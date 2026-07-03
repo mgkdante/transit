@@ -136,7 +136,7 @@
 	);
 </script>
 
-<Surface width="bleed" pad="hub" class="lines-index">
+<Surface pad="hub" class="lines-index">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
 		<!-- The search box + the sort/status pickers are collected into ONE
 		     ControlsRail (quiet infra control panel, mono group overline), so this

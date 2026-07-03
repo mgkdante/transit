@@ -88,7 +88,8 @@
 	   the floating chrome); non-interactive — it states a fact, it does not block
 	   the map. Sits just below the floating freshness/edge row. */
 	.map-feed-stall {
-		top: 3.6rem;
+		/* Below the floating chrome (--chrome-offset knob) + the edge row it trails. */
+		top: calc(var(--chrome-offset) + 2.5rem);
 		left: calc(var(--app-left-rail-offset, 0rem) / 2 + var(--map-detail-offset, 0rem) / 2);
 		right: 0;
 		margin-inline: auto;

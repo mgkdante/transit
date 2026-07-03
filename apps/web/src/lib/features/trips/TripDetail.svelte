@@ -105,7 +105,7 @@
 	}
 </script>
 
-<Surface width="wide" as="div" data-slot="trip-detail">
+<Surface as="div" data-slot="trip-detail">
 	<ResourceBoundary resource={trips} lang={locale}>
 		{#snippet children(_file)}
 			{#if trip == null}

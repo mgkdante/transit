@@ -863,7 +863,7 @@
 
 		.context-panel {
 			position: sticky;
-			top: 5rem;
+			top: var(--chrome-offset);
 		}
 
 		.toc-nav-shell {
@@ -881,8 +881,9 @@
 	}
 
 	/* ── Provenance preamble ─────────────────────────────────────────────────── */
+	/* Deep-link/ToC scroll offset is owned globally (app.css `[data-toc]` rule off
+	   --chrome-offset) — no per-surface scroll-margin literal here. */
 	.metrics-prose {
-		scroll-margin-block-start: 5.5rem;
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
@@ -981,11 +982,9 @@
 		margin-block-end: 0.25rem;
 	}
 
-	/* The section block carries the deep-link target id (so /metrics#otp scrolls
-	   here natively) and offsets the sticky-header scroll landing. */
-	.section-block {
-		scroll-margin-block-start: 5.5rem;
-	}
+	/* The .section-block elements carry the deep-link target id (so /metrics#otp
+	   scrolls here natively); their scroll landing is offset globally by the
+	   app.css `[id]` rule off --chrome-offset (no per-surface scroll-margin). */
 
 	/* ── Metric card body (inside the shared CollapsibleSection) ─────────────── */
 	.metric__body {

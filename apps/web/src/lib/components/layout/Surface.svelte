@@ -1,10 +1,19 @@
+<!--
+  Surface — the page content shell (A1: full-bleed law).
+
+  A1 dropped the boxed max-width variants (content|wide|bleed). Surface now
+  ALWAYS fills its rail-inset <main> box edge-to-edge; content lanes are formed
+  by the gutter (`padding-inline: var(--space-page-x)`), not by a centred
+  max-width cap. Consumers that need a narrower prose measure re-cap locally
+  (`.surface-measure`) or use the future ArticleShell (the sole owner of the
+  surviving --container-content prose lane).
+-->
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 	interface SurfaceProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> {
 		children?: Snippet;
-		width?: 'content' | 'wide' | 'bleed';
 		gutter?: boolean;
 		pad?: 'surface' | 'hub' | 'none';
 		as?: 'section' | 'div' | 'article';
@@ -12,37 +21,29 @@
 	}
 	let {
 		children,
-		width = 'content',
 		gutter = true,
 		pad = 'surface',
 		as = 'section',
 		class: className,
 		...rest
 	}: SurfaceProps = $props();
-	const maxw = $derived(
-		width === 'wide'
-			? 'var(--container-wide)'
-			: width === 'bleed'
-				? 'none'
-				: 'var(--container-content)',
-	);
 </script>
 
 <svelte:element
 	this={as}
 	class={cn('surface-shell', `surface-shell--${pad}`, gutter && 'surface-shell--gutter', className)}
 	data-slot="surface"
-	style="--surface-maxw: {maxw};"
 	{...rest}
 >
 	{@render children?.()}
 </svelte:element>
 
 <style>
+	/* A1 full-bleed: the shell always fills the rail-inset <main> width. No
+	   max-width cap, no centring — content lanes come from the gutter below (or a
+	   local .surface-measure re-cap for dense prose). */
 	.surface-shell {
 		width: 100%;
-		max-width: var(--surface-maxw);
-		margin-inline: auto;
 		display: flex;
 		flex-direction: column;
 		gap: clamp(1.75rem, 4vw, 2.75rem);

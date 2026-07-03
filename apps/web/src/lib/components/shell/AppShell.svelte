@@ -246,23 +246,33 @@
 </script>
 
 <div
-	class={cn('flex h-dvh w-full flex-col overflow-hidden bg-background text-foreground', className)}
+	class={cn(
+		'app-shell-root flex h-dvh w-full flex-col overflow-hidden bg-background text-foreground',
+		className,
+	)}
 	data-slot="app-shell"
 >
-	<!-- TopBar spans the full width on every breakpoint. -->
-	<TopBar
-		{locale}
-		{url}
-		{providerName}
-		{providerShortName}
-		{alertCount}
-		bind:search
-		{onsearch}
-		{searchResults}
-		{onresultselect}
-		{searchScope}
-		{onalerts}
-	/>
+	<!-- Chrome floats OVER the row (not a flex-reserved band): the row fills the
+	     full viewport height and content scrolls UNDER the chrome edge-to-edge, so
+	     the map is truly full-bleed and the single --chrome-offset knob (measured
+	     from the viewport top) correctly places every sticky rail + heading anchor.
+	     Non-full-bleed pages reclaim the space with a top pad (see +layout #main).
+	     STAGE-1: the chrome is still the TopBar; stage-2 swaps it for the NavPill. -->
+	<div class="app-shell-chrome" data-slot="app-shell-chrome">
+		<TopBar
+			{locale}
+			{url}
+			{providerName}
+			{providerShortName}
+			{alertCount}
+			bind:search
+			{onsearch}
+			{searchResults}
+			{onresultselect}
+			{searchScope}
+			{onalerts}
+		/>
+	</div>
 
 	<!-- ONE stable row, server-rendered, correct on first paint. The map stage,
 	     the LeftRail overlay, and the detail surface are ALWAYS in the DOM; the
@@ -376,6 +386,31 @@
 </div>
 
 <style>
+	/* THE single vertical-chrome knob. Every sticky top + every heading anchor
+	   offset derives from this one value — no more scattered 5.5rem / 5rem / 7rem
+	   literals or the unset --nav-height fallback (the old three-system split).
+	   = the pill's top inset (1rem + notch) + the pill height + a 0.5rem breath.
+	   --pill-h is a TEMPORARY fallback matching the CURRENT TopBar height (60px);
+	   stage-2 NavPill replaces --pill-h with its per-breakpoint deterministic
+	   height and this calc keeps working unchanged. */
+	.app-shell-root {
+		--pill-h: 60px; /* stage-2 NavPill replaces */
+		--chrome-offset: calc(1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + 0.5rem);
+		position: relative;
+	}
+
+	/* The chrome floats OVER the row: absolute at the top, full width, above the
+	   rail/detail overlays via --z-nav. Removing it from the flex flow lets the row
+	   fill the whole viewport (map full-bleed) and makes #main's scroll-container
+	   top coincide with the viewport top — so --chrome-offset (viewport-measured)
+	   places sticky rails correctly. STAGE-1: hosts TopBar; stage-2 hosts NavPill. */
+	.app-shell-chrome {
+		position: absolute;
+		inset-block-start: 0;
+		inset-inline: 0;
+		z-index: var(--z-nav);
+	}
+
 	/* The rail width the map chrome offsets against. CSS owns it (not a JS-driven
 	   percent) so it is correct in the FIRST paint and follows the collapse toggle
 	   without a reactive flip. MOBILE default 0px: the rail overlay is hidden below

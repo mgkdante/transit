@@ -229,7 +229,7 @@
 	const isEmpty = $derived(present.size === 0);
 </script>
 
-<Surface width="bleed" class="hotspots">
+<Surface class="hotspots">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
 		<FreshnessStamp variant="updated" {generatedUtc} {locale} />
 	</SurfaceHeader>

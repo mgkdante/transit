@@ -391,7 +391,7 @@
 	const hasDayType = $derived(dayTypeRows.length > 0);
 </script>
 
-<Surface width="bleed" class="network">
+<Surface class="network">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
 		<div class="network-feed-health">
 			<FreshnessStamp

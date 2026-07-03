@@ -85,6 +85,29 @@ describe('ControlsRail', () => {
 		expect(source).toMatch(/\.controls-rail--sticky\s*\{[^}]*z-index:\s*var\(--z-rail\)/);
 	});
 
+	it('parks the sticky rail off the single --chrome-offset knob (no literal, no --rail-sticky-top)', () => {
+		// B1: every sticky top derives from --chrome-offset. Assert the sticky rule
+		// uses it and that the old per-surface --rail-sticky-top override is gone.
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/layout/ControlsRail.svelte'),
+			'utf-8',
+		);
+		expect(source).toMatch(/\.controls-rail--sticky\s*\{[^}]*top:\s*var\(--chrome-offset\)/);
+		expect(source).not.toMatch(/top:\s*var\(--rail-sticky-top/);
+		expect(source).not.toMatch(/top:\s*5\.5rem/);
+	});
+
+	it('flushes tight under the chrome when stuck (B2: hairline + backdrop, no dead band)', () => {
+		// The stuck state is toggled by the observeStuck action via data-stuck; the
+		// flush rule must key off it so there is no dead padding band under the pill.
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/layout/ControlsRail.svelte'),
+			'utf-8',
+		);
+		expect(source).toMatch(/\.controls-rail--sticky\[data-stuck='true'\]/);
+		expect(source).toMatch(/backdrop-filter:\s*blur\(16px\)/);
+	});
+
 	it('is a non-landmark group (not a <section>) and forwards a custom class', () => {
 		const { container } = render(ControlsRail, {
 			props: { label: 'CONTRÔLES', children: controls, class: 'surface-controls' },

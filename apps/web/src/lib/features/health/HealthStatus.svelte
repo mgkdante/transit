@@ -98,7 +98,7 @@
 	});
 </script>
 
-<Surface width="content" class="health">
+<Surface class="health">
 	<!-- The surface head renders UNCONDITIONALLY (h1 present in every state). The
 	     ResourceBoundary below gates only the provenance body; the once-daily
 	     "Updated N ago" stamp rides inside it because it reads prov.generated_utc. -->

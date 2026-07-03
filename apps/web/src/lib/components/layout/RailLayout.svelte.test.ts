@@ -7,6 +7,8 @@
 // content at >=lg. Layout-only: no colour / data-mark assertions.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import RailLayout from './RailLayout.svelte';
@@ -83,5 +85,16 @@ describe('RailLayout', () => {
 		expect(container.querySelector('[data-slot="rail-layout"]')?.classList).toContain(
 			'metrics-body',
 		);
+	});
+
+	it('parks the sticky rail off the single --chrome-offset knob (no literal)', () => {
+		// B1: the sticky offset derives from --chrome-offset (jsdom cannot resolve
+		// Svelte-scoped <style>, so assert the source contract) — never a 5.5rem literal.
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/layout/RailLayout.svelte'),
+			'utf-8',
+		);
+		expect(source).toMatch(/\.rail-layout__rail-sticky\s*\{[^}]*top:\s*var\(--chrome-offset\)/);
+		expect(source).not.toMatch(/top:\s*5\.5rem/);
 	});
 });

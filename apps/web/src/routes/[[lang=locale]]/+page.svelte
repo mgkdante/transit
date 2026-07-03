@@ -410,7 +410,7 @@
 	];
 </script>
 
-<Surface width="wide" pad="hub" class="hub">
+<Surface pad="hub" class="hub">
 	<!-- 1. CONTROL-ROOM HERO ------------------------------------------------- -->
 	<header class="hub-head">
 		<SectionLabel text={t.kicker} variant="station" />

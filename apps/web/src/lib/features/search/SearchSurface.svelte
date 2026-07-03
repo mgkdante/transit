@@ -232,7 +232,7 @@
 		o ? OCCUPANCY_LABELS[locale][o] : null;
 </script>
 
-<Surface width="bleed" class="surface">
+<Surface class="surface">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede} />
 
 	<SearchInput

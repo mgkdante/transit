@@ -41,7 +41,8 @@
 	.map-freshness[data-placement='floating'] {
 		position: absolute;
 		z-index: 10;
-		top: 1rem;
+		/* Clears the floating chrome via the single --chrome-offset knob. */
+		top: var(--chrome-offset);
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
 		display: inline-flex;
 		align-items: center;

@@ -89,11 +89,13 @@
 </div>
 
 <style>
-	/* TOP-CENTRE (operator): the grain filter pill floats just below the app nav; the shared
-	   TocPill keeps the bottom for jump-to, so the two never collide (filter top, nav bottom). */
+	/* TOP-CENTRE (operator): the grain filter pill floats just below the floating
+	   chrome via the single --chrome-offset knob (which already folds in the notch
+	   safe-area); the shared TocPill keeps the bottom for jump-to, so the two never
+	   collide (filter top, nav bottom). */
 	.rel-filter-pill-container {
 		position: fixed;
-		top: calc(var(--nav-height, 64px) + 0.6rem + env(safe-area-inset-top, 0px));
+		top: var(--chrome-offset);
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: var(--z-sheet);

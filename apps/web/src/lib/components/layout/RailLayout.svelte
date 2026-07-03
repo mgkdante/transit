@@ -8,7 +8,7 @@
   the mobile affordance, exactly as MetricsExplainer does with TocPill).
 
     DESKTOP (>=1024px): [rail minmax(13rem,17rem)] [content minmax(0,1fr)],
-      gap 2rem, align-items:start; the rail is position:sticky at top:5.5rem.
+      gap 2rem, align-items:start; the rail is position:sticky at top:var(--chrome-offset).
     MOBILE (<1024px): one column; both panes stack (rail first, then content).
 
   Snippet-prop based (Svelte 5 runes), layout only, doctrine-clean: no data
@@ -80,11 +80,11 @@
 			grid-column: 2;
 		}
 
-		/* The rail tracks the content as it scrolls, parked under the sticky chrome
-		   (the 5.5rem top inset matches the surface header / app-shell top bar). */
+		/* The rail tracks the content as it scrolls, parked under the floating
+		   chrome via the single --chrome-offset knob (AppShell owns it). */
 		.rail-layout__rail-sticky {
 			position: sticky;
-			top: 5.5rem;
+			top: var(--chrome-offset);
 		}
 	}
 </style>

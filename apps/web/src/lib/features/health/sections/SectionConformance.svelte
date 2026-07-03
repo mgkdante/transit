@@ -81,9 +81,8 @@
 	.health-conformance-badge {
 		display: flex;
 	}
-	.section-block {
-		scroll-margin-block-start: 5.5rem;
-	}
+	/* .section-block scroll landing is offset globally (app.css `[data-toc]` rule
+	   off --chrome-offset) — the CollapsibleSection inside is the tracked target. */
 	.health-conformance-detail {
 		display: flex;
 		flex-direction: column;

@@ -185,7 +185,9 @@
 		z-index: 10;
 	}
 	.map-filter-panel {
-		top: 5.25rem;
+		/* Below the chrome (--chrome-offset knob) + the title band, matching the
+		   original ~66px offset from the title top. */
+		top: calc(var(--chrome-offset) + 4rem);
 		left: calc(var(--app-left-rail-offset, 0rem) + 1rem);
 	}
 
@@ -212,7 +214,8 @@
 	   non-interactive (it states a fact; it does not block the map). Centred between
 	   the left rail and the right detail offset so it never hides behind a pane. */
 	.map-live-edge {
-		top: 1.15rem;
+		/* Clears the floating chrome via the single --chrome-offset knob. */
+		top: var(--chrome-offset);
 		left: calc(var(--app-left-rail-offset, 0rem) / 2 + var(--map-detail-offset, 0rem) / 2);
 		right: 0;
 		margin-inline: auto;

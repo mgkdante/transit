@@ -524,13 +524,11 @@ table {
 	}
 }
 
-/* Anchor-link scroll offset so headings land below a sticky nav */
-h1[id],
-h2[id],
-h3[id],
-h4[id],
-h5[id],
-h6[id],
-[data-section-index] {
-	scroll-margin-top: calc(var(--nav-height, 64px) + 1rem);
+/* Anchor-link scroll offset so ANY deep-linked element lands clear of the
+   floating chrome. ONE rule off the single --chrome-offset knob (AppShell) —
+   replaces every per-surface scroll-margin hack (metrics/health/lines). */
+[id],
+[data-section-index],
+[data-toc] {
+	scroll-margin-top: calc(var(--chrome-offset) + 0.5rem);
 }

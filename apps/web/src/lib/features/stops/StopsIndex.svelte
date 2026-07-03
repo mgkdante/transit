@@ -219,7 +219,7 @@
 	const sortedMatches = $derived(applySort(matches));
 </script>
 
-<Surface width="bleed" class="stops-index">
+<Surface class="stops-index">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
 		<!-- All controls collected into ONE ControlsRail: the free-text search, the
 		     by-line combobox, and the reliability sort. --primary lives only on the

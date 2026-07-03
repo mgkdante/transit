@@ -512,22 +512,20 @@ vehicle 40231 · occupancy LOW</pre>
 				</ResizablePaneGroup>
 			</div>
 
-			<!-- Surface widths + hazard separator + standalone ChartLegend. -->
+			<!-- Surface (A1 full-bleed law) + hazard separator + standalone ChartLegend. -->
 			<div class="kit-card kit-card-wide">
 				<SectionLabel
-					text={lang === 'fr' ? 'SURFACE · LARGEURS' : 'SURFACE · WIDTHS'}
+					text={lang === 'fr' ? 'SURFACE · PLEINE LARGEUR' : 'SURFACE · FULL-BLEED'}
 					variant="metric"
 				/>
 				<div class="kit-stack">
-					<Surface width="content" pad="none" gutter={false} class="kit-surface-demo">
-						<span class="kit-surface-label">content · var(--container-content)</span>
-					</Surface>
-					<Surface width="wide" pad="none" gutter={false} class="kit-surface-demo">
-						<span class="kit-surface-label">wide · var(--container-wide)</span>
-					</Surface>
-					<Surface width="bleed" pad="none" gutter={false} class="kit-surface-demo">
+					<!-- A1: Surface always fills its rail-inset <main> edge-to-edge; content
+					     lanes come from the gutter, not a max-width cap. -->
+					<Surface pad="none" gutter={false} class="kit-surface-demo">
 						<span class="kit-surface-label"
-							>{lang === 'fr' ? 'bleed · pleine largeur' : 'bleed · edge-to-edge'}</span
+							>{lang === 'fr'
+								? 'pleine largeur · gouttière = var(--space-page-x)'
+								: 'full-bleed · gutter = var(--space-page-x)'}</span
 						>
 					</Surface>
 				</div>

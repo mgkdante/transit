@@ -258,7 +258,7 @@
 	/>
 {/snippet}
 
-<Surface width="bleed" class="alert-history">
+<Surface class="alert-history">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
 		<FreshnessStamp variant="updated" {generatedUtc} {locale} />
 	</SurfaceHeader>

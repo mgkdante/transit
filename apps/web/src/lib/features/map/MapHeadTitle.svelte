@@ -40,7 +40,10 @@
 		z-index: 10;
 	}
 	.map-head {
-		top: 1.15rem;
+		/* Clears the floating chrome via the single --chrome-offset knob: the map
+		   stage now starts at viewport top (chrome floats over it), so the title
+		   parks below the chrome instead of the old fixed 60px-band assumption. */
+		top: var(--chrome-offset);
 		left: calc(var(--app-left-rail-offset, 0rem) + 1rem);
 		display: flex;
 		flex-direction: column;
@@ -91,7 +94,8 @@
 
 	@media (max-width: 1023px) {
 		.map-head {
-			top: 0.75rem;
+			/* Clear the floating chrome (single --chrome-offset knob) on mobile too. */
+			top: var(--chrome-offset);
 			left: 0.75rem;
 			right: 0.75rem;
 			padding-left: 0.7rem;

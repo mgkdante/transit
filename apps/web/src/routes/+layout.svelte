@@ -482,7 +482,13 @@
 			class="flex h-full w-full flex-col {isFullBleed ? 'overflow-hidden' : 'overflow-y-auto'}"
 			tabindex="-1"
 		>
-			<div class={isFullBleed ? 'min-h-0 grow' : 'grow shrink-0 basis-auto'}>
+			<!-- Non-full-bleed pages reclaim the chrome band with a single top pad off
+			     --chrome-offset (the yesid --nav-clearance analog) so page content clears
+			     the floating chrome — pages never hand-roll it. The map (full-bleed) owns
+			     its own viewport-top chrome clearance and takes no pad. -->
+			<div
+				class={isFullBleed ? 'min-h-0 grow' : 'grow shrink-0 basis-auto pt-[var(--chrome-offset)]'}
+			>
 				{#if !v1}
 					<!-- /v1 contract unreachable: render the honest error state, never a
 					     crash. Retry (and an automatic client re-boot on mount) re-fetch

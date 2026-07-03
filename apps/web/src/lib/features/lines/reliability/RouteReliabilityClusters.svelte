@@ -649,11 +649,10 @@
 		   intra-section gaps — so sections never run together. */
 		gap: clamp(3rem, 7vw, 5rem);
 		width: 100%;
-		/* This surface scrolls inside a nested container that already begins BELOW the
-		   app nav, so the rail's sticky offset is 0 (flush at the container top) — not the
-		   5.5rem window-scroll default that floated it ~88px down with content showing
-		   through. The hazard-tape separator below the rail gives the visual break. */
-		--rail-sticky-top: 0px;
+		/* No per-surface sticky override: the floating pill sits OVER #main and the
+		   single --chrome-offset knob (AppShell → ControlsRail) clears it correctly
+		   here like everywhere else. The hazard-tape separator below the rail gives
+		   the visual break. */
 	}
 
 	/* The single sections column: the sticky grain rail + the five rider-question
@@ -848,9 +847,8 @@
 		   leaving width auto lets the negative inline margins widen the band symmetrically to both
 		   page edges, so the re-padded content sits centred. */
 		padding-inline: var(--space-page-x);
-		/* TOC jump-to: clear the sticky control rail so a jumped-to section header isn't
-		   hidden under it. */
-		scroll-margin-top: 7rem;
+		/* TOC jump-to anchor offset is owned globally: the `[id]` rule in app.css
+		   parks jumped-to headers below the floating chrome via --chrome-offset. */
 	}
 	/* Smooth jump-to from the TOC (reduced-motion users get the instant default). */
 	@media (prefers-reduced-motion: no-preference) {

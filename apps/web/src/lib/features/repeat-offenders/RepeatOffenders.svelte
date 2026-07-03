@@ -283,7 +283,7 @@
 	const hasLegacy = $derived((offenders.data?.offenders?.length ?? 0) > 0);
 </script>
 
-<Surface width="bleed" class="repeat-offenders">
+<Surface class="repeat-offenders">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
 		<FreshnessStamp variant="updated" {generatedUtc} {locale} />
 	</SurfaceHeader>
