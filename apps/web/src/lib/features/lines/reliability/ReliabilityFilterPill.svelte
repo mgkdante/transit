@@ -108,10 +108,10 @@
 	.rel-filter-pill {
 		display: flex;
 		align-items: center;
-		gap: 0.55rem;
+		gap: 0.5rem;
 		min-height: 44px;
 		max-width: calc(100vw - 2rem);
-		padding: 0.6rem 1rem 0.6rem 0.85rem;
+		padding: 0.625rem 1rem 0.625rem 0.875rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		color: var(--foreground);
@@ -120,7 +120,8 @@
 		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(10px) saturate(1.1);
+		backdrop-filter: blur(16px) saturate(1.1);
+		-webkit-backdrop-filter: blur(16px) saturate(1.1);
 		cursor: pointer;
 		transition:
 			border-color var(--duration-fast) var(--ease-default),
@@ -132,15 +133,11 @@
 	.rel-filter-pill[aria-expanded='true'] {
 		border-color: color-mix(in srgb, var(--primary) 55%, transparent);
 	}
-	.rel-filter-pill:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
 	.rel-filter-pill-dot {
 		width: 0.5rem;
 		height: 0.5rem;
 		flex: none;
-		border-radius: 999px;
+		border-radius: var(--radius-pill);
 		background: var(--primary);
 	}
 	/* The "View" eyebrow stays quiet; the active window is the value voice. */
@@ -188,7 +185,8 @@
 		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-sheet);
-		backdrop-filter: blur(12px) saturate(1.1);
+		backdrop-filter: blur(16px) saturate(1.1);
+		-webkit-backdrop-filter: blur(16px) saturate(1.1);
 	}
 
 	@media (prefers-reduced-motion: reduce) {

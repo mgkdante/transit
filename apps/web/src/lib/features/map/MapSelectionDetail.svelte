@@ -569,12 +569,12 @@
 	.map-selection-detail {
 		display: flex;
 		flex-direction: column;
-		gap: 1.15rem;
+		gap: 1.25rem;
 		font-family: var(--font-body);
 		color: var(--foreground);
 	}
 	.map-selection-detail.compact {
-		gap: 0.7rem;
+		gap: 0.75rem;
 		min-width: 14rem;
 		max-width: 18rem;
 	}
@@ -583,12 +583,12 @@
 	.map-selection-head {
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
-		padding-bottom: 0.85rem;
+		gap: 0.375rem;
+		padding-bottom: 0.875rem;
 		border-bottom: 1px solid var(--border-subtle);
 	}
 	.compact .map-selection-head {
-		padding-bottom: 0.55rem;
+		padding-bottom: 0.5rem;
 	}
 	.map-selection-kind {
 		display: inline-flex;
@@ -616,7 +616,7 @@
 		font-size: var(--text-heading);
 		font-weight: 600;
 		line-height: 1.08;
-		letter-spacing: -0.01em;
+		letter-spacing: var(--tracking-tight);
 		text-wrap: balance;
 		color: var(--foreground);
 	}
@@ -628,7 +628,7 @@
 	.map-stop-stats {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.45rem;
+		gap: 0.375rem;
 		align-items: center;
 	}
 	.map-selection-id span,
@@ -639,10 +639,9 @@
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-pill);
 		background: var(--muted);
-		padding: 0.25rem 0.7rem;
+		padding: 0.25rem 0.75rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
-		letter-spacing: 0.01em;
 		color: var(--muted-foreground);
 	}
 	.map-selection-id span {
@@ -662,15 +661,14 @@
 		border: 1px solid var(--border-brand);
 		border-radius: var(--radius-pill);
 		background: color-mix(in srgb, var(--primary) 12%, transparent);
-		padding: 0.25rem 0.7rem;
+		padding: 0.25rem 0.75rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		font-weight: 600;
-		letter-spacing: 0.02em;
 		color: var(--foreground);
 	}
 	.map-id-action {
-		gap: 0.35rem;
+		gap: 0.375rem;
 		cursor: pointer;
 		transition:
 			color var(--duration-fast) var(--ease-out),
@@ -699,12 +697,11 @@
 	}
 	/* ── Not-reporting note — calm, honest per-bus stale-GPS caution ──── */
 	.map-not-reporting {
-		position: relative;
 		display: flex;
 		align-items: center;
-		gap: 0.45rem;
+		gap: 0.375rem;
 		margin: 0;
-		padding: 0.4rem 0.6rem 0.4rem 0.75rem;
+		padding: 0.375rem 0.5rem;
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-md);
 		background: var(--muted);
@@ -717,16 +714,6 @@
 		flex: none;
 		opacity: 0.75;
 	}
-	/* Leading signage rail — calm + honest, not alarmist. */
-	.map-not-reporting::before {
-		content: '';
-		position: absolute;
-		inset-block: 0;
-		inset-inline-start: 0;
-		width: 3px;
-		background: var(--muted-foreground);
-		opacity: 0.5;
-	}
 
 	/* ── Attribute grid (status / crowding / delay …) ─────────── */
 	.map-detail-grid {
@@ -738,7 +725,7 @@
 	.map-detail-grid div {
 		display: grid;
 		grid-template-columns: 5.75rem minmax(0, 1fr);
-		gap: 0.6rem;
+		gap: 0.5rem;
 		align-items: center;
 		min-height: 2.4rem;
 		border-bottom: 1px solid var(--border-subtle);
@@ -765,12 +752,12 @@
 	}
 	.map-inline-action {
 		display: inline-flex;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		max-width: 100%;
 		align-items: center;
 		justify-content: flex-start;
 		min-height: 1.7rem;
-		padding: 0.2rem 0.55rem;
+		padding: 0.25rem 0.5rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		font-weight: 500;
@@ -816,18 +803,11 @@
 	.map-status-label {
 		color: var(--muted-foreground);
 	}
-	.map-inline-action:focus-visible,
-	.map-id-action:focus-visible,
-	.map-stop-action:focus-visible,
-	.map-vehicle-action:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
 	/* ── Departures list ──────────────────────────────────────── */
 	.map-departures {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -837,25 +817,14 @@
 		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
-		gap: 0.6rem;
-		position: relative;
+		gap: 0.5rem;
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-md);
 		background: var(--muted);
-		padding: 0.5rem 0.65rem 0.5rem 0.85rem;
+		padding: 0.5rem 0.625rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		overflow: hidden;
-	}
-	/* Left signage rail accent on each departure row. */
-	.map-departures li::before {
-		content: '';
-		position: absolute;
-		inset-block: 0;
-		inset-inline-start: 0;
-		width: 3px;
-		background: var(--primary);
-		opacity: 0.55;
 	}
 
 	/* ── Section scaffolding (shared) ─────────────────────────── */
@@ -864,14 +833,14 @@
 	.map-live-buses {
 		display: flex;
 		flex-direction: column;
-		gap: 0.55rem;
+		gap: 0.5rem;
 	}
 	.map-stop-sequence h3,
 	.map-route-times h3,
 	.map-live-buses h3 {
 		display: flex;
 		align-items: center;
-		gap: 0.55rem;
+		gap: 0.5rem;
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
@@ -898,10 +867,10 @@
 	.map-direction-block {
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
+		gap: 0.375rem;
 	}
 	.map-direction-block + .map-direction-block {
-		margin-top: 0.55rem;
+		margin-top: 0.5rem;
 	}
 	.map-direction-block h4,
 	.map-route-time h4 {
@@ -915,8 +884,8 @@
 	.map-direction-block h4 {
 		display: flex;
 		flex-direction: column;
-		gap: 0.15rem;
-		padding-bottom: 0.3rem;
+		gap: 0.125rem;
+		padding-bottom: 0.375rem;
 		color: var(--accent-text);
 	}
 	.map-direction-block h4 small {
@@ -930,7 +899,7 @@
 		display: inline-flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		text-transform: none;
 		letter-spacing: 0;
 	}
@@ -944,11 +913,11 @@
 	.map-stop-action {
 		display: grid;
 		grid-template-columns: 1.9rem minmax(0, 1fr) auto;
-		gap: 0.65rem;
-		width: calc(100% + 1.1rem);
-		margin-inline: -0.55rem;
+		gap: 0.625rem;
+		width: calc(100% + 1rem);
+		margin-inline: -0.5rem;
 		align-items: center;
-		padding: 0.5rem 0.55rem;
+		padding: 0.5rem 0.5rem;
 		border-radius: var(--radius-sm);
 		color: var(--foreground);
 		text-align: left;
@@ -983,8 +952,8 @@
 		grid-column: 2;
 		display: inline-flex;
 		align-items: center;
-		gap: 0.45rem;
-		margin-top: 0.1rem;
+		gap: 0.375rem;
+		margin-top: 0.125rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		color: var(--muted-foreground);
@@ -1008,11 +977,11 @@
 	.map-vehicle-action {
 		display: grid;
 		grid-template-columns: minmax(3.5rem, auto) minmax(0, 1fr) auto auto;
-		gap: 0.6rem;
-		width: calc(100% + 1.1rem);
-		margin-inline: -0.55rem;
+		gap: 0.5rem;
+		width: calc(100% + 1rem);
+		margin-inline: -0.5rem;
 		align-items: center;
-		padding: 0.5rem 0.55rem;
+		padding: 0.5rem 0.5rem;
 		border-radius: var(--radius-sm);
 		color: var(--foreground);
 		text-align: left;
@@ -1062,12 +1031,12 @@
 	}
 	/* ── Route-time card (stop detail) ────────────────────────── */
 	.map-route-times {
-		gap: 0.6rem;
+		gap: 0.5rem;
 	}
 	.map-route-time {
 		display: flex;
 		flex-direction: column;
-		gap: 0.65rem;
+		gap: 0.625rem;
 		padding: 0.75rem;
 		background: var(--card);
 		border: 1px solid var(--border-subtle);
@@ -1079,7 +1048,7 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.5rem;
-		padding-bottom: 0.55rem;
+		padding-bottom: 0.5rem;
 		border-bottom: 1px solid var(--border-subtle);
 	}
 	.map-route-time header span {
@@ -1092,13 +1061,13 @@
 		gap: 0.75rem;
 	}
 	.map-time-columns h4 {
-		margin-bottom: 0.2rem;
+		margin-bottom: 0.25rem;
 	}
 	.map-time-columns li {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
-		padding: 0.18rem 0;
+		gap: 0.375rem;
+		padding: 0.125rem 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		color: var(--foreground);
@@ -1130,14 +1099,14 @@
 			align-items: start;
 		}
 		.map-stop-action span {
-			padding-top: 0.1rem;
+			padding-top: 0.125rem;
 		}
 		.map-stop-action strong {
 			white-space: normal;
 		}
 		.map-time-columns {
 			grid-template-columns: minmax(0, 1fr);
-			gap: 0.4rem;
+			gap: 0.375rem;
 		}
 	}
 	/* Graceful shrink inside the resizable right-panel dock. The viewport media
@@ -1178,7 +1147,7 @@
 		}
 		.map-time-columns {
 			grid-template-columns: minmax(0, 1fr);
-			gap: 0.4rem;
+			gap: 0.375rem;
 		}
 	}
 	/* E4 — cuter, compact arrivals when the dock is dragged NARROW. The Past/Next/
@@ -1202,15 +1171,15 @@
 		}
 		/* Compact each remaining column into a quiet stacked list with a tight gap. */
 		.map-time-col h4 {
-			margin-bottom: 0.1rem;
+			margin-bottom: 0.125rem;
 		}
 		.map-time-columns li {
-			padding-block: 0.12rem;
+			padding-block: 0.125rem;
 		}
 		/* The Live list reads as the cuter primary block: a touch more breathing room
 		   between its dated rows so the delay tags do not crowd at the narrow width. */
 		.map-live-list li {
-			gap: 0.3rem;
+			gap: 0.375rem;
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {

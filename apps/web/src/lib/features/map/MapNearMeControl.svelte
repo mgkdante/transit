@@ -277,17 +277,17 @@
 <style>
 	.map-near {
 		position: absolute;
-		z-index: 10;
+		z-index: var(--z-map-overlay);
 		top: auto;
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
 		bottom: 5.1rem;
 		left: auto;
 		transform: none;
 		display: grid;
-		gap: 0.45rem;
+		gap: 0.375rem;
 		width: auto;
 		justify-items: end;
-		transition: right 180ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+		transition: right var(--duration-normal) var(--ease-out);
 	}
 	.map-near-toggle,
 	.map-near-action,
@@ -300,9 +300,9 @@
 		border: 1px solid var(--border-subtle);
 		cursor: pointer;
 		transition:
-			color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1)),
-			background-color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1)),
-			border-color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1));
+			color var(--duration-fast) var(--ease-default),
+			background-color var(--duration-fast) var(--ease-default),
+			border-color var(--duration-fast) var(--ease-default);
 	}
 	.map-near-toggle {
 		display: inline-flex;
@@ -311,15 +311,18 @@
 		gap: 0.5rem;
 		justify-self: end;
 		min-height: 2rem;
-		padding: 0.35rem 0.85rem 0.35rem 0.7rem;
+		padding: 0.375rem 0.875rem 0.375rem 0.75rem;
 		font-weight: 600;
-		letter-spacing: 0.04em;
+		letter-spacing: var(--tracking-wide);
 		color: var(--foreground);
 		background: color-mix(in srgb, var(--card) 88%, transparent);
 		border-color: color-mix(in srgb, var(--border) 82%, var(--primary) 18%);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(10px) saturate(1.1);
+		/* Map GL escape hatch (§C4 P4): blur(12px) not the global 16px — the overlay
+		   family floats over the live WebGL canvas where 16px induces compositing jank. */
+		backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 	}
 	.map-near-toggle[aria-expanded='true'] {
 		color: var(--primary);
@@ -340,21 +343,11 @@
 		color: var(--primary);
 		background: color-mix(in srgb, var(--primary) 10%, var(--muted) 90%);
 		border-color: color-mix(in srgb, var(--primary) 42%, var(--border) 58%);
-		outline: none;
-	}
-	.map-near-toggle:focus-visible,
-	.map-near-action:focus-visible,
-	.map-near-form button:focus-visible,
-	.map-near-stop:focus-visible,
-	.map-near-suggestion:focus-visible,
-	.map-near-clear:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
 	}
 	:global(.map-near-icon) {
 		flex: none;
 		color: var(--primary);
-		transition: color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1));
+		transition: color var(--duration-fast) var(--ease-default);
 	}
 	.map-near-panel {
 		position: absolute;
@@ -362,17 +355,19 @@
 		bottom: calc(100% + 0.5rem);
 		width: min(28rem, calc(100vw - var(--map-detail-offset, 0rem) - 2rem));
 		display: grid;
-		gap: 0.45rem;
-		padding: 0.6rem;
+		gap: 0.375rem;
+		padding: 0.5rem;
 		background: color-mix(in srgb, var(--card) 92%, transparent);
 		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
+		/* Map GL escape hatch (§C4 P4): blur(12px), see .map-near-toggle. */
 		backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 	}
 	.map-near-action {
 		min-height: 2rem;
-		padding: 0.4rem 0.65rem;
+		padding: 0.375rem 0.625rem;
 		font-weight: 600;
 		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
@@ -383,7 +378,7 @@
 	}
 	.map-near-form button {
 		min-height: 2rem;
-		padding: 0.3rem 0.7rem;
+		padding: 0.375rem 0.75rem;
 		font-weight: 600;
 		color: var(--foreground);
 		background: var(--muted);
@@ -392,7 +387,7 @@
 	.map-near-form {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.map-near-input-wrap {
 		position: relative;
@@ -402,7 +397,7 @@
 		width: 100%;
 		min-width: 0;
 		min-height: 2rem;
-		padding: 0.3rem 0.7rem;
+		padding: 0.375rem 0.75rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		color: var(--foreground);
@@ -410,8 +405,8 @@
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-pill);
 		transition:
-			border-color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1)),
-			background-color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1));
+			border-color var(--duration-fast) var(--ease-default),
+			background-color var(--duration-fast) var(--ease-default);
 	}
 	.map-near-form input:hover {
 		border-color: color-mix(in srgb, var(--primary) 28%, var(--border) 72%);
@@ -424,13 +419,11 @@
 		color: var(--muted-foreground);
 	}
 	.map-near-form input:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 1px;
 		border-color: color-mix(in srgb, var(--primary) 50%, var(--border) 50%);
 	}
 	.map-near-suggestions {
 		grid-column: 1 / -1;
-		z-index: 2;
+		z-index: var(--z-map-popover-behind);
 		display: grid;
 		gap: 0.25rem;
 		max-height: min(18rem, calc(100dvh - 10rem));
@@ -438,7 +431,7 @@
 		/* Reserve the scrollbar track so the suggestion rows do not shift left
 		   the moment the list grows tall enough to scroll. */
 		scrollbar-gutter: stable;
-		padding: 0.35rem;
+		padding: 0.375rem;
 		background: color-mix(in srgb, var(--card) 98%, transparent);
 		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 		border-radius: var(--radius-md);
@@ -446,9 +439,9 @@
 	}
 	.map-near-suggestion {
 		display: grid;
-		gap: 0.12rem;
+		gap: 0.125rem;
 		min-height: 2rem;
-		padding: 0.4rem 0.6rem;
+		padding: 0.375rem 0.5rem;
 		color: var(--foreground);
 		text-align: left;
 		background: var(--muted);
@@ -477,36 +470,43 @@
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		min-height: 1.5rem;
-		padding: 0.25rem 0.4rem 0.1rem;
+		padding: 0.25rem 0.375rem 0.125rem;
 		color: var(--muted-foreground);
 		background: color-mix(in srgb, var(--card) 92%, transparent);
 		border-radius: var(--radius-sm);
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 	}
+	/* Google's own brand palette — exempt-by-brand (§C4 P12 exemptions): an EXTERNAL
+	   provider wordmark that cannot flow through the transit token scale. Named here as
+	   local consts so the raw hexes are documented, not scattered. */
 	.map-near-google-wordmark {
+		--google-blue: #4285f4;
+		--google-red: #ea4335;
+		--google-yellow: #fbbc05;
+		--google-green: #34a853;
 		display: inline-flex;
 		align-items: baseline;
 		font-family: var(--font-heading);
-		font-size: 0.72rem;
+		font-size: var(--text-micro);
 		font-weight: 700;
 		letter-spacing: 0;
 	}
 	.map-near-google-wordmark span:nth-child(1),
 	.map-near-google-wordmark span:nth-child(4) {
-		color: #4285f4;
+		color: var(--google-blue);
 	}
 	.map-near-google-wordmark span:nth-child(2),
 	.map-near-google-wordmark span:nth-child(6) {
-		color: #ea4335;
+		color: var(--google-red);
 	}
 	.map-near-google-wordmark span:nth-child(3) {
-		color: #fbbc05;
+		color: var(--google-yellow);
 	}
 	.map-near-google-wordmark span:nth-child(5) {
-		color: #34a853;
+		color: var(--google-green);
 	}
 	.map-near-message,
 	.map-near-origin {
@@ -521,9 +521,8 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
 		align-items: center;
-		gap: 0.45rem;
-		padding: 0.1rem 0.3rem 0.1rem 0.45rem;
-		border-left: 2px solid color-mix(in srgb, var(--primary) 55%, transparent);
+		gap: 0.375rem;
+		padding: 0.125rem 0.375rem;
 	}
 	.map-near-origin {
 		min-width: 0;
@@ -537,24 +536,24 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		min-height: 1.75rem;
-		padding: 0.25rem 0.55rem;
+		padding: 0.25rem 0.5rem;
 		color: var(--muted-foreground);
 		background: var(--muted);
 		border-radius: var(--radius-pill);
 	}
 	.map-near-results {
 		display: grid;
-		gap: 0.3rem;
+		gap: 0.375rem;
 	}
 	.map-near-stop {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 0.6rem;
+		gap: 0.5rem;
 		min-height: 2rem;
-		padding: 0.4rem 0.65rem;
+		padding: 0.375rem 0.625rem;
 		color: var(--foreground);
 		text-align: left;
 		background: var(--muted);
@@ -580,7 +579,7 @@
 		}
 	}
 
-	@media (max-width: 760px) {
+	@media (max-width: 768px) {
 		.map-near {
 			top: auto;
 			right: 0.75rem;
@@ -595,7 +594,7 @@
 			height: 2.75rem;
 			min-height: 2.75rem;
 			padding: 0;
-			border-radius: 999px;
+			border-radius: var(--radius-pill);
 		}
 		.map-near-toggle span {
 			display: none;

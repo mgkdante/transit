@@ -38,11 +38,10 @@
 	.map-delay-tag {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		font-family: var(--font-mono);
 		font-size: inherit;
 		font-weight: 600;
-		letter-spacing: 0.01em;
 		color: var(--muted-foreground);
 		white-space: nowrap;
 	}

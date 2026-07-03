@@ -74,7 +74,7 @@ describe('MapNearMeControl', () => {
 		expect(s).toMatch(/\.map-near-suggestions\s*\{[\s\S]*max-height:\s*min\(18rem/);
 		expect(s).toMatch(/\.map-near-suggestion span\s*\{[\s\S]*white-space:\s*normal/);
 		expect(s).toMatch(
-			/@media \(max-width: 760px\)[\s\S]*\.map-near-panel\s*\{[\s\S]*width:\s*min\(24rem/,
+			/@media \(max-width: 768px\)[\s\S]*\.map-near-panel\s*\{[\s\S]*width:\s*min\(24rem/,
 		);
 	});
 

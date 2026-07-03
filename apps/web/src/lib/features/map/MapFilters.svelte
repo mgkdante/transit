@@ -479,16 +479,19 @@
 
 		display: flex;
 		flex-direction: column;
-		gap: 0.7rem;
+		gap: 0.75rem;
 		width: 16rem;
 		max-width: calc(100vw - 2rem);
 		max-height: min(72dvh, calc(100dvh - 7rem));
-		padding: 0.55rem 0.7rem 0.7rem;
+		padding: 0.5rem 0.75rem 0.75rem;
 		background: color-mix(in srgb, var(--card) 90%, transparent);
 		border: 1px solid var(--mf-edge);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(10px) saturate(1.1);
+		/* Map GL escape hatch (§C4 P4): blur(12px) not the global 16px — floats over
+		   the live WebGL canvas where 16px induces compositing jank. */
+		backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		overflow: hidden;
 		transition:
 			width var(--duration-slow) var(--ease-out),
@@ -504,7 +507,7 @@
 		display: flex;
 		flex-direction: column;
 		min-width: 0;
-		padding-bottom: 0.6rem;
+		padding-bottom: 0.5rem;
 		border-bottom: 1px solid color-mix(in srgb, var(--mf-edge) 70%, transparent);
 	}
 	.mf-controls {
@@ -512,14 +515,14 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		min-width: 0;
-		padding-bottom: 0.6rem;
+		padding-bottom: 0.5rem;
 		border-bottom: 1px solid color-mix(in srgb, var(--mf-edge) 70%, transparent);
 	}
 	.mf-head {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 0.55rem;
+		gap: 0.5rem;
 		min-width: 0;
 	}
 	.mf-toggle {
@@ -528,8 +531,8 @@
 		gap: 0.5rem;
 		width: 100%;
 		min-height: 2rem;
-		padding: 0.25rem 0.3rem;
-		margin: -0.25rem -0.3rem;
+		padding: 0.25rem 0.375rem;
+		margin: -0.25rem -0.375rem;
 		color: var(--muted-foreground);
 		background: none;
 		border: none;
@@ -562,10 +565,6 @@
 		color: var(--foreground);
 		background: var(--muted);
 	}
-	.mf-toggle:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
 	.mf-title {
 		font-family: var(--font-mono);
 		font-size: var(--text-mono);
@@ -584,7 +583,7 @@
 	.mf-body {
 		display: flex;
 		flex-direction: column;
-		gap: 0.85rem;
+		gap: 0.875rem;
 		min-height: 0;
 		min-width: 0;
 		overflow-y: auto;
@@ -594,7 +593,7 @@
 		scrollbar-color: color-mix(in srgb, var(--primary) 40%, var(--border) 60%) transparent;
 	}
 	.mf-body::-webkit-scrollbar {
-		width: 0.4rem;
+		width: 0.375rem;
 	}
 	.mf-body::-webkit-scrollbar-track {
 		background: transparent;
@@ -609,13 +608,13 @@
 	.mf-group {
 		display: flex;
 		flex-direction: column;
-		gap: 0.45rem;
+		gap: 0.375rem;
 		min-width: 0;
 	}
 	.mf-group-label {
 		display: flex;
 		align-items: center;
-		gap: 0.45rem;
+		gap: 0.375rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		font-weight: 600;
@@ -704,7 +703,7 @@
 	.mf-chips {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
-		gap: 0.3rem;
+		gap: 0.375rem;
 		min-width: 0;
 	}
 	.mf-chip {
@@ -716,8 +715,7 @@
 		min-height: var(--mf-control-size);
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
-		letter-spacing: 0.01em;
-		padding: 0.3rem 0.7rem 0.3rem 0.5rem;
+		padding: 0.375rem 0.75rem 0.375rem 0.5rem;
 		text-align: left;
 		color: var(--muted-foreground);
 		background: color-mix(in srgb, var(--muted) 70%, transparent);
@@ -786,10 +784,6 @@
 	.mf-clear:disabled:hover .mf-clear-icon {
 		box-shadow: none;
 	}
-	.mf-chip:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
 	.mf-chip:active {
 		transform: translateY(0.5px);
 	}
@@ -827,7 +821,7 @@
 		place-items: center;
 		width: 1.4rem;
 		height: 1.4rem;
-		padding: 0.16rem;
+		padding: 0.125rem;
 		flex: none;
 		color: var(--primary);
 		/* Knocked-out parts (windshield / headlights / pin hole) read as cut-outs

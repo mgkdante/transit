@@ -924,13 +924,13 @@
 	/* Tier-1 direction-asymmetry callout — the "which way you go changes the wait" takeaway,
 	   in the same insight register as §1's takeaway (yellow overline + accent left-rule + a
 	   foreground sentence), distinct from the bordered data cards. */
+	/* Tier-1 direction-asymmetry callout — carries the insight via the yellow overline
+	   + foreground sentence (§C4 P7: the former 3px accent left-stripe is retired). */
 	.direction-callout {
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		max-width: 64ch;
-		padding-inline-start: 0.7rem;
-		border-inline-start: 3px solid var(--accent-text);
 	}
 	.direction-callout :global([data-slot='section-label']) {
 		color: var(--accent-text);
@@ -955,7 +955,7 @@
 	.label-with-info {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.label-with-info :global([data-slot='section-label']) {
 		min-width: 0;
@@ -986,7 +986,7 @@
 	.metric-with-info {
 		display: inline-flex;
 		align-items: flex-start;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.metric-with-info :global([data-slot='metric-display']) {
 		min-width: 0;
@@ -1014,7 +1014,7 @@
 	.compare-list {
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -1023,8 +1023,8 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 0.25rem 0.6rem;
-		padding: 0.3rem 0;
+		gap: 0.25rem 0.5rem;
+		padding: 0.375rem 0;
 	}
 	.compare-row + .compare-row {
 		border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
@@ -1063,8 +1063,8 @@
 	.shift-direction {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
-		margin-top: 0.85rem;
+		gap: 0.5rem;
+		margin-top: 0.875rem;
 	}
 	/* The observed-gap-by-direction TABLE. Tabular numbers, zebra rows, sticky-ish row
 	   headers; the two direction columns are right-aligned numerics. */
@@ -1076,7 +1076,7 @@
 	}
 	.direction-table th,
 	.direction-table td {
-		padding: 0.4rem 0.6rem;
+		padding: 0.375rem 0.5rem;
 		text-align: right;
 		white-space: nowrap;
 	}
@@ -1084,7 +1084,7 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		text-transform: uppercase;
-		letter-spacing: 0.04em;
+		letter-spacing: var(--tracking-wide);
 		color: var(--muted-foreground);
 		border-bottom: 1px solid var(--border);
 	}
@@ -1123,13 +1123,13 @@
 			border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
 		}
 		.direction-table th[scope='row'] {
-			margin-bottom: 0.2rem;
+			margin-bottom: 0.25rem;
 		}
 		.direction-table td {
 			display: flex;
 			justify-content: space-between;
 			gap: 1rem;
-			padding: 0.15rem 0;
+			padding: 0.125rem 0;
 			border: 0;
 		}
 		.direction-table td::before {
@@ -1137,7 +1137,7 @@
 			font-family: var(--font-mono);
 			font-size: var(--text-micro);
 			text-transform: uppercase;
-			letter-spacing: 0.04em;
+			letter-spacing: var(--tracking-wide);
 			color: var(--muted-foreground);
 		}
 	}

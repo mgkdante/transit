@@ -555,7 +555,7 @@
 	.route-label-row {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	/* Current-buses roster: one row per live vehicle, worst-delay first. */
 	.route-roster {
@@ -589,9 +589,9 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.4rem 0.5rem;
+		padding: 0.375rem 0.5rem;
 		margin-inline: -0.5rem;
-		border-radius: var(--radius-sm, 0.375rem);
+		border-radius: var(--radius-sm);
 		color: var(--foreground);
 		text-decoration: none;
 		transition: background-color var(--duration-fast) var(--ease-out);
@@ -613,18 +613,14 @@
 		opacity: 1;
 		transform: translateX(2px);
 	}
-	.route-roster-link:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
 	/* Compact "view on map" pill for each bus. */
 	.route-roster-map {
 		flex-shrink: 0;
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3rem;
-		padding: 0.3rem 0.6rem;
-		border-radius: var(--radius-pill, 999px);
+		gap: 0.375rem;
+		padding: 0.375rem 0.5rem;
+		border-radius: var(--radius-pill);
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		color: var(--muted-foreground);
@@ -638,10 +634,6 @@
 		color: var(--primary);
 		border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
 	}
-	.route-roster-map:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
 	.route-departures {
 		display: flex;
 		flex-wrap: wrap;
@@ -651,7 +643,7 @@
 	.route-metric-cell {
 		display: inline-flex;
 		align-items: flex-start;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.route-periods {
 		list-style: none;
@@ -710,11 +702,11 @@
 	.route-period {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 		padding: 1rem 1.25rem;
 		background-color: var(--card);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-lg, 0.75rem);
+		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
 	}
 	.route-period-metrics {

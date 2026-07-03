@@ -139,7 +139,7 @@
 	.line-direction {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 	}
 	.line-direction-head {
 		display: flex;
@@ -181,7 +181,7 @@
 		width: calc(100% + 1rem);
 		margin-inline: -0.5rem;
 		padding: 0.5rem;
-		border-radius: var(--radius-sm, 0.375rem);
+		border-radius: var(--radius-sm);
 		color: var(--foreground);
 		text-decoration: none;
 		transition: background-color var(--duration-fast) var(--ease-out);
@@ -218,9 +218,8 @@
 	.line-stop-delay {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		font-weight: 600;
-		letter-spacing: 0.01em;
 		white-space: nowrap;
 		color: var(--muted-foreground);
 	}
@@ -268,10 +267,6 @@
 	.line-stop-link:hover :global(svg) {
 		opacity: 1;
 		transform: translateX(2px);
-	}
-	.line-stop-link:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.line-stop-link,

@@ -100,11 +100,6 @@
 		cursor: pointer;
 		color: inherit;
 	}
-	.section-toggle:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 4px;
-		border-radius: var(--radius-md, 0.5rem);
-	}
 	.section-head-text {
 		display: flex;
 		flex-direction: column;

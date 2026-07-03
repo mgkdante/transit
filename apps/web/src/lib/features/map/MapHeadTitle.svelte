@@ -37,7 +37,7 @@
 <style>
 	.map-overlay {
 		position: absolute;
-		z-index: 10;
+		z-index: var(--z-map-overlay);
 	}
 	.map-head {
 		/* Clears the floating chrome via the single --chrome-offset knob: the map
@@ -47,11 +47,7 @@
 		left: calc(var(--app-left-rail-offset, 0rem) + 1rem);
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
-		padding-left: 0.85rem;
-		/* Hairline accent rule anchors the title to the canvas edge — font as
-		   architecture: a single vertical brand stroke instead of a chrome box. */
-		border-left: 2px solid var(--border-rule);
+		gap: 0.375rem;
 		max-width: calc(
 			100% - var(--app-left-rail-offset, 0rem) - var(--map-detail-offset, 0rem) - 2rem
 		);
@@ -59,7 +55,7 @@
 	.map-kicker-row {
 		display: flex;
 		align-items: center;
-		gap: 0.6rem;
+		gap: 0.5rem;
 		min-width: 0;
 	}
 	.map-kicker {
@@ -73,7 +69,7 @@
 	.map-title-row {
 		display: flex;
 		align-items: center;
-		gap: 0.55rem;
+		gap: 0.5rem;
 		min-width: 0;
 	}
 	.map-heading {
@@ -81,7 +77,7 @@
 		font-family: var(--font-heading);
 		font-weight: 700;
 		font-size: var(--text-heading);
-		letter-spacing: -0.01em;
+		letter-spacing: var(--tracking-tight);
 		line-height: 0.95;
 		color: var(--foreground);
 		/* Faint legibility lift so the heading survives over busy basemap tiles;
@@ -92,13 +88,12 @@
 		color: var(--primary);
 	}
 
-	@media (max-width: 1023px) {
+	@media (max-width: 1023.98px) {
 		.map-head {
 			/* Clear the floating chrome (single --chrome-offset knob) on mobile too. */
 			top: var(--chrome-offset);
 			left: 0.75rem;
 			right: 0.75rem;
-			padding-left: 0.7rem;
 			max-width: calc(100% - 1.5rem);
 		}
 		.map-heading {

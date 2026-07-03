@@ -72,12 +72,12 @@
 	.map-alerts {
 		display: flex;
 		flex-direction: column;
-		gap: 0.55rem;
+		gap: 0.5rem;
 	}
 	.map-alerts h3 {
 		display: flex;
 		align-items: center;
-		gap: 0.55rem;
+		gap: 0.5rem;
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
@@ -95,31 +95,21 @@
 	.map-alerts ul {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
 	.map-alerts li {
 		--alert-tone: var(--dataviz-severity-high);
-		position: relative;
 		margin: 0;
 		border: 1px solid color-mix(in srgb, var(--alert-tone) 32%, var(--border) 68%);
 		border-radius: var(--radius-md);
 		background: color-mix(in srgb, var(--alert-tone) 9%, var(--card));
-		padding: 0.5rem 0.6rem 0.5rem 0.85rem;
+		padding: 0.5rem 0.625rem;
 		font-size: var(--text-small);
 		color: var(--foreground);
 		overflow: hidden;
-	}
-	/* Severity rail down the leading edge. */
-	.map-alerts li::before {
-		content: '';
-		position: absolute;
-		inset-block: 0;
-		inset-inline-start: 0;
-		width: 3px;
-		background: var(--alert-tone);
 	}
 	.map-alerts li[data-severity='critical'] {
 		--alert-tone: var(--dataviz-severity-critical);
@@ -160,23 +150,19 @@
 		opacity: 1;
 		transform: translateX(2px);
 	}
-	.map-alert-button:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
 	/* Cause / effect metadata — a labeled mono caption line under the headline.
 	   Each entry is a small uppercase caption + value pill, tinted by the alert's
 	   own severity tone so it reads as part of the same signage block. */
 	.map-alert-meta {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.35rem 0.6rem;
+		gap: 0.375rem 0.5rem;
 		margin: 0.5rem 0 0;
 	}
 	.map-alert-meta div {
 		display: inline-flex;
 		align-items: baseline;
-		gap: 0.35rem;
+		gap: 0.375rem;
 		min-width: 0;
 	}
 	.map-alert-meta dt {
@@ -200,7 +186,7 @@
 		border: 1px dashed var(--border-subtle);
 		border-radius: var(--radius-md);
 		background: var(--muted);
-		padding: 0.55rem 0.7rem;
+		padding: 0.5rem 0.75rem;
 		font-size: var(--text-small);
 		color: var(--muted-foreground);
 	}

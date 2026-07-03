@@ -694,11 +694,11 @@
 	   ControlsRail keeps its comfortable padding on /stop + /network). Trim the panel padding + the
 	   inter-control gaps so the sticky bar eats minimal vertical space. */
 	.reliability-clusters :global(.controls-rail) {
-		padding: 0.5rem 0.8rem;
-		gap: 0.35rem;
+		padding: 0.5rem 0.75rem;
+		gap: 0.375rem;
 	}
 	.reliability-clusters :global(.controls-rail__body) {
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 
 	/* The start + end date pair is now the SHARED DateRangePicker primitive (S8B), which
@@ -742,7 +742,7 @@
 	.reliability-toc {
 		display: flex;
 		align-items: baseline;
-		gap: 0.3rem 0.6rem;
+		gap: 0.375rem 0.5rem;
 		min-width: 0;
 	}
 	.reliability-toc__label {
@@ -764,7 +764,7 @@
 	.reliability-toc__list {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.4rem 0.5rem;
+		gap: 0.375rem 0.5rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -772,9 +772,9 @@
 	.reliability-toc__link {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.35rem;
-		min-height: 28px;
-		padding: 0.2rem 0.6rem;
+		gap: 0.375rem;
+		min-height: 1.75rem;
+		padding: 0.25rem 0.625rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		color: var(--foreground);
@@ -789,10 +789,6 @@
 	.reliability-toc__link:hover {
 		border-color: var(--primary);
 		color: var(--primary);
-	}
-	.reliability-toc__link:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
 	}
 	/* The scope glyph: ∞ (full history) reads quiet; ↻ (follows the window) rides the
 	   yellow wayfinding voice so the windowed sections are scannable at a glance. */
@@ -830,7 +826,7 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.45rem 0.75rem;
+		gap: 0.375rem 0.75rem;
 		min-width: 0;
 	}
 	@media (min-width: 768px) {
@@ -901,13 +897,15 @@
 		/* SOLID surface — the occlusion law (§C1): a content card must fully occlude
 		   the blueprint grid, so no alpha bleed. Was card@70% (grid showed through). */
 		background: var(--surface-2);
-		border-radius: var(--radius-lg, 0.75rem);
+		border-radius: var(--radius-lg);
 		padding: clamp(0.9rem, 2.2vw, 1.35rem);
 	}
 	:global(.reliability-band [data-card='primary']) {
-		/* The semantic decorative-rule token (= --primary, theme-safe) — --primary itself is
-		   reserved for interactive affordances; a static card rule reads --border-rule. */
-		border-inline-start: 3px solid var(--border-rule);
+		/* The section's PRIMARY chart reads as the hero unit via a full brand-rule
+		   border (§C4 P7 — the former 3px left-stripe accent is retired; the
+		   decorative-rule token = --primary, theme-safe, --primary itself stays
+		   reserved for interactive affordances). */
+		border-color: var(--border-rule);
 	}
 	/* Operator: "yellow titles for each card so they tell what the graph is." Every graph
 	   card's title (its SectionLabel) wears the yellow wayfinding voice (--accent-text, AA

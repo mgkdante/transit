@@ -319,7 +319,7 @@
 	/* KPI tiles: a responsive RAM grid, never below one column on a phone. */
 	.verdict-kpis {
 		display: grid;
-		gap: var(--space-card-gap, 1rem);
+		gap: var(--space-card-gap);
 		grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
 	}
 
@@ -339,7 +339,7 @@
 	.label-with-info {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.35rem;
+		gap: 0.375rem;
 		min-width: 0;
 	}
 	.block-window,

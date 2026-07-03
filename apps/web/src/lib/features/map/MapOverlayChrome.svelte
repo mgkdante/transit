@@ -182,7 +182,7 @@
 <style>
 	.map-overlay {
 		position: absolute;
-		z-index: 10;
+		z-index: var(--z-map-overlay);
 	}
 	.map-filter-panel {
 		/* Below the chrome (--chrome-offset knob) + the title band, matching the
@@ -194,19 +194,18 @@
 	.map-peek {
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
 		bottom: 1.15rem;
-		z-index: 24;
+		z-index: var(--z-map-detail);
 		max-width: min(20rem, calc(100% - 2rem));
-		padding: 0.85rem 0.9rem;
+		padding: 0.875rem;
 		background: color-mix(in srgb, var(--card) 92%, transparent);
 		border: 1px solid var(--border-hairline);
-		border-top: 2px solid var(--border-rule);
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-card);
-		/* The card is already ~92% opaque, so the blur barely shows through; keep
-		   it modest (10px, in line with the rest of the chrome) since this peek
-		   floats over the constantly-repainting live canvas — a heavier blur is
-		   pure compositing cost on the busiest overlay for no visible gain. */
-		backdrop-filter: blur(10px) saturate(1.05);
+		/* Map GL escape hatch (§C4 P4): blur(12px) — the card is ~92% opaque so the
+		   blur barely shows; kept modest since this peek floats over the constantly-
+		   repainting live canvas where a heavier blur is pure compositing cost. */
+		backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		pointer-events: none;
 	}
 	/* Live-feed edge notice: a calm, centred pill near the top of the canvas. Token-
@@ -219,26 +218,27 @@
 		left: calc(var(--app-left-rail-offset, 0rem) / 2 + var(--map-detail-offset, 0rem) / 2);
 		right: 0;
 		margin-inline: auto;
-		z-index: 12;
+		z-index: var(--z-map-filter);
 		width: max-content;
 		max-width: min(26rem, calc(100% - 2rem));
-		padding: 0.45rem 0.85rem;
+		padding: 0.375rem 0.875rem;
 		text-align: center;
 		font-size: var(--text-caption);
 		line-height: 1.4;
 		color: var(--muted-foreground);
 		background: color-mix(in srgb, var(--card) 88%, transparent);
 		border: 1px solid var(--border-hairline);
-		border-top: 2px solid var(--border-rule);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(10px) saturate(1.05);
+		/* Map GL escape hatch (§C4 P4): blur(12px), floats over the live canvas. */
+		backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		pointer-events: none;
 	}
-	/* The feed-down state warms the border with the caution hue (a data verdict),
+	/* The feed-down state warms the WHOLE border with the caution hue (a data verdict),
 	   echoing the stale-freshness chrome; the text still carries the meaning. */
 	.map-live-edge[data-state='unavailable'] {
-		border-top-color: color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
+		border-color: color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
 	}
 
 	@media (prefers-reduced-motion: reduce) {
@@ -254,7 +254,7 @@
 	   dead 760px band where the panel and pill could both show or both vanish.
 	   .map-peek is already `layout.isDesktop`-gated in markup; the hide here is
 	   belt-and-braces. */
-	@media (max-width: 1023px) {
+	@media (max-width: 1023.98px) {
 		.map-filter-panel {
 			display: none;
 		}

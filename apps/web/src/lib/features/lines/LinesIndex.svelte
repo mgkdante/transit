@@ -225,7 +225,7 @@
 	:global(.lines-controls-rail [data-slot='controls-rail-body']) {
 		flex-direction: column;
 		align-items: stretch;
-		gap: 0.85rem;
+		gap: 0.875rem;
 	}
 	.lines-controls {
 		display: flex;
@@ -235,7 +235,7 @@
 	.lines-control {
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.lines-control-label {
 		font-family: var(--font-mono);

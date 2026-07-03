@@ -1223,6 +1223,18 @@
 		   MAP CANVAS never reads either var, so resizing the panel can not resize it. */
 		--app-right-detail-offset: 360px;
 		--map-detail-offset: 0rem;
+		/* Map-internal stacking ladder (P5.3d §C4 P5). Source of truth + docs:
+		   lib/features/map/mapZ.ts. Deliberately NOT global --z-* tokens — these
+		   order overlays WITHIN the canvas only and are all capped under --z-nav. */
+		--z-map-behind: -1;
+		--z-map-canvas: 1;
+		--z-map-popover-behind: 2;
+		--z-map-scrim: 5;
+		--z-map-overlay: 10;
+		--z-map-filter: 12;
+		--z-map-banner-content: 13;
+		--z-map-detail: 24;
+		--z-map-detail-panel: 32;
 	}
 
 	/* The map surface is FULL-BLEED: it fills the whole hero (inset:0) and is the BASE

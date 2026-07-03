@@ -43,10 +43,9 @@
 		flex-wrap: wrap;
 		align-items: baseline;
 		gap: 0.5rem 1.25rem;
-		/* A quiet accent bar in the band colour — a redundant, non-text cue paired with the
-		   band word in the sentence. */
-		border-inline-start: 3px solid var(--verdict-accent, var(--border));
-		padding-inline-start: 1rem;
+		/* §C4 P7: the former 3px band-colour left-stripe is retired — it was a
+		   REDUNDANT, non-text cue; the band colour still rides the BAN + the band
+		   word in the sentence, so no signal is lost. */
 	}
 	.verdict__ban {
 		font-family: var(--font-heading);
