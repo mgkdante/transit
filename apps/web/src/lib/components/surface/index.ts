@@ -12,7 +12,6 @@
 // Import from `$lib/components/surface`.
 
 export { default as ResourceBoundary } from './ResourceBoundary.svelte';
-export { default as SurfaceHeader } from './SurfaceHeader.svelte';
 export { default as EntityRow } from './EntityRow.svelte';
 export { default as EntityList } from './EntityList.svelte';
 export { default as EntityDetail } from './EntityDetail.svelte';
@@ -33,7 +32,6 @@ export { default as AffectedAlerts } from './AffectedAlerts.svelte';
 // NOTE: the generic components (ResourceBoundary<T>, EntityList<T>, EntityDetail<K>)
 // can't export their Props from a `generics=` instance script (Svelte limitation),
 // and the interface references the type param anyway — so they stay unexported.
-export type { SurfaceHeaderProps } from './SurfaceHeader.svelte';
 export type { EntityRowProps } from './EntityRow.svelte';
 export type { BreadcrumbProps } from './Breadcrumb.svelte';
 export type { ReliabilityPaneProps } from './ReliabilityPane.svelte';

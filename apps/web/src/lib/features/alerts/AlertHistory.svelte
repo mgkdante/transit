@@ -40,11 +40,12 @@
 		type DateWindow,
 	} from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { ResourceBoundary, SurfaceHeader, FreshnessStamp } from '$lib/components/surface';
+	import { ResourceBoundary, FreshnessStamp } from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import Masthead from '$lib/components/brand/Masthead.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -288,11 +289,11 @@
 {/snippet}
 
 <Surface class="alert-history">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
-		<FreshnessStamp variant="updated" {generatedUtc} {locale} />
-	</SurfaceHeader>
-
-	<Separator variant="hazard" />
+	<Masthead kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
+		{#snippet meta()}
+			<FreshnessStamp variant="updated" {generatedUtc} {locale} />
+		{/snippet}
+	</Masthead>
 
 	<!-- HONEST ABSENCE: a zero-length alert archive is the GOOD empty — the network ran
 	     normally with no disruptions. Route it to the green network-healthy verdict. -->

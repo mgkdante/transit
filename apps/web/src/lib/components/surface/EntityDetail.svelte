@@ -201,7 +201,7 @@
 
 	/* Detail-head rhythm (§C2/§C5.4/§C5.6, yesid-visual-spec §6): the framing
 	   sentence under the display title — muted, subheading-scale, ~52ch measure,
-	   matching SurfaceHeader's lede so line/stop/trip heads read identically. */
+	   matching the Masthead lede so line/stop/trip heads read identically. */
 	.surface-detail-lede {
 		color: var(--muted-foreground);
 		font-size: var(--text-subheading);

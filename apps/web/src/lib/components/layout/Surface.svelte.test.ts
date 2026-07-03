@@ -58,8 +58,8 @@ describe('Surface (A1 full-bleed)', () => {
 
 	it('drops the width prop and the max-width cap from source (A1)', () => {
 		// Guard the A1 law at the source level: no `width?:` prop, no max-width on the
-		// shell (the gutter forms content lanes; --container-content survives only for
-		// the future ArticleShell prose lane, not on Surface).
+		// shell (the gutter forms content lanes; a narrower prose measure is re-capped
+		// locally, not on Surface).
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/components/layout/Surface.svelte'),
 			'utf-8',

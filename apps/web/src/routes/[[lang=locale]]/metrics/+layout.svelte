@@ -11,7 +11,7 @@
   rail inside MetricsExplainer's own `.body-grid` (which S10 widens to the yesid
   blog/[slug] proportions).
 
-  The header hierarchy still reads without the edge word: the SurfaceHeader
+  The header hierarchy still reads without the edge word: the Masthead
   (kicker / heading / lede) inside MetricsExplainer carries the page identity, and
   the giant vertical title was `aria-hidden` decoration only — no semantic loss.
 

@@ -26,6 +26,9 @@ export type { SectionLabelProps } from './SectionLabel.svelte';
 export { default as SectionHeading } from './SectionHeading.svelte';
 export type { SectionHeadingProps } from './SectionHeading.svelte';
 
+export { default as Masthead } from './Masthead.svelte';
+export type { MastheadProps } from './Masthead.svelte';
+
 export { default as NumberedChip } from './NumberedChip.svelte';
 export type { NumberedChipProps } from './NumberedChip.svelte';
 

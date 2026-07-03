@@ -7,7 +7,7 @@
   the sections must not: the getRepeatOffenders resource, the codec-seeded grain +
   worst-N state (seeded from ?grain/?n via $lib/filters, clamped to the populated
   grains, mirrored back to the URL), the ONE mapping pass through the pure
-  offenderLadder selector, the SurfaceHeader + FreshnessStamp + the sticky
+  offenderLadder selector, the Masthead + FreshnessStamp + the sticky
   SurfaceControls rail, the ExplainedMetricCard headline, and the honest absence.
   RepeatOffendersSection is a pure presenter fed one built ladder + tray per kind.
 
@@ -40,17 +40,13 @@
 	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { getRepeatOffenders, type RepeatOffenderEntry, type Offender } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import {
-		ResourceBoundary,
-		SurfaceHeader,
-		FreshnessStamp,
-		SurfaceControls,
-	} from '$lib/components/surface';
+	import { ResourceBoundary, FreshnessStamp, SurfaceControls } from '$lib/components/surface';
 	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { AbsentValue } from '$lib/components/edge';
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import Masthead from '$lib/components/brand/Masthead.svelte';
 	import { DELAY_DIST_DOMAIN } from '$lib/features/reliability/domains';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -314,11 +310,11 @@
 </script>
 
 <Surface class="repeat-offenders">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
-		<FreshnessStamp variant="updated" {generatedUtc} {locale} />
-	</SurfaceHeader>
-
-	<Separator variant="hazard" />
+	<Masthead kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
+		{#snippet meta()}
+			<FreshnessStamp variant="updated" {generatedUtc} {locale} />
+		{/snippet}
+	</Masthead>
 
 	<!-- The boundary gates skeleton / error / (no-file) empty. A PUBLISHED file that
 	     populates neither a grain ladder NOR a scalar offender is a legitimate "nothing

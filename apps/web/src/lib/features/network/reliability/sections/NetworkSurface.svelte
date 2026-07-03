@@ -53,7 +53,6 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
 	import {
-		SurfaceHeader,
 		FreshnessStamp,
 		ConformanceBadge,
 		ResourceBoundary,
@@ -71,6 +70,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import Masthead from '$lib/components/brand/Masthead.svelte';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
@@ -440,31 +440,31 @@
 <Surface class="network">
 	<!-- D2: the rotated edge word in the left gutter (≥xl, decorative). -->
 	<VerticalSectionTitle word={verticalSectionTitleWord('network', locale)} />
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
-		<div class="network-feed-health">
-			<FreshnessStamp
-				variant="live"
-				generatedUtc={live.generatedUtc}
-				ageSeconds={live.ageSeconds}
-				isStale={live.isStale}
-				{locale}
-			/>
-			<!-- Worker-cycle feed age — a SECOND freshness signal. Null → honest no-data. -->
-			{#if feedAge != null}
-				<span
-					class="network-feed-age"
-					data-slot="feed-age"
-					aria-label={`${t.feedAge.a11yPrefix} ${feedAge}`}
-				>
-					<span class="network-feed-age-label">{t.feedAge.label}</span>
-					<span class="network-feed-age-value">{feedAge}</span>
-				</span>
-			{/if}
-			<ConformanceBadge conformance={provenance.data?.conformance} {locale} />
-		</div>
-	</SurfaceHeader>
-
-	<Separator variant="hazard" />
+	<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede}>
+		{#snippet meta()}
+			<div class="network-feed-health">
+				<FreshnessStamp
+					variant="live"
+					generatedUtc={live.generatedUtc}
+					ageSeconds={live.ageSeconds}
+					isStale={live.isStale}
+					{locale}
+				/>
+				<!-- Worker-cycle feed age — a SECOND freshness signal. Null → honest no-data. -->
+				{#if feedAge != null}
+					<span
+						class="network-feed-age"
+						data-slot="feed-age"
+						aria-label={`${t.feedAge.a11yPrefix} ${feedAge}`}
+					>
+						<span class="network-feed-age-label">{t.feedAge.label}</span>
+						<span class="network-feed-age-value">{feedAge}</span>
+					</span>
+				{/if}
+				<ConformanceBadge conformance={provenance.data?.conformance} {locale} />
+			</div>
+		{/snippet}
+	</Masthead>
 
 	<!-- ── LIVE region ──────────────────────────────────────────────────────────────
 	     Four glance cards (C1) · the Reporting row (vehicles + non_responding + silent

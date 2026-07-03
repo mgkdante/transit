@@ -5,8 +5,7 @@
   ALWAYS fills its rail-inset <main> box edge-to-edge; content lanes are formed
   by the gutter (`padding-inline: var(--space-page-x)`), not by a centred
   max-width cap. Consumers that need a narrower prose measure re-cap locally
-  (`.surface-measure`) or use the future ArticleShell (the sole owner of the
-  surviving --container-content prose lane).
+  (`.surface-measure`); the Masthead head family carries its own capped lede lane.
 -->
 <script lang="ts">
 	import { cn } from '$lib/utils';

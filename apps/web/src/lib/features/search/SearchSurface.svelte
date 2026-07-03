@@ -57,16 +57,15 @@
 	} from '$lib/v1';
 	import {
 		ResourceBoundary,
-		SurfaceHeader,
 		EntityList,
 		EntityRow,
 		SearchInput,
 		ReliabilityBadge,
 		GrainPicker,
 	} from '$lib/components/surface';
+	import { Masthead } from '$lib/components/brand';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { Surface } from '$lib/components/layout';
-	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
 	import { FreshnessStamp } from '$lib/components/surface';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -269,41 +268,39 @@
 </script>
 
 <Surface class="surface">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede} />
+	<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede}>
+		<SearchInput
+			id="surface-search-input"
+			label={t.inputLabel}
+			placeholder={t.inputPlaceholder}
+			bind:value={query}
+		/>
 
-	<SearchInput
-		id="surface-search-input"
-		label={t.inputLabel}
-		placeholder={t.inputPlaceholder}
-		bind:value={query}
-	/>
-
-	{#if hasQuery}
-		<div class="search-controls">
-			<div class="search-control">
-				<span class="search-control-label">{t.scopeLabel}</span>
-				<GrainPicker segments={scopeSegments} bind:value={scope} label={t.scopeLabel} />
-			</div>
-			<div class="search-control">
-				<span class="search-control-label" id="search-mode-label">{t.modeLabel}</span>
-				<div class="search-mode-chips" role="group" aria-labelledby="search-mode-label">
-					{#each modeChips as chip (chip.key)}
-						<button
-							type="button"
-							class="search-mode-chip"
-							data-on={modes.has(chip.key)}
-							aria-pressed={modes.has(chip.key)}
-							onclick={() => toggleMode(chip.key)}
-						>
-							{chip.label}
-						</button>
-					{/each}
+		{#if hasQuery}
+			<div class="search-controls">
+				<div class="search-control">
+					<span class="search-control-label">{t.scopeLabel}</span>
+					<GrainPicker segments={scopeSegments} bind:value={scope} label={t.scopeLabel} />
+				</div>
+				<div class="search-control">
+					<span class="search-control-label" id="search-mode-label">{t.modeLabel}</span>
+					<div class="search-mode-chips" role="group" aria-labelledby="search-mode-label">
+						{#each modeChips as chip (chip.key)}
+							<button
+								type="button"
+								class="search-mode-chip"
+								data-on={modes.has(chip.key)}
+								aria-pressed={modes.has(chip.key)}
+								onclick={() => toggleMode(chip.key)}
+							>
+								{chip.label}
+							</button>
+						{/each}
+					</div>
 				</div>
 			</div>
-		</div>
-	{/if}
-
-	<Separator variant="hazard" />
+		{/if}
+	</Masthead>
 
 	<ResourceBoundary resource={routes} lang={locale}>
 		<ResourceBoundary resource={stops} lang={locale}>

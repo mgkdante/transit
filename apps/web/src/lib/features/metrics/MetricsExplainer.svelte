@@ -14,9 +14,9 @@
 
     · A full-bleed ARTICLE HEADER band carrying the .detail-header-grid dot-grid
       chrome (the "Manifesto schematic" behind the yesid detail headers) + the
-      SurfaceHeader (kicker / heading / lede) + the quiet-mode switch, closed off
-      by an edge-to-edge `<Separator variant="hazard">` stripe — 1:1 with the blog/
-      projects detail header + hazard separator.
+      Masthead (kicker / heading / lede / meta) + the quiet-mode switch, closed off
+      by the Masthead's edge-to-edge `<Separator variant="hazard">` tape — 1:1 with
+      the blog/projects detail header + hazard separator.
     · The `.body-grid` below it is the yesid article grid: max-width container-wide,
       centred, with the page gutter; at lg it becomes a TWO-column grid
       `minmax(13rem,17rem) | minmax(0,1fr)` — a TOC rail + a wide reading column
@@ -39,7 +39,7 @@
     · ONE IntersectionObserver (observeActiveToc over `[data-toc]`) owns activeId
       and feeds BOTH the rail and the pill (no duplicate observers).
 
-  Composes the brand/layout spine: the article header band (SurfaceHeader +
+  Composes the brand/layout spine: the article header band (Masthead +
   .detail-header-grid) + the hazard Separator + SectionLabel + the shared CodeBlock
   (SQL syntax chrome) + the shared shared/ TOC + collapsible-card kit
   (CollapsibleSection / TocNav / TocPill / toc.ts). The co-located
@@ -62,13 +62,13 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ConformanceBadge, FreshnessStamp } from '$lib/components/surface';
 	import {
-		ArticleShell,
 		DetailTemplate,
 		VerticalSectionTitle,
 		verticalSectionTitleWord,
 	} from '$lib/components/layout';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import Masthead from '$lib/components/brand/Masthead.svelte';
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
 	import { cornerMetaLabels } from '$lib/components/brand';
 	import { formatUtc } from '$lib/utils/time';
@@ -436,7 +436,7 @@
 
 	// ── Page-title flourish (D4) ───────────────────────────────────────────────
 	// The house wordmark hover treatment on the /metrics title: reuse the SAME
-	// effect family (bounce / wiggle / wave / spin) on the SurfaceHeader display
+	// effect family (bounce / wiggle / wave / spin) on the Masthead display
 	// heading. The heading is rendered by the shared SectionHeading primitive
 	// (`.section-heading-text`), so we grab it from the bound header on mount rather
 	// than modify that shared component. easterWordHover self-disables on touch +
@@ -543,8 +543,8 @@
 	</div>
 {/snippet}
 
-<!-- The header controls — the FOCUS switch + REMEMBER pin — ride the ArticleShell
-     meta row (the mono header-control zone), below the subheading line. -->
+<!-- The header controls — the FOCUS switch + REMEMBER pin — ride the Masthead meta
+     row (the mono header-control zone), below the subheading line. -->
 {#snippet masthead()}
 	<span class="metrics-subhead">{t.subheading}</span>
 	<div class="metrics-quiet-controls">
@@ -604,8 +604,8 @@
 	<!-- D2: the rotated edge word in the left gutter (≥xl, decorative). -->
 	<VerticalSectionTitle word={verticalSectionTitleWord('measure', locale)} />
 	<DetailTemplate class="metrics-detail">
-		<!-- Masthead → ArticleShell: kicker → display title + orange dot → lede → meta
-		     row (subheading + FOCUS controls) → hazard tape. The full-bleed dot-grid
+		<!-- Masthead (the ONE head family): kicker → display title + orange dot → lede →
+		     meta row (subheading + FOCUS controls) → hazard tape. The full-bleed dot-grid
 		     schematic band survives as the wrapper (`.detail-header-grid`). -->
 		{#snippet head()}
 			<div class="metrics-header detail-header-grid" bind:this={headerEl}>
@@ -626,7 +626,7 @@
 									>{cm.sources} · {cornerSourceCount}</span
 								>{/if}{/snippet}
 					</CornerMeta>
-					<ArticleShell kicker={t.kicker} title={t.heading} lede={t.lede} meta={masthead} />
+					<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede} meta={masthead} />
 				</div>
 			</div>
 		{/snippet}
@@ -964,7 +964,7 @@
 	.metrics-corner {
 		white-space: nowrap;
 	}
-	/* The subheading line ("// PROXY…") leads the ArticleShell meta row; it reads
+	/* The subheading line ("// PROXY…") leads the Masthead meta row; it reads
 	   in the mono micro voice the old SurfaceHeader subheading carried. */
 	.metrics-subhead {
 		flex-basis: 100%;

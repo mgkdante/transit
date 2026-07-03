@@ -6,7 +6,7 @@
   must not: the getHotspots resource, the codec-seeded grain + worst-N state (seeded
   from ?grain/?n via $lib/filters, clamped to the populated grains, mirrored back to
   the URL), the ONE mapping pass through the pure hotspotLadder selector, the
-  SurfaceHeader + FreshnessStamp + the sticky SurfaceControls rail, and the honest
+  Masthead + FreshnessStamp + the sticky SurfaceControls rail, and the honest
   absence. HotspotSection is a pure presenter fed one built ladder + tray.
 
   RANKING (DECISIONS WEB1): the bar encodes each cell's SEVERE-DELAY RATE on the
@@ -43,12 +43,8 @@
 	import { getHotspots } from '$lib/v1';
 	import type { HotspotEntry } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import {
-		ResourceBoundary,
-		SurfaceHeader,
-		FreshnessStamp,
-		SurfaceControls,
-	} from '$lib/components/surface';
+	import { ResourceBoundary, FreshnessStamp, SurfaceControls } from '$lib/components/surface';
+	import { Masthead } from '$lib/components/brand';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { AbsentValue } from '$lib/components/edge';
@@ -249,11 +245,11 @@
 </script>
 
 <Surface class="hotspots">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
-		<FreshnessStamp variant="updated" {generatedUtc} {locale} />
-	</SurfaceHeader>
-
-	<Separator variant="hazard" />
+	<Masthead kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
+		{#snippet meta()}
+			<FreshnessStamp variant="updated" {generatedUtc} {locale} />
+		{/snippet}
+	</Masthead>
 
 	<!-- The boundary gates skeleton / error / (no-file) empty. A PUBLISHED file that
 	     populates no grain is a legitimate "nothing is a hotspot right now" reading, so

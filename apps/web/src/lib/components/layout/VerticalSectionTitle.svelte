@@ -12,7 +12,7 @@
   via position: sticky under the floating pill (top: var(--chrome-offset)).
 
   DECORATIVE by contract: aria-hidden + pointer-events:none. The real page
-  heading (SurfaceHeader / SectionHeading h1) already carries the accessible page
+  heading (Masthead / SectionHeading h1) already carries the accessible page
   identity, so this word adds NO semantic content — it is pure theatre. It is
   localized (D2: «Réseau.» / «Fiabilité.» / «Mesure.» · Network. / Reliability. /
   Measure.) by the caller.

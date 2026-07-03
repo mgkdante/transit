@@ -1,7 +1,7 @@
 <!--
   TripDetail — the standalone per-trip detail surface (slice-9.4).
 
-  Composes the surface spine: a SurfaceHeader over the trip's route link, status
+  Composes the surface spine: a Masthead over the trip's route link, status
   band, current delay and ordered remaining-stop ETA list. The trip is looked up
   from the live trips map (getTrips → TripsFile.trips[id]) via createResource,
   gated by a ResourceBoundary so skeleton / error render without bespoke plumbing.
@@ -23,12 +23,12 @@
 	import type { TripsFile, Trip, StatusCode, StopsIndex } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { Surface } from '$lib/components/layout';
-	import { ResourceBoundary, SurfaceHeader, FreshnessStamp } from '$lib/components/surface';
+	import { ResourceBoundary, FreshnessStamp } from '$lib/components/surface';
 	import Breadcrumb from '$lib/components/surface/Breadcrumb.svelte';
 	import type { BreadcrumbTrailItem } from '$lib/seo/routeSeo';
-	import { Separator } from '$lib/components/ui/separator';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import Masthead from '$lib/components/brand/Masthead.svelte';
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
 	import { cornerMetaLabels } from '$lib/components/brand';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
@@ -191,7 +191,7 @@
 				<div class="trip-standdown" data-testid="trip-standdown">
 					<SectionLabel text={t.kicker} variant="station" />
 					<!-- D1: the stand-down head is display-type + the orange terminal dot,
-					     the same head treatment the live branch carries via SurfaceHeader. -->
+					     the same head treatment the live branch carries via Masthead. -->
 					<SectionHeading heading={t.standDownHeading} level={1} dot />
 					<p class="trip-standdown-body">{t.standDownBody}</p>
 				</div>
@@ -199,21 +199,18 @@
 				<!-- A4: the live head is the relative host for the CornerMeta corners
 				     (provider · generated · trip id — real data from the manifest + live
 				     tier). aria-hidden, hidden < 768px. -->
-				<div class="trip-head">
-					<CornerMeta>
-						{#snippet topLeft()}<span class="trip-corner">{cm.trip} · {id}</span>{/snippet}
-						{#snippet topRight()}{#if cornerGeneratedStamp}<span class="trip-corner"
-									>{cm.generated} · {cornerGeneratedStamp}</span
-								>{/if}{/snippet}
-						{#snippet bottomLeft()}<span class="trip-corner">{cm.provider} · {shortName}</span
-							>{/snippet}
-					</CornerMeta>
-					<SurfaceHeader
-						kicker={t.kicker}
-						heading={t.heading(id)}
-						subheading={t.subheading}
-						lede={t.lede}
-					>
+				<Masthead kicker={t.kicker} heading={t.heading(id)} subheading={t.subheading} lede={t.lede}>
+					{#snippet cornerMeta()}
+						<CornerMeta>
+							{#snippet topLeft()}<span class="trip-corner">{cm.trip} · {id}</span>{/snippet}
+							{#snippet topRight()}{#if cornerGeneratedStamp}<span class="trip-corner"
+										>{cm.generated} · {cornerGeneratedStamp}</span
+									>{/if}{/snippet}
+							{#snippet bottomLeft()}<span class="trip-corner">{cm.provider} · {shortName}</span
+								>{/snippet}
+						</CornerMeta>
+					{/snippet}
+					{#snippet meta()}
 						<div class="trip-head-actions">
 							{#if generatedUtc != null}
 								<FreshnessStamp variant="live" {generatedUtc} isStale={false} {locale} />
@@ -224,10 +221,8 @@
 								ariaLabel={t.viewTripOnMap(id)}
 							/>
 						</div>
-					</SurfaceHeader>
-				</div>
-
-				<Separator variant="hazard" />
+					{/snippet}
+				</Masthead>
 
 				<div class="trip-body">
 					<!-- ONE merged verdict chip (§C5.15): status band + current delay in a single
@@ -339,22 +334,10 @@
 </Surface>
 
 <style>
-	/* A4: the live head hosts the CornerMeta corners; a top margin band (only where
-	   the corners surface, >=768px) keeps them clear of the kicker/heading flow.
-	   A bottom band is reserved too: unlike the line/stop heads (whose meta slot
-	   carries only the end-aligned map link), the trip head flows the LIVE freshness
-	   stamp into .trip-head-actions at the bottom-left — exactly where the pinned
-	   `corner-bl` (provider · short-name) sits. The padding lifts the actions clear
-	   of that absolutely-positioned corner so the two never overlap. */
-	.trip-head {
-		position: relative;
-	}
-	@media (min-width: 768px) {
-		.trip-head {
-			padding-top: 1.5rem;
-			padding-bottom: 1.75rem;
-		}
-	}
+	/* The live head hosts the CornerMeta corners via Masthead's cornered band, which
+	   owns the position:relative host + the ≥768px padding-block that lifts the
+	   kicker/heading and the .trip-head-actions clear of the absolutely-positioned
+	   corners so they never overlap. */
 	.trip-corner {
 		white-space: nowrap;
 	}

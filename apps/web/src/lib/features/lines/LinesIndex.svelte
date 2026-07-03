@@ -1,7 +1,7 @@
 <!--
   LinesIndex — the Lines index screen (slice-9.3 · data-depth batch 4).
 
-  Composes the surface spine: a SurfaceHeader over a filterable EntityList of
+  Composes the surface spine: a Masthead over a filterable EntityList of
   every route from the static routes_index. Each row now carries an at-a-glance
   RELIABILITY BADGE (status verdict + OTP%) lazily loaded per-route, plus two
   combinable controls: a SORT toggle (alphabetical | worst reliability first) and
@@ -49,7 +49,6 @@
 	import { reliabilityCopy } from './reliability/reliability.copy';
 	import {
 		ResourceBoundary,
-		SurfaceHeader,
 		EntityList,
 		EntityRow,
 		SearchInput,
@@ -57,8 +56,8 @@
 		ReliabilityBadge,
 		GrainPicker,
 	} from '$lib/components/surface';
+	import { Masthead } from '$lib/components/brand';
 	import { Surface, ControlsRail } from '$lib/components/layout';
-	import { Separator } from '$lib/components/ui/separator';
 	import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 	import { routeModeHint } from '$lib/search/stopMode';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -225,7 +224,7 @@
 {/snippet}
 
 <Surface pad="hub" class="lines-index">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede} explainer={otpHeaderInfo}>
+	<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede} explainer={otpHeaderInfo}>
 		<!-- The search box + the sort/status pickers are collected into ONE
 		     ControlsRail (quiet infra control panel, mono group overline), so this
 		     surface's controls read as the same discerned-from-data zone the rest of
@@ -251,9 +250,7 @@
 				</div>
 			</div>
 		</ControlsRail>
-	</SurfaceHeader>
-
-	<Separator variant="hazard" />
+	</Masthead>
 
 	<!-- NETWORK VERDICT BAND (§C5.3): the one-line at-a-glance answer between the head and
 	     the grid — reuses the SHARED VerdictBanner at network scope, from the same live

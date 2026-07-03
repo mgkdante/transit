@@ -48,6 +48,7 @@
 	import { sharedClock } from '$lib/stores';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import Masthead from '$lib/components/brand/Masthead.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
@@ -428,26 +429,36 @@
 
 <Surface pad="hub" class="hub">
 	<!-- 1. CONTROL-ROOM HERO ------------------------------------------------- -->
-	<header class="hub-head">
-		<!-- A4: blueprint-margin corner annotations — provider · generated · dataset ·
-		     live vehicle count, all REAL data from the manifest + live tier. aria-hidden,
-		     hidden < 768px; a missing datum drops its corner. -->
-		<CornerMeta>
-			{#snippet topLeft()}<span class="corner-line">{cm.provider} · {shortName}</span>{/snippet}
-			{#snippet topRight()}{#if cornerGeneratedStamp}<span class="corner-line"
-						>{cm.generated} · {cornerGeneratedStamp}</span
-					>{/if}{/snippet}
-			{#snippet bottomLeft()}<span class="corner-line"
-					>{cm.dataset} · {manifest.dataset_version}</span
-				>{/snippet}
-			{#snippet bottomRight()}{#if cornerVehicleCount}<span class="corner-line"
-						>{cm.vehicles} · {cornerVehicleCount}</span
-					>{/if}{/snippet}
-		</CornerMeta>
-		<SectionLabel text={t.kicker} variant="station" />
-		<SectionHeading heading={manifest.display_name} level={1} dot />
-		<p class="hub-tagline">{t.tagline}</p>
-	</header>
+	<!-- The hero head is the ONE Masthead family (kicker → display title + orange dot →
+	     lede) with the blueprint-margin CornerMeta pinned to it. The TerminalPanel pulse
+	     rides below as the hero body; the hero region is closed by the hazard tape after
+	     the pulse (so the tape separates the whole hero from "What this is"), so the
+	     Masthead's own tape is off here. -->
+	<Masthead
+		class="hub-head"
+		kicker={t.kicker}
+		heading={manifest.display_name}
+		lede={t.tagline}
+		tape={false}
+	>
+		{#snippet cornerMeta()}
+			<!-- A4: blueprint-margin corner annotations — provider · generated · dataset ·
+			     live vehicle count, all REAL data from the manifest + live tier. aria-hidden,
+			     hidden < 768px; a missing datum drops its corner. -->
+			<CornerMeta>
+				{#snippet topLeft()}<span class="corner-line">{cm.provider} · {shortName}</span>{/snippet}
+				{#snippet topRight()}{#if cornerGeneratedStamp}<span class="corner-line"
+							>{cm.generated} · {cornerGeneratedStamp}</span
+						>{/if}{/snippet}
+				{#snippet bottomLeft()}<span class="corner-line"
+						>{cm.dataset} · {manifest.dataset_version}</span
+					>{/snippet}
+				{#snippet bottomRight()}{#if cornerVehicleCount}<span class="corner-line"
+							>{cm.vehicles} · {cornerVehicleCount}</span
+						>{/if}{/snippet}
+			</CornerMeta>
+		{/snippet}
+	</Masthead>
 
 	<TerminalPanel
 		class="hub-pulse"
@@ -593,16 +604,16 @@
 
 <style>
 	/* ── Hero ─────────────────────────────────────────────────────────────── */
-	.hub-head {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		gap: 0.875rem;
+	/* The hero head is a Masthead (class="hub-head" on its root — `:global` because the
+	   class lands on the child component's root, not on an element in this file); it owns
+	   the position:relative cornered host + the ≥768px padding-block band internally, so
+	   this root only caps the hero measure. */
+	:global(.hub-head) {
 		max-width: 62ch;
 	}
 	/* H1 overflow-wrap (§C5.1): a long provider display_name must break inside the word
 	   rather than overflow the hero measure on a narrow phone. */
-	.hub-head :global(.section-heading-text) {
+	:global(.hub-head .section-heading-text) {
 		overflow-wrap: anywhere;
 	}
 	/* H1 > H2 weight fix (§C5.1): SectionHeading's DISPLAY mode is a fixed display scale
@@ -615,22 +626,8 @@
 		font-weight: 800;
 		letter-spacing: var(--tracking-tight);
 	}
-	/* A4: the corner readouts annotate the head from a margin band — inset the
-	   content on the wider viewports (>=768, where CornerMeta surfaces) so the
-	   corners never collide with the kicker/heading/tagline. */
-	@media (min-width: 768px) {
-		.hub-head {
-			padding-block: 1.75rem;
-		}
-	}
 	.corner-line {
 		white-space: nowrap;
-	}
-	.hub-tagline {
-		color: var(--muted-foreground);
-		font-size: var(--text-subheading);
-		line-height: 1.6;
-		max-width: 56ch;
 	}
 
 	:global(.hub-pulse) {

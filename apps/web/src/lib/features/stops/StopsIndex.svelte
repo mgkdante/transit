@@ -26,7 +26,7 @@
         history simply shows no badge (never a spinner storm, never a fabricated 0%).
         An optional worst-first sort keys off the LOADED verdict; unloaded rows sink.
 
-  Composes the surface spine (SurfaceHeader + ControlsRail + ResourceBoundary +
+  Composes the surface spine (Masthead + ControlsRail + ResourceBoundary +
   EntityList/EntityRow). Locale via getLocale(); all copy in stops.copy.ts. Tokens
   only, no hex; --primary stays interactive-only.
 -->
@@ -45,7 +45,6 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import {
 		ResourceBoundary,
-		SurfaceHeader,
 		EntityList,
 		EntityRow,
 		SearchInput,
@@ -53,9 +52,9 @@
 		GrainPicker,
 		MapDrilldownLink,
 	} from '$lib/components/surface';
+	import { Masthead } from '$lib/components/brand';
 	import { Surface, ControlsRail } from '$lib/components/layout';
 	import { LineCombobox, type LineComboboxOption } from '$lib/components/ui/line-combobox';
-	import { Separator } from '$lib/components/ui/separator';
 	import { fromSearchParams } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
@@ -251,7 +250,7 @@
 {/snippet}
 
 <Surface class="stops-index">
-	<SurfaceHeader
+	<Masthead
 		kicker={t.kicker}
 		heading={t.heading}
 		subheading={t.subheading}
@@ -289,9 +288,7 @@
 				</div>
 			</div>
 		</ControlsRail>
-	</SurfaceHeader>
-
-	<Separator variant="hazard" />
+	</Masthead>
 
 	<ResourceBoundary resource={index} lang={locale}>
 		{#if lineActive}

@@ -6,7 +6,7 @@
   maps, and lays the sections out.
 
   P5.3b RE-SEAT — the surface moves onto the shared detail spine:
-    · MASTHEAD → ArticleShell (kicker → display title + orange dot → lede → meta
+    · MASTHEAD → Masthead (kicker → display title + orange dot → lede → meta
       row carrying the "Updated N ago" stamp → hazard tape).
     · BODY → DetailTemplate (3-col at ≥xl): LEFT = the numbered ToC over the (up
       to) 8 sections + a SEC n/m readout; CENTER = the existing 8 gated sections
@@ -31,7 +31,8 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { formatRelativeSeconds } from '$lib/utils/time';
 	import { METHODOLOGY_METRIC_KEY } from '$lib/features/metrics/metrics.content';
-	import { ArticleShell, DetailTemplate } from '$lib/components/layout';
+	import { DetailTemplate } from '$lib/components/layout';
+	import { Masthead } from '$lib/components/brand';
 	import { ResourceBoundary, FreshnessStamp } from '$lib/components/surface';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import SectionProgress from '$lib/components/brand/SectionProgress.svelte';
@@ -202,12 +203,13 @@
 
 <article class="health-article" data-testid="health-article">
 	<DetailTemplate class="health-detail">
-		<!-- Masthead → ArticleShell. The "Updated N ago" stamp rides the meta row when
-		     the provenance document is available; the head otherwise renders in every
-		     state (h1 present on load/error), matching the prior unconditional head. -->
+		<!-- Masthead (the ONE head family — merges the old SurfaceHeader + ArticleShell).
+		     The "Updated N ago" stamp rides the meta row when the provenance document is
+		     available; the head otherwise renders in every state (h1 present on load/error),
+		     matching the prior unconditional head. -->
 		{#snippet head()}
 			<div class="health-header">
-				<ArticleShell kicker={t.kicker} title={t.heading} lede={t.lede} meta={masthead} />
+				<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede} meta={masthead} />
 			</div>
 		{/snippet}
 
@@ -351,7 +353,7 @@
 	</div>
 {/if}
 
-<!-- The ArticleShell meta row — the "AS OF · Updated N ago" stamp (live off the
+<!-- The Masthead meta row — the "AS OF · Updated N ago" stamp (live off the
      provenance document's generated_utc when available). -->
 {#snippet masthead()}
 	{#if prov?.generated_utc}
@@ -397,7 +399,7 @@
 		width: 100%;
 	}
 
-	/* Masthead band: the ArticleShell head sits in DetailTemplate's `detail-head`
+	/* Masthead band: the Masthead head sits in DetailTemplate's `detail-head`
 	   slot (full-width above the grid); the gutter is applied here so the head
 	   aligns with the gutter'd body columns. */
 	.health-header {
@@ -407,7 +409,7 @@
 	}
 
 	/* "as of" stamp: the mono label + the neutral "Updated N ago" stamp, riding the
-	   ArticleShell meta row. */
+	   Masthead meta row. */
 	.health-asof {
 		display: inline-flex;
 		align-items: center;

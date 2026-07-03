@@ -8,7 +8,7 @@
 
   • DISPLAY mode (existing, unchanged): pass `heading` for a display-scale title
     (+ optional `subheading` mono overline below, + the brand orange `dot`). This
-    is the page/surface head used by SurfaceHeader, the hub, RouteDetail.
+    is the page/surface head used by Masthead, the hub, RouteDetail.
 
   • OVERLINE mode (new): pass `overline` for the mono-uppercase station-voice
     label look — the demoted SectionLabel, now wrapped in a real heading. This is

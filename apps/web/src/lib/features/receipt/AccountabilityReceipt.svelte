@@ -42,12 +42,8 @@
 	import { shiftLabel } from '$lib/features/reliability/shiftGrains';
 	import { getReceiptsIndex, getReceipt, type Receipt } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import {
-		SurfaceHeader,
-		ResourceBoundary,
-		DateRangePicker,
-		FreshnessStamp,
-	} from '$lib/components/surface';
+	import { ResourceBoundary, DateRangePicker, FreshnessStamp } from '$lib/components/surface';
+	import { Masthead } from '$lib/components/brand';
 	import { Surface, ControlsRail } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
@@ -244,11 +240,11 @@
 </script>
 
 <Surface class="receipt">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
-		<FreshnessStamp variant="updated" {generatedUtc} {locale} />
-	</SurfaceHeader>
-
-	<Separator variant="hazard" />
+	<Masthead kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
+		{#snippet meta()}
+			<FreshnessStamp variant="updated" {generatedUtc} {locale} />
+		{/snippet}
+	</Masthead>
 
 	<!-- Discovery index → smart date picker. We DON'T hand the boundary an `isEmpty`:
 	     an empty index has a SPECIFIC honest message (`emptyIndex`), so the boundary
