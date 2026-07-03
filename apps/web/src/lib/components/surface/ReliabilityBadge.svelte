@@ -2,7 +2,7 @@
   ReliabilityBadge — a compact at-a-glance reliability mark for a LIST ROW.
 
   The visible payoff of the shared lazy loader (reliabilitySnapshot.svelte.ts):
-  a tiny status-dot + headline OTP% (and an optional inline sparkline) that turns
+  a tiny status-dot + headline OTP% that turns
   a bare navigational row into a health reading. Used by BOTH the /lines index
   and /search result rows.
 
@@ -11,8 +11,8 @@
   404s/errors (phase 'empty'), shows no badge — never a spinner, never an error,
   never a fabricated 0% (HONESTY: a null OTP is no badge, never a zero).
 
-  DOCTRINE: the dot + sparkline are DATA marks on the dataviz status scale
-  (StatusBadge 'dot' + Sparkline colorVar), never --primary. Colour is paired
+  DOCTRINE: the dot is a DATA mark on the dataviz status scale
+  (StatusBadge 'dot'), never --primary. Colour is paired
   with the StatusBadge glyph so the verdict survives monochrome / colour-blind
   reading. Intrinsic OTP vocabulary (the "% on time" a11y phrasing) is local +
   bilingual — provider-agnostic.
@@ -21,32 +21,28 @@
 	import type { Locale } from '$lib/i18n';
 	import type { StatusCode } from '$lib/v1/schemas';
 	import type { ReliabilitySnapshot } from '$lib/v1/reliabilitySnapshot.svelte';
-	import { StatusBadge, Sparkline, statusVar } from '$lib/components/dataviz';
+	import { StatusBadge } from '$lib/components/dataviz';
 
 	export interface ReliabilityBadgeProps {
 		/** The reactive snapshot for this row's entity, from the lazy loader. */
 		snapshot: ReliabilitySnapshot;
 		/** Active locale for the intrinsic OTP a11y phrasing + number grouping. */
 		locale: Locale;
-		/** Render the inline OTP sparkline alongside the dot + %. Default off. */
-		sparkline?: boolean;
 		/** Optional extra classes on the badge. */
 		class?: string;
 	}
 
-	let { snapshot, locale, sparkline = false, class: className }: ReliabilityBadgeProps = $props();
+	let { snapshot, locale, class: className }: ReliabilityBadgeProps = $props();
 
 	// Intrinsic, provider-agnostic bilingual vocabulary (the screen-reader phrasing
 	// + the verdict words). Kept local: this is component-intrinsic, not surface copy.
 	const L = {
 		en: {
 			onTime: (pct: string) => `${pct} on time`,
-			series: 'On-time % trend, recent days',
 			verdict: { on_time: 'On time', late: 'Late', severe: 'Severe' } as Record<string, string>,
 		},
 		fr: {
 			onTime: (pct: string) => `${pct} à l’heure`,
-			series: 'Tendance ponctualité, jours récents',
 			verdict: {
 				on_time: 'À l’heure',
 				late: 'En retard',
@@ -68,11 +64,6 @@
 	const verdict = $derived(snapshot.verdict as StatusCode);
 	const verdictLabel = $derived(snapshot.verdict ? (t.verdict[snapshot.verdict] ?? '') : '');
 	const a11y = $derived(pctText ? `${verdictLabel} · ${t.onTime(pctText)}` : verdictLabel);
-
-	// A sparkline only when asked AND there are at least two real points to draw a
-	// line between — one lone point is not a trend (honesty: no fabricated slope).
-	const realCount = $derived(snapshot.series.filter((v) => v != null).length);
-	const showSpark = $derived(show && sparkline && realCount >= 2);
 </script>
 
 {#if show}
@@ -90,18 +81,6 @@
 		aria-label={a11y}
 		title={a11y}
 	>
-		{#if showSpark}
-			<Sparkline
-				class="reliability-badge-spark"
-				values={snapshot.series}
-				colorVar={statusVar(verdict)}
-				width={48}
-				height={16}
-				stroke={1.4}
-				label={t.series}
-				aria-hidden="true"
-			/>
-		{/if}
 		<span aria-hidden="true" class="reliability-badge-mark">
 			<StatusBadge status={verdict} mode="dot" size="sm" label={verdictLabel} />
 		</span>
@@ -119,9 +98,6 @@
 		color: var(--foreground);
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
-	}
-	.reliability-badge :global(.reliability-badge-spark) {
-		flex: none;
 	}
 	/* The dot wrapper is a pure a11y-hiding shell — it must not perturb the row's
 	   inline-flex layout, so it collapses to its contents. */

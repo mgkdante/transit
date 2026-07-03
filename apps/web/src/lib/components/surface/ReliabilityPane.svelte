@@ -18,7 +18,9 @@
 	import type { Locale } from '$lib/i18n';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import { Sparkline, SeverityBar } from '$lib/components/dataviz';
+	import { SeverityBar } from '$lib/components/dataviz';
+	import { Chart, type SparklineSpec } from '$lib/components/dataviz/chart';
+	import { sparkZoomDomain } from '$lib/components/dataviz/chart/sparkDomain';
 
 	/** Normalized per-period reliability the caller maps its raw shape into. */
 	export interface ReliabilityPeriodVM {
@@ -107,6 +109,27 @@
 
 	// OTP series across periods, drives the trend sparkline (dataviz scale).
 	const otpSeries = $derived(periods.map((p) => p.otpPct));
+
+	// P5.2: the OTP mini-trend is a `sparkline` ChartSpec (legacy primitive retired).
+	// The spec carries an EXPLICIT domain via the blessed data-anchored zoom
+	// (chart/sparkDomain.ts owns the adjudication), clamped to the honest [0,100].
+	const sparkSpec = $derived.by<SparklineSpec | null>(() => {
+		const domain = sparkZoomDomain(otpSeries, { clampHi: 100 });
+		if (domain == null) return null;
+		return {
+			kind: 'sparkline',
+			title: t.trend,
+			locale,
+			domain,
+			unit: t.unitPct,
+			label: t.otp,
+			values: otpSeries,
+			xLabels: periods.map((p) => p.grain),
+			showLast: true,
+			width: 160,
+			height: 32,
+		};
+	});
 </script>
 
 {#if periods.length > 0}
@@ -157,18 +180,10 @@
 			{/each}
 		</div>
 
-		{#if otpSeries.length > 1}
+		{#if sparkSpec}
 			<div class="reliability-trend">
 				<SectionLabel text={t.trend} variant="metric" />
-				<Sparkline
-					values={otpSeries}
-					width={160}
-					height={32}
-					label={t.trend}
-					yAxis={{ label: t.otp, unit: t.unitPct }}
-					xLabels={periods.map((p) => p.grain)}
-					interactive
-				/>
+				<Chart spec={sparkSpec} />
 			</div>
 		{/if}
 	</div>

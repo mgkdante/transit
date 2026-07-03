@@ -1,7 +1,8 @@
 <!--
   SectionCrowding — the occupancy band-shares of buses OBSERVED AT this stop.
 
-  Pure presenter of `selectCrowdingMix`. A 100%-stacked occupancy proportion bar
+  Pure presenter of `selectCrowdingMix` (P5.2: the selector emits a stacked-share
+  ChartSpec rendered by the ONE <Chart> renderer). A 100%-stacked occupancy strip
   reusing the dataviz occupancy scale + the SHARED lines band vocabulary. Honesty
   (Cluster04 doctrine): occupancy_mix is null when no telemetry was attributed to
   this stop (or an all-zero mix) — once the resource has loaded, an explicit styled
@@ -11,7 +12,7 @@
 	import type { Locale } from '$lib/i18n';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { MetricDisplay } from '$lib/components/brand';
-	import { StackedBar, type StackedSegment } from '$lib/components/dataviz';
+	import { Chart } from '$lib/components/dataviz/chart';
 	import { AbsentValue } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -38,9 +39,6 @@
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
 
-	const segments = $derived<StackedSegment[]>(
-		vm.segments.map((s) => ({ code: s.code, value: s.value, label: s.label })),
-	);
 	// The honest no-telemetry note shows once loaded but no crowding was attributed.
 	const showNoTelemetry = $derived(settled && !vm.hasCrowding);
 </script>
@@ -57,7 +55,7 @@
 	/>
 {/snippet}
 
-{#if vm.hasCrowding && vm.dominant != null}
+{#if vm.hasCrowding && vm.dominant != null && vm.spec}
 	<div class="stop-tile stop-reliability-crowding" data-slot="stop-crowding">
 		<span class="stop-tile-heading">
 			<SectionLabel text={copy.crowding.heading} variant="station" />
@@ -70,15 +68,7 @@
 			sublabel={copy.crowding.dominantLabel}
 			size="md"
 		/>
-		<StackedBar
-			scale="occupancy"
-			{segments}
-			label={copy.crowding.barLabel}
-			size="sm"
-			legend
-			interactive
-			class="stop-crowding-bar"
-		/>
+		<Chart spec={vm.spec} class="stop-crowding-bar" />
 	</div>
 {:else if showNoTelemetry}
 	<div class="stop-tile stop-reliability-crowding" data-slot="stop-crowding-empty">

@@ -142,6 +142,7 @@
 				<Axis
 					placement="bottom"
 					ticks={isTime ? 4 : undefined}
+					tickSpacing={isTime ? undefined : 96}
 					format={xTickFormat}
 					class="dv-trendmark-axis"
 				/>

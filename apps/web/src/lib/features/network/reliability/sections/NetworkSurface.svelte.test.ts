@@ -84,8 +84,10 @@ vi.mock('$lib/nav', async () => {
 	return {
 		layout: { isDesktop: true },
 		openSurface,
-		routeFor: (t: { kind: string; id?: string }) =>
-			t.kind === 'line' && t.id ? `/lines/${encodeURIComponent(t.id)}` : '/lines',
+		routeFor: (t: { kind: string; id?: string; search?: string }) => {
+			const base = t.kind === 'line' && t.id ? `/lines/${encodeURIComponent(t.id)}` : `/${t.kind}`;
+			return t.search ? `${base}?${t.search}` : base;
+		},
 	};
 });
 
@@ -147,14 +149,26 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 }));
 
 describe('NetworkSurface drilldown', () => {
-	it('opens the live map with a status filter when a status segment is selected', async () => {
-		openSurface.mockClear();
-		render(NetworkSurface);
-		await fireEvent.click(screen.getByRole('img', { name: 'Late: 20%' }));
-		expect(openSurface).toHaveBeenCalledExactlyOnceWith({ kind: 'map', search: 'status=late' });
+	// P5.2: the cross-filter rides each band's spec `href` (a focusable SVG link
+	// rendered by StackedShareBar) — the legacy onSelect callback is gone. LayerChart
+	// paints nothing in happy-dom's zero-size containers (house pattern: marks are
+	// asserted via their layout-independent sr-only tables; see the mark tests), so
+	// these specs are proven here via the AT mirror; the href VALUES are pinned in
+	// mixes.test.ts (hrefFor plumbing) and the band links are browser-verified.
+	const rowFor = (container: HTMLElement, label: string): string | null => {
+		for (const row of container.querySelectorAll('table.sr-only tbody tr')) {
+			if (row.querySelector('th')?.textContent?.trim() === label)
+				return row.querySelector('td')?.textContent?.trim() ?? null;
+		}
+		return null;
+	};
+
+	it('renders the status mix as a stacked-share mark (normalised shares in the AT mirror)', () => {
+		const { container } = render(NetworkSurface);
+		expect(rowFor(container as HTMLElement, 'Late')).toBe('20%');
 	});
 
-	it('opens the live map with an occupancy filter when a crowding segment is selected', async () => {
+	it('renders the crowding mix as a stacked-share mark when telemetry exists', () => {
 		network.occupancy_mix = {
 			empty: 0.2,
 			many_seats: 0.3,
@@ -162,13 +176,8 @@ describe('NetworkSurface drilldown', () => {
 			standing: 0.2,
 			full: 0.1,
 		};
-		openSurface.mockClear();
-		render(NetworkSurface);
-		await fireEvent.click(screen.getByRole('img', { name: 'Standing: 20%' }));
-		expect(openSurface).toHaveBeenCalledExactlyOnceWith({
-			kind: 'map',
-			search: 'occupancy=standing',
-		});
+		const { container } = render(NetworkSurface);
+		expect(rowFor(container as HTMLElement, 'Standing')).toBe('20%');
 		network.occupancy_mix = null;
 	});
 });
@@ -353,20 +362,27 @@ describe('NetworkSurface trend window + series', () => {
 	});
 
 	it('switches the retard channel from p90 to the avg/median series when "Typical" is picked', async () => {
+		// P5.2: TrendMark's sr-only table is the layout-independent read (LayerChart
+		// paints nothing in happy-dom). The secondary column header carries the resolved
+		// retard label; its cells carry the series.
 		const { container } = render(NetworkSurface);
-		const figure = container.querySelector(
-			'[data-slot="trend-line"][aria-label*="chosen delay series"]',
-		) as HTMLElement;
+		const figure = container.querySelector('[data-slot="trend-mark"]') as HTMLElement;
 		expect(figure).not.toBeNull();
-		const targetsP90 = within(figure).getAllByRole('img');
-		const lastP90 = targetsP90[targetsP90.length - 1];
-		expect(lastP90.getAttribute('aria-label')).toContain('Slowest 10% (min) 6 min');
+		const secondaryHeader = () =>
+			figure.querySelectorAll('table.sr-only thead th')[2]?.textContent ?? '';
+		const lastY2 = () => {
+			const rows = figure.querySelectorAll('table.sr-only tbody tr');
+			// The daily fixture's last REAL reading sits on the second row (day 2 of 2 real).
+			const cells = rows[1]?.querySelectorAll('td');
+			return cells?.[1]?.textContent ?? '';
+		};
+		expect(secondaryHeader()).toContain('Slowest 10% (min)');
+		expect(lastY2()).toBe('6');
 
 		await fireEvent.click(screen.getByRole('radio', { name: 'Typical' }));
-		const targetsAvg = within(figure).getAllByRole('img');
-		const lastAvg = targetsAvg[targetsAvg.length - 1];
-		expect(lastAvg.getAttribute('aria-label')).toContain('Median delay 1.8 min');
-		expect(lastAvg.getAttribute('aria-label')).not.toContain('Slowest 10% (min)');
+		expect(secondaryHeader()).toContain('Median delay');
+		expect(secondaryHeader()).not.toContain('Slowest 10% (min)');
+		expect(lastY2()).toBe('1.8');
 	});
 });
 
@@ -379,9 +395,10 @@ describe('NetworkSurface trend grain (day/week/month)', () => {
 	});
 
 	const trendFigure = (container: HTMLElement) =>
-		container.querySelector(
-			'[data-slot="trend-line"][aria-label*="chosen delay series"]',
-		) as HTMLElement;
+		container.querySelector('[data-slot="trend-mark"]') as HTMLElement;
+	const trendRows = (container: HTMLElement) =>
+		Array.from(trendFigure(container).querySelectorAll('table.sr-only tbody tr'));
+	const rowY = (row: Element) => row.querySelectorAll('td')[0]?.textContent ?? '';
 
 	it('offers a day/week/month grain picker when the coarse series carry data', () => {
 		render(NetworkSurface);
@@ -393,26 +410,22 @@ describe('NetworkSurface trend grain (day/week/month)', () => {
 
 	it('switches the plotted series from daily to weekly when "Week" is picked (never flattened)', async () => {
 		const { container } = render(NetworkSurface);
-		const dayTargets = within(trendFigure(container)).getAllByRole('img');
-		expect(dayTargets).toHaveLength(2);
-		expect(dayTargets[dayTargets.length - 1].getAttribute('aria-label')).toContain('On-time % 81%');
+		const dayRows = trendRows(container);
+		expect(dayRows).toHaveLength(2);
+		expect(rowY(dayRows[dayRows.length - 1])).toBe('81');
 
 		await fireEvent.click(screen.getByRole('radio', { name: 'Week' }));
-		const weekTargets = within(trendFigure(container)).getAllByRole('img');
-		expect(weekTargets).toHaveLength(3);
-		expect(weekTargets[weekTargets.length - 1].getAttribute('aria-label')).toContain(
-			'On-time % 83%',
-		);
+		const weekRows = trendRows(container);
+		expect(weekRows).toHaveLength(3);
+		expect(rowY(weekRows[weekRows.length - 1])).toBe('83');
 	});
 
 	it('switches the plotted series to monthly when "Month" is picked', async () => {
 		const { container } = render(NetworkSurface);
 		await fireEvent.click(screen.getByRole('radio', { name: 'Month' }));
-		const monthTargets = within(trendFigure(container)).getAllByRole('img');
-		expect(monthTargets).toHaveLength(2);
-		expect(monthTargets[monthTargets.length - 1].getAttribute('aria-label')).toContain(
-			'On-time % 76%',
-		);
+		const monthRows = trendRows(container);
+		expect(monthRows).toHaveLength(2);
+		expect(rowY(monthRows[monthRows.length - 1])).toBe('76');
 	});
 
 	it('hides the daily-only marks under week/month (window picker, vehicles row, per-day crowding)', async () => {
@@ -432,10 +445,11 @@ describe('NetworkSurface trend grain (day/week/month)', () => {
 		await fireEvent.click(screen.getByRole('radio', { name: 'Week' }));
 		const delayGroup = screen.getByRole('radiogroup', { name: 'Delay series' });
 		expect(within(delayGroup).getByRole('radio', { name: 'Slowest 10%' })).toBeDisabled();
-		const targets = within(trendFigure(container)).getAllByRole('img');
-		const last = targets[targets.length - 1];
-		expect(last.getAttribute('aria-label')).toContain('Median delay 1.6 min');
-		expect(last.getAttribute('aria-label')).not.toContain('Slowest 10% (min)');
+		const header = trendFigure(container).querySelectorAll('table.sr-only thead th')[2];
+		expect(header?.textContent).toContain('Median delay');
+		expect(header?.textContent).not.toContain('Slowest 10% (min)');
+		const rows = trendRows(container);
+		expect(rows[rows.length - 1].querySelectorAll('td')[1]?.textContent).toBe('1.6');
 	});
 
 	it('stands the grain picker down when no coarse series carries data', () => {
@@ -565,8 +579,9 @@ describe('NetworkSurface by time of day + weekday/weekend', () => {
 
 describe('NetworkSurface trend window re-slice', () => {
 	const original = trendSeries.slice();
+	// Unique dates (TrendMark keys its sr-table rows by xLabel — real series never repeat a day).
 	const longSeries = Array.from({ length: 40 }, (_, i) => ({
-		date: `2026-05-${String((i % 28) + 1).padStart(2, '0')}`,
+		date: `2026-${String(5 + Math.floor(i / 28)).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`,
 		otp_pct: 70 + (i % 20),
 		avg_delay_min: 1 + (i % 5),
 		p90_min: 4 + (i % 6),
@@ -584,42 +599,29 @@ describe('NetworkSurface trend window re-slice', () => {
 
 	it('re-slices the trend to fewer plotted days when 7d is picked after the 30d default', async () => {
 		const { container } = render(NetworkSurface);
-		const figureFor = () =>
-			container.querySelector(
-				'[data-slot="trend-line"][aria-label*="chosen delay series"]',
-			) as HTMLElement;
+		const rowsFor = () =>
+			container.querySelectorAll('[data-slot="trend-mark"] table.sr-only tbody tr');
 
 		const group = screen.getByRole('radiogroup', { name: 'Trend window' });
 		expect(within(group).getByRole('radio', { name: '30d' })).not.toBeDisabled();
 		expect(within(group).getByRole('radio', { name: '90d' })).toBeDisabled();
-		expect(within(figureFor()).getAllByRole('img')).toHaveLength(30);
+		expect(rowsFor()).toHaveLength(30);
 
 		await fireEvent.click(within(group).getByRole('radio', { name: '7d' }));
-		expect(within(figureFor()).getAllByRole('img')).toHaveLength(7);
+		expect(rowsFor()).toHaveLength(7);
 	});
 });
 
 describe('NetworkSurface OTP trend zoom (S9B min-span domain + reference)', () => {
-	it('hands the on-time TrendLine a floored zoom domain (span >= 8) with the 80% reference', () => {
+	// P5.2: the zoom VALUE lives in the selector-emitted spec (LayerChart draws the axis
+	// only in a real layout); the floored-span + clamp behaviour is pinned in
+	// trendChart.test.ts against otpTrendDomain, and the rendered axis is browser-verified.
+	it('mounts the trend as the spec-driven TrendMark (the S9B zoom rides the spec domain)', () => {
 		const { container } = render(NetworkSurface);
-		const figure = container.querySelector(
-			'[data-slot="trend-line"][aria-label*="chosen delay series"]',
-		) as HTMLElement;
+		const figure = container.querySelector('[data-slot="trend-mark"]') as HTMLElement;
 		expect(figure).not.toBeNull();
-		// The left y-tick gutter carries the clipped bounds (true values, not a normalized 0/100).
-		// The daily fixture is otp 78/81 → padded+floored to an 8-pt window inside [0,100].
-		const ticks = Array.from(figure.querySelectorAll('.dv-trendline-tick')).map(
-			(t) => t.textContent ?? '',
-		);
-		const pctTicks = ticks
-			.filter((t) => t.endsWith('%'))
-			.map((t) => Number(t.replace('%', '')))
-			.filter((n) => !Number.isNaN(n));
-		expect(pctTicks.length).toBeGreaterThanOrEqual(2);
-		const span = Math.max(...pctTicks) - Math.min(...pctTicks);
-		expect(span).toBeGreaterThanOrEqual(8);
-		expect(Math.min(...pctTicks)).toBeGreaterThanOrEqual(0);
-		expect(Math.max(...pctTicks)).toBeLessThanOrEqual(100);
+		// The sr-only table (the AT mirror) carries both series for every plotted day.
+		expect(figure.querySelectorAll('table.sr-only tbody tr').length).toBeGreaterThanOrEqual(2);
 	});
 });
 

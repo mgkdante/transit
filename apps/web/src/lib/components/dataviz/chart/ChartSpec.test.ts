@@ -21,6 +21,7 @@ describe('isMagnitudeKind', () => {
 				'histogram',
 				'line',
 				'magnitude-bars',
+				'sparkline',
 				'trend',
 			].sort(),
 		);

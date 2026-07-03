@@ -30,7 +30,7 @@ export interface ChartTooltipRow {
 /**
  * Optional axis metadata a chart consumer passes so the primitive can label its
  * ticks and suffix the tooltip values with a unit. The single source of truth
- * for axis shape across the line/area kit (Sparkline / TrendLine / Distribution).
+ * for axis shape across the non-chart kit (RankedRow / SeverityBar readouts).
  * Every field is optional → existing call-sites that omit it stay byte-identical.
  */
 export interface ChartAxis {

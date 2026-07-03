@@ -18,7 +18,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { resolve } from 'node:path';
 import { brandHexViolations, datavizViolations, tvOnlyInUiViolations, walk } from '@yesid/gates';
 import {
 	TRANSIT_BRAND_HEXES,
@@ -78,14 +78,16 @@ describe('brand doctrine — dataviz kit encodes data only with the dataviz scal
 		});
 	}
 
-	// Negative control: prove the allowlist marker is actually honoured, so a
-	// future refactor that drops the marker (or the affordance) is caught.
-	it('Distribution.svelte p50 median marker is the one allowlisted interactive --primary touch', () => {
-		const src = readFileSync(join(DATAVIZ, 'Distribution.svelte'), 'utf-8');
-		// The raw source DOES contain the affordance token (the marker line)…
-		expect(src).toMatch(/stroke="var\(--primary\)"/);
-		// …but the doctrine scan passes BECAUSE it is allowlisted.
-		expect(datavizViolations(src, datavizConfig)).toEqual([]);
+	// Negative control: prove the allowlist marker is actually honoured with THIS
+	// config, so a config drift that breaks the marker window is caught. (P5.2: the
+	// former anchor — Distribution.svelte's p50 --primary marker — was deleted with
+	// the legacy chart primitives; the kit currently has no allowlisted affordance
+	// fill, so the control runs on a fixture through the same engine + config.)
+	it('the doctrine-allow marker clears a genuine interactive affordance (and only then)', () => {
+		const hit = '<line stroke="var(--primary)" />';
+		expect(datavizViolations(hit, datavizConfig)).toHaveLength(1);
+		const allowed = `<!-- doctrine-allow: interactive — a UI affordance, not a data mark -->\n${hit}`;
+		expect(datavizViolations(allowed, datavizConfig)).toEqual([]);
 	});
 });
 

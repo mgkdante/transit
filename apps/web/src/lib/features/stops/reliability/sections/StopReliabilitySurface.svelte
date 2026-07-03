@@ -226,7 +226,10 @@
 
 	const occupancyBands = $derived(linesDetailCopy[locale].occupancyBands);
 	const crowding = $derived(
-		selectCrowdingMix(data.occupancy_mix, (code: OccupancyCode) => occupancyBands[code]),
+		selectCrowdingMix(data.occupancy_mix, (code: OccupancyCode) => occupancyBands[code], {
+			title: copy.crowding.barLabel,
+			locale,
+		}),
 	);
 
 	// The reliability resource has always loaded by the time this surface mounts
