@@ -178,6 +178,13 @@ export interface TrendDatum {
  * domain (e.g. retard [0,8]) so the two never squash each other. Wilson 95% band follows
  * the primary. Gaps (null y) BREAK the line. Line only when realPoints ≥ minPointsForLine
  * AND every period n ≥ minN; otherwise unconnected dots.
+ *
+ * DOMAIN EXCEPTION (S9B, carried through P5.2): the NETWORK OTP trend alone rides
+ * `otpTrendDomain(...)` — a data-anchored, min-span-floored, [0,100]-clamped zoom
+ * with true tick labels + the absolute 80% reference INSIDE the window — instead of a
+ * zero-based domain. Adjudicated honest in S9 (DECISIONS B1/B2);
+ * features/reliability/domains.ts owns the ruling. Every other trend consumer stays
+ * zero-based (`checkAbsoluteDomain` reflects the general law, not this one carve-out).
  */
 export interface TrendSpec extends ChartSpecBase {
 	readonly kind: 'trend';
