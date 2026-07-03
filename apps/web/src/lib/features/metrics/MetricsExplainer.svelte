@@ -873,7 +873,9 @@
 		/* Keep a long TOC scrollable within the sticky viewport (the content column
 		   is the longer one). */
 		.toc-scroll {
-			max-height: calc(100dvh - 6rem);
+			/* Derive the ceiling from the shared knob: the rail pins at --chrome-offset,
+			   so the reachable viewport is 100dvh minus that offset, less 1rem slack. */
+			max-height: calc(100dvh - var(--chrome-offset) - 1rem);
 			overflow-y: auto;
 			overscroll-behavior: contain;
 			padding-bottom: 1rem;

@@ -122,6 +122,10 @@
 	// iterates, localized + active-aware, so a route rename lands in one place.
 	const auditLabel = $derived(locale === 'fr' ? 'Vérification' : 'Audit');
 	const searchGroupLabel = $derived(locale === 'fr' ? 'Recherche' : 'Search');
+	// The primary surfaces (Map/Lines/Stops/Network) — the sheet counterpart of the
+	// in-pill .nav-links row, which is hidden below lg. Without this, compact-width
+	// mobile nav would be a dead-end (the hamburger only reached Audit + Search).
+	const primaryGroupLabel = $derived(locale === 'fr' ? 'Explorer' : 'Explore');
 
 	const navItems = $derived(
 		SURFACE_NAV.map((item) => ({
@@ -252,9 +256,11 @@
 		     in the Audit menu), so it routes to the dashboard root. -->
 		<BrandWordmark href={localizeHref('/', locale)} external={false} class="nav-wordmark" />
 
-		<span class="nav-divider" aria-hidden="true"></span>
+		<span class="nav-divider nav-divider-collapsible" aria-hidden="true"></span>
 
-		<!-- PRIMARY LINKS: Map / Lines / Stops / Network -->
+		<!-- PRIMARY LINKS: Map / Lines / Stops / Network. Shown ≥lg; below lg the pill
+		     drops them (they'd push the controls + hamburger off-screen) and the menu
+		     sheet carries them instead — the hamburger is the compact nav entry. -->
 		<div class="nav-links" data-slot="nav-links">
 			{#each navItems as item (item.key)}
 				<a href={item.href} class="nav-pill-link" aria-current={item.active ? 'page' : undefined}>
@@ -263,7 +269,7 @@
 			{/each}
 		</div>
 
-		<span class="nav-divider" aria-hidden="true"></span>
+		<span class="nav-divider nav-divider-collapsible" aria-hidden="true"></span>
 
 		<!-- SEARCH: a compact in-pill field ≥lg; below lg it collapses to an icon that
 		     opens the menu sheet (which carries the search field there). -->
@@ -348,6 +354,28 @@
 			data-testid="nav-menu"
 			data-slot="nav-menu"
 		>
+			<!-- PRIMARY (sheet only, <lg): the in-pill .nav-links row is hidden below lg,
+			     so the sheet carries Map/Lines/Stops/Network there. Hidden ≥lg by CSS —
+			     the pill's own link row is the desktop entry. -->
+			<div
+				class="nav-menu-primary-group"
+				role="group"
+				aria-label={primaryGroupLabel}
+				data-slot="nav-menu-primary"
+			>
+				<SectionLabel text={primaryGroupLabel} variant="station" class="nav-menu-heading" />
+				{#each navItems as item (item.key)}
+					<a
+						href={item.href}
+						class="nav-menu-link"
+						aria-current={item.active ? 'page' : undefined}
+						onclick={closeMenu}
+					>
+						<span>{item.label}</span>
+					</a>
+				{/each}
+			</div>
+
 			<!-- SEARCH (sheet only, <lg): the in-pill field is hidden below lg, so the
 			     menu carries the sole search entry there. Hidden ≥lg by CSS. -->
 			<div class="nav-menu-search-group" role="group" aria-label={searchGroupLabel}>
@@ -476,8 +504,17 @@
 		background: var(--border-brand);
 	}
 
+	/* Dividers that flank the below-lg-hidden primary links + search: collapse with
+	   them so the compact pill keeps one brand→controls delimiter, not empty rules. */
+	.nav-divider-collapsible {
+		display: none;
+	}
+
+	/* The in-pill primary links are a ≥lg affordance: below lg they are removed (the
+	   menu sheet's Explore group carries them), so the controls + hamburger never get
+	   pushed off the pill's right edge on a compact viewport. */
 	.nav-links {
-		display: flex;
+		display: none;
 		align-items: center;
 		gap: 28px;
 	}
@@ -698,24 +735,37 @@
 		padding-bottom: 0.1rem;
 	}
 
+	.nav-menu-primary-group,
 	.nav-menu-group,
 	.nav-menu-search-group {
 		display: grid;
 		gap: 0.35rem;
 	}
 
+	/* The Search + Audit groups sit under a hairline; the Explore group leads the
+	   sheet, so it takes no top rule. */
+	.nav-menu-search-group,
 	.nav-menu-group {
 		margin-top: 0.5rem;
 		padding-top: 0.55rem;
 		border-top: 1px solid var(--border-subtle);
 	}
 
-	/* The in-pill search is hidden below lg; the sheet search group is hidden at
-	   and above lg (the pill field is the desktop entry). */
+	/* The in-pill primary links + search are hidden below lg; the sheet's Explore +
+	   Search groups are hidden at and above lg (the pill is the desktop entry). The
+	   two dividers flanking the hidden links/search collapse with them so a compact
+	   pill reads Brand · | · Controls, not three empty rules. */
 	@media (min-width: 1024px) {
+		.nav-links {
+			display: flex;
+		}
+		.nav-divider-collapsible {
+			display: block;
+		}
 		.nav-search {
 			display: flex;
 		}
+		.nav-menu-primary-group,
 		.nav-menu-search-group {
 			display: none;
 		}

@@ -149,6 +149,47 @@ describe('NavPill — the Audit menu', () => {
 		expect(document.activeElement).toBe(toggle);
 	});
 
+	it('carries the four primary surfaces in the sheet (the <lg wayfinding entry)', async () => {
+		// Regression guard: below lg the in-pill .nav-links row is hidden, so the
+		// hamburger sheet MUST carry Map/Lines/Stops/Network or compact-width nav is a
+		// dead-end (the hamburger reached only Audit + Search).
+		const { getByRole, queryByTestId } = render(NavPill, {
+			props: { locale: 'en', url: new URL('https://transit.local/map') },
+		});
+		await fireEvent.click(getByRole('button', { name: 'Open menu' }));
+		const menu = queryByTestId('nav-menu') as HTMLElement;
+		const explore = within(menu).getByRole('group', { name: 'Explore' });
+		expect(within(explore).getByRole('link', { name: 'Map' })).toHaveAttribute('href', '/map');
+		expect(within(explore).getByRole('link', { name: 'Lines' })).toHaveAttribute('href', '/lines');
+		expect(within(explore).getByRole('link', { name: 'Stops' })).toHaveAttribute('href', '/stops');
+		expect(within(explore).getByRole('link', { name: 'Network' })).toHaveAttribute(
+			'href',
+			'/network',
+		);
+	});
+
+	it('localizes the Explore (primary) sheet group in French', async () => {
+		const { getByRole, queryByTestId } = render(NavPill, {
+			props: { locale: 'fr', url: new URL('https://transit.local/fr/map') },
+		});
+		await fireEvent.click(getByRole('button', { name: 'Ouvrir le menu' }));
+		const menu = queryByTestId('nav-menu') as HTMLElement;
+		const explore = within(menu).getByRole('group', { name: 'Explorer' });
+		expect(within(explore).getByRole('link', { name: 'Réseau' })).toHaveAttribute(
+			'href',
+			'/fr/network',
+		);
+	});
+
+	it('hides the in-pill primary links below lg, shown ≥lg (source)', () => {
+		const source = readSource();
+		// Base rule hides .nav-links; the ≥lg media query restores display:flex.
+		expect(source).toMatch(/\.nav-links\s*\{[\s\S]*display:\s*none;/);
+		expect(source).toMatch(
+			/@media \(min-width: 1024px\)\s*\{[\s\S]*\.nav-links\s*\{[\s\S]*display:\s*flex;/,
+		);
+	});
+
 	it('carries a search group in the menu sheet (the <lg search entry)', async () => {
 		const { getByRole, queryByTestId } = render(NavPill, {
 			props: { locale: 'en', url: new URL('https://transit.local/map') },
