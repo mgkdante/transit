@@ -121,7 +121,7 @@
 		pointer-events: none;
 		opacity: 0;
 		z-index: 1;
-		transition: opacity var(--duration-fast, 0.15s) var(--ease-default, ease);
+		transition: opacity var(--duration-fast) var(--ease-default);
 	}
 	.dv-scrollframe::before {
 		left: var(--sf-gutter);

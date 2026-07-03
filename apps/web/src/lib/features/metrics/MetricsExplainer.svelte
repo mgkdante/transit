@@ -1100,7 +1100,7 @@
 	.metrics-measure__item {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	.metrics-measure__heading {
 		margin: 0;
@@ -1138,7 +1138,7 @@
 		flex-shrink: 0;
 		display: inline-flex;
 		align-items: center;
-		padding: 0.1rem 0.5rem;
+		padding: 0.125rem 0.5rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-pill);
 		background: var(--muted);
@@ -1150,7 +1150,7 @@
 		white-space: nowrap;
 	}
 	.metrics-chip--meta {
-		font-size: 0.6875rem;
+		font-size: var(--text-micro);
 	}
 
 	/* ── Cluster bands ───────────────────────────────────────────────────────── */
@@ -1206,12 +1206,12 @@
 	.metric__not {
 		color: var(--muted-foreground);
 	}
-	/* Live pipeline note: a quiet card-inset block, visually set apart from the
-	   static science with a left rule + muted surface (NOT --primary, no data
-	   mark). The verbatim methodology string reads on the mono caption voice. */
+	/* Live pipeline note: a quiet card-inset block, set apart from the static
+	   science by its muted surface + hairline frame (P7: no left stripe). The
+	   verbatim methodology string reads on the mono caption voice. */
 	.metric__note-block {
 		padding: 0.75rem 0.875rem;
-		border-left: 3px solid var(--border-rule-accent, var(--border));
+		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
 		background: var(--muted);
 	}
@@ -1250,7 +1250,7 @@
 	.metrics-lacunes__gap {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		padding-block-start: 1.25rem;
 		border-block-start: 1px solid var(--border-hairline, var(--border));
 	}
@@ -1285,7 +1285,7 @@
 	.metrics-live__point {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		padding-block-start: 1.25rem;
 		border-block-start: 1px solid var(--border-hairline, var(--border));
 	}
@@ -1378,7 +1378,7 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		gap: 0.45rem;
+		gap: 0.375rem;
 		min-height: 44px;
 		padding-inline: 0.75rem 0.875rem;
 		border: 2px solid var(--border-brand);

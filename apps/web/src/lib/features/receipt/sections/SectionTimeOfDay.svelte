@@ -65,7 +65,7 @@
 	.receipt-tod {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 	}
 	.receipt-tod-list {
 		display: flex;

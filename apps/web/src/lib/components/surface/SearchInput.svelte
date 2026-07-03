@@ -60,7 +60,7 @@
 	.search-input-field {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		max-width: 28rem;
 	}
 	.search-input-label {
@@ -80,8 +80,8 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
 		transition:
-			border-color 150ms ease,
-			box-shadow 150ms ease;
+			border-color var(--duration-fast) var(--ease-default),
+			box-shadow var(--duration-fast) var(--ease-default);
 	}
 	.search-input-control::placeholder {
 		color: var(--muted-foreground);

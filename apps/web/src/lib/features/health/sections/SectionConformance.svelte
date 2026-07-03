@@ -100,12 +100,12 @@
 		list-style: none;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	.health-members-item {
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
-		padding: 0.15rem 0.5rem;
+		padding: 0.125rem 0.5rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
 		background: var(--muted);

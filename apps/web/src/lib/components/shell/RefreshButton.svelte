@@ -110,7 +110,7 @@
 	.refresh-control {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	.refresh-readout {
 		font-family: var(--font-mono);
@@ -130,7 +130,7 @@
 		cursor: pointer;
 		color: var(--secondary-foreground);
 		border-radius: var(--radius-lg);
-		transition: color var(--duration-fast, 120ms) var(--ease-default, ease);
+		transition: color var(--duration-fast) var(--ease-default);
 	}
 	.refresh-btn:hover {
 		color: var(--primary);

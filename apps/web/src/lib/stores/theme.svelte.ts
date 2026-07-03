@@ -15,15 +15,15 @@ import { browser } from '$app/environment';
 export type Theme = 'dark' | 'light';
 
 /**
- * Address-bar / PWA surface colour per theme. These mirror the resolved
- * --background token for each theme:
- *   dark  -> #141414 (near-black board)
- *   light -> #F3F6FB (cool-slate paper)
+ * Address-bar / PWA surface colour for the currently-applied theme. Read live
+ * from the resolved `--background` token on <html> so it can never drift from
+ * the design system (no hand-copied hex). Must be called AFTER `data-theme`
+ * is set, so getComputedStyle reflects the target theme's background.
  */
-const THEME_SURFACE: Record<Theme, string> = {
-	dark: '#141414',
-	light: '#F3F6FB',
-};
+function resolvedSurface(): string {
+	if (!browser) return '';
+	return getComputedStyle(document.documentElement).getPropertyValue('--background').trim();
+}
 
 /** Read the theme the pre-paint script applied to <html data-theme>. */
 function readDocumentTheme(): Theme {
@@ -47,7 +47,7 @@ function apply(next: Theme, persist: boolean): void {
 	// the OS prefers-color-scheme.
 	document
 		.querySelector('meta[name="theme-color"]:not([media])')
-		?.setAttribute('content', THEME_SURFACE[next]);
+		?.setAttribute('content', resolvedSurface());
 	if (persist) {
 		try {
 			localStorage.setItem('theme', next);

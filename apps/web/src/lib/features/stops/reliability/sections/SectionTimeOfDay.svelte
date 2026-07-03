@@ -95,7 +95,7 @@
 	.stop-reliability-tod {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 	}
 	.stop-reliability-route-list {
 		display: flex;

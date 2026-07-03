@@ -55,7 +55,7 @@
 	.health-note-item {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	.health-note-text {
 		margin: 0;

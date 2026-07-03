@@ -564,7 +564,7 @@
 		position: relative;
 		display: flex;
 		flex-direction: column;
-		gap: 0.85rem;
+		gap: 0.875rem;
 		max-width: 62ch;
 	}
 	/* A4: the corner readouts annotate the head from a margin band — inset the
@@ -599,7 +599,7 @@
 	.pulse-label {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.55rem;
+		gap: 0.5rem;
 	}
 	:global(.pulse-grid) {
 		list-style: none;
@@ -615,7 +615,7 @@
 	.pulse-kpi {
 		display: flex;
 		align-items: flex-start;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		min-width: 0;
 	}
 	.pulse-kpi :global([data-slot='metric-display']) {
@@ -654,7 +654,7 @@
 		color: var(--primary);
 		text-decoration: none;
 		border-bottom: 1px solid transparent;
-		transition: border-color 150ms ease;
+		transition: border-color var(--duration-fast) var(--ease-default);
 	}
 	.what-link:hover,
 	.what-link:focus-visible {
@@ -673,11 +673,11 @@
 	.pillar {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		padding: 1rem 1.1rem;
 		background-color: var(--card);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-lg, 0.75rem);
+		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
 		min-width: 0;
 	}
@@ -733,12 +733,12 @@
 		background-color: var(--card);
 		color: var(--foreground);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-lg, 0.75rem);
+		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
 		cursor: pointer;
 		transition:
-			border-color 150ms ease,
-			transform 150ms ease;
+			border-color var(--duration-fast) var(--ease-default),
+			transform var(--duration-fast) var(--ease-out);
 	}
 	.hub-tile:hover {
 		border-color: var(--primary);

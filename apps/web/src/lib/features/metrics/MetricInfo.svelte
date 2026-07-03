@@ -332,7 +332,7 @@
 		block-size: 1.05rem;
 		padding: 0;
 		border: 1px solid var(--border);
-		border-radius: 999px;
+		border-radius: var(--radius-pill);
 		background: transparent;
 		color: var(--muted-foreground);
 		cursor: pointer;
@@ -352,7 +352,7 @@
 	}
 	.metric-info__glyph {
 		font-family: var(--font-mono);
-		font-size: 0.7rem;
+		font-size: var(--text-micro);
 		font-style: italic;
 		font-weight: 700;
 	}

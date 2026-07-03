@@ -103,7 +103,7 @@
 	.alert-history-dist {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 		min-width: 0;
 		padding: 1rem;
 		border: 1px solid var(--border);

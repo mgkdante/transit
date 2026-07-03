@@ -57,7 +57,7 @@
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.85rem;
+		gap: 0.875rem;
 		padding: 1.1rem 1.2rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
@@ -81,7 +81,7 @@
 	.receipt-count {
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
+		gap: 0.25rem;
 	}
 	.receipt-count dt {
 		font-family: var(--font-mono);

@@ -164,10 +164,10 @@
 		);
 	}
 
-	/* The status bar's top line is a BOLD departure-board rule, the yellow
-	   wayfinding voice as structure. */
+	/* The status bar's top line is a BOLD departure-board rule — a full-width
+	   structural divider on the strong-border ink (P7: not a brand accent rule). */
 	.footer-status-border {
-		border-top: 2px solid var(--border-rule-accent);
+		border-top: 2px solid var(--border-strong);
 	}
 
 	footer {
@@ -181,7 +181,7 @@
 	.footer-honesty {
 		display: flex;
 		flex-direction: column;
-		gap: 0.15rem;
+		gap: 0.125rem;
 	}
 	.footer-disclaimer {
 		color: var(--secondary-foreground);

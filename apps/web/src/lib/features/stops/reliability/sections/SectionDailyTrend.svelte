@@ -176,7 +176,7 @@
 	.daily-verdict {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 	}
 	.daily-verdict-head {
 		display: flex;

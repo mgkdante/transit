@@ -86,7 +86,7 @@
 	.stop-reliability-crowding {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 	}
 	.stop-reliability-window {
 		margin: 0;

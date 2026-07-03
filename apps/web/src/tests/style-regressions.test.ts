@@ -7,11 +7,13 @@
 // style-regressions gate); the FORBIDDEN table + the scan roots are transit's
 // per-app taste contract and live here.
 //
-// SCOPE (P5.3d stage A): the two largest surfaces — `lib/features/map/**` and
-// `lib/features/lines/**` — are swept clean, so the guard runs over them now with
-// an EMPTY allowlist (§C4: "Allowlists start and stay EMPTY."). Sweep B expands
-// FORBIDDEN_ROOTS to the remaining surfaces as they are swept; the table itself
-// is already site-final and must never grow an exception.
+// SCOPE (P5.3d stage B): the sweep is COMPLETE site-wide. Stage A cleared
+// `lib/features/{map,lines}`; stage B cleared everything else —
+// `lib/components/**` (ui/brand/dataviz incl. the frozen chart marks, edge,
+// shared, shell, layout, surface, map canvas), `routes/**`, and the remaining
+// `lib/features/**` surfaces. The guard now runs over the whole component +
+// route tree with an EMPTY allowlist (§C4: "Allowlists start and stay EMPTY.").
+// The FORBIDDEN table is site-final and must never grow an exception.
 //
 // The four FORBIDDEN patterns (§C4):
 //   1. STRIPES — border-(left|inline-start|top) accent rules on the brand tokens
@@ -57,9 +59,11 @@ const FORBIDDEN: readonly ForbiddenPattern[] = [
 	},
 ];
 
-// Swept roots (stage A). Sweep B appends the remaining feature/shell/ui/route
-// roots here as each is cleared.
-const FORBIDDEN_ROOTS = ['src/lib/features/map', 'src/lib/features/lines'] as const;
+// Swept roots — site-wide after stage B. The whole component + route tree is
+// under the guard; the frozen chart marks (§C4 P8) live under lib/components and
+// are covered too (they carry none of the four forbidden patterns — only the
+// exempt stroke/dash literals, which this table never targets).
+const FORBIDDEN_ROOTS = ['src/lib/components', 'src/lib/features', 'src/routes'] as const;
 
 describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 	for (const rel of FORBIDDEN_ROOTS) {

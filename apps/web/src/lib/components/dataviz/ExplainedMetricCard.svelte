@@ -192,7 +192,7 @@
 
 	/* Caveat note (e.g. ramp-in): small, quiet mono under the value. */
 	.emc-note {
-		margin: 0.4rem 0 0;
+		margin: 0.375rem 0 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.4;

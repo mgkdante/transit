@@ -40,8 +40,8 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		padding: 0.875rem 1rem;
-		border: 1px solid var(--border);
-		border-left: 3px solid var(--dataviz-status-late);
+		/* P7: the late-tone signal is carried by a full border-color, not a left stripe. */
+		border: 1px solid var(--dataviz-status-late);
 		border-radius: var(--radius-md);
 		background: var(--muted);
 	}
@@ -56,7 +56,7 @@
 		padding-inline-start: 1.1rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
+		gap: 0.375rem;
 	}
 	.health-gaps-item {
 		font-family: var(--font-mono);

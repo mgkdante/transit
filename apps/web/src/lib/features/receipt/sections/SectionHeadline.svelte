@@ -70,7 +70,7 @@
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.85rem;
+		gap: 0.875rem;
 		padding: 1.1rem 1.2rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
@@ -93,7 +93,7 @@
 	.receipt-kpi {
 		display: flex;
 		align-items: flex-start;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		min-width: 0;
 	}
 	.receipt-kpi :global([data-slot='metric-display']) {

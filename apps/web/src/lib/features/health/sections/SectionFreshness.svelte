@@ -85,7 +85,7 @@
 		display: inline-flex;
 		flex-direction: column;
 		align-items: flex-end;
-		gap: 0.1rem;
+		gap: 0.125rem;
 		flex-shrink: 0;
 		text-align: right;
 	}

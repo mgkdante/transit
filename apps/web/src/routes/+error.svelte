@@ -74,7 +74,7 @@
 	.err {
 		max-width: 40rem;
 		margin-inline: auto;
-		padding: clamp(3rem, 10vw, 6rem) var(--space-page-x, 1.5rem);
+		padding: clamp(3rem, 10vw, 6rem) var(--space-page-x);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -132,9 +132,9 @@
 		/* Interactive affordance — the only --primary touch on the page. */
 		color: var(--primary-foreground);
 		background: var(--primary);
-		border-radius: var(--radius-md, 0.5rem);
+		border-radius: var(--radius-md);
 		text-decoration: none;
-		transition: background 150ms ease;
+		transition: background var(--duration-fast) var(--ease-default);
 	}
 	.err-home:hover {
 		background: var(--primary-hover, var(--primary));

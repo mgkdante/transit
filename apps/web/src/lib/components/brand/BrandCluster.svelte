@@ -10,7 +10,7 @@
   Two `variant`s keep each call site's CSS hooks + behaviour intact:
     topbar — links the product mark to `/`, shows the live LED dot, and emits the
              `topbar-brand-mark` / `topbar-divider` / `topbar-home` hooks plus the
-             ≤760px collapse (drop the parent mark + divider, tighten the link).
+             ≤768px collapse (drop the parent mark + divider, tighten the link).
     footer — links the product mark to the localized home, no live dot, animation
              off (static footer chrome), and emits the `footer-divider` /
              `footer-home` hooks.
@@ -83,7 +83,7 @@
 		align-items: center;
 		gap: 0.5rem;
 		border-radius: var(--radius-sm);
-		transition: color var(--duration-fast, 120ms) var(--ease-default, ease);
+		transition: color var(--duration-fast) var(--ease-default);
 	}
 	.topbar-home:hover .topbar-product {
 		color: var(--primary);
@@ -98,7 +98,7 @@
 		font-size: 1rem;
 		color: var(--foreground);
 		white-space: nowrap;
-		transition: color var(--duration-fast, 120ms) var(--ease-default, ease);
+		transition: color var(--duration-fast) var(--ease-default);
 	}
 
 	/* Footer variant — brand divider between the parent wordmark and the product
@@ -126,7 +126,7 @@
 
 	/* TopBar: below the brand breakpoint, drop the parent mark + divider and
 	   tighten the home link — the same responsive collapse TopBar carried inline. */
-	@media (max-width: 760px) {
+	@media (max-width: 768px) {
 		.topbar-brand-mark {
 			display: none;
 		}
@@ -134,10 +134,10 @@
 			display: none;
 		}
 		.topbar-home {
-			gap: 0.35rem;
+			gap: 0.375rem;
 		}
 		.topbar-product {
-			font-size: 0.98rem;
+			font-size: var(--text-body);
 		}
 	}
 

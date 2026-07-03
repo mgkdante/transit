@@ -69,7 +69,7 @@
 		cursor: pointer;
 		color: var(--secondary-foreground);
 		border-radius: var(--radius-lg);
-		transition: color var(--duration-fast, 120ms) var(--ease-default, ease);
+		transition: color var(--duration-fast) var(--ease-default);
 	}
 	.theme-toggle:hover {
 		color: var(--foreground);
@@ -84,8 +84,8 @@
 		stroke: currentColor;
 		stroke-width: 1.25;
 		transition:
-			fill var(--duration-normal, 220ms) var(--ease-default, ease),
-			filter var(--duration-normal, 220ms) var(--ease-default, ease);
+			fill var(--duration-normal) var(--ease-default),
+			filter var(--duration-normal) var(--ease-default);
 	}
 	.lens.lit {
 		fill: var(--primary);

@@ -143,18 +143,17 @@
 <style>
 	.toc-nav {
 		font-family: var(--font-heading);
-		font-size: 16px;
-		border-left: 2px solid color-mix(in srgb, var(--primary) 12%, transparent);
-		padding-left: 14px;
+		/* P7: no left spine rule — the numbered chips + active state carry the outline. */
+		font-size: var(--text-body);
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 0.125rem;
 	}
 
 	.toc-item {
 		display: flex;
 		align-items: center;
-		gap: 0.55rem;
+		gap: 0.5rem;
 		width: 100%;
 		text-align: left;
 		background: none;

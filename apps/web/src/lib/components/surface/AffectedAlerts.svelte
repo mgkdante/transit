@@ -198,7 +198,7 @@
 	.affected-alerts {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 	}
 	.affected-alerts-list {
 		display: flex;
@@ -219,7 +219,7 @@
 		color: var(--primary);
 		background: none;
 		border: none;
-		padding: 0.15rem 0;
+		padding: 0.125rem 0;
 		cursor: pointer;
 		text-decoration: underline;
 		text-underline-offset: 0.2em;
@@ -230,10 +230,10 @@
 	.affected-alerts-more:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
-		border-radius: var(--radius-sm, 0.375rem);
+		border-radius: var(--radius-sm);
 	}
-	/* Each alert is a card with a severity-coloured leading rail — the same signage
-	   pattern the map's selection detail uses, on the dataviz severity scale. */
+	/* Each alert is a card whose severity reads from its tinted border + surface
+	   on the dataviz severity scale (P7: no leading stripe rail). */
 	.affected-alert {
 		--alert-tone: var(--dataviz-severity-high);
 		position: relative;
@@ -241,16 +241,8 @@
 		border: 1px solid color-mix(in srgb, var(--alert-tone) 32%, var(--border) 68%);
 		border-radius: var(--radius-md);
 		background: color-mix(in srgb, var(--alert-tone) 9%, var(--card));
-		padding: 0.6rem 0.7rem 0.6rem 0.9rem;
+		padding: 0.625rem 0.75rem;
 		overflow: hidden;
-	}
-	.affected-alert::before {
-		content: '';
-		position: absolute;
-		inset-block: 0;
-		inset-inline-start: 0;
-		width: 3px;
-		background: var(--alert-tone);
 	}
 	.affected-alert[data-severity='critical'] {
 		--alert-tone: var(--dataviz-severity-critical);
@@ -286,13 +278,13 @@
 	.affected-alert-meta {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.3rem 0.7rem;
+		gap: 0.375rem 0.75rem;
 		margin: 0.5rem 0 0;
 	}
 	.affected-alert-meta div {
 		display: inline-flex;
 		align-items: baseline;
-		gap: 0.35rem;
+		gap: 0.375rem;
 		min-width: 0;
 	}
 	.affected-alert-meta dt {

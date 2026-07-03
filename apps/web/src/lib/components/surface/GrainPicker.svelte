@@ -140,7 +140,7 @@
 		gap: 0.25rem;
 		padding: 0.25rem;
 		border: 1px solid var(--border);
-		border-radius: var(--radius-lg, 0.75rem);
+		border-radius: var(--radius-lg);
 		background-color: var(--card);
 	}
 	.grain-seg {
@@ -157,12 +157,12 @@
 		align-items: center;
 		justify-content: center;
 		min-height: 44px;
-		padding: 0.4rem 0.8rem;
-		border-radius: var(--radius-md, 0.5rem);
+		padding: 0.375rem 0.8rem;
+		border-radius: var(--radius-md);
 		cursor: pointer;
 		transition:
-			background-color 0.15s ease,
-			color 0.15s ease;
+			background-color var(--duration-fast) var(--ease-default),
+			color var(--duration-fast) var(--ease-default);
 	}
 	.grain-seg:hover:not(:disabled) {
 		color: var(--foreground);

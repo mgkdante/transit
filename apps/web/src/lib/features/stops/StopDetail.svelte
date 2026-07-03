@@ -667,7 +667,7 @@
 	.stop-departure-delay {
 		display: inline-flex;
 		align-items: baseline;
-		gap: 0.35rem;
+		gap: 0.375rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		/* Fallback for the null/none case (no realtime delta beyond on-time) — the inline
@@ -682,7 +682,7 @@
 		line-height: 1;
 	}
 	.stop-chip-glyph {
-		margin-inline-end: 0.3rem;
+		margin-inline-end: 0.375rem;
 		font-size: var(--text-micro);
 		line-height: 1;
 	}
@@ -745,7 +745,7 @@
 		grid-template-columns: repeat(5, minmax(0, 1fr));
 		grid-template-rows: repeat(var(--sched-rows, 1), auto);
 		grid-auto-flow: column;
-		gap: 0.4rem 0.75rem;
+		gap: 0.375rem 0.75rem;
 	}
 	.stop-schedule-time {
 		font-family: var(--font-mono);
@@ -784,14 +784,14 @@
 		padding: 0;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 
 	/* Live-departures filter chips + count (laid out inside the ControlsRail body). */
 	.stop-chip-group {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	.stop-chip {
 		appearance: none;
@@ -801,8 +801,8 @@
 		color: var(--muted-foreground);
 		background-color: var(--card);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-pill, 999px);
-		padding: 0.35rem 0.75rem;
+		border-radius: var(--radius-pill);
+		padding: 0.375rem 0.75rem;
 		cursor: pointer;
 		transition:
 			background-color 0.15s ease,

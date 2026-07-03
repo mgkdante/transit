@@ -64,7 +64,7 @@
 	.health-row-body {
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
+		gap: 0.25rem;
 		min-width: 0;
 	}
 	.health-row-feed {

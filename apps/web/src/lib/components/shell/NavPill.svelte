@@ -587,7 +587,7 @@
 
 	.nav-search :global(.nav-search-icon) {
 		position: absolute;
-		left: 0.6rem;
+		left: 0.5rem;
 		pointer-events: none;
 		color: var(--muted-foreground);
 	}
@@ -620,7 +620,7 @@
 	.nav-controls {
 		display: flex;
 		align-items: center;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 
 	/* Every pill control is a ≥44px hit area by construction. */
@@ -715,7 +715,7 @@
 		z-index: var(--z-nav);
 		display: grid;
 		align-content: start;
-		gap: 0.35rem;
+		gap: 0.375rem;
 		width: min(20rem, 92vw);
 		max-height: 100dvh;
 		overflow-y: auto;
@@ -740,15 +740,15 @@
 	}
 
 	.nav-menu-heading {
-		padding-inline: 0.15rem;
-		padding-bottom: 0.1rem;
+		padding-inline: 0.125rem;
+		padding-bottom: 0.125rem;
 	}
 
 	.nav-menu-primary-group,
 	.nav-menu-group,
 	.nav-menu-search-group {
 		display: grid;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 
 	/* The Search + Audit groups sit under a hairline; the Explore group leads the
@@ -756,7 +756,7 @@
 	.nav-menu-search-group,
 	.nav-menu-group {
 		margin-top: 0.5rem;
-		padding-top: 0.55rem;
+		padding-top: 0.5rem;
 		border-top: 1px solid var(--border-subtle);
 	}
 
@@ -789,7 +789,7 @@
 
 	.nav-menu-search :global(.nav-search-icon) {
 		position: absolute;
-		left: 0.7rem;
+		left: 0.75rem;
 		pointer-events: none;
 		color: var(--muted-foreground);
 	}
@@ -818,7 +818,7 @@
 
 	.nav-menu-search-clear {
 		position: absolute;
-		right: 0.4rem;
+		right: 0.375rem;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -845,7 +845,7 @@
 		justify-content: space-between;
 		gap: 0.75rem;
 		min-height: 44px;
-		padding: 0.55rem 0.65rem;
+		padding: 0.5rem 0.65rem;
 		color: var(--foreground);
 		background: var(--muted);
 		border: 1px solid var(--border-subtle);
@@ -881,7 +881,7 @@
 		justify-content: flex-start;
 		min-height: 44px;
 		margin-top: 0.5rem;
-		padding: 0.55rem 0.65rem;
+		padding: 0.5rem 0.65rem;
 		color: var(--foreground);
 		background: color-mix(in srgb, var(--foreground) 4%, transparent);
 		border: 1px solid var(--border-subtle);
@@ -922,7 +922,7 @@
 		gap: 0.25rem;
 		max-height: min(22rem, calc(100dvh - var(--pill-h) - 3rem));
 		overflow-y: auto;
-		padding: 0.35rem;
+		padding: 0.375rem;
 		border-radius: var(--radius-lg);
 		background: color-mix(in srgb, var(--background) 96%, transparent);
 		border: 1px solid var(--border-brand);
@@ -938,7 +938,7 @@
 		justify-content: space-between;
 		gap: 0.75rem;
 		min-height: 2.25rem;
-		padding: 0.4rem 0.55rem;
+		padding: 0.375rem 0.5rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		color: var(--foreground);
@@ -961,12 +961,12 @@
 		display: flex;
 		min-width: 0;
 		align-items: flex-start;
-		gap: 0.45rem;
+		gap: 0.375rem;
 	}
 
 	.nav-search-kind {
 		flex: none;
-		padding: 0.12rem 0.35rem;
+		padding: 0.125rem 0.375rem;
 		color: var(--primary);
 		background: color-mix(in srgb, var(--primary) 10%, transparent);
 		border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent);
@@ -988,9 +988,9 @@
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		min-height: 1.5rem;
-		padding: 0.2rem 0.6rem 0.3rem;
+		padding: 0.25rem 0.5rem 0.375rem;
 		color: var(--muted-foreground);
 		border-top: 1px solid var(--border-subtle);
 		font-family: var(--font-mono);
@@ -1001,7 +1001,7 @@
 		display: inline-flex;
 		align-items: baseline;
 		font-family: var(--font-heading);
-		font-size: 0.72rem;
+		font-size: var(--text-micro);
 		font-weight: 700;
 		letter-spacing: 0;
 	}

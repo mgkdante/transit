@@ -320,13 +320,13 @@
 		padding: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
+		gap: 0.25rem;
 	}
 	.offender-recurrence-item {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		line-height: 1.4;
@@ -339,7 +339,7 @@
 	.offender-tray {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		margin-top: 0.75rem;
 		padding-top: 0.75rem;
 		border-top: 1px dashed var(--border);
@@ -359,7 +359,7 @@
 		display: inline-flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		border-radius: var(--radius-sm);
 		text-decoration: none;
 		color: inherit;

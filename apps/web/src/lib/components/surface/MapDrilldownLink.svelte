@@ -42,9 +42,9 @@
 		border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border) 72%);
 		border-radius: var(--radius-pill);
 		transition:
-			color 150ms ease,
-			background-color 150ms ease,
-			border-color 150ms ease;
+			color var(--duration-fast) var(--ease-default),
+			background-color var(--duration-fast) var(--ease-default),
+			border-color var(--duration-fast) var(--ease-default);
 	}
 	.map-drilldown-link:hover {
 		color: var(--foreground);

@@ -388,7 +388,7 @@
 	.stop-reliability :global(.stop-tile) {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 		min-width: 0;
 		padding: 1rem;
 		border: 1px solid var(--border);
@@ -399,7 +399,7 @@
 		display: inline-flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	/* The 7×24 habits matrix + the daily trend are wide readouts — span the whole board
 	   on desktop, collapse to a single column on mobile (auto-fit reflow handles <lg). */

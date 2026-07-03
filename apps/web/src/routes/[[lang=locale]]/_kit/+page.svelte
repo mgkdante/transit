@@ -552,7 +552,7 @@ vehicle 40231 · occupancy LOW</pre>
 	.kit {
 		max-width: var(--width-content);
 		margin-inline: auto;
-		padding: clamp(1.5rem, 4vw, 3rem) var(--space-page-x, 1.5rem);
+		padding: clamp(1.5rem, 4vw, 3rem) var(--space-page-x);
 		display: flex;
 		flex-direction: column;
 		gap: clamp(2rem, 4vw, 3rem);
@@ -600,7 +600,7 @@ vehicle 40231 · occupancy LOW</pre>
 	.kit-dot {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		font-size: var(--text-small);
 		color: var(--muted-foreground);
 	}
@@ -608,7 +608,7 @@ vehicle 40231 · occupancy LOW</pre>
 	.kit-cornermarks {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		font-size: var(--text-small);
 		color: var(--muted-foreground);
 		background: none;
@@ -643,7 +643,7 @@ vehicle 40231 · occupancy LOW</pre>
 		padding: 1rem;
 		background-color: var(--card);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-lg, 0.75rem);
+		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
 		overflow: hidden;
 	}

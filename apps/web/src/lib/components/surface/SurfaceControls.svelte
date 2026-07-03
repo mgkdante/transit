@@ -224,7 +224,7 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 0.3rem 1.25rem;
+		gap: 0.375rem 1.25rem;
 		width: 100%;
 		min-width: 0;
 	}
@@ -232,7 +232,7 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.45rem 0.75rem;
+		gap: 0.375rem 0.75rem;
 		min-width: 0;
 	}
 	.surface-controls__window {

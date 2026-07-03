@@ -70,7 +70,7 @@
 	.receipt-not-reported {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 	}
 	.receipt-not-reported-caveat,
 	.receipt-not-reported-note {

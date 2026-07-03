@@ -143,7 +143,7 @@
 	.lane-row {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 		padding: 0.875rem 1rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
@@ -177,7 +177,7 @@
 	.lane-cell {
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
+		gap: 0.25rem;
 		min-width: 0;
 	}
 	.lane-cell-label {
@@ -196,7 +196,7 @@
 	.lane-gate-chip {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	.lane-gate-verdict {
 		font-family: var(--font-mono);
@@ -208,7 +208,7 @@
 	.lane-na {
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.lane-na-chip {
 		align-self: flex-start;
@@ -216,7 +216,7 @@
 		font-size: var(--text-caption);
 		text-transform: uppercase;
 		letter-spacing: var(--tracking-eyebrow);
-		padding: 0.15rem 0.5rem;
+		padding: 0.125rem 0.5rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
 		background: var(--card);

@@ -74,7 +74,7 @@
 		list-style: none;
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		max-width: 100%;
 	}
 	.network-occupancy-day {

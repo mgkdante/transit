@@ -177,10 +177,10 @@
 	/* MOTION — a gentle swing on switch + a small per-board stagger. No filters. */
 	.boards {
 		transform-origin: 28px 22px;
-		animation: post-swing 460ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;
+		animation: post-swing var(--duration-slower) var(--ease-out) both;
 	}
 	.board {
-		animation: board-settle 520ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;
+		animation: board-settle var(--duration-slower) var(--ease-out) both;
 		animation-delay: var(--d, 0ms);
 	}
 	@keyframes post-swing {

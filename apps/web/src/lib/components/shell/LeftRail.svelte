@@ -252,7 +252,7 @@
 
 	.left-rail-nav {
 		display: grid;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 
 	.left-rail[data-open='false'] .left-rail-nav {
@@ -265,21 +265,21 @@
 	   the rule tightens so the icons stay flush. */
 	.left-rail-group {
 		display: grid;
-		gap: 0.4rem;
-		margin-top: 0.85rem;
+		gap: 0.375rem;
+		margin-top: 0.875rem;
 		padding-top: 0.75rem;
 		border-top: 1px solid var(--border-subtle);
 	}
 
 	.left-rail[data-open='false'] .left-rail-group {
 		justify-items: center;
-		margin-top: 0.55rem;
-		padding-top: 0.55rem;
+		margin-top: 0.5rem;
+		padding-top: 0.5rem;
 	}
 
 	:global(.left-rail-group-heading) {
-		padding-inline: 0.2rem;
-		padding-bottom: 0.1rem;
+		padding-inline: 0.25rem;
+		padding-bottom: 0.125rem;
 	}
 
 	.left-rail-link {
@@ -289,16 +289,16 @@
 		gap: 0.75rem;
 		height: var(--left-rail-tile-size);
 		min-height: var(--left-rail-tile-size);
-		padding: 0.6rem 0.7rem;
+		padding: 0.5rem 0.75rem;
 		color: var(--foreground);
 		background: color-mix(in srgb, var(--muted) 84%, transparent);
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-sm);
 		text-decoration: none;
 		transition:
-			color var(--duration-fast, 120ms) var(--ease-default, ease),
-			background var(--duration-fast, 120ms) var(--ease-default, ease),
-			border-color var(--duration-fast, 120ms) var(--ease-default, ease);
+			color var(--duration-fast) var(--ease-default),
+			background var(--duration-fast) var(--ease-default),
+			border-color var(--duration-fast) var(--ease-default);
 	}
 
 	.left-rail[data-open='false'] .left-rail-link {
@@ -307,7 +307,7 @@
 		width: var(--left-rail-tile-size);
 		height: var(--left-rail-tile-size);
 		min-height: var(--left-rail-tile-size);
-		padding: 0.6rem;
+		padding: 0.5rem;
 	}
 
 	.left-rail-link:hover,
@@ -341,18 +341,18 @@
 	.left-rail-copy {
 		display: grid;
 		min-width: 0;
-		gap: 0.15rem;
+		gap: 0.125rem;
 		/* Ease the copy in/out on collapse-expand (the row text fading rather than
 		   snapping); guarded under prefers-reduced-motion below. */
 		transition:
-			opacity var(--duration-normal, 180ms) var(--ease-default, ease),
-			transform var(--duration-normal, 180ms) var(--ease-out, ease);
+			opacity var(--duration-normal) var(--ease-default),
+			transform var(--duration-normal) var(--ease-out);
 	}
 
 	.left-rail-copy span {
 		overflow: hidden;
 		font-family: var(--font-heading);
-		font-size: 0.96rem;
+		font-size: var(--text-small);
 		font-weight: 700;
 		line-height: 1.05;
 		text-overflow: ellipsis;
@@ -362,13 +362,13 @@
 	.left-rail-copy small {
 		overflow: hidden;
 		font-family: var(--font-mono);
-		font-size: 0.72rem;
+		font-size: var(--text-micro);
 		color: var(--muted-foreground);
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		/* Reflow gate: the description fades out (see the @container rule) before the
 		   label, so a narrowing rail sheds the secondary line gracefully. */
-		transition: opacity var(--duration-fast, 120ms) var(--ease-default, ease);
+		transition: opacity var(--duration-fast) var(--ease-default);
 	}
 
 	/* Container-query reflow — drives the EXPANDED rail's content off the rail's own
@@ -387,7 +387,7 @@
 	@container left-rail (max-width: 9.5rem) {
 		.left-rail-link {
 			gap: 0.5rem;
-			padding-inline: 0.55rem;
+			padding-inline: 0.5rem;
 		}
 		.left-rail-copy span {
 			font-size: 0.9rem;

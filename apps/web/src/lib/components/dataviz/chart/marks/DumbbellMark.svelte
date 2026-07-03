@@ -140,8 +140,8 @@
 <style>
 	.dv-dumbbell-legend {
 		display: flex;
-		gap: var(--spacing-4, 1rem);
-		margin-bottom: var(--spacing-1, 0.25rem);
+		gap: 1rem;
+		margin-bottom: 0.25rem;
 		font-size: var(--text-mono);
 		color: var(--muted-foreground);
 	}

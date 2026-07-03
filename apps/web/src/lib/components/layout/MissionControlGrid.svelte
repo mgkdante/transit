@@ -130,7 +130,7 @@
 		box-shadow: var(--shadow-sheet);
 		border-start-start-radius: var(--radius-lg);
 		border-start-end-radius: var(--radius-lg);
-		transition: max-height 240ms cubic-bezier(0.2, 0, 0, 1);
+		transition: max-height var(--duration-normal) var(--ease-out);
 	}
 
 	.mc-grid[data-detail-open] .mc-detail {

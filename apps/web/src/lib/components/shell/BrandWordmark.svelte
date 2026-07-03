@@ -89,7 +89,7 @@
 		flex-shrink: 0;
 		letter-spacing: -0.01em;
 		border-radius: var(--radius-sm);
-		transition: color var(--duration-fast, 120ms) var(--ease-default, ease);
+		transition: color var(--duration-fast) var(--ease-default);
 	}
 	.brand-wordmark:hover {
 		color: var(--primary);

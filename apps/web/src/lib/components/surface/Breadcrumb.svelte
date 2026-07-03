@@ -77,7 +77,7 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.15rem 0.35rem;
+		gap: 0.125rem 0.375rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -86,7 +86,7 @@
 		display: inline-flex;
 		min-width: 0;
 		align-items: center;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.breadcrumb-item :global(.breadcrumb-sep) {
 		flex: none;

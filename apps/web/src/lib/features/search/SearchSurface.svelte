@@ -384,12 +384,12 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 1.25rem 2rem;
-		margin-top: 0.85rem;
+		margin-top: 0.875rem;
 	}
 	.search-control {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	.search-control-label {
 		font-family: var(--font-mono);
@@ -404,14 +404,14 @@
 	.search-mode-chips {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.search-mode-chip {
 		appearance: none;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.2;
-		padding: 0.4rem 0.75rem;
+		padding: 0.375rem 0.75rem;
 		color: var(--muted-foreground);
 		background: var(--card);
 		border: 1px solid var(--border);
@@ -445,7 +445,7 @@
 		padding: clamp(2rem, 6vw, 3.5rem) 1.5rem;
 		background-color: var(--card);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-lg, 0.75rem);
+		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
 	}
 	.search-idle-glyph {

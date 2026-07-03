@@ -247,7 +247,7 @@
 	.surface-back {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		align-self: start;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);

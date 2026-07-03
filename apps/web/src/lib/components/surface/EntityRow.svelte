@@ -111,7 +111,7 @@
 		border-radius: var(--radius-md);
 		color: var(--foreground);
 		text-decoration: none;
-		transition: background-color 150ms ease;
+		transition: background-color var(--duration-fast) var(--ease-default);
 	}
 	.entity-row:hover {
 		background-color: var(--muted);
@@ -131,15 +131,15 @@
 	   hue (the lone dynamic colour; everything else is a token). */
 	.entity-row-swatch {
 		flex-shrink: 0;
-		width: 0.85rem;
-		height: 0.85rem;
+		width: 0.875rem;
+		height: 0.875rem;
 		border-radius: var(--radius-pill);
 		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 18%, transparent);
 	}
 	.entity-row-body {
 		display: flex;
 		flex-direction: column;
-		gap: 0.15rem;
+		gap: 0.125rem;
 		flex: 1 1 auto;
 		min-width: 0;
 	}
@@ -164,7 +164,7 @@
 		font-size: var(--text-micro);
 		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
-		padding: 0.05rem 0.4rem;
+		padding: 0.05rem 0.375rem;
 		border-radius: var(--radius-pill);
 		background-color: var(--muted);
 		color: var(--muted-foreground);
@@ -181,13 +181,13 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.25rem;
-		margin-top: 0.1rem;
+		margin-top: 0.125rem;
 	}
 	.entity-row-route {
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.1;
-		padding: 0.1rem 0.35rem;
+		padding: 0.125rem 0.375rem;
 		border-radius: var(--radius-md);
 		background-color: var(--muted);
 		color: var(--muted-foreground);

@@ -104,7 +104,7 @@
 	.receipt-states {
 		display: flex;
 		flex-direction: column;
-		gap: 0.85rem;
+		gap: 0.875rem;
 	}
 	.receipt-states-hero {
 		max-width: 24rem;

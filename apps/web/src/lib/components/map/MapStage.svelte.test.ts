@@ -47,16 +47,16 @@ describe('MapStage', () => {
 			/\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*bottom:\s*1rem/,
 		);
 		expect(s).toMatch(
-			/\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*transition:\s*right 180ms/,
+			/\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*transition:\s*right var\(--duration-normal\) var\(--ease-out\)/,
 		);
 		expect(s).toMatch(
-			/@media \(max-width: 760px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*right:\s*0\.75rem/,
+			/@media \(max-width: 768px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*right:\s*0\.75rem/,
 		);
 		expect(s).toMatch(
-			/@media \(max-width: 760px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*bottom:\s*calc\(1rem \+ env\(safe-area-inset-bottom, 0px\)\)/,
+			/@media \(max-width: 768px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*bottom:\s*calc\(1rem \+ env\(safe-area-inset-bottom, 0px\)\)/,
 		);
 		expect(s).toMatch(
-			/@media \(max-width: 760px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*max-width:\s*calc\(100vw - 5\.25rem\)/,
+			/@media \(max-width: 768px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*max-width:\s*calc\(100vw - 5\.25rem\)/,
 		);
 	});
 
@@ -101,10 +101,10 @@ describe('MapStage', () => {
 			/\.map-stage\s*:global\(\.maplibregl-ctrl-attrib-inner\)\s*\{[\s\S]*overflow-wrap:\s*anywhere/,
 		);
 		expect(s).toMatch(
-			/@media \(max-width: 760px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-attrib\.maplibregl-compact\)\s*\{[\s\S]*margin:\s*0/,
+			/@media \(max-width: 768px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-attrib\.maplibregl-compact\)\s*\{[\s\S]*margin:\s*0/,
 		);
 		expect(s).toMatch(
-			/@media \(max-width: 760px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-attrib\.maplibregl-compact-show\)\s*\{[\s\S]*max-width:\s*calc\(100vw - 5\.25rem\)/,
+			/@media \(max-width: 768px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-attrib\.maplibregl-compact-show\)\s*\{[\s\S]*max-width:\s*calc\(100vw - 5\.25rem\)/,
 		);
 	});
 });

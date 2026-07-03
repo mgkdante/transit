@@ -280,7 +280,7 @@
 	.hotspot-tray {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		margin-top: 0.75rem;
 		padding-top: 0.75rem;
 		border-top: 1px dashed var(--border);
@@ -300,7 +300,7 @@
 		display: inline-flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		border-radius: var(--radius-sm);
 		text-decoration: none;
 		color: inherit;

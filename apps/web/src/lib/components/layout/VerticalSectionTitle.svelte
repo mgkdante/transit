@@ -80,7 +80,7 @@
 			transform: rotate(180deg);
 			transform-origin: center;
 			/* A hair of inset keeps the rotated glyph off the exact content edge. */
-			margin-inline-start: 0.15rem;
+			margin-inline-start: 0.125rem;
 			margin-block-start: 0.75rem;
 			font-family: var(--font-heading);
 			/* Sized to the gutter band (~--space-page-x wide): big enough to read as

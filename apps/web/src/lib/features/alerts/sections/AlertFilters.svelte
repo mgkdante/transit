@@ -126,7 +126,7 @@
 	.alert-history-pick {
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
+		gap: 0.375rem;
 		min-width: 0;
 		flex: 1 1 16rem;
 	}
@@ -149,7 +149,7 @@
 		color: var(--primary);
 		background: none;
 		border: none;
-		padding: 0.15rem 0;
+		padding: 0.125rem 0;
 		cursor: pointer;
 		text-decoration: underline;
 		text-underline-offset: 0.2em;
@@ -160,6 +160,6 @@
 	.alert-history-clear:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
-		border-radius: var(--radius-sm, 0.375rem);
+		border-radius: var(--radius-sm);
 	}
 </style>

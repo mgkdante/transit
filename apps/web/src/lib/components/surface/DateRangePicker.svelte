@@ -303,8 +303,8 @@
 		color: var(--foreground);
 		background-color: var(--card);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-md, 0.5rem);
-		padding: 0.35rem 0.6rem;
+		border-radius: var(--radius-md);
+		padding: 0.375rem 0.5rem;
 	}
 	.date-range__select:focus-visible {
 		outline: 2px solid var(--ring);
@@ -321,12 +321,12 @@
 		color: var(--muted-foreground);
 		background-color: transparent;
 		border: 1px solid var(--border);
-		border-radius: var(--radius-pill, 999px);
-		padding: 0.35rem 0.75rem;
+		border-radius: var(--radius-pill);
+		padding: 0.375rem 0.75rem;
 		cursor: pointer;
 		transition:
-			color 0.15s ease,
-			border-color 0.15s ease;
+			color var(--duration-fast) var(--ease-default),
+			border-color var(--duration-fast) var(--ease-default);
 	}
 	.date-range__clear:hover {
 		color: var(--foreground);

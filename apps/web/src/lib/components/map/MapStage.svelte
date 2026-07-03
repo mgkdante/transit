@@ -368,7 +368,7 @@
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
 		bottom: 1rem;
 		z-index: 12;
-		transition: right 180ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+		transition: right var(--duration-normal) var(--ease-out);
 	}
 
 	.map-stage :global(.maplibregl-ctrl-attrib) {
@@ -395,7 +395,7 @@
 		}
 	}
 
-	@media (max-width: 760px) {
+	@media (max-width: 768px) {
 		.map-stage :global(.maplibregl-ctrl-bottom-right) {
 			right: 0.75rem;
 			bottom: calc(1rem + env(safe-area-inset-bottom, 0px));

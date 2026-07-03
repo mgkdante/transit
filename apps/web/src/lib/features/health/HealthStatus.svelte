@@ -468,7 +468,7 @@
 	.health-stat {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		padding: 0.875rem 1rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);

@@ -440,7 +440,7 @@
 		width: var(--app-rail-width-expanded);
 		max-width: 100%;
 		pointer-events: auto;
-		transition: width var(--duration-normal, 180ms) var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+		transition: width var(--duration-normal) var(--ease-out);
 	}
 
 	/* Suppress the width transition WHILE dragging so the rail tracks the pointer
@@ -464,8 +464,8 @@
 		background: var(--border);
 		opacity: 0;
 		transition:
-			opacity var(--duration-fast, 140ms) var(--ease-default, ease),
-			background var(--duration-fast, 140ms) var(--ease-default, ease);
+			opacity var(--duration-fast) var(--ease-default),
+			background var(--duration-fast) var(--ease-default);
 		touch-action: none;
 	}
 

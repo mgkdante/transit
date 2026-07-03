@@ -140,7 +140,7 @@
 	.network-silent-tile {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 		width: 100%;
 	}
 	/* Non-responding-by-route ranked list — list > listitem > link; the whole row is a link,

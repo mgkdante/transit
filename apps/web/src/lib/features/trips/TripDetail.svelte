@@ -316,12 +316,12 @@
 	.trip-summary-cell {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	.trip-route-link {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		text-decoration: none;
 		color: var(--foreground);
 		transition: color var(--duration-fast) var(--ease-out);
@@ -358,7 +358,7 @@
 	.trip-delay {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		font-family: var(--font-mono);
 		font-weight: 600;
 		font-size: var(--text-body);
@@ -366,8 +366,8 @@
 	}
 	.trip-delay::before {
 		content: '';
-		width: 0.45rem;
-		height: 0.45rem;
+		width: 0.375rem;
+		height: 0.375rem;
 		border-radius: var(--radius-pill);
 		background: currentcolor;
 		flex: none;
@@ -394,7 +394,7 @@
 	.trip-stops-section {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 	}
 	.trip-stops {
 		list-style: none;
@@ -417,7 +417,7 @@
 		width: calc(100% + 1rem);
 		margin-inline: -0.5rem;
 		padding: 0.625rem 0.5rem;
-		border-radius: var(--radius-sm, 0.375rem);
+		border-radius: var(--radius-sm);
 		color: var(--foreground);
 		text-decoration: none;
 		transition: background-color var(--duration-fast) var(--ease-out);
@@ -450,15 +450,15 @@
 	.trip-stop-delay {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		font-weight: 600;
 		white-space: nowrap;
 		color: var(--muted-foreground);
 	}
 	.trip-stop-delay::before {
 		content: '';
-		width: 0.4rem;
-		height: 0.4rem;
+		width: 0.375rem;
+		height: 0.375rem;
 		border-radius: var(--radius-pill);
 		background: currentcolor;
 		flex: none;

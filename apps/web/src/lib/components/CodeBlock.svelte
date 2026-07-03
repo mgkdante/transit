@@ -83,7 +83,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.4rem 0.75rem;
+		padding: 0.375rem 0.75rem;
 		border-block-end: 1px solid var(--border);
 		background: var(--muted);
 	}

@@ -106,6 +106,6 @@
 	.network-vehicles-row {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 </style>

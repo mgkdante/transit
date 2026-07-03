@@ -214,8 +214,8 @@
 		transition:
 			border-color var(--duration-normal) var(--ease-default),
 			box-shadow var(--duration-normal) var(--ease-default),
-			scale 120ms cubic-bezier(0.2, 0, 0, 1),
-			opacity 120ms cubic-bezier(0.2, 0, 0, 1);
+			scale var(--duration-instant) var(--ease-out),
+			opacity var(--duration-instant) var(--ease-out);
 	}
 	:global(
 		[data-slot='card'].section-card.section-card--toggleable:active:not(
