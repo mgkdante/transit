@@ -13,6 +13,7 @@ src/app.css
 src/lib/styles/tokens.css
 src/lib/motion/tokens.ts
 src/lib/v1/schemas/json
+vendor/design
 
 # static assets + docs
 static
