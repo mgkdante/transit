@@ -18,6 +18,7 @@
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
+	import NetworkTile from './NetworkTile.svelte';
 	import type { ShiftRow } from '../selectors/shiftRank';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
@@ -44,7 +45,7 @@
 	const i = $derived(info('severe', copy.shiftSection));
 </script>
 
-<div class="network-tile" data-slot={dataSlot}>
+<NetworkTile {dataSlot}>
 	<SectionHeading level={3} overline={copy.shiftSection}>
 		{#snippet explainer()}
 			<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
@@ -70,22 +71,9 @@
 	{#if showCaveat}
 		<p class="network-shift-caveat" data-slot="shift-caveat">{copy.shift.caveat}</p>
 	{/if}
-</div>
+</NetworkTile>
 
 <style>
-	.network-tile {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		min-width: 0;
-		padding: 1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
-		/* E1 glow map: content tiles rest on --shadow-card (the soft card bevel);
-		   they carry no drill-in, so no interactive hover-lift. */
-		box-shadow: var(--shadow-card);
-	}
 	.network-ranked {
 		display: flex;
 		flex-direction: column;

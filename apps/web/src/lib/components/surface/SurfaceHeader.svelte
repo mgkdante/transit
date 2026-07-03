@@ -25,6 +25,8 @@
 		lede?: string;
 		/** Heading level (1–6). Default 1 — surfaces are page-level. */
 		level?: 1 | 2 | 3 | 4 | 5 | 6;
+		/** Optional inline explainer (i) affordance rendered after the heading title (§C6). */
+		explainer?: Snippet;
 		/** Optional anchors / actions row rendered below the lede. */
 		children?: Snippet;
 		/** Optional extra classes on the header root. */
@@ -37,6 +39,7 @@
 		subheading,
 		lede,
 		level = 1,
+		explainer,
 		children,
 		class: className,
 	}: SurfaceHeaderProps = $props();
@@ -44,7 +47,7 @@
 
 <header class={cn('surface-header', className)} data-slot="surface-header">
 	<SectionLabel text={kicker} variant="station" />
-	<SectionHeading {heading} {subheading} {level} dot />
+	<SectionHeading {heading} {subheading} {level} dot {explainer} />
 	{#if lede}
 		<p class="surface-lede">{lede}</p>
 	{/if}

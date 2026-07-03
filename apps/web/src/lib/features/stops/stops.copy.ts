@@ -39,6 +39,24 @@ export interface StopsIndexCopy extends SurfaceHeadCopy {
 	readonly sortLabel: string;
 	readonly sortDefault: string;
 	readonly sortWorst: string;
+	/**
+	 * Idle-state network stop-picture band (§C5.5) — shown before the rider types,
+	 * turning the dead prompt into a live census + a way in.
+	 */
+	readonly census: {
+		/** Mono overline over the census band. */
+		readonly label: string;
+		/** "{n} stops" served-catalogue count (already-fetched stops index). */
+		readonly stops: (n: string) => string;
+		/** "{n} lines" served-catalogue count (already-fetched routes index). */
+		readonly lines: (n: string) => string;
+		/** Worst-stop teaser link text into /repeat-offenders. */
+		readonly worstTeaser: string;
+		/** Caption over the example-query chips. */
+		readonly examplesLabel: string;
+		/** The tappable example queries that fill the search box. */
+		readonly examples: readonly string[];
+	};
 }
 
 export interface StopDetailCopy {
@@ -143,6 +161,14 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		sortLabel: 'Trier',
 		sortDefault: 'Ordre du parcours',
 		sortWorst: 'Moins fiables',
+		census: {
+			label: 'Le réseau en un coup d’œil',
+			stops: (n) => `${n} arrêts`,
+			lines: (n) => `${n} lignes`,
+			worstTeaser: 'Voir les arrêts les moins fiables →',
+			examplesLabel: 'Essayez',
+			examples: ['Berri-UQAM', 'Côte-Vertu', 'Place-des-Arts'],
+		},
 	},
 	en: {
 		kicker: 'STOPS · CATALOGUE',
@@ -167,6 +193,14 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		sortLabel: 'Sort',
 		sortDefault: 'Route order',
 		sortWorst: 'Least reliable',
+		census: {
+			label: 'The network at a glance',
+			stops: (n) => `${n} stops`,
+			lines: (n) => `${n} lines`,
+			worstTeaser: 'See the least reliable stops →',
+			examplesLabel: 'Try',
+			examples: ['Berri-UQAM', 'Côte-Vertu', 'Place-des-Arts'],
+		},
 	},
 };
 

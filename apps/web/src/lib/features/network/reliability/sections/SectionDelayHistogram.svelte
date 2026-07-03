@@ -19,6 +19,7 @@
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
+	import NetworkTile from './NetworkTile.svelte';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
 	interface SectionDelayHistogramProps {
@@ -43,7 +44,7 @@
 
 {#if hasHistogram}
 	<section class="network-hist-section" data-slot="delay-histogram-section">
-		<div class="network-tile network-hist-tile">
+		<NetworkTile class="network-hist-tile">
 			<SectionHeading level={3} overline={copy.delayHistogramSection}>
 				{#snippet explainer()}
 					<MetricInfo
@@ -59,7 +60,7 @@
 			<div class="network-hist" data-slot="delay-histogram">
 				<Chart {spec} />
 			</div>
-		</div>
+		</NetworkTile>
 	</section>
 {/if}
 
@@ -69,17 +70,10 @@
 		display: block;
 		width: 100%;
 	}
-	.network-hist-tile {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		min-width: 0;
-		padding: 1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
-		/* E1 glow map: content tile rest shadow (matches the sibling network-tiles). */
-		box-shadow: var(--shadow-card);
+	/* The shared NetworkTile chassis fills this full-width row (the base tile does not
+	   force width; the histogram row wants the whole page width for its bars). The
+	   :global qualifier reaches the NetworkTile root through the passed class. */
+	:global(.network-hist-tile) {
 		width: 100%;
 	}
 	.network-hist {

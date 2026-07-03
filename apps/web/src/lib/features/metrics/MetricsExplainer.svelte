@@ -306,6 +306,24 @@
 		cardOpenSignals = { ...cardOpenSignals, [anchor]: cardOpenSignal(anchor) + 1 };
 	}
 
+	// ── Expand-all / collapse-all (§C5.8) ───────────────────────────────────────
+	// A single toggle over EVERY collapsible card. "Expand all" bumps each openable
+	// anchor's open-signal (reusing the per-card opener); "Collapse all" bumps the
+	// shared closeSignal (the same edge FOCUS-on uses). The flag flips the label; a
+	// reader's individual card toggles afterwards don't sync it back (best-effort
+	// bulk control, not a live mirror of every card's state).
+	let allExpanded = $state(false);
+	function toggleExpandAll(): void {
+		if (allExpanded) {
+			// Collapse every card (reuse the FOCUS close edge; leaves the ToC as-is).
+			closeSignal += 1;
+			allExpanded = false;
+		} else {
+			for (const anchor of openableAnchors) openCard(anchor);
+			allExpanded = true;
+		}
+	}
+
 	onMount(() => {
 		try {
 			remembered = localStorage.getItem(REMEMBER_STORAGE_KEY) === '1';
@@ -568,6 +586,17 @@
 			</svg>
 			<span>{t.quiet.rememberLabel}</span>
 		</button>
+		<!-- Expand-all / collapse-all (§C5.8): one control to open or close every card. -->
+		<button
+			type="button"
+			class="metrics-expand-all"
+			aria-pressed={allExpanded}
+			aria-label={allExpanded ? t.expand.collapseAll : t.expand.expandAll}
+			data-testid="metrics-expand-all"
+			onclick={toggleExpandAll}
+		>
+			<span>{allExpanded ? t.expand.collapseAll : t.expand.expandAll}</span>
+		</button>
 	</div>
 {/snippet}
 
@@ -732,6 +761,7 @@
 							<div class="section-block" id={entry.anchor}>
 								<CollapsibleSection
 									title={entry.name[locale]}
+									subtitle={entry.oneLiner[locale]}
 									anchor={entry.anchor}
 									index={metricIndex}
 									sectionKey={cardKey(entry.anchor)}
@@ -1423,6 +1453,40 @@
 		filter: drop-shadow(0 0 3px color-mix(in srgb, var(--glow) 50%, transparent));
 	}
 
+	/* Expand-all / collapse-all — the same mono-pill chrome as the FOCUS controls,
+	   lighting up in --primary when engaged (every card open). */
+	.metrics-expand-all {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 44px;
+		padding-inline: 0.875rem;
+		border: 2px solid var(--border-brand);
+		border-radius: var(--radius-md);
+		background: var(--background);
+		box-shadow: inset 0 1px 0 var(--edge-highlight);
+		color: var(--secondary-foreground);
+		font-family: var(--font-mono);
+		font-size: var(--text-control);
+		letter-spacing: 0;
+		cursor: pointer;
+		transition:
+			border-color var(--duration-normal) var(--ease-default),
+			color var(--duration-normal) var(--ease-default),
+			background var(--duration-normal) var(--ease-default);
+	}
+	.metrics-expand-all:hover,
+	.metrics-expand-all:focus-visible,
+	.metrics-expand-all[aria-pressed='true'] {
+		border-color: var(--primary);
+		color: var(--primary);
+		background: color-mix(in srgb, var(--primary) 7%, var(--background));
+	}
+	.metrics-expand-all:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 3px;
+	}
+
 	.metric__top {
 		align-self: flex-start;
 		font-family: var(--font-mono);
@@ -1449,7 +1513,8 @@
 		.metrics-quiet-toggle .q-wave,
 		.metrics-quiet-toggle .q-core,
 		.metrics-quiet-remember,
-		.metrics-quiet-remember .r-pin {
+		.metrics-quiet-remember .r-pin,
+		.metrics-expand-all {
 			transition: none;
 		}
 	}

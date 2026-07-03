@@ -304,32 +304,38 @@
 			background-color var(--duration-fast) var(--ease-default),
 			border-color var(--duration-fast) var(--ease-default);
 	}
+	/* THE amber conversion CTA (§C1/§C5.2, operator-CONFIRMED): the ONE signage-pair
+	   yellow per view — amber #FFB627 ground (--accent) / #1C1814 ink (--accent-
+	   foreground). No other yellow anywhere. min 44px tap target. */
 	.map-near-toggle {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		gap: 0.5rem;
 		justify-self: end;
-		min-height: 2rem;
-		padding: 0.375rem 0.875rem 0.375rem 0.75rem;
-		font-weight: 600;
+		min-height: 44px;
+		padding: 0.5rem 1rem;
+		font-weight: 700;
 		letter-spacing: var(--tracking-wide);
-		color: var(--foreground);
-		background: color-mix(in srgb, var(--card) 88%, transparent);
-		border-color: color-mix(in srgb, var(--border) 82%, var(--primary) 18%);
+		color: var(--accent-foreground);
+		background: var(--accent);
+		border-color: var(--accent);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
-		/* Map GL escape hatch (§C4 P4): blur(12px) not the global 16px — the overlay
-		   family floats over the live WebGL canvas where 16px induces compositing jank. */
-		backdrop-filter: blur(12px) saturate(1.1);
-		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 	}
-	.map-near-toggle[aria-expanded='true'] {
-		color: var(--primary);
-		border-color: color-mix(in srgb, var(--primary) 50%, var(--border) 50%);
-	}
+	/* The amber CTA keeps its signage colour when open; the icon reads on the ink. */
 	.map-near-toggle:hover,
 	.map-near-toggle:focus-visible,
+	.map-near-toggle[aria-expanded='true'] {
+		color: var(--accent-foreground);
+		background: color-mix(in srgb, var(--accent) 88%, var(--accent-foreground) 12%);
+		border-color: var(--accent);
+	}
+	/* The near-me toggle's icon rides the ink colour (it sits on the amber ground),
+	   overriding the shared --primary icon rule below. */
+	.map-near-toggle :global(.map-near-icon) {
+		color: var(--accent-foreground);
+	}
 	.map-near-action:hover,
 	.map-near-action:focus-visible,
 	.map-near-form button:hover,

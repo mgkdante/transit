@@ -19,8 +19,8 @@
 <script lang="ts">
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { mapHrefFor, routeFor } from '$lib/nav';
-	import { getTrips, getV1Context } from '$lib/v1';
-	import type { TripsFile, Trip, StatusCode } from '$lib/v1';
+	import { getTrips, getStopsIndex, getV1Context } from '$lib/v1';
+	import type { TripsFile, Trip, StatusCode, StopsIndex } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { Surface } from '$lib/components/layout';
 	import { ResourceBoundary, SurfaceHeader, FreshnessStamp } from '$lib/components/surface';
@@ -34,6 +34,9 @@
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import MapDrilldownLink from '$lib/components/surface/MapDrilldownLink.svelte';
 	import { MaybeValue } from '$lib/components/edge';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor, metricName } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import { formatUtc } from '$lib/utils/time';
 	import { delayTone, delayLabel } from '$lib/site/delayPresentation';
@@ -48,6 +51,18 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(tripCopy[locale]);
+
+	// The metric-explainer (i) affordance (§C5.15): a one-line tip + a deep link into
+	// /metrics#<anchor>, wired onto the verdict chip (delay) + the ETA list (ETA basis).
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const delayInfo = $derived.by(() => {
+		const i = metricInfoFor('avgDelay', locale);
+		return {
+			...i,
+			label: explainerCopy.info.trigger(metricName('avgDelay', locale)),
+			linkLabel: explainerCopy.info.link,
+		};
+	});
 
 	// Visible breadcrumb for wayfinding (H4). Trip has no index route AND is noindex
 	// (ids rotate), so the trail is built INLINE here — Home > Trip {id} — and stays
@@ -67,6 +82,29 @@
 
 	/** This trip, or null when the broadcast carries no entry for it (stand-down). */
 	const trip = $derived<Trip | null>(trips.data?.trips?.[id] ?? null);
+
+	// Supplementary stops index — client-side, fail-soft (a 404 / failed fetch just
+	// leaves raw ids). Used ONLY to resolve a stop-id to its human name (§C5.15); the
+	// surface renders fully without it, so it never blocks the trip.
+	const stopsIndex = createResource<StopsIndex | null>(() => getStopsIndex());
+	const stopNameById = $derived.by<Record<string, string>>(() => {
+		const m: Record<string, string> = {};
+		for (const s of stopsIndex.data?.stops ?? []) m[s.id] = s.name;
+		return m;
+	});
+	/** A stop-id resolved to its name, or the raw id when the index has no entry. */
+	const stopNameFor = (stopId: string): string => stopNameById[stopId] ?? stopId;
+
+	// Destination + progress (§C5.15) from the remaining-stop ETA list: the destination
+	// is the LAST remaining stop (resolved to a name); "N stops remaining" is the count
+	// of the served list. Honest: the feed carries only REMAINING stops, so we never
+	// fabricate a total-stop denominator — we report what the broadcast actually gives.
+	const remainingStops = $derived(trip?.stops ?? []);
+	const remainingCount = $derived(remainingStops.length);
+	const destinationName = $derived.by<string | null>(() => {
+		const last = remainingStops[remainingStops.length - 1];
+		return last ? stopNameFor(last.stop) : null;
+	});
 
 	const routeHref = (routeId: string): string =>
 		localizeHref(routeFor({ kind: 'line', id: routeId }), locale);
@@ -130,6 +168,16 @@
 	}
 </script>
 
+{#snippet etaInfo()}
+	<MetricInfo
+		tip={delayInfo.tip}
+		href={delayInfo.href}
+		label={delayInfo.label}
+		linkLabel={delayInfo.linkLabel}
+		side="bottom"
+	/>
+{/snippet}
+
 <Surface as="div" data-slot="trip-detail">
 	<ResourceBoundary resource={trips} lang={locale}>
 		{#snippet children(_file)}
@@ -182,12 +230,53 @@
 				<Separator variant="hazard" />
 
 				<div class="trip-body">
-					<!-- Route link + status + current delay. -->
+					<!-- ONE merged verdict chip (§C5.15): status band + current delay in a single
+					     signal (they were two duplicate cells) + the destination/progress + the
+					     line context link-back. -->
 					<div class="trip-summary">
 						<div class="trip-summary-cell">
+							<span class="trip-cell-head">
+								<SectionLabel text={t.verdictHeading} variant="metric" />
+								<MetricInfo
+									tip={delayInfo.tip}
+									href={delayInfo.href}
+									label={delayInfo.label}
+									linkLabel={delayInfo.linkLabel}
+									side="bottom"
+								/>
+							</span>
+							<!-- The dot is the COLOUR channel; the status word is the text channel
+							     (colour never the sole channel). The delay reading rides the SAME chip
+							     so the verdict reads as one signal, not two. A null delay stands down
+							     to the styled honest-absence chip, never a fabricated 0. -->
+							<span class="trip-verdict">
+								<StatusDot color={trip.status} />
+								<span class="trip-status-label">{statusLabel(trip.status)}</span>
+								<MaybeValue present={trip.delay_min != null} reason="not-reported" {locale}>
+									<span
+										class="trip-verdict-delay"
+										data-tone={chipTone(trip.status, trip.delay_min)}
+									>
+										{delayLabel(trip.delay_min, t)}
+									</span>
+								</MaybeValue>
+							</span>
+						</div>
+
+						<!-- Destination + progress from the remaining-stop ETA list. -->
+						{#if destinationName != null}
+							<div class="trip-summary-cell">
+								<SectionLabel text={t.destinationHeading} variant="metric" />
+								<span class="trip-destination">
+									<span class="trip-destination-name">{destinationName}</span>
+									<span class="trip-destination-progress">{t.stopsRemaining(remainingCount)}</span>
+								</span>
+							</div>
+						{/if}
+
+						<!-- Line context link-back. -->
+						<div class="trip-summary-cell">
 							<SectionLabel text={t.route} variant="metric" />
-							<!-- Broadcasting trip: render the route link, else the styled honest-absence
-							     chip (the live feed omitted the route), never a plain grey note. -->
 							<MaybeValue present={trip.route != null} reason="not-reported" {locale}>
 								<a
 									class="trip-route-link"
@@ -199,44 +288,24 @@
 								</a>
 							</MaybeValue>
 						</div>
-
-						<div class="trip-summary-cell">
-							<SectionLabel text={t.statusHeading} variant="metric" />
-							<span class="trip-status">
-								<!-- The dot is the COLOUR channel; the adjacent visible label is the
-								     text channel (colour never the sole channel). No sr-only label on
-								     the dot so the status name is not announced twice. -->
-								<StatusDot color={trip.status} />
-								<span class="trip-status-label">{statusLabel(trip.status)}</span>
-							</span>
-						</div>
-
-						<div class="trip-summary-cell">
-							<SectionLabel text={t.delayLabel} variant="metric" />
-							<!-- Broadcasting trip: render the delay reading, else the styled honest-
-							     absence chip ("Unknown · not reported in the live feed") when the live
-							     feed omitted delay_min, never an easy-to-miss plain note, never a 0. -->
-							<MaybeValue present={trip.delay_min != null} reason="not-reported" {locale}>
-								<span class="trip-delay" data-tone={chipTone(trip.status, trip.delay_min)}>
-									{delayLabel(trip.delay_min, t)}
-								</span>
-							</MaybeValue>
-						</div>
 					</div>
 
-					<!-- Remaining-stop ETA list, framed as a LIVE PREDICTION. -->
+					<!-- Remaining-stop ETA list, framed as a LIVE PREDICTION. The delay (i)
+					     rides the section heading (the ETA basis is the same delay metric). -->
 					<div class="trip-stops-section">
-						<SectionHeading level={2} overline={t.remainingStops} />
-						{#if (trip.stops ?? []).length > 0}
+						<SectionHeading level={2} overline={t.remainingStops} explainer={etaInfo} />
+						{#if remainingStops.length > 0}
 							<ol class="trip-stops" aria-label={t.stopsListLabel}>
-								{#each trip.stops ?? [] as stop, si (stop.stop + '-' + si)}
+								{#each remainingStops as stop, si (stop.stop + '-' + si)}
 									<li class="trip-stop">
 										<a
 											class="trip-stop-link"
 											href={stopHref(stop.stop)}
-											aria-label={t.viewStop(stop.stop)}
+											aria-label={t.viewStop(stopNameFor(stop.stop))}
 										>
-											<span class="trip-stop-name">{stop.stop}</span>
+											<!-- Raw stop-id resolved to its human name via the stops repo
+											     (client-side, fail-soft to the id when unresolved). -->
+											<span class="trip-stop-name">{stopNameFor(stop.stop)}</span>
 											<span class="trip-stop-live">
 												<time class="trip-stop-eta" datetime={stop.eta_utc}>
 													{timeLabel(stop.eta_utc)}
@@ -346,16 +415,24 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
-	.trip-status {
+	/* The cell head aligns the SectionLabel with its (i) affordance inline. */
+	.trip-cell-head {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+	}
+	/* The merged verdict chip: status dot + status word + delay reading as ONE signal. */
+	.trip-verdict {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.5rem;
+		flex-wrap: wrap;
 	}
 	.trip-status-label {
 		font-size: var(--text-body);
 		color: var(--foreground);
 	}
-	.trip-delay {
+	.trip-verdict-delay {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
@@ -364,7 +441,7 @@
 		font-size: var(--text-body);
 		color: var(--muted-foreground);
 	}
-	.trip-delay::before {
+	.trip-verdict-delay::before {
 		content: '';
 		width: 0.375rem;
 		height: 0.375rem;
@@ -372,23 +449,41 @@
 		background: currentcolor;
 		flex: none;
 	}
-	.trip-delay[data-tone='none'] {
+	.trip-verdict-delay[data-tone='none'] {
 		color: var(--muted-foreground);
 	}
-	.trip-delay[data-tone='none']::before {
+	.trip-verdict-delay[data-tone='none']::before {
 		display: none;
 	}
-	.trip-delay[data-tone='early'] {
+	.trip-verdict-delay[data-tone='early'] {
 		color: var(--dataviz-status-early);
 	}
-	.trip-delay[data-tone='on-time'] {
+	.trip-verdict-delay[data-tone='on-time'] {
 		color: var(--dataviz-status-on-time);
 	}
-	.trip-delay[data-tone='late'] {
+	.trip-verdict-delay[data-tone='late'] {
 		color: var(--dataviz-status-late);
 	}
-	.trip-delay[data-tone='severe'] {
+	.trip-verdict-delay[data-tone='severe'] {
 		color: var(--dataviz-status-severe);
+	}
+	/* Destination + progress: the last remaining stop's name over the remaining count. */
+	.trip-destination {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+	}
+	.trip-destination-name {
+		font-size: var(--text-body);
+		font-weight: 600;
+		color: var(--foreground);
+	}
+	.trip-destination-progress {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		letter-spacing: var(--tracking-eyebrow);
+		text-transform: uppercase;
+		color: var(--muted-foreground);
 	}
 
 	.trip-stops-section {

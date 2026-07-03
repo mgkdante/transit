@@ -210,6 +210,20 @@ export interface HealthCopy extends SurfaceHeadCopy {
 			readonly fresh: (ok: string, total: string) => string;
 		};
 	};
+	/**
+	 * Aggregate lane-gate verdict TerminalPanel (§C5.9) — the FIRST thing the page
+	 * says, before the section ledger: "N/M lanes passing" + the worst lane.
+	 */
+	readonly aggregate: {
+		/** TerminalPanel title (mono, --text-micro). */
+		readonly title: string;
+		/** The pass-summary sentence ("{pass} of {total} lanes passing"). */
+		readonly summary: (pass: string, total: string) => string;
+		/** Trailing "worst: {lane}" clause when a lane is failing. */
+		readonly worst: (lane: string) => string;
+		/** Shown in place of the worst clause when every applicable lane passes. */
+		readonly allClear: string;
+	};
 }
 
 export const copy: Record<Locale, HealthCopy> = {
@@ -346,6 +360,12 @@ export const copy: Record<Locale, HealthCopy> = {
 				fresh: (ok, total) => `${ok} / ${total} fresh`,
 			},
 		},
+		aggregate: {
+			title: 'PIPELINE GATE',
+			summary: (pass, total) => `${pass} of ${total} lanes passing`,
+			worst: (lane) => `worst: ${lane}`,
+			allClear: 'all lanes passing',
+		},
 	},
 	fr: {
 		kicker: 'DONNÉES · HONNÊTETÉ',
@@ -479,6 +499,12 @@ export const copy: Record<Locale, HealthCopy> = {
 				title: 'Flux',
 				fresh: (ok, total) => `${ok} / ${total} à jour`,
 			},
+		},
+		aggregate: {
+			title: 'GATE PIPELINE',
+			summary: (pass, total) => `${pass} lignes conformes sur ${total}`,
+			worst: (lane) => `pire : ${lane}`,
+			allClear: 'toutes les lignes conformes',
 		},
 	},
 };

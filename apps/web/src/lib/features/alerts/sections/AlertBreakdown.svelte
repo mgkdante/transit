@@ -12,6 +12,7 @@
 	import type { AlertHistoryCopy } from '../alerts.copy';
 	import type { BreakdownRow } from '../selectors/alertLog';
 	import type { Locale } from '$lib/i18n';
+	import type { Snippet } from 'svelte';
 	import { DashboardGrid } from '$lib/components/layout';
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
@@ -24,8 +25,22 @@
 		hasBreakdown: boolean;
 		copy: AlertHistoryCopy;
 		locale: Locale;
+		/** Optional (i) explainer snippets on the three distribution sub-headings. */
+		causeInfo?: Snippet;
+		effectInfo?: Snippet;
+		severityInfo?: Snippet;
 	}
-	let { causeRows, effectRows, severityRows, hasBreakdown, copy, locale }: Props = $props();
+	let {
+		causeRows,
+		effectRows,
+		severityRows,
+		hasBreakdown,
+		copy,
+		locale,
+		causeInfo,
+		effectInfo,
+		severityInfo,
+	}: Props = $props();
 </script>
 
 <div class="alert-history-block" data-slot="alert-breakdown">
@@ -38,7 +53,7 @@
 		<DashboardGrid minTile="240px" gutter={false}>
 			{#if causeRows.length > 0}
 				<div class="alert-history-dist">
-					<SectionHeading level={3} overline={copy.breakdown.byCause} />
+					<SectionHeading level={3} overline={copy.breakdown.byCause} explainer={causeInfo} />
 					<div class="alert-history-ranked" role="list" aria-label={copy.breakdown.byCauseLabel}>
 						{#each causeRows as row (row.key)}
 							<RankedRow
@@ -55,7 +70,7 @@
 			{/if}
 			{#if effectRows.length > 0}
 				<div class="alert-history-dist">
-					<SectionHeading level={3} overline={copy.breakdown.byEffect} />
+					<SectionHeading level={3} overline={copy.breakdown.byEffect} explainer={effectInfo} />
 					<div class="alert-history-ranked" role="list" aria-label={copy.breakdown.byEffectLabel}>
 						{#each effectRows as row (row.key)}
 							<RankedRow
@@ -72,7 +87,7 @@
 			{/if}
 			{#if severityRows.length > 0}
 				<div class="alert-history-dist">
-					<SectionHeading level={3} overline={copy.breakdown.bySeverity} />
+					<SectionHeading level={3} overline={copy.breakdown.bySeverity} explainer={severityInfo} />
 					<div class="alert-history-ranked" role="list" aria-label={copy.breakdown.bySeverityLabel}>
 						{#each severityRows as row (row.key)}
 							<RankedRow

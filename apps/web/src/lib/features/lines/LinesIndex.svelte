@@ -56,10 +56,21 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 	import { routeModeHint } from '$lib/search/stopMode';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { indexCopy } from './lines.copy';
 
 	const locale = getLocale();
 	const t = $derived(indexCopy[locale]);
+
+	// The OTP explainer (i) on the surface header (§C5.3 / §C6): one-line tip + deep
+	// link to /metrics#otp, the same `info()` shape every surface uses.
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const otpInfo = $derived.by(() => {
+		const i = metricInfoFor('otp', locale);
+		return { ...i, label: explainerCopy.info.trigger('OTP'), linkLabel: explainerCopy.info.link };
+	});
 
 	const routes = createResource(() => getRoutesIndex());
 
@@ -198,14 +209,24 @@
 	);
 </script>
 
+{#snippet otpHeaderInfo()}
+	<MetricInfo
+		tip={otpInfo.tip}
+		href={otpInfo.href}
+		label={otpInfo.label}
+		linkLabel={otpInfo.linkLabel}
+		side="bottom"
+	/>
+{/snippet}
+
 <Surface pad="hub" class="lines-index">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
+	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede} explainer={otpHeaderInfo}>
 		<!-- The search box + the sort/status pickers are collected into ONE
 		     ControlsRail (quiet infra control panel, mono group overline), so this
 		     surface's controls read as the same discerned-from-data zone the rest of
 		     the analytics surfaces use. --primary lives only on the active picker
 		     segment inside; the rail chrome stays quiet. -->
-		<ControlsRail label={t.controlsLabel} class="lines-controls-rail">
+		<ControlsRail label={t.controlsLabel} class="lines-controls-rail" sticky>
 			<SearchInput
 				id="lines-filter-input"
 				label={t.filterLabel}

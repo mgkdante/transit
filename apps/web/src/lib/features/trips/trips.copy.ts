@@ -26,6 +26,12 @@ export interface TripDetailCopy {
 	readonly viewRoute: (route: string) => string;
 	/** Shown when the trip carries no route reference. */
 	readonly noRoute: string;
+	/** Section label above the merged status + delay verdict chip (§C5.15). */
+	readonly verdictHeading: string;
+	/** Section label above the destination + progress line (§C5.15). */
+	readonly destinationHeading: string;
+	/** "{n} stops remaining" progress caption (the served remaining-stop count). */
+	readonly stopsRemaining: (n: number) => string;
 	/** Section label above the status / delay readout. */
 	readonly statusHeading: string;
 	/** Status-band labels keyed by the v1 StatusCode. */
@@ -74,6 +80,9 @@ export const tripCopy: Record<Locale, TripDetailCopy> = {
 		route: 'Ligne',
 		viewRoute: (route) => `Voir la ligne ${route}`,
 		noRoute: 'Ligne non communiquée',
+		verdictHeading: 'Verdict',
+		destinationHeading: 'Destination',
+		stopsRemaining: (n) => (n === 1 ? '1 arrêt restant' : `${n} arrêts restants`),
 		statusHeading: 'Statut',
 		status: {
 			early: 'En avance',
@@ -109,6 +118,9 @@ export const tripCopy: Record<Locale, TripDetailCopy> = {
 		route: 'Line',
 		viewRoute: (route) => `View line ${route}`,
 		noRoute: 'No line reported',
+		verdictHeading: 'Verdict',
+		destinationHeading: 'Destination',
+		stopsRemaining: (n) => (n === 1 ? '1 stop remaining' : `${n} stops remaining`),
 		statusHeading: 'Status',
 		status: {
 			early: 'Early',

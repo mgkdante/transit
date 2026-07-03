@@ -132,6 +132,13 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		/** aria-label / title when the pin is ON (the action the press performs: unpin it). */
 		readonly forget: string;
 	};
+	/** The expand-all / collapse-all control that opens or closes every metric card at once (§C5.8). */
+	readonly expand: {
+		/** Visible label + aria-label for the "open every card" action. */
+		readonly expandAll: string;
+		/** Visible label + aria-label for the "close every card" action. */
+		readonly collapseAll: string;
+	};
 	/**
 	 * Right-rail stat cards (P5.3b DetailTemplate re-seat). Three compact cards —
 	 * Provenance / Coverage / Freshness — built from data the page already has
@@ -285,6 +292,10 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			remember: 'Mémoriser le mode lecture pour les prochaines visites',
 			forget: 'Oublier le mode lecture (cette session seulement)',
 		},
+		expand: {
+			expandAll: 'Tout ouvrir',
+			collapseAll: 'Tout fermer',
+		},
 		statRail: {
 			label: 'En bref',
 			provenance: {
@@ -422,6 +433,10 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			rememberLabel: 'Remember',
 			remember: 'Remember focus reading on future visits',
 			forget: 'Forget focus reading (this session only)',
+		},
+		expand: {
+			expandAll: 'Expand all',
+			collapseAll: 'Collapse all',
 		},
 		statRail: {
 			label: 'At a glance',

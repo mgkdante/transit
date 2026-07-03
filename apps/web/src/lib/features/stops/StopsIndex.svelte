@@ -32,7 +32,7 @@
 -->
 <script lang="ts">
 	import { page } from '$app/state';
-	import { getLocale, type Locale } from '$lib/i18n';
+	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { mapHrefFor } from '$lib/nav';
 	import {
 		getStopsIndex,
@@ -60,10 +60,21 @@
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 	import { stopGroupKey, stopModeHint, routeModeHint } from '$lib/search/stopMode';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { indexCopy } from './stops.copy';
 
 	const locale: Locale = getLocale();
 	const t = $derived(indexCopy[locale]);
+
+	// The OTP explainer (i) on the surface header (§C5.5 / §C6): a one-line tip +
+	// a localized deep link to /metrics#otp, the same `info()` shape every surface uses.
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const otpInfo = $derived.by(() => {
+		const i = metricInfoFor('otp', locale);
+		return { ...i, label: explainerCopy.info.trigger('OTP'), linkLabel: explainerCopy.info.link };
+	});
 
 	const index = createResource(() => getStopsIndex());
 	const routesIndex = createResource(() => getRoutesIndex());
@@ -217,14 +228,40 @@
 			.filter((g) => g.stops.length > 0),
 	);
 	const sortedMatches = $derived(applySort(matches));
+
+	// ── Idle-state census (§C5.5) ───────────────────────────────────────────────
+	// Turn the dead "start typing" prompt into a live network stop-picture, entirely
+	// from the two already-fetched indices — total stops + total lines — plus a
+	// worst-stop teaser into /repeat-offenders and tappable example queries. No new
+	// fetch: the counts are the length of the payloads the surface already loaded.
+	const stopCount = $derived(index.data?.stops?.length ?? null);
+	const lineCount = $derived(routesIndex.data?.routes?.length ?? null);
+	const repeatOffendersHref = $derived(localizeHref('/repeat-offenders', locale));
+	const numberFmt = $derived(new Intl.NumberFormat(locale));
 </script>
 
+{#snippet otpHeaderInfo()}
+	<MetricInfo
+		tip={otpInfo.tip}
+		href={otpInfo.href}
+		label={otpInfo.label}
+		linkLabel={otpInfo.linkLabel}
+		side="bottom"
+	/>
+{/snippet}
+
 <Surface class="stops-index">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
+	<SurfaceHeader
+		kicker={t.kicker}
+		heading={t.heading}
+		subheading={t.subheading}
+		lede={t.lede}
+		explainer={otpHeaderInfo}
+	>
 		<!-- All controls collected into ONE ControlsRail: the free-text search, the
 		     by-line combobox, and the reliability sort. --primary lives only on the
 		     active sort segment / highlighted combobox option; the rail is quiet. -->
-		<ControlsRail label={t.controlsLabel} class="stops-controls-rail">
+		<ControlsRail label={t.controlsLabel} class="stops-controls-rail" sticky>
 			<SearchInput
 				id="stops-filter-input"
 				label={t.searchLabel}
@@ -282,7 +319,33 @@
 				{/each}
 			{/if}
 		{:else if !folded}
-			<p class="stops-note">{t.searchPrompt}</p>
+			<!-- IDLE (§C5.5): a network stop-picture band instead of a dead prompt —
+			     live counts from the two fetched indices + a worst-stop teaser into
+			     /repeat-offenders + tappable example queries that fill the search box. -->
+			<div class="stops-census" data-slot="stops-census">
+				<span class="stops-census__label">{t.census.label}</span>
+				<p class="stops-census__counts">
+					{#if stopCount != null}
+						<span class="stops-census__stat">{t.census.stops(numberFmt.format(stopCount))}</span>
+					{/if}
+					{#if lineCount != null}
+						<span class="stops-census__dot" aria-hidden="true">·</span>
+						<span class="stops-census__stat">{t.census.lines(numberFmt.format(lineCount))}</span>
+					{/if}
+				</p>
+				<a class="stops-census__teaser" href={repeatOffendersHref}>{t.census.worstTeaser}</a>
+				<div class="stops-census__examples">
+					<span class="stops-census__examples-label">{t.census.examplesLabel}</span>
+					<div class="stops-census__chips">
+						{#each t.census.examples as example (example)}
+							<button type="button" class="stops-census__chip" onclick={() => (query = example)}>
+								{example}
+							</button>
+						{/each}
+					</div>
+				</div>
+				<p class="stops-note stops-census__prompt">{t.searchPrompt}</p>
+			</div>
 		{:else if matches.length === 0}
 			<p class="stops-note">{t.noMatches}</p>
 		{:else}
@@ -328,6 +391,112 @@
 		font-size: var(--text-small);
 		line-height: 1.5;
 		padding: 0.5rem 0.875rem;
+	}
+	/* Idle census band (§C5.5): a quiet card of live network counts + a way in. Not
+	   a data mark; the teaser + chips are interactive affordances (--primary). */
+	.stops-census {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		padding: 1.25rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		background: var(--card);
+	}
+	.stops-census__label {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-weight: 600;
+		letter-spacing: var(--tracking-eyebrow);
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.stops-census__counts {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.5rem;
+		margin: 0;
+	}
+	.stops-census__stat {
+		font-family: var(--font-heading);
+		font-size: 1.5rem;
+		font-weight: 800;
+		line-height: 1.1;
+		color: var(--foreground);
+		font-variant-numeric: tabular-nums;
+	}
+	.stops-census__dot {
+		color: var(--muted-foreground);
+	}
+	.stops-census__teaser {
+		align-self: flex-start;
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		color: var(--primary);
+		text-decoration: none;
+	}
+	.stops-census__teaser:hover,
+	.stops-census__teaser:focus-visible {
+		text-decoration: underline;
+	}
+	.stops-census__teaser:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+		border-radius: var(--radius-sm);
+	}
+	.stops-census__examples {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.stops-census__examples-label {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		letter-spacing: var(--tracking-eyebrow);
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.stops-census__chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+	.stops-census__chip {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		padding: 0.375rem 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-pill);
+		background: var(--muted);
+		color: var(--foreground);
+		font-size: var(--text-caption);
+		cursor: pointer;
+		transition:
+			border-color var(--duration-fast) var(--ease-default),
+			color var(--duration-fast) var(--ease-default);
+	}
+	.stops-census__chip:hover,
+	.stops-census__chip:focus-visible {
+		border-color: var(--primary);
+		color: var(--primary);
+	}
+	.stops-census__chip:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+	.stops-census__prompt {
+		padding: 0;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.stops-census__chip {
+			transition: none;
+		}
 	}
 	/* The control panel fills the header measure; its body lays the search box
 	   across the top with the line filter + sort beneath. */

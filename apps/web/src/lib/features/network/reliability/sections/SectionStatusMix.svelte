@@ -16,6 +16,7 @@
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
+	import NetworkTile from './NetworkTile.svelte';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
 	interface SectionStatusMixProps {
@@ -43,14 +44,14 @@
 
 <DashboardGrid minTile="320px" align="start" gutter={false}>
 	<!-- Status mix -->
-	<div class="network-tile">
+	<NetworkTile>
 		<SectionHeading level={3} overline={copy.statusSection} />
 		<Chart spec={statusSpec} />
-	</div>
+	</NetworkTile>
 
 	<!-- Crowding (occupancy) — only when telemetry was received this cycle -->
 	{#if hasOccupancy && occupancySpec}
-		<div class="network-tile">
+		<NetworkTile>
 			<SectionHeading level={3} overline={copy.occupancySection}>
 				{#snippet explainer()}
 					<MetricInfo
@@ -63,22 +64,6 @@
 				{/snippet}
 			</SectionHeading>
 			<Chart spec={occupancySpec} />
-		</div>
+		</NetworkTile>
 	{/if}
 </DashboardGrid>
-
-<style>
-	.network-tile {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		min-width: 0;
-		padding: 1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
-		/* E1 glow map: content tiles rest on --shadow-card (the soft card bevel);
-		   they carry no drill-in, so no interactive hover-lift. */
-		box-shadow: var(--shadow-card);
-	}
-</style>

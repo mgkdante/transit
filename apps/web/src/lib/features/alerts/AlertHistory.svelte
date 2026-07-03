@@ -46,6 +46,8 @@
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor, type SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	// The shared alert vocabulary, now in the $lib/v1 kernel (no cross-feature import).
 	import { alertDisplayText } from '$lib/v1/alertDisplay';
 	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
@@ -71,6 +73,16 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(alertHistoryCopy[locale]);
+
+	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
+	// /metrics#<anchor>. Wires the five supplemental alert* dimensions (cause/effect/
+	// severity/duration/reach) onto their headings — the SAME `info()` shape every
+	// other surface uses (NetworkSurface / RouteDetail / StopReliabilitySurface).
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: SupplementalMetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
 
 	// Historic tier — the daily-rebuilt alert archive (createResource, browser-only).
 	const history = createResource(() => getAlertHistory(), { freshness: true });
@@ -249,13 +261,30 @@
 </script>
 
 {#snippet headlineInfo()}
-	<MetricInfo
-		tip={t.headline.tip}
-		href={`/${locale === 'fr' ? 'fr/' : ''}metrics`}
-		label={t.headline.label}
-		linkLabel={t.headline.linkLabel}
-		side="bottom"
-	/>
+	<!-- Wired to the alert-duration explainer: the honest deep link replaces the surface's
+	     only bare `/metrics` href (its lone convention break) with metricInfoFor('alertDuration'). -->
+	{@const i = info('alertDuration', t.headline.label)}
+	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+{/snippet}
+
+<!-- The five supplemental alert* explainer tips, each wired onto its heading. cause/effect/
+     severity ride the three breakdown sub-headings; reach rides the log section (its rows
+     carry the affected-lines/stops counts). duration rides the headline card above. -->
+{#snippet causeInfo()}
+	{@const i = info('alertCause', t.breakdown.byCause)}
+	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+{/snippet}
+{#snippet effectInfo()}
+	{@const i = info('alertEffect', t.breakdown.byEffect)}
+	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+{/snippet}
+{#snippet severityInfo()}
+	{@const i = info('alertSeverity', t.breakdown.bySeverity)}
+	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+{/snippet}
+{#snippet reachInfo()}
+	{@const i = info('alertReach', t.meta.routes)}
+	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
 {/snippet}
 
 <Surface class="alert-history">
@@ -287,9 +316,26 @@
 
 		<Separator variant="hazard" />
 
+		<!-- REORDER (§C5.13): analytics BEFORE the stream. The Tier-2 cause/effect/severity
+		     distribution reads first so the citizen gets the SHAPE of the archive before the
+		     25-row chronological log. cause/effect/severity headings carry their (i) tips. -->
+		<AlertBreakdown
+			{causeRows}
+			{effectRows}
+			{severityRows}
+			{hasBreakdown}
+			copy={t}
+			{locale}
+			{causeInfo}
+			{effectInfo}
+			{severityInfo}
+		/>
+
+		<Separator variant="hazard" />
+
 		<div class="alert-history-block">
 			<div class="alert-history-head">
-				<SectionHeading level={2} overline={t.logSection} />
+				<SectionHeading level={2} overline={t.logSection} explainer={reachInfo} />
 				<span class="alert-history-count" data-slot="alert-count">
 					{t.count(visibleRows.length, filtered.length)}
 				</span>
@@ -332,14 +378,15 @@
 				/>
 			{/if}
 		</div>
-
-		<!-- Tier-2 cause / effect / severity distribution (pure presenter). -->
-		<Separator variant="hazard" />
-		<AlertBreakdown {causeRows} {effectRows} {severityRows} {hasBreakdown} copy={t} {locale} />
 	</ResourceBoundary>
 </Surface>
 
 <style>
+	/* §C5.13: the surface caps at the content lane (no full-bleed — width="bleed" was
+	   dropped with A1). The analytics + log read as one column, matching the 52rem log. */
+	:global([data-slot='surface'].alert-history) {
+		max-width: var(--container-content);
+	}
 	.alert-history-headline {
 		margin-bottom: 0.25rem;
 	}

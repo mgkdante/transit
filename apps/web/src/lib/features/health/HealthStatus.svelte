@@ -33,6 +33,7 @@
 	import { METHODOLOGY_METRIC_KEY } from '$lib/features/metrics/metrics.content';
 	import { ArticleShell, DetailTemplate } from '$lib/components/layout';
 	import { ResourceBoundary, FreshnessStamp } from '$lib/components/surface';
+	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import SectionProgress from '$lib/components/brand/SectionProgress.svelte';
 	import { TocNav, TocPill, observeActiveToc, type TocEntry } from '$lib/components/shared';
 	import { copy as COPY } from './health.copy';
@@ -247,6 +248,26 @@
 			<ResourceBoundary resource={provenance} lang={locale}>
 				{#snippet children(_p)}
 					<div class="health-sections" data-slot="health-sections">
+						<!-- ── Aggregate lane-gate verdict (§C5.9) ────────────────────────
+						     The page opens with ONE terminal verdict — "N of M lanes passing ·
+						     worst: X" — before the detail ledger, so the reader gets the whole-
+						     pipeline answer first. Present only when applicable lanes exist. -->
+						{#if laneStat.total > 0}
+							<div class="health-section health-aggregate" data-slot="health-aggregate">
+								<TerminalPanel title={t.aggregate.title}>
+									<p class="health-aggregate__verdict">
+										<span class="health-aggregate__summary"
+											>{t.aggregate.summary(String(laneStat.passing), String(laneStat.total))}</span
+										>
+										<span class="health-aggregate__worst">
+											{#if laneStat.worst}{t.aggregate.worst(laneStat.worst.label)}{:else}{t
+													.aggregate.allClear}{/if}
+										</span>
+									</p>
+								</TerminalPanel>
+							</div>
+						{/if}
+
 						<!-- ── Pipeline lanes (top section) ──────────────────────────── -->
 						{#if laneRows.length > 0}
 							<div class="health-section" data-toc="health-lanes">
@@ -444,6 +465,30 @@
 	}
 	.health-section {
 		min-width: 0;
+	}
+
+	/* Aggregate verdict panel — the pass-summary + worst-lane sentence inside the
+	   terminal frame. Not a data mark / no --primary; the summary reads in the
+	   heading voice, the worst clause in the muted mono voice. */
+	.health-aggregate__verdict {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.375rem 0.75rem;
+		margin: 0;
+	}
+	.health-aggregate__summary {
+		font-family: var(--font-heading);
+		font-size: 1.125rem;
+		font-weight: 700;
+		line-height: 1.2;
+		color: var(--foreground);
+		font-variant-numeric: tabular-nums;
+	}
+	.health-aggregate__worst {
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		color: var(--muted-foreground);
 	}
 
 	/* ── Right rail / mobile summary stat cards ────────────────────────────────
