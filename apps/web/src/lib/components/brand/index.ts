@@ -44,8 +44,14 @@ export type { ChevronToggleProps } from './ChevronToggle.svelte';
 export { default as MetroStation } from './MetroStation.svelte';
 export type { MetroStationProps } from './MetroStation.svelte';
 
+export { default as TerminalPanel } from './TerminalPanel.svelte';
+export type { TerminalPanelProps, TerminalFooterItem } from './TerminalPanel.svelte';
+
 export { default as TerminalChrome } from './TerminalChrome.svelte';
-export type { TerminalChromeProps, TerminalFooterItem } from './TerminalChrome.svelte';
+export type { TerminalChromeProps } from './TerminalChrome.svelte';
+
+export { default as CornerMeta } from './CornerMeta.svelte';
+export type { CornerMetaProps } from './CornerMeta.svelte';
 
 export { default as StickyPanel } from './StickyPanel.svelte';
 export type { StickyPanelProps } from './StickyPanel.svelte';
