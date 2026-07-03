@@ -61,6 +61,27 @@ describe('CornerMeta — decorative contract', () => {
 	});
 });
 
+describe('CornerMeta — corner readouts stay in their quadrant', () => {
+	it('renders both bottom corners independently so a long readout stays in its own corner', () => {
+		// A long dataset-edition string in one corner must not swallow or displace the
+		// opposite corner (the home hero DATASET·… overrunning VEHICLES·… regression;
+		// the width-cap + ellipsis containment is CSS, verified geometrically). Lock
+		// that each bottom corner is its own contained element carrying its own text.
+		const { container, getByText } = render(CornerMeta, {
+			props: {
+				bottomLeft: textSnippet('DATASET · a-very-long-edition-filename-that-would-overrun'),
+				bottomRight: textSnippet('VEHICLES · 804'),
+			},
+		});
+		const bl = container.querySelector('[data-slot="corner-bl"]') as HTMLElement;
+		const br = container.querySelector('[data-slot="corner-br"]') as HTMLElement;
+		expect(bl).toBeInTheDocument();
+		expect(br).toBeInTheDocument();
+		expect(bl).not.toContainElement(br);
+		expect(getByText('VEHICLES · 804')).toBeInTheDocument();
+	});
+});
+
 describe('CornerMeta — crosshair ornament (opt-in)', () => {
 	it('omits the crosshair by default', () => {
 		const { container } = render(CornerMeta, { props: { topLeft: textSnippet('STM') } });

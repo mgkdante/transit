@@ -90,6 +90,14 @@
 		letter-spacing: var(--tracking-wide);
 		color: var(--muted-foreground);
 		white-space: nowrap;
+		/* A margin annotation, never load-bearing (aria-hidden). Cap each corner to
+		   its own half of the host (minus the two 0.75rem gutters + a 0.75rem gap)
+		   and ellipsize — a long readout (e.g. a full dataset-edition string) then
+		   truncates inside its quadrant instead of overrunning the opposite corner
+		   or the hero content below it. */
+		max-width: calc(50% - 1.5rem);
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.corner-tl {

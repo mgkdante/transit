@@ -165,14 +165,20 @@
 		gap: 0.75rem;
 	}
 	/* A4: when the head carries CornerMeta it becomes the relative host for the
-	   four corner readouts; a top margin band (only where the corners surface,
-	   >=768px) keeps them clear of the breadcrumb/kicker/heading flow. */
+	   four corner readouts; a top AND bottom margin band (only where the corners
+	   surface, >=768px) keeps them clear of the content flow — the top band clears
+	   the breadcrumb/kicker/heading, the bottom band clears the meta row (the map
+	   drilldown / ARRÊT plate) that the bottom corners would otherwise overlap. */
 	.surface-head--cornered {
 		position: relative;
 	}
 	@media (min-width: 768px) {
 		.surface-head--cornered {
 			padding-top: 1.5rem;
+			/* The bottom band must exceed the corner's own footprint (its 0.75rem
+			   inset + its ~0.9rem line-box) so the bottom corner clears the meta row
+			   entirely rather than grazing its baseline. */
+			padding-bottom: 2rem;
 		}
 	}
 

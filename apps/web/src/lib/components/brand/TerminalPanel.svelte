@@ -137,7 +137,11 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 0.75rem;
+		/* Wrap the whole status readout to its own line on narrow titlebars (≈390px)
+		   rather than letting the tag/status squeeze into mid-word breaks ("LI VE").
+		   The row-gap keeps the wrapped status legible under the lead group. */
+		flex-wrap: wrap;
+		gap: 0.25rem 0.75rem;
 		padding: 0.5rem 0.75rem;
 		background: var(--terminal-chrome);
 	}
@@ -161,6 +165,7 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		color: var(--secondary-foreground);
+		white-space: nowrap;
 	}
 
 	.terminal-tag {
@@ -170,6 +175,7 @@
 		font-size: var(--text-micro);
 		background: var(--accent-surface);
 		color: var(--accent-text);
+		white-space: nowrap;
 	}
 
 	.terminal-status,
@@ -177,6 +183,9 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		color: var(--muted-foreground);
+		/* Whole-unit wrap: the status readout reflows to its own titlebar line
+		   rather than breaking mid-word when the 390px titlebar gets tight. */
+		white-space: nowrap;
 	}
 
 	.terminal-body {
