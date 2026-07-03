@@ -120,7 +120,7 @@
 			{@const laneRows = selectLaneRows(dh, laneLabels)}
 			<!-- The accountability envelope: read off data_health first (the live lane's
 			     own stamp), falling back to provenance so it shows on a legacy publish. -->
-			{@const envelope = selectEnvelope(dh, prov as Provenance)}
+			{@const envelope = selectEnvelope(prov as Provenance, dh)}
 			{@const hasEnvelope =
 				envelope.generationId != null ||
 				envelope.schemaVersion != null ||

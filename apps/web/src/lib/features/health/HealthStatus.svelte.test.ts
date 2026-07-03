@@ -133,6 +133,15 @@ const richDataHealth: DataHealth = {
 // repository fetcher the resource was created with), so a test can swap either for
 // a sparse variant before rendering.
 let provenanceFixture: Provenance = richProvenance;
+
+/** A provenance payload predating the PayloadEnvelope fields (legacy publish). */
+function stripEnvelope(prov: Provenance): Provenance {
+	const { schema_version, methodology_version, publish_generation_id, ...rest } = prov;
+	void schema_version;
+	void methodology_version;
+	void publish_generation_id;
+	return rest as Provenance;
+}
 let dataHealthFixture: DataHealth | null = richDataHealth;
 
 vi.mock('$lib/nav', async () => ({ layout: { isDesktop: true } }));
@@ -362,33 +371,36 @@ describe('HealthStatus — S11 pipeline lanes', () => {
 });
 
 describe('HealthStatus — S11 build-accountability envelope', () => {
-	it('renders publish run id + schema + methodology versions from data_health', () => {
+	it('renders the PROVENANCE envelope (the run that produced the page body), never the live stamp', () => {
+		// S11 review F1-web: the copy says the stamp produced everything on this
+		// page; the body (freshness/sources/retention/conformance) is provenance,
+		// so the provenance stamp is primary. The live run's stamp belongs to the
+		// lanes section only.
 		render(HealthStatus);
 		expect(screen.getByText(en.envelope.section)).toBeInTheDocument();
-		// The generation id + its always-visible explanation.
-		expect(screen.getByText('gen-live-abc')).toBeInTheDocument();
-		expect(screen.getByText(en.envelope.generationIdExplain)).toBeInTheDocument();
-		// Schema + methodology versions render by label.
-		const schema = screen
-			.getByText(en.envelope.schemaVersionLabel)
-			.closest('[data-slot="metric-display"]');
-		expect(within(schema as HTMLElement).getByText('1')).toBeInTheDocument();
-		const method = screen
-			.getByText(en.envelope.methodologyVersionLabel)
-			.closest('[data-slot="metric-display"]');
-		expect(within(method as HTMLElement).getByText('live-1')).toBeInTheDocument();
-	});
-
-	it('falls back to provenance envelope fields when data_health lacks them', () => {
-		// data_health present but with NO envelope fields → the selector fills each
-		// field from provenance (the legacy source), so the section still renders.
-		dataHealthFixture = { generated_utc: iso('2026-06-19T12:00:00Z'), lanes: richDataHealth.lanes };
-		render(HealthStatus);
 		expect(screen.getByText('gen-prov-xyz')).toBeInTheDocument();
+		expect(screen.queryByText('gen-live-abc')).toBeNull();
+		expect(screen.getByText(en.envelope.generationIdExplain)).toBeInTheDocument();
 		const schema = screen
 			.getByText(en.envelope.schemaVersionLabel)
 			.closest('[data-slot="metric-display"]');
 		expect(within(schema as HTMLElement).getByText('3')).toBeInTheDocument();
+		const method = screen
+			.getByText(en.envelope.methodologyVersionLabel)
+			.closest('[data-slot="metric-display"]');
+		expect(within(method as HTMLElement).getByText('historic-2')).toBeInTheDocument();
+	});
+
+	it('falls back to data_health envelope fields when provenance lacks them', () => {
+		// A provenance payload predating the envelope fields → the selector fills
+		// each field from data_health, so the section still renders.
+		provenanceFixture = stripEnvelope(richProvenance);
+		render(HealthStatus);
+		expect(screen.getByText('gen-live-abc')).toBeInTheDocument();
+		const schema = screen
+			.getByText(en.envelope.schemaVersionLabel)
+			.closest('[data-slot="metric-display"]');
+		expect(within(schema as HTMLElement).getByText('1')).toBeInTheDocument();
 	});
 
 	it('renders the styled honest-absence for envelope fields absent from BOTH sources', () => {

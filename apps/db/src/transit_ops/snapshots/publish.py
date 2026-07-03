@@ -370,6 +370,7 @@ def _publish_live(
     provider_id: str,
     settings: object,
     gate_report: object | None = None,
+    gen: str | None = None,
 ) -> list[str]:
     """Build and upload all live-tier snapshot files; return the list of keys written.
 
@@ -377,8 +378,14 @@ def _publish_live(
     live tier is WARN-ONLY (enforced with force=True by the caller) so a transient blip
     never aborts the ~57s cycle and blinds the map. Files upload sequentially in list
     order, manifest last.
+
+    *gen* is the cycle's ONE publish stamp: the caller threads the same value it
+    persists to snapshot_publish_state, so the manifest, envelope stamps, gate
+    report, and the data-health lane row can never disagree by a second-boundary
+    (S11 review F1 — two independent utc_now() reads used to race the clock).
     """
-    gen = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
+    if gen is None:
+        gen = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     items = _build_live_items(conn, provider_id=provider_id, settings=settings, gen=gen)
     _stamp_envelope(items, provider_id=provider_id, stamp=gen)  # GC2 H4
     if gate_report is not None:
@@ -760,8 +767,15 @@ def publish_snapshot(
         with engine.begin() as conn:  # type: ignore[attr-defined]
             gen = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
             live_report = gate.new_report(provider_id, tier, gen) if gate_enabled else None
+            # ONE stamp per cycle: the same gen flows into the payload build (manifest
+            # + envelope) AND the state row below (S11 review F1).
             keys = _publish_live(
-                conn, storage, provider_id=provider_id, settings=settings, gate_report=live_report
+                conn,
+                storage,
+                provider_id=provider_id,
+                settings=settings,
+                gate_report=live_report,
+                gen=gen,
             )
             # Persist the live lane's last publish + gate outcome. Unlike static/
             # historic this row is NOT hash-gate bookkeeping (live is un-gated) — it

@@ -27,10 +27,14 @@ export interface EnvelopeView {
 
 /**
  * Read the envelope off the FIRST source that carries a value for each field,
- * preferring the data-health doc (the live lane's own stamp) then falling back to
- * provenance — so /status still shows the envelope on a legacy publish with no
- * data_health. Each field independently falls back, so a partial payload never
- * blanks a field another source could fill.
+ * preferring PROVENANCE (the daily run that produced the page BODY the reader is
+ * looking at — freshness, sources, retention, conformance all come from it), then
+ * falling back to data_health so the section still renders when a provenance
+ * payload predates the envelope fields. Showing the live-cycle stamp here would be
+ * a false honesty claim: the copy says the stamp produced everything on the page
+ * (S11 review F1-web). The live run's own stamp lives in the lanes section. Each
+ * field independently falls back, so a partial payload never blanks a field
+ * another source could fill.
  */
 export function selectEnvelope(
 	primary: EnvelopeBearing | null | undefined,
