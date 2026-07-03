@@ -330,10 +330,15 @@ UPSERT_ROUTE_CANCELLATION_DAILY = named_query(
         GROUP BY f.provider_id, f.route_id, f.trip_id, f.start_date
     ),
     obs AS (
-        -- RT-observed counts per route — BYTE-IDENTICAL to the pre-H1 SELECT.
-        -- total/canceled/rate keep their RT-observed semantics unchanged; the
-        -- scheduled FULL JOIN below only ADDS columns + sch-only dark rows, it never
-        -- filters or mutates this CTE (rows with obs stay byte-identical, FIX-4).
+        -- RT-observed counts per route. The aggregation SHAPE is byte-identical to the
+        -- pre-H1 SELECT (same COUNT / FILTER / rate formula); total/canceled/rate keep
+        -- their RT-observed DEFINITION. What shifts is the universe underneath: on
+        -- cross-midnight routes the trip_day CTE now excludes the mis-attributed
+        -- neighbouring-service-day tail, so total_trip_days (and the rate derived from
+        -- it) is CORRECTED — not bit-identical to the old value, just self-consistent
+        -- with the scheduled denominator it now shares. The scheduled FULL JOIN below
+        -- only ADDS columns + sch-only dark rows; it never filters or mutates this CTE
+        -- (rows that already have an obs match keep this aggregate's value, FIX-4).
         SELECT
             provider_id,
             route_id,
