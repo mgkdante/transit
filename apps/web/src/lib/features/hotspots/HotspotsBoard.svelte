@@ -178,6 +178,25 @@
 
 	const activeLadder = $derived(ladders.get(grainKey));
 
+	// §C5.10 #1-HOTSPOT CALLOUT: the already-computed otp_delta_pts of the WORST-ranked
+	// cell, finally SHOWN as the headline reading above the ladder. entries[] is DB-ranked
+	// worst-first (cross-kind), so entries[0] is the #1 hotspot. A null delta reads the
+	// name-only sentence (honest absence — never a fabricated loss); an empty ladder reads
+	// the stand-down line.
+	const topHotspot = $derived<HotspotEntry | null>(activeLadder?.entries?.[0] ?? null);
+	const topHotspotName = $derived(
+		topHotspot ? (topHotspot.name ?? t.unnamed(topHotspot.id)) : null,
+	);
+	const verdictLine = $derived.by<string>(() => {
+		if (!topHotspot || topHotspotName == null) return t.verdict.none;
+		const d = topHotspot.otp_delta_pts;
+		if (d == null) return t.verdict.topNoDelta(topHotspotName);
+		// otp_delta_pts is signed loss in points; show its magnitude with the deltaLost voice.
+		const pts = `${Math.abs(Math.round(d))}${t.units.pts}`;
+		return t.verdict.topWithDelta(topHotspotName, pts);
+	});
+	const topHotspotHref = $derived(topHotspot ? hrefFor(topHotspot) : null);
+
 	// WEB2: entries[] is a MIXED route+stop array ranked PER KIND. The section renders one
 	// TAB per kind, so build a ladder for EACH kind by filtering entries[] by type
 	// losslessly. shown/total per kind uses the DB's per-kind ranked totals
@@ -261,6 +280,17 @@
 					<Separator variant="hazard" hazardSize="sm" />
 				{/if}
 
+				<!-- §C5.10 verdict line + #1-hotspot callout ABOVE the ladder: the
+				     already-computed otp_delta_pts, finally shown as the headline reading. The
+				     #1 name links to its detail page when it maps to a route/stop. -->
+				<div class="hotspots-verdict" data-slot="hotspots-verdict" aria-label={t.verdict.label}>
+					{#if topHotspotHref}
+						<a class="hotspots-verdict-line" href={topHotspotHref}>{verdictLine}</a>
+					{:else}
+						<p class="hotspots-verdict-line">{verdictLine}</p>
+					{/if}
+				</div>
+
 				<!-- ONE ladder section (the single-provider network — see the per-city fork
 				     note above), split into route|stop TABS (WEB2). When the DB adds a
 				     per-cell city, this becomes a loop over the served city labels. -->
@@ -298,6 +328,31 @@
 		font-size: var(--text-small);
 		line-height: 1.4;
 		color: var(--muted-foreground);
+	}
+	/* §C5.10 #1-hotspot callout: the headline reading above the ladder. Reads at
+	   foreground weight so the worst spot is impossible to miss; a linked #1 hovers to
+	   the interactive accent. */
+	.hotspots-verdict-line {
+		display: inline-block;
+		margin: 0;
+		max-width: 60ch;
+		font-family: var(--font-body);
+		font-size: var(--text-subheading);
+		line-height: 1.45;
+		color: var(--foreground);
+		text-decoration: none;
+	}
+	a.hotspots-verdict-line {
+		border-bottom: 1px solid transparent;
+		transition: border-color var(--duration-fast) var(--ease-default);
+	}
+	a.hotspots-verdict-line:hover,
+	a.hotspots-verdict-line:focus-visible {
+		border-bottom-color: var(--primary);
+	}
+	a.hotspots-verdict-line:focus-visible {
+		outline: 2px solid var(--primary);
+		outline-offset: 2px;
 	}
 	/* The honest empty state wraps the styled AbsentValue block; the container centers it. */
 	.hotspots-note {

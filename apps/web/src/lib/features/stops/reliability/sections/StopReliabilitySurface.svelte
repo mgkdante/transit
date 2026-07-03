@@ -40,6 +40,8 @@
 	import { DashboardGrid, ControlsRail } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import { VerdictBanner } from '$lib/components/brand';
+	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -201,6 +203,23 @@
 	);
 	const dayPercentiles = $derived(selectDayPercentiles(data.periods, grain));
 
+	// §C5.6 one-line reliability verdict at the TOP of the Reliability pane — the SHARED
+	// VerdictBanner + selectVerdict at stop scope, off the selected-grain period's own
+	// otp_pct + observation_count (the Wilson hedge rides the real n; selectVerdict
+	// derives the numerator from otp×n honestly when no explicit on_time is served). The
+	// pipeline emits one period per grain → read the last matching row; a null otp stands
+	// the band down to "still measuring" (never a fabricated verdict).
+	const gradedPeriodRaw = $derived.by(() => {
+		const rows = (data.periods ?? []).filter((p) => p.grain === grain);
+		return rows.length > 0 ? rows[rows.length - 1] : null;
+	});
+	const stopVerdictHeadline = $derived<VerdictHeadline>({
+		otpPct: gradedPeriodRaw?.otp_pct ?? null,
+		observationCount: gradedPeriodRaw?.observation_count ?? null,
+		onTime: null,
+	});
+	const stopVerdict = $derived(selectVerdict(stopVerdictHeadline, grain, locale, copy.verdict));
+
 	const fmtMin = (v: number | null): string =>
 		fmtDelayMin(v, { rounding: 'fixed1', noData: copy.noDelay });
 	const rankedRoutes = $derived(selectRankedRoutes(data.by_route, fmtMin));
@@ -327,6 +346,8 @@
 						{@render metricInfo('severe', copy.metrics.severe)}
 					{/snippet}
 				</SectionHeading>
+				<!-- §C5.6: the one-line reliability verdict at the top of the pane. -->
+				<VerdictBanner result={stopVerdict} />
 				<ReliabilityPane periods={gradedPeriods} {locale} />
 			</div>
 		{/if}

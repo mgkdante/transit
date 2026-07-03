@@ -112,6 +112,28 @@ export interface ReceiptCopy extends SurfaceHeadCopy {
 		readonly min: string;
 		readonly pts: string;
 	};
+	/**
+	 * §C5.11 day-verdict sentence on the headline — templated ONLY from numbers already
+	 * present on the receipt (worst line + affected share + completeness). NO fabricated
+	 * baseline: when the S13 completeness cuts stand down (ramp-in), the verdict says
+	 * exactly that. The `worst` clause is omitted when no worst line is served.
+	 */
+	readonly dayVerdict: {
+		/** Accessible name for the verdict line. */
+		readonly label: string;
+		/** Lead reading of the day's on-time %. */
+		readonly otp: (otpPct: string) => string;
+		/** Worst-line clause (name + on-time points lost). */
+		readonly worst: (name: string, deltaPts: string) => string;
+		/** Affected-lines clause (count of lines touched). */
+		readonly affected: (lines: string) => string;
+		/** Completeness clause when the service-state cut is live. */
+		readonly completeness: (pct: string) => string;
+		/** Honest stand-down clause when the completeness cut is absent (ramp-in). */
+		readonly completenessStandDown: string;
+		/** Whole-verdict stand-down when the receipt carries no readable headline. */
+		readonly none: string;
+	};
 }
 
 export const copy: Record<Locale, ReceiptCopy> = {
@@ -188,6 +210,15 @@ export const copy: Record<Locale, ReceiptCopy> = {
 			min: ' min',
 			pts: ' pts',
 		},
+		dayVerdict: {
+			label: 'Day verdict',
+			otp: (otpPct) => `The network ran on time ${otpPct} of the time that day`,
+			worst: (name, deltaPts) => `worst line ${name} (${deltaPts} lost)`,
+			affected: (lines) => `${lines} lines affected`,
+			completeness: (pct) => `service delivered at ${pct}`,
+			completenessStandDown: 'service completeness not yet available',
+			none: 'No overall reading for this day.',
+		},
 	},
 	fr: {
 		kicker: 'IMPUTABILITÉ · QUOTIDIEN',
@@ -263,6 +294,15 @@ export const copy: Record<Locale, ReceiptCopy> = {
 			pct: '%',
 			min: ' min',
 			pts: ' pts',
+		},
+		dayVerdict: {
+			label: 'Verdict du jour',
+			otp: (otpPct) => `Le réseau a été à l’heure ${otpPct} ce jour-là`,
+			worst: (name, deltaPts) => `pire ligne ${name} (${deltaPts} pts perdus)`,
+			affected: (lines) => `${lines} lignes touchées`,
+			completeness: (pct) => `service assuré à ${pct}`,
+			completenessStandDown: 'complétude du service pas encore disponible',
+			none: 'Aucune lecture d’ensemble pour ce jour.',
 		},
 	},
 };

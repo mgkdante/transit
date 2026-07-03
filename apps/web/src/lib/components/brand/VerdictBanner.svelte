@@ -1,6 +1,9 @@
 <!--
-  VerdictBanner — the §0 at-a-glance answer: a big-aggregate number (BAN) coloured by the
+  VerdictBanner — the at-a-glance answer: a big-aggregate number (BAN) coloured by the
   reliability band, beside the plain-language two-sided verdict sentence.
+
+  A shared brand primitive (hoisted from lines §0 so lines index / line detail / stop
+  detail / network all reuse the ONE verdict presenter without a cross-feature import).
 
   TEXT-LED by design (research pass-2): the sentence carries the probability content (the
   Deterministic Construal Error — readers get the number right 94% as text vs ~36% from any
@@ -8,10 +11,10 @@
   the sentence once). The band colour rides the dataviz STATUS scale (never --primary) and is
   ALWAYS paired with the band word in the sentence — colour is never the sole channel
   (WCAG 1.4.1). When there's no percentage to read the verdict says "still measuring" with no
-  BAN, so this doubles as §0's honest empty state.
+  BAN, so this doubles as the honest empty state.
 -->
 <script lang="ts">
-	import type { VerdictResult } from '../selectors/verdict';
+	import type { VerdictResult } from '$lib/v1/verdict';
 
 	let { result }: { result: VerdictResult } = $props();
 

@@ -204,6 +204,34 @@
 			fmtSharePct,
 		}),
 	);
+	// §C5.11 DAY-VERDICT SENTENCE — templated ONLY from numbers already on the receipt
+	// (on-time % · worst line + its on-time loss · affected lines · completeness), NEVER a
+	// fabricated baseline: a null on-time → the whole-verdict stand-down; a null worst
+	// line drops that clause; and when the S13 completeness cut stands down (ramp-in) the
+	// sentence SAYS so ("service completeness not yet available") instead of inventing one.
+	const dayVerdict = $derived.by<string | null>(() => {
+		const r = receipt.data;
+		if (r == null) return null;
+		if (r.otp_pct == null) return t.dayVerdict.none;
+		const clauses: string[] = [t.dayVerdict.otp(`${r.otp_pct}${t.units.pct}`)];
+		const wr = r.worst_route;
+		if (wr?.name != null && wr.otp_delta_pts != null) {
+			const pts = `${Math.abs(Math.round(wr.otp_delta_pts))}${t.units.pts}`;
+			clauses.push(t.dayVerdict.worst(wr.name, pts));
+		}
+		if (r.affected_routes != null)
+			clauses.push(t.dayVerdict.affected(fmtCount(r.affected_routes) ?? `${r.affected_routes}`));
+		// Completeness: the ONE service_completeness_pct if the S13 cut is live, else the
+		// honest stand-down (never a fabricated baseline during the GC2 ramp).
+		const comp = r.service_states?.service_completeness_pct ?? null;
+		clauses.push(
+			comp != null
+				? t.dayVerdict.completeness(fmtSharePct(comp) ?? `${comp}${t.units.pct}`)
+				: t.dayVerdict.completenessStandDown,
+		);
+		return `${clauses.join(' · ')}.`;
+	});
+
 	const notReported = $derived(
 		selectNotReportedLines(receipt.data?.service_states, {
 			routeName: (id, name) => name ?? routeNameFallback(id, locale),
@@ -280,6 +308,18 @@
 					     desktop, one column mobile). The worst tile stands DOWN entirely when
 					     the receipt carries no worst line/stop — the grid reflows past it. -->
 					<div class="receipt-frame" data-slot="receipt-frame">
+						<!-- §C5.11: the day-verdict sentence on the headline — the day in one line,
+						     templated from the receipt's own numbers (honest stand-down, no fabricated
+						     baseline). -->
+						{#if dayVerdict}
+							<p
+								class="receipt-day-verdict"
+								data-slot="receipt-day-verdict"
+								aria-label={t.dayVerdict.label}
+							>
+								{dayVerdict}
+							</p>
+						{/if}
 						<div class="receipt-layout" class:no-worst={!worst.hasWorst} data-slot="receipt-layout">
 							<SectionHeadline
 								kpis={headlineKpis}
@@ -354,6 +394,16 @@
 	.receipt-frame {
 		container-type: inline-size;
 		container-name: receipt;
+	}
+	/* §C5.11 day-verdict sentence — the day in one line, at foreground weight so it reads
+	   as the headline before the tile figures. Capped for readability. */
+	.receipt-day-verdict {
+		margin: 0 0 1rem;
+		max-width: 64ch;
+		font-family: var(--font-body);
+		font-size: var(--text-subheading);
+		line-height: 1.45;
+		color: var(--foreground);
 	}
 	.receipt-layout {
 		display: grid;

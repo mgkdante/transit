@@ -114,12 +114,15 @@ describe('HotspotsBoard — S12 re-seat', () => {
 
 	it('deep-links a ranked route/stop entry to its detail page (per-kind tabs)', async () => {
 		render(HotspotsBoard);
+		// Scope to the ladder section — the §C5.10 #1-hotspot callout above the ladder
+		// also names + links the worst entry, so a bare screen query would be ambiguous.
+		const section = document.querySelector('[data-slot="hotspot-section"]') as HTMLElement;
 		// The default (route) tab is the accessible pane → route 51 links to /lines/51.
-		expect(screen.getByRole('link', { name: /51/ })).toHaveAttribute('href', '/lines/51');
+		expect(within(section).getByRole('link', { name: /51/ })).toHaveAttribute('href', '/lines/51');
 		// Activate the Stop tab (the inactive pane is `hidden`, so out of the a11y tree) →
 		// the S1 stop entry links to /stop/S1.
 		await fireEvent.click(screen.getByRole('tab', { name: 'Stop' }));
-		const stop = screen.getByRole('link', { name: /Berri-UQAM/ });
+		const stop = within(section).getByRole('link', { name: /Berri-UQAM/ });
 		expect(stop).toHaveAttribute('href', '/stop/S1');
 	});
 
@@ -147,10 +150,15 @@ describe('HotspotsBoard — S12 re-seat', () => {
 	it('seeds the grain rail from ?grain=week (a different ladder than the day default)', () => {
 		mockUrl = new URL('http://localhost/hotspots?grain=week');
 		render(HotspotsBoard);
+		// Scope to the ladder section (the #1-hotspot callout above it also links the worst).
+		const section = document.querySelector('[data-slot="hotspot-section"]') as HTMLElement;
 		// The week ladder ranks Van Horne (161) worst — its link resolves to /lines/161.
-		expect(screen.getByRole('link', { name: /Van Horne/ })).toHaveAttribute('href', '/lines/161');
+		expect(within(section).getByRole('link', { name: /Van Horne/ })).toHaveAttribute(
+			'href',
+			'/lines/161',
+		);
 		// The day-grain stop entry is NOT shown on the week grain.
-		expect(screen.queryByRole('link', { name: /Berri-UQAM/ })).toBeNull();
+		expect(within(section).queryByRole('link', { name: /Berri-UQAM/ })).toBeNull();
 	});
 
 	it('mirrors a grain change to ?grain and OMITS the day default (clean canonical URL)', async () => {

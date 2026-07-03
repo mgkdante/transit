@@ -55,3 +55,5 @@ export type { CornerMetaLabels } from './cornerMeta.copy';
 
 export { default as StickyPanel } from './StickyPanel.svelte';
 export type { StickyPanelProps } from './StickyPanel.svelte';
+
+export { default as VerdictBanner } from './VerdictBanner.svelte';

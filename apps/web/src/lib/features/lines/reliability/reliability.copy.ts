@@ -14,6 +14,11 @@
 //   - controls{}   — the grain control-spine labels + the active-window caption.
 
 import type { Locale } from '$lib/i18n';
+// The verdict copy shape is now the shared $lib/v1 kernel (hoisted so every OTP-headline
+// surface reuses the ONE verdict engine); re-export VerdictSentenceArgs for the callers
+// that still reference it from here.
+import type { VerdictCopy, VerdictSentenceArgs } from '$lib/v1/verdict';
+export type { VerdictSentenceArgs };
 
 /** The five cluster keys, in surface order. */
 export type ReliabilityClusterKey =
@@ -22,15 +27,6 @@ export type ReliabilityClusterKey =
 	| 'serviceDelivered'
 	| 'crowding'
 	| 'habits';
-
-/** The computed numbers a §0 verdict band sentence interpolates (two-sided natural frequency). */
-export interface VerdictSentenceArgs {
-	readonly window: string;
-	readonly onTen: number;
-	readonly lateTen: number;
-	/** The numeric hedge clause, e.g. " (78%, 95% sure between 71 and 84%)" or " (78%)". */
-	readonly hedge: string;
-}
 
 export interface ReliabilityCopy {
 	/** Numbered cluster overlines ('01 Punctuality' / '01 Ponctualité' …). */
@@ -319,28 +315,7 @@ export interface ReliabilityCopy {
 		readonly detailHide: string;
 	};
 	/** §0 plain-language reliability verdict (text-led, two-sided, numerically hedged). */
-	readonly verdict: {
-		readonly windowPhrase: {
-			readonly day: string;
-			readonly week: string;
-			readonly month: string;
-			readonly range: string;
-		};
-		readonly reliable: (a: VerdictSentenceArgs) => string;
-		readonly patchy: (a: VerdictSentenceArgs) => string;
-		readonly unreliable: (a: VerdictSentenceArgs) => string;
-		readonly tentative: (a: {
-			readonly window: string;
-			readonly otp: number;
-			readonly n: number;
-			readonly lo: number;
-			readonly hi: number;
-		}) => string;
-		readonly tooFew: (window: string, n: number) => string;
-		readonly absent: string;
-		readonly hedgeSimple: (otp: number) => string;
-		readonly hedgeCI: (otp: number, lo: number, hi: number) => string;
-	};
+	readonly verdict: VerdictCopy;
 }
 
 export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {

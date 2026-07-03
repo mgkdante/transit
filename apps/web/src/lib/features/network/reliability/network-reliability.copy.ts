@@ -10,6 +10,7 @@
 
 import type { Locale } from '$lib/i18n';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
+import type { VerdictCopy } from '$lib/v1/verdict';
 
 export interface NetworkReliabilityCopy extends SurfaceHeadCopy {
 	/** D3: the TerminalPanel framing the LIVE control-room band. */
@@ -192,6 +193,22 @@ export interface NetworkReliabilityCopy extends SurfaceHeadCopy {
 		readonly pct: string;
 		readonly min: string;
 	};
+	/**
+	 * §0 network verdict band (§C5.7) — the plain-language at-a-glance answer between the
+	 * LIVE and HISTORIC regions, rendered through the SHARED VerdictBanner + selectVerdict.
+	 * The live tier carries no OTP trip-day denominator, so the sentence reads WITHOUT a
+	 * Wilson hedge (the honest pre-republish path) — never a fabricated confidence.
+	 */
+	readonly verdict: VerdictCopy;
+	/** The network verdict band's Δ-vs-prior chip (§C6 #3) — latest vs prior trend day. */
+	readonly verdictDelta: {
+		/** Accessible name for the verdict band section. */
+		readonly label: string;
+		/** The chip text builder: signed points vs the prior day (e.g. "+3 pts vs prior day"). */
+		readonly chip: (signedPts: string) => string;
+		/** a11y prefix for the chip. */
+		readonly a11y: string;
+	};
 }
 
 export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
@@ -288,6 +305,31 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		window: { label: 'Trend window', d7: '7d', d30: '30d', d90: '90d' },
 		noData: 'no data',
 		units: { pct: '%', min: ' min' },
+		verdict: {
+			windowPhrase: {
+				day: 'right now',
+				week: 'right now',
+				month: 'right now',
+				range: 'right now',
+			},
+			reliable: ({ window, onTen, lateTen, hedge }) =>
+				`The network is running reliably ${window}, about ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
+			patchy: ({ window, onTen, lateTen, hedge }) =>
+				`The network is running unevenly ${window}, about ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
+			unreliable: ({ window, onTen, lateTen, hedge }) =>
+				`The network is running poorly ${window}, only ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
+			tentative: ({ window, otp, n, lo, hi }) =>
+				`About ${otp}% of trips on time ${window} (95% sure between ${lo} and ${hi}%, n=${n}).`,
+			tooFew: (window, n) => `Still measuring ${window}, only ${n} trips tracked so far.`,
+			absent: 'Still measuring the network. No live on-time reading yet.',
+			hedgeSimple: (otp) => ` (${otp}%)`,
+			hedgeCI: (otp, lo, hi) => ` (${otp}%, 95% sure between ${lo} and ${hi}%)`,
+		},
+		verdictDelta: {
+			label: 'Network verdict',
+			chip: (signedPts) => `${signedPts} vs prior day`,
+			a11y: 'Change versus the prior day:',
+		},
 	},
 	fr: {
 		kicker: 'RÉSEAU · EN DIRECT',
@@ -387,5 +429,30 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		window: { label: 'Fenêtre de tendance', d7: '7 j', d30: '30 j', d90: '90 j' },
 		noData: 'aucune donnée',
 		units: { pct: '%', min: ' min' },
+		verdict: {
+			windowPhrase: {
+				day: 'en ce moment',
+				week: 'en ce moment',
+				month: 'en ce moment',
+				range: 'en ce moment',
+			},
+			reliable: ({ window, onTen, lateTen, hedge }) =>
+				`Le réseau est fiable ${window}, environ ${onTen} trajets sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
+			patchy: ({ window, onTen, lateTen, hedge }) =>
+				`Le réseau est inégal ${window}, environ ${onTen} trajets sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
+			unreliable: ({ window, onTen, lateTen, hedge }) =>
+				`Le réseau est peu fiable ${window}, seulement ${onTen} trajets sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
+			tentative: ({ window, otp, n, lo, hi }) =>
+				`Environ ${otp} % des trajets à l’heure ${window} (sûr à 95 % entre ${lo} et ${hi} %, n=${n}).`,
+			tooFew: (window, n) => `Mesure en cours ${window}, seulement ${n} trajets suivis jusqu’ici.`,
+			absent: 'Mesure du réseau en cours. Pas encore de ponctualité en direct.',
+			hedgeSimple: (otp) => ` (${otp} %)`,
+			hedgeCI: (otp, lo, hi) => ` (${otp} %, sûr à 95 % entre ${lo} et ${hi} %)`,
+		},
+		verdictDelta: {
+			label: 'Verdict du réseau',
+			chip: (signedPts) => `${signedPts} vs la veille`,
+			a11y: 'Variation par rapport à la veille :',
+		},
 	},
 };

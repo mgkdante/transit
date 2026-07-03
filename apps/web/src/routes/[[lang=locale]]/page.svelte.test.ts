@@ -56,7 +56,13 @@ vi.mock('$lib/nav', async () => {
 });
 
 vi.mock('$lib/v1', async () => {
+	// otpVerdict is a pure 90/75-floor mapper the pulse tiles use for the verdict word;
+	// re-export the real implementation so the tone reads honestly under test.
+	const { otpVerdict } = await vi.importActual<typeof import('$lib/v1/reliabilityVerdict')>(
+		'$lib/v1/reliabilityVerdict',
+	);
 	return {
+		otpVerdict,
 		getV1Context: () => ({ manifest, labels: {}, lang: state.locale }),
 		createLiveStore: () => ({
 			vehicles: null,
@@ -123,8 +129,11 @@ describe('Home hub — live pulse honesty', () => {
 		state.network = null;
 		render(Page);
 		const board = screen.getByRole('list', { name: /the network, right now/i });
-		// Every headline reads the honest no-data glyph; no fabricated 0 / 0%.
-		expect(within(board).getAllByText('no data').length).toBeGreaterThanOrEqual(4);
+		// Every headline stands down to the STYLED honest-absence chip (§C5.1 upgrade:
+		// the flagship page speaks the site's own absence language), never a fabricated
+		// 0 / 0%. The 'not-reported' reason reads "not reported in the live feed".
+		expect(board.querySelectorAll('[data-slot="absent-value"]')).toHaveLength(4);
+		expect(within(board).getAllByText(/not reported in the live feed/i).length).toBe(4);
 		expect(within(board).queryByText('0%')).toBeNull();
 		expect(within(board).queryByText('0')).toBeNull();
 		// The pulse verdict reads STANDBY when the live tier is absent (the terminal
@@ -172,15 +181,15 @@ describe('Home hub — live pulse honesty', () => {
 		expect(within(board).getByRole('button', { name: /About Coverage/i })).toBeInTheDocument();
 	});
 
-	it('renders the muted no-data state on each pulse tile when a metric is null', () => {
+	it('renders the styled honest-absence chip on each pulse tile when a metric is null', () => {
 		state.network = null;
 		render(Page);
 		const board = screen.getByRole('list', { name: /the network, right now/i });
-		// MetricDisplay's emptyLabel branch: a null value reads the muted no-data
-		// caption (data-slot="metric-empty"), never the amber value voice or a 0.
-		const empties = board.querySelectorAll('[data-slot="metric-empty"]');
+		// §C5.1 upgrade: a null value reads the styled AbsentValue chip (calm "Unknown"
+		// tone + the WHY), never the amber value voice, a fabricated 0, or a bare glyph.
+		const empties = board.querySelectorAll('[data-slot="absent-value"]');
 		expect(empties).toHaveLength(4);
-		for (const el of empties) expect(el.textContent).toBe('no data');
+		for (const el of empties) expect(el.textContent).toMatch(/not reported in the live feed/i);
 	});
 });
 

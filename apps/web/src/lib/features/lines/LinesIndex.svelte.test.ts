@@ -26,6 +26,11 @@ const ROUTES = [
 vi.mock('$lib/v1', () => ({
 	getRoutesIndex: vi.fn(),
 	isProblemVerdict: (v: string | null) => v === 'late' || v === 'severe',
+	// The network verdict band (§C5.3): a null-network live store → the band stands down
+	// to the honest "still measuring" empty. selectVerdict is stubbed to the absent shape.
+	getV1Context: () => ({ manifest: { provider: 'demo', files: {} }, labels: {}, lang: 'en' }),
+	createLiveStore: () => ({ network: null, start: () => {}, stop: () => {} }),
+	selectVerdict: () => ({ status: 'absent', ban: null, sentence: 'Still measuring.' }),
 	createReliabilityLoader: () => ({
 		get: (id: string) => snapshots.get(id) ?? snap({}),
 		request: (target: string | { id: string; known?: boolean }) =>

@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { selectVerdict, wilsonInterval } from './verdict';
-import { reliabilityCopy } from '../reliability.copy';
+import { reliabilityCopy } from '$lib/features/lines/reliability/reliability.copy';
 
-const en = reliabilityCopy.en;
-const fr = reliabilityCopy.fr;
+// The lines reliability copy still satisfies VerdictCopy structurally, so it exercises
+// the hoisted engine against the canonical line-detail voice (the sentence assertions
+// below are byte-identical to the pre-hoist behaviour).
+const en = reliabilityCopy.en.verdict;
+const fr = reliabilityCopy.fr.verdict;
 
 const h = (
 	otpPct: number | null,

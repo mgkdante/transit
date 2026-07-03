@@ -1,9 +1,16 @@
-// verdict.ts — the §0 plain-language reliability verdict (the page's at-a-glance answer).
+// verdict.ts — the plain-language reliability verdict (a surface's at-a-glance answer).
+//
+// The §0 line-detail verdict selector, hoisted to $lib so every surface that owns an
+// OTP headline (lines index network-band, line detail, stop detail, /network §0) can
+// reuse the ONE verdict engine + the ONE VerdictBanner presenter without a
+// cross-feature import (the crossFeatureImports gate keeps features/ leaf-isolated —
+// shared kernels live here). The lines reliability copy still satisfies VerdictCopy
+// structurally, so nothing about the line-detail voice changes.
 //
 // Research-driven (S7 pass-2): the verdict is TEXT-LED (the Deterministic Construal
-// Error — text reads 94% correct vs ~36% for any probability graphic) and is the page's
-// honesty failure point (84% of misleading dashboards mislead via the reasoning, not the
-// marks). So this selector is deliberately conservative + n-aware:
+// Error — text reads 94% correct vs ~36% for any probability graphic) and is the
+// honesty failure point (84% of misleading dashboards mislead via the reasoning, not
+// the marks). So this selector is deliberately conservative + n-aware:
 //
 //   • two-sided natural frequency  ("about 8 in 10 trips on time … 2 in 10 late")
 //   • a numeric (not verbal) hedge ("78%, 95% sure between 71 and 84%")
@@ -20,7 +27,6 @@
 
 import type { Locale } from '$lib/i18n';
 import { wilsonBoundsProportion } from '$lib/v1/stats';
-import type { ReliabilityCopy } from '../reliability.copy';
 
 export type VerdictStatus = 'reliable' | 'patchy' | 'unreliable' | 'tentative' | 'absent';
 
@@ -32,11 +38,50 @@ export interface VerdictResult {
 	readonly sentence: string;
 }
 
-/** The headline fields the verdict reads (a subset of PunctualityVM['headline']). */
+/** The headline fields the verdict reads (a subset of a surface's headline VM). */
 export interface VerdictHeadline {
 	readonly otpPct: number | null;
 	readonly observationCount: number | null;
 	readonly onTime: number | null;
+}
+
+/** The computed numbers a verdict band sentence interpolates (two-sided natural frequency). */
+export interface VerdictSentenceArgs {
+	readonly window: string;
+	readonly onTen: number;
+	readonly lateTen: number;
+	/** The numeric hedge clause, e.g. " (78%, 95% sure between 71 and 84%)" or " (78%)". */
+	readonly hedge: string;
+}
+
+/**
+ * The bilingual copy a verdict band interpolates — the ONE shape `selectVerdict`
+ * reads. The lines `ReliabilityCopy['verdict']` bundle satisfies this structurally
+ * (so the line-detail voice is byte-identical); network + stop supply their own
+ * scope-specific bundle of the SAME shape. This is the kernel decoupling that lets the
+ * selector live in $lib without importing any feature's copy.
+ */
+export interface VerdictCopy {
+	readonly windowPhrase: {
+		readonly day: string;
+		readonly week: string;
+		readonly month: string;
+		readonly range: string;
+	};
+	readonly reliable: (a: VerdictSentenceArgs) => string;
+	readonly patchy: (a: VerdictSentenceArgs) => string;
+	readonly unreliable: (a: VerdictSentenceArgs) => string;
+	readonly tentative: (a: {
+		readonly window: string;
+		readonly otp: number;
+		readonly n: number;
+		readonly lo: number;
+		readonly hi: number;
+	}) => string;
+	readonly tooFew: (window: string, n: number) => string;
+	readonly absent: string;
+	readonly hedgeSimple: (otp: number) => string;
+	readonly hedgeCI: (otp: number, lo: number, hi: number) => string;
 }
 
 /** NCHS small-sample suppression floor: below this many tracked arrivals, suppress. */
@@ -71,16 +116,16 @@ const bandOf = (otp: number): 'reliable' | 'patchy' | 'unreliable' =>
 			: 'unreliable';
 
 /**
- * Build the §0 verdict for the selected-window headline.
+ * Build the verdict for the selected-window headline.
  * @param mode the display window (day|week|month|range) — names the window in the sentence.
  */
 export function selectVerdict(
 	headline: VerdictHeadline,
 	mode: string,
 	_locale: Locale,
-	copy: ReliabilityCopy,
+	verdict: VerdictCopy,
 ): VerdictResult {
-	const v = copy.verdict;
+	const v = verdict;
 	const window = v.windowPhrase[asMode(mode)];
 	const otp = headline.otpPct;
 

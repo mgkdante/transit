@@ -49,7 +49,7 @@
 	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { AbsentValue } from '$lib/components/edge';
-	import { RankedRow, ExplainedMetricCard } from '$lib/components/dataviz';
+	import { RankedRow } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { DELAY_DIST_DOMAIN } from '$lib/features/reliability/domains';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -185,6 +185,36 @@
 	const tripLadder = $derived(ladderFor('trip', activeLadder?.total_ranked_trips));
 	const vehicleLadder = $derived(ladderFor('vehicle', activeLadder?.total_ranked_vehicles));
 
+	// §C5.12 #1-OFFENDER HERO: entries[] is DB-ranked worst-first by the Wilson lower
+	// bound, so entries[0] IS the #1 offender. The hero names it + shows its streak
+	// (recurrence natural frequency) + its Wilson-bounded severe rate. Honest: a null rate
+	// / absent bounds degrade the clause (never a fabricated confidence); no entries →
+	// the stand-down line. The bar's Wilson bracket the COMPLEMENTARY not-severe rate, so
+	// flip onto the severe scale ([100−hi, 100−lo]) exactly as the ladder selector does.
+	const topOffender = $derived<RepeatOffenderEntry | null>(activeLadder?.entries?.[0] ?? null);
+	const round1 = (x: number): number => Math.round(x * 10) / 10;
+	const heroName = $derived(topOffender ? (topOffender.route_name ?? unnamed(topOffender)) : null);
+	const heroStreak = $derived.by<string | null>(() => {
+		if (!topOffender) return null;
+		return topOffender.recurrence_days != null && topOffender.observed_days != null
+			? t.recurrence.naturalFrequency(topOffender.recurrence_days, topOffender.observed_days)
+			: t.recurrence.unknown;
+	});
+	const heroRate = $derived.by<string | null>(() => {
+		if (!topOffender) return null;
+		const sev = topOffender.severe_pct;
+		if (sev == null) return null;
+		const ratePct = `${Math.round(sev)}${t.units.pct}`;
+		// Flip the Wilson bounds onto the severe scale (100 − complementary bound).
+		if (topOffender.wilson_lo != null && topOffender.wilson_hi != null) {
+			const lo = round1(100 - topOffender.wilson_hi);
+			const hi = round1(100 - topOffender.wilson_lo);
+			return t.hero.rateWithCi(ratePct, `${lo}`, `${hi}`);
+		}
+		return t.hero.rateNoCi(ratePct);
+	});
+	const heroHref = $derived(topOffender ? hrefFor(topOffender) : null);
+
 	// The VISIBLE natural-frequency recurrence line per shown ranked row ("late-prone on
 	// N of M observed days"), split by kind, honoring the SAME worst-N cap as the ladder
 	// so the recurrence list and the chart stay in lock-step. This is the on-screen
@@ -300,25 +330,42 @@
 	>
 		{#if hasGrains}
 			<section class="repeat-offenders-region" aria-label={t.heading}>
-				<!-- Headline metric tile: what the ladder ranks + the always-visible reading. -->
-				<ExplainedMetricCard
-					label={t.headline.label}
-					value={null}
-					explanation={t.headline.explanation}
-					emptyLabel={t.ladder.heading}
-					{locale}
-					size="md"
-				>
-					{#snippet info()}
-						<MetricInfo
-							tip={severeInfo.tip}
-							href={severeInfo.href}
-							label={severeInfo.label}
-							linkLabel={severeInfo.linkLabel}
-							side="bottom"
-						/>
-					{/snippet}
-				</ExplainedMetricCard>
+				<!-- §C5.12 #1-OFFENDER HERO: the actual worst entity is the hero (name + streak
+				     + Wilson-bounded severe rate), so the page opens on the accountability payoff,
+				     not a definition. The definition demotes to a lede + (i) beneath it. -->
+				<div class="offenders-hero" data-slot="offenders-hero" aria-label={t.hero.label}>
+					{#if topOffender && heroName != null}
+						<span class="offenders-hero-overline">{t.hero.overline}</span>
+						{#if heroHref}
+							<a class="offenders-hero-name" href={heroHref}>{heroName}</a>
+						{:else}
+							<span class="offenders-hero-name">{heroName}</span>
+						{/if}
+						{#if heroRate}
+							<p class="offenders-hero-rate">{heroRate}</p>
+						{/if}
+						{#if heroStreak}
+							<p class="offenders-hero-streak">
+								<span class="offenders-hero-streak-label">{t.hero.streakLabel}</span>
+								{heroStreak}
+							</p>
+						{/if}
+					{:else}
+						<p class="offenders-hero-none">{t.hero.none}</p>
+					{/if}
+				</div>
+
+				<!-- The definition, DEMOTED to a lede + (i) (was the value=null hero). -->
+				<p class="offenders-def" data-slot="offenders-def">
+					{t.headline.explanation}
+					<MetricInfo
+						tip={severeInfo.tip}
+						href={severeInfo.href}
+						label={severeInfo.label}
+						linkLabel={severeInfo.linkLabel}
+						side="bottom"
+					/>
+				</p>
 
 				{#if showGrainPicker}
 					<SurfaceControls
@@ -418,6 +465,79 @@
 		flex-direction: column;
 		gap: 1rem;
 		max-width: 76rem;
+	}
+	/* §C5.12 #1-offender hero — a solid card (occlusion law) leading with the worst
+	   entity's name, its Wilson-bounded severe rate + its streak. */
+	.offenders-hero {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		padding: 1.1rem 1.25rem;
+		border: 2px solid var(--border-rule);
+		border-radius: var(--radius-lg);
+		background: var(--surface-2);
+	}
+	.offenders-hero-overline {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-weight: 600;
+		letter-spacing: var(--tracking-eyebrow);
+		text-transform: uppercase;
+		color: var(--accent-text);
+	}
+	.offenders-hero-name {
+		font-family: var(--font-heading);
+		font-size: var(--text-title);
+		font-weight: 700;
+		line-height: 1.1;
+		letter-spacing: var(--tracking-tight);
+		color: var(--foreground);
+		text-decoration: none;
+	}
+	a.offenders-hero-name {
+		border-bottom: 1px solid transparent;
+		transition: border-color var(--duration-fast) var(--ease-default);
+		width: fit-content;
+	}
+	a.offenders-hero-name:hover,
+	a.offenders-hero-name:focus-visible {
+		border-bottom-color: var(--primary);
+	}
+	a.offenders-hero-name:focus-visible {
+		outline: 2px solid var(--primary);
+		outline-offset: 2px;
+	}
+	.offenders-hero-rate {
+		margin: 0;
+		font-size: var(--text-subheading);
+		line-height: 1.4;
+		color: var(--foreground);
+	}
+	.offenders-hero-streak,
+	.offenders-hero-none {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+	}
+	.offenders-hero-streak-label {
+		text-transform: uppercase;
+		letter-spacing: var(--tracking-eyebrow);
+		color: var(--accent-text);
+		margin-inline-end: 0.375rem;
+	}
+	/* The demoted definition — a quiet lede beneath the hero, with its (i) inline. */
+	.offenders-def {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0;
+		max-width: 72ch;
+		font-size: var(--text-small);
+		line-height: 1.55;
+		color: var(--muted-foreground);
 	}
 	.repeat-offenders-block {
 		display: flex;

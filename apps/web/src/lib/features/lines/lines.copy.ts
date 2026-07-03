@@ -30,6 +30,10 @@ export interface LinesIndexCopy extends SurfaceHeadCopy {
 	readonly statusProblem: string;
 	/** SR caption when the problem filter is on but no line has loaded its verdict yet. */
 	readonly statusPending: string;
+	/** Accessible name for the one-line network verdict band above the grid (§C5.3). */
+	readonly networkVerdictLabel: string;
+	/** Polite caption while the worst-first ranking waits on the visible verdicts to settle. */
+	readonly rankingPending: string;
 }
 
 export interface RouteDetailCopy {
@@ -147,6 +151,8 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		statusAll: 'Toutes',
 		statusProblem: 'En retard',
 		statusPending: 'Chargement de la fiabilité des lignes visibles…',
+		networkVerdictLabel: 'Verdict du réseau',
+		rankingPending: 'Classement des lignes visibles en cours…',
 	},
 	en: {
 		kicker: 'LINES · NETWORK',
@@ -165,6 +171,8 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		statusAll: 'All',
 		statusProblem: 'Late',
 		statusPending: 'Loading reliability for the visible lines…',
+		networkVerdictLabel: 'Network verdict',
+		rankingPending: 'Ranking the visible lines…',
 	},
 };
 

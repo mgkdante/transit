@@ -64,6 +64,20 @@ export interface HotspotsCopy extends SurfaceHeadCopy {
 	};
 	/** OTP-points delta display (points of on-time lost vs baseline) — evidence field. */
 	readonly deltaLost: (pts: string) => string;
+	/**
+	 * §C5.10 verdict callout above the ladder: the #1 hotspot named + its on-time loss,
+	 * so the already-computed otp_delta_pts is finally SHOWN as the headline reading.
+	 */
+	readonly verdict: {
+		/** Accessible label for the callout region. */
+		readonly label: string;
+		/** The #1-hotspot sentence (name + delta) when a delta is present. */
+		readonly topWithDelta: (name: string, deltaPts: string) => string;
+		/** The #1-hotspot sentence when no delta is served (name only — honest absence). */
+		readonly topNoDelta: (name: string) => string;
+		/** Stand-down line when no hotspot ranks (published-empty). */
+		readonly none: string;
+	};
 	/** Mode tag chips by hotspot type (route / stop). */
 	readonly type: {
 		readonly route: string;
@@ -127,6 +141,13 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			samples: 'n',
 		},
 		deltaLost: (pts) => `${pts} pts de ponctualité perdus`,
+		verdict: {
+			label: 'Point chaud n°1',
+			topWithDelta: (name, deltaPts) =>
+				`Pire point chaud : ${name}, ${deltaPts} pts de ponctualité perdus.`,
+			topNoDelta: (name) => `Pire point chaud : ${name}.`,
+			none: 'Aucun point chaud pour l’instant.',
+		},
 		type: {
 			route: 'Ligne',
 			stop: 'Arrêt',
@@ -178,6 +199,12 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			samples: 'n',
 		},
 		deltaLost: (pts) => `${pts} on-time points lost`,
+		verdict: {
+			label: '#1 hotspot',
+			topWithDelta: (name, deltaPts) => `Worst hotspot: ${name}, ${deltaPts} on-time points lost.`,
+			topNoDelta: (name) => `Worst hotspot: ${name}.`,
+			none: 'Nothing is a hotspot right now.',
+		},
 		type: {
 			route: 'Line',
 			stop: 'Stop',

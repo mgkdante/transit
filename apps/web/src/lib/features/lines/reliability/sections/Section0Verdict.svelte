@@ -28,7 +28,7 @@
 	import { MaybeValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
-	import VerdictBanner from './VerdictBanner.svelte';
+	import { VerdictBanner } from '$lib/components/brand';
 	import MetricBullet from './MetricBullet.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -43,7 +43,7 @@
 	} from '$lib/features/reliability/shiftGrains';
 	import { selectPunctualityTrend } from '../selectors/punctualityTrend';
 	import { selectPunctualityDistribution } from '../selectors/punctualityDistribution';
-	import { selectVerdict } from '../selectors/verdict';
+	import { selectVerdict } from '$lib/v1/verdict';
 	import { selectBullet, otpTone } from '../selectors/bullet';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
@@ -63,7 +63,7 @@
 	// The trend re-shapes on the calendar grain; a date range zooms the day series.
 	const grain = $derived(mode === 'range' ? 'day' : mode);
 	const headline = $derived(vm.headline);
-	const verdict = $derived(selectVerdict(headline, mode, locale, copy));
+	const verdict = $derived(selectVerdict(headline, mode, locale, copy.verdict));
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });

@@ -72,6 +72,8 @@
 	import { EdgeState } from '$lib/components/edge';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
+	import { VerdictBanner } from '$lib/components/brand';
+	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
 	import {
 		metricInfoFor,
 		type MetricKey,
@@ -175,6 +177,43 @@
 				})
 			: null,
 	);
+	// §0 NETWORK VERDICT (§C5.7): the plain-language at-a-glance answer between the LIVE
+	// and HISTORIC regions, via the SHARED VerdictBanner + selectVerdict off the SAME live
+	// on_time_pct the headline reads. n=null → the sentence carries no fabricated Wilson
+	// hedge (the live tier has no OTP trip-day denominator — honest degradation).
+	const networkHeadline = $derived<VerdictHeadline>({
+		otpPct: live.network?.on_time_pct ?? null,
+		observationCount: null,
+		onTime: null,
+	});
+	const networkVerdict = $derived(selectVerdict(networkHeadline, 'day', locale, t.verdict));
+	// The Δ-vs-prior chip (§C6 #3 — the comparison network entirely lacked): the latest
+	// daily trend OTP minus the immediately-prior day's, from the SAME dated series the
+	// trend plots. Both bounds must be real (no fabricated 0): a null on either day → no
+	// chip. Rounded to whole points (OTP is an integer percentage).
+	const verdictDeltaPts = $derived.by<number | null>(() => {
+		const s = trend.data?.series ?? [];
+		if (s.length < 2) return null;
+		const latest = s[s.length - 1]?.otp_pct;
+		const prior = s[s.length - 2]?.otp_pct;
+		if (latest == null || prior == null) return null;
+		return Math.round(latest - prior);
+	});
+	const verdictDeltaText = $derived(
+		verdictDeltaPts == null
+			? null
+			: t.verdictDelta.chip(`${verdictDeltaPts > 0 ? '+' : ''}${verdictDeltaPts}${t.units.pct}`),
+	);
+	// The Δ chip's tone rides the dataviz status scale (improving vs slipping vs flat) —
+	// colour is paired with the +/− sign so it is never the sole channel.
+	const verdictDeltaColor = $derived(
+		verdictDeltaPts == null || verdictDeltaPts === 0
+			? 'var(--muted-foreground)'
+			: verdictDeltaPts > 0
+				? 'var(--dataviz-status-on-time)'
+				: 'var(--dataviz-status-late)',
+	);
+
 	const statusSpec = $derived(
 		selectStatusMix(
 			live.network?.status_dist ?? null,
@@ -490,6 +529,33 @@
 
 	<Separator variant="hazard" />
 
+	<!-- §0 NETWORK VERDICT BAND (§C5.7): the one-line at-a-glance answer between the LIVE
+	     and HISTORIC regions — the SHARED VerdictBanner off the live on_time_pct, plus the
+	     Δ-vs-prior chip (§C6 #3) the network previously lacked. Stands down honestly
+	     ("still measuring") before the first live tick / on an absent live tier. -->
+	<section class="network-verdict" aria-label={t.verdictDelta.label}>
+		<VerdictBanner result={networkVerdict} />
+		{#if verdictDeltaText}
+			<span
+				class="network-verdict-delta"
+				data-slot="verdict-delta"
+				style={`--delta-tone: ${verdictDeltaColor}`}
+				aria-label={`${t.verdictDelta.a11y} ${verdictDeltaText}`}
+			>
+				<span class="network-verdict-delta__mark" aria-hidden="true"
+					>{verdictDeltaPts != null && verdictDeltaPts > 0
+						? '▲'
+						: verdictDeltaPts != null && verdictDeltaPts < 0
+							? '▼'
+							: '■'}</span
+				>
+				<span>{verdictDeltaText}</span>
+			</span>
+		{/if}
+	</section>
+
+	<Separator variant="hazard" />
+
 	<!-- ── HISTORIC region ──────────────────────────────────────────────────────────
 	     The three scattered controls (grain · window · delay series) collected into ONE
 	     STICKY rail, then the readout board (the main trend spanning a wide cell). -->
@@ -622,6 +688,28 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
+	}
+	/* §0 verdict band between LIVE and HISTORIC — the VerdictBanner beside the Δ-vs-prior
+	   chip; wraps on a narrow phone so the chip drops beneath the sentence. */
+	.network-verdict {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.5rem 1.25rem;
+	}
+	/* Δ-vs-prior chip: a quiet mono pill whose glyph + colour + sign read the direction
+	   (colour is never the sole channel — the ▲/▼ + the +/− sign carry it too). */
+	.network-verdict-delta {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-variant-numeric: tabular-nums;
+		color: var(--delta-tone, var(--muted-foreground));
+	}
+	.network-verdict-delta__mark {
+		line-height: 1;
 	}
 	/* Worker-feed-age chip — a quiet mono badge beside the LIVE freshness chip. */
 	.network-feed-age {

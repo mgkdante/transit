@@ -54,6 +54,10 @@
 	import { formatUtc } from '$lib/utils/time';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
+	import { VerdictBanner } from '$lib/components/brand';
+	import { selectVerdict } from '$lib/v1/verdict';
+	import { toReliabilityClusters } from './reliability/clusters';
+	import { reliabilityCopy } from './reliability/reliability.copy';
 	import RouteReliabilityClusters from './reliability/RouteReliabilityClusters.svelte';
 	import { directionHeadsigns } from './directions';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -123,6 +127,23 @@
 		const routeId = id;
 		return getRouteReliability(routeId);
 	});
+
+	// ALWAYS-VISIBLE VERDICT BAND (§C5.4): the §0 verdict, hoisted ABOVE the tabs so the
+	// payoff is never buried behind the Detail tab. Reuses the SHARED VerdictBanner +
+	// selectVerdict off the SAME §0 headline (the default 'day' grain of the reliability
+	// archive), so the band and the §0 verdict inside the Reliability tab always agree.
+	// The band renders ONLY once the historic archive has loaded (a null → no band, never
+	// a fabricated verdict); the Wilson hedge + natural frequency ride the archive's own
+	// observation_count / on_time (never fabricated).
+	const relCopy = $derived(reliabilityCopy[locale]);
+	const verdictHeadline = $derived(
+		reliability.data
+			? toReliabilityClusters(reliability.data, { grain: 'day' }).punctuality.headline
+			: null,
+	);
+	const routeVerdict = $derived(
+		verdictHeadline ? selectVerdict(verdictHeadline, 'day', locale, relCopy.verdict) : null,
+	);
 
 	// Live tier: one store for this surface (the v1 context is booted before
 	// mount in the root layout). It polls vehicles/trips on the live ttl; the
@@ -298,6 +319,15 @@
 			label={t.viewOnMap}
 			ariaLabel={t.viewRouteOnMap(id)}
 		/>
+	{/snippet}
+
+	{#snippet banner()}
+		<!-- §C5.4: the always-visible verdict band above the tabs (verdict sentence + the
+		     OTP BAN), from the §0 headline. Renders only once the archive loads (honest
+		     absence otherwise — no fabricated verdict). -->
+		{#if routeVerdict}
+			<VerdictBanner result={routeVerdict} />
+		{/if}
 	{/snippet}
 
 	{#snippet pane(key)}

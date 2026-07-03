@@ -40,6 +40,9 @@
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { getV1Context, createLiveStore } from '$lib/v1';
 	import { openSurface, type SurfaceTarget } from '$lib/nav';
+	import { otpVerdict } from '$lib/v1';
+	import { STATUS_LABELS } from '$lib/v1/enumLabels';
+	import { StatusBadge } from '$lib/components/dataviz';
 	import { ageSeconds, formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import { fmtCount as sharedFmtCount, fmtPct as sharedFmtPct } from '$lib/utils';
 	import { sharedClock } from '$lib/stores';
@@ -480,10 +483,12 @@
 			aria-label={t.pulseLabel}
 			aria-live="polite"
 		>
-			<li>{@render pulse(fmtPct(net?.on_time_pct), t.metricOnTime, 'otp')}</li>
+			<li>{@render pulse(fmtPct(net?.on_time_pct), t.metricOnTime, 'otp', net?.on_time_pct)}</li>
 			<li>{@render pulse(fmtCount(net?.vehicles_in_service), t.metricVehicles, 'vehicleCount')}</li>
 			<li>{@render pulse(fmtCount(net?.non_responding), t.metricSilent, 'silentTrip')}</li>
-			<li>{@render pulse(fmtPct(net?.coverage_pct), t.metricCoverage, 'coverage')}</li>
+			<li>
+				{@render pulse(fmtPct(net?.coverage_pct), t.metricCoverage, 'coverage', net?.coverage_pct)}
+			</li>
 		</DashboardGrid>
 	</TerminalPanel>
 
@@ -539,12 +544,40 @@
 </Surface>
 
 <!-- A pulse tile = MetricDisplay + its (i) explainer, top-aligned beside the quiet
-     label (same shape as NetworkHealth's `kpi`). A null value renders the muted
-     no-data state via `emptyLabel`, never a fabricated 0. -->
-{#snippet pulse(value: string | null, label: string, key: MetricKey | SupplementalMetricKey)}
+     label (same shape as NetworkHealth's `kpi`). A null value renders the STYLED
+     honest-absence chip ('not-reported' — the flagship page speaks the site's own
+     absence language), never a fabricated 0. When a `verdictPct` is supplied (the two
+     percentage KPIs — on-time + coverage), a StatusBadge WORD + tone reads the 90/75
+     reliabilityVerdict floors beneath the value, so the number carries its meaning
+     (the evidence dead-end closes). The two counts have no OTP floor → no fabricated
+     word. -->
+{#snippet pulse(
+	value: string | null,
+	label: string,
+	key: MetricKey | SupplementalMetricKey,
+	verdictPct?: number | null,
+)}
 	{@const i = info(key, label)}
+	{@const verdict = verdictPct == null ? null : otpVerdict(verdictPct)}
 	<div class="pulse-kpi">
-		<MetricDisplay {value} {label} emptyLabel={t.noData} size="lg" />
+		<div class="pulse-kpi-body">
+			<MetricDisplay
+				{value}
+				{label}
+				emptyLabel={t.noData}
+				absentReason="not-reported"
+				{locale}
+				size="lg"
+			/>
+			{#if verdict}
+				<StatusBadge
+					status={verdict}
+					label={STATUS_LABELS[locale][verdict]}
+					size="sm"
+					class="pulse-verdict"
+				/>
+			{/if}
+		</div>
 		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
 	</div>
 {/snippet}
@@ -566,6 +599,21 @@
 		flex-direction: column;
 		gap: 0.875rem;
 		max-width: 62ch;
+	}
+	/* H1 overflow-wrap (§C5.1): a long provider display_name must break inside the word
+	   rather than overflow the hero measure on a narrow phone. */
+	.hub-head :global(.section-heading-text) {
+		overflow-wrap: anywhere;
+	}
+	/* H1 > H2 weight fix (§C5.1): SectionHeading's DISPLAY mode is a fixed display scale
+	   regardless of `level`, so the hub's §2 "What this is" heading rendered at the SAME
+	   size as the H1 (the inversion — no visual hierarchy). Step the §2 display heading
+	   DOWN one register here so the H1 clearly reads as the apex. Scoped to the hub so the
+	   shared primitive is untouched. */
+	.hub-what :global(.section-heading-text) {
+		font-size: clamp(1.75rem, 4vw, 2.5rem);
+		font-weight: 800;
+		letter-spacing: var(--tracking-tight);
 	}
 	/* A4: the corner readouts annotate the head from a margin band — inset the
 	   content on the wider viewports (>=768, where CornerMeta surfaces) so the
@@ -614,6 +662,14 @@
 	   Mirrors NetworkHealth's .network-kpi. */
 	.pulse-kpi {
 		display: flex;
+		align-items: flex-start;
+		gap: 0.375rem;
+		min-width: 0;
+	}
+	/* The value + its verdict word stack; the (i) explainer pins beside the label. */
+	.pulse-kpi-body {
+		display: flex;
+		flex-direction: column;
 		align-items: flex-start;
 		gap: 0.375rem;
 		min-width: 0;

@@ -45,6 +45,12 @@
 		 * here (REAL data only); omitted ⇒ no corner annotations. Hero-zone only.
 		 */
 		cornerMeta?: Snippet;
+		/**
+		 * Optional ALWAYS-VISIBLE banner rendered between the head and the tabs (§C5.4 /
+		 * §C5.6) — the at-a-glance verdict that must never be buried behind a tab. The
+		 * caller drops a fully-composed block (e.g. a VerdictBanner); omitted ⇒ no banner.
+		 */
+		banner?: Snippet;
 		/** Tab definitions — stable key + already-localized label. */
 		tabs: readonly { key: K; label: string }[];
 		/** The active tab key (two-way bindable). */
@@ -72,6 +78,7 @@
 		lede,
 		meta,
 		cornerMeta,
+		banner,
 		tabs,
 		active = $bindable(),
 		pane,
@@ -132,6 +139,12 @@
 
 	<Separator variant="hazard" />
 
+	{#if banner}
+		<!-- §C5.4/§C5.6: the always-visible verdict banner above the tabs — the payoff is
+		     never buried behind a tab. Its own register between the head and the tab strip. -->
+		<div class="surface-banner" data-slot="entity-detail-banner">{@render banner()}</div>
+	{/if}
+
 	<Tabs bind:value={active}>
 		<TabsList variant="line" class="w-full justify-start">
 			{#each tabs as t (t.key)}
@@ -190,6 +203,11 @@
 		font-size: var(--text-subheading);
 		line-height: 1.6;
 		max-width: 52ch;
+	}
+	/* Always-visible verdict banner (§C5.4/§C5.6) between the head and the tabs —
+	   quiet spacing so the VerdictBanner reads as its own register above the tab strip. */
+	.surface-banner {
+		margin-block: 0.25rem 1rem;
 	}
 	/* Meta row — the mono-micro chips (the stop's ARRÊT plate, the map drilldown)
 	   below the lede; a flex row that wraps on narrow viewports. */
