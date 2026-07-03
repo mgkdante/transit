@@ -60,6 +60,8 @@ export interface StopDetailCopy {
 	};
 	/** "Next departures" pane. */
 	readonly next: {
+		/** D3: the TerminalPanel framing the live departures board. */
+		readonly terminal: { readonly title: string; readonly tag: string };
 		/** Section label over the departures list. */
 		readonly heading: string;
 		/** Shown when the live board has no upcoming departures for this stop. */
@@ -178,6 +180,7 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 		viewStopOnMap: (stop) => `Voir l’arrêt ${stop} sur la carte`,
 		tabs: { next: 'Prochains', schedule: 'Horaire', info: 'Info', reliability: 'Fiabilité' },
 		next: {
+			terminal: { title: 'passages-en-direct', tag: 'EN DIRECT' },
 			heading: 'Prochains passages',
 			none: 'Aucun passage à venir pour le moment.',
 			late: (min) => `+${min} min de retard`,
@@ -230,6 +233,7 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 		viewStopOnMap: (stop) => `View stop ${stop} on map`,
 		tabs: { next: 'Next', schedule: 'Schedule', info: 'Info', reliability: 'Reliability' },
 		next: {
+			terminal: { title: 'live-departures', tag: 'LIVE' },
 			heading: 'Next departures',
 			none: 'No upcoming departures right now.',
 			late: (min) => `+${min} min late`,

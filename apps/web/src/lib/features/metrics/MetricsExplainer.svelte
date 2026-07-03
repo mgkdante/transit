@@ -61,7 +61,12 @@
 	import { getProvenance, getV1Context } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ConformanceBadge, FreshnessStamp } from '$lib/components/surface';
-	import { ArticleShell, DetailTemplate } from '$lib/components/layout';
+	import {
+		ArticleShell,
+		DetailTemplate,
+		VerticalSectionTitle,
+		verticalSectionTitleWord,
+	} from '$lib/components/layout';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
@@ -567,6 +572,8 @@
 {/snippet}
 
 <article class="metrics-article" data-testid="metrics-article">
+	<!-- D2: the rotated edge word in the left gutter (≥xl, decorative). -->
+	<VerticalSectionTitle word={verticalSectionTitleWord('measure', locale)} />
 	<DetailTemplate class="metrics-detail">
 		<!-- Masthead → ArticleShell: kicker → display title + orange dot → lede → meta
 		     row (subheading + FOCUS controls) → hazard tape. The full-bleed dot-grid
@@ -892,6 +899,18 @@
 		flex-direction: column;
 		gap: 0;
 		width: 100%;
+		/* Anchor for the D2 rotated edge word's zero-width absolute rail. */
+		position: relative;
+	}
+
+	/* D2: give the ≥xl grid (ToC · sections · stat rail) a left gutter so the
+	   rotated edge word has a margin band to live in — clear of the app LeftRail on
+	   its left and the ToC card on its right. The masthead stays full-bleed (the
+	   dot-grid band spans edge-to-edge); only the grid content is inset. */
+	@media (min-width: 1280px) {
+		.metrics-article :global(.detail-grid) {
+			padding-inline-start: var(--space-page-x);
+		}
 	}
 
 	/* Full-bleed header band carrying the .detail-header-grid dot-grid chrome.

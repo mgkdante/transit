@@ -45,7 +45,7 @@
 		AffectedAlerts,
 	} from '$lib/components/surface';
 	import { RankedRow } from '$lib/components/dataviz';
-	import { ListDetailGrid } from '$lib/components/layout';
+	import { ListDetailGrid, verticalSectionTitleWord } from '$lib/components/layout';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -272,6 +272,7 @@
 	kicker={t.kicker}
 	back={{ href: localizeHref('/lines', locale), label: t.back }}
 	lede={t.detailLede}
+	edgeWord={verticalSectionTitleWord('reliability', locale)}
 	{tabs}
 	bind:active
 >

@@ -1,6 +1,6 @@
 // TerminalPanel.test.ts — the ONE terminal idiom (§C2.3), DOM gate.
 //
-// TerminalPanel absorbs TerminalChrome: strict superset (signal head + hazard
+// TerminalPanel absorbed (and retired) TerminalChrome: strict superset (signal head + hazard
 // separator + title/tag/status/footer) PLUS the meta/footer snippet slots and
 // the sanctioned rest-glow (use:cursorGlow, E2). This gate locks:
 //   - the chassis rides the SOLID surface + border-rule frame + shadow-section
@@ -107,7 +107,7 @@ describe('TerminalPanel — footer readout (snippet + string forms)', () => {
 		expect(container.querySelector('[data-slot="terminal-footer"]')).toBeInTheDocument();
 	});
 
-	it('renders the label/value STRING footer (the TerminalChrome path)', () => {
+	it('renders the label/value STRING footer (the former TerminalChrome path)', () => {
 		const { getByText } = render(TerminalPanel, {
 			props: { title: 'demo', footerItems: [{ label: 'ISSUED', value: '2026-07-03' }] },
 		});

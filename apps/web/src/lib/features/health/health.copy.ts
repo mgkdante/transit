@@ -122,6 +122,8 @@ export interface HealthCopy extends SurfaceHeadCopy {
 	 * plus the MAINTENANCE honest not-applicable row (no public heartbeat).
 	 */
 	readonly lanes: {
+		/** D3: the TerminalPanel framing the pipeline-lanes board. */
+		readonly terminal: { readonly title: string; readonly tag: string };
 		readonly section: string;
 		/** Short caption under the section label. */
 		readonly note: string;
@@ -282,6 +284,7 @@ export const copy: Record<Locale, HealthCopy> = {
 			unknown: 'unknown',
 		},
 		lanes: {
+			terminal: { title: 'pipeline-lanes', tag: 'BUILD' },
 			section: 'Pipeline lanes',
 			note: 'Each publishing lane, how long ago it last published, how many files it wrote, and how its last value check turned out. Times are the scheduled cadences, not guarantees.',
 			listLabel: 'Publish lanes',
@@ -415,6 +418,7 @@ export const copy: Record<Locale, HealthCopy> = {
 			unknown: 'inconnu',
 		},
 		lanes: {
+			terminal: { title: 'voies-du-pipeline', tag: 'CONSTRUCTION' },
 			section: 'Voies du pipeline',
 			note: 'Chaque voie de publication, il y a combien de temps elle a publié pour la dernière fois, combien de fichiers elle a écrits, et le résultat de sa dernière vérification des valeurs. Les heures sont les cadences prévues, pas des garanties.',
 			listLabel: 'Voies de publication',

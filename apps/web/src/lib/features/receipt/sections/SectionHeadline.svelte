@@ -4,7 +4,7 @@
   Pure presenter of the headlineKpis VMs: the day's on-time %, average delay, severe
   share, rider-impact score, each a MetricDisplay + its (i) metric-explainer. A null
   value reads the styled honest-absence chip ('no-observations'), never a fabricated 0.
-  A receipt line-group inside the TerminalChrome (WEB4 metaphor preserved).
+  A receipt line-group inside the TerminalPanel (WEB4 metaphor preserved).
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';

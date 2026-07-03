@@ -4,7 +4,7 @@
   Pure presenter of the affectedCounts VMs: the lines / stops / alerts touched on the
   day, each a MaybeValue (null → the styled 'no-observations' chip, a real 0 stays 0).
   The always-null `vehicles` cell is dropped upstream by the selector. A receipt
-  line-group inside the TerminalChrome (WEB4 metaphor preserved).
+  line-group inside the TerminalPanel (WEB4 metaphor preserved).
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';

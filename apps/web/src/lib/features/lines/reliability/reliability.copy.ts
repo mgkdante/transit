@@ -304,7 +304,12 @@ export interface ReliabilityCopy {
 	 * progressive-disclosure expander labels.
 	 */
 	readonly sections: {
-		readonly verdict: { readonly label: string; readonly question: string };
+		readonly verdict: {
+			readonly label: string;
+			readonly question: string;
+			/** D3: the TerminalPanel framing the §0 verdict block. */
+			readonly terminal: { readonly title: string; readonly tag: string };
+		};
 		readonly whenToRide: { readonly label: string; readonly question: string };
 		readonly theWait: { readonly label: string; readonly question: string };
 		readonly runAndFit: { readonly label: string; readonly question: string };
@@ -511,7 +516,11 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			sectionReadout: (n, total) => `SEC ${n}/${total}`,
 		},
 		sections: {
-			verdict: { label: 'Fiabilité', question: 'Peut-on compter sur cette ligne ?' },
+			verdict: {
+				label: 'Fiabilité',
+				question: 'Peut-on compter sur cette ligne ?',
+				terminal: { title: 'verdict', tag: 'FIABILITÉ' },
+			},
 			whenToRide: {
 				label: 'Quand voyager',
 				question: 'Quand est-ce fiable, et quand ça se gâte ?',
@@ -721,7 +730,11 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			sectionReadout: (n, total) => `SEC ${n}/${total}`,
 		},
 		sections: {
-			verdict: { label: 'Reliability', question: 'Can you count on this line?' },
+			verdict: {
+				label: 'Reliability',
+				question: 'Can you count on this line?',
+				terminal: { title: 'verdict', tag: 'RELIABILITY' },
+			},
 			whenToRide: {
 				label: 'When to ride',
 				question: 'When is it good, and when does it fall apart?',

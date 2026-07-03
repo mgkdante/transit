@@ -10,10 +10,10 @@
   2px --border-rule frame, radius --radius-lg, bg --surface-2 SOLID (the
   occlusion law — no alpha so the blueprint grid never bleeds through).
 
-  ABSORBS TerminalChrome: this is a strict superset. TerminalChrome now
-  re-exports as a thin alias over TerminalPanel (string tag/status/footer[]
-  path preserved) so its four consumers keep working untouched — one terminal
-  idiom, not two.
+  ABSORBED TerminalChrome (P5.3c · D3): the old TerminalChrome alias is RETIRED —
+  this is now the ONE terminal-window idiom. Its string footer[] path lives on as
+  the `footerItems` prop (label/value items), so the former consumers (home pulse,
+  receipt, _kit) migrated to TerminalPanel directly with no visual change.
 
   GLOW LAW: rest-glow is a pointer-tracked opacity gradient (cursorGlow),
   NEVER a text-shadow. No text-shadow anywhere in this component (§C4 P4 /
@@ -42,7 +42,7 @@
 		meta?: Snippet;
 		/** Footer readout — snippet form (honest stats: n · window · generated_utc). */
 		footer?: Snippet;
-		/** Footer readout — string form (label/value items; the TerminalChrome path). */
+		/** Footer readout — string form (label/value items; the former TerminalChrome path). */
 		footerItems?: TerminalFooterItem[];
 		/** Remove body padding (when children manage their own). */
 		noPadding?: boolean;

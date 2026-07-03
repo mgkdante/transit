@@ -4,7 +4,7 @@
   Pure presenter of the worstOfDay VM: the single worst line (→ /lines/[id]) + worst
   stop (→ /stop/[id]) as linked EntityRows. The whole panel is mounted by the
   orchestrator ONLY when hasWorst — so it stands down (the grid reflows past it) rather
-  than a fabricated empty card. A receipt line-group inside the TerminalChrome (WEB4).
+  than a fabricated empty card. A receipt line-group inside the TerminalPanel (WEB4).
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';

@@ -59,7 +59,7 @@
 	import { EdgeState } from '$lib/components/edge';
 
 	// Chrome & layout (Set-B brand + layout primitives).
-	import { TerminalChrome, StickyPanel } from '$lib/components/brand';
+	import { TerminalPanel, StickyPanel } from '$lib/components/brand';
 	import { Footer, Surface } from '$lib/components/layout';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 
@@ -479,11 +479,11 @@
 			variant="section"
 		/>
 		<div class="kit-grid2">
-			<TerminalChrome
+			<TerminalPanel
 				title="receipt.log"
 				tag="STM"
 				status="live"
-				footer={[
+				footerItems={[
 					{ label: 'rows', value: '128' },
 					{ label: 'ms', value: '42' },
 				]}
@@ -491,7 +491,7 @@
 				<pre class="kit-term">route 165 · on_time 0.82
 stop 51234 · next 3 min
 vehicle 40231 · occupancy LOW</pre>
-			</TerminalChrome>
+			</TerminalPanel>
 
 			<StickyPanel top="1rem">
 				<SectionLabel text="STICKY" variant="metric" />

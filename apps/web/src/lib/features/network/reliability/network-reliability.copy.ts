@@ -12,6 +12,17 @@ import type { Locale } from '$lib/i18n';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export interface NetworkReliabilityCopy extends SurfaceHeadCopy {
+	/** D3: the TerminalPanel framing the LIVE control-room band. */
+	readonly liveTerminal: {
+		/** Mono terminal-window title (e.g. "control-room"). */
+		readonly title: string;
+		/** Small tag chip beside the title (e.g. "LIVE"). */
+		readonly tag: string;
+		/** Footer readout label for the live snapshot source. */
+		readonly footerLabel: string;
+		/** Footer readout value (the honest source note). */
+		readonly footerValue: string;
+	};
 	/** Region heading above the LIVE half of the surface. */
 	readonly liveRegion: string;
 	/** Region heading above the HISTORIC half of the surface. */
@@ -188,6 +199,12 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		kicker: 'NETWORK · LIVE',
 		heading: 'Network health',
 		lede: 'Live network-wide on-time performance, crowding and feed freshness, measured from the /v1 contract. We never invent data: a missing signal shows as “no data”, not a fabricated zero.',
+		liveTerminal: {
+			title: 'control-room',
+			tag: 'LIVE',
+			footerLabel: 'SOURCE',
+			footerValue: '/v1 live snapshot',
+		},
 		liveRegion: 'Live now',
 		historicRegion: 'Historic trend',
 		viewControlsLabel: 'View',
@@ -276,6 +293,12 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		kicker: 'RÉSEAU · EN DIRECT',
 		heading: 'Santé du réseau',
 		lede: 'Ponctualité, achalandage et fraîcheur du flux à l’échelle du réseau, mesurés à partir du contrat /v1. On n’invente jamais de données : un signal absent s’affiche « aucune donnée », jamais un zéro fabriqué.',
+		liveTerminal: {
+			title: 'salle-de-contrôle',
+			tag: 'EN DIRECT',
+			footerLabel: 'SOURCE',
+			footerValue: 'instantané /v1 en direct',
+		},
 		liveRegion: 'En direct',
 		historicRegion: 'Tendance historique',
 		viewControlsLabel: 'Vue',

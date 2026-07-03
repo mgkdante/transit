@@ -65,9 +65,9 @@ export interface ReceiptCopy extends SurfaceHeadCopy {
 	};
 	/** Caption above the receipt body. */
 	readonly receiptSection: string;
-	/** TerminalChrome title bar text (the receipt "window" title). */
+	/** TerminalPanel title bar text (the receipt "window" title). */
 	readonly terminalTitle: string;
-	/** TerminalChrome tag chip (a small label beside the title). */
+	/** TerminalPanel tag chip (a small label beside the title). */
 	readonly terminalTag: string;
 	/** Footer label for the day the receipt covers. */
 	readonly issuedLabel: string;

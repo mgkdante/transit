@@ -60,6 +60,7 @@
 	import StopLabel from '$lib/components/brand/StopLabel.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
 	import { cornerMetaLabels } from '$lib/components/brand';
@@ -347,9 +348,15 @@
 			{#if departures == null}
 				<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
 			{:else}
-				<div class="stop-next">
-					<div class="stop-next-head">
-						<SectionHeading level={2} overline={t.next.heading} />
+				<!-- D3: the live departures board framed in the ONE TerminalPanel idiom.
+				     Existing board content wrapped untouched; the live freshness stamp
+				     moves to the panel's meta slot (the terminal's right readout). -->
+				<TerminalPanel
+					title={t.next.terminal.title}
+					tag={t.next.terminal.tag}
+					class="stop-next-terminal"
+				>
+					{#snippet meta()}
 						<FreshnessStamp
 							variant="live"
 							generatedUtc={live.generatedUtc}
@@ -357,109 +364,114 @@
 							isStale={live.isStale}
 							{locale}
 						/>
-					</div>
-					{#if departures.length === 0}
-						<!-- HONEST ABSENCE: an empty live board STATES the inferred reason
+					{/snippet}
+					<div class="stop-next">
+						<div class="stop-next-head">
+							<SectionHeading level={2} overline={t.next.heading} />
+						</div>
+						{#if departures.length === 0}
+							<!-- HONEST ABSENCE: an empty live board STATES the inferred reason
 						     (service closed — opens at FIRST / no service at this hour /
 						     scheduled-but-silent) from the stop's own window + the live silent
 						     signal. emptyReason is null when no reason is derivable → the plain
 						     honest no-data copy, never a fabricated reason. -->
-						<EdgeState
-							variant="empty"
-							lang={locale}
-							layout={edgeLayout}
-							emptyReason={departuresAbsenceReason}
-						/>
-					{:else}
-						<!-- Combinable status chips + an optional by-route chip narrow the
+							<EdgeState
+								variant="empty"
+								lang={locale}
+								layout={edgeLayout}
+								emptyReason={departuresAbsenceReason}
+							/>
+						{:else}
+							<!-- Combinable status chips + an optional by-route chip narrow the
 						     board, collected into ONE ControlsRail (quiet infra chrome,
 						     discerned from the data canvas). Both default off (everything
 						     shown); the data marks are unchanged — these are INTERACTION
 						     controls, so --primary lives only on the active chip. -->
-						<ControlsRail label={t.next.controlsLabel}>
-							<div class="stop-chip-group" role="group" aria-label={t.next.filter.statusLabel}>
-								{#each DEPARTURE_TONES as tone (tone)}
-									<button
-										type="button"
-										class="stop-chip"
-										class:stop-chip--active={statusFilter.has(tone)}
-										aria-pressed={statusFilter.has(tone)}
-										onclick={() => toggleStatus(tone)}
-									>
-										<!-- colour + glyph redundancy: the tone's status fill tints the dot,
-										     and the glyph carries the meaning without colour (a11y). -->
-										<span
-											class="stop-chip-glyph"
-											style:color={toneColorVar(tone)}
-											aria-hidden="true">{TONE_GLYPH[tone]}</span
-										>
-										{toneLabel(tone)}
-									</button>
-								{/each}
-							</div>
-							{#if departureRoutes.length > 1}
-								<div class="stop-chip-group" role="group" aria-label={t.next.filter.routeLabel}>
-									<button
-										type="button"
-										class="stop-chip"
-										class:stop-chip--active={routeFilter == null}
-										aria-pressed={routeFilter == null}
-										onclick={() => (routeFilter = null)}
-									>
-										{t.next.filter.allRoutes}
-									</button>
-									{#each departureRoutes as route (route)}
+							<ControlsRail label={t.next.controlsLabel}>
+								<div class="stop-chip-group" role="group" aria-label={t.next.filter.statusLabel}>
+									{#each DEPARTURE_TONES as tone (tone)}
 										<button
 											type="button"
 											class="stop-chip"
-											class:stop-chip--active={routeFilter === route}
-											aria-pressed={routeFilter === route}
-											onclick={() => (routeFilter = routeFilter === route ? null : route)}
+											class:stop-chip--active={statusFilter.has(tone)}
+											aria-pressed={statusFilter.has(tone)}
+											onclick={() => toggleStatus(tone)}
 										>
-											{route}
+											<!-- colour + glyph redundancy: the tone's status fill tints the dot,
+										     and the glyph carries the meaning without colour (a11y). -->
+											<span
+												class="stop-chip-glyph"
+												style:color={toneColorVar(tone)}
+												aria-hidden="true">{TONE_GLYPH[tone]}</span
+											>
+											{toneLabel(tone)}
 										</button>
 									{/each}
 								</div>
-							{/if}
-							<p class="stop-departures-count" aria-live="polite">
-								{t.next.filter.showing(filteredDepartures?.length ?? 0, departures.length)}
-							</p>
-						</ControlsRail>
+								{#if departureRoutes.length > 1}
+									<div class="stop-chip-group" role="group" aria-label={t.next.filter.routeLabel}>
+										<button
+											type="button"
+											class="stop-chip"
+											class:stop-chip--active={routeFilter == null}
+											aria-pressed={routeFilter == null}
+											onclick={() => (routeFilter = null)}
+										>
+											{t.next.filter.allRoutes}
+										</button>
+										{#each departureRoutes as route (route)}
+											<button
+												type="button"
+												class="stop-chip"
+												class:stop-chip--active={routeFilter === route}
+												aria-pressed={routeFilter === route}
+												onclick={() => (routeFilter = routeFilter === route ? null : route)}
+											>
+												{route}
+											</button>
+										{/each}
+									</div>
+								{/if}
+								<p class="stop-departures-count" aria-live="polite">
+									{t.next.filter.showing(filteredDepartures?.length ?? 0, departures.length)}
+								</p>
+							</ControlsRail>
 
-						<!-- Hazard tape discerns the controls zone from the data canvas. -->
-						<Separator variant="hazard" hazardSize="sm" />
+							<!-- Hazard tape discerns the controls zone from the data canvas. -->
+							<Separator variant="hazard" hazardSize="sm" />
 
-						{#if (filteredDepartures?.length ?? 0) === 0}
-							<p class="stop-departures-empty" data-testid="departures-filter-empty">
-								{t.next.filter.noMatches}
-							</p>
-						{:else}
-							<ul class="stop-departures">
-								{#each filteredDepartures ?? [] as d, i (`${d.trip ?? d.route ?? 'dep'}-${d.eta_utc}-${i}`)}
-									{@const tone = depTone(d.delay_min)}
-									<li class="stop-departure">
-										<span class="stop-departure-route">{d.route ?? t.next.route}</span>
-										<span class="stop-departure-eta">{formatUtc(d.eta_utc, locale)}</span>
-										<!-- The delay caption is COLOUR-CODED by the shared status scale AND
+							{#if (filteredDepartures?.length ?? 0) === 0}
+								<p class="stop-departures-empty" data-testid="departures-filter-empty">
+									{t.next.filter.noMatches}
+								</p>
+							{:else}
+								<ul class="stop-departures">
+									{#each filteredDepartures ?? [] as d, i (`${d.trip ?? d.route ?? 'dep'}-${d.eta_utc}-${i}`)}
+										{@const tone = depTone(d.delay_min)}
+										<li class="stop-departure">
+											<span class="stop-departure-route">{d.route ?? t.next.route}</span>
+											<span class="stop-departure-eta">{formatUtc(d.eta_utc, locale)}</span>
+											<!-- The delay caption is COLOUR-CODED by the shared status scale AND
 										     carries a redundant glyph (Doctrine: never colour-only), with the
 										     plain-language delayLabel text as the third channel. A null delay
 										     rides the muted 'none' track: no fill, no glyph — absence never
 										     reads as an on-time claim. -->
-										<span
-											class="stop-departure-delay"
-											style:color={rowColorVar(tone)}
-											data-tone={tone}
-										>
-											{#if rowGlyph(tone)}<span class="stop-departure-glyph" aria-hidden="true"
-													>{rowGlyph(tone)}</span
-												>{/if}{delayLabel(d.delay_min, t.next)}
-										</span>
-									</li>
-								{/each}
-							</ul>
+											<span
+												class="stop-departure-delay"
+												style:color={rowColorVar(tone)}
+												data-tone={tone}
+											>
+												{#if rowGlyph(tone)}<span class="stop-departure-glyph" aria-hidden="true"
+														>{rowGlyph(tone)}</span
+													>{/if}{delayLabel(d.delay_min, t.next)}
+											</span>
+										</li>
+									{/each}
+								</ul>
+							{/if}
 						{/if}
-					{/if}
-				</div>
+					</div>
+				</TerminalPanel>
 			{/if}
 		{:else if key === 'schedule'}
 			<!-- STATIC: scheduled service grouped by route. -->

@@ -6,7 +6,7 @@
   presents the project at a glance in three movements:
 
     1. CONTROL-ROOM HERO — the provider identity (display_name) framed in
-       TerminalChrome, with a LIVE PULSE of the network right now. The pulse
+       TerminalPanel, with a LIVE PULSE of the network right now. The pulse
        reads the same live network.json the /network surface does, via
        createLiveStore (on-time %, vehicles in service, not-reporting count,
        coverage %). HONESTY: before the first client tick (and during SSR) the
@@ -49,7 +49,7 @@
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
 	import { cornerMetaLabels } from '$lib/components/brand';
-	import TerminalChrome from '$lib/components/brand/TerminalChrome.svelte';
+	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { FreshnessStamp } from '$lib/components/surface';
 	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
@@ -446,7 +446,7 @@
 		<p class="hub-tagline">{t.tagline}</p>
 	</header>
 
-	<TerminalChrome
+	<TerminalPanel
 		class="hub-pulse"
 		title={t.terminalTitle}
 		tag={isLive ? t.pulseLive : t.pulseStandby}
@@ -485,7 +485,7 @@
 			<li>{@render pulse(fmtCount(net?.non_responding), t.metricSilent, 'silentTrip')}</li>
 			<li>{@render pulse(fmtPct(net?.coverage_pct), t.metricCoverage, 'coverage')}</li>
 		</DashboardGrid>
-	</TerminalChrome>
+	</TerminalPanel>
 
 	<Separator variant="hazard" hazardSize="sm" maxWidth="100%" />
 

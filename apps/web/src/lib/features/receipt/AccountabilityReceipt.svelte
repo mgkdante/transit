@@ -1,7 +1,7 @@
 <!--
   AccountabilityReceipt — the /receipt surface ORCHESTRATOR (S13 re-seat).
 
-  A daily accountability "receipt" rendered in the brand TerminalChrome window frame
+  A daily accountability "receipt" rendered in the brand TerminalPanel window frame
   (WEB4 — the receipt metaphor STAYS): a SMART availability-aware single-date calendar
   picks the day, driving a per-date fetch of one day's receipt, composed as receipt
   line-groups —
@@ -51,7 +51,7 @@
 	import { Surface, ControlsRail } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
-	import TerminalChrome from '$lib/components/brand/TerminalChrome.svelte';
+	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import {
 		metricInfoFor,
 		type MetricKey,
@@ -270,11 +270,11 @@
 				<p class="receipt-note" data-slot="receipt-empty">{t.emptyReceipt}</p>
 			{:else}
 				{@const r = receipt.data}
-				<TerminalChrome
+				<TerminalPanel
 					title={t.terminalTitle}
 					tag={t.terminalTag}
 					status={formatDateKey(r.date, locale)}
-					footer={[{ label: t.issuedLabel, value: formatDateKey(r.date, locale) }]}
+					footerItems={[{ label: t.issuedLabel, value: formatDateKey(r.date, locale) }]}
 				>
 					<!-- The receipt's readout blocks tile into a fluid board (multi-column
 					     desktop, one column mobile). The worst tile stands DOWN entirely when
@@ -294,7 +294,7 @@
 							{/if}
 						</div>
 					</div>
-				</TerminalChrome>
+				</TerminalPanel>
 
 				<!-- S13 re-granulated cuts — WEB4 documented hoist: these render as receipt
 				     line-groups BELOW the frame because a ranked ladder / share-bar list /

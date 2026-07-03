@@ -47,9 +47,6 @@ export type { MetroStationProps } from './MetroStation.svelte';
 export { default as TerminalPanel } from './TerminalPanel.svelte';
 export type { TerminalPanelProps, TerminalFooterItem } from './TerminalPanel.svelte';
 
-export { default as TerminalChrome } from './TerminalChrome.svelte';
-export type { TerminalChromeProps } from './TerminalChrome.svelte';
-
 export { default as CornerMeta } from './CornerMeta.svelte';
 export type { CornerMetaProps } from './CornerMeta.svelte';
 

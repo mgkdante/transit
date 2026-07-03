@@ -61,10 +61,17 @@
 		GrainPicker,
 		type GrainSegment,
 	} from '$lib/components/surface';
-	import { Surface, ControlsRail, DashboardGrid } from '$lib/components/layout';
+	import {
+		Surface,
+		ControlsRail,
+		DashboardGrid,
+		VerticalSectionTitle,
+		verticalSectionTitleWord,
+	} from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import {
 		metricInfoFor,
 		type MetricKey,
@@ -392,6 +399,8 @@
 </script>
 
 <Surface class="network">
+	<!-- D2: the rotated edge word in the left gutter (≥xl, decorative). -->
+	<VerticalSectionTitle word={verticalSectionTitleWord('network', locale)} />
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
 		<div class="network-feed-health">
 			<FreshnessStamp
@@ -429,26 +438,45 @@
 	     service-span signal we do not yet publish. DEFERRED — carried to the S9 Handoff with the
 	     pipeline note (needs an unpublished network service-span signal). -->
 	{#if kpis}
-		<section class="network-region" aria-label={t.liveRegion}>
-			<SectionHeading level={2} overline={t.liveRegion} number={1} />
-			<SectionLiveHeadline cards={kpis.headline} {info} noData={t.noData} {locale} />
-			<SectionReporting
-				cards={kpis.reporting}
-				{silentRows}
-				{info}
-				copy={t}
-				noData={t.noData}
-				{locale}
-			/>
-			<SectionStatusMix
-				{statusSpec}
-				occupancySpec={occupancyMix.spec}
-				hasOccupancy={occupancyMix.hasOccupancy}
-				{info}
-				copy={t}
-			/>
-			<SectionDelayHistogram spec={delayHistogramSpec} {info} copy={t} />
-		</section>
+		<!-- D3: the LIVE control-room band framed in the ONE TerminalPanel idiom.
+		     The existing region content is wrapped untouched (no new verdict copy);
+		     the panel adds the terminal chassis + an honest footer readout. -->
+		<TerminalPanel
+			title={t.liveTerminal.title}
+			tag={t.liveTerminal.tag}
+			class="network-live-terminal"
+			footerItems={[{ label: t.liveTerminal.footerLabel, value: t.liveTerminal.footerValue }]}
+		>
+			{#snippet meta()}
+				<FreshnessStamp
+					variant="live"
+					generatedUtc={live.generatedUtc}
+					ageSeconds={live.ageSeconds}
+					isStale={live.isStale}
+					{locale}
+				/>
+			{/snippet}
+			<section class="network-region" aria-label={t.liveRegion}>
+				<SectionHeading level={2} overline={t.liveRegion} number={1} />
+				<SectionLiveHeadline cards={kpis.headline} {info} noData={t.noData} {locale} />
+				<SectionReporting
+					cards={kpis.reporting}
+					{silentRows}
+					{info}
+					copy={t}
+					noData={t.noData}
+					{locale}
+				/>
+				<SectionStatusMix
+					{statusSpec}
+					occupancySpec={occupancyMix.spec}
+					hasOccupancy={occupancyMix.hasOccupancy}
+					{info}
+					copy={t}
+				/>
+				<SectionDelayHistogram spec={delayHistogramSpec} {info} copy={t} />
+			</section>
+		</TerminalPanel>
 	{:else if live.error}
 		<EdgeState
 			variant="error-v1"
@@ -577,6 +605,11 @@
 </Surface>
 
 <style>
+	/* Anchor for the D2 rotated edge word's zero-width absolute rail (it pins to
+	   the Surface's left gutter). */
+	:global(.surface-shell.network) {
+		position: relative;
+	}
 	.network-feed-health {
 		display: flex;
 		flex-wrap: wrap;

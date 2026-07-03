@@ -15,11 +15,12 @@
 	import { page } from '$app/state';
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '$lib/components/ui/tabs';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import { Surface } from '$lib/components/layout';
+	import { Surface, VerticalSectionTitle } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
 	import { getLocale } from '$lib/i18n';
 	import { resolveBreadcrumbTrail } from '$lib/seo/routeSeo';
+	import { cn } from '$lib/utils';
 	import Breadcrumb from './Breadcrumb.svelte';
 
 	interface EntityDetailProps {
@@ -55,6 +56,12 @@
 		 * chrome: a localized index href + label. Omitted ⇒ no back link.
 		 */
 		back?: { href: string; label: string };
+		/**
+		 * Optional D2 rotated edge word in the left gutter (≥xl, decorative). Set to
+		 * the already-localized word (e.g. "Reliability" / "Fiabilité") on the
+		 * surfaces the design language calls for it (/lines/[id]); omitted elsewhere.
+		 */
+		edgeWord?: string;
 		/** Optional extra classes on the surface root. */
 		class?: string;
 	}
@@ -69,6 +76,7 @@
 		active = $bindable(),
 		pane,
 		back,
+		edgeWord,
 		class: className,
 	}: EntityDetailProps = $props();
 
@@ -83,7 +91,11 @@
 	const trail = $derived(resolveBreadcrumbTrail(page.url.pathname, locale));
 </script>
 
-<Surface as="div" class={className} data-slot="entity-detail">
+<Surface as="div" class={cn('entity-detail-surface', className)} data-slot="entity-detail">
+	{#if edgeWord}
+		<!-- D2: the rotated edge word in the left gutter (≥xl, decorative). -->
+		<VerticalSectionTitle word={edgeWord} />
+	{/if}
 	<!-- A4 (slice-9.7): route/stop detail is a DATA DASHBOARD — it fills the
 	     rail-inset <main> width edge-to-edge (Surface is full-bleed by default
 	     after A1), keeping the page gutter (--space-page-x, from the
@@ -143,6 +155,10 @@
 </Surface>
 
 <style>
+	/* Anchor for the optional D2 rotated edge word's zero-width absolute rail. */
+	:global(.surface-shell.entity-detail-surface) {
+		position: relative;
+	}
 	.surface-head {
 		display: flex;
 		flex-direction: column;

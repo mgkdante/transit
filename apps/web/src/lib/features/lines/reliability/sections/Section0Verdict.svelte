@@ -27,6 +27,7 @@
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { MaybeValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
+	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import VerdictBanner from './VerdictBanner.svelte';
 	import MetricBullet from './MetricBullet.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -196,47 +197,58 @@
 	eyebrow={copy.sections.verdict.label}
 	question={copy.sections.verdict.question}
 >
-	<!-- The at-a-glance verdict: the BAN + the plain-language two-sided sentence. It owns
-	     §0's honest absence ("still measuring") when there's no percentage to read. -->
-	<VerdictBanner result={verdict} />
+	<!-- D3: the §0 verdict block framed in the ONE TerminalPanel idiom. The existing
+	     at-a-glance answer (VerdictBanner + the KPI tiles) is wrapped untouched — no
+	     new verdict copy is authored. -->
+	<TerminalPanel
+		title={copy.sections.verdict.terminal.title}
+		tag={copy.sections.verdict.terminal.tag}
+		class="verdict-terminal"
+	>
+		<!-- The at-a-glance verdict: the BAN + the plain-language two-sided sentence. It owns
+		     §0's honest absence ("still measuring") when there's no percentage to read. -->
+		<VerdictBanner result={verdict} />
+
+		{#if !sectionEmpty}
+			<!-- KPI tiles — each a text-led number + a LayerChart bullet (scale context). The
+			     bullet handles honest absence (no bar) + on-time carries the 80% target tick. -->
+			<div class="verdict-kpis" data-slot="verdict-kpis">
+				<MetricBullet
+					label={copy.strip.otpPct}
+					valueText={pct(headline.otpPct)}
+					spec={otpBullet}
+					{locale}
+					size="lg"
+					info={otpInfo}
+				/>
+				<MetricBullet
+					label={copy.strip.avgDelayMin}
+					valueText={min(headline.avgDelayMin)}
+					spec={avgBullet}
+					{locale}
+					info={avgInfo}
+				/>
+				<MetricBullet
+					label={copy.strip.p50Min}
+					valueText={min(headline.p50Min)}
+					spec={p50Bullet}
+					{locale}
+					info={p50Info}
+					caption={copy.strip.p50Caption}
+				/>
+				<MetricBullet
+					label={copy.strip.p90Min}
+					valueText={min(headline.p90Min)}
+					spec={p90Bullet}
+					{locale}
+					info={p90Info}
+					caption={copy.strip.p90Caption}
+				/>
+			</div>
+		{/if}
+	</TerminalPanel>
 
 	{#if !sectionEmpty}
-		<!-- KPI tiles — each a text-led number + a LayerChart bullet (scale context). The
-		     bullet handles honest absence (no bar) + on-time carries the 80% target tick. -->
-		<div class="verdict-kpis" data-slot="verdict-kpis">
-			<MetricBullet
-				label={copy.strip.otpPct}
-				valueText={pct(headline.otpPct)}
-				spec={otpBullet}
-				{locale}
-				size="lg"
-				info={otpInfo}
-			/>
-			<MetricBullet
-				label={copy.strip.avgDelayMin}
-				valueText={min(headline.avgDelayMin)}
-				spec={avgBullet}
-				{locale}
-				info={avgInfo}
-			/>
-			<MetricBullet
-				label={copy.strip.p50Min}
-				valueText={min(headline.p50Min)}
-				spec={p50Bullet}
-				{locale}
-				info={p50Info}
-				caption={copy.strip.p50Caption}
-			/>
-			<MetricBullet
-				label={copy.strip.p90Min}
-				valueText={min(headline.p90Min)}
-				spec={p90Bullet}
-				{locale}
-				info={p90Info}
-				caption={copy.strip.p90Caption}
-			/>
-		</div>
-
 		<!-- PRIMARY — the on-time / avg-delay trend. -->
 		{#if hasTrend}
 			<div class="section-primary" data-slot="otp-trend" data-card="primary">
