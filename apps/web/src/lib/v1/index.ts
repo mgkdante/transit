@@ -29,6 +29,7 @@ export {
 	getRoutesIndex,
 	getRoute,
 	getStopsIndex,
+	getStopsIndexSlim,
 	getStop,
 	getNetworkTrend,
 	getHotspots,
@@ -42,7 +43,10 @@ export {
 	getProvenance,
 	getDataHealth,
 	getBasemap,
+	toSlimStop,
+	toSlimStopsIndex,
 } from './repositories';
+export type { SlimStopEntry, SlimStopsIndex } from './repositories';
 
 // --- boot + label resolution + context ---------------------------------------
 export { bootV1, loadManifest, resolveLabel, getV1Context, setV1Context } from './boot';

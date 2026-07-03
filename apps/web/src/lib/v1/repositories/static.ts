@@ -12,6 +12,7 @@
 
 import { adapter, type AdapterCtx } from '$lib/v1/adapter';
 import type { RouteFile, RoutesIndex, StopFile, StopsIndex } from '$lib/v1/schemas';
+import { isSlimStopsIndex, toSlimStopsIndex, type SlimStopsIndex } from './stopsSlim';
 
 /**
  * Fetch + validate the static routes discovery index.
@@ -35,6 +36,30 @@ export async function getRoute(routeId: string, ctx?: AdapterCtx): Promise<Route
  */
 export async function getStopsIndex(ctx?: AdapterCtx): Promise<StopsIndex> {
 	return adapter.static.stopsIndex(ctx);
+}
+
+/**
+ * Fetch the SLIM stops index ({id,name,lat,lon,code}) — the map + near-me
+ * fast-path (§C8 item 3). The `/api/stops/slim` endpoint projects the full
+ * catalogue server-side, so the client parses a fraction of the 1.15 MB payload.
+ *
+ * ADDITIVE + honest-absence: on any endpoint failure we fall back to projecting
+ * the FULL index client-side, so the map still resolves every stop (never a
+ * fabricated empty catalogue). Client-only path (browser fetch of a same-origin
+ * API route); an explicit `ctx.fetch` (SSR/tests) still works.
+ */
+export async function getStopsIndexSlim(ctx?: AdapterCtx): Promise<SlimStopsIndex> {
+	const fetchFn = ctx?.fetch ?? fetch;
+	try {
+		const res = await fetchFn('/api/stops/slim', { signal: ctx?.signal });
+		if (res.ok) {
+			const body: unknown = await res.json();
+			if (isSlimStopsIndex(body)) return body;
+		}
+	} catch {
+		// fall through to the full-index projection
+	}
+	return toSlimStopsIndex(await adapter.static.stopsIndex(ctx));
 }
 
 /**

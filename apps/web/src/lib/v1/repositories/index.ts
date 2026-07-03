@@ -12,7 +12,7 @@
 import { getManifest } from './manifest';
 import { getLabels } from './labels';
 import { getAlerts, getNetwork, getStopDepartures, getTrips, getVehicles } from './live';
-import { getRoute, getRoutesIndex, getStop, getStopsIndex } from './static';
+import { getRoute, getRoutesIndex, getStop, getStopsIndex, getStopsIndexSlim } from './static';
 import {
 	getAlertHistory,
 	getHotspots,
@@ -47,6 +47,7 @@ export const repositories = {
 		routesIndex: getRoutesIndex,
 		route: getRoute,
 		stopsIndex: getStopsIndex,
+		stopsIndexSlim: getStopsIndexSlim,
 		stop: getStop,
 	},
 	historic: {
@@ -75,7 +76,9 @@ export const repositories = {
 export { getManifest, getManifestFresh } from './manifest';
 export { getLabels } from './labels';
 export { getAlerts, getNetwork, getStopDepartures, getTrips, getVehicles } from './live';
-export { getRoute, getRoutesIndex, getStop, getStopsIndex } from './static';
+export { getRoute, getRoutesIndex, getStop, getStopsIndex, getStopsIndexSlim } from './static';
+export type { SlimStopEntry, SlimStopsIndex } from './stopsSlim';
+export { toSlimStop, toSlimStopsIndex } from './stopsSlim';
 export {
 	getAlertHistory,
 	getHotspots,

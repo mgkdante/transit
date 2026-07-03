@@ -6,11 +6,9 @@
 // voice can never drift between features again (it silently had: map said
 // "Grave"/"Places assises"/"Peu de sièges", network said the winning variants).
 //
-// FR winners (S7.5 P3-1 — flagged for operator morning veto): the network variants
-// win the three drifted keys — severe='Sévère', many_seats='Plusieurs places',
-// few_seats='Peu de places' (standard FR transit register; 'places' parallels the
-// whole crowding scale). The map variants are equally valid copy; this is a one-line
-// revert if disliked.
+// FR register (S7.5 P3-1): the network variants own the three once-drifted keys —
+// severe='Sévère', many_seats='Plusieurs places', few_seats='Peu de places'
+// (standard FR transit register; 'places' parallels the whole crowding scale).
 import type { Locale } from '$lib/i18n';
 import type { StatusCode, OccupancyCode, SeverityCode } from './schemas';
 

@@ -470,12 +470,11 @@
 	     Four glance cards (C1) · the Reporting row (vehicles + non_responding + silent
 	     lines + the global-signal caveat) · the two distribution bars · the re-seated
 	     delay histogram. -->
-	<!-- TODO(beauty2-honest-absence · DECISIONS C3): when net.vehicles_in_service === 0 (live
-	     zero / overnight), surface an honest-absence banner above the headline board via
+	<!-- PIPELINE-BLOCKED: when net.vehicles_in_service === 0 (live zero / overnight), we would
+	     surface an honest-absence banner above the headline board via
 	     $lib/site/serviceWindow.inferAbsenceReason. Like /map this is a NETWORK-WIDE view with
 	     no single first/last window, so a "service closed / overnight" verdict needs a network
-	     service-span signal we do not yet publish. DEFERRED — carried to the S9 Handoff with the
-	     pipeline note (needs an unpublished network service-span signal). -->
+	     service-span signal /v1 does not yet publish — not actionable web-side. -->
 	{#if kpis}
 		<!-- D3: the LIVE control-room band framed in the ONE TerminalPanel idiom.
 		     The existing region content is wrapped untouched (no new verdict copy);
