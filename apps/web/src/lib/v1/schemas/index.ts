@@ -48,3 +48,6 @@ export * from './alert_history';
 
 // --- provenance --------------------------------------------------------------
 export * from './provenance';
+
+// --- data health (live-lane per-lane publish freshness + last gate outcome) ---
+export * from './data_health';

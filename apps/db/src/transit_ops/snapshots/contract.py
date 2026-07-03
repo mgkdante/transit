@@ -43,6 +43,7 @@ PAYLOAD_METHODOLOGY: dict[str, str] = {
     "live_alerts": "alerts-1",
     "live_network": "live-1",
     "live_stop_departures": "live-1",
+    "live_data_health": "live-1",
     "static_routes_index": "static-1",
     "static_stops_index": "static-1",
     "static_route": "static-1",
@@ -237,6 +238,11 @@ class ManifestLiveFiles(BaseModel):
     alerts: str = "live/alerts.json"
     network: str = "live/network.json"
     stop_departures: str = "live/stop_departures.json"
+    # S11 additive-optional pointer to the per-lane data-health payload (published
+    # on the live lane every cycle). Default-valued so an already-published manifest
+    # stays FIELD-IDENTICAL under the growth rule; the adapter resolves it
+    # manifest-first like every other live file.
+    data_health: str = "status/data_health.json"
     ttl_s: int = 30
     generated_utc: str
 
@@ -1427,6 +1433,79 @@ class Provenance(PayloadEnvelope):
 
 
 # ---------------------------------------------------------------------------
+# Citizen data-health payload (S11) — status/data_health.json
+# ---------------------------------------------------------------------------
+# The live lane serves a tiny per-publish-lane freshness + last-gate-outcome
+# summary so /status can render "how healthy is the pipeline right now" from ONE
+# fetch, without scraping the CI gate artifact. 16384 (16 KiB) clears the three
+# lanes + a handful of feed rows with generous headroom. Exported so the web can
+# share the constant; the gate + a real-DB probe assert it.
+DATA_HEALTH_BYTE_CEILING = 16384
+
+
+class DataHealthGate(BaseModel):
+    # Last VALUE-GATE outcome for the lane, persisted per tier on
+    # core.snapshot_publish_state (migration 0078). Counts + verdict only — the
+    # full results[] stays a CI artifact (cli.py --report-dir). Every field is
+    # honest-NULL when the lane predates 0078, was published with the gate
+    # disabled, or (static) took the dataset-level SKIP that never ran the gate.
+    checks_run: int | None = None
+    errors: int | None = None
+    warnings: int | None = None
+    verdict: str | None = None  # 'pass' | 'warn' | 'fail'
+    generated_utc: str | None = None
+
+
+class LaneHealth(BaseModel):
+    # One publish lane's last-completed-publish health. lane is the persisted tier
+    # name mapped to a citizen label: 'live'/'static'/'rollup' (rollup == the
+    # historic tier row). last_publish_utc is the row's generated_utc (DATA time,
+    # honest-NULL when the lane has never published); age_s is now() - that stamp,
+    # computed SERVER-SIDE off the DB clock (the single source of truth), honest-NULL
+    # when last_publish_utc is NULL. file counts mirror snapshot_publish_state.
+    lane: str  # 'live' | 'static' | 'rollup'
+    last_publish_utc: str | None = None
+    age_s: int | None = None
+    files_written: int | None = None
+    files_skipped: int | None = None
+    files_total: int | None = None
+    gate: DataHealthGate | None = None
+
+
+class DataHealthFeed(BaseModel):
+    # Per-feed freshness, mirroring ProvenanceFreshness so the live lane's feed
+    # detail is one fetch (gold.feed_freshness_current, same source as provenance).
+    feed: str
+    status: str | None = None
+    age_s: int | None = None
+
+
+class DataHealth(PayloadEnvelope):
+    """status/data_health.json — per-lane publish freshness + last gate outcome.
+
+    Published on the LIVE lane every cycle (tiny, un-hash-gated like the rest of
+    live) so a citizen /status page can show, in one fetch, how fresh each publish
+    lane is and whether its last value-gate pass errored or warned.
+
+    lanes carries EXACTLY the three lanes that have a Postgres publish heartbeat:
+    the live / static / historic (labelled 'rollup') rows of
+    core.snapshot_publish_state. MAINTENANCE and REPLAY are DELIBERATELY ABSENT:
+    those pipeline stages run only in GitHub Actions and write NO DB heartbeat, so
+    this payload has nothing honest to say about them. Fabricating a lane row for
+    them would be dishonest; adding a real heartbeat write for those stages is
+    OUT OF S11 SCOPE (flagged for a future slice). The web renders MAINTENANCE /
+    REPLAY as honest not-applicable rows from static copy, not from this payload.
+
+    Each lane's gate block is honest-NULL when that lane predates migration 0078
+    or was published with the gate disabled (the gate outcome is UNKNOWN, never
+    assumed pass). age_s is computed server-side off the DB clock.
+    """
+    generated_utc: str
+    lanes: list[LaneHealth] = Field(default_factory=list)
+    feeds: list[DataHealthFeed] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Basemap pointer + receipts discovery index (slice-9.1.1r)
 # ---------------------------------------------------------------------------
 
@@ -1518,6 +1597,7 @@ TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
     "historic_route_reliability_index": RouteReliabilityIndex,
     "historic_alert_history": AlertHistory,
     "provenance": Provenance,
+    "live_data_health": DataHealth,
 }
 
 

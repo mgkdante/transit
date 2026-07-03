@@ -40,6 +40,7 @@ export {
 	getRouteReliabilityIndex,
 	getStopReliability,
 	getProvenance,
+	getDataHealth,
 	getBasemap,
 } from './repositories';
 

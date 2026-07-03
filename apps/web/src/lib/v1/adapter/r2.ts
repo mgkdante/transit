@@ -43,6 +43,7 @@ import { ReceiptSchema } from '$lib/v1/schemas/receipts';
 import { RouteReliabilitySchema } from '$lib/v1/schemas/route_reliability';
 import { StopReliabilitySchema } from '$lib/v1/schemas/stop_reliability';
 import { ProvenanceSchema } from '$lib/v1/schemas/provenance';
+import { DataHealthSchema } from '$lib/v1/schemas/data_health';
 import { BasemapFileSchema } from '$lib/v1/schemas/basemap';
 
 import type { Locale } from '$lib/i18n';
@@ -63,6 +64,7 @@ const DEFAULTS = {
 		alerts: 'live/alerts.json',
 		network: 'live/network.json',
 		stop_departures: 'live/stop_departures.json',
+		data_health: 'status/data_health.json',
 	},
 	static: {
 		routes_index: 'static/routes_index.json',
@@ -413,6 +415,23 @@ export const r2Adapter: ContentAdapter = {
 				SLOW_CACHE,
 				ctx,
 			);
+		},
+	},
+
+	dataHealth: {
+		// Manifest-first like every live file, falling back to the contract default
+		// path when the pointer is absent (pre-S11 manifest). A 404 → null: /status
+		// stands the pipeline-lanes section DOWN on a legacy publish rather than
+		// erroring, so the surface degrades honestly during the rollout window.
+		async get(ctx?: AdapterCtx) {
+			const m = await loadManifest(ctx);
+			const rel = m.files.live.data_health ?? DEFAULTS.live.data_health;
+			const url = resolveUrl(rel);
+			const value = await getEntityJson(url, DataHealthSchema, 'dataHealth', fetchOf(ctx), {
+				cache: LIVE_CACHE,
+				signal: ctx?.signal,
+			});
+			return value ?? null;
 		},
 	},
 };

@@ -48,6 +48,8 @@ import {
 	AlertHistorySchema,
 	// provenance
 	ProvenanceSchema,
+	// data health (live-lane)
+	DataHealthSchema,
 } from './index';
 
 const ISO = '2026-06-15T03:14:00Z';
@@ -151,6 +153,9 @@ const CASES: Case[] = [
 
 	// --- provenance ----------------------------------------------------------
 	['provenance', ProvenanceSchema, { generated_utc: ISO }],
+
+	// --- data health (live-lane): minimal = generated_utc only; lanes/feeds default []. --
+	['data_health', DataHealthSchema, { generated_utc: ISO }],
 ];
 
 describe('schema round-trip — every family parses a minimal valid fixture', () => {

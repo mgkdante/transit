@@ -116,6 +116,66 @@ export interface HealthCopy extends SurfaceHeadCopy {
 		readonly failed: string;
 		readonly unknown: string;
 	};
+	/**
+	 * Pipeline-lanes section (S11): one row per publish lane (live / static /
+	 * rollup) with last-publish age + file counts + the last value-gate verdict,
+	 * plus the MAINTENANCE honest not-applicable row (no public heartbeat).
+	 */
+	readonly lanes: {
+		readonly section: string;
+		/** Short caption under the section label. */
+		readonly note: string;
+		/** Accessible label for the lanes list. */
+		readonly listLabel: string;
+		/** lane key → localized lane label. */
+		readonly laneLabel: Readonly<Record<string, string>>;
+		/** lane key → localized scheduled-cadence line (stated as a schedule, not a promise). */
+		readonly cadence: Readonly<Record<string, string>>;
+		/** Caption before the "as scheduled" cadence line (a11y + label). */
+		readonly cadenceLabel: string;
+		/** Caption before the file counts (written / total). */
+		readonly filesLabel: string;
+		/** Formats a "{written} of {total} files" count line. */
+		readonly filesCount: (written: string, total: string) => string;
+		/** Caption before the last-publish age. */
+		readonly lastPublishLabel: string;
+		/** Localized gate-verdict words (map to the status chip tone). */
+		readonly gateVerdict: {
+			readonly pass: string;
+			readonly warn: string;
+			readonly fail: string;
+			readonly unknown: string;
+		};
+		/** Caption before the gate chip. */
+		readonly gateLabel: string;
+		/**
+		 * One-line explanation of WHAT the gate is (honest, not alarmist): value-level
+		 * checks that BLOCK a bad historic publish. Shown once beside the lanes list.
+		 */
+		readonly gateExplain: string;
+		/** The MAINTENANCE not-applicable row copy. */
+		readonly maintenanceLabel: string;
+		readonly maintenanceCadence: string;
+		readonly maintenanceReason: string;
+		/** Chip word for the not-applicable lane (no heartbeat). */
+		readonly notApplicable: string;
+	};
+	/**
+	 * Accountability-envelope section (S11): the deterministic publish stamp +
+	 * schema/methodology versions every payload carries, surfaced so the reader can
+	 * cite the exact build.
+	 */
+	readonly envelope: {
+		readonly section: string;
+		readonly note: string;
+		/** publish_generation_id — label + always-visible explanation (ExplainedMetricCard). */
+		readonly generationIdLabel: string;
+		readonly generationIdExplain: string;
+		/** schema_version — MetricDisplay row label. */
+		readonly schemaVersionLabel: string;
+		/** methodology_version — MetricDisplay row label. */
+		readonly methodologyVersionLabel: string;
+	};
 	/** Shown when a contract value is absent (honest no-data, never fabricated). */
 	readonly noData: string;
 }
@@ -154,12 +214,20 @@ export const copy: Record<Locale, HealthCopy> = {
 			section: 'Pipeline notes',
 			note: 'How the pipeline builds the things that have no single metric card of their own, published verbatim from the latest run.',
 			listLabel: 'Pipeline methodology notes',
+			// One label per un-threaded methodology key. The list iterates the FULL
+			// published dict, so a key absent here still renders (its humanized key as
+			// the label); these are just the friendlier names for the keys we know.
 			labels: {
 				history_freeze: 'Closed-period freeze',
 				service_time_conversion: 'Service-time conversion',
 				alert_text_en: 'English alert text',
 				network_no_data: 'Network no-data honesty',
 				alert_breakdown: 'Alert breakdown',
+				rounding: 'Rounding rule',
+				min_n_rate: 'Minimum sample for a rate',
+				wilson_z: 'Confidence-interval z-score',
+				service_span: 'Service span',
+				alert_history_window: 'Alert-history window',
 			},
 		},
 		retention: {
@@ -182,6 +250,49 @@ export const copy: Record<Locale, HealthCopy> = {
 			running: 'loading',
 			failed: 'load failed',
 			unknown: 'unknown',
+		},
+		lanes: {
+			section: 'Pipeline lanes',
+			note: 'Each publishing lane, how long ago it last published, how many files it wrote, and how its last value check turned out. Times are the scheduled cadences, not guarantees.',
+			listLabel: 'Publish lanes',
+			laneLabel: {
+				live: 'Live',
+				static: 'Schedule',
+				rollup: 'Rollups',
+				maintenance: 'Maintenance',
+			},
+			cadence: {
+				live: 'every ~57 seconds',
+				static: 'daily, 06:00 UTC',
+				rollup: 'daily, 07:00 UTC',
+			},
+			cadenceLabel: 'Cadence',
+			filesLabel: 'Files',
+			filesCount: (written, total) => `${written} of ${total} files`,
+			lastPublishLabel: 'Last publish',
+			gateVerdict: {
+				pass: 'passed',
+				warn: 'warnings',
+				fail: 'blocked',
+				unknown: 'not checked',
+			},
+			gateLabel: 'Value check',
+			gateExplain:
+				'The value check runs before a rollup is published: it verifies the numbers against fixed rules and blocks a bad build from shipping. A warning is noted but does not block.',
+			maintenanceLabel: 'Maintenance',
+			maintenanceCadence: 'weekly, Sunday 08:00 UTC',
+			maintenanceReason:
+				'Runs weekly in continuous integration and writes no public heartbeat, so there is nothing to report here.',
+			notApplicable: 'not applicable',
+		},
+		envelope: {
+			section: 'Build accountability',
+			note: 'Every page carries the stamp of the exact publish run that produced it, plus the contract and methodology versions in force.',
+			generationIdLabel: 'Publish run',
+			generationIdExplain:
+				'The deterministic stamp of the single publish run that produced everything on this page. Two pages sharing this stamp were built from the same run.',
+			schemaVersionLabel: 'Contract version',
+			methodologyVersionLabel: 'Methodology version',
 		},
 		noData: 'no data',
 	},
@@ -218,12 +329,20 @@ export const copy: Record<Locale, HealthCopy> = {
 			section: 'Notes du pipeline',
 			note: 'Comment le pipeline construit ce qui n’a pas de fiche-métrique propre, publié tel quel depuis la dernière exécution.',
 			listLabel: 'Notes de méthode du pipeline',
+			// Une étiquette par clé de méthode non rattachée. La liste parcourt le dict
+			// publié au COMPLET : une clé absente ici s’affiche quand même (sa clé
+			// humanisée sert d’étiquette) ; voici seulement les noms plus lisibles.
 			labels: {
 				history_freeze: 'Gel des périodes closes',
 				service_time_conversion: 'Conversion des heures de service',
 				alert_text_en: 'Texte d’alerte en anglais',
 				network_no_data: 'Honnêteté « aucune donnée » du réseau',
 				alert_breakdown: 'Répartition des alertes',
+				rounding: 'Règle d’arrondi',
+				min_n_rate: 'Échantillon minimal pour un taux',
+				wilson_z: 'Cote z de l’intervalle de confiance',
+				service_span: 'Amplitude de service',
+				alert_history_window: 'Fenêtre d’historique des alertes',
 			},
 		},
 		retention: {
@@ -246,6 +365,49 @@ export const copy: Record<Locale, HealthCopy> = {
 			running: 'en cours',
 			failed: 'échec du chargement',
 			unknown: 'inconnu',
+		},
+		lanes: {
+			section: 'Voies du pipeline',
+			note: 'Chaque voie de publication, il y a combien de temps elle a publié pour la dernière fois, combien de fichiers elle a écrits, et le résultat de sa dernière vérification des valeurs. Les heures sont les cadences prévues, pas des garanties.',
+			listLabel: 'Voies de publication',
+			laneLabel: {
+				live: 'Temps réel',
+				static: 'Horaire',
+				rollup: 'Agrégats',
+				maintenance: 'Maintenance',
+			},
+			cadence: {
+				live: 'toutes les ~57 secondes',
+				static: 'chaque jour, 06:00 UTC',
+				rollup: 'chaque jour, 07:00 UTC',
+			},
+			cadenceLabel: 'Cadence',
+			filesLabel: 'Fichiers',
+			filesCount: (written, total) => `${written} sur ${total} fichiers`,
+			lastPublishLabel: 'Dernière publication',
+			gateVerdict: {
+				pass: 'réussie',
+				warn: 'avertissements',
+				fail: 'bloquée',
+				unknown: 'non vérifiée',
+			},
+			gateLabel: 'Vérification des valeurs',
+			gateExplain:
+				'La vérification des valeurs s’exécute avant la publication d’un agrégat : elle contrôle les nombres selon des règles fixes et empêche une mauvaise version de partir. Un avertissement est noté mais ne bloque pas.',
+			maintenanceLabel: 'Maintenance',
+			maintenanceCadence: 'chaque semaine, dimanche 08:00 UTC',
+			maintenanceReason:
+				'S’exécute chaque semaine en intégration continue et n’écrit aucun battement public, il n’y a donc rien à rapporter ici.',
+			notApplicable: 'sans objet',
+		},
+		envelope: {
+			section: 'Traçabilité de la version',
+			note: 'Chaque page porte l’empreinte de l’exécution de publication exacte qui l’a produite, ainsi que les versions du contrat et de la méthode en vigueur.',
+			generationIdLabel: 'Exécution de publication',
+			generationIdExplain:
+				'L’empreinte déterministe de l’unique exécution de publication qui a produit tout ce qui figure sur cette page. Deux pages partageant cette empreinte proviennent de la même exécution.',
+			schemaVersionLabel: 'Version du contrat',
+			methodologyVersionLabel: 'Version de la méthode',
 		},
 		noData: 'aucune donnée',
 	},

@@ -54,6 +54,8 @@ import {
 	AlertHistorySchema,
 	// provenance
 	ProvenanceSchema,
+	// data health (live-lane)
+	DataHealthSchema,
 } from './index';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
@@ -127,6 +129,8 @@ const FAMILIES: Family[] = [
 	},
 	// provenance
 	{ label: 'provenance', mirror: 'provenance.schema.json', schema: ProvenanceSchema },
+	// data health (live-lane per-lane publish freshness + last gate outcome)
+	{ label: 'data_health', mirror: 'live_data_health.schema.json', schema: DataHealthSchema },
 ];
 
 const JSON_DIR = resolve(process.cwd(), 'src/lib/v1/schemas/json');
@@ -371,9 +375,10 @@ describe('Gate B — Zod ⇔ canonical JSON-Schema conformance', () => {
 			missingFiles,
 			`FAMILIES references a mirror file that is not on disk: ${missingFiles.join(', ')}`,
 		).toEqual([]);
-		// 22 canonical surfaces (live 5 + static 6 + historic 9 + manifest + provenance).
-		expect(onDisk.size).toBe(22);
-		expect(FAMILIES.length).toBe(22);
+		// 23 canonical surfaces (live 5 + static 6 + historic 9 + manifest + provenance
+		// + data_health).
+		expect(onDisk.size).toBe(23);
+		expect(FAMILIES.length).toBe(23);
 	});
 
 	for (const family of FAMILIES) {

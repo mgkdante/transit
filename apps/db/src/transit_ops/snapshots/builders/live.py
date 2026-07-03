@@ -45,7 +45,11 @@ from transit_ops.snapshots.contract import (
     Alert,
     AlertsFile,
     Capability,
+    DataHealth,
+    DataHealthFeed,
+    DataHealthGate,
     DelayBucket,
+    LaneHealth,
     Manifest,
     ManifestFiles,
     ManifestHistoricFiles,
@@ -727,3 +731,137 @@ def build_manifest(
         surfaces=list(_SURFACES),
         capabilities=capabilities,
     )
+
+
+# --------------------------------------------------------------------------
+# Data health (S11) — status/data_health.json
+# --------------------------------------------------------------------------
+# Per-lane publish freshness + last gate outcome. age_s is computed SERVER-SIDE
+# off now() (the DB clock is the single source of truth) so a lane's staleness is
+# never derived from a client wall clock; honest-NULL when the lane has never
+# published (generated_utc NULL). Only the three lanes with a Postgres publish
+# heartbeat appear (live/static/historic); MAINTENANCE + REPLAY have no DB
+# heartbeat and are deliberately absent (see DataHealth docstring).
+_DATA_HEALTH_LANES_SQL = named_query(
+    "data_health.lanes",
+    """
+    SELECT
+        tier,
+        generated_utc,
+        CASE
+            WHEN generated_utc IS NULL THEN NULL
+            ELSE floor(EXTRACT(EPOCH FROM (now() - generated_utc)))::bigint
+        END AS age_s,
+        files_written,
+        files_skipped,
+        files_total,
+        gate_checks_run,
+        gate_errors,
+        gate_warnings,
+        gate_verdict,
+        gate_generated_utc
+    FROM core.snapshot_publish_state
+    WHERE provider_id = :provider_id
+      AND tier IN ('live', 'static', 'historic')
+    """
+)
+
+# Per-feed freshness — SAME source as build_provenance (gold.feed_freshness_current),
+# so the live lane's feed detail is one fetch and never disagrees with provenance.
+_DATA_HEALTH_FEEDS_SQL = named_query(
+    "data_health.feeds",
+    """
+    SELECT endpoint_key, status, completed_age_seconds
+    FROM gold.feed_freshness_current
+    WHERE provider_id = :provider_id
+    ORDER BY endpoint_key
+    """
+)
+
+# The historic tier is the citizen-facing 'rollup' lane; live/static keep their
+# names. Order is the fixed presentation order (live, static, rollup).
+_DATA_HEALTH_TIER_LABELS: dict[str, str] = {
+    "live": "live",
+    "static": "static",
+    "historic": "rollup",
+}
+_DATA_HEALTH_LANE_ORDER = ("live", "static", "rollup")
+
+
+def _data_health_gate(row: dict) -> DataHealthGate | None:
+    """Build the lane's gate block, or None when the lane carries NO gate telemetry.
+
+    A row predating migration 0078 (or a tier published with the gate disabled) has
+    every gate_* column NULL — the gate outcome is honestly UNKNOWN, so the block is
+    omitted entirely rather than emitted as a fabricated all-null/pass shape.
+    """
+    if (
+        row.get("gate_checks_run") is None
+        and row.get("gate_errors") is None
+        and row.get("gate_warnings") is None
+        and row.get("gate_verdict") is None
+        and row.get("gate_generated_utc") is None
+    ):
+        return None
+    return DataHealthGate(
+        checks_run=_opt_int(row.get("gate_checks_run")),
+        errors=_opt_int(row.get("gate_errors")),
+        warnings=_opt_int(row.get("gate_warnings")),
+        verdict=row.get("gate_verdict"),
+        generated_utc=_opt_iso(row.get("gate_generated_utc")),
+    )
+
+
+def build_data_health(
+    conn: Connection, provider_id: str = "stm", *, generated_utc: str
+) -> DataHealth:
+    """Build status/data_health.json — per-lane publish freshness + last gate outcome.
+
+    Reads core.snapshot_publish_state for all three tiers (live/static/historic; the
+    historic tier is surfaced as the 'rollup' lane) with age_s computed server-side
+    off now(). A tier with no row is honestly ABSENT from lanes (never a fabricated
+    zero-age lane). Feeds mirror build_provenance's per-feed freshness.
+    """
+    params = {"provider_id": provider_id}
+
+    rows_by_tier: dict[str, dict] = {}
+    for r in conn.execute(_DATA_HEALTH_LANES_SQL, params).mappings():
+        rows_by_tier[str(r["tier"])] = dict(r)
+
+    lanes: list[LaneHealth] = []
+    for tier, label in _DATA_HEALTH_TIER_LABELS.items():
+        row = rows_by_tier.get(tier)
+        if row is None:
+            # No publish-state row for this tier yet — the lane has never published.
+            # Omit it: build_data_health never fabricates a zero-age lane. The web
+            # renders a lane it does not receive as honest not-applicable.
+            continue
+        lanes.append(
+            LaneHealth(
+                lane=label,
+                last_publish_utc=_opt_iso(row.get("generated_utc")),
+                age_s=_opt_int(row.get("age_s")),
+                files_written=_opt_int(row.get("files_written")),
+                files_skipped=_opt_int(row.get("files_skipped")),
+                files_total=_opt_int(row.get("files_total")),
+                gate=_data_health_gate(row),
+            )
+        )
+    # Stable presentation order (live, static, rollup).
+    lanes.sort(key=lambda lane: _DATA_HEALTH_LANE_ORDER.index(lane.lane))
+
+    feeds: list[DataHealthFeed] = []
+    for r in conn.execute(_DATA_HEALTH_FEEDS_SQL, params).mappings():
+        feeds.append(
+            DataHealthFeed(
+                feed=str(r["endpoint_key"]),
+                status=r["status"],
+                age_s=(
+                    int(r["completed_age_seconds"])
+                    if r["completed_age_seconds"] is not None
+                    else None
+                ),
+            )
+        )
+
+    return DataHealth(generated_utc=generated_utc, lanes=lanes, feeds=feeds)

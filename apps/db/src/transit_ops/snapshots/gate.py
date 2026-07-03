@@ -921,6 +921,44 @@ def check_vehicles(payload: object, *, rel_key: str) -> list[CheckResult]:
     return emit.out
 
 
+def check_data_health(payload: object, *, rel_key: str) -> list[CheckResult]:
+    emit = _Emitter("live_data_health", rel_key)
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return emit.out
+    # S11 byte ceiling: the three-lane summary must stay tiny.
+    from transit_ops.snapshots.contract import DATA_HEALTH_BYTE_CEILING
+
+    size = _payload_bytes(payload)
+    if size is not None and size > DATA_HEALTH_BYTE_CEILING:
+        emit.err("byte_ceiling", "", size,
+                 f"data_health payload {size}B exceeds ceiling {DATA_HEALTH_BYTE_CEILING}B")
+    _valid_verdicts = frozenset({"pass", "warn", "fail"})
+    for i, lane in enumerate(d.get("lanes") or []):
+        if not isinstance(lane, dict):
+            continue
+        sub = _prefixed(emit, f"lanes[{i}].")
+        # age_s / file counts are non-negative or honest-NULL (None-skipped by .count).
+        sub.count(lane, "age_s")
+        for f in ("files_written", "files_skipped", "files_total"):
+            sub.count(lane, f)
+        gate = lane.get("gate")
+        if isinstance(gate, dict):
+            gsub = _prefixed(emit, f"lanes[{i}].gate.")
+            for f in ("checks_run", "errors", "warnings"):
+                gsub.count(gate, f)
+            verdict = gate.get("verdict")
+            if verdict is not None and verdict not in _valid_verdicts:
+                gsub.err("unknown_verdict", "verdict", verdict,
+                         f"verdict={verdict!r} not in {sorted(_valid_verdicts)}")
+    for i, feed in enumerate(d.get("feeds") or []):
+        if not isinstance(feed, dict):
+            continue
+        sub = _prefixed(emit, f"feeds[{i}].")
+        sub.count(feed, "age_s")
+    return emit.out
+
+
 def check_alerts(payload: object, *, rel_key: str) -> list[CheckResult]:
     emit = _Emitter("live_alerts", rel_key)
     d = _as_dict(payload)
@@ -957,6 +995,7 @@ _EXACT_CHECKERS = {
     "live/network.json": (check_network, "live_network"),
     "live/vehicles.json": (check_vehicles, "live_vehicles"),
     "live/alerts.json": (check_alerts, "live_alerts"),
+    "status/data_health.json": (check_data_health, "live_data_health"),
     "historic/network_trend.json": (check_network_trend, "historic_network_trend"),
     "historic/hotspots.json": (check_hotspots, "historic_hotspots"),
     "historic/repeat_offenders.json": (check_repeat_offenders, "historic_repeat_offenders"),

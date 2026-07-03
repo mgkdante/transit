@@ -41,6 +41,7 @@ import type { Receipt } from '$lib/v1/schemas/receipts';
 import type { RouteReliability } from '$lib/v1/schemas/route_reliability';
 import type { StopReliability } from '$lib/v1/schemas/stop_reliability';
 import type { Provenance } from '$lib/v1/schemas/provenance';
+import type { DataHealth } from '$lib/v1/schemas/data_health';
 import type { BasemapFile } from '$lib/v1/schemas/basemap';
 
 /**
@@ -101,6 +102,15 @@ export interface ProvenancePort {
 	get(ctx?: AdapterCtx): Promise<Provenance>;
 }
 
+/**
+ * Data-health document: per-lane publish freshness + last gate outcome, served on
+ * the LIVE lane every cycle. 404 -> null so /status stands the pipeline-lanes
+ * section DOWN on a legacy publish (no data_health yet) rather than erroring.
+ */
+export interface DataHealthPort {
+	get(ctx?: AdapterCtx): Promise<DataHealth | null>;
+}
+
 /** Basemap pointer: the hosted PMTiles archive descriptor, or null when none. */
 export interface BasemapPort {
 	get(ctx?: AdapterCtx): Promise<BasemapFile | null>;
@@ -117,5 +127,6 @@ export interface ContentAdapter {
 	static: StaticPort;
 	historic: HistoricPort;
 	provenance: ProvenancePort;
+	dataHealth: DataHealthPort;
 	basemap: BasemapPort;
 }
