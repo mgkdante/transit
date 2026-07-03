@@ -61,11 +61,7 @@
 	import { getProvenance, getV1Context } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ConformanceBadge, FreshnessStamp } from '$lib/components/surface';
-	import {
-		DetailTemplate,
-		VerticalSectionTitle,
-		verticalSectionTitleWord,
-	} from '$lib/components/layout';
+	import { DetailTemplate } from '$lib/components/layout';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import Masthead from '$lib/components/brand/Masthead.svelte';
@@ -601,8 +597,6 @@
 {/snippet}
 
 <article class="metrics-article" data-testid="metrics-article">
-	<!-- D2: the rotated edge word in the left gutter (≥xl, decorative). -->
-	<VerticalSectionTitle word={verticalSectionTitleWord('measure', locale)} />
 	<DetailTemplate class="metrics-detail">
 		<!-- Masthead (the ONE head family): kicker → display title + orange dot → lede →
 		     meta row (subheading + FOCUS controls) → hazard tape. The full-bleed dot-grid

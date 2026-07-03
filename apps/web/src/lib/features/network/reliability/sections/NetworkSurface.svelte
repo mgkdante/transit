@@ -60,13 +60,7 @@
 		GrainPicker,
 		type GrainSegment,
 	} from '$lib/components/surface';
-	import {
-		Surface,
-		ControlsRail,
-		DashboardGrid,
-		VerticalSectionTitle,
-		verticalSectionTitleWord,
-	} from '$lib/components/layout';
+	import { Surface, ControlsRail, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
@@ -438,8 +432,6 @@
 </script>
 
 <Surface class="network">
-	<!-- D2: the rotated edge word in the left gutter (≥xl, decorative). -->
-	<VerticalSectionTitle word={verticalSectionTitleWord('network', locale)} />
 	<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede}>
 		{#snippet meta()}
 			<div class="network-feed-health">

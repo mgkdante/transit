@@ -30,8 +30,4 @@ export { default as Surface } from './Surface.svelte';
 export { default as DetailTemplate } from './DetailTemplate.svelte';
 export type { DetailTemplateProps } from './DetailTemplate.svelte';
 
-export { default as VerticalSectionTitle } from './VerticalSectionTitle.svelte';
-export { verticalSectionTitleWord } from './verticalSectionTitle.copy';
-export type { VerticalSectionTitleKey } from './verticalSectionTitle.copy';
-
 export { default as Footer } from './Footer.svelte';
