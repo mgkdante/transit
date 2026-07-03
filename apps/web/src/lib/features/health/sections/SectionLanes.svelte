@@ -20,7 +20,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { FreshnessStamp } from '$lib/components/surface';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import type { LaneRow } from '../selectors/laneHealth';
@@ -37,7 +37,7 @@
 </script>
 
 <section class="health-block" aria-labelledby="health-lanes" data-slot="lanes-section">
-	<SectionLabel id="health-lanes" text={t.section} variant="station" />
+	<SectionHeading level={2} id="health-lanes" overline={t.section} number={1} />
 	<p class="health-note">{t.note}</p>
 	<!-- The gate explainer: one honest, not-alarmist sentence for the whole section. -->
 	<p class="health-note health-note--gate" data-slot="gate-explain">{t.gateExplain}</p>

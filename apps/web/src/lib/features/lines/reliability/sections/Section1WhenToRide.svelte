@@ -389,6 +389,7 @@
 
 <CollapsibleSection
 	dataSection="when-to-ride"
+	number={2}
 	eyebrow={copy.sections.whenToRide.label}
 	question={copy.sections.whenToRide.question}
 >

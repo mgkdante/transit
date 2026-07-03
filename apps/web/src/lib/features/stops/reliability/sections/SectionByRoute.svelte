@@ -8,7 +8,7 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { RankedRow } from '$lib/components/dataviz';
 	import { AbsentValue } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -48,10 +48,11 @@
 
 {#if rows.length > 0 || hasAssociations}
 	<div class="stop-tile stop-reliability-routes" data-slot="stop-by-route">
-		<span class="stop-tile-heading">
-			<SectionLabel text={copy.byRoute} variant="station" />
-			{@render metricInfo('avgDelay', copy.byRoute)}
-		</span>
+		<SectionHeading level={2} overline={copy.byRoute} class="stop-tile-heading">
+			{#snippet explainer()}
+				{@render metricInfo('avgDelay', copy.byRoute)}
+			{/snippet}
+		</SectionHeading>
 		{#if rows.length > 0}
 			<div class="stop-reliability-route-list" role="list">
 				{#each rows as row (row.key)}

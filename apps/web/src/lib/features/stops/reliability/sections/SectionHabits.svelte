@@ -12,7 +12,7 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { ChartLegend } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -92,10 +92,11 @@
 {/snippet}
 
 <div class="stop-tile stop-tile--wide stop-reliability-habits" data-slot="stop-habits">
-	<span class="stop-tile-heading">
-		<SectionLabel text={copy.habits.heading} variant="station" />
-		{@render metricInfo('habits', copy.habits.heading)}
-	</span>
+	<SectionHeading level={2} overline={copy.habits.heading} class="stop-tile-heading">
+		{#snippet explainer()}
+			{@render metricInfo('habits', copy.habits.heading)}
+		{/snippet}
+	</SectionHeading>
 	<Chart {spec} />
 	<ChartLegend items={habitsLegend} />
 	<p class="stop-reliability-habits-caption">{copy.habits.caption}</p>

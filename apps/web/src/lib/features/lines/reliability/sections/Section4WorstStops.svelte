@@ -127,6 +127,7 @@
 
 <CollapsibleSection
 	dataSection="worst-stops"
+	number={5}
 	eyebrow={copy.sections.worstStops.label}
 	question={copy.sections.worstStops.question}
 >

@@ -10,7 +10,7 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { MetricDisplay } from '$lib/components/brand';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { AbsentValue } from '$lib/components/edge';
@@ -57,10 +57,11 @@
 
 {#if vm.hasCrowding && vm.dominant != null && vm.spec}
 	<div class="stop-tile stop-reliability-crowding" data-slot="stop-crowding">
-		<span class="stop-tile-heading">
-			<SectionLabel text={copy.crowding.heading} variant="station" />
-			{@render metricInfo('occupancy', copy.crowding.heading)}
-		</span>
+		<SectionHeading level={2} overline={copy.crowding.heading} class="stop-tile-heading">
+			{#snippet explainer()}
+				{@render metricInfo('occupancy', copy.crowding.heading)}
+			{/snippet}
+		</SectionHeading>
 		<p class="stop-reliability-window">{copy.crowding.window}</p>
 		<MetricDisplay
 			value={vm.dominantPct ?? copy.noDelay}
@@ -72,10 +73,11 @@
 	</div>
 {:else if showNoTelemetry}
 	<div class="stop-tile stop-reliability-crowding" data-slot="stop-crowding-empty">
-		<span class="stop-tile-heading">
-			<SectionLabel text={copy.crowding.heading} variant="station" />
-			{@render metricInfo('occupancy', copy.crowding.heading)}
-		</span>
+		<SectionHeading level={2} overline={copy.crowding.heading} class="stop-tile-heading">
+			{#snippet explainer()}
+				{@render metricInfo('occupancy', copy.crowding.heading)}
+			{/snippet}
+		</SectionHeading>
 		<AbsentValue variant="block" reason="no-observations" {locale} />
 	</div>
 {/if}

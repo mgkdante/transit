@@ -44,7 +44,7 @@
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	// The shared alert vocabulary, now in the $lib/v1 kernel (no cross-feature import).
 	import { alertDisplayText } from '$lib/v1/alertDisplay';
@@ -289,7 +289,7 @@
 
 		<div class="alert-history-block">
 			<div class="alert-history-head">
-				<SectionLabel text={t.logSection} variant="station" />
+				<SectionHeading level={2} overline={t.logSection} />
 				<span class="alert-history-count" data-slot="alert-count">
 					{t.count(visibleRows.length, filtered.length)}
 				</span>

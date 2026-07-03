@@ -13,20 +13,30 @@
 		stop: string;
 		/** Stop name */
 		label: string;
+		/**
+		 * Element to render as. Default `div` (a plain plate); pass a heading tag
+		 * (e.g. `h1`) when this plate IS the surface's title, so the page earns a
+		 * real heading outline (the SectionHeading law, §C2.7). The visible mono
+		 * wayfinding look is identical either way.
+		 */
+		as?: 'div' | 'h1' | 'h2' | 'h3';
 		class?: string;
 	}
 
-	let { stop, label, class: className, ...restProps }: StopLabelProps = $props();
+	let { stop, label, as = 'div', class: className, ...restProps }: StopLabelProps = $props();
 </script>
 
-<div class={cn('stop-label', className)} data-slot="stop-label" {...restProps}>
+<svelte:element this={as} class={cn('stop-label', className)} data-slot="stop-label" {...restProps}>
 	<span class="stop-label-num">ARRÊT {stop}</span> · {label}
-</div>
+</svelte:element>
 
 <style>
 	.stop-label {
+		/* Reset the UA heading box so `as="h1"` looks identical to the div plate. */
+		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
+		font-weight: 400;
 		letter-spacing: 2px;
 		color: var(--muted-foreground);
 		position: relative;

@@ -64,7 +64,7 @@
 	import { Surface, ControlsRail, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import {
 		metricInfoFor,
 		type MetricKey,
@@ -430,7 +430,7 @@
 	     pipeline note (needs an unpublished network service-span signal). -->
 	{#if kpis}
 		<section class="network-region" aria-label={t.liveRegion}>
-			<SectionLabel text={t.liveRegion} variant="station" />
+			<SectionHeading level={2} overline={t.liveRegion} number={1} />
 			<SectionLiveHeadline cards={kpis.headline} {info} noData={t.noData} {locale} />
 			<SectionReporting
 				cards={kpis.reporting}
@@ -466,7 +466,7 @@
 	     The three scattered controls (grain · window · delay series) collected into ONE
 	     STICKY rail, then the readout board (the main trend spanning a wide cell). -->
 	<section class="network-region" aria-label={t.historicRegion}>
-		<SectionLabel text={t.historicRegion} variant="station" />
+		<SectionHeading level={2} overline={t.historicRegion} number={2} />
 
 		{#snippet windowControls()}
 			<!-- Trend window (7/30/90-day) — DAY grain only; slices the tail. Week/month render

@@ -11,7 +11,7 @@
 <script lang="ts">
 	import { Chart } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { OccupancyDay } from '../selectors/occupancyTrend';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
@@ -35,10 +35,11 @@
 </script>
 
 <div class="network-tile">
-	<span class="network-section">
-		<SectionLabel text={copy.occupancyTrendSection} variant="station" />
-		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
-	</span>
+	<SectionHeading level={3} overline={copy.occupancyTrendSection}>
+		{#snippet explainer()}
+			<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+		{/snippet}
+	</SectionHeading>
 	<ul
 		class="network-occupancy-days"
 		aria-label={copy.occupancyTrend.summary}
@@ -63,11 +64,6 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		background: var(--card);
-	}
-	.network-section {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
 	}
 	.network-occupancy-days {
 		margin: 0;

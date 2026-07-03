@@ -39,7 +39,7 @@
 	} from '$lib/components/surface';
 	import { DashboardGrid, ControlsRail } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -316,12 +316,17 @@
 
 		{#if gradedPeriods.length > 0}
 			<div class="stop-tile" data-slot="stop-reliability-pane">
-				<span class="stop-tile-heading stop-tile-heading--metrics">
-					<SectionLabel text={copy.paneHeading} variant="station" />
-					{@render metricInfo('otp', copy.metrics.otp)}
-					{@render metricInfo('avgDelay', copy.metrics.avgDelay)}
-					{@render metricInfo('severe', copy.metrics.severe)}
-				</span>
+				<SectionHeading
+					level={2}
+					overline={copy.paneHeading}
+					class="stop-tile-heading stop-tile-heading--metrics"
+				>
+					{#snippet explainer()}
+						{@render metricInfo('otp', copy.metrics.otp)}
+						{@render metricInfo('avgDelay', copy.metrics.avgDelay)}
+						{@render metricInfo('severe', copy.metrics.severe)}
+					{/snippet}
+				</SectionHeading>
 				<ReliabilityPane periods={gradedPeriods} {locale} />
 			</div>
 		{/if}

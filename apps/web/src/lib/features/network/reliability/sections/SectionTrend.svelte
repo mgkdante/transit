@@ -30,6 +30,7 @@
 <script lang="ts">
 	import { Chart, type ChartSpec, type SparklineSpec } from '$lib/components/dataviz/chart';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
@@ -58,10 +59,11 @@
 </script>
 
 <div class="network-tile network-tile--wide">
-	<span class="network-section">
-		<SectionLabel text={copy.trendSection} variant="station" />
-		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
-	</span>
+	<SectionHeading level={3} overline={copy.trendSection}>
+		{#snippet explainer()}
+			<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+		{/snippet}
+	</SectionHeading>
 	<div class="network-trend">
 		<Chart spec={trendSpec} />
 
@@ -90,11 +92,6 @@
 		.network-tile--wide {
 			grid-column: 1 / -1;
 		}
-	}
-	.network-section {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
 	}
 	.network-trend {
 		display: flex;

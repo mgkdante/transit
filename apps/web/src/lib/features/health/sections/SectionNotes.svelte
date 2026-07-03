@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import type { PipelineNote } from '../selectors/provenanceViews';
 	import type { HealthCopy } from '../health.copy';
 
@@ -18,7 +19,7 @@
 </script>
 
 <section class="health-block" aria-labelledby="health-pipeline-notes" data-slot="notes-section">
-	<SectionLabel id="health-pipeline-notes" text={t.section} variant="station" />
+	<SectionHeading level={2} id="health-pipeline-notes" overline={t.section} number={5} />
 	<p class="health-note">{t.note}</p>
 	<ul class="health-notes-list" aria-label={t.listLabel} data-slot="pipeline-notes">
 		{#each notes as note (note.key)}

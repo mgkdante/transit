@@ -13,7 +13,7 @@
 <script lang="ts">
 	import { DashboardGrid } from '$lib/components/layout';
 	import { Chart, type ChartSpec } from '$lib/components/dataviz/chart';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
@@ -44,23 +44,24 @@
 <DashboardGrid minTile="320px" align="start" gutter={false}>
 	<!-- Status mix -->
 	<div class="network-tile">
-		<SectionLabel text={copy.statusSection} variant="station" />
+		<SectionHeading level={3} overline={copy.statusSection} />
 		<Chart spec={statusSpec} />
 	</div>
 
 	<!-- Crowding (occupancy) — only when telemetry was received this cycle -->
 	{#if hasOccupancy && occupancySpec}
 		<div class="network-tile">
-			<span class="network-section">
-				<SectionLabel text={copy.occupancySection} variant="station" />
-				<MetricInfo
-					tip={occInfo.tip}
-					href={occInfo.href}
-					label={occInfo.label}
-					linkLabel={occInfo.linkLabel}
-					side="bottom"
-				/>
-			</span>
+			<SectionHeading level={3} overline={copy.occupancySection}>
+				{#snippet explainer()}
+					<MetricInfo
+						tip={occInfo.tip}
+						href={occInfo.href}
+						label={occInfo.label}
+						linkLabel={occInfo.linkLabel}
+						side="bottom"
+					/>
+				{/snippet}
+			</SectionHeading>
 			<Chart spec={occupancySpec} />
 		</div>
 	{/if}
@@ -76,10 +77,5 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		background: var(--card);
-	}
-	.network-section {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
 	}
 </style>

@@ -9,6 +9,7 @@
 	import { ConformanceBadge } from '$lib/components/surface';
 	import { CollapsibleSection } from '$lib/components/shared';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import type { ProvenanceConformance } from '$lib/v1/schemas';
 	import type { HealthCopy } from '../health.copy';
@@ -23,7 +24,7 @@
 </script>
 
 <section class="health-block" aria-labelledby="health-conformance" data-slot="conformance-section">
-	<SectionLabel id="health-conformance" text={t.section} variant="station" />
+	<SectionHeading level={2} id="health-conformance" overline={t.section} number={7} />
 	<p class="health-note">{t.note}</p>
 	<div class="health-conformance-badge">
 		<ConformanceBadge {conformance} {locale} />

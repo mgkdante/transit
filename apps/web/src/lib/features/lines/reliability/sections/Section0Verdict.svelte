@@ -192,6 +192,7 @@
 
 <CollapsibleSection
 	dataSection="verdict"
+	number={1}
 	eyebrow={copy.sections.verdict.label}
 	question={copy.sections.verdict.question}
 >

@@ -16,7 +16,7 @@
 -->
 <script lang="ts">
 	import { RankedRow } from '$lib/components/dataviz';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { NOT_REPORTED_DOMAIN, type NotReportedVM } from '../selectors/notReportedLines';
 
 	interface SectionNotReportedProps {
@@ -33,7 +33,7 @@
 </script>
 
 <section class="receipt-not-reported" data-slot="receipt-not-reported" aria-label={heading}>
-	<SectionLabel text={heading} variant="station" />
+	<SectionHeading level={2} overline={heading} />
 	<p class="receipt-not-reported-caveat" data-slot="receipt-not-reported-caveat">{caveat}</p>
 	{#if truncated}
 		<p class="receipt-not-reported-note" data-slot="receipt-shown-of-total">

@@ -26,6 +26,7 @@
 	import { ResourceBoundary, SurfaceHeader, FreshnessStamp } from '$lib/components/surface';
 	import { Separator } from '$lib/components/ui/separator';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import MapDrilldownLink from '$lib/components/surface/MapDrilldownLink.svelte';
 	import { MaybeValue } from '$lib/components/edge';
@@ -183,7 +184,7 @@
 
 					<!-- Remaining-stop ETA list, framed as a LIVE PREDICTION. -->
 					<div class="trip-stops-section">
-						<SectionLabel text={t.remainingStops} variant="metric" />
+						<SectionHeading level={2} overline={t.remainingStops} />
 						{#if (trip.stops ?? []).length > 0}
 							<ol class="trip-stops" aria-label={t.stopsListLabel}>
 								{#each trip.stops ?? [] as stop, si (stop.stop + '-' + si)}

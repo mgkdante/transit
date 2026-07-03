@@ -50,7 +50,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { AbsentValue } from '$lib/components/edge';
 	import { RankedRow, ExplainedMetricCard } from '$lib/components/dataviz';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { DELAY_DIST_DOMAIN } from '$lib/features/reliability/domains';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -356,16 +356,17 @@
 		{:else if hasLegacy}
 			<!-- FALLBACK: the legacy scalar ledger on the ABSOLUTE delay domain. -->
 			<div class="repeat-offenders-block">
-				<span class="repeat-offenders-section">
-					<SectionLabel text={t.listSection} variant="station" />
-					<MetricInfo
-						tip={severeInfo.tip}
-						href={severeInfo.href}
-						label={severeInfo.label}
-						linkLabel={severeInfo.linkLabel}
-						side="bottom"
-					/>
-				</span>
+				<SectionHeading level={2} overline={t.listSection}>
+					{#snippet explainer()}
+						<MetricInfo
+							tip={severeInfo.tip}
+							href={severeInfo.href}
+							label={severeInfo.label}
+							linkLabel={severeInfo.linkLabel}
+							side="bottom"
+						/>
+					{/snippet}
+				</SectionHeading>
 				<p class="repeat-offenders-caption">{t.rowCaption}</p>
 				<DashboardGrid
 					as="ul"
@@ -422,12 +423,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
-	}
-	/* Section heading + its (i) explainer share a baseline-aligned inline row. */
-	.repeat-offenders-section {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
 	}
 	:global(.dashboard-grid.repeat-offenders-ranked) {
 		max-width: 76rem;

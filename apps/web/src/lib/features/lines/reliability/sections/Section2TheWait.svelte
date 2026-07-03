@@ -673,6 +673,7 @@
 
 <CollapsibleSection
 	dataSection="the-wait"
+	number={3}
 	eyebrow={copy.sections.theWait.label}
 	question={copy.sections.theWait.question}
 >

@@ -7,7 +7,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import type { HealthCopy } from '../health.copy';
 
 	interface SectionRetentionProps {
@@ -23,7 +23,7 @@
 </script>
 
 <section class="health-block" aria-labelledby="health-retention" data-slot="retention-section">
-	<SectionLabel id="health-retention" text={t.section} variant="station" />
+	<SectionHeading level={2} id="health-retention" overline={t.section} number={6} />
 	<p class="health-note">{t.note}</p>
 	<div class="health-retention">
 		<MetricDisplay

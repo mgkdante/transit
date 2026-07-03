@@ -298,7 +298,7 @@
 									{#if roster.length > 0}
 										<div class="route-roster" data-testid="route-roster">
 											<div class="route-section-head">
-												<SectionLabel text={t.roster.heading} variant="station" />
+												<SectionHeading level={2} overline={t.roster.heading} />
 												<span class="route-roster-count">{t.roster.count(roster.length)}</span>
 											</div>
 											<ul class="route-roster-list" aria-label={t.roster.listLabel}>
@@ -365,7 +365,7 @@
 						{#snippet detail()}
 							<div class="route-section route-directions-pane">
 								<div class="route-section-head">
-									<SectionLabel text={t.directions} variant="station" />
+									<SectionHeading level={2} overline={t.directions} />
 									{#if live.generatedUtc != null || live.ageSeconds != null}
 										<FreshnessStamp
 											variant="live"

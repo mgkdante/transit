@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
 	import { EntityList } from '$lib/components/surface';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import type { ProvenanceSource } from '$lib/v1/schemas';
 	import type { HealthCopy } from '../health.copy';
 
@@ -20,7 +20,7 @@
 </script>
 
 <section class="health-block" aria-labelledby="health-sources" data-slot="sources-section">
-	<SectionLabel id="health-sources" text={t.section} variant="station" />
+	<SectionHeading level={2} id="health-sources" overline={t.section} number={3} />
 	<p class="health-note">{t.note}</p>
 	<EntityList items={[...items]} key={(s) => s.feed} class="health-list" aria-label={t.listLabel}>
 		{#snippet row(s)}

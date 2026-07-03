@@ -20,7 +20,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import type { EnvelopeView } from '../selectors/envelope';
 	import type { HealthCopy } from '../health.copy';
@@ -36,7 +36,7 @@
 </script>
 
 <section class="health-block" aria-labelledby="health-envelope" data-slot="envelope-section">
-	<SectionLabel id="health-envelope" text={t.section} variant="station" />
+	<SectionHeading level={2} id="health-envelope" overline={t.section} number={8} />
 	<p class="health-note">{t.note}</p>
 
 	<!-- publish_generation_id: the wide explained card carries the WHY in col2. -->

@@ -59,6 +59,7 @@
 	import { layout, mapHrefFor } from '$lib/nav';
 	import StopLabel from '$lib/components/brand/StopLabel.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { formatUtc } from '$lib/utils/time';
@@ -301,7 +302,7 @@
 >
 	{#snippet header()}
 		<div class="stop-detail-head">
-			<StopLabel stop={id} label={stop.data?.name ?? `#${id}`} />
+			<StopLabel as="h1" stop={id} label={stop.data?.name ?? `#${id}`} />
 			<MapDrilldownLink
 				href={mapHrefFor({ stop: id }, locale)}
 				label={t.viewOnMap}
@@ -318,7 +319,7 @@
 			{:else}
 				<div class="stop-next">
 					<div class="stop-next-head">
-						<SectionLabel text={t.next.heading} variant="station" />
+						<SectionHeading level={2} overline={t.next.heading} />
 						<FreshnessStamp
 							variant="live"
 							generatedUtc={live.generatedUtc}
@@ -439,7 +440,7 @@
 			>
 				{#snippet children(s: StopFile | null)}
 					<div class="stop-schedule">
-						<SectionLabel text={t.schedule.heading} variant="station" />
+						<SectionHeading level={2} overline={t.schedule.heading} />
 						{#each s?.scheduled ?? [] as entry, i (`${entry.route}-${entry.headsign ?? i}`)}
 							{@const shown = (entry.times ?? []).slice(0, SCHEDULE_CAP)}
 							<div class="stop-schedule-route">

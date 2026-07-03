@@ -63,6 +63,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { SurfaceHeader, ConformanceBadge } from '$lib/components/surface';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import {
 		CollapsibleSection,
@@ -544,7 +545,7 @@
 				aria-labelledby="metrics-provenance"
 				data-toc={PROVENANCE_ANCHOR}
 			>
-				<SectionLabel id="metrics-provenance" text={t.provenance.label} variant="station" />
+				<SectionHeading level={2} id="metrics-provenance" overline={t.provenance.label} />
 				<p class="metrics-preamble">{t.provenance.body}</p>
 				{#if provenance.data?.conformance}
 					<div class="metrics-conformance">
@@ -613,7 +614,7 @@
 			     overline groups them; the card number badge is the continuous index. -->
 			{#each groups as group (group.cluster)}
 				<div class="metrics-cluster">
-					<SectionLabel text={group.label} variant="station" class="metrics-cluster__overline" />
+					<SectionHeading level={2} overline={group.label} class="metrics-cluster__overline" />
 					{#each group.entries as entry (entry.key)}
 						{@const metricIndex = orderedMetrics.findIndex((m) => m.key === entry.key)}
 						{@const note = methodologyNote(entry)}

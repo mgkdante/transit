@@ -21,6 +21,7 @@
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { MetricDisplay } from '$lib/components/brand';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import { selectDailyTrend } from '../selectors/dailyTrend';
 	import { poolDailyRange } from '../selectors/dailyRange';
@@ -91,9 +92,7 @@
 	data-slot="stop-daily-trend"
 	data-mount="daily-range"
 >
-	<span class="stop-tile-heading">
-		<SectionLabel text={copy.trend.heading} variant="station" />
-	</span>
+	<SectionHeading level={2} overline={copy.trend.heading} class="stop-tile-heading" />
 
 	<!-- S8B WINDOW SLOT: the surface's DateRangePicker seats here (bound to the window
 	     the trend + verdict below clip to). Chrome, discerned from the data canvas; the

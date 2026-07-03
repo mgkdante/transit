@@ -367,6 +367,7 @@
 
 <CollapsibleSection
 	dataSection="run-and-fit"
+	number={4}
 	eyebrow={copy.sections.runAndFit.label}
 	question={copy.sections.runAndFit.question}
 >

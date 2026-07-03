@@ -14,7 +14,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { DashboardGrid } from '$lib/components/layout';
 	import { RankedRow } from '$lib/components/dataviz';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 
 	interface Props {
@@ -29,7 +29,7 @@
 </script>
 
 <div class="alert-history-block" data-slot="alert-breakdown">
-	<SectionLabel text={copy.breakdown.section} variant="station" />
+	<SectionHeading level={2} overline={copy.breakdown.section} />
 	{#if !hasBreakdown}
 		<!-- HONEST ABSENCE: the archive carries alerts but no published
 		     cause/effect/severity distribution. Say so with the styled chip, never a blank. -->
@@ -38,7 +38,7 @@
 		<DashboardGrid minTile="240px" gutter={false}>
 			{#if causeRows.length > 0}
 				<div class="alert-history-dist">
-					<SectionLabel text={copy.breakdown.byCause} variant="metric" />
+					<SectionHeading level={3} overline={copy.breakdown.byCause} />
 					<div class="alert-history-ranked" role="list" aria-label={copy.breakdown.byCauseLabel}>
 						{#each causeRows as row (row.key)}
 							<RankedRow
@@ -55,7 +55,7 @@
 			{/if}
 			{#if effectRows.length > 0}
 				<div class="alert-history-dist">
-					<SectionLabel text={copy.breakdown.byEffect} variant="metric" />
+					<SectionHeading level={3} overline={copy.breakdown.byEffect} />
 					<div class="alert-history-ranked" role="list" aria-label={copy.breakdown.byEffectLabel}>
 						{#each effectRows as row (row.key)}
 							<RankedRow
@@ -72,7 +72,7 @@
 			{/if}
 			{#if severityRows.length > 0}
 				<div class="alert-history-dist">
-					<SectionLabel text={copy.breakdown.bySeverity} variant="metric" />
+					<SectionHeading level={3} overline={copy.breakdown.bySeverity} />
 					<div class="alert-history-ranked" role="list" aria-label={copy.breakdown.bySeverityLabel}>
 						{#each severityRows as row (row.key)}
 							<RankedRow

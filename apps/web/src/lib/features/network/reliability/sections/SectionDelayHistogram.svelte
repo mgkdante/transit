@@ -16,7 +16,7 @@
 -->
 <script lang="ts">
 	import { Chart, type HistogramSpec, type AbsenceSpec } from '$lib/components/dataviz/chart';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
@@ -44,16 +44,17 @@
 {#if hasHistogram}
 	<section class="network-hist-section" data-slot="delay-histogram-section">
 		<div class="network-tile network-hist-tile">
-			<span class="network-section">
-				<SectionLabel text={copy.delayHistogramSection} variant="station" />
-				<MetricInfo
-					tip={i.tip}
-					href={i.href}
-					label={i.label}
-					linkLabel={i.linkLabel}
-					side="bottom"
-				/>
-			</span>
+			<SectionHeading level={3} overline={copy.delayHistogramSection}>
+				{#snippet explainer()}
+					<MetricInfo
+						tip={i.tip}
+						href={i.href}
+						label={i.label}
+						linkLabel={i.linkLabel}
+						side="bottom"
+					/>
+				{/snippet}
+			</SectionHeading>
 			<p class="network-hist-caption">{copy.delayHistogram.caption}</p>
 			<div class="network-hist" data-slot="delay-histogram">
 				<Chart {spec} />
@@ -81,11 +82,6 @@
 	}
 	.network-hist {
 		max-width: 100%;
-	}
-	.network-section {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
 	}
 	.network-hist-caption {
 		margin: 0;
