@@ -6,13 +6,17 @@
   non-full-bleed pages.
 
   Content order (§C2.1, built exactly):
-    BrandWordmark · divider · Map / Lines / Stops / Network · divider ·
-    search (≥lg compact in-pill field; <lg an icon → the menu sheet) · divider ·
-    LangSwitch + ThemeToggle · hamburger → the Audit menu.
+    BrandWordmark ("Transit" + orange dot → /) · divider · Map / Lines / Stops /
+    Network · divider · search (≥lg compact in-pill field; <lg an icon → the menu
+    sheet) · divider · LangSwitch + ThemeToggle · hamburger → the menu.
 
-  The Audit menu (Metrics · Status · Hotspots · Receipt · Repeat offenders ·
-  Alerts, + Search on <lg) opens as a full-height sheet ≤767px and an anchored
-  dropdown ≥768px — both wear the shared .glass-chrome recipe (§C4 P4).
+  The menu is a FLAT, unlabelled list of destinations (Map/Lines/Stops/Network
+  on <lg · Search on <lg · Metrics · Status · Hotspots · Receipt · Repeat
+  offenders · Alerts) closing with a "Yesid" link OUT to yesid.dev (external ↗).
+  No text group-headings — a quiet hairline is the only separator between the
+  primary surfaces and the secondary ones on mobile. It opens as a full-height
+  sheet ≤767px and an anchored dropdown ≥768px — both wear the shared
+  .glass-chrome recipe (§C4 P4).
 
   --pill-h is set on :root per breakpoint by PLAIN CSS (no JS measurement): the
   pill height is deterministic (content 44px + 2·padV + 2·2px border). Stage-1's
@@ -26,6 +30,7 @@
 <script lang="ts">
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import XIcon from '@lucide/svelte/icons/x';
+	import ArrowUpRightIcon from '@lucide/svelte/icons/arrow-up-right';
 	import { cn } from '$lib/utils';
 	import {
 		type Locale,
@@ -36,7 +41,7 @@
 		localizeHref,
 	} from '$lib/i18n';
 	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
-	import { SURFACE_NAV, AUDIT_NAV, isSurfaceActive } from '$lib/content/nav';
+	import { SURFACE_NAV, AUDIT_NAV, YESID_HOUSE_LINK, isSurfaceActive } from '$lib/content/nav';
 	// F (motion wiring): the pill nav links carry a subtle magnetic cursor-pull
 	// (≤3px). magnetic is MOTION-GATED — the vendored action no-ops under
 	// prefers-reduced-motion and on touch devices. Never edited.
@@ -45,7 +50,6 @@
 	import RefreshButton from './RefreshButton.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import LangSwitch from './LangSwitch.svelte';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 
 	interface NavPillProps {
 		/** Active request locale; omitted → getLocale() context. */
@@ -122,15 +126,22 @@
 	const closeMenuAria = $derived(locale === 'fr' ? 'Fermer le menu' : 'Close menu');
 	const menuAria = $derived(locale === 'fr' ? 'Menu de navigation' : 'Navigation menu');
 	const navAria = $derived(locale === 'fr' ? 'Navigation principale' : 'Primary navigation');
-	// The Audit group (accountability/meta surfaces) — AUDIT_NAV, localized +
-	// active-aware, so a route rename lands in one place. The hamburger menu is now
-	// the sole nav-menu consumer of this group (the footer also renders it).
+	// The menu is a FLAT, unlabelled list of destinations (no visible "Audit" /
+	// "Explore" headings — simpler, less confusing). These strings survive only as
+	// the group aria-labels so assistive tech can still tell the primary surfaces
+	// (AUDIT_NAV is active-aware, so a route rename lands in one place) from the
+	// accountability surfaces without a visible heading.
 	const auditLabel = $derived(locale === 'fr' ? 'Vérification' : 'Audit');
 	const searchGroupLabel = $derived(locale === 'fr' ? 'Recherche' : 'Search');
-	// The primary surfaces (Map/Lines/Stops/Network) — the sheet counterpart of the
-	// in-pill .nav-links row, which is hidden below lg. Without this, compact-width
-	// mobile nav would be a dead-end (the hamburger only reached Audit + Search).
 	const primaryGroupLabel = $derived(locale === 'fr' ? 'Explorer' : 'Explore');
+	// The parent-brand "Yesid" link out to yesid.dev — the final burger-menu row,
+	// with an external ↗ affordance. NOT the pill's main click anymore.
+	const yesidHouseLabel = $derived(YESID_HOUSE_LINK.label[locale]);
+	const yesidHouseAria = $derived(
+		locale === 'fr'
+			? `${YESID_HOUSE_LINK.label.fr} (nouvel onglet)`
+			: `${YESID_HOUSE_LINK.label.en} (opens in a new tab)`,
+	);
 
 	const navItems = $derived(
 		SURFACE_NAV.map((item) => ({
@@ -295,10 +306,16 @@
 		data-testid="nav-pill"
 		data-slot="nav-pill"
 	>
-		<!-- BRAND: the yesid. house wordmark (→ /). transit.yesid.dev is a yesid.dev
-		     product, but here the wordmark is the PRODUCT home (the house link lives
-		     in the Audit menu), so it routes to the dashboard root. -->
-		<BrandWordmark href={localizeHref('/', locale)} external={false} class="nav-wordmark" />
+		<!-- BRAND: the "Transit" product wordmark (→ /). transit.yesid.dev is a
+		     yesid.dev product, but here the pill wordmark is the PRODUCT home (the
+		     parent-brand "Yesid" link lives in the menu), so it reads "Transit" with
+		     the orange terminal dot and routes to the dashboard root. -->
+		<BrandWordmark
+			href={localizeHref('/', locale)}
+			text="Transit"
+			external={false}
+			class="nav-wordmark"
+		/>
 
 		<span class="nav-divider nav-divider-collapsible" aria-hidden="true"></span>
 
@@ -414,14 +431,14 @@
 		>
 			<!-- PRIMARY (sheet only, <lg): the in-pill .nav-links row is hidden below lg,
 			     so the sheet carries Map/Lines/Stops/Network there. Hidden ≥lg by CSS —
-			     the pill's own link row is the desktop entry. -->
+			     the pill's own link row is the desktop entry. FLAT — no visible heading;
+			     the group aria-label carries the wayfinding grouping for AT. -->
 			<div
 				class="nav-menu-primary-group"
 				role="group"
 				aria-label={primaryGroupLabel}
 				data-slot="nav-menu-primary"
 			>
-				<SectionLabel text={primaryGroupLabel} variant="station" class="nav-menu-heading" />
 				{#each navItems as item (item.key)}
 					<a
 						href={item.href}
@@ -435,9 +452,9 @@
 			</div>
 
 			<!-- SEARCH (sheet only, <lg): the in-pill field is hidden below lg, so the
-			     menu carries the sole search entry there. Hidden ≥lg by CSS. -->
+			     menu carries the sole search entry there. Hidden ≥lg by CSS. The field is
+			     self-describing (placeholder + aria-label); no visible heading. -->
 			<div class="nav-menu-search-group" role="group" aria-label={searchGroupLabel}>
-				<SectionLabel text={searchGroupLabel} variant="station" class="nav-menu-heading" />
 				<form
 					class="nav-menu-search"
 					role="search"
@@ -469,9 +486,10 @@
 				</form>
 			</div>
 
-			<!-- AUDIT group — the accountability/meta surfaces. -->
+			<!-- AUDIT (accountability/meta) surfaces — a flat continuation of the
+			     destination list, no visible heading; a quiet hairline (CSS) is the only
+			     separator from the primaries. The group aria-label is AT-only. -->
 			<div class="nav-menu-group" role="group" aria-label={auditLabel} data-slot="nav-menu-audit">
-				<SectionLabel text={auditLabel} variant="station" class="nav-menu-heading" />
 				{#each auditItems as item (item.key)}
 					<a
 						href={item.href}
@@ -484,16 +502,21 @@
 				{/each}
 			</div>
 
+			<!-- Parent-brand "Yesid" link OUT to yesid.dev — the final menu row, with an
+			     external ↗ affordance + rel="noopener". This replaces the old pill-click
+			     house link (the pill wordmark now reads "Transit"). -->
 			<a
-				href="https://yesid.dev"
+				href={YESID_HOUSE_LINK.href}
 				target="_blank"
 				rel="noopener noreferrer"
 				class="nav-menu-house"
-				aria-label="yesid."
+				aria-label={yesidHouseAria}
+				onclick={closeMenu}
 			>
 				<span class="nav-menu-house-wordmark"
-					><span>yesid</span><span class="text-primary">.</span></span
+					><span>{yesidHouseLabel}</span><span class="text-primary">.</span></span
 				>
+				<ArrowUpRightIcon size={15} strokeWidth={2} aria-hidden="true" />
 			</a>
 		</div>
 	{/if}
@@ -796,11 +819,6 @@
 		}
 	}
 
-	.nav-menu-heading {
-		padding-inline: 0.125rem;
-		padding-bottom: 0.125rem;
-	}
-
 	.nav-menu-primary-group,
 	.nav-menu-group,
 	.nav-menu-search-group {
@@ -937,9 +955,10 @@
 	}
 
 	.nav-menu-house {
-		display: inline-flex;
+		display: flex;
 		align-items: center;
-		justify-content: flex-start;
+		justify-content: space-between;
+		gap: 0.5rem;
 		min-height: 44px;
 		margin-top: 0.5rem;
 		padding: 0.5rem 0.65rem;
@@ -960,6 +979,18 @@
 		background: color-mix(in srgb, var(--primary) 10%, var(--muted) 90%);
 		border-color: color-mix(in srgb, var(--primary) 44%, var(--border) 56%);
 		outline: none;
+	}
+
+	/* The external ↗ affordance rides muted until the row is hover/focused. */
+	.nav-menu-house :global(svg) {
+		flex: none;
+		color: var(--muted-foreground);
+		transition: color var(--duration-fast) var(--ease-default);
+	}
+
+	.nav-menu-house:hover :global(svg),
+	.nav-menu-house:focus-visible :global(svg) {
+		color: var(--primary);
 	}
 
 	.nav-menu-house-wordmark {

@@ -17,9 +17,11 @@ describe('NavPill — structure', () => {
 		const pill = getByTestId('nav-pill');
 		expect(pill).toBeInTheDocument();
 
-		// Brand wordmark routes to the product home (not the external house site).
-		const brand = within(pill).getByRole('link', { name: /yesid/ });
+		// Brand wordmark reads "Transit" and routes to the product home (not the
+		// external house site).
+		const brand = within(pill).getByRole('link', { name: /Transit/ });
 		expect(brand).toHaveAttribute('href', '/');
+		expect(brand).toHaveTextContent('Transit');
 
 		// The four primaries, in order.
 		expect(within(pill).getByRole('link', { name: 'Map' })).toHaveAttribute('href', '/map');
@@ -63,8 +65,8 @@ describe('NavPill — active "you are here" dot', () => {
 	});
 });
 
-describe('NavPill — the Audit menu', () => {
-	it('opens a menu grouping the six audit surfaces + the externalized house link', async () => {
+describe('NavPill — the flat menu', () => {
+	it('opens a flat menu of the six audit destinations + the externalized Yesid link', async () => {
 		const { getByRole, queryByTestId } = render(NavPill, {
 			props: { locale: 'en', url: new URL('https://transit.local/map') },
 		});
@@ -76,7 +78,12 @@ describe('NavPill — the Audit menu', () => {
 		const menu = queryByTestId('nav-menu') as HTMLElement;
 		expect(menu).toBeInTheDocument();
 
-		// The Audit group holds the six accountability surfaces.
+		// FLAT list — no visible "Audit" text heading (the group aria-label survives
+		// for AT, but there is no rendered SectionLabel heading).
+		expect(within(menu).queryByText('Audit')).not.toBeInTheDocument();
+		expect(within(menu).queryByText('Explore')).not.toBeInTheDocument();
+
+		// The Audit group (aria-labelled) holds the six accountability surfaces.
 		const audit = within(menu).getByRole('group', { name: 'Audit' });
 		expect(within(audit).getByRole('link', { name: 'How we measure' })).toHaveAttribute(
 			'href',
@@ -100,14 +107,16 @@ describe('NavPill — the Audit menu', () => {
 		);
 		expect(within(audit).getByRole('link', { name: 'Alerts' })).toHaveAttribute('href', '/alerts');
 
-		// The parent-brand house link is externalized.
-		const yesid = within(menu).getByRole('link', { name: 'yesid.' });
+		// The parent-brand "Yesid" link is externalized (final menu row, external ↗).
+		const yesid = within(menu).getByRole('link', { name: /Yesid/ });
+		expect(yesid).toHaveTextContent('Yesid');
 		expect(yesid).toHaveAttribute('href', 'https://yesid.dev');
 		expect(yesid).toHaveAttribute('target', '_blank');
 		expect(yesid).toHaveAttribute('rel', 'noopener noreferrer');
+		expect(yesid).toHaveAccessibleName('Yesid (opens in a new tab)');
 	});
 
-	it('localizes the Audit group heading + hrefs in French', async () => {
+	it('localizes the Audit group + Yesid new-tab affordance in French', async () => {
 		const { getByRole, queryByTestId } = render(NavPill, {
 			props: { locale: 'fr', url: new URL('https://transit.local/fr/map') },
 		});
@@ -118,6 +127,11 @@ describe('NavPill — the Audit menu', () => {
 			'href',
 			'/fr/repeat-offenders',
 		);
+		// The parent-brand link stays "Yesid" (brand name, not localized) with a FR
+		// new-tab affordance, and still points at the external house site.
+		const yesid = within(menu).getByRole('link', { name: /Yesid/ });
+		expect(yesid).toHaveAttribute('href', 'https://yesid.dev');
+		expect(yesid).toHaveAccessibleName('Yesid (nouvel onglet)');
 	});
 
 	it('closes the menu and returns focus to the hamburger via Escape', async () => {

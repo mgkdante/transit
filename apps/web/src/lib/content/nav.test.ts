@@ -9,6 +9,7 @@ import {
 	SECONDARY_NAV,
 	AUDIT_NAV,
 	MENU_EXTRAS,
+	YESID_HOUSE_LINK,
 	isSurfaceActive,
 	mainLandmarkLabel,
 } from './nav';
@@ -167,5 +168,13 @@ describe('MENU_EXTRAS', () => {
 			expect(link.label.en).toBeTruthy();
 			expect(link.label.fr).toBeTruthy();
 		}
+	});
+});
+
+describe('YESID_HOUSE_LINK', () => {
+	it('is the external "Yesid" link out to the yesid.dev portfolio (bilingual)', () => {
+		expect(YESID_HOUSE_LINK.href).toBe('https://yesid.dev');
+		expect(YESID_HOUSE_LINK.label.en).toBe('Yesid');
+		expect(YESID_HOUSE_LINK.label.fr).toBe('Yesid');
 	});
 });

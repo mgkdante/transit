@@ -112,6 +112,18 @@ export const MENU_EXTRAS: readonly ExternalNavLink[] = [
 ] as const;
 
 /**
+ * The parent-brand link out to the yesid.dev portfolio, surfaced as the final
+ * burger-menu row (with an external ↗ affordance + rel="noopener"). transit is a
+ * yesid.dev product; the pill wordmark now reads "Transit" (the product home), so
+ * the "Yesid" house link lives here in the menu rather than as the pill's main
+ * click. One place for the label + href.
+ */
+export const YESID_HOUSE_LINK: ExternalNavLink = {
+	href: 'https://yesid.dev',
+	label: { en: 'Yesid', fr: 'Yesid' },
+} as const;
+
+/**
  * The "Audit" group — the accountability/meta surfaces, the SINGLE source for
  * both the NavPill hamburger menu's Audit section and the footer. The
  * metric explainer (/metrics) + data-health (/status) anchor it; the four
