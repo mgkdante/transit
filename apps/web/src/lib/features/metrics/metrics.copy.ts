@@ -132,6 +132,26 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		/** aria-label / title when the pin is ON (the action the press performs: unpin it). */
 		readonly forget: string;
 	};
+	/**
+	 * Right-rail stat cards (P5.3b DetailTemplate re-seat). Three compact cards —
+	 * Provenance / Coverage / Freshness — built from data the page already has
+	 * (the conformance verdict, the metric/cluster counts + confidence legend, and
+	 * generated_utc). On mobile they reflow into the top summary strip.
+	 */
+	readonly statRail: {
+		/** Accessible label for the whole stat rail (aside). */
+		readonly label: string;
+		/** Provenance card: title + the "verdict unavailable" stand-down. */
+		readonly provenance: { readonly title: string; readonly unavailable: string };
+		/** Coverage card: title + the (already-pluralized) unit nouns. */
+		readonly coverage: {
+			readonly title: string;
+			readonly metrics: string;
+			readonly families: string;
+		};
+		/** Freshness card: title (the "Updated N ago" stamp fills the body). */
+		readonly freshness: { readonly title: string };
+	};
 	/** Jump-nav (table of contents) heading. */
 	readonly tocLabel: string;
 	/** Mono prefix for the TOC "{prefix} N / total" counter (yesid uses "SEC"). */
@@ -265,6 +285,19 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			remember: 'Mémoriser le mode lecture pour les prochaines visites',
 			forget: 'Oublier le mode lecture (cette session seulement)',
 		},
+		statRail: {
+			label: 'En bref',
+			provenance: {
+				title: 'Provenance',
+				unavailable: 'Vérification de conformité momentanément indisponible.',
+			},
+			coverage: {
+				title: 'Couverture',
+				metrics: 'métriques',
+				families: 'familles',
+			},
+			freshness: { title: 'Fraîcheur' },
+		},
 		tocLabel: 'Aller à une métrique',
 		tocCounterPrefix: 'SEC',
 		backToTop: 'Retour en haut',
@@ -389,6 +422,19 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			rememberLabel: 'Remember',
 			remember: 'Remember focus reading on future visits',
 			forget: 'Forget focus reading (this session only)',
+		},
+		statRail: {
+			label: 'At a glance',
+			provenance: {
+				title: 'Provenance',
+				unavailable: 'Conformance check momentarily unavailable.',
+			},
+			coverage: {
+				title: 'Coverage',
+				metrics: 'metrics',
+				families: 'families',
+			},
+			freshness: { title: 'Freshness' },
 		},
 		tocLabel: 'Jump to a metric',
 		tocCounterPrefix: 'SEC',

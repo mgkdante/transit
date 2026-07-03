@@ -294,8 +294,11 @@ describe('HealthStatus — full manifest render', () => {
 	});
 
 	it('renders the conformance verdict + the COMPLETE unknown-member list + exact extra-row count', () => {
-		render(HealthStatus);
-		expect(screen.getByText(en.conformance.section)).toBeInTheDocument();
+		const { container } = render(HealthStatus);
+		// The caption also appears in the left-rail ToC now (P5.3b), so scope the
+		// section-heading assertion to the center sections column.
+		const sections = container.querySelector('[data-slot="health-sections"]') as HTMLElement;
+		expect(within(sections).getByText(en.conformance.section)).toBeInTheDocument();
 		const list = screen.getByRole('list', { name: en.conformance.membersListLabel });
 		for (const member of richProvenance.conformance!.unknown_members!) {
 			expect(within(list).getByText(member)).toBeInTheDocument();
@@ -376,8 +379,11 @@ describe('HealthStatus — S11 build-accountability envelope', () => {
 		// page; the body (freshness/sources/retention/conformance) is provenance,
 		// so the provenance stamp is primary. The live run's stamp belongs to the
 		// lanes section only.
-		render(HealthStatus);
-		expect(screen.getByText(en.envelope.section)).toBeInTheDocument();
+		const { container } = render(HealthStatus);
+		// The caption also appears in the left-rail ToC now (P5.3b), so scope the
+		// section-heading assertion to the center sections column.
+		const sections = container.querySelector('[data-slot="health-sections"]') as HTMLElement;
+		expect(within(sections).getByText(en.envelope.section)).toBeInTheDocument();
 		expect(screen.getByText('gen-prov-xyz')).toBeInTheDocument();
 		expect(screen.queryByText('gen-live-abc')).toBeNull();
 		expect(screen.getByText(en.envelope.generationIdExplain)).toBeInTheDocument();
@@ -465,8 +471,11 @@ describe('HealthStatus — honesty (sections stand down when absent)', () => {
 			conformance: { status: 'conformant', extra_row_count: 0, unknown_members: [] },
 		};
 		dataHealthFixture = null;
-		render(HealthStatus);
-		expect(screen.getByText(en.conformance.section)).toBeInTheDocument();
+		const { container } = render(HealthStatus);
+		// The caption also appears in the left-rail ToC now (P5.3b), so scope the
+		// section-heading assertion to the center sections column.
+		const sections = container.querySelector('[data-slot="health-sections"]') as HTMLElement;
+		expect(within(sections).getByText(en.conformance.section)).toBeInTheDocument();
 		expect(screen.queryByText(en.conformance.detailsTitle)).toBeNull();
 	});
 

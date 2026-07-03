@@ -178,6 +178,36 @@ export interface HealthCopy extends SurfaceHeadCopy {
 	};
 	/** Shown when a contract value is absent (honest no-data, never fabricated). */
 	readonly noData: string;
+	/**
+	 * Left-rail ToC (P5.3b DetailTemplate re-seat) — heading + SEC counter prefix +
+	 * mobile-pill a11y strings. The entry titles reuse each section's own caption.
+	 */
+	readonly toc: {
+		readonly label: string;
+		readonly counterPrefix: string;
+		readonly pill: { readonly open: string; readonly title: string; readonly close: string };
+	};
+	/**
+	 * Right-rail stat cards (P5.3b) — a compact pass/fail summary built from data on
+	 * the page: lanes passing over total (+ worst lane) and feeds fresh over total.
+	 * Reflows into the mobile top strip.
+	 */
+	readonly statRail: {
+		/** Accessible label for the whole stat rail (aside). */
+		readonly label: string;
+		/** Lanes card: title + "{pass} / {total}" pass-summary + "worst: {lane}" line. */
+		readonly lanes: {
+			readonly title: string;
+			readonly passing: (pass: string, total: string) => string;
+			readonly worst: (lane: string) => string;
+			readonly allClear: string;
+		};
+		/** Feeds card: title + "{ok} / {total}" fresh-summary. */
+		readonly feeds: {
+			readonly title: string;
+			readonly fresh: (ok: string, total: string) => string;
+		};
+	};
 }
 
 export const copy: Record<Locale, HealthCopy> = {
@@ -295,6 +325,24 @@ export const copy: Record<Locale, HealthCopy> = {
 			methodologyVersionLabel: 'Methodology version',
 		},
 		noData: 'no data',
+		toc: {
+			label: 'Jump to a section',
+			counterPrefix: 'SEC',
+			pill: { open: 'Contents', title: 'Jump to a section', close: 'Close contents' },
+		},
+		statRail: {
+			label: 'At a glance',
+			lanes: {
+				title: 'Lanes',
+				passing: (pass, total) => `${pass} / ${total} passing`,
+				worst: (lane) => `worst: ${lane}`,
+				allClear: 'all lanes passing',
+			},
+			feeds: {
+				title: 'Feeds',
+				fresh: (ok, total) => `${ok} / ${total} fresh`,
+			},
+		},
 	},
 	fr: {
 		kicker: 'DONNÉES · HONNÊTETÉ',
@@ -410,5 +458,23 @@ export const copy: Record<Locale, HealthCopy> = {
 			methodologyVersionLabel: 'Version de la méthode',
 		},
 		noData: 'aucune donnée',
+		toc: {
+			label: 'Aller à une section',
+			counterPrefix: 'SEC',
+			pill: { open: 'Sommaire', title: 'Aller à une section', close: 'Fermer le sommaire' },
+		},
+		statRail: {
+			label: 'En bref',
+			lanes: {
+				title: 'Lignes',
+				passing: (pass, total) => `${pass} / ${total} conformes`,
+				worst: (lane) => `pire : ${lane}`,
+				allClear: 'toutes les lignes conformes',
+			},
+			feeds: {
+				title: 'Flux',
+				fresh: (ok, total) => `${ok} / ${total} à jour`,
+			},
+		},
 	},
 };

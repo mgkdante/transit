@@ -72,29 +72,25 @@ describe('MetricsExplainer', () => {
 		expect(container.textContent).toContain(en.confidence.levels.medium.meaning);
 	});
 
-	it('lays the body out as a 2-column grid (ToC rail + content, no empty third measure rail)', () => {
+	it('re-seats onto the DetailTemplate 3-col shell (left ToC rail · center sections · right stat rail)', () => {
 		const { container } = render(MetricsExplainer);
 
-		// slice-9.8-B dropped the empty right rail: the body grid is now ToC rail +
-		// reading column only. The legacy .entry-column is gone entirely.
-		expect(container.querySelector('.entry-column')).toBeNull();
-
-		// Exactly the two grid children remain: the ToC rail and the sections column.
-		const grid = container.querySelector('.body-grid') as HTMLElement;
+		// P5.3b: the surface is now a DetailTemplate. The left rail carries the ToC,
+		// the center carries the sections column, the right rail carries the stat cards.
+		const grid = container.querySelector('.detail-grid') as HTMLElement;
 		expect(grid).not.toBeNull();
-		expect(grid.querySelector('.context-column')).not.toBeNull();
-		expect(grid.querySelector('.sections-column')).not.toBeNull();
-		const directChildren = Array.from(grid.children);
-		expect(directChildren).toHaveLength(2);
+		expect(grid.querySelector('[data-slot="detail-left"] .metrics-toc-rail')).not.toBeNull();
+		expect(grid.querySelector('[data-slot="detail-center"] .sections-column')).not.toBeNull();
+		expect(grid.querySelector('[data-slot="detail-right"] .metrics-stat-rail')).not.toBeNull();
 	});
 
 	it('renders the desktop TOC rail with one numbered jump button per metric', () => {
 		const { container } = render(MetricsExplainer);
 
-		// The TocNav lives in the desktop rail; its jump items are buttons (not
+		// The TocNav lives in the desktop left rail; its jump items are buttons (not
 		// links, the shared TocNav drives scroll via onNavigate, not href). One
 		// per metric, each labelled with the metric name.
-		const rail = container.querySelector('.context-column');
+		const rail = container.querySelector('.metrics-toc-rail');
 		expect(rail).not.toBeNull();
 		for (const entry of METRICS) {
 			expect(
@@ -207,7 +203,7 @@ describe('MetricsExplainer', () => {
 
 		// Every metric anchor resolves to exactly one in-page section block, and the
 		// rail offers a jump for it (the (i)-tip deep-link contract).
-		const rail = container.querySelector('.context-column') as HTMLElement;
+		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 		for (const entry of METRICS) {
 			expect(container.querySelectorAll(`#${CSS.escape(entry.anchor)}`)).toHaveLength(1);
 			expect(within(rail).getByRole('button', { name: entry.name.en })).toBeInTheDocument();
@@ -241,7 +237,7 @@ describe('MetricsExplainer', () => {
 
 	it('registers the structural-gaps section in the desktop TOC rail (after the metrics)', () => {
 		const { container } = render(MetricsExplainer);
-		const rail = container.querySelector('.context-column') as HTMLElement;
+		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 
 		// The rail offers a jump to the Lacunes card by its title (one ToC entry).
 		expect(within(rail).getByRole('button', { name: en.lacunes.title })).toBeInTheDocument();
@@ -276,7 +272,7 @@ describe('MetricsExplainer', () => {
 
 	it('registers the live-positions section in the desktop TOC rail', () => {
 		const { container } = render(MetricsExplainer);
-		const rail = container.querySelector('.context-column') as HTMLElement;
+		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 		expect(within(rail).getByRole('button', { name: en.livePositions.title })).toBeInTheDocument();
 	});
 
@@ -304,10 +300,10 @@ describe('MetricsExplainer', () => {
 	}
 
 	// The desktop ToC rail's OWN collapse trigger. It is the header disclosure
-	// trigger inside .context-column — DISTINCT from the metric-card triggers (which
+	// trigger inside .metrics-toc-rail — DISTINCT from the metric-card triggers (which
 	// live in metrics-sections).
 	function tocTrigger(container: HTMLElement): HTMLElement | null {
-		const rail = container.querySelector('.context-column') as HTMLElement;
+		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 		return rail?.querySelector('[data-slot="collapsible-trigger"]') ?? null;
 	}
 
@@ -392,7 +388,7 @@ describe('MetricsExplainer', () => {
 	// ── D3: ToC navigation opens its target card, closed siblings stay closed ───
 	it('ToC navigation opens the target card (closed siblings unaffected)', async () => {
 		const { container } = render(MetricsExplainer);
-		const rail = container.querySelector('.context-column') as HTMLElement;
+		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 
 		// Every card starts closed; jump to a mid-page metric via the rail.
 		const target = METRICS[3];
@@ -435,12 +431,12 @@ describe('MetricsExplainer', () => {
 
 		// The ToC rail is never HIDDEN (still in the DOM, still offers its jumps) —
 		// FOCUS folds its CollapsibleSection, it does not display:none the column.
-		const rail = container.querySelector('.context-column') as HTMLElement;
+		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 		expect(rail).not.toBeNull();
 		expect(rail.style.display).not.toBe('none');
-		// The body grid never gains a quiet variant class (grid + gutter unchanged).
+		// The detail grid never gains a quiet variant class (grid + gutter unchanged).
 		expect(
-			(container.querySelector('.body-grid') as HTMLElement).classList.contains('is-quiet'),
+			(container.querySelector('.detail-grid') as HTMLElement).classList.contains('is-quiet'),
 		).toBe(false);
 
 		// FOCUS OFF → the ToC reopens; the cards STAY closed (default-closed page —
@@ -536,7 +532,7 @@ describe('MetricsExplainer', () => {
 		}
 		// The restored FOCUS folded the ToC too (parity), but the rail is present.
 		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'false');
-		const rail = container.querySelector('.context-column') as HTMLElement;
+		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 		expect(rail).not.toBeNull();
 	});
 

@@ -60,10 +60,11 @@
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { getProvenance } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { Separator } from '$lib/components/ui/separator';
-	import { SurfaceHeader, ConformanceBadge } from '$lib/components/surface';
+	import { ConformanceBadge, FreshnessStamp } from '$lib/components/surface';
+	import { ArticleShell, DetailTemplate } from '$lib/components/layout';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import SectionProgress from '$lib/components/brand/SectionProgress.svelte';
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import {
 		CollapsibleSection,
@@ -428,6 +429,15 @@
 	let activeId = $state('');
 	onMount(() => observeActiveToc((id) => (activeId = id)));
 
+	// ── Reading-position readout (SEC n / m) for the left rail ───────────────────
+	// The 1-based index of the active ToC entry (falls back to 1 before any section
+	// is observed). Feeds SectionProgress alongside the ToC's own counter so the
+	// left rail carries a persistent "where am I" signal even when the ToC is folded.
+	const activeIndex = $derived.by(() => {
+		const i = tocEntries.findIndex((e) => e.id === activeId);
+		return i >= 0 ? i + 1 : 1;
+	});
+
 	// ── TOC navigation ──────────────────────────────────────────────────────────
 	// A TOC click OPENS its target card (default-closed page: a jump must reveal, not
 	// land on a shut card), then scrolls to it. Opening a card while its siblings
@@ -446,324 +456,396 @@
 	}
 </script>
 
-<article class="metrics-article" data-testid="metrics-article">
-	<!-- Full-bleed ARTICLE HEADER band — the .detail-header-grid dot-grid chrome
-	     (the "Manifesto schematic" behind the yesid blog/projects detail headers)
-	     behind the SurfaceHeader + the quiet-mode switch. Measured: the header
-	     content re-caps to container-content so the title block reads like an
-	     article masthead, while the dot-grid band itself spans the full width. -->
-	<header class="metrics-header detail-header-grid" bind:this={headerEl}>
-		<div class="metrics-header__inner">
-			<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
-				<!-- Quiet-mode (focus reading) affordance — a single restrained switch in the
-				     header. --primary lights up only when active (the mono "wave" icon collapses
-				     to a glowing core dot), 1:1 with the yesid.dev "Quiet mode" switch on transit
-				     tokens. A real <button role="switch"> with aria-checked + a bilingual label;
-				     the press flips the persisted quiet state. -->
-				<div class="metrics-quiet-controls">
-					<button
-						type="button"
-						class="metrics-quiet-toggle"
-						role="switch"
-						aria-checked={quiet}
-						aria-label={quiet ? t.quiet.disable : t.quiet.enable}
-						data-testid="metrics-quiet-toggle"
-						onclick={toggleQuiet}
-					>
-						<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-							<path class="q-wave" d="M8.4 8.4a5 5 0 0 0 0 7.2" />
-							<path class="q-wave" d="M15.6 8.4a5 5 0 0 1 0 7.2" />
-							<path class="q-wave q-wave--far" d="M5.7 5.7a8.9 8.9 0 0 0 0 12.6" />
-							<path class="q-wave q-wave--far" d="M18.3 5.7a8.9 8.9 0 0 1 0 12.6" />
-							<circle class="q-core" cx="12" cy="12" r="2.3" />
-						</svg>
-						<span>{t.quiet.label}</span>
-					</button>
-					<!-- Remember pin (slice-9.8-B): a paired switch that PINS the FOCUS
-					     preference across visits. OFF = FOCUS is session-only; ON = the
-					     current FOCUS choice is remembered next visit. The pin icon fills in
-					     --primary when engaged. Independent of the FOCUS state itself. -->
-					<button
-						type="button"
-						class="metrics-quiet-remember"
-						role="switch"
-						aria-checked={remembered}
-						aria-label={remembered ? t.quiet.forget : t.quiet.remember}
-						title={remembered ? t.quiet.forget : t.quiet.remember}
-						data-testid="metrics-quiet-remember"
-						onclick={toggleRemember}
-					>
-						<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-							<path class="r-pin" d="M12 17v4" />
-							<path class="r-pin" d="M9 3h6l-1 6 3 3v1H7v-1l3-3-1-6z" />
-						</svg>
-						<span>{t.quiet.rememberLabel}</span>
-					</button>
-				</div>
-			</SurfaceHeader>
+<!-- The right-rail / mobile-summary stat cards — Provenance / Coverage / Freshness,
+     all built from data the page already has (the live conformance verdict, the
+     metric+cluster counts + confidence legend, and generated_utc). Rendered ONCE
+     here and dropped into both the desktop right rail and the mobile top strip. -->
+{#snippet statCards()}
+	<div class="metrics-stat-rail">
+		<!-- Provenance: the live feed-conformance verdict (the same honesty signal
+		     the preamble carries), or an honest stand-down when it can't load. -->
+		<div class="metrics-stat" data-slot="stat-provenance">
+			<span class="metrics-stat__title">{t.statRail.provenance.title}</span>
+			{#if provenance.data?.conformance}
+				<ConformanceBadge conformance={provenance.data.conformance} {locale} />
+			{:else if provenanceUnavailable}
+				<p class="metrics-stat__note" role="status">{t.statRail.provenance.unavailable}</p>
+			{/if}
 		</div>
-	</header>
 
-	<!-- Edge-to-edge hazard stripe closing the header — 1:1 with the blog/projects
-	     detail header → <Separator variant="hazard"> contract. -->
-	<Separator variant="hazard" />
+		<!-- Coverage: the shape of the page — how many metrics across how many
+		     families, plus the confidence legend chips. Pure static counts. -->
+		<div class="metrics-stat" data-slot="stat-coverage">
+			<span class="metrics-stat__title">{t.statRail.coverage.title}</span>
+			<p class="metrics-stat__count">
+				<span class="metrics-stat__big">{orderedMetrics.length}</span>
+				<span class="metrics-stat__unit">{t.statRail.coverage.metrics}</span>
+			</p>
+			<p class="metrics-stat__sub">
+				{groups.length}
+				{t.statRail.coverage.families}
+			</p>
+			<ul class="metrics-stat__chips">
+				{#each Object.entries(t.confidence.levels) as [level, info] (level)}
+					<li><span class="metrics-chip">{info.chip}</span></li>
+				{/each}
+			</ul>
+		</div>
 
-	<!-- Body: the yesid article grid (max-width container-wide, centred, with the
-	     page gutter; at lg a 2-col grid → TOC rail | wide reading column). Single
-	     column below lg; the rail is replaced by the floating pill. The grid +
-	     gutter are IDENTICAL whether quiet mode is on or off — quiet only collapses
-	     the section cards (below); the ToC rail stays present. -->
-	<div class="body-grid">
-		<aside class="context-column">
-			<div class="context-panel toc-scroll">
-				<div class="toc-nav-shell">
-					<!-- The ToC keeps its OWN user-driven collapse (its chevron) + persists
-					     the choice across same-tab visits via `sectionKey`. S10 (2026-07-02):
-					     it ALSO follows FOCUS now (yesid Quiet-Mode parity) — `closeSignal`
-					     folds the rail on FOCUS ON, `openSignal` reopens it on FOCUS OFF. The
-					     reader's manual chevron still works and still wins between signals. -->
-					<TocNav
-						entries={tocEntries}
-						{activeId}
-						onNavigate={navigate}
-						heading={t.tocLabel}
-						counterPrefix={t.tocCounterPrefix}
-						sectionKey="metrics-toc"
-						{closeSignal}
-						openSignal={tocOpenSignal}
-					/>
+		<!-- Freshness: when this methodology build's provenance document was generated
+		     (the calm "Updated N ago" stamp — never a live-tier LIVE chip). -->
+		{#if provenance.data?.generated_utc}
+			<div class="metrics-stat" data-slot="stat-freshness">
+				<span class="metrics-stat__title">{t.statRail.freshness.title}</span>
+				<FreshnessStamp variant="updated" generatedUtc={provenance.data.generated_utc} {locale} />
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
+<!-- The header controls — the FOCUS switch + REMEMBER pin — ride the ArticleShell
+     meta row (the mono header-control zone), below the subheading line. -->
+{#snippet masthead()}
+	<span class="metrics-subhead">{t.subheading}</span>
+	<div class="metrics-quiet-controls">
+		<button
+			type="button"
+			class="metrics-quiet-toggle"
+			role="switch"
+			aria-checked={quiet}
+			aria-label={quiet ? t.quiet.disable : t.quiet.enable}
+			data-testid="metrics-quiet-toggle"
+			onclick={toggleQuiet}
+		>
+			<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+				<path class="q-wave" d="M8.4 8.4a5 5 0 0 0 0 7.2" />
+				<path class="q-wave" d="M15.6 8.4a5 5 0 0 1 0 7.2" />
+				<path class="q-wave q-wave--far" d="M5.7 5.7a8.9 8.9 0 0 0 0 12.6" />
+				<path class="q-wave q-wave--far" d="M18.3 5.7a8.9 8.9 0 0 1 0 12.6" />
+				<circle class="q-core" cx="12" cy="12" r="2.3" />
+			</svg>
+			<span>{t.quiet.label}</span>
+		</button>
+		<!-- Remember pin (slice-9.8-B): a paired switch that PINS the FOCUS
+		     preference across visits. OFF = FOCUS is session-only; ON = the
+		     current FOCUS choice is remembered next visit. The pin icon fills in
+		     --primary when engaged. Independent of the FOCUS state itself. -->
+		<button
+			type="button"
+			class="metrics-quiet-remember"
+			role="switch"
+			aria-checked={remembered}
+			aria-label={remembered ? t.quiet.forget : t.quiet.remember}
+			title={remembered ? t.quiet.forget : t.quiet.remember}
+			data-testid="metrics-quiet-remember"
+			onclick={toggleRemember}
+		>
+			<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+				<path class="r-pin" d="M12 17v4" />
+				<path class="r-pin" d="M9 3h6l-1 6 3 3v1H7v-1l3-3-1-6z" />
+			</svg>
+			<span>{t.quiet.rememberLabel}</span>
+		</button>
+	</div>
+{/snippet}
+
+<article class="metrics-article" data-testid="metrics-article">
+	<DetailTemplate class="metrics-detail">
+		<!-- Masthead → ArticleShell: kicker → display title + orange dot → lede → meta
+		     row (subheading + FOCUS controls) → hazard tape. The full-bleed dot-grid
+		     schematic band survives as the wrapper (`.detail-header-grid`). -->
+		{#snippet head()}
+			<div class="metrics-header detail-header-grid" bind:this={headerEl}>
+				<div class="metrics-header__inner">
+					<ArticleShell kicker={t.kicker} title={t.heading} lede={t.lede} meta={masthead} />
 				</div>
 			</div>
-		</aside>
+		{/snippet}
 
-		<div class="sections-column" data-testid="metrics-sections">
-			<!-- Provenance preamble: the honest framing every number inherits. Carries
+		<!-- Mobile top summary strip — the right-rail stats reflowed above the sections
+		     (DetailTemplate hides this ≥xl, where the right rail carries them). -->
+		{#snippet mobileSummary()}
+			{@render statCards()}
+		{/snippet}
+
+		<!-- LEFT rail: the numbered ToC + the SEC n / m reading-position readout. -->
+		{#snippet left()}
+			<div class="metrics-toc-rail">
+				<SectionProgress
+					current={activeIndex}
+					total={tocEntries.length}
+					prefix={t.tocCounterPrefix}
+				/>
+				<!-- The ToC keeps its OWN user-driven collapse (its chevron) + persists
+				     the choice across same-tab visits via `sectionKey`. S10 (2026-07-02):
+				     it ALSO follows FOCUS now (yesid Quiet-Mode parity) — `closeSignal`
+				     folds the rail on FOCUS ON, `openSignal` reopens it on FOCUS OFF. The
+				     reader's manual chevron still works and still wins between signals. -->
+				<TocNav
+					entries={tocEntries}
+					{activeId}
+					onNavigate={navigate}
+					heading={t.tocLabel}
+					counterPrefix={t.tocCounterPrefix}
+					sectionKey="metrics-toc"
+					{closeSignal}
+					openSignal={tocOpenSignal}
+				/>
+			</div>
+		{/snippet}
+
+		<!-- RIGHT rail: the three stat cards (desktop-sticky; reflowed to the top on
+		     mobile via mobileSummary above). -->
+		{#snippet right()}
+			<aside class="metrics-stat-aside" aria-label={t.statRail.label}>
+				{@render statCards()}
+			</aside>
+		{/snippet}
+
+		{#snippet center()}
+			<div class="sections-column" data-testid="metrics-sections">
+				<!-- Provenance preamble: the honest framing every number inherits. Carries
 			     the data-toc anchor so it is the FIRST tracked ToC target (active-section
 			     observer + click-to-scroll), mirroring the structural-gaps card pattern. -->
-			<section
-				class="metrics-prose"
-				aria-labelledby="metrics-provenance"
-				data-toc={PROVENANCE_ANCHOR}
-			>
-				<SectionHeading level={2} id="metrics-provenance" overline={t.provenance.label} />
-				<p class="metrics-preamble">{t.provenance.body}</p>
-				{#if provenance.data?.conformance}
-					<div class="metrics-conformance">
-						<ConformanceBadge conformance={provenance.data.conformance} {locale} />
-					</div>
-				{:else if provenanceUnavailable}
-					<!-- Supplementary provenance failed to load: degrade honestly with a
+				<section
+					class="metrics-prose"
+					aria-labelledby="metrics-provenance"
+					data-toc={PROVENANCE_ANCHOR}
+				>
+					<SectionHeading level={2} id="metrics-provenance" overline={t.provenance.label} />
+					<p class="metrics-preamble">{t.provenance.body}</p>
+					{#if provenance.data?.conformance}
+						<div class="metrics-conformance">
+							<ConformanceBadge conformance={provenance.data.conformance} {locale} />
+						</div>
+					{:else if provenanceUnavailable}
+						<!-- Supplementary provenance failed to load: degrade honestly with a
 					     localized stand-down line instead of a silent gap. The static
 					     methodology + structural-gaps card below are unaffected. -->
-					<p class="metrics-provenance-down" role="status">{t.provenance.unavailable}</p>
-				{/if}
+						<p class="metrics-provenance-down" role="status">{t.provenance.unavailable}</p>
+					{/if}
 
-				<!-- How we measure: the cross-cutting conventions every metric inherits
+					<!-- How we measure: the cross-cutting conventions every metric inherits
 				     (S10). Two static notes (capture-day vs service-day time model; the
 				     2026-07-01 half-away rounding rebaseline) + a doctrine-constants line
 				     rendered from the live provenance.methodology (min_n_rate / wilson_z),
 				     with an honest-absence stand-down when that document has not loaded. -->
-				<div class="metrics-measure">
-					<SectionLabel text={t.provenance.howWeMeasure.label} variant="metric" />
-					<div class="metrics-measure__item">
-						<h3 class="metrics-measure__heading">{t.provenance.howWeMeasure.serviceDay.heading}</h3>
-						<p class="metric__prose">{t.provenance.howWeMeasure.serviceDay.body}</p>
-					</div>
-					<div class="metrics-measure__item">
-						<h3 class="metrics-measure__heading">{t.provenance.howWeMeasure.rounding.heading}</h3>
-						<p class="metric__prose">{t.provenance.howWeMeasure.rounding.body}</p>
-					</div>
-					<div class="metrics-measure__item">
-						<h3 class="metrics-measure__heading">{t.provenance.howWeMeasure.constants.heading}</h3>
-						{#if doctrineConstants}
-							<p class="metric__prose" data-testid="metrics-doctrine-constants">
-								{t.provenance.howWeMeasure.constants.body(
-									doctrineConstants.minN,
-									doctrineConstants.wilsonZ,
-								)}
-							</p>
-						{:else}
-							<!-- Honest-absence: provenance.methodology carries the authoritative
+					<div class="metrics-measure">
+						<SectionLabel text={t.provenance.howWeMeasure.label} variant="metric" />
+						<div class="metrics-measure__item">
+							<h3 class="metrics-measure__heading">
+								{t.provenance.howWeMeasure.serviceDay.heading}
+							</h3>
+							<p class="metric__prose">{t.provenance.howWeMeasure.serviceDay.body}</p>
+						</div>
+						<div class="metrics-measure__item">
+							<h3 class="metrics-measure__heading">{t.provenance.howWeMeasure.rounding.heading}</h3>
+							<p class="metric__prose">{t.provenance.howWeMeasure.rounding.body}</p>
+						</div>
+						<div class="metrics-measure__item">
+							<h3 class="metrics-measure__heading">
+								{t.provenance.howWeMeasure.constants.heading}
+							</h3>
+							{#if doctrineConstants}
+								<p class="metric__prose" data-testid="metrics-doctrine-constants">
+									{t.provenance.howWeMeasure.constants.body(
+										doctrineConstants.minN,
+										doctrineConstants.wilsonZ,
+									)}
+								</p>
+							{:else}
+								<!-- Honest-absence: provenance.methodology carries the authoritative
 							     min_n_rate / wilson_z; when it has not loaded we say so rather
 							     than printing a hardcoded 30 / 1.96. -->
-							<p
-								class="metric__prose metric__not"
-								role="status"
-								data-testid="metrics-doctrine-absent"
-							>
-								{t.provenance.howWeMeasure.constants.absent}
-							</p>
-						{/if}
+								<p
+									class="metric__prose metric__not"
+									role="status"
+									data-testid="metrics-doctrine-absent"
+								>
+									{t.provenance.howWeMeasure.constants.absent}
+								</p>
+							{/if}
+						</div>
 					</div>
-				</div>
 
-				<div class="metrics-legend">
-					<SectionLabel text={t.confidence.label} variant="metric" />
-					<ul class="metrics-legend__list">
-						{#each Object.entries(t.confidence.levels) as [level, info] (level)}
-							<li class="metrics-legend__item">
-								<span class="metrics-chip">{info.chip}</span>
-								<span class="metrics-legend__meaning">{info.meaning}</span>
-							</li>
-						{/each}
-					</ul>
-				</div>
-			</section>
+					<div class="metrics-legend">
+						<SectionLabel text={t.confidence.label} variant="metric" />
+						<ul class="metrics-legend__list">
+							{#each Object.entries(t.confidence.levels) as [level, info] (level)}
+								<li class="metrics-legend__item">
+									<span class="metrics-chip">{info.chip}</span>
+									<span class="metrics-legend__meaning">{info.meaning}</span>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				</section>
 
-			<!-- One collapsible section card per metric, in cluster order. The cluster
+				<!-- One collapsible section card per metric, in cluster order. The cluster
 			     overline groups them; the card number badge is the continuous index. -->
-			{#each groups as group (group.cluster)}
-				<div class="metrics-cluster">
-					<SectionHeading level={2} overline={group.label} class="metrics-cluster__overline" />
-					{#each group.entries as entry (entry.key)}
-						{@const metricIndex = orderedMetrics.findIndex((m) => m.key === entry.key)}
-						{@const note = methodologyNote(entry)}
-						<div class="section-block" id={entry.anchor}>
-							<CollapsibleSection
-								title={entry.name[locale]}
-								anchor={entry.anchor}
-								index={metricIndex}
-								sectionKey={cardKey(entry.anchor)}
-								open={false}
-								{closeSignal}
-								openSignal={cardOpenSignal(entry.anchor)}
-							>
-								<div class="metric__body">
-									<p class="metric__meta">
-										<code class="metric__sci">{entry.sciName}</code>
-										<span class="metrics-chip metrics-chip--meta">{confidenceMeaning(entry)}</span>
-									</p>
+				{#each groups as group (group.cluster)}
+					<div class="metrics-cluster">
+						<SectionHeading level={2} overline={group.label} class="metrics-cluster__overline" />
+						{#each group.entries as entry (entry.key)}
+							{@const metricIndex = orderedMetrics.findIndex((m) => m.key === entry.key)}
+							{@const note = methodologyNote(entry)}
+							<div class="section-block" id={entry.anchor}>
+								<CollapsibleSection
+									title={entry.name[locale]}
+									anchor={entry.anchor}
+									index={metricIndex}
+									sectionKey={cardKey(entry.anchor)}
+									open={false}
+									{closeSignal}
+									openSignal={cardOpenSignal(entry.anchor)}
+								>
+									<div class="metric__body">
+										<p class="metric__meta">
+											<code class="metric__sci">{entry.sciName}</code>
+											<span class="metrics-chip metrics-chip--meta">{confidenceMeaning(entry)}</span
+											>
+										</p>
 
-									<div class="metric__block">
-										<SectionLabel text={t.sections.definition} variant="metric" />
-										<!-- EasterProse: definition prose carries the tasteful D4 easter-word
+										<div class="metric__block">
+											<SectionLabel text={t.sections.definition} variant="metric" />
+											<!-- EasterProse: definition prose carries the tasteful D4 easter-word
 										     flourish (buses / trains / science / agencies), decoration-only. -->
-										<EasterProse text={entry.definition[locale]} class="metric__prose" />
-									</div>
+											<EasterProse text={entry.definition[locale]} class="metric__prose" />
+										</div>
 
-									<div class="metric__block">
-										<SectionLabel text={t.sections.math} variant="metric" />
-										<p class="metric__prose metric__prose--mono">{entry.math[locale]}</p>
-									</div>
+										<div class="metric__block">
+											<SectionLabel text={t.sections.math} variant="metric" />
+											<p class="metric__prose metric__prose--mono">{entry.math[locale]}</p>
+										</div>
 
-									<div class="metric__block">
-										<SectionLabel text={t.sections.sql} variant="metric" />
-										<CodeBlock
-											code={entry.sql}
-											lang="SQL"
-											ariaLabel={`${t.sqlAria}: ${entry.sciName}`}
-										/>
-									</div>
+										<div class="metric__block">
+											<SectionLabel text={t.sections.sql} variant="metric" />
+											<CodeBlock
+												code={entry.sql}
+												lang="SQL"
+												ariaLabel={`${t.sqlAria}: ${entry.sciName}`}
+											/>
+										</div>
 
-									<div class="metric__block">
-										<SectionLabel text={t.sections.notReally} variant="metric" />
-										<EasterProse text={entry.notReally[locale]} class="metric__prose metric__not" />
-									</div>
+										<div class="metric__block">
+											<SectionLabel text={t.sections.notReally} variant="metric" />
+											<EasterProse
+												text={entry.notReally[locale]}
+												class="metric__prose metric__not"
+											/>
+										</div>
 
-									<div class="metric__block">
-										<SectionLabel text={t.sections.caveats} variant="metric" />
-										<ul class="metric__caveats">
-											{#each entry.caveats[locale] as caveat, i (i)}
-												<li>{caveat}</li>
-											{/each}
-										</ul>
-									</div>
+										<div class="metric__block">
+											<SectionLabel text={t.sections.caveats} variant="metric" />
+											<ul class="metric__caveats">
+												{#each entry.caveats[locale] as caveat, i (i)}
+													<li>{caveat}</li>
+												{/each}
+											</ul>
+										</div>
 
-									<!-- Live pipeline note: the verbatim provenance.methodology string
+										<!-- Live pipeline note: the verbatim provenance.methodology string
 									     for this metric from the CURRENT build, distinguished from the
 									     static science above. Stands down entirely when unmapped/absent.
 									     `note` is bound once at the #each level (above) — looked up once,
 									     used as the guard AND the body. -->
-									{#if note}
-										<div class="metric__block metric__note-block" data-slot="pipeline-note">
-											<SectionLabel text={t.sections.pipelineNote} variant="metric" />
-											<p class="metric__prose metric__pipeline-note">{note}</p>
-										</div>
-									{/if}
+										{#if note}
+											<div class="metric__block metric__note-block" data-slot="pipeline-note">
+												<SectionLabel text={t.sections.pipelineNote} variant="metric" />
+												<p class="metric__prose metric__pipeline-note">{note}</p>
+											</div>
+										{/if}
 
-									<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
-								</div>
-							</CollapsibleSection>
-						</div>
-					{/each}
-				</div>
-			{/each}
+										<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
+									</div>
+								</CollapsibleSection>
+							</div>
+						{/each}
+					</div>
+				{/each}
 
-			<!-- Live vehicle positions: the honest "almost real-time, not real-time"
+				<!-- Live vehicle positions: the honest "almost real-time, not real-time"
 			     explainer for how the live map DRAWS moving buses. Same collapsible-card
 			     spine as the methodology sections, with an icon badge (not a metric
 			     number); carries the deep-link target id + data-toc anchor the on-map
 			     "How this works" link points at (/metrics#live-positions). -->
-			<div class="section-block metrics-live" id={LIVE_POSITIONS_ANCHOR}>
-				<CollapsibleSection
-					title={t.livePositions.title}
-					anchor={LIVE_POSITIONS_ANCHOR}
-					sectionKey={cardKey(LIVE_POSITIONS_ANCHOR)}
-					open={false}
-					{closeSignal}
-					openSignal={cardOpenSignal(LIVE_POSITIONS_ANCHOR)}
-				>
-					{#snippet icon()}
-						<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
-					{/snippet}
-					<div class="metric__body">
-						<p class="metric__prose metrics-live__lede">{t.livePositions.lede}</p>
-						<ul class="metrics-live__list">
-							{#each t.livePositions.points as point (point.heading)}
-								<li class="metrics-live__point">
-									<h3 class="metrics-live__heading">{point.heading}</h3>
-									<p class="metric__prose">{point.body}</p>
-								</li>
-							{/each}
-						</ul>
-						<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
-					</div>
-				</CollapsibleSection>
-			</div>
+				<div class="section-block metrics-live" id={LIVE_POSITIONS_ANCHOR}>
+					<CollapsibleSection
+						title={t.livePositions.title}
+						anchor={LIVE_POSITIONS_ANCHOR}
+						sectionKey={cardKey(LIVE_POSITIONS_ANCHOR)}
+						open={false}
+						{closeSignal}
+						openSignal={cardOpenSignal(LIVE_POSITIONS_ANCHOR)}
+					>
+						{#snippet icon()}
+							<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
+						{/snippet}
+						<div class="metric__body">
+							<p class="metric__prose metrics-live__lede">{t.livePositions.lede}</p>
+							<ul class="metrics-live__list">
+								{#each t.livePositions.points as point (point.heading)}
+									<li class="metrics-live__point">
+										<h3 class="metrics-live__heading">{point.heading}</h3>
+										<p class="metric__prose">{point.body}</p>
+									</li>
+								{/each}
+							</ul>
+							<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
+						</div>
+					</CollapsibleSection>
+				</div>
 
-			<!-- Structural gaps ("Lacunes"): the honest close — what these metrics
+				<!-- Structural gaps ("Lacunes"): the honest close — what these metrics
 			     CANNOT tell the rider. Same collapsible-card spine as the methodology
 			     sections, but an icon badge (not a metric number) marks it as a
 			     non-metric section; carries the deep-link target id + data-toc anchor. -->
-			<div class="section-block metrics-lacunes" id={LACUNES_ANCHOR}>
-				<CollapsibleSection
-					title={t.lacunes.title}
-					anchor={LACUNES_ANCHOR}
-					sectionKey={cardKey(LACUNES_ANCHOR)}
-					open={false}
-					{closeSignal}
-					openSignal={cardOpenSignal(LACUNES_ANCHOR)}
-				>
-					{#snippet icon()}
-						<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
-					{/snippet}
-					<div class="metric__body">
-						<p class="metric__prose metrics-lacunes__lede">{t.lacunes.lede}</p>
-						<ul class="metrics-lacunes__list">
-							{#each t.lacunes.gaps as gap (gap.heading)}
-								<li class="metrics-lacunes__gap">
-									<h3 class="metrics-lacunes__heading">{gap.heading}</h3>
-									<p class="metric__prose">{gap.body}</p>
-								</li>
-							{/each}
-						</ul>
-						<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
-					</div>
-				</CollapsibleSection>
+				<div class="section-block metrics-lacunes" id={LACUNES_ANCHOR}>
+					<CollapsibleSection
+						title={t.lacunes.title}
+						anchor={LACUNES_ANCHOR}
+						sectionKey={cardKey(LACUNES_ANCHOR)}
+						open={false}
+						{closeSignal}
+						openSignal={cardOpenSignal(LACUNES_ANCHOR)}
+					>
+						{#snippet icon()}
+							<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
+						{/snippet}
+						<div class="metric__body">
+							<p class="metric__prose metrics-lacunes__lede">{t.lacunes.lede}</p>
+							<ul class="metrics-lacunes__list">
+								{#each t.lacunes.gaps as gap (gap.heading)}
+									<li class="metrics-lacunes__gap">
+										<h3 class="metrics-lacunes__heading">{gap.heading}</h3>
+										<p class="metric__prose">{gap.body}</p>
+									</li>
+								{/each}
+							</ul>
+							<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
+						</div>
+					</CollapsibleSection>
+				</div>
 			</div>
-		</div>
-	</div>
+		{/snippet}
+	</DetailTemplate>
 </article>
 
 <!-- Mobile floating TOC pill (hidden ≥lg). onNavigate routes through the page's
      open-then-scroll path so a drawer jump reveals its card (S10 review F1). -->
-<TocPill
-	entries={tocEntries}
-	{activeId}
-	openAria={t.tocPill.open}
-	closeAria={t.tocPill.close}
-	onNavigate={navigate}
-/>
+<!-- The pill covers the whole sub-xl range: DetailTemplate's left rail only
+     appears at ≥xl (1280px), so the floating pill must remain visible through the
+     1024–1279 band where the layout is still single-column. TocPill hides itself
+     ≥lg (1024px), so we re-show it up to xl here. -->
+<div class="metrics-toc-pill-shell">
+	<TocPill
+		entries={tocEntries}
+		{activeId}
+		openAria={t.tocPill.open}
+		closeAria={t.tocPill.close}
+		onNavigate={navigate}
+	/>
+</div>
 
 <style>
 	/* ── Article shell ─────────────────────────────────────────────────────────
@@ -789,6 +871,7 @@
 		padding-block: clamp(1.75rem, 4vw, 3rem);
 		padding-inline: var(--space-page-x);
 		background: var(--manifesto);
+		margin-block-end: 1.5rem;
 	}
 	.metrics-header__inner {
 		position: relative;
@@ -796,91 +879,131 @@
 		max-width: var(--container-content);
 		margin-inline: auto;
 	}
-
-	/* ── Body grid (yesid article grid) ────────────────────────────────────────
-	   Mobile: one column, container-wide, centred, with the page gutter. At lg it
-	   becomes a measured 2-col grid → TOC rail | reading column. slice-9.8-B
-	   dropped the empty right rail: the reclaimed real estate goes to a wider ToC
-	   rail and a wider reading column (the cards grow into it). The grid + gutter
-	   are IDENTICAL whether quiet mode is on or off (quiet only collapses cards). */
-	.body-grid {
-		max-width: var(--container-wide);
-		margin: 0 auto;
-		padding-inline: var(--space-page-x);
-		padding-block: 1.5rem;
-		min-width: 0;
-		overflow-x: clip;
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: var(--space-card-gap);
+	/* The subheading line ("// PROXY…") leads the ArticleShell meta row; it reads
+	   in the mono micro voice the old SurfaceHeader subheading carried. */
+	.metrics-subhead {
+		flex-basis: 100%;
+		font-family: var(--font-mono);
+		font-size: var(--text-mono);
+		letter-spacing: 2px;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
 	}
 
-	.context-column,
-	.sections-column {
-		min-width: 0;
-	}
-
-	/* The TOC rail is hidden below lg (the floating pill takes over). */
-	.toc-nav-shell {
+	/* ── Left rail (ToC + SEC readout) ─────────────────────────────────────────
+	   The rail's own vertical rhythm; the SEC readout sits above the ToC. Below xl
+	   the whole left rail is hidden by DetailTemplate (the floating TocPill takes
+	   over), so the SEC readout + ToC only appear on the ≥xl sticky rail. */
+	.metrics-toc-rail {
 		display: none;
+		flex-direction: column;
+		gap: 0.75rem;
+		min-width: 0;
+	}
+	@media (min-width: 1280px) {
+		.metrics-toc-rail {
+			display: flex;
+		}
 	}
 
+	/* Re-show the floating ToC pill through the 1024–1279 band (TocPill hides
+	   itself ≥lg, but the DetailTemplate left rail only appears at ≥xl). */
+	.metrics-toc-pill-shell :global(.toc-pill-container) {
+		display: block;
+	}
+	@media (min-width: 1280px) {
+		.metrics-toc-pill-shell :global(.toc-pill-container) {
+			display: none;
+		}
+	}
+
+	/* ── Sections column (the reading measure) ─────────────────────────────────
+	   The center column of the 3-col template; caps to the article measure so the
+	   cards read at a comfortable width whatever the track resolves to. */
 	.sections-column {
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
 		width: 100%;
+		min-width: 0;
+		max-width: 60rem;
 	}
 
-	@media (min-width: 1024px) {
-		.body-grid {
-			width: 100%;
-			max-width: none;
-			/* Two columns: a ToC rail + a fluid reading column. S10 (2026-07-02): the
-			   +layout retired the rotated edge word + accent rail that used to eat the
-			   left of the viewport, so the whole surface reclaims that width. The rail
-			   widens toward the yesid blog/[slug] context-column measure
-			   (min(18rem, 100%)) and the reading column takes the rest. */
-			grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
-			gap: 2.5rem;
-			align-items: start;
-			padding-block: 2.5rem;
-		}
-
-		.context-column {
-			grid-column: 1;
-			justify-self: stretch;
-			width: 100%;
-		}
-
-		.sections-column {
-			grid-column: 2;
-			/* Grow into the reclaimed real estate: widened from 46rem and pinned to
-			   the start so the cards fill the column rather than re-centring narrow. */
-			justify-self: start;
-			max-width: 60rem;
-			width: 100%;
-		}
-
-		.context-panel {
-			position: sticky;
-			top: var(--chrome-offset);
-		}
-
-		.toc-nav-shell {
-			display: block;
-		}
-
-		/* Keep a long TOC scrollable within the sticky viewport (the content column
-		   is the longer one). */
-		.toc-scroll {
-			/* Derive the ceiling from the shared knob: the rail pins at --chrome-offset,
-			   so the reachable viewport is 100dvh minus that offset, less 1rem slack. */
-			max-height: calc(100dvh - var(--chrome-offset) - 1rem);
-			overflow-y: auto;
-			overscroll-behavior: contain;
-			padding-bottom: 1rem;
-		}
+	/* ── Right rail / mobile summary stat cards ────────────────────────────────
+	   Provenance / Coverage / Freshness — compact cards fed from data the page
+	   already has. On desktop they stack in the sticky right rail; on mobile the
+	   SAME markup reflows into the top summary strip (a horizontal row that wraps).
+	   No data marks, no --primary (the honesty chips + stamp carry their own tone). */
+	.metrics-stat-aside {
+		min-width: 0;
+	}
+	.metrics-stat-rail {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-card-gap);
+	}
+	/* Mobile summary strip: lay the three cards in a wrapping row so they read as a
+	   compact strip above the sections, not a tall stack. */
+	.metrics-article :global(.detail-mobile-summary .metrics-stat-rail) {
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+	.metrics-article :global(.detail-mobile-summary .metrics-stat) {
+		flex: 1 1 12rem;
+	}
+	.metrics-stat {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		padding: 0.875rem 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		background: var(--muted);
+		min-width: 0;
+	}
+	.metrics-stat__title {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		letter-spacing: var(--tracking-eyebrow);
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.metrics-stat__note {
+		margin: 0;
+		color: var(--muted-foreground);
+		font-size: var(--text-caption);
+		line-height: 1.5;
+	}
+	.metrics-stat__count {
+		display: flex;
+		align-items: baseline;
+		gap: 0.375rem;
+		margin: 0;
+	}
+	.metrics-stat__big {
+		font-family: var(--font-heading);
+		font-size: 1.75rem;
+		font-weight: 800;
+		line-height: 1;
+		color: var(--foreground);
+		font-variant-numeric: tabular-nums;
+	}
+	.metrics-stat__unit {
+		font-size: var(--text-caption);
+		color: var(--muted-foreground);
+	}
+	.metrics-stat__sub {
+		margin: 0;
+		font-size: var(--text-caption);
+		color: var(--muted-foreground);
+	}
+	.metrics-stat__chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
 	}
 
 	/* ── Provenance preamble ─────────────────────────────────────────────────── */
