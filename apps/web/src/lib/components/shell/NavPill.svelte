@@ -37,6 +37,10 @@
 	} from '$lib/i18n';
 	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
 	import { SURFACE_NAV, AUDIT_NAV, isSurfaceActive } from '$lib/content/nav';
+	// F (motion wiring): the pill nav links carry a subtle magnetic cursor-pull
+	// (≤3px). magnetic is MOTION-GATED — the vendored action no-ops under
+	// prefers-reduced-motion and on touch devices. Never edited.
+	import { magnetic } from '@yesid/motion';
 	import BrandWordmark from './BrandWordmark.svelte';
 	import RefreshButton from './RefreshButton.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
@@ -263,7 +267,12 @@
 		     sheet carries them instead — the hamburger is the compact nav entry. -->
 		<div class="nav-links" data-slot="nav-links">
 			{#each navItems as item (item.key)}
-				<a href={item.href} class="nav-pill-link" aria-current={item.active ? 'page' : undefined}>
+				<a
+					href={item.href}
+					class="nav-pill-link"
+					aria-current={item.active ? 'page' : undefined}
+					use:magnetic={{ strength: 3, radius: 44 }}
+				>
 					{item.label}
 				</a>
 			{/each}

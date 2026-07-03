@@ -11,6 +11,9 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	// F (motion wiring): touch tactility on the mobile grain pill — pressBounce
+	// alongside the existing .tap-press CSS baseline (both self-gate). Vendored.
+	import { pressBounce } from '@yesid/motion';
 	import { ChevronToggle } from '$lib/components/brand';
 
 	interface Props {
@@ -63,6 +66,7 @@
 		bind:this={pillBtn}
 		type="button"
 		class="tap-press rel-filter-pill"
+		use:pressBounce
 		onclick={() => (drawerOpen = !drawerOpen)}
 		aria-expanded={drawerOpen}
 		aria-label={`${title} · ${label} · ${openAria}`}

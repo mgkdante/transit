@@ -77,6 +77,9 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		background: var(--card);
+		/* E1 glow map: content tiles rest on --shadow-card (the soft card bevel);
+		   they carry no drill-in, so no interactive hover-lift. */
+		box-shadow: var(--shadow-card);
 	}
 	.network-trend {
 		display: flex;

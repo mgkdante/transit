@@ -78,6 +78,8 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		background: var(--card);
+		/* E1 glow map: content tile rest shadow (matches the sibling network-tiles). */
+		box-shadow: var(--shadow-card);
 		width: 100%;
 	}
 	.network-hist {

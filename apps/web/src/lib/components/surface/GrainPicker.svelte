@@ -21,6 +21,12 @@
 -->
 <script lang="ts">
 	import { cn } from '$lib/utils';
+	// F (motion wiring): the grain toggles are the segmented "grain-picker toggles"
+	// boop targets — a self-resetting hover pop on desktop (SAFE-ALWAYS, touch-gated),
+	// with pressBounce + the .tap-press CSS baseline for touch tactility. All three
+	// self-gate (boop/pressBounce no-op on the wrong pointer type; tap-press is
+	// PRM-guarded). Vendored actions, never edited.
+	import { boop, pressBounce } from '@yesid/motion';
 
 	/** One offered grain segment. `available:false` renders disabled (never picked). */
 	export interface GrainSegment<K extends string = string> {
@@ -110,7 +116,7 @@
 			bind:this={refs[i]}
 			type="button"
 			role="radio"
-			class="grain-seg"
+			class="tap-press grain-seg"
 			class:grain-seg--active={value === seg.key}
 			aria-checked={value === seg.key}
 			aria-describedby={seg.available === false ? seg.describedById : undefined}
@@ -118,6 +124,8 @@
 			disabled={seg.available === false}
 			tabindex={i === checkedIndex ? 0 : -1}
 			onclick={() => pick(seg)}
+			use:boop={{ scale: 1.04 }}
+			use:pressBounce
 			{onkeydown}
 		>
 			{seg.label}

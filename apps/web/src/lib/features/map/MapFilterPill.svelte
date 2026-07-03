@@ -3,6 +3,10 @@
      renders): the motion toggle pinned to the top, the filters below. -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	// F (motion wiring): the mobile filter pill is a touch control — pressBounce
+	// adds tactile press feedback alongside the .tap-press CSS baseline. Both
+	// self-gate (pressBounce → touch only; tap-press → PRM-guarded). Vendored.
+	import { pressBounce } from '@yesid/motion';
 	import { ChevronToggle } from '$lib/components/brand';
 	import type { FilterStore } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
@@ -65,6 +69,7 @@
 			onclick={() => (drawerOpen = !drawerOpen)}
 			aria-expanded={drawerOpen}
 			aria-label={`${t.controlsTitle} ${activeCount} · ${t.controlsTitle}`}
+			use:pressBounce
 		>
 			<div class="map-filter-pill-dot" data-active={activeCount > 0}></div>
 			<span class="map-filter-pill-name">{t.controlsTitle}</span>
