@@ -322,10 +322,10 @@ describe('StopDetail reliability — habits heatmap', () => {
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 
 		expect(screen.getByText('Severe delays by hour')).toBeInTheDocument();
-		// The interactive Heatmap root is a labelled `group` (AT descends into the
-		// roving cells); its aria-label is the heatmap summary.
+		// P5.2: the heatmap is the classed-tier <Chart> mark — a labelled figure (the
+		// sr-only table is the AT mirror; LayerChart paints only in a real layout).
 		expect(
-			screen.getByRole('group', { name: 'Severe-delay heatmap by day and hour' }),
+			screen.getByRole('figure', { name: 'Severe-delay heatmap by day and hour' }),
 		).toBeInTheDocument();
 	});
 
@@ -352,10 +352,11 @@ describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 		expect(
 			within(crowding).getByText(/How full the buses observed at this stop ran/),
 		).toBeInTheDocument();
-		// The interactive proportion bar renders as a labelled group (AT descends into
-		// the focusable slices); its aria-label is the occupancy mix summary.
+		// P5.2: the proportion strip is a stacked-share <Chart> mark — a labelled figure
+		// whose aria-label carries the band summary (LayerChart paints nothing in
+		// happy-dom, so the figure + its sr-only table are the layout-independent read).
 		expect(
-			within(crowding).getByRole('group', {
+			within(crowding).getByRole('figure', {
 				name: /Occupancy mix of buses observed at this stop/,
 			}),
 		).toBeInTheDocument();

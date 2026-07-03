@@ -56,29 +56,8 @@ describe('ReliabilityBadge', () => {
 		expect(screen.queryByText('0%')).toBeNull();
 	});
 
-	it('draws the sparkline only when asked AND there are ≥2 real points', () => {
-		const { container } = render(ReliabilityBadge, {
-			props: {
-				snapshot: snap({ phase: 'ready', otpPct: 90, verdict: 'on_time', series: [88, null, 90] }),
-				locale: 'en',
-				sparkline: true,
-			},
-		});
-		expect(container.querySelector('[data-slot="sparkline"]')).not.toBeNull();
-	});
-
-	it('omits the sparkline when there is only one real point (no fabricated slope)', () => {
-		const { container } = render(ReliabilityBadge, {
-			props: {
-				snapshot: snap({ phase: 'ready', otpPct: 90, verdict: 'on_time', series: [null, 90] }),
-				locale: 'en',
-				sparkline: true,
-			},
-		});
-		expect(container.querySelector('[data-slot="sparkline"]')).toBeNull();
-		// The dot + % still render.
-		expect(screen.getByText('90%')).toBeInTheDocument();
-	});
+	// P5.2: the decorative inline sparkline path was removed with the legacy
+	// Sparkline primitive (it was never enabled by any consumer).
 
 	it('localizes the percent grouping in FR', () => {
 		render(ReliabilityBadge, {

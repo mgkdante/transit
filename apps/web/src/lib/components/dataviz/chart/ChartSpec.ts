@@ -43,6 +43,7 @@ export type ChartKind =
 	| 'dumbbell'
 	| 'line'
 	| 'trend'
+	| 'sparkline'
 	| 'cycle'
 	| 'histogram'
 	| 'bullet'
@@ -64,6 +65,7 @@ export const MAGNITUDE_KINDS = [
 	'dumbbell',
 	'line',
 	'trend',
+	'sparkline',
 	'cycle',
 	'histogram',
 	'bullet',
@@ -176,6 +178,13 @@ export interface TrendDatum {
  * domain (e.g. retard [0,8]) so the two never squash each other. Wilson 95% band follows
  * the primary. Gaps (null y) BREAK the line. Line only when realPoints ≥ minPointsForLine
  * AND every period n ≥ minN; otherwise unconnected dots.
+ *
+ * DOMAIN EXCEPTION (S9B, carried through P5.2): the NETWORK OTP trend alone rides
+ * `otpTrendDomain(...)` — a data-anchored, min-span-floored, [0,100]-clamped zoom
+ * with true tick labels + the absolute 80% reference INSIDE the window — instead of a
+ * zero-based domain. Adjudicated honest in S9 (DECISIONS B1/B2);
+ * features/reliability/domains.ts owns the ruling. Every other trend consumer stays
+ * zero-based (`checkAbsoluteDomain` reflects the general law, not this one carve-out).
  */
 export interface TrendSpec extends ChartSpecBase {
 	readonly kind: 'trend';
@@ -195,6 +204,32 @@ export interface TrendSpec extends ChartSpecBase {
 	};
 	readonly minPointsForLine: number;
 	readonly minN: number;
+}
+
+/**
+ * A5 (P5.2) — the inline mini-trend: a single series drawn WITHOUT axes/grid inside a
+ * KPI card, badge or context row. Still a MAGNITUDE kind: the y-scale rides an explicit
+ * zero-based absolute domain (never /max — the same value reads the same height on every
+ * card/refresh). Gaps (null) BREAK the line, never bridged. Colour comes as a dataviz
+ * token var (never an affordance token). Rendered by SparklineMark (LayerChart).
+ */
+export interface SparklineSpec extends ChartSpecBase {
+	readonly kind: 'sparkline';
+	readonly domain: AbsoluteDomain;
+	readonly unit: string;
+	/** Accessible label for the series (e.g. "Vehicles reporting, last 7 periods"). */
+	readonly label: string;
+	/** y per x; null = an honest GAP. */
+	readonly values: readonly (number | null)[];
+	/** Optional per-point labels for the tooltip / sr table (index-aligned to values). */
+	readonly xLabels?: readonly string[];
+	/** Line colour var — a dataviz scale token (defaults to the value voice). */
+	readonly colorVar?: string;
+	/** Emphasise the most recent real point with a dot + its formatted value. */
+	readonly showLast?: boolean;
+	/** Drawn size in px (presentation; the legacy Sparkline call-site sizes). */
+	readonly width?: number;
+	readonly height?: number;
 }
 
 /** One weekday panel of a cycle plot (a mini across-weeks series + its mean). */
@@ -300,6 +335,13 @@ export interface ShareSegment {
 	readonly occupancy?: OccupancyCode;
 	readonly status?: StatusCode;
 	readonly glyph?: string;
+	/**
+	 * Optional drill link — activating the band navigates here (P5.2; precedent:
+	 * MagnitudeDatum.href). The network status/occupancy mixes use it for the
+	 * map cross-filter URLs that the legacy StackedBar carried as an onSelect
+	 * callback — the spec stays data, navigation stays a URL.
+	 */
+	readonly href?: string;
 }
 
 /**
@@ -312,6 +354,15 @@ export interface StackedShareSpec extends ChartSpecBase {
 	readonly kind: 'stacked-share';
 	readonly scale: 'status' | 'occupancy';
 	readonly segments: readonly ShareSegment[];
+	/**
+	 * Presentation fields (P5.2, migrated from the legacy StackedBar contract —
+	 * precedent: HeatmapSpec's optional presentation block). `legend` renders the
+	 * labelled swatch list under the strip; `size` picks the legacy strip heights
+	 * (sm 8px / md 10px) — omitted ⇒ the mark's own default height, so pre-P5.2
+	 * call sites render pixel-identically.
+	 */
+	readonly legend?: boolean;
+	readonly size?: 'sm' | 'md';
 }
 
 /** One cell of a heatmap grid. */
@@ -510,6 +561,7 @@ export type ChartSpec =
 	| DumbbellSpec
 	| LineSpec
 	| TrendSpec
+	| SparklineSpec
 	| CycleSpec
 	| HistogramSpec
 	| BulletSpec

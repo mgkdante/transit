@@ -1,14 +1,15 @@
 <!--
   SectionCrowdingByDay — the per-day crowding small-multiple (one 100% bar per day).
 
-  Pure presenter of `selectOccupancyTrend`. One StackedBar(scale='occupancy') per day WITH
-  occupancy telemetry — a day with no telemetry is SKIPPED upstream (never an even split). The
-  100% stacked bars are self-normalising (EXEMPT from the absolute-magnitude domain law). The
-  whole tile stands down (renders nothing) when no day carries crowding data — the orchestrator
-  gates on the day-grain + a non-empty list.
+  Pure presenter of `selectOccupancyTrend` (P5.2: selector-emitted stacked-share
+  ChartSpecs through the ONE <Chart> renderer). One strip per day WITH occupancy
+  telemetry — a day with no telemetry is SKIPPED upstream (never an even split). The
+  100% stacked strips are self-normalising (EXEMPT from the absolute-magnitude domain
+  law). The whole tile stands down (renders nothing) when no day carries crowding data —
+  the orchestrator gates on the day-grain + a non-empty list.
 -->
 <script lang="ts">
-	import { StackedBar } from '$lib/components/dataviz';
+	import { Chart } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
@@ -46,13 +47,7 @@
 		{#each days as day (day.date)}
 			<li class="network-occupancy-day">
 				<span class="network-occupancy-date">{day.dateLabel}</span>
-				<StackedBar
-					scale="occupancy"
-					segments={day.segments}
-					size="sm"
-					interactive
-					label={`${copy.occupancySection} · ${day.dateLabel}`}
-				/>
+				<Chart spec={day.spec} />
 			</li>
 		{/each}
 	</ul>

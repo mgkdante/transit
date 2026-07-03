@@ -10,22 +10,37 @@ const statusLabel = (c: string) => `S:${c}`;
 const occLabel = (c: OccupancyCode) => `O:${c}`;
 
 describe('selectStatusMix', () => {
-	it('maps the 5 codes by count, null when no dist', () => {
+	it('emits a stacked-share spec (zero bands dropped, shares normalised, hrefs carried)', () => {
 		const dist = { early: 0, on_time: 8, late: 2, severe: 0, unknown: 0 } as StatusDist;
-		const segs = selectStatusMix(dist, statusLabel);
-		expect(segs).toHaveLength(5);
-		expect(segs.find((s) => s.code === 'on_time')?.value).toBe(8);
-		expect(selectStatusMix(null, statusLabel).every((s) => s.value == null)).toBe(true);
+		const spec = selectStatusMix(dist, statusLabel, {
+			title: 'Status mix',
+			locale: 'en',
+			hrefFor: (code) => `/map?status=${code}`,
+		});
+		expect(spec.kind).toBe('stacked-share');
+		if (spec.kind !== 'stacked-share') throw new Error('unreachable');
+		// zero-count bands are DROPPED (legacy StackedBar semantics)…
+		expect(spec.segments.map((s) => s.key)).toEqual(['on_time', 'late']);
+		// …and shares normalise to 100.
+		expect(spec.segments.find((s) => s.key === 'on_time')?.share).toBe(80);
+		expect(spec.segments.find((s) => s.key === 'late')?.href).toBe('/map?status=late');
+		expect(spec.legend).toBe(true);
+		expect(spec.size).toBe('md');
+	});
+
+	it('emits an honest absence spec when there is no dist (never a fabricated split)', () => {
+		const spec = selectStatusMix(null, statusLabel, { title: 'Status mix', locale: 'en' });
+		expect(spec.kind).toBe('absence');
 	});
 });
 
 describe('selectOccupancyMix', () => {
-	it('stands down (hasOccupancy false) on a null mix — never a fabricated even split', () => {
-		const vm = selectOccupancyMix(null, occLabel);
+	it('stands down (hasOccupancy false, spec null) on a null mix — never a fabricated even split', () => {
+		const vm = selectOccupancyMix(null, occLabel, { title: 'Crowding', locale: 'en' });
 		expect(vm.hasOccupancy).toBe(false);
-		expect(vm.segments.every((s) => s.value == null)).toBe(true);
+		expect(vm.spec).toBeNull();
 	});
-	it('carries the 5 band fractions when telemetry exists', () => {
+	it('emits the 5-band stacked-share spec when telemetry exists', () => {
 		const mix = {
 			empty: 0.1,
 			many_seats: 0.4,
@@ -33,14 +48,19 @@ describe('selectOccupancyMix', () => {
 			standing: 0.15,
 			full: 0.05,
 		} as unknown as OccupancyMix;
-		const vm = selectOccupancyMix(mix, occLabel);
+		const vm = selectOccupancyMix(mix, occLabel, { title: 'Crowding', locale: 'en' });
 		expect(vm.hasOccupancy).toBe(true);
-		expect(vm.segments).toHaveLength(5);
+		expect(vm.spec?.kind).toBe('stacked-share');
+		if (vm.spec?.kind !== 'stacked-share') throw new Error('unreachable');
+		expect(vm.spec.segments).toHaveLength(5);
+		expect(vm.spec.segments.find((s) => s.key === 'many_seats')?.occupancy).toBe('many_seats');
+		// fractions normalise to shares of 100
+		expect(vm.spec.segments.find((s) => s.key === 'many_seats')?.share).toBeCloseTo(40, 6);
 	});
 });
 
 describe('selectOccupancyTrend', () => {
-	it('SKIPS days with no telemetry (never an even split)', () => {
+	it('SKIPS days with no telemetry (never an even split) and emits per-day specs', () => {
 		const points: TrendPoint[] = [
 			{ date: '2026-06-14', occupancy_mix: null },
 			{
@@ -54,10 +74,16 @@ describe('selectOccupancyTrend', () => {
 				} as unknown as OccupancyMix,
 			},
 		];
-		const days = selectOccupancyTrend(points, (d) => `L:${d}`, occLabel);
+		const days = selectOccupancyTrend(points, (d) => `L:${d}`, occLabel, {
+			locale: 'en',
+			titleFor: (label) => `Crowding · ${label}`,
+		});
 		expect(days).toHaveLength(1);
 		expect(days[0].date).toBe('2026-06-15');
 		expect(days[0].dateLabel).toBe('L:2026-06-15');
+		expect(days[0].spec.kind).toBe('stacked-share');
+		expect(days[0].spec.title).toBe('Crowding · L:2026-06-15');
+		expect(days[0].spec.size).toBe('sm');
 	});
 });
 

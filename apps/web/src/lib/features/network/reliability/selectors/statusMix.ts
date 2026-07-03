@@ -1,21 +1,51 @@
-// statusMix — the live status-mix segments (the 5 StatusCodes by count).
+// statusMix — the live status-mix spec (the 5 StatusCodes by count).
 //
-// Ported VERBATIM from the NetworkHealth god-file. The self-normalising 100% status bar
-// stays on the shared StackedBar primitive (a stacked-share mark is EXEMPT from the
-// absolute-magnitude domain law — each segment's length IS its share of the whole), so this
-// selector emits StackedBar-ready StackedSegments, not a ChartSpec. StackedBar drops zeros.
+// P5.2: emits a `stacked-share` ChartSpec for the ONE <Chart> renderer (the legacy
+// StackedBar primitive is retired). The self-normalising 100% status bar stays EXEMPT
+// from the absolute-magnitude domain law — each band's length IS its share of the
+// whole; the shared `stackedShareSpec` helper carries the legacy semantics (null→0,
+// zero bands dropped). Each band carries the map cross-filter URL as `href` (the
+// legacy onSelect callback was always a navigation). Total 0 ⇒ an honest absence spec.
 
 import { STATUS_CODES, type StatusCode, type StatusDist } from '$lib/v1/schemas';
-import type { StackedSegment } from '$lib/components/dataviz';
+import type { ChartSpec } from '$lib/components/dataviz/chart';
+import { stackedShareSpec } from '$lib/components/dataviz/chart/share';
+import type { Locale } from '$lib/i18n/config';
+
+export interface StatusMixOptions {
+	/** Accessible title for the strip (the legacy `label`). */
+	readonly title: string;
+	readonly locale: Locale;
+	/** Band → the localized map cross-filter URL (omit ⇒ non-navigating bands). */
+	readonly hrefFor?: (code: StatusCode) => string;
+}
 
 /** code → localized status band label (the SHARED $lib/v1/enumLabels vocabulary). */
 export function selectStatusMix(
 	dist: StatusDist | null | undefined,
 	statusLabel: (code: StatusCode) => string,
-): StackedSegment[] {
-	return STATUS_CODES.map((code: StatusCode) => ({
-		code,
-		value: dist ? dist[code] : null,
-		label: statusLabel(code),
-	}));
+	opts: StatusMixOptions,
+): ChartSpec {
+	const spec = stackedShareSpec({
+		title: opts.title,
+		locale: opts.locale,
+		scale: 'status',
+		legend: true,
+		size: 'md',
+		inputs: STATUS_CODES.map((code: StatusCode) => ({
+			code,
+			value: dist ? dist[code] : null,
+			label: statusLabel(code),
+			href: opts.hrefFor?.(code),
+		})),
+	});
+	return (
+		spec ?? {
+			kind: 'absence',
+			title: opts.title,
+			locale: opts.locale,
+			reason: 'no-observations',
+			variant: 'inline',
+		}
+	);
 }

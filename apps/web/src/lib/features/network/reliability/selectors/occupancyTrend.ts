@@ -1,20 +1,29 @@
 // selectOccupancyTrend — the per-day crowding small-multiple (one 100% bar per day).
 //
-// Ported VERBATIM from the NetworkHealth god-file. One StackedBar(scale='occupancy') per day
-// THAT HAS occupancy telemetry; a day whose occupancy_mix is null/absent is SKIPPED entirely
-// (never an even split). Each kept day's segments null-guard the same way the live bar does.
-// Per-day crowding is a DAILY artifact — week/month carry no per-point occupancy mix — so the
+// P5.2: each kept day emits a `stacked-share` ChartSpec for the ONE <Chart> renderer
+// (the legacy StackedBar primitive is retired). One strip per day THAT HAS occupancy
+// telemetry; a day whose occupancy_mix is null/absent — or all-zero, which the shared
+// helper treats identically — is SKIPPED entirely (never an even split). Per-day
+// crowding is a DAILY artifact — week/month carry no per-point occupancy mix — so the
 // orchestrator only renders it on the day grain. Consumes the ALREADY-windowed series.
 
 import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
 import type { TrendPoint } from '$lib/v1/schemas';
-import type { StackedSegment } from '$lib/components/dataviz';
+import type { StackedShareSpec } from '$lib/components/dataviz/chart';
+import { stackedShareSpec } from '$lib/components/dataviz/chart/share';
+import type { Locale } from '$lib/i18n/config';
 
 /** One dated crowding column in the small-multiple. */
 export interface OccupancyDay {
 	readonly date: string;
 	readonly dateLabel: string;
-	readonly segments: StackedSegment[];
+	readonly spec: StackedShareSpec;
+}
+
+export interface OccupancyTrendOptions {
+	readonly locale: Locale;
+	/** Localized strip title for a day (e.g. "Crowding · Jun 30"). */
+	readonly titleFor: (dateLabel: string) => string;
 }
 
 /**
@@ -25,19 +34,25 @@ export function selectOccupancyTrend(
 	points: readonly TrendPoint[],
 	dateLabel: (date: string) => string,
 	occupancyLabel: (code: OccupancyCode) => string,
+	opts: OccupancyTrendOptions,
 ): OccupancyDay[] {
-	return points
-		.filter(
-			(p): p is TrendPoint & { occupancy_mix: NonNullable<TrendPoint['occupancy_mix']> } =>
-				p.occupancy_mix != null,
-		)
-		.map((p) => ({
-			date: p.date,
-			dateLabel: dateLabel(p.date),
-			segments: OCCUPANCY_CODES.map((code: OccupancyCode) => ({
+	const out: OccupancyDay[] = [];
+	for (const p of points) {
+		const mix = p.occupancy_mix;
+		if (mix == null) continue;
+		const label = dateLabel(p.date);
+		const spec = stackedShareSpec({
+			title: opts.titleFor(label),
+			locale: opts.locale,
+			scale: 'occupancy',
+			size: 'sm',
+			inputs: OCCUPANCY_CODES.map((code: OccupancyCode) => ({
 				code,
-				value: p.occupancy_mix[code] ?? null,
+				value: mix[code] ?? null,
 				label: occupancyLabel(code),
 			})),
-		}));
+		});
+		if (spec) out.push({ date: p.date, dateLabel: label, spec });
+	}
+	return out;
 }

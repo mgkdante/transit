@@ -43,21 +43,17 @@
 	} from '$lib/components/ui/card';
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '$lib/components/ui/tabs';
 
-	// Dataviz kit.
+	// Dataviz kit (non-chart primitives) + the ONE chart renderer (P5.2).
 	import {
 		StatusBadge,
-		Sparkline,
-		TrendLine,
-		Distribution,
-		Heatmap,
 		RankedRow,
 		SeverityBar,
-		StackedBar,
 		ChartLegend,
 		statusVar,
 		STATUS_GLYPH,
 		type ChartLegendItem,
 	} from '$lib/components/dataviz';
+	import { Chart, stackedShareSpec, type ChartSpec } from '$lib/components/dataviz/chart';
 
 	// Edge states.
 	import { EdgeState } from '$lib/components/edge';
@@ -97,7 +93,66 @@
 	const sparkSeries: Array<number | null> = [82, 84, 80, null, 86, 88, 85, 90, 87, 91];
 	const trendOnTime: Array<number | null> = [78, 80, 82, 81, 85, 86, 88];
 	const trendRetard: Array<number | null> = [22, 20, 18, 19, 15, 14, 12];
-	const distStats = { min: 0, p25: 2, p50: 4, p75: 7, max: 14 };
+
+	// P5.2 chart demos — selector-shaped specs through the ONE <Chart> renderer.
+	const sparkSpec = $derived<ChartSpec>({
+		kind: 'sparkline',
+		title: 'On-time % · 10 builds',
+		locale: lang,
+		domain: [0, 100],
+		unit: '%',
+		label: lang === 'fr' ? 'À l’heure %' : 'On-time %',
+		values: sparkSeries,
+		xLabels: sparkSeries.map((_, i) => `#${i + 1}`),
+		colorVar: statusVar('on_time'),
+		showLast: true,
+		width: 220,
+		height: 48,
+	});
+	const trendSpec = $derived<ChartSpec>({
+		kind: 'trend',
+		title: '7-day trend',
+		locale: lang,
+		xScale: 'band',
+		domain: [0, 100],
+		unit: '%',
+		label: lang === 'fr' ? 'À l’heure %' : 'On-time %',
+		points: trendOnTime.map((y, i) => ({
+			x: lang === 'fr' ? `J${i + 1}` : `D${i + 1}`,
+			xLabel: lang === 'fr' ? `J${i + 1}` : `D${i + 1}`,
+			y,
+			y2: trendRetard[i] ?? null,
+		})),
+		hasBand: false,
+		secondary: {
+			domain: [0, 100],
+			unit: '%',
+			label: lang === 'fr' ? 'Retard %' : 'Delayed %',
+		},
+		minPointsForLine: 2,
+		minN: 0,
+	});
+	// HistogramMark reads the SHARED signed-seconds axis (the house contract —
+	// see delayHistogram.ts: minutes × 60), so the demo bins are in seconds.
+	const histogramSpec = $derived<ChartSpec>({
+		kind: 'histogram',
+		title: lang === 'fr' ? 'Distribution des retards' : 'Delay distribution',
+		locale: lang,
+		domain: [-300, 1800],
+		countDomain: [0, 40],
+		unit: 'min',
+		xLabel: lang === 'fr' ? 'Retard (min)' : 'Delay (min)',
+		yLabel: lang === 'fr' ? 'Voyages' : 'Trips',
+		bins: [
+			{ lo: -300, hi: -60, count: 6 },
+			{ lo: -60, hi: 60, count: 38 },
+			{ lo: 60, hi: 300, count: 24 },
+			{ lo: 300, hi: 600, count: 12 },
+			{ lo: 600, hi: 1800, count: 5 },
+		],
+		medianRef: 144,
+		p90Ref: 480,
+	});
 
 	// 7×24 heatmap of normalized delay; sprinkle nulls for the no-data token.
 	const heatmapGrid: Array<Array<number | null>> = Array.from({ length: 7 }, (_, d) =>
@@ -107,23 +162,59 @@
 		}),
 	);
 
-	const stackedStatus = $derived(
-		STATUS_CODES.map((code, i) => ({
-			code,
-			value: [4, 62, 20, 6, 8][i],
-			label: STATUS_LABEL[code][lang],
-		})),
+	const stackedStatusSpec = $derived(
+		stackedShareSpec({
+			title: lang === 'fr' ? 'Répartition statut' : 'Status mix',
+			locale: lang,
+			scale: 'status',
+			legend: true,
+			size: 'md',
+			inputs: STATUS_CODES.map((code, i) => ({
+				code,
+				value: [4, 62, 20, 6, 8][i] ?? null,
+				label: STATUS_LABEL[code][lang],
+			})),
+		}),
 	);
-	const stackedOccupancy = $derived(
-		OCCUPANCY_CODES.map((code, i) => ({
-			code,
-			value: [10, 30, 28, 22, 10][i],
-			label: OCC_LABEL[code][lang],
-		})),
+	const stackedOccupancySpec = $derived(
+		stackedShareSpec({
+			title: lang === 'fr' ? 'Achalandage' : 'Occupancy',
+			locale: lang,
+			scale: 'occupancy',
+			legend: true,
+			size: 'md',
+			inputs: OCCUPANCY_CODES.map((code, i) => ({
+				code,
+				value: [10, 30, 28, 22, 10][i] ?? null,
+				label: OCC_LABEL[code][lang],
+			})),
+		}),
 	);
+	const heatmapSpec = $derived<ChartSpec>({
+		kind: 'heatmap',
+		title: lang === 'fr' ? 'Carte de chaleur des retards' : 'Delay heatmap',
+		locale: lang,
+		mode: 'absolute',
+		domain: [0, 1],
+		rowLabels: (lang === 'fr'
+			? ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
+			: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) as string[],
+		colLabels: Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`),
+		cells: heatmapGrid.map((row) =>
+			row.map((v) => (v == null ? { value: null, absentReason: 'no-observations' } : { value: v })),
+		),
+		tiers: {
+			tierLabels:
+				lang === 'fr' ? ['Calme', 'Modéré', 'Chargé', 'Pire'] : ['Calm', 'Mild', 'Busy', 'Worst'],
+			noDataLabel: lang === 'fr' ? 'Aucune donnée' : 'No data',
+			worstGlyph: '◆',
+		},
+		valueLabel: lang === 'fr' ? 'Retard normalisé' : 'Normalised delay',
+		colTicks: [0, 6, 12, 18].map((h) => ({ index: h, label: `${String(h).padStart(2, '0')}:00` })),
+	});
 
 	// Standalone ChartLegend demo — the 5 status codes as glyph+colour swatches
-	// on the dataviz scale (the same legend StackedBar/TrendLine compose).
+	// on the dataviz scale (the same legend the chart marks compose).
 	const legendStatusItems = $derived<ChartLegendItem[]>(
 		STATUS_CODES.map((code) => ({
 			colorVar: statusVar(code),
@@ -295,74 +386,23 @@
 		<div class="kit-grid2">
 			<div class="kit-card">
 				<SectionLabel text="SPARKLINE" variant="metric" />
-				<Sparkline
-					values={sparkSeries}
-					width={220}
-					height={48}
-					label="On-time % · 10 builds"
-					colorVar={statusVar('on_time')}
-					yAxis={{ label: lang === 'fr' ? 'À l’heure %' : 'On-time %', unit: '%' }}
-					xLabels={sparkSeries.map((_, i) => `#${i + 1}`)}
-					showYTicks
-					interactive
-				/>
+				<Chart spec={sparkSpec} />
 			</div>
 			<div class="kit-card">
 				<SectionLabel text="TRENDLINE" variant="metric" />
-				<TrendLine
-					onTime={trendOnTime}
-					retard={trendRetard}
-					onTimeLabel={lang === 'fr' ? 'À l’heure %' : 'On-time %'}
-					retardLabel={lang === 'fr' ? 'Retard %' : 'Delayed %'}
-					xLabels={trendOnTime.map((_, i) => (lang === 'fr' ? `J${i + 1}` : `D${i + 1}`))}
-					yAxis={{
-						label: lang === 'fr' ? 'À l’heure %' : 'On-time %',
-						unit: '%',
-						domain: [0, 100],
-					}}
-					retardAxis={{
-						label: lang === 'fr' ? 'Retard %' : 'Delayed %',
-						unit: '%',
-						domain: [0, 100],
-					}}
-					showYTicks
-					showXTicks
-					label="7-day trend"
-					interactive
-				/>
+				<Chart spec={trendSpec} />
 			</div>
 			<div class="kit-card">
-				<SectionLabel text="DISTRIBUTION" variant="metric" />
-				<Distribution
-					stats={distStats}
-					domain={[0, 14]}
-					unit="min"
-					label={lang === 'fr' ? 'Retard' : 'Delay'}
-					fillVar={statusVar('late')}
-					showAxis
-					axisLabel={lang === 'fr' ? 'Retard (min)' : 'Delay (min)'}
-					interactive
-				/>
+				<SectionLabel text="HISTOGRAM" variant="metric" />
+				<Chart spec={histogramSpec} />
 			</div>
 			<div class="kit-card">
 				<SectionLabel text="STACKED · STATUS" variant="metric" />
-				<StackedBar
-					scale="status"
-					segments={stackedStatus}
-					interactive
-					legend
-					label={lang === 'fr' ? 'Répartition statut' : 'Status mix'}
-				/>
+				{#if stackedStatusSpec}<Chart spec={stackedStatusSpec} />{/if}
 			</div>
 			<div class="kit-card">
 				<SectionLabel text="STACKED · OCCUPANCY" variant="metric" />
-				<StackedBar
-					scale="occupancy"
-					segments={stackedOccupancy}
-					interactive
-					legend
-					label={lang === 'fr' ? 'Achalandage' : 'Occupancy'}
-				/>
+				{#if stackedOccupancySpec}<Chart spec={stackedOccupancySpec} />{/if}
 			</div>
 			<div class="kit-card">
 				<SectionLabel text="SEVERITY BARS" variant="metric" />
@@ -375,11 +415,7 @@
 			</div>
 			<div class="kit-card kit-card-wide">
 				<SectionLabel text="HEATMAP · 7×24" variant="metric" />
-				<Heatmap
-					grid={heatmapGrid}
-					label={lang === 'fr' ? 'Carte de chaleur des retards' : 'Delay heatmap'}
-					interactive
-				/>
+				<Chart spec={heatmapSpec} />
 			</div>
 			<div class="kit-card kit-card-wide">
 				<SectionLabel text="RANKED ROWS" variant="metric" />

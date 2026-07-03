@@ -55,6 +55,12 @@ export interface StopReliabilityCopy {
 			readonly medium: string;
 			readonly high: string;
 			readonly noData: string;
+			/**
+			 * The four classed-tier labels, calmest → worst (P5.2 — the stop habits
+			 * heatmap bins onto the same 4 tiers as the lines §1 hero; words mirror
+			 * the severe-delay read). The worst tier also carries the ◆ glyph.
+			 */
+			readonly tiers: readonly [string, string, string, string];
 		};
 		readonly weekdays: readonly [string, string, string, string, string, string, string, string];
 		readonly weekdaysShort: readonly [string, string, string, string, string, string, string];
@@ -177,7 +183,13 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 			dayAxisLabel: 'Jour de la semaine',
 			caption:
 				'La couleur indique la fréquence des retards graves, comparée heure par heure au sein de chaque journée. Plus c’est chaud, plus le problème revient souvent.',
-			legend: { low: 'Faible', medium: 'Moyen', high: 'Élevé', noData: 'Aucune donnée' },
+			legend: {
+				low: 'Faible',
+				medium: 'Moyen',
+				high: 'Élevé',
+				noData: 'Aucune donnée',
+				tiers: ['Rarement grave', 'Parfois grave', 'Souvent grave', 'Très peu fiable'],
+			},
 			weekdays: ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
 			weekdaysShort: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'],
 		},
@@ -269,7 +281,13 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 			dayAxisLabel: 'Day of week',
 			caption:
 				'Colour shows how often severe delays repeat, compared hour-by-hour within each day. Hotter = the problem comes back more often.',
-			legend: { low: 'Low', medium: 'Medium', high: 'High', noData: 'No data' },
+			legend: {
+				low: 'Low',
+				medium: 'Medium',
+				high: 'High',
+				noData: 'No data',
+				tiers: ['Rarely severe', 'Sometimes severe', 'Often severe', 'Very unreliable'],
+			},
 			weekdays: ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
 			weekdaysShort: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
 		},

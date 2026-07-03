@@ -1,19 +1,24 @@
 <!--
   SectionHabits — the per-stop 7×24 severe-delay habits heatmap.
 
-  Pure presenter of `selectHabitsHeatmap`. Reuses the Heatmap + ChartLegend dataviz
-  primitives directly (the same encoding the lines surface uses); a null cell is
-  "no data" (the dedicated nodata token). Rendered only when the caller has at least
-  one real cell — the whole subsection stands down otherwise (never a fabricated grid).
+  Pure presenter of `selectHabitsHeatmapSpec` (P5.2: the classed-tier `heatmap`
+  ChartSpec through the ONE <Chart> renderer — the same encoding the lines §1 hero
+  uses). ABSOLUTE [0,1] domain: the matrix is pipeline-normalised to the stop's worst
+  cell, so the mark bins every cell onto the same four tiers everywhere (the legacy
+  per-row re-normalisation painted a mild day's worst hour as dark as a severe day's —
+  fixed here, mirroring the lines S7 P4 ruling). A null cell is the honest no-data
+  swatch. Rendered only when the caller has at least one real cell — the whole
+  subsection stands down otherwise (never a fabricated grid).
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import { Heatmap, ChartLegend, HEATMAP_RAMP, HEATMAP_NODATA } from '$lib/components/dataviz';
+	import { ChartLegend } from '$lib/components/dataviz';
+	import { Chart } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
-	import { habitsCellText } from '../selectors/habitsHeatmap';
+	import { selectHabitsHeatmap, selectHabitsHeatmapSpec } from '../selectors/habitsHeatmap';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
 
 	interface SectionHabitsProps {
@@ -33,20 +38,45 @@
 	// Full weekday names in row order (drop the ISO index-0 placeholder).
 	const habitsFullDays = $derived(copy.habits.weekdays.slice(1));
 
-	/** Heatmap scale legend — three ramp buckets (low→high) + the no-data swatch. */
+	// Four plain-language tiers, calmest → worst (rider language, same shape as the
+	// lines §1 hero — they say what the colour MEANS, not just an intensity word).
+	const tierLabels = $derived([...copy.habits.legend.tiers]);
+	const WORST_GLYPH = '◆';
+
+	const spec = $derived(
+		selectHabitsHeatmapSpec(selectHabitsHeatmap(matrix), locale, {
+			title: copy.habits.label,
+			valueLabel: copy.habits.cellValueLabel,
+			rowAxisLabel: copy.habits.dayAxisLabel,
+			colAxisLabel: copy.habits.hourAxisLabel,
+			rowLabels: [...copy.habits.weekdaysShort],
+			fullRowLabels: [...habitsFullDays],
+			tierLabels,
+			noDataLabel: copy.habits.legend.noData,
+			worstGlyph: WORST_GLYPH,
+			hourLabel: (h) => `${String(h).padStart(2, '0')}:00`,
+			hourTicks: [0, 3, 6, 9, 12, 15, 18, 21],
+		}),
+	);
+
+	// Classed-tier legend — the tier swatches calmest→worst (the worst label carries
+	// the glyph) + the dedicated no-data swatch. Colours are data marks
+	// (--dataviz-heatmap-tier-*); the mark's tooltip + sr-table carry a11y.
 	const habitsLegend = $derived([
-		{ colorVar: HEATMAP_RAMP[0], label: copy.habits.legend.low, swatch: 'square' as const },
-		{ colorVar: HEATMAP_RAMP[2], label: copy.habits.legend.medium, swatch: 'square' as const },
+		{ colorVar: 'var(--dataviz-heatmap-tier-0)', label: tierLabels[0], swatch: 'square' as const },
+		{ colorVar: 'var(--dataviz-heatmap-tier-1)', label: tierLabels[1], swatch: 'square' as const },
+		{ colorVar: 'var(--dataviz-heatmap-tier-2)', label: tierLabels[2], swatch: 'square' as const },
 		{
-			colorVar: HEATMAP_RAMP[HEATMAP_RAMP.length - 1],
-			label: copy.habits.legend.high,
+			colorVar: 'var(--dataviz-heatmap-tier-3)',
+			label: `${tierLabels[3]} ${WORST_GLYPH}`,
 			swatch: 'square' as const,
 		},
-		{ colorVar: HEATMAP_NODATA, label: copy.habits.legend.noData, swatch: 'square' as const },
+		{
+			colorVar: 'var(--dataviz-heatmap-nodata)',
+			label: copy.habits.legend.noData,
+			swatch: 'square' as const,
+		},
 	]);
-
-	const cellText = (value: number | null, norm: number | null): string =>
-		habitsCellText(value, norm, copy.habits.legend);
 </script>
 
 {#snippet metricInfo(key: MetricKey, name: string)}
@@ -66,20 +96,7 @@
 		<SectionLabel text={copy.habits.heading} variant="station" />
 		{@render metricInfo('habits', copy.habits.heading)}
 	</span>
-	<Heatmap
-		grid={matrix}
-		dayLabels={[...copy.habits.weekdaysShort]}
-		fullDayLabels={[...habitsFullDays]}
-		label={copy.habits.label}
-		hourAxisLabel={copy.habits.hourAxisLabel}
-		dayAxisLabel={copy.habits.dayAxisLabel}
-		valueLabel={copy.habits.cellValueLabel}
-		noDataText={copy.habits.legend.noData}
-		hourTicks={[0, 3, 6, 9, 12, 15, 18, 21]}
-		clockTicks
-		valueFormat={cellText}
-		interactive
-	/>
+	<Chart {spec} />
 	<ChartLegend items={habitsLegend} />
 	<p class="stop-reliability-habits-caption">{copy.habits.caption}</p>
 </div>

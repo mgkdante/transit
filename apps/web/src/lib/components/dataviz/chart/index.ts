@@ -2,8 +2,8 @@
 //
 // A selector emits a `ChartSpec`; `<Chart spec />` renders it. The magnitude marks ride
 // LayerChart on an absolute domain the SELECTOR supplies (this layer stays
-// domain-agnostic, so `components/` never imports `features/`). Scoped in practice to the
-// lines/reliability surface (D1) — other surfaces keep the raw-SVG dataviz primitives.
+// domain-agnostic, so `components/` never imports `features/`). P5.2: this is THE chart
+// layer for every surface — the legacy raw-SVG dataviz primitives are retired.
 
 export { default as Chart } from './Chart.svelte';
 export type { ChartProps } from './Chart.svelte';
@@ -18,6 +18,8 @@ export { categoryGutter } from './axisGutter';
 export type { CategoryGutter, CategoryGutterOpts } from './axisGutter';
 
 export { MAGNITUDE_KINDS, isMagnitudeKind, checkAbsoluteDomain } from './ChartSpec';
+export { shareSegments, stackedShareSpec } from './share';
+export type { ShareInput, StackedShareSpecOptions } from './share';
 export type {
 	AbsoluteDomain,
 	ChartKind,
@@ -33,6 +35,7 @@ export type {
 	LineSeries,
 	TrendSpec,
 	TrendDatum,
+	SparklineSpec,
 	CycleSpec,
 	CyclePanelSpec,
 	HistogramSpec,

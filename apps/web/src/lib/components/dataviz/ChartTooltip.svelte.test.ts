@@ -1,24 +1,28 @@
 // ChartTooltip.svelte.test.ts: the floating chart tooltip contract.
 //
-// ChartTooltip is the pointer-positioned overlay used by the crowding StackedBar,
-// the Heatmap, and the Distribution box-plot. Its non-negotiables after the
+// ChartTooltip is the pointer-positioned overlay used by the NON-CHART dataviz
+// primitives (SeverityBar, RankedRow, MetricInfo readouts — the chart marks ride
+// LayerChart's own tooltip since P5.2). Its non-negotiables after the
 // edge-clipping fix:
 //   1. it PORTALS the tip out of the chart wrapper to <body>, so no overflow:hidden
 //      ancestor can clip it and the chart's width can't shrink it,
 //   2. the portaled tip is position:FIXED (anchored in viewport coordinates),
 //   3. it carries its content (heading + rows) and the controller id for aria.
 //
-// Driven through StackedBar (interactive) so it exercises the real wiring rather
+// Driven through SeverityBar (interactive) so it exercises the real wiring rather
 // than a hand-built snippet.
 
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
-import StackedBar from './StackedBar.svelte';
+import SeverityBar from './SeverityBar.svelte';
 
-const segments = [
-	{ code: 'on_time' as const, value: 80, label: 'On-time' },
-	{ code: 'late' as const, value: 20, label: 'Late' },
-];
+const props = {
+	severity: 'high' as const,
+	value: 0.6,
+	label: 'Late share',
+	display: '60%',
+	interactive: true,
+};
 
 afterEach(() => {
 	// The tooltip portals to <body>; clear any stragglers between tests.
@@ -26,10 +30,8 @@ afterEach(() => {
 });
 
 describe('ChartTooltip portal + viewport anchoring', () => {
-	it('portals the tip OUT of the chart wrapper to <body> (escapes ancestor clipping)', async () => {
-		const { container } = render(StackedBar, {
-			props: { scale: 'status', segments, interactive: true, label: 'Status mix' },
-		});
+	it('portals the tip OUT of the chart wrapper to <body> (escapes ancestor clipping)', () => {
+		const { container } = render(SeverityBar, { props });
 
 		// The chart wrapper stays inside the rendered container...
 		const wrap = container.querySelector('[data-slot="chart-tooltip-wrap"]');
@@ -43,11 +45,9 @@ describe('ChartTooltip portal + viewport anchoring', () => {
 	});
 
 	it('anchors the portaled tip in viewport pixel coordinates (left/top px)', async () => {
-		render(StackedBar, {
-			props: { scale: 'status', segments, interactive: true, label: 'Status mix' },
-		});
-		const lateSlice = screen.getByRole('img', { name: 'Late: 20%' });
-		await fireEvent.pointerEnter(lateSlice);
+		render(SeverityBar, { props });
+		const bar = screen.getByRole('progressbar');
+		await fireEvent.pointerEnter(bar);
 
 		const tip = document.body.querySelector('[role="tooltip"]') as HTMLElement;
 		expect(tip).not.toBeNull();
@@ -59,29 +59,23 @@ describe('ChartTooltip portal + viewport anchoring', () => {
 		expect(tip.classList.contains('chart-tooltip')).toBe(true);
 	});
 
-	it('reveals the hovered slice content on pointer enter', async () => {
-		render(StackedBar, {
-			props: { scale: 'status', segments, interactive: true, label: 'Status mix' },
-		});
+	it('reveals the hovered content on pointer enter', async () => {
+		render(SeverityBar, { props });
+		const bar = screen.getByRole('progressbar');
+		await fireEvent.pointerEnter(bar);
 
-		const lateSlice = screen.getByRole('img', { name: 'Late: 20%' });
-		await fireEvent.pointerEnter(lateSlice);
-
-		// The tip (portaled) now shows the slice label + share.
+		// The tip (portaled) now shows the reading.
 		const tip = document.body.querySelector('[role="tooltip"]') as HTMLElement;
 		expect(tip).not.toBeNull();
-		expect(tip).toHaveTextContent('Late');
-		expect(tip).toHaveTextContent('20%');
+		expect(tip).toHaveTextContent('Late share');
 		expect(tip.getAttribute('aria-hidden')).toBe('false');
 	});
 
 	it('hides (aria-hidden) on pointer leave', async () => {
-		render(StackedBar, {
-			props: { scale: 'status', segments, interactive: true, label: 'Status mix' },
-		});
-		const lateSlice = screen.getByRole('img', { name: 'Late: 20%' });
-		await fireEvent.pointerEnter(lateSlice);
-		await fireEvent.pointerLeave(lateSlice);
+		render(SeverityBar, { props });
+		const bar = screen.getByRole('progressbar');
+		await fireEvent.pointerEnter(bar);
+		await fireEvent.pointerLeave(bar);
 		const tip = document.body.querySelector('[role="tooltip"]') as HTMLElement;
 		expect(tip.getAttribute('aria-hidden')).toBe('true');
 	});

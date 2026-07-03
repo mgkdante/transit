@@ -246,7 +246,7 @@
 	const valueNoData = $derived(copy.strip.noData);
 
 	/* ── service-span timeline copy + formatters ──────────────────────────────
-	   The first/last-trip clock times resolve inside ServiceSpanTimeline (it owns the
+	   The first/last-trip clock times resolve inside the service-span mark (it owns the
 	   UTC→wall-clock + the fixed 24h axis); here we only shape the two TEXT annotations
 	   it renders (span length + trip count), both honest-null when absent. */
 	const spanCopy = $derived(copy.serviceSpanTimeline);

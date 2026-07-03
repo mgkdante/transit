@@ -13,7 +13,7 @@
   non_responding_by_route move WHOLLY into the dedicated Reporting row (SectionReporting) with
   the global-signal caveat. The delay histogram is RE-SEATED off the hand-rolled /max <ul> onto
   the ChartSpec kernel (SectionDelayHistogram) on an absolute count domain. status/occupancy
-  mixes stay on the shared StackedBar.
+  mixes render as stacked-share specs through the ONE <Chart> renderer (P5.2).
 
   MIRROR-PATH (DECISIONS A1 — recorded, no churn): grain/window mirror to the URL via
   mirrorSearchParams (in-place, MERGES, preserves other params); the status/occupancy map
@@ -32,7 +32,7 @@
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeNameFallback } from '$lib/site/absence';
-	import { layout, openSurface, routeFor } from '$lib/nav';
+	import { layout, routeFor } from '$lib/nav';
 	import { mapSearchFor, fromSearchParams, toSearchParams, emptyFilterState } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
@@ -85,7 +85,7 @@
 	import { selectOccupancyMix } from '../selectors/occupancyMix';
 	import { selectDelayHistogram } from '../selectors/delayHistogram';
 	import { selectSilentByRoute } from '../selectors/silentByRoute';
-	import { selectTrendChart, selectVehiclesSeries } from '../selectors/trendChart';
+	import { selectTrendChart, selectVehiclesSpark } from '../selectors/trendChart';
 	import { selectCancelTrend } from '../selectors/cancelTrend';
 	import { selectCompleteness } from '../selectors/completeness';
 	import { selectOccupancyTrend } from '../selectors/occupancyTrend';
@@ -168,13 +168,31 @@
 				})
 			: null,
 	);
-	const statusSegments = $derived(
-		selectStatusMix(live.network?.status_dist ?? null, (c: StatusCode) => STATUS_LABELS[locale][c]),
+	const statusSpec = $derived(
+		selectStatusMix(
+			live.network?.status_dist ?? null,
+			(c: StatusCode) => STATUS_LABELS[locale][c],
+			{
+				title: t.statusBarLabel,
+				locale,
+				hrefFor: (code: StatusCode) =>
+					localizeHref(routeFor({ kind: 'map', search: mapSearchFor({ status: [code] }) }), locale),
+			},
+		),
 	);
 	const occupancyMix = $derived(
 		selectOccupancyMix(
 			live.network?.occupancy_mix ?? null,
 			(c: OccupancyCode) => OCCUPANCY_LABELS[locale][c],
+			{
+				title: t.occupancyBarLabel,
+				locale,
+				hrefFor: (code: OccupancyCode) =>
+					localizeHref(
+						routeFor({ kind: 'map', search: mapSearchFor({ occupancy: [code] }) }),
+						locale,
+					),
+			},
 		),
 	);
 	const delayHistogramSpec = $derived(
@@ -202,13 +220,8 @@
 		}),
 	);
 
-	// Live map cross-filters (DECISIONS A1 — the map-owned URL seam, distinct from the mirror).
-	function openStatusOnMap(code: StatusCode | OccupancyCode): void {
-		openSurface({ kind: 'map', search: mapSearchFor({ status: [code as StatusCode] }) });
-	}
-	function openOccupancyOnMap(code: StatusCode | OccupancyCode): void {
-		openSurface({ kind: 'map', search: mapSearchFor({ occupancy: [code as OccupancyCode] }) });
-	}
+	// Live map cross-filters (DECISIONS A1) ride each band's spec `href` now (P5.2) —
+	// the legacy onSelect callbacks were plain navigations, so the URL IS the contract.
 
 	/* ── HISTORIC: grain (day/week/month) ─────────────────────────────────────────── */
 	const dailySeries = $derived<TrendPoint[]>(trend.data?.series ?? []);
@@ -319,9 +332,31 @@
 
 	/* ── HISTORIC mapping pass — ONE window slice shared by every mark ────────────── */
 	const windowed = $derived<readonly TrendPoint[]>(windowedSeries(grain, allSeries, windowDays));
-	const trendChart = $derived(selectTrendChart(windowed, effectiveRetard));
-	const vehiclesSeries = $derived(selectVehiclesSeries(windowed));
-	const cancelTrend = $derived(selectCancelTrend(windowed));
+	const trendSpec = $derived(
+		selectTrendChart(windowed, effectiveRetard, {
+			locale,
+			title: t.trend.summary,
+			onTimeLabel: t.trend.onTimeLabel,
+			retardLabel,
+			pctUnit: t.units.pct,
+			minUnit: t.units.min,
+		}),
+	);
+	const vehiclesSpark = $derived(
+		selectVehiclesSpark(windowed, {
+			locale,
+			title: t.trend.vehiclesSpark,
+			label: t.trend.vehiclesSpark,
+		}),
+	);
+	const cancelTrend = $derived(
+		selectCancelTrend(windowed, {
+			locale,
+			title: t.cancel.summary,
+			seriesLabel: t.cancel.seriesLabel,
+			pctUnit: t.units.pct,
+		}),
+	);
 	// Service completeness (GC2 service_completeness_rate): stands UP only once a windowed point
 	// carries a non-null rate (null across the whole retained window on prod today — ramp-in).
 	const completeness = $derived(selectCompleteness(windowed));
@@ -331,6 +366,7 @@
 			windowed,
 			(d) => formatDateKey(d, locale),
 			(c: OccupancyCode) => OCCUPANCY_LABELS[locale][c],
+			{ locale, titleFor: (dateLabel) => `${t.occupancySection} · ${dateLabel}` },
 		),
 	);
 	const hasOccupancyTrend = $derived(isDailyGrain && occupancyDays.length > 0);
@@ -405,11 +441,9 @@
 				{locale}
 			/>
 			<SectionStatusMix
-				{statusSegments}
-				occupancySegments={occupancyMix.segments}
+				{statusSpec}
+				occupancySpec={occupancyMix.spec}
 				hasOccupancy={occupancyMix.hasOccupancy}
-				onStatusSelect={openStatusOnMap}
-				onOccupancySelect={openOccupancyOnMap}
 				{info}
 				copy={t}
 			/>
@@ -486,14 +520,7 @@
 		>
 			<!-- The readouts read the module-level windowed VMs (not the boundary payload). -->
 			<DashboardGrid minTile="360px" align="start" gutter={false}>
-				<SectionTrend
-					chart={trendChart}
-					{vehiclesSeries}
-					{retardLabel}
-					{isDailyGrain}
-					{info}
-					copy={t}
-				/>
+				<SectionTrend {trendSpec} {vehiclesSpark} {isDailyGrain} {info} copy={t} />
 
 				{#if cancelTrend.hasCancel}
 					<SectionCancellations

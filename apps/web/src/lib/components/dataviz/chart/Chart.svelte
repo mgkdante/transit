@@ -22,6 +22,7 @@
 	import MagnitudeBarsMark from './marks/MagnitudeBarsMark.svelte';
 	import DumbbellMark from './marks/DumbbellMark.svelte';
 	import LineMark from './marks/LineMark.svelte';
+	import SparklineMark from './marks/SparklineMark.svelte';
 	import BulletMark from './marks/BulletMark.svelte';
 	import HeatmapMark from './marks/HeatmapMark.svelte';
 	import StackedShareMark from './marks/StackedShareMark.svelte';
@@ -57,6 +58,8 @@
 	<DumbbellMark {spec} class={className} />
 {:else if spec.kind === 'line'}
 	<LineMark {spec} class={className} />
+{:else if spec.kind === 'sparkline'}
+	<SparklineMark {spec} class={className} />
 {:else if spec.kind === 'bullet'}
 	<BulletMark {spec} class={className} />
 {:else if spec.kind === 'heatmap'}

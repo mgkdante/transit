@@ -2,10 +2,11 @@
   SectionTrend — the primary historic trend (on-time % vs the chosen delay series) + the
   vehicles-reporting OWN labelled row (S9A operator fix).
 
-  The primary line rides the interactive dual-axis TrendLine: on-time % (green) vs the chosen
-  delay series (amber, MINUTES on the FIXED DELAY_DIST_DOMAIN [0,15] — the p90-capable NAMED
-  PAIRED constant, see domains.ts A2; never the in-view max, so a given delay renders the same
-  length on every window / grain / 30s refresh). null points are gaps.
+  P5.2: the primary line renders through the ONE <Chart> renderer (a dual-axis `trend`
+  spec → TrendMark): on-time % vs the chosen delay series (MINUTES on the FIXED
+  DELAY_DIST_DOMAIN [0,15] — the p90-capable NAMED PAIRED constant, see domains.ts A2;
+  never the in-view max, so a given delay renders the same length on every window /
+  grain / 30s refresh). null points are gaps. The selector owns the spec.
 
   OTP ZOOM (S9B · DECISIONS B1/B2): the on-time channel does NOT ride the bare [0,100] frame — a
   whole-network on-time average moves only ~1–2 pts week-to-week, so on 100-tall it reads dead-flat.
@@ -27,20 +28,17 @@
   the S9B trends lane once data accrues.
 -->
 <script lang="ts">
-	import { TrendLine, Sparkline } from '$lib/components/dataviz';
+	import { Chart, type ChartSpec, type SparklineSpec } from '$lib/components/dataviz/chart';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
-	import type { TrendChartVM } from '../selectors/trendChart';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
 	interface SectionTrendProps {
-		/** The primary-trend view-model (on-time + retard series + the fixed retard domain). */
-		chart: TrendChartVM;
-		/** The vehicles-in-service context series (day-grain only; null = gap). */
-		vehiclesSeries: Array<number | null>;
-		/** The resolved retard-axis label (p90 or median). */
-		retardLabel: string;
+		/** The selector-emitted dual-axis trend spec (or an honest absence). */
+		trendSpec: ChartSpec;
+		/** The vehicles-in-service context spark (day-grain only; null = no real points). */
+		vehiclesSpark: SparklineSpec | null;
 		/** True on the DAY grain (gates the vehicles row — vehicles is null on week/month). */
 		isDailyGrain: boolean;
 		info: (
@@ -54,8 +52,7 @@
 		};
 		copy: NetworkReliabilityCopy;
 	}
-	let { chart, vehiclesSeries, retardLabel, isDailyGrain, info, copy }: SectionTrendProps =
-		$props();
+	let { trendSpec, vehiclesSpark, isDailyGrain, info, copy }: SectionTrendProps = $props();
 
 	const i = $derived(info('otp', copy.trendSection));
 </script>
@@ -66,36 +63,13 @@
 		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
 	</span>
 	<div class="network-trend">
-		<TrendLine
-			onTime={chart.onTime}
-			retard={chart.retard}
-			domain={chart.onTimeDomain}
-			retardDomain={chart.retardDomain}
-			target={chart.onTimeReference}
-			xLabels={chart.xLabels}
-			onTimeLabel={copy.trend.onTimeLabel}
-			{retardLabel}
-			yAxis={{ label: copy.trend.onTimeLabel, unit: copy.units.pct, domain: chart.onTimeDomain }}
-			retardAxis={{ label: retardLabel, unit: copy.units.min, domain: chart.retardDomain }}
-			showYTicks
-			label={copy.trend.summary}
-			interactive
-		/>
+		<Chart spec={trendSpec} />
 
 		<!-- VEHICLES-REPORTING OWN ROW: its own SectionLabel (not a caption), DAY grain only. -->
-		{#if isDailyGrain}
+		{#if isDailyGrain && vehiclesSpark}
 			<div class="network-vehicles-row" data-slot="vehicles-reporting-row">
 				<SectionLabel text={copy.trend.vehiclesContext} variant="metric" />
-				<Sparkline
-					values={vehiclesSeries}
-					label={copy.trend.vehiclesSpark}
-					xLabels={chart.xLabels}
-					width={320}
-					height={56}
-					colorVar="var(--dataviz-status-unknown)"
-					interactive
-					showLast
-				/>
+				<Chart spec={vehiclesSpark} />
 			</div>
 		{/if}
 	</div>
