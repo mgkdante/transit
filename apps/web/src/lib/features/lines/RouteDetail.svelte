@@ -49,6 +49,9 @@
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
+	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
+	import { cornerMetaLabels } from '$lib/components/brand';
+	import { formatUtc } from '$lib/utils/time';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
 	import RouteReliabilityClusters from './reliability/RouteReliabilityClusters.svelte';
@@ -126,11 +129,23 @@
 	// Detail tab reads its index to derive per-stop predictions (client-side,
 	// fail-soft: the static directions/stops render regardless). start()/stop()
 	// are browser-only and idempotent.
-	const live = createLiveStore(getV1Context().manifest);
+	const manifest = getV1Context().manifest;
+	const live = createLiveStore(manifest);
 	onMount(() => {
 		live.start();
 		return () => live.stop();
 	});
+
+	// CornerMeta readouts (A4) — REAL data only. Provider is always present from the
+	// manifest; the generated stamp prefers the live tier (the head's freshest data),
+	// falling back to the reliability build; a datum that isn't present drops its
+	// corner (never fabricated).
+	const cm = cornerMetaLabels[locale];
+	const shortName = manifest.short_name?.trim() || manifest.display_name;
+	const cornerGeneratedUtc = $derived(live.generatedUtc ?? reliability.data?.generated_utc ?? null);
+	const cornerGeneratedStamp = $derived(
+		cornerGeneratedUtc != null ? formatUtc(cornerGeneratedUtc, locale) : null,
+	);
 
 	// Per-stop SOONEST predicted arrival on this route, derived from the live
 	// trips of every bus currently on the route (NO per-stop fetch, a route has
@@ -260,6 +275,18 @@
 	{tabs}
 	bind:active
 >
+	{#snippet cornerMeta()}
+		<!-- A4: blueprint-margin corners — provider · generated (real data from the
+		     manifest + the live/reliability tiers). aria-hidden, hidden < 768px. -->
+		<CornerMeta>
+			{#snippet topLeft()}<span class="line-corner">{cm.line} · {id}</span>{/snippet}
+			{#snippet topRight()}{#if cornerGeneratedStamp}<span class="line-corner"
+						>{cm.generated} · {cornerGeneratedStamp}</span
+					>{/if}{/snippet}
+			{#snippet bottomLeft()}<span class="line-corner">{cm.provider} · {shortName}</span>{/snippet}
+		</CornerMeta>
+	{/snippet}
+
 	{#snippet header()}
 		<SectionHeading heading={id} level={1} dot />
 	{/snippet}
@@ -489,6 +516,9 @@
 </EntityDetail>
 
 <style>
+	.line-corner {
+		white-space: nowrap;
+	}
 	.route-section {
 		display: flex;
 		flex-direction: column;

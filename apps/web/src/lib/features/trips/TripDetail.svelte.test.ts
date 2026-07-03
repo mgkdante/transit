@@ -42,8 +42,13 @@ let tripsData: TripsFile | null = TRIPS_FILE;
 
 // Mock $lib/v1 with a clean factory (importing the real barrel pulls the full
 // module graph incl. $app/environment, which the jsdom env can't boot).
+// getV1Context feeds the A4 CornerMeta corners (provider short_name); a minimal
+// manifest stub is enough for the head to render.
 vi.mock('$lib/v1', () => ({
 	getTrips: vi.fn(),
+	getV1Context: () => ({
+		manifest: { short_name: 'STM', display_name: 'STM', dataset_version: 'test' },
+	}),
 }));
 
 // createResource returns the trips file (or null) for the one trips read.

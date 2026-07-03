@@ -27,7 +27,12 @@ import { metricsCopy } from './metrics.copy';
 // gate stays env-free (the real $lib/v1 chain reads $env/dynamic/public) and
 // off-network. data:null → no conformance → the badge renders nothing, leaving
 // every assertion below about the static article untouched.
-vi.mock('$lib/v1', () => ({ getProvenance: vi.fn() }));
+vi.mock('$lib/v1', () => ({
+	getProvenance: vi.fn(),
+	getV1Context: () => ({
+		manifest: { short_name: 'STM', display_name: 'STM', dataset_version: 'test' },
+	}),
+}));
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({
 		data: null,

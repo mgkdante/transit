@@ -40,13 +40,15 @@
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { getV1Context, createLiveStore } from '$lib/v1';
 	import { openSurface, type SurfaceTarget } from '$lib/nav';
-	import { ageSeconds, formatRelativeSeconds } from '$lib/utils/time';
+	import { ageSeconds, formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import { fmtCount as sharedFmtCount, fmtPct as sharedFmtPct } from '$lib/utils';
 	import { sharedClock } from '$lib/stores';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
+	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
+	import { cornerMetaLabels } from '$lib/components/brand';
 	import TerminalChrome from '$lib/components/brand/TerminalChrome.svelte';
 	import { FreshnessStamp } from '$lib/components/surface';
 	import { Surface, DashboardGrid } from '$lib/components/layout';
@@ -91,6 +93,17 @@
 	$effect(() => sharedClock.subscribe());
 
 	const net = $derived(live.network);
+
+	// CornerMeta readouts (A4) — REAL data only, sourced from the manifest + the
+	// live tier this page already loads; a datum that isn't present drops its corner
+	// (never fabricated). generated_utc formats to an absolute stamp (the corners are
+	// a blueprint-margin annotation, aria-hidden, so an absolute time is fine here —
+	// the ticking "last updated" lives in the terminal chrome above).
+	const cm = cornerMetaLabels[locale];
+	const cornerGeneratedStamp = $derived(
+		generatedUtc != null ? formatUtc(generatedUtc, locale) : null,
+	);
+	const cornerVehicleCount = $derived(fmtCount(net?.vehicles_in_service));
 
 	// "Last updated X ago" in the terminal chrome — TICKS off the live store so it
 	// advances each second in lockstep with the FreshnessStamp chip below it (a frozen
@@ -413,6 +426,21 @@
 <Surface pad="hub" class="hub">
 	<!-- 1. CONTROL-ROOM HERO ------------------------------------------------- -->
 	<header class="hub-head">
+		<!-- A4: blueprint-margin corner annotations — provider · generated · dataset ·
+		     live vehicle count, all REAL data from the manifest + live tier. aria-hidden,
+		     hidden < 768px; a missing datum drops its corner. -->
+		<CornerMeta>
+			{#snippet topLeft()}<span class="corner-line">{cm.provider} · {shortName}</span>{/snippet}
+			{#snippet topRight()}{#if cornerGeneratedStamp}<span class="corner-line"
+						>{cm.generated} · {cornerGeneratedStamp}</span
+					>{/if}{/snippet}
+			{#snippet bottomLeft()}<span class="corner-line"
+					>{cm.dataset} · {manifest.dataset_version}</span
+				>{/snippet}
+			{#snippet bottomRight()}{#if cornerVehicleCount}<span class="corner-line"
+						>{cm.vehicles} · {cornerVehicleCount}</span
+					>{/if}{/snippet}
+		</CornerMeta>
 		<SectionLabel text={t.kicker} variant="station" />
 		<SectionHeading heading={manifest.display_name} level={1} dot />
 		<p class="hub-tagline">{t.tagline}</p>
@@ -533,10 +561,22 @@
 <style>
 	/* ── Hero ─────────────────────────────────────────────────────────────── */
 	.hub-head {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		gap: 0.85rem;
 		max-width: 62ch;
+	}
+	/* A4: the corner readouts annotate the head from a margin band — inset the
+	   content on the wider viewports (>=768, where CornerMeta surfaces) so the
+	   corners never collide with the kicker/heading/tagline. */
+	@media (min-width: 768px) {
+		.hub-head {
+			padding-block: 1.75rem;
+		}
+	}
+	.corner-line {
+		white-space: nowrap;
 	}
 	.hub-tagline {
 		color: var(--muted-foreground);

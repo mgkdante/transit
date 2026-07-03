@@ -53,5 +53,8 @@ export type { TerminalChromeProps } from './TerminalChrome.svelte';
 export { default as CornerMeta } from './CornerMeta.svelte';
 export type { CornerMetaProps } from './CornerMeta.svelte';
 
+export { cornerMetaLabels } from './cornerMeta.copy';
+export type { CornerMetaLabels } from './cornerMeta.copy';
+
 export { default as StickyPanel } from './StickyPanel.svelte';
 export type { StickyPanelProps } from './StickyPanel.svelte';

@@ -61,6 +61,8 @@
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
+	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
+	import { cornerMetaLabels } from '$lib/components/brand';
 	import { Badge } from '$lib/components/ui/badge';
 	import { formatUtc } from '$lib/utils/time';
 	import { StopReliabilitySurface } from './reliability';
@@ -105,11 +107,21 @@
 	$effect(() => mirrorSearchParam('tab', active === 'next' ? null : active));
 
 	// --- live tier: per-stop departures board --------------------------------
-	const live = createLiveStore(getV1Context().manifest);
+	const manifest = getV1Context().manifest;
+	const live = createLiveStore(manifest);
 	onMount(() => {
 		live.start();
 		return () => live.stop();
 	});
+
+	// CornerMeta readouts (A4) — REAL data only: provider (always, from the manifest)
+	// + the live-tier generated stamp (the departures board's freshness); a missing
+	// datum drops its corner (never fabricated).
+	const cm = cornerMetaLabels[locale];
+	const shortName = manifest.short_name?.trim() || manifest.display_name;
+	const cornerGeneratedStamp = $derived(
+		live.generatedUtc != null ? formatUtc(live.generatedUtc, locale) : null,
+	);
 	// Departures for THIS stop from the authoritative per-stop board. null before
 	// the first tick (skeleton); [] is a real "no upcoming departures" verdict.
 	const departures = $derived<readonly StopDeparture[] | null>(
@@ -301,6 +313,18 @@
 	{tabs}
 	bind:active
 >
+	{#snippet cornerMeta()}
+		<!-- A4: blueprint-margin corners — stop id · generated · provider (real data
+		     from the manifest + the live tier). aria-hidden, hidden < 768px. -->
+		<CornerMeta>
+			{#snippet topLeft()}<span class="stop-corner">{cm.stop} · {id}</span>{/snippet}
+			{#snippet topRight()}{#if cornerGeneratedStamp}<span class="stop-corner"
+						>{cm.generated} · {cornerGeneratedStamp}</span
+					>{/if}{/snippet}
+			{#snippet bottomLeft()}<span class="stop-corner">{cm.provider} · {shortName}</span>{/snippet}
+		</CornerMeta>
+	{/snippet}
+
 	{#snippet header()}
 		<!-- The framing head the stop index already earns (kicker + display title +
 		     lede, §C5.6): the stop NAME is the display-scale h1 (+ brand dot); the
@@ -573,6 +597,9 @@
 </EntityDetail>
 
 <style>
+	.stop-corner {
+		white-space: nowrap;
+	}
 	/* The ARRÊT plate as a meta chip: no left LED-lamp inset needed here (the head
 	   already carries the brand dot on the display title) — keep the mono voice. */
 	:global(.stop-detail-plate) {

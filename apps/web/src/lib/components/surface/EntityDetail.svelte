@@ -38,6 +38,12 @@
 		 * (e.g. the stop's ARRÊT plate, the line's map action). Omitted ⇒ no meta row.
 		 */
 		meta?: Snippet;
+		/**
+		 * Optional CornerMeta block (A4) — blueprint-margin corner readouts pinned to
+		 * the (relative) detail head. The caller drops a fully-composed <CornerMeta>
+		 * here (REAL data only); omitted ⇒ no corner annotations. Hero-zone only.
+		 */
+		cornerMeta?: Snippet;
 		/** Tab definitions — stable key + already-localized label. */
 		tabs: readonly { key: K; label: string }[];
 		/** The active tab key (two-way bindable). */
@@ -58,6 +64,7 @@
 		header,
 		lede,
 		meta,
+		cornerMeta,
 		tabs,
 		active = $bindable(),
 		pane,
@@ -88,7 +95,10 @@
 	     long-form prose paragraphs to re-cap — the honest no-data notes / caveats
 	     live in the caller panes (RouteDetail / StopDetail), which own their own
 	     reading measures; .surface-measure is available there if they need it. -->
-	<div class="surface-head">
+	<div class="surface-head" class:surface-head--cornered={cornerMeta}>
+		{#if cornerMeta}
+			{@render cornerMeta()}
+		{/if}
 		{#if trail.length > 1}
 			<Breadcrumb {trail} {locale} />
 		{/if}
@@ -137,6 +147,17 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+	}
+	/* A4: when the head carries CornerMeta it becomes the relative host for the
+	   four corner readouts; a top margin band (only where the corners surface,
+	   >=768px) keeps them clear of the breadcrumb/kicker/heading flow. */
+	.surface-head--cornered {
+		position: relative;
+	}
+	@media (min-width: 768px) {
+		.surface-head--cornered {
+			padding-top: 1.5rem;
+		}
 	}
 
 	/* Detail-head rhythm (§C2/§C5.4/§C5.6, yesid-visual-spec §6): the framing

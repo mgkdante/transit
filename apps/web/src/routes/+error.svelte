@@ -14,6 +14,7 @@
 	import { page } from '$app/stores';
 	import { pathLocale, localizeHref, type Locale } from '$lib/i18n';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 
 	// Defensive optional chain: the error page is the last surface that may
 	// render, and bare test renders may not provide $page.url.
@@ -57,7 +58,9 @@
 		<span class="err-code">{status}</span>
 	</div>
 
-	<h1 class="err-heading">{heading}</h1>
+	<!-- D1: the page head is display-type + the orange terminal dot (SectionHeading
+	     display mode), the same head treatment every surface carries. -->
+	<SectionHeading {heading} level={1} dot class="err-heading" />
 	<p class="err-body">{body}</p>
 
 	{#if detail}
@@ -96,13 +99,14 @@
 		font-weight: 700;
 		color: var(--foreground);
 	}
-	.err-heading {
-		font-family: var(--font-heading);
-		font-size: var(--text-heading);
-		font-weight: 700;
-		color: var(--foreground);
-		line-height: 1.15;
+	/* The display head (SectionHeading) is a flex row; center it in the centered
+	   error column so the 404 reads centered like the rest of the page. */
+	.err :global([data-slot='section-heading']) {
 		max-width: 28ch;
+	}
+	.err :global(.err-heading .section-heading-text) {
+		justify-content: center;
+		text-align: center;
 	}
 	.err-body {
 		color: var(--muted-foreground);

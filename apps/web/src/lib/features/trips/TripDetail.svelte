@@ -19,7 +19,7 @@
 <script lang="ts">
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { mapHrefFor, routeFor } from '$lib/nav';
-	import { getTrips } from '$lib/v1';
+	import { getTrips, getV1Context } from '$lib/v1';
 	import type { TripsFile, Trip, StatusCode } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { Surface } from '$lib/components/layout';
@@ -29,6 +29,8 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
+	import { cornerMetaLabels } from '$lib/components/brand';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import MapDrilldownLink from '$lib/components/surface/MapDrilldownLink.svelte';
 	import { MaybeValue } from '$lib/components/edge';
@@ -78,6 +80,17 @@
 	// Freshness off the live file's build timestamp. The FreshnessStamp computes its
 	// server-anchored, shared-tick age centrally — no per-page age math here.
 	const generatedUtc = $derived(trips.data?.generated_utc ?? null);
+
+	// CornerMeta readouts (A4) — REAL data only: provider (always, from the manifest)
+	// + the live-tier generated stamp; a missing datum drops its corner (never
+	// fabricated). Corners annotate the LIVE head only (the stand-down branch has no
+	// broadcasting trip to frame).
+	const manifest = getV1Context().manifest;
+	const cm = cornerMetaLabels[locale];
+	const shortName = manifest.short_name?.trim() || manifest.display_name;
+	const cornerGeneratedStamp = $derived(
+		generatedUtc != null ? formatUtc(generatedUtc, locale) : null,
+	);
 
 	/** Localized status-band label for the v1 StatusCode. */
 	function statusLabel(status: StatusCode): string {
@@ -129,27 +142,42 @@
 				     a localized note, never a fabricated trip. -->
 				<div class="trip-standdown" data-testid="trip-standdown">
 					<SectionLabel text={t.kicker} variant="station" />
-					<h1 class="trip-standdown-heading">{t.standDownHeading}</h1>
+					<!-- D1: the stand-down head is display-type + the orange terminal dot,
+					     the same head treatment the live branch carries via SurfaceHeader. -->
+					<SectionHeading heading={t.standDownHeading} level={1} dot />
 					<p class="trip-standdown-body">{t.standDownBody}</p>
 				</div>
 			{:else}
-				<SurfaceHeader
-					kicker={t.kicker}
-					heading={t.heading(id)}
-					subheading={t.subheading}
-					lede={t.lede}
-				>
-					<div class="trip-head-actions">
-						{#if generatedUtc != null}
-							<FreshnessStamp variant="live" {generatedUtc} isStale={false} {locale} />
-						{/if}
-						<MapDrilldownLink
-							href={mapHrefFor({ trip: id }, locale)}
-							label={t.viewOnMap}
-							ariaLabel={t.viewTripOnMap(id)}
-						/>
-					</div>
-				</SurfaceHeader>
+				<!-- A4: the live head is the relative host for the CornerMeta corners
+				     (provider · generated · trip id — real data from the manifest + live
+				     tier). aria-hidden, hidden < 768px. -->
+				<div class="trip-head">
+					<CornerMeta>
+						{#snippet topLeft()}<span class="trip-corner">{cm.trip} · {id}</span>{/snippet}
+						{#snippet topRight()}{#if cornerGeneratedStamp}<span class="trip-corner"
+									>{cm.generated} · {cornerGeneratedStamp}</span
+								>{/if}{/snippet}
+						{#snippet bottomLeft()}<span class="trip-corner">{cm.provider} · {shortName}</span
+							>{/snippet}
+					</CornerMeta>
+					<SurfaceHeader
+						kicker={t.kicker}
+						heading={t.heading(id)}
+						subheading={t.subheading}
+						lede={t.lede}
+					>
+						<div class="trip-head-actions">
+							{#if generatedUtc != null}
+								<FreshnessStamp variant="live" {generatedUtc} isStale={false} {locale} />
+							{/if}
+							<MapDrilldownLink
+								href={mapHrefFor({ trip: id }, locale)}
+								label={t.viewOnMap}
+								ariaLabel={t.viewTripOnMap(id)}
+							/>
+						</div>
+					</SurfaceHeader>
+				</div>
 
 				<Separator variant="hazard" />
 
@@ -242,17 +270,23 @@
 </Surface>
 
 <style>
+	/* A4: the live head hosts the CornerMeta corners; a top margin band (only where
+	   the corners surface, >=768px) keeps them clear of the kicker/heading flow. */
+	.trip-head {
+		position: relative;
+	}
+	@media (min-width: 768px) {
+		.trip-head {
+			padding-top: 1.5rem;
+		}
+	}
+	.trip-corner {
+		white-space: nowrap;
+	}
 	.trip-standdown {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
-	}
-	.trip-standdown-heading {
-		margin: 0;
-		font-family: var(--font-heading);
-		font-weight: 600;
-		font-size: var(--text-heading);
-		color: var(--foreground);
 	}
 	.trip-standdown-body {
 		margin: 0;

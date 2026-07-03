@@ -58,12 +58,15 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { getLocale, type Locale } from '$lib/i18n';
-	import { getProvenance } from '$lib/v1';
+	import { getProvenance, getV1Context } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ConformanceBadge, FreshnessStamp } from '$lib/components/surface';
 	import { ArticleShell, DetailTemplate } from '$lib/components/layout';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
+	import { cornerMetaLabels } from '$lib/components/brand';
+	import { formatUtc } from '$lib/utils/time';
 	import SectionProgress from '$lib/components/brand/SectionProgress.svelte';
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import {
@@ -105,6 +108,20 @@
 	// (the badge renders nothing when conformance is null / the fetch fails), so it
 	// never blocks the static methodology article.
 	const provenance = createResource(() => getProvenance());
+
+	// CornerMeta readouts (A4) for the masthead — REAL data only. Provider + dataset
+	// version are always present from the manifest; the generated stamp + source-feed
+	// count come from the provenance document (supplementary, so those two corners drop
+	// until it settles). A missing datum drops its corner, never fabricated.
+	const manifest = getV1Context().manifest;
+	const cm = cornerMetaLabels[locale];
+	const cornerShortName = manifest.short_name?.trim() || manifest.display_name;
+	const cornerGeneratedStamp = $derived(
+		provenance.data?.generated_utc != null
+			? formatUtc(provenance.data.generated_utc, locale)
+			: null,
+	);
+	const cornerSourceCount = $derived(provenance.data?.sources?.length ?? null);
 
 	// The supplementary provenance fetch errored (or settled with nothing), so the
 	// live conformance badge cannot render. The static methodology + the structural-
@@ -557,6 +574,22 @@
 		{#snippet head()}
 			<div class="metrics-header detail-header-grid" bind:this={headerEl}>
 				<div class="metrics-header__inner">
+					<!-- A4: blueprint-margin corners on the masthead — provider · generated ·
+					     dataset · source count (real data from the manifest + provenance).
+					     aria-hidden, hidden < 768px. -->
+					<CornerMeta>
+						{#snippet topLeft()}<span class="metrics-corner">{cm.provider} · {cornerShortName}</span
+							>{/snippet}
+						{#snippet topRight()}{#if cornerGeneratedStamp}<span class="metrics-corner"
+									>{cm.generated} · {cornerGeneratedStamp}</span
+								>{/if}{/snippet}
+						{#snippet bottomLeft()}<span class="metrics-corner"
+								>{cm.dataset} · {manifest.dataset_version}</span
+							>{/snippet}
+						{#snippet bottomRight()}{#if cornerSourceCount != null}<span class="metrics-corner"
+									>{cm.sources} · {cornerSourceCount}</span
+								>{/if}{/snippet}
+					</CornerMeta>
 					<ArticleShell kicker={t.kicker} title={t.heading} lede={t.lede} meta={masthead} />
 				</div>
 			</div>
@@ -878,6 +911,9 @@
 		z-index: var(--z-content);
 		max-width: var(--container-content);
 		margin-inline: auto;
+	}
+	.metrics-corner {
+		white-space: nowrap;
 	}
 	/* The subheading line ("// PROXY…") leads the ArticleShell meta row; it reads
 	   in the mono micro voice the old SurfaceHeader subheading carried. */
