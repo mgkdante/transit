@@ -29,6 +29,11 @@ export const ManifestLiveFilesSchema = z.object({
 	trips: z.string().optional(),
 	stop_departures: z.string().optional(),
 	alerts: z.string().optional(),
+	// S11 additive-optional pointer to the per-lane data-health payload the live
+	// lane publishes every cycle. Absent on pre-S11 manifests → the adapter falls
+	// back to the contract default path (status/data_health.json), and a 404 there
+	// stands the /status pipeline-lanes section down (honest absence, not an error).
+	data_health: z.string().optional(),
 	ttl_s: z.number().int().optional(),
 });
 export type ManifestLiveFiles = z.infer<typeof ManifestLiveFilesSchema>;

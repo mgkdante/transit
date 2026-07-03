@@ -1,0 +1,246 @@
+{
+  "$defs": {
+    "DataHealthFeed": {
+      "properties": {
+        "age_s": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Age S"
+        },
+        "feed": {
+          "title": "Feed",
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        }
+      },
+      "required": [
+        "feed"
+      ],
+      "title": "DataHealthFeed",
+      "type": "object"
+    },
+    "DataHealthGate": {
+      "properties": {
+        "checks_run": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checks Run"
+        },
+        "errors": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Errors"
+        },
+        "generated_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generated Utc"
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verdict"
+        },
+        "warnings": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Warnings"
+        }
+      },
+      "title": "DataHealthGate",
+      "type": "object"
+    },
+    "LaneHealth": {
+      "properties": {
+        "age_s": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Age S"
+        },
+        "files_skipped": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Files Skipped"
+        },
+        "files_total": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Files Total"
+        },
+        "files_written": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Files Written"
+        },
+        "gate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DataHealthGate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "lane": {
+          "title": "Lane",
+          "type": "string"
+        },
+        "last_publish_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Publish Utc"
+        }
+      },
+      "required": [
+        "lane"
+      ],
+      "title": "LaneHealth",
+      "type": "object"
+    }
+  },
+  "description": "status/data_health.json \u2014 per-lane publish freshness + last gate outcome.\n\nPublished on the LIVE lane every cycle (tiny, un-hash-gated like the rest of\nlive) so a citizen /status page can show, in one fetch, how fresh each publish\nlane is and whether its last value-gate pass errored or warned.\n\nlanes carries EXACTLY the three lanes that have a Postgres publish heartbeat:\nthe live / static / historic (labelled 'rollup') rows of\ncore.snapshot_publish_state. MAINTENANCE and REPLAY are DELIBERATELY ABSENT:\nthose pipeline stages run only in GitHub Actions and write NO DB heartbeat, so\nthis payload has nothing honest to say about them. Fabricating a lane row for\nthem would be dishonest; adding a real heartbeat write for those stages is\nOUT OF S11 SCOPE (flagged for a future slice). The web renders MAINTENANCE /\nREPLAY as honest not-applicable rows from static copy, not from this payload.\n\nEach lane's gate block is honest-NULL when that lane predates migration 0078\nor was published with the gate disabled (the gate outcome is UNKNOWN, never\nassumed pass). age_s is computed server-side off the DB clock.",
+  "properties": {
+    "feeds": {
+      "items": {
+        "$ref": "#/$defs/DataHealthFeed"
+      },
+      "title": "Feeds",
+      "type": "array"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "lanes": {
+      "items": {
+        "$ref": "#/$defs/LaneHealth"
+      },
+      "title": "Lanes",
+      "type": "array"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "generated_utc"
+  ],
+  "title": "DataHealth",
+  "type": "object"
+}

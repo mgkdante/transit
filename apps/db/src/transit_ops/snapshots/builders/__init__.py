@@ -94,6 +94,7 @@ from transit_ops.snapshots.builders.live import (
     _STOP_DEPARTURES_SQL,
     _TRIP_DEPARTURES_SQL,
     build_alerts,
+    build_data_health,
     build_manifest,
     build_network,
     build_stop_departures,
@@ -123,6 +124,7 @@ __all__ = [
     "build_alerts",
     "build_network",
     "build_manifest",
+    "build_data_health",
     # static
     "build_labels",
     "build_routes_index",

@@ -181,15 +181,52 @@ class PublishResult:
 _RECORD_STATE_SQL = named_query(
     "publish.state.upsert",
     "INSERT INTO core.snapshot_publish_state "
-    "(provider_id, tier, generated_utc, files_written, files_skipped, files_total, updated_at_utc) "
-    "VALUES (:provider_id, :tier, :generated_utc, :written, :skipped, :total, now()) "
+    "(provider_id, tier, generated_utc, files_written, files_skipped, files_total, "
+    " gate_checks_run, gate_errors, gate_warnings, gate_verdict, gate_generated_utc, "
+    " updated_at_utc) "
+    "VALUES (:provider_id, :tier, :generated_utc, :written, :skipped, :total, "
+    " :gate_checks_run, :gate_errors, :gate_warnings, :gate_verdict, "
+    " CAST(:gate_generated_utc AS timestamptz), now()) "
     "ON CONFLICT (provider_id, tier) DO UPDATE SET "
     "generated_utc = EXCLUDED.generated_utc, "
     "files_written = EXCLUDED.files_written, "
     "files_skipped = EXCLUDED.files_skipped, "
     "files_total = EXCLUDED.files_total, "
+    "gate_checks_run = EXCLUDED.gate_checks_run, "
+    "gate_errors = EXCLUDED.gate_errors, "
+    "gate_warnings = EXCLUDED.gate_warnings, "
+    "gate_verdict = EXCLUDED.gate_verdict, "
+    "gate_generated_utc = EXCLUDED.gate_generated_utc, "
     "updated_at_utc = now()",
 )
+
+
+def _gate_summary(report: object | None) -> dict:  # type: ignore[type-arg]
+    """Extract the persistable gate summary from a GateReport.to_dict() dict.
+
+    verdict = 'fail' when any ERROR finding exists, else 'warn' when any WARN
+    finding exists, else 'pass'. Returns all-None when *report* is None (the gate
+    did not run for this tier — --no-gate, or a static dataset-level SKIP), so the
+    honest-NULL boundary of migration 0078 is preserved (never a fabricated pass).
+    """
+    if report is None:
+        return {
+            "gate_checks_run": None,
+            "gate_errors": None,
+            "gate_warnings": None,
+            "gate_verdict": None,
+            "gate_generated_utc": None,
+        }
+    errors = int(report.get("errors") or 0)
+    warnings = int(report.get("warnings") or 0)
+    verdict = "fail" if errors > 0 else ("warn" if warnings > 0 else "pass")
+    return {
+        "gate_checks_run": report.get("checks_run"),
+        "gate_errors": errors,
+        "gate_warnings": warnings,
+        "gate_verdict": verdict,
+        "gate_generated_utc": report.get("generated_utc"),
+    }
 
 
 def _record_publish_state(
@@ -201,8 +238,14 @@ def _record_publish_state(
     written: int,
     skipped: int,
     total: int,
+    gate_report: dict | None = None,  # type: ignore[type-arg]
 ) -> None:
-    """Upsert the per-tier publish-state row inside the caller's transaction."""
+    """Upsert the per-tier publish-state row inside the caller's transaction.
+
+    *gate_report* is a GateReport.to_dict() dict (or None when the gate did not
+    run); its counts + derived verdict are persisted alongside the file counts so
+    the S11 data-health payload can serve the last gate outcome per lane.
+    """
 
     conn.execute(  # type: ignore[attr-defined]
         _RECORD_STATE_SQL,
@@ -213,6 +256,7 @@ def _record_publish_state(
             "written": written,
             "skipped": skipped,
             "total": total,
+            **_gate_summary(gate_report),
         },
     )
 
@@ -295,6 +339,14 @@ def _build_live_items(conn: object, *, provider_id: str, settings: object, gen: 
         (
             "live/stop_departures.json",
             builders.build_stop_departures(conn, provider_id=provider_id, generated_utc=gen),  # type: ignore[arg-type]
+            "live",
+        ),
+        # S11 per-lane data-health (reads snapshot_publish_state; last-completed-
+        # publish semantics — the live lane row it reads is from the PRIOR cycle,
+        # persisted after this cycle's payloads are built). Before the manifest.
+        (
+            "status/data_health.json",
+            builders.build_data_health(conn, provider_id=provider_id, generated_utc=gen),  # type: ignore[arg-type]
             "live",
         ),
         # manifest LAST — its generated_utc marks a fully-uploaded snapshot
@@ -711,6 +763,22 @@ def publish_snapshot(
             keys = _publish_live(
                 conn, storage, provider_id=provider_id, settings=settings, gate_report=live_report
             )
+            # Persist the live lane's last publish + gate outcome. Unlike static/
+            # historic this row is NOT hash-gate bookkeeping (live is un-gated) — it
+            # exists so the data-health payload can serve the live lane's freshness +
+            # gate summary. The report is fully populated by _publish_live above (the
+            # record loop ran); enforce() below only logs. The NEXT cycle's
+            # build_data_health reads THIS row (last-completed-publish semantics).
+            _record_publish_state(
+                conn,
+                provider_id=provider_id,
+                tier=tier,
+                generated_utc=gen,
+                written=len(keys),
+                skipped=0,
+                total=len(keys),
+                gate_report=live_report.to_dict() if live_report is not None else None,
+            )
         if live_report is not None:
             gate.enforce(live_report, force=True)  # WARN-only: never aborts live
         return PublishResult(
@@ -812,6 +880,7 @@ def publish_snapshot(
             written=len(gated.written),
             skipped=len(gated.skipped),
             total=len(gated.written) + len(gated.skipped),
+            gate_report=report.to_dict() if report is not None else None,
         )
 
     return PublishResult(

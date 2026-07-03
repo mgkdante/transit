@@ -652,3 +652,75 @@ def test_manifest_capabilities_is_additive_optional():
     from transit_ops.snapshots.contract import Manifest
 
     assert "capabilities" not in Manifest.model_json_schema()["required"]
+
+
+# --- S11: DataHealth payload + manifest data_health pointer --------------------
+
+def test_manifest_live_files_data_health_pointer_is_additive_optional():
+    # The data_health pointer is additive-optional-with-default so an already-published
+    # manifest stays FIELD-IDENTICAL under the growth rule.
+    from transit_ops.snapshots.contract import ManifestLiveFiles
+
+    mlf = ManifestLiveFiles(generated_utc="t")
+    assert mlf.data_health == "status/data_health.json"
+    assert "data_health" not in ManifestLiveFiles.model_json_schema()["required"]
+
+
+def test_data_health_roundtrips_with_lanes_and_feeds():
+    from transit_ops.snapshots.contract import (
+        DataHealth,
+        DataHealthFeed,
+        DataHealthGate,
+        LaneHealth,
+    )
+
+    dh = DataHealth(
+        generated_utc="2026-07-02T12:00:00Z",
+        lanes=[
+            LaneHealth(
+                lane="live",
+                last_publish_utc="2026-07-02T11:59:03Z",
+                age_s=57,
+                files_written=6,
+                files_skipped=0,
+                files_total=6,
+                gate=DataHealthGate(
+                    checks_run=6, errors=0, warnings=1, verdict="warn",
+                    generated_utc="2026-07-02T11:59:03Z",
+                ),
+            ),
+            LaneHealth(lane="rollup"),  # honest-null lane (never published)
+        ],
+        feeds=[DataHealthFeed(feed="trip_updates", status="fresh", age_s=30)],
+    )
+    parsed = DataHealth.model_validate_json(dh.model_dump_json())
+    assert parsed.lanes[0].gate.verdict == "warn"
+    assert parsed.lanes[1].last_publish_utc is None
+    assert parsed.lanes[1].gate is None
+    assert parsed.feeds[0].feed == "trip_updates"
+
+
+def test_data_health_honest_null_defaults():
+    # A lane / gate / feed with only its required key set carries honest-NULL, never 0.
+    from transit_ops.snapshots.contract import DataHealth, LaneHealth
+
+    dh = DataHealth(generated_utc="t", lanes=[LaneHealth(lane="static")])
+    lane = dh.lanes[0]
+    assert lane.age_s is None and lane.files_total is None and lane.gate is None
+    assert dh.feeds == []
+
+
+def test_data_health_carries_the_envelope_and_is_additive():
+    from transit_ops.snapshots.contract import DataHealth, PayloadEnvelope
+
+    assert issubclass(DataHealth, PayloadEnvelope)
+    req = DataHealth.model_json_schema()["required"]
+    for f in ("lanes", "feeds", "schema_version", "methodology_version"):
+        assert f not in req, f"{f} must be additive-optional"
+    assert "generated_utc" in req
+
+
+def test_data_health_byte_ceiling_constant_exported():
+    from transit_ops.snapshots.contract import DATA_HEALTH_BYTE_CEILING
+
+    assert DATA_HEALTH_BYTE_CEILING == 16384

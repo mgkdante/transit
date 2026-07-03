@@ -25,6 +25,7 @@ import {
 	getStopReliability,
 } from './historic';
 import { getProvenance } from './provenance';
+import { getDataHealth } from './dataHealth';
 import { getBasemap } from './basemap';
 
 /** Per-family repository ports — the `repositories` grouping in $lib/v1. */
@@ -62,6 +63,9 @@ export const repositories = {
 	provenance: {
 		get: getProvenance,
 	},
+	dataHealth: {
+		get: getDataHealth,
+	},
 	basemap: {
 		get: getBasemap,
 	},
@@ -84,4 +88,5 @@ export {
 	getStopReliability,
 } from './historic';
 export { getProvenance } from './provenance';
+export { getDataHealth } from './dataHealth';
 export { getBasemap } from './basemap';

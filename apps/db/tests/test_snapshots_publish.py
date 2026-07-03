@@ -156,12 +156,14 @@ def test_publish_live_uploads_all_files_manifest_last() -> None:
         "live/alerts.json",
         "live/network.json",
         "live/stop_departures.json",
+        "status/data_health.json",
         "manifest.json",
     ]
     assert store.keys == expected_keys, f"got {store.keys}"
     assert store.keys[-1] == "manifest.json"
-    # stop_departures is uploaded before the manifest (manifest-last invariant)
+    # stop_departures + data_health are uploaded before the manifest (manifest-last)
     assert store.keys.index("live/stop_departures.json") < store.keys.index("manifest.json")
+    assert store.keys.index("status/data_health.json") < store.keys.index("manifest.json")
     # every live PUT (manifest included) carries tier='live'
     assert store.tiers == ["live"] * len(expected_keys)
 
@@ -227,7 +229,7 @@ def test_publish_result_display_dict() -> None:
     assert d["provider_id"] == "stm"
     assert d["tier"] == "live"
     assert isinstance(d["keys_written"], list)
-    assert len(d["keys_written"]) == 6
+    assert len(d["keys_written"]) == 7  # + status/data_health.json (S11)
 
 
 def test_publish_rejects_unimplemented_tier() -> None:
@@ -254,7 +256,7 @@ def test_publish_accepts_registry_kwarg() -> None:
         registry=object(),  # should be silently ignored
     )
     assert res.tier == "live"
-    assert len(store.keys) == 6
+    assert len(store.keys) == 7  # + status/data_health.json (S11)
 
 
 def test_publish_static_writes_expected_keys() -> None:
@@ -806,6 +808,83 @@ def test_publish_records_state_row_per_tier() -> None:
     inserts = [s for s in conn.sql if "INSERT INTO core.snapshot_publish_state" in s]
     assert len(inserts) == 1
     assert "ON CONFLICT (provider_id, tier)" in inserts[0]
+    # S11: the state upsert now carries the gate-telemetry columns.
+    for col in ("gate_checks_run", "gate_errors", "gate_warnings",
+                "gate_verdict", "gate_generated_utc"):
+        assert col in inserts[0], f"{col} missing from state upsert SQL"
+
+
+# --- S11: gate-summary derivation + live-lane state persistence ----------------
+
+
+def test_gate_summary_none_report_is_all_null() -> None:
+    from transit_ops.snapshots.publish import _gate_summary
+
+    s = _gate_summary(None)
+    assert s == {
+        "gate_checks_run": None,
+        "gate_errors": None,
+        "gate_warnings": None,
+        "gate_verdict": None,
+        "gate_generated_utc": None,
+    }
+
+
+def test_gate_summary_verdict_pass_warn_fail() -> None:
+    from transit_ops.snapshots.publish import _gate_summary
+
+    # errors>0 -> fail (dominates warnings).
+    assert _gate_summary(
+        {"checks_run": 5, "errors": 2, "warnings": 3, "generated_utc": "t"}
+    )["gate_verdict"] == "fail"
+    # warnings>0, no errors -> warn.
+    assert _gate_summary(
+        {"checks_run": 5, "errors": 0, "warnings": 3, "generated_utc": "t"}
+    )["gate_verdict"] == "warn"
+    # clean -> pass.
+    s = _gate_summary({"checks_run": 5, "errors": 0, "warnings": 0, "generated_utc": "t"})
+    assert s["gate_verdict"] == "pass"
+    assert s["gate_checks_run"] == 5 and s["gate_generated_utc"] == "t"
+
+
+class _ParamRecordingConn(FakeConn):
+    """FakeConn that also captures the params of the state-upsert INSERT."""
+
+    def __init__(self) -> None:
+        self.state_params: list[dict] = []
+
+    def execute(self, statement, params=None):  # noqa: ANN001
+        if "INSERT INTO core.snapshot_publish_state" in str(statement):
+            self.state_params.append(dict(params or {}))
+        return FakeResult()
+
+
+def test_publish_live_persists_state_with_gate_summary() -> None:
+    """The live lane now upserts snapshot_publish_state with the just-computed gate
+    summary (verdict derived from the report counts), so data-health can serve it."""
+    conn = _ParamRecordingConn()
+
+    class _Engine:
+        def begin(self):  # noqa: ANN202
+            @contextmanager
+            def _cm():
+                yield conn
+
+            return _cm()
+
+    res = publish_snapshot(
+        "stm", tier="live", settings=FakeSettings(), engine=_Engine(), storage=FakeStore()
+    )
+    assert res.tier == "live"
+    assert len(conn.state_params) == 1
+    p = conn.state_params[0]
+    assert p["tier"] == "live"
+    # Empty FakeConn feeds -> a clean gate over 7 payloads -> pass verdict, no errors.
+    assert p["gate_verdict"] == "pass"
+    assert p["gate_errors"] == 0 and p["gate_warnings"] == 0
+    assert p["gate_checks_run"] == 7  # 6 live payloads + data_health itself
+    # file counts reflect the live upload (no skips on the un-gated live lane).
+    assert p["written"] == 7 and p["skipped"] == 0 and p["total"] == 7
 
 
 def test_publish_result_reports_skip_counts() -> None:
@@ -874,7 +953,7 @@ def test_publish_live_is_not_hash_gated() -> None:
         "stm", tier="live", settings=FakeSettings(), engine=FakeEngine(), storage=store
     )
     assert res.tier == "live"
-    assert len(store.keys) == 6
+    assert len(store.keys) == 7  # + status/data_health.json (S11)
     assert res.keys_skipped == []
 
 
@@ -894,7 +973,7 @@ def test_live_gate_checker_crash_never_aborts_cycle(monkeypatch) -> None:
     )
     # gate crashed on every file, yet the cycle completed and uploaded everything
     assert res.tier == "live"
-    assert len(store.keys) == 6
+    assert len(store.keys) == 7  # + status/data_health.json (S11)
     assert store.keys[-1] == "manifest.json"
 
 

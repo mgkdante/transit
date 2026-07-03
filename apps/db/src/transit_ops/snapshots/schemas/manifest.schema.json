@@ -114,6 +114,11 @@
           "title": "Alerts",
           "type": "string"
         },
+        "data_health": {
+          "default": "status/data_health.json",
+          "title": "Data Health",
+          "type": "string"
+        },
         "generated_utc": {
           "title": "Generated Utc",
           "type": "string"

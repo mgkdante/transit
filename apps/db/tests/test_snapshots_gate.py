@@ -741,6 +741,84 @@ def test_enforce_clean_report_does_not_raise():
     assert report.passed
 
 
+# --- S11 data-health -----------------------------------------------------------
+
+
+def _data_health(lanes=None, feeds=None):
+    from transit_ops.snapshots.contract import DataHealth
+
+    return DataHealth(generated_utc="t", lanes=lanes or [], feeds=feeds or [])
+
+
+def test_data_health_clean_payload_passes():
+    from transit_ops.snapshots.contract import DataHealthFeed, DataHealthGate, LaneHealth
+
+    dh = _data_health(
+        lanes=[
+            LaneHealth(
+                lane="live", last_publish_utc="t", age_s=57,
+                files_written=6, files_skipped=0, files_total=6,
+                gate=DataHealthGate(checks_run=6, errors=0, warnings=1, verdict="warn"),
+            ),
+            LaneHealth(lane="rollup"),  # honest-null lane, no findings
+        ],
+        feeds=[DataHealthFeed(feed="trip_updates", status="fresh", age_s=30)],
+    )
+    res = gate.check_payload("status/data_health.json", dh)
+    assert _errors(res) == []
+
+
+def test_data_health_negative_age_is_error():
+    from transit_ops.snapshots.contract import LaneHealth
+
+    dh = _data_health(lanes=[LaneHealth(lane="live", age_s=-5)])
+    res = gate.check_payload("status/data_health.json", dh)
+    assert _has_err(res, "count_negative", "lanes[0].age_s")
+
+
+def test_data_health_negative_gate_count_is_error():
+    from transit_ops.snapshots.contract import DataHealthGate, LaneHealth
+
+    dh = _data_health(
+        lanes=[LaneHealth(lane="static", gate=DataHealthGate(errors=-1))]
+    )
+    res = gate.check_payload("status/data_health.json", dh)
+    assert _has_err(res, "count_negative", "lanes[0].gate.errors")
+
+
+def test_data_health_unknown_verdict_is_error():
+    from transit_ops.snapshots.contract import DataHealthGate, LaneHealth
+
+    dh = _data_health(
+        lanes=[LaneHealth(lane="live", gate=DataHealthGate(verdict="green"))]
+    )
+    res = gate.check_payload("status/data_health.json", dh)
+    assert _has_err(res, "unknown_verdict", "lanes[0].gate.verdict")
+
+
+def test_data_health_negative_feed_age_is_error():
+    from transit_ops.snapshots.contract import DataHealthFeed
+
+    dh = _data_health(feeds=[DataHealthFeed(feed="alerts", age_s=-3)])
+    res = gate.check_payload("status/data_health.json", dh)
+    assert _has_err(res, "count_negative", "feeds[0].age_s")
+
+
+def test_data_health_byte_ceiling_is_error():
+    from transit_ops.snapshots.contract import (
+        DATA_HEALTH_BYTE_CEILING,
+        DataHealthFeed,
+    )
+
+    # Overflow the ceiling with a runaway feed list (each feed name long).
+    big = _data_health(
+        feeds=[DataHealthFeed(feed="f" * 200, status="fresh", age_s=1) for _ in range(200)]
+    )
+    assert gate._payload_bytes(big) > DATA_HEALTH_BYTE_CEILING
+    res = gate.check_payload("status/data_health.json", big)
+    assert _has_err(res, "byte_ceiling")
+
+
 # --- report round-trip -------------------------------------------------------
 
 
