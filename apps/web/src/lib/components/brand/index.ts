@@ -26,6 +26,12 @@ export type { SectionLabelProps } from './SectionLabel.svelte';
 export { default as SectionHeading } from './SectionHeading.svelte';
 export type { SectionHeadingProps } from './SectionHeading.svelte';
 
+export { default as NumberedChip } from './NumberedChip.svelte';
+export type { NumberedChipProps } from './NumberedChip.svelte';
+
+export { default as SectionProgress } from './SectionProgress.svelte';
+export type { SectionProgressProps } from './SectionProgress.svelte';
+
 export { default as StopLabel } from './StopLabel.svelte';
 export type { StopLabelProps } from './StopLabel.svelte';
 
