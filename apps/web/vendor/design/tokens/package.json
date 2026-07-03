@@ -1,0 +1,22 @@
+{
+  "name": "@yesid/tokens",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "DTCG-format design tokens + generators for yesid.dev. Source of truth: tokens.json.",
+  "//": "figma:push runbook — emits FigmaVariable[] JSON on stdout; a separate orchestration step feeds it to the Figma MCP (see scripts/push-to-figma.ts header). verify-roundtrip.ts checks Figma state against tokens.json.",
+  "scripts": {
+    "build": "bun run build.ts",
+    "figma:push": "bun scripts/push-to-figma.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "tsc --noEmit",
+    "lint:design-md": "design.md lint ../../DESIGN.md"
+  },
+  "devDependencies": {
+    "@google/design.md": "0.1.1",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.0"
+  }
+}

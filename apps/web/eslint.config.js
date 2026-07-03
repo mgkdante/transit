@@ -46,6 +46,7 @@ export default ts.config(
 			'src/lib/motion/tokens.ts',
 			'src/lib/v1/schemas/json/',
 			'tools/tokens/**',
+			'vendor/',
 		],
 	},
 );
