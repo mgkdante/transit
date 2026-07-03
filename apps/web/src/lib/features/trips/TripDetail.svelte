@@ -24,6 +24,8 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { Surface } from '$lib/components/layout';
 	import { ResourceBoundary, SurfaceHeader, FreshnessStamp } from '$lib/components/surface';
+	import Breadcrumb from '$lib/components/surface/Breadcrumb.svelte';
+	import type { BreadcrumbTrailItem } from '$lib/seo/routeSeo';
 	import { Separator } from '$lib/components/ui/separator';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
@@ -44,6 +46,15 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(tripCopy[locale]);
+
+	// Visible breadcrumb for wayfinding (H4). Trip has no index route AND is noindex
+	// (ids rotate), so the trail is built INLINE here — Home > Trip {id} — and stays
+	// OUT of resolveBreadcrumbTrail so the SEO BreadcrumbList never lists a noindex
+	// page. Paths are delocalized (the Breadcrumb contract); it localizes each href.
+	const trail = $derived<BreadcrumbTrailItem[]>([
+		{ name: t.crumbHome, path: '/' },
+		{ name: t.heading(id), path: `/trip/${encodeURIComponent(id)}` },
+	]);
 
 	// The whole live trips map (trip-keyed). One read, reactive to `id`. We look up
 	// THIS trip below; an absent entry is the honest "not broadcasting" signal.
@@ -109,6 +120,9 @@
 <Surface as="div" data-slot="trip-detail">
 	<ResourceBoundary resource={trips} lang={locale}>
 		{#snippet children(_file)}
+			<!-- Wayfinding breadcrumb (H4): Home > Trip {id}. Carried on both the
+			     stand-down and the live branch so the trail is stable across states. -->
+			<Breadcrumb {trail} {locale} />
 			{#if trip == null}
 				<!-- HONEST stand-down: the broadcast carries no entry for this trip id.
 				     Trip ids rotate, so this is the expected path for a stale deep link —

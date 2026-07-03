@@ -37,6 +37,8 @@ export interface RouteDetailCopy {
 	readonly kicker: string;
 	/** Back-link label into the lines index ("← Lines"), keeps nav in-chrome. */
 	readonly back: string;
+	/** Framing lede under the line id in the detail head (detail-head rhythm). */
+	readonly detailLede: string;
 	/** Tab labels, keyed by the EntityDetail tab key. */
 	readonly tabs: {
 		readonly detail: string;
@@ -170,6 +172,8 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 	fr: {
 		kicker: 'LIGNE',
 		back: 'Lignes',
+		detailLede:
+			'Parcours en direct, horaire prévu et fiabilité historique de cette ligne. Mesuré à partir du contrat /v1.',
 		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
 		viewOnMap: 'Voir sur la carte',
 		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
@@ -242,6 +246,8 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 	en: {
 		kicker: 'LINE',
 		back: 'Lines',
+		detailLede:
+			'Live route, planned schedule and historic reliability for this line. Measured from the /v1 contract.',
 		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },
 		viewOnMap: 'View on map',
 		viewRouteOnMap: (route) => `View route ${route} on map`,

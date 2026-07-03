@@ -11,8 +11,12 @@
 	export interface StopLabelProps extends HTMLAttributes<HTMLDivElement> {
 		/** Stop number (e.g. "01", "02") */
 		stop: string;
-		/** Stop name */
-		label: string;
+		/**
+		 * Stop name. Optional: when omitted/empty, the plate shows just the
+		 * "ARRÊT {stop}" number (no trailing separator) — the meta-chip form used in
+		 * the detail head where the name is the display h1 above.
+		 */
+		label?: string;
 		/**
 		 * Element to render as. Default `div` (a plain plate); pass a heading tag
 		 * (e.g. `h1`) when this plate IS the surface's title, so the page earns a
@@ -24,10 +28,15 @@
 	}
 
 	let { stop, label, as = 'div', class: className, ...restProps }: StopLabelProps = $props();
+
+	// The name is optional in the meta-chip form (the display h1 carries the name);
+	// omit the "·" separator when there is no label so no orphan separator shows.
+	const hasLabel = $derived(label != null && label !== '');
 </script>
 
 <svelte:element this={as} class={cn('stop-label', className)} data-slot="stop-label" {...restProps}>
-	<span class="stop-label-num">ARRÊT {stop}</span> · {label}
+	<span class="stop-label-num">ARRÊT {stop}</span>{#if hasLabel}
+		· {label}{/if}
 </svelte:element>
 
 <style>

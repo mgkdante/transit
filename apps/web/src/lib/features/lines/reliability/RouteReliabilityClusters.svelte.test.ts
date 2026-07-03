@@ -140,6 +140,19 @@ describe('RouteReliabilityClusters', () => {
 		expect(screen.getByText(copy.controls.thisMonth)).toBeInTheDocument();
 	});
 
+	it('renders the SEC n/m position readout in the sticky ToC rail (H4)', () => {
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: populated, locale: 'en' },
+		});
+
+		// The rail carries a "SEC n/m" wayfinding stamp over the total section count
+		// (5). Before the scroll observer resolves an active id, it falls back to
+		// section 1 → "SEC 1/5".
+		const readout = container.querySelector('[data-slot="section-readout"]');
+		expect(readout).not.toBeNull();
+		expect(readout?.textContent).toBe('SEC 1/5');
+	});
+
 	it('renders every section honestly empty (no crash, no dropped section) with an empty contract', () => {
 		// A minimal valid contract: only the two required identity fields, no data
 		// arrays — every section must fall to its honest empty state.

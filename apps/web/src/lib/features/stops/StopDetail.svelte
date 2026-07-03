@@ -297,18 +297,24 @@
 <EntityDetail
 	kicker={t.kicker}
 	back={{ href: localizeHref('/stops', locale), label: t.back }}
+	lede={t.detailLede}
 	{tabs}
 	bind:active
 >
 	{#snippet header()}
-		<div class="stop-detail-head">
-			<StopLabel as="h1" stop={id} label={stop.data?.name ?? `#${id}`} />
-			<MapDrilldownLink
-				href={mapHrefFor({ stop: id }, locale)}
-				label={t.viewOnMap}
-				ariaLabel={t.viewStopOnMap(id)}
-			/>
-		</div>
+		<!-- The framing head the stop index already earns (kicker + display title +
+		     lede, §C5.6): the stop NAME is the display-scale h1 (+ brand dot); the
+		     mono ARRÊT plate demotes to a meta chip below. -->
+		<SectionHeading heading={stop.data?.name ?? `#${id}`} level={1} dot />
+	{/snippet}
+
+	{#snippet meta()}
+		<StopLabel stop={id} label="" class="stop-detail-plate" />
+		<MapDrilldownLink
+			href={mapHrefFor({ stop: id }, locale)}
+			label={t.viewOnMap}
+			ariaLabel={t.viewStopOnMap(id)}
+		/>
 	{/snippet}
 
 	{#snippet pane(key)}
@@ -567,11 +573,13 @@
 </EntityDetail>
 
 <style>
-	.stop-detail-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
+	/* The ARRÊT plate as a meta chip: no left LED-lamp inset needed here (the head
+	   already carries the brand dot on the display title) — keep the mono voice. */
+	:global(.stop-detail-plate) {
+		padding-left: 0;
+	}
+	:global(.stop-detail-plate)::before {
+		display: none;
 	}
 
 	.stop-next {
@@ -794,10 +802,6 @@
 	}
 
 	@media (max-width: 48rem) {
-		.stop-detail-head {
-			align-items: flex-start;
-			flex-direction: column;
-		}
 		/* A3: the 2-col Info pane collapses to a single column on a phone. */
 		.stop-info {
 			grid-template-columns: minmax(0, 1fr);

@@ -423,6 +423,15 @@
 	// TocPill highlights (client-only; each band carries data-toc below).
 	let activeId = $state('');
 	onMount(() => observeActiveToc((id) => (activeId = id)));
+
+	// "SEC n/m" position readout for the sticky ToC rail (H4, §C2.6): the active
+	// section's 1-based index over the total. Before the observer resolves an
+	// active id (or if it points off-list), fall back to section 1.
+	const sectionReadout = $derived.by(() => {
+		const idx = sectionNav.findIndex((s) => s.id === activeId);
+		const n = idx >= 0 ? idx + 1 : 1;
+		return copy.controls.sectionReadout(n, sectionNav.length);
+	});
 </script>
 
 <div class={cn('reliability-clusters', className)} data-slot="reliability-clusters">
@@ -506,6 +515,14 @@
 			     scope (↻ follows the window above, ∞ full history). -->
 			<nav class="reliability-toc" data-slot="section-toc" aria-label={copy.controls.toc}>
 				<span class="reliability-toc__label">{copy.controls.toc}</span>
+				<!-- SEC n/m position readout (H4, §C2.6): the active section over the total,
+				     a quiet mono wayfinding stamp that tracks the scroll. -->
+				<span
+					class="reliability-toc__readout"
+					data-slot="section-readout"
+					aria-live="polite"
+					aria-atomic="true">{sectionReadout}</span
+				>
 				<ul class="reliability-toc__list">
 					{#each sectionNav as s (s.id)}
 						<li>
@@ -734,6 +751,15 @@
 		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: var(--muted-foreground);
+	}
+	/* SEC n/m position readout — the amber wayfinding voice (station numbering),
+	   quiet mono, sitting beside the "Jump to" label. */
+	.reliability-toc__readout {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		letter-spacing: var(--tracking-eyebrow);
+		text-transform: uppercase;
+		color: var(--accent-text);
 	}
 	.reliability-toc__list {
 		display: flex;

@@ -11,6 +11,9 @@ import type { Locale } from '$lib/i18n';
 export interface TripDetailCopy {
 	/** Station-voice overline above the trip heading. */
 	readonly kicker: string;
+	/** Breadcrumb "Home" root label (the trip trail is built inline — trip has no
+	 *  index route, and stays out of the SEO BreadcrumbList since it is noindex). */
+	readonly crumbHome: string;
 	/** Heading prefix for the trip id (e.g. "Trip 12345"). */
 	readonly heading: (id: string) => string;
 	/** Mono subheading under the heading. */
@@ -64,6 +67,7 @@ export interface TripDetailCopy {
 export const tripCopy: Record<Locale, TripDetailCopy> = {
 	fr: {
 		kicker: 'TRAJET',
+		crumbHome: 'Accueil',
 		heading: (id) => `Trajet ${id}`,
 		subheading: '// EN DIRECT',
 		lede: 'Prédiction en direct pour ce trajet: ligne, statut, retard et prochains arrêts. Mesuré depuis le contrat ouvert /v1, jamais inventé.',
@@ -98,6 +102,7 @@ export const tripCopy: Record<Locale, TripDetailCopy> = {
 	},
 	en: {
 		kicker: 'TRIP',
+		crumbHome: 'Home',
 		heading: (id) => `Trip ${id}`,
 		subheading: '// LIVE',
 		lede: 'Live prediction for this trip: line, status, delay and remaining stops. Measured from the open /v1 data contract, never invented.',

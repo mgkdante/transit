@@ -27,6 +27,17 @@
 		kicker: string;
 		/** Surface-specific heading (SectionHeading for lines, StopLabel for stops). */
 		header: Snippet;
+		/**
+		 * Optional lede paragraph under the heading (muted, ~52ch) — the framing
+		 * sentence in the detail-head rhythm (kicker → display title → lede → meta).
+		 * Omitted ⇒ no lede row (P5.3b detail-head rhythm, §C2/§C5.4/§C5.6).
+		 */
+		lede?: string;
+		/**
+		 * Optional mono meta row under the lede — the detail-head meta chips
+		 * (e.g. the stop's ARRÊT plate, the line's map action). Omitted ⇒ no meta row.
+		 */
+		meta?: Snippet;
 		/** Tab definitions — stable key + already-localized label. */
 		tabs: readonly { key: K; label: string }[];
 		/** The active tab key (two-way bindable). */
@@ -45,6 +56,8 @@
 	let {
 		kicker,
 		header,
+		lede,
+		meta,
 		tabs,
 		active = $bindable(),
 		pane,
@@ -87,6 +100,12 @@
 		{/if}
 		<SectionLabel text={kicker} variant="station" />
 		{@render header()}
+		{#if lede}
+			<p class="surface-detail-lede">{lede}</p>
+		{/if}
+		{#if meta}
+			<div class="surface-detail-meta">{@render meta()}</div>
+		{/if}
 	</div>
 
 	<Separator variant="hazard" />
@@ -118,6 +137,24 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+	}
+
+	/* Detail-head rhythm (§C2/§C5.4/§C5.6, yesid-visual-spec §6): the framing
+	   sentence under the display title — muted, subheading-scale, ~52ch measure,
+	   matching SurfaceHeader's lede so line/stop/trip heads read identically. */
+	.surface-detail-lede {
+		color: var(--muted-foreground);
+		font-size: var(--text-subheading);
+		line-height: 1.6;
+		max-width: 52ch;
+	}
+	/* Meta row — the mono-micro chips (the stop's ARRÊT plate, the map drilldown)
+	   below the lede; a flex row that wraps on narrow viewports. */
+	.surface-detail-meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem 1rem;
 	}
 
 	/* Signage-active tab (yesid StationTabs parity). The child <button> replaces the

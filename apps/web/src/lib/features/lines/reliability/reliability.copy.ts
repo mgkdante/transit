@@ -291,6 +291,12 @@ export interface ReliabilityCopy {
 		readonly scopeWhole: string;
 		/** One-line scope note under the grain picker (which sections the window drives). */
 		readonly scopeNote: string;
+		/**
+		 * Section-position readout in the sticky ToC rail (H4, §C2.6): "SEC n/m" —
+		 * the active section index over the total. Builder so the numerals localize
+		 * cleanly and the mono label stays a single source.
+		 */
+		readonly sectionReadout: (n: number, total: number) => string;
 	};
 	/**
 	 * Rider-question section framing (the 5-section rider-first IA): each section's
@@ -502,6 +508,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			scopeWhole: 'Historique complet : la fenêtre ci-dessus ne change pas cette section',
 			scopeNote:
 				'La fenêtre ci-dessus remodèle les sections marquées ↻ ; les sections ∞ montrent tout l’historique.',
+			sectionReadout: (n, total) => `SEC ${n}/${total}`,
 		},
 		sections: {
 			verdict: { label: 'Fiabilité', question: 'Peut-on compter sur cette ligne ?' },
@@ -711,6 +718,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			scopeWindowed: 'Follows the time window above',
 			scopeWhole: 'Full history: the window above doesn’t change this section',
 			scopeNote: 'The window above re-shapes the ↻ sections; the ∞ sections show the full history.',
+			sectionReadout: (n, total) => `SEC ${n}/${total}`,
 		},
 		sections: {
 			verdict: { label: 'Reliability', question: 'Can you count on this line?' },

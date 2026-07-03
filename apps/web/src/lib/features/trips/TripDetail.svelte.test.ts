@@ -100,6 +100,18 @@ describe('TripDetail: a broadcasting trip', () => {
 		expect(screen.getAllByText('4 min late').length).toBeGreaterThanOrEqual(1);
 	});
 
+	it('renders the wayfinding breadcrumb (Home > Trip {id}) with the leaf as current', () => {
+		render(TripDetail, { props: { id: 't161' } });
+
+		const nav = screen.getByRole('navigation', { name: 'Breadcrumb' });
+		expect(nav).toBeInTheDocument();
+		// Home links to the localized root; the trip leaf is the current page (not a link).
+		expect(within(nav).getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
+		const leaf = within(nav).getByText('Trip t161');
+		expect(leaf).toHaveAttribute('aria-current', 'page');
+		expect(within(nav).queryByRole('link', { name: 'Trip t161' })).toBeNull();
+	});
+
 	it('anchors the FreshnessStamp age to the SERVER clock (serverNow), not Date.now()', () => {
 		render(TripDetail, { props: { id: 't161' } });
 

@@ -46,6 +46,8 @@ export interface StopDetailCopy {
 	readonly kicker: string;
 	/** Back-link label into the stops index ("← Stops"), keeps nav in-chrome. */
 	readonly back: string;
+	/** Framing lede under the stop name in the detail head (detail-head rhythm). */
+	readonly detailLede: string;
 	/** Live-map drilldown action. */
 	readonly viewOnMap: string;
 	readonly viewStopOnMap: (stop: string) => string;
@@ -170,6 +172,8 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 	fr: {
 		kicker: 'ARRÊT',
 		back: 'Arrêts',
+		detailLede:
+			'Prochains passages en direct, horaire prévu et fiabilité historique de cet arrêt. Mesuré à partir du contrat /v1.',
 		viewOnMap: 'Voir sur la carte',
 		viewStopOnMap: (stop) => `Voir l’arrêt ${stop} sur la carte`,
 		tabs: { next: 'Prochains', schedule: 'Horaire', info: 'Info', reliability: 'Fiabilité' },
@@ -220,6 +224,8 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 	en: {
 		kicker: 'STOP',
 		back: 'Stops',
+		detailLede:
+			'Live next departures, planned schedule and historic reliability for this stop. Measured from the /v1 contract.',
 		viewOnMap: 'View on map',
 		viewStopOnMap: (stop) => `View stop ${stop} on map`,
 		tabs: { next: 'Next', schedule: 'Schedule', info: 'Info', reliability: 'Reliability' },

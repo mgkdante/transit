@@ -281,6 +281,29 @@ describe('StopDetail map drilldown', () => {
 	});
 });
 
+describe('StopDetail framing head (§C5.6)', () => {
+	it('renders the stop NAME as a real display h1 (the framing head its index already has)', () => {
+		reset();
+		render(StopDetail, { props: { id: '57191' } });
+
+		// The stop name is the display-scale page title (a real <h1>), not a flat span.
+		expect(screen.getByRole('heading', { level: 1, name: 'Test stop' })).toBeInTheDocument();
+	});
+
+	it('demotes the ARRÊT id plate to a meta chip + shows the framing lede', () => {
+		reset();
+		render(StopDetail, { props: { id: '57191' } });
+
+		// The ARRÊT plate renders the id (no name, no orphan separator) as a non-heading chip.
+		const plate = document.querySelector('[data-slot="stop-label"].stop-detail-plate');
+		expect(plate).not.toBeNull();
+		expect(plate?.textContent).toContain('ARRÊT 57191');
+		expect(plate?.tagName).toBe('DIV');
+		// The framing lede sits under the head.
+		expect(screen.getByText(/Live next departures, planned schedule/)).toBeInTheDocument();
+	});
+});
+
 describe('StopDetail reliability — grain picker', () => {
 	// NOTE (S8A re-seat): the grain-availability + grain-switch + calendar-only assertions
 	// moved to StopReliabilitySurface.svelte.test.ts (the grain rail now lives in the

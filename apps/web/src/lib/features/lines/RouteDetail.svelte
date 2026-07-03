@@ -256,18 +256,20 @@
 <EntityDetail
 	kicker={t.kicker}
 	back={{ href: localizeHref('/lines', locale), label: t.back }}
+	lede={t.detailLede}
 	{tabs}
 	bind:active
 >
 	{#snippet header()}
-		<div class="route-detail-head">
-			<SectionHeading heading={id} level={1} dot />
-			<MapDrilldownLink
-				href={mapHrefFor({ route: id }, locale)}
-				label={t.viewOnMap}
-				ariaLabel={t.viewRouteOnMap(id)}
-			/>
-		</div>
+		<SectionHeading heading={id} level={1} dot />
+	{/snippet}
+
+	{#snippet meta()}
+		<MapDrilldownLink
+			href={mapHrefFor({ route: id }, locale)}
+			label={t.viewOnMap}
+			ariaLabel={t.viewRouteOnMap(id)}
+		/>
 	{/snippet}
 
 	{#snippet pane(key)}
@@ -487,12 +489,6 @@
 </EntityDetail>
 
 <style>
-	.route-detail-head {
-		display: flex;
-		align-items: end;
-		justify-content: space-between;
-		gap: 1rem;
-	}
 	.route-section {
 		display: flex;
 		flex-direction: column;
@@ -680,12 +676,6 @@
 		}
 	}
 
-	@media (max-width: 520px) {
-		.route-detail-head {
-			align-items: start;
-			flex-direction: column;
-		}
-	}
 	.route-period {
 		display: flex;
 		flex-direction: column;
