@@ -10,7 +10,7 @@
 // distinct component name, so there are no collisions across barrels.
 //
 //   brand   — metro-board brand primitives (StatusDot, MetricDisplay, …)
-//   shell   — responsive app-shell chrome (AppShell, TopBar, LeftRail, …)
+//   shell   — responsive app-shell chrome (AppShell, NavPill, RightPanel, …)
 //   layout  — the four responsive grid recipes (MissionControlGrid, …)
 //   dataviz — SVG data-viz kit + token helpers (Heatmap, TrendLine, …)
 //   edge    — edge-condition primitive (EdgeState)

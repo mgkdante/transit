@@ -49,11 +49,10 @@
 	}
 
 	/* ≥ xl: a zero-width absolute rail spanning the Surface's full height at its
-	   LEFT CONTENT-BOX edge (inset-inline-start:0 = right of the app LeftRail,
-	   which the <main> padding-left clears). It contributes NO layout box (0 width,
-	   absolute), so the content lane and every sticky rail keep their geometry —
-	   the word is pure overlay living in the content's own --space-page-x gutter
-	   band, never over the LeftRail. */
+	   LEFT CONTENT-BOX edge (inset-inline-start:0). It contributes NO layout box
+	   (0 width, absolute), so the content lane and every sticky rail keep their
+	   geometry — the word is pure overlay living in the content's own
+	   --space-page-x gutter band. */
 	@media (min-width: 1280px) {
 		.vst-rail {
 			display: block;
@@ -69,9 +68,9 @@
 		}
 
 		/* The word pins under the pill and rides the scroll. It sits flush at the
-		   content-box left edge, INSIDE the --space-page-x gutter band (right of the
-		   LeftRail, left of the text), rotated vertical. Sized to the gutter so it
-		   never crosses into the content lane or the rail. */
+		   content-box left edge, INSIDE the --space-page-x gutter band (left of the
+		   text), rotated vertical. Sized to the gutter so it never crosses into the
+		   content lane. */
 		.vst-word {
 			position: sticky;
 			top: var(--chrome-offset);

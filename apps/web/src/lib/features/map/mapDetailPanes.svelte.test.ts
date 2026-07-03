@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // mapDetailPanes — the draggable width of the RIGHT DETAIL panel (an absolute
 // overlay anchored flush-right over the map). The panel is NOT a paneforge pane;
-// its width is a single px scalar written into a CSS var and persisted, exactly
-// like the left nav rail (leftRailWidth.ts). These clamp + persist that width.
-// SSR-safe localStorage.
+// its width is a single px scalar written into a CSS var and persisted via the
+// shared overlayWidth factory. These clamp + persist that width. SSR-safe
+// localStorage.
 
 const mocks = vi.hoisted(() => ({ browser: true }));
 vi.mock('$app/environment', () => ({

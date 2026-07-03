@@ -63,7 +63,7 @@ describe('SURFACE_NAV manifest', () => {
 
 describe('AUDIT_NAV (side-nav Audit group)', () => {
 	it('exposes the accountability/meta surfaces as a side-nav-consumable group', () => {
-		// PR-5: the Audit group rides AUDIT_NAV for the LeftRail + mobile menu. The
+		// PR-5: the Audit group rides AUDIT_NAV for the NavPill hamburger menu. The
 		// four accountability surfaces (plus the methodology + data-health anchors)
 		// must be present with a stable icon key + EN/FR label.
 		const hrefs = AUDIT_NAV.map((i) => i.href);

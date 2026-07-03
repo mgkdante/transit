@@ -122,8 +122,9 @@
 	const closeMenuAria = $derived(locale === 'fr' ? 'Fermer le menu' : 'Close menu');
 	const menuAria = $derived(locale === 'fr' ? 'Menu de navigation' : 'Navigation menu');
 	const navAria = $derived(locale === 'fr' ? 'Navigation principale' : 'Primary navigation');
-	// The Audit group (accountability/meta surfaces) — same AUDIT_NAV the LeftRail
-	// iterates, localized + active-aware, so a route rename lands in one place.
+	// The Audit group (accountability/meta surfaces) — AUDIT_NAV, localized +
+	// active-aware, so a route rename lands in one place. The hamburger menu is now
+	// the sole nav-menu consumer of this group (the footer also renders it).
 	const auditLabel = $derived(locale === 'fr' ? 'Vérification' : 'Audit');
 	const searchGroupLabel = $derived(locale === 'fr' ? 'Recherche' : 'Search');
 	// The primary surfaces (Map/Lines/Stops/Network) — the sheet counterpart of the
@@ -155,6 +156,14 @@
 	let menuToggle = $state<HTMLButtonElement>();
 	let searchResultsOpen = $state(true);
 	let rootEl = $state<HTMLElement>();
+	// The pill capsule — measured so the ≥768 dropdown can pin its RIGHT edge to the
+	// pill's right edge (the pill is intrinsic-width + centred, so its right edge is
+	// near the viewport centre-right, not the far edge). We publish the pill's
+	// right-inset-from-viewport as a CSS var the ≥768 rule consumes.
+	let pillEl = $state<HTMLElement>();
+	// First menu-item, so opening the menu can move keyboard focus INTO the sheet /
+	// dropdown (the backdrop is no longer a focusable dismiss control).
+	let menuEl = $state<HTMLElement>();
 
 	const showSearchResults = $derived(
 		searchResultsOpen && search.trim().length > 0 && searchResults.length > 0,
@@ -166,15 +175,39 @@
 	// shadow while open so the dropdown reads as the elevated layer.
 	const overlayActive = $derived(menuOpen);
 
-	// Focus the sheet search field when the menu opens on a <lg viewport where the
-	// in-pill field is hidden (the sheet carries the only search entry there).
+	// Pin the ≥768 dropdown's right edge to the pill's right edge. The pill is
+	// intrinsic-width + centred in a full-width rail, so its right edge sits near the
+	// viewport centre-right; measuring it (viewport width − pill.right) gives the
+	// inset-inline-end the dropdown should use, published as --nav-pill-right on the
+	// rail. Recomputed whenever the menu opens or the viewport resizes; the <lg sheet
+	// ignores it (it stays a full-height edge sheet).
+	function syncPillAnchor(): void {
+		if (typeof window === 'undefined' || !rootEl || !pillEl) return;
+		const rect = pillEl.getBoundingClientRect();
+		const rightInset = Math.max(0, Math.round(window.innerWidth - rect.right));
+		rootEl.style.setProperty('--nav-pill-right', `${rightInset}px`);
+	}
+
 	$effect(() => {
-		if (!menuOpen || !sheetSearchInput) return;
-		// Only autofocus when the sheet search is actually visible (<lg); a matchMedia
-		// guard keeps desktop keyboard flow on the hamburger, not a hidden field.
-		if (typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1024px)').matches) return;
-		sheetSearchInput.focus();
-		sheetSearchInput.select();
+		if (!menuOpen) return;
+		syncPillAnchor();
+	});
+
+	// Focus goes INTO the menu on open. On <lg the sheet's search field is the natural
+	// first stop (and its autofocus/select aids fast search); ≥lg the search group is
+	// hidden, so focus lands on the menu container (tabindex=-1) — either way keyboard
+	// focus enters the menu, and closeMenu() returns it to the hamburger. This replaces
+	// the removed aria-hidden focusable backdrop as the a11y entry point.
+	$effect(() => {
+		if (!menuOpen || !menuEl) return;
+		const desktop =
+			typeof window !== 'undefined' && !!window.matchMedia?.('(min-width: 1024px)').matches;
+		if (!desktop && sheetSearchInput) {
+			sheetSearchInput.focus();
+			sheetSearchInput.select();
+			return;
+		}
+		menuEl.focus();
 	});
 
 	function submitSearch(event: SubmitEvent) {
@@ -241,7 +274,13 @@
 	}
 </script>
 
-<svelte:window onkeydown={onKeydown} onpointerdown={onWindowPointerDown} />
+<svelte:window
+	onkeydown={onKeydown}
+	onpointerdown={onWindowPointerDown}
+	onresize={() => {
+		if (menuOpen) syncPillAnchor();
+	}}
+/>
 
 <nav
 	bind:this={rootEl}
@@ -250,6 +289,7 @@
 	data-slot="nav-pill-root"
 >
 	<div
+		bind:this={pillEl}
 		class="nav-pill"
 		class:nav-pill-compact={overlayActive}
 		data-testid="nav-pill"
@@ -349,16 +389,25 @@
 	</div>
 
 	{#if menuOpen}
+		<!-- Scrim + click-away dismiss. A real, LABELLED dismiss control (NOT
+		     aria-hidden — an aria-hidden element that owns/contains focus trips the
+		     "Blocked aria-hidden … retained focus" console error). tabindex=-1 keeps it
+		     out of the tab sequence (keyboard dismisses via Escape); focus lives inside
+		     the menu, so nothing focusable hides behind an aria-hidden ancestor. -->
 		<button
 			type="button"
 			class="nav-menu-backdrop"
 			tabindex="-1"
-			aria-hidden="true"
+			aria-label={closeMenuAria}
 			onclick={closeMenu}
 		></button>
 
 		<div
+			bind:this={menuEl}
 			class="nav-menu glass-chrome"
+			tabindex="-1"
+			role="dialog"
+			aria-modal="false"
 			aria-label={menuAria}
 			data-testid="nav-menu"
 			data-slot="nav-menu"
@@ -730,12 +779,16 @@
 		/* .glass-chrome supplies background + hairline + blur + shadow. */
 	}
 
-	/* ≥768 — an anchored dropdown pinned under the pill, not a full-height sheet. */
+	/* ≥768 — an anchored dropdown pinned UNDER THE PILL, its right edge aligned to the
+	   pill's right edge (near centre-right), not pinned to the viewport far-right. The
+	   pill is intrinsic-width + centred, so JS measures its right-inset-from-viewport
+	   into --nav-pill-right (NavPill.syncPillAnchor); we fall back to 1rem before the
+	   first measure / with JS off so it still reads as an under-pill dropdown. */
 	@media (min-width: 768px) {
 		.nav-menu {
 			inset-block: auto;
 			inset-block-start: calc(1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + 8px);
-			inset-inline-end: 1rem;
+			inset-inline-end: var(--nav-pill-right, 1rem);
 			width: min(19rem, calc(100vw - 1.5rem));
 			max-height: min(calc(100dvh - var(--pill-h) - 3rem), 34rem);
 			padding: 0.65rem;

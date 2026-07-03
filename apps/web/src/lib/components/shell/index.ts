@@ -1,27 +1,17 @@
 // $lib/components/shell — the responsive app-shell chrome.
 //
-// The shell is the persistent application frame: a floating NavPill over a
-// responsive 3-zone body (desktop LeftRail + MapStage + RightPanel; mobile
-// full-bleed map + BottomSheet). Pages compose it via named snippet props (rail
-// / main / detail / detailFooter) and drive it with bindable `search` +
-// `detailOpen`.
+// The shell is the persistent application frame: a floating NavPill (which carries
+// ALL site nav — Map/Lines/Stops/Network + Audit via the hamburger) over a
+// full-bleed MapStage + a RightPanel (desktop) / BottomSheet (mobile) detail
+// surface. Pages compose it via named snippet props (main / detail / detailFooter)
+// and drive it with bindable `search` + `detailOpen`.
 //
 // Import the composed shell from here:
 //   import { AppShell } from '$lib/components/shell';
 // The individual zones are exported too for pages that assemble a custom frame.
 
 export { default as AppShell } from './AppShell.svelte';
-export {
-	readStoredLeftRailWidth,
-	writeStoredLeftRailWidth,
-	clampLeftRailWidth,
-	LEFT_RAIL_WIDTH_STORAGE_KEY,
-	DEFAULT_LEFT_RAIL_WIDTH,
-	MIN_LEFT_RAIL_WIDTH,
-	MAX_LEFT_RAIL_WIDTH,
-} from './leftRailWidth';
 export { default as NavPill } from './NavPill.svelte';
-export { default as LeftRail } from './LeftRail.svelte';
 export { default as RightPanel } from './RightPanel.svelte';
 export { default as BottomSheet } from './BottomSheet.svelte';
 
