@@ -144,7 +144,9 @@
 <section class="offender-section" data-slot="offender-section">
 	{#if tabs.length > 0}
 		<Tabs bind:value={active}>
-			<TabsList variant="line" class="w-full justify-start">
+			<!-- overflow-x:auto (P5.3d §C4 P10): the tab strip scrolls rather than
+			     clips at narrow widths. -->
+			<TabsList variant="line" class="w-full flex-nowrap justify-start overflow-x-auto">
 				{#each tabs as tab (tab.key)}
 					<!-- Signage-active tab look (the yesid StationTabs pattern): bits-ui owns
 					     behavior / ARIA; the child <button> owns the metro-signage active chip. -->
@@ -279,6 +281,8 @@
 	/* The metro-signage active tab (yesid StationTabs parity). */
 	.station-tab {
 		min-width: max-content;
+		/* Tap-target floor (P5.3d §C4 P10): 41px → 44px. */
+		min-height: var(--size-tap-min);
 		display: inline-flex;
 		align-items: center;
 		gap: 0.5rem;

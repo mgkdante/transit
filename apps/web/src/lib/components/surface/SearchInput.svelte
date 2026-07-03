@@ -72,6 +72,8 @@
 	}
 	.search-input-control {
 		width: 100%;
+		/* Tap-target floor (P5.3d §C4 P10). */
+		min-height: var(--size-tap-min);
 		padding: 0.75rem 0.875rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-body);

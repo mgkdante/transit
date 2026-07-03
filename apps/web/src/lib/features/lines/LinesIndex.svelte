@@ -21,9 +21,14 @@
   (the route GTFS colour is not surfaced here — that is the search swatch's job);
   --primary stays interactive-only (the active sort/filter segment).
 
-  DEFER (tracked follow-ups, out of scope this batch): no near-me / distance sort;
-  no per-row reliability grain selection (always the latest day); no accessible-only
-  filter (needs a DB field).
+  Near-me / distance sort is intentionally NOT offered here: a line is a whole
+  route (a polyline across the network), not a single point, so "nearest line"
+  has no honest single-distance definition — the near-me affordance lives on /map
+  ("Stops near me", the amber conversion CTA) where a stop IS a point. (P5.3d
+  resolved the former near-me DEFER: no orphan scaffold, no dead follow-up.)
+
+  DEFER (DB-blocked, owned by S16 data work): no per-row reliability grain
+  selection (always the latest day); no accessible-only filter (needs a DB field).
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';

@@ -146,7 +146,11 @@
 	{/if}
 
 	<Tabs bind:value={active}>
-		<TabsList variant="line" class="w-full justify-start">
+		<!-- overflow-x:auto (P5.3d §C4 P10): at 390px the 4-tab strip (Next / Schedule
+		     / Info / Reliability) overran its container and clipped the last tab
+		     ("Reliabilit…"). The scroller reveals it instead of clipping — THE named
+		     mobile overflow bug. flex-nowrap keeps the tabs on one scrollable row. -->
+		<TabsList variant="line" class="w-full flex-nowrap justify-start overflow-x-auto">
 			{#each tabs as t (t.key)}
 				<!-- Signage-active tab look (the yesid StationTabs pattern): bits-ui owns
 				     behavior / ARIA / roving-tabindex via {...props}; the child <button> owns
@@ -225,6 +229,8 @@
 	   change). The active VISUAL only — behavior/ARIA stay on the bits-ui trigger. */
 	.station-tab {
 		min-width: max-content;
+		/* Tap-target floor (P5.3d §C4 P10): the tab was 41px tall → 44px. */
+		min-height: var(--size-tap-min);
 		display: inline-flex;
 		align-items: center;
 		gap: 0.5rem;

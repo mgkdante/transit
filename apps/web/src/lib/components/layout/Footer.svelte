@@ -189,6 +189,7 @@
 
 	/* Underline draw, blueprint line at word scale (the lone --primary touch). */
 	.footer-link {
+		position: relative;
 		background-image: linear-gradient(var(--primary), var(--primary));
 		background-repeat: no-repeat;
 		background-position: 0 100%;
@@ -196,6 +197,18 @@
 		transition:
 			background-size var(--duration-fast) var(--ease-out),
 			color var(--duration-fast) var(--ease-default);
+	}
+	/* Tap-target floor (P5.3d §C4 P10): the ~23px text links keep their tight text
+	   box (so the word-scale underline stays glued to the baseline) but gain a
+	   --size-tap-min hit area via a centered transparent overlay — zero layout shift. */
+	.footer-link::after {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		translate: -50% -50%;
+		width: 100%;
+		min-height: var(--size-tap-min);
 	}
 	.footer-link:hover,
 	.footer-link:focus-visible {

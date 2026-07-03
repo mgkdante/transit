@@ -28,6 +28,14 @@ select {
 	appearance: none;
 }
 
+/* Tap-target floor (P5.3d §C4 P10). Transit-local constant — the minimum
+   comfortable touch size (WCAG 2.5.5 / Apple HIG). Kept local, NOT in the
+   generated @theme block: it is transit's taste contract, not a design-repo
+   token (§C4 governance — census-born constants stay transit-local). */
+:root {
+	--size-tap-min: 44px;
+}
+
 /* Tap-feedback primitives (reduced-motion-guarded). */
 @utility tap-press {
 	transition:

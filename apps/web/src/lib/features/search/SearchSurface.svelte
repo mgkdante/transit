@@ -28,8 +28,14 @@
   interactive-only; bilingual via getLocale + co-located copy; keyed {#each};
   fail-soft — never invent data, never crash.
 
-  DEFER (tracked follow-ups, out of scope this batch): near-me / distance sort;
-  per-row reliability grain selection; accessible-only filter (needs a DB field).
+  Near-me / distance sort is intentionally NOT offered here: search is a finder,
+  flat by design (§C5.14) — ranking is by match quality, not geography. The
+  near-me affordance lives on /map ("Stops near me", the amber conversion CTA),
+  the one surface where proximity is the story. (P5.3d resolved the former
+  near-me DEFER: no orphan scaffold, no dead follow-up.)
+
+  DEFER (DB-blocked, owned by S16 data work): per-row reliability grain
+  selection; accessible-only filter (needs a DB field).
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';

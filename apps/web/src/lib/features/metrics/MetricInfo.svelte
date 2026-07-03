@@ -325,6 +325,7 @@
 	/* Trigger glyph — an INTERACTIVE affordance, so --primary is doctrine-clean
 	   here (doctrine-allow: interactive). Muted at rest, accent on hover/focus. */
 	.metric-info__trigger {
+		position: relative;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -340,6 +341,18 @@
 		transition:
 			color var(--duration-fast) var(--ease-default),
 			border-color var(--duration-fast) var(--ease-default);
+	}
+	/* Touch target floor (P5.3d §C4 P10): the glyph stays a 17px dot but the
+	   HIT area is expanded to --size-tap-min via a centered transparent overlay.
+	   Absolutely positioned → zero layout shift on the inline label row. */
+	.metric-info__trigger::after {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		translate: -50% -50%;
+		min-inline-size: var(--size-tap-min);
+		min-block-size: var(--size-tap-min);
 	}
 	.metric-info__trigger:hover,
 	.metric-info__trigger[aria-expanded='true'] {

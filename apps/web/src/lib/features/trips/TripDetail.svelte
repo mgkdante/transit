@@ -391,6 +391,8 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
+		/* Tap-target floor (P5.3d §C4 P10): the line-context link-back was 29px tall. */
+		min-height: var(--size-tap-min);
 		text-decoration: none;
 		color: var(--foreground);
 		transition: color var(--duration-fast) var(--ease-out);
