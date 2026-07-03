@@ -934,7 +934,7 @@
 	}
 
 	/* D2: give the ≥xl grid (ToC · sections · stat rail) a left gutter so the
-	   rotated edge word has a margin band to live in — clear of the app LeftRail on
+	   rotated edge word has a margin band to live in — clear of the viewport edge on
 	   its left and the ToC card on its right. The masthead stays full-bleed (the
 	   dot-grid band spans edge-to-edge); only the grid content is inset. */
 	@media (min-width: 1280px) {

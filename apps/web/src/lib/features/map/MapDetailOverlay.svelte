@@ -51,7 +51,7 @@
 	// writes a CLAMPED width into the CSS var (so the overlay follows live), and we
 	// persist on release. Dragging the LEFT edge GROWS the panel as the pointer moves
 	// left, so the delta is negated. The map canvas is untouched throughout — it never
-	// reads the panel width. Mirrors the AppShell left-rail drag exactly.
+	// reads the panel width.
 	function onDetailHandlePointerDown(event: PointerEvent): void {
 		if (event.button !== 0) return;
 		dragging = true;
