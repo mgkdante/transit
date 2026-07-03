@@ -604,7 +604,8 @@
 		border-radius: var(--radius-pill);
 		transition:
 			border-color var(--duration-fast) var(--ease-default),
-			background var(--duration-fast) var(--ease-default);
+			background var(--duration-fast) var(--ease-default),
+			box-shadow var(--duration-fast) var(--ease-default);
 	}
 
 	.nav-search-input::placeholder {
@@ -614,7 +615,10 @@
 	.nav-search-input:focus-visible {
 		border-color: var(--primary);
 		background: var(--muted);
+		/* Carry the same amber ring every other control earns (SearchInput, nav
+		   links) — the border-color shift alone was too quiet for a keyboard focus. */
 		outline: none;
+		box-shadow: 0 0 0 2px var(--ring);
 	}
 
 	.nav-controls {
@@ -804,7 +808,9 @@
 		background: color-mix(in srgb, var(--muted) 70%, transparent);
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-md);
-		transition: border-color var(--duration-fast) var(--ease-default);
+		transition:
+			border-color var(--duration-fast) var(--ease-default),
+			box-shadow var(--duration-fast) var(--ease-default);
 	}
 
 	.nav-menu-search-input::placeholder {
@@ -813,7 +819,9 @@
 
 	.nav-menu-search-input:focus-visible {
 		border-color: var(--primary);
+		/* Same amber ring as the in-pill field + SearchInput (keyboard-visible focus). */
 		outline: none;
+		box-shadow: 0 0 0 2px var(--ring);
 	}
 
 	.nav-menu-search-clear {

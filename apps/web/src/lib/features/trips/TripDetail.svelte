@@ -340,13 +340,19 @@
 
 <style>
 	/* A4: the live head hosts the CornerMeta corners; a top margin band (only where
-	   the corners surface, >=768px) keeps them clear of the kicker/heading flow. */
+	   the corners surface, >=768px) keeps them clear of the kicker/heading flow.
+	   A bottom band is reserved too: unlike the line/stop heads (whose meta slot
+	   carries only the end-aligned map link), the trip head flows the LIVE freshness
+	   stamp into .trip-head-actions at the bottom-left — exactly where the pinned
+	   `corner-bl` (provider · short-name) sits. The padding lifts the actions clear
+	   of that absolutely-positioned corner so the two never overlap. */
 	.trip-head {
 		position: relative;
 	}
 	@media (min-width: 768px) {
 		.trip-head {
 			padding-top: 1.5rem;
+			padding-bottom: 1.75rem;
 		}
 	}
 	.trip-corner {
