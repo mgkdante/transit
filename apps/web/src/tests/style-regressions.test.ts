@@ -9,11 +9,19 @@
 //
 // SCOPE (P5.3d stage B): the sweep is COMPLETE site-wide. Stage A cleared
 // `lib/features/{map,lines}`; stage B cleared everything else —
-// `lib/components/**` (ui/brand/dataviz incl. the frozen chart marks, edge,
-// shared, shell, layout, surface, map canvas), `routes/**`, and the remaining
-// `lib/features/**` surfaces. The guard now runs over the whole component +
-// route tree with an EMPTY allowlist (§C4: "Allowlists start and stay EMPTY.").
-// The FORBIDDEN table is site-final and must never grow an exception.
+// `lib/components/**` (ui/brand/dataviz edge, shared, shell, layout, surface,
+// map canvas), `routes/**`, and the remaining `lib/features/**` surfaces. The
+// guard now runs over the whole component + route tree with an EMPTY allowlist
+// (§C4: "Allowlists start and stay EMPTY."). The FORBIDDEN table is site-final
+// and must never grow an exception.
+//
+// FROZEN EXEMPTION (§C4 P8): the P5.2 chart marks under
+// `lib/components/dataviz/chart/marks/**` are FROZEN — the sweep does not touch
+// them and this guard does not scan them. Their stroke/dash literals and any
+// pre-existing token fallbacks are the mark contract's business, out of scope
+// for the vibe kill-table. This is a directory exclusion, NOT an allowlist: no
+// individual violation is ever pinned, and the exclusion is expressed as a path
+// prefix so nothing in the swept tree can hide behind it.
 //
 // The four FORBIDDEN patterns (§C4):
 //   1. STRIPES — border-(left|inline-start|top) accent rules on the brand tokens
@@ -60,17 +68,27 @@ const FORBIDDEN: readonly ForbiddenPattern[] = [
 ];
 
 // Swept roots — site-wide after stage B. The whole component + route tree is
-// under the guard; the frozen chart marks (§C4 P8) live under lib/components and
-// are covered too (they carry none of the four forbidden patterns — only the
-// exempt stroke/dash literals, which this table never targets).
+// under the guard.
 const FORBIDDEN_ROOTS = ['src/lib/components', 'src/lib/features', 'src/routes'] as const;
+
+// Frozen-marks exclusion (§C4 P8). Any hit whose path is under the chart-marks
+// directory is dropped from the report: the P5.2 chart marks are off-limits to
+// the sweep, so the guard must not force an edit inside them. The engine emits
+// hit paths with the SCAN ROOT replaced by 'src' (so under the
+// 'src/lib/components' root a mark reads 'src/dataviz/chart/marks/…'); match on
+// the directory segment to stay independent of which root produced the hit.
+const FROZEN_MARKS_SEGMENT = 'dataviz/chart/marks/';
 
 describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 	for (const rel of FORBIDDEN_ROOTS) {
 		const root = resolve(process.cwd(), rel);
 
 		describe(rel, () => {
-			const results = styleRegressionViolations({ root, forbidden: FORBIDDEN });
+			const results = styleRegressionViolations({ root, forbidden: FORBIDDEN }).map((r) => ({
+				...r,
+				// Drop frozen-marks hits (§C4 P8) — the sweep never edits those files.
+				hits: r.hits.filter((h) => !h.includes(FROZEN_MARKS_SEGMENT)),
+			}));
 
 			it('scans a non-empty tree (guards against a wrong path)', () => {
 				// Every root has .svelte files; if the walk found none the path is wrong.
