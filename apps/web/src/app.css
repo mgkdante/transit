@@ -342,6 +342,20 @@ table {
 		repeating-linear-gradient(0deg, var(--grid-line-minor) 0px, transparent 1px, transparent 16px);
 }
 
+/* Glass chrome — the ONE floating-chrome glass recipe (§C4 P4). The NavPill menu
+   (dropdown + full-height sheet) consumes it; the map overlay family (currently
+   drifting 8/10/12px) standardizes onto it in P5.3d. Background + border are the
+   pill chassis family (92% surface mix + brand hairline); the blur is fixed at
+   16px (the documented GL escape hatch to blur(12px) lives on /map only, applied
+   there, never here). Radius is a CONTEXT concern — the consumer sets pill/xl. */
+.glass-chrome {
+	background: color-mix(in srgb, var(--background) 92%, transparent);
+	border: 1px solid var(--border-brand);
+	backdrop-filter: blur(16px) saturate(1.1);
+	-webkit-backdrop-filter: blur(16px) saturate(1.1);
+	box-shadow: var(--shadow-nav);
+}
+
 /* Detail-header dot-grid — the "Manifesto schematic" chrome behind the measured
    article headers (ported 1:1 from yesid.dev's shared .detail-header-grid in
    app.css). Single source of truth for the grid lines + solder-dot

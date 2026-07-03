@@ -872,7 +872,9 @@
 	   blocks' own gap; the frame just bounds it. */
 	:global(.reliability-band [data-card]) {
 		border: 1px solid var(--border);
-		background: color-mix(in oklab, var(--card) 70%, transparent);
+		/* SOLID surface — the occlusion law (§C1): a content card must fully occlude
+		   the blueprint grid, so no alpha bleed. Was card@70% (grid showed through). */
+		background: var(--surface-2);
 		border-radius: var(--radius-lg, 0.75rem);
 		padding: clamp(0.9rem, 2.2vw, 1.35rem);
 	}

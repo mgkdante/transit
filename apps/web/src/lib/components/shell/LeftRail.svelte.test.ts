@@ -107,13 +107,9 @@ describe('LeftRail', () => {
 		expect(within(audit).getByRole('link', { name: 'Hotspots' })).toBeInTheDocument();
 	});
 
-	it('keeps the burger out of desktop by threading url into the left rail', () => {
+	it('keeps the desktop rail threaded with url + collapse wiring in the AppShell', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/components/shell/AppShell.svelte'),
-			'utf-8',
-		);
-		const topbarSource = readFileSync(
-			resolve(process.cwd(), 'src/lib/components/shell/TopBar.svelte'),
 			'utf-8',
 		);
 
@@ -122,9 +118,31 @@ describe('LeftRail', () => {
 		);
 		expect(source).toContain('collapsed={leftRailCollapsed}');
 		expect(source).toContain('ontogglecollapse={toggleLeftRailCollapsed}');
-		expect(topbarSource).toMatch(/class="tap-press topbar-menu-toggle md:hidden"/);
-		expect(topbarSource).toMatch(
-			/@media \(min-width: 768px\)[\s\S]*\.topbar-menu-toggle[\s\S]*display: none/,
+	});
+
+	it('restyles the rail into a floating pill COLUMN at ≥xl (chassis family + radius-xl + chrome-offset inset)', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/shell/LeftRail.svelte'),
+			'utf-8',
+		);
+
+		// ≥1280px: the rail wears the NavPill chassis family (2px brand border, 92%
+		// bg mix, blur16, --shadow-nav) but a column radius (--radius-xl), inset below
+		// the pill via --chrome-offset and floated off the edges (a margin box).
+		expect(source).toMatch(
+			/@media \(min-width: 1280px\)\s*\{[\s\S]*\.left-rail\s*\{[\s\S]*border:\s*2px solid var\(--border-brand\);/,
+		);
+		expect(source).toMatch(
+			/@media \(min-width: 1280px\)\s*\{[\s\S]*\.left-rail\s*\{[\s\S]*border-radius:\s*var\(--radius-xl\);/,
+		);
+		expect(source).toMatch(
+			/@media \(min-width: 1280px\)\s*\{[\s\S]*\.left-rail\s*\{[\s\S]*box-shadow:\s*var\(--shadow-nav\);/,
+		);
+		expect(source).toMatch(
+			/@media \(min-width: 1280px\)\s*\{[\s\S]*\.left-rail\s*\{[\s\S]*margin:\s*var\(--chrome-offset\)/,
+		);
+		expect(source).toMatch(
+			/@media \(min-width: 1280px\)\s*\{[\s\S]*\.left-rail\s*\{[\s\S]*backdrop-filter:\s*blur\(16px\)/,
 		);
 	});
 
@@ -222,8 +240,10 @@ describe('LeftRail', () => {
 		);
 
 		// The map stage is the stable full-bleed base; the rail overlay floats over it.
+		// The base is transparent so the blueprint grid (circuit-grid on the root)
+		// shows through document surfaces (the map paints its own solid --background).
 		expect(source).toContain(
-			'class="app-shell-main relative min-w-0 flex-1 overflow-hidden bg-surface-0"',
+			'class="app-shell-main relative min-w-0 flex-1 overflow-hidden bg-transparent"',
 		);
 		expect(source).toMatch(/\.app-shell-row\s*\{[\s\S]*position:\s*relative;/);
 		expect(source).toMatch(/\.app-shell-main\s*\{[\s\S]*position:\s*absolute;[\s\S]*inset:\s*0;/);

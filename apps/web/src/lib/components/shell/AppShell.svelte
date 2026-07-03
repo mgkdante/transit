@@ -1,11 +1,11 @@
 <!--
   AppShell — the application chrome, ONE STABLE DOM correct on the first (SSR)
-  paint. The persistent chrome (TopBar + LeftRail) is rendered UNCONDITIONALLY,
+  paint. The persistent chrome (NavPill + LeftRail) is rendered UNCONDITIONALLY,
   so it is in the very first server-rendered frame and never flashes in, re-mounts
   on navigation, or repaints mobile→desktop after hydration.
 
-    ┌──────────────────────── TopBar (h60) ────────────────────────┐
-    │           <main> map stage (full bleed under the chrome)      │
+    ┌ NavPill (floats, publishes --pill-h) ┐
+    │  <main> map stage (full bleed under the floating chrome)      │
     │ LeftRail overlays left; the detail surface overlays right.    │
     └──────────────────────────────────────────────────────────────┘
 
@@ -13,8 +13,8 @@
   — NOT a `{#if layout.isDesktop}` structural re-branch. The same DOM serves both
   form factors:
     · the LeftRail rides a fixed-width overlay column that the media query reveals
-      at ≥1024px and folds to the TopBar burger below it (the rail content stays in
-      the DOM, presentation is CSS);
+      at ≥1024px and folds to the NavPill hamburger menu below it (the rail content
+      stays in the DOM, presentation is CSS);
     · the detail surface floats over the map's right slice on desktop and rides the
       BottomSheet on mobile, both gated only on `detailOpen` (a JS open/close
       decision, never the breakpoint).
@@ -46,7 +46,7 @@
 	// PERSISTENT chrome (rail/header/footer) is CSS-responsive and never reads it, so
 	// the first paint is correct without JS. See the detail block + `$lib/nav`.
 	import { layout } from '$lib/nav';
-	import TopBar from './TopBar.svelte';
+	import NavPill from './NavPill.svelte';
 	import LeftRail from './LeftRail.svelte';
 	import RightPanel from './RightPanel.svelte';
 	import BottomSheet from './BottomSheet.svelte';
@@ -61,24 +61,20 @@
 	interface AppShellProps {
 		/** Active locale, threaded to every chrome zone (prop wins over context). */
 		locale?: Locale;
-		/** Full current URL — passed to the TopBar language switch. */
+		/** Full current URL — passed to the NavPill language switch. */
 		url?: URL;
-		/** Active provider display name (manifest.display_name) for the TopBar network chip. */
+		/** Active provider display name (manifest.display_name), threaded to the NavPill. */
 		providerName?: string;
 		/** Snappy provider brand (manifest.short_name) — preferred for the compact chip. */
 		providerShortName?: string;
-		/** Active alert count for the TopBar bell badge. */
-		alertCount?: number;
-		/** Bindable search value for the TopBar field. */
+		/** Bindable search value for the NavPill field. */
 		search?: string;
-		/** Fired when the TopBar search is submitted. */
+		/** Fired when the NavPill search is submitted. */
 		onsearch?: (value: string) => void;
 		searchResults?: readonly ChromeSearchResult[];
 		onresultselect?: (result: ChromeSearchResult) => void;
-		/** Active surface scope — drives the scoped TopBar placeholder hint. */
+		/** Active surface scope — drives the scoped NavPill placeholder hint. */
 		searchScope?: ChromeSearchScope;
-		/** Fired when the TopBar alerts bell is activated. */
-		onalerts?: () => void;
 
 		/** Whether the detail surface (RightPanel / BottomSheet) is shown (bindable). */
 		detailOpen?: boolean;
@@ -116,13 +112,11 @@
 		url,
 		providerName,
 		providerShortName,
-		alertCount = 0,
 		search = $bindable(''),
 		onsearch,
 		searchResults = [],
 		onresultselect,
 		searchScope = 'all',
-		onalerts,
 		detailOpen = $bindable(false),
 		detailTitle,
 		surfaceKey = 'empty',
@@ -247,7 +241,7 @@
 
 <div
 	class={cn(
-		'app-shell-root flex h-dvh w-full flex-col overflow-hidden bg-background text-foreground',
+		'app-shell-root circuit-grid flex h-dvh w-full flex-col overflow-hidden bg-background text-foreground',
 		className,
 	)}
 	data-slot="app-shell"
@@ -257,20 +251,18 @@
 	     the map is truly full-bleed and the single --chrome-offset knob (measured
 	     from the viewport top) correctly places every sticky rail + heading anchor.
 	     Non-full-bleed pages reclaim the space with a top pad (see +layout #main).
-	     STAGE-1: the chrome is still the TopBar; stage-2 swaps it for the NavPill. -->
+	     The chrome is the floating NavPill; it publishes --pill-h per breakpoint. -->
 	<div class="app-shell-chrome" data-slot="app-shell-chrome">
-		<TopBar
+		<NavPill
 			{locale}
 			{url}
 			{providerName}
 			{providerShortName}
-			{alertCount}
 			bind:search
 			{onsearch}
 			{searchResults}
 			{onresultselect}
 			{searchScope}
-			{onalerts}
 		/>
 	</div>
 
@@ -285,8 +277,12 @@
 		data-rail-collapsed={leftRailCollapsed ? 'true' : 'false'}
 		data-rail-dragging={railDragging ? 'true' : undefined}
 	>
+		<!-- Transparent base: the blueprint grid painted on .app-shell-root (circuit-
+		     grid) shows through the document surfaces (solid cards occlude it — the
+		     occlusion law). The map stays opaque because .map-hero paints its own
+		     solid --background, so /map is grid-free by construction. -->
 		<main
-			class="app-shell-main relative min-w-0 flex-1 overflow-hidden bg-surface-0"
+			class="app-shell-main relative min-w-0 flex-1 overflow-hidden bg-transparent"
 			aria-label={mainAriaLabel}
 			data-slot="map-stage"
 		>
@@ -294,7 +290,7 @@
 		</main>
 
 		<!-- LeftRail — ALWAYS rendered (server-side, in the first paint). The overlay
-		     column is hidden below 1024px (the TopBar burger owns mobile nav) and
+		     column is hidden below 1024px (the NavPill hamburger owns mobile nav) and
 		     revealed at ≥1024px purely by CSS — never by a JS isDesktop flip, so the
 		     rail is present + correct before hydration. pointer-events are confined to
 		     the rail itself so the map stays interactive through the overlay. -->
@@ -390,11 +386,10 @@
 	   offset derives from this one value — no more scattered 5.5rem / 5rem / 7rem
 	   literals or the unset --nav-height fallback (the old three-system split).
 	   = the pill's top inset (1rem + notch) + the pill height + a 0.5rem breath.
-	   --pill-h is a TEMPORARY fallback matching the CURRENT TopBar height (60px);
-	   stage-2 NavPill replaces --pill-h with its per-breakpoint deterministic
-	   height and this calc keeps working unchanged. */
+	   --pill-h is published per breakpoint by NavPill (deterministic: content 44px
+	   + 2·padV + 2·2px border), so this calc tracks the real floating pill height
+	   at every width with no JS measurement. */
 	.app-shell-root {
-		--pill-h: 60px; /* stage-2 NavPill replaces */
 		--chrome-offset: calc(1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + 0.5rem);
 		position: relative;
 	}
@@ -403,7 +398,7 @@
 	   rail/detail overlays via --z-nav. Removing it from the flex flow lets the row
 	   fill the whole viewport (map full-bleed) and makes #main's scroll-container
 	   top coincide with the viewport top — so --chrome-offset (viewport-measured)
-	   places sticky rails correctly. STAGE-1: hosts TopBar; stage-2 hosts NavPill. */
+	   places sticky rails correctly. Hosts the floating NavPill. */
 	.app-shell-chrome {
 		position: absolute;
 		inset-block-start: 0;
@@ -414,7 +409,7 @@
 	/* The rail width the map chrome offsets against. CSS owns it (not a JS-driven
 	   percent) so it is correct in the FIRST paint and follows the collapse toggle
 	   without a reactive flip. MOBILE default 0px: the rail overlay is hidden below
-	   1024px (the TopBar burger owns nav there), so the map chrome sits flush left. */
+	   1024px (the NavPill hamburger owns nav there), so the map chrome sits flush left. */
 	.app-shell-row {
 		position: relative;
 		--app-rail-width-expanded: 16rem;
@@ -440,7 +435,7 @@
 		position: absolute;
 		inset-block: 0;
 		left: 0;
-		z-index: 30;
+		z-index: var(--z-rail);
 		display: none;
 		width: var(--app-rail-width-expanded);
 		max-width: 100%;
@@ -511,11 +506,14 @@
 		}
 	}
 
+	/* The desktop detail dock is the sheet's desktop form (the mobile BottomSheet
+	   uses --z-sheet); it rides the same elevation band, above the rail overlay
+	   and below the floating pill (--z-nav). */
 	.app-shell-detail-overlay {
 		position: absolute;
 		inset-block: 0;
 		right: 0;
-		z-index: 32;
+		z-index: var(--z-sheet);
 		pointer-events: auto;
 	}
 

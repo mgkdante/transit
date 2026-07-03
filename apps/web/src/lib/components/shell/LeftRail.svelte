@@ -88,6 +88,7 @@
 	aria-label={navAria}
 	data-slot="left-rail"
 	data-open={collapsed ? 'false' : 'true'}
+	data-testid="left-rail"
 >
 	<!-- Rail header — sticky above the scrolling body. -->
 	<div class="left-rail-head flex h-12 shrink-0 items-center border-b border-border-subtle px-4">
@@ -193,6 +194,39 @@
 		   hard icon-only collapse, so a narrow rail reflows gracefully instead of
 		   clipping/truncating its labels. */
 		container: left-rail / inline-size;
+	}
+
+	/* ≥xl (1280px): the rail restyles into a FLOATING PILL COLUMN of the same
+	   chassis family as the NavPill — 2px --border-brand, 92% background mix,
+	   blur(16px), --shadow-nav — but radius --radius-xl (a column, not a capsule).
+	   It insets below the pill via --chrome-offset and floats off all three edges,
+	   so the blueprint grid runs behind it. The overlay-column geometry (width /
+	   --app-left-rail-offset / collapse / drag) is UNTOUCHED — only the rail's own
+	   box restyles. Below xl (incl. the 1024–1279 flush band + the mobile overlay)
+	   it keeps its prior edge-anchored bg-card treatment. */
+	@media (min-width: 1280px) {
+		.left-rail {
+			height: auto;
+			max-height: calc(100dvh - var(--chrome-offset) - 0.75rem);
+			margin: var(--chrome-offset) 0.75rem 0.75rem 0.75rem;
+			background: color-mix(in srgb, var(--background) 92%, transparent);
+			border: 2px solid var(--border-brand);
+			border-radius: var(--radius-xl);
+			box-shadow: var(--shadow-nav);
+			backdrop-filter: blur(16px) saturate(1.1);
+			-webkit-backdrop-filter: blur(16px) saturate(1.1);
+		}
+		/* The rail head's bottom rule softens to a subtle hairline inside the floating
+		   card (the hard border-b read as a seam against the rounded chassis). */
+		.left-rail .left-rail-head {
+			border-bottom-color: var(--border-subtle);
+		}
+	}
+
+	@media (min-width: 1280px) and (prefers-reduced-motion: no-preference) {
+		.left-rail {
+			transition: margin var(--duration-normal) var(--ease-default);
+		}
 	}
 
 	/* Reserve a stable scrollbar gutter so the rail body never shifts horizontally
