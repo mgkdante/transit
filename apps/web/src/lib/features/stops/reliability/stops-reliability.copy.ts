@@ -180,7 +180,7 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 		},
 		controlsLabel: 'Vue',
 		nav: {
-			toc: 'Aller à',
+			toc: 'Aller à une section',
 			pillOpen: 'Ouvrir la vue et les sections',
 			pillClose: 'Fermer la vue et les sections',
 			sectionReadout: (n, total) => `SEC ${n}/${total}`,
@@ -304,7 +304,7 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 		},
 		controlsLabel: 'View',
 		nav: {
-			toc: 'Jump to',
+			toc: 'Jump to a section',
 			pillOpen: 'Open view and sections',
 			pillClose: 'Close view and sections',
 			sectionReadout: (n, total) => `SEC ${n}/${total}`,

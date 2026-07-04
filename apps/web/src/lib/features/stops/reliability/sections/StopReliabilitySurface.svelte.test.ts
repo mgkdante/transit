@@ -167,20 +167,28 @@ describe('StopReliabilitySurface — GLASS LEFT RAIL structure (P5.4)', () => {
 
 	it('lists ONLY the present sections in the ToC (drops stood-down sections)', () => {
 		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
+		// The rail section jump-list now rides the shared TocNav (button-driven .toc-item rows
+		// carrying a .toc-label title), not bespoke <a href> anchors.
 		const toc = container.querySelector(
 			'[data-slot="surface-rail"] [data-slot="section-toc"]',
 		) as HTMLElement;
-		const hrefs = Array.from(toc.querySelectorAll('a')).map((a) => a.getAttribute('href'));
+		expect(toc).not.toBeNull();
+		const labels = Array.from(toc.querySelectorAll('.toc-item .toc-label')).map((el) =>
+			el.textContent?.trim(),
+		);
 		// Present: trend + percentiles (day grain) + pane + crowding + by-route.
-		expect(hrefs).toContain('#stop-rel-trend');
-		expect(hrefs).toContain('#stop-rel-percentiles');
-		expect(hrefs).toContain('#stop-rel-pane');
-		expect(hrefs).toContain('#stop-rel-crowding');
-		expect(hrefs).toContain('#stop-rel-by-route');
+		expect(labels).toContain('Daily trend');
+		expect(labels).toContain('Daily delay'); // day percentiles
+		expect(labels).toContain('On-time and delay'); // pane
+		expect(labels).toContain('Crowding on buses seen here');
+		expect(labels).toContain('Avg delay by route');
 		// Absent from the fixture (no habits / day_of_week / shift periods) → not listed.
-		expect(hrefs).not.toContain('#stop-rel-habits');
-		expect(hrefs).not.toContain('#stop-rel-weekday');
-		expect(hrefs).not.toContain('#stop-rel-time');
+		expect(labels).not.toContain('Severe delays by hour'); // habits
+		expect(labels).not.toContain('By day of week');
+		expect(labels).not.toContain('By time of day');
+		// The old ↻/∞ per-row scope glyph is gone.
+		expect(toc.textContent).not.toContain('↻');
+		expect(toc.textContent).not.toContain('∞');
 	});
 
 	it('drops the percentiles ToC entry on the week grain (percentiles stand down)', async () => {
@@ -190,8 +198,10 @@ describe('StopReliabilitySurface — GLASS LEFT RAIL structure (P5.4)', () => {
 		const toc = container.querySelector(
 			'[data-slot="surface-rail"] [data-slot="section-toc"]',
 		) as HTMLElement;
-		const hrefs = Array.from(toc.querySelectorAll('a')).map((a) => a.getAttribute('href'));
-		expect(hrefs).not.toContain('#stop-rel-percentiles'); // day-only percentiles gone
+		const labels = Array.from(toc.querySelectorAll('.toc-item .toc-label')).map((el) =>
+			el.textContent?.trim(),
+		);
+		expect(labels).not.toContain('Daily delay'); // day-only percentiles gone
 	});
 });
 

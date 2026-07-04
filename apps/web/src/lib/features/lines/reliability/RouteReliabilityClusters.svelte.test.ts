@@ -145,12 +145,12 @@ describe('RouteReliabilityClusters', () => {
 			props: { data: populated, locale: 'en' },
 		});
 
-		// The rail carries a "SEC n/m" wayfinding stamp over the total section count
-		// (5). Before the scroll observer resolves an active id, it falls back to
-		// section 1 → "SEC 1/5".
-		const readout = container.querySelector('[data-slot="section-readout"]');
+		// The rail carries a "SEC n/m" wayfinding stamp (shared SectionProgress) over the
+		// total section count (5). Before the scroll observer resolves an active id, it
+		// falls back to section 1 → "SEC 01 / 05".
+		const readout = container.querySelector('[data-slot="section-progress"]');
 		expect(readout).not.toBeNull();
-		expect(readout?.textContent).toBe('SEC 1/5');
+		expect(readout?.textContent?.replace(/\s+/g, ' ').trim()).toContain('SEC 01 / 05');
 	});
 
 	it('renders every section honestly empty (no crash, no dropped section) with an empty contract', () => {
@@ -322,52 +322,5 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 	});
 });
 
-describe('RouteReliabilityClusters — §1/§2/§4 scope badge (S7-B windowable)', () => {
-	const scopeOf = (container: HTMLElement, id: string): string | null =>
-		container.querySelector(`a[href="#${id}"]`)?.getAttribute('data-scope') ?? null;
-
-	it('shows ∞ (whole) for §1/§2/§4 when no *_by_grain is published (honest pre-deploy)', () => {
-		const { container } = render(RouteReliabilityClusters, {
-			props: { data: populated, locale: 'en' },
-		});
-		// §0 + §3 always window
-		expect(scopeOf(container, 'rel-verdict')).toBe('windowed');
-		expect(scopeOf(container, 'rel-run-and-fit')).toBe('windowed');
-		// §1/§2/§4 honestly whole-history until the DB publishes their companions
-		expect(scopeOf(container, 'rel-when-to-ride')).toBe('whole');
-		expect(scopeOf(container, 'rel-the-wait')).toBe('whole');
-		expect(scopeOf(container, 'rel-worst-stops')).toBe('whole');
-	});
-
-	it('flips §1/§2/§4 to ↻ (windowed) when the active grain has a *_by_grain entry', () => {
-		const windowedData: RouteReliability = {
-			generated_utc: '2026-06-19T02:00:00Z' as IsoUtc,
-			id: '51',
-			// default grain is 'day' → the windowed entries must carry a 'day' key to flip.
-			periods_by_grain: [
-				{
-					grain: 'day',
-					by_shift: [{ grain: 'am_peak', otp_pct: 80, observation_count: 200 }],
-					by_daytype: [],
-					day_of_week: [],
-					by_shift_daytype: [],
-				},
-			],
-			headway_by_grain: [
-				{ grain: 'day', headway: [{ shift: 'am_peak', observed_min: 7, cov: 0.5 }] },
-			],
-			weak_stops_by_grain: [
-				{
-					grain: 'day',
-					stops: [{ id: 's1', severe_pct: 30, observation_count: 50, wilson_lo: 22 }],
-				},
-			],
-		};
-		const { container } = render(RouteReliabilityClusters, {
-			props: { data: windowedData, locale: 'en' },
-		});
-		expect(scopeOf(container, 'rel-when-to-ride')).toBe('windowed');
-		expect(scopeOf(container, 'rel-the-wait')).toBe('windowed');
-		expect(scopeOf(container, 'rel-worst-stops')).toBe('windowed');
-	});
-});
+// (The §1/§2/§4 ↻/∞ scope-badge tests were removed with the scope glyph itself: the rail
+// now renders the shared TocNav, a plain numbered jump-list with no per-row scope marker.)

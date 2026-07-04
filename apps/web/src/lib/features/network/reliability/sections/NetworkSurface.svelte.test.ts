@@ -688,25 +688,21 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
 	});
 
-	it('minted a two-region ToC (Live now + Historic trend) with the SEC n/m readout', () => {
+	it('minted a two-region ToC (Live now + Historic trend) on the shared TocNav', () => {
 		const { container } = render(NetworkSurface);
-		// The two minted anchors carry data-toc so the observer + the ToC jump links resolve.
+		// The two minted anchors carry data-toc so the observer + the ToC jump buttons resolve.
 		expect(container.querySelector('[data-toc="net-live"]')).not.toBeNull();
 		expect(container.querySelector('[data-toc="net-historic"]')).not.toBeNull();
-		// The rail ToC jumps between the two regions.
-		expect(container.querySelector('a[href="#net-live"]')).not.toBeNull();
-		expect(container.querySelector('a[href="#net-historic"]')).not.toBeNull();
-		// SEC 1/2 readout (before the scroll observer resolves an active id → region 1).
-		const readout = container.querySelector('[data-slot="section-readout"]');
-		expect(readout?.textContent).toBe('SEC 1/2');
-	});
-
-	it('marks the live region ∞ (whole) + the historic region ↻ (windowed) in the ToC scope', () => {
-		const { container } = render(NetworkSurface);
-		const scopeOf = (id: string): string | null =>
-			container.querySelector(`a[href="#${id}"]`)?.getAttribute('data-scope') ?? null;
-		// The view controls re-shape ONLY the historic region.
-		expect(scopeOf('net-live')).toBe('whole');
-		expect(scopeOf('net-historic')).toBe('windowed');
+		// The rail region jump-list now rides the ONE shared TocNav (button-driven), not the
+		// old bespoke ↻/∞ anchor nav.
+		const toc = container.querySelector('[data-slot="section-toc"]') as HTMLElement;
+		expect(toc).not.toBeNull();
+		const items = Array.from(toc.querySelectorAll('.toc-item'));
+		expect(items.length).toBeGreaterThanOrEqual(2);
+		const labels = items.map((b) => b.textContent ?? '');
+		expect(labels.some((l) => l.includes(copy.liveRegion))).toBe(true);
+		expect(labels.some((l) => l.includes(copy.historicRegion))).toBe(true);
+		// The old per-region scope glyph is gone — no ↻/∞ anywhere in the rail ToC.
+		expect(toc.textContent).not.toMatch(/[↻∞]/);
 	});
 });

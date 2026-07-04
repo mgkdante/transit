@@ -43,7 +43,8 @@
 		DateRangePicker,
 		type GrainSegment,
 	} from '$lib/components/surface';
-	import { observeActiveToc } from '$lib/components/shared';
+	import { observeActiveToc, TocNav, type TocEntry } from '$lib/components/shared';
+	import SectionProgress from '$lib/components/brand/SectionProgress.svelte';
 	import { onMount } from 'svelte';
 	import { DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
@@ -289,6 +290,19 @@
 		].filter((s) => s.present),
 	);
 
+	// Map the present sections to numbered TocEntry rows for the shared TocNav (badge =
+	// station-style SEC number; flat list, no children) — the SAME jump-list every other
+	// surface's rail renders, so wayfinding looks identical site-wide.
+	const tocEntries: TocEntry[] = $derived(
+		sectionNav.map((s, i) => ({
+			id: s.id,
+			title: s.label,
+			level: 2,
+			badge: { kind: 'number' as const, value: i + 1 },
+			children: [],
+		})),
+	);
+
 	// One IntersectionObserver over the present tiles' [data-toc] anchors owns the
 	// active section the rail ToC highlights (client-only).
 	let activeId = $state('');
@@ -297,11 +311,17 @@
 	// "SEC n/m" position readout for the rail ToC: the active section's 1-based index
 	// over the total present sections. Falls back to section 1 before the observer
 	// resolves (or if it points off-list).
-	const sectionReadout = $derived.by(() => {
+	const activeIndex = $derived.by(() => {
 		const idx = sectionNav.findIndex((s) => s.id === activeId);
-		const n = idx >= 0 ? idx + 1 : 1;
-		return copy.nav.sectionReadout(n, sectionNav.length);
+		return idx >= 0 ? idx + 1 : 1;
 	});
+
+	// Smooth-scroll to a section when its TocNav row is tapped (TocNav is button-driven).
+	function navigate(id: string): void {
+		document
+			.querySelector(`[data-toc="${id}"]`)
+			?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
 </script>
 
 {#snippet metricInfo(key: MetricKey, name: string)}
@@ -338,34 +358,21 @@
 				</p>
 			</div>
 
-			<!-- Section ToC (wayfinding): a vertical jump list of the PRESENT sections; the
-			     active one is highlighted. No ↻/∞ scope glyph — this surface has no page-level
-			     window (the daily-trend range is section-local). -->
-			<nav class="stop-reliability-toc" data-slot="section-toc" aria-label={copy.nav.toc}>
-				<span class="stop-reliability-toc__head">
-					<span class="stop-reliability-toc__label">{copy.nav.toc}</span>
-					<span
-						class="stop-reliability-toc__readout"
-						data-slot="section-readout"
-						aria-live="polite"
-						aria-atomic="true">{sectionReadout}</span
-					>
-				</span>
-				<ul class="stop-reliability-toc__list">
-					{#each sectionNav as s (s.id)}
-						<li>
-							<a
-								class="stop-reliability-toc__link"
-								class:active={activeId === s.id}
-								aria-current={activeId === s.id ? 'location' : undefined}
-								href={`#${s.id}`}
-							>
-								<span class="stop-reliability-toc__text">{s.label}</span>
-							</a>
-						</li>
-					{/each}
-				</ul>
-			</nav>
+			<!-- Section ToC (wayfinding) — the ONE shared TocNav, identical to the metrics /
+			     status / network / lines rails: a "SEC n/m" position readout + a numbered jump
+			     list of the PRESENT sections, the active one amber-highlighted. No per-row scope
+			     glyph — this surface has no page-level window (the daily-trend range is
+			     section-local). -->
+			<div class="rail-toc" data-slot="section-toc">
+				<SectionProgress current={activeIndex} total={Math.max(sectionNav.length, 1)} />
+				<TocNav
+					entries={tocEntries}
+					{activeId}
+					onNavigate={navigate}
+					heading={copy.nav.toc}
+					sectionKey="stop-reliability-toc"
+				/>
+			</div>
 		{/snippet}
 
 		<!-- The map-style GLASS LEFT RAIL: a sticky floating panel beside the sections on
@@ -544,78 +551,14 @@
 		color: var(--muted-foreground);
 	}
 
-	/* Section ToC (wayfinding): a VERTICAL jump list in the rail — one full-width link per
-	   present section, the active one highlighted. */
-	.stop-reliability-toc {
+	/* The rail section jump-list rides the ONE shared TocNav (same component the metrics /
+	   status / network / lines rails use), so every surface's wayfinding looks identical.
+	   Only this thin flex wrapper is local; TocNav + SectionProgress own the rest. */
+	.rail-toc {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.75rem;
 		min-width: 0;
-	}
-	.stop-reliability-toc__head {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 0.5rem;
-	}
-	.stop-reliability-toc__label {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-	/* SEC n/m position readout — the amber wayfinding voice (station numbering). */
-	.stop-reliability-toc__readout {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--accent-text);
-	}
-	.stop-reliability-toc__list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-	.stop-reliability-toc__link {
-		display: flex;
-		align-items: center;
-		gap: 0.375rem;
-		width: 100%;
-		min-height: 44px;
-		padding: 0.375rem 0.625rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--foreground);
-		text-decoration: none;
-		background: transparent;
-		border: 1px solid transparent;
-		border-radius: var(--radius-md);
-		transition:
-			border-color var(--duration-fast) var(--ease-default),
-			background-color var(--duration-fast) var(--ease-default),
-			color var(--duration-fast) var(--ease-default);
-	}
-	.stop-reliability-toc__link:hover {
-		border-color: var(--primary);
-		color: var(--primary);
-	}
-	/* The active section: the amber-bordered wayfinding highlight (like the map's selected
-	   entity), so the reader always sees where they are in the rail. */
-	.stop-reliability-toc__link.active {
-		border-color: var(--border-brand);
-		background: color-mix(in srgb, var(--primary) 8%, transparent);
-		color: var(--primary);
-	}
-	.stop-reliability-toc__text {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
 	}
 
 	/* Section anchor wrapper: the locale-free [id]/[data-toc] jump target the rail ToC +

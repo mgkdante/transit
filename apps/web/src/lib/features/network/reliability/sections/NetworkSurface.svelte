@@ -62,7 +62,8 @@
 		GrainPicker,
 		type GrainSegment,
 	} from '$lib/components/surface';
-	import { observeActiveToc } from '$lib/components/shared';
+	import { observeActiveToc, TocNav, type TocEntry } from '$lib/components/shared';
+	import SectionProgress from '$lib/components/brand/SectionProgress.svelte';
 	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
@@ -451,25 +452,42 @@
 
 	/* ── P5.4: the map-style GLASS LEFT RAIL region ToC ────────────────────────────
 	   The surface has TWO numbered regions — §1 Live now + §2 Historic trend. The rail
-	   holds the view controls (which re-shape ONLY the historic region) + a vertical ToC
-	   jumping between the two regions. `windowed` marks whether the view controls above
-	   re-shape the region: the historic region follows them (↻), the live region never
-	   does (∞). The mobile pill's summary names the active grain. */
+	   holds the view controls (which re-shape ONLY the historic region) + the ONE shared
+	   TocNav jumping between the two regions — the same numbered jump-list every other
+	   surface's rail renders, so wayfinding looks identical site-wide. (The old per-region
+	   ↻/∞ view-scope glyph is gone: it read as a "reload" affordance and broke the
+	   cross-page sameness.) The mobile pill's summary names the active grain. */
 	const regionNav = $derived([
-		{ id: 'net-live', label: t.liveRegion, windowed: false },
-		{ id: 'net-historic', label: t.historicRegion, windowed: true },
+		{ id: 'net-live', label: t.liveRegion },
+		{ id: 'net-historic', label: t.historicRegion },
 	]);
+	// Map the regions to numbered TocEntry rows for the shared TocNav (badge = station-style
+	// SEC number; flat list, no children).
+	const tocEntries: TocEntry[] = $derived(
+		regionNav.map((s, i) => ({
+			id: s.id,
+			title: s.label,
+			level: 2,
+			badge: { kind: 'number' as const, value: i + 1 },
+			children: [],
+		})),
+	);
 	// One IntersectionObserver over the two regions' [data-toc] anchors owns the active
 	// region the rail ToC highlights (client-only; each region carries data-toc below).
 	let activeId = $state('');
 	onMount(() => observeActiveToc((id) => (activeId = id)));
-	// "SEC n/m" position readout: the active region's 1-based index over the total.
-	// Before the observer resolves (or if it points off-list), fall back to region 1.
-	const sectionReadout = $derived.by(() => {
-		const idx = regionNav.findIndex((r) => r.id === activeId);
-		const n = idx >= 0 ? idx + 1 : 1;
-		return t.rail.sectionReadout(n, regionNav.length);
+	// "SEC n/m" position readout: the active region's 1-based index over the total,
+	// falling back to region 1 before the observer resolves an active id.
+	const activeIndex = $derived.by(() => {
+		const idx = regionNav.findIndex((s) => s.id === activeId);
+		return idx >= 0 ? idx + 1 : 1;
 	});
+	// Smooth-scroll to a region when its TocNav row is tapped (TocNav is button-driven).
+	function navigate(id: string): void {
+		document
+			.querySelector(`[data-toc="${id}"]`)
+			?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
 	// The mobile pill summary — the active grain (mirrors the historic view controls).
 	const railSummary = $derived(grainLabels[grainKey] ?? grainKey);
 </script>
@@ -553,41 +571,19 @@
 				{@render windowControls()}
 			</div>
 
-			<!-- Region ToC (wayfinding): a vertical jump list; each entry highlights the active
-		     region + shows whether the view controls re-shape it (↻ historic, ∞ live). -->
-			<nav class="network-toc" data-slot="section-toc" aria-label={t.rail.toc}>
-				<span class="network-toc__head">
-					<span class="network-toc__label">{t.rail.toc}</span>
-					<!-- SEC n/m position readout: the active region over the total. -->
-					<span
-						class="network-toc__readout"
-						data-slot="section-readout"
-						aria-live="polite"
-						aria-atomic="true">{sectionReadout}</span
-					>
-				</span>
-				<ul class="network-toc__list">
-					{#each regionNav as r (r.id)}
-						<li>
-							<a
-								class="network-toc__link"
-								class:active={activeId === r.id}
-								aria-current={activeId === r.id ? 'location' : undefined}
-								href={`#${r.id}`}
-								data-scope={r.windowed ? 'windowed' : 'whole'}
-							>
-								<span class="network-toc__text">{r.label}</span>
-								<span
-									class="network-toc__scope"
-									title={r.windowed ? t.rail.scopeWindowed : t.rail.scopeWhole}
-									aria-label={r.windowed ? t.rail.scopeWindowed : t.rail.scopeWhole}
-									>{r.windowed ? '↻' : '∞'}</span
-								>
-							</a>
-						</li>
-					{/each}
-				</ul>
-			</nav>
+			<!-- Region ToC (wayfinding) — the ONE shared TocNav, identical to the metrics /
+			     status / lines / stops rails: a "SEC n/m" position readout + a numbered jump
+			     list, the active region amber-highlighted. No per-region scope glyph. -->
+			<div class="rail-toc" data-slot="section-toc">
+				<SectionProgress current={activeIndex} total={Math.max(regionNav.length, 1)} />
+				<TocNav
+					entries={tocEntries}
+					{activeId}
+					onNavigate={navigate}
+					heading={t.rail.toc}
+					sectionKey="network-toc"
+				/>
+			</div>
 		{/snippet}
 
 		<!-- The map-style GLASS LEFT RAIL: a sticky floating panel beside the regions on
@@ -854,89 +850,14 @@
 		border: 0;
 	}
 
-	/* Region TOC (wayfinding + scope map): a VERTICAL jump list in the rail — one full-width
-	   link per region (with a ↻/∞ scope glyph), the active one highlighted. */
-	.network-toc {
+	/* The rail region jump-list rides the ONE shared TocNav (same component the metrics /
+	   status / lines / stops rails use), so every surface's wayfinding looks identical.
+	   Only this thin flex wrapper is local; TocNav + SectionProgress own the rest. */
+	.rail-toc {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.75rem;
 		min-width: 0;
-	}
-	.network-toc__head {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 0.5rem;
-	}
-	.network-toc__label {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-	/* SEC n/m position readout — the amber wayfinding voice (station numbering), quiet mono. */
-	.network-toc__readout {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--accent-text);
-	}
-	.network-toc__list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-	.network-toc__link {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.375rem;
-		width: 100%;
-		min-height: 44px;
-		padding: 0.375rem 0.625rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--foreground);
-		text-decoration: none;
-		background: transparent;
-		border: 1px solid transparent;
-		border-radius: var(--radius-md);
-		transition:
-			border-color var(--duration-fast) var(--ease-default),
-			background-color var(--duration-fast) var(--ease-default),
-			color var(--duration-fast) var(--ease-default);
-	}
-	.network-toc__link:hover {
-		border-color: var(--primary);
-		color: var(--primary);
-	}
-	/* The active region: the amber-bordered wayfinding highlight (like the map's selected
-	   entity), so the reader always sees where they are in the rail. */
-	.network-toc__link.active {
-		border-color: var(--border-brand);
-		background: color-mix(in srgb, var(--primary) 8%, transparent);
-		color: var(--primary);
-	}
-	.network-toc__text {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	/* The scope glyph: ∞ (live, never re-shaped) reads quiet; ↻ (follows the view controls)
-	   rides the yellow wayfinding voice so the windowed region is scannable at a glance. */
-	.network-toc__scope {
-		font-size: var(--text-body);
-		line-height: 1;
-		color: var(--muted-foreground);
-	}
-	.network-toc__link[data-scope='windowed'] .network-toc__scope {
-		color: var(--accent-text);
 	}
 	/* Smooth jump-to from the TOC (reduced-motion users get the instant default). */
 	@media (prefers-reduced-motion: no-preference) {

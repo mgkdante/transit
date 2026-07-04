@@ -65,7 +65,10 @@
 		if (!sheetOpen || !sheetEl) return;
 		sheetEl.querySelector<HTMLElement>('button, a, select, input, [tabindex]')?.focus();
 		const onClick = (e: MouseEvent) => {
-			if ((e.target as HTMLElement | null)?.closest('a[href^="#"]')) closeSheet(false);
+			// Close on a ToC jump — either a native anchor (#section) OR a shared TocNav
+			// button (.toc-item), so the sheet dismisses when the reader picks a section
+			// (a filter/grain control is neither, so changing filters keeps the sheet open).
+			if ((e.target as HTMLElement | null)?.closest('a[href^="#"], .toc-item')) closeSheet(false);
 		};
 		sheetEl.addEventListener('click', onClick);
 		return () => sheetEl?.removeEventListener('click', onClick);

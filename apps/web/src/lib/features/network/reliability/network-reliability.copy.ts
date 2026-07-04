@@ -245,7 +245,7 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		historicRegion: 'Historic trend',
 		viewControlsLabel: 'View',
 		rail: {
-			toc: 'Jump to',
+			toc: 'Jump to a section',
 			pillOpen: 'Open view controls',
 			pillClose: 'Close view controls',
 			scopeWindowed: 'Follows the view controls above',
@@ -372,7 +372,7 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		historicRegion: 'Tendance historique',
 		viewControlsLabel: 'Vue',
 		rail: {
-			toc: 'Aller à',
+			toc: 'Aller à une section',
 			pillOpen: 'Ouvrir les commandes de vue',
 			pillClose: 'Fermer les commandes de vue',
 			scopeWindowed: 'Suit les commandes de vue ci-dessus',
