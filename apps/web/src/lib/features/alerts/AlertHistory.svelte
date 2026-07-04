@@ -359,6 +359,7 @@
 				{stopOptions}
 				{availableDates}
 				{filtersActive}
+				matchCount={filtered.length}
 				copy={t}
 				{locale}
 				onClear={clearFilters}

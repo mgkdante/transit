@@ -95,8 +95,9 @@ export interface AlertHistoryCopy extends SurfaceHeadCopy {
 		readonly window: DateRangePickerLabels;
 		/** Honest no-match note shown when the active filters narrow the log to zero. */
 		readonly noMatch: string;
-		/** "Clear filters" action that restores the full log. */
-		readonly clear: string;
+		/** FilterSummary count templates ("{count} alert" / "{count} alerts"),
+		    keyed by Locale; the shared widget picks the plural form per locale. */
+		readonly summary: Record<Locale, { readonly singular: string; readonly plural: string }>;
 	};
 	/** The alerts-in-window headline card (ExplainedMetricCard). */
 	readonly headline: {
@@ -194,7 +195,10 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 				anyEnd: 'Au plus tard',
 			},
 			noMatch: 'Aucun avis ne correspond aux filtres sélectionnés.',
-			clear: 'Effacer les filtres',
+			summary: {
+				fr: { singular: '{count} avis', plural: '{count} avis' },
+				en: { singular: '{count} alert', plural: '{count} alerts' },
+			},
 		},
 		headline: {
 			label: 'Avis dans la fenêtre',
@@ -279,7 +283,10 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 				anyEnd: 'Latest',
 			},
 			noMatch: 'No alerts match the selected filters.',
-			clear: 'Clear filters',
+			summary: {
+				fr: { singular: '{count} avis', plural: '{count} avis' },
+				en: { singular: '{count} alert', plural: '{count} alerts' },
+			},
 		},
 		headline: {
 			label: 'Alerts in window',
