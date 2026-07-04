@@ -120,6 +120,8 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		min-width: 0;
+		/* Fill the grid cell so cause / effect / severity read as one equal-height row. */
+		height: 100%;
 		padding: 1rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);

@@ -383,6 +383,7 @@
 	}
 	:global(.receipt [data-slot='terminal-chrome']) {
 		max-width: var(--container-content);
+		margin-inline: auto;
 	}
 
 	/* The receipt is a COMPOSED document. A @container drives the composition off the
@@ -429,7 +430,9 @@
 			grid-template-areas:
 				'headline headline'
 				'affected worst';
-			align-items: start;
+			/* affected + worst share one row — stretch both to the row height so the pair
+			   reads as ONE equal-height geometric block (never a lopsided 144-vs-221 gap). */
+			align-items: stretch;
 		}
 		.receipt-layout.no-worst {
 			grid-template-areas:
@@ -445,6 +448,7 @@
 		gap: 1.5rem;
 		margin-top: 1.25rem;
 		max-width: var(--container-content);
+		margin-inline: auto;
 	}
 	.receipt-note {
 		color: var(--muted-foreground);

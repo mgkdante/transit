@@ -40,7 +40,7 @@
 
 <!-- Glance board — the four scalars on an auto-fit grid so they fill the desktop width and
      reflow to one column on a phone. No `label`: the enclosing LIVE region already names it. -->
-<DashboardGrid minTile="220px" align="start" gutter={false}>
+<DashboardGrid minTile="220px" gutter={false}>
 	{#each cards as card (card.label)}
 		{@const i = info(card.key, card.label)}
 		<ExplainedMetricCard

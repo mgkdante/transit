@@ -57,7 +57,7 @@
 	<SectionHeading level={3} overline={copy.reporting.heading} />
 
 	<!-- The two required-int scalar cards (glance mode — the (i) carries the definition). -->
-	<DashboardGrid minTile="220px" align="start" gutter={false}>
+	<DashboardGrid minTile="220px" gutter={false}>
 		{#each cards as card (card.label)}
 			{@const i = info(card.key, card.label)}
 			<ExplainedMetricCard

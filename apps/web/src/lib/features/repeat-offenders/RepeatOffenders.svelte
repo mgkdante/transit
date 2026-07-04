@@ -461,6 +461,7 @@
 		flex-direction: column;
 		gap: 1rem;
 		max-width: 76rem;
+		margin-inline: auto;
 	}
 	/* §C5.12 #1-offender hero — a solid card (occlusion law) leading with the worst
 	   entity's name, its Wilson-bounded severe rate + its streak. */
@@ -542,6 +543,7 @@
 	}
 	:global(.dashboard-grid.repeat-offenders-ranked) {
 		max-width: 76rem;
+		margin-inline: auto;
 	}
 	.repeat-offenders-item {
 		display: block;

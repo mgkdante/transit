@@ -502,14 +502,15 @@ describe('AlertHistory date window (?from/?to)', () => {
 		expect(screen.queryByText('Early alert')).toBeNull();
 	});
 
-	it('renders the date-range picker over the served span (both selects present)', () => {
+	it('renders the date-range picker over the served span (both native date inputs present)', () => {
 		seedWindowFixture();
 		(fixture as AlertHistory).window_start = '2026-06-01';
 		(fixture as AlertHistory).window_end = '2026-06-30';
 		render(AlertHistoryScreen);
 		const picker = document.querySelector('[data-slot="date-range"]');
 		expect(picker).not.toBeNull();
-		expect(within(picker as HTMLElement).getAllByRole('combobox').length).toBeGreaterThanOrEqual(2);
+		// From + To are now native <input type="date"> calendar pickers (not <select>s).
+		expect((picker as HTMLElement).querySelectorAll('input[type="date"]').length).toBe(2);
 	});
 
 	it('hides the picker with honest absence when NOTHING is datable (no window fields, undatable entries)', () => {

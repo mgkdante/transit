@@ -53,6 +53,8 @@
 		flex-direction: column;
 		gap: 0.75rem;
 		min-width: 0;
+		/* Fill the grid cell so a row of tiles reads as ONE equal-height geometric board. */
+		height: 100%;
 		padding: 1rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);

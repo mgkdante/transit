@@ -767,6 +767,9 @@
 		align-items: flex-start;
 		gap: 0.375rem;
 		min-width: 0;
+		/* Fill the grid cell so the 2×2 pulse reads as an equal-height board (a KPI with a
+		   verdict word no longer sits taller than a bare-count KPI beside it). */
+		height: 100%;
 	}
 	/* The value + its verdict word stack; the (i) explainer pins beside the label. */
 	.pulse-kpi-body {
@@ -838,6 +841,8 @@
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
 		min-width: 0;
+		/* Fill the grid cell so the three pillars read as one equal-height row. */
+		height: 100%;
 	}
 	.pillar-glyph {
 		font-family: var(--font-mono);

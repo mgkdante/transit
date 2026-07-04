@@ -258,11 +258,12 @@ describe('AccountabilityReceipt date switching', () => {
 		// First paint carries the seeded default (the LATEST published day, Jun 17, 82%).
 		expect(await screen.findByText('82%')).toBeInTheDocument();
 
-		// Pick the NON-default Jun 16 day via the smart single-date <select> (S13 —
+		// Pick the NON-default Jun 16 day via the smart single-date picker (S13 —
 		// the GrainPicker-as-date-picker misuse is gone; the picker is now an
-		// availability-bound native select whose options ARE the real dates).
-		const select = screen.getByLabelText('Receipt day') as HTMLSelectElement;
-		await fireEvent.change(select, { target: { value: '2026-06-16' } });
+		// availability-bound native date picker (<input type="date">) whose min/max
+		// bound the real published span).
+		const input = screen.getByLabelText('Receipt day') as HTMLInputElement;
+		await fireEvent.change(input, { target: { value: '2026-06-16' } });
 
 		// getReceipt was invoked with the freshly-picked date …
 		expect(vi.mocked(v1.getReceipt)).toHaveBeenCalledWith('2026-06-16');
@@ -273,19 +274,19 @@ describe('AccountabilityReceipt date switching', () => {
 });
 
 describe('AccountabilityReceipt smart date picker (S13)', () => {
-	it('defaults to the LATEST published day and offers the full span as select options', async () => {
+	it('defaults to the LATEST published day and bounds the calendar to the full span', async () => {
 		render(AccountabilityReceipt);
 		await screen.findByText('82%');
-		const select = screen.getByLabelText('Receipt day') as HTMLSelectElement;
-		// The three published days are all enabled options (no gaps in this index).
-		const opts = Array.from(select.options);
-		expect(opts.map((o) => o.value)).toEqual(['2026-06-15', '2026-06-16', '2026-06-17']);
-		expect(opts.every((o) => !o.disabled)).toBe(true);
-		// The default selection is the latest (Jun 17).
-		expect(select.value).toBe('2026-06-17');
+		const input = screen.getByLabelText('Receipt day') as HTMLInputElement;
+		// A native date picker bounded (min/max) to the published earliest→latest span.
+		expect(input.type).toBe('date');
+		expect(input.min).toBe('2026-06-15');
+		expect(input.max).toBe('2026-06-17');
+		// The default selection is the latest published day (Jun 17).
+		expect(input.value).toBe('2026-06-17');
 	});
 
-	it('disables a GAP day between earliest and latest with an honest reason', async () => {
+	it('bounds the calendar across a GAP day (native pickers cannot disable an interior day)', async () => {
 		const v1 = await import('$lib/v1');
 		// Jun 15 + Jun 17 published; Jun 16 is a gap the index never published.
 		indexData = {
@@ -295,12 +296,14 @@ describe('AccountabilityReceipt smart date picker (S13)', () => {
 		vi.mocked(v1.getReceiptsIndex).mockImplementation(() => indexData as never);
 		render(AccountabilityReceipt);
 		await screen.findByText('82%');
-		const select = screen.getByLabelText('Receipt day') as HTMLSelectElement;
-		const opts = Array.from(select.options);
-		expect(opts.map((o) => o.value)).toEqual(['2026-06-15', '2026-06-16', '2026-06-17']);
-		const gap = opts.find((o) => o.value === '2026-06-16')!;
-		expect(gap.disabled).toBe(true);
-		expect(gap.textContent).toContain('no receipt');
+		const input = screen.getByLabelText('Receipt day') as HTMLInputElement;
+		// The native calendar can only BOUND (min/max) — the gap day (Jun 16) is INSIDE the
+		// span and pickable; its honesty is preserved at runtime via the receipt's absent-day
+		// path, not by disabling the option (which the old <select> could do). This is the
+		// documented S13 degradation from the selects→native-date-picker migration.
+		expect(input.type).toBe('date');
+		expect(input.min).toBe('2026-06-15');
+		expect(input.max).toBe('2026-06-17');
 	});
 });
 

@@ -498,7 +498,7 @@
 	}
 	@media (min-width: 1024px) {
 		.stop-reliability-layout {
-			grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr);
+			grid-template-columns: 15rem minmax(0, 1fr);
 			gap: 2rem;
 			align-items: start;
 		}

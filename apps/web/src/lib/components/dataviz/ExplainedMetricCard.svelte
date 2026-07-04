@@ -130,6 +130,12 @@
 	.explained-metric-card {
 		position: relative;
 		container-type: inline-size;
+		/* Fill the grid cell so a row of cards reads as ONE equal-height geometric board
+		   (a short "no data" card no longer collapses beside a value+bar card). Flex column
+		   so the .emc-grid can eat the slack and pin the content to the top. */
+		height: 100%;
+		display: flex;
+		flex-direction: column;
 		padding: 1.1rem 1.25rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
@@ -145,6 +151,8 @@
 		grid-template-columns: 1fr;
 		gap: 0.75rem;
 		min-width: 0;
+		/* Eat the card's slack so short + tall cards occupy the same vertical band. */
+		flex: 1;
 	}
 	/* The 2-up figure | explanation engages ONLY for explained cards. A bare card
 	   (no explanation — the hero strip) stays single-column so the figure isn't

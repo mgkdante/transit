@@ -3,8 +3,8 @@
 
   ONE primitive every historic surface reuses to range over its REAL dated days
   (S8: the stop daily series; S13: the receipts index; lines: the day-grain
-  periods). It is a PURE view + normalize: a start/end pair of native <select>s
-  over the surface's `availableDates`, composing a NORMALIZED {@link DateWindow}
+  periods). It is a PURE view + normalize: a start/end pair of native date PICKERS
+  (<input type="date">) bounded (min/max) to the surface's `availableDates`, composing a NORMALIZED {@link DateWindow}
   (via $lib/filters normalizeWindow) on every change. Because the options are the
   surface's real dates ONLY, an out-of-coverage pick is impossible by
   construction; any pick order is valid (normalizeWindow swaps an inverted pair);
@@ -15,11 +15,13 @@
   labels} — zero stop/receipt/lines-specific fields. It seats into
   SurfaceControls' `window` Snippet slot with no primitive changes.
 
-  S13 SINGLE MODE: `mode='single'` composes the SAME chrome into ONE availability-
-  bound <select> over `dateOptions` (the full earliest→latest calendar; published
-  days enabled, gap-days DISABLED + reasoned) binding a single `date` instead of a
-  window. The range path is byte-identical (default mode='range'), so the receipt
-  reuses this primitive rather than forking a second component.
+  S13 SINGLE MODE: `mode='single'` composes the SAME chrome into ONE native date
+  PICKER bounded (min/max) to the `dateOptions` span, binding a single `date`
+  instead of a window. Degradation from the old <select>: a native calendar can
+  only BOUND via min/max (it can't DISABLE an interior gap-day), so a gap-day is
+  pickable but resolves HONESTLY through the receipt's own absent-day path — no
+  fabricated reading. `dateOptions` (disabled/reason fields kept) still gates
+  hasDates. The range path is byte-identical, so the receipt reuses this primitive.
 
   HONEST ABSENCE: when `availableDates` is empty there is nothing to range over —
   the primitive renders an AbsentValue (via describeAbsence) with the caller's
@@ -27,8 +29,9 @@
 
   BILINGUAL: the primitive OWNS zero copy — every string is a prop (`labels`);
   the caller supplies them from its i18n bundle. a11y AA: a wrapping role="group"
-  + aria-label, an aria-label per select, and a 44px min-height touch target on
-  each select + the clear button. Native <select> gives free keyboard/mobile.
+  + aria-label, an aria-label per input, and a 44px min-height touch target on
+  each input + the clear button. Native <input type="date"> gives the OS calendar
+  + free keyboard/mobile.
 
   DOCTRINE: tokens-only styling (lifted from RRC's proven .reliability-date
   chrome — --card / --border / focus-visible --ring); NO tv() (not a ui/
@@ -189,6 +192,22 @@
 	/** Single-mode label (falls back to the group label so the a11y name is never empty). */
 	const singleLabel = $derived(labels.single ?? labels.group);
 
+	// Coverage BOUNDS for the native calendar pickers — the earliest/latest day the surface
+	// actually carries. `availableDates` (range) + `dateOptions` (single) are ascending, so
+	// [0]/[len-1] are first/last. A native <input type=date> can only BOUND via min/max (it
+	// can't disable interior gap-days like the old <select> could) — an out-of-coverage or
+	// interior-gap pick resolves HONESTLY through the surface's own clamp (resolveWindow /
+	// the receipt's absent-day path), same philosophy as the range clamp. min/max keep the
+	// calendar itself scoped to the real span.
+	const minDate = $derived(availableDates.length ? availableDates[0] : undefined);
+	const maxDate = $derived(
+		availableDates.length ? availableDates[availableDates.length - 1] : undefined,
+	);
+	const singleMin = $derived(dateOptions.length ? dateOptions[0].date : undefined);
+	const singleMax = $derived(
+		dateOptions.length ? dateOptions[dateOptions.length - 1].date : undefined,
+	);
+
 	/**
 	 * Compose the two bounds into a normalized window (or clear it) and assign
 	 * `value`. normalizeWindow swaps an inverted pair, so any pick order is valid; a
@@ -210,10 +229,12 @@
 	<!-- Nothing to range over — honest absence, never a dead empty control. -->
 	<AbsentValue variant="block" reason={emptyReason} {locale} />
 {:else if mode === 'single'}
-	<!-- SINGLE-date calendar (S13): ONE availability-bound select over the full
-	     earliest→latest span. Published days are enabled; a gap-day the receipt index
-	     never published is a DISABLED option carrying its honest reason, so the picker
-	     truthfully shows which days have data (never a silently-missing day). -->
+	<!-- SINGLE-date calendar (S13): a native date PICKER bounded to the published
+	     earliest→latest span (min/max). Degradation note: the old <select> could DISABLE an
+	     interior gap-day the receipt index never published; a native calendar can only bound
+	     via min/max, so an interior gap-day is pickable and resolves HONESTLY through the
+	     receipt's own absent-day path (no fabricated reading). `dateOptions` (with its
+	     disabled/reason fields) is still the coverage source that gates hasDates. -->
 	<div
 		class={['date-range', stack && 'date-range--stack', className]}
 		data-slot="date-range"
@@ -222,19 +243,16 @@
 	>
 		<label class="date-range__field">
 			<span class="date-range__label">{singleLabel}</span>
-			<select
-				class="date-range__select"
+			<input
+				type="date"
+				class="date-range__input"
 				value={date ?? ''}
+				min={singleMin}
+				max={singleMax}
 				onchange={(e) => (date = e.currentTarget.value || undefined)}
 				aria-label={singleLabel}
 				data-slot="single-date"
-			>
-				{#each dateOptions as opt (opt.date)}
-					<option value={opt.date} disabled={opt.disabled}>
-						{opt.disabled && opt.disabledLabel ? `${opt.label} · ${opt.disabledLabel}` : opt.label}
-					</option>
-				{/each}
-			</select>
+			/>
 		</label>
 	</div>
 {:else}
@@ -246,31 +264,27 @@
 	>
 		<label class="date-range__field">
 			<span class="date-range__label">{labels.start}</span>
-			<select
-				class="date-range__select"
+			<input
+				type="date"
+				class="date-range__input"
 				value={start}
+				min={minDate}
+				max={maxDate}
 				onchange={(e) => emit(e.currentTarget.value, end)}
 				aria-label={`${labels.group} · ${labels.start}`}
-			>
-				<option value="">{labels.anyStart}</option>
-				{#each availableDates as d (d)}
-					<option value={d}>{d}</option>
-				{/each}
-			</select>
+			/>
 		</label>
 		<label class="date-range__field">
 			<span class="date-range__label">{labels.end}</span>
-			<select
-				class="date-range__select"
+			<input
+				type="date"
+				class="date-range__input"
 				value={end}
+				min={minDate}
+				max={maxDate}
 				onchange={(e) => emit(start, e.currentTarget.value)}
 				aria-label={`${labels.group} · ${labels.end}`}
-			>
-				<option value="">{labels.anyEnd}</option>
-				{#each availableDates as d (d)}
-					<option value={d}>{d}</option>
-				{/each}
-			</select>
+			/>
 		</label>
 		<!-- Clear the window (back to the surface's full-window default). Shown only
 		     when a span is actually set, so the affordance never invites a no-op. Opt
@@ -300,7 +314,7 @@
 	.date-range--stack .date-range__field {
 		justify-content: space-between;
 	}
-	.date-range--stack .date-range__select {
+	.date-range--stack .date-range__input {
 		flex: 1 1 auto;
 		min-width: 0;
 	}
@@ -317,7 +331,7 @@
 	/* Chrome lifted from RRC's proven .reliability-date__select — tokens only, AA in
 	   both themes; native appearance keeps the free keyboard/mobile picker. 44px min
 	   height is the WCAG 2.2 AA touch-target floor. */
-	.date-range__select {
+	.date-range__input {
 		appearance: auto;
 		min-height: 44px;
 		font-family: var(--font-mono);
@@ -328,7 +342,7 @@
 		border-radius: var(--radius-md);
 		padding: 0.375rem 0.5rem;
 	}
-	.date-range__select:focus-visible {
+	.date-range__input:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}

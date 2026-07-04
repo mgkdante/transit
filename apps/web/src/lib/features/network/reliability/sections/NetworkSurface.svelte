@@ -717,7 +717,7 @@
 						(d.monthly?.length ?? 0) === 0}
 				>
 					<!-- The readouts read the module-level windowed VMs (not the boundary payload). -->
-					<DashboardGrid minTile="360px" align="start" gutter={false}>
+					<DashboardGrid minTile="360px" gutter={false}>
 						<SectionTrend {trendSpec} {vehiclesSpark} {isDailyGrain} {info} copy={t} />
 
 						{#if cancelTrend.hasCancel}
@@ -801,7 +801,7 @@
 	}
 	@media (min-width: 1024px) {
 		.network-layout {
-			grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr);
+			grid-template-columns: 15rem minmax(0, 1fr);
 			gap: 2rem;
 			align-items: start;
 		}

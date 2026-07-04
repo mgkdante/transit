@@ -42,7 +42,7 @@
 	const occInfo = $derived(info('occupancy', copy.occupancySection));
 </script>
 
-<DashboardGrid minTile="320px" align="start" gutter={false}>
+<DashboardGrid minTile="320px" gutter={false}>
 	<!-- Status mix -->
 	<NetworkTile>
 		<SectionHeading level={3} overline={copy.statusSection} />

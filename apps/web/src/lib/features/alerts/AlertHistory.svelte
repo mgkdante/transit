@@ -416,6 +416,7 @@
 	   dropped with A1). The analytics + log read as one column, matching the 52rem log. */
 	:global([data-slot='surface'].alert-history) {
 		max-width: var(--container-content);
+		margin-inline: auto;
 	}
 	.alert-history-headline {
 		margin-bottom: 0.25rem;
@@ -431,7 +432,7 @@
 	}
 	@media (min-width: 1024px) {
 		.alert-history-block {
-			grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr);
+			grid-template-columns: 15rem minmax(0, 1fr);
 			gap: 2rem;
 			align-items: start;
 		}

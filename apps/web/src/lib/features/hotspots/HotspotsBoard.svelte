@@ -383,10 +383,11 @@
 		gap: clamp(1.5rem, 4vw, 2rem);
 		width: 100%;
 		max-width: 76rem;
+		margin-inline: auto;
 	}
 	@media (min-width: 1024px) {
 		.hotspots-region--railed {
-			grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr);
+			grid-template-columns: 15rem minmax(0, 1fr);
 			gap: 2rem;
 			align-items: start;
 		}
