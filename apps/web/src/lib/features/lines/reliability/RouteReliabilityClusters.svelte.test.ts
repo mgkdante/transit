@@ -285,43 +285,40 @@ const multiDay: RouteReliability = {
 	],
 };
 
-describe('RouteReliabilityClusters — mobile floating pills (S7)', () => {
-	it('renders the grain filter pill (labelled by the active window) + the section jump-to pill', () => {
+describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
+	it('renders ONE mobile pill labelled with the View heading + the active grain', () => {
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: populated, locale: 'en' },
 		});
-		// The grain FILTER pill replaces the old collapse toggle on mobile.
-		const filterPill = container.querySelector(
-			'[data-testid="reliability-filter-pill"]',
-		) as HTMLElement;
-		expect(filterPill).not.toBeNull();
-		// It is labelled with the active window (default 'day' → Today).
-		expect(filterPill.textContent).toContain(copy.controls.today);
-		// The grain controls live in the pill DRAWER (closed by default → not rendered yet).
-		expect(container.querySelector('[data-testid="reliability-filter-drawer"]')).toBeNull();
-
-		// The section JUMP-TO rides the shared TocPill.
-		expect(container.querySelector('[data-testid="toc-pill"]')).not.toBeNull();
-
-		// The old collapse toggle is gone.
+		// The SurfaceRail mobile pill replaces the old two floating pills.
+		const railMobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		expect(railMobile).not.toBeNull();
+		const pillBtn = railMobile.querySelector('button') as HTMLButtonElement;
+		expect(pillBtn).not.toBeNull();
+		// Labelled with the View heading + the active window (default 'day' → Today).
+		expect(pillBtn.textContent).toContain(copy.controls.viewLabel);
+		expect(pillBtn.textContent).toContain(copy.controls.today);
+		// The sheet is closed by default (no dialog rendered yet).
+		expect(railMobile.querySelector('[role="dialog"]')).toBeNull();
+		// The old collapse toggle + the separate toc/filter pills are gone.
 		expect(container.querySelector('[data-slot="controls-toggle"]')).toBeNull();
+		expect(container.querySelector('[data-testid="reliability-filter-pill"]')).toBeNull();
+		expect(container.querySelector('[data-testid="toc-pill"]')).toBeNull();
 	});
 
-	it('opens the filter drawer with the grain controls on tap', async () => {
+	it('opens ONE sheet with BOTH the grain controls AND the section ToC on tap', async () => {
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: populated, locale: 'en' },
 		});
-		const pillBtn = container.querySelector(
-			'[data-testid="reliability-filter-pill"] button',
-		) as HTMLButtonElement;
+		const railMobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		const pillBtn = railMobile.querySelector('button') as HTMLButtonElement;
 		await fireEvent.click(pillBtn);
 		expect(pillBtn.getAttribute('aria-expanded')).toBe('true');
-		// The drawer now renders the grain controls (a second active-window readout appears).
-		const drawer = container.querySelector(
-			'[data-testid="reliability-filter-drawer"]',
-		) as HTMLElement;
-		expect(drawer).not.toBeNull();
-		expect(drawer.querySelector('[data-slot="active-window"]')).not.toBeNull();
+		const sheet = railMobile.querySelector('[role="dialog"]') as HTMLElement;
+		expect(sheet).not.toBeNull();
+		// The ONE sheet merges the grain controls (active-window readout) AND the section ToC.
+		expect(sheet.querySelector('[data-slot="active-window"]')).not.toBeNull();
+		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
 	});
 });
 

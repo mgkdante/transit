@@ -126,6 +126,12 @@
 		 * primitive matches its existing pick-a-start-and-end UX with no clear button.
 		 */
 		clearable?: boolean;
+		/**
+		 * Stack the fields VERTICALLY (one per row) instead of the default inline row.
+		 * For a narrow rail (SurfaceRail) where two side-by-side date selects would crowd —
+		 * the "no two filters on one row" layout. Default false (the inline row).
+		 */
+		stack?: boolean;
 		class?: string;
 	}
 </script>
@@ -144,6 +150,7 @@
 		labels,
 		emptyReason = 'no-observations',
 		clearable = true,
+		stack = false,
 		class: className,
 	}: DateRangePickerProps = $props();
 
@@ -208,7 +215,7 @@
 	     never published is a DISABLED option carrying its honest reason, so the picker
 	     truthfully shows which days have data (never a silently-missing day). -->
 	<div
-		class={['date-range', className]}
+		class={['date-range', stack && 'date-range--stack', className]}
 		data-slot="date-range"
 		role="group"
 		aria-label={labels.group}
@@ -232,7 +239,7 @@
 	</div>
 {:else}
 	<div
-		class={['date-range', className]}
+		class={['date-range', stack && 'date-range--stack', className]}
 		data-slot="date-range"
 		role="group"
 		aria-label={labels.group}
@@ -280,6 +287,21 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.75rem 1rem;
+		min-width: 0;
+	}
+	/* Stacked variant (SurfaceRail): each field on its own row — no two filters share a row.
+	   The field stays label + select on its line; the select fills the rail width. */
+	.date-range--stack {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.625rem;
+	}
+	.date-range--stack .date-range__field {
+		justify-content: space-between;
+	}
+	.date-range--stack .date-range__select {
+		flex: 1 1 auto;
 		min-width: 0;
 	}
 	.date-range__field {

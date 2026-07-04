@@ -43,13 +43,11 @@
 	import { onMount } from 'svelte';
 	import {
 		GrainPicker,
-		SurfaceControls,
 		DateRangePicker,
+		SurfaceRail,
 		type GrainSegment,
 	} from '$lib/components/surface';
-	import { Separator } from '$lib/components/ui/separator';
-	import { TocPill, observeActiveToc, type TocEntry } from '$lib/components/shared';
-	import ReliabilityFilterPill from './ReliabilityFilterPill.svelte';
+	import { observeActiveToc } from '$lib/components/shared';
 	import { toReliabilityClusters } from './clusters';
 	import { reliabilityCopy } from './reliability.copy';
 	import Section0Verdict from './sections/Section0Verdict.svelte';
@@ -338,21 +336,9 @@
 	// GrainMode key). Availability is passed as EXPLICIT `available` flags (NOT the MIN_POINTS
 	// data-depth clamp) so the enable/disable semantics stay EXACTLY today's per DECISIONS P2-2 —
 	// a grain enabled iff the contract carries that grain, `range` iff there are dated day-periods.
-	// The mobile filter pill keeps rendering the same 4-mode GrainPicker (via `grainControls`), so
-	// both affordances share ONE viewKey binding + one availability source (no divergence).
-	const grainOffered: readonly GrainMode[] = ['day', 'week', 'month', 'range'];
-	const grainAvailability = $derived<Partial<Record<GrainMode, { available: boolean }>>>({
-		day: { available: availableGrains.has('day') },
-		week: { available: availableGrains.has('week') },
-		month: { available: availableGrains.has('month') },
-		range: { available: hasDatedPeriods },
-	});
-	const grainLabels = $derived<Partial<Record<GrainMode, string>>>({
-		day: copy.controls.today,
-		week: copy.controls.thisWeek,
-		month: copy.controls.thisMonth,
-		range: copy.controls.dateRange,
-	});
+	// The GrainPicker `segments` (built below) carry the labels + the explicit-flag
+	// availability directly; the rail renders that one radiogroup in both the desktop glass
+	// panel and the mobile sheet, sharing ONE viewKey binding (no divergence).
 
 	// Active-window caption under the control spine — names the resolved window so
 	// "Today / This week / This month / {range}" is never ambiguous about coverage.
@@ -415,12 +401,8 @@
 		},
 	]);
 
-	// The mobile TocPill reads the SAME sections as the desktop jump-to nav (one source).
-	const tocEntries = $derived<TocEntry[]>(
-		sectionNav.map((s) => ({ id: s.id, title: s.label, level: 1, children: [] })),
-	);
 	// One IntersectionObserver over the bands' [data-toc] anchors owns the active section the
-	// TocPill highlights (client-only; each band carries data-toc below).
+	// rail ToC highlights (client-only; each band carries data-toc below).
 	let activeId = $state('');
 	onMount(() => observeActiveToc((id) => (activeId = id)));
 
@@ -435,21 +417,14 @@
 </script>
 
 <div class={cn('reliability-clusters', className)} data-slot="reliability-clusters">
-	<!-- The page-level grain rail (sticky) sits above the five rider-question sections.
-	     The grain refines §0's trend + §3's windowed rates/mix; §1/§2/§4 follow it once their
-	     *_by_grain companion is published (else they read the scalar whole history). One column,
-	     the rail pinned over it. -->
-	<div class="reliability-grain-block" data-slot="reliability-sections">
-		<!-- Control panel: the grain/date controls collected into ONE ControlsRail (quiet
-	     infra chrome, mono "View" overline) so the control reads identically to /stop
-	     and /network. ONE shared GrainPicker owns the whole radiogroup —
-	     day|week|month PLUS the lines-only "range" segment — so EXACTLY ONE chip is
-	     active at a time (picking range deselects the grain and vice-versa; no dual
-	     highlight). The headline shows with ZERO interaction at the default 'day'
-	     grain — the controls only refine. --primary lives only on the active control
-	     chip, never on the rail chrome. STICKY (S6): the grain control is the main
-	     control of the surface, so the rail stays pinned (desktop) while the metric
-	     cards + bands scroll under it. -->
+	<!-- P5.4: the grain/filter controls + the section ToC live in a map-style GLASS LEFT RAIL
+	     (SurfaceRail) — a sticky floating panel beside the five rider-question sections on
+	     desktop, and ONE merged pill→sheet menu (grain + ToC together) on mobile. The grain
+	     refines §0's trend + §3's windowed rates/mix; §1/§2/§4 follow it once their *_by_grain
+	     companion is published. --primary lives only on the active control chip. ONE shared
+	     GrainPicker owns the whole radiogroup — day|week|month PLUS the lines-only "range"
+	     segment — so exactly one chip is active at a time. -->
+	<div class="reliability-layout" data-slot="reliability-sections">
 		<!-- The grain controls (GrainPicker + range pair + active-window caption). ONE definition,
 		     rendered in BOTH the desktop rail AND the mobile filter pill's drawer (single source). -->
 		<!-- The range start/end date pair — its own snippet so it seats in BOTH the desktop
@@ -468,6 +443,7 @@
 					{availableDates}
 					{locale}
 					clearable={false}
+					stack
 					labels={{
 						group: copy.controls.dateRange,
 						start: copy.controls.rangeStart,
@@ -480,15 +456,17 @@
 			{/if}
 		{/snippet}
 
-		<!-- The MOBILE pill's grain controls (GrainPicker + range + caption). Desktop uses
-		     SurfaceControls below; this snippet feeds ONLY the mobile filter-pill drawer, driven
-		     by the SAME viewKey + segments + range bounds (no behavioural divergence). -->
-		{#snippet grainControls()}
+		<!-- The rail content — the grain controls (GrainPicker + range pair + caption) + the
+		     section ToC. ONE definition, rendered by SurfaceRail in BOTH the desktop glass rail
+		     AND the mobile sheet (single source; both bind the same viewKey + track activeId). -->
+		{#snippet railContent()}
 			<div class="reliability-control-body" data-slot="controls-body">
+				<span class="reliability-rail-view" data-slot="controls-rail-label"
+					>{copy.controls.viewLabel}</span
+				>
 				<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
-				<!-- Disabled-reason descriptions (honest-absence parity with the desktop rail): one
-				     visually-hidden span per disabled segment, referenced by its radio via
-				     aria-describedby (set in the `segments` derived). Never a layout box. -->
+				<!-- Disabled-reason descriptions (honest-absence): one visually-hidden span per
+				     disabled segment, referenced by its radio via aria-describedby. -->
 				{#each segments as seg (seg.key)}
 					{#if seg.describedById}
 						<span id={seg.describedById} class="reliability-reason" data-slot="controls-reason"
@@ -502,32 +480,27 @@
 					{activeWindowCaption}
 				</p>
 			</div>
-		{/snippet}
 
-		<!-- The desktop rail's row-1 nav: the "View" overline + the "Jump to" TOC on ONE row
-		     (operator layout law). Seated in SurfaceControls' `nav` slot so the primitive owns the
-		     rail chrome + sticky while lines keeps its bespoke wayfinding row. -->
-		{#snippet desktopNav()}
-			<span class="reliability-rail-view" data-slot="controls-rail-label"
-				>{copy.controls.viewLabel}</span
-			>
-			<!-- Section TOC (wayfinding): each entry jumps to its section AND shows its filter
-			     scope (↻ follows the window above, ∞ full history). -->
+			<!-- Section TOC (wayfinding): a vertical jump list; each entry highlights the active
+			     section + shows its filter scope (↻ follows the window, ∞ full history). -->
 			<nav class="reliability-toc" data-slot="section-toc" aria-label={copy.controls.toc}>
-				<span class="reliability-toc__label">{copy.controls.toc}</span>
-				<!-- SEC n/m position readout (H4, §C2.6): the active section over the total,
-				     a quiet mono wayfinding stamp that tracks the scroll. -->
-				<span
-					class="reliability-toc__readout"
-					data-slot="section-readout"
-					aria-live="polite"
-					aria-atomic="true">{sectionReadout}</span
-				>
+				<span class="reliability-toc__head">
+					<span class="reliability-toc__label">{copy.controls.toc}</span>
+					<!-- SEC n/m position readout (H4): the active section over the total. -->
+					<span
+						class="reliability-toc__readout"
+						data-slot="section-readout"
+						aria-live="polite"
+						aria-atomic="true">{sectionReadout}</span
+					>
+				</span>
 				<ul class="reliability-toc__list">
 					{#each sectionNav as s (s.id)}
 						<li>
 							<a
 								class="reliability-toc__link"
+								class:active={activeId === s.id}
+								aria-current={activeId === s.id ? 'location' : undefined}
 								href={`#${s.id}`}
 								data-scope={s.windowed ? 'windowed' : 'whole'}
 							>
@@ -545,113 +518,76 @@
 			</nav>
 		{/snippet}
 
-		<!-- DESKTOP (>=lg): the full sticky SurfaceControls rail — row-1 nav ("View" + "Jump to")
-		     in the nav slot, the 4-mode grain radiogroup, the range date pair in the window slot,
-		     and the active-window caption. Availability = explicit flags (today's exact semantics).
-		     Hidden below lg, where the floating pills below take over. -->
-		<SurfaceControls
-			sticky
-			class="reliability-rail-desktop"
-			offered={grainOffered}
-			availability={grainAvailability}
-			bind:value={viewKey}
-			labels={grainLabels}
-			grainLabel={copy.controls.grainLabel}
-			{locale}
-			windowCaption={activeWindowCaption}
-			nav={desktopNav}
-			window={rangeControls}
-			role="group"
-			aria-label={copy.controls.viewLabel}
-		/>
-
-		<!-- MOBILE (<lg): two floating pills replace the rail — the grain FILTER pill opens a drawer
-		     with the SAME grain controls; the section JUMP-TO rides the shared TocPill below it,
-		     tracking the active section as you scroll. Both hide at >=lg. -->
-		<ReliabilityFilterPill
-			title={copy.controls.viewLabel}
-			label={controlsSummary}
-			controls={grainControls}
+		<!-- The map-style GLASS LEFT RAIL: a sticky floating panel beside the sections on
+		     desktop; ONE pill→sheet (grain + ToC merged into one menu) on mobile. -->
+		<SurfaceRail
+			rail={railContent}
+			label={copy.controls.viewLabel}
+			summary={controlsSummary}
 			openAria={copy.controls.filterPillOpen}
 			closeAria={copy.controls.filterPillClose}
 		/>
-		<TocPill
-			entries={tocEntries}
-			{activeId}
-			openAria={copy.controls.toc}
-			closeAria={copy.controls.tocPillClose}
-		/>
 
-		<!-- Hazard tape discerns the controls zone from the data canvas. -->
-		<Separator variant="hazard" hazardSize="sm" />
+		<!-- The five rider-question sections — the content column beside the rail. -->
+		<div class="reliability-content">
+			<!-- §0 Verdict — "Can you count on this line?" The grain rail re-shapes only the trend. -->
+			<div class="reliability-band" id="rel-verdict" data-toc="rel-verdict" data-band="verdict">
+				<Section0Verdict vm={clusters.punctuality} {locale} {copy} {mode} />
+			</div>
 
-		<!-- §0 Verdict — "Can you count on this line?" The grain rail re-shapes only the trend. -->
-		<div
-			class="reliability-band surface-bleed"
-			id="rel-verdict"
-			data-toc="rel-verdict"
-			data-band="verdict"
-		>
-			<Section0Verdict vm={clusters.punctuality} {locale} {copy} {mode} />
-		</div>
+			<!-- §1 When to ride — the 7×24 heatmap hero + the time-of-day / weekday detail. -->
+			<div
+				class="reliability-band"
+				id="rel-when-to-ride"
+				data-toc="rel-when-to-ride"
+				data-band="when-to-ride"
+			>
+				<Section1WhenToRide
+					punctuality={clusters.punctuality}
+					habits={clusters.habits}
+					{locale}
+					{copy}
+					{mode}
+				/>
+			</div>
 
-		<!-- §1 When to ride — the 7×24 heatmap hero + the time-of-day / weekday detail. -->
-		<div
-			class="reliability-band surface-bleed"
-			id="rel-when-to-ride"
-			data-toc="rel-when-to-ride"
-			data-band="when-to-ride"
-		>
-			<Section1WhenToRide
-				punctuality={clusters.punctuality}
-				habits={clusters.habits}
-				{locale}
-				{copy}
-				{mode}
-			/>
-		</div>
+			<!-- §2 The wait — scheduled-vs-observed headway + (detail) regularity + service span. -->
+			<div class="reliability-band" id="rel-the-wait" data-toc="rel-the-wait" data-band="the-wait">
+				<Section2TheWait
+					wait={clusters.waitRegularity}
+					serviceSpans={clusters.serviceDelivered.serviceSpans}
+					{locale}
+					{copy}
+					{directionHeadsigns}
+					{mode}
+				/>
+			</div>
 
-		<!-- §2 The wait — scheduled-vs-observed headway + (detail) regularity + service span. -->
-		<div
-			class="reliability-band surface-bleed"
-			id="rel-the-wait"
-			data-toc="rel-the-wait"
-			data-band="the-wait"
-		>
-			<Section2TheWait
-				wait={clusters.waitRegularity}
-				serviceSpans={clusters.serviceDelivered.serviceSpans}
-				{locale}
-				{copy}
-				{directionHeadsigns}
-				{mode}
-			/>
-		</div>
+			<!-- §3 Will it run & will you fit — cancellations/skips + crowding (grain-windowed). -->
+			<div
+				class="reliability-band"
+				id="rel-run-and-fit"
+				data-toc="rel-run-and-fit"
+				data-band="run-and-fit"
+			>
+				<Section3RunAndFit
+					service={clusters.serviceDelivered}
+					crowding={clusters.crowding}
+					{locale}
+					{copy}
+					windowLabel={controlsSummary}
+				/>
+			</div>
 
-		<!-- §3 Will it run & will you fit — cancellations/skips + crowding (grain-windowed). -->
-		<div
-			class="reliability-band surface-bleed"
-			id="rel-run-and-fit"
-			data-toc="rel-run-and-fit"
-			data-band="run-and-fit"
-		>
-			<Section3RunAndFit
-				service={clusters.serviceDelivered}
-				crowding={clusters.crowding}
-				{locale}
-				{copy}
-				windowLabel={controlsSummary}
-			/>
-		</div>
-
-		<!-- §4 Where it's worst — the worst-N stops accountability lollipop. -->
-		<div
-			class="reliability-band surface-bleed"
-			id="rel-worst-stops"
-			data-toc="rel-worst-stops"
-			data-band="worst-stops"
-		>
-			<Section4WorstStops punctuality={clusters.punctuality} {locale} {copy} />
+			<!-- §4 Where it's worst — the worst-N stops accountability lollipop. -->
+			<div
+				class="reliability-band"
+				id="rel-worst-stops"
+				data-toc="rel-worst-stops"
+				data-band="worst-stops"
+			>
+				<Section4WorstStops punctuality={clusters.punctuality} {locale} {copy} />
+			</div>
 		</div>
 	</div>
 </div>
@@ -672,33 +608,36 @@
 		   the visual break. */
 	}
 
-	/* The single sections column: the sticky grain rail + the five rider-question
-	   sections, carrying the same section rhythm as the page. This is the rail's
-	   sticky CONTAINING BLOCK, so the rail stays pinned over the whole surface. */
-	.reliability-grain-block {
+	/* The 2-col layout (P5.4): the map-style GLASS LEFT RAIL (SurfaceRail) + the content
+	   column at ≥1024; a single column below, where the rail collapses to the mobile
+	   pill→sheet. The content column is the rail's sticky CONTAINING BLOCK, so the glass
+	   rail stays pinned over the sections. */
+	.reliability-layout {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: clamp(1.5rem, 4vw, 2rem);
+		width: 100%;
+	}
+	@media (min-width: 1024px) {
+		.reliability-layout {
+			grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr);
+			gap: 2rem;
+			align-items: start;
+		}
+	}
+	/* The content column — the five rider-question sections at the page section rhythm. */
+	.reliability-content {
 		display: flex;
 		flex-direction: column;
 		gap: clamp(3rem, 7vw, 5rem);
-		width: 100%;
+		min-width: 0;
 	}
 
-	/* The grain + range control is now ONE shared GrainPicker (day|week|month|range),
-	   so the bespoke companion-chip styles are gone — the active-chip accent lives in
-	   GrainPicker. The segmented row keeps a measure + wraps so a long localized
-	   segment label never collides with its neighbour or overflows the rail. */
+	/* The grain radiogroup wraps so a long localized segment never overflows the narrow
+	   rail; the active-chip accent lives in GrainPicker. */
 	.reliability-clusters :global([data-slot='grain-picker']) {
 		min-width: 0;
 		flex-wrap: wrap;
-	}
-	/* Operator: make the control rail as THIN as possible (reliability surface ONLY — the shared
-	   ControlsRail keeps its comfortable padding on /stop + /network). Trim the panel padding + the
-	   inter-control gaps so the sticky bar eats minimal vertical space. */
-	.reliability-clusters :global(.controls-rail) {
-		padding: 0.5rem 0.75rem;
-		gap: 0.375rem;
-	}
-	.reliability-clusters :global(.controls-rail__body) {
-		gap: 0.375rem;
 	}
 
 	/* The start + end date pair is now the SHARED DateRangePicker primitive (S8B), which
@@ -734,16 +673,19 @@
 		color: var(--muted-foreground);
 	}
 
-	/* Section TOC (wayfinding + filter-scope map): a horizontal nav of the 5 sections,
-	   each a jump link + a scope glyph (↻ follows the window / ∞ full history). It now
-	   shares ROW 1 with the "View" overline (operator: "Jump to on the same row as View"),
-	   so it carries no divider of its own — it sits inline, right of the overline. The
-	   list keeps the destinations on ONE row on desktop (see below). */
+	/* Section TOC (wayfinding + filter-scope map): a VERTICAL jump list in the rail — one
+	   full-width link per section (with a ↻/∞ scope glyph), the active one highlighted. */
 	.reliability-toc {
 		display: flex;
-		align-items: baseline;
-		gap: 0.375rem 0.5rem;
+		flex-direction: column;
+		gap: 0.5rem;
 		min-width: 0;
+	}
+	.reliability-toc__head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem;
 	}
 	.reliability-toc__label {
 		font-family: var(--font-mono);
@@ -763,32 +705,48 @@
 	}
 	.reliability-toc__list {
 		display: flex;
-		flex-wrap: wrap;
-		gap: 0.375rem 0.5rem;
+		flex-direction: column;
+		gap: 0.25rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
 	.reliability-toc__link {
-		display: inline-flex;
+		display: flex;
 		align-items: center;
+		justify-content: space-between;
 		gap: 0.375rem;
-		min-height: 1.75rem;
-		padding: 0.25rem 0.625rem;
+		width: 100%;
+		min-height: 44px;
+		padding: 0.375rem 0.625rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		color: var(--foreground);
 		text-decoration: none;
-		background: var(--card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
+		background: transparent;
+		border: 1px solid transparent;
+		border-radius: var(--radius-md);
 		transition:
 			border-color var(--duration-fast) var(--ease-default),
+			background-color var(--duration-fast) var(--ease-default),
 			color var(--duration-fast) var(--ease-default);
 	}
 	.reliability-toc__link:hover {
 		border-color: var(--primary);
 		color: var(--primary);
+	}
+	/* The active section: the amber-bordered wayfinding highlight (like the map's selected
+	   entity), so the reader always sees where they are in the rail. */
+	.reliability-toc__link.active {
+		border-color: var(--border-brand);
+		background: color-mix(in srgb, var(--primary) 8%, transparent);
+		color: var(--primary);
+	}
+	.reliability-toc__text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	/* The scope glyph: ∞ (full history) reads quiet; ↻ (follows the window) rides the
 	   yellow wayfinding voice so the windowed sections are scannable at a glance. */
@@ -820,61 +778,25 @@
 		letter-spacing: var(--tracking-eyebrow);
 		color: var(--muted-foreground);
 	}
-	/* The grain controls (GrainPicker + range + caption). ONE block, rendered by the
-	   grainControls snippet in BOTH the desktop rail and the mobile filter pill's drawer. */
+	/* The grain controls (View overline + GrainPicker + range + caption), stacked in the
+	   rail. Rendered by railContent in BOTH the desktop glass rail and the mobile sheet. */
 	.reliability-control-body {
 		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.375rem 0.75rem;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.5rem;
 		min-width: 0;
 	}
-	@media (min-width: 768px) {
-		/* Desktop: keep ALL destinations on ONE line (operator). If a long locale ever
-		   overflows, the row scrolls horizontally rather than wrapping to a second line. */
-		.reliability-toc__list {
-			flex-wrap: nowrap;
-			overflow-x: auto;
-			scrollbar-width: thin;
-		}
-	}
-	/* MOBILE (<lg): the floating pills (ReliabilityFilterPill + TocPill) replace the rail, so
-	   hide the sticky rail entirely below the desktop breakpoint. The pills are lg:hidden, so
-	   EXACTLY ONE controls affordance shows at every width (no overlap at the 1024 line). */
-	@media (max-width: 1023.98px) {
-		.reliability-clusters :global(.reliability-rail-desktop) {
-			display: none;
-		}
-	}
 
-	/* Each band is its own edge-to-edge block; the strip carries a quiet rule so
-	   the single-glance headline reads as its own register above the clusters.
-	   Bands opt into full-bleed at the wrapper (.surface-bleed, see Surface.svelte)
-	   so the data marks reach the content-column edges; dense prose inside re-caps
-	   itself via .surface-measure. The control spine (.reliability-controls) stays
-	   within the reading column — it is chrome, not a band, so it is NOT bled.
-
-	   The .surface-bleed escapes the Surface gutter via a negative inline margin;
-	   left UNCANCELLED the band content would hug the bled edge and read LEFT-
-	   SHIFTED / wider than the inset (non-bled) control spine — the off-centre
-	   complaint on mobile/tablet. Re-apply the gutter as padding (matching
-	   .surface-measure's intent + MetricsExplainer's .body-grid) so the band's
-	   content edges land back on the page-padding line — centred at every width,
-	   aligned with the control spine + the /stop DashboardGrid. */
+	/* Each band is a block in the content column (no longer full-bleed — the left rail now
+	   defines a 2-col reading measure). The [id] rule in app.css parks jumped-to sections
+	   below the floating chrome via --chrome-offset. */
 	.reliability-band {
-		/* NO width:100% here. With width:100% the band is pinned to the parent's width, so the
-		   .surface-bleed negative margins only shift it LEFT (they cannot widen it on the right) —
-		   that was the mobile "everything biased to the left" bug (band bled to x=0 but its right
-		   edge stopped a full gutter short). As a STRETCH flex child of .reliability-grain-block,
-		   leaving width auto lets the negative inline margins widen the band symmetrically to both
-		   page edges, so the re-padded content sits centred. */
-		padding-inline: var(--space-page-x);
-		/* TOC jump-to anchor offset is owned globally: the `[id]` rule in app.css
-		   parks jumped-to headers below the floating chrome via --chrome-offset. */
+		min-width: 0;
 	}
 	/* Smooth jump-to from the TOC (reduced-motion users get the instant default). */
 	@media (prefers-reduced-motion: no-preference) {
-		.reliability-grain-block {
+		.reliability-layout {
 			scroll-behavior: smooth;
 		}
 	}

@@ -19,6 +19,7 @@ export { default as Breadcrumb } from './Breadcrumb.svelte';
 export { default as ReliabilityPane } from './ReliabilityPane.svelte';
 export { default as GrainPicker } from './GrainPicker.svelte';
 export { default as SurfaceControls } from './SurfaceControls.svelte';
+export { default as SurfaceRail } from './SurfaceRail.svelte';
 export { default as DateRangePicker } from './DateRangePicker.svelte';
 export { default as FreshnessStamp } from './FreshnessStamp.svelte';
 export { default as ConformanceBadge } from './ConformanceBadge.svelte';
