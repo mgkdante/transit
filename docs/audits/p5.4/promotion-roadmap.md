@@ -84,12 +84,14 @@ The two apps' copies must be diffed and merged into one superset before extracti
   `@yesid/ui-detail` during the extraction only if a transit surface adopts a mobile filter
   drawer (none does today — FilterGroup's own `collapsible` covers mobile clutter).
 
-## 6. Deferred from P5.4 (owned by later slices, not this roadmap)
+## 6. SurfaceRail — BUILT (P5.4d(4)/(5)), stays transit-local
 
-- The full 5-surface **SurfaceRail** left-rail refactor was **de-scoped** in P5.4d (operator
-  call: the surfaces already share `SurfaceControls`/`GrainPicker` seated-sticky, only /alerts
-  has real categorical filters, and each surface's grain is welded to a bespoke URL codec a
-  shared rail must not own — high risk, near-zero DRY win). If a future slice wants the left-rail
-  *layout*, `SurfaceControls` already forwards `sticky`+`nav` and each surface keeps its codec —
-  it is a per-surface layout change, not a shared-state change.
+The map-style **glass left rail** + **merged mobile pill→sheet** shipped (operator reversed the
+earlier de-scope): `components/surface/SurfaceRail.svelte` (a LAYOUT composer — the surface keeps
+its state/URL codec), applied to line-reliability, stop-reliability, network, hotspots, and alerts.
+Each surface's grain/filter controls + (where it has jump targets) a vertical section ToC render in
+the sticky glass rail on desktop and ONE sheet on mobile; sections become the content column.
+`DateRangePicker` gained a `stack` prop (one field per row in the narrow rail). **Stays transit-local**
+(grain/data-depth + the URL codec are transit-domain), same as `SurfaceControls`/`GrainPicker` (§5).
+
 - `--chart-stroke-*` / `--chart-dash-*` tokenization (frozen P5.2 mark internals) → post-S16.
