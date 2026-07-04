@@ -180,6 +180,49 @@ describe('SurfaceControls — window + nav slots + caption', () => {
 	});
 });
 
+describe('SurfaceControls — enabled-grain hint (grain/sub-grain clarity)', () => {
+	it('gives every ENABLED standard grain a positive hint title + aria-describedby by default', () => {
+		const { getByRole } = renderControls({
+			availability: { day: { buckets: 30 }, week: { buckets: 30 }, month: { buckets: 30 } },
+		});
+		const week = getByRole('radio', { name: 'Week' });
+		// The default hint rides the pointer title...
+		expect(week).toHaveAttribute('title', 'Weekly granularity');
+		// ...and an aria-describedby points at a hidden span carrying the same text.
+		const descId = week.getAttribute('aria-describedby');
+		expect(descId).toBeTruthy();
+		expect(document.getElementById(descId as string)?.textContent).toBe('Weekly granularity');
+	});
+
+	it('localizes the default hint (fr)', () => {
+		const { getByRole } = renderControls({
+			locale: 'fr',
+			availability: { day: { buckets: 30 }, week: { buckets: 30 }, month: { buckets: 30 } },
+		});
+		expect(getByRole('radio', { name: 'Day' })).toHaveAttribute('title', 'Granularité quotidienne');
+	});
+
+	it('lets grainHints override the default per key', () => {
+		const { getByRole } = renderControls({
+			availability: { day: { buckets: 30 }, week: { buckets: 30 }, month: { buckets: 30 } },
+			grainHints: { day: 'Today, hour by hour' } as Partial<Record<Grain, string>>,
+		});
+		expect(getByRole('radio', { name: 'Day' })).toHaveAttribute('title', 'Today, hour by hour');
+		// Un-overridden keys keep the default.
+		expect(getByRole('radio', { name: 'Month' })).toHaveAttribute('title', 'Monthly granularity');
+	});
+
+	it('a DISABLED grain keeps its absence reason as the title (not a positive hint)', () => {
+		const { getByRole } = renderControls({
+			availability: { day: { buckets: 30 }, week: { buckets: 30 }, month: { buckets: 2 } },
+		});
+		expect(getByRole('radio', { name: 'Month' })).toHaveAttribute(
+			'title',
+			'not enough readings yet',
+		);
+	});
+});
+
 describe('SurfaceControls — codec purity (static source scan)', () => {
 	const src = readFileSync(
 		resolve(process.cwd(), 'src/lib/components/surface/SurfaceControls.svelte'),
