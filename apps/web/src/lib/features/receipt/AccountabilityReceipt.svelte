@@ -430,9 +430,11 @@
 			grid-template-areas:
 				'headline headline'
 				'affected worst';
-			/* affected + worst share one row — stretch both to the row height so the pair
-			   reads as ONE equal-height geometric block (never a lopsided 144-vs-221 gap). */
-			align-items: stretch;
+			/* affected (a one-row count summary) and worst (a two-entry detail list) are
+			   inherently different heights. Top-align them at their NATURAL height rather than
+			   stretch the short one — a stretched summary card just leaves dead space under its
+			   counts (un-geometric), which reads worse than an honest ragged baseline. */
+			align-items: start;
 		}
 		.receipt-layout.no-worst {
 			grid-template-areas:
