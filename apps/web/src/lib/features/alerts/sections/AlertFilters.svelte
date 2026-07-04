@@ -1,22 +1,24 @@
 <!--
-  AlertFilters — the /alerts filter rail (S15 re-seat; filter-family adoption).
+  AlertFilters — the /alerts filter rail body (P5.4e: map-style GLASS LEFT RAIL).
 
-  ONE ControlsRail (quiet infra chrome) collecting the five codec-backed axes:
+  The filter WIDGETS themselves (no chrome container): SurfaceRail owns the glass
+  panel + the mobile pill→sheet, and renders THIS content as the single rail source
+  in both. A plain flex column collecting the five codec-backed axes:
     · entity-type (Affects) — a shared FilterGroup (All | Lines | Stops)
     · severity — a shared FilterGroup (All | Critical | High | Watch)
     · Line — a typeahead LineCombobox over the distinct lines in the log
     · Stop — a typeahead LineCombobox over the distinct stops in the log
-    · date range — the shared DateRangePicker over the served span (?from/?to)
+    · date range — the shared DateRangePicker (stacked: one field per row in the rail)
 
-  The two entity-type/severity radiogroups now ride the shared $lib/components/filter
-  FilterGroup (bits-ui ToggleGroup + built-in "All" reset), and the bespoke clear
-  button rides FilterSummary — a BOUNDED widget swap only. FilterGroup is CONTROLLED
-  (activeKey + onSelect), so this file threads the surface's existing $bindable
-  scalars through: the built-in "All" maps to the codec's 'all' sentinel (activeKey =
-  x==='all' ? null : x; onSelect = (k)=> x = k ?? 'all'). The orchestrator still owns
-  the codec seed + batched URL mirror + every predicate — nothing about state or the
-  URL changed. The two comboboxes carry the type in their GROUP label ONCE (no per-row
-  prefix). --primary lives only on the active chip / highlighted option, never on the rail.
+  The two entity-type/severity radiogroups ride the shared $lib/components/filter
+  FilterGroup (bits-ui ToggleGroup + built-in "All" reset), and the clear affordance
+  rides FilterSummary. FilterGroup is CONTROLLED (activeKey + onSelect), so this file
+  threads the surface's existing $bindable scalars through: the built-in "All" maps to
+  the codec's 'all' sentinel (activeKey = x==='all' ? null : x; onSelect = (k)=> x = k
+  ?? 'all'). The orchestrator still owns the codec seed + batched URL mirror + every
+  predicate — nothing about state or the URL changed. The two comboboxes carry the type
+  in their GROUP label ONCE (no per-row prefix). --primary lives only on the active chip
+  / highlighted option, never on the rail.
 -->
 <script lang="ts">
 	import type { AlertHistoryCopy } from '../alerts.copy';
@@ -26,7 +28,6 @@
 	import type { AlertAffects, DateWindow } from '$lib/filters';
 	import { DateRangePicker } from '$lib/components/surface';
 	import { FilterGroup, FilterSummary } from '$lib/components/filter';
-	import { ControlsRail } from '$lib/components/layout';
 	import { LineCombobox, type LineComboboxOption } from '$lib/components/ui/line-combobox';
 	import { foldSearchText } from '$lib/search/normalize';
 
@@ -91,7 +92,12 @@
 	}
 </script>
 
-<ControlsRail label={copy.filters.railLabel} class="alert-history-filters">
+<div
+	class="alert-filters-body"
+	data-slot="alert-filters"
+	role="group"
+	aria-label={copy.filters.railLabel}
+>
 	<FilterGroup
 		label={copy.filters.entity.label}
 		items={entityItems}
@@ -135,7 +141,13 @@
 	<!-- The shared date-range picker over the served span. Empty coverage → honest
 	     absence (the primitive renders an AbsentValue, never a dead control). -->
 	<div class="alert-history-pick" data-slot="window-pick">
-		<DateRangePicker bind:value={window} {availableDates} {locale} labels={copy.filters.window} />
+		<DateRangePicker
+			bind:value={window}
+			{availableDates}
+			{locale}
+			stack
+			labels={copy.filters.window}
+		/>
 	</div>
 	{#if filtersActive}
 		<!-- Shared FilterSummary: the match count + the clear-filters link (BOUNDED swap
@@ -145,16 +157,25 @@
 			<FilterSummary count={matchCount} countLabel={copy.filters.summary} {onClear} />
 		</div>
 	{/if}
-</ControlsRail>
+</div>
 
 <style>
-	/* Each labeled picker seats in the filter rail beside the two radiogroups. */
+	/* The rail body: the filter widgets stacked in one column. Rendered by SurfaceRail
+	   in BOTH the desktop glass rail AND the mobile sheet (single source of truth). The
+	   glass panel + pill→sheet chrome is SurfaceRail's; this is just the controls. */
+	.alert-filters-body {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 1rem;
+		min-width: 0;
+	}
+	/* Each labeled picker seats full-width in the narrow rail column (one per row). */
 	.alert-history-pick {
 		display: flex;
 		flex-direction: column;
 		gap: 0.375rem;
 		min-width: 0;
-		flex: 1 1 16rem;
 	}
 	.alert-history-pick-label {
 		font-family: var(--font-mono);
@@ -168,6 +189,6 @@
 	   count + clear link never crowd the pickers. It carries its own --primary link
 	   treatment (an interaction control), so no bespoke clear styles remain here. */
 	.alert-history-summary {
-		flex: 1 1 100%;
+		width: 100%;
 	}
 </style>

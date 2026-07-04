@@ -57,8 +57,14 @@ export interface AlertHistoryCopy extends SurfaceHeadCopy {
 	readonly severity: Record<SeverityCode, string>;
 	/** The client-side filter rail over the alert log. */
 	readonly filters: {
-		/** Group label for the whole filter control panel. */
+		/** Group label for the whole filter control panel (also the rail heading + mobile pill label). */
 		readonly railLabel: string;
+		/** aria-label for the mobile filter pill's open control. */
+		readonly pillOpen: string;
+		/** aria-label for the mobile filter sheet's dismiss control. */
+		readonly pillClose: string;
+		/** Collapsed-pill summary naming the current match count. */
+		readonly pillSummary: (matchCount: number) => string;
 		/** Entity-type axis: filter by what an alert affects (lines / stops). */
 		readonly entity: {
 			/** Radiogroup label. */
@@ -164,6 +170,9 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		severity: SEVERITY_LABELS.fr,
 		filters: {
 			railLabel: 'Filtres',
+			pillOpen: 'Ouvrir les filtres',
+			pillClose: 'Fermer les filtres',
+			pillSummary: (matchCount) => `${matchCount.toLocaleString('fr-CA')} avis`,
 			entity: {
 				label: 'Touche',
 				all: 'Tout',
@@ -252,6 +261,9 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		severity: SEVERITY_LABELS.en,
 		filters: {
 			railLabel: 'Filters',
+			pillOpen: 'Open filters',
+			pillClose: 'Close filters',
+			pillSummary: (matchCount) => `${matchCount.toLocaleString('en-CA')} alerts`,
 			entity: {
 				label: 'Affects',
 				all: 'All',

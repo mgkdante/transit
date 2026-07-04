@@ -40,13 +40,19 @@
 	import { routeFor, type SurfaceKind } from '$lib/nav';
 	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
+	import { describeAbsence } from '$lib/site/absence';
 	import { getHotspots } from '$lib/v1';
 	import type { HotspotEntry } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { ResourceBoundary, FreshnessStamp, SurfaceControls } from '$lib/components/surface';
+	import {
+		ResourceBoundary,
+		FreshnessStamp,
+		SurfaceRail,
+		GrainPicker,
+		type GrainSegment,
+	} from '$lib/components/surface';
 	import { Masthead } from '$lib/components/brand';
 	import { Surface } from '$lib/components/layout';
-	import { Separator } from '$lib/components/ui/separator';
 	import { AbsentValue } from '$lib/components/edge';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -100,9 +106,6 @@
 		})(),
 	);
 
-	const grainAvailability = $derived<Partial<Record<HotspotGrainKey, { available: boolean }>>>(
-		Object.fromEntries(HOTSPOT_GRAINS.map((g) => [g, { available: present.has(g) }])),
-	);
 	const grainLabels = $derived<Partial<Record<HotspotGrainKey, string>>>({
 		day: t.grain.day,
 		week: t.grain.week,
@@ -110,8 +113,31 @@
 		shift: t.grain.shift,
 	});
 	// The grain picker is a dead control when only one grain carries data — render it
-	// ONLY when more than one grain is populated.
+	// ONLY when more than one grain is populated. When it is off, the rail has nothing
+	// to show, so the board renders single-column (no empty glass rail).
 	const showGrainPicker = $derived(present.size > 1);
+
+	// Instance-unique id prefix so a disabled segment's aria-describedby id never collides
+	// with another surface's controls on the same page.
+	const uid = $props.id();
+	const disabledReason = $derived(describeAbsence('no-observations', locale).why);
+	// The GrainPicker segments seated in the rail — one per HOTSPOT_GRAINS key, in
+	// finest→coarsest order. An unavailable grain renders disabled (never selectable), each
+	// disabled segment carrying the honest-absence reason (aria-describedby + pointer title).
+	// This is the same availability wiring SurfaceControls built internally; the rail composes
+	// GrainPicker directly (like the lines reliability rail) so the control seats in the glass
+	// panel + the mobile sheet.
+	const grainSegments = $derived<GrainSegment<HotspotGrainKey>[]>(
+		HOTSPOT_GRAINS.map((key) => {
+			const available = present.has(key);
+			return {
+				key,
+				label: grainLabels[key] ?? key,
+				available,
+				...(available ? {} : { describedById: `${uid}-reason-${key}`, title: disabledReason }),
+			};
+		}),
+	);
 
 	// Keep the selection on a POPULATED grain (the clamp): a chosen grain whose ladder
 	// is absent falls back to the richest present grain. Never a dead/empty grain.
@@ -240,6 +266,10 @@
 	// The trailing-window caption for the active grain (a shift cut has no window).
 	const windowCaption = $derived(t.window[grainKey]);
 
+	// The mobile rail pill's summary — the active grain's label (so the collapsed pill
+	// names the current view).
+	const controlsSummary = $derived(grainLabels[grainKey] ?? '');
+
 	// Whole-file empty: the payload populates NO grain at all (no ladder anywhere).
 	const isEmpty = $derived(present.size === 0);
 </script>
@@ -260,62 +290,158 @@
 				<AbsentValue variant="block" reason="no-observations" {locale} />
 			</div>
 		{:else}
-			<section class="hotspots-region" aria-label={t.heading}>
+			<!-- P5.4: the grain control lives in a map-style GLASS LEFT RAIL (SurfaceRail) — a
+			     sticky floating panel beside the ladder on desktop, ONE pill→sheet on mobile.
+			     This surface has NO numbered sections to jump to (one region, route|stop tabs),
+			     so the rail holds ONLY the grain picker (no ToC); the per-tab worst-N cap stays
+			     INLINE in HotspotSection. When ≤1 grain is populated the rail has nothing to
+			     show, so the board renders single-column with no rail. --primary lives only on
+			     the active grain chip. -->
+			{#snippet railContent()}
+				<div class="hotspots-control-body" data-slot="controls-body">
+					<span class="hotspots-rail-view" data-slot="controls-rail-label"
+						>{t.viewControlsLabel}</span
+					>
+					<GrainPicker segments={grainSegments} bind:value={grainKey} label={t.grain.label} />
+					<!-- Disabled-reason descriptions (honest-absence): one visually-hidden span per
+					     disabled segment, referenced by its radio via aria-describedby. -->
+					{#each grainSegments as seg (seg.key)}
+						{#if seg.describedById}
+							<span id={seg.describedById} class="hotspots-reason" data-slot="controls-reason"
+								>{disabledReason}</span
+							>
+						{/if}
+					{/each}
+					<!-- Active-window caption: names the trailing window the grain resolves to. -->
+					<p class="hotspots-window" data-slot="active-window" aria-live="polite">
+						{windowCaption}
+					</p>
+				</div>
+			{/snippet}
+
+			<section
+				class="hotspots-region"
+				class:hotspots-region--railed={showGrainPicker}
+				aria-label={t.heading}
+			>
 				{#if showGrainPicker}
-					<SurfaceControls
-						offered={HOTSPOT_GRAINS}
-						availability={grainAvailability}
-						bind:value={grainKey}
-						minPoints={1}
-						labels={grainLabels}
-						grainLabel={t.grain.label}
-						railLabel={t.viewControlsLabel}
-						sticky
-						{locale}
+					<!-- The map-style GLASS LEFT RAIL: a sticky floating grain panel beside the
+					     ladder on desktop; ONE pill→sheet on mobile. -->
+					<SurfaceRail
+						rail={railContent}
+						label={t.viewControlsLabel}
+						summary={controlsSummary}
+						openAria={t.filterPillOpen}
+						closeAria={t.filterPillClose}
 					/>
-					<Separator variant="hazard" hazardSize="sm" />
 				{/if}
 
-				<!-- §C5.10 verdict line + #1-hotspot callout ABOVE the ladder: the
-				     already-computed otp_delta_pts, finally shown as the headline reading. The
-				     #1 name links to its detail page when it maps to a route/stop. -->
-				<div class="hotspots-verdict" data-slot="hotspots-verdict" aria-label={t.verdict.label}>
-					{#if topHotspotHref}
-						<a class="hotspots-verdict-line" href={topHotspotHref}>{verdictLine}</a>
-					{:else}
-						<p class="hotspots-verdict-line">{verdictLine}</p>
-					{/if}
+				<!-- The content column beside the rail (or the whole width when there is no rail). -->
+				<div class="hotspots-content">
+					<!-- §C5.10 verdict line + #1-hotspot callout ABOVE the ladder: the
+					     already-computed otp_delta_pts, finally shown as the headline reading. The
+					     #1 name links to its detail page when it maps to a route/stop. -->
+					<div class="hotspots-verdict" data-slot="hotspots-verdict" aria-label={t.verdict.label}>
+						{#if topHotspotHref}
+							<a class="hotspots-verdict-line" href={topHotspotHref}>{verdictLine}</a>
+						{:else}
+							<p class="hotspots-verdict-line">{verdictLine}</p>
+						{/if}
+					</div>
+
+					<!-- ONE ladder section (the single-provider network — see the per-city fork
+					     note above), split into route|stop TABS (WEB2). When the DB adds a
+					     per-cell city, this becomes a loop over the served city labels. -->
+					<HotspotSection
+						heading={t.ladder.heading}
+						{routeLadder}
+						{stopLadder}
+						{routeTray}
+						{stopTray}
+						{windowCaption}
+						info={severeInfo}
+						bind:worstN
+						{locale}
+						copy={t}
+					/>
+
+					<!-- Honest caveat: a trailing-window ranking, not a certified league table. -->
+					<p class="hotspots-caveat" data-slot="hotspots-caveat">{t.caveat}</p>
 				</div>
-
-				<!-- ONE ladder section (the single-provider network — see the per-city fork
-				     note above), split into route|stop TABS (WEB2). When the DB adds a
-				     per-cell city, this becomes a loop over the served city labels. -->
-				<HotspotSection
-					heading={t.ladder.heading}
-					{routeLadder}
-					{stopLadder}
-					{routeTray}
-					{stopTray}
-					{windowCaption}
-					info={severeInfo}
-					bind:worstN
-					{locale}
-					copy={t}
-				/>
-
-				<!-- Honest caveat: a trailing-window ranking, not a certified league table. -->
-				<p class="hotspots-caveat" data-slot="hotspots-caveat">{t.caveat}</p>
 			</section>
 		{/if}
 	</ResourceBoundary>
 </Surface>
 
 <style>
+	/* The region: a single content column when there is no rail (≤1 populated grain), or a
+	   2-col [rail | content] grid when the grain rail is shown (P5.4). The content column is
+	   the rail's sticky containing block, so the glass rail stays pinned beside the ladder. */
 	.hotspots-region {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: clamp(1.5rem, 4vw, 2rem);
+		width: 100%;
+		max-width: 76rem;
+	}
+	@media (min-width: 1024px) {
+		.hotspots-region--railed {
+			grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr);
+			gap: 2rem;
+			align-items: start;
+		}
+	}
+	/* The content column — verdict callout + ladder + caveat. */
+	.hotspots-content {
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
-		max-width: 76rem;
+		min-width: 0;
+	}
+	/* The grain controls seated in the rail (View overline + GrainPicker + window caption),
+	   rendered by SurfaceRail in BOTH the desktop glass rail and the mobile sheet. */
+	.hotspots-control-body {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	/* The grain radiogroup wraps so a long localized segment never overflows the narrow rail;
+	   the active-chip accent lives in GrainPicker. */
+	.hotspots-control-body :global([data-slot='grain-picker']) {
+		min-width: 0;
+		flex-wrap: wrap;
+	}
+	/* The "View" overline — the quiet mono rail label. */
+	.hotspots-rail-view {
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: var(--tracking-eyebrow);
+		color: var(--muted-foreground);
+	}
+	/* Visually-hidden disabled-reason description (mobile drawer + desktop) — carried for
+	   screen readers via aria-describedby on the disabled radio; never a layout box. */
+	.hotspots-reason {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+	/* Active-window caption — quiet mono note beneath the picker. */
+	.hotspots-window {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		line-height: 1.3;
+		color: var(--muted-foreground);
 	}
 	.hotspots-caveat {
 		margin: 0;

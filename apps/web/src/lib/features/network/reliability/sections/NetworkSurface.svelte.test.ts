@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
 import type { IsoUtc } from '$lib/v1/schemas';
 import NetworkSurface from './NetworkSurface.svelte';
+import { networkReliabilityCopy } from '../network-reliability.copy';
+
+const copy = networkReliabilityCopy.en;
 
 const { openSurface, live, network, trendSeries, weeklySeries, monthlySeries, byShift, byDaytype } =
 	vi.hoisted(() => ({
@@ -654,5 +657,56 @@ describe('NetworkSurface service completeness (S9B GC2 ramp-in)', () => {
 		expect(within(tile).getByText('94.2%')).toBeInTheDocument();
 		// The always-visible explainer carries the silent-trip framing.
 		expect(within(tile).getByText(/never appears in the live feed/i)).toBeInTheDocument();
+	});
+});
+
+describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
+	it('renders ONE mobile pill labelled with the View heading + the active grain', () => {
+		const { container } = render(NetworkSurface);
+		// The SurfaceRail mobile pill replaces the old top-rail SurfaceControls + ControlsRail.
+		const railMobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		expect(railMobile).not.toBeNull();
+		const pillBtn = railMobile.querySelector('button') as HTMLButtonElement;
+		expect(pillBtn).not.toBeNull();
+		// Labelled with the View heading + the active grain (default 'day' → Day).
+		expect(pillBtn.textContent).toContain(copy.viewControlsLabel);
+		expect(pillBtn.textContent).toContain(copy.grain.day);
+		// The sheet is closed by default (no dialog rendered yet).
+		expect(railMobile.querySelector('[role="dialog"]')).toBeNull();
+	});
+
+	it('opens ONE sheet with BOTH the view controls AND the region ToC on tap', async () => {
+		const { container } = render(NetworkSurface);
+		const railMobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		const pillBtn = railMobile.querySelector('button') as HTMLButtonElement;
+		await fireEvent.click(pillBtn);
+		expect(pillBtn.getAttribute('aria-expanded')).toBe('true');
+		const sheet = railMobile.querySelector('[role="dialog"]') as HTMLElement;
+		expect(sheet).not.toBeNull();
+		// The ONE sheet merges the view controls (the delay-series toggle) AND the region ToC.
+		expect(within(sheet).getByRole('radiogroup', { name: 'Delay series' })).toBeInTheDocument();
+		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
+	});
+
+	it('minted a two-region ToC (Live now + Historic trend) with the SEC n/m readout', () => {
+		const { container } = render(NetworkSurface);
+		// The two minted anchors carry data-toc so the observer + the ToC jump links resolve.
+		expect(container.querySelector('[data-toc="net-live"]')).not.toBeNull();
+		expect(container.querySelector('[data-toc="net-historic"]')).not.toBeNull();
+		// The rail ToC jumps between the two regions.
+		expect(container.querySelector('a[href="#net-live"]')).not.toBeNull();
+		expect(container.querySelector('a[href="#net-historic"]')).not.toBeNull();
+		// SEC 1/2 readout (before the scroll observer resolves an active id → region 1).
+		const readout = container.querySelector('[data-slot="section-readout"]');
+		expect(readout?.textContent).toBe('SEC 1/2');
+	});
+
+	it('marks the live region ∞ (whole) + the historic region ↻ (windowed) in the ToC scope', () => {
+		const { container } = render(NetworkSurface);
+		const scopeOf = (id: string): string | null =>
+			container.querySelector(`a[href="#${id}"]`)?.getAttribute('data-scope') ?? null;
+		// The view controls re-shape ONLY the historic region.
+		expect(scopeOf('net-live')).toBe('whole');
+		expect(scopeOf('net-historic')).toBe('windowed');
 	});
 });

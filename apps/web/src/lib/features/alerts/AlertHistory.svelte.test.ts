@@ -526,6 +526,41 @@ describe('AlertHistory date window (?from/?to)', () => {
 	});
 });
 
+describe('AlertHistory filter rail (P5.4e SurfaceRail — glass left rail + mobile pill→sheet)', () => {
+	it('mounts the filter widgets inside the SurfaceRail (desktop glass panel present)', () => {
+		render(AlertHistoryScreen);
+		// The desktop glass rail <aside> carries the filter body (single source).
+		const rail = document.querySelector('[data-slot="surface-rail"]');
+		expect(rail).not.toBeNull();
+		expect(rail?.querySelector('[data-slot="alert-filters"]')).not.toBeNull();
+		// The filter axes render once (rail only; the mobile sheet is closed).
+		expect(document.querySelectorAll('[data-slot="line-pick"]')).toHaveLength(1);
+		// The old ControlsRail wrapper class is gone (bounded chrome swap).
+		expect(document.querySelector('.alert-history-filters')).toBeNull();
+	});
+
+	it('exposes ONE mobile filter pill that opens ONE sheet holding the SAME filters', async () => {
+		render(AlertHistoryScreen);
+		const mobile = document.querySelector('[data-slot="surface-rail-mobile"]');
+		expect(mobile).not.toBeNull();
+		const pill = mobile?.querySelector('button') as HTMLButtonElement;
+		expect(pill).not.toBeNull();
+		expect(pill.getAttribute('aria-expanded')).toBe('false');
+		// No sheet until the pill is tapped.
+		expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+		await fireEvent.click(pill);
+		expect(pill.getAttribute('aria-expanded')).toBe('true');
+		const sheet = document.querySelector('[role="dialog"]') as HTMLElement;
+		expect(sheet).not.toBeNull();
+		// The sheet renders the SAME filter body (the entity radiogroup lives inside it).
+		expect(sheet.querySelector('[data-slot="alert-filters"]')).not.toBeNull();
+		expect(
+			within(sheet).getByRole('radio', { name: copyEn.filters.entity.lines }),
+		).toBeInTheDocument();
+	});
+});
+
 describe('AlertHistory empty state', () => {
 	it('routes to the empty edge state when the archive carries no alerts', () => {
 		fixture.alerts = [];

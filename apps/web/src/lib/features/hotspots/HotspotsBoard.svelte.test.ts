@@ -202,6 +202,52 @@ describe('HotspotsBoard — S12 re-seat', () => {
 		expect(screen.getByText(/5\/6/)).toBeInTheDocument();
 	});
 
+	it('seats the grain control in the SurfaceRail (map-style glass left rail, P5.4)', async () => {
+		const { container } = render(HotspotsBoard);
+		// The grain control now rides the SurfaceRail: a desktop glass panel + ONE mobile
+		// pill→sheet (this surface has no ToC, so the rail holds only the grain picker).
+		const railMobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		expect(railMobile).not.toBeNull();
+		const pillBtn = railMobile.querySelector('button') as HTMLButtonElement;
+		expect(pillBtn).not.toBeNull();
+		// The pill is labelled with the View heading + the active grain (default day → Day).
+		expect(pillBtn.textContent).toContain('View');
+		expect(pillBtn.textContent).toContain('Day');
+		// The sheet is closed by default.
+		expect(railMobile.querySelector('[role="dialog"]')).toBeNull();
+		// Tap opens ONE sheet holding the grain picker + the active-window caption.
+		await fireEvent.click(pillBtn);
+		expect(pillBtn.getAttribute('aria-expanded')).toBe('true');
+		const sheet = railMobile.querySelector('[role="dialog"]') as HTMLElement;
+		expect(sheet).not.toBeNull();
+		expect(sheet.querySelector('[data-slot="grain-picker"]')).not.toBeNull();
+		expect(sheet.querySelector('[data-slot="active-window"]')).not.toBeNull();
+	});
+
+	it('renders single-column with NO rail when only one grain is populated', () => {
+		// A payload populating a SINGLE grain (day) → showGrainPicker is false → no rail.
+		payload.current = {
+			generated_utc: '2026-06-25T00:00:00Z' as IsoUtc,
+			hotspots: [],
+			by_grain: [
+				{
+					grain: 'day',
+					date: '2026-06-24',
+					window_end: '2026-06-24',
+					entries: [{ rank: 1, type: 'route', id: '51', severe_pct: 40, observation_count: 100 }],
+					tray: [],
+				},
+			],
+		} satisfies Hotspots as Hotspots;
+		const { container } = render(HotspotsBoard);
+		// No rail (desktop panel or mobile pill) when there is nothing to pick.
+		expect(container.querySelector('[data-slot="surface-rail"]')).toBeNull();
+		expect(container.querySelector('[data-slot="surface-rail-mobile"]')).toBeNull();
+		// The ladder still renders (single-column) — the route entry links to its detail.
+		const section = document.querySelector('[data-slot="hotspot-section"]') as HTMLElement;
+		expect(within(section).getByRole('link', { name: /51/ })).toHaveAttribute('href', '/lines/51');
+	});
+
 	it('shows the styled honest-absence empty state when NO grain is populated', () => {
 		payload.current = {
 			generated_utc: '2026-06-25T00:00:00Z' as IsoUtc,

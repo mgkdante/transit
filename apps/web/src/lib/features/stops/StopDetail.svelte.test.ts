@@ -341,14 +341,18 @@ describe('StopDetail reliability — grain picker', () => {
 describe('StopDetail reliability — habits heatmap', () => {
 	it('renders the habits heatmap when the matrix carries data', () => {
 		reset();
-		render(StopDetail, { props: { id: '57191' } });
+		const { container } = render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 
-		expect(screen.getByText('Severe delays by hour')).toBeInTheDocument();
+		// P5.4: the label also appears in the SurfaceRail section ToC (desktop + mobile),
+		// so scope the section-heading assertion to the habits tile itself (getByText would
+		// otherwise match the ToC copies too).
+		const habitsTile = container.querySelector('[data-slot="stop-habits"]') as HTMLElement;
+		expect(within(habitsTile).getByText('Severe delays by hour')).toBeInTheDocument();
 		// P5.2: the heatmap is the classed-tier <Chart> mark — a labelled figure (the
 		// sr-only table is the AT mirror; LayerChart paints only in a real layout).
 		expect(
-			screen.getByRole('figure', { name: 'Severe-delay heatmap by day and hour' }),
+			within(habitsTile).getByRole('figure', { name: 'Severe-delay heatmap by day and hour' }),
 		).toBeInTheDocument();
 	});
 

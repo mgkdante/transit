@@ -13,6 +13,10 @@ import type { SurfaceHeadCopy } from '$lib/components/surface';
 export interface HotspotsCopy extends SurfaceHeadCopy {
 	/** Rail overline (e.g. "View" / "Vue") + the grain radiogroup label. */
 	readonly viewControlsLabel: string;
+	/** aria-label for the mobile rail pill's open control. */
+	readonly filterPillOpen: string;
+	/** aria-label for the mobile rail sheet's dismiss control. */
+	readonly filterPillClose: string;
 	readonly grain: {
 		readonly label: string;
 		readonly day: string;
@@ -106,6 +110,8 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		subheading: '// PIRES EN PREMIER',
 		lede: 'Les arrêts et les lignes qui tirent le réseau vers le bas, classés du pire au moins pire par le taux de retards graves. On n’invente jamais de données.',
 		viewControlsLabel: 'Vue',
+		filterPillOpen: 'Ouvrir les commandes de vue',
+		filterPillClose: 'Fermer les commandes de vue',
 		grain: {
 			label: 'Granularité',
 			day: 'Jour',
@@ -165,6 +171,8 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		subheading: '// WORST FIRST',
 		lede: 'The stops and lines dragging the network down, ranked worst first by their severe-delay rate. We never invent data.',
 		viewControlsLabel: 'View',
+		filterPillOpen: 'Open view controls',
+		filterPillClose: 'Close view controls',
 		grain: {
 			label: 'Granularity',
 			day: 'Day',

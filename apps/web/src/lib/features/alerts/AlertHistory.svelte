@@ -21,6 +21,12 @@
   zero-alert day is a REAL answer. Legacy payloads with no window fields derive the
   span from the entries; nothing datable → the picker hides with honest absence.
 
+  P5.4e: the filters live in a map-style GLASS LEFT RAIL (SurfaceRail) beside the
+  PAST-ALERTS log — a sticky glass panel at ≥1024 (the 2-col [rail | log] grid), and
+  ONE pill→sheet holding the SAME filters on mobile. The headline card + the Tier-2
+  breakdown stay ABOVE, full-width, unchanged. There are no anchor-addressable sections
+  to jump between, so the rail holds ONLY the filters (no ToC).
+
   HONESTY: a null/absent field is OMITTED; a generic/empty headline falls back to the
   shared "Service alert"; an empty archive routes to the localized empty state; the
   breakdown stands down when no distribution was published; a truncated window shows
@@ -40,7 +46,7 @@
 		type DateWindow,
 	} from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { ResourceBoundary, FreshnessStamp } from '$lib/components/surface';
+	import { ResourceBoundary, FreshnessStamp, SurfaceRail } from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
@@ -334,51 +340,73 @@
 
 		<Separator variant="hazard" />
 
-		<div class="alert-history-block">
-			<div class="alert-history-head">
-				<SectionHeading level={2} overline={t.logSection} explainer={reachInfo} />
-				<span class="alert-history-count" data-slot="alert-count">
-					{t.count(visibleRows.length, filtered.length)}
-				</span>
-			</div>
+		<!-- P5.4e: the PAST-ALERTS block is a 2-col [ GLASS FILTER RAIL | log ] grid at
+		     ≥1024; a single column below, where the rail collapses to the mobile pill→sheet.
+		     The filter WIDGETS live in the rail (one source, rendered by SurfaceRail in both
+		     the desktop panel AND the mobile sheet); the log is the content column. -->
+		<div class="alert-history-block" data-slot="alert-log-block">
+			<!-- The rail content — the filter widgets. ONE definition, rendered by SurfaceRail
+			     in BOTH the desktop glass rail AND the mobile sheet (single source; all axes
+			     bind the same surface state). No ToC: the log has no jump-to sections. -->
+			{#snippet filterRail()}
+				<AlertFilters
+					bind:affects
+					bind:severity
+					bind:route
+					bind:window={pickedWindow}
+					bind:stop
+					{lineOptions}
+					{stopOptions}
+					{availableDates}
+					{filtersActive}
+					matchCount={filtered.length}
+					copy={t}
+					{locale}
+					onClear={clearFilters}
+				/>
+			{/snippet}
 
-			{#if truncated && totalInWindow != null}
-				<!-- Honest cap disclosure: the served window was capped newest-first. -->
-				<p class="alert-history-truncated" data-slot="alert-truncated">
-					{t.truncatedNote(entries.length, totalInWindow)}
-				</p>
-			{/if}
-
-			<AlertFilters
-				bind:affects
-				bind:severity
-				bind:route
-				bind:window={pickedWindow}
-				bind:stop
-				{lineOptions}
-				{stopOptions}
-				{availableDates}
-				{filtersActive}
-				matchCount={filtered.length}
-				copy={t}
-				{locale}
-				onClear={clearFilters}
+			<!-- The map-style GLASS LEFT RAIL: a sticky glass filter panel beside the log on
+			     desktop; ONE filter pill→sheet on mobile. -->
+			<SurfaceRail
+				rail={filterRail}
+				label={t.filters.railLabel}
+				summary={t.filters.pillSummary(filtered.length)}
+				openAria={t.filters.pillOpen}
+				closeAria={t.filters.pillClose}
 			/>
 
-			{#if !hasMatches}
-				<!-- Honest no-match: the active filters narrowed the log to zero. -->
-				<p class="alert-history-no-match" data-slot="alert-no-match">{t.filters.noMatch}</p>
-			{:else}
-				<AlertLog
-					rows={visibleRows}
-					total={filtered.length}
-					{expanded}
-					{overflow}
-					{logId}
-					copy={t}
-					onToggle={() => (expanded = !expanded)}
-				/>
-			{/if}
+			<!-- The log — the content column beside the filter rail. -->
+			<div class="alert-history-content" data-slot="alert-log-content">
+				<div class="alert-history-head">
+					<SectionHeading level={2} overline={t.logSection} explainer={reachInfo} />
+					<span class="alert-history-count" data-slot="alert-count">
+						{t.count(visibleRows.length, filtered.length)}
+					</span>
+				</div>
+
+				{#if truncated && totalInWindow != null}
+					<!-- Honest cap disclosure: the served window was capped newest-first. -->
+					<p class="alert-history-truncated" data-slot="alert-truncated">
+						{t.truncatedNote(entries.length, totalInWindow)}
+					</p>
+				{/if}
+
+				{#if !hasMatches}
+					<!-- Honest no-match: the active filters narrowed the log to zero. -->
+					<p class="alert-history-no-match" data-slot="alert-no-match">{t.filters.noMatch}</p>
+				{:else}
+					<AlertLog
+						rows={visibleRows}
+						total={filtered.length}
+						{expanded}
+						{overflow}
+						{logId}
+						copy={t}
+						onToggle={() => (expanded = !expanded)}
+					/>
+				{/if}
+			</div>
 		</div>
 	</ResourceBoundary>
 </Surface>
@@ -392,10 +420,28 @@
 	.alert-history-headline {
 		margin-bottom: 0.25rem;
 	}
+	/* P5.4e: the PAST-ALERTS block is the map-style 2-col [ GLASS FILTER RAIL | log ]
+	   grid at ≥1024 (the content column is the rail's sticky containing block), and a
+	   single column below where the rail collapses to the mobile pill→sheet. */
 	.alert-history-block {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: clamp(1.5rem, 4vw, 2rem);
+		width: 100%;
+	}
+	@media (min-width: 1024px) {
+		.alert-history-block {
+			grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr);
+			gap: 2rem;
+			align-items: start;
+		}
+	}
+	/* The log content column beside the filter rail. */
+	.alert-history-content {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+		min-width: 0;
 	}
 	/* Section label + the capped-count caption on one row. */
 	.alert-history-head {

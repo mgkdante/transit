@@ -30,6 +30,25 @@ export interface NetworkReliabilityCopy extends SurfaceHeadCopy {
 	readonly historicRegion: string;
 	/** Bilingual group label for the historic ControlsRail (grain + window + series). */
 	readonly viewControlsLabel: string;
+	/**
+	 * P5.4: the map-style GLASS LEFT RAIL (SurfaceRail) copy — the View overline, the
+	 * region ToC label + n/m readout, the scope glyph titles, and the mobile pill's
+	 * open/close a11y names. Rendered in BOTH the desktop glass panel + the mobile sheet.
+	 */
+	readonly rail: {
+		/** ToC "jump to" nav label + its aria-label. */
+		readonly toc: string;
+		/** aria-label for the mobile pill's open control. */
+		readonly pillOpen: string;
+		/** aria-label for the mobile sheet's dismiss control. */
+		readonly pillClose: string;
+		/** Title/aria for a region whose readout follows the view controls (↻). */
+		readonly scopeWindowed: string;
+		/** Title/aria for a region the view controls never re-shape (∞). */
+		readonly scopeWhole: string;
+		/** "SEC n/m" position readout builder. */
+		readonly sectionReadout: (n: number, total: number) => string;
+	};
 	/** Section caption above the live metric grid. */
 	readonly liveSection: string;
 	/** Section caption above the trend chart. */
@@ -225,6 +244,14 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		liveRegion: 'Live now',
 		historicRegion: 'Historic trend',
 		viewControlsLabel: 'View',
+		rail: {
+			toc: 'Jump to',
+			pillOpen: 'Open view controls',
+			pillClose: 'Close view controls',
+			scopeWindowed: 'Follows the view controls above',
+			scopeWhole: 'Live now: the view controls above don’t change this region',
+			sectionReadout: (n, total) => `SEC ${n}/${total}`,
+		},
 		liveSection: 'Live now',
 		trendSection: 'Daily trend',
 		cancelSection: 'Cancellations',
@@ -344,6 +371,14 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		liveRegion: 'En direct',
 		historicRegion: 'Tendance historique',
 		viewControlsLabel: 'Vue',
+		rail: {
+			toc: 'Aller à',
+			pillOpen: 'Ouvrir les commandes de vue',
+			pillClose: 'Fermer les commandes de vue',
+			scopeWindowed: 'Suit les commandes de vue ci-dessus',
+			scopeWhole: 'En direct : les commandes de vue ci-dessus ne changent pas cette section',
+			sectionReadout: (n, total) => `SEC ${n}/${total}`,
+		},
 		liveSection: 'En direct',
 		trendSection: 'Tendance quotidienne',
 		cancelSection: 'Annulations',

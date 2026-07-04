@@ -24,6 +24,21 @@ export interface StopReliabilityCopy {
 	};
 	/** Controls-rail label collecting the grain picker + window caption ("View"). */
 	readonly controlsLabel: string;
+	/**
+	 * P5.4 GLASS LEFT RAIL wayfinding: the section ToC heading + the mobile
+	 * pill/sheet open+close aria + the "SEC n/m" position readout. The rail merges
+	 * the grain picker + this jump list into ONE menu (desktop panel / mobile sheet).
+	 */
+	readonly nav: {
+		/** Section ToC heading ("Jump to"). */
+		readonly toc: string;
+		/** aria-label for the mobile rail pill's open control. */
+		readonly pillOpen: string;
+		/** aria-label for the mobile rail sheet's dismiss control. */
+		readonly pillClose: string;
+		/** "SEC n/m" position readout for the active section. */
+		readonly sectionReadout: (n: number, total: number) => string;
+	};
 	/** Grain (roll-up) picker affordances. */
 	readonly grain: {
 		/** Accessible group label over the grain segments. */
@@ -164,6 +179,12 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 			severe: 'Part des retards graves',
 		},
 		controlsLabel: 'Vue',
+		nav: {
+			toc: 'Aller à',
+			pillOpen: 'Ouvrir la vue et les sections',
+			pillClose: 'Fermer la vue et les sections',
+			sectionReadout: (n, total) => `SEC ${n}/${total}`,
+		},
 		grain: {
 			label: 'Période de regroupement',
 			day: 'Jour',
@@ -282,6 +303,12 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 			severe: 'Severe-delay share',
 		},
 		controlsLabel: 'View',
+		nav: {
+			toc: 'Jump to',
+			pillOpen: 'Open view and sections',
+			pillClose: 'Close view and sections',
+			sectionReadout: (n, total) => `SEC ${n}/${total}`,
+		},
 		grain: {
 			label: 'Roll-up period',
 			day: 'Day',
