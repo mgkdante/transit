@@ -181,7 +181,7 @@ export interface HealthCopy extends SurfaceHeadCopy {
 	/** Shown when a contract value is absent (honest no-data, never fabricated). */
 	readonly noData: string;
 	/**
-	 * Left-rail ToC (P5.3b DetailTemplate re-seat) — heading + SEC counter prefix +
+	 * Left-rail ToC (P5.4c DetailShell re-seat) — heading + SEC counter prefix +
 	 * mobile-pill a11y strings. The entry titles reuse each section's own caption.
 	 */
 	readonly toc: {

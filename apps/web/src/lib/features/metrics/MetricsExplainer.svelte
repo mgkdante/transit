@@ -7,45 +7,38 @@
   caveats, all bilingual (FR canonical). A (i) tip on the reliability surface
   deep-links here at each metric's anchor.
 
-  SHELL: a MEASURED ARTICLE built 1:1 on the yesid.dev blog/project detail-page
-  shell (the SAME shared components, on transit tokens + i18n; we are one brand,
-  not lookalikes). This is a PROSE / methodology page — the sibling of yesid's
-  blog/[slug] + projects/[slug] — so it is measured, NOT full-bleed:
+  SHELL: a MEASURED ARTICLE mounted on the shared `layout/DetailShell` (P5.4c) — the
+  ONE detail-page system that ports the yesid.dev blog/project detail architecture and
+  that /status shares. This feature supplies only the CONTENT of each DetailShell slot;
+  the shell owns the layout + ToC wiring:
 
-    · A full-bleed ARTICLE HEADER band carrying the .detail-header-grid dot-grid
-      chrome (the "Manifesto schematic" behind the yesid detail headers) + the
-      Masthead (kicker / heading / lede / meta) + the quiet-mode switch, closed off
-      by the Masthead's edge-to-edge `<Separator variant="hazard">` tape — 1:1 with
-      the blog/projects detail header + hazard separator.
-    · The `.body-grid` below it is the yesid article grid: max-width container-wide,
-      centred, with the page gutter; at lg it becomes a TWO-column grid
-      `minmax(13rem,17rem) | minmax(0,1fr)` — a TOC rail + a wide reading column
-      (slice-9.8-B widened the column to ~60rem into the reclaimed third-rail space).
-    · DESKTOP (>=lg): a sticky table-of-contents rail (shared TocNav) on the left +
-      the measured content column on the right. The rail tracks the current section
-      (activeId) and scrolls to its target on click. The ToC carries its OWN
-      user-driven collapse (its chevron, persisted via sectionKey="metrics-toc").
-      S10 (2026-07-02): the rail ALSO follows FOCUS now (yesid Quiet-Mode parity) —
-      FOCUS ON folds it (closeSignal), FOCUS OFF reopens it (openSignal); the
+    · HEADER slot → the Masthead (kicker / heading / lede / meta) + CornerMeta, dropped
+      into the shell's full-bleed `.detail-header-grid` dot-grid band (the "Manifesto
+      schematic"). The Masthead runs `tape={false}`; DetailShell adds the edge-to-edge
+      closing `<Separator variant="hazard">` tape. The quiet-mode / remember / expand-all
+      controls ride the Masthead meta row.
+    · The shell's 3-column body grid is `1fr 2fr 1fr` at ≥1024 (gap 2rem), collapsing to
+      a single column below. LEFT slot = the numbered TocNav + the SEC n/m reading-position
+      readout; CENTER = the provenance preamble + the per-metric cards; RIGHT = the
+      Provenance / Coverage / Freshness stat cards (reflowed to a mobileSummary strip < 1024).
+    · The LEFT rail's ToC carries its OWN user-driven collapse (its chevron, persisted via
+      sectionKey="metrics-toc"). S10 (2026-07-02): it ALSO follows FOCUS (yesid Quiet-Mode
+      parity) — FOCUS ON folds it (closeSignal), FOCUS OFF reopens it (openSignal); the
       reader's manual chevron still works between signals.
-    · The provenance preamble + one CollapsibleSection card PER METRIC (number
-      badge, `data-toc` anchor, deep-link `id` on the section block) carry the
-      definition / math / SQL / "what it's NOT" / caveats. S10: every card is
-      DEFAULT-CLOSED with its own persisted open-state (sectionKey
-      `metrics-card-<anchor>`); a mount/hashchange opener + ToC navigation open a
-      target card so deep-links + jumps reveal content on the default-closed page.
-    · MOBILE (<lg): the shared TocPill floating pill + drawer drives the same
-      activeId/onNavigate.
-    · ONE IntersectionObserver (observeActiveToc over `[data-toc]`) owns activeId
-      and feeds BOTH the rail and the pill (no duplicate observers).
+    · The provenance preamble + one CollapsibleSection card PER METRIC (number badge,
+      `data-toc` anchor, deep-link `id` on the section block) carry the definition / math /
+      SQL / "what it's NOT" / caveats. S10: every card is DEFAULT-CLOSED with its own
+      persisted open-state (sectionKey `metrics-card-<anchor>`); a mount/hashchange opener +
+      ToC navigation open a target card so deep-links + jumps reveal content.
+    · MOBILE (< 1024): DetailShell renders the shared TocPill floating pill + drawer, driven
+      by the SAME activeId (which the shell owns via one observeActiveToc — no duplicate
+      observer here; this feature binds `activeId` back from the shell) + this feature's
+      open-then-scroll `navigate`.
 
-  Composes the brand/layout spine: the article header band (Masthead +
-  .detail-header-grid) + the hazard Separator + SectionLabel + the shared CodeBlock
-  (SQL syntax chrome) + the shared shared/ TOC + collapsible-card kit
-  (CollapsibleSection / TocNav / TocPill / toc.ts). The co-located
-  metrics/+layout.svelte is a bare pass-through (S10 retired the rotated edge-word
-  grid + accent-rail + metro dots — see that file's header); all of this surface's
-  chrome (header band, hazard stripe, body grid) lives right here.
+  Composes: DetailShell (header band + hazard tape + 3-col grid + observer + pill) +
+  Masthead + CornerMeta + SectionLabel + the shared CodeBlock (SQL syntax chrome) + the
+  shared shared/ TOC + collapsible-card kit (CollapsibleSection / TocNav / toc.ts). The
+  co-located metrics/+layout.svelte is a bare pass-through.
 
   DOCTRINE: no data marks here (prose + SQL), so the dataviz scale is not in play;
   --primary appears only on interactive chrome (the TOC, the pill, the back-to-top
@@ -61,7 +54,7 @@
 	import { getProvenance, getV1Context } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ConformanceBadge, FreshnessStamp } from '$lib/components/surface';
-	import { DetailTemplate } from '$lib/components/layout';
+	import { DetailShell } from '$lib/components/layout';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import Masthead from '$lib/components/brand/Masthead.svelte';
@@ -74,8 +67,6 @@
 		CollapsibleSection,
 		SectionIcon,
 		TocNav,
-		TocPill,
-		observeActiveToc,
 		tocElement,
 		type TocEntry,
 	} from '$lib/components/shared';
@@ -459,11 +450,10 @@
 	});
 
 	// ── Active-section tracking ────────────────────────────────────────────────
-	// One IntersectionObserver over the section cards' [data-toc] anchors owns the
-	// active id; the desktop rail and the mobile pill both receive it as a prop (no
-	// duplicate observers). No-ops gracefully without IO (SSR / tests).
+	// DetailShell owns the single IntersectionObserver (observeActiveToc) and writes
+	// `activeId` back via `bind:activeId`; this state receives it and feeds the left
+	// rail's TocNav + reading-position readout below (no duplicate observer here).
 	let activeId = $state('');
-	onMount(() => observeActiveToc((id) => (activeId = id)));
 
 	// ── Reading-position readout (SEC n / m) for the left rail ───────────────────
 	// The 1-based index of the active ToC entry (falls back to 1 before any section
@@ -597,36 +587,50 @@
 {/snippet}
 
 <article class="metrics-article" data-testid="metrics-article">
-	<DetailTemplate class="metrics-detail">
+	<DetailShell
+		class="metrics-detail"
+		bind:activeId
+		{tocEntries}
+		onNavigate={navigate}
+		tocOpenAria={t.tocPill.open}
+		tocCloseAria={t.tocPill.close}
+	>
 		<!-- Masthead (the ONE head family): kicker → display title + orange dot → lede →
-		     meta row (subheading + FOCUS controls) → hazard tape. The full-bleed dot-grid
-		     schematic band survives as the wrapper (`.detail-header-grid`). -->
-		{#snippet head()}
-			<div class="metrics-header detail-header-grid" bind:this={headerEl}>
-				<div class="metrics-header__inner">
-					<!-- A4: blueprint-margin corners on the masthead — provider · generated ·
-					     dataset · source count (real data from the manifest + provenance).
-					     aria-hidden, hidden < 768px. -->
-					<CornerMeta>
-						{#snippet topLeft()}<span class="metrics-corner">{cm.provider} · {cornerShortName}</span
-							>{/snippet}
-						{#snippet topRight()}{#if cornerGeneratedStamp}<span class="metrics-corner"
-									>{cm.generated} · {cornerGeneratedStamp}</span
-								>{/if}{/snippet}
-						{#snippet bottomLeft()}<span class="metrics-corner"
-								>{cm.dataset} · {manifest.dataset_version}</span
-							>{/snippet}
-						{#snippet bottomRight()}{#if cornerSourceCount != null}<span class="metrics-corner"
-									>{cm.sources} · {cornerSourceCount}</span
-								>{/if}{/snippet}
-					</CornerMeta>
-					<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede} meta={masthead} />
-				</div>
+		     meta row (subheading + FOCUS controls). The DetailShell owns the full-bleed
+		     dot-grid header band + the closing hazard tape, so the Masthead runs tape={false}
+		     and the content just drops CornerMeta + Masthead into the band's centered inner. -->
+		{#snippet header()}
+			<!-- headerEl hosts the display title for the D-effect motion + is the relative
+			     host CornerMeta pins its four corners to. -->
+			<div class="metrics-header-content" bind:this={headerEl}>
+				<!-- A4: blueprint-margin corners on the masthead — provider · generated ·
+				     dataset · source count (real data from the manifest + provenance).
+				     aria-hidden, hidden < 768px. -->
+				<CornerMeta>
+					{#snippet topLeft()}<span class="metrics-corner">{cm.provider} · {cornerShortName}</span
+						>{/snippet}
+					{#snippet topRight()}{#if cornerGeneratedStamp}<span class="metrics-corner"
+								>{cm.generated} · {cornerGeneratedStamp}</span
+							>{/if}{/snippet}
+					{#snippet bottomLeft()}<span class="metrics-corner"
+							>{cm.dataset} · {manifest.dataset_version}</span
+						>{/snippet}
+					{#snippet bottomRight()}{#if cornerSourceCount != null}<span class="metrics-corner"
+								>{cm.sources} · {cornerSourceCount}</span
+							>{/if}{/snippet}
+				</CornerMeta>
+				<Masthead
+					kicker={t.kicker}
+					heading={t.heading}
+					lede={t.lede}
+					meta={masthead}
+					tape={false}
+				/>
 			</div>
 		{/snippet}
 
 		<!-- Mobile top summary strip — the right-rail stats reflowed above the sections
-		     (DetailTemplate hides this ≥xl, where the right rail carries them). -->
+		     (DetailShell hides this ≥1024, where the right rail carries them). -->
 		{#snippet mobileSummary()}
 			{@render statCards()}
 		{/snippet}
@@ -892,68 +896,35 @@
 				</div>
 			</div>
 		{/snippet}
-	</DetailTemplate>
+	</DetailShell>
 </article>
 
-<!-- Mobile floating TOC pill (hidden ≥lg). onNavigate routes through the page's
-     open-then-scroll path so a drawer jump reveals its card (S10 review F1). -->
-<!-- The pill covers the whole sub-xl range: DetailTemplate's left rail only
-     appears at ≥xl (1280px), so the floating pill must remain visible through the
-     1024–1279 band where the layout is still single-column. TocPill hides itself
-     ≥lg (1024px), so we re-show it up to xl here. -->
-<div class="metrics-toc-pill-shell">
-	<TocPill
-		entries={tocEntries}
-		{activeId}
-		openAria={t.tocPill.open}
-		closeAria={t.tocPill.close}
-		onNavigate={navigate}
-	/>
-</div>
+<!-- The floating mobile ToC pill now lives INSIDE DetailShell (it owns the observer +
+     the pill), so it is no longer rendered here. The 1024–1279 re-show hack is gone too:
+     the shell's rails appear at the SAME 1024 boundary the pill hides at, so the handoff
+     is seamless with no gap band. -->
 
 <style>
-	/* ── Article shell ─────────────────────────────────────────────────────────
-	   The whole surface is a measured article (the yesid blog/projects detail
-	   page on transit tokens): a full-bleed header band, an edge-to-edge hazard
-	   stripe, then the measured body grid. The article itself sets no max-width —
-	   the header band + hazard span the rail-inset <main> width, and the body grid
-	   owns the reading measure. */
+	/* The surface is a measured article rendered through DetailShell, which owns the
+	   full-bleed dot-grid header band + the edge-to-edge hazard tape + the 3-col body
+	   grid. This feature supplies only the CONTENT of each slot. */
 	.metrics-article {
-		display: flex;
-		flex-direction: column;
-		gap: 0;
+		display: block;
 		width: 100%;
-		/* Anchor for the D2 rotated edge word's zero-width absolute rail. */
-		position: relative;
 	}
 
-	/* D2: give the ≥xl grid (ToC · sections · stat rail) a left gutter so the
-	   rotated edge word has a margin band to live in — clear of the viewport edge on
-	   its left and the ToC card on its right. The masthead stays full-bleed (the
-	   dot-grid band spans edge-to-edge); only the grid content is inset. */
-	@media (min-width: 1280px) {
-		.metrics-article :global(.detail-grid) {
-			padding-inline-start: var(--space-page-x);
+	/* The header slot content — the relative host CornerMeta pins its four corners to,
+	   and the element the D-effect motion queries for the display title. The shell's
+	   header band supplies the dot-grid ground + centered measure around it; a ≥768px
+	   padding-block band (only where the corners surface) keeps them clear of the kicker
+	   + controls (the same corner-clearance idiom the home Masthead uses). */
+	.metrics-header-content {
+		position: relative;
+	}
+	@media (min-width: 768px) {
+		.metrics-header-content {
+			padding-block: 1.75rem;
 		}
-	}
-
-	/* Full-bleed header band carrying the .detail-header-grid dot-grid chrome.
-	   `position: relative` + `overflow: hidden` anchor the grid's ::after solder
-	   dots; the band spans full width while its inner block re-caps to the reading
-	   measure so the masthead reads like an article header (not edge-to-edge text). */
-	.metrics-header {
-		position: relative;
-		overflow: hidden;
-		padding-block: clamp(1.75rem, 4vw, 3rem);
-		padding-inline: var(--space-page-x);
-		background: var(--manifesto);
-		margin-block-end: 1.5rem;
-	}
-	.metrics-header__inner {
-		position: relative;
-		z-index: var(--z-content);
-		max-width: var(--container-content);
-		margin-inline: auto;
 	}
 	.metrics-corner {
 		white-space: nowrap;
@@ -970,30 +941,14 @@
 	}
 
 	/* ── Left rail (ToC + SEC readout) ─────────────────────────────────────────
-	   The rail's own vertical rhythm; the SEC readout sits above the ToC. Below xl
-	   the whole left rail is hidden by DetailTemplate (the floating TocPill takes
-	   over), so the SEC readout + ToC only appear on the ≥xl sticky rail. */
+	   The rail's own vertical rhythm; the SEC readout sits above the ToC. DetailShell
+	   shows/hides the whole left rail at 1024 (the floating TocPill covers below), so
+	   this only owns the in-rail stacking. */
 	.metrics-toc-rail {
-		display: none;
+		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
 		min-width: 0;
-	}
-	@media (min-width: 1280px) {
-		.metrics-toc-rail {
-			display: flex;
-		}
-	}
-
-	/* Re-show the floating ToC pill through the 1024–1279 band (TocPill hides
-	   itself ≥lg, but the DetailTemplate left rail only appears at ≥xl). */
-	.metrics-toc-pill-shell :global(.toc-pill-container) {
-		display: block;
-	}
-	@media (min-width: 1280px) {
-		.metrics-toc-pill-shell :global(.toc-pill-container) {
-			display: none;
-		}
 	}
 
 	/* ── Sections column (the reading measure) ─────────────────────────────────
@@ -1023,11 +978,11 @@
 	}
 	/* Mobile summary strip: lay the three cards in a wrapping row so they read as a
 	   compact strip above the sections, not a tall stack. */
-	.metrics-article :global(.detail-mobile-summary .metrics-stat-rail) {
+	.metrics-article :global(.detail-shell-mobile-summary .metrics-stat-rail) {
 		flex-direction: row;
 		flex-wrap: wrap;
 	}
-	.metrics-article :global(.detail-mobile-summary .metrics-stat) {
+	.metrics-article :global(.detail-shell-mobile-summary .metrics-stat) {
 		flex: 1 1 12rem;
 	}
 	.metrics-stat {

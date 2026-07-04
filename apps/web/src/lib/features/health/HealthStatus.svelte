@@ -5,10 +5,11 @@
   lives in ./selectors and every block in ./sections; this file only fetches,
   maps, and lays the sections out.
 
-  P5.3b RE-SEAT — the surface moves onto the shared detail spine:
+  P5.4c RE-SEAT — the surface moves onto the shared DetailShell spine (same detail
+  architecture as /metrics; status now gains the full-bleed dot-grid header band):
     · MASTHEAD → Masthead (kicker → display title + orange dot → lede → meta
-      row carrying the "Updated N ago" stamp → hazard tape).
-    · BODY → DetailTemplate (3-col at ≥xl): LEFT = the numbered ToC over the (up
+      row carrying the "Updated N ago" stamp); DetailShell adds the hazard tape.
+    · BODY → DetailShell (3-col at ≥1024): LEFT = the numbered ToC over the (up
       to) 8 sections + a SEC n/m readout; CENTER = the existing 8 gated sections
       (real headings from stage 1, unchanged); RIGHT = per-feed stat cards (lanes
       passing / feeds fresh). Mobile: single column, the stat cards reflow to a top
@@ -25,18 +26,17 @@
   status marks ride the dataviz status scale (StatusDot), never --primary.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { getProvenance, getDataHealth, freshnessRelative, type Provenance } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { formatRelativeSeconds } from '$lib/utils/time';
 	import { METHODOLOGY_METRIC_KEY } from '$lib/features/metrics/metrics.content';
-	import { DetailTemplate } from '$lib/components/layout';
+	import { DetailShell } from '$lib/components/layout';
 	import { Masthead } from '$lib/components/brand';
 	import { ResourceBoundary, FreshnessStamp } from '$lib/components/surface';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import SectionProgress from '$lib/components/brand/SectionProgress.svelte';
-	import { TocNav, TocPill, observeActiveToc, type TocEntry } from '$lib/components/shared';
+	import { TocNav, type TocEntry } from '$lib/components/shared';
 	import { copy as COPY } from './health.copy';
 	import {
 		verdictFor as verdictForRaw,
@@ -186,8 +186,9 @@
 	});
 
 	// ── Active-section tracking + ToC navigation ──────────────────────────────────
+	// DetailShell owns the single IntersectionObserver and writes `activeId` back via
+	// `bind:activeId`; this state receives it and feeds the left rail + reading readout.
 	let activeId = $state('');
-	onMount(() => observeActiveToc((id) => (activeId = id)));
 
 	const activeIndex = $derived.by(() => {
 		const i = tocEntries.findIndex((e) => e.id === activeId);
@@ -202,15 +203,21 @@
 </script>
 
 <article class="health-article" data-testid="health-article">
-	<DetailTemplate class="health-detail">
-		<!-- Masthead (the ONE head family — merges the old SurfaceHeader + ArticleShell).
-		     The "Updated N ago" stamp rides the meta row when the provenance document is
-		     available; the head otherwise renders in every state (h1 present on load/error),
-		     matching the prior unconditional head. -->
-		{#snippet head()}
-			<div class="health-header">
-				<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede} meta={masthead} />
-			</div>
+	<DetailShell
+		class="health-detail"
+		bind:activeId
+		{tocEntries}
+		onNavigate={navigate}
+		tocOpenAria={t.toc.pill.open}
+		tocCloseAria={t.toc.pill.close}
+	>
+		<!-- Masthead (the ONE head family). DetailShell owns the full-bleed dot-grid header
+		     band + the closing hazard tape, so the Masthead runs tape={false} and status now
+		     shares the SAME article header as /metrics. The "Updated N ago" stamp rides the
+		     meta row when the provenance document is available; the head otherwise renders in
+		     every state (h1 present on load/error), matching the prior unconditional head. -->
+		{#snippet header()}
+			<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede} meta={masthead} tape={false} />
 		{/snippet}
 
 		{#snippet mobileSummary()}
@@ -335,23 +342,11 @@
 				{/snippet}
 			</ResourceBoundary>
 		{/snippet}
-	</DetailTemplate>
+	</DetailShell>
 </article>
-
-<!-- The floating ToC pill covers the whole sub-xl range: DetailTemplate's left
-     rail only appears at ≥xl (1280px), so the pill (which hides itself ≥lg) is
-     re-shown through the 1024–1279 band by the wrapper below. -->
-{#if tocEntries.length > 0}
-	<div class="health-toc-pill-shell">
-		<TocPill
-			entries={tocEntries}
-			{activeId}
-			openAria={t.toc.pill.open}
-			closeAria={t.toc.pill.close}
-			onNavigate={navigate}
-		/>
-	</div>
-{/if}
+<!-- The floating mobile ToC pill now lives INSIDE DetailShell (it owns the observer +
+     the pill); no separate render + no 1024–1279 re-show hack is needed — the shell's
+     rails appear at the SAME 1024 boundary the pill hides at. -->
 
 <!-- The Masthead meta row — the "AS OF · Updated N ago" stamp (live off the
      provenance document's generated_utc when available). -->
@@ -393,19 +388,12 @@
 {/snippet}
 
 <style>
+	/* The surface is a measured article rendered through DetailShell, which owns the
+	   full-bleed dot-grid header band + the hazard tape + the 3-col body grid. This
+	   feature supplies only the CONTENT of each slot. */
 	.health-article {
-		display: flex;
-		flex-direction: column;
+		display: block;
 		width: 100%;
-	}
-
-	/* Masthead band: the Masthead head sits in DetailTemplate's `detail-head`
-	   slot (full-width above the grid); the gutter is applied here so the head
-	   aligns with the gutter'd body columns. */
-	.health-header {
-		padding-inline: var(--space-page-x);
-		padding-block-start: clamp(1.5rem, 4vw, 2.5rem);
-		margin-block-end: 1.5rem;
 	}
 
 	/* "as of" stamp: the mono label + the neutral "Updated N ago" stamp, riding the
@@ -424,35 +412,14 @@
 		color: var(--muted-foreground);
 	}
 
-	/* The body columns pick up the page gutter (DetailTemplate's grid is edge-to-
-	   edge inside <main>; the reading content re-enters the gutter here). */
-	.health-article :global(.detail-grid) {
-		padding-inline: var(--space-page-x);
-	}
-
 	/* ── Left rail (SEC readout + ToC) ─────────────────────────────────────────
-	   Hidden below xl (DetailTemplate hides the left slot; the TocPill takes over). */
+	   DetailShell shows/hides the whole left rail at 1024 (the floating TocPill covers
+	   below), so this only owns the in-rail stacking. */
 	.health-toc-rail {
-		display: none;
+		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
 		min-width: 0;
-	}
-	@media (min-width: 1280px) {
-		.health-toc-rail {
-			display: flex;
-		}
-	}
-
-	/* Re-show the floating ToC pill through the 1024–1279 band (TocPill hides
-	   itself ≥lg, but the DetailTemplate left rail only appears at ≥xl). */
-	.health-toc-pill-shell :global(.toc-pill-container) {
-		display: block;
-	}
-	@media (min-width: 1280px) {
-		.health-toc-pill-shell :global(.toc-pill-container) {
-			display: none;
-		}
 	}
 
 	/* ── Center sections ───────────────────────────────────────────────────────
@@ -505,11 +472,11 @@
 		flex-direction: column;
 		gap: var(--space-card-gap);
 	}
-	.health-article :global(.detail-mobile-summary .health-stat-rail) {
+	.health-article :global(.detail-shell-mobile-summary .health-stat-rail) {
 		flex-direction: row;
 		flex-wrap: wrap;
 	}
-	.health-article :global(.detail-mobile-summary .health-stat) {
+	.health-article :global(.detail-shell-mobile-summary .health-stat) {
 		flex: 1 1 10rem;
 	}
 	.health-stat {

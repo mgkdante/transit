@@ -27,7 +27,7 @@ export { default as ControlsRail } from './ControlsRail.svelte';
 
 export { default as Surface } from './Surface.svelte';
 
-export { default as DetailTemplate } from './DetailTemplate.svelte';
-export type { DetailTemplateProps } from './DetailTemplate.svelte';
+export { default as DetailShell } from './DetailShell.svelte';
+export type { DetailShellProps } from './DetailShell.svelte';
 
 export { default as Footer } from './Footer.svelte';

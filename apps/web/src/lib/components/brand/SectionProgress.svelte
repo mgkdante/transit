@@ -3,7 +3,7 @@
 
   A mono micro line that says which section of how many is currently in view
   (e.g. `SEC 03 / 08`). Extracted from the inline block TocNav hand-rolled so the
-  left-rail of DetailTemplate and the ToC share ONE readout. The LED dot is the
+  left-rail of DetailShell and the ToC share ONE readout. The LED dot is the
   same rest-glow the ToC counter uses.
 
   Numbers are tabular-nums + zero-padded (mirrors NumberedChip) so the readout

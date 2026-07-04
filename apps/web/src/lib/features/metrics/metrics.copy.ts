@@ -140,7 +140,7 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		readonly collapseAll: string;
 	};
 	/**
-	 * Right-rail stat cards (P5.3b DetailTemplate re-seat). Three compact cards —
+	 * Right-rail stat cards (P5.4c DetailShell re-seat). Three compact cards —
 	 * Provenance / Coverage / Freshness — built from data the page already has
 	 * (the conformance verdict, the metric/cluster counts + confidence legend, and
 	 * generated_utc). On mobile they reflow into the top summary strip.

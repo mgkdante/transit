@@ -77,16 +77,18 @@ describe('MetricsExplainer', () => {
 		expect(container.textContent).toContain(en.confidence.levels.medium.meaning);
 	});
 
-	it('re-seats onto the DetailTemplate 3-col shell (left ToC rail · center sections · right stat rail)', () => {
+	it('re-seats onto the DetailShell 3-col shell (left ToC rail · center sections · right stat rail)', () => {
 		const { container } = render(MetricsExplainer);
 
-		// P5.3b: the surface is now a DetailTemplate. The left rail carries the ToC,
+		// P5.4c: the surface is now a DetailShell. The left rail carries the ToC,
 		// the center carries the sections column, the right rail carries the stat cards.
-		const grid = container.querySelector('.detail-grid') as HTMLElement;
+		const grid = container.querySelector('.detail-shell-grid') as HTMLElement;
 		expect(grid).not.toBeNull();
-		expect(grid.querySelector('[data-slot="detail-left"] .metrics-toc-rail')).not.toBeNull();
-		expect(grid.querySelector('[data-slot="detail-center"] .sections-column')).not.toBeNull();
-		expect(grid.querySelector('[data-slot="detail-right"] .metrics-stat-rail')).not.toBeNull();
+		expect(grid.querySelector('[data-slot="detail-shell-left"] .metrics-toc-rail')).not.toBeNull();
+		expect(grid.querySelector('[data-slot="detail-shell-center"] .sections-column')).not.toBeNull();
+		expect(
+			grid.querySelector('[data-slot="detail-shell-right"] .metrics-stat-rail'),
+		).not.toBeNull();
 	});
 
 	it('renders the desktop TOC rail with one numbered jump button per metric', () => {
@@ -441,7 +443,7 @@ describe('MetricsExplainer', () => {
 		expect(rail.style.display).not.toBe('none');
 		// The detail grid never gains a quiet variant class (grid + gutter unchanged).
 		expect(
-			(container.querySelector('.detail-grid') as HTMLElement).classList.contains('is-quiet'),
+			(container.querySelector('.detail-shell-grid') as HTMLElement).classList.contains('is-quiet'),
 		).toBe(false);
 
 		// FOCUS OFF → the ToC reopens; the cards STAY closed (default-closed page —
