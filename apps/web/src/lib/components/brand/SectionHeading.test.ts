@@ -123,3 +123,35 @@ describe('SectionHeading — explainer slot (the optional (i))', () => {
 		expect(container.querySelector('.section-heading-explainer')).toBeNull();
 	});
 });
+
+describe('SectionHeading — DOT LAW (the dot sits beside the last letter, always)', () => {
+	// The global `body { overflow-wrap: anywhere }` allows a break between a word
+	// and a following inline span, which could orphan the dot onto its own line.
+	// SectionHeading glues [last word + dot] inside one nowrap tail span so that
+	// break opportunity does not exist. These tests pin the glue on both paths.
+	it('glues the last word of a plain display heading to the dot in a nowrap tail', () => {
+		const { container } = render(SectionHeading, { props: { heading: 'What this is' } });
+		const tail = container.querySelector('.section-heading-tail');
+		expect(tail).not.toBeNull();
+		expect(tail?.textContent).toBe('is.');
+		// The full visible text is unchanged by the split.
+		expect(container.querySelector('h2')?.textContent).toBe('What this is.');
+	});
+
+	it('glues the last word of the ACCENT line to the dot (two-line thesis grammar)', () => {
+		const { container } = render(SectionHeading, {
+			props: { heading: 'LE RÉSEAU,', headingAccent: 'MESURÉ HONNÊTEMENT' },
+		});
+		const accent = container.querySelector('[data-slot="section-heading-accent"]');
+		const tail = accent?.querySelector('.section-heading-tail');
+		expect(tail?.textContent).toBe('HONNÊTEMENT.');
+		expect(accent?.textContent).toBe('MESURÉ HONNÊTEMENT.');
+		// The dot lives INSIDE the tail, beside the last letter.
+		expect(tail?.querySelector('[data-slot="section-heading-dot"]')).not.toBeNull();
+	});
+
+	it('renders a single-word heading whole inside the tail (no leading head)', () => {
+		const { container } = render(SectionHeading, { props: { heading: 'Crowding' } });
+		expect(container.querySelector('.section-heading-tail')?.textContent).toBe('Crowding.');
+	});
+});
