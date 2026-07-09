@@ -48,7 +48,7 @@ def test_put_json_returns_full_key():
 def test_cache_control_values():
     assert CACHE_CONTROL["live"] == "public, max-age=30"
     assert CACHE_CONTROL["static"] == "public, max-age=86400, stale-while-revalidate=86400"
-    assert CACHE_CONTROL["historic"] == "public, max-age=86400"
+    assert CACHE_CONTROL["historic"] == "public, max-age=3600, stale-while-revalidate=86400"
     assert CACHE_CONTROL["internal"] == "private, no-store"
 
 

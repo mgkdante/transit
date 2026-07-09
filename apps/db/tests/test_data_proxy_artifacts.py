@@ -138,10 +138,12 @@ def test_smoke_script_asserts_canonical_and_fallback_objects() -> None:
     # Canonical host and untouched fallback origin both probed.
     assert "transit.yesid.dev/data" in text
     assert "data.yesid.dev" in text
-    # All three cache tiers hard-asserted (storage.py CACHE_CONTROL values).
+    # All three cache tiers hard-asserted (storage.py CACHE_CONTROL values;
+    # old|new alternations tolerate the hash-guarded header rollout).
     assert "max-age=30" in text
     assert "max-age=604800" in text
     assert "max-age=86400" in text
+    assert "max-age=3600, stale-while-revalidate=86400" in text
     # All three tiers + provenance covered (historic went live 2026-06-10).
     assert "live/vehicles.json" in text
     assert "static/routes_index.json" in text
