@@ -106,33 +106,8 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		/** Chip text + meaning per confidence level. */
 		readonly levels: Record<Confidence, { readonly chip: string; readonly meaning: string }>;
 	};
-	/**
-	 * Quiet-mode (focus reading) affordance — a single header toggle that COLLAPSES
-	 * every metric section card so the page becomes a scannable stack of headings,
-	 * while leaving the ToC rail fully visible (it never hides the ToC, changes the
-	 * grid, or drops the gutter). The choice persists across navigations (the
-	 * card-collapse preference, never a hidden ToC). Mirrors the yesid.dev detail-
-	 * page "Quiet mode" switch, kept to one restrained control.
-	 */
-	readonly quiet: {
-		/** Visible button label (mono control voice). */
-		readonly label: string;
-		/** aria-label when quiet mode is OFF (the action the press performs). */
-		readonly enable: string;
-		/** aria-label when quiet mode is ON (the action the press performs). */
-		readonly disable: string;
-		/**
-		 * The paired "remember" pin (slice-9.8-B). FOCUS is session-only by default;
-		 * the pin promotes the preference to be remembered across visits.
-		 */
-		/** Visible label for the remember pin (mono control voice). */
-		readonly rememberLabel: string;
-		/** aria-label / title when the pin is OFF (the action the press performs: pin it). */
-		readonly remember: string;
-		/** aria-label / title when the pin is ON (the action the press performs: unpin it). */
-		readonly forget: string;
-	};
-	/** The expand-all / collapse-all control that opens or closes every metric card at once (§C5.8). */
+	/** The expand-all / collapse-all control that opens or closes every metric card at once (§C5.8).
+	 *  (The FOCUS switch + REMEMBER pin copy lives in the shared QuietModeButton — P5-R R3.) */
 	readonly expand: {
 		/** Visible label + aria-label for the "open every card" action. */
 		readonly expandAll: string;
@@ -284,14 +259,6 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 				},
 			},
 		},
-		quiet: {
-			label: 'Lecture',
-			enable: 'Activer le mode lecture',
-			disable: 'Quitter le mode lecture',
-			rememberLabel: 'Mémoriser',
-			remember: 'Mémoriser le mode lecture pour les prochaines visites',
-			forget: 'Oublier le mode lecture (cette session seulement)',
-		},
 		expand: {
 			expandAll: 'Tout ouvrir',
 			collapseAll: 'Tout fermer',
@@ -425,14 +392,6 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 						'A point-in-time per-vehicle census (the live vehicle snapshot), not an aggregate.',
 				},
 			},
-		},
-		quiet: {
-			label: 'Focus',
-			enable: 'Enter focus reading',
-			disable: 'Exit focus reading',
-			rememberLabel: 'Remember',
-			remember: 'Remember focus reading on future visits',
-			forget: 'Forget focus reading (this session only)',
 		},
 		expand: {
 			expandAll: 'Expand all',

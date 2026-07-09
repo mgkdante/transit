@@ -34,6 +34,8 @@
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
 	import { cn } from '$lib/utils';
+	import { isPrefersReducedMotion } from '$lib/motion';
+	import { isViewportAtMost } from '$lib/motion/utils/device';
 	import { Separator } from '$lib/components/ui/separator';
 	import TocPill from '$lib/components/shared/TocPill.svelte';
 	import { observeActiveToc, type TocEntry } from '$lib/components/shared/toc';
@@ -43,6 +45,15 @@
 		    full-bleed `.detail-header-grid` band. Pass the Masthead `tape={false}` — the
 		    shell adds the closing hazard tape after the band. */
 		header: Snippet;
+		/**
+		 * Optional BLUEPRINT ART layer for the header band (P5-R R3, operator:
+		 * "blueprints for the headers"). When given, the band drops the dot-grid
+		 * schematic and renders this aria-hidden drawing absolutely behind the
+		 * header content (a per-page BlueprintShell assembly), and the shell mounts
+		 * the draw-on-scroll stroke scrub over it — PRM / ≤1023px / SSR degrade to
+		 * the static fully-drawn art with zero plugin download.
+		 */
+		blueprintArt?: Snippet;
 		/** Left rail — ToC / reading-position readout / context (sticky, ≥1024). */
 		left: Snippet;
 		/** Center column — the numbered sections (the 2fr / 3fr track). */
@@ -77,6 +88,7 @@
 
 	let {
 		header,
+		blueprintArt,
 		left,
 		center,
 		right,
@@ -96,14 +108,50 @@
 	// `[data-section-index]` (toc.ts). Re-scoped only on mount; sections are stable.
 	onMount(() => observeActiveToc((id) => (activeId = id)));
 
+	// Blueprint draw-on-scroll — mounted only when the band carries art. The
+	// PRM / ≤1023px gate runs HERE, before even the module's dynamic import
+	// (R3a review: a gated visit downloads zero motion code); the scrub module
+	// re-gates internally (defense in depth), is plugin-free (plain rect math +
+	// a capture-phase scroll listener, so transit's inner-container scrolling
+	// just works), and only ever touches `.blueprint-bg` strokes — never the
+	// band's interactive chrome.
+	let bandEl = $state<HTMLElement>();
+	onMount(() => {
+		if (!blueprintArt) return;
+		if (isPrefersReducedMotion() || isViewportAtMost(1023)) return;
+		let cancelled = false;
+		let destroy: (() => void) | undefined;
+		void (async () => {
+			if (!bandEl) return;
+			const { startBlueprintScrub } = await import('$lib/motion/scrubs/blueprint-scrub');
+			if (cancelled) return;
+			destroy = startBlueprintScrub(bandEl);
+			if (cancelled) destroy?.();
+		})();
+		return () => {
+			cancelled = true;
+			destroy?.();
+		};
+	});
+
 	const pillEntries = $derived(mobileTocEntries ?? tocEntries);
 </script>
 
 <article data-slot="detail-shell" class={cn('detail-shell', className)}>
-	<!-- Full-bleed header band: the global dot-grid schematic over the --manifesto ground;
-	     the caller's Masthead + CornerMeta ride the centered inner. Closed by the hazard
-	     tape below (edge-to-edge), the yesid detail-head rhythm. -->
-	<div class="detail-shell-header detail-header-grid" data-slot="detail-shell-header">
+	<!-- Full-bleed header band over the --manifesto ground: BLUEPRINT ART when the
+	     caller supplies it (per-page drawing, aria-hidden, scroll-drawn), else the
+	     global dot-grid schematic; the caller's Masthead + CornerMeta ride the
+	     centered inner. Closed by the hazard tape below (edge-to-edge), the yesid
+	     detail-head rhythm. -->
+	<div
+		class={cn(
+			'detail-shell-header',
+			blueprintArt ? 'detail-shell-header--art' : 'detail-header-grid',
+		)}
+		data-slot="detail-shell-header"
+		bind:this={bandEl}
+	>
+		{#if blueprintArt}{@render blueprintArt()}{/if}
 		<div class="detail-shell-header__inner">
 			{@render header()}
 		</div>
@@ -172,6 +220,21 @@
 		z-index: 1;
 		max-width: var(--container-content);
 		margin-inline: auto;
+	}
+	/* With blueprint art behind the head, a soft manifesto-ground scrim calms the
+	   zone under the words (legibility first) while the drawing stays confident
+	   at the band's edges — feathered, never a hard panel. */
+	.detail-shell-header--art .detail-shell-header__inner::before {
+		content: '';
+		position: absolute;
+		inset: -1.5rem -3rem;
+		z-index: -1;
+		background: radial-gradient(
+			120% 105% at 35% 50%,
+			color-mix(in srgb, var(--manifesto) 82%, transparent) 40%,
+			transparent 78%
+		);
+		pointer-events: none;
 	}
 
 	/* The mobile summary strip is a single-column band above the sections; the desktop
