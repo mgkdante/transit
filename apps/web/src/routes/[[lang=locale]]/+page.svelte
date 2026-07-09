@@ -197,9 +197,14 @@
 		| 'distColShare'
 		| 'busyLabel'
 		| 'distColRoute'
-		| 'groupExplore'
-		| 'groupAccount'
-		| 'groupTrust'
+		| 'qWhere'
+		| 'qWhereScope'
+		| 'qTrust'
+		| 'qTrustScope'
+		| 'qPromise'
+		| 'qPromiseScope'
+		| 'qMethod'
+		| 'qMethodScope'
 		| 'exploreNav';
 
 	const T: Record<Locale, Record<CopyKey, string>> = {
@@ -222,7 +227,7 @@
 			enter: 'Ouvrir',
 			whatTitle: 'Ce que c’est',
 			whatSub: '// INDÉPENDANT · HONNÊTE D’ABORD',
-			whatBody: `Un tableau de bord indépendant et honnête pour le réseau ${shortName} de ${city}, dérivé du flux GTFS-temps réel public via le contrat ouvert /v1. La ponctualité est un indicateur mesuré, un proxy, pas une ponctualité certifiée. Quand une donnée manque, on l’affiche comme absente. Jamais de zéro inventé.`,
+			whatBody: `Un tableau de bord indépendant pour le réseau ${shortName} de ${city}, construit à partir du même flux public que les bus diffusent en direct. Ici, « à l’heure » veut dire ce qu’on a mesuré nous-mêmes, pas une statistique officielle. Quand une donnée manque, on l’affiche comme absente. Jamais de zéro inventé.`,
 			measureLink: 'Comment on mesure',
 			metricOnTime: 'Ponctualité',
 			metricDelayP50: 'Retard médian',
@@ -236,9 +241,14 @@
 			distColShare: 'part',
 			busyLabel: 'Lignes les plus actives',
 			distColRoute: 'ligne',
-			groupExplore: 'Explorer',
-			groupAccount: 'Reddition de comptes',
-			groupTrust: 'Confiance',
+			qWhere: 'Où est mon bus ?',
+			qWhereScope: 'Le voir bouger, savoir quand il passe, trouver le vôtre.',
+			qTrust: 'À quelle ligne se fier ?',
+			qTrustScope: 'Comparer la performance réelle des lignes et du réseau.',
+			qPromise: 'Ont-ils tenu parole ?',
+			qPromiseScope: 'Le bilan du jour, les récidivistes et les perturbations.',
+			qMethod: 'Derrière les chiffres',
+			qMethodScope: 'Comment on mesure, et à quel point les données sont fraîches.',
 			exploreNav: 'Tout explorer',
 		},
 		en: {
@@ -260,7 +270,7 @@
 			enter: 'Open',
 			whatTitle: 'What this is',
 			whatSub: '// INDEPENDENT · HONESTY FIRST',
-			whatBody: `An independent, honesty-first dashboard for the ${shortName} network across ${city}, derived from the public GTFS-realtime feed through the open /v1 contract. On-time performance is a measured proxy, not certified OTP. When a number is missing, we show it as missing. Never a fabricated zero.`,
+			whatBody: `An independent dashboard for the ${shortName} network across ${city}, built from the same public feed the buses broadcast live. Here, “on time” means what we measured ourselves, not an official statistic. When a number is missing, we show it as missing. Never a fabricated zero.`,
 			measureLink: 'How we measure',
 			metricOnTime: 'On-time',
 			metricDelayP50: 'Median delay',
@@ -274,9 +284,14 @@
 			distColShare: 'share',
 			busyLabel: 'Busiest lines',
 			distColRoute: 'route',
-			groupExplore: 'Explore',
-			groupAccount: 'Accountability',
-			groupTrust: 'Trust',
+			qWhere: 'Where’s my bus?',
+			qWhereScope: 'See it moving, know when it comes, find yours.',
+			qTrust: 'Which line can I trust?',
+			qTrustScope: 'Compare how lines and the whole network actually perform.',
+			qPromise: 'Did they keep their promise?',
+			qPromiseScope: 'The daily verdict, the repeat offenders, the disruptions.',
+			qMethod: 'Behind the numbers',
+			qMethodScope: 'How we measure, and how fresh the data is.',
 			exploreNav: 'Explore everything',
 		},
 	};
@@ -349,15 +364,19 @@
 		  };
 
 	interface Group {
-		readonly key: 'explore' | 'account' | 'trust';
-		readonly label: () => string;
+		readonly key: 'where-bus' | 'trust-line' | 'promise' | 'method';
+		/** The rider QUESTION this group answers (the visible heading). */
+		readonly question: () => string;
+		/** One plain sentence of scope under the question (what you'll find). */
+		readonly scope: () => string;
 		readonly entries: readonly Entry[];
 	}
 
 	const GROUPS: readonly Group[] = [
 		{
-			key: 'explore',
-			label: () => t.groupExplore,
+			key: 'where-bus',
+			question: () => t.qWhere,
+			scope: () => t.qWhereScope,
 			entries: [
 				{
 					kind: 'surface',
@@ -371,32 +390,12 @@
 				},
 				{
 					kind: 'surface',
-					target: { kind: 'line' },
-					glyph: '═',
-					title: { fr: 'Lignes', en: 'Lines' },
-					desc: {
-						fr: 'Détail, horaire et fiabilité par ligne.',
-						en: 'Per-line detail, schedule and reliability.',
-					},
-				},
-				{
-					kind: 'surface',
 					target: { kind: 'stop' },
 					glyph: '■',
 					title: { fr: 'Arrêts', en: 'Stops' },
 					desc: {
 						fr: 'Prochains passages et fiabilité par arrêt.',
 						en: 'Next departures and reliability per stop.',
-					},
-				},
-				{
-					kind: 'surface',
-					target: { kind: 'network-health' },
-					glyph: '◎',
-					title: { fr: 'Santé du réseau', en: 'Network health' },
-					desc: {
-						fr: 'Vue d’ensemble de la ponctualité en direct.',
-						en: 'Live network-wide on-time overview.',
 					},
 				},
 				{
@@ -412,9 +411,30 @@
 			],
 		},
 		{
-			key: 'account',
-			label: () => t.groupAccount,
+			key: 'trust-line',
+			question: () => t.qTrust,
+			scope: () => t.qTrustScope,
 			entries: [
+				{
+					kind: 'surface',
+					target: { kind: 'line' },
+					glyph: '═',
+					title: { fr: 'Lignes', en: 'Lines' },
+					desc: {
+						fr: 'Détail, horaire et fiabilité par ligne.',
+						en: 'Per-line detail, schedule and reliability.',
+					},
+				},
+				{
+					kind: 'surface',
+					target: { kind: 'network-health' },
+					glyph: '◎',
+					title: { fr: 'Santé du réseau', en: 'Network health' },
+					desc: {
+						fr: 'Vue d’ensemble de la ponctualité en direct.',
+						en: 'Live network-wide on-time overview.',
+					},
+				},
 				{
 					kind: 'link',
 					href: '/hotspots',
@@ -425,6 +445,13 @@
 						en: 'Where delays concentrate across the network.',
 					},
 				},
+			],
+		},
+		{
+			key: 'promise',
+			question: () => t.qPromise,
+			scope: () => t.qPromiseScope,
+			entries: [
 				{
 					kind: 'link',
 					href: '/receipt',
@@ -458,8 +485,9 @@
 			],
 		},
 		{
-			key: 'trust',
-			label: () => t.groupTrust,
+			key: 'method',
+			question: () => t.qMethod,
+			scope: () => t.qMethodScope,
 			entries: [
 				{
 					kind: 'link',
@@ -715,14 +743,17 @@
 	</div>
 {/snippet}
 
-<!-- A launchpad group = a station-voice overline + ONE uniform tile grid. Every
-     group shares the SAME column template + tile chassis (the old feature/compact
-     weighting is gone — symmetry law), rows equalized by grid-auto-rows:1fr. -->
+<!-- A wayfinding group = a RIDER QUESTION as the heading + one plain sentence of
+     scope (research 2026-07-09: task/question-led IA beats taxonomy labels like
+     "Explore"/"Accountability"; a scope line under every section label tells the
+     reader what's behind the click). ONE uniform tile grid; every group shares
+     the SAME chassis + column template, rows equalized. -->
 {#snippet launchGroup(group: Group)}
 	<section class="launch-group" aria-labelledby={`group-${group.key}`}>
-		<h2 class="launch-group-label" id={`group-${group.key}`}>
-			<SectionLabel text={group.label()} variant="station" />
-		</h2>
+		<div class="launch-group-head">
+			<h2 class="launch-group-question" id={`group-${group.key}`}>{group.question()}</h2>
+			<p class="launch-group-scope">{group.scope()}</p>
+		</div>
 		<ul class="launch-grid">
 			{#each group.entries as entry (entry.glyph + entry.title.en)}
 				<li>
@@ -1135,8 +1166,26 @@
 		flex-direction: column;
 		gap: 1rem;
 	}
-	.launch-group-label {
+	/* The rider QUESTION as a readable heading (plain language, not mono-caps
+	   taxonomy) + one muted sentence of scope: the reader knows what a group
+	   holds before scanning a single card. */
+	.launch-group-head {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+	.launch-group-question {
 		margin: 0;
+		font-family: var(--font-heading);
+		font-size: var(--text-heading);
+		font-weight: 800;
+		letter-spacing: var(--tracking-tight);
+		color: var(--foreground);
+	}
+	.launch-group-scope {
+		margin: 0;
+		font-size: var(--text-small);
+		color: var(--muted-foreground);
 	}
 	/* Every group shares the SAME column template + auto-rows:1fr — tiles are the
 	   same width and every row is level, across all three groups. */
@@ -1146,7 +1195,10 @@
 		padding: 0;
 		display: grid;
 		gap: 1.25rem;
-		grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+		/* auto-FIT (not fill): empty tracks collapse so each question's tiles span
+		   the full row edge-to-edge — no dead right half (felt symmetry). Rows stay
+		   uniform WITHIN a group; the 2-tile method row breathes wider by design. */
+		grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
 		grid-auto-rows: 1fr;
 	}
 	.launch-grid > li {
