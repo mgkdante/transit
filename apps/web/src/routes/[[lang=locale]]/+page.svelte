@@ -13,12 +13,18 @@
        both columns read equally FULL at a glance — balance comes from real
        content mass and grid centering, never from stretching a short box.
 
-    2. WHAT THIS IS — heading + one tight bilingual paragraph (60ch) stacked
-       ABOVE three honesty pillars in ONE equal row (identical chassis + content
-       budget). Provider-agnostic copy templated on the manifest.
+    2. WHAT THIS IS — TWO columns (wayfinding v2): the heading + prose in one,
+       the three ground rules (Live / Honest / Accountable) in the other as an
+       INFORMATIONAL species — a legend against an amber rule, no card chassis,
+       no hover, nothing that could be mistaken for a clickable destination.
+       Provider-agnostic copy templated on the manifest.
 
-    3. EXPLORE — every surface in ONE uniform tile grammar (identical chassis,
-       identical size, rows equalized), grouped under station-voice overlines.
+    3. EXPLORE — a LEFT FILTER RAIL (the site's one SurfaceRail grammar: sticky
+       glass panel ≥1024, ONE pill→sheet below) beside the destination cards.
+       Two facets — the rider question + the kind of answer (live now / the
+       record / the method) — with the four question groups as the default
+       unfiltered view. Cards share ONE chassis: big glyph + kind tag up top,
+       heading-scale title, body-scale description, a hairline footer CTA.
        Primary surfaces route via openSurface; reference surfaces are localized
        links.
 
@@ -46,7 +52,8 @@
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
 	import { cornerMetaLabels } from '$lib/components/brand';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
-	import { FreshnessStamp } from '$lib/components/surface';
+	import { FreshnessStamp, SurfaceRail } from '$lib/components/surface';
+	import { FilterGroup, FilterSummary } from '$lib/components/filter';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -184,7 +191,17 @@
 		| 'whatTitle'
 		| 'whatSub'
 		| 'whatBody'
+		| 'pillarsLabel'
 		| 'measureLink'
+		| 'filterLabel'
+		| 'filterByQuestion'
+		| 'filterByKind'
+		| 'tempoNow'
+		| 'tempoRecord'
+		| 'tempoMethod'
+		| 'filterOpen'
+		| 'filterClose'
+		| 'filterEmpty'
 		| 'metricOnTime'
 		| 'metricDelayP50'
 		| 'metricSilent'
@@ -228,7 +245,18 @@
 			whatTitle: 'Ce que c’est',
 			whatSub: '// INDÉPENDANT · HONNÊTE D’ABORD',
 			whatBody: `Un tableau de bord indépendant pour le réseau ${shortName} de ${city}, construit à partir du même flux public que les bus diffusent en direct. Ici, « à l’heure » veut dire ce qu’on a mesuré nous-mêmes, pas une statistique officielle. Quand une donnée manque, on l’affiche comme absente. Jamais de zéro inventé.`,
+			pillarsLabel: '// LES RÈGLES DU JEU',
 			measureLink: 'Comment on mesure',
+			filterLabel: 'Filtres',
+			filterByQuestion: 'Par question',
+			filterByKind: 'Par genre',
+			tempoNow: 'En direct',
+			tempoRecord: 'Le bilan',
+			tempoMethod: 'La méthode',
+			filterOpen: 'Ouvrir les filtres',
+			filterClose: 'Fermer les filtres',
+			filterEmpty:
+				'Rien ne correspond à ces filtres. Effacez-les pour retrouver toutes les destinations.',
 			metricOnTime: 'Ponctualité',
 			metricDelayP50: 'Retard médian',
 			metricSilent: 'Sans réponse',
@@ -271,7 +299,17 @@
 			whatTitle: 'What this is',
 			whatSub: '// INDEPENDENT · HONESTY FIRST',
 			whatBody: `An independent dashboard for the ${shortName} network across ${city}, built from the same public feed the buses broadcast live. Here, “on time” means what we measured ourselves, not an official statistic. When a number is missing, we show it as missing. Never a fabricated zero.`,
+			pillarsLabel: '// THE GROUND RULES',
 			measureLink: 'How we measure',
+			filterLabel: 'Filters',
+			filterByQuestion: 'By question',
+			filterByKind: 'By kind',
+			tempoNow: 'Live now',
+			tempoRecord: 'The record',
+			tempoMethod: 'The method',
+			filterOpen: 'Open the filters',
+			filterClose: 'Close the filters',
+			filterEmpty: 'Nothing matches these filters. Clear them to see every destination.',
 			metricOnTime: 'On-time',
 			metricDelayP50: 'Median delay',
 			metricSilent: 'Not reporting',
@@ -346,22 +384,19 @@
 	// EXPLORE EVERYTHING — all surfaces grouped so the project's full scope is
 	// obvious. Primary surfaces (kind) route via openSurface; reference surfaces
 	// (href) are localized <a> links. Each carries a glyph + bilingual title +
-	// a one-line description of what it shows.
+	// a plain-words description + a TEMPO — the kind of answer the destination
+	// gives (live now / the record / the method), the second filter facet and
+	// the card's corner tag.
+	type Tempo = 'now' | 'record' | 'method';
+	interface EntryBody {
+		readonly glyph: string;
+		readonly tempo: Tempo;
+		readonly title: Record<Locale, string>;
+		readonly desc: Record<Locale, string>;
+	}
 	type Entry =
-		| {
-				readonly kind: 'surface';
-				readonly target: SurfaceTarget;
-				readonly glyph: string;
-				readonly title: Record<Locale, string>;
-				readonly desc: Record<Locale, string>;
-		  }
-		| {
-				readonly kind: 'link';
-				readonly href: string;
-				readonly glyph: string;
-				readonly title: Record<Locale, string>;
-				readonly desc: Record<Locale, string>;
-		  };
+		| (EntryBody & { readonly kind: 'surface'; readonly target: SurfaceTarget })
+		| (EntryBody & { readonly kind: 'link'; readonly href: string });
 
 	interface Group {
 		readonly key: 'where-bus' | 'trust-line' | 'promise' | 'method';
@@ -382,30 +417,33 @@
 					kind: 'surface',
 					target: { kind: 'map' },
 					glyph: '✦',
+					tempo: 'now',
 					title: { fr: 'Carte en direct', en: 'Live map' },
 					desc: {
-						fr: 'Chaque bus et arrêt, en mouvement, sur la carte.',
-						en: 'Every bus and stop, moving, on the map.',
+						fr: 'Chaque bus sur la carte, en mouvement en temps réel. Touchez-en un pour le suivre.',
+						en: 'Every bus on the map, moving in real time. Tap one to follow it.',
 					},
 				},
 				{
 					kind: 'surface',
 					target: { kind: 'stop' },
 					glyph: '■',
+					tempo: 'now',
 					title: { fr: 'Arrêts', en: 'Stops' },
 					desc: {
-						fr: 'Prochains passages et fiabilité par arrêt.',
-						en: 'Next departures and reliability per stop.',
+						fr: 'Les prochains passages à votre arrêt, et sa fiabilité habituelle.',
+						en: 'The next departures at your stop, and how reliable it usually is.',
 					},
 				},
 				{
 					kind: 'surface',
 					target: { kind: 'search' },
 					glyph: '⌕',
+					tempo: 'now',
 					title: { fr: 'Rechercher', en: 'Search' },
 					desc: {
-						fr: 'Trouver une ligne, un arrêt ou un véhicule.',
-						en: 'Find a line, stop or vehicle.',
+						fr: 'Trouvez une ligne, un arrêt ou un véhicule par son nom ou son numéro.',
+						en: 'Find a line, a stop or a vehicle by its name or number.',
 					},
 				},
 			],
@@ -419,30 +457,33 @@
 					kind: 'surface',
 					target: { kind: 'line' },
 					glyph: '═',
+					tempo: 'record',
 					title: { fr: 'Lignes', en: 'Lines' },
 					desc: {
-						fr: 'Détail, horaire et fiabilité par ligne.',
-						en: 'Per-line detail, schedule and reliability.',
+						fr: 'Une page par ligne : l’horaire, les retards, et sa tenue jour après jour.',
+						en: 'One page per line: the schedule, the delays, and how it holds up day after day.',
 					},
 				},
 				{
 					kind: 'surface',
 					target: { kind: 'network-health' },
 					glyph: '◎',
+					tempo: 'now',
 					title: { fr: 'Santé du réseau', en: 'Network health' },
 					desc: {
-						fr: 'Vue d’ensemble de la ponctualité en direct.',
-						en: 'Live network-wide on-time overview.',
+						fr: 'Tout le réseau d’un coup d’œil : la part qui roule à l’heure en ce moment.',
+						en: 'The whole network at a glance: how much of it is running on time right now.',
 					},
 				},
 				{
 					kind: 'link',
 					href: '/hotspots',
 					glyph: '▲',
+					tempo: 'record',
 					title: { fr: 'Points chauds', en: 'Hotspots' },
 					desc: {
-						fr: 'Où les retards se concentrent sur le réseau.',
-						en: 'Where delays concentrate across the network.',
+						fr: 'Les endroits où les retards s’accumulent, sur l’ensemble du réseau.',
+						en: 'The places where delays pile up, mapped across the whole network.',
 					},
 				},
 			],
@@ -456,30 +497,33 @@
 					kind: 'link',
 					href: '/receipt',
 					glyph: '🜨',
+					tempo: 'record',
 					title: { fr: 'Reçu quotidien', en: 'Daily receipt' },
 					desc: {
-						fr: 'Le bilan du jour, chiffre par chiffre.',
-						en: 'The day in numbers, line by line.',
+						fr: 'Le bilan du jour, chiffre par chiffre : ce qui était promis, ce qui est vraiment passé.',
+						en: 'The day in numbers, line by line: what was promised, what actually showed up.',
 					},
 				},
 				{
 					kind: 'link',
 					href: '/repeat-offenders',
 					glyph: '↻',
+					tempo: 'record',
 					title: { fr: 'Récidivistes', en: 'Repeat offenders' },
 					desc: {
-						fr: 'Les lignes en retard, jour après jour.',
-						en: 'The lines that run late, day after day.',
+						fr: 'Les lignes qui accumulent les retards, jour après jour, classées au grand jour.',
+						en: 'The lines that keep running late, day after day, ranked in the open.',
 					},
 				},
 				{
 					kind: 'link',
 					href: '/alerts',
 					glyph: '⚠',
+					tempo: 'now',
 					title: { fr: 'Avis', en: 'Alerts' },
 					desc: {
-						fr: 'Perturbations de service en vigueur.',
-						en: 'Service disruptions in effect.',
+						fr: 'Les perturbations en vigueur en ce moment, et l’historique des précédentes.',
+						en: 'Service disruptions in effect right now, plus the record of past ones.',
 					},
 				},
 			],
@@ -493,25 +537,76 @@
 					kind: 'link',
 					href: '/metrics',
 					glyph: '∑',
+					tempo: 'method',
 					title: { fr: 'Comment on mesure', en: 'How we measure' },
 					desc: {
-						fr: 'Définition, calcul exact et limites honnêtes.',
-						en: 'Definition, exact math and honest caveats.',
+						fr: 'Chaque chiffre défini en mots simples : ce qu’il compte, et ce qu’il rate honnêtement.',
+						en: 'Every number defined in plain words: what it counts, and what it honestly misses.',
 					},
 				},
 				{
 					kind: 'link',
 					href: '/status',
 					glyph: '♥',
+					tempo: 'method',
 					title: { fr: 'Santé des données', en: 'Data health' },
 					desc: {
-						fr: 'Fraîcheur, provenance et lacunes connues des flux.',
-						en: 'Feed freshness, provenance and known gaps.',
+						fr: 'Nos données sont-elles fraîches ? Le dernier signal de chaque flux, et les trous qu’on connaît.',
+						en: 'Is our data fresh? When each feed last answered, and the gaps we know about.',
 					},
 				},
 			],
 		},
 	];
+
+	// ── EXPLORE filters (wayfinding v2) ─────────────────────────────────────────
+	// Two single-select facets over the destination cards: the rider QUESTION
+	// (one group) and the KIND of answer (tempo). null = "All". Plain page state,
+	// no URL mirror — the home is a launchpad, not a shareable filtered view; the
+	// four question groups are the default. Groups keep their heading while any
+	// card in them matches; a group with no matching card hides whole.
+	let activeQuestion = $state<Group['key'] | null>(null);
+	let activeTempo = $state<Tempo | null>(null);
+
+	const filtersActive = $derived(activeQuestion != null || activeTempo != null);
+	const visibleGroups = $derived(
+		GROUPS.map((group) => ({
+			group,
+			entries:
+				activeQuestion != null && group.key !== activeQuestion
+					? []
+					: group.entries.filter((e) => activeTempo == null || e.tempo === activeTempo),
+		})).filter(({ entries }) => entries.length > 0),
+	);
+	const matchCount = $derived(visibleGroups.reduce((n, g) => n + g.entries.length, 0));
+	function clearFilters(): void {
+		activeQuestion = null;
+		activeTempo = null;
+	}
+
+	const questionItems = $derived(GROUPS.map((g) => ({ key: g.key, label: g.question() })));
+	const tempoItems = $derived([
+		{ key: 'now', label: t.tempoNow },
+		{ key: 'record', label: t.tempoRecord },
+		{ key: 'method', label: t.tempoMethod },
+	]);
+	const tempoTag = $derived<Record<Tempo, string>>({
+		now: t.tempoNow,
+		record: t.tempoRecord,
+		method: t.tempoMethod,
+	});
+
+	// The FilterSummary count phrasing + the mobile pill summary share one
+	// per-locale plural rule (FR: 0 and 1 are singular; EN: only 1 is).
+	const FILTER_COUNT_LABEL: Record<Locale, { singular: string; plural: string }> = {
+		en: { singular: '{count} destination', plural: '{count} destinations' },
+		fr: { singular: '{count} destination', plural: '{count} destinations' },
+	};
+	const pillSummary = $derived.by(() => {
+		const tpl = FILTER_COUNT_LABEL[locale];
+		const isPlural = locale === 'fr' ? matchCount >= 2 : matchCount !== 1;
+		return (isPlural ? tpl.plural : tpl.singular).replace('{count}', String(matchCount));
+	});
 </script>
 
 <Surface pad="hub" class="hub">
@@ -641,9 +736,10 @@
 
 	<Separator variant="hazard" hazardSize="sm" maxWidth="100%" />
 
-	<!-- 2. WHAT THIS IS — SYMMETRIC: the heading + prose stack ABOVE (52ch measure),
-	     the three honesty pillars sit in ONE equal-height row below (grid-auto-rows:1fr;
-	     every pillar has the same content budget: glyph · title · desc). -->
+	<!-- 2. WHAT THIS IS — TWO columns (wayfinding v2): prose | ground rules. The
+	     rules are an INFORMATIONAL species — a legend seated against an amber rule,
+	     no card chassis, no hover, no CTA — visibly NOT the clickable destination
+	     cards below. Felt symmetry: real content mass on both sides, centered. -->
 	<section class="hub-what" aria-labelledby="hub-what-title">
 		<div class="what-prose">
 			<SectionHeading heading={t.whatTitle} subheading={t.whatSub} level={2} id="hub-what-title" />
@@ -654,25 +750,70 @@
 			</a>
 		</div>
 
-		<ul class="pillar-grid">
-			{#each PILLARS as pillar (pillar.title.en)}
-				<li class="pillar">
-					<span class="pillar-glyph" aria-hidden="true">{pillar.glyph}</span>
-					<span class="pillar-title">{pillar.title[locale]}</span>
-					<span class="pillar-desc">{pillar.desc[locale]}</span>
-				</li>
-			{/each}
-		</ul>
+		<div class="what-pillars">
+			<SectionLabel text={t.pillarsLabel} variant="station" />
+			<ul class="pillar-list">
+				{#each PILLARS as pillar (pillar.title.en)}
+					<li class="pillar">
+						<span class="pillar-glyph" aria-hidden="true">{pillar.glyph}</span>
+						<span class="pillar-text">
+							<span class="pillar-title">{pillar.title[locale]}</span>
+							<span class="pillar-desc">{pillar.desc[locale]}</span>
+						</span>
+					</li>
+				{/each}
+			</ul>
+		</div>
 	</section>
 
-	<!-- 3. EXPLORE — ONE uniform tile grammar (the weighted feature/compact split is
-	     gone): every surface renders the SAME chassis at the SAME size, rows equalized
-	     by grid-auto-rows:1fr, grouped under station-voice overlines for scanning. -->
-	<nav class="hub-launch" aria-label={t.exploreNav}>
-		{#each GROUPS as group (group.key)}
-			{@render launchGroup(group)}
-		{/each}
-	</nav>
+	<!-- 3. EXPLORE — the LEFT FILTER RAIL beside the destination cards. The rail is
+	     the site's ONE rail grammar (SurfaceRail: sticky glass panel ≥1024, pill→sheet
+	     below) carrying the two facets + the match summary; the four rider-question
+	     groups stay the default view, and a group hides whole when nothing in it
+	     matches. -->
+	<div class="hub-launch">
+		{#snippet exploreRail()}
+			<div class="explore-filters" role="group" aria-label={t.filterLabel}>
+				<FilterGroup
+					label={t.filterByQuestion}
+					items={questionItems}
+					activeKey={activeQuestion}
+					onSelect={(key) => (activeQuestion = key as Group['key'] | null)}
+					testIdPrefix="hub-filter-question"
+				/>
+				<FilterGroup
+					label={t.filterByKind}
+					items={tempoItems}
+					activeKey={activeTempo}
+					onSelect={(key) => (activeTempo = key as Tempo | null)}
+					testIdPrefix="hub-filter-kind"
+				/>
+				{#if filtersActive}
+					<FilterSummary
+						count={matchCount}
+						countLabel={FILTER_COUNT_LABEL}
+						onClear={clearFilters}
+					/>
+				{/if}
+			</div>
+		{/snippet}
+		<SurfaceRail
+			rail={exploreRail}
+			label={t.filterLabel}
+			summary={pillSummary}
+			openAria={t.filterOpen}
+			closeAria={t.filterClose}
+		/>
+
+		<nav class="launch-content" aria-label={t.exploreNav}>
+			{#each visibleGroups as { group, entries } (group.key)}
+				{@render launchGroup(group, entries)}
+			{/each}
+			{#if matchCount === 0}
+				<p class="launch-empty" role="status">{t.filterEmpty}</p>
+			{/if}
+		</nav>
+	</div>
 </Surface>
 
 <!-- A pulse tile = MetricDisplay + its (i) explainer, top-aligned beside the quiet
@@ -747,23 +888,24 @@
      scope (research 2026-07-09: task/question-led IA beats taxonomy labels like
      "Explore"/"Accountability"; a scope line under every section label tells the
      reader what's behind the click). ONE uniform tile grid; every group shares
-     the SAME chassis + column template, rows equalized. -->
-{#snippet launchGroup(group: Group)}
+     the SAME chassis + column template, rows equalized. `entries` arrives already
+     facet-filtered (the group hides upstream when it empties). -->
+{#snippet launchGroup(group: Group, entries: readonly Entry[])}
 	<section class="launch-group" aria-labelledby={`group-${group.key}`}>
 		<div class="launch-group-head">
 			<h2 class="launch-group-question" id={`group-${group.key}`}>{group.question()}</h2>
 			<p class="launch-group-scope">{group.scope()}</p>
 		</div>
 		<ul class="launch-grid">
-			{#each group.entries as entry (entry.glyph + entry.title.en)}
+			{#each entries as entry (entry.glyph + entry.title.en)}
 				<li>
 					{#if entry.kind === 'surface'}
 						<button type="button" class="hub-tile" onclick={() => openSurface(entry.target)}>
-							{@render tileBody(entry.glyph, entry.title[locale], entry.desc[locale])}
+							{@render tileBody(entry)}
 						</button>
 					{:else}
 						<a class="hub-tile" href={localizeHref(entry.href, locale)}>
-							{@render tileBody(entry.glyph, entry.title[locale], entry.desc[locale])}
+							{@render tileBody(entry)}
 						</a>
 					{/if}
 				</li>
@@ -772,12 +914,18 @@
 	</section>
 {/snippet}
 
-{#snippet tileBody(glyph: string, title: string, desc: string)}
-	<span class="hub-tile-glyph" aria-hidden="true">{glyph}</span>
-	<span class="hub-tile-body">
-		<span class="hub-tile-title">{title}</span>
-		<span class="hub-tile-desc">{desc}</span>
+<!-- ONE card interior (wayfinding v2): big amber glyph + the KIND tag on the top
+     row (the tag echoes the rail's second facet, so a card tells you what sort of
+     answer it opens), heading-scale title, body-scale description that fills the
+     width, and the Open CTA seated on a hairline footer. Real content mass in
+     every corner — no left-stacked dead space. -->
+{#snippet tileBody(entry: Entry)}
+	<span class="hub-tile-top">
+		<span class="hub-tile-glyph" aria-hidden="true">{entry.glyph}</span>
+		<span class="hub-tile-tag label-metric">{tempoTag[entry.tempo]}</span>
 	</span>
+	<span class="hub-tile-title">{entry.title[locale]}</span>
+	<span class="hub-tile-desc">{entry.desc[locale]}</span>
 	<span class="hub-tile-cta label-metric" aria-hidden="true">{t.enter} →</span>
 {/snippet}
 
@@ -1068,11 +1216,22 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	/* ══ WHAT THIS IS — stacked prose + one equal pillar row ═════════════════════ */
+	/* ══ WHAT THIS IS — two columns: prose | informational ground rules ══════════
+	   Wayfinding v2: the rules read as a LEGEND (amber left rule, aligned glyph
+	   column, no chassis) so they cannot be mistaken for the clickable cards
+	   below. Felt symmetry: both columns carry real mass and center on each
+	   other; single column below 1024. */
 	.hub-what {
-		display: flex;
-		flex-direction: column;
-		gap: 2rem;
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 2.5rem;
+	}
+	@media (min-width: 1024px) {
+		.hub-what {
+			grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+			gap: clamp(2.5rem, 6vw, 5rem);
+			align-items: center;
+		}
 	}
 	/* §C5.1 hierarchy: the §2 heading steps DOWN a register so the hero thesis
 	   stays the apex. Scoped; the shared primitive is untouched. */
@@ -1112,54 +1271,93 @@
 		outline: 2px solid var(--primary);
 		outline-offset: 3px;
 	}
-	/* Three pillars, ONE row ≥768, identical chassis + content budget → the row
-	   reads level without any stretching tricks. */
-	.pillar-grid {
+	/* The ground rules — an INFORMATIONAL species: seated against a 1px amber
+	   rule with an aligned mono glyph column, transparent ground, square edges,
+	   no shadow, no hover, no cursor — none of the clickable-card cues (bordered
+	   chassis, radius, lift, Open CTA) the destination tiles wear. */
+	.what-pillars {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+		border-left: 1px solid var(--line-amber);
+		padding-left: clamp(1.25rem, 3vw, 2rem);
+		min-width: 0;
+	}
+	.pillar-list {
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		display: grid;
-		gap: 1.25rem;
-		grid-auto-rows: 1fr;
-	}
-	@media (min-width: 768px) {
-		.pillar-grid {
-			grid-template-columns: repeat(3, minmax(0, 1fr));
-		}
-	}
-	.pillar {
 		display: flex;
 		flex-direction: column;
-		gap: 0.375rem;
-		padding: 1.25rem 1.5rem;
-		background-color: var(--card);
-		border: 2px solid var(--border-brand);
-		border-radius: var(--radius-lg);
-		box-shadow: var(--shadow-card);
-		min-width: 0;
+		gap: 1.5rem;
+	}
+	.pillar {
+		display: grid;
+		grid-template-columns: 2.75rem minmax(0, 1fr);
+		column-gap: 0.875rem;
+		align-items: start;
 	}
 	.pillar-glyph {
 		font-family: var(--font-mono);
-		font-size: var(--text-heading);
-		line-height: 1;
+		font-size: 1.75rem;
+		line-height: 1.15;
 		color: var(--accent-text);
+	}
+	.pillar-text {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		min-width: 0;
 	}
 	.pillar-title {
 		font-family: var(--font-heading);
 		font-weight: 700;
 		font-size: var(--text-subheading);
+		line-height: 1.2;
 	}
 	.pillar-desc {
 		color: var(--muted-foreground);
-		font-size: var(--text-small);
-		line-height: 1.5;
+		font-size: var(--text-body);
+		line-height: 1.55;
 	}
 
-	/* ══ EXPLORE — ONE uniform tile grammar, equal rows ══════════════════════════ */
+	/* ══ EXPLORE — [ FILTER RAIL | destination groups ] ══════════════════════════
+	   The alerts-page grid grammar: one column below 1024 (the rail collapses to
+	   SurfaceRail's pill→sheet), [15rem | content] at ≥1024 with the rail sticky.
+	   The rail track is RESERVED — it holds its lane whether or not a filter is
+	   active. */
 	.hub-launch {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: clamp(1.5rem, 4vw, 2rem);
+		width: 100%;
+	}
+	@media (min-width: 1024px) {
+		.hub-launch {
+			grid-template-columns: 15rem minmax(0, 1fr);
+			gap: 2rem;
+			align-items: start;
+		}
+	}
+	/* The rail body: the two facet groups + the match summary in one column. */
+	.explore-filters {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		min-width: 0;
+	}
+	.launch-content {
 		display: flex;
 		flex-direction: column;
 		gap: 2.5rem;
+		min-width: 0;
+	}
+	/* Honest empty state when the two facets intersect to nothing. */
+	.launch-empty {
+		margin: 0;
+		padding: 2rem 0;
+		font-size: var(--text-body);
+		color: var(--muted-foreground);
 	}
 	.launch-group {
 		display: flex;
@@ -1197,22 +1395,26 @@
 		gap: 1.25rem;
 		/* auto-FIT (not fill): empty tracks collapse so each question's tiles span
 		   the full row edge-to-edge — no dead right half (felt symmetry). Rows stay
-		   uniform WITHIN a group; the 2-tile method row breathes wider by design. */
-		grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+		   uniform WITHIN a group; the 2-tile method row breathes wider by design.
+		   17rem floor: the v2 interiors carry heading-scale titles + body-scale
+		   descriptions, which need the wider lane to read. */
+		grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
 		grid-auto-rows: 1fr;
 	}
 	.launch-grid > li {
 		min-width: 0;
 		display: flex;
 	}
-	/* ONE tile chassis (the feature/compact split is gone): glyph · title · desc ·
-	   enter — an identical content budget on every surface. */
+	/* ONE tile chassis (wayfinding v2): big glyph + kind tag on the top row,
+	   heading-scale title, body-scale description, Open CTA on a hairline footer.
+	   Content fills the card — the interior earns its area instead of stacking
+	   small type in the top-left corner. */
 	.hub-tile {
 		width: 100%;
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
-		padding: 1.25rem 1.5rem;
+		gap: 0.625rem;
+		padding: 1.5rem 1.625rem 1.25rem;
 		text-align: left;
 		text-decoration: none;
 		background-color: var(--card);
@@ -1235,34 +1437,46 @@
 		outline: 2px solid var(--primary);
 		outline-offset: 2px;
 	}
+	/* Top row: the glyph anchors the left, the KIND tag seats the top-right
+	   corner — the same words as the rail's second facet, so filter and card
+	   speak one language. */
+	.hub-tile-top {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
 	/* The glyph rides the amber TEXT accent (station wayfinding) — distinct from
 	   the reserved amber GROUND conversion CTA. */
 	.hub-tile-glyph {
 		font-family: var(--font-mono);
-		font-size: var(--text-title);
+		font-size: clamp(2.25rem, 2.5vw, 2.75rem);
 		line-height: 1;
 		color: var(--accent-text);
 	}
-	.hub-tile-body {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		flex: 1 1 auto;
-		min-width: 0;
+	.hub-tile-tag {
+		color: var(--muted-foreground);
+		white-space: nowrap;
+		padding-top: 0.25rem;
 	}
 	.hub-tile-title {
 		font-family: var(--font-heading);
-		font-weight: 700;
-		font-size: var(--text-subheading);
-		line-height: 1.2;
+		font-weight: 800;
+		font-size: var(--text-heading);
+		line-height: 1.15;
+		letter-spacing: var(--tracking-tight);
 	}
 	.hub-tile-desc {
 		color: var(--muted-foreground);
-		font-size: var(--text-small);
-		line-height: 1.5;
+		font-size: var(--text-body);
+		line-height: 1.6;
 	}
 	.hub-tile-cta {
 		margin-top: auto;
+		padding-top: 0.875rem;
+		border-top: 1px solid var(--border-subtle);
+		align-self: stretch;
+		text-align: right;
 		color: var(--primary);
 		white-space: nowrap;
 	}
