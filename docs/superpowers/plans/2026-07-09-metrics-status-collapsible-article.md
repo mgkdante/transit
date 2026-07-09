@@ -273,7 +273,7 @@ git commit -m "feat(web): match yesid article controls"
 
 - Modify: `apps/web/tools/tokens/tokens.json`
 - Regenerate: `apps/web/src/lib/styles/tokens.css`
-- Regenerate: `apps/web/src/app.css`
+- Run the generator against: `apps/web/src/app.css` (expected unchanged because the current Tailwind theme-block generator emits only immediate `text.*` leaves; runtime CSS imports `tokens.css` directly)
 - Modify: `apps/web/src/lib/features/metrics/MetricsExplainer.svelte`
 - Modify: `apps/web/src/lib/features/metrics/MetricsExplainer.svelte.test.ts`
 - Modify: `apps/web/src/lib/features/metrics/MetricsExplainer.methodology.svelte.test.ts`
@@ -380,7 +380,7 @@ Run:
 bun run --cwd apps/web tokens:build
 ```
 
-Expected: `tokens.css` and the generated `app.css` theme region gain the two matching brand-base variables; motion tokens remain unchanged.
+Expected: `tokens.css` gains the two matching brand-base variables. `app.css` and motion tokens remain unchanged; `app.css` imports `tokens.css`, so direct custom-property consumers receive the nested tokens without a Tailwind utility alias.
 
 - [ ] **Step 4: Replace Metrics page-owned bulk logic with the shared store**
 
@@ -512,7 +512,7 @@ Run the Global Constraints pre-commit battery, then:
 
 ```bash
 git add apps/web/tools/tokens/tokens.json \
-  apps/web/src/lib/styles/tokens.css apps/web/src/app.css \
+  apps/web/src/lib/styles/tokens.css \
   apps/web/src/lib/features/metrics/MetricsExplainer.svelte \
   apps/web/src/lib/features/metrics/MetricsExplainer.svelte.test.ts \
   apps/web/src/lib/features/metrics/MetricsExplainer.methodology.svelte.test.ts \
