@@ -30,7 +30,24 @@
 
 ## P5-R state (Notion slice `3983e863-0690-81cb-b2f0-dbf5b8619711`)
 
-- **R1 home: ~85%.** Remaining = the SCROLL JOURNEY machinery only:
+- **R1 home: ~80%.** Remaining = TWO pieces (operator, end-of-day round):
+
+  **(1) WAYFINDING v2 — filterable cards + informational/clickable split (DO FIRST):**
+  - Restructure "What this is": the heading + prose in ONE column; Live / Honest /
+    Accountable in a SECOND column with their OWN *informational* styling — they must
+    NOT look clickable (no card chassis that reads as a button; readers were at risk of
+    clicking "Accountable" expecting a page). Clickable destination cards and
+    informational pillars must be visibly different species.
+  - Add a LEFT RAIL carrying FILTERS for the destination cards (reserve the rail space
+    in the layout); cards become filterable (by rider question / live-vs-history /
+    whatever classification survives a design pass — keep the four question groups as
+    the default view).
+  - Redesign the card INTERIOR: today everything stacks left with wasted space — use
+    it: bigger fonts, bigger glyphs, longer descriptions where they earn it, nicer
+    internal styling. Keep one uniform chassis + content budget (felt symmetry), keep
+    icon+label+description+CTA (research law), keep EN+FR.
+
+  **(2) the SCROLL JOURNEY machinery:
   lazy ScrollTrigger/DrawSVG/CustomEase loaders + scrub kit port → 'NEXT STOP: SCROLL
   DOWN' billboard → transit network-schematic SVG draw → --primary viewport takeover →
   cross-fade into the (already-live) thesis hero. PRM/mobile fallback = current page
@@ -65,7 +82,9 @@
 See the operator-facing prompt in the session close; short form:
 "Continue P5-R (memory p5r-redo-program.md + docs/audits/p5-r/). First verify #204
 merged+deployed and prod healthy; check STM API recovery (then data_health.json must be
-200); push the date-bomb sweep branch if it exists. Then BUILD THE R1 SCROLL JOURNEY per
-r1-build-brief.md (skip the rejected SQL terminal), ship via the PR train (full battery ×
-browser matrix EN/FR × dark/light × 390). Then R3 (article skeleton EXACT), then R2, R4,
-R5, R6 — every page citizen-plain, yesid-lifted, our variations, felt symmetry."
+200). Then R1-final in two PRs: (1) WAYFINDING v2 — filter rail + informational/clickable
+split + card-interior redesign (spec in 'P5-R state' above); (2) the SCROLL JOURNEY per
+r1-build-brief.md (skip the rejected SQL terminal). Ship each via the PR train (full
+battery × browser matrix EN/FR × dark/light × 390). Then R3 (article skeleton EXACT),
+then R2, R4, R5, R6 — every page citizen-plain, yesid-lifted, our variations, felt
+symmetry."
