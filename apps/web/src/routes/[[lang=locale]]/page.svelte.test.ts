@@ -261,9 +261,85 @@ describe('Home hub — explore everything wayfinding', () => {
 	});
 });
 
+describe('Home hub — wayfinding v2 (informational pillars + filter rail)', () => {
+	it('renders the ground rules as informational, never clickable', () => {
+		render(Page);
+		// The what-this-is section holds ONE link (the measure deep-link) and no
+		// buttons: the pillars are a legend, not cards — nothing about them is
+		// interactive (informational vs clickable = different species).
+		const what = screen.getByRole('region', { name: /what this is/i });
+		expect(within(what).getAllByRole('link')).toHaveLength(1);
+		expect(within(what).queryAllByRole('button')).toHaveLength(0);
+		for (const title of ['Live', 'Honest', 'Accountable']) {
+			expect(within(what).getByText(title).closest('a, button')).toBeNull();
+		}
+	});
+
+	it('reserves the filter rail: both facets render with the full-count summary', () => {
+		render(Page);
+		// The two facet radiogroups are present in the default (unfiltered) view —
+		// the rail space is reserved, not conjured on demand.
+		expect(screen.getByRole('radio', { name: 'Where’s my bus?' })).toBeInTheDocument();
+		expect(screen.getByRole('radio', { name: 'The record' })).toBeInTheDocument();
+		// All 11 destinations count into the pill summary before any filtering.
+		expect(screen.getAllByText('11 destinations').length).toBeGreaterThanOrEqual(1);
+	});
+
+	it('filters to ONE group when a rider question is picked', async () => {
+		render(Page);
+		await fireEvent.click(screen.getByRole('radio', { name: 'Which line can I trust?' }));
+		const nav = screen.getByRole('navigation', { name: /explore everything/i });
+		expect(
+			within(nav).getByRole('heading', { name: 'Which line can I trust?' }),
+		).toBeInTheDocument();
+		expect(within(nav).queryByRole('heading', { name: 'Where’s my bus?' })).toBeNull();
+		expect(within(nav).queryByRole('heading', { name: 'Behind the numbers' })).toBeNull();
+		// The match summary counts the one group's three destinations.
+		expect(screen.getAllByText('3 destinations').length).toBeGreaterThanOrEqual(1);
+	});
+
+	it('filters across groups by KIND, hides emptied groups, and clears back to all', async () => {
+		render(Page);
+		await fireEvent.click(screen.getByRole('radio', { name: 'The record' }));
+		const nav = screen.getByRole('navigation', { name: /explore everything/i });
+		// Live-only surfaces drop out, record surfaces stay, and the all-method
+		// group hides whole rather than standing as an empty heading.
+		expect(within(nav).queryByRole('button', { name: /Live map/i })).toBeNull();
+		expect(within(nav).getByRole('link', { name: /Repeat offenders/i })).toBeInTheDocument();
+		expect(within(nav).queryByRole('heading', { name: 'Behind the numbers' })).toBeNull();
+		// Clear restores the four-group default view.
+		await fireEvent.click(screen.getByRole('button', { name: /clear filters/i }));
+		expect(within(nav).getByRole('heading', { name: 'Behind the numbers' })).toBeInTheDocument();
+		expect(within(nav).getByRole('button', { name: /Live map/i })).toBeInTheDocument();
+	});
+
+	it('shows an honest empty state when the two facets intersect to nothing', async () => {
+		render(Page);
+		await fireEvent.click(screen.getByRole('radio', { name: 'Where’s my bus?' }));
+		await fireEvent.click(screen.getByRole('radio', { name: 'The record' }));
+		expect(screen.getByText(/nothing matches these filters/i)).toBeInTheDocument();
+	});
+
+	it('tags every card with its KIND in the same words as the rail facet', () => {
+		render(Page);
+		const mapTile = screen.getByRole('button', { name: /Live map/i });
+		expect(within(mapTile).getByText('Live now')).toBeInTheDocument();
+		const receiptTile = screen.getByRole('link', { name: /Daily receipt/i });
+		expect(within(receiptTile).getByText('The record')).toBeInTheDocument();
+	});
+});
+
 describe('Home hub — bilingual', () => {
 	beforeEach(() => {
 		state.locale = 'fr';
+	});
+
+	it('renders the FR filter rail (facet labels + kind chips)', () => {
+		render(Page);
+		expect(screen.getByText('Par question')).toBeInTheDocument();
+		expect(screen.getByText('Par genre')).toBeInTheDocument();
+		expect(screen.getByRole('radio', { name: 'Le bilan' })).toBeInTheDocument();
+		expect(screen.getByRole('radio', { name: 'Où est mon bus ?' })).toBeInTheDocument();
 	});
 
 	it('renders the FR copy + FR-prefixed reference hrefs', () => {
