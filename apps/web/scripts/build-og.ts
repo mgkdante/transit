@@ -23,6 +23,7 @@ import { Resvg } from '@resvg/resvg-js';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEPLOYMENT_IDENTITY } from '../src/lib/site/deployment';
 
 const here = dirname(fileURLToPath(import.meta.url)); // web/scripts
 const webRoot = resolve(here, '..'); // web/
@@ -54,14 +55,19 @@ interface CardCopy {
 	statusLabel: string; // text beside the live dot
 }
 
+// Provider identity comes from the deployment seam (operator law 2026-07-09:
+// never a hardcoded provider string). Relative import keeps this script free of
+// $lib/$app aliases (it runs under bare bun, no vite resolver).
+const PROVIDER = DEPLOYMENT_IDENTITY.providerShortName.toUpperCase();
+
 const COPY: Record<Locale, CardCopy> = {
 	en: {
-		eyebrow: 'STM · NETWORK ANALYTICS',
+		eyebrow: `${PROVIDER} · NETWORK ANALYTICS`,
 		tagline: 'On-time performance, crowding and disruptions — measured, never invented.',
 		statusLabel: 'LIVE NETWORK',
 	},
 	fr: {
-		eyebrow: 'STM · ANALYSE DU RÉSEAU',
+		eyebrow: `${PROVIDER} · ANALYSE DU RÉSEAU`,
 		tagline: 'Ponctualité, achalandage et perturbations — mesurés, jamais inventés.',
 		statusLabel: 'RÉSEAU EN DIRECT',
 	},
