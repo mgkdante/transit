@@ -1,5 +1,19 @@
 # R1 · Theatre machinery + the home JOURNEY — build brief
 
+> ## ⛔ TOMBSTONE (operator, 2026-07-09, end of day)
+>
+> **The scroll JOURNEY below is REJECTED for transit — do NOT build it.** Operator:
+> the pinned scroll intro (billboard → schematic draw → orange takeover) is
+> yesid.dev-ONLY theatre; it belongs to the portfolio site, never to this citizen
+> dashboard. The earlier "re-legalized scroll theatre" ruling covered yesid.dev, and
+> reading it as a transit mandate was a misunderstanding. Same standing as the
+> LiveNetworkTerminal rejection: keep this note so no session resurrects it from the
+> register (§ HOME gap 1) or from the movement list below.
+>
+> **R1 is COMPLETE** once wayfinding v2 (PR #206: filter rail + informational
+> pillars + card redesign) merges. The home = the honest command board, full stop.
+> The movement list below is retained as historical reference ONLY.
+
 > Branch `slice/p5r-r1-home-journey`. Notion slice `3983e863-0690-81cb-b2f0-dbf5b8619711` ·
 > register: `parity-register-full.json` § HOME + § SITE-WIDE. Every hard law from the plan
 > applies (marks frozen · one amber ground CTA per view · glow never text · EN+FR · honest
@@ -9,9 +23,9 @@
 >
 > STATUS: the STATIC hero + sections shipped 2026-07-09 (`3d7bdf1` — the yesid hero geometry
 > verbatim: thesis + 3 stat tiles + statement/lede/CTAs | amber spine | live-pulse panel with
-> fleet-status readout; uniform explore tiles; level pillar row). REMAINING = the scroll
-> JOURNEY machinery below. **LiveNetworkTerminal (the SQL query panel) was REJECTED by the
-> operator — do NOT rebuild it**; the hero right column IS the live-pulse TerminalPanel.
+> fleet-status readout; uniform explore tiles; level pillar row). **LiveNetworkTerminal (the
+> SQL query panel) was REJECTED by the operator — do NOT rebuild it**; the hero right column
+> IS the live-pulse TerminalPanel.
 
 ## Movements (yesid HomePage.svelte:228-314 is the reference score)
 
