@@ -7,10 +7,12 @@
 // chosen WIDTH as a scalar so the layout sticks across reloads. The map canvas
 // never reads this value, so resizing the detail panel can not resize the map.
 //
-// This mirrors `leftRailWidth.ts` (the left nav rail's overlay width) exactly —
-// one mechanism, two instances — so both are thin wrappers over the SHARED
-// `overlayWidth` factory, binding their own key + band and re-exporting the same
-// named constants/functions (every import site stays untouched).
+// This is a thin wrapper over the SHARED `overlayWidth` factory, binding its own
+// storage key + band and re-exporting the named constants/functions (every import
+// site stays untouched). The factory was originally shared with the left-nav rail's
+// overlay width; the rail is gone (nav lives in the NavPill), so the detail panel is
+// the sole consumer now — the factory stays because it owns the SSR-safe clamp +
+// persist that this panel relies on.
 
 import { createOverlayWidth } from '$lib/components/shell/overlayWidth';
 

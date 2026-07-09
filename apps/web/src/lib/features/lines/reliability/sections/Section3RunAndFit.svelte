@@ -367,6 +367,7 @@
 
 <CollapsibleSection
 	dataSection="run-and-fit"
+	number={4}
 	eyebrow={copy.sections.runAndFit.label}
 	question={copy.sections.runAndFit.question}
 >
@@ -551,7 +552,7 @@
 	.sub-head {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	/* The ramp-in caveat: quiet mono caption, but always present + legible (AA). */
 	.sub-rampin {
@@ -574,7 +575,7 @@
 	   below one column on a phone. Each tile is a MetricBullet (number + scale bullet). */
 	.run-metrics {
 		display: grid;
-		gap: var(--space-card-gap, 1rem);
+		gap: var(--space-card-gap);
 		grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
 	}
 
@@ -584,7 +585,7 @@
 	.label-with-info {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.label-with-info :global([data-slot='section-label']) {
 		min-width: 0;
@@ -598,7 +599,7 @@
 	.crowding-delay {
 		display: flex;
 		flex-direction: column;
-		gap: var(--spacing-2, 0.5rem);
+		gap: 0.5rem;
 	}
 
 	/* S7 weekday/weekend 2-col: auto-fit so it's two columns on desktop and reflows
@@ -607,7 +608,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
-		margin-top: var(--spacing-3, 0.75rem);
+		margin-top: 0.75rem;
 	}
 	.crowding-2col-grid {
 		display: grid;
@@ -617,7 +618,7 @@
 	.crowding-2col-cell {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		min-width: 0;
 	}
 	.crowding-2col-label {
@@ -633,7 +634,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
-		margin-top: var(--spacing-3, 0.75rem);
+		margin-top: 0.75rem;
 	}
 	.crowding-dow-caption {
 		margin: 0;
@@ -648,7 +649,7 @@
 	.crowding-dow-grid {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -657,7 +658,7 @@
 		display: grid;
 		grid-template-columns: 6.5rem 1fr;
 		align-items: center;
-		gap: 0.85rem;
+		gap: 0.875rem;
 		min-width: 0;
 	}
 	.crowding-dow-label {

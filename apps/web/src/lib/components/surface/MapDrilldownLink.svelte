@@ -32,7 +32,10 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		min-height: 2rem;
+		/* Tap-target floor (P5.3d §C4 P10): 32px → 44px. Clears the "View on map"
+		   chip everywhere it renders (line/stop detail heads + ~200 lines-index rows
+		   + trip line/map chips) in one shared change. */
+		min-height: var(--size-tap-min);
 		padding: 0.25rem 0.65rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
@@ -42,9 +45,9 @@
 		border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border) 72%);
 		border-radius: var(--radius-pill);
 		transition:
-			color 150ms ease,
-			background-color 150ms ease,
-			border-color 150ms ease;
+			color var(--duration-fast) var(--ease-default),
+			background-color var(--duration-fast) var(--ease-default),
+			border-color var(--duration-fast) var(--ease-default);
 	}
 	.map-drilldown-link:hover {
 		color: var(--foreground);

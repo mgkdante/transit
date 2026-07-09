@@ -39,6 +39,24 @@ export interface StopsIndexCopy extends SurfaceHeadCopy {
 	readonly sortLabel: string;
 	readonly sortDefault: string;
 	readonly sortWorst: string;
+	/**
+	 * Idle-state network stop-picture band (§C5.5) — shown before the rider types,
+	 * turning the dead prompt into a live census + a way in.
+	 */
+	readonly census: {
+		/** Mono overline over the census band. */
+		readonly label: string;
+		/** "{n} stops" served-catalogue count (already-fetched stops index). */
+		readonly stops: (n: string) => string;
+		/** "{n} lines" served-catalogue count (already-fetched routes index). */
+		readonly lines: (n: string) => string;
+		/** Worst-stop teaser link text into /repeat-offenders. */
+		readonly worstTeaser: string;
+		/** Caption over the example-query chips. */
+		readonly examplesLabel: string;
+		/** The tappable example queries that fill the search box. */
+		readonly examples: readonly string[];
+	};
 }
 
 export interface StopDetailCopy {
@@ -46,6 +64,8 @@ export interface StopDetailCopy {
 	readonly kicker: string;
 	/** Back-link label into the stops index ("← Stops"), keeps nav in-chrome. */
 	readonly back: string;
+	/** Framing lede under the stop name in the detail head (detail-head rhythm). */
+	readonly detailLede: string;
 	/** Live-map drilldown action. */
 	readonly viewOnMap: string;
 	readonly viewStopOnMap: (stop: string) => string;
@@ -58,6 +78,8 @@ export interface StopDetailCopy {
 	};
 	/** "Next departures" pane. */
 	readonly next: {
+		/** D3: the TerminalPanel framing the live departures board. */
+		readonly terminal: { readonly title: string; readonly tag: string };
 		/** Section label over the departures list. */
 		readonly heading: string;
 		/** Shown when the live board has no upcoming departures for this stop. */
@@ -139,6 +161,14 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		sortLabel: 'Trier',
 		sortDefault: 'Ordre du parcours',
 		sortWorst: 'Moins fiables',
+		census: {
+			label: 'Le réseau en un coup d’œil',
+			stops: (n) => `${n} arrêts`,
+			lines: (n) => `${n} lignes`,
+			worstTeaser: 'Voir les arrêts les moins fiables →',
+			examplesLabel: 'Essayez',
+			examples: ['Berri-UQAM', 'Côte-Vertu', 'Place-des-Arts'],
+		},
 	},
 	en: {
 		kicker: 'STOPS · CATALOGUE',
@@ -163,6 +193,14 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		sortLabel: 'Sort',
 		sortDefault: 'Route order',
 		sortWorst: 'Least reliable',
+		census: {
+			label: 'The network at a glance',
+			stops: (n) => `${n} stops`,
+			lines: (n) => `${n} lines`,
+			worstTeaser: 'See the least reliable stops →',
+			examplesLabel: 'Try',
+			examples: ['Berri-UQAM', 'Côte-Vertu', 'Place-des-Arts'],
+		},
 	},
 };
 
@@ -170,10 +208,13 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 	fr: {
 		kicker: 'ARRÊT',
 		back: 'Arrêts',
+		detailLede:
+			'Prochains passages en direct, horaire prévu et fiabilité historique de cet arrêt. Mesuré à partir du contrat /v1.',
 		viewOnMap: 'Voir sur la carte',
 		viewStopOnMap: (stop) => `Voir l’arrêt ${stop} sur la carte`,
 		tabs: { next: 'Prochains', schedule: 'Horaire', info: 'Info', reliability: 'Fiabilité' },
 		next: {
+			terminal: { title: 'passages-en-direct', tag: 'EN DIRECT' },
 			heading: 'Prochains passages',
 			none: 'Aucun passage à venir pour le moment.',
 			late: (min) => `+${min} min de retard`,
@@ -220,10 +261,13 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 	en: {
 		kicker: 'STOP',
 		back: 'Stops',
+		detailLede:
+			'Live next departures, planned schedule and historic reliability for this stop. Measured from the /v1 contract.',
 		viewOnMap: 'View on map',
 		viewStopOnMap: (stop) => `View stop ${stop} on map`,
 		tabs: { next: 'Next', schedule: 'Schedule', info: 'Info', reliability: 'Reliability' },
 		next: {
+			terminal: { title: 'live-departures', tag: 'LIVE' },
 			heading: 'Next departures',
 			none: 'No upcoming departures right now.',
 			late: (min) => `+${min} min late`,

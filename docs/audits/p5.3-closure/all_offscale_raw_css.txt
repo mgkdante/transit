@@ -1,0 +1,446 @@
+prop=gap  value=0.4rem  count=55
+    apps/web/src/routes/[[lang=locale]]/+page.svelte:578  | gap: 0.4rem;
+    apps/web/src/routes/[[lang=locale]]/+page.svelte:636  | gap: 0.4rem;
+    apps/web/src/routes/[[lang=locale]]/_kit/+page.svelte:605  | gap: 0.4rem;
+    apps/web/src/routes/[[lang=locale]]/_kit/+page.svelte:613  | gap: 0.4rem;
+    apps/web/src/lib/features/lines/RouteDetail.svelte:531  | gap: 0.4rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section3RunAndFit.svelte:554  | gap: 0.4rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section3RunAndFit.svelte:620  | gap: 0.4rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section1WhenToRide.svelte:551  | gap: 0.4rem;
+    apps/web/src/lib/features/lines/reliability/sections/MetricBullet.svelte:73  | gap: 0.4rem;
+    apps/web/src/lib/features/trips/TripDetail.svelte:270  | gap: 0.4rem;
+    apps/web/src/lib/features/stops/StopDetail.svelte:739  | gap: 0.4rem;
+    apps/web/src/lib/features/stops/StopDetail.svelte:746  | gap: 0.4rem;
+    apps/web/src/lib/features/hotspots/sections/HotspotSection.svelte:295  | gap: 0.4rem;
+    apps/web/src/lib/features/hotspots/sections/HotspotSection.svelte:320  | gap: 0.4rem;
+    apps/web/src/lib/features/map/MapMotionControl.svelte:112  | gap: 0.4rem;
+    apps/web/src/lib/features/map/MapDetailAlerts.svelte:98  | gap: 0.4rem;
+    apps/web/src/lib/features/map/MapHeadTitle.svelte:47  | gap: 0.4rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:830  | gap: 0.4rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:933  | gap: 0.4rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1100  | gap: 0.4rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1140  | gap: 0.4rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1181  | gap: 0.4rem;
+    apps/web/src/lib/features/receipt/sections/SectionTimeOfDay.svelte:72  | gap: 0.4rem;
+    apps/web/src/lib/features/receipt/sections/SectionHeadline.svelte:95  | gap: 0.4rem;
+    apps/web/src/lib/features/receipt/sections/SectionHeadline.svelte:104  | gap: 0.4rem;
+    apps/web/src/lib/features/receipt/sections/SectionWorst.svelte:78  | gap: 0.4rem;
+    apps/web/src/lib/features/receipt/sections/SectionAffected.svelte:72  | gap: 0.4rem;
+    apps/web/src/lib/features/search/SearchSurface.svelte:392  | gap: 0.4rem;
+    apps/web/src/lib/features/network/reliability/sections/SectionTrend.svelte:97  | gap: 0.4rem;
+    apps/web/src/lib/features/network/reliability/sections/SectionTrend.svelte:109  | gap: 0.4rem;
+    apps/web/src/lib/features/network/reliability/sections/SectionByTimeOfDay.svelte:88  | gap: 0.4rem;
+    apps/web/src/lib/features/network/reliability/sections/SectionStatusMix.svelte:83  | gap: 0.4rem;
+    apps/web/src/lib/features/network/reliability/sections/NetworkSurface.svelte:597  | gap: 0.4rem;
+    apps/web/src/lib/features/network/reliability/sections/SectionCrowdingByDay.svelte:70  | gap: 0.4rem;
+    apps/web/src/lib/features/network/reliability/sections/SectionCrowdingByDay.svelte:78  | gap: 0.4rem;
+    apps/web/src/lib/features/network/reliability/sections/SectionDelayHistogram.svelte:88  | gap: 0.4rem;
+    apps/web/src/lib/features/network/reliability/sections/SectionWeekday.svelte:81  | gap: 0.4rem;
+    apps/web/src/lib/features/health/sections/SectionNotes.svelte:57  | gap: 0.4rem;
+    apps/web/src/lib/features/health/sections/SectionConformance.svelte:103  | gap: 0.4rem;
+    apps/web/src/lib/features/health/sections/SectionLanes.svelte:193  | gap: 0.4rem;
+    apps/web/src/lib/features/metrics/MetricsExplainer.svelte:921  | gap: 0.4rem;
+    apps/web/src/lib/features/metrics/MetricsExplainer.svelte:1073  | gap: 0.4rem;
+    apps/web/src/lib/features/metrics/MetricsExplainer.svelte:1108  | gap: 0.4rem;
+    apps/web/src/lib/features/repeat-offenders/RepeatOffenders.svelte:430  | gap: 0.4rem;
+    apps/web/src/lib/features/repeat-offenders/sections/RepeatOffendersSection.svelte:342  | gap: 0.4rem;
+    apps/web/src/lib/features/repeat-offenders/sections/RepeatOffendersSection.svelte:355  | gap: 0.4rem;
+    apps/web/src/lib/features/repeat-offenders/sections/RepeatOffendersSection.svelte:380  | gap: 0.4rem;
+    apps/web/src/lib/components/surface/ReliabilityPane.svelte:226  | gap: 0.4rem;
+    apps/web/src/lib/components/surface/ReliabilityPane.svelte:231  | gap: 0.4rem;
+    apps/web/src/lib/components/surface/SearchInput.svelte:63  | gap: 0.4rem;
+    apps/web/src/lib/components/surface/ReliabilityBadge.svelte:95  | gap: 0.4rem;
+    apps/web/src/lib/components/edge/AbsentValue.svelte:126  | gap: 0.4rem;
+    apps/web/src/lib/components/shell/RefreshButton.svelte:113  | gap: 0.4rem;
+    apps/web/src/lib/components/shell/LeftRail.svelte:221  | gap: 0.4rem;
+    apps/web/src/lib/components/shell/LeftRail.svelte:234  | gap: 0.4rem;
+prop=gap  value=0.35rem  count=31
+    apps/web/src/lib/features/lines/RouteDetail.svelte:627  | gap: 0.35rem;
+    apps/web/src/lib/features/lines/LinesIndex.svelte:238  | gap: 0.35rem;
+    apps/web/src/lib/features/lines/reliability/RouteReliabilityClusters.svelte:682  | gap: 0.35rem;
+    apps/web/src/lib/features/lines/reliability/RouteReliabilityClusters.svelte:685  | gap: 0.35rem;
+    apps/web/src/lib/features/lines/reliability/RouteReliabilityClusters.svelte:750  | gap: 0.35rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section0Verdict.svelte:329  | gap: 0.35rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section4WorstStops.svelte:183  | gap: 0.35rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section2TheWait.svelte:957  | gap: 0.35rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section2TheWait.svelte:988  | gap: 0.35rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section3RunAndFit.svelte:587  | gap: 0.35rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section1WhenToRide.svelte:528  | gap: 0.35rem;
+    apps/web/src/lib/features/lines/reliability/sections/MetricBullet.svelte:82  | gap: 0.35rem;
+    apps/web/src/lib/features/alerts/sections/AlertFilters.svelte:129  | gap: 0.35rem;
+    apps/web/src/lib/features/alerts/sections/AlertLog.svelte:220  | gap: 0.35rem;
+    apps/web/src/lib/features/stops/StopDetail.svelte:622  | gap: 0.35rem;
+    apps/web/src/lib/features/stops/StopsIndex.svelte:350  | gap: 0.35rem;
+    apps/web/src/lib/features/stops/reliability/sections/StopReliabilitySurface.svelte:397  | gap: 0.35rem;
+    apps/web/src/lib/features/hotspots/sections/HotspotSection.svelte:237  | gap: 0.35rem;
+    apps/web/src/lib/features/hotspots/sections/HotspotSection.svelte:303  | gap: 0.35rem;
+    apps/web/src/lib/features/map/MapDetailAlerts.svelte:179  | gap: 0.35rem;
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:395  | gap: 0.35rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:673  | gap: 0.35rem;
+    apps/web/src/lib/features/search/SearchSurface.svelte:407  | gap: 0.35rem;
+    apps/web/src/lib/features/health/sections/SectionLanes.svelte:205  | gap: 0.35rem;
+    apps/web/src/lib/features/repeat-offenders/sections/RepeatOffendersSection.svelte:275  | gap: 0.35rem;
+    apps/web/src/lib/features/repeat-offenders/sections/RepeatOffendersSection.svelte:363  | gap: 0.35rem;
+    apps/web/src/lib/components/surface/AffectedAlerts.svelte:295  | gap: 0.35rem;
+    apps/web/src/lib/components/surface/Breadcrumb.svelte:89  | gap: 0.35rem;
+    apps/web/src/lib/components/brand/BrandCluster.svelte:137  | gap: 0.35rem;
+    apps/web/src/lib/components/shell/TopBar.svelte:658  | gap: 0.35rem;
+    apps/web/src/lib/components/shell/TopBar.svelte:721  | gap: 0.35rem;
+prop=gap  value=0.3rem  count=25
+    apps/web/src/lib/features/lines/RouteDetail.svelte:598  | gap: 0.3rem;
+    apps/web/src/lib/features/lines/LineDirections.svelte:221  | gap: 0.3rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section2TheWait.svelte:929  | gap: 0.3rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section2TheWait.svelte:1016  | gap: 0.3rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section1WhenToRide.svelte:597  | gap: 0.3rem;
+    apps/web/src/lib/features/trips/TripDetail.svelte:275  | gap: 0.3rem;
+    apps/web/src/lib/features/trips/TripDetail.svelte:312  | gap: 0.3rem;
+    apps/web/src/lib/features/trips/TripDetail.svelte:404  | gap: 0.3rem;
+    apps/web/src/lib/features/map/MapDelayTag.svelte:41  | gap: 0.3rem;
+    apps/web/src/lib/features/map/MapFilters.svelte:707  | gap: 0.3rem;
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:480  | gap: 0.3rem;
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:540  | gap: 0.3rem;
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:549  | gap: 0.3rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:586  | gap: 0.3rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:768  | gap: 0.3rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:901  | gap: 0.3rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1213  | gap: 0.3rem;
+    apps/web/src/lib/features/map/MapFreshness.svelte:115  | gap: 0.3rem;
+    apps/web/src/lib/features/search/VehicleResultRow.svelte:211  | gap: 0.3rem;
+    apps/web/src/lib/features/health/sections/SectionGaps.svelte:59  | gap: 0.3rem;
+    apps/web/src/lib/components/surface/EntityDetail.svelte:169  | gap: 0.3rem;
+    apps/web/src/lib/components/edge/AbsentValue.svelte:101  | gap: 0.3rem;
+    apps/web/src/lib/components/shell/TopBar.svelte:766  | gap: 0.3rem;
+    apps/web/src/lib/components/dataviz/chart/marks/ServiceSpanMark.svelte:206  | gap: 0.3rem;
+    apps/web/src/lib/components/dataviz/chart/marks/DumbbellMark.svelte:151  | gap: 0.3rem;
+prop=gap  value=0.6rem  count=23
+    apps/web/src/lib/features/lines/RouteDetail.svelte:692  | gap: 0.6rem;
+    apps/web/src/lib/features/lines/LineDirections.svelte:142  | gap: 0.6rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section2TheWait.svelte:1065  | gap: 0.6rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section3RunAndFit.svelte:651  | gap: 0.6rem;
+    apps/web/src/lib/features/trips/TripDetail.svelte:348  | gap: 0.6rem;
+    apps/web/src/lib/features/alerts/sections/AlertBreakdown.svelte:106  | gap: 0.6rem;
+    apps/web/src/lib/features/stops/reliability/sections/SectionTimeOfDay.svelte:96  | gap: 0.6rem;
+    apps/web/src/lib/features/stops/reliability/sections/SectionDailyTrend.svelte:180  | gap: 0.6rem;
+    apps/web/src/lib/features/stops/reliability/sections/SectionWeekday.svelte:72  | gap: 0.6rem;
+    apps/web/src/lib/features/stops/reliability/sections/SectionCrowding.svelte:87  | gap: 0.6rem;
+    apps/web/src/lib/features/stops/reliability/sections/StopReliabilitySurface.svelte:386  | gap: 0.6rem;
+    apps/web/src/lib/features/map/MapHeadTitle.svelte:59  | gap: 0.6rem;
+    apps/web/src/lib/features/map/MapFilterPill.svelte:107  | gap: 0.6rem;
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:555  | gap: 0.6rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:741  | gap: 0.6rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:840  | gap: 0.6rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1011  | gap: 0.6rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1065  | gap: 0.6rem;
+    apps/web/src/lib/features/receipt/sections/SectionTimeOfDay.svelte:67  | gap: 0.6rem;
+    apps/web/src/lib/features/receipt/sections/SectionNotReported.svelte:73  | gap: 0.6rem;
+    apps/web/src/lib/features/network/reliability/sections/SectionReporting.svelte:142  | gap: 0.6rem;
+    apps/web/src/lib/features/health/sections/SectionLanes.svelte:140  | gap: 0.6rem;
+    apps/web/src/lib/components/surface/AffectedAlerts.svelte:201  | gap: 0.6rem;
+prop=gap  value=0.45rem  count=15
+    apps/web/src/lib/features/map/MapMotionControl.svelte:123  | gap: 0.45rem;
+    apps/web/src/lib/features/map/MapMotionControl.svelte:129  | gap: 0.45rem;
+    apps/web/src/lib/features/map/MapMotionControl.svelte:165  | gap: 0.45rem;
+    apps/web/src/lib/features/map/MapFilters.svelte:612  | gap: 0.45rem;
+    apps/web/src/lib/features/map/MapFilters.svelte:618  | gap: 0.45rem;
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:287  | gap: 0.45rem;
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:365  | gap: 0.45rem;
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:524  | gap: 0.45rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:631  | gap: 0.45rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:705  | gap: 0.45rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:986  | gap: 0.45rem;
+    apps/web/src/lib/features/map/MapFreshness.svelte:76  | gap: 0.45rem;
+    apps/web/src/lib/features/metrics/MetricsExplainer.svelte:1201  | gap: 0.45rem;
+    apps/web/src/lib/components/shell/TopBar.svelte:849  | gap: 0.45rem;
+    apps/web/src/lib/components/shared/Detail.svelte:77  | gap: 0.45rem;
+prop=gap  value=0.85rem  count=9
+    apps/web/src/routes/[[lang=locale]]/+page.svelte:538  | gap: 0.85rem;
+    apps/web/src/lib/features/lines/LinesIndex.svelte:228  | gap: 0.85rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section3RunAndFit.svelte:660  | gap: 0.85rem;
+    apps/web/src/lib/features/stops/StopsIndex.svelte:340  | gap: 0.85rem;
+    apps/web/src/lib/features/map/MapFilters.svelte:587  | gap: 0.85rem;
+    apps/web/src/lib/features/receipt/sections/SectionHeadline.svelte:72  | gap: 0.85rem;
+    apps/web/src/lib/features/receipt/sections/SectionStateCuts.svelte:106  | gap: 0.85rem;
+    apps/web/src/lib/features/receipt/sections/SectionWorst.svelte:69  | gap: 0.85rem;
+    apps/web/src/lib/features/receipt/sections/SectionAffected.svelte:59  | gap: 0.85rem;
+prop=gap  value=0.55rem  count=9
+    apps/web/src/routes/[[lang=locale]]/+page.svelte:562  | gap: 0.55rem;
+    apps/web/src/lib/features/lines/reliability/ReliabilityFilterPill.svelte:105  | gap: 0.55rem;
+    apps/web/src/lib/features/map/MapDetailAlerts.svelte:75  | gap: 0.55rem;
+    apps/web/src/lib/features/map/MapDetailAlerts.svelte:80  | gap: 0.55rem;
+    apps/web/src/lib/features/map/MapHeadTitle.svelte:73  | gap: 0.55rem;
+    apps/web/src/lib/features/map/MapFilters.svelte:522  | gap: 0.55rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:867  | gap: 0.55rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:874  | gap: 0.55rem;
+    apps/web/src/lib/components/shared/TocNav.svelte:157  | gap: 0.55rem;
+prop=gap  value=0.15rem  count=5
+    apps/web/src/lib/features/alerts/sections/AlertLog.svelte:243  | gap: 0.15rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:918  | gap: 0.15rem;
+    apps/web/src/lib/components/surface/EntityRow.svelte:142  | gap: 0.15rem;
+    apps/web/src/lib/components/layout/Footer.svelte:184  | gap: 0.15rem;
+    apps/web/src/lib/components/shell/LeftRail.svelte:310  | gap: 0.15rem;
+prop=padding  value=0.15rem 0  count=4
+    apps/web/src/lib/features/lines/reliability/sections/Section2TheWait.svelte:1131  | padding: 0.15rem 0;
+    apps/web/src/lib/features/alerts/sections/AlertFilters.svelte:152  | padding: 0.15rem 0;
+    apps/web/src/lib/features/alerts/sections/AlertLog.svelte:291  | padding: 0.15rem 0;
+    apps/web/src/lib/components/surface/AffectedAlerts.svelte:222  | padding: 0.15rem 0;
+prop=gap  value=0.2rem  count=4
+    apps/web/src/lib/features/receipt/sections/SectionAffected.svelte:88  | gap: 0.2rem;
+    apps/web/src/lib/features/health/sections/SectionLanes.svelte:174  | gap: 0.2rem;
+    apps/web/src/lib/features/health/sections/SectionSources.svelte:67  | gap: 0.2rem;
+    apps/web/src/lib/features/repeat-offenders/sections/RepeatOffendersSection.svelte:336  | gap: 0.2rem;
+prop=margin-top  value=0.85rem  count=3
+    apps/web/src/lib/features/lines/reliability/sections/Section2TheWait.svelte:1066  | margin-top: 0.85rem;
+    apps/web/src/lib/features/search/SearchSurface.svelte:387  | margin-top: 0.85rem;
+    apps/web/src/lib/components/shell/LeftRail.svelte:235  | margin-top: 0.85rem;
+prop=font-size  value=0.72rem  count=3
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:493  | font-size: 0.72rem;
+    apps/web/src/lib/components/shell/TopBar.svelte:779  | font-size: 0.72rem;
+    apps/web/src/lib/components/shell/LeftRail.svelte:331  | font-size: 0.72rem;
+prop=padding  value=1.1rem 1.2rem  count=3
+    apps/web/src/lib/features/receipt/sections/SectionHeadline.svelte:73  | padding: 1.1rem 1.2rem;
+    apps/web/src/lib/features/receipt/sections/SectionWorst.svelte:70  | padding: 1.1rem 1.2rem;
+    apps/web/src/lib/features/receipt/sections/SectionAffected.svelte:60  | padding: 1.1rem 1.2rem;
+prop=font-size  value=13px  count=3
+    apps/web/src/lib/components/shell/LangSwitch.svelte:155  | font-size: 13px;
+    apps/web/src/lib/components/shared/TocPill.svelte:279  | font-size: 13px;
+    apps/web/src/lib/components/shared/TocNav.svelte:201  | font-size: 13px;
+prop=gap  value=0.45rem 0.75rem  count=2
+    apps/web/src/lib/features/lines/reliability/RouteReliabilityClusters.svelte:808  | gap: 0.45rem 0.75rem;
+    apps/web/src/lib/components/surface/SurfaceControls.svelte:235  | gap: 0.45rem 0.75rem;
+prop=gap  value=0.25rem 0.6rem  count=2
+    apps/web/src/lib/features/lines/reliability/sections/Section2TheWait.svelte:1025  | gap: 0.25rem 0.6rem;
+    apps/web/src/lib/features/lines/reliability/sections/Section1WhenToRide.svelte:606  | gap: 0.25rem 0.6rem;
+prop=padding  value=0.3rem 0  count=2
+    apps/web/src/lib/features/lines/reliability/sections/Section2TheWait.svelte:1026  | padding: 0.3rem 0;
+    apps/web/src/lib/features/lines/reliability/sections/Section1WhenToRide.svelte:607  | padding: 0.3rem 0;
+prop=padding  value=0.4rem 0.6rem  count=2
+    apps/web/src/lib/features/lines/reliability/sections/Section2TheWait.svelte:1078  | padding: 0.4rem 0.6rem;
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:451  | padding: 0.4rem 0.6rem;
+prop=margin-bottom  value=0.2rem  count=2
+    apps/web/src/lib/features/lines/reliability/sections/Section2TheWait.svelte:1125  | margin-bottom: 0.2rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1095  | margin-bottom: 0.2rem;
+prop=margin-top  value=0.15rem  count=2
+    apps/web/src/lib/features/lines/reliability/sections/MetricBullet.svelte:113  | margin-top: 0.15rem;
+    apps/web/src/lib/features/search/VehicleResultRow.svelte:206  | margin-top: 0.15rem;
+prop=padding  value=0.6rem 0.7rem 0.6rem 0.9rem  count=2
+    apps/web/src/lib/features/alerts/sections/AlertLog.svelte:169  | padding: 0.6rem 0.7rem 0.6rem 0.9rem;
+    apps/web/src/lib/components/surface/AffectedAlerts.svelte:244  | padding: 0.6rem 0.7rem 0.6rem 0.9rem;
+prop=gap  value=0.3rem 0.7rem  count=2
+    apps/web/src/lib/features/alerts/sections/AlertLog.svelte:214  | gap: 0.3rem 0.7rem;
+    apps/web/src/lib/components/surface/AffectedAlerts.svelte:289  | gap: 0.3rem 0.7rem;
+prop=margin  value=0.4rem 0 0  count=2
+    apps/web/src/lib/features/alerts/sections/AlertLog.svelte:263  | margin: 0.4rem 0 0;
+    apps/web/src/lib/components/dataviz/ExplainedMetricCard.svelte:195  | margin: 0.4rem 0 0;
+prop=padding  value=0.35rem 0.75rem  count=2
+    apps/web/src/lib/features/stops/StopDetail.svelte:757  | padding: 0.35rem 0.75rem;
+    apps/web/src/lib/components/surface/DateRangePicker.svelte:325  | padding: 0.35rem 0.75rem;
+prop=padding  value=0.45rem 0.85rem  count=2
+    apps/web/src/lib/features/map/MapOverlayChrome.svelte:222  | padding: 0.45rem 0.85rem;
+    apps/web/src/lib/features/map/MapFeedStallBanner.svelte:98  | padding: 0.45rem 0.85rem;
+prop=gap  value=0.7rem  count=2
+    apps/web/src/lib/features/map/MapFilters.svelte:482  | gap: 0.7rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:577  | gap: 0.7rem;
+prop=padding-bottom  value=0.6rem  count=2
+    apps/web/src/lib/features/map/MapFilters.svelte:507  | padding-bottom: 0.6rem;
+    apps/web/src/lib/features/map/MapFilters.svelte:515  | padding-bottom: 0.6rem;
+prop=padding  value=0.6rem  count=2
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:366  | padding: 0.6rem;
+    apps/web/src/lib/components/shell/LeftRail.svelte:276  | padding: 0.6rem;
+prop=padding  value=0.4rem 0.65rem  count=2
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:375  | padding: 0.4rem 0.65rem;
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:557  | padding: 0.4rem 0.65rem;
+prop=padding  value=0.3rem 0.7rem  count=2
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:386  | padding: 0.3rem 0.7rem;
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:405  | padding: 0.3rem 0.7rem;
+prop=padding  value=0.35rem  count=2
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:441  | padding: 0.35rem;
+    apps/web/src/lib/components/shell/TopBar.svelte:808  | padding: 0.35rem;
+prop=padding-bottom  value=0.55rem  count=2
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:591  | padding-bottom: 0.55rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1082  | padding-bottom: 0.55rem;
+prop=padding  value=0.25rem 0.7rem  count=2
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:642  | padding: 0.25rem 0.7rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:665  | padding: 0.25rem 0.7rem;
+prop=margin-top  value=0.55rem  count=2
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:904  | margin-top: 0.55rem;
+    apps/web/src/lib/components/shell/LeftRail.svelte:242  | margin-top: 0.55rem;
+prop=gap  value=0.65rem  count=2
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:947  | gap: 0.65rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1070  | gap: 0.65rem;
+prop=margin-inline  value=-0.55rem  count=2
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:949  | margin-inline: -0.55rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1013  | margin-inline: -0.55rem;
+prop=padding  value=0.5rem 0.55rem  count=2
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:951  | padding: 0.5rem 0.55rem;
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1015  | padding: 0.5rem 0.55rem;
+prop=margin-top  value=0.1rem  count=2
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:987  | margin-top: 0.1rem;
+    apps/web/src/lib/components/surface/EntityRow.svelte:184  | margin-top: 0.1rem;
+prop=padding  value=0.4rem 0.75rem  count=2
+    apps/web/src/lib/features/search/SearchSurface.svelte:414  | padding: 0.4rem 0.75rem;
+    apps/web/src/lib/components/CodeBlock.svelte:86  | padding: 0.4rem 0.75rem;
+prop=padding  value=0.15rem 0.5rem  count=2
+    apps/web/src/lib/features/health/sections/SectionConformance.svelte:108  | padding: 0.15rem 0.5rem;
+    apps/web/src/lib/features/health/sections/SectionLanes.svelte:213  | padding: 0.15rem 0.5rem;
+prop=font-size  value=18px  count=2
+    apps/web/src/lib/components/shell/BrandWordmark.svelte:87  | font-size: 18px;
+    apps/web/src/lib/components/shell/TopBar.svelte:757  | font-size: 18px;
+prop=padding  value=0.55rem 0.65rem  count=2
+    apps/web/src/lib/components/shell/TopBar.svelte:686  | padding: 0.55rem 0.65rem;
+    apps/web/src/lib/components/shell/TopBar.svelte:735  | padding: 0.55rem 0.65rem;
+prop=padding-top  value=0.55rem  count=2
+    apps/web/src/lib/components/shell/TopBar.svelte:723  | padding-top: 0.55rem;
+    apps/web/src/lib/components/shell/LeftRail.svelte:243  | padding-top: 0.55rem;
+prop=padding-bottom  value=0.1rem  count=2
+    apps/web/src/lib/components/shell/TopBar.svelte:728  | padding-bottom: 0.1rem;
+    apps/web/src/lib/components/shell/LeftRail.svelte:248  | padding-bottom: 0.1rem;
+prop=padding  value=1rem 1.1rem  count=1
+    apps/web/src/routes/[[lang=locale]]/+page.svelte:637  | padding: 1rem 1.1rem;
+prop=padding  value=0.4rem 0.5rem  count=1
+    apps/web/src/lib/features/lines/RouteDetail.svelte:565  | padding: 0.4rem 0.5rem;
+prop=padding  value=0.3rem 0.6rem  count=1
+    apps/web/src/lib/features/lines/RouteDetail.svelte:599  | padding: 0.3rem 0.6rem;
+prop=padding  value=0.6rem 1rem 0.6rem 0.85rem  count=1
+    apps/web/src/lib/features/lines/reliability/ReliabilityFilterPill.svelte:108  | padding: 0.6rem 1rem 0.6rem 0.85rem;
+prop=padding  value=0.5rem 0.8rem  count=1
+    apps/web/src/lib/features/lines/reliability/RouteReliabilityClusters.svelte:681  | padding: 0.5rem 0.8rem;
+prop=gap  value=0.3rem 0.6rem  count=1
+    apps/web/src/lib/features/lines/reliability/RouteReliabilityClusters.svelte:729  | gap: 0.3rem 0.6rem;
+prop=gap  value=0.4rem 0.5rem  count=1
+    apps/web/src/lib/features/lines/reliability/RouteReliabilityClusters.svelte:742  | gap: 0.4rem 0.5rem;
+prop=padding  value=0.2rem 0.6rem  count=1
+    apps/web/src/lib/features/lines/reliability/RouteReliabilityClusters.svelte:752  | padding: 0.2rem 0.6rem;
+prop=margin  value=0.15rem 0 0  count=1
+    apps/web/src/lib/features/alerts/sections/AlertLog.svelte:252  | margin: 0.15rem 0 0;
+prop=gap  value=0.4rem 0.75rem  count=1
+    apps/web/src/lib/features/stops/StopDetail.svelte:700  | gap: 0.4rem 0.75rem;
+prop=padding  value=0.25rem 0.6rem 0.25rem 0.35rem  count=1
+    apps/web/src/lib/features/map/MapMotionControl.svelte:167  | padding: 0.25rem 0.6rem 0.25rem 0.35rem;
+prop=padding  value=0.5rem 0.6rem 0.5rem 0.85rem  count=1
+    apps/web/src/lib/features/map/MapDetailAlerts.svelte:110  | padding: 0.5rem 0.6rem 0.5rem 0.85rem;
+prop=gap  value=0.35rem 0.6rem  count=1
+    apps/web/src/lib/features/map/MapDetailAlerts.svelte:173  | gap: 0.35rem 0.6rem;
+prop=padding  value=0.55rem 0.7rem  count=1
+    apps/web/src/lib/features/map/MapDetailAlerts.svelte:203  | padding: 0.55rem 0.7rem;
+prop=padding-left  value=0.85rem  count=1
+    apps/web/src/lib/features/map/MapHeadTitle.svelte:48  | padding-left: 0.85rem;
+prop=padding-left  value=0.7rem  count=1
+    apps/web/src/lib/features/map/MapHeadTitle.svelte:97  | padding-left: 0.7rem;
+prop=padding  value=0.65rem 1rem 0.65rem 0.85rem  count=1
+    apps/web/src/lib/features/map/MapFilterPill.svelte:110  | padding: 0.65rem 1rem 0.65rem 0.85rem;
+prop=padding  value=0 0.4rem  count=1
+    apps/web/src/lib/features/map/MapFilterPill.svelte:162  | padding: 0 0.4rem;
+prop=padding  value=0.85rem 0.9rem  count=1
+    apps/web/src/lib/features/map/MapOverlayChrome.svelte:197  | padding: 0.85rem 0.9rem;
+prop=padding  value=0.55rem 0.7rem 0.7rem  count=1
+    apps/web/src/lib/features/map/MapFilters.svelte:486  | padding: 0.55rem 0.7rem 0.7rem;
+prop=padding  value=0.25rem 0.3rem  count=1
+    apps/web/src/lib/features/map/MapFilters.svelte:531  | padding: 0.25rem 0.3rem;
+prop=margin  value=-0.25rem -0.3rem  count=1
+    apps/web/src/lib/features/map/MapFilters.svelte:532  | margin: -0.25rem -0.3rem;
+prop=padding  value=0.3rem 0.7rem 0.3rem 0.5rem  count=1
+    apps/web/src/lib/features/map/MapFilters.svelte:720  | padding: 0.3rem 0.7rem 0.3rem 0.5rem;
+prop=padding  value=0.16rem  count=1
+    apps/web/src/lib/features/map/MapFilters.svelte:830  | padding: 0.16rem;
+prop=padding  value=0.35rem 0.85rem 0.35rem 0.7rem  count=1
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:314  | padding: 0.35rem 0.85rem 0.35rem 0.7rem;
+prop=gap  value=0.12rem  count=1
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:449  | gap: 0.12rem;
+prop=padding  value=0.25rem 0.4rem 0.1rem  count=1
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:482  | padding: 0.25rem 0.4rem 0.1rem;
+prop=padding  value=0.1rem 0.3rem 0.1rem 0.45rem  count=1
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:525  | padding: 0.1rem 0.3rem 0.1rem 0.45rem;
+prop=padding  value=0.25rem 0.55rem  count=1
+    apps/web/src/lib/features/map/MapNearMeControl.svelte:542  | padding: 0.25rem 0.55rem;
+prop=gap  value=1.15rem  count=1
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:572  | gap: 1.15rem;
+prop=padding-bottom  value=0.85rem  count=1
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:587  | padding-bottom: 0.85rem;
+prop=padding  value=0.4rem 0.6rem 0.4rem 0.75rem  count=1
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:707  | padding: 0.4rem 0.6rem 0.4rem 0.75rem;
+prop=padding  value=0.2rem 0.55rem  count=1
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:773  | padding: 0.2rem 0.55rem;
+prop=padding  value=0.5rem 0.65rem 0.5rem 0.85rem  count=1
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:845  | padding: 0.5rem 0.65rem 0.5rem 0.85rem;
+prop=padding-bottom  value=0.3rem  count=1
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:919  | padding-bottom: 0.3rem;
+prop=padding  value=0.18rem 0  count=1
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1101  | padding: 0.18rem 0;
+prop=padding-top  value=0.1rem  count=1
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1133  | padding-top: 0.1rem;
+prop=margin-bottom  value=0.1rem  count=1
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1205  | margin-bottom: 0.1rem;
+prop=padding-block  value=0.12rem  count=1
+    apps/web/src/lib/features/map/MapSelectionDetail.svelte:1208  | padding-block: 0.12rem;
+prop=padding  value=0.4rem 0.75rem 0.4rem 0.7rem  count=1
+    apps/web/src/lib/features/map/MapFreshness.svelte:48  | padding: 0.4rem 0.75rem 0.4rem 0.7rem;
+prop=padding  value=0.24rem 0.5rem  count=1
+    apps/web/src/lib/features/map/MapFreshness.svelte:98  | padding: 0.24rem 0.5rem;
+prop=gap  value=1.1rem 1.75rem  count=1
+    apps/web/src/lib/features/receipt/sections/SectionHeadline.svelte:84  | gap: 1.1rem 1.75rem;
+prop=gap  value=0.8rem 1.5rem  count=1
+    apps/web/src/lib/features/receipt/sections/SectionAffected.svelte:77  | gap: 0.8rem 1.5rem;
+prop=gap  value=0.4rem 0.6rem  count=1
+    apps/web/src/lib/features/search/VehicleResultRow.svelte:205  | gap: 0.4rem 0.6rem;
+prop=gap  value=0.1rem  count=1
+    apps/web/src/lib/features/health/sections/SectionFreshness.svelte:88  | gap: 0.1rem;
+prop=padding  value=0.1rem 0.5rem  count=1
+    apps/web/src/lib/features/metrics/MetricsExplainer.svelte:959  | padding: 0.1rem 0.5rem;
+prop=font-size  value=0.6875rem  count=1
+    apps/web/src/lib/features/metrics/MetricsExplainer.svelte:971  | font-size: 0.6875rem;
+prop=font-size  value=0.7rem  count=1
+    apps/web/src/lib/features/metrics/MetricInfo.svelte:355  | font-size: 0.7rem;
+prop=padding  value=0.5rem 3.75rem 0.5rem 0.75rem  count=1
+    apps/web/src/lib/components/ui/line-combobox/line-combobox.svelte:193  | padding: 0.5rem 3.75rem 0.5rem 0.75rem;
+prop=padding  value=0.05rem 0.4rem  count=1
+    apps/web/src/lib/components/surface/EntityRow.svelte:167  | padding: 0.05rem 0.4rem;
+prop=padding  value=0.1rem 0.35rem  count=1
+    apps/web/src/lib/components/surface/EntityRow.svelte:190  | padding: 0.1rem 0.35rem;
+prop=padding  value=0.4rem 0.8rem  count=1
+    apps/web/src/lib/components/surface/GrainPicker.svelte:152  | padding: 0.4rem 0.8rem;
+prop=padding  value=0.35rem 0.6rem  count=1
+    apps/web/src/lib/components/surface/DateRangePicker.svelte:307  | padding: 0.35rem 0.6rem;
+prop=padding  value=0.25rem 0.65rem  count=1
+    apps/web/src/lib/components/surface/MapDrilldownLink.svelte:36  | padding: 0.25rem 0.65rem;
+prop=gap  value=0.3rem 1.25rem  count=1
+    apps/web/src/lib/components/surface/SurfaceControls.svelte:227  | gap: 0.3rem 1.25rem;
+prop=gap  value=0.15rem 0.35rem  count=1
+    apps/web/src/lib/components/surface/Breadcrumb.svelte:80  | gap: 0.15rem 0.35rem;
+prop=padding  value=0.18rem 0.55rem  count=1
+    apps/web/src/lib/components/edge/AbsentValue.svelte:103  | padding: 0.18rem 0.55rem;
+prop=font-size  value=0.98rem  count=1
+    apps/web/src/lib/components/brand/BrandCluster.svelte:140  | font-size: 0.98rem;
+prop=padding  value=0.25rem 1.85rem 0.25rem 0.55rem  count=1
+    apps/web/src/lib/components/map/MapStage.svelte:414  | padding: 0.25rem 1.85rem 0.25rem 0.55rem;
+prop=padding  value=0.8rem  count=1
+    apps/web/src/lib/components/shell/RightPanel.svelte:231  | padding: 0.8rem;
+prop=padding  value=0.45rem  count=1
+    apps/web/src/lib/components/shell/TopBar.svelte:591  | padding: 0.45rem;
+prop=gap  value=5px  count=1
+    apps/web/src/lib/components/shell/TopBar.svelte:605  | gap: 5px;
+prop=padding  value=0.55rem  count=1
+    apps/web/src/lib/components/shell/TopBar.svelte:669  | padding: 0.55rem;
+prop=padding-inline  value=0.15rem  count=1
+    apps/web/src/lib/components/shell/TopBar.svelte:727  | padding-inline: 0.15rem;
+prop=padding  value=0.2rem 0.6rem 0.3rem  count=1
+    apps/web/src/lib/components/shell/TopBar.svelte:768  | padding: 0.2rem 0.6rem 0.3rem;
+prop=padding  value=0.4rem 0.55rem  count=1
+    apps/web/src/lib/components/shell/TopBar.svelte:828  | padding: 0.4rem 0.55rem;
+prop=padding  value=0.12rem 0.35rem  count=1
+    apps/web/src/lib/components/shell/TopBar.svelte:853  | padding: 0.12rem 0.35rem;
+prop=padding-inline  value=0.2rem  count=1
+    apps/web/src/lib/components/shell/LeftRail.svelte:247  | padding-inline: 0.2rem;
+prop=padding  value=0.6rem 0.7rem  count=1
+    apps/web/src/lib/components/shell/LeftRail.svelte:258  | padding: 0.6rem 0.7rem;
+prop=font-size  value=0.96rem  count=1
+    apps/web/src/lib/components/shell/LeftRail.svelte:321  | font-size: 0.96rem;
+prop=padding-inline  value=0.55rem  count=1
+    apps/web/src/lib/components/shell/LeftRail.svelte:356  | padding-inline: 0.55rem;
+prop=font-size  value=0.9rem  count=1
+    apps/web/src/lib/components/shell/LeftRail.svelte:359  | font-size: 0.9rem;
+prop=padding  value=3px  count=1
+    apps/web/src/lib/components/shell/LangSwitch.svelte:231  | padding: 3px;
+prop=padding  value=0.4rem 0.15rem  count=1
+    apps/web/src/lib/components/shared/Detail.svelte:80  | padding: 0.4rem 0.15rem;
+prop=padding  value=1.1rem 1.25rem  count=1
+    apps/web/src/lib/components/dataviz/ExplainedMetricCard.svelte:133  | padding: 1.1rem 1.25rem;

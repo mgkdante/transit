@@ -134,7 +134,7 @@
 		border-radius: var(--radius-md);
 		color: var(--foreground);
 		text-decoration: none;
-		transition: background-color 150ms ease;
+		transition: background-color var(--duration-fast) var(--ease-default);
 	}
 	.vehicle-row:hover {
 		background-color: var(--muted);
@@ -156,7 +156,7 @@
 		font-size: var(--text-subheading);
 		line-height: 1;
 		color: var(--primary);
-		transition: transform 150ms ease;
+		transition: transform var(--duration-fast) var(--ease-out);
 	}
 	.vehicle-row-glyph {
 		font-family: var(--font-mono);
@@ -202,13 +202,13 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.4rem 0.6rem;
-		margin-top: 0.15rem;
+		gap: 0.375rem 0.5rem;
+		margin-top: 0.125rem;
 	}
 	.vehicle-row-crowd {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		color: var(--muted-foreground);

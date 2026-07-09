@@ -9,6 +9,7 @@
 	import { ConformanceBadge } from '$lib/components/surface';
 	import { CollapsibleSection } from '$lib/components/shared';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import type { ProvenanceConformance } from '$lib/v1/schemas';
 	import type { HealthCopy } from '../health.copy';
@@ -23,7 +24,7 @@
 </script>
 
 <section class="health-block" aria-labelledby="health-conformance" data-slot="conformance-section">
-	<SectionLabel id="health-conformance" text={t.section} variant="station" />
+	<SectionHeading level={2} id="health-conformance" overline={t.section} number={7} />
 	<p class="health-note">{t.note}</p>
 	<div class="health-conformance-badge">
 		<ConformanceBadge {conformance} {locale} />
@@ -81,9 +82,8 @@
 	.health-conformance-badge {
 		display: flex;
 	}
-	.section-block {
-		scroll-margin-block-start: 5.5rem;
-	}
+	/* .section-block scroll landing is offset globally (app.css `[data-toc]` rule
+	   off --chrome-offset) — the CollapsibleSection inside is the tracked target. */
 	.health-conformance-detail {
 		display: flex;
 		flex-direction: column;
@@ -100,12 +100,12 @@
 		list-style: none;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	.health-members-item {
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
-		padding: 0.15rem 0.5rem;
+		padding: 0.125rem 0.5rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
 		background: var(--muted);

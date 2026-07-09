@@ -19,6 +19,7 @@
 	import { DashboardGrid } from '$lib/components/layout';
 	import { ExplainedMetricCard, RankedRow } from '$lib/components/dataviz';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { KpiCardVM } from '../selectors/headlineKpis';
@@ -53,10 +54,10 @@
 	data-slot="reporting-section"
 	aria-label={copy.reporting.heading}
 >
-	<SectionLabel text={copy.reporting.heading} variant="station" />
+	<SectionHeading level={3} overline={copy.reporting.heading} />
 
 	<!-- The two required-int scalar cards (glance mode — the (i) carries the definition). -->
-	<DashboardGrid minTile="220px" align="start" gutter={false}>
+	<DashboardGrid minTile="220px" gutter={false}>
 		{#each cards as card (card.label)}
 			{@const i = info(card.key, card.label)}
 			<ExplainedMetricCard
@@ -139,7 +140,7 @@
 	.network-silent-tile {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 		width: 100%;
 	}
 	/* Non-responding-by-route ranked list — list > listitem > link; the whole row is a link,

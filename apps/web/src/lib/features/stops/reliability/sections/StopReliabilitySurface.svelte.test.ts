@@ -59,10 +59,13 @@ const data: StopReliability = {
 	],
 };
 
-// The DESKTOP SurfaceControls rail (the mobile ControlsRail renders the same picker in
-// jsdom; scope to the desktop rail's radiogroup for an unambiguous query).
+// P5.4: the grain radiogroup now lives in the map-style GLASS LEFT RAIL (SurfaceRail),
+// which renders the SAME rail snippet in BOTH the desktop glass panel
+// ([data-slot="surface-rail"]) AND the mobile pill→sheet. Scope to the desktop rail's
+// radiogroup for an unambiguous query (jsdom renders both, so an unscoped role query is
+// ambiguous).
 const desktopGroup = (c: HTMLElement): HTMLElement => {
-	const rail = c.querySelector('[data-surface-controls]') as HTMLElement;
+	const rail = c.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 	return rail.querySelector('[role="radiogroup"]') as HTMLElement;
 };
 
@@ -136,6 +139,69 @@ describe('StopReliabilitySurface — grain seed + availability (S8A)', () => {
 		await fireEvent.click(week);
 		expect(mockUrl.searchParams.get('grain')).toBe('week');
 		expect(mockUrl.searchParams.get('tab')).toBe('reliability'); // ?tab untouched
+	});
+});
+
+describe('StopReliabilitySurface — GLASS LEFT RAIL structure (P5.4)', () => {
+	beforeEach(() => {
+		mockUrl = new URL('http://localhost/stop/57191');
+		replaceState.mockClear();
+	});
+
+	it('renders the SurfaceRail: a desktop glass panel + a mobile pill that opens a dialog sheet', async () => {
+		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
+		// Desktop glass panel holds the grain radiogroup + the section ToC.
+		const railPanel = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		expect(railPanel).not.toBeNull();
+		expect(railPanel.querySelector('[data-slot="section-toc"]')).not.toBeNull();
+
+		// Mobile pill → ONE dialog sheet (grain + ToC merged).
+		const pill = container.querySelector(
+			'[data-slot="surface-rail-mobile"] button',
+		) as HTMLButtonElement;
+		expect(pill).not.toBeNull();
+		expect(container.querySelector('[role="dialog"]')).toBeNull(); // closed by default
+		await fireEvent.click(pill);
+		expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+	});
+
+	it('lists ONLY the present sections in the ToC (drops stood-down sections)', () => {
+		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
+		// The rail section jump-list now rides the shared TocNav (button-driven .toc-item rows
+		// carrying a .toc-label title), not bespoke <a href> anchors.
+		const toc = container.querySelector(
+			'[data-slot="surface-rail"] [data-slot="section-toc"]',
+		) as HTMLElement;
+		expect(toc).not.toBeNull();
+		const labels = Array.from(toc.querySelectorAll('.toc-item .toc-label')).map((el) =>
+			el.textContent?.trim(),
+		);
+		// Present: trend + percentiles (day grain) + pane + crowding + by-route.
+		expect(labels).toContain('Daily trend');
+		expect(labels).toContain('Daily delay'); // day percentiles
+		expect(labels).toContain('On-time and delay'); // pane
+		expect(labels).toContain('Crowding on buses seen here');
+		expect(labels).toContain('Avg delay by route');
+		// Absent from the fixture (no habits / day_of_week / shift periods) → not listed.
+		expect(labels).not.toContain('Severe delays by hour'); // habits
+		expect(labels).not.toContain('By day of week');
+		expect(labels).not.toContain('By time of day');
+		// The old ↻/∞ per-row scope glyph is gone.
+		expect(toc.textContent).not.toContain('↻');
+		expect(toc.textContent).not.toContain('∞');
+	});
+
+	it('drops the percentiles ToC entry on the week grain (percentiles stand down)', async () => {
+		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
+		const week = within(desktopGroup(container)).getByRole('radio', { name: 'Week' });
+		await fireEvent.click(week);
+		const toc = container.querySelector(
+			'[data-slot="surface-rail"] [data-slot="section-toc"]',
+		) as HTMLElement;
+		const labels = Array.from(toc.querySelectorAll('.toc-item .toc-label')).map((el) =>
+			el.textContent?.trim(),
+		);
+		expect(labels).not.toContain('Daily delay'); // day-only percentiles gone
 	});
 });
 

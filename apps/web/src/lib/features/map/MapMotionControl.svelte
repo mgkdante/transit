@@ -109,7 +109,7 @@
 	.map-motion {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
-		gap: 0.4rem;
+		gap: 0.375rem;
 		/* LAW: the motion toggle is sized to its CONTENT, wide enough for the FR
 		   "Presque en temps réel" on one line, NOT 100% of the parent panel. The cap
 		   keeps the longest hint from stretching the control to an awkward width. */
@@ -120,13 +120,13 @@
 	/* Collapsed rail: center the single square in the narrow rail, matching the
 	   collapsed filter chips' centred alignment. */
 	.map-motion[data-collapsed='true'] {
-		gap: 0.45rem;
+		gap: 0.375rem;
 		justify-items: center;
 	}
 	.map-motion-label {
 		display: flex;
 		align-items: center;
-		gap: 0.45rem;
+		gap: 0.375rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		letter-spacing: var(--tracking-eyebrow);
@@ -162,31 +162,25 @@
 		display: inline-flex;
 		justify-self: start;
 		align-items: center;
-		gap: 0.45rem;
+		gap: 0.375rem;
 		min-height: 2rem;
-		padding: 0.25rem 0.6rem 0.25rem 0.35rem;
+		padding: 0.25rem 0.5rem 0.25rem 0.375rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		font-weight: 600;
-		letter-spacing: 0.02em;
 		color: var(--foreground);
 		background: var(--muted);
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-pill);
 		cursor: pointer;
 		transition:
-			color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1)),
-			background-color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1)),
-			border-color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1));
+			color var(--duration-fast) var(--ease-default),
+			background-color var(--duration-fast) var(--ease-default),
+			border-color var(--duration-fast) var(--ease-default);
 	}
 	.map-motion-switch:hover,
 	.map-motion-switch:focus-visible {
 		border-color: color-mix(in srgb, var(--primary) 42%, var(--border) 58%);
-		outline: none;
-	}
-	.map-motion-switch:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
 	}
 	.map-motion-switch[aria-checked='true'] {
 		color: var(--primary);
@@ -200,8 +194,7 @@
 		height: 1.05rem;
 		border-radius: var(--radius-pill);
 		background: color-mix(in srgb, var(--border) 70%, transparent);
-		transition: background-color var(--duration-fast, 150ms)
-			var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1));
+		transition: background-color var(--duration-fast) var(--ease-default);
 	}
 	.map-motion-switch[aria-checked='true'] .map-motion-track {
 		background: color-mix(in srgb, var(--primary) 55%, transparent);
@@ -209,14 +202,14 @@
 	.map-motion-thumb {
 		position: absolute;
 		top: 50%;
-		left: 0.15rem;
+		left: 0.125rem;
 		width: 0.75rem;
 		height: 0.75rem;
 		border-radius: 50%;
 		background: var(--card);
 		box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 30%, transparent);
 		transform: translate(0, -50%);
-		transition: transform var(--duration-fast, 150ms) var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+		transition: transform var(--duration-fast) var(--ease-out);
 	}
 	.map-motion-switch[aria-checked='true'] .map-motion-thumb {
 		transform: translate(0.8rem, -50%);
@@ -237,16 +230,14 @@
 		font-size: var(--text-micro);
 		color: var(--primary);
 		text-decoration: none;
-		transition: opacity var(--duration-fast, 150ms) var(--ease-default, ease);
+		transition: opacity var(--duration-fast) var(--ease-default);
 	}
 	.map-motion-explain:hover,
 	.map-motion-explain:focus-visible {
 		text-decoration: underline;
 	}
 	.map-motion-explain:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-		border-radius: 2px;
+		border-radius: var(--radius-sm);
 	}
 
 	/* Collapsed rail — a single ~2rem ROUND toggle carrying the motion (Waves) icon,
@@ -266,18 +257,13 @@
 		color: var(--muted-foreground);
 		cursor: pointer;
 		transition:
-			color var(--duration-fast, 150ms) var(--ease-default, ease),
-			background-color var(--duration-fast, 150ms) var(--ease-default, ease),
-			border-color var(--duration-fast, 150ms) var(--ease-default, ease);
+			color var(--duration-fast) var(--ease-default),
+			background-color var(--duration-fast) var(--ease-default),
+			border-color var(--duration-fast) var(--ease-default);
 	}
 	.map-motion-round:hover,
 	.map-motion-round:focus-visible {
 		border-color: color-mix(in srgb, var(--primary) 48%, var(--border) 52%);
-		outline: none;
-	}
-	.map-motion-round:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
 	}
 	.map-motion-round[aria-checked='true'] {
 		color: var(--primary-foreground);

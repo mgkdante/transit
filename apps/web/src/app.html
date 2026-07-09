@@ -28,9 +28,9 @@
 		     #F3F6FB). -->
 		<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141414" />
 		<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F3F6FB" />
-		<!-- Basemap origin (MapLibre glyph PBFs) — warm DNS+TLS on the /map LCP path. -->
-		<link rel="preconnect" href="https://protomaps.github.io" crossorigin />
-		<link rel="dns-prefetch" href="https://protomaps.github.io" />
+		<!-- Basemap origin (MapLibre glyph PBFs) preconnect is scoped to the /map route
+		     head (src/routes/[[lang=locale]]/map/+page.svelte) so home/lines/etc. do not
+		     pay a wasted connection warmup to protomaps.github.io. -->
 		<!-- Fonts: self-hosted via @fontsource-variable (no external requests). Preload
 		     the latin variable woff2 for Inter (body/headings) + JetBrains Mono (mono
 		     numerals) on the LCP path. These point at content-stable copies under

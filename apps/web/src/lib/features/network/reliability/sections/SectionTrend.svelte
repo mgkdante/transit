@@ -30,8 +30,10 @@
 <script lang="ts">
 	import { Chart, type ChartSpec, type SparklineSpec } from '$lib/components/dataviz/chart';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
+	import NetworkTile from './NetworkTile.svelte';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
 	interface SectionTrendProps {
@@ -57,11 +59,12 @@
 	const i = $derived(info('otp', copy.trendSection));
 </script>
 
-<div class="network-tile network-tile--wide">
-	<span class="network-section">
-		<SectionLabel text={copy.trendSection} variant="station" />
-		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
-	</span>
+<NetworkTile wide>
+	<SectionHeading level={3} overline={copy.trendSection}>
+		{#snippet explainer()}
+			<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+		{/snippet}
+	</SectionHeading>
 	<div class="network-trend">
 		<Chart spec={trendSpec} />
 
@@ -73,29 +76,9 @@
 			</div>
 		{/if}
 	</div>
-</div>
+</NetworkTile>
 
 <style>
-	.network-tile {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		min-width: 0;
-		padding: 1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
-	}
-	@media (min-width: 1024px) {
-		.network-tile--wide {
-			grid-column: 1 / -1;
-		}
-	}
-	.network-section {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
-	}
 	.network-trend {
 		display: flex;
 		flex-direction: column;
@@ -106,6 +89,6 @@
 	.network-vehicles-row {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 </style>

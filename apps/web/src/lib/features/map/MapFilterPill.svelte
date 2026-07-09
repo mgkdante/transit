@@ -3,6 +3,10 @@
      renders): the motion toggle pinned to the top, the filters below. -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	// F (motion wiring): the mobile filter pill is a touch control — pressBounce
+	// adds tactile press feedback alongside the .tap-press CSS baseline. Both
+	// self-gate (pressBounce → touch only; tap-press → PRM-guarded). Vendored.
+	import { pressBounce } from '@yesid/motion';
 	import { ChevronToggle } from '$lib/components/brand';
 	import type { FilterStore } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
@@ -65,6 +69,7 @@
 			onclick={() => (drawerOpen = !drawerOpen)}
 			aria-expanded={drawerOpen}
 			aria-label={`${t.controlsTitle} ${activeCount} · ${t.controlsTitle}`}
+			use:pressBounce
 		>
 			<div class="map-filter-pill-dot" data-active={activeCount > 0}></div>
 			<span class="map-filter-pill-name">{t.controlsTitle}</span>
@@ -104,10 +109,10 @@
 	.map-filter-pill {
 		display: flex;
 		align-items: center;
-		gap: 0.6rem;
+		gap: 0.5rem;
 		min-height: 44px;
 		max-width: calc(100vw - 2rem);
-		padding: 0.65rem 1rem 0.65rem 0.85rem;
+		padding: 0.625rem 1rem 0.625rem 0.875rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		font-weight: 600;
@@ -119,7 +124,9 @@
 		border: 1px solid color-mix(in srgb, var(--border) 80%, var(--primary) 20%);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(10px) saturate(1.1);
+		/* Map GL escape hatch (§C4 P4): blur(12px), floats over the live canvas. */
+		backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		cursor: pointer;
 		transition:
 			border-color var(--duration-fast) var(--ease-default),
@@ -138,7 +145,7 @@
 		width: 0.5rem;
 		height: 0.5rem;
 		flex: none;
-		border-radius: 999px;
+		border-radius: var(--radius-pill);
 		background: var(--primary);
 		transition: box-shadow var(--duration-fast) var(--ease-default);
 	}
@@ -159,7 +166,7 @@
 		place-items: center;
 		min-width: 1.4rem;
 		height: 1.4rem;
-		padding: 0 0.4rem;
+		padding: 0 0.375rem;
 		font-variant-numeric: tabular-nums;
 		color: var(--primary-foreground);
 		background: var(--primary);
@@ -187,7 +194,7 @@
 	.map-filter-drawer-backdrop {
 		position: fixed;
 		inset: 0;
-		z-index: -1;
+		z-index: var(--z-map-behind, -1);
 		background: transparent;
 		border: none;
 		cursor: default;
@@ -208,7 +215,9 @@
 		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-sheet);
+		/* Map GL escape hatch (§C4 P4): blur(12px), floats over the live canvas. */
 		backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		transform: none;
 		padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 		overscroll-behavior: contain;
@@ -224,11 +233,6 @@
 		border: none;
 		box-shadow: none;
 		backdrop-filter: none;
-	}
-
-	.map-filter-pill:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
 	}
 
 	/* Unified map breakpoint: at the desktop layout (>= 1024px) the pill is gone —

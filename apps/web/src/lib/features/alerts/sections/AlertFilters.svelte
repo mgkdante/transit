@@ -1,19 +1,24 @@
 <!--
-  AlertFilters — the /alerts filter rail (S15 re-seat).
+  AlertFilters — the /alerts filter rail body (P5.4e: map-style GLASS LEFT RAIL).
 
-  ONE ControlsRail (quiet infra chrome) collecting the five codec-backed axes:
-    · entity-type (Affects) — a GrainPicker radiogroup (all|lines|stops)
-    · severity — a GrainPicker radiogroup (all|critical|high|watch)
+  The filter WIDGETS themselves (no chrome container): SurfaceRail owns the glass
+  panel + the mobile pill→sheet, and renders THIS content as the single rail source
+  in both. A plain flex column collecting the five codec-backed axes:
+    · entity-type (Affects) — a shared FilterGroup (All | Lines | Stops)
+    · severity — a shared FilterGroup (All | Critical | High | Watch)
     · Line — a typeahead LineCombobox over the distinct lines in the log
     · Stop — a typeahead LineCombobox over the distinct stops in the log
-    · date range — the shared DateRangePicker over the served span (?from/?to)
+    · date range — the shared DateRangePicker (stacked: one field per row in the rail)
 
-  The bespoke SearchInput + chip set + ~90 lines of CSS from the old E3 picker are
-  GONE — the two comboboxes carry the type in their GROUP label ONCE (no per-row
-  "Line NN"/"Stop NNNNN" prefix), and route-24-vs-stop-24 stays disambiguated by the
-  separate pickers. Every value is $bindable so the orchestrator owns the codec seed +
-  batched URL mirror; this file is a pure control surface. --primary lives only on the
-  active chip / highlighted option, never on the rail.
+  The two entity-type/severity radiogroups ride the shared $lib/components/filter
+  FilterGroup (bits-ui ToggleGroup + built-in "All" reset), and the clear affordance
+  rides FilterSummary. FilterGroup is CONTROLLED (activeKey + onSelect), so this file
+  threads the surface's existing $bindable scalars through: the built-in "All" maps to
+  the codec's 'all' sentinel (activeKey = x==='all' ? null : x; onSelect = (k)=> x = k
+  ?? 'all'). The orchestrator still owns the codec seed + batched URL mirror + every
+  predicate — nothing about state or the URL changed. The two comboboxes carry the type
+  in their GROUP label ONCE (no per-row prefix). --primary lives only on the active chip
+  / highlighted option, never on the rail.
 -->
 <script lang="ts">
 	import type { AlertHistoryCopy } from '../alerts.copy';
@@ -21,8 +26,8 @@
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import { SEVERITY_CODES } from '$lib/v1/schemas';
 	import type { AlertAffects, DateWindow } from '$lib/filters';
-	import { GrainPicker, DateRangePicker, type GrainSegment } from '$lib/components/surface';
-	import { ControlsRail } from '$lib/components/layout';
+	import { DateRangePicker } from '$lib/components/surface';
+	import { FilterGroup, FilterSummary } from '$lib/components/filter';
 	import { LineCombobox, type LineComboboxOption } from '$lib/components/ui/line-combobox';
 	import { foldSearchText } from '$lib/search/normalize';
 
@@ -45,6 +50,8 @@
 		availableDates: readonly string[];
 		/** True when any axis is active (shows the "clear filters" affordance). */
 		filtersActive: boolean;
+		/** The count of alerts matching the active filters (already computed upstream). */
+		matchCount: number;
 		copy: AlertHistoryCopy;
 		locale: Locale;
 		/** Reset every axis to its unfiltered default. */
@@ -60,28 +67,50 @@
 		stopOptions,
 		availableDates,
 		filtersActive,
+		matchCount,
 		copy,
 		locale,
 		onClear,
 	}: Props = $props();
 
-	const entitySegments = $derived<GrainSegment<'all' | AlertAffects>[]>([
-		{ key: 'all', label: copy.filters.entity.all },
+	// FilterGroup items exclude the built-in "All" (its own reset row supplies it).
+	const entityItems = $derived<{ key: string; label: string }[]>([
 		{ key: 'lines', label: copy.filters.entity.lines },
 		{ key: 'stops', label: copy.filters.entity.stops },
 	]);
-	const severitySegments = $derived<GrainSegment<'all' | SeverityCode>[]>([
-		{ key: 'all', label: copy.filters.severity.all },
-		...SEVERITY_CODES.map((code) => ({ key: code, label: copy.severity[code] })),
-	]);
+	const severityItems = $derived<{ key: string; label: string }[]>(
+		SEVERITY_CODES.map((code) => ({ key: code, label: copy.severity[code] })),
+	);
+
+	// Controlled ↔ codec bridge: 'all' sentinel ⇄ FilterGroup's null "All". The
+	// $bindable scalars stay the surface's state; we only translate the null reset.
+	function setAffects(key: string | null): void {
+		affects = (key ?? 'all') as 'all' | AlertAffects;
+	}
+	function setSeverity(key: string | null): void {
+		severity = (key ?? 'all') as 'all' | SeverityCode;
+	}
 </script>
 
-<ControlsRail label={copy.filters.railLabel} class="alert-history-filters">
-	<GrainPicker segments={entitySegments} bind:value={affects} label={copy.filters.entity.label} />
-	<GrainPicker
-		segments={severitySegments}
-		bind:value={severity}
+<div
+	class="alert-filters-body"
+	data-slot="alert-filters"
+	role="group"
+	aria-label={copy.filters.railLabel}
+>
+	<FilterGroup
+		label={copy.filters.entity.label}
+		items={entityItems}
+		activeKey={affects === 'all' ? null : affects}
+		allLabel={{ en: copy.filters.entity.all, fr: copy.filters.entity.all }}
+		onSelect={setAffects}
+	/>
+	<FilterGroup
 		label={copy.filters.severity.label}
+		items={severityItems}
+		activeKey={severity === 'all' ? null : severity}
+		allLabel={{ en: copy.filters.severity.all, fr: copy.filters.severity.all }}
+		onSelect={setSeverity}
 	/>
 	<!-- The two specific-entity typeahead pickers. The group label names the type once;
 	     each option is the bare id (no per-row prefix). Single-select, codec-mirrored. -->
@@ -112,23 +141,41 @@
 	<!-- The shared date-range picker over the served span. Empty coverage → honest
 	     absence (the primitive renders an AbsentValue, never a dead control). -->
 	<div class="alert-history-pick" data-slot="window-pick">
-		<DateRangePicker bind:value={window} {availableDates} {locale} labels={copy.filters.window} />
+		<DateRangePicker
+			bind:value={window}
+			{availableDates}
+			{locale}
+			stack
+			labels={copy.filters.window}
+		/>
 	</div>
 	{#if filtersActive}
-		<button type="button" class="alert-history-clear" data-slot="clear-filters" onclick={onClear}>
-			{copy.filters.clear}
-		</button>
+		<!-- Shared FilterSummary: the match count + the clear-filters link (BOUNDED swap
+		     of the old bespoke button). onClear = the surface's existing reset; the count
+		     is the already-computed filtered length. -->
+		<div class="alert-history-summary" data-slot="filter-summary-wrap">
+			<FilterSummary count={matchCount} countLabel={copy.filters.summary} {onClear} />
+		</div>
 	{/if}
-</ControlsRail>
+</div>
 
 <style>
-	/* Each labeled picker seats in the filter rail beside the two radiogroups. */
+	/* The rail body: the filter widgets stacked in one column. Rendered by SurfaceRail
+	   in BOTH the desktop glass rail AND the mobile sheet (single source of truth). The
+	   glass panel + pill→sheet chrome is SurfaceRail's; this is just the controls. */
+	.alert-filters-body {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 1rem;
+		min-width: 0;
+	}
+	/* Each labeled picker seats full-width in the narrow rail column (one per row). */
 	.alert-history-pick {
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
+		gap: 0.375rem;
 		min-width: 0;
-		flex: 1 1 16rem;
 	}
 	.alert-history-pick-label {
 		font-family: var(--font-mono);
@@ -138,28 +185,10 @@
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 	}
-	/* "Clear filters" — an INTERACTION control, so --primary belongs here. A quiet mono
-	   link seated in the filter rail beside the pickers. */
-	.alert-history-clear {
-		appearance: none;
-		align-self: flex-start;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		line-height: 1.2;
-		color: var(--primary);
-		background: none;
-		border: none;
-		padding: 0.15rem 0;
-		cursor: pointer;
-		text-decoration: underline;
-		text-underline-offset: 0.2em;
-	}
-	.alert-history-clear:hover {
-		text-decoration-thickness: 2px;
-	}
-	.alert-history-clear:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-		border-radius: var(--radius-sm, 0.375rem);
+	/* The shared FilterSummary seats full-width on its own row in the rail so the
+	   count + clear link never crowd the pickers. It carries its own --primary link
+	   treatment (an interaction control), so no bespoke clear styles remain here. */
+	.alert-history-summary {
+		width: 100%;
 	}
 </style>

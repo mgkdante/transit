@@ -21,6 +21,12 @@
   zero-alert day is a REAL answer. Legacy payloads with no window fields derive the
   span from the entries; nothing datable → the picker hides with honest absence.
 
+  P5.4e: the filters live in a map-style GLASS LEFT RAIL (SurfaceRail) beside the
+  PAST-ALERTS log — a sticky glass panel at ≥1024 (the 2-col [rail | log] grid), and
+  ONE pill→sheet holding the SAME filters on mobile. The headline card + the Tier-2
+  breakdown stay ABOVE, full-width, unchanged. There are no anchor-addressable sections
+  to jump between, so the rail holds ONLY the filters (no ToC).
+
   HONESTY: a null/absent field is OMITTED; a generic/empty headline falls back to the
   shared "Service alert"; an empty archive routes to the localized empty state; the
   breakdown stands down when no distribution was published; a truncated window shows
@@ -40,12 +46,15 @@
 		type DateWindow,
 	} from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { ResourceBoundary, SurfaceHeader, FreshnessStamp } from '$lib/components/surface';
+	import { ResourceBoundary, FreshnessStamp, SurfaceRail } from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import Masthead from '$lib/components/brand/Masthead.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor, type SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	// The shared alert vocabulary, now in the $lib/v1 kernel (no cross-feature import).
 	import { alertDisplayText } from '$lib/v1/alertDisplay';
 	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
@@ -71,6 +80,16 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(alertHistoryCopy[locale]);
+
+	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
+	// /metrics#<anchor>. Wires the five supplemental alert* dimensions (cause/effect/
+	// severity/duration/reach) onto their headings — the SAME `info()` shape every
+	// other surface uses (NetworkSurface / RouteDetail / StopReliabilitySurface).
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: SupplementalMetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
 
 	// Historic tier — the daily-rebuilt alert archive (createResource, browser-only).
 	const history = createResource(() => getAlertHistory(), { freshness: true });
@@ -249,21 +268,38 @@
 </script>
 
 {#snippet headlineInfo()}
-	<MetricInfo
-		tip={t.headline.tip}
-		href={`/${locale === 'fr' ? 'fr/' : ''}metrics`}
-		label={t.headline.label}
-		linkLabel={t.headline.linkLabel}
-		side="bottom"
-	/>
+	<!-- Wired to the alert-duration explainer: the honest deep link replaces the surface's
+	     only bare `/metrics` href (its lone convention break) with metricInfoFor('alertDuration'). -->
+	{@const i = info('alertDuration', t.headline.label)}
+	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
 {/snippet}
 
-<Surface width="bleed" class="alert-history">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
-		<FreshnessStamp variant="updated" {generatedUtc} {locale} />
-	</SurfaceHeader>
+<!-- The five supplemental alert* explainer tips, each wired onto its heading. cause/effect/
+     severity ride the three breakdown sub-headings; reach rides the log section (its rows
+     carry the affected-lines/stops counts). duration rides the headline card above. -->
+{#snippet causeInfo()}
+	{@const i = info('alertCause', t.breakdown.byCause)}
+	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+{/snippet}
+{#snippet effectInfo()}
+	{@const i = info('alertEffect', t.breakdown.byEffect)}
+	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+{/snippet}
+{#snippet severityInfo()}
+	{@const i = info('alertSeverity', t.breakdown.bySeverity)}
+	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+{/snippet}
+{#snippet reachInfo()}
+	{@const i = info('alertReach', t.meta.routes)}
+	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+{/snippet}
 
-	<Separator variant="hazard" />
+<Surface class="alert-history">
+	<Masthead kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
+		{#snippet meta()}
+			<FreshnessStamp variant="updated" {generatedUtc} {locale} />
+		{/snippet}
+	</Masthead>
 
 	<!-- HONEST ABSENCE: a zero-length alert archive is the GOOD empty — the network ran
 	     normally with no disruptions. Route it to the green network-healthy verdict. -->
@@ -287,66 +323,126 @@
 
 		<Separator variant="hazard" />
 
-		<div class="alert-history-block">
-			<div class="alert-history-head">
-				<SectionLabel text={t.logSection} variant="station" />
-				<span class="alert-history-count" data-slot="alert-count">
-					{t.count(visibleRows.length, filtered.length)}
-				</span>
-			</div>
+		<!-- REORDER (§C5.13): analytics BEFORE the stream. The Tier-2 cause/effect/severity
+		     distribution reads first so the citizen gets the SHAPE of the archive before the
+		     25-row chronological log. cause/effect/severity headings carry their (i) tips. -->
+		<AlertBreakdown
+			{causeRows}
+			{effectRows}
+			{severityRows}
+			{hasBreakdown}
+			copy={t}
+			{locale}
+			{causeInfo}
+			{effectInfo}
+			{severityInfo}
+		/>
 
-			{#if truncated && totalInWindow != null}
-				<!-- Honest cap disclosure: the served window was capped newest-first. -->
-				<p class="alert-history-truncated" data-slot="alert-truncated">
-					{t.truncatedNote(entries.length, totalInWindow)}
-				</p>
-			{/if}
+		<Separator variant="hazard" />
 
-			<AlertFilters
-				bind:affects
-				bind:severity
-				bind:route
-				bind:window={pickedWindow}
-				bind:stop
-				{lineOptions}
-				{stopOptions}
-				{availableDates}
-				{filtersActive}
-				copy={t}
-				{locale}
-				onClear={clearFilters}
+		<!-- P5.4e: the PAST-ALERTS block is a 2-col [ GLASS FILTER RAIL | log ] grid at
+		     ≥1024; a single column below, where the rail collapses to the mobile pill→sheet.
+		     The filter WIDGETS live in the rail (one source, rendered by SurfaceRail in both
+		     the desktop panel AND the mobile sheet); the log is the content column. -->
+		<div class="alert-history-block" data-slot="alert-log-block">
+			<!-- The rail content — the filter widgets. ONE definition, rendered by SurfaceRail
+			     in BOTH the desktop glass rail AND the mobile sheet (single source; all axes
+			     bind the same surface state). No ToC: the log has no jump-to sections. -->
+			{#snippet filterRail()}
+				<AlertFilters
+					bind:affects
+					bind:severity
+					bind:route
+					bind:window={pickedWindow}
+					bind:stop
+					{lineOptions}
+					{stopOptions}
+					{availableDates}
+					{filtersActive}
+					matchCount={filtered.length}
+					copy={t}
+					{locale}
+					onClear={clearFilters}
+				/>
+			{/snippet}
+
+			<!-- The map-style GLASS LEFT RAIL: a sticky glass filter panel beside the log on
+			     desktop; ONE filter pill→sheet on mobile. -->
+			<SurfaceRail
+				rail={filterRail}
+				label={t.filters.railLabel}
+				summary={t.filters.pillSummary(filtered.length)}
+				openAria={t.filters.pillOpen}
+				closeAria={t.filters.pillClose}
 			/>
 
-			{#if !hasMatches}
-				<!-- Honest no-match: the active filters narrowed the log to zero. -->
-				<p class="alert-history-no-match" data-slot="alert-no-match">{t.filters.noMatch}</p>
-			{:else}
-				<AlertLog
-					rows={visibleRows}
-					total={filtered.length}
-					{expanded}
-					{overflow}
-					{logId}
-					copy={t}
-					onToggle={() => (expanded = !expanded)}
-				/>
-			{/if}
-		</div>
+			<!-- The log — the content column beside the filter rail. -->
+			<div class="alert-history-content" data-slot="alert-log-content">
+				<div class="alert-history-head">
+					<SectionHeading level={2} overline={t.logSection} explainer={reachInfo} />
+					<span class="alert-history-count" data-slot="alert-count">
+						{t.count(visibleRows.length, filtered.length)}
+					</span>
+				</div>
 
-		<!-- Tier-2 cause / effect / severity distribution (pure presenter). -->
-		<Separator variant="hazard" />
-		<AlertBreakdown {causeRows} {effectRows} {severityRows} {hasBreakdown} copy={t} {locale} />
+				{#if truncated && totalInWindow != null}
+					<!-- Honest cap disclosure: the served window was capped newest-first. -->
+					<p class="alert-history-truncated" data-slot="alert-truncated">
+						{t.truncatedNote(entries.length, totalInWindow)}
+					</p>
+				{/if}
+
+				{#if !hasMatches}
+					<!-- Honest no-match: the active filters narrowed the log to zero. -->
+					<p class="alert-history-no-match" data-slot="alert-no-match">{t.filters.noMatch}</p>
+				{:else}
+					<AlertLog
+						rows={visibleRows}
+						total={filtered.length}
+						{expanded}
+						{overflow}
+						{logId}
+						copy={t}
+						onToggle={() => (expanded = !expanded)}
+					/>
+				{/if}
+			</div>
+		</div>
 	</ResourceBoundary>
 </Surface>
 
 <style>
+	/* §C5.13: the surface caps at the content lane (no full-bleed — width="bleed" was
+	   dropped with A1). The analytics + log read as one column, matching the 52rem log. */
+	:global([data-slot='surface'].alert-history) {
+		max-width: var(--container-content);
+		margin-inline: auto;
+	}
 	.alert-history-headline {
 		margin-bottom: 0.25rem;
 	}
+	/* P5.4e: the PAST-ALERTS block is the map-style 2-col [ GLASS FILTER RAIL | log ]
+	   grid at ≥1024 (the content column is the rail's sticky containing block), and a
+	   single column below where the rail collapses to the mobile pill→sheet. */
 	.alert-history-block {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: clamp(1.5rem, 4vw, 2rem);
+		width: 100%;
+	}
+	@media (min-width: 1024px) {
+		.alert-history-block {
+			grid-template-columns: 15rem minmax(0, 1fr);
+			gap: 2rem;
+			align-items: start;
+		}
+	}
+	/* The log content column beside the filter rail. */
+	.alert-history-content {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+		min-width: 0;
 	}
 	/* Section label + the capped-count caption on one row. */
 	.alert-history-head {

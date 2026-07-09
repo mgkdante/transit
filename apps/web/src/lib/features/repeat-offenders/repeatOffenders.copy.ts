@@ -42,6 +42,24 @@ export interface RepeatOffendersCopy extends SurfaceHeadCopy {
 		/** The always-visible plain-language explanation of what the ladder shows. */
 		readonly explanation: string;
 	};
+	/**
+	 * §C5.12 #1-offender hero: the actual worst entity is the hero now (name + streak +
+	 * Wilson-bounded rate), and the old value=null definition card demotes to a lede + (i).
+	 */
+	readonly hero: {
+		/** Accessible label for the hero region. */
+		readonly label: string;
+		/** Overline over the #1 entity name. */
+		readonly overline: string;
+		/** The streak line (recurrence natural frequency); reuses `recurrence.naturalFrequency`. */
+		readonly streakLabel: string;
+		/** The severe-rate reading with its Wilson interval (rate% + 95% CI bounds). */
+		readonly rateWithCi: (ratePct: string, lo: string, hi: string) => string;
+		/** The severe-rate reading when no Wilson bounds are served (rate only). */
+		readonly rateNoCi: (ratePct: string) => string;
+		/** Stand-down when no offender ranks (published-empty). */
+		readonly none: string;
+	};
 	/** The ladder section heading + its value-axis label. */
 	readonly ladder: {
 		readonly heading: string;
@@ -131,6 +149,15 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 			explanation:
 				'Each row is a single trip or vehicle that keeps running severely late. The bar is its severe-delay rate, the share of its readings more than five minutes behind schedule, ranked worst first by the cautious (Wilson) lower bound, so a chronic offender with plenty of readings outranks a noisy one with few. The line beneath each bar says how many of its observed service days were late-prone, so you can see the recurrence, not just the average.',
 		},
+		hero: {
+			label: 'Worst repeat offender',
+			overline: '#1 offender',
+			streakLabel: 'Streak',
+			rateWithCi: (ratePct, lo, hi) =>
+				`${ratePct} of readings severely late (95% sure between ${lo} and ${hi}%).`,
+			rateNoCi: (ratePct) => `${ratePct} of readings severely late.`,
+			none: 'No repeat offender ranks right now.',
+		},
 		ladder: {
 			heading: 'Worst offenders',
 			severeRateLabel: 'Severe-delay rate',
@@ -194,6 +221,15 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 			label: 'Taux de retards graves',
 			explanation:
 				'Chaque rangée est un seul voyage ou véhicule qui accumule les retards graves. La barre indique son taux de retards graves, soit la part de ses relevés à plus de cinq minutes de retard, classé du pire au moins pire selon la borne inférieure prudente (Wilson), afin qu’un récidiviste chronique avec beaucoup de relevés devance un cas bruyant avec peu de relevés. La ligne sous chaque barre indique combien de ses jours de service observés étaient sujets aux retards, pour voir la récurrence et pas seulement la moyenne.',
+		},
+		hero: {
+			label: 'Pire récidiviste',
+			overline: 'Récidiviste n°1',
+			streakLabel: 'Série',
+			rateWithCi: (ratePct, lo, hi) =>
+				`${ratePct} des relevés en retard grave (sûr à 95 % entre ${lo} et ${hi} %).`,
+			rateNoCi: (ratePct) => `${ratePct} des relevés en retard grave.`,
+			none: 'Aucun récidiviste classé pour l’instant.',
 		},
 		ladder: {
 			heading: 'Pires récidivistes',

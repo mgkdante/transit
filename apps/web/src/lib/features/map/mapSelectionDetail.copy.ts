@@ -47,6 +47,14 @@ export const MAP_SELECTION_DETAIL_COPY = {
 		liveBuses: 'Live buses',
 		notReporting: 'Not reporting GPS',
 		lastPosition: (age: string) => `last updated position ${age} ago`,
+		// The "Open full analysis →" exit out of the map walled garden (§C5.2).
+		openFull: 'Open full analysis',
+		openFullRoute: (route: string) => `Open the full analysis for route ${route}`,
+		openFullStop: (stop: string) => `Open the full analysis for stop ${stop}`,
+		openFullTrip: (trip: string) => `Open the full analysis for trip ${trip}`,
+		// (i) explainer link text inside the map popover.
+		infoLink: 'How this is measured',
+		infoTrigger: (name: string) => `About ${name}`,
 	},
 	fr: {
 		bus: 'Bus',
@@ -88,6 +96,14 @@ export const MAP_SELECTION_DETAIL_COPY = {
 		liveBuses: 'Bus en direct',
 		notReporting: 'Pas de signal GPS',
 		lastPosition: (age: string) => `dernière position il y a ${age}`,
+		// The "Open full analysis →" exit out of the map walled garden (§C5.2).
+		openFull: 'Voir l’analyse complète',
+		openFullRoute: (route: string) => `Voir l’analyse complète de la ligne ${route}`,
+		openFullStop: (stop: string) => `Voir l’analyse complète de l’arrêt ${stop}`,
+		openFullTrip: (trip: string) => `Voir l’analyse complète du trajet ${trip}`,
+		// (i) explainer link text inside the map popover.
+		infoLink: 'Comment c’est mesuré',
+		infoTrigger: (name: string) => `À propos de ${name}`,
 	},
 } as const;
 

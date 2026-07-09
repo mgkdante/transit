@@ -1,13 +1,14 @@
 // overlayWidth — the shared draggable-overlay width machinery.
 //
-// Both the LEFT NAV rail (leftRailWidth.ts) and the RIGHT DETAIL panel
-// (features/map/mapDetailPanes.ts) are absolute OVERLAYS whose width is a single
-// persisted px scalar written into a CSS custom property (the map canvas never
-// reads it, so resizing an overlay can never resize the map). The clamp + the
-// SSR-safe localStorage read/write were byte-identical between the two; this
-// factory is the ONE implementation, parameterised by storage key + bounds. The
-// two call sites become thin wrappers that bind their key/band and re-export the
-// same named constants/functions, so every import site stays untouched.
+// The RIGHT DETAIL panel (features/map/mapDetailPanes.ts) is an absolute OVERLAY
+// whose width is a single persisted px scalar written into a CSS custom property
+// (the map canvas never reads it, so resizing an overlay can never resize the map).
+// The clamp + the SSR-safe localStorage read/write live here as the ONE
+// implementation, parameterised by storage key + bounds. The call site is a thin
+// wrapper that binds its key/band and re-exports the named constants/functions, so
+// every import site stays untouched. (Originally shared with the left-nav rail's
+// width too; that rail is gone — nav moved into the NavPill — so the detail panel
+// is the sole consumer now.)
 //
 // SSR-safe: every localStorage touch is browser-guarded and falls back to the
 // default with no JS / no stored choice. The clamp is pure (unit-testable without

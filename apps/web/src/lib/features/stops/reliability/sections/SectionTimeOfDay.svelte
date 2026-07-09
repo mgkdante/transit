@@ -10,6 +10,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { RankedRow } from '$lib/components/dataviz';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -45,10 +46,11 @@
 {/snippet}
 
 <div class="stop-tile stop-reliability-tod" data-slot="stop-time-of-day">
-	<span class="stop-tile-heading">
-		<SectionLabel text={copy.timeOfDay.heading} variant="station" />
-		{@render metricInfo('severe', copy.timeOfDay.heading)}
-	</span>
+	<SectionHeading level={2} overline={copy.timeOfDay.heading} class="stop-tile-heading">
+		{#snippet explainer()}
+			{@render metricInfo('severe', copy.timeOfDay.heading)}
+		{/snippet}
+	</SectionHeading>
 	{#if shiftRows.length > 0}
 		<div class="stop-reliability-route-list" role="list" aria-label={copy.timeOfDay.heading}>
 			{#each shiftRows as row (row.key)}
@@ -93,7 +95,7 @@
 	.stop-reliability-tod {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 	}
 	.stop-reliability-route-list {
 		display: flex;

@@ -22,12 +22,16 @@ from transit_ops.settings import Settings
 # Cache-Control header per data tier.
 # live    — 30 s TTL; realtime vehicle positions / alerts
 # static  — 1-day TTL + stale-while-revalidate; GTFS-derived shapes, stops, routes
-# historic — 1-day TTL; aggregated summaries that change once per day
+# historic — 1-hour TTL + stale-while-revalidate; the tier is REWRITTEN daily and
+#            its indexes/aggregates are mutable, so a 24 h client cache could pin a
+#            returning visitor a full publish behind (observed 2026-07-09: a cached
+#            receipts index kept the picker a week stale). Per-day files are
+#            immutable and only pay a cheap ETag 304 on revalidation.
 # internal — private, no-store; per-tier hash-state objects (never client-cached)
 CACHE_CONTROL: dict[str, str] = {
     "live": "public, max-age=30",
     "static": "public, max-age=86400, stale-while-revalidate=86400",
-    "historic": "public, max-age=86400",
+    "historic": "public, max-age=3600, stale-while-revalidate=86400",
     "internal": "private, no-store",
 }
 

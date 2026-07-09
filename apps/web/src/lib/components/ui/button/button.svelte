@@ -72,6 +72,13 @@
 </script>
 
 <script lang="ts">
+	// F (motion wiring): pressBounce gives buttons a tactile <200ms scale bounce on
+	// touch (SAFE-ALWAYS tier — the action self-gates to touch devices and stays under
+	// PRM per the package policy). Pointer users already carry active:translate-y-px
+	// from the base variant, so no .tap-press CSS is layered here (that would double
+	// the press scale). Vendored action, never edited.
+	import { pressBounce } from '@yesid/motion';
+
 	let {
 		class: className,
 		variant = 'default',
@@ -94,6 +101,7 @@
 		aria-disabled={disabled}
 		role={disabled ? 'link' : undefined}
 		tabindex={disabled ? -1 : undefined}
+		use:pressBounce
 		{...restProps}
 	>
 		{@render children?.()}
@@ -105,6 +113,7 @@
 		class={cn(buttonVariants({ variant, size }), className)}
 		{type}
 		{disabled}
+		use:pressBounce
 		{...restProps}
 	>
 		{@render children?.()}

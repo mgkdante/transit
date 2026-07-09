@@ -464,7 +464,7 @@
 		border-radius: var(--radius-md);
 		padding: 0.5rem 1.25rem;
 		cursor: pointer;
-		transition: background 150ms ease;
+		transition: background var(--duration-fast) var(--ease-default);
 	}
 	.edge-retry:hover {
 		background: var(--primary-hover);

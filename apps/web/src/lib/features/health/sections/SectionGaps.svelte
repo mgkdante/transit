@@ -4,7 +4,7 @@
   humanizer is passed in. Stands DOWN (parent guards) when gaps is empty.
 -->
 <script lang="ts">
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import type { HealthCopy } from '../health.copy';
 
 	interface SectionGapsProps {
@@ -18,7 +18,7 @@
 </script>
 
 <section class="health-block" aria-labelledby="health-gaps" data-slot="gaps-section">
-	<SectionLabel id="health-gaps" text={t.section} variant="station" />
+	<SectionHeading level={2} id="health-gaps" overline={t.section} number={4} />
 	<div class="health-gaps" data-slot="gaps-callout">
 		<p class="health-gaps-lede">{t.lede}</p>
 		<ul class="health-gaps-list" aria-label={t.listLabel}>
@@ -40,8 +40,8 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		padding: 0.875rem 1rem;
-		border: 1px solid var(--border);
-		border-left: 3px solid var(--dataviz-status-late);
+		/* P7: the late-tone signal is carried by a full border-color, not a left stripe. */
+		border: 1px solid var(--dataviz-status-late);
 		border-radius: var(--radius-md);
 		background: var(--muted);
 	}
@@ -56,7 +56,7 @@
 		padding-inline-start: 1.1rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
+		gap: 0.375rem;
 	}
 	.health-gaps-item {
 		font-family: var(--font-mono);

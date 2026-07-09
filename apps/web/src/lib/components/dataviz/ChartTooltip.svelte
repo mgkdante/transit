@@ -241,7 +241,7 @@
 	}
 
 	.chart-tooltip--animate {
-		transition: opacity 80ms ease-out;
+		transition: opacity var(--duration-instant) var(--ease-out);
 	}
 
 	.chart-tooltip__heading {

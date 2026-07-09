@@ -33,9 +33,10 @@
 		getRoute,
 		getRoutesIndex,
 		getStop,
-		getStopsIndex,
+		getStopsIndexSlim,
 		type RouteFile,
 		type StopFile,
+		type SlimStopEntry,
 	} from '$lib/v1';
 	import type { Alert } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -103,7 +104,6 @@
 	} from './mapSelection';
 	import type { GeocodedLocation, GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
 	import { hasCoordinates } from '$lib/geocode/types';
-	import type { StopIndexEntry } from '$lib/v1/schemas';
 
 	const locale: Locale = getLocale();
 	const t = $derived(MAP_COPY[locale]);
@@ -241,7 +241,10 @@
 	// that settled AFTER mount used to flip basemap.data null→file and trigger a
 	// full setStyle wipe (the flicker). getBasemap() is passed straight to the stage.
 	// Static stop catalogue (8,986 stops) for the stops layer + (later) near-me.
-	const stops = createResource(() => getStopsIndex());
+	// Slim stops-index fast-path (§C8 item 3): the map only needs {id,name,lat,lon,code}
+	// (it plots points, labels them, and fetches the FULL per-stop record on click), so
+	// it loads the server-projected slim index instead of the 1.15 MB full catalogue.
+	const stops = createResource(() => getStopsIndexSlim());
 	const routesIndex = createResource(() => getRoutesIndex());
 	const selectedRouteIds = $derived(Array.from(filters.routes).sort());
 	const selectedRoutes = createResource<RouteFile[]>(async () => {
@@ -311,7 +314,7 @@
 	let pendingFocus = $state<MapFocus | null>(null);
 
 	const stopList = $derived(stops.data?.stops ?? []);
-	const nearbyStops = $derived<WithDistance<StopIndexEntry>[]>(
+	const nearbyStops = $derived<WithDistance<SlimStopEntry>[]>(
 		nearMeOrigin ? nearestStops(nearMeOrigin, stopList, 5, 1_200) : [],
 	);
 	const focusedSelection = $derived(selected ?? hovered);
@@ -399,11 +402,11 @@
 	//   · 'no-vehicles' — a build loaded fine + is fresh, but reports zero vehicles
 	//     to plot (e.g. overnight, or a partial feed). Honest "nothing to show" beats
 	//     a silent empty map.
-	// TODO(beauty2-honest-absence PR-3): upgrade 'no-vehicles' to the inferred
-	// reason via $lib/site/serviceWindow.inferAbsenceReason. The map spans the WHOLE
-	// network (mixed modes + every route), so there is no single first/last window
+	// PIPELINE-BLOCKED: upgrading 'no-vehicles' to the inferred reason via
+	// $lib/site/serviceWindow.inferAbsenceReason is not actionable web-side. The map spans
+	// the WHOLE network (mixed modes + every route), so there is no single first/last window
 	// to claim "closed" against here — a network-wide overnight verdict needs a
-	// network service-span signal we do not yet publish. The selected-but-silent
+	// network service-span signal /v1 does not yet publish. The selected-but-silent
 	// "last seen N ago" half is also DEFERRED: it needs a per-vehicle report
 	// timestamp in /v1, but updated_utc is currently the uniform snapshot capture
 	// time (every vehicle shares it), so it can only express global staleness, not
@@ -834,7 +837,7 @@
 		}
 	}
 
-	function selectNearbyStop(stop: WithDistance<StopIndexEntry>): void {
+	function selectNearbyStop(stop: WithDistance<SlimStopEntry>): void {
 		filters.addStop(stop.id);
 		selectionStack = [];
 		selected = { kind: 'stop', id: stop.id };
@@ -1223,6 +1226,18 @@
 		   MAP CANVAS never reads either var, so resizing the panel can not resize it. */
 		--app-right-detail-offset: 360px;
 		--map-detail-offset: 0rem;
+		/* Map-internal stacking ladder (P5.3d §C4 P5). Source of truth + docs:
+		   lib/features/map/mapZ.ts. Deliberately NOT global --z-* tokens — these
+		   order overlays WITHIN the canvas only and are all capped under --z-nav. */
+		--z-map-behind: -1;
+		--z-map-canvas: 1;
+		--z-map-popover-behind: 2;
+		--z-map-scrim: 5;
+		--z-map-overlay: 10;
+		--z-map-filter: 12;
+		--z-map-banner-content: 13;
+		--z-map-detail: 24;
+		--z-map-detail-panel: 32;
 	}
 
 	/* The map surface is FULL-BLEED: it fills the whole hero (inset:0) and is the BASE

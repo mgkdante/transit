@@ -98,9 +98,9 @@
 		display: inline-flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		max-width: 100%;
-		padding: 0.18rem 0.55rem;
+		padding: 0.125rem 0.5rem;
 		border: 1px solid color-mix(in srgb, var(--absent-accent) 38%, var(--border) 62%);
 		border-radius: var(--radius-pill);
 		background: color-mix(in srgb, var(--absent-accent) 12%, transparent);
@@ -123,7 +123,7 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		text-align: center;
 		padding: 1.5rem;
 	}

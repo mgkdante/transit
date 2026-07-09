@@ -59,7 +59,7 @@
 	import { EdgeState } from '$lib/components/edge';
 
 	// Chrome & layout (Set-B brand + layout primitives).
-	import { TerminalChrome, StickyPanel } from '$lib/components/brand';
+	import { TerminalPanel, StickyPanel } from '$lib/components/brand';
 	import { Footer, Surface } from '$lib/components/layout';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 
@@ -479,11 +479,11 @@
 			variant="section"
 		/>
 		<div class="kit-grid2">
-			<TerminalChrome
+			<TerminalPanel
 				title="receipt.log"
 				tag="STM"
 				status="live"
-				footer={[
+				footerItems={[
 					{ label: 'rows', value: '128' },
 					{ label: 'ms', value: '42' },
 				]}
@@ -491,7 +491,7 @@
 				<pre class="kit-term">route 165 · on_time 0.82
 stop 51234 · next 3 min
 vehicle 40231 · occupancy LOW</pre>
-			</TerminalChrome>
+			</TerminalPanel>
 
 			<StickyPanel top="1rem">
 				<SectionLabel text="STICKY" variant="metric" />
@@ -512,22 +512,20 @@ vehicle 40231 · occupancy LOW</pre>
 				</ResizablePaneGroup>
 			</div>
 
-			<!-- Surface widths + hazard separator + standalone ChartLegend. -->
+			<!-- Surface (A1 full-bleed law) + hazard separator + standalone ChartLegend. -->
 			<div class="kit-card kit-card-wide">
 				<SectionLabel
-					text={lang === 'fr' ? 'SURFACE · LARGEURS' : 'SURFACE · WIDTHS'}
+					text={lang === 'fr' ? 'SURFACE · PLEINE LARGEUR' : 'SURFACE · FULL-BLEED'}
 					variant="metric"
 				/>
 				<div class="kit-stack">
-					<Surface width="content" pad="none" gutter={false} class="kit-surface-demo">
-						<span class="kit-surface-label">content · var(--container-content)</span>
-					</Surface>
-					<Surface width="wide" pad="none" gutter={false} class="kit-surface-demo">
-						<span class="kit-surface-label">wide · var(--container-wide)</span>
-					</Surface>
-					<Surface width="bleed" pad="none" gutter={false} class="kit-surface-demo">
+					<!-- A1: Surface always fills its rail-inset <main> edge-to-edge; content
+					     lanes come from the gutter, not a max-width cap. -->
+					<Surface pad="none" gutter={false} class="kit-surface-demo">
 						<span class="kit-surface-label"
-							>{lang === 'fr' ? 'bleed · pleine largeur' : 'bleed · edge-to-edge'}</span
+							>{lang === 'fr'
+								? 'pleine largeur · gouttière = var(--space-page-x)'
+								: 'full-bleed · gutter = var(--space-page-x)'}</span
 						>
 					</Surface>
 				</div>
@@ -554,7 +552,7 @@ vehicle 40231 · occupancy LOW</pre>
 	.kit {
 		max-width: var(--width-content);
 		margin-inline: auto;
-		padding: clamp(1.5rem, 4vw, 3rem) var(--space-page-x, 1.5rem);
+		padding: clamp(1.5rem, 4vw, 3rem) var(--space-page-x);
 		display: flex;
 		flex-direction: column;
 		gap: clamp(2rem, 4vw, 3rem);
@@ -602,7 +600,7 @@ vehicle 40231 · occupancy LOW</pre>
 	.kit-dot {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		font-size: var(--text-small);
 		color: var(--muted-foreground);
 	}
@@ -610,7 +608,7 @@ vehicle 40231 · occupancy LOW</pre>
 	.kit-cornermarks {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		font-size: var(--text-small);
 		color: var(--muted-foreground);
 		background: none;
@@ -645,7 +643,7 @@ vehicle 40231 · occupancy LOW</pre>
 		padding: 1rem;
 		background-color: var(--card);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-lg, 0.75rem);
+		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
 		overflow: hidden;
 	}

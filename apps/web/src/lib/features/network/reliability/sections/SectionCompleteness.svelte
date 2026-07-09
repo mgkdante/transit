@@ -17,6 +17,7 @@
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
+	import NetworkTile from './NetworkTile.svelte';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
 	interface SectionCompletenessProps {
@@ -40,7 +41,7 @@
 	const i = $derived(info('cancellation', copy.completeness.section));
 </script>
 
-<div class="network-tile" data-slot="completeness-section">
+<NetworkTile dataSlot="completeness-section">
 	<ExplainedMetricCard
 		label={copy.completeness.metric}
 		value={latestDisplay}
@@ -55,17 +56,4 @@
 			<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
 		{/snippet}
 	</ExplainedMetricCard>
-</div>
-
-<style>
-	.network-tile {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		min-width: 0;
-		padding: 1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
-	}
-</style>
+</NetworkTile>

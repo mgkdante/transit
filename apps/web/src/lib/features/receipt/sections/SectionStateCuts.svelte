@@ -14,6 +14,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { ExplainedMetricCard, RankedRow } from '$lib/components/dataviz';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { StateCutsVM } from '../selectors/stateCuts';
@@ -48,7 +49,7 @@
 </script>
 
 <section class="receipt-states" data-slot="receipt-state-cuts" aria-label={heading}>
-	<SectionLabel text={heading} variant="station" />
+	<SectionHeading level={2} overline={heading} />
 
 	<!-- The ONE completeness reading (heroed from service_completeness_pct). A null
 	     reading reads the styled honest-absence chip + the ramp-in note, never a 0. -->
@@ -103,7 +104,7 @@
 	.receipt-states {
 		display: flex;
 		flex-direction: column;
-		gap: 0.85rem;
+		gap: 0.875rem;
 	}
 	.receipt-states-hero {
 		max-width: 24rem;

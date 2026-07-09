@@ -122,6 +122,8 @@ export interface HealthCopy extends SurfaceHeadCopy {
 	 * plus the MAINTENANCE honest not-applicable row (no public heartbeat).
 	 */
 	readonly lanes: {
+		/** D3: the TerminalPanel framing the pipeline-lanes board. */
+		readonly terminal: { readonly title: string; readonly tag: string };
 		readonly section: string;
 		/** Short caption under the section label. */
 		readonly note: string;
@@ -178,6 +180,50 @@ export interface HealthCopy extends SurfaceHeadCopy {
 	};
 	/** Shown when a contract value is absent (honest no-data, never fabricated). */
 	readonly noData: string;
+	/**
+	 * Left-rail ToC (P5.4c DetailShell re-seat) — heading + SEC counter prefix +
+	 * mobile-pill a11y strings. The entry titles reuse each section's own caption.
+	 */
+	readonly toc: {
+		readonly label: string;
+		readonly counterPrefix: string;
+		readonly pill: { readonly open: string; readonly title: string; readonly close: string };
+	};
+	/**
+	 * Right-rail stat cards (P5.3b) — a compact pass/fail summary built from data on
+	 * the page: lanes passing over total (+ worst lane) and feeds fresh over total.
+	 * Reflows into the mobile top strip.
+	 */
+	readonly statRail: {
+		/** Accessible label for the whole stat rail (aside). */
+		readonly label: string;
+		/** Lanes card: title + "{pass} / {total}" pass-summary + "worst: {lane}" line. */
+		readonly lanes: {
+			readonly title: string;
+			readonly passing: (pass: string, total: string) => string;
+			readonly worst: (lane: string) => string;
+			readonly allClear: string;
+		};
+		/** Feeds card: title + "{ok} / {total}" fresh-summary. */
+		readonly feeds: {
+			readonly title: string;
+			readonly fresh: (ok: string, total: string) => string;
+		};
+	};
+	/**
+	 * Aggregate lane-gate verdict TerminalPanel (§C5.9) — the FIRST thing the page
+	 * says, before the section ledger: "N/M lanes passing" + the worst lane.
+	 */
+	readonly aggregate: {
+		/** TerminalPanel title (mono, --text-micro). */
+		readonly title: string;
+		/** The pass-summary sentence ("{pass} of {total} lanes passing"). */
+		readonly summary: (pass: string, total: string) => string;
+		/** Trailing "worst: {lane}" clause when a lane is failing. */
+		readonly worst: (lane: string) => string;
+		/** Shown in place of the worst clause when every applicable lane passes. */
+		readonly allClear: string;
+	};
 }
 
 export const copy: Record<Locale, HealthCopy> = {
@@ -252,6 +298,7 @@ export const copy: Record<Locale, HealthCopy> = {
 			unknown: 'unknown',
 		},
 		lanes: {
+			terminal: { title: 'pipeline-lanes', tag: 'BUILD' },
 			section: 'Pipeline lanes',
 			note: 'Each publishing lane, how long ago it last published, how many files it wrote, and how its last value check turned out. Times are the scheduled cadences, not guarantees.',
 			listLabel: 'Publish lanes',
@@ -295,6 +342,30 @@ export const copy: Record<Locale, HealthCopy> = {
 			methodologyVersionLabel: 'Methodology version',
 		},
 		noData: 'no data',
+		toc: {
+			label: 'Jump to a section',
+			counterPrefix: 'SEC',
+			pill: { open: 'Contents', title: 'Jump to a section', close: 'Close contents' },
+		},
+		statRail: {
+			label: 'At a glance',
+			lanes: {
+				title: 'Lanes',
+				passing: (pass, total) => `${pass} / ${total} passing`,
+				worst: (lane) => `worst: ${lane}`,
+				allClear: 'all lanes passing',
+			},
+			feeds: {
+				title: 'Feeds',
+				fresh: (ok, total) => `${ok} / ${total} fresh`,
+			},
+		},
+		aggregate: {
+			title: 'PIPELINE GATE',
+			summary: (pass, total) => `${pass} of ${total} lanes passing`,
+			worst: (lane) => `worst: ${lane}`,
+			allClear: 'all lanes passing',
+		},
 	},
 	fr: {
 		kicker: 'DONNÉES · HONNÊTETÉ',
@@ -367,6 +438,7 @@ export const copy: Record<Locale, HealthCopy> = {
 			unknown: 'inconnu',
 		},
 		lanes: {
+			terminal: { title: 'voies-du-pipeline', tag: 'CONSTRUCTION' },
 			section: 'Voies du pipeline',
 			note: 'Chaque voie de publication, il y a combien de temps elle a publié pour la dernière fois, combien de fichiers elle a écrits, et le résultat de sa dernière vérification des valeurs. Les heures sont les cadences prévues, pas des garanties.',
 			listLabel: 'Voies de publication',
@@ -410,5 +482,29 @@ export const copy: Record<Locale, HealthCopy> = {
 			methodologyVersionLabel: 'Version de la méthode',
 		},
 		noData: 'aucune donnée',
+		toc: {
+			label: 'Aller à une section',
+			counterPrefix: 'SEC',
+			pill: { open: 'Sommaire', title: 'Aller à une section', close: 'Fermer le sommaire' },
+		},
+		statRail: {
+			label: 'En bref',
+			lanes: {
+				title: 'Lignes',
+				passing: (pass, total) => `${pass} / ${total} conformes`,
+				worst: (lane) => `pire : ${lane}`,
+				allClear: 'toutes les lignes conformes',
+			},
+			feeds: {
+				title: 'Flux',
+				fresh: (ok, total) => `${ok} / ${total} à jour`,
+			},
+		},
+		aggregate: {
+			title: 'GATE PIPELINE',
+			summary: (pass, total) => `${pass} lignes conformes sur ${total}`,
+			worst: (lane) => `pire : ${lane}`,
+			allClear: 'toutes les lignes conformes',
+		},
 	},
 };

@@ -71,7 +71,9 @@ describe('TocNav', () => {
 			},
 		});
 		// 3 flattened non-rail entries (overview, reliability, on-time); overview is #1.
-		expect(getByText(/SEC\s*1\s*\/\s*3/)).toBeTruthy();
+		// Zero-padded to match the numbered section chips (P5.4f: this footer counter is
+		// the rail's ONE position readout — SectionProgress was retired).
+		expect(getByText(/SEC\s*01\s*\/\s*03/)).toBeTruthy();
 	});
 
 	it('calls onNavigate with the entry id on click', async () => {

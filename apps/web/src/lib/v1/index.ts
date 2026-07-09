@@ -29,6 +29,7 @@ export {
 	getRoutesIndex,
 	getRoute,
 	getStopsIndex,
+	getStopsIndexSlim,
 	getStop,
 	getNetworkTrend,
 	getHotspots,
@@ -42,7 +43,10 @@ export {
 	getProvenance,
 	getDataHealth,
 	getBasemap,
+	toSlimStop,
+	toSlimStopsIndex,
 } from './repositories';
+export type { SlimStopEntry, SlimStopsIndex } from './repositories';
 
 // --- boot + label resolution + context ---------------------------------------
 export { bootV1, loadManifest, resolveLabel, getV1Context, setV1Context } from './boot';
@@ -92,6 +96,24 @@ export {
 	OTP_ON_TIME_FLOOR,
 	OTP_LATE_FLOOR,
 } from './reliabilityVerdict';
+
+// The plain-language reliability verdict engine (the §0 sentence + Wilson-hedged BAN),
+// hoisted from lines/reliability so every OTP-headline surface reuses the ONE engine +
+// the ONE VerdictBanner presenter without a cross-feature import.
+export {
+	selectVerdict,
+	wilsonInterval,
+	VERDICT_MIN_N,
+	VERDICT_RELIABLE_FLOOR,
+	VERDICT_PATCHY_FLOOR,
+} from './verdict';
+export type {
+	VerdictResult,
+	VerdictStatus,
+	VerdictHeadline,
+	VerdictCopy,
+	VerdictSentenceArgs,
+} from './verdict';
 
 // --- schemas (enums + contract types) — re-export the typed contract surface --
 export * from './schemas';

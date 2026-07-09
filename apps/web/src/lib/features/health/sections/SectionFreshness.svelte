@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
 	import { EntityList } from '$lib/components/surface';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import type { ProvenanceFreshness } from '$lib/v1/schemas';
 	import type { FreshnessVerdict } from '../selectors/provenanceViews';
@@ -25,7 +25,7 @@
 </script>
 
 <section class="health-block" aria-labelledby="health-freshness" data-slot="freshness-section">
-	<SectionLabel id="health-freshness" text={t.section} variant="station" />
+	<SectionHeading level={2} id="health-freshness" overline={t.section} number={2} />
 	<p class="health-note">{t.note}</p>
 	<EntityList items={[...items]} key={(f) => f.feed} class="health-list" aria-label={t.listLabel}>
 		{#snippet row(f)}
@@ -85,7 +85,7 @@
 		display: inline-flex;
 		flex-direction: column;
 		align-items: flex-end;
-		gap: 0.1rem;
+		gap: 0.125rem;
 		flex-shrink: 0;
 		text-align: right;
 	}

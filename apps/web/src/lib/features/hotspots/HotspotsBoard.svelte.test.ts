@@ -114,12 +114,15 @@ describe('HotspotsBoard — S12 re-seat', () => {
 
 	it('deep-links a ranked route/stop entry to its detail page (per-kind tabs)', async () => {
 		render(HotspotsBoard);
+		// Scope to the ladder section — the §C5.10 #1-hotspot callout above the ladder
+		// also names + links the worst entry, so a bare screen query would be ambiguous.
+		const section = document.querySelector('[data-slot="hotspot-section"]') as HTMLElement;
 		// The default (route) tab is the accessible pane → route 51 links to /lines/51.
-		expect(screen.getByRole('link', { name: /51/ })).toHaveAttribute('href', '/lines/51');
+		expect(within(section).getByRole('link', { name: /51/ })).toHaveAttribute('href', '/lines/51');
 		// Activate the Stop tab (the inactive pane is `hidden`, so out of the a11y tree) →
 		// the S1 stop entry links to /stop/S1.
 		await fireEvent.click(screen.getByRole('tab', { name: 'Stop' }));
-		const stop = screen.getByRole('link', { name: /Berri-UQAM/ });
+		const stop = within(section).getByRole('link', { name: /Berri-UQAM/ });
 		expect(stop).toHaveAttribute('href', '/stop/S1');
 	});
 
@@ -147,10 +150,15 @@ describe('HotspotsBoard — S12 re-seat', () => {
 	it('seeds the grain rail from ?grain=week (a different ladder than the day default)', () => {
 		mockUrl = new URL('http://localhost/hotspots?grain=week');
 		render(HotspotsBoard);
+		// Scope to the ladder section (the #1-hotspot callout above it also links the worst).
+		const section = document.querySelector('[data-slot="hotspot-section"]') as HTMLElement;
 		// The week ladder ranks Van Horne (161) worst — its link resolves to /lines/161.
-		expect(screen.getByRole('link', { name: /Van Horne/ })).toHaveAttribute('href', '/lines/161');
+		expect(within(section).getByRole('link', { name: /Van Horne/ })).toHaveAttribute(
+			'href',
+			'/lines/161',
+		);
 		// The day-grain stop entry is NOT shown on the week grain.
-		expect(screen.queryByRole('link', { name: /Berri-UQAM/ })).toBeNull();
+		expect(within(section).queryByRole('link', { name: /Berri-UQAM/ })).toBeNull();
 	});
 
 	it('mirrors a grain change to ?grain and OMITS the day default (clean canonical URL)', async () => {
@@ -192,6 +200,52 @@ describe('HotspotsBoard — S12 re-seat', () => {
 		expect(container.querySelectorAll('table.sr-only tbody tr')).toHaveLength(5);
 		// The honest shown/total heading surfaces the truncation.
 		expect(screen.getByText(/5\/6/)).toBeInTheDocument();
+	});
+
+	it('seats the grain control in the SurfaceRail (map-style glass left rail, P5.4)', async () => {
+		const { container } = render(HotspotsBoard);
+		// The grain control now rides the SurfaceRail: a desktop glass panel + ONE mobile
+		// pill→sheet (this surface has no ToC, so the rail holds only the grain picker).
+		const railMobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		expect(railMobile).not.toBeNull();
+		const pillBtn = railMobile.querySelector('button') as HTMLButtonElement;
+		expect(pillBtn).not.toBeNull();
+		// The pill is labelled with the View heading + the active grain (default day → Day).
+		expect(pillBtn.textContent).toContain('View');
+		expect(pillBtn.textContent).toContain('Day');
+		// The sheet is closed by default.
+		expect(railMobile.querySelector('[role="dialog"]')).toBeNull();
+		// Tap opens ONE sheet holding the grain picker + the active-window caption.
+		await fireEvent.click(pillBtn);
+		expect(pillBtn.getAttribute('aria-expanded')).toBe('true');
+		const sheet = railMobile.querySelector('[role="dialog"]') as HTMLElement;
+		expect(sheet).not.toBeNull();
+		expect(sheet.querySelector('[data-slot="grain-picker"]')).not.toBeNull();
+		expect(sheet.querySelector('[data-slot="active-window"]')).not.toBeNull();
+	});
+
+	it('renders single-column with NO rail when only one grain is populated', () => {
+		// A payload populating a SINGLE grain (day) → showGrainPicker is false → no rail.
+		payload.current = {
+			generated_utc: '2026-06-25T00:00:00Z' as IsoUtc,
+			hotspots: [],
+			by_grain: [
+				{
+					grain: 'day',
+					date: '2026-06-24',
+					window_end: '2026-06-24',
+					entries: [{ rank: 1, type: 'route', id: '51', severe_pct: 40, observation_count: 100 }],
+					tray: [],
+				},
+			],
+		} satisfies Hotspots as Hotspots;
+		const { container } = render(HotspotsBoard);
+		// No rail (desktop panel or mobile pill) when there is nothing to pick.
+		expect(container.querySelector('[data-slot="surface-rail"]')).toBeNull();
+		expect(container.querySelector('[data-slot="surface-rail-mobile"]')).toBeNull();
+		// The ladder still renders (single-column) — the route entry links to its detail.
+		const section = document.querySelector('[data-slot="hotspot-section"]') as HTMLElement;
+		expect(within(section).getByRole('link', { name: /51/ })).toHaveAttribute('href', '/lines/51');
 	});
 
 	it('shows the styled honest-absence empty state when NO grain is populated', () => {

@@ -137,19 +137,28 @@ describe('RepeatOffenders — S14 re-seat (by_grain ladders)', () => {
 
 	it('deep-links a ranked trip/vehicle entry to its offending line', async () => {
 		render(RepeatOffenders);
+		// Scope to the ladder section — the §C5.12 #1-offender hero above it also names +
+		// links the worst entry, so a bare screen query would be ambiguous.
+		const section = document.querySelector('[data-slot="offender-section"]') as HTMLElement;
 		// The default (trip) tab is the accessible pane → trip T1 links to its route /lines/11.
-		expect(screen.getByRole('link', { name: /Montagne/ })).toHaveAttribute('href', '/lines/11');
+		expect(within(section).getByRole('link', { name: /Montagne/ })).toHaveAttribute(
+			'href',
+			'/lines/11',
+		);
 		// Activate the Vehicle tab → the 42010 vehicle entry links to /lines/55.
 		await fireEvent.click(screen.getByRole('tab', { name: 'Vehicle' }));
-		const veh = screen.getByRole('link', { name: /Boulevard/ });
+		const veh = within(section).getByRole('link', { name: /Boulevard/ });
 		expect(veh).toHaveAttribute('href', '/lines/55');
 	});
 
 	it('surfaces the natural-frequency recurrence line on a ranked row', () => {
 		render(RepeatOffenders);
+		// Scope to the ladder section (the hero's streak line repeats the same natural
+		// frequency for the #1 offender, so a bare query would be ambiguous).
+		const section = document.querySelector('[data-slot="offender-section"]') as HTMLElement;
 		// The per-row note carries "Late-prone on 5 of 7 observed days" (the sr-only table
 		// mirrors the note text).
-		expect(screen.getByText(/Late-prone on 5 of 7 observed days/i)).toBeInTheDocument();
+		expect(within(section).getByText(/Late-prone on 5 of 7 observed days/i)).toBeInTheDocument();
 	});
 
 	it('splits ranked entries into trip|vehicle tabs (only offered kinds appear)', () => {
@@ -174,10 +183,15 @@ describe('RepeatOffenders — S14 re-seat (by_grain ladders)', () => {
 	it('seeds the grain rail from ?grain=month (a different ladder than the week default)', () => {
 		mockUrl = new URL('http://localhost/repeat-offenders?grain=month');
 		render(RepeatOffenders);
+		// Scope to the ladder section (the #1-offender hero above it also links the worst).
+		const section = document.querySelector('[data-slot="offender-section"]') as HTMLElement;
 		// The month ladder ranks Van Horne (161) worst — its link resolves to /lines/161.
-		expect(screen.getByRole('link', { name: /Van Horne/ })).toHaveAttribute('href', '/lines/161');
+		expect(within(section).getByRole('link', { name: /Van Horne/ })).toHaveAttribute(
+			'href',
+			'/lines/161',
+		);
 		// The week-grain trip is NOT shown on the month grain.
-		expect(screen.queryByRole('link', { name: /Montagne/ })).toBeNull();
+		expect(within(section).queryByRole('link', { name: /Montagne/ })).toBeNull();
 	});
 
 	it('mirrors a grain change to ?grain and OMITS the week default (clean canonical URL)', async () => {

@@ -60,26 +60,22 @@
 
 <style>
 	/* Solid surface (doctrine: no alpha on card backgrounds). Severity is carried
-	   by a 3px left rule in the dataviz severity hue + a tinted border — data
-	   marks only, never interactive --primary. */
+	   by the full tinted border in the dataviz severity hue (P7: no left stripe) —
+	   data marks only, never interactive --primary. */
 	.alert-surface {
 		background: var(--card);
 		border-color: var(--border);
-		border-left-width: 3px;
 	}
 	.alert-neutral {
-		border-left-color: var(--border-strong, var(--border));
+		border-color: var(--border-strong);
 	}
 	.alert-critical {
-		border-left-color: var(--dataviz-severity-critical);
-		border-color: color-mix(in srgb, var(--dataviz-severity-critical) 40%, var(--border));
+		border-color: color-mix(in srgb, var(--dataviz-severity-critical) 55%, var(--border));
 	}
 	.alert-high {
-		border-left-color: var(--dataviz-severity-high);
-		border-color: color-mix(in srgb, var(--dataviz-severity-high) 40%, var(--border));
+		border-color: color-mix(in srgb, var(--dataviz-severity-high) 55%, var(--border));
 	}
 	.alert-watch {
-		border-left-color: var(--dataviz-severity-watch);
-		border-color: color-mix(in srgb, var(--dataviz-severity-watch) 40%, var(--border));
+		border-color: color-mix(in srgb, var(--dataviz-severity-watch) 55%, var(--border));
 	}
 </style>

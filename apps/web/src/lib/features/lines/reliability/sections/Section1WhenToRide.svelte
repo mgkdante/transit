@@ -389,6 +389,7 @@
 
 <CollapsibleSection
 	dataSection="when-to-ride"
+	number={2}
 	eyebrow={copy.sections.whenToRide.label}
 	question={copy.sections.whenToRide.question}
 >
@@ -525,7 +526,7 @@
 	.label-with-info {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.label-with-info :global([data-slot='section-label']) {
 		min-width: 0;
@@ -548,7 +549,7 @@
 	.heatmap-window-note {
 		display: flex;
 		align-items: baseline;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		margin: 0;
 		max-width: 60ch;
 		font-family: var(--font-mono);
@@ -565,11 +566,11 @@
 	/* §1 takeaway sentence — the lead "when to avoid / when it's fine" verdict. Reads stronger
 	   than the quiet captions (foreground, medium weight, body size) so the eye catches the
 	   answer first; a thin accent rule marks it as the section's insight. */
+	/* §1 takeaway — carries the section's insight via foreground weight + body size
+	   (§C4 P7: the former 3px accent left-stripe is retired). */
 	.heatmap-insight {
 		margin: 0;
 		max-width: 60ch;
-		padding-inline-start: 0.7rem;
-		border-inline-start: 3px solid var(--accent-text);
 		font-size: var(--text-body);
 		line-height: 1.45;
 		font-weight: 500;
@@ -594,7 +595,7 @@
 	.compare-list {
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -603,8 +604,8 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 0.25rem 0.6rem;
-		padding: 0.3rem 0;
+		gap: 0.25rem 0.5rem;
+		padding: 0.375rem 0;
 	}
 	.compare-row + .compare-row {
 		border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);

@@ -12,7 +12,9 @@
 // light shadow re-pins) and base-ONLY tokens (component text sizes, cta
 // shadows, z.overlay/ripple, color.brand.glow) are legal — only SHARED paths
 // are value-locked. The dataviz families are shared as of design v0.2.0, so
-// the whole dataviz scale is gate-locked to the brand base.
+// the whole dataviz scale is gate-locked to the brand base. As of design
+// v0.3.0 (P5.3a·E4) the shadow.glow-* basis and space.page-x floor were
+// reconciled to the brand base, shrinking the override register from 6 to 2.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -29,27 +31,11 @@ const baseTokens = JSON.parse(
  * Each entry pins BOTH sides, so it goes stale loudly if either repo moves.
  */
 const DECLARED_OVERRIDES: Record<string, { base: unknown; transit: unknown; why: string }> = {
-	'shadow.glow-sm': {
-		base: '0 0 6px color-mix(in srgb, var(--glow) 30%, transparent)',
-		transit: '0 0 6px color-mix(in srgb, var(--primary) 30%, transparent)',
-		why: 'transit predates color.brand.glow — glows ride --primary here (P5.3: adopt --glow)',
-	},
-	'shadow.glow-md': {
-		base: '0 0 12px color-mix(in srgb, var(--glow) 20%, transparent)',
-		transit: '0 0 12px color-mix(in srgb, var(--primary) 20%, transparent)',
-		why: 'same as shadow.glow-sm',
-	},
-	'shadow.glow-lg': {
-		base: '0 0 24px color-mix(in srgb, var(--glow) 15%, transparent), 0 0 60px color-mix(in srgb, var(--glow) 6%, transparent)',
-		transit:
-			'0 0 24px color-mix(in srgb, var(--primary) 15%, transparent), 0 0 60px color-mix(in srgb, var(--primary) 6%, transparent)',
-		why: 'same as shadow.glow-sm',
-	},
-	'space.page-x': {
-		base: { min: '1.5rem', preferred: '4vw', max: '5rem' },
-		transit: { min: '1rem', preferred: '4vw', max: '5rem' },
-		why: 'data-dense dashboard keeps a tighter mobile gutter (deliberate, S3 era)',
-	},
+	// P5.3a·E4 (design v0.3.0, 2026-07-03): the register dropped 6→2. transit
+	// RECONCILED the shadow.glow-{sm,md,lg} basis (--primary → --glow) and
+	// space.page-x mobile floor (1rem → 1.5rem) UP to the brand base, so those
+	// four paths are now SHARED-and-matching and need no override. The two
+	// scanability type re-pins below remain deliberate divergences.
 	'text.heading': {
 		base: { min: '1.25rem', preferred: '3vw', max: '1.5rem' },
 		transit: { min: '1.375rem', preferred: '3vw', max: '1.75rem' },

@@ -18,7 +18,7 @@
 		CollapsibleContent,
 	} from '$lib/components/ui/collapsible';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import { ChevronToggle } from '$lib/components/brand';
+	import { ChevronToggle, NumberedChip } from '$lib/components/brand';
 
 	interface CollapsibleSectionProps {
 		/** Mono eyebrow (e.g. "WHEN TO RIDE"). */
@@ -27,6 +27,8 @@
 		question: string;
 		/** `data-section` token for wayfinding / tests (e.g. "when-to-ride"). */
 		dataSection: string;
+		/** Optional D4 numbered chip (the ordered §0–§4 sequence) — decorative wayfinding. */
+		number?: number;
 		/** Open by default; bindable so a caller could persist/seed it later. */
 		open?: boolean;
 		/** The section body. */
@@ -36,6 +38,7 @@
 		eyebrow,
 		question,
 		dataSection,
+		number,
 		open = $bindable(true),
 		children,
 	}: CollapsibleSectionProps = $props();
@@ -51,7 +54,10 @@
 				<h2 class="section-heading">
 					<button {...props} type="button" class="section-toggle" data-slot="section-toggle">
 						<span class="section-head-text">
-							<SectionLabel text={eyebrow} variant="station" />
+							<span class="section-eyebrow-row">
+								{#if number != null}<NumberedChip value={number} />{/if}
+								<SectionLabel text={eyebrow} variant="station" />
+							</span>
 							<span class="section-question" data-slot="section-question">{question}</span>
 						</span>
 						<ChevronToggle {open} direction="down" size="md" />
@@ -94,16 +100,17 @@
 		cursor: pointer;
 		color: inherit;
 	}
-	.section-toggle:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 4px;
-		border-radius: var(--radius-md, 0.5rem);
-	}
 	.section-head-text {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 		min-width: 0;
+	}
+	/* The eyebrow row — numbered chip (D4) leads the mono station eyebrow. */
+	.section-eyebrow-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 	}
 	.section-toggle :global([data-slot='chevron-toggle']) {
 		flex: none;

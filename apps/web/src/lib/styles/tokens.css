@@ -40,7 +40,7 @@
   --tracking-tight: -0.025em;
   --tracking-wide: 0.05em;
   --tracking-eyebrow: 0.1em;
-  --space-page-x: clamp(1rem, 4vw, 5rem);
+  --space-page-x: clamp(1.5rem, 4vw, 5rem);
   --space-section-y: clamp(3rem, 8vw, 6rem);
   --space-card-gap: clamp(1rem, 2vw, 1.5rem);
   --radius-sm: 4px;
@@ -48,9 +48,9 @@
   --radius-lg: 12px;
   --radius-xl: 16px;
   --radius-pill: 9999px;
-  --shadow-glow-sm: 0 0 6px color-mix(in srgb, var(--primary) 30%, transparent);
-  --shadow-glow-md: 0 0 12px color-mix(in srgb, var(--primary) 20%, transparent);
-  --shadow-glow-lg: 0 0 24px color-mix(in srgb, var(--primary) 15%, transparent), 0 0 60px color-mix(in srgb, var(--primary) 6%, transparent);
+  --shadow-glow-sm: 0 0 6px color-mix(in srgb, var(--glow) 30%, transparent);
+  --shadow-glow-md: 0 0 12px color-mix(in srgb, var(--glow) 20%, transparent);
+  --shadow-glow-lg: 0 0 24px color-mix(in srgb, var(--glow) 15%, transparent), 0 0 60px color-mix(in srgb, var(--glow) 6%, transparent);
   --shadow-card: 0 0 16px color-mix(in srgb, var(--primary) 8%, transparent), 0 2px 8px rgba(10, 7, 4, 0.35), inset 0 1px 0 var(--edge-highlight);
   --shadow-section: 0 8px 32px color-mix(in srgb, var(--primary) 6%, transparent);
   --shadow-nav: 0 4px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);

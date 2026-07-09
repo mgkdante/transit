@@ -12,9 +12,10 @@
 	import type { AlertHistoryCopy } from '../alerts.copy';
 	import type { BreakdownRow } from '../selectors/alertLog';
 	import type { Locale } from '$lib/i18n';
+	import type { Snippet } from 'svelte';
 	import { DashboardGrid } from '$lib/components/layout';
 	import { RankedRow } from '$lib/components/dataviz';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 
 	interface Props {
@@ -24,12 +25,26 @@
 		hasBreakdown: boolean;
 		copy: AlertHistoryCopy;
 		locale: Locale;
+		/** Optional (i) explainer snippets on the three distribution sub-headings. */
+		causeInfo?: Snippet;
+		effectInfo?: Snippet;
+		severityInfo?: Snippet;
 	}
-	let { causeRows, effectRows, severityRows, hasBreakdown, copy, locale }: Props = $props();
+	let {
+		causeRows,
+		effectRows,
+		severityRows,
+		hasBreakdown,
+		copy,
+		locale,
+		causeInfo,
+		effectInfo,
+		severityInfo,
+	}: Props = $props();
 </script>
 
 <div class="alert-history-block" data-slot="alert-breakdown">
-	<SectionLabel text={copy.breakdown.section} variant="station" />
+	<SectionHeading level={2} overline={copy.breakdown.section} />
 	{#if !hasBreakdown}
 		<!-- HONEST ABSENCE: the archive carries alerts but no published
 		     cause/effect/severity distribution. Say so with the styled chip, never a blank. -->
@@ -38,7 +53,7 @@
 		<DashboardGrid minTile="240px" gutter={false}>
 			{#if causeRows.length > 0}
 				<div class="alert-history-dist">
-					<SectionLabel text={copy.breakdown.byCause} variant="metric" />
+					<SectionHeading level={3} overline={copy.breakdown.byCause} explainer={causeInfo} />
 					<div class="alert-history-ranked" role="list" aria-label={copy.breakdown.byCauseLabel}>
 						{#each causeRows as row (row.key)}
 							<RankedRow
@@ -55,7 +70,7 @@
 			{/if}
 			{#if effectRows.length > 0}
 				<div class="alert-history-dist">
-					<SectionLabel text={copy.breakdown.byEffect} variant="metric" />
+					<SectionHeading level={3} overline={copy.breakdown.byEffect} explainer={effectInfo} />
 					<div class="alert-history-ranked" role="list" aria-label={copy.breakdown.byEffectLabel}>
 						{#each effectRows as row (row.key)}
 							<RankedRow
@@ -72,7 +87,7 @@
 			{/if}
 			{#if severityRows.length > 0}
 				<div class="alert-history-dist">
-					<SectionLabel text={copy.breakdown.bySeverity} variant="metric" />
+					<SectionHeading level={3} overline={copy.breakdown.bySeverity} explainer={severityInfo} />
 					<div class="alert-history-ranked" role="list" aria-label={copy.breakdown.bySeverityLabel}>
 						{#each severityRows as row (row.key)}
 							<RankedRow
@@ -103,8 +118,10 @@
 	.alert-history-dist {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 		min-width: 0;
+		/* Fill the grid cell so cause / effect / severity read as one equal-height row. */
+		height: 100%;
 		padding: 1rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);

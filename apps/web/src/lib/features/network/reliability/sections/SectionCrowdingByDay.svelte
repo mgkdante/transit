@@ -11,8 +11,9 @@
 <script lang="ts">
 	import { Chart } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
+	import NetworkTile from './NetworkTile.svelte';
 	import type { OccupancyDay } from '../selectors/occupancyTrend';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
@@ -34,11 +35,12 @@
 	const i = $derived(info('occupancy', copy.occupancyTrendSection));
 </script>
 
-<div class="network-tile">
-	<span class="network-section">
-		<SectionLabel text={copy.occupancyTrendSection} variant="station" />
-		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
-	</span>
+<NetworkTile>
+	<SectionHeading level={3} overline={copy.occupancyTrendSection}>
+		{#snippet explainer()}
+			<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+		{/snippet}
+	</SectionHeading>
 	<ul
 		class="network-occupancy-days"
 		aria-label={copy.occupancyTrend.summary}
@@ -51,31 +53,16 @@
 			</li>
 		{/each}
 	</ul>
-</div>
+</NetworkTile>
 
 <style>
-	.network-tile {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		min-width: 0;
-		padding: 1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
-	}
-	.network-section {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
-	}
 	.network-occupancy-days {
 		margin: 0;
 		padding: 0;
 		list-style: none;
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		max-width: 100%;
 	}
 	.network-occupancy-day {

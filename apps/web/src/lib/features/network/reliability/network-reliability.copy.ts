@@ -10,14 +10,39 @@
 
 import type { Locale } from '$lib/i18n';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
+import type { VerdictCopy } from '$lib/v1/verdict';
 
 export interface NetworkReliabilityCopy extends SurfaceHeadCopy {
+	/** D3: the TerminalPanel framing the LIVE control-room band. */
+	readonly liveTerminal: {
+		/** Mono terminal-window title (e.g. "control-room"). */
+		readonly title: string;
+		/** Small tag chip beside the title (e.g. "LIVE"). */
+		readonly tag: string;
+		/** Footer readout label for the live snapshot source. */
+		readonly footerLabel: string;
+		/** Footer readout value (the honest source note). */
+		readonly footerValue: string;
+	};
 	/** Region heading above the LIVE half of the surface. */
 	readonly liveRegion: string;
 	/** Region heading above the HISTORIC half of the surface. */
 	readonly historicRegion: string;
 	/** Bilingual group label for the historic ControlsRail (grain + window + series). */
 	readonly viewControlsLabel: string;
+	/**
+	 * P5.4: the map-style GLASS LEFT RAIL (SurfaceRail) copy — the View overline, the
+	 * region ToC label, and the mobile pill's open/close a11y names. Rendered in BOTH
+	 * the desktop glass panel + the mobile sheet.
+	 */
+	readonly rail: {
+		/** ToC "jump to" nav label + its aria-label. */
+		readonly toc: string;
+		/** aria-label for the mobile pill's open control. */
+		readonly pillOpen: string;
+		/** aria-label for the mobile sheet's dismiss control. */
+		readonly pillClose: string;
+	};
 	/** Section caption above the live metric grid. */
 	readonly liveSection: string;
 	/** Section caption above the trend chart. */
@@ -181,6 +206,22 @@ export interface NetworkReliabilityCopy extends SurfaceHeadCopy {
 		readonly pct: string;
 		readonly min: string;
 	};
+	/**
+	 * §0 network verdict band (§C5.7) — the plain-language at-a-glance answer between the
+	 * LIVE and HISTORIC regions, rendered through the SHARED VerdictBanner + selectVerdict.
+	 * The live tier carries no OTP trip-day denominator, so the sentence reads WITHOUT a
+	 * Wilson hedge (the honest pre-republish path) — never a fabricated confidence.
+	 */
+	readonly verdict: VerdictCopy;
+	/** The network verdict band's Δ-vs-prior chip (§C6 #3) — latest vs prior trend day. */
+	readonly verdictDelta: {
+		/** Accessible name for the verdict band section. */
+		readonly label: string;
+		/** The chip text builder: signed points vs the prior day (e.g. "+3 pts vs prior day"). */
+		readonly chip: (signedPts: string) => string;
+		/** a11y prefix for the chip. */
+		readonly a11y: string;
+	};
 }
 
 export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
@@ -188,9 +229,20 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		kicker: 'NETWORK · LIVE',
 		heading: 'Network health',
 		lede: 'Live network-wide on-time performance, crowding and feed freshness, measured from the /v1 contract. We never invent data: a missing signal shows as “no data”, not a fabricated zero.',
+		liveTerminal: {
+			title: 'control-room',
+			tag: 'LIVE',
+			footerLabel: 'SOURCE',
+			footerValue: '/v1 live snapshot',
+		},
 		liveRegion: 'Live now',
 		historicRegion: 'Historic trend',
 		viewControlsLabel: 'View',
+		rail: {
+			toc: 'Jump to a section',
+			pillOpen: 'Open view controls',
+			pillClose: 'Close view controls',
+		},
 		liveSection: 'Live now',
 		trendSection: 'Daily trend',
 		cancelSection: 'Cancellations',
@@ -271,14 +323,50 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		window: { label: 'Trend window', d7: '7d', d30: '30d', d90: '90d' },
 		noData: 'no data',
 		units: { pct: '%', min: ' min' },
+		verdict: {
+			windowPhrase: {
+				day: 'right now',
+				week: 'right now',
+				month: 'right now',
+				range: 'right now',
+			},
+			reliable: ({ window, onTen, lateTen, hedge }) =>
+				`The network is running reliably ${window}, about ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
+			patchy: ({ window, onTen, lateTen, hedge }) =>
+				`The network is running unevenly ${window}, about ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
+			unreliable: ({ window, onTen, lateTen, hedge }) =>
+				`The network is running poorly ${window}, only ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
+			tentative: ({ window, otp, n, lo, hi }) =>
+				`About ${otp}% of trips on time ${window} (95% sure between ${lo} and ${hi}%, n=${n}).`,
+			tooFew: (window, n) => `Still measuring ${window}, only ${n} trips tracked so far.`,
+			absent: 'Still measuring the network. No live on-time reading yet.',
+			hedgeSimple: (otp) => ` (${otp}%)`,
+			hedgeCI: (otp, lo, hi) => ` (${otp}%, 95% sure between ${lo} and ${hi}%)`,
+		},
+		verdictDelta: {
+			label: 'Network verdict',
+			chip: (signedPts) => `${signedPts} vs prior day`,
+			a11y: 'Change versus the prior day:',
+		},
 	},
 	fr: {
 		kicker: 'RÉSEAU · EN DIRECT',
 		heading: 'Santé du réseau',
 		lede: 'Ponctualité, achalandage et fraîcheur du flux à l’échelle du réseau, mesurés à partir du contrat /v1. On n’invente jamais de données : un signal absent s’affiche « aucune donnée », jamais un zéro fabriqué.',
+		liveTerminal: {
+			title: 'salle-de-contrôle',
+			tag: 'EN DIRECT',
+			footerLabel: 'SOURCE',
+			footerValue: 'instantané /v1 en direct',
+		},
 		liveRegion: 'En direct',
 		historicRegion: 'Tendance historique',
 		viewControlsLabel: 'Vue',
+		rail: {
+			toc: 'Aller à une section',
+			pillOpen: 'Ouvrir les commandes de vue',
+			pillClose: 'Fermer les commandes de vue',
+		},
 		liveSection: 'En direct',
 		trendSection: 'Tendance quotidienne',
 		cancelSection: 'Annulations',
@@ -364,5 +452,30 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		window: { label: 'Fenêtre de tendance', d7: '7 j', d30: '30 j', d90: '90 j' },
 		noData: 'aucune donnée',
 		units: { pct: '%', min: ' min' },
+		verdict: {
+			windowPhrase: {
+				day: 'en ce moment',
+				week: 'en ce moment',
+				month: 'en ce moment',
+				range: 'en ce moment',
+			},
+			reliable: ({ window, onTen, lateTen, hedge }) =>
+				`Le réseau est fiable ${window}, environ ${onTen} trajets sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
+			patchy: ({ window, onTen, lateTen, hedge }) =>
+				`Le réseau est inégal ${window}, environ ${onTen} trajets sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
+			unreliable: ({ window, onTen, lateTen, hedge }) =>
+				`Le réseau est peu fiable ${window}, seulement ${onTen} trajets sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
+			tentative: ({ window, otp, n, lo, hi }) =>
+				`Environ ${otp} % des trajets à l’heure ${window} (sûr à 95 % entre ${lo} et ${hi} %, n=${n}).`,
+			tooFew: (window, n) => `Mesure en cours ${window}, seulement ${n} trajets suivis jusqu’ici.`,
+			absent: 'Mesure du réseau en cours. Pas encore de ponctualité en direct.',
+			hedgeSimple: (otp) => ` (${otp} %)`,
+			hedgeCI: (otp, lo, hi) => ` (${otp} %, sûr à 95 % entre ${lo} et ${hi} %)`,
+		},
+		verdictDelta: {
+			label: 'Verdict du réseau',
+			chip: (signedPts) => `${signedPts} vs la veille`,
+			a11y: 'Variation par rapport à la veille :',
+		},
 	},
 };

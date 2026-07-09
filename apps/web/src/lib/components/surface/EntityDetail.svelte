@@ -20,6 +20,7 @@
 	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
 	import { getLocale } from '$lib/i18n';
 	import { resolveBreadcrumbTrail } from '$lib/seo/routeSeo';
+	import { cn } from '$lib/utils';
 	import Breadcrumb from './Breadcrumb.svelte';
 
 	interface EntityDetailProps {
@@ -27,6 +28,29 @@
 		kicker: string;
 		/** Surface-specific heading (SectionHeading for lines, StopLabel for stops). */
 		header: Snippet;
+		/**
+		 * Optional lede paragraph under the heading (muted, ~52ch) — the framing
+		 * sentence in the detail-head rhythm (kicker → display title → lede → meta).
+		 * Omitted ⇒ no lede row (P5.3b detail-head rhythm, §C2/§C5.4/§C5.6).
+		 */
+		lede?: string;
+		/**
+		 * Optional mono meta row under the lede — the detail-head meta chips
+		 * (e.g. the stop's ARRÊT plate, the line's map action). Omitted ⇒ no meta row.
+		 */
+		meta?: Snippet;
+		/**
+		 * Optional CornerMeta block (A4) — blueprint-margin corner readouts pinned to
+		 * the (relative) detail head. The caller drops a fully-composed <CornerMeta>
+		 * here (REAL data only); omitted ⇒ no corner annotations. Hero-zone only.
+		 */
+		cornerMeta?: Snippet;
+		/**
+		 * Optional ALWAYS-VISIBLE banner rendered between the head and the tabs (§C5.4 /
+		 * §C5.6) — the at-a-glance verdict that must never be buried behind a tab. The
+		 * caller drops a fully-composed block (e.g. a VerdictBanner); omitted ⇒ no banner.
+		 */
+		banner?: Snippet;
 		/** Tab definitions — stable key + already-localized label. */
 		tabs: readonly { key: K; label: string }[];
 		/** The active tab key (two-way bindable). */
@@ -45,6 +69,10 @@
 	let {
 		kicker,
 		header,
+		lede,
+		meta,
+		cornerMeta,
+		banner,
 		tabs,
 		active = $bindable(),
 		pane,
@@ -63,10 +91,11 @@
 	const trail = $derived(resolveBreadcrumbTrail(page.url.pathname, locale));
 </script>
 
-<Surface width="bleed" as="div" class={className} data-slot="entity-detail">
+<Surface as="div" class={cn('entity-detail-surface', className)} data-slot="entity-detail">
 	<!-- A4 (slice-9.7): route/stop detail is a DATA DASHBOARD — it fills the
-	     rail-inset <main> width edge-to-edge (width="bleed"), keeping the page
-	     gutter (--space-page-x, from the surface-shell--gutter) and the "never
+	     rail-inset <main> width edge-to-edge (Surface is full-bleed by default
+	     after A1), keeping the page gutter (--space-page-x, from the
+	     surface-shell--gutter) and the "never
 	     behind the left rail" boundary (AppShell's <main> padding-left, untouched).
 	     The masthead (breadcrumb + back + kicker + heading) and the tabs + their
 	     data panes (tables / charts / crosstabs) all share the gutter-aligned left
@@ -74,7 +103,10 @@
 	     long-form prose paragraphs to re-cap — the honest no-data notes / caveats
 	     live in the caller panes (RouteDetail / StopDetail), which own their own
 	     reading measures; .surface-measure is available there if they need it. -->
-	<div class="surface-head">
+	<div class="surface-head" class:surface-head--cornered={cornerMeta}>
+		{#if cornerMeta}
+			{@render cornerMeta()}
+		{/if}
 		{#if trail.length > 1}
 			<Breadcrumb {trail} {locale} />
 		{/if}
@@ -86,12 +118,28 @@
 		{/if}
 		<SectionLabel text={kicker} variant="station" />
 		{@render header()}
+		{#if lede}
+			<p class="surface-detail-lede">{lede}</p>
+		{/if}
+		{#if meta}
+			<div class="surface-detail-meta">{@render meta()}</div>
+		{/if}
 	</div>
 
 	<Separator variant="hazard" />
 
+	{#if banner}
+		<!-- §C5.4/§C5.6: the always-visible verdict banner above the tabs — the payoff is
+		     never buried behind a tab. Its own register between the head and the tab strip. -->
+		<div class="surface-banner" data-slot="entity-detail-banner">{@render banner()}</div>
+	{/if}
+
 	<Tabs bind:value={active}>
-		<TabsList variant="line" class="w-full justify-start">
+		<!-- overflow-x:auto (P5.3d §C4 P10): at 390px the 4-tab strip (Next / Schedule
+		     / Info / Reliability) overran its container and clipped the last tab
+		     ("Reliabilit…"). The scroller reveals it instead of clipping — THE named
+		     mobile overflow bug. flex-nowrap keeps the tabs on one scrollable row. -->
+		<TabsList variant="line" class="w-full flex-nowrap justify-start overflow-x-auto">
 			{#each tabs as t (t.key)}
 				<!-- Signage-active tab look (the yesid StationTabs pattern): bits-ui owns
 				     behavior / ARIA / roving-tabindex via {...props}; the child <button> owns
@@ -113,10 +161,54 @@
 </Surface>
 
 <style>
+	/* Anchor for the optional D2 rotated edge word's zero-width absolute rail. */
+	:global(.surface-shell.entity-detail-surface) {
+		position: relative;
+	}
 	.surface-head {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+	}
+	/* A4: when the head carries CornerMeta it becomes the relative host for the
+	   four corner readouts; a top AND bottom margin band (only where the corners
+	   surface, >=768px) keeps them clear of the content flow — the top band clears
+	   the breadcrumb/kicker/heading, the bottom band clears the meta row (the map
+	   drilldown / ARRÊT plate) that the bottom corners would otherwise overlap. */
+	.surface-head--cornered {
+		position: relative;
+	}
+	@media (min-width: 768px) {
+		.surface-head--cornered {
+			padding-top: 1.5rem;
+			/* The bottom band must exceed the corner's own footprint (its 0.75rem
+			   inset + its ~0.9rem line-box) so the bottom corner clears the meta row
+			   entirely rather than grazing its baseline. */
+			padding-bottom: 2rem;
+		}
+	}
+
+	/* Detail-head rhythm (§C2/§C5.4/§C5.6, yesid-visual-spec §6): the framing
+	   sentence under the display title — muted, subheading-scale, ~52ch measure,
+	   matching the Masthead lede so line/stop/trip heads read identically. */
+	.surface-detail-lede {
+		color: var(--muted-foreground);
+		font-size: var(--text-subheading);
+		line-height: 1.6;
+		max-width: 52ch;
+	}
+	/* Always-visible verdict banner (§C5.4/§C5.6) between the head and the tabs —
+	   quiet spacing so the VerdictBanner reads as its own register above the tab strip. */
+	.surface-banner {
+		margin-block: 0.25rem 1rem;
+	}
+	/* Meta row — the mono-micro chips (the stop's ARRÊT plate, the map drilldown)
+	   below the lede; a flex row that wraps on narrow viewports. */
+	.surface-detail-meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem 1rem;
 	}
 
 	/* Signage-active tab (yesid StationTabs parity). The child <button> replaces the
@@ -126,6 +218,8 @@
 	   change). The active VISUAL only — behavior/ARIA stay on the bits-ui trigger. */
 	.station-tab {
 		min-width: max-content;
+		/* Tap-target floor (P5.3d §C4 P10): the tab was 41px tall → 44px. */
+		min-height: var(--size-tap-min);
 		display: inline-flex;
 		align-items: center;
 		gap: 0.5rem;
@@ -166,7 +260,7 @@
 	.surface-back {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3rem;
+		gap: 0.375rem;
 		align-self: start;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);

@@ -70,16 +70,16 @@
 	.metric-bullet {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		padding: 1rem 1.25rem;
 		background: var(--card);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-lg, 0.75rem);
+		border-radius: var(--radius-lg);
 	}
 	.metric-bullet__head {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.35rem;
+		gap: 0.375rem;
 		min-width: 0;
 	}
 	.metric-bullet__label {
@@ -110,7 +110,7 @@
 		color: var(--muted-foreground);
 	}
 	.metric-bullet__chart {
-		margin-top: 0.15rem;
+		margin-top: 0.125rem;
 	}
 	.metric-bullet__caption {
 		margin: 0;

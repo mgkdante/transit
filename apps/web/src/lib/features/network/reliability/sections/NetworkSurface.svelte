@@ -5,7 +5,9 @@
   stops/reliability re-seat (StopReliabilitySurface). This orchestrator owns EVERYTHING the
   sections must not: the live store + the trend/provenance resources, the codec-seeded
   grain/window/retard state + their clamps, the URL mirror, the ONE mapping pass through the
-  pure selectors, and the LIVE/HISTORIC region layout with the STICKY SurfaceControls rail.
+  pure selectors, and the LIVE/HISTORIC region layout. P5.4: the grain/window/delay view
+  controls + the two-region ToC now ride a map-style GLASS LEFT RAIL (SurfaceRail) — a sticky
+  floating panel beside the regions on desktop, ONE merged pill→sheet on mobile.
   Each section is a pure presenter fed one VM slice.
 
   LIVE tier (S9C · DECISIONS C1–C4): the top board is FOUR glance ExplainedMetricCards
@@ -31,7 +33,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { routeNameFallback } from '$lib/site/absence';
+	import { routeNameFallback, describeAbsence } from '$lib/site/absence';
 	import { layout, routeFor } from '$lib/nav';
 	import { mapSearchFor, fromSearchParams, toSearchParams, emptyFilterState } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
@@ -53,18 +55,22 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
 	import {
-		SurfaceHeader,
 		FreshnessStamp,
 		ConformanceBadge,
 		ResourceBoundary,
-		SurfaceControls,
+		SurfaceRail,
 		GrainPicker,
 		type GrainSegment,
 	} from '$lib/components/surface';
-	import { Surface, ControlsRail, DashboardGrid } from '$lib/components/layout';
+	import { observeActiveToc, TocNav, type TocEntry } from '$lib/components/shared';
+	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import Masthead from '$lib/components/brand/Masthead.svelte';
+	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
+	import { VerdictBanner } from '$lib/components/brand';
+	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
 	import {
 		metricInfoFor,
 		type MetricKey,
@@ -168,6 +174,43 @@
 				})
 			: null,
 	);
+	// §0 NETWORK VERDICT (§C5.7): the plain-language at-a-glance answer between the LIVE
+	// and HISTORIC regions, via the SHARED VerdictBanner + selectVerdict off the SAME live
+	// on_time_pct the headline reads. n=null → the sentence carries no fabricated Wilson
+	// hedge (the live tier has no OTP trip-day denominator — honest degradation).
+	const networkHeadline = $derived<VerdictHeadline>({
+		otpPct: live.network?.on_time_pct ?? null,
+		observationCount: null,
+		onTime: null,
+	});
+	const networkVerdict = $derived(selectVerdict(networkHeadline, 'day', locale, t.verdict));
+	// The Δ-vs-prior chip (§C6 #3 — the comparison network entirely lacked): the latest
+	// daily trend OTP minus the immediately-prior day's, from the SAME dated series the
+	// trend plots. Both bounds must be real (no fabricated 0): a null on either day → no
+	// chip. Rounded to whole points (OTP is an integer percentage).
+	const verdictDeltaPts = $derived.by<number | null>(() => {
+		const s = trend.data?.series ?? [];
+		if (s.length < 2) return null;
+		const latest = s[s.length - 1]?.otp_pct;
+		const prior = s[s.length - 2]?.otp_pct;
+		if (latest == null || prior == null) return null;
+		return Math.round(latest - prior);
+	});
+	const verdictDeltaText = $derived(
+		verdictDeltaPts == null
+			? null
+			: t.verdictDelta.chip(`${verdictDeltaPts > 0 ? '+' : ''}${verdictDeltaPts}${t.units.pct}`),
+	);
+	// The Δ chip's tone rides the dataviz status scale (improving vs slipping vs flat) —
+	// colour is paired with the +/− sign so it is never the sole channel.
+	const verdictDeltaColor = $derived(
+		verdictDeltaPts == null || verdictDeltaPts === 0
+			? 'var(--muted-foreground)'
+			: verdictDeltaPts > 0
+				? 'var(--dataviz-status-on-time)'
+				: 'var(--dataviz-status-late)',
+	);
+
 	const statusSpec = $derived(
 		selectStatusMix(
 			live.network?.status_dist ?? null,
@@ -243,11 +286,6 @@
 	const grain = $derived<NetworkGrain>(grainKey);
 	const isDailyGrain = $derived(grain === 'day');
 
-	const grainAvailability = $derived({
-		day: { buckets: dailySeries.length },
-		week: { buckets: weeklySeries.length },
-		month: { buckets: monthlySeries.length },
-	});
 	const grainLabels: Partial<Record<NetworkGrain, string>> = $derived({
 		day: t.grain.day,
 		week: t.grain.week,
@@ -256,6 +294,27 @@
 	// The grain picker is a dead control when only one grain carries data, so it renders ONLY
 	// when MORE THAN ONE grain is populated.
 	const showGrainPicker = $derived(present.size > 1);
+
+	// P5.4: the grain radiogroup now rides a plain GrainPicker seated in the map-style GLASS
+	// LEFT RAIL (SurfaceRail) — replacing the SurfaceControls top-rail. The enable/disable
+	// semantics stay EXACTLY today's (enable-iff-populated, `present`): a grain the trend has no
+	// series for renders disabled with the honest-absence reason, never selectable. `uid` keys
+	// the visually-hidden disabled-reason spans so they never collide with another surface.
+	const uid = $props.id();
+	const grainDisabledReason = $derived(describeAbsence('no-observations', locale).why);
+	const grainSegments = $derived<GrainSegment<NetworkGrain>[]>(
+		NETWORK_GRAINS.map((key) => {
+			const available = present.has(key);
+			return {
+				key,
+				label: grainLabels[key] ?? key,
+				available,
+				...(available
+					? {}
+					: { describedById: `${uid}-grain-reason-${key}`, title: grainDisabledReason }),
+			};
+		}),
+	);
 
 	// Keep the selection on a POPULATED grain — the codec-owned clamp: a chosen coarse grain
 	// whose series is absent falls back to the richest present grain (day→week→month); an empty
@@ -389,85 +448,79 @@
 	);
 	const hasShift = $derived(shiftRows.length > 0);
 	const hasDayType = $derived(dayTypeRows.length > 0);
+
+	/* ── P5.4: the map-style GLASS LEFT RAIL region ToC ────────────────────────────
+	   The surface has TWO numbered regions — §1 Live now + §2 Historic trend. The rail
+	   holds the view controls (which re-shape ONLY the historic region) + the ONE shared
+	   TocNav jumping between the two regions — the same numbered jump-list every other
+	   surface's rail renders, so wayfinding looks identical site-wide. (The old per-region
+	   ↻/∞ view-scope glyph is gone: it read as a "reload" affordance and broke the
+	   cross-page sameness.) The mobile pill's summary names the active grain. */
+	const regionNav = $derived([
+		{ id: 'net-live', label: t.liveRegion },
+		{ id: 'net-historic', label: t.historicRegion },
+	]);
+	// Map the regions to numbered TocEntry rows for the shared TocNav (badge = station-style
+	// SEC number; flat list, no children).
+	const tocEntries: TocEntry[] = $derived(
+		regionNav.map((s, i) => ({
+			id: s.id,
+			title: s.label,
+			level: 2,
+			badge: { kind: 'number' as const, value: i + 1 },
+			children: [],
+		})),
+	);
+	// One IntersectionObserver over the two regions' [data-toc] anchors owns the active
+	// region the rail ToC highlights (client-only; each region carries data-toc below).
+	let activeId = $state('');
+	onMount(() => observeActiveToc((id) => (activeId = id)));
+	// Smooth-scroll to a region when its TocNav row is tapped (TocNav is button-driven).
+	function navigate(id: string): void {
+		document
+			.querySelector(`[data-toc="${id}"]`)
+			?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
+	// The mobile pill summary — the active grain (mirrors the historic view controls).
+	const railSummary = $derived(grainLabels[grainKey] ?? grainKey);
 </script>
 
-<Surface width="bleed" class="network">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
-		<div class="network-feed-health">
-			<FreshnessStamp
-				variant="live"
-				generatedUtc={live.generatedUtc}
-				ageSeconds={live.ageSeconds}
-				isStale={live.isStale}
-				{locale}
-			/>
-			<!-- Worker-cycle feed age — a SECOND freshness signal. Null → honest no-data. -->
-			{#if feedAge != null}
-				<span
-					class="network-feed-age"
-					data-slot="feed-age"
-					aria-label={`${t.feedAge.a11yPrefix} ${feedAge}`}
-				>
-					<span class="network-feed-age-label">{t.feedAge.label}</span>
-					<span class="network-feed-age-value">{feedAge}</span>
-				</span>
-			{/if}
-			<ConformanceBadge conformance={provenance.data?.conformance} {locale} />
-		</div>
-	</SurfaceHeader>
+<Surface class="network">
+	<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede}>
+		{#snippet meta()}
+			<div class="network-feed-health">
+				<FreshnessStamp
+					variant="live"
+					generatedUtc={live.generatedUtc}
+					ageSeconds={live.ageSeconds}
+					isStale={live.isStale}
+					{locale}
+				/>
+				<!-- Worker-cycle feed age — a SECOND freshness signal. Null → honest no-data. -->
+				{#if feedAge != null}
+					<span
+						class="network-feed-age"
+						data-slot="feed-age"
+						aria-label={`${t.feedAge.a11yPrefix} ${feedAge}`}
+					>
+						<span class="network-feed-age-label">{t.feedAge.label}</span>
+						<span class="network-feed-age-value">{feedAge}</span>
+					</span>
+				{/if}
+				<ConformanceBadge conformance={provenance.data?.conformance} {locale} />
+			</div>
+		{/snippet}
+	</Masthead>
 
-	<Separator variant="hazard" />
-
-	<!-- ── LIVE region ──────────────────────────────────────────────────────────────
-	     Four glance cards (C1) · the Reporting row (vehicles + non_responding + silent
-	     lines + the global-signal caveat) · the two distribution bars · the re-seated
-	     delay histogram. -->
-	<!-- TODO(beauty2-honest-absence · DECISIONS C3): when net.vehicles_in_service === 0 (live
-	     zero / overnight), surface an honest-absence banner above the headline board via
-	     $lib/site/serviceWindow.inferAbsenceReason. Like /map this is a NETWORK-WIDE view with
-	     no single first/last window, so a "service closed / overnight" verdict needs a network
-	     service-span signal we do not yet publish. DEFERRED — carried to the S9 Handoff with the
-	     pipeline note (needs an unpublished network service-span signal). -->
-	{#if kpis}
-		<section class="network-region" aria-label={t.liveRegion}>
-			<SectionLabel text={t.liveRegion} variant="station" />
-			<SectionLiveHeadline cards={kpis.headline} {info} noData={t.noData} {locale} />
-			<SectionReporting
-				cards={kpis.reporting}
-				{silentRows}
-				{info}
-				copy={t}
-				noData={t.noData}
-				{locale}
-			/>
-			<SectionStatusMix
-				{statusSpec}
-				occupancySpec={occupancyMix.spec}
-				hasOccupancy={occupancyMix.hasOccupancy}
-				{info}
-				copy={t}
-			/>
-			<SectionDelayHistogram spec={delayHistogramSpec} {info} copy={t} />
-		</section>
-	{:else if live.error}
-		<EdgeState
-			variant="error-v1"
-			lang={locale}
-			layout={edgeLayout}
-			onRetry={() => live.refresh()}
-		/>
-	{:else}
-		<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
-	{/if}
-
-	<Separator variant="hazard" />
-
-	<!-- ── HISTORIC region ──────────────────────────────────────────────────────────
-	     The three scattered controls (grain · window · delay series) collected into ONE
-	     STICKY rail, then the readout board (the main trend spanning a wide cell). -->
-	<section class="network-region" aria-label={t.historicRegion}>
-		<SectionLabel text={t.historicRegion} variant="station" />
-
+	<!-- P5.4: the view controls (grain · window · delay series) + the two-region ToC live in a
+	     map-style GLASS LEFT RAIL (SurfaceRail) — a sticky floating panel beside the LIVE +
+	     HISTORIC regions on desktop, and ONE merged pill→sheet (controls + ToC together) on
+	     mobile. The view controls re-shape ONLY the historic region; the ToC jumps between the
+	     two regions. --primary lives only on the active control chip. -->
+	<div class="network-layout" data-slot="network-regions">
+		<!-- The window + delay-series toggles — DAY-grain window slicer + the p90/avg series. Their
+		     own snippet so it seats inside the rail body (after the grain picker). ONE definition,
+		     rendered by SurfaceRail in BOTH the desktop glass rail AND the mobile sheet. -->
 		{#snippet windowControls()}
 			<!-- Trend window (7/30/90-day) — DAY grain only; slices the tail. Week/month render
 			     their full short series → no window. -->
@@ -488,101 +541,333 @@
 			/>
 		{/snippet}
 
-		{#if showGrainPicker}
-			<!-- STICKY rail (S9A · C). minPoints=1 keeps TODAY's enable-iff-any-data semantics. -->
-			<SurfaceControls
-				offered={NETWORK_GRAINS}
-				availability={grainAvailability}
-				bind:value={grainKey}
-				minPoints={1}
-				labels={grainLabels}
-				grainLabel={t.grain.label}
-				railLabel={t.viewControlsLabel}
-				sticky
-				{locale}
-				window={windowControls}
-			/>
-		{:else}
-			<ControlsRail label={t.viewControlsLabel} sticky>
-				{@render windowControls()}
-			</ControlsRail>
-		{/if}
-
-		<Separator variant="hazard" hazardSize="sm" />
-
-		<ResourceBoundary
-			resource={trend}
-			lang={locale}
-			isEmpty={(d) =>
-				(d.series?.length ?? 0) === 0 &&
-				(d.weekly?.length ?? 0) === 0 &&
-				(d.monthly?.length ?? 0) === 0}
-		>
-			<!-- The readouts read the module-level windowed VMs (not the boundary payload). -->
-			<DashboardGrid minTile="360px" align="start" gutter={false}>
-				<SectionTrend {trendSpec} {vehiclesSpark} {isDailyGrain} {info} copy={t} />
-
-				{#if cancelTrend.hasCancel}
-					<SectionCancellations
-						vm={cancelTrend}
-						latestDisplay={fmtCancel(cancelTrend.latest)}
-						{info}
-						copy={t}
-						noData={t.noData}
-						{locale}
-					/>
+		<!-- The rail content — the View overline + the grain picker (when >1 grain is populated) +
+		     the window/delay toggles + the two-region ToC. ONE definition, rendered by SurfaceRail
+		     in BOTH the desktop glass rail AND the mobile sheet (single source). -->
+		{#snippet railContent({ closeSheet }: { closeSheet: () => void })}
+			<div class="network-control-body" data-slot="controls-body">
+				<span class="network-rail-view" data-slot="controls-rail-label">{t.viewControlsLabel}</span>
+				<!-- The grain radiogroup — rendered only when MORE THAN ONE grain carries data (a dead
+			     control otherwise). enable-iff-populated: an empty grain renders disabled. -->
+				{#if showGrainPicker}
+					<GrainPicker segments={grainSegments} bind:value={grainKey} label={t.grain.label} />
+					<!-- Disabled-reason descriptions (honest-absence): one visually-hidden span per
+				     disabled grain, referenced by its radio via aria-describedby. -->
+					{#each grainSegments as seg (seg.key)}
+						{#if seg.describedById}
+							<span id={seg.describedById} class="network-reason" data-slot="controls-reason"
+								>{grainDisabledReason}</span
+							>
+						{/if}
+					{/each}
 				{/if}
+				{@render windowControls()}
+			</div>
 
-				<!-- SERVICE COMPLETENESS (S9B · GC2): ALWAYS rendered — while the rate is null
+			<!-- Region ToC (wayfinding) — the ONE shared TocNav, identical to the metrics /
+			     status / lines / stops rails: a numbered jump list with TocNav's own
+			     "SEC n/m" readout (the rail's ONLY position counter), the active region
+			     amber-highlighted. Picking a region also dismisses the mobile sheet through
+			     SurfaceRail's explicit closeSheet seam. -->
+			<div class="rail-toc" data-slot="section-toc">
+				<TocNav
+					entries={tocEntries}
+					{activeId}
+					onNavigate={(id) => {
+						navigate(id);
+						closeSheet();
+					}}
+					heading={t.rail.toc}
+					sectionKey="network-toc"
+				/>
+			</div>
+		{/snippet}
+
+		<!-- The map-style GLASS LEFT RAIL: a sticky floating panel beside the regions on
+		     desktop; ONE pill→sheet (controls + ToC merged) on mobile. -->
+		<SurfaceRail
+			rail={railContent}
+			label={t.viewControlsLabel}
+			summary={railSummary}
+			openAria={t.rail.pillOpen}
+			closeAria={t.rail.pillClose}
+		/>
+
+		<!-- The two regions — the content column beside the rail. -->
+		<div class="network-content">
+			<!-- ── LIVE region ──────────────────────────────────────────────────────────────
+			     Four glance cards (C1) · the Reporting row (vehicles + non_responding + silent
+			     lines + the global-signal caveat) · the two distribution bars · the re-seated
+			     delay histogram. -->
+			<!-- PIPELINE-BLOCKED: when net.vehicles_in_service === 0 (live zero / overnight), we would
+			     surface an honest-absence banner above the headline board via
+			     $lib/site/serviceWindow.inferAbsenceReason. Like /map this is a NETWORK-WIDE view with
+			     no single first/last window, so a "service closed / overnight" verdict needs a network
+			     service-span signal /v1 does not yet publish — not actionable web-side. -->
+			{#if kpis}
+				<!-- D3: the LIVE control-room band framed in the ONE TerminalPanel idiom.
+		     The existing region content is wrapped untouched (no new verdict copy);
+		     the panel adds the terminal chassis + an honest footer readout. -->
+				<TerminalPanel
+					title={t.liveTerminal.title}
+					tag={t.liveTerminal.tag}
+					class="network-live-terminal"
+					footerItems={[{ label: t.liveTerminal.footerLabel, value: t.liveTerminal.footerValue }]}
+				>
+					{#snippet meta()}
+						<FreshnessStamp
+							variant="live"
+							generatedUtc={live.generatedUtc}
+							ageSeconds={live.ageSeconds}
+							isStale={live.isStale}
+							{locale}
+						/>
+					{/snippet}
+					<section
+						class="network-region"
+						id="net-live"
+						data-toc="net-live"
+						aria-label={t.liveRegion}
+					>
+						<SectionHeading level={2} overline={t.liveRegion} number={1} />
+						<SectionLiveHeadline cards={kpis.headline} {info} noData={t.noData} {locale} />
+						<SectionReporting
+							cards={kpis.reporting}
+							{silentRows}
+							{info}
+							copy={t}
+							noData={t.noData}
+							{locale}
+						/>
+						<SectionStatusMix
+							{statusSpec}
+							occupancySpec={occupancyMix.spec}
+							hasOccupancy={occupancyMix.hasOccupancy}
+							{info}
+							copy={t}
+						/>
+						<SectionDelayHistogram spec={delayHistogramSpec} {info} copy={t} />
+					</section>
+				</TerminalPanel>
+			{:else if live.error}
+				<EdgeState
+					variant="error-v1"
+					lang={locale}
+					layout={edgeLayout}
+					onRetry={() => live.refresh()}
+				/>
+			{:else}
+				<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
+			{/if}
+
+			<Separator variant="hazard" />
+
+			<!-- §0 NETWORK VERDICT BAND (§C5.7): the one-line at-a-glance answer between the LIVE
+	     and HISTORIC regions — the SHARED VerdictBanner off the live on_time_pct, plus the
+	     Δ-vs-prior chip (§C6 #3) the network previously lacked. Stands down honestly
+	     ("still measuring") before the first live tick / on an absent live tier. -->
+			<section class="network-verdict" aria-label={t.verdictDelta.label}>
+				<VerdictBanner result={networkVerdict} />
+				{#if verdictDeltaText}
+					<span
+						class="network-verdict-delta"
+						data-slot="verdict-delta"
+						style={`--delta-tone: ${verdictDeltaColor}`}
+						aria-label={`${t.verdictDelta.a11y} ${verdictDeltaText}`}
+					>
+						<span class="network-verdict-delta__mark" aria-hidden="true"
+							>{verdictDeltaPts != null && verdictDeltaPts > 0
+								? '▲'
+								: verdictDeltaPts != null && verdictDeltaPts < 0
+									? '▼'
+									: '■'}</span
+						>
+						<span>{verdictDeltaText}</span>
+					</span>
+				{/if}
+			</section>
+
+			<Separator variant="hazard" />
+
+			<!-- ── HISTORIC region ──────────────────────────────────────────────────────────
+	     The readout board (the main trend spanning a wide cell). The three view controls
+	     (grain · window · delay series) live in the GLASS LEFT RAIL above (P5.4) — they
+	     re-shape this region only. -->
+			<section
+				class="network-region"
+				id="net-historic"
+				data-toc="net-historic"
+				aria-label={t.historicRegion}
+			>
+				<SectionHeading level={2} overline={t.historicRegion} number={2} />
+
+				<ResourceBoundary
+					resource={trend}
+					lang={locale}
+					isEmpty={(d) =>
+						(d.series?.length ?? 0) === 0 &&
+						(d.weekly?.length ?? 0) === 0 &&
+						(d.monthly?.length ?? 0) === 0}
+				>
+					<!-- The readouts read the module-level windowed VMs (not the boundary payload). -->
+					<!-- align="start": these tiles are HETEROGENEOUS (tall charts beside a
+					     one-line completeness note) — stretching them equal pads the short ones
+					     with dead space (measured ~360px empty in the crowding tile), the exact
+					     disease 0f274ae reverted on the receipt. Natural height is the ruling
+					     for mixed-kind rows; equal-height stays for uniform scalar boards. -->
+					<DashboardGrid minTile="360px" gutter={false} align="start">
+						<SectionTrend {trendSpec} {vehiclesSpark} {isDailyGrain} {info} copy={t} />
+
+						{#if cancelTrend.hasCancel}
+							<SectionCancellations
+								vm={cancelTrend}
+								latestDisplay={fmtCancel(cancelTrend.latest)}
+								{info}
+								copy={t}
+								noData={t.noData}
+								{locale}
+							/>
+						{/if}
+
+						<!-- SERVICE COMPLETENESS (S9B · GC2): ALWAYS rendered — while the rate is null
 				     (ramp-in on prod today) the tile carries its honest-absence note; a citizen
 				     sees "no data + why", never a silently missing section. -->
-				<SectionCompleteness
-					latestDisplay={completenessDisplay}
-					{info}
-					copy={t}
-					noData={t.noData}
-					{locale}
-				/>
+						<SectionCompleteness
+							latestDisplay={completenessDisplay}
+							{info}
+							copy={t}
+							noData={t.noData}
+							{locale}
+						/>
 
-				{#if hasOccupancyTrend}
-					<SectionCrowdingByDay days={occupancyDays} {info} copy={t} />
-				{/if}
+						{#if hasOccupancyTrend}
+							<SectionCrowdingByDay days={occupancyDays} {info} copy={t} />
+						{/if}
 
-				<!-- The `network-shift` data-slot + the trailing-window caveat are COORDINATED here:
+						<!-- The `network-shift` data-slot + the trailing-window caveat are COORDINATED here:
 				     the shift tile hosts the anchor when present, else the day-type tile; the caveat
 				     renders on the day-type tile when present, else the shift tile (never duplicated). -->
-				{#if hasShift}
-					<SectionByTimeOfDay
-						rows={shiftRows}
-						dataSlot="network-shift"
-						showCaveat={!hasDayType}
-						{info}
-						copy={t}
-						{locale}
-					/>
-				{/if}
-				{#if hasDayType}
-					<SectionWeekday
-						rows={dayTypeRows}
-						dataSlot={hasShift ? undefined : 'network-shift'}
-						showCaveat={true}
-						{info}
-						copy={t}
-						{locale}
-					/>
-				{/if}
-			</DashboardGrid>
-		</ResourceBoundary>
-	</section>
+						{#if hasShift}
+							<SectionByTimeOfDay
+								rows={shiftRows}
+								dataSlot="network-shift"
+								showCaveat={!hasDayType}
+								{info}
+								copy={t}
+								{locale}
+							/>
+						{/if}
+						{#if hasDayType}
+							<SectionWeekday
+								rows={dayTypeRows}
+								dataSlot={hasShift ? undefined : 'network-shift'}
+								showCaveat={true}
+								{info}
+								copy={t}
+								{locale}
+							/>
+						{/if}
+					</DashboardGrid>
+				</ResourceBoundary>
+			</section>
+		</div>
+	</div>
 </Surface>
 
 <style>
+	/* Anchor for the D2 rotated edge word's zero-width absolute rail (it pins to
+	   the Surface's left gutter). */
+	:global(.surface-shell.network) {
+		position: relative;
+	}
 	.network-feed-health {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.5rem 1.25rem;
 	}
+
+	/* The 2-col layout (P5.4): the map-style GLASS LEFT RAIL (SurfaceRail) + the content
+	   column at ≥1024; a single column below, where the rail collapses to the mobile
+	   pill→sheet. The content column is the rail's sticky CONTAINING BLOCK, so the glass
+	   rail stays pinned over the two regions. */
+	.network-layout {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: clamp(1.5rem, 4vw, 2rem);
+		width: 100%;
+	}
+	@media (min-width: 1024px) {
+		.network-layout {
+			grid-template-columns: 15rem minmax(0, 1fr);
+			gap: 2rem;
+			align-items: start;
+		}
+	}
+	/* The content column — the LIVE + verdict + HISTORIC regions stacked, at the page
+	   section rhythm; the hazard Separators between them ride the page flow here. */
+	.network-content {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		min-width: 0;
+	}
+
+	/* The view controls (View overline + grain picker + window/delay toggles), stacked in the
+	   rail. Rendered by railContent in BOTH the desktop glass rail and the mobile sheet. */
+	.network-control-body {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	/* The "View" overline — the quiet mono rail label. */
+	.network-rail-view {
+		flex: none;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: var(--tracking-eyebrow);
+		color: var(--muted-foreground);
+	}
+	/* The grain / window / delay radiogroups wrap so a long localized segment never overflows
+	   the narrow rail; the active-chip accent lives in GrainPicker. */
+	.network-control-body :global([data-slot='grain-picker']) {
+		min-width: 0;
+		flex-wrap: wrap;
+	}
+	/* Visually-hidden disabled-reason description (mobile drawer + desktop rail) — carried for
+	   screen readers via aria-describedby on the disabled radio; never shown, never a layout box. */
+	.network-reason {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+
+	/* The rail region jump-list rides the ONE shared TocNav (same component the metrics /
+	   status / lines / stops rails use), so every surface's wayfinding looks identical.
+	   Only this thin flex wrapper is local; TocNav owns the rest. */
+	.rail-toc {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		min-width: 0;
+	}
+	/* Smooth jump-to from the TOC (reduced-motion users get the instant default). */
+	@media (prefers-reduced-motion: no-preference) {
+		.network-layout {
+			scroll-behavior: smooth;
+		}
+	}
+
 	/* A surface region (LIVE / HISTORIC) — its station label, control panel and readout board
 	   stacked. The hazard Separator between regions lives outside. */
 	.network-region {
@@ -590,11 +875,33 @@
 		flex-direction: column;
 		gap: 1rem;
 	}
+	/* §0 verdict band between LIVE and HISTORIC — the VerdictBanner beside the Δ-vs-prior
+	   chip; wraps on a narrow phone so the chip drops beneath the sentence. */
+	.network-verdict {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.5rem 1.25rem;
+	}
+	/* Δ-vs-prior chip: a quiet mono pill whose glyph + colour + sign read the direction
+	   (colour is never the sole channel — the ▲/▼ + the +/− sign carry it too). */
+	.network-verdict-delta {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-variant-numeric: tabular-nums;
+		color: var(--delta-tone, var(--muted-foreground));
+	}
+	.network-verdict-delta__mark {
+		line-height: 1;
+	}
 	/* Worker-feed-age chip — a quiet mono badge beside the LIVE freshness chip. */
 	.network-feed-age {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		color: var(--muted-foreground);

@@ -92,7 +92,7 @@
 	.reliability-badge {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		color: var(--foreground);

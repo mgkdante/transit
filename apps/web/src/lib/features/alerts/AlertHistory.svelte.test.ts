@@ -502,14 +502,15 @@ describe('AlertHistory date window (?from/?to)', () => {
 		expect(screen.queryByText('Early alert')).toBeNull();
 	});
 
-	it('renders the date-range picker over the served span (both selects present)', () => {
+	it('renders the date-range picker over the served span (both native date inputs present)', () => {
 		seedWindowFixture();
 		(fixture as AlertHistory).window_start = '2026-06-01';
 		(fixture as AlertHistory).window_end = '2026-06-30';
 		render(AlertHistoryScreen);
 		const picker = document.querySelector('[data-slot="date-range"]');
 		expect(picker).not.toBeNull();
-		expect(within(picker as HTMLElement).getAllByRole('combobox').length).toBeGreaterThanOrEqual(2);
+		// From + To are now native <input type="date"> calendar pickers (not <select>s).
+		expect((picker as HTMLElement).querySelectorAll('input[type="date"]').length).toBe(2);
 	});
 
 	it('hides the picker with honest absence when NOTHING is datable (no window fields, undatable entries)', () => {
@@ -523,6 +524,41 @@ describe('AlertHistory date window (?from/?to)', () => {
 		// The DateRangePicker renders its honest-absence AbsentValue (no selects).
 		expect(pick?.querySelector('[data-slot="date-range"]')).toBeNull();
 		expect(pick?.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+	});
+});
+
+describe('AlertHistory filter rail (P5.4e SurfaceRail — glass left rail + mobile pill→sheet)', () => {
+	it('mounts the filter widgets inside the SurfaceRail (desktop glass panel present)', () => {
+		render(AlertHistoryScreen);
+		// The desktop glass rail <aside> carries the filter body (single source).
+		const rail = document.querySelector('[data-slot="surface-rail"]');
+		expect(rail).not.toBeNull();
+		expect(rail?.querySelector('[data-slot="alert-filters"]')).not.toBeNull();
+		// The filter axes render once (rail only; the mobile sheet is closed).
+		expect(document.querySelectorAll('[data-slot="line-pick"]')).toHaveLength(1);
+		// The old ControlsRail wrapper class is gone (bounded chrome swap).
+		expect(document.querySelector('.alert-history-filters')).toBeNull();
+	});
+
+	it('exposes ONE mobile filter pill that opens ONE sheet holding the SAME filters', async () => {
+		render(AlertHistoryScreen);
+		const mobile = document.querySelector('[data-slot="surface-rail-mobile"]');
+		expect(mobile).not.toBeNull();
+		const pill = mobile?.querySelector('button') as HTMLButtonElement;
+		expect(pill).not.toBeNull();
+		expect(pill.getAttribute('aria-expanded')).toBe('false');
+		// No sheet until the pill is tapped.
+		expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+		await fireEvent.click(pill);
+		expect(pill.getAttribute('aria-expanded')).toBe('true');
+		const sheet = document.querySelector('[role="dialog"]') as HTMLElement;
+		expect(sheet).not.toBeNull();
+		// The sheet renders the SAME filter body (the entity radiogroup lives inside it).
+		expect(sheet.querySelector('[data-slot="alert-filters"]')).not.toBeNull();
+		expect(
+			within(sheet).getByRole('radio', { name: copyEn.filters.entity.lines }),
+		).toBeInTheDocument();
 	});
 });
 

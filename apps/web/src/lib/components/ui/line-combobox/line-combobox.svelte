@@ -184,13 +184,16 @@
 	:global(.line-combobox-input) {
 		flex: 1 1 auto;
 		min-width: 0;
+		/* Tap-target floor (P5.3d §C4 P10): the input row was 39px tall → 44px. */
+		min-height: var(--size-tap-min);
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		color: var(--foreground);
 		background: var(--card);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
-		padding: 0.5rem 3.75rem 0.5rem 0.75rem;
+		/* Right padding reserves room for the 44px clear + trigger hit areas. */
+		padding: 0.5rem 5.25rem 0.5rem 0.75rem;
 		line-height: 1.4;
 	}
 	:global(.line-combobox-input::placeholder) {
@@ -203,11 +206,15 @@
 	.line-combobox-clear,
 	:global(.line-combobox-trigger) {
 		position: absolute;
+		top: 50%;
+		translate: 0 -50%;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 1.75rem;
-		height: 1.75rem;
+		/* Tap-target floor (P5.3d §C4 P10): the clear/open affordances were 28px
+		   square → a full --size-tap-min hit area (the glyph stays visually small). */
+		width: var(--size-tap-min);
+		height: var(--size-tap-min);
 		color: var(--muted-foreground);
 		background: transparent;
 		border: 0;
@@ -216,11 +223,11 @@
 		font-family: var(--font-mono);
 	}
 	.line-combobox-clear {
-		right: 2rem;
+		right: 2.5rem;
 		font-size: var(--text-small);
 	}
 	:global(.line-combobox-trigger) {
-		right: 0.25rem;
+		right: 0;
 		font-size: var(--text-body);
 	}
 	.line-combobox-clear:hover,

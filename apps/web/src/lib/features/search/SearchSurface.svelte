@@ -28,8 +28,14 @@
   interactive-only; bilingual via getLocale + co-located copy; keyed {#each};
   fail-soft — never invent data, never crash.
 
-  DEFER (tracked follow-ups, out of scope this batch): near-me / distance sort;
-  per-row reliability grain selection; accessible-only filter (needs a DB field).
+  Near-me / distance sort is intentionally NOT offered here: search is a finder,
+  flat by design (§C5.14) — ranking is by match quality, not geography. The
+  near-me affordance lives on /map ("Stops near me", the amber conversion CTA),
+  the one surface where proximity is the story. (P5.3d resolved the former
+  near-me DEFER: no orphan scaffold, no dead follow-up.)
+
+  DEFER (DB-blocked, owned by S16 data work): per-row reliability grain
+  selection; accessible-only filter (needs a DB field).
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -51,17 +57,25 @@
 	} from '$lib/v1';
 	import {
 		ResourceBoundary,
-		SurfaceHeader,
 		EntityList,
 		EntityRow,
 		SearchInput,
 		ReliabilityBadge,
 		GrainPicker,
 	} from '$lib/components/surface';
+	import { Masthead } from '$lib/components/brand';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { Surface } from '$lib/components/layout';
-	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
+	import { FreshnessStamp } from '$lib/components/surface';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import {
+		metricInfoFor,
+		metricName,
+		type MetricKey,
+		type SupplementalMetricKey,
+	} from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 	import {
 		stopGroupKey,
@@ -78,6 +92,20 @@
 	const locale: Locale = getLocale();
 	const t = $derived(copy[locale]);
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
+
+	// The metric-explainer (i) affordance on result-group headings (§C5.14): a
+	// one-line tip + a deep link into /metrics#<anchor>, the same `info()` shape every
+	// surface uses. OTP rides the Lines group; crowding + delay ride the Live-buses group.
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
+	// The three result-group (i) payloads, hoisted to script level (an {@const} can't
+	// sit directly inside a plain element in the group headings below).
+	const otpInfo = $derived(info('otp', 'OTP'));
+	const crowdingInfo = $derived(info('occupancy', metricName('occupancy', locale)));
+	const delayInfo = $derived(info('avgDelay', metricName('avgDelay', locale)));
 
 	// Static discovery indexes — loaded client-side, gated by ResourceBoundary.
 	const routes = createResource(() => getRoutesIndex());
@@ -230,53 +258,97 @@
 	const statusLabelFor = (s: StatusCode): string => STATUS_LABELS[locale][s];
 	const occupancyLabelFor = (o: OccupancyCode | null | undefined): string | null =>
 		o ? OCCUPANCY_LABELS[locale][o] : null;
+
+	// ── Idle-state census (§C5.14) ──────────────────────────────────────────────
+	// Live network counts from the already-fetched indices + a live freshness stamp
+	// + tappable example queries — turning the dead prompt into a live way in.
+	const lineCount = $derived(routes.data?.routes?.length ?? null);
+	const stopCount = $derived(stops.data?.stops?.length ?? null);
+	const numberFmt = $derived(new Intl.NumberFormat(locale));
 </script>
 
-<Surface width="bleed" class="surface">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede} />
+<Surface class="surface">
+	<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede}>
+		<SearchInput
+			id="surface-search-input"
+			label={t.inputLabel}
+			placeholder={t.inputPlaceholder}
+			bind:value={query}
+		/>
 
-	<SearchInput
-		id="surface-search-input"
-		label={t.inputLabel}
-		placeholder={t.inputPlaceholder}
-		bind:value={query}
-	/>
-
-	{#if hasQuery}
-		<div class="search-controls">
-			<div class="search-control">
-				<span class="search-control-label">{t.scopeLabel}</span>
-				<GrainPicker segments={scopeSegments} bind:value={scope} label={t.scopeLabel} />
-			</div>
-			<div class="search-control">
-				<span class="search-control-label" id="search-mode-label">{t.modeLabel}</span>
-				<div class="search-mode-chips" role="group" aria-labelledby="search-mode-label">
-					{#each modeChips as chip (chip.key)}
-						<button
-							type="button"
-							class="search-mode-chip"
-							data-on={modes.has(chip.key)}
-							aria-pressed={modes.has(chip.key)}
-							onclick={() => toggleMode(chip.key)}
-						>
-							{chip.label}
-						</button>
-					{/each}
+		{#if hasQuery}
+			<div class="search-controls">
+				<div class="search-control">
+					<span class="search-control-label">{t.scopeLabel}</span>
+					<GrainPicker segments={scopeSegments} bind:value={scope} label={t.scopeLabel} />
+				</div>
+				<div class="search-control">
+					<span class="search-control-label" id="search-mode-label">{t.modeLabel}</span>
+					<div class="search-mode-chips" role="group" aria-labelledby="search-mode-label">
+						{#each modeChips as chip (chip.key)}
+							<button
+								type="button"
+								class="search-mode-chip"
+								data-on={modes.has(chip.key)}
+								aria-pressed={modes.has(chip.key)}
+								onclick={() => toggleMode(chip.key)}
+							>
+								{chip.label}
+							</button>
+						{/each}
+					</div>
 				</div>
 			</div>
-		</div>
-	{/if}
-
-	<Separator variant="hazard" />
+		{/if}
+	</Masthead>
 
 	<ResourceBoundary resource={routes} lang={locale}>
 		<ResourceBoundary resource={stops} lang={locale}>
 			{#if !hasQuery}
-				<!-- Idle — instructional, before the rider types anything. -->
+				<!-- IDLE (§C5.14): a network census band instead of a dead prompt — live
+				     counts from the fetched indices + a live freshness stamp + tappable
+				     example queries that fill the search box. -->
 				<div class="search-idle" role="note">
 					<span class="search-idle-glyph" aria-hidden="true">⌕</span>
 					<p class="search-idle-title">{t.idleTitle}</p>
 					<p class="search-idle-body">{t.idleBody}</p>
+					<div class="search-census" data-slot="search-census">
+						<span class="search-census__label">{t.census.label}</span>
+						<p class="search-census__counts">
+							{#if lineCount != null}
+								<span class="search-census__stat"
+									>{t.census.lines(numberFmt.format(lineCount))}</span
+								>
+							{/if}
+							{#if stopCount != null}
+								<span class="search-census__dot" aria-hidden="true">·</span>
+								<span class="search-census__stat"
+									>{t.census.stops(numberFmt.format(stopCount))}</span
+								>
+							{/if}
+						</p>
+						<FreshnessStamp
+							variant="live"
+							generatedUtc={live.generatedUtc}
+							ageSeconds={live.ageSeconds}
+							isStale={live.isStale}
+							{locale}
+						/>
+						<div class="search-census__examples">
+							<span class="search-census__examples-label">{t.census.examplesLabel}</span>
+							<div class="search-census__chips">
+								{#each t.census.examples as example (example)}
+									<button
+										type="button"
+										class="search-census__chip"
+										onclick={() => (query = example)}
+									>
+										{example}
+									</button>
+								{/each}
+							</div>
+						</div>
+					</div>
 				</div>
 			{:else if !hasResults}
 				<EdgeState variant="no-results" lang={locale} layout={edgeLayout} />
@@ -285,7 +357,16 @@
 					{#if showRoutes}
 						<section class="search-group" aria-label={t.linesLabel}>
 							<h2 class="search-group-head">
-								<span class="search-group-label">{t.linesLabel}</span>
+								<span class="search-group-labelrow">
+									<span class="search-group-label">{t.linesLabel}</span>
+									<MetricInfo
+										tip={otpInfo.tip}
+										href={otpInfo.href}
+										label={otpInfo.label}
+										linkLabel={otpInfo.linkLabel}
+										side="bottom"
+									/>
+								</span>
 								<span class="search-group-count">{t.resultCount(matchedRoutes.length)}</span>
 							</h2>
 							<EntityList
@@ -354,7 +435,23 @@
 					{#if showVehicles}
 						<section class="search-group" aria-label={t.vehiclesLabel}>
 							<h2 class="search-group-head">
-								<span class="search-group-label">{t.vehiclesLabel}</span>
+								<span class="search-group-labelrow">
+									<span class="search-group-label">{t.vehiclesLabel}</span>
+									<MetricInfo
+										tip={crowdingInfo.tip}
+										href={crowdingInfo.href}
+										label={crowdingInfo.label}
+										linkLabel={crowdingInfo.linkLabel}
+										side="bottom"
+									/>
+									<MetricInfo
+										tip={delayInfo.tip}
+										href={delayInfo.href}
+										label={delayInfo.label}
+										linkLabel={delayInfo.linkLabel}
+										side="bottom"
+									/>
+								</span>
 								<span class="search-group-count">{t.resultCount(matchedVehicles.length)}</span>
 							</h2>
 							<!-- No max/truncatedLabel: vehicles match on an EXACT unit-id, so this
@@ -384,12 +481,115 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 1.25rem 2rem;
-		margin-top: 0.85rem;
+		margin-top: 0.875rem;
+	}
+	/* Desktop: keep the scope + mode controls in reach while results scroll (§C5.14).
+	   The single --chrome-offset knob clears the floating pill; mobile drops the
+	   sticky (a sticky control bar would eat scarce phone viewport). */
+	@media (min-width: 1024px) {
+		.search-controls {
+			position: sticky;
+			top: var(--chrome-offset);
+			z-index: var(--z-rail);
+			background: color-mix(in srgb, var(--background) 92%, transparent);
+			backdrop-filter: blur(16px) saturate(1.1);
+			padding-block: 0.5rem;
+			margin-top: 0;
+		}
+	}
+	/* Group heading label + its (i) affordance sit inline. */
+	.search-group-labelrow {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+	}
+	/* Idle census band — live counts + freshness + example chips. Not a data mark;
+	   the chips are interactive affordances (--primary on hover/focus). */
+	.search-census {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.75rem;
+		margin-top: 1rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--border);
+		width: 100%;
+	}
+	.search-census__label {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-weight: 600;
+		letter-spacing: var(--tracking-eyebrow);
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.search-census__counts {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: center;
+		gap: 0.5rem;
+		margin: 0;
+	}
+	.search-census__stat {
+		font-family: var(--font-heading);
+		font-size: 1.375rem;
+		font-weight: 800;
+		line-height: 1.1;
+		color: var(--foreground);
+		font-variant-numeric: tabular-nums;
+	}
+	.search-census__dot {
+		color: var(--muted-foreground);
+	}
+	.search-census__examples {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+	}
+	.search-census__examples-label {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		letter-spacing: var(--tracking-eyebrow);
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.search-census__chips {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 0.5rem;
+	}
+	.search-census__chip {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		padding: 0.375rem 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-pill);
+		background: var(--muted);
+		color: var(--foreground);
+		font-size: var(--text-caption);
+		cursor: pointer;
+		transition:
+			border-color var(--duration-fast) var(--ease-default),
+			color var(--duration-fast) var(--ease-default);
+	}
+	.search-census__chip:hover,
+	.search-census__chip:focus-visible {
+		border-color: var(--primary);
+		color: var(--primary);
+	}
+	.search-census__chip:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
 	}
 	.search-control {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	.search-control-label {
 		font-family: var(--font-mono);
@@ -404,14 +604,14 @@
 	.search-mode-chips {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.search-mode-chip {
 		appearance: none;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.2;
-		padding: 0.4rem 0.75rem;
+		padding: 0.375rem 0.75rem;
 		color: var(--muted-foreground);
 		background: var(--card);
 		border: 1px solid var(--border);
@@ -445,7 +645,7 @@
 		padding: clamp(2rem, 6vw, 3.5rem) 1.5rem;
 		background-color: var(--card);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-lg, 0.75rem);
+		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
 	}
 	.search-idle-glyph {
@@ -498,7 +698,8 @@
 		color: var(--muted-foreground);
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.search-mode-chip {
+		.search-mode-chip,
+		.search-census__chip {
 			transition: none;
 		}
 	}

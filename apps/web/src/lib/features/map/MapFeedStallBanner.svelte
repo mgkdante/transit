@@ -80,7 +80,7 @@
 <style>
 	.map-overlay {
 		position: absolute;
-		z-index: 10;
+		z-index: var(--z-map-overlay);
 	}
 	/* Top-CENTRE banner. Centred between the left rail and the right detail offset
 	   (the same offset the rest of the floating chrome tracks) so it never hides
@@ -88,30 +88,32 @@
 	   the floating chrome); non-interactive — it states a fact, it does not block
 	   the map. Sits just below the floating freshness/edge row. */
 	.map-feed-stall {
-		top: 3.6rem;
+		/* Below the floating chrome (--chrome-offset knob) + the edge row it trails. */
+		top: calc(var(--chrome-offset) + 2.5rem);
 		left: calc(var(--app-left-rail-offset, 0rem) / 2 + var(--map-detail-offset, 0rem) / 2);
 		right: 0;
 		margin-inline: auto;
-		z-index: 13;
+		z-index: var(--z-map-banner-content);
 		width: max-content;
 		max-width: min(26rem, calc(100% - 2rem));
-		padding: 0.45rem 0.85rem;
+		padding: 0.375rem 0.875rem;
 		text-align: center;
 		font-size: var(--text-caption);
 		line-height: 1.4;
 		color: var(--muted-foreground);
 		background: color-mix(in srgb, var(--card) 88%, transparent);
-		border: 1px solid var(--border-hairline);
-		/* Calm caution: the top rule warms with the caution hue (a data verdict),
+		/* Calm caution: the whole border warms with the caution hue (a data verdict),
 		   echoing the stale-freshness chrome — never an alarm red fill. */
-		border-top: 2px solid color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
+		border: 1px solid color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(10px) saturate(1.05);
+		/* Map GL escape hatch (§C4 P4): blur(12px), floats over the live canvas. */
+		backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		pointer-events: none;
 	}
 
-	@media (max-width: 760px) {
+	@media (max-width: 768px) {
 		.map-feed-stall {
 			top: auto;
 			bottom: calc(8.5rem + env(safe-area-inset-bottom, 0px));

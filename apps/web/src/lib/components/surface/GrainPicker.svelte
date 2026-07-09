@@ -21,6 +21,12 @@
 -->
 <script lang="ts">
 	import { cn } from '$lib/utils';
+	// F (motion wiring): the grain toggles are the segmented "grain-picker toggles"
+	// boop targets — a self-resetting hover pop on desktop (SAFE-ALWAYS, touch-gated),
+	// with pressBounce + the .tap-press CSS baseline for touch tactility. All three
+	// self-gate (boop/pressBounce no-op on the wrong pointer type; tap-press is
+	// PRM-guarded). Vendored actions, never edited.
+	import { boop, pressBounce } from '@yesid/motion';
 
 	/** One offered grain segment. `available:false` renders disabled (never picked). */
 	export interface GrainSegment<K extends string = string> {
@@ -28,12 +34,21 @@
 		readonly label: string;
 		readonly available?: boolean;
 		/**
-		 * Id of a description element for a DISABLED segment (wired to aria-describedby),
-		 * so assistive tech announces WHY it is off. Ignored on enabled segments.
+		 * Id of a description element wired to aria-describedby, so assistive tech
+		 * announces context: for a DISABLED segment, WHY it is off; for an ENABLED
+		 * segment, its positive `hint` (what this grain shows). The caller sets it for
+		 * whichever it supplied.
 		 */
 		readonly describedById?: string;
-		/** Tooltip carrying the same disabled reason for pointer users. */
+		/** Tooltip carrying the DISABLED reason for pointer users (disabled segments only). */
 		readonly title?: string;
+		/**
+		 * Positive per-grain explainer for an ENABLED segment (e.g. "Weekly granularity")
+		 * — surfaced as the segment's pointer `title` so a hover clarifies what the grain
+		 * shows (the grain/sub-grain confusion fix). Ignored on disabled segments (they
+		 * carry `title` = the absence reason instead).
+		 */
+		readonly hint?: string;
 	}
 
 	export interface GrainPickerProps<K extends string = string> {
@@ -110,14 +125,16 @@
 			bind:this={refs[i]}
 			type="button"
 			role="radio"
-			class="grain-seg"
+			class="tap-press grain-seg"
 			class:grain-seg--active={value === seg.key}
 			aria-checked={value === seg.key}
-			aria-describedby={seg.available === false ? seg.describedById : undefined}
-			title={seg.available === false ? seg.title : undefined}
+			aria-describedby={seg.describedById}
+			title={seg.available === false ? seg.title : seg.hint}
 			disabled={seg.available === false}
 			tabindex={i === checkedIndex ? 0 : -1}
 			onclick={() => pick(seg)}
+			use:boop={{ scale: 1.04 }}
+			use:pressBounce
 			{onkeydown}
 		>
 			{seg.label}
@@ -132,7 +149,7 @@
 		gap: 0.25rem;
 		padding: 0.25rem;
 		border: 1px solid var(--border);
-		border-radius: var(--radius-lg, 0.75rem);
+		border-radius: var(--radius-lg);
 		background-color: var(--card);
 	}
 	.grain-seg {
@@ -149,12 +166,12 @@
 		align-items: center;
 		justify-content: center;
 		min-height: 44px;
-		padding: 0.4rem 0.8rem;
-		border-radius: var(--radius-md, 0.5rem);
+		padding: 0.375rem 0.8rem;
+		border-radius: var(--radius-md);
 		cursor: pointer;
 		transition:
-			background-color 0.15s ease,
-			color 0.15s ease;
+			background-color var(--duration-fast) var(--ease-default),
+			color var(--duration-fast) var(--ease-default);
 	}
 	.grain-seg:hover:not(:disabled) {
 		color: var(--foreground);

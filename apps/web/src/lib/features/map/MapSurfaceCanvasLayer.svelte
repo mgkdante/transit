@@ -37,7 +37,7 @@
 	:global(.map-surface .map-hero-stage) {
 		position: absolute;
 		inset: 0;
-		z-index: 1;
+		z-index: var(--z-map-canvas);
 		border-radius: 0;
 	}
 
@@ -48,7 +48,7 @@
 	.map-vignette {
 		position: absolute;
 		inset: 0;
-		z-index: 5;
+		z-index: var(--z-map-scrim);
 		pointer-events: none;
 		background:
 			linear-gradient(

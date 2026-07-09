@@ -79,3 +79,58 @@ export function delayLabel(delay: number | null | undefined, copy: DelayLabelCop
 	if (delay > 0) return copy.late(delay);
 	return copy.onTime;
 }
+
+// ── Departure-row glyph + tone helpers (shared board presentation) ────────────
+// The live-departures board (StopDetail) and the reusable ScheduleTable both tint
+// a departure row by its delay tone AND carry a redundant glyph (Chart Doctrine:
+// colour is NEVER the only channel). Promoted here so the two renderers read ONE
+// source of truth instead of forking the mapping.
+
+/** The four FILTERABLE, non-null delay tones (a null delay rides the 'none' track). */
+export type ChipTone = Exclude<DelayTone, 'none'>;
+
+/**
+ * A departure's tone — a null/absent delay is an ABSENT realtime delta, NOT an
+ * on-time claim: it rides the 'none' no-data track (no fill, no glyph).
+ */
+export function depTone(delay: number | null | undefined): DelayTone {
+	return delay == null ? 'none' : delayTone(delay);
+}
+
+/**
+ * Redundant glyph per tone (Chart Doctrine: colour is NEVER the only channel).
+ * ▲ = behind schedule (late/severe), ▼ = ahead (early), ● = on time.
+ */
+export const TONE_GLYPH: Record<ChipTone, string> = {
+	early: '▼',
+	'on-time': '●',
+	late: '▲',
+	severe: '▲',
+};
+
+/**
+ * A representative signed delay per tone. Drives the SHARED delayColorVar so the
+ * chip glyphs + row captions resolve the ONE status scale — on-time always
+ * resolves (unlike a raw null → no-data track).
+ */
+export const TONE_SAMPLE: Record<ChipTone, number> = {
+	early: -1,
+	'on-time': 0,
+	late: 1,
+	severe: 5,
+};
+
+/** The `--dataviz-status-*` fill for a non-null tone (chip glyphs + row captions). */
+export function toneColorVar(tone: ChipTone): string | undefined {
+	return delayColorVar(TONE_SAMPLE[tone]);
+}
+
+/** A row's glyph — 'none' rows render muted (no glyph, honest absence). */
+export function rowGlyph(tone: DelayTone): string {
+	return tone === 'none' ? '' : TONE_GLYPH[tone];
+}
+
+/** A row's status fill — 'none' rows render muted (no fill, honest absence). */
+export function rowColorVar(tone: DelayTone): string | undefined {
+	return tone === 'none' ? undefined : toneColorVar(tone);
+}

@@ -1,7 +1,7 @@
 <!--
   LinesIndex — the Lines index screen (slice-9.3 · data-depth batch 4).
 
-  Composes the surface spine: a SurfaceHeader over a filterable EntityList of
+  Composes the surface spine: a Masthead over a filterable EntityList of
   every route from the static routes_index. Each row now carries an at-a-glance
   RELIABILITY BADGE (status verdict + OTP%) lazily loaded per-route, plus two
   combinable controls: a SORT toggle (alphabetical | worst reliability first) and
@@ -21,19 +21,34 @@
   (the route GTFS colour is not surfaced here — that is the search swatch's job);
   --primary stays interactive-only (the active sort/filter segment).
 
-  DEFER (tracked follow-ups, out of scope this batch): no near-me / distance sort;
-  no per-row reliability grain selection (always the latest day); no accessible-only
-  filter (needs a DB field).
+  Near-me / distance sort is intentionally NOT offered here: a line is a whole
+  route (a polyline across the network), not a single point, so "nearest line"
+  has no honest single-distance definition — the near-me affordance lives on /map
+  ("Stops near me", the amber conversion CTA) where a stop IS a point. (P5.3d
+  resolved the former near-me DEFER: no orphan scaffold, no dead follow-up.)
+
+  DEFER (DB-blocked, owned by S16 data work): no per-row reliability grain
+  selection (always the latest day); no accessible-only filter (needs a DB field).
 -->
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { getLocale } from '$lib/i18n';
 	import { mapHrefFor } from '$lib/nav';
-	import { getRoutesIndex, createReliabilityLoader, isProblemVerdict } from '$lib/v1';
+	import {
+		getRoutesIndex,
+		createReliabilityLoader,
+		isProblemVerdict,
+		createLiveStore,
+		getV1Context,
+		selectVerdict,
+		type VerdictHeadline,
+	} from '$lib/v1';
 	import type { RouteIndexEntry } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
+	import { VerdictBanner } from '$lib/components/brand';
+	import { reliabilityCopy } from './reliability/reliability.copy';
 	import {
 		ResourceBoundary,
-		SurfaceHeader,
 		EntityList,
 		EntityRow,
 		SearchInput,
@@ -41,14 +56,25 @@
 		ReliabilityBadge,
 		GrainPicker,
 	} from '$lib/components/surface';
+	import { Masthead } from '$lib/components/brand';
 	import { Surface, ControlsRail } from '$lib/components/layout';
-	import { Separator } from '$lib/components/ui/separator';
 	import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 	import { routeModeHint } from '$lib/search/stopMode';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { indexCopy } from './lines.copy';
 
 	const locale = getLocale();
 	const t = $derived(indexCopy[locale]);
+
+	// The OTP explainer (i) on the surface header (§C5.3 / §C6): one-line tip + deep
+	// link to /metrics#otp, the same `info()` shape every surface uses.
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const otpInfo = $derived.by(() => {
+		const i = metricInfoFor('otp', locale);
+		return { ...i, label: explainerCopy.info.trigger('OTP'), linkLabel: explainerCopy.info.link };
+	});
 
 	const routes = createResource(() => getRoutesIndex());
 
@@ -57,6 +83,26 @@
 	// the `observeReliability` action so only on-screen rows fetch.
 	const reliability = createReliabilityLoader('route');
 	const observeReliability = reliability.reliability;
+
+	// NETWORK VERDICT BAND (§C5.3): a one-line at-a-glance answer between the head and
+	// the grid, reusing the SHARED VerdictBanner + selectVerdict from the SAME live
+	// on_time_pct the /network headline reads. Honest degradation: the live tier carries
+	// no OTP trip-day denominator here (status_dist is an instant vehicle count, a
+	// DIFFERENT universe), so we pass n=null → the band renders the sentence WITHOUT a
+	// fabricated Wilson hedge (the pre-republish path), never a made-up confidence.
+	const live = createLiveStore(getV1Context().manifest);
+	onMount(() => {
+		live.start();
+		return () => live.stop();
+	});
+	const verdictCopy = $derived(reliabilityCopy[locale].verdict);
+	const networkHeadline = $derived<VerdictHeadline>({
+		otpPct: live.network?.on_time_pct ?? null,
+		observationCount: null,
+		onTime: null,
+	});
+	// 'day' names the window as "today" — the live tier is a right-now reading.
+	const networkVerdict = $derived(selectVerdict(networkHeadline, 'day', locale, verdictCopy));
 
 	// GTFS route_type → the shared identity glyph (extends the stop mode vocabulary
 	// to routes; bus '═' is the network default for anything unmapped).
@@ -103,13 +149,44 @@
 		return v == null ? 99 : (VERDICT_RANK[v] ?? 99);
 	}
 
+	// FREEZE-ON-SETTLE (§C5.3): the worst-first sort must not RESHUFFLE the list as
+	// badges stream in one by one (a row jumping mid-scroll is the reshuffle complaint).
+	// So in worst mode we hold a FROZEN id order that only recomputes once the visible
+	// badges have SETTLED (no visible row still `loading`) — until then the list shows in
+	// its stable alphabetical order with a polite "ranking…" caption. The frozen order is
+	// keyed by id so re-filtering (search) reorders WITHIN the frozen ranks, never a churn.
+	let worstOrder = $state<readonly string[] | null>(null);
+	// Any filtered row still fetching its verdict → the ranking is not yet settled.
+	const worstPending = $derived(
+		sort === 'worst' && filtered.some((r) => reliability.get(r.id).phase === 'loading'),
+	);
+	$effect(() => {
+		if (sort !== 'worst') {
+			worstOrder = null;
+			return;
+		}
+		// Recompute the frozen order ONLY when the visible badges have settled (nothing
+		// loading). Rank asc, alpha tiebreak — the SAME stable key as before, snapshotted.
+		if (!worstPending) {
+			worstOrder = filtered
+				.map((r, i) => ({ id: r.id, rank: worstRank(r.id), i }))
+				.sort((a, b) => a.rank - b.rank || a.i - b.i)
+				.map((x) => x.id);
+		}
+	});
+
 	const sorted = $derived.by<RouteIndexEntry[]>(() => {
 		if (sort === 'alpha') return filtered;
-		// Stable worst-first: rank asc, then the original alphabetical order as the
-		// tiebreak (filtered is already numeric-alpha sorted).
+		// Until the frozen worst order settles, hold the stable alpha order (no reshuffle).
+		if (worstOrder == null) return filtered;
+		// Apply the FROZEN rank as a stable key over the current filtered set (search may
+		// have narrowed it) — rows keep their settled rank, so nothing reshuffles violently.
+		const frozenRank = new Map(worstOrder.map((id, i) => [id, i]));
 		return filtered
 			.map((r, i) => ({ r, i }))
-			.sort((a, b) => worstRank(a.r.id) - worstRank(b.r.id) || a.i - b.i)
+			.sort(
+				(a, b) => (frozenRank.get(a.r.id) ?? 1e9) - (frozenRank.get(b.r.id) ?? 1e9) || a.i - b.i,
+			)
 			.map((x) => x.r);
 	});
 
@@ -136,14 +213,24 @@
 	);
 </script>
 
-<Surface width="bleed" pad="hub" class="lines-index">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
+{#snippet otpHeaderInfo()}
+	<MetricInfo
+		tip={otpInfo.tip}
+		href={otpInfo.href}
+		label={otpInfo.label}
+		linkLabel={otpInfo.linkLabel}
+		side="bottom"
+	/>
+{/snippet}
+
+<Surface pad="hub" class="lines-index">
+	<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede} explainer={otpHeaderInfo}>
 		<!-- The search box + the sort/status pickers are collected into ONE
 		     ControlsRail (quiet infra control panel, mono group overline), so this
 		     surface's controls read as the same discerned-from-data zone the rest of
 		     the analytics surfaces use. --primary lives only on the active picker
 		     segment inside; the rail chrome stays quiet. -->
-		<ControlsRail label={t.controlsLabel} class="lines-controls-rail">
+		<ControlsRail label={t.controlsLabel} class="lines-controls-rail" sticky>
 			<SearchInput
 				id="lines-filter-input"
 				label={t.filterLabel}
@@ -163,16 +250,22 @@
 				</div>
 			</div>
 		</ControlsRail>
-	</SurfaceHeader>
+	</Masthead>
 
-	<Separator variant="hazard" />
+	<!-- NETWORK VERDICT BAND (§C5.3): the one-line at-a-glance answer between the head and
+	     the grid — reuses the SHARED VerdictBanner at network scope, from the same live
+	     on_time_pct the /network headline reads. Stands down honestly ("still measuring")
+	     before the first live tick / on an absent live tier. -->
+	<section class="lines-verdict" aria-label={t.networkVerdictLabel}>
+		<VerdictBanner result={networkVerdict} />
+	</section>
 
 	<ResourceBoundary resource={routes} lang={locale} isEmpty={(d) => d.routes.length === 0}>
 		<!-- Polite SR caption: while the problem filter waits on verdicts to stream
 		     in, a screen-reader user hears that the visible list is still loading
 		     rather than meeting an apparently-empty result set in silence. -->
 		<p class="sr-only" role="status" aria-live="polite">
-			{statusPending ? t.statusPending : ''}
+			{statusPending ? t.statusPending : worstPending ? t.rankingPending : ''}
 		</p>
 		<!-- The catalogue lays out as a 2-up auto-fit board on desktop (each line
 		     result fills its grid cell), reflowing to a single column on a phone —
@@ -217,6 +310,11 @@
 		white-space: nowrap;
 		border: 0;
 	}
+	/* The one-line network verdict band between the head and the grid — quiet spacing
+	   so the VerdictBanner reads as its own register above the catalogue. */
+	.lines-verdict {
+		margin-block: 0.25rem 0.5rem;
+	}
 	/* The control panel fills the header measure; its body lays the search box
 	   across the top with the sort/status pickers beneath. */
 	:global(.lines-controls-rail) {
@@ -225,7 +323,7 @@
 	:global(.lines-controls-rail [data-slot='controls-rail-body']) {
 		flex-direction: column;
 		align-items: stretch;
-		gap: 0.85rem;
+		gap: 0.875rem;
 	}
 	.lines-controls {
 		display: flex;
@@ -235,7 +333,7 @@
 	.lines-control {
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.lines-control-label {
 		font-family: var(--font-mono);

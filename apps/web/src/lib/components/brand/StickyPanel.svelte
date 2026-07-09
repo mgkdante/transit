@@ -36,6 +36,9 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		background: var(--card);
+		/* E1 glow map: the sidebar panel rests on --shadow-card (soft card bevel),
+		   consistent with the content-card family. No hover-lift (a static rail). */
+		box-shadow: var(--shadow-card);
 		padding: 1.25rem;
 		overflow-y: auto;
 		max-height: calc(100dvh - 8rem);

@@ -49,7 +49,13 @@
 	const ready = $derived(w > 0 && h > 0);
 </script>
 
-<div bind:this={el} class={cn('chart-frame', className)} style:height data-slot="chart-frame">
+<div
+	bind:this={el}
+	class={cn('chart-frame', className)}
+	style:height
+	style:--chart-frame-h={height}
+	data-slot="chart-frame"
+>
 	{#if ready}{@render children?.()}{/if}
 </div>
 
@@ -57,5 +63,10 @@
 	.chart-frame {
 		position: relative;
 		width: 100%;
+		/* CLS guard: reserve the plot box BEFORE the chart mounts. `height` fixes the box,
+		   and `min-height` holds it even inside a flex/grid parent that would otherwise
+		   collapse an empty child — so the chart popping in after hydration + the
+		   createResource fetch never shifts the surrounding content. */
+		min-height: var(--chart-frame-h);
 	}
 </style>

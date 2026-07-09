@@ -2,13 +2,13 @@
 //
 // Pure content (no imports, no runtime): declares WHICH surfaces the chrome links
 // to and WHAT they are called in each locale. Every `href` is locale-LESS and is
-// run through `localizeHref` at render time by the consumers (TopBar / LeftRail /
-// Footer) — a locale-prefixed href here would double-localize on /fr.
+// run through `localizeHref` at render time by the consumers (NavPill / Footer) —
+// a locale-prefixed href here would double-localize on /fr.
 //
-// ONE manifest, three consumers. Before this, TopBar and LeftRail hand-rolled
-// identical lists inline while Footer rendered a STALE inventory (/, /history,
-// /data-trust) that shipped dead links. Keep every chrome surface iterating
-// SURFACE_NAV so a route rename happens in exactly one place.
+// ONE manifest, shared consumers. Before this, the chrome hand-rolled identical
+// lists inline while Footer rendered a STALE inventory (/, /history, /data-trust)
+// that shipped dead links. Keep every chrome surface iterating SURFACE_NAV so a
+// route rename happens in exactly one place.
 
 /** Bilingual string — consumers pick `en`/`fr` from the active locale. */
 export interface BilingualLabel {
@@ -112,8 +112,20 @@ export const MENU_EXTRAS: readonly ExternalNavLink[] = [
 ] as const;
 
 /**
+ * The parent-brand link out to the yesid.dev portfolio, surfaced as the final
+ * burger-menu row (with an external ↗ affordance + rel="noopener"). transit is a
+ * yesid.dev product; the pill wordmark now reads "Transit" (the product home), so
+ * the "Yesid" house link lives here in the menu rather than as the pill's main
+ * click. One place for the label + href.
+ */
+export const YESID_HOUSE_LINK: ExternalNavLink = {
+	href: 'https://yesid.dev',
+	label: { en: 'Yesid', fr: 'Yesid' },
+} as const;
+
+/**
  * The "Audit" group — the accountability/meta surfaces, the SINGLE source for
- * both the side-nav Audit section (LeftRail / mobile menu) and the footer. The
+ * both the NavPill hamburger menu's Audit section and the footer. The
  * metric explainer (/metrics) + data-health (/status) anchor it; the four
  * accountability surfaces (/hotspots, /receipt, /repeat-offenders, /alerts) read
  * the roll-ups to hold the service to account. None are primary wayfinding

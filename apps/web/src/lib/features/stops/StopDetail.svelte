@@ -38,12 +38,8 @@
 	import { sharedClock } from '$lib/stores';
 	import { minutesSinceMidnight } from '$lib/utils/time';
 	import { inferAbsenceReason, stopServiceWindow } from '$lib/site/serviceWindow';
-	import {
-		delayLabel,
-		delayTone,
-		delayColorVar,
-		type DelayTone,
-	} from '$lib/site/delayPresentation';
+	import { depTone, toneColorVar, TONE_GLYPH, type ChipTone } from '$lib/site/delayPresentation';
+	import { ScheduleTable, type ScheduleRow } from '$lib/components/schedule';
 	import { STATUS_LABELS } from '$lib/v1';
 	import type { StatusCode } from '$lib/v1/schemas';
 	import {
@@ -53,13 +49,17 @@
 		MapDrilldownLink,
 		AffectedAlerts,
 	} from '$lib/components/surface';
-	import { EdgeState, AbsentValue } from '$lib/components/edge';
+	import { EdgeState } from '$lib/components/edge';
 	import { ControlsRail } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { layout, mapHrefFor } from '$lib/nav';
 	import StopLabel from '$lib/components/brand/StopLabel.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
+	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
+	import { cornerMetaLabels } from '$lib/components/brand';
 	import { Badge } from '$lib/components/ui/badge';
 	import { formatUtc } from '$lib/utils/time';
 	import { StopReliabilitySurface } from './reliability';
@@ -104,11 +104,21 @@
 	$effect(() => mirrorSearchParam('tab', active === 'next' ? null : active));
 
 	// --- live tier: per-stop departures board --------------------------------
-	const live = createLiveStore(getV1Context().manifest);
+	const manifest = getV1Context().manifest;
+	const live = createLiveStore(manifest);
 	onMount(() => {
 		live.start();
 		return () => live.stop();
 	});
+
+	// CornerMeta readouts (A4) — REAL data only: provider (always, from the manifest)
+	// + the live-tier generated stamp (the departures board's freshness); a missing
+	// datum drops its corner (never fabricated).
+	const cm = cornerMetaLabels[locale];
+	const shortName = manifest.short_name?.trim() || manifest.display_name;
+	const cornerGeneratedStamp = $derived(
+		live.generatedUtc != null ? formatUtc(live.generatedUtc, locale) : null,
+	);
 	// Departures for THIS stop from the authoritative per-stop board. null before
 	// the first tick (skeleton); [] is a real "no upcoming departures" verdict.
 	const departures = $derived<readonly StopDeparture[] | null>(
@@ -189,52 +199,19 @@
 	   glyph) and matches no status chip — visible only under "all". The four
 	   FILTERABLE tones stay chips on the shared vocabulary. Both filters default
 	   "off" (everything shown); an empty result shows a localized empty state. */
-	type DepartureTone = DelayTone;
-	const DEPARTURE_TONES: readonly Exclude<DelayTone, 'none'>[] = [
-		'on-time',
-		'late',
-		'severe',
-		'early',
-	];
-
-	/** A departure's tone — a null delay is an ABSENT realtime delta, not an
-	 * on-time claim: it rides the 'none' no-data track (no fill, no glyph). */
-	function depTone(delayMin: number | null | undefined): DepartureTone {
-		return delayMin == null ? 'none' : delayTone(delayMin);
-	}
+	const DEPARTURE_TONES: readonly ChipTone[] = ['on-time', 'late', 'severe', 'early'];
 
 	// Map a departure tone → the closed StatusCode so the chips + row status read the
 	// ONE shared bilingual vocabulary (STATUS_LABELS) — no invented per-surface labels.
-	type ChipTone = Exclude<DelayTone, 'none'>;
+	// The tone → glyph/fill mapping (TONE_GLYPH / toneColorVar / depTone) is the shared
+	// delayPresentation kernel, reused verbatim by the ScheduleTable board rows.
 	const TONE_STATUS: Record<ChipTone, StatusCode> = {
 		early: 'early',
 		'on-time': 'on_time',
 		late: 'late',
 		severe: 'severe',
 	};
-	// Redundant glyph per tone (Chart Doctrine: colour is NEVER the only channel).
-	// ▲ = behind schedule (late/severe), ▼ = ahead (early), ● = on time.
-	const TONE_GLYPH: Record<ChipTone, string> = {
-		early: '▼',
-		'on-time': '●',
-		late: '▲',
-		severe: '▲',
-	};
 	const toneLabel = (tone: ChipTone): string => STATUS_LABELS[locale][TONE_STATUS[tone]];
-	// The --dataviz-status-* fill for a tone (chip glyphs + row captions). A representative
-	// signed delay per tone drives the SHARED delayColorVar so the fill is the ONE status
-	// scale — on-time always resolves (unlike a raw null → no-data track).
-	const TONE_SAMPLE: Record<ChipTone, number> = {
-		early: -1,
-		'on-time': 0,
-		late: 1,
-		severe: 5,
-	};
-	const toneColorVar = (tone: ChipTone): string | undefined => delayColorVar(TONE_SAMPLE[tone]);
-	// 'none' rows: muted presentation — no fill, no glyph (honest absence).
-	const rowGlyph = (tone: DepartureTone): string => (tone === 'none' ? '' : TONE_GLYPH[tone]);
-	const rowColorVar = (tone: DepartureTone): string | undefined =>
-		tone === 'none' ? undefined : toneColorVar(tone);
 
 	const statusFilter = new SvelteSet<ChipTone>();
 	let routeFilter = $state<string | null>(null);
@@ -296,18 +273,36 @@
 <EntityDetail
 	kicker={t.kicker}
 	back={{ href: localizeHref('/stops', locale), label: t.back }}
+	lede={t.detailLede}
 	{tabs}
 	bind:active
 >
+	{#snippet cornerMeta()}
+		<!-- A4: blueprint-margin corners — stop id · generated · provider (real data
+		     from the manifest + the live tier). aria-hidden, hidden < 768px. -->
+		<CornerMeta>
+			{#snippet topLeft()}<span class="stop-corner">{cm.stop} · {id}</span>{/snippet}
+			{#snippet topRight()}{#if cornerGeneratedStamp}<span class="stop-corner"
+						>{cm.generated} · {cornerGeneratedStamp}</span
+					>{/if}{/snippet}
+			{#snippet bottomLeft()}<span class="stop-corner">{cm.provider} · {shortName}</span>{/snippet}
+		</CornerMeta>
+	{/snippet}
+
 	{#snippet header()}
-		<div class="stop-detail-head">
-			<StopLabel stop={id} label={stop.data?.name ?? `#${id}`} />
-			<MapDrilldownLink
-				href={mapHrefFor({ stop: id }, locale)}
-				label={t.viewOnMap}
-				ariaLabel={t.viewStopOnMap(id)}
-			/>
-		</div>
+		<!-- The framing head the stop index already earns (kicker + display title +
+		     lede, §C5.6): the stop NAME is the display-scale h1 (+ brand dot); the
+		     mono ARRÊT plate demotes to a meta chip below. -->
+		<SectionHeading heading={stop.data?.name ?? `#${id}`} level={1} dot />
+	{/snippet}
+
+	{#snippet meta()}
+		<StopLabel stop={id} label="" class="stop-detail-plate" />
+		<MapDrilldownLink
+			href={mapHrefFor({ stop: id }, locale)}
+			label={t.viewOnMap}
+			ariaLabel={t.viewStopOnMap(id)}
+		/>
 	{/snippet}
 
 	{#snippet pane(key)}
@@ -316,9 +311,15 @@
 			{#if departures == null}
 				<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
 			{:else}
-				<div class="stop-next">
-					<div class="stop-next-head">
-						<SectionLabel text={t.next.heading} variant="station" />
+				<!-- D3: the live departures board framed in the ONE TerminalPanel idiom.
+				     Existing board content wrapped untouched; the live freshness stamp
+				     moves to the panel's meta slot (the terminal's right readout). -->
+				<TerminalPanel
+					title={t.next.terminal.title}
+					tag={t.next.terminal.tag}
+					class="stop-next-terminal"
+				>
+					{#snippet meta()}
 						<FreshnessStamp
 							variant="live"
 							generatedUtc={live.generatedUtc}
@@ -326,109 +327,109 @@
 							isStale={live.isStale}
 							{locale}
 						/>
-					</div>
-					{#if departures.length === 0}
-						<!-- HONEST ABSENCE: an empty live board STATES the inferred reason
+					{/snippet}
+					<div class="stop-next">
+						<div class="stop-next-head">
+							<SectionHeading level={2} overline={t.next.heading} />
+						</div>
+						{#if departures.length === 0}
+							<!-- HONEST ABSENCE: an empty live board STATES the inferred reason
 						     (service closed — opens at FIRST / no service at this hour /
 						     scheduled-but-silent) from the stop's own window + the live silent
 						     signal. emptyReason is null when no reason is derivable → the plain
 						     honest no-data copy, never a fabricated reason. -->
-						<EdgeState
-							variant="empty"
-							lang={locale}
-							layout={edgeLayout}
-							emptyReason={departuresAbsenceReason}
-						/>
-					{:else}
-						<!-- Combinable status chips + an optional by-route chip narrow the
+							<EdgeState
+								variant="empty"
+								lang={locale}
+								layout={edgeLayout}
+								emptyReason={departuresAbsenceReason}
+							/>
+						{:else}
+							<!-- Combinable status chips + an optional by-route chip narrow the
 						     board, collected into ONE ControlsRail (quiet infra chrome,
 						     discerned from the data canvas). Both default off (everything
 						     shown); the data marks are unchanged — these are INTERACTION
 						     controls, so --primary lives only on the active chip. -->
-						<ControlsRail label={t.next.controlsLabel}>
-							<div class="stop-chip-group" role="group" aria-label={t.next.filter.statusLabel}>
-								{#each DEPARTURE_TONES as tone (tone)}
-									<button
-										type="button"
-										class="stop-chip"
-										class:stop-chip--active={statusFilter.has(tone)}
-										aria-pressed={statusFilter.has(tone)}
-										onclick={() => toggleStatus(tone)}
-									>
-										<!-- colour + glyph redundancy: the tone's status fill tints the dot,
-										     and the glyph carries the meaning without colour (a11y). -->
-										<span
-											class="stop-chip-glyph"
-											style:color={toneColorVar(tone)}
-											aria-hidden="true">{TONE_GLYPH[tone]}</span
-										>
-										{toneLabel(tone)}
-									</button>
-								{/each}
-							</div>
-							{#if departureRoutes.length > 1}
-								<div class="stop-chip-group" role="group" aria-label={t.next.filter.routeLabel}>
-									<button
-										type="button"
-										class="stop-chip"
-										class:stop-chip--active={routeFilter == null}
-										aria-pressed={routeFilter == null}
-										onclick={() => (routeFilter = null)}
-									>
-										{t.next.filter.allRoutes}
-									</button>
-									{#each departureRoutes as route (route)}
+							<ControlsRail label={t.next.controlsLabel}>
+								<div class="stop-chip-group" role="group" aria-label={t.next.filter.statusLabel}>
+									{#each DEPARTURE_TONES as tone (tone)}
 										<button
 											type="button"
 											class="stop-chip"
-											class:stop-chip--active={routeFilter === route}
-											aria-pressed={routeFilter === route}
-											onclick={() => (routeFilter = routeFilter === route ? null : route)}
+											class:stop-chip--active={statusFilter.has(tone)}
+											aria-pressed={statusFilter.has(tone)}
+											onclick={() => toggleStatus(tone)}
 										>
-											{route}
+											<!-- colour + glyph redundancy: the tone's status fill tints the dot,
+										     and the glyph carries the meaning without colour (a11y). -->
+											<span
+												class="stop-chip-glyph"
+												style:color={toneColorVar(tone)}
+												aria-hidden="true">{TONE_GLYPH[tone]}</span
+											>
+											{toneLabel(tone)}
 										</button>
 									{/each}
 								</div>
-							{/if}
-							<p class="stop-departures-count" aria-live="polite">
-								{t.next.filter.showing(filteredDepartures?.length ?? 0, departures.length)}
-							</p>
-						</ControlsRail>
-
-						<!-- Hazard tape discerns the controls zone from the data canvas. -->
-						<Separator variant="hazard" hazardSize="sm" />
-
-						{#if (filteredDepartures?.length ?? 0) === 0}
-							<p class="stop-departures-empty" data-testid="departures-filter-empty">
-								{t.next.filter.noMatches}
-							</p>
-						{:else}
-							<ul class="stop-departures">
-								{#each filteredDepartures ?? [] as d, i (`${d.trip ?? d.route ?? 'dep'}-${d.eta_utc}-${i}`)}
-									{@const tone = depTone(d.delay_min)}
-									<li class="stop-departure">
-										<span class="stop-departure-route">{d.route ?? t.next.route}</span>
-										<span class="stop-departure-eta">{formatUtc(d.eta_utc, locale)}</span>
-										<!-- The delay caption is COLOUR-CODED by the shared status scale AND
-										     carries a redundant glyph (Doctrine: never colour-only), with the
-										     plain-language delayLabel text as the third channel. A null delay
-										     rides the muted 'none' track: no fill, no glyph — absence never
-										     reads as an on-time claim. -->
-										<span
-											class="stop-departure-delay"
-											style:color={rowColorVar(tone)}
-											data-tone={tone}
+								{#if departureRoutes.length > 1}
+									<div class="stop-chip-group" role="group" aria-label={t.next.filter.routeLabel}>
+										<button
+											type="button"
+											class="stop-chip"
+											class:stop-chip--active={routeFilter == null}
+											aria-pressed={routeFilter == null}
+											onclick={() => (routeFilter = null)}
 										>
-											{#if rowGlyph(tone)}<span class="stop-departure-glyph" aria-hidden="true"
-													>{rowGlyph(tone)}</span
-												>{/if}{delayLabel(d.delay_min, t.next)}
-										</span>
-									</li>
-								{/each}
-							</ul>
+											{t.next.filter.allRoutes}
+										</button>
+										{#each departureRoutes as route (route)}
+											<button
+												type="button"
+												class="stop-chip"
+												class:stop-chip--active={routeFilter === route}
+												aria-pressed={routeFilter === route}
+												onclick={() => (routeFilter = routeFilter === route ? null : route)}
+											>
+												{route}
+											</button>
+										{/each}
+									</div>
+								{/if}
+								<p class="stop-departures-count" aria-live="polite">
+									{t.next.filter.showing(filteredDepartures?.length ?? 0, departures.length)}
+								</p>
+							</ControlsRail>
+
+							<!-- Hazard tape discerns the controls zone from the data canvas. -->
+							<Separator variant="hazard" hazardSize="sm" />
+
+							{#if (filteredDepartures?.length ?? 0) === 0}
+								<p class="stop-departures-empty" data-testid="departures-filter-empty">
+									{t.next.filter.noMatches}
+								</p>
+							{:else}
+								<!-- The departure ROW LIST is the reusable ScheduleTable (board mode) —
+								     route · eta · colour+glyph delay caption, verbatim from the shared
+								     kernel. The filter/count/skeleton/empty state stay in StopDetail. -->
+								<ScheduleTable
+									mode="board"
+									rows={(filteredDepartures ?? []).map(
+										(d): ScheduleRow => ({
+											kind: 'board',
+											route: d.route,
+											eta_utc: d.eta_utc,
+											delay_min: d.delay_min,
+											trip: d.trip,
+										}),
+									)}
+									{locale}
+									delayCopy={t.next}
+									routeFallback={t.next.route}
+								/>
+							{/if}
 						{/if}
-					{/if}
-				</div>
+					</div>
+				</TerminalPanel>
 			{/if}
 		{:else if key === 'schedule'}
 			<!-- STATIC: scheduled service grouped by route. -->
@@ -439,38 +440,24 @@
 			>
 				{#snippet children(s: StopFile | null)}
 					<div class="stop-schedule">
-						<SectionLabel text={t.schedule.heading} variant="station" />
-						{#each s?.scheduled ?? [] as entry, i (`${entry.route}-${entry.headsign ?? i}`)}
-							{@const shown = (entry.times ?? []).slice(0, SCHEDULE_CAP)}
-							<div class="stop-schedule-route">
-								<div class="stop-schedule-route-head">
-									<span class="stop-schedule-route-code">{entry.route}</span>
-									{#if entry.headsign}
-										<span class="stop-schedule-headsign">{entry.headsign}</span>
-									{/if}
-								</div>
-								{#if shown.length > 0}
-									<!-- B4: a COLUMN-MAJOR 5-column grid — times read top→bottom then
-									     across (the operator's "vertical grid"). The explicit row count
-									     (ceil(shown/5)) + grid-auto-flow:column drives the vertical fill;
-									     it collapses to a single readable column on mobile. -->
-									<ul class="stop-schedule-times" style:--sched-rows={Math.ceil(shown.length / 5)}>
-										{#each shown as time, ti (`${time}-${ti}`)}
-											<li class="stop-schedule-time">{time}</li>
-										{/each}
-									</ul>
-									{#if (entry.times?.length ?? 0) > SCHEDULE_CAP}
-										<p class="stop-schedule-time-more">
-											{t.schedule.moreTimes((entry.times?.length ?? 0) - SCHEDULE_CAP)}
-										</p>
-									{/if}
-								{:else}
-									<!-- Honest absence: a route listed with NO scheduled times says so
-									     explicitly instead of a silently empty block. -->
-									<AbsentValue variant="inline" reason="no-observations" {locale} />
-								{/if}
-							</div>
-						{/each}
+						<SectionHeading level={2} overline={t.schedule.heading} />
+						<!-- The per-route schedule grid is the reusable ScheduleTable (grid mode) —
+						     route code + headsign + the column-major times grid + honest per-route
+						     absence, verbatim. The pane-level empty/skeleton stays on ResourceBoundary. -->
+						<ScheduleTable
+							mode="grid"
+							rows={(s?.scheduled ?? []).map(
+								(entry): ScheduleRow => ({
+									kind: 'grid',
+									route: entry.route,
+									headsign: entry.headsign,
+									times: entry.times ?? [],
+								}),
+							)}
+							{locale}
+							cap={SCHEDULE_CAP}
+							moreLabel={t.schedule.moreTimes}
+						/>
 					</div>
 				{/snippet}
 			</ResourceBoundary>
@@ -566,11 +553,16 @@
 </EntityDetail>
 
 <style>
-	.stop-detail-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
+	.stop-corner {
+		white-space: nowrap;
+	}
+	/* The ARRÊT plate as a meta chip: no left LED-lamp inset needed here (the head
+	   already carries the brand dot on the display title) — keep the mono voice. */
+	:global(.stop-detail-plate) {
+		padding-left: 0;
+	}
+	:global(.stop-detail-plate)::before {
+		display: none;
 	}
 
 	.stop-next {
@@ -585,56 +577,11 @@
 		justify-content: space-between;
 		gap: 0.75rem;
 	}
-	.stop-departures {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-	}
-	.stop-departure {
-		display: flex;
-		align-items: baseline;
-		gap: 0.875rem;
-		padding: 0.75rem 0.875rem;
-		border-bottom: 1px solid var(--border-subtle, var(--border));
-	}
-	.stop-departure:last-child {
-		border-bottom: none;
-	}
-	.stop-departure-route {
-		font-family: var(--font-mono);
-		font-weight: 700;
-		font-size: var(--text-body);
-		color: var(--accent-text);
-		flex-shrink: 0;
-		min-width: 3ch;
-	}
-	.stop-departure-eta {
-		font-family: var(--font-mono);
-		font-size: var(--text-body);
-		color: var(--foreground);
-		flex: 1 1 auto;
-	}
-	.stop-departure-delay {
-		display: inline-flex;
-		align-items: baseline;
-		gap: 0.35rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		/* Fallback for the null/none case (no realtime delta beyond on-time) — the inline
-		   style:color from toneColorVar overrides this when a tone resolves a status fill. */
-		color: var(--muted-foreground);
-		flex-shrink: 0;
-	}
-	/* The redundant status glyph beside the delay caption (colour + glyph, never
-	   colour-only). Inherits the caption's tone colour via the inline style. */
-	.stop-departure-glyph {
-		font-size: var(--text-micro);
-		line-height: 1;
-	}
+	/* The live-departures ROW LIST styles (.stop-departures / .stop-departure*) now
+	   live with <ScheduleTable> (P5.3e board mode); StopDetail keeps only the board
+	   CHROME — the filter chips, the count, and the empty state. */
 	.stop-chip-glyph {
-		margin-inline-end: 0.3rem;
+		margin-inline-end: 0.375rem;
 		font-size: var(--text-micro);
 		line-height: 1;
 	}
@@ -665,61 +612,10 @@
 	}
 
 	/* The reliability tile chrome + the per-tile / per-section reliability layout now
-	   live with <StopReliabilitySurface> and its section components (S8A re-seat), so
-	   StopDetail carries only the next / schedule / info pane styles. */
-	.stop-schedule-route {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-	.stop-schedule-route-head {
-		display: flex;
-		align-items: baseline;
-		gap: 0.75rem;
-	}
-	.stop-schedule-route-code {
-		font-family: var(--font-mono);
-		font-weight: 700;
-		color: var(--accent-text);
-	}
-	.stop-schedule-headsign {
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
-	}
-	/* B4: a 5-column COLUMN-MAJOR grid. grid-auto-flow:column + an explicit row count
-	   (--sched-rows = ceil(shown/5)) fills top→bottom then left→right, so the times read
-	   vertically down each column (the operator's "vertical grid"). */
-	.stop-schedule-times {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: grid;
-		grid-template-columns: repeat(5, minmax(0, 1fr));
-		grid-template-rows: repeat(var(--sched-rows, 1), auto);
-		grid-auto-flow: column;
-		gap: 0.4rem 0.75rem;
-	}
-	.stop-schedule-time {
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--foreground);
-	}
-	.stop-schedule-time-more {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
-	}
-	/* Mobile: a dense 5-col grid is unreadable on a phone — collapse to a single column
-	   (row-major again, since there is one column). */
-	@media (max-width: 48rem) {
-		.stop-schedule-times {
-			grid-template-columns: minmax(0, 1fr);
-			grid-template-rows: none;
-			grid-auto-flow: row;
-		}
-	}
-
+	   live with <StopReliabilitySurface> and its section components (S8A re-seat); the
+	   per-route schedule grid (.stop-schedule-route* / .stop-schedule-times*) now lives
+	   with <ScheduleTable> (P5.3e grid mode), so StopDetail carries only the schedule
+	   pane WRAPPER (.stop-schedule) + the next / info pane chrome. */
 	.stop-info-metrics {
 		display: flex;
 		flex-wrap: wrap;
@@ -736,14 +632,14 @@
 		padding: 0;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 
 	/* Live-departures filter chips + count (laid out inside the ControlsRail body). */
 	.stop-chip-group {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	.stop-chip {
 		appearance: none;
@@ -753,8 +649,8 @@
 		color: var(--muted-foreground);
 		background-color: var(--card);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-pill, 999px);
-		padding: 0.35rem 0.75rem;
+		border-radius: var(--radius-pill);
+		padding: 0.375rem 0.75rem;
 		cursor: pointer;
 		transition:
 			background-color 0.15s ease,
@@ -793,10 +689,6 @@
 	}
 
 	@media (max-width: 48rem) {
-		.stop-detail-head {
-			align-items: flex-start;
-			flex-direction: column;
-		}
 		/* A3: the 2-col Info pane collapses to a single column on a phone. */
 		.stop-info {
 			grid-template-columns: minmax(0, 1fr);

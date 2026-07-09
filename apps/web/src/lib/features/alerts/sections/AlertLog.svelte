@@ -157,8 +157,8 @@
 		list-style: none;
 		max-width: 52rem;
 	}
-	/* Each past alert is a card with a severity-coloured leading rail — the same
-	   signage pattern AffectedAlerts uses, on the dataviz severity scale. */
+	/* Each past alert is a card whose severity reads from its tinted border +
+	   surface on the dataviz severity scale (P7: no leading stripe rail). */
 	.alert-history-row {
 		--alert-tone: var(--dataviz-severity-watch);
 		position: relative;
@@ -166,16 +166,8 @@
 		border: 1px solid color-mix(in srgb, var(--alert-tone) 32%, var(--border) 68%);
 		border-radius: var(--radius-md);
 		background: color-mix(in srgb, var(--alert-tone) 9%, var(--card));
-		padding: 0.6rem 0.7rem 0.6rem 0.9rem;
+		padding: 0.625rem 0.75rem;
 		overflow: hidden;
-	}
-	.alert-history-row::before {
-		content: '';
-		position: absolute;
-		inset-block: 0;
-		inset-inline-start: 0;
-		width: 3px;
-		background: var(--alert-tone);
 	}
 	.alert-history-row[data-severity='critical'] {
 		--alert-tone: var(--dataviz-severity-critical);
@@ -211,13 +203,13 @@
 	.alert-history-meta {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.3rem 0.7rem;
+		gap: 0.375rem 0.75rem;
 		margin: 0.5rem 0 0;
 	}
 	.alert-history-meta > div {
 		display: inline-flex;
 		align-items: baseline;
-		gap: 0.35rem;
+		gap: 0.375rem;
 		min-width: 0;
 	}
 	.alert-history-meta dt {
@@ -240,7 +232,7 @@
 	.alert-history-windows {
 		display: flex;
 		flex-direction: column;
-		gap: 0.15rem;
+		gap: 0.125rem;
 		flex-basis: 100%;
 	}
 	.alert-history-windows-count {
@@ -249,7 +241,7 @@
 		color: var(--foreground);
 	}
 	.alert-history-window-list {
-		margin: 0.15rem 0 0;
+		margin: 0.125rem 0 0;
 		padding: 0 0 0 1rem;
 		list-style: disc;
 		font-size: var(--text-caption);
@@ -260,7 +252,7 @@
 	}
 	/* External details link — an INTERACTION affordance (--primary). */
 	.alert-history-link {
-		margin: 0.4rem 0 0;
+		margin: 0.375rem 0 0;
 	}
 	.alert-history-link a {
 		font-family: var(--font-mono);
@@ -276,7 +268,7 @@
 	.alert-history-link a:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
-		border-radius: var(--radius-sm, 0.375rem);
+		border-radius: var(--radius-sm);
 	}
 	/* "+N more" disclosure — an INTERACTION control, so --primary belongs here. */
 	.alert-history-more {
@@ -288,7 +280,7 @@
 		color: var(--primary);
 		background: none;
 		border: none;
-		padding: 0.15rem 0;
+		padding: 0.125rem 0;
 		cursor: pointer;
 		text-decoration: underline;
 		text-underline-offset: 0.2em;
@@ -299,7 +291,7 @@
 	.alert-history-more:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
-		border-radius: var(--radius-sm, 0.375rem);
+		border-radius: var(--radius-sm);
 	}
 	/* Visually-hidden severity word / live region — colour + glyph never the sole channel. */
 	.sr-only {

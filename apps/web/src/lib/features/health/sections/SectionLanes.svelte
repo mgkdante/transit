@@ -20,8 +20,9 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { FreshnessStamp } from '$lib/components/surface';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
+	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import type { LaneRow } from '../selectors/laneHealth';
 	import type { HealthCopy } from '../health.copy';
@@ -36,76 +37,81 @@
 	const t = $derived(copy.lanes);
 </script>
 
-<section class="health-block" aria-labelledby="health-lanes" data-slot="lanes-section">
-	<SectionLabel id="health-lanes" text={t.section} variant="station" />
-	<p class="health-note">{t.note}</p>
-	<!-- The gate explainer: one honest, not-alarmist sentence for the whole section. -->
-	<p class="health-note health-note--gate" data-slot="gate-explain">{t.gateExplain}</p>
+<!-- D3: the existing pipeline-lanes board framed in the ONE TerminalPanel idiom.
+     The section content is wrapped untouched — NOT a new top-of-page aggregate
+     panel (that is P5.3d). -->
+<TerminalPanel title={t.terminal.title} tag={t.terminal.tag} class="lanes-terminal">
+	<section class="health-block" aria-labelledby="health-lanes" data-slot="lanes-section">
+		<SectionHeading level={2} id="health-lanes" overline={t.section} number={1} />
+		<p class="health-note">{t.note}</p>
+		<!-- The gate explainer: one honest, not-alarmist sentence for the whole section. -->
+		<p class="health-note health-note--gate" data-slot="gate-explain">{t.gateExplain}</p>
 
-	<ul class="lanes-list" role="list" aria-label={t.listLabel} data-slot="lanes-list">
-		{#each rows as row (row.key)}
-			<li
-				class="lane-row"
-				data-slot="lane-row"
-				data-lane={row.key}
-				data-applicable={row.applicable}
-			>
-				<div class="lane-head">
-					<span class="lane-label">{row.label}</span>
-					<span class="lane-cadence" aria-label={`${t.cadenceLabel}: ${row.cadence}`}
-						>{row.cadence}</span
-					>
-				</div>
+		<ul class="lanes-list" role="list" aria-label={t.listLabel} data-slot="lanes-list">
+			{#each rows as row (row.key)}
+				<li
+					class="lane-row"
+					data-slot="lane-row"
+					data-lane={row.key}
+					data-applicable={row.applicable}
+				>
+					<div class="lane-head">
+						<span class="lane-label">{row.label}</span>
+						<span class="lane-cadence" aria-label={`${t.cadenceLabel}: ${row.cadence}`}
+							>{row.cadence}</span
+						>
+					</div>
 
-				{#if row.applicable}
-					<div class="lane-meta">
-						<!-- Last publish: relative age off the shared clock (or "unknown" when the
+					{#if row.applicable}
+						<div class="lane-meta">
+							<!-- Last publish: relative age off the shared clock (or "unknown" when the
 						     lane has never published). -->
-						<div class="lane-cell" data-slot="lane-last-publish">
-							<span class="lane-cell-label">{t.lastPublishLabel}</span>
-							<FreshnessStamp variant="updated" generatedUtc={row.lastPublishUtc} {locale} />
-						</div>
+							<div class="lane-cell" data-slot="lane-last-publish">
+								<span class="lane-cell-label">{t.lastPublishLabel}</span>
+								<FreshnessStamp variant="updated" generatedUtc={row.lastPublishUtc} {locale} />
+							</div>
 
-						<!-- File counts: written of total. Absent → the honest absence chip. -->
-						<div class="lane-cell" data-slot="lane-files">
-							<span class="lane-cell-label">{t.filesLabel}</span>
-							{#if row.filesTotal != null}
-								<span class="lane-cell-value"
-									>{t.filesCount(
-										(row.filesWritten ?? 0).toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA'),
-										row.filesTotal.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA'),
-									)}</span
-								>
-							{:else}
-								<AbsentValue variant="inline" reason="not-reported" {locale} />
-							{/if}
-						</div>
+							<!-- File counts: written of total. Absent → the honest absence chip. -->
+							<div class="lane-cell" data-slot="lane-files">
+								<span class="lane-cell-label">{t.filesLabel}</span>
+								{#if row.filesTotal != null}
+									<span class="lane-cell-value"
+										>{t.filesCount(
+											(row.filesWritten ?? 0).toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA'),
+											row.filesTotal.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA'),
+										)}</span
+									>
+								{:else}
+									<AbsentValue variant="inline" reason="not-reported" {locale} />
+								{/if}
+							</div>
 
-						<!-- Gate verdict chip: a StatusDot on the status scale + the verdict word.
+							<!-- Gate verdict chip: a StatusDot on the status scale + the verdict word.
 						     Null gate → the honest "not checked" absence (never an assumed pass). -->
-						<div class="lane-cell" data-slot="lane-gate">
-							<span class="lane-cell-label">{t.gateLabel}</span>
-							{#if row.gate}
-								<span class="lane-gate-chip" data-gate={row.gate.aspect}>
-									<StatusDot color={row.gate.aspect} aria-hidden="true" />
-									<span class="lane-gate-verdict">{row.gate.label}</span>
-								</span>
-							{:else}
-								<AbsentValue variant="inline" reason="not-reported" {locale} />
-							{/if}
+							<div class="lane-cell" data-slot="lane-gate">
+								<span class="lane-cell-label">{t.gateLabel}</span>
+								{#if row.gate}
+									<span class="lane-gate-chip" data-gate={row.gate.aspect}>
+										<StatusDot color={row.gate.aspect} aria-hidden="true" />
+										<span class="lane-gate-verdict">{row.gate.label}</span>
+									</span>
+								{:else}
+									<AbsentValue variant="inline" reason="not-reported" {locale} />
+								{/if}
+							</div>
 						</div>
-					</div>
-				{:else}
-					<!-- MAINTENANCE not-applicable row: no heartbeat, a plain honest reason. -->
-					<div class="lane-na" data-slot="lane-not-applicable">
-						<span class="lane-na-chip">{t.notApplicable}</span>
-						<p class="lane-na-reason">{row.notApplicableReason}</p>
-					</div>
-				{/if}
-			</li>
-		{/each}
-	</ul>
-</section>
+					{:else}
+						<!-- MAINTENANCE not-applicable row: no heartbeat, a plain honest reason. -->
+						<div class="lane-na" data-slot="lane-not-applicable">
+							<span class="lane-na-chip">{t.notApplicable}</span>
+							<p class="lane-na-reason">{row.notApplicableReason}</p>
+						</div>
+					{/if}
+				</li>
+			{/each}
+		</ul>
+	</section>
+</TerminalPanel>
 
 <style>
 	.health-block {
@@ -137,7 +143,7 @@
 	.lane-row {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 		padding: 0.875rem 1rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
@@ -171,7 +177,7 @@
 	.lane-cell {
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
+		gap: 0.25rem;
 		min-width: 0;
 	}
 	.lane-cell-label {
@@ -190,7 +196,7 @@
 	.lane-gate-chip {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	.lane-gate-verdict {
 		font-family: var(--font-mono);
@@ -202,7 +208,7 @@
 	.lane-na {
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.lane-na-chip {
 		align-self: flex-start;
@@ -210,7 +216,7 @@
 		font-size: var(--text-caption);
 		text-transform: uppercase;
 		letter-spacing: var(--tracking-eyebrow);
-		padding: 0.15rem 0.5rem;
+		padding: 0.125rem 0.5rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
 		background: var(--card);

@@ -51,7 +51,7 @@
 	// writes a CLAMPED width into the CSS var (so the overlay follows live), and we
 	// persist on release. Dragging the LEFT edge GROWS the panel as the pointer moves
 	// left, so the delta is negated. The map canvas is untouched throughout — it never
-	// reads the panel width. Mirrors the AppShell left-rail drag exactly.
+	// reads the panel width.
 	function onDetailHandlePointerDown(event: PointerEvent): void {
 		if (event.button !== 0) return;
 		dragging = true;
@@ -146,12 +146,12 @@
 		position: absolute;
 		inset-block: 0;
 		right: 0;
-		z-index: 32;
+		z-index: var(--z-map-detail-panel, 32);
 		width: var(--app-right-detail-offset);
 		max-width: 100%;
 		box-shadow: var(--shadow-section);
 		pointer-events: auto;
-		transition: width var(--duration-normal, 180ms) var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+		transition: width var(--duration-normal) var(--ease-out);
 	}
 	/* Suppress the width transition WHILE dragging so the panel tracks the pointer 1:1;
 	   it re-applies for the collapse/expand snap. */
@@ -174,13 +174,13 @@
 		inset-block: 0;
 		left: 0;
 		width: 6px;
-		z-index: 1;
+		z-index: var(--z-map-canvas, 1);
 		cursor: col-resize;
 		background: var(--border);
 		opacity: 0;
 		transition:
-			opacity var(--duration-fast, 140ms) var(--ease-default, ease),
-			background var(--duration-fast, 140ms) var(--ease-default, ease);
+			opacity var(--duration-fast) var(--ease-default),
+			background var(--duration-fast) var(--ease-default);
 		touch-action: none;
 	}
 	.map-detail-overlay:hover .map-detail-handle,

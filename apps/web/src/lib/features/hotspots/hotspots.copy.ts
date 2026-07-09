@@ -13,6 +13,10 @@ import type { SurfaceHeadCopy } from '$lib/components/surface';
 export interface HotspotsCopy extends SurfaceHeadCopy {
 	/** Rail overline (e.g. "View" / "Vue") + the grain radiogroup label. */
 	readonly viewControlsLabel: string;
+	/** aria-label for the mobile rail pill's open control. */
+	readonly filterPillOpen: string;
+	/** aria-label for the mobile rail sheet's dismiss control. */
+	readonly filterPillClose: string;
 	readonly grain: {
 		readonly label: string;
 		readonly day: string;
@@ -64,6 +68,20 @@ export interface HotspotsCopy extends SurfaceHeadCopy {
 	};
 	/** OTP-points delta display (points of on-time lost vs baseline) — evidence field. */
 	readonly deltaLost: (pts: string) => string;
+	/**
+	 * §C5.10 verdict callout above the ladder: the #1 hotspot named + its on-time loss,
+	 * so the already-computed otp_delta_pts is finally SHOWN as the headline reading.
+	 */
+	readonly verdict: {
+		/** Accessible label for the callout region. */
+		readonly label: string;
+		/** The #1-hotspot sentence (name + delta) when a delta is present. */
+		readonly topWithDelta: (name: string, deltaPts: string) => string;
+		/** The #1-hotspot sentence when no delta is served (name only — honest absence). */
+		readonly topNoDelta: (name: string) => string;
+		/** Stand-down line when no hotspot ranks (published-empty). */
+		readonly none: string;
+	};
 	/** Mode tag chips by hotspot type (route / stop). */
 	readonly type: {
 		readonly route: string;
@@ -92,6 +110,8 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		subheading: '// PIRES EN PREMIER',
 		lede: 'Les arrêts et les lignes qui tirent le réseau vers le bas, classés du pire au moins pire par le taux de retards graves. On n’invente jamais de données.',
 		viewControlsLabel: 'Vue',
+		filterPillOpen: 'Ouvrir les commandes de vue',
+		filterPillClose: 'Fermer les commandes de vue',
 		grain: {
 			label: 'Granularité',
 			day: 'Jour',
@@ -127,6 +147,13 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			samples: 'n',
 		},
 		deltaLost: (pts) => `${pts} pts de ponctualité perdus`,
+		verdict: {
+			label: 'Point chaud n°1',
+			topWithDelta: (name, deltaPts) =>
+				`Pire point chaud : ${name}, ${deltaPts} pts de ponctualité perdus.`,
+			topNoDelta: (name) => `Pire point chaud : ${name}.`,
+			none: 'Aucun point chaud pour l’instant.',
+		},
 		type: {
 			route: 'Ligne',
 			stop: 'Arrêt',
@@ -144,6 +171,8 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		subheading: '// WORST FIRST',
 		lede: 'The stops and lines dragging the network down, ranked worst first by their severe-delay rate. We never invent data.',
 		viewControlsLabel: 'View',
+		filterPillOpen: 'Open view controls',
+		filterPillClose: 'Close view controls',
 		grain: {
 			label: 'Granularity',
 			day: 'Day',
@@ -178,6 +207,12 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			samples: 'n',
 		},
 		deltaLost: (pts) => `${pts} on-time points lost`,
+		verdict: {
+			label: '#1 hotspot',
+			topWithDelta: (name, deltaPts) => `Worst hotspot: ${name}, ${deltaPts} on-time points lost.`,
+			topNoDelta: (name) => `Worst hotspot: ${name}.`,
+			none: 'Nothing is a hotspot right now.',
+		},
 		type: {
 			route: 'Line',
 			stop: 'Stop',

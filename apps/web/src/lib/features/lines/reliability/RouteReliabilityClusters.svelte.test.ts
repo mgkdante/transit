@@ -140,6 +140,19 @@ describe('RouteReliabilityClusters', () => {
 		expect(screen.getByText(copy.controls.thisMonth)).toBeInTheDocument();
 	});
 
+	it('renders the SEC n/m position readout in the sticky ToC rail (H4)', () => {
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: populated, locale: 'en' },
+		});
+
+		// The rail's ONE wayfinding stamp is TocNav's own zero-padded footer counter
+		// over the total section count (5). Before the scroll observer resolves an
+		// active id, it falls back to section 1 → "SEC 01 / 05".
+		const readout = container.querySelector('.toc-counter-text');
+		expect(readout).not.toBeNull();
+		expect(readout?.textContent?.replace(/\s+/g, ' ').trim()).toContain('SEC 01 / 05');
+	});
+
 	it('renders every section honestly empty (no crash, no dropped section) with an empty contract', () => {
 		// A minimal valid contract: only the two required identity fields, no data
 		// arrays — every section must fall to its honest empty state.
@@ -272,92 +285,42 @@ const multiDay: RouteReliability = {
 	],
 };
 
-describe('RouteReliabilityClusters — mobile floating pills (S7)', () => {
-	it('renders the grain filter pill (labelled by the active window) + the section jump-to pill', () => {
+describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
+	it('renders ONE mobile pill labelled with the View heading + the active grain', () => {
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: populated, locale: 'en' },
 		});
-		// The grain FILTER pill replaces the old collapse toggle on mobile.
-		const filterPill = container.querySelector(
-			'[data-testid="reliability-filter-pill"]',
-		) as HTMLElement;
-		expect(filterPill).not.toBeNull();
-		// It is labelled with the active window (default 'day' → Today).
-		expect(filterPill.textContent).toContain(copy.controls.today);
-		// The grain controls live in the pill DRAWER (closed by default → not rendered yet).
-		expect(container.querySelector('[data-testid="reliability-filter-drawer"]')).toBeNull();
-
-		// The section JUMP-TO rides the shared TocPill.
-		expect(container.querySelector('[data-testid="toc-pill"]')).not.toBeNull();
-
-		// The old collapse toggle is gone.
+		// The SurfaceRail mobile pill replaces the old two floating pills.
+		const railMobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		expect(railMobile).not.toBeNull();
+		const pillBtn = railMobile.querySelector('button') as HTMLButtonElement;
+		expect(pillBtn).not.toBeNull();
+		// Labelled with the View heading + the active window (default 'day' → Today).
+		expect(pillBtn.textContent).toContain(copy.controls.viewLabel);
+		expect(pillBtn.textContent).toContain(copy.controls.today);
+		// The sheet is closed by default (no dialog rendered yet).
+		expect(railMobile.querySelector('[role="dialog"]')).toBeNull();
+		// The old collapse toggle + the separate toc/filter pills are gone.
 		expect(container.querySelector('[data-slot="controls-toggle"]')).toBeNull();
+		expect(container.querySelector('[data-testid="reliability-filter-pill"]')).toBeNull();
+		expect(container.querySelector('[data-testid="toc-pill"]')).toBeNull();
 	});
 
-	it('opens the filter drawer with the grain controls on tap', async () => {
+	it('opens ONE sheet with BOTH the grain controls AND the section ToC on tap', async () => {
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: populated, locale: 'en' },
 		});
-		const pillBtn = container.querySelector(
-			'[data-testid="reliability-filter-pill"] button',
-		) as HTMLButtonElement;
+		const railMobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		const pillBtn = railMobile.querySelector('button') as HTMLButtonElement;
 		await fireEvent.click(pillBtn);
 		expect(pillBtn.getAttribute('aria-expanded')).toBe('true');
-		// The drawer now renders the grain controls (a second active-window readout appears).
-		const drawer = container.querySelector(
-			'[data-testid="reliability-filter-drawer"]',
-		) as HTMLElement;
-		expect(drawer).not.toBeNull();
-		expect(drawer.querySelector('[data-slot="active-window"]')).not.toBeNull();
+		const sheet = railMobile.querySelector('[role="dialog"]') as HTMLElement;
+		expect(sheet).not.toBeNull();
+		// The ONE sheet merges the grain controls (active-window readout) AND the section ToC.
+		expect(sheet.querySelector('[data-slot="active-window"]')).not.toBeNull();
+		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
 	});
 });
 
-describe('RouteReliabilityClusters — §1/§2/§4 scope badge (S7-B windowable)', () => {
-	const scopeOf = (container: HTMLElement, id: string): string | null =>
-		container.querySelector(`a[href="#${id}"]`)?.getAttribute('data-scope') ?? null;
-
-	it('shows ∞ (whole) for §1/§2/§4 when no *_by_grain is published (honest pre-deploy)', () => {
-		const { container } = render(RouteReliabilityClusters, {
-			props: { data: populated, locale: 'en' },
-		});
-		// §0 + §3 always window
-		expect(scopeOf(container, 'rel-verdict')).toBe('windowed');
-		expect(scopeOf(container, 'rel-run-and-fit')).toBe('windowed');
-		// §1/§2/§4 honestly whole-history until the DB publishes their companions
-		expect(scopeOf(container, 'rel-when-to-ride')).toBe('whole');
-		expect(scopeOf(container, 'rel-the-wait')).toBe('whole');
-		expect(scopeOf(container, 'rel-worst-stops')).toBe('whole');
-	});
-
-	it('flips §1/§2/§4 to ↻ (windowed) when the active grain has a *_by_grain entry', () => {
-		const windowedData: RouteReliability = {
-			generated_utc: '2026-06-19T02:00:00Z' as IsoUtc,
-			id: '51',
-			// default grain is 'day' → the windowed entries must carry a 'day' key to flip.
-			periods_by_grain: [
-				{
-					grain: 'day',
-					by_shift: [{ grain: 'am_peak', otp_pct: 80, observation_count: 200 }],
-					by_daytype: [],
-					day_of_week: [],
-					by_shift_daytype: [],
-				},
-			],
-			headway_by_grain: [
-				{ grain: 'day', headway: [{ shift: 'am_peak', observed_min: 7, cov: 0.5 }] },
-			],
-			weak_stops_by_grain: [
-				{
-					grain: 'day',
-					stops: [{ id: 's1', severe_pct: 30, observation_count: 50, wilson_lo: 22 }],
-				},
-			],
-		};
-		const { container } = render(RouteReliabilityClusters, {
-			props: { data: windowedData, locale: 'en' },
-		});
-		expect(scopeOf(container, 'rel-when-to-ride')).toBe('windowed');
-		expect(scopeOf(container, 'rel-the-wait')).toBe('windowed');
-		expect(scopeOf(container, 'rel-worst-stops')).toBe('windowed');
-	});
-});
+// (The §1/§2/§4 ↻/∞ scope-badge tests were removed with the scope glyph itself: the rail
+// now renders the shared TocNav, a plain numbered jump-list with no per-row scope marker.)

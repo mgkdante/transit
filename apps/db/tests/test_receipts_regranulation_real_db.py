@@ -20,7 +20,7 @@ it never appears in the output or the availability index.
 from __future__ import annotations
 
 import os
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -36,16 +36,22 @@ pytestmark = pytest.mark.skipif(
 )
 
 PROVIDER = "stm_s13_receipts_test"
-BUILT = datetime(2026, 6, 8, 3, 0, tzinfo=UTC)
 STATIC_ENDPOINT_ID = 994001
 STATIC_RUN_ID = 994101
 DVID = 994201
 
 # Distinct local dates so each fixture is independent within the one build window.
-SILENT_DAY = date(2026, 6, 5)      # (i)  telemetry + silent/not-reported routes
-SCHEDULE_ONLY_DAY = date(2026, 6, 6)  # (ii) scheduled known, alerts-only CAD row
-EMPTY_DAY = date(2026, 6, 7)       # (iii) alerts-only, no schedule
-DARK_DAY = date(2026, 6, 4)        # fully-dark scheduled — NO CAD row, receipt absent
+# RELATIVE to today: build_receipts windows its driver on CURRENT_DATE (the
+# trailing ~30-day clause), so hardcoded dates rot out of the window — this suite
+# time-bombed on 2026-07-09, 34 days after its original June fixtures were
+# written. Anchoring a few days back keeps the whole set inside the window on any
+# run date (a ±1-day session-timezone skew vs CURRENT_DATE is harmless at -7).
+_ANCHOR = date.today() - timedelta(days=7)
+DARK_DAY = _ANCHOR                             # fully-dark scheduled — NO CAD row
+SILENT_DAY = _ANCHOR + timedelta(days=1)       # (i)  telemetry + silent/not-reported
+SCHEDULE_ONLY_DAY = _ANCHOR + timedelta(days=2)  # (ii) scheduled known, alerts-only
+EMPTY_DAY = _ANCHOR + timedelta(days=3)        # (iii) alerts-only, no schedule
+BUILT = datetime.combine(_ANCHOR + timedelta(days=4), time(3, 0), tzinfo=UTC)
 
 
 @pytest.fixture()
@@ -238,7 +244,7 @@ def test_real_db_receipt_under_byte_ceiling(conn, capsys) -> None:  # noqa: ANN0
     Reports the observed byte size."""
     from transit_ops.snapshots.contract import RECEIPT_BYTE_CEILING
 
-    out = build_receipts(conn, PROVIDER, generated_utc="2026-06-08T03:00:00Z")
+    out = build_receipts(conn, PROVIDER, generated_utc=BUILT.isoformat())
     sizes = {ds: len(r.model_dump_json().encode("utf-8")) for ds, r in out.items()}
     biggest = max(sizes, key=sizes.get)
     with capsys.disabled():

@@ -29,6 +29,7 @@
 
 	let {
 		title,
+		subtitle = undefined,
 		open = $bindable(true),
 		sectionKey = undefined,
 		index = null,
@@ -41,6 +42,12 @@
 		children,
 	}: {
 		title: string;
+		/**
+		 * Optional one-line subtitle shown UNDER the title in the header — visible
+		 * whether the card is open or closed. On /metrics this carries the metric's
+		 * `oneLiner`, so the story is legible pre-expand (§C5.8). Muted caption voice.
+		 */
+		subtitle?: string;
 		open?: boolean;
 		/**
 		 * Opt this section's open/closed state into surviving a locale navigation.
@@ -144,9 +151,15 @@
 		{@render icon()}
 	{/if}
 
-	<h2 class="section-title flex-1 font-heading text-lg font-bold text-[var(--foreground)]">
-		{title}
-	</h2>
+	<span class="section-title-group flex flex-1 flex-col gap-0.5">
+		<h2 class="section-title font-heading text-lg font-bold text-[var(--foreground)]">
+			{title}
+		</h2>
+		{#if subtitle}
+			<!-- One-line story, visible whether the card is open or closed (§C5.8). -->
+			<span class="section-subtitle">{subtitle}</span>
+		{/if}
+	</span>
 {/snippet}
 
 <!--
@@ -214,8 +227,8 @@
 		transition:
 			border-color var(--duration-normal) var(--ease-default),
 			box-shadow var(--duration-normal) var(--ease-default),
-			scale 120ms cubic-bezier(0.2, 0, 0, 1),
-			opacity 120ms cubic-bezier(0.2, 0, 0, 1);
+			scale var(--duration-instant) var(--ease-out),
+			opacity var(--duration-instant) var(--ease-out);
 	}
 	:global(
 		[data-slot='card'].section-card.section-card--toggleable:active:not(
@@ -252,6 +265,14 @@
 
 	:global(.section-title) {
 		transition: color var(--duration-normal) var(--ease-default);
+	}
+
+	/* One-line story subtitle — a muted caption under the title, visible whether the
+	   card is open or closed (§C5.8 /metrics oneLiner). Not a data mark, not --primary. */
+	.section-subtitle {
+		font-size: var(--text-caption);
+		line-height: 1.5;
+		color: var(--muted-foreground);
 	}
 
 	/* The open/close animation (grid-template-rows 0fr -> 1fr + opacity, reduced-

@@ -57,8 +57,14 @@ export interface AlertHistoryCopy extends SurfaceHeadCopy {
 	readonly severity: Record<SeverityCode, string>;
 	/** The client-side filter rail over the alert log. */
 	readonly filters: {
-		/** Group label for the whole filter control panel. */
+		/** Group label for the whole filter control panel (also the rail heading + mobile pill label). */
 		readonly railLabel: string;
+		/** aria-label for the mobile filter pill's open control. */
+		readonly pillOpen: string;
+		/** aria-label for the mobile filter sheet's dismiss control. */
+		readonly pillClose: string;
+		/** Collapsed-pill summary naming the current match count. */
+		readonly pillSummary: (matchCount: number) => string;
 		/** Entity-type axis: filter by what an alert affects (lines / stops). */
 		readonly entity: {
 			/** Radiogroup label. */
@@ -95,8 +101,9 @@ export interface AlertHistoryCopy extends SurfaceHeadCopy {
 		readonly window: DateRangePickerLabels;
 		/** Honest no-match note shown when the active filters narrow the log to zero. */
 		readonly noMatch: string;
-		/** "Clear filters" action that restores the full log. */
-		readonly clear: string;
+		/** FilterSummary count templates ("{count} alert" / "{count} alerts"),
+		    keyed by Locale; the shared widget picks the plural form per locale. */
+		readonly summary: Record<Locale, { readonly singular: string; readonly plural: string }>;
 	};
 	/** The alerts-in-window headline card (ExplainedMetricCard). */
 	readonly headline: {
@@ -163,6 +170,9 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		severity: SEVERITY_LABELS.fr,
 		filters: {
 			railLabel: 'Filtres',
+			pillOpen: 'Ouvrir les filtres',
+			pillClose: 'Fermer les filtres',
+			pillSummary: (matchCount) => `${matchCount.toLocaleString('fr-CA')} avis`,
 			entity: {
 				label: 'Touche',
 				all: 'Tout',
@@ -194,7 +204,10 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 				anyEnd: 'Au plus tard',
 			},
 			noMatch: 'Aucun avis ne correspond aux filtres sélectionnés.',
-			clear: 'Effacer les filtres',
+			summary: {
+				fr: { singular: '{count} avis', plural: '{count} avis' },
+				en: { singular: '{count} alert', plural: '{count} alerts' },
+			},
 		},
 		headline: {
 			label: 'Avis dans la fenêtre',
@@ -248,6 +261,9 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		severity: SEVERITY_LABELS.en,
 		filters: {
 			railLabel: 'Filters',
+			pillOpen: 'Open filters',
+			pillClose: 'Close filters',
+			pillSummary: (matchCount) => `${matchCount.toLocaleString('en-CA')} alerts`,
 			entity: {
 				label: 'Affects',
 				all: 'All',
@@ -279,7 +295,10 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 				anyEnd: 'Latest',
 			},
 			noMatch: 'No alerts match the selected filters.',
-			clear: 'Clear filters',
+			summary: {
+				fr: { singular: '{count} avis', plural: '{count} avis' },
+				en: { singular: '{count} alert', plural: '{count} alerts' },
+			},
 		},
 		headline: {
 			label: 'Alerts in window',

@@ -13,8 +13,10 @@
   DOCTRINE: --primary lives ONLY on the active grain chip (delegated to GrainPicker);
   the rail chrome stays quiet (ControlsRail). Bilingual labels + the disabled reason
   come from the caller. a11y: the radiogroup + roving tabindex + arrow-key nav +
-  disabled-skip are GrainPicker's (WCAG 2.2 AA). This rail adds only the disabled
-  reason (aria-describedby + title) so a screen reader announces WHY a grain is off.
+  disabled-skip are GrainPicker's (WCAG 2.2 AA). This rail adds the disabled reason
+  (aria-describedby + title) so a screen reader announces WHY a grain is off, AND a
+  positive per-grain hint on ENABLED grains (default "Daily/Weekly/Monthly granularity",
+  overridable via `grainHints`) so a hover/announce clarifies what the grain shows.
 
   SLOTS: `window` (a surface's window/range affordance — e.g. lines' from/to selects,
   network's 7/30/90) and `nav` (a section-TOC / jump-to) render inside the rail body;
@@ -70,6 +72,13 @@
 		minPoints?: number;
 		/** Bilingual key labels: key → label (caller supplies from i18n). */
 		labels: Partial<Record<K, string>>;
+		/**
+		 * Optional positive per-key explainer shown as an ENABLED segment's tooltip +
+		 * aria-description (the grain/sub-grain confusion fix — a hover on "Week" says
+		 * what it shows). Overrides the built-in default (day/week/month → "… granularity")
+		 * that this rail applies automatically to the standard Grain keys.
+		 */
+		grainHints?: Partial<Record<K, string>>;
 		/** Bilingual radiogroup label (e.g. "Granularity" / "Granularité"). */
 		grainLabel: string;
 		/** Bilingual rail overline (e.g. "View" / "Vue"); omit = unlabelled plain group. */
@@ -106,6 +115,7 @@
 		value = $bindable(),
 		minPoints = MIN_POINTS_PER_GRAIN,
 		labels,
+		grainHints,
 		grainLabel,
 		railLabel,
 		locale,
@@ -116,6 +126,22 @@
 		class: className,
 		...restProps
 	}: SurfaceControlsProps<K> = $props();
+
+	/**
+	 * The DRY built-in positive hint for the standard Grain keys — the roll-up
+	 * granularity in plain words, accurate on every surface (it names what the grain
+	 * DOES, not a surface-specific sub-grain rendering). A caller can override or extend
+	 * per key via `grainHints`. Non-Grain keys (a lines "range" mode, hotspots "shift")
+	 * get no default — pass `grainHints` for those.
+	 */
+	const DEFAULT_GRAIN_HINTS: Record<Locale, Partial<Record<Grain, string>>> = {
+		en: { day: 'Daily granularity', week: 'Weekly granularity', month: 'Monthly granularity' },
+		fr: {
+			day: 'Granularité quotidienne',
+			week: 'Granularité hebdomadaire',
+			month: 'Granularité mensuelle',
+		},
+	};
 
 	/** Instance-unique id prefix so a disabled reason's description id never collides
 	 *  across two SurfaceControls on one page (e.g. /stop's two rails). */
@@ -159,16 +185,42 @@
 		return out;
 	});
 
-	/** The GrainPicker segments — every offered key rendered; the unusable ones disabled,
-	 *  each carrying its honest-absence reason (aria-describedby + title). */
+	/** The positive per-key hint for each ENABLED key — the caller's `grainHints` override,
+	 *  else the built-in default for the standard Grain keys (day/week/month). Non-Grain
+	 *  keys with no override get no hint (undefined). */
+	const hints = $derived.by<Partial<Record<K, string>>>(() => {
+		const out: Partial<Record<K, string>> = {};
+		for (const k of offered) {
+			if (!usable.has(k)) continue;
+			const override = grainHints?.[k];
+			const fallback = isGrain(k) ? DEFAULT_GRAIN_HINTS[locale][k] : undefined;
+			const hint = override ?? fallback;
+			if (hint) out[k] = hint;
+		}
+		return out;
+	});
+
+	/** The GrainPicker segments — every offered key rendered. Unusable ones are disabled,
+	 *  each carrying its honest-absence reason; enabled ones carry their positive hint —
+	 *  both via aria-describedby + the pointer title. */
 	const segments = $derived<GrainSegment<K>[]>(
 		offered.map((k) => {
 			const enabled = usable.has(k);
+			if (!enabled) {
+				return {
+					key: k,
+					label: labels[k] ?? k,
+					available: false,
+					describedById: `${uid}-reason-${k}`,
+					title: reasons[k],
+				};
+			}
+			const hint = hints[k];
 			return {
 				key: k,
 				label: labels[k] ?? k,
-				available: enabled,
-				...(enabled ? {} : { describedById: `${uid}-reason-${k}`, title: reasons[k] }),
+				available: true,
+				...(hint ? { hint, describedById: `${uid}-hint-${k}` } : {}),
 			};
 		}),
 	);
@@ -205,6 +257,17 @@
 			{/if}
 		{/each}
 
+		<!-- Positive per-grain hints: one visually-hidden span per ENABLED grain that has
+		     a hint, referenced by its radio via aria-describedby + surfaced as the radio's
+		     title for pointer users (the grain/sub-grain clarity fix). -->
+		{#each offered as k (k)}
+			{#if hints[k]}
+				<span id={`${uid}-hint-${k}`} class="surface-controls__reason" data-slot="controls-hint"
+					>{hints[k]}</span
+				>
+			{/if}
+		{/each}
+
 		{#if windowSlot}
 			<div class="surface-controls__window" data-slot="controls-window">
 				{@render windowSlot()}
@@ -224,7 +287,7 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 0.3rem 1.25rem;
+		gap: 0.375rem 1.25rem;
 		width: 100%;
 		min-width: 0;
 	}
@@ -232,7 +295,7 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.45rem 0.75rem;
+		gap: 0.375rem 0.75rem;
 		min-width: 0;
 	}
 	.surface-controls__window {

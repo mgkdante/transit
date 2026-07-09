@@ -16,6 +16,7 @@
 	import { Chart } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
+	import NetworkTile from './NetworkTile.svelte';
 	import type { CancelTrendVM } from '../selectors/cancelTrend';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
@@ -42,7 +43,7 @@
 	const i = $derived(info('cancellation', copy.cancelSection));
 </script>
 
-<div class="network-tile">
+<NetworkTile>
 	<div class="network-trend">
 		<ExplainedMetricCard
 			label={copy.cancel.metric}
@@ -65,19 +66,9 @@
 		<!-- Single-series trend spec: only the cancellation rate is plotted. -->
 		<Chart spec={vm.spec} />
 	</div>
-</div>
+</NetworkTile>
 
 <style>
-	.network-tile {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		min-width: 0;
-		padding: 1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
-	}
 	.network-trend {
 		display: flex;
 		flex-direction: column;

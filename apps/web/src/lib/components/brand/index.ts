@@ -26,6 +26,12 @@ export type { SectionLabelProps } from './SectionLabel.svelte';
 export { default as SectionHeading } from './SectionHeading.svelte';
 export type { SectionHeadingProps } from './SectionHeading.svelte';
 
+export { default as Masthead } from './Masthead.svelte';
+export type { MastheadProps } from './Masthead.svelte';
+
+export { default as NumberedChip } from './NumberedChip.svelte';
+export type { NumberedChipProps } from './NumberedChip.svelte';
+
 export { default as StopLabel } from './StopLabel.svelte';
 export type { StopLabelProps } from './StopLabel.svelte';
 
@@ -38,8 +44,16 @@ export type { ChevronToggleProps } from './ChevronToggle.svelte';
 export { default as MetroStation } from './MetroStation.svelte';
 export type { MetroStationProps } from './MetroStation.svelte';
 
-export { default as TerminalChrome } from './TerminalChrome.svelte';
-export type { TerminalChromeProps, TerminalFooterItem } from './TerminalChrome.svelte';
+export { default as TerminalPanel } from './TerminalPanel.svelte';
+export type { TerminalPanelProps, TerminalFooterItem } from './TerminalPanel.svelte';
+
+export { default as CornerMeta } from './CornerMeta.svelte';
+export type { CornerMetaProps } from './CornerMeta.svelte';
+
+export { cornerMetaLabels } from './cornerMeta.copy';
+export type { CornerMetaLabels } from './cornerMeta.copy';
 
 export { default as StickyPanel } from './StickyPanel.svelte';
 export type { StickyPanelProps } from './StickyPanel.svelte';
+
+export { default as VerdictBanner } from './VerdictBanner.svelte';

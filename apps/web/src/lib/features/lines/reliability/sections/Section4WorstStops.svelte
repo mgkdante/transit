@@ -127,6 +127,7 @@
 
 <CollapsibleSection
 	dataSection="worst-stops"
+	number={5}
 	eyebrow={copy.sections.worstStops.label}
 	question={copy.sections.worstStops.question}
 >
@@ -180,7 +181,7 @@
 	.label-with-info {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.35rem;
+		gap: 0.375rem;
 		min-width: 0;
 	}
 	.label-with-info :global([data-slot='section-label']) {

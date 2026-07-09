@@ -1,7 +1,7 @@
 <!--
   AccountabilityReceipt — the /receipt surface ORCHESTRATOR (S13 re-seat).
 
-  A daily accountability "receipt" rendered in the brand TerminalChrome window frame
+  A daily accountability "receipt" rendered in the brand TerminalPanel window frame
   (WEB4 — the receipt metaphor STAYS): a SMART availability-aware single-date calendar
   picks the day, driving a per-date fetch of one day's receipt, composed as receipt
   line-groups —
@@ -42,16 +42,12 @@
 	import { shiftLabel } from '$lib/features/reliability/shiftGrains';
 	import { getReceiptsIndex, getReceipt, type Receipt } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import {
-		SurfaceHeader,
-		ResourceBoundary,
-		DateRangePicker,
-		FreshnessStamp,
-	} from '$lib/components/surface';
+	import { ResourceBoundary, DateRangePicker, FreshnessStamp } from '$lib/components/surface';
+	import { Masthead } from '$lib/components/brand';
 	import { Surface, ControlsRail } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
-	import TerminalChrome from '$lib/components/brand/TerminalChrome.svelte';
+	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import {
 		metricInfoFor,
 		type MetricKey,
@@ -204,6 +200,34 @@
 			fmtSharePct,
 		}),
 	);
+	// §C5.11 DAY-VERDICT SENTENCE — templated ONLY from numbers already on the receipt
+	// (on-time % · worst line + its on-time loss · affected lines · completeness), NEVER a
+	// fabricated baseline: a null on-time → the whole-verdict stand-down; a null worst
+	// line drops that clause; and when the S13 completeness cut stands down (ramp-in) the
+	// sentence SAYS so ("service completeness not yet available") instead of inventing one.
+	const dayVerdict = $derived.by<string | null>(() => {
+		const r = receipt.data;
+		if (r == null) return null;
+		if (r.otp_pct == null) return t.dayVerdict.none;
+		const clauses: string[] = [t.dayVerdict.otp(`${r.otp_pct}${t.units.pct}`)];
+		const wr = r.worst_route;
+		if (wr?.name != null && wr.otp_delta_pts != null) {
+			const pts = `${Math.abs(Math.round(wr.otp_delta_pts))}${t.units.pts}`;
+			clauses.push(t.dayVerdict.worst(wr.name, pts));
+		}
+		if (r.affected_routes != null)
+			clauses.push(t.dayVerdict.affected(fmtCount(r.affected_routes) ?? `${r.affected_routes}`));
+		// Completeness: the ONE service_completeness_pct if the S13 cut is live, else the
+		// honest stand-down (never a fabricated baseline during the GC2 ramp).
+		const comp = r.service_states?.service_completeness_pct ?? null;
+		clauses.push(
+			comp != null
+				? t.dayVerdict.completeness(fmtSharePct(comp) ?? `${comp}${t.units.pct}`)
+				: t.dayVerdict.completenessStandDown,
+		);
+		return `${clauses.join(' · ')}.`;
+	});
+
 	const notReported = $derived(
 		selectNotReportedLines(receipt.data?.service_states, {
 			routeName: (id, name) => name ?? routeNameFallback(id, locale),
@@ -215,12 +239,12 @@
 	);
 </script>
 
-<Surface width="bleed" class="receipt">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
-		<FreshnessStamp variant="updated" {generatedUtc} {locale} />
-	</SurfaceHeader>
-
-	<Separator variant="hazard" />
+<Surface class="receipt">
+	<Masthead kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
+		{#snippet meta()}
+			<FreshnessStamp variant="updated" {generatedUtc} {locale} />
+		{/snippet}
+	</Masthead>
 
 	<!-- Discovery index → smart date picker. We DON'T hand the boundary an `isEmpty`:
 	     an empty index has a SPECIFIC honest message (`emptyIndex`), so the boundary
@@ -232,8 +256,10 @@
 			<!-- The smart single-date calendar lives in a bare ControlsRail (quiet infra
 			     panel) ABOVE the frame — the receipt is NOT a multi-grain surface, so a
 			     bare rail hosts ONLY the availability-bound picker; --primary stays on the
-			     interactive control. The full span shows disabled gap-days with honest
-			     reasons (WEB3). -->
+			     interactive control. It's a native calendar bounded (min/max) to the
+			     published span (earliest→latest); an interior gap-day is still pickable
+			     but resolves HONESTLY through the receipt's own absent-day path — never a
+			     fabricated reading (WEB3). -->
 			<ControlsRail label={t.controlsLabel} class="receipt-controls">
 				<DateRangePicker
 					mode="single"
@@ -270,16 +296,28 @@
 				<p class="receipt-note" data-slot="receipt-empty">{t.emptyReceipt}</p>
 			{:else}
 				{@const r = receipt.data}
-				<TerminalChrome
+				<TerminalPanel
 					title={t.terminalTitle}
 					tag={t.terminalTag}
 					status={formatDateKey(r.date, locale)}
-					footer={[{ label: t.issuedLabel, value: formatDateKey(r.date, locale) }]}
+					footerItems={[{ label: t.issuedLabel, value: formatDateKey(r.date, locale) }]}
 				>
 					<!-- The receipt's readout blocks tile into a fluid board (multi-column
 					     desktop, one column mobile). The worst tile stands DOWN entirely when
 					     the receipt carries no worst line/stop — the grid reflows past it. -->
 					<div class="receipt-frame" data-slot="receipt-frame">
+						<!-- §C5.11: the day-verdict sentence on the headline — the day in one line,
+						     templated from the receipt's own numbers (honest stand-down, no fabricated
+						     baseline). -->
+						{#if dayVerdict}
+							<p
+								class="receipt-day-verdict"
+								data-slot="receipt-day-verdict"
+								aria-label={t.dayVerdict.label}
+							>
+								{dayVerdict}
+							</p>
+						{/if}
 						<div class="receipt-layout" class:no-worst={!worst.hasWorst} data-slot="receipt-layout">
 							<SectionHeadline
 								kpis={headlineKpis}
@@ -294,7 +332,7 @@
 							{/if}
 						</div>
 					</div>
-				</TerminalChrome>
+				</TerminalPanel>
 
 				<!-- S13 re-granulated cuts — WEB4 documented hoist: these render as receipt
 				     line-groups BELOW the frame because a ranked ladder / share-bar list /
@@ -347,6 +385,7 @@
 	}
 	:global(.receipt [data-slot='terminal-chrome']) {
 		max-width: var(--container-content);
+		margin-inline: auto;
 	}
 
 	/* The receipt is a COMPOSED document. A @container drives the composition off the
@@ -354,6 +393,16 @@
 	.receipt-frame {
 		container-type: inline-size;
 		container-name: receipt;
+	}
+	/* §C5.11 day-verdict sentence — the day in one line, at foreground weight so it reads
+	   as the headline before the tile figures. Capped for readability. */
+	.receipt-day-verdict {
+		margin: 0 0 1rem;
+		max-width: 64ch;
+		font-family: var(--font-body);
+		font-size: var(--text-subheading);
+		line-height: 1.45;
+		color: var(--foreground);
 	}
 	.receipt-layout {
 		display: grid;
@@ -383,6 +432,10 @@
 			grid-template-areas:
 				'headline headline'
 				'affected worst';
+			/* affected (a one-row count summary) and worst (a two-entry detail list) are
+			   inherently different heights. Top-align them at their NATURAL height rather than
+			   stretch the short one — a stretched summary card just leaves dead space under its
+			   counts (un-geometric), which reads worse than an honest ragged baseline. */
 			align-items: start;
 		}
 		.receipt-layout.no-worst {
@@ -399,6 +452,7 @@
 		gap: 1.5rem;
 		margin-top: 1.25rem;
 		max-width: var(--container-content);
+		margin-inline: auto;
 	}
 	.receipt-note {
 		color: var(--muted-foreground);

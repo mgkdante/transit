@@ -20,7 +20,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import type { WorstN } from '$lib/filters';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '$lib/components/ui/tabs';
 	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
@@ -118,7 +118,9 @@
 <section class="hotspot-section" data-slot="hotspot-section">
 	{#if tabs.length > 0}
 		<Tabs bind:value={active}>
-			<TabsList variant="line" class="w-full justify-start">
+			<!-- overflow-x:auto (P5.3d §C4 P10): the Line/Stop tab strip scrolls
+			     rather than clips at narrow widths. -->
+			<TabsList variant="line" class="w-full flex-nowrap justify-start overflow-x-auto">
 				{#each tabs as tab (tab.key)}
 					<!-- Signage-active tab look (the yesid StationTabs pattern): bits-ui owns
 					     behavior / ARIA; the child <button> owns the metro-signage active chip. -->
@@ -136,17 +138,18 @@
 				<TabsContent value={tab.key} class="hotspot-tab-pane">
 					{#if tab.ladder.shown > 0}
 						<div class="hotspot-section-head">
-							<span class="label-with-info">
-								<SectionLabel text={headingTextFor(tab.ladder)} variant="metric" />
-								<MetricInfo
-									class="hotspot-info"
-									tip={info.tip}
-									href={info.href}
-									label={info.label}
-									linkLabel={info.linkLabel}
-									side="bottom"
-								/>
-							</span>
+							<SectionHeading level={2} overline={headingTextFor(tab.ladder)}>
+								{#snippet explainer()}
+									<MetricInfo
+										class="hotspot-info"
+										tip={info.tip}
+										href={info.href}
+										label={info.label}
+										linkLabel={info.linkLabel}
+										side="bottom"
+									/>
+								{/snippet}
+							</SectionHeading>
 							{#if showWorstNFor(tab.ladder)}
 								<GrainPicker {segments} bind:value={worstN} label={t.worstN.label} />
 							{/if}
@@ -158,7 +161,7 @@
 					{:else}
 						<!-- This kind served only sub-MIN_N cells (tray, below) — no ranked ladder. -->
 						<div class="hotspot-section-head">
-							<SectionLabel text={heading} variant="metric" />
+							<SectionHeading level={2} overline={heading} />
 						</div>
 						<div data-slot="hotspot-ladder-empty">
 							<AbsentValue variant="block" reason="no-observations" {locale} />
@@ -169,9 +172,8 @@
 					     for transparency, never scored. -->
 					{#if tab.tray.length > 0}
 						<div class="hotspot-tray" data-slot="hotspot-tray">
-							<span class="hotspot-tray-head">
-								<SectionLabel text={t.tray.heading} variant="metric" />
-							</span>
+							<SectionHeading level={3} overline={t.tray.heading} />
+
 							<p class="caption" data-slot="hotspot-tray-reason">{t.tray.reason}</p>
 							<ul class="hotspot-tray-list" aria-label={t.tray.listLabel}>
 								{#each tab.tray as row (row.key)}
@@ -202,7 +204,7 @@
 	{:else}
 		<!-- Whole-section honest empty: this grain served no ranked entry of EITHER kind. -->
 		<div class="hotspot-section-head">
-			<SectionLabel text={heading} variant="metric" />
+			<SectionHeading level={2} overline={heading} />
 		</div>
 		<div data-slot="hotspot-ladder-empty">
 			<AbsentValue variant="block" reason="no-observations" {locale} />
@@ -231,18 +233,6 @@
 		justify-content: space-between;
 		gap: 0.5rem 1rem;
 	}
-	.label-with-info {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.35rem;
-		min-width: 0;
-	}
-	.label-with-info :global([data-slot='section-label']) {
-		min-width: 0;
-	}
-	.label-with-info :global(.hotspot-info) {
-		flex: none;
-	}
 	.caption {
 		margin: 0;
 		max-width: 52ch;
@@ -254,6 +244,8 @@
 	/* The metro-signage active tab (yesid StationTabs parity — same as EntityDetail). */
 	.station-tab {
 		min-width: max-content;
+		/* Tap-target floor (P5.3d §C4 P10): 41px → 44px. */
+		min-height: var(--size-tap-min);
 		display: inline-flex;
 		align-items: center;
 		gap: 0.5rem;
@@ -292,15 +284,10 @@
 	.hotspot-tray {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		margin-top: 0.75rem;
 		padding-top: 0.75rem;
 		border-top: 1px dashed var(--border);
-	}
-	.hotspot-tray-head {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.35rem;
 	}
 	.hotspot-tray-list {
 		list-style: none;
@@ -317,7 +304,7 @@
 		display: inline-flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		border-radius: var(--radius-sm);
 		text-decoration: none;
 		color: inherit;

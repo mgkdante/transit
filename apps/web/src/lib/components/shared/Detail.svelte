@@ -74,10 +74,10 @@
 	.detail__toggle {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.45rem;
+		gap: 0.375rem;
 		/* WCAG 2.2 (2.5.8) tap target, via padding rather than a heavy box. */
 		min-height: 44px;
-		padding: 0.4rem 0.15rem;
+		padding: 0.375rem 0.125rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		font-weight: 500;
@@ -98,7 +98,7 @@
 	.detail__toggle:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 3px;
-		border-radius: var(--radius-sm, 0.375rem);
+		border-radius: var(--radius-sm);
 		/* Keyboard users get the same orange + underline affordance hover gives. */
 		color: var(--primary-hover);
 		text-decoration: underline;

@@ -40,21 +40,24 @@
 
 	.map-freshness[data-placement='floating'] {
 		position: absolute;
-		z-index: 10;
-		top: 1rem;
+		z-index: var(--z-map-overlay);
+		/* Clears the floating chrome via the single --chrome-offset knob. */
+		top: var(--chrome-offset);
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
 		display: inline-flex;
 		align-items: center;
-		padding: 0.4rem 0.75rem 0.4rem 0.7rem;
+		padding: 0.375rem 0.75rem 0.375rem 0.75rem;
 		background: color-mix(in srgb, var(--card) 86%, transparent);
 		border: 1px solid color-mix(in srgb, var(--border) 80%, var(--primary) 20%);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(10px) saturate(1.1);
+		/* Map GL escape hatch (§C4 P4): blur(12px), floats over the live canvas. */
+		backdrop-filter: blur(12px) saturate(1.1);
+		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		transition:
-			right 180ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-			border-color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1)),
-			background-color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1));
+			right var(--duration-normal) var(--ease-out),
+			border-color var(--duration-fast) var(--ease-default),
+			background-color var(--duration-fast) var(--ease-default);
 	}
 
 	/* Stale feed: warm the chrome with the caution hue so the at-rest border
@@ -73,7 +76,7 @@
 	}
 
 	.map-freshness[data-placement='floating'] :global(.freshness-stamp) {
-		gap: 0.45rem;
+		gap: 0.375rem;
 		font-size: var(--text-caption);
 		line-height: 1;
 	}
@@ -84,7 +87,7 @@
 		}
 	}
 
-	@media (max-width: 760px) {
+	@media (max-width: 768px) {
 		.map-freshness[data-placement='floating'] {
 			display: none;
 		}
@@ -95,7 +98,7 @@
 			flex: none;
 			gap: 0.25rem;
 			margin-left: auto;
-			padding: 0.24rem 0.5rem;
+			padding: 0.25rem 0.5rem;
 			font-size: var(--text-micro);
 			line-height: 1;
 			white-space: nowrap;
@@ -103,7 +106,9 @@
 			border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 			border-radius: var(--radius-pill);
 			box-shadow: var(--shadow-card);
-			backdrop-filter: blur(8px) saturate(1.1);
+			/* Map GL escape hatch (§C4 P4): blur(12px), floats over the live canvas. */
+			backdrop-filter: blur(12px) saturate(1.1);
+			-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		}
 
 		.map-freshness[data-placement='head'][data-stale='true'] {
@@ -112,7 +117,7 @@
 		}
 
 		.map-freshness[data-placement='head'] :global(.freshness-stamp) {
-			gap: 0.3rem;
+			gap: 0.375rem;
 			font-size: var(--text-micro);
 			line-height: 1;
 		}

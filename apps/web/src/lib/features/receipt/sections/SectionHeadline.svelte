@@ -4,12 +4,12 @@
   Pure presenter of the headlineKpis VMs: the day's on-time %, average delay, severe
   share, rider-impact score, each a MetricDisplay + its (i) metric-explainer. A null
   value reads the styled honest-absence chip ('no-observations'), never a fabricated 0.
-  A receipt line-group inside the TerminalChrome (WEB4 metaphor preserved).
+  A receipt line-group inside the TerminalPanel (WEB4 metaphor preserved).
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { HeadlineKpiVM } from '../selectors/headlineKpis';
@@ -30,16 +30,17 @@
 </script>
 
 <section class="receipt-panel receipt-primary" data-slot="receipt-headline">
-	<span class="receipt-section">
-		<SectionLabel text={heading} variant="station" />
-		<MetricInfo
-			tip={headingInfo.tip}
-			href={headingInfo.href}
-			label={headingInfo.label}
-			linkLabel={headingInfo.linkLabel}
-			side="bottom"
-		/>
-	</span>
+	<SectionHeading level={2} overline={heading}>
+		{#snippet explainer()}
+			<MetricInfo
+				tip={headingInfo.tip}
+				href={headingInfo.href}
+				label={headingInfo.label}
+				linkLabel={headingInfo.linkLabel}
+				side="bottom"
+			/>
+		{/snippet}
+	</SectionHeading>
 	<div class="receipt-metrics">
 		{#each kpis as kpi (kpi.key)}
 			{@const i = info(kpi.key, kpi.label)}
@@ -69,7 +70,7 @@
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.85rem;
+		gap: 0.875rem;
 		padding: 1.1rem 1.2rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
@@ -92,15 +93,10 @@
 	.receipt-kpi {
 		display: flex;
 		align-items: flex-start;
-		gap: 0.4rem;
+		gap: 0.375rem;
 		min-width: 0;
 	}
 	.receipt-kpi :global([data-slot='metric-display']) {
 		min-width: 0;
-	}
-	.receipt-section {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
 	}
 </style>

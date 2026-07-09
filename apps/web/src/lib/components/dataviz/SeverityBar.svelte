@@ -192,7 +192,7 @@
 	}
 	.dv-severity-fill {
 		min-width: 2px;
-		transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
+		transition: width var(--duration-normal) var(--ease-out);
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.dv-severity-fill {

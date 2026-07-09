@@ -21,10 +21,10 @@ describe('MapFreshness', () => {
 			/\.map-freshness\[data-placement='floating'\]\s*\{[\s\S]*position:\s*absolute;[\s\S]*right:\s*calc\(var\(--map-detail-offset, 0rem\) \+ 1rem\)/,
 		);
 		expect(s).toMatch(
-			/@media \(max-width: 760px\)[\s\S]*\.map-freshness\[data-placement='floating'\]\s*\{[\s\S]*display:\s*none/,
+			/@media \(max-width: 768px\)[\s\S]*\.map-freshness\[data-placement='floating'\]\s*\{[\s\S]*display:\s*none/,
 		);
 		expect(s).toMatch(
-			/@media \(max-width: 760px\)[\s\S]*\.map-freshness\[data-placement='head'\]\s*\{[\s\S]*display:\s*inline-flex/,
+			/@media \(max-width: 768px\)[\s\S]*\.map-freshness\[data-placement='head'\]\s*\{[\s\S]*display:\s*inline-flex/,
 		);
 	});
 });

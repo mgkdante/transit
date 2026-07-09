@@ -3,23 +3,29 @@
 
   ONE primitive every historic surface reuses to range over its REAL dated days
   (S8: the stop daily series; S13: the receipts index; lines: the day-grain
-  periods). It is a PURE view + normalize: a start/end pair of native <select>s
-  over the surface's `availableDates`, composing a NORMALIZED {@link DateWindow}
-  (via $lib/filters normalizeWindow) on every change. Because the options are the
-  surface's real dates ONLY, an out-of-coverage pick is impossible by
-  construction; any pick order is valid (normalizeWindow swaps an inverted pair);
-  a half pick (one bound cleared) yields NO window (`undefined`) — a fabricated /
-  inverted span never leaves the primitive (honest-absence).
+  periods). It is a PURE view + normalize: a start/end pair of native date PICKERS
+  (<input type="date">) bounded (min/max) to the surface's `availableDates`, composing a NORMALIZED {@link DateWindow}
+  (via $lib/filters normalizeWindow) on every change. GUARANTEE: min/max scope the
+  native calendar to the surface's real span, but a native picker can't disable an
+  INTERIOR gap-day or block a typed out-of-range value — either resolves HONESTLY
+  through the surface's own absent-day / normalize path, never fabricated data; any
+  pick order is valid (normalizeWindow swaps an inverted pair); a half pick (one
+  bound cleared) yields NO window (`undefined`) — a fabricated / inverted span
+  never leaves the primitive (honest-absence).
 
   S13-REUSABLE: the primitive knows only {DateWindow, availableDates, locale,
   labels} — zero stop/receipt/lines-specific fields. It seats into
   SurfaceControls' `window` Snippet slot with no primitive changes.
 
-  S13 SINGLE MODE: `mode='single'` composes the SAME chrome into ONE availability-
-  bound <select> over `dateOptions` (the full earliest→latest calendar; published
-  days enabled, gap-days DISABLED + reasoned) binding a single `date` instead of a
-  window. The range path is byte-identical (default mode='range'), so the receipt
-  reuses this primitive rather than forking a second component.
+  S13 SINGLE MODE: `mode='single'` composes the SAME chrome into ONE native date
+  PICKER bounded (min/max) to the `dateOptions` span, binding a single `date`
+  instead of a window. Degradation from the old <select>: a native calendar can
+  only BOUND via min/max (it can't DISABLE an interior gap-day), so a gap-day is
+  pickable but resolves HONESTLY through the receipt's own absent-day path — no
+  fabricated reading. `dateOptions` still gates hasDates (its length) and supplies
+  the span's earliest/latest day; the producer's per-day disabled/reason fields
+  aren't part of this primitive's contract (a native input can't render them). The
+  range path is byte-identical, so the receipt reuses this primitive.
 
   HONEST ABSENCE: when `availableDates` is empty there is nothing to range over —
   the primitive renders an AbsentValue (via describeAbsence) with the caller's
@@ -27,8 +33,9 @@
 
   BILINGUAL: the primitive OWNS zero copy — every string is a prop (`labels`);
   the caller supplies them from its i18n bundle. a11y AA: a wrapping role="group"
-  + aria-label, an aria-label per select, and a 44px min-height touch target on
-  each select + the clear button. Native <select> gives free keyboard/mobile.
+  + aria-label, an aria-label per input, and a 44px min-height touch target on
+  each input + the clear button. Native <input type="date"> gives the OS calendar
+  + free keyboard/mobile.
 
   DOCTRINE: tokens-only styling (lifted from RRC's proven .reliability-date
   chrome — --card / --border / focus-visible --ring); NO tv() (not a ui/
@@ -60,18 +67,14 @@
 	}
 
 	/**
-	 * One option in the SINGLE-date calendar (S13, mode='single'). A day carries an
-	 * honest DISABLED state + reason when the calendar span (earliest→latest) has a
-	 * gap the receipt index never published — so the picker HONESTLY shows which days
-	 * carry data rather than hiding the gap. `label` is the caller's localized short
-	 * date; `disabledLabel` is the appended honest reason (e.g. "no receipt").
+	 * One day in the SINGLE-date calendar's availability span (S13, mode='single').
+	 * The primitive reads only `date` — a native <input type="date"> bounds itself
+	 * via min/max to the span's earliest/latest day; it can't disable an interior
+	 * day or show a per-day reason, so those live only in the producer's own VM
+	 * (presentAvailability) for its callers/tests, not in this primitive's contract.
 	 */
 	export interface SingleDateOption {
 		readonly date: string;
-		readonly label: string;
-		readonly disabled: boolean;
-		/** Localized reason appended to a disabled option (caller-supplied). */
-		readonly disabledLabel?: string;
 	}
 
 	/**
@@ -126,6 +129,12 @@
 		 * primitive matches its existing pick-a-start-and-end UX with no clear button.
 		 */
 		clearable?: boolean;
+		/**
+		 * Stack the fields VERTICALLY (one per row) instead of the default inline row.
+		 * For a narrow rail (SurfaceRail) where two side-by-side date selects would crowd —
+		 * the "no two filters on one row" layout. Default false (the inline row).
+		 */
+		stack?: boolean;
 		class?: string;
 	}
 </script>
@@ -144,6 +153,7 @@
 		labels,
 		emptyReason = 'no-observations',
 		clearable = true,
+		stack = false,
 		class: className,
 	}: DateRangePickerProps = $props();
 
@@ -182,6 +192,31 @@
 	/** Single-mode label (falls back to the group label so the a11y name is never empty). */
 	const singleLabel = $derived(labels.single ?? labels.group);
 
+	// Coverage BOUNDS for the native calendar pickers — the earliest/latest day the surface
+	// actually carries. `availableDates` (range) + `dateOptions` (single) are ascending, so
+	// [0]/[len-1] are first/last. A native <input type=date> can only BOUND via min/max (it
+	// can't disable interior gap-days like the old <select> could) — an out-of-coverage or
+	// interior-gap pick resolves HONESTLY through the surface's own clamp (resolveWindow /
+	// the receipt's absent-day path), same philosophy as the range clamp. min/max keep the
+	// calendar itself scoped to the real span.
+	const minDate = $derived(availableDates.length ? availableDates[0] : undefined);
+	const maxDate = $derived(
+		availableDates.length ? availableDates[availableDates.length - 1] : undefined,
+	);
+	const singleMin = $derived(dateOptions.length ? dateOptions[0].date : undefined);
+	const singleMax = $derived(
+		dateOptions.length ? dateOptions[dateOptions.length - 1].date : undefined,
+	);
+
+	// RANGE CLAMP: once one bound is picked, the OTHER input's own min/max narrows to
+	// it — the To field can't go earlier than the picked From day, and the From field
+	// can't go later than the picked To day. This keeps the calendar itself honest
+	// about the resulting window (normalizeWindow would swap an inverted pair anyway,
+	// but the widget shouldn't invite picking one). Falls back to the surface's own
+	// coverage bound when the other side isn't picked yet.
+	const toMin = $derived(start || minDate);
+	const fromMax = $derived(end || maxDate);
+
 	/**
 	 * Compose the two bounds into a normalized window (or clear it) and assign
 	 * `value`. normalizeWindow swaps an inverted pair, so any pick order is valid; a
@@ -203,67 +238,62 @@
 	<!-- Nothing to range over — honest absence, never a dead empty control. -->
 	<AbsentValue variant="block" reason={emptyReason} {locale} />
 {:else if mode === 'single'}
-	<!-- SINGLE-date calendar (S13): ONE availability-bound select over the full
-	     earliest→latest span. Published days are enabled; a gap-day the receipt index
-	     never published is a DISABLED option carrying its honest reason, so the picker
-	     truthfully shows which days have data (never a silently-missing day). -->
+	<!-- SINGLE-date calendar (S13): a native date PICKER bounded to the published
+	     earliest→latest span (min/max). Degradation note: the old <select> could DISABLE an
+	     interior gap-day the receipt index never published; a native calendar can only bound
+	     via min/max, so an interior gap-day is pickable and resolves HONESTLY through the
+	     receipt's own absent-day path (no fabricated reading). `dateOptions` (with its
+	     disabled/reason fields) is still the coverage source that gates hasDates. -->
 	<div
-		class={['date-range', className]}
+		class={['date-range', stack && 'date-range--stack', className]}
 		data-slot="date-range"
 		role="group"
 		aria-label={labels.group}
 	>
 		<label class="date-range__field">
 			<span class="date-range__label">{singleLabel}</span>
-			<select
-				class="date-range__select"
+			<input
+				type="date"
+				class="date-range__input"
 				value={date ?? ''}
+				min={singleMin}
+				max={singleMax}
 				onchange={(e) => (date = e.currentTarget.value || undefined)}
 				aria-label={singleLabel}
 				data-slot="single-date"
-			>
-				{#each dateOptions as opt (opt.date)}
-					<option value={opt.date} disabled={opt.disabled}>
-						{opt.disabled && opt.disabledLabel ? `${opt.label} · ${opt.disabledLabel}` : opt.label}
-					</option>
-				{/each}
-			</select>
+			/>
 		</label>
 	</div>
 {:else}
 	<div
-		class={['date-range', className]}
+		class={['date-range', stack && 'date-range--stack', className]}
 		data-slot="date-range"
 		role="group"
 		aria-label={labels.group}
 	>
 		<label class="date-range__field">
 			<span class="date-range__label">{labels.start}</span>
-			<select
-				class="date-range__select"
+			<input
+				type="date"
+				class="date-range__input"
 				value={start}
+				min={minDate}
+				max={fromMax}
 				onchange={(e) => emit(e.currentTarget.value, end)}
 				aria-label={`${labels.group} · ${labels.start}`}
-			>
-				<option value="">{labels.anyStart}</option>
-				{#each availableDates as d (d)}
-					<option value={d}>{d}</option>
-				{/each}
-			</select>
+			/>
 		</label>
 		<label class="date-range__field">
 			<span class="date-range__label">{labels.end}</span>
-			<select
-				class="date-range__select"
+			<input
+				type="date"
+				class="date-range__input"
 				value={end}
+				min={toMin}
+				max={maxDate}
 				onchange={(e) => emit(start, e.currentTarget.value)}
 				aria-label={`${labels.group} · ${labels.end}`}
-			>
-				<option value="">{labels.anyEnd}</option>
-				{#each availableDates as d (d)}
-					<option value={d}>{d}</option>
-				{/each}
-			</select>
+			/>
 		</label>
 		<!-- Clear the window (back to the surface's full-window default). Shown only
 		     when a span is actually set, so the affordance never invites a no-op. Opt
@@ -282,6 +312,21 @@
 		gap: 0.75rem 1rem;
 		min-width: 0;
 	}
+	/* Stacked variant (SurfaceRail): each field on its own row — no two filters share a row.
+	   The field stays label + select on its line; the select fills the rail width. */
+	.date-range--stack {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.625rem;
+	}
+	.date-range--stack .date-range__field {
+		justify-content: space-between;
+	}
+	.date-range--stack .date-range__input {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
 	.date-range__field {
 		display: inline-flex;
 		align-items: center;
@@ -295,7 +340,7 @@
 	/* Chrome lifted from RRC's proven .reliability-date__select — tokens only, AA in
 	   both themes; native appearance keeps the free keyboard/mobile picker. 44px min
 	   height is the WCAG 2.2 AA touch-target floor. */
-	.date-range__select {
+	.date-range__input {
 		appearance: auto;
 		min-height: 44px;
 		font-family: var(--font-mono);
@@ -303,10 +348,10 @@
 		color: var(--foreground);
 		background-color: var(--card);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-md, 0.5rem);
-		padding: 0.35rem 0.6rem;
+		border-radius: var(--radius-md);
+		padding: 0.375rem 0.5rem;
 	}
-	.date-range__select:focus-visible {
+	.date-range__input:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
@@ -321,12 +366,12 @@
 		color: var(--muted-foreground);
 		background-color: transparent;
 		border: 1px solid var(--border);
-		border-radius: var(--radius-pill, 999px);
-		padding: 0.35rem 0.75rem;
+		border-radius: var(--radius-pill);
+		padding: 0.375rem 0.75rem;
 		cursor: pointer;
 		transition:
-			color 0.15s ease,
-			border-color 0.15s ease;
+			color var(--duration-fast) var(--ease-default),
+			border-color var(--duration-fast) var(--ease-default);
 	}
 	.date-range__clear:hover {
 		color: var(--foreground);

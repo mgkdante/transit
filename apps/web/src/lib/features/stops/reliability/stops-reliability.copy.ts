@@ -9,6 +9,7 @@
 // shared primitives / lines vocabulary and are NOT duplicated here.
 
 import type { Locale } from '$lib/i18n';
+import type { VerdictCopy } from '$lib/v1/verdict';
 
 export interface StopReliabilityCopy {
 	readonly byRoute: string;
@@ -23,6 +24,19 @@ export interface StopReliabilityCopy {
 	};
 	/** Controls-rail label collecting the grain picker + window caption ("View"). */
 	readonly controlsLabel: string;
+	/**
+	 * P5.4 GLASS LEFT RAIL wayfinding: the section ToC heading + the mobile
+	 * pill/sheet open+close aria. The rail merges the grain picker + this jump
+	 * list into ONE menu (desktop panel / mobile sheet).
+	 */
+	readonly nav: {
+		/** Section ToC heading ("Jump to"). */
+		readonly toc: string;
+		/** aria-label for the mobile rail pill's open control. */
+		readonly pillOpen: string;
+		/** aria-label for the mobile rail sheet's dismiss control. */
+		readonly pillClose: string;
+	};
 	/** Grain (roll-up) picker affordances. */
 	readonly grain: {
 		/** Accessible group label over the grain segments. */
@@ -34,6 +48,13 @@ export interface StopReliabilityCopy {
 		/** Caption naming the resolved roll-up window. */
 		readonly window: (grain: string) => string;
 	};
+	/**
+	 * §C5.6 one-line reliability verdict at the top of the Reliability pane — the SHARED
+	 * VerdictBanner + selectVerdict, at stop scope. Stop OTP is a punctuality PROXY (no
+	 * scheduled-OTP concept at a stop), so the voice reads "on time" honestly off the
+	 * proxy; the Wilson hedge rides the period's own observation_count (never fabricated).
+	 */
+	readonly verdict: VerdictCopy;
 	/** Day-grain percentile clarity (typical vs worst-case delay). */
 	readonly percentiles: {
 		readonly heading: string;
@@ -156,6 +177,11 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 			severe: 'Part des retards graves',
 		},
 		controlsLabel: 'Vue',
+		nav: {
+			toc: 'Aller à une section',
+			pillOpen: 'Ouvrir la vue et les sections',
+			pillClose: 'Fermer la vue et les sections',
+		},
 		grain: {
 			label: 'Période de regroupement',
 			day: 'Jour',
@@ -167,6 +193,26 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 					: grain === 'month'
 						? 'Regroupé par mois.'
 						: 'Regroupé par jour.',
+		},
+		verdict: {
+			windowPhrase: {
+				day: 'aujourd’hui',
+				week: 'cette semaine',
+				month: 'ce mois-ci',
+				range: 'sur la période',
+			},
+			reliable: ({ window, onTen, lateTen, hedge }) =>
+				`Arrêt fiable ${window}, environ ${onTen} passages sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
+			patchy: ({ window, onTen, lateTen, hedge }) =>
+				`Arrêt inégal ${window}, environ ${onTen} passages sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
+			unreliable: ({ window, onTen, lateTen, hedge }) =>
+				`Arrêt peu fiable ${window}, seulement ${onTen} passages sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
+			tentative: ({ window, otp, n, lo, hi }) =>
+				`Environ ${otp} % des passages à l’heure ${window} (sûr à 95 % entre ${lo} et ${hi} %, n=${n}).`,
+			tooFew: (window, n) => `Mesure en cours ${window}, seulement ${n} passages suivis.`,
+			absent: 'Mesure de l’arrêt en cours. Pas encore de lecture de ponctualité.',
+			hedgeSimple: (otp) => ` (${otp} %)`,
+			hedgeCI: (otp, lo, hi) => ` (${otp} %, sûr à 95 % entre ${lo} et ${hi} %)`,
 		},
 		percentiles: {
 			heading: 'Retard journalier',
@@ -254,6 +300,11 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 			severe: 'Severe-delay share',
 		},
 		controlsLabel: 'View',
+		nav: {
+			toc: 'Jump to a section',
+			pillOpen: 'Open view and sections',
+			pillClose: 'Close view and sections',
+		},
 		grain: {
 			label: 'Roll-up period',
 			day: 'Day',
@@ -265,6 +316,26 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 					: grain === 'month'
 						? 'Rolled up by month.'
 						: 'Rolled up by day.',
+		},
+		verdict: {
+			windowPhrase: {
+				day: 'today',
+				week: 'this week',
+				month: 'this month',
+				range: 'over the range',
+			},
+			reliable: ({ window, onTen, lateTen, hedge }) =>
+				`This stop ran reliably ${window}, about ${onTen} in 10 arrivals on time${hedge}; ${lateTen} in 10 ran late.`,
+			patchy: ({ window, onTen, lateTen, hedge }) =>
+				`This stop ran unevenly ${window}, about ${onTen} in 10 arrivals on time${hedge}; ${lateTen} in 10 ran late.`,
+			unreliable: ({ window, onTen, lateTen, hedge }) =>
+				`This stop ran poorly ${window}, only ${onTen} in 10 arrivals on time${hedge}; ${lateTen} in 10 ran late.`,
+			tentative: ({ window, otp, n, lo, hi }) =>
+				`About ${otp}% of arrivals on time ${window} (95% sure between ${lo} and ${hi}%, n=${n}).`,
+			tooFew: (window, n) => `Still measuring ${window}, only ${n} arrivals tracked.`,
+			absent: 'Still measuring this stop. No on-time reading yet.',
+			hedgeSimple: (otp) => ` (${otp}%)`,
+			hedgeCI: (otp, lo, hi) => ` (${otp}%, 95% sure between ${lo} and ${hi}%)`,
 		},
 		percentiles: {
 			heading: 'Daily delay',

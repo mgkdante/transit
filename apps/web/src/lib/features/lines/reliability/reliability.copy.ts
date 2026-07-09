@@ -14,6 +14,11 @@
 //   - controls{}   — the grain control-spine labels + the active-window caption.
 
 import type { Locale } from '$lib/i18n';
+// The verdict copy shape is now the shared $lib/v1 kernel (hoisted so every OTP-headline
+// surface reuses the ONE verdict engine); re-export VerdictSentenceArgs for the callers
+// that still reference it from here.
+import type { VerdictCopy, VerdictSentenceArgs } from '$lib/v1/verdict';
+export type { VerdictSentenceArgs };
 
 /** The five cluster keys, in surface order. */
 export type ReliabilityClusterKey =
@@ -22,15 +27,6 @@ export type ReliabilityClusterKey =
 	| 'serviceDelivered'
 	| 'crowding'
 	| 'habits';
-
-/** The computed numbers a §0 verdict band sentence interpolates (two-sided natural frequency). */
-export interface VerdictSentenceArgs {
-	readonly window: string;
-	readonly onTen: number;
-	readonly lateTen: number;
-	/** The numeric hedge clause, e.g. " (78%, 95% sure between 71 and 84%)" or " (78%)". */
-	readonly hedge: string;
-}
 
 export interface ReliabilityCopy {
 	/** Numbered cluster overlines ('01 Punctuality' / '01 Ponctualité' …). */
@@ -285,12 +281,6 @@ export interface ReliabilityCopy {
 		readonly filterPillClose: string;
 		/** a11y: close the mobile section-jump (TOC) pill drawer. */
 		readonly tocPillClose: string;
-		/** Scope tooltip: this section re-shapes on the time window. */
-		readonly scopeWindowed: string;
-		/** Scope tooltip: this section ignores the time window (full history). */
-		readonly scopeWhole: string;
-		/** One-line scope note under the grain picker (which sections the window drives). */
-		readonly scopeNote: string;
 	};
 	/**
 	 * Rider-question section framing (the 5-section rider-first IA): each section's
@@ -298,7 +288,12 @@ export interface ReliabilityCopy {
 	 * progressive-disclosure expander labels.
 	 */
 	readonly sections: {
-		readonly verdict: { readonly label: string; readonly question: string };
+		readonly verdict: {
+			readonly label: string;
+			readonly question: string;
+			/** D3: the TerminalPanel framing the §0 verdict block. */
+			readonly terminal: { readonly title: string; readonly tag: string };
+		};
 		readonly whenToRide: { readonly label: string; readonly question: string };
 		readonly theWait: { readonly label: string; readonly question: string };
 		readonly runAndFit: { readonly label: string; readonly question: string };
@@ -308,28 +303,7 @@ export interface ReliabilityCopy {
 		readonly detailHide: string;
 	};
 	/** §0 plain-language reliability verdict (text-led, two-sided, numerically hedged). */
-	readonly verdict: {
-		readonly windowPhrase: {
-			readonly day: string;
-			readonly week: string;
-			readonly month: string;
-			readonly range: string;
-		};
-		readonly reliable: (a: VerdictSentenceArgs) => string;
-		readonly patchy: (a: VerdictSentenceArgs) => string;
-		readonly unreliable: (a: VerdictSentenceArgs) => string;
-		readonly tentative: (a: {
-			readonly window: string;
-			readonly otp: number;
-			readonly n: number;
-			readonly lo: number;
-			readonly hi: number;
-		}) => string;
-		readonly tooFew: (window: string, n: number) => string;
-		readonly absent: string;
-		readonly hedgeSimple: (otp: number) => string;
-		readonly hedgeCI: (otp: number, lo: number, hi: number) => string;
-	};
+	readonly verdict: VerdictCopy;
 }
 
 export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
@@ -494,17 +468,17 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				range: (n, start, end) => `Moyenne sur ${n} jours, du ${start} au ${end}`,
 				rangePrompt: 'Fenêtre : choisissez une date de début et de fin',
 			},
-			toc: 'Aller à',
+			toc: 'Aller à une section',
 			filterPillOpen: 'Ouvrir les commandes de vue',
 			filterPillClose: 'Fermer les commandes de vue',
 			tocPillClose: 'Fermer la liste des sections',
-			scopeWindowed: 'Suit la fenêtre choisie ci-dessus',
-			scopeWhole: 'Historique complet : la fenêtre ci-dessus ne change pas cette section',
-			scopeNote:
-				'La fenêtre ci-dessus remodèle les sections marquées ↻ ; les sections ∞ montrent tout l’historique.',
 		},
 		sections: {
-			verdict: { label: 'Fiabilité', question: 'Peut-on compter sur cette ligne ?' },
+			verdict: {
+				label: 'Fiabilité',
+				question: 'Peut-on compter sur cette ligne ?',
+				terminal: { title: 'verdict', tag: 'FIABILITÉ' },
+			},
 			whenToRide: {
 				label: 'Quand voyager',
 				question: 'Quand est-ce fiable, et quand ça se gâte ?',
@@ -704,16 +678,17 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				range: (n, start, end) => `Average across ${n} days, ${start} to ${end}`,
 				rangePrompt: 'Window: pick a start and end date',
 			},
-			toc: 'Jump to',
+			toc: 'Jump to a section',
 			filterPillOpen: 'Open view controls',
 			filterPillClose: 'Close view controls',
 			tocPillClose: 'Close section list',
-			scopeWindowed: 'Follows the time window above',
-			scopeWhole: 'Full history: the window above doesn’t change this section',
-			scopeNote: 'The window above re-shapes the ↻ sections; the ∞ sections show the full history.',
 		},
 		sections: {
-			verdict: { label: 'Reliability', question: 'Can you count on this line?' },
+			verdict: {
+				label: 'Reliability',
+				question: 'Can you count on this line?',
+				terminal: { title: 'verdict', tag: 'RELIABILITY' },
+			},
 			whenToRide: {
 				label: 'When to ride',
 				question: 'When is it good, and when does it fall apart?',

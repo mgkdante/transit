@@ -1,5 +1,9 @@
 <!--
-  BrandWordmark — the yesid.dev house wordmark: "yesid" + the orange period.
+  BrandWordmark — the brand wordmark: a word + the orange period. Defaults to the
+  yesid.dev house mark ("yesid"); the NavPill passes text="Transit" so the pill
+  reads as the PRODUCT home while BrandCluster (topbar/footer) keeps the "yesid"
+  parent mark. Same brand treatment either way — font-heading bold, the --primary
+  terminal dot, the GSAP hover.
 
   Replicated from the yesid.dev navbar (font-heading bold, 18px, no-wrap,
   foreground letters + the --primary dot) INCLUDING the signature GSAP SplitText
@@ -20,6 +24,8 @@
 	interface Props {
 		/** Where the mark links. Default: the parent brand site. */
 		href?: string;
+		/** The wordmark letters (the orange terminal dot is always appended). */
+		text?: string;
 		/** Open in a new tab (external parent-brand link). */
 		external?: boolean;
 		/** Enable the GSAP wordmark animation (disable in tests / static renders). */
@@ -31,6 +37,7 @@
 
 	let {
 		href = 'https://yesid.dev',
+		text = 'yesid',
 		external = true,
 		animate = true,
 		autoPlay = true,
@@ -77,7 +84,7 @@
 	)}
 	data-slot="brand-wordmark"
 >
-	<span bind:this={lettersEl}>yesid</span><span class="text-primary" bind:this={dotEl}>.</span>
+	<span bind:this={lettersEl}>{text}</span><span class="text-primary" bind:this={dotEl}>.</span>
 </a>
 
 <style>
@@ -89,7 +96,7 @@
 		flex-shrink: 0;
 		letter-spacing: -0.01em;
 		border-radius: var(--radius-sm);
-		transition: color var(--duration-fast, 120ms) var(--ease-default, ease);
+		transition: color var(--duration-fast) var(--ease-default);
 	}
 	.brand-wordmark:hover {
 		color: var(--primary);

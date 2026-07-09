@@ -11,6 +11,9 @@ import type { Locale } from '$lib/i18n';
 export interface TripDetailCopy {
 	/** Station-voice overline above the trip heading. */
 	readonly kicker: string;
+	/** Breadcrumb "Home" root label (the trip trail is built inline — trip has no
+	 *  index route, and stays out of the SEO BreadcrumbList since it is noindex). */
+	readonly crumbHome: string;
 	/** Heading prefix for the trip id (e.g. "Trip 12345"). */
 	readonly heading: (id: string) => string;
 	/** Mono subheading under the heading. */
@@ -23,6 +26,12 @@ export interface TripDetailCopy {
 	readonly viewRoute: (route: string) => string;
 	/** Shown when the trip carries no route reference. */
 	readonly noRoute: string;
+	/** Section label above the merged status + delay verdict chip (§C5.15). */
+	readonly verdictHeading: string;
+	/** Section label above the destination + progress line (§C5.15). */
+	readonly destinationHeading: string;
+	/** "{n} stops remaining" progress caption (the served remaining-stop count). */
+	readonly stopsRemaining: (n: number) => string;
 	/** Section label above the status / delay readout. */
 	readonly statusHeading: string;
 	/** Status-band labels keyed by the v1 StatusCode. */
@@ -64,12 +73,16 @@ export interface TripDetailCopy {
 export const tripCopy: Record<Locale, TripDetailCopy> = {
 	fr: {
 		kicker: 'TRAJET',
+		crumbHome: 'Accueil',
 		heading: (id) => `Trajet ${id}`,
 		subheading: '// EN DIRECT',
 		lede: 'Prédiction en direct pour ce trajet: ligne, statut, retard et prochains arrêts. Mesuré depuis le contrat ouvert /v1, jamais inventé.',
 		route: 'Ligne',
 		viewRoute: (route) => `Voir la ligne ${route}`,
 		noRoute: 'Ligne non communiquée',
+		verdictHeading: 'Verdict',
+		destinationHeading: 'Destination',
+		stopsRemaining: (n) => (n === 1 ? '1 arrêt restant' : `${n} arrêts restants`),
 		statusHeading: 'Statut',
 		status: {
 			early: 'En avance',
@@ -98,12 +111,16 @@ export const tripCopy: Record<Locale, TripDetailCopy> = {
 	},
 	en: {
 		kicker: 'TRIP',
+		crumbHome: 'Home',
 		heading: (id) => `Trip ${id}`,
 		subheading: '// LIVE',
 		lede: 'Live prediction for this trip: line, status, delay and remaining stops. Measured from the open /v1 data contract, never invented.',
 		route: 'Line',
 		viewRoute: (route) => `View line ${route}`,
 		noRoute: 'No line reported',
+		verdictHeading: 'Verdict',
+		destinationHeading: 'Destination',
+		stopsRemaining: (n) => (n === 1 ? '1 stop remaining' : `${n} stops remaining`),
 		statusHeading: 'Status',
 		status: {
 			early: 'Early',

@@ -83,12 +83,10 @@ export function resolveWindow(
 	availableDates: ReadonlySet<string>,
 ): DateWindow | undefined {
 	if (!window) return undefined;
-	// CONSTRAINT (intentional honest-absence change): if EITHER bound is not a real available
-	// date, the WHOLE window is dropped — we do NOT clamp/keep the surviving bound (the old
-	// per-bound behaviour). A partial or one-sided span is a fabricated window the URL never
-	// actually described; dropping it entirely falls the surface back to its grain default,
-	// which is the honest outcome. Callers relying on the old keep-the-good-bound behaviour
-	// must re-derive it explicitly.
+	// Honest-absence: if EITHER bound is not a real available date, the WHOLE window is
+	// dropped — we never clamp/keep the surviving bound. A partial or one-sided span is a
+	// fabricated window the URL never actually described; dropping it entirely falls the
+	// surface back to its grain default, which is the honest outcome.
 	if (!availableDates.has(window.from) || !availableDates.has(window.to)) return undefined;
 	return window;
 }

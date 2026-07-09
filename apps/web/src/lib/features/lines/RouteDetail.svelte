@@ -49,8 +49,15 @@
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
+	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
+	import { cornerMetaLabels } from '$lib/components/brand';
+	import { formatUtc } from '$lib/utils/time';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
+	import { VerdictBanner } from '$lib/components/brand';
+	import { selectVerdict } from '$lib/v1/verdict';
+	import { toReliabilityClusters } from './reliability/clusters';
+	import { reliabilityCopy } from './reliability/reliability.copy';
 	import RouteReliabilityClusters from './reliability/RouteReliabilityClusters.svelte';
 	import { directionHeadsigns } from './directions';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -121,16 +128,45 @@
 		return getRouteReliability(routeId);
 	});
 
+	// ALWAYS-VISIBLE VERDICT BAND (§C5.4): the §0 verdict, hoisted ABOVE the tabs so the
+	// payoff is never buried behind the Detail tab. Reuses the SHARED VerdictBanner +
+	// selectVerdict off the SAME §0 headline (the default 'day' grain of the reliability
+	// archive), so the band and the §0 verdict inside the Reliability tab always agree.
+	// The band renders ONLY once the historic archive has loaded (a null → no band, never
+	// a fabricated verdict); the Wilson hedge + natural frequency ride the archive's own
+	// observation_count / on_time (never fabricated).
+	const relCopy = $derived(reliabilityCopy[locale]);
+	const verdictHeadline = $derived(
+		reliability.data
+			? toReliabilityClusters(reliability.data, { grain: 'day' }).punctuality.headline
+			: null,
+	);
+	const routeVerdict = $derived(
+		verdictHeadline ? selectVerdict(verdictHeadline, 'day', locale, relCopy.verdict) : null,
+	);
+
 	// Live tier: one store for this surface (the v1 context is booted before
 	// mount in the root layout). It polls vehicles/trips on the live ttl; the
 	// Detail tab reads its index to derive per-stop predictions (client-side,
 	// fail-soft: the static directions/stops render regardless). start()/stop()
 	// are browser-only and idempotent.
-	const live = createLiveStore(getV1Context().manifest);
+	const manifest = getV1Context().manifest;
+	const live = createLiveStore(manifest);
 	onMount(() => {
 		live.start();
 		return () => live.stop();
 	});
+
+	// CornerMeta readouts (A4) — REAL data only. Provider is always present from the
+	// manifest; the generated stamp prefers the live tier (the head's freshest data),
+	// falling back to the reliability build; a datum that isn't present drops its
+	// corner (never fabricated).
+	const cm = cornerMetaLabels[locale];
+	const shortName = manifest.short_name?.trim() || manifest.display_name;
+	const cornerGeneratedUtc = $derived(live.generatedUtc ?? reliability.data?.generated_utc ?? null);
+	const cornerGeneratedStamp = $derived(
+		cornerGeneratedUtc != null ? formatUtc(cornerGeneratedUtc, locale) : null,
+	);
 
 	// Per-stop SOONEST predicted arrival on this route, derived from the live
 	// trips of every bus currently on the route (NO per-stop fetch, a route has
@@ -256,18 +292,41 @@
 <EntityDetail
 	kicker={t.kicker}
 	back={{ href: localizeHref('/lines', locale), label: t.back }}
+	lede={t.detailLede}
 	{tabs}
 	bind:active
 >
+	{#snippet cornerMeta()}
+		<!-- A4: blueprint-margin corners — provider · generated (real data from the
+		     manifest + the live/reliability tiers). aria-hidden, hidden < 768px. -->
+		<CornerMeta>
+			{#snippet topLeft()}<span class="line-corner">{cm.line} · {id}</span>{/snippet}
+			{#snippet topRight()}{#if cornerGeneratedStamp}<span class="line-corner"
+						>{cm.generated} · {cornerGeneratedStamp}</span
+					>{/if}{/snippet}
+			{#snippet bottomLeft()}<span class="line-corner">{cm.provider} · {shortName}</span>{/snippet}
+		</CornerMeta>
+	{/snippet}
+
 	{#snippet header()}
-		<div class="route-detail-head">
-			<SectionHeading heading={id} level={1} dot />
-			<MapDrilldownLink
-				href={mapHrefFor({ route: id }, locale)}
-				label={t.viewOnMap}
-				ariaLabel={t.viewRouteOnMap(id)}
-			/>
-		</div>
+		<SectionHeading heading={id} level={1} dot />
+	{/snippet}
+
+	{#snippet meta()}
+		<MapDrilldownLink
+			href={mapHrefFor({ route: id }, locale)}
+			label={t.viewOnMap}
+			ariaLabel={t.viewRouteOnMap(id)}
+		/>
+	{/snippet}
+
+	{#snippet banner()}
+		<!-- §C5.4: the always-visible verdict band above the tabs (verdict sentence + the
+		     OTP BAN), from the §0 headline. Renders only once the archive loads (honest
+		     absence otherwise — no fabricated verdict). -->
+		{#if routeVerdict}
+			<VerdictBanner result={routeVerdict} />
+		{/if}
 	{/snippet}
 
 	{#snippet pane(key)}
@@ -298,7 +357,7 @@
 									{#if roster.length > 0}
 										<div class="route-roster" data-testid="route-roster">
 											<div class="route-section-head">
-												<SectionLabel text={t.roster.heading} variant="station" />
+												<SectionHeading level={2} overline={t.roster.heading} />
 												<span class="route-roster-count">{t.roster.count(roster.length)}</span>
 											</div>
 											<ul class="route-roster-list" aria-label={t.roster.listLabel}>
@@ -365,7 +424,7 @@
 						{#snippet detail()}
 							<div class="route-section route-directions-pane">
 								<div class="route-section-head">
-									<SectionLabel text={t.directions} variant="station" />
+									<SectionHeading level={2} overline={t.directions} />
 									{#if live.generatedUtc != null || live.ageSeconds != null}
 										<FreshnessStamp
 											variant="live"
@@ -487,11 +546,8 @@
 </EntityDetail>
 
 <style>
-	.route-detail-head {
-		display: flex;
-		align-items: end;
-		justify-content: space-between;
-		gap: 1rem;
+	.line-corner {
+		white-space: nowrap;
 	}
 	.route-section {
 		display: flex;
@@ -528,7 +584,7 @@
 	.route-label-row {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.375rem;
 	}
 	/* Current-buses roster: one row per live vehicle, worst-delay first. */
 	.route-roster {
@@ -562,9 +618,9 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.4rem 0.5rem;
+		padding: 0.375rem 0.5rem;
 		margin-inline: -0.5rem;
-		border-radius: var(--radius-sm, 0.375rem);
+		border-radius: var(--radius-sm);
 		color: var(--foreground);
 		text-decoration: none;
 		transition: background-color var(--duration-fast) var(--ease-out);
@@ -586,18 +642,14 @@
 		opacity: 1;
 		transform: translateX(2px);
 	}
-	.route-roster-link:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
 	/* Compact "view on map" pill for each bus. */
 	.route-roster-map {
 		flex-shrink: 0;
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3rem;
-		padding: 0.3rem 0.6rem;
-		border-radius: var(--radius-pill, 999px);
+		gap: 0.375rem;
+		padding: 0.375rem 0.5rem;
+		border-radius: var(--radius-pill);
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		color: var(--muted-foreground);
@@ -611,10 +663,6 @@
 		color: var(--primary);
 		border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
 	}
-	.route-roster-map:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
 	.route-departures {
 		display: flex;
 		flex-wrap: wrap;
@@ -624,7 +672,7 @@
 	.route-metric-cell {
 		display: inline-flex;
 		align-items: flex-start;
-		gap: 0.35rem;
+		gap: 0.375rem;
 	}
 	.route-periods {
 		list-style: none;
@@ -680,20 +728,14 @@
 		}
 	}
 
-	@media (max-width: 520px) {
-		.route-detail-head {
-			align-items: start;
-			flex-direction: column;
-		}
-	}
 	.route-period {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 		padding: 1rem 1.25rem;
 		background-color: var(--card);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-lg, 0.75rem);
+		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
 	}
 	.route-period-metrics {

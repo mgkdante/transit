@@ -7,9 +7,10 @@
   infra control panel: a bordered card on --card with a mono group label, a token
   radius, and comfortable padding.
 
-    DESKTOP: an upright control panel; pass `sticky` to park it under the sticky
-      chrome (position:sticky at top:5.5rem) so the controls stay in reach while
-      the data scrolls. It pairs naturally as the `rail` of a RailLayout.
+    DESKTOP: an upright control panel; pass `sticky` to park it under the
+      floating chrome (position:sticky at top:var(--chrome-offset)) so the
+      controls stay in reach while the data scrolls. It pairs naturally as the
+      `rail` of a RailLayout.
     MOBILE: a grouped bar whose controls wrap (the sticky offset is dropped — a
       sticky control bar would eat scarce phone viewport).
 
@@ -30,6 +31,7 @@
 -->
 <script lang="ts">
 	import { cn } from '$lib/utils';
+	import { observeStuck } from '$lib/components/shared/stuck';
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 
@@ -38,7 +40,7 @@
 		label?: string;
 		/** The granular controls — pickers, toggles, filter chips. */
 		children?: Snippet;
-		/** Desktop sticky (position:sticky, top:5.5rem). Default false. */
+		/** Desktop sticky (position:sticky, top:var(--chrome-offset)). Default false. */
 		sticky?: boolean;
 		class?: string;
 	}
@@ -50,12 +52,22 @@
 		class: className,
 		...restProps
 	}: ControlsRailProps = $props();
+
+	let railEl = $state<HTMLElement | null>(null);
+
+	// B2 flush: when the rail is sticky, observe its stuck state so it tightens to
+	// a hairline under the chrome (no dead padding band). No-op when not sticky.
+	$effect(() => {
+		if (!sticky || !railEl) return;
+		return observeStuck(railEl);
+	});
 </script>
 
 <!-- role="group" ONLY when labelled: a labelled group is the right semantics for
      a control cluster (and is NOT a landmark, unlike a labelled <section>). With
      no label there is nothing to name, so it stays a plain grouping div. -->
 <div
+	bind:this={railEl}
 	class={cn('controls-rail', sticky && 'controls-rail--sticky', className)}
 	data-slot="controls-rail"
 	role={label ? 'group' : undefined}
@@ -114,13 +126,24 @@
 		   content but below the chrome (--z-nav) and menus/popovers (--z-menu). */
 		.controls-rail--sticky {
 			position: sticky;
-			/* Sticky offset = the chrome height ABOVE the rail inside its SCROLL CONTAINER.
-			   Caller-tunable via --rail-sticky-top (default 5.5rem, the window-scrolled
-			   assumption). A surface whose scroll container already begins below the app
-			   nav (the reliability dashboard) sets it to 0 so the rail pins FLUSH under the
-			   header — not floating ~88px below it with scrolling content showing through. */
-			top: var(--rail-sticky-top, 5.5rem);
+			/* Sticky offset = the single --chrome-offset knob (AppShell). No more
+			   per-surface --rail-sticky-top override: the pill floats OVER #main and
+			   this one value clears it correctly on EVERY surface (the three former
+			   ~88px sticky-float bugs — network, hotspots, repeat-offenders — die by
+			   construction, and the RouteReliabilityClusters 0px override is gone). */
+			top: var(--chrome-offset);
 			z-index: var(--z-rail);
+		}
+
+		/* B2 flush: when the rail engages (pinned under the chrome), tighten it to a
+		   hairline + backdrop so there is no dead padding band between the pill and
+		   the pinned controls. The stuck flag is toggled by the `stickyStuck` action
+		   (a zero-height sentinel + IntersectionObserver — the observer idiom reused
+		   from observeActiveToc). */
+		.controls-rail--sticky[data-stuck='true'] {
+			border-bottom: 1px solid var(--border);
+			background: color-mix(in srgb, var(--background) 92%, transparent);
+			backdrop-filter: blur(16px) saturate(1.1);
 		}
 	}
 </style>

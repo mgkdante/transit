@@ -28,11 +28,15 @@ status_of() {
 }
 
 assert_object() {
+  # $2 is an EXTENDED-regex alternation: objects only pick up a new publish-time
+  # Cache-Control when their CONTENT next rewrites (publish is hash-guarded), so
+  # during a header rollout prod legitimately serves old|new until the next
+  # rewrite of that object (daily for historic aggregates; edition-flip for static).
   local url="$1" cache_control="$2" headers
   headers="$(headers_of "$url")" || fail "$url did not return 2xx headers"
   grep -qi '^content-type: application/json' <<<"$headers" \
     || fail "$url content-type is not application/json"
-  grep -qi "^cache-control: ${cache_control}$" <<<"$headers" \
+  grep -Eqi "^cache-control: (${cache_control})$" <<<"$headers" \
     || fail "$url cache-control != '${cache_control}'"
   ok "$url -> 200 application/json '${cache_control}'"
 }
@@ -45,9 +49,9 @@ curl -fsS --max-time "$MAX_TIME" "$CANONICAL_BASE/v1/stm/manifest.json" \
 ok "manifest body carries provider stm"
 
 assert_object "$CANONICAL_BASE/v1/stm/live/vehicles.json" "public, max-age=30"
-assert_object "$CANONICAL_BASE/v1/stm/static/routes_index.json" "public, max-age=604800"
-assert_object "$CANONICAL_BASE/v1/stm/historic/network_trend.json" "public, max-age=86400"
-assert_object "$CANONICAL_BASE/v1/stm/provenance.json" "public, max-age=86400"
+assert_object "$CANONICAL_BASE/v1/stm/static/routes_index.json" "public, max-age=86400, stale-while-revalidate=86400|public, max-age=604800"
+assert_object "$CANONICAL_BASE/v1/stm/historic/network_trend.json" "public, max-age=3600, stale-while-revalidate=86400|public, max-age=86400"
+assert_object "$CANONICAL_BASE/v1/stm/provenance.json" "public, max-age=3600, stale-while-revalidate=86400|public, max-age=86400"
 
 # --- negatives: clean 404/405, and errors are never cacheable ---
 [ "$(status_of "$CANONICAL_BASE/v1/stm/definitely-missing.json")" = "404" ] \

@@ -61,6 +61,22 @@ export interface SearchCopy extends SurfaceHeadCopy {
 	/** Instructional empty state shown before the rider types anything. */
 	readonly idleTitle: string;
 	readonly idleBody: string;
+	/**
+	 * Idle-state network census band (§C5.14) — live counts + a freshness stamp +
+	 * tappable example queries, turning the dead prompt into a live way in.
+	 */
+	readonly census: {
+		/** Mono overline over the census band. */
+		readonly label: string;
+		/** "{n} lines" served-catalogue count. */
+		readonly lines: (n: string) => string;
+		/** "{n} stops" served-catalogue count. */
+		readonly stops: (n: string) => string;
+		/** Caption over the example-query chips. */
+		readonly examplesLabel: string;
+		/** Tappable example queries that fill the search box. */
+		readonly examples: readonly string[];
+	};
 	/** "+N more" truncation note (caller owns the localized string). */
 	readonly more: (n: number) => string;
 	/** Per-group result-count caption (sr + visible). */
@@ -86,6 +102,13 @@ export const copy: Record<Locale, SearchCopy> = {
 		scopeCount: (label, n) => `${label} (${n})`,
 		idleTitle: 'Search a line, stop or bus',
 		idleBody: 'Type a line number, a line or stop name, a stop code, or a live bus id to find it.',
+		census: {
+			label: 'The network right now',
+			lines: (n) => `${n} lines`,
+			stops: (n) => `${n} stops`,
+			examplesLabel: 'Try',
+			examples: ['747', 'Berri-UQAM', 'Métro'],
+		},
 		more: (n) => `+${n} more`,
 		resultCount: (n) => (n === 1 ? '1 result' : `${n} results`),
 		vehicle: {
@@ -118,6 +141,13 @@ export const copy: Record<Locale, SearchCopy> = {
 		idleTitle: 'Rechercher une ligne, un arrêt ou un bus',
 		idleBody:
 			'Saisissez un numéro de ligne, un nom de ligne ou d’arrêt, un code d’arrêt, ou un identifiant de bus en direct pour le trouver.',
+		census: {
+			label: 'Le réseau en ce moment',
+			lines: (n) => `${n} lignes`,
+			stops: (n) => `${n} arrêts`,
+			examplesLabel: 'Essayez',
+			examples: ['747', 'Berri-UQAM', 'Métro'],
+		},
 		more: (n) => `+${n} de plus`,
 		resultCount: (n) => (n === 1 ? '1 résultat' : `${n} résultats`),
 		vehicle: {

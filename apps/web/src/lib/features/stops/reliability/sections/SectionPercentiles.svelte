@@ -9,7 +9,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { fmtDelayMin } from '$lib/utils';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { MetricDisplay } from '$lib/components/brand';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -45,10 +45,11 @@
 {/snippet}
 
 <div class="stop-tile stop-reliability-percentiles" data-slot="stop-percentiles">
-	<span class="stop-tile-heading">
-		<SectionLabel text={copy.percentiles.heading} variant="station" />
-		{@render metricInfo('p50p90', copy.percentiles.heading)}
-	</span>
+	<SectionHeading level={2} overline={copy.percentiles.heading} class="stop-tile-heading">
+		{#snippet explainer()}
+			{@render metricInfo('p50p90', copy.percentiles.heading)}
+		{/snippet}
+	</SectionHeading>
 	<div class="stop-reliability-percentile-tiles">
 		<MetricDisplay
 			value={min(percentiles.p50)}

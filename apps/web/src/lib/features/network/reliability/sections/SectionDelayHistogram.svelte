@@ -16,9 +16,10 @@
 -->
 <script lang="ts">
 	import { Chart, type HistogramSpec, type AbsenceSpec } from '$lib/components/dataviz/chart';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
+	import NetworkTile from './NetworkTile.svelte';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 
 	interface SectionDelayHistogramProps {
@@ -43,22 +44,23 @@
 
 {#if hasHistogram}
 	<section class="network-hist-section" data-slot="delay-histogram-section">
-		<div class="network-tile network-hist-tile">
-			<span class="network-section">
-				<SectionLabel text={copy.delayHistogramSection} variant="station" />
-				<MetricInfo
-					tip={i.tip}
-					href={i.href}
-					label={i.label}
-					linkLabel={i.linkLabel}
-					side="bottom"
-				/>
-			</span>
+		<NetworkTile class="network-hist-tile">
+			<SectionHeading level={3} overline={copy.delayHistogramSection}>
+				{#snippet explainer()}
+					<MetricInfo
+						tip={i.tip}
+						href={i.href}
+						label={i.label}
+						linkLabel={i.linkLabel}
+						side="bottom"
+					/>
+				{/snippet}
+			</SectionHeading>
 			<p class="network-hist-caption">{copy.delayHistogram.caption}</p>
 			<div class="network-hist" data-slot="delay-histogram">
 				<Chart {spec} />
 			</div>
-		</div>
+		</NetworkTile>
 	</section>
 {/if}
 
@@ -68,24 +70,14 @@
 		display: block;
 		width: 100%;
 	}
-	.network-hist-tile {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		min-width: 0;
-		padding: 1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
+	/* The shared NetworkTile chassis fills this full-width row (the base tile does not
+	   force width; the histogram row wants the whole page width for its bars). The
+	   :global qualifier reaches the NetworkTile root through the passed class. */
+	:global(.network-hist-tile) {
 		width: 100%;
 	}
 	.network-hist {
 		max-width: 100%;
-	}
-	.network-section {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
 	}
 	.network-hist-caption {
 		margin: 0;

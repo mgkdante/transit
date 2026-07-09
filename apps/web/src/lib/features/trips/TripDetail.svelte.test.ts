@@ -42,8 +42,13 @@ let tripsData: TripsFile | null = TRIPS_FILE;
 
 // Mock $lib/v1 with a clean factory (importing the real barrel pulls the full
 // module graph incl. $app/environment, which the jsdom env can't boot).
+// getV1Context feeds the A4 CornerMeta corners (provider short_name); a minimal
+// manifest stub is enough for the head to render.
 vi.mock('$lib/v1', () => ({
 	getTrips: vi.fn(),
+	getV1Context: () => ({
+		manifest: { short_name: 'STM', display_name: 'STM', dataset_version: 'test' },
+	}),
 }));
 
 // createResource returns the trips file (or null) for the one trips read.
@@ -98,6 +103,18 @@ describe('TripDetail: a broadcasting trip', () => {
 		expect(screen.getByText('Late')).toBeInTheDocument();
 		// "4 min late" appears at trip level AND on the matching stop; both are honest.
 		expect(screen.getAllByText('4 min late').length).toBeGreaterThanOrEqual(1);
+	});
+
+	it('renders the wayfinding breadcrumb (Home > Trip {id}) with the leaf as current', () => {
+		render(TripDetail, { props: { id: 't161' } });
+
+		const nav = screen.getByRole('navigation', { name: 'Breadcrumb' });
+		expect(nav).toBeInTheDocument();
+		// Home links to the localized root; the trip leaf is the current page (not a link).
+		expect(within(nav).getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
+		const leaf = within(nav).getByText('Trip t161');
+		expect(leaf).toHaveAttribute('aria-current', 'page');
+		expect(within(nav).queryByRole('link', { name: 'Trip t161' })).toBeNull();
 	});
 
 	it('anchors the FreshnessStamp age to the SERVER clock (serverNow), not Date.now()', () => {

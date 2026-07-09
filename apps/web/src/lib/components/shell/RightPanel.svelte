@@ -189,7 +189,7 @@
 			-12px 0 28px -20px rgba(0, 0, 0, 0.45),
 			inset 1px 0 0 var(--edge-highlight);
 		transition:
-			width 180ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+			width var(--duration-normal) var(--ease-out),
 			box-shadow var(--duration-normal) var(--ease-out);
 		/* Size container so the swapped detail content can reflow against the dock's
 		   OWN width as it is dragged narrower in a resizable pane (grab-resize),
@@ -234,7 +234,7 @@
 
 	/* Swap-volet entrance — a subtle slide-in on each keyed surface change. */
 	.swap-volet {
-		animation: volet-in 240ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;
+		animation: volet-in var(--duration-normal) var(--ease-out) both;
 	}
 
 	@keyframes volet-in {

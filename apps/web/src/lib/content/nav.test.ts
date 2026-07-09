@@ -9,6 +9,7 @@ import {
 	SECONDARY_NAV,
 	AUDIT_NAV,
 	MENU_EXTRAS,
+	YESID_HOUSE_LINK,
 	isSurfaceActive,
 	mainLandmarkLabel,
 } from './nav';
@@ -63,7 +64,7 @@ describe('SURFACE_NAV manifest', () => {
 
 describe('AUDIT_NAV (side-nav Audit group)', () => {
 	it('exposes the accountability/meta surfaces as a side-nav-consumable group', () => {
-		// PR-5: the Audit group rides AUDIT_NAV for the LeftRail + mobile menu. The
+		// PR-5: the Audit group rides AUDIT_NAV for the NavPill hamburger menu. The
 		// four accountability surfaces (plus the methodology + data-health anchors)
 		// must be present with a stable icon key + EN/FR label.
 		const hrefs = AUDIT_NAV.map((i) => i.href);
@@ -167,5 +168,13 @@ describe('MENU_EXTRAS', () => {
 			expect(link.label.en).toBeTruthy();
 			expect(link.label.fr).toBeTruthy();
 		}
+	});
+});
+
+describe('YESID_HOUSE_LINK', () => {
+	it('is the external "Yesid" link out to the yesid.dev portfolio (bilingual)', () => {
+		expect(YESID_HOUSE_LINK.href).toBe('https://yesid.dev');
+		expect(YESID_HOUSE_LINK.label.en).toBe('Yesid');
+		expect(YESID_HOUSE_LINK.label.fr).toBe('Yesid');
 	});
 });

@@ -21,7 +21,11 @@
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { MetricDisplay } from '$lib/components/brand';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { AbsentValue } from '$lib/components/edge';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { selectDailyTrend } from '../selectors/dailyTrend';
 	import { poolDailyRange } from '../selectors/dailyRange';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
@@ -46,6 +50,14 @@
 		picker?: Snippet;
 	}
 	let { daily, locale, copy, window = null, picker }: SectionDailyTrendProps = $props();
+
+	// The metric-explainer (i) — the ONE stop-detail section that was missing it
+	// (§C6 #5). The trend is a severe-share series, so it deep-links to /metrics#severe.
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: MetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
 
 	// The dated severe-share trend (A3), clipped to the window. Honest absence when
 	// fewer than 2 real points survive.
@@ -91,9 +103,19 @@
 	data-slot="stop-daily-trend"
 	data-mount="daily-range"
 >
-	<span class="stop-tile-heading">
-		<SectionLabel text={copy.trend.heading} variant="station" />
-	</span>
+	<SectionHeading level={2} overline={copy.trend.heading} class="stop-tile-heading">
+		{#snippet explainer()}
+			{@const i = info('severe', copy.trend.heading)}
+			<MetricInfo
+				class="stop-metric-info"
+				tip={i.tip}
+				href={i.href}
+				label={i.label}
+				linkLabel={i.linkLabel}
+				side="bottom"
+			/>
+		{/snippet}
+	</SectionHeading>
 
 	<!-- S8B WINDOW SLOT: the surface's DateRangePicker seats here (bound to the window
 	     the trend + verdict below clip to). Chrome, discerned from the data canvas; the
@@ -177,7 +199,7 @@
 	.daily-verdict {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.5rem;
 	}
 	.daily-verdict-head {
 		display: flex;
