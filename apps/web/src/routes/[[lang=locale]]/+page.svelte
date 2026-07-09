@@ -32,7 +32,7 @@
 	import { getV1Context, createLiveStore } from '$lib/v1';
 	import { openSurface, type SurfaceTarget } from '$lib/nav';
 	import { otpVerdict } from '$lib/v1';
-	import { STATUS_LABELS } from '$lib/v1/enumLabels';
+	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
 	import { StatusBadge } from '$lib/components/dataviz';
 	import { formatUtc } from '$lib/utils/time';
 	import {
@@ -84,6 +84,58 @@
 	});
 
 	const net = $derived(live.network);
+
+	// ── The three RESULT GRIDS (operator, 2026-07-09: "SQL result grids") ──────
+	// One row shape for all three; each derives from REAL live data and HIDES
+	// honestly when its slice is absent (null mix / empty index) — never a
+	// fabricated row. Dots ride the dataviz scales (DATA voice).
+	interface GridRow {
+		readonly key: string;
+		readonly dotClass?: string;
+		readonly label: string;
+		readonly value: string;
+	}
+	const STATUS_ORDER = ['early', 'on_time', 'late', 'severe', 'unknown'] as const;
+	const OCCUPANCY_ORDER = ['empty', 'many_seats', 'few_seats', 'standing', 'full'] as const;
+
+	const fleetRows = $derived.by<GridRow[] | null>(() => {
+		const dist = net?.status_dist;
+		if (!dist) return null;
+		return STATUS_ORDER.map((code) => ({
+			key: code,
+			dotClass: `pulse-dist-dot--${code}`,
+			label: STATUS_LABELS[locale][code],
+			value: fmtCount(dist[code]) ?? '',
+		}));
+	});
+
+	// Crowding shares (fractions of the reporting fleet) → whole percent.
+	const crowdingRows = $derived.by<GridRow[] | null>(() => {
+		const mix = net?.occupancy_mix;
+		if (!mix) return null;
+		return OCCUPANCY_ORDER.map((code) => ({
+			key: code,
+			dotClass: `pulse-dist-dot--occ-${code}`,
+			label: OCCUPANCY_LABELS[locale][code],
+			value: `${Math.round(mix[code] * 100)}${T[locale].pct}`,
+		}));
+	});
+
+	// The busiest lines RIGHT NOW — routes ranked by live vehicles on the road
+	// (numeric-aware tiebreak). Gated on a reported tier; empty index hides.
+	const busiestRows = $derived.by<GridRow[] | null>(() => {
+		if (net == null) return null;
+		const ranked = [...live.index.vehiclesByRoute.entries()]
+			.map(([route, ids]) => [route, ids.size] as const)
+			.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], undefined, { numeric: true }))
+			.slice(0, 5);
+		if (ranked.length === 0) return null;
+		return ranked.map(([route, count]) => ({
+			key: route,
+			label: route,
+			value: fmtCount(count) ?? '',
+		}));
+	});
 
 	// CornerMeta readouts (A4) — REAL data only, sourced from the manifest + the
 	// live tier this page already loads; a datum that isn't present drops its corner
@@ -140,6 +192,11 @@
 		| 'distLabel'
 		| 'distColStatus'
 		| 'distColVehicles'
+		| 'crowdLabel'
+		| 'distColCrowding'
+		| 'distColShare'
+		| 'busyLabel'
+		| 'distColRoute'
 		| 'groupExplore'
 		| 'groupAccount'
 		| 'groupTrust'
@@ -174,6 +231,11 @@
 			distLabel: 'État de la flotte',
 			distColStatus: 'statut',
 			distColVehicles: 'véhicules',
+			crowdLabel: 'Achalandage',
+			distColCrowding: 'achalandage',
+			distColShare: 'part',
+			busyLabel: 'Lignes les plus actives',
+			distColRoute: 'ligne',
 			groupExplore: 'Explorer',
 			groupAccount: 'Reddition de comptes',
 			groupTrust: 'Confiance',
@@ -207,6 +269,11 @@
 			distLabel: 'Fleet status',
 			distColStatus: 'status',
 			distColVehicles: 'vehicles',
+			crowdLabel: 'Crowding',
+			distColCrowding: 'crowding',
+			distColShare: 'share',
+			busyLabel: 'Busiest lines',
+			distColRoute: 'route',
 			groupExplore: 'Explore',
 			groupAccount: 'Accountability',
 			groupTrust: 'Trust',
@@ -518,31 +585,26 @@
 				     status-colored dot · label · dotted leader · tabular count. The
 				     panel's visual MASS (felt balance from real content, never stretch).
 				     Renders only when the tier reports. -->
-				{#if net?.status_dist}
-					<div class="pulse-dist" role="group" aria-label={t.distLabel}>
-						<span class="pulse-dist-head label-metric">{t.distLabel}</span>
-						<table class="pulse-dist-table">
-							<caption class="sr-only">{t.distLabel}</caption>
-							<thead>
-								<tr>
-									<th scope="col">{t.distColStatus}</th>
-									<th scope="col" class="pulse-dist-num">{t.distColVehicles}</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each ['early', 'on_time', 'late', 'severe', 'unknown'] as const as code (code)}
-									<tr>
-										<td class="pulse-dist-status">
-											<span class="pulse-dist-dot pulse-dist-dot--{code}" aria-hidden="true"></span>
-											{STATUS_LABELS[locale][code]}
-										</td>
-										<td class="pulse-dist-num pulse-dist-value"
-											>{fmtCount(net.status_dist[code])}</td
-										>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
+				{#if fleetRows || crowdingRows || busiestRows}
+					<div class="pulse-tables">
+						{#if fleetRows}{@render resultGrid(
+								t.distLabel,
+								t.distColStatus,
+								t.distColVehicles,
+								fleetRows,
+							)}{/if}
+						{#if crowdingRows}{@render resultGrid(
+								t.crowdLabel,
+								t.distColCrowding,
+								t.distColShare,
+								crowdingRows,
+							)}{/if}
+						{#if busiestRows}{@render resultGrid(
+								t.busyLabel,
+								t.distColRoute,
+								t.distColVehicles,
+								busiestRows,
+							)}{/if}
 					</div>
 				{/if}
 			</TerminalPanel>
@@ -593,6 +655,35 @@
      reliabilityVerdict floors beneath the value, so the number carries its meaning
      (the evidence dead-end closes). The two counts have no OTP floor → no fabricated
      word. -->
+<!-- ONE result-grid grammar for the terminal panel's three readouts (fleet /
+     crowding / busiest lines): sr-caption, header band, gridlines, labels left
+     (+ optional dataviz dot), values right-aligned in-column, natural width. -->
+{#snippet resultGrid(label: string, colA: string, colB: string, rows: GridRow[])}
+	<div class="pulse-dist" role="group" aria-label={label}>
+		<span class="pulse-dist-head label-metric">{label}</span>
+		<table class="pulse-dist-table">
+			<caption class="sr-only">{label}</caption>
+			<thead>
+				<tr>
+					<th scope="col">{colA}</th>
+					<th scope="col" class="pulse-dist-num">{colB}</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each rows as row (row.key)}
+					<tr>
+						<td class="pulse-dist-status">
+							{#if row.dotClass}<span class="pulse-dist-dot {row.dotClass}" aria-hidden="true"
+								></span>{/if}{row.label}
+						</td>
+						<td class="pulse-dist-num pulse-dist-value">{row.value}</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+{/snippet}
+
 {#snippet pulse(
 	value: string | null,
 	label: string,
@@ -670,7 +761,14 @@
 		position: relative; /* CornerMeta host (A4 blueprint margins) */
 		display: grid;
 		gap: 2rem;
-		min-height: calc(100svh - var(--chrome-offset));
+		/* 100dvh WITH the navbar inside (operator, 2026-07-09): the band starts at
+		   the viewport top — cancelling BOTH the layout's nav-clearance pad
+		   (--chrome-offset on the page wrapper) AND the hub Surface's top pad (its
+		   exposed var) — and spans exactly one viewport. The floating pill lives
+		   INSIDE the band; --chrome-offset as top padding keeps content clear of it. */
+		margin-top: calc(-1 * (var(--chrome-offset) + var(--surface-pad-y)));
+		min-height: 100dvh;
+		padding-top: var(--chrome-offset);
 		align-content: center;
 	}
 	@media (min-width: 1024px) {
@@ -845,26 +943,37 @@
 		min-width: 0;
 	}
 	/* Fleet-status readout — mono terminal rows under a hairline; the panel's mass. */
-	.pulse-dist {
+	/* Three result grids in one row — similar row counts keep the trio level
+	   (felt symmetry via matching content, never stretching); wraps below. */
+	.pulse-tables {
 		margin-top: 1.25rem;
 		padding-top: 1rem;
 		border-top: 1px solid var(--border-subtle);
 		display: flex;
+		flex-wrap: wrap;
+		gap: 1.25rem 2.25rem;
+	}
+	.pulse-dist {
+		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 	}
-	/* The result table — a real SQL-output look (operator, 2026-07-09): header row
-	   + hairline rule, labels LEFT, counts RIGHT-ALIGNED in their own column, and
-	   the table takes its NATURAL width like a CLI result set (never stretched
-	   across the panel). */
+	/* The result GRID — a real SQL client result set (operator, 2026-07-09):
+	   visible gridlines on every cell, header row set off on a faint ground,
+	   labels LEFT, counts RIGHT-ALIGNED in-column, natural width (max-content
+	   beats the global full-width table rule). */
 	.pulse-dist-table {
-		/* max-content beats any global full-width table rule: a CLI result set is
-		   exactly as wide as its columns. */
 		width: max-content;
 		max-width: 100%;
 		border-collapse: collapse;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
+		border: 1px solid var(--border-subtle);
+	}
+	.pulse-dist-table th,
+	.pulse-dist-table td {
+		border: 1px solid var(--border-subtle);
+		padding: 0.375rem 0.875rem;
 	}
 	.pulse-dist-table th {
 		text-align: left;
@@ -872,15 +981,7 @@
 		text-transform: uppercase;
 		letter-spacing: 1.5px;
 		color: var(--muted-foreground);
-		padding: 0 0 0.375rem;
-		border-bottom: 1px solid var(--border-subtle);
-	}
-	.pulse-dist-table td {
-		padding: 0.3125rem 0 0;
-	}
-	.pulse-dist-table th + th,
-	.pulse-dist-table td + td {
-		padding-left: 2.5rem;
+		background-color: color-mix(in srgb, var(--foreground) 4%, transparent);
 	}
 	.pulse-dist-num {
 		text-align: right;
@@ -914,6 +1015,22 @@
 	}
 	.pulse-dist-dot--unknown {
 		background-color: var(--dataviz-status-unknown);
+	}
+	/* Crowding dots — the dataviz OCCUPANCY scale (purple family). */
+	.pulse-dist-dot--occ-empty {
+		background-color: var(--dataviz-occupancy-empty);
+	}
+	.pulse-dist-dot--occ-many_seats {
+		background-color: var(--dataviz-occupancy-many-seats);
+	}
+	.pulse-dist-dot--occ-few_seats {
+		background-color: var(--dataviz-occupancy-few-seats);
+	}
+	.pulse-dist-dot--occ-standing {
+		background-color: var(--dataviz-occupancy-standing);
+	}
+	.pulse-dist-dot--occ-full {
+		background-color: var(--dataviz-occupancy-full);
 	}
 	.pulse-dist-value {
 		color: var(--accent-text);

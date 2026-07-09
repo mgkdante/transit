@@ -54,7 +54,11 @@
 		padding-block: clamp(1.5rem, 4vw, 2.5rem);
 	}
 	.surface-shell--hub {
-		padding-block: clamp(2rem, 6vw, 4rem);
+		/* Exposed as a var so a full-viewport hero can cancel exactly this pad
+		   (margin-top: calc(-1 * var(--surface-pad-y))) without duplicating the
+		   clamp — one source of truth for the hub's block rhythm. */
+		--surface-pad-y: clamp(2rem, 6vw, 4rem);
+		padding-block: var(--surface-pad-y);
 	}
 	.surface-shell--none {
 		padding-block: 0;
