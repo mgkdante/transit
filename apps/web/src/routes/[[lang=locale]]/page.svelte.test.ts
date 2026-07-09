@@ -123,7 +123,9 @@ describe('Home hub — identity + what-this-is', () => {
 		expect(screen.getAllByText(/Demo network across Testville/i).length).toBeGreaterThanOrEqual(1);
 		// The honesty contract line is unique to the what-this-is body.
 		expect(screen.getByText(/Never a fabricated zero\./i)).toBeInTheDocument();
-		expect(screen.getByText(/a measured proxy, not certified OTP/i)).toBeInTheDocument();
+		expect(
+			screen.getByText(/what we measured ourselves, not an official statistic/i),
+		).toBeInTheDocument();
 		// The "How we measure" deep links (the prose link + the trust tile) point at
 		// /metrics.
 		const measureLinks = screen.getAllByRole('link', { name: /How we measure/i });
@@ -211,12 +213,19 @@ describe('Home hub — live pulse honesty', () => {
 });
 
 describe('Home hub — explore everything wayfinding', () => {
-	it('renders all three surface groups', () => {
+	it('renders the four rider-question groups (task-led IA, never taxonomy labels)', () => {
 		render(Page);
 		const nav = screen.getByRole('navigation', { name: /explore everything/i });
-		expect(within(nav).getByRole('heading', { name: 'Explore' })).toBeInTheDocument();
-		expect(within(nav).getByRole('heading', { name: 'Accountability' })).toBeInTheDocument();
-		expect(within(nav).getByRole('heading', { name: 'Trust' })).toBeInTheDocument();
+		expect(within(nav).getByRole('heading', { name: 'Where’s my bus?' })).toBeInTheDocument();
+		expect(
+			within(nav).getByRole('heading', { name: 'Which line can I trust?' }),
+		).toBeInTheDocument();
+		expect(
+			within(nav).getByRole('heading', { name: 'Did they keep their promise?' }),
+		).toBeInTheDocument();
+		expect(within(nav).getByRole('heading', { name: 'Behind the numbers' })).toBeInTheDocument();
+		// Every group heading carries a plain scope sentence (what's behind the click).
+		expect(within(nav).getByText(/See it moving, know when it comes/i)).toBeInTheDocument();
 	});
 
 	it('routes a primary surface tile through openSurface', async () => {
@@ -263,8 +272,8 @@ describe('Home hub — bilingual', () => {
 		expect(screen.getByText(/Jamais de zéro inventé\./i)).toBeInTheDocument();
 		// FR group labels.
 		const nav = screen.getByRole('navigation', { name: /tout explorer/i });
-		expect(within(nav).getByRole('heading', { name: 'Explorer' })).toBeInTheDocument();
-		expect(within(nav).getByRole('heading', { name: 'Confiance' })).toBeInTheDocument();
+		expect(within(nav).getByRole('heading', { name: 'Où est mon bus ?' })).toBeInTheDocument();
+		expect(within(nav).getByRole('heading', { name: 'Ont-ils tenu parole ?' })).toBeInTheDocument();
 		// Reference links carry the /fr prefix.
 		const mesureLinks = screen.getAllByRole('link', { name: /Comment on mesure/i });
 		expect(mesureLinks.length).toBeGreaterThanOrEqual(1);
