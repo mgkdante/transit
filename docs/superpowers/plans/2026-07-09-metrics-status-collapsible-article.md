@@ -45,9 +45,11 @@ bun run --cwd apps/web format:check
 bun run --cwd apps/web og:check
 bun run --cwd apps/web icons:check
 bun run --cwd apps/web build
-(cd apps/db && uv run pytest tests && uv run ruff check src tests)
+(cd apps/db && uv run pytest tests && uv run ruff check src tests --select F)
 bun run --cwd apps/data-proxy test
 ```
+
+The DB Ruff command intentionally matches `.github/workflows/ci.yml`. The repository has a known non-F lint backlog outside this web slice; do not expand this task into unrelated DB cleanup.
 
 If a gate exposes a new defect, use `superpowers:systematic-debugging` and add a failing regression test before changing production code.
 
