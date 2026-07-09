@@ -761,7 +761,14 @@
 		position: relative; /* CornerMeta host (A4 blueprint margins) */
 		display: grid;
 		gap: 2rem;
-		min-height: calc(100svh - var(--chrome-offset));
+		/* 100dvh WITH the navbar inside (operator, 2026-07-09): the band starts at
+		   the viewport top — cancelling BOTH the layout's nav-clearance pad
+		   (--chrome-offset on the page wrapper) AND the hub Surface's top pad (its
+		   exposed var) — and spans exactly one viewport. The floating pill lives
+		   INSIDE the band; --chrome-offset as top padding keeps content clear of it. */
+		margin-top: calc(-1 * (var(--chrome-offset) + var(--surface-pad-y)));
+		min-height: 100dvh;
+		padding-top: var(--chrome-offset);
 		align-content: center;
 	}
 	@media (min-width: 1024px) {
