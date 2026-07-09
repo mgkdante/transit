@@ -97,7 +97,7 @@ const liveNetwork: NetworkFile = {
 	non_responding: 7,
 	feed_freshness_s: 20,
 	coverage_pct: 94,
-	occupancy_mix: null,
+	occupancy_mix: { empty: 0.1, many_seats: 0.65, few_seats: 0.17, standing: 0.08, full: 0 },
 };
 
 afterEach(() => {
@@ -164,6 +164,12 @@ describe('Home hub — live pulse honesty', () => {
 		expect(within(board).getByText('7')).toBeInTheDocument(); // not reporting
 		const dist = screen.getByRole('group', { name: /fleet status/i });
 		expect(within(dist).getByText('8')).toBeInTheDocument(); // on-time vehicles (fixture)
+		// The crowding grid renders the occupancy shares as whole percents…
+		const crowd = screen.getByRole('group', { name: /crowding/i });
+		expect(within(crowd).getByText('65%')).toBeInTheDocument(); // many seats
+		// …and busiest-lines hides honestly while the live index is empty (the
+		// mocked store carries emptyLiveIndex): no fabricated route rows.
+		expect(screen.queryByRole('group', { name: /busiest lines/i })).toBeNull();
 		// The pulse verdict flips to LIVE when the tier reports (no STANDBY anywhere).
 		expect(screen.getAllByText('LIVE').length).toBeGreaterThanOrEqual(1);
 		expect(screen.queryByText('STANDBY')).toBeNull();
