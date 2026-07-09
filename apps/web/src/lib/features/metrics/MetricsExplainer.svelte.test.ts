@@ -48,12 +48,12 @@ const en = metricsCopy.en;
 
 // P5-R R3 — the page is DEFAULT-OPEN with per-card persisted open-state
 // (sessionStorage key `transit.persisted:metrics-card-<anchor>`), plus the ToC's
-// own `metrics-toc` key and the ONE site-wide FOCUS preference
+// own `metrics-toc` key and the ONE site-wide collapsed-default preference
 // ('transit:quiet-mode', owned by the shared quietModeStore — a module
 // singleton whose state would leak between tests). `persisted()` seeds
 // synchronously from sessionStorage, so wipe every relevant key AND reset the
 // store before + after each test so every render starts from the true default
-// (all cards open, ToC open, FOCUS off) and no stale hash lingers.
+// (all cards open, ToC open, bulk collapse off) and no stale hash lingers.
 const CARD_ANCHORS = [...METRICS.map((m) => m.anchor), 'live-positions', 'structural-gaps'];
 function resetMetricsStorage(): void {
 	for (const anchor of CARD_ANCHORS) {
@@ -209,7 +209,7 @@ describe('MetricsExplainer', () => {
 
 	it('mobile pill navigation OPENS the target card through a folded page (review F1)', async () => {
 		const { container } = render(MetricsExplainer);
-		// Fold the default-open page first (FOCUS) so the reveal is observable.
+		// Fold the default-open page first so the reveal is observable.
 		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
 		const target = METRICS[0];
 		const card = container
@@ -226,7 +226,7 @@ describe('MetricsExplainer', () => {
 	});
 
 	it('a malformed hash fragment never throws during mount (review F2)', async () => {
-		// Pin FOCUS so the page mounts folded — "nothing opened" is then observable.
+		// Save collapsed mode so the page mounts folded — "nothing opened" is observable.
 		localStorage.setItem('transit:quiet-mode', 'true');
 		window.location.hash = '#%';
 		expect(() => render(MetricsExplainer)).not.toThrow();
@@ -372,8 +372,8 @@ describe('MetricsExplainer', () => {
 	});
 
 	// ── R3: the hash opener reveals its target through a folded page ───────────
-	it('opens the hash-named card on mount even when a pinned FOCUS folded the page', async () => {
-		localStorage.setItem('transit:quiet-mode', 'true'); // a prior visit pinned FOCUS
+	it('opens the hash-named card on mount even when a saved collapse default folded the page', async () => {
+		localStorage.setItem('transit:quiet-mode', 'true');
 		window.location.hash = '#otp';
 		const { container } = render(MetricsExplainer);
 		// One await for the opener's own deferral (review F3), one for the
@@ -381,9 +381,11 @@ describe('MetricsExplainer', () => {
 		await tick();
 		await tick();
 
-		// FOCUS restored ON → the page folded; the deep-linked card still opens
+		// Saved collapsed mode restored → the page folded; the deep-linked card still opens
 		// (quiet folds cards but never locks them against explicit intent).
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveAttribute('aria-checked', 'true');
+		const quietToggle = screen.getByTestId('quiet-mode-toggle');
+		expect(quietToggle).toHaveAttribute('data-collapsed', 'true');
+		expect(quietToggle).toHaveTextContent('Expand all');
 		expect(cardTrigger(container, 'otp')).toHaveAttribute('aria-expanded', 'true');
 		for (const entry of METRICS.filter((m) => m.anchor !== 'otp')) {
 			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'false');
@@ -392,7 +394,7 @@ describe('MetricsExplainer', () => {
 
 	it('opens another card on a later hashchange without closing the first (folded page)', async () => {
 		const { container } = render(MetricsExplainer);
-		// Fold everything first (FOCUS) so the additive opening is observable.
+		// Fold everything first so the additive opening is observable.
 		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -413,7 +415,7 @@ describe('MetricsExplainer', () => {
 	it('scrolls to a non-card preamble anchor without opening any folded card and without crashing', async () => {
 		// Several supplemental (i) tips deep-link to /metrics#metrics-provenance, the
 		// provenance PREAMBLE — a plain <section>, NOT a collapsible card. Fold the
-		// page first (pinned FOCUS) so "no card opens" is observable.
+		// page first (saved collapsed mode) so "no card opens" is observable.
 		localStorage.setItem('transit:quiet-mode', 'true');
 		window.location.hash = '#metrics-provenance';
 		const { container } = render(MetricsExplainer);
@@ -427,9 +429,9 @@ describe('MetricsExplainer', () => {
 		expect(container.querySelector('#metrics-provenance')).not.toBeNull();
 	});
 
-	it('ToC navigation opens the target card through FOCUS (folded siblings unaffected)', async () => {
+	it('ToC navigation opens the target card through a folded page (siblings unaffected)', async () => {
 		const { container } = render(MetricsExplainer);
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle')); // fold all
+		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
 		const rail = container.querySelector('.metrics-toc-rail') as HTMLElement;
 
 		const target = METRICS[3];
@@ -441,28 +443,26 @@ describe('MetricsExplainer', () => {
 		expect(cardTrigger(container, METRICS[0].anchor)).toHaveAttribute('aria-expanded', 'false');
 	});
 
-	// ── R3: FOCUS = the full yesid contract (fold all / reopen ALL) ────────────
-	it('FOCUS ON collapses every card + the ToC; FOCUS OFF reopens EVERYTHING', async () => {
+	// ── R3: the full yesid contract (collapse all / expand all) ────────────────
+	it('Collapse all folds every card + the ToC; Expand all reopens everything', async () => {
 		const { container } = render(MetricsExplainer);
 
 		const toggle = screen.getByTestId('quiet-mode-toggle');
-		expect(toggle).toHaveAttribute('role', 'switch');
-		expect(toggle).toHaveAttribute('aria-checked', 'false');
-		// The accessible NAME is the stable visible word (WCAG 2.5.3); the action
-		// phrase rides title only and may flip with state.
-		expect(toggle).toHaveTextContent('Focus');
-		expect(toggle).toHaveAttribute('title', 'Enter focus reading');
+		expect(toggle).not.toHaveAttribute('role', 'switch');
+		expect(toggle).toHaveAttribute('data-collapsed', 'false');
+		expect(toggle).toHaveTextContent('Collapse all');
+		expect(toggle).toHaveAttribute('title', 'Collapse all sections on this page');
 
-		// FOCUS ON → every card collapses AND the ToC rail folds.
+		// Collapse all → every card collapses AND the ToC rail folds.
 		await fireEvent.click(toggle);
-		expect(toggle).toHaveAttribute('aria-checked', 'true');
-		expect(toggle).toHaveTextContent('Focus');
-		expect(toggle).toHaveAttribute('title', 'Exit focus reading');
+		expect(toggle).toHaveAttribute('data-collapsed', 'true');
+		expect(toggle).toHaveTextContent('Expand all');
+		expect(toggle).toHaveAttribute('title', 'Expand all sections on this page');
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		}
 		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'false');
-		// Unpinned FOCUS writes NO storage (session-only, in-memory).
+		// An unsaved collapse action writes no storage.
 		expect(localStorage.getItem('transit:quiet-mode')).toBeNull();
 
 		// The ToC rail is never HIDDEN (still in the DOM, still offers its jumps);
@@ -474,10 +474,10 @@ describe('MetricsExplainer', () => {
 			(container.querySelector('.detail-shell-grid') as HTMLElement).classList.contains('is-quiet'),
 		).toBe(false);
 
-		// FOCUS OFF → EVERYTHING reopens (cards + ToC — the yesid contract; the S10
-		// reopen-ToC-only deviation retired with the default-open flip).
+		// Expand all → everything reopens (cards + ToC).
 		await fireEvent.click(toggle);
-		expect(toggle).toHaveAttribute('aria-checked', 'false');
+		expect(toggle).toHaveAttribute('data-collapsed', 'false');
+		expect(toggle).toHaveTextContent('Collapse all');
 		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'true');
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'true');
@@ -501,7 +501,7 @@ describe('MetricsExplainer', () => {
 		expect(sessionStorage.getItem('transit.persisted:metrics-toc')).toBe('false');
 	});
 
-	it('persists a per-card CLOSE choice under its own session key (default-open page)', async () => {
+	it('writes a per-card CLOSE choice, then resets it on an unremembered article mount', async () => {
 		const { container } = render(MetricsExplainer);
 
 		// The card starts open; close it and confirm its own persisted key is written.
@@ -510,45 +510,53 @@ describe('MetricsExplainer', () => {
 		expect(cardTrigger(container, 'severe')).toHaveAttribute('aria-expanded', 'false');
 		expect(sessionStorage.getItem('transit.persisted:metrics-card-severe')).toBe('false');
 
-		// A fresh render (same tab) restores that ONE card closed, the rest open.
+		// A fresh unremembered article resets all participating cards open. Its
+		// mount-time openSignal intentionally overrides the prior per-card choice.
 		const { container: c2 } = render(MetricsExplainer);
-		expect(cardTrigger(c2, 'severe')).toHaveAttribute('aria-expanded', 'false');
+		expect(cardTrigger(c2, 'severe')).toHaveAttribute('aria-expanded', 'true');
 		expect(cardTrigger(c2, 'otp')).toHaveAttribute('aria-expanded', 'true');
 	});
 
-	// ── R3: the REMEMBER pin (ONE site-wide preference) ────────────────────────
-	it('REMEMBER pins FOCUS across visits under the site-wide key; forgetting unpins without unfolding', async () => {
+	// ── R3: the remembered collapsed default (ONE site-wide preference) ───────
+	it('Always start collapsed persists; forgetting clears the default without unfolding', async () => {
 		const { container } = render(MetricsExplainer);
 
 		const remember = screen.getByTestId('quiet-mode-remember');
-		expect(remember).toHaveAttribute('role', 'switch');
-		expect(remember).toHaveAttribute('aria-checked', 'false');
+		expect(remember).not.toHaveAttribute('role', 'switch');
+		expect(remember).toHaveAttribute('data-remembered', 'false');
+		expect(remember).toHaveTextContent('Always start collapsed');
 
-		// PIN → engages FOCUS and persists the site-wide preference.
+		// Remembering engages collapsed mode and persists the site-wide preference.
 		await fireEvent.click(remember);
-		expect(remember).toHaveAttribute('aria-checked', 'true');
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveAttribute('aria-checked', 'true');
+		expect(remember).toHaveAttribute('data-remembered', 'true');
+		expect(remember).toHaveTextContent("Don't start collapsed");
+		expect(screen.getByTestId('quiet-mode-toggle')).toHaveAttribute('data-collapsed', 'true');
+		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
 		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		}
 
-		// FORGET → the preference clears; the on-screen folded state is untouched.
+		// Forgetting clears the preference; the on-screen folded state is untouched.
 		await fireEvent.click(remember);
-		expect(remember).toHaveAttribute('aria-checked', 'false');
+		expect(remember).toHaveAttribute('data-remembered', 'false');
+		expect(remember).toHaveTextContent('Always start collapsed');
 		expect(localStorage.getItem('transit:quiet-mode')).toBeNull();
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveAttribute('aria-checked', 'true');
+		expect(screen.getByTestId('quiet-mode-toggle')).toHaveAttribute('data-collapsed', 'true');
+		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
 	});
 
-	it('restores a PINNED FOCUS preference on mount → cards + ToC folded, rail still present', () => {
-		// A prior visit pinned FOCUS ON (the ONE site-wide key). On mount the shared
+	it('restores a saved collapsed preference on mount → cards + ToC folded, rail still present', () => {
+		// A prior visit saved collapsed mode under the ONE site-wide key. On mount the shared
 		// store re-applies it: the close signal folds cards + ToC; the rail is NEVER
 		// removed from the DOM.
 		localStorage.setItem('transit:quiet-mode', 'true');
 		const { container } = render(MetricsExplainer);
 
-		expect(screen.getByTestId('quiet-mode-toggle')).toHaveAttribute('aria-checked', 'true');
-		expect(screen.getByTestId('quiet-mode-remember')).toHaveAttribute('aria-checked', 'true');
+		expect(screen.getByTestId('quiet-mode-toggle')).toHaveAttribute('data-collapsed', 'true');
+		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
+		expect(screen.getByTestId('quiet-mode-remember')).toHaveAttribute('data-remembered', 'true');
+		expect(screen.getByTestId('quiet-mode-remember')).toHaveTextContent("Don't start collapsed");
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		}
@@ -568,7 +576,7 @@ describe('MetricsExplainer', () => {
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		}
-		// The bulk control never folds the ToC (only FOCUS does).
+		// The page-owned bulk control never folds the ToC (only the shared control does).
 		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'true');
 		expect(bulk).toHaveTextContent(en.expand.expandAll);
 
