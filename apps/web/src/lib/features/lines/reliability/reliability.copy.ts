@@ -281,18 +281,6 @@ export interface ReliabilityCopy {
 		readonly filterPillClose: string;
 		/** a11y: close the mobile section-jump (TOC) pill drawer. */
 		readonly tocPillClose: string;
-		/** Scope tooltip: this section re-shapes on the time window. */
-		readonly scopeWindowed: string;
-		/** Scope tooltip: this section ignores the time window (full history). */
-		readonly scopeWhole: string;
-		/** One-line scope note under the grain picker (which sections the window drives). */
-		readonly scopeNote: string;
-		/**
-		 * Section-position readout in the sticky ToC rail (H4, §C2.6): "SEC n/m" —
-		 * the active section index over the total. Builder so the numerals localize
-		 * cleanly and the mono label stays a single source.
-		 */
-		readonly sectionReadout: (n: number, total: number) => string;
 	};
 	/**
 	 * Rider-question section framing (the 5-section rider-first IA): each section's
@@ -484,11 +472,6 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			filterPillOpen: 'Ouvrir les commandes de vue',
 			filterPillClose: 'Fermer les commandes de vue',
 			tocPillClose: 'Fermer la liste des sections',
-			scopeWindowed: 'Suit la fenêtre choisie ci-dessus',
-			scopeWhole: 'Historique complet : la fenêtre ci-dessus ne change pas cette section',
-			scopeNote:
-				'La fenêtre ci-dessus remodèle les sections marquées ↻ ; les sections ∞ montrent tout l’historique.',
-			sectionReadout: (n, total) => `SEC ${n}/${total}`,
 		},
 		sections: {
 			verdict: {
@@ -699,10 +682,6 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			filterPillOpen: 'Open view controls',
 			filterPillClose: 'Close view controls',
 			tocPillClose: 'Close section list',
-			scopeWindowed: 'Follows the time window above',
-			scopeWhole: 'Full history: the window above doesn’t change this section',
-			scopeNote: 'The window above re-shapes the ↻ sections; the ∞ sections show the full history.',
-			sectionReadout: (n, total) => `SEC ${n}/${total}`,
 		},
 		sections: {
 			verdict: {

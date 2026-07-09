@@ -1,10 +1,14 @@
 // presentAvailability — the receipt DATE-PICKER availability model (S13 · WEB3).
 //
-// The smart calendar picker shows the FULL span earliest→latest, with published
-// days enabled and any gap-day in between DISABLED, each carrying an honest reason.
-// This pure presenter turns the ReceiptsIndex ({dates} + the S13 {available}
-// metadata) into the ordered SingleDateOption[] the DateRangePicker (mode='single')
-// renders, plus the flat list of enabled dates the default/seed logic reads.
+// Classifies the FULL span earliest→latest, with published days enabled and any
+// gap-day in between DISABLED, each carrying an honest reason. This pure presenter
+// turns the ReceiptsIndex ({dates} + the S13 {available} metadata) into the ordered
+// ReceiptDateOption[] this module's tests assert on, plus the flat list of enabled
+// dates the default/seed logic reads. NOTE: the DateRangePicker primitive
+// (mode='single') is a native <input type="date"> — it reads only each option's
+// `date` to bound its min/max span; it can't render a per-day disabled state or
+// reason, so `disabled`/`disabledLabel`/`label` are this module's own classification
+// output, not part of the primitive's contract.
 //
 // HONEST REASONS (WEB3 · DB3): the `available[]` metadata distinguishes
 //   · a PUBLISHED day with telemetry            → enabled;
@@ -43,10 +47,25 @@ export interface ReceiptAvailabilityLabels {
 	readonly scheduleOnly?: string;
 }
 
+/**
+ * A calendar day in the receipt's availability span. Extends the primitive's
+ * {@link SingleDateOption} (which reads only `date` — a native calendar can't
+ * disable an interior day or show a per-day reason) with this presenter's own
+ * classification fields; this module's own tests assert on `disabled` /
+ * `disabledLabel` directly, and `label` documents the resolved caption even
+ * though the current DateRangePicker primitive ignores both.
+ */
+export interface ReceiptDateOption extends SingleDateOption {
+	readonly label: string;
+	readonly disabled: boolean;
+	/** Localized reason appended to a disabled day. */
+	readonly disabledLabel?: string;
+}
+
 /** The availability view-model the orchestrator + picker consume. */
 export interface AvailabilityVM {
 	/** The full calendar as ordered picker options (published enabled, gaps disabled). */
-	readonly options: SingleDateOption[];
+	readonly options: ReceiptDateOption[];
 	/** The ENABLED, published dates ascending (what the default/seed reads). */
 	readonly enabledDates: string[];
 	/** True when at least one day is published (else the picker stands down entirely). */
@@ -102,7 +121,7 @@ export function selectAvailability(
 	const earliest = sorted[0];
 	const latest = sorted[sorted.length - 1];
 
-	const options: SingleDateOption[] = [];
+	const options: ReceiptDateOption[] = [];
 	const enabledDates: string[] = [];
 	// Enumerate the FULL span (bounded — the index is a trailing 30-day window) so a
 	// gap-day shows as a disabled option rather than silently vanishing.

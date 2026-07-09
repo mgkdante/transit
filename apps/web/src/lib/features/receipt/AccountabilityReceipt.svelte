@@ -256,8 +256,10 @@
 			<!-- The smart single-date calendar lives in a bare ControlsRail (quiet infra
 			     panel) ABOVE the frame — the receipt is NOT a multi-grain surface, so a
 			     bare rail hosts ONLY the availability-bound picker; --primary stays on the
-			     interactive control. The full span shows disabled gap-days with honest
-			     reasons (WEB3). -->
+			     interactive control. It's a native calendar bounded (min/max) to the
+			     published span (earliest→latest); an interior gap-day is still pickable
+			     but resolves HONESTLY through the receipt's own absent-day path — never a
+			     fabricated reading (WEB3). -->
 			<ControlsRail label={t.controlsLabel} class="receipt-controls">
 				<DateRangePicker
 					mode="single"

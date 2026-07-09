@@ -26,8 +26,13 @@
 		/**
 		 * The rail content — grain / filter controls + the section ToC. Rendered in BOTH
 		 * the desktop glass panel AND the mobile sheet (single source of truth).
+		 * The snippet receives `{ closeSheet }` — the EXPLICIT dismissal seam: wire it
+		 * into TocNav's `onNavigate` (or any jump control) so picking a section closes
+		 * the mobile sheet. On desktop it is a harmless no-op. This replaces the old
+		 * `.toc-item` class sniffing, which silently coupled SurfaceRail to TocNav's
+		 * private markup (a rename there would have killed sheet dismissal).
 		 */
-		rail: Snippet;
+		rail: Snippet<[{ closeSheet: () => void }]>;
 		/** Rail aria-label + the mobile pill/sheet heading (e.g. "View" / "Vue"). */
 		label: string;
 		/** Optional collapsed-pill summary (e.g. the active grain · section). */
@@ -57,18 +62,17 @@
 	}
 	// Move focus into the sheet when it opens (first focusable) so keyboard users land
 	// inside it; focus returns to the pill button on close (closeSheet). ALSO: a tap on a
-	// ToC jump link (an in-page `#anchor`) closes the sheet so the reader lands on the
-	// section — a filter/grain pick (a button) does NOT close, so filters can be changed
-	// freely. Delegated via addEventListener (not an inline onclick) so the sheet stays a
-	// plain container with no static-element-interaction a11y violation.
+	// native ToC jump link (an in-page `#anchor`) closes the sheet so the reader lands on
+	// the section — a filter/grain pick (a button) does NOT close, so filters can be
+	// changed freely. Component ToCs (TocNav) dismiss through the EXPLICIT seam instead:
+	// the rail snippet's `closeSheet` param wired into `onNavigate`. Delegated via
+	// addEventListener (not an inline onclick) so the sheet stays a plain container with
+	// no static-element-interaction a11y violation.
 	$effect(() => {
 		if (!sheetOpen || !sheetEl) return;
 		sheetEl.querySelector<HTMLElement>('button, a, select, input, [tabindex]')?.focus();
 		const onClick = (e: MouseEvent) => {
-			// Close on a ToC jump — either a native anchor (#section) OR a shared TocNav
-			// button (.toc-item), so the sheet dismisses when the reader picks a section
-			// (a filter/grain control is neither, so changing filters keeps the sheet open).
-			if ((e.target as HTMLElement | null)?.closest('a[href^="#"], .toc-item')) closeSheet(false);
+			if ((e.target as HTMLElement | null)?.closest('a[href^="#"]')) closeSheet(false);
 		};
 		sheetEl.addEventListener('click', onClick);
 		return () => sheetEl?.removeEventListener('click', onClick);
@@ -83,7 +87,7 @@
 	data-slot="surface-rail"
 	aria-label={label}
 >
-	{@render rail()}
+	{@render rail({ closeSheet: () => closeSheet(false) })}
 </aside>
 
 <!-- MOBILE: ONE pill → ONE sheet merging grain/filters + ToC (<1024; hidden ≥1024). -->
@@ -113,7 +117,7 @@
 			role="dialog"
 			aria-label={label}
 		>
-			{@render rail()}
+			{@render rail({ closeSheet: () => closeSheet(false) })}
 		</div>
 	{/if}
 </div>

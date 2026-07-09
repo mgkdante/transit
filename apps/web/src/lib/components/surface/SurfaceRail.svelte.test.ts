@@ -11,13 +11,28 @@ import { createRawSnippet } from 'svelte';
 import SurfaceRail from './SurfaceRail.svelte';
 
 // The rail content: a filter button + a ToC jump link, so we can prove the sheet renders both
-// and that a link closes the sheet while the button does not.
+// and that a link closes the sheet while the button does not. The snippet receives the
+// { closeSheet } seam param (unused here; the seam test below wires it).
 const rail = createRawSnippet(() => ({
 	render: () =>
 		`<div data-testid="rail-body">
 			<button type="button" data-testid="rail-filter">Day</button>
 			<nav data-slot="section-toc"><a href="#sec-a" data-testid="rail-jump">Section A</a></nav>
 		</div>`,
+}));
+
+// A rail that wires the snippet's { closeSheet } param onto a component-style ToC button —
+// the EXPLICIT dismissal seam TocNav consumers use (onNavigate → closeSheet), replacing the
+// old private `.toc-item` class sniffing.
+const railWithSeam = createRawSnippet<[{ closeSheet: () => void }]>((getArgs) => ({
+	render: () =>
+		`<div data-testid="rail-body">
+			<button type="button" data-testid="rail-seam-jump">Section A</button>
+		</div>`,
+	setup: (el) => {
+		const btn = el.querySelector('[data-testid="rail-seam-jump"]') as HTMLButtonElement;
+		btn.addEventListener('click', () => getArgs().closeSheet());
+	},
 }));
 
 const baseProps = {
@@ -73,6 +88,21 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 
 		// A ToC jump link (in-page #anchor) DOES close the sheet so the reader lands on the section.
 		await fireEvent.click(mobile.querySelector('[data-testid="rail-jump"]') as HTMLElement);
+		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
+	});
+
+	it('a component ToC tap dismisses the sheet through the explicit closeSheet seam', async () => {
+		const { container } = render(SurfaceRail, { props: { ...baseProps, rail: railWithSeam } });
+		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		const pill = mobile.querySelector('button') as HTMLButtonElement;
+
+		await fireEvent.click(pill);
+		expect(mobile.querySelector('[role="dialog"]')).not.toBeNull();
+
+		// The seam button is a plain <button> (NOT an #anchor, NOT any special class) —
+		// only the snippet-param wiring closes the sheet, proving the seam is explicit.
+		const sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
+		await fireEvent.click(sheet.querySelector('[data-testid="rail-seam-jump"]') as HTMLElement);
 		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
 	});
 

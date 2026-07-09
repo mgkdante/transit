@@ -35,7 +35,6 @@
 	import { Masthead } from '$lib/components/brand';
 	import { ResourceBoundary, FreshnessStamp } from '$lib/components/surface';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
-	import SectionProgress from '$lib/components/brand/SectionProgress.svelte';
 	import { TocNav, type TocEntry } from '$lib/components/shared';
 	import { copy as COPY } from './health.copy';
 	import {
@@ -187,13 +186,9 @@
 
 	// ── Active-section tracking + ToC navigation ──────────────────────────────────
 	// DetailShell owns the single IntersectionObserver and writes `activeId` back via
-	// `bind:activeId`; this state receives it and feeds the left rail + reading readout.
+	// `bind:activeId`; this state receives it and feeds the left rail ToC (whose own
+	// footer carries the ONE "SEC n/m" reading readout).
 	let activeId = $state('');
-
-	const activeIndex = $derived.by(() => {
-		const i = tocEntries.findIndex((e) => e.id === activeId);
-		return i >= 0 ? i + 1 : 1;
-	});
 
 	function navigate(id: string): void {
 		document
@@ -226,11 +221,6 @@
 
 		{#snippet left()}
 			<div class="health-toc-rail">
-				<SectionProgress
-					current={activeIndex}
-					total={Math.max(tocEntries.length, 1)}
-					prefix={t.toc.counterPrefix}
-				/>
 				{#if tocEntries.length > 0}
 					<TocNav
 						entries={tocEntries}

@@ -382,7 +382,7 @@
 		grid-template-columns: 1fr;
 		gap: clamp(1.5rem, 4vw, 2rem);
 		width: 100%;
-		max-width: 76rem;
+		max-width: var(--container-wide);
 		margin-inline: auto;
 	}
 	@media (min-width: 1024px) {

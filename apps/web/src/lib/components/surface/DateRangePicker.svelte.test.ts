@@ -92,6 +92,19 @@ describe('DateRangePicker — bounds + normalization', () => {
 		await fireEvent.change(getByLabelText('Pick a date range · To'), { target: { value: '' } });
 		expect(box.value).toBeUndefined();
 	});
+
+	it('clamps the To input min to the picked From value, and the From input max to the picked To value', async () => {
+		const { getByLabelText } = renderPicker();
+		const start = getByLabelText('Pick a date range · From') as HTMLInputElement;
+		const end = getByLabelText('Pick a date range · To') as HTMLInputElement;
+		// Before any pick, both bounds fall back to the surface's full coverage span.
+		expect(end.min).toBe('2026-06-01');
+		expect(start.max).toBe('2026-06-03');
+		await fireEvent.change(start, { target: { value: '2026-06-02' } });
+		expect(end.min).toBe('2026-06-02');
+		await fireEvent.change(end, { target: { value: '2026-06-03' } });
+		expect(start.max).toBe('2026-06-03');
+	});
 });
 
 describe('DateRangePicker — clear affordance', () => {

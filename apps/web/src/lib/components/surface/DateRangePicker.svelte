@@ -5,11 +5,13 @@
   (S8: the stop daily series; S13: the receipts index; lines: the day-grain
   periods). It is a PURE view + normalize: a start/end pair of native date PICKERS
   (<input type="date">) bounded (min/max) to the surface's `availableDates`, composing a NORMALIZED {@link DateWindow}
-  (via $lib/filters normalizeWindow) on every change. Because the options are the
-  surface's real dates ONLY, an out-of-coverage pick is impossible by
-  construction; any pick order is valid (normalizeWindow swaps an inverted pair);
-  a half pick (one bound cleared) yields NO window (`undefined`) — a fabricated /
-  inverted span never leaves the primitive (honest-absence).
+  (via $lib/filters normalizeWindow) on every change. GUARANTEE: min/max scope the
+  native calendar to the surface's real span, but a native picker can't disable an
+  INTERIOR gap-day or block a typed out-of-range value — either resolves HONESTLY
+  through the surface's own absent-day / normalize path, never fabricated data; any
+  pick order is valid (normalizeWindow swaps an inverted pair); a half pick (one
+  bound cleared) yields NO window (`undefined`) — a fabricated / inverted span
+  never leaves the primitive (honest-absence).
 
   S13-REUSABLE: the primitive knows only {DateWindow, availableDates, locale,
   labels} — zero stop/receipt/lines-specific fields. It seats into
@@ -20,8 +22,10 @@
   instead of a window. Degradation from the old <select>: a native calendar can
   only BOUND via min/max (it can't DISABLE an interior gap-day), so a gap-day is
   pickable but resolves HONESTLY through the receipt's own absent-day path — no
-  fabricated reading. `dateOptions` (disabled/reason fields kept) still gates
-  hasDates. The range path is byte-identical, so the receipt reuses this primitive.
+  fabricated reading. `dateOptions` still gates hasDates (its length) and supplies
+  the span's earliest/latest day; the producer's per-day disabled/reason fields
+  aren't part of this primitive's contract (a native input can't render them). The
+  range path is byte-identical, so the receipt reuses this primitive.
 
   HONEST ABSENCE: when `availableDates` is empty there is nothing to range over —
   the primitive renders an AbsentValue (via describeAbsence) with the caller's
@@ -63,18 +67,14 @@
 	}
 
 	/**
-	 * One option in the SINGLE-date calendar (S13, mode='single'). A day carries an
-	 * honest DISABLED state + reason when the calendar span (earliest→latest) has a
-	 * gap the receipt index never published — so the picker HONESTLY shows which days
-	 * carry data rather than hiding the gap. `label` is the caller's localized short
-	 * date; `disabledLabel` is the appended honest reason (e.g. "no receipt").
+	 * One day in the SINGLE-date calendar's availability span (S13, mode='single').
+	 * The primitive reads only `date` — a native <input type="date"> bounds itself
+	 * via min/max to the span's earliest/latest day; it can't disable an interior
+	 * day or show a per-day reason, so those live only in the producer's own VM
+	 * (presentAvailability) for its callers/tests, not in this primitive's contract.
 	 */
 	export interface SingleDateOption {
 		readonly date: string;
-		readonly label: string;
-		readonly disabled: boolean;
-		/** Localized reason appended to a disabled option (caller-supplied). */
-		readonly disabledLabel?: string;
 	}
 
 	/**
@@ -208,6 +208,15 @@
 		dateOptions.length ? dateOptions[dateOptions.length - 1].date : undefined,
 	);
 
+	// RANGE CLAMP: once one bound is picked, the OTHER input's own min/max narrows to
+	// it — the To field can't go earlier than the picked From day, and the From field
+	// can't go later than the picked To day. This keeps the calendar itself honest
+	// about the resulting window (normalizeWindow would swap an inverted pair anyway,
+	// but the widget shouldn't invite picking one). Falls back to the surface's own
+	// coverage bound when the other side isn't picked yet.
+	const toMin = $derived(start || minDate);
+	const fromMax = $derived(end || maxDate);
+
 	/**
 	 * Compose the two bounds into a normalized window (or clear it) and assign
 	 * `value`. normalizeWindow swaps an inverted pair, so any pick order is valid; a
@@ -269,7 +278,7 @@
 				class="date-range__input"
 				value={start}
 				min={minDate}
-				max={maxDate}
+				max={fromMax}
 				onchange={(e) => emit(e.currentTarget.value, end)}
 				aria-label={`${labels.group} · ${labels.start}`}
 			/>
@@ -280,7 +289,7 @@
 				type="date"
 				class="date-range__input"
 				value={end}
-				min={minDate}
+				min={toMin}
 				max={maxDate}
 				onchange={(e) => emit(start, e.currentTarget.value)}
 				aria-label={`${labels.group} · ${labels.end}`}

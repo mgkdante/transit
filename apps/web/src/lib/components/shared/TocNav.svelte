@@ -131,11 +131,14 @@
 		{/each}
 	</nav>
 
+	<!-- THE one section-position readout for a rail (zero-padded to match the
+	     numbered chips). SectionProgress was retired in P5.4f: every rail that
+	     renders a TocNav gets exactly this counter, never a second one. -->
 	<div class="mt-6 flex items-center gap-2">
 		<div class="toc-counter-dot"></div>
 		<span class="toc-counter-text font-mono text-micro tracking-[1.5px]">
 			{counterPrefix}
-			{activeIndex + 1} / {flat.length}
+			{String(activeIndex + 1).padStart(2, '0')} / {String(flat.length).padStart(2, '0')}
 		</span>
 	</div>
 </CollapsibleSection>

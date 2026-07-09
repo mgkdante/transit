@@ -460,7 +460,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
-		max-width: 76rem;
+		max-width: var(--container-wide);
 		margin-inline: auto;
 	}
 	/* §C5.12 #1-offender hero — a solid card (occlusion law) leading with the worst
@@ -542,7 +542,7 @@
 		gap: 0.75rem;
 	}
 	:global(.dashboard-grid.repeat-offenders-ranked) {
-		max-width: 76rem;
+		max-width: var(--container-wide);
 		margin-inline: auto;
 	}
 	.repeat-offenders-item {

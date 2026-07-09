@@ -145,10 +145,10 @@ describe('RouteReliabilityClusters', () => {
 			props: { data: populated, locale: 'en' },
 		});
 
-		// The rail carries a "SEC n/m" wayfinding stamp (shared SectionProgress) over the
-		// total section count (5). Before the scroll observer resolves an active id, it
-		// falls back to section 1 → "SEC 01 / 05".
-		const readout = container.querySelector('[data-slot="section-progress"]');
+		// The rail's ONE wayfinding stamp is TocNav's own zero-padded footer counter
+		// over the total section count (5). Before the scroll observer resolves an
+		// active id, it falls back to section 1 → "SEC 01 / 05".
+		const readout = container.querySelector('.toc-counter-text');
 		expect(readout).not.toBeNull();
 		expect(readout?.textContent?.replace(/\s+/g, ' ').trim()).toContain('SEC 01 / 05');
 	});

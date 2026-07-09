@@ -26,8 +26,8 @@ export interface StopReliabilityCopy {
 	readonly controlsLabel: string;
 	/**
 	 * P5.4 GLASS LEFT RAIL wayfinding: the section ToC heading + the mobile
-	 * pill/sheet open+close aria + the "SEC n/m" position readout. The rail merges
-	 * the grain picker + this jump list into ONE menu (desktop panel / mobile sheet).
+	 * pill/sheet open+close aria. The rail merges the grain picker + this jump
+	 * list into ONE menu (desktop panel / mobile sheet).
 	 */
 	readonly nav: {
 		/** Section ToC heading ("Jump to"). */
@@ -36,8 +36,6 @@ export interface StopReliabilityCopy {
 		readonly pillOpen: string;
 		/** aria-label for the mobile rail sheet's dismiss control. */
 		readonly pillClose: string;
-		/** "SEC n/m" position readout for the active section. */
-		readonly sectionReadout: (n: number, total: number) => string;
 	};
 	/** Grain (roll-up) picker affordances. */
 	readonly grain: {
@@ -183,7 +181,6 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 			toc: 'Aller à une section',
 			pillOpen: 'Ouvrir la vue et les sections',
 			pillClose: 'Fermer la vue et les sections',
-			sectionReadout: (n, total) => `SEC ${n}/${total}`,
 		},
 		grain: {
 			label: 'Période de regroupement',
@@ -307,7 +304,6 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 			toc: 'Jump to a section',
 			pillOpen: 'Open view and sections',
 			pillClose: 'Close view and sections',
-			sectionReadout: (n, total) => `SEC ${n}/${total}`,
 		},
 		grain: {
 			label: 'Roll-up period',

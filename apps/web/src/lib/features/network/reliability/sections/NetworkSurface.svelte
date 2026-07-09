@@ -63,7 +63,6 @@
 		type GrainSegment,
 	} from '$lib/components/surface';
 	import { observeActiveToc, TocNav, type TocEntry } from '$lib/components/shared';
-	import SectionProgress from '$lib/components/brand/SectionProgress.svelte';
 	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
@@ -476,12 +475,6 @@
 	// region the rail ToC highlights (client-only; each region carries data-toc below).
 	let activeId = $state('');
 	onMount(() => observeActiveToc((id) => (activeId = id)));
-	// "SEC n/m" position readout: the active region's 1-based index over the total,
-	// falling back to region 1 before the observer resolves an active id.
-	const activeIndex = $derived.by(() => {
-		const idx = regionNav.findIndex((s) => s.id === activeId);
-		return idx >= 0 ? idx + 1 : 1;
-	});
 	// Smooth-scroll to a region when its TocNav row is tapped (TocNav is button-driven).
 	function navigate(id: string): void {
 		document
@@ -551,7 +544,7 @@
 		<!-- The rail content — the View overline + the grain picker (when >1 grain is populated) +
 		     the window/delay toggles + the two-region ToC. ONE definition, rendered by SurfaceRail
 		     in BOTH the desktop glass rail AND the mobile sheet (single source). -->
-		{#snippet railContent()}
+		{#snippet railContent({ closeSheet }: { closeSheet: () => void })}
 			<div class="network-control-body" data-slot="controls-body">
 				<span class="network-rail-view" data-slot="controls-rail-label">{t.viewControlsLabel}</span>
 				<!-- The grain radiogroup — rendered only when MORE THAN ONE grain carries data (a dead
@@ -572,14 +565,18 @@
 			</div>
 
 			<!-- Region ToC (wayfinding) — the ONE shared TocNav, identical to the metrics /
-			     status / lines / stops rails: a "SEC n/m" position readout + a numbered jump
-			     list, the active region amber-highlighted. No per-region scope glyph. -->
+			     status / lines / stops rails: a numbered jump list with TocNav's own
+			     "SEC n/m" readout (the rail's ONLY position counter), the active region
+			     amber-highlighted. Picking a region also dismisses the mobile sheet through
+			     SurfaceRail's explicit closeSheet seam. -->
 			<div class="rail-toc" data-slot="section-toc">
-				<SectionProgress current={activeIndex} total={Math.max(regionNav.length, 1)} />
 				<TocNav
 					entries={tocEntries}
 					{activeId}
-					onNavigate={navigate}
+					onNavigate={(id) => {
+						navigate(id);
+						closeSheet();
+					}}
 					heading={t.rail.toc}
 					sectionKey="network-toc"
 				/>
@@ -713,7 +710,12 @@
 						(d.monthly?.length ?? 0) === 0}
 				>
 					<!-- The readouts read the module-level windowed VMs (not the boundary payload). -->
-					<DashboardGrid minTile="360px" gutter={false}>
+					<!-- align="start": these tiles are HETEROGENEOUS (tall charts beside a
+					     one-line completeness note) — stretching them equal pads the short ones
+					     with dead space (measured ~360px empty in the crowding tile), the exact
+					     disease 0f274ae reverted on the receipt. Natural height is the ruling
+					     for mixed-kind rows; equal-height stays for uniform scalar boards. -->
+					<DashboardGrid minTile="360px" gutter={false} align="start">
 						<SectionTrend {trendSpec} {vehiclesSpark} {isDailyGrain} {info} copy={t} />
 
 						{#if cancelTrend.hasCancel}
@@ -852,7 +854,7 @@
 
 	/* The rail region jump-list rides the ONE shared TocNav (same component the metrics /
 	   status / lines / stops rails use), so every surface's wayfinding looks identical.
-	   Only this thin flex wrapper is local; TocNav + SectionProgress own the rest. */
+	   Only this thin flex wrapper is local; TocNav owns the rest. */
 	.rail-toc {
 		display: flex;
 		flex-direction: column;

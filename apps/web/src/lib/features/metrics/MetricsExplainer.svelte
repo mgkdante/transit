@@ -61,7 +61,6 @@
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
 	import { cornerMetaLabels } from '$lib/components/brand';
 	import { formatUtc } from '$lib/utils/time';
-	import SectionProgress from '$lib/components/brand/SectionProgress.svelte';
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import {
 		CollapsibleSection,
@@ -455,15 +454,6 @@
 	// rail's TocNav + reading-position readout below (no duplicate observer here).
 	let activeId = $state('');
 
-	// ── Reading-position readout (SEC n / m) for the left rail ───────────────────
-	// The 1-based index of the active ToC entry (falls back to 1 before any section
-	// is observed). Feeds SectionProgress alongside the ToC's own counter so the
-	// left rail carries a persistent "where am I" signal even when the ToC is folded.
-	const activeIndex = $derived.by(() => {
-		const i = tocEntries.findIndex((e) => e.id === activeId);
-		return i >= 0 ? i + 1 : 1;
-	});
-
 	// ── TOC navigation ──────────────────────────────────────────────────────────
 	// A TOC click OPENS its target card (default-closed page: a jump must reveal, not
 	// land on a shut card), then scrolls to it. Opening a card while its siblings
@@ -635,14 +625,9 @@
 			{@render statCards()}
 		{/snippet}
 
-		<!-- LEFT rail: the numbered ToC + the SEC n / m reading-position readout. -->
+		<!-- LEFT rail: the numbered ToC (its footer carries the ONE SEC n / m readout). -->
 		{#snippet left()}
 			<div class="metrics-toc-rail">
-				<SectionProgress
-					current={activeIndex}
-					total={tocEntries.length}
-					prefix={t.tocCounterPrefix}
-				/>
 				<!-- The ToC keeps its OWN user-driven collapse (its chevron) + persists
 				     the choice across same-tab visits via `sectionKey`. S10 (2026-07-02):
 				     it ALSO follows FOCUS now (yesid Quiet-Mode parity) — `closeSignal`

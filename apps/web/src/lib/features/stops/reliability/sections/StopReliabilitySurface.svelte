@@ -44,7 +44,6 @@
 		type GrainSegment,
 	} from '$lib/components/surface';
 	import { observeActiveToc, TocNav, type TocEntry } from '$lib/components/shared';
-	import SectionProgress from '$lib/components/brand/SectionProgress.svelte';
 	import { onMount } from 'svelte';
 	import { DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
@@ -308,14 +307,6 @@
 	let activeId = $state('');
 	onMount(() => observeActiveToc((id) => (activeId = id)));
 
-	// "SEC n/m" position readout for the rail ToC: the active section's 1-based index
-	// over the total present sections. Falls back to section 1 before the observer
-	// resolves (or if it points off-list).
-	const activeIndex = $derived.by(() => {
-		const idx = sectionNav.findIndex((s) => s.id === activeId);
-		return idx >= 0 ? idx + 1 : 1;
-	});
-
 	// Smooth-scroll to a section when its TocNav row is tapped (TocNav is button-driven).
 	function navigate(id: string): void {
 		document
@@ -347,7 +338,7 @@
 		     section ToC. ONE definition, rendered by SurfaceRail in BOTH the desktop glass
 		     panel AND the mobile sheet (single source; both bind the same grain + track
 		     activeId). -->
-		{#snippet railContent()}
+		{#snippet railContent({ closeSheet }: { closeSheet: () => void })}
 			<div class="stop-reliability-control-body" data-slot="controls-body">
 				<span class="stop-reliability-view" data-slot="controls-rail-label"
 					>{copy.controlsLabel}</span
@@ -359,16 +350,18 @@
 			</div>
 
 			<!-- Section ToC (wayfinding) — the ONE shared TocNav, identical to the metrics /
-			     status / network / lines rails: a "SEC n/m" position readout + a numbered jump
-			     list of the PRESENT sections, the active one amber-highlighted. No per-row scope
-			     glyph — this surface has no page-level window (the daily-trend range is
-			     section-local). -->
+			     status / network / lines rails: a numbered jump list of the PRESENT sections
+			     with TocNav's own "SEC n/m" readout (the rail's ONLY position counter), the
+			     active one amber-highlighted. Picking a section also dismisses the mobile
+			     sheet through SurfaceRail's explicit closeSheet seam. -->
 			<div class="rail-toc" data-slot="section-toc">
-				<SectionProgress current={activeIndex} total={Math.max(sectionNav.length, 1)} />
 				<TocNav
 					entries={tocEntries}
 					{activeId}
-					onNavigate={navigate}
+					onNavigate={(id) => {
+						navigate(id);
+						closeSheet();
+					}}
 					heading={copy.nav.toc}
 					sectionKey="stop-reliability-toc"
 				/>
@@ -553,7 +546,7 @@
 
 	/* The rail section jump-list rides the ONE shared TocNav (same component the metrics /
 	   status / network / lines rails use), so every surface's wayfinding looks identical.
-	   Only this thin flex wrapper is local; TocNav + SectionProgress own the rest. */
+	   Only this thin flex wrapper is local; TocNav owns the rest. */
 	.rail-toc {
 		display: flex;
 		flex-direction: column;
