@@ -1,10 +1,17 @@
 # R1 · Theatre machinery + the home JOURNEY — build brief
 
-> Branch `slice/p5r-r1-home-journey` (off the substrate stack tip `66eb4a8`; rebases onto
-> main trivially once the operator merges the substrate). Notion slice
-> `3983e863-0690-81cb-b2f0-dbf5b8619711` · register: `parity-register-full.json` § HOME +
-> § SITE-WIDE. Every hard law from the plan applies (marks frozen · one amber ground CTA
-> per view · glow never text · EN+FR · honest absence · PRM-silent).
+> Branch `slice/p5r-r1-home-journey`. Notion slice `3983e863-0690-81cb-b2f0-dbf5b8619711` ·
+> register: `parity-register-full.json` § HOME + § SITE-WIDE. Every hard law from the plan
+> applies (marks frozen · one amber ground CTA per view · glow never text · EN+FR · honest
+> absence · PRM-silent) PLUS the operator's FELT-SYMMETRY law (2026-07-09): both sides of a
+> composition read equally FULL at a glance — balance via real content mass and centering,
+> never stretching or mechanical equal-heights; edge-to-edge; simple; easy navigation.
+>
+> STATUS: the STATIC hero + sections shipped 2026-07-09 (`3d7bdf1` — the yesid hero geometry
+> verbatim: thesis + 3 stat tiles + statement/lede/CTAs | amber spine | live-pulse panel with
+> fleet-status readout; uniform explore tiles; level pillar row). REMAINING = the scroll
+> JOURNEY machinery below. **LiveNetworkTerminal (the SQL query panel) was REJECTED by the
+> operator — do NOT rebuild it**; the hero right column IS the live-pulse TerminalPanel.
 
 ## Movements (yesid HomePage.svelte:228-314 is the reference score)
 
@@ -15,7 +22,7 @@
 2. **Thesis hero** — Masthead with a two-line thesis (operator picks A/B/C; register § HOME
    gap 2 has the EN//FR pairs; audit recommends A: "THE NETWORK, / MEASURED HONESTLY." //
    "LE RÉSEAU, / MESURÉ HONNÊTEMENT."), line 2 in --primary, agency name demoted to
-   kicker/CornerMeta + **LiveNetworkTerminal** beside it (see below).
+   kicker/CornerMeta + the live-pulse TerminalPanel beside it (SHIPPED).
 3. **HonestyManifesto** — full-viewport blueprint-band beat: "WHEN A NUMBER IS MISSING, /
    WE SHOW IT MISSING." // "QUAND UNE DONNÉE MANQUE, / ON L'AFFICHE ABSENTE." at display
    scale + the existing 3 pillars (Live/Honest/Accountable) + a mono prompt line.
@@ -24,20 +31,12 @@
    direct" → /map.
    Hazard-tape Separator between movements; NumberedChip movement numbers 01/02/03.
 
-## LiveNetworkTerminal (buildable now, no GSAP — the signature interaction)
+## LiveNetworkTerminal — REJECTED (do not build)
 
-`features/home/LiveNetworkTerminal.svelte` inside `<TerminalPanel>`:
-- Mono, syntax-colored QUERY text (display-only; describes the real client-side compute):
-  `SELECT route, count(*) vehicles, median(|delay|) delay_p50 FROM live.vehicles GROUP BY route ORDER BY vehicles DESC LIMIT 5`
-- RESULTS table computed client-side: facet `live.index.vehiclesByRoute`
-  (v1/live/index.ts:46) → per-route `aggregateLive(facet)` (v1/live/aggregate.ts:78) →
-  top-5 by count; columns route · vehicles · delay_p50 (AbsentValue on null — honest-null,
-  never a fabricated 0). Footer readout: N rows · total vehicles · FreshnessStamp.
-- "PULL FRESH DATA" / "ACTUALISER LES DONNÉES" button → `live.refresh()`
-  (v1/live/store.svelte.ts:86), spinner on the glyph while settling. Ground = --primary
-  gradient (yesid HeroBanner:615-627 grammar). NOT amber (amber = the terminus map CTA).
-- EN+FR copy in the home copy module; unit tests: faceting/top-5 selector (pure), refresh
-  wiring, honest-null rendering.
+Operator (2026-07-09): "you can remove the SQL query" — the panel was built, shipped,
+and removed the same day. The signature interaction slot in movement 2 is filled by the
+live-pulse TerminalPanel (2×2 KPIs + fleet-status readout). Keep this note so the idea
+is not resurrected from the older audit register entry (§ HOME gap 3).
 
 ## Machinery (gap 1 + site-wide § gap 1)
 
