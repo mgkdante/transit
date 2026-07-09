@@ -189,7 +189,10 @@ describe('TripDetail: stand-down honesty', () => {
 		render(TripDetail, { props: { id: 'tGhost' } });
 
 		expect(screen.getByTestId('trip-standdown')).toBeInTheDocument();
-		expect(screen.getByText('Trip not broadcasting')).toBeInTheDocument();
+		// Role+name query: SectionHeading glues [last word + dot] in a tail span
+		// (DOT LAW), so the heading text spans multiple nodes; the accessible name
+		// still reads whole (the aria-hidden dot is excluded).
+		expect(screen.getByRole('heading', { name: 'Trip not broadcasting' })).toBeInTheDocument();
 		// Never a fabricated trip heading / stop list.
 		expect(screen.queryByRole('heading', { name: 'Trip tGhost' })).not.toBeInTheDocument();
 	});

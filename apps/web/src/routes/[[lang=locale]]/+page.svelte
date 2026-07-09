@@ -976,14 +976,14 @@
 	   tracking -0.04em; line 2 (the accent) breaks onto its own row in --primary
 	   and carries the dot. Scoped override of SectionHeading's display size. */
 	.hub-hero :global(.hero-thesis .section-heading-text) {
-		font-size: var(--text-hero-mobile);
+		/* DOT LAW, narrow half: SectionHeading glues [last word + dot] in a nowrap
+		   tail, so the longest thesis word must FIT the viewport or it clips (html
+		   is overflow-x: clip). 10.5vw keeps FR's "HONNÊTEMENT." + dot inside the
+		   gutter down to 320px; the token still caps the size everywhere wider. */
+		font-size: min(var(--text-hero-mobile), 10.5vw);
 		line-height: 0.88;
 		letter-spacing: -0.04em;
 		text-transform: uppercase;
-		/* NO overflow-wrap:anywhere here — an anywhere-break lets the terminating
-		   dot wrap onto its own line (operator law: the dot sits beside the last
-		   word, always). The thesis copy is short controlled text; default
-		   word-boundary wrapping is safe at every viewport. */
 	}
 	@media (min-width: 768px) {
 		.hub-hero :global(.hero-thesis .section-heading-text) {
@@ -1236,20 +1236,28 @@
 	/* §C5.1 hierarchy: the §2 heading steps DOWN a register so the hero thesis
 	   stays the apex. Scoped; the shared primitive is untouched. */
 	.hub-what :global(.section-heading-text) {
-		font-size: clamp(1.75rem, 4vw, 2.5rem);
+		font-size: clamp(2.25rem, 5vw, 3.25rem);
 		font-weight: 800;
 		letter-spacing: var(--tracking-tight);
+	}
+	/* The mono sub steps up with it (operator: the whole head reads bigger). */
+	.hub-what :global(.section-heading-sub) {
+		font-size: var(--text-small);
+		margin-block-end: 0;
 	}
 	.what-prose {
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
 	}
+	/* Legibility (operator 2026-07-10): the manifesto paragraph speaks in the
+	   hero-lede voice, not a muted caption: heading-scale type, generous leading,
+	   the stronger secondary ink. */
 	.what-body {
-		color: var(--muted-foreground);
-		font-size: var(--text-body);
-		line-height: 1.65;
-		max-width: 60ch;
+		color: var(--secondary-foreground);
+		font-size: var(--text-heading);
+		line-height: 1.7;
+		max-width: 58ch;
 	}
 	.what-link {
 		display: inline-flex;

@@ -82,7 +82,20 @@
 	// Overline mode when there is an overline and no display heading.
 	const isOverline = $derived(overline != null && heading == null);
 	// The visible title text of whichever mode is active.
-	const titleText = $derived(isOverline ? overline : (heading ?? ''));
+	const titleText = $derived(isOverline ? (overline ?? '') : (heading ?? ''));
+
+	// DOT LAW (operator): the dot sits beside the last LETTER, always. The global
+	// no-overflow guarantee (`body { overflow-wrap: anywhere }`) creates a break
+	// opportunity between the final word and the dot span, so a tight line can
+	// orphan the dot onto its own row. Splitting the text and gluing
+	// [last word + dot] inside one white-space:nowrap span removes that break
+	// point at the only seam that matters, on every dotted heading.
+	function splitTail(text: string): { head: string; tail: string } {
+		const m = /^([\s\S]*\s)(\S+)$/.exec(text);
+		return m ? { head: m[1], tail: m[2] } : { head: '', tail: text };
+	}
+	const titleParts = $derived(splitTail(titleText));
+	const accentParts = $derived(splitTail(headingAccent ?? ''));
 </script>
 
 <div
@@ -100,19 +113,23 @@
 				tone={numberTone}
 				class="section-heading-chip"
 			/>{/if}<span class="section-heading-title"
-			>{titleText}{#if headingAccent && !isOverline}<span
+			>{#if headingAccent && !isOverline}{titleText}<span
 					data-slot="section-heading-accent"
 					class="section-heading-accent"
-					>{headingAccent}{#if dot}<span
-							data-slot="section-heading-dot"
-							class="section-heading-dot"
-							aria-hidden="true">.</span
-						>{/if}</span
-				>{:else if dot && !isOverline}<span
-					data-slot="section-heading-dot"
-					class="section-heading-dot"
-					aria-hidden="true">.</span
-				>{/if}</span
+					>{accentParts.head}<span class="section-heading-tail"
+						>{accentParts.tail}{#if dot}<span
+								data-slot="section-heading-dot"
+								class="section-heading-dot"
+								aria-hidden="true">.</span
+							>{/if}</span
+					></span
+				>{:else if dot && !isOverline}{titleParts.head}<span class="section-heading-tail"
+					>{titleParts.tail}<span
+						data-slot="section-heading-dot"
+						class="section-heading-dot"
+						aria-hidden="true">.</span
+					></span
+				>{:else}{titleText}{/if}</span
 		>{#if explainer}<span class="section-heading-explainer">{@render explainer()}</span>{/if}
 	</svelte:element>
 	{#if subheading && !isOverline}
@@ -137,6 +154,11 @@
 	/* Brand flourish — the interactive-accent orange (doctrine: not a data mark). */
 	.section-heading-dot {
 		color: var(--primary);
+	}
+	/* [last word + dot] glued: no break opportunity between them, so the global
+	   overflow-wrap:anywhere can never orphan the dot onto its own line. */
+	.section-heading-tail {
+		white-space: nowrap;
 	}
 	/* The two-line thesis accent (yesid HeroTextContent grammar): line 2 breaks onto
 	   its own row in --primary and CARRIES the dot inline (the dot must never wrap
