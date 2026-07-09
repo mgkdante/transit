@@ -30,28 +30,25 @@
 
 ## P5-R state (Notion slice `3983e863-0690-81cb-b2f0-dbf5b8619711`)
 
-- **R1 home: ~80%.** Remaining = TWO pieces (operator, end-of-day round):
+- **R1 home: COMPLETE (2026-07-09, late).** Wayfinding v2 SHIPPED as PR #206
+  (filter rail via SurfaceRail, informational/clickable species split, card-interior
+  redesign, EN+FR, full battery + browser matrix). **The scroll JOURNEY is CANCELLED —
+  operator: the pinned scroll intro is yesid.dev-ONLY theatre, never for transit; the
+  earlier "scroll theatre re-legalized" ruling covered yesid.dev and reading it as a
+  transit mandate was a misunderstanding.** Tombstone at the top of `r1-build-brief.md`
+  (same standing as the LiveNetworkTerminal rejection). The home IS the honest command
+  board, finished.
 
-  **(1) WAYFINDING v2 — filterable cards + informational/clickable split (DO FIRST):**
-  - Restructure "What this is": the heading + prose in ONE column; Live / Honest /
-    Accountable in a SECOND column with their OWN *informational* styling — they must
-    NOT look clickable (no card chassis that reads as a button; readers were at risk of
-    clicking "Accountable" expecting a page). Clickable destination cards and
-    informational pillars must be visibly different species.
-  - Add a LEFT RAIL carrying FILTERS for the destination cards (reserve the rail space
-    in the layout); cards become filterable (by rider question / live-vs-history /
-    whatever classification survives a design pass — keep the four question groups as
-    the default view).
-  - Redesign the card INTERIOR: today everything stacks left with wasted space — use
-    it: bigger fonts, bigger glyphs, longer descriptions where they earn it, nicer
-    internal styling. Keep one uniform chassis + content budget (felt symmetry), keep
-    icon+label+description+CTA (research law), keep EN+FR.
+- **NEW OPERATING MODE for R2–R6 (operator, 2026-07-09 interrupt): BRAINSTORM FIRST.**
+  Before building each page, brainstorm it WITH the operator: extract the right
+  yesid.dev primitives (or design new brand-derived ones), aim intuitive / usable /
+  simple for citizens. Execution starts only after the per-page brainstorm.
 
-  **(2) the SCROLL JOURNEY machinery:
-  lazy ScrollTrigger/DrawSVG/CustomEase loaders + scrub kit port → 'NEXT STOP: SCROLL
-  DOWN' billboard → transit network-schematic SVG draw → --primary viewport takeover →
-  cross-fade into the (already-live) thesis hero. PRM/mobile fallback = current page
-  as-is. Full spec: `r1-build-brief.md` (LiveNetworkTerminal section = REJECTED, skip).
+- **DATE DIMENSION ambition (same round):** every page should be "on par with date" —
+  date-range controls are a wanted nice-to-have across surfaces, and the pipeline
+  should be able to answer "almost any dimensional question". Fold a per-page
+  date/dimension check into each R-slice brainstorm (what the rollups can already
+  serve vs what needs new feeders; see memory `rollup-coverage-and-gaps`).
 - **R2–R6 specced** in `parity-register-full.json` (61 gaps, file:line-anchored):
   R2 listing grammar (lines/stops/search: EdgeTitleColumn, BlueprintShell, station
   spines, RouteChain, filter rail, FLIP) · **R3 detail heads + /metrics + /status to the
