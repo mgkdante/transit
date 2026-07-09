@@ -154,16 +154,16 @@ describe('Home hub — live pulse honesty', () => {
 	it('reads real headline numbers when the live tier reports', () => {
 		state.network = liveNetwork;
 		render(Page);
-		// The hero glance tiles carry the identity-scale numbers…
-		const glance = screen.getByRole('list', { name: /the network at a glance/i });
-		expect(within(glance).getByText('412')).toBeInTheDocument(); // vehicles tracked
-		expect(within(glance).getByText('83%')).toBeInTheDocument(); // on-time (+ verdict word)
-		// …and the terminal board carries the non-overlapping pulse KPIs.
+		// ONE numbers voice (operator variation): the terminal board carries the
+		// glance — on-time leads with its verdict word, then coverage / median
+		// delay / not reporting; the fleet-status ledger carries the distribution.
 		const board = screen.getByRole('list', { name: /the network, right now/i });
+		expect(within(board).getByText('83%')).toBeInTheDocument(); // on-time
 		expect(within(board).getByText('94%')).toBeInTheDocument(); // coverage
 		expect(within(board).getByText('1 min')).toBeInTheDocument(); // median delay
-		expect(within(board).getByText('6 min')).toBeInTheDocument(); // slowest 10%
 		expect(within(board).getByText('7')).toBeInTheDocument(); // not reporting
+		const dist = screen.getByRole('group', { name: /fleet status/i });
+		expect(within(dist).getByText('8')).toBeInTheDocument(); // on-time vehicles (fixture)
 		// The pulse verdict flips to LIVE when the tier reports (no STANDBY anywhere).
 		expect(screen.getAllByText('LIVE').length).toBeGreaterThanOrEqual(1);
 		expect(screen.queryByText('STANDBY')).toBeNull();
@@ -186,9 +186,9 @@ describe('Home hub — live pulse honesty', () => {
 			.getAllByRole('button')
 			.filter((b) => b.classList.contains('metric-info__trigger'));
 		expect(triggers).toHaveLength(4);
+		expect(within(board).getByRole('button', { name: /About On-time/i })).toBeInTheDocument();
 		expect(within(board).getByRole('button', { name: /About Coverage/i })).toBeInTheDocument();
 		expect(within(board).getByRole('button', { name: /About Median delay/i })).toBeInTheDocument();
-		expect(within(board).getByRole('button', { name: /About Slowest 10%/i })).toBeInTheDocument();
 		expect(within(board).getByRole('button', { name: /About Not reporting/i })).toBeInTheDocument();
 	});
 

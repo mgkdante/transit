@@ -43,7 +43,6 @@
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
 	import { cornerMetaLabels } from '$lib/components/brand';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
@@ -86,20 +85,6 @@
 
 	const net = $derived(live.network);
 
-	// Routes with ≥1 live vehicle right now — the hero's third stat tile. Gated on a
-	// reported live tier so a pre-tick empty index reads as honest absence, while a
-	// genuine post-tick 0 stays a real zero.
-	const routesLive = $derived(net != null ? fmtCount(live.index.vehiclesByRoute.size) : null);
-
-	// The on-time tile's verdict WORD (90/75 reliabilityVerdict floors) — undefined
-	// (no sublabel) while the tier is absent or the verdict has no floor.
-	const onTimeVerdictWord = $derived.by(() => {
-		const pct = net?.on_time_pct;
-		if (pct == null) return undefined;
-		const v = otpVerdict(pct);
-		return v ? STATUS_LABELS[locale][v] : undefined;
-	});
-
 	// CornerMeta readouts (A4) — REAL data only, sourced from the manifest + the
 	// live tier this page already loads; a datum that isn't present drops its corner
 	// (never fabricated). generated_utc formats to an absolute stamp (the corners are
@@ -137,7 +122,6 @@
 		| 'ctaMap'
 		| 'terminalTitle'
 		| 'pulseLabel'
-		| 'glanceLabel'
 		| 'pulseLive'
 		| 'pulseStandby'
 		| 'datasetLabel'
@@ -150,15 +134,12 @@
 		| 'whatBody'
 		| 'measureLink'
 		| 'metricOnTime'
-		| 'metricVehicles'
-		| 'metricRoutesLive'
-		| 'metricRoutesLiveSub'
-		| 'metricVehiclesSub'
 		| 'metricDelayP50'
-		| 'metricDelayP90'
 		| 'metricSilent'
 		| 'metricCoverage'
 		| 'distLabel'
+		| 'distColStatus'
+		| 'distColVehicles'
 		| 'groupExplore'
 		| 'groupAccount'
 		| 'groupTrust'
@@ -175,7 +156,6 @@
 			ctaMap: 'Ouvrir la carte en direct',
 			terminalTitle: 'reseau.salle-de-controle',
 			pulseLabel: 'Le réseau, en ce moment',
-			glanceLabel: 'Le réseau en un coup d’œil',
 			pulseLive: 'EN DIRECT',
 			pulseStandby: 'EN ATTENTE',
 			datasetLabel: 'Jeu de données',
@@ -188,15 +168,12 @@
 			whatBody: `Un tableau de bord indépendant et honnête pour le réseau ${shortName} de ${city}, dérivé du flux GTFS-temps réel public via le contrat ouvert /v1. La ponctualité est un indicateur mesuré, un proxy, pas une ponctualité certifiée. Quand une donnée manque, on l’affiche comme absente. Jamais de zéro inventé.`,
 			measureLink: 'Comment on mesure',
 			metricOnTime: 'Ponctualité',
-			metricVehicles: 'Véhicules suivis',
-			metricVehiclesSub: `${shortName.toUpperCase()} · EN DIRECT`,
-			metricRoutesLive: 'Lignes actives',
-			metricRoutesLiveSub: 'EN CE MOMENT',
 			metricDelayP50: 'Retard médian',
-			metricDelayP90: 'Pires 10 %',
 			metricSilent: 'Sans réponse',
 			metricCoverage: 'Couverture',
 			distLabel: 'État de la flotte',
+			distColStatus: 'statut',
+			distColVehicles: 'véhicules',
 			groupExplore: 'Explorer',
 			groupAccount: 'Reddition de comptes',
 			groupTrust: 'Confiance',
@@ -212,7 +189,6 @@
 			ctaMap: 'Open the live map',
 			terminalTitle: 'network.control-room',
 			pulseLabel: 'The network, right now',
-			glanceLabel: 'The network at a glance',
 			pulseLive: 'LIVE',
 			pulseStandby: 'STANDBY',
 			datasetLabel: 'Dataset',
@@ -225,15 +201,12 @@
 			whatBody: `An independent, honesty-first dashboard for the ${shortName} network across ${city}, derived from the public GTFS-realtime feed through the open /v1 contract. On-time performance is a measured proxy, not certified OTP. When a number is missing, we show it as missing. Never a fabricated zero.`,
 			measureLink: 'How we measure',
 			metricOnTime: 'On-time',
-			metricVehicles: 'Vehicles tracked',
-			metricVehiclesSub: `${shortName.toUpperCase()} · LIVE`,
-			metricRoutesLive: 'Routes live',
-			metricRoutesLiveSub: 'RIGHT NOW',
 			metricDelayP50: 'Median delay',
-			metricDelayP90: 'Slowest 10%',
 			metricSilent: 'Not reporting',
 			metricCoverage: 'Coverage',
 			distLabel: 'Fleet status',
+			distColStatus: 'status',
+			distColVehicles: 'vehicles',
 			groupExplore: 'Explore',
 			groupAccount: 'Accountability',
 			groupTrust: 'Trust',
@@ -462,8 +435,10 @@
 	     to the kicker + CornerMeta (A4). Honesty unchanged: every number stands down to
 	     the styled absence chip pre-tick, never a fabricated 0. -->
 	<section class="hub-hero" aria-labelledby="hub-hero-title">
+		<!-- No provider corner: the kicker already carries CITIZEN DASHBOARD · {SHORT} ·
+		     {CITY} — a PROVIDER corner would say it twice (operator variation, 2026-07-09:
+		     lift the yesid pattern, then trim what this dashboard doesn't need). -->
 		<CornerMeta>
-			{#snippet topLeft()}<span class="corner-line">{cm.provider} · {shortName}</span>{/snippet}
 			{#snippet topRight()}{#if cornerGeneratedStamp}<span class="corner-line"
 						>{cm.generated} · {cornerGeneratedStamp}</span
 					>{/if}{/snippet}
@@ -485,44 +460,9 @@
 				class="hero-thesis"
 			/>
 
-			<!-- THREE equal stat tiles (build sheet §3: grid-cols-3, gap 14px, card
-			     px-5 py-4, MetricDisplay lg) — the row stretches all three to one height. -->
-			<ul class="hero-stats" aria-label={t.glanceLabel}>
-				<li class="hero-stat">
-					<MetricDisplay
-						value={fmtCount(net?.vehicles_in_service)}
-						label={t.metricVehicles}
-						sublabel={t.metricVehiclesSub}
-						emptyLabel={t.noData}
-						absentReason="not-reported"
-						{locale}
-						size="lg"
-					/>
-				</li>
-				<li class="hero-stat">
-					<MetricDisplay
-						value={fmtPct(net?.on_time_pct)}
-						label={t.metricOnTime}
-						sublabel={onTimeVerdictWord}
-						emptyLabel={t.noData}
-						absentReason="not-reported"
-						{locale}
-						size="lg"
-					/>
-				</li>
-				<li class="hero-stat">
-					<MetricDisplay
-						value={routesLive}
-						label={t.metricRoutesLive}
-						sublabel={t.metricRoutesLiveSub}
-						emptyLabel={t.noData}
-						absentReason="not-reported"
-						{locale}
-						size="lg"
-					/>
-				</li>
-			</ul>
-
+			<!-- No stat-tile row (operator variation): yesid's hero tiles sell a
+			     portfolio; here the live numbers belong to ONE voice — the terminal
+			     panel beside the thesis. -->
 			<p class="hero-statement">{t.statement}</p>
 			<p class="hero-lede">{t.tagline}</p>
 
@@ -548,16 +488,11 @@
 				title={t.terminalTitle}
 				tag={isLive ? t.pulseLive : t.pulseStandby}
 			>
+				<!-- ONE live voice (operator UX pass): the titlebar tag carries LIVE, the
+				     head row carries the label + the ONE ticking freshness stamp — no
+				     StatusDot echo, no second stamp. -->
 				<div class="pulse-head">
-					<span class="pulse-label">
-						<StatusDot
-							color={isLive ? 'on_time' : 'unknown'}
-							pulse={isLive}
-							size="md"
-							label={isLive ? t.pulseLive : t.pulseStandby}
-						/>
-						<SectionLabel text={t.pulseLabel} variant="metric" />
-					</span>
+					<SectionLabel text={t.pulseLabel} variant="metric" />
 					<FreshnessStamp
 						variant="live"
 						generatedUtc={live.generatedUtc}
@@ -567,38 +502,47 @@
 					/>
 				</div>
 
-				<!-- 2×2 EQUAL KPI grid — no overlap with the hero tiles: coverage, median
-				     delay, slowest 10%, not reporting. Each tile has the same content
-				     budget (value · label · (i)) so the rows stay symmetric. -->
+				<!-- 2×2 KPI board — the headline number (on-time, with its verdict word)
+				     leads; coverage · median delay · not reporting complete the glance.
+				     Same content budget per cell (value · label · (i)). -->
 				<ul class="pulse-grid" aria-label={t.pulseLabel} aria-live="polite">
 					<li>
-						{@render pulse(
-							fmtPct(net?.coverage_pct),
-							t.metricCoverage,
-							'coverage',
-							net?.coverage_pct,
-						)}
+						{@render pulse(fmtPct(net?.on_time_pct), t.metricOnTime, 'otp', net?.on_time_pct)}
 					</li>
+					<li>{@render pulse(fmtPct(net?.coverage_pct), t.metricCoverage, 'coverage')}</li>
 					<li>{@render pulse(fmtMin(net?.delay_p50_min), t.metricDelayP50, 'p50p90')}</li>
-					<li>{@render pulse(fmtMin(net?.delay_p90_min), t.metricDelayP90, 'p50p90')}</li>
 					<li>{@render pulse(fmtCount(net?.non_responding), t.metricSilent, 'silentTrip')}</li>
 				</ul>
 
-				<!-- Fleet status readout — REAL live status_dist as mono terminal rows.
-				     This is the panel's visual MASS (felt balance with the tall thesis
-				     column comes from real content, never from stretching). Renders only
-				     when the tier reports; absence keeps the panel honest and shorter. -->
+				<!-- Fleet status readout — REAL live status_dist as a terminal ledger:
+				     status-colored dot · label · dotted leader · tabular count. The
+				     panel's visual MASS (felt balance from real content, never stretch).
+				     Renders only when the tier reports. -->
 				{#if net?.status_dist}
 					<div class="pulse-dist" role="group" aria-label={t.distLabel}>
 						<span class="pulse-dist-head label-metric">{t.distLabel}</span>
-						<ul class="pulse-dist-rows">
-							{#each ['early', 'on_time', 'late', 'severe', 'unknown'] as const as code (code)}
-								<li class="pulse-dist-row">
-									<span class="pulse-dist-label">{STATUS_LABELS[locale][code]}</span>
-									<span class="pulse-dist-value">{fmtCount(net.status_dist[code])}</span>
-								</li>
-							{/each}
-						</ul>
+						<table class="pulse-dist-table">
+							<caption class="sr-only">{t.distLabel}</caption>
+							<thead>
+								<tr>
+									<th scope="col">{t.distColStatus}</th>
+									<th scope="col" class="pulse-dist-num">{t.distColVehicles}</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each ['early', 'on_time', 'late', 'severe', 'unknown'] as const as code (code)}
+									<tr>
+										<td class="pulse-dist-status">
+											<span class="pulse-dist-dot pulse-dist-dot--{code}" aria-hidden="true"></span>
+											{STATUS_LABELS[locale][code]}
+										</td>
+										<td class="pulse-dist-num pulse-dist-value"
+											>{fmtCount(net.status_dist[code])}</td
+										>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
 					</div>
 				{/if}
 			</TerminalPanel>
@@ -759,7 +703,10 @@
 		line-height: 0.88;
 		letter-spacing: -0.04em;
 		text-transform: uppercase;
-		overflow-wrap: anywhere;
+		/* NO overflow-wrap:anywhere here — an anywhere-break lets the terminating
+		   dot wrap onto its own line (operator law: the dot sits beside the last
+		   word, always). The thesis copy is short controlled text; default
+		   word-boundary wrapping is safe at every viewport. */
 	}
 	@media (min-width: 768px) {
 		.hub-hero :global(.hero-thesis .section-heading-text) {
@@ -767,33 +714,9 @@
 		}
 	}
 
-	/* THREE equal stat tiles — one row, one chassis, one content budget each
-	   (label · value · sublabel). Same-kind cells: the grid row equalizes them. */
-	.hero-stats {
-		list-style: none;
-		margin: 1.5rem 0 0;
-		padding: 0;
-		display: grid;
-		gap: 0.875rem;
-		width: 100%;
-	}
-	@media (min-width: 640px) {
-		.hero-stats {
-			grid-template-columns: repeat(3, minmax(0, 1fr));
-		}
-	}
-	.hero-stat {
-		min-width: 0;
-		padding: 1rem 1.25rem;
-		background-color: var(--card);
-		border: 2px solid var(--border-brand);
-		border-radius: var(--radius-lg);
-		box-shadow: var(--shadow-card);
-	}
-
 	/* Statement → lede → CTAs (yesid vertical rhythm: mt 0.625 / 1.25 / 1.5rem). */
 	.hero-statement {
-		margin: 1rem 0 0;
+		margin: 1.5rem 0 0;
 		font-family: var(--font-heading);
 		font-size: clamp(1.625rem, min(3.5vw, 4svh), 2.75rem);
 		font-weight: 700;
@@ -930,26 +853,67 @@
 		flex-direction: column;
 		gap: 0.5rem;
 	}
-	.pulse-dist-rows {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
-	}
-	.pulse-dist-row {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 1rem;
+	/* The result table — a real SQL-output look (operator, 2026-07-09): header row
+	   + hairline rule, labels LEFT, counts RIGHT-ALIGNED in their own column, and
+	   the table takes its NATURAL width like a CLI result set (never stretched
+	   across the panel). */
+	.pulse-dist-table {
+		/* max-content beats any global full-width table rule: a CLI result set is
+		   exactly as wide as its columns. */
+		width: max-content;
+		max-width: 100%;
+		border-collapse: collapse;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 	}
-	.pulse-dist-label {
+	.pulse-dist-table th {
+		text-align: left;
+		font-weight: 400;
+		text-transform: uppercase;
+		letter-spacing: 1.5px;
+		color: var(--muted-foreground);
+		padding: 0 0 0.375rem;
+		border-bottom: 1px solid var(--border-subtle);
+	}
+	.pulse-dist-table td {
+		padding: 0.3125rem 0 0;
+	}
+	.pulse-dist-table th + th,
+	.pulse-dist-table td + td {
+		padding-left: 2.5rem;
+	}
+	.pulse-dist-num {
+		text-align: right;
+	}
+	.pulse-dist-status {
 		color: var(--muted-foreground);
 		text-transform: uppercase;
 		letter-spacing: 1.5px;
+	}
+	/* Status-colored chip — the SAME dataviz status scale every chart rides (DATA
+	   voice, not --primary). */
+	.pulse-dist-dot {
+		display: inline-block;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		margin-right: 0.375rem;
+		vertical-align: 1px;
+	}
+	.pulse-dist-dot--early {
+		background-color: var(--dataviz-status-early);
+	}
+	.pulse-dist-dot--on_time {
+		background-color: var(--dataviz-status-on-time);
+	}
+	.pulse-dist-dot--late {
+		background-color: var(--dataviz-status-late);
+	}
+	.pulse-dist-dot--severe {
+		background-color: var(--dataviz-status-severe);
+	}
+	.pulse-dist-dot--unknown {
+		background-color: var(--dataviz-status-unknown);
 	}
 	.pulse-dist-value {
 		color: var(--accent-text);
