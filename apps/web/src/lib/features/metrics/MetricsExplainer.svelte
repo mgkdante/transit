@@ -13,23 +13,26 @@
   the shell owns the layout + ToC wiring:
 
     · HEADER slot → the Masthead (kicker / heading / lede / meta) + CornerMeta, dropped
-      into the shell's full-bleed `.detail-header-grid` dot-grid band (the "Manifesto
-      schematic"). The Masthead runs `tape={false}`; DetailShell adds the edge-to-edge
-      closing `<Separator variant="hazard">` tape. The quiet-mode / remember / expand-all
-      controls ride the Masthead meta row.
+      into the shell's full-bleed header band, which on this page carries the
+      MetricsBlueprint drafting wall (P5-R R3 "blueprints for the headers"; the dot-grid
+      stands down). The Masthead runs `tape={false}`; DetailShell adds the edge-to-edge
+      closing `<Separator variant="hazard">` tape. The shared QuietModeButton (FOCUS +
+      REMEMBER, site-wide store) + the expand-all control ride the Masthead meta row.
     · The shell's 3-column body grid is `1fr 2fr 1fr` at ≥1024 (gap 2rem), collapsing to
       a single column below. LEFT slot = the numbered TocNav + the SEC n/m reading-position
       readout; CENTER = the provenance preamble + the per-metric cards; RIGHT = the
       Provenance / Coverage / Freshness stat cards (reflowed to a mobileSummary strip < 1024).
     · The LEFT rail's ToC carries its OWN user-driven collapse (its chevron, persisted via
-      sectionKey="metrics-toc"). S10 (2026-07-02): it ALSO follows FOCUS (yesid Quiet-Mode
-      parity) — FOCUS ON folds it (closeSignal), FOCUS OFF reopens it (openSignal); the
-      reader's manual chevron still works between signals.
+      sectionKey="metrics-toc") AND follows FOCUS (yesid Quiet-Mode parity) — FOCUS ON
+      folds it, FOCUS OFF reopens it; the reader's manual chevron still wins between
+      signals.
     · The provenance preamble + one CollapsibleSection card PER METRIC (number badge,
       `data-toc` anchor, deep-link `id` on the section block) carry the definition / math /
-      SQL / "what it's NOT" / caveats. S10: every card is DEFAULT-CLOSED with its own
-      persisted open-state (sectionKey `metrics-card-<anchor>`); a mount/hashchange opener +
-      ToC navigation open a target card so deep-links + jumps reveal content.
+      SQL / "what it's NOT" / caveats. P5-R R3 (operator 2026-07-10): every card is
+      DEFAULT-OPEN (the yesid article contract; the S10 default-closed deviation is
+      retired) with its own persisted open-state (sectionKey `metrics-card-<anchor>`);
+      FOCUS collapses everything, unfocus reopens everything; a mount/hashchange opener +
+      ToC navigation still open a specific target card under FOCUS.
     · MOBILE (< 1024): DetailShell renders the shared TocPill floating pill + drawer, driven
       by the SAME activeId (which the shell owns via one observeActiveToc — no duplicate
       observer here; this feature binds `activeId` back from the shell) + this feature's
@@ -58,6 +61,9 @@
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import Masthead from '$lib/components/brand/Masthead.svelte';
+	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import MetricsBlueprint from './MetricsBlueprint.svelte';
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
 	import { cornerMetaLabels } from '$lib/components/brand';
 	import { formatUtc } from '$lib/utils/time';
@@ -225,50 +231,26 @@
 	]);
 
 	// ── Quiet / FOCUS mode (focus reading) ─────────────────────────────────────
-	// A restrained header control that enters a distraction-free reading state for
-	// the methodology article (mirrors the yesid.dev detail-page "Quiet mode" switch).
-	//
-	// S10 (2026-07-02) — DEFAULT-CLOSED + FOCUS parity. The page is now a scannable
-	// stack of CLOSED cards on first visit (D3): each metric/lacunes/live-positions
-	// card owns its own persisted open-state (sectionKey `metrics-card-<anchor>`),
-	// default closed, and a reader opens the ones they want (or jumps from the ToC /
-	// an (i) deep-link, which opens the target). FOCUS is reconciled to yesid's
-	// Quiet-Mode signal contract:
-	//   · FOCUS ON  → collapse EVERY card AND fold the ToC rail (closeSignal bump).
-	//   · FOCUS OFF → reopen the ToC rail (tocOpenSignal bump); the cards STAY closed
-	//     (deviation from yesid's openSignal-opens-ALL: the page is default-closed, so
-	//     unfocus must not explode all 14 cards open — the operator's focused-
-	//     experience mandate). Only the ToC receives the open signal; cards do not.
-	// This replaces the pre-S10 model where FOCUS drove a single global `cardsOpen`
-	// and the ToC was documented Focus-INDEPENDENT.
-	//
-	// slice-9.8-B — SESSION-BY-DEFAULT, OPTIONALLY PINNED. Two controls now sit in
-	// the header (the yesid QuietModeButton pair):
-	//   1. the FOCUS switch — toggles the card-collapse for THIS session only.
-	//   2. the REMEMBER pin — when engaged, the FOCUS preference is remembered across
-	//      visits; when off, FOCUS resets to its default each fresh visit.
-	//
-	// Persistence model (SSR-safe; every read/write is window-guarded so the server
-	// + tests render the default layout and the stored prefs re-apply on mount with
-	// no mid-paint flash):
-	//   · metrics-focus-remembered (localStorage '1'/'0') — the PIN: does the FOCUS
-	//     preference survive across visits?
-	//   · metrics-quiet (localStorage '1'/'0') — the remembered FOCUS value, read on
-	//     mount ONLY when pinned.
-	//   · metrics-quiet (sessionStorage '1'/'0') — the unpinned, session-scoped FOCUS
-	//     value, read on mount when NOT pinned (survives same-tab nav, not a new visit).
-	const QUIET_STORAGE_KEY = 'metrics-quiet';
-	const REMEMBER_STORAGE_KEY = 'metrics-focus-remembered';
-	let quiet = $state(false);
-	let remembered = $state(false);
+	// P5-R R3 (operator ruling 2026-07-10): FOCUS is the yesid article contract,
+	// SITE-WIDE — the page is DEFAULT-OPEN (everything readable on arrival), FOCUS
+	// collapses to a ToC-led reading mode, and unfocus reopens EVERYTHING (cards +
+	// ToC — the openSignal-opens-ALL contract; the S10 default-closed deviation is
+	// retired). The state, its signals, and the ONE localStorage preference
+	// ('transit:quiet-mode') live in the shared quietModeStore; the FOCUS switch +
+	// REMEMBER pin render via the shared QuietModeButton in the Masthead meta row.
+	// This page only WIRES the store's signals into its cards + ToC and keeps its
+	// own bulk expand/collapse control (the switch itself renders + reads the
+	// store inside the shared QuietModeButton).
 
-	// S10 FOCUS signals (yesid closeSignal/openSignal idiom, page-owned). Bumping
-	// `closeSignal` collapses every card + folds the ToC; bumping `tocOpenSignal`
-	// reopens the ToC ONLY (cards stay closed — the default-closed deviation).
-	// Cards receive `closeSignal` alone; the ToC receives both. Monotonic counters
-	// so CollapsibleSection's edge-triggered effects never fire on a fresh mount.
-	let closeSignal = $state(0);
-	let tocOpenSignal = $state(0);
+	// Bulk collapse-all edge (§C5.8) — page-owned, cards only (the documented
+	// intent: the bulk control never folds the ToC; only FOCUS does).
+	let bulkCloseSignal = $state(0);
+
+	// Cards fold on EITHER edge (FOCUS ON or collapse-all): monotonic counters sum
+	// into one card-facing close signal. The ToC folds only with FOCUS.
+	const cardCloseSignal = $derived(bulkCloseSignal + quietModeStore.closeSignal);
+	// FOCUS OFF reopens every card + the ToC (the yesid contract).
+	const focusOpenSignal = $derived(quietModeStore.openSignal);
 
 	// Per-card persisted-open key. Each metric/lacunes/live-positions card owns its
 	// own sessionStorage-backed open state under this stable, locale-free key, so
@@ -293,78 +275,21 @@
 	}
 
 	// ── Expand-all / collapse-all (§C5.8) ───────────────────────────────────────
-	// A single toggle over EVERY collapsible card. "Expand all" bumps each openable
-	// anchor's open-signal (reusing the per-card opener); "Collapse all" bumps the
-	// shared closeSignal (the same edge FOCUS-on uses). The flag flips the label; a
-	// reader's individual card toggles afterwards don't sync it back (best-effort
-	// bulk control, not a live mirror of every card's state).
-	let allExpanded = $state(false);
+	// A single toggle over EVERY collapsible card. "Collapse all" bumps the bulk
+	// close signal (cards only — the ToC stays); "Expand all" bumps each openable
+	// anchor's open-signal (reusing the per-card opener). Default-open page → the
+	// control starts as "Collapse all". The flag flips the label; a reader's
+	// individual card toggles afterwards don't sync it back (best-effort bulk
+	// control, not a live mirror of every card's state).
+	let allExpanded = $state(true);
 	function toggleExpandAll(): void {
 		if (allExpanded) {
-			// Collapse every card (reuse the FOCUS close edge; leaves the ToC as-is).
-			closeSignal += 1;
+			bulkCloseSignal += 1;
 			allExpanded = false;
 		} else {
 			for (const anchor of openableAnchors) openCard(anchor);
 			allExpanded = true;
 		}
-	}
-
-	onMount(() => {
-		try {
-			remembered = localStorage.getItem(REMEMBER_STORAGE_KEY) === '1';
-			// Pinned → restore the remembered value from localStorage. Unpinned →
-			// FOCUS is session-scoped, so restore only a same-tab session value.
-			quiet = remembered
-				? localStorage.getItem(QUIET_STORAGE_KEY) === '1'
-				: sessionStorage.getItem(QUIET_STORAGE_KEY) === '1';
-			// A restored FOCUS-ON must collapse the cards it applies to (they default
-			// closed anyway, but be explicit) AND fold the ToC — bump the close signal
-			// so the page paints in the focused state.
-			if (quiet) closeSignal += 1;
-		} catch {
-			/* private mode / disabled storage — session-only FOCUS is fine */
-		}
-	});
-
-	// Write the current FOCUS value to whichever store its persistence scope owns:
-	// localStorage when pinned (remembered across visits), sessionStorage otherwise
-	// (this tab only). We keep the two stores from fighting by clearing the other.
-	function persistQuiet(): void {
-		try {
-			if (remembered) {
-				localStorage.setItem(QUIET_STORAGE_KEY, quiet ? '1' : '0');
-				sessionStorage.removeItem(QUIET_STORAGE_KEY);
-			} else {
-				sessionStorage.setItem(QUIET_STORAGE_KEY, quiet ? '1' : '0');
-				localStorage.removeItem(QUIET_STORAGE_KEY);
-			}
-		} catch {
-			/* private mode / disabled storage — the in-memory toggle still works */
-		}
-	}
-
-	function toggleQuiet(): void {
-		quiet = !quiet;
-		persistQuiet();
-		// FOCUS ON → collapse every card + fold the ToC (closeSignal). FOCUS OFF →
-		// reopen the ToC only (tocOpenSignal); the cards stay closed by design.
-		if (quiet) closeSignal += 1;
-		else tocOpenSignal += 1;
-	}
-
-	// Pin / unpin the FOCUS preference. Pinning promotes the current FOCUS value to
-	// localStorage (remembered across visits); unpinning demotes it back to a
-	// session value. Either way the current on-screen FOCUS state is unchanged —
-	// only WHERE the preference lives (and how long it survives) changes.
-	function toggleRemember(): void {
-		remembered = !remembered;
-		try {
-			localStorage.setItem(REMEMBER_STORAGE_KEY, remembered ? '1' : '0');
-		} catch {
-			/* private mode / disabled storage — the in-memory pin still works */
-		}
-		persistQuiet();
 	}
 
 	// The set of anchors that correspond to a COLLAPSIBLE CARD (every metric card
@@ -519,49 +444,13 @@
 	</div>
 {/snippet}
 
-<!-- The header controls — the FOCUS switch + REMEMBER pin — ride the Masthead meta
-     row (the mono header-control zone), below the subheading line. -->
+<!-- The header controls — the shared FOCUS switch + REMEMBER pin (site-wide
+     quietModeStore) beside the page-owned expand/collapse-all — ride the Masthead
+     meta row (the mono header-control zone), below the subheading line. -->
 {#snippet masthead()}
 	<span class="metrics-subhead">{t.subheading}</span>
-	<div class="metrics-quiet-controls">
-		<button
-			type="button"
-			class="metrics-quiet-toggle"
-			role="switch"
-			aria-checked={quiet}
-			aria-label={quiet ? t.quiet.disable : t.quiet.enable}
-			data-testid="metrics-quiet-toggle"
-			onclick={toggleQuiet}
-		>
-			<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-				<path class="q-wave" d="M8.4 8.4a5 5 0 0 0 0 7.2" />
-				<path class="q-wave" d="M15.6 8.4a5 5 0 0 1 0 7.2" />
-				<path class="q-wave q-wave--far" d="M5.7 5.7a8.9 8.9 0 0 0 0 12.6" />
-				<path class="q-wave q-wave--far" d="M18.3 5.7a8.9 8.9 0 0 1 0 12.6" />
-				<circle class="q-core" cx="12" cy="12" r="2.3" />
-			</svg>
-			<span>{t.quiet.label}</span>
-		</button>
-		<!-- Remember pin (slice-9.8-B): a paired switch that PINS the FOCUS
-		     preference across visits. OFF = FOCUS is session-only; ON = the
-		     current FOCUS choice is remembered next visit. The pin icon fills in
-		     --primary when engaged. Independent of the FOCUS state itself. -->
-		<button
-			type="button"
-			class="metrics-quiet-remember"
-			role="switch"
-			aria-checked={remembered}
-			aria-label={remembered ? t.quiet.forget : t.quiet.remember}
-			title={remembered ? t.quiet.forget : t.quiet.remember}
-			data-testid="metrics-quiet-remember"
-			onclick={toggleRemember}
-		>
-			<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-				<path class="r-pin" d="M12 17v4" />
-				<path class="r-pin" d="M9 3h6l-1 6 3 3v1H7v-1l3-3-1-6z" />
-			</svg>
-			<span>{t.quiet.rememberLabel}</span>
-		</button>
+	<div class="metrics-meta-controls">
+		<QuietModeButton />
 		<!-- Expand-all / collapse-all (§C5.8): one control to open or close every card. -->
 		<button
 			type="button"
@@ -585,6 +474,13 @@
 		tocOpenAria={t.tocPill.open}
 		tocCloseAria={t.tocPill.close}
 	>
+		<!-- The article-cover BLUEPRINT (P5-R R3): the Bridge-elevation drafting wall
+		     behind the Masthead, scroll-drawn on capable viewports, static under PRM
+		     and below 1024. Replaces the dot-grid band on this page. -->
+		{#snippet blueprintArt()}
+			<MetricsBlueprint />
+		{/snippet}
+
 		<!-- Masthead (the ONE head family): kicker → display title + orange dot → lede →
 		     meta row (subheading + FOCUS controls). The DetailShell owns the full-bleed
 		     dot-grid header band + the closing hazard tape, so the Masthead runs tape={false}
@@ -640,8 +536,8 @@
 					heading={t.tocLabel}
 					counterPrefix={t.tocCounterPrefix}
 					sectionKey="metrics-toc"
-					{closeSignal}
-					openSignal={tocOpenSignal}
+					closeSignal={quietModeStore.closeSignal}
+					openSignal={focusOpenSignal}
 				/>
 			</div>
 		{/snippet}
@@ -748,9 +644,9 @@
 									anchor={entry.anchor}
 									index={metricIndex}
 									sectionKey={cardKey(entry.anchor)}
-									open={false}
-									{closeSignal}
-									openSignal={cardOpenSignal(entry.anchor)}
+									open={true}
+									closeSignal={cardCloseSignal}
+									openSignal={cardOpenSignal(entry.anchor) + focusOpenSignal}
 								>
 									<div class="metric__body">
 										<p class="metric__meta">
@@ -827,9 +723,9 @@
 						title={t.livePositions.title}
 						anchor={LIVE_POSITIONS_ANCHOR}
 						sectionKey={cardKey(LIVE_POSITIONS_ANCHOR)}
-						open={false}
-						{closeSignal}
-						openSignal={cardOpenSignal(LIVE_POSITIONS_ANCHOR)}
+						open={true}
+						closeSignal={cardCloseSignal}
+						openSignal={cardOpenSignal(LIVE_POSITIONS_ANCHOR) + focusOpenSignal}
 					>
 						{#snippet icon()}
 							<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
@@ -858,9 +754,9 @@
 						title={t.lacunes.title}
 						anchor={LACUNES_ANCHOR}
 						sectionKey={cardKey(LACUNES_ANCHOR)}
-						open={false}
-						{closeSignal}
-						openSignal={cardOpenSignal(LACUNES_ANCHOR)}
+						open={true}
+						closeSignal={cardCloseSignal}
+						openSignal={cardOpenSignal(LACUNES_ANCHOR) + focusOpenSignal}
 					>
 						{#snippet icon()}
 							<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
@@ -1265,130 +1161,16 @@
 		line-height: 1.4;
 		color: var(--foreground);
 	}
-
-	/* ── Quiet-mode (focus reading) toggle ─────────────────────────────────────
-	   The single header switch, ported 1:1 from the yesid.dev "Quiet mode" control
-	   onto transit tokens: a quiet mono pill that lights up in --primary ONLY when
-	   active (the wave strokes fade and the core dot glows), so OFF it is calm
-	   chrome and ON it reads as a clear, lit state. */
-	.metrics-quiet-controls {
+	/* ── Masthead meta controls row ────────────────────────────────────────────
+	   The shared QuietModeButton pair (FOCUS + REMEMBER, its own chassis) beside
+	   the page-owned expand/collapse-all pill, one mono control zone. */
+	.metrics-meta-controls {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.5rem;
 		flex-wrap: wrap;
-		margin-block-start: 0.25rem;
-	}
-	.metrics-quiet-toggle {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
 		gap: 0.5rem;
-		min-height: 44px;
-		padding-inline: 0.875rem 1rem;
-		border: 2px solid var(--border-brand);
-		border-radius: var(--radius-md);
-		background: var(--background);
-		box-shadow: inset 0 1px 0 var(--edge-highlight);
-		color: var(--secondary-foreground);
-		font-family: var(--font-mono);
-		font-size: var(--text-control);
-		letter-spacing: 0;
-		cursor: pointer;
-		transition:
-			border-color var(--duration-normal) var(--ease-default),
-			color var(--duration-normal) var(--ease-default),
-			background var(--duration-normal) var(--ease-default);
-	}
-	.metrics-quiet-toggle:hover,
-	.metrics-quiet-toggle:focus-visible,
-	.metrics-quiet-toggle[aria-checked='true'] {
-		border-color: var(--primary);
-		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 7%, var(--background));
-	}
-	.metrics-quiet-toggle:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 3px;
-	}
-	.metrics-quiet-toggle .q-wave,
-	.metrics-quiet-toggle .q-core {
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.5;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-		transition:
-			opacity var(--duration-normal) var(--ease-default),
-			fill var(--duration-normal) var(--ease-default),
-			stroke var(--duration-normal) var(--ease-default),
-			filter var(--duration-normal) var(--ease-default);
-	}
-	.metrics-quiet-toggle .q-wave--far {
-		opacity: 0.5;
-	}
-	.metrics-quiet-toggle[aria-checked='true'] .q-wave {
-		opacity: 0;
-	}
-	.metrics-quiet-toggle[aria-checked='true'] .q-core {
-		fill: var(--primary);
-		stroke: var(--primary);
-		filter: drop-shadow(0 0 4px color-mix(in srgb, var(--glow) 60%, transparent));
 	}
 
-	/* Remember pin — the paired switch. Same mono-pill chrome as the FOCUS switch
-	   but a touch quieter (it is a meta-control over the FOCUS one). Lights up in
-	   --primary when engaged (the pin fills). */
-	.metrics-quiet-remember {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.375rem;
-		min-height: 44px;
-		padding-inline: 0.75rem 0.875rem;
-		border: 2px solid var(--border-brand);
-		border-radius: var(--radius-md);
-		background: var(--background);
-		box-shadow: inset 0 1px 0 var(--edge-highlight);
-		color: var(--muted-foreground);
-		font-family: var(--font-mono);
-		font-size: var(--text-control);
-		letter-spacing: 0;
-		cursor: pointer;
-		transition:
-			border-color var(--duration-normal) var(--ease-default),
-			color var(--duration-normal) var(--ease-default),
-			background var(--duration-normal) var(--ease-default);
-	}
-	.metrics-quiet-remember:hover,
-	.metrics-quiet-remember:focus-visible,
-	.metrics-quiet-remember[aria-checked='true'] {
-		border-color: var(--primary);
-		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 7%, var(--background));
-	}
-	.metrics-quiet-remember:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 3px;
-	}
-	.metrics-quiet-remember .r-pin {
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.5;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-		transition:
-			fill var(--duration-normal) var(--ease-default),
-			stroke var(--duration-normal) var(--ease-default),
-			filter var(--duration-normal) var(--ease-default);
-	}
-	.metrics-quiet-remember[aria-checked='true'] .r-pin {
-		fill: color-mix(in srgb, var(--primary) 22%, transparent);
-		stroke: var(--primary);
-		filter: drop-shadow(0 0 3px color-mix(in srgb, var(--glow) 50%, transparent));
-	}
-
-	/* Expand-all / collapse-all — the same mono-pill chrome as the FOCUS controls,
-	   lighting up in --primary when engaged (every card open). */
 	.metrics-expand-all {
 		display: inline-flex;
 		align-items: center;
@@ -1443,11 +1225,6 @@
 
 	@media (prefers-reduced-motion: reduce) {
 		.metric__top,
-		.metrics-quiet-toggle,
-		.metrics-quiet-toggle .q-wave,
-		.metrics-quiet-toggle .q-core,
-		.metrics-quiet-remember,
-		.metrics-quiet-remember .r-pin,
 		.metrics-expand-all {
 			transition: none;
 		}

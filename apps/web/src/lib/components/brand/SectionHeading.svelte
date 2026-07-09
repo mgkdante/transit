@@ -145,7 +145,9 @@
 		flex-wrap: wrap;
 		gap: 0.5rem;
 		font-family: var(--font-heading);
-		font-size: clamp(2.5rem, 6vw, 4rem);
+		/* The display scale rides the shared family token (parity audit R3): the
+		   old local clamp ran 6vw mid-range; the token is the yesid 5vw curve. */
+		font-size: var(--text-display);
 		font-weight: 900;
 		color: var(--foreground);
 		letter-spacing: -2px;
