@@ -853,18 +853,22 @@
 		flex-direction: column;
 		gap: 0.5rem;
 	}
-	/* The result table — a real SQL-output look (operator, 2026-07-09): header row
-	   + hairline rule, labels LEFT, counts RIGHT-ALIGNED in their own column, and
-	   the table takes its NATURAL width like a CLI result set (never stretched
-	   across the panel). */
+	/* The result GRID — a real SQL client result set (operator, 2026-07-09):
+	   visible gridlines on every cell, header row set off on a faint ground,
+	   labels LEFT, counts RIGHT-ALIGNED in-column, natural width (max-content
+	   beats the global full-width table rule). */
 	.pulse-dist-table {
-		/* max-content beats any global full-width table rule: a CLI result set is
-		   exactly as wide as its columns. */
 		width: max-content;
 		max-width: 100%;
 		border-collapse: collapse;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
+		border: 1px solid var(--border-subtle);
+	}
+	.pulse-dist-table th,
+	.pulse-dist-table td {
+		border: 1px solid var(--border-subtle);
+		padding: 0.375rem 0.875rem;
 	}
 	.pulse-dist-table th {
 		text-align: left;
@@ -872,15 +876,7 @@
 		text-transform: uppercase;
 		letter-spacing: 1.5px;
 		color: var(--muted-foreground);
-		padding: 0 0 0.375rem;
-		border-bottom: 1px solid var(--border-subtle);
-	}
-	.pulse-dist-table td {
-		padding: 0.3125rem 0 0;
-	}
-	.pulse-dist-table th + th,
-	.pulse-dist-table td + td {
-		padding-left: 2.5rem;
+		background-color: color-mix(in srgb, var(--foreground) 4%, transparent);
 	}
 	.pulse-dist-num {
 		text-align: right;
