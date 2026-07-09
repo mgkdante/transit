@@ -29,5 +29,7 @@ export { default as Surface } from './Surface.svelte';
 
 export { default as DetailShell } from './DetailShell.svelte';
 export type { DetailShellProps } from './DetailShell.svelte';
+export { default as ArticleHeader } from './ArticleHeader.svelte';
+export type { ArticleHeaderProps, ArticleMetaEntry } from './ArticleHeader.svelte';
 
 export { default as Footer } from './Footer.svelte';

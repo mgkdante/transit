@@ -132,7 +132,7 @@ const richDataHealth: DataHealth = {
 // The mutable fixtures the createResource mock reads BY REFERENCE (keyed by which
 // repository fetcher the resource was created with), so a test can swap either for
 // a sparse variant before rendering.
-let provenanceFixture: Provenance = richProvenance;
+let provenanceFixture: Provenance | null = richProvenance;
 
 /** A provenance payload predating the PayloadEnvelope fields (legacy publish). */
 function stripEnvelope(prov: Provenance): Provenance {
@@ -194,18 +194,78 @@ afterEach(() => {
 });
 
 describe('HealthStatus — full manifest render', () => {
-	it('renders the surface head + a NEUTRAL "Updated N ago" stamp, never the live "LIVE" chip', () => {
-		render(HealthStatus);
+	it('renders the shared status article header with truthful meta, body lede, and no FOCUS or default band', () => {
+		const { container } = render(HealthStatus);
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+
+		expect(header).not.toBeNull();
+		expect(within(header).getByRole('heading', { level: 1, name: en.heading })).toBeInTheDocument();
+		expect(within(header).getByRole('link', { name: en.article.back })).toHaveAttribute(
+			'href',
+			'/',
+		);
+		const keywords = within(header).getByRole('list', { name: en.article.tagsAria });
+		for (const keyword of en.article.tags) {
+			expect(within(keywords).getByText(keyword)).toBeInTheDocument();
+		}
+		expect(header).toHaveTextContent(en.article.sections(8));
+		expect(header).toHaveTextContent('2026');
+		expect(container.querySelector('[data-slot="detail-shell-header"]')).toBeNull();
+		expect(container.querySelector('[data-testid="quiet-mode-toggle"]')).toBeNull();
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		expect(within(center).getByText(en.lede)).toBeInTheDocument();
+		expect(container.querySelector('[data-slot="detail-shell"]')?.parentElement).toBe(container);
+	});
+
+	it('keeps status article meta honestly absent when no status document is available', () => {
+		provenanceFixture = null;
+		dataHealthFixture = null;
+		const { container } = render(HealthStatus);
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+
+		expect(header).not.toBeNull();
+		expect(header.querySelector('.header__meta')?.children).toHaveLength(0);
+		expect(header).not.toHaveTextContent('0 sections');
+	});
+
+	it('labels daily and live timestamps separately when the two status documents diverge', () => {
+		provenanceFixture = {
+			...richProvenance,
+			generated_utc: iso('2026-06-19T06:00:00Z'),
+		};
+		dataHealthFixture = {
+			...richDataHealth,
+			generated_utc: iso('2026-06-19T12:00:00Z'),
+		};
+		const { container } = render(HealthStatus);
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+
+		expect(within(header).getByText('DAILY RECORD AS OF')).toBeInTheDocument();
+		expect(within(header).getByText('LIVE FEEDS AS OF')).toBeInTheDocument();
+		expect(Array.from(header.querySelectorAll('time')).map((time) => time.dateTime)).toEqual([
+			'2026-06-19T06:00:00Z',
+			'2026-06-19T12:00:00Z',
+		]);
+	});
+
+	it('keeps EN and FR status keywords distinct and removes internal /v1 jargon from the lede', () => {
+		expect(copy.en.article.tags).toEqual(['data', 'feeds', 'freshness', 'known gaps']);
+		expect(copy.fr.article.tags).toEqual(['données', 'flux', 'fraîcheur', 'lacunes connues']);
+		expect(copy.en.article.sections(1)).toBe('1 section');
+		expect(copy.fr.article.sections(1)).toBe('1 section');
+		expect(copy.en.lede).not.toContain('/v1');
+		expect(copy.fr.lede).not.toContain('/v1');
+	});
+
+	it('renders the surface head + a semantic neutral update time, never the live "LIVE" chip', () => {
+		const { container } = render(HealthStatus);
 		expect(screen.getByRole('heading', { level: 1, name: en.heading })).toBeInTheDocument();
 		expect(screen.getByText(en.asOf)).toBeInTheDocument();
-		const stamp = document.querySelector('[data-slot="health-asof"]') as HTMLElement;
-		expect(stamp).not.toBeNull();
-		const fresh = stamp.querySelector('[data-slot="freshness-stamp"]');
-		expect(fresh).not.toBeNull();
-		expect((fresh as HTMLElement).getAttribute('data-variant')).toBe('updated');
-		expect(within(fresh as HTMLElement).getByText('Updated')).toBeInTheDocument();
-		expect((fresh as HTMLElement).querySelector('time')).not.toBeNull();
-		expect(within(fresh as HTMLElement).queryByText('LIVE')).toBeNull();
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+		const time = header.querySelector('time');
+		expect(time).not.toBeNull();
+		expect(time).toHaveAttribute('datetime', richProvenance.generated_utc);
+		expect(within(header).queryByText('LIVE')).toBeNull();
 	});
 
 	it('AUTO-REFRESHES both resources via the shared epoch (freshness: true on each)', async () => {

@@ -38,6 +38,25 @@ const src = () =>
 	readFileSync(resolve(process.cwd(), 'src/lib/components/layout/DetailShell.svelte'), 'utf-8');
 
 describe('DetailShell — slots render in their zones', () => {
+	it('lets articleHeader replace the default band while preserving tape and body slots', () => {
+		const { container } = render(DetailShell, {
+			props: { ...baseProps, articleHeader: mk('article-header') },
+		});
+
+		expect(container.querySelector('[data-testid="article-header"]')).not.toBeNull();
+		expect(container.querySelector('[data-slot="detail-shell-header"]')).toBeNull();
+		expect(container.querySelector('.detail-shell-tape')).not.toBeNull();
+		expect(
+			container.querySelector('[data-slot="detail-shell-left"] [data-testid="left"]'),
+		).not.toBeNull();
+		expect(
+			container.querySelector('[data-slot="detail-shell-center"] [data-testid="center"]'),
+		).not.toBeNull();
+		expect(
+			container.querySelector('[data-slot="detail-shell-right"] [data-testid="right"]'),
+		).not.toBeNull();
+	});
+
 	it('renders header inside the full-bleed dot-grid band', () => {
 		const { container } = render(DetailShell, { props: baseProps });
 		const band = container.querySelector('[data-slot="detail-shell-header"]');

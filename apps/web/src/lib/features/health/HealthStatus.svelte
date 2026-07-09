@@ -5,10 +5,10 @@
   lives in ./selectors and every block in ./sections; this file only fetches,
   maps, and lays the sections out.
 
-  P5.4c RE-SEAT — the surface moves onto the shared DetailShell spine (same detail
-  architecture as /metrics; status now gains the full-bleed dot-grid header band):
-    · MASTHEAD → Masthead (kicker → display title + orange dot → lede → meta
-      row carrying the "Updated N ago" stamp); DetailShell adds the hazard tape.
+  P5.4c RE-SEAT — the surface uses the shared DetailShell spine (same detail
+  architecture as /metrics) and the shared ArticleHeader cover: circuit grid,
+  ManifestoCanvas, watermark, category rule, keywords and truthful dated meta.
+  The lede opens the body column; DetailShell adds the hazard tape.
     · BODY → DetailShell (3-col at ≥1024): LEFT = the numbered ToC over the (up
       to) 8 sections + a SEC n/m readout; CENTER = the existing 8 gated sections
       (real headings from stage 1, unchanged); RIGHT = per-feed stat cards (lanes
@@ -26,14 +26,13 @@
   status marks ride the dataviz status scale (StatusDot), never --primary.
 -->
 <script lang="ts">
-	import { getLocale, type Locale } from '$lib/i18n';
+	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { getProvenance, getDataHealth, freshnessRelative, type Provenance } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { formatRelativeSeconds } from '$lib/utils/time';
+	import { formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import { METHODOLOGY_METRIC_KEY } from '$lib/features/metrics/metrics.content';
-	import { DetailShell } from '$lib/components/layout';
-	import { Masthead } from '$lib/components/brand';
-	import { ResourceBoundary, FreshnessStamp } from '$lib/components/surface';
+	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
+	import { ResourceBoundary } from '$lib/components/surface';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { TocNav, type TocEntry } from '$lib/components/shared';
 	import { copy as COPY } from './health.copy';
@@ -167,6 +166,31 @@
 			})),
 	);
 
+	const dailyGeneratedMeta = $derived(
+		prov?.generated_utc
+			? { text: formatUtc(prov.generated_utc, locale), datetime: prov.generated_utc }
+			: null,
+	);
+	const liveGeneratedMeta = $derived(
+		dh?.generated_utc
+			? { text: formatUtc(dh.generated_utc, locale), datetime: dh.generated_utc }
+			: null,
+	);
+	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
+		const entries: ArticleMetaEntry[] = [];
+		if (
+			dailyGeneratedMeta &&
+			liveGeneratedMeta &&
+			dailyGeneratedMeta.datetime !== liveGeneratedMeta.datetime
+		) {
+			entries.push(t.article.dailyAsOf, dailyGeneratedMeta, t.article.liveAsOf, liveGeneratedMeta);
+		} else {
+			const sharedGeneratedMeta = dailyGeneratedMeta ?? liveGeneratedMeta;
+			if (sharedGeneratedMeta) entries.push(t.asOf, sharedGeneratedMeta);
+		}
+		if (tocEntries.length > 0) entries.push(t.article.sections(tocEntries.length));
+		return entries;
+	});
 	// ── Right-rail stat summary (pass/fail, from data on the page) ────────────────
 	// Applicable lanes only (the MAINTENANCE not-applicable row + gate-less lanes are
 	// excluded from the pass count); a lane "passes" when its gate aspect is on_time.
@@ -197,157 +221,150 @@
 	}
 </script>
 
-<article class="health-article" data-testid="health-article">
-	<DetailShell
-		class="health-detail"
-		bind:activeId
-		{tocEntries}
-		onNavigate={navigate}
-		tocOpenAria={t.toc.pill.open}
-		tocCloseAria={t.toc.pill.close}
-	>
-		<!-- Masthead (the ONE head family). DetailShell owns the full-bleed dot-grid header
-		     band + the closing hazard tape, so the Masthead runs tape={false} and status now
-		     shares the SAME article header as /metrics. The "Updated N ago" stamp rides the
-		     meta row when the provenance document is available; the head otherwise renders in
-		     every state (h1 present on load/error), matching the prior unconditional head. -->
-		{#snippet header()}
-			<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede} meta={masthead} tape={false} />
-		{/snippet}
+<DetailShell
+	class="health-detail"
+	bind:activeId
+	{tocEntries}
+	onNavigate={navigate}
+	tocOpenAria={t.toc.pill.open}
+	tocCloseAria={t.toc.pill.close}
+>
+	{#snippet articleHeader()}
+		<ArticleHeader
+			watermark={t.article.watermark}
+			category={t.kicker}
+			title={t.heading}
+			tags={t.article.tags}
+			tagsAria={t.article.tagsAria}
+			backHref={localizeHref('/', locale)}
+			backLabel={t.article.back}
+			meta={articleMeta}
+			titleId="status-title"
+		/>
+	{/snippet}
 
-		{#snippet mobileSummary()}
+	{#snippet mobileSummary()}
+		{@render statCards()}
+	{/snippet}
+
+	{#snippet left()}
+		<div class="health-toc-rail">
+			{#if tocEntries.length > 0}
+				<TocNav
+					entries={tocEntries}
+					{activeId}
+					onNavigate={navigate}
+					heading={t.toc.label}
+					counterPrefix={t.toc.counterPrefix}
+					sectionKey="status-toc"
+				/>
+			{/if}
+		</div>
+	{/snippet}
+
+	{#snippet right()}
+		<aside class="health-stat-aside" aria-label={t.statRail.label}>
 			{@render statCards()}
-		{/snippet}
+		</aside>
+	{/snippet}
 
-		{#snippet left()}
-			<div class="health-toc-rail">
-				{#if tocEntries.length > 0}
-					<TocNav
-						entries={tocEntries}
-						{activeId}
-						onNavigate={navigate}
-						heading={t.toc.label}
-						counterPrefix={t.toc.counterPrefix}
-						sectionKey="status-toc"
-					/>
-				{/if}
-			</div>
-		{/snippet}
-
-		{#snippet right()}
-			<aside class="health-stat-aside" aria-label={t.statRail.label}>
-				{@render statCards()}
-			</aside>
-		{/snippet}
-
-		{#snippet center()}
-			<!-- The boundary owns the skeleton/error/empty UX for the daily provenance
+	{#snippet center()}
+		<p class="health-lede">{t.lede}</p>
+		<!-- The boundary owns the skeleton/error/empty UX for the daily provenance
 			     document; the sections + ToC + stat rail derive from `provenance.data`
 			     at script level (null-safe), so the resolved snippet arg is unused. -->
-			<ResourceBoundary resource={provenance} lang={locale}>
-				{#snippet children(_p)}
-					<div class="health-sections" data-slot="health-sections">
-						<!-- ── Aggregate lane-gate verdict (§C5.9) ────────────────────────
+		<ResourceBoundary resource={provenance} lang={locale}>
+			{#snippet children(_p)}
+				<div class="health-sections" data-slot="health-sections">
+					<!-- ── Aggregate lane-gate verdict (§C5.9) ────────────────────────
 						     The page opens with ONE terminal verdict — "N of M lanes passing ·
 						     worst: X" — before the detail ledger, so the reader gets the whole-
 						     pipeline answer first. Present only when applicable lanes exist. -->
-						{#if laneStat.total > 0}
-							<div class="health-section health-aggregate" data-slot="health-aggregate">
-								<TerminalPanel title={t.aggregate.title}>
-									<p class="health-aggregate__verdict">
-										<span class="health-aggregate__summary"
-											>{t.aggregate.summary(String(laneStat.passing), String(laneStat.total))}</span
-										>
-										<span class="health-aggregate__worst">
-											{#if laneStat.worst}{t.aggregate.worst(laneStat.worst.label)}{:else}{t
-													.aggregate.allClear}{/if}
-										</span>
-									</p>
-								</TerminalPanel>
-							</div>
-						{/if}
+					{#if laneStat.total > 0}
+						<div class="health-section health-aggregate" data-slot="health-aggregate">
+							<TerminalPanel title={t.aggregate.title}>
+								<p class="health-aggregate__verdict">
+									<span class="health-aggregate__summary"
+										>{t.aggregate.summary(String(laneStat.passing), String(laneStat.total))}</span
+									>
+									<span class="health-aggregate__worst">
+										{#if laneStat.worst}{t.aggregate.worst(laneStat.worst.label)}{:else}{t.aggregate
+												.allClear}{/if}
+									</span>
+								</p>
+							</TerminalPanel>
+						</div>
+					{/if}
 
-						<!-- ── Pipeline lanes (top section) ──────────────────────────── -->
-						{#if laneRows.length > 0}
-							<div class="health-section" data-toc="health-lanes">
-								<SectionLanes rows={laneRows} copy={t} {locale} />
-							</div>
-						{/if}
+					<!-- ── Pipeline lanes (top section) ──────────────────────────── -->
+					{#if laneRows.length > 0}
+						<div class="health-section" data-toc="health-lanes">
+							<SectionLanes rows={laneRows} copy={t} {locale} />
+						</div>
+					{/if}
 
-						<!-- ── Per-feed freshness ─────────────────────────────────────── -->
-						{#if freshness.length > 0}
-							<div class="health-section" data-toc="health-freshness">
-								<SectionFreshness items={freshness} {verdictFor} {humanizeAge} copy={t} />
-							</div>
-						{/if}
+					<!-- ── Per-feed freshness ─────────────────────────────────────── -->
+					{#if freshness.length > 0}
+						<div class="health-section" data-toc="health-freshness">
+							<SectionFreshness items={freshness} {verdictFor} {humanizeAge} copy={t} />
+						</div>
+					{/if}
 
-						<!-- ── Source-feed lineage ────────────────────────────────────── -->
-						{#if sources.length > 0}
-							<div class="health-section" data-toc="health-sources">
-								<SectionSources items={sources} {lastLoaded} copy={t} />
-							</div>
-						{/if}
+					<!-- ── Source-feed lineage ────────────────────────────────────── -->
+					{#if sources.length > 0}
+						<div class="health-section" data-toc="health-sources">
+							<SectionSources items={sources} {lastLoaded} copy={t} />
+						</div>
+					{/if}
 
-						<!-- ── Known data gaps (honesty banner) ───────────────────────── -->
-						{#if gaps.length > 0}
-							<div class="health-section" data-toc="health-gaps">
-								<SectionGaps {gaps} {humanizeGap} copy={t} />
-							</div>
-						{/if}
+					<!-- ── Known data gaps (honesty banner) ───────────────────────── -->
+					{#if gaps.length > 0}
+						<div class="health-section" data-toc="health-gaps">
+							<SectionGaps {gaps} {humanizeGap} copy={t} />
+						</div>
+					{/if}
 
-						<!-- ── Pipeline notes ─────────────────────────────────────────── -->
-						{#if pipelineNotes.length > 0}
-							<div class="health-section" data-toc="health-pipeline-notes">
-								<SectionNotes notes={pipelineNotes} copy={t} />
-							</div>
-						{/if}
+					<!-- ── Pipeline notes ─────────────────────────────────────────── -->
+					{#if pipelineNotes.length > 0}
+						<div class="health-section" data-toc="health-pipeline-notes">
+							<SectionNotes notes={pipelineNotes} copy={t} />
+						</div>
+					{/if}
 
-						<!-- ── Retention ──────────────────────────────────────────────── -->
-						{#if hasRetention}
-							<div class="health-section" data-toc="health-retention">
-								<SectionRetention
-									detail={retention.detail}
-									aggregate={retention.aggregate}
-									{fmtDays}
-									copy={t}
-									{locale}
-								/>
-							</div>
-						{/if}
+					<!-- ── Retention ──────────────────────────────────────────────── -->
+					{#if hasRetention}
+						<div class="health-section" data-toc="health-retention">
+							<SectionRetention
+								detail={retention.detail}
+								aggregate={retention.aggregate}
+								{fmtDays}
+								copy={t}
+								{locale}
+							/>
+						</div>
+					{/if}
 
-						<!-- ── Conformance ────────────────────────────────────────────── -->
-						{#if conformance}
-							<div class="health-section" data-toc="health-conformance">
-								<SectionConformance {conformance} copy={t} {locale} />
-							</div>
-						{/if}
+					<!-- ── Conformance ────────────────────────────────────────────── -->
+					{#if conformance}
+						<div class="health-section" data-toc="health-conformance">
+							<SectionConformance {conformance} copy={t} {locale} />
+						</div>
+					{/if}
 
-						<!-- ── Build accountability (envelope) ────────────────────────── -->
-						{#if hasEnvelope}
-							<div class="health-section" data-toc="health-envelope">
-								<SectionEnvelope {envelope} copy={t} {locale} />
-							</div>
-						{/if}
-					</div>
-				{/snippet}
-			</ResourceBoundary>
-		{/snippet}
-	</DetailShell>
-</article>
+					<!-- ── Build accountability (envelope) ────────────────────────── -->
+					{#if hasEnvelope}
+						<div class="health-section" data-toc="health-envelope">
+							<SectionEnvelope {envelope} copy={t} {locale} />
+						</div>
+					{/if}
+				</div>
+			{/snippet}
+		</ResourceBoundary>
+	{/snippet}
+</DetailShell>
 <!-- The floating mobile ToC pill now lives INSIDE DetailShell (it owns the observer +
      the pill); no separate render + no 1024–1279 re-show hack is needed — the shell's
      rails appear at the SAME 1024 boundary the pill hides at. -->
-
-<!-- The Masthead meta row — the "AS OF · Updated N ago" stamp (live off the
-     provenance document's generated_utc when available). -->
-{#snippet masthead()}
-	{#if prov?.generated_utc}
-		<span class="health-asof" data-slot="health-asof">
-			<span class="health-asof-label">{t.asOf}</span>
-			<FreshnessStamp variant="updated" generatedUtc={prov.generated_utc} {locale} />
-		</span>
-	{/if}
-{/snippet}
 
 <!-- Right-rail / mobile-summary stat cards — a compact pass/fail summary from the
      lanes gate + feed freshness. Rendered ONCE and dropped into both the desktop
@@ -378,28 +395,12 @@
 {/snippet}
 
 <style>
-	/* The surface is a measured article rendered through DetailShell, which owns the
-	   full-bleed dot-grid header band + the hazard tape + the 3-col body grid. This
-	   feature supplies only the CONTENT of each slot. */
-	.health-article {
-		display: block;
-		width: 100%;
-	}
-
-	/* "as of" stamp: the mono label + the neutral "Updated N ago" stamp, riding the
-	   Masthead meta row. */
-	.health-asof {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		flex-wrap: wrap;
-	}
-	.health-asof-label {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: 1px;
-		text-transform: uppercase;
-		color: var(--muted-foreground);
+	.health-lede {
+		margin: 0 0 1.5rem;
+		max-width: 60ch;
+		font-size: var(--text-subheading);
+		line-height: 1.65;
+		color: var(--secondary-foreground);
 	}
 
 	/* ── Left rail (SEC readout + ToC) ─────────────────────────────────────────
@@ -462,11 +463,11 @@
 		flex-direction: column;
 		gap: var(--space-card-gap);
 	}
-	.health-article :global(.detail-shell-mobile-summary .health-stat-rail) {
+	:global(.detail-shell-mobile-summary) .health-stat-rail {
 		flex-direction: row;
 		flex-wrap: wrap;
 	}
-	.health-article :global(.detail-shell-mobile-summary .health-stat) {
+	:global(.detail-shell-mobile-summary) .health-stat {
 		flex: 1 1 10rem;
 	}
 	.health-stat {

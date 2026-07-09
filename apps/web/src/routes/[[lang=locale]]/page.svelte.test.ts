@@ -15,6 +15,8 @@
 // the same way the NetworkHealth surface test does, and $lib/nav for openSurface.
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { NetworkFile } from '$lib/v1';
 import type { IsoUtc } from '$lib/v1/schemas';
 import Page from './+page.svelte';
@@ -262,6 +264,24 @@ describe('Home hub — explore everything wayfinding', () => {
 });
 
 describe('Home hub — wayfinding v2 (informational pillars + filter rail)', () => {
+	it('opts both home filter facets into spacious density while retaining the 19rem rail and smaller legible paragraph', () => {
+		const { container } = render(Page);
+		const question = screen.getByRole('radio', { name: 'Where’s my bus?' });
+		const kind = screen.getByRole('radio', { name: 'The record' });
+		for (const button of [question, kind]) expect(button).toHaveClass('px-3', 'text-base');
+
+		const src = readFileSync(
+			resolve(process.cwd(), 'src/routes/[[lang=locale]]/+page.svelte'),
+			'utf-8',
+		);
+		expect(src.match(/density="spacious"/g)).toHaveLength(2);
+		expect(src).toMatch(/grid-template-columns:\s*19rem\s+minmax\(0,\s*1fr\)/);
+		expect(src).toMatch(
+			/\.what-body\s*\{[\s\S]*?font-size:\s*var\(--text-subheading\)[\s\S]*?line-height:\s*1\.65/,
+		);
+		expect(container.querySelector('.what-body')).toHaveClass('what-body');
+	});
+
 	it('renders the ground rules as informational, never clickable', () => {
 		render(Page);
 		// The what-this-is section holds ONE link (the measure deep-link) and no

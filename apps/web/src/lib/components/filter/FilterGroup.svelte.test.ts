@@ -12,6 +12,39 @@ const ITEMS = [
 ] as const;
 
 describe('FilterGroup', () => {
+	it('keeps the default density compact for alerts and existing callers', () => {
+		const { container } = render(FilterGroup, {
+			props: { label: 'Affects', items: ITEMS, activeKey: null, onSelect: vi.fn() },
+		});
+		const all = screen.getByRole('radio', { name: 'All' });
+		const item = screen.getByRole('radio', { name: 'Lines' });
+		expect(container.firstElementChild).toHaveAttribute('data-density', 'compact');
+		for (const button of [all, item]) {
+			expect(button).toHaveClass('px-2', 'text-sm');
+			expect(button).not.toHaveClass('px-3', 'text-base');
+		}
+	});
+
+	it('offers an explicit spacious density with larger type and inline padding', () => {
+		const { container } = render(FilterGroup, {
+			props: {
+				label: 'Affects',
+				items: ITEMS,
+				activeKey: null,
+				density: 'spacious',
+				onSelect: vi.fn(),
+			},
+		});
+		expect(container.firstElementChild).toHaveAttribute('data-density', 'spacious');
+		for (const button of [
+			screen.getByRole('radio', { name: 'All' }),
+			screen.getByRole('radio', { name: 'Lines' }),
+		]) {
+			expect(button).toHaveClass('px-3', 'text-base');
+			expect(button).not.toHaveClass('px-2', 'text-sm');
+		}
+	});
+
 	it('renders the label, an "All" reset, and one button per item', () => {
 		render(FilterGroup, {
 			props: { label: 'Affects', items: ITEMS, activeKey: null, onSelect: vi.fn() },

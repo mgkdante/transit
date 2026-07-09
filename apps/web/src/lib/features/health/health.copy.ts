@@ -17,15 +17,20 @@ import type { Locale } from '$lib/i18n';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export interface HealthCopy extends SurfaceHeadCopy {
-	/** "as of" stamp label preceding the generated-at stamp. */
+	readonly lede: string;
+	/** Shared yesid-style article header copy for /status. */
+	readonly article: {
+		readonly watermark: string;
+		readonly back: string;
+		readonly tagsAria: string;
+		readonly tags: readonly string[];
+		readonly sections: (count: number) => string;
+		/** Source labels used only when the daily and live documents have different stamps. */
+		readonly dailyAsOf: string;
+		readonly liveAsOf: string;
+	};
+	/** "as of" label preceding the generated-at article meta. */
 	readonly asOf: string;
-	/**
-	 * Neutral "Updated {age}" stamp for the once-daily provenance document — a
-	 * relative-age read of generated_utc, deliberately NOT the live-tier "LIVE"
-	 * chip (this is a daily build, never a live feed). `{age}` is the humanized
-	 * relative age (e.g. "2 hours ago" / "il y a 2 heures").
-	 */
-	readonly updated: (age: string) => string;
 	/** Per-feed freshness table. */
 	readonly freshness: {
 		/** Section caption. */
@@ -229,11 +234,18 @@ export interface HealthCopy extends SurfaceHeadCopy {
 export const copy: Record<Locale, HealthCopy> = {
 	en: {
 		kicker: 'DATA · HONESTY',
+		article: {
+			watermark: 'Status',
+			back: '← Back to the dashboard',
+			tagsAria: 'Page keywords',
+			tags: ['data', 'feeds', 'freshness', 'known gaps'],
+			sections: (n) => `${n} ${n === 1 ? 'section' : 'sections'}`,
+			dailyAsOf: 'DAILY RECORD AS OF',
+			liveAsOf: 'LIVE FEEDS AS OF',
+		},
 		heading: 'Data health',
-		subheading: '// PROVENANCE',
-		lede: 'How fresh every source feed is, where each one came from, what is knowingly missing, how long we keep it, and how cleanly the latest schedule matched our model. Measured from the open /v1 provenance contract. A missing signal shows as “no data”, never a fabricated value.',
+		lede: 'How fresh each source is, where it came from, what is knowingly missing, how long we keep it, and how cleanly the latest schedule matched the model behind this dashboard. A missing signal shows as “no data”, never a fabricated value.',
 		asOf: 'AS OF',
-		updated: (age) => `Updated ${age}`,
 		freshness: {
 			section: 'Feed freshness',
 			note: 'The status of each feed’s most recent ingestion run, whether the last load succeeded, failed, or is still running, and how long ago that run was.',
@@ -369,11 +381,18 @@ export const copy: Record<Locale, HealthCopy> = {
 	},
 	fr: {
 		kicker: 'DONNÉES · HONNÊTETÉ',
+		article: {
+			watermark: 'État',
+			back: '← Retour au tableau de bord',
+			tagsAria: 'Mots-clés de la page',
+			tags: ['données', 'flux', 'fraîcheur', 'lacunes connues'],
+			sections: (n) => `${n} ${n === 1 ? 'section' : 'sections'}`,
+			dailyAsOf: 'BILAN QUOTIDIEN À JOUR AU',
+			liveAsOf: 'FLUX EN DIRECT À JOUR AU',
+		},
 		heading: 'Santé des données',
-		subheading: '// PROVENANCE',
-		lede: 'À quel point chaque flux source est récent, d’où il vient, ce qui manque sciemment, combien de temps on le garde, et à quel point le dernier horaire correspondait à notre modèle. Mesuré depuis le contrat ouvert /v1 de provenance. Un signal absent s’affiche « aucune donnée », jamais une valeur fabriquée.',
+		lede: 'À quel point chaque source est récente, d’où elle vient, ce qui manque sciemment, combien de temps on la garde et à quel point le dernier horaire correspondait au modèle derrière ce tableau de bord. Un signal absent s’affiche « aucune donnée », jamais une valeur fabriquée.',
 		asOf: 'À JOUR AU',
-		updated: (age) => `Mis à jour ${age}`,
 		freshness: {
 			section: 'Fraîcheur des flux',
 			note: 'Le statut de la dernière exécution d’ingestion de chaque flux : si le dernier chargement a réussi, échoué, ou est encore en cours, et il y a combien de temps.',

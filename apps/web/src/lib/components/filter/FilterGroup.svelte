@@ -35,6 +35,7 @@
 		startOpen = true,
 		persistKey = undefined,
 		allLabel = defaultAllLabel,
+		density = 'compact',
 		onSelect,
 		testIdPrefix = undefined,
 	}: {
@@ -51,6 +52,8 @@
 		 */
 		persistKey?: string;
 		allLabel?: Record<Locale, string>;
+		/** Compact is the shared alerts/default density; spacious is opt-in. */
+		density?: 'compact' | 'spacious';
 		onSelect: (key: string | null) => void;
 		testIdPrefix?: string | undefined;
 	} = $props();
@@ -81,7 +84,7 @@
 	}
 </script>
 
-<div>
+<div data-density={density}>
 	{#if collapsible}
 		<button
 			type="button"
@@ -110,7 +113,11 @@
 					{#snippet child({ props })}
 						<button
 							{...props}
-							class="tap-press filter-btn w-full rounded px-2 py-3 min-h-11 text-left text-sm transition-colors"
+							class="tap-press filter-btn w-full rounded py-3 min-h-11 text-left transition-colors"
+							class:px-2={density === 'compact'}
+							class:text-sm={density === 'compact'}
+							class:px-3={density === 'spacious'}
+							class:text-base={density === 'spacious'}
 							class:active={activeKey === null}
 						>
 							{allLabel[locale]}
@@ -123,7 +130,11 @@
 						{#snippet child({ props })}
 							<button
 								{...props}
-								class="tap-press filter-btn w-full rounded border border-border px-2 py-3 min-h-11 text-left text-sm text-[var(--muted-foreground)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)] active:border-[var(--primary)] active:text-[var(--primary)]"
+								class="tap-press filter-btn w-full rounded border border-border py-3 min-h-11 text-left text-[var(--muted-foreground)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)] active:border-[var(--primary)] active:text-[var(--primary)]"
+								class:px-2={density === 'compact'}
+								class:text-sm={density === 'compact'}
+								class:px-3={density === 'spacious'}
+								class:text-base={density === 'spacious'}
 								class:tag-active={activeKey === item.key}
 								data-testid={testIdPrefix ? `${testIdPrefix}-${item.key}` : undefined}
 							>

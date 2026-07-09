@@ -67,6 +67,32 @@ beforeEach(resetMetricsStorage);
 afterEach(resetMetricsStorage);
 
 describe('MetricsExplainer', () => {
+	it('renders the shared article header with metrics keywords, back link, body lede, and working controls', () => {
+		const { container } = render(MetricsExplainer);
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+
+		expect(header).not.toBeNull();
+		expect(within(header).getByRole('heading', { level: 1, name: en.heading })).toBeInTheDocument();
+		expect(within(header).getByRole('link', { name: en.article.back })).toHaveAttribute(
+			'href',
+			'/',
+		);
+		const keywords = within(header).getByRole('list', { name: en.article.tagsAria });
+		for (const keyword of en.article.tags) {
+			expect(within(keywords).getByText(keyword)).toBeInTheDocument();
+		}
+		expect(header.querySelector('.detail-header-grid')).not.toBeNull();
+		expect(header.querySelector('[data-testid="manifesto-canvas"]')).not.toBeNull();
+
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		expect(within(center).getByText(en.lede)).toBeInTheDocument();
+		expect(within(header).getByTestId('quiet-mode-toggle')).toBeInTheDocument();
+		expect(within(header).getByTestId('metrics-expand-all')).toBeInTheDocument();
+		expect(container.querySelector('[data-slot="detail-shell-header"]')).toBeNull();
+		expect(container.textContent).not.toMatch(/blueprint/i);
+		expect(container.querySelector('[data-slot="detail-shell"]')?.parentElement).toBe(container);
+	});
+
 	it('renders the surface head + provenance preamble', () => {
 		const { container } = render(MetricsExplainer);
 
