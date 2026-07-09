@@ -55,6 +55,12 @@
 		numberTone?: 'rest' | 'active';
 		/** Optional inline explainer affordance (the (i) slot, §C2.7). */
 		explainer?: Snippet;
+		/**
+		 * Optional SECOND display line rendered in --primary under `heading` (the
+		 * yesid two-line thesis grammar — "SYSTEMS THAT / DON'T BREAK."). The dot
+		 * terminates the accent line. Display mode only.
+		 */
+		headingAccent?: string;
 		class?: string;
 	}
 
@@ -67,6 +73,7 @@
 		number,
 		numberTone = 'rest',
 		explainer,
+		headingAccent,
 		class: className,
 		...restProps
 	}: SectionHeadingProps = $props();
@@ -93,7 +100,15 @@
 				tone={numberTone}
 				class="section-heading-chip"
 			/>{/if}<span class="section-heading-title"
-			>{titleText}{#if dot && !isOverline}<span
+			>{titleText}{#if headingAccent && !isOverline}<span
+					data-slot="section-heading-accent"
+					class="section-heading-accent"
+					>{headingAccent}{#if dot}<span
+							data-slot="section-heading-dot"
+							class="section-heading-dot"
+							aria-hidden="true">.</span
+						>{/if}</span
+				>{:else if dot && !isOverline}<span
 					data-slot="section-heading-dot"
 					class="section-heading-dot"
 					aria-hidden="true">.</span
@@ -121,6 +136,13 @@
 	}
 	/* Brand flourish — the interactive-accent orange (doctrine: not a data mark). */
 	.section-heading-dot {
+		color: var(--primary);
+	}
+	/* The two-line thesis accent (yesid HeroTextContent grammar): line 2 breaks onto
+	   its own row in --primary and CARRIES the dot inline (the dot must never wrap
+	   onto a lone line). The dot inherits its own --primary rule. */
+	.section-heading-accent {
+		display: block;
 		color: var(--primary);
 	}
 	.section-heading-sub {

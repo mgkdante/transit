@@ -61,6 +61,10 @@ vi.mock('$lib/v1', async () => {
 	const { otpVerdict } = await vi.importActual<typeof import('$lib/v1/reliabilityVerdict')>(
 		'$lib/v1/reliabilityVerdict',
 	);
+	// The hero's routes-live tile iterates a REAL LiveIndex (vehiclesByRoute Map),
+	// so the mocked store carries the real empty index, not a bare {}.
+	const { emptyLiveIndex } =
+		await vi.importActual<typeof import('$lib/v1/live/index')>('$lib/v1/live/index');
 	return {
 		otpVerdict,
 		getV1Context: () => ({ manifest, labels: {}, lang: state.locale }),
@@ -70,7 +74,7 @@ vi.mock('$lib/v1', async () => {
 			departures: null,
 			alerts: null,
 			network: state.network,
-			index: {},
+			index: emptyLiveIndex(),
 			generatedUtc: state.network?.generated_utc ?? null,
 			ageSeconds: state.network ? 12 : null,
 			isStale: false,
@@ -103,9 +107,13 @@ afterEach(() => {
 });
 
 describe('Home hub — identity + what-this-is', () => {
-	it('renders the provider identity as the page heading', () => {
+	it('renders the two-line THESIS as the page heading, with the identity in the kicker', () => {
 		render(Page);
-		expect(screen.getByRole('heading', { level: 1, name: /Demo Transit/i })).toBeInTheDocument();
+		// P5-R R1: the h1 is the thesis (line 2 is the --primary accent), not the
+		// agency name — identity demotes to the station-voice kicker + CornerMeta.
+		const h1 = screen.getByRole('heading', { level: 1 });
+		expect(h1.textContent?.replace(/\s+/g, ' ')).toMatch(/THE NETWORK, ?MEASURED HONESTLY/i);
+		expect(screen.getByText(/CITIZEN DASHBOARD · DEMO · TESTVILLE/i)).toBeInTheDocument();
 	});
 
 	it('templates the what-this-is copy on the manifest short_name + city (provider-agnostic)', () => {
@@ -146,11 +154,16 @@ describe('Home hub — live pulse honesty', () => {
 	it('reads real headline numbers when the live tier reports', () => {
 		state.network = liveNetwork;
 		render(Page);
+		// ONE numbers voice (operator variation): the terminal board carries the
+		// glance — on-time leads with its verdict word, then coverage / median
+		// delay / not reporting; the fleet-status ledger carries the distribution.
 		const board = screen.getByRole('list', { name: /the network, right now/i });
 		expect(within(board).getByText('83%')).toBeInTheDocument(); // on-time
-		expect(within(board).getByText('412')).toBeInTheDocument(); // vehicles in service
-		expect(within(board).getByText('7')).toBeInTheDocument(); // not reporting
 		expect(within(board).getByText('94%')).toBeInTheDocument(); // coverage
+		expect(within(board).getByText('1 min')).toBeInTheDocument(); // median delay
+		expect(within(board).getByText('7')).toBeInTheDocument(); // not reporting
+		const dist = screen.getByRole('group', { name: /fleet status/i });
+		expect(within(dist).getByText('8')).toBeInTheDocument(); // on-time vehicles (fixture)
 		// The pulse verdict flips to LIVE when the tier reports (no STANDBY anywhere).
 		expect(screen.getAllByText('LIVE').length).toBeGreaterThanOrEqual(1);
 		expect(screen.queryByText('STANDBY')).toBeNull();
@@ -174,11 +187,9 @@ describe('Home hub — live pulse honesty', () => {
 			.filter((b) => b.classList.contains('metric-info__trigger'));
 		expect(triggers).toHaveLength(4);
 		expect(within(board).getByRole('button', { name: /About On-time/i })).toBeInTheDocument();
-		expect(
-			within(board).getByRole('button', { name: /About Vehicles in service/i }),
-		).toBeInTheDocument();
-		expect(within(board).getByRole('button', { name: /About Not reporting/i })).toBeInTheDocument();
 		expect(within(board).getByRole('button', { name: /About Coverage/i })).toBeInTheDocument();
+		expect(within(board).getByRole('button', { name: /About Median delay/i })).toBeInTheDocument();
+		expect(within(board).getByRole('button', { name: /About Not reporting/i })).toBeInTheDocument();
 	});
 
 	it('renders the styled honest-absence chip on each pulse tile when a metric is null', () => {

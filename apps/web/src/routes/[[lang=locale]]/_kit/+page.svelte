@@ -481,7 +481,7 @@
 		<div class="kit-grid2">
 			<TerminalPanel
 				title="receipt.log"
-				tag="STM"
+				tag="DEMO"
 				status="live"
 				footerItems={[
 					{ label: 'rows', value: '128' },
