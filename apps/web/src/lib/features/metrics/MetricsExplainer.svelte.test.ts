@@ -54,10 +54,18 @@ const en = metricsCopy.en;
 // synchronously from sessionStorage, so wipe every relevant key AND reset the
 // store before + after each test so every render starts from the true default
 // (all cards open, ToC open, bulk collapse off) and no stale hash lingers.
-const CARD_ANCHORS = [...METRICS.map((m) => m.anchor), 'live-positions', 'structural-gaps'];
+const CARD_ANCHORS = [
+	'metrics-provenance',
+	...METRICS.map((m) => m.anchor),
+	'live-positions',
+	'structural-gaps',
+];
 function resetMetricsStorage(): void {
 	for (const anchor of CARD_ANCHORS) {
 		sessionStorage.removeItem(`transit.persisted:metrics-card-${anchor}`);
+	}
+	for (const rail of ['provenance', 'coverage', 'freshness']) {
+		sessionStorage.removeItem(`transit.persisted:metrics-rail-${rail}`);
 	}
 	sessionStorage.removeItem('transit.persisted:metrics-toc');
 	quietModeStore.resetForTest();
@@ -67,7 +75,7 @@ beforeEach(resetMetricsStorage);
 afterEach(resetMetricsStorage);
 
 describe('MetricsExplainer', () => {
-	it('renders the shared article header with metrics keywords, back link, body lede, and working controls', () => {
+	it('renders the shared article header with metrics keywords, back link, and body lede', () => {
 		const { container } = render(MetricsExplainer);
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
 
@@ -86,11 +94,29 @@ describe('MetricsExplainer', () => {
 
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
 		expect(within(center).getByText(en.lede)).toBeInTheDocument();
-		expect(within(header).getByTestId('quiet-mode-toggle')).toBeInTheDocument();
-		expect(within(header).getByTestId('metrics-expand-all')).toBeInTheDocument();
 		expect(container.querySelector('[data-slot="detail-shell-header"]')).toBeNull();
 		expect(container.textContent).not.toMatch(/blueprint/i);
 		expect(container.querySelector('[data-slot="detail-shell"]')?.parentElement).toBe(container);
+	});
+
+	it('renders exactly the two source controls and no metrics-only third control', async () => {
+		const { container } = render(MetricsExplainer);
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+		expect(within(header).getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
+		expect(
+			within(header).getByRole('button', { name: 'Always start collapsed' }),
+		).toBeInTheDocument();
+		expect(within(header).queryByTestId('metrics-expand-all')).toBeNull();
+	});
+
+	it('places the lede and methodology inside the opening provenance card', () => {
+		const { container } = render(MetricsExplainer);
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		const trigger = within(center).getByRole('button', { name: en.provenance.label });
+		const card = trigger.closest('[data-slot="card"]') as HTMLElement;
+		expect(within(card).getByText(en.lede)).toBeInTheDocument();
+		expect(within(card).getByText(en.provenance.body)).toBeInTheDocument();
+		expect(card).toHaveAttribute('data-toc', 'metrics-provenance');
 	});
 
 	it('renders the surface head + provenance preamble', () => {
@@ -412,21 +438,17 @@ describe('MetricsExplainer', () => {
 		expect(cardTrigger(container, 'otp')).toHaveAttribute('aria-expanded', 'true');
 	});
 
-	it('scrolls to a non-card preamble anchor without opening any folded card and without crashing', async () => {
-		// Several supplemental (i) tips deep-link to /metrics#metrics-provenance, the
-		// provenance PREAMBLE — a plain <section>, NOT a collapsible card. Fold the
-		// page first (saved collapsed mode) so "no card opens" is observable.
+	it('opens the provenance card on mount when a saved collapse default folded the page', async () => {
 		localStorage.setItem('transit:quiet-mode', 'true');
 		window.location.hash = '#metrics-provenance';
 		const { container } = render(MetricsExplainer);
 		await tick();
 		await tick();
 
+		expect(cardTrigger(container, 'metrics-provenance')).toHaveAttribute('aria-expanded', 'true');
 		for (const entry of METRICS) {
 			expect(cardTrigger(container, entry.anchor)).toHaveAttribute('aria-expanded', 'false');
 		}
-		// The preamble section is present + carries the deep-link target id.
-		expect(container.querySelector('#metrics-provenance')).not.toBeNull();
 	});
 
 	it('ToC navigation opens the target card through a folded page (siblings unaffected)', async () => {
@@ -482,6 +504,27 @@ describe('MetricsExplainer', () => {
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'true');
 		}
+	});
+
+	it('collapses and expands left, center, and both responsive rail mounts', async () => {
+		const { container } = render(MetricsExplainer);
+		await fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+		for (const trigger of container.querySelectorAll('button.section-header')) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		}
+		await fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+		for (const trigger of container.querySelectorAll('button.section-header')) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		}
+	});
+
+	it('keeps desktop and mobile copies of a rail card on one logical open state', async () => {
+		render(MetricsExplainer);
+		const coverage = screen.getAllByRole('button', { name: en.statRail.coverage.title });
+		expect(coverage).toHaveLength(2);
+		await fireEvent.click(coverage[0]);
+		expect(coverage[0]).toHaveAttribute('aria-expanded', 'false');
+		expect(coverage[1]).toHaveAttribute('aria-expanded', 'false');
 	});
 
 	it('keeps the ToC rail its OWN user-driven collapse chevron (cards untouched, persisted)', async () => {
@@ -562,27 +605,5 @@ describe('MetricsExplainer', () => {
 		}
 		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'false');
 		expect(container.querySelector('.metrics-toc-rail')).not.toBeNull();
-	});
-
-	// ── §C5.8: the bulk expand/collapse control on a default-open page ─────────
-	it('collapse-all folds every card but leaves the ToC; expand-all reopens them', async () => {
-		const { container } = render(MetricsExplainer);
-
-		const bulk = screen.getByTestId('metrics-expand-all');
-		// Default-open page → the control starts as "Collapse all".
-		expect(bulk).toHaveTextContent(en.expand.collapseAll);
-
-		await fireEvent.click(bulk);
-		for (const trigger of metricTriggers(container)) {
-			expect(trigger).toHaveAttribute('aria-expanded', 'false');
-		}
-		// The page-owned bulk control never folds the ToC (only the shared control does).
-		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'true');
-		expect(bulk).toHaveTextContent(en.expand.expandAll);
-
-		await fireEvent.click(bulk);
-		for (const trigger of metricTriggers(container)) {
-			expect(trigger).toHaveAttribute('aria-expanded', 'true');
-		}
 	});
 });

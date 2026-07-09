@@ -118,14 +118,6 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		/** Keyword pills; the first pill is the title-highlight candidate. */
 		readonly tags: readonly string[];
 	};
-	/** The expand-all / collapse-all control that opens or closes every metric card at once (§C5.8).
-	 *  (The FOCUS switch + REMEMBER pin copy lives in the shared QuietModeButton — P5-R R3.) */
-	readonly expand: {
-		/** Visible label + aria-label for the "open every card" action. */
-		readonly expandAll: string;
-		/** Visible label + aria-label for the "close every card" action. */
-		readonly collapseAll: string;
-	};
 	/**
 	 * Right-rail stat cards (P5.4c DetailShell re-seat). Three compact cards —
 	 * Provenance / Coverage / Freshness — built from data the page already has
@@ -276,10 +268,6 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			tagsAria: 'Mots-clés de la page',
 			tags: ['mesure', 'ponctualité', 'retards', 'calcul honnête', 'données ouvertes'],
 		},
-		expand: {
-			expandAll: 'Tout ouvrir',
-			collapseAll: 'Tout fermer',
-		},
 		statRail: {
 			label: 'En bref',
 			provenance: {
@@ -414,10 +402,6 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			back: '← Back to the dashboard',
 			tagsAria: 'Page keywords',
 			tags: ['measure', 'on-time', 'delays', 'honest math', 'open data'],
-		},
-		expand: {
-			expandAll: 'Expand all',
-			collapseAll: 'Collapse all',
 		},
 		statRail: {
 			label: 'At a glance',

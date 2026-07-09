@@ -31,6 +31,8 @@
   --text-heading: clamp(1.375rem, 3vw, 1.75rem);
   --text-subheading: 1.1875rem;
   --text-body: 1.0625rem;
+  --text-detail-body-mobile: 1.0625rem;
+  --text-detail-body-desktop: 1.125rem;
   --text-small: 0.9375rem;
   --text-control: 0.9375rem;
   --text-tag: 0.9375rem;
