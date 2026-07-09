@@ -1,44 +1,30 @@
 <!--
-  Hub landing, the network entry surface — a dispatcher's launchpad (P5.4b).
+  Home — the network entry surface, rebuilt on the yesid.dev home-hero geometry
+  (P5-R · R1; build sheet at docs/audits/p5-r/). Three movements:
 
-  Renders inside the AppShell `main` zone (the root layout pipes the page tree
-  here). Reads the active locale (context) + the booted v1 snapshot context, and
-  presents the project at a glance in three movements:
+    1. HERO — full-viewport, grid [1fr | 1px amber spine | 1fr]. LEFT: kicker
+       (agency identity, amber text) → two-line THESIS at --text-hero (line 2
+       --primary + dot) → THREE equal stat tiles (vehicles tracked · on-time with
+       its verdict word · routes live) → statement → lede → CTA row (--primary
+       "Explore the network" + THE amber-ground map conversion CTA — the view's
+       one). RIGHT: the live-pulse TerminalPanel — 2×2 KPI board (coverage ·
+       median delay · slowest 10% · not reporting, zero overlap with the tiles)
+       + the mono fleet-status readout. FELT-SYMMETRY LAW (operator 2026-07-09):
+       both columns read equally FULL at a glance — balance comes from real
+       content mass and grid centering, never from stretching a short box.
 
-    1. COMMAND-BOARD HERO — the yesid home-hero DNA in transit voice: a two-column
-       board [identity Masthead] │ orange divider │ [live-pulse TerminalPanel] at
-       ≥1024, stacked below. LEFT is the ONE Masthead family (kicker → display
-       title + orange dot → lede) with the blueprint-margin CornerMeta; RIGHT is
-       the network "right now" board (the dispatcher status-at-a-glance, co-hero)
-       reading the same live network.json /network does, via createLiveStore
-       (on-time %, vehicles in service, not-reporting count, coverage %). HONESTY:
-       before the first client tick (and during SSR) the store is null, so every
-       KPI stands down to the STYLED honest-absence chip (absentReason
-       'not-reported') — never a fabricated 0; the two percentage KPIs carry a
-       verdict WORD from the reliabilityVerdict floors. A single edge-to-edge
-       hazard tape closes the hero.
+    2. WHAT THIS IS — heading + one tight bilingual paragraph (60ch) stacked
+       ABOVE three honesty pillars in ONE equal row (identical chassis + content
+       budget). Provider-agnostic copy templated on the manifest.
 
-    2. WHAT THIS IS — one tight bilingual paragraph + three honesty pillars
-       (Live / Honest / Accountable) so a first-time visitor instantly grasps the
-       whole project: an independent, honesty-first citizen-analytics dashboard
-       derived from the live GTFS-realtime feed, a measured PROXY (not certified
-       OTP), where null always means "no data". Provider-agnostic: the copy
-       templates on short_name / city / display_name from the manifest, never a
-       hardcoded agency or place.
+    3. EXPLORE — every surface in ONE uniform tile grammar (identical chassis,
+       identical size, rows equalized), grouped under station-voice overlines.
+       Primary surfaces route via openSurface; reference surfaces are localized
+       links.
 
-    3. LAUNCHPAD — ALL ~10 surfaces as entry points, WEIGHTED like a dispatcher's
-       board: the five PRIMARY destinations (Explore group) render as glyph-forward
-       FEATURE tiles; the accountability + trust surfaces sit beside each other
-       (≥1024) as a denser COMPACT field. Each entry is a focusable tile with a
-       glyph, a bilingual title and a one-line description. Primary surfaces route
-       through $lib/nav `openSurface` (route-push on mobile, panel-swap on
-       desktop); reference surfaces are localized <a> links.
-
-  Brand primitives + tokens only (no hex). The live/healthy dots ride the dataviz
-  status scale (DATA), never --primary; --primary is the brand flourish (dot,
-  hero divider, tile hover/focus) — amber stays reserved for the one conversion
-  CTA. Responsive: the hero + launchpad collapse to a single column < 1024 and
-  every board is a DashboardGrid (auto-fit) so nothing overflows at 360px.
+  HONESTY unchanged: pre-tick/absent live tier stands every number down to the
+  styled absence chip — never a fabricated 0. Brand primitives + tokens only.
+  Edge-to-edge: hazard tapes span full width; sections inherit the page gutter.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -48,19 +34,21 @@
 	import { otpVerdict } from '$lib/v1';
 	import { STATUS_LABELS } from '$lib/v1/enumLabels';
 	import { StatusBadge } from '$lib/components/dataviz';
-	import { ageSeconds, formatRelativeSeconds, formatUtc } from '$lib/utils/time';
-	import { fmtCount as sharedFmtCount, fmtPct as sharedFmtPct } from '$lib/utils';
-	import { sharedClock } from '$lib/stores';
+	import { formatUtc } from '$lib/utils/time';
+	import {
+		fmtCount as sharedFmtCount,
+		fmtPct as sharedFmtPct,
+		fmtDelayMin as sharedFmtDelayMin,
+	} from '$lib/utils';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import Masthead from '$lib/components/brand/Masthead.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
 	import { cornerMetaLabels } from '$lib/components/brand';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { FreshnessStamp } from '$lib/components/surface';
-	import { Surface, DashboardGrid } from '$lib/components/layout';
+	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import {
@@ -96,12 +84,21 @@
 		return () => live.stop();
 	});
 
-	// Keep the ONE shared clock alive while this page is on screen so the boot
-	// fallback below ticks (the live store also subscribes once started; this is
-	// idempotent and covers the pre-tick fallback window).
-	$effect(() => sharedClock.subscribe());
-
 	const net = $derived(live.network);
+
+	// Routes with ≥1 live vehicle right now — the hero's third stat tile. Gated on a
+	// reported live tier so a pre-tick empty index reads as honest absence, while a
+	// genuine post-tick 0 stays a real zero.
+	const routesLive = $derived(net != null ? fmtCount(live.index.vehiclesByRoute.size) : null);
+
+	// The on-time tile's verdict WORD (90/75 reliabilityVerdict floors) — undefined
+	// (no sublabel) while the tier is absent or the verdict has no floor.
+	const onTimeVerdictWord = $derived.by(() => {
+		const pct = net?.on_time_pct;
+		if (pct == null) return undefined;
+		const v = otpVerdict(pct);
+		return v ? STATUS_LABELS[locale][v] : undefined;
+	});
 
 	// CornerMeta readouts (A4) — REAL data only, sourced from the manifest + the
 	// live tier this page already loads; a datum that isn't present drops its corner
@@ -114,26 +111,6 @@
 	);
 	const cornerVehicleCount = $derived(fmtCount(net?.vehicles_in_service));
 
-	// "Last updated X ago" in the terminal chrome — TICKS off the live store so it
-	// advances each second in lockstep with the FreshnessStamp chip below it (a frozen
-	// one-shot here read as a contradiction beside the ticking chip). Once the live
-	// tier reports we read its ticking `ageSeconds` (advanced off the shared clock);
-	// before the first tick we fall back to the one-shot static/boot build time so
-	// the chrome still shows an anchor instead of "unknown".
-	const lastBuilt = $derived(
-		live.generatedUtc != null
-			? formatRelativeSeconds(live.ageSeconds ?? 0, locale)
-			: generatedUtc != null
-				? // The pre-tick fallback is a SERVER build timestamp → anchor its age to
-					// the shared SERVER clock (same skew-correction the primary live path
-					// already uses), so the two paths stay consistent on a skewed client.
-					formatRelativeSeconds(
-						Math.max(0, ageSeconds(generatedUtc, sharedClock.serverNow)),
-						locale,
-					)
-				: null,
-	);
-
 	// The pulse formatters return `null` for a missing value (never a fabricated 0);
 	// the MetricDisplay then renders its muted `emptyLabel` no-data state, the
 	// honest absence reading consistent with the null-aware MetricDisplay.
@@ -145,19 +122,28 @@
 	function fmtCount(v: number | null | undefined): string | null {
 		return sharedFmtCount(v, { locale });
 	}
+	/** Nullable minutes → "2 min" or null (→ the honest-absence chip). */
+	function fmtMin(v: number | null | undefined): string | null {
+		return sharedFmtDelayMin(v, { suffix: T[locale].min });
+	}
 
 	type CopyKey =
 		| 'kicker'
+		| 'thesis1'
+		| 'thesis2'
+		| 'statement'
 		| 'tagline'
+		| 'ctaNetwork'
+		| 'ctaMap'
 		| 'terminalTitle'
 		| 'pulseLabel'
+		| 'glanceLabel'
 		| 'pulseLive'
 		| 'pulseStandby'
 		| 'datasetLabel'
-		| 'builtLabel'
-		| 'builtUnknown'
 		| 'noData'
 		| 'pct'
+		| 'min'
 		| 'enter'
 		| 'whatTitle'
 		| 'whatSub'
@@ -165,8 +151,14 @@
 		| 'measureLink'
 		| 'metricOnTime'
 		| 'metricVehicles'
+		| 'metricRoutesLive'
+		| 'metricRoutesLiveSub'
+		| 'metricVehiclesSub'
+		| 'metricDelayP50'
+		| 'metricDelayP90'
 		| 'metricSilent'
 		| 'metricCoverage'
+		| 'distLabel'
 		| 'groupExplore'
 		| 'groupAccount'
 		| 'groupTrust'
@@ -174,52 +166,74 @@
 
 	const T: Record<Locale, Record<CopyKey, string>> = {
 		fr: {
-			kicker: 'TABLEAU DE BORD CITOYEN',
-			tagline: `Le réseau ${shortName} de ${city}, mesuré en direct. On n'invente jamais de données.`,
+			kicker: `TABLEAU DE BORD CITOYEN · ${shortName.toUpperCase()} · ${city.toUpperCase()}`,
+			thesis1: 'LE RÉSEAU,',
+			thesis2: 'MESURÉ HONNÊTEMENT',
+			statement: 'On n’invente jamais de données.',
+			tagline: `Le réseau ${shortName} de ${city}, mesuré en direct depuis le flux public. Quand une donnée manque, on l’affiche absente.`,
+			ctaNetwork: 'Explorer le réseau →',
+			ctaMap: 'Ouvrir la carte en direct',
 			terminalTitle: 'reseau.salle-de-controle',
 			pulseLabel: 'Le réseau, en ce moment',
+			glanceLabel: 'Le réseau en un coup d’œil',
 			pulseLive: 'EN DIRECT',
 			pulseStandby: 'EN ATTENTE',
 			datasetLabel: 'Jeu de données',
-			builtLabel: 'Dernière mise à jour',
-			builtUnknown: 'inconnue',
 			noData: 'aucune donnée',
 			pct: '%',
+			min: ' min',
 			enter: 'Ouvrir',
 			whatTitle: 'Ce que c’est',
 			whatSub: '// INDÉPENDANT · HONNÊTE D’ABORD',
 			whatBody: `Un tableau de bord indépendant et honnête pour le réseau ${shortName} de ${city}, dérivé du flux GTFS-temps réel public via le contrat ouvert /v1. La ponctualité est un indicateur mesuré, un proxy, pas une ponctualité certifiée. Quand une donnée manque, on l’affiche comme absente. Jamais de zéro inventé.`,
 			measureLink: 'Comment on mesure',
 			metricOnTime: 'Ponctualité',
-			metricVehicles: 'Véhicules en service',
+			metricVehicles: 'Véhicules suivis',
+			metricVehiclesSub: `${shortName.toUpperCase()} · EN DIRECT`,
+			metricRoutesLive: 'Lignes actives',
+			metricRoutesLiveSub: 'EN CE MOMENT',
+			metricDelayP50: 'Retard médian',
+			metricDelayP90: 'Pires 10 %',
 			metricSilent: 'Sans réponse',
 			metricCoverage: 'Couverture',
+			distLabel: 'État de la flotte',
 			groupExplore: 'Explorer',
 			groupAccount: 'Reddition de comptes',
 			groupTrust: 'Confiance',
 			exploreNav: 'Tout explorer',
 		},
 		en: {
-			kicker: 'CITIZEN DASHBOARD',
-			tagline: `The ${shortName} network across ${city}, measured live. We never invent data.`,
+			kicker: `CITIZEN DASHBOARD · ${shortName.toUpperCase()} · ${city.toUpperCase()}`,
+			thesis1: 'THE NETWORK,',
+			thesis2: 'MEASURED HONESTLY',
+			statement: 'We never invent data.',
+			tagline: `The ${shortName} network across ${city}, measured live from the public feed. When a number is missing, we show it missing.`,
+			ctaNetwork: 'Explore the network →',
+			ctaMap: 'Open the live map',
 			terminalTitle: 'network.control-room',
 			pulseLabel: 'The network, right now',
+			glanceLabel: 'The network at a glance',
 			pulseLive: 'LIVE',
 			pulseStandby: 'STANDBY',
 			datasetLabel: 'Dataset',
-			builtLabel: 'Last updated',
-			builtUnknown: 'unknown',
 			noData: 'no data',
 			pct: '%',
+			min: ' min',
 			enter: 'Open',
 			whatTitle: 'What this is',
 			whatSub: '// INDEPENDENT · HONESTY FIRST',
 			whatBody: `An independent, honesty-first dashboard for the ${shortName} network across ${city}, derived from the public GTFS-realtime feed through the open /v1 contract. On-time performance is a measured proxy, not certified OTP. When a number is missing, we show it as missing. Never a fabricated zero.`,
 			measureLink: 'How we measure',
 			metricOnTime: 'On-time',
-			metricVehicles: 'Vehicles in service',
+			metricVehicles: 'Vehicles tracked',
+			metricVehiclesSub: `${shortName.toUpperCase()} · LIVE`,
+			metricRoutesLive: 'Routes live',
+			metricRoutesLiveSub: 'RIGHT NOW',
+			metricDelayP50: 'Median delay',
+			metricDelayP90: 'Slowest 10%',
 			metricSilent: 'Not reporting',
 			metricCoverage: 'Coverage',
+			distLabel: 'Fleet status',
 			groupExplore: 'Explore',
 			groupAccount: 'Accountability',
 			groupTrust: 'Trust',
@@ -296,9 +310,6 @@
 
 	interface Group {
 		readonly key: 'explore' | 'account' | 'trust';
-		/** Spatial weight on the launchpad — the primary destinations render as
-		    glyph-forward feature tiles; the rest as a denser compact field. */
-		readonly weight: 'feature' | 'compact';
 		readonly label: () => string;
 		readonly entries: readonly Entry[];
 	}
@@ -306,7 +317,6 @@
 	const GROUPS: readonly Group[] = [
 		{
 			key: 'explore',
-			weight: 'feature',
 			label: () => t.groupExplore,
 			entries: [
 				{
@@ -363,7 +373,6 @@
 		},
 		{
 			key: 'account',
-			weight: 'compact',
 			label: () => t.groupAccount,
 			entries: [
 				{
@@ -410,7 +419,6 @@
 		},
 		{
 			key: 'trust',
-			weight: 'compact',
 			label: () => t.groupTrust,
 			entries: [
 				{
@@ -446,91 +454,162 @@
 	     blueprint-margin CornerMeta pinned to it; the right is the network "right now"
 	     board (the dispatcher status-at-a-glance, co-hero). They sit side by side ≥1024
 	     and stack below; a single edge-to-edge hazard tape closes the whole hero. -->
-	<div class="hub-hero">
-		<Masthead
-			class="hub-head"
-			kicker={t.kicker}
-			heading={manifest.display_name}
-			lede={t.tagline}
-			tape={false}
-		>
-			{#snippet cornerMeta()}
-				<!-- A4: blueprint-margin corner annotations — provider · generated · dataset ·
-				     live vehicle count, all REAL data from the manifest + live tier. aria-hidden,
-				     hidden < 768px; a missing datum drops its corner. -->
-				<CornerMeta>
-					{#snippet topLeft()}<span class="corner-line">{cm.provider} · {shortName}</span>{/snippet}
-					{#snippet topRight()}{#if cornerGeneratedStamp}<span class="corner-line"
-								>{cm.generated} · {cornerGeneratedStamp}</span
-							>{/if}{/snippet}
-					{#snippet bottomLeft()}<span class="corner-line"
-							>{cm.dataset} · {manifest.dataset_version}</span
-						>{/snippet}
-					{#snippet bottomRight()}{#if cornerVehicleCount}<span class="corner-line"
-								>{cm.vehicles} · {cornerVehicleCount}</span
-							>{/if}{/snippet}
-				</CornerMeta>
-			{/snippet}
-		</Masthead>
+	<!-- yesid home-hero GEOMETRY verbatim (build sheet §2–§4): full-bleed, viewport-
+	     filling, grid [1fr | 1px amber spine | 1fr] gap 32px top-aligned. LEFT: kicker →
+	     two-line THESIS (line 2 --primary + dot) → THREE EQUAL stat tiles → statement →
+	     lede → CTA row (orange /network + THE amber map conversion — the view's one).
+	     RIGHT: the live-pulse TerminalPanel (2×2 equal KPIs). The agency name demotes
+	     to the kicker + CornerMeta (A4). Honesty unchanged: every number stands down to
+	     the styled absence chip pre-tick, never a fabricated 0. -->
+	<section class="hub-hero" aria-labelledby="hub-hero-title">
+		<CornerMeta>
+			{#snippet topLeft()}<span class="corner-line">{cm.provider} · {shortName}</span>{/snippet}
+			{#snippet topRight()}{#if cornerGeneratedStamp}<span class="corner-line"
+						>{cm.generated} · {cornerGeneratedStamp}</span
+					>{/if}{/snippet}
+			{#snippet bottomLeft()}<span class="corner-line"
+					>{cm.dataset} · {manifest.dataset_version}</span
+				>{/snippet}
+			{#snippet bottomRight()}{#if cornerVehicleCount}<span class="corner-line"
+						>{cm.vehicles} · {cornerVehicleCount}</span
+					>{/if}{/snippet}
+		</CornerMeta>
 
-		<!-- Faded orange rule (yesid hero-divider idiom; --primary, NEVER amber — amber is
-		     the one reserved conversion CTA). Decorative; hidden when the columns stack. -->
-		<div class="hub-hero-divider" aria-hidden="true"></div>
+		<div class="hero-left">
+			<SectionLabel text={t.kicker} variant="station" class="hero-kicker" />
+			<SectionHeading
+				heading={t.thesis1}
+				headingAccent={t.thesis2}
+				level={1}
+				id="hub-hero-title"
+				class="hero-thesis"
+			/>
 
-		<TerminalPanel
-			class="hub-pulse"
-			title={t.terminalTitle}
-			tag={isLive ? t.pulseLive : t.pulseStandby}
-			status={lastBuilt ? `${t.builtLabel} ${lastBuilt}` : t.builtUnknown}
-		>
-			<div class="pulse-head">
-				<span class="pulse-label">
-					<StatusDot
-						color={isLive ? 'on_time' : 'unknown'}
-						pulse={isLive}
-						size="md"
-						label={isLive ? t.pulseLive : t.pulseStandby}
+			<!-- THREE equal stat tiles (build sheet §3: grid-cols-3, gap 14px, card
+			     px-5 py-4, MetricDisplay lg) — the row stretches all three to one height. -->
+			<ul class="hero-stats" aria-label={t.glanceLabel}>
+				<li class="hero-stat">
+					<MetricDisplay
+						value={fmtCount(net?.vehicles_in_service)}
+						label={t.metricVehicles}
+						sublabel={t.metricVehiclesSub}
+						emptyLabel={t.noData}
+						absentReason="not-reported"
+						{locale}
+						size="lg"
 					/>
-					<SectionLabel text={t.pulseLabel} variant="metric" />
-				</span>
-				<FreshnessStamp
-					variant="live"
-					generatedUtc={live.generatedUtc}
-					ageSeconds={live.ageSeconds}
-					isStale={live.isStale}
-					{locale}
-				/>
-			</div>
+				</li>
+				<li class="hero-stat">
+					<MetricDisplay
+						value={fmtPct(net?.on_time_pct)}
+						label={t.metricOnTime}
+						sublabel={onTimeVerdictWord}
+						emptyLabel={t.noData}
+						absentReason="not-reported"
+						{locale}
+						size="lg"
+					/>
+				</li>
+				<li class="hero-stat">
+					<MetricDisplay
+						value={routesLive}
+						label={t.metricRoutesLive}
+						sublabel={t.metricRoutesLiveSub}
+						emptyLabel={t.noData}
+						absentReason="not-reported"
+						{locale}
+						size="lg"
+					/>
+				</li>
+			</ul>
 
-			<DashboardGrid
-				as="ul"
-				minTile="150px"
-				maxWidth="none"
-				gutter={false}
-				class="pulse-grid"
-				aria-label={t.pulseLabel}
-				aria-live="polite"
+			<p class="hero-statement">{t.statement}</p>
+			<p class="hero-lede">{t.tagline}</p>
+
+			<div class="hero-ctas">
+				<a class="tap-press hero-cta hero-cta--primary" href={localizeHref('/network', locale)}
+					>{t.ctaNetwork}</a
+				>
+				<a class="tap-press hero-cta hero-cta--conversion" href={localizeHref('/map', locale)}
+					>{t.ctaMap}</a
+				>
+			</div>
+		</div>
+
+		<!-- The 1px vertical spine between the columns (build sheet §4: amber gradient,
+		     transparent → --line-amber 15–85% → transparent). Decorative. -->
+		<div class="hero-spine" aria-hidden="true"></div>
+
+		<div class="hero-right">
+			<!-- No titlebar `status`: the FreshnessStamp in the panel head is the ONE
+			     freshness readout (a second ticking stamp in the chrome read as an echo). -->
+			<TerminalPanel
+				class="hub-pulse"
+				title={t.terminalTitle}
+				tag={isLive ? t.pulseLive : t.pulseStandby}
 			>
-				<li>{@render pulse(fmtPct(net?.on_time_pct), t.metricOnTime, 'otp', net?.on_time_pct)}</li>
-				<li>
-					{@render pulse(fmtCount(net?.vehicles_in_service), t.metricVehicles, 'vehicleCount')}
-				</li>
-				<li>{@render pulse(fmtCount(net?.non_responding), t.metricSilent, 'silentTrip')}</li>
-				<li>
-					{@render pulse(
-						fmtPct(net?.coverage_pct),
-						t.metricCoverage,
-						'coverage',
-						net?.coverage_pct,
-					)}
-				</li>
-			</DashboardGrid>
-		</TerminalPanel>
-	</div>
+				<div class="pulse-head">
+					<span class="pulse-label">
+						<StatusDot
+							color={isLive ? 'on_time' : 'unknown'}
+							pulse={isLive}
+							size="md"
+							label={isLive ? t.pulseLive : t.pulseStandby}
+						/>
+						<SectionLabel text={t.pulseLabel} variant="metric" />
+					</span>
+					<FreshnessStamp
+						variant="live"
+						generatedUtc={live.generatedUtc}
+						ageSeconds={live.ageSeconds}
+						isStale={live.isStale}
+						{locale}
+					/>
+				</div>
+
+				<!-- 2×2 EQUAL KPI grid — no overlap with the hero tiles: coverage, median
+				     delay, slowest 10%, not reporting. Each tile has the same content
+				     budget (value · label · (i)) so the rows stay symmetric. -->
+				<ul class="pulse-grid" aria-label={t.pulseLabel} aria-live="polite">
+					<li>
+						{@render pulse(
+							fmtPct(net?.coverage_pct),
+							t.metricCoverage,
+							'coverage',
+							net?.coverage_pct,
+						)}
+					</li>
+					<li>{@render pulse(fmtMin(net?.delay_p50_min), t.metricDelayP50, 'p50p90')}</li>
+					<li>{@render pulse(fmtMin(net?.delay_p90_min), t.metricDelayP90, 'p50p90')}</li>
+					<li>{@render pulse(fmtCount(net?.non_responding), t.metricSilent, 'silentTrip')}</li>
+				</ul>
+
+				<!-- Fleet status readout — REAL live status_dist as mono terminal rows.
+				     This is the panel's visual MASS (felt balance with the tall thesis
+				     column comes from real content, never from stretching). Renders only
+				     when the tier reports; absence keeps the panel honest and shorter. -->
+				{#if net?.status_dist}
+					<div class="pulse-dist" role="group" aria-label={t.distLabel}>
+						<span class="pulse-dist-head label-metric">{t.distLabel}</span>
+						<ul class="pulse-dist-rows">
+							{#each ['early', 'on_time', 'late', 'severe', 'unknown'] as const as code (code)}
+								<li class="pulse-dist-row">
+									<span class="pulse-dist-label">{STATUS_LABELS[locale][code]}</span>
+									<span class="pulse-dist-value">{fmtCount(net.status_dist[code])}</span>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+			</TerminalPanel>
+		</div>
+	</section>
 
 	<Separator variant="hazard" hazardSize="sm" maxWidth="100%" />
 
-	<!-- 2. WHAT THIS IS ------------------------------------------------------- -->
+	<!-- 2. WHAT THIS IS — SYMMETRIC: the heading + prose stack ABOVE (52ch measure),
+	     the three honesty pillars sit in ONE equal-height row below (grid-auto-rows:1fr;
+	     every pillar has the same content budget: glyph · title · desc). -->
 	<section class="hub-what" aria-labelledby="hub-what-title">
 		<div class="what-prose">
 			<SectionHeading heading={t.whatTitle} subheading={t.whatSub} level={2} id="hub-what-title" />
@@ -541,7 +620,7 @@
 			</a>
 		</div>
 
-		<DashboardGrid as="ul" minTile="180px" maxWidth="none" gutter={false} class="pillar-grid">
+		<ul class="pillar-grid">
 			{#each PILLARS as pillar (pillar.title.en)}
 				<li class="pillar">
 					<span class="pillar-glyph" aria-hidden="true">{pillar.glyph}</span>
@@ -549,26 +628,16 @@
 					<span class="pillar-desc">{pillar.desc[locale]}</span>
 				</li>
 			{/each}
-		</DashboardGrid>
+		</ul>
 	</section>
 
-	<!-- 3. LAUNCHPAD ---------------------------------------------------------- -->
-	<!-- Every surface as an entry point, weighted like a dispatcher's board: the five
-	     PRIMARY destinations render as glyph-forward FEATURE tiles; the accountability +
-	     trust surfaces sit beside each other (≥1024) as a denser COMPACT field. -->
+	<!-- 3. EXPLORE — ONE uniform tile grammar (the weighted feature/compact split is
+	     gone): every surface renders the SAME chassis at the SAME size, rows equalized
+	     by grid-auto-rows:1fr, grouped under station-voice overlines for scanning. -->
 	<nav class="hub-launch" aria-label={t.exploreNav}>
 		{#each GROUPS as group (group.key)}
-			{#if group.weight === 'feature'}
-				{@render launchGroup(group)}
-			{/if}
+			{@render launchGroup(group)}
 		{/each}
-		<div class="launch-secondary">
-			{#each GROUPS as group (group.key)}
-				{#if group.weight === 'compact'}
-					{@render launchGroup(group)}
-				{/if}
-			{/each}
-		</div>
 	</nav>
 </Surface>
 
@@ -611,120 +680,198 @@
 	</div>
 {/snippet}
 
-<!-- A launchpad group = a station-voice overline + a tile grid. The `weight` drives
-     both the tile treatment (glyph-forward feature vs inline compact) and the tile
-     min-width, so one snippet renders the primary board and the secondary field. -->
+<!-- A launchpad group = a station-voice overline + ONE uniform tile grid. Every
+     group shares the SAME column template + tile chassis (the old feature/compact
+     weighting is gone — symmetry law), rows equalized by grid-auto-rows:1fr. -->
 {#snippet launchGroup(group: Group)}
-	<section class="launch-group launch-group--{group.weight}" aria-labelledby={`group-${group.key}`}>
+	<section class="launch-group" aria-labelledby={`group-${group.key}`}>
 		<h2 class="launch-group-label" id={`group-${group.key}`}>
 			<SectionLabel text={group.label()} variant="station" />
 		</h2>
-		<DashboardGrid
-			as="ul"
-			minTile={group.weight === 'feature' ? '224px' : '210px'}
-			maxWidth="none"
-			gutter={false}
-			class="launch-grid"
-		>
+		<ul class="launch-grid">
 			{#each group.entries as entry (entry.glyph + entry.title.en)}
 				<li>
 					{#if entry.kind === 'surface'}
-						<button
-							type="button"
-							class="hub-tile hub-tile--{group.weight}"
-							onclick={() => openSurface(entry.target)}
-						>
-							{@render tileBody(entry.glyph, entry.title[locale], entry.desc[locale], group.weight)}
+						<button type="button" class="hub-tile" onclick={() => openSurface(entry.target)}>
+							{@render tileBody(entry.glyph, entry.title[locale], entry.desc[locale])}
 						</button>
 					{:else}
-						<a class="hub-tile hub-tile--{group.weight}" href={localizeHref(entry.href, locale)}>
-							{@render tileBody(entry.glyph, entry.title[locale], entry.desc[locale], group.weight)}
+						<a class="hub-tile" href={localizeHref(entry.href, locale)}>
+							{@render tileBody(entry.glyph, entry.title[locale], entry.desc[locale])}
 						</a>
 					{/if}
 				</li>
 			{/each}
-		</DashboardGrid>
+		</ul>
 	</section>
 {/snippet}
 
-{#snippet tileBody(glyph: string, title: string, desc: string, weight: 'feature' | 'compact')}
+{#snippet tileBody(glyph: string, title: string, desc: string)}
 	<span class="hub-tile-glyph" aria-hidden="true">{glyph}</span>
 	<span class="hub-tile-body">
 		<span class="hub-tile-title">{title}</span>
 		<span class="hub-tile-desc">{desc}</span>
 	</span>
-	<span class="hub-tile-cta label-metric" aria-hidden="true">
-		{t.enter}{#if weight === 'feature'}<span class="hub-tile-arrow"> →</span>{/if}
-	</span>
+	<span class="hub-tile-cta label-metric" aria-hidden="true">{t.enter} →</span>
 {/snippet}
 
 <style>
-	/* ── Command-board hero ───────────────────────────────────────────────── */
-	/* Two-column board — [identity] │ divider │ [live pulse] — ≥1024; stacked below.
-	   align-items:start keeps each column its natural height; the divider spans the row. */
+	/* ══ HERO — yesid home-hero geometry (build sheet §2–§5) ══════════════════════
+	   Full-viewport band, grid [1fr | 1px amber spine | 1fr], gap 32px. FELT
+	   symmetry (operator law 2026-07-09): both columns read equally FULL at a
+	   glance — the left carries the tall thesis stack, the right carries a dense
+	   terminal panel, and the grid centers them on each other. Balance comes from
+	   real content mass, never from stretching a short box. */
 	.hub-hero {
+		position: relative; /* CornerMeta host (A4 blueprint margins) */
 		display: grid;
-		gap: clamp(1.5rem, 5vw, 2.75rem);
+		gap: 2rem;
+		min-height: calc(100svh - var(--chrome-offset));
+		align-content: center;
 	}
 	@media (min-width: 1024px) {
 		.hub-hero {
-			grid-template-columns: minmax(0, 1.05fr) 1px minmax(0, 1fr);
-			gap: clamp(2rem, 4vw, 3.5rem);
-			align-items: start;
+			grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
+			align-items: center;
 		}
-	}
-	/* The hero head is a Masthead (class="hub-head" on its root — `:global` because the
-	   class lands on the child component's root, not on an element in this file); it owns
-	   the position:relative cornered host + the ≥768px padding-block band internally. Cap
-	   its measure only when it fills the viewport (< 1024); ≥1024 the grid column bounds it. */
-	:global(.hub-head) {
-		max-width: 62ch;
-	}
-	@media (min-width: 1024px) {
-		:global(.hub-head) {
-			max-width: none;
-		}
-	}
-	/* H1 overflow-wrap (§C5.1): a long provider display_name must break inside the word
-	   rather than overflow the hero measure on a narrow phone. */
-	:global(.hub-head .section-heading-text) {
-		overflow-wrap: anywhere;
-	}
-	/* H1 > H2 weight fix (§C5.1): SectionHeading's DISPLAY mode is a fixed display scale
-	   regardless of `level`, so the hub's §2 "What this is" heading rendered at the SAME
-	   size as the H1 (the inversion — no visual hierarchy). Step the §2 display heading
-	   DOWN one register here so the H1 clearly reads as the apex. Scoped to the hub so the
-	   shared primitive is untouched. */
-	.hub-what :global(.section-heading-text) {
-		font-size: clamp(1.75rem, 4vw, 2.5rem);
-		font-weight: 800;
-		letter-spacing: var(--tracking-tight);
 	}
 	.corner-line {
 		white-space: nowrap;
 	}
 
-	/* Faded orange rule between the identity and the live pulse (yesid hero-divider
-	   idiom; --border-brand = --primary @60%, NOT amber). Only when the columns sit side
-	   by side; it collapses (display:none) when they stack. */
-	.hub-hero-divider {
+	.hero-left {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		min-width: 0;
+	}
+	/* Kicker — mono micro, AMBER TEXT accent (yesid hero-kicker: --accent-text ink,
+	   12px, tracking 1px). Class lands on the SectionLabel root → :global. */
+	.hub-hero :global(.hero-kicker) {
+		color: var(--accent-text);
+		margin-bottom: 0.75rem;
+	}
+	/* The two-line THESIS at yesid hero scale: --text-hero, leading 0.88,
+	   tracking -0.04em; line 2 (the accent) breaks onto its own row in --primary
+	   and carries the dot. Scoped override of SectionHeading's display size. */
+	.hub-hero :global(.hero-thesis .section-heading-text) {
+		font-size: var(--text-hero-mobile);
+		line-height: 0.88;
+		letter-spacing: -0.04em;
+		text-transform: uppercase;
+		overflow-wrap: anywhere;
+	}
+	@media (min-width: 768px) {
+		.hub-hero :global(.hero-thesis .section-heading-text) {
+			font-size: var(--text-hero);
+		}
+	}
+
+	/* THREE equal stat tiles — one row, one chassis, one content budget each
+	   (label · value · sublabel). Same-kind cells: the grid row equalizes them. */
+	.hero-stats {
+		list-style: none;
+		margin: 1.5rem 0 0;
+		padding: 0;
+		display: grid;
+		gap: 0.875rem;
+		width: 100%;
+	}
+	@media (min-width: 640px) {
+		.hero-stats {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+		}
+	}
+	.hero-stat {
+		min-width: 0;
+		padding: 1rem 1.25rem;
+		background-color: var(--card);
+		border: 2px solid var(--border-brand);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-card);
+	}
+
+	/* Statement → lede → CTAs (yesid vertical rhythm: mt 0.625 / 1.25 / 1.5rem). */
+	.hero-statement {
+		margin: 1rem 0 0;
+		font-family: var(--font-heading);
+		font-size: clamp(1.625rem, min(3.5vw, 4svh), 2.75rem);
+		font-weight: 700;
+		line-height: 1.1;
+		color: var(--foreground);
+	}
+	.hero-lede {
+		margin: 1.25rem 0 0;
+		font-size: var(--text-heading);
+		line-height: 1.7;
+		color: var(--secondary-foreground);
+		max-width: 52ch;
+	}
+	.hero-ctas {
+		margin-top: 1.5rem;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.875rem;
+	}
+	.hero-cta {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 44px;
+		padding: 1rem 2rem;
+		font-family: var(--font-heading);
+		font-size: var(--text-subheading);
+		font-weight: 600;
+		border-radius: var(--radius-lg);
+		text-decoration: none;
+		transition:
+			transform var(--duration-fast) var(--ease-default),
+			box-shadow var(--duration-fast) var(--ease-default);
+	}
+	.hero-cta--primary {
+		background-color: var(--primary);
+		color: var(--primary-foreground);
+	}
+	.hero-cta--primary:hover {
+		transform: translateY(-1px);
+		box-shadow: var(--shadow-glow-sm);
+	}
+	/* THE one amber-ground conversion CTA on this view (signage pair). */
+	.hero-cta--conversion {
+		background-color: var(--accent);
+		color: var(--signage-bg);
+	}
+	.hero-cta--conversion:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent);
+	}
+	.hero-cta:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+
+	/* The 1px vertical spine (yesid §4): amber gradient fading at both ends. */
+	.hero-spine {
 		display: none;
 	}
 	@media (min-width: 1024px) {
-		.hub-hero-divider {
+		.hero-spine {
 			display: block;
 			width: 1px;
 			align-self: stretch;
 			background: linear-gradient(
 				180deg,
 				transparent 0%,
-				var(--border-brand) 18%,
-				var(--border-brand) 82%,
+				var(--line-amber) 15%,
+				var(--line-amber) 85%,
 				transparent 100%
 			);
 		}
 	}
 
+	.hero-right {
+		min-width: 0;
+	}
 	:global(.hub-pulse) {
 		width: 100%;
 	}
@@ -741,37 +888,29 @@
 		align-items: center;
 		gap: 0.5rem;
 	}
-	:global(.pulse-grid) {
+	/* 2×2 equal KPI board — same-kind cells (value · label · (i)), grid-equalized. */
+	.pulse-grid {
 		list-style: none;
 		margin: 0;
 		padding: 0;
+		display: grid;
+		gap: 1.25rem 1.5rem;
 	}
-	:global(.pulse-grid) > li {
-		min-width: 0;
-	}
-	/* In the hero, the live board reads as a clean 2×2 beside the identity. Below 1024
-	   the panel is full width and DashboardGrid's auto-fit (minTile 150) governs. The
-	   selector is `.hub-pulse ul.pulse-grid` (0,2,1) so it beats DashboardGrid's own
-	   scoped `.dashboard-grid.svelte-xxx` grid-template-columns rule (0,2,0) — a bare
-	   `.pulse-grid` (0,1,0) loses to it regardless of source order (the 2×2 stays inert). */
-	@media (min-width: 1024px) {
-		:global(.hub-pulse ul.pulse-grid) {
+	@media (min-width: 640px) {
+		.pulse-grid {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 	}
-	/* A pulse KPI cell: the MetricDisplay (label + big value) with its (i) explainer
-	   pinned beside the quiet label, top-aligned so it never overlaps the value.
-	   Mirrors NetworkHealth's .network-kpi. */
+	.pulse-grid > li {
+		min-width: 0;
+	}
 	.pulse-kpi {
 		display: flex;
 		align-items: flex-start;
 		gap: 0.375rem;
 		min-width: 0;
-		/* Fill the grid cell so the 2×2 pulse reads as an equal-height board (a KPI with a
-		   verdict word no longer sits taller than a bare-count KPI beside it). */
 		height: 100%;
 	}
-	/* The value + its verdict word stack; the (i) explainer pins beside the label. */
 	.pulse-kpi-body {
 		display: flex;
 		flex-direction: column;
@@ -782,17 +921,53 @@
 	.pulse-kpi :global([data-slot='metric-display']) {
 		min-width: 0;
 	}
-
-	/* ── What this is ─────────────────────────────────────────────────────── */
-	.hub-what {
-		display: grid;
-		gap: clamp(1.5rem, 4vw, 2.5rem);
+	/* Fleet-status readout — mono terminal rows under a hairline; the panel's mass. */
+	.pulse-dist {
+		margin-top: 1.25rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--border-subtle);
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
 	}
-	@media (min-width: 1024px) {
-		.hub-what {
-			grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-			align-items: start;
-		}
+	.pulse-dist-rows {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+	.pulse-dist-row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+	}
+	.pulse-dist-label {
+		color: var(--muted-foreground);
+		text-transform: uppercase;
+		letter-spacing: 1.5px;
+	}
+	.pulse-dist-value {
+		color: var(--accent-text);
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* ══ WHAT THIS IS — stacked prose + one equal pillar row ═════════════════════ */
+	.hub-what {
+		display: flex;
+		flex-direction: column;
+		gap: 2rem;
+	}
+	/* §C5.1 hierarchy: the §2 heading steps DOWN a register so the hero thesis
+	   stays the apex. Scoped; the shared primitive is untouched. */
+	.hub-what :global(.section-heading-text) {
+		font-size: clamp(1.75rem, 4vw, 2.5rem);
+		font-weight: 800;
+		letter-spacing: var(--tracking-tight);
 	}
 	.what-prose {
 		display: flex;
@@ -825,24 +1000,31 @@
 		outline: 2px solid var(--primary);
 		outline-offset: 3px;
 	}
-
-	:global(.pillar-grid) {
+	/* Three pillars, ONE row ≥768, identical chassis + content budget → the row
+	   reads level without any stretching tricks. */
+	.pillar-grid {
 		list-style: none;
 		margin: 0;
 		padding: 0;
+		display: grid;
+		gap: 1.25rem;
+		grid-auto-rows: 1fr;
+	}
+	@media (min-width: 768px) {
+		.pillar-grid {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+		}
 	}
 	.pillar {
 		display: flex;
 		flex-direction: column;
 		gap: 0.375rem;
-		padding: 1rem 1.1rem;
+		padding: 1.25rem 1.5rem;
 		background-color: var(--card);
-		border: 1px solid var(--border);
+		border: 2px solid var(--border-brand);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
 		min-width: 0;
-		/* Fill the grid cell so the three pillars read as one equal-height row. */
-		height: 100%;
 	}
 	.pillar-glyph {
 		font-family: var(--font-mono);
@@ -861,11 +1043,11 @@
 		line-height: 1.5;
 	}
 
-	/* ── Launchpad ────────────────────────────────────────────────────────── */
+	/* ══ EXPLORE — ONE uniform tile grammar, equal rows ══════════════════════════ */
 	.hub-launch {
 		display: flex;
 		flex-direction: column;
-		gap: clamp(1.75rem, 4vw, 2.75rem);
+		gap: 2.5rem;
 	}
 	.launch-group {
 		display: flex;
@@ -875,38 +1057,34 @@
 	.launch-group-label {
 		margin: 0;
 	}
-	/* Accountability (4 tiles) + Trust (2 tiles) sit side by side ≥1024 — the denser
-	   secondary field that uses the horizontal real estate rather than a long stack.
-	   Accountability takes ~2/3, trust ~1/3. Stacked < 1024. */
-	.launch-secondary {
-		display: grid;
-		gap: clamp(1.75rem, 4vw, 2.5rem);
-	}
-	@media (min-width: 1024px) {
-		.launch-secondary {
-			grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-			align-items: start;
-		}
-	}
-	:global(.launch-grid) {
+	/* Every group shares the SAME column template + auto-rows:1fr — tiles are the
+	   same width and every row is level, across all three groups. */
+	.launch-grid {
 		list-style: none;
 		margin: 0;
 		padding: 0;
+		display: grid;
+		gap: 1.25rem;
+		grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+		grid-auto-rows: 1fr;
 	}
-	:global(.launch-grid) > li {
+	.launch-grid > li {
 		min-width: 0;
+		display: flex;
 	}
-
-	/* Shared tile chrome (solid card, brand-border hover lift + section glow). */
+	/* ONE tile chassis (the feature/compact split is gone): glyph · title · desc ·
+	   enter — an identical content budget on every surface. */
 	.hub-tile {
 		width: 100%;
-		height: 100%;
 		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		padding: 1.25rem 1.5rem;
 		text-align: left;
 		text-decoration: none;
 		background-color: var(--card);
 		color: var(--foreground);
-		border: 1px solid var(--border);
+		border: 2px solid var(--border-brand);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
 		cursor: pointer;
@@ -916,7 +1094,7 @@
 			box-shadow var(--duration-fast) var(--ease-out);
 	}
 	.hub-tile:hover {
-		border-color: var(--primary);
+		border-color: var(--border-brand-active);
 		transform: translateY(-2px);
 		box-shadow: var(--shadow-section);
 	}
@@ -924,44 +1102,11 @@
 		outline: 2px solid var(--primary);
 		outline-offset: 2px;
 	}
-
-	/* FEATURE tiles — glyph-forward launcher cards for the primary destinations. */
-	.hub-tile--feature {
-		flex-direction: column;
-		gap: 0.85rem;
-		padding: 1.5rem 1.5rem 1.35rem;
-		min-height: 11rem;
-	}
-	.hub-tile--feature .hub-tile-glyph {
-		font-size: var(--text-display);
-	}
-	.hub-tile--feature .hub-tile-title {
-		font-size: var(--text-heading);
-	}
-	.hub-tile--feature .hub-tile-cta {
-		margin-top: auto;
-	}
-
-	/* COMPACT tiles — inline glyph + body + cta for the secondary field. */
-	.hub-tile--compact {
-		flex-direction: row;
-		align-items: flex-start;
-		gap: 0.85rem;
-		padding: 1.1rem 1.25rem;
-	}
-	.hub-tile--compact .hub-tile-glyph {
-		font-size: var(--text-heading);
-		flex-shrink: 0;
-	}
-	.hub-tile--compact .hub-tile-cta {
-		align-self: center;
-		flex-shrink: 0;
-	}
-
-	/* Shared tile parts. The glyph rides the amber TEXT accent (station wayfinding) —
-	   distinct from the reserved amber GROUND conversion CTA. */
+	/* The glyph rides the amber TEXT accent (station wayfinding) — distinct from
+	   the reserved amber GROUND conversion CTA. */
 	.hub-tile-glyph {
 		font-family: var(--font-mono);
+		font-size: var(--text-title);
 		line-height: 1;
 		color: var(--accent-text);
 	}
@@ -984,15 +1129,19 @@
 		line-height: 1.5;
 	}
 	.hub-tile-cta {
+		margin-top: auto;
 		color: var(--primary);
 		white-space: nowrap;
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.hub-tile {
+		.hub-tile,
+		.hero-cta,
+		.what-link {
 			transition: none;
 		}
-		.hub-tile:hover {
+		.hub-tile:hover,
+		.hero-cta:hover {
 			transform: none;
 		}
 	}
