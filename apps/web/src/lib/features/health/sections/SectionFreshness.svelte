@@ -6,7 +6,6 @@
 -->
 <script lang="ts">
 	import { EntityList } from '$lib/components/surface';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import type { ProvenanceFreshness } from '$lib/v1/schemas';
 	import type { FreshnessVerdict } from '../selectors/provenanceViews';
@@ -24,8 +23,7 @@
 	const t = $derived(copy.freshness);
 </script>
 
-<section class="health-block" aria-labelledby="health-freshness" data-slot="freshness-section">
-	<SectionHeading level={2} id="health-freshness" overline={t.section} number={2} />
+<div class="health-block" data-slot="freshness-section">
 	<p class="health-note">{t.note}</p>
 	<EntityList items={[...items]} key={(f) => f.feed} class="health-list" aria-label={t.listLabel}>
 		{#snippet row(f)}
@@ -44,7 +42,7 @@
 			</div>
 		{/snippet}
 	</EntityList>
-</section>
+</div>
 
 <style>
 	.health-block {
@@ -55,9 +53,15 @@
 	.health-note {
 		margin: 0;
 		color: var(--muted-foreground);
-		font-size: var(--text-small);
-		line-height: 1.6;
+		font-size: var(--text-detail-body-mobile);
+		line-height: 1.8;
 		max-width: 60ch;
+	}
+	@media (min-width: 1024px) {
+		.health-note {
+			font-size: var(--text-detail-body-desktop);
+			line-height: 1.9;
+		}
 	}
 	.health-row {
 		display: flex;

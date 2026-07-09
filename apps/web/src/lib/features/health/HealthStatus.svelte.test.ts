@@ -15,9 +15,10 @@
 // data ports are stubbed so this gate stays env-free + off-network; createResource
 // hands back the per-repository fixture directly (keyed by the fetcher).
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import type { DataHealth, IsoUtc, Provenance } from '$lib/v1/schemas';
+import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';
 
@@ -144,6 +145,15 @@ function stripEnvelope(prov: Provenance): Provenance {
 }
 let dataHealthFixture: DataHealth | null = richDataHealth;
 
+function resetStatusStorage(): void {
+	for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+		const key = sessionStorage.key(index);
+		if (key?.startsWith('transit.persisted:status-')) sessionStorage.removeItem(key);
+	}
+	sessionStorage.removeItem('transit.persisted:health-conformance-members');
+	quietModeStore.resetForTest();
+}
+
 vi.mock('$lib/nav', async () => ({ layout: { isDesktop: true } }));
 
 // The barrel mock exports the two fetchers (distinct spy identities so the resource
@@ -188,13 +198,16 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	},
 }));
 
+beforeEach(resetStatusStorage);
+
 afterEach(() => {
 	provenanceFixture = richProvenance;
 	dataHealthFixture = richDataHealth;
+	resetStatusStorage();
 });
 
 describe('HealthStatus — full manifest render', () => {
-	it('renders the shared status article header with truthful meta, body lede, and no FOCUS or default band', () => {
+	it('renders the shared status article header with truthful meta, body lede, and no default band', () => {
 		const { container } = render(HealthStatus);
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
 
@@ -211,10 +224,40 @@ describe('HealthStatus — full manifest render', () => {
 		expect(header).toHaveTextContent(en.article.sections(8));
 		expect(header).toHaveTextContent('2026');
 		expect(container.querySelector('[data-slot="detail-shell-header"]')).toBeNull();
-		expect(container.querySelector('[data-testid="quiet-mode-toggle"]')).toBeNull();
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
 		expect(within(center).getByText(en.lede)).toBeInTheDocument();
 		expect(container.querySelector('[data-slot="detail-shell"]')?.parentElement).toBe(container);
+	});
+
+	it('renders the exact two controls and one numbered card per present pipeline section', async () => {
+		const { container } = render(HealthStatus);
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+		expect(within(header).getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
+		expect(
+			within(header).getByRole('button', { name: 'Always start collapsed' }),
+		).toBeInTheDocument();
+
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		for (const title of [
+			en.lanes.section,
+			en.freshness.section,
+			en.sources.section,
+			en.gaps.section,
+			en.pipelineNotes.section,
+			en.retention.section,
+			en.conformance.section,
+			en.envelope.section,
+		]) {
+			const trigger = within(center).getByRole('button', { name: title });
+			const card = trigger.closest('[data-slot="card"]') as HTMLElement;
+			expect(card).not.toBeNull();
+			expect(within(card).getAllByText(title)).toHaveLength(1);
+		}
+
+		await fireEvent.click(within(header).getByRole('button', { name: 'Collapse all' }));
+		for (const trigger of center.querySelectorAll('button.section-header')) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		}
 	});
 
 	it('keeps status article meta honestly absent when no status document is available', () => {

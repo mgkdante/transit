@@ -10,8 +10,8 @@
   ManifestoCanvas, watermark, category rule, keywords and truthful dated meta.
   The lede opens the body column; DetailShell adds the hazard tape.
     · BODY → DetailShell (3-col at ≥1024): LEFT = the numbered ToC over the (up
-      to) 8 sections + a SEC n/m readout; CENTER = the existing 8 gated sections
-      (real headings from stage 1, unchanged); RIGHT = per-feed stat cards (lanes
+      to) 8 sections + a SEC n/m readout; CENTER = the 8 gated, single-title
+      collapsible cards; RIGHT = per-feed stat cards (lanes
       passing / feeds fresh). Mobile: single column, the stat cards reflow to a top
       summary strip, the ToC becomes the floating TocPill.
 
@@ -34,7 +34,9 @@
 	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
 	import { ResourceBoundary } from '$lib/components/surface';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
-	import { TocNav, type TocEntry } from '$lib/components/shared';
+	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import { CollapsibleSection, TocNav, type TocEntry } from '$lib/components/shared';
+	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import { copy as COPY } from './health.copy';
 	import {
 		verdictFor as verdictForRaw,
@@ -125,7 +127,7 @@
 	);
 
 	// ── Section presence registry (order = pipeline order; numbers frozen 1–8) ────
-	// Each section carries its FIXED number (matching the SectionHeading chip) and a
+	// Each section carries its FIXED number (matching the parent card badge) and a
 	// presence flag; the ToC lists only present sections but keeps their own number,
 	// so a stood-down section leaves a gap in the run rather than re-sequencing.
 	const sectionDefs = $derived([
@@ -213,8 +215,15 @@
 	// `bind:activeId`; this state receives it and feeds the left rail ToC (whose own
 	// footer carries the ONE "SEC n/m" reading readout).
 	let activeId = $state('');
+	let cardOpenSignals = $state<Record<string, number>>({});
+	const cardOpenSignal = (id: string): number => cardOpenSignals[id] ?? 0;
+
+	function openCard(id: string): void {
+		cardOpenSignals = { ...cardOpenSignals, [id]: cardOpenSignal(id) + 1 };
+	}
 
 	function navigate(id: string): void {
+		openCard(id);
 		document
 			.querySelector(`[data-toc="${id}"]`)
 			?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -240,7 +249,11 @@
 			backLabel={t.article.back}
 			meta={articleMeta}
 			titleId="status-title"
-		/>
+		>
+			{#snippet controls()}
+				<QuietModeButton />
+			{/snippet}
+		</ArticleHeader>
 	{/snippet}
 
 	{#snippet mobileSummary()}
@@ -257,6 +270,8 @@
 					heading={t.toc.label}
 					counterPrefix={t.toc.counterPrefix}
 					sectionKey="status-toc"
+					closeSignal={quietModeStore.closeSignal}
+					openSignal={quietModeStore.openSignal}
 				/>
 			{/if}
 		</div>
@@ -298,42 +313,90 @@
 
 					<!-- ── Pipeline lanes (top section) ──────────────────────────── -->
 					{#if laneRows.length > 0}
-						<div class="health-section" data-toc="health-lanes">
+						<CollapsibleSection
+							title={t.lanes.section}
+							index={0}
+							anchor="health-lanes"
+							sectionKey="status-card-health-lanes"
+							open={true}
+							closeSignal={quietModeStore.closeSignal}
+							openSignal={quietModeStore.openSignal + cardOpenSignal('health-lanes')}
+						>
 							<SectionLanes rows={laneRows} copy={t} {locale} />
-						</div>
+						</CollapsibleSection>
 					{/if}
 
 					<!-- ── Per-feed freshness ─────────────────────────────────────── -->
 					{#if freshness.length > 0}
-						<div class="health-section" data-toc="health-freshness">
+						<CollapsibleSection
+							title={t.freshness.section}
+							index={1}
+							anchor="health-freshness"
+							sectionKey="status-card-health-freshness"
+							open={true}
+							closeSignal={quietModeStore.closeSignal}
+							openSignal={quietModeStore.openSignal + cardOpenSignal('health-freshness')}
+						>
 							<SectionFreshness items={freshness} {verdictFor} {humanizeAge} copy={t} />
-						</div>
+						</CollapsibleSection>
 					{/if}
 
 					<!-- ── Source-feed lineage ────────────────────────────────────── -->
 					{#if sources.length > 0}
-						<div class="health-section" data-toc="health-sources">
+						<CollapsibleSection
+							title={t.sources.section}
+							index={2}
+							anchor="health-sources"
+							sectionKey="status-card-health-sources"
+							open={true}
+							closeSignal={quietModeStore.closeSignal}
+							openSignal={quietModeStore.openSignal + cardOpenSignal('health-sources')}
+						>
 							<SectionSources items={sources} {lastLoaded} copy={t} />
-						</div>
+						</CollapsibleSection>
 					{/if}
 
 					<!-- ── Known data gaps (honesty banner) ───────────────────────── -->
 					{#if gaps.length > 0}
-						<div class="health-section" data-toc="health-gaps">
+						<CollapsibleSection
+							title={t.gaps.section}
+							index={3}
+							anchor="health-gaps"
+							sectionKey="status-card-health-gaps"
+							open={true}
+							closeSignal={quietModeStore.closeSignal}
+							openSignal={quietModeStore.openSignal + cardOpenSignal('health-gaps')}
+						>
 							<SectionGaps {gaps} {humanizeGap} copy={t} />
-						</div>
+						</CollapsibleSection>
 					{/if}
 
 					<!-- ── Pipeline notes ─────────────────────────────────────────── -->
 					{#if pipelineNotes.length > 0}
-						<div class="health-section" data-toc="health-pipeline-notes">
+						<CollapsibleSection
+							title={t.pipelineNotes.section}
+							index={4}
+							anchor="health-pipeline-notes"
+							sectionKey="status-card-health-pipeline-notes"
+							open={true}
+							closeSignal={quietModeStore.closeSignal}
+							openSignal={quietModeStore.openSignal + cardOpenSignal('health-pipeline-notes')}
+						>
 							<SectionNotes notes={pipelineNotes} copy={t} />
-						</div>
+						</CollapsibleSection>
 					{/if}
 
 					<!-- ── Retention ──────────────────────────────────────────────── -->
 					{#if hasRetention}
-						<div class="health-section" data-toc="health-retention">
+						<CollapsibleSection
+							title={t.retention.section}
+							index={5}
+							anchor="health-retention"
+							sectionKey="status-card-health-retention"
+							open={true}
+							closeSignal={quietModeStore.closeSignal}
+							openSignal={quietModeStore.openSignal + cardOpenSignal('health-retention')}
+						>
 							<SectionRetention
 								detail={retention.detail}
 								aggregate={retention.aggregate}
@@ -341,21 +404,43 @@
 								copy={t}
 								{locale}
 							/>
-						</div>
+						</CollapsibleSection>
 					{/if}
 
 					<!-- ── Conformance ────────────────────────────────────────────── -->
 					{#if conformance}
-						<div class="health-section" data-toc="health-conformance">
-							<SectionConformance {conformance} copy={t} {locale} />
-						</div>
+						<CollapsibleSection
+							title={t.conformance.section}
+							index={6}
+							anchor="health-conformance"
+							sectionKey="status-card-health-conformance"
+							open={true}
+							closeSignal={quietModeStore.closeSignal}
+							openSignal={quietModeStore.openSignal + cardOpenSignal('health-conformance')}
+						>
+							<SectionConformance
+								{conformance}
+								copy={t}
+								{locale}
+								closeSignal={quietModeStore.closeSignal}
+								openSignal={quietModeStore.openSignal}
+							/>
+						</CollapsibleSection>
 					{/if}
 
 					<!-- ── Build accountability (envelope) ────────────────────────── -->
 					{#if hasEnvelope}
-						<div class="health-section" data-toc="health-envelope">
+						<CollapsibleSection
+							title={t.envelope.section}
+							index={7}
+							anchor="health-envelope"
+							sectionKey="status-card-health-envelope"
+							open={true}
+							closeSignal={quietModeStore.closeSignal}
+							openSignal={quietModeStore.openSignal + cardOpenSignal('health-envelope')}
+						>
 							<SectionEnvelope {envelope} copy={t} {locale} />
-						</div>
+						</CollapsibleSection>
 					{/if}
 				</div>
 			{/snippet}
@@ -414,8 +499,8 @@
 	}
 
 	/* ── Center sections ───────────────────────────────────────────────────────
-	   The existing 8 sections keep their own vertical rhythm; the wrappers only add
-	   the ToC scroll anchor + inter-section spacing. */
+	   The eight parent cards keep the existing body presenters in pipeline order;
+	   this column owns only their inter-card spacing. */
 	.health-sections {
 		display: flex;
 		flex-direction: column;

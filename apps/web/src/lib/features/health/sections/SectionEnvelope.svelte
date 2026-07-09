@@ -20,7 +20,6 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import type { EnvelopeView } from '../selectors/envelope';
 	import type { HealthCopy } from '../health.copy';
@@ -35,8 +34,7 @@
 	const t = $derived(copy.envelope);
 </script>
 
-<section class="health-block" aria-labelledby="health-envelope" data-slot="envelope-section">
-	<SectionHeading level={2} id="health-envelope" overline={t.section} number={8} />
+<div class="health-block" data-slot="envelope-section">
 	<p class="health-note">{t.note}</p>
 
 	<!-- publish_generation_id: the wide explained card carries the WHY in col2. -->
@@ -69,7 +67,7 @@
 			size="md"
 		/>
 	</div>
-</section>
+</div>
 
 <style>
 	.health-block {
@@ -80,9 +78,15 @@
 	.health-note {
 		margin: 0;
 		color: var(--muted-foreground);
-		font-size: var(--text-small);
-		line-height: 1.6;
+		font-size: var(--text-detail-body-mobile);
+		line-height: 1.8;
 		max-width: 60ch;
+	}
+	@media (min-width: 1024px) {
+		.health-note {
+			font-size: var(--text-detail-body-desktop);
+			line-height: 1.9;
+		}
 	}
 	.envelope-rows {
 		display: grid;

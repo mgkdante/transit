@@ -4,7 +4,6 @@
   humanizer is passed in. Stands DOWN (parent guards) when gaps is empty.
 -->
 <script lang="ts">
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import type { HealthCopy } from '../health.copy';
 
 	interface SectionGapsProps {
@@ -17,8 +16,7 @@
 	const t = $derived(copy.gaps);
 </script>
 
-<section class="health-block" aria-labelledby="health-gaps" data-slot="gaps-section">
-	<SectionHeading level={2} id="health-gaps" overline={t.section} number={4} />
+<div class="health-block" data-slot="gaps-section">
 	<div class="health-gaps" data-slot="gaps-callout">
 		<p class="health-gaps-lede">{t.lede}</p>
 		<ul class="health-gaps-list" aria-label={t.listLabel}>
@@ -27,7 +25,7 @@
 			{/each}
 		</ul>
 	</div>
-</section>
+</div>
 
 <style>
 	.health-block {
@@ -48,8 +46,14 @@
 	.health-gaps-lede {
 		margin: 0;
 		color: var(--foreground);
-		font-size: var(--text-small);
-		line-height: 1.6;
+		font-size: var(--text-detail-body-mobile);
+		line-height: 1.8;
+	}
+	@media (min-width: 1024px) {
+		.health-gaps-lede {
+			font-size: var(--text-detail-body-desktop);
+			line-height: 1.9;
+		}
 	}
 	.health-gaps-list {
 		margin: 0;
