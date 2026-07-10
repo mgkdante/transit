@@ -65,10 +65,13 @@ export function gapsOf(p: Provenance) {
 // a hardcoded subset) so a new pipeline key the DB starts publishing renders
 // automatically — a known key gets its localized label, an unknown one falls back
 // to its humanized key (underscores → spaces), so no note is ever dropped.
+export type PipelineNoteKind = 'definition' | 'math' | 'caveat' | 'pipeline-note';
+
 export interface PipelineNote {
 	readonly key: string;
 	readonly label: string;
 	readonly text: string;
+	readonly kind: PipelineNoteKind;
 }
 
 export function pipelineNotesOf(
@@ -77,6 +80,8 @@ export function pipelineNotesOf(
 	threadedKeys: Readonly<Record<string, unknown>>,
 	/** key → localized label; a key absent here falls back to its humanized form. */
 	labels: Readonly<Record<string, string>>,
+	/** key → semantic card kind; a key absent here uses the pipeline-note fallback. */
+	kinds: Readonly<Record<string, PipelineNoteKind>> = {},
 ): PipelineNote[] {
 	const methodology = p.methodology;
 	if (!methodology) return [];
@@ -86,6 +91,7 @@ export function pipelineNotesOf(
 			key,
 			label: labels[key] ?? key.replace(/_/g, ' '),
 			text: (value as string).trim(),
+			kind: kinds[key] ?? 'pipeline-note',
 		}))
 		.filter((n) => n.text.length > 0);
 }

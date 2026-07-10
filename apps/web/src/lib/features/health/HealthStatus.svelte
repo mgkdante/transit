@@ -73,6 +73,19 @@
 	import SectionConformance from './sections/SectionConformance.svelte';
 	import SectionEnvelope from './sections/SectionEnvelope.svelte';
 
+	const PIPELINE_NOTE_KINDS = {
+		history_freeze: 'pipeline-note',
+		service_time_conversion: 'math',
+		alert_text_en: 'definition',
+		network_no_data: 'caveat',
+		alert_breakdown: 'definition',
+		rounding: 'math',
+		min_n_rate: 'math',
+		wilson_z: 'math',
+		service_span: 'definition',
+		alert_history_window: 'caveat',
+	} as const;
+
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
 
@@ -111,7 +124,8 @@
 			freshnessOf(value).length === 0 &&
 			sourcesOf(value).length === 0 &&
 			gapsOf(value).length === 0 &&
-			pipelineNotesOf(value, METHODOLOGY_METRIC_KEY, t.pipelineNotes.labels).length === 0 &&
+			pipelineNotesOf(value, METHODOLOGY_METRIC_KEY, t.pipelineNotes.labels, PIPELINE_NOTE_KINDS)
+				.length === 0 &&
 			windows.detail == null &&
 			windows.aggregate == null &&
 			value.conformance == null &&
@@ -147,7 +161,9 @@
 	const retention = $derived(prov ? retentionOf(prov) : { detail: null, aggregate: null });
 	const conformance = $derived(prov?.conformance ?? null);
 	const pipelineNotes = $derived(
-		prov ? pipelineNotesOf(prov, METHODOLOGY_METRIC_KEY, t.pipelineNotes.labels) : [],
+		prov
+			? pipelineNotesOf(prov, METHODOLOGY_METRIC_KEY, t.pipelineNotes.labels, PIPELINE_NOTE_KINDS)
+			: [],
 	);
 	const hasRetention = $derived(retention.detail != null || retention.aggregate != null);
 	const laneRows = $derived(dh ? selectLaneRows(dh, laneLabels) : []);
