@@ -310,6 +310,26 @@ describe('HealthStatus — full manifest render', () => {
 		]);
 	});
 
+	it('keeps each French source label paired with its timestamp', () => {
+		provenanceState = ready({
+			...richProvenance,
+			generated_utc: iso('2026-06-19T06:00:00Z'),
+		});
+		dataHealthState = ready({
+			...richDataHealth,
+			generated_utc: iso('2026-06-19T12:00:00Z'),
+		});
+		const { container } = render(HealthStatus, { context: localeContext('fr') });
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+		const pairs = Array.from(header.querySelectorAll('.header__meta-pair'));
+
+		expect(pairs).toHaveLength(2);
+		expect(pairs[0]).toHaveTextContent(copy.fr.article.dailyAsOf);
+		expect(pairs[0].querySelector('time')).toHaveAttribute('datetime', '2026-06-19T06:00:00Z');
+		expect(pairs[1]).toHaveTextContent(copy.fr.article.liveAsOf);
+		expect(pairs[1].querySelector('time')).toHaveAttribute('datetime', '2026-06-19T12:00:00Z');
+	});
+
 	it('keeps EN and FR status keywords distinct and removes internal /v1 jargon from the lede', () => {
 		expect(copy.en.article.tags).toEqual(['data', 'feeds', 'freshness', 'known gaps']);
 		expect(copy.fr.article.tags).toEqual(['données', 'flux', 'fraîcheur', 'lacunes connues']);
@@ -332,6 +352,16 @@ describe('HealthStatus — full manifest render', () => {
 		);
 		expect(src).toMatch(
 			/\.health-stat__sub\s*\{[\s\S]*?font-size:\s*0\.95rem[\s\S]*?line-height:\s*1\.45/,
+		);
+	});
+
+	it('top-aligns mobile rail cards so a collapsed peer stays compact', () => {
+		const src = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/health/HealthStatus.svelte'),
+			'utf8',
+		);
+		expect(src).toMatch(
+			/:global\(\.detail-shell-mobile-summary\) \.health-stat-rail\s*\{[\s\S]*?align-items:\s*flex-start/,
 		);
 	});
 
@@ -452,7 +482,7 @@ describe('HealthStatus — Overview and independent resources', () => {
 	it('keeps Overview visible with two labelled loading regions', () => {
 		provenanceState = { data: null, error: null, loading: true, settled: false };
 		dataHealthState = { data: null, error: null, loading: true, settled: false };
-		render(HealthStatus);
+		const { container } = render(HealthStatus);
 
 		const overview = screen
 			.getByRole('button', { name: overviewCopy.en.title })
@@ -460,6 +490,9 @@ describe('HealthStatus — Overview and independent resources', () => {
 		expect(within(overview).getByText(en.lede)).toBeInTheDocument();
 		expect(within(overview).getByText(overviewCopy.en.dailyRecord)).toBeInTheDocument();
 		expect(within(overview).getByText(overviewCopy.en.liveFeeds)).toBeInTheDocument();
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+		expect(header.querySelector('.header__meta')).toHaveAttribute('data-pending', 'true');
+		expect(header.querySelector('.header__meta-skeleton')).toHaveAttribute('aria-hidden', 'true');
 	});
 
 	it('does not let daily failure hide valid live cards', () => {
@@ -574,9 +607,11 @@ describe('HealthStatus — S11 pipeline lanes', () => {
 		// A legacy publish serves no data_health.json → getDataHealth resolves null →
 		// the section renders nothing (not even the maintenance row).
 		dataHealthState = ready<DataHealth>(null);
-		render(HealthStatus);
+		const { container } = render(HealthStatus);
 		expect(screen.queryByRole('list', { name: en.lanes.listLabel })).toBeNull();
 		expect(screen.queryByText(en.lanes.section)).toBeNull();
+		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		expect(within(left).getByText(/SEC\s*02\s*\/\s*08/)).toBeInTheDocument();
 	});
 });
 

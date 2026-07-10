@@ -157,6 +157,10 @@
 		font-size: var(--text-small);
 		color: var(--foreground);
 	}
+	.freshness-stamp-label {
+		flex-shrink: 0;
+		white-space: nowrap;
+	}
 	/* Live variant: the LIVE label rides the accent voice (the chip's identity). */
 	.freshness-stamp--live .freshness-stamp-label {
 		letter-spacing: 1px;

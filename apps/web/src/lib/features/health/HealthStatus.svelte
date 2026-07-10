@@ -221,10 +221,13 @@
 			liveGeneratedMeta &&
 			dailyGeneratedMeta.datetime !== liveGeneratedMeta.datetime
 		) {
-			entries.push(t.article.dailyAsOf, dailyGeneratedMeta, t.article.liveAsOf, liveGeneratedMeta);
+			entries.push(
+				{ ...dailyGeneratedMeta, label: t.article.dailyAsOf },
+				{ ...liveGeneratedMeta, label: t.article.liveAsOf },
+			);
 		} else {
 			const sharedGeneratedMeta = dailyGeneratedMeta ?? liveGeneratedMeta;
-			if (sharedGeneratedMeta) entries.push(t.asOf, sharedGeneratedMeta);
+			if (sharedGeneratedMeta) entries.push({ ...sharedGeneratedMeta, label: t.asOf });
 		}
 		if (tocEntries.length > 0) entries.push(t.article.sections(tocEntries.length));
 		return entries;
@@ -371,6 +374,7 @@
 			backHref={localizeHref('/', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
+			metaPending={provenance.loading || dataHealth.loading}
 			titleId="status-title"
 		>
 			{#snippet controls()}
@@ -730,6 +734,7 @@
 	:global(.detail-shell-mobile-summary) .health-stat-rail {
 		flex-direction: row;
 		flex-wrap: wrap;
+		align-items: flex-start;
 	}
 	:global(.detail-shell-mobile-summary) .health-stat-rail :global([data-slot='card']) {
 		flex: 1 1 10rem;

@@ -54,6 +54,45 @@ describe('ArticleHeader — article anatomy', () => {
 		expect(time).toHaveAttribute('datetime', '2026-07-09T12:00:00Z');
 	});
 
+	it('keeps a labelled meta value and its separator in one unbreakable item', () => {
+		const { container } = render(ArticleHeader, {
+			props: {
+				...baseProps,
+				meta: [
+					{
+						label: 'BILAN QUOTIDIEN À JOUR AU',
+						text: '7 juill. 2026, 20 h 00',
+						datetime: '2026-07-08T00:00:00Z',
+					},
+					'8 sections',
+				],
+			},
+		});
+
+		const pair = container.querySelector('.header__meta-pair');
+		expect(pair).toHaveTextContent('BILAN QUOTIDIEN À JOUR AU');
+		expect(pair).toHaveTextContent('7 juill. 2026, 20 h 00');
+		expect(pair?.closest('.header__meta-item')).toContainElement(container.querySelector('time'));
+		expect(container.querySelectorAll('.header__meta-sep')).toHaveLength(1);
+
+		const article = source('src/lib/components/layout/ArticleHeader.svelte');
+		expect(article).toMatch(/\.header__meta-pair\s*\{[\s\S]*?white-space:\s*nowrap/);
+	});
+
+	it('reserves the meta row with an inert skeleton while metadata is loading', () => {
+		const { container } = render(ArticleHeader, {
+			props: { ...baseProps, meta: [], metaPending: true },
+		});
+		const meta = container.querySelector('.header__meta');
+		const skeleton = container.querySelector('.header__meta-skeleton');
+
+		expect(meta).toHaveAttribute('data-pending', 'true');
+		expect(skeleton).toHaveAttribute('aria-hidden', 'true');
+
+		const article = source('src/lib/components/layout/ArticleHeader.svelte');
+		expect(article).toMatch(/\.header__meta\s*\{[\s\S]*?min-height:\s*1rem/);
+	});
+
 	it('highlights the first keyword when it appears in the title', () => {
 		const { container } = render(ArticleHeader, { props: baseProps });
 		const highlight = container.querySelector('.header__title-highlight');

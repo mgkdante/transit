@@ -181,14 +181,6 @@
 		filter: drop-shadow(0 0 4px color-mix(in srgb, var(--glow) 55%, transparent));
 	}
 
-	@media (max-width: 480px) {
-		.quiet-mode-controls {
-			width: 100%;
-			flex-wrap: wrap;
-			justify-content: center;
-		}
-	}
-
 	@media (prefers-reduced-motion: reduce) {
 		.quiet-mode-toggle,
 		.q-wave,

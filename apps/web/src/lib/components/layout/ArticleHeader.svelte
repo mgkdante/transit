@@ -47,6 +47,8 @@
 		backLabel: string;
 		/** Dot-separated meta row entries. Dated entries render as semantic time. */
 		meta: readonly ArticleMetaEntry[];
+		/** Reserve the meta row with a visual-only skeleton while its data is loading. */
+		metaPending?: boolean;
 		/** Accent color for the whole cover. Default: the brand primary. */
 		accent?: string;
 		/** The controls row under the meta (QuietModeButton + page controls). */
@@ -55,7 +57,14 @@
 		titleId?: string;
 	}
 
-	export type ArticleMetaEntry = string | { readonly text: string; readonly datetime?: string };
+	export type ArticleMetaEntry =
+		| string
+		| {
+				readonly text: string;
+				readonly datetime?: string;
+				/** Optional label glued to this value so bilingual source/date pairs wrap together. */
+				readonly label?: string;
+		  };
 
 	let {
 		watermark,
@@ -66,6 +75,7 @@
 		backHref,
 		backLabel,
 		meta,
+		metaPending = false,
 		accent = 'var(--primary)',
 		controls,
 		titleId,
@@ -151,17 +161,31 @@
 			</ul>
 
 			<!-- Meta row -->
-			<div class="header__meta">
+			<div class="header__meta" data-pending={metaPending}>
 				{#each meta as entry, i (i)}
-					{#if i > 0}<span class="header__meta-sep" aria-hidden="true"></span>{/if}
-					{#if typeof entry === 'string'}
-						<span>{entry}</span>
-					{:else if entry.datetime}
-						<time datetime={entry.datetime}>{entry.text}</time>
-					{:else}
-						<span>{entry.text}</span>
-					{/if}
+					<span class="header__meta-item">
+						{#if i > 0}<span class="header__meta-sep" aria-hidden="true"></span>{/if}
+						{#if typeof entry === 'string'}
+							<span>{entry}</span>
+						{:else if entry.label}
+							<span class="header__meta-pair">
+								<span>{entry.label}</span>
+								{#if entry.datetime}
+									<time datetime={entry.datetime}>{entry.text}</time>
+								{:else}
+									<span>{entry.text}</span>
+								{/if}
+							</span>
+						{:else if entry.datetime}
+							<time datetime={entry.datetime}>{entry.text}</time>
+						{:else}
+							<span>{entry.text}</span>
+						{/if}
+					</span>
 				{/each}
+				{#if meta.length === 0 && metaPending}
+					<span class="header__meta-skeleton" aria-hidden="true"></span>
+				{/if}
 			</div>
 
 			{#if controls}
@@ -375,9 +399,29 @@
 		align-items: center;
 		justify-content: center;
 		gap: 1rem;
+		min-height: 1rem;
 		font-family: var(--font-mono);
-		font-size: 11px;
+		font-size: clamp(9px, 2.8vw, 11px);
 		color: color-mix(in srgb, var(--article-accent) 85%, transparent);
+	}
+	.header__meta-item {
+		display: inline-flex;
+		align-items: center;
+		gap: 1rem;
+		min-width: 0;
+	}
+	.header__meta-pair {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.5em;
+		white-space: nowrap;
+	}
+	.header__meta-skeleton {
+		display: block;
+		width: clamp(8rem, 18vw, 14rem);
+		height: 0.625rem;
+		border-radius: var(--radius-pill);
+		background: color-mix(in srgb, var(--article-accent) 12%, transparent);
 	}
 	.header__meta-sep {
 		width: 3px;

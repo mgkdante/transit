@@ -69,14 +69,17 @@ describe('QuietModeButton source parity', () => {
 		expect(screen.getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
 	});
 
-	it('allows the two controls to wrap without shrinking their tap targets', () => {
+	it('keeps the two controls side-by-side at every width, exactly like the source', () => {
 		const source = readFileSync(
 			`${process.cwd()}/src/lib/components/shared/QuietModeButton.svelte`,
 			'utf8',
 		);
-		expect(source).toMatch(
-			/@media\s*\(max-width:\s*480px\)[\s\S]*?\.quiet-mode-controls\s*\{[\s\S]*?flex-wrap:\s*wrap/,
-		);
+		// yesid.dev keeps the pair in ONE row at every viewport: the buttons shrink
+		// and their labels wrap INSIDE the fixed 44px-min targets. A max-width
+		// override that stacks .quiet-mode-controls is a transit-only deviation
+		// from the source control-row grammar (confirmed against live yesid.dev at
+		// 390px).
+		expect(source).not.toMatch(/@media\s*\(max-width:[\s\S]*?\.quiet-mode-controls/);
 		expect(source).toMatch(/min-width:\s*44px[\s\S]*?min-height:\s*44px/);
 	});
 });

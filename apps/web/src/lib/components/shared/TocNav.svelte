@@ -88,6 +88,29 @@
 			flat.findIndex((e) => e.id === activeId),
 		),
 	);
+	// A pure numbered top-level run carries canonical section numbers. When a
+	// conditional section stands down, keep the footer aligned with those badges
+	// (for example 02 / 08), rather than silently re-numbering it as position 01 / 07.
+	// Mixed/icon/child ToCs retain their reading-position counter.
+	const usesCanonicalNumbers = $derived(
+		shown.length > 0 &&
+			shown.every((entry) => entry.badge?.kind === 'number' && entry.children.length === 0),
+	);
+	const counterCurrent = $derived.by(() => {
+		if (usesCanonicalNumbers) {
+			const activeEntry = shown.find((entry) => entry.id === activeId) ?? shown[0];
+			if (activeEntry?.badge?.kind === 'number') return activeEntry.badge.value;
+		}
+		return activeIndex + 1;
+	});
+	const counterTotal = $derived.by(() => {
+		if (usesCanonicalNumbers) {
+			return Math.max(
+				...shown.map((entry) => (entry.badge?.kind === 'number' ? entry.badge.value : 0)),
+			);
+		}
+		return flat.length;
+	});
 </script>
 
 <!--
@@ -143,7 +166,7 @@
 		<div class="toc-counter-dot"></div>
 		<span class="toc-counter-text font-mono text-micro tracking-[1.5px]">
 			{counterPrefix}
-			{String(activeIndex + 1).padStart(2, '0')} / {String(flat.length).padStart(2, '0')}
+			{String(counterCurrent).padStart(2, '0')} / {String(counterTotal).padStart(2, '0')}
 		</span>
 	</div>
 </CollapsibleSection>

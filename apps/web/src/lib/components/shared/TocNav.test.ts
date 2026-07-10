@@ -76,6 +76,36 @@ describe('TocNav', () => {
 		expect(getByText(/SEC\s*01\s*\/\s*03/)).toBeTruthy();
 	});
 
+	it('keeps a gapped canonical number run aligned with its badges', () => {
+		const gappedEntries: TocEntry[] = [
+			{
+				id: 'freshness',
+				title: 'Freshness',
+				level: 2,
+				badge: { kind: 'number', value: 2 },
+				children: [],
+			},
+			{
+				id: 'envelope',
+				title: 'Build accountability',
+				level: 2,
+				badge: { kind: 'number', value: 8 },
+				children: [],
+			},
+		];
+		const { getByText } = render(TocNav, {
+			props: {
+				entries: gappedEntries,
+				activeId: 'freshness',
+				onNavigate: () => {},
+				heading: 'Jump to a section',
+				counterPrefix: 'SEC',
+			},
+		});
+
+		expect(getByText(/SEC\s*02\s*\/\s*08/)).toBeTruthy();
+	});
+
 	it('calls onNavigate with the entry id on click', async () => {
 		const onNavigate = vi.fn();
 		const { getByText } = render(TocNav, {
