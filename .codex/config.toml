@@ -1,7 +1,5 @@
-# transit — workflow-overlord Codex CLI config.
-#
-# Hook dispatchers live in the GLOBAL ~/.codex/config.toml. Keep only the local
-# feature flags here so hooks are not double-registered.
+# transit — workflow-overlord v4 Codex CLI config.
+# Hooks come only from the installed plugin's hooks/hooks.json.
 
 [features]
 hooks = true
