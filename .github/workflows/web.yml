@@ -133,7 +133,7 @@ jobs:
     needs: ci
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'production')
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy_target == 'production')
     environment: production
     steps:
       - name: Check out repository
@@ -155,3 +155,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: bunx wrangler@4.100.0 deploy --env=""
+
+      - name: Verify shared production routes
+        working-directory: apps/data-proxy
+        run: bash smoke.sh

@@ -8,7 +8,7 @@
 # working untouched as the fallback origin.
 #
 # Usage: bash apps/data-proxy/smoke.sh
-#   CANONICAL_BASE / FALLBACK_BASE env vars override the probed hosts.
+#   CANONICAL_BASE / FALLBACK_BASE / APEX_BASE override the probed hosts.
 set -euo pipefail
 
 CANONICAL_BASE="${CANONICAL_BASE:-https://transit.yesid.dev/data}"
@@ -84,4 +84,34 @@ ok "access-control-allow-origin: * present"
   || fail "fallback $FALLBACK_BASE manifest must still return 200"
 ok "fallback $FALLBACK_BASE manifest -> 200"
 
-echo "SMOKE OK: canonical + fallback serving, negatives clean"
+# --- /api/v1/kpis: public KPI endpoint (frozen v1 contract, src/kpis.js) ---
+# APEX_BASE is independent from CANONICAL_BASE because the latter ends in
+# /data while this route sits at the canonical host apex.
+APEX_BASE="${APEX_BASE:-https://transit.yesid.dev}"
+KPIS_URL="$APEX_BASE/api/v1/kpis"
+kpis_body="$(curl -fsS --max-time "$MAX_TIME" "$KPIS_URL")" \
+  || fail "$KPIS_URL did not return 200 (cold pipeline would be 503)"
+for field in snapshotAt freshnessS vehicles avgDelayS coverage routesLive routesTotal topRoutes; do
+  grep -q "\"$field\"" <<<"$kpis_body" || fail "kpis body missing \"$field\""
+done
+ok "$KPIS_URL -> 200 with all v1 contract fields"
+
+kpis_headers="$(curl -fsSI --max-time "$MAX_TIME" -H 'Origin: https://yesid.dev' "$KPIS_URL" | tr -d '\r')"
+grep -qi '^access-control-allow-origin: \*' <<<"$kpis_headers" \
+  || fail "kpis must carry access-control-allow-origin: *"
+grep -qi '^cache-control: no-store' <<<"$kpis_headers" \
+  || fail "kpis response must be no-store (server-side cache only)"
+ok "kpis CORS + no-store headers present"
+
+[ "$(status_of "$APEX_BASE/api/v1/definitely-missing")" = "404" ] \
+  || fail "unknown /api/v1/* must return 404"
+ok "unknown /api/v1/* -> 404"
+
+# /api/vitals belongs to the web app. A 405 means the data-proxy route widened
+# beyond /api/v1/* and intercepted the beacon.
+vitals_status="$(status_of -X POST -H 'content-type: application/json' -d '{}' \
+  "$APEX_BASE/api/vitals")"
+[ "$vitals_status" != "405" ] || fail "/api/vitals returned 405 — route scope leaked past /api/v1/*"
+ok "/api/vitals still reaches the web app (status $vitals_status)"
+
+echo "SMOKE OK: canonical + fallback serving, kpis live, negatives clean"
