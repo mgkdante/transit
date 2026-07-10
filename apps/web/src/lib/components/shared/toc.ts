@@ -105,6 +105,10 @@ export function settleLayout(target: Element | null, maxWaitMs = 700): Promise<v
 		}
 	}
 	const measured = scroller ?? document.scrollingElement ?? document.documentElement;
+	const transitionGraceMs =
+		typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+			? 0
+			: 100;
 	return new Promise((resolve) => {
 		const startedAt = performance.now();
 		let done = false;
@@ -134,7 +138,7 @@ export function settleLayout(target: Element | null, maxWaitMs = 700): Promise<v
 			// disclosure transition starts. Do not mistake those initial equal frames
 			// for the final layout; once movement is observed, reduced-motion and
 			// already-running transitions can still settle in the normal two frames.
-			const transitionHadTimeToStart = performance.now() - startedAt >= 100;
+			const transitionHadTimeToStart = performance.now() - startedAt >= transitionGraceMs;
 			if (stable >= 2 && (sawChange || transitionHadTimeToStart)) finish();
 			else frameId = requestAnimationFrame(frame);
 		};

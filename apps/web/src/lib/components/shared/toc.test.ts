@@ -142,6 +142,32 @@ describe('settleLayout', () => {
 		}
 	});
 
+	it('skips the transition-start grace when reduced motion is active', async () => {
+		const media = vi
+			.spyOn(window, 'matchMedia')
+			.mockReturnValue({ matches: true } as MediaQueryList);
+		const scroller = document.createElement('div');
+		scroller.style.overflowY = 'auto';
+		const target = document.createElement('div');
+		scroller.appendChild(target);
+		document.body.appendChild(scroller);
+		let reads = 0;
+		Object.defineProperty(scroller, 'scrollHeight', {
+			configurable: true,
+			get: () => {
+				reads += 1;
+				return 400;
+			},
+		});
+		try {
+			await settleLayout(target);
+			expect(reads).toBe(3);
+		} finally {
+			media.mockRestore();
+			document.body.removeChild(scroller);
+		}
+	});
+
 	it('gives up at the max wait when the height never stabilizes', async () => {
 		const scroller = document.createElement('div');
 		scroller.style.overflowY = 'auto';

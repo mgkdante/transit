@@ -352,6 +352,10 @@
 	});
 
 	async function navigate(id: string): Promise<void> {
+		// An explicit reader choice supersedes any queued async hash. The reveal's
+		// new generation cancels an in-flight hash scroll; clearing the queue keeps a
+		// later resource/inventory change from reviving that stale destination.
+		pendingHash = null;
 		await reveal(id);
 	}
 </script>

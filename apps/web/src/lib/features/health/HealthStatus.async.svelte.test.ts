@@ -241,4 +241,48 @@ describe('HealthStatus — async reveal navigation', () => {
 
 		await waitFor(() => expect(targets).toEqual(['health-freshness']));
 	});
+
+	it('does not revive an in-flight hash after an explicit ToC choice', async () => {
+		const { container } = render(HealthStatus);
+		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));
+		provenanceGate.resolve(provenanceFixture);
+		dataHealthGate.resolve(dataHealthFixture);
+
+		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		await waitFor(() =>
+			expect(within(left).getByRole('button', { name: copy.en.freshness.section })).toBeVisible(),
+		);
+		const targets: Array<string | null> = [];
+		scrollIntoView.mockImplementation(function (this: Element) {
+			targets.push(this.getAttribute('data-toc'));
+		});
+
+		window.history.replaceState(null, '', '#health-lanes');
+		await fireEvent(window, new HashChangeEvent('hashchange'));
+		await tick();
+		await tick();
+		await fireEvent.click(within(left).getByRole('button', { name: copy.en.freshness.section }));
+		await waitFor(() => expect(targets).toEqual(['health-freshness']));
+
+		ports.getProvenance.mockImplementation(() =>
+			Promise.resolve({
+				...provenanceFixture,
+				sources: [
+					{
+						feed: 'static_schedule',
+						chain: 'r2:provider/static/gtfs.zip',
+						last_loaded_utc: iso('2026-06-19T11:00:00Z'),
+					},
+				],
+			}),
+		);
+		dataRefresh.bumpEpoch();
+		await waitFor(() => expect(ports.getProvenance).toHaveBeenCalledTimes(2));
+		await waitFor(() =>
+			expect(within(left).getByRole('button', { name: copy.en.sources.section })).toBeVisible(),
+		);
+		await new Promise((resolve) => setTimeout(resolve, 800));
+
+		expect(targets).toEqual(['health-freshness']);
+	});
 });
