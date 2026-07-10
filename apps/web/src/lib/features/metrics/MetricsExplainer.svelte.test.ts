@@ -8,8 +8,8 @@
 // same as the other feature-screen tests): the surface head, the provenance
 // preamble + confidence legend, a sticky TOC rail (a TocNav with one jump button
 // per metric, badge-numbered) and one anchored CollapsibleSection card per metric
-// carrying the definition / math / SQL / "what it's NOT" / caveats blocks. The SQL
-// rides the shared CodeBlock (syntax chrome). A mobile floating pill opens the
+// carrying the definition / math / SQL / "what it's NOT" / caveats cards. The SQL
+// rides the shared typed-card terminal chrome. A mobile floating pill opens the
 // same jump-nav as a drawer.
 //
 // These are the affordances the (i) tip deep-links into (/metrics#<anchor>), so
@@ -21,7 +21,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import MetricsExplainer from './MetricsExplainer.svelte';
-import { METRICS, METRIC_KEYS } from './metrics.content';
+import { METRICS } from './metrics.content';
 import { metricsCopy } from './metrics.copy';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 
@@ -30,6 +30,16 @@ import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 // gate stays env-free (the real $lib/v1 chain reads $env/dynamic/public) and
 // off-network. data:null → no conformance → the badge renders nothing, leaving
 // every assertion below about the static article untouched.
+const { provState } = vi.hoisted(() => ({
+	provState: {
+		data: null as {
+			generated_utc: string;
+			conformance: { status: string; extra_row_count: number; unknown_members: string[] };
+			methodology: Record<string, unknown>;
+		} | null,
+	},
+}));
+
 vi.mock('$lib/v1', () => ({
 	getProvenance: vi.fn(),
 	getV1Context: () => ({
@@ -38,7 +48,9 @@ vi.mock('$lib/v1', () => ({
 }));
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({
-		data: null,
+		get data() {
+			return provState.data;
+		},
 		error: null,
 		loading: false,
 		settled: true,
@@ -63,6 +75,7 @@ const CARD_ANCHORS = [
 	'structural-gaps',
 ];
 function resetMetricsStorage(): void {
+	provState.data = null;
 	for (const anchor of CARD_ANCHORS) {
 		sessionStorage.removeItem(`transit.persisted:metrics-card-${anchor}`);
 	}
@@ -85,6 +98,21 @@ describe('MetricsExplainer', () => {
 		expect(source).toMatch(
 			/\.metrics-stat__body\[data-slot='stat-freshness'\]\s*:global\(\.freshness-stamp-label\)\s*\{[\s\S]*?flex-shrink:\s*0[\s\S]*?white-space:\s*nowrap/,
 		);
+	});
+
+	it('stacks every mobile summary rail card in one full-width grid row', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
+			'utf8',
+		);
+
+		expect(source).toMatch(
+			/:global\(\.detail-shell-mobile-summary\) \.metrics-stat-rail\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+		);
+		expect(source).toMatch(
+			/:global\(\.detail-shell-mobile-summary\)[\s\S]*?\.metrics-stat-rail[\s\S]*?> :global\(\[data-slot='card'\]\)\s*\{[^}]*width:\s*100%;/,
+		);
+		expect(source).not.toMatch(/flex:\s*1 1 12rem/);
 	});
 
 	it('renders the shared article header with metrics keywords, back link, and body lede', () => {
@@ -170,7 +198,7 @@ describe('MetricsExplainer', () => {
 		}
 	});
 
-	it('renders one anchored CollapsibleSection card per metric with the science blocks', () => {
+	it('renders every anchored metric with the exact typed-card anatomy and terminal SQL', () => {
 		const { container } = render(MetricsExplainer);
 
 		for (const entry of METRICS) {
@@ -192,8 +220,22 @@ describe('MetricsExplainer', () => {
 			// by the shared collapsible, so it is present even while collapsed).
 			expect(block?.textContent).toContain(entry.name.en);
 			expect(block?.textContent).toContain(entry.definition.en);
-			// The verbatim SQL survives the CodeBlock tokenizer byte-for-byte.
-			expect(block?.textContent).toContain(entry.sql);
+
+			const informationCards = Array.from(
+				card?.querySelectorAll<HTMLElement>('[data-slot="typed-information-card"]') ?? [],
+			);
+			expect(
+				informationCards.map((informationCard) => informationCard.dataset.kind),
+				`${entry.anchor} typed-card kinds`,
+			).toEqual(['definition', 'math', 'sql', 'not-really', 'caveat']);
+
+			const sqlCard = informationCards.find(
+				(informationCard) => informationCard.dataset.kind === 'sql',
+			);
+			expect(sqlCard?.querySelector('[data-slot="terminal-panel"]')).toBeInTheDocument();
+			const sqlRegion = sqlCard?.querySelector<HTMLElement>('[role="region"]');
+			expect(sqlRegion).toHaveAttribute('tabindex', '0');
+			expect(sqlRegion?.textContent, `${entry.anchor} SQL remains byte-for-byte`).toBe(entry.sql);
 		}
 	});
 
@@ -205,17 +247,6 @@ describe('MetricsExplainer', () => {
 		expect(text).toContain(en.sections.sql);
 		expect(text).toContain(en.sections.notReally);
 		expect(text).toContain(en.sections.caveats);
-	});
-
-	it('gives the SQL the CodeBlock chrome (a SQL language tag per metric)', () => {
-		const { container } = render(MetricsExplainer);
-		const blocks = container.querySelectorAll('.codeblock');
-		expect(blocks).toHaveLength(METRIC_KEYS.length);
-		// Each code region is keyboard-scrollable (focusable) for pointer-free overflow.
-		for (const block of blocks) {
-			const region = block.querySelector('[role="region"]');
-			expect(region).toHaveAttribute('tabindex', '0');
-		}
 	});
 
 	it('exposes a mobile floating pill that opens the same jump-nav as a drawer', async () => {
@@ -611,13 +642,40 @@ describe('MetricsExplainer', () => {
 		}
 	});
 
-	it('keeps desktop and mobile copies of a rail card on one logical open state', async () => {
-		render(MetricsExplainer);
+	it('keeps a mobile Coverage action scoped to Coverage across both responsive rail mounts', async () => {
+		provState.data = {
+			generated_utc: '2026-07-10T12:00:00Z',
+			conformance: { status: 'conformant', extra_row_count: 0, unknown_members: [] },
+			methodology: {},
+		};
+		const { container } = render(MetricsExplainer);
+		const mobileSummary = container.querySelector(
+			'[data-slot="detail-shell-mobile-summary"]',
+		) as HTMLElement;
 		const coverage = screen.getAllByRole('button', { name: en.statRail.coverage.title });
 		expect(coverage).toHaveLength(2);
-		await fireEvent.click(coverage[0]);
-		expect(coverage[0]).toHaveAttribute('aria-expanded', 'false');
-		expect(coverage[1]).toHaveAttribute('aria-expanded', 'false');
+		const mobileCoverage = within(mobileSummary).getByRole('button', {
+			name: en.statRail.coverage.title,
+		});
+		const otherRailTriggers = Array.from(
+			container.querySelectorAll<HTMLButtonElement>('.metrics-stat-rail button.section-header'),
+		).filter((trigger) => !coverage.includes(trigger));
+		const otherRailStates = otherRailTriggers.map((trigger) =>
+			trigger.getAttribute('aria-expanded'),
+		);
+
+		await fireEvent.click(mobileCoverage);
+
+		const mobileCoverageBody = mobileCoverage
+			.closest('[data-slot="card"]')
+			?.querySelector('[data-slot="collapsible-content"]');
+		expect(mobileCoverageBody).toHaveAttribute('data-state', 'closed');
+		for (const trigger of coverage) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		}
+		expect(otherRailTriggers.map((trigger) => trigger.getAttribute('aria-expanded'))).toEqual(
+			otherRailStates,
+		);
 	});
 
 	it('keeps the ToC rail its OWN user-driven collapse chevron (cards untouched, persisted)', async () => {

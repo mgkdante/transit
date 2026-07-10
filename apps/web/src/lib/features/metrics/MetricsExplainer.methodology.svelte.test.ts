@@ -11,7 +11,7 @@
 // with a mutable `provState` the createResource mock reads by reference.
 
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import MetricsExplainer from './MetricsExplainer.svelte';
@@ -24,7 +24,11 @@ const source = readFileSync(
 
 const { provState } = vi.hoisted(() => ({
 	provState: {
-		data: null as { conformance: null; methodology: unknown } | null,
+		data: null as {
+			generated_utc?: string;
+			conformance: { status: string; extra_row_count: number; unknown_members: string[] } | null;
+			methodology: unknown;
+		} | null,
 		error: null as Error | null,
 		settled: true,
 	},
@@ -63,6 +67,20 @@ const liveMethodology = {
 	cancellation: 'LIVE-NOTE-CANCEL: canceled trip-days / observed trip-days, ramp-in',
 };
 
+const richProvenance = {
+	generated_utc: '2026-07-10T12:00:00Z',
+	conformance: {
+		status: 'conformant',
+		extra_row_count: 0,
+		unknown_members: [],
+	},
+	methodology: {
+		...liveMethodology,
+		min_n_rate: 30,
+		wilson_z: 1.96,
+	},
+};
+
 describe('MetricsExplainer — live pipeline note', () => {
 	it('uses the long-form detail tokens and article line heights for narrative prose', () => {
 		expect(source).toContain('var(--text-detail-body-mobile)');
@@ -71,7 +89,7 @@ describe('MetricsExplainer — live pipeline note', () => {
 		expect(source).toMatch(/line-height:\s*1\.9/);
 	});
 
-	it('renders the matched methodology string as a pipeline note inside its card', () => {
+	it('renders the matched methodology string verbatim inside a pipeline-note card', () => {
 		provState.data = { conformance: null, methodology: liveMethodology };
 		render(MetricsExplainer);
 
@@ -80,12 +98,12 @@ describe('MetricsExplainer — live pipeline note', () => {
 		expect(screen.getAllByText(metricsCopy.en.sections.pipelineNote).length).toBeGreaterThanOrEqual(
 			2,
 		);
-		expect(screen.getByText(liveMethodology.otp_definition)).toBeInTheDocument();
-		expect(screen.getByText(liveMethodology.cancellation)).toBeInTheDocument();
-
-		// One note block per matched metric, each anchored in a metric card.
-		const notes = document.querySelectorAll('[data-slot="pipeline-note"]');
-		expect(notes.length).toBeGreaterThanOrEqual(2);
+		for (const note of Object.values(liveMethodology)) {
+			const noteBody = screen.getByText(note);
+			expect(noteBody).toHaveAttribute('data-slot', 'pipeline-note');
+			expect(noteBody.textContent).toBe(note);
+			expect(noteBody.closest('[data-kind="pipeline-note"]')).not.toBeNull();
+		}
 	});
 
 	it('renders NO pipeline note when methodology is absent (card unchanged)', () => {
@@ -93,7 +111,22 @@ describe('MetricsExplainer — live pipeline note', () => {
 		render(MetricsExplainer);
 
 		expect(screen.queryByText(metricsCopy.en.sections.pipelineNote)).toBeNull();
-		expect(document.querySelectorAll('[data-slot="pipeline-note"]').length).toBe(0);
+		expect(document.querySelectorAll('[data-kind="pipeline-note"]').length).toBe(0);
+	});
+});
+
+describe('MetricsExplainer — responsive stat rail icons', () => {
+	it('renders the Provenance, Coverage, and Freshness SectionIcons in both rail mounts', () => {
+		provState.data = richProvenance;
+		const { container } = render(MetricsExplainer);
+
+		const rails = container.querySelectorAll('.metrics-stat-rail');
+		expect(rails).toHaveLength(2);
+		for (const rail of rails) {
+			expect(within(rail as HTMLElement).getByTestId('section-layers-icon')).toBeInTheDocument();
+			expect(within(rail as HTMLElement).getByTestId('section-chart-icon')).toBeInTheDocument();
+			expect(within(rail as HTMLElement).getByTestId('section-eye-icon')).toBeInTheDocument();
+		}
 	});
 });
 

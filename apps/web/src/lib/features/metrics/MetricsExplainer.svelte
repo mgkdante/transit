@@ -38,9 +38,9 @@
       open-then-scroll `navigate`.
 
   Composes: DetailShell (hazard tape + 3-col grid + observer + pill) + ArticleHeader
-  (cover) + SectionLabel + the shared CodeBlock (SQL syntax chrome) + the
-  shared shared/ TOC + collapsible-card kit (CollapsibleSection / TocNav / toc.ts). The
-  co-located metrics/+layout.svelte is a bare pass-through.
+  (cover) + SectionLabel + shared typed information cards (including SQL terminal
+  chrome) + the shared TOC + collapsible-card kit (CollapsibleSection / TocNav /
+  toc.ts). The co-located metrics/+layout.svelte is a bare pass-through.
 
   DOCTRINE: no data marks here (prose + SQL), so the dataviz scale is not in play;
   --primary appears only on interactive chrome (the TOC, the pill, the back-to-top
@@ -63,11 +63,11 @@
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import { persisted } from '$lib/stores';
 	import { formatUtc } from '$lib/utils/time';
-	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import {
 		CollapsibleSection,
 		SectionIcon,
 		TocNav,
+		TypedInformationCard,
 		tocElement,
 		settleLayout,
 		type TocEntry,
@@ -388,6 +388,9 @@
 				openSignal={quietModeStore.openSignal}
 				bulkCollapsed={quietModeStore.enabled}
 			>
+				{#snippet icon()}
+					<SectionIcon name="layers" class="h-4 w-4 shrink-0 text-primary" />
+				{/snippet}
 				<div class="metrics-stat__body" data-slot="stat-provenance">
 					{#if provenance.data?.conformance}
 						<ConformanceBadge conformance={provenance.data.conformance} {locale} />
@@ -407,6 +410,9 @@
 			openSignal={quietModeStore.openSignal}
 			bulkCollapsed={quietModeStore.enabled}
 		>
+			{#snippet icon()}
+				<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
+			{/snippet}
 			<div class="metrics-stat__body" data-slot="stat-coverage">
 				<p class="metrics-stat__count">
 					<span class="metrics-stat__big">{orderedMetrics.length}</span>
@@ -434,6 +440,9 @@
 				openSignal={quietModeStore.openSignal}
 				bulkCollapsed={quietModeStore.enabled}
 			>
+				{#snippet icon()}
+					<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
+				{/snippet}
 				<div class="metrics-stat__body" data-slot="stat-freshness">
 					<FreshnessStamp variant="updated" generatedUtc={provenance.data.generated_utc} {locale} />
 				</div>
@@ -626,52 +635,47 @@
 										<span class="metrics-chip metrics-chip--meta">{confidenceMeaning(entry)}</span>
 									</p>
 
-									<div class="metric__block">
-										<SectionLabel text={t.sections.definition} variant="metric" />
-										<!-- EasterProse: definition prose carries the tasteful D4 easter-word
-										     flourish (buses / trains / science / agencies), decoration-only. -->
-										<EasterProse text={entry.definition[locale]} class="metric__prose" />
-									</div>
+									<div class="metric__information-stack">
+										<TypedInformationCard kind="definition" label={t.sections.definition}>
+											<EasterProse text={entry.definition[locale]} class="metric__prose" />
+										</TypedInformationCard>
 
-									<div class="metric__block">
-										<SectionLabel text={t.sections.math} variant="metric" />
-										<p class="metric__prose metric__prose--mono">{entry.math[locale]}</p>
-									</div>
+										<TypedInformationCard kind="math" label={t.sections.math}>
+											<p class="metric__prose metric__prose--mono">{entry.math[locale]}</p>
+										</TypedInformationCard>
 
-									<div class="metric__block">
-										<SectionLabel text={t.sections.sql} variant="metric" />
-										<CodeBlock
+										<TypedInformationCard
+											kind="sql"
+											label={t.sections.sql}
 											code={entry.sql}
-											lang="SQL"
-											ariaLabel={`${t.sqlAria}: ${entry.sciName}`}
+											codeAriaLabel={`${t.sqlAria}: ${entry.sciName}`}
 										/>
-									</div>
 
-									<div class="metric__block">
-										<SectionLabel text={t.sections.notReally} variant="metric" />
-										<EasterProse text={entry.notReally[locale]} class="metric__prose metric__not" />
-									</div>
+										<div class="metric__paired-information">
+											<TypedInformationCard kind="not-really" label={t.sections.notReally}>
+												<EasterProse
+													text={entry.notReally[locale]}
+													class="metric__prose metric__not"
+												/>
+											</TypedInformationCard>
 
-									<div class="metric__block">
-										<SectionLabel text={t.sections.caveats} variant="metric" />
-										<ul class="metric__caveats">
-											{#each entry.caveats[locale] as caveat, i (i)}
-												<li>{caveat}</li>
-											{/each}
-										</ul>
-									</div>
-
-									<!-- Live pipeline note: the verbatim provenance.methodology string
-									     for this metric from the CURRENT build, distinguished from the
-									     static science above. Stands down entirely when unmapped/absent.
-									     `note` is bound once at the #each level (above) — looked up once,
-									     used as the guard AND the body. -->
-									{#if note}
-										<div class="metric__block metric__note-block" data-slot="pipeline-note">
-											<SectionLabel text={t.sections.pipelineNote} variant="metric" />
-											<p class="metric__prose metric__pipeline-note">{note}</p>
+											<TypedInformationCard kind="caveat" label={t.sections.caveats}>
+												<ul class="metric__caveats">
+													{#each entry.caveats[locale] as caveat, i (i)}
+														<li>{caveat}</li>
+													{/each}
+												</ul>
+											</TypedInformationCard>
 										</div>
-									{/if}
+
+										{#if note}
+											<TypedInformationCard kind="pipeline-note" label={t.sections.pipelineNote}>
+												<p class="metric__prose metric__pipeline-note" data-slot="pipeline-note">
+													{note}
+												</p>
+											</TypedInformationCard>
+										{/if}
+									</div>
 
 									<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
 								</div>
@@ -787,9 +791,8 @@
 
 	/* ── Right rail / mobile summary stat cards ────────────────────────────────
 	   Provenance / Coverage / Freshness — compact cards fed from data the page
-	   already has. On desktop they stack in the sticky right rail; on mobile the
-	   SAME markup reflows into the top summary strip (a horizontal row that wraps).
-	   No data marks, no --primary (the honesty chips + stamp carry their own tone). */
+	   already has. On desktop they stack in the sticky right rail; on mobile each
+	   card occupies its own full-width summary row. */
 	.metrics-stat-aside {
 		min-width: 0;
 	}
@@ -798,14 +801,13 @@
 		flex-direction: column;
 		gap: var(--space-card-gap);
 	}
-	/* Mobile summary strip: lay the three cards in a wrapping row so they read as a
-	   compact strip above the sections, not a tall stack. */
 	:global(.detail-shell-mobile-summary) .metrics-stat-rail {
-		flex-direction: row;
-		flex-wrap: wrap;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		align-items: start;
 	}
 	:global(.detail-shell-mobile-summary) .metrics-stat-rail > :global([data-slot='card']) {
-		flex: 1 1 12rem;
+		width: 100%;
 		min-width: 0;
 	}
 	.metrics-stat__body {
@@ -980,39 +982,40 @@
 		font-size: var(--text-caption);
 		color: var(--muted-foreground);
 	}
-	.metric__block {
+	.metric__information-stack {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 1rem;
+		min-width: 0;
+	}
+	.metric__paired-information {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 1rem;
 	}
 	.metric__prose {
 		margin: 0;
 		color: var(--foreground);
 		max-width: 68ch;
 	}
-	.metric__prose--mono {
+	.metric__prose,
+	.metric__caveats,
+	.metric__pipeline-note {
+		font-size: inherit;
+		line-height: inherit;
+	}
+	.metric__prose--mono,
+	.metric__pipeline-note {
 		font-family: var(--font-mono);
-		font-size: var(--text-caption);
+	}
+	.metric__prose--mono {
 		color: var(--muted-foreground);
-		line-height: 1.7;
 	}
 	.metric__not {
 		color: var(--muted-foreground);
 	}
-	/* Live pipeline note: a quiet card-inset block, set apart from the static
-	   science by its muted surface + hairline frame (P7: no left stripe). The
-	   verbatim methodology string reads on the mono caption voice. */
-	.metric__note-block {
-		padding: 0.75rem 0.875rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		background: var(--muted);
-	}
 	.metric__pipeline-note {
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
 		color: var(--muted-foreground);
-		line-height: 1.7;
 	}
 	.metric__caveats {
 		display: flex;
@@ -1114,8 +1117,6 @@
 	}
 
 	.metrics-article-prose,
-	.metric__prose,
-	.metric__caveats,
 	.metrics-live__lede,
 	.metrics-live__point p,
 	.metrics-lacunes__lede,
@@ -1126,8 +1127,6 @@
 
 	@media (min-width: 1024px) {
 		.metrics-article-prose,
-		.metric__prose,
-		.metric__caveats,
 		.metrics-live__lede,
 		.metrics-live__point p,
 		.metrics-lacunes__lede,
@@ -1135,18 +1134,13 @@
 			font-size: var(--text-detail-body-desktop);
 			line-height: 1.9;
 		}
-	}
 
-	/* Formula and current-run note rows stay on their compact mono treatment. */
-	.metric__prose--mono,
-	.metric__pipeline-note {
-		font-size: var(--text-caption);
-		line-height: 1.7;
-	}
-
-	@media (max-width: 24rem) {
-		:global(.detail-shell-mobile-summary) .metrics-stat-rail {
-			flex-direction: column;
+		.metric__paired-information {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			align-items: stretch;
+		}
+		.metric__paired-information > :global([data-slot='typed-information-card']) {
+			height: 100%;
 		}
 	}
 
