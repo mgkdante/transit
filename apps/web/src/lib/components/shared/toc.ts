@@ -58,6 +58,64 @@ export function tocElement(id: string): Element | null {
 	return document.getElementById(id);
 }
 
+/** Wait until the target's scroll container stops changing height. The card
+ *  expand/collapse animates 300ms (grid-rows), and `scrollIntoView` computes —
+ *  and CLAMPS — its destination against the geometry at call time, so
+ *  positioning before the layout settles lands wrong: over-scroll when a
+ *  remembered collapse shrinks the page under the scroll, short landings when
+ *  the target's expansion grows it. Resolves after two consecutive same-height
+ *  frames, or after `maxWaitMs` as a hard cap (fonts/images may keep trickling
+ *  in). Reduced motion sets the transitions to `none`, so this settles in two
+ *  frames there. */
+export function settleLayout(target: Element | null, maxWaitMs = 700): Promise<void> {
+	if (!target || typeof requestAnimationFrame !== 'function') return Promise.resolve();
+	let scroller: Element | null = null;
+	for (let node = target.parentElement; node; node = node.parentElement) {
+		const overflowY = getComputedStyle(node).overflowY;
+		if (overflowY === 'auto' || overflowY === 'scroll') {
+			scroller = node;
+			break;
+		}
+	}
+	const measured = scroller ?? document.scrollingElement ?? document.documentElement;
+	return new Promise((resolve) => {
+		const startedAt = performance.now();
+		let done = false;
+		let frameId: number | null = null;
+		let timeoutId: ReturnType<typeof setTimeout> | null = null;
+		let last = -1;
+		let stable = 0;
+		let sawChange = false;
+		const finish = (): void => {
+			if (done) return;
+			done = true;
+			if (frameId !== null && typeof cancelAnimationFrame === 'function') {
+				cancelAnimationFrame(frameId);
+			}
+			if (timeoutId !== null) clearTimeout(timeoutId);
+			resolve();
+		};
+		const frame = (): void => {
+			const height = measured.scrollHeight;
+			if (height === last) stable += 1;
+			else {
+				if (last !== -1) sawChange = true;
+				stable = 0;
+				last = height;
+			}
+			// Mount-time bulk signals can update aria state one paint before the
+			// disclosure transition starts. Do not mistake those initial equal frames
+			// for the final layout; once movement is observed, reduced-motion and
+			// already-running transitions can still settle in the normal two frames.
+			const transitionHadTimeToStart = performance.now() - startedAt >= 100;
+			if (stable >= 2 && (sawChange || transitionHadTimeToStart)) finish();
+			else frameId = requestAnimationFrame(frame);
+		};
+		timeoutId = setTimeout(finish, Math.max(0, maxWaitMs));
+		frameId = requestAnimationFrame(frame);
+	});
+}
+
 /** Observe every TOC-target element on the page and report the active id as the
  *  user scrolls. One observer drives BOTH the desktop nav and the mobile pill
  *  (the page owns the active id and passes it down; no duplicate observers).

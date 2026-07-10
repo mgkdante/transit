@@ -17,4 +17,11 @@ export { default as TocNav } from './TocNav.svelte';
 export { default as TocPill } from './TocPill.svelte';
 export { default as TocBadge } from './TocBadge.svelte';
 export { default as SectionIcon, type SectionIconName } from './SectionIcon.svelte';
-export { flattenToc, tocElement, observeActiveToc, type TocEntry, type TocBadgeSpec } from './toc';
+export {
+	flattenToc,
+	tocElement,
+	settleLayout,
+	observeActiveToc,
+	type TocEntry,
+	type TocBadgeSpec,
+} from './toc';

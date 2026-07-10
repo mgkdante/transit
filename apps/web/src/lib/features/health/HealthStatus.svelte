@@ -43,7 +43,13 @@
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import { CollapsibleSection, TocNav, tocElement, type TocEntry } from '$lib/components/shared';
+	import {
+		CollapsibleSection,
+		TocNav,
+		tocElement,
+		settleLayout,
+		type TocEntry,
+	} from '$lib/components/shared';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import { persisted } from '$lib/stores';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
@@ -263,6 +269,8 @@
 	const openableAnchors = $derived(new Set(tocEntries.map((entry) => entry.id)));
 	let pendingHash = $state<string | null>(null);
 	let consumingHash = false;
+	let requestedHash: string | null = null;
+	let navigationGeneration = 0;
 
 	function decodedHash(): string | null {
 		const raw = window.location.hash.replace(/^#/, '');
@@ -274,11 +282,25 @@
 		}
 	}
 
-	async function reveal(id: string): Promise<boolean> {
+	function queueHash(id: string | null): void {
+		if (id === requestedHash) return;
+		requestedHash = id;
+		navigationGeneration += 1;
+		pendingHash = id;
+	}
+
+	async function reveal(id: string, generation = ++navigationGeneration): Promise<boolean> {
 		if (!openableAnchors.has(id)) return false;
 		openCard(id);
 		await tick();
-		tocElement(id)?.scrollIntoView({
+		const target = tocElement(id);
+		// The disclosure expand (and, under a remembered collapse, every sibling's
+		// fold) animates the page height; scroll clamping uses call-time geometry,
+		// so let the layout settle before positioning (design: open the
+		// destination BEFORE final positioning).
+		await settleLayout(target);
+		if (generation !== navigationGeneration) return false;
+		target?.scrollIntoView({
 			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
 			block: 'start',
 		});
@@ -292,7 +314,7 @@
 		try {
 			await tick();
 			if (pendingHash !== id || !openableAnchors.has(id)) return;
-			if ((await reveal(id)) && pendingHash === id) pendingHash = null;
+			if ((await reveal(id, navigationGeneration)) && pendingHash === id) pendingHash = null;
 		} finally {
 			consumingHash = false;
 			if (pendingHash && pendingHash !== id && openableAnchors.has(pendingHash)) {
@@ -313,14 +335,15 @@
 		let cancelled = false;
 		void (async () => {
 			await tick();
-			if (!cancelled) pendingHash = decodedHash();
+			if (!cancelled) queueHash(decodedHash());
 		})();
 		const onHashChange = () => {
-			pendingHash = decodedHash();
+			queueHash(decodedHash());
 		};
 		window.addEventListener('hashchange', onHashChange);
 		return () => {
 			cancelled = true;
+			navigationGeneration += 1;
 			window.removeEventListener('hashchange', onHashChange);
 		};
 	});

@@ -216,4 +216,29 @@ describe('HealthStatus — async reveal navigation', () => {
 		expect(expandedAtScroll).toEqual(['true']);
 		expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
 	});
+
+	it('scrolls only the latest async hash target when the hash changes during layout settle', async () => {
+		const { container } = render(HealthStatus);
+		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));
+		provenanceGate.resolve(provenanceFixture);
+		dataHealthGate.resolve(dataHealthFixture);
+
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		await waitFor(() =>
+			expect(within(center).getByRole('button', { name: copy.en.freshness.section })).toBeVisible(),
+		);
+		const targets: Array<string | null> = [];
+		scrollIntoView.mockImplementation(function (this: Element) {
+			targets.push(this.getAttribute('data-toc'));
+		});
+
+		window.history.replaceState(null, '', '#health-lanes');
+		await fireEvent(window, new HashChangeEvent('hashchange'));
+		await tick();
+		await tick();
+		window.history.replaceState(null, '', '#health-freshness');
+		await fireEvent(window, new HashChangeEvent('hashchange'));
+
+		await waitFor(() => expect(targets).toEqual(['health-freshness']));
+	});
 });

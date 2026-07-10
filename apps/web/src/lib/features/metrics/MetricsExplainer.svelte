@@ -69,6 +69,7 @@
 		SectionIcon,
 		TocNav,
 		tocElement,
+		settleLayout,
 		type TocEntry,
 	} from '$lib/components/shared';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
@@ -294,21 +295,32 @@
 	// ── Hash opener (mount + hashchange) ───────────────────────────────────────
 	// A deep-link to /metrics#<anchor> (an (i) MetricInfo tip, an on-map "How this
 	// works" link, a shared URL) must REVEAL its target on a default-closed page. If
-	// the hash names a collapsible card, open ONLY that card, then let the native
-	// anchor scroll land on it. Runs once on mount (for the initial hash) and on every
-	// hashchange (same-page (i) navigation swaps the hash without a remount).
+	// the hash names a collapsible card, open ONLY that card, then position it
+	// explicitly via navigate(): the native anchor jump fires against the
+	// pre-hydration layout, and a remembered collapse reshapes the page after it,
+	// leaving the native landing clamped past the target (design: open the
+	// destination BEFORE final positioning). Runs once on mount (for the initial
+	// hash) and on every hashchange (same-page (i) navigation swaps the hash
+	// without a remount).
+	let requestedHash: string | null = null;
+	let navigationGeneration = 0;
+
 	function openFromHash(): void {
 		const raw = window.location.hash.replace(/^#/, '');
-		if (!raw) return;
+		let anchor: string | null = null;
 		// A malformed fragment ('#%' etc.) must not throw during mount — the anchors
 		// are plain ASCII, so an undecodable hash simply cannot match (S10 review F2).
-		let anchor: string;
-		try {
-			anchor = decodeURIComponent(raw);
-		} catch {
-			return;
+		if (raw) {
+			try {
+				anchor = decodeURIComponent(raw);
+			} catch {
+				anchor = null;
+			}
 		}
-		if (openableAnchors.has(anchor)) openCard(anchor);
+		if (anchor === requestedHash) return;
+		requestedHash = anchor;
+		const generation = ++navigationGeneration;
+		if (anchor && openableAnchors.has(anchor)) void navigate(anchor, generation);
 	}
 
 	onMount(() => {
@@ -326,6 +338,7 @@
 		window.addEventListener('hashchange', openFromHash);
 		return () => {
 			cancelled = true;
+			navigationGeneration += 1;
 			window.removeEventListener('hashchange', openFromHash);
 		};
 	});
@@ -341,13 +354,18 @@
 	// land on a shut card), then scrolls to it. Opening a card while its siblings
 	// stay closed does not disturb the scroll — every card is force-mounted, so the
 	// closed siblings above keep their (collapsed) height and the target lands true.
-	// The provenance preamble is not a card, so it just scrolls. await tick() keeps
-	// the scroll a frame after the reactive open settles. Reduced-motion drops the
-	// smooth scroll.
-	async function navigate(id: string): Promise<void> {
+	// The provenance preamble is not a card, so it just scrolls. await tick() flushes
+	// the reactive open; settleLayout then waits out the 300ms height animation
+	// (the expand, plus every sibling's fold under a remembered collapse) because
+	// scroll clamping uses call-time geometry. Reduced-motion drops the smooth
+	// scroll and its transitions, so the settle is two frames there.
+	async function navigate(id: string, generation = ++navigationGeneration): Promise<void> {
 		if (openableAnchors.has(id)) openCard(id);
 		await tick();
-		tocElement(id)?.scrollIntoView({
+		const target = tocElement(id);
+		await settleLayout(target);
+		if (generation !== navigationGeneration) return;
+		target?.scrollIntoView({
 			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
 			block: 'start',
 		});

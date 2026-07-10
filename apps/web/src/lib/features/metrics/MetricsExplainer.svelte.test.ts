@@ -418,6 +418,87 @@ describe('MetricsExplainer', () => {
 		}
 	});
 
+	it('scrolls the hash-named card into position after opening it on mount', async () => {
+		// The design contract: a direct load opens the destination BEFORE final
+		// positioning. Relying on the native anchor jump alone lands wrong when the
+		// remembered collapse reshapes the page after the browser has scrolled.
+		const scrollCalls: Array<{ expanded: string | null; args: unknown }> = [];
+		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+		const { container } = await (async () => {
+			localStorage.setItem('transit:quiet-mode', 'true');
+			window.location.hash = '#otp';
+			return render(MetricsExplainer);
+		})();
+		Object.defineProperty(Element.prototype, 'scrollIntoView', {
+			configurable: true,
+			value: function (this: Element, args: unknown) {
+				scrollCalls.push({
+					expanded: cardTrigger(container, 'otp')!.getAttribute('aria-expanded'),
+					args,
+				});
+			},
+		});
+		try {
+			await vi.waitFor(() => expect(scrollCalls.length).toBeGreaterThanOrEqual(1));
+			expect(scrollCalls[0].expanded).toBe('true');
+			expect(scrollCalls[0].args).toMatchObject({ block: 'start' });
+		} finally {
+			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
+			else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+		}
+	});
+
+	it('scrolls the newly hash-named card after a same-page hashchange', async () => {
+		const { container } = render(MetricsExplainer);
+		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+
+		const scrollCalls: Array<string | null> = [];
+		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+		Object.defineProperty(Element.prototype, 'scrollIntoView', {
+			configurable: true,
+			value: function (this: Element) {
+				scrollCalls.push(cardTrigger(container, 'headway')!.getAttribute('aria-expanded'));
+			},
+		});
+		try {
+			window.location.hash = '#headway';
+			await fireEvent(window, new HashChangeEvent('hashchange'));
+			await vi.waitFor(() => expect(scrollCalls.length).toBeGreaterThanOrEqual(1));
+			// The card is already open by the time the positioning scroll fires.
+			expect(scrollCalls[0]).toBe('true');
+		} finally {
+			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
+			else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+		}
+	});
+
+	it('scrolls only the latest target when the hash changes again while layout settles', async () => {
+		const { container } = render(MetricsExplainer);
+		await tick();
+
+		const scrollCalls: Array<string | null> = [];
+		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+		Object.defineProperty(Element.prototype, 'scrollIntoView', {
+			configurable: true,
+			value: function (this: Element) {
+				scrollCalls.push(this.getAttribute('data-toc'));
+			},
+		});
+		try {
+			window.history.replaceState(null, '', '#otp');
+			await fireEvent(window, new HashChangeEvent('hashchange'));
+			window.history.replaceState(null, '', '#headway');
+			await fireEvent(window, new HashChangeEvent('hashchange'));
+
+			await vi.waitFor(() => expect(scrollCalls).toEqual(['headway']));
+		} finally {
+			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
+			else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+			window.history.replaceState(null, '', window.location.pathname);
+			void container;
+		}
+	});
+
 	it('opens another card on a later hashchange without closing the first (folded page)', async () => {
 		const { container } = render(MetricsExplainer);
 		// Fold everything first so the additive opening is observable.
