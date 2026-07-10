@@ -14,6 +14,8 @@ set -euo pipefail
 CANONICAL_BASE="${CANONICAL_BASE:-https://transit.yesid.dev/data}"
 FALLBACK_BASE="${FALLBACK_BASE:-https://data.yesid.dev}"
 MAX_TIME=15
+KPIS_MAX_ATTEMPTS="${KPIS_MAX_ATTEMPTS:-24}"
+KPIS_RETRY_DELAY_S="${KPIS_RETRY_DELAY_S:-5}"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 ok() { echo "ok: $*"; }
@@ -89,11 +91,32 @@ ok "fallback $FALLBACK_BASE manifest -> 200"
 # /data while this route sits at the canonical host apex.
 APEX_BASE="${APEX_BASE:-https://transit.yesid.dev}"
 KPIS_URL="$APEX_BASE/api/v1/kpis"
-kpis_body="$(curl -fsS --max-time "$MAX_TIME" "$KPIS_URL")" \
-  || fail "$KPIS_URL did not return 200 (cold pipeline would be 503)"
-for field in snapshotAt freshnessS vehicles avgDelayS coverage routesLive routesTotal topRoutes; do
-  grep -q "\"$field\"" <<<"$kpis_body" || fail "kpis body missing \"$field\""
+[[ "$KPIS_MAX_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] \
+  || fail "KPIS_MAX_ATTEMPTS must be a positive integer"
+[[ "$KPIS_RETRY_DELAY_S" =~ ^[0-9]+$ ]] \
+  || fail "KPIS_RETRY_DELAY_S must be a non-negative integer"
+
+kpis_body=""
+kpis_ready=false
+for ((attempt = 1; attempt <= KPIS_MAX_ATTEMPTS; attempt++)); do
+  if kpis_body="$(curl -fsS --max-time "$MAX_TIME" "$KPIS_URL")"; then
+    kpis_ready=true
+    for field in snapshotAt freshnessS vehicles avgDelayS coverage routesLive routesTotal topRoutes; do
+      if ! grep -q "\"$field\"" <<<"$kpis_body"; then
+        kpis_ready=false
+        break
+      fi
+    done
+    [ "$kpis_ready" = true ] && break
+  fi
+
+  if [ "$attempt" -lt "$KPIS_MAX_ATTEMPTS" ]; then
+    echo "wait: $KPIS_URL not ready (attempt $attempt/$KPIS_MAX_ATTEMPTS); retrying in ${KPIS_RETRY_DELAY_S}s" >&2
+    sleep "$KPIS_RETRY_DELAY_S"
+  fi
 done
+[ "$kpis_ready" = true ] \
+  || fail "$KPIS_URL exhausted $KPIS_MAX_ATTEMPTS attempts without a valid 200 response"
 ok "$KPIS_URL -> 200 with all v1 contract fields"
 
 kpis_headers="$(curl -fsSI --max-time "$MAX_TIME" -H 'Origin: https://yesid.dev' "$KPIS_URL" | tr -d '\r')"

@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import subprocess
+import textwrap
 import tomllib
 from pathlib import Path
 
@@ -173,6 +174,114 @@ def test_smoke_script_asserts_canonical_and_fallback_objects() -> None:
         assert field in text
     assert "/api/v1/definitely-missing" in text
     assert "/api/vitals" in text
+
+
+def test_smoke_retries_kpis_during_bounded_route_propagation_window() -> None:
+    text = (PROXY_DIR / "smoke.sh").read_text(encoding="utf-8")
+
+    assert 'KPIS_MAX_ATTEMPTS="${KPIS_MAX_ATTEMPTS:-24}"' in text
+    assert 'KPIS_RETRY_DELAY_S="${KPIS_RETRY_DELAY_S:-5}"' in text
+    assert "attempt <= KPIS_MAX_ATTEMPTS" in text
+    assert 'sleep "$KPIS_RETRY_DELAY_S"' in text
+    assert "exhausted $KPIS_MAX_ATTEMPTS attempts" in text
+
+
+def test_smoke_recovers_when_kpi_route_appears_after_propagation(
+    tmp_path: Path,
+) -> None:
+    mock_bin = tmp_path / "bin"
+    mock_bin.mkdir()
+    curl = mock_bin / "curl"
+    curl.write_text(
+        textwrap.dedent(
+            r"""
+            #!/usr/bin/env bash
+            set -euo pipefail
+
+            url="${*: -1}"
+            method=GET
+            status_only=false
+            head_only=false
+            for ((index = 1; index <= $#; index++)); do
+              argument="${!index}"
+              [ "$argument" = "-w" ] && status_only=true
+              case "$argument" in -*I*) head_only=true ;; esac
+              if [ "$argument" = "-X" ]; then
+                next=$((index + 1))
+                method="${!next}"
+              fi
+            done
+
+            if [ "$status_only" = true ]; then
+              case "$url" in
+                */api/vitals) printf 400 ;;
+                */api/v1/definitely-missing) printf 404 ;;
+                */definitely-missing.json|*/secrets.txt) printf 404 ;;
+                */manifest.json)
+                  [ "$method" = POST ] && printf 405 || printf 200
+                  ;;
+                *) printf 200 ;;
+              esac
+              exit 0
+            fi
+
+            if [ "$head_only" = true ]; then
+              case "$url" in
+                */definitely-missing.json) cache_control='no-store' ;;
+                */api/v1/kpis) cache_control='no-store' ;;
+                */live/vehicles.json|*/manifest.json) cache_control='public, max-age=30' ;;
+                */static/routes_index.json) cache_control='public, max-age=604800' ;;
+                *) cache_control='public, max-age=86400' ;;
+              esac
+              printf 'HTTP/2 200\r\n'
+              printf 'content-type: application/json\r\n'
+              printf 'cache-control: %s\r\n' "$cache_control"
+              printf 'access-control-allow-origin: *\r\n\r\n'
+              exit 0
+            fi
+
+            if [[ "$url" == */api/v1/kpis ]]; then
+              count="$(cat "$CURL_COUNT_FILE" 2>/dev/null || printf 0)"
+              count=$((count + 1))
+              printf '%s' "$count" > "$CURL_COUNT_FILE"
+              [ "$count" -ge 3 ] || exit 22
+              printf '%s' \
+                '{"snapshotAt":"now","freshnessS":1,"vehicles":1,' \
+                '"avgDelayS":0,"coverage":1,"routesLive":1,' \
+                '"routesTotal":1,"topRoutes":[]}'
+              exit 0
+            fi
+
+            [[ "$url" == */manifest.json ]] && printf '{"provider":"stm"}' || printf '{}'
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+    curl.chmod(0o755)
+
+    count_file = tmp_path / "kpi-attempts"
+    env = {
+        **os.environ,
+        "PATH": f"{mock_bin}:{os.environ['PATH']}",
+        "CURL_COUNT_FILE": str(count_file),
+        "CANONICAL_BASE": "https://canonical.test/data",
+        "FALLBACK_BASE": "https://fallback.test",
+        "APEX_BASE": "https://apex.test",
+        "KPIS_MAX_ATTEMPTS": "3",
+        "KPIS_RETRY_DELAY_S": "0",
+    }
+    result = subprocess.run(
+        ["bash", str(PROXY_DIR / "smoke.sh")],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert count_file.read_text(encoding="utf-8") == "3"
+    assert result.stderr.count("not ready") == 2
+    assert "SMOKE OK" in result.stdout
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
