@@ -37,6 +37,7 @@
 		sectionKey = undefined,
 		closeSignal = null,
 		openSignal = null,
+		bulkCollapsed = null,
 	}: {
 		entries: TocEntry[];
 		activeId: string;
@@ -68,6 +69,12 @@
 		 * Forwarded verbatim to the wrapping CollapsibleSection.
 		 */
 		openSignal?: number | null;
+		/**
+		 * The page's current bulk mode for a rail that mounts after the mount-time
+		 * signal fired (the status ToC renders only once async entries exist).
+		 * Forwarded verbatim to the wrapping CollapsibleSection.
+		 */
+		bulkCollapsed?: boolean | null;
 	} = $props();
 
 	// Desktop TOC lists only the center-column sections; right-rail cards
@@ -96,6 +103,7 @@
 	{sectionKey}
 	{closeSignal}
 	{openSignal}
+	{bulkCollapsed}
 	open={true}
 >
 	{#snippet icon()}

@@ -19,6 +19,7 @@
 		locale: Locale;
 		closeSignal?: number | null;
 		openSignal?: number | null;
+		bulkCollapsed?: boolean | null;
 	}
 	let {
 		conformance,
@@ -26,6 +27,7 @@
 		locale,
 		closeSignal = null,
 		openSignal = null,
+		bulkCollapsed = null,
 	}: SectionConformanceProps = $props();
 	const t = $derived(copy.conformance);
 </script>
@@ -45,6 +47,7 @@
 				open={true}
 				{closeSignal}
 				{openSignal}
+				{bulkCollapsed}
 			>
 				<div class="health-conformance-detail">
 					<!-- Honest extra-row count: a real number renders localized; a null/absent

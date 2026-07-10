@@ -372,6 +372,7 @@
 					sectionKey="status-toc"
 					closeSignal={quietModeStore.closeSignal}
 					openSignal={quietModeStore.openSignal}
+					bulkCollapsed={quietModeStore.enabled}
 				/>
 			{/if}
 		</div>
@@ -391,6 +392,7 @@
 				open={true}
 				closeSignal={quietModeStore.closeSignal}
 				openSignal={quietModeStore.openSignal}
+				bulkCollapsed={quietModeStore.enabled}
 			>
 				<div class="health-overview">
 					<p class="health-lede">{t.lede}</p>
@@ -440,6 +442,7 @@
 					open={true}
 					closeSignal={quietModeStore.closeSignal}
 					openSignal={quietModeStore.openSignal + cardOpenSignal('health-lanes')}
+					bulkCollapsed={quietModeStore.enabled}
 				>
 					<SectionLanes rows={laneRows} copy={t} {locale} />
 				</CollapsibleSection>
@@ -455,6 +458,7 @@
 					open={true}
 					closeSignal={quietModeStore.closeSignal}
 					openSignal={quietModeStore.openSignal + cardOpenSignal('health-freshness')}
+					bulkCollapsed={quietModeStore.enabled}
 				>
 					<SectionFreshness items={freshness} {verdictFor} {humanizeAge} copy={t} />
 				</CollapsibleSection>
@@ -470,6 +474,7 @@
 					open={true}
 					closeSignal={quietModeStore.closeSignal}
 					openSignal={quietModeStore.openSignal + cardOpenSignal('health-sources')}
+					bulkCollapsed={quietModeStore.enabled}
 				>
 					<SectionSources items={sources} {lastLoaded} copy={t} />
 				</CollapsibleSection>
@@ -485,6 +490,7 @@
 					open={true}
 					closeSignal={quietModeStore.closeSignal}
 					openSignal={quietModeStore.openSignal + cardOpenSignal('health-gaps')}
+					bulkCollapsed={quietModeStore.enabled}
 				>
 					<SectionGaps {gaps} {humanizeGap} copy={t} />
 				</CollapsibleSection>
@@ -500,6 +506,7 @@
 					open={true}
 					closeSignal={quietModeStore.closeSignal}
 					openSignal={quietModeStore.openSignal + cardOpenSignal('health-pipeline-notes')}
+					bulkCollapsed={quietModeStore.enabled}
 				>
 					<SectionNotes notes={pipelineNotes} copy={t} />
 				</CollapsibleSection>
@@ -515,6 +522,7 @@
 					open={true}
 					closeSignal={quietModeStore.closeSignal}
 					openSignal={quietModeStore.openSignal + cardOpenSignal('health-retention')}
+					bulkCollapsed={quietModeStore.enabled}
 				>
 					<SectionRetention
 						detail={retention.detail}
@@ -536,6 +544,7 @@
 					open={true}
 					closeSignal={quietModeStore.closeSignal}
 					openSignal={quietModeStore.openSignal + cardOpenSignal('health-conformance')}
+					bulkCollapsed={quietModeStore.enabled}
 				>
 					<SectionConformance
 						{conformance}
@@ -543,6 +552,7 @@
 						{locale}
 						closeSignal={quietModeStore.closeSignal}
 						openSignal={quietModeStore.openSignal}
+						bulkCollapsed={quietModeStore.enabled}
 					/>
 				</CollapsibleSection>
 			{/if}
@@ -557,6 +567,7 @@
 					open={true}
 					closeSignal={quietModeStore.closeSignal}
 					openSignal={quietModeStore.openSignal + cardOpenSignal('health-envelope')}
+					bulkCollapsed={quietModeStore.enabled}
 				>
 					<SectionEnvelope {envelope} copy={t} {locale} />
 				</CollapsibleSection>
@@ -579,6 +590,7 @@
 				bind:open={() => railOpen.lanes.value, (next) => setRailOpen('lanes', next)}
 				closeSignal={quietModeStore.closeSignal}
 				openSignal={quietModeStore.openSignal}
+				bulkCollapsed={quietModeStore.enabled}
 			>
 				<div class="health-stat__body" data-slot="stat-lanes">
 					<p class="health-stat__count">
@@ -600,6 +612,7 @@
 				bind:open={() => railOpen.feeds.value, (next) => setRailOpen('feeds', next)}
 				closeSignal={quietModeStore.closeSignal}
 				openSignal={quietModeStore.openSignal}
+				bulkCollapsed={quietModeStore.enabled}
 			>
 				<div class="health-stat__body" data-slot="stat-feeds">
 					<p class="health-stat__count">

@@ -159,6 +159,39 @@ describe('HealthStatus — async reveal navigation', () => {
 		expect(scrollIntoView).toHaveBeenCalledTimes(1);
 	});
 
+	it('collapses cards that mount after the remembered start signal', async () => {
+		// No stale per-card session seed: the collapsed start must come from the
+		// remembered bulk mode alone, even for cards that mount once data resolves.
+		sessionStorage.removeItem('transit.persisted:status-card-health-lanes');
+		const { container } = render(HealthStatus);
+		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));
+		provenanceGate.resolve(provenanceFixture);
+		dataHealthGate.resolve(dataHealthFixture);
+
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		const lanes = await waitFor(() =>
+			within(center).getByRole('button', { name: copy.en.lanes.section }),
+		);
+		expect(lanes).toHaveAttribute('aria-expanded', 'false');
+	});
+
+	it('reopens a stale session CLOSE choice on an unremembered mount once data arrives', async () => {
+		// Unremembered article mount: the reset-to-expanded signal is authoritative
+		// over the stale session CLOSE seeded in beforeEach, including for cards
+		// that mount only after their resource resolves.
+		localStorage.removeItem('transit:quiet-mode');
+		const { container } = render(HealthStatus);
+		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));
+		provenanceGate.resolve(provenanceFixture);
+		dataHealthGate.resolve(dataHealthFixture);
+
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		const lanes = await waitFor(() =>
+			within(center).getByRole('button', { name: copy.en.lanes.section }),
+		);
+		expect(lanes).toHaveAttribute('aria-expanded', 'true');
+	});
+
 	it('opens a ToC target before scrolling and uses auto behavior for reduced motion', async () => {
 		motion.reduced = true;
 		const { container } = render(HealthStatus);

@@ -139,3 +139,78 @@ describe('CollapsibleSection - whole-card toggling', () => {
 		expect(card.classList.contains('section-card--toggleable')).toBe(false);
 	});
 });
+
+describe('CollapsibleSection - mount-time bulk mode', () => {
+	// Data-gated cards mount AFTER the article's mount-time bulk signal bumped the
+	// counters, so the edge-detectors never see a change. `bulkCollapsed` carries
+	// the page's current bulk mode; on mount it is authoritative over the `open`
+	// default and any restored session choice (state model #8/#10).
+
+	it('adopts a collapsed bulk mode when mounting after the close signal fired', () => {
+		const { container } = render(CollapsibleSection, {
+			props: { title: 'Late', open: true, closeSignal: 1, openSignal: 0, bulkCollapsed: true },
+		});
+		expect(container.querySelector('.section-body')?.getAttribute('data-state')).toBe('closed');
+	});
+
+	it('reopens a stale session CLOSE choice when the mount-time bulk mode is expanded', () => {
+		sessionStorage.setItem('transit.persisted:late-card', 'false');
+		try {
+			const { container } = render(CollapsibleSection, {
+				props: {
+					title: 'Late',
+					open: true,
+					sectionKey: 'late-card',
+					closeSignal: 0,
+					openSignal: 1,
+					bulkCollapsed: false,
+				},
+			});
+			expect(container.querySelector('.section-body')?.getAttribute('data-state')).toBe('open');
+		} finally {
+			sessionStorage.removeItem('transit.persisted:late-card');
+		}
+	});
+
+	it('stays session-restored when no bulk mode is wired (signal-inert default)', () => {
+		sessionStorage.setItem('transit.persisted:late-card-inert', 'false');
+		try {
+			const { container } = render(CollapsibleSection, {
+				props: { title: 'Late', open: true, sectionKey: 'late-card-inert' },
+			});
+			expect(container.querySelector('.section-body')?.getAttribute('data-state')).toBe('closed');
+		} finally {
+			sessionStorage.removeItem('transit.persisted:late-card-inert');
+		}
+	});
+
+	it('uses bulkCollapsed only at mount and preserves later manual state', async () => {
+		try {
+			const { container, rerender } = render(CollapsibleSection, {
+				props: {
+					title: 'Late',
+					open: true,
+					sectionKey: 'late-card-one-shot',
+					bulkCollapsed: true,
+				},
+			});
+			const header = container.querySelector('button.section-header') as HTMLElement;
+			const body = container.querySelector('.section-body');
+			expect(body).toHaveAttribute('data-state', 'closed');
+
+			await fireEvent.click(header);
+			await fireEvent.click(header);
+			expect(body).toHaveAttribute('data-state', 'closed');
+
+			await rerender({
+				title: 'Late',
+				open: true,
+				sectionKey: 'late-card-one-shot',
+				bulkCollapsed: false,
+			});
+			expect(body).toHaveAttribute('data-state', 'closed');
+		} finally {
+			sessionStorage.removeItem('transit.persisted:late-card-one-shot');
+		}
+	});
+});

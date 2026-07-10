@@ -36,6 +36,7 @@
 		anchor = undefined,
 		closeSignal = null,
 		openSignal = null,
+		bulkCollapsed = null,
 		icon,
 		children,
 	}: {
@@ -72,6 +73,16 @@
 		 * action bumps it, the card opens. `null` (default) keeps it signal-inert.
 		 */
 		openSignal?: number | null;
+		/**
+		 * The page's CURRENT bulk mode (quietModeStore.enabled) for cards that mount
+		 * AFTER the article's mount-time signal fired (data-gated cards appear once
+		 * their fetch resolves; the edge-detectors can't see a bump that predates
+		 * init). Applied once at init, authoritative over the `open` default and any
+		 * restored session choice — the same contract the mount-time signal enforces
+		 * for cards that were present when it fired. `null` (default) keeps the
+		 * mount state seed-driven, exactly as before.
+		 */
+		bulkCollapsed?: boolean | null;
 		icon?: Snippet;
 		children?: Snippet;
 	} = $props();
@@ -113,6 +124,15 @@
 		if (signal === lastOpenSignal) return;
 		lastOpenSignal = signal;
 		if (collapsible && signal !== null) setOpen(true);
+	});
+
+	// Mount-time bulk adoption: a card mounting after the article's mount-time
+	// signal fired would otherwise keep its seed (stale session choice or the
+	// `open` default) and desync from the page's bulk mode. Cards mounted BEFORE
+	// the signal are unaffected: init() re-emits on every article mount and the
+	// edge effects above settle them to the same state.
+	untrack(() => {
+		if (collapsible && bulkCollapsed !== null) setOpen(!bulkCollapsed);
 	});
 
 	// The WHOLE card is the toggle surface. Interactive children take priority: a
