@@ -40,6 +40,33 @@ export function flattenToc(entries: TocEntry[]): TocEntry[] {
 	return flat;
 }
 
+/** Resolve the visible counter shared by desktop TocNav and mobile TocPill.
+ * A flat all-numbered run carries canonical section numbers, so conditional
+ * gaps stay honest (02 / 08). Mixed, icon, and nested ToCs remain positional. */
+export function resolveTocCounter(
+	entries: TocEntry[],
+	activeId: string,
+): { current: number; total: number } {
+	const flat = flattenToc(entries);
+	const activeIndex = Math.max(
+		0,
+		flat.findIndex((entry) => entry.id === activeId),
+	);
+	const usesCanonicalNumbers =
+		entries.length > 0 &&
+		entries.every((entry) => entry.badge?.kind === 'number' && entry.children.length === 0);
+	if (usesCanonicalNumbers) {
+		const activeEntry = entries.find((entry) => entry.id === activeId) ?? entries[0];
+		return {
+			current: activeEntry.badge?.kind === 'number' ? activeEntry.badge.value : activeIndex + 1,
+			total: Math.max(
+				...entries.map((entry) => (entry.badge?.kind === 'number' ? entry.badge.value : 0)),
+			),
+		};
+	}
+	return { current: activeIndex + 1, total: flat.length };
+}
+
 /** Resolve a TOC id to its scroll-target element. Supports three anchor schemes
  *  so one resolver serves every detail page:
  *   - `section-N`            -> a locale-stable `[data-section-index="N"]`

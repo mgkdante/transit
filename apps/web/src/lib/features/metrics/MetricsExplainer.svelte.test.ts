@@ -15,6 +15,8 @@
 // These are the affordances the (i) tip deep-links into (/metrics#<anchor>), so
 // every anchor must exist as an in-page element id and stay reachable.
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -75,6 +77,16 @@ beforeEach(resetMetricsStorage);
 afterEach(resetMetricsStorage);
 
 describe('MetricsExplainer', () => {
+	it('scopes the narrow freshness label treatment to the Metrics freshness rail', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
+			'utf8',
+		);
+		expect(source).toMatch(
+			/\.metrics-stat__body\[data-slot='stat-freshness'\]\s*:global\(\.freshness-stamp-label\)\s*\{[\s\S]*?flex-shrink:\s*0[\s\S]*?white-space:\s*nowrap/,
+		);
+	});
+
 	it('renders the shared article header with metrics keywords, back link, and body lede', () => {
 		const { container } = render(MetricsExplainer);
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;

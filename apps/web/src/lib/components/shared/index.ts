@@ -19,6 +19,7 @@ export { default as TocBadge } from './TocBadge.svelte';
 export { default as SectionIcon, type SectionIconName } from './SectionIcon.svelte';
 export {
 	flattenToc,
+	resolveTocCounter,
 	tocElement,
 	settleLayout,
 	observeActiveToc,

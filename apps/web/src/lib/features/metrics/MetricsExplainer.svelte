@@ -814,6 +814,10 @@
 		gap: 0.5rem;
 		min-width: 0;
 	}
+	.metrics-stat__body[data-slot='stat-freshness'] :global(.freshness-stamp-label) {
+		flex-shrink: 0;
+		white-space: nowrap;
+	}
 	.metrics-stat__note {
 		margin: 0;
 		color: var(--muted-foreground);

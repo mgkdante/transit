@@ -9,7 +9,14 @@
 //     IntersectionObserver path needs a browser, exercised in the render tests).
 
 import { describe, it, expect, vi } from 'vitest';
-import { flattenToc, tocElement, settleLayout, observeActiveToc, type TocEntry } from './toc';
+import {
+	flattenToc,
+	resolveTocCounter,
+	tocElement,
+	settleLayout,
+	observeActiveToc,
+	type TocEntry,
+} from './toc';
 
 const entry = (id: string, title: string, children: TocEntry[] = []): TocEntry => ({
 	id,
@@ -29,6 +36,24 @@ describe('flattenToc', () => {
 
 	it('returns an empty list for no entries', () => {
 		expect(flattenToc([])).toEqual([]);
+	});
+});
+
+describe('resolveTocCounter', () => {
+	it('uses canonical badges for a gapped flat numbered run', () => {
+		const entries: TocEntry[] = [
+			{ ...entry('freshness', 'Freshness'), badge: { kind: 'number', value: 2 } },
+			{ ...entry('envelope', 'Build accountability'), badge: { kind: 'number', value: 8 } },
+		];
+		expect(resolveTocCounter(entries, 'freshness')).toEqual({ current: 2, total: 8 });
+	});
+
+	it('keeps positional counting for mixed badge runs', () => {
+		const entries: TocEntry[] = [
+			{ ...entry('overview', 'Overview'), badge: { kind: 'icon', name: 'eye' } },
+			{ ...entry('metric', 'Metric'), badge: { kind: 'number', value: 4 } },
+		];
+		expect(resolveTocCounter(entries, 'metric')).toEqual({ current: 2, total: 2 });
 	});
 });
 

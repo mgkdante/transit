@@ -57,14 +57,12 @@ describe('FreshnessStamp — live variant', () => {
 });
 
 describe('FreshnessStamp — updated variant', () => {
-	it('keeps the status label on one line inside narrow rail cards', () => {
+	it('leaves route-specific label wrapping policy to the caller', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/components/surface/FreshnessStamp.svelte'),
 			'utf8',
 		);
-		expect(source).toMatch(
-			/\.freshness-stamp-label\s*\{[\s\S]*?flex-shrink:\s*0[\s\S]*?white-space:\s*nowrap/,
-		);
+		expect(source).not.toMatch(/\.freshness-stamp-label\s*\{[\s\S]*?white-space:\s*nowrap/);
 	});
 
 	it('renders the calm neutral "Updated" stamp, never the LIVE label', () => {
