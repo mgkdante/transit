@@ -1,7 +1,6 @@
 name: Deploy Data Proxy Worker
 
 on:
-  workflow_dispatch:
   pull_request:
     branches: [main, develop]
     paths:
@@ -43,7 +42,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: test-data-proxy
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
     defaults:
       run:
         working-directory: apps/data-proxy
@@ -65,3 +65,6 @@ jobs:
         run: bunx wrangler@4.100.0 deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Run production smoke
+        run: bash smoke.sh

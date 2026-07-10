@@ -39,17 +39,16 @@ def _workflow_triggers(workflow: dict) -> dict:
     return workflow.get("on", workflow.get(True))
 
 
-def test_wrangler_config_routes_canonical_data_path_to_snapshots_bucket() -> None:
+def test_wrangler_config_routes_public_contracts_to_snapshots_bucket() -> None:
     config = _wrangler_config()
 
     assert config["name"] == "transit-data-proxy"
     assert config["main"] == "src/worker.js"
     assert config["routes"] == [
-        {"pattern": "transit.yesid.dev/data/*", "zone_name": "yesid.dev"}
+        {"pattern": "transit.yesid.dev/data/*", "zone_name": "yesid.dev"},
+        {"pattern": "transit.yesid.dev/api/v1/*", "zone_name": "yesid.dev"},
     ]
-    assert config["r2_buckets"] == [
-        {"binding": "SNAPSHOTS", "bucket_name": "transit-snapshots"}
-    ]
+    assert config["r2_buckets"] == [{"binding": "SNAPSHOTS", "bucket_name": "transit-snapshots"}]
 
 
 def test_wrangler_config_disables_workers_dev_and_pins_account() -> None:
@@ -64,7 +63,7 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
     workflow = _deploy_workflow()
 
     triggers = _workflow_triggers(workflow)
-    assert "workflow_dispatch" in triggers
+    assert "workflow_dispatch" not in triggers
     # CI runs the worker tests on both lanes (develop = dev gate); the deploy STEP
     # stays main-only (gated by the job `if` on refs/heads/main).
     assert triggers["push"]["branches"] == ["main", "develop"]
@@ -84,10 +83,10 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
     )
     assert deploy_job["needs"] == "test-data-proxy", "tests must gate the deploy"
 
-    # Deploy is main-only (or manual dispatch); develop pushes run the tests but
-    # never publish.
-    assert "refs/heads/main" in deploy_job["if"]
-    assert "workflow_dispatch" in deploy_job["if"]
+    # Production is push-only from main. workflow_dispatch lets an operator
+    # select another ref, which could publish that branch's stale route config.
+    assert deploy_job["if"] == ("github.event_name == 'push' && github.ref == 'refs/heads/main'")
+    assert deploy_job["environment"] == "production"
 
     # CI must deploy with the EXACT wrangler the worker declares, or the
     # dry-run-validated toolchain and the deployed one silently drift. Under the
@@ -104,6 +103,11 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
     wrangler_step = wrangler_steps[0]
     assert wrangler_step["env"]["CLOUDFLARE_API_TOKEN"] == "${{ secrets.CLOUDFLARE_API_TOKEN }}"
 
+    deploy_runs = [step.get("run", "") for step in deploy_steps]
+    wrangler_index = next(index for index, run in enumerate(deploy_runs) if "wrangler" in run)
+    smoke_index = next(index for index, run in enumerate(deploy_runs) if run == "bash smoke.sh")
+    assert smoke_index > wrangler_index, "live smoke must verify the deployed Worker"
+
     proxy_pkg = json.loads((PROXY_DIR / "package.json").read_text(encoding="utf-8"))
     declared_wrangler = proxy_pkg["devDependencies"]["wrangler"]
     assert f"wrangler@{declared_wrangler}" in wrangler_step["run"]
@@ -111,14 +115,14 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
 
 def test_env_example_public_base_url_matches_worker_route() -> None:
     lines = ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
-    (base_url_line,) = [
-        line for line in lines if line.startswith("SNAPSHOT_PUBLIC_BASE_URL=")
-    ]
+    (base_url_line,) = [line for line in lines if line.startswith("SNAPSHOT_PUBLIC_BASE_URL=")]
     base_url = base_url_line.split("=", 1)[1]
 
     assert base_url == "https://transit.yesid.dev/data"
 
-    (route,) = _wrangler_config()["routes"]
+    route = next(
+        route for route in _wrangler_config()["routes"] if route["pattern"].endswith("/data/*")
+    )
     host_and_path = base_url.removeprefix("https://")
     assert route["pattern"] == f"{host_and_path}/*"
 
@@ -153,6 +157,22 @@ def test_smoke_script_asserts_canonical_and_fallback_objects() -> None:
     assert "405" in text
     assert "no-store" in text
     assert "access-control-allow-origin" in text
+    # The deployment gate must fail if a future Worker publish drops the KPI
+    # route or sends it back to the web app's HTML catch-all.
+    assert "/api/v1/kpis" in text
+    for field in (
+        "snapshotAt",
+        "freshnessS",
+        "vehicles",
+        "avgDelayS",
+        "coverage",
+        "routesLive",
+        "routesTotal",
+        "topRoutes",
+    ):
+        assert field in text
+    assert "/api/v1/definitely-missing" in text
+    assert "/api/vitals" in text
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -183,8 +203,7 @@ def test_worker_behavioral_suite_passes_under_node() -> None:
     # >= 21, and a literal "test/*.test.mjs" hard-fails (MODULE_NOT_FOUND)
     # on 18/20 LTS. Explicit file paths run on every node with the runner.
     test_files = sorted(
-        path.relative_to(PROXY_DIR).as_posix()
-        for path in (PROXY_DIR / "test").glob("*.test.mjs")
+        path.relative_to(PROXY_DIR).as_posix() for path in (PROXY_DIR / "test").glob("*.test.mjs")
     )
     assert test_files, "worker behavioral suite has no test files"
 

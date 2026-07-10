@@ -1,6 +1,7 @@
 // transit-data-proxy — read-only Cloudflare Worker serving the public /v1
 // snapshot contract from the transit-snapshots R2 bucket on the route
-// transit.yesid.dev/data/* (slice-9.1.1p).
+// transit.yesid.dev/data/* (slice-9.1.1p), plus the aggregated public KPI
+// endpoint on transit.yesid.dev/api/v1/* (src/kpis.js).
 //
 // Contract: GET/HEAD only; Content-Type and Cache-Control written at publish
 // time (db/src/transit_ops/snapshots/storage.py) pass through unchanged via
@@ -8,26 +9,16 @@
 // (public read-only data) so the slice-9.2 app can fetch the canonical host
 // directly from any dev or prod origin. data.yesid.dev stays untouched as the
 // fallback origin — this worker never writes to the bucket.
+import { CORS_HEADERS, PREFLIGHT_HEADERS } from "./cors.js";
+import { serveKpis } from "./kpis.js";
 
 // Only keys under v1/ are servable; the URL prefix /data/ is stripped to map
 // onto bucket keys (e.g. /data/v1/stm/manifest.json -> v1/stm/manifest.json).
 const KEY_PREFIX = "/data/";
 const SERVABLE_PREFIX = "/data/v1/";
 
-const CORS_HEADERS = {
-  "access-control-allow-origin": "*",
-  // Expose the range/validator headers so a cross-origin pmtiles range reader
-  // (MapLibre's pmtiles:// protocol, slice-9.3 basemap) can read them.
-  "access-control-expose-headers": "Content-Range, Content-Length, Accept-Ranges, ETag",
-};
-
-const PREFLIGHT_HEADERS = {
-  ...CORS_HEADERS,
-  "access-control-allow-methods": "GET, HEAD, OPTIONS",
-  // Range added for pmtiles partial reads (slice-9.3 basemap).
-  "access-control-allow-headers": "If-None-Match, If-Modified-Since, Range",
-  "access-control-max-age": "86400",
-};
+const KPIS_PATH = "/api/v1/kpis";
+const API_PREFIX = "/api/v1/";
 
 function errorResponse(status, extraHeaders = {}) {
   // no-store: a transient 404/405 must never stick in any browser or
@@ -39,7 +30,7 @@ function errorResponse(status, extraHeaders = {}) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: PREFLIGHT_HEADERS });
     }
@@ -48,6 +39,14 @@ export default {
     }
 
     const { pathname } = new URL(request.url);
+    if (pathname === KPIS_PATH) {
+      return serveKpis(request, env, ctx);
+    }
+    if (pathname.startsWith(API_PREFIX)) {
+      // The /api/v1/* zone route lands here for paths this worker doesn't
+      // define yet — a clean, uncacheable 404 (never the web app's HTML).
+      return errorResponse(404);
+    }
     if (!pathname.startsWith(SERVABLE_PREFIX)) {
       return errorResponse(404);
     }
