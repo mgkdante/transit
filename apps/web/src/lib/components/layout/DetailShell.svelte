@@ -30,8 +30,7 @@
 	  lives in app.css; a complete article cover owns its own ground and layers.
 -->
 <script lang="ts">
-	import type { Snippet } from 'svelte';
-	import { onMount } from 'svelte';
+	import { tick, type Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { Separator } from '$lib/components/ui/separator';
 	import TocPill from '$lib/components/shared/TocPill.svelte';
@@ -101,9 +100,25 @@
 	}: DetailShellProps = $props();
 
 	// ONE observer drives BOTH the caller's desktop TocNav (via the bound activeId) and
-	// the shell's mobile TocPill — no duplicate observers. Targets `[data-toc]` +
-	// `[data-section-index]` (toc.ts). Re-scoped only on mount; sections are stable.
-	onMount(() => observeActiveToc((id) => (activeId = id)));
+	// the shell's mobile TocPill — no duplicate observers. Async resources can add or
+	// remove targets after mount, so reconnect after the ordered id signature changes
+	// and after the corresponding DOM update settles.
+	$effect(() => {
+		const signature = tocEntries.map((entry) => entry.id).join('|');
+		let cancelled = false;
+		let stop: (() => void) | undefined;
+
+		void (async () => {
+			void signature;
+			await tick();
+			if (!cancelled) stop = observeActiveToc((id) => (activeId = id));
+		})();
+
+		return () => {
+			cancelled = true;
+			stop?.();
+		};
+	});
 
 	const pillEntries = $derived(mobileTocEntries ?? tocEntries);
 </script>

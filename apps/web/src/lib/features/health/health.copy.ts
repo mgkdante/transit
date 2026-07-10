@@ -18,6 +18,12 @@ import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export interface HealthCopy extends SurfaceHeadCopy {
 	readonly lede: string;
+	/** Always-present opening card and its two independent resource-state labels. */
+	readonly overview: {
+		readonly title: string;
+		readonly dailyRecord: string;
+		readonly liveFeeds: string;
+	};
 	/** Shared yesid-style article header copy for /status. */
 	readonly article: {
 		readonly watermark: string;
@@ -245,6 +251,11 @@ export const copy: Record<Locale, HealthCopy> = {
 		},
 		heading: 'Data health',
 		lede: 'How fresh each source is, where it came from, what is knowingly missing, how long we keep it, and how cleanly the latest schedule matched the model behind this dashboard. A missing signal shows as “no data”, never a fabricated value.',
+		overview: {
+			title: 'Overview',
+			dailyRecord: 'Daily record',
+			liveFeeds: 'Live feeds',
+		},
 		asOf: 'AS OF',
 		freshness: {
 			section: 'Feed freshness',
@@ -392,6 +403,11 @@ export const copy: Record<Locale, HealthCopy> = {
 		},
 		heading: 'Santé des données',
 		lede: 'À quel point chaque source est récente, d’où elle vient, ce qui manque sciemment, combien de temps on la garde et à quel point le dernier horaire correspondait au modèle derrière ce tableau de bord. Un signal absent s’affiche « aucune donnée », jamais une valeur fabriquée.',
+		overview: {
+			title: 'Vue d’ensemble',
+			dailyRecord: 'Bilan quotidien',
+			liveFeeds: 'Flux en direct',
+		},
 		asOf: 'À JOUR AU',
 		freshness: {
 			section: 'Fraîcheur des flux',

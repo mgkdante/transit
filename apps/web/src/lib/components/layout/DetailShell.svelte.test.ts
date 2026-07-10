@@ -7,11 +7,22 @@
 // summary strip is opt-in; and the floating TocPill renders only when there are entries.
 // Layout + wiring only — no data-mark assertions.
 
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { render } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
+import { render, waitFor } from '@testing-library/svelte';
+import { createRawSnippet, tick } from 'svelte';
+
+const tocObserver = vi.hoisted(() => ({
+	observe: vi.fn(),
+	cleanups: [] as ReturnType<typeof vi.fn>[],
+}));
+
+vi.mock('$lib/components/shared/toc', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('$lib/components/shared/toc')>();
+	return { ...actual, observeActiveToc: tocObserver.observe };
+});
+
 import DetailShell from './DetailShell.svelte';
 import type { TocEntry } from '$lib/components/shared/toc';
 
@@ -36,6 +47,16 @@ const baseProps = {
 
 const src = () =>
 	readFileSync(resolve(process.cwd(), 'src/lib/components/layout/DetailShell.svelte'), 'utf-8');
+
+beforeEach(() => {
+	tocObserver.cleanups = [];
+	tocObserver.observe.mockReset();
+	tocObserver.observe.mockImplementation(() => {
+		const cleanup = vi.fn();
+		tocObserver.cleanups.push(cleanup);
+		return cleanup;
+	});
+});
 
 describe('DetailShell — slots render in their zones', () => {
 	it('lets articleHeader replace the default band while preserving tape and body slots', () => {
@@ -112,6 +133,22 @@ describe('DetailShell — hazard tape + floating pill', () => {
 	it('omits the TocPill when there are no entries', () => {
 		const { container } = render(DetailShell, { props: { ...baseProps, tocEntries: [] } });
 		expect(container.querySelector(`button[aria-label*="${OPEN_ARIA}"]`)).toBeNull();
+	});
+});
+
+describe('DetailShell — dynamic ToC observation', () => {
+	it('reconnects observation after conditional targets appear', async () => {
+		const { rerender } = render(DetailShell, {
+			props: { ...baseProps, tocEntries: [] },
+		});
+		await waitFor(() => expect(tocObserver.observe).toHaveBeenCalledTimes(1));
+		const firstCleanup = tocObserver.cleanups[0];
+
+		await rerender({ ...baseProps, tocEntries: entries });
+		await tick();
+
+		await waitFor(() => expect(tocObserver.observe).toHaveBeenCalledTimes(2));
+		expect(firstCleanup).toHaveBeenCalledTimes(1);
 	});
 });
 
