@@ -628,7 +628,7 @@ Change explanatory `.health-note`, gap ledes, and pipeline-note prose to the Tas
 
 - [ ] **Step 4: Wrap each present section once in `HealthStatus.svelte`**
 
-Import `QuietModeButton`, `quietModeStore`, `CollapsibleSection`, and `SectionIcon`. Add the exact control snippet to `ArticleHeader`. Pass both store signals to `TocNav`.
+Import `QuietModeButton`, `quietModeStore`, and `CollapsibleSection`. Add the exact control snippet to `ArticleHeader`. Pass both store signals to `TocNav`.
 
 Use one parent card per presence-gated section. The fixed number is zero-based at the component boundary:
 
