@@ -207,4 +207,7 @@
 		padding: 1rem;
 		border-radius: var(--radius-xl);
 	}
+	.surface-rail-sheet > :global(*) {
+		flex: none;
+	}
 </style>
