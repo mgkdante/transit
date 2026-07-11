@@ -7,6 +7,7 @@
   or category-local filter state remain.
 -->
 <script lang="ts">
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceKind } from '$lib/nav';
@@ -65,6 +66,46 @@
 	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
 		railOpen[key].value = next;
 	}
+	function setAllRailOpen(next: boolean): void {
+		setRailOpen('controls', next);
+		setRailOpen('toc', next);
+	}
+
+	// QuietModeButton.init() deliberately re-emits the stored global state on each
+	// article mount. Cards consume that edge directly, but these rail disclosures
+	// already restore their own page-owned session choice. Start watching only
+	// after the mount edge settles, then mirror later reader actions into both
+	// persisted rail runes. A remembered collapsed default still wins on mount.
+	let railSignalsReady = $state(false);
+	let lastRailCloseSignal = quietModeStore.closeSignal;
+	let lastRailOpenSignal = quietModeStore.openSignal;
+	onMount(() => {
+		let cancelled = false;
+		void (async () => {
+			await tick();
+			if (cancelled) return;
+			lastRailCloseSignal = quietModeStore.closeSignal;
+			lastRailOpenSignal = quietModeStore.openSignal;
+			if (quietModeStore.enabled) setAllRailOpen(false);
+			railSignalsReady = true;
+		})();
+		return () => {
+			cancelled = true;
+		};
+	});
+	$effect(() => {
+		const closeSignal = quietModeStore.closeSignal;
+		const openSignal = quietModeStore.openSignal;
+		if (!railSignalsReady) return;
+		if (closeSignal !== lastRailCloseSignal) {
+			lastRailCloseSignal = closeSignal;
+			setAllRailOpen(false);
+		}
+		if (openSignal !== lastRailOpenSignal) {
+			lastRailOpenSignal = openSignal;
+			setAllRailOpen(true);
+		}
+	});
 
 	const explainerCopy = $derived(metricsCopy[locale]);
 	const info = $derived((key: MetricKey, name: string) => {
@@ -351,9 +392,6 @@
 		<CollapsibleSection
 			title={t.rail.controls}
 			bind:open={() => railOpen.controls.value, (next) => setRailOpen('controls', next)}
-			closeSignal={quietModeStore.closeSignal}
-			openSignal={quietModeStore.openSignal}
-			bulkCollapsed={presentation === 'desktop' ? quietModeStore.enabled : null}
 		>
 			<div class="hotspots-control-body" data-slot="controls-body">
 				{#if showGrainPicker}
@@ -387,9 +425,6 @@
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
 					bind:open={() => railOpen.toc.value, (next) => setRailOpen('toc', next)}
-					closeSignal={quietModeStore.closeSignal}
-					openSignal={quietModeStore.openSignal}
-					bulkCollapsed={presentation === 'desktop' ? quietModeStore.enabled : null}
 					onNavigate={(id) => {
 						closeSheet();
 						void navigate(id);

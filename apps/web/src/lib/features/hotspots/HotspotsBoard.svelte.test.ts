@@ -294,6 +294,31 @@ describe('HotspotsBoard article', () => {
 		expect(mobileToc).toHaveAttribute('aria-expanded', 'false');
 	});
 
+	it('restores one manual rail choice across a full same-tab board remount', async () => {
+		const first = render(HotspotsBoard);
+		const firstDesktop = first.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const firstControls = within(firstDesktop).getByRole('button', { name: 'View controls' });
+		const firstToc = within(firstDesktop).getByRole('button', { name: 'On this page' });
+
+		await waitFor(() => expect(firstControls).toHaveAttribute('aria-expanded', 'true'));
+		expect(firstToc).toHaveAttribute('aria-expanded', 'true');
+		await fireEvent.click(firstControls);
+		expect(sessionStorage.getItem('transit.persisted:hotspots-controls')).toBe('false');
+		expect(firstToc).toHaveAttribute('aria-expanded', 'true');
+
+		first.unmount();
+		const second = render(HotspotsBoard);
+		const secondDesktop = second.container.querySelector(
+			'[data-slot="surface-rail"]',
+		) as HTMLElement;
+		const secondControls = within(secondDesktop).getByRole('button', { name: 'View controls' });
+		const secondToc = within(secondDesktop).getByRole('button', { name: 'On this page' });
+
+		await waitFor(() => expect(secondControls).toHaveAttribute('aria-expanded', 'false'));
+		expect(secondToc).toHaveAttribute('aria-expanded', 'true');
+		expect(sessionStorage.getItem('transit.persisted:hotspots-controls')).toBe('false');
+	});
+
 	it('Collapse all closes every card and Expand all reopens every card', async () => {
 		const { container } = render(HotspotsBoard);
 		const ids = ['hotspots-top', 'hotspots-lines', 'hotspots-stops'];
@@ -334,6 +359,30 @@ describe('HotspotsBoard article', () => {
 			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
 		}
 		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+	});
+
+	it('reapplies remembered quiet mode across a full board remount', async () => {
+		const first = render(HotspotsBoard);
+		const firstDesktop = first.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const firstControls = within(firstDesktop).getByRole('button', { name: 'View controls' });
+
+		await fireEvent.click(screen.getByTestId('quiet-mode-remember'));
+		await fireEvent.click(firstControls);
+		expect(firstControls).toHaveAttribute('aria-expanded', 'true');
+		expect(sessionStorage.getItem('transit.persisted:hotspots-controls')).toBe('true');
+		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+
+		first.unmount();
+		const second = render(HotspotsBoard);
+		const secondDesktop = second.container.querySelector(
+			'[data-slot="surface-rail"]',
+		) as HTMLElement;
+		const secondControls = within(secondDesktop).getByRole('button', { name: 'View controls' });
+		const secondToc = within(secondDesktop).getByRole('button', { name: 'On this page' });
+
+		await waitFor(() => expect(secondControls).toHaveAttribute('aria-expanded', 'false'));
+		expect(secondToc).toHaveAttribute('aria-expanded', 'false');
+		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
 	});
 
 	it('applies remembered bulk collapse when Stops mounts after a same-page grain change', async () => {
