@@ -204,6 +204,16 @@ describe('NavPill — the flat menu', () => {
 		);
 	});
 
+	it('keeps compact Search/Audit separators but clears the visible Audit divider at ≥lg (source)', () => {
+		const source = readSource();
+		expect(source).toMatch(
+			/\.nav-menu-search-group,\s*\.nav-menu-group\s*\{\s*margin-top:\s*0\.5rem;\s*padding-top:\s*0\.5rem;\s*border-top:\s*1px solid var\(--border-subtle\);\s*\}/,
+		);
+		expect(source).toMatch(
+			/@media \(min-width: 1024px\)\s*\{[\s\S]*?\.nav-menu-primary-group,\s*\.nav-menu-search-group\s*\{\s*display:\s*none;\s*\}\s*\.nav-menu-group\s*\{\s*margin-top:\s*0;\s*padding-top:\s*0;\s*border-top:\s*0;\s*\}\s*\}/,
+		);
+	});
+
 	it('carries a search group in the menu sheet (the <lg search entry)', async () => {
 		const { getByRole, queryByTestId } = render(NavPill, {
 			props: { locale: 'en', url: new URL('https://transit.local/map') },
