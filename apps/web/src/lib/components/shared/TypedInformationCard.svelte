@@ -70,11 +70,7 @@
 			<span>{label}</span>
 		</h3>
 
-		<div
-			class="typed-information-body"
-			class:typed-information-body--mono={kind === 'math' || kind === 'pipeline-note'}
-			data-slot="typed-information-body"
-		>
+		<div class="typed-information-body" data-slot="typed-information-body">
 			{@render children?.()}
 		</div>
 	</div>
@@ -140,9 +136,6 @@
 		font-size: var(--text-detail-body-mobile);
 		line-height: 1.8;
 		overflow-wrap: anywhere;
-	}
-	.typed-information-body--mono {
-		font-family: var(--font-mono);
 	}
 	.typed-information-body :global(:first-child) {
 		margin-block-start: 0;

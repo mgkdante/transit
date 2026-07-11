@@ -115,8 +115,8 @@
 		overflow-x: auto;
 		padding: 1rem;
 		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		line-height: 1.6;
+		font-size: var(--text-detail-body-mobile);
+		line-height: 1.8;
 		color: var(--code-plain);
 		white-space: pre;
 		tab-size: 2;
@@ -151,5 +151,12 @@
 	}
 	.tok--plain {
 		color: var(--code-plain);
+	}
+
+	@media (min-width: 1024px) {
+		.codeblock__pre {
+			font-size: var(--text-detail-body-desktop);
+			line-height: 1.9;
+		}
 	}
 </style>

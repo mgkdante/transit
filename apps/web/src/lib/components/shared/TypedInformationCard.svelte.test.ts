@@ -37,6 +37,25 @@ const NON_SQL_CASES = [
 ] as const;
 
 describe('TypedInformationCard', () => {
+	it.each(NON_SQL_CASES)(
+		'uses the shared non-SQL body typography for the $kind kind',
+		({ kind, label }) => {
+			expect(TypedInformationCard).toBeDefined();
+			if (!TypedInformationCard) return;
+
+			const children = createRawSnippet(() => ({
+				render: () => `<p>Body for ${kind}</p>`,
+			}));
+			const { container } = render(TypedInformationCard, {
+				props: { kind, label, children },
+			});
+
+			const body = container.querySelector('[data-slot="typed-information-body"]');
+			expect(body).toHaveClass('typed-information-body');
+			expect(body).not.toHaveClass('typed-information-body--mono');
+		},
+	);
+
 	for (const { kind, label, iconClass } of NON_SQL_CASES) {
 		it(`renders the ${kind} kind with its badge, icon, and children`, () => {
 			expect(TypedInformationCard).toBeDefined();
