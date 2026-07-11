@@ -514,16 +514,23 @@ describe('HotspotsBoard article', () => {
 		expect(mockUrl.searchParams.get('n')).toBeNull();
 	});
 
-	it('uses the time-row grain picker with compact shift copy and leaves Show default', () => {
+	it('uses the time-grid grain picker in row-major order and leaves Show default', () => {
 		payload.current = largeSeed();
 		const { container } = render(HotspotsBoard);
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		const grain = within(rail).getByRole('radiogroup', { name: 'Granularity' });
 		const show = within(rail).getByRole('radiogroup', { name: 'Show' });
 
-		expect(grain).toHaveAttribute('data-variant', 'time-row');
-		expect(within(grain).getAllByRole('radio')).toHaveLength(4);
+		expect(grain).toHaveAttribute('data-variant', 'time-grid');
+		expect(
+			within(grain)
+				.getAllByRole('radio')
+				.map((radio) => radio.textContent?.trim()),
+		).toEqual(['Day', 'Week', 'Month', 'Peak hours']);
 		expect(show).toHaveAttribute('data-variant', 'default');
+		expect(hotspotsCopy.fr.grain.day).toBe('Jour');
+		expect(hotspotsCopy.fr.grain.week).toBe('Semaine');
+		expect(hotspotsCopy.fr.grain.month).toBe('Mois');
 		expect(hotspotsCopy.fr.grain.shiftCompact).toBe('Pointe');
 		expect(hotspotsCopy.fr.grain.shift).toBe('Heures de pointe');
 	});

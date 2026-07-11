@@ -399,7 +399,7 @@
 						segments={presentedGrainSegments}
 						bind:value={grainKey}
 						label={t.grain.label}
-						variant="time-row"
+						variant="time-grid"
 					/>
 					{#each presentedGrainSegments as segment (segment.key)}
 						{#if segment.describedById}

@@ -52,42 +52,70 @@ function renderPicker(
 }
 
 describe('GrainPicker — variants', () => {
-	it('renders the opt-in time row as four equal compact segments', () => {
+	it('renders the opt-in time grid as four row-major compact segments', () => {
 		const { getByRole } = render(GrainPicker, {
 			props: {
 				segments: FOUR_SEGMENTS,
 				value: 'day',
 				label: 'Roll-up period',
-				variant: 'time-row',
+				variant: 'time-grid',
 			},
 		});
 		const group = getByRole('radiogroup', { name: 'Roll-up period' });
-		expect(group).toHaveAttribute('data-variant', 'time-row');
-		expect(group).toHaveClass('grain-picker--time-row');
-		expect(within(group).getAllByRole('radio')).toHaveLength(4);
+		expect(group).toHaveAttribute('data-variant', 'time-grid');
+		expect(group).toHaveClass('grain-picker--time-grid');
+		expect(
+			within(group)
+				.getAllByRole('radio')
+				.map((radio) => radio.textContent?.trim()),
+		).toEqual(['Day', 'Week', 'Month', 'Pointe']);
 		const shift = within(group).getByRole('radio', { name: 'Heures de pointe' });
 		expect(shift).toHaveTextContent('Pointe');
 		expect(shift).toHaveAttribute('title', 'Heures de pointe');
 	});
 
-	it('scopes the fixed four-column layout to the time-row modifier', () => {
-		const match = source.match(
-			/\.grain-picker--time-row\s*\{([\s\S]*?)\}\s*\.grain-picker--time-row \.grain-seg\s*\{([\s\S]*?)\}/,
-		);
-		expect(match).not.toBeNull();
-		const rootModifier = match?.[1] ?? '';
-		const segmentModifier = match?.[2] ?? '';
+	it('scopes the joined two-by-two matrix to the time-grid modifier', () => {
+		const rootModifier = source.match(/\.grain-picker--time-grid\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		const segmentModifier =
+			source.match(/\.grain-picker--time-grid \.grain-seg\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		const baseSegment = source.match(/\n\t\.grain-seg\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		const verticalDivider =
+			source.match(
+				/\.grain-picker--time-grid \.grain-seg:nth-child\(odd\)\s*\{([\s\S]*?)\}/,
+			)?.[1] ?? '';
+		const horizontalDivider =
+			source.match(
+				/\.grain-picker--time-grid \.grain-seg:nth-child\(-n \+ 2\)\s*\{([\s\S]*?)\}/,
+			)?.[1] ?? '';
+
 		expect(rootModifier).toContain('width: 100%');
-		expect(rootModifier).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))');
+		expect(rootModifier).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+		expect(rootModifier).toContain('grid-template-rows: repeat(2, 52px)');
+		expect(rootModifier).toContain('gap: 0');
+		expect(rootModifier).toContain('padding: 0');
+		expect(rootModifier).toContain('overflow: hidden');
+		expect(rootModifier).toContain('border-radius: var(--radius-lg)');
+		expect(rootModifier).not.toContain('aspect-ratio');
+		expect(rootModifier).not.toContain('overflow-x: auto');
+
+		expect(segmentModifier).toContain('width: 100%');
 		expect(segmentModifier).toContain('min-width: 0');
-		expect(`${rootModifier}\n${segmentModifier}`).not.toContain('overflow-x: auto');
+		expect(segmentModifier).toContain('min-height: 52px');
+		expect(segmentModifier).toContain('border-radius: 0');
+		expect(segmentModifier).toContain('white-space: nowrap');
+		expect(segmentModifier).toContain('word-break: keep-all');
+		expect(baseSegment).toContain('align-items: center');
+		expect(baseSegment).toContain('justify-content: center');
+
+		expect(verticalDivider).toContain('border-inline-end: 1px solid var(--border)');
+		expect(horizontalDivider).toContain('border-block-end: 1px solid var(--border)');
 	});
 
 	it('keeps the default variant flex-based with full labels', () => {
 		const { getByRole } = renderPicker(ALL_ENABLED, 'week');
 		const group = getByRole('radiogroup', { name: 'Roll-up period' });
 		expect(group).toHaveAttribute('data-variant', 'default');
-		expect(group).not.toHaveClass('grain-picker--time-row');
+		expect(group).not.toHaveClass('grain-picker--time-grid');
 		expect(within(group).getByRole('radio', { name: 'Week' })).toHaveTextContent('Week');
 
 		const defaultRule = source.match(/\.grain-picker\s*\{([\s\S]*?)\}/)?.[1] ?? '';

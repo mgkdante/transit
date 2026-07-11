@@ -28,7 +28,7 @@
 	// PRM-guarded). Vendored actions, never edited.
 	import { boop, pressBounce } from '@yesid/motion';
 
-	export type GrainPickerVariant = 'default' | 'time-row';
+	export type GrainPickerVariant = 'default' | 'time-grid';
 
 	/** One offered grain segment. `available:false` renders disabled (never picked). */
 	export interface GrainSegment<K extends string = string> {
@@ -126,7 +126,7 @@
 </script>
 
 <div
-	class={cn('grain-picker', variant === 'time-row' && 'grain-picker--time-row', className)}
+	class={cn('grain-picker', variant === 'time-grid' && 'grain-picker--time-grid', className)}
 	role="radiogroup"
 	aria-label={label}
 	data-slot="grain-picker"
@@ -167,24 +167,41 @@
 		border-radius: var(--radius-lg);
 		background-color: var(--card);
 	}
-	.grain-picker--time-row {
+	.grain-picker--time-grid {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-rows: repeat(2, 52px);
 		width: 100%;
 		min-width: 0;
-		flex-wrap: nowrap;
-		overflow: visible;
+		gap: 0;
+		padding: 0;
+		overflow: hidden;
+		border-radius: var(--radius-lg);
 		background: color-mix(in srgb, var(--primary) 6%, var(--card));
 	}
-	.grain-picker--time-row .grain-seg {
+	.grain-picker--time-grid .grain-seg {
 		width: 100%;
 		min-width: 0;
+		min-height: 52px;
 		padding-inline: 0.375rem;
+		border-radius: 0;
+		white-space: nowrap;
+		overflow-wrap: normal;
+		word-break: keep-all;
 	}
-	.grain-picker--time-row .grain-seg--active {
+	.grain-picker--time-grid .grain-seg:nth-child(odd) {
+		border-inline-end: 1px solid var(--border);
+	}
+	.grain-picker--time-grid .grain-seg:nth-child(-n + 2) {
+		border-block-end: 1px solid var(--border);
+	}
+	.grain-picker--time-grid .grain-seg--active {
 		box-shadow:
 			var(--shadow-glow-sm),
 			inset 0 1px 0 var(--edge-highlight);
+	}
+	.grain-picker--time-grid .grain-seg:focus-visible {
+		outline-offset: -3px;
 	}
 	.grain-seg {
 		appearance: none;
