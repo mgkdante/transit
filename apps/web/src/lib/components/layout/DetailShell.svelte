@@ -35,57 +35,53 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import TocPill from '$lib/components/shared/TocPill.svelte';
 	import { observeActiveToc, type TocEntry } from '$lib/components/shared/toc';
+	import SurfaceRail from '$lib/components/surface/SurfaceRail.svelte';
 
-	export interface DetailShellProps {
-		/** The header content — the caller's Masthead + CornerMeta. Rendered inside the
-		    full-bleed `.detail-header-grid` band. Pass the Masthead `tape={false}` — the
-		    shell adds the closing hazard tape after the band. Omit when passing
-		    `articleHeader`. */
-		header?: Snippet;
-		/**
-		 * The ARTICLE HEADER (P5-R R3a.2): a complete band the caller supplies
-		 * (the shared ArticleHeader — the yesid magazine-cover port). When given,
-		 * it REPLACES the shell's default band entirely (the cover owns its own
-		 * ground, grid, canvas and nav-clearance mechanics); the shell still adds
-		 * the closing hazard tape and everything below.
-		 */
-		articleHeader?: Snippet;
-		/** Left rail — ToC / reading-position readout / context (sticky, ≥1024). */
-		left: Snippet;
-		/** Center column — the numbered sections (the 2fr / 3fr track). */
-		center: Snippet;
-		/** Right rail — stat cards (sticky, ≥1024). Omit ⇒ a 2-column grid. */
-		right?: Snippet;
-		/** Mobile-only top summary strip — the right-rail stats reflowed above the sections
-		    (< 1024, where the right rail is hidden). Omit ⇒ nothing above the sections. */
-		mobileSummary?: Snippet;
-		/** ToC entries for the floating mobile pill (the shell owns the pill). */
-		tocEntries: TocEntry[];
-		/** Optional distinct mobile-order entries for the pill. Default = `tocEntries`. */
-		mobileTocEntries?: TocEntry[];
-		/**
-		 * The active ToC id. `$bindable` — the shell owns the single IntersectionObserver
-		 * and writes this as the reader scrolls; the caller binds it so its left-rail
-		 * TocNav + reading-position readout follow, and drives it back if needed.
-		 */
-		activeId?: string;
-		/** Scroll-to-section handler for the pill (and the caller's TocNav reuse it). */
-		onNavigate: (id: string) => void;
-		/** aria-label for the pill's open control ("Table of contents"). */
-		tocOpenAria: string;
-		/** aria-label for the pill's close control. */
-		tocCloseAria: string;
-		/** Optional conversion band region below the sections (yesid CtaBand analog).
-		    Unused on transit's metrics/status; kept for promotion parity. */
-		cta?: Snippet;
-		/** Extra classes on the shell root article. */
+	export interface DetailShellCombinedRailConfig {
+		label: string;
+		summary?: string;
+		openAria: string;
+		closeAria: string;
 		class?: string;
 	}
+	interface DetailShellBaseProps {
+		header?: Snippet;
+		articleHeader?: Snippet;
+		center: Snippet;
+		right?: Snippet;
+		mobileSummary?: Snippet;
+		tocEntries: TocEntry[];
+		activeId?: string;
+		cta?: Snippet;
+		class?: string;
+	}
+	type DetailShellLegacyRailProps = {
+		left: Snippet;
+		combinedRail?: never;
+		combinedRailConfig?: never;
+		mobileTocEntries?: TocEntry[];
+		onNavigate: (id: string) => void;
+		tocOpenAria: string;
+		tocCloseAria: string;
+	};
+	type DetailShellCombinedRailProps = {
+		left?: never;
+		combinedRail: Snippet<[{ closeSheet: () => void }]>;
+		combinedRailConfig: DetailShellCombinedRailConfig;
+		mobileTocEntries?: never;
+		onNavigate?: never;
+		tocOpenAria?: never;
+		tocCloseAria?: never;
+	};
+	export type DetailShellProps = DetailShellBaseProps &
+		(DetailShellLegacyRailProps | DetailShellCombinedRailProps);
 
 	let {
 		header,
 		articleHeader,
 		left,
+		combinedRail,
+		combinedRailConfig,
 		center,
 		right,
 		mobileSummary,
@@ -149,9 +145,20 @@
 	{/if}
 
 	<div class="detail-shell-grid" class:detail-shell-grid--two={!right}>
-		<aside class="detail-shell-rail detail-shell-rail--left" data-slot="detail-shell-left">
-			{@render left()}
-		</aside>
+		{#if combinedRail && combinedRailConfig}
+			<SurfaceRail
+				rail={combinedRail}
+				label={combinedRailConfig.label}
+				summary={combinedRailConfig.summary}
+				openAria={combinedRailConfig.openAria}
+				closeAria={combinedRailConfig.closeAria}
+				class={combinedRailConfig.class}
+			/>
+		{:else if left}
+			<aside class="detail-shell-rail detail-shell-rail--left" data-slot="detail-shell-left">
+				{@render left()}
+			</aside>
+		{/if}
 
 		<div class="detail-shell-center" data-slot="detail-shell-center">
 			{@render center()}
@@ -171,12 +178,12 @@
 
 <!-- Floating mobile ToC pill (hides itself ≥1024 via its own breakpoint, so the sticky
      left rail takes over seamlessly at the SAME 1024 boundary the rails appear at). -->
-{#if pillEntries.length > 0}
+{#if !combinedRail && pillEntries.length > 0}
 	<TocPill
 		entries={pillEntries}
 		{activeId}
-		openAria={tocOpenAria}
-		closeAria={tocCloseAria}
+		openAria={tocOpenAria!}
+		closeAria={tocCloseAria!}
 		{onNavigate}
 	/>
 {/if}
