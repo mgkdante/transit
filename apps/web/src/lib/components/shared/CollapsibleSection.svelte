@@ -25,9 +25,12 @@
 	import { Card } from '$lib/components/ui/card';
 	import { persisted } from '$lib/stores';
 
+	type CollapsibleSectionHeaderVariant = 'default' | 'article-summary';
+
 	let {
 		title,
 		subtitle = undefined,
+		headerVariant = 'default',
 		open = $bindable(true),
 		sectionKey = undefined,
 		index = null,
@@ -47,6 +50,7 @@
 		 * `oneLiner`, so the story is legible pre-expand (§C5.8). Muted caption voice.
 		 */
 		subtitle?: string;
+		headerVariant?: CollapsibleSectionHeaderVariant;
 		open?: boolean;
 		/**
 		 * Opt this section's open/closed state into surviving a locale navigation.
@@ -86,6 +90,13 @@
 		icon?: Snippet;
 		children?: Snippet;
 	} = $props();
+
+	const headerUid = $props.id();
+	const subtitleId = `${headerUid}-summary`;
+	const usesArticleSummary = $derived(
+		collapsible && headerVariant === 'article-summary',
+	);
+	const hasHeaderMark = $derived(index !== null || icon !== undefined);
 
 	// When a sectionKey is supplied, the open state is session-scoped: persisted()
 	// seeds from the `open` prop default. The key + seed are captured ONCE at init
@@ -154,7 +165,7 @@
 	}
 </script>
 
-{#snippet headerContent()}
+{#snippet headerMark()}
 	{#if index !== null}
 		<Badge
 			variant="number"
@@ -165,7 +176,10 @@
 	{:else if icon}
 		{@render icon()}
 	{/if}
+{/snippet}
 
+{#snippet legacyHeaderContent()}
+	{@render headerMark()}
 	<span class="section-title-group flex flex-1 flex-col gap-0.5">
 		<h2 class="section-title font-heading text-lg font-bold text-[var(--foreground)]">
 			{title}
@@ -182,28 +196,71 @@
   Collapsible.Root renders the div we use as the card wrapper.
 -->
 <Card
-	class="section-card {collapsible ? 'section-card--toggleable' : ''}"
+	class="section-card {collapsible ? 'section-card--toggleable' : ''} {usesArticleSummary
+		? 'section-card--article-summary'
+		: ''}"
 	style="--accent: {accentColor};"
 	data-toc={anchor}
+	data-header-variant={usesArticleSummary ? 'article-summary' : undefined}
 	onclick={collapsible ? onCardClick : undefined}
 >
 	<Collapsible bind:open={() => isOpen, setOpen}>
 		{#if collapsible}
-			<CollapsibleTrigger>
-				{#snippet child({ props })}
-					<button
-						{...props}
-						type="button"
-						class="section-header flex w-full items-center gap-2.5 px-6 py-4 text-left"
+			{#if usesArticleSummary}
+				<h2 class="section-heading">
+					<CollapsibleTrigger>
+						{#snippet child({ props })}
+							<button
+								{...props}
+								type="button"
+								aria-describedby={subtitle ? subtitleId : undefined}
+								class="section-header section-header--article-summary {hasHeaderMark
+									? 'section-header--with-mark'
+									: ''} {subtitle ? '' : 'section-header--title-only'}"
+							>
+								{#if hasHeaderMark}
+									<span class="section-header__mark" aria-hidden="true">
+										{@render headerMark()}
+									</span>
+								{/if}
+								<span
+									class="section-title section-title--article-summary font-heading text-lg font-bold text-[var(--foreground)]"
+								>
+									{title}
+								</span>
+								<ChevronToggle open={isOpen} direction="right" />
+							</button>
+						{/snippet}
+					</CollapsibleTrigger>
+				</h2>
+				{#if subtitle}
+					<p
+						id={subtitleId}
+						class="section-subtitle section-subtitle--article-summary {hasHeaderMark
+							? 'section-subtitle--with-mark'
+							: ''}"
+						data-state={isOpen ? 'open' : 'closed'}
 					>
-						{@render headerContent()}
-						<ChevronToggle open={isOpen} direction="right" />
-					</button>
-				{/snippet}
-			</CollapsibleTrigger>
+						<span class="section-subtitle__text">{subtitle}</span>
+					</p>
+				{/if}
+			{:else}
+				<CollapsibleTrigger>
+					{#snippet child({ props })}
+						<button
+							{...props}
+							type="button"
+							class="section-header flex w-full items-center gap-2.5 px-6 py-4 text-left"
+						>
+							{@render legacyHeaderContent()}
+							<ChevronToggle open={isOpen} direction="right" />
+						</button>
+					{/snippet}
+				</CollapsibleTrigger>
+			{/if}
 		{:else}
 			<div class="flex items-center gap-2.5 px-6 py-4">
-				{@render headerContent()}
+				{@render legacyHeaderContent()}
 			</div>
 		{/if}
 
@@ -224,6 +281,10 @@
 		border-width: 3px;
 	}
 
+	:global([data-slot='card'].section-card.section-card--article-summary) {
+		padding-block: 0;
+	}
+
 	:global([data-slot='card'].section-card:hover) {
 		border-color: var(--accent);
 	}
@@ -235,6 +296,46 @@
 	   .section-card qualifier outranks card.svelte's scoped transition. */
 	.section-header {
 		cursor: pointer;
+	}
+
+	.section-heading {
+		margin: 0;
+	}
+
+	.section-header--article-summary {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 1.25rem;
+		align-items: start;
+		column-gap: .625rem;
+		min-height: 44px;
+		padding: 1rem 1.5rem .375rem;
+		text-align: left;
+	}
+
+	.section-header--article-summary.section-header--with-mark {
+		grid-template-columns: 1.75rem minmax(0, 1fr) 1.25rem;
+	}
+
+	.section-header--article-summary.section-header--title-only {
+		padding-block: 1rem;
+	}
+
+	.section-header__mark {
+		display: inline-flex;
+		width: 1.75rem;
+		min-height: 1.75rem;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.section-header--article-summary :global([data-slot='chevron-toggle']) {
+		margin-block-start: .25rem;
+	}
+
+	.section-title--article-summary {
+		min-width: 0;
+		line-height: 1.4;
+		text-wrap: balance;
 	}
 
 	:global([data-slot='card'].section-card.section-card--toggleable) {
@@ -288,6 +389,40 @@
 		font-size: var(--text-caption);
 		line-height: 1.5;
 		color: var(--muted-foreground);
+	}
+
+	.section-subtitle--article-summary {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 1.25rem;
+		margin: 0;
+		padding: 0 1.5rem 1rem;
+		color: var(--foreground);
+		font-family: var(--font-body);
+		font-size: var(--text-small);
+		line-height: 1.6;
+	}
+
+	.section-subtitle--article-summary.section-subtitle--with-mark {
+		grid-template-columns: 1.75rem minmax(0, 1fr) 1.25rem;
+	}
+
+	.section-subtitle__text {
+		grid-column: 1;
+		min-width: 0;
+		overflow-wrap: anywhere;
+		text-wrap: pretty;
+	}
+
+	.section-subtitle--with-mark .section-subtitle__text {
+		grid-column: 2;
+	}
+
+	.section-subtitle--article-summary[data-state='closed'] .section-subtitle__text {
+		display: -webkit-box;
+		overflow: hidden;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
 	}
 
 	/* The open/close animation (grid-template-rows 0fr -> 1fr + opacity, reduced-
