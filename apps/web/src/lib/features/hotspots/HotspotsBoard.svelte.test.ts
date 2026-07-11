@@ -35,6 +35,7 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 }));
 
 import HotspotsBoard from './HotspotsBoard.svelte';
+import { copy as hotspotsCopy } from './hotspots.copy';
 
 // A populated day ladder (both kinds + one tray) and a populated week ladder, so
 // the article has all three cards and the combined rail offers its grain control.
@@ -150,6 +151,8 @@ function resetHotspotsState(): void {
 	for (const key of ['hotspots-card-top', 'hotspots-card-lines', 'hotspots-card-stops']) {
 		sessionStorage.removeItem(`transit.persisted:${key}`);
 	}
+	sessionStorage.removeItem('transit.persisted:hotspots-controls');
+	sessionStorage.removeItem('transit.persisted:hotspots-toc');
 	quietModeStore.resetForTest();
 }
 
@@ -207,7 +210,7 @@ describe('HotspotsBoard article', () => {
 		expect(within(rail).queryByRole('button', { name: 'Stops' })).toBeNull();
 	});
 
-	it('puts grain, useful top-N, window, and non-collapsible TOC in one mobile sheet', async () => {
+	it('puts two rail disclosures, grain, useful top-N, window, and TOC in one mobile sheet', async () => {
 		payload.current = largeSeed();
 		const { container } = render(HotspotsBoard);
 		expect(container.querySelectorAll('[data-slot="surface-rail-mobile"]')).toHaveLength(1);
@@ -218,30 +221,103 @@ describe('HotspotsBoard article', () => {
 		await fireEvent.click(pill);
 		const sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
 		expect(sheet).not.toBeNull();
+		expect(within(sheet).getByRole('button', { name: 'View controls' })).toBeInTheDocument();
+		expect(within(sheet).getByRole('button', { name: 'On this page' })).toBeInTheDocument();
+		expect(
+			within(sheet).getAllByRole('button', { name: /^(View controls|On this page)$/ }),
+		).toHaveLength(2);
 		expect(sheet.querySelectorAll('[data-slot="grain-picker"]')).toHaveLength(2);
 		expect(sheet.querySelector('[data-slot="active-window"]')).not.toBeNull();
 		expect(within(sheet).getByRole('button', { name: 'Top hotspot' })).toBeInTheDocument();
 		expect(within(sheet).getByRole('button', { name: 'Lines' })).toBeInTheDocument();
 		expect(within(sheet).getByRole('button', { name: 'Stops' })).toBeInTheDocument();
-		// The TOC is permanently open: its wrapper has no disclosure trigger of its own.
-		expect(within(sheet).queryByRole('button', { name: 'On this page' })).toBeNull();
+
+		const reasonIds = Array.from(
+			container.querySelectorAll<HTMLElement>('[data-slot="controls-reason"]'),
+		).map((reason) => reason.id);
+		expect(reasonIds).toHaveLength(4);
+		expect(new Set(reasonIds)).toHaveLength(4);
+		expect(reasonIds.some((id) => id.endsWith('-desktop'))).toBe(true);
+		expect(reasonIds.some((id) => id.endsWith('-mobile'))).toBe(true);
+	});
+
+	it('keeps rail disclosures independent, persisted, and synchronized across presentations', async () => {
+		const { container } = render(HotspotsBoard);
+		const desktop = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const controls = within(desktop).getByRole('button', { name: 'View controls' });
+		const toc = within(desktop).getByRole('button', { name: 'On this page' });
+
+		await fireEvent.click(controls);
+		expect(controls).toHaveAttribute('aria-expanded', 'false');
+		expect(toc).toHaveAttribute('aria-expanded', 'true');
+		expect(sessionStorage.getItem('transit.persisted:hotspots-controls')).toBe('false');
+
+		await fireEvent.click(toc);
+		expect(sessionStorage.getItem('transit.persisted:hotspots-toc')).toBe('false');
+
+		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		const pill = mobile.querySelector(':scope > button') as HTMLButtonElement;
+		await fireEvent.click(pill);
+		let sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
+		let mobileControls = within(sheet).getByRole('button', { name: 'View controls' });
+		let mobileToc = within(sheet).getByRole('button', { name: 'On this page' });
+		expect(mobileControls).toHaveAttribute('aria-expanded', 'false');
+		expect(mobileToc).toHaveAttribute('aria-expanded', 'false');
+
+		await fireEvent.click(mobileControls);
+		expect(controls).toHaveAttribute('aria-expanded', 'true');
+		expect(toc).toHaveAttribute('aria-expanded', 'false');
+
+		await fireEvent.click(pill);
+		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
+		await fireEvent.click(pill);
+		sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
+		mobileControls = within(sheet).getByRole('button', { name: 'View controls' });
+		mobileToc = within(sheet).getByRole('button', { name: 'On this page' });
+		expect(mobileControls).toHaveAttribute('aria-expanded', 'true');
+		expect(mobileToc).toHaveAttribute('aria-expanded', 'false');
 	});
 
 	it('Collapse all closes every card and Expand all reopens every card', async () => {
 		const { container } = render(HotspotsBoard);
 		const ids = ['hotspots-top', 'hotspots-lines', 'hotspots-stops'];
+		const desktop = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const railTriggers = [
+			within(desktop).getByRole('button', { name: 'View controls' }),
+			within(desktop).getByRole('button', { name: 'On this page' }),
+		];
+		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'true');
 		for (const id of ids)
 			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'true');
 
 		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		for (const id of ids)
 			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
 		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
 
 		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'true');
 		for (const id of ids)
 			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'true');
 		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Collapse all');
+	});
+
+	it('Always start collapsed closes both rail blocks and every article card', async () => {
+		const { container } = render(HotspotsBoard);
+		const desktop = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const railTriggers = [
+			within(desktop).getByRole('button', { name: 'View controls' }),
+			within(desktop).getByRole('button', { name: 'On this page' }),
+		];
+
+		await fireEvent.click(screen.getByTestId('quiet-mode-remember'));
+
+		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		for (const id of ['hotspots-top', 'hotspots-lines', 'hotspots-stops']) {
+			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
+		}
+		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
 	});
 
 	it('applies remembered bulk collapse when Stops mounts after a same-page grain change', async () => {
@@ -333,6 +409,20 @@ describe('HotspotsBoard article', () => {
 		expect(ten).toBeDefined();
 		await fireEvent.click(ten!);
 		expect(mockUrl.searchParams.get('n')).toBeNull();
+	});
+
+	it('uses the time-row grain picker with compact shift copy and leaves Show default', () => {
+		payload.current = largeSeed();
+		const { container } = render(HotspotsBoard);
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const grain = within(rail).getByRole('radiogroup', { name: 'Granularity' });
+		const show = within(rail).getByRole('radiogroup', { name: 'Show' });
+
+		expect(grain).toHaveAttribute('data-variant', 'time-row');
+		expect(within(grain).getAllByRole('radio')).toHaveLength(4);
+		expect(show).toHaveAttribute('data-variant', 'default');
+		expect(hotspotsCopy.fr.grain.shiftCompact).toBe('Pointe');
+		expect(hotspotsCopy.fr.grain.shift).toBe('Heures de pointe');
 	});
 
 	it('keeps the combined rail for a one-grain article while omitting the dead grain picker', () => {

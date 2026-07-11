@@ -29,10 +29,15 @@
 	} from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { persisted } from '$lib/stores';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import { formatUtc } from '$lib/utils/time';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
+	import type {
+		SurfaceRailContext,
+		SurfaceRailPresentation,
+	} from '$lib/components/surface/SurfaceRail.svelte';
 
 	import {
 		presentGrains,
@@ -53,6 +58,13 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
+	const railOpen = {
+		controls: persisted('hotspots-controls', true),
+		toc: persisted('hotspots-toc', true),
+	};
+	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
+		railOpen[key].value = next;
+	}
 
 	const explainerCopy = $derived(metricsCopy[locale]);
 	const info = $derived((key: MetricKey, name: string) => {
@@ -94,11 +106,21 @@
 			return {
 				key,
 				label: grainLabels[key] ?? key,
+				...(key === 'shift' ? { compactLabel: t.grain.shiftCompact } : {}),
 				available,
 				...(available ? {} : { describedById: `${uid}-reason-${key}`, title: disabledReason }),
 			};
 		}),
 	);
+	function grainSegmentsFor(
+		presentation: SurfaceRailPresentation,
+	): GrainSegment<HotspotGrainKey>[] {
+		return grainSegments.map((segment) =>
+			segment.describedById
+				? { ...segment, describedById: `${segment.describedById}-${presentation}` }
+				: segment,
+		);
+	}
 
 	$effect(() => {
 		if (present.size > 0 && !present.has(grainKey)) grainKey = defaultHotspotGrain(present);
@@ -321,26 +343,39 @@
 		</ArticleHeader>
 	{/snippet}
 
-	{#snippet combinedRail({ closeSheet }: { closeSheet: () => void })}
-		<div class="hotspots-control-body" data-slot="controls-body">
-			<span class="hotspots-rail-label" data-slot="controls-rail-label">{t.rail.label}</span>
-			{#if showGrainPicker}
-				<GrainPicker segments={grainSegments} bind:value={grainKey} label={t.grain.label} />
-				{#each grainSegments as segment (segment.key)}
-					{#if segment.describedById}
-						<span id={segment.describedById} class="hotspots-reason" data-slot="controls-reason">
-							{disabledReason}
-						</span>
-					{/if}
-				{/each}
-			{/if}
-			{#if showWorstN}
-				<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
-			{/if}
-			<p class="hotspots-window" data-slot="active-window" aria-live="polite">
-				{windowCaption}
-			</p>
-		</div>
+	{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
+		{@const presentedGrainSegments = grainSegmentsFor(presentation)}
+		<CollapsibleSection
+			title={t.rail.controls}
+			bind:open={() => railOpen.controls.value, (next) => setRailOpen('controls', next)}
+			closeSignal={quietModeStore.closeSignal}
+			openSignal={quietModeStore.openSignal}
+			bulkCollapsed={presentation === 'desktop' ? quietModeStore.enabled : null}
+		>
+			<div class="hotspots-control-body" data-slot="controls-body">
+				{#if showGrainPicker}
+					<GrainPicker
+						segments={presentedGrainSegments}
+						bind:value={grainKey}
+						label={t.grain.label}
+						variant="time-row"
+					/>
+					{#each presentedGrainSegments as segment (segment.key)}
+						{#if segment.describedById}
+							<span id={segment.describedById} class="hotspots-reason" data-slot="controls-reason">
+								{disabledReason}
+							</span>
+						{/if}
+					{/each}
+				{/if}
+				{#if showWorstN}
+					<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
+				{/if}
+				<p class="hotspots-window" data-slot="active-window" aria-live="polite">
+					{windowCaption}
+				</p>
+			</div>
+		</CollapsibleSection>
 		{#if tocEntries.length > 0}
 			<div class="hotspots-rail-toc" data-slot="section-toc">
 				<TocNav
@@ -348,7 +383,10 @@
 					{activeId}
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
-					collapsible={false}
+					bind:open={() => railOpen.toc.value, (next) => setRailOpen('toc', next)}
+					closeSignal={quietModeStore.closeSignal}
+					openSignal={quietModeStore.openSignal}
+					bulkCollapsed={presentation === 'desktop' ? quietModeStore.enabled : null}
 					onNavigate={(id) => {
 						closeSheet();
 						void navigate(id);
@@ -440,14 +478,6 @@
 	.hotspots-control-body :global([data-slot='grain-picker']) {
 		min-width: 0;
 		flex-wrap: wrap;
-	}
-	.hotspots-rail-label {
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-eyebrow);
-		color: var(--muted-foreground);
 	}
 	.hotspots-reason {
 		position: absolute;

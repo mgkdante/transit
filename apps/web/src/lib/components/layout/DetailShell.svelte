@@ -35,7 +35,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import TocPill from '$lib/components/shared/TocPill.svelte';
 	import { observeActiveToc, type TocEntry } from '$lib/components/shared/toc';
-	import SurfaceRail from '$lib/components/surface/SurfaceRail.svelte';
+	import SurfaceRail, { type SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 
 	export interface DetailShellCombinedRailConfig {
 		label: string;
@@ -95,7 +95,7 @@
 	};
 	type DetailShellCombinedRailProps = {
 		left?: never;
-		combinedRail: Snippet<[{ closeSheet: () => void }]>;
+		combinedRail: Snippet<[SurfaceRailContext]>;
 		combinedRailConfig: DetailShellCombinedRailConfig;
 		mobileTocEntries?: never;
 		onNavigate?: never;

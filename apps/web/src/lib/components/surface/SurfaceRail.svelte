@@ -22,17 +22,25 @@
 	import { cn } from '$lib/utils';
 	import { ChevronToggle } from '$lib/components/brand';
 
+	export type SurfaceRailPresentation = 'desktop' | 'mobile';
+	export interface SurfaceRailContext {
+		closeSheet: () => void;
+		presentation: SurfaceRailPresentation;
+	}
+
 	interface Props {
 		/**
 		 * The rail content — grain / filter controls + the section ToC. Rendered in BOTH
 		 * the desktop glass panel AND the mobile sheet (single source of truth).
-		 * The snippet receives `{ closeSheet }` — the EXPLICIT dismissal seam: wire it
-		 * into TocNav's `onNavigate` (or any jump control) so picking a section closes
-		 * the mobile sheet. On desktop it is a harmless no-op. This replaces the old
+		 * The snippet receives `{ closeSheet, presentation }`: `closeSheet` is the
+		 * EXPLICIT dismissal seam to wire into TocNav's `onNavigate` (or any jump
+		 * control), while `presentation` distinguishes the always-mounted desktop copy
+		 * from the late-mounted mobile copy. On desktop, `closeSheet` is a harmless
+		 * no-op. This replaces the old
 		 * `.toc-item` class sniffing, which silently coupled SurfaceRail to TocNav's
 		 * private markup (a rename there would have killed sheet dismissal).
 		 */
-		rail: Snippet<[{ closeSheet: () => void }]>;
+		rail: Snippet<[SurfaceRailContext]>;
 		/** Rail aria-label + the mobile pill/sheet heading (e.g. "View" / "Vue"). */
 		label: string;
 		/** Optional collapsed-pill summary (e.g. the active grain · section). */
@@ -87,7 +95,7 @@
 	data-slot="surface-rail"
 	aria-label={label}
 >
-	{@render rail({ closeSheet: () => closeSheet(false) })}
+	{@render rail({ closeSheet: () => closeSheet(false), presentation: 'desktop' })}
 </aside>
 
 <!-- MOBILE: ONE pill → ONE sheet merging grain/filters + ToC (<1024; hidden ≥1024). -->
@@ -117,7 +125,7 @@
 			role="dialog"
 			aria-label={label}
 		>
-			{@render rail({ closeSheet: () => closeSheet(false) })}
+			{@render rail({ closeSheet: () => closeSheet(false), presentation: 'mobile' })}
 		</div>
 	{/if}
 </div>

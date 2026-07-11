@@ -23,6 +23,7 @@ export interface HotspotsCopy extends SurfaceHeadCopy {
 		readonly label: string;
 		readonly open: string;
 		readonly close: string;
+		readonly controls: string;
 		readonly toc: string;
 		readonly counterPrefix: string;
 	};
@@ -40,6 +41,7 @@ export interface HotspotsCopy extends SurfaceHeadCopy {
 		/** The PEAK-ONLY cut (DECISIONS DB1/WEB4) — a 4th rail segment: the am+pm rush of
 		 * the trailing week, not a per-row sub-breakdown. */
 		readonly shift: string;
+		readonly shiftCompact: string;
 	};
 	/** The trailing-window caption per grain (what aggregate the ranking reads). */
 	readonly window: {
@@ -136,6 +138,7 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			label: 'Vue et sommaire',
 			open: 'Ouvrir les commandes et le sommaire',
 			close: 'Fermer les commandes et le sommaire',
+			controls: 'Commandes de vue',
 			toc: 'Sur cette page',
 			counterPrefix: 'SEC',
 		},
@@ -162,6 +165,7 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			week: 'Semaine',
 			month: 'Mois',
 			shift: 'Heures de pointe',
+			shiftCompact: 'Pointe',
 		},
 		window: {
 			day: 'Classement sur la dernière journée de service.',
@@ -226,6 +230,7 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			label: 'View & contents',
 			open: 'Open view controls and contents',
 			close: 'Close view controls and contents',
+			controls: 'View controls',
 			toc: 'On this page',
 			counterPrefix: 'SEC',
 		},
@@ -250,6 +255,7 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			week: 'Week',
 			month: 'Month',
 			shift: 'Peak hours',
+			shiftCompact: 'Peak hours',
 		},
 		window: {
 			day: 'Ranked over the latest service day.',
