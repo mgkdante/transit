@@ -45,23 +45,52 @@
 		class?: string;
 	}
 	interface DetailShellBaseProps {
+		/** The header content — the caller's Masthead + CornerMeta. Rendered inside the
+		    full-bleed `.detail-header-grid` band. Pass the Masthead `tape={false}` — the
+		    shell adds the closing hazard tape after the band. Omit when passing
+		    `articleHeader`. */
 		header?: Snippet;
+		/**
+		 * The ARTICLE HEADER (P5-R R3a.2): a complete band the caller supplies
+		 * (the shared ArticleHeader — the yesid magazine-cover port). When given,
+		 * it REPLACES the shell's default band entirely (the cover owns its own
+		 * ground, grid, canvas and nav-clearance mechanics); the shell still adds
+		 * the closing hazard tape and everything below.
+		 */
 		articleHeader?: Snippet;
+		/** Center column — the numbered sections (the 2fr / 3fr track). */
 		center: Snippet;
+		/** Right rail — stat cards (sticky, ≥1024). Omit ⇒ a 2-column grid. */
 		right?: Snippet;
+		/** Mobile-only top summary strip — the right-rail stats reflowed above the sections
+		    (< 1024, where the right rail is hidden). Omit ⇒ nothing above the sections. */
 		mobileSummary?: Snippet;
+		/** ToC entries for the floating mobile pill (the shell owns the pill). */
 		tocEntries: TocEntry[];
+		/**
+		 * The active ToC id. `$bindable` — the shell owns the single IntersectionObserver
+		 * and writes this as the reader scrolls; the caller binds it so its left-rail
+		 * TocNav + reading-position readout follow, and drives it back if needed.
+		 */
 		activeId?: string;
+		/** Optional conversion band region below the sections (yesid CtaBand analog).
+		    Unused on transit's metrics/status; kept for promotion parity. */
 		cta?: Snippet;
+		/** Extra classes on the shell root article. */
 		class?: string;
 	}
 	type DetailShellLegacyRailProps = {
+		/** Left rail — ToC / reading-position readout / context (sticky, ≥1024). */
 		left: Snippet;
 		combinedRail?: never;
 		combinedRailConfig?: never;
+		/** Optional distinct mobile-order entries for the pill. Default = `tocEntries`. */
 		mobileTocEntries?: TocEntry[];
+		/** Scroll-to-section handler for the pill (and the caller's TocNav reuse it). */
 		onNavigate: (id: string) => void;
+		/** aria-label for the pill's open control ("Table of contents"). */
 		tocOpenAria: string;
+		/** aria-label for the pill's close control. */
 		tocCloseAria: string;
 	};
 	type DetailShellCombinedRailProps = {
