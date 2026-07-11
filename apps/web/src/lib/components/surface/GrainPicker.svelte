@@ -185,6 +185,8 @@
 		min-height: 52px;
 		padding-inline: 0.375rem;
 		border-radius: 0;
+		scale: 1 !important;
+		transform: none !important;
 		white-space: nowrap;
 		overflow-wrap: normal;
 		word-break: keep-all;

@@ -111,6 +111,24 @@ describe('GrainPicker — variants', () => {
 		expect(horizontalDivider).toContain('border-block-end: 1px solid var(--border)');
 	});
 
+	it('neutralizes per-cell scale motion only inside the joined time grid', () => {
+		const segmentModifier =
+			source.match(/\.grain-picker--time-grid \.grain-seg\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		const baseSegment = source.match(/\n\t\.grain-seg\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		const buttonMarkup = source.match(/<button[\s\S]*?<\/button>/)?.[0] ?? '';
+
+		// tap-press uses the individual scale property; boop and pressBounce write transform.
+		expect(segmentModifier).toContain('scale: 1 !important');
+		expect(segmentModifier).toContain('transform: none !important');
+		expect(baseSegment).not.toContain('scale: 1 !important');
+		expect(baseSegment).not.toContain('transform: none !important');
+
+		// Default segments retain the existing pointer/touch feedback wiring.
+		expect(buttonMarkup).toContain('class="tap-press grain-seg"');
+		expect(buttonMarkup).toContain('use:boop={{ scale: 1.04 }}');
+		expect(buttonMarkup).toContain('use:pressBounce');
+	});
+
 	it('keeps the default variant flex-based with full labels', () => {
 		const { getByRole } = renderPicker(ALL_ENABLED, 'week');
 		const group = getByRole('radiogroup', { name: 'Roll-up period' });
