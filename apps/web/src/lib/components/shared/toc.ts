@@ -40,6 +40,33 @@ export function flattenToc(entries: TocEntry[]): TocEntry[] {
 	return flat;
 }
 
+/** Resolve the visible counter shared by desktop TocNav and mobile TocPill.
+ * A flat all-numbered run carries canonical section numbers, so conditional
+ * gaps stay honest (02 / 08). Mixed, icon, and nested ToCs remain positional. */
+export function resolveTocCounter(
+	entries: TocEntry[],
+	activeId: string,
+): { current: number; total: number } {
+	const flat = flattenToc(entries);
+	const activeIndex = Math.max(
+		0,
+		flat.findIndex((entry) => entry.id === activeId),
+	);
+	const usesCanonicalNumbers =
+		entries.length > 0 &&
+		entries.every((entry) => entry.badge?.kind === 'number' && entry.children.length === 0);
+	if (usesCanonicalNumbers) {
+		const activeEntry = entries.find((entry) => entry.id === activeId) ?? entries[0];
+		return {
+			current: activeEntry.badge?.kind === 'number' ? activeEntry.badge.value : activeIndex + 1,
+			total: Math.max(
+				...entries.map((entry) => (entry.badge?.kind === 'number' ? entry.badge.value : 0)),
+			),
+		};
+	}
+	return { current: activeIndex + 1, total: flat.length };
+}
+
 /** Resolve a TOC id to its scroll-target element. Supports three anchor schemes
  *  so one resolver serves every detail page:
  *   - `section-N`            -> a locale-stable `[data-section-index="N"]`
@@ -56,6 +83,68 @@ export function tocElement(id: string): Element | null {
 		return visible ?? tagged[0];
 	}
 	return document.getElementById(id);
+}
+
+/** Wait until the target's scroll container stops changing height. The card
+ *  expand/collapse animates 300ms (grid-rows), and `scrollIntoView` computes —
+ *  and CLAMPS — its destination against the geometry at call time, so
+ *  positioning before the layout settles lands wrong: over-scroll when a
+ *  remembered collapse shrinks the page under the scroll, short landings when
+ *  the target's expansion grows it. Resolves after two consecutive same-height
+ *  frames, or after `maxWaitMs` as a hard cap (fonts/images may keep trickling
+ *  in). Reduced motion sets the transitions to `none`, so this settles in two
+ *  frames there. */
+export function settleLayout(target: Element | null, maxWaitMs = 700): Promise<void> {
+	if (!target || typeof requestAnimationFrame !== 'function') return Promise.resolve();
+	let scroller: Element | null = null;
+	for (let node = target.parentElement; node; node = node.parentElement) {
+		const overflowY = getComputedStyle(node).overflowY;
+		if (overflowY === 'auto' || overflowY === 'scroll') {
+			scroller = node;
+			break;
+		}
+	}
+	const measured = scroller ?? document.scrollingElement ?? document.documentElement;
+	const transitionGraceMs =
+		typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+			? 0
+			: 100;
+	return new Promise((resolve) => {
+		const startedAt = performance.now();
+		let done = false;
+		let frameId: number | null = null;
+		let timeoutId: ReturnType<typeof setTimeout> | null = null;
+		let last = -1;
+		let stable = 0;
+		let sawChange = false;
+		const finish = (): void => {
+			if (done) return;
+			done = true;
+			if (frameId !== null && typeof cancelAnimationFrame === 'function') {
+				cancelAnimationFrame(frameId);
+			}
+			if (timeoutId !== null) clearTimeout(timeoutId);
+			resolve();
+		};
+		const frame = (): void => {
+			const height = measured.scrollHeight;
+			if (height === last) stable += 1;
+			else {
+				if (last !== -1) sawChange = true;
+				stable = 0;
+				last = height;
+			}
+			// Mount-time bulk signals can update aria state one paint before the
+			// disclosure transition starts. Do not mistake those initial equal frames
+			// for the final layout; once movement is observed, reduced-motion and
+			// already-running transitions can still settle in the normal two frames.
+			const transitionHadTimeToStart = performance.now() - startedAt >= transitionGraceMs;
+			if (stable >= 2 && (sawChange || transitionHadTimeToStart)) finish();
+			else frameId = requestAnimationFrame(frame);
+		};
+		timeoutId = setTimeout(finish, Math.max(0, maxWaitMs));
+		frameId = requestAnimationFrame(frame);
+	});
 }
 
 /** Observe every TOC-target element on the page and report the active id as the

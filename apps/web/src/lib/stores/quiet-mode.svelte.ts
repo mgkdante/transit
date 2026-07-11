@@ -1,20 +1,18 @@
-// quiet-mode.svelte.ts — the ONE site-wide FOCUS (quiet reading) store.
+// quiet-mode.svelte.ts — the ONE site-wide article-collapse preference store.
 //
-// Ported from yesid.dev's state/quiet-mode.svelte (P5-R R3; operator ruling
-// 2026-07-10: FOCUS is default-OPEN + focus-to-close with ONE site-wide
-// preference — the per-page localStorage keys /metrics carried are retired).
+// Ported from yesid.dev's state/quiet-mode.svelte while retaining Transit's
+// localStorage key.
 //
 // Semantics (the yesid contract):
 //   · enabled=false (the default): article surfaces render default-OPEN.
 //   · toggle ON  → closeSignal bumps: every subscribed card + ToC rail folds.
 //   · toggle OFF → openSignal bumps: every subscribed card + ToC rail reopens.
-//   · REMEMBER pins the focused state across visits (ONE localStorage key for
-//     the whole site); forgetting demotes FOCUS back to session-only, leaving
-//     the on-screen state untouched.
+//   · "Always start collapsed" engages + persists the collapsed state under one
+//     site-wide key; "Don't start collapsed" clears only that preference.
 //
 // The signals are monotonic counters consumed by CollapsibleSection/TocNav's
-// edge-triggered effects, so a fresh mount never fires them. `syncDocument`
-// stamps `data-quiet-mode` on <html> for any CSS that wants the reading state.
+// edge-triggered effects. `init()` intentionally emits the stored state after an
+// article mounts. `syncDocument` stamps `data-quiet-mode` on <html> for CSS.
 
 import { browser } from '$app/environment';
 
@@ -75,21 +73,20 @@ export const quietModeStore = {
 	toggle(): void {
 		setEnabled(!enabled);
 	},
-	/** Pin: engage FOCUS and remember it across visits. */
+	/** Engage the collapsed state and remember it across visits. */
 	rememberCurrent(): void {
 		setEnabled(true);
 		setRemembered(true);
 	},
-	/** Unpin: FOCUS becomes session-only; the on-screen state is untouched. */
+	/** Clear the default; the on-screen state is untouched. */
 	forgetDefault(): void {
 		setRemembered(false);
 	},
-	/** Mount-time restore: a pinned FOCUS re-engages (bumping closeSignal so the
-	 *  page paints folded); otherwise the default-open state stands. */
+	/** Mount-time restore: every article starts from the stored boolean. */
 	init(): void {
 		const stored = readRemembered();
 		remembered = stored;
-		if (stored) setEnabled(true);
+		setEnabled(stored);
 	},
 	/** Test seam — resets state + storage + the document stamp. */
 	resetForTest(): void {

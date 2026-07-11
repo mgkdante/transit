@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import FreshnessStamp from './FreshnessStamp.svelte';
@@ -55,6 +57,14 @@ describe('FreshnessStamp — live variant', () => {
 });
 
 describe('FreshnessStamp — updated variant', () => {
+	it('leaves route-specific label wrapping policy to the caller', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/surface/FreshnessStamp.svelte'),
+			'utf8',
+		);
+		expect(source).not.toMatch(/\.freshness-stamp-label\s*\{[\s\S]*?white-space:\s*nowrap/);
+	});
+
 	it('renders the calm neutral "Updated" stamp, never the LIVE label', () => {
 		render(FreshnessStamp, { props: { variant: 'updated', generatedUtc: GEN, locale: 'en' } });
 		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;

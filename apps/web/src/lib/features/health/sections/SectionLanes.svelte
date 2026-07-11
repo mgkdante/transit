@@ -20,7 +20,6 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { FreshnessStamp } from '$lib/components/surface';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { AbsentValue } from '$lib/components/edge';
@@ -41,8 +40,7 @@
      The section content is wrapped untouched — NOT a new top-of-page aggregate
      panel (that is P5.3d). -->
 <TerminalPanel title={t.terminal.title} tag={t.terminal.tag} class="lanes-terminal">
-	<section class="health-block" aria-labelledby="health-lanes" data-slot="lanes-section">
-		<SectionHeading level={2} id="health-lanes" overline={t.section} number={1} />
+	<div class="health-block" data-slot="lanes-section">
 		<p class="health-note">{t.note}</p>
 		<!-- The gate explainer: one honest, not-alarmist sentence for the whole section. -->
 		<p class="health-note health-note--gate" data-slot="gate-explain">{t.gateExplain}</p>
@@ -110,7 +108,7 @@
 				</li>
 			{/each}
 		</ul>
-	</section>
+	</div>
 </TerminalPanel>
 
 <style>
@@ -122,14 +120,19 @@
 	.health-note {
 		margin: 0;
 		color: var(--muted-foreground);
-		font-size: var(--text-small);
-		line-height: 1.6;
+		font-size: var(--text-detail-body-mobile);
+		line-height: 1.8;
 		max-width: 60ch;
 	}
 	.health-note--gate {
 		font-family: var(--font-mono);
-		font-size: var(--text-caption);
 		max-width: 72ch;
+	}
+	@media (min-width: 1024px) {
+		.health-note {
+			font-size: var(--text-detail-body-desktop);
+			line-height: 1.9;
+		}
 	}
 
 	.lanes-list {

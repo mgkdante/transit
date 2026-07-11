@@ -3,7 +3,8 @@
  * app.html owns the FIRST paint (reads localStorage, sets
  * <html data-theme>); this store owns everything after hydration: toggle
  * writes, the <meta name="theme-color"> surface colour, localStorage
- * persistence, and a re-sync on mount.
+ * persistence, the themechange event consumed by canvas layers, and a re-sync
+ * on mount.
  *
  * Dark is the brand default: no-JS, crawlers, and an absent stored choice all
  * resolve to dark (matching the markup default in app.html).
@@ -55,6 +56,7 @@ function apply(next: Theme, persist: boolean): void {
 			/* private mode / disabled storage — session-only theming is fine */
 		}
 	}
+	document.dispatchEvent(new CustomEvent('themechange', { detail: { theme: next } }));
 }
 
 /** Flip between dark and light, persisting the explicit choice. */

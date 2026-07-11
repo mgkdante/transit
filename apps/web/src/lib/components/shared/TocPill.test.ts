@@ -38,6 +38,32 @@ describe('TocPill', () => {
 		expect(pill.getAttribute('aria-label')).toBe('Overview 1/2 · Table of contents');
 	});
 
+	it('shows canonical section numbers for a gapped numbered run', () => {
+		const gappedEntries: TocEntry[] = [
+			{
+				id: 'freshness',
+				title: 'Feed freshness',
+				level: 2,
+				badge: { kind: 'number', value: 2 },
+				children: [],
+			},
+			{
+				id: 'envelope',
+				title: 'Build accountability',
+				level: 2,
+				badge: { kind: 'number', value: 8 },
+				children: [],
+			},
+		];
+		const { getByTestId, getByText } = render(TocPill, {
+			props: { ...props, entries: gappedEntries, activeId: 'freshness' },
+		});
+
+		expect(getByText('2/8')).toBeTruthy();
+		const pill = getByTestId('toc-pill').querySelector('.toc-pill') as HTMLElement;
+		expect(pill.getAttribute('aria-label')).toBe('Feed freshness 2/8 · Table of contents');
+	});
+
 	it('opens the drawer on tap and lists every entry (rail included on mobile)', async () => {
 		const { getByTestId } = render(TocPill, { props });
 		const container = getByTestId('toc-pill');

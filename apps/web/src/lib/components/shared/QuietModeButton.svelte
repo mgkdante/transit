@@ -1,18 +1,10 @@
 <!--
-  QuietModeButton — the shared FOCUS switch + REMEMBER pin pair (P5-R R3).
+  QuietModeButton — the shared two-button article control.
 
-  Ported from yesid.dev's shared/QuietModeButton and rewired to transit's Locale
-  idiom + the site-wide quietModeStore (operator ruling 2026-07-10: FOCUS is
-  default-open + focus-to-close with ONE site-wide preference). The visual
-  grammar is the transit port that previously lived inline on /metrics: the
-  broadcast-arcs FOCUS switch (arcs fall silent + the core lamp lights when
-  engaged) and the wayfinding-pin REMEMBER switch. Both are role="switch" whose
-  accessible NAME is the stable visible word (Focus / Remember — WCAG 2.5.3);
-  aria-checked carries the state and the action phrase rides `title` only.
-  --primary lights ONLY the engaged state (interactive accent).
-
-  Consumers (/metrics, /status) render this in their Masthead meta row and read
-  the same store's close/open signals for their cards + ToC.
+  Ported from yesid.dev's shared/QuietModeButton and rewired to Transit's Locale
+  idiom + site-wide quietModeStore. The visible action labels flip with state, so
+  both controls stay plain buttons. Consumers render this in their article header
+  and forward the store's page-scoped close/open signals to participating cards.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -22,29 +14,29 @@
 	let { class: className = '' }: { class?: string } = $props();
 
 	interface QuietCopy {
-		readonly label: string;
-		readonly enable: string;
-		readonly disable: string;
-		readonly rememberLabel: string;
+		readonly collapse: string;
+		readonly expand: string;
+		readonly collapseTitle: string;
+		readonly expandTitle: string;
 		readonly remember: string;
 		readonly forget: string;
 	}
 	const COPY: Record<Locale, QuietCopy> = {
-		fr: {
-			label: 'Lecture',
-			enable: 'Activer le mode lecture',
-			disable: 'Quitter le mode lecture',
-			rememberLabel: 'Mémoriser',
-			remember: 'Mémoriser le mode lecture pour les prochaines visites',
-			forget: 'Oublier le mode lecture (cette session seulement)',
-		},
 		en: {
-			label: 'Focus',
-			enable: 'Enter focus reading',
-			disable: 'Exit focus reading',
-			rememberLabel: 'Remember',
-			remember: 'Remember focus reading on future visits',
-			forget: 'Forget focus reading (this session only)',
+			collapse: 'Collapse all',
+			expand: 'Expand all',
+			collapseTitle: 'Collapse all sections on this page',
+			expandTitle: 'Expand all sections on this page',
+			remember: 'Always start collapsed',
+			forget: "Don't start collapsed",
+		},
+		fr: {
+			collapse: 'Tout replier',
+			expand: 'Tout déplier',
+			collapseTitle: 'Replier toutes les sections de la page',
+			expandTitle: 'Déplier toutes les sections de la page',
+			remember: 'Toujours replier',
+			forget: 'Ne plus replier',
 		},
 	};
 	const locale: Locale = getLocale();
@@ -52,25 +44,24 @@
 
 	const enabled = $derived(quietModeStore.enabled);
 	const remembered = $derived(quietModeStore.remembered);
+	const label = $derived(enabled ? t.expand : t.collapse);
+	const title = $derived(enabled ? t.expandTitle : t.collapseTitle);
+	const rememberLabel = $derived(remembered ? t.forget : t.remember);
 
 	onMount(() => quietModeStore.init());
 </script>
 
 <div class="quiet-mode-controls {className}" data-testid="quiet-mode-controls">
-	<!-- role=switch name law (R3a review, WCAG 2.5.3): the visible word IS the
-	     accessible name and stays STABLE; aria-checked alone carries the state.
-	     The flipping action phrase rides `title` (a description, never the name). -->
 	<button
 		type="button"
 		class="quiet-mode-toggle quiet-mode-toggle--switch tap-press"
-		role="switch"
-		aria-checked={enabled}
-		title={enabled ? t.disable : t.enable}
+		data-collapsed={enabled}
+		{title}
 		data-testid="quiet-mode-toggle"
 		onclick={() => quietModeStore.toggle()}
 	>
 		<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-			<!-- broadcast arcs: the signal announces; they fall silent when FOCUS engages -->
+			<!-- broadcast arcs: the signal announces; they fall silent when quiet engages -->
 			<path class="q-wave" d="M8.4 8.4a5 5 0 0 0 0 7.2" />
 			<path class="q-wave" d="M15.6 8.4a5 5 0 0 1 0 7.2" />
 			<path class="q-wave q-wave--far" d="M5.7 5.7a8.9 8.9 0 0 0 0 12.6" />
@@ -78,25 +69,22 @@
 			<!-- signal core: lights up to mark the quiet zone -->
 			<circle class="q-core" cx="12" cy="12" r="2.3" />
 		</svg>
-		<span>{t.label}</span>
+		<span>{label}</span>
 	</button>
 
-	<!-- The REMEMBER pin: pins the FOCUS preference across visits (one site-wide
-	     key). Independent of the FOCUS state itself. -->
 	<button
 		type="button"
 		class="quiet-mode-toggle quiet-mode-toggle--remember tap-press"
-		role="switch"
-		aria-checked={remembered}
-		title={remembered ? t.forget : t.remember}
+		data-remembered={remembered}
+		title={rememberLabel}
 		data-testid="quiet-mode-remember"
 		onclick={() => (remembered ? quietModeStore.forgetDefault() : quietModeStore.rememberCurrent())}
 	>
-		<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-			<path class="r-pin" d="M12 17v4" />
-			<path class="r-pin" d="M9 3h6l-1 6 3 3v1H7v-1l3-3-1-6z" />
+		<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+			<!-- wayfinding bookmark: fills solid when the preference is pinned -->
+			<path class="r-bookmark" d="M7 4.5h10a1 1 0 0 1 1 1V20l-6-3.9L6 20V5.5a1 1 0 0 1 1-1z" />
 		</svg>
-		<span>{t.rememberLabel}</span>
+		<span>{rememberLabel}</span>
 	</button>
 </div>
 
@@ -120,37 +108,46 @@
 		color: var(--secondary-foreground);
 		box-shadow: inset 0 1px 0 var(--edge-highlight);
 		cursor: pointer;
-		font-family: var(--font-mono);
-		font-size: var(--text-control);
 		transition:
 			border-color var(--duration-normal) var(--ease-default),
 			color var(--duration-normal) var(--ease-default),
 			background var(--duration-normal) var(--ease-default);
 	}
+
 	.quiet-mode-toggle--switch {
 		padding-inline: 0.875rem 1rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-control);
+		letter-spacing: 0;
 	}
+
 	.quiet-mode-toggle--remember {
 		padding-inline: 0.75rem 0.875rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-control);
+		letter-spacing: 0;
 	}
 
 	.quiet-mode-toggle:hover,
 	.quiet-mode-toggle:focus-visible,
-	.quiet-mode-toggle[aria-checked='true'] {
+	.quiet-mode-toggle[data-collapsed='true'],
+	.quiet-mode-toggle[data-remembered='true'] {
 		border-color: var(--primary);
 		color: var(--primary);
 		background: color-mix(in srgb, var(--primary) 7%, var(--background));
 	}
+
 	.quiet-mode-toggle:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 3px;
 	}
 
-	/* Flat line-art strokes; the engaged state lights --primary with the soft
-	   signal-lens glow (glow on CHROME, never on text). */
+	/* Flat line-art in the ThemeToggle / LanguageToggle family: currentColor
+	   strokes, and the active state lights --primary with a soft glow exactly
+	   like the theme toggle's lit signal lens. */
 	.q-wave,
 	.q-core,
-	.r-pin {
+	.r-bookmark {
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 1.5;
@@ -162,31 +159,33 @@
 			stroke var(--duration-normal) var(--ease-default),
 			filter var(--duration-normal) var(--ease-default);
 	}
+
 	.q-wave--far {
 		opacity: 0.5;
 	}
 
-	/* FOCUS engaged: the broadcast falls silent (arcs fade) and the core lights. */
-	.quiet-mode-toggle[aria-checked='true'] .q-wave {
+	/* Collapsed ENGAGED: the broadcast falls silent (arcs fade) and the core lights. */
+	.quiet-mode-toggle[data-collapsed='true'] .q-wave {
 		opacity: 0;
 	}
-	.quiet-mode-toggle--switch[aria-checked='true'] .q-core {
+	.quiet-mode-toggle[data-collapsed='true'] .q-core {
 		fill: var(--primary);
 		stroke: var(--primary);
 		filter: drop-shadow(0 0 4px color-mix(in srgb, var(--glow) 60%, transparent));
 	}
 
-	/* REMEMBER engaged: the pin fills solid. */
-	.quiet-mode-toggle--remember[aria-checked='true'] .r-pin {
+	/* Pinned: the bookmark fills solid --primary (the saved preference). */
+	.quiet-mode-toggle[data-remembered='true'] .r-bookmark {
 		fill: var(--primary);
 		stroke: var(--primary);
+		filter: drop-shadow(0 0 4px color-mix(in srgb, var(--glow) 55%, transparent));
 	}
 
 	@media (prefers-reduced-motion: reduce) {
 		.quiet-mode-toggle,
 		.q-wave,
 		.q-core,
-		.r-pin {
+		.r-bookmark {
 			transition: none;
 		}
 	}

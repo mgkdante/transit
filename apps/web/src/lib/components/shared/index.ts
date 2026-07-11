@@ -8,6 +8,7 @@
 //   TocPill            - mobile floating table-of-contents pill + drawer
 //   TocBadge           - a TOC entry's leading mark (reuses the card's badge)
 //   SectionIcon        - shared section/TOC icon registry (shape names)
+//   TypedInformationCard - static definition/math/SQL/caveat/pipeline note card
 //   toc                - TOC model + DOM helpers (flatten / resolve / observe)
 //
 // Import from `$lib/components/shared`.
@@ -17,4 +18,14 @@ export { default as TocNav } from './TocNav.svelte';
 export { default as TocPill } from './TocPill.svelte';
 export { default as TocBadge } from './TocBadge.svelte';
 export { default as SectionIcon, type SectionIconName } from './SectionIcon.svelte';
-export { flattenToc, tocElement, observeActiveToc, type TocEntry, type TocBadgeSpec } from './toc';
+export { default as TypedInformationCard } from './TypedInformationCard.svelte';
+export type { InformationKind, TypedInformationCardProps } from './TypedInformationCard.svelte';
+export {
+	flattenToc,
+	resolveTocCounter,
+	tocElement,
+	settleLayout,
+	observeActiveToc,
+	type TocEntry,
+	type TocBadgeSpec,
+} from './toc';

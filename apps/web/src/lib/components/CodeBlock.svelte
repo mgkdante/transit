@@ -16,26 +16,36 @@
 <script lang="ts">
 	import { tokenizeSql, type CodeToken } from './sql-highlight';
 
-	interface CodeBlockProps {
+	export interface CodeBlockProps {
 		/** The verbatim source to render. Language-neutral; highlighting is SQL-aware. */
 		code: string;
 		/** Language label shown in the chrome tag (e.g. "SQL"). Default 'SQL'. */
 		lang?: string;
 		/** Accessible label for the scrollable code region. */
 		ariaLabel?: string;
+		/** Render inside an existing terminal chassis without a second frame or titlebar. */
+		embedded?: boolean;
 		/** Extra classes on the figure wrapper. */
 		class?: string;
 	}
 
-	let { code, lang = 'SQL', ariaLabel, class: className }: CodeBlockProps = $props();
+	let {
+		code,
+		lang = 'SQL',
+		ariaLabel,
+		embedded = false,
+		class: className,
+	}: CodeBlockProps = $props();
 
 	const tokens: CodeToken[] = $derived(tokenizeSql(code));
 </script>
 
-<figure class={`codeblock ${className ?? ''}`}>
-	<figcaption class="codeblock__chrome">
-		<span class="codeblock__lang">{lang}</span>
-	</figcaption>
+<figure class={`codeblock ${className ?? ''}`} class:codeblock--embedded={embedded}>
+	{#if !embedded}
+		<figcaption class="codeblock__chrome">
+			<span class="codeblock__lang">{lang}</span>
+		</figcaption>
+	{/if}
 	<!-- Scrollable code region: keyboard-focusable so the overflow is reachable
 	     without a pointer (mirrors the dataviz scrollable-region pattern). -->
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -69,6 +79,11 @@
 		background: var(--card);
 		overflow: hidden;
 	}
+	.codeblock--embedded {
+		border: 0;
+		border-radius: 0;
+		background: var(--terminal);
+	}
 
 	/* Light theme re-pin — darker, AA-readable hues on the paper card. */
 	:global([data-theme='light']) .codeblock,
@@ -100,8 +115,8 @@
 		overflow-x: auto;
 		padding: 1rem;
 		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		line-height: 1.6;
+		font-size: var(--text-detail-body-mobile);
+		line-height: 1.8;
 		color: var(--code-plain);
 		white-space: pre;
 		tab-size: 2;
@@ -136,5 +151,12 @@
 	}
 	.tok--plain {
 		color: var(--code-plain);
+	}
+
+	@media (min-width: 1024px) {
+		.codeblock__pre {
+			font-size: var(--text-detail-body-desktop);
+			line-height: 1.9;
+		}
 	}
 </style>

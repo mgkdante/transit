@@ -15,6 +15,7 @@ import type { SurfaceHeadCopy } from '$lib/components/surface';
 import type { MetricClusterKey, Confidence } from './metrics.content';
 
 export interface MetricsCopy extends SurfaceHeadCopy {
+	readonly lede: string;
 	/** Per-metric section labels (mono metric overlines on the page). */
 	readonly sections: {
 		readonly definition: string;
@@ -106,13 +107,16 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		/** Chip text + meaning per confidence level. */
 		readonly levels: Record<Confidence, { readonly chip: string; readonly meaning: string }>;
 	};
-	/** The expand-all / collapse-all control that opens or closes every metric card at once (§C5.8).
-	 *  (The FOCUS switch + REMEMBER pin copy lives in the shared QuietModeButton — P5-R R3.) */
-	readonly expand: {
-		/** Visible label + aria-label for the "open every card" action. */
-		readonly expandAll: string;
-		/** Visible label + aria-label for the "close every card" action. */
-		readonly collapseAll: string;
+	/** The magazine-cover article header (P5-R R3a.2 — the yesid detail-header port). */
+	readonly article: {
+		/** The giant ghost word behind the cover. */
+		readonly watermark: string;
+		/** The back link under the nav (the article's one up-nav). */
+		readonly back: string;
+		/** aria-label for the keyword-pill list. */
+		readonly tagsAria: string;
+		/** Keyword pills; the first pill is the title-highlight candidate. */
+		readonly tags: readonly string[];
 	};
 	/**
 	 * Right-rail stat cards (P5.4c DetailShell re-seat). Three compact cards —
@@ -166,7 +170,6 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 	fr: {
 		kicker: 'MÉTHODE · SCIENCE DES MESURES',
 		heading: 'Comment on mesure',
-		subheading: '// PROXY, PAS UNE PONCTUALITÉ CERTIFIÉE',
 		lede: 'Chaque chiffre de fiabilité sur ce site est un proxy dérivé du flux temps réel prédit, pas une mesure certifiée. Voici, par métrique, ce qu’il mesure vraiment, le calcul exact, le SQL, ce qu’il n’est PAS, et ses limites honnêtes.',
 		sections: {
 			definition: 'Définition',
@@ -259,9 +262,11 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 				},
 			},
 		},
-		expand: {
-			expandAll: 'Tout ouvrir',
-			collapseAll: 'Tout fermer',
+		article: {
+			watermark: 'Méthode',
+			back: '← Retour au tableau de bord',
+			tagsAria: 'Mots-clés de la page',
+			tags: ['mesure', 'ponctualité', 'retards', 'calcul honnête', 'données ouvertes'],
 		},
 		statRail: {
 			label: 'En bref',
@@ -300,7 +305,6 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 	en: {
 		kicker: 'METHODOLOGY · METRIC SCIENCE',
 		heading: 'How we measure',
-		subheading: '// PROXY, NOT CERTIFIED OTP',
 		lede: 'Every reliability number on this site is a proxy derived from the predicted realtime feed, not a certified measurement. Here, per metric, is what it actually measures, the exact math, the SQL, what it is NOT, and its honest limits.',
 		sections: {
 			definition: 'Definition',
@@ -393,9 +397,11 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 				},
 			},
 		},
-		expand: {
-			expandAll: 'Expand all',
-			collapseAll: 'Collapse all',
+		article: {
+			watermark: 'Method',
+			back: '← Back to the dashboard',
+			tagsAria: 'Page keywords',
+			tags: ['measure', 'on-time', 'delays', 'honest math', 'open data'],
 		},
 		statRail: {
 			label: 'At a glance',

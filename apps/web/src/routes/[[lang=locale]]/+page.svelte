@@ -778,6 +778,7 @@
 					label={t.filterByQuestion}
 					items={questionItems}
 					activeKey={activeQuestion}
+					density="spacious"
 					onSelect={(key) => (activeQuestion = key as Group['key'] | null)}
 					testIdPrefix="hub-filter-question"
 				/>
@@ -785,6 +786,7 @@
 					label={t.filterByKind}
 					items={tempoItems}
 					activeKey={activeTempo}
+					density="spacious"
 					onSelect={(key) => (activeTempo = key as Tempo | null)}
 					testIdPrefix="hub-filter-kind"
 				/>
@@ -1250,14 +1252,14 @@
 		flex-direction: column;
 		gap: 1rem;
 	}
-	/* Legibility (operator 2026-07-10): the manifesto paragraph speaks in the
-	   hero-lede voice, not a muted caption: heading-scale type, generous leading,
-	   the stronger secondary ink. */
+	/* Legibility (operator 2026-07-10, round 2): bright secondary ink + generous
+	   leading for readability, one step BELOW the first pass's heading scale —
+	   "smaller" but never a muted caption. */
 	.what-body {
 		color: var(--secondary-foreground);
-		font-size: var(--text-heading);
-		line-height: 1.7;
-		max-width: 58ch;
+		font-size: var(--text-subheading);
+		line-height: 1.65;
+		max-width: 60ch;
 	}
 	.what-link {
 		display: inline-flex;
@@ -1342,7 +1344,9 @@
 	}
 	@media (min-width: 1024px) {
 		.hub-launch {
-			grid-template-columns: 15rem minmax(0, 1fr);
+			/* Wider rail (operator: filters need FULL legibility) — the chips get
+			   room to breathe and never truncate a rider question. */
+			grid-template-columns: 19rem minmax(0, 1fr);
 			gap: 2rem;
 			align-items: start;
 		}

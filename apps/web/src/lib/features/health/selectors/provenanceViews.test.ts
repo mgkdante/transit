@@ -71,6 +71,21 @@ describe('pipelineNotesOf', () => {
 			[],
 		);
 	});
+
+	it('assigns explicit kinds by key and gives unknown keys the pipeline-note fallback', () => {
+		const p = {
+			generated_utc: iso('2026-07-10T12:00:00Z'),
+			methodology: {
+				network_no_data: 'same words',
+				wilson_z: 'same words',
+				brand_new_key: 'same words',
+			},
+		} as unknown as Provenance;
+		const notes = pipelineNotesOf(p, {}, {}, { network_no_data: 'caveat', wilson_z: 'math' });
+		expect(notes.find((note) => note.key === 'network_no_data')?.kind).toBe('caveat');
+		expect(notes.find((note) => note.key === 'wilson_z')?.kind).toBe('math');
+		expect(notes.find((note) => note.key === 'brand_new_key')?.kind).toBe('pipeline-note');
+	});
 });
 
 describe('retentionOf', () => {

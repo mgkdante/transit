@@ -15,7 +15,7 @@
 <script lang="ts">
 	import { ChevronToggle } from '$lib/components/brand';
 	import TocBadge from './TocBadge.svelte';
-	import { flattenToc, tocElement, type TocEntry } from './toc';
+	import { flattenToc, resolveTocCounter, tocElement, type TocEntry } from './toc';
 
 	let {
 		entries,
@@ -44,6 +44,7 @@
 		),
 	);
 	const activeName = $derived(flat[activeIndex]?.title ?? '');
+	const counter = $derived(resolveTocCounter(entries, activeId));
 
 	let drawerOpen = $state(false);
 	let pillBtn = $state<HTMLButtonElement>();
@@ -105,14 +106,14 @@
 		class="tap-press toc-pill"
 		onclick={() => (drawerOpen = !drawerOpen)}
 		aria-expanded={drawerOpen}
-		aria-label={`${activeName} ${activeIndex + 1}/${flat.length} · ${openAria}`}
+		aria-label={`${activeName} ${counter.current}/${counter.total} · ${openAria}`}
 	>
 		<div class="h-1.5 w-1.5 rounded-full bg-primary"></div>
 		<span class="toc-pill-name font-mono text-caption">
 			{activeName}
 		</span>
 		<span class="toc-pill-counter font-mono text-micro">
-			{activeIndex + 1}/{flat.length}
+			{counter.current}/{counter.total}
 		</span>
 		<ChevronToggle open={drawerOpen} size="sm" direction="down" />
 	</button>

@@ -9,7 +9,6 @@
 	import { ConformanceBadge } from '$lib/components/surface';
 	import { CollapsibleSection } from '$lib/components/shared';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import type { ProvenanceConformance } from '$lib/v1/schemas';
 	import type { HealthCopy } from '../health.copy';
@@ -18,13 +17,22 @@
 		conformance: ProvenanceConformance;
 		copy: HealthCopy;
 		locale: Locale;
+		closeSignal?: number | null;
+		openSignal?: number | null;
+		bulkCollapsed?: boolean | null;
 	}
-	let { conformance, copy, locale }: SectionConformanceProps = $props();
+	let {
+		conformance,
+		copy,
+		locale,
+		closeSignal = null,
+		openSignal = null,
+		bulkCollapsed = null,
+	}: SectionConformanceProps = $props();
 	const t = $derived(copy.conformance);
 </script>
 
-<section class="health-block" aria-labelledby="health-conformance" data-slot="conformance-section">
-	<SectionHeading level={2} id="health-conformance" overline={t.section} number={7} />
+<div class="health-block" data-slot="conformance-section">
 	<p class="health-note">{t.note}</p>
 	<div class="health-conformance-badge">
 		<ConformanceBadge {conformance} {locale} />
@@ -36,7 +44,10 @@
 			<CollapsibleSection
 				title={t.detailsTitle}
 				sectionKey="health-conformance-members"
-				open={false}
+				open={true}
+				{closeSignal}
+				{openSignal}
+				{bulkCollapsed}
 			>
 				<div class="health-conformance-detail">
 					<!-- Honest extra-row count: a real number renders localized; a null/absent
@@ -64,7 +75,7 @@
 			</CollapsibleSection>
 		</div>
 	{/if}
-</section>
+</div>
 
 <style>
 	.health-block {
@@ -75,9 +86,15 @@
 	.health-note {
 		margin: 0;
 		color: var(--muted-foreground);
-		font-size: var(--text-small);
-		line-height: 1.6;
+		font-size: var(--text-detail-body-mobile);
+		line-height: 1.8;
 		max-width: 60ch;
+	}
+	@media (min-width: 1024px) {
+		.health-note {
+			font-size: var(--text-detail-body-desktop);
+			line-height: 1.9;
+		}
 	}
 	.health-conformance-badge {
 		display: flex;

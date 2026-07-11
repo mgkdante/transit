@@ -15,13 +15,22 @@
 // data ports are stubbed so this gate stays env-free + off-network; createResource
 // hands back the per-repository fixture directly (keyed by the fetcher).
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { DataHealth, IsoUtc, Provenance } from '$lib/v1/schemas';
+import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';
 
 const en = copy.en;
+const localeContext = (locale: 'en' | 'fr') =>
+	new Map([[Symbol.for('transit.i18n.locale'), () => locale]]);
+const overviewCopy = {
+	en: { title: 'Overview', dailyRecord: 'Daily record', liveFeeds: 'Live feeds' },
+	fr: { title: 'Vue d’ensemble', dailyRecord: 'Bilan quotidien', liveFeeds: 'Flux en direct' },
+} as const;
 
 /** Brand an ISO string as the contract's IsoUtc (the runtime value is plain). */
 const iso = (s: string) => s as unknown as IsoUtc;
@@ -129,10 +138,23 @@ const richDataHealth: DataHealth = {
 	feeds: [{ feed: 'realtime_vehicles', status: 'succeeded', age_s: 40 }],
 };
 
-// The mutable fixtures the createResource mock reads BY REFERENCE (keyed by which
-// repository fetcher the resource was created with), so a test can swap either for
-// a sparse variant before rendering.
-let provenanceFixture: Provenance = richProvenance;
+interface ResourceState<T> {
+	data: T | null;
+	error: Error | null;
+	loading: boolean;
+	settled: boolean;
+}
+
+const ready = <T>(data: T | null): ResourceState<T> => ({
+	data,
+	error: null,
+	loading: false,
+	settled: true,
+});
+
+// Independent resource surfaces let the matrix tests exercise daily and live
+// loading/error states without coupling one document to the other.
+let provenanceState: ResourceState<Provenance> = ready(richProvenance);
 
 /** A provenance payload predating the PayloadEnvelope fields (legacy publish). */
 function stripEnvelope(prov: Provenance): Provenance {
@@ -142,7 +164,16 @@ function stripEnvelope(prov: Provenance): Provenance {
 	void publish_generation_id;
 	return rest as Provenance;
 }
-let dataHealthFixture: DataHealth | null = richDataHealth;
+let dataHealthState: ResourceState<DataHealth> = ready(richDataHealth);
+
+function resetStatusStorage(): void {
+	for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+		const key = sessionStorage.key(index);
+		if (key?.startsWith('transit.persisted:status-')) sessionStorage.removeItem(key);
+	}
+	sessionStorage.removeItem('transit.persisted:health-conformance-members');
+	quietModeStore.resetForTest();
+}
 
 vi.mock('$lib/nav', async () => ({ layout: { isDesktop: true } }));
 
@@ -178,34 +209,227 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 			// fetchers are stubbed to return undefined; ignore.
 		}
 		const isDataHealth = getDataHealth.mock.calls.length > 0;
+		const state = isDataHealth ? dataHealthState : provenanceState;
 		return {
-			data: isDataHealth ? dataHealthFixture : provenanceFixture,
-			error: null,
-			loading: false,
-			settled: true,
+			...state,
 			reload: vi.fn(),
 		};
 	},
 }));
 
+beforeEach(resetStatusStorage);
+
 afterEach(() => {
-	provenanceFixture = richProvenance;
-	dataHealthFixture = richDataHealth;
+	provenanceState = ready(richProvenance);
+	dataHealthState = ready(richDataHealth);
+	resetStatusStorage();
 });
 
 describe('HealthStatus — full manifest render', () => {
-	it('renders the surface head + a NEUTRAL "Updated N ago" stamp, never the live "LIVE" chip', () => {
-		render(HealthStatus);
+	it('renders the shared status article header with truthful meta, body lede, and no default band', () => {
+		const { container } = render(HealthStatus);
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+
+		expect(header).not.toBeNull();
+		expect(within(header).getByRole('heading', { level: 1, name: en.heading })).toBeInTheDocument();
+		expect(within(header).getByRole('link', { name: en.article.back })).toHaveAttribute(
+			'href',
+			'/',
+		);
+		const keywords = within(header).getByRole('list', { name: en.article.tagsAria });
+		for (const keyword of en.article.tags) {
+			expect(within(keywords).getByText(keyword)).toBeInTheDocument();
+		}
+		expect(header).toHaveTextContent(en.article.sections(8));
+		expect(header).toHaveTextContent('2026');
+		expect(container.querySelector('[data-slot="detail-shell-header"]')).toBeNull();
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		expect(within(center).getByText(en.lede)).toBeInTheDocument();
+		expect(container.querySelector('[data-slot="detail-shell"]')?.parentElement).toBe(container);
+	});
+
+	it('renders the exact two controls and one numbered card per present pipeline section', async () => {
+		const { container } = render(HealthStatus);
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+		expect(within(header).getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
+		expect(
+			within(header).getByRole('button', { name: 'Always start collapsed' }),
+		).toBeInTheDocument();
+
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		for (const title of [
+			en.lanes.section,
+			en.freshness.section,
+			en.sources.section,
+			en.gaps.section,
+			en.pipelineNotes.section,
+			en.retention.section,
+			en.conformance.section,
+			en.envelope.section,
+		]) {
+			const trigger = within(center).getByRole('button', { name: title });
+			const card = trigger.closest('[data-slot="card"]') as HTMLElement;
+			expect(card).not.toBeNull();
+			expect(within(card).getAllByText(title)).toHaveLength(1);
+		}
+
+		await fireEvent.click(within(header).getByRole('button', { name: 'Collapse all' }));
+		for (const trigger of center.querySelectorAll('button.section-header')) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		}
+	});
+
+	it('opts every Status section and stat card into title-only article-summary headers', () => {
+		const { container } = render(HealthStatus);
+		const sectionCards = Array.from(
+			container.querySelectorAll<HTMLElement>('.health-sections > [data-slot="card"]'),
+		);
+		const railCards = Array.from(
+			container.querySelectorAll<HTMLElement>('.health-stat-rail > [data-slot="card"]'),
+		);
+
+		expect(sectionCards).toHaveLength(9);
+		expect(railCards).toHaveLength(4);
+		for (const card of [...sectionCards, ...railCards]) {
+			expect(card).toHaveAttribute('data-header-variant', 'article-summary');
+			const heading = card.querySelector('h2.section-heading') as HTMLHeadingElement;
+			expect(heading).not.toBeNull();
+			expect(heading.children).toHaveLength(1);
+			const trigger = heading.firstElementChild as HTMLButtonElement;
+			expect(trigger).toHaveClass('section-header--title-only');
+			expect(trigger).not.toHaveAttribute('aria-describedby');
+			expect(card.querySelector('.section-subtitle--article-summary')).toBeNull();
+		}
+		expect(
+			container.querySelector('.health-toc-rail [data-header-variant="article-summary"]'),
+		).toBeNull();
+	});
+
+	it('keeps status article meta honestly absent when no status document is available', () => {
+		provenanceState = ready<Provenance>(null);
+		dataHealthState = ready<DataHealth>(null);
+		const { container } = render(HealthStatus);
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+
+		expect(header).not.toBeNull();
+		expect(header.querySelector('.header__meta')?.children).toHaveLength(0);
+		expect(header).not.toHaveTextContent('0 sections');
+	});
+
+	it('labels daily and live timestamps separately when the two status documents diverge', () => {
+		provenanceState = ready({
+			...richProvenance,
+			generated_utc: iso('2026-06-19T06:00:00Z'),
+		});
+		dataHealthState = ready({
+			...richDataHealth,
+			generated_utc: iso('2026-06-19T12:00:00Z'),
+		});
+		const { container } = render(HealthStatus);
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+
+		expect(within(header).getByText('DAILY RECORD AS OF')).toBeInTheDocument();
+		expect(within(header).getByText('LIVE FEEDS AS OF')).toBeInTheDocument();
+		expect(Array.from(header.querySelectorAll('time')).map((time) => time.dateTime)).toEqual([
+			'2026-06-19T06:00:00Z',
+			'2026-06-19T12:00:00Z',
+		]);
+	});
+
+	it('keeps each French source label paired with its timestamp', () => {
+		provenanceState = ready({
+			...richProvenance,
+			generated_utc: iso('2026-06-19T06:00:00Z'),
+		});
+		dataHealthState = ready({
+			...richDataHealth,
+			generated_utc: iso('2026-06-19T12:00:00Z'),
+		});
+		const { container } = render(HealthStatus, { context: localeContext('fr') });
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+		const pairs = Array.from(header.querySelectorAll('.header__meta-pair'));
+
+		expect(pairs).toHaveLength(2);
+		expect(pairs[0]).toHaveTextContent(copy.fr.article.dailyAsOf);
+		expect(pairs[0].querySelector('time')).toHaveAttribute('datetime', '2026-06-19T06:00:00Z');
+		expect(pairs[1]).toHaveTextContent(copy.fr.article.liveAsOf);
+		expect(pairs[1].querySelector('time')).toHaveAttribute('datetime', '2026-06-19T12:00:00Z');
+	});
+
+	it('keeps EN and FR status keywords distinct and removes internal /v1 jargon from the lede', () => {
+		expect(copy.en.article.tags).toEqual(['data', 'feeds', 'freshness', 'known gaps']);
+		expect(copy.fr.article.tags).toEqual(['données', 'flux', 'fraîcheur', 'lacunes connues']);
+		expect(copy.en.article.sections(1)).toBe('1 section');
+		expect(copy.fr.article.sections(1)).toBe('1 section');
+		expect(copy.en.lede).not.toContain('/v1');
+		expect(copy.fr.lede).not.toContain('/v1');
+	});
+
+	it('uses the exact article prose and compact rail typography contract', () => {
+		const src = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/health/HealthStatus.svelte'),
+			'utf8',
+		);
+		expect(src).toMatch(
+			/\.health-lede\s*\{[\s\S]*?font-size:\s*var\(--text-detail-body-mobile\)[\s\S]*?line-height:\s*1\.8/,
+		);
+		expect(src).toMatch(
+			/@media\s*\(min-width:\s*1024px\)[\s\S]*?\.health-lede\s*\{[\s\S]*?font-size:\s*var\(--text-detail-body-desktop\)[\s\S]*?line-height:\s*1\.9/,
+		);
+		expect(src).toMatch(
+			/\.health-stat__sub\s*\{[\s\S]*?font-size:\s*0\.95rem[\s\S]*?line-height:\s*1\.45/,
+		);
+	});
+
+	it('pins the mobile Status rail to one full-width track below the shell breakpoint', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/health/HealthStatus.svelte'),
+			'utf8',
+		);
+		expect(source).toMatch(
+			/:global\(\.detail-shell-mobile-summary\) \.health-stat-rail\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+		);
+		expect(source).toMatch(
+			/:global\(\.detail-shell-mobile-summary\)[\s\S]*?\.health-stat-rail[\s\S]*?:global\(\[data-slot='card'\]\)\s*\{[^}]*width:\s*100%;/,
+		);
+		expect(source).not.toMatch(/flex:\s*1 1 10rem/);
+	});
+
+	it('renders approved Lanes and Feeds icons in both responsive rail mounts', () => {
+		const { container } = render(HealthStatus);
+		for (const rail of container.querySelectorAll('.health-stat-rail')) {
+			expect(rail.querySelector('[data-testid="section-grid-icon"]')).not.toBeNull();
+			expect(rail.querySelector('[data-testid="section-list-icon"]')).not.toBeNull();
+		}
+	});
+
+	it('independently closes mobile Lanes while Feeds stays open and the desktop copy follows', async () => {
+		const { container } = render(HealthStatus);
+		const mobile = container.querySelector(
+			'[data-slot="detail-shell-mobile-summary"]',
+		) as HTMLElement;
+		const lanes = within(mobile).getByRole('button', { name: en.statRail.lanes.title });
+		const feeds = within(mobile).getByRole('button', { name: en.statRail.feeds.title });
+		const laneCard = lanes.closest('[data-slot="card"]') as HTMLElement;
+
+		await fireEvent.click(lanes);
+
+		for (const trigger of screen.getAllByRole('button', { name: en.statRail.lanes.title })) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		}
+		expect(laneCard.querySelector('.section-body')).toHaveAttribute('data-state', 'closed');
+		expect(feeds).toHaveAttribute('aria-expanded', 'true');
+	});
+
+	it('renders the surface head + a semantic neutral update time, never the live "LIVE" chip', () => {
+		const { container } = render(HealthStatus);
 		expect(screen.getByRole('heading', { level: 1, name: en.heading })).toBeInTheDocument();
 		expect(screen.getByText(en.asOf)).toBeInTheDocument();
-		const stamp = document.querySelector('[data-slot="health-asof"]') as HTMLElement;
-		expect(stamp).not.toBeNull();
-		const fresh = stamp.querySelector('[data-slot="freshness-stamp"]');
-		expect(fresh).not.toBeNull();
-		expect((fresh as HTMLElement).getAttribute('data-variant')).toBe('updated');
-		expect(within(fresh as HTMLElement).getByText('Updated')).toBeInTheDocument();
-		expect((fresh as HTMLElement).querySelector('time')).not.toBeNull();
-		expect(within(fresh as HTMLElement).queryByText('LIVE')).toBeNull();
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+		const time = header.querySelector('time');
+		expect(time).not.toBeNull();
+		expect(time).toHaveAttribute('datetime', richProvenance.generated_utc);
+		expect(within(header).queryByText('LIVE')).toBeNull();
 	});
 
 	it('AUTO-REFRESHES both resources via the shared epoch (freshness: true on each)', async () => {
@@ -310,6 +534,78 @@ describe('HealthStatus — full manifest render', () => {
 	});
 });
 
+describe('HealthStatus — Overview and independent resources', () => {
+	it('keeps Overview visible with two labelled loading regions', () => {
+		provenanceState = { data: null, error: null, loading: true, settled: false };
+		dataHealthState = { data: null, error: null, loading: true, settled: false };
+		const { container } = render(HealthStatus);
+
+		const overview = screen
+			.getByRole('button', { name: overviewCopy.en.title })
+			.closest('[data-slot="card"]') as HTMLElement;
+		expect(within(overview).getByText(en.lede)).toBeInTheDocument();
+		expect(within(overview).getByText(overviewCopy.en.dailyRecord)).toBeInTheDocument();
+		expect(within(overview).getByText(overviewCopy.en.liveFeeds)).toBeInTheDocument();
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+		expect(header.querySelector('.header__meta')).toHaveAttribute('data-pending', 'true');
+		expect(header.querySelector('.header__meta-skeleton')).toHaveAttribute('aria-hidden', 'true');
+	});
+
+	it('does not let daily failure hide valid live cards', () => {
+		provenanceState = {
+			data: null,
+			error: new Error('daily down'),
+			loading: false,
+			settled: true,
+		};
+		dataHealthState = ready(richDataHealth);
+		const { container } = render(HealthStatus);
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+
+		expect(within(center).getByRole('button', { name: en.lanes.section })).toBeInTheDocument();
+		expect(screen.getAllByRole('button', { name: en.statRail.lanes.title })).toHaveLength(2);
+		expect(screen.getByRole('alert')).toBeInTheDocument();
+	});
+
+	it('does not let live failure hide valid daily cards', () => {
+		provenanceState = ready(richProvenance);
+		dataHealthState = {
+			data: null,
+			error: new Error('live down'),
+			loading: false,
+			settled: true,
+		};
+		const { container } = render(HealthStatus);
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+
+		expect(within(center).getByRole('button', { name: en.freshness.section })).toBeInTheDocument();
+		expect(screen.getAllByRole('button', { name: en.statRail.feeds.title })).toHaveLength(2);
+		expect(screen.getByRole('alert')).toBeInTheDocument();
+	});
+
+	it('keeps both responsive copies of a Status rail card synchronized', async () => {
+		render(HealthStatus);
+		const lanes = screen.getAllByRole('button', { name: en.statRail.lanes.title });
+
+		await fireEvent.click(lanes[0]);
+
+		expect(lanes[0]).toHaveAttribute('aria-expanded', 'false');
+		expect(lanes[1]).toHaveAttribute('aria-expanded', 'false');
+	});
+
+	it('renders the French Overview and resource-region labels from locale context', () => {
+		provenanceState = { data: null, error: null, loading: true, settled: false };
+		dataHealthState = { data: null, error: null, loading: true, settled: false };
+		render(HealthStatus, { context: localeContext('fr') });
+
+		const overview = screen
+			.getByRole('button', { name: overviewCopy.fr.title })
+			.closest('[data-slot="card"]') as HTMLElement;
+		expect(within(overview).getByText(overviewCopy.fr.dailyRecord)).toBeInTheDocument();
+		expect(within(overview).getByText(overviewCopy.fr.liveFeeds)).toBeInTheDocument();
+	});
+});
+
 describe('HealthStatus — S11 pipeline lanes', () => {
 	it('renders one row per publish lane (live / static / rollup) + the MAINTENANCE not-applicable row', () => {
 		render(HealthStatus);
@@ -366,10 +662,12 @@ describe('HealthStatus — S11 pipeline lanes', () => {
 	it('stands the lanes section DOWN entirely on a LEGACY publish (data_health absent)', () => {
 		// A legacy publish serves no data_health.json → getDataHealth resolves null →
 		// the section renders nothing (not even the maintenance row).
-		dataHealthFixture = null;
-		render(HealthStatus);
+		dataHealthState = ready<DataHealth>(null);
+		const { container } = render(HealthStatus);
 		expect(screen.queryByRole('list', { name: en.lanes.listLabel })).toBeNull();
 		expect(screen.queryByText(en.lanes.section)).toBeNull();
+		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		expect(within(left).getByText(/SEC\s*02\s*\/\s*08/)).toBeInTheDocument();
 	});
 });
 
@@ -400,7 +698,7 @@ describe('HealthStatus — S11 build-accountability envelope', () => {
 	it('falls back to data_health envelope fields when provenance lacks them', () => {
 		// A provenance payload predating the envelope fields → the selector fills
 		// each field from data_health, so the section still renders.
-		provenanceFixture = stripEnvelope(richProvenance);
+		provenanceState = ready(stripEnvelope(richProvenance));
 		render(HealthStatus);
 		expect(screen.getByText('gen-live-abc')).toBeInTheDocument();
 		const schema = screen
@@ -411,15 +709,15 @@ describe('HealthStatus — S11 build-accountability envelope', () => {
 
 	it('renders the styled honest-absence for envelope fields absent from BOTH sources', () => {
 		// Neither payload carries envelope fields → the section stands down entirely.
-		dataHealthFixture = { generated_utc: iso('2026-06-19T12:00:00Z') };
-		provenanceFixture = {
+		dataHealthState = ready({ generated_utc: iso('2026-06-19T12:00:00Z') });
+		provenanceState = ready({
 			generated_utc: iso('2026-06-19T12:00:00Z'),
 			freshness: [],
 			sources: [],
 			gaps: [],
 			retention: {},
 			conformance: null,
-		};
+		});
 		render(HealthStatus);
 		expect(screen.queryByText(en.envelope.section)).toBeNull();
 	});
@@ -427,15 +725,15 @@ describe('HealthStatus — S11 build-accountability envelope', () => {
 
 describe('HealthStatus — honesty (sections stand down when absent)', () => {
 	it('omits gaps / retention / conformance sections entirely when their data is absent', () => {
-		provenanceFixture = {
+		provenanceState = ready({
 			generated_utc: iso('2026-06-19T12:00:00Z'),
 			freshness: [{ feed: 'realtime_vehicles', status: 'succeeded', age_s: 60 }],
 			sources: [],
 			gaps: [],
 			retention: {},
 			conformance: null,
-		};
-		dataHealthFixture = null;
+		});
+		dataHealthState = ready<DataHealth>(null);
 		render(HealthStatus);
 		expect(screen.getByRole('list', { name: en.freshness.listLabel })).toBeInTheDocument();
 		expect(screen.queryByRole('list', { name: en.sources.listLabel })).toBeNull();
@@ -446,7 +744,7 @@ describe('HealthStatus — honesty (sections stand down when absent)', () => {
 	});
 
 	it('stands the Pipeline-notes section down when every methodology key is already threaded', () => {
-		provenanceFixture = {
+		provenanceState = ready({
 			generated_utc: iso('2026-06-19T12:00:00Z'),
 			freshness: [],
 			sources: [],
@@ -454,23 +752,23 @@ describe('HealthStatus — honesty (sections stand down when absent)', () => {
 			retention: {},
 			methodology: { otp_definition: 'on-time band', cancellation: 'canceled / observed' },
 			conformance: null,
-		};
-		dataHealthFixture = null;
+		});
+		dataHealthState = ready<DataHealth>(null);
 		render(HealthStatus);
 		expect(screen.queryByText(en.pipelineNotes.section)).toBeNull();
 		expect(screen.queryByRole('list', { name: en.pipelineNotes.listLabel })).toBeNull();
 	});
 
 	it('renders a conformance verdict but no disclosure when there are no unknown members', () => {
-		provenanceFixture = {
+		provenanceState = ready({
 			generated_utc: iso('2026-06-19T12:00:00Z'),
 			freshness: [],
 			sources: [],
 			gaps: [],
 			retention: {},
 			conformance: { status: 'conformant', extra_row_count: 0, unknown_members: [] },
-		};
-		dataHealthFixture = null;
+		});
+		dataHealthState = ready<DataHealth>(null);
 		const { container } = render(HealthStatus);
 		// The caption also appears in the left-rail ToC now (P5.3b), so scope the
 		// section-heading assertion to the center sections column.
@@ -480,15 +778,15 @@ describe('HealthStatus — honesty (sections stand down when absent)', () => {
 	});
 
 	it('renders the styled honest-absence chip (never a fabricated 0) when extra_row_count is null', () => {
-		provenanceFixture = {
+		provenanceState = ready({
 			generated_utc: iso('2026-06-19T12:00:00Z'),
 			freshness: [],
 			sources: [],
 			gaps: [],
 			retention: {},
 			conformance: { status: 'out_of_norm', unknown_members: ['zone_id'] },
-		};
-		dataHealthFixture = null;
+		});
+		dataHealthState = ready<DataHealth>(null);
 		render(HealthStatus);
 		const extra = screen
 			.getByText(en.conformance.extraRowsLabel)

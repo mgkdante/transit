@@ -5,13 +5,13 @@
   lives in ./selectors and every block in ./sections; this file only fetches,
   maps, and lays the sections out.
 
-  P5.4c RE-SEAT — the surface moves onto the shared DetailShell spine (same detail
-  architecture as /metrics; status now gains the full-bleed dot-grid header band):
-    · MASTHEAD → Masthead (kicker → display title + orange dot → lede → meta
-      row carrying the "Updated N ago" stamp); DetailShell adds the hazard tape.
+  P5.4c RE-SEAT — the surface uses the shared DetailShell spine (same detail
+  architecture as /metrics) and the shared ArticleHeader cover: circuit grid,
+  ManifestoCanvas, watermark, category rule, keywords and truthful dated meta.
+  The lede opens the body column; DetailShell adds the hazard tape.
     · BODY → DetailShell (3-col at ≥1024): LEFT = the numbered ToC over the (up
-      to) 8 sections + a SEC n/m readout; CENTER = the existing 8 gated sections
-      (real headings from stage 1, unchanged); RIGHT = per-feed stat cards (lanes
+      to) 8 sections + a SEC n/m readout; CENTER = the 8 gated, single-title
+      collapsible cards; RIGHT = per-feed stat cards (lanes
       passing / feeds fresh). Mobile: single column, the stat cards reflow to a top
       summary strip, the ToC becomes the floating TocPill.
 
@@ -26,16 +26,34 @@
   status marks ride the dataviz status scale (StatusDot), never --primary.
 -->
 <script lang="ts">
-	import { getLocale, type Locale } from '$lib/i18n';
-	import { getProvenance, getDataHealth, freshnessRelative, type Provenance } from '$lib/v1';
+	import { onMount, tick } from 'svelte';
+	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import {
+		getProvenance,
+		getDataHealth,
+		freshnessRelative,
+		type DataHealth,
+		type Provenance,
+	} from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { formatRelativeSeconds } from '$lib/utils/time';
+	import { formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import { METHODOLOGY_METRIC_KEY } from '$lib/features/metrics/metrics.content';
-	import { DetailShell } from '$lib/components/layout';
-	import { Masthead } from '$lib/components/brand';
-	import { ResourceBoundary, FreshnessStamp } from '$lib/components/surface';
+	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
+	import { ResourceBoundary } from '$lib/components/surface';
+	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
-	import { TocNav, type TocEntry } from '$lib/components/shared';
+	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import {
+		CollapsibleSection,
+		SectionIcon,
+		TocNav,
+		tocElement,
+		settleLayout,
+		type TocEntry,
+	} from '$lib/components/shared';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+	import { persisted } from '$lib/stores';
+	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import { copy as COPY } from './health.copy';
 	import {
 		verdictFor as verdictForRaw,
@@ -55,6 +73,19 @@
 	import SectionRetention from './sections/SectionRetention.svelte';
 	import SectionConformance from './sections/SectionConformance.svelte';
 	import SectionEnvelope from './sections/SectionEnvelope.svelte';
+
+	const PIPELINE_NOTE_KINDS = {
+		history_freeze: 'pipeline-note',
+		service_time_conversion: 'math',
+		alert_text_en: 'definition',
+		network_no_data: 'caveat',
+		alert_breakdown: 'definition',
+		rounding: 'math',
+		min_n_rate: 'math',
+		wilson_z: 'math',
+		service_span: 'definition',
+		alert_history_window: 'caveat',
+	} as const;
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
@@ -88,6 +119,27 @@
 		return v == null ? null : `${v}${t.retention.daysUnit}`;
 	}
 
+	function provenanceIsEmpty(value: Provenance): boolean {
+		const windows = retentionOf(value);
+		return (
+			freshnessOf(value).length === 0 &&
+			sourcesOf(value).length === 0 &&
+			gapsOf(value).length === 0 &&
+			pipelineNotesOf(value, METHODOLOGY_METRIC_KEY, t.pipelineNotes.labels, PIPELINE_NOTE_KINDS)
+				.length === 0 &&
+			windows.detail == null &&
+			windows.aggregate == null &&
+			value.conformance == null &&
+			value.publish_generation_id == null &&
+			value.schema_version == null &&
+			value.methodology_version == null
+		);
+	}
+
+	function dataHealthIsEmpty(value: DataHealth): boolean {
+		return (value.lanes?.length ?? 0) === 0 && (value.feeds?.length ?? 0) === 0;
+	}
+
 	// The lane-label bundle the selector interpolates (i18n stays here).
 	const laneLabels = $derived<LaneLabels>({
 		laneLabel: (key) => t.lanes.laneLabel[key] ?? key,
@@ -110,7 +162,9 @@
 	const retention = $derived(prov ? retentionOf(prov) : { detail: null, aggregate: null });
 	const conformance = $derived(prov?.conformance ?? null);
 	const pipelineNotes = $derived(
-		prov ? pipelineNotesOf(prov, METHODOLOGY_METRIC_KEY, t.pipelineNotes.labels) : [],
+		prov
+			? pipelineNotesOf(prov, METHODOLOGY_METRIC_KEY, t.pipelineNotes.labels, PIPELINE_NOTE_KINDS)
+			: [],
 	);
 	const hasRetention = $derived(retention.detail != null || retention.aggregate != null);
 	const laneRows = $derived(dh ? selectLaneRows(dh, laneLabels) : []);
@@ -126,7 +180,7 @@
 	);
 
 	// ── Section presence registry (order = pipeline order; numbers frozen 1–8) ────
-	// Each section carries its FIXED number (matching the SectionHeading chip) and a
+	// Each section carries its FIXED number (matching the parent card badge) and a
 	// presence flag; the ToC lists only present sections but keeps their own number,
 	// so a stood-down section leaves a gap in the run rather than re-sequencing.
 	const sectionDefs = $derived([
@@ -167,6 +221,34 @@
 			})),
 	);
 
+	const dailyGeneratedMeta = $derived(
+		prov?.generated_utc
+			? { text: formatUtc(prov.generated_utc, locale), datetime: prov.generated_utc }
+			: null,
+	);
+	const liveGeneratedMeta = $derived(
+		dh?.generated_utc
+			? { text: formatUtc(dh.generated_utc, locale), datetime: dh.generated_utc }
+			: null,
+	);
+	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
+		const entries: ArticleMetaEntry[] = [];
+		if (
+			dailyGeneratedMeta &&
+			liveGeneratedMeta &&
+			dailyGeneratedMeta.datetime !== liveGeneratedMeta.datetime
+		) {
+			entries.push(
+				{ ...dailyGeneratedMeta, label: t.article.dailyAsOf },
+				{ ...liveGeneratedMeta, label: t.article.liveAsOf },
+			);
+		} else {
+			const sharedGeneratedMeta = dailyGeneratedMeta ?? liveGeneratedMeta;
+			if (sharedGeneratedMeta) entries.push({ ...sharedGeneratedMeta, label: t.asOf });
+		}
+		if (tocEntries.length > 0) entries.push(t.article.sections(tocEntries.length));
+		return entries;
+	});
 	// ── Right-rail stat summary (pass/fail, from data on the page) ────────────────
 	// Applicable lanes only (the MAINTENANCE not-applicable row + gate-less lanes are
 	// excluded from the pass count); a lane "passes" when its gate aspect is on_time.
@@ -183,171 +265,376 @@
 		const ok = freshness.filter((f) => verdictFor(f.status).aspect === 'on_time').length;
 		return { total, ok };
 	});
+	const railOpen = {
+		lanes: persisted('status-rail-lanes', true),
+		feeds: persisted('status-rail-feeds', true),
+	};
+
+	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
+		railOpen[key].value = next;
+	}
 
 	// ── Active-section tracking + ToC navigation ──────────────────────────────────
 	// DetailShell owns the single IntersectionObserver and writes `activeId` back via
 	// `bind:activeId`; this state receives it and feeds the left rail ToC (whose own
 	// footer carries the ONE "SEC n/m" reading readout).
 	let activeId = $state('');
+	let cardOpenSignals = $state<Record<string, number>>({});
+	const cardOpenSignal = (id: string): number => cardOpenSignals[id] ?? 0;
 
-	function navigate(id: string): void {
-		document
-			.querySelector(`[data-toc="${id}"]`)
-			?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	function openCard(id: string): void {
+		cardOpenSignals = { ...cardOpenSignals, [id]: cardOpenSignal(id) + 1 };
+	}
+
+	const openableAnchors = $derived(new Set(tocEntries.map((entry) => entry.id)));
+	let pendingHash = $state<string | null>(null);
+	let consumingHash = false;
+	let requestedHash: string | null = null;
+	let navigationGeneration = 0;
+
+	function decodedHash(): string | null {
+		const raw = window.location.hash.replace(/^#/, '');
+		if (!raw) return null;
+		try {
+			return decodeURIComponent(raw);
+		} catch {
+			return null;
+		}
+	}
+
+	function queueHash(id: string | null): void {
+		if (id === requestedHash) return;
+		requestedHash = id;
+		navigationGeneration += 1;
+		pendingHash = id;
+	}
+
+	async function reveal(id: string, generation = ++navigationGeneration): Promise<boolean> {
+		if (!openableAnchors.has(id)) return false;
+		openCard(id);
+		await tick();
+		const target = tocElement(id);
+		// The disclosure expand (and, under a remembered collapse, every sibling's
+		// fold) animates the page height; scroll clamping uses call-time geometry,
+		// so let the layout settle before positioning (design: open the
+		// destination BEFORE final positioning).
+		await settleLayout(target);
+		if (generation !== navigationGeneration) return false;
+		target?.scrollIntoView({
+			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
+			block: 'start',
+		});
+		return true;
+	}
+
+	async function consumePendingHash(): Promise<void> {
+		const id = pendingHash;
+		if (consumingHash || !id || !openableAnchors.has(id)) return;
+		consumingHash = true;
+		try {
+			await tick();
+			if (pendingHash !== id || !openableAnchors.has(id)) return;
+			if ((await reveal(id, navigationGeneration)) && pendingHash === id) pendingHash = null;
+		} finally {
+			consumingHash = false;
+			if (pendingHash && pendingHash !== id && openableAnchors.has(pendingHash)) {
+				void consumePendingHash();
+			}
+		}
+	}
+
+	$effect(() => {
+		const signature = tocEntries.map((entry) => entry.id).join('|');
+		const id = pendingHash;
+		void signature;
+		void id;
+		void consumePendingHash();
+	});
+
+	onMount(() => {
+		let cancelled = false;
+		void (async () => {
+			await tick();
+			if (!cancelled) queueHash(decodedHash());
+		})();
+		const onHashChange = () => {
+			queueHash(decodedHash());
+		};
+		window.addEventListener('hashchange', onHashChange);
+		return () => {
+			cancelled = true;
+			navigationGeneration += 1;
+			window.removeEventListener('hashchange', onHashChange);
+		};
+	});
+
+	async function navigate(id: string): Promise<void> {
+		// An explicit reader choice supersedes any queued async hash. The reveal's
+		// new generation cancels an in-flight hash scroll; clearing the queue keeps a
+		// later resource/inventory change from reviving that stale destination.
+		pendingHash = null;
+		await reveal(id);
 	}
 </script>
 
-<article class="health-article" data-testid="health-article">
-	<DetailShell
-		class="health-detail"
-		bind:activeId
-		{tocEntries}
-		onNavigate={navigate}
-		tocOpenAria={t.toc.pill.open}
-		tocCloseAria={t.toc.pill.close}
-	>
-		<!-- Masthead (the ONE head family). DetailShell owns the full-bleed dot-grid header
-		     band + the closing hazard tape, so the Masthead runs tape={false} and status now
-		     shares the SAME article header as /metrics. The "Updated N ago" stamp rides the
-		     meta row when the provenance document is available; the head otherwise renders in
-		     every state (h1 present on load/error), matching the prior unconditional head. -->
-		{#snippet header()}
-			<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede} meta={masthead} tape={false} />
-		{/snippet}
+<DetailShell
+	class="health-detail"
+	bind:activeId
+	{tocEntries}
+	onNavigate={navigate}
+	tocOpenAria={t.toc.pill.open}
+	tocCloseAria={t.toc.pill.close}
+>
+	{#snippet articleHeader()}
+		<ArticleHeader
+			watermark={t.article.watermark}
+			category={t.kicker}
+			title={t.heading}
+			tags={t.article.tags}
+			tagsAria={t.article.tagsAria}
+			backHref={localizeHref('/', locale)}
+			backLabel={t.article.back}
+			meta={articleMeta}
+			metaPending={provenance.loading || dataHealth.loading}
+			titleId="status-title"
+		>
+			{#snippet controls()}
+				<QuietModeButton />
+			{/snippet}
+		</ArticleHeader>
+	{/snippet}
 
-		{#snippet mobileSummary()}
+	{#snippet mobileSummary()}
+		{@render statCards()}
+	{/snippet}
+
+	{#snippet left()}
+		<div class="health-toc-rail">
+			{#if tocEntries.length > 0}
+				<TocNav
+					entries={tocEntries}
+					{activeId}
+					onNavigate={navigate}
+					heading={t.toc.label}
+					counterPrefix={t.toc.counterPrefix}
+					sectionKey="status-toc"
+					closeSignal={quietModeStore.closeSignal}
+					openSignal={quietModeStore.openSignal}
+					bulkCollapsed={quietModeStore.enabled}
+				/>
+			{/if}
+		</div>
+	{/snippet}
+
+	{#snippet right()}
+		<aside class="health-stat-aside" aria-label={t.statRail.label}>
 			{@render statCards()}
-		{/snippet}
+		</aside>
+	{/snippet}
 
-		{#snippet left()}
-			<div class="health-toc-rail">
-				{#if tocEntries.length > 0}
-					<TocNav
-						entries={tocEntries}
-						{activeId}
-						onNavigate={navigate}
-						heading={t.toc.label}
-						counterPrefix={t.toc.counterPrefix}
-						sectionKey="status-toc"
+	{#snippet center()}
+		<div class="health-sections" data-slot="health-sections">
+			<CollapsibleSection
+				title={t.overview.title}
+				headerVariant="article-summary"
+				sectionKey="status-overview"
+				open={true}
+				closeSignal={quietModeStore.closeSignal}
+				openSignal={quietModeStore.openSignal}
+				bulkCollapsed={quietModeStore.enabled}
+			>
+				<div class="health-overview">
+					<p class="health-lede">{t.lede}</p>
+					{#if !prov || provenanceIsEmpty(prov)}
+						<div class="health-resource-state" aria-label={t.overview.dailyRecord}>
+							<SectionLabel text={t.overview.dailyRecord} variant="metric" />
+							<ResourceBoundary resource={provenance} lang={locale} isEmpty={provenanceIsEmpty}>
+								{#snippet children(_value)}{/snippet}
+							</ResourceBoundary>
+						</div>
+					{/if}
+					{#if !dh || dataHealthIsEmpty(dh)}
+						<div class="health-resource-state" aria-label={t.overview.liveFeeds}>
+							<SectionLabel text={t.overview.liveFeeds} variant="metric" />
+							<ResourceBoundary resource={dataHealth} lang={locale} isEmpty={dataHealthIsEmpty}>
+								{#snippet children(_value)}{/snippet}
+							</ResourceBoundary>
+						</div>
+					{:else if laneStat.total > 0}
+						<div class="health-aggregate" data-slot="health-aggregate">
+							<TerminalPanel title={t.aggregate.title}>
+								<p class="health-aggregate__verdict">
+									<span class="health-aggregate__summary">
+										{t.aggregate.summary(String(laneStat.passing), String(laneStat.total))}
+									</span>
+									<span class="health-aggregate__worst">
+										{#if laneStat.worst}
+											{t.aggregate.worst(laneStat.worst.label)}
+										{:else}
+											{t.aggregate.allClear}
+										{/if}
+									</span>
+								</p>
+							</TerminalPanel>
+						</div>
+					{/if}
+				</div>
+			</CollapsibleSection>
+
+			<!-- ── Pipeline lanes (top section) ──────────────────────────── -->
+			{#if laneRows.length > 0}
+				<CollapsibleSection
+					title={t.lanes.section}
+					headerVariant="article-summary"
+					index={0}
+					anchor="health-lanes"
+					sectionKey="status-card-health-lanes"
+					open={true}
+					closeSignal={quietModeStore.closeSignal}
+					openSignal={quietModeStore.openSignal + cardOpenSignal('health-lanes')}
+					bulkCollapsed={quietModeStore.enabled}
+				>
+					<SectionLanes rows={laneRows} copy={t} {locale} />
+				</CollapsibleSection>
+			{/if}
+
+			<!-- ── Per-feed freshness ─────────────────────────────────────── -->
+			{#if freshness.length > 0}
+				<CollapsibleSection
+					title={t.freshness.section}
+					headerVariant="article-summary"
+					index={1}
+					anchor="health-freshness"
+					sectionKey="status-card-health-freshness"
+					open={true}
+					closeSignal={quietModeStore.closeSignal}
+					openSignal={quietModeStore.openSignal + cardOpenSignal('health-freshness')}
+					bulkCollapsed={quietModeStore.enabled}
+				>
+					<SectionFreshness items={freshness} {verdictFor} {humanizeAge} copy={t} />
+				</CollapsibleSection>
+			{/if}
+
+			<!-- ── Source-feed lineage ────────────────────────────────────── -->
+			{#if sources.length > 0}
+				<CollapsibleSection
+					title={t.sources.section}
+					headerVariant="article-summary"
+					index={2}
+					anchor="health-sources"
+					sectionKey="status-card-health-sources"
+					open={true}
+					closeSignal={quietModeStore.closeSignal}
+					openSignal={quietModeStore.openSignal + cardOpenSignal('health-sources')}
+					bulkCollapsed={quietModeStore.enabled}
+				>
+					<SectionSources items={sources} {lastLoaded} copy={t} />
+				</CollapsibleSection>
+			{/if}
+
+			<!-- ── Known data gaps (honesty banner) ───────────────────────── -->
+			{#if gaps.length > 0}
+				<CollapsibleSection
+					title={t.gaps.section}
+					headerVariant="article-summary"
+					index={3}
+					anchor="health-gaps"
+					sectionKey="status-card-health-gaps"
+					open={true}
+					closeSignal={quietModeStore.closeSignal}
+					openSignal={quietModeStore.openSignal + cardOpenSignal('health-gaps')}
+					bulkCollapsed={quietModeStore.enabled}
+				>
+					<SectionGaps {gaps} {humanizeGap} copy={t} />
+				</CollapsibleSection>
+			{/if}
+
+			<!-- ── Pipeline notes ─────────────────────────────────────────── -->
+			{#if pipelineNotes.length > 0}
+				<CollapsibleSection
+					title={t.pipelineNotes.section}
+					headerVariant="article-summary"
+					index={4}
+					anchor="health-pipeline-notes"
+					sectionKey="status-card-health-pipeline-notes"
+					open={true}
+					closeSignal={quietModeStore.closeSignal}
+					openSignal={quietModeStore.openSignal + cardOpenSignal('health-pipeline-notes')}
+					bulkCollapsed={quietModeStore.enabled}
+				>
+					<SectionNotes notes={pipelineNotes} copy={t} />
+				</CollapsibleSection>
+			{/if}
+
+			<!-- ── Retention ──────────────────────────────────────────────── -->
+			{#if hasRetention}
+				<CollapsibleSection
+					title={t.retention.section}
+					headerVariant="article-summary"
+					index={5}
+					anchor="health-retention"
+					sectionKey="status-card-health-retention"
+					open={true}
+					closeSignal={quietModeStore.closeSignal}
+					openSignal={quietModeStore.openSignal + cardOpenSignal('health-retention')}
+					bulkCollapsed={quietModeStore.enabled}
+				>
+					<SectionRetention
+						detail={retention.detail}
+						aggregate={retention.aggregate}
+						{fmtDays}
+						copy={t}
+						{locale}
 					/>
-				{/if}
-			</div>
-		{/snippet}
+				</CollapsibleSection>
+			{/if}
 
-		{#snippet right()}
-			<aside class="health-stat-aside" aria-label={t.statRail.label}>
-				{@render statCards()}
-			</aside>
-		{/snippet}
+			<!-- ── Conformance ────────────────────────────────────────────── -->
+			{#if conformance}
+				<CollapsibleSection
+					title={t.conformance.section}
+					headerVariant="article-summary"
+					index={6}
+					anchor="health-conformance"
+					sectionKey="status-card-health-conformance"
+					open={true}
+					closeSignal={quietModeStore.closeSignal}
+					openSignal={quietModeStore.openSignal + cardOpenSignal('health-conformance')}
+					bulkCollapsed={quietModeStore.enabled}
+				>
+					<SectionConformance
+						{conformance}
+						copy={t}
+						{locale}
+						closeSignal={quietModeStore.closeSignal}
+						openSignal={quietModeStore.openSignal}
+						bulkCollapsed={quietModeStore.enabled}
+					/>
+				</CollapsibleSection>
+			{/if}
 
-		{#snippet center()}
-			<!-- The boundary owns the skeleton/error/empty UX for the daily provenance
-			     document; the sections + ToC + stat rail derive from `provenance.data`
-			     at script level (null-safe), so the resolved snippet arg is unused. -->
-			<ResourceBoundary resource={provenance} lang={locale}>
-				{#snippet children(_p)}
-					<div class="health-sections" data-slot="health-sections">
-						<!-- ── Aggregate lane-gate verdict (§C5.9) ────────────────────────
-						     The page opens with ONE terminal verdict — "N of M lanes passing ·
-						     worst: X" — before the detail ledger, so the reader gets the whole-
-						     pipeline answer first. Present only when applicable lanes exist. -->
-						{#if laneStat.total > 0}
-							<div class="health-section health-aggregate" data-slot="health-aggregate">
-								<TerminalPanel title={t.aggregate.title}>
-									<p class="health-aggregate__verdict">
-										<span class="health-aggregate__summary"
-											>{t.aggregate.summary(String(laneStat.passing), String(laneStat.total))}</span
-										>
-										<span class="health-aggregate__worst">
-											{#if laneStat.worst}{t.aggregate.worst(laneStat.worst.label)}{:else}{t
-													.aggregate.allClear}{/if}
-										</span>
-									</p>
-								</TerminalPanel>
-							</div>
-						{/if}
-
-						<!-- ── Pipeline lanes (top section) ──────────────────────────── -->
-						{#if laneRows.length > 0}
-							<div class="health-section" data-toc="health-lanes">
-								<SectionLanes rows={laneRows} copy={t} {locale} />
-							</div>
-						{/if}
-
-						<!-- ── Per-feed freshness ─────────────────────────────────────── -->
-						{#if freshness.length > 0}
-							<div class="health-section" data-toc="health-freshness">
-								<SectionFreshness items={freshness} {verdictFor} {humanizeAge} copy={t} />
-							</div>
-						{/if}
-
-						<!-- ── Source-feed lineage ────────────────────────────────────── -->
-						{#if sources.length > 0}
-							<div class="health-section" data-toc="health-sources">
-								<SectionSources items={sources} {lastLoaded} copy={t} />
-							</div>
-						{/if}
-
-						<!-- ── Known data gaps (honesty banner) ───────────────────────── -->
-						{#if gaps.length > 0}
-							<div class="health-section" data-toc="health-gaps">
-								<SectionGaps {gaps} {humanizeGap} copy={t} />
-							</div>
-						{/if}
-
-						<!-- ── Pipeline notes ─────────────────────────────────────────── -->
-						{#if pipelineNotes.length > 0}
-							<div class="health-section" data-toc="health-pipeline-notes">
-								<SectionNotes notes={pipelineNotes} copy={t} />
-							</div>
-						{/if}
-
-						<!-- ── Retention ──────────────────────────────────────────────── -->
-						{#if hasRetention}
-							<div class="health-section" data-toc="health-retention">
-								<SectionRetention
-									detail={retention.detail}
-									aggregate={retention.aggregate}
-									{fmtDays}
-									copy={t}
-									{locale}
-								/>
-							</div>
-						{/if}
-
-						<!-- ── Conformance ────────────────────────────────────────────── -->
-						{#if conformance}
-							<div class="health-section" data-toc="health-conformance">
-								<SectionConformance {conformance} copy={t} {locale} />
-							</div>
-						{/if}
-
-						<!-- ── Build accountability (envelope) ────────────────────────── -->
-						{#if hasEnvelope}
-							<div class="health-section" data-toc="health-envelope">
-								<SectionEnvelope {envelope} copy={t} {locale} />
-							</div>
-						{/if}
-					</div>
-				{/snippet}
-			</ResourceBoundary>
-		{/snippet}
-	</DetailShell>
-</article>
+			<!-- ── Build accountability (envelope) ────────────────────────── -->
+			{#if hasEnvelope}
+				<CollapsibleSection
+					title={t.envelope.section}
+					headerVariant="article-summary"
+					index={7}
+					anchor="health-envelope"
+					sectionKey="status-card-health-envelope"
+					open={true}
+					closeSignal={quietModeStore.closeSignal}
+					openSignal={quietModeStore.openSignal + cardOpenSignal('health-envelope')}
+					bulkCollapsed={quietModeStore.enabled}
+				>
+					<SectionEnvelope {envelope} copy={t} {locale} />
+				</CollapsibleSection>
+			{/if}
+		</div>
+	{/snippet}
+</DetailShell>
 <!-- The floating mobile ToC pill now lives INSIDE DetailShell (it owns the observer +
      the pill); no separate render + no 1024–1279 re-show hack is needed — the shell's
      rails appear at the SAME 1024 boundary the pill hides at. -->
-
-<!-- The Masthead meta row — the "AS OF · Updated N ago" stamp (live off the
-     provenance document's generated_utc when available). -->
-{#snippet masthead()}
-	{#if prov?.generated_utc}
-		<span class="health-asof" data-slot="health-asof">
-			<span class="health-asof-label">{t.asOf}</span>
-			<FreshnessStamp variant="updated" generatedUtc={prov.generated_utc} {locale} />
-		</span>
-	{/if}
-{/snippet}
 
 <!-- Right-rail / mobile-summary stat cards — a compact pass/fail summary from the
      lanes gate + feed freshness. Rendered ONCE and dropped into both the desktop
@@ -355,51 +642,75 @@
 {#snippet statCards()}
 	<div class="health-stat-rail">
 		{#if laneStat.total > 0}
-			<div class="health-stat" data-slot="stat-lanes">
-				<span class="health-stat__title">{t.statRail.lanes.title}</span>
-				<p class="health-stat__count">
-					{t.statRail.lanes.passing(String(laneStat.passing), String(laneStat.total))}
-				</p>
-				<p class="health-stat__sub">
-					{#if laneStat.worst}{t.statRail.lanes.worst(laneStat.worst.label)}{:else}{t.statRail.lanes
-							.allClear}{/if}
-				</p>
-			</div>
+			<CollapsibleSection
+				title={t.statRail.lanes.title}
+				headerVariant="article-summary"
+				bind:open={() => railOpen.lanes.value, (next) => setRailOpen('lanes', next)}
+				closeSignal={quietModeStore.closeSignal}
+				openSignal={quietModeStore.openSignal}
+				bulkCollapsed={quietModeStore.enabled}
+			>
+				{#snippet icon()}
+					<SectionIcon name="grid" class="h-4 w-4 shrink-0 text-primary" />
+				{/snippet}
+				<div class="health-stat__body" data-slot="stat-lanes">
+					<p class="health-stat__count">
+						{t.statRail.lanes.passing(String(laneStat.passing), String(laneStat.total))}
+					</p>
+					<p class="health-stat__sub">
+						{#if laneStat.worst}
+							{t.statRail.lanes.worst(laneStat.worst.label)}
+						{:else}
+							{t.statRail.lanes.allClear}
+						{/if}
+					</p>
+				</div>
+			</CollapsibleSection>
 		{/if}
 		{#if feedStat.total > 0}
-			<div class="health-stat" data-slot="stat-feeds">
-				<span class="health-stat__title">{t.statRail.feeds.title}</span>
-				<p class="health-stat__count">
-					{t.statRail.feeds.fresh(String(feedStat.ok), String(feedStat.total))}
-				</p>
-			</div>
+			<CollapsibleSection
+				title={t.statRail.feeds.title}
+				headerVariant="article-summary"
+				bind:open={() => railOpen.feeds.value, (next) => setRailOpen('feeds', next)}
+				closeSignal={quietModeStore.closeSignal}
+				openSignal={quietModeStore.openSignal}
+				bulkCollapsed={quietModeStore.enabled}
+			>
+				{#snippet icon()}
+					<SectionIcon name="list" class="h-4 w-4 shrink-0 text-primary" />
+				{/snippet}
+				<div class="health-stat__body" data-slot="stat-feeds">
+					<p class="health-stat__count">
+						{t.statRail.feeds.fresh(String(feedStat.ok), String(feedStat.total))}
+					</p>
+				</div>
+			</CollapsibleSection>
 		{/if}
 	</div>
 {/snippet}
 
 <style>
-	/* The surface is a measured article rendered through DetailShell, which owns the
-	   full-bleed dot-grid header band + the hazard tape + the 3-col body grid. This
-	   feature supplies only the CONTENT of each slot. */
-	.health-article {
-		display: block;
-		width: 100%;
+	.health-overview {
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+		min-width: 0;
 	}
-
-	/* "as of" stamp: the mono label + the neutral "Updated N ago" stamp, riding the
-	   Masthead meta row. */
-	.health-asof {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		flex-wrap: wrap;
+	.health-lede {
+		margin: 0;
+		max-width: 60ch;
+		font-size: var(--text-detail-body-mobile);
+		line-height: 1.8;
+		color: var(--secondary-foreground);
 	}
-	.health-asof-label {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: 1px;
-		text-transform: uppercase;
-		color: var(--muted-foreground);
+	.health-resource-state {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		min-width: 0;
+	}
+	.health-aggregate {
+		min-width: 0;
 	}
 
 	/* ── Left rail (SEC readout + ToC) ─────────────────────────────────────────
@@ -413,8 +724,8 @@
 	}
 
 	/* ── Center sections ───────────────────────────────────────────────────────
-	   The existing 8 sections keep their own vertical rhythm; the wrappers only add
-	   the ToC scroll anchor + inter-section spacing. */
+	   The eight parent cards keep the existing body presenters in pipeline order;
+	   this column owns only their inter-card spacing. */
 	.health-sections {
 		display: flex;
 		flex-direction: column;
@@ -422,10 +733,6 @@
 		min-width: 0;
 		max-width: var(--container-content);
 	}
-	.health-section {
-		min-width: 0;
-	}
-
 	/* Aggregate verdict panel — the pass-summary + worst-lane sentence inside the
 	   terminal frame. Not a data mark / no --primary; the summary reads in the
 	   heading voice, the worst clause in the muted mono voice. */
@@ -452,7 +759,7 @@
 
 	/* ── Right rail / mobile summary stat cards ────────────────────────────────
 	   Lanes-passing + feeds-fresh, from data on the page. Desktop: sticky right
-	   rail. Mobile: reflowed into a wrapping top strip via mobileSummary. No data
+	   rail. Mobile: reflowed into a one-track summary stack via mobileSummary. No data
 	   marks / no --primary — the counts read in the calm mono/heading voice. */
 	.health-stat-aside {
 		min-width: 0;
@@ -462,29 +769,20 @@
 		flex-direction: column;
 		gap: var(--space-card-gap);
 	}
-	.health-article :global(.detail-shell-mobile-summary .health-stat-rail) {
-		flex-direction: row;
-		flex-wrap: wrap;
+	:global(.detail-shell-mobile-summary) .health-stat-rail {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		align-items: start;
 	}
-	.health-article :global(.detail-shell-mobile-summary .health-stat) {
-		flex: 1 1 10rem;
+	:global(.detail-shell-mobile-summary) .health-stat-rail :global([data-slot='card']) {
+		width: 100%;
+		min-width: 0;
 	}
-	.health-stat {
+	.health-stat__body {
 		display: flex;
 		flex-direction: column;
 		gap: 0.375rem;
-		padding: 0.875rem 1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		background: var(--muted);
 		min-width: 0;
-	}
-	.health-stat__title {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--muted-foreground);
 	}
 	.health-stat__count {
 		margin: 0;
@@ -497,7 +795,15 @@
 	}
 	.health-stat__sub {
 		margin: 0;
-		font-size: var(--text-caption);
+		font-size: 0.95rem;
+		line-height: 1.45;
 		color: var(--muted-foreground);
+	}
+
+	@media (min-width: 1024px) {
+		.health-lede {
+			font-size: var(--text-detail-body-desktop);
+			line-height: 1.9;
+		}
 	}
 </style>

@@ -9,14 +9,12 @@
   fold the rail and, when a `sectionKey` is supplied, that collapsed choice
   persists across same-tab visits.
 
-  S10 UPDATE (was: "FOCUS NEVER touches the ToC"): the /metrics FOCUS parity pass
-  reconciled transit to yesid's Quiet-Mode contract, where the ToC's own
-  CollapsibleSection DOES respond to the page's quiet signals (yesid TocNav →
-  CollapsibleSection subscribes to closeSignal/openSignal). Transit now matches:
-  a page may pass `closeSignal` (fold the rail on FOCUS) + `openSignal` (reopen it
-  on unfocus). When neither is wired the rail stays Focus-independent exactly as
-  before (both default `null`). The reader's manual chevron still works and still
-  persists; the signals are edge-triggered so they never fight a fresh mount.
+  ARTICLE CONTROL CONTRACT: the ToC's own CollapsibleSection can respond to the
+  page-scoped signals behind `Collapse all` / `Expand all`. A page may pass
+  `closeSignal` to fold the rail and `openSignal` to reopen it. When neither is
+  wired the rail stays independent (both default `null`). The reader's manual
+  chevron still works and still persists; the signals are edge-triggered so they
+  never fight a fresh mount.
   Pass `collapsible={false}` for a permanently-open, non-hideable rail.
 
   Ported from yesid.dev shared/TocNav. Deviation: yesid's `.toc-counter-dot`
@@ -27,7 +25,7 @@
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import SectionIcon from './SectionIcon.svelte';
 	import TocBadge from './TocBadge.svelte';
-	import { flattenToc, type TocEntry } from './toc';
+	import { resolveTocCounter, type TocEntry } from './toc';
 
 	let {
 		entries,
@@ -39,6 +37,7 @@
 		sectionKey = undefined,
 		closeSignal = null,
 		openSignal = null,
+		bulkCollapsed = null,
 	}: {
 		entries: TocEntry[];
 		activeId: string;
@@ -48,8 +47,8 @@
 		/**
 		 * When true (default), the rail renders its OWN collapse affordance (chevron)
 		 * so a reader can fold the navigation manually. This is the ToC's own toggle —
-		 * it is NEVER driven by FOCUS/quiet mode (which collapses the section cards,
-		 * not the ToC). Pass false to render a permanently-open, non-hideable rail.
+		 * page-level `Collapse all` / `Expand all` signals remain optional. Pass false
+		 * to render a permanently-open, non-hideable rail.
 		 */
 		collapsible?: boolean;
 		/**
@@ -59,39 +58,42 @@
 		 */
 		sectionKey?: string;
 		/**
-		 * S10 FOCUS parity — optional "fold the rail" signal (yesid closeSignal idiom).
-		 * When a page bumps it, the rail's CollapsibleSection collapses. `null`
-		 * (default) keeps the rail Focus-independent. Forwarded verbatim to the wrapping
-		 * CollapsibleSection.
+		 * Optional page-scoped `Collapse all` signal (yesid closeSignal idiom). When a
+		 * page bumps it, the rail's CollapsibleSection collapses. `null` (default)
+		 * keeps the rail independent. Forwarded verbatim to the wrapping section.
 		 */
 		closeSignal?: number | null;
 		/**
-		 * S10 FOCUS parity — optional "reopen the rail" signal (yesid openSignal idiom).
-		 * When a page bumps it, the rail reopens. `null` (default) keeps the rail
-		 * Focus-independent. Forwarded verbatim to the wrapping CollapsibleSection.
+		 * Optional page-scoped `Expand all` signal (yesid openSignal idiom). When a page
+		 * bumps it, the rail reopens. `null` (default) keeps the rail independent.
+		 * Forwarded verbatim to the wrapping CollapsibleSection.
 		 */
 		openSignal?: number | null;
+		/**
+		 * The page's current bulk mode for a rail that mounts after the mount-time
+		 * signal fired (the status ToC renders only once async entries exist).
+		 * Forwarded verbatim to the wrapping CollapsibleSection.
+		 */
+		bulkCollapsed?: boolean | null;
 	} = $props();
 
 	// Desktop TOC lists only the center-column sections; right-rail cards
 	// (rail:true) are already visible in the sticky rail, so they are excluded
 	// here. They DO appear in the mobile pill, where they sit in the page flow.
 	const shown = $derived(entries.filter((e) => !e.rail));
-	const flat = $derived(flattenToc(shown));
-	const activeIndex = $derived(
-		Math.max(
-			0,
-			flat.findIndex((e) => e.id === activeId),
-		),
-	);
+	// A pure numbered top-level run carries canonical section numbers. When a
+	// conditional section stands down, keep the footer aligned with those badges
+	// (for example 02 / 08), rather than silently re-numbering it as position 01 / 07.
+	// Mixed/icon/child ToCs retain their reading-position counter.
+	const counter = $derived(resolveTocCounter(shown, activeId));
 </script>
 
 <!--
 	The ToC rail carries its OWN user-driven collapse (its own chevron). When
 	`collapsible` is true (default) a reader can fold the rail, and a `sectionKey`
-	persists that choice across same-tab visits. This toggle is the ToC's alone —
-	it is never wired to FOCUS/quiet (which collapses the section cards, not this).
-	Default-open so the nav is reachable until the reader chooses to fold it.
+	persists that choice across same-tab visits. Page-scoped `Collapse all` /
+	`Expand all` signals may also be forwarded explicitly. Default-open so the nav
+	is reachable until the reader or page action folds it.
 -->
 <CollapsibleSection
 	title={heading}
@@ -99,6 +101,7 @@
 	{sectionKey}
 	{closeSignal}
 	{openSignal}
+	{bulkCollapsed}
 	open={true}
 >
 	{#snippet icon()}
@@ -138,7 +141,7 @@
 		<div class="toc-counter-dot"></div>
 		<span class="toc-counter-text font-mono text-micro tracking-[1.5px]">
 			{counterPrefix}
-			{String(activeIndex + 1).padStart(2, '0')} / {String(flat.length).padStart(2, '0')}
+			{String(counter.current).padStart(2, '0')} / {String(counter.total).padStart(2, '0')}
 		</span>
 	</div>
 </CollapsibleSection>
