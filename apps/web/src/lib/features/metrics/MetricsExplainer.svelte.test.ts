@@ -205,6 +205,57 @@ describe('MetricsExplainer', () => {
 		).not.toBeNull();
 	});
 
+	it('opts every Metrics section and stat card into article-summary headers', () => {
+		provState.data = {
+			generated_utc: '2026-07-11T04:00:00Z',
+			conformance: { status: 'conformant', extra_row_count: 0, unknown_members: [] },
+			methodology: {},
+		};
+		const { container } = render(MetricsExplainer);
+		const sectionCards = Array.from(
+			container.querySelectorAll<HTMLElement>(
+				'[data-testid="metrics-sections"] .section-block > [data-slot="card"]',
+			),
+		);
+		const railCards = Array.from(
+			container.querySelectorAll<HTMLElement>('.metrics-stat-rail > [data-slot="card"]'),
+		);
+
+		expect(sectionCards).toHaveLength(METRICS.length + 3);
+		expect(railCards).toHaveLength(6);
+		for (const card of [...sectionCards, ...railCards]) {
+			expect(card).toHaveAttribute('data-header-variant', 'article-summary');
+		}
+		expect(
+			container.querySelector('.metrics-toc-rail [data-header-variant="article-summary"]'),
+		).toBeNull();
+	});
+
+	it('keeps a metric one-liner linked to its article-summary trigger across collapse', async () => {
+		const first = METRICS[0];
+		const { container } = render(MetricsExplainer);
+		const card = container.querySelector(
+			`#${CSS.escape(first.anchor)} > [data-slot="card"][data-header-variant="article-summary"]`,
+		) as HTMLElement;
+		const trigger = card?.querySelector(
+			'h2.section-heading > button.section-header',
+		) as HTMLButtonElement;
+
+		expect(card).not.toBeNull();
+		expect(trigger).toHaveAccessibleName(first.name.en);
+		const subtitleId = trigger.getAttribute('aria-describedby') ?? '';
+		expect(subtitleId).not.toBe('');
+		const subtitle = card.querySelector(`#${CSS.escape(subtitleId)}`) as HTMLElement;
+		expect(subtitle).toBeVisible();
+		expect(subtitle.textContent?.trim()).toBe(first.oneLiner.en);
+		expect(subtitle).toHaveAttribute('data-state', 'open');
+
+		await fireEvent.click(trigger);
+
+		expect(subtitle).toHaveAttribute('data-state', 'closed');
+		expect(subtitle.textContent?.trim()).toBe(first.oneLiner.en);
+	});
+
 	it('renders the desktop TOC rail with one numbered jump button per metric', () => {
 		const { container } = render(MetricsExplainer);
 

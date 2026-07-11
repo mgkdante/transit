@@ -383,6 +383,7 @@
 		{#if provenance.data?.conformance || provenanceUnavailable}
 			<CollapsibleSection
 				title={t.statRail.provenance.title}
+				headerVariant="article-summary"
 				bind:open={() => railOpen.provenance.value, (next) => setRailOpen('provenance', next)}
 				closeSignal={quietModeStore.closeSignal}
 				openSignal={quietModeStore.openSignal}
@@ -405,6 +406,7 @@
 		     families, plus the confidence legend chips. Pure static counts. -->
 		<CollapsibleSection
 			title={t.statRail.coverage.title}
+			headerVariant="article-summary"
 			bind:open={() => railOpen.coverage.value, (next) => setRailOpen('coverage', next)}
 			closeSignal={quietModeStore.closeSignal}
 			openSignal={quietModeStore.openSignal}
@@ -435,6 +437,7 @@
 		{#if provenance.data?.generated_utc}
 			<CollapsibleSection
 				title={t.statRail.freshness.title}
+				headerVariant="article-summary"
 				bind:open={() => railOpen.freshness.value, (next) => setRailOpen('freshness', next)}
 				closeSignal={quietModeStore.closeSignal}
 				openSignal={quietModeStore.openSignal}
@@ -525,6 +528,7 @@
 			<div class="section-block" id={PROVENANCE_ANCHOR}>
 				<CollapsibleSection
 					title={t.provenance.label}
+					headerVariant="article-summary"
 					anchor={PROVENANCE_ANCHOR}
 					sectionKey={cardKey(PROVENANCE_ANCHOR)}
 					open={true}
@@ -621,6 +625,7 @@
 							<CollapsibleSection
 								title={entry.name[locale]}
 								subtitle={entry.oneLiner[locale]}
+								headerVariant="article-summary"
 								anchor={entry.anchor}
 								index={metricIndex}
 								sectionKey={cardKey(entry.anchor)}
@@ -693,6 +698,7 @@
 			<div class="section-block metrics-live" id={LIVE_POSITIONS_ANCHOR}>
 				<CollapsibleSection
 					title={t.livePositions.title}
+					headerVariant="article-summary"
 					anchor={LIVE_POSITIONS_ANCHOR}
 					sectionKey={cardKey(LIVE_POSITIONS_ANCHOR)}
 					open={true}
@@ -725,6 +731,7 @@
 			<div class="section-block metrics-lacunes" id={LACUNES_ANCHOR}>
 				<CollapsibleSection
 					title={t.lacunes.title}
+					headerVariant="article-summary"
 					anchor={LACUNES_ANCHOR}
 					sectionKey={cardKey(LACUNES_ANCHOR)}
 					open={true}

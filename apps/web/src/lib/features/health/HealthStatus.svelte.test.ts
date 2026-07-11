@@ -279,6 +279,32 @@ describe('HealthStatus — full manifest render', () => {
 		}
 	});
 
+	it('opts every Status section and stat card into title-only article-summary headers', () => {
+		const { container } = render(HealthStatus);
+		const sectionCards = Array.from(
+			container.querySelectorAll<HTMLElement>('.health-sections > [data-slot="card"]'),
+		);
+		const railCards = Array.from(
+			container.querySelectorAll<HTMLElement>('.health-stat-rail > [data-slot="card"]'),
+		);
+
+		expect(sectionCards).toHaveLength(9);
+		expect(railCards).toHaveLength(4);
+		for (const card of [...sectionCards, ...railCards]) {
+			expect(card).toHaveAttribute('data-header-variant', 'article-summary');
+			const heading = card.querySelector('h2.section-heading') as HTMLHeadingElement;
+			expect(heading).not.toBeNull();
+			expect(heading.children).toHaveLength(1);
+			const trigger = heading.firstElementChild as HTMLButtonElement;
+			expect(trigger).toHaveClass('section-header--title-only');
+			expect(trigger).not.toHaveAttribute('aria-describedby');
+			expect(card.querySelector('.section-subtitle--article-summary')).toBeNull();
+		}
+		expect(
+			container.querySelector('.health-toc-rail [data-header-variant="article-summary"]'),
+		).toBeNull();
+	});
+
 	it('keeps status article meta honestly absent when no status document is available', () => {
 		provenanceState = ready<Provenance>(null);
 		dataHealthState = ready<DataHealth>(null);

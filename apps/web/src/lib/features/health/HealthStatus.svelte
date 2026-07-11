@@ -436,6 +436,7 @@
 		<div class="health-sections" data-slot="health-sections">
 			<CollapsibleSection
 				title={t.overview.title}
+				headerVariant="article-summary"
 				sectionKey="status-overview"
 				open={true}
 				closeSignal={quietModeStore.closeSignal}
@@ -484,6 +485,7 @@
 			{#if laneRows.length > 0}
 				<CollapsibleSection
 					title={t.lanes.section}
+					headerVariant="article-summary"
 					index={0}
 					anchor="health-lanes"
 					sectionKey="status-card-health-lanes"
@@ -500,6 +502,7 @@
 			{#if freshness.length > 0}
 				<CollapsibleSection
 					title={t.freshness.section}
+					headerVariant="article-summary"
 					index={1}
 					anchor="health-freshness"
 					sectionKey="status-card-health-freshness"
@@ -516,6 +519,7 @@
 			{#if sources.length > 0}
 				<CollapsibleSection
 					title={t.sources.section}
+					headerVariant="article-summary"
 					index={2}
 					anchor="health-sources"
 					sectionKey="status-card-health-sources"
@@ -532,6 +536,7 @@
 			{#if gaps.length > 0}
 				<CollapsibleSection
 					title={t.gaps.section}
+					headerVariant="article-summary"
 					index={3}
 					anchor="health-gaps"
 					sectionKey="status-card-health-gaps"
@@ -548,6 +553,7 @@
 			{#if pipelineNotes.length > 0}
 				<CollapsibleSection
 					title={t.pipelineNotes.section}
+					headerVariant="article-summary"
 					index={4}
 					anchor="health-pipeline-notes"
 					sectionKey="status-card-health-pipeline-notes"
@@ -564,6 +570,7 @@
 			{#if hasRetention}
 				<CollapsibleSection
 					title={t.retention.section}
+					headerVariant="article-summary"
 					index={5}
 					anchor="health-retention"
 					sectionKey="status-card-health-retention"
@@ -586,6 +593,7 @@
 			{#if conformance}
 				<CollapsibleSection
 					title={t.conformance.section}
+					headerVariant="article-summary"
 					index={6}
 					anchor="health-conformance"
 					sectionKey="status-card-health-conformance"
@@ -609,6 +617,7 @@
 			{#if hasEnvelope}
 				<CollapsibleSection
 					title={t.envelope.section}
+					headerVariant="article-summary"
 					index={7}
 					anchor="health-envelope"
 					sectionKey="status-card-health-envelope"
@@ -635,6 +644,7 @@
 		{#if laneStat.total > 0}
 			<CollapsibleSection
 				title={t.statRail.lanes.title}
+				headerVariant="article-summary"
 				bind:open={() => railOpen.lanes.value, (next) => setRailOpen('lanes', next)}
 				closeSignal={quietModeStore.closeSignal}
 				openSignal={quietModeStore.openSignal}
@@ -660,6 +670,7 @@
 		{#if feedStat.total > 0}
 			<CollapsibleSection
 				title={t.statRail.feeds.title}
+				headerVariant="article-summary"
 				bind:open={() => railOpen.feeds.value, (next) => setRailOpen('feeds', next)}
 				closeSignal={quietModeStore.closeSignal}
 				openSignal={quietModeStore.openSignal}
