@@ -72,6 +72,22 @@ function seed(): Hotspots {
 						severe_pct: 5,
 						observation_count: 12,
 					},
+					{
+						rank: null,
+						type: 'route',
+						id: 'R2',
+						name: 'Sparse Route',
+						severe_pct: 4,
+						observation_count: null,
+					},
+					{
+						rank: null,
+						type: 'route',
+						id: 'R3',
+						name: 'Zero Route',
+						severe_pct: 0,
+						observation_count: 0,
+					},
 				],
 			},
 			{
@@ -365,13 +381,51 @@ describe('HotspotsBoard article', () => {
 		expect(cardTrigger(container, 'hotspots-top')).toHaveAttribute('aria-expanded', 'false');
 	});
 
-	it('renders the un-ranked tray explicitly outside the ranked ladder', () => {
+	it('renders below-floor evidence in semantic tables without fabricating readings', () => {
 		const { container } = render(HotspotsBoard);
 		const stopCard = card(container, 'hotspots-stops');
-		const tray = stopCard.querySelector('[data-slot="hotspot-tray"]') as HTMLElement;
-		expect(within(tray).getByText(/not ranked/i)).toBeInTheDocument();
-		expect(within(tray).getByText('Quiet Ave')).toBeInTheDocument();
-		expect(within(tray).queryAllByRole('progressbar')).toHaveLength(0);
+		const stopTray = stopCard.querySelector('[data-slot="hotspot-tray"]') as HTMLElement;
+		const stopTables = stopTray.querySelectorAll('table[data-slot="hotspot-tray-table"]');
+		expect(stopTables).toHaveLength(1);
+		const stopTable = stopTables[0] as HTMLTableElement;
+		expect(
+			within(stopTable)
+				.getAllByRole('columnheader')
+				.map((cell) => cell.textContent?.trim()),
+		).toEqual(['Item', 'Type / ID', 'Readings']);
+		const detail = within(stopTable).getByRole('link', { name: /View detail for Quiet Ave/ });
+		expect(detail).toHaveAttribute('href', '/stop/S2');
+		const servedRow = detail.closest('tr') as HTMLTableRowElement;
+		expect(servedRow).toHaveTextContent('Stop · S2');
+		expect(servedRow).toHaveTextContent('12');
+		expect(servedRow.querySelector('[data-slot="absent-value"]')).toBeNull();
+		const reason = stopTray.querySelector('[data-slot="hotspot-tray-reason"]') as HTMLElement;
+		expect(reason).toHaveTextContent(/not ranked/i);
+		expect(stopTable).not.toContainElement(reason);
+
+		const lineCard = card(container, 'hotspots-lines');
+		const lineTable = lineCard.querySelector(
+			'table[data-slot="hotspot-tray-table"]',
+		) as HTMLTableElement;
+		expect(lineTable).not.toBeNull();
+		const nullTitle = within(lineTable).getByText('Sparse Route');
+		const nullRow = nullTitle.closest('tr') as HTMLTableRowElement;
+		expect(nullRow).toHaveTextContent('Line · R2');
+		expect(nullRow.querySelectorAll('[data-slot="absent-value"]')).toHaveLength(1);
+		expect(nullRow).not.toHaveTextContent(/\b0\b/);
+		const zeroTitle = within(lineTable).getByText('Zero Route');
+		const zeroRow = zeroTitle.closest('tr') as HTMLTableRowElement;
+		expect(zeroRow).toHaveTextContent('Line · R3');
+		expect(zeroRow.querySelector('.hotspot-tray-readings')).toHaveTextContent('0');
+		expect(zeroRow.querySelector('[data-slot="absent-value"]')).toBeNull();
+
+		const rankedTable = stopCard.querySelector('table.sr-only') as HTMLTableElement;
+		expect(rankedTable).not.toBeNull();
+		expect(within(rankedTable).getByRole('link', { name: 'Berri-UQAM' })).toHaveAttribute(
+			'href',
+			'/stop/S1',
+		);
+		expect(rankedTable).not.toBe(stopTable);
 	});
 
 	it('seeds the grain from ?grain=week and renders the matching conditional cards', () => {

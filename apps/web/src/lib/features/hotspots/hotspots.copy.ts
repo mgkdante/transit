@@ -66,14 +66,22 @@ export interface HotspotsCopy extends SurfaceHeadCopy {
 		/** Wilson-interval label surfaced in the tooltip + sr-only table. */
 		readonly ci: string;
 	};
+	readonly chart: {
+		readonly scroll: (sectionTitle: string) => string;
+	};
 	/** The un-ranked tray (sub-MIN_N cells) heading + reason. */
 	readonly tray: {
 		/** Section heading (e.g. "Below the reliable-reading floor"). */
 		readonly heading: string;
 		/** Why these cells are not ranked (the MIN_N floor). */
 		readonly reason: string;
-		/** Accessible label over the tray list. */
+		/** Accessible label over the tray table. */
 		readonly listLabel: string;
+		readonly columns: {
+			readonly item: string;
+			readonly typeId: string;
+			readonly readings: string;
+		};
 		/** One tray row's subtitle (kind · id). */
 		readonly rowSubtitle: (kind: string, id: string) => string;
 	};
@@ -183,10 +191,18 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			severeRateLabel: 'Taux de retards graves',
 			ci: 'IC à 95 %',
 		},
+		chart: {
+			scroll: (sectionTitle) => `Faire défiler horizontalement le graphique ${sectionTitle}`,
+		},
 		tray: {
 			heading: 'Sous le seuil de lecture fiable',
 			reason: 'Trop peu d’observations pour un classement (moins de 30 relevés) · non classés.',
 			listLabel: 'Points non classés, sous le seuil d’observations',
+			columns: {
+				item: 'Élément',
+				typeId: 'Type / ID',
+				readings: 'Relevés',
+			},
 			rowSubtitle: (kind, id) => `${kind} · ${id}`,
 		},
 		note: {
@@ -272,10 +288,18 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			severeRateLabel: 'Severe-delay rate',
 			ci: '95% CI',
 		},
+		chart: {
+			scroll: (sectionTitle) => `Scroll the ${sectionTitle} chart horizontally`,
+		},
 		tray: {
 			heading: 'Below the reliable-reading floor',
 			reason: 'Too few observations to rank (fewer than 30 readings) · not ranked.',
 			listLabel: 'Un-ranked spots, below the observations floor',
+			columns: {
+				item: 'Item',
+				typeId: 'Type / ID',
+				readings: 'Readings',
+			},
 			rowSubtitle: (kind, id) => `${kind} · ${id}`,
 		},
 		note: {

@@ -206,7 +206,9 @@
 	interface TrayRow {
 		readonly key: string;
 		readonly title: string;
-		readonly subtitle: string;
+		readonly type: string;
+		readonly id: string;
+		readonly observationCount: number | null;
 		readonly href: string | null;
 		readonly ariaLabel: string;
 	}
@@ -215,11 +217,12 @@
 			.filter((entry) => entry.type === kind)
 			.map((entry) => {
 				const title = entry.name ?? t.unnamed(entry.id);
-				const tag = typeTag(entry.type);
 				return {
 					key: `${entry.type}-${entry.id}`,
 					title,
-					subtitle: t.tray.rowSubtitle(tag ?? entry.type, entry.id),
+					type: typeTag(entry.type) ?? entry.type,
+					id: entry.id,
+					observationCount: entry.observation_count ?? null,
 					href: hrefFor(entry),
 					ariaLabel: t.viewDetail(title),
 				};
@@ -443,6 +446,7 @@
 										ladder={routeLadder}
 										tray={routeTray}
 										{windowCaption}
+										chartScrollLabel={t.chart.scroll(t.cards.lines.title)}
 										info={severeInfo}
 										{locale}
 										copy={t}
@@ -453,6 +457,7 @@
 										ladder={stopLadder}
 										tray={stopTray}
 										{windowCaption}
+										chartScrollLabel={t.chart.scroll(t.cards.stops.title)}
 										info={severeInfo}
 										{locale}
 										copy={t}
