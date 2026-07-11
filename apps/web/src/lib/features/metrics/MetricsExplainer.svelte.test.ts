@@ -115,6 +115,28 @@ describe('MetricsExplainer', () => {
 		expect(source).not.toMatch(/flex:\s*1 1 12rem/);
 	});
 
+	it('keeps every information kind in one foreground stack at every width', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
+			'utf8',
+		);
+		expect(source).toMatch(
+			/\.metric__paired-information\s*\{[\s\S]*?display:\s*flex[\s\S]*?flex-direction:\s*column/,
+		);
+		expect(source).not.toMatch(
+			/\.metric__paired-information\s*\{[^}]*grid-template-columns:/,
+		);
+		expect(source).not.toMatch(
+			/\.metric__paired-information\s*>\s*:global\(\[data-slot='typed-information-card'\]\)\s*\{[^}]*height:\s*100%/,
+		);
+		expect(source).not.toMatch(
+			/\.metric__prose--mono\s*\{[^}]*font-family:\s*var\(--font-mono\)/,
+		);
+		expect(source).not.toMatch(
+			/\.(?:metric__prose--mono|metric__not|metric__pipeline-note|metric__caveats)\s*\{[^}]*color:\s*var\(--muted-foreground\)/,
+		);
+	});
+
 	it('renders the shared article header with metrics keywords, back link, and body lede', () => {
 		const { container } = render(MetricsExplainer);
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;

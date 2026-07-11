@@ -989,9 +989,10 @@
 		min-width: 0;
 	}
 	.metric__paired-information {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
+		display: flex;
+		flex-direction: column;
 		gap: 1rem;
+		min-width: 0;
 	}
 	.metric__prose {
 		margin: 0;
@@ -1004,26 +1005,12 @@
 		font-size: inherit;
 		line-height: inherit;
 	}
-	.metric__prose--mono,
-	.metric__pipeline-note {
-		font-family: var(--font-mono);
-	}
-	.metric__prose--mono {
-		color: var(--muted-foreground);
-	}
-	.metric__not {
-		color: var(--muted-foreground);
-	}
-	.metric__pipeline-note {
-		color: var(--muted-foreground);
-	}
 	.metric__caveats {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 		margin: 0;
 		padding-inline-start: 1.1rem;
-		color: var(--muted-foreground);
 		max-width: 72ch;
 	}
 	/* ── Structural-gaps card ─────────────────────────────────────────────────
@@ -1133,14 +1120,6 @@
 		.metrics-lacunes__gap p {
 			font-size: var(--text-detail-body-desktop);
 			line-height: 1.9;
-		}
-
-		.metric__paired-information {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-			align-items: stretch;
-		}
-		.metric__paired-information > :global([data-slot='typed-information-card']) {
-			height: 100%;
 		}
 	}
 

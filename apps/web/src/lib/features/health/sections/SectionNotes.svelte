@@ -38,7 +38,7 @@
 	}
 	.health-note {
 		margin: 0;
-		color: var(--muted-foreground);
+		color: var(--foreground);
 		font-size: var(--text-detail-body-mobile);
 		line-height: 1.8;
 		max-width: 60ch;

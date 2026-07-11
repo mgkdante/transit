@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import SectionNotes from './SectionNotes.svelte';
@@ -19,5 +21,26 @@ describe('SectionNotes', () => {
 		expect(container.querySelector('[data-kind="caveat"] .lucide-triangle-alert')).not.toBeNull();
 		expect(container.querySelector('[data-kind="math"] .lucide-sigma')).not.toBeNull();
 		expect(container.querySelector('[data-kind="pipeline-note"] .lucide-workflow')).not.toBeNull();
+	});
+
+	it('uses the same foreground article body for every note kind and its section note', () => {
+		const { container } = render(SectionNotes, { props: { notes, copy: copy.en } });
+		const bodies = Array.from(
+			container.querySelectorAll<HTMLElement>('[data-slot="typed-information-body"]'),
+		);
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/health/sections/SectionNotes.svelte'),
+			'utf8',
+		);
+		expect(bodies).toHaveLength(notes.length);
+		for (const body of bodies) {
+			expect(body).not.toHaveClass('typed-information-body--mono');
+		}
+		expect(source).toMatch(
+			/\.health-note\s*\{[\s\S]*?color:\s*var\(--foreground\)/,
+		);
+		expect(source).not.toMatch(
+			/\.health-note\s*\{[\s\S]*?color:\s*var\(--muted-foreground\)/,
+		);
 	});
 });
