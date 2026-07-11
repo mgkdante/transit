@@ -28,10 +28,13 @@
 	// PRM-guarded). Vendored actions, never edited.
 	import { boop, pressBounce } from '@yesid/motion';
 
+	export type GrainPickerVariant = 'default' | 'time-row';
+
 	/** One offered grain segment. `available:false` renders disabled (never picked). */
 	export interface GrainSegment<K extends string = string> {
 		readonly key: K;
 		readonly label: string;
+		readonly compactLabel?: string;
 		readonly available?: boolean;
 		/**
 		 * Id of a description element wired to aria-describedby, so assistive tech
@@ -58,11 +61,19 @@
 		value: K;
 		/** Accessible group label. */
 		label: string;
+		/** Optional layout treatment; defaults to the shared flexible control. */
+		variant?: GrainPickerVariant;
 		/** Optional extra classes on the root. */
 		class?: string;
 	}
 
-	let { segments, value = $bindable(), label, class: className }: GrainPickerProps = $props();
+	let {
+		segments,
+		value = $bindable(),
+		label,
+		variant = 'default',
+		class: className,
+	}: GrainPickerProps = $props();
 
 	/** Button refs, keyed by segment index, so keyboard nav can move focus. */
 	const refs: (HTMLButtonElement | null)[] = $state([]);
@@ -115,10 +126,11 @@
 </script>
 
 <div
-	class={cn('grain-picker', className)}
+	class={cn('grain-picker', variant === 'time-row' && 'grain-picker--time-row', className)}
 	role="radiogroup"
 	aria-label={label}
 	data-slot="grain-picker"
+	data-variant={variant}
 >
 	{#each segments as seg, i (seg.key)}
 		<button
@@ -129,7 +141,10 @@
 			class:grain-seg--active={value === seg.key}
 			aria-checked={value === seg.key}
 			aria-describedby={seg.describedById}
-			title={seg.available === false ? seg.title : seg.hint}
+			aria-label={seg.compactLabel ? seg.label : undefined}
+			title={seg.available === false
+				? seg.title
+				: (seg.hint ?? (seg.compactLabel ? seg.label : undefined))}
 			disabled={seg.available === false}
 			tabindex={i === checkedIndex ? 0 : -1}
 			onclick={() => pick(seg)}
@@ -137,7 +152,7 @@
 			use:pressBounce
 			{onkeydown}
 		>
-			{seg.label}
+			{seg.compactLabel ?? seg.label}
 		</button>
 	{/each}
 </div>
@@ -151,6 +166,25 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		background-color: var(--card);
+	}
+	.grain-picker--time-row {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		width: 100%;
+		min-width: 0;
+		flex-wrap: nowrap;
+		overflow: visible;
+		background: color-mix(in srgb, var(--primary) 6%, var(--card));
+	}
+	.grain-picker--time-row .grain-seg {
+		width: 100%;
+		min-width: 0;
+		padding-inline: 0.375rem;
+	}
+	.grain-picker--time-row .grain-seg--active {
+		box-shadow:
+			var(--shadow-glow-sm),
+			inset 0 1px 0 var(--edge-highlight);
 	}
 	.grain-seg {
 		appearance: none;

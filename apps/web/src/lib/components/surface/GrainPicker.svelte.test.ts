@@ -5,11 +5,13 @@
 // tab-focusable), and the arrow-key keyboard pattern (next/previous ENABLED
 // segment, wrapping, skipping disabled).
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render, fireEvent, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import GrainPicker from './GrainPicker.svelte';
 
-type Grain = 'day' | 'week' | 'month';
+type Grain = 'day' | 'week' | 'month' | 'shift';
 
 const ALL_ENABLED = [
 	{ key: 'day', label: 'Day', available: true },
@@ -23,6 +25,23 @@ const MONTH_DISABLED = [
 	{ key: 'month', label: 'Month', available: false },
 ] as const;
 
+const FOUR_SEGMENTS = [
+	{ key: 'day', label: 'Day', available: true },
+	{ key: 'week', label: 'Week', available: true },
+	{ key: 'month', label: 'Month', available: true },
+	{
+		key: 'shift',
+		label: 'Heures de pointe',
+		compactLabel: 'Pointe',
+		available: true,
+	},
+] as const;
+
+const source = readFileSync(
+	resolve(process.cwd(), 'src/lib/components/surface/GrainPicker.svelte'),
+	'utf-8',
+);
+
 function renderPicker(
 	segments: readonly { key: Grain; label: string; available: boolean }[],
 	value: Grain,
@@ -31,6 +50,51 @@ function renderPicker(
 		props: { segments, value, label: 'Roll-up period' },
 	});
 }
+
+describe('GrainPicker — variants', () => {
+	it('renders the opt-in time row as four equal compact segments', () => {
+		const { getByRole } = render(GrainPicker, {
+			props: {
+				segments: FOUR_SEGMENTS,
+				value: 'day',
+				label: 'Roll-up period',
+				variant: 'time-row',
+			},
+		});
+		const group = getByRole('radiogroup', { name: 'Roll-up period' });
+		expect(group).toHaveAttribute('data-variant', 'time-row');
+		expect(group).toHaveClass('grain-picker--time-row');
+		expect(within(group).getAllByRole('radio')).toHaveLength(4);
+		const shift = within(group).getByRole('radio', { name: 'Heures de pointe' });
+		expect(shift).toHaveTextContent('Pointe');
+		expect(shift).toHaveAttribute('title', 'Heures de pointe');
+	});
+
+	it('scopes the fixed four-column layout to the time-row modifier', () => {
+		const match = source.match(
+			/\.grain-picker--time-row\s*\{([\s\S]*?)\}\s*\.grain-picker--time-row \.grain-seg\s*\{([\s\S]*?)\}/,
+		);
+		expect(match).not.toBeNull();
+		const rootModifier = match?.[1] ?? '';
+		const segmentModifier = match?.[2] ?? '';
+		expect(rootModifier).toContain('width: 100%');
+		expect(rootModifier).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))');
+		expect(segmentModifier).toContain('min-width: 0');
+		expect(`${rootModifier}\n${segmentModifier}`).not.toContain('overflow-x: auto');
+	});
+
+	it('keeps the default variant flex-based with full labels', () => {
+		const { getByRole } = renderPicker(ALL_ENABLED, 'week');
+		const group = getByRole('radiogroup', { name: 'Roll-up period' });
+		expect(group).toHaveAttribute('data-variant', 'default');
+		expect(group).not.toHaveClass('grain-picker--time-row');
+		expect(within(group).getByRole('radio', { name: 'Week' })).toHaveTextContent('Week');
+
+		const defaultRule = source.match(/\.grain-picker\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		expect(defaultRule).toContain('display: inline-flex');
+		expect(defaultRule).not.toContain('grid-template-columns');
+	});
+});
 
 describe('GrainPicker — radiogroup semantics', () => {
 	it('marks the bound value as the checked radio', () => {
