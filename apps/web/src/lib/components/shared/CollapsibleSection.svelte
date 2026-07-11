@@ -394,6 +394,7 @@
 	.section-subtitle--article-summary {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 1.25rem;
+		column-gap: .625rem;
 		margin: 0;
 		padding: 0 1.5rem 1rem;
 		color: var(--foreground);

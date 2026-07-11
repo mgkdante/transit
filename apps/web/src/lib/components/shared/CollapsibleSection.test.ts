@@ -239,6 +239,7 @@ describe('CollapsibleSection - article summary header', () => {
 		expect(titleRule).toMatch(/text-wrap:\s*balance;/);
 		expect(subtitleRule).toMatch(/display:\s*grid;/);
 		expect(subtitleRule).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+1\.25rem;/);
+		expect(subtitleRule).toMatch(/column-gap:\s*0?\.625rem;/);
 		expect(subtitleRule).toMatch(/margin:\s*0;/);
 		expect(subtitleRule).toMatch(/padding:\s*0\s+1\.5rem\s+1rem;/);
 		expect(subtitleRule).toMatch(/color:\s*var\(--foreground\);/);
