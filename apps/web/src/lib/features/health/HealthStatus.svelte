@@ -45,6 +45,7 @@
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import {
 		CollapsibleSection,
+		SectionIcon,
 		TocNav,
 		tocElement,
 		settleLayout,
@@ -639,6 +640,9 @@
 				openSignal={quietModeStore.openSignal}
 				bulkCollapsed={quietModeStore.enabled}
 			>
+				{#snippet icon()}
+					<SectionIcon name="grid" class="h-4 w-4 shrink-0 text-primary" />
+				{/snippet}
 				<div class="health-stat__body" data-slot="stat-lanes">
 					<p class="health-stat__count">
 						{t.statRail.lanes.passing(String(laneStat.passing), String(laneStat.total))}
@@ -661,6 +665,9 @@
 				openSignal={quietModeStore.openSignal}
 				bulkCollapsed={quietModeStore.enabled}
 			>
+				{#snippet icon()}
+					<SectionIcon name="list" class="h-4 w-4 shrink-0 text-primary" />
+				{/snippet}
 				<div class="health-stat__body" data-slot="stat-feeds">
 					<p class="health-stat__count">
 						{t.statRail.feeds.fresh(String(feedStat.ok), String(feedStat.total))}
@@ -741,7 +748,7 @@
 
 	/* ── Right rail / mobile summary stat cards ────────────────────────────────
 	   Lanes-passing + feeds-fresh, from data on the page. Desktop: sticky right
-	   rail. Mobile: reflowed into a wrapping top strip via mobileSummary. No data
+	   rail. Mobile: reflowed into a one-track summary stack via mobileSummary. No data
 	   marks / no --primary — the counts read in the calm mono/heading voice. */
 	.health-stat-aside {
 		min-width: 0;
@@ -752,12 +759,13 @@
 		gap: var(--space-card-gap);
 	}
 	:global(.detail-shell-mobile-summary) .health-stat-rail {
-		flex-direction: row;
-		flex-wrap: wrap;
-		align-items: flex-start;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		align-items: start;
 	}
 	:global(.detail-shell-mobile-summary) .health-stat-rail :global([data-slot='card']) {
-		flex: 1 1 10rem;
+		width: 100%;
+		min-width: 0;
 	}
 	.health-stat__body {
 		display: flex;

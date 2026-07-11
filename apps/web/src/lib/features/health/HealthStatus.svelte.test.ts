@@ -355,14 +355,44 @@ describe('HealthStatus — full manifest render', () => {
 		);
 	});
 
-	it('top-aligns mobile rail cards so a collapsed peer stays compact', () => {
-		const src = readFileSync(
+	it('pins the mobile Status rail to one full-width track below the shell breakpoint', () => {
+		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/health/HealthStatus.svelte'),
 			'utf8',
 		);
-		expect(src).toMatch(
-			/:global\(\.detail-shell-mobile-summary\) \.health-stat-rail\s*\{[\s\S]*?align-items:\s*flex-start/,
+		expect(source).toMatch(
+			/:global\(\.detail-shell-mobile-summary\) \.health-stat-rail\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
 		);
+		expect(source).toMatch(
+			/:global\(\.detail-shell-mobile-summary\)[\s\S]*?\.health-stat-rail[\s\S]*?:global\(\[data-slot='card'\]\)\s*\{[^}]*width:\s*100%;/,
+		);
+		expect(source).not.toMatch(/flex:\s*1 1 10rem/);
+	});
+
+	it('renders approved Lanes and Feeds icons in both responsive rail mounts', () => {
+		const { container } = render(HealthStatus);
+		for (const rail of container.querySelectorAll('.health-stat-rail')) {
+			expect(rail.querySelector('[data-testid="section-grid-icon"]')).not.toBeNull();
+			expect(rail.querySelector('[data-testid="section-list-icon"]')).not.toBeNull();
+		}
+	});
+
+	it('independently closes mobile Lanes while Feeds stays open and the desktop copy follows', async () => {
+		const { container } = render(HealthStatus);
+		const mobile = container.querySelector(
+			'[data-slot="detail-shell-mobile-summary"]',
+		) as HTMLElement;
+		const lanes = within(mobile).getByRole('button', { name: en.statRail.lanes.title });
+		const feeds = within(mobile).getByRole('button', { name: en.statRail.feeds.title });
+		const laneCard = lanes.closest('[data-slot="card"]') as HTMLElement;
+
+		await fireEvent.click(lanes);
+
+		for (const trigger of screen.getAllByRole('button', { name: en.statRail.lanes.title })) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		}
+		expect(laneCard.querySelector('.section-body')).toHaveAttribute('data-state', 'closed');
+		expect(feeds).toHaveAttribute('aria-expanded', 'true');
 	});
 
 	it('renders the surface head + a semantic neutral update time, never the live "LIVE" chip', () => {
