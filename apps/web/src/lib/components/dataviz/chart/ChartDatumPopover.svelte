@@ -84,16 +84,28 @@
 			if (event.key === 'Escape') dismiss();
 		}
 
+		function handleScroll(event: Event): void {
+			const activeSurface = surface;
+			if (activeSurface) {
+				const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+				if (path.includes(activeSurface)) return;
+
+				const target = event.target;
+				if (target instanceof Node && activeSurface.contains(target)) return;
+			}
+			dismiss();
+		}
+
 		document.addEventListener('pointerdown', handlePointerDown, true);
 		document.addEventListener('keydown', handleKeyDown);
-		window.addEventListener('scroll', dismiss, true);
+		window.addEventListener('scroll', handleScroll, true);
 		window.addEventListener('resize', dismiss);
 		window.addEventListener('orientationchange', dismiss);
 
 		return () => {
 			document.removeEventListener('pointerdown', handlePointerDown, true);
 			document.removeEventListener('keydown', handleKeyDown);
-			window.removeEventListener('scroll', dismiss, true);
+			window.removeEventListener('scroll', handleScroll, true);
 			window.removeEventListener('resize', dismiss);
 			window.removeEventListener('orientationchange', dismiss);
 		};

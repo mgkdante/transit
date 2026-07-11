@@ -34,7 +34,7 @@
 	const controller = createChartDatumPopover();
 	let lastActivation = $state<boolean | null>(null);
 
-	function activate(event: PointerEvent, model: ChartDatumPopoverModel): void {
+	function activate(event: MouseEvent, model: ChartDatumPopoverModel): void {
 		lastActivation = controller.activate(event, model);
 	}
 </script>
@@ -51,12 +51,12 @@
 	<button
 		type="button"
 		data-testid="linked-trigger"
-		onpointerdown={(event) => activate(event, linkedModel)}>Open linked datum</button
+		onclick={(event) => activate(event, linkedModel)}>Open linked datum</button
 	>
 	<button
 		type="button"
 		data-testid="information-trigger"
-		onpointerdown={(event) => activate(event, informationModel)}>Open information datum</button
+		onclick={(event) => activate(event, informationModel)}>Open information datum</button
 	>
 	<button type="button" data-testid="explicit-close" onclick={() => controller.close()}
 		>Close</button

@@ -20,11 +20,25 @@ async function activate(
 	clientX = 160,
 	clientY = 320,
 ): Promise<void> {
-	await fireEvent.pointerDown(screen.getByTestId(testId), {
-		pointerType,
-		clientX,
-		clientY,
-	});
+	await pointerClick(screen.getByTestId(testId), pointerType, clientX, clientY);
+}
+
+async function pointerClick(
+	element: Element,
+	pointerType: string,
+	clientX: number,
+	clientY: number,
+): Promise<void> {
+	await fireEvent(
+		element,
+		new PointerEvent('click', {
+			bubbles: true,
+			cancelable: true,
+			pointerType,
+			clientX,
+			clientY,
+		}),
+	);
 }
 
 function mockDialogRect(width: number, height: number): void {
@@ -71,6 +85,21 @@ describe('ChartDatumPopover activation and content', () => {
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 		expect(harness).toHaveAttribute('data-last-activation', 'false');
 		expect(harness).toHaveAttribute('data-open', 'false');
+	});
+
+	it('does not activate from touch pointerdown without a completed native click', async () => {
+		render(ChartDatumPopoverHarness);
+		const harness = screen.getByTestId('chart-popover-harness');
+
+		await fireEvent.pointerDown(screen.getByTestId('linked-trigger'), {
+			pointerType: 'touch',
+			clientX: 140,
+			clientY: 220,
+		});
+
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		expect(harness).toHaveAttribute('data-last-activation', 'unset');
+		expect(harness).toHaveAttribute('data-model-key', '');
 	});
 
 	it.each(['touch', 'pen'])('opens for %s activation and reports success', async (pointerType) => {
@@ -152,21 +181,23 @@ describe('ChartDatumPopover activation and content', () => {
 		const firstHarness = first.container.querySelector(
 			'[data-testid="chart-popover-harness"]',
 		) as HTMLElement;
-		await fireEvent.pointerDown(first.container.querySelector('[data-testid="linked-trigger"]')!, {
-			pointerType: 'touch',
-			clientX: 100,
-			clientY: 200,
-		});
+		await pointerClick(
+			first.container.querySelector('[data-testid="linked-trigger"]')!,
+			'touch',
+			100,
+			200,
+		);
 
 		const second = render(ChartDatumPopoverHarness);
 		const secondHarness = second.container.querySelector(
 			'[data-testid="chart-popover-harness"]',
 		) as HTMLElement;
-		await fireEvent.pointerDown(second.container.querySelector('[data-testid="linked-trigger"]')!, {
-			pointerType: 'touch',
-			clientX: 120,
-			clientY: 220,
-		});
+		await pointerClick(
+			second.container.querySelector('[data-testid="linked-trigger"]')!,
+			'touch',
+			120,
+			220,
+		);
 
 		const firstId = firstHarness.dataset.controllerId ?? '';
 		const secondId = secondHarness.dataset.controllerId ?? '';
@@ -244,6 +275,16 @@ describe('ChartDatumPopover dismissal and cleanup', () => {
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 	});
 
+	it('stays open when the scroll originates inside its own overflow surface', async () => {
+		render(ChartDatumPopoverHarness);
+		await activate('linked-trigger', 'touch');
+		const dialog = await screen.findByRole('dialog');
+
+		await fireEvent.scroll(dialog);
+
+		expect(screen.getByRole('dialog')).toBe(dialog);
+	});
+
 	it.each(['resize', 'orientationchange'])('dismisses on window %s', async (eventName) => {
 		render(ChartDatumPopoverHarness);
 		await activate('linked-trigger', 'touch');
@@ -270,11 +311,7 @@ describe('ChartDatumPopover dismissal and cleanup', () => {
 		const windowRemove = vi.spyOn(window, 'removeEventListener');
 		const view = render(ChartDatumPopoverHarness);
 
-		await fireEvent.pointerDown(view.getByTestId('linked-trigger'), {
-			pointerType: 'touch',
-			clientX: 120,
-			clientY: 220,
-		});
+		await pointerClick(view.getByTestId('linked-trigger'), 'touch', 120, 220);
 		expect(await screen.findByRole('dialog')).toBeInTheDocument();
 		await waitFor(() => {
 			expect(
