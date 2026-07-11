@@ -244,23 +244,38 @@ describe('HotspotsBoard article', () => {
 		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Collapse all');
 	});
 
-	it('applies a remembered collapse to a card mounted after the fixture gains that category', () => {
+	it('applies remembered bulk collapse when Stops mounts after a same-page grain change', async () => {
 		localStorage.setItem('transit:quiet-mode', 'true');
-		payload.current = routeOnlySeed();
-		const first = render(HotspotsBoard);
-		expect(first.container.querySelector('[data-toc="hotspots-stops"]')).toBeNull();
-		expect(cardTrigger(first.container, 'hotspots-lines')).toHaveAttribute(
-			'aria-expanded',
-			'false',
+		mockUrl = new URL('http://localhost/hotspots?grain=week');
+		const { container } = render(HotspotsBoard);
+		expect(container.querySelector('[data-toc="hotspots-stops"]')).toBeNull();
+		await waitFor(() =>
+			expect(cardTrigger(container, 'hotspots-lines')).toHaveAttribute('aria-expanded', 'false'),
 		);
 
-		payload.current = seed();
-		const { container } = render(HotspotsBoard);
-		expect(cardTrigger(container, 'hotspots-stops')).toHaveAttribute('aria-expanded', 'false');
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const day = within(rail)
+			.getAllByRole('radio')
+			.find((radio) => radio.textContent?.trim() === 'Day');
+		expect(day).toBeDefined();
+		await fireEvent.click(day!);
+
+		await waitFor(() => {
+			expect(card(container, 'hotspots-stops')).not.toBeNull();
+			expect(cardTrigger(container, 'hotspots-stops')).toHaveAttribute('aria-expanded', 'false');
+		});
 	});
 
 	it('a TOC jump reveals only its closed Lines card before scrolling', async () => {
 		const { container } = render(HotspotsBoard);
+		const statesAtScroll: Array<{ linesOpen: string | null; topOpen: string | null }> = [];
+		const scrollIntoView = vi.fn(() => {
+			statesAtScroll.push({
+				linesOpen: cardTrigger(container, 'hotspots-lines').getAttribute('aria-expanded'),
+				topOpen: cardTrigger(container, 'hotspots-top').getAttribute('aria-expanded'),
+			});
+		});
+		Element.prototype.scrollIntoView = scrollIntoView;
 		await fireEvent.click(cardTrigger(container, 'hotspots-top'));
 		await fireEvent.click(cardTrigger(container, 'hotspots-lines'));
 		expect(cardTrigger(container, 'hotspots-top')).toHaveAttribute('aria-expanded', 'false');
@@ -268,9 +283,9 @@ describe('HotspotsBoard article', () => {
 
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		await fireEvent.click(within(rail).getByRole('button', { name: 'Lines' }));
-		await waitFor(() =>
-			expect(cardTrigger(container, 'hotspots-lines')).toHaveAttribute('aria-expanded', 'true'),
-		);
+		await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+		expect(statesAtScroll).toEqual([{ linesOpen: 'true', topOpen: 'false' }]);
+		expect(cardTrigger(container, 'hotspots-lines')).toHaveAttribute('aria-expanded', 'true');
 		expect(cardTrigger(container, 'hotspots-top')).toHaveAttribute('aria-expanded', 'false');
 	});
 
