@@ -8,6 +8,7 @@
 // is the primary scheme. `data-section-index` / `section-N` and plain element
 // ids are kept so the resolver stays general across future surfaces.
 
+import { tick } from 'svelte';
 import type { SectionIconName } from './SectionIcon.svelte';
 
 /** A TOC entry's leading mark. Mirrors the badge on the matching section card:
@@ -27,6 +28,13 @@ export interface TocEntry {
 	 *  (there they sit in the page flow). */
 	rail?: boolean;
 	children: TocEntry[];
+}
+
+export interface RevealTocTargetOptions {
+	beforeReveal?: (id: string) => void;
+	isCurrent?: () => boolean;
+	behavior: ScrollBehavior;
+	block?: ScrollLogicalPosition;
 }
 
 /** Flatten entries + their children into one ordered list for the "N / total"
@@ -65,6 +73,30 @@ export function resolveTocCounter(
 		};
 	}
 	return { current: activeIndex + 1, total: flat.length };
+}
+
+export function reconcileActiveToc(
+	activeId: string,
+	previousIds: readonly string[],
+	nextIds: readonly string[],
+): string {
+	if (nextIds.length === 0) return '';
+	if (!activeId) return nextIds[0];
+	if (nextIds.includes(activeId)) return activeId;
+	const previousIndex = previousIds.indexOf(activeId);
+	if (previousIndex < 0) return nextIds[0];
+	let winner = nextIds[0];
+	let winnerDistance = Number.POSITIVE_INFINITY;
+	for (const id of nextIds) {
+		const index = previousIds.indexOf(id);
+		if (index < 0) continue;
+		const distance = Math.abs(index - previousIndex);
+		if (distance < winnerDistance) {
+			winner = id;
+			winnerDistance = distance;
+		}
+	}
+	return winner;
 }
 
 /** Resolve a TOC id to its scroll-target element. Supports three anchor schemes
@@ -145,6 +177,19 @@ export function settleLayout(target: Element | null, maxWaitMs = 700): Promise<v
 		timeoutId = setTimeout(finish, Math.max(0, maxWaitMs));
 		frameId = requestAnimationFrame(frame);
 	});
+}
+
+export async function revealTocTarget(
+	id: string,
+	{ beforeReveal, isCurrent = () => true, behavior, block = 'start' }: RevealTocTargetOptions,
+): Promise<boolean> {
+	beforeReveal?.(id);
+	await tick();
+	const target = tocElement(id);
+	await settleLayout(target);
+	if (!target || !isCurrent()) return false;
+	target.scrollIntoView({ behavior, block });
+	return true;
 }
 
 /** Observe every TOC-target element on the page and report the active id as the

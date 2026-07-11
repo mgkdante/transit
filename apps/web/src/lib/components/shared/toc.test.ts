@@ -8,6 +8,7 @@
 //   - observeActiveToc returns a no-op cleanup when there are no targets (the
 //     IntersectionObserver path needs a browser, exercised in the render tests).
 
+import { tick } from 'svelte';
 import { describe, it, expect, vi } from 'vitest';
 import {
 	flattenToc,
@@ -15,6 +16,8 @@ import {
 	tocElement,
 	settleLayout,
 	observeActiveToc,
+	revealTocTarget,
+	reconcileActiveToc,
 	type TocEntry,
 } from './toc';
 
@@ -209,5 +212,137 @@ describe('settleLayout', () => {
 			globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
 			vi.useRealTimers();
 		}
+	});
+});
+
+describe('revealTocTarget', () => {
+	it('runs beforeReveal before looking up the target', async () => {
+		const target = document.createElement('section');
+		target.scrollIntoView = vi.fn();
+		const media = vi
+			.spyOn(window, 'matchMedia')
+			.mockReturnValue({ matches: true } as MediaQueryList);
+		const beforeReveal = vi.fn((id: string) => {
+			expect(id).toBe('late-target');
+			expect(tocElement(id)).toBeNull();
+			target.setAttribute('data-toc', id);
+			document.body.appendChild(target);
+		});
+		try {
+			await expect(
+				revealTocTarget('late-target', { beforeReveal, behavior: 'auto' }),
+			).resolves.toBe(true);
+			expect(beforeReveal).toHaveBeenCalledOnce();
+			expect(target.scrollIntoView).toHaveBeenCalledOnce();
+		} finally {
+			media.mockRestore();
+			target.remove();
+		}
+	});
+
+	it('waits for layout settlement before scrolling', async () => {
+		const target = document.createElement('section');
+		target.setAttribute('data-toc', 'settling-target');
+		target.scrollIntoView = vi.fn();
+		document.body.appendChild(target);
+		const frames: FrameRequestCallback[] = [];
+		const media = vi
+			.spyOn(window, 'matchMedia')
+			.mockReturnValue({ matches: true } as MediaQueryList);
+		const requestFrame = vi
+			.spyOn(globalThis, 'requestAnimationFrame')
+			.mockImplementation((callback) => {
+				frames.push(callback);
+				return frames.length;
+			});
+		const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {});
+		try {
+			const result = revealTocTarget('settling-target', { behavior: 'smooth' });
+			await tick();
+			expect(target.scrollIntoView).not.toHaveBeenCalled();
+			expect(frames).toHaveLength(1);
+
+			frames.shift()?.(performance.now());
+			frames.shift()?.(performance.now());
+			expect(target.scrollIntoView).not.toHaveBeenCalled();
+
+			frames.shift()?.(performance.now());
+			await expect(result).resolves.toBe(true);
+			expect(target.scrollIntoView).toHaveBeenCalledOnce();
+		} finally {
+			cancelFrame.mockRestore();
+			requestFrame.mockRestore();
+			media.mockRestore();
+			target.remove();
+		}
+	});
+
+	it.each(['smooth', 'auto'] as const)(
+		'passes %s scroll behavior through unchanged',
+		async (behavior) => {
+			const target = document.createElement('section');
+			target.setAttribute('data-toc', `${behavior}-target`);
+			target.scrollIntoView = vi.fn();
+			document.body.appendChild(target);
+			const media = vi
+				.spyOn(window, 'matchMedia')
+				.mockReturnValue({ matches: true } as MediaQueryList);
+			try {
+				await revealTocTarget(`${behavior}-target`, { behavior });
+				expect(target.scrollIntoView).toHaveBeenCalledWith({ behavior, block: 'start' });
+			} finally {
+				media.mockRestore();
+				target.remove();
+			}
+		},
+	);
+
+	it('cancels a stale scroll when isCurrent returns false', async () => {
+		const target = document.createElement('section');
+		target.setAttribute('data-toc', 'stale-target');
+		target.scrollIntoView = vi.fn();
+		document.body.appendChild(target);
+		const media = vi
+			.spyOn(window, 'matchMedia')
+			.mockReturnValue({ matches: true } as MediaQueryList);
+		const isCurrent = vi.fn(() => false);
+		try {
+			await expect(
+				revealTocTarget('stale-target', { isCurrent, behavior: 'smooth' }),
+			).resolves.toBe(false);
+			expect(isCurrent).toHaveBeenCalledOnce();
+			expect(target.scrollIntoView).not.toHaveBeenCalled();
+		} finally {
+			media.mockRestore();
+			target.remove();
+		}
+	});
+
+	it('returns false without throwing when the target is missing', async () => {
+		await expect(revealTocTarget('missing-target', { behavior: 'auto' })).resolves.toBe(false);
+	});
+});
+
+describe('reconcileActiveToc', () => {
+	it('keeps an active id that still exists', () => {
+		expect(reconcileActiveToc('coverage', ['overview', 'coverage'], ['coverage'])).toBe('coverage');
+	});
+
+	it('chooses the surviving id with the smallest distance in the previous order', () => {
+		expect(
+			reconcileActiveToc(
+				'coverage',
+				['overview', 'intro', 'coverage', 'freshness', 'envelope'],
+				['overview', 'envelope', 'freshness'],
+			),
+		).toBe('freshness');
+	});
+
+	it('uses the first new id when no previous relationship exists', () => {
+		expect(reconcileActiveToc('removed', ['old'], ['new-first', 'new-second'])).toBe('new-first');
+	});
+
+	it('returns an empty string when no cards remain', () => {
+		expect(reconcileActiveToc('coverage', ['coverage'], [])).toBe('');
 	});
 });
