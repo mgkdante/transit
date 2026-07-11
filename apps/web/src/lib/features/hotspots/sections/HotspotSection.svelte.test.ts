@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { render, within } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import { tick } from 'svelte';
+import { fireEvent, render, within } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HotspotLadderResult } from '../selectors/hotspotLadder';
 import { copy as COPY } from '../hotspots.copy';
 import HotspotSection from './HotspotSection.svelte';
@@ -70,6 +71,60 @@ const info = {
 	linkLabel: 'Voir la méthodologie',
 };
 
+const resizeObservers: ResizeObserverStub[] = [];
+
+class ResizeObserverStub {
+	readonly targets = new Set<Element>();
+	readonly observe = vi.fn((target: Element) => this.targets.add(target));
+	readonly unobserve = vi.fn((target: Element) => this.targets.delete(target));
+	readonly disconnect = vi.fn(() => this.targets.clear());
+
+	constructor(private readonly callback: ResizeObserverCallback) {
+		resizeObservers.push(this);
+	}
+
+	trigger(): void {
+		this.callback([], this as unknown as ResizeObserver);
+	}
+}
+
+function mockHorizontalLayout(
+	element: HTMLElement,
+	initial: { clientWidth: number; scrollWidth: number; scrollLeft?: number },
+) {
+	// happy-dom does not evaluate the component media query; model its mobile/tablet
+	// `overflow-x: auto` mode so the test can exercise real scroll-range measurement.
+	element.style.overflowX = 'auto';
+	let clientWidth = initial.clientWidth;
+	let scrollWidth = initial.scrollWidth;
+	let scrollLeft = initial.scrollLeft ?? 0;
+	Object.defineProperties(element, {
+		clientWidth: { configurable: true, get: () => clientWidth },
+		scrollWidth: { configurable: true, get: () => scrollWidth },
+		scrollLeft: {
+			configurable: true,
+			get: () => scrollLeft,
+			set: (value: number) => {
+				scrollLeft = value;
+			},
+		},
+	});
+
+	return {
+		resize(next: { clientWidth: number; scrollWidth: number }): void {
+			clientWidth = next.clientWidth;
+			scrollWidth = next.scrollWidth;
+		},
+		scrollTo(next: number): void {
+			scrollLeft = next;
+		},
+	};
+}
+
+function observerFor(target: Element): ResizeObserverStub | undefined {
+	return resizeObservers.find((observer) => observer.targets.has(target));
+}
+
 function renderSection() {
 	return render(HotspotSection, {
 		props: {
@@ -90,6 +145,15 @@ function cssRule(source: string, selector: RegExp): string {
 }
 
 describe('HotspotSection evidence presentation', () => {
+	beforeEach(() => {
+		resizeObservers.length = 0;
+		vi.stubGlobal('ResizeObserver', ResizeObserverStub);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
 	it('localizes a semantic evidence table and distinguishes linked, absent, and zero rows', () => {
 		const { container } = renderSection();
 		const table = container.querySelector(
@@ -118,16 +182,58 @@ describe('HotspotSection evidence presentation', () => {
 		expect(zeroRow.querySelector('[data-slot="absent-value"]')).toBeNull();
 	});
 
-	it('keeps only the chart canvas inside the named keyboard-focusable viewport', () => {
+	it('keeps a non-overflowing chart viewport out of the tab order and accessibility tree', () => {
 		const { container } = renderSection();
-		const viewport = within(container).getByRole('region', { name: chartScrollLabel });
-		expect(viewport).toHaveAttribute('tabindex', '0');
+		const viewport = container.querySelector<HTMLElement>(
+			'[data-slot="hotspot-chart-viewport"]',
+		) as HTMLElement;
+		expect(viewport).not.toBeNull();
+		expect(viewport).not.toHaveAttribute('role');
+		expect(viewport).not.toHaveAttribute('aria-label');
+		expect(viewport).not.toHaveAttribute('tabindex');
 		expect(viewport.children).toHaveLength(1);
 		expect(viewport.firstElementChild).toHaveAttribute('data-slot', 'hotspot-chart-canvas');
 		expect(viewport.querySelector('[data-slot="hotspot-window"]')).toBeNull();
 		expect(viewport.querySelector('[data-slot="hotspot-tray-table"]')).toBeNull();
 		expect(container.querySelector('[data-slot="hotspot-window"]')).not.toBeNull();
 		expect(container.querySelector('[data-slot="hotspot-tray-table"]')).not.toBeNull();
+		expect(container.querySelector('[data-slot="hotspot-chart-shell"]')).toHaveAttribute(
+			'data-more-end',
+			'false',
+		);
+	});
+
+	it('adds keyboard semantics only for real overflow and hides the cue at the right edge', async () => {
+		const view = renderSection();
+		const viewport = view.container.querySelector<HTMLElement>(
+			'[data-slot="hotspot-chart-viewport"]',
+		) as HTMLElement;
+		const shell = view.container.querySelector('[data-slot="hotspot-chart-shell"]');
+		const layout = mockHorizontalLayout(viewport, { clientWidth: 320, scrollWidth: 768 });
+		const observer = observerFor(viewport);
+		expect(observer).toBeDefined();
+		observer?.trigger();
+		await tick();
+
+		expect(within(view.container).getByRole('region', { name: chartScrollLabel })).toBe(viewport);
+		expect(viewport).toHaveAttribute('tabindex', '0');
+		expect(shell).toHaveAttribute('data-more-end', 'true');
+
+		layout.scrollTo(448);
+		await fireEvent.scroll(viewport);
+		await tick();
+		expect(shell).toHaveAttribute('data-more-end', 'false');
+
+		layout.resize({ clientWidth: 768, scrollWidth: 768 });
+		observer?.trigger();
+		await tick();
+		expect(viewport).not.toHaveAttribute('role');
+		expect(viewport).not.toHaveAttribute('aria-label');
+		expect(viewport).not.toHaveAttribute('tabindex');
+		expect(shell).toHaveAttribute('data-more-end', 'false');
+
+		await view.unmount();
+		expect(observer?.disconnect).toHaveBeenCalledTimes(1);
 	});
 
 	it('limits the 48rem chart floor and horizontal containment to the responsive viewport', () => {
@@ -154,6 +260,8 @@ describe('HotspotSection evidence presentation', () => {
 		expect(cssRule(desktop, /\.hotspot-chart-viewport:focus-visible/)).toMatch(
 			/outline:\s*2px solid var\(--ring\)/,
 		);
-		expect(cssRule(mobile, /\.hotspot-chart-shell::after/)).toMatch(/pointer-events:\s*none/);
+		expect(cssRule(mobile, /\.hotspot-chart-shell\[data-more-end='true'\]::after/)).toMatch(
+			/pointer-events:\s*none/,
+		);
 	});
 });

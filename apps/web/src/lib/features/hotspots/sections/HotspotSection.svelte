@@ -51,6 +51,30 @@
 		copy,
 	}: HotspotSectionProps = $props();
 
+	let chartViewport = $state<HTMLDivElement | null>(null);
+	let chartScrollable = $state(false);
+	let chartMoreEnd = $state(false);
+
+	function measureChartOverflow(): void {
+		const viewport = chartViewport;
+		if (!viewport) return;
+		const overflowX = getComputedStyle(viewport).overflowX;
+		const scrollRange = viewport.scrollWidth - viewport.clientWidth;
+		chartScrollable = (overflowX === 'auto' || overflowX === 'scroll') && scrollRange > 1;
+		chartMoreEnd = chartScrollable && viewport.scrollLeft < scrollRange - 1;
+	}
+
+	$effect(() => {
+		const viewport = chartViewport;
+		if (!viewport) return;
+		measureChartOverflow();
+		if (typeof ResizeObserver === 'undefined') return;
+		const observer = new ResizeObserver(measureChartOverflow);
+		observer.observe(viewport);
+		if (viewport.firstElementChild) observer.observe(viewport.firstElementChild);
+		return () => observer.disconnect();
+	});
+
 	const headingText = $derived(
 		ladder.total > ladder.shown
 			? `${heading} ${copy.shownOfTotal(ladder.shown, ladder.total)}`
@@ -75,14 +99,16 @@
 			</SectionHeading>
 		</div>
 		<p class="caption" data-slot="hotspot-window">{windowCaption}</p>
-		<div class="hotspot-chart-shell" data-slot="hotspot-chart-shell">
+		<div class="hotspot-chart-shell" data-slot="hotspot-chart-shell" data-more-end={chartMoreEnd}>
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<div
+				bind:this={chartViewport}
 				class="hotspot-chart-viewport"
 				data-slot="hotspot-chart-viewport"
-				role="region"
-				aria-label={chartScrollLabel}
-				tabindex="0"
+				role={chartScrollable ? 'region' : undefined}
+				aria-label={chartScrollable ? chartScrollLabel : undefined}
+				tabindex={chartScrollable ? 0 : undefined}
+				onscroll={measureChartOverflow}
 			>
 				<div class="hotspot-chart-canvas" data-slot="hotspot-chart-canvas">
 					<Chart spec={ladder.spec} />
@@ -238,7 +264,7 @@
 		}
 	}
 	@media (max-width: 1023px) {
-		.hotspot-chart-shell::after {
+		.hotspot-chart-shell[data-more-end='true']::after {
 			content: '';
 			display: block;
 			position: absolute;
