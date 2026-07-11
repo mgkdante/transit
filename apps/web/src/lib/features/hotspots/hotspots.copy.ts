@@ -11,12 +11,27 @@ import type { Locale } from '$lib/i18n';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export interface HotspotsCopy extends SurfaceHeadCopy {
-	/** Rail overline (e.g. "View" / "Vue") + the grain radiogroup label. */
-	readonly viewControlsLabel: string;
-	/** aria-label for the mobile rail pill's open control. */
-	readonly filterPillOpen: string;
-	/** aria-label for the mobile rail sheet's dismiss control. */
-	readonly filterPillClose: string;
+	readonly article: {
+		readonly watermark: string;
+		readonly back: string;
+		readonly tagsAria: string;
+		readonly tags: readonly string[];
+		readonly sections: (count: number) => string;
+	};
+	readonly asOf: string;
+	readonly rail: {
+		readonly label: string;
+		readonly open: string;
+		readonly close: string;
+		readonly toc: string;
+		readonly counterPrefix: string;
+	};
+	readonly cards: {
+		readonly top: { readonly title: string; readonly subtitle: string };
+		readonly lines: { readonly title: string; readonly subtitle: string };
+		readonly stops: { readonly title: string; readonly subtitle: string };
+	};
+	readonly caveatLabel: string;
 	readonly grain: {
 		readonly label: string;
 		readonly day: string;
@@ -109,9 +124,38 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		heading: 'Points chauds',
 		subheading: '// PIRES EN PREMIER',
 		lede: 'Les arrêts et les lignes qui tirent le réseau vers le bas, classés du pire au moins pire par le taux de retards graves. On n’invente jamais de données.',
-		viewControlsLabel: 'Vue',
-		filterPillOpen: 'Ouvrir les commandes de vue',
-		filterPillClose: 'Fermer les commandes de vue',
+		article: {
+			watermark: 'Points chauds',
+			back: '← Retour au tableau de bord',
+			tagsAria: 'Mots-clés de la page',
+			tags: ['chauds', 'lignes', 'arrêts', 'retards graves'],
+			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
+		},
+		asOf: 'À JOUR AU',
+		rail: {
+			label: 'Vue et sommaire',
+			open: 'Ouvrir les commandes et le sommaire',
+			close: 'Fermer les commandes et le sommaire',
+			toc: 'Sur cette page',
+			counterPrefix: 'SEC',
+		},
+		cards: {
+			top: {
+				title: 'Point chaud principal',
+				subtitle: 'Le pire point chaud actuel et les preuves qui l’expliquent',
+			},
+			lines: {
+				title: 'Lignes',
+				subtitle:
+					'Lignes classées selon le taux de retards graves, y compris les petits échantillons',
+			},
+			stops: {
+				title: 'Arrêts',
+				subtitle:
+					'Arrêts classés selon le taux de retards graves, y compris les petits échantillons',
+			},
+		},
+		caveatLabel: 'Mise en garde',
 		grain: {
 			label: 'Granularité',
 			day: 'Jour',
@@ -170,9 +214,36 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		heading: 'Hotspots',
 		subheading: '// WORST FIRST',
 		lede: 'The stops and lines dragging the network down, ranked worst first by their severe-delay rate. We never invent data.',
-		viewControlsLabel: 'View',
-		filterPillOpen: 'Open view controls',
-		filterPillClose: 'Close view controls',
+		article: {
+			watermark: 'Hotspots',
+			back: '← Back to the dashboard',
+			tagsAria: 'Page keywords',
+			tags: ['hotspots', 'lines', 'stops', 'severe delay'],
+			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
+		},
+		asOf: 'AS OF',
+		rail: {
+			label: 'View & contents',
+			open: 'Open view controls and contents',
+			close: 'Close view controls and contents',
+			toc: 'On this page',
+			counterPrefix: 'SEC',
+		},
+		cards: {
+			top: {
+				title: 'Top hotspot',
+				subtitle: 'The worst current hotspot and the evidence behind it',
+			},
+			lines: {
+				title: 'Lines',
+				subtitle: 'Lines ranked by severe-delay rate, including low-sample cases',
+			},
+			stops: {
+				title: 'Stops',
+				subtitle: 'Stops ranked by severe-delay rate, including low-sample cases',
+			},
+		},
+		caveatLabel: 'Caveat',
 		grain: {
 			label: 'Granularity',
 			day: 'Day',
