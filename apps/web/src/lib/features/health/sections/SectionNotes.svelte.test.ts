@@ -36,11 +36,7 @@ describe('SectionNotes', () => {
 		for (const body of bodies) {
 			expect(body).not.toHaveClass('typed-information-body--mono');
 		}
-		expect(source).toMatch(
-			/\.health-note\s*\{[\s\S]*?color:\s*var\(--foreground\)/,
-		);
-		expect(source).not.toMatch(
-			/\.health-note\s*\{[\s\S]*?color:\s*var\(--muted-foreground\)/,
-		);
+		expect(source).toMatch(/\.health-note\s*\{[\s\S]*?color:\s*var\(--foreground\)/);
+		expect(source).not.toMatch(/\.health-note\s*\{[\s\S]*?color:\s*var\(--muted-foreground\)/);
 	});
 });

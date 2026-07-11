@@ -128,9 +128,7 @@ describe('CollapsibleSection - article summary header', () => {
 		const secondSubtitle = second.container.querySelector(
 			'.section-subtitle--article-summary',
 		) as HTMLElement | null;
-		const firstButton = first.container.querySelector(
-			'button.section-header',
-		) as HTMLButtonElement;
+		const firstButton = first.container.querySelector('button.section-header') as HTMLButtonElement;
 		const firstSubtitleId = firstSubtitle?.id ?? '';
 		const secondSubtitleId = secondSubtitle?.id ?? '';
 
@@ -153,9 +151,7 @@ describe('CollapsibleSection - article summary header', () => {
 			},
 		});
 		const button = container.querySelector('button.section-header') as HTMLButtonElement;
-		const subtitle = container.querySelector(
-			'.section-subtitle--article-summary',
-		) as HTMLElement;
+		const subtitle = container.querySelector('.section-subtitle--article-summary') as HTMLElement;
 
 		expect(subtitle).toHaveAttribute('data-state', 'closed');
 		expect(subtitle.textContent?.trim()).toBe(summary);
@@ -221,9 +217,9 @@ describe('CollapsibleSection - article summary header', () => {
 		expect(headerRule).toMatch(/display:\s*grid;/);
 		expect(headerRule).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+1\.25rem;/);
 		expect(headerRule).toMatch(/align-items:\s*start;/);
-		expect(headerRule).toMatch(/column-gap:\s*\.625rem;/);
+		expect(headerRule).toMatch(/column-gap:\s*0\.625rem;/);
 		expect(headerRule).toMatch(/min-height:\s*44px;/);
-		expect(headerRule).toMatch(/padding:\s*1rem\s+1\.5rem\s+\.375rem;/);
+		expect(headerRule).toMatch(/padding:\s*1rem\s+1\.5rem\s+0\.375rem;/);
 		expect(markedHeaderRule).toMatch(
 			/grid-template-columns:\s*1\.75rem\s+minmax\(0,\s*1fr\)\s+1\.25rem;/,
 		);
@@ -233,7 +229,7 @@ describe('CollapsibleSection - article summary header', () => {
 		expect(markRule).toMatch(/min-height:\s*1\.75rem;/);
 		expect(markRule).toMatch(/align-items:\s*center;/);
 		expect(markRule).toMatch(/justify-content:\s*center;/);
-		expect(chevronRule).toMatch(/margin-block-start:\s*\.25rem;/);
+		expect(chevronRule).toMatch(/margin-block-start:\s*0\.25rem;/);
 		expect(titleRule).toMatch(/min-width:\s*0;/);
 		expect(titleRule).toMatch(/line-height:\s*1\.4;/);
 		expect(titleRule).toMatch(/text-wrap:\s*balance;/);
@@ -266,10 +262,7 @@ describe('CollapsibleSection - article summary header', () => {
 
 	it('characterizes the unchanged content and chevron motion contracts', () => {
 		const contentSource = readFileSync(
-			resolve(
-				process.cwd(),
-				'src/lib/components/ui/collapsible/collapsible-content.svelte',
-			),
+			resolve(process.cwd(), 'src/lib/components/ui/collapsible/collapsible-content.svelte'),
 			'utf-8',
 		);
 		const chevronSource = readFileSync(
@@ -286,9 +279,7 @@ describe('CollapsibleSection - article summary header', () => {
 		expect(collapsedRule).toMatch(
 			/grid-template-rows\s+var\(--duration-slow\)\s+var\(--ease-default\)/,
 		);
-		expect(collapsedRule).toMatch(
-			/opacity\s+var\(--duration-slow\)\s+var\(--ease-default\)/,
-		);
+		expect(collapsedRule).toMatch(/opacity\s+var\(--duration-slow\)\s+var\(--ease-default\)/);
 		expect(openRule).toMatch(/grid-template-rows:\s*1fr;/);
 		expect(openRule).toMatch(/opacity:\s*1;/);
 		expect(contentSource).toMatch(

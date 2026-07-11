@@ -93,9 +93,7 @@
 
 	const headerUid = $props.id();
 	const subtitleId = `${headerUid}-summary`;
-	const usesArticleSummary = $derived(
-		collapsible && headerVariant === 'article-summary',
-	);
+	const usesArticleSummary = $derived(collapsible && headerVariant === 'article-summary');
 	const hasHeaderMark = $derived(index !== null || icon !== undefined);
 
 	// When a sectionKey is supplied, the open state is session-scoped: persisted()
@@ -306,9 +304,9 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 1.25rem;
 		align-items: start;
-		column-gap: .625rem;
+		column-gap: 0.625rem;
 		min-height: 44px;
-		padding: 1rem 1.5rem .375rem;
+		padding: 1rem 1.5rem 0.375rem;
 		text-align: left;
 	}
 
@@ -329,7 +327,7 @@
 	}
 
 	.section-header--article-summary :global([data-slot='chevron-toggle']) {
-		margin-block-start: .25rem;
+		margin-block-start: 0.25rem;
 	}
 
 	.section-title--article-summary {
@@ -394,7 +392,7 @@
 	.section-subtitle--article-summary {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 1.25rem;
-		column-gap: .625rem;
+		column-gap: 0.625rem;
 		margin: 0;
 		padding: 0 1.5rem 1rem;
 		color: var(--foreground);
