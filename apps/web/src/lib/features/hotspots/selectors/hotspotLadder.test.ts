@@ -20,6 +20,31 @@ const labels: HotspotLadderLabels = {
 	note: (e) => `n=${e.observation_count}`,
 	unnamed: (id) => `Item ${id}`,
 	href: (e) => (e.type === 'stop' ? `/stop/${e.id}` : e.type === 'route' ? `/lines/${e.id}` : null),
+	tapPopover: (entry, href, evidence) => {
+		const heading = entry.name ?? `Item ${entry.id}`;
+		return {
+			key: `${entry.type}-${entry.id}`,
+			heading,
+			meta: `${entry.type} · ${entry.id}`,
+			rows: [
+				...(entry.severe_pct != null
+					? [{ label: 'Severe-delay rate', value: `${entry.severe_pct}%` }]
+					: []),
+				...(evidence.wilsonLo != null && evidence.wilsonHi != null
+					? [{ label: '95% CI', value: `${evidence.wilsonLo}%–${evidence.wilsonHi}%` }]
+					: []),
+			],
+			...(href
+				? {
+						action: {
+							href,
+							label: entry.type === 'route' ? 'View line' : 'View stop',
+							ariaLabel: `View detail for ${heading}`,
+						},
+					}
+				: {}),
+		};
+	},
 };
 
 const entries: HotspotEntry[] = [
@@ -91,6 +116,25 @@ describe('selectHotspotLadder', () => {
 		expect(spec.ciLabel).toBe('95% CI');
 	});
 
+	it('maps a normalized popover with row identity, flipped evidence, and the drill action', () => {
+		const spec = asBars(selectHotspotLadder(entries, 10, 'en', labels));
+		expect(spec.rows[0].tapPopover).toEqual({
+			key: 'stop-S1',
+			heading: 'Berri-UQAM',
+			meta: 'stop · S1',
+			rows: [
+				{ label: 'Severe-delay rate', value: '70%' },
+				{ label: '95% CI', value: '69.9%–83.2%' },
+			],
+			action: {
+				href: '/stop/S1',
+				label: 'View stop',
+				ariaLabel: 'View detail for Berri-UQAM',
+			},
+		});
+		expect(spec.rows[1].tapPopover?.heading).toBe('Item 51');
+	});
+
 	it('falls back to the unnamed label when the cell has no name', () => {
 		const spec = asBars(selectHotspotLadder(entries, 10, 'en', labels));
 		expect(spec.rows[1].label).toBe('Item 51'); // route 51 has no name
@@ -128,5 +172,6 @@ describe('selectHotspotLadder', () => {
 			selectHotspotLadder([{ type: 'corridor', id: 'C9', severe_pct: 10 }], 10, 'en', labels),
 		);
 		expect(spec.rows[0].href).toBeUndefined();
+		expect(spec.rows[0].tapPopover?.action).toBeUndefined();
 	});
 });

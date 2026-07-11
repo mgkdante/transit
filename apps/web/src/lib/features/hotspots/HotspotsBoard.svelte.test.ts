@@ -2,6 +2,7 @@ import { render, screen, within, fireEvent, waitFor } from '@testing-library/sve
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Hotspots, IsoUtc } from '$lib/v1/schemas';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
 
 // Mock the SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the ?grain
 // / ?n seed and the round-trip mirror remain covered while the page changes shells.
@@ -21,7 +22,14 @@ vi.mock('$app/state', () => ({
 }));
 vi.mock('$app/navigation', () => ({ replaceState }));
 
+const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
+vi.mock('$lib/i18n', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('$lib/i18n')>();
+	return { ...actual, getLocale: () => currentLocale.value };
+});
+
 const { payload } = vi.hoisted(() => ({ payload: { current: null as Hotspots | null } }));
+const capturedLadders = vi.hoisted(() => ({ current: [] as unknown[] }));
 
 vi.mock('$lib/v1', () => ({ getHotspots: vi.fn() }));
 vi.mock('$lib/v1/resource.svelte', () => ({
@@ -33,6 +41,18 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 		reload: vi.fn(),
 	}),
 }));
+
+vi.mock('./selectors/hotspotLadder', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('./selectors/hotspotLadder')>();
+	return {
+		...actual,
+		selectHotspotLadder: (...args: Parameters<typeof actual.selectHotspotLadder>) => {
+			const result = actual.selectHotspotLadder(...args);
+			capturedLadders.current.push(result);
+			return result;
+		},
+	};
+});
 
 import HotspotsBoard from './HotspotsBoard.svelte';
 import { copy as hotspotsCopy } from './hotspots.copy';
@@ -172,10 +192,28 @@ function resetHotspotsState(): void {
 	quietModeStore.resetForTest();
 }
 
+type CapturedMagnitudeDatum = MagnitudeDatum & {
+	readonly tapPopover?: ChartDatumPopoverModel;
+};
+
+function capturedRow(key: string): CapturedMagnitudeDatum {
+	const row = (
+		capturedLadders.current as Array<{
+			spec: { kind: string; rows?: readonly CapturedMagnitudeDatum[] };
+		}>
+	)
+		.flatMap((result) => (result.spec.kind === 'magnitude-bars' ? (result.spec.rows ?? []) : []))
+		.find((candidate) => candidate.key === key);
+	if (!row) throw new Error(`Expected captured magnitude row ${key}`);
+	return row;
+}
+
 describe('HotspotsBoard article', () => {
 	beforeEach(() => {
 		mockUrl = new URL('http://localhost/hotspots');
 		replaceState.mockClear();
+		currentLocale.value = 'en';
+		capturedLadders.current = [];
 		payload.current = seed();
 		resetHotspotsState();
 		Element.prototype.scrollIntoView = vi.fn();
@@ -214,6 +252,122 @@ describe('HotspotsBoard article', () => {
 		expect(
 			within(card(container, 'hotspots-stops')).getByRole('link', { name: /Berri-UQAM/ }),
 		).toHaveAttribute('href', '/stop/S1');
+	});
+
+	it('defines the exact EN and FR chart popover copy', () => {
+		expect(hotspotsCopy.en.chart.popover).toEqual({
+			averageDelay: 'Average delay',
+			readings: 'Readings',
+			viewLine: 'View line',
+			viewStop: 'View stop',
+		});
+		expect(hotspotsCopy.fr.chart.popover).toEqual({
+			averageDelay: 'Retard moyen',
+			readings: 'Relevés',
+			viewLine: 'Voir la ligne',
+			viewStop: 'Voir l’arrêt',
+		});
+	});
+
+	it('maps localized EN line and stop popovers with formatted evidence and actions', () => {
+		render(HotspotsBoard);
+		expect(capturedRow('stop-S1').tapPopover).toEqual({
+			key: 'stop-S1',
+			heading: 'Berri-UQAM',
+			meta: 'Stop · S1',
+			rows: [
+				{ label: 'Severe-delay rate', value: '70%' },
+				{ label: '95% CI', value: '69.9%–83.2%' },
+				{ label: 'Average delay', value: '6.7 min' },
+				{ label: 'Readings', value: '80' },
+			],
+			action: {
+				href: '/stop/S1',
+				label: 'View stop',
+				ariaLabel: 'View detail for Berri-UQAM',
+			},
+		});
+		expect(capturedRow('route-51').tapPopover).toEqual({
+			key: 'route-51',
+			heading: 'Item 51',
+			meta: 'Line · 51',
+			rows: [
+				{ label: 'Severe-delay rate', value: '40%' },
+				{ label: 'Readings', value: '100' },
+			],
+			action: {
+				href: '/lines/51',
+				label: 'View line',
+				ariaLabel: 'View detail for Item 51',
+			},
+		});
+	});
+
+	it('localizes FR popover values, detail hrefs, visible actions, and accessible names', () => {
+		currentLocale.value = 'fr';
+		mockUrl = new URL('http://localhost/fr/hotspots');
+		render(HotspotsBoard);
+		expect(capturedRow('stop-S1').tapPopover).toEqual({
+			key: 'stop-S1',
+			heading: 'Berri-UQAM',
+			meta: 'Arrêt · S1',
+			rows: [
+				{ label: 'Taux de retards graves', value: '70%' },
+				{ label: 'IC à 95 %', value: '69,9%–83,2%' },
+				{ label: 'Retard moyen', value: '6,7 min' },
+				{ label: 'Relevés', value: '80' },
+			],
+			action: {
+				href: '/fr/stop/S1',
+				label: 'Voir l’arrêt',
+				ariaLabel: 'Voir le détail de Berri-UQAM',
+			},
+		});
+		expect(capturedRow('route-51').tapPopover?.action).toEqual({
+			href: '/fr/lines/51',
+			label: 'Voir la ligne',
+			ariaLabel: 'Voir le détail de Élément 51',
+		});
+	});
+
+	it('keeps served zero evidence as 0 while omitting every null optional value', () => {
+		const fixture = routeOnlySeed();
+		const day = fixture.by_grain?.[0];
+		if (!day) throw new Error('Expected the route-only day ladder');
+		day.entries = [
+			{
+				rank: 1,
+				type: 'route',
+				id: 'ZERO',
+				name: 'Zero evidence',
+				severe_pct: 0,
+				observation_count: 0,
+				wilson_lo: null,
+				wilson_hi: null,
+				avg_delay_min: null,
+			},
+			{
+				rank: 2,
+				type: 'route',
+				id: 'NULL',
+				name: 'Missing evidence',
+				severe_pct: null,
+				observation_count: null,
+				wilson_lo: null,
+				wilson_hi: null,
+				avg_delay_min: null,
+			},
+		];
+		payload.current = fixture;
+		render(HotspotsBoard);
+		expect(capturedRow('route-ZERO').tapPopover?.rows).toEqual([
+			{ label: 'Severe-delay rate', value: '0%' },
+			{ label: 'Readings', value: '0' },
+		]);
+		expect(capturedRow('route-NULL').tapPopover?.rows).toEqual([]);
+		expect(capturedRow('route-NULL').tapPopover?.rows.some((row) => row.value.includes('0'))).toBe(
+			false,
+		);
 	});
 
 	it('omits the Stops card and Stops TOC destination for a route-only grain', () => {

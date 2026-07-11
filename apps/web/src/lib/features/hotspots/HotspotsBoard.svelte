@@ -17,6 +17,7 @@
 	import { getHotspots } from '$lib/v1';
 	import type { HotspotEntry } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
+	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
 	import { ResourceBoundary, GrainPicker, type GrainSegment } from '$lib/components/surface';
 	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
 	import { AbsentValue } from '$lib/components/edge';
@@ -32,6 +33,7 @@
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import { persisted } from '$lib/stores';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import { formatUtc } from '$lib/utils/time';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -53,7 +55,7 @@
 		worstNSegments as buildWorstNSegments,
 		SMALLEST_WORST_N,
 	} from './data/ladderCap';
-	import { selectHotspotLadder } from './selectors/hotspotLadder';
+	import { selectHotspotLadder, type HotspotPopoverEvidence } from './selectors/hotspotLadder';
 	import HotspotSection from './sections/HotspotSection.svelte';
 	import { copy as COPY } from './hotspots.copy';
 
@@ -203,6 +205,50 @@
 		if (kind === 'stop') return t.type.stop;
 		return null;
 	}
+	function tapPopoverFor(
+		entry: HotspotEntry,
+		href: string | null,
+		evidence: HotspotPopoverEvidence,
+	): ChartDatumPopoverModel {
+		const heading = entry.name ?? t.unnamed(entry.id);
+		const rows: Array<{ label: string; value: string }> = [];
+		const severe = fmtPct(entry.severe_pct, { locale, suffix: t.units.pct });
+		if (severe != null) rows.push({ label: t.ladder.severeRateLabel, value: severe });
+		if (evidence.wilsonLo != null && evidence.wilsonHi != null) {
+			const lower = fmtPct(evidence.wilsonLo, { locale, suffix: t.units.pct });
+			const upper = fmtPct(evidence.wilsonHi, { locale, suffix: t.units.pct });
+			if (lower != null && upper != null) {
+				rows.push({ label: t.ladder.ci, value: `${lower}–${upper}` });
+			}
+		}
+		const averageDelay = fmtDelayMin(entry.avg_delay_min, {
+			rounding: 'auto',
+			locale,
+			suffix: t.units.min,
+		});
+		if (averageDelay != null) {
+			rows.push({ label: t.chart.popover.averageDelay, value: averageDelay });
+		}
+		const readings = fmtCount(entry.observation_count, { locale });
+		if (readings != null) rows.push({ label: t.chart.popover.readings, value: readings });
+
+		const kind = navKindFor(entry.type);
+		const actionLabel =
+			kind === 'line'
+				? t.chart.popover.viewLine
+				: kind === 'stop'
+					? t.chart.popover.viewStop
+					: null;
+		return {
+			key: `${entry.type}-${entry.id}`,
+			heading,
+			meta: t.tray.rowSubtitle(typeTag(entry.type) ?? entry.type, entry.id),
+			rows,
+			...(actionLabel && href
+				? { action: { href, label: actionLabel, ariaLabel: t.viewDetail(heading) } }
+				: {}),
+		};
+	}
 	function ladderNote(entry: HotspotEntry): string {
 		const parts: string[] = [];
 		if (entry.severe_pct != null) {
@@ -238,6 +284,7 @@
 			note: ladderNote,
 			unnamed: t.unnamed,
 			href: hrefFor,
+			tapPopover: tapPopoverFor,
 		});
 		return { ...result, total: total ?? result.total };
 	}

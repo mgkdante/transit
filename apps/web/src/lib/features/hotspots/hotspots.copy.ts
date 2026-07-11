@@ -68,6 +68,12 @@ export interface HotspotsCopy extends SurfaceHeadCopy {
 	};
 	readonly chart: {
 		readonly scroll: (sectionTitle: string) => string;
+		readonly popover: {
+			readonly averageDelay: string;
+			readonly readings: string;
+			readonly viewLine: string;
+			readonly viewStop: string;
+		};
 	};
 	/** The un-ranked tray (sub-MIN_N cells) heading + reason. */
 	readonly tray: {
@@ -193,6 +199,12 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		},
 		chart: {
 			scroll: (sectionTitle) => `Faire défiler horizontalement le graphique ${sectionTitle}`,
+			popover: {
+				averageDelay: 'Retard moyen',
+				readings: 'Relevés',
+				viewLine: 'Voir la ligne',
+				viewStop: 'Voir l’arrêt',
+			},
 		},
 		tray: {
 			heading: 'Sous le seuil de lecture fiable',
@@ -290,6 +302,12 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		},
 		chart: {
 			scroll: (sectionTitle) => `Scroll the ${sectionTitle} chart horizontally`,
+			popover: {
+				averageDelay: 'Average delay',
+				readings: 'Readings',
+				viewLine: 'View line',
+				viewStop: 'View stop',
+			},
 		},
 		tray: {
 			heading: 'Below the reliable-reading floor',
