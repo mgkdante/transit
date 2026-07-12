@@ -242,6 +242,43 @@ export function enumerateDates(start: string, end: string): string[] {
 // Tier-2 breakdown rows (cause / effect / severity distributions).
 // ---------------------------------------------------------------------------
 
+export interface SummarizedAlertBreakdown {
+	readonly by_cause: readonly AlertBreakdownBucket[];
+	readonly by_effect: readonly AlertBreakdownBucket[];
+	readonly by_severity: readonly AlertBreakdownBucket[];
+}
+
+function summarizeBuckets(
+	entries: readonly AlertHistoryEntry[],
+	keyFor: (entry: AlertHistoryEntry) => string,
+): AlertBreakdownBucket[] {
+	const groups = new Map<string, { count: number; durations: number[] }>();
+	for (const entry of entries) {
+		const key = keyFor(entry).trim() || 'unknown';
+		const group = groups.get(key) ?? { count: 0, durations: [] };
+		group.count += 1;
+		if (entry.duration_min != null && Number.isFinite(entry.duration_min)) {
+			group.durations.push(entry.duration_min);
+		}
+		groups.set(key, group);
+	}
+	return Array.from(groups, ([key, group]) => ({
+		key,
+		count: group.count,
+		median_duration_min: medianOf(group.durations),
+	}));
+}
+
+export function summarizeAlertBreakdown(
+	entries: readonly AlertHistoryEntry[],
+): SummarizedAlertBreakdown {
+	return {
+		by_cause: summarizeBuckets(entries, (entry) => entry.cause ?? 'unknown'),
+		by_effect: summarizeBuckets(entries, (entry) => entry.effect ?? 'unknown'),
+		by_severity: summarizeBuckets(entries, (entry) => bandSeverity(entry.severity)),
+	};
+}
+
 /** Which distribution a bucket list belongs to (drives label resolution + bar tone). */
 export type BreakdownKind = 'cause' | 'effect' | 'severity';
 
