@@ -14,7 +14,10 @@
 	import { cn } from '$lib/utils';
 	import ChartDatumPopover from '../ChartDatumPopover.svelte';
 	import ChartFrame from '../ChartFrame.svelte';
-	import { createChartDatumPopover } from '../useChartDatumPopover.svelte';
+	import {
+		chartDatumPopoverBoundary,
+		createChartDatumPopover,
+	} from '../useChartDatumPopover.svelte';
 	import { categoryGutter } from '../axisGutter';
 	import MagnitudeCiWhiskers from './MagnitudeCiWhiskers.svelte';
 	import { activateMagnitudeRow } from './magnitudeRowActivation';
@@ -68,6 +71,7 @@
 	class={cn('dv-barmark m-0', className)}
 	aria-label={spec.title}
 	data-slot="magnitude-bars-mark"
+	use:chartDatumPopoverBoundary={popover}
 >
 	<ChartFrame height={frameHeight} class="dv-barmark-plot">
 		<LcChart
@@ -111,24 +115,26 @@
 					<MagnitudeCiWhiskers rows={reals} domain={xDomain} />
 				{/if}
 			</Svg>
-			<Tooltip.Root>
-				{#snippet children({ data }: { data: MagnitudeDatum })}
-					<Tooltip.Header>{data.label}</Tooltip.Header>
-					<Tooltip.List>
-						<Tooltip.Item
-							label={spec.xLabel ?? spec.title}
-							value={`${fmt(data.value)}${spec.unit}`}
-						/>
-						{#if spec.ciLabel && data.wilsonLo != null && data.wilsonHi != null}
+			{#if !hasTapPopover || popover.showNativeTooltip}
+				<Tooltip.Root>
+					{#snippet children({ data }: { data: MagnitudeDatum })}
+						<Tooltip.Header>{data.label}</Tooltip.Header>
+						<Tooltip.List>
 							<Tooltip.Item
-								label={spec.ciLabel}
-								value={`${fmt(data.wilsonLo)}–${fmt(data.wilsonHi)}${spec.unit}`}
+								label={spec.xLabel ?? spec.title}
+								value={`${fmt(data.value)}${spec.unit}`}
 							/>
-						{/if}
-						{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
-					</Tooltip.List>
-				{/snippet}
-			</Tooltip.Root>
+							{#if spec.ciLabel && data.wilsonLo != null && data.wilsonHi != null}
+								<Tooltip.Item
+									label={spec.ciLabel}
+									value={`${fmt(data.wilsonLo)}–${fmt(data.wilsonHi)}${spec.unit}`}
+								/>
+							{/if}
+							{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
+						</Tooltip.List>
+					{/snippet}
+				</Tooltip.Root>
+			{/if}
 		</LcChart>
 	</ChartFrame>
 	<ChartDatumPopover controller={popover} />

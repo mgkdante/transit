@@ -13,7 +13,7 @@ export type { ChartFrameProps } from './ChartFrame.svelte';
 
 export { default as ChartDatumPopover } from './ChartDatumPopover.svelte';
 export type { ChartDatumPopoverProps } from './ChartDatumPopover.svelte';
-export { createChartDatumPopover } from './useChartDatumPopover.svelte';
+export { chartDatumPopoverBoundary, createChartDatumPopover } from './useChartDatumPopover.svelte';
 export type {
 	ChartDatumPopoverAction,
 	ChartDatumPopoverController,

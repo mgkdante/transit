@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import type { ChartDatumPopoverModel } from '../useChartDatumPopover.svelte';
 
@@ -127,6 +127,49 @@ describe('MagnitudeBarsMark — Wilson CI surfacing guard (PR-WEB-2 Feature B)',
 });
 
 describe('MagnitudeBarsMark — touch datum popover integration', () => {
+	it('keeps an opted-in touch sequence exclusive before opening one custom dialog', async () => {
+		const { container } = renderReadyMark(baseSpec('95% CI', true));
+		const overlay = await rowOverlay(container);
+		const touch = {
+			pointerType: 'touch',
+			clientX: 120,
+			clientY: 240,
+		};
+
+		await act(() => {
+			overlay.dispatchEvent(
+				new PointerEvent('pointerover', { ...touch, bubbles: true, cancelable: true }),
+			);
+			overlay.dispatchEvent(
+				new PointerEvent('pointerenter', { ...touch, bubbles: false, cancelable: false }),
+			);
+			overlay.dispatchEvent(
+				new PointerEvent('pointermove', { ...touch, bubbles: true, cancelable: true }),
+			);
+			overlay.dispatchEvent(
+				new PointerEvent('pointerdown', { ...touch, bubbles: true, cancelable: true }),
+			);
+		});
+
+		expect(document.querySelector('.lc-tooltip-root')).not.toBeInTheDocument();
+		expect(document.querySelector('.lc-tooltip-content')).not.toBeInTheDocument();
+
+		await fireEvent.pointerUp(overlay, touch);
+		await pointerClick(overlay, 'touch');
+
+		const dialogs = await screen.findAllByRole('dialog', { name: 'Stop One' });
+		expect(dialogs).toHaveLength(1);
+		expect(document.querySelector('.lc-tooltip-root')).not.toBeInTheDocument();
+		expect(document.querySelector('.lc-tooltip-content')).not.toBeInTheDocument();
+		expect(navigate).not.toHaveBeenCalled();
+
+		const action = within(dialogs[0]).getByRole('link', {
+			name: 'View detail for Stop One',
+		});
+		expect(action).toHaveAttribute('href', '/stop/s1');
+		expect(action).toHaveTextContent('View stop');
+	});
+
 	it('opens one shared popover for an opted-in touch row without navigating', async () => {
 		const { container } = renderReadyMark(baseSpec('95% CI', true));
 
@@ -134,6 +177,36 @@ describe('MagnitudeBarsMark — touch datum popover integration', () => {
 
 		expect(await screen.findAllByRole('dialog', { name: 'Stop One' })).toHaveLength(1);
 		expect(navigate).not.toHaveBeenCalled();
+	});
+
+	it('hands a touch-open datum to mouse hover without overlapping or navigating', async () => {
+		const { container } = renderReadyMark(baseSpec('95% CI', true));
+		const overlay = await rowOverlay(container);
+		const initialHref = window.location.href;
+
+		await pointerClick(overlay, 'touch');
+		expect(await screen.findAllByRole('dialog', { name: 'Stop One' })).toHaveLength(1);
+		expect(navigate).not.toHaveBeenCalled();
+
+		const mouse = {
+			pointerType: 'mouse',
+			clientX: 120,
+			clientY: 240,
+		};
+		await fireEvent.pointerOver(overlay, mouse);
+		await fireEvent.pointerEnter(overlay, mouse);
+		await fireEvent.pointerMove(overlay, mouse);
+
+		await waitFor(() => {
+			expect(document.querySelectorAll('.lc-tooltip-root')).toHaveLength(1);
+		});
+		expect(screen.queryAllByRole('dialog', { name: 'Stop One' })).toHaveLength(0);
+		expect(navigate).not.toHaveBeenCalled();
+		expect(window.location.href).toBe(initialHref);
+
+		await pointerClick(overlay, 'mouse');
+		expect(navigate).toHaveBeenCalledOnce();
+		expect(navigate).toHaveBeenCalledWith('/stop/s1');
 	});
 
 	it('opts LayerChart into auto touch events only when at least one row has a popover model', async () => {
@@ -169,6 +242,27 @@ describe('MagnitudeBarsMark — touch datum popover integration', () => {
 		expect(within(hover).getByText('31–57%')).toBeInTheDocument();
 		expect(within(hover).getByText('median 0.4 min · n=120')).toBeInTheDocument();
 		expect(within(hover).queryByText('↦ open stop')).not.toBeInTheDocument();
+	});
+
+	it('keeps a non-opted-in mark on pan-y with its native mouse tooltip', async () => {
+		const { container } = renderReadyMark(baseSpec('95% CI'));
+		expect((await tooltipContext(container)).style.getPropertyValue('--touch-action')).toBe(
+			'pan-y',
+		);
+
+		await fireEvent.pointerEnter(await rowOverlay(container), {
+			pointerType: 'mouse',
+			clientX: 120,
+			clientY: 240,
+		});
+
+		const hover = await waitFor(() => {
+			const content = document.querySelector<HTMLElement>('.lc-tooltip-content');
+			if (!content) throw new Error('Expected non-opted native LayerChart tooltip');
+			return content;
+		});
+		expect(within(hover).getByText('Stop One')).toBeInTheDocument();
+		expect(within(hover).getByText('44%')).toBeInTheDocument();
 	});
 
 	it('keeps desktop mouse activation as one direct navigation', async () => {
