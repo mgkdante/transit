@@ -1,12 +1,12 @@
 # Hotspots reading-floor, controls, and mobile-chart refinement
 
 Date: 2026-07-11
-Status: Approved design, implementation pending
+Status: Implemented and operator-approved on 2026-07-12
 Surface: `/hotspots` and `/fr/hotspots`
 
 ## Goal
 
-Make the Hotspots article easier to scan and operate without changing its data contract or the approved ArticleHeader/card system. The below-floor entries become a real table, the combined rail gains independent disclosures, the time-grain control becomes a polished one-row control, and mobile charts gain room to breathe through horizontal scrolling.
+Make the Hotspots article easier to scan and operate without changing its data contract or the approved ArticleHeader/card system. The below-floor entries become a real table, the combined rail gains independent disclosures, the time-grain control becomes a compact joined centered 2×2 matrix, and mobile charts gain room to breathe through horizontal scrolling.
 
 ## Scope
 
@@ -16,17 +16,18 @@ This refinement changes only Hotspots presentation plus the smallest reusable ti
 
 ### Time-grain control
 
-The Day, Week, Month, and Peak hours choices render as one cohesive four-segment control on desktop and mobile.
+The Day, Week, Month, and Peak hours choices render as one cohesive joined 2×2 matrix on desktop and mobile.
 
-- The track is full-width, softly inset, token-driven, and divided into four equal cells.
+- The compact matrix is centered within its available rail width, token-driven, and divided into four equal cells.
+- Its inner seams are straight. Only the matrix's four outer quarters are rounded.
 - The active cell uses Transit orange, primary foreground text, and restrained elevation. Inactive cells remain quiet with clear hover and focus states.
 - Every segment retains a 44px minimum target, roving radio focus, arrow-key selection, disabled-state honesty, and reduced-motion behavior.
-- The four choices never wrap into a second row and the control itself never scrolls horizontally.
+- The control does not scroll horizontally.
 - English displays `Day`, `Week`, `Month`, and `Peak hours`.
 - French uses the compact visible label `Pointe` for the fourth cell while preserving `Heures de pointe` as the full accessible meaning and pointer hint.
 - The existing top-N control keeps its current compact default treatment. The polished four-cell layout applies only to the time-grain picker.
 
-Implementation boundary: extend the shared `GrainPicker` with an opt-in time-row variant and optional compact segment label. Existing callers remain unchanged unless they opt in.
+Implementation boundary: extend the shared `GrainPicker` with an opt-in time-grid variant and optional compact segment label. Existing callers remain unchanged unless they opt in.
 
 ### Collapsible filters and contents
 
@@ -86,16 +87,16 @@ Only the chart viewport inside the Lines and Stops cards scrolls horizontally be
 
 Follow strict red-green-refactor:
 
-1. Add failing GrainPicker tests for the opt-in four-column time variant, compact visible label, full accessible label, and unchanged default variant.
+1. Add failing GrainPicker tests for the opt-in joined 2×2 time-grid variant, compact visible label, full accessible label, and unchanged default variant.
 2. Add failing Hotspots tests proving Filters and TOC are independent disclosures, persist under stable keys, and follow Collapse/Expand all.
 3. Add failing Hotspots/HotspotSection assertions for semantic table headers, linked Item, localized Type/ID, served Readings, and honest missing count.
 4. Add failing mobile-contract assertions for a keyboard-focusable chart scroller with a wider inner canvas while desktop remains unforced.
 5. Run the focused Hotspots, GrainPicker, shared disclosure, DetailShell, SurfaceRail, Metrics, and Status regression suites plus `bun run check`.
-6. Run Chrome visual checks at 1512px, 768px, and 390px in English/French and light/dark. Verify the one-row time control, both rail disclosures, table reflow, chart pan, focus, no page-level horizontal overflow, and parity with Metrics/Status.
+6. Run Chrome visual checks at 1512px, 768px, and 390px in English/French and light/dark. Verify the joined 2×2 matrix at every target viewport, both rail disclosures, table reflow, chart pan, focus, no page-level horizontal overflow, and parity with Metrics/Status.
 
 ## Acceptance criteria
 
-- Four time grains remain in one polished row at every supported viewport.
+- Four time grains remain one compact joined 2×2 matrix at every supported viewport with no control-level horizontal scrolling.
 - Filters and TOC collapse independently and also follow global collapse/expand.
 - Below-floor entries render as `Item | Type/ID | Readings` with real served counts.
 - Mobile users can pan the graph without moving the rest of the card.

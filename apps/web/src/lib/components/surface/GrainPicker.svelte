@@ -88,6 +88,14 @@
 		return seg.available !== false;
 	}
 
+	function pointerTitle(seg: GrainSegment): string | undefined {
+		if (seg.available !== false) {
+			return seg.hint ?? (seg.compactLabel ? seg.label : undefined);
+		}
+		if (!seg.compactLabel) return seg.title;
+		return seg.title ? `${seg.label} — ${seg.title}` : seg.label;
+	}
+
 	/** The index of the currently-checked segment (roving-tabindex anchor). */
 	const checkedIndex = $derived(
 		Math.max(
@@ -142,9 +150,7 @@
 			aria-checked={value === seg.key}
 			aria-describedby={seg.describedById}
 			aria-label={seg.compactLabel ? seg.label : undefined}
-			title={seg.available === false
-				? seg.title
-				: (seg.hint ?? (seg.compactLabel ? seg.label : undefined))}
+			title={pointerTitle(seg)}
 			disabled={seg.available === false}
 			tabindex={i === checkedIndex ? 0 : -1}
 			onclick={() => pick(seg)}

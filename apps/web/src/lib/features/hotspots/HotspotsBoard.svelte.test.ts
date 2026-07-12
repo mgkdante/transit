@@ -768,6 +768,11 @@ describe('HotspotsBoard article', () => {
 			'data-variant',
 			'block',
 		);
+		expect(container.querySelector('[data-slot="surface-rail"]')).toBeNull();
+		expect(container.querySelector('[data-slot="surface-rail-mobile"]')).toBeNull();
+		expect(container.querySelector('.surface-rail-pill')).toBeNull();
+		expect(container.querySelector('.surface-rail-pill-summary')).toBeNull();
+		expect(container.querySelector('[data-slot="active-window"]')).toBeNull();
 		expect(container.querySelectorAll('[data-toc^="hotspots-"]')).toHaveLength(0);
 		expect(container.querySelectorAll('table.sr-only tbody tr')).toHaveLength(0);
 	});

@@ -197,6 +197,16 @@
 		const rightInset = Math.max(0, Math.round(window.innerWidth - rect.right));
 		rootEl.style.setProperty('--nav-pill-right', `${rightInset}px`);
 	}
+	function onPillTransitionEnd(event: TransitionEvent): void {
+		if (
+			!menuOpen ||
+			event.target !== event.currentTarget ||
+			!event.propertyName.startsWith('padding')
+		) {
+			return;
+		}
+		syncPillAnchor();
+	}
 
 	$effect(() => {
 		if (!menuOpen) return;
@@ -304,6 +314,7 @@
 		class:nav-pill-compact={overlayActive}
 		data-testid="nav-pill"
 		data-slot="nav-pill"
+		ontransitionend={onPillTransitionEnd}
 	>
 		<!-- BRAND: the "Transit" product wordmark (→ /). transit.yesid.dev is a
 		     yesid.dev product, but here the pill wordmark is the PRODUCT home (the

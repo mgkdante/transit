@@ -140,6 +140,28 @@ describe('GrainPicker — variants', () => {
 		expect(defaultRule).toContain('display: inline-flex');
 		expect(defaultRule).not.toContain('grid-template-columns');
 	});
+
+	it('preserves the full French label in a disabled compact pointer hint', () => {
+		const { getByRole } = render(GrainPicker, {
+			props: {
+				segments: [
+					{ key: 'day', label: 'Jour', available: true },
+					{
+						key: 'shift',
+						label: 'Heures de pointe',
+						compactLabel: 'Pointe',
+						available: false,
+						title: 'Aucune observation',
+					},
+				],
+				value: 'day',
+				label: 'Période',
+			},
+		});
+		const shift = getByRole('radio', { name: 'Heures de pointe' });
+		expect(shift).toHaveTextContent('Pointe');
+		expect(shift).toHaveAttribute('title', 'Heures de pointe — Aucune observation');
+	});
 });
 
 describe('GrainPicker — radiogroup semantics', () => {

@@ -96,7 +96,7 @@
 	type DetailShellCombinedRailProps = {
 		left?: never;
 		combinedRail: Snippet<[SurfaceRailContext]>;
-		combinedRailConfig: DetailShellCombinedRailConfig;
+		combinedRailConfig: DetailShellCombinedRailConfig | undefined;
 		mobileTocEntries?: never;
 		onNavigate?: never;
 		tocOpenAria?: never;

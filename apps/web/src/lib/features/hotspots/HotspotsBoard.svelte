@@ -321,6 +321,7 @@
 	const windowCaption = $derived(t.window[grainKey]);
 	const controlsSummary = $derived(grainLabels[grainKey] ?? '');
 	const isEmpty = $derived(present.size === 0);
+	const showCombinedRail = $derived(hotspots.settled && hotspots.data != null && present.size > 0);
 	const showWorstN = $derived(
 		routeLadder.total > SMALLEST_WORST_N || stopLadder.total > SMALLEST_WORST_N,
 	);
@@ -408,12 +409,14 @@
 	class="hotspots-detail"
 	bind:activeId
 	{tocEntries}
-	combinedRailConfig={{
-		label: t.rail.label,
-		summary: controlsSummary,
-		openAria: t.rail.open,
-		closeAria: t.rail.close,
-	}}
+	combinedRailConfig={showCombinedRail
+		? {
+				label: t.rail.label,
+				summary: controlsSummary,
+				openAria: t.rail.open,
+				closeAria: t.rail.close,
+			}
+		: undefined}
 >
 	{#snippet articleHeader()}
 		<ArticleHeader

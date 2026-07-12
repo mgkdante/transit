@@ -1,7 +1,7 @@
 import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import NavPill from './NavPill.svelte';
 
 function readSource(): string {
@@ -11,6 +11,14 @@ function readSource(): string {
 function baseMenuRule(source: string): string {
 	return source.match(/\n\t\.nav-menu\s*\{([^}]*)\}/)?.[1] ?? '';
 }
+
+function fireTransitionEnd(element: Element, propertyName: string): Promise<boolean> {
+	const event = new Event('transitionend', { bubbles: true });
+	Object.defineProperty(event, 'propertyName', { value: propertyName });
+	return fireEvent(element, event);
+}
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('NavPill — structure', () => {
 	it('renders the floating pill with the four primary links in wayfinding order', () => {
@@ -119,6 +127,46 @@ describe('NavPill — the flat menu', () => {
 		expect(yesid).toHaveAttribute('rel', 'noopener noreferrer');
 		expect(yesid).toHaveAccessibleName('Yesid (opens in a new tab)');
 	});
+
+	it.each([768, 1512])(
+		'resynchronizes the settled menu anchor at %ipx after the pill padding transition',
+		async (viewportWidth) => {
+			const { getByRole, getByTestId } = render(NavPill, {
+				props: { locale: 'en', url: new URL('https://transit.local/map') },
+			});
+			const root = getByRole('navigation', { name: 'Primary navigation' });
+			const pill = getByTestId('nav-pill');
+			const brand = within(pill).getByRole('link', { name: /Transit/ });
+			let pillRight = viewportWidth - 96;
+			vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(viewportWidth);
+			vi.spyOn(pill, 'getBoundingClientRect').mockImplementation(
+				() =>
+					({
+						x: pillRight - 480,
+						y: 16,
+						left: pillRight - 480,
+						top: 16,
+						right: pillRight,
+						bottom: 88,
+						width: 480,
+						height: 72,
+						toJSON: () => ({}),
+					}) as DOMRect,
+			);
+
+			await fireEvent.click(getByRole('button', { name: 'Open menu' }));
+			await waitFor(() => expect(root.style.getPropertyValue('--nav-pill-right')).toBe('96px'));
+
+			pillRight -= 8;
+			await fireTransitionEnd(pill, 'box-shadow');
+			expect(root.style.getPropertyValue('--nav-pill-right')).toBe('96px');
+			await fireTransitionEnd(brand, 'padding-right');
+			expect(root.style.getPropertyValue('--nav-pill-right')).toBe('96px');
+
+			await fireTransitionEnd(pill, 'padding-right');
+			expect(root.style.getPropertyValue('--nav-pill-right')).toBe('104px');
+		},
+	);
 
 	it('localizes the Audit group + Yesid new-tab affordance in French', async () => {
 		const { getByRole, queryByTestId } = render(NavPill, {
