@@ -353,7 +353,8 @@
 					input:active,
 					select:active,
 					textarea:active,
-					[role='button']:active
+					[role='button']:active,
+					[data-card-interactive]:active
 				)
 			)
 	) {

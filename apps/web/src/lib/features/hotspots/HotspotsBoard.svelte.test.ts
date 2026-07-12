@@ -12,6 +12,7 @@ const replaceState = vi.hoisted(() =>
 		mockUrl = new URL(u, 'http://localhost');
 	}),
 );
+const navigate = vi.hoisted(() => vi.fn());
 vi.mock('$app/state', () => ({
 	page: {
 		get url() {
@@ -20,7 +21,7 @@ vi.mock('$app/state', () => ({
 		state: {},
 	},
 }));
-vi.mock('$app/navigation', () => ({ replaceState }));
+vi.mock('$app/navigation', () => ({ goto: navigate, replaceState }));
 
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
 vi.mock('$lib/i18n', async (importOriginal) => {
@@ -211,6 +212,7 @@ function capturedRow(key: string): CapturedMagnitudeDatum {
 describe('HotspotsBoard article', () => {
 	beforeEach(() => {
 		mockUrl = new URL('http://localhost/hotspots');
+		navigate.mockClear();
 		replaceState.mockClear();
 		currentLocale.value = 'en';
 		capturedLadders.current = [];
@@ -252,6 +254,59 @@ describe('HotspotsBoard article', () => {
 		expect(
 			within(card(container, 'hotspots-stops')).getByRole('link', { name: /Berri-UQAM/ }),
 		).toHaveAttribute('href', '/stop/S1');
+	});
+
+	it('keeps a real chart touch click inside its open card while opening details', async () => {
+		const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
+		const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
+		const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');
+		Object.defineProperty(Element.prototype, 'animate', {
+			configurable: true,
+			value: vi.fn(() => ({
+				cancel: vi.fn(),
+				currentTime: 0,
+				effect: null,
+				onfinish: null,
+				playState: 'finished',
+			})),
+		});
+
+		try {
+			const { container } = render(HotspotsBoard);
+			const linesCard = card(container, 'hotspots-lines');
+			const body = linesCard.querySelector('.section-body');
+			const overlay = await waitFor(() => {
+				const element = linesCard.querySelector<SVGRectElement>('rect.lc-tooltip-rect');
+				if (!element) throw new Error('Expected the real LayerChart row overlay');
+				return element;
+			});
+
+			expect(body).toHaveAttribute('data-state', 'open');
+			await fireEvent(
+				overlay,
+				new PointerEvent('click', {
+					bubbles: true,
+					cancelable: true,
+					clientX: 120,
+					clientY: 240,
+					pointerType: 'touch',
+				}),
+			);
+
+			const dialog = await screen.findByRole('dialog', { name: 'Item 51' });
+			expect(within(dialog).getByRole('link', { name: 'View detail for Item 51' })).toHaveAttribute(
+				'href',
+				'/lines/51',
+			);
+			expect(navigate).not.toHaveBeenCalled();
+			expect(body).toHaveAttribute('data-state', 'open');
+		} finally {
+			width.mockRestore();
+			height.mockRestore();
+			if (originalAnimate) Object.defineProperty(Element.prototype, 'animate', originalAnimate);
+			else Reflect.deleteProperty(Element.prototype, 'animate');
+			document.querySelectorAll('[role="dialog"]').forEach((element) => element.remove());
+		}
 	});
 
 	it('defines the exact EN and FR chart popover copy', () => {

@@ -338,6 +338,14 @@ describe('CollapsibleSection - whole-card toggling', () => {
 		expect(body?.getAttribute('data-state')).toBe('open');
 	});
 
+	it('excludes data-card-interactive descendants from whole-card press feedback', () => {
+		const source = componentSource();
+
+		expect(source).toMatch(
+			/:global\(\s*\[data-slot='card'\]\.section-card\.section-card--toggleable:active:not\(\s*:has\([\s\S]*?\[data-card-interactive\]:active[\s\S]*?\)\s*\)\s*\)\s*\{[\s\S]*?scale:\s*0\.97;[\s\S]*?opacity:\s*0\.92;/,
+		);
+	});
+
 	it('header click toggles exactly once (card handler must not re-toggle it)', async () => {
 		const { container } = render(CollapsibleSection, {
 			props: { title: 'Card', open: true, children: bodyContent },
