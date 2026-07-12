@@ -16,10 +16,20 @@
 // grain serves no ranked entry.
 
 import type { Locale } from '$lib/i18n';
-import type { AbsenceSpec, MagnitudeBarsSpec, MagnitudeDatum } from '$lib/components/dataviz/chart';
+import type {
+	AbsenceSpec,
+	ChartDatumPopoverModel,
+	MagnitudeBarsSpec,
+	MagnitudeDatum,
+} from '$lib/components/dataviz/chart';
 import { SEVERE_DOMAIN } from '$lib/features/reliability/domains';
 import { severeShareToSeverity } from '$lib/features/reliability/shiftGrains';
 import type { HotspotEntry } from '$lib/v1/schemas';
+
+export interface HotspotPopoverEvidence {
+	readonly wilsonLo: number | null;
+	readonly wilsonHi: number | null;
+}
 
 /** Localized labels + link/note builders the pure selector needs (no runes here). */
 export interface HotspotLadderLabels {
@@ -37,6 +47,11 @@ export interface HotspotLadderLabels {
 	unnamed: (id: string) => string;
 	/** Build the drill link for a cell (route/stop); null when its type maps to no page. */
 	href: (e: HotspotEntry) => string | null;
+	tapPopover: (
+		entry: HotspotEntry,
+		href: string | null,
+		evidence: HotspotPopoverEvidence,
+	) => ChartDatumPopoverModel;
 }
 
 export interface HotspotLadderResult {
@@ -93,6 +108,8 @@ export function selectHotspotLadder(
 
 	const rows: MagnitudeDatum[] = top.map((e) => {
 		const href = labels.href(e);
+		const wilsonLo = severeCiLo(e);
+		const wilsonHi = severeCiHi(e);
 		return {
 			key: `${e.type}-${e.id}`,
 			label: e.name ?? labels.unnamed(e.id),
@@ -101,9 +118,10 @@ export function selectHotspotLadder(
 			severity: severeShareToSeverity(e.severe_pct ?? null),
 			n: e.observation_count ?? null,
 			// CI flipped onto the bar's (severe-rate) scale so it brackets the value (see helpers).
-			wilsonLo: severeCiLo(e),
-			wilsonHi: severeCiHi(e),
+			wilsonLo,
+			wilsonHi,
 			note: labels.note(e),
+			tapPopover: labels.tapPopover(e, href, { wilsonLo, wilsonHi }),
 			...(href ? { href } : {}),
 		};
 	});

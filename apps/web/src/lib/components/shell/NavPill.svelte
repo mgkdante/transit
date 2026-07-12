@@ -7,16 +7,16 @@
 
   Content order (§C2.1, built exactly):
     BrandWordmark ("Transit" + orange dot → /) · divider · Map / Lines / Stops /
-    Network · divider · search (≥lg compact in-pill field; <lg an icon → the menu
-    sheet) · divider · LangSwitch + ThemeToggle · hamburger → the menu.
+    Network · divider · search (≥lg compact in-pill field; <lg inside the menu
+    dropdown) · divider · LangSwitch + ThemeToggle · hamburger → the menu.
 
   The menu is a FLAT, unlabelled list of destinations (Map/Lines/Stops/Network
   on <lg · Search on <lg · Metrics · Status · Hotspots · Receipt · Repeat
   offenders · Alerts) closing with a "Yesid" link OUT to yesid.dev (external ↗).
   No text group-headings — a quiet hairline is the only separator between the
-  primary surfaces and the secondary ones on mobile. It opens as a full-height
-  sheet ≤767px and an anchored dropdown ≥768px — both wear the shared
-  .glass-chrome recipe (§C4 P4).
+  primary surfaces and the secondary ones at compact widths. It opens as one
+  anchored dropdown at every width; compact widths retain the primary + search
+  groups. The dropdown wears the shared .glass-chrome recipe (§C4 P4).
 
   --pill-h is set on :root per breakpoint by PLAIN CSS (no JS measurement): the
   pill height is deterministic (content 44px + 2·padV + 2·2px border). Stage-1's
@@ -167,13 +167,13 @@
 	let menuToggle = $state<HTMLButtonElement>();
 	let searchResultsOpen = $state(true);
 	let rootEl = $state<HTMLElement>();
-	// The pill capsule — measured so the ≥768 dropdown can pin its RIGHT edge to the
+	// The pill capsule — measured so the anchored dropdown can pin its RIGHT edge to the
 	// pill's right edge (the pill is intrinsic-width + centred, so its right edge is
 	// near the viewport centre-right, not the far edge). We publish the pill's
-	// right-inset-from-viewport as a CSS var the ≥768 rule consumes.
+	// right-inset-from-viewport as a CSS var the base menu rule consumes.
 	let pillEl = $state<HTMLElement>();
-	// First menu-item, so opening the menu can move keyboard focus INTO the sheet /
-	// dropdown (the backdrop is no longer a focusable dismiss control).
+	// First menu-item, so opening the menu can move keyboard focus INTO the dropdown
+	// (the backdrop is no longer a focusable dismiss control).
 	let menuEl = $state<HTMLElement>();
 
 	const showSearchResults = $derived(
@@ -186,17 +186,26 @@
 	// shadow while open so the dropdown reads as the elevated layer.
 	const overlayActive = $derived(menuOpen);
 
-	// Pin the ≥768 dropdown's right edge to the pill's right edge. The pill is
+	// Pin the dropdown's right edge to the pill's right edge at every width. The pill is
 	// intrinsic-width + centred in a full-width rail, so its right edge sits near the
 	// viewport centre-right; measuring it (viewport width − pill.right) gives the
 	// inset-inline-end the dropdown should use, published as --nav-pill-right on the
-	// rail. Recomputed whenever the menu opens or the viewport resizes; the <lg sheet
-	// ignores it (it stays a full-height edge sheet).
+	// rail. Recomputed whenever the menu opens or the viewport resizes.
 	function syncPillAnchor(): void {
 		if (typeof window === 'undefined' || !rootEl || !pillEl) return;
 		const rect = pillEl.getBoundingClientRect();
 		const rightInset = Math.max(0, Math.round(window.innerWidth - rect.right));
 		rootEl.style.setProperty('--nav-pill-right', `${rightInset}px`);
+	}
+	function onPillTransitionEnd(event: TransitionEvent): void {
+		if (
+			!menuOpen ||
+			event.target !== event.currentTarget ||
+			!event.propertyName.startsWith('padding')
+		) {
+			return;
+		}
+		syncPillAnchor();
 	}
 
 	$effect(() => {
@@ -204,7 +213,7 @@
 		syncPillAnchor();
 	});
 
-	// Focus goes INTO the menu on open. On <lg the sheet's search field is the natural
+	// Focus goes INTO the menu on open. On <lg the dropdown's search field is the natural
 	// first stop (and its autofocus/select aids fast search); ≥lg the search group is
 	// hidden, so focus lands on the menu container (tabindex=-1) — either way keyboard
 	// focus enters the menu, and closeMenu() returns it to the hamburger. This replaces
@@ -305,6 +314,7 @@
 		class:nav-pill-compact={overlayActive}
 		data-testid="nav-pill"
 		data-slot="nav-pill"
+		ontransitionend={onPillTransitionEnd}
 	>
 		<!-- BRAND: the "Transit" product wordmark (→ /). transit.yesid.dev is a
 		     yesid.dev product, but here the pill wordmark is the PRODUCT home (the
@@ -321,7 +331,7 @@
 
 		<!-- PRIMARY LINKS: Map / Lines / Stops / Network. Shown ≥lg; below lg the pill
 		     drops them (they'd push the controls + hamburger off-screen) and the menu
-		     sheet carries them instead — the hamburger is the compact nav entry. -->
+		     dropdown carries them instead — the hamburger is the compact nav entry. -->
 		<div class="nav-links" data-slot="nav-links">
 			{#each navItems as item (item.key)}
 				<a
@@ -337,8 +347,8 @@
 
 		<span class="nav-divider nav-divider-collapsible" aria-hidden="true"></span>
 
-		<!-- SEARCH: a compact in-pill field ≥lg; below lg it collapses to an icon that
-		     opens the menu sheet (which carries the search field there). -->
+		<!-- SEARCH: a compact in-pill field ≥lg; below lg the menu dropdown carries the
+		     search field. -->
 		<form class="nav-search" role="search" onsubmit={submitSearch} data-slot="nav-search">
 			<SearchIcon class="nav-search-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
 			<input
@@ -429,8 +439,8 @@
 			data-testid="nav-menu"
 			data-slot="nav-menu"
 		>
-			<!-- PRIMARY (sheet only, <lg): the in-pill .nav-links row is hidden below lg,
-			     so the sheet carries Map/Lines/Stops/Network there. Hidden ≥lg by CSS —
+			<!-- PRIMARY (compact only, <lg): the in-pill .nav-links row is hidden below lg,
+			     so the dropdown carries Map/Lines/Stops/Network there. Hidden ≥lg by CSS —
 			     the pill's own link row is the desktop entry. FLAT — no visible heading;
 			     the group aria-label carries the wayfinding grouping for AT. -->
 			<div
@@ -451,9 +461,9 @@
 				{/each}
 			</div>
 
-			<!-- SEARCH (sheet only, <lg): the in-pill field is hidden below lg, so the
-			     menu carries the sole search entry there. Hidden ≥lg by CSS. The field is
-			     self-describing (placeholder + aria-label); no visible heading. -->
+			<!-- SEARCH (compact only, <lg): the in-pill field is hidden below lg, so the
+			     dropdown carries the sole search entry there. Hidden ≥lg by CSS. The field
+			     is self-describing (placeholder + aria-label); no visible heading. -->
 			<div class="nav-menu-search-group" role="group" aria-label={searchGroupLabel}>
 				<form
 					class="nav-menu-search"
@@ -570,7 +580,7 @@
 	}
 
 	/* Menu-open (compact) tier: tighten to 12/20 and drop the shadow so the
-	   dropdown/sheet reads as the elevated layer. */
+	   dropdown reads as the elevated layer. */
 	.nav-pill-compact {
 		padding: 12px 20px;
 		box-shadow: none;
@@ -592,7 +602,7 @@
 	}
 
 	/* The in-pill primary links are a ≥lg affordance: below lg they are removed (the
-	   menu sheet's Explore group carries them), so the controls + hamburger never get
+	   menu dropdown's Explore group carries them), so the controls + hamburger never get
 	   pushed off the pill's right edge on a compact viewport. */
 	.nav-links {
 		display: none;
@@ -648,8 +658,8 @@
 	}
 
 	/* SEARCH — the compact in-pill field (≥lg). Below lg it is removed (the menu
-	   sheet carries search); a search icon is not needed in the pill there because
-	   the hamburger opens the sheet. */
+	   dropdown carries search); a search icon is not needed in the pill there because
+	   the hamburger opens the dropdown. */
 	.nav-search {
 		position: relative;
 		display: none;
@@ -772,7 +782,9 @@
 		transform: translateY(-3.25px) rotate(-45deg);
 	}
 
-	/* MENU — full-height sheet ≤767, anchored dropdown ≥768. Both .glass-chrome. */
+	/* MENU — one anchored dropdown at every width. Compact widths retain the
+	   primary + search groups; ≥1024 hides those duplicates because the pill owns
+	   them. The transparent backdrop remains the click-away dismiss surface. */
 	.nav-menu-backdrop {
 		position: fixed;
 		inset: 0;
@@ -786,36 +798,33 @@
 	.nav-menu {
 		pointer-events: auto;
 		position: fixed;
-		inset-block: 0;
-		inset-inline-end: 0;
+		inset-block: auto;
+		inset-block-start: calc(1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + 8px);
+		inset-inline-end: var(--nav-pill-right, 0.75rem);
 		z-index: var(--z-nav);
 		display: grid;
 		align-content: start;
 		gap: 0.375rem;
-		width: min(20rem, 92vw);
-		max-height: 100dvh;
+		width: min(19rem, calc(100vw - 1.5rem));
+		max-height: min(
+			calc(
+				100dvh - var(--pill-h) - 3rem - env(safe-area-inset-top, 0px) -
+					env(safe-area-inset-bottom, 0px)
+			),
+			42rem
+		);
 		overflow-y: auto;
 		overscroll-behavior: contain;
-		padding: calc(1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + 1rem) 1rem
-			calc(1rem + env(safe-area-inset-bottom, 0px)) 1rem;
-		border-radius: 0;
+		padding: 0.65rem;
+		border-radius: var(--radius-xl);
 		/* .glass-chrome supplies background + hairline + blur + shadow. */
 	}
 
-	/* ≥768 — an anchored dropdown pinned UNDER THE PILL, its right edge aligned to the
-	   pill's right edge (near centre-right), not pinned to the viewport far-right. The
-	   pill is intrinsic-width + centred, so JS measures its right-inset-from-viewport
-	   into --nav-pill-right (NavPill.syncPillAnchor); we fall back to 1rem before the
-	   first measure / with JS off so it still reads as an under-pill dropdown. */
+	/* Preserve the existing tablet/desktop cap; every other dropdown declaration
+	   now lives in the base rule so phones use the same presentation. */
 	@media (min-width: 768px) {
 		.nav-menu {
-			inset-block: auto;
-			inset-block-start: calc(1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + 8px);
-			inset-inline-end: var(--nav-pill-right, 1rem);
-			width: min(19rem, calc(100vw - 1.5rem));
 			max-height: min(calc(100dvh - var(--pill-h) - 3rem), 34rem);
-			padding: 0.65rem;
-			border-radius: var(--radius-xl);
 		}
 	}
 
@@ -827,7 +836,7 @@
 	}
 
 	/* The Search + Audit groups sit under a hairline; the Explore group leads the
-	   sheet, so it takes no top rule. */
+	   dropdown at compact widths, so it takes no top rule. */
 	.nav-menu-search-group,
 	.nav-menu-group {
 		margin-top: 0.5rem;
@@ -835,7 +844,7 @@
 		border-top: 1px solid var(--border-subtle);
 	}
 
-	/* The in-pill primary links + search are hidden below lg; the sheet's Explore +
+	/* The in-pill primary links + search are hidden below lg; the dropdown's Explore +
 	   Search groups are hidden at and above lg (the pill is the desktop entry). The
 	   two dividers flanking the hidden links/search collapse with them so a compact
 	   pill reads Brand · | · Controls, not three empty rules. */
@@ -852,6 +861,11 @@
 		.nav-menu-primary-group,
 		.nav-menu-search-group {
 			display: none;
+		}
+		.nav-menu-group {
+			margin-top: 0;
+			padding-top: 0;
+			border-top: 0;
 		}
 	}
 

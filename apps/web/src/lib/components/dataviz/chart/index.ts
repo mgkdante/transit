@@ -11,6 +11,16 @@ export type { ChartProps } from './Chart.svelte';
 export { default as ChartFrame } from './ChartFrame.svelte';
 export type { ChartFrameProps } from './ChartFrame.svelte';
 
+export { default as ChartDatumPopover } from './ChartDatumPopover.svelte';
+export type { ChartDatumPopoverProps } from './ChartDatumPopover.svelte';
+export { chartDatumPopoverBoundary, createChartDatumPopover } from './useChartDatumPopover.svelte';
+export type {
+	ChartDatumPopoverAction,
+	ChartDatumPopoverController,
+	ChartDatumPopoverModel,
+	ChartDatumPopoverRow,
+} from './useChartDatumPopover.svelte';
+
 export { default as ScrollFrame } from './ScrollFrame.svelte';
 export type { ScrollFrameProps } from './ScrollFrame.svelte';
 

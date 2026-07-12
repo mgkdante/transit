@@ -25,7 +25,10 @@ export {
 	resolveTocCounter,
 	tocElement,
 	settleLayout,
+	revealTocTarget,
+	reconcileActiveToc,
 	observeActiveToc,
 	type TocEntry,
 	type TocBadgeSpec,
+	type RevealTocTargetOptions,
 } from './toc';

@@ -5,11 +5,13 @@
 // tab-focusable), and the arrow-key keyboard pattern (next/previous ENABLED
 // segment, wrapping, skipping disabled).
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render, fireEvent, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import GrainPicker from './GrainPicker.svelte';
 
-type Grain = 'day' | 'week' | 'month';
+type Grain = 'day' | 'week' | 'month' | 'shift';
 
 const ALL_ENABLED = [
 	{ key: 'day', label: 'Day', available: true },
@@ -23,6 +25,23 @@ const MONTH_DISABLED = [
 	{ key: 'month', label: 'Month', available: false },
 ] as const;
 
+const FOUR_SEGMENTS = [
+	{ key: 'day', label: 'Day', available: true },
+	{ key: 'week', label: 'Week', available: true },
+	{ key: 'month', label: 'Month', available: true },
+	{
+		key: 'shift',
+		label: 'Heures de pointe',
+		compactLabel: 'Pointe',
+		available: true,
+	},
+] as const;
+
+const source = readFileSync(
+	resolve(process.cwd(), 'src/lib/components/surface/GrainPicker.svelte'),
+	'utf-8',
+);
+
 function renderPicker(
 	segments: readonly { key: Grain; label: string; available: boolean }[],
 	value: Grain,
@@ -31,6 +50,119 @@ function renderPicker(
 		props: { segments, value, label: 'Roll-up period' },
 	});
 }
+
+describe('GrainPicker — variants', () => {
+	it('renders the opt-in time grid as four row-major compact segments', () => {
+		const { getByRole } = render(GrainPicker, {
+			props: {
+				segments: FOUR_SEGMENTS,
+				value: 'day',
+				label: 'Roll-up period',
+				variant: 'time-grid',
+			},
+		});
+		const group = getByRole('radiogroup', { name: 'Roll-up period' });
+		expect(group).toHaveAttribute('data-variant', 'time-grid');
+		expect(group).toHaveClass('grain-picker--time-grid');
+		expect(
+			within(group)
+				.getAllByRole('radio')
+				.map((radio) => radio.textContent?.trim()),
+		).toEqual(['Day', 'Week', 'Month', 'Pointe']);
+		const shift = within(group).getByRole('radio', { name: 'Heures de pointe' });
+		expect(shift).toHaveTextContent('Pointe');
+		expect(shift).toHaveAttribute('title', 'Heures de pointe');
+	});
+
+	it('scopes the joined two-by-two matrix to the time-grid modifier', () => {
+		const rootModifier = source.match(/\.grain-picker--time-grid\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		const segmentModifier =
+			source.match(/\.grain-picker--time-grid \.grain-seg\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		const baseSegment = source.match(/\n\t\.grain-seg\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		const verticalDivider =
+			source.match(
+				/\.grain-picker--time-grid \.grain-seg:nth-child\(odd\)\s*\{([\s\S]*?)\}/,
+			)?.[1] ?? '';
+		const horizontalDivider =
+			source.match(
+				/\.grain-picker--time-grid \.grain-seg:nth-child\(-n \+ 2\)\s*\{([\s\S]*?)\}/,
+			)?.[1] ?? '';
+
+		expect(rootModifier).toContain('width: 100%');
+		expect(rootModifier).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+		expect(rootModifier).toContain('grid-template-rows: repeat(2, 52px)');
+		expect(rootModifier).toContain('gap: 0');
+		expect(rootModifier).toContain('padding: 0');
+		expect(rootModifier).toContain('overflow: hidden');
+		expect(rootModifier).toContain('border-radius: var(--radius-lg)');
+		expect(rootModifier).not.toContain('aspect-ratio');
+		expect(rootModifier).not.toContain('overflow-x: auto');
+
+		expect(segmentModifier).toContain('width: 100%');
+		expect(segmentModifier).toContain('min-width: 0');
+		expect(segmentModifier).toContain('min-height: 52px');
+		expect(segmentModifier).toContain('border-radius: 0');
+		expect(segmentModifier).toContain('white-space: nowrap');
+		expect(segmentModifier).toContain('word-break: keep-all');
+		expect(baseSegment).toContain('align-items: center');
+		expect(baseSegment).toContain('justify-content: center');
+
+		expect(verticalDivider).toContain('border-inline-end: 1px solid var(--border)');
+		expect(horizontalDivider).toContain('border-block-end: 1px solid var(--border)');
+	});
+
+	it('neutralizes per-cell scale motion only inside the joined time grid', () => {
+		const segmentModifier =
+			source.match(/\.grain-picker--time-grid \.grain-seg\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		const baseSegment = source.match(/\n\t\.grain-seg\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		const buttonMarkup = source.match(/<button[\s\S]*?<\/button>/)?.[0] ?? '';
+
+		// tap-press uses the individual scale property; boop and pressBounce write transform.
+		expect(segmentModifier).toContain('scale: 1 !important');
+		expect(segmentModifier).toContain('transform: none !important');
+		expect(baseSegment).not.toContain('scale: 1 !important');
+		expect(baseSegment).not.toContain('transform: none !important');
+
+		// Default segments retain the existing pointer/touch feedback wiring.
+		expect(buttonMarkup).toContain('class="tap-press grain-seg"');
+		expect(buttonMarkup).toContain('use:boop={{ scale: 1.04 }}');
+		expect(buttonMarkup).toContain('use:pressBounce');
+	});
+
+	it('keeps the default variant flex-based with full labels', () => {
+		const { getByRole } = renderPicker(ALL_ENABLED, 'week');
+		const group = getByRole('radiogroup', { name: 'Roll-up period' });
+		expect(group).toHaveAttribute('data-variant', 'default');
+		expect(group).not.toHaveClass('grain-picker--time-grid');
+		expect(within(group).getByRole('radio', { name: 'Week' })).toHaveTextContent('Week');
+
+		const defaultRule = source.match(/\.grain-picker\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		expect(defaultRule).toContain('display: inline-flex');
+		expect(defaultRule).not.toContain('grid-template-columns');
+	});
+
+	it('preserves the full French label in a disabled compact pointer hint', () => {
+		const { getByRole } = render(GrainPicker, {
+			props: {
+				segments: [
+					{ key: 'day', label: 'Jour', available: true },
+					{
+						key: 'shift',
+						label: 'Heures de pointe',
+						compactLabel: 'Pointe',
+						available: false,
+						title: 'Aucune observation',
+					},
+				],
+				value: 'day',
+				label: 'Période',
+			},
+		});
+		const shift = getByRole('radio', { name: 'Heures de pointe' });
+		expect(shift).toHaveTextContent('Pointe');
+		expect(shift).toHaveAttribute('title', 'Heures de pointe: Aucune observation');
+	});
+});
 
 describe('GrainPicker — radiogroup semantics', () => {
 	it('marks the bound value as the checked radio', () => {

@@ -10,7 +10,7 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { render, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 
 const tocObserver = vi.hoisted(() => ({
@@ -43,6 +43,39 @@ const baseProps = {
 	onNavigate: () => {},
 	tocOpenAria: OPEN_ARIA,
 	tocCloseAria: CLOSE_ARIA,
+};
+
+const combinedRail = createRawSnippet<[{ closeSheet: () => void }]>((getArgs) => ({
+	render: () =>
+		`<div data-testid="combined-rail">
+			<button type="button" data-testid="combined-control">Weekday</button>
+			<nav data-slot="section-toc">
+				<a href="#sec-a" data-testid="combined-jump">Section A</a>
+			</nav>
+			<button type="button" data-testid="combined-seam-jump">Close and jump</button>
+		</div>`,
+	setup: (el) => {
+		const button = el.querySelector('[data-testid="combined-seam-jump"]') as HTMLButtonElement;
+		button.addEventListener('click', () => getArgs().closeSheet());
+	},
+}));
+
+const combinedRailConfig = {
+	label: 'Article controls',
+	summary: 'Weekday · Section A',
+	openAria: 'Open article controls',
+	closeAria: 'Close article controls',
+	class: 'article-controls',
+};
+
+const combinedProps = {
+	header: mk('header'),
+	center: mk('center'),
+	right: mk('right'),
+	mobileSummary: mk('summary'),
+	tocEntries: entries,
+	combinedRail,
+	combinedRailConfig,
 };
 
 const src = () =>
@@ -133,6 +166,92 @@ describe('DetailShell — hazard tape + floating pill', () => {
 	it('omits the TocPill when there are no entries', () => {
 		const { container } = render(DetailShell, { props: { ...baseProps, tocEntries: [] } });
 		expect(container.querySelector(`button[aria-label*="${OPEN_ARIA}"]`)).toBeNull();
+	});
+});
+
+describe('DetailShell — opt-in combined rail', () => {
+	it('renders the named rail snippet inside one desktop SurfaceRail', () => {
+		const { container } = render(DetailShell, { props: combinedProps });
+		const rails = container.querySelectorAll('[data-slot="surface-rail"]');
+
+		expect(rails).toHaveLength(1);
+		expect(rails[0]?.getAttribute('aria-label')).toBe(combinedRailConfig.label);
+		expect(rails[0]?.querySelector('[data-testid="combined-rail"]')).not.toBeNull();
+	});
+
+	it('uses one center column when the combined rail config is absent', () => {
+		const { container } = render(DetailShell, {
+			props: { ...combinedProps, right: undefined, combinedRailConfig: undefined },
+		});
+		const grid = container.querySelector('.detail-shell-grid');
+
+		expect(container.querySelector('[data-slot="surface-rail"]')).toBeNull();
+		expect(container.querySelector('[data-slot="surface-rail-mobile"]')).toBeNull();
+		expect(grid).toHaveClass('detail-shell-grid--single');
+		expect(grid).not.toHaveClass('detail-shell-grid--two');
+		expect(
+			container.querySelector('[data-slot="detail-shell-center"] [data-testid="center"]'),
+		).not.toBeNull();
+		expect(src()).toMatch(
+			/@media\s*\(min-width:\s*1024px\)[\s\S]*?\.detail-shell-grid--single\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+		);
+	});
+
+	it('omits the legacy left-rail wrapper', () => {
+		const { container } = render(DetailShell, { props: combinedProps });
+
+		expect(container.querySelector('[data-slot="detail-shell-left"]')).toBeNull();
+	});
+
+	it('suppresses the legacy TocPill even when tocEntries are non-empty', () => {
+		const { container } = render(DetailShell, { props: combinedProps });
+
+		expect(combinedProps.tocEntries).not.toHaveLength(0);
+		expect(container.querySelector('[data-testid="toc-pill"]')).toBeNull();
+	});
+
+	it('renders exactly one mobile SurfaceRail presentation', () => {
+		const { container } = render(DetailShell, { props: combinedProps });
+
+		expect(container.querySelectorAll('[data-slot="surface-rail-mobile"]')).toHaveLength(1);
+	});
+
+	it('opens one dialog containing both a real control and a ToC jump', async () => {
+		const { container } = render(DetailShell, { props: combinedProps });
+		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		const pill = mobile.querySelector('button[aria-expanded]') as HTMLButtonElement;
+
+		await fireEvent.click(pill);
+
+		const dialogs = container.querySelectorAll('[role="dialog"]');
+		expect(dialogs).toHaveLength(1);
+		expect(dialogs[0]?.querySelector('[data-testid="combined-control"]')).not.toBeNull();
+		expect(dialogs[0]?.querySelector('[data-testid="combined-jump"]')).not.toBeNull();
+	});
+
+	it('closes the mobile dialog through the snippet closeSheet callback', async () => {
+		const { container } = render(DetailShell, { props: combinedProps });
+		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		const pill = mobile.querySelector('button[aria-expanded]') as HTMLButtonElement;
+
+		await fireEvent.click(pill);
+		const dialog = mobile.querySelector('[role="dialog"]') as HTMLElement;
+		expect(dialog).not.toBeNull();
+
+		await fireEvent.click(
+			dialog.querySelector('[data-testid="combined-seam-jump"]') as HTMLButtonElement,
+		);
+		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
+	});
+
+	it('keeps the legacy left snippet aside and TocPill unchanged', () => {
+		const { container } = render(DetailShell, { props: baseProps });
+		const left = container.querySelector('[data-slot="detail-shell-left"]');
+
+		expect(left?.tagName.toLowerCase()).toBe('aside');
+		expect(left?.querySelector('[data-testid="left"]')).not.toBeNull();
+		expect(container.querySelector('[data-testid="toc-pill"]')).not.toBeNull();
+		expect(container.querySelector('[data-slot="surface-rail"]')).toBeNull();
 	});
 });
 

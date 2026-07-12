@@ -34,6 +34,7 @@
 		heading,
 		counterPrefix = 'SEC',
 		collapsible = true,
+		open = $bindable(true),
 		sectionKey = undefined,
 		closeSignal = null,
 		openSignal = null,
@@ -44,6 +45,8 @@
 		onNavigate: (id: string) => void;
 		heading: string;
 		counterPrefix?: string;
+		/** Optional caller-owned disclosure state. */
+		open?: boolean;
 		/**
 		 * When true (default), the rail renders its OWN collapse affordance (chevron)
 		 * so a reader can fold the navigation manually. This is the ToC's own toggle —
@@ -102,7 +105,7 @@
 	{closeSignal}
 	{openSignal}
 	{bulkCollapsed}
-	open={true}
+	bind:open
 >
 	{#snippet icon()}
 		<SectionIcon name="toc" class="h-4 w-4 shrink-0 text-primary" />

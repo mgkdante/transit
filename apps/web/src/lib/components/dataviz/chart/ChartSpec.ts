@@ -27,6 +27,7 @@
 import type { AbsenceReasonKey } from '$lib/site/absence';
 import type { Locale } from '$lib/i18n/config';
 import type { OccupancyCode, SeverityCode, StatusCode } from '$lib/v1/schemas';
+import type { ChartDatumPopoverModel } from './useChartDatumPopover.svelte';
 
 /**
  * An explicit, absolute chart domain `[lo, hi]`. Comes from a `domains.ts` literal —
@@ -97,6 +98,8 @@ export interface MagnitudeDatum {
 	readonly status?: StatusCode;
 	/** Optional drill link — clicking the row navigates here (e.g. the stop's page). */
 	readonly href?: string;
+	/** Optional normalized model for the reusable touch/pen datum popover. */
+	readonly tapPopover?: ChartDatumPopoverModel;
 	/** Optional secondary tooltip line (e.g. "median 0.4 min · n=120"). */
 	readonly note?: string;
 	/** Reason for an absent datum, shown on hover / in the no-data slot. */

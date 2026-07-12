@@ -28,10 +28,13 @@
 	// PRM-guarded). Vendored actions, never edited.
 	import { boop, pressBounce } from '@yesid/motion';
 
+	export type GrainPickerVariant = 'default' | 'time-grid';
+
 	/** One offered grain segment. `available:false` renders disabled (never picked). */
 	export interface GrainSegment<K extends string = string> {
 		readonly key: K;
 		readonly label: string;
+		readonly compactLabel?: string;
 		readonly available?: boolean;
 		/**
 		 * Id of a description element wired to aria-describedby, so assistive tech
@@ -58,11 +61,19 @@
 		value: K;
 		/** Accessible group label. */
 		label: string;
+		/** Optional layout treatment; defaults to the shared flexible control. */
+		variant?: GrainPickerVariant;
 		/** Optional extra classes on the root. */
 		class?: string;
 	}
 
-	let { segments, value = $bindable(), label, class: className }: GrainPickerProps = $props();
+	let {
+		segments,
+		value = $bindable(),
+		label,
+		variant = 'default',
+		class: className,
+	}: GrainPickerProps = $props();
 
 	/** Button refs, keyed by segment index, so keyboard nav can move focus. */
 	const refs: (HTMLButtonElement | null)[] = $state([]);
@@ -75,6 +86,14 @@
 	/** Is a segment selectable (offered + not disabled)? */
 	function isEnabled(seg: GrainSegment): boolean {
 		return seg.available !== false;
+	}
+
+	function pointerTitle(seg: GrainSegment): string | undefined {
+		if (seg.available !== false) {
+			return seg.hint ?? (seg.compactLabel ? seg.label : undefined);
+		}
+		if (!seg.compactLabel) return seg.title;
+		return seg.title ? `${seg.label}: ${seg.title}` : seg.label;
 	}
 
 	/** The index of the currently-checked segment (roving-tabindex anchor). */
@@ -115,10 +134,11 @@
 </script>
 
 <div
-	class={cn('grain-picker', className)}
+	class={cn('grain-picker', variant === 'time-grid' && 'grain-picker--time-grid', className)}
 	role="radiogroup"
 	aria-label={label}
 	data-slot="grain-picker"
+	data-variant={variant}
 >
 	{#each segments as seg, i (seg.key)}
 		<button
@@ -129,7 +149,8 @@
 			class:grain-seg--active={value === seg.key}
 			aria-checked={value === seg.key}
 			aria-describedby={seg.describedById}
-			title={seg.available === false ? seg.title : seg.hint}
+			aria-label={seg.compactLabel ? seg.label : undefined}
+			title={pointerTitle(seg)}
 			disabled={seg.available === false}
 			tabindex={i === checkedIndex ? 0 : -1}
 			onclick={() => pick(seg)}
@@ -137,7 +158,7 @@
 			use:pressBounce
 			{onkeydown}
 		>
-			{seg.label}
+			{seg.compactLabel ?? seg.label}
 		</button>
 	{/each}
 </div>
@@ -151,6 +172,44 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		background-color: var(--card);
+	}
+	.grain-picker--time-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-rows: repeat(2, 52px);
+		width: 100%;
+		min-width: 0;
+		gap: 0;
+		padding: 0;
+		overflow: hidden;
+		border-radius: var(--radius-lg);
+		background: color-mix(in srgb, var(--primary) 6%, var(--card));
+	}
+	.grain-picker--time-grid .grain-seg {
+		width: 100%;
+		min-width: 0;
+		min-height: 52px;
+		padding-inline: 0.375rem;
+		border-radius: 0;
+		scale: 1 !important;
+		transform: none !important;
+		white-space: nowrap;
+		overflow-wrap: normal;
+		word-break: keep-all;
+	}
+	.grain-picker--time-grid .grain-seg:nth-child(odd) {
+		border-inline-end: 1px solid var(--border);
+	}
+	.grain-picker--time-grid .grain-seg:nth-child(-n + 2) {
+		border-block-end: 1px solid var(--border);
+	}
+	.grain-picker--time-grid .grain-seg--active {
+		box-shadow:
+			var(--shadow-glow-sm),
+			inset 0 1px 0 var(--edge-highlight);
+	}
+	.grain-picker--time-grid .grain-seg:focus-visible {
+		outline-offset: -3px;
 	}
 	.grain-seg {
 		appearance: none;

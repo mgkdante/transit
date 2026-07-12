@@ -150,6 +150,22 @@ describe('TocNav', () => {
 		expect(container.querySelector('[data-state="closed"]')).not.toBeNull();
 	});
 
+	it('accepts a bound open state and follows later prop changes', async () => {
+		const props = {
+			entries,
+			activeId: 'overview',
+			onNavigate: () => {},
+			heading: 'On this page',
+			open: false,
+		};
+		const { getByRole, rerender } = render(TocNav, { props });
+
+		expect(getByRole('button', { name: 'On this page' })).toHaveAttribute('aria-expanded', 'false');
+
+		await rerender({ ...props, open: true });
+		expect(getByRole('button', { name: 'On this page' })).toHaveAttribute('aria-expanded', 'true');
+	});
+
 	// The non-hideable variant remains available (collapsible={false}): a caller
 	// can still opt into a permanently-open rail with no disclosure trigger.
 	it('renders a permanently-open, non-hideable rail when collapsible={false}', () => {

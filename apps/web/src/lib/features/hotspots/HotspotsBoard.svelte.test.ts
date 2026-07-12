@@ -1,17 +1,18 @@
-import { render, screen, within, fireEvent } from '@testing-library/svelte';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Hotspots, IsoUtc } from '$lib/v1/schemas';
+import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
 
 // Mock the SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the ?grain
-// / ?n seed AND the round-trip mirror are testable (the RouteReliabilityClusters
-// urlseed pattern). getLocale stays REAL → 'en'; $lib/i18n + $lib/nav stay REAL so the
-// deep links resolve to genuine /lines/<id> and /stop/<id> hrefs.
+// / ?n seed and the round-trip mirror remain covered while the page changes shells.
 let mockUrl = new URL('http://localhost/hotspots');
 const replaceState = vi.hoisted(() =>
 	vi.fn((u: string | URL) => {
 		mockUrl = new URL(u, 'http://localhost');
 	}),
 );
+const navigate = vi.hoisted(() => vi.fn());
 vi.mock('$app/state', () => ({
 	page: {
 		get url() {
@@ -20,9 +21,16 @@ vi.mock('$app/state', () => ({
 		state: {},
 	},
 }));
-vi.mock('$app/navigation', () => ({ replaceState }));
+vi.mock('$app/navigation', () => ({ goto: navigate, replaceState }));
+
+const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
+vi.mock('$lib/i18n', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('$lib/i18n')>();
+	return { ...actual, getLocale: () => currentLocale.value };
+});
 
 const { payload } = vi.hoisted(() => ({ payload: { current: null as Hotspots | null } }));
+const capturedLadders = vi.hoisted(() => ({ current: [] as unknown[] }));
 
 vi.mock('$lib/v1', () => ({ getHotspots: vi.fn() }));
 vi.mock('$lib/v1/resource.svelte', () => ({
@@ -35,10 +43,23 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	}),
 }));
 
-import HotspotsBoard from './HotspotsBoard.svelte';
+vi.mock('./selectors/hotspotLadder', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('./selectors/hotspotLadder')>();
+	return {
+		...actual,
+		selectHotspotLadder: (...args: Parameters<typeof actual.selectHotspotLadder>) => {
+			const result = actual.selectHotspotLadder(...args);
+			capturedLadders.current.push(result);
+			return result;
+		},
+	};
+});
 
-// A populated week ladder (3 ranked cross-kind entries + 1 tray) + a populated month
-// ladder, so the grain rail renders and a seed to a different grain is observable.
+import HotspotsBoard from './HotspotsBoard.svelte';
+import { copy as hotspotsCopy } from './hotspots.copy';
+
+// A populated day ladder (both kinds + one tray) and a populated week ladder, so
+// the article has all three cards and the combined rail offers its grain control.
 function seed(): Hotspots {
 	return {
 		generated_utc: '2026-06-25T00:00:00Z' as IsoUtc,
@@ -72,6 +93,22 @@ function seed(): Hotspots {
 						severe_pct: 5,
 						observation_count: 12,
 					},
+					{
+						rank: null,
+						type: 'route',
+						id: 'R2',
+						name: 'Sparse Route',
+						severe_pct: 4,
+						observation_count: null,
+					},
+					{
+						rank: null,
+						type: 'route',
+						id: 'R3',
+						name: 'Zero Route',
+						severe_pct: 0,
+						observation_count: 0,
+					},
 				],
 			},
 			{
@@ -94,172 +131,649 @@ function seed(): Hotspots {
 	} satisfies Hotspots as Hotspots;
 }
 
-describe('HotspotsBoard — S12 re-seat', () => {
+function routeOnlySeed(count = 1): Hotspots {
+	return {
+		generated_utc: '2026-06-25T00:00:00Z' as IsoUtc,
+		hotspots: [],
+		by_grain: [
+			{
+				grain: 'day',
+				date: '2026-06-24',
+				window_end: '2026-06-24',
+				entries: Array.from({ length: count }, (_, i) => ({
+					rank: i + 1,
+					type: 'route',
+					id: `R${i}`,
+					name: `Route ${i}`,
+					severe_pct: 50 - i,
+					observation_count: 100,
+				})),
+				tray: [],
+			},
+		],
+	} satisfies Hotspots as Hotspots;
+}
+
+function largeSeed(): Hotspots {
+	const fixture = routeOnlySeed(6);
+	const entries = fixture.by_grain?.[0]?.entries;
+	if (!entries) throw new Error('largeSeed requires a day ladder');
+	entries.push({
+		rank: 7,
+		type: 'stop',
+		id: 'S7',
+		name: 'Station Seven',
+		severe_pct: 30,
+		observation_count: 100,
+	});
+	fixture.by_grain?.push({
+		grain: 'week',
+		entries: [{ rank: 1, type: 'route', id: 'W1', severe_pct: 25, observation_count: 100 }],
+		tray: [],
+	});
+	return fixture;
+}
+
+function card(container: HTMLElement, id: string): HTMLElement {
+	return container.querySelector(`[data-toc="${id}"]`) as HTMLElement;
+}
+
+function cardTrigger(container: HTMLElement, id: string): HTMLButtonElement {
+	return card(container, id).querySelector(
+		'h2.section-heading > button.section-header',
+	) as HTMLButtonElement;
+}
+
+function resetHotspotsState(): void {
+	for (const key of ['hotspots-card-top', 'hotspots-card-lines', 'hotspots-card-stops']) {
+		sessionStorage.removeItem(`transit.persisted:${key}`);
+	}
+	sessionStorage.removeItem('transit.persisted:hotspots-controls');
+	sessionStorage.removeItem('transit.persisted:hotspots-toc');
+	quietModeStore.resetForTest();
+}
+
+type CapturedMagnitudeDatum = MagnitudeDatum & {
+	readonly tapPopover?: ChartDatumPopoverModel;
+};
+
+function capturedRow(key: string): CapturedMagnitudeDatum {
+	const row = (
+		capturedLadders.current as Array<{
+			spec: { kind: string; rows?: readonly CapturedMagnitudeDatum[] };
+		}>
+	)
+		.flatMap((result) => (result.spec.kind === 'magnitude-bars' ? (result.spec.rows ?? []) : []))
+		.find((candidate) => candidate.key === key);
+	if (!row) throw new Error(`Expected captured magnitude row ${key}`);
+	return row;
+}
+
+describe('HotspotsBoard article', () => {
 	beforeEach(() => {
 		mockUrl = new URL('http://localhost/hotspots');
+		navigate.mockClear();
 		replaceState.mockClear();
+		currentLocale.value = 'en';
+		capturedLadders.current = [];
 		payload.current = seed();
+		resetHotspotsState();
+		Element.prototype.scrollIntoView = vi.fn();
 	});
 
-	it('renders the head and the worst-first ladder (a lollipop Chart, NOT a /worst bar)', () => {
+	afterEach(resetHotspotsState);
+
+	it('renders one article h1 and only the exact two QuietModeButton controls', () => {
 		const { container } = render(HotspotsBoard);
-		expect(screen.getByRole('heading', { name: 'Hotspots' })).toBeInTheDocument();
-		// WEB2: route and stop are SEPARATE per-kind tabs. The day grain has one route + one
-		// stop ranked entry → one sr-only row PER kind pane (bits-ui mounts both panes) = 2.
-		expect(container.querySelectorAll('table.sr-only tbody tr')).toHaveLength(2);
-		// Both kind tabs are offered (day grain has a route AND a stop ranked entry).
-		expect(screen.getByRole('tab', { name: 'Line' })).toBeInTheDocument();
-		expect(screen.getByRole('tab', { name: 'Stop' })).toBeInTheDocument();
+		expect(screen.getAllByRole('heading', { level: 1, name: 'Hotspots' })).toHaveLength(1);
+		const controls = screen.getByTestId('quiet-mode-controls');
+		expect(within(controls).getAllByRole('button')).toHaveLength(2);
+		expect(within(controls).getByRole('button', { name: /Collapse all/ })).toBeInTheDocument();
+		expect(container.querySelector('[data-slot="detail-shell"]')).not.toBeNull();
 	});
 
-	it('deep-links a ranked route/stop entry to its detail page (per-kind tabs)', async () => {
+	it('renders Top hotspot, Lines, and Stops as simultaneous article-summary cards without tabs', () => {
+		const { container } = render(HotspotsBoard);
+		const cards = ['hotspots-top', 'hotspots-lines', 'hotspots-stops'].map((id) =>
+			card(container, id),
+		);
+		expect(cards.every(Boolean)).toBe(true);
+		expect(cards.map((el) => el.getAttribute('data-header-variant'))).toEqual([
+			'article-summary',
+			'article-summary',
+			'article-summary',
+		]);
+		expect(cards.map((el) => el.querySelector('[data-slot="badge"]')?.textContent?.trim())).toEqual(
+			['01', '02', '03'],
+		);
+		expect(container.querySelector('[role="tablist"]')).toBeNull();
+		expect(container.querySelector('[role="tab"]')).toBeNull();
+		expect(
+			within(card(container, 'hotspots-lines')).getByRole('link', { name: /51/ }),
+		).toHaveAttribute('href', '/lines/51');
+		expect(
+			within(card(container, 'hotspots-stops')).getByRole('link', { name: /Berri-UQAM/ }),
+		).toHaveAttribute('href', '/stop/S1');
+	});
+
+	it('keeps a real chart touch click inside its open card while opening details', async () => {
+		const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
+		const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
+		const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');
+		Object.defineProperty(Element.prototype, 'animate', {
+			configurable: true,
+			value: vi.fn(() => ({
+				cancel: vi.fn(),
+				currentTime: 0,
+				effect: null,
+				onfinish: null,
+				playState: 'finished',
+			})),
+		});
+
+		try {
+			const { container } = render(HotspotsBoard);
+			const linesCard = card(container, 'hotspots-lines');
+			const body = linesCard.querySelector('.section-body');
+			const overlay = await waitFor(() => {
+				const element = linesCard.querySelector<SVGRectElement>('rect.lc-tooltip-rect');
+				if (!element) throw new Error('Expected the real LayerChart row overlay');
+				return element;
+			});
+
+			expect(body).toHaveAttribute('data-state', 'open');
+			await fireEvent(
+				overlay,
+				new PointerEvent('click', {
+					bubbles: true,
+					cancelable: true,
+					clientX: 120,
+					clientY: 240,
+					pointerType: 'touch',
+				}),
+			);
+
+			const dialog = await screen.findByRole('dialog', { name: 'Item 51' });
+			expect(within(dialog).getByRole('link', { name: 'View detail for Item 51' })).toHaveAttribute(
+				'href',
+				'/lines/51',
+			);
+			expect(navigate).not.toHaveBeenCalled();
+			expect(body).toHaveAttribute('data-state', 'open');
+		} finally {
+			width.mockRestore();
+			height.mockRestore();
+			if (originalAnimate) Object.defineProperty(Element.prototype, 'animate', originalAnimate);
+			else Reflect.deleteProperty(Element.prototype, 'animate');
+			document.querySelectorAll('[role="dialog"]').forEach((element) => element.remove());
+		}
+	});
+
+	it('defines the exact EN and FR chart popover copy', () => {
+		expect(hotspotsCopy.en.chart.popover).toEqual({
+			averageDelay: 'Average delay',
+			readings: 'Readings',
+			viewLine: 'View line',
+			viewStop: 'View stop',
+		});
+		expect(hotspotsCopy.fr.chart.popover).toEqual({
+			averageDelay: 'Retard moyen',
+			readings: 'Relevés',
+			viewLine: 'Voir la ligne',
+			viewStop: 'Voir l’arrêt',
+		});
+	});
+
+	it('maps localized EN line and stop popovers with formatted evidence and actions', () => {
 		render(HotspotsBoard);
-		// Scope to the ladder section — the §C5.10 #1-hotspot callout above the ladder
-		// also names + links the worst entry, so a bare screen query would be ambiguous.
-		const section = document.querySelector('[data-slot="hotspot-section"]') as HTMLElement;
-		// The default (route) tab is the accessible pane → route 51 links to /lines/51.
-		expect(within(section).getByRole('link', { name: /51/ })).toHaveAttribute('href', '/lines/51');
-		// Activate the Stop tab (the inactive pane is `hidden`, so out of the a11y tree) →
-		// the S1 stop entry links to /stop/S1.
-		await fireEvent.click(screen.getByRole('tab', { name: 'Stop' }));
-		const stop = within(section).getByRole('link', { name: /Berri-UQAM/ });
-		expect(stop).toHaveAttribute('href', '/stop/S1');
+		expect(capturedRow('stop-S1').tapPopover).toEqual({
+			key: 'stop-S1',
+			heading: 'Berri-UQAM',
+			meta: 'Stop · S1',
+			rows: [
+				{ label: 'Severe-delay rate', value: '70%' },
+				{ label: '95% CI', value: '69.9%–83.2%' },
+				{ label: 'Average delay', value: '6.7 min' },
+				{ label: 'Readings', value: '80' },
+			],
+			action: {
+				href: '/stop/S1',
+				label: 'View stop',
+				ariaLabel: 'View detail for Berri-UQAM',
+			},
+		});
+		expect(capturedRow('route-51').tapPopover).toEqual({
+			key: 'route-51',
+			heading: 'Item 51',
+			meta: 'Line · 51',
+			rows: [
+				{ label: 'Severe-delay rate', value: '40%' },
+				{ label: 'Readings', value: '100' },
+			],
+			action: {
+				href: '/lines/51',
+				label: 'View line',
+				ariaLabel: 'View detail for Item 51',
+			},
+		});
 	});
 
-	it('splits ranked entries into route|stop tabs (only offered kinds appear)', () => {
-		// A week grain with only a route entry → the Stop tab is NOT offered (no dead tab).
+	it('localizes FR popover values, detail hrefs, visible actions, and accessible names', () => {
+		currentLocale.value = 'fr';
+		mockUrl = new URL('http://localhost/fr/hotspots');
+		render(HotspotsBoard);
+		expect(capturedRow('stop-S1').tapPopover).toEqual({
+			key: 'stop-S1',
+			heading: 'Berri-UQAM',
+			meta: 'Arrêt · S1',
+			rows: [
+				{ label: 'Taux de retards graves', value: '70%' },
+				{ label: 'IC à 95 %', value: '69,9%–83,2%' },
+				{ label: 'Retard moyen', value: '6,7 min' },
+				{ label: 'Relevés', value: '80' },
+			],
+			action: {
+				href: '/fr/stop/S1',
+				label: 'Voir l’arrêt',
+				ariaLabel: 'Voir le détail de Berri-UQAM',
+			},
+		});
+		expect(capturedRow('route-51').tapPopover?.action).toEqual({
+			href: '/fr/lines/51',
+			label: 'Voir la ligne',
+			ariaLabel: 'Voir le détail de Élément 51',
+		});
+	});
+
+	it('keeps served zero evidence as 0 while omitting every null optional value', () => {
+		const fixture = routeOnlySeed();
+		const day = fixture.by_grain?.[0];
+		if (!day) throw new Error('Expected the route-only day ladder');
+		day.entries = [
+			{
+				rank: 1,
+				type: 'route',
+				id: 'ZERO',
+				name: 'Zero evidence',
+				severe_pct: 0,
+				observation_count: 0,
+				wilson_lo: null,
+				wilson_hi: null,
+				avg_delay_min: null,
+			},
+			{
+				rank: 2,
+				type: 'route',
+				id: 'NULL',
+				name: 'Missing evidence',
+				severe_pct: null,
+				observation_count: null,
+				wilson_lo: null,
+				wilson_hi: null,
+				avg_delay_min: null,
+			},
+		];
+		payload.current = fixture;
+		render(HotspotsBoard);
+		expect(capturedRow('route-ZERO').tapPopover?.rows).toEqual([
+			{ label: 'Severe-delay rate', value: '0%' },
+			{ label: 'Readings', value: '0' },
+		]);
+		expect(capturedRow('route-NULL').tapPopover?.rows).toEqual([]);
+		expect(capturedRow('route-NULL').tapPopover?.rows.some((row) => row.value.includes('0'))).toBe(
+			false,
+		);
+	});
+
+	it('omits the Stops card and Stops TOC destination for a route-only grain', () => {
+		payload.current = routeOnlySeed();
+		const { container } = render(HotspotsBoard);
+		expect(card(container, 'hotspots-lines')).not.toBeNull();
+		expect(container.querySelector('[data-toc="hotspots-stops"]')).toBeNull();
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		expect(within(rail).getByRole('button', { name: 'Lines' })).toBeInTheDocument();
+		expect(within(rail).queryByRole('button', { name: 'Stops' })).toBeNull();
+	});
+
+	it('puts two rail disclosures, grain, useful top-N, window, and TOC in one mobile sheet', async () => {
+		payload.current = largeSeed();
+		const { container } = render(HotspotsBoard);
+		expect(container.querySelectorAll('[data-slot="surface-rail-mobile"]')).toHaveLength(1);
+		expect(container.querySelector('[data-slot="toc-pill"]')).toBeNull();
+
+		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		const pill = mobile.querySelector(':scope > button') as HTMLButtonElement;
+		await fireEvent.click(pill);
+		const sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
+		expect(sheet).not.toBeNull();
+		expect(within(sheet).getByRole('button', { name: 'View controls' })).toBeInTheDocument();
+		expect(within(sheet).getByRole('button', { name: 'On this page' })).toBeInTheDocument();
+		expect(
+			within(sheet).getAllByRole('button', { name: /^(View controls|On this page)$/ }),
+		).toHaveLength(2);
+		expect(sheet.querySelectorAll('[data-slot="grain-picker"]')).toHaveLength(2);
+		expect(sheet.querySelector('[data-slot="active-window"]')).not.toBeNull();
+		expect(within(sheet).getByRole('button', { name: 'Top hotspot' })).toBeInTheDocument();
+		expect(within(sheet).getByRole('button', { name: 'Lines' })).toBeInTheDocument();
+		expect(within(sheet).getByRole('button', { name: 'Stops' })).toBeInTheDocument();
+
+		const reasonIds = Array.from(
+			container.querySelectorAll<HTMLElement>('[data-slot="controls-reason"]'),
+		).map((reason) => reason.id);
+		expect(reasonIds).toHaveLength(4);
+		expect(new Set(reasonIds)).toHaveLength(4);
+		expect(reasonIds.some((id) => id.endsWith('-desktop'))).toBe(true);
+		expect(reasonIds.some((id) => id.endsWith('-mobile'))).toBe(true);
+	});
+
+	it('keeps rail disclosures independent, persisted, and synchronized across presentations', async () => {
+		const { container } = render(HotspotsBoard);
+		const desktop = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const controls = within(desktop).getByRole('button', { name: 'View controls' });
+		const toc = within(desktop).getByRole('button', { name: 'On this page' });
+
+		await fireEvent.click(controls);
+		expect(controls).toHaveAttribute('aria-expanded', 'false');
+		expect(toc).toHaveAttribute('aria-expanded', 'true');
+		expect(sessionStorage.getItem('transit.persisted:hotspots-controls')).toBe('false');
+
+		await fireEvent.click(toc);
+		expect(sessionStorage.getItem('transit.persisted:hotspots-toc')).toBe('false');
+
+		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		const pill = mobile.querySelector(':scope > button') as HTMLButtonElement;
+		await fireEvent.click(pill);
+		let sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
+		let mobileControls = within(sheet).getByRole('button', { name: 'View controls' });
+		let mobileToc = within(sheet).getByRole('button', { name: 'On this page' });
+		expect(mobileControls).toHaveAttribute('aria-expanded', 'false');
+		expect(mobileToc).toHaveAttribute('aria-expanded', 'false');
+
+		await fireEvent.click(mobileControls);
+		expect(controls).toHaveAttribute('aria-expanded', 'true');
+		expect(toc).toHaveAttribute('aria-expanded', 'false');
+
+		await fireEvent.click(pill);
+		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
+		await fireEvent.click(pill);
+		sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
+		mobileControls = within(sheet).getByRole('button', { name: 'View controls' });
+		mobileToc = within(sheet).getByRole('button', { name: 'On this page' });
+		expect(mobileControls).toHaveAttribute('aria-expanded', 'true');
+		expect(mobileToc).toHaveAttribute('aria-expanded', 'false');
+	});
+
+	it('restores one manual rail choice across a full same-tab board remount', async () => {
+		const first = render(HotspotsBoard);
+		const firstDesktop = first.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const firstControls = within(firstDesktop).getByRole('button', { name: 'View controls' });
+		const firstToc = within(firstDesktop).getByRole('button', { name: 'On this page' });
+
+		await waitFor(() => expect(firstControls).toHaveAttribute('aria-expanded', 'true'));
+		expect(firstToc).toHaveAttribute('aria-expanded', 'true');
+		await fireEvent.click(firstControls);
+		expect(sessionStorage.getItem('transit.persisted:hotspots-controls')).toBe('false');
+		expect(firstToc).toHaveAttribute('aria-expanded', 'true');
+
+		first.unmount();
+		const second = render(HotspotsBoard);
+		const secondDesktop = second.container.querySelector(
+			'[data-slot="surface-rail"]',
+		) as HTMLElement;
+		const secondControls = within(secondDesktop).getByRole('button', { name: 'View controls' });
+		const secondToc = within(secondDesktop).getByRole('button', { name: 'On this page' });
+
+		await waitFor(() => expect(secondControls).toHaveAttribute('aria-expanded', 'false'));
+		expect(secondToc).toHaveAttribute('aria-expanded', 'true');
+		expect(sessionStorage.getItem('transit.persisted:hotspots-controls')).toBe('false');
+	});
+
+	it('Collapse all closes every card and Expand all reopens every card', async () => {
+		const { container } = render(HotspotsBoard);
+		const ids = ['hotspots-top', 'hotspots-lines', 'hotspots-stops'];
+		const desktop = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const railTriggers = [
+			within(desktop).getByRole('button', { name: 'View controls' }),
+			within(desktop).getByRole('button', { name: 'On this page' }),
+		];
+		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		for (const id of ids)
+			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'true');
+
+		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		for (const id of ids)
+			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
+		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
+
+		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		for (const id of ids)
+			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'true');
+		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Collapse all');
+	});
+
+	it('Always start collapsed closes both rail blocks and every article card', async () => {
+		const { container } = render(HotspotsBoard);
+		const desktop = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const railTriggers = [
+			within(desktop).getByRole('button', { name: 'View controls' }),
+			within(desktop).getByRole('button', { name: 'On this page' }),
+		];
+
+		await fireEvent.click(screen.getByTestId('quiet-mode-remember'));
+
+		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		for (const id of ['hotspots-top', 'hotspots-lines', 'hotspots-stops']) {
+			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
+		}
+		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+	});
+
+	it('reapplies remembered quiet mode across a full board remount', async () => {
+		const first = render(HotspotsBoard);
+		const firstDesktop = first.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const firstControls = within(firstDesktop).getByRole('button', { name: 'View controls' });
+
+		await fireEvent.click(screen.getByTestId('quiet-mode-remember'));
+		await fireEvent.click(firstControls);
+		expect(firstControls).toHaveAttribute('aria-expanded', 'true');
+		expect(sessionStorage.getItem('transit.persisted:hotspots-controls')).toBe('true');
+		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+
+		first.unmount();
+		const second = render(HotspotsBoard);
+		const secondDesktop = second.container.querySelector(
+			'[data-slot="surface-rail"]',
+		) as HTMLElement;
+		const secondControls = within(secondDesktop).getByRole('button', { name: 'View controls' });
+		const secondToc = within(secondDesktop).getByRole('button', { name: 'On this page' });
+
+		await waitFor(() => expect(secondControls).toHaveAttribute('aria-expanded', 'false'));
+		expect(secondToc).toHaveAttribute('aria-expanded', 'false');
+		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
+	});
+
+	it('applies remembered bulk collapse when Stops mounts after a same-page grain change', async () => {
+		localStorage.setItem('transit:quiet-mode', 'true');
 		mockUrl = new URL('http://localhost/hotspots?grain=week');
-		render(HotspotsBoard);
-		expect(screen.getByRole('tab', { name: 'Line' })).toBeInTheDocument();
-		expect(screen.queryByRole('tab', { name: 'Stop' })).toBeNull();
+		const { container } = render(HotspotsBoard);
+		expect(container.querySelector('[data-toc="hotspots-stops"]')).toBeNull();
+		await waitFor(() =>
+			expect(cardTrigger(container, 'hotspots-lines')).toHaveAttribute('aria-expanded', 'false'),
+		);
+
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const day = within(rail)
+			.getAllByRole('radio')
+			.find((radio) => radio.textContent?.trim() === 'Day');
+		expect(day).toBeDefined();
+		await fireEvent.click(day!);
+
+		await waitFor(() => {
+			expect(card(container, 'hotspots-stops')).not.toBeNull();
+			expect(cardTrigger(container, 'hotspots-stops')).toHaveAttribute('aria-expanded', 'false');
+		});
 	});
 
-	it('renders the un-ranked tray (sub-MIN_N cells), explicitly NOT ranked', () => {
-		render(HotspotsBoard);
-		// The day-grain tray cell (Quiet Ave) is a STOP → it lives on the Stop tab pane
-		// (bits-ui mounts both panes, so the tray is in the DOM without a tab click).
-		const tray = document.querySelector('[data-slot="hotspot-tray"]');
-		expect(tray).not.toBeNull();
-		// The tray reason names the MIN_N floor.
-		expect(within(tray as HTMLElement).getByText(/not ranked/i)).toBeInTheDocument();
-		// The tray cell is present as a link, but carries NO magnitude bar (not scored).
-		expect(within(tray as HTMLElement).getByText('Quiet Ave')).toBeInTheDocument();
-		expect(within(tray as HTMLElement).queryAllByRole('progressbar')).toHaveLength(0);
+	it('a TOC jump reveals only its closed Lines card before scrolling', async () => {
+		const { container } = render(HotspotsBoard);
+		const statesAtScroll: Array<{ linesOpen: string | null; topOpen: string | null }> = [];
+		const scrollIntoView = vi.fn(() => {
+			statesAtScroll.push({
+				linesOpen: cardTrigger(container, 'hotspots-lines').getAttribute('aria-expanded'),
+				topOpen: cardTrigger(container, 'hotspots-top').getAttribute('aria-expanded'),
+			});
+		});
+		Element.prototype.scrollIntoView = scrollIntoView;
+		await fireEvent.click(cardTrigger(container, 'hotspots-top'));
+		await fireEvent.click(cardTrigger(container, 'hotspots-lines'));
+		expect(cardTrigger(container, 'hotspots-top')).toHaveAttribute('aria-expanded', 'false');
+		expect(cardTrigger(container, 'hotspots-lines')).toHaveAttribute('aria-expanded', 'false');
+
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		await fireEvent.click(within(rail).getByRole('button', { name: 'Lines' }));
+		await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+		expect(statesAtScroll).toEqual([{ linesOpen: 'true', topOpen: 'false' }]);
+		expect(cardTrigger(container, 'hotspots-lines')).toHaveAttribute('aria-expanded', 'true');
+		expect(cardTrigger(container, 'hotspots-top')).toHaveAttribute('aria-expanded', 'false');
 	});
 
-	it('seeds the grain rail from ?grain=week (a different ladder than the day default)', () => {
-		mockUrl = new URL('http://localhost/hotspots?grain=week');
-		render(HotspotsBoard);
-		// Scope to the ladder section (the #1-hotspot callout above it also links the worst).
-		const section = document.querySelector('[data-slot="hotspot-section"]') as HTMLElement;
-		// The week ladder ranks Van Horne (161) worst — its link resolves to /lines/161.
-		expect(within(section).getByRole('link', { name: /Van Horne/ })).toHaveAttribute(
+	it('renders below-floor evidence in semantic tables without fabricating readings', () => {
+		const { container } = render(HotspotsBoard);
+		const stopCard = card(container, 'hotspots-stops');
+		const stopTray = stopCard.querySelector('[data-slot="hotspot-tray"]') as HTMLElement;
+		const stopTables = stopTray.querySelectorAll('table[data-slot="hotspot-tray-table"]');
+		expect(stopTables).toHaveLength(1);
+		const stopTable = stopTables[0] as HTMLTableElement;
+		expect(
+			within(stopTable)
+				.getAllByRole('columnheader')
+				.map((cell) => cell.textContent?.trim()),
+		).toEqual(['Item', 'Type / ID', 'Readings']);
+		const detail = within(stopTable).getByRole('link', { name: /View detail for Quiet Ave/ });
+		expect(detail).toHaveAttribute('href', '/stop/S2');
+		const servedRow = detail.closest('tr') as HTMLTableRowElement;
+		expect(servedRow).toHaveTextContent('Stop · S2');
+		expect(servedRow).toHaveTextContent('12');
+		expect(servedRow.querySelector('[data-slot="absent-value"]')).toBeNull();
+		const reason = stopTray.querySelector('[data-slot="hotspot-tray-reason"]') as HTMLElement;
+		expect(reason).toHaveTextContent(/not ranked/i);
+		expect(stopTable).not.toContainElement(reason);
+
+		const lineCard = card(container, 'hotspots-lines');
+		const lineTable = lineCard.querySelector(
+			'table[data-slot="hotspot-tray-table"]',
+		) as HTMLTableElement;
+		expect(lineTable).not.toBeNull();
+		const nullTitle = within(lineTable).getByText('Sparse Route');
+		const nullRow = nullTitle.closest('tr') as HTMLTableRowElement;
+		expect(nullRow).toHaveTextContent('Line · R2');
+		expect(nullRow.querySelectorAll('[data-slot="absent-value"]')).toHaveLength(1);
+		expect(nullRow).not.toHaveTextContent(/\b0\b/);
+		const zeroTitle = within(lineTable).getByText('Zero Route');
+		const zeroRow = zeroTitle.closest('tr') as HTMLTableRowElement;
+		expect(zeroRow).toHaveTextContent('Line · R3');
+		expect(zeroRow.querySelector('.hotspot-tray-readings')).toHaveTextContent('0');
+		expect(zeroRow.querySelector('[data-slot="absent-value"]')).toBeNull();
+
+		const rankedTable = stopCard.querySelector('table.sr-only') as HTMLTableElement;
+		expect(rankedTable).not.toBeNull();
+		expect(within(rankedTable).getByRole('link', { name: 'Berri-UQAM' })).toHaveAttribute(
 			'href',
-			'/lines/161',
+			'/stop/S1',
 		);
-		// The day-grain stop entry is NOT shown on the week grain.
-		expect(within(section).queryByRole('link', { name: /Berri-UQAM/ })).toBeNull();
+		expect(rankedTable).not.toBe(stopTable);
 	});
 
-	it('mirrors a grain change to ?grain and OMITS the day default (clean canonical URL)', async () => {
-		render(HotspotsBoard);
-		// A clean URL at the day default writes nothing (idempotent default-omit).
-		expect(mockUrl.searchParams.get('grain')).toBeNull();
-		const week = Array.from(document.querySelectorAll<HTMLElement>('[role="radio"]')).find((el) =>
-			(el.textContent ?? '').toLowerCase().includes('week'),
-		);
+	it('seeds the grain from ?grain=week and renders the matching conditional cards', () => {
+		mockUrl = new URL('http://localhost/hotspots?grain=week');
+		const { container } = render(HotspotsBoard);
+		expect(
+			within(card(container, 'hotspots-lines')).getByRole('link', { name: /Van Horne/ }),
+		).toHaveAttribute('href', '/lines/161');
+		expect(container.querySelector('[data-toc="hotspots-stops"]')).toBeNull();
+	});
+
+	it('clamps an invalid grain and mirrors grain changes while omitting the day default', async () => {
+		mockUrl = new URL('http://localhost/hotspots?grain=garbage');
+		const { container } = render(HotspotsBoard);
+		await waitFor(() => expect(mockUrl.searchParams.get('grain')).toBeNull());
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const week = within(rail)
+			.getAllByRole('radio')
+			.find((el) => (el.textContent ?? '').toLowerCase().includes('week'));
 		expect(week).toBeDefined();
 		await fireEvent.click(week!);
 		expect(mockUrl.searchParams.get('grain')).toBe('week');
 	});
 
-	it('seeds the worst-N cap from ?n and mirrors a change back to ?n', async () => {
-		// A day ladder with 6 ranked entries so the worst-N control renders (total > 5).
-		payload.current = {
-			generated_utc: '2026-06-25T00:00:00Z' as IsoUtc,
-			hotspots: [],
-			by_grain: [
-				{
-					grain: 'day',
-					date: '2026-06-24',
-					window_end: '2026-06-24',
-					entries: Array.from({ length: 6 }, (_, i) => ({
-						rank: i + 1,
-						type: 'route',
-						id: `R${i}`,
-						severe_pct: 50 - i,
-						observation_count: 100,
-					})),
-					tray: [],
-				},
-			],
-		} satisfies Hotspots as Hotspots;
+	it('seeds the shared worst-N cap from ?n and mirrors a change back to the URL', async () => {
+		payload.current = largeSeed();
 		mockUrl = new URL('http://localhost/hotspots?n=5');
 		const { container } = render(HotspotsBoard);
-		// ?n=5 caps the ladder to 5 of 6 → 5 sr-only body rows.
-		expect(container.querySelectorAll('table.sr-only tbody tr')).toHaveLength(5);
-		// The honest shown/total heading surfaces the truncation.
+		expect(container.querySelectorAll('table.sr-only tbody tr')).toHaveLength(6);
 		expect(screen.getByText(/5\/6/)).toBeInTheDocument();
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const ten = within(rail)
+			.getAllByRole('radio')
+			.find((el) => el.textContent?.trim() === '10');
+		expect(ten).toBeDefined();
+		await fireEvent.click(ten!);
+		expect(mockUrl.searchParams.get('n')).toBeNull();
 	});
 
-	it('seats the grain control in the SurfaceRail (map-style glass left rail, P5.4)', async () => {
+	it('uses the time-grid grain picker in row-major order and leaves Show default', () => {
+		payload.current = largeSeed();
 		const { container } = render(HotspotsBoard);
-		// The grain control now rides the SurfaceRail: a desktop glass panel + ONE mobile
-		// pill→sheet (this surface has no ToC, so the rail holds only the grain picker).
-		const railMobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
-		expect(railMobile).not.toBeNull();
-		const pillBtn = railMobile.querySelector('button') as HTMLButtonElement;
-		expect(pillBtn).not.toBeNull();
-		// The pill is labelled with the View heading + the active grain (default day → Day).
-		expect(pillBtn.textContent).toContain('View');
-		expect(pillBtn.textContent).toContain('Day');
-		// The sheet is closed by default.
-		expect(railMobile.querySelector('[role="dialog"]')).toBeNull();
-		// Tap opens ONE sheet holding the grain picker + the active-window caption.
-		await fireEvent.click(pillBtn);
-		expect(pillBtn.getAttribute('aria-expanded')).toBe('true');
-		const sheet = railMobile.querySelector('[role="dialog"]') as HTMLElement;
-		expect(sheet).not.toBeNull();
-		expect(sheet.querySelector('[data-slot="grain-picker"]')).not.toBeNull();
-		expect(sheet.querySelector('[data-slot="active-window"]')).not.toBeNull();
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const grain = within(rail).getByRole('radiogroup', { name: 'Granularity' });
+		const show = within(rail).getByRole('radiogroup', { name: 'Show' });
+
+		expect(grain).toHaveAttribute('data-variant', 'time-grid');
+		expect(
+			within(grain)
+				.getAllByRole('radio')
+				.map((radio) => radio.textContent?.trim()),
+		).toEqual(['Day', 'Week', 'Month', 'Peak hours']);
+		expect(show).toHaveAttribute('data-variant', 'default');
+		expect(hotspotsCopy.fr.grain.day).toBe('Jour');
+		expect(hotspotsCopy.fr.grain.week).toBe('Semaine');
+		expect(hotspotsCopy.fr.grain.month).toBe('Mois');
+		expect(hotspotsCopy.fr.grain.shiftCompact).toBe('Pointe');
+		expect(hotspotsCopy.fr.grain.shift).toBe('Heures de pointe');
 	});
 
-	it('renders single-column with NO rail when only one grain is populated', () => {
-		// A payload populating a SINGLE grain (day) → showGrainPicker is false → no rail.
-		payload.current = {
-			generated_utc: '2026-06-25T00:00:00Z' as IsoUtc,
-			hotspots: [],
-			by_grain: [
-				{
-					grain: 'day',
-					date: '2026-06-24',
-					window_end: '2026-06-24',
-					entries: [{ rank: 1, type: 'route', id: '51', severe_pct: 40, observation_count: 100 }],
-					tray: [],
-				},
-			],
-		} satisfies Hotspots as Hotspots;
+	it('keeps the combined rail for a one-grain article while omitting the dead grain picker', () => {
+		payload.current = routeOnlySeed();
 		const { container } = render(HotspotsBoard);
-		// No rail (desktop panel or mobile pill) when there is nothing to pick.
-		expect(container.querySelector('[data-slot="surface-rail"]')).toBeNull();
-		expect(container.querySelector('[data-slot="surface-rail-mobile"]')).toBeNull();
-		// The ladder still renders (single-column) — the route entry links to its detail.
-		const section = document.querySelector('[data-slot="hotspot-section"]') as HTMLElement;
-		expect(within(section).getByRole('link', { name: /51/ })).toHaveAttribute('href', '/lines/51');
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		expect(rail).not.toBeNull();
+		expect(rail.querySelector('[data-slot="grain-picker"]')).toBeNull();
+		expect(within(rail).getByRole('button', { name: 'Lines' })).toBeInTheDocument();
+		expect(
+			within(card(container, 'hotspots-lines')).getByRole('link', { name: /Route 0/ }),
+		).toHaveAttribute('href', '/lines/R0');
 	});
 
-	it('shows the styled honest-absence empty state when NO grain is populated', () => {
+	it('keeps the published-empty state outside collapsible cards', () => {
 		payload.current = {
 			generated_utc: '2026-06-25T00:00:00Z' as IsoUtc,
 			hotspots: [],
 			by_grain: [{ grain: 'day', entries: [], tray: [] }],
 		} satisfies Hotspots as Hotspots;
 		const { container } = render(HotspotsBoard);
-		const empty = document.querySelector('[data-slot="hotspots-empty"]');
-		expect(empty).not.toBeNull();
-		const chip = empty?.querySelector('[data-slot="absent-value"]');
-		expect(chip?.getAttribute('data-variant')).toBe('block');
-		// No ladder rendered → no sr-only table.
+		const empty = container.querySelector('[data-slot="hotspots-empty"]');
+		expect(empty?.querySelector('[data-slot="absent-value"]')).toHaveAttribute(
+			'data-variant',
+			'block',
+		);
+		expect(container.querySelector('[data-slot="surface-rail"]')).toBeNull();
+		expect(container.querySelector('[data-slot="surface-rail-mobile"]')).toBeNull();
+		expect(container.querySelector('.surface-rail-pill')).toBeNull();
+		expect(container.querySelector('.surface-rail-pill-summary')).toBeNull();
+		expect(container.querySelector('[data-slot="active-window"]')).toBeNull();
+		expect(container.querySelectorAll('[data-toc^="hotspots-"]')).toHaveLength(0);
 		expect(container.querySelectorAll('table.sr-only tbody tr')).toHaveLength(0);
 	});
 });

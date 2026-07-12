@@ -1,12 +1,24 @@
 import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import NavPill from './NavPill.svelte';
 
 function readSource(): string {
 	return readFileSync(resolve(process.cwd(), 'src/lib/components/shell/NavPill.svelte'), 'utf-8');
 }
+
+function baseMenuRule(source: string): string {
+	return source.match(/\n\t\.nav-menu\s*\{([^}]*)\}/)?.[1] ?? '';
+}
+
+function fireTransitionEnd(element: Element, propertyName: string): Promise<boolean> {
+	const event = new Event('transitionend', { bubbles: true });
+	Object.defineProperty(event, 'propertyName', { value: propertyName });
+	return fireEvent(element, event);
+}
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('NavPill — structure', () => {
 	it('renders the floating pill with the four primary links in wayfinding order', () => {
@@ -116,6 +128,46 @@ describe('NavPill — the flat menu', () => {
 		expect(yesid).toHaveAccessibleName('Yesid (opens in a new tab)');
 	});
 
+	it.each([768, 1512])(
+		'resynchronizes the settled menu anchor at %ipx after the pill padding transition',
+		async (viewportWidth) => {
+			const { getByRole, getByTestId } = render(NavPill, {
+				props: { locale: 'en', url: new URL('https://transit.local/map') },
+			});
+			const root = getByRole('navigation', { name: 'Primary navigation' });
+			const pill = getByTestId('nav-pill');
+			const brand = within(pill).getByRole('link', { name: /Transit/ });
+			let pillRight = viewportWidth - 96;
+			vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(viewportWidth);
+			vi.spyOn(pill, 'getBoundingClientRect').mockImplementation(
+				() =>
+					({
+						x: pillRight - 480,
+						y: 16,
+						left: pillRight - 480,
+						top: 16,
+						right: pillRight,
+						bottom: 88,
+						width: 480,
+						height: 72,
+						toJSON: () => ({}),
+					}) as DOMRect,
+			);
+
+			await fireEvent.click(getByRole('button', { name: 'Open menu' }));
+			await waitFor(() => expect(root.style.getPropertyValue('--nav-pill-right')).toBe('96px'));
+
+			pillRight -= 8;
+			await fireTransitionEnd(pill, 'box-shadow');
+			expect(root.style.getPropertyValue('--nav-pill-right')).toBe('96px');
+			await fireTransitionEnd(brand, 'padding-right');
+			expect(root.style.getPropertyValue('--nav-pill-right')).toBe('96px');
+
+			await fireTransitionEnd(pill, 'padding-right');
+			expect(root.style.getPropertyValue('--nav-pill-right')).toBe('104px');
+		},
+	);
+
 	it('localizes the Audit group + Yesid new-tab affordance in French', async () => {
 		const { getByRole, queryByTestId } = render(NavPill, {
 			props: { locale: 'fr', url: new URL('https://transit.local/fr/map') },
@@ -201,6 +253,16 @@ describe('NavPill — the flat menu', () => {
 		expect(source).toMatch(/\.nav-links\s*\{[\s\S]*display:\s*none;/);
 		expect(source).toMatch(
 			/@media \(min-width: 1024px\)\s*\{[\s\S]*\.nav-links\s*\{[\s\S]*display:\s*flex;/,
+		);
+	});
+
+	it('keeps compact Search/Audit separators but clears the visible Audit divider at ≥lg (source)', () => {
+		const source = readSource();
+		expect(source).toMatch(
+			/\.nav-menu-search-group,\s*\.nav-menu-group\s*\{\s*margin-top:\s*0\.5rem;\s*padding-top:\s*0\.5rem;\s*border-top:\s*1px solid var\(--border-subtle\);\s*\}/,
+		);
+		expect(source).toMatch(
+			/@media \(min-width: 1024px\)\s*\{[\s\S]*?\.nav-menu-primary-group,\s*\.nav-menu-search-group\s*\{\s*display:\s*none;\s*\}\s*\.nav-menu-group\s*\{\s*margin-top:\s*0;\s*padding-top:\s*0;\s*border-top:\s*0;\s*\}\s*\}/,
 		);
 	});
 
@@ -345,12 +407,25 @@ describe('NavPill — the pill chassis + --pill-h contract (source)', () => {
 		expect(source).toMatch(/\.nav-menu-toggle\s*\{[\s\S]*width:\s*44px;[\s\S]*height:\s*44px;/);
 	});
 
-	it('dresses both menu presentations in .glass-chrome (sheet ≤767, dropdown ≥768)', () => {
+	it('uses one anchored rounded dropdown at every width', () => {
 		const source = readSource();
+		const menuRule = baseMenuRule(source);
+
 		expect(source).toMatch(/class="nav-menu glass-chrome"/);
-		// ≥768 is an anchored dropdown pinned under the pill (top uses --pill-h + 8px).
+		expect(menuRule).toContain('inset-block: auto;');
+		expect(menuRule).toContain(
+			'inset-block-start: calc(1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + 8px);',
+		);
+		expect(menuRule).toContain('inset-inline-end: var(--nav-pill-right, 0.75rem);');
+		expect(menuRule).toContain('width: min(19rem, calc(100vw - 1.5rem));');
+		expect(menuRule).toContain('padding: 0.65rem;');
+		expect(menuRule).toContain('border-radius: var(--radius-xl);');
+		expect(menuRule).toMatch(/max-height:\s*min\([\s\S]*42rem\s*\);/);
+		expect(menuRule).not.toContain('inset-block: 0;');
+		expect(menuRule).not.toContain('max-height: 100dvh;');
+		expect(menuRule).not.toContain('border-radius: 0;');
 		expect(source).toMatch(
-			/@media \(min-width: 768px\)\s*\{[\s\S]*\.nav-menu\s*\{[\s\S]*var\(--pill-h\) \+ 8px\)/,
+			/@media \(min-width: 768px\)\s*\{\s*\.nav-menu\s*\{\s*max-height:\s*min\(calc\(100dvh - var\(--pill-h\) - 3rem\), 34rem\);/,
 		);
 	});
 });

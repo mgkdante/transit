@@ -6,13 +6,20 @@
 // sheet while a filter tap does not; Escape closes.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render, fireEvent } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import SurfaceRail from './SurfaceRail.svelte';
 
+const source = readFileSync(
+	resolve(process.cwd(), 'src/lib/components/surface/SurfaceRail.svelte'),
+	'utf-8',
+);
+
 // The rail content: a filter button + a ToC jump link, so we can prove the sheet renders both
-// and that a link closes the sheet while the button does not. The snippet receives the
-// { closeSheet } seam param (unused here; the seam test below wires it).
+// and that a link closes the sheet while the button does not. The snippet receives the shared
+// rail context (unused here; the seam and presentation tests below inspect it).
 const rail = createRawSnippet(() => ({
 	render: () =>
 		`<div data-testid="rail-body">
@@ -24,7 +31,9 @@ const rail = createRawSnippet(() => ({
 // A rail that wires the snippet's { closeSheet } param onto a component-style ToC button —
 // the EXPLICIT dismissal seam TocNav consumers use (onNavigate → closeSheet), replacing the
 // old private `.toc-item` class sniffing.
-const railWithSeam = createRawSnippet<[{ closeSheet: () => void }]>((getArgs) => ({
+const railWithSeam = createRawSnippet<
+	[{ closeSheet: () => void; presentation: 'desktop' | 'mobile' }]
+>((getArgs) => ({
 	render: () =>
 		`<div data-testid="rail-body">
 			<button type="button" data-testid="rail-seam-jump">Section A</button>
@@ -50,9 +59,48 @@ describe('SurfaceRail — desktop glass rail', () => {
 		expect(aside?.tagName.toLowerCase()).toBe('aside');
 		expect(aside?.querySelector('[data-testid="rail-body"]')).not.toBeNull();
 	});
+
+	it('identifies the always-mounted rail as desktop and the sheet copy as mobile', async () => {
+		const received: Array<{
+			closeSheet: () => void;
+			presentation: 'desktop' | 'mobile';
+		}> = [];
+		const contextualRail = createRawSnippet<
+			[{ closeSheet: () => void; presentation: 'desktop' | 'mobile' }]
+		>((getArgs) => ({
+			render: () => {
+				received.push({ ...getArgs() });
+				return '<div data-testid="contextual-rail"></div>';
+			},
+		}));
+		const { container } = render(SurfaceRail, {
+			props: { ...baseProps, rail: contextualRail },
+		});
+
+		expect(received.map(({ presentation }) => presentation)).toEqual(['desktop']);
+
+		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		await fireEvent.click(mobile.querySelector(':scope > button') as HTMLButtonElement);
+		expect(received.map(({ presentation }) => presentation)).toEqual(['desktop', 'mobile']);
+	});
 });
 
 describe('SurfaceRail — mobile pill + merged sheet', () => {
+	it('keeps direct sheet children at natural height while the sheet owns vertical scrolling', () => {
+		const sheetRule = source.match(/\.surface-rail-sheet\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		const directChildRule =
+			source.match(/\.surface-rail-sheet\s*>\s*:global\(\*\)\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		const overflowY = Array.from(
+			sheetRule.matchAll(/^\s*overflow-y\s*:\s*([^;]+)\s*;/gm),
+			([, value]) => value.trim(),
+		);
+
+		expect(overflowY).toEqual(['auto']);
+		expect(sheetRule).not.toMatch(/^\s*overflow\s*:[^;]*(?:hidden|clip)[^;]*;/m);
+		expect(sheetRule).not.toMatch(/^\s*height\s*:/m);
+		expect(directChildRule).toMatch(/(?:^|[;\s])(?:flex:\s*none|flex-shrink:\s*0)\s*;/);
+	});
+
 	it('labels the pill with the heading + summary, and the sheet is closed by default', () => {
 		const { container } = render(SurfaceRail, { props: baseProps });
 		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;

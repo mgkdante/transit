@@ -12,9 +12,15 @@
 	import { scaleBand, scaleLinear } from 'd3-scale';
 	import { goto } from '$app/navigation';
 	import { cn } from '$lib/utils';
+	import ChartDatumPopover from '../ChartDatumPopover.svelte';
 	import ChartFrame from '../ChartFrame.svelte';
+	import {
+		chartDatumPopoverBoundary,
+		createChartDatumPopover,
+	} from '../useChartDatumPopover.svelte';
 	import { categoryGutter } from '../axisGutter';
 	import MagnitudeCiWhiskers from './MagnitudeCiWhiskers.svelte';
+	import { activateMagnitudeRow } from './magnitudeRowActivation';
 	import type { MagnitudeBarsSpec, MagnitudeDatum } from '../ChartSpec';
 	import type { SeverityCode } from '$lib/v1/schemas';
 
@@ -29,6 +35,8 @@
 	const labels = $derived(spec.rows.map((r) => r.label));
 	const reals = $derived(spec.rows.filter((r) => r.value != null));
 	const xDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
+	const hasTapPopover = $derived(spec.rows.some((r) => r.tapPopover != null));
+	const popover = createChartDatumPopover();
 
 	const bySeverity = (sev: SeverityCode): MagnitudeDatum[] =>
 		reals.filter((r) => (r.severity ?? 'watch') === sev);
@@ -49,9 +57,9 @@
 	// The drill fires on the tooltip's band overlay (which sits ON TOP of the bars, so the
 	// bars' own onclick never reaches the pointer) — LayerChart's tooltipContext.onclick
 	// hands back the active row datum, so clicking anywhere on a row navigates to its stop.
-	function onRowClick(_e: MouseEvent, detail: { data?: MagnitudeDatum }): void {
-		const href = detail?.data?.href;
-		if (href) goto(href);
+	function onRowClick(event: MouseEvent, detail: { data?: MagnitudeDatum }): void {
+		const datum = detail?.data;
+		if (datum) activateMagnitudeRow(event, datum, popover, goto);
 	}
 
 	const fmt = (v: number | null): string => (v == null ? '' : String(v));
@@ -63,6 +71,7 @@
 	class={cn('dv-barmark m-0', className)}
 	aria-label={spec.title}
 	data-slot="magnitude-bars-mark"
+	use:chartDatumPopoverBoundary={popover}
 >
 	<ChartFrame height={frameHeight} class="dv-barmark-plot">
 		<LcChart
@@ -74,7 +83,11 @@
 			yScale={scaleBand().padding(0.42)}
 			yDomain={labels}
 			{padding}
-			tooltipContext={{ mode: 'band', onclick: onRowClick }}
+			tooltipContext={{
+				mode: 'band',
+				onclick: onRowClick,
+				...(hasTapPopover ? { touchEvents: 'auto' as const } : {}),
+			}}
 		>
 			<Svg>
 				<Grid x class="dv-barmark-grid" />
@@ -102,27 +115,29 @@
 					<MagnitudeCiWhiskers rows={reals} domain={xDomain} />
 				{/if}
 			</Svg>
-			<Tooltip.Root>
-				{#snippet children({ data }: { data: MagnitudeDatum })}
-					<Tooltip.Header>{data.label}</Tooltip.Header>
-					<Tooltip.List>
-						<Tooltip.Item
-							label={spec.xLabel ?? spec.title}
-							value={`${fmt(data.value)}${spec.unit}`}
-						/>
-						{#if spec.ciLabel && data.wilsonLo != null && data.wilsonHi != null}
+			{#if !hasTapPopover || popover.showNativeTooltip}
+				<Tooltip.Root>
+					{#snippet children({ data }: { data: MagnitudeDatum })}
+						<Tooltip.Header>{data.label}</Tooltip.Header>
+						<Tooltip.List>
 							<Tooltip.Item
-								label={spec.ciLabel}
-								value={`${fmt(data.wilsonLo)}–${fmt(data.wilsonHi)}${spec.unit}`}
+								label={spec.xLabel ?? spec.title}
+								value={`${fmt(data.value)}${spec.unit}`}
 							/>
-						{/if}
-						{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
-						{#if data.href}<Tooltip.Item label="" value="↦ open stop" />{/if}
-					</Tooltip.List>
-				{/snippet}
-			</Tooltip.Root>
+							{#if spec.ciLabel && data.wilsonLo != null && data.wilsonHi != null}
+								<Tooltip.Item
+									label={spec.ciLabel}
+									value={`${fmt(data.wilsonLo)}–${fmt(data.wilsonHi)}${spec.unit}`}
+								/>
+							{/if}
+							{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
+						</Tooltip.List>
+					{/snippet}
+				</Tooltip.Root>
+			{/if}
 		</LcChart>
 	</ChartFrame>
+	<ChartDatumPopover controller={popover} />
 
 	<!-- AT fallback: the ranking as a table; links drill to each stop. -->
 	<table class="sr-only">
