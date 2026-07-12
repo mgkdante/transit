@@ -245,6 +245,7 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		font-weight: 650;
+		/* doctrine-allow: interactive — a UI affordance, not a data mark */
 		color: var(--primary);
 		text-underline-offset: 0.2em;
 		border-radius: var(--radius-sm);
