@@ -93,7 +93,7 @@
 			return seg.hint ?? (seg.compactLabel ? seg.label : undefined);
 		}
 		if (!seg.compactLabel) return seg.title;
-		return seg.title ? `${seg.label} — ${seg.title}` : seg.label;
+		return seg.title ? `${seg.label}: ${seg.title}` : seg.label;
 	}
 
 	/** The index of the currently-checked segment (roving-tabindex anchor). */

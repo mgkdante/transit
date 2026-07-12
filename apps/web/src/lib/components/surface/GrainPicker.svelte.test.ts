@@ -160,7 +160,7 @@ describe('GrainPicker — variants', () => {
 		});
 		const shift = getByRole('radio', { name: 'Heures de pointe' });
 		expect(shift).toHaveTextContent('Pointe');
-		expect(shift).toHaveAttribute('title', 'Heures de pointe — Aucune observation');
+		expect(shift).toHaveAttribute('title', 'Heures de pointe: Aucune observation');
 	});
 });
 
