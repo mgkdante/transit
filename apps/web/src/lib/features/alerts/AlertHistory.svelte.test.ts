@@ -1,6 +1,9 @@
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AlertHistory } from '$lib/v1/schemas';
+import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import { alertHistoryCopy } from './alerts.copy';
 import AlertHistoryScreen from './AlertHistory.svelte';
 
@@ -25,6 +28,8 @@ const { fixture } = vi.hoisted(() => ({
 				end_utc: '2026-06-21T21:00:00Z',
 				duration_min: 2040,
 				impact_passages: 1234,
+				cause: 'CONSTRUCTION',
+				effect: 'DETOUR',
 			},
 			{
 				id: 'a-2',
@@ -37,6 +42,8 @@ const { fixture } = vi.hoisted(() => ({
 				end_utc: '2026-06-20T18:30:00Z',
 				duration_min: 210,
 				impact_passages: null,
+				cause: 'ACCIDENT',
+				effect: '',
 			},
 		],
 		breakdown: {
@@ -73,20 +80,6 @@ function setUrl(path: string): void {
 	nav.url = new URL(path, 'http://localhost');
 }
 
-// Mock the shared clock with a FIXED, skewed `serverNow` so the FreshnessStamp age is
-// anchored to the SERVER clock (serverNow = generated_utc + 2 h → "2 hours ago").
-const clockStub = vi.hoisted(() => ({
-	get now() {
-		return Date.parse('2026-06-20T02:00:00Z');
-	},
-	get serverNow() {
-		return Date.parse('2026-06-20T02:00:00Z');
-	},
-	subscribe: () => () => {},
-}));
-vi.mock('$lib/stores/clock.svelte', () => ({ sharedClock: clockStub }));
-vi.mock('$lib/stores', () => ({ sharedClock: clockStub }));
-
 // createResource returns the shared fixture as already-settled data.
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({
@@ -100,6 +93,83 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 
 const ORIGINAL_ALERTS = JSON.parse(JSON.stringify(fixture.alerts));
 const ORIGINAL_BREAKDOWN = JSON.parse(JSON.stringify(fixture.breakdown));
+
+function card(container: HTMLElement, id: string): HTMLElement {
+	return container.querySelector(`[data-toc="${id}"]`) as HTMLElement;
+}
+
+function cardTrigger(container: HTMLElement, id: string): HTMLButtonElement {
+	return card(container, id).querySelector(
+		'h2.section-heading > button.section-header',
+	) as HTMLButtonElement;
+}
+
+function resetArticleState(): void {
+	for (const key of [
+		'alerts-card-window',
+		'alerts-card-breakdown',
+		'alerts-card-log',
+		'alerts-filters',
+		'alerts-toc',
+	]) {
+		sessionStorage.removeItem(`transit.persisted:${key}`);
+	}
+	quietModeStore.resetForTest();
+}
+
+function seedAnalyticalFilterFixture(): void {
+	fixture.alerts = [
+		{
+			id: 'L1',
+			severity: 'critical',
+			header_text_en: 'Line closed',
+			routes: ['10'],
+			stops: [],
+			start_utc: '2026-06-20T09:00:00Z',
+			end_utc: '2026-06-20T10:00:00Z',
+			duration_min: 60,
+			cause: 'ACCIDENT',
+			effect: 'NO_SERVICE',
+		},
+		{
+			id: 'S1',
+			severity: 'high',
+			header_text_en: 'Stop moved',
+			routes: [],
+			stops: ['52458'],
+			start_utc: '2026-06-21T11:00:00Z',
+			end_utc: '2026-06-21T13:00:00Z',
+			duration_min: 120,
+			cause: 'CONSTRUCTION',
+			effect: 'DETOUR',
+		},
+		{
+			id: 'B1',
+			severity: 'watch',
+			header_text_en: 'Detour',
+			routes: ['24'],
+			stops: ['99999'],
+			start_utc: '2026-06-22T13:00:00Z',
+			end_utc: '2026-06-22T16:00:00Z',
+			duration_min: 180,
+			cause: 'CONSTRUCTION',
+			effect: 'DETOUR',
+		},
+	] as unknown as AlertHistory['alerts'];
+	fixture.breakdown = {
+		by_cause: [{ key: 'SERVER_ONLY', count: 99, median_duration_min: 999 }],
+		by_effect: [],
+		by_severity: [],
+	};
+	(fixture as AlertHistory).window_start = '2026-06-20';
+	(fixture as AlertHistory).window_end = '2026-06-22';
+}
+
+beforeEach(() => {
+	resetArticleState();
+	Element.prototype.scrollIntoView = vi.fn();
+});
+
 afterEach(() => {
 	fixture.alerts = JSON.parse(JSON.stringify(ORIGINAL_ALERTS));
 	fixture.breakdown = JSON.parse(JSON.stringify(ORIGINAL_BREAKDOWN));
@@ -109,6 +179,167 @@ afterEach(() => {
 	delete (fixture as AlertHistory).truncated;
 	setUrl('http://localhost/alerts');
 	replaceState.mockClear();
+	resetArticleState();
+});
+
+describe('AlertHistory article shell', () => {
+	it('renders one article heading, exact metadata copy, and only the two shared reading controls', () => {
+		const { container } = render(AlertHistoryScreen);
+
+		expect(screen.getAllByRole('heading', { level: 1, name: 'Alerts' })).toHaveLength(1);
+		expect(container.querySelector('[data-slot="detail-shell"]')).not.toBeNull();
+		expect(container.querySelector('[data-slot="article-header"]')).not.toBeNull();
+		expect(screen.getByRole('link', { name: '← Back to the dashboard' })).toHaveAttribute(
+			'href',
+			'/',
+		);
+		expect(
+			within(screen.getByRole('list', { name: 'Page keywords' })).getAllByRole('listitem'),
+		).toHaveLength(4);
+		expect(screen.getByText('AS OF')).toBeInTheDocument();
+		expect(screen.getByText('2 matches')).toBeInTheDocument();
+		expect(screen.getByText('3 sections')).toBeInTheDocument();
+
+		const controls = screen.getByTestId('quiet-mode-controls');
+		expect(within(controls).getAllByRole('button')).toHaveLength(2);
+		expect(within(controls).getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
+		expect(
+			within(controls).getByRole('button', { name: 'Always start collapsed' }),
+		).toBeInTheDocument();
+	});
+
+	it('keeps the exact bilingual article, rail, and card copy', () => {
+		expect(copyEn.article).toEqual({
+			watermark: 'Alerts',
+			back: '← Back to the dashboard',
+			tagsAria: 'Page keywords',
+			tags: ['alerts', 'archive', 'duration', 'reach'],
+			sections: expect.any(Function),
+			matches: expect.any(Function),
+		});
+		expect(copyEn.article.matches(1)).toBe('1 match');
+		expect(copyEn.article.matches(2)).toBe('2 matches');
+		expect(copyEn.rail).toEqual({
+			label: 'Filters & contents',
+			open: 'Open filters and contents',
+			close: 'Close filters and contents',
+			toc: 'On this page',
+			counterPrefix: 'SEC',
+		});
+		expect(copyEn.cards).toEqual({
+			window: {
+				title: 'Alerts in window',
+				subtitle: 'Matching alerts and their median resolved duration',
+			},
+			breakdown: {
+				title: 'Breakdown',
+				subtitle: 'Cause, effect, and severity across the matching alerts',
+			},
+			log: {
+				title: 'Past alerts',
+				subtitle: 'The matching alert archive, newest first',
+			},
+		});
+
+		const copyFr = alertHistoryCopy.fr;
+		expect(copyFr.article).toEqual({
+			watermark: 'Avis',
+			back: '← Retour au tableau de bord',
+			tagsAria: 'Mots-clés de la page',
+			tags: ['avis', 'archive', 'durée', 'portée'],
+			sections: expect.any(Function),
+			matches: expect.any(Function),
+		});
+		expect(copyFr.article.matches(1)).toBe('1 résultat');
+		expect(copyFr.article.matches(2)).toBe('2 résultats');
+		expect(copyFr.rail).toEqual({
+			label: 'Filtres et sommaire',
+			open: 'Ouvrir les filtres et le sommaire',
+			close: 'Fermer les filtres et le sommaire',
+			toc: 'Sur cette page',
+			counterPrefix: 'SEC',
+		});
+		expect(copyFr.cards).toEqual({
+			window: {
+				title: 'Avis dans la fenêtre',
+				subtitle: 'Les avis correspondants et leur durée médiane de résolution',
+			},
+			breakdown: {
+				title: 'Répartition',
+				subtitle: 'Les causes, effets et gravités des avis correspondants',
+			},
+			log: {
+				title: 'Avis passés',
+				subtitle: 'L’archive des avis correspondants, du plus récent au plus ancien',
+			},
+		});
+	});
+
+	it('renders the stable three-card registry and matching numbered TOC when breakdown is published', () => {
+		const { container } = render(AlertHistoryScreen);
+		const ids = ['alerts-window', 'alerts-breakdown', 'alerts-log'];
+
+		expect(ids.map((id) => card(container, id).getAttribute('data-header-variant'))).toEqual([
+			'article-summary',
+			'article-summary',
+			'article-summary',
+		]);
+		expect(
+			ids.map((id) =>
+				card(container, id).querySelector('[data-slot="badge"]')?.textContent?.trim(),
+			),
+		).toEqual(['01', '02', '03']);
+		expect(
+			within(card(container, 'alerts-breakdown')).getAllByRole('heading', { level: 2 }),
+		).toHaveLength(1);
+
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		for (const title of ['Alerts in window', 'Breakdown', 'Past alerts']) {
+			expect(within(rail).getByRole('button', { name: title })).toBeInTheDocument();
+		}
+	});
+
+	it.each([
+		{ state: 'null', breakdown: null },
+		{ state: 'empty', breakdown: { by_cause: [], by_effect: [], by_severity: [] } },
+	])('stands the breakdown card and TOC entry down for a $state breakdown', ({ breakdown }) => {
+		fixture.breakdown = breakdown;
+		const { container } = render(AlertHistoryScreen);
+		expect(container.querySelector('[data-toc="alerts-breakdown"]')).toBeNull();
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		expect(within(rail).queryByRole('button', { name: 'Breakdown' })).toBeNull();
+		expect(card(container, 'alerts-log').querySelector('[data-slot="badge"]')).toHaveTextContent(
+			'03',
+		);
+	});
+
+	it('opens one mobile sheet containing all filters followed by the TOC without a TocPill', async () => {
+		const { container } = render(AlertHistoryScreen);
+		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		const pill = within(mobile).getByRole('button', { name: /Open filters and contents/ });
+		await fireEvent.click(pill);
+
+		const sheet = screen.getByRole('dialog', { name: 'Filters & contents' });
+		const filters = sheet.querySelector('[data-slot="alert-filters"]') as HTMLElement;
+		const toc = sheet.querySelector('[data-slot="section-toc"]') as HTMLElement;
+		expect(filters).not.toBeNull();
+		expect(toc).not.toBeNull();
+		expect(filters.compareDocumentPosition(toc) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+		expect(within(filters).getByText('Affects')).toBeInTheDocument();
+		expect(within(filters).getByText('Severity')).toBeInTheDocument();
+		expect(within(filters).getByRole('radio', { name: 'Lines' })).toBeInTheDocument();
+		expect(within(filters).getByRole('radio', { name: 'Critical' })).toBeInTheDocument();
+		expect(within(filters).getByRole('combobox', { name: 'Line' })).toBeInTheDocument();
+		expect(within(filters).getByRole('combobox', { name: 'Stop' })).toBeInTheDocument();
+		expect(filters.querySelectorAll('input[type="date"]')).toHaveLength(2);
+		expect(within(sheet).getByRole('button', { name: 'On this page' })).toBeInTheDocument();
+		expect(container.querySelector('[data-slot="toc-pill"]')).toBeNull();
+
+		await fireEvent.click(within(filters).getByRole('radio', { name: 'Lines' }));
+		expect(screen.getByRole('dialog', { name: 'Filters & contents' })).toBeInTheDocument();
+		await fireEvent.click(within(sheet).getByRole('button', { name: 'Past alerts' }));
+		await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+	});
 });
 
 describe('AlertHistory log', () => {
@@ -119,6 +350,8 @@ describe('AlertHistory log', () => {
 		expect(titles).toHaveLength(2);
 		const rows = within(list).getAllByRole('listitem');
 		expect(rows).toHaveLength(2);
+		expect(rows[0]).toHaveTextContent('210 min');
+		expect(rows[1]).toHaveTextContent('2040 min');
 	});
 
 	it('omits absent fields and never fabricates a 0 (no impact line when impact_passages is null)', () => {
@@ -137,12 +370,14 @@ describe('AlertHistory log', () => {
 		expect(screen.getByText('210 min')).toBeInTheDocument();
 	});
 
-	it('anchors the FreshnessStamp age to the SERVER clock (serverNow), not Date.now()', () => {
+	it('renders the archive generation timestamp as semantic article metadata', () => {
 		render(AlertHistoryScreen);
-		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
-		expect(chip).not.toBeNull();
-		expect(chip.getAttribute('data-variant')).toBe('updated');
-		expect(within(chip).getByText('2 hours ago')).toBeInTheDocument();
+		const generated = document.querySelector(
+			'time[datetime="2026-06-20T00:00:00Z"]',
+		) as HTMLTimeElement;
+		expect(generated).not.toBeNull();
+		expect(generated).toHaveTextContent('Jun 19, 2026, 8:00 p.m.');
+		expect(document.querySelector('[data-slot="freshness-stamp"]')).toBeNull();
 	});
 
 	it('lists ALL active windows when an alert carries more than one (D1)', () => {
@@ -226,27 +461,148 @@ describe('AlertHistory headline', () => {
 });
 
 describe('AlertHistory breakdown', () => {
-	it('humanizes a known cause bucket and reads "Unspecified" for an unknown effect key', () => {
+	it('derives published cause/effect/severity rows from the matching entries, not server aggregates', () => {
 		render(AlertHistoryScreen);
 		const causeList = screen.getByRole('list', { name: /distribution by cause/i });
 		expect(within(causeList).getByText('Construction')).toBeInTheDocument();
+		expect(within(causeList).getByText('Accident')).toBeInTheDocument();
+		expect(within(causeList).queryByText('7 alerts')).toBeNull();
 		const effectList = screen.getByRole('list', { name: /distribution by effect/i });
 		expect(within(effectList).getByText('Unspecified')).toBeInTheDocument();
 		expect(within(effectList).queryByText('unknown')).toBeNull();
 	});
 
-	it('shows the styled honest-absence chip when alerts exist but no distribution was published', () => {
-		fixture.breakdown = null;
-		render(AlertHistoryScreen);
-		const block = document.querySelector('[data-slot="alert-breakdown"]');
-		expect(block).not.toBeNull();
-		const chip = block?.querySelector('[data-slot="absent-value"]');
-		expect(chip).not.toBeNull();
-		expect(chip?.getAttribute('data-tone')).toBe('unknown');
-		expect(block?.querySelector('[role="list"]')).toBeNull();
+	it('keeps its DashboardGrid to one column below 1024px', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/alerts/sections/AlertBreakdown.svelte'),
+			'utf8',
+		);
+		const desktopStart = source.indexOf('@media (min-width: 1024px)');
+
+		expect(desktopStart).toBeGreaterThan(-1);
+		const base = source.slice(0, desktopStart);
+		const desktop = source.slice(desktopStart);
+		expect(base).toMatch(
+			/:global\(\.alert-breakdown-grid\)\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+		);
+		expect(base).not.toMatch(/repeat\(auto-fit/);
+		expect(desktop).toMatch(
+			/:global\(\.alert-breakdown-grid\)\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fit/,
+		);
+	});
+});
+
+describe('AlertHistory analytical filter coherence', () => {
+	it.each([
+		{
+			axis: 'severity',
+			query: '?severity=critical',
+			count: 1,
+			shown: ['Line closed'],
+			causes: ['Accident'],
+			absentCauses: ['Construction'],
+		},
+		{
+			axis: 'affects',
+			query: '?affects=lines',
+			count: 2,
+			shown: ['Line closed', 'Detour'],
+			causes: ['Accident', 'Construction'],
+			absentCauses: [],
+		},
+		{
+			axis: 'line',
+			query: '?route=24',
+			count: 1,
+			shown: ['Detour'],
+			causes: ['Construction'],
+			absentCauses: ['Accident'],
+		},
+		{
+			axis: 'stop',
+			query: '?stop=52458',
+			count: 1,
+			shown: ['Stop moved'],
+			causes: ['Construction'],
+			absentCauses: ['Accident'],
+		},
+		{
+			axis: 'date',
+			query: '?from=2026-06-21&to=2026-06-21',
+			count: 1,
+			shown: ['Stop moved'],
+			causes: ['Construction'],
+			absentCauses: ['Accident'],
+		},
+	])(
+		'$axis filtering drives the headline, derived breakdown, article metadata, and log together',
+		({ query, count, shown, causes, absentCauses }) => {
+			seedAnalyticalFilterFixture();
+			setUrl(`http://localhost/alerts${query}`);
+			const { container } = render(AlertHistoryScreen);
+
+			expect(within(card(container, 'alerts-window')).getByText(String(count))).toBeInTheDocument();
+			expect(screen.getByText(count === 1 ? '1 match' : `${count} matches`)).toBeInTheDocument();
+
+			const causeList = within(card(container, 'alerts-breakdown')).getByRole('list', {
+				name: /distribution by cause/i,
+			});
+			for (const cause of causes) expect(within(causeList).getByText(cause)).toBeInTheDocument();
+			for (const cause of absentCauses) expect(within(causeList).queryByText(cause)).toBeNull();
+			expect(within(causeList).queryByText('SERVER_ONLY')).toBeNull();
+
+			const log = within(card(container, 'alerts-log')).getByRole('list', {
+				name: /past service alerts, newest first/i,
+			});
+			expect(within(log).getAllByRole('listitem')).toHaveLength(count);
+			for (const headline of shown) expect(within(log).getByText(headline)).toBeInTheDocument();
+		},
+	);
+
+	it('keeps a published Breakdown card with honest absence when active filters match zero', async () => {
+		seedAnalyticalFilterFixture();
+		const { container } = render(AlertHistoryScreen);
+		await fireEvent.click(screen.getByRole('radio', { name: copyEn.severity.critical }));
+		await fireEvent.click(screen.getByRole('radio', { name: copyEn.filters.entity.stops }));
+
+		expect(within(card(container, 'alerts-window')).getByText('0')).toBeInTheDocument();
+		expect(screen.getByText('0 matches')).toBeInTheDocument();
+		const breakdown = card(container, 'alerts-breakdown');
+		expect(breakdown).not.toBeNull();
+		expect(breakdown.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+		expect(breakdown.querySelector('[role="list"]')).toBeNull();
 		expect(
-			screen.getByRole('list', { name: /past service alerts, newest first/i }),
-		).toBeInTheDocument();
+			card(container, 'alerts-log').querySelector('[data-slot="alert-no-match"]'),
+		).toHaveTextContent(copyEn.filters.noMatch);
+	});
+
+	it('preserves affects, severity, route, stop, from, and to in the one batched URL mirror', async () => {
+		seedAnalyticalFilterFixture();
+		setUrl(
+			'http://localhost/alerts?affects=stops&severity=watch&route=24&stop=99999&from=2026-06-22&to=2026-06-22',
+		);
+		render(AlertHistoryScreen);
+		await fireEvent.click(screen.getByRole('radio', { name: 'High' }));
+
+		await waitFor(() => {
+			expect(Object.fromEntries(nav.url.searchParams)).toMatchObject({
+				affects: 'stops',
+				severity: 'high',
+				route: '24',
+				stop: '99999',
+				from: '2026-06-22',
+				to: '2026-06-22',
+			});
+		});
+		const mirrored = new URL(String(replaceState.mock.calls.at(-1)?.[0]), 'http://localhost');
+		expect(Object.fromEntries(mirrored.searchParams)).toMatchObject({
+			affects: 'stops',
+			severity: 'high',
+			route: '24',
+			stop: '99999',
+			from: '2026-06-22',
+			to: '2026-06-22',
+		});
 	});
 });
 
@@ -513,6 +869,20 @@ describe('AlertHistory date window (?from/?to)', () => {
 		expect((picker as HTMLElement).querySelectorAll('input[type="date"]').length).toBe(2);
 	});
 
+	it('clamps unavailable URL bounds away and restores the full served log', async () => {
+		seedWindowFixture();
+		(fixture as AlertHistory).window_start = '2026-06-01';
+		(fixture as AlertHistory).window_end = '2026-06-30';
+		setUrl('http://localhost/alerts?from=2026-05-01&to=2026-07-01');
+		render(AlertHistoryScreen);
+
+		await waitFor(() => {
+			expect(nav.url.searchParams.get('from')).toBeNull();
+			expect(nav.url.searchParams.get('to')).toBeNull();
+			expect(logRows()).toHaveLength(2);
+		});
+	});
+
 	it('hides the picker with honest absence when NOTHING is datable (no window fields, undatable entries)', () => {
 		fixture.alerts = [
 			{ id: 'u', severity: 'watch', header_text_en: 'Undatable', routes: ['10'], stops: [] },
@@ -527,46 +897,165 @@ describe('AlertHistory date window (?from/?to)', () => {
 	});
 });
 
-describe('AlertHistory filter rail (P5.4e SurfaceRail — glass left rail + mobile pill→sheet)', () => {
-	it('mounts the filter widgets inside the SurfaceRail (desktop glass panel present)', () => {
-		render(AlertHistoryScreen);
-		// The desktop glass rail <aside> carries the filter body (single source).
-		const rail = document.querySelector('[data-slot="surface-rail"]');
+describe('AlertHistory combined rail and disclosure behavior', () => {
+	it('mounts filters first and TOC second in one desktop SurfaceRail', () => {
+		const { container } = render(AlertHistoryScreen);
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const filters = rail.querySelector('[data-slot="alert-filters"]') as HTMLElement;
+		const toc = rail.querySelector('[data-slot="section-toc"]') as HTMLElement;
+
 		expect(rail).not.toBeNull();
-		expect(rail?.querySelector('[data-slot="alert-filters"]')).not.toBeNull();
-		// The filter axes render once (rail only; the mobile sheet is closed).
+		expect(filters).not.toBeNull();
+		expect(toc).not.toBeNull();
+		expect(filters.compareDocumentPosition(toc) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
 		expect(document.querySelectorAll('[data-slot="line-pick"]')).toHaveLength(1);
-		// The old ControlsRail wrapper class is gone (bounded chrome swap).
 		expect(document.querySelector('.alert-history-filters')).toBeNull();
 	});
 
-	it('exposes ONE mobile filter pill that opens ONE sheet holding the SAME filters', async () => {
-		render(AlertHistoryScreen);
-		const mobile = document.querySelector('[data-slot="surface-rail-mobile"]');
-		expect(mobile).not.toBeNull();
-		const pill = mobile?.querySelector('button') as HTMLButtonElement;
-		expect(pill).not.toBeNull();
-		expect(pill.getAttribute('aria-expanded')).toBe('false');
-		// No sheet until the pill is tapped.
-		expect(document.querySelector('[role="dialog"]')).toBeNull();
+	it('persists the Filters and TOC disclosures independently with locale-free Alerts keys', async () => {
+		const first = render(AlertHistoryScreen);
+		const firstRail = first.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const firstFilters = within(firstRail).getByRole('button', { name: 'Filters' });
+		const firstToc = within(firstRail).getByRole('button', { name: 'On this page' });
 
-		await fireEvent.click(pill);
-		expect(pill.getAttribute('aria-expanded')).toBe('true');
-		const sheet = document.querySelector('[role="dialog"]') as HTMLElement;
-		expect(sheet).not.toBeNull();
-		// The sheet renders the SAME filter body (the entity radiogroup lives inside it).
-		expect(sheet.querySelector('[data-slot="alert-filters"]')).not.toBeNull();
-		expect(
-			within(sheet).getByRole('radio', { name: copyEn.filters.entity.lines }),
-		).toBeInTheDocument();
+		expect(firstFilters).toHaveAttribute('aria-expanded', 'true');
+		expect(firstToc).toHaveAttribute('aria-expanded', 'true');
+		await fireEvent.click(firstFilters);
+		expect(firstFilters).toHaveAttribute('aria-expanded', 'false');
+		expect(firstToc).toHaveAttribute('aria-expanded', 'true');
+		expect(sessionStorage.getItem('transit.persisted:alerts-filters')).toBe('false');
+		expect(sessionStorage.getItem('transit.persisted:alerts-toc')).toBeNull();
+		first.unmount();
+
+		const second = render(AlertHistoryScreen);
+		const secondRail = second.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		await waitFor(() =>
+			expect(within(secondRail).getByRole('button', { name: 'Filters' })).toHaveAttribute(
+				'aria-expanded',
+				'false',
+			),
+		);
+		expect(within(secondRail).getByRole('button', { name: 'On this page' })).toHaveAttribute(
+			'aria-expanded',
+			'true',
+		);
+	});
+
+	it('Collapse all and Expand all synchronize both rail disclosures and every article card', async () => {
+		const { container } = render(AlertHistoryScreen);
+		const ids = ['alerts-window', 'alerts-breakdown', 'alerts-log'];
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const railTriggers = [
+			within(rail).getByRole('button', { name: 'Filters' }),
+			within(rail).getByRole('button', { name: 'On this page' }),
+		];
+
+		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		for (const id of ids)
+			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'true');
+
+		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		for (const id of ids)
+			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
+		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Expand all');
+
+		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		for (const id of ids)
+			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'true');
+		expect(screen.getByTestId('quiet-mode-toggle')).toHaveTextContent('Collapse all');
+	});
+
+	it('Always start collapsed initializes both rail disclosures and every article card closed', async () => {
+		localStorage.setItem('transit:quiet-mode', 'true');
+		const { container } = render(AlertHistoryScreen);
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+
+		await waitFor(() => {
+			expect(within(rail).getByRole('button', { name: 'Filters' })).toHaveAttribute(
+				'aria-expanded',
+				'false',
+			);
+			expect(within(rail).getByRole('button', { name: 'On this page' })).toHaveAttribute(
+				'aria-expanded',
+				'false',
+			);
+			for (const id of ['alerts-window', 'alerts-breakdown', 'alerts-log']) {
+				expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
+			}
+		});
+		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+	});
+
+	it('opens the target card before a TOC scroll while leaving sibling cards closed', async () => {
+		const { container } = render(AlertHistoryScreen);
+		await fireEvent.click(cardTrigger(container, 'alerts-window'));
+		await fireEvent.click(cardTrigger(container, 'alerts-breakdown'));
+		const statesAtScroll: Array<{ window: string | null; breakdown: string | null }> = [];
+		Element.prototype.scrollIntoView = vi.fn(() => {
+			statesAtScroll.push({
+				window: cardTrigger(container, 'alerts-window').getAttribute('aria-expanded'),
+				breakdown: cardTrigger(container, 'alerts-breakdown').getAttribute('aria-expanded'),
+			});
+		});
+
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		await fireEvent.click(within(rail).getByRole('button', { name: 'Breakdown' }));
+		await waitFor(() => expect(statesAtScroll).toHaveLength(1));
+		expect(statesAtScroll[0]).toEqual({ window: 'false', breakdown: 'true' });
+	});
+
+	it('keeps Show more/Show less inside alerts-log and independent of the card disclosure', async () => {
+		fixture.alerts = Array.from({ length: 26 }, (_, index) => ({
+			id: `alert-${index}`,
+			severity: 'watch',
+			header_text_en: `Alert ${index}`,
+			routes: ['24'],
+			stops: [],
+			start_utc: `2026-06-${String((index % 20) + 1).padStart(2, '0')}T09:00:00Z`,
+			end_utc: `2026-06-${String((index % 20) + 1).padStart(2, '0')}T10:00:00Z`,
+			duration_min: 60,
+			cause: 'CONSTRUCTION',
+			effect: 'DETOUR',
+		})) as unknown as AlertHistory['alerts'];
+		fixture.breakdown = {
+			by_cause: [{ key: 'CONSTRUCTION', count: 26, median_duration_min: 60 }],
+			by_effect: [],
+			by_severity: [],
+		};
+		const { container } = render(AlertHistoryScreen);
+		const logCard = card(container, 'alerts-log');
+
+		expect(logCard.querySelectorAll('[data-slot="alert-row"]')).toHaveLength(25);
+		const more = within(logCard).getByRole('button', { name: '+1 more' });
+		expect(card(container, 'alerts-window').contains(more)).toBe(false);
+		await fireEvent.click(more);
+		expect(logCard.querySelectorAll('[data-slot="alert-row"]')).toHaveLength(26);
+		expect(within(logCard).getByRole('button', { name: 'Show less' })).toBeInTheDocument();
+
+		await fireEvent.click(cardTrigger(container, 'alerts-log'));
+		expect(cardTrigger(container, 'alerts-log')).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(cardTrigger(container, 'alerts-log'));
+		expect(cardTrigger(container, 'alerts-log')).toHaveAttribute('aria-expanded', 'true');
+		expect(logCard.querySelectorAll('[data-slot="alert-row"]')).toHaveLength(26);
+		expect(within(logCard).getByRole('button', { name: 'Show less' })).toBeInTheDocument();
 	});
 });
 
 describe('AlertHistory empty state', () => {
-	it('routes to the empty edge state when the archive carries no alerts', () => {
+	it('keeps the healthy archive-empty ResourceBoundary and renders no article cards or rail', () => {
 		fixture.alerts = [];
-		render(AlertHistoryScreen);
+		const { container } = render(AlertHistoryScreen);
+		expect(container.querySelector('[data-slot="article-header"]')).not.toBeNull();
+		expect(container.querySelector('[data-slot="edge-state"]')).toHaveAttribute(
+			'data-variant',
+			'empty-avis',
+		);
+		expect(container.querySelectorAll('[data-toc^="alerts-"]')).toHaveLength(0);
+		expect(container.querySelector('[data-slot="surface-rail"]')).toBeNull();
+		expect(container.querySelector('[data-slot="surface-rail-mobile"]')).toBeNull();
 		expect(screen.queryByRole('list', { name: /past service alerts, newest first/i })).toBeNull();
-		expect(document.querySelector('[data-slot="alert-breakdown"]')).toBeNull();
+		expect(container.querySelector('[data-slot="alert-breakdown"]')).toBeNull();
 	});
 });

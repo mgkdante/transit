@@ -21,11 +21,10 @@
   zero-alert day is a REAL answer. Legacy payloads with no window fields derive the
   span from the entries; nothing datable → the picker hides with honest absence.
 
-  P5.4e: the filters live in a map-style GLASS LEFT RAIL (SurfaceRail) beside the
-  PAST-ALERTS log — a sticky glass panel at ≥1024 (the 2-col [rail | log] grid), and
-  ONE pill→sheet holding the SAME filters on mobile. The headline card + the Tier-2
-  breakdown stay ABOVE, full-width, unchanged. There are no anchor-addressable sections
-  to jump between, so the rail holds ONLY the filters (no ToC).
+	  ARTICLE: DetailShell owns one combined filters/contents rail and the shared section
+	  registry drives both the numbered TOC and the three disclosure cards. The server
+	  breakdown is only the availability signal; current filters derive every rendered
+	  cause/effect/severity bucket from the matching alert entries.
 
   HONESTY: a null/absent field is OMITTED; a generic/empty headline falls back to the
   shared "Service alert"; an empty archive routes to the localized empty state; the
@@ -33,8 +32,9 @@
   an honest cap note. Tokens only, no hex. All prose is in ./alerts.copy.
 -->
 <script lang="ts">
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
-	import { getLocale, type Locale } from '$lib/i18n';
+	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { getAlertHistory } from '$lib/v1';
 	import type { AlertHistory, AlertHistoryEntry, Alert, SeverityCode } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -46,12 +46,22 @@
 		type DateWindow,
 	} from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { ResourceBoundary, FreshnessStamp, SurfaceRail } from '$lib/components/surface';
-	import { Surface } from '$lib/components/layout';
-	import { Separator } from '$lib/components/ui/separator';
+	import { ResourceBoundary } from '$lib/components/surface';
+	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
+	import {
+		CollapsibleSection,
+		TocNav,
+		reconcileActiveToc,
+		revealTocTarget,
+		type TocEntry,
+	} from '$lib/components/shared';
+	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { persisted } from '$lib/stores';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+	import type { SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
-	import Masthead from '$lib/components/brand/Masthead.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -65,6 +75,7 @@
 		sortNewestFirst,
 		filterAlertLog,
 		buildAlertRow,
+		summarizeAlertBreakdown,
 		toBreakdownRows,
 		deriveSpan,
 		enumerateDates,
@@ -80,6 +91,48 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(alertHistoryCopy[locale]);
+	const railOpen = {
+		filters: persisted('alerts-filters', true),
+		toc: persisted('alerts-toc', true),
+	};
+	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
+		railOpen[key].value = next;
+	}
+	function setAllRailOpen(next: boolean): void {
+		setRailOpen('filters', next);
+		setRailOpen('toc', next);
+	}
+
+	let railSignalsReady = $state(false);
+	let lastRailCloseSignal = quietModeStore.closeSignal;
+	let lastRailOpenSignal = quietModeStore.openSignal;
+	onMount(() => {
+		let cancelled = false;
+		void (async () => {
+			await tick();
+			if (cancelled) return;
+			lastRailCloseSignal = quietModeStore.closeSignal;
+			lastRailOpenSignal = quietModeStore.openSignal;
+			if (quietModeStore.enabled) setAllRailOpen(false);
+			railSignalsReady = true;
+		})();
+		return () => {
+			cancelled = true;
+		};
+	});
+	$effect(() => {
+		const closeSignal = quietModeStore.closeSignal;
+		const openSignal = quietModeStore.openSignal;
+		if (!railSignalsReady) return;
+		if (closeSignal !== lastRailCloseSignal) {
+			lastRailCloseSignal = closeSignal;
+			setAllRailOpen(false);
+		}
+		if (openSignal !== lastRailOpenSignal) {
+			lastRailOpenSignal = openSignal;
+			setAllRailOpen(true);
+		}
+	});
 
 	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
 	// /metrics#<anchor>. Wires the five supplemental alert* dimensions (cause/effect/
@@ -250,18 +303,106 @@
 		countDisplay: (n: number) => t.breakdown.buckets(n),
 		medianSubtitle: (min: number) => t.breakdown.median(min),
 	});
+	const breakdownPublished = $derived(
+		history.data?.breakdown != null &&
+			((history.data.breakdown.by_cause?.length ?? 0) > 0 ||
+				(history.data.breakdown.by_effect?.length ?? 0) > 0 ||
+				(history.data.breakdown.by_severity?.length ?? 0) > 0),
+	);
+	const filteredBreakdown = $derived(summarizeAlertBreakdown(filtered));
 	const causeRows = $derived(
-		toBreakdownRows(history.data?.breakdown?.by_cause, 'cause', breakdownResolvers),
+		toBreakdownRows(filteredBreakdown.by_cause, 'cause', breakdownResolvers),
 	);
 	const effectRows = $derived(
-		toBreakdownRows(history.data?.breakdown?.by_effect, 'effect', breakdownResolvers),
+		toBreakdownRows(filteredBreakdown.by_effect, 'effect', breakdownResolvers),
 	);
 	const severityRows = $derived(
-		toBreakdownRows(history.data?.breakdown?.by_severity, 'severity', breakdownResolvers),
+		toBreakdownRows(filteredBreakdown.by_severity, 'severity', breakdownResolvers),
 	);
 	const hasBreakdown = $derived(
 		causeRows.length > 0 || effectRows.length > 0 || severityRows.length > 0,
 	);
+	const archiveReady = $derived(history.settled && history.data != null && entries.length > 0);
+	const sectionDefs = $derived([
+		{
+			id: 'alerts-window',
+			sectionKey: 'alerts-card-window',
+			number: 1,
+			title: t.cards.window.title,
+			subtitle: t.cards.window.subtitle,
+			present: archiveReady,
+		},
+		{
+			id: 'alerts-breakdown',
+			sectionKey: 'alerts-card-breakdown',
+			number: 2,
+			title: t.cards.breakdown.title,
+			subtitle: t.cards.breakdown.subtitle,
+			present: archiveReady && breakdownPublished,
+		},
+		{
+			id: 'alerts-log',
+			sectionKey: 'alerts-card-log',
+			number: 3,
+			title: t.cards.log.title,
+			subtitle: t.cards.log.subtitle,
+			present: archiveReady,
+		},
+	]);
+	const tocEntries = $derived<TocEntry[]>(
+		sectionDefs
+			.filter((section) => section.present)
+			.map((section) => ({
+				id: section.id,
+				title: section.title,
+				level: 2,
+				badge: { kind: 'number' as const, value: section.number },
+				children: [],
+			})),
+	);
+	const openableAnchors = $derived(new Set(tocEntries.map((entry) => entry.id)));
+	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
+		const meta: ArticleMetaEntry[] = [];
+		if (generatedUtc) {
+			meta.push({
+				text: formatUtc(generatedUtc, locale),
+				datetime: generatedUtc,
+				label: t.asOf,
+			});
+		}
+		if (history.data != null) {
+			meta.push(t.article.matches(filtered.length));
+			meta.push(t.article.sections(tocEntries.length));
+		}
+		return meta;
+	});
+
+	let activeId = $state('');
+	let cardOpenSignals = $state<Record<string, number>>({});
+	let navigationGeneration = 0;
+	let previousTocIds: string[] = [];
+	function openCard(id: string): void {
+		cardOpenSignals = {
+			...cardOpenSignals,
+			[id]: (cardOpenSignals[id] ?? 0) + 1,
+		};
+	}
+	function cardOpenSignal(id: string): number {
+		return quietModeStore.openSignal + (cardOpenSignals[id] ?? 0);
+	}
+	async function navigate(id: string): Promise<void> {
+		const generation = ++navigationGeneration;
+		await revealTocTarget(id, {
+			beforeReveal: openableAnchors.has(id) ? openCard : undefined,
+			isCurrent: () => generation === navigationGeneration,
+			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
+		});
+	}
+	$effect(() => {
+		const next = tocEntries.map((entry) => entry.id);
+		activeId = reconcileActiveToc(activeId, previousTocIds, next);
+		previousTocIds = next;
+	});
 
 	const uid = $props.id();
 	const logId = `alert-history-log-${uid}`;
@@ -294,150 +435,176 @@
 	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
 {/snippet}
 
-<Surface class="alert-history">
-	<Masthead kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
-		{#snippet meta()}
-			<FreshnessStamp variant="updated" {generatedUtc} {locale} />
-		{/snippet}
-	</Masthead>
-
-	<!-- HONEST ABSENCE: a zero-length alert archive is the GOOD empty — the network ran
-	     normally with no disruptions. Route it to the green network-healthy verdict. -->
-	<ResourceBoundary
-		resource={history}
-		lang={locale}
-		isEmpty={(d: AlertHistory) => (d.alerts?.length ?? 0) === 0}
-		emptyVariant="empty-avis"
-	>
-		<!-- In-window headline: the alerts-in-window count + median duration. -->
-		<div class="alert-history-headline" data-slot="alert-headline">
-			<ExplainedMetricCard
-				label={t.headline.label}
-				value={t.headline.value(headlineCount)}
-				explanation={t.headline.explanation}
-				sublabel={headlineSublabel}
-				info={headlineInfo}
-				{locale}
-			/>
-		</div>
-
-		<Separator variant="hazard" />
-
-		<!-- REORDER (§C5.13): analytics BEFORE the stream. The Tier-2 cause/effect/severity
-		     distribution reads first so the citizen gets the SHAPE of the archive before the
-		     25-row chronological log. cause/effect/severity headings carry their (i) tips. -->
-		<AlertBreakdown
-			{causeRows}
-			{effectRows}
-			{severityRows}
-			{hasBreakdown}
-			copy={t}
-			{locale}
-			{causeInfo}
-			{effectInfo}
-			{severityInfo}
-		/>
-
-		<Separator variant="hazard" />
-
-		<!-- P5.4e: the PAST-ALERTS block is a 2-col [ GLASS FILTER RAIL | log ] grid at
-		     ≥1024; a single column below, where the rail collapses to the mobile pill→sheet.
-		     The filter WIDGETS live in the rail (one source, rendered by SurfaceRail in both
-		     the desktop panel AND the mobile sheet); the log is the content column. -->
-		<div class="alert-history-block" data-slot="alert-log-block">
-			<!-- The rail content — the filter widgets. ONE definition, rendered by SurfaceRail
-			     in BOTH the desktop glass rail AND the mobile sheet (single source; all axes
-			     bind the same surface state). No ToC: the log has no jump-to sections. -->
-			{#snippet filterRail()}
-				<AlertFilters
-					bind:affects
-					bind:severity
-					bind:route
-					bind:window={pickedWindow}
-					bind:stop
-					{lineOptions}
-					{stopOptions}
-					{availableDates}
-					{filtersActive}
-					matchCount={filtered.length}
-					copy={t}
-					{locale}
-					onClear={clearFilters}
-				/>
+<DetailShell
+	class="alert-history-detail"
+	bind:activeId
+	{tocEntries}
+	combinedRailConfig={archiveReady
+		? {
+				label: t.rail.label,
+				summary: t.filters.pillSummary(filtered.length),
+				openAria: t.rail.open,
+				closeAria: t.rail.close,
+			}
+		: undefined}
+>
+	{#snippet articleHeader()}
+		<ArticleHeader
+			watermark={t.article.watermark}
+			category={t.kicker}
+			title={t.heading}
+			tags={t.article.tags}
+			tagsAria={t.article.tagsAria}
+			backHref={localizeHref('/', locale)}
+			backLabel={t.article.back}
+			meta={articleMeta}
+			metaPending={history.loading || !history.settled}
+			titleId="alerts-title"
+		>
+			{#snippet controls()}
+				<QuietModeButton />
 			{/snippet}
+		</ArticleHeader>
+	{/snippet}
 
-			<!-- The map-style GLASS LEFT RAIL: a sticky glass filter panel beside the log on
-			     desktop; ONE filter pill→sheet on mobile. -->
-			<SurfaceRail
-				rail={filterRail}
-				label={t.filters.railLabel}
-				summary={t.filters.pillSummary(filtered.length)}
-				openAria={t.filters.pillOpen}
-				closeAria={t.filters.pillClose}
+	{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
+		<CollapsibleSection
+			title={t.filters.railLabel}
+			bind:open={() => railOpen.filters.value, (next) => setRailOpen('filters', next)}
+		>
+			<AlertFilters
+				bind:affects
+				bind:severity
+				bind:route
+				bind:window={pickedWindow}
+				bind:stop
+				{lineOptions}
+				{stopOptions}
+				{availableDates}
+				{filtersActive}
+				matchCount={filtered.length}
+				copy={t}
+				{locale}
+				onClear={clearFilters}
 			/>
-
-			<!-- The log — the content column beside the filter rail. -->
-			<div class="alert-history-content" data-slot="alert-log-content">
-				<div class="alert-history-head">
-					<SectionHeading level={2} overline={t.logSection} explainer={reachInfo} />
-					<span class="alert-history-count" data-slot="alert-count">
-						{t.count(visibleRows.length, filtered.length)}
-					</span>
-				</div>
-
-				{#if truncated && totalInWindow != null}
-					<!-- Honest cap disclosure: the served window was capped newest-first. -->
-					<p class="alert-history-truncated" data-slot="alert-truncated">
-						{t.truncatedNote(entries.length, totalInWindow)}
-					</p>
-				{/if}
-
-				{#if !hasMatches}
-					<!-- Honest no-match: the active filters narrowed the log to zero. -->
-					<p class="alert-history-no-match" data-slot="alert-no-match">{t.filters.noMatch}</p>
-				{:else}
-					<AlertLog
-						rows={visibleRows}
-						total={filtered.length}
-						{expanded}
-						{overflow}
-						{logId}
-						copy={t}
-						onToggle={() => (expanded = !expanded)}
-					/>
-				{/if}
+		</CollapsibleSection>
+		{#if tocEntries.length > 0}
+			<div class="alert-history-rail-toc" data-slot="section-toc">
+				<TocNav
+					entries={tocEntries}
+					{activeId}
+					heading={t.rail.toc}
+					counterPrefix={t.rail.counterPrefix}
+					bind:open={() => railOpen.toc.value, (next) => setRailOpen('toc', next)}
+					onNavigate={(id) => {
+						closeSheet();
+						void navigate(id);
+					}}
+				/>
 			</div>
-		</div>
-	</ResourceBoundary>
-</Surface>
+		{/if}
+	{/snippet}
+
+	{#snippet center()}
+		<!-- HONEST ABSENCE: a zero-length alert archive is the GOOD empty — the network ran
+		     normally with no disruptions. Route it to the green network-healthy verdict. -->
+		<ResourceBoundary
+			resource={history}
+			lang={locale}
+			isEmpty={(d: AlertHistory) => (d.alerts?.length ?? 0) === 0}
+			emptyVariant="empty-avis"
+		>
+			<div class="alert-history-sections" data-slot="alert-sections">
+				{#each sectionDefs as section (section.id)}
+					{#if section.present}
+						<CollapsibleSection
+							title={section.title}
+							subtitle={section.subtitle}
+							headerVariant="article-summary"
+							anchor={section.id}
+							sectionKey={section.sectionKey}
+							index={section.number - 1}
+							open={true}
+							closeSignal={quietModeStore.closeSignal}
+							openSignal={cardOpenSignal(section.id)}
+							bulkCollapsed={quietModeStore.enabled}
+						>
+							{#if section.id === 'alerts-window'}
+								<div class="alert-history-headline" data-slot="alert-headline">
+									<ExplainedMetricCard
+										label={t.headline.label}
+										value={t.headline.value(headlineCount)}
+										explanation={t.headline.explanation}
+										sublabel={headlineSublabel}
+										info={headlineInfo}
+										{locale}
+									/>
+								</div>
+							{:else if section.id === 'alerts-breakdown'}
+								<AlertBreakdown
+									{causeRows}
+									{effectRows}
+									{severityRows}
+									{hasBreakdown}
+									copy={t}
+									{locale}
+									{causeInfo}
+									{effectInfo}
+									{severityInfo}
+								/>
+							{:else}
+								<div class="alert-history-content" data-slot="alert-log-content">
+									<div class="alert-history-head">
+										<SectionHeading level={3} overline={t.logSection} explainer={reachInfo} />
+										<span class="alert-history-count" data-slot="alert-count">
+											{t.count(visibleRows.length, filtered.length)}
+										</span>
+									</div>
+
+									{#if truncated && totalInWindow != null}
+										<p class="alert-history-truncated" data-slot="alert-truncated">
+											{t.truncatedNote(entries.length, totalInWindow)}
+										</p>
+									{/if}
+
+									{#if !hasMatches}
+										<p class="alert-history-no-match" data-slot="alert-no-match">
+											{t.filters.noMatch}
+										</p>
+									{:else}
+										<AlertLog
+											rows={visibleRows}
+											total={filtered.length}
+											{expanded}
+											{overflow}
+											{logId}
+											copy={t}
+											onToggle={() => (expanded = !expanded)}
+										/>
+									{/if}
+								</div>
+							{/if}
+						</CollapsibleSection>
+					{/if}
+				{/each}
+			</div>
+		</ResourceBoundary>
+	{/snippet}
+</DetailShell>
 
 <style>
-	/* §C5.13: the surface caps at the content lane (no full-bleed — width="bleed" was
-	   dropped with A1). The analytics + log read as one column, matching the 52rem log. */
-	:global([data-slot='surface'].alert-history) {
-		max-width: var(--container-content);
-		margin-inline: auto;
+	.alert-history-sections {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-card-gap);
+		min-width: 0;
+	}
+	.alert-history-rail-toc {
+		margin-top: 0.25rem;
 	}
 	.alert-history-headline {
 		margin-bottom: 0.25rem;
 	}
-	/* P5.4e: the PAST-ALERTS block is the map-style 2-col [ GLASS FILTER RAIL | log ]
-	   grid at ≥1024 (the content column is the rail's sticky containing block), and a
-	   single column below where the rail collapses to the mobile pill→sheet. */
-	.alert-history-block {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: clamp(1.5rem, 4vw, 2rem);
-		width: 100%;
-	}
-	@media (min-width: 1024px) {
-		.alert-history-block {
-			grid-template-columns: 15rem minmax(0, 1fr);
-			gap: 2rem;
-			align-items: start;
-		}
-	}
-	/* The log content column beside the filter rail. */
 	.alert-history-content {
 		display: flex;
 		flex-direction: column;

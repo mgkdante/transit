@@ -17,6 +17,27 @@ import type { SurfaceHeadCopy } from '$lib/components/surface';
 import type { DateRangePickerLabels } from '$lib/components/surface';
 
 export interface AlertHistoryCopy extends SurfaceHeadCopy {
+	readonly article: {
+		readonly watermark: string;
+		readonly back: string;
+		readonly tagsAria: string;
+		readonly tags: readonly string[];
+		readonly matches: (count: number) => string;
+		readonly sections: (count: number) => string;
+	};
+	readonly asOf: string;
+	readonly rail: {
+		readonly label: string;
+		readonly open: string;
+		readonly close: string;
+		readonly toc: string;
+		readonly counterPrefix: string;
+	};
+	readonly cards: {
+		readonly window: { readonly title: string; readonly subtitle: string };
+		readonly breakdown: { readonly title: string; readonly subtitle: string };
+		readonly log: { readonly title: string; readonly subtitle: string };
+	};
 	/** Section label over the chronological alert log. */
 	readonly logSection: string;
 	/** Accessible label for the alert list (the chronological history). */
@@ -145,6 +166,36 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		heading: 'Avis',
 		subheading: '// HISTORIQUE',
 		lede: 'Les avis de service passés, du plus récent au plus ancien, avec leur durée et leur portée. On n’invente jamais de données : un champ absent reste absent.',
+		article: {
+			watermark: 'Avis',
+			back: '← Retour au tableau de bord',
+			tagsAria: 'Mots-clés de la page',
+			tags: ['avis', 'archive', 'durée', 'portée'],
+			matches: (count) => `${count.toLocaleString('fr-CA')} résultat${count === 1 ? '' : 's'}`,
+			sections: (count) => `${count.toLocaleString('fr-CA')} section${count === 1 ? '' : 's'}`,
+		},
+		asOf: 'À JOUR AU',
+		rail: {
+			label: 'Filtres et sommaire',
+			open: 'Ouvrir les filtres et le sommaire',
+			close: 'Fermer les filtres et le sommaire',
+			toc: 'Sur cette page',
+			counterPrefix: 'SEC',
+		},
+		cards: {
+			window: {
+				title: 'Avis dans la fenêtre',
+				subtitle: 'Les avis correspondants et leur durée médiane de résolution',
+			},
+			breakdown: {
+				title: 'Répartition',
+				subtitle: 'Les causes, effets et gravités des avis correspondants',
+			},
+			log: {
+				title: 'Avis passés',
+				subtitle: 'L’archive des avis correspondants, du plus récent au plus ancien',
+			},
+		},
 		logSection: 'Avis passés',
 		logListLabel: 'Avis de service passés, du plus récent au plus ancien',
 		count: (shown, total) => `${shown} sur ${total} avis affichés`,
@@ -236,6 +287,37 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		heading: 'Alerts',
 		subheading: '// HISTORY',
 		lede: 'Past service alerts, newest first, with their duration and reach. We never invent data: an absent field stays absent.',
+		article: {
+			watermark: 'Alerts',
+			back: '← Back to the dashboard',
+			tagsAria: 'Page keywords',
+			tags: ['alerts', 'archive', 'duration', 'reach'],
+			matches: (count) => `${count.toLocaleString('en-CA')} ${count === 1 ? 'match' : 'matches'}`,
+			sections: (count) =>
+				`${count.toLocaleString('en-CA')} ${count === 1 ? 'section' : 'sections'}`,
+		},
+		asOf: 'AS OF',
+		rail: {
+			label: 'Filters & contents',
+			open: 'Open filters and contents',
+			close: 'Close filters and contents',
+			toc: 'On this page',
+			counterPrefix: 'SEC',
+		},
+		cards: {
+			window: {
+				title: 'Alerts in window',
+				subtitle: 'Matching alerts and their median resolved duration',
+			},
+			breakdown: {
+				title: 'Breakdown',
+				subtitle: 'Cause, effect, and severity across the matching alerts',
+			},
+			log: {
+				title: 'Past alerts',
+				subtitle: 'The matching alert archive, newest first',
+			},
+		},
 		logSection: 'Past alerts',
 		logListLabel: 'Past service alerts, newest first',
 		count: (shown, total) => `Showing ${shown} of ${total} alerts`,
