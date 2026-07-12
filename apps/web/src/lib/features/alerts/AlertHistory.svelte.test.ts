@@ -340,6 +340,7 @@ describe('AlertHistory article shell', () => {
 		expect(screen.getByRole('dialog', { name: 'Filters & contents' })).toBeInTheDocument();
 		await fireEvent.click(within(sheet).getByRole('button', { name: 'Past alerts' }));
 		await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+		expect(document.activeElement).toBe(pill);
 	});
 });
 

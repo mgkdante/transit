@@ -387,6 +387,13 @@
 	}
 	$effect(() => {
 		const next = tocEntries.map((entry) => entry.id);
+		const settledEmpty =
+			selectedDate !== '' &&
+			receipt.settled &&
+			!receipt.loading &&
+			receipt.error == null &&
+			receipt.data == null;
+		if (next.length === 0 && !settledEmpty) return;
 		activeId = reconcileActiveToc(activeId, previousTocIds, next);
 		previousTocIds = next;
 	});

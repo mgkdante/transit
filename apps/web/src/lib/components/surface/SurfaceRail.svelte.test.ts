@@ -133,10 +133,14 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 		// A filter tap does NOT close the sheet (filters can be changed freely).
 		await fireEvent.click(mobile.querySelector('[data-testid="rail-filter"]') as HTMLElement);
 		expect(mobile.querySelector('[role="dialog"]')).not.toBeNull();
+		expect(document.activeElement).toBe(
+			mobile.querySelector('[data-testid="rail-filter"]') as HTMLElement,
+		);
 
 		// A ToC jump link (in-page #anchor) DOES close the sheet so the reader lands on the section.
 		await fireEvent.click(mobile.querySelector('[data-testid="rail-jump"]') as HTMLElement);
 		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
+		expect(document.activeElement).toBe(pill);
 	});
 
 	it('a component ToC tap dismisses the sheet through the explicit closeSheet seam', async () => {
@@ -152,6 +156,7 @@ describe('SurfaceRail — mobile pill + merged sheet', () => {
 		const sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
 		await fireEvent.click(sheet.querySelector('[data-testid="rail-seam-jump"]') as HTMLElement);
 		expect(mobile.querySelector('[role="dialog"]')).toBeNull();
+		expect(document.activeElement).toBe(pill);
 	});
 
 	it('Escape closes the open sheet', async () => {

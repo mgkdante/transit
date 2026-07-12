@@ -80,7 +80,7 @@
 		if (!sheetOpen || !sheetEl) return;
 		sheetEl.querySelector<HTMLElement>('button, a, select, input, [tabindex]')?.focus();
 		const onClick = (e: MouseEvent) => {
-			if ((e.target as HTMLElement | null)?.closest('a[href^="#"]')) closeSheet(false);
+			if ((e.target as HTMLElement | null)?.closest('a[href^="#"]')) closeSheet(true);
 		};
 		sheetEl.addEventListener('click', onClick);
 		return () => sheetEl?.removeEventListener('click', onClick);
@@ -125,7 +125,7 @@
 			role="dialog"
 			aria-label={label}
 		>
-			{@render rail({ closeSheet: () => closeSheet(false), presentation: 'mobile' })}
+			{@render rail({ closeSheet: () => closeSheet(true), presentation: 'mobile' })}
 		</div>
 	{/if}
 </div>
