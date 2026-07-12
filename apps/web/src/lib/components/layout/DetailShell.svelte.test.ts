@@ -179,6 +179,24 @@ describe('DetailShell — opt-in combined rail', () => {
 		expect(rails[0]?.querySelector('[data-testid="combined-rail"]')).not.toBeNull();
 	});
 
+	it('uses one center column when the combined rail config is absent', () => {
+		const { container } = render(DetailShell, {
+			props: { ...combinedProps, right: undefined, combinedRailConfig: undefined },
+		});
+		const grid = container.querySelector('.detail-shell-grid');
+
+		expect(container.querySelector('[data-slot="surface-rail"]')).toBeNull();
+		expect(container.querySelector('[data-slot="surface-rail-mobile"]')).toBeNull();
+		expect(grid).toHaveClass('detail-shell-grid--single');
+		expect(grid).not.toHaveClass('detail-shell-grid--two');
+		expect(
+			container.querySelector('[data-slot="detail-shell-center"] [data-testid="center"]'),
+		).not.toBeNull();
+		expect(src()).toMatch(
+			/@media\s*\(min-width:\s*1024px\)[\s\S]*?\.detail-shell-grid--single\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+		);
+	});
+
 	it('omits the legacy left-rail wrapper', () => {
 		const { container } = render(DetailShell, { props: combinedProps });
 

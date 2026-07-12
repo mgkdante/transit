@@ -12,7 +12,8 @@
     · the 3-column body grid — `1fr 2fr 1fr` at ≥1024 (yesid's breakpoint, gap 2rem),
       collapsing to a single column below. Left rail (ToC) + right rail (stat cards) are
       sticky at `top: var(--chrome-offset)` (the single P5.3a offset knob). When no `right`
-      snippet is given the grid is 2-column (`1fr 3fr`);
+      snippet is given with a rendered left rail the grid is 2-column (`1fr 3fr`);
+      with neither rail it is one full-width center track;
     · the mobile order: below 1024 the side rails are hidden, the right-rail stats reflow
       to a top `mobileSummary` strip, and the ToC becomes the floating `TocPill`;
     · ONE IntersectionObserver (`observeActiveToc` over `[data-toc]`/`[data-section-index]`)
@@ -146,6 +147,7 @@
 	});
 
 	const pillEntries = $derived(mobileTocEntries ?? tocEntries);
+	const rendersLeftRail = $derived(Boolean(left || (combinedRail && combinedRailConfig)));
 </script>
 
 <article data-slot="detail-shell" class={cn('detail-shell', className)}>
@@ -173,7 +175,11 @@
 		</div>
 	{/if}
 
-	<div class="detail-shell-grid" class:detail-shell-grid--two={!right}>
+	<div
+		class="detail-shell-grid"
+		class:detail-shell-grid--two={rendersLeftRail && !right}
+		class:detail-shell-grid--single={!rendersLeftRail && !right}
+	>
 		{#if combinedRail && combinedRailConfig}
 			<SurfaceRail
 				rail={combinedRail}
@@ -274,9 +280,13 @@
 			gap: 2rem;
 			padding-block: 2.5rem;
 		}
-		/* 2-column when there is no right rail (e.g. a detail page without stat cards). */
+		/* 2-column when a real left rail renders without a right rail. */
 		.detail-shell-grid--two {
 			grid-template-columns: 1fr 3fr;
+		}
+		/* One full-width center track when neither rail renders. */
+		.detail-shell-grid--single {
+			grid-template-columns: minmax(0, 1fr);
 		}
 		/* The mobile summary strip is redundant once the sticky right rail is visible. */
 		.detail-shell-mobile-summary {
