@@ -8,6 +8,10 @@ function readSource(): string {
 	return readFileSync(resolve(process.cwd(), 'src/lib/components/shell/NavPill.svelte'), 'utf-8');
 }
 
+function baseMenuRule(source: string): string {
+	return source.match(/\n\t\.nav-menu\s*\{([^}]*)\}/)?.[1] ?? '';
+}
+
 describe('NavPill — structure', () => {
 	it('renders the floating pill with the four primary links in wayfinding order', () => {
 		const { getByTestId, getByRole } = render(NavPill, {
@@ -355,12 +359,25 @@ describe('NavPill — the pill chassis + --pill-h contract (source)', () => {
 		expect(source).toMatch(/\.nav-menu-toggle\s*\{[\s\S]*width:\s*44px;[\s\S]*height:\s*44px;/);
 	});
 
-	it('dresses both menu presentations in .glass-chrome (sheet ≤767, dropdown ≥768)', () => {
+	it('uses one anchored rounded dropdown at every width', () => {
 		const source = readSource();
+		const menuRule = baseMenuRule(source);
+
 		expect(source).toMatch(/class="nav-menu glass-chrome"/);
-		// ≥768 is an anchored dropdown pinned under the pill (top uses --pill-h + 8px).
+		expect(menuRule).toContain('inset-block: auto;');
+		expect(menuRule).toContain(
+			'inset-block-start: calc(1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + 8px);',
+		);
+		expect(menuRule).toContain('inset-inline-end: var(--nav-pill-right, 0.75rem);');
+		expect(menuRule).toContain('width: min(19rem, calc(100vw - 1.5rem));');
+		expect(menuRule).toContain('padding: 0.65rem;');
+		expect(menuRule).toContain('border-radius: var(--radius-xl);');
+		expect(menuRule).toMatch(/max-height:\s*min\([\s\S]*42rem\s*\);/);
+		expect(menuRule).not.toContain('inset-block: 0;');
+		expect(menuRule).not.toContain('max-height: 100dvh;');
+		expect(menuRule).not.toContain('border-radius: 0;');
 		expect(source).toMatch(
-			/@media \(min-width: 768px\)\s*\{[\s\S]*\.nav-menu\s*\{[\s\S]*var\(--pill-h\) \+ 8px\)/,
+			/@media \(min-width: 768px\)\s*\{\s*\.nav-menu\s*\{\s*max-height:\s*min\(calc\(100dvh - var\(--pill-h\) - 3rem\), 34rem\);/,
 		);
 	});
 });
