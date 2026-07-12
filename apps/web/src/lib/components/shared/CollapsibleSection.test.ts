@@ -19,6 +19,9 @@ const bodyContent = createRawSnippet(() => ({
 		<button type="button" data-testid="body-button">Child action</button>
 		<span role="button" tabindex="0" data-testid="body-rolebutton">Faux button</span>
 		<a href="/lines" data-testid="body-link">Child link</a>
+		<div data-card-interactive>
+			<span data-testid="body-interactive-descendant">Chart mark</span>
+		</div>
 	</div>`,
 }));
 
@@ -321,6 +324,17 @@ describe('CollapsibleSection - whole-card toggling', () => {
 		expect(body?.getAttribute('data-state')).toBe('open');
 
 		await fireEvent.click(getByTestId('body-rolebutton'));
+		expect(body?.getAttribute('data-state')).toBe('open');
+	});
+
+	it('keeps clicks inside a data-card-interactive boundary from toggling', async () => {
+		const { container, getByTestId } = render(CollapsibleSection, {
+			props: { title: 'Card', open: true, children: bodyContent },
+		});
+		const body = container.querySelector('.section-body');
+		expect(body?.getAttribute('data-state')).toBe('open');
+
+		await fireEvent.click(getByTestId('body-interactive-descendant'));
 		expect(body?.getAttribute('data-state')).toBe('open');
 	});
 

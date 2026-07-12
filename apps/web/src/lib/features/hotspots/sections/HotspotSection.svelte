@@ -105,6 +105,7 @@
 				bind:this={chartViewport}
 				class="hotspot-chart-viewport"
 				data-slot="hotspot-chart-viewport"
+				data-card-interactive
 				role={chartScrollable ? 'region' : undefined}
 				aria-label={chartScrollable ? chartScrollLabel : undefined}
 				tabindex={chartScrollable ? 0 : undefined}

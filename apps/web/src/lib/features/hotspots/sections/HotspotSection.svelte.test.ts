@@ -203,6 +203,13 @@ describe('HotspotSection evidence presentation', () => {
 		);
 	});
 
+	it('marks the chart viewport as a data-card-interactive boundary', () => {
+		const { container } = renderSection();
+		const viewport = container.querySelector('[data-slot="hotspot-chart-viewport"]');
+
+		expect(viewport).toHaveAttribute('data-card-interactive');
+	});
+
 	it('adds keyboard semantics only for real overflow and hides the cue at the right edge', async () => {
 		const view = renderSection();
 		const viewport = view.container.querySelector<HTMLElement>(

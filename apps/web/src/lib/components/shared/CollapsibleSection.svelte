@@ -150,7 +150,8 @@
 	// trigger already toggles, so skipping it prevents a double-toggle. The header
 	// stays the semantic button (aria-expanded, keyboard); this handler is a
 	// pointer convenience on top.
-	const INTERACTIVE_CHILD = 'a,button,input,select,textarea,[role="button"]';
+	const INTERACTIVE_CHILD =
+		'a,button,input,select,textarea,[role="button"],[data-card-interactive]';
 	function onCardClick(event: MouseEvent) {
 		const target = event.target as Element | null;
 		if (!target) return;
