@@ -110,11 +110,11 @@
 		flex-direction: column;
 		gap: 0.75rem;
 	}
-	:global(.alert-breakdown-grid) {
+	.alert-history-block :global(.alert-breakdown-grid) {
 		grid-template-columns: minmax(0, 1fr);
 	}
 	@media (min-width: 1024px) {
-		:global(.alert-breakdown-grid) {
+		.alert-history-block :global(.alert-breakdown-grid) {
 			grid-template-columns: repeat(auto-fit, minmax(min(var(--min-tile), 100%), 1fr));
 		}
 	}
