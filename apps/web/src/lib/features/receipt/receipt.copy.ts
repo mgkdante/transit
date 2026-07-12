@@ -13,6 +13,34 @@ import type { Locale } from '$lib/i18n';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export interface ReceiptCopy extends SurfaceHeadCopy {
+	/** Shared article-cover copy for the Daily Receipt surface. */
+	readonly article: {
+		readonly watermark: string;
+		readonly back: string;
+		readonly tagsAria: string;
+		readonly tags: readonly string[];
+		readonly generatedLabel: string;
+		readonly selectedLabel: string;
+		readonly sections: (count: number) => string;
+	};
+	/** Combined day-picker and table-of-contents rail. */
+	readonly rail: {
+		readonly label: string;
+		readonly open: string;
+		readonly close: string;
+		readonly controls: string;
+		readonly toc: string;
+		readonly counterPrefix: string;
+	};
+	/** Fixed article-card titles and subtitles. */
+	readonly cards: {
+		readonly main: { readonly title: string; readonly subtitle: string };
+		readonly time: { readonly title: string; readonly subtitle: string };
+		readonly delivered: { readonly title: string; readonly subtitle: string };
+		readonly silent: { readonly title: string; readonly subtitle: string };
+	};
+	/** Label used by caveat information cards. */
+	readonly caveatLabel: string;
 	/** Accessible group label for the date selector (the index of receipt dates). */
 	readonly dateSelectLabel: string;
 	/** ControlsRail overline naming the date-selector control zone. */
@@ -142,6 +170,42 @@ export const copy: Record<Locale, ReceiptCopy> = {
 		heading: 'Accountability receipt',
 		subheading: '// RECEIPT',
 		lede: 'One day, one receipt: the headline reliability of the service, the day it covers, and the worst of it, issued daily with nothing hidden.',
+		article: {
+			watermark: 'Receipt',
+			back: '← Back to the dashboard',
+			tagsAria: 'Page keywords',
+			tags: ['receipt', 'reliability', 'service', 'accountability'],
+			generatedLabel: 'GENERATED',
+			selectedLabel: 'FOR',
+			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
+		},
+		rail: {
+			label: 'Day & contents',
+			open: 'Open day controls and contents',
+			close: 'Close day controls and contents',
+			controls: 'Day',
+			toc: 'On this page',
+			counterPrefix: 'SEC',
+		},
+		cards: {
+			main: {
+				title: 'The receipt',
+				subtitle: 'The day’s reliability figures, affected service, and worst readings',
+			},
+			time: {
+				title: 'By time of day',
+				subtitle: 'Severe delays across the day’s service periods',
+			},
+			delivered: {
+				title: 'Service delivered',
+				subtitle: 'Scheduled service split into delivered, cancelled, and silent outcomes',
+			},
+			silent: {
+				title: 'Scheduled but never appeared',
+				subtitle: 'Lines with scheduled trips that never appeared in the live feed',
+			},
+		},
+		caveatLabel: 'Caveat',
 		dateSelectLabel: 'Choose a receipt day',
 		controlsLabel: 'Day',
 		datePicker: {
@@ -225,6 +289,43 @@ export const copy: Record<Locale, ReceiptCopy> = {
 		heading: "Reçu d'imputabilité",
 		subheading: '// REÇU',
 		lede: 'Un jour, un reçu : la fiabilité globale du service, la journée couverte et le pire de la journée, émis chaque jour, rien de caché.',
+		article: {
+			watermark: 'Reçu',
+			back: '← Retour au tableau de bord',
+			tagsAria: 'Mots-clés de la page',
+			tags: ['reçu', 'fiabilité', 'service', 'imputabilité'],
+			generatedLabel: 'PRODUIT',
+			selectedLabel: 'POUR LE',
+			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
+		},
+		rail: {
+			label: 'Jour et sommaire',
+			open: 'Ouvrir le choix du jour et le sommaire',
+			close: 'Fermer le choix du jour et le sommaire',
+			controls: 'Jour',
+			toc: 'Sur cette page',
+			counterPrefix: 'SEC',
+		},
+		cards: {
+			main: {
+				title: 'Le reçu',
+				subtitle: 'Les chiffres de fiabilité du jour, le service touché et les pires lectures',
+			},
+			time: {
+				title: 'Par moment de la journée',
+				subtitle: 'Les retards graves selon les périodes de service de la journée',
+			},
+			delivered: {
+				title: 'Service livré',
+				subtitle: 'Le service planifié réparti entre livré, annulé et silencieux',
+			},
+			silent: {
+				title: 'Planifiés mais jamais apparus',
+				subtitle:
+					'Les lignes dont des voyages planifiés ne sont jamais apparus dans le flux en direct',
+			},
+		},
+		caveatLabel: 'Mise en garde',
 		dateSelectLabel: 'Choisir une journée',
 		controlsLabel: 'Jour',
 		datePicker: {
@@ -298,7 +399,7 @@ export const copy: Record<Locale, ReceiptCopy> = {
 		dayVerdict: {
 			label: 'Verdict du jour',
 			otp: (otpPct) => `Le réseau a été à l’heure ${otpPct} ce jour-là`,
-			worst: (name, deltaPts) => `pire ligne ${name} (${deltaPts} pts perdus)`,
+			worst: (name, deltaPts) => `pire ligne ${name} (${deltaPts} perdus)`,
 			affected: (lines) => `${lines} lignes touchées`,
 			completeness: (pct) => `service assuré à ${pct}`,
 			completenessStandDown: 'complétude du service pas encore disponible',

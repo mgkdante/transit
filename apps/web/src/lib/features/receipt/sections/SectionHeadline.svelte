@@ -23,14 +23,15 @@
 			name: string,
 		) => { tip: string; href: string; label: string; linkLabel: string };
 		locale: Locale;
+		headingLevel?: 2 | 3;
 	}
-	let { kpis, heading, noData, info, locale }: SectionHeadlineProps = $props();
+	let { kpis, heading, noData, info, locale, headingLevel = 2 }: SectionHeadlineProps = $props();
 
 	const headingInfo = $derived(info('otp', heading));
 </script>
 
 <section class="receipt-panel receipt-primary" data-slot="receipt-headline">
-	<SectionHeading level={2} overline={heading}>
+	<SectionHeading level={headingLevel} overline={heading}>
 		{#snippet explainer()}
 			<MetricInfo
 				tip={headingInfo.tip}
@@ -83,7 +84,12 @@
 		margin: 0;
 		display: grid;
 		gap: 1.1rem 1.75rem;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: minmax(0, 1fr);
+	}
+	@container receipt (min-width: 24rem) {
+		.receipt-metrics {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
 	}
 	@container receipt (min-width: 46rem) {
 		.receipt-metrics {

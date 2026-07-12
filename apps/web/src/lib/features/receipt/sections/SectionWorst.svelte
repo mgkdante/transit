@@ -22,14 +22,15 @@
 			name: string,
 		) => { tip: string; href: string; label: string; linkLabel: string };
 		locale: Locale;
+		headingLevel?: 2 | 3;
 	}
-	let { worst, heading, info, locale }: SectionWorstProps = $props();
+	let { worst, heading, info, locale, headingLevel = 2 }: SectionWorstProps = $props();
 
 	const headingInfo = $derived(info('otp', heading));
 </script>
 
 <section class="receipt-panel receipt-worst-panel" data-slot="receipt-worst">
-	<SectionHeading level={2} overline={heading}>
+	<SectionHeading level={headingLevel} overline={heading}>
 		{#snippet explainer()}
 			<MetricInfo
 				tip={headingInfo.tip}

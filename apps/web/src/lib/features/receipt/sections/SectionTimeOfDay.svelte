@@ -12,6 +12,7 @@
 	import type { Locale } from '$lib/i18n';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { RankedRow } from '$lib/components/dataviz';
+	import TypedInformationCard from '$lib/components/shared/TypedInformationCard.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { ReceiptShiftRow } from '../selectors/timeOfDay';
@@ -21,19 +22,29 @@
 		heading: string;
 		subtitle: string;
 		caveat: string;
+		caveatLabel: string;
 		info: (
 			key: MetricKey | SupplementalMetricKey,
 			name: string,
 		) => { tip: string; href: string; label: string; linkLabel: string };
 		locale: Locale;
+		headingLevel?: 2 | 3;
 	}
-	let { rows, heading, subtitle, caveat, info }: SectionTimeOfDayProps = $props();
+	let {
+		rows,
+		heading,
+		subtitle,
+		caveat,
+		caveatLabel,
+		info,
+		headingLevel = 2,
+	}: SectionTimeOfDayProps = $props();
 
 	const headingInfo = $derived(info('severe', heading));
 </script>
 
 <section class="receipt-tod" data-slot="receipt-time-of-day" aria-label={heading}>
-	<SectionHeading level={2} overline={heading}>
+	<SectionHeading level={headingLevel} overline={heading}>
 		{#snippet explainer()}
 			<MetricInfo
 				tip={headingInfo.tip}
@@ -58,7 +69,9 @@
 			/>
 		{/each}
 	</div>
-	<p class="receipt-tod-caveat">{caveat}</p>
+	<TypedInformationCard kind="caveat" label={caveatLabel}>
+		<p class="receipt-tod-caveat-copy">{caveat}</p>
+	</TypedInformationCard>
 </section>
 
 <style>
@@ -72,12 +85,9 @@
 		flex-direction: column;
 		gap: 0.5rem;
 	}
-	.receipt-tod-caveat {
+	.receipt-tod-caveat-copy {
 		margin: 0;
 		max-width: 100%;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		line-height: 1.4;
-		color: var(--muted-foreground);
+		color: var(--foreground);
 	}
 </style>

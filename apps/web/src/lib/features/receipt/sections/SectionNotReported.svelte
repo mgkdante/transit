@@ -25,15 +25,16 @@
 		caveat: string;
 		/** "Showing 50 of 200" — rendered only when the list is capped below the total. */
 		shownOfTotal: (shown: number, total: number) => string;
+		headingLevel?: 2 | 3;
 	}
-	let { list, heading, caveat, shownOfTotal }: SectionNotReportedProps = $props();
+	let { list, heading, caveat, shownOfTotal, headingLevel = 2 }: SectionNotReportedProps = $props();
 
 	// Show the shown/total note only when the pre-cap total exceeds the shown rows.
 	const truncated = $derived(list.total != null && list.total > list.shown);
 </script>
 
 <section class="receipt-not-reported" data-slot="receipt-not-reported" aria-label={heading}>
-	<SectionHeading level={2} overline={heading} />
+	<SectionHeading level={headingLevel} overline={heading} />
 	<p class="receipt-not-reported-caveat" data-slot="receipt-not-reported-caveat">{caveat}</p>
 	{#if truncated}
 		<p class="receipt-not-reported-note" data-slot="receipt-shown-of-total">
@@ -81,10 +82,9 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
-	/* Auto-fit grid: one column on a phone, several across a wide desktop. */
 	.receipt-not-reported-list {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+		grid-template-columns: minmax(0, 1fr);
 		gap: 0.5rem 1.25rem;
 		max-width: 100%;
 		margin: 0;
@@ -103,5 +103,10 @@
 	.receipt-not-reported-link:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
+	}
+	@media (min-width: 1024px) {
+		.receipt-not-reported-list {
+			grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+		}
 	}
 </style>

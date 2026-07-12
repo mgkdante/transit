@@ -32,6 +32,7 @@
 			name: string,
 		) => { tip: string; href: string; label: string; linkLabel: string };
 		locale: Locale;
+		headingLevel?: 2 | 3;
 	}
 	let {
 		state,
@@ -43,13 +44,14 @@
 		noData,
 		info,
 		locale,
+		headingLevel = 2,
 	}: SectionStateCutsProps = $props();
 
 	const i = $derived(info('cancellation', completenessLabel));
 </script>
 
 <section class="receipt-states" data-slot="receipt-state-cuts" aria-label={heading}>
-	<SectionHeading level={2} overline={heading} />
+	<SectionHeading level={headingLevel} overline={heading} />
 
 	<!-- The ONE completeness reading (heroed from service_completeness_pct). A null
 	     reading reads the styled honest-absence chip + the ramp-in note, never a 0. -->
