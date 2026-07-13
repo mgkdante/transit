@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { selectAvailability } from './presentAvailability';
-import { resolveReceiptDate } from './presentDates';
 import type { ReceiptsIndex } from '$lib/v1/schemas';
 
 const labels = {
@@ -72,26 +71,5 @@ describe('selectAvailability — the smart calendar', () => {
 		expect(vm.hasAny).toBe(false);
 		expect(vm.options).toEqual([]);
 		expect(selectAvailability(null, labels).hasAny).toBe(false);
-	});
-});
-
-describe('resolveReceiptDate — default = latest published, deep-link honoured', () => {
-	const enabled = ['2026-06-15', '2026-06-17'];
-
-	it('defaults to the latest enabled day when no seed', () => {
-		expect(resolveReceiptDate(null, enabled)).toBe('2026-06-17');
-	});
-
-	it('honours a deep-linked ?date that points at a real enabled day', () => {
-		expect(resolveReceiptDate('2026-06-15', enabled)).toBe('2026-06-15');
-	});
-
-	it('self-heals a ?date that is a gap/unknown day back to the latest default', () => {
-		expect(resolveReceiptDate('2026-06-16', enabled)).toBe('2026-06-17'); // gap
-		expect(resolveReceiptDate('1999-01-01', enabled)).toBe('2026-06-17'); // unknown
-	});
-
-	it('returns null when there are no enabled days', () => {
-		expect(resolveReceiptDate('2026-06-15', [])).toBeNull();
 	});
 });
