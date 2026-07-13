@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IsoUtc, Receipt, ReceiptsIndex } from '$lib/v1/schemas';
+import { dataRefresh } from '$lib/stores';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 
 const ports = vi.hoisted(() => ({
@@ -31,10 +32,12 @@ import AccountabilityReceipt from './AccountabilityReceipt.svelte';
 
 function deferred<T>() {
 	let resolve!: (value: T) => void;
-	const promise = new Promise<T>((done) => {
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((done, fail) => {
 		resolve = done;
+		reject = fail;
 	});
-	return { promise, resolve };
+	return { promise, resolve, reject };
 }
 
 const DATES = ['2026-06-15', '2026-06-16', '2026-06-17'] as const;
@@ -223,6 +226,39 @@ describe('AccountabilityReceipt — asynchronous date transitions', () => {
 				'aria-current',
 				'location',
 			),
+		);
+	});
+
+	it('removes stale cards and TOC after a same-date refresh fails, then restores continuity on retry', async () => {
+		const { container } = render(AccountabilityReceipt);
+		await waitFor(() => expect(ports.getReceipt).toHaveBeenCalledWith('2026-06-17'));
+		receiptGates.get('2026-06-17')!.resolve(receipt('2026-06-17'));
+
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		await waitFor(() => expect(card(container, 'receipt-silent')).not.toBeNull());
+		await activate(container, 'receipt-silent');
+		expect(within(container).getByText('4 sections')).toBeInTheDocument();
+
+		const failedRefresh = deferred<Receipt | null>();
+		receiptGates.set('2026-06-17', failedRefresh);
+		dataRefresh.bumpEpoch();
+		await waitFor(() => expect(ports.getReceipt).toHaveBeenCalledTimes(2));
+		failedRefresh.reject(new Error('refresh failed'));
+
+		await waitFor(() => expect(within(container).getByRole('alert')).toBeInTheDocument());
+		expect(container.querySelector('[data-toc="receipt-main"]')).toBeNull();
+		expect(rail.querySelector('[data-slot="section-toc"]')).toBeNull();
+		expect(within(container).queryByText('4 sections')).toBeNull();
+
+		const successfulRetry = deferred<Receipt | null>();
+		receiptGates.set('2026-06-17', successfulRetry);
+		await fireEvent.click(within(container).getByRole('button', { name: 'Retry' }));
+		await waitFor(() => expect(ports.getReceipt).toHaveBeenCalledTimes(3));
+		successfulRetry.resolve(receipt('2026-06-17'));
+		await waitFor(() =>
+			expect(
+				within(rail).getByRole('button', { name: 'Scheduled but never appeared' }),
+			).toHaveAttribute('aria-current', 'location'),
 		);
 	});
 });

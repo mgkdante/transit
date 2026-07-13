@@ -185,6 +185,7 @@
 		selectedDate !== '' &&
 			receipt.settled &&
 			!receipt.loading &&
+			receipt.error == null &&
 			receipt.data != null &&
 			receipt.data.date === selectedDate,
 	);
