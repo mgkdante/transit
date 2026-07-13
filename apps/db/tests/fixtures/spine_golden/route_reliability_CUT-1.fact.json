@@ -1336,9 +1336,9 @@
           "otp_pct": 50,
           "p50_min": 2.5,
           "p90_min": 6.4,
-          "prior_observation_count": 8,
-          "prior_on_time": 4,
-          "prior_otp_pct": 50,
+          "prior_observation_count": null,
+          "prior_on_time": null,
+          "prior_otp_pct": null,
           "severe_pct": 25.0,
           "wilson_hi": 78.5,
           "wilson_lo": 21.5
