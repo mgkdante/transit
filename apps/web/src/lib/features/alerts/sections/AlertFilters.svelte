@@ -160,6 +160,7 @@
 			coverageText={historyCoverageText}
 			selectionText={historySelectionText}
 			announcement={historyAnnouncement}
+			liveAnnouncement={false}
 			onRangeChange={onWindowChange}
 		/>
 	</div>

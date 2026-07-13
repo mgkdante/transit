@@ -195,6 +195,26 @@ describe('HistoryNavigator — caller-owned neighbors and copy', () => {
 		expect(view.getByRole('status')).toBe(status);
 		expect(status).toHaveTextContent('Showing the nearest available window.');
 	});
+
+	it('can keep correction copy visible without exposing a second live region', () => {
+		const view = render(HistoryNavigator, {
+			props: {
+				mode: 'range',
+				locale: 'en',
+				labels: EN,
+				availableDates: DATES,
+				announcement: 'Showing the nearest available window.',
+				liveAnnouncement: false,
+			},
+		});
+
+		const copy = view.container.querySelector('[data-slot="history-announcement"]');
+		expect(copy).toHaveTextContent('Showing the nearest available window.');
+		expect(copy).not.toHaveAttribute('role');
+		expect(copy).not.toHaveAttribute('aria-live');
+		expect(copy).not.toHaveAttribute('aria-atomic');
+		expect(view.queryByRole('status')).toBeNull();
+	});
 });
 
 describe('HistoryNavigator — duplicate mount and narrow-rail safety', () => {

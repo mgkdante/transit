@@ -428,6 +428,16 @@
 	});
 </script>
 
+<p
+	class="sr-only"
+	data-slot="history-page-announcement"
+	role="status"
+	aria-live="polite"
+	aria-atomic="true"
+>
+	{historyAnnouncement ?? ''}
+</p>
+
 <DetailShell
 	class="receipt-detail"
 	bind:activeId
@@ -476,6 +486,7 @@
 						coverageText={historyCoverageText}
 						selectionText={historySelectionText}
 						announcement={historyAnnouncement}
+						liveAnnouncement={false}
 						{locale}
 						labels={{
 							group: t.history.group,

@@ -606,6 +606,16 @@
 	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
 {/snippet}
 
+<p
+	class="sr-only"
+	data-slot="history-page-announcement"
+	role="status"
+	aria-live="polite"
+	aria-atomic="true"
+>
+	{historyAnnouncement ?? ''}
+</p>
+
 <DetailShell
 	class="alert-history-detail"
 	bind:activeId

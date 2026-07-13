@@ -4,6 +4,7 @@ import { HistoryArtifactContractError } from '$lib/v1/history';
 import type { IsoUtc, Receipt, ReceiptsIndex } from '$lib/v1/schemas';
 import { dataRefresh } from '$lib/stores';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { copy as receiptCopy } from './receipt.copy';
 
 const ports = vi.hoisted(() => ({
 	getReceiptsIndex: vi.fn(),
@@ -16,6 +17,7 @@ const nav = vi.hoisted(() => ({
 		nav.url = new URL(url, 'http://localhost');
 	}),
 }));
+const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
 
 vi.mock('$lib/v1', () => ({
 	getReceiptsIndex: ports.getReceiptsIndex,
@@ -33,6 +35,10 @@ vi.mock('$app/state', () => ({
 vi.mock('$app/navigation', () => ({
 	replaceState: nav.replaceState,
 }));
+vi.mock('$lib/i18n', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('$lib/i18n')>();
+	return { ...actual, getLocale: () => currentLocale.value };
+});
 
 import AccountabilityReceipt from './AccountabilityReceipt.svelte';
 
@@ -132,6 +138,7 @@ async function activate(container: HTMLElement, id: string): Promise<void> {
 
 beforeEach(() => {
 	cleanup();
+	currentLocale.value = 'en';
 	quietModeStore.resetForTest();
 	localStorage.removeItem('transit:quiet-mode');
 	for (const key of ['receipt-controls', 'receipt-toc']) {
@@ -155,6 +162,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	cleanup();
+	currentLocale.value = 'en';
 	quietModeStore.resetForTest();
 	vi.unstubAllGlobals();
 });
@@ -514,12 +522,76 @@ describe('AccountabilityReceipt — raw URL corrections', () => {
 		expect(nav.replaceState).toHaveBeenCalledTimes(1);
 	});
 
+	it.each([
+		{
+			locale: 'en' as const,
+			expected: 'That date was not valid. Showing the latest receipt.',
+		},
+		{
+			locale: 'fr' as const,
+			expected: 'Cette date n’était pas valide. Affichage du reçu le plus récent.',
+		},
+	])(
+		'exposes one $locale page announcement while collapsed and before/after the mobile sheet',
+		async ({ locale, expected }) => {
+			currentLocale.value = locale;
+			localStorage.setItem('transit:quiet-mode', 'true');
+			nav.url = new URL('http://localhost/receipt?date=');
+			const { container } = render(AccountabilityReceipt);
+			const bundle = receiptCopy[locale];
+
+			await waitFor(() => expect(ports.getAdvertisedReceipt).toHaveBeenCalledTimes(1));
+			receiptGates.get('2026-06-17')!.resolve(receipt('2026-06-17'));
+			await waitFor(() => expect(within(container).getByText('82%')).toBeInTheDocument());
+			await waitFor(() =>
+				expect(
+					container.querySelector('[data-slot="history-page-announcement"]'),
+				).toHaveTextContent(expected),
+			);
+			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+			expect(within(rail).getByRole('button', { name: bundle.rail.controls })).toHaveAttribute(
+				'aria-expanded',
+				'false',
+			);
+			expect(within(container).queryByRole('dialog')).toBeNull();
+
+			let liveRegions = container.querySelectorAll('[role="status"][aria-live="polite"]');
+			expect(liveRegions).toHaveLength(1);
+			expect(liveRegions[0]).toHaveTextContent(expected);
+			expect(liveRegions[0]?.closest('[data-slot="surface-rail"]')).toBeNull();
+			let navigatorCopies = container.querySelectorAll('[data-slot="history-announcement"]');
+			expect(navigatorCopies).toHaveLength(1);
+			expect(navigatorCopies[0]).toHaveTextContent(expected);
+			expect(navigatorCopies[0]).not.toHaveAttribute('role');
+
+			await fireEvent.click(
+				within(container).getByRole('button', { name: new RegExp(bundle.rail.open, 'i') }),
+			);
+			expect(
+				within(container).getByRole('dialog', { name: bundle.rail.label }),
+			).toBeInTheDocument();
+			liveRegions = container.querySelectorAll('[role="status"][aria-live="polite"]');
+			expect(liveRegions).toHaveLength(1);
+			navigatorCopies = container.querySelectorAll('[data-slot="history-announcement"]');
+			expect(navigatorCopies).toHaveLength(2);
+			for (const copy of navigatorCopies) {
+				expect(copy).toHaveTextContent(expected);
+				expect(copy).not.toHaveAttribute('role');
+				expect(copy).not.toHaveAttribute('aria-live');
+			}
+			expect(nav.replaceState).toHaveBeenCalledTimes(1);
+		},
+	);
+
 	it('waits for the index before correcting a present blank date', async () => {
 		const indexGate = deferred<ReceiptsIndex>();
 		ports.getReceiptsIndex.mockReturnValue(indexGate.promise);
 		nav.url = new URL('http://localhost/receipt?date=');
 		const { container } = render(AccountabilityReceipt);
+		const pageAnnouncement = container.querySelector('[data-slot="history-page-announcement"]');
 
+		expect(pageAnnouncement).not.toBeNull();
+		expect(pageAnnouncement?.textContent?.trim()).toBe('');
 		expect(nav.replaceState).not.toHaveBeenCalled();
 		expect(ports.getAdvertisedReceipt).not.toHaveBeenCalled();
 		indexGate.resolve({
@@ -528,6 +600,12 @@ describe('AccountabilityReceipt — raw URL corrections', () => {
 		});
 		await waitFor(() => expect(ports.getAdvertisedReceipt).toHaveBeenCalledTimes(1));
 		await waitFor(() => expect(nav.replaceState).toHaveBeenCalledTimes(1));
+		expect(container.querySelector('[data-slot="history-page-announcement"]')).toBe(
+			pageAnnouncement,
+		);
+		expect(pageAnnouncement).toHaveTextContent(
+			'That date was not valid. Showing the latest receipt.',
+		);
 		expect(container.querySelector('[data-slot="history-announcement"]')).toHaveTextContent(
 			'That date was not valid. Showing the latest receipt.',
 		);

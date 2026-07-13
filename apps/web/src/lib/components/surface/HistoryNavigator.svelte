@@ -24,6 +24,7 @@
 		readonly coverageText?: string | null;
 		readonly selectionText?: string | null;
 		readonly announcement?: string | null;
+		readonly liveAnnouncement?: boolean;
 		readonly onRangeChange?: (value: DateWindow | undefined) => void;
 		readonly onDateChange?: (date: string | undefined) => void;
 		readonly emptyReason?: AbsenceReasonKey;
@@ -47,6 +48,7 @@
 		coverageText = null,
 		selectionText = null,
 		announcement = null,
+		liveAnnouncement = true,
 		onRangeChange,
 		onDateChange,
 		emptyReason = 'no-observations',
@@ -106,9 +108,9 @@
 		<p
 			class="history-navigator__announcement"
 			data-slot="history-announcement"
-			role="status"
-			aria-live="polite"
-			aria-atomic="true"
+			role={liveAnnouncement ? 'status' : undefined}
+			aria-live={liveAnnouncement ? 'polite' : undefined}
+			aria-atomic={liveAnnouncement ? 'true' : undefined}
 		>
 			{announcement ?? ''}
 		</p>

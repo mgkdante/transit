@@ -1280,6 +1280,52 @@ describe('AlertHistory retained archive integration', () => {
 		expect(replaceState).toHaveBeenCalledTimes(1);
 	});
 
+	it('announces a correction once outside collapsed controls before and after the mobile sheet opens', async () => {
+		localStorage.setItem('transit:quiet-mode', 'true');
+		(fixture as AlertHistory).window_start = '2026-06-20';
+		(fixture as AlertHistory).window_end = '2026-06-22';
+		archiveState.index = makeArchiveIndex();
+		archiveState.entries = [
+			makeArchiveEntry('archive-current', 'Archive current alert', '2026-06-21', '2026-06-21'),
+		];
+		setUrl('http://localhost/alerts?from=&to=&route=24');
+
+		const { container } = render(AlertHistoryScreen);
+		const expected = copyEn.filters.history.correction.malformed;
+
+		await waitFor(() => expect(nav.url.searchParams.has('from')).toBe(false));
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		await waitFor(() =>
+			expect(within(rail).getByRole('button', { name: copyEn.filters.railLabel })).toHaveAttribute(
+				'aria-expanded',
+				'false',
+			),
+		);
+		expect(screen.queryByRole('dialog')).toBeNull();
+
+		let liveRegions = container.querySelectorAll('[role="status"][aria-live="polite"]');
+		expect(liveRegions).toHaveLength(1);
+		expect(liveRegions[0]).toHaveTextContent(expected);
+		expect(liveRegions[0]?.closest('[data-slot="surface-rail"]')).toBeNull();
+		let navigatorCopies = container.querySelectorAll('[data-slot="history-announcement"]');
+		expect(navigatorCopies).toHaveLength(1);
+		expect(navigatorCopies[0]).toHaveTextContent(expected);
+		expect(navigatorCopies[0]).not.toHaveAttribute('role');
+
+		await fireEvent.click(screen.getByRole('button', { name: new RegExp(copyEn.rail.open, 'i') }));
+		expect(screen.getByRole('dialog', { name: copyEn.rail.label })).toBeInTheDocument();
+		liveRegions = container.querySelectorAll('[role="status"][aria-live="polite"]');
+		expect(liveRegions).toHaveLength(1);
+		navigatorCopies = container.querySelectorAll('[data-slot="history-announcement"]');
+		expect(navigatorCopies).toHaveLength(2);
+		for (const copy of navigatorCopies) {
+			expect(copy).toHaveTextContent(expected);
+			expect(copy).not.toHaveAttribute('role');
+			expect(copy).not.toHaveAttribute('aria-live');
+		}
+		expect(replaceState).toHaveBeenCalledTimes(1);
+	});
+
 	it('renders localized coverage, selection, and correction copy', async () => {
 		currentLocale.value = 'fr';
 		(fixture as AlertHistory).window_start = '2026-06-20';
