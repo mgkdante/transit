@@ -29,6 +29,10 @@ export const AlertHistoryEntrySchema = z.object({
 	header_text: z.string().nullable().optional(),
 	/** Optional archived English headline; null when absent. Never resolveLabel. */
 	header_text_en: z.string().nullable().optional(),
+	/** Raw source FR description; display cleanup belongs to alertDisplayText. */
+	description: z.string().nullable().optional(),
+	/** Raw source EN description; honest-null when STM did not publish English. */
+	description_en: z.string().nullable().optional(),
 	// Free-string severity (NOT the live SeverityCode enum); null when absent.
 	severity: z.string().nullable().optional(),
 	routes: z.array(z.string()).optional(),

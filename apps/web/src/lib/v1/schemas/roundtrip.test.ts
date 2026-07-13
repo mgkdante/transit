@@ -730,6 +730,8 @@ describe('alert_history — S15 additive (window envelope + entry cause/effect/u
 				{
 					id: 'h1',
 					severity: 'high',
+					description: '<p>Arrêts annulés.</p>',
+					description_en: '<p>Stops cancelled.</p>',
 					cause: 'CONSTRUCTION',
 					effect: 'DETOUR',
 					severity_level: 'WARNING',
@@ -740,7 +742,11 @@ describe('alert_history — S15 additive (window envelope + entry cause/effect/u
 				{ id: 'h2' },
 			],
 		};
-		expect(() => parsePort('alert_history', AlertHistorySchema, fixture)).not.toThrow();
+		const parsed = parsePort('alert_history', AlertHistorySchema, fixture);
+		expect(parsed.alerts?.[0]).toMatchObject({
+			description: '<p>Arrêts annulés.</p>',
+			description_en: '<p>Stops cancelled.</p>',
+		});
 	});
 
 	it('still parses a LEGACY history with none of the S15 fields (additive-only)', () => {
