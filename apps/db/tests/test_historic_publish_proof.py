@@ -474,6 +474,50 @@ def _replace_public_model(fixture: PublicFixture, path: str, model: object) -> N
     fixture.public_bytes[path] = _json_bytes(model)
 
 
+@pytest.mark.parametrize(
+    ("label", "unsafe_path"),
+    [
+        ("space_raw", "historic/alerts/index evil.json"),
+        ("space_encoded", "historic/alerts/index%20evil.json"),
+        ("space_double_encoded", "historic/alerts/index%2520evil.json"),
+        ("tab_raw", "historic/alerts/index\tevil.json"),
+        ("tab_encoded", "historic/alerts/index%09evil.json"),
+        ("tab_double_encoded", "historic/alerts/index%2509evil.json"),
+        ("crlf_raw", "historic/alerts/index\r\nevil.json"),
+        ("crlf_encoded", "historic/alerts/index%0d%0aevil.json"),
+        ("crlf_double_encoded", "historic/alerts/index%250d%250aevil.json"),
+        ("nul_raw", "historic/alerts/index\x00evil.json"),
+        ("nul_encoded", "historic/alerts/index%00evil.json"),
+        ("nul_double_encoded", "historic/alerts/index%2500evil.json"),
+        ("del_raw", "historic/alerts/index\x7fevil.json"),
+        ("del_encoded", "historic/alerts/index%7fevil.json"),
+        ("del_double_encoded", "historic/alerts/index%257fevil.json"),
+    ],
+)
+def test_historic_publish_proof_rejects_control_paths_before_url_construction(
+    label: str,
+    unsafe_path: str,
+) -> None:
+    fixture = _complete_public_fixture()
+    default_index_path = "historic/alerts/index.json"
+    alert_index_bytes = fixture.public_bytes[default_index_path]
+    manifest = Manifest.model_validate_json(fixture.public_bytes["manifest.json"])
+    manifest.files.historic.alerts_index = unsafe_path
+    _replace_public_model(fixture, "manifest.json", manifest)
+
+    def fetch_override(url: str) -> bytes:
+        path = urlsplit(url).path.split("/v1/stm/", 1)[1]
+        return fixture.public_bytes.get(path, alert_index_bytes)
+
+    report = _build_report(fixture, fetch_override=fetch_override)
+
+    assert report.status == "fail"
+    artifact = report.public["artifacts"][unsafe_path]
+    assert artifact["url"] is None
+    assert artifact["status"] == "fail"
+    assert artifact["failures"] == ["unsafe_public_path"]
+
+
 def _header_only_fixture() -> PublicFixture:
     fixture = _complete_public_fixture()
     index_path = "historic/alerts/index.json"

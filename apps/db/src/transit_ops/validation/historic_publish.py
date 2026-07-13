@@ -144,6 +144,10 @@ def _safe_public_path(path: str) -> str:
         or parsed.query
         or parsed.fragment
         or any(segment in {"", ".", ".."} for segment in segments)
+        or any(
+            character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F
+            for character in canonical
+        )
     ):
         raise ValueError("unsafe_public_path")
     return canonical
