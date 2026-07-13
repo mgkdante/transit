@@ -394,7 +394,9 @@ _C2_TOUCHED_SQL_SHA256 = {
     # off the 0077 child table. Re-frozen AGAIN in the S15 review fix wave (F3):
     # the periods subquery became DISTINCT ON (period_index) newest-version-wins so
     # re-rowed multi-period alerts cannot emit duplicate period_index bounds.
-    "alerts.history": "ff8c0307610b66ff95286be16558397a2d56b8bee8a49e915ef874e1f52d85a1",
+    # Re-frozen for 0079: two source-description columns are deterministic MAX()
+    # passthroughs; the grouping, ordering, cap, and alert identity are unchanged.
+    "alerts.history": "4ff90b3e64c76a2020094843a11e88b060a07604f9209554d486172dbfd9d5a4",
     "route.weak_stops.by_grain": "95b4e55b3a19a89b6bd48ca465cf3d7f107e0d1ba4572345bd84e496efc6e270",
 }
 
