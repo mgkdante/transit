@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal, TypeVar
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
@@ -92,6 +93,8 @@ class HistoricPublishProofReport:
 
 OperationalErrorTypes = (OSError, ValueError, SQLAlchemyError)
 PayloadT = TypeVar("PayloadT", bound=BaseModel)
+_PERCENT_ESCAPE = re.compile(r"%([0-9a-fA-F]{2})")
+_ENCODED_UNSAFE_BYTES = {ord(character) for character in "./\\?#:@"}
 
 
 def _has_source_text(alert: object) -> bool:
@@ -117,21 +120,33 @@ def _has_description(alert: object) -> bool:
 
 
 def _safe_public_path(path: str) -> str:
-    parsed = urlsplit(path)
-    segments = path.split("/")
+    canonical = path
+    while True:
+        if any(
+            int(match.group(1), 16) in _ENCODED_UNSAFE_BYTES
+            for match in _PERCENT_ESCAPE.finditer(canonical)
+        ):
+            raise ValueError("unsafe_public_path")
+        decoded = unquote(canonical, errors="strict")
+        if decoded == canonical:
+            break
+        canonical = decoded
+
+    parsed = urlsplit(canonical)
+    segments = canonical.split("/")
     if (
-        not path
+        not canonical
         or parsed.scheme
         or parsed.netloc
-        or path.startswith("/")
-        or "\\" in path
+        or canonical.startswith("/")
+        or "\\" in canonical
+        or "%" in canonical
         or parsed.query
         or parsed.fragment
         or any(segment in {"", ".", ".."} for segment in segments)
-        or any("%2f" in segment.casefold() or "%5c" in segment.casefold() for segment in segments)
     ):
         raise ValueError("unsafe_public_path")
-    return path
+    return canonical
 
 
 def _add_failure(
@@ -514,10 +529,23 @@ def _index_evidence(
     }
 
 
-def _boundary_values(values: Sequence[str]) -> list[str]:
-    if not values:
+def _boundary_values(
+    values: Sequence[str],
+    *,
+    failures: list[str],
+    artifact: dict[str, object],
+    order_failure: str,
+    duplicate_failure: str,
+) -> list[str]:
+    ordered = list(values)
+    if ordered != sorted(ordered):
+        _add_failure(failures, order_failure, artifact)
+    if len(set(ordered)) != len(ordered):
+        _add_failure(failures, duplicate_failure, artifact)
+    unique = sorted(set(ordered))
+    if not unique:
         return []
-    return list(dict.fromkeys((values[0], values[-1])))
+    return list(dict.fromkeys((unique[0], unique[-1])))
 
 
 def _message_section(
@@ -533,6 +561,10 @@ def _message_section(
         status = "no_data"
     elif expected_alert_count is None or public_alert_count is None:
         status = "unavailable"
+    elif database_source_text_count is None or public_source_text_count is None:
+        status = "unavailable"
+    elif database_source_text_count <= 0 or public_source_text_count <= 0:
+        status = "missing"
     else:
         status = "ok"
     return {
@@ -646,6 +678,7 @@ def build_historic_publish_proof(
 
     if public_root is not None:
         resolved_fetch = fetch_bytes or _default_fetch_bytes
+        proof_query = f"proof={uuid4().hex}"
         manifest, _, manifest_artifact = _fetch_model(
             "manifest.json",
             Manifest,
@@ -653,7 +686,7 @@ def build_historic_publish_proof(
             fetch_bytes=resolved_fetch,
             artifacts=artifacts,
             failures=failures,
-            query=f"proof={uuid4().hex}",
+            query=proof_query,
         )
         historic_files = ManifestHistoricFiles()
         if manifest is not None:
@@ -673,6 +706,7 @@ def build_historic_publish_proof(
             fetch_bytes=resolved_fetch,
             artifacts=artifacts,
             failures=failures,
+            query=proof_query,
         )
         receipts_index, _, receipts_index_artifact = _fetch_model(
             historic_files.receipts_index,
@@ -681,6 +715,7 @@ def build_historic_publish_proof(
             fetch_bytes=resolved_fetch,
             artifacts=artifacts,
             failures=failures,
+            query=proof_query,
         )
         routes_index, _, routes_index_artifact = _fetch_model(
             historic_files.route_reliability_index,
@@ -689,6 +724,7 @@ def build_historic_publish_proof(
             fetch_bytes=resolved_fetch,
             artifacts=artifacts,
             failures=failures,
+            query=proof_query,
         )
         alert_history, _, history_artifact = _fetch_model(
             historic_files.alert_history,
@@ -697,6 +733,7 @@ def build_historic_publish_proof(
             fetch_bytes=resolved_fetch,
             artifacts=artifacts,
             failures=failures,
+            query=proof_query,
         )
 
         indexes = public["indexes"]
@@ -751,6 +788,7 @@ def build_historic_publish_proof(
                     fetch_bytes=resolved_fetch,
                     artifacts=artifacts,
                     failures=failures,
+                    query=proof_query,
                 )
                 if raw is not None:
                     raw_sha256 = hashlib.sha256(raw).hexdigest()
@@ -810,7 +848,13 @@ def build_historic_publish_proof(
                 _add_failure(failures, "public_legacy_count_mismatch", history_artifact)
 
         if receipts_index is not None:
-            receipt_boundaries = _boundary_values(receipts_index.dates)
+            receipt_boundaries = _boundary_values(
+                receipts_index.dates,
+                failures=failures,
+                artifact=receipts_index_artifact,
+                order_failure="receipts_index_order_invalid",
+                duplicate_failure="receipts_index_duplicate_values",
+            )
             public["boundary_receipts"] = receipt_boundaries
             for receipt_date in receipt_boundaries:
                 receipt_path = f"{historic_files.receipts_prefix}{receipt_date}.json"
@@ -821,6 +865,7 @@ def build_historic_publish_proof(
                     fetch_bytes=resolved_fetch,
                     artifacts=artifacts,
                     failures=failures,
+                    query=proof_query,
                 )
                 if receipt is None:
                     continue
@@ -835,7 +880,13 @@ def build_historic_publish_proof(
                     _add_failure(failures, "public_receipt_generation_mismatch", receipt_artifact)
 
         if routes_index is not None:
-            route_boundaries = _boundary_values(routes_index.route_ids)
+            route_boundaries = _boundary_values(
+                routes_index.route_ids,
+                failures=failures,
+                artifact=routes_index_artifact,
+                order_failure="route_reliability_index_order_invalid",
+                duplicate_failure="route_reliability_index_duplicate_values",
+            )
             public["boundary_routes"] = route_boundaries
             for route_id in route_boundaries:
                 route_path = f"{historic_files.route_reliability_prefix}{route_id}.json"
@@ -846,6 +897,7 @@ def build_historic_publish_proof(
                     fetch_bytes=resolved_fetch,
                     artifacts=artifacts,
                     failures=failures,
+                    query=proof_query,
                 )
                 if route is None:
                     continue
@@ -866,12 +918,12 @@ def build_historic_publish_proof(
     if expectations is not None and expectations.total_alerts > 0:
         if expectations.archive_source_text_count <= 0 or not archive_public_source_text_count:
             _add_failure(failures, "archive_source_text_missing")
-        if expectations.archive_description_count <= 0 or not archive_public_description_count:
+        if expectations.archive_description_count > 0 and not archive_public_description_count:
             _add_failure(failures, "archive_source_description_missing")
     if expectations is not None and expectations.legacy_alert_count > 0:
         if expectations.legacy_source_text_count <= 0 or not legacy_public_source_text_count:
             _add_failure(failures, "legacy_source_text_missing")
-        if expectations.legacy_description_count <= 0 or not legacy_public_description_count:
+        if expectations.legacy_description_count > 0 and not legacy_public_description_count:
             _add_failure(failures, "legacy_source_description_missing")
 
     source_messages = {

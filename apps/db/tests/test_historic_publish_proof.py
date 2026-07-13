@@ -5,10 +5,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.error import HTTPError
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+import transit_ops.validation.historic_publish as historic_publish_module
 from transit_ops.settings import Settings
 from transit_ops.snapshots.contract import (
     AlertArchiveEntry,
@@ -383,8 +384,149 @@ def test_historic_publish_proof_treats_honest_empty_alerts_as_no_data() -> None:
     assert not any("/generations/" in urlsplit(url).path for url in fixture.fetch_calls)
 
 
+@pytest.mark.parametrize(
+    ("label", "single_encoded", "double_encoded"),
+    [
+        (
+            "dot",
+            "historic/alerts/%2e/page.json",
+            "historic/alerts/%252e/page.json",
+        ),
+        (
+            "dot_dot",
+            "historic/alerts/%2e%2e/page.json",
+            "historic/alerts/%252e%252e/page.json",
+        ),
+        (
+            "slash",
+            "historic%2falerts/index.json",
+            "historic%252falerts/index.json",
+        ),
+        (
+            "backslash",
+            "historic/alerts/%5csecret.json",
+            "historic/alerts/%255csecret.json",
+        ),
+        (
+            "query",
+            "historic/alerts/index.json%3fproof=attacker",
+            "historic/alerts/index.json%253fproof=attacker",
+        ),
+        (
+            "fragment",
+            "historic/alerts/index.json%23fragment",
+            "historic/alerts/index.json%2523fragment",
+        ),
+        (
+            "colon",
+            "historic/alerts/%3aevil.json",
+            "historic/alerts/%253aevil.json",
+        ),
+        (
+            "at",
+            "historic/alerts/%40evil.json",
+            "historic/alerts/%2540evil.json",
+        ),
+        (
+            "authority",
+            "%2f%2fevil.example/historic/index.json",
+            "%252f%252fevil.example/historic/index.json",
+        ),
+    ],
+)
+def test_safe_public_path_rejects_single_and_double_encoded_reserved_delimiters(
+    label: str,
+    single_encoded: str,
+    double_encoded: str,
+) -> None:
+    for path in (single_encoded, double_encoded):
+        with pytest.raises(ValueError, match="unsafe_public_path"):
+            historic_publish_module._safe_public_path(path)
+
+
+def test_safe_public_path_preserves_content_addressed_alert_page() -> None:
+    path = f"historic/alerts/generations/{'a' * 64}/2026-07/page-0001.json"
+
+    assert historic_publish_module._safe_public_path(path) == path
+
+
+def test_historic_publish_proof_uses_one_unique_cache_buster_for_every_fetch() -> None:
+    first = _complete_public_fixture()
+    second = _complete_public_fixture()
+
+    assert _build_report(first).status == "pass"
+    assert _build_report(second).status == "pass"
+
+    proof_tokens: list[str] = []
+    for calls in (first.fetch_calls, second.fetch_calls):
+        parsed_queries = [parse_qs(urlsplit(url).query) for url in calls]
+        assert parsed_queries
+        assert all(set(query) == {"proof"} for query in parsed_queries)
+        run_tokens = {query["proof"][0] for query in parsed_queries}
+        assert len(run_tokens) == 1
+        token = run_tokens.pop()
+        assert token
+        proof_tokens.append(token)
+    assert proof_tokens[0] != proof_tokens[1]
+
+
 def _replace_public_model(fixture: PublicFixture, path: str, model: object) -> None:
     fixture.public_bytes[path] = _json_bytes(model)
+
+
+def _header_only_fixture() -> PublicFixture:
+    fixture = _complete_public_fixture()
+    index_path = "historic/alerts/index.json"
+    index = AlertArchiveIndex.model_validate_json(fixture.public_bytes[index_path])
+    page_paths: list[str] = []
+    for month in index.months:
+        for ref in month.pages:
+            page = AlertArchivePage.model_validate_json(fixture.public_bytes.pop(ref.path))
+            for alert in page.alerts:
+                alert.description = None
+                alert.description_en = None
+            raw = _json_bytes(page)
+            digest = hashlib.sha256(raw).hexdigest()
+            path = f"historic/alerts/generations/{digest}/{page.month}/page-{page.page:04d}.json"
+            ref.path = path
+            ref.byte_size = len(raw)
+            ref.sha256 = digest
+            fixture.public_bytes[path] = raw
+            page_paths.append(path)
+    _replace_public_model(fixture, index_path, index)
+
+    history_path = "historic/alert_history.json"
+    history = AlertHistory.model_validate_json(fixture.public_bytes[history_path])
+    for alert in history.alerts:
+        alert.description = None
+        alert.description_en = None
+    _replace_public_model(fixture, history_path, history)
+
+    def expectations_reader(provider_id, generated_utc, engine):  # noqa: ANN001
+        return _nonempty_expectations(
+            archive_description_count=0,
+            legacy_description_count=0,
+        )
+
+    fixture.page_paths = tuple(page_paths)
+    fixture.expectations_reader = expectations_reader
+    return fixture
+
+
+def test_historic_publish_proof_accepts_header_only_alert_sources() -> None:
+    fixture = _header_only_fixture()
+
+    report = _build_report(fixture)
+
+    assert report.status == "pass"
+    assert "archive_source_description_missing" not in report.failures
+    assert "legacy_source_description_missing" not in report.failures
+    assert report.source_messages["archive"]["status"] == "ok"
+    assert report.source_messages["archive"]["database_description_count"] == 0
+    assert report.source_messages["archive"]["public_description_count"] == 0
+    assert report.source_messages["legacy"]["status"] == "ok"
+    assert report.source_messages["legacy"]["database_description_count"] == 0
+    assert report.source_messages["legacy"]["public_description_count"] == 0
 
 
 def _nonempty_expectations(**overrides: object) -> AlertExpectations:
@@ -520,6 +662,71 @@ def test_historic_publish_proof_fails_closed(mutation: str, failure: str) -> Non
     report = build_mutated_report(mutation)
     assert report.status == "fail"
     assert failure in report.failures
+
+
+@pytest.mark.parametrize(
+    ("mutation", "section"),
+    [
+        ("archive_text", "archive"),
+        ("legacy_text", "legacy"),
+    ],
+)
+def test_historic_publish_proof_marks_nonempty_zero_text_section_missing(
+    mutation: str,
+    section: str,
+) -> None:
+    report = build_mutated_report(mutation)
+
+    assert report.source_messages[section]["status"] == "missing"
+
+
+def test_unsorted_duplicate_indexes_fail_closed_and_fetch_true_boundaries() -> None:
+    fixture = _complete_public_fixture()
+    receipt_index_path = "historic/receipts/index.json"
+    route_index_path = "historic/route_reliability/index.json"
+    receipt_index = ReceiptsIndex.model_validate_json(fixture.public_bytes[receipt_index_path])
+    receipt_index.dates = [
+        "2026-06-01",
+        "2026-07-13",
+        "2026-05-01",
+        "2026-06-01",
+    ]
+    route_index = RouteReliabilityIndex.model_validate_json(fixture.public_bytes[route_index_path])
+    route_index.route_ids = ["20", "747", "10", "20"]
+    _replace_public_model(fixture, receipt_index_path, receipt_index)
+    _replace_public_model(fixture, route_index_path, route_index)
+    fixture.public_bytes["historic/receipts/2026-06-01.json"] = _json_bytes(
+        Receipt(generated_utc=GENERATED_UTC, date="2026-06-01")
+    )
+    fixture.public_bytes["historic/route_reliability/20.json"] = _json_bytes(
+        RouteReliability(generated_utc=GENERATED_UTC, id="20")
+    )
+
+    report = _build_report(fixture)
+
+    assert report.status == "fail"
+    assert {
+        "receipts_index_order_invalid",
+        "receipts_index_duplicate_values",
+        "route_reliability_index_order_invalid",
+        "route_reliability_index_duplicate_values",
+    } <= set(report.failures)
+    assert report.public["boundary_receipts"] == ["2026-05-01", "2026-07-13"]
+    assert report.public["boundary_routes"] == ["10", "747"]
+    fetched_paths = {urlsplit(url).path.split("/v1/stm/", 1)[1] for url in fixture.fetch_calls}
+    assert {
+        "historic/receipts/2026-05-01.json",
+        "historic/receipts/2026-07-13.json",
+        "historic/route_reliability/10.json",
+        "historic/route_reliability/747.json",
+    } <= fetched_paths
+    assert (
+        "receipts_index_order_invalid" in report.public["artifacts"][receipt_index_path]["failures"]
+    )
+    assert (
+        "route_reliability_index_duplicate_values"
+        in report.public["artifacts"][route_index_path]["failures"]
+    )
 
 
 @pytest.mark.parametrize(
