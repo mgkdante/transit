@@ -4,7 +4,7 @@ import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from http.client import IncompleteRead
+from http.client import HTTPException, IncompleteRead, InvalidURL
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
@@ -1015,6 +1015,47 @@ def test_historic_publish_proof_records_incomplete_read_without_partial_body() -
     assert "private-partial-body" not in str(report.display_dict())
 
 
+@pytest.mark.parametrize(
+    ("exception_type", "private_detail"),
+    [
+        (InvalidURL, "https://user:private-secret@invalid.example/path"),
+        (HTTPException, "private-partial-body"),
+    ],
+)
+def test_historic_publish_proof_records_http_client_failure_without_exception_detail(
+    exception_type: type[HTTPException],
+    private_detail: str,
+) -> None:
+    fixture = _complete_public_fixture()
+    failed_path = "historic/receipts/index.json"
+
+    def fetch_override(url: str) -> bytes:
+        path = urlsplit(url).path.split("/v1/stm/", 1)[1]
+        if path == failed_path:
+            raise exception_type(private_detail)
+        return fixture.public_bytes[path]
+
+    report = _build_report(fixture, fetch_override=fetch_override)
+
+    assert report.status == "fail"
+    assert "public_artifact_fetch_failed" in report.failures
+    artifact = report.public["artifacts"][failed_path]
+    assert artifact["failures"] == ["public_artifact_fetch_failed"]
+    assert artifact["error_type"] == exception_type.__name__
+    assert not {"error", "message", "detail", "exception"} & artifact.keys()
+    assert private_detail not in str(report.display_dict())
+
+
+def test_historic_publish_proof_propagates_fetch_type_error() -> None:
+    fixture = _complete_public_fixture()
+
+    def fetch_override(url: str) -> bytes:  # noqa: ARG001
+        raise TypeError("programming bug")
+
+    with pytest.raises(TypeError, match="programming bug"):
+        _build_report(fixture, fetch_override=fetch_override)
+
+
 def test_historic_publish_proof_records_malformed_public_base_url() -> None:
     fixture = _complete_public_fixture()
 
@@ -1024,6 +1065,28 @@ def test_historic_publish_proof_records_malformed_public_base_url() -> None:
     assert "snapshot_public_base_url_invalid" in report.failures
     assert report.public["base_url"] is None
     assert "malformed" not in str(report.display_dict())
+
+
+@pytest.mark.parametrize(
+    "public_base_url",
+    [
+        "https://exam ple.com",
+        "https://exam\tple.com",
+        "https://example.com:not-a-port",
+        "https://example.com:70000",
+    ],
+)
+def test_historic_publish_proof_rejects_invalid_public_origin(
+    public_base_url: str,
+) -> None:
+    fixture = _complete_public_fixture()
+
+    report = _build_report(fixture, public_base_url=public_base_url)
+
+    assert report.status == "fail"
+    assert "snapshot_public_base_url_invalid" in report.failures
+    assert report.public["base_url"] is None
+    assert public_base_url not in str(report.display_dict())
 
 
 def test_historic_publish_proof_rejects_unsafe_manifest_prefixes_with_evidence() -> None:

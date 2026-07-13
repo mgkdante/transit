@@ -7,7 +7,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from http.client import IncompleteRead
+from http.client import HTTPException
 from pathlib import Path
 from typing import Literal, TypeVar
 from urllib.parse import unquote, urlsplit
@@ -205,16 +205,24 @@ def _public_root(settings: Settings, provider_id: str, failures: list[str]) -> s
         return None
     try:
         parsed = urlsplit(raw_base)
+        hostname = parsed.hostname
+        port = parsed.port
     except ValueError:
         _add_failure(failures, "snapshot_public_base_url_invalid")
         return None
     if (
         parsed.scheme not in {"http", "https"}
         or not parsed.netloc
+        or hostname is None
+        or port == 0
         or parsed.username is not None
         or parsed.password is not None
         or parsed.query
         or parsed.fragment
+        or any(
+            character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F
+            for character in raw_base
+        )
     ):
         _add_failure(failures, "snapshot_public_base_url_invalid")
         return None
@@ -261,7 +269,7 @@ def _fetch_model(
     )
     try:
         raw = fetch_bytes(url)
-    except (*OperationalErrorTypes, IncompleteRead) as exc:
+    except (*OperationalErrorTypes, HTTPException) as exc:
         artifact["error_type"] = type(exc).__name__
         _add_failure(failures, "public_artifact_fetch_failed", artifact)
         return None, None, artifact
