@@ -360,7 +360,6 @@ def _stable_alert_id(
     provider_id: str,
     upstream_id: object,
     header_text: object,
-    severity: object,
     start_utc: object,
     end_utc: object,
 ) -> str:
@@ -369,9 +368,7 @@ def _stable_alert_id(
         return source_id
     normalized_start = _utc(start_utc)
     normalized_end = _utc(end_utc)
-    basis = "|".join(
-        str(value or "") for value in (header_text, severity, normalized_start, normalized_end)
-    )
+    basis = "|".join(str(value or "") for value in (header_text, normalized_start, normalized_end))
     digest = hashlib.sha1(basis.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
     return f"{provider_id}-alert-{digest}"
 
@@ -431,7 +428,6 @@ def _record_from_source(
         provider_id,
         row.get("alert_id"),
         row.get("header_text"),
-        row.get("severity"),
         row.get("start_utc"),
         row.get("end_utc"),
     )

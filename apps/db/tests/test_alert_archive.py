@@ -121,15 +121,15 @@ def test_source_queries_are_named_bounded_and_uncapped() -> None:
 
 
 def test_stable_alert_id_keeps_upstream_or_synthesizes_deterministically() -> None:
-    assert _stable_alert_id("stm", " A-10 ", "H", "WARNING", START, END) == "A-10"
-    synthesized = _stable_alert_id("stm", None, "H", "WARNING", START, END)
-    assert synthesized == _stable_alert_id("stm", "", "H", "WARNING", START, END)
-    assert synthesized == _stable_alert_id("stm", None, "H", "WARNING", START, END)
+    assert _stable_alert_id("stm", " A-10 ", "H", START, END) == "A-10"
+    synthesized = _stable_alert_id("stm", None, "H", START, END)
+    assert synthesized == _stable_alert_id("stm", "", "H", START, END)
+    assert synthesized == _stable_alert_id("stm", None, "H", START, END)
     assert synthesized.startswith("stm-alert-")
-    assert synthesized != _stable_alert_id("stm", None, "Other", "WARNING", START, END)
+    assert synthesized != _stable_alert_id("stm", None, "Other", START, END)
 
-    legacy_basis = "|".join(str(value or "") for value in ("H", "WARNING", START, END))
-    expected = hashlib.sha1(legacy_basis.encode(), usedforsecurity=False).hexdigest()[:12]
+    durable_basis = "|".join(str(value or "") for value in ("H", START, END))
+    expected = hashlib.sha1(durable_basis.encode(), usedforsecurity=False).hexdigest()[:12]
     assert synthesized == f"stm-alert-{expected}"
 
     toronto = ZoneInfo("America/Toronto")
@@ -137,10 +137,32 @@ def test_stable_alert_id_keeps_upstream_or_synthesizes_deterministically() -> No
         "stm",
         None,
         "H",
-        "WARNING",
         START.astimezone(toronto),
         END.astimezone(toronto),
     )
+
+
+def test_synthetic_identity_does_not_duplicate_when_severity_changes() -> None:
+    initial = FakeConnection(source=[source_row(alert_id=None, severity="WARNING")])
+    first = run_sync(initial)
+    stored = initial.writes[0]
+
+    changed = FakeConnection(
+        source=[
+            source_row(
+                alert_id=None,
+                severity="CRITICAL",
+                last_seen_utc=datetime(2026, 7, 11, tzinfo=UTC),
+            )
+        ],
+        existing=[stored],
+    )
+    second = run_sync(changed)
+
+    assert first.inserted_count == 1
+    assert (second.inserted_count, second.updated_count) == (0, 1)
+    assert changed.writes[0]["alert_id"] == stored["alert_id"]
+    assert changed.writes[0]["severity"] == "CRITICAL"
 
 
 def test_inverted_range_fails_before_any_query() -> None:

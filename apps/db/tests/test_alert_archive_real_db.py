@@ -202,7 +202,6 @@ def test_alert_archive_insert_update_and_unchanged_rerun() -> None:
                 str(value or "")
                 for value in (
                     "Votre ligne",
-                    "WARNING",
                     datetime(2026, 7, 8, 13, 0, tzinfo=UTC),
                     datetime(2026, 7, 10, 19, 0, tzinfo=UTC),
                 )
