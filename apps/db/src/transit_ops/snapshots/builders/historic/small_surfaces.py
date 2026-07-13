@@ -232,7 +232,7 @@ _HOTSPOTS_SQL = named_query(
       AND NOT (rp.entity_kind = 'stop' AND rp.entity_id = '__unknown_stop__')
     ORDER BY rp.issue_count DESC
     LIMIT 20
-    """
+    """,
 )
 
 
@@ -304,11 +304,11 @@ def build_hotspots(conn: Connection, provider_id: str = "stm", *, generated_utc:
 # Wilson LB does not demote an extreme tiny-n fluke (a 4-of-4-severe entity pins the
 # not-severe LB at 0.0%, n-independent), so a hard exclude to the un-ranked tray is the
 # only rail.
-_MIN_N_HOTSPOT = MIN_N_RATE          # 30 — the proportion reliability floor
-_HOTSPOTS_BY_GRAIN_CAP = 50          # ranked entries stored per (grain, KIND) — route
-                                     # and stop are ranked SEPARATELY (WEB2), each cap 50
-_HOTSPOTS_TRAY_CAP = 60              # un-ranked tray entries stored per grain TOTAL
-                                     # (the cross-kind union, capped after the sort)
+_MIN_N_HOTSPOT = MIN_N_RATE  # 30 — the proportion reliability floor
+_HOTSPOTS_BY_GRAIN_CAP = 50  # ranked entries stored per (grain, KIND) — route
+# and stop are ranked SEPARATELY (WEB2), each cap 50
+_HOTSPOTS_TRAY_CAP = 60  # un-ranked tray entries stored per grain TOTAL
+# (the cross-kind union, capped after the sort)
 # The peak (rush-hour) shifts the 'shift' grain scopes to — the time-of-day cut where a
 # hotspot bites hardest. Both source paths share these kernel labels (route via the
 # hour->shift CASE, stop via gold.stop_delay_shift_daily.shift), so the two kinds bucket
@@ -494,8 +494,14 @@ class _KindLadder:
 
     __slots__ = ("kind", "entries", "total_ranked", "tray_rows", "names")
 
-    def __init__(self, kind: str, entries: list[HotspotEntry], total_ranked: int,
-                 tray_rows: list, names: dict):  # noqa: ANN001
+    def __init__(
+        self,
+        kind: str,
+        entries: list[HotspotEntry],
+        total_ranked: int,
+        tray_rows: list,
+        names: dict,
+    ):  # noqa: ANN001
         self.kind = kind
         self.entries = entries
         self.total_ranked = total_ranked
@@ -535,8 +541,9 @@ def _tray_severe(r, kind: str) -> float:  # noqa: ANN001
     return _severe_pct(int(r["obs"] or 0), int(r["severe"] or 0)) or 0.0
 
 
-def _merge_grain(route_l: _KindLadder | None, stop_l: _KindLadder | None,
-                 *, grain: str, win_start, win_end) -> HotspotGrain | None:
+def _merge_grain(
+    route_l: _KindLadder | None, stop_l: _KindLadder | None, *, grain: str, win_start, win_end
+) -> HotspotGrain | None:
     """Assemble ONE grain from the two PER-KIND ladders (WEB2): route + stop entries are each
     already ranked on their OWN ladder (rank restarts per kind), so they simply CONCATENATE
     into the mixed entries[] with per-kind order preserved (no cross-kind re-rank). The tray
@@ -554,10 +561,13 @@ def _merge_grain(route_l: _KindLadder | None, stop_l: _KindLadder | None,
     # tuple carries its own kind + name map so the union resolves names without a re-thread.
     route_names = route_l.names if route_l else {}
     stop_names = stop_l.names if stop_l else {}
-    union: list[tuple] = [(_tray_severe(r, "route"), str(r["route_id"]), r, "route", route_names)
-                          for r in route_tray_rows]
-    union += [(_tray_severe(r, "stop"), str(r["stop_id"]), r, "stop", stop_names)
-              for r in stop_tray_rows]
+    union: list[tuple] = [
+        (_tray_severe(r, "route"), str(r["route_id"]), r, "route", route_names)
+        for r in route_tray_rows
+    ]
+    union += [
+        (_tray_severe(r, "stop"), str(r["stop_id"]), r, "stop", stop_names) for r in stop_tray_rows
+    ]
     tray_total = len(union)
     if not entries and tray_total == 0:
         return None
@@ -611,7 +621,9 @@ def _hotspots_by_grain(
         # window START/END for the merged label = the route window when present else stop's
         # (both anchor off the same feed, so they coincide save the rare split-anchor edge).
         merged = _merge_grain(
-            route_l, stop_l, grain=grain,
+            route_l,
+            stop_l,
+            grain=grain,
             win_start=r_start if r_start is not None else s_start,
             win_end=r_end if r_end is not None else s_end,
         )
@@ -656,7 +668,7 @@ _REPEAT_OFFENDERS_SQL = named_query(
     WHERE provider_id = :provider_id
     ORDER BY recurrence_days DESC, avg_delay_seconds DESC
     LIMIT 50
-    """
+    """,
 )
 
 
@@ -668,9 +680,7 @@ def build_repeat_offenders(
     Source: gold.repeat_offender (P3 mart).
     Ordered by recurrence_days desc, avg_delay_seconds desc.
     """
-    rows = list(
-        conn.execute(_REPEAT_OFFENDERS_SQL, {"provider_id": provider_id}).mappings()
-    )
+    rows = list(conn.execute(_REPEAT_OFFENDERS_SQL, {"provider_id": provider_id}).mappings())
     # Offender entities are 'trip'/'vehicle' kinds with no display name of
     # their own — resolve the ROUTE context name instead (history-backed).
     route_names = {
@@ -682,9 +692,7 @@ def build_repeat_offenders(
             type=str(r["entity_kind"]),
             id=str(r["entity_id"]),
             route=r["route_id"],
-            route_name=(
-                route_names.get(str(r["route_id"])) if r["route_id"] is not None else None
-            ),
+            route_name=(route_names.get(str(r["route_id"])) if r["route_id"] is not None else None),
             recurrence=f"{r['recurrence_days']}/{r['window_days']}d",
             # S14 additive structured twins (columns the query already selects): the web
             # reads these instead of parsing "N/14d" + re-deriving severity client-side.
@@ -699,9 +707,7 @@ def build_repeat_offenders(
     # above is UNTOUCHED (order + legacy fields byte-identical); by_grain is recomposed off
     # the 0075 daily offender spine at read time.
     by_grain = _repeat_offenders_by_grain(conn, provider_id, route_names)
-    return RepeatOffenders(
-        generated_utc=generated_utc, offenders=offenders, by_grain=by_grain
-    )
+    return RepeatOffenders(generated_utc=generated_utc, offenders=offenders, by_grain=by_grain)
 
 
 # --------------------------------------------------------------------------
@@ -716,10 +722,10 @@ def build_repeat_offenders(
 # ladders (trip + vehicle) with rank restarting per kind. recurrence_days ("N of M
 # observed days") is EVIDENCE, not the rank key. Grains are week|month ONLY — a
 # repeat offender is undefined on a single day (see RepeatOffenderGrain).
-_MIN_N_OFFENDER = MIN_N_RATE          # 30 — the proportion reliability floor
-_OFFENDERS_BY_GRAIN_CAP = 50          # ranked entries stored per (grain, KIND); trip and
-                                      # vehicle are ranked SEPARATELY, each cap 50
-_OFFENDERS_TRAY_CAP = 60              # un-ranked tray entries stored per grain TOTAL
+_MIN_N_OFFENDER = MIN_N_RATE  # 30 — the proportion reliability floor
+_OFFENDERS_BY_GRAIN_CAP = 50  # ranked entries stored per (grain, KIND); trip and
+# vehicle are ranked SEPARATELY, each cap 50
+_OFFENDERS_TRAY_CAP = 60  # un-ranked tray entries stored per grain TOTAL
 _OFFENDERS_GRAINS = ("week", "month")  # week|month only — day is undefined for "repeat"
 # A sub-MIN_N entity reaches the tray ONLY when it STILL recurred: recurrence_days >= this.
 # Below the floor a single-day fluke carries no "repeat" signal, so it is dropped entirely.
@@ -778,8 +784,10 @@ def _offender_severity(recurrence_days: int | None, avg_sec: float | None) -> st
     if recurrence_days is None and avg_sec is None:
         return None
     rec = recurrence_days or 0
-    if (rec >= _OFFENDER_SEVERITY_CRITICAL_RECURRENCE
-            or (avg_sec or 0.0) > _OFFENDER_SEVERITY_CRITICAL_AVG_SECONDS):
+    if (
+        rec >= _OFFENDER_SEVERITY_CRITICAL_RECURRENCE
+        or (avg_sec or 0.0) > _OFFENDER_SEVERITY_CRITICAL_AVG_SECONDS
+    ):
         return "critical"
     if rec >= _OFFENDER_SEVERITY_HIGH_RECURRENCE:
         return "high"
@@ -914,15 +922,9 @@ def _repeat_offenders_by_grain(
         # stamp the trailing window length onto each row (a plain dict copy — mappings are
         # read-only) so the entry builders read window_days from one source.
         trip_rows = [dict(r, window_days=window_days) for r in rows if r["entity_kind"] == "trip"]
-        veh_rows = [
-            dict(r, window_days=window_days) for r in rows if r["entity_kind"] == "vehicle"
-        ]
-        trip_entries, trip_total, trip_tray = _offender_kind_ladder(
-            trip_rows, "trip", route_names
-        )
-        veh_entries, veh_total, veh_tray = _offender_kind_ladder(
-            veh_rows, "vehicle", route_names
-        )
+        veh_rows = [dict(r, window_days=window_days) for r in rows if r["entity_kind"] == "vehicle"]
+        trip_entries, trip_total, trip_tray = _offender_kind_ladder(trip_rows, "trip", route_names)
+        veh_entries, veh_total, veh_tray = _offender_kind_ladder(veh_rows, "vehicle", route_names)
         # entries[] = the two per-kind ladders concatenated (trip first, then vehicle); each
         # keeps its own 1..N rank. The web filters by type into per-kind tabs losslessly.
         entries = trip_entries + veh_entries
@@ -1011,19 +1013,20 @@ _RECEIPTS_NETWORK_DAILY_SQL = named_query(
 _RECEIPTS_WORST_ROUTE_SQL = named_query(
     "receipts.worst_route",
     """
-    SELECT provider_local_date AS d,
-           route_id,
-           avg_delay_seconds,
-           on_time_observation_count AS on_time,
-           delay_observation_count   AS known_obs
+    SELECT DISTINCT ON (prr.provider_local_date)
+           prr.provider_local_date AS d,
+           prr.route_id,
+           prr.avg_delay_seconds,
+           prr.on_time_observation_count AS on_time,
+           prr.delay_observation_count   AS known_obs
     FROM gold.public_route_reliability_daily AS prr
     JOIN gold.dim_provider AS dp ON dp.provider_id = prr.provider_id
     WHERE prr.provider_id = :provider_id
       AND prr.provider_local_date >= :receipt_start
       AND prr.provider_local_date <= :receipt_end
-      AND avg_delay_seconds IS NOT NULL
-      AND route_id <> '__unrouted__'
-    ORDER BY provider_local_date, avg_delay_seconds DESC, route_id
+      AND prr.avg_delay_seconds IS NOT NULL
+      AND prr.route_id <> '__unrouted__'
+    ORDER BY prr.provider_local_date, prr.avg_delay_seconds DESC, prr.route_id
     """,
 )
 
@@ -1031,18 +1034,19 @@ _RECEIPTS_WORST_ROUTE_SQL = named_query(
 _RECEIPTS_WORST_STOP_SQL = named_query(
     "receipts.worst_stop",
     """
-    SELECT provider_local_date AS d,
-           stop_id,
-           avg_delay_seconds,
-           max_delay_seconds
+    SELECT DISTINCT ON (psd.provider_local_date)
+           psd.provider_local_date AS d,
+           psd.stop_id,
+           psd.avg_delay_seconds,
+           psd.max_delay_seconds
     FROM gold.public_stop_delay_daily AS psd
     JOIN gold.dim_provider AS dp ON dp.provider_id = psd.provider_id
     WHERE psd.provider_id = :provider_id
       AND psd.provider_local_date >= :receipt_start
       AND psd.provider_local_date <= :receipt_end
-      AND avg_delay_seconds IS NOT NULL
-      AND stop_id <> '__unknown_stop__'
-    ORDER BY provider_local_date, avg_delay_seconds DESC, stop_id
+      AND psd.avg_delay_seconds IS NOT NULL
+      AND psd.stop_id <> '__unknown_stop__'
+    ORDER BY psd.provider_local_date, psd.avg_delay_seconds DESC, psd.stop_id
     """,
 )
 
@@ -1246,18 +1250,16 @@ def build_receipts(
             r = buckets[shift]
             known_obs = r["known_obs"]
             pooled, inclamp = r["pooled_delay_sec"], r["inclamp_obs"]
-            avg_sec = (
-                (float(pooled) / float(inclamp))
-                if inclamp and pooled is not None
-                else None
+            avg_sec = (float(pooled) / float(inclamp)) if inclamp and pooled is not None else None
+            cuts.append(
+                ReceiptShiftCut(
+                    shift=shift,
+                    observation_count=_opt_int(known_obs),
+                    severe_count=_opt_int(r["severe"]),
+                    severe_pct=_severe_pct(known_obs, r["severe"]),
+                    avg_delay_min=_avg_delay_min(avg_sec),
+                )
             )
-            cuts.append(ReceiptShiftCut(
-                shift=shift,
-                observation_count=_opt_int(known_obs),
-                severe_count=_opt_int(r["severe"]),
-                severe_pct=_severe_pct(known_obs, r["severe"]),
-                avg_delay_min=_avg_delay_min(avg_sec),
-            ))
         if cuts:
             by_shift[ds] = cuts
 
@@ -1273,11 +1275,13 @@ def build_receipts(
         not_reported_total[ds] = not_reported_total.get(ds, 0) + 1  # honest PRE-cap count
         bucket = not_reported.setdefault(ds, [])
         if len(bucket) < NOT_REPORTED_ROUTES_CAP:  # rows arrive scheduled DESC — top-N
-            bucket.append(ReceiptNotReportedRoute(
-                id=rid,
-                name=route_names.get(rid),
-                scheduled_trip_days=_opt_int(r["scheduled_trip_days"]),
-            ))
+            bucket.append(
+                ReceiptNotReportedRoute(
+                    id=rid,
+                    name=route_names.get(rid),
+                    scheduled_trip_days=_opt_int(r["scheduled_trip_days"]),
+                )
+            )
 
     service_states: dict[str, ReceiptServiceStates] = {}
     for r in conn.execute(_RECEIPTS_SERVICE_STATES_SQL, params).mappings():
@@ -1411,7 +1415,7 @@ _ALERT_HISTORY_SQL = named_query(
     GROUP BY grp.alert_header_text, grp.start_utc, grp.end_utc
     ORDER BY grp.start_utc DESC NULLS LAST
     LIMIT 500
-    """
+    """,
 )
 
 
@@ -1433,7 +1437,7 @@ _ALERT_HISTORY_COUNT_SQL = named_query(
                  iah.active_period_start_utc,
                  iah.active_period_end_utc
     ) AS grouped
-    """
+    """,
 )
 
 
@@ -1446,7 +1450,7 @@ _ALERT_HISTORY_ANCHOR_SQL = named_query(
     SELECT (now() AT TIME ZONE dp.timezone)::date AS anchor
     FROM gold.dim_provider AS dp
     WHERE dp.provider_id = :provider_id
-    """
+    """,
 )
 
 
@@ -1521,9 +1525,9 @@ def build_alert_history(
     from transit_ops.settings import get_settings
 
     retention_days = get_settings().SILVER_I3_CLOSED_RETENTION_DAYS
-    anchor_row = conn.execute(
-        _ALERT_HISTORY_ANCHOR_SQL, {"provider_id": provider_id}
-    ).mappings().fetchone()
+    anchor_row = (
+        conn.execute(_ALERT_HISTORY_ANCHOR_SQL, {"provider_id": provider_id}).mappings().fetchone()
+    )
     win_end: date | None = anchor_row["anchor"] if anchor_row else None
     win_start: date | None = (
         win_end - timedelta(days=retention_days) if win_end is not None else None
@@ -1580,8 +1584,7 @@ def build_alert_history(
         # alert_id is always NULL in this feed — synthesize a content-stable id
         # from header + severity + active period (mirrors live build_alerts).
         basis = "|".join(
-            str(r[c] or "")
-            for c in ("alert_header_text", "severity", "start_utc", "end_utc")
+            str(r[c] or "") for c in ("alert_header_text", "severity", "start_utc", "end_utc")
         )
         alert_id = f"{provider_id}-alert-{hashlib.sha1(basis.encode()).hexdigest()[:12]}"
         severity_code = _severity_code(r["severity"])

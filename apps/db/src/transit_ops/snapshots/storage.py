@@ -272,9 +272,9 @@ class HashGatedStorage:
     def flush_state(self) -> str:
         """Persist the merged (prior + new) hash map as the tier's state object.
 
-        Merging keeps hashes for keys NOT produced this run (receipts older than
-        the 30-day window, vanished stops/routes) so they stay skippable if they
-        ever reappear unchanged — nothing is ever deleted from the state.
+        Merging keeps hashes for stable keys not produced in the current run
+        (dated artifacts or entities no longer in current discovery) so they stay
+        skippable if they ever reappear unchanged — state entries are not deleted.
         """
         merged = {**self._prior, **self._new}
         doc = {"fingerprint": self._fingerprint, "hashes": merged}

@@ -26,6 +26,10 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from transit_ops.snapshots.builders import build_receipts
+from transit_ops.snapshots.builders.historic.small_surfaces import (
+    _RECEIPTS_WORST_ROUTE_SQL,
+    _RECEIPTS_WORST_STOP_SQL,
+)
 from transit_ops.snapshots.contract import ReceiptAvailability
 
 DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
@@ -192,6 +196,39 @@ def _spine(c, d, rid, *, hour, obs, on_time, severe, sum_sec) -> None:  # noqa: 
     )
 
 
+def _route_candidate(c, d, rid, *, avg_delay, on_time) -> None:  # noqa: ANN001
+    c.execute(
+        text(
+            "INSERT INTO gold.route_delay_hourly (provider_id, period_start_utc, route_id,"
+            " observation_count, delay_observation_count, on_time_observation_count,"
+            " avg_delay_seconds) VALUES (:p, :ts, :r, 10, 10, :ot, :avg)"
+        ),
+        {
+            "p": PROVIDER,
+            "ts": datetime.combine(d, time(12, 0), tzinfo=UTC),
+            "r": rid,
+            "ot": on_time,
+            "avg": avg_delay,
+        },
+    )
+
+
+def _stop_candidate(c, d, sid, *, avg_delay) -> None:  # noqa: ANN001
+    c.execute(
+        text(
+            "INSERT INTO gold.stop_delay_hourly (provider_id, period_start_utc, stop_id,"
+            " route_id, observation_count, avg_arrival_delay_seconds)"
+            " VALUES (:p, :ts, :s, '51', 10, :avg)"
+        ),
+        {
+            "p": PROVIDER,
+            "ts": datetime.combine(d, time(12, 0), tzinfo=UTC),
+            "s": sid,
+            "avg": avg_delay,
+        },
+    )
+
+
 def _cancel(c, d, rid, *, scheduled, total, canceled) -> None:  # noqa: ANN001
     delivered = total - canceled
     silent = max(scheduled - total, 0)
@@ -295,6 +332,27 @@ def test_old_retained_day_is_enriched_and_supplement_only_gap_stays_absent(conn)
     assert receipt.service_states.silent_trip_days == 2
     assert receipt.service_states.service_completeness_pct == 70.0
     assert SUPPLEMENT_ONLY_GAP_DAY.isoformat() not in out
+
+
+def test_worst_queries_return_one_ranked_candidate_per_date(conn) -> None:  # noqa: ANN001
+    _route_candidate(conn, OLD_RETAINED_DAY, "51", avg_delay=300, on_time=4)
+    _route_candidate(conn, OLD_RETAINED_DAY, "24", avg_delay=300, on_time=5)
+    _route_candidate(conn, OLD_RETAINED_DAY, "747", avg_delay=120, on_time=8)
+    _stop_candidate(conn, OLD_RETAINED_DAY, "3001", avg_delay=420)
+    _stop_candidate(conn, OLD_RETAINED_DAY, "1002", avg_delay=420)
+    _stop_candidate(conn, OLD_RETAINED_DAY, "9999", avg_delay=180)
+
+    params = {
+        "provider_id": PROVIDER,
+        "receipt_start": OLD_RETAINED_DAY,
+        "receipt_end": OLD_RETAINED_DAY,
+    }
+    route_rows = list(conn.execute(_RECEIPTS_WORST_ROUTE_SQL, params).mappings())
+    stop_rows = list(conn.execute(_RECEIPTS_WORST_STOP_SQL, params).mappings())
+
+    assert len(route_rows) == len(stop_rows) == 1
+    assert [(row["d"], row["route_id"]) for row in route_rows] == [(OLD_RETAINED_DAY, "24")]
+    assert [(row["d"], row["stop_id"]) for row in stop_rows] == [(OLD_RETAINED_DAY, "1002")]
 
 
 def test_real_db_receipt_under_byte_ceiling(conn, capsys) -> None:  # noqa: ANN001

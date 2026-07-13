@@ -224,8 +224,13 @@ def test_pctile_from_hist_bin_zero_safe_and_negative() -> None:
 
 
 def _spine_row(*, known_obs, on_time, severe, sum_delay_sec, hist):  # noqa: ANN001, ANN202
-    row = {"obs": known_obs, "known_obs": known_obs, "on_time": on_time,
-           "severe": severe, "sum_delay_sec": sum_delay_sec}
+    row = {
+        "obs": known_obs,
+        "known_obs": known_obs,
+        "on_time": on_time,
+        "severe": severe,
+        "sum_delay_sec": sum_delay_sec,
+    }
     for k in range(1, 22):
         row[f"h{k}"] = hist[k - 1]
     return row
@@ -236,10 +241,11 @@ def test_spine_reliability_period_maps_otp_severe_and_rebaselined_avg() -> None:
 
     # 6 in-clamp delays summing to 1100s; otp 4/8=50, severe 2/8=25.0,
     # avg 1100/6/60 = 3.06 -> rounds to 3.1.
-    hist = [0] * 8 + [6] + [0] * 12   # all 6 in bin 8 = [30,60)
+    hist = [0] * 8 + [6] + [0] * 12  # all 6 in bin 8 = [30,60)
     p = _spine_reliability_period(
         _spine_row(known_obs=8, on_time=4, severe=2, sum_delay_sec=1100, hist=hist),
-        grain="week", date="2026-06-01",
+        grain="week",
+        date="2026-06-01",
     )
     assert p.grain == "week" and p.date == "2026-06-01"
     assert p.otp_pct == 50
@@ -265,7 +271,8 @@ def test_spine_reliability_period_honest_null_when_no_delays() -> None:
     # metric is honest-None (never a fabricated 0.0).
     p = _spine_reliability_period(
         _spine_row(known_obs=0, on_time=None, severe=0, sum_delay_sec=0, hist=[0] * 21),
-        grain="am_peak", date=None,
+        grain="am_peak",
+        date=None,
     )
     assert p.otp_pct is None
     assert p.severe_pct is None
@@ -380,8 +387,7 @@ def test_build_network_trend_service_completeness_clamped_at_100() -> None:
             "network.trend.daily_p90": [],
             # delivered 250 vs scheduled 100 -> raw 250% -> clamped to 100.0
             "network.trend.daily_cancel": [
-                {"local_date": d, "canceled": 0, "total": 250,
-                 "delivered": 250, "scheduled": 100},
+                {"local_date": d, "canceled": 0, "total": 250, "delivered": 250, "scheduled": 100},
             ],
             "network.trend.daily_occupancy": [],
         }
@@ -407,17 +413,37 @@ def test_build_network_trend_weekly_monthly_vary_not_flat() -> None:
             # WEEKLY re-group: two buckets, DISTINCT on_time/known -> otp 87 vs 88,
             # DISTINCT pooled/inclamp -> avg 1.0 vs 1.1 min (60s vs 66s).
             "network.trend.week_hourly": [
-                {"local_date": wk1, "known_obs": 1000, "on_time": 870,
-                 "pooled_delay_sec": 60000.0, "inclamp_obs": 1000},
-                {"local_date": wk2, "known_obs": 1000, "on_time": 880,
-                 "pooled_delay_sec": 66000.0, "inclamp_obs": 1000},
+                {
+                    "local_date": wk1,
+                    "known_obs": 1000,
+                    "on_time": 870,
+                    "pooled_delay_sec": 60000.0,
+                    "inclamp_obs": 1000,
+                },
+                {
+                    "local_date": wk2,
+                    "known_obs": 1000,
+                    "on_time": 880,
+                    "pooled_delay_sec": 66000.0,
+                    "inclamp_obs": 1000,
+                },
             ],
             # MONTHLY re-group: two buckets, DISTINCT otp 87 vs 89, avg 0.9 vs 1.2 min.
             "network.trend.month_hourly": [
-                {"local_date": mo1, "known_obs": 2000, "on_time": 1740,
-                 "pooled_delay_sec": 108000.0, "inclamp_obs": 2000},
-                {"local_date": mo2, "known_obs": 2000, "on_time": 1780,
-                 "pooled_delay_sec": 144000.0, "inclamp_obs": 2000},
+                {
+                    "local_date": mo1,
+                    "known_obs": 2000,
+                    "on_time": 1740,
+                    "pooled_delay_sec": 108000.0,
+                    "inclamp_obs": 2000,
+                },
+                {
+                    "local_date": mo2,
+                    "known_obs": 2000,
+                    "on_time": 1780,
+                    "pooled_delay_sec": 144000.0,
+                    "inclamp_obs": 2000,
+                },
             ],
         }
     )
@@ -465,11 +491,25 @@ def test_build_network_trend_fact_only_date() -> None:
 # --------------------------------------------------------------------------
 
 
-def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headway=None,
-                                headway_direction=None,
-                                habit=None, weak=None, names=None, schedule=None,
-                                route_names=None, dow=None, crowding=None, crosstab=None,
-                                occ_dow=None, occ_grain=None, occ_hour=None):
+def _route_reliability_dispatch(
+    *,
+    daily=None,
+    weekly=None,
+    monthly=None,
+    headway=None,
+    headway_direction=None,
+    habit=None,
+    weak=None,
+    names=None,
+    schedule=None,
+    route_names=None,
+    dow=None,
+    crowding=None,
+    crosstab=None,
+    occ_dow=None,
+    occ_grain=None,
+    occ_hour=None,
+):
     """Assemble the name-keyed dispatch map for build_route_reliability.
 
     Each query dispatches on its `-- q:<name>` registry marker (no ordering). The
@@ -592,10 +632,18 @@ def test_build_route_reliability_directional_headway_is_typed_not_encoded() -> N
     conn = FakeConn(
         _route_reliability_dispatch(
             headway_direction=[
-                {"shift": "am_peak", "direction_id": 0, "service_day_kind": "weekday",
-                 "observed_headway_min": 7.9},
-                {"shift": "am_peak", "direction_id": 1, "service_day_kind": "weekend",
-                 "observed_headway_min": 9.1},
+                {
+                    "shift": "am_peak",
+                    "direction_id": 0,
+                    "service_day_kind": "weekday",
+                    "observed_headway_min": 7.9,
+                },
+                {
+                    "shift": "am_peak",
+                    "direction_id": 1,
+                    "service_day_kind": "weekend",
+                    "observed_headway_min": 9.1,
+                },
             ],
         )
     )
@@ -761,9 +809,7 @@ def test_build_route_reliability_weak_stops_respects_explicit_limit() -> None:
     assert [w.id for w in out.weak_stops] == ["S1", "S4", "S2"]  # top 3 by delay
 
     conn2 = FakeConn(_route_reliability_dispatch(weak=weak, names=names))
-    out_all = build_route_reliability(
-        conn2, route_id="51", generated_utc="t", weak_stops_limit=100
-    )
+    out_all = build_route_reliability(conn2, route_id="51", generated_utc="t", weak_stops_limit=100)
     assert len(out_all.weak_stops) == 6  # limit beyond available returns only what exists
 
 
@@ -773,12 +819,30 @@ def test_build_route_reliability_delay_by_crowding_co_observes_all_bands() -> No
     # read SQL returns one row per band: {band, delay_obs, sum_delay_sec, w_p50_sec, p50_obs,
     # day_count}; the shaper emits avg = sum/obs and obs-weighted p50, in canonical band order.
     crowding = [
-        {"band": "many_seats", "delay_obs": 100, "sum_delay_sec": 6000.0,
-         "w_p50_sec": None, "p50_obs": 0, "day_count": 5},   # 60s -> 1.0 min
-        {"band": "standing", "delay_obs": 40, "sum_delay_sec": 9600.0,
-         "w_p50_sec": None, "p50_obs": 0, "day_count": 5},   # 240s -> 4.0 min
-        {"band": "full", "delay_obs": 10, "sum_delay_sec": 3000.0,
-         "w_p50_sec": None, "p50_obs": 0, "day_count": 3},   # 300s -> 5.0 min
+        {
+            "band": "many_seats",
+            "delay_obs": 100,
+            "sum_delay_sec": 6000.0,
+            "w_p50_sec": None,
+            "p50_obs": 0,
+            "day_count": 5,
+        },  # 60s -> 1.0 min
+        {
+            "band": "standing",
+            "delay_obs": 40,
+            "sum_delay_sec": 9600.0,
+            "w_p50_sec": None,
+            "p50_obs": 0,
+            "day_count": 5,
+        },  # 240s -> 4.0 min
+        {
+            "band": "full",
+            "delay_obs": 10,
+            "sum_delay_sec": 3000.0,
+            "w_p50_sec": None,
+            "p50_obs": 0,
+            "day_count": 3,
+        },  # 300s -> 5.0 min
     ]
     conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
 
@@ -799,8 +863,14 @@ def test_build_route_reliability_delay_by_crowding_avg_and_p50() -> None:
     # avg_delay_min = sum_delay_sec / delay_obs / 60; p50_min = (w_p50_sec / p50_obs) / 60 (an
     # obs-weighted mean of the daily band p50s the rollup carries).
     crowding = [
-        {"band": "many_seats", "delay_obs": 40, "sum_delay_sec": 7200.0,  # 180s -> 3.0 min
-         "w_p50_sec": 3600.0, "p50_obs": 40, "day_count": 2},             # 90s -> 1.5 min
+        {
+            "band": "many_seats",
+            "delay_obs": 40,
+            "sum_delay_sec": 7200.0,  # 180s -> 3.0 min
+            "w_p50_sec": 3600.0,
+            "p50_obs": 40,
+            "day_count": 2,
+        },  # 90s -> 1.5 min
     ]
     conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
 
@@ -824,10 +894,22 @@ def test_build_route_reliability_delay_by_crowding_skips_null_band() -> None:
     # A row whose band is NULL (occupancy_status outside the 0-5 band map) is skipped, never
     # emitted; only mapped bands surface.
     crowding = [
-        {"band": None, "delay_obs": 5, "sum_delay_sec": 600.0,
-         "w_p50_sec": None, "p50_obs": 0, "day_count": 1},
-        {"band": "standing", "delay_obs": 20, "sum_delay_sec": 4800.0,
-         "w_p50_sec": None, "p50_obs": 0, "day_count": 2},
+        {
+            "band": None,
+            "delay_obs": 5,
+            "sum_delay_sec": 600.0,
+            "w_p50_sec": None,
+            "p50_obs": 0,
+            "day_count": 1,
+        },
+        {
+            "band": "standing",
+            "delay_obs": 20,
+            "sum_delay_sec": 4800.0,
+            "w_p50_sec": None,
+            "p50_obs": 0,
+            "day_count": 2,
+        },
     ]
     conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
@@ -849,8 +931,15 @@ def test_build_route_reliability_by_shift_daytype_honest_null_metrics() -> None:
     # SPINE-shaped zero row (dispatched on the whole-history crosstab projector name).
     from transit_ops.snapshots.builders.historic import _spine_route_crosstab
 
-    row = {"shift": "night", "day_type": "weekend", "known_obs": 0, "obs": 0,
-           "on_time": None, "severe": 0, "sum_delay_sec": 0}
+    row = {
+        "shift": "night",
+        "day_type": "weekend",
+        "known_obs": 0,
+        "obs": 0,
+        "on_time": None,
+        "severe": 0,
+        "sum_delay_sec": 0,
+    }
     for k in range(1, 22):
         row[f"h{k}"] = 0
     conn = FakeConn({"route.spine.crosstab": [row]})
@@ -867,10 +956,22 @@ def test_build_route_reliability_occupancy_by_dow_cells() -> None:
     # S7 §04: per-ISO-weekday crowding mix; one OccupancyByDow per weekday with
     # band telemetry, shares computed from the summed band counts.
     occ_dow = [
-        {"day_of_week_iso": 1, "empty": 0, "many_seats": 5,
-         "few_seats": 3, "standing": 2, "full": 0},
-        {"day_of_week_iso": 6, "empty": 8, "many_seats": 2,
-         "few_seats": 0, "standing": 0, "full": 0},
+        {
+            "day_of_week_iso": 1,
+            "empty": 0,
+            "many_seats": 5,
+            "few_seats": 3,
+            "standing": 2,
+            "full": 0,
+        },
+        {
+            "day_of_week_iso": 6,
+            "empty": 8,
+            "many_seats": 2,
+            "few_seats": 0,
+            "standing": 0,
+            "full": 0,
+        },
     ]
     conn = FakeConn(_route_reliability_dispatch(occ_dow=occ_dow))
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
@@ -890,8 +991,14 @@ def test_build_route_reliability_occupancy_by_dow_honest_none_when_no_bands() ->
     # A weekday with data-days but all-zero band counts -> mix is None (honest
     # absence, never a fabricated all-empty mix); the cell is still emitted.
     occ_dow = [
-        {"day_of_week_iso": 3, "empty": 0, "many_seats": 0,
-         "few_seats": 0, "standing": 0, "full": 0},
+        {
+            "day_of_week_iso": 3,
+            "empty": 0,
+            "many_seats": 0,
+            "few_seats": 0,
+            "standing": 0,
+            "full": 0,
+        },
     ]
     conn = FakeConn(_route_reliability_dispatch(occ_dow=occ_dow))
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
@@ -913,10 +1020,22 @@ def test_build_route_reliability_occupancy_by_hour_cells() -> None:
     # GC2 H3 §04: per-LOCAL-hour crowding mix; one OccupancyByHour per hour with band
     # telemetry, shares computed from the summed band counts (clone of the by_dow pair).
     occ_hour = [
-        {"hour_of_day_local": 8, "empty": 0, "many_seats": 5,
-         "few_seats": 3, "standing": 2, "full": 0},
-        {"hour_of_day_local": 12, "empty": 8, "many_seats": 2,
-         "few_seats": 0, "standing": 0, "full": 0},
+        {
+            "hour_of_day_local": 8,
+            "empty": 0,
+            "many_seats": 5,
+            "few_seats": 3,
+            "standing": 2,
+            "full": 0,
+        },
+        {
+            "hour_of_day_local": 12,
+            "empty": 8,
+            "many_seats": 2,
+            "few_seats": 0,
+            "standing": 0,
+            "full": 0,
+        },
     ]
     conn = FakeConn(_route_reliability_dispatch(occ_hour=occ_hour))
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
@@ -935,8 +1054,14 @@ def test_build_route_reliability_occupancy_by_hour_honest_none_when_no_bands() -
     # An hour with data-days but all-zero band counts -> mix is None (honest absence,
     # never a fabricated all-empty mix); the cell is still emitted with a real n=0.
     occ_hour = [
-        {"hour_of_day_local": 3, "empty": 0, "many_seats": 0,
-         "few_seats": 0, "standing": 0, "full": 0},
+        {
+            "hour_of_day_local": 3,
+            "empty": 0,
+            "many_seats": 0,
+            "few_seats": 0,
+            "standing": 0,
+            "full": 0,
+        },
     ]
     conn = FakeConn(_route_reliability_dispatch(occ_hour=occ_hour))
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
@@ -956,12 +1081,30 @@ def test_build_route_reliability_occupancy_by_grain_windows() -> None:
     # S7 §04: grain-aware crowding mix bucketed in Python from trailing-30d daily
     # band rows. day = most recent closed day; week = trailing 7d; month = all 30d.
     occ_grain = [
-        {"d": datetime.date(2026, 6, 20), "empty": 0, "many_seats": 10,
-         "few_seats": 0, "standing": 0, "full": 0},
-        {"d": datetime.date(2026, 6, 15), "empty": 0, "many_seats": 0,
-         "few_seats": 10, "standing": 0, "full": 0},
-        {"d": datetime.date(2026, 5, 25), "empty": 10, "many_seats": 0,
-         "few_seats": 0, "standing": 0, "full": 0},
+        {
+            "d": datetime.date(2026, 6, 20),
+            "empty": 0,
+            "many_seats": 10,
+            "few_seats": 0,
+            "standing": 0,
+            "full": 0,
+        },
+        {
+            "d": datetime.date(2026, 6, 15),
+            "empty": 0,
+            "many_seats": 0,
+            "few_seats": 10,
+            "standing": 0,
+            "full": 0,
+        },
+        {
+            "d": datetime.date(2026, 5, 25),
+            "empty": 10,
+            "many_seats": 0,
+            "few_seats": 0,
+            "standing": 0,
+            "full": 0,
+        },
     ]
     conn = FakeConn(_route_reliability_dispatch(occ_grain=occ_grain))
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
@@ -980,8 +1123,14 @@ def test_build_route_reliability_occupancy_by_grain_honest_none_when_no_bands() 
     # Data-days exist but carry no band telemetry -> every grain emitted with
     # mix None (honest), never a fabricated mix.
     occ_grain = [
-        {"d": datetime.date(2026, 6, 20), "empty": 0, "many_seats": 0,
-         "few_seats": 0, "standing": 0, "full": 0},
+        {
+            "d": datetime.date(2026, 6, 20),
+            "empty": 0,
+            "many_seats": 0,
+            "few_seats": 0,
+            "standing": 0,
+            "full": 0,
+        },
     ]
     conn = FakeConn(_route_reliability_dispatch(occ_grain=occ_grain))
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
@@ -1249,11 +1398,19 @@ def test_build_hotspots_excludes_sentinel_entities() -> None:
     NULL-buckets must never surface as a named hotspot, even if a query path returns
     them; survivors re-rank from 1 (defense-in-depth over the publish-SQL filter)."""
     rows = [
-        {"entity_kind": "route", "entity_id": "__unrouted__", "issue_count": 99,
-         "severity_label": "critical"},
+        {
+            "entity_kind": "route",
+            "entity_id": "__unrouted__",
+            "issue_count": 99,
+            "severity_label": "critical",
+        },
         {"entity_kind": "route", "entity_id": "51", "issue_count": 40, "severity_label": "high"},
-        {"entity_kind": "stop", "entity_id": "__unknown_stop__", "issue_count": 30,
-         "severity_label": "high"},
+        {
+            "entity_kind": "stop",
+            "entity_id": "__unknown_stop__",
+            "issue_count": 30,
+            "severity_label": "high",
+        },
         {"entity_kind": "stop", "entity_id": "3456", "issue_count": 10, "severity_label": "watch"},
     ]
     conn = FakeConn({"hotspots.list": rows})
@@ -1486,9 +1643,17 @@ def test_hotspots_sql_per_kind_otp_join_keys() -> None:
 import datetime as _dt  # noqa: E402
 
 
-def _by_grain_conn(*, route_anchor=_dt.date(2026, 6, 20), stop_anchor=_dt.date(2026, 6, 20),
-                   route_rows=None, stop_rows=None, route_shift=None, stop_shift=None,
-                   route_names=None, stop_names=None):  # noqa: ANN001, ANN202
+def _by_grain_conn(
+    *,
+    route_anchor=_dt.date(2026, 6, 20),
+    stop_anchor=_dt.date(2026, 6, 20),
+    route_rows=None,
+    stop_rows=None,
+    route_shift=None,
+    stop_shift=None,
+    route_names=None,
+    stop_names=None,
+):  # noqa: ANN001, ANN202
     """Name-dispatch FakeConn for _hotspots_by_grain. Every window-grain read returns the
     SAME rows (the fixture is grain-agnostic), so the ladders are identical across grains —
     fine for unit-testing the ranking/tray/absence logic."""
@@ -1525,7 +1690,7 @@ def test_hotspots_by_grain_min_n_goes_to_tray_not_ranked() -> None:
     tray (rank=None, wilson None below the floor) — never a fabricated ranked entry."""
     route_rows = [
         {"route_id": "99", "obs": 50, "severe": 10, "sum_delay_sec": 30000},  # >=30 -> ranked
-        {"route_id": "7", "obs": 12, "severe": 6, "sum_delay_sec": 3000},     # <30 -> tray
+        {"route_id": "7", "obs": 12, "severe": 6, "sum_delay_sec": 3000},  # <30 -> tray
     ]
     conn, rn, sn = _by_grain_conn(route_rows=route_rows, stop_rows=[])
     day = _hotspots_by_grain(conn, "stm", rn, sn)[0]
@@ -1533,7 +1698,7 @@ def test_hotspots_by_grain_min_n_goes_to_tray_not_ranked() -> None:
     assert day.entries[0].rank == 1
     assert [e.id for e in day.tray] == ["7"]
     assert day.tray[0].rank is None
-    assert day.tray[0].wilson_lo is None       # Wilson uninformative below MIN_N
+    assert day.tray[0].wilson_lo is None  # Wilson uninformative below MIN_N
     assert day.tray[0].observation_count == 12  # counts still honest
 
 
@@ -1575,7 +1740,7 @@ def test_hotspots_by_grain_otp_delta_vs_network_severe_baseline() -> None:
     severe-proxy OTP (same metric). A worse-than-network entity is negative."""
     stop_rows = [
         {"stop_id": "S1", "obs": 100, "severe": 50, "sum_delay_sec": 60000},  # 50% severe -> OTP 50
-        {"stop_id": "S2", "obs": 100, "severe": 10, "sum_delay_sec": 6000},   # 10% severe -> OTP 90
+        {"stop_id": "S2", "obs": 100, "severe": 10, "sum_delay_sec": 6000},  # 10% severe -> OTP 90
     ]
     # network severe = 60/200 = 30% -> network OTP 70; S1 delta = 50-70 = -20
     conn, rn, sn = _by_grain_conn(route_rows=[], stop_rows=stop_rows)
@@ -1597,7 +1762,7 @@ def test_hotspots_by_grain_tray_is_severe_desc_union_with_total() -> None:
     stop_rows = [{"stop_id": "S9", "obs": 10, "severe": 2, "sum_delay_sec": 1000}]  # 20% severe
     conn, rn, sn = _by_grain_conn(route_rows=route_rows, stop_rows=stop_rows)
     day = _hotspots_by_grain(conn, "stm", rn, sn)[0]
-    assert day.entries == []                       # nothing clears MIN_N
+    assert day.entries == []  # nothing clears MIN_N
     assert [e.id for e in day.tray] == ["R7", "R3", "S9"]  # severe DESC across kinds
     assert all(e.rank is None for e in day.tray)
     assert day.tray_total == 3
@@ -1608,6 +1773,7 @@ def test_hotspots_by_grain_scalar_list_byte_identical() -> None:
     """PARITY: adding by_grain must NOT perturb the scalar hotspots[] bytes. The scalar
     array serializes IDENTICALLY whether or not by_grain is populated."""
     import json
+
     scalar_rows = [
         {"entity_kind": "route", "entity_id": "51", "issue_count": 9, "severity_label": "high"},
         {"entity_kind": "stop", "entity_id": "3456", "issue_count": 3, "severity_label": "watch"},
@@ -1619,11 +1785,13 @@ def test_hotspots_by_grain_scalar_list_byte_identical() -> None:
         "hotspots.list": scalar_rows,
         "hotspots.route.anchor": [{"anchor": _dt.date(2026, 6, 20)}],
         "hotspots.stop.anchor": [{"anchor": _dt.date(2026, 6, 20)}],
-        "hotspots.route.by_grain": [{"route_id": "99", "obs": 50, "severe": 10,
-                                     "sum_delay_sec": 30000}],
+        "hotspots.route.by_grain": [
+            {"route_id": "99", "obs": 50, "severe": 10, "sum_delay_sec": 30000}
+        ],
         "hotspots.stop.by_grain": [],
-        "hotspots.route.by_shift": [{"route_id": "99", "obs": 50, "severe": 10,
-                                     "sum_delay_sec": 30000}],
+        "hotspots.route.by_shift": [
+            {"route_id": "99", "obs": 50, "severe": 10, "sum_delay_sec": 30000}
+        ],
         "hotspots.stop.by_shift": [],
     }
     b = build_hotspots(FakeConn(mapping), generated_utc="t")
@@ -1774,10 +1942,24 @@ def test_build_repeat_offenders_scalar_additive_fields_and_order_stable() -> Non
     """S14 additive: the scalar offenders[] gains recurrence_days/window_days/severity from the
     columns the mart query already selects — WITHOUT changing the legacy fields or the order."""
     rows = [
-        {"entity_kind": "trip", "entity_id": "T9", "route_id": "9", "recurrence_days": 10,
-         "window_days": 14, "avg_delay_seconds": 300.0, "severity_label": "critical"},
-        {"entity_kind": "vehicle", "entity_id": "V2", "route_id": "51", "recurrence_days": 5,
-         "window_days": 14, "avg_delay_seconds": 600.0, "severity_label": "high"},
+        {
+            "entity_kind": "trip",
+            "entity_id": "T9",
+            "route_id": "9",
+            "recurrence_days": 10,
+            "window_days": 14,
+            "avg_delay_seconds": 300.0,
+            "severity_label": "critical",
+        },
+        {
+            "entity_kind": "vehicle",
+            "entity_id": "V2",
+            "route_id": "51",
+            "recurrence_days": 5,
+            "window_days": 14,
+            "avg_delay_seconds": 600.0,
+            "severity_label": "high",
+        },
     ]
     conn = FakeConn({"repeat.offenders": rows})
     out = build_repeat_offenders(conn, generated_utc="t")
@@ -1801,12 +1983,12 @@ def test_build_repeat_offenders_scalar_additive_fields_and_order_stable() -> Non
 
 def test_offender_severity_matches_mart_vocabulary() -> None:
     # avg_sec is the UN-ROUNDED pooled mean in SECONDS (S14 review F2).
-    assert _offender_severity(10, 0.0) == "critical"           # recurrence >= 10
-    assert _offender_severity(0, 601.2) == "critical"          # avg 601.2s > 600s
+    assert _offender_severity(10, 0.0) == "critical"  # recurrence >= 10
+    assert _offender_severity(0, 601.2) == "critical"  # avg 601.2s > 600s
     assert _offender_severity(1, 600.0) in ("high", "watch")
-    assert _offender_severity(5, 0.0) == "high"                # recurrence >= 5
-    assert _offender_severity(4, 300.0) == "watch"             # below both ladders
-    assert _offender_severity(None, None) is None              # honest-None, never 'watch'
+    assert _offender_severity(5, 0.0) == "high"  # recurrence >= 5
+    assert _offender_severity(4, 300.0) == "watch"  # below both ladders
+    assert _offender_severity(None, None) is None  # honest-None, never 'watch'
 
 
 def test_offender_severity_avg_boundary_is_strict_gt_600s() -> None:
@@ -1839,9 +2021,14 @@ def _offender_grain_conn(spine_rows, route_names=None):  # noqa: ANN001, ANN202
 
 def _offender_spine_row(kind, eid, route, *, obs, severe, sum_sec, recurrence_days, observed_days):  # noqa: ANN001, ANN202
     return {
-        "entity_kind": kind, "entity_id": eid, "route_id": route,
-        "obs": obs, "severe": severe, "sum_delay_sec": sum_sec,
-        "recurrence_days": recurrence_days, "observed_days": observed_days,
+        "entity_kind": kind,
+        "entity_id": eid,
+        "route_id": route,
+        "obs": obs,
+        "severe": severe,
+        "sum_delay_sec": sum_sec,
+        "recurrence_days": recurrence_days,
+        "observed_days": observed_days,
     }
 
 
@@ -1850,16 +2037,31 @@ def test_by_grain_ranks_per_kind_and_sets_window_days() -> None:
     the 0075 spine. rank restarts per kind; window_days = the trailing window length."""
     rows = [
         # a clearly-severe trip (100 obs, 60 severe) and a clean trip (100 obs, 2 severe)
-        _offender_spine_row("trip", "T_BAD", "9", obs=100, severe=60, sum_sec=48000,
-                   recurrence_days=6, observed_days=6),
-        _offender_spine_row("trip", "T_OK", "9", obs=100, severe=2, sum_sec=6000,
-                   recurrence_days=1, observed_days=6),
-        _offender_spine_row("vehicle", "V_BAD", "51", obs=80, severe=40, sum_sec=40000,
-                   recurrence_days=5, observed_days=5),
+        _offender_spine_row(
+            "trip",
+            "T_BAD",
+            "9",
+            obs=100,
+            severe=60,
+            sum_sec=48000,
+            recurrence_days=6,
+            observed_days=6,
+        ),
+        _offender_spine_row(
+            "trip", "T_OK", "9", obs=100, severe=2, sum_sec=6000, recurrence_days=1, observed_days=6
+        ),
+        _offender_spine_row(
+            "vehicle",
+            "V_BAD",
+            "51",
+            obs=80,
+            severe=40,
+            sum_sec=40000,
+            recurrence_days=5,
+            observed_days=5,
+        ),
     ]
-    conn = _offender_grain_conn(
-        rows, route_names=[{"route_id": "9", "route_name": "Route Nine"}]
-    )
+    conn = _offender_grain_conn(rows, route_names=[{"route_id": "9", "route_name": "Route Nine"}])
     grains = _repeat_offenders_by_grain(conn, "stm", {"9": "Route Nine"})
     assert [g.grain for g in grains] == ["week", "month"]
     week = next(g for g in grains if g.grain == "week")
@@ -2018,6 +2220,20 @@ def test_receipt_queries_follow_retained_accountability_span_policy() -> None:
         assert "current_date" not in sql
         assert "now()" not in sql
         assert not re.search(r"-\s*(?:30|31)\b", sql)
+
+
+def test_receipt_worst_entity_queries_bound_to_one_row_per_date_in_sql() -> None:
+    expected = (
+        (_RECEIPTS_WORST_ROUTE_SQL, "prr", "route_id"),
+        (_RECEIPTS_WORST_STOP_SQL, "psd", "stop_id"),
+    )
+    for query, alias, entity_id in expected:
+        sql = " ".join(str(query).lower().split())
+        assert f"select distinct on ({alias}.provider_local_date)" in sql
+        assert (
+            f"order by {alias}.provider_local_date, "
+            f"{alias}.avg_delay_seconds desc, {alias}.{entity_id}"
+        ) in sql
 
 
 def test_build_receipts_uses_full_accountability_span_and_bounds_supplements() -> None:
@@ -2323,10 +2539,10 @@ def test_build_receipts_otp_from_network_hourly() -> None:
     )
     out = build_receipts(conn, generated_utc="t")
     r = out["2026-05-10"]
-    assert r.otp_pct == 60      # 60/100 = 60
+    assert r.otp_pct == 60  # 60/100 = 60
     assert r.avg_delay_min == 2.0
     assert r.severe_pct == 10.0  # 10/100
-    assert r.vehicles is None   # v1 deferral
+    assert r.vehicles is None  # v1 deferral
 
 
 def test_build_receipts_worst_route_and_stop_by_max_delay() -> None:
@@ -2399,9 +2615,13 @@ def test_build_receipts_skips_sentinel_worst_entities() -> None:
         _receipts_dispatch(
             acct=[
                 {
-                    "provider_local_date": d, "affected_route_count": 1,
-                    "affected_stop_count": 1, "delayed_trip_count": 0,
-                    "severe_delay_count": 0, "alert_count": 0, "rider_impact_score": None,
+                    "provider_local_date": d,
+                    "affected_route_count": 1,
+                    "affected_stop_count": 1,
+                    "delayed_trip_count": 0,
+                    "severe_delay_count": 0,
+                    "alert_count": 0,
+                    "rider_impact_score": None,
                 }
             ],
             worst_route=[
@@ -2409,8 +2629,12 @@ def test_build_receipts_skips_sentinel_worst_entities() -> None:
                 {"d": d, "route_id": "105", "avg_delay_seconds": 300.0},
             ],
             worst_stop=[
-                {"d": d, "stop_id": "__unknown_stop__", "avg_delay_seconds": 800.0,
-                 "max_delay_seconds": 1000.0},
+                {
+                    "d": d,
+                    "stop_id": "__unknown_stop__",
+                    "avg_delay_seconds": 800.0,
+                    "max_delay_seconds": 1000.0,
+                },
                 {"d": d, "stop_id": "9999", "avg_delay_seconds": 420.0, "max_delay_seconds": 600.0},
             ],
         )
@@ -2429,9 +2653,13 @@ def test_build_receipts_worst_route_otp_delta_none_when_baseline_missing() -> No
         _receipts_dispatch(
             acct=[
                 {
-                    "provider_local_date": d, "affected_route_count": 1,
-                    "affected_stop_count": 1, "delayed_trip_count": 0,
-                    "severe_delay_count": 0, "alert_count": 0, "rider_impact_score": None,
+                    "provider_local_date": d,
+                    "affected_route_count": 1,
+                    "affected_stop_count": 1,
+                    "delayed_trip_count": 0,
+                    "severe_delay_count": 0,
+                    "alert_count": 0,
+                    "rider_impact_score": None,
                 }
             ],
             # no net row for d -> network baseline OTP unknown
@@ -2456,8 +2684,8 @@ def test_receipts_worst_entity_order_has_deterministic_tiebreaker() -> None:
     route_sql = str(_RECEIPTS_WORST_ROUTE_SQL)
     stop_sql = str(_RECEIPTS_WORST_STOP_SQL)
 
-    assert "avg_delay_seconds DESC, route_id" in route_sql
-    assert "avg_delay_seconds DESC, stop_id" in stop_sql
+    assert "prr.avg_delay_seconds DESC, prr.route_id" in route_sql
+    assert "psd.avg_delay_seconds DESC, psd.stop_id" in stop_sql
     # slice-9-honesty-fixes: sentinel NULL-buckets filtered at the publish-SQL layer.
     assert "route_id <> '__unrouted__'" in route_sql
     assert "stop_id <> '__unknown_stop__'" in stop_sql
@@ -2482,8 +2710,12 @@ def test_build_receipts_worst_entity_names() -> None:
             ],
             worst_route=[{"d": d, "route_id": "R_RETIRED", "avg_delay_seconds": 300.0}],
             worst_stop=[
-                {"d": d, "stop_id": "S_UNKNOWN", "avg_delay_seconds": 420.0,
-                 "max_delay_seconds": 600.0},
+                {
+                    "d": d,
+                    "stop_id": "S_UNKNOWN",
+                    "avg_delay_seconds": 420.0,
+                    "max_delay_seconds": 600.0,
+                },
             ],
             route_names=[{"route_id": "R_RETIRED", "route_name": "Ancienne ligne"}],
             stop_names=[],
@@ -2529,6 +2761,7 @@ def test_build_receipts_missing_network_yields_none_otp() -> None:
 # S13 build_receipts re-granulation: by_shift, service_states, availability
 # --------------------------------------------------------------------------
 
+
 def _acct_row(d, **over):
     base = {
         "provider_local_date": d,
@@ -2551,12 +2784,30 @@ def test_receipts_by_shift_ordered_by_canonical_shift_order() -> None:
             acct=[_acct_row(d)],
             # rows deliberately out of order
             shift=[
-                {"local_date": d, "shift": "evening", "known_obs": 100, "severe": 5,
-                 "pooled_delay_sec": 6000.0, "inclamp_obs": 100},
-                {"local_date": d, "shift": "am_peak", "known_obs": 200, "severe": 10,
-                 "pooled_delay_sec": 12000.0, "inclamp_obs": 200},
-                {"local_date": d, "shift": "night", "known_obs": 50, "severe": 1,
-                 "pooled_delay_sec": 1500.0, "inclamp_obs": 50},
+                {
+                    "local_date": d,
+                    "shift": "evening",
+                    "known_obs": 100,
+                    "severe": 5,
+                    "pooled_delay_sec": 6000.0,
+                    "inclamp_obs": 100,
+                },
+                {
+                    "local_date": d,
+                    "shift": "am_peak",
+                    "known_obs": 200,
+                    "severe": 10,
+                    "pooled_delay_sec": 12000.0,
+                    "inclamp_obs": 200,
+                },
+                {
+                    "local_date": d,
+                    "shift": "night",
+                    "known_obs": 50,
+                    "severe": 1,
+                    "pooled_delay_sec": 1500.0,
+                    "inclamp_obs": 50,
+                },
             ],
         )
     )
@@ -2568,10 +2819,26 @@ def test_receipts_by_shift_pooled_avg_matches_day_scalar_methodology() -> None:
     """A single-shift cut's pooled avg == the day-level scalar's pooled avg when the
     day's ONLY observations fall in that shift (identical Σsec/Σinclamp methodology)."""
     d = datetime.date(2026, 6, 2)
-    net = [{"local_date": d, "known_obs": 300, "on_time": 250, "severe": 12,
-            "pooled_delay_sec": 27000.0, "inclamp_obs": 300}]
-    shift = [{"local_date": d, "shift": "midday", "known_obs": 300, "severe": 12,
-              "pooled_delay_sec": 27000.0, "inclamp_obs": 300}]
+    net = [
+        {
+            "local_date": d,
+            "known_obs": 300,
+            "on_time": 250,
+            "severe": 12,
+            "pooled_delay_sec": 27000.0,
+            "inclamp_obs": 300,
+        }
+    ]
+    shift = [
+        {
+            "local_date": d,
+            "shift": "midday",
+            "known_obs": 300,
+            "severe": 12,
+            "pooled_delay_sec": 27000.0,
+            "inclamp_obs": 300,
+        }
+    ]
     conn = FakeConn(_receipts_dispatch(acct=[_acct_row(d)], net=net, shift=shift))
     r = build_receipts(conn, generated_utc="t")["2026-06-02"]
     assert len(r.by_shift) == 1
@@ -2585,8 +2852,16 @@ def test_receipts_by_shift_zero_inclamp_yields_none_avg() -> None:
     conn = FakeConn(
         _receipts_dispatch(
             acct=[_acct_row(d)],
-            shift=[{"local_date": d, "shift": "night", "known_obs": 10, "severe": 0,
-                    "pooled_delay_sec": None, "inclamp_obs": 0}],
+            shift=[
+                {
+                    "local_date": d,
+                    "shift": "night",
+                    "known_obs": 10,
+                    "severe": 0,
+                    "pooled_delay_sec": None,
+                    "inclamp_obs": 0,
+                }
+            ],
         )
     )
     r = build_receipts(conn, generated_utc="t")["2026-06-03"]
@@ -2600,11 +2875,16 @@ def test_receipts_service_states_silent_vs_cancelled_distinct() -> None:
     conn = FakeConn(
         _receipts_dispatch(
             acct=[_acct_row(d)],
-            service_states=[{
-                "local_date": d, "scheduled_trip_days": 100,
-                "delivered_trip_days": 80, "cancelled_trip_days": 5,
-                "silent_trip_days": 15, "service_completeness_pct": 80.0,
-            }],
+            service_states=[
+                {
+                    "local_date": d,
+                    "scheduled_trip_days": 100,
+                    "delivered_trip_days": 80,
+                    "cancelled_trip_days": 5,
+                    "silent_trip_days": 15,
+                    "service_completeness_pct": 80.0,
+                }
+            ],
             not_reported=[
                 {"local_date": d, "route_id": "51", "scheduled_trip_days": 12},
                 {"local_date": d, "route_id": "24", "scheduled_trip_days": 8},
@@ -2627,16 +2907,22 @@ def test_receipts_service_states_silent_vs_cancelled_distinct() -> None:
 def test_receipts_not_reported_cap_and_precap_count() -> None:
     """The not_reported list caps at NOT_REPORTED_ROUTES_CAP; the count is PRE-cap."""
     from transit_ops.snapshots.contract import NOT_REPORTED_ROUTES_CAP
+
     d = datetime.date(2026, 6, 5)
     n = NOT_REPORTED_ROUTES_CAP + 20
     conn = FakeConn(
         _receipts_dispatch(
             acct=[_acct_row(d)],
-            service_states=[{
-                "local_date": d, "scheduled_trip_days": 500,
-                "delivered_trip_days": 0, "cancelled_trip_days": 0,
-                "silent_trip_days": 500, "service_completeness_pct": 0.0,
-            }],
+            service_states=[
+                {
+                    "local_date": d,
+                    "scheduled_trip_days": 500,
+                    "delivered_trip_days": 0,
+                    "cancelled_trip_days": 0,
+                    "silent_trip_days": 500,
+                    "service_completeness_pct": 0.0,
+                }
+            ],
             not_reported=[
                 {"local_date": d, "route_id": f"R{i:03d}", "scheduled_trip_days": n - i}
                 for i in range(n)
@@ -2656,11 +2942,16 @@ def test_receipts_not_reported_excludes_sentinel() -> None:
     conn = FakeConn(
         _receipts_dispatch(
             acct=[_acct_row(d)],
-            service_states=[{
-                "local_date": d, "scheduled_trip_days": 10,
-                "delivered_trip_days": 0, "cancelled_trip_days": 0,
-                "silent_trip_days": 10, "service_completeness_pct": 0.0,
-            }],
+            service_states=[
+                {
+                    "local_date": d,
+                    "scheduled_trip_days": 10,
+                    "delivered_trip_days": 0,
+                    "cancelled_trip_days": 0,
+                    "silent_trip_days": 10,
+                    "service_completeness_pct": 0.0,
+                }
+            ],
             not_reported=[
                 {"local_date": d, "route_id": "__unrouted__", "scheduled_trip_days": 99},
                 {"local_date": d, "route_id": "747", "scheduled_trip_days": 3},
@@ -2680,11 +2971,16 @@ def test_receipts_service_states_honest_null_when_scheduled_unknown() -> None:
     conn = FakeConn(
         _receipts_dispatch(
             acct=[_acct_row(d)],
-            service_states=[{
-                "local_date": d, "scheduled_trip_days": None,
-                "delivered_trip_days": None, "cancelled_trip_days": 2,
-                "silent_trip_days": None, "service_completeness_pct": None,
-            }],
+            service_states=[
+                {
+                    "local_date": d,
+                    "scheduled_trip_days": None,
+                    "delivered_trip_days": None,
+                    "cancelled_trip_days": 2,
+                    "silent_trip_days": None,
+                    "service_completeness_pct": None,
+                }
+            ],
         )
     )
     r = build_receipts(conn, generated_utc="t")["2026-06-07"]
@@ -2722,26 +3018,39 @@ def test_receipt_full_payload_under_byte_ceiling() -> None:
         ReceiptWorstRoute,
         ReceiptWorstStop,
     )
+
     wide = "Ligne à correspondance interrompue — desservie partiellement" * 2
     r = Receipt(
         generated_utc="2026-06-08T00:00:00Z",
         date="2026-06-08",
-        otp_pct=50, avg_delay_min=9.9, severe_pct=12.3,
+        otp_pct=50,
+        avg_delay_min=9.9,
+        severe_pct=12.3,
         worst_route=ReceiptWorstRoute(id="999", name=wide, otp_delta_pts=-40.0),
         worst_stop=ReceiptWorstStop(id="99999", name=wide, avg_delay_min=30.0),
-        affected_routes=200, affected_stops=2000, alerts=50, rider_impact_score=1234.5,
+        affected_routes=200,
+        affected_stops=2000,
+        alerts=50,
+        rider_impact_score=1234.5,
         by_shift=[
-            ReceiptShiftCut(shift=s, observation_count=99999, severe_count=9999,
-                            severe_pct=12.34, avg_delay_min=9.87)
+            ReceiptShiftCut(
+                shift=s,
+                observation_count=99999,
+                severe_count=9999,
+                severe_pct=12.34,
+                avg_delay_min=9.87,
+            )
             for s in ("am_peak", "midday", "pm_peak", "evening", "night")
         ],
         service_states=ReceiptServiceStates(
-            scheduled_trip_days=99999, delivered_trip_days=88888,
-            cancelled_trip_days=1111, silent_trip_days=9999,
-            not_reported_route_count=200, service_completeness_pct=88.88,
+            scheduled_trip_days=99999,
+            delivered_trip_days=88888,
+            cancelled_trip_days=1111,
+            silent_trip_days=9999,
+            not_reported_route_count=200,
+            service_completeness_pct=88.88,
             not_reported_routes=[
-                ReceiptNotReportedRoute(id=f"R{i:04d}", name=wide,
-                                        scheduled_trip_days=999 - i)
+                ReceiptNotReportedRoute(id=f"R{i:04d}", name=wide, scheduled_trip_days=999 - i)
                 for i in range(NOT_REPORTED_ROUTES_CAP)
             ],
         ),
@@ -2775,7 +3084,7 @@ def test_build_alert_history_aggregation() -> None:
                         "header_text_en": "Your line",
                         "alert_id": None,  # STM feed leaves this NULL — ignored
                         "severity": "WARNING",
-                        "routes": ["51", "9", "51"],   # dedup -> ["9","51"]
+                        "routes": ["51", "9", "51"],  # dedup -> ["9","51"]
                         "stops": ["3001", "1002"],
                         "start_utc": start,
                         "end_utc": end,
@@ -2813,9 +3122,16 @@ def test_build_alert_history_breakdown_buckets_by_cause_effect_severity() -> Non
 
     def _row(header, sev, cause, effect, start, end):  # noqa: ANN001, ANN202
         return {
-            "alert_header_text": header, "header_text_en": None, "alert_id": None,
-            "severity": sev, "cause": cause, "effect": effect,
-            "routes": [], "stops": [], "start_utc": start, "end_utc": end,
+            "alert_header_text": header,
+            "header_text_en": None,
+            "alert_id": None,
+            "severity": sev,
+            "cause": cause,
+            "effect": effect,
+            "routes": [],
+            "stops": [],
+            "start_utc": start,
+            "end_utc": end,
         }
 
     s = _dt.datetime(2026, 5, 1, 8, 0, 0, tzinfo=_dt.UTC)
@@ -3014,10 +3330,14 @@ def test_build_alert_history_active_periods_from_child_json() -> None:
                     "start_utc": start,
                     "end_utc": start + _dt.timedelta(hours=2),
                     "active_periods": [
-                        {"start_utc": "2026-06-01T08:00:00+00:00",
-                         "end_utc": "2026-06-01T10:00:00+00:00"},
-                        {"start_utc": "2026-06-08T08:00:00+00:00",
-                         "end_utc": "2026-06-08T10:00:00+00:00"},
+                        {
+                            "start_utc": "2026-06-01T08:00:00+00:00",
+                            "end_utc": "2026-06-01T10:00:00+00:00",
+                        },
+                        {
+                            "start_utc": "2026-06-08T08:00:00+00:00",
+                            "end_utc": "2026-06-08T10:00:00+00:00",
+                        },
                     ],
                 }
             ],
