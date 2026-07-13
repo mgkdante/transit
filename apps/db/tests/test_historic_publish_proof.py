@@ -4,6 +4,7 @@ import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from http.client import IncompleteRead
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
@@ -11,6 +12,7 @@ import pytest
 
 import transit_ops.validation.historic_publish as historic_publish_module
 from transit_ops.settings import Settings
+from transit_ops.snapshots.builders.historic.alert_archive import _collection_generation_id
 from transit_ops.snapshots.contract import (
     AlertArchiveEntry,
     AlertArchiveIndex,
@@ -28,6 +30,7 @@ from transit_ops.snapshots.contract import (
     RouteReliability,
     RouteReliabilityIndex,
 )
+from transit_ops.snapshots.gate import check_alert_archive_index
 from transit_ops.validation.historic_publish import (
     AlertExpectations,
     MigrationEvidence,
@@ -36,7 +39,6 @@ from transit_ops.validation.historic_publish import (
 
 GENERATED_UTC = "2026-07-13T06:00:00+00:00"
 NOW_UTC = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
-COLLECTION_GENERATION_ID = "a" * 64
 
 
 @dataclass
@@ -44,6 +46,7 @@ class PublicFixture:
     public_bytes: dict[str, bytes]
     page_paths: tuple[str, ...]
     fetch_calls: list[str]
+    collection_generation_id: str
     expectations_reader: Callable[..., AlertExpectations]
 
 
@@ -118,7 +121,8 @@ def _complete_public_fixture(*, empty_alerts: bool = False) -> PublicFixture:
     page_paths: tuple[str, ...]
     public_bytes: dict[str, bytes] = {}
     if empty_alerts:
-        collection_generation_id = "b" * 64
+        months: list[AlertArchiveMonth] = []
+        collection_generation_id = _collection_generation_id(months, None, None)
         alert_index = AlertArchiveIndex(
             generated_utc=GENERATED_UTC,
             collection_generation_id=collection_generation_id,
@@ -150,16 +154,22 @@ def _complete_public_fixture(*, empty_alerts: bool = False) -> PublicFixture:
         public_bytes[may_path] = _json_bytes(may_page)
         public_bytes[july_path] = _json_bytes(july_page)
         page_paths = (may_path, july_path)
+        months = [
+            AlertArchiveMonth(month="2026-07", total_alerts=1, pages=[july_ref]),
+            AlertArchiveMonth(month="2026-05", total_alerts=1, pages=[may_ref]),
+        ]
+        collection_generation_id = _collection_generation_id(
+            months,
+            "2026-05-01",
+            "2026-07-13",
+        )
         alert_index = AlertArchiveIndex(
             generated_utc=GENERATED_UTC,
-            collection_generation_id=COLLECTION_GENERATION_ID,
+            collection_generation_id=collection_generation_id,
             first_available_date="2026-05-01",
             last_available_date="2026-07-13",
             total_alerts=2,
-            months=[
-                AlertArchiveMonth(month="2026-07", total_alerts=1, pages=[july_ref]),
-                AlertArchiveMonth(month="2026-05", total_alerts=1, pages=[may_ref]),
-            ],
+            months=months,
         )
         alert_history = AlertHistory(
             generated_utc=GENERATED_UTC,
@@ -218,7 +228,7 @@ def _complete_public_fixture(*, empty_alerts: bool = False) -> PublicFixture:
 
         def expectations_reader(provider_id, generated_utc, engine):  # noqa: ANN001
             return AlertExpectations(
-                collection_generation_id="b" * 64,
+                collection_generation_id=collection_generation_id,
                 total_alerts=0,
                 first_available_date=None,
                 last_available_date=None,
@@ -233,7 +243,7 @@ def _complete_public_fixture(*, empty_alerts: bool = False) -> PublicFixture:
 
         def expectations_reader(provider_id, generated_utc, engine):  # noqa: ANN001
             return AlertExpectations(
-                collection_generation_id="a" * 64,
+                collection_generation_id=collection_generation_id,
                 total_alerts=2,
                 first_available_date="2026-05-01",
                 last_available_date="2026-07-13",
@@ -248,6 +258,7 @@ def _complete_public_fixture(*, empty_alerts: bool = False) -> PublicFixture:
         public_bytes=public_bytes,
         page_paths=page_paths,
         fetch_calls=fetch_calls,
+        collection_generation_id=collection_generation_id,
         expectations_reader=expectations_reader,
     )
 
@@ -268,7 +279,7 @@ def _sync_receipt() -> dict[str, object]:
     }
 
 
-def _gate_report() -> dict[str, object]:
+def _gate_report(fixture: PublicFixture) -> dict[str, object]:
     return {
         "provider_id": "stm",
         "tier": "historic",
@@ -278,6 +289,16 @@ def _gate_report() -> dict[str, object]:
         "errors": 0,
         "warnings": 0,
         "results": [],
+        "payload_sha256": dict(
+            sorted(
+                (
+                    path,
+                    hashlib.sha256(raw).hexdigest(),
+                )
+                for path, raw in fixture.public_bytes.items()
+                if path != "manifest.json"
+            )
+        ),
     }
 
 
@@ -303,6 +324,7 @@ def _build_report(
     gate_report: dict[str, object] | None = None,
     migration_reader: Callable[..., MigrationEvidence] | None = None,
     fetch_override: Callable[[str], bytes] | None = None,
+    public_base_url: str = "https://data.example.com",
 ):
     def default_migration_reader(settings, engine):  # noqa: ANN001
         return MigrationEvidence(
@@ -320,11 +342,11 @@ def _build_report(
     return build_historic_publish_proof(
         "stm",
         sync_receipt=sync_receipt or _sync_receipt(),
-        gate_report=gate_report or _gate_report(),
+        gate_report=gate_report if gate_report is not None else _gate_report(fixture),
         settings=Settings(
             _env_file=None,
             DATABASE_URL="postgresql://proof:secret@localhost/transit",
-            SNAPSHOT_PUBLIC_BASE_URL="https://data.example.com",
+            SNAPSHOT_PUBLIC_BASE_URL=public_base_url,
         ),
         engine=object(),  # type: ignore[arg-type]
         fetch_bytes=fetch_bytes,
@@ -382,6 +404,118 @@ def test_historic_publish_proof_treats_honest_empty_alerts_as_no_data() -> None:
     assert report.source_messages["archive"]["status"] == "no_data"
     assert report.source_messages["legacy"]["status"] == "no_data"
     assert not any("/generations/" in urlsplit(url).path for url in fixture.fetch_calls)
+
+
+def test_historic_publish_proof_rejects_forged_archive_generation_binding() -> None:
+    fixture = _complete_public_fixture()
+    index_path = "historic/alerts/index.json"
+    index = AlertArchiveIndex.model_validate_json(fixture.public_bytes[index_path])
+    original_generation = index.collection_generation_id
+    forged_paths: list[str] = []
+
+    for month in index.months:
+        for ref in month.pages:
+            page = AlertArchivePage.model_validate_json(fixture.public_bytes.pop(ref.path))
+            page.alerts[0].id = f"forged-{page.alerts[0].id}"
+            raw = _json_bytes(page)
+            digest = hashlib.sha256(raw).hexdigest()
+            forged_path = (
+                f"historic/alerts/generations/{digest}/{page.month}/page-{page.page:04d}.json"
+            )
+            ref.path = forged_path
+            ref.byte_size = len(raw)
+            ref.sha256 = digest
+            fixture.public_bytes[forged_path] = raw
+            forged_paths.append(forged_path)
+
+    assert index.collection_generation_id == original_generation
+    canonical_findings = check_alert_archive_index(index, rel_key=index_path)
+    assert "collection_generation_id" in {finding.check for finding in canonical_findings}
+    _replace_public_model(fixture, index_path, index)
+    fixture.page_paths = tuple(forged_paths)
+
+    report = _build_report(fixture)
+
+    assert report.status == "fail"
+    assert "public_archive_generation_binding_mismatch" in report.failures
+    assert (
+        "public_archive_generation_binding_mismatch"
+        in report.public["artifacts"][index_path]["failures"]
+    )
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "alerts_index",
+        "receipts_index",
+        "route_index",
+        "alert_history",
+        "alert_page_oldest",
+        "alert_page_newest",
+        "receipt_oldest",
+        "receipt_newest",
+        "route_oldest",
+        "route_newest",
+    ],
+)
+def test_historic_publish_proof_binds_every_fetched_task6_artifact_to_gate_digest(
+    target: str,
+) -> None:
+    fixture = _complete_public_fixture()
+    target_paths = {
+        "alerts_index": "historic/alerts/index.json",
+        "receipts_index": "historic/receipts/index.json",
+        "route_index": "historic/route_reliability/index.json",
+        "alert_history": "historic/alert_history.json",
+        "alert_page_oldest": fixture.page_paths[0],
+        "alert_page_newest": fixture.page_paths[-1],
+        "receipt_oldest": "historic/receipts/2026-05-01.json",
+        "receipt_newest": "historic/receipts/2026-07-13.json",
+        "route_oldest": "historic/route_reliability/10.json",
+        "route_newest": "historic/route_reliability/747.json",
+    }
+    path = target_paths[target]
+    gate_report = _gate_report(fixture)
+    payload_sha256 = gate_report["payload_sha256"]
+    assert isinstance(payload_sha256, dict)
+    payload_sha256[path] = "0" * 64
+
+    report = _build_report(fixture, gate_report=gate_report)
+
+    assert report.status == "fail"
+    assert "public_gate_digest_mismatch" in report.failures
+    artifact = report.public["artifacts"][path]
+    assert artifact["failures"] == ["public_gate_digest_mismatch"]
+    assert artifact["gate_sha256_matches"] is False
+
+
+@pytest.mark.parametrize(
+    ("mutation", "artifact_failure"),
+    [
+        ("missing_mapping", "public_gate_digest_missing"),
+        ("malformed_digest", "public_gate_digest_invalid"),
+    ],
+)
+def test_historic_publish_proof_rejects_missing_or_malformed_gate_digest_receipt(
+    mutation: str,
+    artifact_failure: str,
+) -> None:
+    fixture = _complete_public_fixture()
+    path = "historic/alerts/index.json"
+    gate_report = _gate_report(fixture)
+    if mutation == "missing_mapping":
+        gate_report.pop("payload_sha256")
+    else:
+        payload_sha256 = gate_report["payload_sha256"]
+        assert isinstance(payload_sha256, dict)
+        payload_sha256[path] = "not-a-sha256"
+
+    report = _build_report(fixture, gate_report=gate_report)
+
+    assert report.status == "fail"
+    assert "gate_payload_sha256_invalid" in report.failures
+    assert artifact_failure in report.public["artifacts"][path]["failures"]
 
 
 @pytest.mark.parametrize(
@@ -537,7 +671,13 @@ def _header_only_fixture() -> PublicFixture:
             ref.sha256 = digest
             fixture.public_bytes[path] = raw
             page_paths.append(path)
+    index.collection_generation_id = _collection_generation_id(
+        index.months,
+        index.first_available_date,
+        index.last_available_date,
+    )
     _replace_public_model(fixture, index_path, index)
+    fixture.collection_generation_id = index.collection_generation_id
 
     history_path = "historic/alert_history.json"
     history = AlertHistory.model_validate_json(fixture.public_bytes[history_path])
@@ -548,6 +688,7 @@ def _header_only_fixture() -> PublicFixture:
 
     def expectations_reader(provider_id, generated_utc, engine):  # noqa: ANN001
         return _nonempty_expectations(
+            collection_generation_id=fixture.collection_generation_id,
             archive_description_count=0,
             legacy_description_count=0,
         )
@@ -573,9 +714,13 @@ def test_historic_publish_proof_accepts_header_only_alert_sources() -> None:
     assert report.source_messages["legacy"]["public_description_count"] == 0
 
 
-def _nonempty_expectations(**overrides: object) -> AlertExpectations:
+def _nonempty_expectations(
+    *,
+    collection_generation_id: str,
+    **overrides: object,
+) -> AlertExpectations:
     values: dict[str, object] = {
-        "collection_generation_id": COLLECTION_GENERATION_ID,
+        "collection_generation_id": collection_generation_id,
         "total_alerts": 2,
         "first_available_date": "2026-05-01",
         "last_available_date": "2026-07-13",
@@ -592,7 +737,7 @@ def _nonempty_expectations(**overrides: object) -> AlertExpectations:
 def build_mutated_report(mutation: str):
     fixture = _complete_public_fixture()
     sync_receipt = _sync_receipt()
-    gate_report = _gate_report()
+    gate_report = _gate_report(fixture)
     migration_reader = None
 
     if mutation == "migration_mismatch":
@@ -848,6 +993,37 @@ def test_historic_publish_proof_records_http_failure_without_leaking_exception()
     assert artifact["failures"] == ["public_artifact_fetch_failed"]
     assert artifact["error_type"] == "HTTPError"
     assert "unavailable" not in str(report.display_dict())
+
+
+def test_historic_publish_proof_records_incomplete_read_without_partial_body() -> None:
+    fixture = _complete_public_fixture()
+    failed_path = "historic/receipts/index.json"
+
+    def fetch_override(url: str) -> bytes:
+        path = urlsplit(url).path.split("/v1/stm/", 1)[1]
+        if path == failed_path:
+            raise IncompleteRead(b"private-partial-body", 100)
+        return fixture.public_bytes[path]
+
+    report = _build_report(fixture, fetch_override=fetch_override)
+
+    assert report.status == "fail"
+    assert "public_artifact_fetch_failed" in report.failures
+    artifact = report.public["artifacts"][failed_path]
+    assert artifact["failures"] == ["public_artifact_fetch_failed"]
+    assert artifact["error_type"] == "IncompleteRead"
+    assert "private-partial-body" not in str(report.display_dict())
+
+
+def test_historic_publish_proof_records_malformed_public_base_url() -> None:
+    fixture = _complete_public_fixture()
+
+    report = _build_report(fixture, public_base_url="https://[malformed")
+
+    assert report.status == "fail"
+    assert "snapshot_public_base_url_invalid" in report.failures
+    assert report.public["base_url"] is None
+    assert "malformed" not in str(report.display_dict())
 
 
 def test_historic_publish_proof_rejects_unsafe_manifest_prefixes_with_evidence() -> None:

@@ -30,6 +30,8 @@ from enum import Enum
 
 from pydantic import BaseModel
 
+from transit_ops.snapshots.storage import _body
+
 logger = logging.getLogger(__name__)
 
 # --- tunable constants (config-free — trust-gate thresholds) ------------------
@@ -93,6 +95,7 @@ class GateReport:
     checks_run: int = 0
     payloads_checked: int = 0
     results: list[CheckResult] = field(default_factory=list)
+    payload_sha256: dict[str, str] = field(default_factory=dict)
 
     @property
     def errors(self) -> list[CheckResult]:
@@ -116,6 +119,7 @@ class GateReport:
             "errors": len(self.errors),
             "warnings": len(self.warnings),
             "results": [r.to_dict() for r in self.results],
+            "payload_sha256": dict(sorted(self.payload_sha256.items())),
         }
 
 
@@ -1411,7 +1415,10 @@ def new_report(provider_id: str, tier: str, generated_utc: str) -> GateReport:
 
 def record(report: GateReport, rel_key: str, payload: object) -> None:
     """Run check_payload for one payload; append results; bump payloads_checked/checks_run."""
-    report.results.extend(check_payload(rel_key, payload))
+    findings = check_payload(rel_key, payload)
+    digest = hashlib.sha256(_body(payload)).hexdigest()  # type: ignore[arg-type]
+    report.results.extend(findings)
+    report.payload_sha256[rel_key] = digest
     report.payloads_checked += 1
     report.checks_run += 1
 

@@ -8,6 +8,7 @@ empty-route aggregates, and enforce()/GateError semantics.
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
@@ -47,6 +48,7 @@ from transit_ops.snapshots.contract import (
     TrendPoint,
 )
 from transit_ops.snapshots.gate import Severity
+from transit_ops.snapshots.storage import _body
 
 
 def _errors(results):
@@ -1106,3 +1108,21 @@ def test_gate_report_to_dict_round_trips_json():
     assert parsed["payloads_checked"] == 1
     assert parsed["errors"] >= 1  # otp_pct=150 -> rate_range ERROR
     assert isinstance(parsed["results"], list)
+
+
+def test_gate_report_records_sorted_canonical_payload_sha256_receipts():
+    report = gate.new_report("stm", "historic", "2026-06-01T00:00:00Z")
+    private_payload = {"generated_utc": "t", "secret": "must-not-leak", "z": 1}
+    receipt = Receipt(generated_utc="t", date="2026-06-01")
+
+    gate.record(report, "historic/z.json", private_payload)
+    gate.record(report, "historic/receipts/2026-06-01.json", receipt)
+
+    expected = {
+        "historic/receipts/2026-06-01.json": hashlib.sha256(_body(receipt)).hexdigest(),
+        "historic/z.json": hashlib.sha256(_body(private_payload)).hexdigest(),
+    }
+    payload_sha256 = report.to_dict()["payload_sha256"]
+    assert payload_sha256 == expected
+    assert list(payload_sha256) == sorted(expected)
+    assert "must-not-leak" not in json.dumps(payload_sha256)

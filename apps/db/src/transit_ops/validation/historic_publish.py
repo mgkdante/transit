@@ -7,6 +7,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from http.client import IncompleteRead
 from pathlib import Path
 from typing import Literal, TypeVar
 from urllib.parse import unquote, urlsplit
@@ -34,6 +35,7 @@ from transit_ops.snapshots.contract import (
     RouteReliability,
     RouteReliabilityIndex,
 )
+from transit_ops.snapshots.gate import check_alert_archive_index
 
 SYNC_MAX_AGE = timedelta(hours=6)
 GATE_MAX_AGE = timedelta(hours=36)
@@ -95,6 +97,7 @@ OperationalErrorTypes = (OSError, ValueError, SQLAlchemyError)
 PayloadT = TypeVar("PayloadT", bound=BaseModel)
 _PERCENT_ESCAPE = re.compile(r"%([0-9a-fA-F]{2})")
 _ENCODED_UNSAFE_BYTES = {ord(character) for character in "./\\?#:@"}
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _has_source_text(alert: object) -> bool:
@@ -200,7 +203,11 @@ def _public_root(settings: Settings, provider_id: str, failures: list[str]) -> s
     if not raw_base:
         _add_failure(failures, "snapshot_public_base_url_missing")
         return None
-    parsed = urlsplit(raw_base)
+    try:
+        parsed = urlsplit(raw_base)
+    except ValueError:
+        _add_failure(failures, "snapshot_public_base_url_invalid")
+        return None
     if (
         parsed.scheme not in {"http", "https"}
         or not parsed.netloc
@@ -228,6 +235,8 @@ def _fetch_model(
     artifacts: dict[str, dict[str, object]],
     failures: list[str],
     query: str | None = None,
+    gate_digests: Mapping[str, object] | None = None,
+    bind_gate_digest: bool = False,
 ) -> tuple[PayloadT | None, bytes | None, dict[str, object]]:
     try:
         safe_path = _safe_public_path(path)
@@ -252,20 +261,37 @@ def _fetch_model(
     )
     try:
         raw = fetch_bytes(url)
-    except OperationalErrorTypes as exc:
+    except (*OperationalErrorTypes, IncompleteRead) as exc:
         artifact["error_type"] = type(exc).__name__
         _add_failure(failures, "public_artifact_fetch_failed", artifact)
         return None, None, artifact
 
     artifact["byte_size"] = len(raw)
-    artifact["sha256"] = hashlib.sha256(raw).hexdigest()
+    actual_sha256 = hashlib.sha256(raw).hexdigest()
+    artifact["sha256"] = actual_sha256
+    if bind_gate_digest:
+        if gate_digests is None or safe_path not in gate_digests:
+            _add_failure(failures, "public_gate_digest_missing", artifact)
+        else:
+            expected_sha256 = gate_digests[safe_path]
+            if (
+                not isinstance(expected_sha256, str)
+                or _SHA256_RE.fullmatch(expected_sha256) is None
+            ):
+                _add_failure(failures, "public_gate_digest_invalid", artifact)
+            else:
+                artifact["gate_sha256"] = expected_sha256
+                artifact["gate_sha256_matches"] = actual_sha256 == expected_sha256
+                if actual_sha256 != expected_sha256:
+                    _add_failure(failures, "public_gate_digest_mismatch", artifact)
     try:
         payload = model_type.model_validate_json(raw)
     except (ValidationError, UnicodeError):
         artifact["error_type"] = "contract_validation"
         _add_failure(failures, "public_artifact_invalid", artifact)
         return None, raw, artifact
-    artifact["status"] = "pass"
+    if artifact["status"] == "pending":
+        artifact["status"] = "pass"
     return payload, raw, artifact
 
 
@@ -440,7 +466,7 @@ def _parse_gate_report(
     *,
     now_utc: datetime,
     failures: list[str],
-) -> tuple[dict[str, object], str | None]:
+) -> tuple[dict[str, object], str | None, Mapping[str, object] | None]:
     provider = report.get("provider_id")
     if provider != provider_id:
         _add_failure(failures, "gate_provider_mismatch")
@@ -470,6 +496,33 @@ def _parse_gate_report(
     if generated is not None and not (now_utc - GATE_MAX_AGE <= generated <= now_utc + FUTURE_SKEW):
         _add_failure(failures, "gate_generation_stale")
 
+    raw_payload_sha256 = report.get("payload_sha256")
+    payload_sha256: dict[str, object] | None = None
+    display_payload_sha256: dict[str, str] = {}
+    digest_mapping_valid = isinstance(raw_payload_sha256, Mapping)
+    if isinstance(raw_payload_sha256, Mapping):
+        payload_sha256 = {}
+        for path, digest in raw_payload_sha256.items():
+            if not isinstance(path, str):
+                digest_mapping_valid = False
+                continue
+            payload_sha256[path] = digest
+            try:
+                safe_path = _safe_public_path(path)
+            except ValueError:
+                digest_mapping_valid = False
+                continue
+            if (
+                safe_path != path
+                or not isinstance(digest, str)
+                or _SHA256_RE.fullmatch(digest) is None
+            ):
+                digest_mapping_valid = False
+                continue
+            display_payload_sha256[path] = digest
+    if not digest_mapping_valid:
+        _add_failure(failures, "gate_payload_sha256_invalid")
+
     generated_text = generated_raw if isinstance(generated_raw, str) else None
     display = {
         "provider_id": provider if isinstance(provider, str) else None,
@@ -478,8 +531,9 @@ def _parse_gate_report(
         "checks_run": checks_run,
         "payloads_checked": payloads_checked,
         "errors": errors,
+        "payload_sha256": dict(sorted(display_payload_sha256.items())),
     }
-    return display, generated_text
+    return display, generated_text, payload_sha256
 
 
 def _check_sync_expectations(
@@ -605,7 +659,7 @@ def build_historic_publish_proof(
         now_utc=now,
         failures=failures,
     )
-    gate, gate_generation = _parse_gate_report(
+    gate, gate_generation, gate_digests = _parse_gate_report(
         provider_id,
         gate_report,
         now_utc=now,
@@ -711,6 +765,8 @@ def build_historic_publish_proof(
             artifacts=artifacts,
             failures=failures,
             query=proof_query,
+            gate_digests=gate_digests,
+            bind_gate_digest=True,
         )
         receipts_index, _, receipts_index_artifact = _fetch_model(
             historic_files.receipts_index,
@@ -720,6 +776,8 @@ def build_historic_publish_proof(
             artifacts=artifacts,
             failures=failures,
             query=proof_query,
+            gate_digests=gate_digests,
+            bind_gate_digest=True,
         )
         routes_index, _, routes_index_artifact = _fetch_model(
             historic_files.route_reliability_index,
@@ -729,6 +787,8 @@ def build_historic_publish_proof(
             artifacts=artifacts,
             failures=failures,
             query=proof_query,
+            gate_digests=gate_digests,
+            bind_gate_digest=True,
         )
         alert_history, _, history_artifact = _fetch_model(
             historic_files.alert_history,
@@ -738,6 +798,8 @@ def build_historic_publish_proof(
             artifacts=artifacts,
             failures=failures,
             query=proof_query,
+            gate_digests=gate_digests,
+            bind_gate_digest=True,
         )
 
         indexes = public["indexes"]
@@ -761,6 +823,29 @@ def build_historic_publish_proof(
                 _add_failure(failures, "public_index_generation_mismatch", artifact)
 
         if alerts_index is not None:
+            generation_findings = check_alert_archive_index(
+                alerts_index,
+                rel_key=historic_files.alerts_index,
+            )
+            if expectations is not None:
+                expected_generation_index = alerts_index.model_copy(
+                    update={
+                        "collection_generation_id": expectations.collection_generation_id,
+                    }
+                )
+                generation_findings.extend(
+                    check_alert_archive_index(
+                        expected_generation_index,
+                        rel_key=historic_files.alerts_index,
+                    )
+                )
+            if any(finding.check == "collection_generation_id" for finding in generation_findings):
+                _add_failure(
+                    failures,
+                    "public_archive_generation_binding_mismatch",
+                    alerts_index_artifact,
+                )
+
             refs = [ref for month in alerts_index.months for ref in month.pages]
             if expectations is not None:
                 if alerts_index.collection_generation_id != expectations.collection_generation_id:
@@ -793,6 +878,8 @@ def build_historic_publish_proof(
                     artifacts=artifacts,
                     failures=failures,
                     query=proof_query,
+                    gate_digests=gate_digests,
+                    bind_gate_digest=True,
                 )
                 if raw is not None:
                     raw_sha256 = hashlib.sha256(raw).hexdigest()
@@ -870,6 +957,8 @@ def build_historic_publish_proof(
                     artifacts=artifacts,
                     failures=failures,
                     query=proof_query,
+                    gate_digests=gate_digests,
+                    bind_gate_digest=True,
                 )
                 if receipt is None:
                     continue
@@ -902,6 +991,8 @@ def build_historic_publish_proof(
                     artifacts=artifacts,
                     failures=failures,
                     query=proof_query,
+                    gate_digests=gate_digests,
+                    bind_gate_digest=True,
                 )
                 if route is None:
                     continue
