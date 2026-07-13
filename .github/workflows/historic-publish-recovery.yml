@@ -66,11 +66,21 @@ jobs:
             echo "Provider discovery returned no providers" >&2
             exit 1
           fi
+          declare -A seen_providers=()
           while IFS= read -r provider; do
             if [[ -z "$provider" ]]; then
               echo "Provider discovery returned an empty provider id" >&2
               exit 1
             fi
+            if [[ ! "$provider" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+              echo "Provider discovery returned an unsafe provider id" >&2
+              exit 1
+            fi
+            if [[ -n "${seen_providers[$provider]+x}" ]]; then
+              echo "Provider discovery returned a duplicate provider id" >&2
+              exit 1
+            fi
+            seen_providers["$provider"]=1
             uv run python -m transit_ops.cli sync-alert-archive "$provider" \
               | tee "artifacts/historic-publish-recovery/alert-archive-sync-${provider}.json"
           done <<< "$providers"
@@ -85,21 +95,85 @@ jobs:
       - name: Prove published historic snapshots
         run: |
           published_providers="$(
-            jq -er '
-              if type != "array" or length == 0 then
+            jq -ers '
+              def valid_provider_id:
+                if type == "string" then
+                  length > 0 and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")
+                else false
+                end;
+              if length != 1 then
+                error("historic publish result must contain exactly one JSON document")
+              elif (.[0] | type) != "array" or (.[0] | length) == 0 then
                 error("historic publish result must be a nonempty array")
-              elif any(
-                .[];
-                ((.provider_id | type) != "string" or (.provider_id | length) == 0)
+              elif any(.[0][];
+                if type == "object" then
+                  (.provider_id | valid_provider_id | not)
+                else true
+                end
               ) then
-                error("every historic publish result needs a nonempty provider_id")
+                error("every historic publish result needs a safe provider_id")
+              elif ([.[0][].provider_id] | unique | length) != (.[0] | length) then
+                error("historic publish result contains duplicate provider_id values")
               else
-                .[].provider_id
+                [.[0][].provider_id] | sort | .[]
               end
             ' artifacts/historic-publish-recovery/historic-publish.json
           )"
           if [[ -z "$published_providers" ]]; then
             echo "Historic publish result returned no provider ids" >&2
+            exit 1
+          fi
+          shopt -s nullglob
+          sync_receipts=(
+            artifacts/historic-publish-recovery/alert-archive-sync-*.json
+          )
+          shopt -u nullglob
+          if (( ${#sync_receipts[@]} == 0 )); then
+            echo "Historic recovery produced no sync receipts" >&2
+            exit 1
+          fi
+          sync_receipt_records=()
+          for sync_receipt in "${sync_receipts[@]}"; do
+            sync_receipt_records+=("$(
+              jq -ecs '
+                def valid_provider_id:
+                  if type == "string" then
+                    length > 0 and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")
+                  else false
+                  end;
+                if length != 1 then
+                  error("sync receipt must contain exactly one JSON document")
+                elif (.[0] | type) != "object" then
+                  error("sync receipt must be a JSON object")
+                elif (.[0].provider_id | valid_provider_id | not) then
+                  error("sync receipt needs a safe provider_id")
+                elif (
+                  .[0] | has("skipped_not_seeded")
+                  and (.skipped_not_seeded | type) != "boolean"
+                ) then
+                  error("sync receipt skipped_not_seeded must be boolean")
+                else
+                  .[0]
+                end
+              ' "$sync_receipt"
+            )")
+          done
+          synced_providers="$(
+            printf '%s\n' "${sync_receipt_records[@]}" \
+              | jq -rs '
+                [.[]
+                  | select(.skipped_not_seeded != true)
+                  | .provider_id
+                ] as $synced
+                | if ($synced | unique | length) != ($synced | length) then
+                    error("sync receipts contain duplicate active provider_id values")
+                  else
+                    $synced | sort | .[]
+                  end
+              '
+          )"
+          if [[ "$synced_providers" != "$published_providers" ]]; then
+            echo "Historic publish provider set does not match active sync receipts" >&2
             exit 1
           fi
           while IFS= read -r provider; do
@@ -117,10 +191,11 @@ jobs:
               echo "Historic publication proof for ${provider} did not write a nonempty report" >&2
               exit 1
             fi
-            if ! jq -e --arg provider "$provider" '
-              type == "object"
-              and .provider_id == $provider
-              and .status == "pass"
+            if ! jq -es --arg provider "$provider" '
+              length == 1
+              and (.[0] | type) == "object"
+              and .[0].provider_id == $provider
+              and .[0].status == "pass"
             ' "$proof_path" >/dev/null; then
               echo "Historic publication proof report for ${provider} is invalid or failed" >&2
               exit 1
