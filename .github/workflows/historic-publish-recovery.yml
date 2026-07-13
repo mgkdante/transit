@@ -107,10 +107,24 @@ jobs:
               echo "Historic publish result returned an empty provider id" >&2
               exit 1
             fi
+            proof_path="artifacts/historic-publish-recovery/public-proof-${provider}.json"
+            : > "$proof_path"
             uv run python -m transit_ops.cli verify-historic-publish "$provider" \
               --sync-report "artifacts/historic-publish-recovery/alert-archive-sync-${provider}.json" \
               --gate-report "artifacts/historic-publish-recovery/publish-gate-${provider}.json" \
-              --report-path "artifacts/historic-publish-recovery/public-proof-${provider}.json"
+              --report-path "$proof_path"
+            if [[ ! -s "$proof_path" ]]; then
+              echo "Historic publication proof for ${provider} did not write a nonempty report" >&2
+              exit 1
+            fi
+            if ! jq -e --arg provider "$provider" '
+              type == "object"
+              and .provider_id == $provider
+              and .status == "pass"
+            ' "$proof_path" >/dev/null; then
+              echo "Historic publication proof report for ${provider} is invalid or failed" >&2
+              exit 1
+            fi
           done <<< "$published_providers"
 
       - name: Upload historic recovery evidence

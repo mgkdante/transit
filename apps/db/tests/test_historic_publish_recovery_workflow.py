@@ -238,13 +238,29 @@ uv run python -m transit_ops.cli publish-all \\
         '    echo "Historic publish result returned an empty provider id" >&2\n'
         "    exit 1\n"
         "  fi\n"
+        '  proof_path="artifacts/historic-publish-recovery/'
+        'public-proof-${provider}.json"\n'
+        '  : > "$proof_path"\n'
         '  uv run python -m transit_ops.cli verify-historic-publish "$provider" \\\n'
         '    --sync-report "artifacts/historic-publish-recovery/'
         'alert-archive-sync-${provider}.json" \\\n'
         '    --gate-report "artifacts/historic-publish-recovery/'
         'publish-gate-${provider}.json" \\\n'
-        '    --report-path "artifacts/historic-publish-recovery/'
-        'public-proof-${provider}.json"\n'
+        '    --report-path "$proof_path"\n'
+        '  if [[ ! -s "$proof_path" ]]; then\n'
+        '    echo "Historic publication proof for ${provider} did not write a '
+        'nonempty report" >&2\n'
+        "    exit 1\n"
+        "  fi\n"
+        '  if ! jq -e --arg provider "$provider" \'\n'
+        '    type == "object"\n'
+        "    and .provider_id == $provider\n"
+        '    and .status == "pass"\n'
+        '  \' "$proof_path" >/dev/null; then\n'
+        '    echo "Historic publication proof report for ${provider} is '
+        'invalid or failed" >&2\n'
+        "    exit 1\n"
+        "  fi\n"
         'done <<< "$published_providers"'
     )
     assert _step(job, "Prove published historic snapshots")["run"].strip() == expected_proof
@@ -396,6 +412,124 @@ def test_proof_step_rejects_invalid_or_empty_publish_results(
     assert result.returncode != 0
 
 
+@pytest.mark.parametrize(
+    ("fake_uv_body", "expected_error"),
+    [
+        (
+            "exit 0\n",
+            "did not write a nonempty report",
+        ),
+        (
+            """\
+if [[ "$*" == *"verify-historic-publish"* ]]; then
+  : > artifacts/historic-publish-recovery/public-proof-stm.json
+fi
+exit 0
+""",
+            "did not write a nonempty report",
+        ),
+        (
+            """\
+if [[ "$*" == *"verify-historic-publish"* ]]; then
+  printf 'not-json\\n' \\
+    > artifacts/historic-publish-recovery/public-proof-stm.json
+fi
+exit 0
+""",
+            "is invalid or failed",
+        ),
+        (
+            """\
+if [[ "$*" == *"verify-historic-publish"* ]]; then
+  printf '[{"provider_id":"stm","status":"pass"}]\\n' \\
+    > artifacts/historic-publish-recovery/public-proof-stm.json
+fi
+exit 0
+""",
+            "is invalid or failed",
+        ),
+        (
+            """\
+if [[ "$*" == *"verify-historic-publish"* ]]; then
+  printf '{"provider_id":"stm","status":"fail"}\\n' \\
+    > artifacts/historic-publish-recovery/public-proof-stm.json
+fi
+exit 0
+""",
+            "is invalid or failed",
+        ),
+        (
+            """\
+if [[ "$*" == *"verify-historic-publish"* ]]; then
+  printf '{"provider_id":"sto","status":"pass"}\\n' \\
+    > artifacts/historic-publish-recovery/public-proof-stm.json
+fi
+exit 0
+""",
+            "is invalid or failed",
+        ),
+    ],
+    ids=[
+        "missing-report",
+        "empty-report",
+        "malformed-report",
+        "non-object-report",
+        "failed-status",
+        "provider-mismatch",
+    ],
+)
+def test_proof_step_rejects_zero_exit_without_matching_passing_report(
+    tmp_path: Path,
+    fake_uv_body: str,
+    expected_error: str,
+) -> None:
+    artifact_dir = tmp_path / "artifacts" / "historic-publish-recovery"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "historic-publish.json").write_text(
+        '[{"provider_id": "stm"}]',
+        encoding="utf-8",
+    )
+    environment = _fake_uv_environment(tmp_path, fake_uv_body)
+    job = _only_job(_load(RECOVERY_WORKFLOW))
+
+    result = _run_step_script(
+        job,
+        "Prove published historic snapshots",
+        cwd=tmp_path,
+        environment=environment,
+    )
+
+    assert result.returncode != 0
+    assert expected_error in result.stderr
+
+
+def test_proof_step_rejects_stale_passing_report_not_rewritten_by_verifier(
+    tmp_path: Path,
+) -> None:
+    artifact_dir = tmp_path / "artifacts" / "historic-publish-recovery"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "historic-publish.json").write_text(
+        '[{"provider_id": "stm"}]',
+        encoding="utf-8",
+    )
+    (artifact_dir / "public-proof-stm.json").write_text(
+        '{"provider_id":"stm","status":"pass"}\n',
+        encoding="utf-8",
+    )
+    environment = _fake_uv_environment(tmp_path, "exit 0\n")
+    job = _only_job(_load(RECOVERY_WORKFLOW))
+
+    result = _run_step_script(
+        job,
+        "Prove published historic snapshots",
+        cwd=tmp_path,
+        environment=environment,
+    )
+
+    assert result.returncode != 0
+    assert "did not write a nonempty report" in result.stderr
+
+
 def test_proof_step_verifies_each_strictly_valid_published_provider(tmp_path: Path) -> None:
     artifact_dir = tmp_path / "artifacts" / "historic-publish-recovery"
     artifact_dir.mkdir(parents=True)
@@ -406,7 +540,14 @@ def test_proof_step_verifies_each_strictly_valid_published_provider(tmp_path: Pa
     calls = tmp_path / "uv-calls.txt"
     environment = _fake_uv_environment(
         tmp_path,
-        'printf "%s\\n" "$*" >> "$UV_CALLS"\n',
+        """\
+printf '%s\\n' "$*" >> "$UV_CALLS"
+if [[ "$*" == *"verify-historic-publish"* ]]; then
+  provider="$6"
+  report_path="artifacts/historic-publish-recovery/public-proof-${provider}.json"
+  printf '{"provider_id":"%s","status":"pass"}\\n' "$provider" > "$report_path"
+fi
+""",
     )
     environment["UV_CALLS"] = str(calls)
     job = _only_job(_load(RECOVERY_WORKFLOW))
@@ -423,6 +564,10 @@ def test_proof_step_verifies_each_strictly_valid_published_provider(tmp_path: Pa
         "stm",
         "sto",
     ]
+    for provider in ("stm", "sto"):
+        assert (artifact_dir / f"public-proof-{provider}.json").read_text(
+            encoding="utf-8"
+        ) == f'{{"provider_id":"{provider}","status":"pass"}}\n'
 
 
 def test_recovery_workflow_has_no_gate_override_or_expensive_command() -> None:
