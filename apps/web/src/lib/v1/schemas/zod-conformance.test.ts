@@ -54,6 +54,8 @@ import {
 	AlertHistorySchema,
 	AlertArchivePageSchema,
 	AlertArchiveIndexSchema,
+	HistoricCollectionIndexSchema,
+	HistoricAvailabilityIndexSchema,
 	// provenance
 	ProvenanceSchema,
 	// data health (live-lane)
@@ -138,6 +140,16 @@ const FAMILIES: Family[] = [
 		label: 'alert_archive_index',
 		mirror: 'historic_alert_archive_index.schema.json',
 		schema: AlertArchiveIndexSchema,
+	},
+	{
+		label: 'historic_collection_index',
+		mirror: 'historic_collection_index.schema.json',
+		schema: HistoricCollectionIndexSchema,
+	},
+	{
+		label: 'historic_availability_index',
+		mirror: 'historic_availability_index.schema.json',
+		schema: HistoricAvailabilityIndexSchema,
 	},
 	// provenance
 	{ label: 'provenance', mirror: 'provenance.schema.json', schema: ProvenanceSchema },
@@ -387,10 +399,10 @@ describe('Gate B — Zod ⇔ canonical JSON-Schema conformance', () => {
 			missingFiles,
 			`FAMILIES references a mirror file that is not on disk: ${missingFiles.join(', ')}`,
 		).toEqual([]);
-		// 25 canonical surfaces (live 5 + static 6 + historic 11 + manifest + provenance
+		// 27 canonical surfaces (live 5 + static 6 + historic 13 + manifest + provenance
 		// + data_health).
-		expect(onDisk.size).toBe(25);
-		expect(FAMILIES.length).toBe(25);
+		expect(onDisk.size).toBe(27);
+		expect(FAMILIES.length).toBe(27);
 	});
 
 	for (const family of FAMILIES) {

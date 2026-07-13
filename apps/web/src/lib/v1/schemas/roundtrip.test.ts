@@ -48,6 +48,8 @@ import {
 	AlertHistorySchema,
 	AlertArchivePageSchema,
 	AlertArchiveIndexSchema,
+	HistoricCollectionIndexSchema,
+	HistoricAvailabilityIndexSchema,
 	// provenance
 	ProvenanceSchema,
 	// data health (live-lane)
@@ -174,6 +176,12 @@ const CASES: Case[] = [
 			months: [],
 		},
 	],
+	[
+		'historic_collection_index',
+		HistoricCollectionIndexSchema,
+		{ generated_utc: ISO, family: 'alerts', selection_mode: 'range' },
+	],
+	['historic_availability_index', HistoricAvailabilityIndexSchema, { generated_utc: ISO }],
 
 	// --- provenance ----------------------------------------------------------
 	['provenance', ProvenanceSchema, { generated_utc: ISO }],
