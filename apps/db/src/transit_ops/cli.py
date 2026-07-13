@@ -157,9 +157,12 @@ def _read_json_object(path: Path, *, option_name: str) -> dict[str, object]:
     except (OSError, UnicodeError) as exc:
         raise typer.BadParameter(f"{option_name} is not readable: {path}") from exc
 
+    def reject_nonstandard_constant(_value: str) -> None:
+        raise ValueError
+
     try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError as exc:
+        payload = json.loads(raw, parse_constant=reject_nonstandard_constant)
+    except ValueError as exc:
         raise typer.BadParameter(f"{option_name} must contain valid JSON: {path}") from exc
     if not isinstance(payload, dict):
         raise typer.BadParameter(f"{option_name} must contain a JSON object: {path}")

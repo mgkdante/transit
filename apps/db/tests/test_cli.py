@@ -1,7 +1,9 @@
 import json
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from typer.testing import CliRunner
 
 import transit_ops.cli as cli_module
@@ -1950,6 +1952,94 @@ def test_verify_historic_publish_rejects_bad_json_before_builder(monkeypatch, tm
         assert "--sync-report" in result.output
         assert expected_error in result.output
         assert secret not in result.output
+    assert builder_calls == []
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_verify_historic_publish_rejects_nonstandard_json_constants_before_builder(
+    monkeypatch, tmp_path, constant
+) -> None:
+    _stub_verify_historic_publish_ready(monkeypatch)
+    sync_path = tmp_path / "sync.json"
+    gate_path = tmp_path / "gate.json"
+    report_path = tmp_path / "proof.json"
+    raw_secret = f"nonstandard-{constant}-raw-secret"
+    sync_path.write_text(
+        f'{{"provider_id": "stm", "value": {constant}, "secret": "{raw_secret}"}}',
+        encoding="utf-8",
+    )
+    gate_path.write_text('{"provider_id": "stm"}', encoding="utf-8")
+    builder_calls: list[object] = []
+    monkeypatch.setattr(
+        cli_module,
+        "build_historic_publish_proof",
+        lambda *args, **kwargs: builder_calls.append((args, kwargs)),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(sync_path),
+            "--gate-report",
+            str(gate_path),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--sync-report" in result.output
+    assert "valid JSON" in result.output
+    assert raw_secret not in result.output
+    assert builder_calls == []
+
+
+def test_verify_historic_publish_rejects_unreadable_input_before_builder(
+    monkeypatch, tmp_path
+) -> None:
+    _stub_verify_historic_publish_ready(monkeypatch)
+    sync_path = tmp_path / "sync.json"
+    gate_path = tmp_path / "gate.json"
+    report_path = tmp_path / "proof.json"
+    raw_secret = "unreadable-input-raw-secret"
+    sync_path.write_text(f'{{"secret": "{raw_secret}"}}', encoding="utf-8")
+    gate_path.write_text('{"provider_id": "stm"}', encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def fail_target_read(path, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        if path == sync_path:
+            raise OSError(raw_secret)
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_target_read)
+    builder_calls: list[object] = []
+    monkeypatch.setattr(
+        cli_module,
+        "build_historic_publish_proof",
+        lambda *args, **kwargs: builder_calls.append((args, kwargs)),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(sync_path),
+            "--gate-report",
+            str(gate_path),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--sync-report" in result.output
+    assert "not readable" in result.output
+    assert raw_secret not in result.output
     assert builder_calls == []
 
 
