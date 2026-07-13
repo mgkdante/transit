@@ -1331,6 +1331,8 @@ _ALERT_HISTORY_SQL = named_query(
     """
     SELECT grp.alert_header_text,
            MAX(grp.header_text_en)                                  AS header_text_en,
+           MAX(grp.description)                                     AS description,
+           MAX(grp.description_en)                                  AS description_en,
            MAX(grp.severity)                                        AS severity,
            MAX(grp.cause)                                           AS cause,
            MAX(grp.effect)                                          AS effect,
@@ -1381,6 +1383,8 @@ _ALERT_HISTORY_SQL = named_query(
     FROM (
         SELECT iah.alert_header_text,
                iah.alert_header_text_en                             AS header_text_en,
+               iah.description_text                                 AS description,
+               iah.description_text_en                              AS description_en,
                iah.severity,
                iah.cause,
                iah.effect,
@@ -1583,6 +1587,8 @@ def build_alert_history(
                 # slice-9.1.1s: header + MAX'd EN header (grouping unchanged).
                 header_text=r["alert_header_text"],
                 header_text_en=_sane_en(r["header_text_en"]),
+                description=r.get("description"),
+                description_en=_sane_en(r.get("description_en")),
                 routes=_natural_sort_dedup(raw_routes),
                 stops=_natural_sort_dedup(raw_stops),
                 start_utc=_opt_iso(start),

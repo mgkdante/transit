@@ -714,13 +714,16 @@ describe('RepeatOffenders — S14 re-seat (by_grain ladders)', () => {
 
 	it('deep-links ranked trip and vehicle entries to their offending lines', () => {
 		const { container } = render(RepeatOffenders);
-		expect(
-			within(card(container, 'repeat-trips')).getByRole('link', { name: /Montagne/ }),
-		).toHaveAttribute('href', '/lines/11');
-		const veh = within(card(container, 'repeat-vehicles')).getByRole('link', {
+		const tripLinks = within(card(container, 'repeat-trips')).getAllByRole('link', {
+			name: /Montagne/,
+		});
+		expect(tripLinks).toHaveLength(2);
+		expect(tripLinks.every((link) => link.getAttribute('href') === '/lines/11')).toBe(true);
+		const vehicleLinks = within(card(container, 'repeat-vehicles')).getAllByRole('link', {
 			name: /Boulevard/,
 		});
-		expect(veh).toHaveAttribute('href', '/lines/55');
+		expect(vehicleLinks).toHaveLength(2);
+		expect(vehicleLinks.every((link) => link.getAttribute('href') === '/lines/55')).toBe(true);
 	});
 
 	it('surfaces the natural-frequency recurrence line on a ranked row', () => {
@@ -758,10 +761,9 @@ describe('RepeatOffenders — S14 re-seat (by_grain ladders)', () => {
 		// Scope to the ladder section (the #1-offender hero above it also links the worst).
 		const section = document.querySelector('[data-slot="offender-section"]') as HTMLElement;
 		// The month ladder ranks Van Horne (161) worst — its link resolves to /lines/161.
-		expect(within(section).getByRole('link', { name: /Van Horne/ })).toHaveAttribute(
-			'href',
-			'/lines/161',
-		);
+		const links = within(section).getAllByRole('link', { name: /Van Horne/ });
+		expect(links).toHaveLength(2);
+		expect(links.every((link) => link.getAttribute('href') === '/lines/161')).toBe(true);
 		// The week-grain trip is NOT shown on the month grain.
 		expect(within(section).queryByRole('link', { name: /Montagne/ })).toBeNull();
 	});

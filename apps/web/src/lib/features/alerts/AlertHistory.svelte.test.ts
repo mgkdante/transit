@@ -77,6 +77,12 @@ vi.mock('$app/state', () => ({
 }));
 vi.mock('$app/navigation', () => ({ replaceState }));
 
+const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
+vi.mock('$lib/i18n', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('$lib/i18n')>();
+	return { ...actual, getLocale: () => currentLocale.value };
+});
+
 function setUrl(path: string): void {
 	nav.url = new URL(path, 'http://localhost');
 }
@@ -167,11 +173,13 @@ function seedAnalyticalFilterFixture(): void {
 }
 
 beforeEach(() => {
+	currentLocale.value = 'en';
 	resetArticleState();
 	Element.prototype.scrollIntoView = vi.fn();
 });
 
 afterEach(() => {
+	currentLocale.value = 'en';
 	fixture.alerts = JSON.parse(JSON.stringify(ORIGINAL_ALERTS));
 	fixture.breakdown = JSON.parse(JSON.stringify(ORIGINAL_BREAKDOWN));
 	delete (fixture as AlertHistory).window_start;
@@ -345,7 +353,7 @@ describe('AlertHistory article shell', () => {
 });
 
 describe('AlertHistory log', () => {
-	it('renders past alerts newest-first using the shared "Service alert" fallback for generic headers', () => {
+	it('renders past alerts newest-first using the shared fallback when messages are absent', () => {
 		render(AlertHistoryScreen);
 		const list = screen.getByRole('list', { name: /past service alerts, newest first/i });
 		const titles = within(list).getAllByText('Service alert');
@@ -354,6 +362,42 @@ describe('AlertHistory log', () => {
 		expect(rows).toHaveLength(2);
 		expect(rows[0]).toHaveTextContent('210 min');
 		expect(rows[1]).toHaveTextContent('2040 min');
+	});
+
+	it.each([
+		{
+			locale: 'en' as const,
+			expected: 'Planned work. Stop moved to Ontario Street.',
+			otherLocale: 'Travaux planifiés. Arrêt déplacé sur la rue Ontario.',
+		},
+		{
+			locale: 'fr' as const,
+			expected: 'Travaux planifiés. Arrêt déplacé sur la rue Ontario.',
+			otherLocale: 'Planned work. Stop moved to Ontario Street.',
+		},
+	])('selects and strips the $locale source description', ({ locale, expected, otherLocale }) => {
+		currentLocale.value = locale;
+		fixture.alerts = [
+			{
+				id: 'message',
+				severity: 'watch',
+				header_text: 'Votre ligne',
+				header_text_en: 'Your line',
+				description: '<p>Travaux planifiés. <strong>Arrêt déplacé</strong> sur la rue Ontario.</p>',
+				description_en: '<p>Planned work. <strong>Stop moved</strong> to Ontario Street.</p>',
+				routes: ['10'],
+				stops: [],
+				start_utc: '2026-06-20T11:00:00Z',
+				end_utc: '2026-06-20T12:00:00Z',
+			},
+		] as unknown as AlertHistory['alerts'];
+		fixture.breakdown = null;
+
+		const { container } = render(AlertHistoryScreen);
+
+		expect(screen.getByText(expected)).toBeInTheDocument();
+		expect(screen.queryByText(otherLocale)).toBeNull();
+		expect(container.querySelector('[data-slot="alert-log"] strong')).toBeNull();
 	});
 
 	it('omits absent fields and never fabricates a 0 (no impact line when impact_passages is null)', () => {

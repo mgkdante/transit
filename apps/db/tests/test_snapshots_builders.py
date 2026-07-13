@@ -1528,6 +1528,8 @@ def test_build_alert_history_sanitizes_legacy_python_repr_en_text() -> None:
                 {
                     "alert_header_text": "Votre ligne",
                     "header_text_en": "{'text': None, 'language': 'en'}",
+                    "description": "<p>Arrêts annulés.</p>",
+                    "description_en": "{'text': None, 'language': 'en'}",
                     "severity": "WARNING",
                     "routes": ["161"],
                     "stops": ["51234"],
@@ -1541,6 +1543,56 @@ def test_build_alert_history_sanitizes_legacy_python_repr_en_text() -> None:
     out = build_alert_history(conn, "stm", generated_utc="H")
 
     assert out.alerts[0].header_text_en is None
+    assert out.alerts[0].description == "<p>Arrêts annulés.</p>"
+    assert out.alerts[0].description_en is None
+
+
+def test_build_alert_history_passes_bilingual_source_messages_without_rekeying() -> None:
+    import datetime
+
+    from transit_ops.snapshots.builders import build_alert_history
+    from transit_ops.snapshots.builders.historic.small_surfaces import _ALERT_HISTORY_SQL
+
+    start = datetime.datetime(2026, 6, 1, 8, 0, tzinfo=datetime.UTC)
+
+    def _build(description: str, description_en: str):
+        return build_alert_history(
+            FakeConn(
+                {
+                    "alerts.history.anchor": [{"anchor": datetime.date(2026, 6, 1)}],
+                    "alerts.history.count": [{"total": 1}],
+                    "alerts.history": [
+                        {
+                            "alert_header_text": "Votre ligne",
+                            "header_text_en": "Your line",
+                            "description": description,
+                            "description_en": description_en,
+                            "severity": "WARNING",
+                            "routes": ["161"],
+                            "stops": ["51234"],
+                            "start_utc": start,
+                            "end_utc": start + datetime.timedelta(hours=1),
+                        }
+                    ],
+                }
+            ),
+            "stm",
+            generated_utc="H",
+        )
+
+    first = _build("<p>Arrêts annulés.</p>", "<p>Stops cancelled.</p>").alerts[0]
+    changed_copy = _build("Message source modifié", "Changed source copy").alerts[0]
+
+    assert first.description == "<p>Arrêts annulés.</p>"
+    assert first.description_en == "<p>Stops cancelled.</p>"
+    assert changed_copy.description == "Message source modifié"
+    assert first.id == changed_copy.id
+
+    sql = " ".join(str(_ALERT_HISTORY_SQL).split())
+    assert "MAX(grp.description) AS description" in sql
+    assert "MAX(grp.description_en) AS description_en" in sql
+    group_by = sql.split("GROUP BY", 1)[1].split("ORDER BY", 1)[0]
+    assert "description" not in group_by
 
 
 # --------------------------------------------------------------------------

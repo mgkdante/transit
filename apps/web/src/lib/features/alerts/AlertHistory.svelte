@@ -215,6 +215,8 @@
 			header_key: '',
 			header_text: entry.header_text ?? undefined,
 			header_text_en: entry.header_text_en ?? undefined,
+			description: entry.description ?? undefined,
+			description_en: entry.description_en ?? undefined,
 		};
 		return alertDisplayText(shaped, locale);
 	}

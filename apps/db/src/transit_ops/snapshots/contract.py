@@ -1345,6 +1345,10 @@ class AlertHistoryEntry(BaseModel):
     # builder; honest-NULL when STM published no English variant.
     header_text: str | None = None
     header_text_en: str | None = None
+    # Raw source descriptions. EN stays honest-NULL when STM omitted it; the
+    # shared web resolver owns locale fallback, legacy cleanup, and HTML scrub.
+    description: str | None = None
+    description_en: str | None = None
     routes: list[str] = Field(default_factory=list)
     stops: list[str] = Field(default_factory=list)
     start_utc: str | None = None
@@ -1381,11 +1385,12 @@ class AlertBreakdown(BaseModel):
 # many bytes (model_dump_json, UTF-8). The window serves the full retention span
 # (SILVER_I3_CLOSED_RETENTION_DAYS) newest-first, LIMIT 500 entries; each entry is
 # a header + bilingual text + route/stop id lists + cause/effect/url + an
-# active_periods list. 262144 (256 KiB) clears a realistic full window with
+# active_periods list. 524288 (512 KiB) clears a realistic 500-row bilingual
+# payload (~369 KiB) with
 # generous headroom while catching a runaway (e.g. a window that stopped
 # clamping). Exported so the web can share the constant. History: introduced at
 # S15 (there was NO ceiling before). The gate + a real-DB probe assert it.
-ALERT_HISTORY_BYTE_CEILING = 262144
+ALERT_HISTORY_BYTE_CEILING = 524288
 
 class AlertHistory(PayloadEnvelope):
     generated_utc: str

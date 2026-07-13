@@ -201,16 +201,86 @@ def test_alert_text_fields_are_additive():
     assert full.header_text_en == "Your line"
     assert full.description == "Arrets annules"
 
-    # AlertHistoryEntry old shape still validates; EN/header default None.
+    # AlertHistoryEntry old shape still validates; all source text defaults None.
     e = AlertHistoryEntry(id="x")
     assert e.header_text is None
     assert e.header_text_en is None
-    eh = AlertHistoryEntry(id="x", header_text="Votre ligne", header_text_en="Your line")
+    assert e.description is None
+    assert e.description_en is None
+    eh = AlertHistoryEntry(
+        id="x",
+        header_text="Votre ligne",
+        header_text_en="Your line",
+        description="Arrêts annulés",
+        description_en="Cancelled stops",
+    )
     assert eh.header_text_en == "Your line"
+    assert eh.description == "Arrêts annulés"
+    assert eh.description_en == "Cancelled stops"
 
     # Freeze-compat: required arrays are exactly the committed ones.
     assert Alert.model_json_schema()["required"] == ["id", "severity", "header_key"]
     assert AlertHistoryEntry.model_json_schema()["required"] == ["id"]
+
+
+def test_alert_history_realistic_500_row_bilingual_payload_fits_512_kib_ceiling():
+    """The newest-first cap stays at 500 after restoring real FR/EN messages."""
+    from transit_ops.snapshots.contract import (
+        ALERT_HISTORY_BYTE_CEILING,
+        AlertActivePeriod,
+        AlertHistory,
+        AlertHistoryEntry,
+    )
+
+    description_fr = (
+        "En raison de travaux, la ligne 10 est détournée entre Berri et "
+        "Saint-Denis. Prévoyez plus de temps."
+    )
+    description_en = (
+        "Due to construction, route 10 is detoured between Berri and Saint-Denis. "
+        "Allow extra time for your trip."
+    )
+    alerts = [
+        AlertHistoryEntry(
+            id=f"stm-alert-{i:03d}",
+            severity="watch",
+            header_text="Votre ligne",
+            header_text_en="Your line",
+            description=description_fr,
+            description_en=description_en,
+            routes=["10", "55"],
+            stops=["52101", "52102", "52103"],
+            start_utc="2026-06-01T08:00:00Z",
+            end_utc="2026-06-01T10:00:00Z",
+            duration_min=120,
+            cause="CONSTRUCTION",
+            effect="DETOUR",
+            severity_level="WARNING",
+            url="https://www.stm.info/fr/infos/etat-du-service/alertes",
+            active_periods=[
+                AlertActivePeriod(
+                    start_utc="2026-06-01T08:00:00Z",
+                    end_utc="2026-06-01T10:00:00Z",
+                )
+            ],
+        )
+        for i in range(500)
+    ]
+    payload = AlertHistory(
+        generated_utc="2026-06-01T00:00:00Z",
+        alerts=alerts,
+        window_start="2026-05-01",
+        window_end="2026-06-01",
+        total_in_window=500,
+        truncated=False,
+    )
+
+    encoded = payload.model_dump_json().encode("utf-8")
+    assert len(payload.alerts) == 500
+    assert all(alert.description == description_fr for alert in payload.alerts)
+    assert 350_000 <= len(encoded) <= 400_000
+    assert ALERT_HISTORY_BYTE_CEILING == 524_288
+    assert len(encoded) <= ALERT_HISTORY_BYTE_CEILING
 
 
 def test_s15_alert_url_and_active_periods_are_additive():

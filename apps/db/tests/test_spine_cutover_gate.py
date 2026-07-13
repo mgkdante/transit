@@ -97,6 +97,11 @@ _DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T")
 # multiple of 7 days, so their daykind composition never varies.
 _DAYKIND_LABELS = {"weekday", "weekend"}
 _ANCHOR_DAYKIND = "anchor-daykind"
+_DAY_DAYTYPE_PRIOR_NULL_FIELDS = (
+    "prior_observation_count",
+    "prior_on_time",
+    "prior_otp_pct",
+)
 
 
 class _NoCommitEngine:
@@ -309,6 +314,13 @@ def _relativize_day_grain_calendar(norm: dict, anchor: date) -> None:
         for row in entry.get("by_daytype") or []:
             if row.get("grain") in _DAYKIND_LABELS:
                 row["grain"] = _ANCHOR_DAYKIND
+            # A one-day prior can cross the Friday/Saturday or Sunday/Monday
+            # boundary. The current anchor's day type then has no matching row
+            # in the prior window, so these values legitimately flip between
+            # counts and NULL with the run date. They are not cutover evidence.
+            for field in _DAY_DAYTYPE_PRIOR_NULL_FIELDS:
+                if field in row:
+                    row[field] = None
         for row in entry.get("by_shift_daytype") or []:
             if row.get("day_type") in _DAYKIND_LABELS:
                 row["day_type"] = _ANCHOR_DAYKIND
