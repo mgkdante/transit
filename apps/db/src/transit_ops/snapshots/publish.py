@@ -28,10 +28,13 @@ from transit_ops.snapshots.contract import (
     PAYLOAD_METHODOLOGY,
     TOP_LEVEL_MODELS,
     AlertArchivePage,
+    LineHistoryPartition,
+    NetworkHistoryPartition,
     PayloadEnvelope,
     ReceiptAvailability,
     ReceiptsIndex,
     RouteReliabilityIndex,
+    StopHistoryPartition,
 )
 from transit_ops.snapshots.storage import (
     HashGatedStorage,
@@ -101,10 +104,15 @@ def _stamp_envelope(items: list, *, provider_id: str, stamp: str) -> None:
     generation_id = _publish_generation_id(provider_id, stamp)
     for _rel_key, payload, _tier in items:
         if isinstance(payload, PayloadEnvelope):
-            # Content-addressed archive pages must remain byte-stable across
-            # runs. Their builder supplies the stable methodology token; a run
-            # generation id would invalidate the already-computed SHA/path.
-            if isinstance(payload, AlertArchivePage):
+            # Content-addressed payloads must remain byte-stable across runs; a
+            # run generation id would invalidate their already-computed SHA/path.
+            if isinstance(
+                payload,
+                AlertArchivePage
+                | NetworkHistoryPartition
+                | LineHistoryPartition
+                | StopHistoryPartition,
+            ):
                 continue
             payload.publish_generation_id = generation_id
             payload.methodology_version = _METHODOLOGY_BY_MODEL.get(type(payload))
@@ -297,8 +305,7 @@ _STATIC_STAMP_SQL = named_query(
 # marts, which derived from the same facts.
 _DISTINCT_HISTORIC_ROUTE_IDS_SQL = named_query(
     "route.spine.route_ids",
-    "SELECT DISTINCT route_id FROM gold.route_delay_spine"
-    " WHERE provider_id = :provider_id",
+    "SELECT DISTINCT route_id FROM gold.route_delay_spine WHERE provider_id = :provider_id",
 )
 
 # Per-route static-file enumerator: every route in the current dim.
@@ -316,9 +323,13 @@ def _static_stamp(conn: object, provider_id: str) -> str:
     changes. Falls back to day-truncated now() when no version row exists.
     """
 
-    row = conn.execute(  # type: ignore[attr-defined]
-        _STATIC_STAMP_SQL, {"provider_id": provider_id}
-    ).mappings().fetchone()
+    row = (
+        conn.execute(  # type: ignore[attr-defined]
+            _STATIC_STAMP_SQL, {"provider_id": provider_id}
+        )
+        .mappings()
+        .fetchone()
+    )
     if row is not None and row["loaded_at_utc"] is not None:
         return builders._iso(row["loaded_at_utc"])
     return utc_now().strftime("%Y-%m-%dT00:00:00Z")
@@ -416,7 +427,9 @@ def _publish_live(
             try:
                 gate.record(gate_report, rel_key, payload)  # type: ignore[arg-type]
             except Exception:  # noqa: BLE001 — never let a gate crash abort the live cycle
-                logger.exception("live gate check crashed for %s (skipped, cycle continues)", rel_key)
+                logger.exception(
+                    "live gate check crashed for %s (skipped, cycle continues)", rel_key
+                )
     written: list[str] = []
     for rel_key, payload, tier in items:
         written.append(storage.put_json(rel_key, payload, tier=tier))  # type: ignore[attr-defined]
@@ -485,7 +498,9 @@ def _build_historic_items(
     route_items = [
         (
             f"historic/route_reliability/{route_id}.json",
-            builders.build_route_reliability(conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp),  # type: ignore[arg-type]
+            builders.build_route_reliability(
+                conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp
+            ),  # type: ignore[arg-type]
             "historic",
         )
         for (route_id,) in route_rows
@@ -507,7 +522,9 @@ def _build_historic_items(
     )
 
     # --- per-stop reliability files (batched build) ---
-    all_stops_rel = builders.build_stop_reliability(conn, provider_id=provider_id, generated_utc=stamp)  # type: ignore[arg-type]
+    all_stops_rel = builders.build_stop_reliability(
+        conn, provider_id=provider_id, generated_utc=stamp
+    )  # type: ignore[arg-type]
     stop_items = [
         (f"historic/stop_reliability/{stop_id}.json", stop_rel, "historic")
         for stop_id, stop_rel in sorted(all_stops_rel.items())
@@ -535,8 +552,7 @@ def _build_historic_items(
         ReceiptAvailability(
             date=date_str,
             has_data=bool(
-                receipt.affected_routes or receipt.affected_stops
-                or receipt.otp_pct is not None
+                receipt.affected_routes or receipt.affected_stops or receipt.otp_pct is not None
             ),
             has_schedule=bool(
                 receipt.service_states is not None
@@ -560,11 +576,12 @@ def _build_historic_items(
     # The legacy newest-500 flat file above remains untouched. This collection is
     # built from the message-complete Gold archive and uploaded pointer-last.
     alert_archive = builders.build_alert_archive(
-        conn, provider_id, generated_utc=stamp  # type: ignore[arg-type]
+        conn,
+        provider_id,
+        generated_utc=stamp,  # type: ignore[arg-type]
     )
     alert_page_items = [
-        (path, page, "historic_immutable")
-        for path, page in alert_archive.page_items
+        (path, page, "historic_immutable") for path, page in alert_archive.page_items
     ]
     alert_index_item = (
         "historic/alerts/index.json",
@@ -592,11 +609,24 @@ def _build_historic_items(
 
 def _stable_item_total(items: list) -> int:
     """Logical surface count, excluding immutable generation objects."""
-    return sum(
-        1
-        for rel_key, _payload, _tier in items
-        if not rel_key.startswith("historic/alerts/generations/")
-    )
+
+    return sum(1 for item in items if not _is_immutable_item(item[0], item[2]))
+
+
+def _is_immutable_item(rel_key: str, tier: str | None = None) -> bool:
+    """Recognize immutable items by declared tier or generation-path identity."""
+
+    return tier == "historic_immutable" or "/generations/" in rel_key
+
+
+def _stable_outcome_total(storage: object) -> int:
+    """Count stable mutable outcomes while path-filtering mislabeled generations."""
+
+    mutable_outcomes = [
+        *storage.written,  # type: ignore[attr-defined]
+        *storage.skipped,  # type: ignore[attr-defined]
+    ]
+    return sum(1 for rel_key in mutable_outcomes if not _is_immutable_item(rel_key))
 
 
 def _find_network_trend(items: list) -> tuple[str, object] | None:
@@ -730,11 +760,15 @@ def _publish_static(
     if bm is not None:
         head_items.append(("static/basemap.json", bm, "static"))
     for lang in ("fr", "en"):
-        head_items.append((
-            f"labels/{lang}.json",
-            builders.build_labels(conn, provider_id=provider_id, lang=lang, generated_utc=stamp),  # type: ignore[arg-type]
-            "static",
-        ))
+        head_items.append(
+            (
+                f"labels/{lang}.json",
+                builders.build_labels(
+                    conn, provider_id=provider_id, lang=lang, generated_utc=stamp
+                ),  # type: ignore[arg-type]
+                "static",
+            )
+        )
     _stamp_envelope(head_items, provider_id=provider_id, stamp=stamp)  # GC2 H4
     written.extend(_parallel_put(storage, head_items, concurrency=concurrency))
 
@@ -746,7 +780,9 @@ def _publish_static(
     route_items = [
         (
             f"static/routes/{route_id}.json",
-            builders.build_route(conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp),  # type: ignore[arg-type]
+            builders.build_route(
+                conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp
+            ),  # type: ignore[arg-type]
             "static",
         )
         for (route_id,) in route_rows
@@ -868,7 +904,9 @@ def publish_snapshot(
         if live_report is not None:
             gate.enforce(live_report, force=True)  # WARN-only: never aborts live
         return PublishResult(
-            provider_id=provider_id, tier=tier, keys_written=keys,
+            provider_id=provider_id,
+            tier=tier,
+            keys_written=keys,
             gate_report=live_report.to_dict() if live_report is not None else None,
         )
 
@@ -959,15 +997,16 @@ def publish_snapshot(
             publisher(conn, gated, provider_id=provider_id, settings=settings, stamp=stamp)
         gated.flush_state()
         physical_written = len(gated.written) + len(gated.immutable_written)
-        physical_total = physical_written + len(gated.skipped)
-        stable_total = len(gated.written) + len(gated.skipped)
+        physical_skipped = len(gated.skipped) + len(gated.immutable_skipped)
+        physical_total = physical_written + physical_skipped
+        stable_total = _stable_outcome_total(gated)
         _record_publish_state(
             conn,
             provider_id=provider_id,
             tier=tier,
             generated_utc=stamp,
             written=physical_written,
-            skipped=len(gated.skipped),
+            skipped=physical_skipped,
             total=physical_total,
             stable_total=stable_total,
             gate_report=report.to_dict() if report is not None else None,
@@ -977,7 +1016,7 @@ def publish_snapshot(
         provider_id=provider_id,
         tier=tier,
         keys_written=[*gated.written, *gated.immutable_written],
-        keys_skipped=list(gated.skipped),
+        keys_skipped=[*gated.skipped, *gated.immutable_skipped],
         gate_report=report.to_dict() if report is not None else None,
     )
 
@@ -1097,11 +1136,7 @@ def validate_snapshots(
         gate.finalize_batch(
             report,
             route_payloads=route_items,
-            current_total=sum(
-                1
-                for key, _payload in all_items
-                if not key.startswith("historic/alerts/generations/")
-            ),
+            current_total=sum(1 for key, _payload in all_items if not _is_immutable_item(key)),
             prior_files_total=prior_total,
             network_trend=next(
                 ((k, p) for (k, p) in all_items if k == "historic/network_trend.json"), None

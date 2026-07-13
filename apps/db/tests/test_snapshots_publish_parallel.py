@@ -51,6 +51,7 @@ class _ConcurrencyProbe:
                 self.keys.append(rel_key)
         return rel_key
 
+
 def test_parallel_put_bounds_concurrency() -> None:
     """No more than `concurrency` uploads run at once."""
     probe = _ConcurrencyProbe()
@@ -146,14 +147,14 @@ def test_hash_gated_skip_does_no_put_under_concurrency() -> None:
     """A file whose hash matches prior state is skipped — no put_bytes."""
     import json
 
-    from transit_ops.snapshots.storage import _body
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
 
     # Seed prior state so half the keys are unchanged.
     prior_hashes = {}
     inner = _CountingInner()
     for i in range(0, 100, 2):  # even keys pre-seeded as unchanged
         key = f"static/stops/{i}.json"
-        body = _body({"i": i})
+        body = snapshot_json_bytes({"i": i})
         import hashlib
 
         prior_hashes[key] = hashlib.md5(body).hexdigest()  # noqa: S324
@@ -256,20 +257,30 @@ class _OrderTrackingStore:
         return rel_key
 
     def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
-        from transit_ops.snapshots.storage import _body
+        from transit_ops.snapshots.serialization import snapshot_json_bytes
 
         with self._lock:
             self.keys.append(rel_key)
-            self.store[rel_key] = _body(payload)
+            self.store[rel_key] = snapshot_json_bytes(payload)
         return rel_key
+
+    def put_immutable_json_outcome(self, rel_key: str, payload: object):
+        from transit_ops.snapshots.serialization import snapshot_json_bytes
+        from transit_ops.snapshots.storage import ImmutablePutOutcome
+
+        body = snapshot_json_bytes(payload)
+        with self._lock:
+            prior = self.store.get(rel_key)
+            if prior is not None:
+                if prior != body:
+                    raise RuntimeError(f"immutable key collision: {rel_key}")
+                return ImmutablePutOutcome(key=rel_key, written=False)
+            self.keys.append(rel_key)
+            self.store[rel_key] = body
+            return ImmutablePutOutcome(key=rel_key, written=True)
 
     def put_immutable_json(self, rel_key: str, payload: object) -> str:
-        from transit_ops.snapshots.storage import _body
-
-        with self._lock:
-            self.keys.append(rel_key)
-            self.store[rel_key] = _body(payload)
-        return rel_key
+        return self.put_immutable_json_outcome(rel_key, payload).key
 
     def get_json(self, rel_key: str):
         import json as _json
@@ -324,39 +335,78 @@ def _historic_dispatch_conn(*, archive_rows=None):  # noqa: ANN001
     # published output the old dead needles gave, so the hand-coded spine branch is gone.
     dispatch = {
         "receipts.network_daily": [
-            {"local_date": datetime.date(2025, 1, 1), "known_obs": 100, "on_time": 90,
-             "severe": 5, "pooled_delay_sec": 5000, "inclamp_obs": 100},
-            {"local_date": datetime.date(2026, 6, 2), "known_obs": 100, "on_time": 90,
-             "severe": 5, "pooled_delay_sec": 5000, "inclamp_obs": 100},
+            {
+                "local_date": datetime.date(2025, 1, 1),
+                "known_obs": 100,
+                "on_time": 90,
+                "severe": 5,
+                "pooled_delay_sec": 5000,
+                "inclamp_obs": 100,
+            },
+            {
+                "local_date": datetime.date(2026, 6, 2),
+                "known_obs": 100,
+                "on_time": 90,
+                "severe": 5,
+                "pooled_delay_sec": 5000,
+                "inclamp_obs": 100,
+            },
         ],
         "network.trend.daily_hourly": [
-            {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
-             "pooled_delay_sec": 5000, "inclamp_obs": 100},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "known_obs": 100,
+                "on_time": 90,
+                "pooled_delay_sec": 5000,
+                "inclamp_obs": 100,
+            },
         ],
         "network.trend.daily_p90": [
             {"local_date": datetime.date(2026, 6, 1), "p90_min": 3.5, "vehicles": 42},
         ],
         "network.trend.week_hourly": [
-            {"local_date": datetime.date(2026, 6, 1), "known_obs": 200, "on_time": 180,
-             "pooled_delay_sec": 12000, "inclamp_obs": 200},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "known_obs": 200,
+                "on_time": 180,
+                "pooled_delay_sec": 12000,
+                "inclamp_obs": 200,
+            },
         ],
         "network.trend.week_cancel": [
             {"local_date": datetime.date(2026, 6, 1), "canceled": 4, "total": 200},
         ],
         "network.trend.week_occupancy": [
-            {"local_date": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 60,
-             "few_seats": 25, "standing": 10, "full": 5},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "empty": 0,
+                "many_seats": 60,
+                "few_seats": 25,
+                "standing": 10,
+                "full": 5,
+            },
         ],
         "network.trend.month_hourly": [
-            {"local_date": datetime.date(2026, 6, 1), "known_obs": 1000, "on_time": 820,
-             "pooled_delay_sec": 90000, "inclamp_obs": 1000},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "known_obs": 1000,
+                "on_time": 820,
+                "pooled_delay_sec": 90000,
+                "inclamp_obs": 1000,
+            },
         ],
         "network.trend.month_cancel": [
             {"local_date": datetime.date(2026, 6, 1), "canceled": 12, "total": 600},
         ],
         "network.trend.month_occupancy": [
-            {"local_date": datetime.date(2026, 6, 1), "empty": 10, "many_seats": 40,
-             "few_seats": 30, "standing": 15, "full": 5},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "empty": 10,
+                "many_seats": 40,
+                "few_seats": 30,
+                "standing": 15,
+                "full": 5,
+            },
         ],
         "hotspots.list": [],
         "repeat.offenders": [],
@@ -367,16 +417,36 @@ def _historic_dispatch_conn(*, archive_rows=None):  # noqa: ANN001
         "static.stop_names": [{"stop_id": "S1", "stop_name": "Stop 1"}],
         "static.route_names": [{"route_id": "R1", "route_name": "Route 1"}],
         "stop.reliability.by_grain": [
-            {"stop_id": "S1", "grain": "am_peak", "obs": 10, "severe": 1,
-             "weighted_delay_sec": 600.0},
-            {"stop_id": "S1", "grain": "weekday", "obs": 14, "severe": 1,
-             "weighted_delay_sec": 1080.0},
+            {
+                "stop_id": "S1",
+                "grain": "am_peak",
+                "obs": 10,
+                "severe": 1,
+                "weighted_delay_sec": 600.0,
+            },
+            {
+                "stop_id": "S1",
+                "grain": "weekday",
+                "obs": 14,
+                "severe": 1,
+                "weighted_delay_sec": 1080.0,
+            },
         ],
         "stop.reliability.dow": [
-            {"stop_id": "S1", "day_of_week_iso": 1, "dow_obs": 20, "severe": 2,
-             "weighted_delay_sec": 1200.0},
-            {"stop_id": "S1", "day_of_week_iso": 7, "dow_obs": 0, "severe": 0,
-             "weighted_delay_sec": None},
+            {
+                "stop_id": "S1",
+                "day_of_week_iso": 1,
+                "dow_obs": 20,
+                "severe": 2,
+                "weighted_delay_sec": 1200.0,
+            },
+            {
+                "stop_id": "S1",
+                "day_of_week_iso": 7,
+                "dow_obs": 0,
+                "severe": 0,
+                "weighted_delay_sec": None,
+            },
         ],
         # per-route reliability enumeration.
         "route.spine.route_ids": [("R1",), ("R2",), ("R3",)],
@@ -387,8 +457,13 @@ def _historic_dispatch_conn(*, archive_rows=None):  # noqa: ANN001
         "route.service_span.daily": [],
         "route.skipped_stop.daily": [],
         "route.reliability.daily": [
-            {"d": datetime.date(2026, 6, 1), "known_obs": 50, "on_time": 45,
-             "avg_delay_sec": 90, "severe": 5},
+            {
+                "d": datetime.date(2026, 6, 1),
+                "known_obs": 50,
+                "on_time": 45,
+                "avg_delay_sec": 90,
+                "severe": 5,
+            },
         ],
         "route.headway.observed_by_shift": [],
         "static.dataset_version": [{"dataset_version_id": 1}],
@@ -417,14 +492,24 @@ def _historic_dispatch_conn(*, archive_rows=None):  # noqa: ANN001
             {"stop_id": "S1", "obs": 10, "severe": 1, "sum_delay_sec": 900},
         ],
         "receipts.accountability": [
-            {"provider_local_date": datetime.date(2025, 1, 1),
-             "affected_route_count": 3, "affected_stop_count": 12,
-             "delayed_trip_count": 45, "severe_delay_count": 5,
-             "alert_count": 2, "rider_impact_score": 0.35},
-            {"provider_local_date": datetime.date(2026, 6, 2),
-             "affected_route_count": 2, "affected_stop_count": 8,
-             "delayed_trip_count": 30, "severe_delay_count": 3,
-             "alert_count": 1, "rider_impact_score": 0.25},
+            {
+                "provider_local_date": datetime.date(2025, 1, 1),
+                "affected_route_count": 3,
+                "affected_stop_count": 12,
+                "delayed_trip_count": 45,
+                "severe_delay_count": 5,
+                "alert_count": 2,
+                "rider_impact_score": 0.35,
+            },
+            {
+                "provider_local_date": datetime.date(2026, 6, 2),
+                "affected_route_count": 2,
+                "affected_stop_count": 8,
+                "delayed_trip_count": 30,
+                "severe_delay_count": 3,
+                "alert_count": 1,
+                "rider_impact_score": 0.25,
+            },
         ],
         "receipts.worst_route": [],
         "receipts.worst_stop": [],
@@ -493,8 +578,7 @@ def test_historic_publish_uploads_index_after_receipts() -> None:
     assert index_key in keys
     # every receipt file appears in the upload log strictly before the index PUT
     receipt_positions = [
-        i for i, k in enumerate(store.keys)
-        if k.startswith("historic/receipts/") and k != index_key
+        i for i, k in enumerate(store.keys) if k.startswith("historic/receipts/") and k != index_key
     ]
     index_position = store.keys.index(index_key)
     assert receipt_positions, "expected receipt files to be uploaded"
@@ -508,17 +592,18 @@ def test_historic_receipt_index_ignores_stale_hash_state_date() -> None:
     import hashlib
 
     from transit_ops.snapshots.publish import publish_snapshot
-    from transit_ops.snapshots.storage import _body, state_fingerprint
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+    from transit_ops.snapshots.storage import state_fingerprint
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
         SNAPSHOT_PUBLISH_CONCURRENCY = 8
 
     stale_key = "historic/receipts/2024-01-01.json"
-    stale_body = _body({"date": "2024-01-01"})
+    stale_body = snapshot_json_bytes({"date": "2024-01-01"})
     store = _OrderTrackingStore()
     store.store[stale_key] = stale_body
-    store.store["_meta/publish_state_historic.json"] = _body(
+    store.store["_meta/publish_state_historic.json"] = snapshot_json_bytes(
         {
             "fingerprint": state_fingerprint("historic"),
             "hashes": {stale_key: hashlib.md5(stale_body).hexdigest()},  # noqa: S324
@@ -586,7 +671,8 @@ def test_historic_publish_uploads_route_index_after_route_files() -> None:
     index_key = "historic/route_reliability/index.json"
     assert index_key in store.keys
     route_positions = [
-        i for i, k in enumerate(store.keys)
+        i
+        for i, k in enumerate(store.keys)
         if k.startswith("historic/route_reliability/") and k != index_key
     ]
     index_position = store.keys.index(index_key)
@@ -717,6 +803,48 @@ def test_historic_publish_counts_archive_pages_physically_but_not_in_stable_base
     assert all(key not in hash_state["hashes"] for key in page_keys)
 
 
+def test_unchanged_historic_republish_counts_immutable_skip_physically_and_exposes_it() -> None:
+    from transit_ops.snapshots.publish import publish_snapshot
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    store = _OrderTrackingStore()
+    conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
+    engine = _FakeEngine(conn)
+
+    first = publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=_Settings(),
+        engine=engine,
+        storage=store,
+    )
+    second = publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=_Settings(),
+        engine=engine,
+        storage=store,
+    )
+
+    page_keys = [
+        key for key in first.keys_written if key.startswith("historic/alerts/generations/")
+    ]
+    assert len(page_keys) == 1
+    assert second.keys_written == []
+    assert page_keys[0] in second.keys_skipped
+
+    state = conn.state_writes[-1]
+    physical_skipped = len(second.keys_skipped)
+    assert state["written"] == 0
+    assert state["skipped"] == physical_skipped
+    assert state["total"] == physical_skipped
+    assert state["stable_total"] == physical_skipped - len(page_keys)
+    assert second.display_dict()["files_skipped"] == physical_skipped
+
+
 @pytest.mark.parametrize("failure", ["page", "index"])
 def test_archive_page_or_index_failure_does_not_flush_hash_or_db_state(failure: str) -> None:
     from transit_ops.snapshots.publish import publish_snapshot
@@ -727,11 +855,15 @@ def test_archive_page_or_index_failure_does_not_flush_hash_or_db_state(failure: 
 
     class _FailingInner(_OrderTrackingStore):
         def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:
-            is_page = rel_key.startswith("historic/alerts/generations/")
             is_index = rel_key == "historic/alerts/index.json"
-            if (failure == "page" and is_page) or (failure == "index" and is_index):
+            if failure == "index" and is_index:
                 raise RuntimeError(f"archive {failure} upload failed")
             return super().put_bytes(rel_key, body, tier=tier)
+
+        def put_immutable_json_outcome(self, rel_key: str, payload: object):
+            if failure == "page" and rel_key.startswith("historic/alerts/generations/"):
+                raise RuntimeError("archive page upload failed")
+            return super().put_immutable_json_outcome(rel_key, payload)
 
     store = _FailingInner()
     old_index = b'{"old":true}'
@@ -790,22 +922,28 @@ class _RecordingStaticConn:
         from transit_ops.sql_registry import query_name
 
         route_row = [
-            {"route_id": "R1", "route_short_name": "1", "route_long_name": "One",
-             "route_color": "009EE0", "route_type": 3}
+            {
+                "route_id": "R1",
+                "route_short_name": "1",
+                "route_long_name": "One",
+                "route_color": "009EE0",
+                "route_type": 3,
+            }
         ]
         stop_row = [
-            {"stop_id": "S1", "stop_code": "S1", "stop_name": "Stop",
-             "stop_lat": 45.0, "stop_lon": -73.0}
+            {
+                "stop_id": "S1",
+                "stop_code": "S1",
+                "stop_name": "Stop",
+                "stop_lat": 45.0,
+                "stop_lon": -73.0,
+            }
         ]
         rows = {
-            "publish.static_stamp": [
-                {"loaded_at_utc": _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)}
-            ],
+            "publish.static_stamp": [{"loaded_at_utc": _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)}],
             "static.reliability_route_ids": [{"route_id": "R1"}],
             "route.spine.route_ids": [{"route_id": "R1"}],
-            "static.dim_route_ids": [
-                {"route_id": "R1"}, {"route_id": "R2"}, {"route_id": "R3"}
-            ],
+            "static.dim_route_ids": [{"route_id": "R1"}, {"route_id": "R2"}, {"route_id": "R3"}],
             "static.routes_index": route_row,
             "static.stops_index": stop_row,
             # static.all_stops stays unmapped -> [] (the pre-migration needle

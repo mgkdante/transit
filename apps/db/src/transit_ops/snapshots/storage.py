@@ -12,12 +12,14 @@ import hashlib
 import json
 import pathlib
 import threading
+from dataclasses import dataclass
 
 from botocore.exceptions import ClientError
 from pydantic import BaseModel
 
 from transit_ops.ingestion.storage import build_s3_client
 from transit_ops.settings import Settings
+from transit_ops.snapshots.serialization import snapshot_json_bytes
 
 # Cache-Control header per data tier.
 # live    — 30 s TTL; realtime vehicle positions / alerts
@@ -40,11 +42,34 @@ CACHE_CONTROL: dict[str, str] = {
 _NOT_FOUND_CODES = {"404", "NoSuchKey", "NotFound"}
 
 
-def _body(payload: BaseModel | dict) -> bytes:  # type: ignore[type-arg]
-    """Serialize a Pydantic model or plain dict to compact UTF-8 JSON bytes."""
-    if isinstance(payload, BaseModel):
-        return payload.model_dump_json().encode("utf-8")
-    return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+# Backward-compatible import surface for older tests and callers. Serialization
+# itself lives only in snapshots.serialization.
+_body = snapshot_json_bytes
+
+
+class ImmutableKeyCollisionError(RuntimeError):
+    """An immutable key already exists with bytes different from the request."""
+
+    def __init__(self, rel_key: str) -> None:
+        super().__init__(f"immutable key collision: {rel_key}")
+
+
+@dataclass(frozen=True)
+class ImmutablePutOutcome:
+    """Atomic immutable write result used by the hash-gate accounting seam."""
+
+    key: str
+    written: bool
+
+
+def _lock_for_key(
+    rel_key: str,
+    *,
+    registry_lock: threading.Lock,
+    locks: dict[str, threading.Lock],
+) -> threading.Lock:
+    with registry_lock:
+        return locks.setdefault(rel_key, threading.Lock())
 
 
 class SnapshotStorage:
@@ -74,6 +99,8 @@ class SnapshotStorage:
         self._prefix = base_prefix.strip("/")
         self._client_factory = client_factory
         self._local = threading.local()
+        self._immutable_registry_lock = threading.Lock()
+        self._immutable_locks: dict[str, threading.Lock] = {}
 
     def _thread_client(self) -> object:
         """Return the client for the calling thread.
@@ -118,11 +145,86 @@ class SnapshotStorage:
             One of ``"live"``, ``"static"``, ``"historic"``, or ``"internal"``;
             controls the ``Cache-Control`` header.
         """
-        return self.put_bytes(rel_key, _body(payload), tier=tier)
+        return self.put_bytes(rel_key, snapshot_json_bytes(payload), tier=tier)
+
+    def _immutable_head(self, rel_key: str) -> dict | None:  # type: ignore[type-arg]
+        key = self.full_key(rel_key)
+        try:
+            return self._thread_client().head_object(  # type: ignore[attr-defined,no-any-return]
+                Bucket=self._bucket,
+                Key=key,
+            )
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            if code in _NOT_FOUND_CODES:
+                return None
+            raise
+
+    def immutable_exists(self, rel_key: str) -> bool:
+        """Return whether an immutable object exists; propagate non-missing errors."""
+
+        lock = _lock_for_key(
+            rel_key,
+            registry_lock=self._immutable_registry_lock,
+            locks=self._immutable_locks,
+        )
+        with lock:
+            return self._immutable_head(rel_key) is not None
+
+    def put_immutable_json_outcome(
+        self,
+        rel_key: str,
+        payload: BaseModel | dict,  # type: ignore[type-arg]
+    ) -> ImmutablePutOutcome:
+        """Create an immutable object or prove an existing object is byte-identical."""
+
+        body = snapshot_json_bytes(payload)
+        digest = hashlib.sha256(body).hexdigest()
+        lock = _lock_for_key(
+            rel_key,
+            registry_lock=self._immutable_registry_lock,
+            locks=self._immutable_locks,
+        )
+        with lock:
+            existing = self._immutable_head(rel_key)
+            if existing is None:
+                key = self.full_key(rel_key)
+                self._thread_client().put_object(  # type: ignore[attr-defined]
+                    Bucket=self._bucket,
+                    Key=key,
+                    Body=body,
+                    ContentType="application/json",
+                    CacheControl=CACHE_CONTROL["historic_immutable"],
+                    Metadata={"sha256": digest},
+                )
+                return ImmutablePutOutcome(key=key, written=True)
+
+            metadata = existing.get("Metadata") or {}
+            prior_digest = metadata.get("sha256")
+            if prior_digest is not None:
+                if prior_digest == digest and existing.get("ContentLength") == len(body):
+                    return ImmutablePutOutcome(key=self.full_key(rel_key), written=False)
+                raise ImmutableKeyCollisionError(rel_key)
+
+            key = self.full_key(rel_key)
+            response = self._thread_client().get_object(  # type: ignore[attr-defined]
+                Bucket=self._bucket,
+                Key=key,
+            )
+            response_body = response["Body"]
+            try:
+                prior_body = response_body.read()
+            finally:
+                if hasattr(response_body, "close"):
+                    response_body.close()
+            if prior_body != body:
+                raise ImmutableKeyCollisionError(rel_key)
+            return ImmutablePutOutcome(key=key, written=False)
 
     def put_immutable_json(self, rel_key: str, payload: BaseModel | dict) -> str:  # type: ignore[type-arg]
-        """PUT a content-addressed historic object with immutable caching."""
-        return self.put_bytes(rel_key, _body(payload), tier="historic_immutable")
+        """Create or byte-verify a content-addressed historic object."""
+
+        return self.put_immutable_json_outcome(rel_key, payload).key
 
     def get_json(self, rel_key: str) -> dict | None:  # type: ignore[type-arg]
         """GET and JSON-decode the object at *rel_key*; ``None`` if it is absent.
@@ -152,6 +254,8 @@ class LocalSnapshotStorage:
     def __init__(self, root: str, base_prefix: str) -> None:
         self._root = pathlib.Path(root)
         self._prefix = base_prefix.strip("/")
+        self._immutable_registry_lock = threading.Lock()
+        self._immutable_locks: dict[str, threading.Lock] = {}
 
     def full_key(self, rel_key: str) -> str:
         """Return the on-disk path for *rel_key* as a string."""
@@ -166,11 +270,53 @@ class LocalSnapshotStorage:
 
     def put_json(self, rel_key: str, payload: BaseModel | dict, *, tier: str) -> str:  # type: ignore[type-arg]
         """Write *payload* to ``{root}/{base_prefix}/{rel_key}`` and return the path."""
-        return self.put_bytes(rel_key, _body(payload), tier=tier)
+        return self.put_bytes(rel_key, snapshot_json_bytes(payload), tier=tier)
+
+    def immutable_exists(self, rel_key: str) -> bool:
+        """Return whether an immutable local object exists."""
+
+        lock = _lock_for_key(
+            rel_key,
+            registry_lock=self._immutable_registry_lock,
+            locks=self._immutable_locks,
+        )
+        with lock:
+            return (self._root / self._prefix / rel_key).exists()
+
+    def put_immutable_json_outcome(
+        self,
+        rel_key: str,
+        payload: BaseModel | dict,  # type: ignore[type-arg]
+    ) -> ImmutablePutOutcome:
+        """Exclusively create an immutable file or verify exact existing bytes."""
+
+        body = snapshot_json_bytes(payload)
+        dest = self._root / self._prefix / rel_key
+        lock = _lock_for_key(
+            rel_key,
+            registry_lock=self._immutable_registry_lock,
+            locks=self._immutable_locks,
+        )
+        with lock:
+            if dest.exists():
+                if dest.read_bytes() != body:
+                    raise ImmutableKeyCollisionError(rel_key)
+                return ImmutablePutOutcome(key=str(dest), written=False)
+
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with dest.open("xb") as destination:
+                    destination.write(body)
+            except FileExistsError:
+                if dest.read_bytes() != body:
+                    raise ImmutableKeyCollisionError(rel_key) from None
+                return ImmutablePutOutcome(key=str(dest), written=False)
+            return ImmutablePutOutcome(key=str(dest), written=True)
 
     def put_immutable_json(self, rel_key: str, payload: BaseModel | dict) -> str:  # type: ignore[type-arg]
-        """Write a content-addressed historic object using the shared serializer."""
-        return self.put_bytes(rel_key, _body(payload), tier="historic_immutable")
+        """Create or byte-verify a content-addressed historic file."""
+
+        return self.put_immutable_json_outcome(rel_key, payload).key
 
     def get_json(self, rel_key: str) -> dict | None:  # type: ignore[type-arg]
         """Read and JSON-decode the object at *rel_key*; ``None`` if the file is missing."""
@@ -213,6 +359,7 @@ class HashGatedStorage:
         self.written: list[str] = []
         self.skipped: list[str] = []
         self.immutable_written: list[str] = []
+        self.immutable_skipped: list[str] = []
         # True after load() iff a prior state object existed AND carried the current
         # fingerprint (cache-policy / format version unchanged). Lets a caller make a
         # dataset-level skip decision (skip the whole rebuild) without trusting stale
@@ -238,7 +385,7 @@ class HashGatedStorage:
         return self._inner.full_key(rel_key)  # type: ignore[attr-defined]
 
     def put_json(self, rel_key: str, payload: BaseModel | dict, *, tier: str) -> str:  # type: ignore[type-arg]
-        body = _body(payload)
+        body = snapshot_json_bytes(payload)
         digest = hashlib.md5(body).hexdigest()  # noqa: S324 — content fingerprint, not security
         # Decide skip-vs-write under the lock so the shared hash map and the
         # written/skipped lists stay consistent across worker threads. A skipped
@@ -258,16 +405,18 @@ class HashGatedStorage:
         return key
 
     def put_immutable_json(self, rel_key: str, payload: BaseModel | dict) -> str:  # type: ignore[type-arg]
-        """Always write immutable generation bytes without growing hash state."""
-        body = _body(payload)
-        key = self._inner.put_bytes(  # type: ignore[attr-defined]
+        """Create-or-verify immutable bytes without growing mutable hash state."""
+
+        outcome = self._inner.put_immutable_json_outcome(  # type: ignore[attr-defined]
             rel_key,
-            body,
-            tier="historic_immutable",
+            payload,
         )
         with self._lock:
-            self.immutable_written.append(rel_key)
-        return key
+            if outcome.written:
+                self.immutable_written.append(rel_key)
+            else:
+                self.immutable_skipped.append(rel_key)
+        return outcome.key
 
     def flush_state(self) -> str:
         """Persist the merged (prior + new) hash map as the tier's state object.
@@ -278,7 +427,7 @@ class HashGatedStorage:
         """
         merged = {**self._prior, **self._new}
         doc = {"fingerprint": self._fingerprint, "hashes": merged}
-        body = json.dumps(doc, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        body = snapshot_json_bytes(doc)
         return self._inner.put_bytes(self._state_rel_key, body, tier="internal")  # type: ignore[attr-defined]
 
 

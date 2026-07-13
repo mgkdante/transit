@@ -8,7 +8,6 @@ empty-route aggregates, and enforce()/GateError semantics.
 
 from __future__ import annotations
 
-import hashlib
 import json
 
 import pytest
@@ -48,7 +47,6 @@ from transit_ops.snapshots.contract import (
     TrendPoint,
 )
 from transit_ops.snapshots.gate import Severity
-from transit_ops.snapshots.storage import _body
 
 
 def _errors(results):
@@ -1111,6 +1109,8 @@ def test_gate_report_to_dict_round_trips_json():
 
 
 def test_gate_report_records_sorted_canonical_payload_sha256_receipts():
+    from transit_ops.snapshots.serialization import snapshot_sha256
+
     report = gate.new_report("stm", "historic", "2026-06-01T00:00:00Z")
     private_payload = {"generated_utc": "t", "secret": "must-not-leak", "z": 1}
     receipt = Receipt(generated_utc="t", date="2026-06-01")
@@ -1119,8 +1119,8 @@ def test_gate_report_records_sorted_canonical_payload_sha256_receipts():
     gate.record(report, "historic/receipts/2026-06-01.json", receipt)
 
     expected = {
-        "historic/receipts/2026-06-01.json": hashlib.sha256(_body(receipt)).hexdigest(),
-        "historic/z.json": hashlib.sha256(_body(private_payload)).hexdigest(),
+        "historic/receipts/2026-06-01.json": snapshot_sha256(receipt),
+        "historic/z.json": snapshot_sha256(private_payload),
     }
     payload_sha256 = report.to_dict()["payload_sha256"]
     assert payload_sha256 == expected

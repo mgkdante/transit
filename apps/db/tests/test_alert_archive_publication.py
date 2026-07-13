@@ -99,6 +99,7 @@ def test_publish_state_uses_stable_baseline_and_pre_0081_coalesce() -> None:
         _PRIOR_FILES_TOTAL_SQL,
         _record_publish_state,
         _stable_item_total,
+        _stable_outcome_total,
     )
 
     class _Connection:
@@ -133,10 +134,48 @@ def test_publish_state_uses_stable_baseline_and_pre_0081_coalesce() -> None:
                     {},
                     "historic_immutable",
                 ),
+                (
+                    "historic/history/network/generations/hash/2026-07.json",
+                    {},
+                    "historic",
+                ),
+                (
+                    "historic/history/lines/3437/generations/hash/2026-07.json",
+                    {},
+                    "historic_immutable",
+                ),
+                (
+                    "historic/history/network/immutable-alias.json",
+                    {},
+                    "historic_immutable",
+                ),
+                (
+                    "historic/history/stops/53544f50/generations/hash/2026-07.json",
+                    {},
+                    "historic_immutable",
+                ),
+                ("historic/history/network/index.json", {}, "historic"),
+                ("historic/history/lines/index.json", {}, "historic"),
+                ("historic/history/stops/index.json", {}, "historic"),
+                ("historic/history/index.json", {}, "historic"),
             ]
         )
-        == 2
+        == 6
     )
+
+    class _Outcomes:
+        written = [
+            "historic/alerts/index.json",
+            "historic/history/network/generations/hash/2026-07.json",
+        ]
+        skipped = [
+            "historic/history/index.json",
+            "historic/history/lines/3437/generations/hash/2026-07.json",
+        ]
+        immutable_written = ["historic/history/network/immutable-alias.json"]
+        immutable_skipped = ["historic/alerts/generations/hash/2026-07/page-0001.json"]
+
+    assert _stable_outcome_total(_Outcomes()) == 2
 
 
 def test_archive_builder_is_deterministic_newest_first_from_shuffled_rows() -> None:
@@ -184,7 +223,7 @@ def test_archive_builder_round_trips_long_unicode_html_and_splits_on_bytes(
 
 
 def test_archive_paths_reuse_same_sha_and_change_with_content() -> None:
-    from transit_ops.snapshots.storage import _body
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
 
     first, _ = _build([_row(1)])
     same, _ = _build([_row(1)], stamp="2027-01-01T00:00:00Z")
@@ -193,18 +232,18 @@ def test_archive_paths_reuse_same_sha_and_change_with_content() -> None:
     first_path, first_page = first.page_items[0]
     assert first_path == same.page_items[0][0]
     assert first_path != changed.page_items[0][0]
-    body = _body(first_page)
+    body = snapshot_json_bytes(first_page)
     assert hashlib.sha256(body).hexdigest() in first_path
     assert first.index.months[0].pages[0].byte_size == len(body)
 
 
 def test_run_envelope_stamping_never_mutates_content_addressed_page_bytes() -> None:
     from transit_ops.snapshots.publish import _stamp_envelope
-    from transit_ops.snapshots.storage import _body
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
 
     bundle, _ = _build([_row(1)])
     path, page = bundle.page_items[0]
-    before = _body(page)
+    before = snapshot_json_bytes(page)
     items = [
         (path, page, "historic_immutable"),
         ("historic/alerts/index.json", bundle.index, "historic"),
@@ -212,10 +251,82 @@ def test_run_envelope_stamping_never_mutates_content_addressed_page_bytes() -> N
 
     _stamp_envelope(items, provider_id="stm", stamp="2030-01-01T00:00:00Z")
 
-    assert _body(page) == before
+    assert snapshot_json_bytes(page) == before
     assert page.publish_generation_id is None
     assert page.methodology_version == "alerts-1"
     assert bundle.index.publish_generation_id == "stm@2030-01-01T00:00:00Z"
+
+
+def test_all_content_addressed_partition_bytes_and_digests_ignore_run_stamps() -> None:
+    from transit_ops.snapshots.publish import _stamp_envelope
+    from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
+
+    archive, _ = _build([_row(1)])
+    partitions = [
+        archive.page_items[0],
+        (
+            "historic/history/network/generations/hash/2026-07.json",
+            contract.NetworkHistoryPartition(
+                generated_utc="2026-07-31T00:00:00Z",
+                month="2026-07",
+                days=[{"date": "2026-07-01", "vehicles": 1}],
+            ),
+        ),
+        (
+            "historic/history/lines/3437/generations/hash/2026-07.json",
+            contract.LineHistoryPartition(
+                generated_utc="2026-07-31T00:00:00Z",
+                month="2026-07",
+                entity_id="47",
+                days=[
+                    {
+                        "date": "2026-07-01",
+                        "delay": {
+                            "observation_count": 1,
+                            "in_clamp_observation_count": 1,
+                            "on_time_count": 1,
+                            "severe_count": 0,
+                            "sum_delay_seconds": 0,
+                        },
+                    }
+                ],
+            ),
+        ),
+        (
+            "historic/history/stops/53544f50/generations/hash/2026-07.json",
+            contract.StopHistoryPartition(
+                generated_utc="2026-07-31T00:00:00Z",
+                month="2026-07",
+                entity_id="STOP",
+                days=[
+                    {
+                        "date": "2026-07-01",
+                        "occupancy": {
+                            "empty": 1,
+                            "many_seats": 0,
+                            "few_seats": 0,
+                            "standing": 0,
+                            "full": 0,
+                        },
+                    }
+                ],
+            ),
+        ),
+    ]
+
+    for path, payload in partitions:
+        before_bytes = snapshot_json_bytes(payload)
+        before_digest = snapshot_sha256(payload)
+        items = [(path, payload, "historic_immutable")]
+
+        _stamp_envelope(items, provider_id="stm", stamp="2030-01-01T00:00:00Z")
+        after_first = snapshot_json_bytes(payload)
+        _stamp_envelope(items, provider_id="stm", stamp="2040-01-01T00:00:00Z")
+
+        assert after_first == before_bytes
+        assert snapshot_json_bytes(payload) == before_bytes
+        assert snapshot_sha256(payload) == before_digest
+        assert payload.publish_generation_id is None
 
 
 def test_archive_index_has_honest_dates_and_long_running_page_coverage() -> None:

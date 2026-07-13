@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -25,6 +24,7 @@ from transit_ops.snapshots.contract import (
     AlertArchivePage,
     AlertArchivePageRef,
 )
+from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
 from transit_ops.sql_registry import named_query
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -191,7 +191,7 @@ def _finalize_page(
         page=page_number,
         alerts=entries,
     )
-    body = page.model_dump_json().encode("utf-8")
+    body = snapshot_json_bytes(page)
     digest = hashlib.sha256(body).hexdigest()
     path = f"historic/alerts/generations/{digest}/{month}/page-{page_number:04d}.json"
     coverage_start, coverage_end = _page_coverage(page, provider_timezone)
@@ -217,8 +217,7 @@ def _collection_generation_id(
         "last_available_date": last_available_date,
         "months": [month.model_dump(mode="json") for month in months],
     }
-    body = json.dumps(canonical, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    return hashlib.sha256(body).hexdigest()
+    return snapshot_sha256(canonical)
 
 
 def build_alert_archive(
@@ -295,10 +294,7 @@ def build_alert_archive(
                     page=page_number,
                     alerts=candidate_entries,
                 )
-                too_large = (
-                    len(candidate.model_dump_json().encode("utf-8"))
-                    > ALERT_ARCHIVE_PAGE_BYTE_CEILING
-                )
+                too_large = len(snapshot_json_bytes(candidate)) > ALERT_ARCHIVE_PAGE_BYTE_CEILING
             if current_entries and (too_many or too_large):
                 finalize()
                 current_rows = [row]

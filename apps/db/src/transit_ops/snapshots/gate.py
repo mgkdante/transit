@@ -30,7 +30,7 @@ from enum import Enum
 
 from pydantic import BaseModel
 
-from transit_ops.snapshots.storage import _body
+from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +39,11 @@ logger = logging.getLogger(__name__)
 # within GATE_SENTINEL_EPS of it). It is NOT a magnitude band: legitimate large leaves
 # exist (observation_count ~1.7M, alert duration_min ~108k, a ~9999-minute ≈7-day alert
 # duration), so any |v|>=9999 band would false-flag real data. NaN/Inf stay universal.
-GATE_SENTINEL_VALUE = 9999.9999   # the Numeric(8,4) overflow sentinel (exact float family)
-GATE_SENTINEL_EPS = 1e-6          # float tolerance around GATE_SENTINEL_VALUE
-GATE_DELAY_MIN_ABS = 90.0         # signed-delay minutes cap (fact cap 3600s=60min + margin)
-GATE_MIX_SUM_TOL = 0.01           # occupancy-mix share sum tolerance around 1.0
-GATE_ROUTE_DROP_FRACTION = 0.30   # total-file-count drop that fires the coverage-delta ERROR
+GATE_SENTINEL_VALUE = 9999.9999  # the Numeric(8,4) overflow sentinel (exact float family)
+GATE_SENTINEL_EPS = 1e-6  # float tolerance around GATE_SENTINEL_VALUE
+GATE_DELAY_MIN_ABS = 90.0  # signed-delay minutes cap (fact cap 3600s=60min + margin)
+GATE_MIX_SUM_TOL = 0.01  # occupancy-mix share sum tolerance around 1.0
+GATE_ROUTE_DROP_FRACTION = 0.30  # total-file-count drop that fires the coverage-delta ERROR
 GATE_EMPTY_ROUTE_WARN_FRACTION = 0.50  # >half empty route files -> coverage-regression WARN
 # GC2 DECISIONS #12 — trip-id drift detector. When RT-observed trip-days exceed the
 # scheduled universe on > this fraction of scheduled route-days, silent_trip_days was
@@ -61,18 +61,18 @@ _DELAY_LO, _DELAY_HI = -GATE_DELAY_MIN_ABS, GATE_DELAY_MIN_ABS
 
 
 class Severity(str, Enum):
-    ERROR = "error"      # aborts publish (unless --force)
-    WARN = "warn"        # logged + in report, never aborts
+    ERROR = "error"  # aborts publish (unless --force)
+    WARN = "warn"  # logged + in report, never aborts
 
 
 @dataclass(frozen=True)
 class CheckResult:
-    check: str            # stable id, e.g. "rate_range"
-    kind: str             # payload kind, e.g. "historic_route_reliability"
-    rel_key: str          # "historic/route_reliability/51.json" (or "<batch>" pre-key)
+    check: str  # stable id, e.g. "rate_range"
+    kind: str  # payload kind, e.g. "historic_route_reliability"
+    rel_key: str  # "historic/route_reliability/51.json" (or "<batch>" pre-key)
     severity: Severity
-    message: str          # human-readable, includes offending field + value
-    field_path: str | None = None   # e.g. "periods[2].otp_pct"
+    message: str  # human-readable, includes offending field + value
+    field_path: str | None = None  # e.g. "periods[2].otp_pct"
     value: object | None = None
 
     def to_dict(self) -> dict:  # type: ignore[type-arg]
@@ -146,15 +146,10 @@ def _as_dict(payload: object) -> object:
 
 
 def _payload_bytes(payload: object) -> int | None:
-    """The UTF-8 byte size the publisher would write (model_dump_json for a
-    model; sorted compact json.dumps for a dict — matching snapshots/storage.py).
-    None when the payload cannot be serialized (a caller test may pass a bare
-    stub)."""
+    """The exact publisher byte size, or ``None`` for unsupported test stubs."""
     try:
-        if isinstance(payload, BaseModel):
-            return len(payload.model_dump_json().encode("utf-8"))
-        if isinstance(payload, dict):
-            return len(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+        if isinstance(payload, BaseModel | dict):
+            return len(snapshot_json_bytes(payload))
     except (TypeError, ValueError):
         return None
     return None
@@ -225,16 +220,30 @@ class _Emitter:
         self.out: list[CheckResult] = []
 
     def err(self, check: str, fp: str, value: object, msg: str) -> None:
-        self.out.append(CheckResult(
-            check=check, kind=self.kind, rel_key=self.rel_key, severity=Severity.ERROR,
-            message=msg, field_path=fp, value=value,
-        ))
+        self.out.append(
+            CheckResult(
+                check=check,
+                kind=self.kind,
+                rel_key=self.rel_key,
+                severity=Severity.ERROR,
+                message=msg,
+                field_path=fp,
+                value=value,
+            )
+        )
 
     def warn(self, check: str, fp: str, value: object, msg: str) -> None:
-        self.out.append(CheckResult(
-            check=check, kind=self.kind, rel_key=self.rel_key, severity=Severity.WARN,
-            message=msg, field_path=fp, value=value,
-        ))
+        self.out.append(
+            CheckResult(
+                check=check,
+                kind=self.kind,
+                rel_key=self.rel_key,
+                severity=Severity.WARN,
+                message=msg,
+                field_path=fp,
+                value=value,
+            )
+        )
 
     # typed guards -----------------------------------------------------------
     def rate(self, d: dict, fp: str, lo: float = 0, hi: float = 100) -> None:
@@ -375,11 +384,19 @@ def check_network(payload: object, *, rel_key: str) -> list[CheckResult]:
                 total += b["count"]
             lo, hi = b.get("lo_min"), b.get("hi_min")
             if not _le(lo, hi):
-                emit.err("edge_order", f"delay_histogram[{i}].lo_min", lo,
-                         f"delay_histogram[{i}] lo_min>hi_min ({lo}>{hi})")
+                emit.err(
+                    "edge_order",
+                    f"delay_histogram[{i}].lo_min",
+                    lo,
+                    f"delay_histogram[{i}] lo_min>hi_min ({lo}>{hi})",
+                )
         if total < 1:
-            emit.warn("empty_histogram", "delay_histogram", total,
-                      "delay_histogram present but all-zero counts")
+            emit.warn(
+                "empty_histogram",
+                "delay_histogram",
+                total,
+                "delay_histogram present but all-zero counts",
+            )
     nrr = d.get("non_responding_by_route")
     if isinstance(nrr, list):
         total = 0
@@ -391,13 +408,21 @@ def check_network(payload: object, *, rel_key: str) -> list[CheckResult]:
                 total += r["count"]
         nr = d.get("non_responding")
         if _is_number(nr) and total != nr:
-            emit.err("sum_mismatch", "non_responding_by_route", total,
-                     f"sum(non_responding_by_route.count)={total} != non_responding={nr}")
+            emit.err(
+                "sum_mismatch",
+                "non_responding_by_route",
+                total,
+                f"sum(non_responding_by_route.count)={total} != non_responding={nr}",
+            )
     emit.delay(d, "delay_p50_min")
     emit.delay(d, "delay_p90_min")
     if not _le(d.get("delay_p50_min"), d.get("delay_p90_min")):
-        emit.warn("percentile_order", "delay_p50_min", d.get("delay_p50_min"),
-                  "delay_p50_min > delay_p90_min")
+        emit.warn(
+            "percentile_order",
+            "delay_p50_min",
+            d.get("delay_p50_min"),
+            "delay_p50_min > delay_p90_min",
+        )
     return emit.out
 
 
@@ -457,13 +482,21 @@ def _check_reliability_period(emit: _Emitter, p: dict) -> None:
                 continue
             _prefixed(emit, f"delay_histogram[{j}].").count(b, "count")
             if not _le(b.get("lo_sec"), b.get("hi_sec")):
-                emit.err("edge_order", f"delay_histogram[{j}].lo_sec", b.get("lo_sec"),
-                         f"delay_histogram[{j}] lo_sec>hi_sec")
+                emit.err(
+                    "edge_order",
+                    f"delay_histogram[{j}].lo_sec",
+                    b.get("lo_sec"),
+                    f"delay_histogram[{j}] lo_sec>hi_sec",
+                )
     emit.rate(p, "prior_otp_pct")
     emit.count(p, "prior_on_time")
     if not _le(p.get("prior_on_time"), p.get("prior_observation_count")):
-        emit.err("invariant", "prior_on_time", p.get("prior_on_time"),
-                 "prior_on_time > prior_observation_count")
+        emit.err(
+            "invariant",
+            "prior_on_time",
+            p.get("prior_on_time"),
+            "prior_on_time > prior_observation_count",
+        )
 
 
 def _check_headway(emit: _Emitter, h: dict) -> None:
@@ -472,8 +505,12 @@ def _check_headway(emit: _Emitter, h: dict) -> None:
     emit.count(h, "cov")
     emit.count(h, "observation_count")
     if _is_neg(h.get("excess_wait_min")):
-        emit.err("clamp_invariant", "excess_wait_min", h.get("excess_wait_min"),
-                 "excess_wait_min < 0 (clamp violated)")
+        emit.err(
+            "clamp_invariant",
+            "excess_wait_min",
+            h.get("excess_wait_min"),
+            "excess_wait_min < 0 (clamp violated)",
+        )
     emit.rate(h, "bunched_pct")
 
 
@@ -534,8 +571,12 @@ def check_route_reliability(payload: object, *, rel_key: str) -> list[CheckResul
         sub.count(c, "canceled_trip_days")
         sub.count(c, "total_trip_days")
         if not _le(c.get("canceled_trip_days"), c.get("total_trip_days")):
-            sub.err("invariant", "canceled_trip_days", c.get("canceled_trip_days"),
-                    "canceled_trip_days > total_trip_days")
+            sub.err(
+                "invariant",
+                "canceled_trip_days",
+                c.get("canceled_trip_days"),
+                "canceled_trip_days > total_trip_days",
+            )
         # Scheduled-universe split (GC2 H1). All None-skip (honest-unknown on pre-0073
         # history). Invariants: delivered<=total (RT-observed subset), silent<=scheduled
         # (silent is a subset of the scheduled universe), delivered+canceled==total.
@@ -544,20 +585,34 @@ def check_route_reliability(payload: object, *, rel_key: str) -> list[CheckResul
         sub.count(c, "silent_trip_days")
         sub.rate(c, "service_completeness_pct")
         if not _le(c.get("delivered_trip_days"), c.get("total_trip_days")):
-            sub.err("invariant", "delivered_trip_days", c.get("delivered_trip_days"),
-                    "delivered_trip_days > total_trip_days")
+            sub.err(
+                "invariant",
+                "delivered_trip_days",
+                c.get("delivered_trip_days"),
+                "delivered_trip_days > total_trip_days",
+            )
         if not _le(c.get("silent_trip_days"), c.get("scheduled_trip_days")):
-            sub.err("invariant", "silent_trip_days", c.get("silent_trip_days"),
-                    "silent_trip_days > scheduled_trip_days")
+            sub.err(
+                "invariant",
+                "silent_trip_days",
+                c.get("silent_trip_days"),
+                "silent_trip_days > scheduled_trip_days",
+            )
         _delivered = c.get("delivered_trip_days")
         _canceled = c.get("canceled_trip_days")
         _total = c.get("total_trip_days")
         if (
-            _is_number(_delivered) and _is_number(_canceled) and _is_number(_total)
+            _is_number(_delivered)
+            and _is_number(_canceled)
+            and _is_number(_total)
             and _delivered + _canceled != _total
         ):
-            sub.err("invariant", "delivered_trip_days", _delivered,
-                    "delivered_trip_days + canceled_trip_days != total_trip_days")
+            sub.err(
+                "invariant",
+                "delivered_trip_days",
+                _delivered,
+                "delivered_trip_days + canceled_trip_days != total_trip_days",
+            )
     for i, s in enumerate(d.get("skipped_stops") or []):
         if not isinstance(s, dict):
             continue
@@ -566,8 +621,12 @@ def check_route_reliability(payload: object, *, rel_key: str) -> list[CheckResul
         sub.count(s, "skipped_stop_count")
         sub.count(s, "stop_time_update_count")
         if not _le(s.get("skipped_stop_count"), s.get("stop_time_update_count")):
-            sub.err("invariant", "skipped_stop_count", s.get("skipped_stop_count"),
-                    "skipped_stop_count > stop_time_update_count")
+            sub.err(
+                "invariant",
+                "skipped_stop_count",
+                s.get("skipped_stop_count"),
+                "skipped_stop_count > stop_time_update_count",
+            )
     for i, w in enumerate(d.get("weak_stops") or []):
         if isinstance(w, dict):
             _check_weak_stop(_prefixed(emit, f"weak_stops[{i}]."), w)
@@ -649,8 +708,12 @@ def check_stop_reliability(payload: object, *, rel_key: str) -> list[CheckResult
         sub.count(dp, "severe_count")
         obs, severe = dp.get("observation_count"), dp.get("severe_count")
         if not _le(severe, obs):
-            sub.err("severe_gt_obs", "severe_count", severe,
-                    f"severe_count={severe} > observation_count={obs}")
+            sub.err(
+                "severe_gt_obs",
+                "severe_count",
+                severe,
+                f"severe_count={severe} > observation_count={obs}",
+            )
         sub.rate(dp, "severe_pct")
         sub.delay(dp, "avg_delay_min")
     return emit.out
@@ -661,11 +724,11 @@ def _check_hotspot_entry(emit: _Emitter, h: dict) -> None:
     NOT assert rank sequence: a by_grain ladder is ranked independently THEN truncated,
     so its ranks need not be a globally-sequential run (only the scalar hotspots[] does)."""
     if h.get("type") not in ("route", "stop"):
-        emit.err("unknown_type", "type", h.get("type"),
-                 f"type={h.get('type')!r} not in {{route,stop}}")
+        emit.err(
+            "unknown_type", "type", h.get("type"), f"type={h.get('type')!r} not in {{route,stop}}"
+        )
     if h.get("id") in _SENTINEL_ENTITY_IDS:
-        emit.err("sentinel_entity", "id", h.get("id"),
-                 f"id={h.get('id')!r} is a sentinel entity")
+        emit.err("sentinel_entity", "id", h.get("id"), f"id={h.get('id')!r} is a sentinel entity")
     emit.rate(h, "otp_delta_pts", -100, 100)
     emit.rate(h, "severe_pct")
     emit.delay(h, "avg_delay_min")
@@ -686,14 +749,23 @@ def check_hotspots(payload: object, *, rel_key: str) -> list[CheckResult]:
         sub = _prefixed(emit, f"hotspots[{i}].")
         expected = i + 1
         if h.get("rank") != expected:
-            sub.err("rank_sequence", "rank", h.get("rank"),
-                    f"rank={h.get('rank')} not sequential (expected {expected})")
+            sub.err(
+                "rank_sequence",
+                "rank",
+                h.get("rank"),
+                f"rank={h.get('rank')} not sequential (expected {expected})",
+            )
         if h.get("type") not in ("route", "stop"):
-            sub.err("unknown_type", "type", h.get("type"),
-                    f"type={h.get('type')!r} not in {{route,stop}}")
+            sub.err(
+                "unknown_type",
+                "type",
+                h.get("type"),
+                f"type={h.get('type')!r} not in {{route,stop}}",
+            )
         if h.get("id") in _SENTINEL_ENTITY_IDS:
-            sub.err("sentinel_entity", "id", h.get("id"),
-                    f"id={h.get('id')!r} is a sentinel entity")
+            sub.err(
+                "sentinel_entity", "id", h.get("id"), f"id={h.get('id')!r} is a sentinel entity"
+            )
         sub.rate(h, "otp_delta_pts", -100, 100)
     # S12 by_grain ladders: walk entries + tray, reusing the sub.rate/delay/wilson checks;
     # NO rank_sequence inside a ladder (ranked-then-truncated), so the scalar list above
@@ -717,14 +789,18 @@ def _check_offender_entry(emit: _Emitter, o: dict) -> None:
     sequential run). type is the offender discriminator trip|vehicle (NOT route|stop). No
     rank field is asserted here (the ladders carry per-kind rank, not a global sequence)."""
     if o.get("type") not in ("trip", "vehicle"):
-        emit.err("unknown_type", "type", o.get("type"),
-                 f"type={o.get('type')!r} not in {{trip,vehicle}}")
+        emit.err(
+            "unknown_type", "type", o.get("type"), f"type={o.get('type')!r} not in {{trip,vehicle}}"
+        )
     if o.get("id") in _SENTINEL_ENTITY_IDS:
-        emit.err("sentinel_entity", "id", o.get("id"),
-                 f"id={o.get('id')!r} is a sentinel entity")
+        emit.err("sentinel_entity", "id", o.get("id"), f"id={o.get('id')!r} is a sentinel entity")
     if o.get("route") in _SENTINEL_ENTITY_IDS:
-        emit.err("sentinel_entity", "route", o.get("route"),
-                 f"route={o.get('route')!r} is a sentinel entity")
+        emit.err(
+            "sentinel_entity",
+            "route",
+            o.get("route"),
+            f"route={o.get('route')!r} is a sentinel entity",
+        )
     emit.rate(o, "severe_pct")
     emit.delay(o, "avg_delay_min")
     emit.count(o, "observation_count")
@@ -744,8 +820,12 @@ def check_repeat_offenders(payload: object, *, rel_key: str) -> list[CheckResult
             continue
         sub = _prefixed(emit, f"offenders[{i}].")
         if o.get("type") not in ("trip", "vehicle", "route", "stop"):
-            sub.err("unknown_type", "type", o.get("type"),
-                    f"type={o.get('type')!r} not a known offender type")
+            sub.err(
+                "unknown_type",
+                "type",
+                o.get("type"),
+                f"type={o.get('type')!r} not a known offender type",
+            )
         sub.delay(o, "avg_delay_min")
         # S14 additive scalar twins: recurrence_days is a non-negative distinct-day count.
         sub.count(o, "recurrence_days")
@@ -794,20 +874,32 @@ def check_alert_history(payload: object, *, rel_key: str) -> list[CheckResult]:
     # cannot hide fewer alerts than it shows).
     win_start, win_end = d.get("window_start"), d.get("window_end")
     if not _iso_le(win_start, win_end):
-        emit.err("window_order", "window_start", win_start,
-                 f"window_start={win_start!r} > window_end={win_end!r}")
+        emit.err(
+            "window_order",
+            "window_start",
+            win_start,
+            f"window_start={win_start!r} > window_end={win_end!r}",
+        )
     alerts = d.get("alerts") or []
     total = d.get("total_in_window")
     if d.get("truncated") is True and isinstance(total, int) and total < len(alerts):
-        emit.err("window_total", "total_in_window", total,
-                 f"total_in_window={total} < emitted alerts ({len(alerts)}) while truncated")
+        emit.err(
+            "window_total",
+            "total_in_window",
+            total,
+            f"total_in_window={total} < emitted alerts ({len(alerts)}) while truncated",
+        )
     # S15 byte ceiling: a runaway window must not bloat the file.
     from transit_ops.snapshots.contract import ALERT_HISTORY_BYTE_CEILING
 
     size = _payload_bytes(payload)
     if size is not None and size > ALERT_HISTORY_BYTE_CEILING:
-        emit.err("byte_ceiling", "", size,
-                 f"alert_history payload {size}B exceeds ceiling {ALERT_HISTORY_BYTE_CEILING}B")
+        emit.err(
+            "byte_ceiling",
+            "",
+            size,
+            f"alert_history payload {size}B exceeds ceiling {ALERT_HISTORY_BYTE_CEILING}B",
+        )
     for i, a in enumerate(alerts):
         if not isinstance(a, dict):
             continue
@@ -821,8 +913,12 @@ def check_alert_history(payload: object, *, rel_key: str) -> list[CheckResult]:
                 sub = _prefixed(emit, f"breakdown.{group}[{i}].")
                 sub.count(b, "count")
                 if _is_neg(b.get("median_duration_min")):
-                    sub.err("count_negative", "median_duration_min",
-                            b.get("median_duration_min"), "median_duration_min < 0")
+                    sub.err(
+                        "count_negative",
+                        "median_duration_min",
+                        b.get("median_duration_min"),
+                        "median_duration_min < 0",
+                    )
     return emit.out
 
 
@@ -861,10 +957,8 @@ _ARCHIVE_PAGE_PATH_RE = re.compile(
 
 def _serialized_body(payload: object) -> bytes | None:
     try:
-        if isinstance(payload, BaseModel):
-            return payload.model_dump_json().encode("utf-8")
-        if isinstance(payload, dict):
-            return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        if isinstance(payload, BaseModel | dict):
+            return snapshot_json_bytes(payload)
     except (TypeError, ValueError):
         return None
     return None
@@ -1049,13 +1143,7 @@ def check_alert_archive_index(payload: object, *, rel_key: str) -> list[CheckRes
         "last_available_date": index.get("last_available_date"),
         "months": months,
     }
-    expected_generation = hashlib.sha256(
-        json.dumps(
-            generation_basis,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-    ).hexdigest()
+    expected_generation = snapshot_sha256(generation_basis)
     if index.get("collection_generation_id") != expected_generation:
         emit.err(
             "collection_generation_id",
@@ -1141,9 +1229,10 @@ def check_alert_archive_bundle(
                 page,
                 provider_timezone=provider_timezone,
             )
-            if coverage is not None and (
-                ref.get("coverage_start"), ref.get("coverage_end")
-            ) != coverage:
+            if (
+                coverage is not None
+                and (ref.get("coverage_start"), ref.get("coverage_end")) != coverage
+            ):
                 emit.err("ref_coverage", "coverage_start", None, "ref coverage does not match page")
             findings.extend(emit.out)
     for path in built.keys() - referenced:
@@ -1183,8 +1272,13 @@ def check_receipt(payload: object, *, rel_key: str) -> list[CheckResult]:
     ss = d.get("service_states")
     if isinstance(ss, dict):
         sub = _prefixed(emit, "service_states.")
-        for f in ("scheduled_trip_days", "delivered_trip_days", "cancelled_trip_days",
-                  "silent_trip_days", "not_reported_route_count"):
+        for f in (
+            "scheduled_trip_days",
+            "delivered_trip_days",
+            "cancelled_trip_days",
+            "silent_trip_days",
+            "not_reported_route_count",
+        ):
             sub.count(ss, f)
         sub.rate(ss, "service_completeness_pct")
         for i, nr in enumerate(ss.get("not_reported_routes") or []):
@@ -1287,8 +1381,12 @@ def check_data_health(payload: object, *, rel_key: str) -> list[CheckResult]:
 
     size = _payload_bytes(payload)
     if size is not None and size > DATA_HEALTH_BYTE_CEILING:
-        emit.err("byte_ceiling", "", size,
-                 f"data_health payload {size}B exceeds ceiling {DATA_HEALTH_BYTE_CEILING}B")
+        emit.err(
+            "byte_ceiling",
+            "",
+            size,
+            f"data_health payload {size}B exceeds ceiling {DATA_HEALTH_BYTE_CEILING}B",
+        )
     _valid_verdicts = frozenset({"pass", "warn", "fail"})
     for i, lane in enumerate(d.get("lanes") or []):
         if not isinstance(lane, dict):
@@ -1305,8 +1403,12 @@ def check_data_health(payload: object, *, rel_key: str) -> list[CheckResult]:
                 gsub.count(gate, f)
             verdict = gate.get("verdict")
             if verdict is not None and verdict not in _valid_verdicts:
-                gsub.err("unknown_verdict", "verdict", verdict,
-                         f"verdict={verdict!r} not in {sorted(_valid_verdicts)}")
+                gsub.err(
+                    "unknown_verdict",
+                    "verdict",
+                    verdict,
+                    f"verdict={verdict!r} not in {sorted(_valid_verdicts)}",
+                )
     for i, feed in enumerate(d.get("feeds") or []):
         if not isinstance(feed, dict):
             continue
@@ -1326,9 +1428,7 @@ def check_alerts(payload: object, *, rel_key: str) -> list[CheckResult]:
         sub = _prefixed(emit, f"alerts[{i}].")
         sev = a.get("severity")
         if sev is not None and sev not in ("critical", "high", "watch"):
-            sub.err(
-                "unknown_severity", "severity", sev, f"severity={sev!r} not a known severity"
-            )
+            sub.err("unknown_severity", "severity", sev, f"severity={sev!r} not a known severity")
         # S15: url must be a string when present; each active window well-ordered.
         url = a.get("url")
         if url is not None and not isinstance(url, str):
@@ -1339,8 +1439,8 @@ def check_alerts(payload: object, *, rel_key: str) -> list[CheckResult]:
             ps, pe = p.get("start_utc"), p.get("end_utc")
             if not _iso_le(ps, pe):
                 _prefixed(emit, f"alerts[{i}].active_periods[{j}].").err(
-                    "window_order", "start_utc", ps,
-                    f"start_utc={ps!r} > end_utc={pe!r}")
+                    "window_order", "start_utc", ps, f"start_utc={ps!r} > end_utc={pe!r}"
+                )
     return emit.out
 
 
@@ -1416,7 +1516,7 @@ def new_report(provider_id: str, tier: str, generated_utc: str) -> GateReport:
 def record(report: GateReport, rel_key: str, payload: object) -> None:
     """Run check_payload for one payload; append results; bump payloads_checked/checks_run."""
     findings = check_payload(rel_key, payload)
-    digest = hashlib.sha256(_body(payload)).hexdigest()  # type: ignore[arg-type]
+    digest = snapshot_sha256(payload)  # type: ignore[arg-type]
     report.results.extend(findings)
     report.payload_sha256[rel_key] = digest
     report.payloads_checked += 1
@@ -1439,12 +1539,16 @@ def check_route_coverage_delta(
         return None
     if current_total < prior_files_total * (1 - drop_frac):
         return CheckResult(
-            check="coverage_delta", kind="batch", rel_key="<batch>", severity=Severity.ERROR,
+            check="coverage_delta",
+            kind="batch",
+            rel_key="<batch>",
+            severity=Severity.ERROR,
             message=(
                 f"published file set shrank from ~{prior_files_total} to {current_total} "
                 f"(> {drop_frac:.0%} drop)"
             ),
-            field_path=None, value=current_total,
+            field_path=None,
+            value=current_total,
         )
     return None
 
@@ -1455,9 +1559,7 @@ def _is_empty_route_file(payload: object) -> bool:
     if not isinstance(d, dict):
         return False
     return (
-        not (d.get("periods") or [])
-        and d.get("habits") is None
-        and not (d.get("weak_stops") or [])
+        not (d.get("periods") or []) and d.get("habits") is None and not (d.get("weak_stops") or [])
     )
 
 
@@ -1510,13 +1612,17 @@ def check_id_drift(
     if ratio <= warn_frac:
         return None
     return CheckResult(
-        check="id_drift", kind="batch", rel_key="<batch>", severity=Severity.WARN,
+        check="id_drift",
+        kind="batch",
+        rel_key="<batch>",
+        severity=Severity.WARN,
         message=(
             f"{overshoot_days} of {scheduled_days} scheduled route-days have observed "
             f"trips > scheduled ({ratio:.0%} > {warn_frac:.0%}) — trip-id drift; silent "
             "counts under-report"
         ),
-        field_path=None, value=ratio,
+        field_path=None,
+        value=ratio,
     )
 
 
@@ -1552,10 +1658,13 @@ def check_network_trend_coverage(
         reason = ""
         severity = Severity.ERROR
     return CheckResult(
-        check="empty_coverage", kind="historic_network_trend", rel_key=rel_key,
+        check="empty_coverage",
+        kind="historic_network_trend",
+        rel_key=rel_key,
         severity=severity,
         message="network_trend series is empty (no daily trend published)" + reason,
-        field_path="series", value=0,
+        field_path="series",
+        value=0,
     )
 
 
@@ -1603,15 +1712,20 @@ def finalize_batch(
         empty = sum(1 for (_k, p) in route_payloads if _is_empty_route_file(p))
         ratio = empty / len(route_payloads)
         if ratio > GATE_EMPTY_ROUTE_WARN_FRACTION:
-            report.results.append(CheckResult(
-                check="empty_route_ratio", kind="batch", rel_key="<batch>",
-                severity=Severity.WARN,
-                message=(
-                    f"{empty} of {len(route_payloads)} route reliability files carry no data "
-                    f"({ratio:.0%} > {GATE_EMPTY_ROUTE_WARN_FRACTION:.0%})"
-                ),
-                field_path=None, value=ratio,
-            ))
+            report.results.append(
+                CheckResult(
+                    check="empty_route_ratio",
+                    kind="batch",
+                    rel_key="<batch>",
+                    severity=Severity.WARN,
+                    message=(
+                        f"{empty} of {len(route_payloads)} route reliability files carry no data "
+                        f"({ratio:.0%} > {GATE_EMPTY_ROUTE_WARN_FRACTION:.0%})"
+                    ),
+                    field_path=None,
+                    value=ratio,
+                )
+            )
 
 
 def enforce(report: GateReport, *, force: bool) -> None:

@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import re
 
+from transit_ops.snapshots.serialization import snapshot_sha256
+
 _CANONICAL_ENTITY_ID = re.compile(r"(?:[0-9a-f]{2})+")
+
+
+def history_collection_generation_id(canonical: dict) -> str:  # type: ignore[type-arg]
+    """Digest canonical collection identity through the shared byte authority."""
+
+    return snapshot_sha256(canonical)
 
 
 def encode_history_entity_id(entity_id: str) -> str:
