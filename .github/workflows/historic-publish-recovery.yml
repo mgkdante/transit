@@ -60,10 +60,19 @@ jobs:
 
       - name: Sync retained alert archive (all providers)
         run: |
-          for provider in $(uv run python -m transit_ops.cli list-providers); do
+          providers="$(uv run python -m transit_ops.cli list-providers)"
+          if [[ -z "$providers" ]]; then
+            echo "Provider discovery returned no providers" >&2
+            exit 1
+          fi
+          while IFS= read -r provider; do
+            if [[ -z "$provider" ]]; then
+              echo "Provider discovery returned an empty provider id" >&2
+              exit 1
+            fi
             uv run python -m transit_ops.cli sync-alert-archive "$provider" \
               | tee "artifacts/historic-publish-recovery/alert-archive-sync-${provider}.json"
-          done
+          done <<< "$providers"
 
       - name: Publish gated historic snapshot (all providers)
         run: |
@@ -74,12 +83,34 @@ jobs:
 
       - name: Prove published historic snapshots
         run: |
-          for provider in $(jq -r '.[].provider_id' artifacts/historic-publish-recovery/historic-publish.json); do
+          published_providers="$(
+            jq -er '
+              if type != "array" or length == 0 then
+                error("historic publish result must be a nonempty array")
+              elif any(
+                .[];
+                ((.provider_id | type) != "string" or (.provider_id | length) == 0)
+              ) then
+                error("every historic publish result needs a nonempty provider_id")
+              else
+                .[].provider_id
+              end
+            ' artifacts/historic-publish-recovery/historic-publish.json
+          )"
+          if [[ -z "$published_providers" ]]; then
+            echo "Historic publish result returned no provider ids" >&2
+            exit 1
+          fi
+          while IFS= read -r provider; do
+            if [[ -z "$provider" ]]; then
+              echo "Historic publish result returned an empty provider id" >&2
+              exit 1
+            fi
             uv run python -m transit_ops.cli verify-historic-publish "$provider" \
               --sync-report "artifacts/historic-publish-recovery/alert-archive-sync-${provider}.json" \
               --gate-report "artifacts/historic-publish-recovery/publish-gate-${provider}.json" \
               --report-path "artifacts/historic-publish-recovery/public-proof-${provider}.json"
-          done
+          done <<< "$published_providers"
 
       - name: Upload historic recovery evidence
         if: always()
