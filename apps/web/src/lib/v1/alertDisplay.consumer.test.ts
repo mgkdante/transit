@@ -23,6 +23,16 @@ const ARRAY_CALLBACKS = new Set([
 	'map',
 	'some',
 ]);
+const REDUCE_CALLBACKS = new Set(['reduce', 'reduceRight']);
+const COLLECTION_PRESERVING_CALLS = new Set([
+	'concat',
+	'filter',
+	'slice',
+	'toReversed',
+	'toSorted',
+	'with',
+]);
+const COLLECTION_ELEMENT_CALLS = new Set(['at', 'find', 'pop', 'shift']);
 
 type AlertValueKind = 'value' | 'collection';
 
@@ -47,15 +57,43 @@ interface AlertScriptAnalysis {
 	violations: string[];
 	values: Set<string>;
 	collections: Set<string>;
+	shapes: Map<string, ReadonlyMap<string, AlertValueKind>>;
 }
 
 function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertScriptAnalysis {
-	const ast = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	const virtualFileName = '/alert-display-consumer.ts';
+	const ast = ts.createSourceFile(
+		virtualFileName,
+		source,
+		ts.ScriptTarget.Latest,
+		true,
+		ts.ScriptKind.TS,
+	);
+	const compilerOptions: ts.CompilerOptions = {
+		module: ts.ModuleKind.ESNext,
+		noLib: true,
+		noResolve: true,
+		target: ts.ScriptTarget.Latest,
+	};
+	const host: ts.CompilerHost = {
+		fileExists: (requestedFileName) => requestedFileName === virtualFileName,
+		getCanonicalFileName: (requestedFileName) => requestedFileName,
+		getCurrentDirectory: () => '/',
+		getDefaultLibFileName: () => '',
+		getDirectories: () => [],
+		getNewLine: () => '\n',
+		getSourceFile: (requestedFileName) => (requestedFileName === virtualFileName ? ast : undefined),
+		readFile: (requestedFileName) => (requestedFileName === virtualFileName ? source : undefined),
+		useCaseSensitiveFileNames: () => true,
+		writeFile: () => undefined,
+	};
+	const checker = ts.createProgram([virtualFileName], compilerOptions, host).getTypeChecker();
 	const typeKinds = new Map<string, AlertValueKind>();
 	const objectShapes = new Map<string, ReadonlyMap<string, AlertValueKind>>();
-	const objectBindings = new Map<string, ReadonlyMap<string, AlertValueKind>>();
-	const values = new Set<string>();
-	const collections = new Set<string>();
+	const symbolKinds = new Map<ts.Symbol, AlertValueKind>();
+	const symbolShapes = new Map<ts.Symbol, ReadonlyMap<string, AlertValueKind>>();
+	const symbolReturnKinds = new Map<ts.Symbol, AlertValueKind>();
+	const topLevelSymbols = new Map<string, ts.Symbol>();
 	const valueBindingPatterns = new Set<ts.BindingName>();
 	const violations: string[] = [];
 
@@ -128,12 +166,51 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 		}
 	}
 
-	function addName(name: ts.BindingName, kind: AlertValueKind): boolean {
-		if (!ts.isIdentifier(name)) return false;
-		const target = kind === 'value' ? values : collections;
-		const size = target.size;
-		target.add(name.text);
-		return target.size !== size;
+	function symbolOfIdentifier(node: ts.Identifier): ts.Symbol | null {
+		return checker.getSymbolAtLocation(node) ?? null;
+	}
+
+	function setSymbolKind(symbol: ts.Symbol | null, kind: AlertValueKind): boolean {
+		if (!symbol || symbolKinds.has(symbol)) return false;
+		symbolKinds.set(symbol, kind);
+		return true;
+	}
+
+	function setSymbolReturnKind(symbol: ts.Symbol | null, kind: AlertValueKind): boolean {
+		if (!symbol || symbolReturnKinds.has(symbol)) return false;
+		symbolReturnKinds.set(symbol, kind);
+		return true;
+	}
+
+	function forEachBindingIdentifier(
+		name: ts.BindingName,
+		visit: (identifier: ts.Identifier) => void,
+	): void {
+		if (ts.isIdentifier(name)) {
+			visit(name);
+			return;
+		}
+		for (const element of name.elements) {
+			if (ts.isOmittedExpression(element)) continue;
+			forEachBindingIdentifier(element.name, visit);
+		}
+	}
+
+	function bindKind(name: ts.BindingName, kind: AlertValueKind): boolean {
+		if (ts.isIdentifier(name)) return setSymbolKind(symbolOfIdentifier(name), kind);
+		if (kind !== 'collection' || !ts.isArrayBindingPattern(name)) {
+			if (kind === 'value') valueBindingPatterns.add(name);
+			return false;
+		}
+
+		let added = false;
+		for (const element of name.elements) {
+			if (ts.isOmittedExpression(element)) continue;
+			const elementKind = element.dotDotDotToken ? 'collection' : 'value';
+			if (elementKind === 'value') valueBindingPatterns.add(element.name);
+			added = bindKind(element.name, elementKind) || added;
+		}
+		return added;
 	}
 
 	function shapeOfType(type: ts.TypeNode | undefined): ReadonlyMap<string, AlertValueKind> | null {
@@ -157,8 +234,9 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 
 	function bindShape(name: ts.BindingName, shape: ReadonlyMap<string, AlertValueKind>): boolean {
 		if (ts.isIdentifier(name)) {
-			if (objectBindings.get(name.text) === shape) return false;
-			objectBindings.set(name.text, shape);
+			const symbol = symbolOfIdentifier(name);
+			if (!symbol || symbolShapes.get(symbol) === shape) return false;
+			symbolShapes.set(symbol, shape);
 			return true;
 		}
 		if (!ts.isObjectBindingPattern(name)) return false;
@@ -167,16 +245,25 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 		for (const element of name.elements) {
 			const field = propertyName(element.propertyName ?? element.name);
 			const kind = field ? shape.get(field) : null;
-			if (kind) added = addName(element.name, kind) || added;
+			if (kind) added = bindKind(element.name, kind) || added;
 		}
 		return added;
 	}
 
 	function seedBinding(name: ts.BindingName, type: ts.TypeNode | undefined): void {
 		const kind = kindOfType(type);
-		if (kind) addName(name, kind);
+		if (kind) bindKind(name, kind);
 		const shape = shapeOfType(type);
 		if (shape) bindShape(name, shape);
+	}
+
+	function returnKindOfType(type: ts.TypeNode | undefined): AlertValueKind | null {
+		if (!type) return null;
+		if (ts.isParenthesizedTypeNode(type)) return returnKindOfType(type.type);
+		if (ts.isUnionTypeNode(type)) {
+			return mergeKinds(...type.types.map(returnKindOfType));
+		}
+		return ts.isFunctionTypeNode(type) ? kindOfType(type.type) : null;
 	}
 
 	function walk(node: ts.Node, visit: (node: ts.Node) => void): void {
@@ -184,8 +271,37 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 		ts.forEachChild(node, (child) => walk(child, visit));
 	}
 
+	for (const statement of ast.statements) {
+		if (ts.isVariableStatement(statement)) {
+			for (const declaration of statement.declarationList.declarations) {
+				forEachBindingIdentifier(declaration.name, (identifier) => {
+					const symbol = symbolOfIdentifier(identifier);
+					if (symbol) topLevelSymbols.set(identifier.text, symbol);
+				});
+			}
+		} else if (ts.isFunctionDeclaration(statement) && statement.name) {
+			const symbol = symbolOfIdentifier(statement.name);
+			if (symbol) topLevelSymbols.set(statement.name.text, symbol);
+		}
+	}
+
 	walk(ast, (node) => {
-		if (ts.isVariableDeclaration(node) || ts.isParameter(node)) seedBinding(node.name, node.type);
+		if (ts.isVariableDeclaration(node) || ts.isParameter(node)) {
+			seedBinding(node.name, node.type);
+		}
+		if (ts.isFunctionDeclaration(node) && node.name) {
+			const returnKind = kindOfType(node.type);
+			if (returnKind) setSymbolReturnKind(symbolOfIdentifier(node.name), returnKind);
+		}
+		if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+			const initializer = node.initializer;
+			const returnKind =
+				returnKindOfType(node.type) ??
+				(initializer && (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer))
+					? kindOfType(initializer.type)
+					: null);
+			if (returnKind) setSymbolReturnKind(symbolOfIdentifier(node.name), returnKind);
+		}
 	});
 
 	function unwrapExpression(node: ts.Expression): ts.Expression {
@@ -210,7 +326,9 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 	function isRuneCall(node: ts.CallExpression): boolean {
 		return (
 			(ts.isIdentifier(node.expression) &&
-				(node.expression.text === '$derived' || node.expression.text === '$state')) ||
+				(node.expression.text === '$derived' ||
+					node.expression.text === '$props' ||
+					node.expression.text === '$state')) ||
 			(ts.isPropertyAccessExpression(node.expression) &&
 				ts.isIdentifier(node.expression.expression) &&
 				node.expression.expression.text === '$derived' &&
@@ -247,8 +365,19 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 		node: ts.Expression | undefined,
 	): ReadonlyMap<string, AlertValueKind> | null {
 		if (!node) return null;
+		if (
+			ts.isAsExpression(node) ||
+			ts.isTypeAssertionExpression(node) ||
+			ts.isSatisfiesExpression(node)
+		) {
+			const assertedShape = shapeOfType(node.type);
+			if (assertedShape) return assertedShape;
+		}
 		node = unwrapExpression(node);
-		if (ts.isIdentifier(node)) return objectBindings.get(node.text) ?? null;
+		if (ts.isIdentifier(node)) {
+			const symbol = symbolOfIdentifier(node);
+			return symbol ? (symbolShapes.get(symbol) ?? null) : null;
+		}
 		if (ts.isCallExpression(node)) {
 			const body = runeBody(node);
 			if (body) return shapeOfExpression(body);
@@ -270,13 +399,46 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 		return null;
 	}
 
+	function callbackReturnKind(callback: ts.Expression | undefined): AlertValueKind | null {
+		if (!callback) return null;
+		callback = unwrapExpression(callback);
+		if (ts.isIdentifier(callback)) {
+			const symbol = symbolOfIdentifier(callback);
+			return symbol ? (symbolReturnKinds.get(symbol) ?? null) : null;
+		}
+		if (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback)) return null;
+		const callbackFunction = callback;
+		const annotatedKind = kindOfType(callbackFunction.type);
+		if (annotatedKind) return annotatedKind;
+		if (!ts.isBlock(callbackFunction.body)) return expressionKind(callbackFunction.body);
+
+		const returnKinds: Array<AlertValueKind | null> = [];
+		function collectReturns(node: ts.Node): void {
+			if (node !== callbackFunction.body && ts.isFunctionLike(node)) return;
+			if (ts.isReturnStatement(node)) {
+				returnKinds.push(expressionKind(node.expression));
+				return;
+			}
+			ts.forEachChild(node, collectReturns);
+		}
+		collectReturns(callbackFunction.body);
+		return mergeKinds(...returnKinds);
+	}
+
 	function expressionKind(node: ts.Expression | undefined): AlertValueKind | null {
 		if (!node) return null;
+		if (
+			ts.isAsExpression(node) ||
+			ts.isTypeAssertionExpression(node) ||
+			ts.isSatisfiesExpression(node)
+		) {
+			const assertedKind = kindOfType(node.type);
+			if (assertedKind) return assertedKind;
+		}
 		node = unwrapExpression(node);
 		if (ts.isIdentifier(node)) {
-			if (values.has(node.text)) return 'value';
-			if (collections.has(node.text)) return 'collection';
-			return null;
+			const symbol = symbolOfIdentifier(node);
+			return symbol ? (symbolKinds.get(symbol) ?? null) : null;
 		}
 		if (ts.isPropertyAccessExpression(node)) {
 			return shapeOfExpression(node.expression)?.get(node.name.text) ?? null;
@@ -294,6 +456,32 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 					?.map(kindOfType)
 					.find((kind): kind is AlertValueKind => kind != null);
 				if (typeKind) return typeKind;
+			}
+			if (ts.isIdentifier(node.expression)) {
+				const symbol = symbolOfIdentifier(node.expression);
+				const returnKind = symbol ? symbolReturnKinds.get(symbol) : null;
+				if (returnKind) return returnKind;
+			}
+			if (ts.isPropertyAccessExpression(node.expression)) {
+				const collection = expressionKind(node.expression.expression);
+				const method = node.expression.name.text;
+				if (collection === 'collection') {
+					if (COLLECTION_PRESERVING_CALLS.has(method)) return 'collection';
+					if (COLLECTION_ELEMENT_CALLS.has(method)) return 'value';
+					const returnKind = callbackReturnKind(node.arguments[0]);
+					if (method === 'map' && returnKind === 'value') return 'collection';
+					if (method === 'flatMap' && returnKind) return 'collection';
+				}
+			}
+		}
+		if (ts.isArrayLiteralExpression(node)) {
+			for (const element of node.elements) {
+				if (
+					(ts.isSpreadElement(element) && expressionKind(element.expression) === 'collection') ||
+					(!ts.isSpreadElement(element) && expressionKind(element) === 'value')
+				) {
+					return 'collection';
+				}
 			}
 		}
 		if (ts.isConditionalExpression(node)) {
@@ -316,9 +504,19 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 		walk(ast, (node) => {
 			if (ts.isVariableDeclaration(node) && node.initializer) {
 				const kind = expressionKind(node.initializer);
-				if (kind) changed = addName(node.name, kind) || changed;
+				if (kind) changed = bindKind(node.name, kind) || changed;
 				const shape = shapeOfExpression(node.initializer);
 				if (shape) changed = bindShape(node.name, shape) || changed;
+				if (ts.isIdentifier(node.name)) {
+					const initializer = unwrapExpression(node.initializer);
+					if (ts.isIdentifier(initializer)) {
+						const sourceSymbol = symbolOfIdentifier(initializer);
+						const returnKind = sourceSymbol ? symbolReturnKinds.get(sourceSymbol) : null;
+						if (returnKind) {
+							changed = setSymbolReturnKind(symbolOfIdentifier(node.name), returnKind) || changed;
+						}
+					}
+				}
 			}
 			if (
 				ts.isBinaryExpression(node) &&
@@ -326,7 +524,7 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 				ts.isIdentifier(node.left)
 			) {
 				const kind = expressionKind(node.right);
-				if (kind) changed = addName(node.left, kind) || changed;
+				if (kind) changed = bindKind(node.left, kind) || changed;
 				const shape = shapeOfExpression(node.right);
 				if (shape) changed = bindShape(node.left, shape) || changed;
 			}
@@ -335,23 +533,26 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 				if (ts.isVariableDeclarationList(declaration)) {
 					for (const item of declaration.declarations) {
 						valueBindingPatterns.add(item.name);
-						changed = addName(item.name, 'value') || changed;
+						changed = bindKind(item.name, 'value') || changed;
 					}
 				}
 			}
 			if (
 				ts.isCallExpression(node) &&
 				ts.isPropertyAccessExpression(node.expression) &&
-				expressionKind(node.expression.expression) === 'collection' &&
-				ARRAY_CALLBACKS.has(node.expression.name.text)
+				expressionKind(node.expression.expression) === 'collection'
 			) {
+				const method = node.expression.name.text;
+				const itemIndex = ARRAY_CALLBACKS.has(method) ? 0 : REDUCE_CALLBACKS.has(method) ? 1 : null;
+				if (itemIndex == null) return;
 				const callback = node.arguments[0];
 				if (
 					(ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) &&
-					callback.parameters[0]
+					callback.parameters[itemIndex]
 				) {
-					valueBindingPatterns.add(callback.parameters[0].name);
-					changed = addName(callback.parameters[0].name, 'value') || changed;
+					const parameter = callback.parameters[itemIndex];
+					valueBindingPatterns.add(parameter.name);
+					changed = bindKind(parameter.name, 'value') || changed;
 				}
 			}
 		});
@@ -360,6 +561,26 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 	function report(node: ts.Node, field: string): void {
 		const location = ast.getLineAndCharacterOfPosition(node.getStart(ast));
 		violations.push(`${fileName}:${location.line + 1}:${location.character + 1} raw ${field}`);
+	}
+
+	function bindingContainsAlertValue(name: ts.BindingName): boolean {
+		if (valueBindingPatterns.has(name)) return true;
+		if (ts.isIdentifier(name)) return false;
+		return name.elements.some(
+			(element) => !ts.isOmittedExpression(element) && bindingContainsAlertValue(element.name),
+		);
+	}
+
+	function reportRawBinding(name: ts.BindingName): void {
+		if (ts.isIdentifier(name)) return;
+		for (const element of name.elements) {
+			if (ts.isOmittedExpression(element)) continue;
+			if (ts.isObjectBindingPattern(name)) {
+				const field = propertyName(element.propertyName ?? element.name);
+				if (field && RAW_COPY_FIELDS.has(field)) report(element, field);
+			}
+			reportRawBinding(element.name);
+		}
 	}
 
 	walk(ast, (node) => {
@@ -387,19 +608,24 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 		}
 		if (
 			(ts.isVariableDeclaration(node) || ts.isParameter(node)) &&
-			ts.isObjectBindingPattern(node.name) &&
-			(kindOfType(node.type) === 'value' ||
-				(node.initializer != null && expressionKind(node.initializer) === 'value') ||
-				valueBindingPatterns.has(node.name))
+			bindingContainsAlertValue(node.name)
 		) {
-			for (const element of node.name.elements) {
-				const field = propertyName(element.propertyName ?? element.name);
-				if (field && RAW_COPY_FIELDS.has(field)) report(element, field);
-			}
+			reportRawBinding(node.name);
 		}
 	});
 
-	return { violations, values, collections };
+	const values = new Set<string>();
+	const collections = new Set<string>();
+	const shapes = new Map<string, ReadonlyMap<string, AlertValueKind>>();
+	for (const [name, symbol] of topLevelSymbols) {
+		const kind = symbolKinds.get(symbol);
+		if (kind === 'value') values.add(name);
+		if (kind === 'collection') collections.add(name);
+		const shape = symbolShapes.get(symbol);
+		if (shape) shapes.set(name, shape);
+	}
+
+	return { collections, shapes, values, violations };
 }
 
 function alertCopyViolations(source: string, fileName = 'fixture.svelte'): string[] {
@@ -426,6 +652,7 @@ interface TemplateNode {
 interface TemplateScope {
 	values: Set<string>;
 	collections: Set<string>;
+	shapes: Map<string, ReadonlyMap<string, AlertValueKind>>;
 }
 
 function svelteAlertCopyViolations(source: string, fileName = 'fixture.svelte'): string[] {
@@ -437,10 +664,42 @@ function svelteAlertCopyViolations(source: string, fileName = 'fixture.svelte'):
 	const rootScope: TemplateScope = {
 		values: new Set(analysis.values),
 		collections: new Set(analysis.collections),
+		shapes: new Map(analysis.shapes),
 	};
 
 	function copyScope(scope: TemplateScope): TemplateScope {
-		return { values: new Set(scope.values), collections: new Set(scope.collections) };
+		return {
+			values: new Set(scope.values),
+			collections: new Set(scope.collections),
+			shapes: new Map(scope.shapes),
+		};
+	}
+
+	function shapeOfExpression(
+		node: TemplateNode | undefined,
+		scope: TemplateScope,
+	): ReadonlyMap<string, AlertValueKind> | null {
+		while (
+			node &&
+			(node.type === 'ChainExpression' ||
+				node.type === 'TSAsExpression' ||
+				node.type === 'TSNonNullExpression')
+		) {
+			node = node.expression;
+		}
+		if (node?.type === 'Identifier' && node.name) {
+			return scope.shapes.get(node.name) ?? null;
+		}
+		if (node?.type === 'ConditionalExpression') {
+			return shapeOfExpression(node.consequent, scope) ?? shapeOfExpression(node.alternate, scope);
+		}
+		if (
+			node?.type === 'LogicalExpression' &&
+			(node.operator === '??' || node.operator === '||' || node.operator === '&&')
+		) {
+			return shapeOfExpression(node.left, scope) ?? shapeOfExpression(node.right, scope);
+		}
+		return null;
 	}
 
 	function expressionKind(
@@ -458,6 +717,10 @@ function svelteAlertCopyViolations(source: string, fileName = 'fixture.svelte'):
 		if (node?.type === 'Identifier' && node.name) {
 			if (scope.values.has(node.name)) return 'value';
 			if (scope.collections.has(node.name)) return 'collection';
+		}
+		if (node?.type === 'MemberExpression') {
+			const field = fieldName(node);
+			return field ? (shapeOfExpression(node.object, scope)?.get(field) ?? null) : null;
 		}
 		if (node?.type === 'ConditionalExpression') {
 			const left = expressionKind(node.consequent, scope);
@@ -550,6 +813,39 @@ function svelteAlertCopyViolations(source: string, fileName = 'fixture.svelte'):
 		}
 	}
 
+	function clearBinding(node: TemplateNode | undefined, scope: TemplateScope): void {
+		if (!node) return;
+		if (node.type === 'Identifier' && node.name) {
+			scope.values.delete(node.name);
+			scope.collections.delete(node.name);
+			scope.shapes.delete(node.name);
+			return;
+		}
+		if (node.type === 'Property') {
+			clearBinding(node.value as TemplateNode, scope);
+			return;
+		}
+		if (node.type === 'RestElement') {
+			clearBinding(node.argument as TemplateNode, scope);
+			return;
+		}
+		if (node.type === 'AssignmentPattern') {
+			clearBinding(node.left, scope);
+			return;
+		}
+		const entries =
+			node.type === 'ObjectPattern'
+				? node.properties
+				: node.type === 'ArrayPattern'
+					? node.elements
+					: [];
+		if (Array.isArray(entries)) {
+			for (const child of entries) {
+				if (child && typeof child === 'object') clearBinding(child as TemplateNode, scope);
+			}
+		}
+	}
+
 	function reportRawBinding(node: TemplateNode | undefined): void {
 		if (!node) return;
 		if (node.type === 'Property') {
@@ -582,6 +878,7 @@ function svelteAlertCopyViolations(source: string, fileName = 'fixture.svelte'):
 		if (node.type === 'EachBlock') {
 			scanExpression(node.expression, scope);
 			const childScope = copyScope(scope);
+			clearBinding(node.context, childScope);
 			if (expressionKind(node.expression, scope) === 'collection') {
 				reportRawBinding(node.context);
 				addBinding(node.context, childScope.values);
@@ -598,9 +895,14 @@ function svelteAlertCopyViolations(source: string, fileName = 'fixture.svelte'):
 			if (assignment?.type === 'AssignmentExpression') {
 				scanExpression(assignment.right, scope);
 				const kind = expressionKind(assignment.right, scope);
+				const shape = shapeOfExpression(assignment.right, scope);
+				clearBinding(assignment.left, scope);
 				if (kind) {
 					if (kind === 'value') reportRawBinding(assignment.left);
 					addBinding(assignment.left, kind === 'value' ? scope.values : scope.collections);
+				}
+				if (shape && assignment.left?.type === 'Identifier' && assignment.left.name) {
+					scope.shapes.set(assignment.left.name, shape);
 				}
 			}
 			return;
@@ -687,6 +989,126 @@ describe('alert display UI boundary', () => {
 		]);
 	});
 
+	it('traces Alert collections through collection-preserving array calls', () => {
+		const violations = alertCopyViolations(`
+			import type { Alert } from '$lib/v1';
+			const alerts: Alert[] = [];
+			alerts.slice().map((alert) => alert.description);
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1])).toEqual(['description']);
+	});
+
+	it('traces Alert collections returned by block-bodied map callbacks', () => {
+		const violations = alertCopyViolations(`
+			import type { Alert } from '$lib/v1';
+			const alerts: Alert[] = [];
+			alerts
+				.map((alert) => {
+					return alert;
+				})
+				.forEach((copy) => void copy.description);
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1])).toEqual(['description']);
+	});
+
+	it('traces Alert collections returned by flatMap callbacks', () => {
+		const violations = alertCopyViolations(`
+			import type { Alert } from '$lib/v1';
+			const alerts: Alert[] = [];
+			alerts
+				.flatMap((alert) => [alert])
+				.forEach((copy) => void copy.header_text);
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1])).toEqual(['header_text']);
+	});
+
+	it('traces Alert collections returned by explicitly typed inline callbacks', () => {
+		const violations = alertCopyViolations(`
+			import type { Alert } from '$lib/v1';
+			import { externalAlert } from './external';
+			const alerts: Alert[] = [];
+			alerts
+				.map((): Alert => externalAlert())
+				.forEach((item) => void item.description);
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1])).toEqual(['description']);
+	});
+
+	it('traces Alert collections returned by named typed callbacks', () => {
+		const violations = alertCopyViolations(`
+			import type { Alert } from '$lib/v1';
+			const alerts: Alert[] = [];
+			const identity = (alert: Alert): Alert => alert;
+			alerts.map(identity).forEach((item) => void item.header_text);
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1])).toEqual(['header_text']);
+	});
+
+	it('traces Alert collections through array spreads', () => {
+		const violations = alertCopyViolations(`
+			import type { Alert } from '$lib/v1';
+			const alerts: Alert[] = [];
+			[...alerts].forEach((alert) => void alert.header_text);
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1])).toEqual(['header_text']);
+	});
+
+	it('traces aliases returned by explicitly typed functions', () => {
+		const violations = alertCopyViolations(`
+			import type { Alert } from '$lib/v1';
+			const getArrowAlert = (): Alert => ({}) as Alert;
+			declare function getDeclaredAlert(): Alert;
+			const arrowAlert = getArrowAlert();
+			const declaredAlert = getDeclaredAlert();
+			void arrowAlert.description_en;
+			void declaredAlert.header_text_en;
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1])).toEqual([
+			'description_en',
+			'header_text_en',
+		]);
+	});
+
+	it('keeps callback bindings lexical when names are reused for unrelated values', () => {
+		const violations = alertCopyViolations(`
+			import type { Alert } from '$lib/v1';
+			const alerts: Alert[] = [];
+			alerts.forEach((item) => void item.header_text);
+			const navigation = [{ description: 'Network status' }];
+			navigation.forEach((item) => void item.description);
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1])).toEqual(['header_text']);
+	});
+
+	it('traces array-destructured Alert collection elements', () => {
+		const violations = alertCopyViolations(`
+			import type { Alert } from '$lib/v1';
+			const alerts: Alert[] = [];
+			const [alert] = alerts;
+			void alert.description;
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1])).toEqual(['description']);
+	});
+
+	it('traces Alert collection elements through reduce callbacks', () => {
+		const violations = alertCopyViolations(`
+			import type { Alert } from '$lib/v1';
+			const alerts: Alert[] = [];
+			alerts.reduce((_, alert) => alert.description, '');
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1])).toEqual(['description']);
+	});
+
 	it('traces typed alert values through Svelte markup, each blocks, and local aliases', () => {
 		const violations = svelteAlertCopyViolations(`
 			<script lang="ts">
@@ -733,6 +1155,35 @@ describe('alert display UI boundary', () => {
 			'description_en',
 			'header_text',
 		]);
+	});
+
+	it('traces direct typed prop values through Svelte const aliases', () => {
+		const violations = svelteAlertCopyViolations(`
+			<script lang="ts">
+				import type { Alert } from '$lib/v1';
+				interface Props { alert: Alert }
+				const props: Props = $props();
+			</script>
+			{@const alert = props.alert}
+			<p>{alert.description}</p>
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1])).toEqual(['description']);
+	});
+
+	it('traces direct typed prop collections through Svelte each blocks', () => {
+		const violations = svelteAlertCopyViolations(`
+			<script lang="ts">
+				import type { Alert } from '$lib/v1';
+				interface Props { alerts: readonly Alert[] }
+				const props: Props = $props();
+			</script>
+			{#each props.alerts as alert}
+				<p>{alert.header_text}</p>
+			{/each}
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1])).toEqual(['header_text']);
 	});
 
 	it('allows unrelated descriptions and resolved headlines in Svelte markup', () => {
