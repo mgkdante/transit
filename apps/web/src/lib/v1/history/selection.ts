@@ -32,7 +32,7 @@ export interface ResolvedHistoryRange {
 type CorrectionReason = HistoryCorrection['reason'];
 
 function isAbsent(value: unknown): boolean {
-	return value === undefined || value === null || value === '';
+	return value === undefined || value === null;
 }
 
 function validGaps(gaps: readonly HistoricCoverageGap[]): HistoricCoverageGap[] {

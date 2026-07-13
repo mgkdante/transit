@@ -151,6 +151,18 @@ describe('point history resolution and neighbors', () => {
 		expect(resolveHistoryDate('2026-03-11', discrete).correction?.reason).toBe('outside-coverage');
 	});
 
+	it('treats a present blank URL date as malformed instead of absent', () => {
+		const rawDate = new URLSearchParams('date=').get('date');
+		const first = resolveHistoryDate(rawDate, discrete);
+		const second = resolveHistoryDate(new URLSearchParams('date=').get('date'), discrete);
+
+		expect(rawDate).toBe('');
+		expect(first.selection).toBe('2026-03-10');
+		expect(first.canonicalDate).toBeNull();
+		expect(first.correction?.reason).toBe('malformed');
+		expect(first.correction?.key).toBe(second.correction?.key);
+	});
+
 	it('resolves empty availability to a null selection without fabricating a correction', () => {
 		expect(resolveHistoryDate('2026-03-01', { kind: 'empty' })).toEqual({
 			selection: null,
@@ -204,6 +216,30 @@ describe('range history resolution', () => {
 			expect(resolved.canonicalWindow).toBeNull();
 			expect(resolved.correction?.reason).toBe(reason);
 		}
+	});
+
+	it('treats present blank URL range bounds as malformed instead of absent', () => {
+		const params = new URLSearchParams('from=&to=');
+		const first = resolveHistoryRange(
+			params.get('from'),
+			params.get('to'),
+			continuous,
+			defaultWindow,
+		);
+		const repeated = new URLSearchParams('from=&to=');
+		const second = resolveHistoryRange(
+			repeated.get('from'),
+			repeated.get('to'),
+			continuous,
+			defaultWindow,
+		);
+
+		expect(params.get('from')).toBe('');
+		expect(params.get('to')).toBe('');
+		expect(first.selection).toEqual(defaultWindow);
+		expect(first.canonicalWindow).toBeNull();
+		expect(first.correction?.reason).toBe('malformed');
+		expect(first.correction?.key).toBe(second.correction?.key);
 	});
 
 	it('returns stable correction keys and null for empty availability', () => {
