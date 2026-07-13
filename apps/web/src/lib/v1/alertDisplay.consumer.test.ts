@@ -53,8 +53,10 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 	const ast = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 	const typeKinds = new Map<string, AlertValueKind>();
 	const objectShapes = new Map<string, ReadonlyMap<string, AlertValueKind>>();
+	const objectBindings = new Map<string, ReadonlyMap<string, AlertValueKind>>();
 	const values = new Set<string>();
 	const collections = new Set<string>();
+	const valueBindingPatterns = new Set<ts.BindingName>();
 	const violations: string[] = [];
 
 	for (const statement of ast.statements) {
@@ -134,17 +136,47 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 		return target.size !== size;
 	}
 
+	function shapeOfType(type: ts.TypeNode | undefined): ReadonlyMap<string, AlertValueKind> | null {
+		if (!type) return null;
+		if (ts.isTypeOperatorNode(type) || ts.isParenthesizedTypeNode(type)) {
+			return shapeOfType(type.type);
+		}
+		if (ts.isUnionTypeNode(type)) {
+			return type.types.map(shapeOfType).find((shape) => shape != null) ?? null;
+		}
+		if (!ts.isTypeReferenceNode(type)) return null;
+		return objectShapes.get(type.typeName.getText(ast)) ?? null;
+	}
+
+	function propertyName(node: ts.Node): string | null {
+		if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNumericLiteral(node)) {
+			return node.text;
+		}
+		return null;
+	}
+
+	function bindShape(name: ts.BindingName, shape: ReadonlyMap<string, AlertValueKind>): boolean {
+		if (ts.isIdentifier(name)) {
+			if (objectBindings.get(name.text) === shape) return false;
+			objectBindings.set(name.text, shape);
+			return true;
+		}
+		if (!ts.isObjectBindingPattern(name)) return false;
+
+		let added = false;
+		for (const element of name.elements) {
+			const field = propertyName(element.propertyName ?? element.name);
+			const kind = field ? shape.get(field) : null;
+			if (kind) added = addName(element.name, kind) || added;
+		}
+		return added;
+	}
+
 	function seedBinding(name: ts.BindingName, type: ts.TypeNode | undefined): void {
 		const kind = kindOfType(type);
 		if (kind) addName(name, kind);
-		if (!type || !ts.isTypeReferenceNode(type) || !ts.isObjectBindingPattern(name)) return;
-		const shape = objectShapes.get(type.typeName.getText(ast));
-		if (!shape) return;
-		for (const element of name.elements) {
-			const property = (element.propertyName ?? element.name).getText(ast);
-			const propertyKind = shape.get(property);
-			if (propertyKind) addName(element.name, propertyKind);
-		}
+		const shape = shapeOfType(type);
+		if (shape) bindShape(name, shape);
 	}
 
 	function walk(node: ts.Node, visit: (node: ts.Node) => void): void {
@@ -156,18 +188,125 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 		if (ts.isVariableDeclaration(node) || ts.isParameter(node)) seedBinding(node.name, node.type);
 	});
 
-	function trackedIdentifier(node: ts.Expression): AlertValueKind | null {
+	function unwrapExpression(node: ts.Expression): ts.Expression {
 		while (
 			ts.isParenthesizedExpression(node) ||
 			ts.isAsExpression(node) ||
 			ts.isTypeAssertionExpression(node) ||
-			ts.isNonNullExpression(node)
+			ts.isNonNullExpression(node) ||
+			ts.isSatisfiesExpression(node)
 		) {
 			node = node.expression;
 		}
-		if (!ts.isIdentifier(node)) return null;
-		if (values.has(node.text)) return 'value';
-		if (collections.has(node.text)) return 'collection';
+		return node;
+	}
+
+	function mergeKinds(...kinds: Array<AlertValueKind | null>): AlertValueKind | null {
+		const known = kinds.filter((kind): kind is AlertValueKind => kind != null);
+		if (known.length === 0) return null;
+		return known.every((kind) => kind === known[0]) ? known[0] : null;
+	}
+
+	function isRuneCall(node: ts.CallExpression): boolean {
+		return (
+			(ts.isIdentifier(node.expression) &&
+				(node.expression.text === '$derived' || node.expression.text === '$state')) ||
+			(ts.isPropertyAccessExpression(node.expression) &&
+				ts.isIdentifier(node.expression.expression) &&
+				node.expression.expression.text === '$derived' &&
+				node.expression.name.text === 'by')
+		);
+	}
+
+	function runeBody(node: ts.CallExpression): ts.Expression | null {
+		if (
+			ts.isIdentifier(node.expression) &&
+			(node.expression.text === '$derived' || node.expression.text === '$state')
+		) {
+			return node.arguments[0] ?? null;
+		}
+		if (
+			ts.isPropertyAccessExpression(node.expression) &&
+			ts.isIdentifier(node.expression.expression) &&
+			node.expression.expression.text === '$derived' &&
+			node.expression.name.text === 'by'
+		) {
+			const callback = node.arguments[0];
+			if (
+				callback != null &&
+				(ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) &&
+				!ts.isBlock(callback.body)
+			) {
+				return callback.body;
+			}
+		}
+		return null;
+	}
+
+	function shapeOfExpression(
+		node: ts.Expression | undefined,
+	): ReadonlyMap<string, AlertValueKind> | null {
+		if (!node) return null;
+		node = unwrapExpression(node);
+		if (ts.isIdentifier(node)) return objectBindings.get(node.text) ?? null;
+		if (ts.isCallExpression(node)) {
+			const body = runeBody(node);
+			if (body) return shapeOfExpression(body);
+			if (isRuneCall(node)) {
+				return node.typeArguments?.map(shapeOfType).find((shape) => shape != null) ?? null;
+			}
+		}
+		if (ts.isConditionalExpression(node)) {
+			return shapeOfExpression(node.whenTrue) ?? shapeOfExpression(node.whenFalse);
+		}
+		if (
+			ts.isBinaryExpression(node) &&
+			(node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken ||
+				node.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
+				node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken)
+		) {
+			return shapeOfExpression(node.left) ?? shapeOfExpression(node.right);
+		}
+		return null;
+	}
+
+	function expressionKind(node: ts.Expression | undefined): AlertValueKind | null {
+		if (!node) return null;
+		node = unwrapExpression(node);
+		if (ts.isIdentifier(node)) {
+			if (values.has(node.text)) return 'value';
+			if (collections.has(node.text)) return 'collection';
+			return null;
+		}
+		if (ts.isPropertyAccessExpression(node)) {
+			return shapeOfExpression(node.expression)?.get(node.name.text) ?? null;
+		}
+		if (ts.isElementAccessExpression(node)) {
+			if (expressionKind(node.expression) === 'collection') return 'value';
+			const field = node.argumentExpression ? propertyName(node.argumentExpression) : null;
+			return field ? (shapeOfExpression(node.expression)?.get(field) ?? null) : null;
+		}
+		if (ts.isCallExpression(node)) {
+			const body = runeBody(node);
+			if (body) return expressionKind(body);
+			if (isRuneCall(node)) {
+				const typeKind = node.typeArguments
+					?.map(kindOfType)
+					.find((kind): kind is AlertValueKind => kind != null);
+				if (typeKind) return typeKind;
+			}
+		}
+		if (ts.isConditionalExpression(node)) {
+			return mergeKinds(expressionKind(node.whenTrue), expressionKind(node.whenFalse));
+		}
+		if (
+			ts.isBinaryExpression(node) &&
+			(node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken ||
+				node.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
+				node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken)
+		) {
+			return mergeKinds(expressionKind(node.left), expressionKind(node.right));
+		}
 		return null;
 	}
 
@@ -176,13 +315,26 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 		changed = false;
 		walk(ast, (node) => {
 			if (ts.isVariableDeclaration(node) && node.initializer) {
-				const kind = trackedIdentifier(node.initializer);
+				const kind = expressionKind(node.initializer);
 				if (kind) changed = addName(node.name, kind) || changed;
+				const shape = shapeOfExpression(node.initializer);
+				if (shape) changed = bindShape(node.name, shape) || changed;
 			}
-			if (ts.isForOfStatement(node) && trackedIdentifier(node.expression) === 'collection') {
+			if (
+				ts.isBinaryExpression(node) &&
+				node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+				ts.isIdentifier(node.left)
+			) {
+				const kind = expressionKind(node.right);
+				if (kind) changed = addName(node.left, kind) || changed;
+				const shape = shapeOfExpression(node.right);
+				if (shape) changed = bindShape(node.left, shape) || changed;
+			}
+			if (ts.isForOfStatement(node) && expressionKind(node.expression) === 'collection') {
 				const declaration = node.initializer;
 				if (ts.isVariableDeclarationList(declaration)) {
 					for (const item of declaration.declarations) {
+						valueBindingPatterns.add(item.name);
 						changed = addName(item.name, 'value') || changed;
 					}
 				}
@@ -190,7 +342,7 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 			if (
 				ts.isCallExpression(node) &&
 				ts.isPropertyAccessExpression(node.expression) &&
-				trackedIdentifier(node.expression.expression) === 'collection' &&
+				expressionKind(node.expression.expression) === 'collection' &&
 				ARRAY_CALLBACKS.has(node.expression.name.text)
 			) {
 				const callback = node.arguments[0];
@@ -198,6 +350,7 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 					(ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) &&
 					callback.parameters[0]
 				) {
+					valueBindingPatterns.add(callback.parameters[0].name);
 					changed = addName(callback.parameters[0].name, 'value') || changed;
 				}
 			}
@@ -219,14 +372,14 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 		}
 		if (
 			ts.isPropertyAccessExpression(node) &&
-			trackedIdentifier(node.expression) === 'value' &&
+			expressionKind(node.expression) === 'value' &&
 			RAW_COPY_FIELDS.has(node.name.text)
 		) {
 			report(node, node.name.text);
 		}
 		if (
 			ts.isElementAccessExpression(node) &&
-			trackedIdentifier(node.expression) === 'value' &&
+			expressionKind(node.expression) === 'value' &&
 			ts.isStringLiteral(node.argumentExpression) &&
 			RAW_COPY_FIELDS.has(node.argumentExpression.text)
 		) {
@@ -236,11 +389,12 @@ function analyzeAlertScript(source: string, fileName = 'fixture.svelte'): AlertS
 			(ts.isVariableDeclaration(node) || ts.isParameter(node)) &&
 			ts.isObjectBindingPattern(node.name) &&
 			(kindOfType(node.type) === 'value' ||
-				(node.initializer != null && trackedIdentifier(node.initializer) === 'value'))
+				(node.initializer != null && expressionKind(node.initializer) === 'value') ||
+				valueBindingPatterns.has(node.name))
 		) {
 			for (const element of node.name.elements) {
-				const field = (element.propertyName ?? element.name).getText(ast);
-				if (RAW_COPY_FIELDS.has(field)) report(element, field);
+				const field = propertyName(element.propertyName ?? element.name);
+				if (field && RAW_COPY_FIELDS.has(field)) report(element, field);
 			}
 		}
 	});
@@ -262,6 +416,9 @@ interface TemplateNode {
 	expression?: TemplateNode;
 	left?: TemplateNode;
 	right?: TemplateNode;
+	consequent?: TemplateNode;
+	alternate?: TemplateNode;
+	operator?: string;
 	context?: TemplateNode;
 	[key: string]: unknown;
 }
@@ -298,9 +455,23 @@ function svelteAlertCopyViolations(source: string, fileName = 'fixture.svelte'):
 		) {
 			node = node.expression;
 		}
-		if (node?.type !== 'Identifier' || !node.name) return null;
-		if (scope.values.has(node.name)) return 'value';
-		if (scope.collections.has(node.name)) return 'collection';
+		if (node?.type === 'Identifier' && node.name) {
+			if (scope.values.has(node.name)) return 'value';
+			if (scope.collections.has(node.name)) return 'collection';
+		}
+		if (node?.type === 'ConditionalExpression') {
+			const left = expressionKind(node.consequent, scope);
+			const right = expressionKind(node.alternate, scope);
+			return left === right ? left : (left ?? right);
+		}
+		if (
+			node?.type === 'LogicalExpression' &&
+			(node.operator === '??' || node.operator === '||' || node.operator === '&&')
+		) {
+			const left = expressionKind(node.left, scope);
+			const right = expressionKind(node.right, scope);
+			return left === right ? left : (left ?? right);
+		}
 		return null;
 	}
 
@@ -483,6 +654,39 @@ describe('alert display UI boundary', () => {
 		expect(violations.join('\n')).toContain('raw header_text');
 	});
 
+	it('traces rune, conditional, coalesced, typed-member, callback, and destructured aliases', () => {
+		const violations = alertCopyViolations(`
+			import type { Alert } from '$lib/v1';
+			interface Props { alert: Alert; alerts: readonly Alert[] }
+			const props: Props = $props();
+			const member = props.alert;
+			const collection = props.alerts;
+			const runeAlias = $derived(member);
+			const stateAlias = $state(props.alert);
+			const conditionalAlias = true ? runeAlias : null;
+			const coalescedAlias = undefined ?? stateAlias;
+			const { alert: destructured, alerts: destructuredCollection } = props;
+			const { description_en: stateDescription } = stateAlias;
+			void runeAlias.header_text_en;
+			void stateDescription;
+			void conditionalAlias.header_text;
+			void coalescedAlias.description;
+			void destructured.header_key;
+			collection.forEach((item) => void item.description);
+			destructuredCollection.map((item) => item.header_text);
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1]).sort()).toEqual([
+			'description',
+			'description',
+			'description_en',
+			'header_key',
+			'header_text',
+			'header_text',
+			'header_text_en',
+		]);
+	});
+
 	it('traces typed alert values through Svelte markup, each blocks, and local aliases', () => {
 		const violations = svelteAlertCopyViolations(`
 			<script lang="ts">
@@ -509,6 +713,28 @@ describe('alert display UI boundary', () => {
 		expect(violations.join('\n')).toContain('raw description_en');
 	});
 
+	it('carries rune-wrapped typed prop members and conditional aliases into Svelte markup', () => {
+		const violations = svelteAlertCopyViolations(`
+			<script lang="ts">
+				import type { Alert } from '$lib/v1';
+				interface Props { alert: Alert; alerts: readonly Alert[] }
+				const props: Props = $props();
+				const member = $derived(props.alert);
+				const collection = $state(props.alerts);
+			</script>
+			{@const chosen = true ? member : null}
+			<p>{chosen.description_en}</p>
+			{#each collection as { header_text: headline }}
+				<strong>{headline}</strong>
+			{/each}
+		`);
+
+		expect(violations.map((violation) => violation.split(' raw ')[1])).toEqual([
+			'description_en',
+			'header_text',
+		]);
+	});
+
 	it('allows unrelated descriptions and resolved headlines in Svelte markup', () => {
 		expect(
 			svelteAlertCopyViolations(`
@@ -525,10 +751,14 @@ describe('alert display UI boundary', () => {
 	it('allows unrelated descriptions and resolved row headlines', () => {
 		expect(
 			alertCopyViolations(`
+				import type { Alert } from '$lib/v1';
 				interface NavItem { description: string }
+				declare function unrelatedMetadata<T>(): NavItem;
 				const nav: NavItem = { description: 'Network status' };
+				const genericNav = unrelatedMetadata<Alert>();
 				const row = { headline: 'Resolved service message' };
 				void nav.description;
+				void genericNav.description;
 				void row.headline;
 			`),
 		).toEqual([]);
