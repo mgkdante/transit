@@ -140,7 +140,7 @@ export async function loadHistoryPartitions<R extends { readonly path: string },
 	const results = new Array<T>(refs.length);
 	const workerCount = Math.min(concurrencyLimit(options.concurrency), refs.length);
 	let nextIndex = 0;
-	let firstFailure: HistoryPartitionLoadError | null = null;
+	let firstFailure: HistoryArtifactContractError | HistoryPartitionLoadError | null = null;
 
 	const worker = async (): Promise<void> => {
 		while (!controller.signal.aborted) {
@@ -155,7 +155,10 @@ export async function loadHistoryPartitions<R extends { readonly path: string },
 				if (firstFailure) throw firstFailure;
 				if (controller.signal.aborted) throw abortReason(controller.signal);
 
-				firstFailure = new HistoryPartitionLoadError(ref.path, cause);
+				firstFailure =
+					cause instanceof HistoryArtifactContractError
+						? cause
+						: new HistoryPartitionLoadError(ref.path, cause);
 				controller.abort(firstFailure);
 				throw firstFailure;
 			}

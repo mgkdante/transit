@@ -45,6 +45,9 @@ import { StopReliabilitySchema } from '$lib/v1/schemas/stop_reliability';
 import { ProvenanceSchema } from '$lib/v1/schemas/provenance';
 import { DataHealthSchema } from '$lib/v1/schemas/data_health';
 import { BasemapFileSchema } from '$lib/v1/schemas/basemap';
+import { AlertArchiveIndexSchema, AlertArchivePageSchema } from '$lib/v1/schemas/alert_archive';
+import { HistoricAvailabilityIndexSchema } from '$lib/v1/schemas/history';
+import { assertSafeHistoryArtifactPath } from '$lib/v1/history';
 
 import type { Locale } from '$lib/i18n';
 
@@ -73,6 +76,8 @@ const DEFAULTS = {
 		stops_prefix: 'static/stops/',
 	},
 	historic: {
+		history_index: 'historic/history/index.json',
+		alerts_index: 'historic/alerts/index.json',
 		network_trend: 'historic/network_trend.json',
 		hotspots: 'historic/hotspots.json',
 		repeat_offenders: 'historic/repeat_offenders.json',
@@ -138,6 +143,21 @@ async function readWhole<T>(
 		throw new Error(`[v1.${label}] expected file not found at ${url}`);
 	}
 	return value;
+}
+
+/** Read an optional whole-file collection root; 404 means rollout absence. */
+async function readOptionalWhole<T>(
+	relativePath: string,
+	schema: z.ZodType<T>,
+	label: string,
+	ctx?: AdapterCtx,
+): Promise<T | null> {
+	const url = resolveUrl(relativePath);
+	const value = await getEntityJson(url, schema, label, fetchOf(ctx), {
+		cache: SLOW_CACHE,
+		signal: ctx?.signal,
+	});
+	return value ?? null;
 }
 
 /** Read a per-entity file under a manifest prefix; 404 -> null (render empty). */
@@ -283,6 +303,36 @@ export const r2Adapter: ContentAdapter = {
 	},
 
 	historic: {
+		historyIndex: async (ctx) => {
+			const m = await loadManifest(ctx);
+			return readOptionalWhole(
+				m.files.historic?.history_index ?? DEFAULTS.historic.history_index,
+				HistoricAvailabilityIndexSchema,
+				'historic.historyIndex',
+				ctx,
+			);
+		},
+		alertArchiveIndex: async (ctx) => {
+			const m = await loadManifest(ctx);
+			return readOptionalWhole(
+				m.files.historic?.alerts_index ?? DEFAULTS.historic.alerts_index,
+				AlertArchiveIndexSchema,
+				'historic.alertArchiveIndex',
+				ctx,
+			);
+		},
+		alertArchivePage: async (path, ctx) => {
+			const safePath = assertSafeHistoryArtifactPath(path);
+			const url = resolveUrl(safePath);
+			const value = await getEntityJson(
+				url,
+				AlertArchivePageSchema,
+				'historic.alertArchivePage',
+				fetchOf(ctx),
+				{ cache: SLOW_CACHE, signal: ctx?.signal },
+			);
+			return value ?? null;
+		},
 		networkTrend: async (ctx) => {
 			const m = await loadManifest(ctx);
 			return readWhole(

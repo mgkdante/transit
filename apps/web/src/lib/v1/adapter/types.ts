@@ -43,6 +43,8 @@ import type { StopReliability } from '$lib/v1/schemas/stop_reliability';
 import type { Provenance } from '$lib/v1/schemas/provenance';
 import type { DataHealth } from '$lib/v1/schemas/data_health';
 import type { BasemapFile } from '$lib/v1/schemas/basemap';
+import type { AlertArchiveIndex, AlertArchivePage } from '$lib/v1/schemas/alert_archive';
+import type { HistoricAvailabilityIndex } from '$lib/v1/schemas/history';
 
 /**
  * Per-request adapter context. Threaded from `event` in SSR loads so reads use
@@ -86,6 +88,9 @@ export interface StaticPort {
 
 /** Historic tier (daily TTL): rollups + per-entity detail/receipts (404 -> null). */
 export interface HistoricPort {
+	historyIndex(ctx?: AdapterCtx): Promise<HistoricAvailabilityIndex | null>;
+	alertArchiveIndex(ctx?: AdapterCtx): Promise<AlertArchiveIndex | null>;
+	alertArchivePage(path: string, ctx?: AdapterCtx): Promise<AlertArchivePage | null>;
 	networkTrend(ctx?: AdapterCtx): Promise<NetworkTrend>;
 	hotspots(ctx?: AdapterCtx): Promise<Hotspots>;
 	repeatOffenders(ctx?: AdapterCtx): Promise<RepeatOffenders>;

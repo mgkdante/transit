@@ -35,7 +35,11 @@ export {
 	getHotspots,
 	getRepeatOffenders,
 	getAlertHistory,
+	getAdvertisedReceipt,
+	getAlertArchiveIndex,
+	getAlertArchiveRange,
 	getReceiptsIndex,
+	getHistoricAvailability,
 	getReceipt,
 	getRouteReliability,
 	getRouteReliabilityIndex,
@@ -47,6 +51,9 @@ export {
 	toSlimStopsIndex,
 } from './repositories';
 export type { SlimStopEntry, SlimStopsIndex } from './repositories';
+
+// --- retained-history selection, partition loading, and typed failures -------
+export * from './history';
 
 // --- boot + label resolution + context ---------------------------------------
 export { bootV1, loadManifest, resolveLabel, getV1Context, setV1Context } from './boot';

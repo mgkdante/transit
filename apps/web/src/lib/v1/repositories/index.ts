@@ -15,7 +15,11 @@ import { getAlerts, getNetwork, getStopDepartures, getTrips, getVehicles } from 
 import { getRoute, getRoutesIndex, getStop, getStopsIndex, getStopsIndexSlim } from './static';
 import {
 	getAlertHistory,
+	getAdvertisedReceipt,
+	getAlertArchiveIndex,
+	getAlertArchiveRange,
 	getHotspots,
+	getHistoricAvailability,
 	getNetworkTrend,
 	getReceipt,
 	getReceiptsIndex,
@@ -51,12 +55,16 @@ export const repositories = {
 		stop: getStop,
 	},
 	historic: {
+		historyIndex: getHistoricAvailability,
+		alertArchiveIndex: getAlertArchiveIndex,
+		alertArchiveRange: getAlertArchiveRange,
 		networkTrend: getNetworkTrend,
 		hotspots: getHotspots,
 		repeatOffenders: getRepeatOffenders,
 		alertHistory: getAlertHistory,
 		receiptsIndex: getReceiptsIndex,
 		receipt: getReceipt,
+		advertisedReceipt: getAdvertisedReceipt,
 		routeReliability: getRouteReliability,
 		routeReliabilityIndex: getRouteReliabilityIndex,
 		stopReliability: getStopReliability,
@@ -81,7 +89,11 @@ export type { SlimStopEntry, SlimStopsIndex } from './stopsSlim';
 export { toSlimStop, toSlimStopsIndex } from './stopsSlim';
 export {
 	getAlertHistory,
+	getAdvertisedReceipt,
+	getAlertArchiveIndex,
+	getAlertArchiveRange,
 	getHotspots,
+	getHistoricAvailability,
 	getNetworkTrend,
 	getReceipt,
 	getReceiptsIndex,
