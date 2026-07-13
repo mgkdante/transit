@@ -97,6 +97,11 @@ from transit_ops.snapshots.builders.historic._spine import (
     _windowed_otp_index,
     _windowed_periods,
 )
+from transit_ops.snapshots.builders.historic.alert_archive import (
+    _ALERT_ARCHIVE_SQL,
+    AlertArchiveBundle,
+    build_alert_archive,
+)
 from transit_ops.snapshots.builders.historic.network_trend import (
     _NETWORK_DAYTYPE_ORDER,
     _NETWORK_SHIFT_ORDER,
@@ -187,10 +192,13 @@ __all__ = [
     "build_provenance",
     "build_route_reliability",
     "build_alert_history",
+    "build_alert_archive",
     "build_hotspots",
     "build_receipts",
     "build_repeat_offenders",
     "build_stop_reliability",
+    "AlertArchiveBundle",
+    "_ALERT_ARCHIVE_SQL",
     # SQL constants + private helpers re-exported for byte-stable
     # builders.historic.<name> attribute + import-path parity
     "_GAP_EDGES",

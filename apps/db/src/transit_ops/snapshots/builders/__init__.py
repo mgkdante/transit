@@ -67,6 +67,7 @@ from transit_ops.snapshots.builders._helpers import (
 # Historic tier — builders + the SQL constants tests reach into.
 # ---------------------------------------------------------------------------
 from transit_ops.snapshots.builders.historic import (
+    _ALERT_ARCHIVE_SQL,
     _RECEIPTS_NETWORK_DAILY_SQL,
     _RECEIPTS_NOT_REPORTED_ROUTES_SQL,
     _RECEIPTS_SERVICE_STATES_SQL,
@@ -76,6 +77,8 @@ from transit_ops.snapshots.builders.historic import (
     _ROUTE_REL_DAILY_SQL,
     _TREND_DAILY_SQL,
     _TREND_FACT_SQL,
+    AlertArchiveBundle,
+    build_alert_archive,
     build_alert_history,
     build_hotspots,
     build_network_trend,
@@ -140,7 +143,9 @@ __all__ = [
     "build_repeat_offenders",
     "build_receipts",
     "build_alert_history",
+    "build_alert_archive",
     "build_provenance",
+    "AlertArchiveBundle",
     # private names imported by tests / publish.py
     "_iso",
     "_iso_date",
@@ -183,6 +188,7 @@ __all__ = [
     "_STOP_NAMES_SQL",
     "_TREND_DAILY_SQL",
     "_TREND_FACT_SQL",
+    "_ALERT_ARCHIVE_SQL",
     "_STOP_DEPARTURES_SQL",
     "_STOP_DEPARTURES_PER_ROUTE_CAP",
     "_TRIP_DEPARTURES_SQL",

@@ -32,6 +32,7 @@ CACHE_CONTROL: dict[str, str] = {
     "live": "public, max-age=30",
     "static": "public, max-age=86400, stale-while-revalidate=86400",
     "historic": "public, max-age=3600, stale-while-revalidate=86400",
+    "historic_immutable": "public, max-age=31536000, immutable",
     "internal": "private, no-store",
 }
 
@@ -119,6 +120,10 @@ class SnapshotStorage:
         """
         return self.put_bytes(rel_key, _body(payload), tier=tier)
 
+    def put_immutable_json(self, rel_key: str, payload: BaseModel | dict) -> str:  # type: ignore[type-arg]
+        """PUT a content-addressed historic object with immutable caching."""
+        return self.put_bytes(rel_key, _body(payload), tier="historic_immutable")
+
     def get_json(self, rel_key: str) -> dict | None:  # type: ignore[type-arg]
         """GET and JSON-decode the object at *rel_key*; ``None`` if it is absent.
 
@@ -163,6 +168,10 @@ class LocalSnapshotStorage:
         """Write *payload* to ``{root}/{base_prefix}/{rel_key}`` and return the path."""
         return self.put_bytes(rel_key, _body(payload), tier=tier)
 
+    def put_immutable_json(self, rel_key: str, payload: BaseModel | dict) -> str:  # type: ignore[type-arg]
+        """Write a content-addressed historic object using the shared serializer."""
+        return self.put_bytes(rel_key, _body(payload), tier="historic_immutable")
+
     def get_json(self, rel_key: str) -> dict | None:  # type: ignore[type-arg]
         """Read and JSON-decode the object at *rel_key*; ``None`` if the file is missing."""
         path = self._root / self._prefix / rel_key
@@ -203,6 +212,7 @@ class HashGatedStorage:
         self._new: dict[str, str] = {}
         self.written: list[str] = []
         self.skipped: list[str] = []
+        self.immutable_written: list[str] = []
         # True after load() iff a prior state object existed AND carried the current
         # fingerprint (cache-policy / format version unchanged). Lets a caller make a
         # dataset-level skip decision (skip the whole rebuild) without trusting stale
@@ -245,6 +255,18 @@ class HashGatedStorage:
         key = self._inner.put_bytes(rel_key, body, tier=tier)  # type: ignore[attr-defined]
         with self._lock:
             self.written.append(rel_key)
+        return key
+
+    def put_immutable_json(self, rel_key: str, payload: BaseModel | dict) -> str:  # type: ignore[type-arg]
+        """Always write immutable generation bytes without growing hash state."""
+        body = _body(payload)
+        key = self._inner.put_bytes(  # type: ignore[attr-defined]
+            rel_key,
+            body,
+            tier="historic_immutable",
+        )
+        with self._lock:
+            self.immutable_written.append(rel_key)
         return key
 
     def flush_state(self) -> str:

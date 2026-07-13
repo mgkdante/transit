@@ -52,6 +52,8 @@ import {
 	HotspotsSchema,
 	NetworkTrendSchema,
 	AlertHistorySchema,
+	AlertArchivePageSchema,
+	AlertArchiveIndexSchema,
 	// provenance
 	ProvenanceSchema,
 	// data health (live-lane)
@@ -126,6 +128,16 @@ const FAMILIES: Family[] = [
 		label: 'alert_history',
 		mirror: 'historic_alert_history.schema.json',
 		schema: AlertHistorySchema,
+	},
+	{
+		label: 'alert_archive_page',
+		mirror: 'historic_alert_archive_page.schema.json',
+		schema: AlertArchivePageSchema,
+	},
+	{
+		label: 'alert_archive_index',
+		mirror: 'historic_alert_archive_index.schema.json',
+		schema: AlertArchiveIndexSchema,
 	},
 	// provenance
 	{ label: 'provenance', mirror: 'provenance.schema.json', schema: ProvenanceSchema },
@@ -375,10 +387,10 @@ describe('Gate B — Zod ⇔ canonical JSON-Schema conformance', () => {
 			missingFiles,
 			`FAMILIES references a mirror file that is not on disk: ${missingFiles.join(', ')}`,
 		).toEqual([]);
-		// 23 canonical surfaces (live 5 + static 6 + historic 9 + manifest + provenance
+		// 25 canonical surfaces (live 5 + static 6 + historic 11 + manifest + provenance
 		// + data_health).
-		expect(onDisk.size).toBe(23);
-		expect(FAMILIES.length).toBe(23);
+		expect(onDisk.size).toBe(25);
+		expect(FAMILIES.length).toBe(25);
 	});
 
 	for (const family of FAMILIES) {

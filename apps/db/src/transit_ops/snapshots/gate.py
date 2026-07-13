@@ -19,9 +19,11 @@ core.snapshot_publish_state.files_total (migration 0042), passed in by the calle
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -804,23 +806,7 @@ def check_alert_history(payload: object, *, rel_key: str) -> list[CheckResult]:
     for i, a in enumerate(alerts):
         if not isinstance(a, dict):
             continue
-        sub = _prefixed(emit, f"alerts[{i}].")
-        if _is_neg(a.get("duration_min")):
-            sub.err("count_negative", "duration_min", a.get("duration_min"), "duration_min < 0")
-        sub.count(a, "impact_passages")
-        # url must be a string when present (never a coerced non-string leaf).
-        url = a.get("url")
-        if url is not None and not isinstance(url, str):
-            sub.err("not_string", "url", url, f"url={url!r} is not a string")
-        # Each active window is well-ordered when BOTH bounds are present.
-        for j, p in enumerate(a.get("active_periods") or []):
-            if not isinstance(p, dict):
-                continue
-            ps, pe = p.get("start_utc"), p.get("end_utc")
-            if not _iso_le(ps, pe):
-                _prefixed(emit, f"alerts[{i}].active_periods[{j}].").err(
-                    "window_order", "start_utc", ps,
-                    f"start_utc={ps!r} > end_utc={pe!r}")
+        _check_alert_entry(emit, a, prefix=f"alerts[{i}].")
     breakdown = d.get("breakdown")
     if isinstance(breakdown, dict):
         for group in ("by_cause", "by_effect", "by_severity"):
@@ -833,6 +819,333 @@ def check_alert_history(payload: object, *, rel_key: str) -> list[CheckResult]:
                     sub.err("count_negative", "median_duration_min",
                             b.get("median_duration_min"), "median_duration_min < 0")
     return emit.out
+
+
+def _check_alert_entry(emit: _Emitter, alert: dict, *, prefix: str) -> None:  # type: ignore[type-arg]
+    """Shared alert invariants for legacy history and retained archive pages."""
+    sub = _prefixed(emit, prefix)
+    if _is_neg(alert.get("duration_min")):
+        sub.err(
+            "count_negative",
+            "duration_min",
+            alert.get("duration_min"),
+            "duration_min < 0",
+        )
+    sub.count(alert, "impact_passages")
+    url = alert.get("url")
+    if url is not None and not isinstance(url, str):
+        sub.err("not_string", "url", url, f"url={url!r} is not a string")
+    for j, period in enumerate(alert.get("active_periods") or []):
+        if not isinstance(period, dict):
+            continue
+        start, end = period.get("start_utc"), period.get("end_utc")
+        if not _iso_le(start, end):
+            _prefixed(emit, f"{prefix}active_periods[{j}].").err(
+                "window_order",
+                "start_utc",
+                start,
+                f"start_utc={start!r} > end_utc={end!r}",
+            )
+
+
+_ARCHIVE_MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
+_ARCHIVE_PAGE_PATH_RE = re.compile(
+    r"^historic/alerts/generations/([0-9a-f]{64})/(\d{4}-\d{2})/page-(\d{4})\.json$"
+)
+
+
+def _serialized_body(payload: object) -> bytes | None:
+    try:
+        if isinstance(payload, BaseModel):
+            return payload.model_dump_json().encode("utf-8")
+        if isinstance(payload, dict):
+            return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def _archive_entry_key(entry: dict) -> tuple[str, str, str]:  # type: ignore[type-arg]
+    return (
+        str(entry.get("start_utc") or entry.get("first_seen_utc") or ""),
+        str(entry.get("last_seen_utc") or ""),
+        str(entry.get("id") or ""),
+    )
+
+
+def _archive_page_coverage(
+    payload: object,
+    *,
+    provider_timezone: str,
+) -> tuple[str, str] | None:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    def local_date(value: str) -> str:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=ZoneInfo("UTC"))
+        return parsed.astimezone(ZoneInfo(provider_timezone)).date().isoformat()
+
+    page = _as_dict(payload)
+    if not isinstance(page, dict):
+        return None
+    bounds: list[str] = []
+    for entry in page.get("alerts") or []:
+        if not isinstance(entry, dict):
+            continue
+        for key in ("first_seen_utc", "last_seen_utc"):
+            if isinstance(entry.get(key), str):
+                bounds.append(entry[key])
+        for period in entry.get("active_periods") or []:
+            if not isinstance(period, dict):
+                continue
+            for key in ("start_utc", "end_utc"):
+                if isinstance(period.get(key), str):
+                    bounds.append(period[key])
+    if not bounds:
+        return None
+    dates = [local_date(value) for value in bounds]
+    return min(dates), max(dates)
+
+
+def check_alert_archive_page(payload: object, *, rel_key: str) -> list[CheckResult]:
+    from transit_ops.snapshots.contract import (
+        ALERT_ARCHIVE_PAGE_BYTE_CEILING,
+        ALERT_ARCHIVE_PAGE_ENTRY_CAP,
+    )
+
+    emit = _Emitter("historic_alert_archive_page", rel_key)
+    page = _as_dict(payload)
+    if not isinstance(page, dict):
+        return emit.out
+    alerts = page.get("alerts")
+    if not isinstance(alerts, list) or not alerts:
+        emit.err("page_count", "alerts", 0, "archive page must contain at least one alert")
+        alerts = []
+    elif len(alerts) > ALERT_ARCHIVE_PAGE_ENTRY_CAP:
+        emit.err(
+            "page_count",
+            "alerts",
+            len(alerts),
+            f"archive page has {len(alerts)} alerts; cap is {ALERT_ARCHIVE_PAGE_ENTRY_CAP}",
+        )
+    body = _serialized_body(payload)
+    if body is not None and len(body) > ALERT_ARCHIVE_PAGE_BYTE_CEILING:
+        emit.err(
+            "byte_ceiling",
+            "",
+            len(body),
+            f"archive page {len(body)}B exceeds ceiling {ALERT_ARCHIVE_PAGE_BYTE_CEILING}B",
+        )
+    month = page.get("month")
+    page_number = page.get("page")
+    match = _ARCHIVE_PAGE_PATH_RE.fullmatch(rel_key)
+    if not isinstance(month, str) or not _ARCHIVE_MONTH_RE.fullmatch(month):
+        emit.err("page_month", "month", month, f"malformed archive month {month!r}")
+    if not isinstance(page_number, int) or page_number < 1:
+        emit.err("page_number", "page", page_number, f"invalid page number {page_number!r}")
+    if match is None:
+        emit.err("page_path", "", rel_key, f"malformed archive generation path {rel_key!r}")
+    else:
+        digest, path_month, path_page = match.groups()
+        if path_month != month or int(path_page) != page_number:
+            emit.err("page_path", "", rel_key, "archive path month/page does not match payload")
+        if body is not None and hashlib.sha256(body).hexdigest() != digest:
+            emit.err("page_sha256", "", digest, "archive path SHA does not match page bytes")
+    keys = [_archive_entry_key(alert) for alert in alerts if isinstance(alert, dict)]
+    # Timestamps newest-first. Stable ids are the deterministic tie breaker.
+    expected = sorted(keys, key=lambda key: key[2])
+    expected.sort(key=lambda key: key[:2], reverse=True)
+    if keys != expected:
+        emit.err("entry_order", "alerts", None, "archive alerts are not newest-first")
+    for index, alert in enumerate(alerts):
+        if isinstance(alert, dict):
+            _check_alert_entry(emit, alert, prefix=f"alerts[{index}].")
+    return emit.out
+
+
+def check_alert_archive_index(payload: object, *, rel_key: str) -> list[CheckResult]:
+    emit = _Emitter("historic_alert_archive_index", rel_key)
+    index = _as_dict(payload)
+    if not isinstance(index, dict):
+        return emit.out
+    months = index.get("months") or []
+    month_names = [month.get("month") for month in months if isinstance(month, dict)]
+    if all(isinstance(name, str) for name in month_names) and month_names != sorted(
+        set(month_names), reverse=True
+    ):
+        emit.err("month_order", "months", month_names, "archive months must be unique newest-first")
+    counted_total = 0
+    for month_index, month in enumerate(months):
+        if not isinstance(month, dict):
+            continue
+        name = month.get("month")
+        if not isinstance(name, str) or not _ARCHIVE_MONTH_RE.fullmatch(name):
+            emit.err("month_format", f"months[{month_index}].month", name, "malformed month")
+        pages = month.get("pages") or []
+        page_numbers = [page.get("page") for page in pages if isinstance(page, dict)]
+        if page_numbers != list(range(1, len(page_numbers) + 1)):
+            emit.err(
+                "page_order",
+                f"months[{month_index}].pages",
+                page_numbers,
+                "pages are not sequential",
+            )
+        ref_total = sum(
+            page.get("count", 0)
+            for page in pages
+            if isinstance(page, dict) and isinstance(page.get("count"), int)
+        )
+        if month.get("total_alerts") != ref_total:
+            emit.err(
+                "month_total",
+                f"months[{month_index}].total_alerts",
+                month.get("total_alerts"),
+                f"month total does not match page refs ({ref_total})",
+            )
+        counted_total += ref_total
+        for page_index, ref in enumerate(pages):
+            if not isinstance(ref, dict):
+                continue
+            if not _iso_le(ref.get("coverage_start"), ref.get("coverage_end")):
+                emit.err(
+                    "coverage_order",
+                    f"months[{month_index}].pages[{page_index}].coverage_start",
+                    ref.get("coverage_start"),
+                    "page coverage is inverted",
+                )
+    if index.get("total_alerts") != counted_total:
+        emit.err(
+            "archive_total",
+            "total_alerts",
+            index.get("total_alerts"),
+            f"archive total does not match refs ({counted_total})",
+        )
+    if counted_total == 0 and (
+        index.get("first_available_date") is not None
+        or index.get("last_available_date") is not None
+    ):
+        emit.err(
+            "empty_coverage",
+            "first_available_date",
+            None,
+            "empty archive has fabricated coverage",
+        )
+    if not _iso_le(index.get("first_available_date"), index.get("last_available_date")):
+        emit.err(
+            "coverage_order",
+            "first_available_date",
+            index.get("first_available_date"),
+            "archive coverage is inverted",
+        )
+    generation_basis = {
+        "first_available_date": index.get("first_available_date"),
+        "last_available_date": index.get("last_available_date"),
+        "months": months,
+    }
+    expected_generation = hashlib.sha256(
+        json.dumps(
+            generation_basis,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    if index.get("collection_generation_id") != expected_generation:
+        emit.err(
+            "collection_generation_id",
+            "collection_generation_id",
+            index.get("collection_generation_id"),
+            "collection generation id does not match canonical ordered refs",
+        )
+    return emit.out
+
+
+def check_alert_archive_bundle(
+    index: object,
+    page_items: list[tuple[str, object]],
+    *,
+    provider_timezone: str = "UTC",
+) -> list[CheckResult]:
+    """Cross-check the stable index against the exact page bytes that will upload."""
+    findings = check_alert_archive_index(index, rel_key="historic/alerts/index.json")
+    built: dict[str, object] = {}
+    duplicate_built: set[str] = set()
+    for path, page in page_items:
+        if path in built:
+            duplicate_built.add(path)
+        built[path] = page
+    for path in duplicate_built:
+        emit = _Emitter("historic_alert_archive_bundle", path)
+        emit.err("duplicate_built_path", "path", path, "archive page path was built twice")
+        findings.extend(emit.out)
+    referenced: set[str] = set()
+    index_dict = _as_dict(index)
+    if not isinstance(index_dict, dict):
+        return findings
+    for month in index_dict.get("months") or []:
+        if not isinstance(month, dict):
+            continue
+        for ref in month.get("pages") or []:
+            if not isinstance(ref, dict) or not isinstance(ref.get("path"), str):
+                continue
+            path = ref["path"]
+            if path in referenced:
+                emit = _Emitter("historic_alert_archive_bundle", path)
+                emit.err(
+                    "duplicate_ref_path",
+                    "path",
+                    path,
+                    "archive page path is referenced twice",
+                )
+                findings.extend(emit.out)
+            referenced.add(path)
+            page = built.get(path)
+            emit = _Emitter("historic_alert_archive_bundle", path)
+            if page is None:
+                emit.err("missing_page", "path", path, "referenced archive page was not built")
+                findings.extend(emit.out)
+                continue
+            findings.extend(check_alert_archive_page(page, rel_key=path))
+            body = _serialized_body(page)
+            page_dict = _as_dict(page)
+            alerts = page_dict.get("alerts") if isinstance(page_dict, dict) else []
+            if isinstance(page_dict, dict) and (
+                page_dict.get("month") != month.get("month")
+                or page_dict.get("page") != ref.get("page")
+            ):
+                emit.err(
+                    "ref_page_metadata",
+                    "path",
+                    path,
+                    "parent month/ref page does not match page payload",
+                )
+            if ref.get("count") != len(alerts or []):
+                emit.err("ref_count", "count", ref.get("count"), "ref count does not match page")
+            if body is not None and ref.get("byte_size") != len(body):
+                emit.err(
+                    "ref_byte_size",
+                    "byte_size",
+                    ref.get("byte_size"),
+                    "ref byte size does not match page",
+                )
+            digest = hashlib.sha256(body).hexdigest() if body is not None else None
+            if digest is not None and ref.get("sha256") != digest:
+                emit.err("ref_sha256", "sha256", ref.get("sha256"), "ref SHA does not match page")
+            coverage = _archive_page_coverage(
+                page,
+                provider_timezone=provider_timezone,
+            )
+            if coverage is not None and (
+                ref.get("coverage_start"), ref.get("coverage_end")
+            ) != coverage:
+                emit.err("ref_coverage", "coverage_start", None, "ref coverage does not match page")
+            findings.extend(emit.out)
+    for path in built.keys() - referenced:
+        emit = _Emitter("historic_alert_archive_bundle", path)
+        emit.err("unreferenced_page", "path", path, "built archive page is not referenced")
+        findings.extend(emit.out)
+    return findings
 
 
 def check_receipt(payload: object, *, rel_key: str) -> list[CheckResult]:
@@ -1000,6 +1313,10 @@ _EXACT_CHECKERS = {
     "historic/hotspots.json": (check_hotspots, "historic_hotspots"),
     "historic/repeat_offenders.json": (check_repeat_offenders, "historic_repeat_offenders"),
     "historic/alert_history.json": (check_alert_history, "historic_alert_history"),
+    "historic/alerts/index.json": (
+        check_alert_archive_index,
+        "historic_alert_archive_index",
+    ),
 }
 
 # Exact discovery-index keys must be matched BEFORE the broader per-entity directory
@@ -1016,6 +1333,11 @@ _INDEX_CHECKERS = {
 }
 
 _PREFIX_CHECKERS = (
+    (
+        "historic/alerts/generations/",
+        check_alert_archive_page,
+        "historic_alert_archive_page",
+    ),
     ("historic/route_reliability/", check_route_reliability, "historic_route_reliability"),
     ("historic/stop_reliability/", check_stop_reliability, "historic_stop_reliability"),
     ("historic/receipts/", check_receipt, "historic_receipt"),

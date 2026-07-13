@@ -46,6 +46,8 @@ import {
 	HotspotsSchema,
 	NetworkTrendSchema,
 	AlertHistorySchema,
+	AlertArchivePageSchema,
+	AlertArchiveIndexSchema,
 	// provenance
 	ProvenanceSchema,
 	// data health (live-lane)
@@ -150,6 +152,28 @@ const CASES: Case[] = [
 	['hotspots', HotspotsSchema, { generated_utc: ISO }],
 	['network_trend', NetworkTrendSchema, { generated_utc: ISO }],
 	['alert_history', AlertHistorySchema, { generated_utc: ISO }],
+	[
+		'alert_archive_page',
+		AlertArchivePageSchema,
+		{
+			generated_utc: ISO,
+			month: '2026-06',
+			page: 1,
+			alerts: [{ id: 'a1', first_seen_utc: ISO, last_seen_utc: ISO }],
+		},
+	],
+	[
+		'alert_archive_index',
+		AlertArchiveIndexSchema,
+		{
+			generated_utc: ISO,
+			collection_generation_id: '0'.repeat(64),
+			first_available_date: null,
+			last_available_date: null,
+			total_alerts: 0,
+			months: [],
+		},
+	],
 
 	// --- provenance ----------------------------------------------------------
 	['provenance', ProvenanceSchema, { generated_utc: ISO }],

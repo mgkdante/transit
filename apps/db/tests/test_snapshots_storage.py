@@ -50,6 +50,7 @@ def test_cache_control_values():
     assert CACHE_CONTROL["static"] == "public, max-age=86400, stale-while-revalidate=86400"
     assert CACHE_CONTROL["historic"] == "public, max-age=3600, stale-while-revalidate=86400"
     assert CACHE_CONTROL["internal"] == "private, no-store"
+    assert CACHE_CONTROL["historic_immutable"] == "public, max-age=31536000, immutable"
 
 
 def test_put_json_static_tier():
@@ -341,3 +342,37 @@ def test_hash_gated_state_written_with_internal_cache_control():
     g.flush_state()
     assert inner.tiers["_meta/s.json"] == "internal"
     assert inner.tiers["static/routes_index.json"] == "static"
+
+
+def test_immutable_put_writes_through_without_hash_state_or_skip_classification():
+    inner = StatefulFakeStore()
+    store = HashGatedStorage(
+        inner,
+        state_rel_key="_meta/publish_state_historic.json",
+        fingerprint=state_fingerprint("historic"),
+    )
+    store.load()
+    key = "historic/alerts/generations/abc/2026-07/page-0001.json"
+
+    store.put_immutable_json(key, {"page": 1})
+    store.put_immutable_json(key, {"page": 1})
+    store.flush_state()
+
+    assert store.immutable_written == [key, key]
+    assert store.written == []
+    assert store.skipped == []
+    state = inner.get_json("_meta/publish_state_historic.json")
+    assert key not in state["hashes"]
+    assert inner.put_bytes_calls.count(key) == 2
+
+
+def test_snapshot_immutable_put_uses_long_lived_immutable_cache_control():
+    client = FakeS3Client()
+    store = SnapshotStorage(client, bucket="b", base_prefix="v1/stm")
+    key = "historic/alerts/generations/abc/2026-07/page-0001.json"
+
+    store.put_immutable_json(key, {"page": 1})
+
+    assert client.objects[f"v1/stm/{key}"]["CacheControl"] == CACHE_CONTROL[
+        "historic_immutable"
+    ]

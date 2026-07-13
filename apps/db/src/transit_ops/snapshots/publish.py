@@ -27,6 +27,7 @@ from transit_ops.snapshots import builders, gate
 from transit_ops.snapshots.contract import (
     PAYLOAD_METHODOLOGY,
     TOP_LEVEL_MODELS,
+    AlertArchivePage,
     PayloadEnvelope,
     ReceiptAvailability,
     ReceiptsIndex,
@@ -62,7 +63,7 @@ _STATIC_SKIP_MATCH_SQL = named_query(
 # first publish is never blocked.
 _PRIOR_FILES_TOTAL_SQL = named_query(
     "publish.prior_files_total",
-    "SELECT files_total FROM core.snapshot_publish_state "
+    "SELECT COALESCE(stable_files_total, files_total) FROM core.snapshot_publish_state "
     "WHERE provider_id = :provider_id AND tier = :tier",
 )
 
@@ -100,6 +101,11 @@ def _stamp_envelope(items: list, *, provider_id: str, stamp: str) -> None:
     generation_id = _publish_generation_id(provider_id, stamp)
     for _rel_key, payload, _tier in items:
         if isinstance(payload, PayloadEnvelope):
+            # Content-addressed archive pages must remain byte-stable across
+            # runs. Their builder supplies the stable methodology token; a run
+            # generation id would invalidate the already-computed SHA/path.
+            if isinstance(payload, AlertArchivePage):
+                continue
             payload.publish_generation_id = generation_id
             payload.methodology_version = _METHODOLOGY_BY_MODEL.get(type(payload))
 
@@ -113,7 +119,13 @@ def _concurrency(settings: object) -> int:
         return 16
 
 
-def _parallel_put(storage: object, items: list, *, concurrency: int) -> list[str]:
+def _parallel_put(
+    storage: object,
+    items: list,
+    *,
+    concurrency: int,
+    write_mode: str = "normal",
+) -> list[str]:
     """Upload every ``(rel_key, payload, tier)`` in *items* and return the keys.
 
     Uploads run through a bounded :class:`ThreadPoolExecutor` so the per-file
@@ -132,17 +144,20 @@ def _parallel_put(storage: object, items: list, *, concurrency: int) -> list[str
     """
     if not items:
         return []
+    if write_mode not in {"normal", "immutable"}:
+        raise ValueError(f"unknown snapshot write mode {write_mode!r}")
+
+    def put(item: tuple[str, object, str]) -> str:
+        rel_key, payload, tier = item
+        if write_mode == "immutable":
+            return storage.put_immutable_json(rel_key, payload)  # type: ignore[attr-defined]
+        return storage.put_json(rel_key, payload, tier=tier)  # type: ignore[attr-defined]
+
     if concurrency <= 1:
-        return [
-            storage.put_json(rel_key, payload, tier=tier)  # type: ignore[attr-defined]
-            for (rel_key, payload, tier) in items
-        ]
+        return [put(item) for item in items]
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = [
-            pool.submit(storage.put_json, rel_key, payload, tier=tier)  # type: ignore[attr-defined]
-            for (rel_key, payload, tier) in items
-        ]
+        futures = [pool.submit(put, item) for item in items]
         # Resolve in submission order; the first exception re-raises here, and
         # the `with` block still joins the remaining workers on the way out.
         return [future.result() for future in futures]
@@ -182,9 +197,11 @@ _RECORD_STATE_SQL = named_query(
     "publish.state.upsert",
     "INSERT INTO core.snapshot_publish_state "
     "(provider_id, tier, generated_utc, files_written, files_skipped, files_total, "
+    " stable_files_total, "
     " gate_checks_run, gate_errors, gate_warnings, gate_verdict, gate_generated_utc, "
     " updated_at_utc) "
     "VALUES (:provider_id, :tier, :generated_utc, :written, :skipped, :total, "
+    " :stable_total, "
     " :gate_checks_run, :gate_errors, :gate_warnings, :gate_verdict, "
     " CAST(:gate_generated_utc AS timestamptz), now()) "
     "ON CONFLICT (provider_id, tier) DO UPDATE SET "
@@ -192,6 +209,7 @@ _RECORD_STATE_SQL = named_query(
     "files_written = EXCLUDED.files_written, "
     "files_skipped = EXCLUDED.files_skipped, "
     "files_total = EXCLUDED.files_total, "
+    "stable_files_total = EXCLUDED.stable_files_total, "
     "gate_checks_run = EXCLUDED.gate_checks_run, "
     "gate_errors = EXCLUDED.gate_errors, "
     "gate_warnings = EXCLUDED.gate_warnings, "
@@ -238,6 +256,7 @@ def _record_publish_state(
     written: int,
     skipped: int,
     total: int,
+    stable_total: int | None = None,
     gate_report: dict | None = None,  # type: ignore[type-arg]
 ) -> None:
     """Upsert the per-tier publish-state row inside the caller's transaction.
@@ -256,6 +275,7 @@ def _record_publish_state(
             "written": written,
             "skipped": skipped,
             "total": total,
+            "stable_total": total if stable_total is None else stable_total,
             **_gate_summary(gate_report),
         },
     )
@@ -405,14 +425,15 @@ def _publish_live(
 
 def _build_historic_items(
     conn: object, *, provider_id: str, settings: object, stamp: str
-) -> tuple[list, list, list]:
+) -> tuple[list, list, list, object]:
     """Build every historic-tier payload; return ``(items, route_items, stages)``.
 
     * *items* — the full ordered (rel_key, payload, tier) list, over which the gate
       runs a single build-then-gate pass (payload build precedes any upload).
     * *route_items* — the per-route subset (for the batch-level empty-route/coverage
       checks).
-    * *stages* — the SAME items partitioned into ordered upload stages that MUST be
+    * *stages* — ``(items, write_mode)`` pairs partitioning the ordered upload
+      stages that MUST be
       uploaded one stage at a time, each stage COMPLETING before the next begins. A
       discovery index is its own singleton stage placed AFTER its per-entity stage, so
       it never advertises an entity whose file is still in flight (the pointer-last
@@ -535,20 +556,47 @@ def _build_historic_items(
         "historic",
     )
 
+    # --- retained alert archive: immutable generation pages + stable pointer ---
+    # The legacy newest-500 flat file above remains untouched. This collection is
+    # built from the message-complete Gold archive and uploaded pointer-last.
+    alert_archive = builders.build_alert_archive(
+        conn, provider_id, generated_utc=stamp  # type: ignore[arg-type]
+    )
+    alert_page_items = [
+        (path, page, "historic_immutable")
+        for path, page in alert_archive.page_items
+    ]
+    alert_index_item = (
+        "historic/alerts/index.json",
+        alert_archive.index,
+        "historic",
+    )
+
     # Ordered upload stages: each stage completes before the next; a discovery index
     # is a singleton stage after its per-entity stage (pointer-last invariant).
     stages: list = [
-        flat_items,
-        route_items,
-        [route_index_item],
-        stop_items,
-        receipt_items,
-        [receipts_index_item],
+        (flat_items, "normal"),
+        (route_items, "normal"),
+        ([route_index_item], "normal"),
+        (stop_items, "normal"),
+        (receipt_items, "normal"),
+        ([receipts_index_item], "normal"),
+        (alert_page_items, "immutable"),
+        ([alert_index_item], "normal"),
     ]
-    for stage in stages:
+    for stage, _write_mode in stages:
         items.extend(stage)
 
-    return items, route_items, stages
+    return items, route_items, stages, alert_archive
+
+
+def _stable_item_total(items: list) -> int:
+    """Logical surface count, excluding immutable generation objects."""
+    return sum(
+        1
+        for rel_key, _payload, _tier in items
+        if not rel_key.startswith("historic/alerts/generations/")
+    )
 
 
 def _find_network_trend(items: list) -> tuple[str, object] | None:
@@ -590,27 +638,50 @@ def _publish_historic(
 
     concurrency = _concurrency(settings)
 
-    items, route_items, stages = _build_historic_items(
+    items, route_items, stages, alert_archive = _build_historic_items(
         conn, provider_id=provider_id, settings=settings, stamp=stamp
     )
     _stamp_envelope(items, provider_id=provider_id, stamp=stamp)  # GC2 H4
 
+    structural_findings = gate.check_alert_archive_bundle(
+        alert_archive.index,
+        alert_archive.page_items,
+        provider_timezone=alert_archive.provider_timezone,
+    )
+    effective_report = gate_report or gate.new_report(provider_id, "historic", stamp)
+
     if gate_report is not None:
         for rel_key, payload, _tier in items:
             gate.record(gate_report, rel_key, payload)  # type: ignore[arg-type]
+        gate_report.results.extend(structural_findings)  # type: ignore[attr-defined]
         gate.finalize_batch(
             gate_report,  # type: ignore[arg-type]
             route_payloads=[(k, p) for (k, p, _t) in route_items],
-            current_total=len(items),
+            current_total=_stable_item_total(items),
             prior_files_total=prior_files_total,
             network_trend=_find_network_trend(items),
         )
         # Enforce BEFORE the first put — a failed gate uploads nothing.
         gate.enforce(gate_report, force=force)  # type: ignore[arg-type]
+    else:
+        # Archive ref/SHA/size/path integrity is a publication invariant, not an
+        # optional analytics gate. Even --no-gate must never publish a dishonest
+        # pointer; only the existing explicit force override may proceed.
+        effective_report.results.extend(structural_findings)
+        effective_report.payloads_checked = len(alert_archive.page_items) + 1
+        effective_report.checks_run = 1
+        gate.enforce(effective_report, force=force)
 
     written: list[str] = []
-    for stage in stages:
-        written.extend(_parallel_put(storage, stage, concurrency=concurrency))
+    for stage, write_mode in stages:
+        written.extend(
+            _parallel_put(
+                storage,
+                stage,
+                concurrency=concurrency,
+                write_mode=write_mode,
+            )
+        )
     return written
 
 
@@ -791,6 +862,7 @@ def publish_snapshot(
                 written=len(keys),
                 skipped=0,
                 total=len(keys),
+                stable_total=len(keys),
                 gate_report=live_report.to_dict() if live_report is not None else None,
             )
         if live_report is not None:
@@ -886,21 +958,25 @@ def publish_snapshot(
         else:
             publisher(conn, gated, provider_id=provider_id, settings=settings, stamp=stamp)
         gated.flush_state()
+        physical_written = len(gated.written) + len(gated.immutable_written)
+        physical_total = physical_written + len(gated.skipped)
+        stable_total = len(gated.written) + len(gated.skipped)
         _record_publish_state(
             conn,
             provider_id=provider_id,
             tier=tier,
             generated_utc=stamp,
-            written=len(gated.written),
+            written=physical_written,
             skipped=len(gated.skipped),
-            total=len(gated.written) + len(gated.skipped),
+            total=physical_total,
+            stable_total=stable_total,
             gate_report=report.to_dict() if report is not None else None,
         )
 
     return PublishResult(
         provider_id=provider_id,
         tier=tier,
-        keys_written=list(gated.written),
+        keys_written=[*gated.written, *gated.immutable_written],
         keys_skipped=list(gated.skipped),
         gate_report=report.to_dict() if report is not None else None,
     )
@@ -926,6 +1002,10 @@ class _CollectingStorage:
         self.collected.append((rel_key, payload))
         return rel_key
 
+    def put_immutable_json(self, rel_key: str, payload: object) -> str:
+        self.collected.append((rel_key, payload))
+        return rel_key
+
 
 def collect_payloads(
     provider_id: str,
@@ -933,7 +1013,8 @@ def collect_payloads(
     tier: str,
     settings: object = None,
     engine: object = None,
-) -> tuple[list[tuple[str, object]], list[tuple[str, object]], str, int | None]:
+    include_archive_bundle: bool = False,
+) -> tuple:
     """Build every payload for *tier* WITHOUT uploading; return the collected set.
 
     Returns ``(all_items, route_items, stamp, prior_files_total)`` — reusing the exact
@@ -955,19 +1036,20 @@ def collect_payloads(
 
         if tier == "historic":
             stamp = _historic_stamp()
-            items, route_items, _stages = _build_historic_items(
+            items, route_items, _stages, _alert_archive = _build_historic_items(
                 conn, provider_id=provider_id, settings=settings, stamp=stamp
             )
             # Stamp the H4 envelope here too (mirrors _publish_historic) so the audit
             # sees published bytes. (Static is already stamped inside _publish_static.)
             _stamp_envelope(items, provider_id=provider_id, stamp=stamp)
             prior_total = _prior_files_total(conn, provider_id=provider_id, tier=tier)
-            return (
+            result = (
                 [(k, p) for (k, p, _t) in items],
                 [(k, p) for (k, p, _t) in route_items],
                 stamp,
                 prior_total,
             )
+            return (*result, _alert_archive) if include_archive_bundle else result
 
         if tier == "static":
             stamp = _static_stamp(conn, provider_id)
@@ -991,17 +1073,35 @@ def validate_snapshots(
     the returned report). The historic tier additionally runs the batch-level
     coverage-delta + empty-route aggregates via ``gate.finalize_batch``.
     """
-    all_items, route_items, stamp, prior_total = collect_payloads(
-        provider_id, tier=tier, settings=settings, engine=engine
+    collected = collect_payloads(
+        provider_id,
+        tier=tier,
+        settings=settings,
+        engine=engine,
+        include_archive_bundle=tier == "historic",
     )
+    all_items, route_items, stamp, prior_total = collected[:4]
+    alert_archive = collected[4] if len(collected) > 4 else None
     report = gate.new_report(provider_id, tier, stamp)
     for rel_key, payload in all_items:
         gate.record(report, rel_key, payload)
     if tier == "historic":
+        if alert_archive is not None:
+            report.results.extend(
+                gate.check_alert_archive_bundle(
+                    alert_archive.index,
+                    alert_archive.page_items,
+                    provider_timezone=alert_archive.provider_timezone,
+                )
+            )
         gate.finalize_batch(
             report,
             route_payloads=route_items,
-            current_total=len(all_items),
+            current_total=sum(
+                1
+                for key, _payload in all_items
+                if not key.startswith("historic/alerts/generations/")
+            ),
             prior_files_total=prior_total,
             network_trend=next(
                 ((k, p) for (k, p) in all_items if k == "historic/network_trend.json"), None

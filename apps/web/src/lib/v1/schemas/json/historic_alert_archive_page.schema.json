@@ -1,0 +1,295 @@
+{
+  "$defs": {
+    "AlertActivePeriod": {
+      "properties": {
+        "end_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Utc"
+        },
+        "start_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Utc"
+        }
+      },
+      "title": "AlertActivePeriod",
+      "type": "object"
+    },
+    "AlertArchiveEntry": {
+      "properties": {
+        "active_periods": {
+          "items": {
+            "$ref": "#/$defs/AlertActivePeriod"
+          },
+          "title": "Active Periods",
+          "type": "array"
+        },
+        "cause": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cause"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "description_en": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description En"
+        },
+        "duration_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Min"
+        },
+        "effect": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effect"
+        },
+        "end_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Utc"
+        },
+        "first_seen_utc": {
+          "title": "First Seen Utc",
+          "type": "string"
+        },
+        "header_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Header Text"
+        },
+        "header_text_en": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Header Text En"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "impact_passages": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Impact Passages"
+        },
+        "last_seen_utc": {
+          "title": "Last Seen Utc",
+          "type": "string"
+        },
+        "routes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Routes",
+          "type": "array"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity"
+        },
+        "severity_level": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity Level"
+        },
+        "start_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Utc"
+        },
+        "stops": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Stops",
+          "type": "array"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "id",
+        "first_seen_utc",
+        "last_seen_utc"
+      ],
+      "title": "AlertArchiveEntry",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "alerts": {
+      "items": {
+        "$ref": "#/$defs/AlertArchiveEntry"
+      },
+      "maxItems": 250,
+      "minItems": 1,
+      "title": "Alerts",
+      "type": "array"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "month": {
+      "title": "Month",
+      "type": "string"
+    },
+    "page": {
+      "minimum": 1,
+      "title": "Page",
+      "type": "integer"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "month",
+    "page",
+    "alerts"
+  ],
+  "title": "AlertArchivePage",
+  "type": "object"
+}

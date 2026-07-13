@@ -51,7 +51,6 @@ class _ConcurrencyProbe:
                 self.keys.append(rel_key)
         return rel_key
 
-
 def test_parallel_put_bounds_concurrency() -> None:
     """No more than `concurrency` uploads run at once."""
     probe = _ConcurrencyProbe()
@@ -264,6 +263,14 @@ class _OrderTrackingStore:
             self.store[rel_key] = _body(payload)
         return rel_key
 
+    def put_immutable_json(self, rel_key: str, payload: object) -> str:
+        from transit_ops.snapshots.storage import _body
+
+        with self._lock:
+            self.keys.append(rel_key)
+            self.store[rel_key] = _body(payload)
+        return rel_key
+
     def get_json(self, rel_key: str):
         import json as _json
 
@@ -271,7 +278,7 @@ class _OrderTrackingStore:
         return _json.loads(raw) if raw is not None else None
 
 
-def _historic_dispatch_conn():
+def _historic_dispatch_conn(*, archive_rows=None):  # noqa: ANN001
     """A fake conn returning enough rows for several per-route/per-stop files."""
     import datetime
 
@@ -354,6 +361,7 @@ def _historic_dispatch_conn():
         "hotspots.list": [],
         "repeat.offenders": [],
         "alerts.history": [],
+        "alerts.archive.publish": list(archive_rows or []),
         "provenance.sources": [],
         "provenance.freshness": [],
         "static.stop_names": [{"stop_id": "S1", "stop_name": "Stop 1"}],
@@ -423,10 +431,50 @@ def _historic_dispatch_conn():
     }
 
     class _Conn:
+        def __init__(self) -> None:
+            self.state_writes: list[dict[str, object]] = []
+
         def execute(self, statement, params=None):
-            return _R(dispatch.get(query_name(statement), []))
+            name = query_name(statement)
+            if name == "publish.state.upsert":
+                self.state_writes.append(dict(params))
+            return _R(dispatch.get(name, []))
 
     return _Conn()
+
+
+def _archive_publish_row() -> dict[str, object]:
+    import datetime
+
+    start = datetime.datetime(2026, 7, 8, 12, tzinfo=datetime.UTC)
+    return {
+        "provider_id": "stm",
+        "alert_id": "stm-retained-a",
+        "archive_month": datetime.date(2026, 7, 1),
+        "header_text": "Métro interrompu",
+        "header_text_en": "Metro interrupted",
+        "description_text": "Service interrompu.",
+        "description_text_en": "Service interrupted.",
+        "severity": "WARNING",
+        "cause": "TECHNICAL_PROBLEM",
+        "effect": "NO_SERVICE",
+        "route_ids": ["1"],
+        "stop_ids": ["10"],
+        "start_utc": start,
+        "end_utc": start + datetime.timedelta(hours=1),
+        "active_periods": [
+            {
+                "start_utc": start.isoformat(),
+                "end_utc": (start + datetime.timedelta(hours=1)).isoformat(),
+            }
+        ],
+        "url": "https://www.stm.info/alert",
+        "first_seen_utc": start,
+        "last_seen_utc": start + datetime.timedelta(hours=1),
+        "updated_at_utc": start + datetime.timedelta(hours=2),
+        "first_available_date": datetime.date(2026, 7, 8),
+        "last_available_date": datetime.date(2026, 7, 8),
+    }
 
 
 def test_historic_publish_uploads_index_after_receipts() -> None:
@@ -475,6 +523,164 @@ def test_historic_publish_uploads_route_index_after_route_files() -> None:
     index_position = store.keys.index(index_key)
     assert route_positions, "expected per-route files to be uploaded"
     assert max(route_positions) < index_position
+
+
+def test_historic_publish_completes_all_archive_pages_before_stable_index() -> None:
+    from transit_ops.snapshots.publish import _publish_historic
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    store = _OrderTrackingStore()
+    conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
+    _publish_historic(conn, store, provider_id="stm", settings=_Settings())
+
+    page_positions = [
+        index
+        for index, key in enumerate(store.keys)
+        if key.startswith("historic/alerts/generations/")
+    ]
+    index_position = store.keys.index("historic/alerts/index.json")
+    assert page_positions
+    assert max(page_positions) < index_position
+
+
+def test_delayed_concurrent_archive_pages_all_finish_before_index() -> None:
+    import datetime
+
+    from transit_ops.snapshots.publish import _publish_historic
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 3
+
+    class _DelayedPages(_OrderTrackingStore):
+        def put_immutable_json(self, rel_key: str, payload: object) -> str:
+            page_number = int(rel_key.rsplit("page-", 1)[1][:4])
+            time.sleep(0.004 * (4 - page_number))
+            return super().put_immutable_json(rel_key, payload)
+
+    base = _archive_publish_row()
+    archive_rows = []
+    for number in range(501):
+        row = dict(base)
+        row["alert_id"] = f"stm-retained-{number:04d}"
+        row["start_utc"] = base["start_utc"] + datetime.timedelta(minutes=number)
+        row["end_utc"] = base["end_utc"] + datetime.timedelta(minutes=number)
+        row["first_seen_utc"] = row["start_utc"]
+        row["last_seen_utc"] = row["end_utc"]
+        row["updated_at_utc"] = row["end_utc"]
+        row["active_periods"] = [
+            {
+                "start_utc": row["start_utc"].isoformat(),
+                "end_utc": row["end_utc"].isoformat(),
+            }
+        ]
+        archive_rows.append(row)
+
+    store = _DelayedPages()
+    _publish_historic(
+        _historic_dispatch_conn(archive_rows=archive_rows),
+        store,
+        provider_id="stm",
+        settings=_Settings(),
+    )
+
+    pages = [
+        index
+        for index, key in enumerate(store.keys)
+        if key.startswith("historic/alerts/generations/")
+    ]
+    assert len(pages) == 3
+    assert max(pages) < store.keys.index("historic/alerts/index.json")
+
+
+def test_historic_archive_page_failure_never_replaces_stable_index() -> None:
+    from transit_ops.snapshots.publish import _publish_historic
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    class _FailingPageStore(_OrderTrackingStore):
+        def put_immutable_json(self, rel_key: str, payload: object) -> str:
+            raise RuntimeError("archive page upload failed")
+
+    store = _FailingPageStore()
+    store.store["historic/alerts/index.json"] = b'{"old":true}'
+    conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
+
+    with pytest.raises(RuntimeError, match="archive page upload failed"):
+        _publish_historic(conn, store, provider_id="stm", settings=_Settings())
+
+    assert store.store["historic/alerts/index.json"] == b'{"old":true}'
+    assert "historic/alerts/index.json" not in store.keys
+
+
+def test_historic_publish_counts_archive_pages_physically_but_not_in_stable_baseline() -> None:
+    from transit_ops.snapshots.publish import publish_snapshot
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    store = _OrderTrackingStore()
+    conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
+    result = publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=_Settings(),
+        engine=_FakeEngine(conn),
+        storage=store,
+    )
+
+    page_keys = [
+        key for key in result.keys_written if key.startswith("historic/alerts/generations/")
+    ]
+    assert len(page_keys) == 1
+    assert len(conn.state_writes) == 1
+    state = conn.state_writes[0]
+    assert state["written"] == len(result.keys_written)
+    assert state["total"] == len(result.keys_written)
+    assert state["stable_total"] == state["total"] - len(page_keys)
+    hash_state = store.get_json("_meta/publish_state_historic.json")
+    assert all(key not in hash_state["hashes"] for key in page_keys)
+
+
+@pytest.mark.parametrize("failure", ["page", "index"])
+def test_archive_page_or_index_failure_does_not_flush_hash_or_db_state(failure: str) -> None:
+    from transit_ops.snapshots.publish import publish_snapshot
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    class _FailingInner(_OrderTrackingStore):
+        def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:
+            is_page = rel_key.startswith("historic/alerts/generations/")
+            is_index = rel_key == "historic/alerts/index.json"
+            if (failure == "page" and is_page) or (failure == "index" and is_index):
+                raise RuntimeError(f"archive {failure} upload failed")
+            return super().put_bytes(rel_key, body, tier=tier)
+
+    store = _FailingInner()
+    old_index = b'{"old":true}'
+    store.store["historic/alerts/index.json"] = old_index
+    conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
+
+    with pytest.raises(RuntimeError, match=f"archive {failure} upload failed"):
+        publish_snapshot(
+            "stm",
+            tier="historic",
+            settings=_Settings(),
+            engine=_FakeEngine(conn),
+            storage=store,
+        )
+
+    assert store.store["historic/alerts/index.json"] == old_index
+    assert "_meta/publish_state_historic.json" not in store.store
+    assert conn.state_writes == []
 
 
 def test_static_publish_manifest_index_keys_present_and_complete() -> None:

@@ -26,7 +26,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from transit_ops.snapshots import builders
-from transit_ops.snapshots.publish import _record_publish_state
+from transit_ops.snapshots.publish import _prior_files_total, _record_publish_state
 
 DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
 
@@ -73,7 +73,7 @@ def _state_rows(connection) -> list[dict]:
             text(
                 """
                 SELECT provider_id, tier, generated_utc, files_written,
-                       files_skipped, files_total, updated_at_utc
+                       files_skipped, files_total, stable_files_total, updated_at_utc
                 FROM core.snapshot_publish_state
                 WHERE provider_id = :p
                 ORDER BY tier
@@ -94,6 +94,7 @@ def test_state_upsert_is_idempotent(conn) -> None:
     first = _state_rows(conn)
     assert len(first) == 1
     assert first[0]["files_written"] == 9300
+    assert first[0]["stable_files_total"] == 9300
     first_updated = first[0]["updated_at_utc"]
 
     _record_publish_state(
@@ -105,6 +106,7 @@ def test_state_upsert_is_idempotent(conn) -> None:
     assert rows[0]["files_written"] == 20
     assert rows[0]["files_skipped"] == 9280
     assert rows[0]["generated_utc"] == T2
+    assert rows[0]["stable_files_total"] == 9300
     assert rows[0]["updated_at_utc"] >= first_updated
 
 
@@ -150,3 +152,38 @@ def test_build_manifest_reads_tier_state(conn) -> None:
     assert manifest.files.static.generated_utc == "2026-06-01T00:00:00Z"
     assert manifest.files.historic.generated_utc == "2026-06-13T00:00:00Z"
     assert manifest.basemap is None  # no PMTILES URL configured
+
+
+def test_historic_state_tracks_physical_and_stable_totals_separately(conn) -> None:
+    _record_publish_state(
+        conn,
+        provider_id=PROVIDER,
+        tier="historic",
+        generated_utc=T2,
+        written=14,
+        skipped=3,
+        total=17,
+        stable_total=12,
+    )
+
+    row = _state_rows(conn)[0]
+    assert row["files_total"] == 17
+    assert row["stable_files_total"] == 12
+    assert _prior_files_total(conn, provider_id=PROVIDER, tier="historic") == 12
+
+
+def test_pre_0081_null_stable_total_falls_back_to_physical_total(conn) -> None:
+    conn.execute(
+        text(
+            """
+            INSERT INTO core.snapshot_publish_state
+                (provider_id, tier, generated_utc, files_written, files_skipped, files_total)
+            VALUES (:provider, 'historic', :generated, 7, 2, 9)
+            """
+        ),
+        {"provider": PROVIDER, "generated": T1},
+    )
+
+    row = _state_rows(conn)[0]
+    assert row["stable_files_total"] is None
+    assert _prior_files_total(conn, provider_id=PROVIDER, tier="historic") == 9

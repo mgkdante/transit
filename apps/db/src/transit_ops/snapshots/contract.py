@@ -59,6 +59,8 @@ PAYLOAD_METHODOLOGY: dict[str, str] = {
     "historic_receipts_index": "receipt-1",
     "historic_route_reliability_index": "reliability-1",
     "historic_alert_history": "alerts-1",
+    "historic_alert_archive_page": "alerts-1",
+    "historic_alert_archive_index": "alerts-1",
     "provenance": "provenance-1",
 }
 
@@ -276,6 +278,7 @@ class ManifestHistoricFiles(BaseModel):
     hotspots: str = Field(default="historic/hotspots.json")
     repeat_offenders: str = Field(default="historic/repeat_offenders.json")
     alert_history: str = Field(default="historic/alert_history.json")
+    alerts_index: str = Field(default="historic/alerts/index.json")
     provenance: str = Field(default="provenance.json")
     receipts_index: str = Field(
         default="historic/receipts/index.json",
@@ -1392,6 +1395,11 @@ class AlertBreakdown(BaseModel):
 # S15 (there was NO ceiling before). The gate + a real-DB probe assert it.
 ALERT_HISTORY_BYTE_CEILING = 524288
 
+# Retained-alert collection bounds. Pages are packed by both entry count and
+# exact compact UTF-8 size; the gate enforces the same limits before upload.
+ALERT_ARCHIVE_PAGE_ENTRY_CAP = 250
+ALERT_ARCHIVE_PAGE_BYTE_CEILING = 524288
+
 class AlertHistory(PayloadEnvelope):
     generated_utc: str
     alerts: list[AlertHistoryEntry] = Field(default_factory=list)
@@ -1406,6 +1414,46 @@ class AlertHistory(PayloadEnvelope):
     window_end: str | None = None
     total_in_window: int | None = None
     truncated: bool | None = None
+
+
+class AlertArchiveEntry(AlertHistoryEntry):
+    first_seen_utc: str
+    last_seen_utc: str
+
+
+class AlertArchivePage(PayloadEnvelope):
+    generated_utc: str
+    month: str
+    page: int = Field(ge=1)
+    alerts: list[AlertArchiveEntry] = Field(
+        min_length=1,
+        max_length=ALERT_ARCHIVE_PAGE_ENTRY_CAP,
+    )
+
+
+class AlertArchivePageRef(BaseModel):
+    path: str
+    page: int = Field(ge=1)
+    count: int = Field(ge=1, le=ALERT_ARCHIVE_PAGE_ENTRY_CAP)
+    byte_size: int = Field(ge=1)
+    sha256: str
+    coverage_start: str
+    coverage_end: str
+
+
+class AlertArchiveMonth(BaseModel):
+    month: str
+    total_alerts: int = Field(ge=1)
+    pages: list[AlertArchivePageRef]
+
+
+class AlertArchiveIndex(PayloadEnvelope):
+    generated_utc: str
+    collection_generation_id: str
+    first_available_date: str | None
+    last_available_date: str | None
+    total_alerts: int = Field(ge=0)
+    months: list[AlertArchiveMonth]
 
 class ProvenanceSource(BaseModel):
     feed: str
@@ -1601,6 +1649,8 @@ TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
     "historic_receipts_index": ReceiptsIndex,
     "historic_route_reliability_index": RouteReliabilityIndex,
     "historic_alert_history": AlertHistory,
+    "historic_alert_archive_page": AlertArchivePage,
+    "historic_alert_archive_index": AlertArchiveIndex,
     "provenance": Provenance,
     "live_data_health": DataHealth,
 }

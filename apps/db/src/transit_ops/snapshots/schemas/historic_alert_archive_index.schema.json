@@ -1,0 +1,161 @@
+{
+  "$defs": {
+    "AlertArchiveMonth": {
+      "properties": {
+        "month": {
+          "title": "Month",
+          "type": "string"
+        },
+        "pages": {
+          "items": {
+            "$ref": "#/$defs/AlertArchivePageRef"
+          },
+          "title": "Pages",
+          "type": "array"
+        },
+        "total_alerts": {
+          "minimum": 1,
+          "title": "Total Alerts",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "month",
+        "total_alerts",
+        "pages"
+      ],
+      "title": "AlertArchiveMonth",
+      "type": "object"
+    },
+    "AlertArchivePageRef": {
+      "properties": {
+        "byte_size": {
+          "minimum": 1,
+          "title": "Byte Size",
+          "type": "integer"
+        },
+        "count": {
+          "maximum": 250,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "coverage_end": {
+          "title": "Coverage End",
+          "type": "string"
+        },
+        "coverage_start": {
+          "title": "Coverage Start",
+          "type": "string"
+        },
+        "page": {
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "page",
+        "count",
+        "byte_size",
+        "sha256",
+        "coverage_start",
+        "coverage_end"
+      ],
+      "title": "AlertArchivePageRef",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "collection_generation_id": {
+      "title": "Collection Generation Id",
+      "type": "string"
+    },
+    "first_available_date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "First Available Date"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "last_available_date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Last Available Date"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "months": {
+      "items": {
+        "$ref": "#/$defs/AlertArchiveMonth"
+      },
+      "title": "Months",
+      "type": "array"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "total_alerts": {
+      "minimum": 0,
+      "title": "Total Alerts",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "collection_generation_id",
+    "first_available_date",
+    "last_available_date",
+    "total_alerts",
+    "months"
+  ],
+  "title": "AlertArchiveIndex",
+  "type": "object"
+}
