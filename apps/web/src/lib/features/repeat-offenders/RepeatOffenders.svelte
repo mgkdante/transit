@@ -7,8 +7,8 @@
   the sections must not: the getRepeatOffenders resource, the codec-seeded grain +
   worst-N state (seeded from ?grain/?n via $lib/filters, clamped to the populated
   grains, mirrored back to the URL), the ONE mapping pass through the pure
-  offenderLadder selector, the Masthead + FreshnessStamp + the sticky
-  SurfaceControls rail, the ExplainedMetricCard headline, and the honest absence.
+  offenderLadder selector, the ArticleHeader + combined controls/contents rail,
+  the article-card registry, and the honest absence.
   RepeatOffendersSection is a pure presenter fed one built ladder + tray per kind.
 
   RANKING (DECISIONS D3): the bar encodes each entity's SEVERE-DELAY RATE on the
@@ -20,7 +20,7 @@
 
   GRAINS (DECISIONS D3): week|month ONLY — "repeat" is undefined on a single day, so
   there is deliberately no day grain (an honest reason, not an omission). A grain is
-  offered iff the payload serves a populated ladder for it.
+  always visible in the control and is disabled when the payload does not serve it.
 
   FALLBACK (DECISIONS D5): when by_grain is absent/empty (an OLD payload) the surface
   renders the legacy scalar offenders[] as a RankedRow ledger on the ABSOLUTE
@@ -32,25 +32,48 @@
   re-derived client-side (DECISIONS D4). All prose comes from ./repeatOffenders.copy.
 -->
 <script lang="ts">
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceKind, type SurfaceTarget } from '$lib/nav';
 	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
+	import { describeAbsence } from '$lib/site/absence';
+	import { fmtCount, fmtDelayMin, fmtDelayMin as sharedFmtDelayMin, fmtPct } from '$lib/utils';
+	import { formatUtc } from '$lib/utils/time';
 	import { getRepeatOffenders, type RepeatOffenderEntry, type Offender } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { ResourceBoundary, FreshnessStamp, SurfaceControls } from '$lib/components/surface';
-	import { Surface, DashboardGrid } from '$lib/components/layout';
-	import { Separator } from '$lib/components/ui/separator';
+	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
+	import { ResourceBoundary, GrainPicker, type GrainSegment } from '$lib/components/surface';
+	import {
+		ArticleHeader,
+		DashboardGrid,
+		DetailShell,
+		type ArticleMetaEntry,
+	} from '$lib/components/layout';
 	import { AbsentValue } from '$lib/components/edge';
+	import {
+		CollapsibleSection,
+		TocNav,
+		TypedInformationCard,
+		reconcileActiveToc,
+		revealTocTarget,
+		type TocEntry,
+	} from '$lib/components/shared';
+	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { persisted } from '$lib/stores';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
-	import Masthead from '$lib/components/brand/Masthead.svelte';
 	import { DELAY_DIST_DOMAIN } from '$lib/features/reliability/domains';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
+	import type {
+		SurfaceRailContext,
+		SurfaceRailPresentation,
+	} from '$lib/components/surface/SurfaceRail.svelte';
 
 	import {
 		presentGrains,
@@ -59,14 +82,61 @@
 		OFFENDER_GRAINS,
 		type OffenderGrainKey,
 	} from './data/presentGrains';
-	import { worstNCap, DEFAULT_WORST_N } from './data/ladderCap';
-	import { selectOffenderLadder } from './selectors/offenderLadder';
+	import {
+		worstNCap,
+		DEFAULT_WORST_N,
+		worstNSegments as buildWorstNSegments,
+		SMALLEST_WORST_N,
+	} from './data/ladderCap';
+	import { selectOffenderLadder, type OffenderPopoverEvidence } from './selectors/offenderLadder';
 	import { buildOffenderLedger } from './selectors/offenderLedger';
 	import RepeatOffendersSection from './sections/RepeatOffendersSection.svelte';
 	import { copy as COPY } from './repeatOffenders.copy';
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
+	const railOpen = {
+		controls: persisted('repeat-offenders-controls', true),
+		toc: persisted('repeat-offenders-toc', true),
+	};
+	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
+		railOpen[key].value = next;
+	}
+	function setAllRailOpen(next: boolean): void {
+		setRailOpen('controls', next);
+		setRailOpen('toc', next);
+	}
+
+	let railSignalsReady = $state(false);
+	let lastRailCloseSignal = quietModeStore.closeSignal;
+	let lastRailOpenSignal = quietModeStore.openSignal;
+	onMount(() => {
+		let cancelled = false;
+		void (async () => {
+			await tick();
+			if (cancelled) return;
+			lastRailCloseSignal = quietModeStore.closeSignal;
+			lastRailOpenSignal = quietModeStore.openSignal;
+			if (quietModeStore.enabled) setAllRailOpen(false);
+			railSignalsReady = true;
+		})();
+		return () => {
+			cancelled = true;
+		};
+	});
+	$effect(() => {
+		const closeSignal = quietModeStore.closeSignal;
+		const openSignal = quietModeStore.openSignal;
+		if (!railSignalsReady) return;
+		if (closeSignal !== lastRailCloseSignal) {
+			lastRailCloseSignal = closeSignal;
+			setAllRailOpen(false);
+		}
+		if (openSignal !== lastRailOpenSignal) {
+			lastRailOpenSignal = openSignal;
+			setAllRailOpen(true);
+		}
+	});
 
 	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
 	// /metrics#<anchor>. The ladder ranks by the SEVERE-delay rate, so the (i) explains
@@ -97,16 +167,32 @@
 		})(),
 	);
 
-	const grainAvailability = $derived<Partial<Record<OffenderGrainKey, { available: boolean }>>>(
-		Object.fromEntries(OFFENDER_GRAINS.map((g) => [g, { available: present.has(g) }])),
-	);
 	const grainLabels = $derived<Partial<Record<OffenderGrainKey, string>>>({
 		week: t.grain.week,
 		month: t.grain.month,
 	});
-	// The grain picker is a dead control when only one grain carries data — render it
-	// ONLY when more than one grain is populated.
-	const showGrainPicker = $derived(present.size > 1);
+	const uid = $props.id();
+	const disabledReason = $derived(describeAbsence('no-observations', locale).why);
+	const grainSegments = $derived<GrainSegment<OffenderGrainKey>[]>(
+		OFFENDER_GRAINS.map((key) => {
+			const available = present.has(key);
+			return {
+				key,
+				label: grainLabels[key] ?? key,
+				available,
+				...(available ? {} : { describedById: `${uid}-reason-${key}`, title: disabledReason }),
+			};
+		}),
+	);
+	function grainSegmentsFor(
+		presentation: SurfaceRailPresentation,
+	): GrainSegment<OffenderGrainKey>[] {
+		return grainSegments.map((segment) =>
+			segment.describedById
+				? { ...segment, describedById: `${segment.describedById}-${presentation}` }
+				: segment,
+		);
+	}
 
 	// Keep the selection on a POPULATED grain (the clamp): a chosen grain whose ladder
 	// is absent falls back to the richest present grain. Never a dead/empty grain.
@@ -117,6 +203,7 @@
 	/* ── worst-N cap (codec ?n) ───────────────────────────────────────────────────── */
 	let worstN = $state<WorstN>(fromSearchParams(page.url.searchParams).worstN ?? DEFAULT_WORST_N);
 	const cap = $derived(worstNCap(worstN));
+	const worstSegments = $derived<GrainSegment<WorstN>[]>(buildWorstNSegments(t.worstN.all));
 
 	// Mirror grain + worst-N together in ONE replaceState (week default + default N →
 	// omitted for a clean canonical URL).
@@ -159,6 +246,63 @@
 		if (e.observation_count != null) parts.push(`${t.note.samples}=${e.observation_count}`);
 		return parts.join(' · ');
 	}
+	function tapPopoverFor(
+		entry: RepeatOffenderEntry,
+		href: string | null,
+		evidence: OffenderPopoverEvidence,
+	): ChartDatumPopoverModel {
+		const heading = entry.route_name ?? unnamed(entry);
+		const rows: Array<{ label: string; value: string }> = [];
+		const severe = fmtPct(entry.severe_pct, { locale, suffix: t.units.pct });
+		if (severe != null) rows.push({ label: t.ladder.severeRateLabel, value: severe });
+		if (evidence.wilsonLo != null && evidence.wilsonHi != null) {
+			const lower = fmtPct(evidence.wilsonLo, { locale, suffix: t.units.pct });
+			const upper = fmtPct(evidence.wilsonHi, { locale, suffix: t.units.pct });
+			if (lower != null && upper != null) {
+				rows.push({ label: t.ladder.ci, value: `${lower}–${upper}` });
+			}
+		}
+		rows.push({
+			label: t.chart.popover.recurrence,
+			value:
+				entry.recurrence_days != null && entry.observed_days != null
+					? t.recurrence.naturalFrequency(entry.recurrence_days, entry.observed_days)
+					: t.recurrence.unknown,
+		});
+		const averageDelay = fmtDelayMin(entry.avg_delay_min, {
+			rounding: 'auto',
+			locale,
+			suffix: t.units.min,
+		});
+		if (averageDelay != null) {
+			rows.push({ label: t.chart.popover.averageDelay, value: averageDelay });
+		}
+		const readings = fmtCount(entry.observation_count, { locale });
+		if (readings != null) rows.push({ label: t.chart.popover.readings, value: readings });
+
+		return {
+			key: `${entry.type}-${entry.id}-${entry.route ?? ''}`,
+			heading,
+			meta: t.tray.rowSubtitle(
+				entry.type === 'trip'
+					? t.type.trip
+					: entry.type === 'vehicle'
+						? t.type.vehicle
+						: t.type.other,
+				entry.id,
+			),
+			rows,
+			...(href
+				? {
+						action: {
+							href,
+							label: t.chart.popover.viewLine,
+							ariaLabel: t.viewDetail(heading),
+						},
+					}
+				: {}),
+		};
+	}
 
 	const activeLadder = $derived(ladders.get(grainKey));
 
@@ -175,6 +319,7 @@
 			note: ladderNote,
 			unnamed,
 			href: hrefFor,
+			tapPopover: tapPopoverFor,
 		});
 		return { ...res, total: total ?? res.total };
 	}
@@ -237,7 +382,7 @@
 	const vehicleRecurrence = $derived(recurrenceLinesFor('vehicle'));
 
 	// The un-ranked tray rows (sub-MIN_N entities) mapped to the section's display shape,
-	// split by kind so each tab shows only its own kind's tray.
+	// split by kind so each article card shows only its own kind's tray.
 	function trayFor(kind: 'trip' | 'vehicle') {
 		return (activeLadder?.tray ?? [])
 			.filter((e) => e.type === kind)
@@ -307,161 +452,375 @@
 	// BOTH are empty.
 	const hasGrains = $derived(present.size > 0);
 	const hasLegacy = $derived((offenders.data?.offenders?.length ?? 0) > 0);
+	const isEmpty = $derived(!hasGrains && !hasLegacy);
+	const showCombinedRail = $derived(
+		offenders.settled && offenders.data != null && (hasGrains || hasLegacy),
+	);
+	const showWorstN = $derived(
+		hasGrains && (tripLadder.total > SMALLEST_WORST_N || vehicleLadder.total > SMALLEST_WORST_N),
+	);
+	const controlsSummary = $derived(hasGrains ? (grainLabels[grainKey] ?? '') : '');
+
+	const sectionDefs = $derived([
+		{
+			id: 'repeat-worst',
+			sectionKey: 'repeat-card-worst',
+			number: 1,
+			title: t.cards.worst.title,
+			subtitle: t.cards.worst.subtitle,
+			present: hasGrains || hasLegacy,
+		},
+		{
+			id: 'repeat-trips',
+			sectionKey: 'repeat-card-trips',
+			number: 2,
+			title: t.cards.trips.title,
+			subtitle: t.cards.trips.subtitle,
+			present: hasGrains && (tripLadder.shown > 0 || tripTray.length > 0),
+		},
+		{
+			id: 'repeat-vehicles',
+			sectionKey: 'repeat-card-vehicles',
+			number: 3,
+			title: t.cards.vehicles.title,
+			subtitle: t.cards.vehicles.subtitle,
+			present: hasGrains && (vehicleLadder.shown > 0 || vehicleTray.length > 0),
+		},
+	]);
+	const tocEntries = $derived<TocEntry[]>(
+		sectionDefs
+			.filter((section) => section.present)
+			.map((section) => ({
+				id: section.id,
+				title: section.title,
+				level: 2,
+				badge: { kind: 'number' as const, value: section.number },
+				children: [],
+			})),
+	);
+	const openableAnchors = $derived(new Set(tocEntries.map((entry) => entry.id)));
+	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
+		const entries: ArticleMetaEntry[] = [];
+		if (generatedUtc) {
+			entries.push({
+				text: formatUtc(generatedUtc, locale),
+				datetime: generatedUtc,
+				label: t.asOf,
+			});
+		}
+		if (tocEntries.length > 0) entries.push(t.article.sections(tocEntries.length));
+		return entries;
+	});
+
+	let activeId = $state('');
+	let cardOpenSignals = $state<Record<string, number>>({});
+	let navigationGeneration = 0;
+	let previousTocIds: string[] = [];
+	function openCard(id: string): void {
+		cardOpenSignals = {
+			...cardOpenSignals,
+			[id]: (cardOpenSignals[id] ?? 0) + 1,
+		};
+	}
+	function cardOpenSignal(id: string): number {
+		return quietModeStore.openSignal + (cardOpenSignals[id] ?? 0);
+	}
+	async function navigate(id: string): Promise<void> {
+		const generation = ++navigationGeneration;
+		await revealTocTarget(id, {
+			beforeReveal: openableAnchors.has(id) ? openCard : undefined,
+			isCurrent: () => generation === navigationGeneration,
+			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
+		});
+	}
+	$effect(() => {
+		const next = tocEntries.map((entry) => entry.id);
+		activeId = reconcileActiveToc(activeId, previousTocIds, next);
+		previousTocIds = next;
+	});
 </script>
 
-<Surface class="repeat-offenders">
-	<Masthead kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
-		{#snippet meta()}
-			<FreshnessStamp variant="updated" {generatedUtc} {locale} />
-		{/snippet}
-	</Masthead>
+<DetailShell
+	class="repeat-offenders-detail"
+	bind:activeId
+	{tocEntries}
+	combinedRailConfig={showCombinedRail
+		? {
+				label: t.rail.label,
+				summary: controlsSummary,
+				openAria: t.rail.open,
+				closeAria: t.rail.close,
+			}
+		: undefined}
+>
+	{#snippet articleHeader()}
+		<ArticleHeader
+			watermark={t.article.watermark}
+			category={t.kicker}
+			title={t.heading}
+			tags={t.article.tags}
+			tagsAria={t.article.tagsAria}
+			backHref={localizeHref('/', locale)}
+			backLabel={t.article.back}
+			meta={articleMeta}
+			metaPending={offenders.loading || !offenders.settled}
+			titleId="repeat-offenders-title"
+		>
+			{#snippet controls()}
+				<QuietModeButton />
+			{/snippet}
+		</ArticleHeader>
+	{/snippet}
 
-	<!-- The boundary gates skeleton / error / (no-file) empty. A PUBLISHED file that
-	     populates neither a grain ladder NOR a scalar offender is a legitimate "nothing
-	     is a repeat offender right now" reading, so we render that honest note. -->
-	<ResourceBoundary
-		resource={offenders}
-		lang={locale}
-		isEmpty={(d) => (d.by_grain?.length ?? 0) === 0 && (d.offenders?.length ?? 0) === 0}
-	>
+	{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
+		{@const presentedGrainSegments = grainSegmentsFor(presentation)}
 		{#if hasGrains}
-			<section class="repeat-offenders-region" aria-label={t.heading}>
-				<!-- §C5.12 #1-OFFENDER HERO: the actual worst entity is the hero (name + streak
-				     + Wilson-bounded severe rate), so the page opens on the accountability payoff,
-				     not a definition. The definition demotes to a lede + (i) beneath it. -->
-				<div class="offenders-hero" data-slot="offenders-hero" aria-label={t.hero.label}>
-					{#if topOffender && heroName != null}
-						<span class="offenders-hero-overline">{t.hero.overline}</span>
-						{#if heroHref}
-							<a class="offenders-hero-name" href={heroHref}>{heroName}</a>
-						{:else}
-							<span class="offenders-hero-name">{heroName}</span>
-						{/if}
-						{#if heroRate}
-							<p class="offenders-hero-rate">{heroRate}</p>
-						{/if}
-						{#if heroStreak}
-							<p class="offenders-hero-streak">
-								<span class="offenders-hero-streak-label">{t.hero.streakLabel}</span>
-								{heroStreak}
-							</p>
-						{/if}
-					{:else}
-						<p class="offenders-hero-none">{t.hero.none}</p>
-					{/if}
-				</div>
-
-				<!-- The definition, DEMOTED to a lede + (i) (was the value=null hero). -->
-				<p class="offenders-def" data-slot="offenders-def">
-					{t.headline.explanation}
-					<MetricInfo
-						tip={severeInfo.tip}
-						href={severeInfo.href}
-						label={severeInfo.label}
-						linkLabel={severeInfo.linkLabel}
-						side="bottom"
-					/>
-				</p>
-
-				{#if showGrainPicker}
-					<SurfaceControls
-						offered={OFFENDER_GRAINS}
-						availability={grainAvailability}
+			<CollapsibleSection
+				title={t.rail.controls}
+				bind:open={() => railOpen.controls.value, (next) => setRailOpen('controls', next)}
+			>
+				<div class="repeat-control-body" data-slot="controls-body">
+					<GrainPicker
+						segments={presentedGrainSegments}
 						bind:value={grainKey}
-						minPoints={1}
-						labels={grainLabels}
-						grainLabel={t.grain.label}
-						railLabel={t.viewControlsLabel}
-						sticky
-						{locale}
+						label={t.grain.label}
 					/>
-					<Separator variant="hazard" hazardSize="sm" />
-				{/if}
-
-				<RepeatOffendersSection
-					heading={t.ladder.heading}
-					{tripLadder}
-					{vehicleLadder}
-					{tripTray}
-					{vehicleTray}
-					{tripRecurrence}
-					{vehicleRecurrence}
-					{windowCaption}
-					info={severeInfo}
-					bind:worstN
-					{locale}
-					copy={t}
-				/>
-
-				<!-- Honest caveat: an observed-days recurrence proxy, not a certified scorecard. -->
-				<p class="repeat-offenders-caveat" data-slot="offenders-caveat">{t.caveat}</p>
-			</section>
-		{:else if hasLegacy}
-			<!-- FALLBACK: the legacy scalar ledger on the ABSOLUTE delay domain. -->
-			<div class="repeat-offenders-block">
-				<SectionHeading level={2} overline={t.listSection}>
-					{#snippet explainer()}
-						<MetricInfo
-							tip={severeInfo.tip}
-							href={severeInfo.href}
-							label={severeInfo.label}
-							linkLabel={severeInfo.linkLabel}
-							side="bottom"
-						/>
-					{/snippet}
-				</SectionHeading>
-				<p class="repeat-offenders-caption">{t.rowCaption}</p>
-				<DashboardGrid
-					as="ul"
-					minTile="360px"
-					gutter={false}
-					class="repeat-offenders-ranked"
-					aria-label={t.listSummary}
-				>
-					{#each legacyRows as row (row.key)}
-						<li class="repeat-offenders-item">
-							<a
-								class="repeat-offenders-link"
-								href={row.href}
-								data-sveltekit-preload-data="hover"
-								data-slot="offender-link"
-								aria-label={row.ariaLabel}
+					{#each presentedGrainSegments as segment (segment.key)}
+						{#if segment.describedById}
+							<span
+								id={segment.describedById}
+								class="repeat-grain-reason"
+								data-slot="controls-reason"
 							>
-								<RankedRow
-									bare
-									rank={row.rank}
-									title={row.title}
-									subtitle={row.subtitle}
-									severity={row.severity}
-									value={row.value}
-									domain={DELAY_DIST_DOMAIN}
-									unit={t.units.min}
-									display={row.display}
-									absentReason="no-observations"
-									{locale}
-								/>
-							</a>
-						</li>
+								{disabledReason}
+							</span>
+						{/if}
 					{/each}
-				</DashboardGrid>
-				<p class="repeat-offenders-caveat" data-slot="offenders-caveat">{t.caveat}</p>
-			</div>
-		{:else}
-			<!-- Published but empty: no grain ladder, no scalar offender. Honest note. -->
-			<div class="repeat-offenders-note" data-slot="offenders-empty">
-				<AbsentValue variant="block" reason="no-observations" {locale} />
+					{#if showWorstN}
+						<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
+					{/if}
+					<p class="repeat-window" data-slot="active-window" aria-live="polite">
+						{windowCaption}
+					</p>
+				</div>
+			</CollapsibleSection>
+		{/if}
+		{#if tocEntries.length > 0}
+			<div class="repeat-rail-toc" data-slot="section-toc">
+				<TocNav
+					entries={tocEntries}
+					{activeId}
+					heading={t.rail.toc}
+					counterPrefix={t.rail.counterPrefix}
+					bind:open={() => railOpen.toc.value, (next) => setRailOpen('toc', next)}
+					onNavigate={(id) => {
+						closeSheet();
+						void navigate(id);
+					}}
+				/>
 			</div>
 		{/if}
-	</ResourceBoundary>
-</Surface>
+	{/snippet}
+
+	{#snippet center()}
+		<ResourceBoundary resource={offenders} lang={locale}>
+			{#if isEmpty}
+				<div class="repeat-offenders-note" data-slot="offenders-empty">
+					<AbsentValue variant="block" reason="no-observations" {locale} />
+				</div>
+			{:else}
+				<div class="repeat-offenders-sections" data-slot="repeat-offenders-sections">
+					{#each sectionDefs as section (section.id)}
+						{#if section.present}
+							<CollapsibleSection
+								title={section.title}
+								subtitle={section.subtitle}
+								headerVariant="article-summary"
+								anchor={section.id}
+								sectionKey={section.sectionKey}
+								index={section.number - 1}
+								open={true}
+								closeSignal={quietModeStore.closeSignal}
+								openSignal={cardOpenSignal(section.id)}
+								bulkCollapsed={quietModeStore.enabled}
+							>
+								{#if section.id === 'repeat-worst' && hasGrains}
+									<div class="repeat-offenders-article-prose">
+										<p class="repeat-offenders-lede">{t.lede}</p>
+										<div
+											class="offenders-hero"
+											data-slot="offenders-hero"
+											aria-label={t.hero.label}
+										>
+											{#if topOffender && heroName != null}
+												<span class="offenders-hero-overline">{t.hero.overline}</span>
+												{#if heroHref}
+													<a class="offenders-hero-name" href={heroHref}>{heroName}</a>
+												{:else}
+													<span class="offenders-hero-name">{heroName}</span>
+												{/if}
+												{#if heroRate}
+													<p class="offenders-hero-rate">{heroRate}</p>
+												{/if}
+												{#if heroStreak}
+													<p class="offenders-hero-streak">
+														<span class="offenders-hero-streak-label">{t.hero.streakLabel}</span>
+														{heroStreak}
+													</p>
+												{/if}
+											{:else}
+												<p class="offenders-hero-none">{t.hero.none}</p>
+											{/if}
+										</div>
+										<p class="offenders-def" data-slot="offenders-def">
+											{t.headline.explanation}
+											<MetricInfo
+												tip={severeInfo.tip}
+												href={severeInfo.href}
+												label={severeInfo.label}
+												linkLabel={severeInfo.linkLabel}
+												side="bottom"
+											/>
+										</p>
+										<TypedInformationCard kind="caveat" label={t.caveatLabel}>
+											<p>{t.caveat}</p>
+										</TypedInformationCard>
+									</div>
+								{:else if section.id === 'repeat-worst'}
+									<div class="repeat-offenders-block">
+										<SectionHeading level={3} overline={t.listSection}>
+											{#snippet explainer()}
+												<MetricInfo
+													tip={severeInfo.tip}
+													href={severeInfo.href}
+													label={severeInfo.label}
+													linkLabel={severeInfo.linkLabel}
+													side="bottom"
+												/>
+											{/snippet}
+										</SectionHeading>
+										<p class="repeat-offenders-caption">{t.rowCaption}</p>
+										<DashboardGrid
+											as="ul"
+											minTile="360px"
+											gutter={false}
+											class="repeat-offenders-ranked"
+											aria-label={t.listSummary}
+										>
+											{#each legacyRows as row (row.key)}
+												<li class="repeat-offenders-item">
+													<a
+														class="repeat-offenders-link"
+														href={row.href}
+														data-sveltekit-preload-data="hover"
+														data-slot="offender-link"
+														aria-label={row.ariaLabel}
+													>
+														<RankedRow
+															bare
+															rank={row.rank}
+															title={row.title}
+															subtitle={row.subtitle}
+															severity={row.severity}
+															value={row.value}
+															domain={DELAY_DIST_DOMAIN}
+															unit={t.units.min}
+															display={row.display}
+															absentReason="no-observations"
+															{locale}
+														/>
+													</a>
+												</li>
+											{/each}
+										</DashboardGrid>
+										<TypedInformationCard kind="caveat" label={t.caveatLabel}>
+											<p>{t.caveat}</p>
+										</TypedInformationCard>
+									</div>
+								{:else if section.id === 'repeat-trips'}
+									<RepeatOffendersSection
+										heading={t.ladder.heading}
+										ladder={tripLadder}
+										tray={tripTray}
+										recurrence={tripRecurrence}
+										{windowCaption}
+										info={severeInfo}
+										{locale}
+										copy={t}
+									/>
+								{:else}
+									<RepeatOffendersSection
+										heading={t.ladder.heading}
+										ladder={vehicleLadder}
+										tray={vehicleTray}
+										recurrence={vehicleRecurrence}
+										{windowCaption}
+										info={severeInfo}
+										{locale}
+										copy={t}
+									/>
+								{/if}
+							</CollapsibleSection>
+						{/if}
+					{/each}
+				</div>
+			{/if}
+		</ResourceBoundary>
+	{/snippet}
+</DetailShell>
 
 <style>
-	.repeat-offenders-region {
+	.repeat-control-body {
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
-		max-width: var(--container-wide);
-		margin-inline: auto;
+		align-items: stretch;
+		gap: 0.75rem;
+		min-width: 0;
+	}
+	.repeat-control-body :global([data-slot='grain-picker']) {
+		min-width: 0;
+		flex-wrap: wrap;
+	}
+	.repeat-grain-reason {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+	.repeat-window {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		line-height: 1.5;
+		color: var(--muted-foreground);
+	}
+	.repeat-rail-toc {
+		margin-top: 0.25rem;
+	}
+	.repeat-offenders-sections {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-card-gap);
+		min-width: 0;
+	}
+	.repeat-offenders-article-prose {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+		min-width: 0;
+		color: var(--foreground);
+		font-size: var(--text-detail-body-mobile);
+		line-height: 1.8;
+	}
+	.repeat-offenders-lede {
+		margin: 0;
+		font-size: var(--text-detail-lede-mobile);
+		line-height: 1.65;
 	}
 	/* §C5.12 #1-offender hero — a solid card (occlusion law) leading with the worst
 	   entity's name, its Wilson-bounded severe rate + its streak. */
@@ -558,16 +917,12 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
-	.repeat-offenders-caption,
-	.repeat-offenders-caveat {
+	.repeat-offenders-caption {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.4;
 		color: var(--muted-foreground);
-	}
-	.repeat-offenders-caveat {
-		max-width: 52ch;
 	}
 	/* The honest empty state wraps the styled AbsentValue block; the container centers it. */
 	.repeat-offenders-note {

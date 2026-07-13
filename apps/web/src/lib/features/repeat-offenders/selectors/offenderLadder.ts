@@ -16,10 +16,20 @@
 // grain serves no ranked entry.
 
 import type { Locale } from '$lib/i18n';
-import type { AbsenceSpec, MagnitudeBarsSpec, MagnitudeDatum } from '$lib/components/dataviz/chart';
+import type {
+	AbsenceSpec,
+	ChartDatumPopoverModel,
+	MagnitudeBarsSpec,
+	MagnitudeDatum,
+} from '$lib/components/dataviz/chart';
 import { SEVERE_DOMAIN } from '$lib/features/reliability/domains';
 import { severeShareToSeverity } from '$lib/features/reliability/shiftGrains';
 import type { RepeatOffenderEntry } from '$lib/v1/schemas';
+
+export interface OffenderPopoverEvidence {
+	readonly wilsonLo: number | null;
+	readonly wilsonHi: number | null;
+}
 
 /** Localized labels + link/note builders the pure selector needs (no runes here). */
 export interface OffenderLadderLabels {
@@ -37,6 +47,12 @@ export interface OffenderLadderLabels {
 	unnamed: (e: RepeatOffenderEntry) => string;
 	/** Build the drill link for an entity (its offending route); null when no route maps. */
 	href: (e: RepeatOffenderEntry) => string | null;
+	/** Optional localized touch/pen detail model; omitted keeps the direct-navigation default. */
+	tapPopover?: (
+		entry: RepeatOffenderEntry,
+		href: string | null,
+		evidence: OffenderPopoverEvidence,
+	) => ChartDatumPopoverModel;
 }
 
 export interface OffenderLadderResult {
@@ -93,6 +109,8 @@ export function selectOffenderLadder(
 
 	const rows: MagnitudeDatum[] = top.map((e) => {
 		const href = labels.href(e);
+		const wilsonLo = severeCiLo(e);
+		const wilsonHi = severeCiHi(e);
 		return {
 			key: `${e.type}-${e.id}-${e.route ?? ''}`,
 			label: e.route_name ?? labels.unnamed(e),
@@ -101,9 +119,12 @@ export function selectOffenderLadder(
 			severity: severeShareToSeverity(e.severe_pct ?? null),
 			n: e.observation_count ?? null,
 			// CI flipped onto the bar's (severe-rate) scale so it brackets the value (see helpers).
-			wilsonLo: severeCiLo(e),
-			wilsonHi: severeCiHi(e),
+			wilsonLo,
+			wilsonHi,
 			note: labels.note(e),
+			...(labels.tapPopover
+				? { tapPopover: labels.tapPopover(e, href, { wilsonLo, wilsonHi }) }
+				: {}),
 			...(href ? { href } : {}),
 		};
 	});

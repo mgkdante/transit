@@ -8,14 +8,36 @@
 // is flagged (natural-frequency recurrence), never dramatizes it. Absence strings
 // carry NO em-dash.
 //
-// S14 grows the primary by_grain path (grain rail, trip|vehicle tabs, the worst-N
-// ladder, the natural-frequency recurrence line, the tray) while KEEPING the legacy
+// S14 grows the primary by_grain path (combined rail, stacked trip/vehicle cards,
+// worst-N ladders, natural-frequency evidence, and trays) while KEEPING the legacy
 // ledger fields (the fallback path reads the same recurrence / type / caveat copy).
 
 import type { Locale } from '$lib/i18n';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export interface RepeatOffendersCopy extends SurfaceHeadCopy {
+	readonly article: {
+		readonly watermark: string;
+		readonly back: string;
+		readonly tagsAria: string;
+		readonly tags: readonly string[];
+		readonly sections: (count: number) => string;
+	};
+	readonly asOf: string;
+	readonly rail: {
+		readonly label: string;
+		readonly open: string;
+		readonly close: string;
+		readonly controls: string;
+		readonly toc: string;
+		readonly counterPrefix: string;
+	};
+	readonly cards: {
+		readonly worst: { readonly title: string; readonly subtitle: string };
+		readonly trips: { readonly title: string; readonly subtitle: string };
+		readonly vehicles: { readonly title: string; readonly subtitle: string };
+	};
+	readonly caveatLabel: string;
 	/** Rail overline (e.g. "View" / "Vue") + the grain radiogroup label. */
 	readonly viewControlsLabel: string;
 	readonly grain: {
@@ -67,6 +89,14 @@ export interface RepeatOffendersCopy extends SurfaceHeadCopy {
 		readonly severeRateLabel: string;
 		/** Wilson-interval label surfaced in the tooltip + sr-only table. */
 		readonly ci: string;
+	};
+	readonly chart: {
+		readonly popover: {
+			readonly recurrence: string;
+			readonly averageDelay: string;
+			readonly readings: string;
+			readonly viewLine: string;
+		};
 	};
 	/** The natural-frequency recurrence line per row ("late-prone on N of M observed days"). */
 	readonly recurrence: {
@@ -130,6 +160,37 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 		heading: 'Repeat offenders',
 		subheading: '// RÉCIDIVISTES',
 		lede: 'The trips and vehicles that run severely late on day after day, ranked worst first by how reliably they slip. We never invent data: an absent reading shows as “no data”, never a fabricated zero.',
+		article: {
+			watermark: 'Repeat',
+			back: '← Back to the dashboard',
+			tagsAria: 'Page keywords',
+			tags: ['offenders', 'trips', 'vehicles', 'recurrence'],
+			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
+		},
+		asOf: 'AS OF',
+		rail: {
+			label: 'View & contents',
+			open: 'Open view controls and contents',
+			close: 'Close view controls and contents',
+			controls: 'View controls',
+			toc: 'On this page',
+			counterPrefix: 'SEC',
+		},
+		cards: {
+			worst: {
+				title: 'Worst repeat offender',
+				subtitle: 'The current worst repeat offender, its severe rate, and its streak',
+			},
+			trips: {
+				title: 'Trips',
+				subtitle: 'Trips ranked by repeated severe lateness across observed days',
+			},
+			vehicles: {
+				title: 'Vehicles',
+				subtitle: 'Vehicles ranked by repeated severe lateness across observed days',
+			},
+		},
+		caveatLabel: 'Caveat',
 		viewControlsLabel: 'View',
 		grain: {
 			label: 'Window',
@@ -162,6 +223,14 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 			heading: 'Worst offenders',
 			severeRateLabel: 'Severe-delay rate',
 			ci: '95% CI',
+		},
+		chart: {
+			popover: {
+				recurrence: 'Recurrence',
+				averageDelay: 'Average delay',
+				readings: 'Readings',
+				viewLine: 'View line',
+			},
 		},
 		recurrence: {
 			naturalFrequency: (lateDays, observedDays) =>
@@ -203,6 +272,37 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 		heading: 'Récidivistes',
 		subheading: '// REPEAT OFFENDERS',
 		lede: 'Les voyages et les véhicules qui accumulent les retards graves jour après jour, classés du pire au moins pire selon la régularité de leurs ratés. On n’invente jamais de données : une lecture absente s’affiche « aucune donnée », jamais un zéro fabriqué.',
+		article: {
+			watermark: 'Récidive',
+			back: '← Retour au tableau de bord',
+			tagsAria: 'Mots-clés de la page',
+			tags: ['récidivistes', 'voyages', 'véhicules', 'récurrence'],
+			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
+		},
+		asOf: 'À JOUR AU',
+		rail: {
+			label: 'Vue et sommaire',
+			open: 'Ouvrir les commandes et le sommaire',
+			close: 'Fermer les commandes et le sommaire',
+			controls: 'Commandes de vue',
+			toc: 'Sur cette page',
+			counterPrefix: 'SEC',
+		},
+		cards: {
+			worst: {
+				title: 'Pire récidiviste',
+				subtitle: 'Le pire récidiviste actuel, son taux de retards graves et sa série',
+			},
+			trips: {
+				title: 'Voyages',
+				subtitle: 'Voyages classés selon la répétition des retards graves sur les jours observés',
+			},
+			vehicles: {
+				title: 'Véhicules',
+				subtitle: 'Véhicules classés selon la répétition des retards graves sur les jours observés',
+			},
+		},
+		caveatLabel: 'Mise en garde',
 		viewControlsLabel: 'Vue',
 		grain: {
 			label: 'Fenêtre',
@@ -236,9 +336,17 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 			severeRateLabel: 'Taux de retards graves',
 			ci: 'IC à 95 %',
 		},
+		chart: {
+			popover: {
+				recurrence: 'Récurrence',
+				averageDelay: 'Retard moyen',
+				readings: 'Relevés',
+				viewLine: 'Voir la ligne',
+			},
+		},
 		recurrence: {
 			naturalFrequency: (lateDays, observedDays) =>
-				`Sujet aux retards ${lateDays} jours sur ${observedDays} observés`,
+				`Sujet aux retards ${lateDays} ${lateDays === 1 ? 'jour' : 'jours'} sur ${observedDays} ${observedDays === 1 ? 'observé' : 'observés'}`,
 			unknown: 'récurrence non consignée',
 		},
 		note: {

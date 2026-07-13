@@ -1,10 +1,30 @@
-import { render, screen, fireEvent } from '@testing-library/svelte';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, within, fireEvent, waitFor, act } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IsoUtc, Receipt, ReceiptsIndex } from '$lib/v1/schemas';
+import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import AccountabilityReceipt from './AccountabilityReceipt.svelte';
 
+let reconciliationIntersectionCallback: IntersectionObserverCallback | undefined;
+
+class ReconciliationIntersectionObserver {
+	readonly root = null;
+	readonly rootMargin = '';
+	readonly thresholds: readonly number[] = [];
+
+	constructor(callback: IntersectionObserverCallback) {
+		reconciliationIntersectionCallback = callback;
+	}
+
+	observe(): void {}
+	unobserve(): void {}
+	disconnect(): void {}
+	takeRecords(): IntersectionObserverEntry[] {
+		return [];
+	}
+}
+
 // The index of published receipt dates (ascending, as the contract publishes).
-// The screen reverses it → the most recent day (Jun 17) is the seeded default.
+// The latest enabled entry (Jun 17) is the seeded default.
 let indexData: ReceiptsIndex = {
 	generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
 	dates: ['2026-06-15', '2026-06-16', '2026-06-17'],
@@ -27,6 +47,55 @@ let receiptData: Receipt | null = {
 	worst_route: { id: '161', name: 'Van Horne', otp_delta_pts: -8 },
 	worst_stop: { id: '57191', name: 'Rockland', avg_delay_min: 6.1 },
 };
+
+function withAllCuts(base: Receipt = receiptData as Receipt): Receipt {
+	return {
+		...base,
+		by_shift: [
+			{
+				shift: 'pm_peak',
+				severe_pct: 11.1,
+				observation_count: 180,
+				severe_count: 20,
+				avg_delay_min: 8,
+			},
+		],
+		service_states: {
+			scheduled_trip_days: 100,
+			delivered_trip_days: 80,
+			cancelled_trip_days: 5,
+			silent_trip_days: 15,
+			not_reported_route_count: 2,
+			service_completeness_pct: 80,
+			not_reported_routes: [{ id: '51', name: 'Édouard-Montpetit', scheduled_trip_days: 12 }],
+		},
+	};
+}
+
+function card(container: HTMLElement, id: string): HTMLElement {
+	return container.querySelector(`[data-toc="${id}"]`) as HTMLElement;
+}
+
+function cardTrigger(container: HTMLElement, id: string): HTMLButtonElement {
+	return card(container, id).querySelector(
+		'h2.section-heading > button.section-header',
+	) as HTMLButtonElement;
+}
+
+function resetReceiptState(): void {
+	for (const key of [
+		'receipt-card-main',
+		'receipt-card-time',
+		'receipt-card-delivered',
+		'receipt-card-silent',
+	]) {
+		sessionStorage.removeItem(`transit.persisted:${key}`);
+	}
+	sessionStorage.removeItem('transit.persisted:receipt-controls');
+	sessionStorage.removeItem('transit.persisted:receipt-toc');
+	localStorage.removeItem('transit:quiet-mode');
+	quietModeStore.resetForTest();
+}
 
 // Mock $lib/v1 with a clean factory (importing the real barrel pulls the full
 // module graph incl. $app/environment, which jsdom can't boot). The two getters
@@ -74,6 +143,8 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 }));
 
 beforeEach(async () => {
+	resetReceiptState();
+	Element.prototype.scrollIntoView = vi.fn();
 	indexData = {
 		generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
 		dates: ['2026-06-15', '2026-06-16', '2026-06-17'],
@@ -98,6 +169,318 @@ beforeEach(async () => {
 	// the synchronous stub only matters for the test's render timing).
 	vi.mocked(v1.getReceiptsIndex).mockImplementation(() => indexData as never);
 	vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
+});
+
+afterEach(resetReceiptState);
+
+describe('AccountabilityReceipt article shell', () => {
+	it('renders one article heading and only the exact two shared reading controls', async () => {
+		const { container } = render(AccountabilityReceipt);
+		expect(
+			await screen.findAllByRole('heading', { level: 1, name: 'Accountability receipt' }),
+		).toHaveLength(1);
+		const controls = screen.getByTestId('quiet-mode-controls');
+		expect(within(controls).getAllByRole('button')).toHaveLength(2);
+		expect(within(controls).getByRole('button', { name: /Collapse all/ })).toBeInTheDocument();
+		expect(container.querySelector('[data-slot="detail-shell"]')).not.toBeNull();
+	});
+
+	it('puts the availability-bound day picker and four-entry TOC in one combined rail', async () => {
+		const v1 = await import('$lib/v1');
+		receiptData = withAllCuts();
+		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
+		const { container } = render(AccountabilityReceipt);
+		await screen.findByText('82%');
+
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		expect(rail).not.toBeNull();
+		const input = within(rail).getByLabelText('Receipt day') as HTMLInputElement;
+		expect(input.min).toBe('2026-06-15');
+		expect(input.max).toBe('2026-06-17');
+		for (const name of [
+			'The receipt',
+			'By time of day',
+			'Service delivered',
+			'Scheduled but never appeared',
+		]) {
+			expect(within(rail).getByRole('button', { name })).toBeInTheDocument();
+		}
+
+		const ids = ['receipt-main', 'receipt-time', 'receipt-delivered', 'receipt-silent'];
+		expect(
+			ids.map((id) =>
+				card(container, id).querySelector('[data-slot="badge"]')?.textContent?.trim(),
+			),
+		).toEqual(['01', '02', '03', '04']);
+	});
+
+	it('stands optional cards and TOC entries down together while retaining fixed numbers', async () => {
+		const v1 = await import('$lib/v1');
+		receiptData = {
+			...withAllCuts(),
+			by_shift: undefined,
+		};
+		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
+		const { container } = render(AccountabilityReceipt);
+		await screen.findByText('82%');
+
+		expect(container.querySelector('[data-toc="receipt-time"]')).toBeNull();
+		expect(
+			container.querySelector('[data-toc="receipt-delivered"] [data-slot="badge"]'),
+		).toHaveTextContent('03');
+		expect(
+			container.querySelector('[data-toc="receipt-silent"] [data-slot="badge"]'),
+		).toHaveTextContent('04');
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		expect(within(rail).queryByRole('button', { name: 'By time of day' })).toBeNull();
+		expect(within(rail).getByRole('button', { name: 'Service delivered' })).toBeInTheDocument();
+		expect(
+			within(rail).getByRole('button', { name: 'Scheduled but never appeared' }),
+		).toBeInTheDocument();
+	});
+
+	it('applies the delivered and silent gates independently to each card and TOC entry', async () => {
+		const v1 = await import('$lib/v1');
+		const base = receiptData as Receipt;
+		receiptData = {
+			...base,
+			service_states: {
+				scheduled_trip_days: 100,
+				delivered_trip_days: 80,
+				cancelled_trip_days: 5,
+				silent_trip_days: 15,
+				service_completeness_pct: 80,
+				not_reported_route_count: 0,
+				not_reported_routes: [],
+			},
+		};
+		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
+		const deliveredOnly = render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		let rail = deliveredOnly.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		expect(card(deliveredOnly.container, 'receipt-delivered')).not.toBeNull();
+		expect(deliveredOnly.container.querySelector('[data-toc="receipt-silent"]')).toBeNull();
+		expect(within(rail).getByRole('button', { name: 'Service delivered' })).toBeInTheDocument();
+		expect(within(rail).queryByRole('button', { name: 'Scheduled but never appeared' })).toBeNull();
+		deliveredOnly.unmount();
+		resetReceiptState();
+
+		receiptData = {
+			...base,
+			service_states: {
+				scheduled_trip_days: null,
+				delivered_trip_days: null,
+				cancelled_trip_days: null,
+				silent_trip_days: null,
+				service_completeness_pct: null,
+				not_reported_route_count: 1,
+				not_reported_routes: [{ id: '51', name: 'Édouard-Montpetit', scheduled_trip_days: 12 }],
+			},
+		};
+		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
+		const silentOnly = render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		rail = silentOnly.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		expect(silentOnly.container.querySelector('[data-toc="receipt-delivered"]')).toBeNull();
+		expect(card(silentOnly.container, 'receipt-silent')).not.toBeNull();
+		expect(within(rail).queryByRole('button', { name: 'Service delivered' })).toBeNull();
+		expect(
+			within(rail).getByRole('button', { name: 'Scheduled but never appeared' }),
+		).toBeInTheDocument();
+	});
+
+	it('Collapse all and Expand all cover every currently rendered receipt card', async () => {
+		const v1 = await import('$lib/v1');
+		receiptData = withAllCuts();
+		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
+		const { container } = render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		const ids = ['receipt-main', 'receipt-time', 'receipt-delivered', 'receipt-silent'];
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const railTriggers = [
+			within(rail).getByRole('button', { name: 'Day' }),
+			within(rail).getByRole('button', { name: 'On this page' }),
+		];
+
+		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		for (const id of ids)
+			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		for (const trigger of railTriggers) expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		for (const id of ids)
+			expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'true');
+	});
+
+	it('persists the Day and TOC disclosures independently across a remount', async () => {
+		const v1 = await import('$lib/v1');
+		receiptData = withAllCuts();
+		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
+		const first = render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		const firstRail = first.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const firstDay = within(firstRail).getByRole('button', { name: 'Day' });
+		const firstToc = within(firstRail).getByRole('button', { name: 'On this page' });
+		await fireEvent.click(firstDay);
+		await fireEvent.click(firstToc);
+		await fireEvent.click(firstToc);
+		expect(firstDay).toHaveAttribute('aria-expanded', 'false');
+		expect(firstToc).toHaveAttribute('aria-expanded', 'true');
+		first.unmount();
+
+		const second = render(AccountabilityReceipt);
+		const secondRail = second.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		await waitFor(() =>
+			expect(within(secondRail).getByRole('button', { name: 'Day' })).toHaveAttribute(
+				'aria-expanded',
+				'false',
+			),
+		);
+		expect(within(secondRail).getByRole('button', { name: 'On this page' })).toHaveAttribute(
+			'aria-expanded',
+			'true',
+		);
+		expect(sessionStorage.getItem('transit.persisted:receipt-controls')).toBe('false');
+		expect(sessionStorage.getItem('transit.persisted:receipt-toc')).toBe('true');
+	});
+
+	it('Always start collapsed initializes both rail disclosures and every current card closed', async () => {
+		const v1 = await import('$lib/v1');
+		receiptData = withAllCuts();
+		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
+		localStorage.setItem('transit:quiet-mode', 'true');
+		const { container } = render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		await waitFor(() => {
+			expect(within(rail).getByRole('button', { name: 'Day' })).toHaveAttribute(
+				'aria-expanded',
+				'false',
+			);
+			expect(within(rail).getByRole('button', { name: 'On this page' })).toHaveAttribute(
+				'aria-expanded',
+				'false',
+			);
+			for (const id of ['receipt-main', 'receipt-time', 'receipt-delivered', 'receipt-silent']) {
+				expect(cardTrigger(container, id)).toHaveAttribute('aria-expanded', 'false');
+			}
+		});
+		expect(localStorage.getItem('transit:quiet-mode')).toBe('true');
+	});
+
+	it('a late optional card mounted by a date change adopts remembered collapsed mode', async () => {
+		const v1 = await import('$lib/v1');
+		localStorage.setItem('transit:quiet-mode', 'true');
+		const base = receiptData as Receipt;
+		const byDate: Record<string, Receipt> = {
+			'2026-06-17': base,
+			'2026-06-16': withAllCuts({ ...base, date: '2026-06-16' }),
+		};
+		vi.mocked(v1.getReceipt).mockImplementation(((date: string) => byDate[date] as never) as never);
+		const { container } = render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		expect(container.querySelector('[data-toc="receipt-time"]')).toBeNull();
+
+		await fireEvent.change(screen.getByLabelText('Receipt day'), {
+			target: { value: '2026-06-16' },
+		});
+		await waitFor(() =>
+			expect(cardTrigger(container, 'receipt-time')).toHaveAttribute('aria-expanded', 'false'),
+		);
+	});
+
+	it('opens a closed TOC target before scrolling without opening another card', async () => {
+		const v1 = await import('$lib/v1');
+		receiptData = withAllCuts();
+		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
+		const { container } = render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		const statesAtScroll: Array<{ time: string | null; main: string | null }> = [];
+		Element.prototype.scrollIntoView = vi.fn(() => {
+			statesAtScroll.push({
+				time: cardTrigger(container, 'receipt-time').getAttribute('aria-expanded'),
+				main: cardTrigger(container, 'receipt-main').getAttribute('aria-expanded'),
+			});
+		});
+		await fireEvent.click(cardTrigger(container, 'receipt-main'));
+		await fireEvent.click(cardTrigger(container, 'receipt-time'));
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		await fireEvent.click(within(rail).getByRole('button', { name: 'By time of day' }));
+		await waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalledOnce());
+		expect(statesAtScroll).toEqual([{ time: 'true', main: 'false' }]);
+	});
+
+	it('reconciles an active Silent destination to the nearest surviving receipt card', async () => {
+		const v1 = await import('$lib/v1');
+		const base = receiptData as Receipt;
+		const byDate: Record<string, Receipt> = {
+			'2026-06-17': withAllCuts(base),
+			'2026-06-16': {
+				...base,
+				date: '2026-06-16',
+				service_states: {
+					scheduled_trip_days: 100,
+					delivered_trip_days: 80,
+					cancelled_trip_days: 5,
+					silent_trip_days: 15,
+					service_completeness_pct: 80,
+					not_reported_route_count: 0,
+					not_reported_routes: [],
+				},
+			},
+		};
+		vi.mocked(v1.getReceipt).mockImplementation(((date: string) => byDate[date] as never) as never);
+		reconciliationIntersectionCallback = undefined;
+		vi.stubGlobal('IntersectionObserver', ReconciliationIntersectionObserver);
+
+		try {
+			const { container } = render(AccountabilityReceipt);
+			await waitFor(() => expect(reconciliationIntersectionCallback).toBeDefined());
+			await act(() =>
+				reconciliationIntersectionCallback!(
+					[
+						{
+							isIntersecting: true,
+							target: card(container, 'receipt-silent'),
+						} as unknown as IntersectionObserverEntry,
+					],
+					{} as IntersectionObserver,
+				),
+			);
+			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+			expect(
+				within(rail).getByRole('button', { name: 'Scheduled but never appeared' }),
+			).toHaveAttribute('aria-current', 'location');
+
+			await fireEvent.change(within(rail).getByLabelText('Receipt day'), {
+				target: { value: '2026-06-16' },
+			});
+			await waitFor(() => {
+				expect(container.querySelector('[data-toc="receipt-silent"]')).toBeNull();
+				expect(within(rail).getByRole('button', { name: 'Service delivered' })).toHaveAttribute(
+					'aria-current',
+					'location',
+				);
+			});
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it('never renders stale cards from the previously selected receipt while a new day resolves', async () => {
+		const v1 = await import('$lib/v1');
+		receiptData = withAllCuts();
+		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
+		const { container } = render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		expect(card(container, 'receipt-time')).not.toBeNull();
+
+		await fireEvent.change(screen.getByLabelText('Receipt day'), {
+			target: { value: '2026-06-16' },
+		});
+		await waitFor(() => expect(container.querySelector('[data-toc="receipt-time"]')).toBeNull());
+		expect(container.querySelector('[data-toc="receipt-main"]')).toBeNull();
+	});
 });
 
 describe('AccountabilityReceipt headline + counts', () => {

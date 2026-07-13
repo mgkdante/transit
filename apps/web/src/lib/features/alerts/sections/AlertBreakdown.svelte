@@ -3,10 +3,10 @@
 
   A pure view over the three pre-built {@link BreakdownRow} lists. The magnitude bar
   rides the dataviz severity scale (RankedRow owns it); --primary stays interactive-
-  only. Each distribution stands DOWN on its own {#if} when its bucket list is empty;
-  when NO distribution was published the block renders the ONE styled honest-absence
-  chip, never a silent vanish. All logic (bucket filtering, label resolution) lives in
-  the orchestrator; this file only tiles the rows.
+	  only. Each distribution stands DOWN on its own {#if} when its bucket list is empty;
+	  a published dimension narrowed to zero by current filters renders the ONE styled
+	  honest-absence chip, never a silent vanish. All logic (bucket filtering, label
+	  resolution) lives in the orchestrator; this file only tiles the rows.
 -->
 <script lang="ts">
 	import type { AlertHistoryCopy } from '../alerts.copy';
@@ -44,13 +44,11 @@
 </script>
 
 <div class="alert-history-block" data-slot="alert-breakdown">
-	<SectionHeading level={2} overline={copy.breakdown.section} />
 	{#if !hasBreakdown}
-		<!-- HONEST ABSENCE: the archive carries alerts but no published
-		     cause/effect/severity distribution. Say so with the styled chip, never a blank. -->
+		<!-- The analytical dimension is published, but the current filters match no rows. -->
 		<AbsentValue variant="block" reason="no-observations" {locale} />
 	{:else}
-		<DashboardGrid minTile="240px" gutter={false}>
+		<DashboardGrid minTile="240px" gutter={false} class="alert-breakdown-grid">
 			{#if causeRows.length > 0}
 				<div class="alert-history-dist">
 					<SectionHeading level={3} overline={copy.breakdown.byCause} explainer={causeInfo} />
@@ -111,6 +109,14 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+	}
+	.alert-history-block :global(.alert-breakdown-grid) {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	@media (min-width: 1024px) {
+		.alert-history-block :global(.alert-breakdown-grid) {
+			grid-template-columns: repeat(auto-fit, minmax(min(var(--min-tile), 100%), 1fr));
+		}
 	}
 	/* Each cause / effect / severity distribution is a quiet bordered tile that fills
 	   its DashboardGrid cell. Chrome only (--card bg, --border) — never a data mark;

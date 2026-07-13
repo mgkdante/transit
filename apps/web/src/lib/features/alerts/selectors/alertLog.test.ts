@@ -16,6 +16,7 @@ import {
 	deriveSpan,
 	enumerateDates,
 	medianOf,
+	summarizeAlertBreakdown,
 	toBreakdownRows,
 } from './alertLog';
 
@@ -30,6 +31,8 @@ type LooseEntry = {
 	end_utc?: string | null;
 	duration_min?: number | null;
 	impact_passages?: number | null;
+	cause?: string | null;
+	effect?: string | null;
 	active_periods?: Array<{ start_utc?: string | null; end_utc?: string | null }>;
 };
 const entry = (over: LooseEntry): AlertHistoryEntry =>
@@ -241,6 +244,71 @@ describe('medianOf', () => {
 		expect(medianOf([3, 1, 2])).toBe(2);
 		expect(medianOf([1, 2, 3, 4])).toBe(2.5);
 		expect(medianOf([])).toBeNull();
+	});
+});
+
+describe('summarizeAlertBreakdown', () => {
+	const filteredEntries = [
+		entry({ id: 'a', cause: 'weather', effect: 'delay', severity: 'high', duration_min: 10 }),
+		entry({ id: 'b', cause: 'weather', effect: 'delay', severity: 'high', duration_min: 30 }),
+		entry({ id: 'c', cause: '  ', effect: null, severity: 'unexpected', duration_min: Infinity }),
+		entry({ id: 'd', cause: 'weather', effect: ' ', severity: 'critical', duration_min: 20 }),
+		entry({ id: 'e', cause: null, effect: 'detour', severity: null, duration_min: NaN }),
+	];
+
+	it('counts supplied entries by cause, effect, and banded severity', () => {
+		const summary = summarizeAlertBreakdown(filteredEntries);
+
+		expect(summary.by_cause).toEqual([
+			{ key: 'weather', count: 3, median_duration_min: 20 },
+			{ key: 'unknown', count: 2, median_duration_min: null },
+		]);
+		expect(summary.by_effect).toEqual([
+			{ key: 'delay', count: 2, median_duration_min: 20 },
+			{ key: 'unknown', count: 2, median_duration_min: 20 },
+			{ key: 'detour', count: 1, median_duration_min: null },
+		]);
+		expect(summary.by_severity).toEqual([
+			{ key: 'high', count: 2, median_duration_min: 20 },
+			{ key: 'watch', count: 2, median_duration_min: null },
+			{ key: 'critical', count: 1, median_duration_min: 20 },
+		]);
+	});
+
+	it('groups blank cause/effect as unknown and uses only finite bucket durations', () => {
+		const summary = summarizeAlertBreakdown([
+			entry({ id: 'blank', cause: ' ', effect: '', severity: 'watch', duration_min: Infinity }),
+			entry({ id: 'null', cause: null, effect: null, severity: 'watch', duration_min: 12 }),
+		]);
+
+		expect(summary.by_cause).toEqual([{ key: 'unknown', count: 2, median_duration_min: 12 }]);
+		expect(summary.by_effect).toEqual([{ key: 'unknown', count: 2, median_duration_min: 12 }]);
+	});
+
+	it('returns empty distributions for an empty filtered set', () => {
+		expect(summarizeAlertBreakdown([])).toEqual({
+			by_cause: [],
+			by_effect: [],
+			by_severity: [],
+		});
+	});
+
+	it('changes counts with the supplied subset instead of leaking a server aggregate', () => {
+		const all = summarizeAlertBreakdown(filteredEntries);
+		const narrowed = summarizeAlertBreakdown([filteredEntries[0], filteredEntries[3]]);
+
+		expect(all.by_cause[0]).toMatchObject({ key: 'weather', count: 3 });
+		expect(narrowed).toEqual({
+			by_cause: [{ key: 'weather', count: 2, median_duration_min: 15 }],
+			by_effect: [
+				{ key: 'delay', count: 1, median_duration_min: 10 },
+				{ key: 'unknown', count: 1, median_duration_min: 20 },
+			],
+			by_severity: [
+				{ key: 'high', count: 1, median_duration_min: 10 },
+				{ key: 'critical', count: 1, median_duration_min: 20 },
+			],
+		});
 	});
 });
 

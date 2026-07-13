@@ -1,24 +1,20 @@
 <!--
   AccountabilityReceipt — the /receipt surface ORCHESTRATOR (S13 re-seat).
 
-  A daily accountability "receipt" rendered in the brand TerminalPanel window frame
-  (WEB4 — the receipt metaphor STAYS): a SMART availability-aware single-date calendar
-  picks the day, driving a per-date fetch of one day's receipt, composed as receipt
-  line-groups —
+  A daily accountability article whose primary card preserves the brand TerminalPanel
+  receipt metaphor. A SMART availability-aware single-date calendar in the combined
+  rail picks the day, driving a per-date fetch composed as fixed, conditional cards —
     · headline figures  — on-time %, average delay, severe share, rider impact;
     · affected counts   — lines / stops / alerts touched on the day;
     · worst of the day   — worst line (→ /lines/[id]) + worst stop (→ /stop/[id]);
-  and the S13 re-granulated cuts, which sit BELOW the frame (a documented WEB4 hoist —
-  a ranked ladder / share-bar list / silent-lines list genuinely breaks the compact
-  terminal-tile metaphor, so they render as their own line-groups under the receipt):
+  and the S13 re-granulated cuts in their own article cards:
     · by time of day    — severe-delay share ranked by shift (absolute SEVERE_DOMAIN);
     · service delivered  — the ONE completeness number + delivered/cancelled/silent split;
     · scheduled but never appeared — the not-reported lines list (silent, not cancelled).
 
-  This file is a THIN orchestrator: the two createResource resources, the codec-seeded
-  ?date + the availability index, a bare ControlsRail hosting the single-date picker,
-  and the section mount order. All formatting + section markup live in ./selectors,
-  ./data, and ./sections — no inline transforms here.
+  This file owns the two resources, codec-seeded ?date, stale-date guard, combined rail,
+  conditional card/TOC registry, and shared reading/navigation signals. Formatting and
+  receipt truth remain in ./selectors, ./data, and ./sections.
 
   HONESTY: null/absent → the localized styled honest-absence chip, NEVER a fabricated 0;
   a 404 (getReceipt → null) or an empty index → the localized empty state. The new cuts
@@ -27,13 +23,14 @@
   picker; every magnitude mark reads an ABSOLUTE domain literal (chart-doctrine).
 -->
 <script lang="ts">
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
-	import { getLocale, type Locale } from '$lib/i18n';
+	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeNameFallback, stopNameFallback } from '$lib/site/absence';
 	import { fromSearchParams } from '$lib/filters';
 	import { layout } from '$lib/nav';
 	import { mirrorSearchParam } from '$lib/site/urlMirror';
-	import { formatDateKey } from '$lib/utils/time';
+	import { formatDateKey, formatUtc } from '$lib/utils/time';
 	import {
 		fmtCount as sharedFmtCount,
 		fmtDelayMin as sharedFmtDelayMin,
@@ -42,10 +39,21 @@
 	import { shiftLabel } from '$lib/features/reliability/shiftGrains';
 	import { getReceiptsIndex, getReceipt, type Receipt } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { ResourceBoundary, DateRangePicker, FreshnessStamp } from '$lib/components/surface';
-	import { Masthead } from '$lib/components/brand';
-	import { Surface, ControlsRail } from '$lib/components/layout';
-	import { Separator } from '$lib/components/ui/separator';
+	import { ResourceBoundary, DateRangePicker } from '$lib/components/surface';
+	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
+	import {
+		CollapsibleSection,
+		TocNav,
+		TypedInformationCard,
+		reconcileActiveToc,
+		revealTocTarget,
+		type TocEntry,
+	} from '$lib/components/shared';
+	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { persisted } from '$lib/stores';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+	import type { SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import { EdgeState } from '$lib/components/edge';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import {
@@ -74,6 +82,48 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
+	const railOpen = {
+		controls: persisted('receipt-controls', true),
+		toc: persisted('receipt-toc', true),
+	};
+	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
+		railOpen[key].value = next;
+	}
+	function setAllRailOpen(next: boolean): void {
+		setRailOpen('controls', next);
+		setRailOpen('toc', next);
+	}
+
+	let railSignalsReady = $state(false);
+	let lastRailCloseSignal = quietModeStore.closeSignal;
+	let lastRailOpenSignal = quietModeStore.openSignal;
+	onMount(() => {
+		let cancelled = false;
+		void (async () => {
+			await tick();
+			if (cancelled) return;
+			lastRailCloseSignal = quietModeStore.closeSignal;
+			lastRailOpenSignal = quietModeStore.openSignal;
+			if (quietModeStore.enabled) setAllRailOpen(false);
+			railSignalsReady = true;
+		})();
+		return () => {
+			cancelled = true;
+		};
+	});
+	$effect(() => {
+		const closeSignal = quietModeStore.closeSignal;
+		const openSignal = quietModeStore.openSignal;
+		if (!railSignalsReady) return;
+		if (closeSignal !== lastRailCloseSignal) {
+			lastRailCloseSignal = closeSignal;
+			setAllRailOpen(false);
+		}
+		if (openSignal !== lastRailOpenSignal) {
+			lastRailOpenSignal = openSignal;
+			setAllRailOpen(true);
+		}
+	});
 
 	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
 	// /metrics#<anchor>, wired onto every KPI + section heading (same wiring as RouteDetail).
@@ -131,7 +181,16 @@
 		() => (selectedDate ? getReceipt(selectedDate) : Promise.resolve(null)),
 		{ freshness: true },
 	);
-	const generatedUtc = $derived(receipt.data?.generated_utc ?? null);
+	const receiptReady = $derived(
+		selectedDate !== '' &&
+			receipt.settled &&
+			!receipt.loading &&
+			receipt.error == null &&
+			receipt.data != null &&
+			receipt.data.date === selectedDate,
+	);
+	const currentReceipt = $derived(receiptReady ? receipt.data : null);
+	const generatedUtc = $derived(currentReceipt?.generated_utc ?? null);
 
 	// ── Formatters (null on no-data → the styled honest-absence chip; a real 0 stays 0) ──
 	const fmtPct = (v: number | null | undefined) => sharedFmtPct(v, { suffix: t.units.pct });
@@ -153,8 +212,8 @@
 
 	// ── Section view-models (pure selectors) ─────────────────────────────────────────
 	const headlineKpis = $derived(
-		receipt.data
-			? selectHeadlineKpis(receipt.data, {
+		currentReceipt
+			? selectHeadlineKpis(currentReceipt, {
 					onTime: t.metrics.onTime,
 					avgDelay: t.metrics.avgDelay,
 					severe: t.metrics.severe,
@@ -167,8 +226,8 @@
 			: [],
 	);
 	const affectedCounts = $derived(
-		receipt.data
-			? selectAffectedCounts(receipt.data, {
+		currentReceipt
+			? selectAffectedCounts(currentReceipt, {
 					routes: t.counts.routes,
 					stops: t.counts.stops,
 					alerts: t.counts.alerts,
@@ -178,7 +237,7 @@
 			: [],
 	);
 	const worst = $derived(
-		selectWorstOfDay(receipt.data ?? { worst_route: null, worst_stop: null }, {
+		selectWorstOfDay(currentReceipt ?? { worst_route: null, worst_stop: null }, {
 			routeName: (id, name) => name ?? routeNameFallback(id, locale),
 			stopName: (id, name) => name ?? stopNameFallback(id, locale),
 			routeLabel: t.worst.routeLabel,
@@ -190,10 +249,10 @@
 		}),
 	);
 	const timeOfDay = $derived(
-		selectReceiptTimeOfDay(receipt.data?.by_shift, { shiftLabel: (s) => shiftLabel(s, locale) }),
+		selectReceiptTimeOfDay(currentReceipt?.by_shift, { shiftLabel: (s) => shiftLabel(s, locale) }),
 	);
 	const stateCuts = $derived(
-		selectStateCuts(receipt.data?.service_states, {
+		selectStateCuts(currentReceipt?.service_states, {
 			delivered: t.stateCuts.delivered,
 			cancelled: t.stateCuts.cancelled,
 			silent: t.stateCuts.silent,
@@ -206,7 +265,7 @@
 	// line drops that clause; and when the S13 completeness cut stands down (ramp-in) the
 	// sentence SAYS so ("service completeness not yet available") instead of inventing one.
 	const dayVerdict = $derived.by<string | null>(() => {
-		const r = receipt.data;
+		const r = currentReceipt;
 		if (r == null) return null;
 		if (r.otp_pct == null) return t.dayVerdict.none;
 		const clauses: string[] = [t.dayVerdict.otp(`${r.otp_pct}${t.units.pct}`)];
@@ -229,7 +288,7 @@
 	});
 
 	const notReported = $derived(
-		selectNotReportedLines(receipt.data?.service_states, {
+		selectNotReportedLines(currentReceipt?.service_states, {
 			routeName: (id, name) => name ?? routeNameFallback(id, locale),
 			rowLabel: t.notReported.rowLabel,
 			href: (id) => `/lines/${id}`,
@@ -237,30 +296,148 @@
 			fmtScheduled: (v) => (v == null ? null : t.notReported.scheduled(v)),
 		}),
 	);
+
+	const sectionDefs = $derived([
+		{
+			id: 'receipt-main',
+			sectionKey: 'receipt-card-main',
+			number: 1,
+			title: t.cards.main.title,
+			subtitle: t.cards.main.subtitle,
+			present: currentReceipt != null,
+		},
+		{
+			id: 'receipt-time',
+			sectionKey: 'receipt-card-time',
+			number: 2,
+			title: t.cards.time.title,
+			subtitle: t.cards.time.subtitle,
+			present: currentReceipt != null && timeOfDay.hasTimeOfDay,
+		},
+		{
+			id: 'receipt-delivered',
+			sectionKey: 'receipt-card-delivered',
+			number: 3,
+			title: t.cards.delivered.title,
+			subtitle: t.cards.delivered.subtitle,
+			present: currentReceipt != null && stateCuts.hasData,
+		},
+		{
+			id: 'receipt-silent',
+			sectionKey: 'receipt-card-silent',
+			number: 4,
+			title: t.cards.silent.title,
+			subtitle: t.cards.silent.subtitle,
+			present: currentReceipt != null && notReported.hasData,
+		},
+	]);
+	const tocEntries = $derived<TocEntry[]>(
+		sectionDefs
+			.filter((section) => section.present)
+			.map((section) => ({
+				id: section.id,
+				title: section.title,
+				level: 2,
+				badge: { kind: 'number' as const, value: section.number },
+				children: [],
+			})),
+	);
+	const openableAnchors = $derived(new Set(tocEntries.map((entry) => entry.id)));
+	const railSummary = $derived(selectedDate ? formatDateKey(selectedDate, locale) : '');
+	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
+		const entries: ArticleMetaEntry[] = [];
+		if (generatedUtc) {
+			entries.push({
+				text: formatUtc(generatedUtc, locale),
+				datetime: generatedUtc,
+				label: t.article.generatedLabel,
+			});
+		}
+		if (selectedDate) {
+			entries.push({ text: formatDateKey(selectedDate, locale), label: t.article.selectedLabel });
+		}
+		if (tocEntries.length > 0) entries.push(t.article.sections(tocEntries.length));
+		return entries;
+	});
+	const metaPending = $derived(
+		index.loading ||
+			!index.settled ||
+			(selectedDate !== '' && (receipt.loading || !receipt.settled)),
+	);
+
+	let activeId = $state('');
+	let cardOpenSignals = $state<Record<string, number>>({});
+	let navigationGeneration = 0;
+	let previousTocIds: string[] = [];
+	function openCard(id: string): void {
+		cardOpenSignals = {
+			...cardOpenSignals,
+			[id]: (cardOpenSignals[id] ?? 0) + 1,
+		};
+	}
+	function cardOpenSignal(id: string): number {
+		return quietModeStore.openSignal + (cardOpenSignals[id] ?? 0);
+	}
+	async function navigate(id: string): Promise<void> {
+		const generation = ++navigationGeneration;
+		await revealTocTarget(id, {
+			beforeReveal: openableAnchors.has(id) ? openCard : undefined,
+			isCurrent: () => generation === navigationGeneration,
+			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
+		});
+	}
+	$effect(() => {
+		const next = tocEntries.map((entry) => entry.id);
+		const settledEmpty =
+			selectedDate !== '' &&
+			receipt.settled &&
+			!receipt.loading &&
+			receipt.error == null &&
+			receipt.data == null;
+		if (next.length === 0 && !settledEmpty) return;
+		activeId = reconcileActiveToc(activeId, previousTocIds, next);
+		previousTocIds = next;
+	});
 </script>
 
-<Surface class="receipt">
-	<Masthead kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
-		{#snippet meta()}
-			<FreshnessStamp variant="updated" {generatedUtc} {locale} />
-		{/snippet}
-	</Masthead>
+<DetailShell
+	class="receipt-detail"
+	bind:activeId
+	{tocEntries}
+	combinedRailConfig={hasDates
+		? {
+				label: t.rail.label,
+				summary: railSummary,
+				openAria: t.rail.open,
+				closeAria: t.rail.close,
+			}
+		: undefined}
+>
+	{#snippet articleHeader()}
+		<ArticleHeader
+			watermark={t.article.watermark}
+			category={t.kicker}
+			title={t.heading}
+			tags={t.article.tags}
+			tagsAria={t.article.tagsAria}
+			backHref={localizeHref('/', locale)}
+			backLabel={t.article.back}
+			meta={articleMeta}
+			{metaPending}
+			titleId="receipt-title"
+		>
+			{#snippet controls()}
+				<QuietModeButton />
+			{/snippet}
+		</ArticleHeader>
+	{/snippet}
 
-	<!-- Discovery index → smart date picker. We DON'T hand the boundary an `isEmpty`:
-	     an empty index has a SPECIFIC honest message (`emptyIndex`), so the boundary
-	     only gates skeleton/error/no-file. -->
-	<ResourceBoundary resource={index} lang={locale}>
-		{#if !hasDates}
-			<p class="receipt-note" data-slot="receipt-empty-index">{t.emptyIndex}</p>
-		{:else}
-			<!-- The smart single-date calendar lives in a bare ControlsRail (quiet infra
-			     panel) ABOVE the frame — the receipt is NOT a multi-grain surface, so a
-			     bare rail hosts ONLY the availability-bound picker; --primary stays on the
-			     interactive control. It's a native calendar bounded (min/max) to the
-			     published span (earliest→latest); an interior gap-day is still pickable
-			     but resolves HONESTLY through the receipt's own absent-day path — never a
-			     fabricated reading (WEB3). -->
-			<ControlsRail label={t.controlsLabel} class="receipt-controls">
+	{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
+		<CollapsibleSection
+			title={t.rail.controls}
+			bind:open={() => railOpen.controls.value, (next) => setRailOpen('controls', next)}
+		>
+			<div class="receipt-controls" data-slot="receipt-controls">
 				<DateRangePicker
 					mode="single"
 					bind:date={selectedDate}
@@ -276,114 +453,180 @@
 						single: t.datePicker.label,
 					}}
 				/>
-			</ControlsRail>
+			</div>
+		</CollapsibleSection>
+		{#if tocEntries.length > 0}
+			<div class="receipt-rail-toc" data-slot="section-toc">
+				<TocNav
+					entries={tocEntries}
+					{activeId}
+					heading={t.rail.toc}
+					counterPrefix={t.rail.counterPrefix}
+					bind:open={() => railOpen.toc.value, (next) => setRailOpen('toc', next)}
+					onNavigate={(id) => {
+						closeSheet();
+						void navigate(id);
+					}}
+				/>
+			</div>
+		{/if}
+	{/snippet}
 
-			<Separator variant="hazard" hazardSize="sm" />
-
-			<!-- The per-date receipt. We branch explicitly rather than via ResourceBoundary
-			     because a 404 surfaces as a loaded `null` the boundary can't tell from
-			     "not yet loaded" — so a null receipt gets the SPECIFIC empty-receipt copy. -->
-			{#if receipt.error}
+	{#snippet center()}
+		<ResourceBoundary resource={index} lang={locale}>
+			{#if !hasDates}
+				<p class="receipt-note" data-slot="receipt-empty-index">{t.emptyIndex}</p>
+			{:else if receipt.error}
 				<EdgeState
 					variant="error-v1"
 					lang={locale}
 					layout={edgeLayout}
 					onRetry={() => receipt.reload()}
 				/>
-			{:else if receipt.loading || !receipt.settled}
+			{:else if !selectedDate || receipt.loading || !receipt.settled || (receipt.data != null && !receiptReady)}
 				<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
 			{:else if receipt.data == null}
 				<p class="receipt-note" data-slot="receipt-empty">{t.emptyReceipt}</p>
 			{:else}
 				{@const r = receipt.data}
-				<TerminalPanel
-					title={t.terminalTitle}
-					tag={t.terminalTag}
-					status={formatDateKey(r.date, locale)}
-					footerItems={[{ label: t.issuedLabel, value: formatDateKey(r.date, locale) }]}
-				>
-					<!-- The receipt's readout blocks tile into a fluid board (multi-column
-					     desktop, one column mobile). The worst tile stands DOWN entirely when
-					     the receipt carries no worst line/stop — the grid reflows past it. -->
-					<div class="receipt-frame" data-slot="receipt-frame">
-						<!-- §C5.11: the day-verdict sentence on the headline — the day in one line,
-						     templated from the receipt's own numbers (honest stand-down, no fabricated
-						     baseline). -->
-						{#if dayVerdict}
-							<p
-								class="receipt-day-verdict"
-								data-slot="receipt-day-verdict"
-								aria-label={t.dayVerdict.label}
+				<div class="receipt-sections" data-slot="receipt-sections">
+					{#each sectionDefs as section (section.id)}
+						{#if section.present}
+							<CollapsibleSection
+								title={section.title}
+								subtitle={section.subtitle}
+								headerVariant="article-summary"
+								anchor={section.id}
+								sectionKey={section.sectionKey}
+								index={section.number - 1}
+								open={true}
+								closeSignal={quietModeStore.closeSignal}
+								openSignal={cardOpenSignal(section.id)}
+								bulkCollapsed={quietModeStore.enabled}
 							>
-								{dayVerdict}
-							</p>
+								{#if section.id === 'receipt-main'}
+									<div class="receipt-main-body">
+										<TerminalPanel
+											title={t.terminalTitle}
+											tag={t.terminalTag}
+											status={formatDateKey(r.date, locale)}
+											footerItems={[{ label: t.issuedLabel, value: formatDateKey(r.date, locale) }]}
+										>
+											<div class="receipt-frame" data-slot="receipt-frame">
+												{#if dayVerdict}
+													<p
+														class="receipt-day-verdict"
+														data-slot="receipt-day-verdict"
+														aria-label={t.dayVerdict.label}
+													>
+														{dayVerdict}
+													</p>
+												{/if}
+												<div
+													class="receipt-layout"
+													class:no-worst={!worst.hasWorst}
+													data-slot="receipt-layout"
+												>
+													<SectionHeadline
+														kpis={headlineKpis}
+														heading={t.receiptSection}
+														noData={t.noData}
+														headingLevel={3}
+														{info}
+														{locale}
+													/>
+													<SectionAffected
+														counts={affectedCounts}
+														heading={t.countsSection}
+														headingLevel={3}
+														{info}
+														{locale}
+													/>
+													{#if worst.hasWorst}
+														<SectionWorst
+															{worst}
+															heading={t.worstSection}
+															headingLevel={3}
+															{info}
+															{locale}
+														/>
+													{/if}
+												</div>
+											</div>
+										</TerminalPanel>
+										<TypedInformationCard kind="caveat" label={t.caveatLabel}>
+											<p>{t.caveat}</p>
+										</TypedInformationCard>
+									</div>
+								{:else if section.id === 'receipt-time'}
+									<SectionTimeOfDay
+										rows={timeOfDay.rows}
+										heading={t.timeOfDay.heading}
+										subtitle={t.timeOfDay.severeShare}
+										caveat={t.timeOfDay.caveat}
+										caveatLabel={t.caveatLabel}
+										headingLevel={3}
+										{info}
+										{locale}
+									/>
+								{:else if section.id === 'receipt-delivered'}
+									<SectionStateCuts
+										state={stateCuts}
+										heading={t.stateCuts.heading}
+										completenessLabel={t.stateCuts.completenessLabel}
+										explainer={t.stateCuts.explainer}
+										standDown={t.stateCuts.standDown}
+										splitLabel={t.stateCuts.splitLabel}
+										noData={t.noData}
+										headingLevel={3}
+										{info}
+										{locale}
+									/>
+								{:else}
+									<SectionNotReported
+										list={notReported}
+										heading={t.notReported.heading}
+										caveat={t.notReported.caveat}
+										shownOfTotal={t.notReported.shownOfTotal}
+										headingLevel={3}
+									/>
+								{/if}
+							</CollapsibleSection>
 						{/if}
-						<div class="receipt-layout" class:no-worst={!worst.hasWorst} data-slot="receipt-layout">
-							<SectionHeadline
-								kpis={headlineKpis}
-								heading={t.receiptSection}
-								noData={t.noData}
-								{info}
-								{locale}
-							/>
-							<SectionAffected counts={affectedCounts} heading={t.countsSection} {info} {locale} />
-							{#if worst.hasWorst}
-								<SectionWorst {worst} heading={t.worstSection} {info} {locale} />
-							{/if}
-						</div>
-					</div>
-				</TerminalPanel>
-
-				<!-- S13 re-granulated cuts — WEB4 documented hoist: these render as receipt
-				     line-groups BELOW the frame because a ranked ladder / share-bar list /
-				     silent-lines list genuinely breaks the compact terminal-tile metaphor. Each
-				     stands DOWN on ramp-in absence (honest-absence, never a fabricated card). -->
-				<div class="receipt-cuts" data-slot="receipt-cuts">
-					{#if timeOfDay.hasTimeOfDay}
-						<SectionTimeOfDay
-							rows={timeOfDay.rows}
-							heading={t.timeOfDay.heading}
-							subtitle={t.timeOfDay.severeShare}
-							caveat={t.timeOfDay.caveat}
-							{info}
-							{locale}
-						/>
-					{/if}
-					{#if stateCuts.hasData}
-						<SectionStateCuts
-							state={stateCuts}
-							heading={t.stateCuts.heading}
-							completenessLabel={t.stateCuts.completenessLabel}
-							explainer={t.stateCuts.explainer}
-							standDown={t.stateCuts.standDown}
-							splitLabel={t.stateCuts.splitLabel}
-							noData={t.noData}
-							{info}
-							{locale}
-						/>
-					{/if}
-					{#if notReported.hasData}
-						<SectionNotReported
-							list={notReported}
-							heading={t.notReported.heading}
-							caveat={t.notReported.caveat}
-							shownOfTotal={t.notReported.shownOfTotal}
-						/>
-					{/if}
+					{/each}
 				</div>
-
-				<!-- Honest caveat: a daily observed summary, not a certified report. -->
-				<p class="receipt-caveat" data-slot="receipt-caveat">{t.caveat}</p>
 			{/if}
-		{/if}
-	</ResourceBoundary>
-</Surface>
+		</ResourceBoundary>
+	{/snippet}
+</DetailShell>
 
 <style>
-	:global(.receipt .receipt-controls[data-slot='controls-rail']) {
-		margin-bottom: 1rem;
+	.receipt-controls,
+	.receipt-main-body,
+	.receipt-sections {
+		min-width: 0;
 	}
-	:global(.receipt [data-slot='terminal-chrome']) {
+	.receipt-controls :global([data-slot='date-range']) {
+		width: 100%;
+	}
+	.receipt-rail-toc {
+		margin-top: 0.25rem;
+	}
+	.receipt-sections {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-card-gap);
+	}
+	.receipt-main-body {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+	}
+	.receipt-main-body :global([data-slot='typed-information-card'] p) {
+		margin: 0;
+	}
+	:global(.receipt-detail [data-slot='terminal-chrome']) {
+		width: 100%;
 		max-width: var(--container-content);
 		margin-inline: auto;
 	}
@@ -445,27 +688,10 @@
 		}
 	}
 
-	/* The S13 cuts sit below the frame as their own stacked line-groups (WEB4 hoist). */
-	.receipt-cuts {
-		display: flex;
-		flex-direction: column;
-		gap: 1.5rem;
-		margin-top: 1.25rem;
-		max-width: var(--container-content);
-		margin-inline: auto;
-	}
 	.receipt-note {
 		color: var(--muted-foreground);
 		font-size: var(--text-small);
 		line-height: 1.5;
 		padding: 0.5rem 0.875rem;
-	}
-	.receipt-caveat {
-		margin: 0.75rem 0 0;
-		max-width: 52ch;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		line-height: 1.4;
-		color: var(--muted-foreground);
 	}
 </style>

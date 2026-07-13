@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { selectOffenderLadder } from './offenderLadder';
 import type { RepeatOffenderEntry } from '$lib/v1/schemas';
 import { SEVERE_DOMAIN } from '$lib/features/reliability/domains';
+import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
 
 const labels = {
 	title: 'Worst offenders',
@@ -11,6 +12,37 @@ const labels = {
 	note: (e: RepeatOffenderEntry) => `n=${e.observation_count ?? 0}`,
 	unnamed: (e: RepeatOffenderEntry) => `Item ${e.id}`,
 	href: (e: RepeatOffenderEntry) => (e.route ? `/lines/${e.route}` : null),
+};
+
+const popoverLabels = {
+	...labels,
+	tapPopover: (
+		e: RepeatOffenderEntry,
+		href: string | null,
+		evidence: { readonly wilsonLo: number | null; readonly wilsonHi: number | null },
+	): ChartDatumPopoverModel => ({
+		key: `${e.type}-${e.id}-${e.route ?? ''}`,
+		heading: e.route_name ?? `Item ${e.id}`,
+		meta: `${e.type} · ${e.id}`,
+		rows: [
+			...(e.severe_pct != null ? [{ label: 'Severe-delay rate', value: `${e.severe_pct}%` }] : []),
+			...(e.observation_count != null
+				? [{ label: 'Readings', value: String(e.observation_count) }]
+				: []),
+			...(evidence.wilsonLo != null && evidence.wilsonHi != null
+				? [{ label: '95% CI', value: `${evidence.wilsonLo}%–${evidence.wilsonHi}%` }]
+				: []),
+		],
+		...(href
+			? {
+					action: {
+						href,
+						label: 'View line',
+						ariaLabel: `View detail for ${e.route_name ?? e.id}`,
+					},
+				}
+			: {}),
+	}),
 };
 
 const entry = (over: Partial<RepeatOffenderEntry>): RepeatOffenderEntry => ({
@@ -95,5 +127,93 @@ describe('selectOffenderLadder', () => {
 		const res = selectOffenderLadder([entry({ route_name: null, route: '77' })], 10, 'en', labels);
 		if (res.spec.kind !== 'magnitude-bars') throw new Error('expected magnitude-bars');
 		expect(res.spec.rows[0].label).toBe('Item T1');
+	});
+
+	it('attaches a caller-supplied popover to every displayed ranked row without changing chart truth', () => {
+		const res = selectOffenderLadder(
+			[
+				entry({
+					id: 'T-first',
+					route: '51',
+					route_name: 'First route',
+					severe_pct: 82.4,
+					observation_count: 210,
+					wilson_lo: 10.2,
+					wilson_hi: 22.5,
+				}),
+				entry({
+					type: 'vehicle',
+					id: 'V-null',
+					route: null,
+					route_name: null,
+					severe_pct: null,
+					observation_count: null,
+					wilson_lo: null,
+					wilson_hi: null,
+				}),
+				entry({ id: 'T-capped', route: '11', severe_pct: 99 }),
+			],
+			2,
+			'en',
+			popoverLabels,
+		);
+
+		expect(res.total).toBe(3);
+		expect(res.shown).toBe(2);
+		if (res.spec.kind !== 'magnitude-bars') throw new Error('expected magnitude-bars');
+		expect(res.spec.domain).toBe(SEVERE_DOMAIN);
+		expect(res.spec.domain).toEqual([0, 100]);
+		expect(res.spec.rows.map((row) => row.key)).toEqual(['trip-T-first-51', 'vehicle-V-null-']);
+		expect(res.spec.rows.map((row) => row.value)).toEqual([82.4, null]);
+		expect(res.spec.rows.map((row) => row.n)).toEqual([210, null]);
+		expect(res.spec.rows.map((row) => [row.wilsonLo, row.wilsonHi])).toEqual([
+			[77.5, 89.8],
+			[null, null],
+		]);
+		expect(res.spec.rows[0].href).toBe('/lines/51');
+		expect(res.spec.rows[1].href).toBeUndefined();
+		expect(res.spec.rows.every((row) => row.tapPopover != null)).toBe(true);
+		expect(res.spec.rows[0].tapPopover).toEqual({
+			key: 'trip-T-first-51',
+			heading: 'First route',
+			meta: 'trip · T-first',
+			rows: [
+				{ label: 'Severe-delay rate', value: '82.4%' },
+				{ label: 'Readings', value: '210' },
+				{ label: '95% CI', value: '77.5%–89.8%' },
+			],
+			action: {
+				href: '/lines/51',
+				label: 'View line',
+				ariaLabel: 'View detail for First route',
+			},
+		});
+		expect(res.spec.rows[1].tapPopover?.rows).toEqual([]);
+		expect(res.spec.rows[1].tapPopover?.action).toBeUndefined();
+	});
+
+	it('keeps the existing non-opt-in selector contract unchanged', () => {
+		const res = selectOffenderLadder(
+			[
+				entry({
+					severe_pct: null,
+					observation_count: null,
+					wilson_lo: null,
+					wilson_hi: null,
+				}),
+			],
+			10,
+			'en',
+			labels,
+		);
+		if (res.spec.kind !== 'magnitude-bars') throw new Error('expected magnitude-bars');
+		expect(res.spec.rows[0]).toMatchObject({
+			value: null,
+			n: null,
+			wilsonLo: null,
+			wilsonHi: null,
+			href: '/lines/11',
+		});
+		expect(res.spec.rows[0].tapPopover).toBeUndefined();
 	});
 });
