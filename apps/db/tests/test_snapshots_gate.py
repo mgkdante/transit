@@ -472,7 +472,7 @@ def test_alert_history_well_ordered_window_and_periods_pass():
 
 
 def test_alert_history_over_byte_ceiling_is_error():
-    # A synthetic runaway: enough wide entries to blow past 256 KiB.
+    # A synthetic runaway: enough wide entries to blow past 512 KiB.
     from transit_ops.snapshots.contract import ALERT_HISTORY_BYTE_CEILING
 
     wide = "x" * 400

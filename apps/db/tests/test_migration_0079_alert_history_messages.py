@@ -63,7 +63,7 @@ def test_0079_upgrade_appends_both_source_descriptions() -> None:
     assert "description_text_en" not in hash_expr.group("body")
 
 
-def test_0079_downgrade_restores_exact_prior_view_and_dependent() -> None:
+def test_0079_downgrade_restores_only_the_post_0059_history_view() -> None:
     prior_sql = re.sub(r"\s+", " ", _sql_block("_HISTORY_VIEW_FROM_0037"))
     assert "CREATE OR REPLACE VIEW gold.i3_alert_history_reporting" in prior_sql
     assert prior_sql.rstrip().endswith("AND e.alert_index = a.alert_index")
@@ -72,8 +72,8 @@ def test_0079_downgrade_restores_exact_prior_view_and_dependent() -> None:
     assert "a.description_text_en" not in prior_sql
 
     source = _source()
-    assert "DROP VIEW IF EXISTS gold.i3_alert_history_reporting CASCADE" in source
-    assert "CREATE OR REPLACE VIEW gold.public_alert_impact_daily" in source
+    assert "DROP VIEW IF EXISTS gold.i3_alert_history_reporting" in source
+    assert "gold.i3_alert_history_reporting CASCADE" not in source
+    assert "gold.public_alert_impact_daily" not in source
     assert "op.execute(_DROP_HISTORY_VIEW)" in source
     assert "op.execute(_HISTORY_VIEW_FROM_0037)" in source
-    assert "op.execute(_IMPACT_VIEW_FROM_0032)" in source
