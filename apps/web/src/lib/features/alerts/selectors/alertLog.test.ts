@@ -29,6 +29,8 @@ type LooseEntry = {
 	stops?: string[];
 	start_utc?: string | null;
 	end_utc?: string | null;
+	first_seen_utc?: string | null;
+	last_seen_utc?: string | null;
 	duration_min?: number | null;
 	impact_passages?: number | null;
 	cause?: string | null;
@@ -157,14 +159,34 @@ describe('filterAlertLog — the four axes AND-ed', () => {
 	});
 });
 
-describe('sortNewestFirst — newest start first, no-start sinks last', () => {
-	it('orders by start desc and sinks a missing start', () => {
+describe('sortNewestFirst — newest observed alert first, truly undated rows last', () => {
+	it('falls back to first_seen, then last_seen and id for deterministic archive ordering', () => {
 		const out = sortNewestFirst([
-			entry({ id: 'a', start_utc: '2026-06-10T00:00:00Z' }),
-			entry({ id: 'b', start_utc: '2026-06-20T00:00:00Z' }),
-			entry({ id: 'c' }),
+			entry({ id: 'undated-z' }),
+			entry({ id: 'archive-old', first_seen_utc: '2026-06-15T00:00:00Z' }),
+			entry({ id: 'current', start_utc: '2026-06-18T00:00:00Z' }),
+			entry({ id: 'archive-new', first_seen_utc: '2026-06-20T00:00:00Z' }),
+			entry({
+				id: 'tie-older-observation',
+				first_seen_utc: '2026-06-10T00:00:00Z',
+				last_seen_utc: '2026-06-11T00:00:00Z',
+			}),
+			entry({
+				id: 'tie-newer-observation',
+				first_seen_utc: '2026-06-10T00:00:00Z',
+				last_seen_utc: '2026-06-12T00:00:00Z',
+			}),
+			entry({ id: 'undated-a' }),
 		]);
-		expect(out.map((e) => e.id)).toEqual(['b', 'a', 'c']);
+		expect(out.map((e) => e.id)).toEqual([
+			'archive-new',
+			'current',
+			'archive-old',
+			'tie-newer-observation',
+			'tie-older-observation',
+			'undated-a',
+			'undated-z',
+		]);
 	});
 });
 

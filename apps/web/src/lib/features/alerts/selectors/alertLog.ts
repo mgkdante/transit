@@ -6,9 +6,10 @@
 // view-model build. Every localized string is INJECTED (label resolvers passed in) so
 // this module owns zero copy and zero i18n — the surface hands down its bundle.
 //
-// HONESTY: an alert with no orderable start sinks to the end (never dropped); a null
-// field is carried as null (never a fabricated 0); the window match is inclusive and
-// multi-period aware (see alertMatchesWindow). SSR-safe: pure data + pure functions.
+// HONESTY: an alert with no orderable start/first-seen instant sinks to the end (never
+// dropped); a null field is carried as null (never a fabricated 0); the window match is
+// inclusive and multi-period aware (see alertMatchesWindow). SSR-safe: pure data + pure
+// functions.
 
 import type { AlertHistoryEntry, AlertBreakdownBucket, SeverityCode } from '$lib/v1/schemas';
 import { SEVERITY_CODES } from '$lib/v1/schemas';
@@ -86,17 +87,33 @@ export interface AlertLogFilters {
 }
 
 /**
- * Sort a copy of `entries` newest-first by start instant. An entry with no orderable
- * start sinks to the end (a missing instant cannot be ordered) — never dropped.
+ * Sort a copy of `entries` newest-first by start instant, falling back to the archive's
+ * first-seen instant. Last-seen and id break ties so mixed current/archive collections
+ * stay deterministic. A truly undated entry sinks to the end — never dropped.
  */
 export function sortNewestFirst(
 	entries: readonly AlertHistoryEntry[],
 ): readonly AlertHistoryEntry[] {
-	const stamp = (e: AlertHistoryEntry): number => {
-		const ms = e.start_utc != null ? Date.parse(e.start_utc) : NaN;
+	const stamp = (value: string | null | undefined): number => {
+		const ms = value != null ? Date.parse(value) : NaN;
 		return Number.isNaN(ms) ? -Infinity : ms;
 	};
-	return entries.slice().sort((a, b) => stamp(b) - stamp(a));
+	const newestFirst = (left: number, right: number): number => {
+		if (left === right) return 0;
+		return left > right ? -1 : 1;
+	};
+	return entries.slice().sort((a, b) => {
+		const primaryOrder = newestFirst(
+			stamp(a.start_utc ?? a.first_seen_utc),
+			stamp(b.start_utc ?? b.first_seen_utc),
+		);
+		if (primaryOrder !== 0) return primaryOrder;
+
+		const observationOrder = newestFirst(stamp(a.last_seen_utc), stamp(b.last_seen_utc));
+		if (observationOrder !== 0) return observationOrder;
+
+		return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+	});
 }
 
 /**

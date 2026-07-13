@@ -1056,6 +1056,29 @@ describe('AlertHistory date window (?from/?to)', () => {
 });
 
 describe('AlertHistory retained archive integration', () => {
+	it('keeps first-seen-only archive entries ahead of older current-shape entries', async () => {
+		(fixture as AlertHistory).window_start = '2026-06-20';
+		(fixture as AlertHistory).window_end = '2026-06-22';
+		archiveState.index = makeArchiveIndex();
+		archiveState.entries = [
+			makeArchiveEntry('archive-newest', 'Archive newest', '2026-06-21', '2026-06-21', {
+				start_utc: null,
+				end_utc: null,
+				first_seen_utc: '2026-06-21T08:00:00Z' as AlertArchiveEntry['first_seen_utc'],
+			}),
+			makeArchiveEntry('current-older', 'Current older', '2026-06-20', '2026-06-20'),
+		];
+
+		render(AlertHistoryScreen);
+		await waitFor(() => expect(ports.getAlertArchiveRange).toHaveBeenCalled());
+
+		const list = screen.getByRole('list', { name: /past service alerts, newest first/i });
+		const rows = within(list).getAllByRole('listitem');
+		expect(rows).toHaveLength(2);
+		expect(rows[0]).toHaveTextContent('Archive newest');
+		expect(rows[1]).toHaveTextContent('Current older');
+	});
+
 	it('loads the clamped current archive range before rendering every calculation', async () => {
 		(fixture as AlertHistory).window_start = '2026-06-20';
 		(fixture as AlertHistory).window_end = '2026-06-22';
