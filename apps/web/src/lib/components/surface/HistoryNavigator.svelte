@@ -196,9 +196,6 @@
 		color: var(--muted-foreground);
 		overflow-wrap: anywhere;
 	}
-	.history-navigator__announcement:empty {
-		display: none;
-	}
 	@media (prefers-reduced-motion: reduce) {
 		.history-navigator__step {
 			transition: none;

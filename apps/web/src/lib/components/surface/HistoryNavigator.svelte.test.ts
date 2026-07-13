@@ -177,6 +177,24 @@ describe('HistoryNavigator — caller-owned neighbors and copy', () => {
 		expect(status).toHaveAttribute('aria-atomic', 'true');
 		expect(status).toHaveTextContent('That date was unavailable. Showing the latest window.');
 	});
+
+	it('keeps the live region mounted before a parent supplies correction copy', async () => {
+		const props = {
+			mode: 'range' as const,
+			locale: 'en' as const,
+			labels: EN,
+			availableDates: DATES,
+			announcement: null,
+		};
+		const view = render(HistoryNavigator, { props });
+		const status = view.getByRole('status');
+		expect(status.textContent?.trim()).toBe('');
+		expect(source).not.toContain('.history-navigator__announcement:empty');
+
+		await view.rerender({ ...props, announcement: 'Showing the nearest available window.' });
+		expect(view.getByRole('status')).toBe(status);
+		expect(status).toHaveTextContent('Showing the nearest available window.');
+	});
 });
 
 describe('HistoryNavigator — duplicate mount and narrow-rail safety', () => {
