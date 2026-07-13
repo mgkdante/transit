@@ -45,6 +45,7 @@ from .bronze import (
     prune_bronze_storage,
 )
 from .gold import (
+    ALERT_ARCHIVE_RETENTION_TABLE,
     COUNT_OLD_FACT_TRIP_DELAY_SNAPSHOTS,
     COUNT_OLD_FACT_VEHICLE_SNAPSHOTS,
     DELETE_OLD_FACT_TRIP_DELAY_SNAPSHOTS,
@@ -58,6 +59,7 @@ from .gold import (
     GoldStoragePruneResult,
     WarmRollupStoragePruneResult,
     _gold_aggregate_retention_statement,
+    prune_alert_archive_history,
     prune_gold_fact_history,
     prune_gold_storage,
     prune_warm_rollup_storage,
@@ -145,6 +147,7 @@ __all__ = [
     "prune_realtime_silver_history",
     "prune_silver_storage",
     # gold tier
+    "ALERT_ARCHIVE_RETENTION_TABLE",
     "GOLD_FACT_TABLES",
     "GOLD_WARM_ROLLUP_TABLES",
     "GOLD_REPORTING_AGGREGATE_TABLES",
@@ -159,6 +162,7 @@ __all__ = [
     "GoldStoragePruneResult",
     "WarmRollupStoragePruneResult",
     "prune_gold_fact_history",
+    "prune_alert_archive_history",
     "prune_gold_storage",
     "prune_warm_rollup_storage",
     # bronze tier

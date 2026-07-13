@@ -63,6 +63,16 @@ jobs:
       - name: Install project dependencies
         run: uv sync --locked
 
+      - name: Sync retained alert archive (all providers)
+        # Archive accrual runs before the expensive warm build so a 90-minute
+        # rollup timeout cannot leave retained alert history stale.
+        run: |
+          for provider in $(uv run python -m transit_ops.cli list-providers); do
+            echo "::group::sync-alert-archive ${provider}"
+            uv run python -m transit_ops.cli sync-alert-archive "$provider"
+            echo "::endgroup::"
+          done
+
       - name: Build 5-minute warm rollups (all providers)
         # One looped job over every provider; the expensive setup is paid once.
         run: |

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import text
@@ -11,8 +11,14 @@ from sqlalchemy.engine import Connection, Engine
 
 import transit_ops.maintenance as _maintenance_pkg
 from transit_ops.db.connection import make_engine
+from transit_ops.gold.alert_archive import (
+    AlertArchiveSyncResult,
+    alert_archive_default_bounds,
+    sync_alert_archive_on_connection,
+)
 from transit_ops.ingestion.common import utc_now
 from transit_ops.ingestion.storage import BronzeStorage
+from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
 from ._helpers import _safe_rowcount, _safe_scalar_count, logger
@@ -164,6 +170,7 @@ class I3StoragePruneResult:
     deleted_row_counts: dict[str, int]
     failed_object_counts: dict[str, int]
     completed_at_utc: datetime
+    alert_archive_sync: AlertArchiveSyncResult | None = None
 
     def display_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -174,7 +181,24 @@ class I3StoragePruneResult:
             self.silver_cutoff_utc.isoformat() if self.silver_cutoff_utc else None
         )
         payload["completed_at_utc"] = self.completed_at_utc.isoformat()
+        payload["alert_archive_sync"] = (
+            self.alert_archive_sync.display_dict() if self.alert_archive_sync else None
+        )
         return payload
+
+
+def _provider_alert_archive_bounds(
+    provider_id: str,
+    settings: Settings,
+) -> tuple[date, date]:
+    manifest = ProviderRegistry.from_project_root(
+        project_root=Path(__file__).resolve().parents[3],
+        settings=settings,
+    ).get_provider(provider_id)
+    return alert_archive_default_bounds(
+        provider_timezone=manifest.provider.timezone,
+        retention_days=settings.GOLD_WARM_ROLLUP_RETENTION_DAYS,
+    )
 
 
 def prune_i3_silver_closed_rows(
@@ -364,11 +388,12 @@ def prune_i3_storage(
     engine: Engine | None = None,
     dry_run: bool = False,
 ) -> I3StoragePruneResult:
-    """Prune closed silver i3 history, then raw i3 snapshots + their R2 JSON.
+    """Archive retained alerts, then prune closed Silver and raw i3 storage.
 
-    Silver-closed runs FIRST so any raw snapshot whose last referencing silver
-    row was just pruned becomes eligible for the raw sweep in the same
-    transaction. Both phases run inside one engine.begin().
+    All three phases share one transaction and run in archive -> Silver -> raw
+    order. An archive failure propagates before either destructive phase. Once
+    Silver closes are removed, any newly unreferenced raw snapshot is eligible
+    for the raw sweep in that same transaction.
     """
 
     settings = settings or get_settings()
@@ -383,8 +408,16 @@ def prune_i3_storage(
 
     silver_retention = settings.SILVER_I3_CLOSED_RETENTION_DAYS
     raw_retention = settings.BRONZE_I3_RETENTION_DAYS
+    archive_from, archive_to = _provider_alert_archive_bounds(provider_id, settings)
 
     with engine.begin() as connection:
+        archive_sync = sync_alert_archive_on_connection(
+            connection,
+            provider_id=provider_id,
+            from_date=archive_from,
+            to_date=archive_to,
+            dry_run=dry_run,
+        )
         silver_cutoff_utc, silver_row_counts = prune_i3_silver_closed_rows(
             connection,
             provider_id=provider_id,
@@ -415,4 +448,5 @@ def prune_i3_storage(
         deleted_row_counts=deleted_row_counts,
         failed_object_counts={"i3_raw": len(failed_snapshot_ids)},
         completed_at_utc=completed_at_utc,
+        alert_archive_sync=archive_sync,
     )

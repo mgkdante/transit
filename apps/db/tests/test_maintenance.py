@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+import transit_ops.gold.alert_archive as alert_archive_module
+import transit_ops.maintenance.gold as gold_maintenance_module
+import transit_ops.maintenance.i3 as i3_maintenance_module
 from transit_ops import maintenance as maintenance_module
 from transit_ops.maintenance import (
     COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
@@ -154,6 +157,11 @@ class RecordingConnection:
         # MUST be routed before the generic 'SELECT dataset_version_id' branch.
         if "gold.dim_route" in sql_text and "SELECT DISTINCT dataset_version_id" in sql_text:
             return IterableResult(self.gold_referenced_rows)
+        if "gold.alert_archive_entry" in sql_text:
+            if "SELECT COUNT(*)" in sql_text:
+                return ScalarResult(17)
+            if "DELETE FROM" in sql_text:
+                return RowcountResult(17)
         for table_name, rowcount in EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS.items():
             if f"DELETE FROM {table_name}" in sql_text:
                 return RowcountResult(rowcount)
@@ -1359,15 +1367,78 @@ def test_prune_warm_rollup_storage_applies_aggregate_retention_to_reporting_mart
 
     assert isinstance(result, WarmRollupStoragePruneResult)
     assert result.retention_days == 365
-    assert result.deleted_row_counts == EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS
+    assert result.deleted_row_counts == {
+        **EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS,
+        "gold.alert_archive_entry": 17,
+    }
     for table_name in EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS:
         assert any(f"FROM {table_name}" in sql for sql in connection.calls)
     assert all("DELETE" not in sql for sql in connection.calls)
 
 
+def test_alert_archive_retention_is_distinct_from_every_aggregate_registry() -> None:
+    from transit_ops.gold.rollups import REPORTING_AGGREGATE_TABLES
+
+    table = gold_maintenance_module.ALERT_ARCHIVE_RETENTION_TABLE
+
+    assert table == "gold.alert_archive_entry"
+    assert table not in gold_maintenance_module.GOLD_AGGREGATE_TABLES
+    assert table not in gold_maintenance_module.GOLD_APPEND_ONLY_DAILY_TABLES
+    assert all(
+        target[0] != table for target in gold_maintenance_module.GOLD_AGGREGATE_RETENTION_COLUMNS
+    )
+    assert "alert_archive_entry" not in REPORTING_AGGREGATE_TABLES
+
+
+def test_alert_archive_retention_keeps_complete_cutoff_partition() -> None:
+    connection = RecordingConnection()
+
+    cutoff_month, count = gold_maintenance_module.prune_alert_archive_history(
+        connection,
+        provider_id="stm",
+        retention_days=730,
+        now_utc=datetime(2026, 7, 13, 3, 30, tzinfo=UTC),
+    )
+
+    assert cutoff_month == date(2024, 7, 1)
+    assert count == 17
+    sql, params = connection.executed[-1]
+    assert "DELETE FROM gold.alert_archive_entry" in sql
+    assert "archive_month < :cutoff_month" in sql
+    assert "archive_month <= :cutoff_month" not in sql
+    assert params == {"provider_id": "stm", "cutoff_month": date(2024, 7, 1)}
+
+
+def test_alert_archive_retention_dry_run_and_disabled_modes_do_not_delete() -> None:
+    connection = RecordingConnection()
+
+    cutoff_month, count = gold_maintenance_module.prune_alert_archive_history(
+        connection,
+        provider_id="stm",
+        retention_days=730,
+        dry_run=True,
+        now_utc=datetime(2026, 7, 13, 3, 30, tzinfo=UTC),
+    )
+    disabled_cutoff, disabled_count = gold_maintenance_module.prune_alert_archive_history(
+        connection,
+        provider_id="stm",
+        retention_days=0,
+    )
+
+    assert cutoff_month == date(2024, 7, 1)
+    assert count == 17
+    assert disabled_cutoff is None
+    assert disabled_count == 0
+    assert len(connection.calls) == 1
+    assert "SELECT COUNT(*) FROM gold.alert_archive_entry" in connection.calls[0]
+    assert "DELETE" not in connection.calls[0]
+
+
 def test_stop_delay_spine_is_append_only_with_retention() -> None:
     """DB-PR-3: gold.stop_delay_spine is append-only (pruned by date, never DELETE+UPSERT wiped) —
-    it must be in the append-only + retention registries and NOT in the reporting-aggregate registry."""
+    it must be in the append-only + retention registries and NOT in the
+    reporting-aggregate registry.
+    """
     from transit_ops.gold.rollups import REPORTING_AGGREGATE_TABLES
     from transit_ops.maintenance.gold import (
         GOLD_AGGREGATE_RETENTION_COLUMNS,
@@ -1380,7 +1451,8 @@ def test_stop_delay_spine_is_append_only_with_retention() -> None:
         "provider_local_date",
         True,
     ) in GOLD_AGGREGATE_RETENTION_COLUMNS
-    # the reporting registry is unqualified table names (DELETE+UPSERT rebuild); the spine is neither.
+    # The reporting registry is unqualified table names (DELETE+UPSERT rebuild);
+    # the spine is neither.
     assert "stop_delay_spine" not in REPORTING_AGGREGATE_TABLES
 
 
@@ -1854,6 +1926,117 @@ def test_vacuum_tables_include_i3_tables() -> None:
         "silver.i3_alert_informed_entities",
     ):
         assert table_name in VACUUM_TABLES
+
+
+def test_vacuum_tables_include_retained_alert_archive() -> None:
+    assert "gold.alert_archive_entry" in VACUUM_TABLES
+
+
+class I3ArchivePruneSettings:
+    GOLD_WARM_ROLLUP_RETENTION_DAYS = 730
+    SILVER_I3_CLOSED_RETENTION_DAYS = 90
+    BRONZE_I3_RETENTION_DAYS = 30
+
+
+def _archive_sync_receipt(*, dry_run: bool) -> alert_archive_module.AlertArchiveSyncResult:
+    return alert_archive_module.AlertArchiveSyncResult(
+        provider_id="stm",
+        requested_from=date(2024, 7, 1),
+        requested_to=date(2026, 7, 12),
+        source_from=None,
+        source_to=None,
+        source_count=0,
+        inserted_count=0,
+        updated_count=0,
+        unchanged_count=0,
+        dry_run=dry_run,
+        synced_at_utc=datetime(2026, 7, 13, 4, 0, tzinfo=UTC),
+    )
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_prune_i3_storage_syncs_archive_before_silver_and_raw(monkeypatch, dry_run: bool) -> None:
+    calls: list[tuple[str, bool]] = []
+    connection = RecordingConnection()
+    engine = RecordingEngine(connection)
+    _patch_bronze_storage(monkeypatch, FakeBronzeStorage())
+    monkeypatch.setattr(
+        i3_maintenance_module,
+        "_provider_alert_archive_bounds",
+        lambda provider_id, settings: (date(2024, 7, 1), date(2026, 7, 12)),
+        raising=False,
+    )
+
+    def fake_archive(connection, *, provider_id, from_date, to_date, dry_run):  # noqa: ANN001
+        calls.append(("archive", dry_run))
+        return _archive_sync_receipt(dry_run=dry_run)
+
+    def fake_silver(connection, *, provider_id, retention_days, dry_run):  # noqa: ANN001
+        calls.append(("silver", dry_run))
+        return None, {"silver.i3_alerts": 4}
+
+    def fake_raw(  # noqa: ANN001
+        connection, *, provider_id, retention_days, bronze_storage, dry_run
+    ):
+        calls.append(("raw", dry_run))
+        return None, {"i3_raw": 3}, {"raw.i3_alert_snapshots": 3}, set()
+
+    monkeypatch.setattr(
+        i3_maintenance_module, "sync_alert_archive_on_connection", fake_archive, raising=False
+    )
+    monkeypatch.setattr(i3_maintenance_module, "prune_i3_silver_closed_rows", fake_silver)
+    monkeypatch.setattr(i3_maintenance_module, "prune_i3_raw_snapshots", fake_raw)
+
+    result = i3_maintenance_module.prune_i3_storage(
+        "stm",
+        settings=I3ArchivePruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+        dry_run=dry_run,
+    )
+
+    assert calls == [("archive", dry_run), ("silver", dry_run), ("raw", dry_run)]
+    assert result.alert_archive_sync is not None
+    assert result.alert_archive_sync.dry_run is dry_run
+    assert result.display_dict()["alert_archive_sync"]["requested_from"] == "2024-07-01"
+
+
+def test_prune_i3_storage_archive_failure_prevents_every_destructive_phase(
+    monkeypatch,
+) -> None:
+    connection = RecordingConnection()
+    engine = RecordingEngine(connection)
+    storage = FakeBronzeStorage()
+    _patch_bronze_storage(monkeypatch, storage)
+    monkeypatch.setattr(
+        i3_maintenance_module,
+        "_provider_alert_archive_bounds",
+        lambda provider_id, settings: (date(2024, 7, 1), date(2026, 7, 12)),
+        raising=False,
+    )
+
+    def fail_archive(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise RuntimeError("archive sync failed")
+
+    def fail_delete(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("destructive prune must not run")
+
+    monkeypatch.setattr(
+        i3_maintenance_module,
+        "sync_alert_archive_on_connection",
+        fail_archive,
+        raising=False,
+    )
+    monkeypatch.setattr(i3_maintenance_module, "prune_i3_silver_closed_rows", fail_delete)
+    monkeypatch.setattr(i3_maintenance_module, "prune_i3_raw_snapshots", fail_delete)
+
+    with pytest.raises(RuntimeError, match="archive sync failed"):
+        i3_maintenance_module.prune_i3_storage(
+            "stm",
+            settings=I3ArchivePruneSettings(),  # type: ignore[arg-type]
+            engine=engine,  # type: ignore[arg-type]
+        )
+
+    assert storage.deleted == []
 
 
 def test_prune_i3_raw_snapshots_sql_guards_silver_refs_and_latest() -> None:

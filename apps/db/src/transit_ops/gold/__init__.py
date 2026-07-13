@@ -20,7 +20,13 @@ Design gate — adding a NEW gold relation (table / view / append-only daily):
     tests/test_gold_reader.py.
 """
 
-from transit_ops.gold.alert_archive import AlertArchiveSyncResult, sync_alert_archive
+from transit_ops.gold.alert_archive import (
+    AlertArchiveBackfillResult,
+    AlertArchiveSyncResult,
+    alert_archive_default_bounds,
+    backfill_alert_archive,
+    sync_alert_archive,
+)
 from transit_ops.gold.dim_history import DimHistoryBackfillResult, backfill_dim_name_history
 from transit_ops.gold.marts import (
     GoldBuildResult,
@@ -41,6 +47,7 @@ from transit_ops.gold.rollups import (
 
 __all__ = [
     "REBUILDABLE_KINDS",
+    "AlertArchiveBackfillResult",
     "AlertArchiveSyncResult",
     "DimHistoryBackfillResult",
     "GoldBuildResult",
@@ -49,6 +56,8 @@ __all__ = [
     "WarmRollupBuildResult",
     "WarmRollupRebuildResult",
     "backfill_dim_name_history",
+    "alert_archive_default_bounds",
+    "backfill_alert_archive",
     "build_gold_marts",
     "build_warm_rollups",
     "provider_is_seeded",

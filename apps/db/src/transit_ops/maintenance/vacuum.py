@@ -12,7 +12,11 @@ from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import Settings, get_settings
 
 from .bronze import RAW_BRONZE_METADATA_TABLES
-from .gold import GOLD_AGGREGATE_TABLES, GOLD_FACT_TABLES
+from .gold import (
+    ALERT_ARCHIVE_RETENTION_TABLE,
+    GOLD_AGGREGATE_TABLES,
+    GOLD_FACT_TABLES,
+)
 from .i3 import I3_RETENTION_TABLES
 from .silver import REALTIME_SILVER_TABLES
 from .static import GIS_SILVER_TABLES, STATIC_SILVER_TABLES
@@ -25,6 +29,7 @@ VACUUM_TABLES = (
     "gold.latest_trip_delay_snapshot",
     "gold.latest_vehicle_snapshot",
     *GOLD_AGGREGATE_TABLES,
+    ALERT_ARCHIVE_RETENTION_TABLE,
     *RAW_BRONZE_METADATA_TABLES,
     *I3_RETENTION_TABLES,
 )

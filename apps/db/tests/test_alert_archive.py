@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
 
+import transit_ops.gold.alert_archive as alert_archive_module
 from transit_ops.gold.alert_archive import (
     _ALERT_ARCHIVE_EXISTING_SQL,
     _ALERT_ARCHIVE_LOCK_SQL,
@@ -96,6 +97,169 @@ def run_sync(connection: FakeConnection, *, dry_run: bool = False):
         dry_run=dry_run,
         synced_at_utc=datetime(2026, 7, 13, 4, 0, tzinfo=UTC),
     )
+
+
+class _BatchTransaction:
+    def __init__(self, engine: _BatchEngine) -> None:
+        self.engine = engine
+        self.connection = object()
+
+    def __enter__(self):
+        return self.connection
+
+    def __exit__(self, exc_type, exc, traceback) -> bool:  # noqa: ANN001
+        self.engine.outcomes.append("commit" if exc_type is None else "rollback")
+        return False
+
+
+class _BatchEngine:
+    def __init__(self) -> None:
+        self.begin_count = 0
+        self.outcomes: list[str] = []
+
+    def begin(self) -> _BatchTransaction:
+        self.begin_count += 1
+        return _BatchTransaction(self)
+
+
+def _batch_receipt(
+    *, from_date: date, to_date: date, dry_run: bool
+) -> alert_archive_module.AlertArchiveSyncResult:
+    return alert_archive_module.AlertArchiveSyncResult(
+        provider_id="stm",
+        requested_from=from_date,
+        requested_to=to_date,
+        source_from=from_date,
+        source_to=to_date,
+        source_count=1,
+        inserted_count=0 if dry_run else 1,
+        updated_count=0,
+        unchanged_count=0,
+        dry_run=dry_run,
+        synced_at_utc=datetime(2026, 7, 13, 4, 0, tzinfo=UTC),
+    )
+
+
+def test_default_window_uses_provider_local_today_and_month_floors_retention() -> None:
+    bounds = alert_archive_module.alert_archive_default_bounds(
+        provider_timezone="America/Toronto",
+        retention_days=730,
+        now_utc=datetime(2026, 7, 13, 3, 30, tzinfo=UTC),
+    )
+
+    assert bounds == (date(2024, 7, 1), date(2026, 7, 12))
+
+
+def test_calendar_batches_keep_partial_edges_oldest_first_without_gaps() -> None:
+    batches = alert_archive_module.alert_archive_month_batches(
+        date(2026, 1, 20), date(2026, 6, 3), month_batch=2
+    )
+
+    assert batches == [
+        (date(2026, 1, 20), date(2026, 2, 28)),
+        (date(2026, 3, 1), date(2026, 4, 30)),
+        (date(2026, 5, 1), date(2026, 6, 3)),
+    ]
+    assert all(
+        next_start == current_end + timedelta(days=1)
+        for (_, current_end), (next_start, _) in zip(batches, batches[1:], strict=False)
+    )
+
+
+def test_backfill_opens_one_transaction_per_calendar_batch_and_reports_receipts(
+    monkeypatch,
+) -> None:
+    engine = _BatchEngine()
+    seen: list[tuple[date, date, bool]] = []
+
+    def fake_sync(connection, *, provider_id, from_date, to_date, dry_run):  # noqa: ANN001
+        seen.append((from_date, to_date, dry_run))
+        return _batch_receipt(from_date=from_date, to_date=to_date, dry_run=dry_run)
+
+    monkeypatch.setattr(alert_archive_module, "sync_alert_archive_on_connection", fake_sync)
+
+    result = alert_archive_module.backfill_alert_archive(
+        "stm",
+        from_date=date(2026, 1, 20),
+        to_date=date(2026, 6, 3),
+        month_batch=2,
+        engine=engine,
+    )
+
+    assert seen == [
+        (date(2026, 1, 20), date(2026, 2, 28), False),
+        (date(2026, 3, 1), date(2026, 4, 30), False),
+        (date(2026, 5, 1), date(2026, 6, 3), False),
+    ]
+    assert engine.outcomes == ["commit", "commit", "commit"]
+    assert [receipt.requested_from for receipt in result.batches] == [
+        date(2026, 1, 20),
+        date(2026, 3, 1),
+        date(2026, 5, 1),
+    ]
+    assert result.display_dict()["batches"][0]["requested_from"] == "2026-01-20"
+
+
+def test_backfill_dry_run_reaches_every_batch_without_writes(monkeypatch) -> None:
+    engine = _BatchEngine()
+    dry_run_values: list[bool] = []
+
+    def fake_sync(connection, *, provider_id, from_date, to_date, dry_run):  # noqa: ANN001
+        dry_run_values.append(dry_run)
+        return _batch_receipt(from_date=from_date, to_date=to_date, dry_run=dry_run)
+
+    monkeypatch.setattr(alert_archive_module, "sync_alert_archive_on_connection", fake_sync)
+
+    result = alert_archive_module.backfill_alert_archive(
+        "stm",
+        from_date=date(2026, 1, 20),
+        to_date=date(2026, 3, 4),
+        dry_run=True,
+        engine=engine,
+    )
+
+    assert dry_run_values == [True, True, True]
+    assert all(receipt.inserted_count == 0 for receipt in result.batches)
+    assert engine.outcomes == ["commit", "commit", "commit"]
+
+
+def test_backfill_rejects_nonpositive_month_batch_before_transaction() -> None:
+    engine = _BatchEngine()
+
+    with pytest.raises(ValueError, match="month_batch"):
+        alert_archive_module.backfill_alert_archive(
+            "stm",
+            from_date=date(2026, 1, 1),
+            to_date=date(2026, 2, 1),
+            month_batch=0,
+            engine=engine,
+        )
+
+    assert engine.begin_count == 0
+
+
+def test_backfill_later_failure_keeps_earlier_batch_commit(monkeypatch) -> None:
+    engine = _BatchEngine()
+    calls = 0
+
+    def fake_sync(connection, *, provider_id, from_date, to_date, dry_run):  # noqa: ANN001
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("second batch failed")
+        return _batch_receipt(from_date=from_date, to_date=to_date, dry_run=dry_run)
+
+    monkeypatch.setattr(alert_archive_module, "sync_alert_archive_on_connection", fake_sync)
+
+    with pytest.raises(RuntimeError, match="second batch failed"):
+        alert_archive_module.backfill_alert_archive(
+            "stm",
+            from_date=date(2026, 1, 1),
+            to_date=date(2026, 3, 31),
+            engine=engine,
+        )
+
+    assert engine.outcomes == ["commit", "rollback"]
 
 
 def test_source_queries_are_named_bounded_and_uncapped() -> None:

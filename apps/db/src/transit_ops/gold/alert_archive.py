@@ -7,8 +7,9 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.engine import Connection, Engine
 
@@ -338,6 +339,70 @@ class AlertArchiveSyncResult:
         return payload
 
 
+@dataclass(frozen=True)
+class AlertArchiveBackfillResult:
+    provider_id: str
+    requested_from: date
+    requested_to: date
+    month_batch: int
+    dry_run: bool
+    batches: tuple[AlertArchiveSyncResult, ...]
+
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "provider_id": self.provider_id,
+            "requested_from": self.requested_from.isoformat(),
+            "requested_to": self.requested_to.isoformat(),
+            "month_batch": self.month_batch,
+            "dry_run": self.dry_run,
+            "batches": [batch.display_dict() for batch in self.batches],
+        }
+
+
+def alert_archive_default_bounds(
+    *,
+    provider_timezone: str,
+    retention_days: int,
+    now_utc: datetime | None = None,
+) -> tuple[date, date]:
+    """Return the retained provider-local sync window, month-floored."""
+
+    now = _utc(now_utc) or datetime.now(UTC)
+    provider_today = now.astimezone(ZoneInfo(provider_timezone)).date()
+    retained_anchor = provider_today - timedelta(days=retention_days)
+    return retained_anchor.replace(day=1), provider_today
+
+
+def _add_months(month_start: date, count: int) -> date:
+    month_index = month_start.year * 12 + (month_start.month - 1) + count
+    year, zero_based_month = divmod(month_index, 12)
+    return date(year, zero_based_month + 1, 1)
+
+
+def alert_archive_month_batches(
+    from_date: date,
+    to_date: date,
+    *,
+    month_batch: int = 1,
+) -> list[tuple[date, date]]:
+    """Split an inclusive range into oldest-first calendar-month batches."""
+
+    if from_date > to_date:
+        raise ValueError("from_date must be on or before to_date")
+    if month_batch <= 0:
+        raise ValueError("month_batch must be positive")
+
+    batches: list[tuple[date, date]] = []
+    cursor = from_date
+    while cursor <= to_date:
+        first_month = cursor.replace(day=1)
+        next_batch_month = _add_months(first_month, month_batch)
+        batch_to = min(to_date, next_batch_month - timedelta(days=1))
+        batches.append((cursor, batch_to))
+        cursor = batch_to + timedelta(days=1)
+    return batches
+
+
 def _utc(value: object) -> datetime | None:
     if value is None:
         return None
@@ -617,3 +682,44 @@ def sync_alert_archive(
             to_date=to_date,
             dry_run=dry_run,
         )
+
+
+def backfill_alert_archive(
+    provider_id: str,
+    *,
+    from_date: date,
+    to_date: date,
+    month_batch: int = 1,
+    dry_run: bool = False,
+    settings: Settings | None = None,
+    engine: Engine | None = None,
+) -> AlertArchiveBackfillResult:
+    batches = alert_archive_month_batches(
+        from_date,
+        to_date,
+        month_batch=month_batch,
+    )
+    settings = settings or get_settings()
+    engine = engine or make_engine(settings)
+
+    receipts: list[AlertArchiveSyncResult] = []
+    for batch_from, batch_to in batches:
+        with engine.begin() as connection:
+            receipts.append(
+                sync_alert_archive_on_connection(
+                    connection,
+                    provider_id=provider_id,
+                    from_date=batch_from,
+                    to_date=batch_to,
+                    dry_run=dry_run,
+                )
+            )
+
+    return AlertArchiveBackfillResult(
+        provider_id=provider_id,
+        requested_from=from_date,
+        requested_to=to_date,
+        month_batch=month_batch,
+        dry_run=dry_run,
+        batches=tuple(receipts),
+    )

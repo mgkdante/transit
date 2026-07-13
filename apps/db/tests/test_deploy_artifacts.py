@@ -293,6 +293,17 @@ def test_daily_warm_rollups_workflow_prunes_i3_after_historic_publish() -> None:
     )
 
 
+def test_daily_warm_rollups_archives_alerts_before_expensive_build_and_publish() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
+
+    sync = workflow.index('sync-alert-archive "$provider"')
+    build = workflow.index('build-warm-rollups "$provider"')
+    publish = workflow.index("publish-all --tier historic")
+    prune = workflow.index('prune-i3-storage "$provider"')
+
+    assert sync < build < publish < prune
+
+
 def _environment_keys(service: dict) -> set[str]:
     env = service.get("environment", {})
     # compose accepts both a mapping and a list of "KEY=VALUE" strings.
