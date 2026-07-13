@@ -1,0 +1,92 @@
+name: Historic Publish Recovery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-warm-rollups
+  cancel-in-progress: false
+
+jobs:
+  publish-historic-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/db
+    env:
+      APP_ENV: production
+      LOG_LEVEL: INFO
+      PROVIDER_TIMEZONE: America/Toronto
+      STM_PROVIDER_ID: stm
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      BRONZE_S3_ENDPOINT: https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com
+      BRONZE_S3_REGION: auto
+      BRONZE_S3_ACCESS_KEY: ${{ secrets.BRONZE_S3_ACCESS_KEY }}
+      BRONZE_S3_SECRET_KEY: ${{ secrets.BRONZE_S3_SECRET_KEY }}
+      SNAPSHOT_STORAGE_BACKEND: s3
+      SNAPSHOT_R2_BUCKET: ${{ secrets.SNAPSHOT_R2_BUCKET }}
+      SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      - name: Apply database migrations
+        run: |
+          mkdir -p artifacts/historic-publish-recovery
+          uv run python -m transit_ops.cli init-db 2>&1 \
+            | tee artifacts/historic-publish-recovery/migration-upgrade.txt
+
+      - name: Prove database migration head
+        run: |
+          {
+            uv run alembic heads
+            uv run alembic current --check-heads
+          } 2>&1 | tee artifacts/historic-publish-recovery/migration-head.txt
+
+      - name: Sync retained alert archive (all providers)
+        run: |
+          for provider in $(uv run python -m transit_ops.cli list-providers); do
+            uv run python -m transit_ops.cli sync-alert-archive "$provider" \
+              | tee "artifacts/historic-publish-recovery/alert-archive-sync-${provider}.json"
+          done
+
+      - name: Publish gated historic snapshot (all providers)
+        run: |
+          uv run python -m transit_ops.cli publish-all \
+            --tier historic \
+            --report-dir artifacts/historic-publish-recovery \
+            | tee artifacts/historic-publish-recovery/historic-publish.json
+
+      - name: Prove published historic snapshots
+        run: |
+          for provider in $(jq -r '.[].provider_id' artifacts/historic-publish-recovery/historic-publish.json); do
+            uv run python -m transit_ops.cli verify-historic-publish "$provider" \
+              --sync-report "artifacts/historic-publish-recovery/alert-archive-sync-${provider}.json" \
+              --gate-report "artifacts/historic-publish-recovery/publish-gate-${provider}.json" \
+              --report-path "artifacts/historic-publish-recovery/public-proof-${provider}.json"
+          done
+
+      - name: Upload historic recovery evidence
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: historic-publish-recovery-${{ github.run_id }}
+          path: apps/db/artifacts/historic-publish-recovery/
+          retention-days: 30
+          if-no-files-found: warn
