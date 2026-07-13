@@ -133,6 +133,12 @@ export async function getAdvertisedReceipt(
 	if (receipt === null) {
 		throw new HistoryArtifactContractError(date, 'advertised receipt not found');
 	}
+	if (receipt.date !== date) {
+		throw new HistoryArtifactContractError(
+			date,
+			`advertised receipt date mismatch (received ${receipt.date})`,
+		);
+	}
 	return receipt;
 }
 

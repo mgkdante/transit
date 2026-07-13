@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { HistoryArtifactContractError } from '$lib/v1/history';
 import type { IsoUtc, Receipt, ReceiptsIndex } from '$lib/v1/schemas';
 import { dataRefresh } from '$lib/stores';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
@@ -459,11 +460,18 @@ describe('AccountabilityReceipt — retained-span URLs', () => {
 		await waitFor(() => expect(nav.url.searchParams.has('date')).toBe(false));
 	});
 
-	it('renders an advertised object failure as a whole-page error and retries the same date', async () => {
+	it('renders advertised receipt contract corruption as an error and retries the same date', async () => {
 		nav.url = new URL(`http://localhost/receipt?date=${OLD_RETAINED_DATE}`);
 		const { container } = render(AccountabilityReceipt);
 		await waitFor(() => expect(ports.getReceipt).toHaveBeenCalledWith(OLD_RETAINED_DATE));
-		receiptGates.get(OLD_RETAINED_DATE)!.reject(new Error('advertised receipt missing'));
+		receiptGates
+			.get(OLD_RETAINED_DATE)!
+			.reject(
+				new HistoryArtifactContractError(
+					OLD_RETAINED_DATE,
+					'advertised receipt date mismatch (received 2026-06-17)',
+				),
+			);
 
 		await waitFor(() => expect(within(container).getByRole('alert')).toBeInTheDocument());
 		expect(within(container).queryByText('No receipt was published for this day.')).toBeNull();

@@ -216,6 +216,18 @@ describe('strict advertised receipts', () => {
 		});
 	});
 
+	it('rejects a mismatched advertised receipt date without changing the legacy seam', async () => {
+		const wrongDate = ReceiptSchema.parse({ generated_utc: ISO, date: '2026-03-30' });
+		vi.spyOn(adapter.historic, 'receipt').mockResolvedValue(wrongDate);
+
+		await expect(getAdvertisedReceipt(index, '2026-03-29')).rejects.toMatchObject({
+			name: 'HistoryArtifactContractError',
+			path: '2026-03-29',
+			message: expect.stringContaining('received 2026-03-30'),
+		});
+		await expect(getReceipt('2026-03-29')).resolves.toBe(wrongDate);
+	});
+
 	it('returns an advertised receipt and preserves legacy direct-receipt null behavior', async () => {
 		const ctx: AdapterCtx = { signal: new AbortController().signal };
 		const receipt = ReceiptSchema.parse({ generated_utc: ISO, date: '2026-03-29' });
