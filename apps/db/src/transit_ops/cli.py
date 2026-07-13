@@ -65,6 +65,7 @@ from transit_ops.silver import (
 from transit_ops.snapshots.gate import GateError
 from transit_ops.snapshots.publish import publish_snapshot, validate_snapshots
 from transit_ops.source_factory.runner import run_source_factory_rebuild
+from transit_ops.validation.historic_publish import build_historic_publish_proof
 from transit_ops.validation.proof import build_retention_proof_report
 from transit_ops.validation.static_feeds import validate_static_feeds
 
@@ -143,6 +144,26 @@ def _preflight_report_path(report_path: Path | None) -> None:
             pass
     except OSError as exc:
         raise typer.BadParameter(f"--report-path is not writable: {report_path}") from exc
+
+
+def _read_json_object(path: Path, *, option_name: str) -> dict[str, object]:
+    if not path.exists():
+        raise typer.BadParameter(f"{option_name} does not exist: {path}")
+    if path.is_dir():
+        raise typer.BadParameter(f"{option_name} must be a file path, got directory: {path}")
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise typer.BadParameter(f"{option_name} is not readable: {path}") from exc
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"{option_name} must contain valid JSON: {path}") from exc
+    if not isinstance(payload, dict):
+        raise typer.BadParameter(f"{option_name} must contain a JSON object: {path}")
+    return payload
 
 
 def _preflight_report_dir(report_dir: Path) -> None:
@@ -496,6 +517,37 @@ def retention_proof_report_command(
     if report_path is not None:
         report_path.write_text(report + "\n", encoding="utf-8")
     typer.echo(report)
+
+
+@app.command("verify-historic-publish")
+def verify_historic_publish_command(
+    provider_id: str,
+    sync_report: Path = typer.Option(..., "--sync-report"),  # noqa: B008
+    gate_report: Path = typer.Option(..., "--gate-report"),  # noqa: B008
+    report_path: Path = typer.Option(..., "--report-path"),  # noqa: B008
+) -> None:
+    """Verify one migrated, synced, gated historic publication against public /v1."""
+    settings = get_settings()
+    try:
+        _provider_registry(settings).get_provider(provider_id)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if _skip_if_unseeded(settings, provider_id, step="verify-historic-publish"):
+        return
+    _preflight_report_path(report_path)
+    sync_payload = _read_json_object(sync_report, option_name="--sync-report")
+    gate_payload = _read_json_object(gate_report, option_name="--gate-report")
+    result = build_historic_publish_proof(
+        provider_id,
+        sync_receipt=sync_payload,
+        gate_report=gate_payload,
+        settings=settings,
+    )
+    body = json.dumps(result.display_dict(), indent=2, sort_keys=True)
+    report_path.write_text(body + "\n", encoding="utf-8")
+    typer.echo(body)
+    if result.status != "pass":
+        raise typer.Exit(code=1)
 
 
 @app.command("capture-realtime")

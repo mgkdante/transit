@@ -8,6 +8,7 @@ import transit_ops.cli as cli_module
 from transit_ops.backups import BackupError
 from transit_ops.cli import app
 from transit_ops.orchestration import RealtimeCycleResult
+from transit_ops.validation.historic_publish import HistoricPublishProofReport
 
 runner = CliRunner()
 LEGACY_ORACLE_REBUILD_COMMAND = "rebuild-" + "oracle-data"
@@ -76,9 +77,7 @@ def test_recover_outputs_json_payload(monkeypatch) -> None:
             return {
                 "action_id": "restart-worker",
                 "execute": False,
-                "commands": [
-                    "docker compose --env-file .env -f docker-compose.yml restart worker"
-                ],
+                "commands": ["docker compose --env-file .env -f docker-compose.yml restart worker"],
                 "status": "planned",
                 "return_code": None,
                 "stdout": None,
@@ -165,9 +164,7 @@ def test_validate_static_feeds_help() -> None:
     assert "current fallback" not in result.stdout
 
 
-def test_validate_static_feeds_passes_provider_and_writes_report(
-    monkeypatch, tmp_path
-) -> None:
+def test_validate_static_feeds_passes_provider_and_writes_report(monkeypatch, tmp_path) -> None:
     from dataclasses import dataclass
 
     recorded: dict[str, object] = {}
@@ -236,9 +233,7 @@ def test_retention_proof_report_help() -> None:
     assert "--report-path" in result.stdout
 
 
-def test_retention_proof_report_passes_provider_and_writes_report(
-    monkeypatch, tmp_path
-) -> None:
+def test_retention_proof_report_passes_provider_and_writes_report(monkeypatch, tmp_path) -> None:
     from dataclasses import dataclass
 
     recorded: dict[str, object] = {}
@@ -284,9 +279,7 @@ def test_retention_proof_report_passes_provider_and_writes_report(
     assert report_payload["provider_id"] == "stm"
 
 
-def test_retention_proof_report_bad_report_path_exits_before_build(
-    monkeypatch, tmp_path
-) -> None:
+def test_retention_proof_report_bad_report_path_exits_before_build(monkeypatch, tmp_path) -> None:
     called = False
 
     def fake_build_retention_proof_report(provider_id, *, settings, registry):  # noqa: ANN001
@@ -499,9 +492,7 @@ def test_run_realtime_worker_help() -> None:
 def test_run_realtime_worker_passes_max_cycles(monkeypatch) -> None:
     recorded: dict[str, object] = {}
 
-    def fake_run_realtime_worker_loop(
-        provider_id, *, settings, registry, max_cycles
-    ):  # noqa: ANN001
+    def fake_run_realtime_worker_loop(provider_id, *, settings, registry, max_cycles):  # noqa: ANN001
         recorded["provider_id"] = provider_id
         recorded["max_cycles"] = max_cycles
 
@@ -871,9 +862,7 @@ def test_prune_bronze_storage_dry_run_flag(monkeypatch) -> None:
 def test_prune_bronze_storage_passes_max_objects_and_max_batches(monkeypatch) -> None:
     recorded: dict[str, object] = {}
 
-    def fake_prune_bronze_storage(
-        provider_id, *, settings, dry_run, max_objects, max_batches
-    ):  # noqa: ANN001
+    def fake_prune_bronze_storage(provider_id, *, settings, dry_run, max_objects, max_batches):  # noqa: ANN001
         recorded["provider_id"] = provider_id
         recorded["dry_run"] = dry_run
         recorded["max_objects"] = max_objects
@@ -1513,9 +1502,7 @@ def test_replay_realtime_silver_requires_since() -> None:
 def test_replay_realtime_silver_rejects_bad_since(monkeypatch) -> None:
     _stub_replay_settings_and_registry(monkeypatch)
 
-    result = runner.invoke(
-        app, ["replay-realtime-silver", "stm", "--since", "not-a-datetime"]
-    )
+    result = runner.invoke(app, ["replay-realtime-silver", "stm", "--since", "not-a-datetime"])
 
     assert result.exit_code == 2
     assert "must be an ISO-8601 datetime" in result.output
@@ -1767,3 +1754,329 @@ def test_publish_all_writes_gate_report_on_success(monkeypatch, tmp_path) -> Non
     written = json.loads(report_file.read_text())
     assert written["provider_id"] == "stm"
     assert written["errors"] == 0
+
+
+def _stub_verify_historic_publish_ready(monkeypatch) -> object:  # noqa: ANN001
+    settings = cli_module.Settings(_env_file=None)
+    monkeypatch.setattr(cli_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        cli_module,
+        "_provider_registry",
+        lambda settings: SimpleNamespace(get_provider=lambda provider_id: object()),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_skip_if_unseeded",
+        lambda settings, provider_id, *, step: False,
+    )
+    return settings
+
+
+def _historic_publish_report(status: str) -> HistoricPublishProofReport:
+    return HistoricPublishProofReport(
+        provider_id="stm",
+        verified_at_utc=datetime(2026, 7, 13, 12, 0, tzinfo=UTC),
+        status=status,
+        migration={"status": "pass"},
+        sync={"status": "pass"},
+        gate={"status": "pass"},
+        public={"status": status},
+        source_messages={"status": "pass"},
+        failures=[] if status == "pass" else ["public_artifact_fetch_failed"],
+    )
+
+
+def test_verify_historic_publish_help() -> None:
+    result = runner.invoke(app, ["verify-historic-publish", "--help"])
+
+    assert result.exit_code == 0
+    assert "Verify one migrated, synced, gated historic publication" in result.stdout
+    assert "--sync-report" in result.stdout
+    assert "--gate-report" in result.stdout
+    assert "--report-path" in result.stdout
+
+
+def test_verify_historic_publish_reads_receipts_and_writes_passing_report(
+    monkeypatch, tmp_path
+) -> None:
+    settings = _stub_verify_historic_publish_ready(monkeypatch)
+    sync_receipt = {
+        "provider_id": "stm",
+        "status": "synced",
+        "nested": {"values": [1, True, None]},
+    }
+    gate_report = {
+        "provider_id": "stm",
+        "errors": 0,
+        "checks": {"archive": "pass"},
+    }
+    sync_path = tmp_path / "sync.json"
+    gate_path = tmp_path / "gate.json"
+    report_path = tmp_path / "proof.json"
+    sync_path.write_text(json.dumps(sync_receipt), encoding="utf-8")
+    gate_path.write_text(json.dumps(gate_report), encoding="utf-8")
+    recorded: dict[str, object] = {}
+
+    def fake_builder(
+        provider_id,
+        *,
+        sync_receipt,
+        gate_report,
+        settings,  # noqa: ANN001
+    ):
+        recorded.update(
+            provider_id=provider_id,
+            sync_receipt=sync_receipt,
+            gate_report=gate_report,
+            settings=settings,
+        )
+        return _historic_publish_report("pass")
+
+    monkeypatch.setattr(cli_module, "build_historic_publish_proof", fake_builder, raising=False)
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(sync_path),
+            "--gate-report",
+            str(gate_path),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert recorded == {
+        "provider_id": "stm",
+        "sync_receipt": sync_receipt,
+        "gate_report": gate_report,
+        "settings": settings,
+    }
+    assert result.stdout == report_path.read_text(encoding="utf-8")
+    assert (
+        result.stdout
+        == json.dumps(_historic_publish_report("pass").display_dict(), indent=2, sort_keys=True)
+        + "\n"
+    )
+
+
+def test_verify_historic_publish_writes_report_before_failed_exit(monkeypatch, tmp_path) -> None:
+    _stub_verify_historic_publish_ready(monkeypatch)
+    sync_receipt = {"provider_id": "stm", "status": "synced"}
+    gate_report = {"provider_id": "stm", "errors": 1}
+    sync_path = tmp_path / "sync.json"
+    gate_path = tmp_path / "gate.json"
+    report_path = tmp_path / "proof.json"
+    sync_path.write_text(json.dumps(sync_receipt), encoding="utf-8")
+    gate_path.write_text(json.dumps(gate_report), encoding="utf-8")
+    recorded: dict[str, object] = {}
+
+    def fake_builder(
+        provider_id,
+        *,
+        sync_receipt,
+        gate_report,
+        settings,  # noqa: ANN001
+    ):
+        recorded["sync_receipt"] = sync_receipt
+        recorded["gate_report"] = gate_report
+        return _historic_publish_report("fail")
+
+    monkeypatch.setattr(cli_module, "build_historic_publish_proof", fake_builder, raising=False)
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(sync_path),
+            "--gate-report",
+            str(gate_path),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert recorded == {
+        "sync_receipt": sync_receipt,
+        "gate_report": gate_report,
+    }
+    assert report_path.exists()
+    assert result.stdout == report_path.read_text(encoding="utf-8")
+    assert json.loads(result.stdout)["status"] == "fail"
+
+
+def test_verify_historic_publish_rejects_bad_json_before_builder(monkeypatch, tmp_path) -> None:
+    _stub_verify_historic_publish_ready(monkeypatch)
+    gate_path = tmp_path / "gate.json"
+    gate_path.write_text('{"provider_id": "stm"}', encoding="utf-8")
+    builder_calls: list[object] = []
+    monkeypatch.setattr(
+        cli_module,
+        "build_historic_publish_proof",
+        lambda *args, **kwargs: builder_calls.append((args, kwargs)),
+        raising=False,
+    )
+
+    cases = [
+        ("invalid.json", "not-json raw-secret", "valid JSON", "raw-secret"),
+        ("array.json", '["array-secret"]', "JSON object", "array-secret"),
+    ]
+    for index, (name, contents, expected_error, secret) in enumerate(cases):
+        sync_path = tmp_path / name
+        report_path = tmp_path / f"proof-{index}.json"
+        sync_path.write_text(contents, encoding="utf-8")
+
+        result = runner.invoke(
+            app,
+            [
+                "verify-historic-publish",
+                "stm",
+                "--sync-report",
+                str(sync_path),
+                "--gate-report",
+                str(gate_path),
+                "--report-path",
+                str(report_path),
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "--sync-report" in result.output
+        assert expected_error in result.output
+        assert secret not in result.output
+    assert builder_calls == []
+
+
+def test_verify_historic_publish_rejects_missing_or_directory_inputs(monkeypatch, tmp_path) -> None:
+    _stub_verify_historic_publish_ready(monkeypatch)
+    sync_path = tmp_path / "sync.json"
+    gate_path = tmp_path / "gate.json"
+    gate_directory = tmp_path / "gate-directory"
+    sync_path.write_text('{"provider_id": "stm"}', encoding="utf-8")
+    gate_path.write_text('{"provider_id": "stm"}', encoding="utf-8")
+    gate_directory.mkdir()
+
+    def fail_builder(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("proof builder must not run for invalid inputs")
+
+    monkeypatch.setattr(cli_module, "build_historic_publish_proof", fail_builder, raising=False)
+
+    missing_result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(tmp_path / "missing.json"),
+            "--gate-report",
+            str(gate_path),
+            "--report-path",
+            str(tmp_path / "missing-proof.json"),
+        ],
+    )
+    directory_result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(sync_path),
+            "--gate-report",
+            str(gate_directory),
+            "--report-path",
+            str(tmp_path / "directory-proof.json"),
+        ],
+    )
+
+    assert missing_result.exit_code == 2
+    assert "--sync-report" in missing_result.output
+    assert "does not exist" in missing_result.output
+    assert directory_result.exit_code == 2
+    assert "--gate-report" in directory_result.output
+    assert "must be a file" in directory_result.output
+
+
+def test_verify_historic_publish_rejects_unknown_provider_before_writing(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(cli_module, "get_settings", lambda: cli_module.Settings(_env_file=None))
+
+    def unknown_provider(provider_id):  # noqa: ANN001
+        raise KeyError(f"unknown provider: {provider_id}")
+
+    monkeypatch.setattr(
+        cli_module,
+        "_provider_registry",
+        lambda settings: SimpleNamespace(get_provider=unknown_provider),
+    )
+
+    def fail(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("validation must stop before skip or proof building")
+
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", fail)
+    monkeypatch.setattr(cli_module, "build_historic_publish_proof", fail, raising=False)
+    report_path = tmp_path / "proof.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "unknown",
+            "--sync-report",
+            str(tmp_path / "sync.json"),
+            "--gate-report",
+            str(tmp_path / "gate.json"),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "unknown provider: unknown" in result.output
+    assert not report_path.exists()
+
+
+def test_verify_historic_publish_skips_unseeded_provider_without_builder(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(cli_module, "get_settings", lambda: cli_module.Settings(_env_file=None))
+    monkeypatch.setattr(
+        cli_module,
+        "_provider_registry",
+        lambda settings: SimpleNamespace(get_provider=lambda provider_id: object()),
+    )
+    _stub_unseeded(monkeypatch, seeded=False)
+
+    def fail_builder(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("proof builder must not run for an unseeded provider")
+
+    monkeypatch.setattr(cli_module, "build_historic_publish_proof", fail_builder, raising=False)
+    report_path = tmp_path / "proof.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "octranspo",
+            "--sync-report",
+            str(tmp_path / "missing-sync.json"),
+            "--gate-report",
+            str(tmp_path / "missing-gate.json"),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "provider_id": "octranspo",
+        "skipped_not_seeded": True,
+        "step": "verify-historic-publish",
+    }
+    assert not report_path.exists()
