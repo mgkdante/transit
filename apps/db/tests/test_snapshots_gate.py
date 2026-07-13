@@ -65,6 +65,70 @@ def _has_err(results, check, needle=""):
     return any(r.check == check and needle in (r.field_path or "") for r in _errors(results))
 
 
+def test_network_history_gate_routes_partition_and_index_structural_checks():
+    partition = {
+        "generated_utc": "2026-07-01T00:00:00Z",
+        "month": "2026-06",
+        "days": [
+            {
+                "date": "2026-06-01",
+                "delay": {
+                    "observation_count": 10,
+                    "in_clamp_observation_count": 8,
+                    "on_time_count": 11,
+                    "severe_count": 0,
+                    "sum_delay_seconds": 80,
+                },
+            }
+        ],
+    }
+    rel_key = f"historic/history/network/generations/{'a' * 64}/2026-06.json"
+    results = gate.check_payload(rel_key, partition)
+    assert "metric_range" in _checks(results)
+
+    index = {
+        "generated_utc": "2026-07-01T00:00:00Z",
+        "family": "network",
+        "selection_mode": "range",
+        "collection_generation_id": "wrong",
+        "first_available_date": None,
+        "last_available_date": None,
+        "available_dates": [],
+        "gaps": [],
+        "partitions": [],
+        "metrics": [],
+    }
+    results = gate.check_payload("historic/history/network/index.json", index)
+    assert "collection_generation_id" in _checks(results)
+
+
+def test_network_history_gate_rejects_noncanonical_empty_index_timestamp():
+    index = {
+        "generated_utc": "2026-07-01T08:00:00-04:00",
+        "family": "network",
+        "selection_mode": "range",
+        "entity_id": None,
+        "collection_generation_id": "wrong",
+        "first_available_date": None,
+        "last_available_date": None,
+        "available_dates": [],
+        "gaps": [],
+        "partitions": [],
+        "metrics": [
+            {"metric": "delay", "aggregation": "additive", "gaps": []},
+            {"metric": "delay_percentiles", "aggregation": "daily_only", "gaps": []},
+            {"metric": "vehicles", "aggregation": "daily_only", "gaps": []},
+            {"metric": "cancellation", "aggregation": "additive", "gaps": []},
+            {"metric": "occupancy", "aggregation": "additive", "gaps": []},
+        ],
+    }
+    results = gate.check_network_history_index(
+        index,
+        rel_key="historic/history/network/index.json",
+    )
+    assert "generated_utc" in _checks(results)
+
+
 # --- range checks ------------------------------------------------------------
 
 

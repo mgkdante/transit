@@ -177,6 +177,35 @@ export const HistoricDelayMetricSchema = z
 				message: 'sum_delay_seconds requires in_clamp_observation_count',
 			});
 		}
+		const inClamp = value.in_clamp_observation_count ?? 0;
+		for (const field of ['on_time_count', 'severe_count'] as const) {
+			const count = value[field];
+			if (count != null && count > inClamp) {
+				ctx.addIssue({
+					code: 'custom',
+					path: [field],
+					message: `${field} cannot exceed in_clamp_observation_count`,
+				});
+			}
+		}
+		if (
+			value.on_time_count != null &&
+			value.severe_count != null &&
+			value.on_time_count + value.severe_count > inClamp
+		) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['on_time_count'],
+				message: 'on_time_count plus severe_count cannot exceed in_clamp_observation_count',
+			});
+		}
+		if (value.sum_delay_seconds != null && Math.abs(value.sum_delay_seconds) > 3600 * inClamp) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['sum_delay_seconds'],
+				message: 'sum_delay_seconds exceeds the capped in-clamp population',
+			});
+		}
 	});
 export type HistoricDelayMetric = z.infer<typeof HistoricDelayMetricSchema>;
 
@@ -191,6 +220,27 @@ export const HistoricDelayPercentilesSchema = z
 			ctx.addIssue({
 				code: 'custom',
 				message: 'at least one delay percentile is required',
+			});
+		}
+		for (const field of ['p50_delay_seconds', 'p90_delay_seconds'] as const) {
+			const percentile = value[field];
+			if (percentile != null && (percentile < -3600 || percentile > 3600)) {
+				ctx.addIssue({
+					code: 'custom',
+					path: [field],
+					message: `${field} must be within the capped delay range`,
+				});
+			}
+		}
+		if (
+			value.p50_delay_seconds != null &&
+			value.p90_delay_seconds != null &&
+			value.p50_delay_seconds > value.p90_delay_seconds
+		) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['p50_delay_seconds'],
+				message: 'p50_delay_seconds cannot exceed p90_delay_seconds',
 			});
 		}
 	});
@@ -219,6 +269,35 @@ export const HistoricCancellationMetricSchema = z
 			ctx.addIssue({
 				code: 'custom',
 				message: 'cancellation requires a positive observed or scheduled denominator',
+			});
+		}
+		if (
+			value.scheduled_trip_days == null &&
+			(value.delivered_trip_days != null || value.silent_trip_days != null)
+		) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['scheduled_trip_days'],
+				message: 'delivered and silent counts require scheduled_trip_days',
+			});
+		}
+		if (
+			value.silent_trip_days != null &&
+			value.scheduled_trip_days != null &&
+			value.silent_trip_days > value.scheduled_trip_days
+		) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['silent_trip_days'],
+				message: 'silent_trip_days cannot exceed scheduled_trip_days',
+			});
+		}
+		const deliveredCap = value.total_trip_days - value.canceled_trip_days;
+		if (value.delivered_trip_days != null && value.delivered_trip_days > deliveredCap) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['delivered_trip_days'],
+				message: 'delivered_trip_days cannot exceed total minus canceled trip-days',
 			});
 		}
 	});
@@ -282,7 +361,20 @@ export const NetworkHistoryDaySchema = z
 		occupancy: HistoricOccupancyMetricSchema.nullable().optional(),
 		vehicles: z.number().int().min(1).nullable().optional(),
 	})
-	.superRefine(requireHistoryDayMetric);
+	.superRefine(requireHistoryDayMetric)
+	.superRefine((value, ctx) => {
+		if (
+			value.vehicles != null &&
+			value.delay_percentiles != null &&
+			value.vehicles > value.delay_percentiles.observation_count
+		) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['vehicles'],
+				message: 'vehicles cannot exceed delay percentile observations',
+			});
+		}
+	});
 export type NetworkHistoryDay = z.infer<typeof NetworkHistoryDaySchema>;
 
 export const LineHistoryDaySchema = z

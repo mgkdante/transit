@@ -171,6 +171,27 @@ def _parallel_put(
         return [future.result() for future in futures]
 
 
+def _publish_stages(
+    storage: object,
+    stages: list,
+    *,
+    concurrency: int,
+) -> list[str]:
+    """Publish ordered stages, waiting for every child stage before its pointer."""
+
+    written: list[str] = []
+    for stage, write_mode in stages:
+        written.extend(
+            _parallel_put(
+                storage,
+                stage,
+                concurrency=concurrency,
+                write_mode=write_mode,
+            )
+        )
+    return written
+
+
 @dataclass(frozen=True)
 class PublishResult:
     """Outcome of a :func:`publish_snapshot` call.
@@ -653,10 +674,13 @@ def _publish_historic(
     *stamp* is the day-truncated DATA-time stamp every artifact carries; when
     omitted (direct callers / older tests) it defaults to today's truncated UTC.
 
-    When *gate_report* is supplied the FULL payload set is built into memory FIRST,
-    the value gate runs over it (with the batch-level coverage/empty-route aggregates),
-    then ``gate.enforce`` is called BEFORE any upload — so a failed gate uploads NOTHING
-    (all-or-nothing) and the caller's transaction rolls back with state un-advanced.
+    Compatibility payloads remain one build/gate pass. Retained Network history is
+    different by design: one month is built, structurally gated, and immutably uploaded
+    before the next month is materialized. Only compact refs survive between months.
+    No mutable PUT starts until the complete structural gate succeeds. Compatibility
+    stages then publish before the Network index, so a storage failure may leave refreshed
+    compatibility files and harmless unreferenced immutable months, but never a new
+    Network pointer to incomplete children.
 
     Uploads run STAGED: within each stage puts fan out through a bounded thread pool,
     but a stage COMPLETES before the next begins, so a discovery index (its own stage)
@@ -673,46 +697,99 @@ def _publish_historic(
     )
     _stamp_envelope(items, provider_id=provider_id, stamp=stamp)  # GC2 H4
 
-    structural_findings = gate.check_alert_archive_bundle(
+    network_history = builders.build_network_history_plan(
+        conn,  # type: ignore[arg-type]
+        provider_id=provider_id,
+        generated_utc=stamp,
+    )
+    effective_report = gate_report or gate.new_report(provider_id, "historic", stamp)
+    alert_findings = gate.check_alert_archive_bundle(
         alert_archive.index,
         alert_archive.page_items,
         provider_timezone=alert_archive.provider_timezone,
     )
-    effective_report = gate_report or gate.new_report(provider_id, "historic", stamp)
 
     if gate_report is not None:
         for rel_key, payload, _tier in items:
             gate.record(gate_report, rel_key, payload)  # type: ignore[arg-type]
-        gate_report.results.extend(structural_findings)  # type: ignore[attr-defined]
+        gate_report.results.extend(alert_findings)  # type: ignore[attr-defined]
+    else:
+        effective_report.results.extend(alert_findings)
+        effective_report.payloads_checked = len(alert_archive.page_items) + 1
+        effective_report.checks_run = 1
+    gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+
+    network_summary = gate.NetworkHistoryStreamSummary()
+    network_keys: list[str] = []
+    for ref, partition in network_history.iter_partition_items():
+        if gate_report is not None:
+            gate.record(gate_report, ref.path, partition)  # type: ignore[arg-type]
+            partition_findings = []
+        else:
+            partition_findings = gate.check_network_history_partition(
+                partition,
+                rel_key=ref.path,
+            )
+            effective_report.payloads_checked += 1  # type: ignore[attr-defined]
+            effective_report.checks_run += 2  # type: ignore[attr-defined]
+        effective_report.results.extend(  # type: ignore[attr-defined]
+            [
+                *partition_findings,
+                *gate.check_network_history_partition_ref(ref, partition),
+            ]
+        )
+        gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+        network_summary.observe(ref, partition)
+        network_keys.append(storage.put_immutable_json(ref.path, partition))  # type: ignore[attr-defined]
+
+    network_index = network_history.build_index(network_summary.detached_refs())
+    network_index_item = [("historic/history/network/index.json", network_index, "historic")]
+    _stamp_envelope(network_index_item, provider_id=provider_id, stamp=stamp)
+    stream_findings = gate.check_network_history_stream_index(
+        network_index,
+        network_summary,
+        fallback_generated_utc=stamp,
+    )
+    if gate_report is not None:
+        gate.record(  # type: ignore[arg-type]
+            gate_report,
+            "historic/history/network/index.json",
+            network_index,
+        )
+        gate_report.results.extend(stream_findings)  # type: ignore[attr-defined]
+        gate_report.checks_run += 1  # type: ignore[attr-defined]
         gate.finalize_batch(
             gate_report,  # type: ignore[arg-type]
             route_payloads=[(k, p) for (k, p, _t) in route_items],
-            current_total=_stable_item_total(items),
+            current_total=_stable_item_total(items) + 1,
             prior_files_total=prior_files_total,
             network_trend=_find_network_trend(items),
         )
-        # Enforce BEFORE the first put — a failed gate uploads nothing.
-        gate.enforce(gate_report, force=force)  # type: ignore[arg-type]
     else:
-        # Archive ref/SHA/size/path integrity is a publication invariant, not an
-        # optional analytics gate. Even --no-gate must never publish a dishonest
-        # pointer; only the existing explicit force override may proceed.
-        effective_report.results.extend(structural_findings)
-        effective_report.payloads_checked = len(alert_archive.page_items) + 1
-        effective_report.checks_run = 1
-        gate.enforce(effective_report, force=force)
-
-    written: list[str] = []
-    for stage, write_mode in stages:
-        written.extend(
-            _parallel_put(
-                storage,
-                stage,
-                concurrency=concurrency,
-                write_mode=write_mode,
-            )
+        effective_report.results.extend(  # type: ignore[attr-defined]
+            [
+                *gate.check_network_history_index(
+                    network_index,
+                    rel_key="historic/history/network/index.json",
+                ),
+                *stream_findings,
+            ]
         )
-    return written
+        effective_report.payloads_checked += 1  # type: ignore[attr-defined]
+        effective_report.checks_run += 2  # type: ignore[attr-defined]
+    gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+
+    compatibility_keys = _publish_stages(
+        storage,
+        stages,
+        concurrency=concurrency,
+    )
+    network_index_key = storage.put_json(  # type: ignore[attr-defined]
+        "historic/history/network/index.json",
+        network_index,
+        tier="historic",
+    )
+    return [*network_keys, *compatibility_keys, network_index_key]
 
 
 def _publish_static(
@@ -957,10 +1034,11 @@ def publish_snapshot(
                 )
         report = None  # the value-gate report for a successful gated publish (FIX-6)
         if tier == "historic":
-            # Historic gate: build the whole set, inspect it, enforce BEFORE the first
-            # put so a failed gate uploads NOTHING and this txn rolls back with state
-            # un-advanced. force bypasses ERROR abort (a logged override). The coverage
-            # baseline is the prior publish's WHOLE-tier files_total (None on first run).
+            # Historic gate: compatibility payloads are gated before their mutable stage,
+            # while retained month partitions stream through the gate one at a time. A
+            # later failure can leave harmless unreferenced immutable months, but no new
+            # retained pointer is written. force bypasses ERROR abort (a logged override).
+            # Coverage uses the prior publish's WHOLE-tier files_total (None on first run).
             report = gate.new_report(provider_id, tier, stamp) if gate_enabled else None
             prior_total = (
                 _prior_files_total(conn, provider_id=provider_id, tier=tier)
@@ -1053,6 +1131,7 @@ def collect_payloads(
     settings: object = None,
     engine: object = None,
     include_archive_bundle: bool = False,
+    include_network_bundle: bool = False,
 ) -> tuple:
     """Build every payload for *tier* WITHOUT uploading; return the collected set.
 
@@ -1081,6 +1160,13 @@ def collect_payloads(
             # Stamp the H4 envelope here too (mirrors _publish_historic) so the audit
             # sees published bytes. (Static is already stamped inside _publish_static.)
             _stamp_envelope(items, provider_id=provider_id, stamp=stamp)
+            network_history = None
+            if include_network_bundle:
+                network_history = builders.build_network_history_plan(
+                    conn,  # type: ignore[arg-type]
+                    provider_id=provider_id,
+                    generated_utc=stamp,
+                )
             prior_total = _prior_files_total(conn, provider_id=provider_id, tier=tier)
             result = (
                 [(k, p) for (k, p, _t) in items],
@@ -1088,7 +1174,12 @@ def collect_payloads(
                 stamp,
                 prior_total,
             )
-            return (*result, _alert_archive) if include_archive_bundle else result
+            extras: list[object] = []
+            if include_archive_bundle:
+                extras.append(_alert_archive)
+            if include_network_bundle:
+                extras.append(network_history)
+            return (*result, *extras)
 
         if tier == "static":
             stamp = _static_stamp(conn, provider_id)
@@ -1118,9 +1209,11 @@ def validate_snapshots(
         settings=settings,
         engine=engine,
         include_archive_bundle=tier == "historic",
+        include_network_bundle=tier == "historic",
     )
     all_items, route_items, stamp, prior_total = collected[:4]
     alert_archive = collected[4] if len(collected) > 4 else None
+    network_history = collected[5] if len(collected) > 5 else None
     report = gate.new_report(provider_id, tier, stamp)
     for rel_key, payload in all_items:
         gate.record(report, rel_key, payload)
@@ -1133,10 +1226,38 @@ def validate_snapshots(
                     provider_timezone=alert_archive.provider_timezone,
                 )
             )
+        if network_history is not None:
+            network_summary = gate.NetworkHistoryStreamSummary()
+            for ref, payload in network_history.iter_partition_items():
+                gate.record(report, ref.path, payload)
+                report.results.extend(gate.check_network_history_partition_ref(ref, payload))
+                network_summary.observe(ref, payload)
+            network_index = network_history.build_index(network_summary.detached_refs())
+            _stamp_envelope(
+                [("historic/history/network/index.json", network_index, "historic")],
+                provider_id=provider_id,
+                stamp=stamp,
+            )
+            gate.record(
+                report,
+                "historic/history/network/index.json",
+                network_index,
+            )
+            report.results.extend(
+                gate.check_network_history_stream_index(
+                    network_index,
+                    network_summary,
+                    fallback_generated_utc=stamp,
+                )
+            )
+            report.checks_run += 1
         gate.finalize_batch(
             report,
             route_payloads=route_items,
-            current_total=sum(1 for key, _payload in all_items if not _is_immutable_item(key)),
+            current_total=(
+                sum(1 for key, _payload in all_items if not _is_immutable_item(key))
+                + (1 if network_history is not None else 0)
+            ),
             prior_files_total=prior_total,
             network_trend=next(
                 ((k, p) for (k, p) in all_items if k == "historic/network_trend.json"), None

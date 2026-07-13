@@ -28,8 +28,20 @@ from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
+from transit_ops.snapshots.builders.historic.history_common import (
+    history_coverage,
+    history_index_generation_id,
+    history_metric_coverage,
+    history_utc_timestamp,
+    latest_history_timestamp,
+)
+from transit_ops.snapshots.contract import (
+    HistoricCollectionIndex,
+    HistoricPartitionRef,
+    NetworkHistoryPartition,
+)
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
 
 logger = logging.getLogger(__name__)
@@ -1242,6 +1254,737 @@ def check_alert_archive_bundle(
     return findings
 
 
+_NETWORK_HISTORY_PARTITION_PATH_RE = re.compile(
+    r"historic/history/network/generations/([0-9a-f]{64})/(\d{4}-(?:0[1-9]|1[0-2]))\.json"
+)
+_NETWORK_HISTORY_INDEX_PATH = "historic/history/network/index.json"
+_NETWORK_HISTORY_METRICS = (
+    ("delay", "additive"),
+    ("delay_percentiles", "daily_only"),
+    ("vehicles", "daily_only"),
+    ("cancellation", "additive"),
+    ("occupancy", "additive"),
+)
+
+
+def _history_model_error(emit: _Emitter, exc: ValidationError) -> None:
+    emit.err("contract", "", None, f"retained history payload violates its contract: {exc}")
+
+
+def _check_network_history_day(emit: _Emitter, day: dict, index: int) -> None:  # type: ignore[type-arg]
+    prefix = f"days[{index}]."
+    delay = day.get("delay")
+    if isinstance(delay, dict):
+        observation_count = delay.get("observation_count")
+        for field in ("in_clamp_observation_count", "on_time_count", "severe_count"):
+            value = delay.get(field)
+            if not _le(value, observation_count):
+                emit.err(
+                    "metric_range",
+                    f"{prefix}delay.{field}",
+                    value,
+                    f"{field} cannot exceed delay observation_count",
+                )
+        in_clamp = delay.get("in_clamp_observation_count")
+        on_time = delay.get("on_time_count")
+        severe = delay.get("severe_count")
+        in_clamp_bound = in_clamp if _is_number(in_clamp) else 0
+        for field, value in (("on_time_count", on_time), ("severe_count", severe)):
+            if _is_number(value) and value > in_clamp_bound:
+                emit.err(
+                    "delay_in_clamp_count",
+                    f"{prefix}delay.{field}",
+                    value,
+                    f"{field} cannot exceed the in-clamp observation count",
+                )
+        if _is_number(on_time) and _is_number(severe) and on_time + severe > in_clamp_bound:
+            emit.err(
+                "delay_in_clamp_partition",
+                f"{prefix}delay.on_time_count",
+                on_time + severe,
+                "on-time and severe counts cannot exceed the disjoint in-clamp population",
+            )
+        delay_sum = delay.get("sum_delay_seconds")
+        if _is_number(delay_sum) and _is_number(in_clamp) and abs(delay_sum) > 3600 * in_clamp:
+            emit.err(
+                "delay_sum_bound",
+                f"{prefix}delay.sum_delay_seconds",
+                delay_sum,
+                "absolute delay sum exceeds the capped in-clamp population",
+            )
+        if delay.get("sum_delay_seconds") is not None and delay.get(
+            "in_clamp_observation_count"
+        ) in (None, 0):
+            emit.err(
+                "metric_range",
+                f"{prefix}delay.sum_delay_seconds",
+                delay.get("sum_delay_seconds"),
+                "delay sum requires a positive in-clamp denominator",
+            )
+    percentile = day.get("delay_percentiles")
+    if isinstance(percentile, dict):
+        p50 = percentile.get("p50_delay_seconds")
+        p90 = percentile.get("p90_delay_seconds")
+        for field, value in (("p50_delay_seconds", p50), ("p90_delay_seconds", p90)):
+            if not _in_range(value, -3600, 3600):
+                emit.err(
+                    "metric_range",
+                    f"{prefix}delay_percentiles.{field}",
+                    value,
+                    f"{field} is outside the capped raw fact range",
+                )
+        if not _le(p50, p90):
+            emit.err(
+                "metric_range",
+                f"{prefix}delay_percentiles.p50_delay_seconds",
+                p50,
+                "p50 delay cannot exceed p90 delay",
+            )
+    vehicles = day.get("vehicles")
+    if _is_number(vehicles) and vehicles <= 0:
+        emit.err(
+            "metric_range",
+            f"{prefix}vehicles",
+            vehicles,
+            "vehicle count must be positive when emitted",
+        )
+    if (
+        _is_number(vehicles)
+        and isinstance(percentile, dict)
+        and _is_number(percentile.get("observation_count"))
+        and vehicles > percentile["observation_count"]
+    ):
+        emit.err(
+            "vehicle_observation_bound",
+            f"{prefix}vehicles",
+            vehicles,
+            "distinct vehicles cannot exceed raw percentile observations",
+        )
+
+    cancellation = day.get("cancellation")
+    if isinstance(cancellation, dict):
+        scheduled = cancellation.get("scheduled_trip_days")
+        delivered = cancellation.get("delivered_trip_days")
+        silent = cancellation.get("silent_trip_days")
+        total = cancellation.get("total_trip_days")
+        if scheduled is None and (delivered is not None or silent is not None):
+            emit.err(
+                "cancellation_universe",
+                f"{prefix}cancellation.scheduled_trip_days",
+                scheduled,
+                "delivered and silent counts require a known scheduled universe",
+            )
+        delivered_cap = (
+            total - cancellation.get("canceled_trip_days")
+            if _is_number(total) and _is_number(cancellation.get("canceled_trip_days"))
+            else None
+        )
+        if not _le(delivered, delivered_cap):
+            emit.err(
+                "cancellation_invariant",
+                f"{prefix}cancellation.delivered_trip_days",
+                delivered,
+                "delivered trip-days cannot exceed total minus canceled trip-days",
+            )
+        if not _le(silent, scheduled):
+            emit.err(
+                "cancellation_invariant",
+                f"{prefix}cancellation.silent_trip_days",
+                silent,
+                "silent trip-days cannot exceed scheduled trip-days",
+            )
+
+
+def check_network_history_partition(payload: object, *, rel_key: str) -> list[CheckResult]:
+    """Validate one Network month payload, including its content-addressed path."""
+
+    emit = _Emitter("historic_network_history_partition", rel_key)
+    partition = _as_dict(payload)
+    if not isinstance(partition, dict):
+        emit.err("contract", "", payload, "network history partition must be an object")
+        return emit.out
+    try:
+        NetworkHistoryPartition.model_validate(partition)
+    except ValidationError as exc:
+        _history_model_error(emit, exc)
+
+    match = _NETWORK_HISTORY_PARTITION_PATH_RE.fullmatch(rel_key)
+    if match is None:
+        emit.err("partition_path", "", rel_key, "malformed Network history generation path")
+    else:
+        path_sha, path_month = match.groups()
+        if partition.get("month") != path_month:
+            emit.err(
+                "partition_month",
+                "month",
+                partition.get("month"),
+                "partition month does not match its generation path",
+            )
+        body = _serialized_body(payload)
+        if body is not None and hashlib.sha256(body).hexdigest() != path_sha:
+            emit.err(
+                "partition_sha256",
+                "",
+                path_sha,
+                "generation path SHA does not match exact partition bytes",
+            )
+
+    if partition.get("methodology_version") != "history-1":
+        emit.err(
+            "partition_envelope",
+            "methodology_version",
+            partition.get("methodology_version"),
+            "immutable Network partition methodology_version must be history-1",
+        )
+    if partition.get("publish_generation_id") is not None:
+        emit.err(
+            "partition_envelope",
+            "publish_generation_id",
+            partition.get("publish_generation_id"),
+            "immutable Network partition cannot carry a run generation stamp",
+        )
+    try:
+        normalized_generated = history_utc_timestamp(
+            partition.get("generated_utc"), field="generated_utc"
+        )
+    except ValueError:
+        emit.err(
+            "generated_utc",
+            "generated_utc",
+            partition.get("generated_utc"),
+            "partition generated_utc is not an aware ISO timestamp",
+        )
+    else:
+        if partition.get("generated_utc") != normalized_generated:
+            emit.err(
+                "partition_envelope",
+                "generated_utc",
+                partition.get("generated_utc"),
+                "immutable Network partition timestamp must be canonical UTC Z",
+            )
+    days = partition.get("days") if isinstance(partition.get("days"), list) else []
+    dates = [day.get("date") for day in days if isinstance(day, dict)]
+    string_dates = [value for value in dates if isinstance(value, str)]
+    if len(string_dates) != len(set(string_dates)):
+        emit.err("duplicate_date", "days", dates, "partition contains a duplicate date")
+    if dates != sorted(string_dates):
+        emit.err("date_order", "days", dates, "partition dates must be strictly ascending")
+    for index, day in enumerate(days):
+        if isinstance(day, dict):
+            _check_network_history_day(emit, day, index)
+    return emit.out
+
+
+def _coverage_dict(value: object) -> object:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if isinstance(value, list):
+        return [_coverage_dict(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _coverage_dict(item) for key, item in value.items()}
+    if isinstance(value, Enum):
+        return value.value
+    return value
+
+
+@dataclass
+class NetworkHistoryStreamSummary:
+    """Compact truth accumulated while Network month payloads stream past the gate."""
+
+    refs: list[HistoricPartitionRef] = field(default_factory=list)
+    available_dates: list[str] = field(default_factory=list)
+    metric_dates: dict[str, list[str]] = field(
+        default_factory=lambda: {metric: [] for metric, _aggregation in _NETWORK_HISTORY_METRICS}
+    )
+    generated_timestamps: list[str] = field(default_factory=list)
+
+    def observe(self, ref: object, partition: object) -> None:
+        """Retain only one compact ref and structural scalars from a streamed month."""
+
+        self.refs.append(HistoricPartitionRef.model_validate(_coverage_dict(ref)))
+        value = _as_dict(partition)
+        if not isinstance(value, dict):
+            return
+        generated_utc = value.get("generated_utc")
+        if isinstance(generated_utc, str):
+            self.generated_timestamps.append(generated_utc)
+        days = value.get("days") if isinstance(value.get("days"), list) else []
+        for day in days:
+            if not isinstance(day, dict):
+                continue
+            local_date = day.get("date")
+            if not isinstance(local_date, str):
+                continue
+            self.available_dates.append(local_date)
+            for metric in self.metric_dates:
+                if day.get(metric) is not None:
+                    self.metric_dates[metric].append(local_date)
+
+    def detached_refs(self) -> list[HistoricPartitionRef]:
+        """Give an index builder copies that cannot rewrite the streamed truth."""
+
+        return [ref.model_copy(deep=True) for ref in self.refs]
+
+
+def check_network_history_stream_index(
+    payload: object,
+    summary: NetworkHistoryStreamSummary,
+    *,
+    fallback_generated_utc: str,
+) -> list[CheckResult]:
+    """Cross-check the final pointer against exactly the children streamed this run."""
+
+    emit = _Emitter("historic_network_history_stream", _NETWORK_HISTORY_INDEX_PATH)
+    index = _as_dict(payload)
+    if not isinstance(index, dict):
+        emit.err("contract", "", payload, "network history index must be an object")
+        return emit.out
+
+    expected_refs = [_coverage_dict(ref) for ref in summary.refs]
+    actual_refs = _coverage_dict(index.get("partitions") or [])
+    if actual_refs != expected_refs:
+        emit.err(
+            "stream_partitions",
+            "partitions",
+            actual_refs,
+            "Network index refs do not exactly match streamed partition refs",
+        )
+
+    expected_dates = sorted(summary.available_dates)
+    actual_dates = index.get("available_dates")
+    if actual_dates != expected_dates:
+        emit.err(
+            "stream_available_dates",
+            "available_dates",
+            actual_dates,
+            "Network index dates do not exactly match streamed partition days",
+        )
+    first, last, gaps = history_coverage(expected_dates)
+    expected_coverage = (first, last, _coverage_dict(gaps))
+    actual_coverage = (
+        index.get("first_available_date"),
+        index.get("last_available_date"),
+        _coverage_dict(index.get("gaps") or []),
+    )
+    if actual_coverage != expected_coverage:
+        emit.err(
+            "stream_coverage",
+            "available_dates",
+            actual_coverage,
+            "Network index coverage does not match streamed partition days",
+        )
+
+    expected_metrics = _coverage_dict(
+        [
+            history_metric_coverage(metric, aggregation, summary.metric_dates[metric])
+            for metric, aggregation in _NETWORK_HISTORY_METRICS
+        ]
+    )
+    actual_metrics = _coverage_dict(index.get("metrics") or [])
+    if actual_metrics != expected_metrics:
+        emit.err(
+            "stream_metrics",
+            "metrics",
+            actual_metrics,
+            "Network metric coverage does not match streamed partition days",
+        )
+
+    try:
+        expected_generated_utc = latest_history_timestamp(
+            summary.generated_timestamps,
+            fallback=fallback_generated_utc,
+        )
+    except ValueError:
+        expected_generated_utc = None
+    if index.get("generated_utc") != expected_generated_utc:
+        emit.err(
+            "stream_generated_utc",
+            "generated_utc",
+            index.get("generated_utc"),
+            "Network index timestamp does not match streamed partition provenance",
+        )
+    return emit.out
+
+
+def check_network_history_index(payload: object, *, rel_key: str) -> list[CheckResult]:
+    """Validate the stable Network pointer's self-contained invariants."""
+
+    emit = _Emitter("historic_network_history_index", rel_key)
+    index = _as_dict(payload)
+    if not isinstance(index, dict):
+        emit.err("contract", "", payload, "network history index must be an object")
+        return emit.out
+    try:
+        HistoricCollectionIndex.model_validate(index)
+    except ValidationError as exc:
+        _history_model_error(emit, exc)
+    if rel_key != _NETWORK_HISTORY_INDEX_PATH:
+        emit.err("index_path", "", rel_key, "Network history index uses the wrong stable path")
+    if (
+        index.get("family") != "network"
+        or index.get("selection_mode") != "range"
+        or index.get("entity_id") is not None
+    ):
+        emit.err(
+            "index_identity",
+            "family",
+            index.get("family"),
+            "Network history index must identify the network/range family",
+        )
+    try:
+        normalized_generated = history_utc_timestamp(
+            index.get("generated_utc"), field="generated_utc"
+        )
+    except ValueError:
+        normalized_generated = None
+    if index.get("generated_utc") != normalized_generated:
+        emit.err(
+            "generated_utc",
+            "generated_utc",
+            index.get("generated_utc"),
+            "Network index timestamp must be canonical UTC Z",
+        )
+
+    dates = index.get("available_dates") if isinstance(index.get("available_dates"), list) else []
+    try:
+        first, last, gaps = history_coverage(dates)
+    except ValueError:
+        emit.err("available_dates", "available_dates", dates, "index dates are malformed")
+    else:
+        if dates != sorted(set(dates)):
+            emit.err(
+                "available_dates",
+                "available_dates",
+                dates,
+                "index available_dates must be sorted and unique",
+            )
+        expected = (first, last, _coverage_dict(gaps))
+        actual = (
+            index.get("first_available_date"),
+            index.get("last_available_date"),
+            _coverage_dict(index.get("gaps") or []),
+        )
+        if actual != expected:
+            emit.err(
+                "available_dates",
+                "available_dates",
+                dates,
+                "index coverage/gaps do not match available_dates",
+            )
+
+    refs = index.get("partitions") if isinstance(index.get("partitions"), list) else []
+    ref_paths = [ref.get("path") for ref in refs if isinstance(ref, dict)]
+    if len(ref_paths) != len(set(ref_paths)):
+        emit.err(
+            "duplicate_ref_path",
+            "partitions",
+            ref_paths,
+            "partition path is referenced twice",
+        )
+    months: list[str] = []
+    for position, ref in enumerate(refs):
+        if not isinstance(ref, dict):
+            continue
+        match = _NETWORK_HISTORY_PARTITION_PATH_RE.fullmatch(str(ref.get("path") or ""))
+        if match is None:
+            emit.err(
+                "ref_path",
+                f"partitions[{position}].path",
+                ref.get("path"),
+                "partition ref path is malformed",
+            )
+            continue
+        path_sha, month = match.groups()
+        months.append(month)
+        if ref.get("sha256") != path_sha:
+            emit.err(
+                "ref_path",
+                f"partitions[{position}].sha256",
+                ref.get("sha256"),
+                "partition ref SHA does not match its path",
+            )
+    if len(months) != len(set(months)):
+        emit.err("duplicate_month", "partitions", months, "Network month is referenced twice")
+    if months != sorted(months):
+        emit.err("partition_order", "partitions", months, "Network partitions are not month-sorted")
+
+    metrics = index.get("metrics") if isinstance(index.get("metrics"), list) else []
+    identity = [
+        (metric.get("metric"), metric.get("aggregation"))
+        for metric in metrics
+        if isinstance(metric, dict)
+    ]
+    if identity != list(_NETWORK_HISTORY_METRICS):
+        emit.err(
+            "metric_vocabulary",
+            "metrics",
+            identity,
+            "Network metric order or aggregation class is not canonical",
+        )
+    expected_generation = history_index_generation_id(index)
+    if index.get("collection_generation_id") != expected_generation:
+        emit.err(
+            "collection_generation_id",
+            "collection_generation_id",
+            index.get("collection_generation_id"),
+            "collection generation does not match canonical Network index semantics",
+        )
+    return emit.out
+
+
+def check_network_history_partition_ref(ref: object, partition: object) -> list[CheckResult]:
+    """Cross-check one compact ref against the exact month payload before upload."""
+
+    ref_dict = _as_dict(ref)
+    if not isinstance(ref_dict, dict):
+        emit = _Emitter("historic_network_history_partition_ref", _NETWORK_HISTORY_INDEX_PATH)
+        emit.err("contract", "partition", ref, "Network partition ref must be an object")
+        return emit.out
+    path = ref_dict.get("path")
+    emit = _Emitter(
+        "historic_network_history_partition_ref",
+        path if isinstance(path, str) else _NETWORK_HISTORY_INDEX_PATH,
+    )
+    if not isinstance(path, str):
+        emit.err("ref_path", "path", path, "partition ref path must be a string")
+        return emit.out
+
+    partition_dict = _as_dict(partition)
+    if not isinstance(partition_dict, dict):
+        emit.err("contract", "partition", partition, "Network partition must be an object")
+        return emit.out
+    body = _serialized_body(partition)
+    if body is not None:
+        digest = hashlib.sha256(body).hexdigest()
+        if ref_dict.get("sha256") != digest:
+            emit.err("ref_sha256", "sha256", ref_dict.get("sha256"), "ref SHA mismatches bytes")
+        if ref_dict.get("byte_size") != len(body):
+            emit.err(
+                "ref_byte_size",
+                "byte_size",
+                ref_dict.get("byte_size"),
+                "ref byte size mismatches bytes",
+            )
+
+    path_match = _NETWORK_HISTORY_PARTITION_PATH_RE.fullmatch(path)
+    path_month = path_match.group(2) if path_match else None
+    if path_match is None:
+        emit.err("ref_path", "path", path, "partition ref path is malformed")
+    elif ref_dict.get("sha256") != path_match.group(1):
+        emit.err(
+            "ref_path",
+            "sha256",
+            ref_dict.get("sha256"),
+            "partition ref SHA does not match its path",
+        )
+    if partition_dict.get("month") != path_month:
+        emit.err(
+            "partition_month",
+            "month",
+            partition_dict.get("month"),
+            "partition month mismatches ref path",
+        )
+
+    days = partition_dict.get("days") if isinstance(partition_dict.get("days"), list) else []
+    dates = [day.get("date") for day in days if isinstance(day, dict)]
+    if ref_dict.get("count") != len(days):
+        emit.err("ref_count", "count", ref_dict.get("count"), "ref count mismatches partition")
+    if days:
+        coverage = (dates[0], dates[-1])
+        if (ref_dict.get("coverage_start"), ref_dict.get("coverage_end")) != coverage:
+            emit.err(
+                "ref_coverage",
+                "coverage_start",
+                None,
+                "ref coverage mismatches partition",
+            )
+    return emit.out
+
+
+def check_network_history_bundle(
+    index: object,
+    partition_items: list[tuple[str, object]],
+    *,
+    include_payload_checks: bool = True,
+) -> list[CheckResult]:
+    """Cross-check the Network index against the exact immutable month bytes."""
+
+    findings = (
+        check_network_history_index(index, rel_key=_NETWORK_HISTORY_INDEX_PATH)
+        if include_payload_checks
+        else []
+    )
+    index_dict = _as_dict(index)
+    if not isinstance(index_dict, dict):
+        return findings
+
+    built: dict[str, object] = {}
+    for path, partition in partition_items:
+        if path in built:
+            emit = _Emitter("historic_network_history_bundle", path)
+            emit.err("duplicate_built_path", "path", path, "partition path was built twice")
+            findings.extend(emit.out)
+        built[path] = partition
+
+    refs = index_dict.get("partitions") or []
+    referenced: set[str] = set()
+    all_dates: list[str] = []
+    metric_dates = {metric: [] for metric, _aggregation in _NETWORK_HISTORY_METRICS}
+    partition_timestamps: list[str] = []
+    for ref in refs:
+        if not isinstance(ref, dict) or not isinstance(ref.get("path"), str):
+            continue
+        path = ref["path"]
+        if path in referenced:
+            emit = _Emitter("historic_network_history_bundle", path)
+            emit.err("duplicate_ref_path", "path", path, "partition ref path occurs twice")
+            findings.extend(emit.out)
+        referenced.add(path)
+        partition = built.get(path)
+        emit = _Emitter("historic_network_history_bundle", path)
+        if partition is None:
+            emit.err("missing_partition", "path", path, "referenced partition was not built")
+            findings.extend(emit.out)
+            continue
+        if include_payload_checks:
+            findings.extend(check_network_history_partition(partition, rel_key=path))
+        partition_dict = _as_dict(partition)
+        if not isinstance(partition_dict, dict):
+            continue
+        body = _serialized_body(partition)
+        if body is not None:
+            digest = hashlib.sha256(body).hexdigest()
+            if ref.get("sha256") != digest:
+                emit.err("ref_sha256", "sha256", ref.get("sha256"), "ref SHA mismatches bytes")
+            if ref.get("byte_size") != len(body):
+                emit.err(
+                    "ref_byte_size",
+                    "byte_size",
+                    ref.get("byte_size"),
+                    "ref byte size mismatches bytes",
+                )
+        path_match = _NETWORK_HISTORY_PARTITION_PATH_RE.fullmatch(path)
+        path_month = path_match.group(2) if path_match else None
+        if partition_dict.get("month") != path_month:
+            emit.err(
+                "partition_month",
+                "month",
+                partition_dict.get("month"),
+                "partition month mismatches ref path",
+            )
+        days = partition_dict.get("days") if isinstance(partition_dict.get("days"), list) else []
+        dates = [day.get("date") for day in days if isinstance(day, dict)]
+        all_dates.extend(value for value in dates if isinstance(value, str))
+        if ref.get("count") != len(days):
+            emit.err("ref_count", "count", ref.get("count"), "ref count mismatches partition")
+        if days:
+            coverage = (dates[0], dates[-1])
+            if (ref.get("coverage_start"), ref.get("coverage_end")) != coverage:
+                emit.err(
+                    "ref_coverage",
+                    "coverage_start",
+                    None,
+                    "ref coverage mismatches partition",
+                )
+        for day in days:
+            if not isinstance(day, dict) or not isinstance(day.get("date"), str):
+                continue
+            for metric in metric_dates:
+                if day.get(metric) is not None:
+                    metric_dates[metric].append(day["date"])
+        try:
+            partition_timestamps.append(
+                history_utc_timestamp(partition_dict.get("generated_utc"), field="generated_utc")
+            )
+        except ValueError:
+            pass
+        findings.extend(emit.out)
+
+    for path in built.keys() - referenced:
+        emit = _Emitter("historic_network_history_bundle", path)
+        emit.err("unreferenced_partition", "path", path, "built partition is not referenced")
+        findings.extend(emit.out)
+    if len(all_dates) != len(set(all_dates)):
+        emit = _Emitter("historic_network_history_bundle", _NETWORK_HISTORY_INDEX_PATH)
+        emit.err(
+            "duplicate_date",
+            "available_dates",
+            all_dates,
+            "date occurs in multiple partitions",
+        )
+        findings.extend(emit.out)
+
+    emit = _Emitter("historic_network_history_bundle", _NETWORK_HISTORY_INDEX_PATH)
+    expected_dates = sorted(set(all_dates))
+    if index_dict.get("available_dates") != expected_dates:
+        emit.err(
+            "available_dates",
+            "available_dates",
+            index_dict.get("available_dates"),
+            "index dates do not match its partitions",
+        )
+    try:
+        first, last, gaps = history_coverage(expected_dates)
+    except ValueError:
+        first, last, gaps = None, None, []
+        emit.err(
+            "available_dates",
+            "available_dates",
+            expected_dates,
+            "partition dates are not valid canonical calendar dates",
+        )
+    else:
+        if (
+            index_dict.get("first_available_date"),
+            index_dict.get("last_available_date"),
+            _coverage_dict(index_dict.get("gaps") or []),
+        ) != (first, last, _coverage_dict(gaps)):
+            emit.err(
+                "available_dates",
+                "first_available_date",
+                index_dict.get("first_available_date"),
+                "index family coverage does not match partition days",
+            )
+    actual_metrics = index_dict.get("metrics") or []
+    try:
+        expected_metrics = [
+            history_metric_coverage(metric, aggregation, metric_dates[metric])
+            for metric, aggregation in _NETWORK_HISTORY_METRICS
+        ]
+    except ValueError:
+        expected_metrics = []
+        emit.err(
+            "metric_coverage",
+            "metrics",
+            metric_dates,
+            "metric dates are not valid canonical calendar dates",
+        )
+    if expected_metrics and _coverage_dict(actual_metrics) != _coverage_dict(expected_metrics):
+        emit.err(
+            "metric_coverage",
+            "metrics",
+            actual_metrics,
+            "metric coverage/gaps do not match emitted metric days",
+        )
+    if partition_timestamps:
+        expected_generated = latest_history_timestamp(partition_timestamps)
+        try:
+            actual_generated = history_utc_timestamp(
+                index_dict.get("generated_utc"), field="generated_utc"
+            )
+        except ValueError:
+            actual_generated = None
+        if actual_generated != expected_generated:
+            emit.err(
+                "generated_utc",
+                "generated_utc",
+                index_dict.get("generated_utc"),
+                "index timestamp is not the latest referenced partition timestamp",
+            )
+    findings.extend(emit.out)
+    return findings
+
+
 def check_receipt(payload: object, *, rel_key: str) -> list[CheckResult]:
     emit = _Emitter("historic_receipt", rel_key)
     d = _as_dict(payload)
@@ -1468,14 +2211,21 @@ _EXACT_CHECKERS = {
 _INDEX_KINDS = {
     "historic/route_reliability/index.json": "historic_route_reliability_index",
     "historic/receipts/index.json": "historic_receipts_index",
+    "historic/history/network/index.json": "historic_network_history_index",
 }
 
 # S13: index keys that carry a dedicated structural checker (beyond model-validate).
 _INDEX_CHECKERS = {
     "historic/receipts/index.json": check_receipts_index,
+    "historic/history/network/index.json": check_network_history_index,
 }
 
 _PREFIX_CHECKERS = (
+    (
+        "historic/history/network/generations/",
+        check_network_history_partition,
+        "historic_network_history_partition",
+    ),
     (
         "historic/alerts/generations/",
         check_alert_archive_page,

@@ -393,7 +393,7 @@ def test_publish_static_writes_expected_keys() -> None:
     assert ri["routes"][0]["reliability"] is True
 
 
-def test_publish_historic_writes_expected_keys(tmp_path) -> None:
+def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> None:
     """Historic tier writes network_trend, hotspots, repeat_offenders, alert_history,
     provenance (top-level), per-route reliability, per-stop reliability and receipts.
 
@@ -404,9 +404,9 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     import datetime
     from contextlib import contextmanager
 
+    from transit_ops.snapshots.contract import NetworkTrend
     from transit_ops.snapshots.publish import _publish_historic
     from transit_ops.snapshots.storage import LocalSnapshotStorage
-    from transit_ops.snapshots.contract import NetworkTrend
 
     class _FakeResult:
         def __init__(self, rows):
@@ -450,6 +450,24 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     # weekly/monthly/weak-stop reads that once shared spine SQL now carry unique
     # names, so the hand-coded FakeConnHistoric.execute spine branch is gone.
     dispatch = {
+        # One real retained Network day proves the historic publisher wires the
+        # content-addressed month outside the compatibility payload list.
+        "history.network.delay": [
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "observation_count": 10,
+                "in_clamp_observation_count": 8,
+                "on_time_count": 7,
+                "severe_count": 1,
+                "sum_delay_seconds": 240,
+                "source_generated_utc": datetime.datetime(
+                    2026, 6, 2, 1, tzinfo=datetime.UTC
+                ),
+            }
+        ],
+        "history.network.fact": [],
+        "history.network.cancellation": [],
+        "history.network.occupancy": [],
         "receipts.network_daily": [
             {"local_date": datetime.date(2025, 1, 1), "known_obs": 80, "on_time": 68,
              "severe": 4, "pooled_delay_sec": 4000, "inclamp_obs": 80},
@@ -678,6 +696,15 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     assert any("historic/repeat_offenders.json" in k for k in key_set)
     assert any("historic/alert_history.json" in k for k in key_set)
     assert any("provenance.json" in k for k in key_set)
+    network_partition_keys = [
+        key
+        for key in keys
+        if "historic/history/network/generations/" in key and key.endswith("/2026-06.json")
+    ]
+    assert len(network_partition_keys) == 1
+    network_index_key = next(key for key in keys if "historic/history/network/index.json" in key)
+    assert keys.index(network_partition_keys[0]) < keys.index(network_index_key)
+    assert not any("historic/history/index.json" in key for key in keys)
     # provenance is top-level (not under historic/)
     assert not any(k.endswith("historic/provenance.json") for k in key_set)
 

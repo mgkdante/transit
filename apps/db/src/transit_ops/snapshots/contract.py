@@ -1693,8 +1693,23 @@ class HistoricDelayMetric(BaseModel):
             value = getattr(self, name)
             if value is not None and value > self.observation_count:
                 raise ValueError(f"{name} cannot exceed observation_count")
+        in_clamp = self.in_clamp_observation_count or 0
+        for name in ("on_time_count", "severe_count"):
+            value = getattr(self, name)
+            if value is not None and value > in_clamp:
+                raise ValueError(f"{name} cannot exceed in_clamp_observation_count")
+        if (
+            self.on_time_count is not None
+            and self.severe_count is not None
+            and self.on_time_count + self.severe_count > in_clamp
+        ):
+            raise ValueError(
+                "on_time_count plus severe_count cannot exceed in_clamp_observation_count"
+            )
         if self.sum_delay_seconds is not None and self.in_clamp_observation_count is None:
             raise ValueError("sum_delay_seconds requires in_clamp_observation_count")
+        if self.sum_delay_seconds is not None and abs(self.sum_delay_seconds) > 3600 * in_clamp:
+            raise ValueError("sum_delay_seconds exceeds the capped in-clamp population")
         return self
 
 
@@ -1707,6 +1722,16 @@ class HistoricDelayPercentiles(BaseModel):
     def require_percentile_value(self) -> Self:
         if self.p50_delay_seconds is None and self.p90_delay_seconds is None:
             raise ValueError("at least one delay percentile is required")
+        for name in ("p50_delay_seconds", "p90_delay_seconds"):
+            value = getattr(self, name)
+            if value is not None and not -3600 <= value <= 3600:
+                raise ValueError(f"{name} must be within the capped delay range")
+        if (
+            self.p50_delay_seconds is not None
+            and self.p90_delay_seconds is not None
+            and self.p50_delay_seconds > self.p90_delay_seconds
+        ):
+            raise ValueError("p50_delay_seconds cannot exceed p90_delay_seconds")
         return self
 
 
@@ -1725,6 +1750,19 @@ class HistoricCancellationMetric(BaseModel):
             self.scheduled_trip_days is not None and self.scheduled_trip_days > 0
         ):
             raise ValueError("cancellation requires a positive observed or scheduled denominator")
+        if self.scheduled_trip_days is None and (
+            self.delivered_trip_days is not None or self.silent_trip_days is not None
+        ):
+            raise ValueError("delivered and silent counts require scheduled_trip_days")
+        if (
+            self.silent_trip_days is not None
+            and self.scheduled_trip_days is not None
+            and self.silent_trip_days > self.scheduled_trip_days
+        ):
+            raise ValueError("silent_trip_days cannot exceed scheduled_trip_days")
+        delivered_cap = self.total_trip_days - self.canceled_trip_days
+        if self.delivered_trip_days is not None and self.delivered_trip_days > delivered_cap:
+            raise ValueError("delivered_trip_days cannot exceed total minus canceled trip-days")
         return self
 
 
@@ -1794,6 +1832,16 @@ class NetworkHistoryDay(_HistoryDay):
     cancellation: HistoricCancellationMetric | None = None
     occupancy: HistoricOccupancyMetric | None = None
     vehicles: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_vehicle_sample(self) -> Self:
+        if (
+            self.vehicles is not None
+            and self.delay_percentiles is not None
+            and self.vehicles > self.delay_percentiles.observation_count
+        ):
+            raise ValueError("vehicles cannot exceed delay percentile observations")
+        return self
 
 
 class LineHistoryDay(_HistoryDay):

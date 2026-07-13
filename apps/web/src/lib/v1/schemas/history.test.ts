@@ -226,12 +226,32 @@ describe('shared retained-history schemas', () => {
 			{ ...delay, on_time_count: 11 },
 			{ ...delay, severe_count: 11 },
 			{ ...delay, in_clamp_observation_count: 11 },
+			{ ...delay, in_clamp_observation_count: 8, on_time_count: 9 },
+			{ ...delay, in_clamp_observation_count: 8, severe_count: 9 },
+			{ ...delay, in_clamp_observation_count: 8, on_time_count: 7, severe_count: 2 },
+			{ observation_count: 10, on_time_count: 1, severe_count: 0 },
+			{ observation_count: 10, on_time_count: 0, severe_count: 1 },
+			{ observation_count: 10, in_clamp_observation_count: 2, sum_delay_seconds: 7201 },
 			{ observation_count: 10, sum_delay_seconds: 1 },
 		]) {
 			expect(() => HistoricDelayMetricSchema.parse(invalid)).toThrow();
 		}
+		expect(
+			HistoricDelayMetricSchema.parse({
+				observation_count: 3,
+				on_time_count: 0,
+				severe_count: 0,
+			}).in_clamp_observation_count,
+		).toBeUndefined();
 
 		expect(() => HistoricDelayPercentilesSchema.parse({ observation_count: 3 })).toThrow();
+		for (const invalid of [
+			{ observation_count: 3, p50_delay_seconds: -3601 },
+			{ observation_count: 3, p90_delay_seconds: 3601 },
+			{ observation_count: 3, p50_delay_seconds: 10, p90_delay_seconds: 9 },
+		]) {
+			expect(() => HistoricDelayPercentilesSchema.parse(invalid)).toThrow();
+		}
 		expect(() =>
 			HistoricCancellationMetricSchema.parse({ canceled_trip_days: 2, total_trip_days: 1 }),
 		).toThrow();
@@ -245,6 +265,33 @@ describe('shared retained-history schemas', () => {
 				scheduled_trip_days: 4,
 			}).scheduled_trip_days,
 		).toBe(4);
+		for (const invalid of [
+			{ canceled_trip_days: 1, total_trip_days: 2, delivered_trip_days: 1 },
+			{ canceled_trip_days: 1, total_trip_days: 2, silent_trip_days: 1 },
+			{
+				canceled_trip_days: 0,
+				total_trip_days: 3,
+				scheduled_trip_days: 4,
+				delivered_trip_days: 4,
+				silent_trip_days: 0,
+			},
+			{
+				canceled_trip_days: 1,
+				total_trip_days: 3,
+				scheduled_trip_days: 4,
+				delivered_trip_days: 3,
+				silent_trip_days: 1,
+			},
+			{
+				canceled_trip_days: 1,
+				total_trip_days: 2,
+				scheduled_trip_days: 4,
+				delivered_trip_days: 1,
+				silent_trip_days: 5,
+			},
+		]) {
+			expect(() => HistoricCancellationMetricSchema.parse(invalid)).toThrow();
+		}
 		expect(() =>
 			HistoricOccupancyMetricSchema.parse({
 				empty: 0,
@@ -278,6 +325,21 @@ describe('shared retained-history schemas', () => {
 		for (const daySchema of [NetworkHistoryDaySchema, LineHistoryDaySchema, StopHistoryDaySchema]) {
 			expect(() => daySchema.parse({ date: '2026-06-01' })).toThrow();
 		}
+		const percentiles = { observation_count: 2, p90_delay_seconds: 30 };
+		expect(
+			NetworkHistoryDaySchema.parse({
+				date: '2026-06-01',
+				delay_percentiles: percentiles,
+				vehicles: 2,
+			}).vehicles,
+		).toBe(2);
+		expect(() =>
+			NetworkHistoryDaySchema.parse({
+				date: '2026-06-01',
+				delay_percentiles: percentiles,
+				vehicles: 3,
+			}),
+		).toThrow();
 		expect(() => NetworkHistoryDaySchema.parse({ date: '2026-06-01', vehicles: 0 })).toThrow();
 		for (const invalid of [
 			{ ...valid, month: '2026-6' },

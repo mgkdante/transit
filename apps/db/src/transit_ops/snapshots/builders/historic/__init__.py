@@ -102,6 +102,18 @@ from transit_ops.snapshots.builders.historic.alert_archive import (
     AlertArchiveBundle,
     build_alert_archive,
 )
+from transit_ops.snapshots.builders.historic.network_history import (
+    _NETWORK_HISTORY_CANCELLATION_SQL,
+    _NETWORK_HISTORY_DELAY_SQL,
+    _NETWORK_HISTORY_FACT_SQL,
+    _NETWORK_HISTORY_OCCUPANCY_SQL,
+    NetworkHistoryBundle,
+    NetworkHistoryPlan,
+    build_network_history,
+    build_network_history_from_rows,
+    build_network_history_plan,
+    build_network_history_plan_from_rows,
+)
 from transit_ops.snapshots.builders.historic.network_trend import (
     _NETWORK_DAYTYPE_ORDER,
     _NETWORK_SHIFT_ORDER,
@@ -189,6 +201,10 @@ from transit_ops.snapshots.builders.historic.stop_reliability import (
 __all__ = [
     # builders
     "build_network_trend",
+    "build_network_history",
+    "build_network_history_from_rows",
+    "build_network_history_plan",
+    "build_network_history_plan_from_rows",
     "build_provenance",
     "build_route_reliability",
     "build_alert_history",
@@ -198,6 +214,8 @@ __all__ = [
     "build_repeat_offenders",
     "build_stop_reliability",
     "AlertArchiveBundle",
+    "NetworkHistoryBundle",
+    "NetworkHistoryPlan",
     "_ALERT_ARCHIVE_SQL",
     # SQL constants + private helpers re-exported for byte-stable
     # builders.historic.<name> attribute + import-path parity
@@ -257,6 +275,10 @@ __all__ = [
     "_weak_stops_by_grain",
     "_windowed_otp_index",
     "_windowed_periods",
+    "_NETWORK_HISTORY_CANCELLATION_SQL",
+    "_NETWORK_HISTORY_DELAY_SQL",
+    "_NETWORK_HISTORY_FACT_SQL",
+    "_NETWORK_HISTORY_OCCUPANCY_SQL",
     "_NETWORK_DAYTYPE_ORDER",
     "_NETWORK_SHIFT_ORDER",
     "_TREND_CANCELLATION_MONTHLY_SQL",

@@ -176,12 +176,27 @@ def test_partitioned_history_metric_vocabulary_and_additive_defaults():
         {"on_time_count": 11},
         {"severe_count": 11},
         {"in_clamp_observation_count": 11},
+        {"in_clamp_observation_count": 8, "on_time_count": 9},
+        {"in_clamp_observation_count": 8, "severe_count": 9},
+        {"in_clamp_observation_count": 8, "on_time_count": 7, "severe_count": 2},
+        {"in_clamp_observation_count": None, "on_time_count": 1, "severe_count": 0},
+        {"in_clamp_observation_count": None, "on_time_count": 0, "severe_count": 1},
+        {"in_clamp_observation_count": 2, "sum_delay_seconds": 7_201},
         {"in_clamp_observation_count": None, "sum_delay_seconds": 1},
     ],
 )
 def test_partitioned_history_delay_rejects_impossible_counts(overrides: dict[str, int | None]):
     with pytest.raises(ValidationError):
         _delay(**overrides)
+
+
+def test_partitioned_history_delay_keeps_all_ghost_zero_counts_honest():
+    metric = HistoricDelayMetric(
+        observation_count=3,
+        on_time_count=0,
+        severe_count=0,
+    )
+    assert metric.in_clamp_observation_count is None
 
 
 def test_partitioned_history_percentiles_require_a_value_and_positive_sample():
@@ -192,6 +207,16 @@ def test_partitioned_history_percentiles_require_a_value_and_positive_sample():
         HistoricDelayPercentiles(observation_count=3)
     with pytest.raises(ValidationError):
         HistoricDelayPercentiles(observation_count=0, p50_delay_seconds=1)
+    with pytest.raises(ValidationError):
+        HistoricDelayPercentiles(observation_count=3, p50_delay_seconds=-3_601)
+    with pytest.raises(ValidationError):
+        HistoricDelayPercentiles(observation_count=3, p90_delay_seconds=3_601)
+    with pytest.raises(ValidationError):
+        HistoricDelayPercentiles(
+            observation_count=3,
+            p50_delay_seconds=10,
+            p90_delay_seconds=9,
+        )
 
 
 def test_partitioned_history_cancellation_preserves_real_scheduled_only_days():
@@ -214,6 +239,49 @@ def test_partitioned_history_cancellation_preserves_real_scheduled_only_days():
             total_trip_days=0,
             scheduled_trip_days=0,
         )
+
+
+@pytest.mark.parametrize(
+    "counts",
+    [
+        {
+            "canceled_trip_days": 1,
+            "total_trip_days": 2,
+            "delivered_trip_days": 1,
+        },
+        {
+            "canceled_trip_days": 1,
+            "total_trip_days": 2,
+            "silent_trip_days": 1,
+        },
+        {
+            "canceled_trip_days": 0,
+            "total_trip_days": 3,
+            "scheduled_trip_days": 4,
+            "delivered_trip_days": 4,
+            "silent_trip_days": 0,
+        },
+        {
+            "canceled_trip_days": 1,
+            "total_trip_days": 3,
+            "scheduled_trip_days": 4,
+            "delivered_trip_days": 3,
+            "silent_trip_days": 1,
+        },
+        {
+            "canceled_trip_days": 1,
+            "total_trip_days": 2,
+            "scheduled_trip_days": 4,
+            "delivered_trip_days": 1,
+            "silent_trip_days": 5,
+        },
+    ],
+)
+def test_partitioned_history_cancellation_rejects_impossible_scheduled_relationships(
+    counts: dict[str, int],
+):
+    with pytest.raises(ValidationError):
+        HistoricCancellationMetric(**counts)
 
 
 def test_partitioned_history_occupancy_and_skips_reject_impossible_telemetry():
@@ -239,6 +307,24 @@ def test_partitioned_history_day_rejects_every_metric_absent(day_model: type):
 def test_partitioned_history_network_day_rejects_zero_vehicles():
     with pytest.raises(ValidationError):
         NetworkHistoryDay(date="2026-06-01", vehicles=0)
+
+
+def test_partitioned_history_network_day_bounds_vehicles_by_raw_observations():
+    percentiles = HistoricDelayPercentiles(observation_count=2, p90_delay_seconds=30)
+    assert (
+        NetworkHistoryDay(
+            date="2026-06-01",
+            delay_percentiles=percentiles,
+            vehicles=2,
+        ).vehicles
+        == 2
+    )
+    with pytest.raises(ValidationError):
+        NetworkHistoryDay(
+            date="2026-06-01",
+            delay_percentiles=percentiles,
+            vehicles=3,
+        )
 
 
 @pytest.mark.parametrize(

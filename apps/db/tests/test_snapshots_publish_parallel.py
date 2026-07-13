@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import Counter
 from contextlib import contextmanager
 
 import pytest
@@ -289,7 +290,12 @@ class _OrderTrackingStore:
         return _json.loads(raw) if raw is not None else None
 
 
-def _historic_dispatch_conn(*, archive_rows=None):  # noqa: ANN001
+def _historic_dispatch_conn(
+    *,
+    archive_rows=None,  # noqa: ANN001
+    network_delay_rows=None,  # noqa: ANN001
+    network_fact_rows=None,  # noqa: ANN001
+):
     """A fake conn returning enough rows for several per-route/per-stop files."""
     import datetime
 
@@ -334,6 +340,13 @@ def _historic_dispatch_conn(*, archive_rows=None):  # noqa: ANN001
     # crosstab/by_shift/by_daytype) are left unmapped ([]) to preserve the exact
     # published output the old dead needles gave, so the hand-coded spine branch is gone.
     dispatch = {
+        # Retained Network history stays empty in legacy publisher-order tests unless a
+        # test explicitly supplies source rows. Keep the new query surface visible so
+        # an accidental name change cannot silently fall through.
+        "history.network.delay": list(network_delay_rows or []),
+        "history.network.fact": list(network_fact_rows or []),
+        "history.network.cancellation": [],
+        "history.network.occupancy": [],
         "receipts.network_daily": [
             {
                 "local_date": datetime.date(2025, 1, 1),
@@ -843,6 +856,92 @@ def test_unchanged_historic_republish_counts_immutable_skip_physically_and_expos
     assert state["total"] == physical_skipped
     assert state["stable_total"] == physical_skipped - len(page_keys)
     assert second.display_dict()["files_skipped"] == physical_skipped
+
+
+def test_network_history_republish_accounts_for_real_hash_gate_outcomes_end_to_end() -> None:
+    import datetime
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    network_rows = [
+        {
+            "local_date": datetime.date(2026, 5, 31),
+            "observation_count": 10,
+            "in_clamp_observation_count": 8,
+            "on_time_count": 6,
+            "severe_count": 2,
+            "sum_delay_seconds": 240,
+            "source_generated_utc": datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC),
+        },
+        {
+            "local_date": datetime.date(2026, 6, 1),
+            "observation_count": 5,
+            "in_clamp_observation_count": 4,
+            "on_time_count": 3,
+            "severe_count": 1,
+            "sum_delay_seconds": 120,
+            "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
+        },
+    ]
+    store = _OrderTrackingStore()
+    conn = _historic_dispatch_conn(network_delay_rows=network_rows)
+    engine = _FakeEngine(conn)
+
+    first = publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=_Settings(),
+        engine=engine,
+        storage=store,
+    )
+    first_put_count = len(store.keys)
+    second = publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=_Settings(),
+        engine=engine,
+        storage=store,
+    )
+
+    state_key = "_meta/publish_state_historic.json"
+    public = set(first.keys_written)
+    generation = {
+        key for key in first.keys_written if key.startswith("historic/history/network/generations/")
+    }
+    stable = public - generation
+    index_key = "historic/history/network/index.json"
+    assert len(public) == len(first.keys_written)
+    assert len(generation) == 2
+    assert index_key in public
+    assert first.keys_skipped == []
+    assert second.keys_written == []
+    assert Counter(second.keys_skipped) == Counter(first.keys_written)
+    assert state_key not in {
+        *first.keys_written,
+        *first.keys_skipped,
+        *second.keys_written,
+        *second.keys_skipped,
+    }
+    assert set(store.store) == public | {state_key}
+    assert store.keys[first_put_count:] == [state_key]
+
+    first_state, second_state = conn.state_writes[-2:]
+    assert first_state["written"] == len(public)
+    assert first_state["skipped"] == 0
+    assert first_state["total"] == len(public)
+    assert first_state["stable_total"] == len(stable)
+    assert second_state["written"] == 0
+    assert second_state["skipped"] == len(public)
+    assert second_state["total"] == len(public)
+    assert second_state["stable_total"] == len(stable)
+
+    hash_state = store.get_json(state_key)
+    assert set(hash_state["hashes"]) == stable
+    assert state_key not in hash_state["hashes"]
+    assert first.display_dict()["files_written"] == len(public)
+    assert second.display_dict()["files_skipped"] == len(public)
 
 
 @pytest.mark.parametrize("failure", ["page", "index"])
