@@ -266,6 +266,14 @@ class FakeConnection:
         if "DELETE FROM gold.repeat_offender_daily_spine" in sql:
             return RowcountResult(6)
 
+        # Retained alert archive is lifecycle-managed beside (not inside) the
+        # aggregate registry, so its dry-run COUNT needs the scalar-result seam.
+        if "SELECT COUNT(*)" in sql and "FROM gold.alert_archive_entry" in sql:
+            return ScalarResult(2)
+
+        if "DELETE FROM gold.alert_archive_entry" in sql:
+            return RowcountResult(2)
+
         for table_name, rowcount in BUILD_REPORTING_AGGREGATE_ROWCOUNTS.items():
             if f"INSERT INTO gold.{table_name}" in sql:
                 return RowcountResult(rowcount)
@@ -1002,7 +1010,10 @@ def test_route_service_span_daily_upsert_shape() -> None:
     assert "f.snapshot_date_key IN (" in compact
     assert "'YYYYMMDD')::integer, :date_key" in compact
     # FIX-2: the LAST trip's terminal (latest captured) delay, not its first observation.
-    assert "ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc DESC, f.entity_index DESC))[1] AS last_obs_delay" in compact
+    assert (
+        "ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc DESC, "
+        "f.entity_index DESC))[1] AS last_obs_delay" in compact
+    )
     assert "MAX(last_obs_delay) FILTER (WHERE rn_last = 1)" in compact
     # span derived from first/last observed trip start.
     assert "MAX(trip_start_utc) - MIN(trip_start_utc)" in compact
@@ -1132,8 +1143,10 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.stop_delay_shift_daily"] == 5
     # route_scheduled_trips_daily — the GC2/H1 append-only scheduled universe (0073), 730d pruning.
     assert result.deleted_row_counts["gold.route_scheduled_trips_daily"] == 17
-    # repeat_offender_daily_spine — the S14 append-only per-entity offender spine (0075), 730d pruning.
+    # repeat_offender_daily_spine — the S14 append-only per-entity offender
+    # spine (0075), 730d pruning.
     assert result.deleted_row_counts["gold.repeat_offender_daily_spine"] == 6
+    assert result.deleted_row_counts["gold.alert_archive_entry"] == 2
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
     # 23 prior MINUS the 6 route delay-cube fold tables (dropped in 0064) MINUS the 2 stop_delay
@@ -1143,7 +1156,7 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     # GC2/H3 route_occupancy_band_hourly (0074) PLUS the S14 repeat_offender_daily_spine (0075)
     # MINUS the S14 route_habit_score drop (0076 — no longer retention-registered); each
     # retention-registered table emits one dry-run COUNT.
-    assert len(count_queries) == 21
+    assert len(count_queries) == 22
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:
