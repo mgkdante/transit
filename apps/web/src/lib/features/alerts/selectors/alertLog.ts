@@ -86,14 +86,20 @@ export interface AlertLogFilters {
 	readonly stop: string | null;
 }
 
+type OrderableAlertHistoryEntry = AlertHistoryEntry & {
+	/** Present on retained archive rows; absent on the legacy current-history fallback. */
+	readonly first_seen_utc?: string | null;
+	readonly last_seen_utc?: string | null;
+};
+
 /**
  * Sort a copy of `entries` newest-first by start instant, falling back to the archive's
  * first-seen instant. Last-seen and id break ties so mixed current/archive collections
  * stay deterministic. A truly undated entry sinks to the end — never dropped.
  */
-export function sortNewestFirst(
-	entries: readonly AlertHistoryEntry[],
-): readonly AlertHistoryEntry[] {
+export function sortNewestFirst<T extends OrderableAlertHistoryEntry>(
+	entries: readonly T[],
+): readonly T[] {
 	const stamp = (value: string | null | undefined): number => {
 		const ms = value != null ? Date.parse(value) : NaN;
 		return Number.isNaN(ms) ? -Infinity : ms;
