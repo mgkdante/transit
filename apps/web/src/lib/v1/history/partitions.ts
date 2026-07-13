@@ -216,7 +216,9 @@ function alertWindowOverlaps(
 ): boolean {
 	const startDate = start?.slice(0, 10) ?? null;
 	const endDate = end?.slice(0, 10) ?? null;
-	return !(endDate != null && endDate < window.from) && !(startDate != null && startDate > window.to);
+	return (
+		!(endDate != null && endDate < window.from) && !(startDate != null && startDate > window.to)
+	);
 }
 
 export function selectAlertEntriesForWindow(

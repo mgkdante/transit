@@ -77,11 +77,7 @@ export function sameHistoryWindow(
 	right: DateWindow | null | undefined,
 ): boolean {
 	if (left == null || right == null) return left == null && right == null;
-	const normalizedLeft =
-		left.from <= left.to ? left : { from: left.to, to: left.from };
-	const normalizedRight =
-		right.from <= right.to ? right : { from: right.to, to: right.from };
-	return (
-		normalizedLeft.from === normalizedRight.from && normalizedLeft.to === normalizedRight.to
-	);
+	const normalizedLeft = left.from <= left.to ? left : { from: left.to, to: left.from };
+	const normalizedRight = right.from <= right.to ? right : { from: right.to, to: right.from };
+	return normalizedLeft.from === normalizedRight.from && normalizedLeft.to === normalizedRight.to;
 }

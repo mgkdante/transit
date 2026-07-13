@@ -48,6 +48,8 @@ const alerts: Alert[] = [
 		severity: 'high',
 		header_key: 'Detour on route 24',
 		header_text: 'Detour on route 24',
+		description: '<p>La ligne <strong>24</strong> est détournée via Pine &amp; Clark.</p>',
+		description_en: '<p>Route <strong>24</strong> is diverted via Pine &amp; Clark.</p>',
 		routes: ['24'],
 		stops: [],
 	},
@@ -56,6 +58,8 @@ const alerts: Alert[] = [
 		severity: 'watch',
 		header_key: 'Stop moved',
 		header_text: 'Stop moved',
+		description: '<p>Arrêt 52618 déplacé au coin <strong>nord-est</strong>.</p>',
+		description_en: '<p>Stop 52618 moved to the <strong>northeast</strong> corner.</p>',
 		routes: [],
 		stops: ['stop-1', 'stop-2'],
 	},
@@ -143,8 +147,8 @@ describe('MapSelectionDetail', () => {
 		expect(getByText('Sherbrooke / Saint-Denis')).toBeInTheDocument();
 		expect(getAllByText('Mont-Royal / Saint-Laurent').length).toBeGreaterThan(0);
 		expect(getByText('Van Horne / Rockland')).toBeInTheDocument();
-		expect(getByText('Detour on route 24')).toBeInTheDocument();
-		expect(getByText('Stop moved')).toBeInTheDocument();
+		expect(getByText('Route 24 is diverted via Pine & Clark.')).toBeInTheDocument();
+		expect(getByText('Stop 52618 moved to the northeast corner.')).toBeInTheDocument();
 
 		if (detail?.kind !== 'vehicle') throw new Error('expected vehicle detail');
 		await fireEvent.click(getByRole('button', { name: 'Select route 24' }));
@@ -172,8 +176,37 @@ describe('MapSelectionDetail', () => {
 		);
 		expect(onselect).toHaveBeenCalledWith({ kind: 'stop', id: 'stop-2' });
 
-		await fireEvent.click(getByRole('button', { name: 'Select alert Detour on route 24' }));
-		expect(onalertselect).toHaveBeenCalledWith(alerts[0]);
+		const locationBeforeAlertTap = window.location.href;
+		await fireEvent.click(
+			getByRole('button', { name: 'Select alert Route 24 is diverted via Pine & Clark.' }),
+		);
+		expect(onalertselect).toHaveBeenCalledTimes(1);
+		expect(onalertselect.mock.calls[0]?.[0]).toBe(alerts[0]);
+		expect(window.location.href).toBe(locationBeforeAlertTap);
+	});
+
+	it('uses resolved source messages in compact mode and keeps the two-alert cap', () => {
+		const detail = resolveMapSelection(
+			{ kind: 'route', id: '24', direction: 0 },
+			{ index, stops, alerts, routes },
+		);
+		if (!detail) throw new Error('expected route detail');
+		const hiddenAlert: Alert = {
+			id: 'hidden-alert',
+			severity: 'watch',
+			header_key: 'Third alert',
+			description_en: '<p>Third source message &amp; details.</p>',
+		};
+		const compactDetail = { ...detail, alerts: [alerts[0], alerts[1], hiddenAlert] };
+
+		const { container, queryByText } = render(MapSelectionDetail, {
+			props: { detail: compactDetail, locale: 'en', compact: true },
+		});
+
+		expect(container.querySelectorAll('.map-alert-button')).toHaveLength(2);
+		expect(queryByText('Route 24 is diverted via Pine & Clark.')).toBeInTheDocument();
+		expect(queryByText('Stop 52618 moved to the northeast corner.')).toBeInTheDocument();
+		expect(queryByText('Third source message & details.')).not.toBeInTheDocument();
 	});
 
 	it('renders a per-bus not-reporting GPS note when the vehicle fix is stale', () => {
@@ -259,7 +292,7 @@ describe('MapSelectionDetail', () => {
 		expect(getAllByText('Next times').length).toBeGreaterThan(0);
 		expect(getByText('08:00')).toBeInTheDocument();
 		expect(getByText('23:50')).toBeInTheDocument();
-		expect(getByText('Stop moved')).toBeInTheDocument();
+		expect(getByText('Stop 52618 moved to the northeast corner.')).toBeInTheDocument();
 
 		await fireEvent.click(getByRole('button', { name: 'Select route 24' }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'route', id: '24' });
@@ -310,7 +343,7 @@ describe('MapSelectionDetail', () => {
 		expect(getByText('Sherbrooke / Saint-Denis')).toBeInTheDocument();
 		expect(getByText('Mont-Royal / Saint-Laurent')).toBeInTheDocument();
 		expect(getByText('Van Horne / Rockland')).toBeInTheDocument();
-		expect(getByText('Detour on route 24')).toBeInTheDocument();
+		expect(getByText('Route 24 is diverted via Pine & Clark.')).toBeInTheDocument();
 
 		await fireEvent.click(getByRole('button', { name: 'Select stop Van Horne / Rockland' }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'stop', id: 'stop-3' });

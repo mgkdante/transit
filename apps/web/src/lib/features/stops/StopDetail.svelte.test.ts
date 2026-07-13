@@ -36,6 +36,8 @@ const ALERTS = [
 		header_key: 'Détour ligne 51',
 		header_text: 'Détour ligne 51',
 		header_text_en: 'Detour on line 51',
+		description: '<p>La ligne <strong>51</strong> est détournée &amp; reste en service.</p>',
+		description_en: '<p>Route <strong>51</strong> is diverted &amp; remains in service.</p>',
 		cause: 'CONSTRUCTION',
 		effect: 'DETOUR',
 		routes: ['51'],
@@ -778,8 +780,11 @@ describe('StopDetail — service alerts affecting this stop', () => {
 
 		// Stop-scoped alert (stops[] lists 57191) surfaces.
 		expect(within(alerts).getByText('Elevator out of service')).toBeInTheDocument();
-		// Route-scoped alert on route 51 (which this stop serves) surfaces.
-		expect(within(alerts).getByText('Detour on line 51')).toBeInTheDocument();
+		// Route-scoped alert surfaces its scrubbed source message.
+		expect(
+			within(alerts).getByText('Route 51 is diverted & remains in service.'),
+		).toBeInTheDocument();
+		expect(within(alerts).queryByText('Detour on line 51')).not.toBeInTheDocument();
 		// An alert touching neither this stop nor any route it serves must NOT appear.
 		expect(within(alerts).queryByText('Unrelated alert')).not.toBeInTheDocument();
 		// The route-scoped alert's cause/effect resolve through gtfsAlertLabels.
@@ -795,7 +800,10 @@ describe('StopDetail — service alerts affecting this stop', () => {
 
 		const alerts = document.querySelector('[data-testid="stop-alerts"]') as HTMLElement;
 		expect(within(alerts).getByText('Avis de service')).toBeInTheDocument();
-		expect(within(alerts).getByText('Détour ligne 51')).toBeInTheDocument();
+		expect(
+			within(alerts).getByText('La ligne 51 est détournée & reste en service.'),
+		).toBeInTheDocument();
+		expect(within(alerts).queryByText('Détour ligne 51')).not.toBeInTheDocument();
 		// CONSTRUCTION → Travaux (fr).
 		expect(within(alerts).getByText('Travaux')).toBeInTheDocument();
 	});

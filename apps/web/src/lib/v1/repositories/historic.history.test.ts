@@ -155,10 +155,10 @@ describe('historic repository collection seams', () => {
 			}),
 		);
 
-		const entries = await getAlertArchiveRange(
-			archiveIndex([advertised]),
-			{ from: '2026-03-05', to: '2026-03-15' },
-		);
+		const entries = await getAlertArchiveRange(archiveIndex([advertised]), {
+			from: '2026-03-05',
+			to: '2026-03-15',
+		});
 
 		expect(entries.map((entry) => entry.id).sort()).toEqual(['first-last-in', 'scalar-in']);
 	});

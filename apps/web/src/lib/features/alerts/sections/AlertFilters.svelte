@@ -8,7 +8,7 @@
     · severity — a shared FilterGroup (All | Critical | High | Watch)
     · Line — a typeahead LineCombobox over the distinct lines in the log
     · Stop — a typeahead LineCombobox over the distinct stops in the log
-    · date range — the shared DateRangePicker (stacked: one field per row in the rail)
+	    · date range — the controlled HistoryNavigator (stacked: one field per row)
 
   The two entity-type/severity radiogroups ride the shared $lib/components/filter
   FilterGroup (bits-ui ToggleGroup + built-in "All" reset), and the clear affordance
@@ -26,7 +26,7 @@
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import { SEVERITY_CODES } from '$lib/v1/schemas';
 	import type { AlertAffects, DateWindow } from '$lib/filters';
-	import { DateRangePicker } from '$lib/components/surface';
+	import { HistoryNavigator } from '$lib/components/surface';
 	import { FilterGroup, FilterSummary } from '$lib/components/filter';
 	import { LineCombobox, type LineComboboxOption } from '$lib/components/ui/line-combobox';
 	import { foldSearchText } from '$lib/search/normalize';
@@ -40,7 +40,7 @@
 		route: string | null;
 		/** The chosen stop id, or null (bindable — mirrors ?stop). */
 		stop: string | null;
-		/** The picked date window, or undefined (bindable — mirrors ?from/?to). */
+		/** The page-owned retained-history window. */
 		window: DateWindow | undefined;
 		/** Line picker options (distinct lines in the log). */
 		lineOptions: readonly LineComboboxOption[];
@@ -54,6 +54,12 @@
 		matchCount: number;
 		copy: AlertHistoryCopy;
 		locale: Locale;
+		/** Localized retained-history captions and polite correction text. */
+		historyCoverageText: string | null;
+		historySelectionText: string | null;
+		historyAnnouncement: string | null;
+		/** Controlled range callback; the page resolves/fetches/mirrors it. */
+		onWindowChange: (window: DateWindow | undefined) => void;
 		/** Reset every axis to its unfiltered default. */
 		onClear: () => void;
 	}
@@ -62,7 +68,7 @@
 		severity = $bindable(),
 		route = $bindable(),
 		stop = $bindable(),
-		window = $bindable(),
+		window,
 		lineOptions,
 		stopOptions,
 		availableDates,
@@ -70,6 +76,10 @@
 		matchCount,
 		copy,
 		locale,
+		historyCoverageText,
+		historySelectionText,
+		historyAnnouncement,
+		onWindowChange,
 		onClear,
 	}: Props = $props();
 
@@ -138,15 +148,19 @@
 			fold={foldSearchText}
 		/>
 	</div>
-	<!-- The shared date-range picker over the served span. Empty coverage → honest
-	     absence (the primitive renders an AbsentValue, never a dead control). -->
+	<!-- Presentation-only retained-history navigator. The page owns its selection,
+	     URL codec, catalog, range resource, and correction announcement. -->
 	<div class="alert-history-pick" data-slot="window-pick">
-		<DateRangePicker
-			bind:value={window}
-			{availableDates}
+		<HistoryNavigator
+			mode="range"
 			{locale}
-			stack
-			labels={copy.filters.window}
+			labels={copy.filters.history.navigator}
+			value={window}
+			{availableDates}
+			coverageText={historyCoverageText}
+			selectionText={historySelectionText}
+			announcement={historyAnnouncement}
+			onRangeChange={onWindowChange}
 		/>
 	</div>
 	{#if filtersActive}

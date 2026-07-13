@@ -50,6 +50,15 @@ const ALERT_BARE = {
 	header_key: 'Réduction de service',
 } as unknown as Alert;
 
+const ALERT_SOURCE_MESSAGE = {
+	...ALERT_FULL,
+	id: 'al-source-message',
+	header_text: 'Votre ligne',
+	header_text_en: 'Your line',
+	description: '<p>La ligne <strong>24</strong> est détournée &amp; ralentie.</p>',
+	description_en: '<p>Route <strong>24</strong> is diverted &amp; delayed.</p>',
+} as Alert;
+
 describe('AffectedAlerts — rendering', () => {
 	it('renders the heading + a labelled list when alerts are present', () => {
 		render(AffectedAlerts, { props: { alerts: [ALERT_FULL], locale: 'en', copy: EN_COPY } });
@@ -80,6 +89,19 @@ describe('AffectedAlerts — rendering', () => {
 		expect(screen.getByText('Détour sur la ligne 24')).toBeInTheDocument();
 		expect(screen.getByText('Travaux')).toBeInTheDocument(); // CONSTRUCTION (fr)
 		expect(screen.getByText('Détour')).toBeInTheDocument(); // DETOUR (fr)
+	});
+
+	it('renders scrubbed localized source descriptions instead of generic headers', async () => {
+		const { rerender } = render(AffectedAlerts, {
+			props: { alerts: [ALERT_SOURCE_MESSAGE], locale: 'en', copy: EN_COPY },
+		});
+
+		expect(screen.getByText('Route 24 is diverted & delayed.')).toBeInTheDocument();
+		expect(screen.queryByText('Your line')).not.toBeInTheDocument();
+
+		await rerender({ alerts: [ALERT_SOURCE_MESSAGE], locale: 'fr', copy: FR_COPY });
+		expect(screen.getByText('La ligne 24 est détournée & ralentie.')).toBeInTheDocument();
+		expect(screen.queryByText('Votre ligne')).not.toBeInTheDocument();
 	});
 
 	it('encodes severity with a data attribute + a visually-hidden severity word', () => {

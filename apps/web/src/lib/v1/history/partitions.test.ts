@@ -321,9 +321,7 @@ describe('stable alert page merging', () => {
 				id: 'period-in',
 				first_seen_utc: '2026-01-01T00:00:00Z',
 				last_seen_utc: '2026-03-31T00:00:00Z',
-				active_periods: [
-					{ start_utc: '2026-03-10T00:00:00Z', end_utc: '2026-03-11T00:00:00Z' },
-				],
+				active_periods: [{ start_utc: '2026-03-10T00:00:00Z', end_utc: '2026-03-11T00:00:00Z' }],
 			},
 			{
 				id: 'period-out-overrides-scalar',
@@ -331,9 +329,7 @@ describe('stable alert page merging', () => {
 				last_seen_utc: '2026-03-11T00:00:00Z',
 				start_utc: '2026-03-10T00:00:00Z',
 				end_utc: '2026-03-11T00:00:00Z',
-				active_periods: [
-					{ start_utc: '2026-02-01T00:00:00Z', end_utc: '2026-02-02T00:00:00Z' },
-				],
+				active_periods: [{ start_utc: '2026-02-01T00:00:00Z', end_utc: '2026-02-02T00:00:00Z' }],
 			},
 			{
 				id: 'scalar-out',

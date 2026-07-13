@@ -38,6 +38,10 @@ const ALERTS = [
 		header_key: 'Détour ligne 161',
 		header_text: 'Détour ligne 161',
 		header_text_en: 'Detour on line 161',
+		description:
+			'<p>La ligne <strong>161</strong> contourne les travaux &amp; dessert les arrêts.</p>',
+		description_en:
+			'<p>Route <strong>161</strong> is detouring around construction &amp; serving stops.</p>',
 		cause: 'CONSTRUCTION',
 		effect: 'DETOUR',
 		routes: ['161'],
@@ -353,8 +357,11 @@ describe('RouteDetail Detail tab: service alerts affecting this route', () => {
 		const alerts = document.querySelector('[data-testid="route-alerts"]') as HTMLElement;
 		expect(alerts).not.toBeNull();
 		expect(within(alerts).getByText('Service alerts')).toBeInTheDocument();
-		// Route-scoped alert for 161 surfaces with its EN headline + cause/effect.
-		expect(within(alerts).getByText('Detour on line 161')).toBeInTheDocument();
+		// Route-scoped alert surfaces the scrubbed source message, not its generic header.
+		expect(
+			within(alerts).getByText('Route 161 is detouring around construction & serving stops.'),
+		).toBeInTheDocument();
+		expect(within(alerts).queryByText('Detour on line 161')).not.toBeInTheDocument();
 		expect(within(alerts).getByText('Construction')).toBeInTheDocument();
 		expect(within(alerts).getByText('Detour')).toBeInTheDocument();
 		// An alert scoped to a different route (999) must NOT appear here.

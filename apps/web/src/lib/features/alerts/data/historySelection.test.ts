@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AlertHistory } from '$lib/v1/schemas';
+import type { AlertHistory, IsoUtc } from '$lib/v1/schemas';
 import { AlertArchiveIndexSchema } from '$lib/v1/schemas';
 import {
 	currentAlertWindow,
@@ -8,10 +8,11 @@ import {
 } from './historySelection';
 
 const GENERATED = '2026-07-13T12:00:00Z';
+const utc = (value: string): IsoUtc => value as IsoUtc;
 
 function history(partial: Partial<AlertHistory> = {}): AlertHistory {
 	return {
-		generated_utc: GENERATED,
+		generated_utc: utc(GENERATED),
 		alerts: [],
 		...partial,
 	};
@@ -45,13 +46,13 @@ describe('currentAlertWindow', () => {
 					alerts: [
 						{
 							id: 'late',
-							start_utc: '2026-06-20T12:00:00Z',
-							end_utc: '2026-06-21T12:00:00Z',
+							start_utc: utc('2026-06-20T12:00:00Z'),
+							end_utc: utc('2026-06-21T12:00:00Z'),
 						},
 						{
 							id: 'early',
-							start_utc: '2026-06-01T12:00:00Z',
-							end_utc: '2026-06-02T12:00:00Z',
+							start_utc: utc('2026-06-01T12:00:00Z'),
+							end_utc: utc('2026-06-02T12:00:00Z'),
 						},
 					],
 				}),
@@ -80,10 +81,7 @@ describe('currentAlertWindow', () => {
 
 	it('keeps the legacy served window when the optional archive index is absent', () => {
 		expect(
-			currentAlertWindow(
-				history({ window_start: '2026-06-01', window_end: '2026-06-30' }),
-				null,
-			),
+			currentAlertWindow(history({ window_start: '2026-06-01', window_end: '2026-06-30' }), null),
 		).toEqual({ from: '2026-06-01', to: '2026-06-30' });
 	});
 });

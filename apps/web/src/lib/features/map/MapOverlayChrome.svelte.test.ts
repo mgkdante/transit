@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFilterStore, emptyFilterState } from '$lib/filters';
 import { motionMode } from '$lib/stores';
-import type { StopIndexEntry } from '$lib/v1/schemas';
+import type { Alert, StopIndexEntry } from '$lib/v1/schemas';
 import type { WithDistance } from '$lib/components/map';
 import type { StopMapDetail } from './mapSelection';
 import { copy as MAP_COPY } from './map.copy';
@@ -26,6 +26,29 @@ const stopDetail: StopMapDetail = {
 	routeTimes: [],
 	alerts: [],
 };
+
+const hoverAlerts: Alert[] = [
+	{
+		id: 'hover-1',
+		severity: 'high',
+		header_key: 'Your stop',
+		description_en: '<p>Elevator closed &amp; shuttle available.</p>',
+	},
+	{
+		id: 'hover-2',
+		severity: 'watch',
+		header_key: 'Your line',
+		description_en: '<p>Route 24 boards on <strong>Clark</strong>.</p>',
+	},
+	{
+		id: 'hover-3',
+		severity: 'watch',
+		header_key: 'Third alert',
+		description_en: 'This compact overflow stays hidden.',
+	},
+];
+
+const stopAlertDetail: StopMapDetail = { ...stopDetail, alerts: hoverAlerts };
 
 beforeEach(() => {
 	localStorage.clear();
@@ -107,6 +130,33 @@ describe('MapOverlayChrome', () => {
 
 		// detailOpen does NOT suppress the peek — both can show at once on desktop.
 		expect(container.querySelector('.map-peek')).toBeInTheDocument();
+	});
+
+	it('renders scrubbed compact alert messages, caps them at two, and preserves the alert object', async () => {
+		const store = createFilterStore(emptyFilterState());
+		const onalertselect = vi.fn();
+		const { container } = render(MapOverlayChromeHarness, {
+			props: {
+				store,
+				locale: 'en',
+				isDesktop: true,
+				hoverDetail: stopAlertDetail,
+				onalertselect,
+			},
+		});
+
+		const peek = container.querySelector('.map-peek') as HTMLElement;
+		expect(peek.querySelectorAll('.map-alert-button')).toHaveLength(2);
+		expect(peek).toHaveTextContent('Elevator closed & shuttle available.');
+		expect(peek).toHaveTextContent('Route 24 boards on Clark.');
+		expect(peek).not.toHaveTextContent('This compact overflow stays hidden.');
+
+		await fireEvent.click(
+			screen.getByRole('button', {
+				name: 'Select alert Elevator closed & shuttle available.',
+			}),
+		);
+		expect(onalertselect.mock.calls[0]?.[0]).toBe(hoverAlerts[0]);
 	});
 
 	it('hides the mobile filter pill while the detail sheet owns the bottom edge', async () => {

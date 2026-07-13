@@ -14,7 +14,8 @@ import type { Locale } from '$lib/i18n';
 import type { SeverityCode } from '$lib/v1/schemas';
 import { SEVERITY_LABELS } from '$lib/v1/enumLabels';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
-import type { DateRangePickerLabels } from '$lib/components/surface';
+import type { HistoryNavigatorLabels } from '$lib/components/surface';
+import type { HistoryCorrection } from '$lib/v1/history';
 
 export interface AlertHistoryCopy extends SurfaceHeadCopy {
 	readonly article: {
@@ -118,8 +119,13 @@ export interface AlertHistoryCopy extends SurfaceHeadCopy {
 			readonly clear: string;
 			readonly empty: string;
 		};
-		/** The date-range picker (?from/?to) labels. */
-		readonly window: DateRangePickerLabels;
+		/** Retained-history range controls and page-owned status copy. */
+		readonly history: {
+			readonly navigator: HistoryNavigatorLabels;
+			readonly coverage: (from: string, to: string) => string;
+			readonly selection: (from: string, to: string) => string;
+			readonly correction: Record<HistoryCorrection['reason'], string>;
+		};
 		/** Honest no-match note shown when the active filters narrow the log to zero. */
 		readonly noMatch: string;
 		/** FilterSummary count templates ("{count} alert" / "{count} alerts"),
@@ -246,13 +252,29 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 				clear: 'Effacer l’arrêt',
 				empty: 'Aucun arrêt touché.',
 			},
-			window: {
-				group: 'Plage de dates',
-				start: 'Du',
-				end: 'Au',
-				clear: 'Effacer',
-				anyStart: 'Au plus tôt',
-				anyEnd: 'Au plus tard',
+			history: {
+				navigator: {
+					group: 'Plage de l’historique des avis',
+					picker: {
+						group: 'Plage de l’historique des avis',
+						start: 'Du',
+						end: 'Au',
+						clear: 'Revenir à la période courante',
+						anyStart: 'Au plus tôt',
+						anyEnd: 'Au plus tard',
+					},
+					previous: 'Période précédente',
+					next: 'Période suivante',
+				},
+				coverage: (from, to) => `Archives : du ${from} au ${to}`,
+				selection: (from, to) => `Sélection : du ${from} au ${to}`,
+				correction: {
+					malformed: 'La plage de dates invalide a été remplacée par la période courante.',
+					'outside-coverage':
+						'La plage de dates non disponible a été remplacée par la période courante.',
+					gap: 'La plage dans une lacune des archives a été remplacée par la période courante.',
+					unpublished: 'La plage non publiée a été remplacée par la période courante.',
+				},
 			},
 			noMatch: 'Aucun avis ne correspond aux filtres sélectionnés.',
 			summary: {
@@ -368,13 +390,28 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 				clear: 'Clear stop',
 				empty: 'No affected stop.',
 			},
-			window: {
-				group: 'Date range',
-				start: 'From',
-				end: 'To',
-				clear: 'Clear',
-				anyStart: 'Earliest',
-				anyEnd: 'Latest',
+			history: {
+				navigator: {
+					group: 'Alert history range',
+					picker: {
+						group: 'Alert history range',
+						start: 'From',
+						end: 'To',
+						clear: 'Return to current window',
+						anyStart: 'Earliest',
+						anyEnd: 'Latest',
+					},
+					previous: 'Previous range',
+					next: 'Next range',
+				},
+				coverage: (from, to) => `Archive coverage: ${from} to ${to}`,
+				selection: (from, to) => `Selected: ${from} to ${to}`,
+				correction: {
+					malformed: 'The invalid date range was reset to the current window.',
+					'outside-coverage': 'The unavailable date range was reset to the current window.',
+					gap: 'The range in an archive gap was reset to the current window.',
+					unpublished: 'The unpublished range was reset to the current window.',
+				},
 			},
 			noMatch: 'No alerts match the selected filters.',
 			summary: {
