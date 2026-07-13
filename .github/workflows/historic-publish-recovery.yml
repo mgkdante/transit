@@ -17,6 +17,7 @@ jobs:
     defaults:
       run:
         working-directory: apps/db
+        shell: bash
     env:
       APP_ENV: production
       LOG_LEVEL: INFO

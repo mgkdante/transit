@@ -71,6 +71,12 @@ def _step(job: dict, name: str) -> dict:
     return next(step for step in job["steps"] if step.get("name") == name)
 
 
+def _github_shell_template(job: dict) -> list[str]:
+    if job["defaults"]["run"].get("shell") == "bash":
+        return ["bash", "--noprofile", "--norc", "-eo", "pipefail", "{0}"]
+    return ["bash", "-e", "{0}"]
+
+
 def _fake_uv_environment(tmp_path: Path, body: str) -> dict[str, str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -89,17 +95,11 @@ def _run_step_script(
     cwd: Path,
     environment: dict[str, str],
 ) -> subprocess.CompletedProcess[str]:
+    script_path = cwd / "github-step.sh"
+    script_path.write_text(_step(job, name)["run"], encoding="utf-8")
+    command = [str(script_path) if part == "{0}" else part for part in _github_shell_template(job)]
     return subprocess.run(
-        [
-            "bash",
-            "--noprofile",
-            "--norc",
-            "-e",
-            "-o",
-            "pipefail",
-            "-c",
-            _step(job, name)["run"],
-        ],
+        command,
         cwd=cwd,
         env=environment,
         capture_output=True,
@@ -123,7 +123,15 @@ def test_recovery_workflow_is_manual_bounded_and_serialized_with_daily_lane() ->
 
     assert job["runs-on"] == "ubuntu-latest"
     assert job["timeout-minutes"] == 45
-    assert job["defaults"] == {"run": {"working-directory": "apps/db"}}
+    assert job["defaults"] == {"run": {"working-directory": "apps/db", "shell": "bash"}}
+    assert _github_shell_template(job) == [
+        "bash",
+        "--noprofile",
+        "--norc",
+        "-eo",
+        "pipefail",
+        "{0}",
+    ]
     assert job["env"] == EXPECTED_ENV
     assert "defaults" not in document
     assert "shell" not in job
@@ -288,6 +296,72 @@ def test_sync_step_rejects_empty_provider_discovery(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "Provider discovery returned no providers" in result.stderr
+
+
+def test_unspecified_linux_shell_can_mask_a_left_pipeline_failure(tmp_path: Path) -> None:
+    script = tmp_path / "pipeline.sh"
+    script.write_text("false | true\n", encoding="utf-8")
+
+    unspecified = subprocess.run(
+        ["bash", "-e", str(script)],
+        check=False,
+    )
+    declared_bash = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", str(script)],
+        check=False,
+    )
+
+    assert unspecified.returncode == 0
+    assert declared_bash.returncode != 0
+
+
+@pytest.mark.parametrize(
+    ("step_name", "fake_uv_body", "expected_status"),
+    [
+        (
+            "Apply database migrations",
+            'if [[ "$*" == *"init-db"* ]]; then exit 31; fi\nexit 0\n',
+            31,
+        ),
+        (
+            "Prove database migration head",
+            'if [[ "$*" == *"alembic heads"* ]]; then exit 32; fi\nexit 0\n',
+            32,
+        ),
+        (
+            "Sync retained alert archive (all providers)",
+            """\
+if [[ "$*" == *"list-providers"* ]]; then printf 'stm\\n'; exit 0; fi
+if [[ "$*" == *"sync-alert-archive"* ]]; then exit 33; fi
+exit 0
+""",
+            33,
+        ),
+        (
+            "Publish gated historic snapshot (all providers)",
+            'if [[ "$*" == *"publish-all"* ]]; then exit 34; fi\nexit 0\n',
+            34,
+        ),
+    ],
+)
+def test_critical_pipeline_propagates_left_side_failure(
+    tmp_path: Path,
+    step_name: str,
+    fake_uv_body: str,
+    expected_status: int,
+) -> None:
+    (tmp_path / "artifacts" / "historic-publish-recovery").mkdir(parents=True)
+    environment = _fake_uv_environment(tmp_path, fake_uv_body)
+    job = _only_job(_load(RECOVERY_WORKFLOW))
+
+    result = _run_step_script(
+        job,
+        step_name,
+        cwd=tmp_path,
+        environment=environment,
+    )
+
+    assert result.returncode == expected_status
 
 
 @pytest.mark.parametrize(
