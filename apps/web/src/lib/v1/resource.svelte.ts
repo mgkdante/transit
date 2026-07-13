@@ -68,7 +68,7 @@ export interface Resource<T> {
  * // <ResourceBoundary resource={reliability} {lang}>{#snippet children(r)}…{/snippet}</ResourceBoundary>
  */
 export function createResource<T>(
-	fetcher: () => Promise<T>,
+	fetcher: (signal: AbortSignal) => Promise<T>,
 	options: ResourceOptions = {},
 ): Resource<T> {
 	const wantsFreshness = options.freshness === true;
@@ -83,6 +83,8 @@ export function createResource<T>(
 	let seq = 0;
 
 	const toError = (e: unknown): Error => (e instanceof Error ? e : new Error(String(e)));
+	const isAbortError = (e: unknown): boolean =>
+		typeof e === 'object' && e !== null && 'name' in e && e.name === 'AbortError';
 
 	$effect(() => {
 		// Reading `manual` registers it as an $effect dependency so reload() re-runs
@@ -95,18 +97,24 @@ export function createResource<T>(
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		dataRefresh.epoch;
 		const token = ++seq;
-
-		let pending: Promise<T>;
-		try {
-			pending = fetcher();
-		} catch (e) {
-			error = toError(e);
-			settled = true;
-			return;
-		}
+		const controller = new AbortController();
+		const cleanup = () => {
+			if (token === seq) seq += 1;
+			controller.abort();
+		};
 
 		loading = true;
 		error = null;
+
+		let pending: Promise<T>;
+		try {
+			pending = fetcher(controller.signal);
+		} catch (e) {
+			if (!isAbortError(e)) error = toError(e);
+			loading = false;
+			settled = true;
+			return cleanup;
+		}
 
 		pending
 			.then((value) => {
@@ -121,13 +129,15 @@ export function createResource<T>(
 			})
 			.catch((e) => {
 				if (token !== seq) return;
-				error = toError(e);
+				if (!isAbortError(e)) error = toError(e);
 			})
 			.finally(() => {
 				if (token !== seq) return;
 				loading = false;
 				settled = true;
 			});
+
+		return cleanup;
 	});
 
 	return {
