@@ -155,6 +155,17 @@ def test_0080_uses_honest_collection_defaults_without_backfill() -> None:
     assert isinstance(table.c.archive_month.type, sa.Date)
     for name in ("header_text", "header_text_en", "description_text", "description_text_en"):
         assert isinstance(table.c[name].type, sa.Text)
+    for name in ("severity", "cause", "effect", "url", "content_hash"):
+        assert isinstance(table.c[name].type, sa.Text)
+    for name in (
+        "start_utc",
+        "end_utc",
+        "first_seen_utc",
+        "last_seen_utc",
+        "updated_at_utc",
+    ):
+        assert isinstance(table.c[name].type, sa.DateTime)
+        assert table.c[name].type.timezone is True
     for name in ("route_ids", "stop_ids"):
         assert isinstance(table.c[name].type, ARRAY)
         assert isinstance(table.c[name].type.item_type, sa.Text)
