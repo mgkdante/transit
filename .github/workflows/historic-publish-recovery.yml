@@ -66,6 +66,7 @@ jobs:
             echo "Provider discovery returned no providers" >&2
             exit 1
           fi
+          discovered_providers=()
           declare -A seen_providers=()
           while IFS= read -r provider; do
             if [[ -z "$provider" ]]; then
@@ -81,9 +82,14 @@ jobs:
               exit 1
             fi
             seen_providers["$provider"]=1
+            discovered_providers+=("$provider")
+          done <<< "$providers"
+          jq -n --args '$ARGS.positional' "${discovered_providers[@]}" \
+            > artifacts/historic-publish-recovery/provider-discovery.json
+          for provider in "${discovered_providers[@]}"; do
             uv run python -m transit_ops.cli sync-alert-archive "$provider" \
               | tee "artifacts/historic-publish-recovery/alert-archive-sync-${provider}.json"
-          done <<< "$providers"
+          done
 
       - name: Publish gated historic snapshot (all providers)
         run: |
@@ -123,30 +129,49 @@ jobs:
             echo "Historic publish result returned no provider ids" >&2
             exit 1
           fi
-          shopt -s nullglob
-          sync_receipts=(
-            artifacts/historic-publish-recovery/alert-archive-sync-*.json
-          )
-          shopt -u nullglob
-          if (( ${#sync_receipts[@]} == 0 )); then
-            echo "Historic recovery produced no sync receipts" >&2
+          discovered_providers="$(
+            jq -ers '
+              def valid_provider_id:
+                if type == "string" then
+                  length > 0 and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")
+                else false
+                end;
+              if length != 1 then
+                error("provider discovery must contain exactly one JSON document")
+              elif (.[0] | type) != "array" or (.[0] | length) == 0 then
+                error("provider discovery must be a nonempty array")
+              elif any(.[0][]; valid_provider_id | not) then
+                error("provider discovery contains an unsafe provider id")
+              elif (.[0] | unique | length) != (.[0] | length) then
+                error("provider discovery contains duplicate provider ids")
+              else
+                .[0][]
+              end
+            ' artifacts/historic-publish-recovery/provider-discovery.json
+          )"
+          if [[ -z "$discovered_providers" ]]; then
+            echo "Historic recovery provider discovery is empty" >&2
             exit 1
           fi
           sync_receipt_records=()
-          for sync_receipt in "${sync_receipts[@]}"; do
+          while IFS= read -r discovered_provider; do
+            if [[ -z "$discovered_provider" ]]; then
+              echo "Historic recovery provider discovery contains an empty id" >&2
+              exit 1
+            fi
+            sync_receipt="artifacts/historic-publish-recovery/alert-archive-sync-${discovered_provider}.json"
+            if [[ ! -f "$sync_receipt" ]]; then
+              echo "Historic recovery is missing a sync receipt for ${discovered_provider}" >&2
+              exit 1
+            fi
             sync_receipt_records+=("$(
-              jq -ecs '
-                def valid_provider_id:
-                  if type == "string" then
-                    length > 0 and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")
-                  else false
-                  end;
+              jq -ecs --arg provider "$discovered_provider" '
                 if length != 1 then
                   error("sync receipt must contain exactly one JSON document")
                 elif (.[0] | type) != "object" then
                   error("sync receipt must be a JSON object")
-                elif (.[0].provider_id | valid_provider_id | not) then
-                  error("sync receipt needs a safe provider_id")
+                elif .[0].provider_id != $provider then
+                  error("sync receipt provider_id does not match discovery")
                 elif (
                   .[0] | has("skipped_not_seeded")
                   and (.skipped_not_seeded | type) != "boolean"
@@ -157,7 +182,7 @@ jobs:
                 end
               ' "$sync_receipt"
             )")
-          done
+          done <<< "$discovered_providers"
           synced_providers="$(
             printf '%s\n' "${sync_receipt_records[@]}" \
               | jq -rs '

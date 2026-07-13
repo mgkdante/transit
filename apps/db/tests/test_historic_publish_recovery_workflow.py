@@ -121,6 +121,11 @@ def _write_sync_receipt(
     )
 
 
+def _write_provider_discovery(artifact_dir: Path, payload: object) -> None:
+    body = payload if isinstance(payload, str) else json.dumps(payload)
+    (artifact_dir / "provider-discovery.json").write_text(body, encoding="utf-8")
+
+
 PASSING_PROOF_UV_BODY = """\
 if [[ "$*" == *"verify-historic-publish"* ]]; then
   provider="$6"
@@ -213,6 +218,7 @@ uv run python -m transit_ops.cli init-db 2>&1 \\
         '  echo "Provider discovery returned no providers" >&2\n'
         "  exit 1\n"
         "fi\n"
+        "discovered_providers=()\n"
         "declare -A seen_providers=()\n"
         "while IFS= read -r provider; do\n"
         '  if [[ -z "$provider" ]]; then\n'
@@ -228,10 +234,15 @@ uv run python -m transit_ops.cli init-db 2>&1 \\
         "    exit 1\n"
         "  fi\n"
         '  seen_providers["$provider"]=1\n'
+        '  discovered_providers+=("$provider")\n'
+        'done <<< "$providers"\n'
+        "jq -n --args '$ARGS.positional' \"${discovered_providers[@]}\" \\\n"
+        "  > artifacts/historic-publish-recovery/provider-discovery.json\n"
+        'for provider in "${discovered_providers[@]}"; do\n'
         '  uv run python -m transit_ops.cli sync-alert-archive "$provider" \\\n'
         '    | tee "artifacts/historic-publish-recovery/'
         'alert-archive-sync-${provider}.json"\n'
-        'done <<< "$providers"'
+        "done"
     )
     assert _step(job, "Sync retained alert archive (all providers)")["run"].strip() == expected_sync
 
@@ -276,30 +287,51 @@ uv run python -m transit_ops.cli publish-all \\
         '  echo "Historic publish result returned no provider ids" >&2\n'
         "  exit 1\n"
         "fi\n"
-        "shopt -s nullglob\n"
-        "sync_receipts=(\n"
-        "  artifacts/historic-publish-recovery/alert-archive-sync-*.json\n"
-        ")\n"
-        "shopt -u nullglob\n"
-        "if (( ${#sync_receipts[@]} == 0 )); then\n"
-        '  echo "Historic recovery produced no sync receipts" >&2\n'
+        'discovered_providers="$(\n'
+        "  jq -ers '\n"
+        "    def valid_provider_id:\n"
+        '      if type == "string" then\n'
+        '        length > 0 and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")\n'
+        "      else false\n"
+        "      end;\n"
+        "    if length != 1 then\n"
+        '      error("provider discovery must contain exactly one JSON document")\n'
+        '    elif (.[0] | type) != "array" or (.[0] | length) == 0 then\n'
+        '      error("provider discovery must be a nonempty array")\n'
+        "    elif any(.[0][]; valid_provider_id | not) then\n"
+        '      error("provider discovery contains an unsafe provider id")\n'
+        "    elif (.[0] | unique | length) != (.[0] | length) then\n"
+        '      error("provider discovery contains duplicate provider ids")\n'
+        "    else\n"
+        "      .[0][]\n"
+        "    end\n"
+        "  ' artifacts/historic-publish-recovery/provider-discovery.json\n"
+        ')"\n'
+        'if [[ -z "$discovered_providers" ]]; then\n'
+        '  echo "Historic recovery provider discovery is empty" >&2\n'
         "  exit 1\n"
         "fi\n"
         "sync_receipt_records=()\n"
-        'for sync_receipt in "${sync_receipts[@]}"; do\n'
+        "while IFS= read -r discovered_provider; do\n"
+        '  if [[ -z "$discovered_provider" ]]; then\n'
+        '    echo "Historic recovery provider discovery contains an empty id" >&2\n'
+        "    exit 1\n"
+        "  fi\n"
+        '  sync_receipt="artifacts/historic-publish-recovery/'
+        'alert-archive-sync-${discovered_provider}.json"\n'
+        '  if [[ ! -f "$sync_receipt" ]]; then\n'
+        '    echo "Historic recovery is missing a sync receipt for '
+        '${discovered_provider}" >&2\n'
+        "    exit 1\n"
+        "  fi\n"
         '  sync_receipt_records+=("$(\n'
-        "    jq -ecs '\n"
-        "      def valid_provider_id:\n"
-        '        if type == "string" then\n'
-        '          length > 0 and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")\n'
-        "        else false\n"
-        "        end;\n"
+        '    jq -ecs --arg provider "$discovered_provider" \'\n'
         "      if length != 1 then\n"
         '        error("sync receipt must contain exactly one JSON document")\n'
         '      elif (.[0] | type) != "object" then\n'
         '        error("sync receipt must be a JSON object")\n'
-        "      elif (.[0].provider_id | valid_provider_id | not) then\n"
-        '        error("sync receipt needs a safe provider_id")\n'
+        "      elif .[0].provider_id != $provider then\n"
+        '        error("sync receipt provider_id does not match discovery")\n'
         "      elif (\n"
         '        .[0] | has("skipped_not_seeded")\n'
         '        and (.skipped_not_seeded | type) != "boolean"\n'
@@ -310,7 +342,7 @@ uv run python -m transit_ops.cli publish-all \\
         "      end\n"
         '    \' "$sync_receipt"\n'
         '  )")\n'
-        "done\n"
+        'done <<< "$discovered_providers"\n'
         'synced_providers="$(\n'
         "  printf '%s\\n' \"${sync_receipt_records[@]}\" \\\n"
         "    | jq -rs '\n"
@@ -469,7 +501,7 @@ exit 0
     )
 
     assert result.returncode != 0
-    assert len(calls.read_text(encoding="utf-8").splitlines()) == 1
+    assert not calls.exists()
 
 
 def test_unspecified_linux_shell_can_mask_a_left_pipeline_failure(tmp_path: Path) -> None:
@@ -660,6 +692,7 @@ def test_proof_step_rejects_zero_exit_without_matching_passing_report(
         '[{"provider_id": "stm"}]',
         encoding="utf-8",
     )
+    _write_provider_discovery(artifact_dir, ["stm"])
     _write_sync_receipt(artifact_dir, "stm", {"provider_id": "stm"})
     environment = _fake_uv_environment(tmp_path, fake_uv_body)
     job = _only_job(_load(RECOVERY_WORKFLOW))
@@ -688,6 +721,7 @@ def test_proof_step_rejects_stale_passing_report_not_rewritten_by_verifier(
         '{"provider_id":"stm","status":"pass"}\n',
         encoding="utf-8",
     )
+    _write_provider_discovery(artifact_dir, ["stm"])
     _write_sync_receipt(artifact_dir, "stm", {"provider_id": "stm"})
     environment = _fake_uv_environment(tmp_path, "exit 0\n")
     job = _only_job(_load(RECOVERY_WORKFLOW))
@@ -746,6 +780,7 @@ def test_proof_step_rejects_invalid_sync_receipts(
         '[{"provider_id":"stm"}]',
         encoding="utf-8",
     )
+    _write_provider_discovery(artifact_dir, list(sync_receipts) or ["stm"])
     for filename_provider, payload in sync_receipts.items():
         _write_sync_receipt(artifact_dir, filename_provider, payload)
     environment = _fake_uv_environment(tmp_path, PASSING_PROOF_UV_BODY)
@@ -780,6 +815,7 @@ def test_proof_step_rejects_provider_set_mismatch(
         json.dumps([{"provider_id": provider} for provider in published_provider_ids]),
         encoding="utf-8",
     )
+    _write_provider_discovery(artifact_dir, list(sync_provider_ids))
     for provider in sync_provider_ids:
         _write_sync_receipt(artifact_dir, provider, {"provider_id": provider})
     environment = _fake_uv_environment(tmp_path, PASSING_PROOF_UV_BODY)
@@ -796,6 +832,106 @@ def test_proof_step_rejects_provider_set_mismatch(
     assert "provider set does not match active sync receipts" in result.stderr
 
 
+@pytest.mark.parametrize(
+    "discovery_payload",
+    [
+        None,
+        "not-json",
+        "{}",
+        "[]",
+        '["stm"]\n["sto"]',
+        '["stm","stm"]',
+        '["stm","../sto"]',
+    ],
+    ids=[
+        "missing",
+        "malformed",
+        "non-array",
+        "empty",
+        "multiple-json-documents",
+        "duplicate-provider",
+        "unsafe-provider",
+    ],
+)
+def test_proof_step_rejects_invalid_provider_discovery(
+    tmp_path: Path,
+    discovery_payload: str | None,
+) -> None:
+    artifact_dir = tmp_path / "artifacts" / "historic-publish-recovery"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "historic-publish.json").write_text(
+        '[{"provider_id":"stm"}]',
+        encoding="utf-8",
+    )
+    if discovery_payload is not None:
+        _write_provider_discovery(artifact_dir, discovery_payload)
+    _write_sync_receipt(artifact_dir, "stm", {"provider_id": "stm"})
+    environment = _fake_uv_environment(tmp_path, PASSING_PROOF_UV_BODY)
+    job = _only_job(_load(RECOVERY_WORKFLOW))
+
+    result = _run_step_script(
+        job,
+        "Prove published historic snapshots",
+        cwd=tmp_path,
+        environment=environment,
+    )
+
+    assert result.returncode != 0
+
+
+def test_proof_step_rejects_wrong_provider_in_skipped_receipt(tmp_path: Path) -> None:
+    artifact_dir = tmp_path / "artifacts" / "historic-publish-recovery"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "historic-publish.json").write_text(
+        '[{"provider_id":"stm"}]',
+        encoding="utf-8",
+    )
+    _write_provider_discovery(artifact_dir, ["stm", "sto"])
+    _write_sync_receipt(artifact_dir, "stm", {"provider_id": "stm"})
+    _write_sync_receipt(
+        artifact_dir,
+        "sto",
+        {
+            "provider_id": "stm",
+            "skipped_not_seeded": True,
+            "step": "sync-alert-archive",
+        },
+    )
+    environment = _fake_uv_environment(tmp_path, PASSING_PROOF_UV_BODY)
+    job = _only_job(_load(RECOVERY_WORKFLOW))
+
+    result = _run_step_script(
+        job,
+        "Prove published historic snapshots",
+        cwd=tmp_path,
+        environment=environment,
+    )
+
+    assert result.returncode != 0
+
+
+def test_proof_step_rejects_missing_skipped_provider_receipt(tmp_path: Path) -> None:
+    artifact_dir = tmp_path / "artifacts" / "historic-publish-recovery"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "historic-publish.json").write_text(
+        '[{"provider_id":"stm"}]',
+        encoding="utf-8",
+    )
+    _write_provider_discovery(artifact_dir, ["stm", "sto"])
+    _write_sync_receipt(artifact_dir, "stm", {"provider_id": "stm"})
+    environment = _fake_uv_environment(tmp_path, PASSING_PROOF_UV_BODY)
+    job = _only_job(_load(RECOVERY_WORKFLOW))
+
+    result = _run_step_script(
+        job,
+        "Prove published historic snapshots",
+        cwd=tmp_path,
+        environment=environment,
+    )
+
+    assert result.returncode != 0
+
+
 def test_proof_step_allows_explicitly_skipped_sync_provider_to_be_absent(
     tmp_path: Path,
 ) -> None:
@@ -805,6 +941,7 @@ def test_proof_step_allows_explicitly_skipped_sync_provider_to_be_absent(
         '[{"provider_id":"stm"}]',
         encoding="utf-8",
     )
+    _write_provider_discovery(artifact_dir, ["stm", "sto"])
     _write_sync_receipt(artifact_dir, "stm", {"provider_id": "stm"})
     _write_sync_receipt(
         artifact_dir,
@@ -835,6 +972,7 @@ def test_proof_step_rejects_duplicate_published_provider(tmp_path: Path) -> None
         '[{"provider_id":"stm"},{"provider_id":"stm"}]',
         encoding="utf-8",
     )
+    _write_provider_discovery(artifact_dir, ["stm"])
     _write_sync_receipt(artifact_dir, "stm", {"provider_id": "stm"})
     environment = _fake_uv_environment(tmp_path, PASSING_PROOF_UV_BODY)
     job = _only_job(_load(RECOVERY_WORKFLOW))
@@ -886,6 +1024,7 @@ def test_proof_step_verifies_each_strictly_valid_published_provider(tmp_path: Pa
         '[{"provider_id": "stm"}, {"provider_id": "sto"}]',
         encoding="utf-8",
     )
+    _write_provider_discovery(artifact_dir, ["stm", "sto"])
     for provider in ("stm", "sto"):
         _write_sync_receipt(artifact_dir, provider, {"provider_id": provider})
     calls = tmp_path / "uv-calls.txt"
