@@ -98,6 +98,17 @@ export interface RepeatOffendersCopy extends SurfaceHeadCopy {
 			readonly viewLine: string;
 		};
 	};
+	readonly evidenceTable: {
+		readonly caption: string;
+		readonly columns: {
+			readonly item: string;
+			readonly typeId: string;
+			readonly severeRate: string;
+			readonly recurrence: string;
+			readonly averageDelay: string;
+			readonly readings: string;
+		};
+	};
 	/** The natural-frequency recurrence line per row ("late-prone on N of M observed days"). */
 	readonly recurrence: {
 		/** N of M observed days (the natural-frequency template). */
@@ -232,6 +243,17 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 				viewLine: 'View line',
 			},
 		},
+		evidenceTable: {
+			caption: 'Evidence for ranked repeat offenders',
+			columns: {
+				item: 'Item',
+				typeId: 'Type / ID',
+				severeRate: 'Severe-delay rate',
+				recurrence: 'Recurrence',
+				averageDelay: 'Average delay',
+				readings: 'Readings',
+			},
+		},
 		recurrence: {
 			naturalFrequency: (lateDays, observedDays) =>
 				`Late-prone on ${lateDays} of ${observedDays} observed days`,
@@ -342,6 +364,17 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 				averageDelay: 'Retard moyen',
 				readings: 'Relevés',
 				viewLine: 'Voir la ligne',
+			},
+		},
+		evidenceTable: {
+			caption: 'Données probantes des récidivistes classés',
+			columns: {
+				item: 'Élément',
+				typeId: 'Type / ID',
+				severeRate: 'Taux de retards graves',
+				recurrence: 'Récurrence',
+				averageDelay: 'Retard moyen',
+				readings: 'Relevés',
 			},
 		},
 		recurrence: {

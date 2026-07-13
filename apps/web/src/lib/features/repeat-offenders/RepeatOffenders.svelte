@@ -89,6 +89,7 @@
 		SMALLEST_WORST_N,
 	} from './data/ladderCap';
 	import { selectOffenderLadder, type OffenderPopoverEvidence } from './selectors/offenderLadder';
+	import { buildOffenderEvidenceRows } from './selectors/offenderEvidence';
 	import { buildOffenderLedger } from './selectors/offenderLedger';
 	import RepeatOffendersSection from './sections/RepeatOffendersSection.svelte';
 	import { copy as COPY } from './repeatOffenders.copy';
@@ -305,12 +306,15 @@
 	}
 
 	const activeLadder = $derived(ladders.get(grainKey));
+	function kindEntriesFor(kind: 'trip' | 'vehicle'): RepeatOffenderEntry[] {
+		return (activeLadder?.entries ?? []).filter((entry) => entry.type === kind);
+	}
 
 	// entries[] is a MIXED trip+vehicle array ranked PER KIND. Build a ladder for EACH
 	// kind by filtering entries[] by type losslessly. shown/total per kind uses the DB's
 	// per-kind ranked totals — a display-N truncation never rescales.
 	function ladderFor(kind: 'trip' | 'vehicle', total: number | null | undefined) {
-		const kindEntries = (activeLadder?.entries ?? []).filter((e) => e.type === kind);
+		const kindEntries = kindEntriesFor(kind);
 		const res = selectOffenderLadder(kindEntries, cap, locale, {
 			title: t.ladder.heading,
 			xLabel: t.ladder.severeRateLabel,
@@ -325,6 +329,30 @@
 	}
 	const tripLadder = $derived(ladderFor('trip', activeLadder?.total_ranked_trips));
 	const vehicleLadder = $derived(ladderFor('vehicle', activeLadder?.total_ranked_vehicles));
+	function evidenceFor(kind: 'trip' | 'vehicle') {
+		return buildOffenderEvidenceRows(kindEntriesFor(kind), cap, {
+			unnamed,
+			href: hrefFor,
+			ariaLabel: t.viewDetail,
+			typeId: (entry) =>
+				t.tray.rowSubtitle(kind === 'trip' ? t.type.trip : t.type.vehicle, entry.id),
+			severeRate: (value) => fmtPct(value, { locale, suffix: t.units.pct }),
+			confidenceInterval: (lower, upper) => {
+				const formattedLower = fmtPct(lower, { locale, suffix: t.units.pct });
+				const formattedUpper = fmtPct(upper, { locale, suffix: t.units.pct });
+				return `${formattedLower}–${formattedUpper}`;
+			},
+			recurrence: (entry) =>
+				entry.recurrence_days != null && entry.observed_days != null
+					? t.recurrence.naturalFrequency(entry.recurrence_days, entry.observed_days)
+					: t.recurrence.unknown,
+			averageDelay: (value) =>
+				fmtDelayMin(value, { rounding: 'auto', locale, suffix: t.units.min }),
+			readings: (value) => fmtCount(value, { locale }),
+		});
+	}
+	const tripEvidence = $derived(evidenceFor('trip'));
+	const vehicleEvidence = $derived(evidenceFor('vehicle'));
 
 	// §C5.12 #1-OFFENDER HERO: entries[] is DB-ranked worst-first by the Wilson lower
 	// bound, so entries[0] IS the #1 offender. The hero names it + shows its streak
@@ -355,31 +383,6 @@
 		return t.hero.rateNoCi(ratePct);
 	});
 	const heroHref = $derived(topOffender ? hrefFor(topOffender) : null);
-
-	// The VISIBLE natural-frequency recurrence line per shown ranked row ("late-prone on
-	// N of M observed days"), split by kind, honoring the SAME worst-N cap as the ladder
-	// so the recurrence list and the chart stay in lock-step. This is the on-screen
-	// evidence the spec mandates (the chart's tooltip note is the AT/hover twin).
-	interface RecurrenceLine {
-		readonly key: string;
-		readonly label: string;
-		readonly text: string;
-	}
-	function recurrenceLinesFor(kind: 'trip' | 'vehicle'): RecurrenceLine[] {
-		return (activeLadder?.entries ?? [])
-			.filter((e) => e.type === kind)
-			.slice(0, Math.max(0, cap))
-			.map((e) => ({
-				key: `${e.type}-${e.id}-${e.route ?? ''}`,
-				label: e.route_name ?? unnamed(e),
-				text:
-					e.recurrence_days != null && e.observed_days != null
-						? t.recurrence.naturalFrequency(e.recurrence_days, e.observed_days)
-						: t.recurrence.unknown,
-			}));
-	}
-	const tripRecurrence = $derived(recurrenceLinesFor('trip'));
-	const vehicleRecurrence = $derived(recurrenceLinesFor('vehicle'));
 
 	// The un-ranked tray rows (sub-MIN_N entities) mapped to the section's display shape,
 	// split by kind so each article card shows only its own kind's tray.
@@ -742,7 +745,7 @@
 										heading={t.ladder.heading}
 										ladder={tripLadder}
 										tray={tripTray}
-										recurrence={tripRecurrence}
+										evidence={tripEvidence}
 										{windowCaption}
 										info={severeInfo}
 										{locale}
@@ -753,7 +756,7 @@
 										heading={t.ladder.heading}
 										ladder={vehicleLadder}
 										tray={vehicleTray}
-										recurrence={vehicleRecurrence}
+										evidence={vehicleEvidence}
 										{windowCaption}
 										info={severeInfo}
 										{locale}

@@ -11,8 +11,10 @@
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { AbsentValue } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import type { OffenderEvidenceRow } from '../selectors/offenderEvidence';
 	import type { OffenderLadderResult } from '../selectors/offenderLadder';
 	import type { RepeatOffendersCopy } from '../repeatOffenders.copy';
+	import RepeatOffenderEvidenceTable from './RepeatOffenderEvidenceTable.svelte';
 
 	interface MetricInfoVM {
 		readonly tip: string;
@@ -27,17 +29,11 @@
 		readonly href: string | null;
 		readonly ariaLabel: string;
 	}
-	interface RecurrenceLine {
-		readonly key: string;
-		readonly label: string;
-		readonly text: string;
-	}
-
 	interface RepeatOffendersSectionProps {
 		heading: string;
 		ladder: OffenderLadderResult;
 		tray: readonly TrayRow[];
-		recurrence: readonly RecurrenceLine[];
+		evidence: readonly OffenderEvidenceRow[];
 		windowCaption: string;
 		info: MetricInfoVM;
 		locale: Locale;
@@ -47,7 +43,7 @@
 		heading,
 		ladder,
 		tray,
-		recurrence,
+		evidence,
 		windowCaption,
 		info,
 		locale,
@@ -81,15 +77,8 @@
 		<div data-slot="offender-ladder" data-card-interactive>
 			<Chart spec={ladder.spec} />
 		</div>
-		{#if recurrence.length > 0}
-			<ul class="offender-recurrence" data-slot="offender-recurrence">
-				{#each recurrence as line (line.key)}
-					<li class="offender-recurrence-item">
-						<span class="offender-recurrence-label">{line.label}</span>
-						<span class="offender-recurrence-text">{line.text}</span>
-					</li>
-				{/each}
-			</ul>
+		{#if evidence.length > 0}
+			<RepeatOffenderEvidenceTable rows={evidence} {locale} {copy} />
 		{/if}
 	{:else}
 		<div class="offender-section-head">
@@ -148,27 +137,6 @@
 		font-size: var(--text-small);
 		line-height: 1.4;
 		color: var(--muted-foreground);
-	}
-	.offender-recurrence {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-	.offender-recurrence-item {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.375rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		line-height: 1.4;
-		color: var(--muted-foreground);
-	}
-	.offender-recurrence-label {
-		color: var(--foreground);
 	}
 	.offender-tray {
 		display: flex;
