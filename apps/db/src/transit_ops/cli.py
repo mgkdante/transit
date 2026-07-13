@@ -506,9 +506,7 @@ def capture_realtime(provider_id: str, endpoint_key: str) -> None:
         FeedKind.TRIP_UPDATES.value,
         FeedKind.VEHICLE_POSITIONS.value,
     }:
-        raise typer.BadParameter(
-            "endpoint_key must be 'trip_updates' or 'vehicle_positions'."
-        )
+        raise typer.BadParameter("endpoint_key must be 'trip_updates' or 'vehicle_positions'.")
 
     settings = get_settings()
     try:
@@ -587,9 +585,7 @@ def load_realtime_silver(provider_id: str, endpoint_key: str) -> None:
         FeedKind.TRIP_UPDATES.value,
         FeedKind.VEHICLE_POSITIONS.value,
     }:
-        raise typer.BadParameter(
-            "endpoint_key must be 'trip_updates' or 'vehicle_positions'."
-        )
+        raise typer.BadParameter("endpoint_key must be 'trip_updates' or 'vehicle_positions'.")
 
     settings = get_settings()
     try:
@@ -691,9 +687,7 @@ def replay_realtime_silver_command(
 
     start_utc = _parse_replay_instant(since, flag="--since")
     end_utc = (
-        _parse_replay_instant(until, flag="--until")
-        if until is not None
-        else datetime.now(UTC)
+        _parse_replay_instant(until, flag="--until") if until is not None else datetime.now(UTC)
     )
     if end_utc <= start_utc:
         raise typer.BadParameter(
@@ -726,10 +720,7 @@ def replay_realtime_silver_command(
         "silver": silver_result.display_dict(),
     }
 
-    if (
-        silver_result.loaded_count == 0
-        and not silver_result.skipped_existing_snapshot_ids
-    ):
+    if silver_result.loaded_count == 0 and not silver_result.skipped_existing_snapshot_ids:
         # Honest no-op: no archived snapshots in the window. Clean exit, not an error.
         payload["gold"] = None
         payload["status"] = "no-snapshots-in-window"
@@ -1010,9 +1001,7 @@ def vacuum_storage_command(
 
     settings = get_settings()
     try:
-        result = vacuum_storage(
-            provider_id, full=full, tables=table or None, settings=settings
-        )
+        result = vacuum_storage(provider_id, full=full, tables=table or None, settings=settings)
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
@@ -1355,9 +1344,7 @@ def build_warm_rollups_command(
 
 def _rebuild_prompt(plan) -> str:  # noqa: ANN001
     """Destructive-rebuild confirmation showing total rows + watermarks per kind."""
-    kinds = sorted(
-        set(plan.deleted_row_counts) | set(plan.deleted_watermark_counts)
-    )
+    kinds = sorted(set(plan.deleted_row_counts) | set(plan.deleted_watermark_counts))
     lines = [
         f"Rebuild {plan.provider_id} append-only daily rollups for rows "
         f"{plan.from_date.isoformat()}..{plan.to_date.isoformat()} — this DELETEs the "
@@ -1398,8 +1385,7 @@ def rebuild_warm_rollups_command(
     dry_run: bool = typer.Option(  # noqa: B008
         False,
         "--dry-run",
-        help="Print the affected row/watermark counts per kind without deleting "
-        "or rebuilding.",
+        help="Print the affected row/watermark counts per kind without deleting or rebuilding.",
     ),
     yes: bool = typer.Option(  # noqa: B008
         False,
@@ -1507,9 +1493,7 @@ def rebuild_source_factory_command(
     try:
         _preflight_report_dir(report_dir)
         if execute and not destructive_r2_cleanup:
-            raise typer.BadParameter(
-                "--destructive-r2-cleanup is required with --execute."
-            )
+            raise typer.BadParameter("--destructive-r2-cleanup is required with --execute.")
         result = run_source_factory_rebuild(
             provider_id,
             artifact_dir=report_dir,
@@ -1638,8 +1622,7 @@ def verify_backup_freshness_command(
         last_modified = datetime.fromisoformat(last_modified_raw)
     except ValueError as exc:
         typer.echo(
-            f"Backup freshness check FAILED: unparseable last_modified "
-            f"'{last_modified_raw}'",
+            f"Backup freshness check FAILED: unparseable last_modified '{last_modified_raw}'",
             err=True,
         )
         raise typer.Exit(code=1) from exc

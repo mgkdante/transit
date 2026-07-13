@@ -174,9 +174,7 @@ class I3StoragePruneResult:
 
     def display_dict(self) -> dict[str, object]:
         payload = asdict(self)
-        payload["raw_cutoff_utc"] = (
-            self.raw_cutoff_utc.isoformat() if self.raw_cutoff_utc else None
-        )
+        payload["raw_cutoff_utc"] = self.raw_cutoff_utc.isoformat() if self.raw_cutoff_utc else None
         payload["silver_cutoff_utc"] = (
             self.silver_cutoff_utc.isoformat() if self.silver_cutoff_utc else None
         )
@@ -230,23 +228,15 @@ def prune_i3_silver_closed_rows(
     params = {"provider_id": provider_id, "cutoff_utc": cutoff_utc}
 
     if dry_run:
-        entity_count = _safe_scalar_count(
-            connection.execute(COUNT_OLD_I3_SILVER_ENTITIES, params)
-        )
-        alert_count = _safe_scalar_count(
-            connection.execute(COUNT_OLD_I3_SILVER_ALERTS, params)
-        )
+        entity_count = _safe_scalar_count(connection.execute(COUNT_OLD_I3_SILVER_ENTITIES, params))
+        alert_count = _safe_scalar_count(connection.execute(COUNT_OLD_I3_SILVER_ALERTS, params))
         return cutoff_utc, {
             "silver.i3_alert_informed_entities": entity_count,
             "silver.i3_alerts": alert_count,
         }
 
-    entities_deleted = _safe_rowcount(
-        connection.execute(DELETE_OLD_I3_SILVER_ENTITIES, params)
-    )
-    alerts_deleted = _safe_rowcount(
-        connection.execute(DELETE_OLD_I3_SILVER_ALERTS, params)
-    )
+    entities_deleted = _safe_rowcount(connection.execute(DELETE_OLD_I3_SILVER_ENTITIES, params))
+    alerts_deleted = _safe_rowcount(connection.execute(DELETE_OLD_I3_SILVER_ALERTS, params))
     return cutoff_utc, {
         "silver.i3_alert_informed_entities": entities_deleted,
         "silver.i3_alerts": alerts_deleted,
@@ -343,9 +333,7 @@ def prune_i3_raw_snapshots(
         return cutoff_utc, {"i3_raw": 0}, zero_meta_counts, failed_snapshot_ids
 
     successful_object_ids = [
-        int(row[2])
-        for row in rows
-        if int(row[0]) in successful_snapshot_ids and row[2] is not None
+        int(row[2]) for row in rows if int(row[0]) in successful_snapshot_ids and row[2] is not None
     ]
 
     snapshots_deleted = _safe_rowcount(
