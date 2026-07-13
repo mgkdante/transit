@@ -31,7 +31,10 @@ from enum import Enum
 from pydantic import BaseModel, ValidationError
 
 from transit_ops.snapshots.builders.historic.history_common import (
+    decode_history_entity_id,
+    encode_history_entity_id,
     history_coverage,
+    history_entity_directory_generation_id,
     history_index_generation_id,
     history_metric_coverage,
     history_utc_timestamp,
@@ -39,7 +42,10 @@ from transit_ops.snapshots.builders.historic.history_common import (
 )
 from transit_ops.snapshots.contract import (
     HistoricCollectionIndex,
+    HistoricEntityDirectoryIndex,
+    HistoricEntityIndexRef,
     HistoricPartitionRef,
+    LineHistoryPartition,
     NetworkHistoryPartition,
 )
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
@@ -1985,6 +1991,719 @@ def check_network_history_bundle(
     return findings
 
 
+_LINE_HISTORY_PARTITION_PATH_RE = re.compile(
+    r"historic/history/lines/((?:[0-9a-f]{2})+)/generations/"
+    r"([0-9a-f]{64})/(\d{4}-(?:0[1-9]|1[0-2]))\.json"
+)
+_LINE_HISTORY_ENTITY_INDEX_PATH_RE = re.compile(
+    r"historic/history/lines/((?:[0-9a-f]{2})+)/index\.json"
+)
+_LINE_HISTORY_DIRECTORY_PATH = "historic/history/lines/index.json"
+_LINE_HISTORY_METRICS = (
+    ("delay", "additive"),
+    ("delay_percentiles", "daily_only"),
+    ("cancellation", "additive"),
+    ("occupancy", "additive"),
+    ("service_span", "daily_only"),
+    ("skipped_stops", "additive"),
+)
+
+
+def _check_line_history_day(emit: _Emitter, day: dict, index: int) -> None:  # type: ignore[type-arg]
+    """Apply shared retained-metric checks plus Line-only daily invariants."""
+
+    _check_network_history_day(emit, day, index)
+    prefix = f"days[{index}]."
+    service_span = day.get("service_span")
+    if isinstance(service_span, dict):
+        normalized: dict[str, str | None] = {}
+        for field_name in ("first_trip_utc", "last_trip_utc"):
+            value = service_span.get(field_name)
+            if value is None:
+                normalized[field_name] = None
+                continue
+            try:
+                canonical = history_utc_timestamp(value, field=field_name)
+            except ValueError:
+                canonical = None
+            normalized[field_name] = canonical
+            if value != canonical:
+                emit.err(
+                    "service_span_timestamp",
+                    f"{prefix}service_span.{field_name}",
+                    value,
+                    f"{field_name} must be an aware canonical UTC Z timestamp",
+                )
+        first = normalized.get("first_trip_utc")
+        last = normalized.get("last_trip_utc")
+        if first is not None and last is not None and not _iso_le(first, last):
+            emit.err(
+                "service_span_order",
+                f"{prefix}service_span.first_trip_utc",
+                first,
+                "first Line trip timestamp cannot be after the last trip timestamp",
+            )
+
+
+def check_line_history_partition(payload: object, *, rel_key: str) -> list[CheckResult]:
+    """Validate one content-addressed Line month and its exact path identity."""
+
+    emit = _Emitter("historic_line_history_partition", rel_key)
+    partition = _as_dict(payload)
+    if not isinstance(partition, dict):
+        emit.err("contract", "", payload, "Line history partition must be an object")
+        return emit.out
+    try:
+        LineHistoryPartition.model_validate(partition)
+    except ValidationError as exc:
+        _history_model_error(emit, exc)
+
+    match = _LINE_HISTORY_PARTITION_PATH_RE.fullmatch(rel_key)
+    if match is None:
+        emit.err("partition_path", "", rel_key, "malformed Line history generation path")
+        path_entity = path_sha = path_month = None
+    else:
+        encoded_id, path_sha, path_month = match.groups()
+        try:
+            path_entity = decode_history_entity_id(encoded_id)
+        except ValueError:
+            path_entity = None
+            emit.err(
+                "partition_entity",
+                "entity_id",
+                encoded_id,
+                "Line history path does not contain canonical UTF-8 entity identity",
+            )
+    if partition.get("entity_id") != path_entity:
+        emit.err(
+            "partition_entity",
+            "entity_id",
+            partition.get("entity_id"),
+            "Line partition entity_id does not match its encoded path identity",
+        )
+    if partition.get("month") != path_month:
+        emit.err(
+            "partition_month",
+            "month",
+            partition.get("month"),
+            "Line partition month does not match its generation path",
+        )
+    body = _serialized_body(payload)
+    if body is not None and path_sha is not None and hashlib.sha256(body).hexdigest() != path_sha:
+        emit.err(
+            "partition_sha256",
+            "",
+            path_sha,
+            "Line generation path SHA does not match exact partition bytes",
+        )
+
+    if partition.get("methodology_version") != "history-1":
+        emit.err(
+            "partition_envelope",
+            "methodology_version",
+            partition.get("methodology_version"),
+            "immutable Line partition methodology_version must be history-1",
+        )
+    if partition.get("publish_generation_id") is not None:
+        emit.err(
+            "partition_envelope",
+            "publish_generation_id",
+            partition.get("publish_generation_id"),
+            "immutable Line partition cannot carry a run generation stamp",
+        )
+    try:
+        normalized_generated = history_utc_timestamp(
+            partition.get("generated_utc"), field="generated_utc"
+        )
+    except ValueError:
+        normalized_generated = None
+    if partition.get("generated_utc") != normalized_generated:
+        emit.err(
+            "partition_envelope",
+            "generated_utc",
+            partition.get("generated_utc"),
+            "Line partition timestamp must be canonical UTC Z",
+        )
+
+    days = partition.get("days") if isinstance(partition.get("days"), list) else []
+    dates = [day.get("date") for day in days if isinstance(day, dict)]
+    string_dates = [value for value in dates if isinstance(value, str)]
+    if len(string_dates) != len(set(string_dates)):
+        emit.err("duplicate_date", "days", dates, "Line partition contains a duplicate date")
+    if dates != sorted(string_dates):
+        emit.err("date_order", "days", dates, "Line partition dates must be ascending")
+    for position, day in enumerate(days):
+        if isinstance(day, dict):
+            _check_line_history_day(emit, day, position)
+    return emit.out
+
+
+def check_line_history_partition_ref(ref: object, partition: object) -> list[CheckResult]:
+    """Cross-check one Line ref against exact immutable bytes and entity identity."""
+
+    ref_dict = _as_dict(ref)
+    partition_dict = _as_dict(partition)
+    path = ref_dict.get("path") if isinstance(ref_dict, dict) else None
+    emit = _Emitter(
+        "historic_line_history_partition_ref",
+        path if isinstance(path, str) else _LINE_HISTORY_DIRECTORY_PATH,
+    )
+    if not isinstance(ref_dict, dict):
+        emit.err("contract", "ref", ref, "Line partition ref must be an object")
+        return emit.out
+    if not isinstance(partition_dict, dict):
+        emit.err("contract", "partition", partition, "Line partition must be an object")
+        return emit.out
+    if not isinstance(path, str):
+        emit.err("ref_path", "path", path, "Line partition ref path must be a string")
+        return emit.out
+
+    match = _LINE_HISTORY_PARTITION_PATH_RE.fullmatch(path)
+    if match is None:
+        emit.err("ref_path", "path", path, "Line partition ref path is malformed")
+        path_entity = path_sha = path_month = None
+    else:
+        encoded_id, path_sha, path_month = match.groups()
+        try:
+            path_entity = decode_history_entity_id(encoded_id)
+        except ValueError:
+            path_entity = None
+    if partition_dict.get("entity_id") != path_entity:
+        emit.err(
+            "ref_entity",
+            "entity_id",
+            partition_dict.get("entity_id"),
+            "Line partition entity_id mismatches the ref path",
+        )
+    if partition_dict.get("month") != path_month:
+        emit.err(
+            "ref_month",
+            "month",
+            partition_dict.get("month"),
+            "Line partition month mismatches the ref path",
+        )
+
+    body = _serialized_body(partition)
+    if body is not None:
+        digest = hashlib.sha256(body).hexdigest()
+        if ref_dict.get("sha256") != digest:
+            emit.err("ref_sha256", "sha256", ref_dict.get("sha256"), "ref SHA mismatches bytes")
+        if ref_dict.get("byte_size") != len(body):
+            emit.err(
+                "ref_byte_size",
+                "byte_size",
+                ref_dict.get("byte_size"),
+                "ref byte size mismatches bytes",
+            )
+        if path_sha is not None and ref_dict.get("sha256") != path_sha:
+            emit.err(
+                "ref_path",
+                "sha256",
+                ref_dict.get("sha256"),
+                "Line ref SHA does not match its generation path",
+            )
+    days = partition_dict.get("days") if isinstance(partition_dict.get("days"), list) else []
+    dates = [day.get("date") for day in days if isinstance(day, dict)]
+    if ref_dict.get("count") != len(days):
+        emit.err("ref_count", "count", ref_dict.get("count"), "ref count mismatches partition")
+    if days and (ref_dict.get("coverage_start"), ref_dict.get("coverage_end")) != (
+        dates[0],
+        dates[-1],
+    ):
+        emit.err(
+            "ref_coverage",
+            "coverage_start",
+            None,
+            "Line ref coverage mismatches its partition",
+        )
+    return emit.out
+
+
+@dataclass
+class _LineEntityStream:
+    refs: list[HistoricPartitionRef] = field(default_factory=list)
+    available_dates: list[str] = field(default_factory=list)
+    metric_dates: dict[str, list[str]] = field(
+        default_factory=lambda: {metric: [] for metric, _aggregation in _LINE_HISTORY_METRICS}
+    )
+    generated_timestamps: list[str] = field(default_factory=list)
+
+
+@dataclass
+class LineHistoryStreamSummary:
+    """Independent compact truth retained while Line month payloads stream."""
+
+    entities: dict[str, _LineEntityStream] = field(default_factory=dict)
+
+    def observe(self, ref: object, partition: object) -> None:
+        value = _as_dict(partition)
+        if not isinstance(value, dict) or not isinstance(value.get("entity_id"), str):
+            return
+        entity_id = value["entity_id"]
+        summary = self.entities.setdefault(entity_id, _LineEntityStream())
+        summary.refs.append(HistoricPartitionRef.model_validate(_coverage_dict(ref)))
+        generated_utc = value.get("generated_utc")
+        if isinstance(generated_utc, str):
+            summary.generated_timestamps.append(generated_utc)
+        days = value.get("days") if isinstance(value.get("days"), list) else []
+        for day in days:
+            if not isinstance(day, dict) or not isinstance(day.get("date"), str):
+                continue
+            local_date = day["date"]
+            summary.available_dates.append(local_date)
+            for metric in summary.metric_dates:
+                if day.get(metric) is not None:
+                    summary.metric_dates[metric].append(local_date)
+
+
+def _expected_line_index(
+    entity_id: str,
+    summary: _LineEntityStream,
+    *,
+    fallback_generated_utc: str,
+) -> dict:  # type: ignore[type-arg]
+    dates = sorted(summary.available_dates)
+    first, last, gaps = history_coverage(dates)
+    value = {
+        "generated_utc": latest_history_timestamp(
+            summary.generated_timestamps,
+            fallback=fallback_generated_utc,
+        ),
+        "family": "lines",
+        "selection_mode": "range",
+        "entity_id": entity_id,
+        "first_available_date": first,
+        "last_available_date": last,
+        "available_dates": dates,
+        "gaps": _coverage_dict(gaps),
+        "partitions": _coverage_dict(summary.refs),
+        "metrics": _coverage_dict(
+            [
+                history_metric_coverage(metric, aggregation, summary.metric_dates[metric])
+                for metric, aggregation in _LINE_HISTORY_METRICS
+            ]
+        ),
+    }
+    value["collection_generation_id"] = history_index_generation_id(value)
+    return value
+
+
+def check_line_history_stream_indexes(
+    payloads: object,
+    summary: LineHistoryStreamSummary,
+    *,
+    fallback_generated_utc: str,
+) -> list[CheckResult]:
+    """Reject any mutable Line index graph that differs from streamed children."""
+
+    emit = _Emitter("historic_line_history_stream", _LINE_HISTORY_DIRECTORY_PATH)
+    if not isinstance(payloads, list):
+        emit.err("line_stream_indexes", "indexes", payloads, "Line indexes must be a list")
+        return emit.out
+    actual_by_entity: dict[str, dict] = {}  # type: ignore[type-arg]
+    duplicates: list[str] = []
+    for payload in payloads:
+        value = _as_dict(payload)
+        if not isinstance(value, dict) or not isinstance(value.get("entity_id"), str):
+            emit.err(
+                "line_stream_indexes",
+                "indexes",
+                value,
+                "every Line index must carry a raw entity_id",
+            )
+            continue
+        entity_id = value["entity_id"]
+        if entity_id in actual_by_entity:
+            duplicates.append(entity_id)
+        actual_by_entity[entity_id] = value
+    expected_entities = sorted(summary.entities)
+    if duplicates or sorted(actual_by_entity) != expected_entities:
+        emit.err(
+            "line_stream_indexes",
+            "indexes",
+            sorted(actual_by_entity),
+            "Line index entities do not exactly match streamed partition entities",
+        )
+    for entity_id in expected_entities:
+        actual = actual_by_entity.get(entity_id)
+        if actual is None:
+            continue
+        expected = _expected_line_index(
+            entity_id,
+            summary.entities[entity_id],
+            fallback_generated_utc=fallback_generated_utc,
+        )
+        fields = (
+            "generated_utc",
+            "family",
+            "selection_mode",
+            "entity_id",
+            "collection_generation_id",
+            "first_available_date",
+            "last_available_date",
+            "available_dates",
+            "gaps",
+            "partitions",
+            "metrics",
+        )
+        actual_semantics = {
+            field_name: _coverage_dict(actual.get(field_name)) for field_name in fields
+        }
+        expected_semantics = {
+            field_name: _coverage_dict(expected.get(field_name)) for field_name in fields
+        }
+        if actual_semantics != expected_semantics:
+            emit.err(
+                "line_stream_indexes",
+                f"indexes[{entity_id}]",
+                actual_semantics,
+                "Line entity index does not exactly match its streamed partitions",
+            )
+    return emit.out
+
+
+@dataclass
+class LineHistoryDirectorySummary:
+    """Detached exact child-index edges used to gate the final Lines directory."""
+
+    entities: list[HistoricEntityIndexRef] = field(default_factory=list)
+    available_dates: list[str] = field(default_factory=list)
+    generated_timestamps: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_indexes(cls, indexes: list[object]) -> LineHistoryDirectorySummary:
+        summary = cls()
+        for payload in indexes:
+            value = _as_dict(payload)
+            if not isinstance(value, dict) or not isinstance(value.get("entity_id"), str):
+                continue
+            entity_id = value["entity_id"]
+            encoded_id = encode_history_entity_id(entity_id)
+            summary.entities.append(
+                HistoricEntityIndexRef(
+                    entity_id=entity_id,
+                    encoded_id=encoded_id,
+                    index_path=f"historic/history/lines/{encoded_id}/index.json",
+                    collection_generation_id=str(value.get("collection_generation_id") or ""),
+                    first_available_date=value.get("first_available_date"),
+                    last_available_date=value.get("last_available_date"),
+                )
+            )
+            summary.available_dates.extend(
+                value.get("available_dates")
+                if isinstance(value.get("available_dates"), list)
+                else []
+            )
+            if isinstance(value.get("generated_utc"), str):
+                summary.generated_timestamps.append(value["generated_utc"])
+        summary.entities.sort(key=lambda item: item.entity_id)
+        return summary
+
+
+def check_line_history_stream_directory(
+    payload: object,
+    summary: LineHistoryDirectorySummary,
+    *,
+    fallback_generated_utc: str,
+) -> list[CheckResult]:
+    """Cross-check the Lines directory against detached, already-gated child edges."""
+
+    emit = _Emitter("historic_line_history_stream", _LINE_HISTORY_DIRECTORY_PATH)
+    directory = _as_dict(payload)
+    if not isinstance(directory, dict):
+        emit.err(
+            "line_stream_directory",
+            "directory",
+            payload,
+            "Lines directory must be an object",
+        )
+        return emit.out
+    dates = sorted(set(summary.available_dates))
+    first, last, _gaps = history_coverage(dates)
+    expected = {
+        "generated_utc": latest_history_timestamp(
+            summary.generated_timestamps,
+            fallback=fallback_generated_utc,
+        ),
+        "family": "lines",
+        "selection_mode": "range",
+        "first_available_date": first,
+        "last_available_date": last,
+        "entities": _coverage_dict(summary.entities),
+    }
+    expected["collection_generation_id"] = history_entity_directory_generation_id(expected)
+    fields = (
+        "generated_utc",
+        "family",
+        "selection_mode",
+        "collection_generation_id",
+        "first_available_date",
+        "last_available_date",
+        "entities",
+    )
+    actual = {field_name: _coverage_dict(directory.get(field_name)) for field_name in fields}
+    if actual != expected:
+        emit.err(
+            "line_stream_directory",
+            "entities",
+            actual,
+            "Lines directory does not exactly match the gated entity indexes",
+        )
+    return emit.out
+
+
+def check_line_history_index(payload: object, *, rel_key: str) -> list[CheckResult]:
+    """Validate one nonempty stable per-Line collection index."""
+
+    emit = _Emitter("historic_line_history_index", rel_key)
+    index = _as_dict(payload)
+    if not isinstance(index, dict):
+        emit.err("contract", "", payload, "Line history index must be an object")
+        return emit.out
+    try:
+        HistoricCollectionIndex.model_validate(index)
+    except ValidationError as exc:
+        _history_model_error(emit, exc)
+
+    match = _LINE_HISTORY_ENTITY_INDEX_PATH_RE.fullmatch(rel_key)
+    if match is None:
+        emit.err("index_path", "", rel_key, "Line entity index uses a malformed path")
+        path_entity = encoded_id = None
+    else:
+        encoded_id = match.group(1)
+        try:
+            path_entity = decode_history_entity_id(encoded_id)
+        except ValueError:
+            path_entity = None
+    entity_id = index.get("entity_id")
+    if (
+        index.get("family") != "lines"
+        or index.get("selection_mode") != "range"
+        or not isinstance(entity_id, str)
+        or not entity_id
+        or entity_id != path_entity
+    ):
+        emit.err(
+            "index_identity",
+            "entity_id",
+            entity_id,
+            "Line index family/range/raw identity must match its encoded path",
+        )
+    try:
+        normalized_generated = history_utc_timestamp(
+            index.get("generated_utc"), field="generated_utc"
+        )
+    except ValueError:
+        normalized_generated = None
+    if index.get("generated_utc") != normalized_generated:
+        emit.err(
+            "generated_utc",
+            "generated_utc",
+            index.get("generated_utc"),
+            "Line index timestamp must be canonical UTC Z",
+        )
+
+    dates = index.get("available_dates") if isinstance(index.get("available_dates"), list) else []
+    refs = index.get("partitions") if isinstance(index.get("partitions"), list) else []
+    if not dates or not refs:
+        emit.err(
+            "empty_entity",
+            "partitions",
+            refs,
+            "a Line entity index cannot advertise an empty retained collection",
+        )
+    try:
+        first, last, gaps = history_coverage(dates)
+    except ValueError:
+        emit.err("available_dates", "available_dates", dates, "Line index dates are malformed")
+    else:
+        expected_coverage = (first, last, _coverage_dict(gaps))
+        actual_coverage = (
+            index.get("first_available_date"),
+            index.get("last_available_date"),
+            _coverage_dict(index.get("gaps") or []),
+        )
+        if dates != sorted(set(dates)) or actual_coverage != expected_coverage:
+            emit.err(
+                "available_dates",
+                "available_dates",
+                dates,
+                "Line index dates/coverage/gaps are not canonical",
+            )
+
+    paths: list[object] = []
+    months: list[str] = []
+    for position, ref in enumerate(refs):
+        if not isinstance(ref, dict):
+            continue
+        path = ref.get("path")
+        paths.append(path)
+        ref_match = _LINE_HISTORY_PARTITION_PATH_RE.fullmatch(str(path or ""))
+        if ref_match is None:
+            emit.err(
+                "ref_path",
+                f"partitions[{position}].path",
+                path,
+                "Line partition ref path is malformed",
+            )
+            continue
+        ref_encoded, path_sha, month = ref_match.groups()
+        months.append(month)
+        if ref_encoded != encoded_id:
+            emit.err(
+                "ref_entity",
+                f"partitions[{position}].path",
+                path,
+                "Line partition ref belongs to another entity",
+            )
+        if ref.get("sha256") != path_sha:
+            emit.err(
+                "ref_path",
+                f"partitions[{position}].sha256",
+                ref.get("sha256"),
+                "Line partition ref SHA does not match its path",
+            )
+    if len(paths) != len(set(paths)):
+        emit.err("duplicate_ref_path", "partitions", paths, "Line partition path is repeated")
+    if len(months) != len(set(months)):
+        emit.err("duplicate_month", "partitions", months, "Line month is referenced twice")
+    if months != sorted(months):
+        emit.err("partition_order", "partitions", months, "Line partitions are not month-sorted")
+
+    metrics = index.get("metrics") if isinstance(index.get("metrics"), list) else []
+    identity = [
+        (metric.get("metric"), metric.get("aggregation"))
+        for metric in metrics
+        if isinstance(metric, dict)
+    ]
+    if identity != list(_LINE_HISTORY_METRICS):
+        emit.err(
+            "metric_vocabulary",
+            "metrics",
+            identity,
+            "Line metric order or aggregation class is not canonical",
+        )
+    expected_generation = history_index_generation_id(index)
+    if index.get("collection_generation_id") != expected_generation:
+        emit.err(
+            "collection_generation_id",
+            "collection_generation_id",
+            index.get("collection_generation_id"),
+            "Line collection generation does not match exact index semantics",
+        )
+    return emit.out
+
+
+def check_line_history_directory(payload: object, *, rel_key: str) -> list[CheckResult]:
+    """Validate the stable Lines entity directory and every child-generation edge."""
+
+    emit = _Emitter("historic_line_history_directory", rel_key)
+    directory = _as_dict(payload)
+    if not isinstance(directory, dict):
+        emit.err("contract", "", payload, "Lines directory must be an object")
+        return emit.out
+    try:
+        HistoricEntityDirectoryIndex.model_validate(directory)
+    except ValidationError as exc:
+        _history_model_error(emit, exc)
+    if rel_key != _LINE_HISTORY_DIRECTORY_PATH:
+        emit.err("directory_path", "", rel_key, "Lines directory uses the wrong stable path")
+    if directory.get("family") != "lines" or directory.get("selection_mode") != "range":
+        emit.err(
+            "directory_identity",
+            "family",
+            directory.get("family"),
+            "Lines directory must identify the lines/range family",
+        )
+    try:
+        normalized_generated = history_utc_timestamp(
+            directory.get("generated_utc"), field="generated_utc"
+        )
+    except ValueError:
+        normalized_generated = None
+    if directory.get("generated_utc") != normalized_generated:
+        emit.err(
+            "generated_utc",
+            "generated_utc",
+            directory.get("generated_utc"),
+            "Lines directory timestamp must be canonical UTC Z",
+        )
+
+    entities = directory.get("entities") if isinstance(directory.get("entities"), list) else []
+    raw_ids = [item.get("entity_id") for item in entities if isinstance(item, dict)]
+    encoded_ids = [item.get("encoded_id") for item in entities if isinstance(item, dict)]
+    index_paths = [item.get("index_path") for item in entities if isinstance(item, dict)]
+    if raw_ids != sorted(raw_ids):
+        emit.err("entity_order", "entities", raw_ids, "Lines directory entities are not sorted")
+    if len(raw_ids) != len(set(raw_ids)):
+        emit.err("duplicate_entity_id", "entities", raw_ids, "raw Line entity ID is repeated")
+    if len(encoded_ids) != len(set(encoded_ids)):
+        emit.err(
+            "duplicate_encoded_id",
+            "entities",
+            encoded_ids,
+            "encoded Line entity ID is repeated",
+        )
+    if len(index_paths) != len(set(index_paths)):
+        emit.err("duplicate_index_path", "entities", index_paths, "Line index path is repeated")
+    first_values: list[str] = []
+    last_values: list[str] = []
+    for position, item in enumerate(entities):
+        if not isinstance(item, dict):
+            continue
+        entity_id = item.get("entity_id")
+        try:
+            expected_encoded = encode_history_entity_id(entity_id)
+        except (TypeError, ValueError):
+            expected_encoded = None
+        expected_path = (
+            f"historic/history/lines/{expected_encoded}/index.json"
+            if expected_encoded is not None
+            else None
+        )
+        if item.get("encoded_id") != expected_encoded or item.get("index_path") != expected_path:
+            emit.err(
+                "entity_identity",
+                f"entities[{position}]",
+                item,
+                "Lines directory raw, encoded, and index-path identity disagree",
+            )
+        if not item.get("collection_generation_id"):
+            emit.err(
+                "entity_generation",
+                f"entities[{position}].collection_generation_id",
+                item.get("collection_generation_id"),
+                "Lines directory child must pin a collection generation",
+            )
+        if isinstance(item.get("first_available_date"), str):
+            first_values.append(item["first_available_date"])
+        if isinstance(item.get("last_available_date"), str):
+            last_values.append(item["last_available_date"])
+    expected_coverage = (
+        min(first_values) if first_values else None,
+        max(last_values) if last_values else None,
+    )
+    if (
+        directory.get("first_available_date"),
+        directory.get("last_available_date"),
+    ) != expected_coverage:
+        emit.err(
+            "directory_coverage",
+            "first_available_date",
+            directory.get("first_available_date"),
+            "Lines directory coverage does not match its entity indexes",
+        )
+    expected_generation = history_entity_directory_generation_id(directory)
+    if directory.get("collection_generation_id") != expected_generation:
+        emit.err(
+            "collection_generation_id",
+            "collection_generation_id",
+            directory.get("collection_generation_id"),
+            "Lines directory generation does not match exact child edges",
+        )
+    return emit.out
+
+
 def check_receipt(payload: object, *, rel_key: str) -> list[CheckResult]:
     emit = _Emitter("historic_receipt", rel_key)
     d = _as_dict(payload)
@@ -2212,12 +2931,14 @@ _INDEX_KINDS = {
     "historic/route_reliability/index.json": "historic_route_reliability_index",
     "historic/receipts/index.json": "historic_receipts_index",
     "historic/history/network/index.json": "historic_network_history_index",
+    "historic/history/lines/index.json": "historic_line_history_directory",
 }
 
 # S13: index keys that carry a dedicated structural checker (beyond model-validate).
 _INDEX_CHECKERS = {
     "historic/receipts/index.json": check_receipts_index,
     "historic/history/network/index.json": check_network_history_index,
+    "historic/history/lines/index.json": check_line_history_directory,
 }
 
 _PREFIX_CHECKERS = (
@@ -2225,6 +2946,11 @@ _PREFIX_CHECKERS = (
         "historic/history/network/generations/",
         check_network_history_partition,
         "historic_network_history_partition",
+    ),
+    (
+        "historic/history/lines/",
+        check_line_history_partition,
+        "historic_line_history_partition",
     ),
     (
         "historic/alerts/generations/",
@@ -2243,7 +2969,13 @@ def _route_checker(rel_key: str):  # noqa: ANN202
         return _EXACT_CHECKERS[rel_key]
     if rel_key in _INDEX_KINDS:
         return (_INDEX_CHECKERS.get(rel_key), _INDEX_KINDS[rel_key])
+    if _LINE_HISTORY_ENTITY_INDEX_PATH_RE.fullmatch(rel_key):
+        return (check_line_history_index, "historic_line_history_index")
     for prefix, checker, kind in _PREFIX_CHECKERS:
+        if prefix == "historic/history/lines/" and not _LINE_HISTORY_PARTITION_PATH_RE.fullmatch(
+            rel_key
+        ):
+            continue
         if rel_key.startswith(prefix):
             return (checker, kind)
     return (None, "unknown")

@@ -8,21 +8,29 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from transit_ops.settings import get_settings
-from transit_ops.snapshots.builders import build_network_trend
+from transit_ops.snapshots.builders import build_network_trend, build_route_reliability
+from transit_ops.snapshots.builders.historic.line_history import build_line_history
 from transit_ops.snapshots.builders.historic.network_history import build_network_history
-from transit_ops.snapshots.contract import NetworkTrend, OccupancyMix, TrendPoint
+from transit_ops.snapshots.contract import (
+    ROUTE_RELIABILITY_BYTE_CEILING,
+    NetworkTrend,
+    OccupancyMix,
+    TrendPoint,
+)
 from transit_ops.snapshots.serialization import snapshot_json_bytes
 
 DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
 
 pytestmark = pytest.mark.skipif(
     not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - partitioned network history real-DB test skipped",
+    reason="TRANSIT_TEST_DATABASE_URL not set - partitioned history real-DB tests skipped",
 )
 
 PROVIDER = "stm_network_history_test"
 OTHER_PROVIDER = "stm_network_history_other_test"
 COMPAT_PROVIDER = "stm_network_history_compat_test"
+LINE_PROVIDER = "stm_line_history_test"
+LINE_OTHER_PROVIDER = "stm_line_history_other_test"
 TRIP_ENDPOINT_ID = 9_987_100
 OTHER_TRIP_ENDPOINT_ID = 9_987_101
 BASE_RUN_ID = 9_987_200
@@ -266,6 +274,119 @@ def _extend_history_retention(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "GOLD_WARM_ROLLUP_RETENTION_DAYS", 36_500)
 
 
+@pytest.fixture()
+def line_history_conn():
+    engine = create_engine(DB_URL)
+    with engine.connect() as conn:
+        tx = conn.begin()
+        for provider_id in (LINE_PROVIDER, LINE_OTHER_PROVIDER):
+            conn.execute(
+                text(
+                    "INSERT INTO core.providers "
+                    "(provider_id, display_name, timezone, provider_key) "
+                    "VALUES (:provider_id, 'Line history regression', 'America/Toronto', "
+                    ":provider_id)"
+                ),
+                {"provider_id": provider_id},
+            )
+        for local_date, obs, on_time, severe, delay_sum, built in (
+            (date(2026, 5, 31), 4, 3, 1, 120, datetime(2026, 6, 1, tzinfo=UTC)),
+            (date(2026, 6, 1), 5, 4, 0, 150, datetime(2026, 6, 2, tzinfo=UTC)),
+        ):
+            histogram = [0] * 21
+            histogram[10] = obs
+            conn.execute(
+                text(
+                    "INSERT INTO gold.route_delay_spine "
+                    "(provider_id, route_id, provider_local_date, hour_of_day_local, direction_id, "
+                    "observation_count, delay_observation_count, on_time_observation_count, "
+                    "severe_delay_count, sum_delay_seconds, delay_histogram, built_at_utc) "
+                    "VALUES (:provider_id, 'A', :local_date, 12, 0, :obs, :obs, :on_time, "
+                    ":severe, :delay_sum, CAST(:histogram AS smallint[]), :built)"
+                ),
+                {
+                    "provider_id": LINE_PROVIDER,
+                    "local_date": local_date,
+                    "obs": obs,
+                    "on_time": on_time,
+                    "severe": severe,
+                    "delay_sum": delay_sum,
+                    "histogram": histogram,
+                    "built": built,
+                },
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO gold.route_cancellation_daily "
+                    "(provider_id, provider_local_date, route_id, total_trip_days, "
+                    "canceled_trip_days, cancellation_rate_pct, scheduled_trip_days, "
+                    "delivered_trip_days, silent_trip_days, built_at_utc) "
+                    "VALUES (:provider_id, :local_date, 'A', 10, 1, 10, 12, 9, 2, :built)"
+                ),
+                {
+                    "provider_id": LINE_PROVIDER,
+                    "local_date": local_date,
+                    "built": built,
+                },
+            )
+        conn.execute(
+            text(
+                "INSERT INTO gold.route_delay_percentile_daily "
+                "(provider_id, provider_local_date, route_id, delay_observation_count, "
+                "p50_delay_seconds, p90_delay_seconds, built_at_utc) "
+                "VALUES (:provider_id, '2026-05-31', 'A', 4, 30, 240, "
+                "'2026-06-01T01:00:00Z')"
+            ),
+            {"provider_id": LINE_PROVIDER},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO gold.route_service_span_daily "
+                "(provider_id, provider_local_date, route_id, first_trip_start_utc, "
+                "last_trip_start_utc, service_span_min, first_trip_delay_seconds, "
+                "last_trip_delay_seconds, trip_count, built_at_utc) "
+                "VALUES (:provider_id, '2026-06-01', 'A', '2026-06-01T09:00:00Z', "
+                "'2026-06-02T03:00:00Z', 1080, 20, -10, 8, '2026-06-02T01:00:00Z')"
+            ),
+            {"provider_id": LINE_PROVIDER},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO gold.route_occupancy_band_daily "
+                "(provider_id, provider_local_date, route_id, observation_count, empty_count, "
+                "many_seats_count, few_seats_count, standing_count, full_count, built_at_utc) "
+                "VALUES (:provider_id, '2026-06-02', 'AUX/only', 2, 0, 0, 0, 2, 0, "
+                "'2026-06-03T00:00:00Z')"
+            ),
+            {"provider_id": LINE_PROVIDER},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO gold.route_skipped_stop_daily "
+                "(provider_id, provider_local_date, route_id, stop_time_update_count, "
+                "skipped_stop_count, skipped_stop_rate_pct, built_at_utc) "
+                "VALUES (:provider_id, '2026-06-02', 'AUX/only', 10, 0, 0, "
+                "'2026-06-03T01:00:00Z')"
+            ),
+            {"provider_id": LINE_PROVIDER},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO gold.route_occupancy_band_daily "
+                "(provider_id, provider_local_date, route_id, observation_count, empty_count, "
+                "many_seats_count, few_seats_count, standing_count, full_count, built_at_utc) "
+                "VALUES (:provider_id, '2026-06-02', 'AUX/only', 99, 0, 0, 0, 0, 99, "
+                "'2026-06-03T00:00:00Z')"
+            ),
+            {"provider_id": LINE_OTHER_PROVIDER},
+        )
+        try:
+            yield conn
+        finally:
+            tx.rollback()
+            engine.dispose()
+
+
 def test_network_history_real_db_matches_cross_month_sql(
     network_history_conn,
     monkeypatch: pytest.MonkeyPatch,
@@ -436,3 +557,174 @@ def test_network_history_real_db_preserves_fixed_compatibility_bytes(
         )
     )
     assert after == expected_bytes
+
+
+def test_line_history_real_db_matches_cross_month_sql_and_sparse_auxiliary_entities(
+    line_history_conn,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _extend_history_retention(monkeypatch)
+    stamp = "2026-07-13T00:00:00Z"
+    compatibility_before = snapshot_json_bytes(
+        build_route_reliability(
+            line_history_conn,
+            provider_id=LINE_PROVIDER,
+            route_id="A",
+            generated_utc=stamp,
+        )
+    )
+    assert len(compatibility_before) <= ROUTE_RELIABILITY_BYTE_CEILING
+    bundle = build_line_history(
+        line_history_conn,
+        provider_id=LINE_PROVIDER,
+        generated_utc=stamp,
+    )
+
+    assert [(partition.entity_id, partition.month) for partition in bundle.partitions] == [
+        ("A", "2026-05"),
+        ("A", "2026-06"),
+        ("AUX/only", "2026-06"),
+    ]
+    direct_delay = line_history_conn.execute(
+        text(
+            "SELECT SUM(delay_observation_count), SUM(on_time_observation_count), "
+            "SUM(severe_delay_count), SUM(sum_delay_seconds), "
+            "SUM((SELECT COALESCE(SUM(x), 0) FROM unnest(delay_histogram) AS x)) "
+            "FROM gold.route_delay_spine WHERE provider_id = :p AND route_id = 'A'"
+        ),
+        {"p": LINE_PROVIDER},
+    ).one()
+    a_days = [
+        day
+        for partition in bundle.partitions
+        if partition.entity_id == "A"
+        for day in partition.days
+    ]
+    assert (
+        sum(day.delay.observation_count for day in a_days if day.delay),
+        sum(day.delay.on_time_count for day in a_days if day.delay),
+        sum(day.delay.severe_count for day in a_days if day.delay),
+        sum(day.delay.sum_delay_seconds for day in a_days if day.delay),
+        sum(day.delay.in_clamp_observation_count for day in a_days if day.delay),
+    ) == tuple(direct_delay)
+    assert a_days[0].delay_percentiles is not None
+    assert a_days[0].delay_percentiles.p90_delay_seconds == 240
+    assert a_days[1].service_span is not None
+    assert a_days[1].service_span.first_trip_utc == "2026-06-01T09:00:00Z"
+    direct_percentile = line_history_conn.execute(
+        text(
+            "SELECT delay_observation_count, p50_delay_seconds, p90_delay_seconds "
+            "FROM gold.route_delay_percentile_daily "
+            "WHERE provider_id = :p AND route_id = 'A'"
+        ),
+        {"p": LINE_PROVIDER},
+    ).one()
+    assert (
+        a_days[0].delay_percentiles.observation_count,
+        a_days[0].delay_percentiles.p50_delay_seconds,
+        a_days[0].delay_percentiles.p90_delay_seconds,
+    ) == (direct_percentile[0], float(direct_percentile[1]), float(direct_percentile[2]))
+    direct_cancellation = line_history_conn.execute(
+        text(
+            "SELECT SUM(canceled_trip_days), SUM(total_trip_days), "
+            "SUM(scheduled_trip_days), SUM(delivered_trip_days), SUM(silent_trip_days) "
+            "FROM gold.route_cancellation_daily "
+            "WHERE provider_id = :p AND route_id = 'A'"
+        ),
+        {"p": LINE_PROVIDER},
+    ).one()
+    assert (
+        sum(day.cancellation.canceled_trip_days for day in a_days if day.cancellation),
+        sum(day.cancellation.total_trip_days for day in a_days if day.cancellation),
+        sum(day.cancellation.scheduled_trip_days for day in a_days if day.cancellation),
+        sum(day.cancellation.delivered_trip_days for day in a_days if day.cancellation),
+        sum(day.cancellation.silent_trip_days for day in a_days if day.cancellation),
+    ) == tuple(direct_cancellation)
+    direct_service = line_history_conn.execute(
+        text(
+            "SELECT trip_count, first_trip_start_utc, last_trip_start_utc, "
+            "first_trip_delay_seconds, last_trip_delay_seconds "
+            "FROM gold.route_service_span_daily "
+            "WHERE provider_id = :p AND route_id = 'A'"
+        ),
+        {"p": LINE_PROVIDER},
+    ).one()
+    span = a_days[1].service_span
+    assert span is not None
+    assert (
+        span.trip_count,
+        span.first_trip_utc,
+        span.last_trip_utc,
+        span.first_trip_delay_seconds,
+        span.last_trip_delay_seconds,
+    ) == (
+        direct_service[0],
+        direct_service[1].astimezone(UTC).isoformat().replace("+00:00", "Z"),
+        direct_service[2].astimezone(UTC).isoformat().replace("+00:00", "Z"),
+        direct_service[3],
+        direct_service[4],
+    )
+
+    auxiliary = next(
+        partition for partition in bundle.partitions if partition.entity_id == "AUX/only"
+    )
+    assert auxiliary.days[0].delay is None
+    assert auxiliary.days[0].delay_percentiles is None
+    assert auxiliary.days[0].occupancy is not None
+    direct_occupancy = line_history_conn.execute(
+        text(
+            "SELECT empty_count, many_seats_count, few_seats_count, standing_count, full_count "
+            "FROM gold.route_occupancy_band_daily "
+            "WHERE provider_id = :p AND route_id = 'AUX/only'"
+        ),
+        {"p": LINE_PROVIDER},
+    ).one()
+    assert (
+        auxiliary.days[0].occupancy.empty,
+        auxiliary.days[0].occupancy.many_seats,
+        auxiliary.days[0].occupancy.few_seats,
+        auxiliary.days[0].occupancy.standing,
+        auxiliary.days[0].occupancy.full,
+    ) == tuple(direct_occupancy)
+    conflicting_provider = line_history_conn.execute(
+        text(
+            "SELECT empty_count, many_seats_count, few_seats_count, standing_count, full_count "
+            "FROM gold.route_occupancy_band_daily "
+            "WHERE provider_id = :p AND route_id = 'AUX/only'"
+        ),
+        {"p": LINE_OTHER_PROVIDER},
+    ).one()
+    assert tuple(conflicting_provider) == (0, 0, 0, 0, 99)
+    assert tuple(direct_occupancy) != tuple(conflicting_provider)
+    assert auxiliary.days[0].skipped_stops is not None
+    assert auxiliary.days[0].skipped_stops.skipped_stop_count == 0
+    direct_skips = line_history_conn.execute(
+        text(
+            "SELECT skipped_stop_count, stop_time_update_count "
+            "FROM gold.route_skipped_stop_daily "
+            "WHERE provider_id = :p AND route_id = 'AUX/only'"
+        ),
+        {"p": LINE_PROVIDER},
+    ).one()
+    assert (
+        auxiliary.days[0].skipped_stops.skipped_stop_count,
+        auxiliary.days[0].skipped_stops.stop_time_update_count,
+    ) == tuple(direct_skips)
+    assert [entry.entity_id for entry in bundle.directory.entities] == ["A", "AUX/only"]
+    assert bundle.directory.entities[1].encoded_id == b"AUX/only".hex()
+    aux_index = next(index for index in bundle.indexes if index.entity_id == "AUX/only")
+    coverage = {metric.metric.value: metric for metric in aux_index.metrics}
+    assert coverage["delay"].first_available_date is None
+    assert coverage["occupancy"].first_available_date == "2026-06-02"
+    assert coverage["skipped_stops"].first_available_date == "2026-06-02"
+    assert auxiliary.days[0].occupancy.full == 0
+    compatibility_after = snapshot_json_bytes(
+        build_route_reliability(
+            line_history_conn,
+            provider_id=LINE_PROVIDER,
+            route_id="A",
+            generated_utc=stamp,
+        )
+    )
+    assert compatibility_after == compatibility_before
+    assert len(compatibility_after) <= ROUTE_RELIABILITY_BYTE_CEILING

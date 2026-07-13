@@ -102,6 +102,17 @@ from transit_ops.snapshots.builders.historic.alert_archive import (
     AlertArchiveBundle,
     build_alert_archive,
 )
+from transit_ops.snapshots.builders.historic.line_history import (
+    LINE_HISTORY_ENTITY_BATCH_SIZE,
+    LINE_HISTORY_METRICS,
+    LineHistoryBundle,
+    LineHistoryPlan,
+    LineHistoryStreamSummary,
+    build_line_history,
+    build_line_history_from_rows,
+    build_line_history_plan,
+    build_line_history_plan_from_rows,
+)
 from transit_ops.snapshots.builders.historic.network_history import (
     _NETWORK_HISTORY_CANCELLATION_SQL,
     _NETWORK_HISTORY_DELAY_SQL,
@@ -205,6 +216,10 @@ __all__ = [
     "build_network_history_from_rows",
     "build_network_history_plan",
     "build_network_history_plan_from_rows",
+    "build_line_history",
+    "build_line_history_from_rows",
+    "build_line_history_plan",
+    "build_line_history_plan_from_rows",
     "build_provenance",
     "build_route_reliability",
     "build_alert_history",
@@ -216,6 +231,11 @@ __all__ = [
     "AlertArchiveBundle",
     "NetworkHistoryBundle",
     "NetworkHistoryPlan",
+    "LineHistoryBundle",
+    "LineHistoryPlan",
+    "LineHistoryStreamSummary",
+    "LINE_HISTORY_ENTITY_BATCH_SIZE",
+    "LINE_HISTORY_METRICS",
     "_ALERT_ARCHIVE_SQL",
     # SQL constants + private helpers re-exported for byte-stable
     # builders.historic.<name> attribute + import-path parity

@@ -295,6 +295,7 @@ def _historic_dispatch_conn(
     archive_rows=None,  # noqa: ANN001
     network_delay_rows=None,  # noqa: ANN001
     network_fact_rows=None,  # noqa: ANN001
+    line_delay_rows=None,  # noqa: ANN001
 ):
     """A fake conn returning enough rows for several per-route/per-stop files."""
     import datetime
@@ -347,6 +348,18 @@ def _historic_dispatch_conn(
         "history.network.fact": list(network_fact_rows or []),
         "history.network.cancellation": [],
         "history.network.occupancy": [],
+        "history.lines.ids": [
+            {"route_id": route_id}
+            for route_id in sorted(
+                {row.get("route_id") for row in (line_delay_rows or []) if row.get("route_id")}
+            )
+        ],
+        "history.lines.delay": list(line_delay_rows or []),
+        "history.lines.percentiles": [],
+        "history.lines.cancellation": [],
+        "history.lines.occupancy": [],
+        "history.lines.service_span": [],
+        "history.lines.skipped_stops": [],
         "receipts.network_daily": [
             {
                 "local_date": datetime.date(2025, 1, 1),
@@ -858,7 +871,9 @@ def test_unchanged_historic_republish_counts_immutable_skip_physically_and_expos
     assert second.display_dict()["files_skipped"] == physical_skipped
 
 
-def test_network_history_republish_accounts_for_real_hash_gate_outcomes_end_to_end() -> None:
+def test_network_and_line_history_republish_account_for_real_hash_gate_outcomes_end_to_end() -> (
+    None
+):
     import datetime
 
     class _Settings:
@@ -885,8 +900,33 @@ def test_network_history_republish_accounts_for_real_hash_gate_outcomes_end_to_e
             "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
         },
     ]
+    line_rows = [
+        {
+            "route_id": "A/B",
+            "local_date": datetime.date(2026, 5, 31),
+            "observation_count": 10,
+            "in_clamp_observation_count": 8,
+            "on_time_count": 6,
+            "severe_count": 2,
+            "sum_delay_seconds": 240,
+            "source_generated_utc": datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC),
+        },
+        {
+            "route_id": "A/B",
+            "local_date": datetime.date(2026, 6, 1),
+            "observation_count": 5,
+            "in_clamp_observation_count": 4,
+            "on_time_count": 3,
+            "severe_count": 1,
+            "sum_delay_seconds": 120,
+            "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
+        },
+    ]
     store = _OrderTrackingStore()
-    conn = _historic_dispatch_conn(network_delay_rows=network_rows)
+    conn = _historic_dispatch_conn(
+        network_delay_rows=network_rows,
+        line_delay_rows=line_rows,
+    )
     engine = _FakeEngine(conn)
 
     first = publish_snapshot(
@@ -907,14 +947,15 @@ def test_network_history_republish_accounts_for_real_hash_gate_outcomes_end_to_e
 
     state_key = "_meta/publish_state_historic.json"
     public = set(first.keys_written)
-    generation = {
-        key for key in first.keys_written if key.startswith("historic/history/network/generations/")
-    }
+    generation = {key for key in first.keys_written if "/generations/" in key}
     stable = public - generation
-    index_key = "historic/history/network/index.json"
+    network_index_key = "historic/history/network/index.json"
+    line_index_key = "historic/history/lines/412f42/index.json"
+    line_directory_key = "historic/history/lines/index.json"
     assert len(public) == len(first.keys_written)
-    assert len(generation) == 2
-    assert index_key in public
+    assert len(generation) == 4
+    assert {network_index_key, line_index_key, line_directory_key}.issubset(public)
+    assert not any(key == "historic/history/index.json" for key in public)
     assert first.keys_skipped == []
     assert second.keys_written == []
     assert Counter(second.keys_skipped) == Counter(first.keys_written)

@@ -55,6 +55,26 @@ def history_index_generation_id(index: BaseModel | Mapping[str, Any]) -> str:
     return history_collection_generation_id(history_collection_generation_basis(index))
 
 
+def history_entity_directory_generation_id(
+    directory: BaseModel | Mapping[str, Any],
+) -> str:
+    """Digest one entity directory including every exact child-generation edge."""
+
+    if isinstance(directory, BaseModel):
+        payload = directory.model_dump(mode="json")
+    else:
+        payload = dict(directory)
+    return history_collection_generation_id(
+        {
+            "family": payload.get("family"),
+            "selection_mode": payload.get("selection_mode"),
+            "first_available_date": payload.get("first_available_date"),
+            "last_available_date": payload.get("last_available_date"),
+            "entities": payload.get("entities"),
+        }
+    )
+
+
 def history_date(value: object, *, field: str = "local_date") -> str:
     """Normalize a database local-date value to canonical ``YYYY-MM-DD``."""
 

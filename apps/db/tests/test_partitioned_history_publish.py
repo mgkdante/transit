@@ -5,12 +5,20 @@ from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
-from test_partitioned_history_builders import _network_history_rows
+from test_partitioned_history_builders import _line_history_rows, _network_history_rows
 
 from transit_ops.snapshots import gate, publish
 from transit_ops.snapshots.builders.historic.history_common import (
+    encode_history_entity_id,
+    history_entity_directory_generation_id,
     history_index_generation_id,
     history_partition_ref,
+)
+from transit_ops.snapshots.builders.historic.line_history import (
+    LineHistoryStreamSummary as BuilderLineHistoryStreamSummary,
+)
+from transit_ops.snapshots.builders.historic.line_history import (
+    build_line_history_plan_from_rows,
 )
 from transit_ops.snapshots.builders.historic.network_history import (
     build_network_history_from_rows,
@@ -42,6 +50,44 @@ def _network_history_plan():
         cancellation_rows=cancellation,
         occupancy_rows=occupancy,
         generated_utc="2026-07-13T00:00:00Z",
+    )
+
+
+def _line_history_plan():
+    delay, percentiles, cancellation, occupancy, service_span, skipped_stops = _line_history_rows()
+    return build_line_history_plan_from_rows(
+        delay_rows=delay,
+        percentile_rows=percentiles,
+        cancellation_rows=cancellation,
+        occupancy_rows=occupancy,
+        service_span_rows=service_span,
+        skipped_stop_rows=skipped_stops,
+        generated_utc="2026-07-13T00:00:00Z",
+        entity_batch_size=2,
+    )
+
+
+def _empty_line_history_plan():
+    return build_line_history_plan_from_rows(
+        delay_rows=[],
+        percentile_rows=[],
+        cancellation_rows=[],
+        occupancy_rows=[],
+        service_span_rows=[],
+        skipped_stop_rows=[],
+        generated_utc="2026-07-13T00:00:00Z",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _default_empty_line_history(monkeypatch):
+    """Keep pre-Line publisher tests scoped to their original Network subject."""
+
+    monkeypatch.setattr(
+        publish.builders,
+        "build_line_history_plan",
+        lambda *args, **kwargs: _empty_line_history_plan(),
+        raising=False,
     )
 
 
@@ -117,6 +163,140 @@ class _PoisonsIndexRefInputsPlan:
         return self.plan.build_index(refs)
 
 
+class _SelfConsistentOmittingLineSummary:
+    """Streams every Line child, then omits one entity from both mutable parents."""
+
+    def __init__(self) -> None:
+        self.summary = BuilderLineHistoryStreamSummary()
+
+    def observe(self, ref, partition):  # noqa: ANN001, ANN201
+        return self.summary.observe(ref, partition)
+
+    def build_indexes(self, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+        return self.summary.build_indexes(fallback_generated_utc=fallback_generated_utc)[:-1]
+
+    def build_directory(self, indexes, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+        return self.summary.build_directory(
+            indexes,
+            fallback_generated_utc=fallback_generated_utc,
+        )
+
+
+class _ClearsLineDirectoryInputsSummary:
+    """Clears the supplied entity-index list before returning an empty directory."""
+
+    def __init__(self) -> None:
+        self.summary = BuilderLineHistoryStreamSummary()
+
+    def observe(self, ref, partition):  # noqa: ANN001, ANN201
+        return self.summary.observe(ref, partition)
+
+    def build_indexes(self, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+        return self.summary.build_indexes(fallback_generated_utc=fallback_generated_utc)
+
+    def build_directory(self, indexes, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+        indexes.clear()
+        return self.summary.build_directory(
+            indexes,
+            fallback_generated_utc=fallback_generated_utc,
+        )
+
+
+class _PoisonsLineIndexSummary:
+    """Returns a self-consistent entity index that drops its streamed months."""
+
+    def __init__(self) -> None:
+        self.summary = BuilderLineHistoryStreamSummary()
+
+    def observe(self, ref, partition):  # noqa: ANN001, ANN201
+        return self.summary.observe(ref, partition)
+
+    def build_indexes(self, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+        indexes = self.summary.build_indexes(fallback_generated_utc=fallback_generated_utc)
+        poisoned = indexes[0]
+        poisoned.generated_utc = fallback_generated_utc
+        poisoned.first_available_date = None
+        poisoned.last_available_date = None
+        poisoned.available_dates = []
+        poisoned.gaps = []
+        poisoned.partitions = []
+        for metric in poisoned.metrics:
+            metric.first_available_date = None
+            metric.last_available_date = None
+            metric.gaps = []
+        poisoned.collection_generation_id = history_index_generation_id(poisoned)
+        return indexes
+
+    def build_directory(self, indexes, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+        return self.summary.build_directory(
+            indexes,
+            fallback_generated_utc=fallback_generated_utc,
+        )
+
+
+class _MutatesSuppliedLineRefSummary:
+    """Mutates an observed ref object after its immutable child was uploaded."""
+
+    def __init__(self) -> None:
+        self.summary = BuilderLineHistoryStreamSummary()
+        self.supplied_refs = []
+
+    def observe(self, ref, partition):  # noqa: ANN001, ANN201
+        self.supplied_refs.append(ref)
+        return self.summary.observe(ref, partition)
+
+    def build_indexes(self, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+        supplied = self.supplied_refs[0]
+        entity_id = next(iter(self.summary.refs))
+        retained = self.summary.refs[entity_id][0]
+        poisoned_sha = "0" * 64
+        month_file = supplied.path.rsplit("/", maxsplit=1)[-1]
+        encoded_id = encode_history_entity_id(entity_id)
+        poisoned_path = (
+            f"historic/history/lines/{encoded_id}/generations/{poisoned_sha}/{month_file}"
+        )
+        supplied.path = poisoned_path
+        supplied.sha256 = poisoned_sha
+        retained.path = poisoned_path
+        retained.sha256 = poisoned_sha
+        return self.summary.build_indexes(fallback_generated_utc=fallback_generated_utc)
+
+    def build_directory(self, indexes, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+        return self.summary.build_directory(
+            indexes,
+            fallback_generated_utc=fallback_generated_utc,
+        )
+
+
+class _MutatesLineIndexBeforeDirectorySummary:
+    """Poisons a supplied child-index object while building a self-consistent directory."""
+
+    def __init__(self) -> None:
+        self.summary = BuilderLineHistoryStreamSummary()
+
+    def observe(self, ref, partition):  # noqa: ANN001, ANN201
+        return self.summary.observe(ref, partition)
+
+    def build_indexes(self, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+        return self.summary.build_indexes(fallback_generated_utc=fallback_generated_utc)
+
+    def build_directory(self, indexes, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+        indexes[0].collection_generation_id = "mutated-child-generation"
+        return self.summary.build_directory(
+            indexes,
+            fallback_generated_utc=fallback_generated_utc,
+        )
+
+
+class _MaterializedLinePlan:
+    def __init__(self, bundle) -> None:  # noqa: ANN001
+        self.bundle = bundle
+
+    def iter_partition_items(self):  # noqa: ANN201
+        refs = [ref for index in self.bundle.indexes for ref in index.partitions]
+        return iter(zip(refs, self.bundle.partitions, strict=True))
+
+
 def _gate_report(enabled: bool):
     return gate.new_report("stm", "historic", "2026-07-13T00:00:00Z") if enabled else None
 
@@ -160,6 +340,539 @@ class _RecordingStore:
             raise RuntimeError("index write failed")
         self.objects[rel_key] = snapshot_json_bytes(payload)
         return rel_key
+
+
+def _patch_minimal_historic(
+    monkeypatch,
+    *,
+    line_plan=None,
+    network_plan=None,
+    compatibility_items=None,
+):
+    archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
+    compatibility_items = list(compatibility_items or [])
+    stages = [(compatibility_items, "normal")] if compatibility_items else []
+    monkeypatch.setattr(
+        publish,
+        "_build_historic_items",
+        lambda *args, **kwargs: (compatibility_items, [], stages, archive),
+    )
+    monkeypatch.setattr(
+        publish.builders,
+        "build_network_history_plan",
+        lambda *args, **kwargs: network_plan or _network_history_plan(),
+    )
+    monkeypatch.setattr(
+        publish.builders,
+        "build_line_history_plan",
+        lambda *args, **kwargs: line_plan or _line_history_plan(),
+        raising=False,
+    )
+    monkeypatch.setattr(publish.gate, "check_alert_archive_bundle", lambda *args, **kwargs: [])
+
+
+def _line_index_path(entity_id: str) -> str:
+    return f"historic/history/lines/{encode_history_entity_id(entity_id)}/index.json"
+
+
+def _seed_retained_pointers(store, line_bundle):  # noqa: ANN001, ANN202
+    pointer_keys = [
+        "historic/history/network/index.json",
+        *[_line_index_path(index.entity_id or "") for index in line_bundle.indexes],
+        "historic/history/lines/index.json",
+    ]
+    expected = {key: f"old:{key}".encode() for key in pointer_keys}
+    store.objects.update(expected)
+    return expected
+
+
+def test_line_history_publish_is_pointer_last_after_all_network_and_line_immutables(
+    monkeypatch,
+):
+    network_plan = _network_history_plan()
+    network_bundle = network_plan.materialize()
+    line_plan = _line_history_plan()
+    line_bundle = line_plan.materialize()
+    compatibility_key = "historic/compatibility.json"
+    _patch_minimal_historic(
+        monkeypatch,
+        line_plan=line_plan,
+        network_plan=network_plan,
+        compatibility_items=[(compatibility_key, {"ready": True}, "historic")],
+    )
+    store = _RecordingStore()
+
+    keys = _publish_historic(
+        object(),
+        store,
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        stamp="2026-07-13T00:00:00Z",
+    )
+
+    network_partitions = [ref.path for ref in network_bundle.index.partitions]
+    line_partitions = [path for path, _partition in line_bundle.partition_items]
+    line_indexes = [_line_index_path(index.entity_id or "") for index in line_bundle.indexes]
+    expected = [
+        *network_partitions,
+        *line_partitions,
+        compatibility_key,
+        "historic/history/network/index.json",
+        *line_indexes,
+        "historic/history/lines/index.json",
+    ]
+    assert [path for _kind, path in store.calls] == expected
+    assert keys == expected
+    assert all(
+        kind == "immutable"
+        for kind, _path in store.calls[: len(network_partitions) + len(line_partitions)]
+    )
+    assert all(path != "historic/history/index.json" for _kind, path in store.calls)
+
+
+@pytest.mark.parametrize("analytics_gate", [False, True])
+@pytest.mark.parametrize(
+    "summary_factory",
+    [
+        _SelfConsistentOmittingLineSummary,
+        _PoisonsLineIndexSummary,
+        _MutatesSuppliedLineRefSummary,
+    ],
+)
+def test_line_history_publish_rejects_self_consistent_entity_index_omission(
+    monkeypatch,
+    analytics_gate: bool,
+    summary_factory,
+):
+    line_plan = _line_history_plan()
+    line_bundle = line_plan.materialize()
+    _patch_minimal_historic(monkeypatch, line_plan=line_plan)
+    monkeypatch.setattr(
+        publish.builders,
+        "LineHistoryStreamSummary",
+        summary_factory,
+        raising=False,
+    )
+    store = _RecordingStore()
+
+    with pytest.raises(gate.GateError) as exc_info:
+        _publish_historic(
+            object(),
+            store,
+            provider_id="stm",
+            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+            stamp="2026-07-13T00:00:00Z",
+            gate_report=_gate_report(analytics_gate),
+        )
+
+    assert "line_stream_indexes" in {finding.check for finding in exc_info.value.report.errors}
+    immutable_paths = {path for kind, path in store.calls if kind == "immutable"}
+    assert {path for path, _partition in line_bundle.partition_items}.issubset(immutable_paths)
+    assert not any(kind == "normal" for kind, _path in store.calls)
+
+
+@pytest.mark.parametrize("analytics_gate", [False, True])
+@pytest.mark.parametrize(
+    "summary_factory",
+    [_ClearsLineDirectoryInputsSummary, _MutatesLineIndexBeforeDirectorySummary],
+)
+def test_line_history_publish_keeps_directory_truth_when_builder_clears_inputs(
+    monkeypatch,
+    analytics_gate: bool,
+    summary_factory,
+):
+    line_plan = _line_history_plan()
+    _patch_minimal_historic(monkeypatch, line_plan=line_plan)
+    monkeypatch.setattr(
+        publish.builders,
+        "LineHistoryStreamSummary",
+        summary_factory,
+        raising=False,
+    )
+    store = _RecordingStore()
+
+    with pytest.raises(gate.GateError) as exc_info:
+        _publish_historic(
+            object(),
+            store,
+            provider_id="stm",
+            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+            stamp="2026-07-13T00:00:00Z",
+            gate_report=_gate_report(analytics_gate),
+        )
+
+    assert "line_stream_directory" in {finding.check for finding in exc_info.value.report.errors}
+    assert not any(kind == "normal" for kind, _path in store.calls)
+
+
+@pytest.mark.parametrize(
+    "summary_factory",
+    [
+        _SelfConsistentOmittingLineSummary,
+        _PoisonsLineIndexSummary,
+        _MutatesSuppliedLineRefSummary,
+    ],
+)
+def test_line_history_validate_rejects_self_consistent_stream_omission(
+    monkeypatch,
+    summary_factory,
+):
+    line_plan = _line_history_plan()
+    _patch_minimal_historic(monkeypatch, line_plan=line_plan)
+    monkeypatch.setattr(
+        publish.builders,
+        "LineHistoryStreamSummary",
+        summary_factory,
+        raising=False,
+    )
+    monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
+
+    class Engine:
+        def connect(self):
+            @contextmanager
+            def connection():
+                yield object()
+
+            return connection()
+
+    report = publish.validate_snapshots(
+        "stm",
+        tier="historic",
+        settings=SimpleNamespace(),
+        engine=Engine(),
+    )
+
+    assert "line_stream_indexes" in {finding.check for finding in report.errors}
+
+
+@pytest.mark.parametrize(
+    "summary_factory",
+    [_ClearsLineDirectoryInputsSummary, _MutatesLineIndexBeforeDirectorySummary],
+)
+def test_line_history_validate_preserves_detached_directory_truth(
+    monkeypatch,
+    summary_factory,
+):
+    line_plan = _line_history_plan()
+    _patch_minimal_historic(monkeypatch, line_plan=line_plan)
+    monkeypatch.setattr(
+        publish.builders,
+        "LineHistoryStreamSummary",
+        summary_factory,
+        raising=False,
+    )
+    monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
+
+    class Engine:
+        def connect(self):
+            @contextmanager
+            def connection():
+                yield object()
+
+            return connection()
+
+    report = publish.validate_snapshots(
+        "stm",
+        tier="historic",
+        settings=SimpleNamespace(),
+        engine=Engine(),
+    )
+
+    assert "line_stream_directory" in {finding.check for finding in report.errors}
+
+
+def test_line_history_gate_rejects_wrong_entity_and_exact_ref_mismatch():
+    bundle = _line_history_plan().materialize()
+    path, original = bundle.partition_items[0]
+    partition = original.model_copy(deep=True)
+    partition.entity_id = "different-line"
+
+    findings = gate.check_payload(path, partition)
+
+    checks = {finding.check for finding in findings}
+    assert "partition_entity" in checks
+    assert "ref_entity" in {
+        finding.check
+        for finding in gate.check_line_history_partition_ref(
+            bundle.indexes[0].partitions[0],
+            partition,
+        )
+    }
+
+
+def test_line_history_gate_accepts_exact_builder_graph_and_stream_truth():
+    bundle = _line_history_plan().materialize()
+    summary = gate.LineHistoryStreamSummary()
+    refs = [ref for index in bundle.indexes for ref in index.partitions]
+    findings = []
+    for ref, partition in zip(refs, bundle.partitions, strict=True):
+        findings.extend(gate.check_payload(ref.path, partition))
+        findings.extend(gate.check_line_history_partition_ref(ref, partition))
+        summary.observe(ref, partition)
+    for index in bundle.indexes:
+        findings.extend(gate.check_payload(_line_index_path(index.entity_id or ""), index))
+    findings.extend(
+        gate.check_line_history_stream_indexes(
+            bundle.indexes,
+            summary,
+            fallback_generated_utc="2026-07-13T00:00:00Z",
+        )
+    )
+    directory_summary = gate.LineHistoryDirectorySummary.from_indexes(bundle.indexes)
+    findings.extend(gate.check_payload("historic/history/lines/index.json", bundle.directory))
+    findings.extend(
+        gate.check_line_history_stream_directory(
+            bundle.directory,
+            directory_summary,
+            fallback_generated_utc="2026-07-13T00:00:00Z",
+        )
+    )
+
+    assert findings == []
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_check"),
+    [
+        (lambda ref, partition: setattr(ref, "sha256", "f" * 64), "ref_sha256"),
+        (lambda ref, partition: setattr(ref, "byte_size", 1), "ref_byte_size"),
+        (lambda ref, partition: setattr(ref, "count", 99), "ref_count"),
+        (
+            lambda ref, partition: setattr(ref, "coverage_start", "2026-01-01"),
+            "ref_coverage",
+        ),
+        (lambda ref, partition: setattr(partition, "entity_id", "wrong"), "ref_entity"),
+        (lambda ref, partition: setattr(partition, "month", "2026-05"), "ref_month"),
+    ],
+)
+def test_line_history_ref_gate_rejects_exact_edge_mismatch(
+    mutation,
+    expected_check,
+):  # noqa: ANN001
+    bundle = _line_history_plan().materialize()
+    ref = bundle.indexes[0].partitions[0].model_copy(deep=True)
+    partition = bundle.partitions[0].model_copy(deep=True)
+    mutation(ref, partition)
+
+    findings = gate.check_line_history_partition_ref(ref, partition)
+
+    assert expected_check in {finding.check for finding in findings}
+
+
+def test_line_history_gate_rejects_empty_entity_duplicate_directory_identity_and_bad_generation():
+    bundle = _line_history_plan().materialize()
+    index = bundle.indexes[0].model_copy(deep=True)
+    index.partitions = []
+    index.available_dates = []
+    index.first_available_date = None
+    index.last_available_date = None
+    index.gaps = []
+    for metric in index.metrics:
+        metric.first_available_date = None
+        metric.last_available_date = None
+        metric.gaps = []
+    index.collection_generation_id = history_index_generation_id(index)
+    index_path = _line_index_path(index.entity_id or "")
+    assert "empty_entity" in {finding.check for finding in gate.check_payload(index_path, index)}
+
+    directory = bundle.directory.model_copy(deep=True)
+    directory.entities.append(directory.entities[0].model_copy(deep=True))
+    directory.collection_generation_id = history_entity_directory_generation_id(directory)
+    checks = {
+        finding.check
+        for finding in gate.check_payload("historic/history/lines/index.json", directory)
+    }
+    assert {"duplicate_entity_id", "duplicate_encoded_id"}.issubset(checks)
+
+    directory = bundle.directory.model_copy(deep=True)
+    directory.collection_generation_id = "wrong"
+    assert "collection_generation_id" in {
+        finding.check
+        for finding in gate.check_payload("historic/history/lines/index.json", directory)
+    }
+
+
+@pytest.mark.parametrize("analytics_gate", [False, True])
+def test_line_history_invalid_later_partition_preserves_every_existing_pointer(
+    monkeypatch,
+    analytics_gate: bool,
+):
+    honest_plan = _line_history_plan()
+    bundle = honest_plan.materialize()
+    bundle.partitions[1].entity_id = "wrong-line"
+    _patch_minimal_historic(
+        monkeypatch,
+        line_plan=_MaterializedLinePlan(bundle),
+    )
+    store = _RecordingStore()
+    expected_pointers = _seed_retained_pointers(store, honest_plan.materialize())
+
+    with pytest.raises(gate.GateError):
+        _publish_historic(
+            object(),
+            store,
+            provider_id="stm",
+            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+            stamp="2026-07-13T00:00:00Z",
+            gate_report=_gate_report(analytics_gate),
+        )
+
+    assert all(store.objects[key] == value for key, value in expected_pointers.items())
+    line_calls = [path for kind, path in store.calls if kind == "immutable" and "/lines/" in path]
+    assert line_calls == [bundle.partition_items[0][0]]
+    assert not any(kind == "normal" for kind, _path in store.calls)
+
+
+@pytest.mark.parametrize("analytics_gate", [False, True])
+def test_line_history_second_immutable_failure_preserves_every_existing_pointer(
+    monkeypatch,
+    analytics_gate: bool,
+):
+    line_plan = _line_history_plan()
+    bundle = line_plan.materialize()
+    target = bundle.partition_items[1][0]
+    _patch_minimal_historic(monkeypatch, line_plan=line_plan)
+
+    class FailSecondLineImmutable(_RecordingStore):
+        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
+            if rel_key == target:
+                self.calls.append(("immutable", rel_key))
+                raise RuntimeError("second Line immutable failed")
+            return super().put_immutable_json(rel_key, payload)
+
+    store = FailSecondLineImmutable()
+    expected_pointers = _seed_retained_pointers(store, bundle)
+
+    with pytest.raises(RuntimeError, match="second Line immutable failed"):
+        _publish_historic(
+            object(),
+            store,
+            provider_id="stm",
+            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+            stamp="2026-07-13T00:00:00Z",
+            gate_report=_gate_report(analytics_gate),
+        )
+
+    assert all(store.objects[key] == value for key, value in expected_pointers.items())
+    assert bundle.partition_items[0][0] in store.objects
+    assert target not in store.objects
+    assert not any(kind == "normal" for kind, _path in store.calls)
+
+
+@pytest.mark.parametrize("analytics_gate", [False, True])
+def test_line_history_compatibility_failure_preserves_every_existing_pointer(
+    monkeypatch,
+    analytics_gate: bool,
+):
+    line_plan = _line_history_plan()
+    bundle = line_plan.materialize()
+    compatibility_key = "historic/compatibility.json"
+    _patch_minimal_historic(
+        monkeypatch,
+        line_plan=line_plan,
+        compatibility_items=[(compatibility_key, {"ready": True}, "historic")],
+    )
+
+    class FailCompatibility(_RecordingStore):
+        def put_json(self, rel_key, payload, *, tier):  # noqa: ANN001, ANN201
+            if rel_key == compatibility_key:
+                self.calls.append(("normal", rel_key))
+                raise RuntimeError("compatibility failed")
+            return super().put_json(rel_key, payload, tier=tier)
+
+    store = FailCompatibility()
+    expected_pointers = _seed_retained_pointers(store, bundle)
+
+    with pytest.raises(RuntimeError, match="compatibility failed"):
+        _publish_historic(
+            object(),
+            store,
+            provider_id="stm",
+            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+            stamp="2026-07-13T00:00:00Z",
+            gate_report=_gate_report(analytics_gate),
+        )
+
+    assert all(store.objects[key] == value for key, value in expected_pointers.items())
+    assert {path for path, _partition in bundle.partition_items}.issubset(store.objects)
+    assert not any(kind == "normal" and path in expected_pointers for kind, path in store.calls)
+
+
+@pytest.mark.parametrize("analytics_gate", [False, True])
+def test_line_history_entity_index_failure_preserves_directory_and_later_pointers(
+    monkeypatch,
+    analytics_gate: bool,
+):
+    line_plan = _line_history_plan()
+    bundle = line_plan.materialize()
+    target = _line_index_path(bundle.indexes[1].entity_id or "")
+    later = _line_index_path(bundle.indexes[2].entity_id or "")
+    directory_key = "historic/history/lines/index.json"
+    _patch_minimal_historic(monkeypatch, line_plan=line_plan)
+
+    class FailEntityIndex(_RecordingStore):
+        def put_json(self, rel_key, payload, *, tier):  # noqa: ANN001, ANN201
+            if rel_key == target:
+                self.calls.append(("normal", rel_key))
+                raise RuntimeError("Line entity index failed")
+            return super().put_json(rel_key, payload, tier=tier)
+
+    store = FailEntityIndex()
+    expected_pointers = _seed_retained_pointers(store, bundle)
+
+    with pytest.raises(RuntimeError, match="Line entity index failed"):
+        _publish_historic(
+            object(),
+            store,
+            provider_id="stm",
+            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+            stamp="2026-07-13T00:00:00Z",
+            gate_report=_gate_report(analytics_gate),
+        )
+
+    assert store.objects[target] == expected_pointers[target]
+    assert store.objects[later] == expected_pointers[later]
+    assert store.objects[directory_key] == expected_pointers[directory_key]
+    assert ("normal", directory_key) not in store.calls
+
+
+@pytest.mark.parametrize("analytics_gate", [False, True])
+def test_line_history_directory_failure_preserves_existing_directory_bytes(
+    monkeypatch,
+    analytics_gate: bool,
+):
+    line_plan = _line_history_plan()
+    bundle = line_plan.materialize()
+    directory_key = "historic/history/lines/index.json"
+    _patch_minimal_historic(monkeypatch, line_plan=line_plan)
+
+    class FailDirectory(_RecordingStore):
+        def put_json(self, rel_key, payload, *, tier):  # noqa: ANN001, ANN201
+            if rel_key == directory_key:
+                self.calls.append(("normal", rel_key))
+                raise RuntimeError("Lines directory failed")
+            return super().put_json(rel_key, payload, tier=tier)
+
+    store = FailDirectory()
+    expected_pointers = _seed_retained_pointers(store, bundle)
+
+    with pytest.raises(RuntimeError, match="Lines directory failed"):
+        _publish_historic(
+            object(),
+            store,
+            provider_id="stm",
+            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+            stamp="2026-07-13T00:00:00Z",
+            gate_report=_gate_report(analytics_gate),
+        )
+
+    assert store.objects[directory_key] == expected_pointers[directory_key]
+    assert all(
+        store.objects[_line_index_path(index.entity_id or "")]
+        != expected_pointers[_line_index_path(index.entity_id or "")]
+        for index in bundle.indexes
+    )
+    assert store.calls[-1] == ("normal", directory_key)
 
 
 def test_network_history_actual_historic_publish_is_separate_structural_and_has_no_root(
