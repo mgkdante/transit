@@ -15,7 +15,6 @@ from transit_ops.gold.reader import (
     SHIFT_BOUNDS,
     SHIFT_DEFAULT,
     GrainWindows,
-    current_date_trailing_clause,
     shift_case_sql,
 )
 from transit_ops.snapshots.builders._helpers import (
@@ -955,7 +954,7 @@ def _repeat_offenders_by_grain(
 # Accountability daily summary — one row per date, drives the receipt set.
 _RECEIPTS_ACCOUNTABILITY_SQL = named_query(
     "receipts.accountability",
-    f"""
+    """
     SELECT provider_local_date,
            affected_route_count,
            affected_stop_count,
@@ -966,12 +965,12 @@ _RECEIPTS_ACCOUNTABILITY_SQL = named_query(
     FROM gold.citizen_accountability_daily AS cad
     JOIN gold.dim_provider AS dp ON dp.provider_id = cad.provider_id
     WHERE cad.provider_id = :provider_id
-      AND {current_date_trailing_clause("provider_local_date")}
     ORDER BY provider_local_date
-    """
+    """,
 )
 
-# Network-level daily aggregation from the route delay spine (last ~31 local days).
+# Network-level daily aggregation from the route delay spine over the actual retained
+# accountability span.
 # GC1 / Step G1: re-pointed off gold.route_delay_hourly onto gold.route_delay_spine.
 # SCOPE REBASELINE (2026-07-02): spine sums cover route-attributed observations only
 # (route_id IS NOT NULL at build); the legacy path included the '__unrouted__'
@@ -1000,9 +999,10 @@ _RECEIPTS_NETWORK_DAILY_SQL = named_query(
                 FROM unnest(sp.delay_histogram) AS x))  AS inclamp_obs
     FROM gold.route_delay_spine AS sp
     WHERE sp.provider_id = :provider_id
-      AND sp.provider_local_date >= (now() AT TIME ZONE 'UTC')::date - 31
+      AND sp.provider_local_date >= :receipt_start
+      AND sp.provider_local_date <= :receipt_end
     GROUP BY sp.provider_local_date
-    """
+    """,
 )
 
 # Worst route per date: max avg_delay_seconds from the public reliability view.
@@ -1010,7 +1010,7 @@ _RECEIPTS_NETWORK_DAILY_SQL = named_query(
 # its on-time-vs-network gap (otp_delta_pts) against the day's network baseline.
 _RECEIPTS_WORST_ROUTE_SQL = named_query(
     "receipts.worst_route",
-    f"""
+    """
     SELECT provider_local_date AS d,
            route_id,
            avg_delay_seconds,
@@ -1019,17 +1019,18 @@ _RECEIPTS_WORST_ROUTE_SQL = named_query(
     FROM gold.public_route_reliability_daily AS prr
     JOIN gold.dim_provider AS dp ON dp.provider_id = prr.provider_id
     WHERE prr.provider_id = :provider_id
-      AND {current_date_trailing_clause("provider_local_date")}
+      AND prr.provider_local_date >= :receipt_start
+      AND prr.provider_local_date <= :receipt_end
       AND avg_delay_seconds IS NOT NULL
       AND route_id <> '__unrouted__'
     ORDER BY provider_local_date, avg_delay_seconds DESC, route_id
-    """
+    """,
 )
 
 # Worst stop per date: max avg_delay_seconds from the public stop delay view.
 _RECEIPTS_WORST_STOP_SQL = named_query(
     "receipts.worst_stop",
-    f"""
+    """
     SELECT provider_local_date AS d,
            stop_id,
            avg_delay_seconds,
@@ -1037,19 +1038,20 @@ _RECEIPTS_WORST_STOP_SQL = named_query(
     FROM gold.public_stop_delay_daily AS psd
     JOIN gold.dim_provider AS dp ON dp.provider_id = psd.provider_id
     WHERE psd.provider_id = :provider_id
-      AND {current_date_trailing_clause("provider_local_date")}
+      AND psd.provider_local_date >= :receipt_start
+      AND psd.provider_local_date <= :receipt_end
       AND avg_delay_seconds IS NOT NULL
       AND stop_id <> '__unknown_stop__'
     ORDER BY provider_local_date, avg_delay_seconds DESC, stop_id
-    """
+    """,
 )
 
 
 # S13 time-of-day cut: per-date, per-shift network-wide delay reading off the delay
-# spine at its hour grain. WINDOW (DECISIONS DB2 / spec risk-1): matches
-# receipts.network_daily's now()-31 UTC predicate EXACTLY (same spine source) so a shift
-# cut and the day-level scalar reconcile — the shift split literally re-sums the same
-# spine cells the network_daily query aggregates. The pooled avg is the SAME ghost-
+# spine at its hour grain. WINDOW (DECISIONS DB2 / spec risk-1): matches the retained
+# accountability span used by receipts.network_daily, so a shift cut and the day-level
+# scalar reconcile — the shift split literally re-sums the same spine cells the network
+# query aggregates. The pooled avg is the SAME ghost-
 # excluded Σ sum_delay_seconds / Σ in-clamp histogram methodology (folded per-shift in
 # build_receipts). Sentinel-guarded in SQL (route_id <> '__unrouted__') + defense-in-depth
 # Python set. The hour->shift bucket is the ONE kernel CASE (shift_case_sql).
@@ -1066,22 +1068,23 @@ _RECEIPTS_SHIFT_DAILY_SQL = named_query(
     FROM gold.route_delay_spine AS sp
     WHERE sp.provider_id = :provider_id
       AND sp.route_id <> '__unrouted__'
-      AND sp.provider_local_date >= (now() AT TIME ZONE 'UTC')::date - 31
+      AND sp.provider_local_date >= :receipt_start
+      AND sp.provider_local_date <= :receipt_end
     GROUP BY sp.provider_local_date,
              ({shift_case_sql("sp.hour_of_day_local", indent=13)})
-    """
+    """,
 )
 
 # S13 service-state cut: per-date network-wide scheduled→delivered→cancelled→silent split
-# off gold.route_cancellation_daily (GC2 scheduled universe). WINDOW: the accountability
-# driver's provider-local trailing clause (this is a per-date driver-annotating cut, not a
-# spine-sourced one — spec risk-1). delivered/silent FILTER(scheduled known) so a route
+# off gold.route_cancellation_daily (GC2 scheduled universe). WINDOW: the actual retained
+# accountability span (this is a per-date driver-annotating cut, not a spine-sourced one
+# — spec risk-1). delivered/silent FILTER(scheduled known) so a route
 # with an unknown scheduled universe (pre-0073) never fabricates a 0 into the sum;
 # service_completeness_pct uses the SAME LEAST(100, ...)/NULL-guard CASE as
 # route.cancellation.daily (route_reliability.py) — None when Σscheduled is NULL or 0.
 _RECEIPTS_SERVICE_STATES_SQL = named_query(
     "receipts.service_states",
-    f"""
+    """
     SELECT rcd.provider_local_date AS local_date,
            SUM(rcd.scheduled_trip_days) AS scheduled_trip_days,
            SUM(rcd.delivered_trip_days)
@@ -1106,10 +1109,11 @@ _RECEIPTS_SERVICE_STATES_SQL = named_query(
     FROM gold.route_cancellation_daily AS rcd
     JOIN gold.dim_provider AS dp ON dp.provider_id = rcd.provider_id
     WHERE rcd.provider_id = :provider_id
-      AND {current_date_trailing_clause("rcd.provider_local_date")}
+      AND rcd.provider_local_date >= :receipt_start
+      AND rcd.provider_local_date <= :receipt_end
     GROUP BY rcd.provider_local_date
     ORDER BY rcd.provider_local_date
-    """
+    """,
 )
 
 # S13 not-reported route list: per-date routes SCHEDULED that day (scheduled_trip_days>0)
@@ -1117,35 +1121,34 @@ _RECEIPTS_SERVICE_STATES_SQL = named_query(
 # (canceled_trip_days>0, which the RT feed explicitly reported as cancelled). Sentinel-
 # guarded in SQL + Python. NO cap in SQL: the builder caps per-date at
 # NOT_REPORTED_ROUTES_CAP after computing the honest pre-cap count. Same window as the
-# service_states cut (provider-local trailing).
+# service_states cut (actual retained accountability span).
 _RECEIPTS_NOT_REPORTED_ROUTES_SQL = named_query(
     "receipts.not_reported_routes",
-    f"""
+    """
     SELECT rcd.provider_local_date AS local_date,
            rcd.route_id,
            rcd.scheduled_trip_days
     FROM gold.route_cancellation_daily AS rcd
     JOIN gold.dim_provider AS dp ON dp.provider_id = rcd.provider_id
     WHERE rcd.provider_id = :provider_id
-      AND {current_date_trailing_clause("rcd.provider_local_date")}
+      AND rcd.provider_local_date >= :receipt_start
+      AND rcd.provider_local_date <= :receipt_end
       AND rcd.total_trip_days = 0
       AND rcd.scheduled_trip_days > 0
       AND rcd.route_id <> '__unrouted__'
     ORDER BY rcd.provider_local_date, rcd.scheduled_trip_days DESC, rcd.route_id
-    """
+    """,
 )
 
 # Canonical shift order for by_shift emission (the kernel SHIFT_BOUNDS order + default).
-_SHIFT_ORDER: tuple[str, ...] = tuple(label for _lo, _hi, label in SHIFT_BOUNDS) + (
-    SHIFT_DEFAULT,
-)
+_SHIFT_ORDER: tuple[str, ...] = tuple(label for _lo, _hi, label in SHIFT_BOUNDS) + (SHIFT_DEFAULT,)
 _SHIFT_RANK: dict[str, int] = {s: i for i, s in enumerate(_SHIFT_ORDER)}
 
 
 def build_receipts(
     conn: Connection, provider_id: str = "stm", *, generated_utc: str
 ) -> dict[str, Receipt]:
-    """Build historic/receipts/{date}.json for each date in the last 30 days.
+    """Build historic/receipts/{date}.json for every retained accountability date.
 
     The citizen_accountability_daily table is the driver — one Receipt per date
     present there.  Network OTP/delay come from gold.route_delay_spine aggregated to
@@ -1158,18 +1161,29 @@ def build_receipts(
     baseline OTP, in percentage points (honest-None when either side is unknown).
     """
     params = {"provider_id": provider_id}
-    route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
 
     # 1. accountability rows: one per date (the driver set)
     acct: dict[str, dict] = {}
+    accountability_dates: list[date] = []
     for r in conn.execute(_RECEIPTS_ACCOUNTABILITY_SQL, params).mappings():
-        ds = _iso_date(r["provider_local_date"])
+        raw_date = r["provider_local_date"]
+        accountability_dates.append(raw_date)
+        ds = _iso_date(raw_date)
         acct[ds] = {
             "affected_routes": _opt_int(r["affected_route_count"]),
             "affected_stops": _opt_int(r["affected_stop_count"]),
             "alerts": _opt_int(r["alert_count"]),
             "rider_impact_score": _public_impact_score(r["rider_impact_score"]),
         }
+    if not accountability_dates:
+        return {}
+
+    params = {
+        "provider_id": provider_id,
+        "receipt_start": min(accountability_dates),
+        "receipt_end": max(accountability_dates),
+    }
+    route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
 
     # 2. network daily OTP/delay from hourly rollup
     net: dict[str, dict] = {}
@@ -1179,11 +1193,7 @@ def build_receipts(
         # GC1 spine re-point: pooled mean = ghost-excluded Σ sum_delay_seconds over the
         # ghost-excluded in-clamp count (Σ histogram bins), matching hist_and_avg.
         pooled, inclamp = r["pooled_delay_sec"], r["inclamp_obs"]
-        avg_sec = (
-            (float(pooled) / float(inclamp))
-            if inclamp and pooled is not None
-            else None
-        )
+        avg_sec = (float(pooled) / float(inclamp)) if inclamp and pooled is not None else None
         net[ds] = {
             "otp_pct": _otp_pct(r["on_time"], known_obs),
             "avg_delay_min": _avg_delay_min(avg_sec),

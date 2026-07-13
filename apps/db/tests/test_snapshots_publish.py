@@ -451,6 +451,8 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     # names, so the hand-coded FakeConnHistoric.execute spine branch is gone.
     dispatch = {
         "receipts.network_daily": [
+            {"local_date": datetime.date(2025, 1, 1), "known_obs": 80, "on_time": 68,
+             "severe": 4, "pooled_delay_sec": 4000, "inclamp_obs": 80},
             {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
              "severe": 5, "pooled_delay_sec": 5000, "inclamp_obs": 100},
         ],
@@ -628,6 +630,10 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
             {"stop_id": "51234", "obs": 10, "severe": 1, "sum_delay_sec": 900},
         ],
         "receipts.accountability": [
+            {"provider_local_date": datetime.date(2025, 1, 1),
+             "affected_route_count": 2, "affected_stop_count": 7,
+             "delayed_trip_count": 20, "severe_delay_count": 4,
+             "alert_count": 1, "rider_impact_score": 0.2},
             {"provider_local_date": datetime.date(2026, 6, 1),
              "affected_route_count": 3, "affected_stop_count": 12,
              "delayed_trip_count": 45, "severe_delay_count": 5,
@@ -682,7 +688,8 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     # --- per-stop file for stop 51234 ---
     assert any("historic/stop_reliability/51234.json" in k for k in key_set)
 
-    # --- receipt for 2026-06-01 ---
+    # --- every current-run retained receipt, including a date >31 days old ---
+    assert any("historic/receipts/2025-01-01.json" in k for k in key_set)
     assert any("historic/receipts/2026-06-01.json" in k for k in key_set)
 
     # --- receipts discovery index (T7): exact set of receipt dates written ---
@@ -690,7 +697,8 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     import pathlib
     index_path = next(k for k in keys if "historic/receipts/index.json" in k)
     ri = ReceiptsIndex.model_validate_json(pathlib.Path(index_path).read_bytes())
-    assert ri.dates == ["2026-06-01"]
+    assert ri.dates == ["2025-01-01", "2026-06-01"]
+    assert [item.date for item in ri.available] == ri.dates
 
     # --- route-reliability discovery index: the EXACT set of routes published this
     # run (so the web list-badge gate never lags the published files like the static

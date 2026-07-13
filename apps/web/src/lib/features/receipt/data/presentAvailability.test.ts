@@ -24,6 +24,19 @@ describe('selectAvailability — the smart calendar', () => {
 		expect(vm.hasAny).toBe(true);
 	});
 
+	it('enumerates a complete 731-day retained span without hitting the safety guard', () => {
+		const oldest = '2024-06-17';
+		const latest = '2026-06-17';
+		const vm = selectAvailability(idx({ dates: [oldest, latest] }), labels);
+
+		expect(vm.options).toHaveLength(731);
+		expect(vm.options[0].date).toBe(oldest);
+		expect(vm.options.at(-1)?.date).toBe(latest);
+		const gap = vm.options.find((option) => option.date === '2025-06-17');
+		expect(gap).toMatchObject({ disabled: true, disabledLabel: 'no receipt' });
+		expect(vm.enabledDates).toEqual([oldest, latest]);
+	});
+
 	it('is timezone-safe across a DST edge (no dropped/duplicated service day)', () => {
 		// 2026-03-08 is the US/CA spring-forward day — string math must not skip it.
 		const vm = selectAvailability(idx({ dates: ['2026-03-07', '2026-03-09'] }), labels);

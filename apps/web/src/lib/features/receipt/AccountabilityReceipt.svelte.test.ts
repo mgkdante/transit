@@ -543,6 +543,8 @@ describe('AccountabilityReceipt honesty', () => {
 		vi.mocked(v1.getReceipt).mockImplementation(() => null as never);
 		render(AccountabilityReceipt);
 		expect(await screen.findByText('No receipt was published for this day.')).toBeInTheDocument();
+		expect(indexData.dates).toContain('2026-06-17');
+		expect(vi.mocked(v1.getReceipt)).toHaveBeenCalledWith('2026-06-17');
 		expect(screen.queryByText('82%')).not.toBeInTheDocument();
 	});
 });

@@ -25,6 +25,7 @@ import logging
 import math
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from enum import Enum
 
 from pydantic import BaseModel
@@ -1187,8 +1188,12 @@ def check_receipt(payload: object, *, rel_key: str) -> list[CheckResult]:
                 continue
             nsub = _prefixed(emit, f"service_states.not_reported_routes[{i}].")
             if nr.get("id") in _SENTINEL_ENTITY_IDS:
-                nsub.err("sentinel_entity", "id", nr.get("id"),
-                         f"id={nr.get('id')!r} is a sentinel entity")
+                nsub.err(
+                    "sentinel_entity",
+                    "id",
+                    nr.get("id"),
+                    f"id={nr.get('id')!r} is a sentinel entity",
+                )
             nsub.count(nr, "scheduled_trip_days")
     return emit.out
 
@@ -1201,14 +1206,48 @@ def check_receipts_index(payload: object, *, rel_key: str) -> list[CheckResult]:
     d = _as_dict(payload)
     if not isinstance(d, dict):
         return emit.out
-    dates = set(d.get("dates") or [])
+    raw_dates = d.get("dates") or []
+    date_list = raw_dates if isinstance(raw_dates, list) else []
+    string_dates = [value for value in date_list if isinstance(value, str)]
+
+    for index, value in enumerate(date_list):
+        try:
+            valid = isinstance(value, str) and date.fromisoformat(value).isoformat() == value
+        except ValueError:
+            valid = False
+        if not valid:
+            emit.err(
+                "date_format",
+                f"dates[{index}]",
+                value,
+                f"receipt index date {value!r} is not a valid ISO calendar date",
+            )
+    if date_list != sorted(string_dates):
+        emit.err(
+            "date_order",
+            "dates",
+            date_list,
+            "receipt index dates must be ascending",
+        )
+    if len(string_dates) != len(set(string_dates)):
+        emit.err(
+            "date_duplicate",
+            "dates",
+            date_list,
+            "receipt index dates must be unique",
+        )
+    dates = set(string_dates)
     for i, a in enumerate(d.get("available") or []):
         if not isinstance(a, dict):
             continue
         sub = _prefixed(emit, f"available[{i}].")
         if a.get("date") not in dates:
-            sub.err("availability_orphan", "date", a.get("date"),
-                    f"available date={a.get('date')!r} not in dates[]")
+            sub.err(
+                "availability_orphan",
+                "date",
+                a.get("date"),
+                f"available date={a.get('date')!r} not in dates[]",
+            )
         for f in ("has_data", "has_schedule"):
             if not isinstance(a.get(f), bool):
                 sub.err("not_bool", f, a.get(f), f"{f}={a.get(f)!r} is not a bool")

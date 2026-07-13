@@ -11,6 +11,7 @@ the 7x24 habits matrix, weak-stop ranking, and batched stop reliability.
 from __future__ import annotations
 
 import datetime
+import re
 
 from _sqlfakes import NamedQueryConn
 
@@ -43,6 +44,10 @@ from transit_ops.snapshots.builders._helpers import (
 )
 from transit_ops.snapshots.builders.historic import (
     _HOTSPOTS_SQL,
+    _RECEIPTS_ACCOUNTABILITY_SQL,
+    _RECEIPTS_NOT_REPORTED_ROUTES_SQL,
+    _RECEIPTS_SERVICE_STATES_SQL,
+    _RECEIPTS_SHIFT_DAILY_SQL,
     _STOP_REL_BY_ROUTE_SQL,
     _hotspots_by_grain,
 )
@@ -59,6 +64,7 @@ from transit_ops.snapshots.contract import (
     RepeatOffenders,
     StopReliability,
 )
+from transit_ops.sql_registry import query_name
 
 # --------------------------------------------------------------------------
 # Fakes — a result that supports both .mappings() iteration AND .fetchone()
@@ -76,6 +82,11 @@ class FakeConn(NamedQueryConn):
 
     def __init__(self, mapping=None):  # noqa: ANN001
         super().__init__(dict(mapping) if mapping is not None else {})
+        self.executed_query_params: list[tuple[str | None, dict]] = []
+
+    def execute(self, statement, params=None):  # noqa: ANN001
+        self.executed_query_params.append((query_name(statement), dict(params or {})))
+        return super().execute(statement, params)
 
 
 def _stop_spine_conn(*, anchor, by_route=None, weekly=None, monthly=None, extra=None):  # noqa: ANN001, ANN202
@@ -1881,21 +1892,38 @@ def test_by_grain_min_n_floor_routes_to_tray_only_when_recurred() -> None:
     assert _MIN_N_OFFENDER == 30  # pins the floor the test depends on
     rows = [
         # sub-floor but recurrent -> tray
-        _offender_spine_row("trip", "T_TRAY", "9", obs=_MIN_N_OFFENDER - 1, severe=10, sum_sec=9000,
-                   recurrence_days=3, observed_days=3),
+        _offender_spine_row(
+            "trip",
+            "T_TRAY",
+            "9",
+            obs=_MIN_N_OFFENDER - 1,
+            severe=10,
+            sum_sec=9000,
+            recurrence_days=3,
+            observed_days=3,
+        ),
         # sub-floor single-day fluke -> dropped (not ranked, not tray)
-        _offender_spine_row("trip", "T_DROP", "9", obs=5, severe=5, sum_sec=6000,
-                   recurrence_days=1, observed_days=1),
+        _offender_spine_row(
+            "trip", "T_DROP", "9", obs=5, severe=5, sum_sec=6000, recurrence_days=1, observed_days=1
+        ),
         # clears the floor -> ranked
-        _offender_spine_row("vehicle", "V_RANKED", "51", obs=_MIN_N_OFFENDER, severe=15, sum_sec=12000,
-                   recurrence_days=4, observed_days=4),
+        _offender_spine_row(
+            "vehicle",
+            "V_RANKED",
+            "51",
+            obs=_MIN_N_OFFENDER,
+            severe=15,
+            sum_sec=12000,
+            recurrence_days=4,
+            observed_days=4,
+        ),
     ]
     conn = _offender_grain_conn(rows)
     week = next(g for g in _repeat_offenders_by_grain(conn, "stm", {}) if g.grain == "week")
     ranked_ids = {e.id for e in week.entries}
     tray_ids = {e.id for e in week.tray}
-    assert ranked_ids == {"V_RANKED"}       # only the >=MIN_N entity is ranked
-    assert tray_ids == {"T_TRAY"}           # sub-floor + recurrent -> tray
+    assert ranked_ids == {"V_RANKED"}  # only the >=MIN_N entity is ranked
+    assert tray_ids == {"T_TRAY"}  # sub-floor + recurrent -> tray
     assert "T_DROP" not in ranked_ids and "T_DROP" not in tray_ids  # fluke dropped
     assert week.tray_total == 1
     # tray entries carry evidence but NO Wilson band (uninformative below the floor)
@@ -1914,8 +1942,11 @@ def test_by_grain_omits_grain_on_honest_absence() -> None:
     )
     assert _repeat_offenders_by_grain(empty, "stm", {}) == []
     # anchor present but only a sub-floor single-day fluke -> both grains omitted
-    rows = [_offender_spine_row("trip", "T", "9", obs=3, severe=3, sum_sec=1000,
-                       recurrence_days=1, observed_days=1)]
+    rows = [
+        _offender_spine_row(
+            "trip", "T", "9", obs=3, severe=3, sum_sec=1000, recurrence_days=1, observed_days=1
+        )
+    ]
     conn = _offender_grain_conn(rows)
     assert _repeat_offenders_by_grain(conn, "stm", {}) == []
 
@@ -1923,8 +1954,11 @@ def test_by_grain_omits_grain_on_honest_absence() -> None:
 def test_by_grain_pooled_avg_honest_none_on_zero_denominator() -> None:
     """A tray row with zero observations yields honest-None avg (never a divide-by-zero)."""
     # zero-obs but recurrence marked (defensive/degenerate) -> tray with None avg
-    rows = [_offender_spine_row("trip", "T0", "9", obs=0, severe=0, sum_sec=0,
-                       recurrence_days=2, observed_days=2)]
+    rows = [
+        _offender_spine_row(
+            "trip", "T0", "9", obs=0, severe=0, sum_sec=0, recurrence_days=2, observed_days=2
+        )
+    ]
     conn = _offender_grain_conn(rows)
     grains = _repeat_offenders_by_grain(conn, "stm", {})
     week = next(g for g in grains if g.grain == "week")
@@ -1936,9 +1970,18 @@ def test_by_grain_pooled_avg_honest_none_on_zero_denominator() -> None:
 # --------------------------------------------------------------------------
 
 
-def _receipts_dispatch(*, acct=None, net=None, worst_route=None, worst_stop=None,
-                       route_names=None, stop_names=None, shift=None,
-                       service_states=None, not_reported=None):
+def _receipts_dispatch(
+    *,
+    acct=None,
+    net=None,
+    worst_route=None,
+    worst_stop=None,
+    route_names=None,
+    stop_names=None,
+    shift=None,
+    service_states=None,
+    not_reported=None,
+):
     """Build the name-keyed dispatch map for build_receipts."""
     return {
         "receipts.accountability": acct or [],
@@ -1951,6 +1994,165 @@ def _receipts_dispatch(*, acct=None, net=None, worst_route=None, worst_stop=None
         "static.route_names": route_names or [],
         "static.stop_names": stop_names or [],
     }
+
+
+def test_receipt_queries_follow_retained_accountability_span_policy() -> None:
+    accountability_sql = str(_RECEIPTS_ACCOUNTABILITY_SQL).lower()
+    assert "current_date" not in accountability_sql
+    assert "now()" not in accountability_sql
+    assert not re.search(r"-\s*(?:30|31)\b", accountability_sql)
+    assert not re.search(r"\blimit\b", accountability_sql)
+
+    supplemental_queries = {
+        _RECEIPTS_NETWORK_DAILY_SQL: "sp.provider_local_date",
+        _RECEIPTS_WORST_ROUTE_SQL: "provider_local_date",
+        _RECEIPTS_WORST_STOP_SQL: "provider_local_date",
+        _RECEIPTS_SHIFT_DAILY_SQL: "sp.provider_local_date",
+        _RECEIPTS_SERVICE_STATES_SQL: "rcd.provider_local_date",
+        _RECEIPTS_NOT_REPORTED_ROUTES_SQL: "rcd.provider_local_date",
+    }
+    for query, date_field in supplemental_queries.items():
+        sql = str(query).lower()
+        assert f"{date_field} >= :receipt_start" in sql
+        assert f"{date_field} <= :receipt_end" in sql
+        assert "current_date" not in sql
+        assert "now()" not in sql
+        assert not re.search(r"-\s*(?:30|31)\b", sql)
+
+
+def test_build_receipts_uses_full_accountability_span_and_bounds_supplements() -> None:
+    old_date = datetime.date(2025, 1, 2)
+    recent_date = datetime.date(2026, 6, 17)
+    supplement_only_date = datetime.date(2025, 8, 3)
+    net_rows = [
+        {
+            "local_date": day,
+            "known_obs": 10,
+            "on_time": 9,
+            "severe": 1,
+            "pooled_delay_sec": 600.0,
+            "inclamp_obs": 10,
+        }
+        for day in (old_date, recent_date, supplement_only_date)
+    ]
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[_acct_row(old_date), _acct_row(recent_date)],
+            net=net_rows,
+            worst_route=[
+                {
+                    "d": supplement_only_date,
+                    "route_id": "51",
+                    "avg_delay_seconds": 120,
+                    "on_time": 8,
+                    "known_obs": 10,
+                }
+            ],
+            worst_stop=[
+                {
+                    "d": supplement_only_date,
+                    "stop_id": "50001",
+                    "avg_delay_seconds": 180,
+                    "max_delay_seconds": 300,
+                }
+            ],
+            shift=[
+                {
+                    "local_date": supplement_only_date,
+                    "shift": "midday",
+                    "known_obs": 10,
+                    "severe": 1,
+                    "pooled_delay_sec": 600.0,
+                    "inclamp_obs": 10,
+                }
+            ],
+            service_states=[
+                {
+                    "local_date": supplement_only_date,
+                    "scheduled_trip_days": 10,
+                    "delivered_trip_days": 9,
+                    "cancelled_trip_days": 0,
+                    "silent_trip_days": 1,
+                    "service_completeness_pct": 90.0,
+                }
+            ],
+            not_reported=[
+                {
+                    "local_date": supplement_only_date,
+                    "route_id": "24",
+                    "scheduled_trip_days": 1,
+                }
+            ],
+        )
+    )
+
+    receipts = build_receipts(conn, provider_id="stm", generated_utc="t")
+
+    assert list(receipts) == [old_date.isoformat(), recent_date.isoformat()]
+    assert receipts[old_date.isoformat()].otp_pct == 90
+    assert receipts[recent_date.isoformat()].otp_pct == 90
+    assert supplement_only_date.isoformat() not in receipts
+
+    supplemental_names = {
+        "receipts.network_daily",
+        "receipts.worst_route",
+        "receipts.worst_stop",
+        "receipts.shift_daily",
+        "receipts.service_states",
+        "receipts.not_reported_routes",
+    }
+    observed = {
+        name: params for name, params in conn.executed_query_params if name in supplemental_names
+    }
+    assert set(observed) == supplemental_names
+    for params in observed.values():
+        assert params == {
+            "provider_id": "stm",
+            "receipt_start": old_date,
+            "receipt_end": recent_date,
+        }
+
+
+def test_build_receipts_empty_accountability_short_circuits_supplements() -> None:
+    supplement_date = datetime.date(2026, 6, 17)
+    conn = FakeConn(
+        _receipts_dispatch(
+            net=[
+                {
+                    "local_date": supplement_date,
+                    "known_obs": 10,
+                    "on_time": 9,
+                    "severe": 1,
+                    "pooled_delay_sec": 600.0,
+                    "inclamp_obs": 10,
+                }
+            ],
+            service_states=[
+                {
+                    "local_date": supplement_date,
+                    "scheduled_trip_days": 10,
+                    "delivered_trip_days": 9,
+                    "cancelled_trip_days": 0,
+                    "silent_trip_days": 1,
+                    "service_completeness_pct": 90.0,
+                }
+            ],
+        )
+    )
+
+    assert build_receipts(conn, provider_id="stm", generated_utc="t") == {}
+    executed_names = {name for name, _params in conn.executed_query_params}
+    assert "receipts.accountability" in executed_names
+    assert executed_names.isdisjoint(
+        {
+            "receipts.network_daily",
+            "receipts.worst_route",
+            "receipts.worst_stop",
+            "receipts.shift_daily",
+            "receipts.service_states",
+            "receipts.not_reported_routes",
+        }
+    )
 
 
 def test_build_receipts_date_driven_by_accountability() -> None:

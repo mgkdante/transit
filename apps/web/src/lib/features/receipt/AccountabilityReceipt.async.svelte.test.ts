@@ -41,6 +41,8 @@ function deferred<T>() {
 }
 
 const DATES = ['2026-06-15', '2026-06-16', '2026-06-17'] as const;
+const OLD_RETAINED_DATE = '2024-06-17';
+const LATEST_RETAINED_DATE = '2026-06-17';
 const INDEX: ReceiptsIndex = {
 	generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
 	dates: [...DATES],
@@ -259,6 +261,71 @@ describe('AccountabilityReceipt — asynchronous date transitions', () => {
 			expect(
 				within(rail).getByRole('button', { name: 'Scheduled but never appeared' }),
 			).toHaveAttribute('aria-current', 'location'),
+		);
+	});
+});
+
+describe('AccountabilityReceipt — retained-span URLs', () => {
+	beforeEach(() => {
+		ports.getReceiptsIndex.mockResolvedValue({
+			generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
+			dates: [OLD_RETAINED_DATE, LATEST_RETAINED_DATE],
+		});
+		receiptGates.set(OLD_RETAINED_DATE, deferred<Receipt | null>());
+	});
+
+	it('fetches and presents an old retained receipt from its date deep link', async () => {
+		nav.url = new URL(`http://localhost/receipt?date=${OLD_RETAINED_DATE}`);
+		const { container } = render(AccountabilityReceipt);
+
+		await waitFor(() => expect(ports.getReceipt).toHaveBeenCalledWith(OLD_RETAINED_DATE));
+		receiptGates.get(OLD_RETAINED_DATE)!.resolve({ ...receipt(OLD_RETAINED_DATE), otp_pct: 61 });
+
+		await waitFor(() => expect(within(container).getByText('61%')).toBeInTheDocument());
+		expect(within(container).getByLabelText('Receipt day')).toHaveValue(OLD_RETAINED_DATE);
+	});
+
+	it('still defaults to the latest receipt across the retained span', async () => {
+		const { container } = render(AccountabilityReceipt);
+
+		await waitFor(() => expect(ports.getReceipt).toHaveBeenCalledWith(LATEST_RETAINED_DATE));
+		receiptGates
+			.get(LATEST_RETAINED_DATE)!
+			.resolve({ ...receipt(LATEST_RETAINED_DATE), otp_pct: 93 });
+
+		await waitFor(() => expect(within(container).getByText('93%')).toBeInTheDocument());
+		expect(within(container).getByLabelText('Receipt day')).toHaveValue(LATEST_RETAINED_DATE);
+		expect(nav.url.searchParams.has('date')).toBe(false);
+	});
+
+	it('removes the date parameter when an old receipt switches back to latest', async () => {
+		nav.url = new URL(`http://localhost/receipt?date=${OLD_RETAINED_DATE}`);
+		const { container } = render(AccountabilityReceipt);
+		await waitFor(() => expect(ports.getReceipt).toHaveBeenCalledWith(OLD_RETAINED_DATE));
+		receiptGates.get(OLD_RETAINED_DATE)!.resolve(receipt(OLD_RETAINED_DATE));
+		await waitFor(() =>
+			expect(within(container).getByLabelText('Receipt day')).toHaveValue(OLD_RETAINED_DATE),
+		);
+
+		await fireEvent.change(within(container).getByLabelText('Receipt day'), {
+			target: { value: LATEST_RETAINED_DATE },
+		});
+		await waitFor(() => expect(ports.getReceipt).toHaveBeenCalledWith(LATEST_RETAINED_DATE));
+		receiptGates.get(LATEST_RETAINED_DATE)!.resolve(receipt(LATEST_RETAINED_DATE));
+
+		await waitFor(() => expect(nav.url.searchParams.has('date')).toBe(false));
+	});
+
+	it('keeps the honest empty treatment when an index-listed retained object 404s', async () => {
+		nav.url = new URL(`http://localhost/receipt?date=${OLD_RETAINED_DATE}`);
+		const { container } = render(AccountabilityReceipt);
+		await waitFor(() => expect(ports.getReceipt).toHaveBeenCalledWith(OLD_RETAINED_DATE));
+		receiptGates.get(OLD_RETAINED_DATE)!.resolve(null);
+
+		await waitFor(() =>
+			expect(
+				within(container).getByText('No receipt was published for this day.'),
+			).toBeInTheDocument(),
 		);
 	});
 });

@@ -1600,10 +1600,8 @@ class ReceiptsIndex(PayloadEnvelope):
     dates: list[str] = Field(
         default_factory=list,
         description=(
-            "ISO dates with a published receipt in the trailing 30-day build "
-            "window, ascending; fetch {receipts_prefix}{date}.json; dates absent "
-            "here either never had data (404 -> empty state) or are older "
-            "archived receipts"
+            "Exact ascending dates whose receipts were built and published from retained "
+            "accountability rows in the current publication."
         ),
     )
     generated_utc: str

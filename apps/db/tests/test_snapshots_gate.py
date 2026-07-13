@@ -234,16 +234,49 @@ def test_receipts_index_available_orphan_is_error():
 
 def test_receipts_index_available_subset_passes_clean():
     from transit_ops.snapshots.contract import ReceiptAvailability
+
     idx = ReceiptsIndex(
         generated_utc="t",
         dates=["2026-06-01", "2026-06-02"],
         available=[
             ReceiptAvailability(date="2026-06-01", has_data=True, has_schedule=True),
-            ReceiptAvailability(date="2026-06-02", has_data=False, has_schedule=False),
         ],
     )
     res = gate.check_payload("historic/receipts/index.json", idx)
     assert _errors(res) == []
+
+
+def test_receipts_index_rejects_dates_out_of_ascending_order():
+    idx = ReceiptsIndex(
+        generated_utc="t",
+        dates=["2026-06-02", "2026-06-01"],
+    )
+
+    res = gate.check_payload("historic/receipts/index.json", idx)
+
+    assert _has_err(res, "date_order", "dates")
+
+
+def test_receipts_index_rejects_duplicate_dates():
+    idx = ReceiptsIndex(
+        generated_utc="t",
+        dates=["2026-06-01", "2026-06-01"],
+    )
+
+    res = gate.check_payload("historic/receipts/index.json", idx)
+
+    assert _has_err(res, "date_duplicate", "dates")
+
+
+def test_receipts_index_rejects_impossible_iso_calendar_date():
+    idx = ReceiptsIndex(
+        generated_utc="t",
+        dates=["2026-02-30"],
+    )
+
+    res = gate.check_payload("historic/receipts/index.json", idx)
+
+    assert _has_err(res, "date_format", "dates[0]")
 
 
 # --- honest-NULL passes clean ------------------------------------------------
@@ -251,10 +284,18 @@ def test_receipts_index_available_subset_passes_clean():
 
 def test_all_none_payload_passes_clean():
     net = NetworkFile(
-        generated_utc="t", vehicles_in_service=0, on_time_pct=None,
-        status_dist=StatusDist(), delay_p50_min=None, delay_p90_min=None,
-        occupancy_mix=None, non_responding=0, feed_freshness_s=None, coverage_pct=None,
-        delay_histogram=None, non_responding_by_route=None,
+        generated_utc="t",
+        vehicles_in_service=0,
+        on_time_pct=None,
+        status_dist=StatusDist(),
+        delay_p50_min=None,
+        delay_p90_min=None,
+        occupancy_mix=None,
+        non_responding=0,
+        feed_freshness_s=None,
+        coverage_pct=None,
+        delay_histogram=None,
+        non_responding_by_route=None,
     )
     res = gate.check_payload("live/network.json", net)
     assert _errors(res) == []
@@ -271,9 +312,15 @@ def test_fully_empty_route_file_passes_clean():
 
 def test_non_responding_by_route_sum_mismatch_is_error():
     net = NetworkFile(
-        generated_utc="t", vehicles_in_service=10, on_time_pct=90,
-        status_dist=StatusDist(), delay_p50_min=None, delay_p90_min=None,
-        non_responding=5, feed_freshness_s=None, coverage_pct=50,
+        generated_utc="t",
+        vehicles_in_service=10,
+        on_time_pct=90,
+        status_dist=StatusDist(),
+        delay_p50_min=None,
+        delay_p90_min=None,
+        non_responding=5,
+        feed_freshness_s=None,
+        coverage_pct=50,
         non_responding_by_route=[
             NonRespondingRoute(route_id="a", count=2),
             NonRespondingRoute(route_id="b", count=1),

@@ -324,7 +324,7 @@ def _historic_dispatch_conn(*, archive_rows=None):  # noqa: ANN001
     # published output the old dead needles gave, so the hand-coded spine branch is gone.
     dispatch = {
         "receipts.network_daily": [
-            {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
+            {"local_date": datetime.date(2025, 1, 1), "known_obs": 100, "on_time": 90,
              "severe": 5, "pooled_delay_sec": 5000, "inclamp_obs": 100},
             {"local_date": datetime.date(2026, 6, 2), "known_obs": 100, "on_time": 90,
              "severe": 5, "pooled_delay_sec": 5000, "inclamp_obs": 100},
@@ -417,7 +417,7 @@ def _historic_dispatch_conn(*, archive_rows=None):  # noqa: ANN001
             {"stop_id": "S1", "obs": 10, "severe": 1, "sum_delay_sec": 900},
         ],
         "receipts.accountability": [
-            {"provider_local_date": datetime.date(2026, 6, 1),
+            {"provider_local_date": datetime.date(2025, 1, 1),
              "affected_route_count": 3, "affected_stop_count": 12,
              "delayed_trip_count": 45, "severe_delay_count": 5,
              "alert_count": 2, "rider_impact_score": 0.35},
@@ -499,6 +499,75 @@ def test_historic_publish_uploads_index_after_receipts() -> None:
     index_position = store.keys.index(index_key)
     assert receipt_positions, "expected receipt files to be uploaded"
     assert max(receipt_positions) < index_position
+    index = store.get_json(index_key)
+    assert index["dates"] == ["2025-01-01", "2026-06-02"]
+    assert [item["date"] for item in index["available"]] == index["dates"]
+
+
+def test_historic_receipt_index_ignores_stale_hash_state_date() -> None:
+    import hashlib
+
+    from transit_ops.snapshots.publish import publish_snapshot
+    from transit_ops.snapshots.storage import _body, state_fingerprint
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    stale_key = "historic/receipts/2024-01-01.json"
+    stale_body = _body({"date": "2024-01-01"})
+    store = _OrderTrackingStore()
+    store.store[stale_key] = stale_body
+    store.store["_meta/publish_state_historic.json"] = _body(
+        {
+            "fingerprint": state_fingerprint("historic"),
+            "hashes": {stale_key: hashlib.md5(stale_body).hexdigest()},  # noqa: S324
+        }
+    )
+    conn = _historic_dispatch_conn()
+
+    publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=_Settings(),
+        engine=_FakeEngine(conn),
+        storage=store,
+    )
+
+    index = store.get_json("historic/receipts/index.json")
+    assert index["dates"] == ["2025-01-01", "2026-06-02"]
+    assert "2024-01-01" not in index["dates"]
+    hash_state = store.get_json("_meta/publish_state_historic.json")
+    assert stale_key in hash_state["hashes"]
+
+
+def test_historic_receipt_file_failure_keeps_previous_index() -> None:
+    from transit_ops.snapshots.publish import _publish_historic
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    class _FailingReceiptStore(_OrderTrackingStore):
+        def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
+            if rel_key == "historic/receipts/2025-01-01.json":
+                raise RuntimeError("receipt upload failed")
+            return super().put_json(rel_key, payload, tier=tier)
+
+    old_index = b'{"dates":["2024-01-01"]}'
+    store = _FailingReceiptStore()
+    store.store["historic/receipts/index.json"] = old_index
+
+    with pytest.raises(RuntimeError, match="receipt upload failed"):
+        _publish_historic(
+            _historic_dispatch_conn(),
+            store,
+            provider_id="stm",
+            settings=_Settings(),
+        )
+
+    assert store.store["historic/receipts/index.json"] == old_index
+    assert "historic/receipts/index.json" not in store.keys
 
 
 def test_historic_publish_uploads_route_index_after_route_files() -> None:

@@ -170,6 +170,10 @@ def test_basemap_and_receipts_index_models():
 
     ri = ReceiptsIndex(dates=["2026-06-01", "2026-06-02"], generated_utc="t")
     assert ri.dates == ["2026-06-01", "2026-06-02"]
+    assert ReceiptsIndex.model_json_schema()["properties"]["dates"]["description"] == (
+        "Exact ascending dates whose receipts were built and published from retained "
+        "accountability rows in the current publication."
+    )
     # generated_utc is required
     with pytest.raises(ValidationError):
         ReceiptsIndex(dates=[])
