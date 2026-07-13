@@ -16,9 +16,12 @@ Architecture -> "/v1 Contract Doctrine".
 
 from __future__ import annotations
 
+import re
+from datetime import date as date_type
 from enum import Enum
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # GC2 H4 — in-band accountability stamps on every top-level payload root.
 # schema_version = the CONTRACT shape generation (bumped on breaking-ish shape moves;
@@ -62,6 +65,10 @@ PAYLOAD_METHODOLOGY: dict[str, str] = {
     "historic_alert_archive_page": "alerts-1",
     "historic_alert_archive_index": "alerts-1",
     "historic_collection_index": "history-1",
+    "historic_entity_directory_index": "history-1",
+    "historic_network_history_partition": "history-1",
+    "historic_line_history_partition": "history-1",
+    "historic_stop_history_partition": "history-1",
     "historic_availability_index": "history-1",
     "provenance": "provenance-1",
 }
@@ -1576,6 +1583,22 @@ class HistorySelectionMode(str, Enum):
     date = "date"
 
 
+class HistoryMetricAggregation(str, Enum):
+    additive = "additive"
+    daily_only = "daily_only"
+    current_only = "current_only"
+
+
+class HistoryMetricName(str, Enum):
+    delay = "delay"
+    delay_percentiles = "delay_percentiles"
+    vehicles = "vehicles"
+    cancellation = "cancellation"
+    occupancy = "occupancy"
+    service_span = "service_span"
+    skipped_stops = "skipped_stops"
+
+
 class HistoricCoverageGap(BaseModel):
     start_date: str
     end_date: str
@@ -1587,7 +1610,16 @@ class HistoricPartitionRef(BaseModel):
     coverage_start: str
     coverage_end: str
     count: int | None = Field(default=None, ge=0)
-    sha256: str | None = None
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    byte_size: int | None = Field(default=None, ge=1)
+
+
+class HistoricMetricCoverage(BaseModel):
+    metric: HistoryMetricName
+    aggregation: HistoryMetricAggregation
+    first_available_date: str | None = None
+    last_available_date: str | None = None
+    gaps: list[HistoricCoverageGap] = Field(default_factory=list)
 
 
 class HistoricCollectionIndex(PayloadEnvelope):
@@ -1601,15 +1633,218 @@ class HistoricCollectionIndex(PayloadEnvelope):
     available_dates: list[str] = Field(default_factory=list)
     gaps: list[HistoricCoverageGap] = Field(default_factory=list)
     partitions: list[HistoricPartitionRef] = Field(default_factory=list)
+    metrics: list[HistoricMetricCoverage] = Field(default_factory=list)
 
 
 class HistoricFamilyAvailability(BaseModel):
     family: str
     selection_mode: HistorySelectionMode
     index_path: str
+    collection_generation_id: str | None = None
     first_available_date: str | None = None
     last_available_date: str | None = None
     gaps: list[HistoricCoverageGap] = Field(default_factory=list)
+    metrics: list[HistoricMetricCoverage] = Field(default_factory=list)
+
+
+class HistoricEntityIndexRef(BaseModel):
+    entity_id: str = Field(min_length=1)
+    encoded_id: str = Field(min_length=2, pattern=r"^(?:[0-9a-f]{2})+$")
+    index_path: str = Field(min_length=1)
+    collection_generation_id: str = Field(min_length=1)
+    first_available_date: str | None = None
+    last_available_date: str | None = None
+
+    @model_validator(mode="after")
+    def validate_encoded_identity(self) -> Self:
+        if self.encoded_id != self.entity_id.encode("utf-8").hex():
+            raise ValueError("encoded_id must be the lowercase UTF-8 hex of entity_id")
+        return self
+
+
+class HistoricEntityDirectoryIndex(PayloadEnvelope):
+    generated_utc: str
+    family: Literal["lines", "stops"]
+    selection_mode: Literal[HistorySelectionMode.range]
+    collection_generation_id: str = Field(min_length=1)
+    first_available_date: str | None = None
+    last_available_date: str | None = None
+    entities: list[HistoricEntityIndexRef] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_entity_paths(self) -> Self:
+        for entity in self.entities:
+            expected = f"historic/history/{self.family}/{entity.encoded_id}/index.json"
+            if entity.index_path != expected:
+                raise ValueError(f"entity index_path must equal {expected}")
+        return self
+
+
+class HistoricDelayMetric(BaseModel):
+    observation_count: int = Field(ge=1)
+    in_clamp_observation_count: int | None = Field(default=None, ge=1)
+    on_time_count: int | None = Field(default=None, ge=0)
+    severe_count: int | None = Field(default=None, ge=0)
+    sum_delay_seconds: int | None = None
+
+    @model_validator(mode="after")
+    def validate_denominators(self) -> Self:
+        for name in ("in_clamp_observation_count", "on_time_count", "severe_count"):
+            value = getattr(self, name)
+            if value is not None and value > self.observation_count:
+                raise ValueError(f"{name} cannot exceed observation_count")
+        if self.sum_delay_seconds is not None and self.in_clamp_observation_count is None:
+            raise ValueError("sum_delay_seconds requires in_clamp_observation_count")
+        return self
+
+
+class HistoricDelayPercentiles(BaseModel):
+    observation_count: int = Field(ge=1)
+    p50_delay_seconds: float | None = None
+    p90_delay_seconds: float | None = None
+
+    @model_validator(mode="after")
+    def require_percentile_value(self) -> Self:
+        if self.p50_delay_seconds is None and self.p90_delay_seconds is None:
+            raise ValueError("at least one delay percentile is required")
+        return self
+
+
+class HistoricCancellationMetric(BaseModel):
+    canceled_trip_days: int = Field(ge=0)
+    total_trip_days: int = Field(ge=0)
+    scheduled_trip_days: int | None = Field(default=None, ge=0)
+    delivered_trip_days: int | None = Field(default=None, ge=0)
+    silent_trip_days: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_denominator(self) -> Self:
+        if self.canceled_trip_days > self.total_trip_days:
+            raise ValueError("canceled_trip_days cannot exceed total_trip_days")
+        if self.total_trip_days == 0 and not (
+            self.scheduled_trip_days is not None and self.scheduled_trip_days > 0
+        ):
+            raise ValueError("cancellation requires a positive observed or scheduled denominator")
+        return self
+
+
+class HistoricOccupancyMetric(BaseModel):
+    empty: int = Field(ge=0)
+    many_seats: int = Field(ge=0)
+    few_seats: int = Field(ge=0)
+    standing: int = Field(ge=0)
+    full: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def require_telemetry(self) -> Self:
+        if self.empty + self.many_seats + self.few_seats + self.standing + self.full == 0:
+            raise ValueError("occupancy requires at least one telemetry observation")
+        return self
+
+
+class HistoricServiceSpanMetric(BaseModel):
+    trip_count: int = Field(ge=1)
+    first_trip_utc: str | None = None
+    last_trip_utc: str | None = None
+    first_trip_delay_seconds: int | None = None
+    last_trip_delay_seconds: int | None = None
+
+
+class HistoricSkippedStopMetric(BaseModel):
+    skipped_stop_count: int = Field(ge=0)
+    stop_time_update_count: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> Self:
+        if self.skipped_stop_count > self.stop_time_update_count:
+            raise ValueError("skipped_stop_count cannot exceed stop_time_update_count")
+        return self
+
+
+def _validate_iso_date(value: str) -> str:
+    try:
+        parsed = date_type.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("date must use valid YYYY-MM-DD format") from exc
+    if parsed.isoformat() != value:
+        raise ValueError("date must use canonical YYYY-MM-DD format")
+    return value
+
+
+class _HistoryDay(BaseModel):
+    date: str
+
+    @field_validator("date")
+    @classmethod
+    def validate_date(cls, value: str) -> str:
+        return _validate_iso_date(value)
+
+    @model_validator(mode="after")
+    def require_real_metric(self) -> Self:
+        if not any(
+            getattr(self, name) is not None for name in type(self).model_fields if name != "date"
+        ):
+            raise ValueError("history day requires at least one real metric")
+        return self
+
+
+class NetworkHistoryDay(_HistoryDay):
+    delay: HistoricDelayMetric | None = None
+    delay_percentiles: HistoricDelayPercentiles | None = None
+    cancellation: HistoricCancellationMetric | None = None
+    occupancy: HistoricOccupancyMetric | None = None
+    vehicles: int | None = Field(default=None, ge=1)
+
+
+class LineHistoryDay(_HistoryDay):
+    delay: HistoricDelayMetric | None = None
+    delay_percentiles: HistoricDelayPercentiles | None = None
+    cancellation: HistoricCancellationMetric | None = None
+    occupancy: HistoricOccupancyMetric | None = None
+    service_span: HistoricServiceSpanMetric | None = None
+    skipped_stops: HistoricSkippedStopMetric | None = None
+
+
+class StopHistoryDay(_HistoryDay):
+    delay: HistoricDelayMetric | None = None
+    delay_percentiles: HistoricDelayPercentiles | None = None
+    occupancy: HistoricOccupancyMetric | None = None
+
+
+class _HistoryPartition(PayloadEnvelope):
+    generated_utc: str
+    month: str
+
+    @field_validator("month")
+    @classmethod
+    def validate_month(cls, value: str) -> str:
+        if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value):
+            raise ValueError("month must use valid YYYY-MM format")
+        return value
+
+    @model_validator(mode="after")
+    def validate_days(self) -> Self:
+        days = self.days
+        dates = [day.date for day in days]
+        if dates != sorted(dates) or len(dates) != len(set(dates)):
+            raise ValueError("partition days must be strictly ascending and unique")
+        if any(day_date[:7] != self.month for day_date in dates):
+            raise ValueError("partition day must belong to partition month")
+        return self
+
+
+class NetworkHistoryPartition(_HistoryPartition):
+    days: list[NetworkHistoryDay] = Field(min_length=1)
+
+
+class LineHistoryPartition(_HistoryPartition):
+    entity_id: str = Field(min_length=1)
+    days: list[LineHistoryDay] = Field(min_length=1)
+
+
+class StopHistoryPartition(_HistoryPartition):
+    entity_id: str = Field(min_length=1)
+    days: list[StopHistoryDay] = Field(min_length=1)
 
 
 class HistoricAvailabilityIndex(PayloadEnvelope):
@@ -1774,6 +2009,7 @@ class ReceiptsIndex(PayloadEnvelope):
         ),
     )
     generated_utc: str
+    collection_generation_id: str | None = None
     # S13 additive-optional per-date availability metadata (DECISIONS DB3). Default empty
     # so an already-published index (dates-only) stays FIELD-IDENTICAL (a republished pre-S13
     # receipt gains only the additive keys); `dates` above stays UNTOUCHED. One
@@ -1821,6 +2057,10 @@ TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
     "historic_alert_archive_page": AlertArchivePage,
     "historic_alert_archive_index": AlertArchiveIndex,
     "historic_collection_index": HistoricCollectionIndex,
+    "historic_entity_directory_index": HistoricEntityDirectoryIndex,
+    "historic_network_history_partition": NetworkHistoryPartition,
+    "historic_line_history_partition": LineHistoryPartition,
+    "historic_stop_history_partition": StopHistoryPartition,
     "historic_availability_index": HistoricAvailabilityIndex,
     "provenance": Provenance,
     "live_data_health": DataHealth,

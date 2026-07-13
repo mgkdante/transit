@@ -264,6 +264,7 @@ def test_basemap_and_receipts_index_models():
 
     ri = ReceiptsIndex(dates=["2026-06-01", "2026-06-02"], generated_utc="t")
     assert ri.dates == ["2026-06-01", "2026-06-02"]
+    assert ri.collection_generation_id is None
     assert ReceiptsIndex.model_json_schema()["properties"]["dates"]["description"] == (
         "Exact ascending dates whose receipts were built and published from retained "
         "accountability rows in the current publication."
@@ -966,11 +967,12 @@ def test_shared_history_contracts_roundtrip_exact_shapes():
         reason="provider outage",
     )
     partition = HistoricPartitionRef(
-        path="historic/example/generations/abc/2026-03.json",
+        path=f"historic/example/generations/{'a' * 64}/2026-03.json",
         coverage_start="2026-03-01",
         coverage_end="2026-03-31",
         count=0,
-        sha256="abc",
+        sha256="a" * 64,
+        byte_size=128,
     )
     collection = HistoricCollectionIndex(
         generated_utc="2026-07-13T12:00:00Z",
@@ -1000,7 +1002,10 @@ def test_shared_history_contracts_roundtrip_exact_shapes():
     assert collection.entity_id is None
     assert collection.collection_generation_id is None
     assert collection.partitions[0].count == 0
+    assert collection.partitions[0].byte_size == 128
+    assert collection.metrics == []
     assert availability.families[0].selection_mode is HistorySelectionMode.range
+    assert availability.families[0].collection_generation_id is None
 
 
 def test_shared_history_contracts_keep_additive_defaults_and_nonnegative_counts():

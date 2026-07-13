@@ -55,6 +55,10 @@ import {
 	AlertArchivePageSchema,
 	AlertArchiveIndexSchema,
 	HistoricCollectionIndexSchema,
+	HistoricEntityDirectoryIndexSchema,
+	NetworkHistoryPartitionSchema,
+	LineHistoryPartitionSchema,
+	StopHistoryPartitionSchema,
 	HistoricAvailabilityIndexSchema,
 	// provenance
 	ProvenanceSchema,
@@ -147,6 +151,26 @@ const FAMILIES: Family[] = [
 		schema: HistoricCollectionIndexSchema,
 	},
 	{
+		label: 'historic_entity_directory_index',
+		mirror: 'historic_entity_directory_index.schema.json',
+		schema: HistoricEntityDirectoryIndexSchema,
+	},
+	{
+		label: 'historic_network_history_partition',
+		mirror: 'historic_network_history_partition.schema.json',
+		schema: NetworkHistoryPartitionSchema,
+	},
+	{
+		label: 'historic_line_history_partition',
+		mirror: 'historic_line_history_partition.schema.json',
+		schema: LineHistoryPartitionSchema,
+	},
+	{
+		label: 'historic_stop_history_partition',
+		mirror: 'historic_stop_history_partition.schema.json',
+		schema: StopHistoryPartitionSchema,
+	},
+	{
 		label: 'historic_availability_index',
 		mirror: 'historic_availability_index.schema.json',
 		schema: HistoricAvailabilityIndexSchema,
@@ -196,13 +220,15 @@ function jsonAllowsNull(node: JsonNode): boolean {
 
 /** The enum members declared on a node (following a `$ref` into a `$def`), else null. */
 function jsonEnum(node: JsonNode, root: JsonSchema): string[] | null {
-	// A bare enum, or a $ref to an enum $def, or an anyOf with an enum branch.
+	// A bare enum/const, or a $ref to an enum $def, or an anyOf with an enum branch.
 	const candidates = branches(node).flatMap((b) => {
 		const d = deref(b, root);
-		return Array.isArray(d.enum) ? [d.enum as string[]] : [];
+		if (Array.isArray(d.enum)) return [d.enum as string[]];
+		return typeof d.const === 'string' ? [[d.const]] : [];
 	});
 	const direct = deref(node, root);
 	if (Array.isArray(direct.enum)) candidates.unshift(direct.enum as string[]);
+	else if (typeof direct.const === 'string') candidates.unshift([direct.const]);
 	return candidates.length ? candidates[0] : null;
 }
 
@@ -399,10 +425,10 @@ describe('Gate B — Zod ⇔ canonical JSON-Schema conformance', () => {
 			missingFiles,
 			`FAMILIES references a mirror file that is not on disk: ${missingFiles.join(', ')}`,
 		).toEqual([]);
-		// 27 canonical surfaces (live 5 + static 6 + historic 13 + manifest + provenance
+		// 31 canonical surfaces (live 5 + static 6 + historic 17 + manifest + provenance
 		// + data_health).
-		expect(onDisk.size).toBe(27);
-		expect(FAMILIES.length).toBe(27);
+		expect(onDisk.size).toBe(31);
+		expect(FAMILIES.length).toBe(31);
 	});
 
 	for (const family of FAMILIES) {

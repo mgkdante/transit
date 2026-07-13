@@ -1,0 +1,425 @@
+{
+  "$defs": {
+    "HistoricCancellationMetric": {
+      "properties": {
+        "canceled_trip_days": {
+          "minimum": 0,
+          "title": "Canceled Trip Days",
+          "type": "integer"
+        },
+        "delivered_trip_days": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delivered Trip Days"
+        },
+        "scheduled_trip_days": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scheduled Trip Days"
+        },
+        "silent_trip_days": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Silent Trip Days"
+        },
+        "total_trip_days": {
+          "minimum": 0,
+          "title": "Total Trip Days",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "canceled_trip_days",
+        "total_trip_days"
+      ],
+      "title": "HistoricCancellationMetric",
+      "type": "object"
+    },
+    "HistoricDelayMetric": {
+      "properties": {
+        "in_clamp_observation_count": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "In Clamp Observation Count"
+        },
+        "observation_count": {
+          "minimum": 1,
+          "title": "Observation Count",
+          "type": "integer"
+        },
+        "on_time_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "On Time Count"
+        },
+        "severe_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Count"
+        },
+        "sum_delay_seconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sum Delay Seconds"
+        }
+      },
+      "required": [
+        "observation_count"
+      ],
+      "title": "HistoricDelayMetric",
+      "type": "object"
+    },
+    "HistoricDelayPercentiles": {
+      "properties": {
+        "observation_count": {
+          "minimum": 1,
+          "title": "Observation Count",
+          "type": "integer"
+        },
+        "p50_delay_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P50 Delay Seconds"
+        },
+        "p90_delay_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P90 Delay Seconds"
+        }
+      },
+      "required": [
+        "observation_count"
+      ],
+      "title": "HistoricDelayPercentiles",
+      "type": "object"
+    },
+    "HistoricOccupancyMetric": {
+      "properties": {
+        "empty": {
+          "minimum": 0,
+          "title": "Empty",
+          "type": "integer"
+        },
+        "few_seats": {
+          "minimum": 0,
+          "title": "Few Seats",
+          "type": "integer"
+        },
+        "full": {
+          "minimum": 0,
+          "title": "Full",
+          "type": "integer"
+        },
+        "many_seats": {
+          "minimum": 0,
+          "title": "Many Seats",
+          "type": "integer"
+        },
+        "standing": {
+          "minimum": 0,
+          "title": "Standing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "empty",
+        "many_seats",
+        "few_seats",
+        "standing",
+        "full"
+      ],
+      "title": "HistoricOccupancyMetric",
+      "type": "object"
+    },
+    "HistoricServiceSpanMetric": {
+      "properties": {
+        "first_trip_delay_seconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Trip Delay Seconds"
+        },
+        "first_trip_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Trip Utc"
+        },
+        "last_trip_delay_seconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Trip Delay Seconds"
+        },
+        "last_trip_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Trip Utc"
+        },
+        "trip_count": {
+          "minimum": 1,
+          "title": "Trip Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "trip_count"
+      ],
+      "title": "HistoricServiceSpanMetric",
+      "type": "object"
+    },
+    "HistoricSkippedStopMetric": {
+      "properties": {
+        "skipped_stop_count": {
+          "minimum": 0,
+          "title": "Skipped Stop Count",
+          "type": "integer"
+        },
+        "stop_time_update_count": {
+          "minimum": 1,
+          "title": "Stop Time Update Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "skipped_stop_count",
+        "stop_time_update_count"
+      ],
+      "title": "HistoricSkippedStopMetric",
+      "type": "object"
+    },
+    "LineHistoryDay": {
+      "properties": {
+        "cancellation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HistoricCancellationMetric"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "delay": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HistoricDelayMetric"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "delay_percentiles": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HistoricDelayPercentiles"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "occupancy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HistoricOccupancyMetric"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "service_span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HistoricServiceSpanMetric"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "skipped_stops": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HistoricSkippedStopMetric"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "date"
+      ],
+      "title": "LineHistoryDay",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "days": {
+      "items": {
+        "$ref": "#/$defs/LineHistoryDay"
+      },
+      "minItems": 1,
+      "title": "Days",
+      "type": "array"
+    },
+    "entity_id": {
+      "minLength": 1,
+      "title": "Entity Id",
+      "type": "string"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "month": {
+      "title": "Month",
+      "type": "string"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "month",
+    "entity_id",
+    "days"
+  ],
+  "title": "LineHistoryPartition",
+  "type": "object"
+}

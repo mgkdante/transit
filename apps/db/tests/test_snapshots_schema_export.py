@@ -15,3 +15,7 @@ def test_shared_history_schema_families_are_exported():
     exported = export_schemas()
     assert "historic_collection_index" in exported
     assert "historic_availability_index" in exported
+    assert "historic_entity_directory_index" in exported
+    assert "historic_network_history_partition" in exported
+    assert "historic_line_history_partition" in exported
+    assert "historic_stop_history_partition" in exported

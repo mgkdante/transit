@@ -49,6 +49,10 @@ import {
 	AlertArchivePageSchema,
 	AlertArchiveIndexSchema,
 	HistoricCollectionIndexSchema,
+	HistoricEntityDirectoryIndexSchema,
+	NetworkHistoryPartitionSchema,
+	LineHistoryPartitionSchema,
+	StopHistoryPartitionSchema,
 	HistoricAvailabilityIndexSchema,
 	// provenance
 	ProvenanceSchema,
@@ -180,6 +184,50 @@ const CASES: Case[] = [
 		'historic_collection_index',
 		HistoricCollectionIndexSchema,
 		{ generated_utc: ISO, family: 'alerts', selection_mode: 'range' },
+	],
+	[
+		'historic_entity_directory_index',
+		HistoricEntityDirectoryIndexSchema,
+		{
+			generated_utc: ISO,
+			family: 'lines',
+			selection_mode: 'range',
+			collection_generation_id: 'directory-generation',
+		},
+	],
+	[
+		'historic_network_history_partition',
+		NetworkHistoryPartitionSchema,
+		{
+			generated_utc: ISO,
+			month: '2026-06',
+			days: [{ date: '2026-06-14', vehicles: 1 }],
+		},
+	],
+	[
+		'historic_line_history_partition',
+		LineHistoryPartitionSchema,
+		{
+			generated_utc: ISO,
+			month: '2026-06',
+			entity_id: '165',
+			days: [{ date: '2026-06-14', delay: { observation_count: 1 } }],
+		},
+	],
+	[
+		'historic_stop_history_partition',
+		StopHistoryPartitionSchema,
+		{
+			generated_utc: ISO,
+			month: '2026-06',
+			entity_id: 's1',
+			days: [
+				{
+					date: '2026-06-14',
+					occupancy: { empty: 1, many_seats: 0, few_seats: 0, standing: 0, full: 0 },
+				},
+			],
+		},
 	],
 	['historic_availability_index', HistoricAvailabilityIndexSchema, { generated_utc: ISO }],
 

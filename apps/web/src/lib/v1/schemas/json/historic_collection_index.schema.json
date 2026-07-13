@@ -30,8 +30,68 @@
       "title": "HistoricCoverageGap",
       "type": "object"
     },
+    "HistoricMetricCoverage": {
+      "properties": {
+        "aggregation": {
+          "$ref": "#/$defs/HistoryMetricAggregation"
+        },
+        "first_available_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Available Date"
+        },
+        "gaps": {
+          "items": {
+            "$ref": "#/$defs/HistoricCoverageGap"
+          },
+          "title": "Gaps",
+          "type": "array"
+        },
+        "last_available_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Available Date"
+        },
+        "metric": {
+          "$ref": "#/$defs/HistoryMetricName"
+        }
+      },
+      "required": [
+        "metric",
+        "aggregation"
+      ],
+      "title": "HistoricMetricCoverage",
+      "type": "object"
+    },
     "HistoricPartitionRef": {
       "properties": {
+        "byte_size": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Byte Size"
+        },
         "count": {
           "anyOf": [
             {
@@ -60,6 +120,7 @@
         "sha256": {
           "anyOf": [
             {
+              "pattern": "^[0-9a-f]{64}$",
               "type": "string"
             },
             {
@@ -77,6 +138,28 @@
       ],
       "title": "HistoricPartitionRef",
       "type": "object"
+    },
+    "HistoryMetricAggregation": {
+      "enum": [
+        "additive",
+        "daily_only",
+        "current_only"
+      ],
+      "title": "HistoryMetricAggregation",
+      "type": "string"
+    },
+    "HistoryMetricName": {
+      "enum": [
+        "delay",
+        "delay_percentiles",
+        "vehicles",
+        "cancellation",
+        "occupancy",
+        "service_span",
+        "skipped_stops"
+      ],
+      "title": "HistoryMetricName",
+      "type": "string"
     },
     "HistorySelectionMode": {
       "enum": [
@@ -169,6 +252,13 @@
       ],
       "default": null,
       "title": "Methodology Version"
+    },
+    "metrics": {
+      "items": {
+        "$ref": "#/$defs/HistoricMetricCoverage"
+      },
+      "title": "Metrics",
+      "type": "array"
     },
     "partitions": {
       "items": {

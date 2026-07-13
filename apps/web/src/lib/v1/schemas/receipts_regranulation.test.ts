@@ -96,7 +96,16 @@ describe('ReceiptsIndex.available — S13 availability metadata', () => {
 			dates: ['2026-06-07', '2026-06-08'],
 		});
 		expect(parsed.available).toBeUndefined();
+		expect(parsed.collection_generation_id).toBeUndefined();
 		expect(parsed.dates).toEqual(['2026-06-07', '2026-06-08']);
+	});
+
+	it('preserves the additive semantic collection generation pin', () => {
+		const parsed = ReceiptsIndexSchema.parse({
+			generated_utc: '2026-06-08T00:00:00Z',
+			collection_generation_id: 'semantic-receipt-generation',
+		});
+		expect(parsed.collection_generation_id).toBe('semantic-receipt-generation');
 	});
 
 	it('parses per-date availability distinguishing rich / shell / schedule-known days', () => {

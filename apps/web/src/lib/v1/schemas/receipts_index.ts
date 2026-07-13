@@ -18,6 +18,7 @@ export type ReceiptAvailability = z.infer<typeof ReceiptAvailabilitySchema>;
 
 export const ReceiptsIndexSchema = z.object({
 	generated_utc: isoUtc(),
+	collection_generation_id: z.string().nullable().optional(),
 	// Exact ascending dates built from retained accountability rows in this publication.
 	// Optional: absent when the index has not been built yet.
 	dates: z.array(z.string()).optional(),

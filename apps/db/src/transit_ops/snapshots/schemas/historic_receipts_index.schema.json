@@ -44,6 +44,18 @@
       "title": "Available",
       "type": "array"
     },
+    "collection_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Collection Generation Id"
+    },
     "dates": {
       "description": "Exact ascending dates whose receipts were built and published from retained accountability rows in the current publication.",
       "items": {
