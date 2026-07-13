@@ -397,6 +397,7 @@
 			stop,
 		}),
 	);
+	const readyMatchCount = $derived(displayData == null ? null : filtered.length);
 	const hasMatches = $derived(filtered.length > 0);
 	const overflow = $derived(Math.max(0, filtered.length - VISIBLE_CAP));
 	const visibleEntries = $derived(
@@ -612,7 +613,7 @@
 	combinedRailConfig={controlsReady
 		? {
 				label: t.rail.label,
-				summary: t.filters.pillSummary(filtered.length),
+				summary: readyMatchCount == null ? undefined : t.filters.pillSummary(readyMatchCount),
 				openAria: t.rail.open,
 				closeAria: t.rail.close,
 			}
@@ -652,7 +653,7 @@
 				{stopOptions}
 				{availableDates}
 				{filtersActive}
-				matchCount={filtered.length}
+				matchCount={readyMatchCount}
 				copy={t}
 				{locale}
 				{historyCoverageText}

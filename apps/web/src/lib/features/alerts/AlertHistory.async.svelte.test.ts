@@ -119,6 +119,45 @@ afterEach(() => {
 });
 
 describe('AlertHistory asynchronous catalog and range transitions', () => {
+	it('omits numeric filter summaries while an advertised range is pending or failed', async () => {
+		nav.url = new URL('http://localhost/alerts?route=24');
+		render(AlertHistoryScreen);
+		await waitFor(() => expect(rangeCalls).toHaveLength(1));
+
+		const pill = document.querySelector(
+			'[data-slot="surface-rail-mobile"] .surface-rail-pill',
+		) as HTMLButtonElement;
+		expect(pill).not.toBeNull();
+		expect(pill.getAttribute('aria-label')).not.toContain('0 alerts');
+		expect(pill.querySelector('.surface-rail-pill-summary')).toBeNull();
+		expect(document.querySelector('[data-slot="filter-summary"]')).toBeNull();
+
+		rangeCalls[0].gate.reject(new Error('advertised archive page missing'));
+		await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+		expect(pill.getAttribute('aria-label')).not.toContain('0 alerts');
+		expect(pill.querySelector('.surface-rail-pill-summary')).toBeNull();
+		expect(document.querySelector('[data-slot="filter-summary"]')).toBeNull();
+	});
+
+	it('shows a real zero summary after a matching successful healthy-empty range', async () => {
+		nav.url = new URL('http://localhost/alerts?route=24');
+		render(AlertHistoryScreen);
+		await waitFor(() => expect(rangeCalls).toHaveLength(1));
+		rangeCalls[0].gate.resolve([]);
+
+		await waitFor(() =>
+			expect(document.querySelector('[data-variant="empty-avis"]')).not.toBeNull(),
+		);
+		const pill = document.querySelector(
+			'[data-slot="surface-rail-mobile"] .surface-rail-pill',
+		) as HTMLButtonElement;
+		expect(pill).toHaveAttribute('aria-label', expect.stringContaining('0 alerts'));
+		expect(pill.querySelector('.surface-rail-pill-summary')).toHaveTextContent('0 alerts');
+		expect(document.querySelector('[data-slot="filter-summary-count"]')).toHaveTextContent(
+			'0 alerts',
+		);
+	});
+
 	it('does not erase malformed raw history evidence before a deferred catalog settles', async () => {
 		const historyGate = deferred<AlertHistory>();
 		const indexGate = deferred<AlertArchiveIndex | null>();

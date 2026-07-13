@@ -51,7 +51,7 @@
 		/** True when any axis is active (shows the "clear filters" affordance). */
 		filtersActive: boolean;
 		/** The count of alerts matching the active filters (already computed upstream). */
-		matchCount: number;
+		matchCount: number | null;
 		copy: AlertHistoryCopy;
 		locale: Locale;
 		/** Localized retained-history captions and polite correction text. */
@@ -163,7 +163,7 @@
 			onRangeChange={onWindowChange}
 		/>
 	</div>
-	{#if filtersActive}
+	{#if filtersActive && matchCount != null}
 		<!-- Shared FilterSummary: the match count + the clear-filters link (BOUNDED swap
 		     of the old bespoke button). onClear = the surface's existing reset; the count
 		     is the already-computed filtered length. -->
