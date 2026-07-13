@@ -119,6 +119,50 @@ describe('historic repository collection seams', () => {
 		expect(partitionSignals[0].aborted).toBe(false);
 	});
 
+	it('returns only entries that exactly intersect the requested range after loading a broad page', async () => {
+		const advertised = ref('2026-03', 1, '2026-01-01', '2026-03-31');
+		vi.spyOn(adapter.historic, 'alertArchivePage').mockResolvedValue(
+			AlertArchivePageSchema.parse({
+				generated_utc: ISO,
+				month: '2026-03',
+				page: 1,
+				alerts: [
+					{
+						id: 'scalar-in',
+						first_seen_utc: '2026-01-01T00:00:00Z',
+						last_seen_utc: '2026-03-31T00:00:00Z',
+						start_utc: '2026-03-10T00:00:00Z',
+						end_utc: '2026-03-11T00:00:00Z',
+					},
+					{
+						id: 'scalar-out',
+						first_seen_utc: '2026-01-01T00:00:00Z',
+						last_seen_utc: '2026-03-31T00:00:00Z',
+						start_utc: '2026-02-01T00:00:00Z',
+						end_utc: '2026-02-02T00:00:00Z',
+					},
+					{
+						id: 'first-last-in',
+						first_seen_utc: '2026-03-12T00:00:00Z',
+						last_seen_utc: '2026-03-14T00:00:00Z',
+					},
+					{
+						id: 'first-last-out',
+						first_seen_utc: '2026-01-12T00:00:00Z',
+						last_seen_utc: '2026-01-14T00:00:00Z',
+					},
+				],
+			}),
+		);
+
+		const entries = await getAlertArchiveRange(
+			archiveIndex([advertised]),
+			{ from: '2026-03-05', to: '2026-03-15' },
+		);
+
+		expect(entries.map((entry) => entry.id).sort()).toEqual(['first-last-in', 'scalar-in']);
+	});
+
 	it('preflights every selected path before starting any fetch', async () => {
 		const safe = ref('2026-03', 1, '2026-03-01', '2026-03-31');
 		const unsafe = { ...ref('2026-03', 2, '2026-03-01', '2026-03-31'), path: '//evil.test/x' };

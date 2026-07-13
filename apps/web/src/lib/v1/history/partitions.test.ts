@@ -9,6 +9,7 @@ import {
 	assertSafeHistoryArtifactPath,
 	loadHistoryPartitions,
 	mergeAlertArchivePages,
+	selectAlertEntriesForWindow,
 	selectAlertPageRefs,
 } from './index';
 
@@ -312,6 +313,47 @@ describe('stable alert page merging', () => {
 		expect(forward.filter((alert) => alert.id === 'exact')).toHaveLength(1);
 		expect(forward.find((alert) => alert.id === 'divergent')?.header_text).toBe('newer');
 		expect(forward.filter((alert) => alert.id === 'tie')).toHaveLength(1);
+	});
+
+	it('projects merged entries to the exact range using periods, scalars, then first/last', () => {
+		const entries = page('2026-03', 1, [
+			{
+				id: 'period-in',
+				first_seen_utc: '2026-01-01T00:00:00Z',
+				last_seen_utc: '2026-03-31T00:00:00Z',
+				active_periods: [
+					{ start_utc: '2026-03-10T00:00:00Z', end_utc: '2026-03-11T00:00:00Z' },
+				],
+			},
+			{
+				id: 'period-out-overrides-scalar',
+				first_seen_utc: '2026-03-10T00:00:00Z',
+				last_seen_utc: '2026-03-11T00:00:00Z',
+				start_utc: '2026-03-10T00:00:00Z',
+				end_utc: '2026-03-11T00:00:00Z',
+				active_periods: [
+					{ start_utc: '2026-02-01T00:00:00Z', end_utc: '2026-02-02T00:00:00Z' },
+				],
+			},
+			{
+				id: 'scalar-out',
+				first_seen_utc: '2026-03-10T00:00:00Z',
+				last_seen_utc: '2026-03-11T00:00:00Z',
+				start_utc: '2026-02-01T00:00:00Z',
+				end_utc: '2026-02-02T00:00:00Z',
+			},
+			{
+				id: 'first-last-in',
+				first_seen_utc: '2026-03-12T00:00:00Z',
+				last_seen_utc: '2026-03-14T00:00:00Z',
+			},
+		]).alerts;
+
+		expect(
+			selectAlertEntriesForWindow(entries, { from: '2026-03-05', to: '2026-03-15' }).map(
+				(entry) => entry.id,
+			),
+		).toEqual(['period-in', 'first-last-in']);
 	});
 });
 

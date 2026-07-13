@@ -208,3 +208,30 @@ export function mergeAlertArchivePages(pages: readonly AlertArchivePage[]): Aler
 			return seenOrder !== 0 ? seenOrder : ascending(a.id, b.id);
 		});
 }
+
+function alertWindowOverlaps(
+	start: string | null | undefined,
+	end: string | null | undefined,
+	window: DateWindow,
+): boolean {
+	const startDate = start?.slice(0, 10) ?? null;
+	const endDate = end?.slice(0, 10) ?? null;
+	return !(endDate != null && endDate < window.from) && !(startDate != null && startDate > window.to);
+}
+
+export function selectAlertEntriesForWindow(
+	entries: readonly AlertArchiveEntry[],
+	window: DateWindow,
+): AlertArchiveEntry[] {
+	return entries.filter((entry) => {
+		if ((entry.active_periods?.length ?? 0) > 0) {
+			return entry.active_periods!.some((period) =>
+				alertWindowOverlaps(period.start_utc, period.end_utc, window),
+			);
+		}
+		if (entry.start_utc != null || entry.end_utc != null) {
+			return alertWindowOverlaps(entry.start_utc, entry.end_utc, window);
+		}
+		return alertWindowOverlaps(entry.first_seen_utc, entry.last_seen_utc, window);
+	});
+}

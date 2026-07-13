@@ -22,6 +22,7 @@ import {
 	assertSafeHistoryArtifactPath,
 	loadHistoryPartitions,
 	mergeAlertArchivePages,
+	selectAlertEntriesForWindow,
 	selectAlertPageRefs,
 	strictIsoDate,
 } from '$lib/v1/history';
@@ -69,7 +70,7 @@ export async function getAlertArchiveRange(
 		},
 		{ signal: ctx?.signal },
 	);
-	return mergeAlertArchivePages(pages);
+	return selectAlertEntriesForWindow(mergeAlertArchivePages(pages), window);
 }
 
 /** Fetch + validate the trailing network-trend series. */
