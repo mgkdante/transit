@@ -53,6 +53,11 @@
           "description": "DATA time of the current historic build; null = historic tier never published",
           "title": "Generated Utc"
         },
+        "history_index": {
+          "default": "historic/history/index.json",
+          "title": "History Index",
+          "type": "string"
+        },
         "hotspots": {
           "default": "historic/hotspots.json",
           "title": "Hotspots",

@@ -53,6 +53,11 @@ def test_web_mirror_has_same_schema_files_as_db_export() -> None:
         "longer in the DB export — delete them"
     )
 
+    assert {
+        "historic_collection_index.schema.json",
+        "historic_availability_index.schema.json",
+    } <= web_names
+
 
 @pytest.mark.parametrize("name", sorted(_schema_basenames(_DB_SCHEMAS)))
 def test_web_mirror_is_byte_identical_to_db_export(name: str) -> None:

@@ -61,6 +61,8 @@ PAYLOAD_METHODOLOGY: dict[str, str] = {
     "historic_alert_history": "alerts-1",
     "historic_alert_archive_page": "alerts-1",
     "historic_alert_archive_index": "alerts-1",
+    "historic_collection_index": "history-1",
+    "historic_availability_index": "history-1",
     "provenance": "provenance-1",
 }
 
@@ -76,13 +78,26 @@ class PayloadEnvelope(BaseModel):
 
 
 class Status(str, Enum):
-    early = "early"; on_time = "on_time"; late = "late"; severe = "severe"; unknown = "unknown"
+    early = "early"
+    on_time = "on_time"
+    late = "late"
+    severe = "severe"
+    unknown = "unknown"
+
 
 class Severity(str, Enum):
-    critical = "critical"; high = "high"; watch = "watch"
+    critical = "critical"
+    high = "high"
+    watch = "watch"
+
 
 class Occupancy(str, Enum):
-    empty = "empty"; many_seats = "many_seats"; few_seats = "few_seats"; standing = "standing"; full = "full"
+    empty = "empty"
+    many_seats = "many_seats"
+    few_seats = "few_seats"
+    standing = "standing"
+    full = "full"
+
 
 class Vehicle(BaseModel):
     id: str
@@ -104,14 +119,17 @@ class Vehicle(BaseModel):
     # web keys honest per-bus fix age / freeze + forward-projection off this.
     reported_utc: str | None = None
 
+
 class VehiclesFile(PayloadEnvelope):
     generated_utc: str
     vehicles: list[Vehicle]
+
 
 class StopEta(BaseModel):
     stop: str
     eta_utc: str
     delay_min: int | None = None
+
 
 class Trip(BaseModel):
     route: str | None = None
@@ -119,15 +137,18 @@ class Trip(BaseModel):
     delay_min: int | None = None
     stops: list[StopEta] = Field(default_factory=list)
 
+
 class TripsFile(PayloadEnvelope):
     generated_utc: str
     trips: dict[str, Trip]
+
 
 class StopDeparture(BaseModel):
     route: str | None = None
     trip: str | None = None
     eta_utc: str
     delay_min: int | None = None
+
 
 class StopDeparturesFile(PayloadEnvelope):
     # stop_id -> chronological next departures, <=2 per route. An absent stop_id
@@ -136,6 +157,7 @@ class StopDeparturesFile(PayloadEnvelope):
     generated_utc: str
     stops: dict[str, list[StopDeparture]] = Field(default_factory=dict)
 
+
 class AlertActivePeriod(BaseModel):
     # S15 additive: one active window of an alert. GTFS-RT alerts carry a LIST of
     # windows; the old path truncated to the first. Either bound may be null (an
@@ -143,6 +165,7 @@ class AlertActivePeriod(BaseModel):
     # and the historic AlertHistoryEntry.
     start_utc: str | None = None
     end_utc: str | None = None
+
 
 class Alert(BaseModel):
     id: str
@@ -176,15 +199,27 @@ class Alert(BaseModel):
     url_en: str | None = None
     active_periods: list[AlertActivePeriod] = Field(default_factory=list)
 
+
 class AlertsFile(PayloadEnvelope):
     generated_utc: str
     alerts: list[Alert]
 
+
 class StatusDist(BaseModel):
-    on_time: int = 0; late: int = 0; severe: int = 0; early: int = 0; unknown: int = 0
+    on_time: int = 0
+    late: int = 0
+    severe: int = 0
+    early: int = 0
+    unknown: int = 0
+
 
 class OccupancyMix(BaseModel):
-    empty: float = 0.0; many_seats: float = 0.0; few_seats: float = 0.0; standing: float = 0.0; full: float = 0.0
+    empty: float = 0.0
+    many_seats: float = 0.0
+    few_seats: float = 0.0
+    standing: float = 0.0
+    full: float = 0.0
+
 
 class DelayBucket(BaseModel):
     # One fixed bin of the network delay distribution. lo_min is the inclusive
@@ -195,6 +230,7 @@ class DelayBucket(BaseModel):
     hi_min: int | None = None
     count: int = 0
 
+
 class NonRespondingRoute(BaseModel):
     # Scheduled trips running NOW with no live vehicle (silent service), per
     # route. Silent trips have no vehicle id by definition, so count is a
@@ -202,6 +238,7 @@ class NonRespondingRoute(BaseModel):
     # equals the scalar non_responding total.
     route_id: str
     count: int
+
 
 class NetworkFile(PayloadEnvelope):
     generated_utc: str
@@ -234,6 +271,7 @@ class NetworkFile(PayloadEnvelope):
     delay_histogram: list[DelayBucket] | None = None
     non_responding_by_route: list[NonRespondingRoute] | None = None
 
+
 class ManifestLiveFiles(BaseModel):
     vehicles: str = "live/vehicles.json"
     trips: str = "live/trips.json"
@@ -248,9 +286,11 @@ class ManifestLiveFiles(BaseModel):
     ttl_s: int = 30
     generated_utc: str
 
+
 # 404-as-empty contract note shared by every per-entity static/historic pointer:
 # a 404 means "no data for this entity" (render an empty state), not a fetch error.
 _404_EMPTY = "; HTTP 404 means no data for this entity — render empty state, not an error"
+
 
 class ManifestStaticFiles(BaseModel):
     routes_index: str = Field(default="static/routes_index.json")
@@ -273,12 +313,14 @@ class ManifestStaticFiles(BaseModel):
         description="DATA time of the current static dataset; null = static tier never published",
     )
 
+
 class ManifestHistoricFiles(BaseModel):
     network_trend: str = Field(default="historic/network_trend.json")
     hotspots: str = Field(default="historic/hotspots.json")
     repeat_offenders: str = Field(default="historic/repeat_offenders.json")
     alert_history: str = Field(default="historic/alert_history.json")
     alerts_index: str = Field(default="historic/alerts/index.json")
+    history_index: str = "historic/history/index.json"
     provenance: str = Field(default="provenance.json")
     receipts_index: str = Field(
         default="historic/receipts/index.json",
@@ -306,17 +348,23 @@ class ManifestHistoricFiles(BaseModel):
         description="DATA time of the current historic build; null = historic tier never published",
     )
 
+
 class ManifestFiles(BaseModel):
     live: ManifestLiveFiles
     static: ManifestStaticFiles = Field(default_factory=ManifestStaticFiles)
     historic: ManifestHistoricFiles = Field(default_factory=ManifestHistoricFiles)
+
 
 class Capability(str, Enum):
     # GC2 H4 — per-surface capability honesty. 'enabled' = the surface is fully served;
     # 'partial' = served but incomplete (e.g. a feed subset); 'unavailable' = the
     # provider's feed simply does not carry it (honest absence, NOT an error);
     # 'not_applicable' = the surface does not apply to this provider at all.
-    enabled = "enabled"; partial = "partial"; unavailable = "unavailable"; not_applicable = "not_applicable"
+    enabled = "enabled"
+    partial = "partial"
+    unavailable = "unavailable"
+    not_applicable = "not_applicable"
+
 
 class ProviderCapabilities(BaseModel):
     # GC2 H4 (DECISIONS #15) — MINIMAL v1 per-provider capability block, ONE field per
@@ -333,6 +381,7 @@ class ProviderCapabilities(BaseModel):
     reliability: Capability | None = None
     accountability: Capability | None = None
     data_trust: Capability | None = None
+
 
 class Manifest(PayloadEnvelope):
     provider: str
@@ -363,6 +412,7 @@ class Manifest(PayloadEnvelope):
 # STATIC tier models (Phase 2) — §8 STATIC shapes, field names ARE the contract
 # ---------------------------------------------------------------------------
 
+
 class RouteIndexEntry(BaseModel):
     id: str
     short: str
@@ -378,9 +428,11 @@ class RouteIndexEntry(BaseModel):
         ),
     )
 
+
 class RoutesIndex(PayloadEnvelope):
     generated_utc: str
     routes: list[RouteIndexEntry]
+
 
 class StopIndexEntry(BaseModel):
     id: str
@@ -394,32 +446,40 @@ class StopIndexEntry(BaseModel):
     # ids serving the stop (route natural-sort order), for search mode + chips.
     mode: str | None = Field(
         default=None,
-        description="highest-priority GTFS mode serving this stop: metro|tram|rail|bus|ferry; null when no route linkage",
+        description=(
+            "highest-priority GTFS mode serving this stop: metro|tram|rail|bus|ferry; "
+            "null when no route linkage"
+        ),
     )
     routes: list[str] = Field(
         default_factory=list,
         description="up to 5 route ids serving this stop, in route natural-sort order",
     )
 
+
 class StopsIndex(PayloadEnvelope):
     generated_utc: str
     stops: list[StopIndexEntry]
+
 
 class RouteStop(BaseModel):
     id: str
     seq: int
     name: str | None = None
 
+
 class RouteDirection(BaseModel):
     dir: int
     headsign: str | None = None
-    shape: dict | None = None          # GeoJSON LineString {"type":"LineString","coordinates":[...]}
+    shape: dict | None = None  # GeoJSON LineString {"type":"LineString","coordinates":[...]}
     stops: list[RouteStop] = Field(default_factory=list)
 
+
 class ServicePeriod(BaseModel):
-    shift: str                         # "am_peak"|"pm_peak"|"midday"|"evening"|"night"|"weekend"
-    window: str | None = None          # e.g. "06:00–09:00"
+    shift: str  # "am_peak"|"pm_peak"|"midday"|"evening"|"night"|"weekend"
+    window: str | None = None  # e.g. "06:00–09:00"
     headway_min: float | None = None
+
 
 class RouteFile(PayloadEnvelope):
     generated_utc: str
@@ -436,10 +496,12 @@ class RouteFile(PayloadEnvelope):
     first_departure: str | None = None
     last_departure: str | None = None
 
+
 class ScheduledRoute(BaseModel):
     route: str
     headsign: str | None = None
     times: list[str] = Field(default_factory=list)
+
 
 class StopFile(PayloadEnvelope):
     generated_utc: str
@@ -452,6 +514,7 @@ class StopFile(PayloadEnvelope):
     routes_served: list[str] = Field(default_factory=list)
     scheduled: list[ScheduledRoute] = Field(default_factory=list)
 
+
 class LabelsFile(PayloadEnvelope):
     generated_utc: str
     labels: dict[str, str]
@@ -460,6 +523,7 @@ class LabelsFile(PayloadEnvelope):
 # ---------------------------------------------------------------------------
 # HISTORIC tier models (Phase 3) — §8 HISTORIC shapes
 # ---------------------------------------------------------------------------
+
 
 class TrendPoint(BaseModel):
     # One trend observation at a single bucket. date is the bucket-start LOCAL
@@ -496,6 +560,7 @@ class TrendPoint(BaseModel):
     wilson_lo: float | None = None
     wilson_hi: float | None = None
 
+
 class NetworkShift(BaseModel):
     # Network-wide reliability for one time-of-day shift or weekday/weekend
     # day-type grain, aggregated across ALL of the provider's routes from
@@ -517,6 +582,7 @@ class NetworkShift(BaseModel):
     wilson_lo: float | None = None
     wilson_hi: float | None = None
 
+
 class NetworkTrend(PayloadEnvelope):
     generated_utc: str
     series: list[TrendPoint] = Field(default_factory=list)
@@ -537,6 +603,7 @@ class NetworkTrend(PayloadEnvelope):
     by_shift: list[NetworkShift] = Field(default_factory=list)
     by_daytype: list[NetworkShift] = Field(default_factory=list)
 
+
 class RouteDelayHistogramBin(BaseModel):
     # One bin of the per-route signed-delay distribution (the §01 distribution chart).
     # Edges are in SECONDS — the spine's native 21-edge resolution, sub-minute near 0
@@ -547,6 +614,7 @@ class RouteDelayHistogramBin(BaseModel):
     lo_sec: int | None = None
     hi_sec: int | None = None
     count: int = 0
+
 
 class ReliabilityPeriod(BaseModel):
     grain: str
@@ -590,6 +658,7 @@ class ReliabilityPeriod(BaseModel):
     # whenever prior_otp_pct is None (no prior window / not a windowed period).
     prior_on_time: int | None = None
 
+
 class CancellationPeriod(BaseModel):
     # Per-route cancellation over one closed local day (or a derived grain).
     # cancellation_rate_pct = 100 * canceled_trip_days / total_trip_days, where a
@@ -619,6 +688,7 @@ class CancellationPeriod(BaseModel):
     delivered_trip_days: int | None = None
     silent_trip_days: int | None = None
     service_completeness_pct: float | None = None
+
 
 class HeadwayPeriod(BaseModel):
     # shift is the BARE time-of-day token (am_peak|midday|pm_peak|evening|night) —
@@ -656,6 +726,7 @@ class HeadwayPeriod(BaseModel):
     prior_observation_count: int | None = None
     prior_observed_min: float | None = None
 
+
 class ServiceSpanPeriod(BaseModel):
     # Per-route service span over one GTFS SERVICE DAY (start_date), NOT the calendar capture
     # day (FIX-2) — so an overnight trip stays on its own service day instead of faking a ~00:00
@@ -674,6 +745,7 @@ class ServiceSpanPeriod(BaseModel):
     last_trip_delay_min: float | None = None
     trip_count: int | None = None
 
+
 class SkippedStopPeriod(BaseModel):
     # Per-route skipped-stop rate over one closed local day. rate_pct = skipped /
     # all observed stop-time updates (GTFS-RT SKIPPED=1); None when none observed.
@@ -682,6 +754,7 @@ class SkippedStopPeriod(BaseModel):
     skipped_stop_rate_pct: float | None = None
     skipped_stop_count: int | None = None
     stop_time_update_count: int | None = None
+
 
 class CrowdingDelayCell(BaseModel):
     # Per-route delay×crowding, TRULY co-observed (FIX-3): each delay observation carries its OWN
@@ -702,6 +775,7 @@ class CrowdingDelayCell(BaseModel):
     observation_count: int | None = None
     day_count: int | None = None
 
+
 class CrosstabCell(BaseModel):
     # Tier-3 2D delay crosstab cell derived from gold.route_delay_spine: the
     # per-route reliability for ONE (shift, day_type) intersection, regrouped from
@@ -720,12 +794,14 @@ class CrosstabCell(BaseModel):
     severe_pct: float | None = None
     observation_count: int | None = None
 
+
 class RouteHabits(BaseModel):
     scale: str
     # Per-route relative-problem heatmap: each cell is a fraction of the route's
     # worst (dow,hour) cell in [0,1] (1.0 = worst hour), or null where the route
     # had no observations for that cell (slice-9.1.1x).
     matrix: list[list[float | None]] = Field(default_factory=list)
+
 
 class WeakStop(BaseModel):
     id: str
@@ -744,6 +820,7 @@ class WeakStop(BaseModel):
     wilson_lo: float | None = None
     wilson_hi: float | None = None
 
+
 class RouteDayOfWeek(BaseModel):
     # Per-route weekday seasonality from gold.route_delay_spine, GROUP BY ISO dow
     # (1=Mon..7=Sun). trip_count is intentionally omitted (no additive distinct-trip
@@ -753,6 +830,7 @@ class RouteDayOfWeek(BaseModel):
     severe_pct: float | None = None
     observation_count: int | None = None
 
+
 class OccupancyByGrain(BaseModel):
     # S7: grain-aware crowding band-shares for the §04 surface. grain is one of
     # 'day' (most recent closed local day), 'week' (trailing 7d), 'month' (trailing
@@ -761,6 +839,7 @@ class OccupancyByGrain(BaseModel):
     # mix), the same rule as occupancy_mix.
     grain: str
     mix: OccupancyMix | None = None
+
 
 class OccupancyByDow(BaseModel):
     # S7: crowding band-shares grouped by ISO weekday (1=Mon..7=Sun) over the same
@@ -777,6 +856,7 @@ class OccupancyByDow(BaseModel):
     # weekday with data-days but zero band telemetry (where mix is None).
     n: int | None = None
 
+
 class OccupancyByHour(BaseModel):
     # GC2 H3: crowding band-shares grouped by LOCAL hour-of-day (0..23) over the same
     # trailing-30d window as occupancy_mix, for the §04 time-of-day (rush-hour vs
@@ -791,6 +871,7 @@ class OccupancyByHour(BaseModel):
     # data-days but zero band telemetry (where mix is None). Mirrors OccupancyByDow.n;
     # it is the sum of the 5 band counts, NOT a distinct-trip count.
     n: int | None = None
+
 
 class ReliabilityByGrain(BaseModel):
     # S7-B windowable §1: the per-route delay breakdowns (by_shift / by_daytype /
@@ -810,6 +891,7 @@ class ReliabilityByGrain(BaseModel):
     day_of_week: list[RouteDayOfWeek] = Field(default_factory=list)
     by_shift_daytype: list[CrosstabCell] = Field(default_factory=list)
 
+
 class RouteHabitsByGrain(BaseModel):
     # S7-B windowable §1 heatmap: the 7x24 repeat-problem matrix recomposed from
     # gold.route_delay_spine over ONE trailing window (same grains/windows as
@@ -828,6 +910,7 @@ class RouteHabitsByGrain(BaseModel):
     habits: RouteHabits | None = None
     cells_observed: int = 0
     cells_suppressed: int = 0
+
 
 class HeadwayByGrain(BaseModel):
     # S7-B windowable §2 ("The wait" follows the grain rail): per-shift scheduled-vs-observed
@@ -853,9 +936,11 @@ class HeadwayByGrain(BaseModel):
     date: str | None = None
     headway: list[HeadwayPeriod] = Field(default_factory=list)
 
+
 class WeakStopGrain(BaseModel):
-    # S7-B windowable §4 ("Where it's worst" follows the grain rail): the worst-N stops on this
-    # route recomposed over ONE trailing window off gold.stop_delay_spine. grain='day'|'week'|'month';
+    # S7-B windowable §4 ("Where it's worst" follows the grain rail): the worst-N stops
+    # on this route recomposed over ONE trailing window off gold.stop_delay_spine.
+    # grain='day'|'week'|'month';
     # window anchored on the route's newest closed STOP-DELAY day (its OWN anchor, distinct from the
     # delay-spine + headway anchors) — day=anchor; week=anchor-6..anchor; month=anchor-29..anchor.
     # date = window START (ISO). stops are RANKED by the not-severe Wilson LOWER bound ASC (a low LB
@@ -869,6 +954,7 @@ class WeakStopGrain(BaseModel):
     date: str | None = None
     stops: list[WeakStop] = Field(default_factory=list)
 
+
 # S7-B payload guard: the published route_reliability/{id}.json must stay under this
 # many bytes (model_dump_json, UTF-8 — the exact bytes the publisher writes). 90 KiB
 # clears the measured worst case (clean ~83.7 KB with weak_stops_by_grain at the N=15
@@ -880,6 +966,7 @@ class WeakStopGrain(BaseModel):
 # consuming the old ~2.7 KB margin — re-anchored on the measured value). Exported so the
 # web can share it.
 ROUTE_RELIABILITY_BYTE_CEILING = 92160
+
 
 class RouteReliability(PayloadEnvelope):
     generated_utc: str
@@ -932,7 +1019,8 @@ class RouteReliability(PayloadEnvelope):
     # S7-B windowable §2 (additive-optional): per-shift headway recomputed per time window
     # (day/week/month) off gold.route_headway_shift_daily, so §2 follows the grain rail. The
     # scalar `headway` above STAYS whole-history (back-compat — still reads route_headway_by_shift
-    # until the 0066 fast-follow re-points it). Default empty so already-published snapshots validate.
+    # until the 0066 fast-follow re-points it). Default empty so already-published snapshots
+    # validate.
     headway_by_grain: list[HeadwayByGrain] = Field(default_factory=list)
     # S7-B windowable §4 (additive-optional): worst-N stops per day/week/month off
     # gold.stop_delay_spine, ranked by the not-severe Wilson lower bound (the
@@ -940,6 +1028,7 @@ class RouteReliability(PayloadEnvelope):
     # whole-history (back-compat — reads stop_delay_weekly until the 0067 fast-follow).
     # Default empty so already-published snapshots validate.
     weak_stops_by_grain: list[WeakStopGrain] = Field(default_factory=list)
+
 
 class StopReliabilityPeriod(BaseModel):
     grain: str
@@ -958,9 +1047,11 @@ class StopReliabilityPeriod(BaseModel):
     wilson_lo: float | None = None
     wilson_hi: float | None = None
 
+
 class StopByRoute(BaseModel):
     route: str
     avg_delay_min: float | None = None
+
 
 class StopDailyPoint(BaseModel):
     # One closed provider-local day for a stop, SUMMED across all of the stop's
@@ -980,6 +1071,7 @@ class StopDailyPoint(BaseModel):
     severe_count: int
     severe_pct: float | None = None
     avg_delay_min: float | None = None
+
 
 class StopReliability(PayloadEnvelope):
     generated_utc: str
@@ -1014,6 +1106,7 @@ class StopReliability(PayloadEnvelope):
     # snapshots lacking this key still validate.
     daily: list[StopDailyPoint] = Field(default_factory=list)
 
+
 class Hotspot(BaseModel):
     rank: int
     type: str
@@ -1021,6 +1114,7 @@ class Hotspot(BaseModel):
     name: str | None = None
     severity: str | None = None
     otp_delta_pts: float | None = None
+
 
 class HotspotEntry(BaseModel):
     # S12 evidence-rich per-entry shape for the re-granulated by_grain ladders.
@@ -1064,6 +1158,7 @@ class HotspotEntry(BaseModel):
     issue_count: int | None = None
     avg_delay_min: float | None = None
 
+
 class HotspotGrain(BaseModel):
     # S12 one re-granulated worst-N ladder for ONE grain, mirroring WeakStopGrain.
     # grain='day'|'week'|'month' anchored on the network's newest CLOSED day per spine
@@ -1099,6 +1194,7 @@ class HotspotGrain(BaseModel):
     # union tray count, so the web can show tray shown/total honestly.
     tray_total: int | None = None
 
+
 # S12 payload guard: the published historic/hotspots.json must stay under this many
 # bytes (model_dump_json, UTF-8 — the exact bytes the publisher writes). LADDER: the
 # scalar hotspots[] top-20 (byte-identical, ~2-3 KB) PLUS the by_grain ladders =
@@ -1121,6 +1217,7 @@ class HotspotGrain(BaseModel):
 # (worst-case ~179.5 KB — still 1.46x under the ceiling, no tray-tightening needed).
 HOTSPOTS_BYTE_CEILING = 262144
 
+
 class Hotspots(PayloadEnvelope):
     generated_utc: str
     hotspots: list[Hotspot] = Field(default_factory=list)
@@ -1130,6 +1227,7 @@ class Hotspots(PayloadEnvelope):
     # Ordered day, week, month, shift per the grain rail; each HotspotGrain interleaves
     # route+stop entries ranked on the one cross-kind severe-rate Wilson LB (WEB1).
     by_grain: list[HotspotGrain] = Field(default_factory=list)
+
 
 class Offender(BaseModel):
     type: str
@@ -1150,6 +1248,7 @@ class Offender(BaseModel):
     window_days: int | None = None
     avg_delay_min: float | None = None
     severity: str | None = None
+
 
 class RepeatOffenderEntry(BaseModel):
     # S14 evidence-rich per-entry shape for the re-granulated by_grain recurrence ladders,
@@ -1189,6 +1288,7 @@ class RepeatOffenderEntry(BaseModel):
     window_days: int | None = None
     avg_delay_min: float | None = None
 
+
 class RepeatOffenderGrain(BaseModel):
     # S14 one re-granulated repeat-offender ladder for ONE grain, mirroring HotspotGrain.
     # grain = 'week'|'month' ONLY — a repeat offender is UNDEFINED on a single day (you
@@ -1214,6 +1314,7 @@ class RepeatOffenderGrain(BaseModel):
     total_ranked_vehicles: int | None = None
     tray_total: int | None = None
 
+
 # S14 payload guard: the published historic/repeat_offenders.json must stay under this many
 # bytes (model_dump_json, UTF-8 — the exact bytes the publisher writes). LADDER: the scalar
 # offenders[] top-50 (byte-identical, ~5-8 KB with the additive structured fields) PLUS the
@@ -1231,6 +1332,7 @@ class RepeatOffenderGrain(BaseModel):
 # entries, keep tray_total). Exported so the web can share the constant. Introduced at S14.
 REPEAT_OFFENDERS_BYTE_CEILING = 262144
 
+
 class RepeatOffenders(PayloadEnvelope):
     generated_utc: str
     offenders: list[Offender] = Field(default_factory=list)
@@ -1242,15 +1344,18 @@ class RepeatOffenders(PayloadEnvelope):
     # the one per-kind severe-rate Wilson LB.
     by_grain: list[RepeatOffenderGrain] = Field(default_factory=list)
 
+
 class ReceiptWorstRoute(BaseModel):
     id: str
     name: str | None = None
     otp_delta_pts: float | None = None
 
+
 class ReceiptWorstStop(BaseModel):
     id: str
     name: str | None = None
     avg_delay_min: float | None = None
+
 
 class ReceiptShiftCut(BaseModel):
     # S13 time-of-day cut of the receipt's day: the network-wide delay/severe reading
@@ -1269,6 +1374,7 @@ class ReceiptShiftCut(BaseModel):
     severe_pct: float | None = None
     avg_delay_min: float | None = None
 
+
 class ReceiptNotReportedRoute(BaseModel):
     # S13 one route that was SCHEDULED that day but produced ZERO realtime observations
     # (total_trip_days=0 AND scheduled_trip_days>0) — distinct from a route with
@@ -1278,6 +1384,7 @@ class ReceiptNotReportedRoute(BaseModel):
     id: str
     name: str | None = None
     scheduled_trip_days: int | None = None
+
 
 class ReceiptServiceStates(BaseModel):
     # S13 the receipt day's scheduled→delivered→cancelled→silent service-state split,
@@ -1300,6 +1407,7 @@ class ReceiptServiceStates(BaseModel):
     service_completeness_pct: float | None = None
     not_reported_routes: list[ReceiptNotReportedRoute] = Field(default_factory=list)
 
+
 class Receipt(PayloadEnvelope):
     generated_utc: str
     date: str
@@ -1314,14 +1422,16 @@ class Receipt(PayloadEnvelope):
     alerts: int | None = None
     rider_impact_score: float | None = None
     # S13 additive-optional re-granulation. All default empty/None so an already-published
-    # receipt (scalar-only) stays FIELD-IDENTICAL (a republished pre-S13 receipt gains only the additive keys) under the additive-optional growth
-    # rule — the scalar fields above are UNTOUCHED. by_shift = the day's time-of-day cuts
-    # (ordered by the canonical shift order; a shift with no observations is omitted).
+    # receipt (scalar-only) stays FIELD-IDENTICAL (a republished pre-S13 receipt gains only
+    # the additive keys) under the additive-optional growth rule — the scalar fields above
+    # are UNTOUCHED. by_shift = the day's time-of-day cuts (ordered by the canonical shift
+    # order; a shift with no observations is omitted).
     # service_states = the day's scheduled→delivered→cancelled→silent split + the
     # not-reported-routes list + the ONE service_completeness_pct (DECISIONS DB1: the web
     # heroes completeness from service_states, no duplicate top-level scalar).
     by_shift: list[ReceiptShiftCut] = Field(default_factory=list)
     service_states: ReceiptServiceStates | None = None
+
 
 # S13 NOT-reported route list cap: the top-N routes (by scheduled_trip_days DESC) that
 # were scheduled yet produced ZERO realtime observations on the receipt day. The list is
@@ -1340,6 +1450,7 @@ NOT_REPORTED_ROUTES_CAP = 50
 # (an un-capped all-route not-reported list on a whole-network-dark day). Exported so the
 # web can share the constant. History: introduced at S13.
 RECEIPT_BYTE_CEILING = 65536
+
 
 class AlertHistoryEntry(BaseModel):
     id: str
@@ -1369,12 +1480,14 @@ class AlertHistoryEntry(BaseModel):
     url: str | None = None
     active_periods: list[AlertActivePeriod] = Field(default_factory=list)
 
+
 class AlertBreakdownBucket(BaseModel):
     # One cause/effect/severity value with its distinct-alert count + median
     # duration (minutes). key is the decoded label, or "unknown" when STM omits it.
     key: str
     count: int = 0
     median_duration_min: float | None = None
+
 
 class AlertBreakdown(BaseModel):
     # Tier-2 additive: distinct-alert distribution over the alert-history window.
@@ -1383,6 +1496,7 @@ class AlertBreakdown(BaseModel):
     by_cause: list[AlertBreakdownBucket] = Field(default_factory=list)
     by_effect: list[AlertBreakdownBucket] = Field(default_factory=list)
     by_severity: list[AlertBreakdownBucket] = Field(default_factory=list)
+
 
 # S15 payload guard: a published historic/alert_history.json must stay under this
 # many bytes (model_dump_json, UTF-8). The window serves the full retention span
@@ -1399,6 +1513,7 @@ ALERT_HISTORY_BYTE_CEILING = 524288
 # exact compact UTF-8 size; the gate enforces the same limits before upload.
 ALERT_ARCHIVE_PAGE_ENTRY_CAP = 250
 ALERT_ARCHIVE_PAGE_BYTE_CEILING = 524288
+
 
 class AlertHistory(PayloadEnvelope):
     generated_utc: str
@@ -1455,15 +1570,64 @@ class AlertArchiveIndex(PayloadEnvelope):
     total_alerts: int = Field(ge=0)
     months: list[AlertArchiveMonth]
 
+
+class HistorySelectionMode(str, Enum):
+    range = "range"
+    date = "date"
+
+
+class HistoricCoverageGap(BaseModel):
+    start_date: str
+    end_date: str
+    reason: str | None = None
+
+
+class HistoricPartitionRef(BaseModel):
+    path: str
+    coverage_start: str
+    coverage_end: str
+    count: int | None = Field(default=None, ge=0)
+    sha256: str | None = None
+
+
+class HistoricCollectionIndex(PayloadEnvelope):
+    generated_utc: str
+    family: str
+    selection_mode: HistorySelectionMode
+    entity_id: str | None = None
+    collection_generation_id: str | None = None
+    first_available_date: str | None = None
+    last_available_date: str | None = None
+    available_dates: list[str] = Field(default_factory=list)
+    gaps: list[HistoricCoverageGap] = Field(default_factory=list)
+    partitions: list[HistoricPartitionRef] = Field(default_factory=list)
+
+
+class HistoricFamilyAvailability(BaseModel):
+    family: str
+    selection_mode: HistorySelectionMode
+    index_path: str
+    first_available_date: str | None = None
+    last_available_date: str | None = None
+    gaps: list[HistoricCoverageGap] = Field(default_factory=list)
+
+
+class HistoricAvailabilityIndex(PayloadEnvelope):
+    generated_utc: str
+    families: list[HistoricFamilyAvailability] = Field(default_factory=list)
+
+
 class ProvenanceSource(BaseModel):
     feed: str
     chain: str | None = None
     last_loaded_utc: str | None = None
 
+
 class ProvenanceFreshness(BaseModel):
     feed: str
     status: str | None = None
     age_s: int | None = None
+
 
 class ProvenanceConformance(BaseModel):
     # GTFS feed-conformance for the provider's latest static load, mirroring the
@@ -1553,6 +1717,7 @@ class DataHealth(PayloadEnvelope):
     or was published with the gate disabled (the gate outcome is UNKNOWN, never
     assumed pass). age_s is computed server-side off the DB clock.
     """
+
     generated_utc: str
     lanes: list[LaneHealth] = Field(default_factory=list)
     feeds: list[DataHealthFeed] = Field(default_factory=list)
@@ -1562,12 +1727,14 @@ class DataHealth(PayloadEnvelope):
 # Basemap pointer + receipts discovery index (slice-9.1.1r)
 # ---------------------------------------------------------------------------
 
+
 class BasemapFile(PayloadEnvelope):
     """static/basemap.json — a settings-driven pointer to the hosted PMTiles archive.
 
     Published only when SNAPSHOT_BASEMAP_PMTILES_URL is configured; until then
     Manifest.basemap is null and no basemap.json object exists.
     """
+
     format: str = "pmtiles"
     url: str
     style_url: str | None = None
@@ -1575,6 +1742,7 @@ class BasemapFile(PayloadEnvelope):
     min_zoom: int = 0
     max_zoom: int = 15
     generated_utc: str
+
 
 class ReceiptAvailability(BaseModel):
     # S13 per-date availability metadata for the S8 DateRangePicker (DECISIONS DB3). A
@@ -1596,6 +1764,7 @@ class ReceiptAvailability(BaseModel):
     has_schedule: bool = False
     publish_generation_id: str | None = None
 
+
 class ReceiptsIndex(PayloadEnvelope):
     dates: list[str] = Field(
         default_factory=list,
@@ -1606,11 +1775,13 @@ class ReceiptsIndex(PayloadEnvelope):
     )
     generated_utc: str
     # S13 additive-optional per-date availability metadata (DECISIONS DB3). Default empty
-    # so an already-published index (dates-only) stays FIELD-IDENTICAL (a republished pre-S13 receipt gains only the additive keys); `dates`
-    # above stays UNTOUCHED. One ReceiptAvailability per published date (available[].date
-    # is a subset of dates), letting the S8 picker distinguish a rich receipt from an
-    # alerts-only shell and a schedule-known day from an empty one with honest reasons.
+    # so an already-published index (dates-only) stays FIELD-IDENTICAL (a republished pre-S13
+    # receipt gains only the additive keys); `dates` above stays UNTOUCHED. One
+    # ReceiptAvailability per published date (available[].date is a subset of dates), letting
+    # the S8 picker distinguish a rich receipt from an alerts-only shell and a schedule-known
+    # day from an empty one with honest reasons.
     available: list[ReceiptAvailability] = Field(default_factory=list)
+
 
 class RouteReliabilityIndex(PayloadEnvelope):
     route_ids: list[str] = Field(
@@ -1649,6 +1820,8 @@ TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
     "historic_alert_history": AlertHistory,
     "historic_alert_archive_page": AlertArchivePage,
     "historic_alert_archive_index": AlertArchiveIndex,
+    "historic_collection_index": HistoricCollectionIndex,
+    "historic_availability_index": HistoricAvailabilityIndex,
     "provenance": Provenance,
     "live_data_health": DataHealth,
 }

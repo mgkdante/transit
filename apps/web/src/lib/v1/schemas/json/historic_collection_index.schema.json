@@ -1,0 +1,208 @@
+{
+  "$defs": {
+    "HistoricCoverageGap": {
+      "properties": {
+        "end_date": {
+          "title": "End Date",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "start_date": {
+          "title": "Start Date",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start_date",
+        "end_date"
+      ],
+      "title": "HistoricCoverageGap",
+      "type": "object"
+    },
+    "HistoricPartitionRef": {
+      "properties": {
+        "count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Count"
+        },
+        "coverage_end": {
+          "title": "Coverage End",
+          "type": "string"
+        },
+        "coverage_start": {
+          "title": "Coverage Start",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        }
+      },
+      "required": [
+        "path",
+        "coverage_start",
+        "coverage_end"
+      ],
+      "title": "HistoricPartitionRef",
+      "type": "object"
+    },
+    "HistorySelectionMode": {
+      "enum": [
+        "range",
+        "date"
+      ],
+      "title": "HistorySelectionMode",
+      "type": "string"
+    }
+  },
+  "properties": {
+    "available_dates": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Available Dates",
+      "type": "array"
+    },
+    "collection_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Collection Generation Id"
+    },
+    "entity_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Entity Id"
+    },
+    "family": {
+      "title": "Family",
+      "type": "string"
+    },
+    "first_available_date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "First Available Date"
+    },
+    "gaps": {
+      "items": {
+        "$ref": "#/$defs/HistoricCoverageGap"
+      },
+      "title": "Gaps",
+      "type": "array"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "last_available_date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Available Date"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "partitions": {
+      "items": {
+        "$ref": "#/$defs/HistoricPartitionRef"
+      },
+      "title": "Partitions",
+      "type": "array"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "selection_mode": {
+      "$ref": "#/$defs/HistorySelectionMode"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "family",
+    "selection_mode"
+  ],
+  "title": "HistoricCollectionIndex",
+  "type": "object"
+}
