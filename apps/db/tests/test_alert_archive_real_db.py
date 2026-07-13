@@ -2,14 +2,44 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import uuid
 from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import DBAPIError
 
-from transit_ops.gold.alert_archive import sync_alert_archive_on_connection
+from transit_ops.gold.alert_archive import (
+    _ALERT_ARCHIVE_LOCK_SQL,
+    sync_alert_archive_on_connection,
+)
+
+
+def test_alert_archive_provider_lock_serializes_concurrent_syncs() -> None:
+    database_url = os.getenv("TRANSIT_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("set TRANSIT_TEST_DATABASE_URL for the PostgreSQL archive proof")
+
+    engine = create_engine(database_url)
+    provider_id = f"archive-lock-{uuid.uuid4().hex[:10]}"
+    with engine.connect() as first, engine.connect() as second:
+        first_transaction = first.begin()
+        second_transaction = second.begin()
+        try:
+            first.execute(_ALERT_ARCHIVE_LOCK_SQL, {"provider_id": provider_id})
+            second.execute(text("SET LOCAL lock_timeout = '100ms'"))
+
+            with pytest.raises(DBAPIError) as blocked:
+                second.execute(_ALERT_ARCHIVE_LOCK_SQL, {"provider_id": provider_id})
+
+            assert getattr(blocked.value.orig, "sqlstate", None) == "55P03"
+        finally:
+            if second_transaction.is_active:
+                second_transaction.rollback()
+            if first_transaction.is_active:
+                first_transaction.rollback()
 
 
 def test_alert_archive_insert_update_and_unchanged_rerun() -> None:
@@ -110,7 +140,7 @@ def test_alert_archive_insert_update_and_unchanged_rerun() -> None:
                         :snapshot_id,
                         0,
                         :provider_id,
-                        'A-1',
+                        NULL,
                         'Votre ligne',
                         'Terminus temporaire.',
                         'Your line',
@@ -159,6 +189,7 @@ def test_alert_archive_insert_update_and_unchanged_rerun() -> None:
                 {"snapshot_id": snapshot_id},
             )
 
+            connection.execute(text("SET LOCAL TIME ZONE 'UTC'"))
             first = sync_alert_archive_on_connection(
                 connection,
                 provider_id=provider_id,
@@ -167,17 +198,31 @@ def test_alert_archive_insert_update_and_unchanged_rerun() -> None:
                 synced_at_utc=datetime(2026, 7, 13, 4, 0, tzinfo=UTC),
             )
             assert (first.inserted_count, first.updated_count, first.unchanged_count) == (1, 0, 0)
+            synthetic_basis = "|".join(
+                str(value or "")
+                for value in (
+                    "Votre ligne",
+                    "WARNING",
+                    datetime(2026, 7, 8, 13, 0, tzinfo=UTC),
+                    datetime(2026, 7, 10, 19, 0, tzinfo=UTC),
+                )
+            )
+            expected_alert_id = (
+                f"{provider_id}-alert-"
+                f"{hashlib.sha1(synthetic_basis.encode(), usedforsecurity=False).hexdigest()[:12]}"
+            )
             initial = (
                 connection.execute(
                     text(
                         "SELECT * FROM gold.alert_archive_entry "
-                        "WHERE provider_id = :provider_id AND alert_id = 'A-1'"
+                        "WHERE provider_id = :provider_id AND alert_id = :alert_id"
                     ),
-                    {"provider_id": provider_id},
+                    {"provider_id": provider_id, "alert_id": expected_alert_id},
                 )
                 .mappings()
                 .one()
             )
+            assert initial["alert_id"] == expected_alert_id
             assert initial["description_text"] == "Terminus temporaire."
             assert initial["description_text_en"] == "Temporary terminus."
             assert initial["route_ids"] == ["45"]
@@ -211,6 +256,7 @@ def test_alert_archive_insert_update_and_unchanged_rerun() -> None:
                 {"snapshot_id": snapshot_id, "provider_id": provider_id},
             )
 
+            connection.execute(text("SET LOCAL TIME ZONE 'America/Toronto'"))
             second = sync_alert_archive_on_connection(
                 connection,
                 provider_id=provider_id,
@@ -227,9 +273,9 @@ def test_alert_archive_insert_update_and_unchanged_rerun() -> None:
                 connection.execute(
                     text(
                         "SELECT * FROM gold.alert_archive_entry "
-                        "WHERE provider_id = :provider_id AND alert_id = 'A-1'"
+                        "WHERE provider_id = :provider_id AND alert_id = :alert_id"
                     ),
-                    {"provider_id": provider_id},
+                    {"provider_id": provider_id, "alert_id": expected_alert_id},
                 )
                 .mappings()
                 .one()
@@ -240,6 +286,7 @@ def test_alert_archive_insert_update_and_unchanged_rerun() -> None:
             assert changed["description_text_en"] == "Temporary terminus."
             assert changed["route_ids"] == ["45", "747"]
 
+            connection.execute(text("SET LOCAL TIME ZONE 'Asia/Tokyo'"))
             third = sync_alert_archive_on_connection(
                 connection,
                 provider_id=provider_id,
@@ -251,9 +298,9 @@ def test_alert_archive_insert_update_and_unchanged_rerun() -> None:
             unchanged_updated_at = connection.execute(
                 text(
                     "SELECT updated_at_utc FROM gold.alert_archive_entry "
-                    "WHERE provider_id = :provider_id AND alert_id = 'A-1'"
+                    "WHERE provider_id = :provider_id AND alert_id = :alert_id"
                 ),
-                {"provider_id": provider_id},
+                {"provider_id": provider_id, "alert_id": expected_alert_id},
             ).scalar_one()
             assert unchanged_updated_at == changed["updated_at_utc"]
         finally:

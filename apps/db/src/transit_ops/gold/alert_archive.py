@@ -16,6 +16,16 @@ from transit_ops.db.connection import make_engine
 from transit_ops.settings import Settings, get_settings
 from transit_ops.sql_registry import named_query
 
+_ALERT_ARCHIVE_LOCK_SQL = named_query(
+    "alerts.archive.lock",
+    """
+    SELECT pg_advisory_xact_lock(
+        hashtext('transit.alert_archive'),
+        hashtext(:provider_id)
+    )
+    """,
+)
+
 _ALERT_ARCHIVE_SOURCE_SQL = named_query(
     "alerts.archive.source",
     """
@@ -24,13 +34,14 @@ _ALERT_ARCHIVE_SOURCE_SQL = named_query(
             a.i3_alert_snapshot_id,
             a.alert_index,
             a.provider_id,
+            NULLIF(BTRIM(a.alert_id), '') AS upstream_alert_id,
             COALESCE(
-                NULLIF(BTRIM(a.alert_id), ''),
-                a.provider_id || '-alert-' || SUBSTRING(
+                'upstream:' || NULLIF(BTRIM(a.alert_id), ''),
+                'synthetic:' || SUBSTRING(
                     MD5(
                         COALESCE(a.alert_header_text, '') || '|' ||
-                        COALESCE(a.active_period_start_utc::text, '') || '|' ||
-                        COALESCE(a.active_period_end_utc::text, '')
+                        COALESCE(EXTRACT(EPOCH FROM a.active_period_start_utc)::text, '') || '|' ||
+                        COALESCE(EXTRACT(EPOCH FROM a.active_period_end_utc)::text, '')
                     ) FROM 1 FOR 12
                 )
             ) AS stable_alert_id,
@@ -161,7 +172,7 @@ _ALERT_ARCHIVE_SOURCE_SQL = named_query(
         FROM base
     )
     SELECT
-        l.stable_alert_id AS alert_id,
+        l.upstream_alert_id AS alert_id,
         DATE_TRUNC(
             'month',
             COALESCE(v.start_utc, s.first_seen_utc)
@@ -349,14 +360,19 @@ def _stable_alert_id(
     provider_id: str,
     upstream_id: object,
     header_text: object,
+    severity: object,
     start_utc: object,
     end_utc: object,
 ) -> str:
     source_id = str(upstream_id).strip() if upstream_id is not None else ""
     if source_id:
         return source_id
-    basis = "|".join((str(header_text or ""), _iso(start_utc) or "", _iso(end_utc) or ""))
-    digest = hashlib.md5(basis.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
+    normalized_start = _utc(start_utc)
+    normalized_end = _utc(end_utc)
+    basis = "|".join(
+        str(value or "") for value in (header_text, severity, normalized_start, normalized_end)
+    )
+    digest = hashlib.sha1(basis.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
     return f"{provider_id}-alert-{digest}"
 
 
@@ -415,6 +431,7 @@ def _record_from_source(
         provider_id,
         row.get("alert_id"),
         row.get("header_text"),
+        row.get("severity"),
         row.get("start_utc"),
         row.get("end_utc"),
     )
@@ -448,13 +465,16 @@ def _merge_record(
     merged = dict(source)
     merged["archive_month"] = _date(existing.get("archive_month"))
     merged["first_seen_utc"] = _utc(existing.get("first_seen_utc"))
+    existing_last_seen = _utc(existing.get("last_seen_utc"))
+    source_is_newer = existing_last_seen is None or source["last_seen_utc"] > existing_last_seen
     merged["last_seen_utc"] = max(
-        value
-        for value in (_utc(existing.get("last_seen_utc")), source["last_seen_utc"])
-        if value is not None
+        value for value in (existing_last_seen, source["last_seen_utc"]) if value is not None
     )
     for field in _SCALAR_FIELDS:
-        if source.get(field) is None:
+        if source_is_newer:
+            if source.get(field) is None:
+                merged[field] = existing.get(field)
+        elif existing.get(field) is not None:
             merged[field] = existing.get(field)
     merged["start_utc"] = _utc(merged.get("start_utc"))
     merged["end_utc"] = _utc(merged.get("end_utc"))
@@ -509,6 +529,7 @@ def sync_alert_archive_on_connection(
     if from_date > to_date:
         raise ValueError("from_date must be on or before to_date")
     synced_at = _utc(synced_at_utc) or datetime.now(UTC)
+    connection.execute(_ALERT_ARCHIVE_LOCK_SQL, {"provider_id": provider_id})
     rows = list(
         connection.execute(
             _ALERT_ARCHIVE_SOURCE_SQL,

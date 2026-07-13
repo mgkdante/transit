@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from transit_ops.gold.alert_archive import (
     _ALERT_ARCHIVE_EXISTING_SQL,
+    _ALERT_ARCHIVE_LOCK_SQL,
     _ALERT_ARCHIVE_SOURCE_SQL,
     _ALERT_ARCHIVE_UPSERT_SQL,
     _stable_alert_id,
@@ -40,6 +43,8 @@ class FakeConnection:
         self.calls.append((name, params))
         if name == "alerts.archive.source":
             return _Rows(self.source)
+        if name == "alerts.archive.lock":
+            return _Rows([])
         if name == "alerts.archive.existing":
             return _Rows(self.existing)
         if name == "alerts.archive.upsert":
@@ -94,6 +99,7 @@ def run_sync(connection: FakeConnection, *, dry_run: bool = False):
 
 
 def test_source_queries_are_named_bounded_and_uncapped() -> None:
+    assert query_name(_ALERT_ARCHIVE_LOCK_SQL) == "alerts.archive.lock"
     assert query_name(_ALERT_ARCHIVE_SOURCE_SQL) == "alerts.archive.source"
     assert query_name(_ALERT_ARCHIVE_EXISTING_SQL) == "alerts.archive.existing"
     assert query_name(_ALERT_ARCHIVE_UPSERT_SQL) == "alerts.archive.upsert"
@@ -105,18 +111,36 @@ def test_source_queries_are_named_bounded_and_uncapped() -> None:
     assert "silver.i3_alert_active_periods" in source
     assert "LIMIT 500" not in source.upper()
     assert "LIMIT " not in source.upper()
+    assert "pg_advisory_xact_lock" in str(_ALERT_ARCHIVE_LOCK_SQL)
+    assert "EXTRACT(EPOCH FROM a.active_period_start_utc)" in source
+    assert "EXTRACT(EPOCH FROM a.active_period_end_utc)" in source
+    assert "l.upstream_alert_id AS alert_id" in source
     latest_values = source.split("latest_values AS (", 1)[1].split("), seen AS (", 1)[0]
     assert "i3_alert_snapshot_id DESC" in latest_values
     assert "alert_index DESC" in latest_values
 
 
 def test_stable_alert_id_keeps_upstream_or_synthesizes_deterministically() -> None:
-    assert _stable_alert_id("stm", " A-10 ", "H", START, END) == "A-10"
-    synthesized = _stable_alert_id("stm", None, "H", START, END)
-    assert synthesized == _stable_alert_id("stm", "", "H", START, END)
-    assert synthesized == _stable_alert_id("stm", None, "H", START, END)
+    assert _stable_alert_id("stm", " A-10 ", "H", "WARNING", START, END) == "A-10"
+    synthesized = _stable_alert_id("stm", None, "H", "WARNING", START, END)
+    assert synthesized == _stable_alert_id("stm", "", "H", "WARNING", START, END)
+    assert synthesized == _stable_alert_id("stm", None, "H", "WARNING", START, END)
     assert synthesized.startswith("stm-alert-")
-    assert synthesized != _stable_alert_id("stm", None, "Other", START, END)
+    assert synthesized != _stable_alert_id("stm", None, "Other", "WARNING", START, END)
+
+    legacy_basis = "|".join(str(value or "") for value in ("H", "WARNING", START, END))
+    expected = hashlib.sha1(legacy_basis.encode(), usedforsecurity=False).hexdigest()[:12]
+    assert synthesized == f"stm-alert-{expected}"
+
+    toronto = ZoneInfo("America/Toronto")
+    assert synthesized == _stable_alert_id(
+        "stm",
+        None,
+        "H",
+        "WARNING",
+        START.astimezone(toronto),
+        END.astimezone(toronto),
+    )
 
 
 def test_inverted_range_fails_before_any_query() -> None:
@@ -139,6 +163,10 @@ def test_first_sync_inserts_complete_normalized_source() -> None:
     assert result.source_to == date(2026, 7, 10)
     assert (result.source_count, result.inserted_count, result.updated_count) == (1, 1, 0)
     assert result.unchanged_count == 0
+    assert [name for name, _ in connection.calls[:2]] == [
+        "alerts.archive.lock",
+        "alerts.archive.source",
+    ]
     assert len(connection.writes) == 1
     written = connection.writes[0]
     assert written["archive_month"] == date(2026, 7, 1)
@@ -199,6 +227,40 @@ def test_changed_sync_preserves_first_partition_and_unions_known_reach() -> None
     assert written["description_text"] == "Terminus déplacé."
 
 
+@pytest.mark.parametrize(
+    ("source_last_seen", "source_description"),
+    [
+        (datetime(2026, 7, 10, tzinfo=UTC), "Older bounded backfill"),
+        (datetime(2026, 7, 20, tzinfo=UTC), "Equal-timestamp replay"),
+    ],
+)
+def test_older_or_equal_source_cannot_overwrite_newer_archive_scalars(
+    source_last_seen: datetime,
+    source_description: str,
+) -> None:
+    newest = source_row(
+        description_text="Newest retained message",
+        last_seen_utc=datetime(2026, 7, 20, tzinfo=UTC),
+    )
+    initial = FakeConnection(source=[newest])
+    run_sync(initial)
+    stored = initial.writes[0]
+
+    replay = FakeConnection(
+        source=[
+            source_row(
+                description_text=source_description,
+                last_seen_utc=source_last_seen,
+            )
+        ],
+        existing=[stored],
+    )
+    result = run_sync(replay)
+
+    assert result.unchanged_count == 1
+    assert replay.writes == []
+
+
 def test_null_later_text_cannot_erase_a_real_message() -> None:
     initial = FakeConnection(source=[source_row()])
     run_sync(initial)
@@ -231,7 +293,13 @@ def test_dry_run_classifies_change_but_performs_no_write() -> None:
     run_sync(initial)
     stored = initial.writes[0]
     connection = FakeConnection(
-        source=[source_row(description_text="Nouveau terminus")], existing=[stored]
+        source=[
+            source_row(
+                description_text="Nouveau terminus",
+                last_seen_utc=datetime(2026, 7, 11, tzinfo=UTC),
+            )
+        ],
+        existing=[stored],
     )
 
     result = run_sync(connection, dry_run=True)
@@ -248,4 +316,7 @@ def test_empty_source_reports_honest_null_bounds_and_zero_counts() -> None:
     assert result.source_from is None and result.source_to is None
     assert result.source_count == 0
     assert result.inserted_count == result.updated_count == result.unchanged_count == 0
-    assert [name for name, _ in connection.calls] == ["alerts.archive.source"]
+    assert [name for name, _ in connection.calls] == [
+        "alerts.archive.lock",
+        "alerts.archive.source",
+    ]
