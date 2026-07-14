@@ -7,7 +7,7 @@ import { flushSync } from 'svelte';
 const mocks = vi.hoisted(() => ({
 	noteDataGeneratedUtc: vi.fn<(v: string | null | undefined) => void>(),
 }));
-vi.mock('$lib/stores', () => ({
+vi.mock('$lib/stores/refresh.svelte', () => ({
 	dataRefresh: {
 		// `epoch` must be a reactive-looking getter so the resource's effect tracks it.
 		get epoch() {

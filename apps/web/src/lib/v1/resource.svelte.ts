@@ -28,7 +28,7 @@
 // `noteDataGeneratedUtc` is latest-wins/monotonic so whichever tier published most
 // recently owns the readout.
 
-import { dataRefresh } from '$lib/stores';
+import { dataRefresh } from '$lib/stores/refresh.svelte';
 
 /** A payload that may carry the server's build timestamp (latest-data anchor). */
 type MaybeFreshPayload = { readonly generated_utc?: string | null } | null | undefined;

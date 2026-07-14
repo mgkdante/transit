@@ -17,7 +17,6 @@
 // knowledge of what is currently mounted.
 
 import { browser } from '$app/environment';
-import { invalidateAll } from '$app/navigation';
 import { ageSeconds as ageSecondsOf } from '$lib/utils/time';
 import { sharedClock } from './clock.svelte';
 
@@ -64,7 +63,8 @@ async function invalidateAllBounded(): Promise<void> {
 		};
 
 		timeoutId = setTimeout(finish, REFRESH_INVALIDATE_TIMEOUT_MS);
-		void invalidateAll()
+		void import('$app/navigation')
+			.then(({ invalidateAll }) => invalidateAll())
 			.catch(() => undefined)
 			.finally(finish);
 	});
