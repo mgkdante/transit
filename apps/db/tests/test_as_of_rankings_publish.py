@@ -33,6 +33,17 @@ from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sh
 STAMP = "2026-07-13T00:00:00Z"
 
 
+@pytest.fixture(autouse=True)
+def _ignore_historic_gc_mark_clearing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep ranking/pointer tests focused on their in-memory publish seam."""
+
+    monkeypatch.setattr(
+        publish,
+        "_clear_referenced_historic_gc_marks",
+        lambda *args, **kwargs: None,
+    )
+
+
 def _hotspots_day(
     local_date: str = "2026-07-01",
     *,
