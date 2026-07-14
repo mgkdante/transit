@@ -18,6 +18,7 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from botocore.exceptions import ClientError
 from pydantic import BaseModel
@@ -81,6 +82,16 @@ class StableObjectVersion:
 
     rel_key: str
     token: str | None
+
+
+@dataclass(frozen=True)
+class StoredObjectVersion:
+    """Stable object metadata used by fail-closed historic generation scans."""
+
+    rel_key: str
+    etag: str
+    last_modified_utc: datetime
+    size: int
 
 
 @dataclass(frozen=True)
@@ -191,6 +202,87 @@ class SnapshotStorage:
             controls the ``Cache-Control`` header.
         """
         return self.put_bytes(rel_key, snapshot_json_bytes(payload), tier=tier)
+
+    def read_bytes(self, rel_key: str) -> bytes | None:
+        """Read exact object bytes, returning ``None`` only for a missing key."""
+
+        key = self.full_key(rel_key)
+        try:
+            response = self._thread_client().get_object(  # type: ignore[attr-defined]
+                Bucket=self._bucket,
+                Key=key,
+            )
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            if code in _NOT_FOUND_CODES:
+                return None
+            raise
+        body = response["Body"]
+        try:
+            return body.read()
+        finally:
+            if hasattr(body, "close"):
+                body.close()
+
+    @staticmethod
+    def _stored_version(rel_key: str, metadata: dict) -> StoredObjectVersion:  # type: ignore[type-arg]
+        etag = metadata.get("ETag")
+        modified = metadata.get("LastModified")
+        size = metadata.get("ContentLength", metadata.get("Size"))
+        if not isinstance(etag, str) or not etag:
+            raise RuntimeError(f"snapshot object has no ETag: {rel_key}")
+        if not isinstance(modified, datetime):
+            raise RuntimeError(f"snapshot object has no LastModified: {rel_key}")
+        if modified.tzinfo is None:
+            modified = modified.replace(tzinfo=UTC)
+        else:
+            modified = modified.astimezone(UTC)
+        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+            raise RuntimeError(f"snapshot object has invalid size: {rel_key}")
+        return StoredObjectVersion(
+            rel_key=rel_key,
+            etag=etag,
+            last_modified_utc=modified,
+            size=size,
+        )
+
+    def capture_object_version(self, rel_key: str) -> StoredObjectVersion | None:
+        """Capture one object's provider version metadata, or absence."""
+
+        metadata = self._immutable_head(rel_key)
+        if metadata is None:
+            return None
+        return self._stored_version(rel_key, metadata)
+
+    def iter_object_versions(self, rel_prefix: str) -> Iterator[StoredObjectVersion]:
+        """Yield every object below *rel_prefix* across all S3 result pages."""
+
+        full_prefix = self.full_key(rel_prefix)
+        token: str | None = None
+        while True:
+            request: dict[str, object] = {"Bucket": self._bucket, "Prefix": full_prefix}
+            if token is not None:
+                request["ContinuationToken"] = token
+            response = self._thread_client().list_objects_v2(**request)  # type: ignore[attr-defined]
+            contents = response.get("Contents", [])
+            if not isinstance(contents, list):
+                raise RuntimeError("snapshot inventory returned malformed Contents")
+            for item in contents:
+                if not isinstance(item, dict):
+                    raise RuntimeError("snapshot inventory returned malformed object metadata")
+                key = item.get("Key")
+                base = f"{self._prefix}/"
+                if not isinstance(key, str) or not key.startswith(base):
+                    raise RuntimeError(
+                        "snapshot inventory returned an object outside provider prefix"
+                    )
+                yield self._stored_version(key[len(base) :], item)
+            if not response.get("IsTruncated"):
+                break
+            next_token = response.get("NextContinuationToken")
+            if not isinstance(next_token, str) or not next_token:
+                raise RuntimeError("snapshot inventory omitted its continuation token")
+            token = next_token
 
     def _immutable_head(self, rel_key: str) -> dict | None:  # type: ignore[type-arg]
         key = self.full_key(rel_key)
@@ -427,6 +519,48 @@ class LocalSnapshotStorage:
     def put_json(self, rel_key: str, payload: BaseModel | dict, *, tier: str) -> str:  # type: ignore[type-arg]
         """Write *payload* to ``{root}/{base_prefix}/{rel_key}`` and return the path."""
         return self.put_bytes(rel_key, snapshot_json_bytes(payload), tier=tier)
+
+    def read_bytes(self, rel_key: str) -> bytes | None:
+        """Read exact local snapshot bytes, returning ``None`` when absent."""
+
+        path = self._root / self._prefix / rel_key
+        try:
+            return path.read_bytes()
+        except FileNotFoundError:
+            return None
+
+    def capture_object_version(self, rel_key: str) -> StoredObjectVersion | None:
+        """Capture a content token plus filesystem time and size."""
+
+        path = self._root / self._prefix / rel_key
+        try:
+            body = path.read_bytes()
+            stat = path.stat()
+        except FileNotFoundError:
+            return None
+        return StoredObjectVersion(
+            rel_key=rel_key,
+            etag=hashlib.sha256(body).hexdigest(),
+            last_modified_utc=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
+            size=len(body),
+        )
+
+    def iter_object_versions(self, rel_prefix: str) -> Iterator[StoredObjectVersion]:
+        """Yield deterministic recursive local inventory below *rel_prefix*."""
+
+        provider_root = self._root / self._prefix
+        prefix_path = provider_root / rel_prefix
+        if not prefix_path.exists():
+            return
+        paths = [prefix_path] if prefix_path.is_file() else sorted(prefix_path.rglob("*"))
+        for path in paths:
+            if not path.is_file():
+                continue
+            rel_key = path.relative_to(provider_root).as_posix()
+            version = self.capture_object_version(rel_key)
+            if version is None:
+                raise RuntimeError(f"snapshot object disappeared during inventory: {rel_key}")
+            yield version
 
     def immutable_exists(self, rel_key: str) -> bool:
         """Return whether an immutable local object exists."""

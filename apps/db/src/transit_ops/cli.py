@@ -63,6 +63,7 @@ from transit_ops.silver import (
     replay_realtime_silver_window,
 )
 from transit_ops.snapshots.gate import GateError
+from transit_ops.snapshots.historic_gc import run_historic_snapshot_gc
 from transit_ops.snapshots.publish import publish_snapshot, validate_snapshots
 from transit_ops.source_factory.runner import run_source_factory_rebuild
 from transit_ops.validation.historic_publish import build_historic_publish_proof
@@ -517,6 +518,72 @@ def retention_proof_report_command(
     except KeyError as exc:
         raise typer.BadParameter(str(exc)) from exc
     report = json.dumps(result.display_dict(), indent=2, sort_keys=True)
+    if report_path is not None:
+        report_path.write_text(report + "\n", encoding="utf-8")
+    typer.echo(report)
+
+
+@app.command("gc-historic-snapshots")
+def gc_historic_snapshots_command(
+    provider_id: str,
+    mode: str = typer.Option(
+        "dry-run",
+        "--mode",
+        help="Non-destructive mode: dry-run inventories only; mark persists reachability marks.",
+    ),
+    report_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--report-path",
+        help="Write the JSON scan receipt to this path as well as stdout.",
+    ),
+) -> None:
+    """Validate historic generation reachability and optionally persist marks."""
+
+    if mode not in {"dry-run", "mark"}:
+        raise typer.BadParameter(
+            "--mode must be dry-run or mark; apply is disabled pending the R2 delete canary"
+        )
+    settings = get_settings()
+    registry = _provider_registry(settings)
+    try:
+        registry.get_provider(provider_id)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    _preflight_report_path(report_path)
+    if _skip_if_unseeded(settings, provider_id, step="gc-historic-snapshots"):
+        payload = {
+            "status": "skip",
+            "provider_id": provider_id,
+            "mode": mode,
+            "skipped_not_seeded": True,
+        }
+        report = json.dumps(payload, indent=2, sort_keys=True)
+        if report_path is not None:
+            report_path.write_text(report + "\n", encoding="utf-8")
+        typer.echo(report)
+        return
+    try:
+        result = run_historic_snapshot_gc(
+            provider_id,
+            settings=settings,
+            registry=registry,
+            mode=mode,  # type: ignore[arg-type]
+        )
+        payload = result.display_dict()
+    except Exception as exc:
+        payload = {
+            "status": "fail",
+            "provider_id": provider_id,
+            "mode": mode,
+            "failure_type": type(exc).__name__,
+            "failure": str(exc),
+        }
+        report = json.dumps(payload, indent=2, sort_keys=True)
+        if report_path is not None:
+            report_path.write_text(report + "\n", encoding="utf-8")
+        typer.echo(report)
+        raise typer.Exit(code=1) from exc
+    report = json.dumps(payload, indent=2, sort_keys=True)
     if report_path is not None:
         report_path.write_text(report + "\n", encoding="utf-8")
     typer.echo(report)

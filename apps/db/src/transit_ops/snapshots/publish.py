@@ -154,6 +154,13 @@ _PUBLISH_LOCK_SQL = named_query(
     "hashtext('transit.snapshot_publish:' || :provider_id), hashtext(:tier))",
 )
 
+_CLEAR_REFERENCED_HISTORIC_GC_MARKS_SQL = named_query(
+    "publish.historic_gc.clear_referenced",
+    "DELETE FROM core.snapshot_historic_gc_marks "
+    "WHERE provider_id = :provider_id "
+    "AND object_key = ANY(CAST(:object_keys AS text[]))",
+)
+
 
 class PublishLockUnavailableError(RuntimeError):
     """A static/historic provider lane already has an active publisher."""
@@ -175,6 +182,22 @@ def _acquire_publish_lock(conn: object, *, provider_id: str, tier: str) -> None:
     ).scalar_one()
     if not acquired:
         raise PublishLockUnavailableError(provider_id=provider_id, tier=tier)
+
+
+def _clear_referenced_historic_gc_marks(
+    conn: object,
+    provider_id: str,
+    object_keys: Sequence[str],
+) -> None:
+    """Reset continuous-unreachability age for every generation in the next graph."""
+
+    keys = sorted(set(object_keys))
+    if not keys:
+        return
+    conn.execute(  # type: ignore[attr-defined]
+        _CLEAR_REFERENCED_HISTORIC_GC_MARKS_SQL,
+        {"provider_id": provider_id, "object_keys": keys},
+    )
 
 
 # GC2 H4 — model-class -> methodology-family string, so the publisher can stamp
@@ -1416,6 +1439,7 @@ def _publish_historic(
     stop_pointer_summary = builders.StopHistoryPointerSummary()
     stop_directory_summary = gate.StopHistoryDirectorySummary()
     stop_index_paths: dict[str, str] = {}
+    stop_referenced_generation_keys: set[str] = set()
     for stop_index in stop_build_summary.iter_indexes(fallback_generated_utc=stamp):
         if not stop_index.entity_id:
             continue
@@ -1433,6 +1457,8 @@ def _publish_historic(
         )
         payload = stop_index
         stop_index_paths[stop_index.entity_id] = rel_key
+        stop_referenced_generation_keys.add(rel_key)
+        stop_referenced_generation_keys.update(ref.path for ref in stop_index.partitions)
         stop_stream_findings = gate.check_stop_history_stream_index(
             payload,
             stop_gate_summary,
@@ -1714,6 +1740,29 @@ def _publish_historic(
         stop_directory_item,
         concurrency=concurrency,
         write_mode="immutable",
+    )
+    referenced_generation_keys = {
+        hotspot_index_path,
+        repeat_offenders_index_path,
+        network_index_path,
+        line_directory_path,
+        stop_directory_path,
+        alert_index_path,
+        receipt_index_path,
+        *(ref.path for ref in hotspot_summary.refs),
+        *(ref.path for ref in repeat_offenders_summary.refs),
+        *(ref.path for ref in network_index.partitions),
+        *(line_index_paths.values()),
+        *(ref.path for index in line_indexes for ref in index.partitions),
+        *stop_referenced_generation_keys,
+        *(ref.path for month in root_alert_index.months for ref in month.pages),
+    }
+    if not all("/generations/" in path for path in referenced_generation_keys):
+        raise RuntimeError("historic GC mark clearing requires only immutable generation keys")
+    _clear_referenced_historic_gc_marks(
+        conn,
+        provider_id,
+        sorted(referenced_generation_keys),
     )
     activate_stable_json = getattr(storage, "activate_stable_json", None)
     if root_version is not None and callable(activate_stable_json):

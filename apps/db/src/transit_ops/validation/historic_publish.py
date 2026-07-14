@@ -10,7 +10,7 @@ from datetime import UTC, date, datetime, timedelta
 from http.client import HTTPException
 from pathlib import Path
 from typing import Literal, TypeVar
-from urllib.parse import unquote, urlsplit
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
@@ -48,6 +48,7 @@ from transit_ops.snapshots.gate import (
     check_point_history_day,
     check_point_history_index,
 )
+from transit_ops.snapshots.paths import safe_public_path as _safe_public_path
 
 SYNC_MAX_AGE = timedelta(hours=6)
 GATE_MAX_AGE = timedelta(hours=36)
@@ -107,8 +108,6 @@ class HistoricPublishProofReport:
 
 OperationalErrorTypes = (OSError, ValueError, SQLAlchemyError)
 PayloadT = TypeVar("PayloadT", bound=BaseModel)
-_PERCENT_ESCAPE = re.compile(r"%([0-9a-fA-F]{2})")
-_ENCODED_UNSAFE_BYTES = {ord(character) for character in "./\\?#:@"}
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PointFamily = Literal["hotspots", "repeat_offenders"]
 _POINT_DAY_MODELS: dict[
@@ -140,40 +139,6 @@ def _has_description(alert: object) -> bool:
             getattr(alert, "description_en", None),
         )
     )
-
-
-def _safe_public_path(path: str) -> str:
-    canonical = path
-    while True:
-        if any(
-            int(match.group(1), 16) in _ENCODED_UNSAFE_BYTES
-            for match in _PERCENT_ESCAPE.finditer(canonical)
-        ):
-            raise ValueError("unsafe_public_path")
-        decoded = unquote(canonical, errors="strict")
-        if decoded == canonical:
-            break
-        canonical = decoded
-
-    parsed = urlsplit(canonical)
-    segments = canonical.split("/")
-    if (
-        not canonical
-        or parsed.scheme
-        or parsed.netloc
-        or canonical.startswith("/")
-        or "\\" in canonical
-        or "%" in canonical
-        or parsed.query
-        or parsed.fragment
-        or any(segment in {"", ".", ".."} for segment in segments)
-        or any(
-            character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F
-            for character in canonical
-        )
-    ):
-        raise ValueError("unsafe_public_path")
-    return canonical
 
 
 def _add_failure(

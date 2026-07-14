@@ -7,6 +7,7 @@ import multiprocessing
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 
 import pytest
 from botocore.exceptions import ClientError
@@ -17,7 +18,9 @@ from transit_ops.snapshots.storage import (
     CACHE_CONTROL,
     HashGatedStorage,
     ImmutableKeyCollisionError,
+    LocalSnapshotStorage,
     SnapshotStorage,
+    StoredObjectVersion,
     state_fingerprint,
 )
 
@@ -50,6 +53,48 @@ class FakeS3Client:
         if key not in self.objects:
             raise ClientError({"Error": {"Code": "NoSuchKey", "Message": "missing"}}, "GetObject")
         return {"Body": io.BytesIO(self.objects[key]["Body"])}
+
+
+class _VersionInventoryClient(FakeS3Client):
+    def __init__(self) -> None:
+        super().__init__()
+        self.list_calls: list[dict] = []
+
+    def list_objects_v2(self, **kwargs):
+        self.list_calls.append(kwargs)
+        if "ContinuationToken" not in kwargs:
+            return {
+                "IsTruncated": True,
+                "NextContinuationToken": "page-2",
+                "Contents": [
+                    {
+                        "Key": "v1/stm/historic/a.json",
+                        "ETag": '"a"',
+                        "LastModified": datetime(2026, 7, 1, tzinfo=UTC),
+                        "Size": 10,
+                    }
+                ],
+            }
+        return {
+            "IsTruncated": False,
+            "Contents": [
+                {
+                    "Key": "v1/stm/historic/b.json",
+                    "ETag": '"b"',
+                    "LastModified": datetime(2026, 7, 2, tzinfo=UTC),
+                    "Size": 20,
+                }
+            ],
+        }
+
+    def head_object(self, **kwargs):
+        if kwargs["Key"].endswith("missing.json"):
+            raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
+        return {
+            "ETag": '"head"',
+            "LastModified": datetime(2026, 7, 3, tzinfo=UTC),
+            "ContentLength": 30,
+        }
 
 
 class _ConditionalCreateRaceClient(FakeS3Client):
@@ -1267,3 +1312,67 @@ def test_hash_gate_delegates_stable_activation_and_accounts_without_hash_skip():
     assert second.written == []
     assert second.skipped == [rel_key]
     assert client.precondition_failures == 1
+
+
+def test_snapshot_storage_lists_every_version_page_and_strips_provider_prefix():
+    client = _VersionInventoryClient()
+    storage = SnapshotStorage(client, bucket="snapshots", base_prefix="v1/stm")
+
+    versions = list(storage.iter_object_versions("historic/"))
+
+    assert versions == [
+        StoredObjectVersion(
+            rel_key="historic/a.json",
+            etag='"a"',
+            last_modified_utc=datetime(2026, 7, 1, tzinfo=UTC),
+            size=10,
+        ),
+        StoredObjectVersion(
+            rel_key="historic/b.json",
+            etag='"b"',
+            last_modified_utc=datetime(2026, 7, 2, tzinfo=UTC),
+            size=20,
+        ),
+    ]
+    assert client.list_calls == [
+        {"Bucket": "snapshots", "Prefix": "v1/stm/historic/"},
+        {
+            "Bucket": "snapshots",
+            "Prefix": "v1/stm/historic/",
+            "ContinuationToken": "page-2",
+        },
+    ]
+
+
+def test_snapshot_storage_captures_head_metadata_and_missing_object():
+    storage = SnapshotStorage(
+        _VersionInventoryClient(),
+        bucket="snapshots",
+        base_prefix="v1/stm",
+    )
+
+    assert storage.capture_object_version("historic/a.json") == StoredObjectVersion(
+        rel_key="historic/a.json",
+        etag='"head"',
+        last_modified_utc=datetime(2026, 7, 3, tzinfo=UTC),
+        size=30,
+    )
+    assert storage.capture_object_version("historic/missing.json") is None
+
+
+def test_local_snapshot_storage_has_list_head_and_raw_read_parity(tmp_path):
+    storage = LocalSnapshotStorage(str(tmp_path), "v1/stm")
+    body = b'{"hello":"world"}'
+    storage.put_bytes("historic/generations/a.json", body, tier="historic_immutable")
+
+    listed = list(storage.iter_object_versions("historic/"))
+    captured = storage.capture_object_version("historic/generations/a.json")
+
+    assert listed == [captured]
+    assert captured is not None
+    assert captured.rel_key == "historic/generations/a.json"
+    assert captured.etag == hashlib.sha256(body).hexdigest()
+    assert captured.size == len(body)
+    assert captured.last_modified_utc.tzinfo == UTC
+    assert storage.read_bytes("historic/generations/a.json") == body
+    assert storage.read_bytes("historic/missing.json") is None

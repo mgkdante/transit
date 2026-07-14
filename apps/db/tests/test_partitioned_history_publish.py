@@ -53,6 +53,12 @@ def _empty_point_history_plans(monkeypatch: pytest.MonkeyPatch) -> None:
         "build_repeat_offenders_history_plan",
         lambda *args, **kwargs: empty,
     )
+    monkeypatch.setattr(
+        publish,
+        "_clear_referenced_historic_gc_marks",
+        lambda *args, **kwargs: None,
+        raising=False,
+    )
 
 
 def _network_history_bundle():
@@ -679,6 +685,57 @@ def test_line_history_publish_is_pointer_last_after_all_network_and_line_immutab
     assert "historic/history/stops/index.json" not in paths
     assert _reachable_history_graph(store)
     assert store.calls[-1] == ("normal", "historic/history/index.json")
+
+
+def test_historic_publish_clears_marks_for_full_graph_before_root_activation(
+    monkeypatch,
+):
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=_network_history_plan(),
+        line_plan=_line_history_plan(),
+        stop_plan=_stop_history_plan(),
+    )
+    store = _RecordingStore()
+    settings = SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1)
+    stamp = "2026-07-13T00:00:00Z"
+    _publish_historic(
+        object(),
+        store,
+        provider_id="stm",
+        settings=settings,
+        stamp=stamp,
+    )
+    referenced = {path for path in store.objects if "/generations/" in path}
+    store.calls.clear()
+    store.immutable_skipped.clear()
+    observed: dict[str, object] = {}
+
+    def record_clear(conn, provider_id, object_keys):  # noqa: ANN001, ANN202
+        observed["conn"] = conn
+        observed["provider_id"] = provider_id
+        observed["object_keys"] = set(object_keys)
+        observed["call_count"] = len(store.calls)
+
+    marker_conn = object()
+    monkeypatch.setattr(publish, "_clear_referenced_historic_gc_marks", record_clear)
+
+    _publish_historic(
+        marker_conn,
+        store,
+        provider_id="stm",
+        settings=settings,
+        stamp=stamp,
+    )
+
+    root_call_index = store.calls.index(("normal", "historic/history/index.json"))
+    assert observed == {
+        "conn": marker_conn,
+        "provider_id": "stm",
+        "object_keys": referenced,
+        "call_count": root_call_index,
+    }
+    assert referenced <= set(store.immutable_skipped)
 
 
 def test_history_root_receipt_collection_generation_tracks_only_semantic_payloads():
