@@ -20,6 +20,9 @@ import {
 	getAlertArchiveRange,
 	getHotspots,
 	getHistoricAvailability,
+	getLineHistoryDirectory,
+	getLineHistoryIndex,
+	getNetworkHistoryIndex,
 	getNetworkTrend,
 	getReceipt,
 	getReceiptsIndex,
@@ -27,6 +30,11 @@ import {
 	getRouteReliability,
 	getRouteReliabilityIndex,
 	getStopReliability,
+	getStopHistoryDirectory,
+	getStopHistoryIndex,
+	loadLineHistoryRange,
+	loadNetworkHistoryRange,
+	loadStopHistoryRange,
 } from './historic';
 import { getProvenance } from './provenance';
 import { getDataHealth } from './dataHealth';
@@ -56,6 +64,14 @@ export const repositories = {
 	},
 	historic: {
 		historyIndex: getHistoricAvailability,
+		networkHistoryIndex: getNetworkHistoryIndex,
+		lineHistoryDirectory: getLineHistoryDirectory,
+		stopHistoryDirectory: getStopHistoryDirectory,
+		lineHistoryIndex: getLineHistoryIndex,
+		stopHistoryIndex: getStopHistoryIndex,
+		networkHistoryRange: loadNetworkHistoryRange,
+		lineHistoryRange: loadLineHistoryRange,
+		stopHistoryRange: loadStopHistoryRange,
 		alertArchiveIndex: getAlertArchiveIndex,
 		alertArchiveRange: getAlertArchiveRange,
 		networkTrend: getNetworkTrend,
@@ -94,6 +110,9 @@ export {
 	getAlertArchiveRange,
 	getHotspots,
 	getHistoricAvailability,
+	getLineHistoryDirectory,
+	getLineHistoryIndex,
+	getNetworkHistoryIndex,
 	getNetworkTrend,
 	getReceipt,
 	getReceiptsIndex,
@@ -101,6 +120,11 @@ export {
 	getRouteReliability,
 	getRouteReliabilityIndex,
 	getStopReliability,
+	getStopHistoryDirectory,
+	getStopHistoryIndex,
+	loadLineHistoryRange,
+	loadNetworkHistoryRange,
+	loadStopHistoryRange,
 } from './historic';
 export { getProvenance } from './provenance';
 export { getDataHealth } from './dataHealth';

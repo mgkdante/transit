@@ -1,24 +1,39 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AdapterCtx } from '$lib/v1/adapter';
 import { adapter } from '$lib/v1/adapter';
-import { HistoryArtifactContractError } from '$lib/v1/history';
+import { HistoryArtifactContractError, HistoryTransientPublicationError } from '$lib/v1/history';
+import { sha256Hex } from '$lib/v1/http';
 import {
 	AlertArchiveIndexSchema,
 	AlertArchivePageSchema,
+	HistoricCollectionIndexSchema,
+	HistoricEntityDirectoryIndexSchema,
 	HistoricAvailabilityIndexSchema,
+	LineHistoryPartitionSchema,
+	NetworkHistoryPartitionSchema,
 	ReceiptSchema,
 	ReceiptsIndexSchema,
+	StopHistoryPartitionSchema,
 } from '$lib/v1/schemas';
 import {
 	getAdvertisedReceipt,
 	getAlertArchiveIndex,
 	getAlertArchiveRange,
 	getHistoricAvailability,
+	getLineHistoryDirectory,
+	getLineHistoryIndex,
+	getNetworkHistoryIndex,
 	getReceipt,
+	getStopHistoryDirectory,
+	getStopHistoryIndex,
+	loadLineHistoryRange,
+	loadNetworkHistoryRange,
+	loadStopHistoryRange,
 } from './historic';
 
 const ISO = '2026-03-31T12:00:00Z';
 const GENERATION = 'b'.repeat(64);
+const NEXT_GENERATION = 'c'.repeat(64);
 
 function path(month: string, page: number): string {
 	return `historic/alerts/generations/${GENERATION}/${month}/page-${String(page).padStart(4, '0')}.json`;
@@ -65,6 +80,187 @@ function archivePage(month: string, page: number, id: string, lastSeen: string) 
 			},
 		],
 	});
+}
+
+function availabilityRoot(
+	families: Array<{
+		family: string;
+		index_path: string;
+		collection_generation_id: string;
+	}>,
+) {
+	return HistoricAvailabilityIndexSchema.parse({
+		generated_utc: ISO,
+		families: families.map((family) => ({ ...family, selection_mode: 'range' })),
+	});
+}
+
+function rootFamily(
+	family: 'network' | 'lines' | 'stops',
+	generation = GENERATION,
+	indexPath = `historic/history/${family}/index.json`,
+) {
+	return {
+		family,
+		index_path: indexPath,
+		collection_generation_id: generation,
+	};
+}
+
+function collectionIndex(
+	family: 'network' | 'lines' | 'stops',
+	generation = GENERATION,
+	entityId: string | null = null,
+	partitions: Array<Record<string, unknown>> = [],
+	metrics: Array<Record<string, unknown>> = [],
+) {
+	const coverageStarts = partitions
+		.map((partition) => partition.coverage_start)
+		.filter((value): value is string => typeof value === 'string')
+		.sort();
+	const coverageEnds = partitions
+		.map((partition) => partition.coverage_end)
+		.filter((value): value is string => typeof value === 'string')
+		.sort();
+	return HistoricCollectionIndexSchema.parse({
+		generated_utc: ISO,
+		family,
+		selection_mode: 'range',
+		entity_id: entityId,
+		collection_generation_id: generation,
+		first_available_date: coverageStarts[0] ?? null,
+		last_available_date: coverageEnds.at(-1) ?? null,
+		partitions,
+		metrics,
+	});
+}
+
+function entityDirectory(
+	family: 'lines' | 'stops',
+	directoryGeneration = GENERATION,
+	entityId = 'A/B',
+	entityGeneration = GENERATION,
+) {
+	const encodedId = Array.from(new TextEncoder().encode(entityId), (byte) =>
+		byte.toString(16).padStart(2, '0'),
+	).join('');
+	return HistoricEntityDirectoryIndexSchema.parse({
+		generated_utc: ISO,
+		family,
+		selection_mode: 'range',
+		collection_generation_id: directoryGeneration,
+		entities: [
+			{
+				entity_id: entityId,
+				encoded_id: encodedId,
+				index_path: `historic/history/${family}/${encodedId}/index.json`,
+				collection_generation_id: entityGeneration,
+			},
+		],
+	});
+}
+
+async function networkArtifact(month: string, day: string) {
+	const value = NetworkHistoryPartitionSchema.parse({
+		generated_utc: ISO,
+		month,
+		days: [
+			{
+				date: day,
+				delay: {
+					observation_count: 10,
+					in_clamp_observation_count: 10,
+					on_time_count: 8,
+					severe_count: 1,
+					sum_delay_seconds: 100,
+				},
+			},
+		],
+	});
+	const bytes = new TextEncoder().encode(JSON.stringify(value));
+	const sha = await sha256Hex(bytes);
+	return {
+		value,
+		bytes,
+		ref: {
+			path: `historic/history/network/generations/${sha}/${month}.json`,
+			coverage_start: day,
+			coverage_end: day,
+			count: 1,
+			sha256: sha,
+			byte_size: bytes.byteLength,
+		},
+	};
+}
+
+async function entityArtifact(
+	family: 'lines' | 'stops',
+	entityId: string,
+	month: string,
+	day: string,
+) {
+	const encodedId = Array.from(new TextEncoder().encode(entityId), (byte) =>
+		byte.toString(16).padStart(2, '0'),
+	).join('');
+	const value =
+		family === 'lines'
+			? LineHistoryPartitionSchema.parse({
+					generated_utc: ISO,
+					month,
+					entity_id: entityId,
+					days: [
+						{
+							date: day,
+							delay: {
+								observation_count: 10,
+								in_clamp_observation_count: 10,
+								on_time_count: 8,
+								severe_count: 1,
+								sum_delay_seconds: 100,
+							},
+						},
+					],
+				})
+			: StopHistoryPartitionSchema.parse({
+					generated_utc: ISO,
+					month,
+					entity_id: entityId,
+					days: [
+						{
+							date: day,
+							delay: {
+								observation_count: 10,
+								in_clamp_observation_count: 10,
+								severe_count: 1,
+								sum_delay_seconds: 100,
+							},
+						},
+					],
+				});
+	const bytes = new TextEncoder().encode(JSON.stringify(value));
+	const sha = await sha256Hex(bytes);
+	return {
+		value,
+		bytes,
+		ref: {
+			path: `historic/history/${family}/${encodedId}/generations/${sha}/${month}.json`,
+			coverage_start: day,
+			coverage_end: day,
+			count: 1,
+			sha256: sha,
+			byte_size: bytes.byteLength,
+		},
+	};
+}
+
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	let reject!: (reason: unknown) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, resolve, reject };
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -240,5 +436,505 @@ describe('strict advertised receipts', () => {
 		await expect(getReceipt('2026-03-29', ctx)).resolves.toBeNull();
 		expect(receiptPort).toHaveBeenNthCalledWith(1, '2026-03-29', ctx);
 		expect(receiptPort).toHaveBeenNthCalledWith(2, '2026-03-29', ctx);
+	});
+});
+
+describe('retained family discovery and generation pins', () => {
+	it('returns null only when the optional root or requested family is absent', async () => {
+		const rootPort = vi
+			.spyOn(adapter.historic, 'historyIndex')
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce(availabilityRoot([]));
+		const childPort = vi.spyOn(adapter.historic, 'networkHistoryIndex');
+
+		await expect(getNetworkHistoryIndex()).resolves.toBeNull();
+		await expect(getNetworkHistoryIndex()).resolves.toBeNull();
+		expect(rootPort).toHaveBeenCalledTimes(2);
+		expect(childPort).not.toHaveBeenCalled();
+	});
+
+	it('rejects an unsafe root edge before reading its advertised child', async () => {
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(
+			availabilityRoot([rootFamily('network', GENERATION, 'https://evil.test/index.json')]),
+		);
+		const childPort = vi.spyOn(adapter.historic, 'networkHistoryIndex');
+
+		await expect(getNetworkHistoryIndex()).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		expect(childPort).not.toHaveBeenCalled();
+	});
+
+	it('treats an advertised network child 404 as strict contract failure', async () => {
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(
+			availabilityRoot([rootFamily('network')]),
+		);
+		vi.spyOn(adapter.historic, 'networkHistoryIndex').mockResolvedValue(null);
+
+		await expect(getNetworkHistoryIndex()).rejects.toMatchObject({
+			name: 'HistoryArtifactContractError',
+			path: 'historic/history/network/index.json',
+		});
+	});
+
+	it('refreshes only the immediate root once when the network generation races', async () => {
+		const firstRoot = availabilityRoot([rootFamily('network', GENERATION)]);
+		const freshRoot = availabilityRoot([rootFamily('network', NEXT_GENERATION)]);
+		const rootPort = vi
+			.spyOn(adapter.historic, 'historyIndex')
+			.mockResolvedValueOnce(firstRoot)
+			.mockResolvedValueOnce(freshRoot);
+		const child = collectionIndex('network', NEXT_GENERATION);
+		const childPort = vi.spyOn(adapter.historic, 'networkHistoryIndex').mockResolvedValue(child);
+
+		await expect(getNetworkHistoryIndex()).resolves.toBe(child);
+		expect(childPort).toHaveBeenCalledTimes(1);
+		expect(rootPort).toHaveBeenNthCalledWith(1, undefined);
+		expect(rootPort).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ freshHistoryParent: true }),
+		);
+	});
+
+	it('fails closed with a typed transient error after exactly one persistent root mismatch', async () => {
+		const root = availabilityRoot([rootFamily('network', GENERATION)]);
+		const rootPort = vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(root);
+		vi.spyOn(adapter.historic, 'networkHistoryIndex').mockResolvedValue(
+			collectionIndex('network', NEXT_GENERATION),
+		);
+
+		await expect(getNetworkHistoryIndex()).rejects.toBeInstanceOf(HistoryTransientPublicationError);
+		expect(rootPort).toHaveBeenCalledTimes(2);
+	});
+
+	it('refreshes only the immediate directory once for an entity-index generation race', async () => {
+		const root = availabilityRoot([rootFamily('lines')]);
+		const firstDirectory = entityDirectory('lines', GENERATION, 'A/B', GENERATION);
+		const freshDirectory = entityDirectory('lines', GENERATION, 'A/B', NEXT_GENERATION);
+		const rootPort = vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(root);
+		const directoryPort = vi
+			.spyOn(adapter.historic, 'lineHistoryDirectory')
+			.mockResolvedValueOnce(firstDirectory)
+			.mockResolvedValueOnce(freshDirectory);
+		const child = collectionIndex('lines', NEXT_GENERATION, 'A/B');
+		const childPort = vi.spyOn(adapter.historic, 'lineHistoryIndex').mockResolvedValue(child);
+
+		await expect(getLineHistoryIndex('A/B')).resolves.toBe(child);
+		expect(rootPort).toHaveBeenCalledTimes(1);
+		expect(childPort).toHaveBeenCalledTimes(1);
+		expect(directoryPort).toHaveBeenNthCalledWith(1, undefined);
+		expect(directoryPort).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ freshHistoryParent: true }),
+		);
+	});
+
+	it('fails transiently when an entity retry sees a directory generation newer than the root', async () => {
+		const root = availabilityRoot([rootFamily('lines', GENERATION)]);
+		const firstDirectory = entityDirectory('lines', GENERATION, 'A/B', GENERATION);
+		const freshDirectory = entityDirectory('lines', NEXT_GENERATION, 'A/B', NEXT_GENERATION);
+		const rootPort = vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(root);
+		const directoryPort = vi
+			.spyOn(adapter.historic, 'lineHistoryDirectory')
+			.mockResolvedValueOnce(firstDirectory)
+			.mockResolvedValueOnce(freshDirectory);
+		vi.spyOn(adapter.historic, 'lineHistoryIndex').mockResolvedValue(
+			collectionIndex('lines', NEXT_GENERATION, 'A/B'),
+		);
+
+		await expect(getLineHistoryIndex('A/B')).rejects.toBeInstanceOf(
+			HistoryTransientPublicationError,
+		);
+		expect(rootPort).toHaveBeenCalledTimes(1);
+		expect(directoryPort).toHaveBeenCalledTimes(2);
+	});
+
+	it('validates the root-to-directory path and refreshes that root pin exactly once', async () => {
+		const badRoot = availabilityRoot([
+			rootFamily('lines', GENERATION, 'historic/history/stops/index.json'),
+		]);
+		const directoryPort = vi.spyOn(adapter.historic, 'lineHistoryDirectory');
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValueOnce(badRoot);
+		await expect(getLineHistoryDirectory()).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		expect(directoryPort).not.toHaveBeenCalled();
+		vi.mocked(adapter.historic.historyIndex).mockClear();
+
+		const rootPort = vi
+			.spyOn(adapter.historic, 'historyIndex')
+			.mockResolvedValueOnce(availabilityRoot([rootFamily('lines', GENERATION)]))
+			.mockResolvedValueOnce(availabilityRoot([rootFamily('lines', NEXT_GENERATION)]));
+		const directory = entityDirectory('lines', NEXT_GENERATION);
+		directoryPort.mockResolvedValue(directory);
+
+		await expect(getLineHistoryDirectory()).resolves.toBe(directory);
+		expect(rootPort).toHaveBeenCalledTimes(2);
+		expect(directoryPort).toHaveBeenCalledTimes(1);
+	});
+
+	it('returns null for an unadvertised entity but makes an advertised entity 404 strict', async () => {
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(
+			availabilityRoot([rootFamily('lines')]),
+		);
+		vi.spyOn(adapter.historic, 'lineHistoryDirectory')
+			.mockResolvedValueOnce(entityDirectory('lines', GENERATION, 'other'))
+			.mockResolvedValueOnce(entityDirectory('lines', GENERATION, 'A/B'));
+		const childPort = vi.spyOn(adapter.historic, 'lineHistoryIndex').mockResolvedValue(null);
+
+		await expect(getLineHistoryIndex('A/B')).resolves.toBeNull();
+		await expect(getLineHistoryIndex('A/B')).rejects.toMatchObject({
+			name: 'HistoryArtifactContractError',
+			path: 'historic/history/lines/412f42/index.json',
+		});
+		expect(childPort).toHaveBeenCalledTimes(1);
+	});
+
+	it('discovers matching line and stop directories through their exact root pins', async () => {
+		vi.spyOn(adapter.historic, 'historyIndex')
+			.mockResolvedValueOnce(availabilityRoot([rootFamily('lines')]))
+			.mockResolvedValueOnce(availabilityRoot([rootFamily('stops')]));
+		const line = entityDirectory('lines');
+		const stop = entityDirectory('stops', GENERATION, '..');
+		vi.spyOn(adapter.historic, 'lineHistoryDirectory').mockResolvedValue(line);
+		vi.spyOn(adapter.historic, 'stopHistoryDirectory').mockResolvedValue(stop);
+
+		await expect(getLineHistoryDirectory()).resolves.toBe(line);
+		await expect(getStopHistoryDirectory()).resolves.toBe(stop);
+	});
+
+	it('loads a matching Stop entity index without touching any other entity', async () => {
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(
+			availabilityRoot([rootFamily('stops')]),
+		);
+		vi.spyOn(adapter.historic, 'stopHistoryDirectory').mockResolvedValue(
+			entityDirectory('stops', GENERATION, '..'),
+		);
+		const child = collectionIndex('stops', GENERATION, '..');
+		const childPort = vi.spyOn(adapter.historic, 'stopHistoryIndex').mockResolvedValue(child);
+
+		await expect(getStopHistoryIndex('..')).resolves.toBe(child);
+		expect(childPort).toHaveBeenCalledWith('..', undefined);
+	});
+});
+
+describe('retained network partition loading', () => {
+	it('loads awkward Line and Stop entities through isolated exact-byte validators', async () => {
+		const lineId = 'A/B';
+		const stopId = '..';
+		const line = await entityArtifact('lines', lineId, '2026-01', '2026-01-31');
+		const stop = await entityArtifact('stops', stopId, '2026-01', '2026-01-31');
+		const coverage = [
+			{
+				metric: 'delay',
+				aggregation: 'additive',
+				first_available_date: '2026-01-31',
+				last_available_date: '2026-01-31',
+			},
+		];
+		const linePort = vi.spyOn(adapter.historic, 'lineHistoryPartition').mockResolvedValue(line);
+		const stopPort = vi.spyOn(adapter.historic, 'stopHistoryPartition').mockResolvedValue(stop);
+
+		await expect(
+			loadLineHistoryRange(
+				lineId,
+				collectionIndex('lines', GENERATION, lineId, [line.ref], coverage),
+				{ from: '2026-01-31', to: '2026-01-31' },
+			),
+		).resolves.toEqual([line.value]);
+		await expect(
+			loadStopHistoryRange(
+				stopId,
+				collectionIndex('stops', GENERATION, stopId, [stop.ref], coverage),
+				{ from: '2026-01-31', to: '2026-01-31' },
+			),
+		).resolves.toEqual([stop.value]);
+		expect(linePort).toHaveBeenCalledWith(lineId, line.ref.path, expect.any(Object));
+		expect(stopPort).toHaveBeenCalledWith(stopId, stop.ref.path, expect.any(Object));
+	});
+
+	it('fails Line/Stop loads on cross-family, cross-entity, month, or byte-size drift', async () => {
+		const lineId = 'A/B';
+		const line = await entityArtifact('lines', lineId, '2026-01', '2026-01-31');
+		const coverage = [
+			{
+				metric: 'delay',
+				aggregation: 'additive',
+				first_available_date: '2026-01-31',
+				last_available_date: '2026-01-31',
+			},
+		];
+		const linePort = vi.spyOn(adapter.historic, 'lineHistoryPartition');
+
+		await expect(
+			loadLineHistoryRange(
+				lineId,
+				collectionIndex('stops', GENERATION, lineId, [line.ref], coverage),
+				{ from: '2026-01-31', to: '2026-01-31' },
+			),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		expect(linePort).not.toHaveBeenCalled();
+
+		linePort.mockResolvedValueOnce({
+			...line,
+			value: { ...line.value, entity_id: 'other' },
+		});
+		await expect(
+			loadLineHistoryRange(
+				lineId,
+				collectionIndex('lines', GENERATION, lineId, [line.ref], coverage),
+				{ from: '2026-01-31', to: '2026-01-31' },
+			),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+
+		linePort.mockResolvedValueOnce({
+			...line,
+			value: { ...line.value, month: '2026-02' },
+		});
+		await expect(
+			loadLineHistoryRange(
+				lineId,
+				collectionIndex('lines', GENERATION, lineId, [line.ref], coverage),
+				{ from: '2026-01-31', to: '2026-01-31' },
+			),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+
+		linePort.mockResolvedValueOnce(line);
+		await expect(
+			loadLineHistoryRange(
+				lineId,
+				collectionIndex(
+					'lines',
+					GENERATION,
+					lineId,
+					[{ ...line.ref, byte_size: line.ref.byte_size + 1 }],
+					coverage,
+				),
+				{ from: '2026-01-31', to: '2026-01-31' },
+			),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+	});
+
+	it('preflights every ref, fetches only intersections, and returns deterministic month order', async () => {
+		const january = await networkArtifact('2026-01', '2026-01-31');
+		const february = await networkArtifact('2026-02', '2026-02-01');
+		const march = await networkArtifact('2026-03', '2026-03-01');
+		const index = collectionIndex(
+			'network',
+			GENERATION,
+			null,
+			[march.ref, february.ref, january.ref],
+			[
+				{
+					metric: 'delay',
+					aggregation: 'additive',
+					first_available_date: '2026-01-31',
+					last_available_date: '2026-03-01',
+				},
+			],
+		);
+		const byPath = new Map(
+			[january, february, march].map((artifact) => [artifact.ref.path, artifact]),
+		);
+		const partitionPort = vi
+			.spyOn(adapter.historic, 'networkHistoryPartition')
+			.mockImplementation(async (advertisedPath) => byPath.get(advertisedPath)!);
+
+		const result = await loadNetworkHistoryRange(index, {
+			from: '2026-01-31',
+			to: '2026-02-01',
+		});
+
+		expect(result.map((partition) => partition.month)).toEqual(['2026-01', '2026-02']);
+		expect(partitionPort.mock.calls.map(([advertisedPath]) => advertisedPath)).toEqual([
+			january.ref.path,
+			february.ref.path,
+		]);
+	});
+
+	it('rejects an unsafe later ref before starting any partition fetch', async () => {
+		const safe = await networkArtifact('2026-01', '2026-01-31');
+		const unsafe = {
+			...safe.ref,
+			path: 'https://evil.test/history.json',
+			coverage_start: '2026-02-01',
+			coverage_end: '2026-02-01',
+		};
+		const index = {
+			...collectionIndex('network', GENERATION, null, [], []),
+			partitions: [safe.ref, unsafe],
+		};
+		const partitionPort = vi.spyOn(adapter.historic, 'networkHistoryPartition');
+
+		await expect(
+			loadNetworkHistoryRange(index, { from: '2026-01-01', to: '2026-02-28' }),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		expect(partitionPort).not.toHaveBeenCalled();
+	});
+
+	it('fails closed for advertised 404, byte-size drift, and SHA drift', async () => {
+		const artifact = await networkArtifact('2026-01', '2026-01-31');
+		const baseMetrics = [
+			{
+				metric: 'delay',
+				aggregation: 'additive',
+				first_available_date: '2026-01-31',
+				last_available_date: '2026-01-31',
+			},
+		];
+		const partitionPort = vi.spyOn(adapter.historic, 'networkHistoryPartition');
+
+		partitionPort.mockResolvedValueOnce(null);
+		await expect(
+			loadNetworkHistoryRange(
+				collectionIndex('network', GENERATION, null, [artifact.ref], baseMetrics),
+				{ from: '2026-01-31', to: '2026-01-31' },
+			),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+
+		partitionPort.mockResolvedValueOnce(artifact);
+		await expect(
+			loadNetworkHistoryRange(
+				collectionIndex(
+					'network',
+					GENERATION,
+					null,
+					[{ ...artifact.ref, byte_size: artifact.ref.byte_size + 1 }],
+					baseMetrics,
+				),
+				{ from: '2026-01-31', to: '2026-01-31' },
+			),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+
+		const wrongSha = 'a'.repeat(64);
+		partitionPort.mockResolvedValueOnce(artifact);
+		await expect(
+			loadNetworkHistoryRange(
+				collectionIndex(
+					'network',
+					GENERATION,
+					null,
+					[
+						{
+							...artifact.ref,
+							sha256: wrongSha,
+							path: `historic/history/network/generations/${wrongSha}/2026-01.json`,
+						},
+					],
+					baseMetrics,
+				),
+				{ from: '2026-01-31', to: '2026-01-31' },
+			),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+	});
+
+	it('uses exactly four workers, threads one abort signal, and stops on caller cancellation', async () => {
+		const months = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
+		const artifacts = await Promise.all(
+			months.map((month) => networkArtifact(month, `${month}-01`)),
+		);
+		const index = collectionIndex(
+			'network',
+			GENERATION,
+			null,
+			artifacts.map((artifact) => artifact.ref),
+			[
+				{
+					metric: 'delay',
+					aggregation: 'additive',
+					first_available_date: '2026-01-01',
+					last_available_date: '2026-05-01',
+				},
+			],
+		);
+		const waits = new Map(
+			artifacts.map((artifact) => [artifact.ref.path, deferred<typeof artifact>()]),
+		);
+		const started: string[] = [];
+		const signals: AbortSignal[] = [];
+		const partitionPort = vi
+			.spyOn(adapter.historic, 'networkHistoryPartition')
+			.mockImplementation(async (advertisedPath, ctx) => {
+				started.push(advertisedPath);
+				signals.push(ctx!.signal!);
+				return waits.get(advertisedPath)!.promise;
+			});
+		const caller = new AbortController();
+		const loading = loadNetworkHistoryRange(
+			index,
+			{ from: '2026-01-01', to: '2026-05-01' },
+			{ signal: caller.signal },
+		);
+
+		await vi.waitFor(() => expect(started).toHaveLength(4));
+		expect(new Set(signals).size).toBe(1);
+		caller.abort();
+		await expect(loading).rejects.toMatchObject({ name: 'AbortError' });
+		expect(signals[0].aborted).toBe(true);
+		expect(started).toHaveLength(4);
+		expect(partitionPort).toHaveBeenCalledTimes(4);
+	});
+
+	it('does not turn an abort-ignoring late partition completion into success', async () => {
+		const artifact = await networkArtifact('2026-01', '2026-01-31');
+		const index = collectionIndex(
+			'network',
+			GENERATION,
+			null,
+			[artifact.ref],
+			[
+				{
+					metric: 'delay',
+					aggregation: 'additive',
+					first_available_date: '2026-01-31',
+					last_available_date: '2026-01-31',
+				},
+			],
+		);
+		const late = deferred<typeof artifact>();
+		vi.spyOn(adapter.historic, 'networkHistoryPartition').mockImplementation(
+			async () => late.promise,
+		);
+		const caller = new AbortController();
+		let resolved = false;
+		const loading = loadNetworkHistoryRange(
+			index,
+			{ from: '2026-01-31', to: '2026-01-31' },
+			{ signal: caller.signal },
+		).then(
+			() => {
+				resolved = true;
+			},
+			(error: unknown) => error,
+		);
+
+		caller.abort();
+		await expect(loading).resolves.toMatchObject({ name: 'AbortError' });
+		late.resolve(artifact);
+		await Promise.resolve();
+		expect(resolved).toBe(false);
+	});
+
+	it('does not memoize raw bytes between repeated range loads', async () => {
+		const artifact = await networkArtifact('2026-01', '2026-01-31');
+		const index = collectionIndex(
+			'network',
+			GENERATION,
+			null,
+			[artifact.ref],
+			[
+				{
+					metric: 'delay',
+					aggregation: 'additive',
+					first_available_date: '2026-01-31',
+					last_available_date: '2026-01-31',
+				},
+			],
+		);
+		const partitionPort = vi
+			.spyOn(adapter.historic, 'networkHistoryPartition')
+			.mockResolvedValue(artifact);
+		const ctx: AdapterCtx = { cache: new Map<string, unknown>() };
+
+		await loadNetworkHistoryRange(index, { from: '2026-01-31', to: '2026-01-31' }, ctx);
+		await loadNetworkHistoryRange(index, { from: '2026-01-31', to: '2026-01-31' }, ctx);
+
+		expect(partitionPort).toHaveBeenCalledTimes(2);
 	});
 });

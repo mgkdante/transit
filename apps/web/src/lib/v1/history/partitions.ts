@@ -28,6 +28,13 @@ export class HistoryPartitionLoadError extends Error {
 	}
 }
 
+export class HistoryTransientPublicationError extends HistoryArtifactContractError {
+	constructor(path: string, message = 'retained history publication changed during discovery') {
+		super(path, message);
+		this.name = 'HistoryTransientPublicationError';
+	}
+}
+
 const ALERT_ARTIFACT_PATH =
 	/^historic\/alerts\/generations\/[0-9a-f]{64}\/\d{4}-(?:0[1-9]|1[0-2])\/page-\d{4}\.json$/;
 

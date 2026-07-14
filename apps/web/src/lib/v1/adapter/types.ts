@@ -19,7 +19,7 @@
 // RouteFile/StopFile) — structurally identical, so the ports satisfy them.
 
 import type { Locale } from '$lib/i18n';
-import type { FetchFn } from '$lib/v1/http';
+import type { FetchFn, RawJsonEntity } from '$lib/v1/http';
 
 import type { Manifest } from '$lib/v1/schemas/manifest';
 import type { VehiclesFile } from '$lib/v1/schemas/vehicles';
@@ -44,7 +44,14 @@ import type { Provenance } from '$lib/v1/schemas/provenance';
 import type { DataHealth } from '$lib/v1/schemas/data_health';
 import type { BasemapFile } from '$lib/v1/schemas/basemap';
 import type { AlertArchiveIndex, AlertArchivePage } from '$lib/v1/schemas/alert_archive';
-import type { HistoricAvailabilityIndex } from '$lib/v1/schemas/history';
+import type {
+	HistoricAvailabilityIndex,
+	HistoricCollectionIndex,
+	HistoricEntityDirectoryIndex,
+	LineHistoryPartition,
+	NetworkHistoryPartition,
+	StopHistoryPartition,
+} from '$lib/v1/schemas/history';
 
 /**
  * Per-request adapter context. Threaded from `event` in SSR loads so reads use
@@ -57,6 +64,8 @@ export interface AdapterCtx {
 	cache?: Map<string, unknown>;
 	/** Optional abort signal for the underlying requests. */
 	signal?: AbortSignal;
+	/** Force one immediate retained-history parent re-read with cache busting. */
+	freshHistoryParent?: boolean;
 }
 
 /** Snapshot root pointer. Read first — every other family resolves relative to it. */
@@ -89,6 +98,25 @@ export interface StaticPort {
 /** Historic tier (daily TTL): rollups + per-entity detail/receipts (404 -> null). */
 export interface HistoricPort {
 	historyIndex(ctx?: AdapterCtx): Promise<HistoricAvailabilityIndex | null>;
+	networkHistoryIndex(ctx?: AdapterCtx): Promise<HistoricCollectionIndex | null>;
+	lineHistoryDirectory(ctx?: AdapterCtx): Promise<HistoricEntityDirectoryIndex | null>;
+	stopHistoryDirectory(ctx?: AdapterCtx): Promise<HistoricEntityDirectoryIndex | null>;
+	lineHistoryIndex(entityId: string, ctx?: AdapterCtx): Promise<HistoricCollectionIndex | null>;
+	stopHistoryIndex(entityId: string, ctx?: AdapterCtx): Promise<HistoricCollectionIndex | null>;
+	networkHistoryPartition(
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<RawJsonEntity<NetworkHistoryPartition> | null>;
+	lineHistoryPartition(
+		entityId: string,
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<RawJsonEntity<LineHistoryPartition> | null>;
+	stopHistoryPartition(
+		entityId: string,
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<RawJsonEntity<StopHistoryPartition> | null>;
 	alertArchiveIndex(ctx?: AdapterCtx): Promise<AlertArchiveIndex | null>;
 	alertArchivePage(path: string, ctx?: AdapterCtx): Promise<AlertArchivePage | null>;
 	networkTrend(ctx?: AdapterCtx): Promise<NetworkTrend>;

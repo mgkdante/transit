@@ -243,6 +243,35 @@ describe('bounded partition loading', () => {
 		await expect(loading).rejects.toMatchObject({ name: 'AbortError' });
 		expect(internalSignal?.aborted).toBe(true);
 	});
+
+	it('keeps a canceled load rejected when an abort-ignoring partition settles late', async () => {
+		const caller = new AbortController();
+		const late = deferred<string>();
+		let resolvedOutput: string[] | null = null;
+		let rejectedWith: unknown;
+		const loading = loadHistoryPartitions([{ path: 'late-page' }], async () => late.promise, {
+			signal: caller.signal,
+		});
+		const observed = loading.then(
+			(value) => {
+				resolvedOutput = value;
+			},
+			(error: unknown) => {
+				rejectedWith = error;
+			},
+		);
+
+		caller.abort();
+		await observed;
+		expect(rejectedWith).toMatchObject({ name: 'AbortError' });
+		expect(resolvedOutput).toBeNull();
+
+		late.resolve('too late');
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(rejectedWith).toMatchObject({ name: 'AbortError' });
+		expect(resolvedOutput).toBeNull();
+	});
 });
 
 describe('stable alert page merging', () => {

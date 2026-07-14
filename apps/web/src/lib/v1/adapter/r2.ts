@@ -19,7 +19,7 @@
 
 import type { z } from 'zod';
 import { resolveUrl, entityUrl } from '$lib/v1/config';
-import { getEntityJson, type FetchFn } from '$lib/v1/http';
+import { getEntityJson, getEntityJsonWithBytes, type FetchFn } from '$lib/v1/http';
 import type { AdapterCtx, ContentAdapter } from './types';
 
 import { ManifestSchema, type Manifest } from '$lib/v1/schemas/manifest';
@@ -46,8 +46,19 @@ import { ProvenanceSchema } from '$lib/v1/schemas/provenance';
 import { DataHealthSchema } from '$lib/v1/schemas/data_health';
 import { BasemapFileSchema } from '$lib/v1/schemas/basemap';
 import { AlertArchiveIndexSchema, AlertArchivePageSchema } from '$lib/v1/schemas/alert_archive';
-import { HistoricAvailabilityIndexSchema } from '$lib/v1/schemas/history';
-import { assertSafeHistoryArtifactPath } from '$lib/v1/history';
+import {
+	HistoricAvailabilityIndexSchema,
+	HistoricCollectionIndexSchema,
+	HistoricEntityDirectoryIndexSchema,
+	LineHistoryPartitionSchema,
+	NetworkHistoryPartitionSchema,
+	StopHistoryPartitionSchema,
+} from '$lib/v1/schemas/history';
+import {
+	HistoryArtifactContractError,
+	assertSafeHistoryArtifactPath,
+	encodeHistoryEntityId,
+} from '$lib/v1/history';
 
 import type { Locale } from '$lib/i18n';
 
@@ -96,6 +107,7 @@ const MANIFEST_MEMO_KEY = 'v1:manifest';
 // daily builds and may serve from cache.
 const LIVE_CACHE: RequestCache = 'default';
 const SLOW_CACHE: RequestCache = 'force-cache';
+let historyRefreshSequence = 0;
 
 function fetchOf(ctx?: AdapterCtx): FetchFn {
 	return ctx?.fetch ?? fetch;
@@ -154,6 +166,61 @@ async function readOptionalWhole<T>(
 ): Promise<T | null> {
 	const url = resolveUrl(relativePath);
 	const value = await getEntityJson(url, schema, label, fetchOf(ctx), {
+		cache: SLOW_CACHE,
+		signal: ctx?.signal,
+	});
+	return value ?? null;
+}
+
+function freshHistoryUrl(path: string, fresh: boolean | undefined): string {
+	const url = resolveUrl(path);
+	if (!fresh) return url;
+	historyRefreshSequence += 1;
+	const token = `${Date.now().toString(36)}-${historyRefreshSequence.toString(36)}`;
+	return `${url}?history_refresh=${encodeURIComponent(token)}`;
+}
+
+async function readOptionalHistory<T>(
+	path: string,
+	schema: z.ZodType<T>,
+	label: string,
+	ctx?: AdapterCtx,
+): Promise<T | null> {
+	const value = await getEntityJson(
+		freshHistoryUrl(path, ctx?.freshHistoryParent),
+		schema,
+		label,
+		fetchOf(ctx),
+		{
+			cache: ctx?.freshHistoryParent ? 'reload' : SLOW_CACHE,
+			signal: ctx?.signal,
+		},
+	);
+	return value ?? null;
+}
+
+function assertFamilyPartitionPath(
+	family: 'network' | 'lines' | 'stops',
+	entityId: string | null,
+	path: string,
+): string {
+	const encoded = family === 'network' ? '' : `${encodeHistoryEntityId(entityId ?? '')}/`;
+	const pattern = new RegExp(
+		`^historic/history/${family}/${encoded}generations/[0-9a-f]{64}/\\d{4}-(?:0[1-9]|1[0-2])\\.json$`,
+	);
+	if (!pattern.test(path)) {
+		throw new HistoryArtifactContractError(path, `unsafe advertised ${family} history path`);
+	}
+	return path;
+}
+
+async function readRawHistoryPartition<T>(
+	path: string,
+	schema: z.ZodType<T>,
+	label: string,
+	ctx?: AdapterCtx,
+) {
+	const value = await getEntityJsonWithBytes(resolveUrl(path), schema, label, fetchOf(ctx), {
 		cache: SLOW_CACHE,
 		signal: ctx?.signal,
 	});
@@ -303,15 +370,69 @@ export const r2Adapter: ContentAdapter = {
 	},
 
 	historic: {
-		historyIndex: async (ctx) => {
-			const m = await loadManifest(ctx);
-			return readOptionalWhole(
-				m.files.historic?.history_index ?? DEFAULTS.historic.history_index,
+		historyIndex: (ctx) =>
+			readOptionalHistory(
+				DEFAULTS.historic.history_index,
 				HistoricAvailabilityIndexSchema,
 				'historic.historyIndex',
 				ctx,
-			);
-		},
+			),
+		networkHistoryIndex: async (ctx) =>
+			readOptionalHistory(
+				'historic/history/network/index.json',
+				HistoricCollectionIndexSchema,
+				'historic.networkHistoryIndex',
+				ctx,
+			),
+		lineHistoryDirectory: async (ctx) =>
+			readOptionalHistory(
+				'historic/history/lines/index.json',
+				HistoricEntityDirectoryIndexSchema,
+				'historic.lineHistoryDirectory',
+				ctx,
+			),
+		stopHistoryDirectory: async (ctx) =>
+			readOptionalHistory(
+				'historic/history/stops/index.json',
+				HistoricEntityDirectoryIndexSchema,
+				'historic.stopHistoryDirectory',
+				ctx,
+			),
+		lineHistoryIndex: async (entityId, ctx) =>
+			readOptionalHistory(
+				`historic/history/lines/${encodeHistoryEntityId(entityId)}/index.json`,
+				HistoricCollectionIndexSchema,
+				'historic.lineHistoryIndex',
+				ctx,
+			),
+		stopHistoryIndex: async (entityId, ctx) =>
+			readOptionalHistory(
+				`historic/history/stops/${encodeHistoryEntityId(entityId)}/index.json`,
+				HistoricCollectionIndexSchema,
+				'historic.stopHistoryIndex',
+				ctx,
+			),
+		networkHistoryPartition: async (path, ctx) =>
+			readRawHistoryPartition(
+				assertFamilyPartitionPath('network', null, path),
+				NetworkHistoryPartitionSchema,
+				'historic.networkHistoryPartition',
+				ctx,
+			),
+		lineHistoryPartition: async (entityId, path, ctx) =>
+			readRawHistoryPartition(
+				assertFamilyPartitionPath('lines', entityId, path),
+				LineHistoryPartitionSchema,
+				'historic.lineHistoryPartition',
+				ctx,
+			),
+		stopHistoryPartition: async (entityId, path, ctx) =>
+			readRawHistoryPartition(
+				assertFamilyPartitionPath('stops', entityId, path),
+				StopHistoryPartitionSchema,
+				'historic.stopHistoryPartition',
+				ctx,
+			),
 		alertArchiveIndex: async (ctx) => {
 			const m = await loadManifest(ctx);
 			return readOptionalWhole(
