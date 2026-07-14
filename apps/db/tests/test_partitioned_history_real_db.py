@@ -8,15 +8,22 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from transit_ops.settings import get_settings
-from transit_ops.snapshots.builders import build_network_trend, build_route_reliability
+from transit_ops.snapshots.builders import (
+    STOP_HISTORY_METRICS,
+    build_network_trend,
+    build_route_reliability,
+    build_stop_reliability,
+)
 from transit_ops.snapshots.builders.historic.line_history import build_line_history
 from transit_ops.snapshots.builders.historic.network_history import build_network_history
+from transit_ops.snapshots.builders.historic.stop_history import build_stop_history
 from transit_ops.snapshots.contract import (
     ROUTE_RELIABILITY_BYTE_CEILING,
     NetworkTrend,
     OccupancyMix,
     TrendPoint,
 )
+from transit_ops.snapshots.publish import _entity_family_availability
 from transit_ops.snapshots.serialization import snapshot_json_bytes
 
 DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
@@ -31,6 +38,8 @@ OTHER_PROVIDER = "stm_network_history_other_test"
 COMPAT_PROVIDER = "stm_network_history_compat_test"
 LINE_PROVIDER = "stm_line_history_test"
 LINE_OTHER_PROVIDER = "stm_line_history_other_test"
+STOP_PROVIDER = "stm_stop_history_test"
+STOP_OTHER_PROVIDER = "stm_stop_history_other_test"
 TRIP_ENDPOINT_ID = 9_987_100
 OTHER_TRIP_ENDPOINT_ID = 9_987_101
 BASE_RUN_ID = 9_987_200
@@ -387,6 +396,127 @@ def line_history_conn():
             engine.dispose()
 
 
+@pytest.fixture()
+def stop_history_conn():
+    engine = create_engine(DB_URL)
+    with engine.connect() as conn:
+        tx = conn.begin()
+        for provider_id in (STOP_PROVIDER, STOP_OTHER_PROVIDER):
+            conn.execute(
+                text(
+                    "INSERT INTO core.providers "
+                    "(provider_id, display_name, timezone, provider_key) "
+                    "VALUES (:provider_id, 'Stop history regression', 'America/Toronto', "
+                    ":provider_id)"
+                ),
+                {"provider_id": provider_id},
+            )
+        main_stop = "A/B é雪"
+        aux_stop = "aux/%雪"
+        for local_date, route_id, obs, severe, delay_sum, built in (
+            (
+                date(2026, 5, 31),
+                "A",
+                4,
+                0,
+                120,
+                datetime(2026, 6, 1, tzinfo=UTC),
+            ),
+            (
+                date(2026, 5, 31),
+                "__unrouted__",
+                6,
+                2,
+                180,
+                datetime(2026, 6, 1, 1, tzinfo=UTC),
+            ),
+            (
+                date(2026, 6, 2),
+                "B",
+                5,
+                0,
+                -50,
+                datetime(2026, 6, 3, tzinfo=UTC),
+            ),
+        ):
+            conn.execute(
+                text(
+                    "INSERT INTO gold.stop_delay_spine "
+                    "(provider_id, stop_id, route_id, provider_local_date, "
+                    "observation_count, severe_delay_count, sum_delay_seconds, built_at_utc) "
+                    "VALUES (:provider_id, :stop_id, :route_id, :local_date, :obs, :severe, "
+                    ":delay_sum, :built)"
+                ),
+                {
+                    "provider_id": STOP_PROVIDER,
+                    "stop_id": main_stop,
+                    "route_id": route_id,
+                    "local_date": local_date,
+                    "obs": obs,
+                    "severe": severe,
+                    "delay_sum": delay_sum,
+                    "built": built,
+                },
+            )
+        conn.execute(
+            text(
+                "INSERT INTO gold.stop_delay_percentile_daily "
+                "(provider_id, provider_local_date, stop_id, delay_observation_count, "
+                "p50_delay_seconds, p90_delay_seconds, built_at_utc) "
+                "VALUES (:provider_id, '2026-05-31', :stop_id, 10, 30, 240, "
+                "'2026-06-01T02:00:00Z'), "
+                "(:provider_id, '2026-06-03', :aux_stop, 2, NULL, 180, "
+                "'2026-06-04T00:00:00Z')"
+            ),
+            {
+                "provider_id": STOP_PROVIDER,
+                "stop_id": main_stop,
+                "aux_stop": aux_stop,
+            },
+        )
+        conn.execute(
+            text(
+                "INSERT INTO gold.stop_occupancy_band_daily "
+                "(provider_id, provider_local_date, stop_id, observation_count, empty_count, "
+                "many_seats_count, few_seats_count, standing_count, full_count, built_at_utc) "
+                "VALUES (:provider_id, '2026-06-02', :stop_id, 4, 0, 1, 1, 1, 1, "
+                "'2026-06-03T01:00:00Z'), "
+                "(:provider_id, '2026-06-03', :aux_stop, 3, 0, 0, 0, 2, 1, "
+                "'2026-06-04T01:00:00Z')"
+            ),
+            {
+                "provider_id": STOP_PROVIDER,
+                "stop_id": main_stop,
+                "aux_stop": aux_stop,
+            },
+        )
+        conn.execute(
+            text(
+                "INSERT INTO gold.stop_delay_spine "
+                "(provider_id, stop_id, route_id, provider_local_date, observation_count, "
+                "severe_delay_count, sum_delay_seconds, built_at_utc) "
+                "VALUES (:provider_id, :stop_id, '__unrouted__', '2026-06-02', 99, 99, "
+                "9999, '2026-06-03T00:00:00Z')"
+            ),
+            {"provider_id": STOP_OTHER_PROVIDER, "stop_id": main_stop},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO gold.stop_occupancy_band_daily "
+                "(provider_id, provider_local_date, stop_id, observation_count, empty_count, "
+                "many_seats_count, few_seats_count, standing_count, full_count, built_at_utc) "
+                "VALUES (:provider_id, '2026-06-03', :stop_id, 99, 0, 0, 0, 0, 99, "
+                "'2026-06-04T00:00:00Z')"
+            ),
+            {"provider_id": STOP_OTHER_PROVIDER, "stop_id": aux_stop},
+        )
+        try:
+            yield conn
+        finally:
+            tx.rollback()
+            engine.dispose()
+
+
 def test_network_history_real_db_matches_cross_month_sql(
     network_history_conn,
     monkeypatch: pytest.MonkeyPatch,
@@ -728,3 +858,135 @@ def test_line_history_real_db_matches_cross_month_sql_and_sparse_auxiliary_entit
     )
     assert compatibility_after == compatibility_before
     assert len(compatibility_after) <= ROUTE_RELIABILITY_BYTE_CEILING
+
+
+def test_stop_history_real_db_reconciles_routes_auxiliary_sources_and_compatibility(
+    stop_history_conn,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _extend_history_retention(monkeypatch)
+    stamp = "2026-07-13T00:00:00Z"
+    compatibility_before = {
+        stop_id: snapshot_json_bytes(payload)
+        for stop_id, payload in build_stop_reliability(
+            stop_history_conn,
+            provider_id=STOP_PROVIDER,
+            generated_utc=stamp,
+        ).items()
+    }
+    bundle = build_stop_history(
+        stop_history_conn,
+        provider_id=STOP_PROVIDER,
+        generated_utc=stamp,
+    )
+
+    main_stop = "A/B é雪"
+    aux_stop = "aux/%雪"
+    assert [(partition.entity_id, partition.month) for partition in bundle.partitions] == [
+        (main_stop, "2026-05"),
+        (main_stop, "2026-06"),
+        (aux_stop, "2026-06"),
+    ]
+    main_days = [
+        day
+        for partition in bundle.partitions
+        if partition.entity_id == main_stop
+        for day in partition.days
+    ]
+    direct_delay = stop_history_conn.execute(
+        text(
+            "SELECT SUM(observation_count), SUM(severe_delay_count), "
+            "SUM(sum_delay_seconds) FROM gold.stop_delay_spine "
+            "WHERE provider_id = :provider_id AND stop_id = :stop_id"
+        ),
+        {"provider_id": STOP_PROVIDER, "stop_id": main_stop},
+    ).one()
+    assert (
+        sum(day.delay.observation_count for day in main_days if day.delay),
+        sum(day.delay.severe_count for day in main_days if day.delay),
+        sum(day.delay.sum_delay_seconds for day in main_days if day.delay),
+    ) == tuple(direct_delay)
+    assert (
+        sum(day.delay.in_clamp_observation_count for day in main_days if day.delay)
+        == direct_delay[0]
+    )
+    assert all(day.delay.on_time_count is None for day in main_days if day.delay)
+    assert main_days[1].delay.severe_count == 0
+    first_day_routes = stop_history_conn.execute(
+        text(
+            "SELECT route_id, observation_count FROM gold.stop_delay_spine "
+            "WHERE provider_id = :provider_id AND stop_id = :stop_id "
+            "AND provider_local_date = '2026-05-31' ORDER BY route_id"
+        ),
+        {"provider_id": STOP_PROVIDER, "stop_id": main_stop},
+    ).all()
+    assert first_day_routes == [("A", 4), ("__unrouted__", 6)]
+    assert main_days[0].delay.observation_count == sum(row[1] for row in first_day_routes)
+    assert main_days[0].delay_percentiles is not None
+    assert main_days[0].delay_percentiles.p90_delay_seconds == 240
+    assert main_days[1].occupancy is not None
+    assert main_days[1].occupancy.model_dump() == {
+        "empty": 0,
+        "many_seats": 1,
+        "few_seats": 1,
+        "standing": 1,
+        "full": 1,
+    }
+
+    auxiliary = next(
+        partition for partition in bundle.partitions if partition.entity_id == aux_stop
+    )
+    assert auxiliary.days[0].delay is None
+    assert auxiliary.days[0].delay_percentiles is not None
+    assert auxiliary.days[0].delay_percentiles.p90_delay_seconds == 180
+    assert auxiliary.days[0].occupancy is not None
+    assert auxiliary.days[0].occupancy.full == 1
+    assert [entry.entity_id for entry in bundle.directory.entities] == [main_stop, aux_stop]
+    assert bundle.directory.entities[0].encoded_id == main_stop.encode().hex()
+    assert all(index.entity_id != "FOREIGN" for index in bundle.indexes)
+    foreign = stop_history_conn.execute(
+        text(
+            "SELECT SUM(observation_count), SUM(severe_delay_count) "
+            "FROM gold.stop_delay_spine WHERE provider_id = :provider_id"
+        ),
+        {"provider_id": STOP_OTHER_PROVIDER},
+    ).one()
+    assert tuple(foreign) == (99, 99)
+    assert tuple(foreign) != tuple(direct_delay[:2])
+
+    stop_family = _entity_family_availability(
+        family="stops",
+        directory=bundle.directory,
+        indexes=bundle.indexes,
+        metrics=STOP_HISTORY_METRICS,
+    )
+    assert stop_family.first_available_date == "2026-05-31"
+    assert stop_family.last_available_date == "2026-06-03"
+    assert [(gap.start_date, gap.end_date) for gap in stop_family.gaps] == [
+        ("2026-06-01", "2026-06-01")
+    ]
+    assert {metric.metric.value for metric in stop_family.metrics} == {
+        "delay",
+        "delay_percentiles",
+        "occupancy",
+    }
+
+    compatibility_after = {
+        stop_id: snapshot_json_bytes(payload)
+        for stop_id, payload in build_stop_reliability(
+            stop_history_conn,
+            provider_id=STOP_PROVIDER,
+            generated_utc=stamp,
+        ).items()
+    }
+    assert compatibility_after == compatibility_before
+    main_compatibility = next(
+        payload
+        for stop_id, payload in build_stop_reliability(
+            stop_history_conn,
+            provider_id=STOP_PROVIDER,
+            generated_utc=stamp,
+        ).items()
+        if stop_id == main_stop
+    )
+    assert [day.date for day in main_compatibility.daily] == ["2026-05-31", "2026-06-02"]

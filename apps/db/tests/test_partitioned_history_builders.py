@@ -19,7 +19,13 @@ from transit_ops.snapshots.builders.historic.network_history import (
     build_network_history_from_rows,
     build_network_history_plan_from_rows,
 )
-from transit_ops.snapshots.contract import LineHistoryDay, LineHistoryPartition, NetworkHistoryDay
+from transit_ops.snapshots.contract import (
+    LineHistoryDay,
+    LineHistoryPartition,
+    NetworkHistoryDay,
+    StopHistoryDay,
+    StopHistoryPartition,
+)
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
 from transit_ops.sql_registry import query_name
 
@@ -1203,3 +1209,291 @@ def test_line_history_builder_is_exported_through_both_builder_facades():
     assert historic.build_line_history_plan is module.build_line_history_plan
     assert builders.build_line_history is module.build_line_history
     assert builders.build_line_history_plan is module.build_line_history_plan
+
+
+def _stop_history_module():
+    try:
+        return import_module("transit_ops.snapshots.builders.historic.stop_history")
+    except ModuleNotFoundError:
+        pytest.fail("Stop retained-history builder has not been implemented")
+
+
+def _stop_history_rows():
+    delay = [
+        {
+            "stop_id": "A/B é雪",
+            "local_date": date(2026, 6, 30),
+            "observation_count": 4,
+            "severe_count": 0,
+            "sum_delay_seconds": 90,
+            "source_generated_utc": _ts(1, 10),
+        },
+        {
+            "stop_id": "A/B é雪",
+            "local_date": date(2026, 6, 30),
+            "observation_count": 6,
+            "severe_count": 2,
+            "sum_delay_seconds": 150,
+            "source_generated_utc": _ts(1, 11),
+        },
+        {
+            "stop_id": "A/B é雪",
+            "local_date": date(2026, 7, 2),
+            "observation_count": 5,
+            "severe_count": 0,
+            "sum_delay_seconds": -40,
+            "source_generated_utc": _ts(3, 8),
+        },
+        {
+            "stop_id": "A/B é雪-2",
+            "local_date": date(2026, 7, 2),
+            "observation_count": 3,
+            "severe_count": 1,
+            "sum_delay_seconds": 60,
+            "source_generated_utc": _ts(3, 9),
+        },
+    ]
+    percentiles = [
+        {
+            "stop_id": "A/B é雪",
+            "local_date": date(2026, 6, 30),
+            "observation_count": 10,
+            "p50_delay_seconds": 20,
+            "p90_delay_seconds": 240,
+            "source_generated_utc": _ts(1, 12),
+        },
+        {
+            "stop_id": "aux-only/%",
+            "local_date": date(2026, 7, 3),
+            "observation_count": 2,
+            "p50_delay_seconds": None,
+            "p90_delay_seconds": 180,
+            "source_generated_utc": _ts(4, 9),
+        },
+    ]
+    occupancy = [
+        {
+            "stop_id": "A/B é雪",
+            "local_date": date(2026, 7, 4),
+            "observation_count": 4,
+            "empty": 0,
+            "many_seats": 1,
+            "few_seats": 1,
+            "standing": 1,
+            "full": 1,
+            "source_generated_utc": _ts(5, 9),
+        }
+    ]
+    return delay, percentiles, occupancy
+
+
+def _build_stop_history_fixture(*, reverse: bool = False):
+    rows = _stop_history_rows()
+    if reverse:
+        rows = tuple(list(reversed(source)) for source in rows)
+    return _stop_history_module().build_stop_history_from_rows(
+        delay_rows=rows[0],
+        percentile_rows=rows[1],
+        occupancy_rows=rows[2],
+        generated_utc="2026-07-13T00:00:00Z",
+    )
+
+
+def test_stop_history_builder_sums_routes_preserves_real_zero_and_splits_months():
+    bundle = _build_stop_history_fixture()
+
+    assert [(item.entity_id, item.month) for item in bundle.partitions] == [
+        ("A/B é雪", "2026-06"),
+        ("A/B é雪", "2026-07"),
+        ("A/B é雪-2", "2026-07"),
+        ("aux-only/%", "2026-07"),
+    ]
+    june, july, isolated, aux_only = bundle.partitions
+    assert june.days[0].delay.model_dump() == {
+        "observation_count": 10,
+        "in_clamp_observation_count": 10,
+        "on_time_count": None,
+        "severe_count": 2,
+        "sum_delay_seconds": 240,
+    }
+    assert june.days[0].delay_percentiles.p90_delay_seconds == 240
+    assert july.days[0].delay.severe_count == 0
+    assert july.days[0].delay.in_clamp_observation_count == 5
+    assert july.days[-1].occupancy.model_dump() == {
+        "empty": 0,
+        "many_seats": 1,
+        "few_seats": 1,
+        "standing": 1,
+        "full": 1,
+    }
+    assert isolated.days[0].delay.observation_count == 3
+    assert aux_only.days[0].delay is None
+    assert aux_only.days[0].delay_percentiles.observation_count == 2
+    assert not hasattr(july.days[0], "habits")
+    assert not hasattr(july.days[0], "by_route")
+
+
+def test_stop_history_builder_has_stable_bytes_safe_identity_and_metric_coverage():
+    first = _build_stop_history_fixture()
+    second = _build_stop_history_fixture(reverse=True)
+
+    assert [snapshot_json_bytes(item) for item in first.partitions] == [
+        snapshot_json_bytes(item) for item in second.partitions
+    ]
+    assert first.indexes == second.indexes
+    assert first.directory == second.directory
+    awkward = next(index for index in first.indexes if index.entity_id == "A/B é雪")
+    metrics = {metric.metric.value: metric for metric in awkward.metrics}
+    assert metrics["delay"].first_available_date == "2026-06-30"
+    assert metrics["delay"].last_available_date == "2026-07-02"
+    assert metrics["delay"].gaps[0].start_date == "2026-07-01"
+    assert metrics["delay_percentiles"].last_available_date == "2026-06-30"
+    assert metrics["occupancy"].first_available_date == "2026-07-04"
+    entry = next(item for item in first.directory.entities if item.entity_id == "A/B é雪")
+    assert entry.encoded_id == "A/B é雪".encode().hex()
+    assert entry.index_path == f"historic/history/stops/{entry.encoded_id}/index.json"
+
+
+def test_stop_history_builder_omits_empty_days_and_rejects_duplicate_daily_percentiles():
+    module = _stop_history_module()
+    shared = {
+        "stop_id": "empty",
+        "local_date": date(2026, 7, 1),
+        "source_generated_utc": _ts(1, 1),
+    }
+    empty = module.build_stop_history_from_rows(
+        delay_rows=[
+            {
+                **shared,
+                "observation_count": 0,
+                "severe_count": 0,
+                "sum_delay_seconds": 0,
+            }
+        ],
+        percentile_rows=[],
+        occupancy_rows=[
+            {
+                **shared,
+                "observation_count": 0,
+                "empty": 0,
+                "many_seats": 0,
+                "few_seats": 0,
+                "standing": 0,
+                "full": 0,
+            }
+        ],
+        generated_utc="2026-07-13T00:00:00Z",
+        entity_ids=["empty"],
+    )
+    assert empty.partitions == []
+    assert empty.indexes == []
+    assert empty.directory.entities == []
+
+    percentile = _stop_history_rows()[1][0]
+    with pytest.raises(ValueError, match="duplicate Stop percentile day"):
+        module.build_stop_history_from_rows(
+            delay_rows=[],
+            percentile_rows=[percentile, dict(percentile)],
+            occupancy_rows=[],
+            generated_utc="2026-07-13T00:00:00Z",
+        )
+
+
+def test_stop_history_plan_batches_three_sources_and_retains_no_payload_models():
+    module = _stop_history_module()
+
+    class RecordingConn(NamedQueryConn):
+        def __init__(self):
+            super().__init__({"history.stops.ids": [{"stop_id": f"S{i:03d}"} for i in range(101)]})
+            self.names: list[str | None] = []
+            self.params: list[dict] = []
+
+        def execute(self, statement, params=None):  # noqa: ANN001
+            self.names.append(query_name(statement))
+            self.params.append(dict(params or {}))
+            return super().execute(statement, params)
+
+    conn = RecordingConn()
+    plan = module.build_stop_history_plan(
+        conn,
+        provider_id="stm",
+        generated_utc="2026-07-13T00:00:00Z",
+    )
+
+    assert list(plan.iter_partition_items()) == []
+    assert conn.names == [
+        "history.stops.ids",
+        *[
+            name
+            for _batch in range(2)
+            for name in (
+                "history.stops.delay",
+                "history.stops.percentiles",
+                "history.stops.occupancy",
+            )
+        ],
+    ]
+    assert all(
+        "stop_id = ANY(:entity_ids)" in str(query)
+        for query in (
+            module._STOP_HISTORY_DELAY_SQL,
+            module._STOP_HISTORY_PERCENTILES_SQL,
+            module._STOP_HISTORY_OCCUPANCY_SQL,
+        )
+    )
+    assert "gold.dim_stop" not in str(module._STOP_HISTORY_IDS_SQL)
+    assert "route_id <> '__unrouted__'" not in str(module._STOP_HISTORY_DELAY_SQL)
+
+    def retained_payloads(value):  # noqa: ANN001, ANN202
+        if isinstance(value, StopHistoryDay | StopHistoryPartition):
+            return [value]
+        if isinstance(value, dict):
+            return [item for child in value.values() for item in retained_payloads(child)]
+        if isinstance(value, list | tuple | set):
+            return [item for child in value for item in retained_payloads(child)]
+        return []
+
+    assert retained_payloads(vars(plan)) == []
+
+
+def test_stop_history_builder_is_exported_through_both_builder_facades():
+    module = _stop_history_module()
+    from transit_ops.snapshots import builders
+    from transit_ops.snapshots.builders import historic
+
+    assert historic.build_stop_history is module.build_stop_history
+    assert historic.build_stop_history_plan is module.build_stop_history_plan
+    assert builders.build_stop_history is module.build_stop_history
+    assert builders.build_stop_history_plan is module.build_stop_history_plan
+
+
+def test_stop_history_stream_summary_retains_compact_date_masks_not_daily_strings():
+    module = _stop_history_module()
+    plan = module.build_stop_history_plan_from_rows(
+        delay_rows=[
+            {
+                "stop_id": "S1",
+                "local_date": date(2024, 7, 1).fromordinal(date(2024, 7, 1).toordinal() + offset),
+                "observation_count": 1,
+                "severe_count": 0,
+                "sum_delay_seconds": 0,
+                "source_generated_utc": _ts(1, 10),
+            }
+            for offset in range(730)
+        ],
+        percentile_rows=[],
+        occupancy_rows=[],
+        generated_utc="2026-07-13T00:00:00Z",
+    )
+    summary = module.StopHistoryStreamSummary()
+    for ref, partition in plan.iter_partition_items():
+        summary.observe(ref, partition)
+
+    entity = summary.entities["S1"]
+    assert not isinstance(entity.available_dates, list)
+    assert all(not isinstance(dates, list) for dates in entity.metric_dates.values())
+    assert list(entity.available_dates) == [
+        date(2024, 7, 1).fromordinal(date(2024, 7, 1).toordinal() + offset).isoformat()
+        for offset in range(730)
+    ]
+    assert not isinstance(entity.generated_utc, list)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -90,6 +91,61 @@ def history_date(value: object, *, field: str = "local_date") -> str:
         if parsed.isoformat() == value:
             return value
     raise ValueError(f"{field} must be a valid local calendar date")
+
+
+@dataclass
+class HistoryDateMask:
+    """Compact relative-date set for bounded retained-history summaries."""
+
+    _first_ordinal: int | None = None
+    _bits: int = 0
+
+    def add(self, value: object) -> None:
+        ordinal = date.fromisoformat(history_date(value, field="date")).toordinal()
+        if self._first_ordinal is None:
+            self._first_ordinal = ordinal
+            self._bits = 1
+            return
+        if ordinal < self._first_ordinal:
+            self._bits <<= self._first_ordinal - ordinal
+            self._first_ordinal = ordinal
+        self._bits |= 1 << (ordinal - self._first_ordinal)
+
+    def update(self, values: Iterable[object]) -> None:
+        for value in values:
+            self.add(value)
+
+    def merge(self, other: HistoryDateMask) -> None:
+        if other._first_ordinal is None:
+            return
+        if self._first_ordinal is None:
+            self._first_ordinal = other._first_ordinal
+            self._bits = other._bits
+            return
+        first = min(self._first_ordinal, other._first_ordinal)
+        self._bits = (self._bits << (self._first_ordinal - first)) | (
+            other._bits << (other._first_ordinal - first)
+        )
+        self._first_ordinal = first
+
+    def copy(self) -> HistoryDateMask:
+        return HistoryDateMask(self._first_ordinal, self._bits)
+
+    def __bool__(self) -> bool:
+        return self._first_ordinal is not None
+
+    def __len__(self) -> int:
+        return self._bits.bit_count()
+
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        if self._first_ordinal is None:
+            return
+        remaining = self._bits
+        while remaining:
+            lowest = remaining & -remaining
+            offset = lowest.bit_length() - 1
+            yield date.fromordinal(self._first_ordinal + offset).isoformat()
+            remaining ^= lowest
 
 
 def history_month(local_date: str) -> str:

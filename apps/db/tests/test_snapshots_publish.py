@@ -704,7 +704,9 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
     assert len(network_partition_keys) == 1
     network_index_key = next(key for key in keys if "historic/history/network/index.json" in key)
     assert keys.index(network_partition_keys[0]) < keys.index(network_index_key)
-    assert not any("historic/history/index.json" in key for key in keys)
+    root_index_key = next(key for key in keys if "historic/history/index.json" in key)
+    assert keys.index(network_index_key) < keys.index(root_index_key)
+    assert keys[-1] == root_index_key
     # provenance is top-level (not under historic/)
     assert not any(k.endswith("historic/provenance.json") for k in key_set)
 
@@ -720,12 +722,26 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
     assert any("historic/receipts/2026-06-01.json" in k for k in key_set)
 
     # --- receipts discovery index (T7): exact set of receipt dates written ---
-    from transit_ops.snapshots.contract import ReceiptsIndex, RouteReliabilityIndex
     import pathlib
+
+    from transit_ops.snapshots import publish as snapshot_publish
+    from transit_ops.snapshots.contract import Receipt, ReceiptsIndex, RouteReliabilityIndex
+
     index_path = next(k for k in keys if "historic/receipts/index.json" in k)
     ri = ReceiptsIndex.model_validate_json(pathlib.Path(index_path).read_bytes())
     assert ri.dates == ["2025-01-01", "2026-06-01"]
     assert [item.date for item in ri.available] == ri.dates
+    published_receipts = {
+        date: Receipt.model_validate_json(
+            pathlib.Path(
+                next(key for key in keys if key.endswith(f"historic/receipts/{date}.json"))
+            ).read_bytes()
+        )
+        for date in ri.dates
+    }
+    assert ri.collection_generation_id == snapshot_publish._receipts_collection_generation_id(
+        published_receipts
+    )
 
     # --- route-reliability discovery index: the EXACT set of routes published this
     # run (so the web list-badge gate never lags the published files like the static

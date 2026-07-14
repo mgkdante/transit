@@ -196,6 +196,18 @@ from transit_ops.snapshots.builders.historic.small_surfaces import (
     build_receipts,
     build_repeat_offenders,
 )
+from transit_ops.snapshots.builders.historic.stop_history import (
+    STOP_HISTORY_ENTITY_BATCH_SIZE,
+    STOP_HISTORY_METRICS,
+    StopHistoryBundle,
+    StopHistoryPlan,
+    StopHistoryPointerSummary,
+    StopHistoryStreamSummary,
+    build_stop_history,
+    build_stop_history_from_rows,
+    build_stop_history_plan,
+    build_stop_history_plan_from_rows,
+)
 from transit_ops.snapshots.builders.historic.stop_reliability import (
     _STOP_BY_GRAIN_SQL,
     _STOP_DOW_SQL,
@@ -220,6 +232,10 @@ __all__ = [
     "build_line_history_from_rows",
     "build_line_history_plan",
     "build_line_history_plan_from_rows",
+    "build_stop_history",
+    "build_stop_history_from_rows",
+    "build_stop_history_plan",
+    "build_stop_history_plan_from_rows",
     "build_provenance",
     "build_route_reliability",
     "build_alert_history",
@@ -234,8 +250,14 @@ __all__ = [
     "LineHistoryBundle",
     "LineHistoryPlan",
     "LineHistoryStreamSummary",
+    "StopHistoryBundle",
+    "StopHistoryPlan",
+    "StopHistoryPointerSummary",
+    "StopHistoryStreamSummary",
     "LINE_HISTORY_ENTITY_BATCH_SIZE",
     "LINE_HISTORY_METRICS",
+    "STOP_HISTORY_ENTITY_BATCH_SIZE",
+    "STOP_HISTORY_METRICS",
     "_ALERT_ARCHIVE_SQL",
     # SQL constants + private helpers re-exported for byte-stable
     # builders.historic.<name> attribute + import-path parity

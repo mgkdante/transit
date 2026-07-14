@@ -31,9 +31,11 @@ from enum import Enum
 from pydantic import BaseModel, ValidationError
 
 from transit_ops.snapshots.builders.historic.history_common import (
+    HistoryDateMask,
     decode_history_entity_id,
     encode_history_entity_id,
     history_coverage,
+    history_date,
     history_entity_directory_generation_id,
     history_index_generation_id,
     history_metric_coverage,
@@ -41,12 +43,14 @@ from transit_ops.snapshots.builders.historic.history_common import (
     latest_history_timestamp,
 )
 from transit_ops.snapshots.contract import (
+    HistoricAvailabilityIndex,
     HistoricCollectionIndex,
     HistoricEntityDirectoryIndex,
     HistoricEntityIndexRef,
     HistoricPartitionRef,
     LineHistoryPartition,
     NetworkHistoryPartition,
+    StopHistoryPartition,
 )
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
 
@@ -2704,6 +2708,1052 @@ def check_line_history_directory(payload: object, *, rel_key: str) -> list[Check
     return emit.out
 
 
+_STOP_HISTORY_PARTITION_PATH_RE = re.compile(
+    r"historic/history/stops/((?:[0-9a-f]{2})+)/generations/"
+    r"([0-9a-f]{64})/(\d{4}-(?:0[1-9]|1[0-2]))\.json"
+)
+_STOP_HISTORY_ENTITY_INDEX_PATH_RE = re.compile(
+    r"historic/history/stops/((?:[0-9a-f]{2})+)/index\.json"
+)
+_STOP_HISTORY_DIRECTORY_PATH = "historic/history/stops/index.json"
+_STOP_HISTORY_ROOT_PATH = "historic/history/index.json"
+_STOP_HISTORY_METRICS = (
+    ("delay", "additive"),
+    ("delay_percentiles", "daily_only"),
+    ("occupancy", "additive"),
+)
+
+
+def check_stop_history_partition(payload: object, *, rel_key: str) -> list[CheckResult]:
+    """Validate one content-addressed Stop month and its exact raw-ID path."""
+
+    emit = _Emitter("historic_stop_history_partition", rel_key)
+    partition = _as_dict(payload)
+    if not isinstance(partition, dict):
+        emit.err("contract", "", payload, "Stop history partition must be an object")
+        return emit.out
+    try:
+        StopHistoryPartition.model_validate(partition)
+    except ValidationError as exc:
+        _history_model_error(emit, exc)
+
+    match = _STOP_HISTORY_PARTITION_PATH_RE.fullmatch(rel_key)
+    if match is None:
+        emit.err("partition_path", "", rel_key, "malformed Stop history generation path")
+        path_entity = path_sha = path_month = None
+    else:
+        encoded_id, path_sha, path_month = match.groups()
+        try:
+            path_entity = decode_history_entity_id(encoded_id)
+        except ValueError:
+            path_entity = None
+            emit.err(
+                "partition_entity",
+                "entity_id",
+                encoded_id,
+                "Stop history path does not contain canonical UTF-8 identity",
+            )
+    if partition.get("entity_id") != path_entity:
+        emit.err(
+            "partition_entity",
+            "entity_id",
+            partition.get("entity_id"),
+            "Stop partition entity_id does not match its encoded path",
+        )
+    if partition.get("month") != path_month:
+        emit.err(
+            "partition_month",
+            "month",
+            partition.get("month"),
+            "Stop partition month does not match its path",
+        )
+    body = _serialized_body(payload)
+    if body is not None and path_sha is not None and hashlib.sha256(body).hexdigest() != path_sha:
+        emit.err(
+            "partition_sha256",
+            "",
+            path_sha,
+            "Stop generation path SHA does not match exact partition bytes",
+        )
+    if partition.get("methodology_version") != "history-1":
+        emit.err(
+            "partition_envelope",
+            "methodology_version",
+            partition.get("methodology_version"),
+            "immutable Stop partition methodology_version must be history-1",
+        )
+    if partition.get("publish_generation_id") is not None:
+        emit.err(
+            "partition_envelope",
+            "publish_generation_id",
+            partition.get("publish_generation_id"),
+            "immutable Stop partition cannot carry a run generation stamp",
+        )
+    try:
+        normalized_generated = history_utc_timestamp(
+            partition.get("generated_utc"), field="generated_utc"
+        )
+    except ValueError:
+        normalized_generated = None
+    if partition.get("generated_utc") != normalized_generated:
+        emit.err(
+            "partition_envelope",
+            "generated_utc",
+            partition.get("generated_utc"),
+            "Stop partition timestamp must be canonical UTC Z",
+        )
+    days = partition.get("days") if isinstance(partition.get("days"), list) else []
+    dates = [day.get("date") for day in days if isinstance(day, dict)]
+    string_dates = [value for value in dates if isinstance(value, str)]
+    if len(string_dates) != len(set(string_dates)):
+        emit.err("duplicate_date", "days", dates, "Stop partition contains a duplicate date")
+    if dates != sorted(string_dates):
+        emit.err("date_order", "days", dates, "Stop partition dates must be ascending")
+    for position, day in enumerate(days):
+        if isinstance(day, dict):
+            unexpected = sorted(set(day) - {"date", "delay", "delay_percentiles", "occupancy"})
+            if unexpected:
+                emit.err(
+                    "stop_metric_vocabulary",
+                    f"days[{position}]",
+                    unexpected,
+                    "Stop history day contains fabricated current-only or Line-only fields",
+                )
+            _check_network_history_day(emit, day, position)
+            delay = day.get("delay")
+            if isinstance(delay, dict):
+                if delay.get("on_time_count") is not None:
+                    emit.err(
+                        "stop_delay_semantics",
+                        f"days[{position}].delay.on_time_count",
+                        delay.get("on_time_count"),
+                        "Stop history cannot publish route-style OTP counts",
+                    )
+                if delay.get("in_clamp_observation_count") != delay.get("observation_count"):
+                    emit.err(
+                        "stop_delay_semantics",
+                        f"days[{position}].delay.in_clamp_observation_count",
+                        delay.get("in_clamp_observation_count"),
+                        "Stop in-clamp denominator must equal its spine observation count",
+                    )
+    return emit.out
+
+
+def check_stop_history_partition_ref(ref: object, partition: object) -> list[CheckResult]:
+    """Cross-check one Stop ref against exact bytes and path identity."""
+
+    ref_dict = _as_dict(ref)
+    partition_dict = _as_dict(partition)
+    path = ref_dict.get("path") if isinstance(ref_dict, dict) else None
+    emit = _Emitter(
+        "historic_stop_history_partition_ref",
+        path if isinstance(path, str) else _STOP_HISTORY_DIRECTORY_PATH,
+    )
+    if not isinstance(ref_dict, dict) or not isinstance(partition_dict, dict):
+        emit.err("contract", "ref", ref, "Stop ref and partition must be objects")
+        return emit.out
+    if not isinstance(path, str):
+        emit.err("ref_path", "path", path, "Stop partition ref path must be a string")
+        return emit.out
+    match = _STOP_HISTORY_PARTITION_PATH_RE.fullmatch(path)
+    if match is None:
+        emit.err("ref_path", "path", path, "Stop partition ref path is malformed")
+        path_entity = path_sha = path_month = None
+    else:
+        encoded_id, path_sha, path_month = match.groups()
+        try:
+            path_entity = decode_history_entity_id(encoded_id)
+        except ValueError:
+            path_entity = None
+    if partition_dict.get("entity_id") != path_entity:
+        emit.err(
+            "ref_entity", "entity_id", partition_dict.get("entity_id"), "Stop ref entity mismatch"
+        )
+    if partition_dict.get("month") != path_month:
+        emit.err("ref_month", "month", partition_dict.get("month"), "Stop ref month mismatch")
+    body = _serialized_body(partition)
+    if body is not None:
+        digest = hashlib.sha256(body).hexdigest()
+        if ref_dict.get("sha256") != digest:
+            emit.err("ref_sha256", "sha256", ref_dict.get("sha256"), "ref SHA mismatches bytes")
+        if ref_dict.get("byte_size") != len(body):
+            emit.err(
+                "ref_byte_size", "byte_size", ref_dict.get("byte_size"), "ref size mismatches bytes"
+            )
+        if path_sha is not None and ref_dict.get("sha256") != path_sha:
+            emit.err("ref_path", "sha256", ref_dict.get("sha256"), "Stop ref SHA mismatches path")
+    days = partition_dict.get("days") if isinstance(partition_dict.get("days"), list) else []
+    dates = [day.get("date") for day in days if isinstance(day, dict)]
+    if ref_dict.get("count") != len(days):
+        emit.err("ref_count", "count", ref_dict.get("count"), "Stop ref count mismatches partition")
+    if len(dates) != len(days) or (
+        dates
+        and (ref_dict.get("coverage_start"), ref_dict.get("coverage_end")) != (dates[0], dates[-1])
+    ):
+        emit.err("ref_coverage", "coverage_start", None, "Stop ref coverage mismatches partition")
+    return emit.out
+
+
+@dataclass
+class _StopEntityStream:
+    partition_ref_digest: bytes = b""
+    partition_count: int = 0
+    available_dates: HistoryDateMask = field(default_factory=HistoryDateMask)
+    metric_dates: dict[str, HistoryDateMask] = field(
+        default_factory=lambda: {
+            metric: HistoryDateMask() for metric, _aggregation in _STOP_HISTORY_METRICS
+        }
+    )
+    generated_utc: str | None = None
+
+
+@dataclass
+class StopHistoryStreamSummary:
+    """Independent compact truth retained while Stop months stream."""
+
+    entities: dict[str, _StopEntityStream] = field(default_factory=dict)
+
+    def observe(self, ref: object, partition: object) -> None:
+        value = _as_dict(partition)
+        if not isinstance(value, dict) or not isinstance(value.get("entity_id"), str):
+            return
+        summary = self.entities.setdefault(value["entity_id"], _StopEntityStream())
+        try:
+            retained_ref = HistoricPartitionRef.model_validate(_coverage_dict(ref))
+        except (TypeError, ValidationError):
+            pass
+        else:
+            ref_digest = hashlib.sha256(snapshot_json_bytes(retained_ref)).digest()
+            summary.partition_ref_digest = hashlib.sha256(
+                summary.partition_ref_digest + ref_digest
+            ).digest()
+            summary.partition_count += 1
+        if isinstance(value.get("generated_utc"), str):
+            try:
+                summary.generated_utc = latest_history_timestamp(
+                    candidate
+                    for candidate in (summary.generated_utc, value["generated_utc"])
+                    if candidate is not None
+                )
+            except ValueError:
+                pass
+        days = value.get("days") if isinstance(value.get("days"), list) else []
+        for day in days:
+            if not isinstance(day, dict) or not isinstance(day.get("date"), str):
+                continue
+            try:
+                summary.available_dates.add(day["date"])
+            except ValueError:
+                continue
+            for metric in summary.metric_dates:
+                if day.get(metric) is not None:
+                    summary.metric_dates[metric].add(day["date"])
+
+
+def _expected_stop_index(
+    entity_id: str,
+    summary: _StopEntityStream,
+    *,
+    fallback_generated_utc: str,
+) -> dict:  # type: ignore[type-arg]
+    dates = list(summary.available_dates)
+    first, last, gaps = history_coverage(summary.available_dates)
+    value = {
+        "generated_utc": latest_history_timestamp(
+            (() if summary.generated_utc is None else (summary.generated_utc,)),
+            fallback=fallback_generated_utc,
+        ),
+        "family": "stops",
+        "selection_mode": "range",
+        "entity_id": entity_id,
+        "first_available_date": first,
+        "last_available_date": last,
+        "available_dates": dates,
+        "gaps": _coverage_dict(gaps),
+        "metrics": _coverage_dict(
+            [
+                history_metric_coverage(metric, aggregation, summary.metric_dates[metric])
+                for metric, aggregation in _STOP_HISTORY_METRICS
+            ]
+        ),
+    }
+    return value
+
+
+def _stop_partition_ref_sequence(payload: object) -> tuple[bytes, int, bool]:
+    refs = payload if isinstance(payload, list) else []
+    malformed = not isinstance(payload, list)
+    digest = b""
+    count = 0
+    for ref in refs:
+        try:
+            value = HistoricPartitionRef.model_validate(_coverage_dict(ref))
+        except (TypeError, ValidationError):
+            malformed = True
+            continue
+        ref_digest = hashlib.sha256(snapshot_json_bytes(value)).digest()
+        digest = hashlib.sha256(digest + ref_digest).digest()
+        count += 1
+    return digest, count, malformed
+
+
+def check_stop_history_stream_index(
+    payload: object,
+    summary: StopHistoryStreamSummary,
+    *,
+    fallback_generated_utc: str,
+) -> list[CheckResult]:
+    value = _as_dict(payload)
+    entity_id = value.get("entity_id") if isinstance(value, dict) else None
+    rel_key = (
+        f"historic/history/stops/{encode_history_entity_id(entity_id)}/index.json"
+        if isinstance(entity_id, str) and entity_id
+        else _STOP_HISTORY_DIRECTORY_PATH
+    )
+    emit = _Emitter("historic_stop_history_stream", rel_key)
+    if not isinstance(value, dict) or not isinstance(entity_id, str):
+        emit.err("stop_stream_indexes", "index", payload, "Stop index must be an object")
+        return emit.out
+    expected_summary = summary.entities.get(entity_id)
+    if expected_summary is None:
+        emit.err(
+            "stop_stream_indexes",
+            "entity_id",
+            entity_id,
+            "Stop index has no streamed partition truth",
+        )
+        return emit.out
+    expected = _expected_stop_index(
+        entity_id,
+        expected_summary,
+        fallback_generated_utc=fallback_generated_utc,
+    )
+    fields = (
+        "generated_utc",
+        "family",
+        "selection_mode",
+        "entity_id",
+        "first_available_date",
+        "last_available_date",
+        "available_dates",
+        "gaps",
+        "metrics",
+    )
+    actual_ref_digest, actual_ref_count, malformed_refs = _stop_partition_ref_sequence(
+        value.get("partitions")
+    )
+    if (
+        {field: _coverage_dict(value.get(field)) for field in fields}
+        != {field: _coverage_dict(expected.get(field)) for field in fields}
+        or malformed_refs
+        or actual_ref_count != expected_summary.partition_count
+        or actual_ref_digest != expected_summary.partition_ref_digest
+        or value.get("collection_generation_id") != history_index_generation_id(value)
+    ):
+        emit.err(
+            "stop_stream_indexes",
+            f"indexes[{entity_id}]",
+            value,
+            "Stop entity index does not match its streamed partitions",
+        )
+    return emit.out
+
+
+def check_stop_history_stream_indexes(
+    payloads: object,
+    summary: StopHistoryStreamSummary,
+    *,
+    fallback_generated_utc: str,
+) -> list[CheckResult]:
+    emit = _Emitter("historic_stop_history_stream", _STOP_HISTORY_DIRECTORY_PATH)
+    if not isinstance(payloads, list):
+        emit.err("stop_stream_indexes", "indexes", payloads, "Stop indexes must be a list")
+        return emit.out
+    actual_by_entity: dict[str, dict] = {}  # type: ignore[type-arg]
+    for payload in payloads:
+        value = _as_dict(payload)
+        if isinstance(value, dict) and isinstance(value.get("entity_id"), str):
+            if value["entity_id"] in actual_by_entity:
+                emit.err(
+                    "stop_stream_indexes", "indexes", value["entity_id"], "duplicate Stop index"
+                )
+            actual_by_entity[value["entity_id"]] = value
+    expected_entities = sorted(summary.entities)
+    if sorted(actual_by_entity) != expected_entities:
+        emit.err(
+            "stop_stream_indexes",
+            "indexes",
+            sorted(actual_by_entity),
+            "Stop index entities do not exactly match streamed partitions",
+        )
+    for entity_id in expected_entities:
+        actual = actual_by_entity.get(entity_id)
+        if actual is None:
+            continue
+        emit.out.extend(
+            check_stop_history_stream_index(
+                actual,
+                summary,
+                fallback_generated_utc=fallback_generated_utc,
+            )
+        )
+    return emit.out
+
+
+@dataclass
+class StopHistoryDirectorySummary:
+    entities: list[HistoricEntityIndexRef] = field(default_factory=list)
+    available_dates: HistoryDateMask = field(default_factory=HistoryDateMask)
+    metric_dates: dict[str, HistoryDateMask] = field(
+        default_factory=lambda: {
+            metric: HistoryDateMask() for metric, _aggregation in _STOP_HISTORY_METRICS
+        }
+    )
+    generated_utc: str | None = None
+
+    def observe(self, payload: object) -> None:
+        value = _as_dict(payload)
+        if not isinstance(value, dict) or not isinstance(value.get("entity_id"), str):
+            return
+        entity_id = value["entity_id"]
+        try:
+            encoded_id = encode_history_entity_id(entity_id)
+            entity = HistoricEntityIndexRef(
+                entity_id=entity_id,
+                encoded_id=encoded_id,
+                index_path=f"historic/history/stops/{encoded_id}/index.json",
+                collection_generation_id=str(value.get("collection_generation_id") or ""),
+                first_available_date=value.get("first_available_date"),
+                last_available_date=value.get("last_available_date"),
+            )
+        except (TypeError, ValueError, ValidationError):
+            return
+        self.entities.append(entity)
+        available = value.get("available_dates")
+        valid_dates = (
+            [item for item in available if isinstance(item, str)]
+            if isinstance(available, list)
+            else []
+        )
+        for local_date in valid_dates:
+            try:
+                self.available_dates.add(local_date)
+            except ValueError:
+                continue
+        metrics = value.get("metrics") if isinstance(value.get("metrics"), list) else []
+        for coverage in metrics:
+            if not isinstance(coverage, dict) or coverage.get("metric") not in self.metric_dates:
+                continue
+            first = coverage.get("first_available_date")
+            last = coverage.get("last_available_date")
+            gaps = coverage.get("gaps") if isinstance(coverage.get("gaps"), list) else []
+            for local_date in valid_dates:
+                if not isinstance(first, str) or not isinstance(last, str):
+                    continue
+                if not first <= local_date <= last:
+                    continue
+                malformed_gap = False
+                inside_gap = False
+                for gap in gaps:
+                    if not isinstance(gap, dict):
+                        malformed_gap = True
+                        continue
+                    start = gap.get("start_date")
+                    end = gap.get("end_date")
+                    if not isinstance(start, str) or not isinstance(end, str):
+                        malformed_gap = True
+                        continue
+                    inside_gap = inside_gap or start <= local_date <= end
+                if not malformed_gap and not inside_gap:
+                    self.metric_dates[coverage["metric"]].add(local_date)
+        if isinstance(value.get("generated_utc"), str):
+            try:
+                self.generated_utc = latest_history_timestamp(
+                    candidate
+                    for candidate in (self.generated_utc, value["generated_utc"])
+                    if candidate is not None
+                )
+            except ValueError:
+                pass
+
+    @classmethod
+    def from_indexes(cls, indexes: list[object]) -> StopHistoryDirectorySummary:
+        summary = cls()
+        for payload in indexes:
+            summary.observe(payload)
+        summary.entities.sort(key=lambda item: item.entity_id)
+        return summary
+
+    def family_dict(self, directory: object) -> dict:  # type: ignore[type-arg]
+        directory_dict = _as_dict(directory)
+        first, last, gaps = history_coverage(self.available_dates)
+        return {
+            "family": "stops",
+            "selection_mode": "range",
+            "index_path": "historic/history/stops/index.json",
+            "collection_generation_id": (
+                directory_dict.get("collection_generation_id")
+                if isinstance(directory_dict, dict)
+                else None
+            ),
+            "first_available_date": first,
+            "last_available_date": last,
+            "gaps": _coverage_dict(gaps),
+            "metrics": _coverage_dict(
+                [
+                    history_metric_coverage(metric, aggregation, self.metric_dates[metric])
+                    for metric, aggregation in _STOP_HISTORY_METRICS
+                ]
+            ),
+        }
+
+
+def check_stop_history_stream_entities(
+    actual: StopHistoryDirectorySummary,
+    expected: StopHistoryStreamSummary,
+) -> list[CheckResult]:
+    emit = _Emitter("historic_stop_history_stream", _STOP_HISTORY_DIRECTORY_PATH)
+    actual_ids = [entity.entity_id for entity in actual.entities]
+    expected_ids = sorted(expected.entities)
+    if actual_ids != expected_ids:
+        emit.err(
+            "stop_stream_indexes",
+            "indexes",
+            actual_ids,
+            "Stop index entities do not exactly match streamed partitions",
+        )
+    return emit.out
+
+
+def check_stop_history_stream_directory(
+    payload: object,
+    summary: StopHistoryDirectorySummary,
+    *,
+    fallback_generated_utc: str,
+) -> list[CheckResult]:
+    emit = _Emitter("historic_stop_history_stream", _STOP_HISTORY_DIRECTORY_PATH)
+    directory = _as_dict(payload)
+    if not isinstance(directory, dict):
+        emit.err("stop_stream_directory", "directory", payload, "Stops directory must be an object")
+        return emit.out
+    first, last, _gaps = history_coverage(summary.available_dates)
+    expected = {
+        "generated_utc": latest_history_timestamp(
+            (() if summary.generated_utc is None else (summary.generated_utc,)),
+            fallback=fallback_generated_utc,
+        ),
+        "family": "stops",
+        "selection_mode": "range",
+        "first_available_date": first,
+        "last_available_date": last,
+        "entities": _coverage_dict(summary.entities),
+    }
+    expected["collection_generation_id"] = history_entity_directory_generation_id(expected)
+    fields = (
+        "generated_utc",
+        "family",
+        "selection_mode",
+        "collection_generation_id",
+        "first_available_date",
+        "last_available_date",
+        "entities",
+    )
+    if {field: _coverage_dict(directory.get(field)) for field in fields} != expected:
+        emit.err(
+            "stop_stream_directory",
+            "entities",
+            directory,
+            "Stops directory does not match the gated entity indexes",
+        )
+    return emit.out
+
+
+def check_stop_history_index(payload: object, *, rel_key: str) -> list[CheckResult]:
+    emit = _Emitter("historic_stop_history_index", rel_key)
+    index = _as_dict(payload)
+    if not isinstance(index, dict):
+        emit.err("contract", "", payload, "Stop history index must be an object")
+        return emit.out
+    try:
+        HistoricCollectionIndex.model_validate(index)
+    except ValidationError as exc:
+        _history_model_error(emit, exc)
+    match = _STOP_HISTORY_ENTITY_INDEX_PATH_RE.fullmatch(rel_key)
+    try:
+        path_entity = decode_history_entity_id(match.group(1)) if match else None
+    except ValueError:
+        path_entity = None
+    if (
+        index.get("family") != "stops"
+        or index.get("selection_mode") != "range"
+        or index.get("entity_id") != path_entity
+    ):
+        emit.err(
+            "index_identity",
+            "entity_id",
+            index.get("entity_id"),
+            "Stop index identity/path mismatch",
+        )
+    dates = index.get("available_dates") if isinstance(index.get("available_dates"), list) else []
+    refs = index.get("partitions") if isinstance(index.get("partitions"), list) else []
+    if not dates or not refs:
+        emit.err("empty_entity", "partitions", refs, "a Stop entity index cannot be empty")
+    try:
+        first, last, gaps = history_coverage(dates)
+    except ValueError:
+        emit.err("available_dates", "available_dates", dates, "Stop dates are malformed")
+    else:
+        if dates != sorted(set(dates)) or (
+            index.get("first_available_date"),
+            index.get("last_available_date"),
+            _coverage_dict(index.get("gaps") or []),
+        ) != (first, last, _coverage_dict(gaps)):
+            emit.err("available_dates", "available_dates", dates, "Stop coverage is not canonical")
+    months: list[str] = []
+    paths: list[str] = []
+    encoded_id = match.group(1) if match else None
+    for position, ref in enumerate(refs):
+        if not isinstance(ref, dict):
+            continue
+        path = str(ref.get("path") or "")
+        paths.append(path)
+        ref_match = _STOP_HISTORY_PARTITION_PATH_RE.fullmatch(path)
+        if ref_match is None:
+            emit.err("ref_path", f"partitions[{position}].path", path, "Stop ref path is malformed")
+            continue
+        ref_encoded, path_sha, month = ref_match.groups()
+        months.append(month)
+        if ref_encoded != encoded_id:
+            emit.err(
+                "ref_entity",
+                f"partitions[{position}].path",
+                path,
+                "Stop ref belongs to another entity",
+            )
+        if ref.get("sha256") != path_sha:
+            emit.err(
+                "ref_path",
+                f"partitions[{position}].sha256",
+                ref.get("sha256"),
+                "Stop ref SHA/path mismatch",
+            )
+    if len(paths) != len(set(paths)) or len(months) != len(set(months)) or months != sorted(months):
+        emit.err(
+            "partition_order", "partitions", paths, "Stop refs must be unique and month-sorted"
+        )
+    metrics = index.get("metrics") if isinstance(index.get("metrics"), list) else []
+    identity = [
+        (metric.get("metric"), metric.get("aggregation"))
+        for metric in metrics
+        if isinstance(metric, dict)
+    ]
+    if identity != list(_STOP_HISTORY_METRICS):
+        emit.err(
+            "metric_vocabulary", "metrics", identity, "Stop metric vocabulary is not canonical"
+        )
+    if index.get("collection_generation_id") != history_index_generation_id(index):
+        emit.err(
+            "collection_generation_id",
+            "collection_generation_id",
+            index.get("collection_generation_id"),
+            "Stop generation mismatches exact semantics",
+        )
+    return emit.out
+
+
+def check_stop_history_directory(payload: object, *, rel_key: str) -> list[CheckResult]:
+    emit = _Emitter("historic_stop_history_directory", rel_key)
+    directory = _as_dict(payload)
+    if not isinstance(directory, dict):
+        emit.err("contract", "", payload, "Stops directory must be an object")
+        return emit.out
+    try:
+        HistoricEntityDirectoryIndex.model_validate(directory)
+    except ValidationError as exc:
+        _history_model_error(emit, exc)
+    if rel_key != _STOP_HISTORY_DIRECTORY_PATH:
+        emit.err("directory_path", "", rel_key, "Stops directory uses the wrong path")
+    if directory.get("family") != "stops" or directory.get("selection_mode") != "range":
+        emit.err(
+            "directory_identity",
+            "family",
+            directory.get("family"),
+            "Stops directory identity is wrong",
+        )
+    entities = directory.get("entities") if isinstance(directory.get("entities"), list) else []
+    raw_ids = [item.get("entity_id") for item in entities if isinstance(item, dict)]
+    string_ids = [value for value in raw_ids if isinstance(value, str)]
+    if (
+        len(string_ids) != len(raw_ids)
+        or raw_ids != sorted(string_ids)
+        or len(string_ids) != len(set(string_ids))
+    ):
+        emit.err(
+            "entity_order", "entities", raw_ids, "Stop directory IDs must be unique and sorted"
+        )
+    first_values: list[str] = []
+    last_values: list[str] = []
+    for position, item in enumerate(entities):
+        if not isinstance(item, dict):
+            continue
+        try:
+            encoded = encode_history_entity_id(item.get("entity_id"))
+        except (TypeError, ValueError):
+            encoded = None
+        expected_path = f"historic/history/stops/{encoded}/index.json" if encoded else None
+        if item.get("encoded_id") != encoded or item.get("index_path") != expected_path:
+            emit.err(
+                "entity_identity",
+                f"entities[{position}]",
+                item,
+                "Stop raw/encoded/path identity disagrees",
+            )
+        if not item.get("collection_generation_id"):
+            emit.err(
+                "entity_generation",
+                f"entities[{position}]",
+                item,
+                "Stop child generation is required",
+            )
+        if isinstance(item.get("first_available_date"), str):
+            first_values.append(item["first_available_date"])
+        if isinstance(item.get("last_available_date"), str):
+            last_values.append(item["last_available_date"])
+    if (directory.get("first_available_date"), directory.get("last_available_date")) != (
+        min(first_values) if first_values else None,
+        max(last_values) if last_values else None,
+    ):
+        emit.err(
+            "directory_coverage",
+            "first_available_date",
+            None,
+            "Stop directory coverage mismatches children",
+        )
+    if directory.get("collection_generation_id") != history_entity_directory_generation_id(
+        directory
+    ):
+        emit.err(
+            "collection_generation_id",
+            "collection_generation_id",
+            directory.get("collection_generation_id"),
+            "Stop directory generation mismatches child edges",
+        )
+    return emit.out
+
+
+def check_history_availability_index(payload: object, *, rel_key: str) -> list[CheckResult]:
+    """Validate the exact stable five-family retained-history discovery root."""
+
+    emit = _Emitter("historic_availability_index", rel_key)
+    root = _as_dict(payload)
+    if not isinstance(root, dict):
+        emit.err("contract", "", payload, "history availability root must be an object")
+        return emit.out
+    try:
+        HistoricAvailabilityIndex.model_validate(root)
+    except ValidationError as exc:
+        _history_model_error(emit, exc)
+    if rel_key != _STOP_HISTORY_ROOT_PATH:
+        emit.err("root_path", "", rel_key, "history availability root uses the wrong path")
+    families = root.get("families") if isinstance(root.get("families"), list) else []
+    names = [item.get("family") for item in families if isinstance(item, dict)]
+    expected_names = ["alerts", "lines", "network", "receipts", "stops"]
+    if names != expected_names:
+        emit.err("family_order", "families", names, "history families must be exact and sorted")
+    expected_paths = {
+        "alerts": "historic/alerts/index.json",
+        "lines": "historic/history/lines/index.json",
+        "network": "historic/history/network/index.json",
+        "receipts": "historic/receipts/index.json",
+        "stops": "historic/history/stops/index.json",
+    }
+    for position, item in enumerate(families):
+        if not isinstance(item, dict):
+            continue
+        family = item.get("family")
+        if item.get("index_path") != expected_paths.get(family):
+            emit.err(
+                "family_path",
+                f"families[{position}].index_path",
+                item.get("index_path"),
+                "family path is wrong",
+            )
+        if not item.get("collection_generation_id"):
+            emit.err(
+                "family_generation",
+                f"families[{position}].collection_generation_id",
+                None,
+                "family generation is required",
+            )
+    return emit.out
+
+
+def _history_family_from_entity_children(
+    *,
+    family: str,
+    directory: object,
+    indexes: list[object],
+    metrics: tuple[tuple[str, str], ...],
+) -> tuple[dict, bool]:  # type: ignore[type-arg]
+    directory_dict = _as_dict(directory)
+    index_dicts = [value for item in indexes if isinstance((value := _as_dict(item)), dict)]
+    malformed = False
+    date_values: set[str] = set()
+    for index in index_dicts:
+        available = index.get("available_dates")
+        if not isinstance(available, list):
+            malformed = True
+            continue
+        for local_date in available:
+            if not isinstance(local_date, str):
+                malformed = True
+                continue
+            try:
+                if date.fromisoformat(local_date).isoformat() != local_date:
+                    raise ValueError
+            except ValueError:
+                malformed = True
+                continue
+            date_values.add(local_date)
+    dates = sorted(date_values)
+    first, last, gaps = history_coverage(dates)
+    metric_dates: dict[str, list[str]] = {name: [] for name, _aggregation in metrics}
+    for index in index_dicts:
+        available = (
+            index.get("available_dates") if isinstance(index.get("available_dates"), list) else []
+        )
+        coverages = index.get("metrics") if isinstance(index.get("metrics"), list) else []
+        for coverage in coverages:
+            if not isinstance(coverage, dict) or coverage.get("metric") not in metric_dates:
+                malformed = True
+                continue
+            metric_name = coverage["metric"]
+            coverage_gaps = coverage.get("gaps") if isinstance(coverage.get("gaps"), list) else []
+            coverage_first = coverage.get("first_available_date")
+            coverage_last = coverage.get("last_available_date")
+            if coverage_first is None and coverage_last is None:
+                continue
+            if not isinstance(coverage_first, str) or not isinstance(coverage_last, str):
+                malformed = True
+                continue
+            valid_gaps: list[tuple[str, str]] = []
+            for gap in coverage_gaps:
+                if not isinstance(gap, dict):
+                    malformed = True
+                    continue
+                start = gap.get("start_date")
+                end = gap.get("end_date")
+                if not isinstance(start, str) or not isinstance(end, str):
+                    malformed = True
+                    continue
+                valid_gaps.append((start, end))
+            metric_dates[metric_name].extend(
+                local_date
+                for local_date in available
+                if isinstance(local_date, str)
+                and coverage_first <= local_date <= coverage_last
+                and not any(start <= local_date <= end for start, end in valid_gaps)
+            )
+    return (
+        {
+            "family": family,
+            "selection_mode": "range",
+            "index_path": f"historic/history/{family}/index.json",
+            "collection_generation_id": (
+                directory_dict.get("collection_generation_id")
+                if isinstance(directory_dict, dict)
+                else None
+            ),
+            "first_available_date": first,
+            "last_available_date": last,
+            "gaps": _coverage_dict(gaps),
+            "metrics": _coverage_dict(
+                [
+                    history_metric_coverage(name, aggregation, metric_dates[name])
+                    for name, aggregation in metrics
+                ]
+            ),
+        },
+        malformed,
+    )
+
+
+def _history_graph_dates(value: object) -> tuple[list[str], bool]:
+    if not isinstance(value, list):
+        return [], True
+    dates: set[str] = set()
+    malformed = False
+    for candidate in value:
+        if not isinstance(candidate, str):
+            malformed = True
+            continue
+        try:
+            dates.add(history_date(candidate, field="date"))
+        except ValueError:
+            malformed = True
+    return sorted(dates), malformed
+
+
+def _append_history_graph_timestamp(values: list[str], value: object) -> bool:
+    try:
+        values.append(history_utc_timestamp(value, field="generated_utc"))
+    except ValueError:
+        return False
+    return True
+
+
+def check_history_availability_graph(
+    payload: object,
+    *,
+    alert_index: object,
+    receipts_index: object,
+    network_index: object,
+    line_directory: object,
+    line_indexes: list[object],
+    stop_directory: object,
+    fallback_generated_utc: str,
+    stop_indexes: list[object] | None = None,
+    stop_summary: StopHistoryDirectorySummary | None = None,
+) -> list[CheckResult]:
+    """Reconcile the root against detached exact child indexes in this build."""
+
+    emit = _Emitter("historic_availability_graph", _STOP_HISTORY_ROOT_PATH)
+    root = _as_dict(payload)
+    alerts = _as_dict(alert_index)
+    receipts = _as_dict(receipts_index)
+    network = _as_dict(network_index)
+    if not all(isinstance(value, dict) for value in (root, alerts, receipts, network)):
+        emit.err(
+            "history_root_graph",
+            "families",
+            payload,
+            "root and all singleton child indexes must be objects",
+        )
+        return emit.out
+    receipt_dates, malformed_graph = _history_graph_dates(receipts.get("dates"))
+    receipt_first, receipt_last, receipt_gaps = history_coverage(receipt_dates)
+    line_family, line_malformed = _history_family_from_entity_children(
+        family="lines",
+        directory=line_directory,
+        indexes=line_indexes,
+        metrics=_LINE_HISTORY_METRICS,
+    )
+    if stop_summary is None:
+        stop_family, stop_malformed = _history_family_from_entity_children(
+            family="stops",
+            directory=stop_directory,
+            indexes=stop_indexes or [],
+            metrics=_STOP_HISTORY_METRICS,
+        )
+    else:
+        stop_family = stop_summary.family_dict(stop_directory)
+        stop_malformed = False
+    malformed_graph = malformed_graph or line_malformed or stop_malformed
+    expected_families = [
+        {
+            "family": "alerts",
+            "selection_mode": "range",
+            "index_path": "historic/alerts/index.json",
+            "collection_generation_id": alerts.get("collection_generation_id"),
+            "first_available_date": alerts.get("first_available_date"),
+            "last_available_date": alerts.get("last_available_date"),
+            "gaps": [],
+            "metrics": [],
+        },
+        line_family,
+        {
+            "family": "network",
+            "selection_mode": "range",
+            "index_path": "historic/history/network/index.json",
+            "collection_generation_id": network.get("collection_generation_id"),
+            "first_available_date": network.get("first_available_date"),
+            "last_available_date": network.get("last_available_date"),
+            "gaps": _coverage_dict(network.get("gaps") or []),
+            "metrics": _coverage_dict(network.get("metrics") or []),
+        },
+        {
+            "family": "receipts",
+            "selection_mode": "date",
+            "index_path": "historic/receipts/index.json",
+            "collection_generation_id": receipts.get("collection_generation_id"),
+            "first_available_date": receipt_first,
+            "last_available_date": receipt_last,
+            "gaps": _coverage_dict(receipt_gaps),
+            "metrics": [],
+        },
+        stop_family,
+    ]
+    populated_timestamps: list[str] = []
+    if alerts.get("first_available_date") is not None:
+        malformed_graph = (
+            not _append_history_graph_timestamp(
+                populated_timestamps,
+                alerts.get("generated_utc"),
+            )
+            or malformed_graph
+        )
+    if receipt_dates:
+        malformed_graph = (
+            not _append_history_graph_timestamp(
+                populated_timestamps,
+                receipts.get("generated_utc"),
+            )
+            or malformed_graph
+        )
+    if network.get("available_dates"):
+        malformed_graph = (
+            not _append_history_graph_timestamp(
+                populated_timestamps,
+                network.get("generated_utc"),
+            )
+            or malformed_graph
+        )
+    for child in [*line_indexes, *(stop_indexes or [])]:
+        value = _as_dict(child)
+        if isinstance(value, dict):
+            malformed_graph = (
+                not _append_history_graph_timestamp(
+                    populated_timestamps,
+                    value.get("generated_utc"),
+                )
+                or malformed_graph
+            )
+    if stop_summary is not None and stop_summary.generated_utc is not None:
+        malformed_graph = (
+            not _append_history_graph_timestamp(
+                populated_timestamps,
+                stop_summary.generated_utc,
+            )
+            or malformed_graph
+        )
+    expected = {
+        "generated_utc": latest_history_timestamp(
+            populated_timestamps,
+            fallback=fallback_generated_utc,
+        ),
+        "families": expected_families,
+    }
+    actual = {
+        "generated_utc": root.get("generated_utc"),
+        "families": _coverage_dict(root.get("families") or []),
+    }
+    if actual != expected:
+        emit.err(
+            "history_root_graph",
+            "families",
+            actual,
+            "history root does not exactly match detached child generations and coverage",
+        )
+    elif malformed_graph:
+        emit.err(
+            "history_root_graph",
+            "families",
+            actual,
+            "history child graph contains malformed dates, gaps, metrics, or timestamps",
+        )
+    return emit.out
+
+
 def check_receipt(payload: object, *, rel_key: str) -> list[CheckResult]:
     emit = _Emitter("historic_receipt", rel_key)
     d = _as_dict(payload)
@@ -2811,6 +3861,69 @@ def check_receipts_index(payload: object, *, rel_key: str) -> list[CheckResult]:
         for f in ("has_data", "has_schedule"):
             if not isinstance(a.get(f), bool):
                 sub.err("not_bool", f, a.get(f), f"{f}={a.get(f)!r} is not a bool")
+    return emit.out
+
+
+def check_receipts_collection(index: object, receipt_items: object) -> list[CheckResult]:
+    """Reconcile the Receipt pointer against exact stamped child semantics."""
+
+    emit = _Emitter("historic_receipts_collection", "historic/receipts/index.json")
+    index_dict = _as_dict(index)
+    if not isinstance(index_dict, dict) or not isinstance(receipt_items, list):
+        emit.err(
+            "receipt_collection",
+            "collection",
+            receipt_items,
+            "Receipt index and child collection must be structured objects",
+        )
+        return emit.out
+    canonical: list[dict[str, object]] = []
+    child_dates: list[str] = []
+    malformed = False
+    for position, item in enumerate(receipt_items):
+        if not isinstance(item, tuple) or len(item) < 2:
+            malformed = True
+            continue
+        rel_key, payload = item[:2]
+        match = re.fullmatch(r"historic/receipts/(\d{4}-\d{2}-\d{2})\.json", str(rel_key))
+        value = _coverage_dict(payload)
+        if match is None or not isinstance(value, dict):
+            malformed = True
+            continue
+        path_date = match.group(1)
+        payload_date = value.get("date")
+        if payload_date != path_date:
+            emit.err(
+                "receipt_collection",
+                f"receipts[{position}].date",
+                payload_date,
+                "Receipt payload date does not match its path",
+            )
+            malformed = True
+            continue
+        semantic_payload = dict(value)
+        semantic_payload.pop("generated_utc", None)
+        semantic_payload.pop("publish_generation_id", None)
+        child_dates.append(path_date)
+        canonical.append({"date": path_date, "payload": semantic_payload})
+    canonical.sort(key=lambda item: str(item["date"]))
+    ordered_dates = sorted(child_dates)
+    index_dates = index_dict.get("dates") if isinstance(index_dict.get("dates"), list) else []
+    if malformed or len(child_dates) != len(set(child_dates)) or index_dates != ordered_dates:
+        emit.err(
+            "receipt_collection",
+            "dates",
+            {"index": index_dates, "children": ordered_dates},
+            "Receipt index dates do not exactly match published Receipt children",
+        )
+    expected_generation = snapshot_sha256({"receipts": canonical})
+    if index_dict.get("collection_generation_id") != expected_generation:
+        emit.err(
+            "receipt_collection",
+            "collection_generation_id",
+            index_dict.get("collection_generation_id"),
+            "Receipt collection generation does not match exact child semantics",
+        )
     return emit.out
 
 
@@ -2932,6 +4045,8 @@ _INDEX_KINDS = {
     "historic/receipts/index.json": "historic_receipts_index",
     "historic/history/network/index.json": "historic_network_history_index",
     "historic/history/lines/index.json": "historic_line_history_directory",
+    "historic/history/stops/index.json": "historic_stop_history_directory",
+    "historic/history/index.json": "historic_availability_index",
 }
 
 # S13: index keys that carry a dedicated structural checker (beyond model-validate).
@@ -2939,6 +4054,8 @@ _INDEX_CHECKERS = {
     "historic/receipts/index.json": check_receipts_index,
     "historic/history/network/index.json": check_network_history_index,
     "historic/history/lines/index.json": check_line_history_directory,
+    "historic/history/stops/index.json": check_stop_history_directory,
+    "historic/history/index.json": check_history_availability_index,
 }
 
 _PREFIX_CHECKERS = (
@@ -2951,6 +4068,11 @@ _PREFIX_CHECKERS = (
         "historic/history/lines/",
         check_line_history_partition,
         "historic_line_history_partition",
+    ),
+    (
+        "historic/history/stops/",
+        check_stop_history_partition,
+        "historic_stop_history_partition",
     ),
     (
         "historic/alerts/generations/",
@@ -2971,8 +4093,14 @@ def _route_checker(rel_key: str):  # noqa: ANN202
         return (_INDEX_CHECKERS.get(rel_key), _INDEX_KINDS[rel_key])
     if _LINE_HISTORY_ENTITY_INDEX_PATH_RE.fullmatch(rel_key):
         return (check_line_history_index, "historic_line_history_index")
+    if _STOP_HISTORY_ENTITY_INDEX_PATH_RE.fullmatch(rel_key):
+        return (check_stop_history_index, "historic_stop_history_index")
     for prefix, checker, kind in _PREFIX_CHECKERS:
         if prefix == "historic/history/lines/" and not _LINE_HISTORY_PARTITION_PATH_RE.fullmatch(
+            rel_key
+        ):
+            continue
+        if prefix == "historic/history/stops/" and not _STOP_HISTORY_PARTITION_PATH_RE.fullmatch(
             rel_key
         ):
             continue
@@ -2995,12 +4123,18 @@ def new_report(provider_id: str, tier: str, generated_utc: str) -> GateReport:
     return GateReport(provider_id=provider_id, tier=tier, generated_utc=generated_utc)
 
 
-def record(report: GateReport, rel_key: str, payload: object) -> None:
+def record(
+    report: GateReport,
+    rel_key: str,
+    payload: object,
+    *,
+    retain_sha: bool = True,
+) -> None:
     """Run check_payload for one payload; append results; bump payloads_checked/checks_run."""
     findings = check_payload(rel_key, payload)
-    digest = snapshot_sha256(payload)  # type: ignore[arg-type]
     report.results.extend(findings)
-    report.payload_sha256[rel_key] = digest
+    if retain_sha:
+        report.payload_sha256[rel_key] = snapshot_sha256(payload)  # type: ignore[arg-type]
     report.payloads_checked += 1
     report.checks_run += 1
 

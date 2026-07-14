@@ -24,6 +24,12 @@ from transit_ops.snapshots.builders.historic.network_history import (
     build_network_history_from_rows,
     build_network_history_plan_from_rows,
 )
+from transit_ops.snapshots.builders.historic.stop_history import (
+    StopHistoryStreamSummary as BuilderStopHistoryStreamSummary,
+)
+from transit_ops.snapshots.builders.historic.stop_history import (
+    build_stop_history_plan_from_rows,
+)
 from transit_ops.snapshots.publish import (
     _publish_historic,
     _stable_outcome_total,
@@ -79,6 +85,85 @@ def _empty_line_history_plan():
     )
 
 
+def _stop_history_plan():
+    return build_stop_history_plan_from_rows(
+        delay_rows=[
+            {
+                "stop_id": "A/B é雪",
+                "local_date": "2026-06-30",
+                "observation_count": 4,
+                "severe_count": 0,
+                "sum_delay_seconds": 90,
+                "source_generated_utc": "2026-07-01T10:00:00Z",
+            },
+            {
+                "stop_id": "A/B é雪",
+                "local_date": "2026-07-02",
+                "observation_count": 5,
+                "severe_count": 1,
+                "sum_delay_seconds": 120,
+                "source_generated_utc": "2026-07-03T08:00:00Z",
+            },
+        ],
+        percentile_rows=[],
+        occupancy_rows=[],
+        generated_utc="2026-07-13T00:00:00Z",
+    )
+
+
+def _empty_stop_history_plan():
+    return build_stop_history_plan_from_rows(
+        delay_rows=[],
+        percentile_rows=[],
+        occupancy_rows=[],
+        generated_utc="2026-07-13T00:00:00Z",
+    )
+
+
+def _many_stop_history_plan(count: int = 5):
+    return build_stop_history_plan_from_rows(
+        delay_rows=[
+            {
+                "stop_id": f"S{position:03d}",
+                "local_date": "2026-07-01",
+                "observation_count": 1,
+                "severe_count": 0,
+                "sum_delay_seconds": 0,
+                "source_generated_utc": "2026-07-02T00:00:00Z",
+            }
+            for position in range(count)
+        ],
+        percentile_rows=[],
+        occupancy_rows=[],
+        generated_utc="2026-07-13T00:00:00Z",
+    )
+
+
+class _MalformedStopPartitionPlan:
+    def __init__(self) -> None:
+        bundle = _stop_history_plan().materialize()
+        self.ref = bundle.indexes[0].partitions[0].model_copy(deep=True)
+        self.partition = bundle.partitions[0].model_dump(mode="json")
+        self.partition["days"] = [7]
+
+    def iter_partition_items(self):  # noqa: ANN201
+        yield self.ref, self.partition
+
+
+class _MalformedStopIndexSummary:
+    def __init__(self) -> None:
+        self.summary = BuilderStopHistoryStreamSummary()
+
+    def observe(self, ref, partition):  # noqa: ANN001, ANN201
+        return self.summary.observe(ref, partition)
+
+    def iter_indexes(self, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+        for index in self.summary.iter_indexes(fallback_generated_utc=fallback_generated_utc):
+            index.available_dates.append(None)
+            index.collection_generation_id = history_index_generation_id(index)
+            yield index
+
+
 @pytest.fixture(autouse=True)
 def _default_empty_line_history(monkeypatch):
     """Keep pre-Line publisher tests scoped to their original Network subject."""
@@ -87,6 +172,12 @@ def _default_empty_line_history(monkeypatch):
         publish.builders,
         "build_line_history_plan",
         lambda *args, **kwargs: _empty_line_history_plan(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        publish.builders,
+        "build_stop_history_plan",
+        lambda *args, **kwargs: _empty_stop_history_plan(),
         raising=False,
     )
 
@@ -347,10 +438,45 @@ def _patch_minimal_historic(
     *,
     line_plan=None,
     network_plan=None,
+    stop_plan=None,
     compatibility_items=None,
+    archive=None,
 ):
-    archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
+    from transit_ops.snapshots.contract import AlertArchiveIndex, ReceiptsIndex
+
+    archive = archive or SimpleNamespace(
+        index=AlertArchiveIndex(
+            generated_utc="2026-07-13T00:00:00Z",
+            collection_generation_id=snapshot_sha256(
+                {
+                    "first_available_date": None,
+                    "last_available_date": None,
+                    "months": [],
+                }
+            ),
+            first_available_date=None,
+            last_available_date=None,
+            total_alerts=0,
+            months=[],
+        ),
+        page_items=[],
+        provider_timezone="UTC",
+    )
     compatibility_items = list(compatibility_items or [])
+    if not any(path == "historic/receipts/index.json" for path, *_rest in compatibility_items):
+        compatibility_items.append(
+            (
+                "historic/receipts/index.json",
+                ReceiptsIndex(
+                    generated_utc="2026-07-13T00:00:00Z",
+                    collection_generation_id=publish._receipts_collection_generation_id({}),
+                    dates=[],
+                ),
+                "historic",
+            )
+        )
+    if not any(path == "historic/alerts/index.json" for path, *_rest in compatibility_items):
+        compatibility_items.append(("historic/alerts/index.json", archive.index, "historic"))
     stages = [(compatibility_items, "normal")] if compatibility_items else []
     monkeypatch.setattr(
         publish,
@@ -368,6 +494,12 @@ def _patch_minimal_historic(
         lambda *args, **kwargs: line_plan or _line_history_plan(),
         raising=False,
     )
+    monkeypatch.setattr(
+        publish.builders,
+        "build_stop_history_plan",
+        lambda *args, **kwargs: stop_plan or _empty_stop_history_plan(),
+        raising=False,
+    )
     monkeypatch.setattr(publish.gate, "check_alert_archive_bundle", lambda *args, **kwargs: [])
 
 
@@ -375,11 +507,29 @@ def _line_index_path(entity_id: str) -> str:
     return f"historic/history/lines/{encode_history_entity_id(entity_id)}/index.json"
 
 
+def _stop_index_path(entity_id: str) -> str:
+    return f"historic/history/stops/{encode_history_entity_id(entity_id)}/index.json"
+
+
 def _seed_retained_pointers(store, line_bundle):  # noqa: ANN001, ANN202
     pointer_keys = [
         "historic/history/network/index.json",
         *[_line_index_path(index.entity_id or "") for index in line_bundle.indexes],
         "historic/history/lines/index.json",
+    ]
+    expected = {key: f"old:{key}".encode() for key in pointer_keys}
+    store.objects.update(expected)
+    return expected
+
+
+def _seed_complete_retained_pointers(store, line_bundle, stop_bundle):  # noqa: ANN001, ANN202
+    pointer_keys = [
+        "historic/history/network/index.json",
+        *[_line_index_path(index.entity_id or "") for index in line_bundle.indexes],
+        *[_stop_index_path(index.entity_id or "") for index in stop_bundle.indexes],
+        "historic/history/lines/index.json",
+        "historic/history/stops/index.json",
+        "historic/history/index.json",
     ]
     expected = {key: f"old:{key}".encode() for key in pointer_keys}
     store.objects.update(expected)
@@ -417,9 +567,13 @@ def test_line_history_publish_is_pointer_last_after_all_network_and_line_immutab
         *network_partitions,
         *line_partitions,
         compatibility_key,
+        "historic/receipts/index.json",
+        "historic/alerts/index.json",
         "historic/history/network/index.json",
         *line_indexes,
         "historic/history/lines/index.json",
+        "historic/history/stops/index.json",
+        "historic/history/index.json",
     ]
     assert [path for _kind, path in store.calls] == expected
     assert keys == expected
@@ -427,7 +581,421 @@ def test_line_history_publish_is_pointer_last_after_all_network_and_line_immutab
         kind == "immutable"
         for kind, _path in store.calls[: len(network_partitions) + len(line_partitions)]
     )
-    assert all(path != "historic/history/index.json" for _kind, path in store.calls)
+    assert store.calls[-1] == ("normal", "historic/history/index.json")
+
+
+def test_history_root_receipt_collection_generation_tracks_only_semantic_payloads():
+    from transit_ops.snapshots.contract import Receipt
+
+    first = Receipt(
+        generated_utc="2026-07-13T00:00:00Z",
+        publish_generation_id="stm@run-1",
+        date="2026-07-01",
+        affected_routes=2,
+        alerts=1,
+    )
+    second = Receipt(
+        generated_utc="2030-01-01T00:00:00Z",
+        publish_generation_id="stm@run-2",
+        date="2026-07-02",
+        affected_routes=3,
+        alerts=2,
+    )
+
+    baseline = publish._receipts_collection_generation_id(  # noqa: SLF001
+        {"2026-07-01": first, "2026-07-02": second}
+    )
+    reversed_mapping = publish._receipts_collection_generation_id(  # noqa: SLF001
+        {"2026-07-02": second, "2026-07-01": first}
+    )
+    stamp_only = publish._receipts_collection_generation_id(  # noqa: SLF001
+        {
+            "2026-07-01": first.model_copy(
+                update={
+                    "generated_utc": "2040-01-01T00:00:00Z",
+                    "publish_generation_id": "stm@run-3",
+                }
+            ),
+            "2026-07-02": second.model_copy(
+                update={
+                    "generated_utc": "2040-01-01T00:00:00Z",
+                    "publish_generation_id": "stm@run-3",
+                }
+            ),
+        }
+    )
+    changed = publish._receipts_collection_generation_id(  # noqa: SLF001
+        {
+            "2026-07-01": first.model_copy(update={"affected_routes": 99}),
+            "2026-07-02": second,
+        }
+    )
+
+    assert baseline == reversed_mapping == stamp_only
+    assert changed != baseline
+
+
+def test_history_root_uses_exact_child_generations_and_metric_coverage():
+    from transit_ops.snapshots.contract import (
+        AlertArchiveIndex,
+        ReceiptsIndex,
+    )
+
+    network = _network_history_plan().materialize().index
+    lines = _line_history_plan().materialize()
+    stops = _stop_history_plan().materialize()
+    receipts = ReceiptsIndex(
+        generated_utc="2026-07-12T00:00:00Z",
+        collection_generation_id="receipt-semantic-generation",
+        dates=["2026-06-01", "2026-07-02"],
+    )
+    alerts = AlertArchiveIndex(
+        generated_utc="2026-07-11T00:00:00Z",
+        collection_generation_id="alert-generation",
+        first_available_date="2026-05-01",
+        last_available_date="2026-07-01",
+        total_alerts=0,
+        months=[],
+    )
+
+    root = publish._build_history_availability_index(  # noqa: SLF001
+        stamp="2026-07-13T00:00:00Z",
+        alert_index=alerts,
+        receipts_index=receipts,
+        network_index=network,
+        line_directory=lines.directory,
+        line_indexes=lines.indexes,
+        stop_directory=stops.directory,
+        stop_indexes=stops.indexes,
+    )
+
+    assert [family.family for family in root.families] == [
+        "alerts",
+        "lines",
+        "network",
+        "receipts",
+        "stops",
+    ]
+    by_family = {family.family: family for family in root.families}
+    assert by_family["alerts"].index_path == "historic/alerts/index.json"
+    assert by_family["alerts"].collection_generation_id == "alert-generation"
+    assert by_family["receipts"].index_path == "historic/receipts/index.json"
+    assert by_family["receipts"].collection_generation_id == "receipt-semantic-generation"
+    assert by_family["receipts"].first_available_date == "2026-06-01"
+    assert by_family["receipts"].last_available_date == "2026-07-02"
+    assert by_family["network"].collection_generation_id == network.collection_generation_id
+    assert by_family["lines"].collection_generation_id == lines.directory.collection_generation_id
+    assert by_family["stops"].collection_generation_id == stops.directory.collection_generation_id
+    assert [metric.metric.value for metric in by_family["network"].metrics]
+    assert {metric.metric.value for metric in by_family["lines"].metrics} == {
+        "delay",
+        "delay_percentiles",
+        "cancellation",
+        "occupancy",
+        "service_span",
+        "skipped_stops",
+    }
+    assert {metric.metric.value for metric in by_family["stops"].metrics} == {
+        "delay",
+        "delay_percentiles",
+        "occupancy",
+    }
+    assert [(gap.start_date, gap.end_date) for gap in by_family["lines"].gaps] == [
+        ("2026-07-01", "2026-07-01")
+    ]
+    assert [(gap.start_date, gap.end_date) for gap in by_family["stops"].gaps] == [
+        ("2026-07-01", "2026-07-01")
+    ]
+    assert root.generated_utc == "2026-07-12T00:00:00Z"
+
+
+def test_history_root_wholly_empty_uses_run_stamp_fallback():
+    from transit_ops.snapshots.builders.historic.network_history import (
+        build_network_history_from_rows,
+    )
+    from transit_ops.snapshots.contract import AlertArchiveIndex, ReceiptsIndex
+
+    stamp = "2026-07-13T00:00:00Z"
+    network = build_network_history_from_rows(
+        delay_rows=[],
+        fact_rows=[],
+        cancellation_rows=[],
+        occupancy_rows=[],
+        generated_utc=stamp,
+    ).index
+    lines = _empty_line_history_plan().materialize()
+    stops = _empty_stop_history_plan().materialize()
+    root = publish._build_history_availability_index(  # noqa: SLF001
+        stamp=stamp,
+        alert_index=AlertArchiveIndex(
+            generated_utc=stamp,
+            collection_generation_id="empty-alerts",
+            first_available_date=None,
+            last_available_date=None,
+            total_alerts=0,
+            months=[],
+        ),
+        receipts_index=ReceiptsIndex(
+            generated_utc=stamp,
+            collection_generation_id="empty-receipts",
+            dates=[],
+        ),
+        network_index=network,
+        line_directory=lines.directory,
+        line_indexes=lines.indexes,
+        stop_directory=stops.directory,
+        stop_indexes=stops.indexes,
+    )
+
+    assert root.generated_utc == stamp
+    assert [family.family for family in root.families] == [
+        "alerts",
+        "lines",
+        "network",
+        "receipts",
+        "stops",
+    ]
+    assert all(family.first_available_date is None for family in root.families)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda root: setattr(root, "generated_utc", "2020-01-01T00:00:00Z"),
+        lambda root: setattr(root.families[0], "collection_generation_id", "wrong"),
+        lambda root: root.families[1].gaps.clear(),
+        lambda root: root.families[2].metrics.clear(),
+    ],
+)
+def test_history_root_gate_reconciles_exact_detached_child_graph(mutation):  # noqa: ANN001
+    from transit_ops.snapshots.contract import AlertArchiveIndex, ReceiptsIndex
+
+    network = _network_history_plan().materialize().index
+    lines = _line_history_plan().materialize()
+    stops = _stop_history_plan().materialize()
+    alerts = AlertArchiveIndex(
+        generated_utc="2026-07-11T00:00:00Z",
+        collection_generation_id="alert-generation",
+        first_available_date="2026-05-01",
+        last_available_date="2026-07-01",
+        total_alerts=1,
+        months=[],
+    )
+    receipts = ReceiptsIndex(
+        generated_utc="2026-07-12T00:00:00Z",
+        collection_generation_id="receipt-generation",
+        dates=["2026-06-01", "2026-07-02"],
+    )
+    root = publish._build_history_availability_index(  # noqa: SLF001
+        stamp="2026-07-13T00:00:00Z",
+        alert_index=alerts,
+        receipts_index=receipts,
+        network_index=network,
+        line_directory=lines.directory,
+        line_indexes=lines.indexes,
+        stop_directory=stops.directory,
+        stop_indexes=stops.indexes,
+    )
+    mutation(root)
+
+    findings = gate.check_history_availability_graph(
+        root,
+        alert_index=alerts,
+        receipts_index=receipts,
+        network_index=network,
+        line_directory=lines.directory,
+        line_indexes=lines.indexes,
+        stop_directory=stops.directory,
+        stop_indexes=stops.indexes,
+        fallback_generated_utc="2026-07-13T00:00:00Z",
+    )
+
+    assert "history_root_graph" in {finding.check for finding in findings}
+
+
+@pytest.mark.parametrize("field", ["cancellation", "vehicles", "habits", "by_route"])
+def test_stop_history_gate_rejects_fabricated_current_or_line_only_day_fields(field: str):
+    bundle = _stop_history_plan().materialize()
+    partition = bundle.partitions[0].model_dump(mode="json")
+    partition["days"][0][field] = {} if field != "vehicles" else 1
+    ref = bundle.indexes[0].partitions[0]
+
+    findings = gate.check_stop_history_partition(partition, rel_key=ref.path)
+
+    assert "stop_metric_vocabulary" in {finding.check for finding in findings}
+
+
+def test_stop_history_and_global_root_publish_pointer_last(monkeypatch):
+    from transit_ops.snapshots.contract import AlertArchiveIndex, ReceiptsIndex
+
+    network_plan = _network_history_plan()
+    line_plan = _line_history_plan()
+    stop_plan = _stop_history_plan()
+    network_bundle = network_plan.materialize()
+    line_bundle = line_plan.materialize()
+    stop_bundle = stop_plan.materialize()
+    alert_index = AlertArchiveIndex(
+        generated_utc="2026-07-11T00:00:00Z",
+        collection_generation_id="alert-generation",
+        first_available_date=None,
+        last_available_date=None,
+        total_alerts=0,
+        months=[],
+    )
+    archive = SimpleNamespace(index=alert_index, page_items=[], provider_timezone="UTC")
+    receipts_index = ReceiptsIndex(
+        generated_utc="2026-07-12T00:00:00Z",
+        collection_generation_id="receipt-generation",
+        dates=[],
+    )
+    compatibility_items = [
+        ("historic/receipts/index.json", receipts_index, "historic"),
+        ("historic/alerts/index.json", alert_index, "historic"),
+    ]
+    _patch_minimal_historic(
+        monkeypatch,
+        line_plan=line_plan,
+        network_plan=network_plan,
+        stop_plan=stop_plan,
+        compatibility_items=compatibility_items,
+        archive=archive,
+    )
+    store = _RecordingStore()
+
+    keys = _publish_historic(
+        object(),
+        store,
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        stamp="2026-07-13T00:00:00Z",
+    )
+
+    immutable_paths = [
+        *[ref.path for ref in network_bundle.index.partitions],
+        *[path for path, _partition in line_bundle.partition_items],
+        *[path for path, _partition in stop_bundle.partition_items],
+    ]
+    line_indexes = [_line_index_path(index.entity_id or "") for index in line_bundle.indexes]
+    stop_indexes = [
+        f"historic/history/stops/{encode_history_entity_id(index.entity_id or '')}/index.json"
+        for index in stop_bundle.indexes
+    ]
+    expected = [
+        *immutable_paths,
+        "historic/receipts/index.json",
+        "historic/alerts/index.json",
+        "historic/history/network/index.json",
+        *line_indexes,
+        *stop_indexes,
+        "historic/history/lines/index.json",
+        "historic/history/stops/index.json",
+        "historic/history/index.json",
+    ]
+    assert [path for _kind, path in store.calls] == expected
+    assert keys == expected
+    assert all(kind == "immutable" for kind, _path in store.calls[: len(immutable_paths)])
+    root = publish.HistoricAvailabilityIndex.model_validate_json(
+        store.objects["historic/history/index.json"]
+    )
+    assert [family.family for family in root.families] == [
+        "alerts",
+        "lines",
+        "network",
+        "receipts",
+        "stops",
+    ]
+
+
+@pytest.mark.parametrize("analytics_gate", [False, True])
+@pytest.mark.parametrize(
+    ("failure_stage", "error_message"),
+    [
+        ("stop_immutable", "Stop immutable failed"),
+        ("stop_entity_index", "Stop entity index failed"),
+        ("stops_directory", "Stops directory failed"),
+        ("root", "History root failed"),
+    ],
+)
+def test_stop_and_root_failure_stage_preserves_old_root_and_skips_later_pointers(
+    monkeypatch,
+    analytics_gate: bool,
+    failure_stage: str,
+    error_message: str,
+):
+    network_plan = _network_history_plan()
+    line_plan = _line_history_plan()
+    stop_plan = _stop_history_plan()
+    line_bundle = line_plan.materialize()
+    stop_bundle = stop_plan.materialize()
+    stop_partition_paths = [path for path, _partition in stop_bundle.partition_items]
+    stop_index_path = _stop_index_path(stop_bundle.indexes[0].entity_id or "")
+    lines_directory_path = "historic/history/lines/index.json"
+    stops_directory_path = "historic/history/stops/index.json"
+    root_path = "historic/history/index.json"
+    targets = {
+        "stop_immutable": stop_partition_paths[-1],
+        "stop_entity_index": stop_index_path,
+        "stops_directory": stops_directory_path,
+        "root": root_path,
+    }
+    later_pointers = {
+        "stop_immutable": [
+            "historic/history/network/index.json",
+            *[_line_index_path(index.entity_id or "") for index in line_bundle.indexes],
+            stop_index_path,
+            lines_directory_path,
+            stops_directory_path,
+            root_path,
+        ],
+        "stop_entity_index": [lines_directory_path, stops_directory_path, root_path],
+        "stops_directory": [root_path],
+        "root": [],
+    }
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=network_plan,
+        line_plan=line_plan,
+        stop_plan=stop_plan,
+    )
+
+    class FailStage(_RecordingStore):
+        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
+            if failure_stage == "stop_immutable" and rel_key == targets[failure_stage]:
+                self.calls.append(("immutable", rel_key))
+                raise RuntimeError(error_message)
+            return super().put_immutable_json(rel_key, payload)
+
+        def put_json(self, rel_key, payload, *, tier):  # noqa: ANN001, ANN201
+            if failure_stage != "stop_immutable" and rel_key == targets[failure_stage]:
+                self.calls.append(("normal", rel_key))
+                raise RuntimeError(error_message)
+            return super().put_json(rel_key, payload, tier=tier)
+
+    store = FailStage()
+    expected_pointers = _seed_complete_retained_pointers(store, line_bundle, stop_bundle)
+
+    with pytest.raises(RuntimeError, match=error_message):
+        _publish_historic(
+            object(),
+            store,
+            provider_id="stm",
+            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+            stamp="2026-07-13T00:00:00Z",
+            gate_report=_gate_report(analytics_gate),
+        )
+
+    assert store.objects[root_path] == expected_pointers[root_path]
+    assert all(
+        store.objects[path] == expected_pointers[path] for path in later_pointers[failure_stage]
+    )
+    assert not any(
+        kind == "normal" and path in later_pointers[failure_stage] for kind, path in store.calls
+    )
+    if failure_stage == "stop_immutable":
+        assert stop_partition_paths[0] in store.objects
+        assert targets[failure_stage] not in store.objects
+    else:
+        assert store.objects[targets[failure_stage]] == expected_pointers[targets[failure_stage]]
 
 
 @pytest.mark.parametrize("analytics_gate", [False, True])
@@ -875,14 +1443,16 @@ def test_line_history_directory_failure_preserves_existing_directory_bytes(
     assert store.calls[-1] == ("normal", directory_key)
 
 
-def test_network_history_actual_historic_publish_is_separate_structural_and_has_no_root(
+def test_network_history_actual_historic_publish_is_structural_and_root_last(
     monkeypatch,
 ):
     bundle = _network_history_bundle()
     plan = _network_history_plan()
-    archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
-    monkeypatch.setattr(publish, "_build_historic_items", lambda *a, **k: ([], [], [], archive))
-    monkeypatch.setattr(publish.builders, "build_network_history_plan", lambda *a, **k: plan)
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=plan,
+        line_plan=_empty_line_history_plan(),
+    )
     monkeypatch.setattr(publish.gate, "check_alert_archive_bundle", lambda *a, **k: [])
     checked = []
     real_check = gate.check_network_history_partition_ref
@@ -906,9 +1476,14 @@ def test_network_history_actual_historic_publish_is_separate_structural_and_has_
     assert len(checked) == len(bundle.partitions)
     assert [path for _kind, path in store.calls] == [
         *(ref.path for ref in bundle.index.partitions),
+        "historic/receipts/index.json",
+        "historic/alerts/index.json",
         "historic/history/network/index.json",
+        "historic/history/lines/index.json",
+        "historic/history/stops/index.json",
+        "historic/history/index.json",
     ]
-    assert all(path != "historic/history/index.json" for _kind, path in store.calls)
+    assert store.calls[-1] == ("normal", "historic/history/index.json")
 
     outcomes = SimpleNamespace(
         written=["historic/history/network/index.json"],
@@ -947,18 +1522,15 @@ def test_network_history_actual_publish_builds_gates_and_uploads_one_month_at_a_
             return index
 
     plan = BoundedPlan()
-    archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
-    monkeypatch.setattr(publish, "_build_historic_items", lambda *a, **k: ([], [], [], archive))
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=plan,
+        line_plan=_empty_line_history_plan(),
+    )
     monkeypatch.setattr(
         publish.builders,
         "build_network_history",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("monolithic builder called")),
-    )
-    monkeypatch.setattr(
-        publish.builders,
-        "build_network_history_plan",
-        lambda *a, **k: plan,
-        raising=False,
     )
     monkeypatch.setattr(publish.gate, "check_alert_archive_bundle", lambda *a, **k: [])
     monkeypatch.setattr(
@@ -1196,9 +1768,11 @@ def test_network_history_second_month_put_failure_preserves_existing_pointer(
 ):
     plan = _network_history_plan()
     bundle = plan.materialize()
-    archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
-    monkeypatch.setattr(publish, "_build_historic_items", lambda *a, **k: ([], [], [], archive))
-    monkeypatch.setattr(publish.builders, "build_network_history_plan", lambda *a, **k: plan)
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=plan,
+        line_plan=_empty_line_history_plan(),
+    )
     monkeypatch.setattr(publish.gate, "check_alert_archive_bundle", lambda *a, **k: [])
     index_key = "historic/history/network/index.json"
     old_pointer = b"preexisting-network-index"
@@ -1240,9 +1814,11 @@ def test_network_history_index_put_failure_leaves_children_and_preserves_existin
 ):
     plan = _network_history_plan()
     bundle = plan.materialize()
-    archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
-    monkeypatch.setattr(publish, "_build_historic_items", lambda *a, **k: ([], [], [], archive))
-    monkeypatch.setattr(publish.builders, "build_network_history_plan", lambda *a, **k: plan)
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=plan,
+        line_plan=_empty_line_history_plan(),
+    )
     monkeypatch.setattr(publish.gate, "check_alert_archive_bundle", lambda *a, **k: [])
     store = _RecordingStore(fail_index=True)
     index_key = "historic/history/network/index.json"
@@ -1271,15 +1847,14 @@ def test_network_history_compatibility_stage_failure_preserves_existing_pointer(
 ):
     plan = _network_history_plan()
     bundle = plan.materialize()
-    archive = SimpleNamespace(index={}, page_items=[], provider_timezone="UTC")
     compatibility_key = "historic/compatibility-pointer.json"
     compatibility_item = (compatibility_key, {"status": "ready"}, "historic")
-    monkeypatch.setattr(
-        publish,
-        "_build_historic_items",
-        lambda *a, **k: ([compatibility_item], [], [([compatibility_item], "normal")], archive),
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=plan,
+        line_plan=_empty_line_history_plan(),
+        compatibility_items=[compatibility_item],
     )
-    monkeypatch.setattr(publish.builders, "build_network_history_plan", lambda *a, **k: plan)
     monkeypatch.setattr(publish.gate, "check_alert_archive_bundle", lambda *a, **k: [])
     index_key = "historic/history/network/index.json"
     old_pointer = b"preexisting-network-index"
@@ -1637,3 +2212,696 @@ def test_network_history_no_gate_corrupt_date_returns_gate_error_not_checker_cra
             gate_report=None,
         )
     assert store.calls == []
+
+
+def test_stop_history_publish_does_not_materialize_all_entity_indexes(monkeypatch):
+    stop_plan = _many_stop_history_plan()
+    _patch_minimal_historic(monkeypatch, stop_plan=stop_plan)
+
+    def forbidden(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        raise AssertionError("Stop build_indexes materialized every entity")
+
+    monkeypatch.setattr(BuilderStopHistoryStreamSummary, "build_indexes", forbidden)
+
+    keys = _publish_historic(
+        object(),
+        _RecordingStore(),
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        stamp="2026-07-13T00:00:00Z",
+    )
+
+    assert len([key for key in keys if key.startswith("historic/history/stops/S")]) == 0
+    assert (
+        sum(
+            key.startswith("historic/history/stops/")
+            and key.endswith("/index.json")
+            and key != "historic/history/stops/index.json"
+            for key in keys
+        )
+        == 5
+    )
+
+
+def test_stop_history_validate_does_not_materialize_all_entity_indexes(monkeypatch):
+    _patch_minimal_historic(monkeypatch, stop_plan=_many_stop_history_plan())
+    monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
+
+    def forbidden(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        raise AssertionError("Stop build_indexes materialized every entity")
+
+    monkeypatch.setattr(BuilderStopHistoryStreamSummary, "build_indexes", forbidden)
+
+    class Engine:
+        def connect(self):
+            @contextmanager
+            def connection():
+                yield object()
+
+            return connection()
+
+    report = publish.validate_snapshots(
+        "stm",
+        tier="historic",
+        settings=SimpleNamespace(),
+        engine=Engine(),
+    )
+
+    assert report.passed
+
+
+def test_historic_validate_consumes_lazy_history_plans_before_connection_closes(monkeypatch):
+    _patch_minimal_historic(monkeypatch)
+    monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
+    connection = SimpleNamespace(closed=False)
+    delegate = _stop_history_plan()
+
+    class ConnectionBoundStopPlan:
+        def iter_partition_items(self):  # noqa: ANN201
+            if connection.closed:
+                raise RuntimeError("history loader used after connection closed")
+            yield from delegate.iter_partition_items()
+
+    monkeypatch.setattr(
+        publish.builders,
+        "build_stop_history_plan",
+        lambda conn, **kwargs: ConnectionBoundStopPlan(),
+    )
+
+    class Engine:
+        @contextmanager
+        def connect(self):
+            try:
+                yield connection
+            finally:
+                connection.closed = True
+
+    report = publish.validate_snapshots(
+        "stm",
+        tier="historic",
+        settings=SimpleNamespace(),
+        engine=Engine(),
+    )
+
+    assert report.passed
+
+
+def test_stop_history_entity_indexes_upload_in_bounded_batches(monkeypatch):
+    _patch_minimal_historic(monkeypatch, stop_plan=_many_stop_history_plan())
+    monkeypatch.setattr(publish, "STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE", 2, raising=False)
+    real_parallel_put = publish._parallel_put
+    batch_sizes: list[int] = []
+
+    def record_batches(storage, items, **kwargs):  # noqa: ANN001, ANN202
+        if items and all(
+            rel_key.startswith("historic/history/stops/")
+            and rel_key.endswith("/index.json")
+            and rel_key != "historic/history/stops/index.json"
+            for rel_key, _payload, _tier in items
+        ):
+            batch_sizes.append(len(items))
+        return real_parallel_put(storage, items, **kwargs)
+
+    monkeypatch.setattr(publish, "_parallel_put", record_batches)
+
+    _publish_historic(
+        object(),
+        _RecordingStore(),
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        stamp="2026-07-13T00:00:00Z",
+    )
+
+    assert batch_sizes == [2, 2, 1]
+
+
+def test_analytics_gate_does_not_retain_stop_generation_digests(monkeypatch):
+    stop_plan = _many_stop_history_plan()
+    stop_bundle = stop_plan.materialize()
+    _patch_minimal_historic(monkeypatch, stop_plan=stop_plan)
+    report = _gate_report(True)
+    assert report is not None
+
+    _publish_historic(
+        object(),
+        _RecordingStore(),
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        stamp="2026-07-13T00:00:00Z",
+        gate_report=report,
+    )
+
+    generation_paths = {path for path, _partition in stop_bundle.partition_items}
+    assert generation_paths.isdisjoint(report.payload_sha256)
+    assert {
+        *(_stop_index_path(index.entity_id or "") for index in stop_bundle.indexes),
+        "historic/history/stops/index.json",
+        "historic/history/index.json",
+    }.issubset(report.payload_sha256)
+
+
+def test_stop_gate_summary_hashes_refs_without_retaining_duplicate_ref_models():
+    from transit_ops.snapshots.contract import HistoricPartitionRef
+
+    plan = _many_stop_history_plan(1001)
+    summary = gate.StopHistoryStreamSummary()
+    partition_count = 0
+    for ref, partition in plan.iter_partition_items():
+        summary.observe(ref, partition)
+        partition_count += 1
+
+    def retained_refs(value):  # noqa: ANN001, ANN202
+        if isinstance(value, HistoricPartitionRef):
+            return [value]
+        if isinstance(value, dict):
+            return [item for child in value.values() for item in retained_refs(child)]
+        if isinstance(value, list | tuple | set):
+            return [item for child in value for item in retained_refs(child)]
+        if hasattr(value, "__dict__"):
+            return retained_refs(vars(value))
+        return []
+
+    assert retained_refs(summary) == []
+    assert sum(entity.partition_count for entity in summary.entities.values()) == partition_count
+
+
+@pytest.mark.parametrize("case", ["ref", "directory"])
+def test_stop_history_malformed_gate_inputs_return_findings_not_exceptions(case: str):
+    bundle = _stop_history_plan().materialize()
+    if case == "ref":
+        partition = bundle.partitions[0].model_dump(mode="json")
+        partition["days"] = [7]
+        findings = gate.check_stop_history_partition_ref(
+            bundle.indexes[0].partitions[0],
+            partition,
+        )
+        assert "ref_coverage" in {finding.check for finding in findings}
+    else:
+        directory = bundle.directory.model_dump(mode="json")
+        directory["entities"].append(
+            {
+                "entity_id": None,
+                "encoded_id": None,
+                "index_path": None,
+                "collection_generation_id": None,
+                "first_available_date": None,
+                "last_available_date": None,
+            }
+        )
+        findings = gate.check_stop_history_directory(
+            directory,
+            rel_key="historic/history/stops/index.json",
+        )
+        assert {"entity_order", "entity_identity"}.intersection(
+            finding.check for finding in findings
+        )
+
+
+@pytest.mark.parametrize("analytics_gate", [False, True])
+@pytest.mark.parametrize("force", [False, True])
+def test_stop_history_malformed_partition_preserves_gate_and_force_semantics(
+    monkeypatch,
+    analytics_gate: bool,
+    force: bool,
+):
+    malformed_plan = _MalformedStopPartitionPlan()
+    _patch_minimal_historic(monkeypatch, stop_plan=malformed_plan)
+    store = _RecordingStore()
+    report = _gate_report(analytics_gate)
+
+    if not force:
+        with pytest.raises(gate.GateError):
+            _publish_historic(
+                object(),
+                store,
+                provider_id="stm",
+                settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+                stamp="2026-07-13T00:00:00Z",
+                gate_report=report,
+            )
+        assert not any(kind == "normal" for kind, _path in store.calls)
+        assert malformed_plan.ref.path not in store.objects
+        return
+
+    keys = _publish_historic(
+        object(),
+        store,
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        stamp="2026-07-13T00:00:00Z",
+        gate_report=report,
+        force=True,
+    )
+    assert keys[-1] == "historic/history/index.json"
+    if report is not None:
+        assert report.errors
+
+
+def test_history_root_gate_handles_malformed_stop_dates_gaps_and_metrics():
+    from transit_ops.snapshots.contract import AlertArchiveIndex, ReceiptsIndex
+
+    network = _network_history_plan().materialize().index
+    lines = _line_history_plan().materialize()
+    stops = _stop_history_plan().materialize()
+    alerts = AlertArchiveIndex(
+        generated_utc="2026-07-13T00:00:00Z",
+        collection_generation_id="alerts",
+        first_available_date=None,
+        last_available_date=None,
+        total_alerts=0,
+        months=[],
+    )
+    receipts = ReceiptsIndex(
+        generated_utc="2026-07-13T00:00:00Z",
+        collection_generation_id=publish._receipts_collection_generation_id({}),
+        dates=[],
+    )
+    root = publish._build_history_availability_index(  # noqa: SLF001
+        stamp="2026-07-13T00:00:00Z",
+        alert_index=alerts,
+        receipts_index=receipts,
+        network_index=network,
+        line_directory=lines.directory,
+        line_indexes=lines.indexes,
+        stop_directory=stops.directory,
+        stop_indexes=stops.indexes,
+    )
+    malformed = stops.indexes[0].model_dump(mode="json")
+    malformed["available_dates"].append(None)
+    malformed["metrics"][0]["gaps"] = [{"start_date": None, "end_date": "2026-07-01"}]
+
+    findings = gate.check_history_availability_graph(
+        root,
+        alert_index=alerts,
+        receipts_index=receipts,
+        network_index=network,
+        line_directory=lines.directory,
+        line_indexes=lines.indexes,
+        stop_directory=stops.directory,
+        stop_indexes=[malformed],
+        fallback_generated_utc="2026-07-13T00:00:00Z",
+    )
+
+    assert "history_root_graph" in {finding.check for finding in findings}
+
+
+def test_stop_history_validate_reports_malformed_index_without_root_reconstruction_crash(
+    monkeypatch,
+):
+    _patch_minimal_historic(monkeypatch, stop_plan=_stop_history_plan())
+    monkeypatch.setattr(
+        publish.builders,
+        "StopHistoryStreamSummary",
+        _MalformedStopIndexSummary,
+    )
+    monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
+
+    class Engine:
+        def connect(self):
+            @contextmanager
+            def connection():
+                yield object()
+
+            return connection()
+
+    report = publish.validate_snapshots(
+        "stm",
+        tier="historic",
+        settings=SimpleNamespace(),
+        engine=Engine(),
+    )
+
+    assert not report.passed
+    assert {"available_dates", "history_root_graph"}.intersection(
+        finding.check for finding in report.errors
+    )
+
+
+def test_receipts_collection_gate_reconciles_exact_stamped_payload_semantics():
+    from transit_ops.snapshots.contract import Receipt, ReceiptsIndex
+
+    receipt = Receipt(
+        generated_utc="2026-07-13T00:00:00Z",
+        publish_generation_id="stm@2026-07-13T00:00:00Z",
+        date="2026-07-01",
+        affected_routes=2,
+    )
+    items = [("historic/receipts/2026-07-01.json", receipt)]
+    index = ReceiptsIndex(
+        generated_utc="2026-07-13T00:00:00Z",
+        dates=["2026-07-01"],
+        collection_generation_id=publish._receipts_collection_generation_id(
+            {receipt.date: receipt}
+        ),
+    )
+    assert gate.check_receipts_collection(index, items) == []
+
+    wrong_generation = index.model_copy(update={"collection_generation_id": "wrong"})
+    omitted = gate.check_receipts_collection(index, [])
+    extra_receipt = receipt.model_copy(update={"date": "2026-07-02"})
+    extra = gate.check_receipts_collection(
+        index,
+        [*items, ("historic/receipts/2026-07-02.json", extra_receipt)],
+    )
+    changed = gate.check_receipts_collection(
+        index,
+        [(items[0][0], receipt.model_copy(update={"affected_routes": 99}))],
+    )
+    wrong = gate.check_receipts_collection(wrong_generation, items)
+
+    for findings in (omitted, extra, changed, wrong):
+        assert "receipt_collection" in {finding.check for finding in findings}
+
+
+@pytest.mark.parametrize("analytics_gate", [False, True])
+def test_historic_publish_gates_receipt_collection_before_retained_pointers(
+    monkeypatch,
+    analytics_gate: bool,
+):
+    from transit_ops.snapshots.contract import Receipt, ReceiptsIndex
+
+    receipt = Receipt(
+        generated_utc="2026-07-13T00:00:00Z",
+        date="2026-07-01",
+        affected_routes=2,
+    )
+    index = ReceiptsIndex(
+        generated_utc="2026-07-13T00:00:00Z",
+        dates=[receipt.date],
+        collection_generation_id="wrong",
+    )
+    _patch_minimal_historic(
+        monkeypatch,
+        compatibility_items=[
+            ("historic/receipts/2026-07-01.json", receipt, "historic"),
+            ("historic/receipts/index.json", index, "historic"),
+        ],
+    )
+    monkeypatch.setattr(publish, "_finalize_receipts_collection_generation", lambda items: None)
+    store = _RecordingStore()
+
+    with pytest.raises(gate.GateError) as exc_info:
+        _publish_historic(
+            object(),
+            store,
+            provider_id="stm",
+            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+            stamp="2026-07-13T00:00:00Z",
+            gate_report=_gate_report(analytics_gate),
+        )
+
+    assert "receipt_collection" in {finding.check for finding in exc_info.value.report.errors}
+    assert not any(path.startswith("historic/history/") for _kind, path in store.calls)
+
+
+def test_historic_validate_gates_receipt_collection_semantics(monkeypatch):
+    from transit_ops.snapshots.contract import Receipt, ReceiptsIndex
+
+    receipt = Receipt(
+        generated_utc="2026-07-13T00:00:00Z",
+        date="2026-07-01",
+        affected_routes=2,
+    )
+    index = ReceiptsIndex(
+        generated_utc="2026-07-13T00:00:00Z",
+        dates=[receipt.date],
+        collection_generation_id="wrong",
+    )
+    _patch_minimal_historic(
+        monkeypatch,
+        compatibility_items=[
+            ("historic/receipts/2026-07-01.json", receipt, "historic"),
+            ("historic/receipts/index.json", index, "historic"),
+        ],
+    )
+    monkeypatch.setattr(publish, "_finalize_receipts_collection_generation", lambda items: None)
+    monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
+
+    class Engine:
+        def connect(self):
+            @contextmanager
+            def connection():
+                yield object()
+
+            return connection()
+
+    report = publish.validate_snapshots(
+        "stm",
+        tier="historic",
+        settings=SimpleNamespace(),
+        engine=Engine(),
+    )
+
+    assert "receipt_collection" in {finding.check for finding in report.errors}
+
+
+def _root_gate_fixture():
+    from transit_ops.snapshots.contract import AlertArchiveIndex, ReceiptsIndex
+
+    network = _network_history_plan().materialize().index
+    lines = _line_history_plan().materialize()
+    stops = _stop_history_plan().materialize()
+    alerts = AlertArchiveIndex(
+        generated_utc="2026-07-11T00:00:00Z",
+        collection_generation_id="alert-generation",
+        first_available_date="2026-06-01",
+        last_available_date="2026-07-01",
+        total_alerts=1,
+        months=[],
+    )
+    receipts = ReceiptsIndex(
+        generated_utc="2026-07-12T00:00:00Z",
+        collection_generation_id="receipt-generation",
+        dates=["2026-07-01"],
+    )
+    root = publish._build_history_availability_index(  # noqa: SLF001
+        stamp="2026-07-13T00:00:00Z",
+        alert_index=alerts,
+        receipts_index=receipts,
+        network_index=network,
+        line_directory=lines.directory,
+        line_indexes=lines.indexes,
+        stop_directory=stops.directory,
+        stop_indexes=stops.indexes,
+    )
+    return SimpleNamespace(
+        root=root,
+        alerts=alerts,
+        receipts=receipts,
+        network=network,
+        lines=lines,
+        stops=stops,
+    )
+
+
+def test_history_root_gate_invalid_receipt_calendar_date_returns_finding_not_exception():
+    fixture = _root_gate_fixture()
+    fixture.receipts.dates = ["not-a-date"]
+
+    findings = gate.check_history_availability_graph(
+        fixture.root,
+        alert_index=fixture.alerts,
+        receipts_index=fixture.receipts,
+        network_index=fixture.network,
+        line_directory=fixture.lines.directory,
+        line_indexes=fixture.lines.indexes,
+        stop_directory=fixture.stops.directory,
+        stop_indexes=fixture.stops.indexes,
+        fallback_generated_utc="2026-07-13T00:00:00Z",
+    )
+
+    assert "history_root_graph" in {finding.check for finding in findings}
+
+
+@pytest.mark.parametrize("singleton", ["alerts", "receipts", "network"])
+def test_history_root_gate_bad_populated_singleton_timestamp_returns_finding(
+    singleton: str,
+):
+    fixture = _root_gate_fixture()
+    child = getattr(fixture, singleton).model_copy(deep=True)
+    child.generated_utc = "bad"
+    setattr(fixture, singleton, child)
+
+    findings = gate.check_history_availability_graph(
+        fixture.root,
+        alert_index=fixture.alerts,
+        receipts_index=fixture.receipts,
+        network_index=fixture.network,
+        line_directory=fixture.lines.directory,
+        line_indexes=fixture.lines.indexes,
+        stop_directory=fixture.stops.directory,
+        stop_indexes=fixture.stops.indexes,
+        fallback_generated_utc="2026-07-13T00:00:00Z",
+    )
+
+    assert "history_root_graph" in {finding.check for finding in findings}
+
+
+class _BadGeneratedUtcNetworkPlan:
+    def __init__(self) -> None:
+        self.plan = _network_history_plan()
+
+    def iter_partition_items(self):  # noqa: ANN201
+        return self.plan.iter_partition_items()
+
+    def build_index(self, refs):  # noqa: ANN001, ANN201
+        index = self.plan.build_index(refs)
+        index.generated_utc = "bad"
+        return index
+
+
+def _invalid_date_receipts_singleton():
+    from transit_ops.snapshots.contract import ReceiptsIndex
+
+    index = ReceiptsIndex(
+        generated_utc="2026-07-13T00:00:00Z",
+        collection_generation_id="pending",
+        dates=[],
+    )
+    index.dates = ["not-a-date"]
+    return index
+
+
+def _bad_generated_utc_receipts_singleton():
+    from transit_ops.snapshots.contract import ReceiptsIndex
+
+    index = ReceiptsIndex(
+        generated_utc="2026-07-13T00:00:00Z",
+        collection_generation_id="pending",
+        dates=["2026-07-01"],
+    )
+    index.generated_utc = "bad"
+    return index
+
+
+def _bad_generated_utc_alert_archive():
+    from transit_ops.snapshots.contract import AlertArchiveIndex
+
+    index = AlertArchiveIndex(
+        generated_utc="2026-07-13T00:00:00Z",
+        collection_generation_id="alert-generation",
+        first_available_date="2026-07-01",
+        last_available_date="2026-07-01",
+        total_alerts=1,
+        months=[],
+    )
+    index.generated_utc = "bad"
+    return SimpleNamespace(index=index, page_items=[], provider_timezone="UTC")
+
+
+def _patch_malformed_history_singleton(monkeypatch, malformation: str) -> None:
+    if malformation == "invalid_receipt_date":
+        _patch_minimal_historic(
+            monkeypatch,
+            compatibility_items=[
+                (
+                    "historic/receipts/index.json",
+                    _invalid_date_receipts_singleton(),
+                    "historic",
+                ),
+            ],
+        )
+        return
+    if malformation == "alerts_timestamp":
+        _patch_minimal_historic(monkeypatch, archive=_bad_generated_utc_alert_archive())
+        return
+    if malformation == "receipts_timestamp":
+        _patch_minimal_historic(
+            monkeypatch,
+            compatibility_items=[
+                (
+                    "historic/receipts/index.json",
+                    _bad_generated_utc_receipts_singleton(),
+                    "historic",
+                ),
+            ],
+        )
+        return
+    if malformation == "network_timestamp":
+        _patch_minimal_historic(monkeypatch, network_plan=_BadGeneratedUtcNetworkPlan())
+        return
+    raise AssertionError(f"unknown malformation: {malformation}")
+
+
+@pytest.mark.parametrize(
+    "malformation",
+    [
+        "invalid_receipt_date",
+        "alerts_timestamp",
+        "receipts_timestamp",
+        "network_timestamp",
+    ],
+)
+@pytest.mark.parametrize("analytics_gate", [False, True])
+@pytest.mark.parametrize("force", [False, True])
+def test_historic_publish_malformed_singleton_preserves_gate_and_force_semantics(
+    monkeypatch,
+    malformation: str,
+    analytics_gate: bool,
+    force: bool,
+):
+    _patch_malformed_history_singleton(monkeypatch, malformation)
+    store = _RecordingStore()
+    report = _gate_report(analytics_gate)
+
+    if not force:
+        with pytest.raises(gate.GateError) as exc_info:
+            _publish_historic(
+                object(),
+                store,
+                provider_id="stm",
+                settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+                stamp="2026-07-13T00:00:00Z",
+                gate_report=report,
+            )
+        assert exc_info.value.report.errors
+        assert not any(kind == "normal" for kind, _path in store.calls)
+        return
+
+    keys = _publish_historic(
+        object(),
+        store,
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        stamp="2026-07-13T00:00:00Z",
+        gate_report=report,
+        force=True,
+    )
+
+    assert keys[-1] == "historic/history/index.json"
+    if report is not None:
+        assert "history_root_graph" in {finding.check for finding in report.errors}
+
+
+@pytest.mark.parametrize(
+    "malformation",
+    [
+        "invalid_receipt_date",
+        "alerts_timestamp",
+        "receipts_timestamp",
+        "network_timestamp",
+    ],
+)
+def test_historic_validate_malformed_singleton_returns_findings(
+    monkeypatch,
+    malformation: str,
+):
+    _patch_malformed_history_singleton(monkeypatch, malformation)
+    monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
+
+    class Engine:
+        def connect(self):
+            @contextmanager
+            def connection():
+                yield object()
+
+            return connection()
+
+    report = publish.validate_snapshots(
+        "stm",
+        tier="historic",
+        settings=SimpleNamespace(),
+        engine=Engine(),
+    )
+
+    assert "history_root_graph" in {finding.check for finding in report.errors}

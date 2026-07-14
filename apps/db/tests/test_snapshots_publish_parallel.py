@@ -296,6 +296,7 @@ def _historic_dispatch_conn(
     network_delay_rows=None,  # noqa: ANN001
     network_fact_rows=None,  # noqa: ANN001
     line_delay_rows=None,  # noqa: ANN001
+    stop_delay_rows=None,  # noqa: ANN001
 ):
     """A fake conn returning enough rows for several per-route/per-stop files."""
     import datetime
@@ -360,6 +361,15 @@ def _historic_dispatch_conn(
         "history.lines.occupancy": [],
         "history.lines.service_span": [],
         "history.lines.skipped_stops": [],
+        "history.stops.ids": [
+            {"stop_id": stop_id}
+            for stop_id in sorted(
+                {row.get("stop_id") for row in (stop_delay_rows or []) if row.get("stop_id")}
+            )
+        ],
+        "history.stops.delay": list(stop_delay_rows or []),
+        "history.stops.percentiles": [],
+        "history.stops.occupancy": [],
         "receipts.network_daily": [
             {
                 "local_date": datetime.date(2025, 1, 1),
@@ -871,9 +881,7 @@ def test_unchanged_historic_republish_counts_immutable_skip_physically_and_expos
     assert second.display_dict()["files_skipped"] == physical_skipped
 
 
-def test_network_and_line_history_republish_account_for_real_hash_gate_outcomes_end_to_end() -> (
-    None
-):
+def test_all_history_families_republish_account_for_real_hash_gate_outcomes_end_to_end() -> None:
     import datetime
 
     class _Settings:
@@ -922,10 +930,29 @@ def test_network_and_line_history_republish_account_for_real_hash_gate_outcomes_
             "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
         },
     ]
+    stop_rows = [
+        {
+            "stop_id": "S/1",
+            "local_date": datetime.date(2026, 5, 31),
+            "observation_count": 10,
+            "severe_count": 0,
+            "sum_delay_seconds": 240,
+            "source_generated_utc": datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC),
+        },
+        {
+            "stop_id": "S/1",
+            "local_date": datetime.date(2026, 6, 1),
+            "observation_count": 5,
+            "severe_count": 1,
+            "sum_delay_seconds": 120,
+            "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
+        },
+    ]
     store = _OrderTrackingStore()
     conn = _historic_dispatch_conn(
         network_delay_rows=network_rows,
         line_delay_rows=line_rows,
+        stop_delay_rows=stop_rows,
     )
     engine = _FakeEngine(conn)
 
@@ -951,11 +978,20 @@ def test_network_and_line_history_republish_account_for_real_hash_gate_outcomes_
     stable = public - generation
     network_index_key = "historic/history/network/index.json"
     line_index_key = "historic/history/lines/412f42/index.json"
+    stop_index_key = "historic/history/stops/532f31/index.json"
     line_directory_key = "historic/history/lines/index.json"
+    stop_directory_key = "historic/history/stops/index.json"
+    root_key = "historic/history/index.json"
     assert len(public) == len(first.keys_written)
-    assert len(generation) == 4
-    assert {network_index_key, line_index_key, line_directory_key}.issubset(public)
-    assert not any(key == "historic/history/index.json" for key in public)
+    assert len(generation) == 6
+    assert {
+        network_index_key,
+        line_index_key,
+        stop_index_key,
+        line_directory_key,
+        stop_directory_key,
+        root_key,
+    }.issubset(public)
     assert first.keys_skipped == []
     assert second.keys_written == []
     assert Counter(second.keys_skipped) == Counter(first.keys_written)
