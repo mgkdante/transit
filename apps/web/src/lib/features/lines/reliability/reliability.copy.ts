@@ -46,10 +46,16 @@ export interface ReliabilityCopy {
 		readonly headwayRegularityCov: string;
 		readonly cancellationRatePct: string;
 		readonly skippedStopRatePct: string;
+		readonly serviceCompletenessPct: string;
 		/** Honest completeness fraction: "{canceled} of {total} trip-days canceled". */
 		readonly cancellationFraction: (canceled: string, total: string) => string;
 		/** Honest completeness fraction: "{skipped} of {total} stop updates skipped". */
 		readonly skippedFraction: (skipped: string, total: string) => string;
+		readonly serviceCompletenessFraction: (
+			delivered: string,
+			scheduled: string,
+			silent: string | null,
+		) => string;
 		/** Plain caption under the typical-delay (p50) tile. */
 		readonly p50Caption: string;
 		/** Plain caption under the worst-case (p90) tile. */
@@ -271,6 +277,8 @@ export interface ReliabilityCopy {
 			 * single exact reading. No em dash; "to" joins the bounds.
 			 */
 			readonly range: (n: number, start: string, end: string) => string;
+			/** Multi-day selected window before a contributing-day count is available. */
+			readonly rangeSelection: (start: string, end: string) => string;
 			/** Prompt before a complete range is picked. */
 			readonly rangePrompt: string;
 		};
@@ -281,6 +289,20 @@ export interface ReliabilityCopy {
 		readonly filterPillClose: string;
 		/** a11y: close the mobile section-jump (TOC) pill drawer. */
 		readonly tocPillClose: string;
+	};
+	readonly history: {
+		readonly navigator: import('$lib/components/surface/HistoryNavigator.svelte').HistoryNavigatorLabels;
+		readonly coverage: (from: string, to: string) => string;
+		readonly selection: (from: string, to: string) => string;
+		readonly correction: Record<import('$lib/v1').HistoryCorrection['reason'], string>;
+		readonly partial: string;
+		readonly noData: string;
+		readonly currentOnly: string;
+		readonly headerCurrentOnly: string;
+		readonly loading: string;
+		readonly ready: string;
+		readonly error: string;
+		readonly retry: string;
 	};
 	/**
 	 * Rider-question section framing (the 5-section rider-first IA): each section's
@@ -325,8 +347,13 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			headwayRegularityCov: 'Régularité (CV)',
 			cancellationRatePct: "Taux d'annulation",
 			skippedStopRatePct: "Taux d'arrêts ignorés",
+			serviceCompletenessPct: 'Service prévu assuré',
 			cancellationFraction: (c, total) => `${c} annulés sur ${total} jours-trajets`,
 			skippedFraction: (s, total) => `${s} ignorés sur ${total} mises à jour d'arrêt`,
+			serviceCompletenessFraction: (delivered, scheduled, silent) =>
+				`${delivered} sur ${scheduled} jours-trajets prévus assurés${
+					silent == null ? '' : ` · ${silent} silencieux`
+				}`,
 			p50Caption: 'La moitié des trajets font mieux, la moitié font pire',
 			p90Caption: '9 trajets sur 10 sont plus rapides que ça',
 			delayDistHeading: 'Du retard médian au pire des cas',
@@ -465,13 +492,47 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				week: 'Fenêtre : cette semaine (semaine la plus récente)',
 				month: 'Fenêtre : ce mois-ci (mois le plus récent)',
 				singleDay: (date) => `Fenêtre : ${date}`,
-				range: (n, start, end) => `Moyenne sur ${n} jours, du ${start} au ${end}`,
+				range: (n, start, end) =>
+					`Moyenne sur ${n} ${n === 1 ? 'jour' : 'jours'}, du ${start} au ${end}`,
+				rangeSelection: (start, end) => `Fenêtre : du ${start} au ${end}`,
 				rangePrompt: 'Fenêtre : choisissez une date de début et de fin',
 			},
 			toc: 'Aller à une section',
 			filterPillOpen: 'Ouvrir les commandes de vue',
 			filterPillClose: 'Fermer les commandes de vue',
 			tocPillClose: 'Fermer la liste des sections',
+		},
+		history: {
+			navigator: {
+				group: 'Historique de fiabilité de la ligne',
+				picker: {
+					group: 'Plage de dates',
+					start: 'Du',
+					end: 'Au',
+					clear: 'Revenir au portrait actuel',
+					anyStart: 'Première date',
+					anyEnd: 'Dernière date',
+				},
+				previous: 'Plage précédente',
+				next: 'Plage suivante',
+			},
+			coverage: (from, to) => `Historique disponible du ${from} au ${to}.`,
+			selection: (from, to) => `Plage choisie : du ${from} au ${to}.`,
+			correction: {
+				malformed: 'La plage invalide a été remplacée par le portrait actuel.',
+				'outside-coverage': 'La plage non disponible a été remplacée par le portrait actuel.',
+				gap: 'La plage traverse une lacune dans les données conservées.',
+				unpublished: 'La plage non publiée a été remplacée par le portrait actuel.',
+			},
+			partial: 'Cette plage ne couvre qu’une partie des mesures conservées.',
+			noData: 'Aucune donnée conservée pour cette plage.',
+			currentOnly:
+				'Les habitudes, les attentes, les pires arrêts et les associations restent basés sur le portrait actuel.',
+			headerCurrentOnly: 'Verdict d’en-tête : portrait actuel',
+			loading: 'Chargement de la plage conservée…',
+			ready: 'Plage conservée chargée.',
+			error: 'Impossible de charger cette plage conservée.',
+			retry: 'Réessayer',
 		},
 		sections: {
 			verdict: {
@@ -536,8 +597,13 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			headwayRegularityCov: 'Regularity (CoV)',
 			cancellationRatePct: 'Cancellation rate',
 			skippedStopRatePct: 'Skipped-stop rate',
+			serviceCompletenessPct: 'Scheduled service delivered',
 			cancellationFraction: (c, total) => `${c} of ${total} trip-days canceled`,
 			skippedFraction: (s, total) => `${s} of ${total} stop updates skipped`,
+			serviceCompletenessFraction: (delivered, scheduled, silent) =>
+				`${delivered} of ${scheduled} scheduled trip-days delivered${
+					silent == null ? '' : ` · ${silent} silent`
+				}`,
 			p50Caption: 'Half of trips do better, half do worse',
 			p90Caption: '9 in 10 trips are better than this',
 			delayDistHeading: 'From typical to worst-case delay',
@@ -675,13 +741,47 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				week: 'Window: this week (most recent week)',
 				month: 'Window: this month (most recent month)',
 				singleDay: (date) => `Window: ${date}`,
-				range: (n, start, end) => `Average across ${n} days, ${start} to ${end}`,
+				range: (n, start, end) =>
+					`Average across ${n} ${n === 1 ? 'day' : 'days'}, ${start} to ${end}`,
+				rangeSelection: (start, end) => `Window: ${start} to ${end}`,
 				rangePrompt: 'Window: pick a start and end date',
 			},
 			toc: 'Jump to a section',
 			filterPillOpen: 'Open view controls',
 			filterPillClose: 'Close view controls',
 			tocPillClose: 'Close section list',
+		},
+		history: {
+			navigator: {
+				group: 'Line reliability history',
+				picker: {
+					group: 'Date range',
+					start: 'From',
+					end: 'To',
+					clear: 'Return to current snapshot',
+					anyStart: 'First date',
+					anyEnd: 'Last date',
+				},
+				previous: 'Previous range',
+				next: 'Next range',
+			},
+			coverage: (from, to) => `History available from ${from} to ${to}.`,
+			selection: (from, to) => `Selected range: ${from} to ${to}.`,
+			correction: {
+				malformed: 'The invalid date range was replaced with the current snapshot.',
+				'outside-coverage': 'The unavailable date range was replaced with the current snapshot.',
+				gap: 'The selected range crosses a gap in retained data.',
+				unpublished: 'The unpublished date range was replaced with the current snapshot.',
+			},
+			partial: 'This range has only partial retained metric coverage.',
+			noData: 'No data is retained for this range.',
+			currentOnly:
+				'Habits, wait regularity, worst stops, and associations still use the current snapshot.',
+			headerCurrentOnly: 'Header verdict: current snapshot',
+			loading: 'Loading retained range…',
+			ready: 'Retained range loaded.',
+			error: 'This retained range could not be loaded.',
+			retry: 'Retry',
 		},
 		sections: {
 			verdict: {

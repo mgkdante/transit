@@ -16,7 +16,7 @@
   copy is co-located. Tokens, no hex; --primary stays interactive-only.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { mirrorSearchParam } from '$lib/site/urlMirror';
 	import { getLocale, localizeHref } from '$lib/i18n';
@@ -30,6 +30,7 @@
 		getProvenance,
 		getV1Context,
 		alertsForRoute,
+		historyRangeRequestFromSearchParams,
 	} from '$lib/v1';
 	import type { RouteFile, RouteReliability, Provenance, StopPrediction, Vehicle } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -59,6 +60,10 @@
 	import { toReliabilityClusters } from './reliability/clusters';
 	import { reliabilityCopy } from './reliability/reliability.copy';
 	import RouteReliabilityClusters from './reliability/RouteReliabilityClusters.svelte';
+	import {
+		createLineHistoryResource,
+		type LineHistoryResource,
+	} from './reliability/data/lineHistoryResource.svelte';
 	import { directionHeadsigns } from './directions';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -128,6 +133,31 @@
 		return getRouteReliability(routeId);
 	});
 
+	function historyFor(routeId: string): LineHistoryResource {
+		return createLineHistoryResource(
+			routeId,
+			historyRangeRequestFromSearchParams(page.url.searchParams),
+		);
+	}
+	const initialHistoryEntityId = untrack(() => id);
+	let historyEntityId = initialHistoryEntityId;
+	let lineHistory = $state.raw<LineHistoryResource>(historyFor(initialHistoryEntityId));
+	$effect(() => {
+		const routeId = id;
+		if (routeId === historyEntityId) return;
+		const previous = lineHistory;
+		historyEntityId = routeId;
+		lineHistory = historyFor(routeId);
+		previous.destroy();
+	});
+	onMount(() => () => lineHistory.destroy());
+	const lineHistoryRequested = $derived(lineHistory.request.hasFrom || lineHistory.request.hasTo);
+	const historyOnlyReliability = $derived.by<RouteReliability | null>(() => {
+		if (!lineHistoryRequested) return null;
+		const generatedUtc = lineHistory.index?.generated_utc ?? route.data?.generated_utc;
+		return generatedUtc == null ? null : { id, generated_utc: generatedUtc };
+	});
+
 	// ALWAYS-VISIBLE VERDICT BAND (§C5.4): the §0 verdict, hoisted ABOVE the tabs so the
 	// payoff is never buried behind the Detail tab. Reuses the SHARED VerdictBanner +
 	// selectVerdict off the SAME §0 headline (the default 'day' grain of the reliability
@@ -143,6 +173,9 @@
 	);
 	const routeVerdict = $derived(
 		verdictHeadline ? selectVerdict(verdictHeadline, 'day', locale, relCopy.verdict) : null,
+	);
+	const headerVerdictCurrentOnly = $derived(
+		(lineHistory.request.hasFrom || lineHistory.request.hasTo) && lineHistory.state !== 'current',
 	);
 
 	// Live tier: one store for this surface (the v1 context is booted before
@@ -325,7 +358,14 @@
 		     OTP BAN), from the §0 headline. Renders only once the archive loads (honest
 		     absence otherwise — no fabricated verdict). -->
 		{#if routeVerdict}
-			<VerdictBanner result={routeVerdict} />
+			<div class="route-verdict-banner">
+				<VerdictBanner result={routeVerdict} />
+				{#if headerVerdictCurrentOnly}
+					<p class="route-verdict-scope" data-slot="header-verdict-current-only">
+						{relCopy.history.headerCurrentOnly}
+					</p>
+				{/if}
+			</div>
 		{/if}
 	{/snippet}
 
@@ -536,16 +576,45 @@
 				{/snippet}
 			</ResourceBoundary>
 		{:else}
-			<ResourceBoundary resource={reliability} lang={locale}>
-				{#snippet children(rel)}
-					<RouteReliabilityClusters data={rel} {locale} directionHeadsigns={dirHeadsigns} />
-				{/snippet}
-			</ResourceBoundary>
+			{#if reliability.settled && reliability.error == null && reliability.data == null && historyOnlyReliability != null && lineHistory.state !== 'current'}
+				{#key id}
+					<RouteReliabilityClusters
+						data={historyOnlyReliability}
+						{locale}
+						directionHeadsigns={dirHeadsigns}
+						history={lineHistory}
+					/>
+				{/key}
+			{:else}
+				<ResourceBoundary resource={reliability} lang={locale}>
+					{#snippet children(rel)}
+						{#key id}
+							<RouteReliabilityClusters
+								data={rel}
+								{locale}
+								directionHeadsigns={dirHeadsigns}
+								history={lineHistory}
+							/>
+						{/key}
+					{/snippet}
+				</ResourceBoundary>
+			{/if}
 		{/if}
 	{/snippet}
 </EntityDetail>
 
 <style>
+	.route-verdict-banner {
+		display: grid;
+		gap: 0.5rem;
+	}
+	.route-verdict-scope {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+	}
 	.line-corner {
 		white-space: nowrap;
 	}

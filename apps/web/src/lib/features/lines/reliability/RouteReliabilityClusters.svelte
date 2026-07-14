@@ -27,6 +27,7 @@
 -->
 <script lang="ts">
 	import { cn } from '$lib/utils';
+	import { formatDateKey } from '$lib/utils/time';
 	import { page } from '$app/state';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import {
@@ -38,18 +39,27 @@
 	} from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
 	import { describeAbsence } from '$lib/site/absence';
-	import type { RouteReliability } from '$lib/v1';
+	import {
+		availabilityFromCollectionIndex,
+		datesForAvailability,
+		historyRangeRequestFromSearchParams,
+		type RawHistoryRangeRequest,
+		type RouteReliability,
+	} from '$lib/v1';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { onMount } from 'svelte';
 	import {
 		GrainPicker,
-		DateRangePicker,
+		HistoryNavigator,
 		SurfaceRail,
 		type GrainSegment,
 	} from '$lib/components/surface';
 	import { observeActiveToc, TocNav, type TocEntry } from '$lib/components/shared';
+	import { Button } from '$lib/components/ui/button';
 	import { toReliabilityClusters } from './clusters';
 	import { reliabilityCopy } from './reliability.copy';
+	import { applyRetainedLineHistory, clearRetainedLineHistory } from './data/retainedHistory';
+	import type { LineHistoryResource } from './data/lineHistoryResource.svelte';
 	import Section0Verdict from './sections/Section0Verdict.svelte';
 	import Section1WhenToRide from './sections/Section1WhenToRide.svelte';
 	import Section2TheWait from './sections/Section2TheWait.svelte';
@@ -69,6 +79,8 @@
 		directionHeadsigns?: Record<number, string>;
 		/** Optional extra class for the surface column. */
 		class?: string;
+		/** Route-keyed retained range resource, owned by RouteDetail. */
+		history?: LineHistoryResource;
 	}
 
 	let {
@@ -76,6 +88,7 @@
 		locale,
 		directionHeadsigns = {},
 		class: className,
+		history,
 	}: RouteReliabilityClustersProps = $props();
 
 	const copy = $derived(reliabilityCopy[locale]);
@@ -141,11 +154,20 @@
 	// otherwise the calendar grain). Kept as a named derived so the mapper/caption
 	// logic below reads unchanged from the prior single-select model.
 	const mode = $derived<GrainMode>(viewKey);
-	// The custom range bounds, seeded from the codec's normalized {from,to} window (already
-	// shape-validated + inverted-swapped by the codec). Availability is validated in the clamp below,
-	// where the dated window is known. Absent window → empty bounds (no range).
-	let rangeStart = $state<string>(seed.window?.from ?? '');
-	let rangeEnd = $state<string>(seed.window?.to ?? '');
+	let localHistoryRequest = $state.raw<RawHistoryRangeRequest>(
+		historyRangeRequestFromSearchParams(page.url.searchParams),
+	);
+	const activeHistoryRequest = $derived(history?.request ?? localHistoryRequest);
+	const emptyHistoryRequest = (): RawHistoryRangeRequest => ({
+		hasFrom: false,
+		hasTo: false,
+		rawFrom: null,
+		rawTo: null,
+	});
+	function setHistoryRequest(request: RawHistoryRangeRequest): void {
+		if (history) history.setRequest(request);
+		else localHistoryRequest = request;
+	}
 
 	// Dated DAY-grain periods the contract carries (for the range picker), sorted
 	// ascending so the start/end dropdowns read oldest→newest. A day-grain period
@@ -160,14 +182,17 @@
 			.slice()
 			.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
 	);
-	const hasDatedPeriods = $derived(datedPeriods.length > 0);
-
-	// The available dated day window (for bounding + the prompt). The picker offers
-	// only real dates, so an out-of-window pick is impossible by construction.
-	const earliestDate = $derived(datedPeriods.length > 0 ? datedPeriods[0].date : '');
-	const latestDate = $derived(
-		datedPeriods.length > 0 ? datedPeriods[datedPeriods.length - 1].date : '',
+	const currentAvailableDates = $derived(datedPeriods.map((period) => period.date));
+	const historyAvailability = $derived(
+		history?.index == null ? null : availabilityFromCollectionIndex(history.index),
 	);
+	const retainedAvailableDates = $derived(
+		historyAvailability == null ? [] : datesForAvailability(historyAvailability),
+	);
+	const availableDates = $derived(
+		retainedAvailableDates.length > 0 ? retainedAvailableDates : currentAvailableDates,
+	);
+	const hasDatedPeriods = $derived(availableDates.length > 0);
 
 	// Which calendar grains the contract actually carries — so we never offer a
 	// grain segment that resolves to nothing (an empty grain is disabled, not a
@@ -180,69 +205,108 @@
 		return set;
 	});
 
-	// Availability clamp (one-shot): the ?grain seed is validated for SHAPE at init, but availability
-	// needs `data` (a $derived) — so clamp once after first render. A URL-seeded grain the contract
-	// can't serve (week/month absent, or range with no dated days) falls back to 'day' so the control
-	// never resolves to an empty grain.
+	// Direct component renders without a retained resource preserve the legacy singleton clamp.
+	// Production route pages defer all older-range validation to the shared retained coordinator.
 	let settled = false;
 	$effect(() => {
 		if (settled) return;
 		settled = true;
-		// S7.5 P1: validate the URL-seeded window against the real dated window via the SHARED
-		// resolveWindow clamp (drop an out-of-window / non-existent bound — the URL is a hint, never
-		// fabricates a window). A complete, in-window {from,to} keeps range mode; anything else drops
-		// the window (and, if we were in range mode purely because of it, falls back to 'day').
-		const availableDates = new Set(datedPeriods.map((p) => p.date));
-		const seededWindow: DateWindow | undefined =
-			rangeStart && rangeEnd ? { from: rangeStart, to: rangeEnd } : undefined;
-		const window = resolveWindow(seededWindow, availableDates);
-		rangeStart = window?.from ?? '';
-		rangeEnd = window?.to ?? '';
-		// A complete, valid window implies range intent (matches the old activateRange: a full range
-		// deep-links range mode even without an explicit token).
-		if (window) viewKey = 'range';
-		// The window was DROPPED (out-of-window / non-existent bounds). Preserve range MODE with its
-		// honest "pick a start and end date" prompt ONLY when range was requested EXPLICITLY (the
-		// ?grain=range half-pick token). A bare ?from/?to whose bounds fall outside the published
-		// window carries no deliberate range intent — revert to the day view (the old behaviour),
-		// never a silent empty range prompt for a link that never mentioned range.
-		else if (viewKey === 'range' && !explicitRangeToken) viewKey = 'day';
-		// Grain availability clamp: a grain the contract can't serve falls back to 'day' so the
-		// control never resolves to an empty grain.
+		if (history == null) {
+			const window = resolveWindow(seed.window, new Set(currentAvailableDates));
+			setHistoryRequest(
+				window == null
+					? emptyHistoryRequest()
+					: { hasFrom: true, hasTo: true, rawFrom: window.from, rawTo: window.to },
+			);
+			if (window) viewKey = 'range';
+			else if (viewKey === 'range' && !explicitRangeToken) viewKey = 'day';
+		}
 		if ((viewKey === 'week' || viewKey === 'month') && !availableGrains.has(viewKey))
 			viewKey = 'day';
-		else if (viewKey === 'range' && !hasDatedPeriods) viewKey = 'day';
+		else if (viewKey === 'range' && !hasDatedPeriods && history == null) viewKey = 'day';
 	});
 
-	// S8B: the range start/end pair now rides the SHARED DateRangePicker primitive.
-	// The picker speaks a normalized {from,to} DateWindow (undefined until both bounds
-	// are set); RRC keeps its rangeStart/rangeEnd strings (all the window-presence→
-	// range-mode + mirror logic below is UNCHANGED), so a function binding bridges the
-	// two: read = compose the current bounds into a window (undefined if half-picked);
-	// write = split the picker's window back onto the raw bounds. The picker's options
-	// are `datedPeriods` dates ONLY, so an out-of-window pick is impossible (as before).
-	const availableDates = $derived(datedPeriods.map((p) => p.date));
-	const getRangeWindow = (): DateWindow | undefined =>
-		rangeStart && rangeEnd
-			? rangeStart <= rangeEnd
-				? { from: rangeStart, to: rangeEnd }
-				: { from: rangeEnd, to: rangeStart }
-			: undefined;
+	let historyAnnouncement = $state<string | null>(null);
+	let handledHistoryCorrection = '';
+	const getRangeWindow = (): DateWindow | undefined => {
+		const from = activeHistoryRequest.rawFrom;
+		const to = activeHistoryRequest.rawTo;
+		if (!activeHistoryRequest.hasFrom || !activeHistoryRequest.hasTo || !from || !to)
+			return undefined;
+		return from <= to ? { from, to } : { from: to, to: from };
+	};
 	const setRangeWindow = (w: DateWindow | undefined): void => {
-		rangeStart = w?.from ?? '';
-		rangeEnd = w?.to ?? '';
+		historyAnnouncement = null;
+		handledHistoryCorrection = '';
+		setHistoryRequest(
+			w == null
+				? emptyHistoryRequest()
+				: { hasFrom: true, hasTo: true, rawFrom: w.from, rawTo: w.to },
+		);
 	};
 
-	// A complete range needs both bounds; we normalise start ≤ end so the user can
-	// pick the two dates in any order without inverting the window.
-	const hasRangePick = $derived(mode === 'range' && !!rangeStart && !!rangeEnd);
+	const rangeWindow = $derived(getRangeWindow());
+	const hasRangePick = $derived(mode === 'range' && rangeWindow != null);
 	const normalizedRange = $derived<{ start: string; end: string } | undefined>(
-		hasRangePick
-			? rangeStart <= rangeEnd
-				? { start: rangeStart, end: rangeEnd }
-				: { start: rangeEnd, end: rangeStart }
-			: undefined,
+		hasRangePick && rangeWindow ? { start: rangeWindow.from, end: rangeWindow.to } : undefined,
 	);
+	const historyRequested = $derived(activeHistoryRequest.hasFrom || activeHistoryRequest.hasTo);
+	const explicitHistory = $derived(
+		history != null && historyRequested && history.state !== 'current',
+	);
+	const retainedReady = $derived(history?.state === 'ready' || history?.state === 'partial');
+	const historyLiveAnnouncement = $derived.by(() => {
+		if (historyAnnouncement != null) return historyAnnouncement;
+		if (!explicitHistory) return '';
+		if (history?.state === 'loading-index' || history?.state === 'loading-range')
+			return copy.history.loading;
+		if (history?.state === 'partial') return copy.history.partial;
+		if (history?.state === 'no-data') return copy.history.noData;
+		if (history?.state === 'error') return copy.history.error;
+		if (history?.state === 'ready') return copy.history.ready;
+		return '';
+	});
+
+	$effect(() => {
+		if (mode === 'range' || !historyRequested) return;
+		setHistoryRequest(emptyHistoryRequest());
+	});
+
+	$effect(() => {
+		const correction = history?.resolved?.correction;
+		if (correction == null || correction.key === handledHistoryCorrection) return;
+		handledHistoryCorrection = correction.key;
+		historyAnnouncement = copy.history.correction[correction.reason];
+		setHistoryRequest(emptyHistoryRequest());
+		if (!explicitRangeToken) viewKey = 'day';
+	});
+
+	$effect(() => {
+		if (
+			history == null ||
+			!historyRequested ||
+			history.state !== 'current' ||
+			history.index != null
+		)
+			return;
+		setHistoryRequest(emptyHistoryRequest());
+		if (!explicitRangeToken) viewKey = 'day';
+	});
+
+	const historyCoverageText = $derived.by<string | null>(() => {
+		if (historyAvailability?.kind !== 'continuous') return null;
+		return copy.history.coverage(
+			formatDateKey(historyAvailability.firstDate, locale),
+			formatDateKey(historyAvailability.lastDate, locale),
+		);
+	});
+	const historySelectionText = $derived.by<string | null>(() => {
+		if (normalizedRange == null) return null;
+		return copy.history.selection(
+			formatDateKey(normalizedRange.start, locale),
+			formatDateKey(normalizedRange.end, locale),
+		);
+	});
 
 	// S7.5 P1: the SERIALIZED wire format for ?grain/?from/?to is now owned by the shared codec
 	// (toSearchParams) — the rail maps its view state to a minimal FilterState and lets the codec
@@ -284,12 +348,25 @@
 	// What the mapper resolves for. In range mode we thread the picked window to
 	// the mapper via `dateRange` (grain stays 'day') so the strip aggregates the
 	// in-range days + the trend zooms. Outside range mode the segment IS the grain.
-	const mapperOpts = $derived<{ grain: string; dateRange?: { start: string; end: string } }>(
-		mode === 'range' ? { grain: 'day', dateRange: normalizedRange } : { grain: mode },
+	const selectedData = $derived.by<RouteReliability>(() => {
+		if (!explicitHistory) return data;
+		if (retainedReady && history?.value != null) {
+			return applyRetainedLineHistory(data, history.value);
+		}
+		return clearRetainedLineHistory(data);
+	});
+	const mapperOpts = $derived(
+		mode === 'range'
+			? {
+					grain: 'day',
+					dateRange: normalizedRange,
+					...(retainedReady && history?.value != null ? { retained: history.value } : {}),
+				}
+			: { grain: mode },
 	);
 
 	// One mapping pass — every band reads its slice of this.
-	const clusters = $derived(toReliabilityClusters(data, mapperOpts));
+	const clusters = $derived(toReliabilityClusters(selectedData, mapperOpts));
 
 	// Instance-unique id prefix so the mobile drawer's disabled-reason description ids never
 	// collide with another surface's controls on the same page.
@@ -348,10 +425,10 @@
 		const aw = copy.controls.activeWindow;
 		if (mode === 'range') {
 			if (!normalizedRange) return aw.rangePrompt;
+			if (normalizedRange.start === normalizedRange.end) return aw.singleDay(normalizedRange.start);
 			const agg = clusters.strip.rangeAggregate;
-			if (agg) return aw.range(agg.days, agg.start, agg.end);
-			// One in-range day (start == end, or only one dated day in the span).
-			return aw.singleDay(normalizedRange.start);
+			if (agg && agg.days > 0) return aw.range(agg.days, agg.start, agg.end);
+			return aw.rangeSelection(normalizedRange.start, normalizedRange.end);
 		}
 		if (mode === 'week') return aw.week;
 		if (mode === 'month') return aw.month;
@@ -427,27 +504,16 @@
 		     SurfaceControls `window` slot AND the mobile pill's grainControls (one source). -->
 		{#snippet rangeControls()}
 			{#if mode === 'range'}
-				<!-- S8B: the start + end pair over the dated day-periods is now the SHARED
-				     DateRangePicker (DRY — one primitive across lines / stops / receipts).
-				     start == end = one day (exact); a wider span aggregates the in-range days
-				     (mean) + zooms the trend. Options are real dated days only, so no
-				     out-of-window pick is possible. `clearable=false` keeps the lines UX
-				     (the grain radiogroup owns range mode; the empty option is the sentinel).
-				     The neutral placeholders name the earliest/latest available day. -->
-				<DateRangePicker
-					bind:value={getRangeWindow, setRangeWindow}
+				<HistoryNavigator
+					mode="range"
 					{availableDates}
 					{locale}
-					clearable={false}
-					stack
-					labels={{
-						group: copy.controls.dateRange,
-						start: copy.controls.rangeStart,
-						end: copy.controls.rangeEnd,
-						clear: copy.controls.clearDates,
-						anyStart: earliestDate || '',
-						anyEnd: latestDate || '',
-					}}
+					labels={copy.history.navigator}
+					value={rangeWindow}
+					coverageText={historyCoverageText}
+					selectionText={historySelectionText}
+					liveAnnouncement={false}
+					onRangeChange={setRangeWindow}
 				/>
 			{/if}
 		{/snippet}
@@ -505,9 +571,40 @@
 			openAria={copy.controls.filterPillOpen}
 			closeAria={copy.controls.filterPillClose}
 		/>
+		<p
+			class="reliability-history-announcement"
+			data-slot="history-page-announcement"
+			role="status"
+			aria-live="polite"
+			aria-atomic="true"
+		>
+			{historyLiveAnnouncement}
+		</p>
 
 		<!-- The five rider-question sections — the content column beside the rail. -->
 		<div class="reliability-content">
+			{#if historyAnnouncement}
+				<p class="reliability-history-correction" data-slot="history-correction">
+					{historyAnnouncement}
+				</p>
+			{/if}
+			{#if explicitHistory}
+				<div class="reliability-history-state" data-slot="history-state">
+					{#if history?.state === 'loading-index' || history?.state === 'loading-range'}
+						<p data-slot="history-loading">{copy.history.loading}</p>
+					{:else if history?.state === 'partial'}
+						<p data-slot="history-partial">{copy.history.partial}</p>
+					{:else if history?.state === 'no-data'}
+						<p data-slot="history-no-data">{copy.history.noData}</p>
+					{:else if history?.state === 'error'}
+						<p data-slot="history-error">{copy.history.error}</p>
+						<Button variant="outline" size="sm" onclick={() => history?.retry()}>
+							{copy.history.retry}
+						</Button>
+					{/if}
+					<p data-slot="history-current-only">{copy.history.currentOnly}</p>
+				</div>
+			{/if}
 			<!-- §0 Verdict — "Can you count on this line?" The grain rail re-shapes only the trend. -->
 			<div class="reliability-band" id="rel-verdict" data-toc="rel-verdict" data-band="verdict">
 				<Section0Verdict vm={clusters.punctuality} {locale} {copy} {mode} />
@@ -554,6 +651,7 @@
 					{locale}
 					{copy}
 					windowLabel={controlsSummary}
+					showServiceCompleteness={explicitHistory && retainedReady}
 				/>
 			</div>
 
@@ -649,6 +747,44 @@
 		font-size: var(--text-caption);
 		line-height: 1.3;
 		color: var(--muted-foreground);
+	}
+	.reliability-history-announcement {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+	.reliability-history-state {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		padding: 0.75rem 1rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+		background: var(--surface-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+	}
+	.reliability-history-state p {
+		margin: 0;
+	}
+	.reliability-history-correction {
+		margin: 0;
+		padding: 0.75rem 1rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--foreground);
+		background: var(--surface-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
 	}
 
 	/* The rail section jump-list rides the ONE shared TocNav (same component the metrics /

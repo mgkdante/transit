@@ -35,6 +35,8 @@ import type {
 	RouteDelayHistogramBin,
 } from '$lib/v1';
 import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '$lib/features/reliability/shiftGrains';
+import { roundHalfAwayFromZero } from '$lib/utils';
+import type { RetainedLineHistory } from './data/retainedHistory';
 
 /* ── VM types ────────────────────────────────────────────────────────────── */
 
@@ -206,6 +208,12 @@ export interface ServiceDeliveredVM {
 	 */
 	readonly cancellationRatePct: number | null;
 	readonly skippedStopRatePct: number | null;
+	readonly serviceCompletenessPct: number | null;
+	readonly scheduledService: {
+		readonly scheduled: number;
+		readonly delivered: number;
+		readonly silent: number | null;
+	} | null;
 	/** True for the cancellations + skipped-stop slices (no historical backfill). */
 	readonly isRampIn: boolean;
 	readonly isEmpty: boolean;
@@ -304,6 +312,8 @@ export interface ToReliabilityClustersOpts {
 	 * strip falls back to the normal day selection and the trend stays full.
 	 */
 	readonly dateRange?: { readonly start: string; readonly end: string };
+	/** Exact additive retained-range values; daily rows remain the chart source. */
+	readonly retained?: Pick<RetainedLineHistory, 'aggregate' | 'retainedDayCount'>;
 }
 
 /**
@@ -660,6 +670,30 @@ function mostRecentRate<T>(
 	return null;
 }
 
+function scheduledServiceSummary(rows: readonly CancellationPeriod[]): {
+	readonly scheduled: number;
+	readonly delivered: number;
+	readonly silent: number | null;
+} | null {
+	let scheduled = 0;
+	let delivered = 0;
+	let silent = 0;
+	let hasScheduled = false;
+	let hasSilent = false;
+	for (const row of rows) {
+		if (row.scheduled_trip_days == null || row.scheduled_trip_days <= 0) continue;
+		if (row.delivered_trip_days == null) continue;
+		hasScheduled = true;
+		scheduled += row.scheduled_trip_days;
+		delivered += row.delivered_trip_days;
+		if (row.silent_trip_days != null) {
+			hasSilent = true;
+			silent += row.silent_trip_days;
+		}
+	}
+	return hasScheduled ? { scheduled, delivered, silent: hasSilent ? silent : null } : null;
+}
+
 /* ── mapper ──────────────────────────────────────────────────────────────── */
 
 /**
@@ -674,6 +708,7 @@ export function toReliabilityClusters(
 	const grain = opts?.grain ?? 'day';
 	const selectedDate = opts?.selectedDate;
 	const dateRange = opts?.dateRange;
+	const retained = opts?.retained;
 
 	const allPeriods = data.periods ?? [];
 	const allHeadway = data.headway ?? [];
@@ -747,20 +782,26 @@ export function toReliabilityClusters(
 	// POOLED windowed rate (Σ canceled / Σ total, Σ skipped / Σ updates) — the SAME pooled value the
 	// §3 "X of Y" caption sums, so the rate tile and its caption agree (a mean-of-daily-rates made
 	// them disagree). Falls back to the most-recent published rate when the window carries no counts.
+	const exactCancellation = retained?.aggregate.cancellation.value ?? null;
+	const exactSkippedStops = retained?.aggregate.skippedStops.value ?? null;
 	const cancellationRatePct =
-		pooledRate(
-			windowByGrain(allCancellations, grain, selectedDate, dateRange),
-			(c) => c.canceled_trip_days,
-			(c) => c.total_trip_days,
-			1,
-		) ?? mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct);
+		exactCancellation?.cancellationRatePct == null
+			? (pooledRate(
+					windowByGrain(allCancellations, grain, selectedDate, dateRange),
+					(c) => c.canceled_trip_days,
+					(c) => c.total_trip_days,
+					1,
+				) ?? mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct))
+			: roundHalfAwayFromZero(exactCancellation.cancellationRatePct, 1);
 	const skippedStopRatePct =
-		pooledRate(
-			windowByGrain(allSkipped, grain, selectedDate, dateRange),
-			(s) => s.skipped_stop_count,
-			(s) => s.stop_time_update_count,
-			1,
-		) ?? mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct);
+		exactSkippedStops == null
+			? (pooledRate(
+					windowByGrain(allSkipped, grain, selectedDate, dateRange),
+					(s) => s.skipped_stop_count,
+					(s) => s.stop_time_update_count,
+					1,
+				) ?? mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct))
+			: roundHalfAwayFromZero(exactSkippedStops.skippedStopRatePct, 1);
 	const headwayRegularityCov = selectHeadwayCov(allHeadway);
 
 	let otpPct: number | null;
@@ -831,6 +872,27 @@ export function toReliabilityClusters(
 					start: rangeDays[0].date!,
 					end: rangeDays[rangeDays.length - 1].date!,
 				};
+		const exactDelay = retained?.aggregate.delay.value;
+		if (exactDelay != null) {
+			observationCount = exactDelay.observationCount;
+			onTime = exactDelay.onTimeCount;
+			otpPct = roundHalfAwayFromZero(exactDelay.otpPct, 0);
+			avgDelayMin =
+				exactDelay.averageDelaySeconds == null
+					? null
+					: roundHalfAwayFromZero(exactDelay.averageDelaySeconds / 60, 1);
+			severePct = roundHalfAwayFromZero(exactDelay.severePct, 1);
+		}
+		if (retained != null && dateRange != null) {
+			rangeAggregate =
+				dateRange.start === dateRange.end
+					? null
+					: {
+							days: retained.retainedDayCount,
+							start: dateRange.start,
+							end: dateRange.end,
+						};
+		}
 	} else {
 		const stripPeriod = selectStripPeriod(calendarPeriods, grain, selectedDate);
 		otpPct = stripPeriod ? num(stripPeriod.otp_pct) : null;
@@ -955,14 +1017,40 @@ export function toReliabilityClusters(
 	const skippedStops = windowByGrain(allSkipped, grain, selectedDate, dateRange).filter(
 		skippedHasSignal,
 	);
+	const exactScheduledService =
+		exactCancellation?.scheduledTripDays != null &&
+		exactCancellation.scheduledTripDays > 0 &&
+		exactCancellation.deliveredTripDays != null
+			? {
+					scheduled: exactCancellation.scheduledTripDays,
+					delivered: exactCancellation.deliveredTripDays,
+					silent: exactCancellation.silentTripDays,
+				}
+			: null;
+	const scheduledService =
+		retained == null ? scheduledServiceSummary(cancellations) : exactScheduledService;
+	const serviceCompletenessPct =
+		retained != null
+			? exactCancellation?.completenessPct == null
+				? null
+				: roundHalfAwayFromZero(exactCancellation.completenessPct, 1)
+			: scheduledService == null
+				? null
+				: roundHalfAwayFromZero((100 * scheduledService.delivered) / scheduledService.scheduled, 1);
 	const serviceDelivered: ServiceDeliveredVM = {
 		serviceSpans,
 		cancellations,
 		skippedStops,
 		cancellationRatePct,
 		skippedStopRatePct,
+		serviceCompletenessPct,
+		scheduledService,
 		isRampIn: true,
-		isEmpty: serviceSpans.length === 0 && cancellations.length === 0 && skippedStops.length === 0,
+		isEmpty:
+			serviceSpans.length === 0 &&
+			cancellations.length === 0 &&
+			skippedStops.length === 0 &&
+			!(retained != null && serviceCompletenessPct != null),
 	};
 
 	/* 04 Crowding. */

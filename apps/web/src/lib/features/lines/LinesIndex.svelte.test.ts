@@ -8,6 +8,11 @@ import LinesIndex from './LinesIndex.svelte';
 // fetch, no viewport gating).
 const snapshots = new Map<string, ReliabilitySnapshot>();
 const requested: string[] = [];
+const historyCalls = vi.hoisted(() => ({
+	getLineHistoryDirectory: vi.fn(),
+	getLineHistoryIndex: vi.fn(),
+	loadLineHistoryRange: vi.fn(),
+}));
 
 function snap(partial: Partial<ReliabilitySnapshot>): ReliabilitySnapshot {
 	return { phase: 'idle', otpPct: null, verdict: null, series: [], ...partial };
@@ -46,6 +51,7 @@ vi.mock('$lib/v1', () => ({
 			return 0;
 		},
 	}),
+	...historyCalls,
 }));
 
 vi.mock('$lib/v1/resource.svelte', () => ({
@@ -61,7 +67,22 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 function reset() {
 	snapshots.clear();
 	requested.length = 0;
+	historyCalls.getLineHistoryDirectory.mockClear();
+	historyCalls.getLineHistoryIndex.mockClear();
+	historyCalls.loadLineHistoryRange.mockClear();
 }
+
+describe('LinesIndex retained-history boundary', () => {
+	it('stays current and never fans out history discovery or partitions across the listing', () => {
+		reset();
+		render(LinesIndex);
+
+		expect(historyCalls.getLineHistoryDirectory).not.toHaveBeenCalled();
+		expect(historyCalls.getLineHistoryIndex).not.toHaveBeenCalled();
+		expect(historyCalls.loadLineHistoryRange).not.toHaveBeenCalled();
+		expect(new Set(requested)).toEqual(new Set(['24', '161', '99']));
+	});
+});
 
 describe('LinesIndex map drilldown', () => {
 	it('keeps the route detail link and adds a separate filtered-map link', () => {

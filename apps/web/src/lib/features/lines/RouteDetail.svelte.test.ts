@@ -1,9 +1,22 @@
-import { render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RouteFile, StopPrediction, Vehicle } from '$lib/v1';
+import type { RouteFile, RouteReliability, StopPrediction, Vehicle } from '$lib/v1';
 import RouteDetail from './RouteDetail.svelte';
+
+const routeDetailNav = vi.hoisted(() => {
+	const page = { url: new URL('http://localhost/lines/161'), state: {} };
+	return {
+		page,
+		replaceState: vi.fn((url: string | URL) => {
+			page.url = new URL(url, 'http://localhost');
+		}),
+	};
+});
+
+vi.mock('$app/state', () => ({ page: routeDetailNav.page }));
+vi.mock('$app/navigation', () => ({ replaceState: routeDetailNav.replaceState }));
 
 // A static route file with one direction + two stops, used to render the Detail
 // tab (the default active tab).
@@ -166,6 +179,67 @@ const liveStore = {
 // STILL called when the flag is true or absent (data must not be lost on a stale
 // index). Resolves to null (no published reliability) by default.
 const getRouteReliabilitySpy = vi.fn(async (_id: string) => null);
+const lineHistoryHarness = vi.hoisted(() => ({
+	getLineHistoryIndex: vi.fn(),
+	loadLineHistoryRange: vi.fn(),
+}));
+
+const CURRENT_RELIABILITY = {
+	id: '161',
+	generated_utc: '2026-07-13T12:00:00Z',
+	periods: [
+		{
+			grain: 'day',
+			date: '2026-07-12',
+			otp_pct: 80,
+			observation_count: 10,
+			on_time: 8,
+		},
+	],
+} as RouteReliability;
+
+const HISTORY_INDEX = {
+	generated_utc: '2026-07-13T12:00:00Z',
+	family: 'lines',
+	selection_mode: 'range',
+	entity_id: '161',
+	collection_generation_id: 'a'.repeat(64),
+	first_available_date: '2026-01-31',
+	last_available_date: '2026-02-01',
+	gaps: [],
+	partitions: [
+		{
+			path: `historic/history/lines/313631/generations/${'b'.repeat(64)}/2026-01.json`,
+			coverage_start: '2026-01-31',
+			coverage_end: '2026-01-31',
+			count: 1,
+			sha256: 'b'.repeat(64),
+			byte_size: 100,
+		},
+		{
+			path: `historic/history/lines/313631/generations/${'c'.repeat(64)}/2026-02.json`,
+			coverage_start: '2026-02-01',
+			coverage_end: '2026-02-01',
+			count: 1,
+			sha256: 'c'.repeat(64),
+			byte_size: 100,
+		},
+	],
+	metrics: [],
+};
+
+let reliabilityResourceState: {
+	data: RouteReliability | null;
+	error: Error | null;
+	loading: boolean;
+	settled: boolean;
+} = {
+	data: null,
+	error: null,
+	loading: false,
+	settled: true,
+};
+const reliabilityReloadSpy = vi.fn();
 
 // The routes-index fixture the reliability gate consults. Mutable so a test can
 // flip THIS route's `reliability` flag (false | true | undefined) per case.
@@ -177,7 +251,11 @@ let routesIndexData: { generated_utc: string; routes: { id: string; reliability?
 vi.mock('$lib/v1', async () => {
 	const affected =
 		await vi.importActual<typeof import('$lib/v1/affectedAlerts')>('$lib/v1/affectedAlerts');
+	const history = await vi.importActual<typeof import('$lib/v1/history')>('$lib/v1/history');
+	const stats = await vi.importActual<typeof import('$lib/v1/stats')>('$lib/v1/stats');
 	return {
+		...history,
+		wilsonBounds: stats.wilsonBounds,
 		getRoute: () => routeFileData,
 		getRouteReliability: (id: string) => getRouteReliabilitySpy(id),
 		getRoutesIndex: async () => routesIndexData,
@@ -186,6 +264,8 @@ vi.mock('$lib/v1', async () => {
 		getV1Context: () => ({ manifest: {}, labels: {}, lang: 'en' }),
 		deriveRouteStopPredictions: () => PREDICTIONS,
 		alertsForRoute: affected.alertsForRoute,
+		getLineHistoryIndex: lineHistoryHarness.getLineHistoryIndex,
+		loadLineHistoryRange: lineHistoryHarness.loadLineHistoryRange,
 	};
 });
 
@@ -194,22 +274,49 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	// this. Call the loader so each resolves to its own fixture: getRoute →
 	// ROUTE_FILE, getProvenance → provenanceData, reliability (vi.fn → undefined) →
 	// the route file is the only one the Detail tab reads, so undefined is fine.
-	createResource: (loader: () => unknown) => ({
-		data: loader() ?? ROUTE_FILE,
-		error: null,
-		loading: false,
-		settled: true,
-		reload: vi.fn(),
-	}),
+	createResource: (loader: () => unknown) => {
+		const value = loader();
+		if (value instanceof Promise) {
+			return {
+				get data() {
+					return reliabilityResourceState.data;
+				},
+				get error() {
+					return reliabilityResourceState.error;
+				},
+				get loading() {
+					return reliabilityResourceState.loading;
+				},
+				get settled() {
+					return reliabilityResourceState.settled;
+				},
+				reload: reliabilityReloadSpy,
+			};
+		}
+		return {
+			data: value ?? ROUTE_FILE,
+			error: null,
+			loading: false,
+			settled: true,
+			reload: vi.fn(),
+		};
+	},
 }));
 
 beforeEach(() => {
+	routeDetailNav.page.url = new URL('http://localhost/lines/161');
+	routeDetailNav.replaceState.mockClear();
 	liveAlerts = { generated_utc: '2026-06-15T12:00:00Z', alerts: ALERTS };
 	liveIndex = buildIndex(VEHICLES);
 	provenanceData = { generated_utc: '2026-06-15T12:00:00Z', gaps: ['metro_realtime'] };
 	routeFileData = ROUTE_FILE;
 	routesIndexData = { generated_utc: '2026-06-15T12:00:00Z', routes: [{ id: '161' }] };
 	getRouteReliabilitySpy.mockClear();
+	lineHistoryHarness.getLineHistoryIndex.mockReset();
+	lineHistoryHarness.getLineHistoryIndex.mockResolvedValue(null);
+	lineHistoryHarness.loadLineHistoryRange.mockReset();
+	reliabilityResourceState = { data: null, error: null, loading: false, settled: true };
+	reliabilityReloadSpy.mockClear();
 });
 
 describe('RouteDetail reliability fetch — the route page trusts the FILE', () => {
@@ -264,6 +371,150 @@ describe('RouteDetail reliability fetch — the route page trusts the FILE', () 
 		await routePageReliability('161');
 
 		expect(getRouteReliabilitySpy).toHaveBeenCalledWith('161');
+	});
+});
+
+describe('RouteDetail retained-history ownership', () => {
+	it('keeps discovery route-keyed, aborts the previous route, and never fans out partitions by default', async () => {
+		lineHistoryHarness.getLineHistoryIndex.mockImplementation(() => new Promise(() => undefined));
+		const view = render(RouteDetail, { props: { id: '161' } });
+
+		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledTimes(1));
+		const firstContext = lineHistoryHarness.getLineHistoryIndex.mock.calls[0]?.[1] as
+			| { signal: AbortSignal }
+			| undefined;
+		expect(lineHistoryHarness.getLineHistoryIndex.mock.calls[0]?.[0]).toBe('161');
+		expect(firstContext?.signal.aborted).toBe(false);
+
+		await view.rerender({ id: 'A/B' });
+		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledTimes(2));
+		expect(firstContext?.signal.aborted).toBe(true);
+		expect(lineHistoryHarness.getLineHistoryIndex.mock.calls[1]?.[0]).toBe('A/B');
+		expect(lineHistoryHarness.loadLineHistoryRange).not.toHaveBeenCalled();
+
+		const secondContext = lineHistoryHarness.getLineHistoryIndex.mock.calls[1]?.[1] as
+			| { signal: AbortSignal }
+			| undefined;
+		view.unmount();
+		expect(secondContext?.signal.aborted).toBe(true);
+	});
+});
+
+describe('RouteDetail reliability boundary with history-only fallback', () => {
+	it('keeps the reliability skeleton while the singleton request is still pending', async () => {
+		reliabilityResourceState = { data: null, error: null, loading: true, settled: false };
+		lineHistoryHarness.getLineHistoryIndex.mockResolvedValue(HISTORY_INDEX);
+		const view = render(RouteDetail, { props: { id: '161' } });
+
+		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledOnce());
+		await waitFor(() =>
+			expect(view.container.querySelector('[data-variant="skeleton"]')).not.toBeNull(),
+		);
+		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).toBeNull();
+	});
+
+	it('keeps the reliability error and retry action when the singleton request fails', async () => {
+		reliabilityResourceState = {
+			data: null,
+			error: new Error('singleton unavailable'),
+			loading: false,
+			settled: true,
+		};
+		lineHistoryHarness.getLineHistoryIndex.mockResolvedValue(HISTORY_INDEX);
+		const view = render(RouteDetail, { props: { id: '161' } });
+
+		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledOnce());
+		const error = await screen.findByRole('alert');
+		expect(error).toHaveTextContent('/v1 contract unreachable');
+		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).toBeNull();
+
+		await fireEvent.click(within(error).getByRole('button', { name: 'Retry' }));
+		expect(reliabilityReloadSpy).toHaveBeenCalledOnce();
+	});
+
+	it('keeps the established empty state on a default URL even after retained discovery succeeds', async () => {
+		reliabilityResourceState = { data: null, error: null, loading: false, settled: true };
+		lineHistoryHarness.getLineHistoryIndex.mockResolvedValue(HISTORY_INDEX);
+		const view = render(RouteDetail, { props: { id: '161' } });
+
+		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledOnce());
+		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).toBeNull();
+		expect(view.container.querySelector('[data-slot="edge-state"]')).not.toBeNull();
+	});
+
+	it('mounts retained loading for an explicit range before entity discovery resolves', async () => {
+		routeDetailNav.page.url = new URL(
+			'http://localhost/lines/161?tab=reliability&from=2026-01-31&to=2026-02-01',
+		);
+		reliabilityResourceState = { data: null, error: null, loading: false, settled: true };
+		lineHistoryHarness.getLineHistoryIndex.mockImplementation(() => new Promise(() => undefined));
+		const view = render(RouteDetail, { props: { id: '161' } });
+
+		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledOnce());
+		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).not.toBeNull();
+		expect(view.container.querySelector('[data-slot="history-loading"]')).toHaveTextContent(
+			'Loading retained range',
+		);
+	});
+
+	it('mounts a retryable retained error for an explicit range whose entity discovery fails', async () => {
+		routeDetailNav.page.url = new URL(
+			'http://localhost/lines/161?tab=reliability&from=2026-01-31&to=2026-02-01',
+		);
+		reliabilityResourceState = { data: null, error: null, loading: false, settled: true };
+		lineHistoryHarness.getLineHistoryIndex.mockRejectedValue(new Error('history unavailable'));
+		const view = render(RouteDetail, { props: { id: '161' } });
+
+		await waitFor(() =>
+			expect(view.container.querySelector('[data-slot="history-error"]')).toHaveTextContent(
+				'could not be loaded',
+			),
+		);
+		expect(view.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+	});
+});
+
+describe('RouteDetail always-visible verdict history scope', () => {
+	it('does not label the header verdict as current-only on the default current snapshot', async () => {
+		reliabilityResourceState = {
+			data: CURRENT_RELIABILITY,
+			error: null,
+			loading: false,
+			settled: true,
+		};
+		const view = render(RouteDetail, { props: { id: '161' } });
+
+		const banner = await waitFor(() => {
+			const found = view.container.querySelector('[data-slot="entity-detail-banner"]');
+			expect(found).not.toBeNull();
+			return found as HTMLElement;
+		});
+		expect(within(banner).queryByText('Header verdict: current snapshot')).toBeNull();
+	});
+
+	it('labels the header verdict as current-only while an explicit retained range is active', async () => {
+		routeDetailNav.page.url = new URL(
+			'http://localhost/lines/161?tab=reliability&from=2026-01-31&to=2026-02-01',
+		);
+		reliabilityResourceState = {
+			data: CURRENT_RELIABILITY,
+			error: null,
+			loading: false,
+			settled: true,
+		};
+		lineHistoryHarness.getLineHistoryIndex.mockResolvedValue(HISTORY_INDEX);
+		lineHistoryHarness.loadLineHistoryRange.mockResolvedValue([]);
+		const view = render(RouteDetail, { props: { id: '161' } });
+
+		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledOnce());
+		const banner = view.container.querySelector(
+			'[data-slot="entity-detail-banner"]',
+		) as HTMLElement;
+		expect(banner).not.toBeNull();
+		expect(within(banner).getByText('Header verdict: current snapshot')).toBeInTheDocument();
 	});
 });
 

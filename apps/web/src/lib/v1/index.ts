@@ -129,6 +129,7 @@ export type {
 	VerdictCopy,
 	VerdictSentenceArgs,
 } from './verdict';
+export { wilsonBounds } from './stats';
 
 // --- schemas (enums + contract types) — re-export the typed contract surface --
 export * from './schemas';

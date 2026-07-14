@@ -60,8 +60,9 @@
 	}
 	let { vm, locale, copy, mode = 'day' }: Section0VerdictProps = $props();
 
-	// The trend re-shapes on the calendar grain; a date range zooms the day series.
-	const grain = $derived(mode === 'range' ? 'day' : mode);
+	// A date range uses the retained dated series. Only the literal day mode uses
+	// the current time-of-day shift comparison.
+	const grain = $derived(mode);
 	const headline = $derived(vm.headline);
 	const verdict = $derived(selectVerdict(headline, mode, locale, copy.verdict));
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);

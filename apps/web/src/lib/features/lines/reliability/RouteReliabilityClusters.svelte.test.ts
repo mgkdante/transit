@@ -1,9 +1,14 @@
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';
 import { reliabilityCopy } from './reliability.copy';
 import type { RouteReliability, IsoUtc } from '$lib/v1';
+
+vi.mock('$lib/v1', async () => ({
+	...(await import('$lib/v1/history')),
+	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
+}));
 
 const copy = reliabilityCopy.en;
 
