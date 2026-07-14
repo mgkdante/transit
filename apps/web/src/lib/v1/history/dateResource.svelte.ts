@@ -109,6 +109,16 @@ function generatedUtc(value: unknown): string | null | undefined {
 	return typeof stamp === 'string' || stamp === null ? stamp : undefined;
 }
 
+function inertResource<T>(): Resource<T> {
+	return {
+		data: null,
+		error: null,
+		loading: false,
+		settled: false,
+		reload() {},
+	};
+}
+
 export function historyDateRequestFromSearchParams(params: URLSearchParams): RawHistoryDateRequest {
 	return {
 		hasDate: params.has('date'),
@@ -127,8 +137,8 @@ export function createHistoryDateResource<TIndex, TValue>(
 	let destroyed = false;
 	let latestIndexAttempt = 0;
 	let latestPayloadAttempt = 0;
-	let indexResource!: Resource<IndexAttempt<TIndex>>;
-	let payloadResource!: Resource<PayloadAttempt<TValue>>;
+	let indexResource: Resource<IndexAttempt<TIndex>> = inertResource();
+	let payloadResource: Resource<PayloadAttempt<TValue>> = inertResource();
 
 	const exactIndexAttempt = (): IndexAttempt<TIndex> | null => {
 		const accepted = indexResource.data;
