@@ -49,7 +49,9 @@ import {
 	ReceiptsIndexSchema,
 	RouteReliabilityIndexSchema,
 	RepeatOffendersSchema,
+	HistoricRepeatOffendersDaySchema,
 	HotspotsSchema,
+	HistoricHotspotsDaySchema,
 	NetworkTrendSchema,
 	AlertHistorySchema,
 	AlertArchivePageSchema,
@@ -124,7 +126,17 @@ const FAMILIES: Family[] = [
 		mirror: 'historic_repeat_offenders.schema.json',
 		schema: RepeatOffendersSchema,
 	},
+	{
+		label: 'historic_repeat_offenders_day',
+		mirror: 'historic_repeat_offenders_day.schema.json',
+		schema: HistoricRepeatOffendersDaySchema,
+	},
 	{ label: 'hotspots', mirror: 'historic_hotspots.schema.json', schema: HotspotsSchema },
+	{
+		label: 'historic_hotspots_day',
+		mirror: 'historic_hotspots_day.schema.json',
+		schema: HistoricHotspotsDaySchema,
+	},
 	{
 		label: 'network_trend',
 		mirror: 'historic_network_trend.schema.json',
@@ -425,10 +437,10 @@ describe('Gate B — Zod ⇔ canonical JSON-Schema conformance', () => {
 			missingFiles,
 			`FAMILIES references a mirror file that is not on disk: ${missingFiles.join(', ')}`,
 		).toEqual([]);
-		// 31 canonical surfaces (live 5 + static 6 + historic 17 + manifest + provenance
-		// + data_health).
-		expect(onDisk.size).toBe(31);
-		expect(FAMILIES.length).toBe(31);
+		// Keep the total explicit so adding or removing a canonical surface requires an
+		// intentional update here as well as an exhaustive mirror pairing above.
+		expect(onDisk.size).toBe(33);
+		expect(FAMILIES.length).toBe(33);
 	});
 
 	for (const family of FAMILIES) {
