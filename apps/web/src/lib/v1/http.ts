@@ -64,6 +64,48 @@ export interface FetchCtx {
 	signal?: AbortSignal;
 }
 
+export interface RawJsonEntity<T> {
+	readonly value: T;
+	readonly bytes: Uint8Array;
+}
+
+type JsonRequestInit = { cache?: RequestCache; signal?: AbortSignal };
+
+function isAbortError(error: unknown): boolean {
+	return error instanceof DOMException
+		? error.name === 'AbortError'
+		: error instanceof Error && error.name === 'AbortError';
+}
+
+async function requestJsonResponse(
+	url: string,
+	label: string,
+	fetchFn: FetchFn,
+	init?: JsonRequestInit,
+): Promise<Response | undefined> {
+	const res = await fetchFn(url, {
+		headers: { accept: 'application/json' },
+		cache: browser ? init?.cache : undefined,
+		signal: init?.signal,
+	});
+
+	noteServerTime(res);
+	if (res.status === 404) return undefined;
+	if (!res.ok) {
+		throw new Error(`[v1.${label}] HTTP ${res.status} ${res.statusText} for ${url}`);
+	}
+	return res;
+}
+
+function invalidJson(label: string, url: string, cause: unknown): never {
+	if (isAbortError(cause)) throw cause;
+	throw new Error(`[v1.${label}] invalid JSON from ${url}`, { cause });
+}
+
+function validateJson<T>(schema: z.ZodType<T>, label: string, body: unknown): T {
+	return parsePort(label, schema, body);
+}
+
 /**
  * Fetch JSON from a snapshot URL and validate it through `parsePort`.
  *
@@ -81,39 +123,48 @@ export async function getEntityJson<T>(
 	schema: z.ZodType<T>,
 	label: string,
 	fetchFn: FetchFn = fetch,
-	init?: { cache?: RequestCache; signal?: AbortSignal },
+	init?: JsonRequestInit,
 ): Promise<T | undefined> {
-	// The `cache` REQUEST mode (e.g. 'force-cache' for long-TTL tiers) is a
-	// browser-only concern: workerd / SvelteKit's SSR `server_fetch` rejects
-	// unsupported modes ("Unsupported cache mode: force-cache"). Server-side,
-	// caching is governed by Cloudflare's edge + the snapshot's `cache-control`
-	// response headers, so we forward the request cache mode in the browser only.
-	const res = await fetchFn(url, {
-		headers: { accept: 'application/json' },
-		cache: browser ? init?.cache : undefined,
-		signal: init?.signal,
-	});
-
-	// Anchor the shared freshness clock to server time (browser-only, fail-soft).
-	// Done before the 404/!ok branches so even a 404/error response with a `Date`
-	// header still corrects the offset.
-	noteServerTime(res);
-
-	// 404 is the contract's "no data for this entity" signal — render empty.
-	if (res.status === 404) return undefined;
-
-	// Anything else non-ok (5xx transport faults, 4xx misconfig) is a real error.
-	if (!res.ok) {
-		throw new Error(`[v1.${label}] HTTP ${res.status} ${res.statusText} for ${url}`);
-	}
+	const res = await requestJsonResponse(url, label, fetchFn, init);
+	if (res === undefined) return undefined;
 
 	let body: unknown;
 	try {
 		body = await res.json();
 	} catch (cause) {
-		throw new Error(`[v1.${label}] invalid JSON from ${url}`, { cause });
+		invalidJson(label, url, cause);
 	}
 
-	// parsePort throws a labelled error on contract drift.
-	return parsePort(label, schema, body);
+	return validateJson(schema, label, body);
+}
+
+export async function getEntityJsonWithBytes<T>(
+	url: string,
+	schema: z.ZodType<T>,
+	label: string,
+	fetchFn: FetchFn = fetch,
+	init?: JsonRequestInit,
+): Promise<RawJsonEntity<T> | undefined> {
+	const res = await requestJsonResponse(url, label, fetchFn, init);
+	if (res === undefined) return undefined;
+
+	let bytes: Uint8Array;
+	let body: unknown;
+	try {
+		bytes = new Uint8Array(await res.arrayBuffer());
+		body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+	} catch (cause) {
+		invalidJson(label, url, cause);
+	}
+
+	return { value: validateJson(schema, label, body), bytes };
+}
+
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
+	const input =
+		bytes.buffer instanceof ArrayBuffer
+			? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+			: new Uint8Array(bytes);
+	const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', input));
+	return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }

@@ -83,6 +83,7 @@
 		d.bandLo != null && d.bandHi != null && !Number.isNaN(d.bandLo) && !Number.isNaN(d.bandHi);
 
 	const num = (v: number | null | undefined): string => (v == null ? '' : String(v));
+	const primaryColor = $derived(spec.colorVar ?? 'var(--dataviz-status-on-time)');
 
 	// Confidence Comet: the OTP dot SIZE encodes the sample size (3 fixed-radius buckets —
 	// LayerChart's per-point r-scale is unreliable, but the Points `r` prop is a stable
@@ -102,7 +103,7 @@
 	);
 
 	const legendItems = $derived([
-		{ colorVar: 'var(--dataviz-status-on-time)', label: spec.label, swatch: 'dot' as const },
+		{ colorVar: primaryColor, label: spec.label, swatch: 'dot' as const },
 		...(spec.secondary
 			? [
 					{
@@ -162,12 +163,23 @@
 					y={(d: TrendDatum) => d.y ?? 0}
 					curve={curveMonotoneX}
 					defined={yDefined}
+					style={`stroke:${primaryColor}`}
 					class="dv-trendmark-otp"
 				/>
 				<!-- Confidence Comet: a dot per real point, radius bucketed by observation_count. -->
-				<Points data={dotsLowN} r={2.5} class="dv-trendmark-otp-dot" />
-				<Points data={dotsMidN} r={4} class="dv-trendmark-otp-dot" />
-				<Points data={dotsHighN} r={6} class="dv-trendmark-otp-dot" />
+				<Points
+					data={dotsLowN}
+					r={2.5}
+					style={`fill:${primaryColor}`}
+					class="dv-trendmark-otp-dot"
+				/>
+				<Points data={dotsMidN} r={4} style={`fill:${primaryColor}`} class="dv-trendmark-otp-dot" />
+				<Points
+					data={dotsHighN}
+					r={6}
+					style={`fill:${primaryColor}`}
+					class="dv-trendmark-otp-dot"
+				/>
 				<Highlight points lines />
 			</Svg>
 			<Tooltip.Root>
@@ -177,7 +189,7 @@
 						<Tooltip.Item
 							label={spec.label}
 							value={`${num(d.y)}${spec.unit}`}
-							color="var(--dataviz-status-on-time)"
+							color={primaryColor}
 						/>
 						{#if spec.secondary}
 							<Tooltip.Item

@@ -21,12 +21,14 @@ export { default as GrainPicker } from './GrainPicker.svelte';
 export { default as SurfaceControls } from './SurfaceControls.svelte';
 export { default as SurfaceRail } from './SurfaceRail.svelte';
 export { default as DateRangePicker } from './DateRangePicker.svelte';
+export { default as HistoryNavigator } from './HistoryNavigator.svelte';
 export { default as FreshnessStamp } from './FreshnessStamp.svelte';
 export { default as ConformanceBadge } from './ConformanceBadge.svelte';
 export { default as ReliabilityBadge } from './ReliabilityBadge.svelte';
 export { default as SearchInput } from './SearchInput.svelte';
 export { default as MapDrilldownLink } from './MapDrilldownLink.svelte';
 export { default as AffectedAlerts } from './AffectedAlerts.svelte';
+export { createRailDisclosureController } from './createRailDisclosureController.svelte';
 
 // Props interfaces, paired with their component (brand/ + dataviz/ convention:
 // every cross-surface primitive re-exports its Props so consumers can type props).
@@ -47,6 +49,7 @@ export type {
 	DateRangePickerLabels,
 	SingleDateOption,
 } from './DateRangePicker.svelte';
+export type { HistoryNavigatorLabels, HistoryNavigatorProps } from './HistoryNavigator.svelte';
 export type { FreshnessStampProps } from './FreshnessStamp.svelte';
 export type { ConformanceBadgeProps } from './ConformanceBadge.svelte';
 export type { ReliabilityBadgeProps } from './ReliabilityBadge.svelte';
@@ -57,4 +60,5 @@ export type { MapDrilldownLinkProps } from './MapDrilldownLink.svelte';
 export type { ReliabilityPeriodVM } from './ReliabilityPane.svelte';
 export type { GrainSegment } from './GrainPicker.svelte';
 export type { AffectedAlertsCopy } from './AffectedAlerts.svelte';
+export type { RailDisclosureController } from './createRailDisclosureController.svelte';
 export type { SurfaceHeadCopy } from './copy';

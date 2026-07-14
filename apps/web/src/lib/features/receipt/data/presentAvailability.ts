@@ -123,7 +123,7 @@ export function selectAvailability(
 
 	const options: ReceiptDateOption[] = [];
 	const enabledDates: string[] = [];
-	// Enumerate the FULL span (bounded — the index is a trailing 30-day window) so a
+	// Enumerate the FULL retained span (bounded by the 1,000-day safety guard) so a
 	// gap-day shows as a disabled option rather than silently vanishing.
 	let cursor = earliest;
 	// Hard guard against a malformed span (should never loop away, but never hang).

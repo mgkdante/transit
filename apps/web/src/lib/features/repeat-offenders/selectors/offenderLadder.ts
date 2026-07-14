@@ -35,6 +35,8 @@ export interface OffenderPopoverEvidence {
 export interface OffenderLadderLabels {
 	/** Accessible name for the ladder (e.g. "Worst trips · severe-delay rate"). */
 	title: string;
+	/** Localized entity heading for the AT table (e.g. "Trip" / "Véhicule"). */
+	rowLabel: string;
 	/** Value-axis (x) title — the severe-delay rate the bar encodes. */
 	xLabel: string;
 	/** Value unit suffix (e.g. "%"). */
@@ -137,6 +139,7 @@ export function selectOffenderLadder(
 			locale,
 			domain: SEVERE_DOMAIN,
 			unit: labels.unit,
+			rowLabel: labels.rowLabel,
 			xLabel: labels.xLabel,
 			ciLabel: labels.ciLabel,
 			rows,

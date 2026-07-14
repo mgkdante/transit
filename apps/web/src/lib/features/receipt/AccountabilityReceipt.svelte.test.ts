@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IsoUtc, Receipt, ReceiptsIndex } from '$lib/v1/schemas';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import AccountabilityReceipt from './AccountabilityReceipt.svelte';
+import { copy as receiptCopy } from './receipt.copy';
 
 let reconciliationIntersectionCallback: IntersectionObserverCallback | undefined;
 
@@ -103,6 +104,7 @@ function resetReceiptState(): void {
 vi.mock('$lib/v1', () => ({
 	getReceiptsIndex: vi.fn(),
 	getReceipt: vi.fn(),
+	getAdvertisedReceipt: vi.fn(),
 }));
 
 // createResource is reactive in production (re-runs the fetcher when its inputs
@@ -116,10 +118,11 @@ vi.mock('$lib/v1', () => ({
 // thenable (the empty-`selectedDate` seed → `Promise.resolve(null)`) stays null,
 // which is exactly the pre-seed state.
 vi.mock('$lib/v1/resource.svelte', () => ({
-	createResource: <T>(fetcher: () => Promise<T> | T) => {
+	createResource: <T>(fetcher: (signal: AbortSignal) => Promise<T> | T) => {
 		let data: T | null = null;
+		const signal = new AbortController().signal;
 		const pump = () => {
-			const v = fetcher() as T | Promise<T>;
+			const v = fetcher(signal) as T | Promise<T>;
 			if (v != null && typeof (v as Promise<T>).then === 'function') {
 				void (v as Promise<T>).then((r) => {
 					data = r;
@@ -169,6 +172,10 @@ beforeEach(async () => {
 	// the synchronous stub only matters for the test's render timing).
 	vi.mocked(v1.getReceiptsIndex).mockImplementation(() => indexData as never);
 	vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
+	vi.mocked(v1.getAdvertisedReceipt).mockImplementation(
+		((_index: ReceiptsIndex, date: string, ctx?: { signal?: AbortSignal }) =>
+			v1.getReceipt(date, ctx) as never) as never,
+	);
 });
 
 afterEach(resetReceiptState);
@@ -537,13 +544,15 @@ describe('AccountabilityReceipt honesty', () => {
 		expect(screen.queryByText('82%')).not.toBeInTheDocument();
 	});
 
-	it('shows the empty-receipt state when the chosen day 404s (getReceipt → null)', async () => {
+	it('loads the latest day through the strict advertised-receipt seam', async () => {
 		const v1 = await import('$lib/v1');
-		receiptData = null;
-		vi.mocked(v1.getReceipt).mockImplementation(() => null as never);
 		render(AccountabilityReceipt);
-		expect(await screen.findByText('No receipt was published for this day.')).toBeInTheDocument();
-		expect(screen.queryByText('82%')).not.toBeInTheDocument();
+		expect(await screen.findByText('82%')).toBeInTheDocument();
+		expect(vi.mocked(v1.getAdvertisedReceipt)).toHaveBeenCalledWith(
+			indexData,
+			'2026-06-17',
+			expect.objectContaining({ signal: expect.any(AbortSignal) }),
+		);
 	});
 });
 
@@ -649,7 +658,10 @@ describe('AccountabilityReceipt date switching', () => {
 		await fireEvent.change(input, { target: { value: '2026-06-16' } });
 
 		// getReceipt was invoked with the freshly-picked date …
-		expect(vi.mocked(v1.getReceipt)).toHaveBeenCalledWith('2026-06-16');
+		expect(vi.mocked(v1.getReceipt)).toHaveBeenCalledWith(
+			'2026-06-16',
+			expect.objectContaining({ signal: expect.any(AbortSignal) }),
+		);
 		// … and the newly-fetched day's figures render (74%, not the old 82%).
 		expect(await screen.findByText('74%')).toBeInTheDocument();
 		expect(screen.queryByText('82%')).not.toBeInTheDocument();
@@ -657,6 +669,23 @@ describe('AccountabilityReceipt date switching', () => {
 });
 
 describe('AccountabilityReceipt smart date picker (S13)', () => {
+	it('owns complete English and French history-navigation copy', () => {
+		expect(receiptCopy.en.history).toMatchObject({
+			group: 'Browse published receipts',
+			previous: 'Previous date',
+			next: 'Next date',
+		});
+		expect(receiptCopy.en.history.coverage('Jun 15', 'Jun 17, 2026')).toBe(
+			'Available receipts: Jun 15–Jun 17, 2026',
+		);
+		expect(receiptCopy.fr.history).toMatchObject({
+			group: 'Parcourir les reçus publiés',
+			previous: 'Date précédente',
+			next: 'Date suivante',
+		});
+		expect(receiptCopy.fr.history.correction.unpublished).toContain('pas été publiée');
+	});
+
 	it('defaults to the LATEST published day and bounds the calendar to the full span', async () => {
 		render(AccountabilityReceipt);
 		await screen.findByText('82%');

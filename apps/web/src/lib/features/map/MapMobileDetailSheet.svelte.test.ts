@@ -1,6 +1,6 @@
-import { fireEvent, render, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { StopIndexEntry } from '$lib/v1/schemas';
+import type { Alert, StopIndexEntry } from '$lib/v1/schemas';
 import type { StopMapDetail } from './mapSelection';
 import MapMobileDetailSheet from './MapMobileDetailSheet.svelte';
 
@@ -22,6 +22,16 @@ const stopDetail: StopMapDetail = {
 	routeTimes: [],
 	alerts: [],
 };
+
+const mobileAlert: Alert = {
+	id: 'mobile-alert',
+	severity: 'high',
+	header_key: 'Your stop',
+	description_en: '<p>Board at the temporary stop &amp; follow signs.</p>',
+	stops: [stop.id],
+};
+
+const stopDetailWithAlert: StopMapDetail = { ...stopDetail, alerts: [mobileAlert] };
 
 function baseProps(overrides: Record<string, unknown> = {}) {
 	return {
@@ -78,6 +88,36 @@ describe('MapMobileDetailSheet', () => {
 			expect(document.querySelector('[data-slot="bottom-sheet"]')).toBeInTheDocument();
 		});
 		expect(document.querySelector('[data-slot="bottom-sheet-back"]')).not.toBeInTheDocument();
+	});
+
+	it('opens the source-message alert action without redirecting or replacing mobile detail/back', async () => {
+		const onalertselect = vi.fn();
+		const onback = vi.fn();
+		const locationBeforeTap = window.location.href;
+		render(MapMobileDetailSheet, {
+			props: baseProps({
+				selectedDetail: stopDetailWithAlert,
+				canGoBack: true,
+				onback,
+				onalertselect,
+			}),
+		});
+
+		const alertButton = await waitFor(() =>
+			screen.getByRole('button', {
+				name: 'Select alert Board at the temporary stop & follow signs.',
+			}),
+		);
+		await fireEvent.click(alertButton);
+
+		expect(onalertselect).toHaveBeenCalledTimes(1);
+		expect(onalertselect.mock.calls[0]?.[0]).toBe(mobileAlert);
+		expect(window.location.href).toBe(locationBeforeTap);
+		expect(document.querySelector('[data-slot="bottom-sheet-body"]')).toHaveTextContent(stop.name);
+		const back = document.querySelector<HTMLButtonElement>('[data-slot="bottom-sheet-back"]');
+		expect(back).toBeInTheDocument();
+		await fireEvent.click(back!);
+		expect(onback).toHaveBeenCalledTimes(1);
 	});
 
 	it('renders nothing visible while closed', () => {

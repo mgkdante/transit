@@ -36,6 +36,10 @@ from transit_ops.snapshots.builders._helpers import (
     _ROUTE_SCHEDULE_SQL,  # noqa: F401 - re-exported for attribute-path parity
     _STOP_NAMES_SQL,  # noqa: F401 - re-exported for attribute-path parity
 )
+from transit_ops.snapshots.builders.historic import hotspots_history as hotspots_history
+from transit_ops.snapshots.builders.historic import (
+    repeat_offenders_history as repeat_offenders_history,
+)
 
 # --- shared spine kernel (value helpers, projector fold catalog, spine +
 #     windowed consumer helpers, headway / weak-stop kernels) ---
@@ -97,6 +101,39 @@ from transit_ops.snapshots.builders.historic._spine import (
     _windowed_otp_index,
     _windowed_periods,
 )
+from transit_ops.snapshots.builders.historic.alert_archive import (
+    _ALERT_ARCHIVE_SQL,
+    AlertArchiveBundle,
+    build_alert_archive,
+)
+from transit_ops.snapshots.builders.historic.hotspots_history import (
+    HotspotsHistoryPlan,
+    build_hotspots_history_plan,
+    build_hotspots_history_plan_from_rows,
+)
+from transit_ops.snapshots.builders.historic.line_history import (
+    LINE_HISTORY_ENTITY_BATCH_SIZE,
+    LINE_HISTORY_METRICS,
+    LineHistoryBundle,
+    LineHistoryPlan,
+    LineHistoryStreamSummary,
+    build_line_history,
+    build_line_history_from_rows,
+    build_line_history_plan,
+    build_line_history_plan_from_rows,
+)
+from transit_ops.snapshots.builders.historic.network_history import (
+    _NETWORK_HISTORY_CANCELLATION_SQL,
+    _NETWORK_HISTORY_DELAY_SQL,
+    _NETWORK_HISTORY_FACT_SQL,
+    _NETWORK_HISTORY_OCCUPANCY_SQL,
+    NetworkHistoryBundle,
+    NetworkHistoryPlan,
+    build_network_history,
+    build_network_history_from_rows,
+    build_network_history_plan,
+    build_network_history_plan_from_rows,
+)
 from transit_ops.snapshots.builders.historic.network_trend import (
     _NETWORK_DAYTYPE_ORDER,
     _NETWORK_SHIFT_ORDER,
@@ -121,6 +158,17 @@ from transit_ops.snapshots.builders.historic.provenance import (
     _PROVIDER_GAPS,
     _build_provenance_conformance,
     build_provenance,
+)
+from transit_ops.snapshots.builders.historic.ranking_kernel import (
+    SENTINEL_ENTITY_IDS as _SENTINEL_ENTITY_IDS,
+)
+from transit_ops.snapshots.builders.historic.ranking_kernel import (
+    otp_delta_points as _otp_delta_pts,
+)
+from transit_ops.snapshots.builders.historic.repeat_offenders_history import (
+    RepeatOffendersHistoryPlan,
+    build_repeat_offenders_history_plan,
+    build_repeat_offenders_history_plan_from_rows,
 )
 from transit_ops.snapshots.builders.historic.route_reliability import (
     _ROUTE_CANCELLATION_DAILY_SQL,
@@ -159,14 +207,24 @@ from transit_ops.snapshots.builders.historic.small_surfaces import (
     _RECEIPTS_WORST_ROUTE_SQL,
     _RECEIPTS_WORST_STOP_SQL,
     _REPEAT_OFFENDERS_SQL,
-    _SENTINEL_ENTITY_IDS,
     _alert_breakdown,
     _hotspots_by_grain,
-    _otp_delta_pts,
     build_alert_history,
     build_hotspots,
     build_receipts,
     build_repeat_offenders,
+)
+from transit_ops.snapshots.builders.historic.stop_history import (
+    STOP_HISTORY_ENTITY_BATCH_SIZE,
+    STOP_HISTORY_METRICS,
+    StopHistoryBundle,
+    StopHistoryPlan,
+    StopHistoryPointerSummary,
+    StopHistoryStreamSummary,
+    build_stop_history,
+    build_stop_history_from_rows,
+    build_stop_history_plan,
+    build_stop_history_plan_from_rows,
 )
 from transit_ops.snapshots.builders.historic.stop_reliability import (
     _STOP_BY_GRAIN_SQL,
@@ -184,13 +242,47 @@ from transit_ops.snapshots.builders.historic.stop_reliability import (
 __all__ = [
     # builders
     "build_network_trend",
+    "build_network_history",
+    "build_network_history_from_rows",
+    "build_network_history_plan",
+    "build_network_history_plan_from_rows",
+    "build_line_history",
+    "build_line_history_from_rows",
+    "build_line_history_plan",
+    "build_line_history_plan_from_rows",
+    "build_stop_history",
+    "build_stop_history_from_rows",
+    "build_stop_history_plan",
+    "build_stop_history_plan_from_rows",
     "build_provenance",
     "build_route_reliability",
     "build_alert_history",
+    "build_alert_archive",
     "build_hotspots",
+    "build_hotspots_history_plan",
+    "build_hotspots_history_plan_from_rows",
     "build_receipts",
     "build_repeat_offenders",
+    "build_repeat_offenders_history_plan",
+    "build_repeat_offenders_history_plan_from_rows",
     "build_stop_reliability",
+    "AlertArchiveBundle",
+    "HotspotsHistoryPlan",
+    "RepeatOffendersHistoryPlan",
+    "NetworkHistoryBundle",
+    "NetworkHistoryPlan",
+    "LineHistoryBundle",
+    "LineHistoryPlan",
+    "LineHistoryStreamSummary",
+    "StopHistoryBundle",
+    "StopHistoryPlan",
+    "StopHistoryPointerSummary",
+    "StopHistoryStreamSummary",
+    "LINE_HISTORY_ENTITY_BATCH_SIZE",
+    "LINE_HISTORY_METRICS",
+    "STOP_HISTORY_ENTITY_BATCH_SIZE",
+    "STOP_HISTORY_METRICS",
+    "_ALERT_ARCHIVE_SQL",
     # SQL constants + private helpers re-exported for byte-stable
     # builders.historic.<name> attribute + import-path parity
     "_GAP_EDGES",
@@ -249,6 +341,10 @@ __all__ = [
     "_weak_stops_by_grain",
     "_windowed_otp_index",
     "_windowed_periods",
+    "_NETWORK_HISTORY_CANCELLATION_SQL",
+    "_NETWORK_HISTORY_DELAY_SQL",
+    "_NETWORK_HISTORY_FACT_SQL",
+    "_NETWORK_HISTORY_OCCUPANCY_SQL",
     "_NETWORK_DAYTYPE_ORDER",
     "_NETWORK_SHIFT_ORDER",
     "_TREND_CANCELLATION_MONTHLY_SQL",

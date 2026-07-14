@@ -45,6 +45,7 @@ const baseSpec = (ciLabel?: string, optedIn = false): MagnitudeBarsSpec => ({
 	domain: [0, 100],
 	unit: '%',
 	xLabel: 'Severe-delay rate',
+	rowLabel: 'Stop',
 	rows: [{ ...rowWithCi, ...(optedIn ? { tapPopover } : {}) }],
 	sort: 'given',
 	scale: 'severity',
@@ -111,19 +112,44 @@ afterEach(() => {
 describe('MagnitudeBarsMark — Wilson CI surfacing guard (PR-WEB-2 Feature B)', () => {
 	it('surfaces the CI in the sr-only cell when ciLabel is set AND the row has both bounds', () => {
 		const { container } = render(MagnitudeBarsMark, { props: { spec: baseSpec('95% CI') } });
-		expect(cell(container)).toContain('95% CI');
-		expect(cell(container)).toContain('31');
-		expect(cell(container)).toContain('57');
+		expect(cell(container)).toBe('44% (95% CI 31%–57%)');
 	});
 
 	it('shows NO CI when ciLabel is unset, even though the row carries Wilson bounds (the guard)', () => {
 		const { container } = render(MagnitudeBarsMark, { props: { spec: baseSpec(undefined) } });
 		const txt = cell(container);
-		expect(txt).toContain('44'); // the value still renders
+		expect(txt).toBe('44%'); // the value still renders with its unit
 		expect(txt).not.toContain('('); // no fabricated CI parenthetical
 		expect(txt).not.toContain('31');
 		expect(txt).not.toContain('57');
 	});
+});
+
+describe('MagnitudeBarsMark — localized semantic AT table', () => {
+	it.each([
+		['en', 'Line', 'Severe-delay rate'],
+		['en', 'Stop', 'Severe-delay rate'],
+		['en', 'Trip', 'Severe-delay rate'],
+		['en', 'Vehicle', 'Severe-delay rate'],
+		['fr', 'Ligne', 'Taux de retard grave'],
+		['fr', 'Arrêt', 'Taux de retard grave'],
+		['fr', 'Voyage', 'Taux de retard grave'],
+		['fr', 'Véhicule', 'Taux de retard grave'],
+	] as const)(
+		'uses %s %s and the localized value label as column headings',
+		(locale, rowLabel, xLabel) => {
+			const { container } = render(MagnitudeBarsMark, {
+				props: { spec: { ...baseSpec('95% CI'), locale, rowLabel, xLabel } },
+			});
+			const table = container.querySelector('table.sr-only') as HTMLTableElement;
+
+			expect(
+				within(table)
+					.getAllByRole('columnheader')
+					.map((header) => header.textContent?.trim()),
+			).toEqual([rowLabel, xLabel]);
+		},
+	);
 });
 
 describe('MagnitudeBarsMark — touch datum popover integration', () => {
@@ -172,11 +198,20 @@ describe('MagnitudeBarsMark — touch datum popover integration', () => {
 
 	it('opens one shared popover for an opted-in touch row without navigating', async () => {
 		const { container } = renderReadyMark(baseSpec('95% CI', true));
+		const figure = container.querySelector('figure') as HTMLElement;
 
 		await pointerClick(await rowOverlay(container), 'touch');
 
-		expect(await screen.findAllByRole('dialog', { name: 'Stop One' })).toHaveLength(1);
+		const dialogs = await screen.findAllByRole('dialog', { name: 'Stop One' });
+		expect(dialogs).toHaveLength(1);
+		await waitFor(() => expect(dialogs[0]).toHaveFocus());
+		expect(figure).toHaveAttribute('aria-controls', dialogs[0].id);
 		expect(navigate).not.toHaveBeenCalled();
+
+		await fireEvent.keyDown(document, { key: 'Escape' });
+		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+		expect(figure).toHaveFocus();
+		expect(figure).not.toHaveAttribute('aria-controls');
 	});
 
 	it('hands a touch-open datum to mouse hover without overlapping or navigating', async () => {
@@ -239,7 +274,7 @@ describe('MagnitudeBarsMark — touch datum popover integration', () => {
 		});
 		expect(within(hover).getByText('Stop One')).toBeInTheDocument();
 		expect(within(hover).getByText('44%')).toBeInTheDocument();
-		expect(within(hover).getByText('31–57%')).toBeInTheDocument();
+		expect(within(hover).getByText('31%–57%')).toBeInTheDocument();
 		expect(within(hover).getByText('median 0.4 min · n=120')).toBeInTheDocument();
 		expect(within(hover).queryByText('↦ open stop')).not.toBeInTheDocument();
 	});

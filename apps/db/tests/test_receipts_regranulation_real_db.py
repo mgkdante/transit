@@ -26,6 +26,10 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from transit_ops.snapshots.builders import build_receipts
+from transit_ops.snapshots.builders.historic.small_surfaces import (
+    _RECEIPTS_WORST_ROUTE_SQL,
+    _RECEIPTS_WORST_STOP_SQL,
+)
 from transit_ops.snapshots.contract import ReceiptAvailability
 
 DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
@@ -40,17 +44,16 @@ STATIC_ENDPOINT_ID = 994001
 STATIC_RUN_ID = 994101
 DVID = 994201
 
-# Distinct local dates so each fixture is independent within the one build window.
-# RELATIVE to today: build_receipts windows its driver on CURRENT_DATE (the
-# trailing ~30-day clause), so hardcoded dates rot out of the window — this suite
-# time-bombed on 2026-07-09, 34 days after its original June fixtures were
-# written. Anchoring a few days back keeps the whole set inside the window on any
-# run date (a ±1-day session-timezone skew vs CURRENT_DATE is harmless at -7).
+# Distinct provider-local dates so each fixture is independent. The retained-history
+# regression deliberately spans more than 400 days; citizen_accountability_daily remains
+# the sole authority for which of those dates becomes a receipt.
 _ANCHOR = date.today() - timedelta(days=7)
-DARK_DAY = _ANCHOR                             # fully-dark scheduled — NO CAD row
-SILENT_DAY = _ANCHOR + timedelta(days=1)       # (i)  telemetry + silent/not-reported
+OLD_RETAINED_DAY = _ANCHOR - timedelta(days=400)
+SUPPLEMENT_ONLY_GAP_DAY = OLD_RETAINED_DAY + timedelta(days=1)
+DARK_DAY = _ANCHOR  # fully-dark scheduled — NO CAD row
+SILENT_DAY = _ANCHOR + timedelta(days=1)  # (i)  telemetry + silent/not-reported
 SCHEDULE_ONLY_DAY = _ANCHOR + timedelta(days=2)  # (ii) scheduled known, alerts-only
-EMPTY_DAY = _ANCHOR + timedelta(days=3)        # (iii) alerts-only, no schedule
+EMPTY_DAY = _ANCHOR + timedelta(days=3)  # (iii) alerts-only, no schedule
 BUILT = datetime.combine(_ANCHOR + timedelta(days=4), time(3, 0), tzinfo=UTC)
 
 
@@ -111,6 +114,23 @@ def _seed(c) -> None:  # noqa: ANN001
             {"d": DVID, "p": PROVIDER, "r": rid, "n": name},
         )
 
+    # --- Retained span: an accountability-backed day >400 days old stays fully
+    # enriched, while an adjacent supplement-only day remains absent.
+    _cad(c, OLD_RETAINED_DAY, affected_routes=2, affected_stops=4, alerts=1, score=8.5)
+    _spine(c, OLD_RETAINED_DAY, "51", hour=7, obs=20, on_time=15, severe=2, sum_sec=2400)
+    _cancel(c, OLD_RETAINED_DAY, "51", scheduled=10, total=8, canceled=1)
+    _spine(
+        c,
+        SUPPLEMENT_ONLY_GAP_DAY,
+        "51",
+        hour=7,
+        obs=12,
+        on_time=10,
+        severe=1,
+        sum_sec=720,
+    )
+    _cancel(c, SUPPLEMENT_ONLY_GAP_DAY, "51", scheduled=8, total=8, canceled=0)
+
     # --- (i) SILENT_DAY: a rich CAD row + spine obs in two shifts + a not-reported route.
     _cad(c, SILENT_DAY, affected_routes=3, affected_stops=8, alerts=1, score=12.5)
     # am_peak (hour 7) + pm_peak (hour 17) spine cells for route 51.
@@ -121,8 +141,7 @@ def _seed(c) -> None:  # noqa: ANN001
     _cancel(c, SILENT_DAY, "24", scheduled=8, total=0, canceled=0)  # not-reported
 
     # --- (ii) SCHEDULE_ONLY_DAY: alerts-only CAD row (no reliability), schedule known.
-    _cad(c, SCHEDULE_ONLY_DAY, affected_routes=None, affected_stops=None, alerts=4,
-         score=None)
+    _cad(c, SCHEDULE_ONLY_DAY, affected_routes=None, affected_stops=None, alerts=4, score=None)
     _cancel(c, SCHEDULE_ONLY_DAY, "51", scheduled=12, total=0, canceled=0)
 
     # --- (iii) EMPTY_DAY: alerts-only CAD row, NO schedule rows at all.
@@ -140,8 +159,15 @@ def _cad(c, d, *, affected_routes, affected_stops, alerts, score) -> None:  # no
             " delayed_trip_count, severe_delay_count, alert_count, rider_impact_score,"
             " built_at_utc) VALUES (:p, :d, :ar, :as_, 0, 0, :al, :sc, :b)"
         ),
-        {"p": PROVIDER, "d": d, "ar": affected_routes, "as_": affected_stops,
-         "al": alerts, "sc": score, "b": BUILT},
+        {
+            "p": PROVIDER,
+            "d": d,
+            "ar": affected_routes,
+            "as_": affected_stops,
+            "al": alerts,
+            "sc": score,
+            "b": BUILT,
+        },
     )
 
 
@@ -156,8 +182,50 @@ def _spine(c, d, rid, *, hour, obs, on_time, severe, sum_sec) -> None:  # noqa: 
             " sum_delay_seconds, delay_histogram)"
             " VALUES (:p, :r, :d, :h, 0, :o, :o, :ot, :sv, :ss, :hist)"
         ),
-        {"p": PROVIDER, "r": rid, "d": d, "h": hour, "o": obs, "ot": on_time,
-         "sv": severe, "ss": sum_sec, "hist": [obs]},
+        {
+            "p": PROVIDER,
+            "r": rid,
+            "d": d,
+            "h": hour,
+            "o": obs,
+            "ot": on_time,
+            "sv": severe,
+            "ss": sum_sec,
+            "hist": [obs],
+        },
+    )
+
+
+def _route_candidate(c, d, rid, *, avg_delay, on_time) -> None:  # noqa: ANN001
+    c.execute(
+        text(
+            "INSERT INTO gold.route_delay_hourly (provider_id, period_start_utc, route_id,"
+            " observation_count, delay_observation_count, on_time_observation_count,"
+            " avg_delay_seconds) VALUES (:p, :ts, :r, 10, 10, :ot, :avg)"
+        ),
+        {
+            "p": PROVIDER,
+            "ts": datetime.combine(d, time(12, 0), tzinfo=UTC),
+            "r": rid,
+            "ot": on_time,
+            "avg": avg_delay,
+        },
+    )
+
+
+def _stop_candidate(c, d, sid, *, avg_delay) -> None:  # noqa: ANN001
+    c.execute(
+        text(
+            "INSERT INTO gold.stop_delay_hourly (provider_id, period_start_utc, stop_id,"
+            " route_id, observation_count, avg_arrival_delay_seconds)"
+            " VALUES (:p, :ts, :s, '51', 10, :avg)"
+        ),
+        {
+            "p": PROVIDER,
+            "ts": datetime.combine(d, time(12, 0), tzinfo=UTC),
+            "s": sid,
+            "avg": avg_delay,
+        },
     )
 
 
@@ -171,9 +239,18 @@ def _cancel(c, d, rid, *, scheduled, total, canceled) -> None:  # noqa: ANN001
             " built_at_utc, scheduled_trip_days, delivered_trip_days, silent_trip_days)"
             " VALUES (:p, :d, :r, :t, :c, :rate, :b, :s, :dl, :si)"
         ),
-        {"p": PROVIDER, "d": d, "r": rid, "t": total, "c": canceled,
-         "rate": (round(100.0 * canceled / total, 2) if total else None),
-         "b": BUILT, "s": scheduled, "dl": delivered, "si": silent},
+        {
+            "p": PROVIDER,
+            "d": d,
+            "r": rid,
+            "t": total,
+            "c": canceled,
+            "rate": (round(100.0 * canceled / total, 2) if total else None),
+            "b": BUILT,
+            "s": scheduled,
+            "dl": delivered,
+            "si": silent,
+        },
     )
 
 
@@ -185,8 +262,7 @@ def _availability(receipts) -> dict[str, ReceiptAvailability]:
             date=date_str,
             has_data=bool(r.affected_routes or r.affected_stops or r.otp_pct is not None),
             has_schedule=bool(
-                r.service_states is not None
-                and r.service_states.scheduled_trip_days is not None
+                r.service_states is not None and r.service_states.scheduled_trip_days is not None
             ),
         )
     return out
@@ -239,6 +315,46 @@ def test_fully_dark_scheduled_day_absent(conn) -> None:  # noqa: ANN001
     assert DARK_DAY.isoformat() not in _availability(out)
 
 
+def test_old_retained_day_is_enriched_and_supplement_only_gap_stays_absent(conn) -> None:  # noqa: ANN001
+    out = build_receipts(conn, PROVIDER, generated_utc="t")
+
+    old_key = OLD_RETAINED_DAY.isoformat()
+    receipt = out[old_key]
+    assert receipt.date == old_key
+    assert receipt.otp_pct == 75
+    assert receipt.avg_delay_min == 2.0
+    assert [cut.shift for cut in receipt.by_shift] == ["am_peak"]
+    assert receipt.by_shift[0].observation_count == 20
+    assert receipt.service_states is not None
+    assert receipt.service_states.scheduled_trip_days == 10
+    assert receipt.service_states.delivered_trip_days == 7
+    assert receipt.service_states.cancelled_trip_days == 1
+    assert receipt.service_states.silent_trip_days == 2
+    assert receipt.service_states.service_completeness_pct == 70.0
+    assert SUPPLEMENT_ONLY_GAP_DAY.isoformat() not in out
+
+
+def test_worst_queries_return_one_ranked_candidate_per_date(conn) -> None:  # noqa: ANN001
+    _route_candidate(conn, OLD_RETAINED_DAY, "51", avg_delay=300, on_time=4)
+    _route_candidate(conn, OLD_RETAINED_DAY, "24", avg_delay=300, on_time=5)
+    _route_candidate(conn, OLD_RETAINED_DAY, "747", avg_delay=120, on_time=8)
+    _stop_candidate(conn, OLD_RETAINED_DAY, "3001", avg_delay=420)
+    _stop_candidate(conn, OLD_RETAINED_DAY, "1002", avg_delay=420)
+    _stop_candidate(conn, OLD_RETAINED_DAY, "9999", avg_delay=180)
+
+    params = {
+        "provider_id": PROVIDER,
+        "receipt_start": OLD_RETAINED_DAY,
+        "receipt_end": OLD_RETAINED_DAY,
+    }
+    route_rows = list(conn.execute(_RECEIPTS_WORST_ROUTE_SQL, params).mappings())
+    stop_rows = list(conn.execute(_RECEIPTS_WORST_STOP_SQL, params).mappings())
+
+    assert len(route_rows) == len(stop_rows) == 1
+    assert [(row["d"], row["route_id"]) for row in route_rows] == [(OLD_RETAINED_DAY, "24")]
+    assert [(row["d"], row["stop_id"]) for row in stop_rows] == [(OLD_RETAINED_DAY, "1002")]
+
+
 def test_real_db_receipt_under_byte_ceiling(conn, capsys) -> None:  # noqa: ANN001
     """Real-DB probe: the richest built receipt serializes well under RECEIPT_BYTE_CEILING.
     Reports the observed byte size."""
@@ -248,6 +364,8 @@ def test_real_db_receipt_under_byte_ceiling(conn, capsys) -> None:  # noqa: ANN0
     sizes = {ds: len(r.model_dump_json().encode("utf-8")) for ds, r in out.items()}
     biggest = max(sizes, key=sizes.get)
     with capsys.disabled():
-        print(f"\n[S13 byte probe] receipt sizes={sizes} "
-              f"max={sizes[biggest]}B ceiling={RECEIPT_BYTE_CEILING}B")
+        print(
+            f"\n[S13 byte probe] receipt sizes={sizes} "
+            f"max={sizes[biggest]}B ceiling={RECEIPT_BYTE_CEILING}B"
+        )
     assert sizes[biggest] <= RECEIPT_BYTE_CEILING

@@ -256,6 +256,7 @@
 			locale,
 			{
 				title: copy.peak.dayType,
+				rowLabel: copy.crosstab.dayTypeHeader,
 				xLabel: copy.strip.severePct,
 				unit: '%',
 				domain: SEVERE_DOMAIN,

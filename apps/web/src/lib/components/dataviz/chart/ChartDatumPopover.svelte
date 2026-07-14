@@ -29,7 +29,7 @@
 			!(currentTarget instanceof Node) ||
 			!currentTarget.contains(destination)
 		) {
-			controller.close();
+			controller.close(false);
 		}
 	}
 
@@ -77,7 +77,9 @@
 		}
 
 		function handlePointerDown(event: PointerEvent): void {
-			if (!(event.target instanceof Node) || !surface?.contains(event.target)) dismiss();
+			if (!(event.target instanceof Node) || !surface?.contains(event.target)) {
+				controller.close(false);
+			}
 		}
 
 		function handleKeyDown(event: KeyboardEvent): void {
@@ -110,6 +112,11 @@
 			window.removeEventListener('orientationchange', dismiss);
 		};
 	});
+
+	$effect(() => {
+		if (!visible || !placed || !surface) return;
+		surface.focus({ preventScroll: true });
+	});
 </script>
 
 {#if visible && model}
@@ -122,6 +129,7 @@
 			role="dialog"
 			aria-modal="false"
 			aria-labelledby={`${controller.id}-heading`}
+			tabindex="-1"
 			data-placed={placed}
 			style:left={`${left}px`}
 			style:top={`${top}px`}

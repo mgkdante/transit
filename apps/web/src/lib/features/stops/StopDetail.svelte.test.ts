@@ -1,7 +1,22 @@
-import { render, screen, fireEvent, within } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { StopFile, StopReliability, StopDeparture } from '$lib/v1';
 import StopDetail from './StopDetail.svelte';
+
+const stopDetailNav = vi.hoisted(() => {
+	const page = { url: new URL('http://localhost/stop/57191'), state: {} };
+	return {
+		page,
+		replaceState: vi.fn((url: string | URL) => {
+			page.url = new URL(url, 'http://localhost');
+		}),
+	};
+});
+
+vi.mock('$app/state', () => ({ page: stopDetailNav.page }));
+vi.mock('$app/navigation', () => ({ replaceState: stopDetailNav.replaceState }));
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // A static stop file (info + schedule). Minimal; the reliability + live tiers
@@ -36,6 +51,8 @@ const ALERTS = [
 		header_key: 'Détour ligne 51',
 		header_text: 'Détour ligne 51',
 		header_text_en: 'Detour on line 51',
+		description: '<p>La ligne <strong>51</strong> est détournée &amp; reste en service.</p>',
+		description_en: '<p>Route <strong>51</strong> is diverted &amp; remains in service.</p>',
 		cause: 'CONSTRUCTION',
 		effect: 'DETOUR',
 		routes: ['51'],
@@ -109,6 +126,53 @@ const RELIABILITY_WITH_TOD = {
 		{ grain: 'weekend', otp_pct: 86, avg_delay_min: 2.2, severe_pct: 4 },
 	],
 } as StopReliability;
+
+const FIELD_EMPTY_RELIABILITY = {
+	generated_utc: RELIABILITY.generated_utc,
+	id: '57191',
+	name: 'Test stop',
+	periods: [],
+	habits: null,
+	by_route: [],
+	day_of_week: [],
+	occupancy_mix: null,
+	daily: [],
+} as StopReliability;
+
+const HABITS_ONLY_RELIABILITY = {
+	...FIELD_EMPTY_RELIABILITY,
+	habits: { scale: 'severe_relative', matrix: habitsMatrix() },
+} as StopReliability;
+
+const STOP_HISTORY_INDEX = {
+	generated_utc: '2026-07-13T12:00:00Z',
+	family: 'stops',
+	selection_mode: 'range',
+	entity_id: '57191',
+	collection_generation_id: 'a'.repeat(64),
+	first_available_date: '2026-01-31',
+	last_available_date: '2026-02-01',
+	gaps: [],
+	partitions: [
+		{
+			path: `historic/history/stops/3537313931/generations/${'b'.repeat(64)}/2026-01.json`,
+			coverage_start: '2026-01-31',
+			coverage_end: '2026-01-31',
+			count: 1,
+			sha256: 'b'.repeat(64),
+			byte_size: 100,
+		},
+		{
+			path: `historic/history/stops/3537313931/generations/${'c'.repeat(64)}/2026-02.json`,
+			coverage_start: '2026-02-01',
+			coverage_end: '2026-02-01',
+			count: 1,
+			sha256: 'c'.repeat(64),
+			byte_size: 100,
+		},
+	],
+	metrics: [],
+};
 
 // A live board for this stop: three departures across late / on-time / early,
 // two routes (51, 80) so the by-route chips appear.
@@ -216,6 +280,20 @@ let provenanceData: { generated_utc: string; gaps: string[] } = {
 // Active UI locale for getLocale() — mutable so a FR-localization test can flip it
 // without disturbing the (default EN) suite.
 let currentLocale: 'en' | 'fr' = 'en';
+const getStopSpy = vi.fn((_id: string) => stopFileData);
+const getStopReliabilitySpy = vi.fn((_id: string) => reliabilityData);
+const stopHistoryHarness = vi.hoisted(() => ({
+	getStopHistoryDirectory: vi.fn(),
+	getStopHistoryIndex: vi.fn(),
+	loadStopHistoryRange: vi.fn(),
+}));
+const reliabilityReloadSpy = vi.fn();
+let reliabilityResourceState: {
+	data: StopReliability | null;
+	error: Error | null;
+	loading: boolean;
+	settled: boolean;
+} | null = null;
 
 // Partial-mock i18n: keep the real routing helpers (localizeHref drives the map
 // drilldown href assertions) but make getLocale read the per-test currentLocale.
@@ -231,35 +309,60 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 vi.mock('$lib/v1', async () => {
 	const affected =
 		await vi.importActual<typeof import('$lib/v1/affectedAlerts')>('$lib/v1/affectedAlerts');
+	const history = await vi.importActual<typeof import('$lib/v1/history')>('$lib/v1/history');
 	// STATUS_LABELS is the shared bilingual status vocabulary the departure-status chips +
 	// row captions read (S8B) — pass the REAL table through so the tone labels resolve.
 	const enumLabels =
 		await vi.importActual<typeof import('$lib/v1/enumLabels')>('$lib/v1/enumLabels');
 	return {
-		getStop: () => stopFileData,
-		getStopReliability: () => reliabilityData,
+		...history,
+		getStop: (id: string) => getStopSpy(id),
+		getStopReliability: (id: string) => getStopReliabilitySpy(id),
 		getProvenance: () => provenanceData,
 		getV1Context: () => ({ manifest: { files: { live: { ttl_s: 30 } } }, labels: {}, lang: 'en' }),
 		createLiveStore: () =>
 			useSilentBoard ? silentBoardLiveStore : useEmptyLive ? emptyLiveStore : liveStore,
 		alertsForStop: affected.alertsForStop,
 		STATUS_LABELS: enumLabels.STATUS_LABELS,
+		...stopHistoryHarness,
 	};
 });
 
 // The resource mock calls the loader and uses its return as `data` — so getStop
 // vs getStopReliability resolve to the right fixture (RouteDetail-style pattern).
 vi.mock('$lib/v1/resource.svelte', () => ({
-	createResource: (loader: () => unknown) => ({
-		data: loader(),
-		error: null,
-		loading: false,
-		settled: true,
-		reload: vi.fn(),
-	}),
+	createResource: (loader: () => unknown) => {
+		const data = loader();
+		if (data === reliabilityData && reliabilityResourceState != null) {
+			return {
+				get data() {
+					return reliabilityResourceState?.data ?? null;
+				},
+				get error() {
+					return reliabilityResourceState?.error ?? null;
+				},
+				get loading() {
+					return reliabilityResourceState?.loading ?? false;
+				},
+				get settled() {
+					return reliabilityResourceState?.settled ?? true;
+				},
+				reload: reliabilityReloadSpy,
+			};
+		}
+		return {
+			data,
+			error: null,
+			loading: false,
+			settled: true,
+			reload: vi.fn(),
+		};
+	},
 }));
 
 function reset() {
+	stopDetailNav.page.url = new URL('http://localhost/stop/57191');
+	stopDetailNav.replaceState.mockClear();
 	useEmptyLive = false;
 	useSilentBoard = false;
 	reliabilityData = RELIABILITY;
@@ -267,7 +370,213 @@ function reset() {
 	alertsData = { generated_utc: '2026-06-15T12:00:00Z', alerts: ALERTS };
 	provenanceData = { generated_utc: '2026-06-15T12:00:00Z', gaps: [] };
 	currentLocale = 'en';
+	getStopSpy.mockClear();
+	getStopReliabilitySpy.mockClear();
+	stopHistoryHarness.getStopHistoryDirectory.mockReset();
+	stopHistoryHarness.getStopHistoryIndex.mockReset();
+	stopHistoryHarness.getStopHistoryIndex.mockResolvedValue(null);
+	stopHistoryHarness.loadStopHistoryRange.mockReset();
+	reliabilityResourceState = null;
+	reliabilityReloadSpy.mockClear();
 }
+
+describe('StopDetail retained-history ownership', () => {
+	it('keeps the default singleton surface intact and loads no retained partition', async () => {
+		reset();
+		const view = render(StopDetail, { props: { id: '57191' } });
+
+		expect(getStopSpy).toHaveBeenCalledWith('57191');
+		expect(getStopReliabilitySpy).toHaveBeenCalledWith('57191');
+		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		const pane = view.container.querySelector('[data-slot="reliability-pane"]') as HTMLElement;
+		expect(pane).not.toBeNull();
+		expect(within(pane).getByText('Day')).toBeInTheDocument();
+		expect(within(pane).getByText('82%')).toBeInTheDocument();
+		expect(stopHistoryHarness.loadStopHistoryRange).not.toHaveBeenCalled();
+
+		await waitFor(() => expect(stopHistoryHarness.getStopHistoryIndex).toHaveBeenCalledOnce());
+		expect(stopHistoryHarness.getStopHistoryDirectory).not.toHaveBeenCalled();
+	});
+
+	it('keeps discovery on the raw awkward stop id and aborts stale ownership on id changes', async () => {
+		reset();
+		stopHistoryHarness.getStopHistoryIndex.mockImplementation(() => new Promise(() => undefined));
+		const view = render(StopDetail, { props: { id: 'A/B ?#' } });
+
+		await waitFor(() => expect(stopHistoryHarness.getStopHistoryIndex).toHaveBeenCalledOnce());
+		const firstCall = stopHistoryHarness.getStopHistoryIndex.mock.calls[0];
+		const firstContext = firstCall?.[1] as { signal: AbortSignal } | undefined;
+		expect(firstCall?.[0]).toBe('A/B ?#');
+		expect(firstContext?.signal.aborted).toBe(false);
+		expect(stopHistoryHarness.getStopHistoryDirectory).not.toHaveBeenCalled();
+		expect(stopHistoryHarness.loadStopHistoryRange).not.toHaveBeenCalled();
+
+		await view.rerender({ id: 'NEXT/STOP' });
+		await waitFor(() => expect(stopHistoryHarness.getStopHistoryIndex).toHaveBeenCalledTimes(2));
+		expect(firstContext?.signal.aborted).toBe(true);
+		expect(stopHistoryHarness.getStopHistoryIndex.mock.calls[1]?.[0]).toBe('NEXT/STOP');
+
+		const secondContext = stopHistoryHarness.getStopHistoryIndex.mock.calls[1]?.[1] as
+			| { signal: AbortSignal }
+			| undefined;
+		view.unmount();
+		expect(secondContext?.signal.aborted).toBe(true);
+	});
+
+	it('passes the retained resource only to StopReliabilitySurface', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/stops/StopDetail.svelte'),
+			'utf-8',
+		);
+		const reliabilitySurfaces = source.match(/<StopReliabilitySurface\s[\s\S]*?\/>/g) ?? [];
+		const outsideReliabilitySurfaces = reliabilitySurfaces.reduce(
+			(remaining, surface) => remaining.replace(surface, ''),
+			source,
+		);
+
+		expect(reliabilitySurfaces).toHaveLength(2);
+		expect(reliabilitySurfaces.every((surface) => surface.includes('history={stopHistory}'))).toBe(
+			true,
+		);
+		expect(outsideReliabilitySurfaces).not.toMatch(/\bhistory=\{stopHistory\}/);
+	});
+
+	it('keeps retained query parameters out of line links', async () => {
+		reset();
+		stopDetailNav.page.url = new URL(
+			'http://localhost/stop/57191?tab=reliability&grain=day&from=2026-01-31&to=2026-02-01',
+		);
+		const view = render(StopDetail, { props: { id: '57191' } });
+
+		await waitFor(() =>
+			expect(view.container.querySelector('[data-slot="stop-by-route"]')).not.toBeNull(),
+		);
+		const lineLinks = view.container.querySelectorAll<HTMLAnchorElement>('a[href^="/lines/"]');
+		expect(lineLinks.length).toBeGreaterThan(0);
+		for (const link of lineLinks) {
+			const url = new URL(link.href);
+			expect(url.search).toBe('');
+			expect(url.hash).toBe('');
+		}
+	});
+});
+
+describe('StopDetail retained-history singleton boundary', () => {
+	it('keeps a habits-only current singleton visible without an explicit retained range', async () => {
+		reset();
+		reliabilityData = HABITS_ONLY_RELIABILITY;
+		const view = render(StopDetail, { props: { id: '57191' } });
+
+		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		const habits = view.container.querySelector('[data-slot="stop-habits"]');
+		expect(habits).not.toBeNull();
+		expect(within(habits as HTMLElement).getByText('Severe delays by hour')).toBeInTheDocument();
+		expect(stopHistoryHarness.loadStopHistoryRange).not.toHaveBeenCalled();
+	});
+
+	it('preserves current habits while an explicit retained range loads', async () => {
+		reset();
+		reliabilityData = HABITS_ONLY_RELIABILITY;
+		stopDetailNav.page.url = new URL(
+			'http://localhost/stop/57191?tab=reliability&from=2026-01-31&to=2026-02-01',
+		);
+		stopHistoryHarness.getStopHistoryIndex.mockResolvedValue(STOP_HISTORY_INDEX);
+		stopHistoryHarness.loadStopHistoryRange.mockImplementation(() => new Promise(() => undefined));
+		const view = render(StopDetail, { props: { id: '57191' } });
+
+		await waitFor(() => expect(stopHistoryHarness.loadStopHistoryRange).toHaveBeenCalledOnce());
+		const habits = view.container.querySelector('[data-slot="stop-habits"]');
+		expect(habits).not.toBeNull();
+		expect(within(habits as HTMLElement).getByText('Severe delays by hour')).toBeInTheDocument();
+	});
+
+	it.each([
+		['settled null', null],
+		['settled field-empty', FIELD_EMPTY_RELIABILITY],
+	] as const)(
+		'keeps the existing ResourceBoundary empty for a default %s singleton',
+		async (_, value) => {
+			reset();
+			reliabilityData = value;
+			const view = render(StopDetail, { props: { id: '57191' } });
+
+			await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+			await waitFor(() =>
+				expect(
+					view.container.querySelector('[data-slot="edge-state"][data-variant="empty"]'),
+				).not.toBeNull(),
+			);
+			expect(view.container.querySelector('.stop-reliability')).toBeNull();
+			expect(stopHistoryHarness.loadStopHistoryRange).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		['null', null],
+		['field-empty', FIELD_EMPTY_RELIABILITY],
+	] as const)(
+		'mounts StopReliabilitySurface for an explicit retained range over a %s singleton',
+		async (_, value) => {
+			reset();
+			reliabilityData = value;
+			stopDetailNav.page.url = new URL(
+				'http://localhost/stop/57191?tab=reliability&from=2026-01-31&to=2026-02-01',
+			);
+			stopHistoryHarness.getStopHistoryIndex.mockResolvedValue(STOP_HISTORY_INDEX);
+			stopHistoryHarness.loadStopHistoryRange.mockImplementation(
+				() => new Promise(() => undefined),
+			);
+			const view = render(StopDetail, { props: { id: '57191' } });
+
+			await waitFor(() => expect(stopHistoryHarness.getStopHistoryIndex).toHaveBeenCalledOnce());
+			await waitFor(() => expect(stopHistoryHarness.loadStopHistoryRange).toHaveBeenCalledOnce());
+			expect(view.container.querySelector('.stop-reliability')).not.toBeNull();
+		},
+	);
+
+	it('does not let retained discovery bypass a pending singleton boundary', async () => {
+		reset();
+		reliabilityData = null;
+		reliabilityResourceState = { data: null, error: null, loading: true, settled: false };
+		stopDetailNav.page.url = new URL(
+			'http://localhost/stop/57191?tab=reliability&from=2026-01-31&to=2026-02-01',
+		);
+		stopHistoryHarness.getStopHistoryIndex.mockResolvedValue(STOP_HISTORY_INDEX);
+		stopHistoryHarness.loadStopHistoryRange.mockImplementation(() => new Promise(() => undefined));
+		const view = render(StopDetail, { props: { id: '57191' } });
+
+		await waitFor(() => expect(stopHistoryHarness.getStopHistoryIndex).toHaveBeenCalledOnce());
+		await waitFor(() => expect(stopHistoryHarness.loadStopHistoryRange).toHaveBeenCalledOnce());
+		expect(view.container.querySelector('[data-variant="skeleton"]')).not.toBeNull();
+		expect(view.container.querySelector('.stop-reliability')).toBeNull();
+	});
+
+	it('does not let retained discovery bypass a singleton error or its retry action', async () => {
+		reset();
+		reliabilityData = null;
+		reliabilityResourceState = {
+			data: null,
+			error: new Error('singleton unavailable'),
+			loading: false,
+			settled: true,
+		};
+		stopDetailNav.page.url = new URL(
+			'http://localhost/stop/57191?tab=reliability&from=2026-01-31&to=2026-02-01',
+		);
+		stopHistoryHarness.getStopHistoryIndex.mockResolvedValue(STOP_HISTORY_INDEX);
+		stopHistoryHarness.loadStopHistoryRange.mockImplementation(() => new Promise(() => undefined));
+		const view = render(StopDetail, { props: { id: '57191' } });
+
+		await waitFor(() => expect(stopHistoryHarness.getStopHistoryIndex).toHaveBeenCalledOnce());
+		await waitFor(() => expect(stopHistoryHarness.loadStopHistoryRange).toHaveBeenCalledOnce());
+		const error = await screen.findByRole('alert');
+		expect(error).toHaveTextContent('/v1 contract unreachable');
+		expect(view.container.querySelector('.stop-reliability')).toBeNull();
+
+		await fireEvent.click(within(error).getByRole('button', { name: 'Retry' }));
+		expect(reliabilityReloadSpy).toHaveBeenCalledOnce();
+	});
+});
 
 describe('StopDetail map drilldown', () => {
 	it('links directly to the live map filtered to this stop', () => {
@@ -778,8 +1087,11 @@ describe('StopDetail — service alerts affecting this stop', () => {
 
 		// Stop-scoped alert (stops[] lists 57191) surfaces.
 		expect(within(alerts).getByText('Elevator out of service')).toBeInTheDocument();
-		// Route-scoped alert on route 51 (which this stop serves) surfaces.
-		expect(within(alerts).getByText('Detour on line 51')).toBeInTheDocument();
+		// Route-scoped alert surfaces its scrubbed source message.
+		expect(
+			within(alerts).getByText('Route 51 is diverted & remains in service.'),
+		).toBeInTheDocument();
+		expect(within(alerts).queryByText('Detour on line 51')).not.toBeInTheDocument();
 		// An alert touching neither this stop nor any route it serves must NOT appear.
 		expect(within(alerts).queryByText('Unrelated alert')).not.toBeInTheDocument();
 		// The route-scoped alert's cause/effect resolve through gtfsAlertLabels.
@@ -795,7 +1107,10 @@ describe('StopDetail — service alerts affecting this stop', () => {
 
 		const alerts = document.querySelector('[data-testid="stop-alerts"]') as HTMLElement;
 		expect(within(alerts).getByText('Avis de service')).toBeInTheDocument();
-		expect(within(alerts).getByText('Détour ligne 51')).toBeInTheDocument();
+		expect(
+			within(alerts).getByText('La ligne 51 est détournée & reste en service.'),
+		).toBeInTheDocument();
+		expect(within(alerts).queryByText('Détour ligne 51')).not.toBeInTheDocument();
 		// CONSTRUCTION → Travaux (fr).
 		expect(within(alerts).getByText('Travaux')).toBeInTheDocument();
 	});

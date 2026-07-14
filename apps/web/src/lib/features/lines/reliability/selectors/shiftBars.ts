@@ -19,6 +19,8 @@ export interface ShiftBarDatum {
 
 export interface ShiftBarsOpts {
 	readonly title: string;
+	/** Localized shift/day-type heading for the AT table mirror. */
+	readonly rowLabel: string;
 	/** Localized value-axis (x) title. */
 	readonly xLabel: string;
 	/** Value unit suffix (e.g. " min", "%", ""). */
@@ -65,6 +67,7 @@ export function selectShiftBars(
 		locale,
 		domain: [opts.domain[0], opts.domain[1]],
 		unit: opts.unit,
+		rowLabel: opts.rowLabel,
 		xLabel: opts.xLabel,
 		rows: out,
 		sort: 'given',

@@ -32,7 +32,39 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 const { payload } = vi.hoisted(() => ({ payload: { current: null as Hotspots | null } }));
 const capturedLadders = vi.hoisted(() => ({ current: [] as unknown[] }));
 
-vi.mock('$lib/v1', () => ({ getHotspots: vi.fn() }));
+vi.mock('$lib/v1', async () => {
+	const history = await import('$lib/v1/history');
+	return {
+		...history,
+		getHotspots: vi.fn(),
+		getHotspotsHistoryIndex: vi.fn(),
+		getHotspotsHistoryDay: vi.fn(),
+		availabilityFromPointCollectionIndex: vi.fn(() => ({ kind: 'empty' })),
+		historyDateRequestFromSearchParams: vi.fn(() => ({ hasDate: false, rawDate: null })),
+		createHistoryDateResource: vi.fn(() => ({
+			request: { hasDate: false, rawDate: null },
+			index: null,
+			resolved: null,
+			availableDates: [],
+			selectedDate: null,
+			canonicalDate: null,
+			previousDate: null,
+			nextDate: null,
+			correction: null,
+			mode: 'current',
+			state: 'current',
+			value: payload.current,
+			data: payload.current,
+			error: null,
+			loading: false,
+			settled: true,
+			setRequest: vi.fn(),
+			retry: vi.fn(),
+			reload: vi.fn(),
+			destroy: vi.fn(),
+		})),
+	};
+});
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({
 		data: payload.current,
@@ -255,6 +287,19 @@ describe('HotspotsBoard article', () => {
 			within(card(container, 'hotspots-stops')).getByRole('link', { name: /Berri-UQAM/ }),
 		).toHaveAttribute('href', '/stop/S1');
 	});
+
+	it.each([
+		['en', 'Worst hotspot: Berri-UQAM, 20 on-time points lost.'],
+		['fr', 'Pire point chaud : Berri-UQAM, 20 pts de ponctualité perdus.'],
+	] as const)(
+		'renders the %s verdict with the point unit exactly once',
+		(locale, expectedVerdict) => {
+			currentLocale.value = locale;
+			render(HotspotsBoard);
+
+			expect(screen.getByText(expectedVerdict)).toBeInTheDocument();
+		},
+	);
 
 	it('keeps a real chart touch click inside its open card while opening details', async () => {
 		const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);

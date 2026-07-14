@@ -54,19 +54,29 @@
 			{/snippet}
 		</SectionHeading>
 		{#if rows.length > 0}
-			<div class="stop-reliability-route-list" role="list">
+			<ul class="stop-reliability-route-list" role="list">
 				{#each rows as row (row.key)}
-					<RankedRow
-						rank={row.rank}
-						title={row.title}
-						severity={row.severity}
-						value={row.value}
-						domain={row.domain}
-						unit={row.unit}
-						display={row.display}
-					/>
+					<li>
+						<a
+							class="stop-reliability-route-link"
+							href={row.href}
+							data-sveltekit-preload-data="hover"
+						>
+							<RankedRow
+								bare
+								rank={row.rank}
+								title={row.title}
+								severity={row.severity}
+								value={row.value}
+								domain={row.domain}
+								unit={row.unit}
+								display={row.display}
+							/>
+							<span class="sr-only">{row.ariaLabel}</span>
+						</a>
+					</li>
 				{/each}
-			</div>
+			</ul>
 		{:else}
 			<!-- Every by-route association carries a null avg delay (too few readings). -->
 			<AbsentValue variant="block" reason="no-observations" {locale} />
@@ -84,5 +94,18 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.stop-reliability-route-link {
+		display: block;
+		color: inherit;
+		text-decoration: none;
+		border-radius: var(--radius-md);
+	}
+	.stop-reliability-route-link:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
 	}
 </style>

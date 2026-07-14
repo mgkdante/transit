@@ -27,11 +27,12 @@ from __future__ import annotations
 import importlib.util
 import os
 import pathlib
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine, text
 
+import transit_ops.maintenance.i3 as i3_maintenance_module
 from transit_ops.maintenance import (
     prune_i3_raw_snapshots,
     prune_i3_silver_closed_rows,
@@ -101,6 +102,23 @@ class FakeBronze:
 
     def delete_object(self, storage_path: str) -> None:
         self.deleted.append(storage_path)
+
+
+class _ExistingTransactionEngine:
+    def __init__(self, connection) -> None:  # noqa: ANN001
+        self.connection = connection
+
+    def begin(self):
+        connection = self.connection
+
+        class Context:
+            def __enter__(self):
+                return connection
+
+            def __exit__(self, exc_type, exc, traceback) -> bool:  # noqa: ANN001
+                return False
+
+        return Context()
 
 
 @pytest.fixture()
@@ -608,3 +626,113 @@ def test_prune_i3_silver_closed_rows_respects_30d_floor_and_cascade(conn) -> Non
         {"p": PROVIDER},
     ).scalar()
     assert remaining_entities == 0
+
+
+def test_i3_prune_archives_complete_alert_before_eligible_silver_delete(conn, monkeypatch) -> None:
+    captured = datetime(2025, 10, 1, 13, 0, tzinfo=UTC)
+    closed = datetime(2026, 3, 1, 13, 0, tzinfo=UTC)
+    conn.execute(
+        text(
+            """
+            INSERT INTO silver.i3_alerts (
+                i3_alert_snapshot_id, alert_index, provider_id, alert_id,
+                alert_header_text, alert_header_text_en,
+                description_text, description_text_en,
+                severity, cause, effect,
+                active_period_start_utc, active_period_end_utc,
+                captured_at_utc, raw_alert_json, content_hash,
+                first_seen_at, last_seen_at, valid_to, url
+            ) VALUES (
+                :snapshot_id, 20, :provider_id, 'ARCHIVE-BEFORE-PRUNE',
+                'Ascenseur fermé', 'Elevator closed',
+                'Utilisez la station voisine.', 'Use the nearby station.',
+                'WARNING', 'MAINTENANCE', 'ACCESSIBILITY_ISSUE',
+                :captured, :closed,
+                :captured, '{}'::jsonb, 'archive-before-prune-v1',
+                :captured, :closed, :closed,
+                'https://www.stm.info/fr/infos/etat-du-service'
+            )
+            """
+        ),
+        {
+            "snapshot_id": SNAP_IDS[0],
+            "provider_id": PROVIDER,
+            "captured": captured,
+            "closed": closed,
+        },
+    )
+    _insert_entity(
+        conn,
+        snap_id=SNAP_IDS[0],
+        alert_index=20,
+        entity_index=0,
+        stop_id="S900",
+    )
+    conn.execute(
+        text(
+            """
+            INSERT INTO silver.i3_alert_active_periods (
+                i3_alert_snapshot_id, alert_index, period_index, start_utc, end_utc
+            ) VALUES (:snapshot_id, 20, 0, :captured, :closed)
+            """
+        ),
+        {"snapshot_id": SNAP_IDS[0], "captured": captured, "closed": closed},
+    )
+
+    class Settings:
+        GOLD_WARM_ROLLUP_RETENTION_DAYS = 730
+        SILVER_I3_CLOSED_RETENTION_DAYS = 90
+        BRONZE_I3_RETENTION_DAYS = 30
+
+    monkeypatch.setattr(
+        i3_maintenance_module,
+        "_provider_alert_archive_bounds",
+        lambda provider_id, settings: (date(2024, 7, 1), date(2026, 7, 12)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        i3_maintenance_module._maintenance_pkg,
+        "get_bronze_storage",
+        lambda settings, project_root=None: FakeBronze(),
+    )
+
+    result = i3_maintenance_module.prune_i3_storage(
+        PROVIDER,
+        settings=Settings(),  # type: ignore[arg-type]
+        engine=_ExistingTransactionEngine(conn),  # type: ignore[arg-type]
+    )
+
+    assert result.alert_archive_sync is not None
+    assert result.alert_archive_sync.inserted_count == 1
+    assert (
+        conn.execute(
+            text(
+                "SELECT count(*) FROM silver.i3_alerts "
+                "WHERE provider_id = :provider_id AND alert_id = 'ARCHIVE-BEFORE-PRUNE'"
+            ),
+            {"provider_id": PROVIDER},
+        ).scalar_one()
+        == 0
+    )
+    archived = (
+        conn.execute(
+            text(
+                """
+            SELECT header_text, header_text_en, description_text, description_text_en,
+                   url, stop_ids, active_periods
+            FROM gold.alert_archive_entry
+            WHERE provider_id = :provider_id AND alert_id = 'ARCHIVE-BEFORE-PRUNE'
+            """
+            ),
+            {"provider_id": PROVIDER},
+        )
+        .mappings()
+        .one()
+    )
+    assert archived["header_text"] == "Ascenseur fermé"
+    assert archived["header_text_en"] == "Elevator closed"
+    assert archived["description_text"] == "Utilisez la station voisine."
+    assert archived["description_text_en"] == "Use the nearby station."
+    assert archived["url"].startswith("https://")
+    assert archived["stop_ids"] == ["S900"]
+    assert len(archived["active_periods"]) == 1

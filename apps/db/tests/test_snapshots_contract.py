@@ -19,18 +19,40 @@ from transit_ops.snapshots.contract import (
 
 
 def test_vehicle_valid():
-    v = Vehicle(id="29051", route="165", trip="t1", lat=45.49, lon=-73.66, bearing=312,
-                speed_kmh=32, status="late", delay_min=4, occupancy="few_seats",
-                next_stop="51234", updated_utc="2026-05-31T21:42:00Z")
+    v = Vehicle(
+        id="29051",
+        route="165",
+        trip="t1",
+        lat=45.49,
+        lon=-73.66,
+        bearing=312,
+        speed_kmh=32,
+        status="late",
+        delay_min=4,
+        occupancy="few_seats",
+        next_stop="51234",
+        updated_utc="2026-05-31T21:42:00Z",
+    )
     assert v.status is Status.late
+
 
 def test_vehicle_rejects_bad_status():
     with pytest.raises(ValidationError):
         Vehicle(id="1", lat=0.0, lon=0.0, status="sideways", updated_utc="x")
 
+
 def test_trips_file_indexed_by_trip_id():
-    tf = TripsFile(generated_utc="t", trips={"t1": Trip(route="165", status="late", delay_min=4,
-                                     stops=[StopEta(stop="51234", eta_utc="x", delay_min=4)])})
+    tf = TripsFile(
+        generated_utc="t",
+        trips={
+            "t1": Trip(
+                route="165",
+                status="late",
+                delay_min=4,
+                stops=[StopEta(stop="51234", eta_utc="x", delay_min=4)],
+            )
+        },
+    )
     assert tf.trips["t1"].stops[0].stop == "51234"
 
 
@@ -58,18 +80,37 @@ def test_stop_departure_rejects_missing_eta():
 
 
 def test_route_file_valid():
-    rf = RouteFile(generated_utc="t", id="165", long="Côte-Vertu",
-                   directions=[RouteDirection(dir=0, headsign="Côte-Vertu",
-                                              stops=[RouteStop(id="51234", seq=1, name="Côte-Vertu / Décarie")])])
+    rf = RouteFile(
+        generated_utc="t",
+        id="165",
+        long="Côte-Vertu",
+        directions=[
+            RouteDirection(
+                dir=0,
+                headsign="Côte-Vertu",
+                stops=[RouteStop(id="51234", seq=1, name="Côte-Vertu / Décarie")],
+            )
+        ],
+    )
     assert rf.directions[0].stops[0].id == "51234"
 
+
 def test_stop_file_valid():
-    sf = StopFile(generated_utc="t", id="51234", name="Côte-Vertu / Décarie", lat=45.49, lon=-73.66,
-                  scheduled=[ScheduledRoute(route="165", headsign="Côte-Vertu", times=["17:46", "17:54"])])
+    sf = StopFile(
+        generated_utc="t",
+        id="51234",
+        name="Côte-Vertu / Décarie",
+        lat=45.49,
+        lon=-73.66,
+        scheduled=[ScheduledRoute(route="165", headsign="Côte-Vertu", times=["17:46", "17:54"])],
+    )
     assert sf.scheduled[0].times[0] == "17:46"
 
+
 def test_labels_file_valid():
-    lf = LabelsFile(generated_utc="t", labels={"status.on_time": "À l'heure", "status.late": "En retard"})
+    lf = LabelsFile(
+        generated_utc="t", labels={"status.on_time": "À l'heure", "status.late": "En retard"}
+    )
     assert lf.labels["status.on_time"] == "À l'heure"
 
 
@@ -83,16 +124,48 @@ def test_historic_models_valid():
         RepeatOffenders,
         RouteReliability,
     )
-    nt = NetworkTrend(generated_utc="t", series=[{"date": "2026-05-30", "otp_pct": 39, "avg_delay_min": 3.4, "p90_min": 11, "vehicles": 612}])
+
+    nt = NetworkTrend(
+        generated_utc="t",
+        series=[
+            {
+                "date": "2026-05-30",
+                "otp_pct": 39,
+                "avg_delay_min": 3.4,
+                "p90_min": 11,
+                "vehicles": 612,
+            }
+        ],
+    )
     assert nt.series[0].otp_pct == 39
-    rr = RouteReliability(generated_utc="t", id="165", periods=[{"grain": "day", "otp_pct": 47}],
-                          headway=[HeadwayPeriod(shift="pm_peak", scheduled_min=6, observed_min=7.8, excess_wait_min=1.8)])
+    rr = RouteReliability(
+        generated_utc="t",
+        id="165",
+        periods=[{"grain": "day", "otp_pct": 47}],
+        headway=[
+            HeadwayPeriod(shift="pm_peak", scheduled_min=6, observed_min=7.8, excess_wait_min=1.8)
+        ],
+    )
     assert rr.headway[0].excess_wait_min == 1.8
-    ro = RepeatOffenders(generated_utc="t", offenders=[Offender(type="vehicle", id="29051", route="171", recurrence="6/7d", avg_delay_min=8)])
+    ro = RepeatOffenders(
+        generated_utc="t",
+        offenders=[
+            Offender(type="vehicle", id="29051", route="171", recurrence="6/7d", avg_delay_min=8)
+        ],
+    )
     assert ro.offenders[0].recurrence == "6/7d"
-    rc = Receipt(generated_utc="t", date="2026-05-30", otp_pct=39, worst_route={"id": "171", "otp_delta_pts": -22})
+    rc = Receipt(
+        generated_utc="t",
+        date="2026-05-30",
+        otp_pct=39,
+        worst_route={"id": "171", "otp_delta_pts": -22},
+    )
     assert rc.worst_route.id == "171"
-    prov = Provenance(generated_utc="t", retention={"detail_days": 14, "aggregate_days": 730}, gaps=["metro_realtime"])
+    prov = Provenance(
+        generated_utc="t",
+        retention={"detail_days": 14, "aggregate_days": 730},
+        gaps=["metro_realtime"],
+    )
     assert prov.retention["detail_days"] == 14
 
 
@@ -109,9 +182,17 @@ def test_artifact_models_require_generated_utc():
     with pytest.raises(ValidationError):
         AlertsFile(alerts=[])
     with pytest.raises(ValidationError):
-        NetworkFile(vehicles_in_service=0, on_time_pct=0, status_dist={}, delay_p50_min=0,
-                    delay_p90_min=0, occupancy_mix={}, non_responding=0, feed_freshness_s=0,
-                    coverage_pct=0)
+        NetworkFile(
+            vehicles_in_service=0,
+            on_time_pct=0,
+            status_dist={},
+            delay_p50_min=0,
+            delay_p90_min=0,
+            occupancy_mix={},
+            non_responding=0,
+            feed_freshness_s=0,
+            coverage_pct=0,
+        )
     with pytest.raises(ValidationError):
         RoutesIndex(routes=[])
     with pytest.raises(ValidationError):
@@ -132,8 +213,14 @@ def test_manifest_tier_inventories_and_nullable_basemap():
     )
 
     m = Manifest(
-        provider="stm", display_name="STM", bbox=[0, 0, 1, 1], attribution="a",
-        basemap=None, dataset_version="v", labels={}, surfaces=[],
+        provider="stm",
+        display_name="STM",
+        bbox=[0, 0, 1, 1],
+        attribution="a",
+        basemap=None,
+        dataset_version="v",
+        labels={},
+        surfaces=[],
         files=ManifestFiles(live=ManifestLiveFiles(generated_utc="t")),
     )
     assert m.basemap is None
@@ -146,12 +233,19 @@ def test_manifest_tier_inventories_and_nullable_basemap():
 
     # populated tier stamps round-trip
     m2 = Manifest(
-        provider="stm", display_name="STM", bbox=[0, 0, 1, 1], attribution="a",
-        basemap="https://x/v1/stm/static/basemap.json", dataset_version="v",
-        labels={}, surfaces=[],
+        provider="stm",
+        display_name="STM",
+        bbox=[0, 0, 1, 1],
+        attribution="a",
+        basemap="https://x/v1/stm/static/basemap.json",
+        dataset_version="v",
+        labels={},
+        surfaces=[],
         files=ManifestFiles(
             live=ManifestLiveFiles(generated_utc="t"),
-            static=ManifestStaticFiles(basemap="static/basemap.json", generated_utc="2026-06-01T00:00:00Z"),
+            static=ManifestStaticFiles(
+                basemap="static/basemap.json", generated_utc="2026-06-01T00:00:00Z"
+            ),
             historic=ManifestHistoricFiles(generated_utc="2026-06-13T00:00:00Z"),
         ),
     )
@@ -170,6 +264,11 @@ def test_basemap_and_receipts_index_models():
 
     ri = ReceiptsIndex(dates=["2026-06-01", "2026-06-02"], generated_utc="t")
     assert ri.dates == ["2026-06-01", "2026-06-02"]
+    assert ri.collection_generation_id is None
+    assert ReceiptsIndex.model_json_schema()["properties"]["dates"]["description"] == (
+        "Exact ascending dates whose receipts were built and published from retained "
+        "accountability rows in the current publication."
+    )
     # generated_utc is required
     with pytest.raises(ValidationError):
         ReceiptsIndex(dates=[])
@@ -314,8 +413,11 @@ def test_s15_alert_url_and_active_periods_are_additive():
 
     # Fully-populated S15 shapes roundtrip.
     full = Alert(
-        id="x", severity="watch", header_key="h",
-        url="https://x", url_en="https://x/en",
+        id="x",
+        severity="watch",
+        header_key="h",
+        url="https://x",
+        url_en="https://x/en",
         active_periods=[AlertActivePeriod(start_utc="2026-06-01T08:00:00Z", end_utc=None)],
     )
     assert full.url == "https://x"
@@ -515,22 +617,31 @@ def test_tier2_headway_servicespan_alertbreakdown_fields_are_additive():
         id="165",
         skipped_stops=[
             SkippedStopPeriod(
-                date="2026-06-17", skipped_stop_rate_pct=3.94,
-                skipped_stop_count=12, stop_time_update_count=305,
+                date="2026-06-17",
+                skipped_stop_rate_pct=3.94,
+                skipped_stop_count=12,
+                stop_time_update_count=305,
             )
         ],
     )
     assert rr_skip.skipped_stops[0].skipped_stop_rate_pct == 3.94
     # Honest-None rate when no stop-time updates observed.
-    assert SkippedStopPeriod(skipped_stop_count=0, stop_time_update_count=0).skipped_stop_rate_pct is None
+    assert (
+        SkippedStopPeriod(skipped_stop_count=0, stop_time_update_count=0).skipped_stop_rate_pct
+        is None
+    )
     full = RouteReliability(
         generated_utc="t",
         id="165",
         service_spans=[
             ServiceSpanPeriod(
-                date="2026-06-17", first_trip_utc="2026-06-17T10:00:00Z",
-                last_trip_utc="2026-06-18T01:00:00Z", service_span_min=900,
-                first_trip_delay_min=0.5, last_trip_delay_min=1.5, trip_count=120,
+                date="2026-06-17",
+                first_trip_utc="2026-06-17T10:00:00Z",
+                last_trip_utc="2026-06-18T01:00:00Z",
+                service_span_min=900,
+                first_trip_delay_min=0.5,
+                last_trip_delay_min=1.5,
+                trip_count=120,
             )
         ],
     )
@@ -577,8 +688,15 @@ def test_weak_stops_by_grain_fields_are_additive():
                 grain="month",
                 date="2026-06-01",
                 stops=[
-                    WeakStop(id="9001", name="Worst / Stop", avg_delay_min=12.4,
-                             observation_count=987, severe_pct=55.0, wilson_lo=33.1, wilson_hi=47.9)
+                    WeakStop(
+                        id="9001",
+                        name="Worst / Stop",
+                        avg_delay_min=12.4,
+                        observation_count=987,
+                        severe_pct=55.0,
+                        wilson_lo=33.1,
+                        wilson_hi=47.9,
+                    )
                 ],
             )
         ],
@@ -607,30 +725,59 @@ def test_repeat_offenders_by_grain_fields_are_additive():
 
     # Old-shape scalar payload still validates; new fields default None / [].
     old = RepeatOffenders.model_validate(
-        {"generated_utc": "t", "offenders": [{"type": "trip", "id": "X1",
-                                              "recurrence": "3/14d", "avg_delay_min": 2.0}]}
+        {
+            "generated_utc": "t",
+            "offenders": [
+                {"type": "trip", "id": "X1", "recurrence": "3/14d", "avg_delay_min": 2.0}
+            ],
+        }
     )
     assert old.by_grain == []
     o0 = old.offenders[0]
-    assert o0.recurrence == "3/14d"          # legacy field untouched
+    assert o0.recurrence == "3/14d"  # legacy field untouched
     assert o0.recurrence_days is None and o0.window_days is None and o0.severity is None
 
     # A fully-populated by_grain payload roundtrips (the exact bytes publisher writes/web reads).
     full = RepeatOffenders(
         generated_utc="t",
-        offenders=[Offender(type="vehicle", id="V2", route="51", recurrence="5/14d",
-                            recurrence_days=5, window_days=14, avg_delay_min=10.0,
-                            severity="high")],
+        offenders=[
+            Offender(
+                type="vehicle",
+                id="V2",
+                route="51",
+                recurrence="5/14d",
+                recurrence_days=5,
+                window_days=14,
+                avg_delay_min=10.0,
+                severity="high",
+            )
+        ],
         by_grain=[
             RepeatOffenderGrain(
                 grain="week",
                 window_days=7,
-                entries=[RepeatOffenderEntry(
-                    rank=1, type="trip", id="T9", route="9", route_name="Route Nine",
-                    severity="critical", observation_count=120, severe_count=80,
-                    severe_pct=66.7, wilson_lo=25.1, wilson_hi=41.2,
-                    recurrence_days=6, observed_days=7, window_days=7, avg_delay_min=11.5)],
-                total_ranked_trips=1, total_ranked_vehicles=0, tray_total=0,
+                entries=[
+                    RepeatOffenderEntry(
+                        rank=1,
+                        type="trip",
+                        id="T9",
+                        route="9",
+                        route_name="Route Nine",
+                        severity="critical",
+                        observation_count=120,
+                        severe_count=80,
+                        severe_pct=66.7,
+                        wilson_lo=25.1,
+                        wilson_hi=41.2,
+                        recurrence_days=6,
+                        observed_days=7,
+                        window_days=7,
+                        avg_delay_min=11.5,
+                    )
+                ],
+                total_ranked_trips=1,
+                total_ranked_vehicles=0,
+                tray_total=0,
             )
         ],
     )
@@ -676,6 +823,7 @@ def test_stop_index_mode_routes_are_additive():
 
 
 # --- GC2 H4: in-band accountability envelope + provider capabilities -----------
+
 
 def test_every_top_level_model_carries_the_envelope():
     # Every TOP_LEVEL_MODELS root MUST subclass PayloadEnvelope so a future top-level
@@ -726,6 +874,7 @@ def test_manifest_capabilities_is_additive_optional():
 
 # --- S11: DataHealth payload + manifest data_health pointer --------------------
 
+
 def test_manifest_live_files_data_health_pointer_is_additive_optional():
     # The data_health pointer is additive-optional-with-default so an already-published
     # manifest stays FIELD-IDENTICAL under the growth rule.
@@ -755,7 +904,10 @@ def test_data_health_roundtrips_with_lanes_and_feeds():
                 files_skipped=0,
                 files_total=6,
                 gate=DataHealthGate(
-                    checks_run=6, errors=0, warnings=1, verdict="warn",
+                    checks_run=6,
+                    errors=0,
+                    warnings=1,
+                    verdict="warn",
                     generated_utc="2026-07-02T11:59:03Z",
                 ),
             ),
@@ -794,3 +946,117 @@ def test_data_health_byte_ceiling_constant_exported():
     from transit_ops.snapshots.contract import DATA_HEALTH_BYTE_CEILING
 
     assert DATA_HEALTH_BYTE_CEILING == 16384
+
+
+# --- Task 4: shared retained-history contracts --------------------------------
+
+
+def test_shared_history_contracts_roundtrip_exact_shapes():
+    from transit_ops.snapshots.contract import (
+        HistoricAvailabilityIndex,
+        HistoricCollectionIndex,
+        HistoricCoverageGap,
+        HistoricFamilyAvailability,
+        HistoricPartitionRef,
+        HistorySelectionMode,
+    )
+
+    gap = HistoricCoverageGap(
+        start_date="2026-03-08",
+        end_date="2026-03-09",
+        reason="provider outage",
+    )
+    partition = HistoricPartitionRef(
+        path=f"historic/example/generations/{'a' * 64}/2026-03.json",
+        coverage_start="2026-03-01",
+        coverage_end="2026-03-31",
+        count=0,
+        sha256="a" * 64,
+        byte_size=128,
+    )
+    collection = HistoricCollectionIndex(
+        generated_utc="2026-07-13T12:00:00Z",
+        family="alerts",
+        selection_mode="range",
+        first_available_date="2026-03-01",
+        last_available_date="2026-03-31",
+        available_dates=["2026-03-01"],
+        gaps=[gap],
+        partitions=[partition],
+    )
+    availability = HistoricAvailabilityIndex(
+        generated_utc="2026-07-13T12:00:00Z",
+        families=[
+            HistoricFamilyAvailability(
+                family="alerts",
+                selection_mode=HistorySelectionMode.range,
+                index_path="historic/alerts/index.json",
+                first_available_date="2026-03-01",
+                last_available_date="2026-03-31",
+                gaps=[gap],
+            )
+        ],
+    )
+
+    assert collection.selection_mode is HistorySelectionMode.range
+    assert collection.entity_id is None
+    assert collection.collection_generation_id is None
+    assert collection.partitions[0].count == 0
+    assert collection.partitions[0].byte_size == 128
+    assert collection.metrics == []
+    assert availability.families[0].selection_mode is HistorySelectionMode.range
+    assert availability.families[0].collection_generation_id is None
+
+
+def test_shared_history_contracts_keep_additive_defaults_and_nonnegative_counts():
+    from transit_ops.snapshots.contract import (
+        HistoricAvailabilityIndex,
+        HistoricCollectionIndex,
+        HistoricPartitionRef,
+    )
+
+    collection = HistoricCollectionIndex(
+        generated_utc="t",
+        family="receipts",
+        selection_mode="date",
+    )
+    availability = HistoricAvailabilityIndex(generated_utc="t")
+
+    assert collection.available_dates == []
+    assert collection.gaps == []
+    assert collection.partitions == []
+    assert availability.families == []
+    for field in ("schema_version", "methodology_version", "publish_generation_id"):
+        assert field not in HistoricCollectionIndex.model_json_schema()["required"]
+        assert field not in HistoricAvailabilityIndex.model_json_schema()["required"]
+
+    with pytest.raises(ValidationError):
+        HistoricPartitionRef(
+            path="historic/example.json",
+            coverage_start="2026-01-01",
+            coverage_end="2026-01-31",
+            count=-1,
+        )
+
+
+def test_shared_history_families_and_manifest_pointer_are_registered():
+    from transit_ops.snapshots.contract import (
+        PAYLOAD_METHODOLOGY,
+        TOP_LEVEL_MODELS,
+        ManifestHistoricFiles,
+    )
+
+    assert TOP_LEVEL_MODELS["historic_collection_index"].__name__ == "HistoricCollectionIndex"
+    assert TOP_LEVEL_MODELS["historic_availability_index"].__name__ == "HistoricAvailabilityIndex"
+    assert TOP_LEVEL_MODELS["historic_hotspots_day"].__name__ == "HistoricHotspotsDay"
+    assert (
+        TOP_LEVEL_MODELS["historic_repeat_offenders_day"].__name__ == "HistoricRepeatOffendersDay"
+    )
+    assert PAYLOAD_METHODOLOGY["historic_collection_index"] == "history-1"
+    assert PAYLOAD_METHODOLOGY["historic_availability_index"] == "history-1"
+    assert PAYLOAD_METHODOLOGY["historic_hotspots_day"] == "reliability-1"
+    assert PAYLOAD_METHODOLOGY["historic_repeat_offenders_day"] == "reliability-1"
+
+    historic = ManifestHistoricFiles()
+    assert historic.history_index == "historic/history/index.json"
+    assert "history_index" not in ManifestHistoricFiles.model_json_schema().get("required", [])

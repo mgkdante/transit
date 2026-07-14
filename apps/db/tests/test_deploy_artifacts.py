@@ -213,24 +213,21 @@ def test_weekly_pg_repack_workflow_is_dry_run_monitor() -> None:
 
 
 def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof() -> None:
-    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
 
-    # Bronze prune runs after the warm-rollup prune, with defaults
-    # (1 batch x 5000 per phase) so a backlog can never blow the job timeout.
-    # Looped over every provider; bronze prune still runs after the warm-rollup prune.
-    assert 'prune-bronze-storage "$provider"' in workflow
-    assert workflow.index('prune-bronze-storage "$provider"') > workflow.index(
-        'prune-warm-rollup-storage "$provider"'
-    )
+    # Each provider gets a bounded, serial retention job after publication.
+    # Exhaustion is required so a capped backlog cannot silently keep growing.
+    assert 'prune-bronze-storage "$PROVIDER_ID" --require-exhausted' in workflow
+    assert workflow.index(
+        'prune-bronze-storage "$PROVIDER_ID" --require-exhausted'
+    ) > workflow.index('prune-warm-rollup-storage "$PROVIDER_ID"')
     # Proof report + artifact give the prune a daily visible receipt.
-    assert 'retention-proof-report "$provider" --report-path' in workflow
+    assert 'retention-proof-report "$PROVIDER_ID" --report-path' in workflow
     assert "actions/upload-artifact@v4" in workflow
     assert "if: always()" in workflow
     # upload-artifact paths are workspace-relative (working-directory does
     # not apply to `uses:` steps).
-    assert "apps/db/artifacts/retention-proof.json" in workflow
+    assert "apps/db/artifacts/daily-warm-rollups/retention/" in workflow
 
     timeout_match = re.search(r"timeout-minutes:\s*(\d+)", workflow)
     assert timeout_match is not None
@@ -287,10 +284,21 @@ def test_daily_warm_rollups_workflow_prunes_i3_after_historic_publish() -> None:
 
     # slice-9.1.1l: the i3 prune runs daily from this job, AFTER the historic
     # /v1 publish so alert_history.json builds from unpruned silver history.
-    assert 'prune-i3-storage "$provider"' in workflow
-    assert workflow.index('prune-i3-storage "$provider"') > workflow.index(
+    assert 'prune-i3-storage "$PROVIDER_ID"' in workflow
+    assert workflow.index('prune-i3-storage "$PROVIDER_ID"') > workflow.index(
         "publish-all --tier historic"
     )
+
+
+def test_daily_warm_rollups_archives_alerts_before_expensive_build_and_publish() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
+
+    sync = workflow.index('sync-alert-archive "$provider"')
+    build = workflow.index('build-warm-rollups "$PROVIDER_ID"')
+    publish = workflow.index("publish-all --tier historic")
+    prune = workflow.index('prune-i3-storage "$PROVIDER_ID"')
+
+    assert sync < build < publish < prune
 
 
 def _environment_keys(service: dict) -> set[str]:
@@ -339,8 +347,13 @@ def test_compose_runtime_defaults_match_settings_retention_contract() -> None:
     settings = Settings(_env_file=None)
 
     worker_env = services["worker"]["environment"]
+    pruner_env = services["pruner"]["environment"]
     health_env = services["health"]["environment"]
 
+    for service_env in (worker_env, pruner_env, health_env):
+        assert service_env["SILVER_REALTIME_RETENTION_DAYS"] == (
+            "${SILVER_REALTIME_RETENTION_DAYS:-1}"
+        )
     assert (
         worker_env["SILVER_REALTIME_PRUNE_BATCH"]
         == f"${{SILVER_REALTIME_PRUNE_BATCH:-{settings.SILVER_REALTIME_PRUNE_BATCH}}}"
@@ -357,6 +370,10 @@ def test_compose_runtime_defaults_match_settings_retention_contract() -> None:
         health_env["BRONZE_STATIC_RETENTION_DAYS"]
         == f"${{BRONZE_STATIC_RETENTION_DAYS:-{settings.BRONZE_STATIC_RETENTION_DAYS}}}"
     )
+    assert worker_env["BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH"] == (
+        "${BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH:-5000}"
+    )
+    assert worker_env["BRONZE_PRUNE_MAX_BATCHES"] == ("${BRONZE_PRUNE_MAX_BATCHES:-2}")
 
 
 def test_compose_health_environment_excludes_stm_credentials() -> None:
@@ -406,6 +423,8 @@ def test_env_example_documents_all_runtime_knobs() -> None:
         "GOLD_FACT_RETENTION_DAYS=14",
         "BRONZE_REALTIME_RETENTION_DAYS=90",
         "GOLD_WARM_ROLLUP_RETENTION_DAYS=730",
+        "BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH=5000",
+        "BRONZE_PRUNE_MAX_BATCHES=2",
     }.issubset(assignments)
 
 

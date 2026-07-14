@@ -43,9 +43,19 @@ import {
 	ReceiptSchema,
 	ReceiptsIndexSchema,
 	RepeatOffendersSchema,
+	HistoricRepeatOffendersDaySchema,
 	HotspotsSchema,
+	HistoricHotspotsDaySchema,
 	NetworkTrendSchema,
 	AlertHistorySchema,
+	AlertArchivePageSchema,
+	AlertArchiveIndexSchema,
+	HistoricCollectionIndexSchema,
+	HistoricEntityDirectoryIndexSchema,
+	NetworkHistoryPartitionSchema,
+	LineHistoryPartitionSchema,
+	StopHistoryPartitionSchema,
+	HistoricAvailabilityIndexSchema,
 	// provenance
 	ProvenanceSchema,
 	// data health (live-lane)
@@ -147,9 +157,87 @@ const CASES: Case[] = [
 	['receipts', ReceiptSchema, { generated_utc: ISO, date: '2026-06-14' }],
 	['receipts_index', ReceiptsIndexSchema, { generated_utc: ISO }],
 	['repeat_offenders', RepeatOffendersSchema, { generated_utc: ISO }],
+	[
+		'historic_repeat_offenders_day',
+		HistoricRepeatOffendersDaySchema,
+		{ generated_utc: ISO, date: '2026-06-14' },
+	],
 	['hotspots', HotspotsSchema, { generated_utc: ISO }],
+	['historic_hotspots_day', HistoricHotspotsDaySchema, { generated_utc: ISO, date: '2026-06-14' }],
 	['network_trend', NetworkTrendSchema, { generated_utc: ISO }],
 	['alert_history', AlertHistorySchema, { generated_utc: ISO }],
+	[
+		'alert_archive_page',
+		AlertArchivePageSchema,
+		{
+			generated_utc: ISO,
+			month: '2026-06',
+			page: 1,
+			alerts: [{ id: 'a1', first_seen_utc: ISO, last_seen_utc: ISO }],
+		},
+	],
+	[
+		'alert_archive_index',
+		AlertArchiveIndexSchema,
+		{
+			generated_utc: ISO,
+			collection_generation_id: '0'.repeat(64),
+			first_available_date: null,
+			last_available_date: null,
+			total_alerts: 0,
+			months: [],
+		},
+	],
+	[
+		'historic_collection_index',
+		HistoricCollectionIndexSchema,
+		{ generated_utc: ISO, family: 'alerts', selection_mode: 'range' },
+	],
+	[
+		'historic_entity_directory_index',
+		HistoricEntityDirectoryIndexSchema,
+		{
+			generated_utc: ISO,
+			family: 'lines',
+			selection_mode: 'range',
+			collection_generation_id: 'directory-generation',
+		},
+	],
+	[
+		'historic_network_history_partition',
+		NetworkHistoryPartitionSchema,
+		{
+			generated_utc: ISO,
+			month: '2026-06',
+			days: [{ date: '2026-06-14', vehicles: 1 }],
+		},
+	],
+	[
+		'historic_line_history_partition',
+		LineHistoryPartitionSchema,
+		{
+			generated_utc: ISO,
+			month: '2026-06',
+			entity_id: '165',
+			days: [{ date: '2026-06-14', delay: { observation_count: 1 } }],
+		},
+	],
+	[
+		'historic_stop_history_partition',
+		StopHistoryPartitionSchema,
+		{
+			generated_utc: ISO,
+			month: '2026-06',
+			entity_id: 's1',
+			days: [
+				{
+					date: '2026-06-14',
+					occupancy: { empty: 1, many_seats: 0, few_seats: 0, standing: 0, full: 0 },
+				},
+			],
+		},
+	],
+	['historic_availability_index', HistoricAvailabilityIndexSchema, { generated_utc: ISO }],
 
 	// --- provenance ----------------------------------------------------------
 	['provenance', ProvenanceSchema, { generated_utc: ISO }],

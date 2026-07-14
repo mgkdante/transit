@@ -32,21 +32,26 @@
   an honest cap note. Tokens only, no hex. All prose is in ./alerts.copy.
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { getAlertHistory } from '$lib/v1';
-	import type { AlertHistory, AlertHistoryEntry, Alert, SeverityCode } from '$lib/v1/schemas';
-	import { createResource } from '$lib/v1/resource.svelte';
-	import { formatUtc } from '$lib/utils/time';
+	import { getAlertArchiveIndex, getAlertArchiveRange, getAlertHistory } from '$lib/v1';
+	import type {
+		AlertArchiveEntry,
+		AlertHistory,
+		AlertHistoryEntry,
+		SeverityCode,
+	} from '$lib/v1/schemas';
+	import { createResource, type Resource } from '$lib/v1/resource.svelte';
 	import {
-		fromSearchParams,
-		resolveWindow,
-		type AlertAffects,
-		type DateWindow,
-	} from '$lib/filters';
+		availabilityFromAlertIndex,
+		datesForAvailability,
+		type HistoryAvailability,
+		type HistoryCorrection,
+	} from '$lib/v1/history';
+	import { formatDateKey, formatUtc } from '$lib/utils/time';
+	import { fromSearchParams, type AlertAffects, type DateWindow } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { ResourceBoundary } from '$lib/components/surface';
+	import { createRailDisclosureController, ResourceBoundary } from '$lib/components/surface';
 	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
 	import {
 		CollapsibleSection,
@@ -57,7 +62,6 @@
 	} from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
-	import { persisted } from '$lib/stores';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import type { SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
@@ -71,14 +75,11 @@
 	import { foldSearchText } from '$lib/search/normalize';
 
 	import {
-		bandSeverity,
 		sortNewestFirst,
 		filterAlertLog,
 		buildAlertRow,
 		summarizeAlertBreakdown,
 		toBreakdownRows,
-		deriveSpan,
-		enumerateDates,
 		medianOf,
 		type BreakdownKind,
 		type AlertRowVM,
@@ -88,50 +89,17 @@
 	import AlertLog from './sections/AlertLog.svelte';
 	import AlertBreakdown from './sections/AlertBreakdown.svelte';
 	import { alertHistoryCopy } from './alerts.copy';
+	import {
+		currentAlertWindow,
+		resolveAlertHistoryRange,
+		sameHistoryWindow,
+	} from './data/historySelection';
 
 	const locale: Locale = getLocale();
 	const t = $derived(alertHistoryCopy[locale]);
-	const railOpen = {
-		filters: persisted('alerts-filters', true),
-		toc: persisted('alerts-toc', true),
-	};
-	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
-		railOpen[key].value = next;
-	}
-	function setAllRailOpen(next: boolean): void {
-		setRailOpen('filters', next);
-		setRailOpen('toc', next);
-	}
-
-	let railSignalsReady = $state(false);
-	let lastRailCloseSignal = quietModeStore.closeSignal;
-	let lastRailOpenSignal = quietModeStore.openSignal;
-	onMount(() => {
-		let cancelled = false;
-		void (async () => {
-			await tick();
-			if (cancelled) return;
-			lastRailCloseSignal = quietModeStore.closeSignal;
-			lastRailOpenSignal = quietModeStore.openSignal;
-			if (quietModeStore.enabled) setAllRailOpen(false);
-			railSignalsReady = true;
-		})();
-		return () => {
-			cancelled = true;
-		};
-	});
-	$effect(() => {
-		const closeSignal = quietModeStore.closeSignal;
-		const openSignal = quietModeStore.openSignal;
-		if (!railSignalsReady) return;
-		if (closeSignal !== lastRailCloseSignal) {
-			lastRailCloseSignal = closeSignal;
-			setAllRailOpen(false);
-		}
-		if (openSignal !== lastRailOpenSignal) {
-			lastRailOpenSignal = openSignal;
-			setAllRailOpen(true);
-		}
+	const railDisclosures = createRailDisclosureController({
+		filters: 'alerts-filters',
+		toc: 'alerts-toc',
 	});
 
 	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
@@ -144,14 +112,21 @@
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
 
-	// Historic tier — the daily-rebuilt alert archive (createResource, browser-only).
-	const history = createResource(() => getAlertHistory(), { freshness: true });
+	// The current compatibility payload stays the fast default and supplies the honest
+	// current span. The optional retained index decides whether range reads come from
+	// partitioned archive pages or keep the legacy newest-window behavior.
+	const history = createResource((signal) => getAlertHistory({ signal }), { freshness: true });
+	const alertArchiveIndex = createResource((signal) => getAlertArchiveIndex({ signal }), {
+		freshness: true,
+	});
 
 	/** Max rows rendered before the "+N more" disclosure. */
 	const VISIBLE_CAP = 25;
 	let expanded = $state(false);
 
 	// --- Codec seed (ONCE) ------------------------------------------------------
+	const rawHistoryFrom = page.url.searchParams.get('from');
+	const rawHistoryTo = page.url.searchParams.get('to');
 	const seed = fromSearchParams(page.url.searchParams);
 	// Entity-type + severity are single-select scalars (absent = "all").
 	let affects = $state<'all' | AlertAffects>(seed.alertAffects ?? 'all');
@@ -160,65 +135,210 @@
 	// pickers are single-select), the StopsIndex precedent.
 	let route = $state<string | null>([...seed.routes][0] ?? null);
 	let stop = $state<string | null>([...seed.stops][0] ?? null);
-	// The picked date window (undefined = full served span). Clamped once below.
-	let pickedWindow = $state<DateWindow | undefined>(seed.window);
-
-	// --- The log entries + the served span --------------------------------------
-	const entries = $derived<readonly AlertHistoryEntry[]>(history.data?.alerts ?? []);
-	const sorted = $derived(sortNewestFirst(entries));
-
-	// The served span: prefer the payload's honest window_start/window_end; else derive
-	// it from the entries (legacy fallback). Null ⇒ nothing datable ⇒ hide the picker.
-	const span = $derived.by<{ start: string; end: string } | null>(() => {
-		const ws = history.data?.window_start ?? null;
-		const we = history.data?.window_end ?? null;
-		if (ws && we) return { start: ws.slice(0, 10), end: we.slice(0, 10) };
-		return deriveSpan(sorted);
-	});
-	// Every served day is selectable (a zero-alert day is a real answer).
-	const availableDates = $derived<readonly string[]>(
-		span ? enumerateDates(span.start, span.end) : [],
-	);
-
-	// One-shot availability clamp: drop a seeded window whose bounds the span has no day
-	// for (resolveWindow returns undefined unless BOTH bounds are real dates). The URL is
-	// a hint, never a data source. Runs once the served span is known.
+	let pickedWindow = $state<DateWindow | undefined>();
+	let defaultWindow = $state<DateWindow | null>(null);
+	let historyCorrection = $state<HistoryCorrection | null>(null);
 	let windowSettled = $state(false);
 	$effect(() => {
 		if (windowSettled) return;
-		// Wait until the resource has settled so availableDates reflects the real span.
-		if (!history.settled) return;
+		if (!history.settled || !alertArchiveIndex.settled) return;
+		if (history.error != null || alertArchiveIndex.error != null || history.data == null) return;
+
+		defaultWindow = currentAlertWindow(history.data, alertArchiveIndex.data);
+		const resolved = resolveAlertHistoryRange(
+			history.data,
+			alertArchiveIndex.data,
+			rawHistoryFrom,
+			rawHistoryTo,
+		);
+		pickedWindow = resolved.selection ?? undefined;
+		historyCorrection = resolved.correction;
 		windowSettled = true;
-		pickedWindow = resolveWindow(pickedWindow, new Set(availableDates));
 	});
+
+	const historyAvailability = $derived.by<HistoryAvailability>(() => {
+		const indexed = availabilityFromAlertIndex(alertArchiveIndex.data);
+		if (indexed != null) return indexed;
+		if (defaultWindow != null) {
+			return {
+				kind: 'continuous',
+				firstDate: defaultWindow.from,
+				lastDate: defaultWindow.to,
+				gaps: [],
+			};
+		}
+		return { kind: 'empty' };
+	});
+	const availableDates = $derived<readonly string[]>(datesForAvailability(historyAvailability));
+
+	function windowKey(window: DateWindow): string {
+		return `${window.from}:${window.to}`;
+	}
+
+	interface SelectedAlertRange {
+		readonly window: DateWindow;
+		readonly entries: readonly AlertArchiveEntry[];
+		readonly generated_utc?: AlertHistory['generated_utc'] | null;
+	}
+	let rangeAttemptKey: string | null = null;
+	const archiveRange = createResource<SelectedAlertRange | null>(
+		async (signal) => {
+			const index = alertArchiveIndex.data;
+			const selection = pickedWindow;
+			if (!windowSettled || index == null || selection == null) {
+				rangeAttemptKey = null;
+				return null;
+			}
+
+			const requestedWindow = { from: selection.from, to: selection.to };
+			rangeAttemptKey = windowKey(requestedWindow);
+			const rangeEntries = await getAlertArchiveRange(index, requestedWindow, { signal });
+			return {
+				window: requestedWindow,
+				entries: rangeEntries,
+				generated_utc: history.data?.generated_utc ?? null,
+			};
+		},
+		{ freshness: true },
+	);
+
+	const selectedRangeData = $derived.by<SelectedAlertRange | null>(() => {
+		if (alertArchiveIndex.data == null || pickedWindow == null) return null;
+		const value = archiveRange.data;
+		return value != null && sameHistoryWindow(value.window, pickedWindow) ? value : null;
+	});
+	const catalogLoading = $derived(
+		history.loading ||
+			alertArchiveIndex.loading ||
+			!history.settled ||
+			!alertArchiveIndex.settled ||
+			!windowSettled,
+	);
+	const displayError = $derived.by<Error | null>(() => {
+		// Read this unconditionally so a rejection wakes the derived value even when a
+		// just-changed selection briefly sees the preceding attempt key.
+		const rangeError = archiveRange.error;
+		if (history.error != null) return history.error;
+		if (alertArchiveIndex.error != null) return alertArchiveIndex.error;
+		if (catalogLoading || alertArchiveIndex.data == null || pickedWindow == null) return null;
+		return rangeAttemptKey === windowKey(pickedWindow) ? rangeError : null;
+	});
+	const displayLoading = $derived.by(() => {
+		if (displayError != null) return false;
+		if (catalogLoading) return true;
+		if (alertArchiveIndex.data == null || pickedWindow == null) return false;
+		const matchingRange = selectedRangeData;
+		return (
+			archiveRange.loading ||
+			!archiveRange.settled ||
+			rangeAttemptKey !== windowKey(pickedWindow) ||
+			matchingRange == null
+		);
+	});
+
+	interface AlertHistoryView {
+		readonly entries: readonly AlertHistoryEntry[];
+	}
+	const displayData = $derived.by<AlertHistoryView | null>(() => {
+		if (displayError != null || displayLoading || history.data == null) return null;
+		if (alertArchiveIndex.data == null) return { entries: history.data.alerts ?? [] };
+		if (pickedWindow == null) return { entries: [] };
+		return selectedRangeData == null ? null : { entries: selectedRangeData.entries };
+	});
+	const displayResource: Resource<AlertHistoryView> = {
+		get data() {
+			return displayData;
+		},
+		get error() {
+			return displayError;
+		},
+		get loading() {
+			return displayLoading;
+		},
+		get settled() {
+			return !displayLoading;
+		},
+		reload() {
+			if (
+				history.error != null ||
+				alertArchiveIndex.error != null ||
+				!history.settled ||
+				!alertArchiveIndex.settled
+			) {
+				history.reload();
+				alertArchiveIndex.reload();
+				return;
+			}
+			if (alertArchiveIndex.data != null && pickedWindow != null) archiveRange.reload();
+			else {
+				history.reload();
+				alertArchiveIndex.reload();
+			}
+		},
+	};
+
+	// The selected archive array is the only input to every calculation. Legacy rows
+	// are reachable only when the optional archive index is honestly absent.
+	const entries = $derived<readonly AlertHistoryEntry[]>(displayData?.entries ?? []);
+	const sorted = $derived(sortNewestFirst(entries));
+	const historyCoverageText = $derived.by<string | null>(() => {
+		if (historyAvailability.kind !== 'continuous') return null;
+		return t.filters.history.coverage(
+			formatDateKey(historyAvailability.firstDate, locale),
+			formatDateKey(historyAvailability.lastDate, locale),
+		);
+	});
+	const historySelectionText = $derived(
+		pickedWindow == null
+			? null
+			: t.filters.history.selection(
+					formatDateKey(pickedWindow.from, locale),
+					formatDateKey(pickedWindow.to, locale),
+				),
+	);
+	const historyAnnouncement = $derived(
+		historyCorrection == null ? null : t.filters.history.correction[historyCorrection.reason],
+	);
+
+	function selectHistoryWindow(next: DateWindow | undefined): void {
+		historyCorrection = null;
+		if (!windowSettled) return;
+		if (next == null) {
+			pickedWindow = defaultWindow ?? undefined;
+			return;
+		}
+		if (history.data == null) return;
+		const resolved = resolveAlertHistoryRange(
+			history.data,
+			alertArchiveIndex.data,
+			next.from,
+			next.to,
+		);
+		pickedWindow = resolved.selection ?? defaultWindow ?? undefined;
+		historyCorrection = resolved.correction;
+	}
 
 	// --- Batched URL mirror -----------------------------------------------------
 	// ONE mirrorSearchParams so back-to-back single writes never clobber each other.
 	// 'all'/null/undefined null out the key for a clean canonical URL.
 	$effect(() => {
+		if (!windowSettled) return;
+		const mirroredWindow =
+			pickedWindow != null && !sameHistoryWindow(pickedWindow, defaultWindow) ? pickedWindow : null;
 		mirrorSearchParams({
 			affects: affects === 'all' ? null : affects,
 			severity: severity === 'all' ? null : severity,
 			route: route,
 			stop: stop,
-			from: pickedWindow?.from ?? null,
-			to: pickedWindow?.to ?? null,
+			from: mirroredWindow?.from ?? null,
+			to: mirroredWindow?.to ?? null,
 		});
 	});
 
 	// --- ONE mapping pass -------------------------------------------------------
 	/** The headline for a history entry, via the SAME resolver the live surfaces use. */
 	function headline(entry: AlertHistoryEntry): string {
-		const shaped: Alert = {
-			id: entry.id,
-			severity: bandSeverity(entry.severity),
-			header_key: '',
-			header_text: entry.header_text ?? undefined,
-			header_text_en: entry.header_text_en ?? undefined,
-			description: entry.description ?? undefined,
-			description_en: entry.description_en ?? undefined,
-		};
-		return alertDisplayText(shaped, locale);
+		return alertDisplayText(entry, locale);
 	}
 	/** A localized wall-clock for a window bound, or null when absent/invalid. */
 	function windowTime(iso: string | null | undefined): string | null {
@@ -237,6 +357,7 @@
 			stop,
 		}),
 	);
+	const readyMatchCount = $derived(displayData == null ? null : filtered.length);
 	const hasMatches = $derived(filtered.length > 0);
 	const overflow = $derived(Math.max(0, filtered.length - VISIBLE_CAP));
 	const visibleEntries = $derived(
@@ -256,14 +377,15 @@
 			severity !== 'all' ||
 			route != null ||
 			stop != null ||
-			pickedWindow != null,
+			!sameHistoryWindow(pickedWindow, defaultWindow),
 	);
 	function clearFilters(): void {
 		affects = 'all';
 		severity = 'all';
 		route = null;
 		stop = null;
-		pickedWindow = undefined;
+		pickedWindow = defaultWindow ?? undefined;
+		historyCorrection = null;
 	}
 
 	// --- In-window headline (ExplainedMetricCard) -------------------------------
@@ -286,8 +408,10 @@
 	// The 'shown' count is the SERVED entry count (the population the newest-first
 	// server cap actually clipped) — never the client-filtered subset, which would
 	// misread as 'the N most recent' under an active filter (S15 review F1).
-	const truncated = $derived(history.data?.truncated === true);
-	const totalInWindow = $derived(history.data?.total_in_window ?? null);
+	const truncated = $derived(alertArchiveIndex.data == null && history.data?.truncated === true);
+	const totalInWindow = $derived(
+		alertArchiveIndex.data == null ? (history.data?.total_in_window ?? null) : null,
+	);
 
 	// --- Tier-2 breakdown -------------------------------------------------------
 	const SEVERITY_WORD_SET = new Set<string>(['critical', 'high', 'watch']);
@@ -306,10 +430,12 @@
 		medianSubtitle: (min: number) => t.breakdown.median(min),
 	});
 	const breakdownPublished = $derived(
-		history.data?.breakdown != null &&
-			((history.data.breakdown.by_cause?.length ?? 0) > 0 ||
-				(history.data.breakdown.by_effect?.length ?? 0) > 0 ||
-				(history.data.breakdown.by_severity?.length ?? 0) > 0),
+		alertArchiveIndex.data != null
+			? entries.length > 0
+			: history.data?.breakdown != null &&
+					((history.data.breakdown.by_cause?.length ?? 0) > 0 ||
+						(history.data.breakdown.by_effect?.length ?? 0) > 0 ||
+						(history.data.breakdown.by_severity?.length ?? 0) > 0),
 	);
 	const filteredBreakdown = $derived(summarizeAlertBreakdown(filtered));
 	const causeRows = $derived(
@@ -324,7 +450,10 @@
 	const hasBreakdown = $derived(
 		causeRows.length > 0 || effectRows.length > 0 || severityRows.length > 0,
 	);
-	const archiveReady = $derived(history.settled && history.data != null && entries.length > 0);
+	const archiveReady = $derived(displayData != null && entries.length > 0);
+	const controlsReady = $derived(
+		windowSettled && (availableDates.length > 0 || entries.length > 0),
+	);
 	const sectionDefs = $derived([
 		{
 			id: 'alerts-window',
@@ -372,7 +501,7 @@
 				label: t.asOf,
 			});
 		}
-		if (history.data != null) {
+		if (displayData != null) {
 			meta.push(t.article.matches(filtered.length));
 			meta.push(t.article.sections(tocEntries.length));
 		}
@@ -437,14 +566,24 @@
 	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
 {/snippet}
 
+<p
+	class="sr-only"
+	data-slot="history-page-announcement"
+	role="status"
+	aria-live="polite"
+	aria-atomic="true"
+>
+	{historyAnnouncement ?? ''}
+</p>
+
 <DetailShell
 	class="alert-history-detail"
 	bind:activeId
 	{tocEntries}
-	combinedRailConfig={archiveReady
+	combinedRailConfig={controlsReady
 		? {
 				label: t.rail.label,
-				summary: t.filters.pillSummary(filtered.length),
+				summary: readyMatchCount == null ? undefined : t.filters.pillSummary(readyMatchCount),
 				openAria: t.rail.open,
 				closeAria: t.rail.close,
 			}
@@ -460,7 +599,7 @@
 			backHref={localizeHref('/', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
-			metaPending={history.loading || !history.settled}
+			metaPending={displayResource.loading || !displayResource.settled}
 			titleId="alerts-title"
 		>
 			{#snippet controls()}
@@ -472,21 +611,27 @@
 	{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
 		<CollapsibleSection
 			title={t.filters.railLabel}
-			bind:open={() => railOpen.filters.value, (next) => setRailOpen('filters', next)}
+			bind:open={
+				() => railDisclosures.isOpen('filters'), (next) => railDisclosures.set('filters', next)
+			}
 		>
 			<AlertFilters
 				bind:affects
 				bind:severity
 				bind:route
-				bind:window={pickedWindow}
+				window={pickedWindow}
 				bind:stop
 				{lineOptions}
 				{stopOptions}
 				{availableDates}
 				{filtersActive}
-				matchCount={filtered.length}
+				matchCount={readyMatchCount}
 				copy={t}
 				{locale}
+				{historyCoverageText}
+				{historySelectionText}
+				{historyAnnouncement}
+				onWindowChange={selectHistoryWindow}
 				onClear={clearFilters}
 			/>
 		</CollapsibleSection>
@@ -497,7 +642,9 @@
 					{activeId}
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
-					bind:open={() => railOpen.toc.value, (next) => setRailOpen('toc', next)}
+					bind:open={
+						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
+					}
 					onNavigate={(id) => {
 						closeSheet();
 						void navigate(id);
@@ -511,9 +658,9 @@
 		<!-- HONEST ABSENCE: a zero-length alert archive is the GOOD empty — the network ran
 		     normally with no disruptions. Route it to the green network-healthy verdict. -->
 		<ResourceBoundary
-			resource={history}
+			resource={displayResource}
 			lang={locale}
-			isEmpty={(d: AlertHistory) => (d.alerts?.length ?? 0) === 0}
+			isEmpty={(d: AlertHistoryView) => d.entries.length === 0}
 			emptyVariant="empty-avis"
 		>
 			<div class="alert-history-sections" data-slot="alert-sections">

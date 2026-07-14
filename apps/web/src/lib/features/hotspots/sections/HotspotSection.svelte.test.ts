@@ -17,6 +17,7 @@ const ladder = {
 		locale: 'fr',
 		domain: [0, 100],
 		unit: '%',
+		rowLabel: 'Ligne',
 		xLabel: 'Taux de retards graves',
 		rows: [
 			{

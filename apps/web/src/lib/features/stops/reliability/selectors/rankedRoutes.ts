@@ -20,12 +20,20 @@ export interface RankedRouteRow {
 	readonly domain: readonly [number, number];
 	readonly unit: string;
 	readonly display: string;
+	readonly href: string;
+	readonly ariaLabel: string;
+}
+
+export interface RankedRouteLinks {
+	readonly href: (routeId: string) => string;
+	readonly ariaLabel: (routeId: string) => string;
 }
 
 /** `fmtMin`: the caller's minute formatter (kept out so i18n/rounding stays upstream). */
 export function selectRankedRoutes(
 	byRoute: readonly StopByRoute[] | null | undefined,
 	fmtMin: (v: number | null) => string,
+	links: RankedRouteLinks,
 ): RankedRouteRow[] {
 	const rows = (byRoute ?? [])
 		.filter((br): br is StopByRoute & { avg_delay_min: number } => br.avg_delay_min != null)
@@ -44,6 +52,8 @@ export function selectRankedRoutes(
 			domain: DELAY_POS_DOMAIN,
 			unit: ' min',
 			display: fmtMin(delay),
+			href: links.href(br.route),
+			ariaLabel: links.ariaLabel(br.route),
 		};
 	});
 }

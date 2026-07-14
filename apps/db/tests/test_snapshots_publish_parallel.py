@@ -14,8 +14,11 @@ stage-1 guarantees:
 
 from __future__ import annotations
 
+import json
+import re
 import threading
 import time
+from collections import Counter
 from contextlib import contextmanager
 
 import pytest
@@ -145,16 +148,15 @@ def test_hash_gated_storage_is_thread_safe_and_consistent() -> None:
 
 def test_hash_gated_skip_does_no_put_under_concurrency() -> None:
     """A file whose hash matches prior state is skipped — no put_bytes."""
-    import json
 
-    from transit_ops.snapshots.storage import _body
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
 
     # Seed prior state so half the keys are unchanged.
     prior_hashes = {}
     inner = _CountingInner()
     for i in range(0, 100, 2):  # even keys pre-seeded as unchanged
         key = f"static/stops/{i}.json"
-        body = _body({"i": i})
+        body = snapshot_json_bytes({"i": i})
         import hashlib
 
         prior_hashes[key] = hashlib.md5(body).hexdigest()  # noqa: S324
@@ -257,12 +259,30 @@ class _OrderTrackingStore:
         return rel_key
 
     def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
-        from transit_ops.snapshots.storage import _body
+        from transit_ops.snapshots.serialization import snapshot_json_bytes
 
         with self._lock:
             self.keys.append(rel_key)
-            self.store[rel_key] = _body(payload)
+            self.store[rel_key] = snapshot_json_bytes(payload)
         return rel_key
+
+    def put_immutable_json_outcome(self, rel_key: str, payload: object):
+        from transit_ops.snapshots.serialization import snapshot_json_bytes
+        from transit_ops.snapshots.storage import ImmutablePutOutcome
+
+        body = snapshot_json_bytes(payload)
+        with self._lock:
+            prior = self.store.get(rel_key)
+            if prior is not None:
+                if prior != body:
+                    raise RuntimeError(f"immutable key collision: {rel_key}")
+                return ImmutablePutOutcome(key=rel_key, written=False)
+            self.keys.append(rel_key)
+            self.store[rel_key] = body
+            return ImmutablePutOutcome(key=rel_key, written=True)
+
+    def put_immutable_json(self, rel_key: str, payload: object) -> str:
+        return self.put_immutable_json_outcome(rel_key, payload).key
 
     def get_json(self, rel_key: str):
         import json as _json
@@ -271,7 +291,17 @@ class _OrderTrackingStore:
         return _json.loads(raw) if raw is not None else None
 
 
-def _historic_dispatch_conn():
+def _historic_dispatch_conn(
+    *,
+    archive_rows=None,  # noqa: ANN001
+    hotspot_route_rows=None,  # noqa: ANN001
+    hotspot_stop_rows=None,  # noqa: ANN001
+    repeat_offender_daily_rows=None,  # noqa: ANN001
+    network_delay_rows=None,  # noqa: ANN001
+    network_fact_rows=None,  # noqa: ANN001
+    line_delay_rows=None,  # noqa: ANN001
+    stop_delay_rows=None,  # noqa: ANN001
+):
     """A fake conn returning enough rows for several per-route/per-stop files."""
     import datetime
 
@@ -316,59 +346,155 @@ def _historic_dispatch_conn():
     # crosstab/by_shift/by_daytype) are left unmapped ([]) to preserve the exact
     # published output the old dead needles gave, so the hand-coded spine branch is gone.
     dispatch = {
+        "publish.lock.try_acquire": [True],
+        "history.hotspots.timezone": [{"timezone": "UTC"}],
+        "history.hotspots.names": [],
+        "history.hotspots.route_daily": list(hotspot_route_rows or []),
+        "history.hotspots.stop_daily": list(hotspot_stop_rows or []),
+        "history.repeat_offenders.timezone": [{"timezone": "UTC"}],
+        "history.repeat_offenders.names": [],
+        "history.repeat_offenders.daily": list(repeat_offender_daily_rows or []),
+        # Retained Network history stays empty in legacy publisher-order tests unless a
+        # test explicitly supplies source rows. Keep the new query surface visible so
+        # an accidental name change cannot silently fall through.
+        "history.network.delay": list(network_delay_rows or []),
+        "history.network.fact": list(network_fact_rows or []),
+        "history.network.cancellation": [],
+        "history.network.occupancy": [],
+        "history.lines.ids": [
+            {"route_id": route_id}
+            for route_id in sorted(
+                {row.get("route_id") for row in (line_delay_rows or []) if row.get("route_id")}
+            )
+        ],
+        "history.lines.delay": list(line_delay_rows or []),
+        "history.lines.percentiles": [],
+        "history.lines.cancellation": [],
+        "history.lines.occupancy": [],
+        "history.lines.service_span": [],
+        "history.lines.skipped_stops": [],
+        "history.stops.ids": [
+            {"stop_id": stop_id}
+            for stop_id in sorted(
+                {row.get("stop_id") for row in (stop_delay_rows or []) if row.get("stop_id")}
+            )
+        ],
+        "history.stops.delay": list(stop_delay_rows or []),
+        "history.stops.percentiles": [],
+        "history.stops.occupancy": [],
         "receipts.network_daily": [
-            {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
-             "severe": 5, "pooled_delay_sec": 5000, "inclamp_obs": 100},
-            {"local_date": datetime.date(2026, 6, 2), "known_obs": 100, "on_time": 90,
-             "severe": 5, "pooled_delay_sec": 5000, "inclamp_obs": 100},
+            {
+                "local_date": datetime.date(2025, 1, 1),
+                "known_obs": 100,
+                "on_time": 90,
+                "severe": 5,
+                "pooled_delay_sec": 5000,
+                "inclamp_obs": 100,
+            },
+            {
+                "local_date": datetime.date(2026, 6, 2),
+                "known_obs": 100,
+                "on_time": 90,
+                "severe": 5,
+                "pooled_delay_sec": 5000,
+                "inclamp_obs": 100,
+            },
         ],
         "network.trend.daily_hourly": [
-            {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
-             "pooled_delay_sec": 5000, "inclamp_obs": 100},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "known_obs": 100,
+                "on_time": 90,
+                "pooled_delay_sec": 5000,
+                "inclamp_obs": 100,
+            },
         ],
         "network.trend.daily_p90": [
             {"local_date": datetime.date(2026, 6, 1), "p90_min": 3.5, "vehicles": 42},
         ],
         "network.trend.week_hourly": [
-            {"local_date": datetime.date(2026, 6, 1), "known_obs": 200, "on_time": 180,
-             "pooled_delay_sec": 12000, "inclamp_obs": 200},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "known_obs": 200,
+                "on_time": 180,
+                "pooled_delay_sec": 12000,
+                "inclamp_obs": 200,
+            },
         ],
         "network.trend.week_cancel": [
             {"local_date": datetime.date(2026, 6, 1), "canceled": 4, "total": 200},
         ],
         "network.trend.week_occupancy": [
-            {"local_date": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 60,
-             "few_seats": 25, "standing": 10, "full": 5},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "empty": 0,
+                "many_seats": 60,
+                "few_seats": 25,
+                "standing": 10,
+                "full": 5,
+            },
         ],
         "network.trend.month_hourly": [
-            {"local_date": datetime.date(2026, 6, 1), "known_obs": 1000, "on_time": 820,
-             "pooled_delay_sec": 90000, "inclamp_obs": 1000},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "known_obs": 1000,
+                "on_time": 820,
+                "pooled_delay_sec": 90000,
+                "inclamp_obs": 1000,
+            },
         ],
         "network.trend.month_cancel": [
             {"local_date": datetime.date(2026, 6, 1), "canceled": 12, "total": 600},
         ],
         "network.trend.month_occupancy": [
-            {"local_date": datetime.date(2026, 6, 1), "empty": 10, "many_seats": 40,
-             "few_seats": 30, "standing": 15, "full": 5},
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "empty": 10,
+                "many_seats": 40,
+                "few_seats": 30,
+                "standing": 15,
+                "full": 5,
+            },
         ],
         "hotspots.list": [],
         "repeat.offenders": [],
         "alerts.history": [],
+        "alerts.archive.publish": list(archive_rows or []),
         "provenance.sources": [],
         "provenance.freshness": [],
         "static.stop_names": [{"stop_id": "S1", "stop_name": "Stop 1"}],
         "static.route_names": [{"route_id": "R1", "route_name": "Route 1"}],
         "stop.reliability.by_grain": [
-            {"stop_id": "S1", "grain": "am_peak", "obs": 10, "severe": 1,
-             "weighted_delay_sec": 600.0},
-            {"stop_id": "S1", "grain": "weekday", "obs": 14, "severe": 1,
-             "weighted_delay_sec": 1080.0},
+            {
+                "stop_id": "S1",
+                "grain": "am_peak",
+                "obs": 10,
+                "severe": 1,
+                "weighted_delay_sec": 600.0,
+            },
+            {
+                "stop_id": "S1",
+                "grain": "weekday",
+                "obs": 14,
+                "severe": 1,
+                "weighted_delay_sec": 1080.0,
+            },
         ],
         "stop.reliability.dow": [
-            {"stop_id": "S1", "day_of_week_iso": 1, "dow_obs": 20, "severe": 2,
-             "weighted_delay_sec": 1200.0},
-            {"stop_id": "S1", "day_of_week_iso": 7, "dow_obs": 0, "severe": 0,
-             "weighted_delay_sec": None},
+            {
+                "stop_id": "S1",
+                "day_of_week_iso": 1,
+                "dow_obs": 20,
+                "severe": 2,
+                "weighted_delay_sec": 1200.0,
+            },
+            {
+                "stop_id": "S1",
+                "day_of_week_iso": 7,
+                "dow_obs": 0,
+                "severe": 0,
+                "weighted_delay_sec": None,
+            },
         ],
         # per-route reliability enumeration.
         "route.spine.route_ids": [("R1",), ("R2",), ("R3",)],
@@ -379,8 +505,13 @@ def _historic_dispatch_conn():
         "route.service_span.daily": [],
         "route.skipped_stop.daily": [],
         "route.reliability.daily": [
-            {"d": datetime.date(2026, 6, 1), "known_obs": 50, "on_time": 45,
-             "avg_delay_sec": 90, "severe": 5},
+            {
+                "d": datetime.date(2026, 6, 1),
+                "known_obs": 50,
+                "on_time": 45,
+                "avg_delay_sec": 90,
+                "severe": 5,
+            },
         ],
         "route.headway.observed_by_shift": [],
         "static.dataset_version": [{"dataset_version_id": 1}],
@@ -409,24 +540,74 @@ def _historic_dispatch_conn():
             {"stop_id": "S1", "obs": 10, "severe": 1, "sum_delay_sec": 900},
         ],
         "receipts.accountability": [
-            {"provider_local_date": datetime.date(2026, 6, 1),
-             "affected_route_count": 3, "affected_stop_count": 12,
-             "delayed_trip_count": 45, "severe_delay_count": 5,
-             "alert_count": 2, "rider_impact_score": 0.35},
-            {"provider_local_date": datetime.date(2026, 6, 2),
-             "affected_route_count": 2, "affected_stop_count": 8,
-             "delayed_trip_count": 30, "severe_delay_count": 3,
-             "alert_count": 1, "rider_impact_score": 0.25},
+            {
+                "provider_local_date": datetime.date(2025, 1, 1),
+                "affected_route_count": 3,
+                "affected_stop_count": 12,
+                "delayed_trip_count": 45,
+                "severe_delay_count": 5,
+                "alert_count": 2,
+                "rider_impact_score": 0.35,
+            },
+            {
+                "provider_local_date": datetime.date(2026, 6, 2),
+                "affected_route_count": 2,
+                "affected_stop_count": 8,
+                "delayed_trip_count": 30,
+                "severe_delay_count": 3,
+                "alert_count": 1,
+                "rider_impact_score": 0.25,
+            },
         ],
         "receipts.worst_route": [],
         "receipts.worst_stop": [],
     }
 
     class _Conn:
+        def __init__(self) -> None:
+            self.state_writes: list[dict[str, object]] = []
+
         def execute(self, statement, params=None):
-            return _R(dispatch.get(query_name(statement), []))
+            name = query_name(statement)
+            if name == "publish.state.upsert":
+                self.state_writes.append(dict(params))
+            return _R(dispatch.get(name, []))
 
     return _Conn()
+
+
+def _archive_publish_row() -> dict[str, object]:
+    import datetime
+
+    start = datetime.datetime(2026, 7, 8, 12, tzinfo=datetime.UTC)
+    return {
+        "provider_id": "stm",
+        "alert_id": "stm-retained-a",
+        "archive_month": datetime.date(2026, 7, 1),
+        "header_text": "Métro interrompu",
+        "header_text_en": "Metro interrupted",
+        "description_text": "Service interrompu.",
+        "description_text_en": "Service interrupted.",
+        "severity": "WARNING",
+        "cause": "TECHNICAL_PROBLEM",
+        "effect": "NO_SERVICE",
+        "route_ids": ["1"],
+        "stop_ids": ["10"],
+        "start_utc": start,
+        "end_utc": start + datetime.timedelta(hours=1),
+        "active_periods": [
+            {
+                "start_utc": start.isoformat(),
+                "end_utc": (start + datetime.timedelta(hours=1)).isoformat(),
+            }
+        ],
+        "url": "https://www.stm.info/alert",
+        "first_seen_utc": start,
+        "last_seen_utc": start + datetime.timedelta(hours=1),
+        "updated_at_utc": start + datetime.timedelta(hours=2),
+        "first_available_date": datetime.date(2026, 7, 8),
+        "last_available_date": datetime.date(2026, 7, 8),
+    }
 
 
 def test_historic_publish_uploads_index_after_receipts() -> None:
@@ -445,12 +626,83 @@ def test_historic_publish_uploads_index_after_receipts() -> None:
     assert index_key in keys
     # every receipt file appears in the upload log strictly before the index PUT
     receipt_positions = [
-        i for i, k in enumerate(store.keys)
-        if k.startswith("historic/receipts/") and k != index_key
+        i
+        for i, k in enumerate(store.keys)
+        if k.startswith("historic/receipts/") and "/generations/" not in k and k != index_key
     ]
     index_position = store.keys.index(index_key)
     assert receipt_positions, "expected receipt files to be uploaded"
     assert max(receipt_positions) < index_position
+    index = store.get_json(index_key)
+    assert index["dates"] == ["2025-01-01", "2026-06-02"]
+    assert [item["date"] for item in index["available"]] == index["dates"]
+
+
+def test_historic_receipt_index_ignores_stale_hash_state_date() -> None:
+    import hashlib
+
+    from transit_ops.snapshots.publish import publish_snapshot
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+    from transit_ops.snapshots.storage import state_fingerprint
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    stale_key = "historic/receipts/2024-01-01.json"
+    stale_body = snapshot_json_bytes({"date": "2024-01-01"})
+    store = _OrderTrackingStore()
+    store.store[stale_key] = stale_body
+    store.store["_meta/publish_state_historic.json"] = snapshot_json_bytes(
+        {
+            "fingerprint": state_fingerprint("historic"),
+            "hashes": {stale_key: hashlib.md5(stale_body).hexdigest()},  # noqa: S324
+        }
+    )
+    conn = _historic_dispatch_conn()
+
+    publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=_Settings(),
+        engine=_FakeEngine(conn),
+        storage=store,
+    )
+
+    index = store.get_json("historic/receipts/index.json")
+    assert index["dates"] == ["2025-01-01", "2026-06-02"]
+    assert "2024-01-01" not in index["dates"]
+    hash_state = store.get_json("_meta/publish_state_historic.json")
+    assert stale_key in hash_state["hashes"]
+
+
+def test_historic_receipt_file_failure_keeps_previous_index() -> None:
+    from transit_ops.snapshots.publish import _publish_historic
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    class _FailingReceiptStore(_OrderTrackingStore):
+        def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
+            if rel_key == "historic/receipts/2025-01-01.json":
+                raise RuntimeError("receipt upload failed")
+            return super().put_json(rel_key, payload, tier=tier)
+
+    old_index = b'{"dates":["2024-01-01"]}'
+    store = _FailingReceiptStore()
+    store.store["historic/receipts/index.json"] = old_index
+
+    with pytest.raises(RuntimeError, match="receipt upload failed"):
+        _publish_historic(
+            _historic_dispatch_conn(),
+            store,
+            provider_id="stm",
+            settings=_Settings(),
+        )
+
+    assert store.store["historic/receipts/index.json"] == old_index
+    assert "historic/receipts/index.json" not in store.keys
 
 
 def test_historic_publish_uploads_route_index_after_route_files() -> None:
@@ -469,12 +721,442 @@ def test_historic_publish_uploads_route_index_after_route_files() -> None:
     index_key = "historic/route_reliability/index.json"
     assert index_key in store.keys
     route_positions = [
-        i for i, k in enumerate(store.keys)
+        i
+        for i, k in enumerate(store.keys)
         if k.startswith("historic/route_reliability/") and k != index_key
     ]
     index_position = store.keys.index(index_key)
     assert route_positions, "expected per-route files to be uploaded"
     assert max(route_positions) < index_position
+
+
+def test_historic_publish_completes_all_archive_pages_before_stable_index() -> None:
+    from transit_ops.snapshots.publish import _publish_historic
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    store = _OrderTrackingStore()
+    conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
+    _publish_historic(conn, store, provider_id="stm", settings=_Settings())
+
+    page_positions = [
+        index
+        for index, key in enumerate(store.keys)
+        if key.startswith("historic/alerts/generations/") and "/page-" in key
+    ]
+    index_position = store.keys.index("historic/alerts/index.json")
+    assert page_positions
+    assert max(page_positions) < index_position
+
+
+def test_delayed_concurrent_archive_pages_all_finish_before_index() -> None:
+    import datetime
+
+    from transit_ops.snapshots.publish import _publish_historic
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 3
+
+    class _DelayedPages(_OrderTrackingStore):
+        def put_immutable_json(self, rel_key: str, payload: object) -> str:
+            if "page-" in rel_key:
+                page_number = int(rel_key.rsplit("page-", 1)[1][:4])
+                time.sleep(0.004 * (4 - page_number))
+            return super().put_immutable_json(rel_key, payload)
+
+    base = _archive_publish_row()
+    archive_rows = []
+    for number in range(501):
+        row = dict(base)
+        row["alert_id"] = f"stm-retained-{number:04d}"
+        row["start_utc"] = base["start_utc"] + datetime.timedelta(minutes=number)
+        row["end_utc"] = base["end_utc"] + datetime.timedelta(minutes=number)
+        row["first_seen_utc"] = row["start_utc"]
+        row["last_seen_utc"] = row["end_utc"]
+        row["updated_at_utc"] = row["end_utc"]
+        row["active_periods"] = [
+            {
+                "start_utc": row["start_utc"].isoformat(),
+                "end_utc": row["end_utc"].isoformat(),
+            }
+        ]
+        archive_rows.append(row)
+
+    store = _DelayedPages()
+    _publish_historic(
+        _historic_dispatch_conn(archive_rows=archive_rows),
+        store,
+        provider_id="stm",
+        settings=_Settings(),
+    )
+
+    pages = [
+        index
+        for index, key in enumerate(store.keys)
+        if key.startswith("historic/alerts/generations/") and "/page-" in key
+    ]
+    assert len(pages) == 3
+    assert max(pages) < store.keys.index("historic/alerts/index.json")
+
+
+def test_historic_archive_page_failure_never_replaces_stable_index() -> None:
+    from transit_ops.snapshots.publish import _publish_historic
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    class _FailingPageStore(_OrderTrackingStore):
+        def put_immutable_json(self, rel_key: str, payload: object) -> str:
+            raise RuntimeError("archive page upload failed")
+
+    store = _FailingPageStore()
+    store.store["historic/alerts/index.json"] = b'{"old":true}'
+    conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
+
+    with pytest.raises(RuntimeError, match="archive page upload failed"):
+        _publish_historic(conn, store, provider_id="stm", settings=_Settings())
+
+    assert store.store["historic/alerts/index.json"] == b'{"old":true}'
+    assert "historic/alerts/index.json" not in store.keys
+
+
+def test_historic_publish_counts_archive_pages_physically_but_not_in_stable_baseline() -> None:
+    from transit_ops.snapshots.publish import publish_snapshot
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    store = _OrderTrackingStore()
+    conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
+    result = publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=_Settings(),
+        engine=_FakeEngine(conn),
+        storage=store,
+    )
+
+    page_keys = [
+        key
+        for key in result.keys_written
+        if key.startswith("historic/alerts/generations/") and "/page-" in key
+    ]
+    generation_keys = [key for key in result.keys_written if "/generations/" in key]
+    assert len(page_keys) == 1
+    assert len(conn.state_writes) == 1
+    state = conn.state_writes[0]
+    assert state["written"] == len(result.keys_written)
+    assert state["total"] == len(result.keys_written)
+    assert state["stable_total"] == state["total"] - len(generation_keys)
+    hash_state = store.get_json("_meta/publish_state_historic.json")
+    assert all(key not in hash_state["hashes"] for key in generation_keys)
+
+
+def test_unchanged_historic_republish_counts_immutable_skip_physically_and_exposes_it() -> None:
+    from transit_ops.snapshots.publish import publish_snapshot
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    store = _OrderTrackingStore()
+    conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
+    engine = _FakeEngine(conn)
+
+    first = publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=_Settings(),
+        engine=engine,
+        storage=store,
+    )
+    second = publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=_Settings(),
+        engine=engine,
+        storage=store,
+    )
+
+    page_keys = [
+        key
+        for key in first.keys_written
+        if key.startswith("historic/alerts/generations/") and "/page-" in key
+    ]
+    generation_keys = [key for key in first.keys_written if "/generations/" in key]
+    assert len(page_keys) == 1
+    assert second.keys_written == []
+    assert page_keys[0] in second.keys_skipped
+
+    state = conn.state_writes[-1]
+    physical_skipped = len(second.keys_skipped)
+    assert state["written"] == 0
+    assert state["skipped"] == physical_skipped
+    assert state["total"] == physical_skipped
+    assert state["stable_total"] == physical_skipped - len(generation_keys)
+    assert second.display_dict()["files_skipped"] == physical_skipped
+
+
+def test_all_history_families_republish_account_for_real_hash_gate_outcomes_end_to_end() -> None:
+    import datetime
+    import hashlib
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    network_rows = [
+        {
+            "local_date": datetime.date(2026, 5, 31),
+            "observation_count": 10,
+            "in_clamp_observation_count": 8,
+            "on_time_count": 6,
+            "severe_count": 2,
+            "sum_delay_seconds": 240,
+            "source_generated_utc": datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC),
+        },
+        {
+            "local_date": datetime.date(2026, 6, 1),
+            "observation_count": 5,
+            "in_clamp_observation_count": 4,
+            "on_time_count": 3,
+            "severe_count": 1,
+            "sum_delay_seconds": 120,
+            "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
+        },
+    ]
+    line_rows = [
+        {
+            "route_id": "A/B",
+            "local_date": datetime.date(2026, 5, 31),
+            "observation_count": 10,
+            "in_clamp_observation_count": 8,
+            "on_time_count": 6,
+            "severe_count": 2,
+            "sum_delay_seconds": 240,
+            "source_generated_utc": datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC),
+        },
+        {
+            "route_id": "A/B",
+            "local_date": datetime.date(2026, 6, 1),
+            "observation_count": 5,
+            "in_clamp_observation_count": 4,
+            "on_time_count": 3,
+            "severe_count": 1,
+            "sum_delay_seconds": 120,
+            "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
+        },
+    ]
+    stop_rows = [
+        {
+            "stop_id": "S/1",
+            "local_date": datetime.date(2026, 5, 31),
+            "observation_count": 10,
+            "severe_count": 0,
+            "sum_delay_seconds": 240,
+            "source_generated_utc": datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC),
+        },
+        {
+            "stop_id": "S/1",
+            "local_date": datetime.date(2026, 6, 1),
+            "observation_count": 5,
+            "severe_count": 1,
+            "sum_delay_seconds": 120,
+            "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
+        },
+    ]
+    point_date = datetime.date(2026, 6, 1)
+    hotspot_route_rows = [
+        {
+            "local_date": point_date,
+            "route_id": "R1",
+            "observation_count": 40,
+            "on_time_count": 20,
+            "known_observation_count": 40,
+            "daily_present": 1,
+            "severe_count": 8,
+            "sum_delay_seconds": 12_000,
+            "in_clamp_observation_count": 40,
+            "peak_observation_count": 0,
+            "peak_severe_count": 0,
+            "peak_sum_delay_seconds": 0,
+            "peak_present": 0,
+            "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
+        }
+    ]
+    repeat_offender_daily_rows = [
+        {
+            "local_date": point_date,
+            "entity_kind": "trip",
+            "entity_id": "T1",
+            "route_id": "R1",
+            "observation_count": 30,
+            "severe_count": 1,
+            "sum_delay_seconds": 9_000,
+            "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
+        }
+    ]
+    store = _OrderTrackingStore()
+    conn = _historic_dispatch_conn(
+        hotspot_route_rows=hotspot_route_rows,
+        repeat_offender_daily_rows=repeat_offender_daily_rows,
+        network_delay_rows=network_rows,
+        line_delay_rows=line_rows,
+        stop_delay_rows=stop_rows,
+    )
+    engine = _FakeEngine(conn)
+
+    first = publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=_Settings(),
+        engine=engine,
+        storage=store,
+    )
+    first_put_count = len(store.keys)
+    second = publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=_Settings(),
+        engine=engine,
+        storage=store,
+    )
+
+    state_key = "_meta/publish_state_historic.json"
+    public = set(first.keys_written)
+    generation = {key for key in first.keys_written if "/generations/" in key}
+    stable = public - generation
+    root_key = "historic/history/index.json"
+    assert len(public) == len(first.keys_written)
+    assert len(generation) == 17
+    assert root_key in public
+    assert {
+        "historic/history/hotspots/index.json",
+        "historic/history/network/index.json",
+        "historic/history/lines/412f42/index.json",
+        "historic/history/stops/532f31/index.json",
+        "historic/history/lines/index.json",
+        "historic/history/stops/index.json",
+        "historic/history/repeat_offenders/index.json",
+    }.isdisjoint(public)
+    assert any(
+        re.fullmatch(
+            r"historic/history/hotspots/generations/[0-9a-f]{64}/index\.json",
+            key,
+        )
+        for key in generation
+    )
+    point_days = {
+        key
+        for key in generation
+        if re.fullmatch(
+            r"historic/history/(?:hotspots|repeat_offenders)/generations/"
+            r"[0-9a-f]{64}/2026-06-01\.json",
+            key,
+        )
+    }
+    assert len(point_days) == 2
+    root = store.get_json(root_key)
+    root_families = {item["family"]: item for item in root["families"]}
+    assert sorted(root_families) == [
+        "alerts",
+        "hotspots",
+        "lines",
+        "network",
+        "receipts",
+        "repeat_offenders",
+        "stops",
+    ]
+    for family in ("hotspots", "repeat_offenders"):
+        index_path = root_families[family]["index_path"]
+        index = store.get_json(index_path)
+        assert index["available_dates"] == [point_date.isoformat()]
+        assert len(index["partitions"]) == 1
+        ref = index["partitions"][0]
+        assert ref["path"] in point_days
+        assert ref["coverage_start"] == ref["coverage_end"] == point_date.isoformat()
+        assert ref["count"] == 1
+    assert any(
+        re.fullmatch(
+            r"historic/history/repeat_offenders/generations/[0-9a-f]{64}/index\.json",
+            key,
+        )
+        for key in generation
+    )
+    assert first.keys_skipped == []
+    assert second.keys_written == []
+    assert Counter(second.keys_skipped) == Counter(first.keys_written)
+    assert state_key not in {
+        *first.keys_written,
+        *first.keys_skipped,
+        *second.keys_written,
+        *second.keys_skipped,
+    }
+    assert set(store.store) == public | {state_key}
+    assert store.keys[first_put_count:] == [state_key]
+
+    first_state, second_state = conn.state_writes[-2:]
+    assert first_state["written"] == len(public)
+    assert first_state["skipped"] == 0
+    assert first_state["total"] == len(public)
+    assert first_state["stable_total"] == len(stable)
+    assert second_state["written"] == 0
+    assert second_state["skipped"] == len(public)
+    assert second_state["total"] == len(public)
+    assert second_state["stable_total"] == len(stable)
+
+    hash_state = store.get_json(state_key)
+    assert set(hash_state["hashes"]) == stable
+    assert point_days.isdisjoint(hash_state["hashes"])
+    for rel_key, digest in hash_state["hashes"].items():
+        assert digest == hashlib.md5(store.store[rel_key]).hexdigest()  # noqa: S324
+    assert state_key not in hash_state["hashes"]
+    assert first.display_dict()["files_written"] == len(public)
+    assert second.display_dict()["files_skipped"] == len(public)
+
+
+@pytest.mark.parametrize("failure", ["page", "index"])
+def test_archive_page_or_index_failure_does_not_flush_hash_or_db_state(failure: str) -> None:
+    from transit_ops.snapshots.publish import publish_snapshot
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    class _FailingInner(_OrderTrackingStore):
+        def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:
+            is_index = rel_key == "historic/alerts/index.json"
+            if failure == "index" and is_index:
+                raise RuntimeError(f"archive {failure} upload failed")
+            return super().put_bytes(rel_key, body, tier=tier)
+
+        def put_immutable_json_outcome(self, rel_key: str, payload: object):
+            if failure == "page" and rel_key.startswith("historic/alerts/generations/"):
+                raise RuntimeError("archive page upload failed")
+            return super().put_immutable_json_outcome(rel_key, payload)
+
+    store = _FailingInner()
+    old_index = b'{"old":true}'
+    store.store["historic/alerts/index.json"] = old_index
+    conn = _historic_dispatch_conn(archive_rows=[_archive_publish_row()])
+
+    with pytest.raises(RuntimeError, match=f"archive {failure} upload failed"):
+        publish_snapshot(
+            "stm",
+            tier="historic",
+            settings=_Settings(),
+            engine=_FakeEngine(conn),
+            storage=store,
+        )
+
+    assert store.store["historic/alerts/index.json"] == old_index
+    assert "_meta/publish_state_historic.json" not in store.store
+    assert conn.state_writes == []
 
 
 def test_static_publish_manifest_index_keys_present_and_complete() -> None:
@@ -514,23 +1196,32 @@ class _RecordingStaticConn:
 
         from transit_ops.sql_registry import query_name
 
+        if query_name(statement) == "publish.lock.try_acquire":
+            return _StaticResult([True])
+
         route_row = [
-            {"route_id": "R1", "route_short_name": "1", "route_long_name": "One",
-             "route_color": "009EE0", "route_type": 3}
+            {
+                "route_id": "R1",
+                "route_short_name": "1",
+                "route_long_name": "One",
+                "route_color": "009EE0",
+                "route_type": 3,
+            }
         ]
         stop_row = [
-            {"stop_id": "S1", "stop_code": "S1", "stop_name": "Stop",
-             "stop_lat": 45.0, "stop_lon": -73.0}
+            {
+                "stop_id": "S1",
+                "stop_code": "S1",
+                "stop_name": "Stop",
+                "stop_lat": 45.0,
+                "stop_lon": -73.0,
+            }
         ]
         rows = {
-            "publish.static_stamp": [
-                {"loaded_at_utc": _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)}
-            ],
+            "publish.static_stamp": [{"loaded_at_utc": _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)}],
             "static.reliability_route_ids": [{"route_id": "R1"}],
             "route.spine.route_ids": [{"route_id": "R1"}],
-            "static.dim_route_ids": [
-                {"route_id": "R1"}, {"route_id": "R2"}, {"route_id": "R3"}
-            ],
+            "static.dim_route_ids": [{"route_id": "R1"}, {"route_id": "R2"}, {"route_id": "R3"}],
             "static.routes_index": route_row,
             "static.stops_index": stop_row,
             # static.all_stops stays unmapped -> [] (the pre-migration needle
@@ -593,3 +1284,132 @@ class _FakeEngine:
             yield self._conn
 
         return _cm()
+
+
+def test_concurrent_historic_publish_loser_stops_before_hash_load_or_any_write() -> None:
+    """One provider/tier transaction owns root, mutable files, hash state, and DB state."""
+    from transit_ops.snapshots import publish as snapshot_publish
+
+    class _TryLockResult:
+        def __init__(self, acquired: bool) -> None:
+            self.acquired = acquired
+
+        def scalar_one(self) -> bool:
+            return self.acquired
+
+    lane = threading.Lock()
+    base_conn = _historic_dispatch_conn()
+
+    class _LockedConn:
+        def __init__(self) -> None:
+            self.owns_lane = False
+
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN201
+            if query_name(statement) == "publish.lock.try_acquire":
+                self.owns_lane = lane.acquire(blocking=False)
+                return _TryLockResult(self.owns_lane)
+            return base_conn.execute(statement, params)
+
+    class _LockedEngine:
+        def begin(self):  # noqa: ANN201
+            conn = _LockedConn()
+
+            @contextmanager
+            def _transaction():
+                try:
+                    yield conn
+                finally:
+                    if conn.owns_lane:
+                        lane.release()
+
+            return _transaction()
+
+    class _PausedHashLoadStore(_OrderTrackingStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.load_started = threading.Event()
+            self.release_load = threading.Event()
+            self.hash_loads = 0
+
+        def get_json(self, rel_key: str):  # noqa: ANN201
+            if rel_key == "_meta/publish_state_historic.json":
+                self.hash_loads += 1
+                self.load_started.set()
+                if not self.release_load.wait(timeout=5):
+                    raise TimeoutError("test did not release the winning publisher")
+            return super().get_json(rel_key)
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    store = _PausedHashLoadStore()
+    engine = _LockedEngine()
+    winner_results: list[object] = []
+    winner_errors: list[BaseException] = []
+
+    def _run_winner() -> None:
+        try:
+            winner_results.append(
+                publish_snapshot(
+                    "stm",
+                    tier="historic",
+                    settings=_Settings(),
+                    engine=engine,
+                    storage=store,
+                    gate_enabled=False,
+                )
+            )
+        except BaseException as exc:  # noqa: BLE001 - surfaced below with full repr
+            winner_errors.append(exc)
+
+    winner = threading.Thread(target=_run_winner)
+    winner.start()
+    assert store.load_started.wait(timeout=5), "winner never reached hash-state load"
+
+    try:
+        with pytest.raises(
+            snapshot_publish.PublishLockUnavailableError,
+            match=r"provider='stm'.*tier='historic'",
+        ):
+            publish_snapshot(
+                "stm",
+                tier="historic",
+                settings=_Settings(),
+                engine=engine,
+                storage=store,
+                gate_enabled=False,
+            )
+
+        assert store.hash_loads == 1
+        assert store.keys == []
+        assert base_conn.state_writes == []
+    finally:
+        store.release_load.set()
+        winner.join(timeout=10)
+
+    assert not winner.is_alive()
+    assert winner_errors == []
+    assert len(winner_results) == 1
+    assert "historic/history/index.json" in store.store
+    assert "historic/network_trend.json" in store.store
+    assert "_meta/publish_state_historic.json" in store.store
+    assert len(base_conn.state_writes) == 1
+    root = store.get_json("historic/history/index.json")
+    families = {item["family"]: item for item in root["families"]}
+    assert sorted(families) == [
+        "alerts",
+        "hotspots",
+        "lines",
+        "network",
+        "receipts",
+        "repeat_offenders",
+        "stops",
+    ]
+    point_indexes = {families[family]["index_path"] for family in ("hotspots", "repeat_offenders")}
+    assert point_indexes.issubset(store.store)
+    assert all("/generations/" in path for path in point_indexes)
+    assert "historic/history/hotspots/index.json" not in store.store
+    assert "historic/history/repeat_offenders/index.json" not in store.store
+    hash_state = store.get_json("_meta/publish_state_historic.json")
+    assert point_indexes.isdisjoint(hash_state["hashes"])

@@ -114,6 +114,28 @@ describe('ChartDatumPopover activation and content', () => {
 		);
 	});
 
+	it.each(['touch', 'pen'])(
+		'moves focus into the %s dialog, associates its trigger, and restores focus on close',
+		async (pointerType) => {
+			render(ChartDatumPopoverHarness);
+			const trigger = screen.getByTestId('linked-trigger');
+			trigger.focus();
+
+			await activate('linked-trigger', pointerType);
+			const dialog = await screen.findByRole('dialog', { name: LINKED_HEADING });
+			await waitFor(() => expect(dialog).toHaveFocus());
+			expect(dialog).toHaveAttribute('tabindex', '-1');
+			expect(trigger).toHaveAttribute('aria-controls', dialog.id);
+			expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+			await fireEvent.keyDown(document, { key: 'Escape' });
+			await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+			expect(trigger).toHaveFocus();
+			expect(trigger).not.toHaveAttribute('aria-controls');
+			expect(trigger).not.toHaveAttribute('aria-expanded');
+		},
+	);
+
 	it('portals the named dialog outside the harness and renders semantic evidence', async () => {
 		render(ChartDatumPopoverHarness);
 		await activate('linked-trigger', 'touch');
@@ -233,13 +255,19 @@ describe('ChartDatumPopover viewport placement', () => {
 });
 
 describe('ChartDatumPopover dismissal and cleanup', () => {
-	it('dismisses on an outside document pointerdown', async () => {
+	it('dismisses on an outside document pointerdown without restoring focus over the new target', async () => {
 		render(ChartDatumPopoverHarness);
+		const trigger = screen.getByTestId('linked-trigger');
 		await activate('linked-trigger', 'touch');
 		expect(await screen.findByRole('dialog')).toBeInTheDocument();
+		const focusTrigger = vi.spyOn(trigger as HTMLElement, 'focus');
 
-		await fireEvent.pointerDown(document.body, { pointerType: 'mouse' });
+		await fireEvent.pointerDown(screen.getByTestId('outside-focus-target'), {
+			pointerType: 'mouse',
+		});
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+		expect(focusTrigger).not.toHaveBeenCalled();
+		expect(trigger).not.toHaveAttribute('aria-controls');
 	});
 
 	it('dismisses on Escape', async () => {
@@ -296,11 +324,13 @@ describe('ChartDatumPopover dismissal and cleanup', () => {
 
 	it('dismisses through the explicit controller close', async () => {
 		render(ChartDatumPopoverHarness);
+		const trigger = screen.getByTestId('linked-trigger');
 		await activate('linked-trigger', 'touch');
 		expect(await screen.findByRole('dialog')).toBeInTheDocument();
 
 		await fireEvent.click(screen.getByTestId('explicit-close'));
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+		expect(trigger).toHaveFocus();
 		expect(screen.getByTestId('chart-popover-harness')).toHaveAttribute('data-model-key', '');
 	});
 

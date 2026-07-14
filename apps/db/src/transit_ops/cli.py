@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import typer
 from alembic import command
@@ -20,6 +22,8 @@ from transit_ops.backups import (
 from transit_ops.core.models import FeedKind, ProviderManifest
 from transit_ops.db.connection import make_engine, test_connection
 from transit_ops.gold import (
+    alert_archive_default_bounds,
+    backfill_alert_archive,
     backfill_dim_name_history,
     build_gold_marts,
     build_warm_rollups,
@@ -27,6 +31,7 @@ from transit_ops.gold import (
     rebuild_warm_rollups,
     refresh_gold_realtime,
     refresh_gold_static,
+    sync_alert_archive,
 )
 from transit_ops.ingestion import (
     capture_i3_alerts,
@@ -60,8 +65,13 @@ from transit_ops.silver import (
     replay_realtime_silver_window,
 )
 from transit_ops.snapshots.gate import GateError
+from transit_ops.snapshots.historic_gc import run_historic_snapshot_gc
 from transit_ops.snapshots.publish import publish_snapshot, validate_snapshots
 from transit_ops.source_factory.runner import run_source_factory_rebuild
+from transit_ops.validation.historic_publish import (
+    HistoricPublishProofReport,
+    build_historic_publish_proof,
+)
 from transit_ops.validation.proof import build_retention_proof_report
 from transit_ops.validation.static_feeds import validate_static_feeds
 
@@ -142,6 +152,50 @@ def _preflight_report_path(report_path: Path | None) -> None:
         raise typer.BadParameter(f"--report-path is not writable: {report_path}") from exc
 
 
+def _write_report_atomic(report_path: Path, body: str) -> None:
+    temporary_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=report_path.parent,
+            prefix=f".{report_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            handle.write(body)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary_path.replace(report_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def _read_json_object(path: Path, *, option_name: str) -> dict[str, object]:
+    if not path.exists():
+        raise typer.BadParameter(f"{option_name} does not exist: {path}")
+    if path.is_dir():
+        raise typer.BadParameter(f"{option_name} must be a file path, got directory: {path}")
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise typer.BadParameter(f"{option_name} is not readable: {path}") from exc
+
+    def reject_nonstandard_constant(_value: str) -> None:
+        raise ValueError
+
+    try:
+        payload = json.loads(raw, parse_constant=reject_nonstandard_constant)
+    except ValueError as exc:
+        raise typer.BadParameter(f"{option_name} must contain valid JSON: {path}") from exc
+    if not isinstance(payload, dict):
+        raise typer.BadParameter(f"{option_name} must contain a JSON object: {path}")
+    return payload
+
+
 def _preflight_report_dir(report_dir: Path) -> None:
     if report_dir.exists() and not report_dir.is_dir():
         raise typer.BadParameter(f"--report-dir must be a directory, got file: {report_dir}")
@@ -162,6 +216,13 @@ def _default_source_factory_keep_from_date(settings: Settings) -> date:
         settings.BRONZE_STATIC_RETENTION_DAYS,
     )
     return datetime.now(UTC).date() - timedelta(days=retention_days)
+
+
+def _parse_alert_archive_date(value: str, *, option_name: str) -> date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise typer.BadParameter(f"{option_name} must be YYYY-MM-DD, got: {value!r}") from exc
 
 
 def _seed_provider(connection, manifest: ProviderManifest) -> None:
@@ -488,6 +549,123 @@ def retention_proof_report_command(
     typer.echo(report)
 
 
+@app.command("gc-historic-snapshots")
+def gc_historic_snapshots_command(
+    provider_id: str,
+    mode: str = typer.Option(
+        "dry-run",
+        "--mode",
+        help="Non-destructive mode: dry-run inventories only; mark persists reachability marks.",
+    ),
+    report_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--report-path",
+        help="Write the JSON scan receipt to this path as well as stdout.",
+    ),
+) -> None:
+    """Validate historic generation reachability and optionally persist marks."""
+
+    if mode not in {"dry-run", "mark"}:
+        raise typer.BadParameter(
+            "--mode must be dry-run or mark; apply is disabled pending the R2 delete canary"
+        )
+    settings = get_settings()
+    registry = _provider_registry(settings)
+    try:
+        registry.get_provider(provider_id)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    _preflight_report_path(report_path)
+    if _skip_if_unseeded(settings, provider_id, step="gc-historic-snapshots"):
+        payload = {
+            "status": "skip",
+            "provider_id": provider_id,
+            "mode": mode,
+            "skipped_not_seeded": True,
+        }
+        report = json.dumps(payload, indent=2, sort_keys=True)
+        if report_path is not None:
+            report_path.write_text(report + "\n", encoding="utf-8")
+        typer.echo(report)
+        return
+    try:
+        result = run_historic_snapshot_gc(
+            provider_id,
+            settings=settings,
+            registry=registry,
+            mode=mode,  # type: ignore[arg-type]
+        )
+        payload = result.display_dict()
+    except Exception as exc:
+        payload = {
+            "status": "fail",
+            "provider_id": provider_id,
+            "mode": mode,
+            "failure_type": type(exc).__name__,
+            "failure": str(exc),
+        }
+        report = json.dumps(payload, indent=2, sort_keys=True)
+        if report_path is not None:
+            report_path.write_text(report + "\n", encoding="utf-8")
+        typer.echo(report)
+        raise typer.Exit(code=1) from exc
+    report = json.dumps(payload, indent=2, sort_keys=True)
+    if report_path is not None:
+        report_path.write_text(report + "\n", encoding="utf-8")
+    typer.echo(report)
+
+
+@app.command("verify-historic-publish")
+def verify_historic_publish_command(
+    provider_id: str,
+    sync_report: Path = typer.Option(..., "--sync-report"),  # noqa: B008
+    gate_report: Path = typer.Option(..., "--gate-report"),  # noqa: B008
+    report_path: Path = typer.Option(..., "--report-path"),  # noqa: B008
+) -> None:
+    """Verify one migrated, synced, gated historic publication against public /v1."""
+    settings = get_settings()
+    try:
+        _provider_registry(settings).get_provider(provider_id)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if _skip_if_unseeded(settings, provider_id, step="verify-historic-publish"):
+        return
+    _preflight_report_path(report_path)
+    sync_payload = _read_json_object(sync_report, option_name="--sync-report")
+    gate_payload = _read_json_object(gate_report, option_name="--gate-report")
+    try:
+        result = build_historic_publish_proof(
+            provider_id,
+            sync_receipt=sync_payload,
+            gate_report=gate_payload,
+            settings=settings,
+            isolate_process=True,
+        )
+    except TimeoutError:
+        result = HistoricPublishProofReport(
+            provider_id=provider_id,
+            verified_at_utc=datetime.now(UTC),
+            status="fail",
+            migration={"status": "unavailable"},
+            sync={"status": "unavailable"},
+            gate={"status": "unavailable"},
+            public={
+                "deadline": {
+                    "exceeded": True,
+                    "failure": "historic_proof_deadline_exceeded",
+                    "receipt_source": "cli_exception_fallback",
+                }
+            },
+            source_messages={"status": "unavailable"},
+            failures=("historic_proof_deadline_exceeded",),
+        )
+    body = json.dumps(result.display_dict(), indent=2, sort_keys=True)
+    _write_report_atomic(report_path, body + "\n")
+    typer.echo(body)
+    if result.status != "pass":
+        raise typer.Exit(code=1)
+
+
 @app.command("capture-realtime")
 def capture_realtime(provider_id: str, endpoint_key: str) -> None:
     """Capture, archive, and register one GTFS-RT snapshot."""
@@ -496,9 +674,7 @@ def capture_realtime(provider_id: str, endpoint_key: str) -> None:
         FeedKind.TRIP_UPDATES.value,
         FeedKind.VEHICLE_POSITIONS.value,
     }:
-        raise typer.BadParameter(
-            "endpoint_key must be 'trip_updates' or 'vehicle_positions'."
-        )
+        raise typer.BadParameter("endpoint_key must be 'trip_updates' or 'vehicle_positions'.")
 
     settings = get_settings()
     try:
@@ -577,9 +753,7 @@ def load_realtime_silver(provider_id: str, endpoint_key: str) -> None:
         FeedKind.TRIP_UPDATES.value,
         FeedKind.VEHICLE_POSITIONS.value,
     }:
-        raise typer.BadParameter(
-            "endpoint_key must be 'trip_updates' or 'vehicle_positions'."
-        )
+        raise typer.BadParameter("endpoint_key must be 'trip_updates' or 'vehicle_positions'.")
 
     settings = get_settings()
     try:
@@ -681,9 +855,7 @@ def replay_realtime_silver_command(
 
     start_utc = _parse_replay_instant(since, flag="--since")
     end_utc = (
-        _parse_replay_instant(until, flag="--until")
-        if until is not None
-        else datetime.now(UTC)
+        _parse_replay_instant(until, flag="--until") if until is not None else datetime.now(UTC)
     )
     if end_utc <= start_utc:
         raise typer.BadParameter(
@@ -716,10 +888,7 @@ def replay_realtime_silver_command(
         "silver": silver_result.display_dict(),
     }
 
-    if (
-        silver_result.loaded_count == 0
-        and not silver_result.skipped_existing_snapshot_ids
-    ):
+    if silver_result.loaded_count == 0 and not silver_result.skipped_existing_snapshot_ids:
         # Honest no-op: no archived snapshots in the window. Clean exit, not an error.
         payload["gold"] = None
         payload["status"] = "no-snapshots-in-window"
@@ -854,6 +1023,111 @@ def prune_gold_storage_command(
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
+@app.command("sync-alert-archive")
+def sync_alert_archive_command(
+    provider_id: str,
+    from_date: str | None = typer.Option(
+        None,
+        "--from",
+        help="First provider-local capture date to sync (YYYY-MM-DD, inclusive).",
+    ),
+    to_date: str | None = typer.Option(
+        None,
+        "--to",
+        help="Last provider-local capture date to sync (YYYY-MM-DD, inclusive).",
+    ),
+) -> None:
+    """Sync a bounded retained window of Silver alerts into the Gold archive."""
+
+    parsed_from = (
+        _parse_alert_archive_date(from_date, option_name="--from")
+        if from_date is not None
+        else None
+    )
+    parsed_to = (
+        _parse_alert_archive_date(to_date, option_name="--to") if to_date is not None else None
+    )
+    if parsed_from is not None and parsed_to is not None and parsed_from > parsed_to:
+        raise typer.BadParameter("--from must be on or before --to")
+
+    settings = get_settings()
+    try:
+        manifest = _provider_registry(settings).get_provider(provider_id)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if _skip_if_unseeded(settings, provider_id, step="sync-alert-archive"):
+        return
+
+    default_from, default_to = alert_archive_default_bounds(
+        provider_timezone=manifest.provider.timezone,
+        retention_days=settings.GOLD_WARM_ROLLUP_RETENTION_DAYS,
+    )
+    effective_from = parsed_from or default_from
+    effective_to = parsed_to or default_to
+    if effective_from > effective_to:
+        raise typer.BadParameter("--from must be on or before --to")
+
+    result = sync_alert_archive(
+        provider_id,
+        from_date=effective_from,
+        to_date=effective_to,
+        settings=settings,
+    )
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("backfill-alert-archive")
+def backfill_alert_archive_command(
+    provider_id: str,
+    from_date: str = typer.Option(  # noqa: B008
+        ...,
+        "--from",
+        help="First provider-local capture date to backfill (YYYY-MM-DD, inclusive).",
+    ),
+    to_date: str = typer.Option(  # noqa: B008
+        ...,
+        "--to",
+        help="Last provider-local capture date to backfill (YYYY-MM-DD, inclusive).",
+    ),
+    month_batch: int = typer.Option(
+        1,
+        "--month-batch",
+        help="Number of complete provider-local calendar months per committed batch.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Classify every batch without upserting archive rows.",
+    ),
+) -> None:
+    """Backfill the alert archive in resumable, oldest-first calendar batches."""
+
+    parsed_from = _parse_alert_archive_date(from_date, option_name="--from")
+    parsed_to = _parse_alert_archive_date(to_date, option_name="--to")
+    if parsed_from > parsed_to:
+        raise typer.BadParameter("--from must be on or before --to")
+    if month_batch <= 0:
+        raise typer.BadParameter("--month-batch must be positive")
+
+    settings = get_settings()
+    try:
+        _provider_registry(settings).get_provider(provider_id)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if _skip_if_unseeded(settings, provider_id, step="backfill-alert-archive"):
+        return
+
+    result = backfill_alert_archive(
+        provider_id,
+        from_date=parsed_from,
+        to_date=parsed_to,
+        month_batch=month_batch,
+        dry_run=dry_run,
+        settings=settings,
+    )
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
 @app.command("prune-i3-storage")
 def prune_i3_storage_command(
     provider_id: str,
@@ -895,9 +1169,7 @@ def vacuum_storage_command(
 
     settings = get_settings()
     try:
-        result = vacuum_storage(
-            provider_id, full=full, tables=table or None, settings=settings
-        )
+        result = vacuum_storage(provider_id, full=full, tables=table or None, settings=settings)
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
@@ -923,6 +1195,11 @@ def prune_bronze_storage_command(
         min=1,
         help="Batches per phase this invocation (defaults to BRONZE_PRUNE_MAX_BATCHES).",
     ),
+    require_exhausted: bool = typer.Option(
+        False,
+        "--require-exhausted",
+        help="Exit 1 after the JSON receipt when a live run leaves eligible backlog.",
+    ),
 ) -> None:
     """Prune old Bronze R2 objects and raw metadata after downstream Silver data is gone."""
 
@@ -940,7 +1217,9 @@ def prune_bronze_storage_command(
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
-    if not dry_run and any(result.failed_object_counts.values()):
+    if not dry_run and (
+        any(result.failed_object_counts.values()) or (require_exhausted and not result.exhausted)
+    ):
         raise typer.Exit(code=1)
 
 
@@ -1240,9 +1519,7 @@ def build_warm_rollups_command(
 
 def _rebuild_prompt(plan) -> str:  # noqa: ANN001
     """Destructive-rebuild confirmation showing total rows + watermarks per kind."""
-    kinds = sorted(
-        set(plan.deleted_row_counts) | set(plan.deleted_watermark_counts)
-    )
+    kinds = sorted(set(plan.deleted_row_counts) | set(plan.deleted_watermark_counts))
     lines = [
         f"Rebuild {plan.provider_id} append-only daily rollups for rows "
         f"{plan.from_date.isoformat()}..{plan.to_date.isoformat()} — this DELETEs the "
@@ -1283,8 +1560,7 @@ def rebuild_warm_rollups_command(
     dry_run: bool = typer.Option(  # noqa: B008
         False,
         "--dry-run",
-        help="Print the affected row/watermark counts per kind without deleting "
-        "or rebuilding.",
+        help="Print the affected row/watermark counts per kind without deleting or rebuilding.",
     ),
     yes: bool = typer.Option(  # noqa: B008
         False,
@@ -1392,9 +1668,7 @@ def rebuild_source_factory_command(
     try:
         _preflight_report_dir(report_dir)
         if execute and not destructive_r2_cleanup:
-            raise typer.BadParameter(
-                "--destructive-r2-cleanup is required with --execute."
-            )
+            raise typer.BadParameter("--destructive-r2-cleanup is required with --execute.")
         result = run_source_factory_rebuild(
             provider_id,
             artifact_dir=report_dir,
@@ -1523,8 +1797,7 @@ def verify_backup_freshness_command(
         last_modified = datetime.fromisoformat(last_modified_raw)
     except ValueError as exc:
         typer.echo(
-            f"Backup freshness check FAILED: unparseable last_modified "
-            f"'{last_modified_raw}'",
+            f"Backup freshness check FAILED: unparseable last_modified '{last_modified_raw}'",
             err=True,
         )
         raise typer.Exit(code=1) from exc

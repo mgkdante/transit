@@ -16,6 +16,7 @@
 import { wilsonBoundsProportion, MIN_N_RATE } from '$lib/v1/stats';
 import type { StopDailyPoint } from '$lib/v1';
 import type { DateWindow } from '$lib/filters';
+import { roundHalfAwayFromZero } from '$lib/utils';
 
 /** The pooled verdict over a window — all fields honest-null when unpoolable. */
 export interface DailyRangeVerdict {
@@ -42,22 +43,52 @@ export interface DailyRangeVerdict {
 	readonly reliable: boolean;
 }
 
-function round1(x: number): number {
-	// Half-away at 1dp (severe_pct ≥ 0 always, so === Math.round for these inputs) —
-	// byte-matches the server's _severe_pct so the pool never diverges from the wire.
-	return Math.round(x * 10) / 10;
+/** Exact additive ingredients for a retained range. Daily display rows are rounded. */
+export interface ExactDailyRangeIngredients {
+	readonly daysWithData: number;
+	readonly from: string;
+	readonly to: string;
+	readonly observationCount: number;
+	readonly inClampObservationCount: number;
+	readonly severeCount: number;
+	readonly sumDelaySeconds: number;
 }
 
 /**
  * Pool the daily series into a single verdict over `window` (inclusive, ISO
  * yyyy-mm-dd string compare). A null/undefined window pools the WHOLE series
- * (the default full-window view before S8B's picker narrows it). Zero-observation
+ * (the default full-window view before the shared navigator narrows it). Zero-observation
  * days are already absent from the series, so every pooled day contributes.
  */
 export function poolDailyRange(
 	daily: readonly StopDailyPoint[] | null | undefined,
 	window?: DateWindow | null,
+	exact?: ExactDailyRangeIngredients | null,
 ): DailyRangeVerdict {
+	if (exact != null && exact.daysWithData > 0 && exact.inClampObservationCount > 0) {
+		const reliable = exact.inClampObservationCount >= MIN_N_RATE;
+		const wilson = reliable
+			? wilsonBoundsProportion(exact.severeCount, exact.inClampObservationCount)
+			: null;
+		return {
+			daysWithData: exact.daysWithData,
+			from: exact.from,
+			to: exact.to,
+			observations: exact.observationCount,
+			severeCount: exact.severeCount,
+			severePct: reliable
+				? roundHalfAwayFromZero((100 * exact.severeCount) / exact.inClampObservationCount, 1)
+				: null,
+			wilsonLo: wilson ? roundHalfAwayFromZero(wilson[0] * 100, 1) : null,
+			wilsonHi: wilson ? roundHalfAwayFromZero(wilson[1] * 100, 1) : null,
+			avgDelayMin: roundHalfAwayFromZero(
+				exact.sumDelaySeconds / exact.inClampObservationCount / 60,
+				1,
+			),
+			reliable,
+		};
+	}
+
 	const inRange = (daily ?? [])
 		.filter((p) => (window ? p.date >= window.from && p.date <= window.to : true))
 		// Only days that actually carried observations pool (defensive: the series
@@ -98,9 +129,9 @@ export function poolDailyRange(
 	const reliable = observations >= MIN_N_RATE;
 	// The pooled share is a REAL re-computation off the summed counts (not a stored
 	// average) — withheld below MIN_N so a thin window never prints a firm percentage.
-	const severePct = reliable ? round1((100 * severeCount) / observations) : null;
+	const severePct = reliable ? roundHalfAwayFromZero((100 * severeCount) / observations, 1) : null;
 	const wilson = reliable ? wilsonBoundsProportion(severeCount, observations) : null;
-	const avgDelayMin = avgWeightN > 0 ? round1(avgWeightedSum / avgWeightN) : null;
+	const avgDelayMin = avgWeightN > 0 ? roundHalfAwayFromZero(avgWeightedSum / avgWeightN, 1) : null;
 
 	return {
 		daysWithData: inRange.length,
@@ -109,8 +140,8 @@ export function poolDailyRange(
 		observations,
 		severeCount,
 		severePct,
-		wilsonLo: wilson ? round1(wilson[0] * 100) : null,
-		wilsonHi: wilson ? round1(wilson[1] * 100) : null,
+		wilsonLo: wilson ? roundHalfAwayFromZero(wilson[0] * 100, 1) : null,
+		wilsonHi: wilson ? roundHalfAwayFromZero(wilson[1] * 100, 1) : null,
 		avgDelayMin,
 		reliable,
 	};

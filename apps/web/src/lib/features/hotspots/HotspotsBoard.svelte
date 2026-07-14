@@ -7,18 +7,31 @@
   or category-local filter state remain.
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceKind } from '$lib/nav';
 	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { describeAbsence } from '$lib/site/absence';
-	import { getHotspots } from '$lib/v1';
-	import type { HotspotEntry } from '$lib/v1/schemas';
-	import { createResource } from '$lib/v1/resource.svelte';
+	import {
+		availabilityFromPointCollectionIndex,
+		createHistoryCorrectionPresentation,
+		createHistoryDateResource,
+		getHotspots,
+		getHotspotsHistoryDay,
+		getHotspotsHistoryIndex,
+		historyDateRequestFromSearchParams,
+	} from '$lib/v1';
+	import type { HistoricCollectionIndex, HotspotEntry, Hotspots } from '$lib/v1/schemas';
 	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
-	import { ResourceBoundary, GrainPicker, type GrainSegment } from '$lib/components/surface';
+	import {
+		createRailDisclosureController,
+		HistoryNavigator,
+		ResourceBoundary,
+		GrainPicker,
+		type GrainSegment,
+	} from '$lib/components/surface';
 	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
 	import { AbsentValue } from '$lib/components/edge';
 	import {
@@ -31,10 +44,9 @@
 	} from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
-	import { persisted } from '$lib/stores';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
-	import { formatUtc } from '$lib/utils/time';
+	import { formatDateKey, formatUtc } from '$lib/utils/time';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type {
@@ -61,52 +73,9 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
-	const railOpen = {
-		controls: persisted('hotspots-controls', true),
-		toc: persisted('hotspots-toc', true),
-	};
-	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
-		railOpen[key].value = next;
-	}
-	function setAllRailOpen(next: boolean): void {
-		setRailOpen('controls', next);
-		setRailOpen('toc', next);
-	}
-
-	// QuietModeButton.init() deliberately re-emits the stored global state on each
-	// article mount. Cards consume that edge directly, but these rail disclosures
-	// already restore their own page-owned session choice. Start watching only
-	// after the mount edge settles, then mirror later reader actions into both
-	// persisted rail runes. A remembered collapsed default still wins on mount.
-	let railSignalsReady = $state(false);
-	let lastRailCloseSignal = quietModeStore.closeSignal;
-	let lastRailOpenSignal = quietModeStore.openSignal;
-	onMount(() => {
-		let cancelled = false;
-		void (async () => {
-			await tick();
-			if (cancelled) return;
-			lastRailCloseSignal = quietModeStore.closeSignal;
-			lastRailOpenSignal = quietModeStore.openSignal;
-			if (quietModeStore.enabled) setAllRailOpen(false);
-			railSignalsReady = true;
-		})();
-		return () => {
-			cancelled = true;
-		};
-	});
-	$effect(() => {
-		const closeSignal = quietModeStore.closeSignal;
-		const openSignal = quietModeStore.openSignal;
-		if (!railSignalsReady) return;
-		if (closeSignal !== lastRailCloseSignal) {
-			lastRailCloseSignal = closeSignal;
-			setAllRailOpen(false);
-		}
-		if (openSignal !== lastRailOpenSignal) {
-			lastRailOpenSignal = openSignal;
-			setAllRailOpen(true);
-		}
+	const railDisclosures = createRailDisclosureController({
+		controls: 'hotspots-controls',
+		toc: 'hotspots-toc',
 	});
 
 	const explainerCopy = $derived(metricsCopy[locale]);
@@ -120,10 +89,49 @@
 	});
 	const severeInfo = $derived(info('severe', t.ladder.severeRateLabel));
 
-	const hotspots = createResource(() => getHotspots(), { freshness: true });
+	const hotspots = createHistoryDateResource<HistoricCollectionIndex, Hotspots>(
+		{
+			loadIndex: (signal) => getHotspotsHistoryIndex({ signal }),
+			availability: (index) => availabilityFromPointCollectionIndex(index),
+			loadCurrent: (signal) => getHotspots({ signal }),
+			loadDate: (date, index, signal) => getHotspotsHistoryDay(date, index, { signal }),
+		},
+		{
+			initialRequest: historyDateRequestFromSearchParams(page.url.searchParams),
+			freshness: true,
+		},
+	);
+	onDestroy(() => hotspots.destroy());
 	const generatedUtc = $derived(hotspots.data?.generated_utc ?? null);
 	const ladders = $derived(ladderByGrain(hotspots.data?.by_grain));
 	const present = $derived(presentGrains(hotspots.data?.by_grain));
+	const availableDates = $derived(hotspots.availableDates);
+	const dateOptions = $derived(availableDates.map((date) => ({ date })));
+	const hasHistoryNavigator = $derived(availableDates.length > 0);
+	const historyCoverageText = $derived(
+		availableDates.length === 0
+			? null
+			: t.history.coverage(
+					formatDateKey(availableDates[0], locale),
+					formatDateKey(availableDates[availableDates.length - 1], locale),
+				),
+	);
+	const historySelectionText = $derived(
+		hotspots.selectedDate == null
+			? null
+			: t.history.selection(formatDateKey(hotspots.selectedDate, locale)),
+	);
+	const historyCorrection = createHistoryCorrectionPresentation(
+		hotspots,
+		() => t.history.correction,
+	);
+	function selectHistoryDate(date: string | undefined): void {
+		historyCorrection.clear();
+		hotspots.setRequest({
+			hasDate: date !== undefined,
+			rawDate: date ?? null,
+		});
+	}
 
 	let grainKey = $state<HotspotGrainKey>(
 		(() => {
@@ -173,7 +181,7 @@
 	const cap = $derived(worstNCap(worstN));
 	const worstSegments = $derived<GrainSegment<WorstN>[]>(buildWorstNSegments(t.worstN.all));
 
-	const wire = $derived.by<{ grain: string | null; n: string | null }>(() => {
+	const wire = $derived.by<{ date: string | null; grain: string | null; n: string | null }>(() => {
 		const state = emptyFilterState();
 		if (worstN !== DEFAULT_WORST_N) state.worstN = worstN;
 		const grainParam =
@@ -185,7 +193,11 @@
 							state.grain = grainKey;
 							return toSearchParams(state).get('grain');
 						})();
-		return { grain: grainParam, n: toSearchParams(state).get('n') };
+		const dateParam =
+			hotspots.request.hasDate && hotspots.resolved == null
+				? hotspots.request.rawDate
+				: hotspots.canonicalDate;
+		return { date: dateParam, grain: grainParam, n: toSearchParams(state).get('n') };
 	});
 	$effect(() => mirrorSearchParams(wire));
 
@@ -267,9 +279,11 @@
 		topHotspot ? (topHotspot.name ?? t.unnamed(topHotspot.id)) : null,
 	);
 	const verdictLine = $derived.by<string>(() => {
-		if (!topHotspot || topHotspotName == null) return t.verdict.none;
+		if (!topHotspot || topHotspotName == null) {
+			return hotspots.mode === 'history' ? t.history.retainedVerdictNone : t.verdict.none;
+		}
 		if (topHotspot.otp_delta_pts == null) return t.verdict.topNoDelta(topHotspotName);
-		const points = `${Math.abs(Math.round(topHotspot.otp_delta_pts))}${t.units.pts}`;
+		const points = String(Math.abs(Math.round(topHotspot.otp_delta_pts)));
 		return t.verdict.topWithDelta(topHotspotName, points);
 	});
 	const topHotspotHref = $derived(topHotspot ? hrefFor(topHotspot) : null);
@@ -278,6 +292,7 @@
 		const entries = (activeLadder?.entries ?? []).filter((entry) => entry.type === kind);
 		const result = selectHotspotLadder(entries, cap, locale, {
 			title: t.ladder.heading,
+			rowLabel: kind === 'route' ? t.type.route : t.type.stop,
 			xLabel: t.ladder.severeRateLabel,
 			unit: t.units.pct,
 			ciLabel: t.ladder.ci,
@@ -318,10 +333,17 @@
 	}
 	const routeTray = $derived(trayFor('route'));
 	const stopTray = $derived(trayFor('stop'));
-	const windowCaption = $derived(t.window[grainKey]);
+	const windowCaption = $derived(
+		hotspots.mode === 'history' && hotspots.selectedDate != null
+			? t.history.retainedWindow(formatDateKey(hotspots.selectedDate, locale))
+			: t.window[grainKey],
+	);
 	const controlsSummary = $derived(grainLabels[grainKey] ?? '');
 	const isEmpty = $derived(present.size === 0);
-	const showCombinedRail = $derived(hotspots.settled && hotspots.data != null && present.size > 0);
+	const showCombinedRail = $derived(
+		(hotspots.data != null && present.size > 0) ||
+			(hotspots.mode === 'history' && hasHistoryNavigator),
+	);
 	const showWorstN = $derived(
 		routeLadder.total > SMALLEST_WORST_N || stopLadder.total > SMALLEST_WORST_N,
 	);
@@ -332,7 +354,7 @@
 			sectionKey: 'hotspots-card-top',
 			number: 1,
 			title: t.cards.top.title,
-			subtitle: t.cards.top.subtitle,
+			subtitle: hotspots.mode === 'history' ? t.history.retainedTopSubtitle : t.cards.top.subtitle,
 			present: hotspots.data != null && !isEmpty,
 		},
 		{
@@ -441,9 +463,29 @@
 		{@const presentedGrainSegments = grainSegmentsFor(presentation)}
 		<CollapsibleSection
 			title={t.rail.controls}
-			bind:open={() => railOpen.controls.value, (next) => setRailOpen('controls', next)}
+			bind:open={
+				() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
+			}
 		>
 			<div class="hotspots-control-body" data-slot="controls-body">
+				{#if hasHistoryNavigator}
+					{#key historyCorrection.revision}
+						<HistoryNavigator
+							mode="date"
+							date={hotspots.selectedDate ?? undefined}
+							{dateOptions}
+							previousDate={hotspots.previousDate}
+							nextDate={hotspots.nextDate}
+							coverageText={historyCoverageText}
+							selectionText={historySelectionText}
+							announcement={historyCorrection.announcement}
+							liveAnnouncement={false}
+							{locale}
+							labels={t.history.navigator}
+							onDateChange={selectHistoryDate}
+						/>
+					{/key}
+				{/if}
 				{#if showGrainPicker}
 					<GrainPicker
 						segments={presentedGrainSegments}
@@ -474,7 +516,9 @@
 					{activeId}
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
-					bind:open={() => railOpen.toc.value, (next) => setRailOpen('toc', next)}
+					bind:open={
+						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
+					}
 					onNavigate={(id) => {
 						closeSheet();
 						void navigate(id);
@@ -485,6 +529,15 @@
 	{/snippet}
 
 	{#snippet center()}
+		<p
+			class="hotspots-history-live"
+			data-slot="history-page-announcement"
+			role="status"
+			aria-live="polite"
+			aria-atomic="true"
+		>
+			{historyCorrection.announcement ?? ''}
+		</p>
 		<ResourceBoundary resource={hotspots} lang={locale}>
 			{#if isEmpty}
 				<div class="hotspots-note" data-slot="hotspots-empty">
@@ -570,6 +623,17 @@
 		flex-wrap: wrap;
 	}
 	.hotspots-reason {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+	.hotspots-history-live {
 		position: absolute;
 		width: 1px;
 		height: 1px;

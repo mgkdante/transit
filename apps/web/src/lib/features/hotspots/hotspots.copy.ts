@@ -8,7 +8,8 @@
 // duplicated here.
 
 import type { Locale } from '$lib/i18n';
-import type { SurfaceHeadCopy } from '$lib/components/surface';
+import type { HistoryNavigatorLabels, SurfaceHeadCopy } from '$lib/components/surface';
+import type { HistoryCorrection } from '$lib/v1';
 
 export interface HotspotsCopy extends SurfaceHeadCopy {
 	readonly article: {
@@ -19,6 +20,15 @@ export interface HotspotsCopy extends SurfaceHeadCopy {
 		readonly sections: (count: number) => string;
 	};
 	readonly asOf: string;
+	readonly history: {
+		readonly navigator: HistoryNavigatorLabels;
+		readonly coverage: (first: string, last: string) => string;
+		readonly selection: (date: string) => string;
+		readonly correction: Record<HistoryCorrection['reason'], string>;
+		readonly retainedWindow: (date: string) => string;
+		readonly retainedTopSubtitle: string;
+		readonly retainedVerdictNone: string;
+	};
 	readonly rail: {
 		readonly label: string;
 		readonly open: string;
@@ -148,6 +158,37 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
 		},
 		asOf: 'À JOUR AU',
+		history: {
+			navigator: {
+				group: 'Parcourir l’historique conservé des points chauds',
+				picker: {
+					group: 'Historique des points chauds',
+					start: 'Du',
+					end: 'Au',
+					clear: 'Données actuelles',
+					anyStart: 'Première date',
+					anyEnd: 'Dernière date',
+					single: 'Date historique',
+				},
+				previous: 'Date précédente',
+				next: 'Date suivante',
+			},
+			coverage: (first, last) => `Historique disponible : du ${first} au ${last}.`,
+			selection: (date) => `Date affichée : ${date}.`,
+			correction: {
+				malformed: 'Cette date n’était pas valide. Affichage des points chauds les plus récents.',
+				'outside-coverage':
+					'Cette date est hors de l’historique conservé. Affichage des points chauds les plus récents.',
+				gap: 'Cette date tombe dans une lacune de publication. Affichage des points chauds les plus récents.',
+				unpublished:
+					'Cette journée n’a pas été publiée. Affichage des points chauds les plus récents.',
+			},
+			retainedWindow: (date) => `Observations conservées disponibles se terminant le ${date}.`,
+			retainedTopSubtitle:
+				'Le pire point chaud des observations conservées sélectionnées et les preuves qui l’expliquent',
+			retainedVerdictNone:
+				'Aucun point chaud classé dans les observations conservées sélectionnées.',
+		},
 		rail: {
 			label: 'Vue et sommaire',
 			open: 'Ouvrir les commandes et le sommaire',
@@ -254,6 +295,34 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
 		},
 		asOf: 'AS OF',
+		history: {
+			navigator: {
+				group: 'Browse retained hotspots history',
+				picker: {
+					group: 'Hotspots history',
+					start: 'From',
+					end: 'To',
+					clear: 'Current data',
+					anyStart: 'Earliest date',
+					anyEnd: 'Latest date',
+					single: 'History date',
+				},
+				previous: 'Previous date',
+				next: 'Next date',
+			},
+			coverage: (first, last) => `History available: ${first} to ${last}.`,
+			selection: (date) => `Showing date: ${date}.`,
+			correction: {
+				malformed: 'That date was not valid. Showing the latest hotspots.',
+				'outside-coverage': 'That date is outside retained history. Showing the latest hotspots.',
+				gap: 'That date falls in a publication gap. Showing the latest hotspots.',
+				unpublished: 'That day was not published. Showing the latest hotspots.',
+			},
+			retainedWindow: (date) => `Available retained observations ending ${date}.`,
+			retainedTopSubtitle:
+				'The worst hotspot in the selected retained observations and the evidence behind it',
+			retainedVerdictNone: 'No hotspot ranks in the selected retained observations.',
+		},
 		rail: {
 			label: 'View & contents',
 			open: 'Open view controls and contents',

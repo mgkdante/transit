@@ -6,6 +6,7 @@ import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
 
 const copy = networkReliabilityCopy.en;
+const motion = vi.hoisted(() => ({ reduced: false }));
 
 const { openSurface, live, network, trendSeries, weeklySeries, monthlySeries, byShift, byDaytype } =
 	vi.hoisted(() => ({
@@ -94,8 +95,18 @@ vi.mock('$lib/nav', async () => {
 	};
 });
 
+vi.mock('$lib/motion/reduced-motion.svelte', () => ({
+	prefersReducedMotion: {
+		get current() {
+			return motion.reduced;
+		},
+	},
+	isPrefersReducedMotion: () => motion.reduced,
+}));
+
 vi.mock('$lib/v1', async () => {
 	return {
+		...(await import('$lib/v1/history')),
 		STATUS_CODES: ['early', 'on_time', 'late', 'severe', 'unknown'],
 		OCCUPANCY_CODES: ['empty', 'many_seats', 'few_seats', 'standing', 'full'],
 		getV1Context: () => ({ manifest: { files: { live: { ttl_s: 30 } } }, labels: {}, lang: 'en' }),
@@ -126,6 +137,8 @@ vi.mock('$lib/v1', async () => {
 		}),
 		getNetworkTrend: vi.fn(),
 		getProvenance: vi.fn(),
+		getNetworkHistoryIndex: vi.fn().mockResolvedValue(null),
+		loadNetworkHistoryRange: vi.fn(),
 	};
 });
 
@@ -357,14 +370,33 @@ describe('NetworkSurface trend window + series', () => {
 		expect(within(group).getByRole('radio', { name: '90d' })).toBeDisabled();
 	});
 
-	it('offers a delay-series toggle (slowest 10% vs typical)', () => {
+	it('offers a delay-series toggle (slowest 10% vs average)', () => {
 		render(NetworkSurface);
 		const group = screen.getByRole('radiogroup', { name: 'Delay series' });
 		expect(within(group).getByRole('radio', { name: 'Slowest 10%' })).toBeInTheDocument();
-		expect(within(group).getByRole('radio', { name: 'Typical' })).toBeInTheDocument();
+		expect(within(group).getByRole('radio', { name: 'Average' })).toBeInTheDocument();
 	});
 
-	it('switches the retard channel from p90 to the avg/median series when "Typical" is picked', async () => {
+	it('preserves both delay choices on a sparse current singleton', () => {
+		const original = trendSeries.slice();
+		trendSeries.splice(
+			0,
+			trendSeries.length,
+			{ date: '2026-06-14', otp_pct: 78, avg_delay_min: null, p90_min: null },
+			{ date: '2026-06-15', otp_pct: 81, avg_delay_min: null, p90_min: null },
+		);
+
+		try {
+			render(NetworkSurface);
+			const group = screen.getByRole('radiogroup', { name: 'Delay series' });
+			expect(within(group).getByRole('radio', { name: 'Slowest 10%' })).not.toBeDisabled();
+			expect(within(group).getByRole('radio', { name: 'Average' })).not.toBeDisabled();
+		} finally {
+			trendSeries.splice(0, trendSeries.length, ...original);
+		}
+	});
+
+	it('switches the retard channel from p90 to the mean series when "Average" is picked', async () => {
 		// P5.2: TrendMark's sr-only table is the layout-independent read (LayerChart
 		// paints nothing in happy-dom). The secondary column header carries the resolved
 		// retard label; its cells carry the series.
@@ -382,8 +414,8 @@ describe('NetworkSurface trend window + series', () => {
 		expect(secondaryHeader()).toContain('Slowest 10% (min)');
 		expect(lastY2()).toBe('6');
 
-		await fireEvent.click(screen.getByRole('radio', { name: 'Typical' }));
-		expect(secondaryHeader()).toContain('Median delay');
+		await fireEvent.click(screen.getByRole('radio', { name: 'Average' }));
+		expect(secondaryHeader()).toContain('Average delay (min)');
 		expect(secondaryHeader()).not.toContain('Slowest 10% (min)');
 		expect(lastY2()).toBe('1.8');
 	});
@@ -448,8 +480,10 @@ describe('NetworkSurface trend grain (day/week/month)', () => {
 		await fireEvent.click(screen.getByRole('radio', { name: 'Week' }));
 		const delayGroup = screen.getByRole('radiogroup', { name: 'Delay series' });
 		expect(within(delayGroup).getByRole('radio', { name: 'Slowest 10%' })).toBeDisabled();
+		expect(within(delayGroup).getByRole('radio', { name: 'Slowest 10%' })).not.toBeChecked();
+		expect(within(delayGroup).getByRole('radio', { name: 'Average' })).toBeChecked();
 		const header = trendFigure(container).querySelectorAll('table.sr-only thead th')[2];
-		expect(header?.textContent).toContain('Median delay');
+		expect(header?.textContent).toContain('Average delay (min)');
 		expect(header?.textContent).not.toContain('Slowest 10% (min)');
 		const rows = trendRows(container);
 		expect(rows[rows.length - 1].querySelectorAll('td')[1]?.textContent).toBe('1.6');
@@ -661,6 +695,27 @@ describe('NetworkSurface service completeness (S9B GC2 ramp-in)', () => {
 });
 
 describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
+	it('uses instant ToC navigation when reduced motion is requested', async () => {
+		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+		const scrollIntoView = vi.fn();
+		Object.defineProperty(Element.prototype, 'scrollIntoView', {
+			configurable: true,
+			value: scrollIntoView,
+		});
+		motion.reduced = true;
+
+		try {
+			const { container } = render(NetworkSurface);
+			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+			await fireEvent.click(within(rail).getByRole('button', { name: copy.historicRegion }));
+			expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+		} finally {
+			motion.reduced = false;
+			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
+			else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+		}
+	});
+
 	it('renders ONE mobile pill labelled with the View heading + the active grain', () => {
 		const { container } = render(NetworkSurface);
 		// The SurfaceRail mobile pill replaces the old top-rail SurfaceControls + ControlsRail.
@@ -686,6 +741,45 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 		// The ONE sheet merges the view controls (the delay-series toggle) AND the region ToC.
 		expect(within(sheet).getByRole('radiogroup', { name: 'Delay series' })).toBeInTheDocument();
 		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
+	});
+
+	it('gives each rail presentation its own disabled-grain reason id', async () => {
+		const original = monthlySeries.slice();
+		monthlySeries.splice(0, monthlySeries.length);
+
+		try {
+			const { container } = render(NetworkSurface);
+			const railMobile = container.querySelector(
+				'[data-slot="surface-rail-mobile"]',
+			) as HTMLElement;
+			await fireEvent.click(railMobile.querySelector('button') as HTMLButtonElement);
+
+			const reasons = Array.from(
+				container.querySelectorAll<HTMLElement>('[data-slot="controls-reason"]'),
+			);
+			const reasonIds = reasons.map((reason) => reason.id);
+			expect(reasonIds).toHaveLength(2);
+			expect(new Set(reasonIds).size).toBe(reasonIds.length);
+			expect(reasonIds).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(/-desktop$/),
+					expect.stringMatching(/-mobile$/),
+				]),
+			);
+
+			const monthRadios = screen.getAllByRole('radio', { name: copy.grain.month });
+			expect(monthRadios).toHaveLength(2);
+			expect(monthRadios.map((radio) => radio.getAttribute('aria-describedby'))).toEqual(
+				expect.arrayContaining(reasonIds),
+			);
+			for (const radio of monthRadios) {
+				const describedBy = radio.getAttribute('aria-describedby');
+				expect(describedBy).not.toBeNull();
+				expect(container.querySelector(`#${describedBy}`)).not.toBeNull();
+			}
+		} finally {
+			monthlySeries.splice(0, monthlySeries.length, ...original);
+		}
 	});
 
 	it('minted a two-region ToC (Live now + Historic trend) on the shared TocNav', () => {

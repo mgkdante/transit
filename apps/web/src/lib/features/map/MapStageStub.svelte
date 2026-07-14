@@ -9,7 +9,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
-	import { STOPS_LAYER } from '$lib/components/map';
+	// Import the leaf directly so this fixture stays independent of the barrel it
+	// stands in for. Going through $lib/components/map would create a mock-factory
+	// cycle when a MapHero render test replaces that barrel's MapStage export.
+	import { STOPS_LAYER } from '$lib/components/map/stopsLayer';
 
 	interface Props {
 		class?: string;
@@ -23,6 +26,7 @@
 
 	type Handler = (e: unknown) => void;
 	const handlers = new SvelteMap<string, Handler[]>();
+	let pickCount = $state(0);
 
 	// A minimal fake MapLibre map: enough surface for installMapLayers /
 	// installMapInteractions / pickSelectionAt to run without WebGL.
@@ -39,6 +43,7 @@
 	};
 
 	function pick(): void {
+		pickCount += 1;
 		for (const handler of handlers.get('click') ?? []) {
 			handler({ point: { x: 10, y: 10 } });
 		}
@@ -49,6 +54,6 @@
 	});
 </script>
 
-<div class={className} data-testid="map-stage-stub">
+<div class={className} data-testid="map-stage-stub" data-pick-count={pickCount}>
 	<button type="button" data-testid="map-stage-stub-pick" onclick={pick} hidden>pick</button>
 </div>

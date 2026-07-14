@@ -58,7 +58,7 @@
 	} from '$lib/features/reliability/shiftGrains';
 	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
 	import { selectCrowdingDelay } from '../selectors/crowdingDelay';
-	import { selectBullet } from '../selectors/bullet';
+	import { otpTone, selectBullet } from '../selectors/bullet';
 	import { selectOccupancyShare } from '../selectors/occupancyShare';
 	import { detailCopy } from '../../lines.copy';
 	import type { ServiceDeliveredVM, CrowdingVM } from '../clusters';
@@ -82,9 +82,18 @@
 		 * threaded (isolated render).
 		 */
 		windowLabel?: string;
+		/** Show the retained-range scheduled-service completeness metric. */
+		showServiceCompleteness?: boolean;
 	}
 
-	let { service, crowding, locale, copy, windowLabel }: Section3RunAndFitProps = $props();
+	let {
+		service,
+		crowding,
+		locale,
+		copy,
+		windowLabel,
+		showServiceCompleteness = false,
+	}: Section3RunAndFitProps = $props();
 
 	// ── Shared explainer (i) wiring ────────────────────────────────────────────
 	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
@@ -110,6 +119,7 @@
 	// tile in lockstep with the strip.
 	const cancellationRatePct = $derived(service.cancellationRatePct);
 	const skippedStopRatePct = $derived(service.skippedStopRatePct);
+	const serviceCompletenessPct = $derived(service.serviceCompletenessPct);
 
 	/** Sum a count pair over the window → {part, total, sharePct}; null when none observed. */
 	function completeness<T>(
@@ -263,6 +273,15 @@
 			tone: 'warn',
 		}),
 	);
+	const serviceCompletenessBullet = $derived(
+		selectBullet(serviceCompletenessPct, locale, {
+			title: t.serviceCompletenessPct,
+			xLabel: t.serviceCompletenessPct,
+			unit: copy.units.pct,
+			domain: SHARE_DOMAIN,
+			tone: otpTone(serviceCompletenessPct),
+		}),
+	);
 	// The dominant occupancy band: how much of the mix that single band owns, on the fixed
 	// [0,100] share scale. Neutral tone — crowding is not "good/bad", the band label carries
 	// the identity. Null when there's no telemetry (the tile shows the honest absence chip).
@@ -318,6 +337,7 @@
 	const crowdingDelay = $derived(
 		selectCrowdingDelay(crowding.delayByCrowding, locale, {
 			title: copy.delayByCrowding.heading,
+			rowLabel: copy.delayByCrowding.bandHeader,
 			xLabel: copy.strip.avgDelayMin,
 			unit: copy.units.min,
 			bandLabel: (code) => bands[code],
@@ -393,6 +413,25 @@
 				</div>
 			{:else}
 				<div class="run-metrics">
+					{#if showServiceCompleteness}
+						<MetricBullet
+							label={t.serviceCompletenessPct}
+							valueText={pct(serviceCompletenessPct)}
+							spec={serviceCompletenessBullet}
+							{locale}
+							caption={service.scheduledService
+								? t.serviceCompletenessFraction(
+										num(service.scheduledService.delivered),
+										num(service.scheduledService.scheduled),
+										service.scheduledService.silent == null
+											? null
+											: num(service.scheduledService.silent),
+									)
+								: undefined}
+							data-slot="service-completeness"
+						/>
+					{/if}
+
 					<!-- Cancellations — text-led rate number + a LayerChart bullet on the fixed
 					     [0,100] scale; the honest "X of Y" raw count rides the caption. -->
 					<MetricBullet

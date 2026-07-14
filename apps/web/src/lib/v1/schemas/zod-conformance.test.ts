@@ -49,9 +49,19 @@ import {
 	ReceiptsIndexSchema,
 	RouteReliabilityIndexSchema,
 	RepeatOffendersSchema,
+	HistoricRepeatOffendersDaySchema,
 	HotspotsSchema,
+	HistoricHotspotsDaySchema,
 	NetworkTrendSchema,
 	AlertHistorySchema,
+	AlertArchivePageSchema,
+	AlertArchiveIndexSchema,
+	HistoricCollectionIndexSchema,
+	HistoricEntityDirectoryIndexSchema,
+	NetworkHistoryPartitionSchema,
+	LineHistoryPartitionSchema,
+	StopHistoryPartitionSchema,
+	HistoricAvailabilityIndexSchema,
 	// provenance
 	ProvenanceSchema,
 	// data health (live-lane)
@@ -116,7 +126,17 @@ const FAMILIES: Family[] = [
 		mirror: 'historic_repeat_offenders.schema.json',
 		schema: RepeatOffendersSchema,
 	},
+	{
+		label: 'historic_repeat_offenders_day',
+		mirror: 'historic_repeat_offenders_day.schema.json',
+		schema: HistoricRepeatOffendersDaySchema,
+	},
 	{ label: 'hotspots', mirror: 'historic_hotspots.schema.json', schema: HotspotsSchema },
+	{
+		label: 'historic_hotspots_day',
+		mirror: 'historic_hotspots_day.schema.json',
+		schema: HistoricHotspotsDaySchema,
+	},
 	{
 		label: 'network_trend',
 		mirror: 'historic_network_trend.schema.json',
@@ -126,6 +146,46 @@ const FAMILIES: Family[] = [
 		label: 'alert_history',
 		mirror: 'historic_alert_history.schema.json',
 		schema: AlertHistorySchema,
+	},
+	{
+		label: 'alert_archive_page',
+		mirror: 'historic_alert_archive_page.schema.json',
+		schema: AlertArchivePageSchema,
+	},
+	{
+		label: 'alert_archive_index',
+		mirror: 'historic_alert_archive_index.schema.json',
+		schema: AlertArchiveIndexSchema,
+	},
+	{
+		label: 'historic_collection_index',
+		mirror: 'historic_collection_index.schema.json',
+		schema: HistoricCollectionIndexSchema,
+	},
+	{
+		label: 'historic_entity_directory_index',
+		mirror: 'historic_entity_directory_index.schema.json',
+		schema: HistoricEntityDirectoryIndexSchema,
+	},
+	{
+		label: 'historic_network_history_partition',
+		mirror: 'historic_network_history_partition.schema.json',
+		schema: NetworkHistoryPartitionSchema,
+	},
+	{
+		label: 'historic_line_history_partition',
+		mirror: 'historic_line_history_partition.schema.json',
+		schema: LineHistoryPartitionSchema,
+	},
+	{
+		label: 'historic_stop_history_partition',
+		mirror: 'historic_stop_history_partition.schema.json',
+		schema: StopHistoryPartitionSchema,
+	},
+	{
+		label: 'historic_availability_index',
+		mirror: 'historic_availability_index.schema.json',
+		schema: HistoricAvailabilityIndexSchema,
 	},
 	// provenance
 	{ label: 'provenance', mirror: 'provenance.schema.json', schema: ProvenanceSchema },
@@ -172,13 +232,15 @@ function jsonAllowsNull(node: JsonNode): boolean {
 
 /** The enum members declared on a node (following a `$ref` into a `$def`), else null. */
 function jsonEnum(node: JsonNode, root: JsonSchema): string[] | null {
-	// A bare enum, or a $ref to an enum $def, or an anyOf with an enum branch.
+	// A bare enum/const, or a $ref to an enum $def, or an anyOf with an enum branch.
 	const candidates = branches(node).flatMap((b) => {
 		const d = deref(b, root);
-		return Array.isArray(d.enum) ? [d.enum as string[]] : [];
+		if (Array.isArray(d.enum)) return [d.enum as string[]];
+		return typeof d.const === 'string' ? [[d.const]] : [];
 	});
 	const direct = deref(node, root);
 	if (Array.isArray(direct.enum)) candidates.unshift(direct.enum as string[]);
+	else if (typeof direct.const === 'string') candidates.unshift([direct.const]);
 	return candidates.length ? candidates[0] : null;
 }
 
@@ -375,10 +437,10 @@ describe('Gate B — Zod ⇔ canonical JSON-Schema conformance', () => {
 			missingFiles,
 			`FAMILIES references a mirror file that is not on disk: ${missingFiles.join(', ')}`,
 		).toEqual([]);
-		// 23 canonical surfaces (live 5 + static 6 + historic 9 + manifest + provenance
-		// + data_health).
-		expect(onDisk.size).toBe(23);
-		expect(FAMILIES.length).toBe(23);
+		// Keep the total explicit so adding or removing a canonical surface requires an
+		// intentional update here as well as an exhaustive mirror pairing above.
+		expect(onDisk.size).toBe(33);
+		expect(FAMILIES.length).toBe(33);
 	});
 
 	for (const family of FAMILIES) {

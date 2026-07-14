@@ -1,11 +1,12 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import type { DataHealth, IsoUtc, Provenance } from '$lib/v1/schemas';
+import type { DataHealth, HistoricAvailabilityIndex, IsoUtc, Provenance } from '$lib/v1/schemas';
 
 const ports = vi.hoisted(() => ({
 	getProvenance: vi.fn(),
 	getDataHealth: vi.fn(),
+	getHistoricAvailability: vi.fn(),
 }));
 const motion = vi.hoisted(() => ({ reduced: false }));
 
@@ -14,6 +15,7 @@ vi.mock('$lib/v1', async () => {
 	return {
 		getProvenance: ports.getProvenance,
 		getDataHealth: ports.getDataHealth,
+		getHistoricAvailability: ports.getHistoricAvailability,
 		freshnessRelative: freshness.freshnessRelative,
 	};
 });
@@ -72,6 +74,19 @@ const dataHealthFixture: DataHealth = {
 	feeds: [],
 };
 
+const historyFixture: HistoricAvailabilityIndex = {
+	generated_utc: iso('2026-07-14T12:00:00Z'),
+	families: [
+		{
+			family: 'alerts',
+			selection_mode: 'range',
+			index_path: 'historic/alerts/index.json',
+			first_available_date: '2026-05-20',
+			last_available_date: '2026-07-14',
+		},
+	],
+};
+
 function deferred<T>() {
 	let resolve!: (value: T) => void;
 	const promise = new Promise<T>((done) => {
@@ -82,6 +97,7 @@ function deferred<T>() {
 
 let provenanceGate: ReturnType<typeof deferred<Provenance>>;
 let dataHealthGate: ReturnType<typeof deferred<DataHealth>>;
+let historyGate: ReturnType<typeof deferred<HistoricAvailabilityIndex | null>>;
 const scrollIntoView = vi.fn();
 const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
 
@@ -109,14 +125,19 @@ beforeEach(() => {
 
 	provenanceGate = deferred<Provenance>();
 	dataHealthGate = deferred<DataHealth>();
+	historyGate = deferred<HistoricAvailabilityIndex | null>();
 	ports.getProvenance.mockReset();
 	ports.getDataHealth.mockReset();
+	ports.getHistoricAvailability.mockReset();
 	ports.getProvenance
 		.mockImplementationOnce(() => provenanceGate.promise)
 		.mockImplementation(() => Promise.resolve(provenanceFixture));
 	ports.getDataHealth
 		.mockImplementationOnce(() => dataHealthGate.promise)
 		.mockImplementation(() => Promise.resolve(dataHealthFixture));
+	ports.getHistoricAvailability
+		.mockImplementationOnce(() => historyGate.promise)
+		.mockImplementation(() => Promise.resolve(historyFixture));
 });
 
 afterEach(() => {
@@ -135,6 +156,52 @@ afterAll(() => {
 });
 
 describe('HealthStatus — async reveal navigation', () => {
+	it('mounts the history card and ToC together after discovery, honoring quiet mode and Expand all', async () => {
+		sessionStorage.removeItem('transit.persisted:status-card-health-history-coverage');
+		const { container } = render(HealthStatus);
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		await waitFor(() => expect(ports.getHistoricAvailability).toHaveBeenCalledTimes(1));
+		expect(
+			within(center).queryByRole('button', { name: copy.en.historyCoverage.section }),
+		).toBeNull();
+		expect(
+			within(left).queryByRole('button', { name: copy.en.historyCoverage.section }),
+		).toBeNull();
+
+		historyGate.resolve(historyFixture);
+
+		const card = await waitFor(() =>
+			within(center).getByRole('button', { name: copy.en.historyCoverage.section }),
+		);
+		expect(
+			within(left).getByRole('button', { name: copy.en.historyCoverage.section }),
+		).toBeInTheDocument();
+		expect(card).toHaveAttribute('aria-expanded', 'false');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+		expect(card).toHaveAttribute('aria-expanded', 'true');
+	});
+
+	it('opens and scrolls a retained-history hash only after the async card and ToC exist', async () => {
+		window.location.hash = '#health-history-coverage';
+		const targets: Array<string | null> = [];
+		scrollIntoView.mockImplementation(function (this: Element) {
+			targets.push(this.getAttribute('data-toc'));
+		});
+		const { container } = render(HealthStatus);
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		await waitFor(() => expect(ports.getHistoricAvailability).toHaveBeenCalledTimes(1));
+
+		historyGate.resolve(historyFixture);
+
+		const card = await waitFor(() =>
+			within(center).getByRole('button', { name: copy.en.historyCoverage.section }),
+		);
+		await waitFor(() => expect(targets).toEqual(['health-history-coverage']));
+		expect(card).toHaveAttribute('aria-expanded', 'true');
+	});
+
 	it('opens and scrolls an async hash target once, even after a later data refresh', async () => {
 		window.location.hash = '#health-lanes';
 		const { container } = render(HealthStatus);

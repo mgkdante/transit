@@ -13,7 +13,8 @@
 // ledger fields (the fallback path reads the same recurrence / type / caveat copy).
 
 import type { Locale } from '$lib/i18n';
-import type { SurfaceHeadCopy } from '$lib/components/surface';
+import type { HistoryNavigatorLabels, SurfaceHeadCopy } from '$lib/components/surface';
+import type { HistoryCorrection } from '$lib/v1';
 
 export interface RepeatOffendersCopy extends SurfaceHeadCopy {
 	readonly article: {
@@ -24,6 +25,15 @@ export interface RepeatOffendersCopy extends SurfaceHeadCopy {
 		readonly sections: (count: number) => string;
 	};
 	readonly asOf: string;
+	readonly history: {
+		readonly navigator: HistoryNavigatorLabels;
+		readonly coverage: (first: string, last: string) => string;
+		readonly selection: (date: string) => string;
+		readonly correction: Record<HistoryCorrection['reason'], string>;
+		readonly retainedWindow: (date: string) => string;
+		readonly retainedWorstSubtitle: string;
+		readonly retainedHeroNone: string;
+	};
 	readonly rail: {
 		readonly label: string;
 		readonly open: string;
@@ -179,6 +189,35 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
 		},
 		asOf: 'AS OF',
+		history: {
+			navigator: {
+				group: 'Browse retained repeat-offender history',
+				picker: {
+					group: 'Repeat-offender history',
+					start: 'From',
+					end: 'To',
+					clear: 'Current data',
+					anyStart: 'Earliest date',
+					anyEnd: 'Latest date',
+					single: 'History date',
+				},
+				previous: 'Previous date',
+				next: 'Next date',
+			},
+			coverage: (first, last) => `History available: ${first} to ${last}.`,
+			selection: (date) => `Showing date: ${date}.`,
+			correction: {
+				malformed: 'That date was not valid. Showing the latest repeat offenders.',
+				'outside-coverage':
+					'That date is outside retained history. Showing the latest repeat offenders.',
+				gap: 'That date falls in a publication gap. Showing the latest repeat offenders.',
+				unpublished: 'That day was not published. Showing the latest repeat offenders.',
+			},
+			retainedWindow: (date) => `Available retained observations ending ${date}.`,
+			retainedWorstSubtitle:
+				'The worst repeat offender in the selected retained observations, its severe rate, and its streak',
+			retainedHeroNone: 'No repeat offender ranks in the selected retained observations.',
+		},
 		rail: {
 			label: 'View & contents',
 			open: 'Open view controls and contents',
@@ -302,6 +341,36 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
 		},
 		asOf: 'À JOUR AU',
+		history: {
+			navigator: {
+				group: 'Parcourir l’historique conservé des récidivistes',
+				picker: {
+					group: 'Historique des récidivistes',
+					start: 'Du',
+					end: 'Au',
+					clear: 'Données actuelles',
+					anyStart: 'Première date',
+					anyEnd: 'Dernière date',
+					single: 'Date historique',
+				},
+				previous: 'Date précédente',
+				next: 'Date suivante',
+			},
+			coverage: (first, last) => `Historique disponible : du ${first} au ${last}.`,
+			selection: (date) => `Date affichée : ${date}.`,
+			correction: {
+				malformed: 'Cette date n’était pas valide. Affichage des récidivistes les plus récents.',
+				'outside-coverage':
+					'Cette date est hors de l’historique conservé. Affichage des récidivistes les plus récents.',
+				gap: 'Cette date tombe dans une lacune de publication. Affichage des récidivistes les plus récents.',
+				unpublished:
+					'Cette journée n’a pas été publiée. Affichage des récidivistes les plus récents.',
+			},
+			retainedWindow: (date) => `Observations conservées disponibles se terminant le ${date}.`,
+			retainedWorstSubtitle:
+				'Le pire récidiviste des observations conservées sélectionnées, son taux de retards graves et sa série',
+			retainedHeroNone: 'Aucun récidiviste classé dans les observations conservées sélectionnées.',
+		},
 		rail: {
 			label: 'Vue et sommaire',
 			open: 'Ouvrir les commandes et le sommaire',

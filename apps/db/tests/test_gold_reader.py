@@ -385,9 +385,14 @@ _C2_TOUCHED_SQL_SHA256 = {
     "stop.occupancy.band_window": (
         "d833895c42e44543e95389d8c9c015f0299286b8d0d34becac220f05ecdb0fed"
     ),
-    "receipts.accountability": "8a95c3e78aebcfd252373dd7fc8cad9ba496ae9bc3d943e640447721f72332c7",
-    "receipts.worst_route": "446fd95112efb2e19080d74d0999e2c15ead10478bf0301d3b6a9e9c1c963d11",
-    "receipts.worst_stop": "aeccf30a7d837bb0d1fa71ce07e70e9191ff28db9adf55b5dd0ab1594c0d8230",
+    # RE-FROZEN (Task 3, 2026-07-13): receipt discovery now follows every retained
+    # accountability date. The driver lost its trailing wall-clock cap; worst-route
+    # and worst-stop enrichment use the driver's actual inclusive min/max bounds.
+    "receipts.accountability": "b9580ef70c44a3a84f74f1d696495602f0d15c55aa82100dcc0bf4745525e5d7",
+    # RE-FROZEN (Task 3 review): DISTINCT ON now enforces the existing top-one-per-date
+    # ranking in PostgreSQL instead of streaming every retained route/stop row to Python.
+    "receipts.worst_route": "801185a271e42fd0e8e70c8525a486c3f969bab9161ea650e475e94a533808aa",
+    "receipts.worst_stop": "38bd3eeaab7d373296085f49ceba254d0095339e76a328dd8c0a6bf7774324f5",
     # RE-FROZEN (S15, 2026-07-02): alerts.history was windowed — the now()-anchored
     # trailing-30 clause became explicit :win_start/:win_end binds serving the full
     # retention span, LIMIT 200 -> 500, + correlated url / active_periods subqueries

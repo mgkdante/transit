@@ -23,6 +23,7 @@ export interface HealthCopy extends SurfaceHeadCopy {
 		readonly title: string;
 		readonly dailyRecord: string;
 		readonly liveFeeds: string;
+		readonly retainedHistory: string;
 	};
 	/** Shared yesid-style article header copy for /status. */
 	readonly article: {
@@ -101,6 +102,51 @@ export interface HealthCopy extends SurfaceHeadCopy {
 		readonly aggregateLabel: string;
 		/** Unit suffix appended to a day count (e.g. " days"). */
 		readonly daysUnit: string;
+	};
+	/** Published retained-history coverage, as accrued rather than promised. */
+	readonly historyCoverage: {
+		readonly section: string;
+		readonly note: string;
+		readonly tableLabel: string;
+		readonly columns: {
+			readonly family: string;
+			readonly window: string;
+			readonly selection: string;
+			readonly details: string;
+		};
+		readonly families: Readonly<
+			Record<
+				'alerts' | 'receipts' | 'network' | 'lines' | 'stops' | 'hotspots' | 'repeat_offenders',
+				string
+			>
+		>;
+		readonly selection: { readonly range: string; readonly date: string };
+		readonly aggregation: {
+			readonly additive: string;
+			readonly daily_only: string;
+			readonly current_only: string;
+		};
+		readonly metrics: Readonly<
+			Record<
+				| 'delay'
+				| 'delay_percentiles'
+				| 'vehicles'
+				| 'cancellation'
+				| 'occupancy'
+				| 'service_span'
+				| 'skipped_stops',
+				string
+			>
+		>;
+		readonly unavailable: string;
+		readonly noCoverage: string;
+		readonly noDeclaredGaps: string;
+		readonly familyGaps: string;
+		readonly metricCoverage: string;
+		readonly noMetricInventory: string;
+		readonly currentOnlySections: string;
+		readonly currentOnlyNote: string;
+		readonly currentOnlySectionLabels: Readonly<Record<string, string>>;
 	};
 	/** Conformance section (full verdict + unknown-member list). */
 	readonly conformance: {
@@ -255,6 +301,7 @@ export const copy: Record<Locale, HealthCopy> = {
 			title: 'Overview',
 			dailyRecord: 'Daily record',
 			liveFeeds: 'Live feeds',
+			retainedHistory: 'Retained history',
 		},
 		asOf: 'AS OF',
 		freshness: {
@@ -306,6 +353,63 @@ export const copy: Record<Locale, HealthCopy> = {
 			aggregateLabel: 'Aggregate window',
 			daysUnit: ' days',
 		},
+		historyCoverage: {
+			section: 'Retained history coverage',
+			note: 'What is actually published today, family by family and metric by metric. These dates report accrued coverage, not the retention ceiling or a promise that every day exists.',
+			tableLabel: 'Published retained-history coverage',
+			columns: {
+				family: 'Page family',
+				window: 'Published window',
+				selection: 'How to browse',
+				details: 'Coverage details',
+			},
+			families: {
+				alerts: 'Alerts',
+				receipts: 'Daily receipts',
+				network: 'Network',
+				lines: 'Lines',
+				stops: 'Stops',
+				hotspots: 'Hotspots',
+				repeat_offenders: 'Repeat offenders',
+			},
+			selection: { range: 'Date range', date: 'Single date' },
+			aggregation: {
+				additive: 'Adds across selected days',
+				daily_only: 'Daily points; not combined',
+				current_only: 'Current view only; not retained',
+			},
+			metrics: {
+				delay: 'Delay',
+				delay_percentiles: 'Delay percentiles',
+				vehicles: 'Live vehicles',
+				cancellation: 'Cancellations',
+				occupancy: 'Crowding',
+				service_span: 'Service span',
+				skipped_stops: 'Skipped stops',
+			},
+			unavailable: 'Not published in this history index',
+			noCoverage: 'No retained dates reported',
+			noDeclaredGaps: 'No gaps declared',
+			familyGaps: 'Family gaps',
+			metricCoverage: 'Metric coverage',
+			noMetricInventory: 'No per-metric inventory published',
+			currentOnlySections: 'Current-only sections',
+			currentOnlyNote: 'These parts of the current page are not reconstructed for past dates:',
+			currentOnlySectionLabels: {
+				identity: 'Identity',
+				live_status: 'Live status',
+				headway: 'Headway',
+				habits: 'Patterns',
+				weak_stops: 'Weak stops',
+				by_shift: 'By shift',
+				by_daytype: 'By day type',
+				by_crowding: 'By crowding',
+				periods: 'Periods',
+				weekday: 'Weekday',
+				time_of_day: 'Time of day',
+				by_route: 'By route',
+			},
+		},
 		conformance: {
 			section: 'Feed conformance',
 			note: 'How cleanly the latest schedule payload matched the model the pipeline expects.',
@@ -332,7 +436,7 @@ export const copy: Record<Locale, HealthCopy> = {
 				maintenance: 'Maintenance',
 			},
 			cadence: {
-				live: 'every ~57 seconds',
+				live: '30-second operating target; delivery may take longer',
 				static: 'daily, 06:00 UTC',
 				rollup: 'daily, 07:00 UTC',
 			},
@@ -407,6 +511,7 @@ export const copy: Record<Locale, HealthCopy> = {
 			title: 'Vue d’ensemble',
 			dailyRecord: 'Bilan quotidien',
 			liveFeeds: 'Flux en direct',
+			retainedHistory: 'Historique conservé',
 		},
 		asOf: 'À JOUR AU',
 		freshness: {
@@ -458,6 +563,64 @@ export const copy: Record<Locale, HealthCopy> = {
 			aggregateLabel: 'Fenêtre d’agrégats',
 			daysUnit: ' jours',
 		},
+		historyCoverage: {
+			section: 'Couverture de l’historique conservé',
+			note: 'Ce qui est réellement publié aujourd’hui, famille par famille et métrique par métrique. Ces dates décrivent la couverture accumulée, pas la limite de conservation ni la promesse que chaque journée existe.',
+			tableLabel: 'Couverture publiée de l’historique conservé',
+			columns: {
+				family: 'Famille de pages',
+				window: 'Fenêtre publiée',
+				selection: 'Mode de consultation',
+				details: 'Détails de couverture',
+			},
+			families: {
+				alerts: 'Alertes',
+				receipts: 'Bilans quotidiens',
+				network: 'Réseau',
+				lines: 'Lignes',
+				stops: 'Arrêts',
+				hotspots: 'Points chauds',
+				repeat_offenders: 'Récidivistes',
+			},
+			selection: { range: 'Plage de dates', date: 'Date unique' },
+			aggregation: {
+				additive: 'S’additionne sur les jours choisis',
+				daily_only: 'Points quotidiens; non combinés',
+				current_only: 'Vue actuelle seulement; non conservée',
+			},
+			metrics: {
+				delay: 'Retard',
+				delay_percentiles: 'Percentiles de retard',
+				vehicles: 'Véhicules en direct',
+				cancellation: 'Annulations',
+				occupancy: 'Achalandage',
+				service_span: 'Amplitude de service',
+				skipped_stops: 'Arrêts sautés',
+			},
+			unavailable: 'Non publiée dans cet index historique',
+			noCoverage: 'Aucune date conservée signalée',
+			noDeclaredGaps: 'Aucune lacune déclarée',
+			familyGaps: 'Lacunes de la famille',
+			metricCoverage: 'Couverture par métrique',
+			noMetricInventory: 'Aucun inventaire par métrique publié',
+			currentOnlySections: 'Sections limitées au présent',
+			currentOnlyNote:
+				'Ces parties de la page actuelle ne sont pas reconstruites pour les dates passées :',
+			currentOnlySectionLabels: {
+				identity: 'Identité',
+				live_status: 'État en direct',
+				headway: 'Intervalle',
+				habits: 'Habitudes',
+				weak_stops: 'Arrêts faibles',
+				by_shift: 'Par quart',
+				by_daytype: 'Par type de jour',
+				by_crowding: 'Par achalandage',
+				periods: 'Périodes',
+				weekday: 'Jour de semaine',
+				time_of_day: 'Moment de la journée',
+				by_route: 'Par ligne',
+			},
+		},
 		conformance: {
 			section: 'Conformité du flux',
 			note: 'À quel point le dernier horaire correspondait au modèle attendu par le pipeline.',
@@ -484,7 +647,7 @@ export const copy: Record<Locale, HealthCopy> = {
 				maintenance: 'Maintenance',
 			},
 			cadence: {
-				live: 'toutes les ~57 secondes',
+				live: 'cible d’exploitation de 30 secondes; l’affichage peut prendre plus de temps',
 				static: 'chaque jour, 06:00 UTC',
 				rollup: 'chaque jour, 07:00 UTC',
 			},

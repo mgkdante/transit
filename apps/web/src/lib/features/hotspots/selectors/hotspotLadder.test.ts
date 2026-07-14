@@ -14,6 +14,7 @@ import type { MagnitudeBarsSpec, AbsenceSpec } from '$lib/components/dataviz/cha
 
 const labels: HotspotLadderLabels = {
 	title: 'Worst spots',
+	rowLabel: 'Stop',
 	xLabel: 'Severe-delay rate',
 	unit: '%',
 	ciLabel: '95% CI',
@@ -87,6 +88,7 @@ describe('selectHotspotLadder', () => {
 		expect(spec.mark).toBe('lollipop');
 		expect(spec.sort).toBe('given');
 		expect(spec.scale).toBe('severity');
+		expect(spec.rowLabel).toBe('Stop');
 	});
 
 	it('encodes severe_pct as the bar value (the rank variable, always >= 0)', () => {

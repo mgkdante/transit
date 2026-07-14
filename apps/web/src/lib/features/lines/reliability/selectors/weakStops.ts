@@ -21,6 +21,8 @@ import type { WeakStop } from '$lib/v1';
 export interface WeakStopsLabels {
 	/** Accessible name (e.g. "Weakest stops by delay"). */
 	title: string;
+	/** Localized stop heading for the AT table mirror. */
+	rowLabel: string;
 	/** Localized value-axis title for the FALLBACK (avg-delay) path (e.g. "Avg delay"). */
 	xLabel: string;
 	/** Value unit suffix for the fallback path (e.g. " min"). */
@@ -134,6 +136,7 @@ export function selectWeakStops(
 			locale,
 			domain: preRanked ? SEVERE_DOMAIN : DELAY_POS_DOMAIN,
 			unit: preRanked ? (labels.severeUnit ?? labels.unit) : labels.unit,
+			rowLabel: labels.rowLabel,
 			xLabel: preRanked ? (labels.severeXLabel ?? labels.xLabel) : labels.xLabel,
 			// the Wilson interval is meaningful only on the severe-rate (preRanked) path.
 			ciLabel: preRanked ? labels.ciLabel : undefined,

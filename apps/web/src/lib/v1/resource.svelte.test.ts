@@ -7,7 +7,7 @@ import { flushSync } from 'svelte';
 const mocks = vi.hoisted(() => ({
 	noteDataGeneratedUtc: vi.fn<(v: string | null | undefined) => void>(),
 }));
-vi.mock('$lib/stores', () => ({
+vi.mock('$lib/stores/refresh.svelte', () => ({
 	dataRefresh: {
 		// `epoch` must be a reactive-looking getter so the resource's effect tracks it.
 		get epoch() {
@@ -22,10 +22,12 @@ import { createResource } from './resource.svelte';
 // A deferred so a test can hold a fetch open and assert in-flight ordering if needed.
 function deferred<T>() {
 	let resolve!: (v: T) => void;
-	const promise = new Promise<T>((res) => {
+	let reject!: (reason: unknown) => void;
+	const promise = new Promise<T>((res, rej) => {
 		resolve = res;
+		reject = rej;
 	});
-	return { promise, resolve };
+	return { promise, resolve, reject };
 }
 
 describe('createResource — reactivity to inputs read inside the fetcher', () => {
@@ -216,6 +218,132 @@ describe('createResource — reactivity to inputs read inside the fetcher', () =
 				flushSync();
 				expect(fetcher).toHaveBeenCalledTimes(2);
 			});
+		} finally {
+			cleanup();
+		}
+	});
+});
+
+describe('createResource — cancellation ownership', () => {
+	it('aborts superseded request A and lets only request B populate state', async () => {
+		let key = $state('A');
+		const requests: Array<{
+			key: string;
+			signal: AbortSignal;
+			pending: ReturnType<typeof deferred<string>>;
+		}> = [];
+		let resource!: ReturnType<typeof createResource<string>>;
+
+		const cleanup = $effect.root(() => {
+			resource = createResource((signal) => {
+				const captured = key;
+				const pending = deferred<string>();
+				requests.push({ key: captured, signal, pending });
+				return pending.promise;
+			});
+			flushSync();
+		});
+
+		try {
+			expect(requests.map((request) => request.key)).toEqual(['A']);
+			key = 'B';
+			flushSync();
+			expect(requests.map((request) => request.key)).toEqual(['A', 'B']);
+			expect(requests[0].signal.aborted).toBe(true);
+			expect(requests[1].signal.aborted).toBe(false);
+
+			requests[0].pending.resolve('stale-A');
+			await Promise.resolve();
+			flushSync();
+			expect(resource.data).toBeNull();
+
+			requests[1].pending.resolve('fresh-B');
+			await vi.waitFor(() => {
+				flushSync();
+				expect(resource.data).toBe('fresh-B');
+			});
+			expect(resource.error).toBeNull();
+		} finally {
+			cleanup();
+		}
+	});
+
+	it('reload aborts the current attempt before starting its replacement', () => {
+		const signals: AbortSignal[] = [];
+		let resource!: ReturnType<typeof createResource<string>>;
+		const cleanup = $effect.root(() => {
+			resource = createResource((signal) => {
+				signals.push(signal);
+				return deferred<string>().promise;
+			});
+			flushSync();
+		});
+
+		try {
+			expect(signals).toHaveLength(1);
+			resource.reload();
+			flushSync();
+			expect(signals).toHaveLength(2);
+			expect(signals[0].aborted).toBe(true);
+			expect(signals[1].aborted).toBe(false);
+		} finally {
+			cleanup();
+		}
+	});
+
+	it('aborts the current attempt on effect teardown', () => {
+		let signal!: AbortSignal;
+		const cleanup = $effect.root(() => {
+			createResource((attemptSignal) => {
+				signal = attemptSignal;
+				return deferred<string>().promise;
+			});
+			flushSync();
+		});
+
+		expect(signal.aborted).toBe(false);
+		cleanup();
+		expect(signal.aborted).toBe(true);
+	});
+
+	it('keeps AbortError silent while preserving settled state', async () => {
+		let resource!: ReturnType<typeof createResource<string>>;
+		const cleanup = $effect.root(() => {
+			resource = createResource(async () => {
+				throw new DOMException('cancelled', 'AbortError');
+			});
+			flushSync();
+		});
+
+		try {
+			await vi.waitFor(() => {
+				flushSync();
+				expect(resource.settled).toBe(true);
+			});
+			expect(resource.loading).toBe(false);
+			expect(resource.error).toBeNull();
+		} finally {
+			cleanup();
+		}
+	});
+
+	it('still surfaces a real failure unchanged', async () => {
+		const failure = new Error('network failed');
+		let resource!: ReturnType<typeof createResource<string>>;
+		const cleanup = $effect.root(() => {
+			resource = createResource(async () => {
+				throw failure;
+			});
+			flushSync();
+		});
+
+		try {
+			await vi.waitFor(() => {
+				flushSync();
+				expect(resource.settled).toBe(true);
+			});
+			expect(resource.error).toBe(failure);
+			expect(resource.loading).toBe(false);
 		} finally {
 			cleanup();
 		}

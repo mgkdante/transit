@@ -36,7 +36,7 @@ export interface LaneRow {
 	readonly key: string;
 	/** Localized lane label (e.g. "Live", "Schedule", "Rollups", "Maintenance"). */
 	readonly label: string;
-	/** Localized scheduled-cadence line (e.g. "every ~57s", "daily 06:00 UTC"). */
+	/** Localized operating target / scheduled-cadence line (e.g. "30-second target"). */
 	readonly cadence: string;
 	/** Whether this lane has a DB heartbeat. false → the not-applicable row. */
 	readonly applicable: boolean;

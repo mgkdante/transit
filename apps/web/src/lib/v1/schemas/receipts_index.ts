@@ -1,7 +1,6 @@
 // receipts_index.ts — Zod mirror of historic_receipts_index.schema.json
-// (title: "ReceiptsIndex"). The discovery index of published receipt dates:
-// fetch {receipts_prefix}{date}.json for each date. Dates absent here either
-// never had data (404 -> empty state) or are older archived receipts.
+// (title: "ReceiptsIndex"). The exact current-publication discovery set built
+// from retained accountability rows; fetch {receipts_prefix}{date}.json per date.
 
 import { z } from 'zod';
 import { isoUtc, payloadEnvelopeFields } from './types';
@@ -19,8 +18,9 @@ export type ReceiptAvailability = z.infer<typeof ReceiptAvailabilitySchema>;
 
 export const ReceiptsIndexSchema = z.object({
 	generated_utc: isoUtc(),
-	// ISO dates with a published receipt in the trailing 30-day build window,
-	// ascending. Optional: absent when the index has not been built yet.
+	collection_generation_id: z.string().nullable().optional(),
+	// Exact ascending dates built from retained accountability rows in this publication.
+	// Optional: absent when the index has not been built yet.
 	dates: z.array(z.string()).optional(),
 	// S13 additive-optional per-date availability (default absent on a pre-S13 index).
 	available: z.array(ReceiptAvailabilitySchema).optional(),

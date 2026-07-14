@@ -9,6 +9,7 @@ const rows: ShiftBarDatum[] = [
 
 const opts = {
 	title: 'Spread',
+	rowLabel: 'Shift',
 	xLabel: 'Spread',
 	unit: '',
 	domain: [0, 1.2] as const,
@@ -24,6 +25,7 @@ describe('selectShiftBars', () => {
 		expect(s.scale).toBe('severity');
 		expect(s.domain).toEqual([0, 1.2]);
 		expect(s.rows.map((r) => r.key)).toEqual(['am', 'mid', 'pm']);
+		expect(s.rowLabel).toBe('Shift');
 	});
 
 	it('keeps a null reading honestly absent (labelled, no fake-0 bar)', () => {

@@ -19,7 +19,7 @@
 // RouteFile/StopFile) — structurally identical, so the ports satisfy them.
 
 import type { Locale } from '$lib/i18n';
-import type { FetchFn } from '$lib/v1/http';
+import type { FetchFn, RawJsonEntity } from '$lib/v1/http';
 
 import type { Manifest } from '$lib/v1/schemas/manifest';
 import type { VehiclesFile } from '$lib/v1/schemas/vehicles';
@@ -33,7 +33,8 @@ import type { StopsIndex } from '$lib/v1/schemas/stops_index';
 import type { StopFile } from '$lib/v1/schemas/stop';
 import type { NetworkTrend } from '$lib/v1/schemas/network_trend';
 import type { Hotspots } from '$lib/v1/schemas/hotspots';
-import type { RepeatOffenders } from '$lib/v1/schemas/repeat_offenders';
+import type { HistoricHotspotsDay } from '$lib/v1/schemas/hotspots';
+import type { HistoricRepeatOffendersDay, RepeatOffenders } from '$lib/v1/schemas/repeat_offenders';
 import type { AlertHistory } from '$lib/v1/schemas/alert_history';
 import type { ReceiptsIndex } from '$lib/v1/schemas/receipts_index';
 import type { RouteReliabilityIndex } from '$lib/v1/schemas/route_reliability_index';
@@ -43,6 +44,15 @@ import type { StopReliability } from '$lib/v1/schemas/stop_reliability';
 import type { Provenance } from '$lib/v1/schemas/provenance';
 import type { DataHealth } from '$lib/v1/schemas/data_health';
 import type { BasemapFile } from '$lib/v1/schemas/basemap';
+import type { AlertArchiveIndex, AlertArchivePage } from '$lib/v1/schemas/alert_archive';
+import type {
+	HistoricAvailabilityIndex,
+	HistoricCollectionIndex,
+	HistoricEntityDirectoryIndex,
+	LineHistoryPartition,
+	NetworkHistoryPartition,
+	StopHistoryPartition,
+} from '$lib/v1/schemas/history';
 
 /**
  * Per-request adapter context. Threaded from `event` in SSR loads so reads use
@@ -55,6 +65,8 @@ export interface AdapterCtx {
 	cache?: Map<string, unknown>;
 	/** Optional abort signal for the underlying requests. */
 	signal?: AbortSignal;
+	/** Force one immediate retained-history pointer re-read with cache busting. */
+	freshHistoryParent?: boolean;
 }
 
 /** Snapshot root pointer. Read first — every other family resolves relative to it. */
@@ -86,6 +98,57 @@ export interface StaticPort {
 
 /** Historic tier (daily TTL): rollups + per-entity detail/receipts (404 -> null). */
 export interface HistoricPort {
+	historyIndex(ctx?: AdapterCtx): Promise<HistoricAvailabilityIndex | null>;
+	networkHistoryIndex(path: string, ctx?: AdapterCtx): Promise<HistoricCollectionIndex | null>;
+	hotspotsHistoryIndex(path: string, ctx?: AdapterCtx): Promise<HistoricCollectionIndex | null>;
+	repeatOffendersHistoryIndex(
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<HistoricCollectionIndex | null>;
+	lineHistoryDirectory(
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<HistoricEntityDirectoryIndex | null>;
+	stopHistoryDirectory(
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<HistoricEntityDirectoryIndex | null>;
+	lineHistoryIndex(
+		entityId: string,
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<HistoricCollectionIndex | null>;
+	stopHistoryIndex(
+		entityId: string,
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<HistoricCollectionIndex | null>;
+	networkHistoryPartition(
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<RawJsonEntity<NetworkHistoryPartition> | null>;
+	lineHistoryPartition(
+		entityId: string,
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<RawJsonEntity<LineHistoryPartition> | null>;
+	stopHistoryPartition(
+		entityId: string,
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<RawJsonEntity<StopHistoryPartition> | null>;
+	hotspotsHistoryDay(
+		date: string,
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<RawJsonEntity<HistoricHotspotsDay> | null>;
+	repeatOffendersHistoryDay(
+		date: string,
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<RawJsonEntity<HistoricRepeatOffendersDay> | null>;
+	alertArchiveIndex(ctx?: AdapterCtx): Promise<AlertArchiveIndex | null>;
+	alertArchivePage(path: string, ctx?: AdapterCtx): Promise<AlertArchivePage | null>;
 	networkTrend(ctx?: AdapterCtx): Promise<NetworkTrend>;
 	hotspots(ctx?: AdapterCtx): Promise<Hotspots>;
 	repeatOffenders(ctx?: AdapterCtx): Promise<RepeatOffenders>;

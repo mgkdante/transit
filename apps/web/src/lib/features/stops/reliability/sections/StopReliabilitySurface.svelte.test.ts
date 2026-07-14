@@ -2,6 +2,8 @@ import { render, fireEvent, within } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { StopReliability, IsoUtc } from '$lib/v1';
 
+const motion = vi.hoisted(() => ({ reduced: false }));
+
 // Seed the grain rail from ?grain on load + mirror it back. Mock the SvelteKit page URL
 // (mutable) + a replaceState that UPDATES it, so the seed, availability clamp, AND the
 // round-trip mirror (incl. the day default-omit) are testable — the same harness the
@@ -21,6 +23,18 @@ vi.mock('$app/state', () => ({
 	},
 }));
 vi.mock('$app/navigation', () => ({ replaceState }));
+vi.mock('$lib/v1', async () => ({
+	...(await import('$lib/v1/history')),
+	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
+}));
+vi.mock('$lib/motion/reduced-motion.svelte', () => ({
+	prefersReducedMotion: {
+		get current() {
+			return motion.reduced;
+		},
+	},
+	isPrefersReducedMotion: () => motion.reduced,
+}));
 
 import StopReliabilitySurface from './StopReliabilitySurface.svelte';
 
@@ -57,6 +71,7 @@ const data: StopReliability = {
 			avg_delay_min: 1.8,
 		},
 	],
+	by_route: [{ route: '51', avg_delay_min: 6 }],
 };
 
 // P5.4: the grain radiogroup now lives in the map-style GLASS LEFT RAIL (SurfaceRail),
@@ -148,6 +163,29 @@ describe('StopReliabilitySurface — GLASS LEFT RAIL structure (P5.4)', () => {
 		replaceState.mockClear();
 	});
 
+	it('uses instant ToC navigation when reduced motion is requested', async () => {
+		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+		const scrollIntoView = vi.fn();
+		Object.defineProperty(Element.prototype, 'scrollIntoView', {
+			configurable: true,
+			value: scrollIntoView,
+		});
+		motion.reduced = true;
+
+		try {
+			const { container } = render(StopReliabilitySurface, {
+				props: { data, locale: 'en' },
+			});
+			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+			await fireEvent.click(within(rail).getByRole('button', { name: 'Daily trend' }));
+			expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+		} finally {
+			motion.reduced = false;
+			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
+			else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+		}
+	});
+
 	it('renders the SurfaceRail: a desktop glass panel + a mobile pill that opens a dialog sheet', async () => {
 		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
 		// Desktop glass panel holds the grain radiogroup + the section ToC.
@@ -203,6 +241,16 @@ describe('StopReliabilitySurface — GLASS LEFT RAIL structure (P5.4)', () => {
 		);
 		expect(labels).not.toContain('Daily delay'); // day-only percentiles gone
 	});
+
+	it('keeps the visible route metric in each Line link accessible name', () => {
+		const view = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
+
+		expect(
+			view.getByRole('link', {
+				name: (name) => name.includes('View line 51') && name.includes('6.0 min'),
+			}),
+		).toHaveAttribute('href', '/lines/51');
+	});
 });
 
 describe('StopReliabilitySurface — daily trend + range verdict (S8A)', () => {
@@ -211,7 +259,7 @@ describe('StopReliabilitySurface — daily trend + range verdict (S8A)', () => {
 		replaceState.mockClear();
 	});
 
-	it('mounts the daily-trend section with the S8B DateRangePicker seam', () => {
+	it('mounts the daily-trend section with the presenter window seam', () => {
 		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
 		expect(container.querySelector('[data-slot="stop-daily-trend"]')).not.toBeNull();
 		// The S8B mount seam is present (a {from,to} window prop drives it).

@@ -11,7 +11,7 @@
 //      entry keeps its 1-based ladder rank; a tray entry's rank is null.
 
 import { describe, it, expect } from 'vitest';
-import { HotspotsSchema, HotspotGrainSchema } from './hotspots';
+import { HistoricHotspotsDaySchema, HotspotsSchema, HotspotGrainSchema } from './hotspots';
 
 describe('Hotspots.by_grain — S12 re-granulated ladders', () => {
 	it('parses a scalar-only (pre-S12) payload — by_grain is additive-optional', () => {
@@ -78,5 +78,64 @@ describe('Hotspots.by_grain — S12 re-granulated ladders', () => {
 
 	it('a HotspotGrain with only a grain key is valid (entries/tray optional)', () => {
 		expect(() => HotspotGrainSchema.parse({ grain: 'day' })).not.toThrow();
+	});
+});
+
+describe('HistoricHotspotsDay contract', () => {
+	it('requires one real self-identifying date without changing the current schema', () => {
+		expect(
+			HistoricHotspotsDaySchema.parse({
+				generated_utc: '2026-07-13T12:00:00Z',
+				date: '2026-07-13',
+			}),
+		).toMatchObject({ date: '2026-07-13' });
+		expect(() =>
+			HistoricHotspotsDaySchema.parse({ generated_utc: '2026-07-13T12:00:00Z' }),
+		).toThrow();
+		expect(() =>
+			HistoricHotspotsDaySchema.parse({
+				generated_utc: '2026-07-13T12:00:00Z',
+				date: '2026-02-30',
+			}),
+		).toThrow();
+
+		expect(HotspotsSchema.parse({ generated_utc: '2026-07-13T12:00:00Z' })).not.toHaveProperty(
+			'date',
+		);
+	});
+
+	it('enforces canonical retained grain vocabulary, order, and payload-anchored endpoints', () => {
+		const valid = [
+			{ grain: 'day', date: '2026-07-13', window_end: '2026-07-13' },
+			{ grain: 'week', date: '2026-07-07', window_end: '2026-07-13' },
+			{ grain: 'month', date: '2026-06-14', window_end: '2026-07-13' },
+			{ grain: 'shift', date: null, window_end: null },
+		];
+		expect(
+			HistoricHotspotsDaySchema.parse({
+				generated_utc: '2026-07-13T12:00:00Z',
+				date: '2026-07-13',
+				by_grain: valid,
+			}).by_grain?.map((grain) => grain.grain),
+		).toEqual(['day', 'week', 'month', 'shift']);
+
+		for (const by_grain of [
+			[{ grain: 'nonsense', date: null, window_end: null }],
+			[valid[0], valid[0]],
+			[valid[1], valid[0]],
+			[{ grain: 'day', date: '2026-07-12', window_end: '2026-07-13' }],
+			[{ grain: 'week', date: '2026-07-07', window_end: '2026-07-12' }],
+			[{ grain: 'month', date: '2026-06-15', window_end: '2026-07-13' }],
+			[{ grain: 'shift', date: '2026-07-07', window_end: '2026-07-13' }],
+		]) {
+			expect(() =>
+				HistoricHotspotsDaySchema.parse({
+					generated_utc: '2026-07-13T12:00:00Z',
+					date: '2026-07-13',
+					by_grain,
+				}),
+			).toThrow();
+		}
+		expect(() => HotspotGrainSchema.parse({ grain: 'nonsense' })).not.toThrow();
 	});
 });

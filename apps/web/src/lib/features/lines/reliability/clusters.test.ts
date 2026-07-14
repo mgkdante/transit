@@ -5,7 +5,7 @@
 //   3. sparse / all-null fields never crash and resolve to honest empties.
 
 import { describe, expect, it } from 'vitest';
-import type { RouteReliability, IsoUtc } from '$lib/v1';
+import type { RouteReliability, IsoUtc, LineHistoryRange } from '$lib/v1';
 import { toReliabilityClusters } from './clusters';
 
 /** Brand a plain string as the IsoUtc the contract requires (matches the codebase fixture idiom). */
@@ -472,6 +472,65 @@ describe('toReliabilityClusters — null fields never crash', () => {
 		});
 		expect(c.habits.isEmpty).toBe(true);
 		expect(c.habits.matrix).toEqual([]);
+	});
+});
+
+describe('toReliabilityClusters — retained scheduled-service honesty', () => {
+	it('keeps mixed known/unknown delivered rows unknown instead of falling back to the known subset', () => {
+		const data: RouteReliability = {
+			generated_utc: utc('2026-07-03T02:00:00Z'),
+			id: '161',
+			cancellations: [
+				{
+					grain: 'day',
+					date: '2026-07-01',
+					canceled_trip_days: 0,
+					total_trip_days: 10,
+					scheduled_trip_days: 10,
+					delivered_trip_days: 10,
+					silent_trip_days: 0,
+					service_completeness_pct: 100,
+				},
+				{
+					grain: 'day',
+					date: '2026-07-02',
+					canceled_trip_days: 0,
+					total_trip_days: 10,
+					scheduled_trip_days: 10,
+					delivered_trip_days: null,
+					silent_trip_days: null,
+					service_completeness_pct: null,
+				},
+			],
+		};
+		const retained = {
+			aggregate: {
+				delay: { status: 'no_data', value: null },
+				cancellation: {
+					status: 'partial',
+					value: {
+						canceledTripDays: 0,
+						totalTripDays: 20,
+						cancellationRatePct: 0,
+						scheduledTripDays: 20,
+						deliveredTripDays: null,
+						silentTripDays: null,
+						completenessPct: null,
+					},
+				},
+				skippedStops: { status: 'no_data', value: null },
+			} as LineHistoryRange,
+			retainedDayCount: 2,
+		};
+
+		const c = toReliabilityClusters(data, {
+			grain: 'day',
+			dateRange: { start: '2026-07-01', end: '2026-07-02' },
+			retained,
+		});
+
+		expect(c.serviceDelivered.serviceCompletenessPct).toBeNull();
+		expect(c.serviceDelivered.scheduledService).toBeNull();
 	});
 });
 

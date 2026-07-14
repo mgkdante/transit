@@ -12,22 +12,20 @@
     · service delivered  — the ONE completeness number + delivered/cancelled/silent split;
     · scheduled but never appeared — the not-reported lines list (silent, not cancelled).
 
-  This file owns the two resources, codec-seeded ?date, stale-date guard, combined rail,
+  This file owns the two resources, raw ?date seeding, stale-date guard, combined rail,
   conditional card/TOC registry, and shared reading/navigation signals. Formatting and
   receipt truth remain in ./selectors, ./data, and ./sections.
 
   HONESTY: null/absent → the localized styled honest-absence chip, NEVER a fabricated 0;
-  a 404 (getReceipt → null) or an empty index → the localized empty state. The new cuts
-  stand DOWN (their `hasData`) during the GC2 ramp — an absent list is honest-absence,
+  an empty index → the localized empty state; loss of an advertised receipt → error/retry.
+  The new cuts stand DOWN (their `hasData`) during the GC2 ramp — an absent list is honest-absence,
   never a fabricated "everything delivered". DOCTRINE: --primary only on the interactive
   picker; every magnitude mark reads an ABSOLUTE domain literal (chart-doctrine).
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeNameFallback, stopNameFallback } from '$lib/site/absence';
-	import { fromSearchParams } from '$lib/filters';
 	import { layout } from '$lib/nav';
 	import { mirrorSearchParam } from '$lib/site/urlMirror';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
@@ -37,9 +35,21 @@
 		fmtPct as sharedFmtPct,
 	} from '$lib/utils';
 	import { shiftLabel } from '$lib/features/reliability/shiftGrains';
-	import { getReceiptsIndex, getReceipt, type Receipt } from '$lib/v1';
+	import { getAdvertisedReceipt, getReceiptsIndex, type Receipt } from '$lib/v1';
+	import {
+		availabilityFromReceiptsIndex,
+		datesForAvailability,
+		nextAvailableDate,
+		previousAvailableDate,
+		resolveHistoryDate,
+		type HistoryCorrection,
+	} from '$lib/v1/history';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { ResourceBoundary, DateRangePicker } from '$lib/components/surface';
+	import {
+		createRailDisclosureController,
+		HistoryNavigator,
+		ResourceBoundary,
+	} from '$lib/components/surface';
 	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
 	import {
 		CollapsibleSection,
@@ -51,7 +61,6 @@
 	} from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
-	import { persisted } from '$lib/stores';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import type { SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import { EdgeState } from '$lib/components/edge';
@@ -64,8 +73,6 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { copy as COPY } from './receipt.copy';
 	// Selectors + data presenters (pure VMs — no transforms in this orchestrator).
-	import { selectAvailability } from './data/presentAvailability';
-	import { resolveReceiptDate } from './data/presentDates';
 	import { selectHeadlineKpis } from './selectors/headlineKpis';
 	import { selectAffectedCounts } from './selectors/affectedCounts';
 	import { selectWorstOfDay } from './selectors/day-worst';
@@ -82,47 +89,9 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
-	const railOpen = {
-		controls: persisted('receipt-controls', true),
-		toc: persisted('receipt-toc', true),
-	};
-	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
-		railOpen[key].value = next;
-	}
-	function setAllRailOpen(next: boolean): void {
-		setRailOpen('controls', next);
-		setRailOpen('toc', next);
-	}
-
-	let railSignalsReady = $state(false);
-	let lastRailCloseSignal = quietModeStore.closeSignal;
-	let lastRailOpenSignal = quietModeStore.openSignal;
-	onMount(() => {
-		let cancelled = false;
-		void (async () => {
-			await tick();
-			if (cancelled) return;
-			lastRailCloseSignal = quietModeStore.closeSignal;
-			lastRailOpenSignal = quietModeStore.openSignal;
-			if (quietModeStore.enabled) setAllRailOpen(false);
-			railSignalsReady = true;
-		})();
-		return () => {
-			cancelled = true;
-		};
-	});
-	$effect(() => {
-		const closeSignal = quietModeStore.closeSignal;
-		const openSignal = quietModeStore.openSignal;
-		if (!railSignalsReady) return;
-		if (closeSignal !== lastRailCloseSignal) {
-			lastRailCloseSignal = closeSignal;
-			setAllRailOpen(false);
-		}
-		if (openSignal !== lastRailOpenSignal) {
-			lastRailOpenSignal = openSignal;
-			setAllRailOpen(true);
-		}
+	const railDisclosures = createRailDisclosureController({
+		controls: 'receipt-controls',
+		toc: 'receipt-toc',
 	});
 
 	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
@@ -137,48 +106,71 @@
 
 	// Discovery index — the published receipt dates + S13 availability metadata.
 	// createResource is browser-only ($effect), so v1 base resolves same-origin.
-	const index = createResource(() => getReceiptsIndex());
+	const index = createResource((signal) => getReceiptsIndex({ signal }));
+	const historyAvailability = $derived(availabilityFromReceiptsIndex(index.data));
+	const availableDates = $derived(datesForAvailability(historyAvailability));
+	const dateOptions = $derived(availableDates.map((date) => ({ date })));
+	const hasDates = $derived(availableDates.length > 0);
 
-	// The smart calendar: the FULL span earliest→latest with published days enabled and
-	// gap/empty days disabled + reasoned. `enabledDates` is what the default/seed reads.
-	const availability = $derived(
-		selectAvailability(index.data, {
-			formatDate: (iso) => formatDateKey(iso, locale),
-			gap: t.datePicker.gapReason,
-			empty: t.datePicker.emptyReason,
-			scheduleOnly: t.datePicker.scheduleOnlyFlag,
-		}),
-	);
-	const hasDates = $derived(availability.hasAny);
-
-	// The chosen day — seeded ONCE from the codec (?date deep-link → the picked day,
-	// else the LATEST published day). resolveReceiptDate self-heals a gap/unknown ?date
-	// back to the latest default. A rider's later pick then sticks.
-	const seededDate = fromSearchParams(page.url.searchParams).date ?? null;
+	// Capture the raw value before any URL mirror can erase blank/malformed evidence.
+	const seededDate = page.url.searchParams.get('date');
 	let selectedDate = $state('');
+	let canonicalDate = $state<string | null>(null);
+	let historyAnnouncement = $state<string | null>(null);
 	let dateSeeded = $state(false);
+	let navigatorRevision = $state(0);
+	function correctionCopy(reason: HistoryCorrection['reason']): string {
+		return t.history.correction[reason];
+	}
+	function selectDate(rawDate: unknown): void {
+		const resolved = resolveHistoryDate(rawDate, historyAvailability);
+		const resetControlledInput =
+			dateSeeded && resolved.correction != null && resolved.selection === selectedDate;
+		selectedDate = resolved.selection ?? '';
+		canonicalDate = resolved.canonicalDate;
+		historyAnnouncement = resolved.correction ? correctionCopy(resolved.correction.reason) : null;
+		if (resetControlledInput) navigatorRevision += 1;
+	}
 	$effect(() => {
-		if (!dateSeeded && hasDates) {
-			selectedDate = resolveReceiptDate(seededDate, availability.enabledDates) ?? '';
+		if (!dateSeeded && index.settled && index.error == null && index.data != null) {
+			selectDate(seededDate);
 			dateSeeded = true;
 		}
 	});
 
-	// Deep-linkable: mirror the picked day to ?date (default = latest omitted for a clean
-	// canonical URL). Only the latest published day is the default, so drop ?date when it
-	// equals the latest enabled day.
 	$effect(() => {
-		if (!selectedDate) return;
-		const latest = availability.enabledDates[availability.enabledDates.length - 1];
-		mirrorSearchParam('date', selectedDate === latest ? null : selectedDate);
+		if (!dateSeeded) return;
+		mirrorSearchParam('date', canonicalDate);
 	});
+	const previousDate = $derived(
+		selectedDate ? previousAvailableDate(selectedDate, historyAvailability) : null,
+	);
+	const nextDate = $derived(
+		selectedDate ? nextAvailableDate(selectedDate, historyAvailability) : null,
+	);
+	const historyCoverageText = $derived(
+		availableDates.length === 0
+			? null
+			: t.history.coverage(
+					formatDateKey(availableDates[0], locale),
+					formatDateKey(availableDates[availableDates.length - 1], locale),
+				),
+	);
+	const historySelectionText = $derived(
+		selectedDate ? t.history.selection(formatDateKey(selectedDate, locale)) : null,
+	);
 
 	// The receipt for the chosen day. The fetcher reads `selectedDate` when invoked, so
-	// changing the day re-runs the fetch (the spine drops out-of-order responses). The
-	// empty seed would 404, so hold off until a real date is chosen. `freshness: true`
+	// changing the day re-runs the fetch (the spine drops out-of-order responses). Hold
+	// off until the index advertises a selected date. `freshness: true`
 	// feeds the chosen receipt's generated_utc into the shared newest-data timestamp.
 	const receipt = createResource<Receipt | null>(
-		() => (selectedDate ? getReceipt(selectedDate) : Promise.resolve(null)),
+		(signal) => {
+			const indexData = index.data;
+			const date = selectedDate;
+			if (!indexData || !date || !availableDates.includes(date)) return Promise.resolve(null);
+			return getAdvertisedReceipt(indexData, date, { signal });
+		},
 		{ freshness: true },
 	);
 	const receiptReady = $derived(
@@ -400,6 +392,16 @@
 	});
 </script>
 
+<p
+	class="sr-only"
+	data-slot="history-page-announcement"
+	role="status"
+	aria-live="polite"
+	aria-atomic="true"
+>
+	{historyAnnouncement ?? ''}
+</p>
+
 <DetailShell
 	class="receipt-detail"
 	bind:activeId
@@ -435,24 +437,40 @@
 	{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
 		<CollapsibleSection
 			title={t.rail.controls}
-			bind:open={() => railOpen.controls.value, (next) => setRailOpen('controls', next)}
+			bind:open={
+				() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
+			}
 		>
 			<div class="receipt-controls" data-slot="receipt-controls">
-				<DateRangePicker
-					mode="single"
-					bind:date={selectedDate}
-					dateOptions={availability.options}
-					{locale}
-					labels={{
-						group: t.dateSelectLabel,
-						start: '',
-						end: '',
-						clear: '',
-						anyStart: '',
-						anyEnd: '',
-						single: t.datePicker.label,
-					}}
-				/>
+				{#key navigatorRevision}
+					<HistoryNavigator
+						mode="date"
+						date={selectedDate}
+						{dateOptions}
+						{previousDate}
+						{nextDate}
+						coverageText={historyCoverageText}
+						selectionText={historySelectionText}
+						announcement={historyAnnouncement}
+						liveAnnouncement={false}
+						{locale}
+						labels={{
+							group: t.history.group,
+							picker: {
+								group: t.dateSelectLabel,
+								start: '',
+								end: '',
+								clear: '',
+								anyStart: '',
+								anyEnd: '',
+								single: t.datePicker.label,
+							},
+							previous: t.history.previous,
+							next: t.history.next,
+						}}
+						onDateChange={selectDate}
+					/>
+				{/key}
 			</div>
 		</CollapsibleSection>
 		{#if tocEntries.length > 0}
@@ -462,7 +480,9 @@
 					{activeId}
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
-					bind:open={() => railOpen.toc.value, (next) => setRailOpen('toc', next)}
+					bind:open={
+						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
+					}
 					onNavigate={(id) => {
 						closeSheet();
 						void navigate(id);

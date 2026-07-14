@@ -19,7 +19,7 @@
 
 import type { z } from 'zod';
 import { resolveUrl, entityUrl } from '$lib/v1/config';
-import { getEntityJson, type FetchFn } from '$lib/v1/http';
+import { getEntityJson, getEntityJsonWithBytes, sha256Hex, type FetchFn } from '$lib/v1/http';
 import type { AdapterCtx, ContentAdapter } from './types';
 
 import { ManifestSchema, type Manifest } from '$lib/v1/schemas/manifest';
@@ -34,8 +34,11 @@ import { RouteFileSchema } from '$lib/v1/schemas/route';
 import { StopsIndexSchema } from '$lib/v1/schemas/stops_index';
 import { StopFileSchema } from '$lib/v1/schemas/stop';
 import { NetworkTrendSchema } from '$lib/v1/schemas/network_trend';
-import { HotspotsSchema } from '$lib/v1/schemas/hotspots';
-import { RepeatOffendersSchema } from '$lib/v1/schemas/repeat_offenders';
+import { HistoricHotspotsDaySchema, HotspotsSchema } from '$lib/v1/schemas/hotspots';
+import {
+	HistoricRepeatOffendersDaySchema,
+	RepeatOffendersSchema,
+} from '$lib/v1/schemas/repeat_offenders';
 import { AlertHistorySchema } from '$lib/v1/schemas/alert_history';
 import { ReceiptsIndexSchema } from '$lib/v1/schemas/receipts_index';
 import { RouteReliabilityIndexSchema } from '$lib/v1/schemas/route_reliability_index';
@@ -45,6 +48,24 @@ import { StopReliabilitySchema } from '$lib/v1/schemas/stop_reliability';
 import { ProvenanceSchema } from '$lib/v1/schemas/provenance';
 import { DataHealthSchema } from '$lib/v1/schemas/data_health';
 import { BasemapFileSchema } from '$lib/v1/schemas/basemap';
+import { AlertArchiveIndexSchema, AlertArchivePageSchema } from '$lib/v1/schemas/alert_archive';
+import {
+	HistoricAvailabilityIndexSchema,
+	HistoricCollectionIndexSchema,
+	HistoricEntityDirectoryIndexSchema,
+	LineHistoryPartitionSchema,
+	NetworkHistoryPartitionSchema,
+	StopHistoryPartitionSchema,
+} from '$lib/v1/schemas/history';
+import {
+	HistoryArtifactContractError,
+	assertSafeHistoryArtifactPath,
+	encodeHistoryEntityId,
+	historyPointerPayloadSha,
+	isHistoryEntityIndexPath,
+	isHistoryFamilyIndexPath,
+	isHistoryPointArtifactPath,
+} from '$lib/v1/history';
 
 import type { Locale } from '$lib/i18n';
 
@@ -73,6 +94,8 @@ const DEFAULTS = {
 		stops_prefix: 'static/stops/',
 	},
 	historic: {
+		history_index: 'historic/history/index.json',
+		alerts_index: 'historic/alerts/index.json',
 		network_trend: 'historic/network_trend.json',
 		hotspots: 'historic/hotspots.json',
 		repeat_offenders: 'historic/repeat_offenders.json',
@@ -91,6 +114,7 @@ const MANIFEST_MEMO_KEY = 'v1:manifest';
 // daily builds and may serve from cache.
 const LIVE_CACHE: RequestCache = 'default';
 const SLOW_CACHE: RequestCache = 'force-cache';
+let historyRefreshSequence = 0;
 
 function fetchOf(ctx?: AdapterCtx): FetchFn {
 	return ctx?.fetch ?? fetch;
@@ -138,6 +162,120 @@ async function readWhole<T>(
 		throw new Error(`[v1.${label}] expected file not found at ${url}`);
 	}
 	return value;
+}
+
+/** Read an optional whole-file collection root; 404 means rollout absence. */
+async function readOptionalWhole<T>(
+	relativePath: string,
+	schema: z.ZodType<T>,
+	label: string,
+	ctx?: AdapterCtx,
+): Promise<T | null> {
+	const url = resolveUrl(relativePath);
+	const value = await getEntityJson(url, schema, label, fetchOf(ctx), {
+		cache: SLOW_CACHE,
+		signal: ctx?.signal,
+	});
+	return value ?? null;
+}
+
+function freshHistoryUrl(path: string, fresh: boolean | undefined): string {
+	const url = resolveUrl(path);
+	if (!fresh) return url;
+	historyRefreshSequence += 1;
+	const token = `${Date.now().toString(36)}-${historyRefreshSequence.toString(36)}`;
+	return `${url}?history_refresh=${encodeURIComponent(token)}`;
+}
+
+async function readOptionalHistory<T>(
+	path: string,
+	schema: z.ZodType<T>,
+	label: string,
+	ctx?: AdapterCtx,
+): Promise<T | null> {
+	const url = freshHistoryUrl(path, ctx?.freshHistoryParent);
+	const init = {
+		cache: ctx?.freshHistoryParent ? ('reload' as const) : SLOW_CACHE,
+		signal: ctx?.signal,
+	};
+	const expectedSha = historyPointerPayloadSha(path);
+	if (expectedSha !== null) {
+		const raw = await getEntityJsonWithBytes(url, schema, label, fetchOf(ctx), init);
+		if (raw === undefined) return null;
+		if ((await sha256Hex(raw.bytes)) !== expectedSha) {
+			throw new HistoryArtifactContractError(path, 'advertised pointer payload SHA-256 mismatch');
+		}
+		return raw.value;
+	}
+	const value = await getEntityJson(url, schema, label, fetchOf(ctx), init);
+	return value ?? null;
+}
+
+function assertHistoryFamilyIndexPath(family: 'network' | 'lines' | 'stops', path: string): string {
+	if (!isHistoryFamilyIndexPath(family, path)) {
+		throw new HistoryArtifactContractError(path, `unsafe advertised ${family} history index path`);
+	}
+	return path;
+}
+
+function assertPointHistoryIndexPath(
+	family: 'hotspots' | 'repeat_offenders',
+	path: string,
+): string {
+	if (!isHistoryFamilyIndexPath(family, path)) {
+		throw new HistoryArtifactContractError(path, `unsafe advertised ${family} history index path`);
+	}
+	return path;
+}
+
+function assertPointHistoryDayPath(
+	family: 'hotspots' | 'repeat_offenders',
+	date: string,
+	path: string,
+): string {
+	if (!isHistoryPointArtifactPath(family, date, path)) {
+		throw new HistoryArtifactContractError(path, `unsafe advertised ${family} history day path`);
+	}
+	return path;
+}
+
+function assertHistoryEntityIndexPath(
+	family: 'lines' | 'stops',
+	entityId: string,
+	path: string,
+): string {
+	if (!isHistoryEntityIndexPath(family, entityId, path)) {
+		throw new HistoryArtifactContractError(path, `unsafe advertised ${family} entity index path`);
+	}
+	return path;
+}
+
+function assertFamilyPartitionPath(
+	family: 'network' | 'lines' | 'stops',
+	entityId: string | null,
+	path: string,
+): string {
+	const encoded = family === 'network' ? '' : `${encodeHistoryEntityId(entityId ?? '')}/`;
+	const pattern = new RegExp(
+		`^historic/history/${family}/${encoded}generations/[0-9a-f]{64}/\\d{4}-(?:0[1-9]|1[0-2])\\.json$`,
+	);
+	if (!pattern.test(path)) {
+		throw new HistoryArtifactContractError(path, `unsafe advertised ${family} history path`);
+	}
+	return path;
+}
+
+async function readRawHistoryPartition<T>(
+	path: string,
+	schema: z.ZodType<T>,
+	label: string,
+	ctx?: AdapterCtx,
+) {
+	const value = await getEntityJsonWithBytes(resolveUrl(path), schema, label, fetchOf(ctx), {
+		cache: SLOW_CACHE,
+		signal: ctx?.signal,
+	});
+	return value ?? null;
 }
 
 /** Read a per-entity file under a manifest prefix; 404 -> null (render empty). */
@@ -283,6 +421,118 @@ export const r2Adapter: ContentAdapter = {
 	},
 
 	historic: {
+		historyIndex: (ctx) =>
+			readOptionalHistory(
+				DEFAULTS.historic.history_index,
+				HistoricAvailabilityIndexSchema,
+				'historic.historyIndex',
+				ctx,
+			),
+		networkHistoryIndex: async (path, ctx) =>
+			readOptionalHistory(
+				assertHistoryFamilyIndexPath('network', path),
+				HistoricCollectionIndexSchema,
+				'historic.networkHistoryIndex',
+				ctx,
+			),
+		hotspotsHistoryIndex: async (path, ctx) =>
+			readOptionalHistory(
+				assertPointHistoryIndexPath('hotspots', path),
+				HistoricCollectionIndexSchema,
+				'historic.hotspotsHistoryIndex',
+				ctx,
+			),
+		repeatOffendersHistoryIndex: async (path, ctx) =>
+			readOptionalHistory(
+				assertPointHistoryIndexPath('repeat_offenders', path),
+				HistoricCollectionIndexSchema,
+				'historic.repeatOffendersHistoryIndex',
+				ctx,
+			),
+		lineHistoryDirectory: async (path, ctx) =>
+			readOptionalHistory(
+				assertHistoryFamilyIndexPath('lines', path),
+				HistoricEntityDirectoryIndexSchema,
+				'historic.lineHistoryDirectory',
+				ctx,
+			),
+		stopHistoryDirectory: async (path, ctx) =>
+			readOptionalHistory(
+				assertHistoryFamilyIndexPath('stops', path),
+				HistoricEntityDirectoryIndexSchema,
+				'historic.stopHistoryDirectory',
+				ctx,
+			),
+		lineHistoryIndex: async (entityId, path, ctx) =>
+			readOptionalHistory(
+				assertHistoryEntityIndexPath('lines', entityId, path),
+				HistoricCollectionIndexSchema,
+				'historic.lineHistoryIndex',
+				ctx,
+			),
+		stopHistoryIndex: async (entityId, path, ctx) =>
+			readOptionalHistory(
+				assertHistoryEntityIndexPath('stops', entityId, path),
+				HistoricCollectionIndexSchema,
+				'historic.stopHistoryIndex',
+				ctx,
+			),
+		networkHistoryPartition: async (path, ctx) =>
+			readRawHistoryPartition(
+				assertFamilyPartitionPath('network', null, path),
+				NetworkHistoryPartitionSchema,
+				'historic.networkHistoryPartition',
+				ctx,
+			),
+		lineHistoryPartition: async (entityId, path, ctx) =>
+			readRawHistoryPartition(
+				assertFamilyPartitionPath('lines', entityId, path),
+				LineHistoryPartitionSchema,
+				'historic.lineHistoryPartition',
+				ctx,
+			),
+		stopHistoryPartition: async (entityId, path, ctx) =>
+			readRawHistoryPartition(
+				assertFamilyPartitionPath('stops', entityId, path),
+				StopHistoryPartitionSchema,
+				'historic.stopHistoryPartition',
+				ctx,
+			),
+		hotspotsHistoryDay: async (date, path, ctx) =>
+			readRawHistoryPartition(
+				assertPointHistoryDayPath('hotspots', date, path),
+				HistoricHotspotsDaySchema,
+				'historic.hotspotsHistoryDay',
+				ctx,
+			),
+		repeatOffendersHistoryDay: async (date, path, ctx) =>
+			readRawHistoryPartition(
+				assertPointHistoryDayPath('repeat_offenders', date, path),
+				HistoricRepeatOffendersDaySchema,
+				'historic.repeatOffendersHistoryDay',
+				ctx,
+			),
+		alertArchiveIndex: async (ctx) => {
+			const m = await loadManifest(ctx);
+			return readOptionalWhole(
+				m.files.historic?.alerts_index ?? DEFAULTS.historic.alerts_index,
+				AlertArchiveIndexSchema,
+				'historic.alertArchiveIndex',
+				ctx,
+			);
+		},
+		alertArchivePage: async (path, ctx) => {
+			const safePath = assertSafeHistoryArtifactPath(path);
+			const url = resolveUrl(safePath);
+			const value = await getEntityJson(
+				url,
+				AlertArchivePageSchema,
+				'historic.alertArchivePage',
+				fetchOf(ctx),
+				{ cache: SLOW_CACHE, signal: ctx?.signal },
+			);
+			return value ?? null;
+		},
 		networkTrend: async (ctx) => {
 			const m = await loadManifest(ctx);
 			return readWhole(

@@ -1,13 +1,16 @@
 import json
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from typer.testing import CliRunner
 
 import transit_ops.cli as cli_module
 from transit_ops.backups import BackupError
 from transit_ops.cli import app
 from transit_ops.orchestration import RealtimeCycleResult
+from transit_ops.validation.historic_publish import HistoricPublishProofReport
 
 runner = CliRunner()
 LEGACY_ORACLE_REBUILD_COMMAND = "rebuild-" + "oracle-data"
@@ -45,6 +48,8 @@ def test_cli_help() -> None:
     assert "run-realtime-cycle" in result.stdout
     assert "run-realtime-worker" in result.stdout
     assert "build-warm-rollups" in result.stdout
+    assert "sync-alert-archive" in result.stdout
+    assert "backfill-alert-archive" in result.stdout
     assert "prune-warm-rollup-storage" in result.stdout
     assert "rebuild-source-factory" in result.stdout
     assert LEGACY_ORACLE_REBUILD_COMMAND not in result.stdout
@@ -74,9 +79,7 @@ def test_recover_outputs_json_payload(monkeypatch) -> None:
             return {
                 "action_id": "restart-worker",
                 "execute": False,
-                "commands": [
-                    "docker compose --env-file .env -f docker-compose.yml restart worker"
-                ],
+                "commands": ["docker compose --env-file .env -f docker-compose.yml restart worker"],
                 "status": "planned",
                 "return_code": None,
                 "stdout": None,
@@ -163,9 +166,7 @@ def test_validate_static_feeds_help() -> None:
     assert "current fallback" not in result.stdout
 
 
-def test_validate_static_feeds_passes_provider_and_writes_report(
-    monkeypatch, tmp_path
-) -> None:
+def test_validate_static_feeds_passes_provider_and_writes_report(monkeypatch, tmp_path) -> None:
     from dataclasses import dataclass
 
     recorded: dict[str, object] = {}
@@ -234,9 +235,7 @@ def test_retention_proof_report_help() -> None:
     assert "--report-path" in result.stdout
 
 
-def test_retention_proof_report_passes_provider_and_writes_report(
-    monkeypatch, tmp_path
-) -> None:
+def test_retention_proof_report_passes_provider_and_writes_report(monkeypatch, tmp_path) -> None:
     from dataclasses import dataclass
 
     recorded: dict[str, object] = {}
@@ -282,9 +281,7 @@ def test_retention_proof_report_passes_provider_and_writes_report(
     assert report_payload["provider_id"] == "stm"
 
 
-def test_retention_proof_report_bad_report_path_exits_before_build(
-    monkeypatch, tmp_path
-) -> None:
+def test_retention_proof_report_bad_report_path_exits_before_build(monkeypatch, tmp_path) -> None:
     called = False
 
     def fake_build_retention_proof_report(provider_id, *, settings, registry):  # noqa: ANN001
@@ -497,9 +494,7 @@ def test_run_realtime_worker_help() -> None:
 def test_run_realtime_worker_passes_max_cycles(monkeypatch) -> None:
     recorded: dict[str, object] = {}
 
-    def fake_run_realtime_worker_loop(
-        provider_id, *, settings, registry, max_cycles
-    ):  # noqa: ANN001
+    def fake_run_realtime_worker_loop(provider_id, *, settings, registry, max_cycles):  # noqa: ANN001
         recorded["provider_id"] = provider_id
         recorded["max_cycles"] = max_cycles
 
@@ -542,6 +537,7 @@ def test_prune_bronze_storage_help() -> None:
     assert "--dry-run" in result.stdout
     assert "--max-objects" in result.stdout
     assert "--max-batches" in result.stdout
+    assert "--require-exhausted" in result.stdout
 
 
 def test_prune_i3_storage_help() -> None:
@@ -549,6 +545,168 @@ def test_prune_i3_storage_help() -> None:
 
     assert result.exit_code == 0
     assert "--dry-run" in result.stdout
+
+
+def test_alert_archive_command_help_exposes_bounded_sync_and_resumable_backfill() -> None:
+    sync_help = runner.invoke(app, ["sync-alert-archive", "--help"])
+    backfill_help = runner.invoke(app, ["backfill-alert-archive", "--help"])
+
+    assert sync_help.exit_code == 0
+    assert "--from" in sync_help.stdout
+    assert "--to" in sync_help.stdout
+    assert backfill_help.exit_code == 0
+    assert "--from" in backfill_help.stdout
+    assert "--to" in backfill_help.stdout
+    assert "--month-batch" in backfill_help.stdout
+    assert "--dry-run" in backfill_help.stdout
+
+
+def test_sync_alert_archive_rejects_malformed_bound_before_service(monkeypatch) -> None:
+    called = False
+
+    def fail_service(*args, **kwargs):  # noqa: ANN002, ANN003
+        nonlocal called
+        called = True
+        raise AssertionError("service must not be called")
+
+    monkeypatch.setattr(cli_module, "sync_alert_archive", fail_service, raising=False)
+
+    result = runner.invoke(app, ["sync-alert-archive", "stm", "--from", "2026-13-40"])
+
+    assert result.exit_code == 2
+    assert "YYYY-MM-DD" in result.output
+    assert called is False
+
+
+def test_backfill_alert_archive_rejects_inverted_bounds_before_service(
+    monkeypatch,
+) -> None:
+    called = False
+
+    def fail_service(*args, **kwargs):  # noqa: ANN002, ANN003
+        nonlocal called
+        called = True
+        raise AssertionError("service must not be called")
+
+    monkeypatch.setattr(cli_module, "backfill_alert_archive", fail_service, raising=False)
+
+    result = runner.invoke(
+        app,
+        [
+            "backfill-alert-archive",
+            "stm",
+            "--from",
+            "2026-07-02",
+            "--to",
+            "2026-07-01",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "on or before" in result.output
+    assert called is False
+
+
+def test_sync_alert_archive_defaults_to_provider_local_retained_window(
+    monkeypatch,
+) -> None:
+    settings = SimpleNamespace(GOLD_WARM_ROLLUP_RETENTION_DAYS=730, LOG_LEVEL="INFO")
+    manifest = SimpleNamespace(provider=SimpleNamespace(timezone="America/Toronto"))
+    seen: dict[str, object] = {}
+
+    class Registry:
+        def get_provider(self, provider_id):  # noqa: ANN001
+            seen["validated_provider"] = provider_id
+            return manifest
+
+    def fake_bounds(*, provider_timezone, retention_days):  # noqa: ANN001
+        seen["timezone"] = provider_timezone
+        seen["retention_days"] = retention_days
+        return date(2024, 7, 1), date(2026, 7, 12)
+
+    class Result:
+        def display_dict(self):
+            return {"provider_id": "stm", "requested_from": "2024-07-01"}
+
+    def fake_sync(provider_id, *, from_date, to_date, settings):  # noqa: ANN001
+        seen["service"] = (provider_id, from_date, to_date, settings)
+        return Result()
+
+    monkeypatch.setattr(cli_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli_module, "_provider_registry", lambda current: Registry())
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
+    monkeypatch.setattr(cli_module, "alert_archive_default_bounds", fake_bounds, raising=False)
+    monkeypatch.setattr(cli_module, "sync_alert_archive", fake_sync, raising=False)
+
+    result = runner.invoke(app, ["sync-alert-archive", "stm"])
+
+    assert result.exit_code == 0
+    assert seen == {
+        "validated_provider": "stm",
+        "timezone": "America/Toronto",
+        "retention_days": 730,
+        "service": ("stm", date(2024, 7, 1), date(2026, 7, 12), settings),
+    }
+
+
+def test_backfill_alert_archive_passes_batch_and_dry_run(monkeypatch) -> None:
+    settings = SimpleNamespace(LOG_LEVEL="INFO")
+    seen: dict[str, object] = {}
+
+    class Registry:
+        def get_provider(self, provider_id):  # noqa: ANN001
+            seen["validated_provider"] = provider_id
+            return object()
+
+    class Result:
+        def display_dict(self):
+            return {"provider_id": "stm", "batches": []}
+
+    def fake_backfill(  # noqa: ANN001
+        provider_id, *, from_date, to_date, month_batch, dry_run, settings
+    ):
+        seen["service"] = (
+            provider_id,
+            from_date,
+            to_date,
+            month_batch,
+            dry_run,
+            settings,
+        )
+        return Result()
+
+    monkeypatch.setattr(cli_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli_module, "_provider_registry", lambda current: Registry())
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
+    monkeypatch.setattr(cli_module, "backfill_alert_archive", fake_backfill, raising=False)
+
+    result = runner.invoke(
+        app,
+        [
+            "backfill-alert-archive",
+            "stm",
+            "--from",
+            "2026-01-20",
+            "--to",
+            "2026-06-03",
+            "--month-batch",
+            "2",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert seen == {
+        "validated_provider": "stm",
+        "service": (
+            "stm",
+            date(2026, 1, 20),
+            date(2026, 6, 3),
+            2,
+            True,
+            settings,
+        ),
+    }
 
 
 def test_prune_i3_storage_dry_run_flag(monkeypatch) -> None:
@@ -662,6 +820,8 @@ def _bronze_prune_cli_result(
     provider_id: str,
     dry_run: bool,
     failed_object_counts: dict[str, int] | None = None,
+    *,
+    exhausted: bool = True,
 ):
     from transit_ops.maintenance import BronzeStoragePruneResult
 
@@ -680,7 +840,7 @@ def _bronze_prune_cli_result(
         },
         failed_object_counts=failed_object_counts or {"realtime": 0, "static": 0},
         batch_counts={"realtime": 0, "static": 0},
-        exhausted=True,
+        exhausted=exhausted,
         completed_at_utc=datetime(2026, 3, 27, 0, 0, 0, tzinfo=UTC),
     )
 
@@ -707,9 +867,7 @@ def test_prune_bronze_storage_dry_run_flag(monkeypatch) -> None:
 def test_prune_bronze_storage_passes_max_objects_and_max_batches(monkeypatch) -> None:
     recorded: dict[str, object] = {}
 
-    def fake_prune_bronze_storage(
-        provider_id, *, settings, dry_run, max_objects, max_batches
-    ):  # noqa: ANN001
+    def fake_prune_bronze_storage(provider_id, *, settings, dry_run, max_objects, max_batches):  # noqa: ANN001
         recorded["provider_id"] = provider_id
         recorded["dry_run"] = dry_run
         recorded["max_objects"] = max_objects
@@ -746,10 +904,81 @@ def test_prune_bronze_storage_exits_nonzero_when_r2_deletes_failed(monkeypatch) 
 
     live_result = runner.invoke(app, ["prune-bronze-storage", "stm"])
     assert live_result.exit_code == 1
+    assert json.loads(live_result.stdout)["failed_object_counts"] == {
+        "realtime": 2,
+        "static": 0,
+    }
 
     # Dry-run never exits nonzero — it deletes nothing.
     dry_result = runner.invoke(app, ["prune-bronze-storage", "stm", "--dry-run"])
     assert dry_result.exit_code == 0
+
+
+def test_prune_bronze_storage_require_exhausted_exits_after_json_for_live_backlog(
+    monkeypatch,
+) -> None:
+    def fake_prune_bronze_storage(
+        provider_id, *, settings, dry_run, max_objects=None, max_batches=None
+    ):  # noqa: ANN001
+        return _bronze_prune_cli_result(
+            provider_id,
+            dry_run,
+            exhausted=False,
+        )
+
+    monkeypatch.setattr(cli_module, "prune_bronze_storage", fake_prune_bronze_storage)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
+
+    result = runner.invoke(
+        app,
+        ["prune-bronze-storage", "stm", "--require-exhausted"],
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["exhausted"] is False
+
+
+def test_prune_bronze_storage_live_backlog_is_advisory_without_requirement(
+    monkeypatch,
+) -> None:
+    def fake_prune_bronze_storage(
+        provider_id, *, settings, dry_run, max_objects=None, max_batches=None
+    ):  # noqa: ANN001
+        return _bronze_prune_cli_result(
+            provider_id,
+            dry_run,
+            exhausted=False,
+        )
+
+    monkeypatch.setattr(cli_module, "prune_bronze_storage", fake_prune_bronze_storage)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
+
+    result = runner.invoke(app, ["prune-bronze-storage", "stm"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["exhausted"] is False
+
+
+def test_prune_bronze_storage_dry_run_never_fails_for_backlog(monkeypatch) -> None:
+    def fake_prune_bronze_storage(
+        provider_id, *, settings, dry_run, max_objects=None, max_batches=None
+    ):  # noqa: ANN001
+        return _bronze_prune_cli_result(
+            provider_id,
+            dry_run,
+            exhausted=False,
+        )
+
+    monkeypatch.setattr(cli_module, "prune_bronze_storage", fake_prune_bronze_storage)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
+
+    result = runner.invoke(
+        app,
+        ["prune-bronze-storage", "stm", "--dry-run", "--require-exhausted"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["exhausted"] is False
 
 
 def test_init_db_requires_database_url(monkeypatch) -> None:
@@ -1349,9 +1578,7 @@ def test_replay_realtime_silver_requires_since() -> None:
 def test_replay_realtime_silver_rejects_bad_since(monkeypatch) -> None:
     _stub_replay_settings_and_registry(monkeypatch)
 
-    result = runner.invoke(
-        app, ["replay-realtime-silver", "stm", "--since", "not-a-datetime"]
-    )
+    result = runner.invoke(app, ["replay-realtime-silver", "stm", "--since", "not-a-datetime"])
 
     assert result.exit_code == 2
     assert "must be an ISO-8601 datetime" in result.output
@@ -1603,3 +1830,501 @@ def test_publish_all_writes_gate_report_on_success(monkeypatch, tmp_path) -> Non
     written = json.loads(report_file.read_text())
     assert written["provider_id"] == "stm"
     assert written["errors"] == 0
+
+
+def _stub_verify_historic_publish_ready(monkeypatch) -> object:  # noqa: ANN001
+    settings = cli_module.Settings(_env_file=None)
+    monkeypatch.setattr(cli_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        cli_module,
+        "_provider_registry",
+        lambda settings: SimpleNamespace(get_provider=lambda provider_id: object()),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_skip_if_unseeded",
+        lambda settings, provider_id, *, step: False,
+    )
+    return settings
+
+
+def _historic_publish_report(status: str) -> HistoricPublishProofReport:
+    return HistoricPublishProofReport(
+        provider_id="stm",
+        verified_at_utc=datetime(2026, 7, 13, 12, 0, tzinfo=UTC),
+        status=status,
+        migration={"status": "pass"},
+        sync={"status": "pass"},
+        gate={"status": "pass"},
+        public={"status": status},
+        source_messages={"status": "pass"},
+        failures=[] if status == "pass" else ["public_artifact_fetch_failed"],
+    )
+
+
+def test_atomic_report_writer_preserves_preseed_until_complete_replacement(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    report_path = tmp_path / "proof.json"
+    preseed = '{"status":"fail","failures":["interrupted"]}\n'
+    completed = '{"status":"pass","failures":[]}\n'
+    report_path.write_text(preseed, encoding="utf-8")
+    original_replace = Path.replace
+    replacements: list[tuple[Path, Path]] = []
+
+    def recording_replace(source: Path, target: Path) -> Path:
+        assert report_path.read_text(encoding="utf-8") == preseed
+        assert source.parent == report_path.parent
+        assert source.read_text(encoding="utf-8") == completed
+        replacements.append((source, target))
+        return original_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", recording_replace)
+
+    cli_module._write_report_atomic(report_path, completed)  # noqa: SLF001
+
+    assert len(replacements) == 1
+    assert replacements[0][1] == report_path
+    assert report_path.read_text(encoding="utf-8") == completed
+    assert list(tmp_path.iterdir()) == [report_path]
+
+
+def test_verify_historic_publish_help() -> None:
+    result = runner.invoke(app, ["verify-historic-publish", "--help"])
+
+    assert result.exit_code == 0
+    assert "Verify one migrated, synced, gated historic publication" in result.stdout
+    assert "--sync-report" in result.stdout
+    assert "--gate-report" in result.stdout
+    assert "--report-path" in result.stdout
+
+
+def test_verify_historic_publish_reads_receipts_and_writes_passing_report(
+    monkeypatch, tmp_path
+) -> None:
+    settings = _stub_verify_historic_publish_ready(monkeypatch)
+    sync_receipt = {
+        "provider_id": "stm",
+        "status": "synced",
+        "nested": {"values": [1, True, None]},
+    }
+    gate_report = {
+        "provider_id": "stm",
+        "errors": 0,
+        "checks": {"archive": "pass"},
+    }
+    sync_path = tmp_path / "sync.json"
+    gate_path = tmp_path / "gate.json"
+    report_path = tmp_path / "proof.json"
+    sync_path.write_text(json.dumps(sync_receipt), encoding="utf-8")
+    gate_path.write_text(json.dumps(gate_report), encoding="utf-8")
+    recorded: dict[str, object] = {}
+
+    def fake_builder(
+        provider_id,
+        *,
+        sync_receipt,
+        gate_report,
+        settings,  # noqa: ANN001
+        isolate_process,
+    ):
+        recorded.update(
+            provider_id=provider_id,
+            sync_receipt=sync_receipt,
+            gate_report=gate_report,
+            settings=settings,
+            isolate_process=isolate_process,
+        )
+        return _historic_publish_report("pass")
+
+    monkeypatch.setattr(cli_module, "build_historic_publish_proof", fake_builder, raising=False)
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(sync_path),
+            "--gate-report",
+            str(gate_path),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert recorded == {
+        "provider_id": "stm",
+        "sync_receipt": sync_receipt,
+        "gate_report": gate_report,
+        "settings": settings,
+        "isolate_process": True,
+    }
+    assert result.stdout == report_path.read_text(encoding="utf-8")
+    assert (
+        result.stdout
+        == json.dumps(_historic_publish_report("pass").display_dict(), indent=2, sort_keys=True)
+        + "\n"
+    )
+
+
+def test_verify_historic_publish_writes_report_before_failed_exit(monkeypatch, tmp_path) -> None:
+    _stub_verify_historic_publish_ready(monkeypatch)
+    sync_receipt = {"provider_id": "stm", "status": "synced"}
+    gate_report = {"provider_id": "stm", "errors": 1}
+    sync_path = tmp_path / "sync.json"
+    gate_path = tmp_path / "gate.json"
+    report_path = tmp_path / "proof.json"
+    sync_path.write_text(json.dumps(sync_receipt), encoding="utf-8")
+    gate_path.write_text(json.dumps(gate_report), encoding="utf-8")
+    recorded: dict[str, object] = {}
+
+    def fake_builder(
+        provider_id,
+        *,
+        sync_receipt,
+        gate_report,
+        settings,  # noqa: ANN001
+        isolate_process,
+    ):
+        recorded["sync_receipt"] = sync_receipt
+        recorded["gate_report"] = gate_report
+        recorded["isolate_process"] = isolate_process
+        return _historic_publish_report("fail")
+
+    monkeypatch.setattr(cli_module, "build_historic_publish_proof", fake_builder, raising=False)
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(sync_path),
+            "--gate-report",
+            str(gate_path),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert recorded == {
+        "sync_receipt": sync_receipt,
+        "gate_report": gate_report,
+        "isolate_process": True,
+    }
+    assert report_path.exists()
+    assert result.stdout == report_path.read_text(encoding="utf-8")
+    assert json.loads(result.stdout)["status"] == "fail"
+
+
+def test_verify_historic_publish_writes_failure_receipt_when_deadline_escapes(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _stub_verify_historic_publish_ready(monkeypatch)
+    sync_path = tmp_path / "sync.json"
+    gate_path = tmp_path / "gate.json"
+    report_path = tmp_path / "proof.json"
+    sync_path.write_text('{"provider_id":"stm","status":"synced"}', encoding="utf-8")
+    gate_path.write_text('{"provider_id":"stm","errors":0}', encoding="utf-8")
+
+    def deadline_builder(*args, **kwargs):  # noqa: ANN002, ANN003, ARG001
+        raise TimeoutError("private upstream detail")
+
+    monkeypatch.setattr(
+        cli_module,
+        "build_historic_publish_proof",
+        deadline_builder,
+        raising=False,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(sync_path),
+            "--gate-report",
+            str(gate_path),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert report_path.stat().st_size > 0
+    assert result.stdout == report_path.read_text(encoding="utf-8")
+    payload = json.loads(result.stdout)
+    assert payload["provider_id"] == "stm"
+    assert payload["status"] == "fail"
+    assert payload["failures"] == ["historic_proof_deadline_exceeded"]
+    assert payload["public"]["deadline"] == {
+        "exceeded": True,
+        "failure": "historic_proof_deadline_exceeded",
+        "receipt_source": "cli_exception_fallback",
+    }
+    assert "private upstream detail" not in result.stdout
+
+
+def test_verify_historic_publish_rejects_bad_json_before_builder(monkeypatch, tmp_path) -> None:
+    _stub_verify_historic_publish_ready(monkeypatch)
+    gate_path = tmp_path / "gate.json"
+    gate_path.write_text('{"provider_id": "stm"}', encoding="utf-8")
+    builder_calls: list[object] = []
+    monkeypatch.setattr(
+        cli_module,
+        "build_historic_publish_proof",
+        lambda *args, **kwargs: builder_calls.append((args, kwargs)),
+        raising=False,
+    )
+
+    cases = [
+        ("invalid.json", "not-json raw-secret", "valid JSON", "raw-secret"),
+        ("array.json", '["array-secret"]', "JSON object", "array-secret"),
+    ]
+    for index, (name, contents, expected_error, secret) in enumerate(cases):
+        sync_path = tmp_path / name
+        report_path = tmp_path / f"proof-{index}.json"
+        sync_path.write_text(contents, encoding="utf-8")
+
+        result = runner.invoke(
+            app,
+            [
+                "verify-historic-publish",
+                "stm",
+                "--sync-report",
+                str(sync_path),
+                "--gate-report",
+                str(gate_path),
+                "--report-path",
+                str(report_path),
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "--sync-report" in result.output
+        assert expected_error in result.output
+        assert secret not in result.output
+    assert builder_calls == []
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_verify_historic_publish_rejects_nonstandard_json_constants_before_builder(
+    monkeypatch, tmp_path, constant
+) -> None:
+    _stub_verify_historic_publish_ready(monkeypatch)
+    sync_path = tmp_path / "sync.json"
+    gate_path = tmp_path / "gate.json"
+    report_path = tmp_path / "proof.json"
+    raw_secret = f"nonstandard-{constant}-raw-secret"
+    sync_path.write_text(
+        f'{{"provider_id": "stm", "value": {constant}, "secret": "{raw_secret}"}}',
+        encoding="utf-8",
+    )
+    gate_path.write_text('{"provider_id": "stm"}', encoding="utf-8")
+    builder_calls: list[object] = []
+    monkeypatch.setattr(
+        cli_module,
+        "build_historic_publish_proof",
+        lambda *args, **kwargs: builder_calls.append((args, kwargs)),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(sync_path),
+            "--gate-report",
+            str(gate_path),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--sync-report" in result.output
+    assert "valid JSON" in result.output
+    assert raw_secret not in result.output
+    assert builder_calls == []
+
+
+def test_verify_historic_publish_rejects_unreadable_input_before_builder(
+    monkeypatch, tmp_path
+) -> None:
+    _stub_verify_historic_publish_ready(monkeypatch)
+    sync_path = tmp_path / "sync.json"
+    gate_path = tmp_path / "gate.json"
+    report_path = tmp_path / "proof.json"
+    raw_secret = "unreadable-input-raw-secret"
+    sync_path.write_text(f'{{"secret": "{raw_secret}"}}', encoding="utf-8")
+    gate_path.write_text('{"provider_id": "stm"}', encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def fail_target_read(path, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        if path == sync_path:
+            raise OSError(raw_secret)
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_target_read)
+    builder_calls: list[object] = []
+    monkeypatch.setattr(
+        cli_module,
+        "build_historic_publish_proof",
+        lambda *args, **kwargs: builder_calls.append((args, kwargs)),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(sync_path),
+            "--gate-report",
+            str(gate_path),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--sync-report" in result.output
+    assert "not readable" in result.output
+    assert raw_secret not in result.output
+    assert builder_calls == []
+
+
+def test_verify_historic_publish_rejects_missing_or_directory_inputs(monkeypatch, tmp_path) -> None:
+    _stub_verify_historic_publish_ready(monkeypatch)
+    sync_path = tmp_path / "sync.json"
+    gate_path = tmp_path / "gate.json"
+    gate_directory = tmp_path / "gate-directory"
+    sync_path.write_text('{"provider_id": "stm"}', encoding="utf-8")
+    gate_path.write_text('{"provider_id": "stm"}', encoding="utf-8")
+    gate_directory.mkdir()
+
+    def fail_builder(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("proof builder must not run for invalid inputs")
+
+    monkeypatch.setattr(cli_module, "build_historic_publish_proof", fail_builder, raising=False)
+
+    missing_result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(tmp_path / "missing.json"),
+            "--gate-report",
+            str(gate_path),
+            "--report-path",
+            str(tmp_path / "missing-proof.json"),
+        ],
+    )
+    directory_result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(sync_path),
+            "--gate-report",
+            str(gate_directory),
+            "--report-path",
+            str(tmp_path / "directory-proof.json"),
+        ],
+    )
+
+    assert missing_result.exit_code == 2
+    assert "--sync-report" in missing_result.output
+    assert "does not exist" in missing_result.output
+    assert directory_result.exit_code == 2
+    assert "--gate-report" in directory_result.output
+    assert "must be a file" in directory_result.output
+
+
+def test_verify_historic_publish_rejects_unknown_provider_before_writing(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(cli_module, "get_settings", lambda: cli_module.Settings(_env_file=None))
+
+    def unknown_provider(provider_id):  # noqa: ANN001
+        raise KeyError(f"unknown provider: {provider_id}")
+
+    monkeypatch.setattr(
+        cli_module,
+        "_provider_registry",
+        lambda settings: SimpleNamespace(get_provider=unknown_provider),
+    )
+
+    def fail(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("validation must stop before skip or proof building")
+
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", fail)
+    monkeypatch.setattr(cli_module, "build_historic_publish_proof", fail, raising=False)
+    report_path = tmp_path / "proof.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "unknown",
+            "--sync-report",
+            str(tmp_path / "sync.json"),
+            "--gate-report",
+            str(tmp_path / "gate.json"),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "unknown provider: unknown" in result.output
+    assert not report_path.exists()
+
+
+def test_verify_historic_publish_skips_unseeded_provider_without_builder(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(cli_module, "get_settings", lambda: cli_module.Settings(_env_file=None))
+    monkeypatch.setattr(
+        cli_module,
+        "_provider_registry",
+        lambda settings: SimpleNamespace(get_provider=lambda provider_id: object()),
+    )
+    _stub_unseeded(monkeypatch, seeded=False)
+
+    def fail_builder(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("proof builder must not run for an unseeded provider")
+
+    monkeypatch.setattr(cli_module, "build_historic_publish_proof", fail_builder, raising=False)
+    report_path = tmp_path / "proof.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "octranspo",
+            "--sync-report",
+            str(tmp_path / "missing-sync.json"),
+            "--gate-report",
+            str(tmp_path / "missing-gate.json"),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "provider_id": "octranspo",
+        "skipped_not_seeded": True,
+        "step": "verify-historic-publish",
+    }
+    assert not report_path.exists()

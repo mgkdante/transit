@@ -115,6 +115,8 @@ export interface MagnitudeBarsSpec extends ChartSpecBase {
 	readonly mark: 'bar' | 'lollipop';
 	readonly domain: AbsoluteDomain;
 	readonly unit: string;
+	/** Localized heading for the row entity/category column in the AT table mirror. */
+	readonly rowLabel: string;
 	/** Localized value-axis (x) title. */
 	readonly xLabel?: string;
 	readonly rows: readonly MagnitudeDatum[];
@@ -196,6 +198,8 @@ export interface TrendSpec extends ChartSpecBase {
 	readonly unit: string;
 	/** Accessible label for the primary series (e.g. "On-time %"). */
 	readonly label: string;
+	/** Primary line colour; defaults to the on-time status voice. */
+	readonly colorVar?: string;
 	readonly points: readonly TrendDatum[];
 	readonly hasBand: boolean;
 	/** Optional horizontal reference on the primary domain (e.g. 80 = the 80% OTP target). */

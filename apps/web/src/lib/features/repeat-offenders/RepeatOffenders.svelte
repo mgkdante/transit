@@ -32,7 +32,7 @@
   re-derived client-side (DECISIONS D4). All prose comes from ./repeatOffenders.copy.
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceKind, type SurfaceTarget } from '$lib/nav';
@@ -40,11 +40,30 @@
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { describeAbsence } from '$lib/site/absence';
 	import { fmtCount, fmtDelayMin, fmtDelayMin as sharedFmtDelayMin, fmtPct } from '$lib/utils';
-	import { formatUtc } from '$lib/utils/time';
-	import { getRepeatOffenders, type RepeatOffenderEntry, type Offender } from '$lib/v1';
-	import { createResource } from '$lib/v1/resource.svelte';
+	import { formatDateKey, formatUtc } from '$lib/utils/time';
+	import {
+		availabilityFromPointCollectionIndex,
+		createHistoryCorrectionPresentation,
+		createHistoryDateResource,
+		getRepeatOffenders,
+		getRepeatOffendersHistoryDay,
+		getRepeatOffendersHistoryIndex,
+		historyDateRequestFromSearchParams,
+		type RepeatOffenderEntry,
+		type Offender,
+	} from '$lib/v1';
+	import type {
+		HistoricCollectionIndex,
+		RepeatOffenders as RepeatOffendersData,
+	} from '$lib/v1/schemas';
 	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
-	import { ResourceBoundary, GrainPicker, type GrainSegment } from '$lib/components/surface';
+	import {
+		createRailDisclosureController,
+		HistoryNavigator,
+		ResourceBoundary,
+		GrainPicker,
+		type GrainSegment,
+	} from '$lib/components/surface';
 	import {
 		ArticleHeader,
 		DashboardGrid,
@@ -62,7 +81,6 @@
 	} from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
-	import { persisted } from '$lib/stores';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
@@ -96,47 +114,9 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
-	const railOpen = {
-		controls: persisted('repeat-offenders-controls', true),
-		toc: persisted('repeat-offenders-toc', true),
-	};
-	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
-		railOpen[key].value = next;
-	}
-	function setAllRailOpen(next: boolean): void {
-		setRailOpen('controls', next);
-		setRailOpen('toc', next);
-	}
-
-	let railSignalsReady = $state(false);
-	let lastRailCloseSignal = quietModeStore.closeSignal;
-	let lastRailOpenSignal = quietModeStore.openSignal;
-	onMount(() => {
-		let cancelled = false;
-		void (async () => {
-			await tick();
-			if (cancelled) return;
-			lastRailCloseSignal = quietModeStore.closeSignal;
-			lastRailOpenSignal = quietModeStore.openSignal;
-			if (quietModeStore.enabled) setAllRailOpen(false);
-			railSignalsReady = true;
-		})();
-		return () => {
-			cancelled = true;
-		};
-	});
-	$effect(() => {
-		const closeSignal = quietModeStore.closeSignal;
-		const openSignal = quietModeStore.openSignal;
-		if (!railSignalsReady) return;
-		if (closeSignal !== lastRailCloseSignal) {
-			lastRailCloseSignal = closeSignal;
-			setAllRailOpen(false);
-		}
-		if (openSignal !== lastRailOpenSignal) {
-			lastRailOpenSignal = openSignal;
-			setAllRailOpen(true);
-		}
+	const railDisclosures = createRailDisclosureController({
+		controls: 'repeat-offenders-controls',
+		toc: 'repeat-offenders-toc',
 	});
 
 	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
@@ -149,9 +129,49 @@
 	}
 	const severeInfo = $derived(buildInfo('severe', t.ladder.severeRateLabel));
 
-	// `freshness: true` feeds generated_utc into the shared newest-data timestamp.
-	const offenders = createResource(() => getRepeatOffenders(), { freshness: true });
+	// The shared coordinator owns current/history discovery, cancellation, retry,
+	// refresh, and freshness. The page only derives presentation from accepted data.
+	const offenders = createHistoryDateResource<HistoricCollectionIndex, RepeatOffendersData>(
+		{
+			loadIndex: (signal) => getRepeatOffendersHistoryIndex({ signal }),
+			availability: (index) => availabilityFromPointCollectionIndex(index),
+			loadCurrent: (signal) => getRepeatOffenders({ signal }),
+			loadDate: (date, index, signal) => getRepeatOffendersHistoryDay(date, index, { signal }),
+		},
+		{
+			initialRequest: historyDateRequestFromSearchParams(page.url.searchParams),
+			freshness: true,
+		},
+	);
+	onDestroy(() => offenders.destroy());
 	const generatedUtc = $derived(offenders.data?.generated_utc ?? null);
+	const availableDates = $derived(offenders.availableDates);
+	const dateOptions = $derived(availableDates.map((date) => ({ date })));
+	const hasHistoryNavigator = $derived(availableDates.length > 0);
+	const historyCoverageText = $derived(
+		availableDates.length === 0
+			? null
+			: t.history.coverage(
+					formatDateKey(availableDates[0], locale),
+					formatDateKey(availableDates[availableDates.length - 1], locale),
+				),
+	);
+	const historySelectionText = $derived(
+		offenders.selectedDate == null
+			? null
+			: t.history.selection(formatDateKey(offenders.selectedDate, locale)),
+	);
+	const historyCorrection = createHistoryCorrectionPresentation(
+		offenders,
+		() => t.history.correction,
+	);
+	function selectHistoryDate(date: string | undefined): void {
+		historyCorrection.clear();
+		offenders.setRequest({
+			hasDate: date !== undefined,
+			rawDate: date ?? null,
+		});
+	}
 
 	/* ── grain vocabulary + availability ──────────────────────────────────────────── */
 	const ladders = $derived(ladderByGrain(offenders.data?.by_grain));
@@ -206,9 +226,9 @@
 	const cap = $derived(worstNCap(worstN));
 	const worstSegments = $derived<GrainSegment<WorstN>[]>(buildWorstNSegments(t.worstN.all));
 
-	// Mirror grain + worst-N together in ONE replaceState (week default + default N →
-	// omitted for a clean canonical URL).
-	const wire = $derived.by<{ grain: string | null; n: string | null }>(() => {
+	// Mirror date + grain + worst-N in one replaceState. Preserve the raw date only
+	// while discovery is unresolved; accepted current/latest state omits it.
+	const wire = $derived.by<{ date: string | null; grain: string | null; n: string | null }>(() => {
 		const state = emptyFilterState();
 		if (worstN !== DEFAULT_WORST_N) state.worstN = worstN;
 		const grainParam =
@@ -218,7 +238,11 @@
 						state.grain = grainKey;
 						return toSearchParams(state).get('grain');
 					})();
-		return { grain: grainParam, n: toSearchParams(state).get('n') };
+		const dateParam =
+			offenders.request.hasDate && offenders.resolved == null
+				? offenders.request.rawDate
+				: offenders.canonicalDate;
+		return { date: dateParam, grain: grainParam, n: toSearchParams(state).get('n') };
 	});
 	$effect(() => mirrorSearchParams(wire));
 
@@ -317,6 +341,7 @@
 		const kindEntries = kindEntriesFor(kind);
 		const res = selectOffenderLadder(kindEntries, cap, locale, {
 			title: t.ladder.heading,
+			rowLabel: kind === 'trip' ? t.type.trip : t.type.vehicle,
 			xLabel: t.ladder.severeRateLabel,
 			unit: t.units.pct,
 			ciLabel: t.ladder.ci,
@@ -405,8 +430,12 @@
 	const tripTray = $derived(trayFor('trip'));
 	const vehicleTray = $derived(trayFor('vehicle'));
 
-	// The trailing-window caption for the active grain.
-	const windowCaption = $derived(t.window[grainKey]);
+	// Retained days may be left-censored; do not promise a complete trailing window.
+	const windowCaption = $derived(
+		offenders.mode === 'history' && offenders.selectedDate != null
+			? t.history.retainedWindow(formatDateKey(offenders.selectedDate, locale))
+			: t.window[grainKey],
+	);
 
 	/* ── the legacy fallback ledger (by_grain absent) ─────────────────────────────── */
 	// When the payload publishes NO populated grain, fall back to the scalar offenders[]
@@ -457,7 +486,8 @@
 	const hasLegacy = $derived((offenders.data?.offenders?.length ?? 0) > 0);
 	const isEmpty = $derived(!hasGrains && !hasLegacy);
 	const showCombinedRail = $derived(
-		offenders.settled && offenders.data != null && (hasGrains || hasLegacy),
+		(offenders.data != null && (hasGrains || hasLegacy)) ||
+			(offenders.mode === 'history' && hasHistoryNavigator),
 	);
 	const showWorstN = $derived(
 		hasGrains && (tripLadder.total > SMALLEST_WORST_N || vehicleLadder.total > SMALLEST_WORST_N),
@@ -470,7 +500,8 @@
 			sectionKey: 'repeat-card-worst',
 			number: 1,
 			title: t.cards.worst.title,
-			subtitle: t.cards.worst.subtitle,
+			subtitle:
+				offenders.mode === 'history' ? t.history.retainedWorstSubtitle : t.cards.worst.subtitle,
 			present: hasGrains || hasLegacy,
 		},
 		{
@@ -577,34 +608,56 @@
 
 	{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
 		{@const presentedGrainSegments = grainSegmentsFor(presentation)}
-		{#if hasGrains}
+		{#if hasGrains || hasHistoryNavigator}
 			<CollapsibleSection
 				title={t.rail.controls}
-				bind:open={() => railOpen.controls.value, (next) => setRailOpen('controls', next)}
+				bind:open={
+					() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
+				}
 			>
 				<div class="repeat-control-body" data-slot="controls-body">
-					<GrainPicker
-						segments={presentedGrainSegments}
-						bind:value={grainKey}
-						label={t.grain.label}
-					/>
-					{#each presentedGrainSegments as segment (segment.key)}
-						{#if segment.describedById}
-							<span
-								id={segment.describedById}
-								class="repeat-grain-reason"
-								data-slot="controls-reason"
-							>
-								{disabledReason}
-							</span>
-						{/if}
-					{/each}
-					{#if showWorstN}
-						<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
+					{#if hasHistoryNavigator}
+						{#key historyCorrection.revision}
+							<HistoryNavigator
+								mode="date"
+								date={offenders.selectedDate ?? undefined}
+								{dateOptions}
+								previousDate={offenders.previousDate}
+								nextDate={offenders.nextDate}
+								coverageText={historyCoverageText}
+								selectionText={historySelectionText}
+								announcement={historyCorrection.announcement}
+								liveAnnouncement={false}
+								{locale}
+								labels={t.history.navigator}
+								onDateChange={selectHistoryDate}
+							/>
+						{/key}
 					{/if}
-					<p class="repeat-window" data-slot="active-window" aria-live="polite">
-						{windowCaption}
-					</p>
+					{#if hasGrains}
+						<GrainPicker
+							segments={presentedGrainSegments}
+							bind:value={grainKey}
+							label={t.grain.label}
+						/>
+						{#each presentedGrainSegments as segment (segment.key)}
+							{#if segment.describedById}
+								<span
+									id={segment.describedById}
+									class="repeat-grain-reason"
+									data-slot="controls-reason"
+								>
+									{disabledReason}
+								</span>
+							{/if}
+						{/each}
+						{#if showWorstN}
+							<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
+						{/if}
+						<p class="repeat-window" data-slot="active-window" aria-live="polite">
+							{windowCaption}
+						</p>
+					{/if}
 				</div>
 			</CollapsibleSection>
 		{/if}
@@ -615,7 +668,9 @@
 					{activeId}
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
-					bind:open={() => railOpen.toc.value, (next) => setRailOpen('toc', next)}
+					bind:open={
+						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
+					}
 					onNavigate={(id) => {
 						closeSheet();
 						void navigate(id);
@@ -626,6 +681,15 @@
 	{/snippet}
 
 	{#snippet center()}
+		<p
+			class="repeat-history-live"
+			data-slot="history-page-announcement"
+			role="status"
+			aria-live="polite"
+			aria-atomic="true"
+		>
+			{historyCorrection.announcement ?? ''}
+		</p>
 		<ResourceBoundary resource={offenders} lang={locale}>
 			{#if isEmpty}
 				<div class="repeat-offenders-note" data-slot="offenders-empty">
@@ -672,7 +736,9 @@
 													</p>
 												{/if}
 											{:else}
-												<p class="offenders-hero-none">{t.hero.none}</p>
+												<p class="offenders-hero-none">
+													{offenders.mode === 'history' ? t.history.retainedHeroNone : t.hero.none}
+												</p>
 											{/if}
 										</div>
 										<p class="offenders-def" data-slot="offenders-def">
@@ -785,6 +851,17 @@
 		flex-wrap: wrap;
 	}
 	.repeat-grain-reason {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+	.repeat-history-live {
 		position: absolute;
 		width: 1px;
 		height: 1px;

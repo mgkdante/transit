@@ -35,6 +35,11 @@
           "title": "Alert History",
           "type": "string"
         },
+        "alerts_index": {
+          "default": "historic/alerts/index.json",
+          "title": "Alerts Index",
+          "type": "string"
+        },
         "generated_utc": {
           "anyOf": [
             {
@@ -47,6 +52,11 @@
           "default": null,
           "description": "DATA time of the current historic build; null = historic tier never published",
           "title": "Generated Utc"
+        },
+        "history_index": {
+          "default": "historic/history/index.json",
+          "title": "History Index",
+          "type": "string"
         },
         "hotspots": {
           "default": "historic/hotspots.json",

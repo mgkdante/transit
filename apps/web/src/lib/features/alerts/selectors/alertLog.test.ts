@@ -29,6 +29,8 @@ type LooseEntry = {
 	stops?: string[];
 	start_utc?: string | null;
 	end_utc?: string | null;
+	first_seen_utc?: string | null;
+	last_seen_utc?: string | null;
 	duration_min?: number | null;
 	impact_passages?: number | null;
 	cause?: string | null;
@@ -123,6 +125,17 @@ describe('alertMatchesWindow — inclusive, multi-period aware', () => {
 			),
 		).toBe(true);
 	});
+
+	it.each([
+		['summer previous day', '2026-08-05T00:30:00Z', '2026-08-04'],
+		['spring DST previous day', '2026-03-08T04:30:00Z', '2026-03-07'],
+		['fall DST previous day', '2026-11-01T03:30:00Z', '2026-10-31'],
+	])('matches %s in the STM provider-local calendar', (_label, instant, localDate) => {
+		const localWindow = { from: localDate, to: localDate };
+		expect(alertMatchesWindow(entry({ start_utc: instant, end_utc: instant }), localWindow)).toBe(
+			true,
+		);
+	});
 });
 
 describe('filterAlertLog — the four axes AND-ed', () => {
@@ -157,14 +170,34 @@ describe('filterAlertLog — the four axes AND-ed', () => {
 	});
 });
 
-describe('sortNewestFirst — newest start first, no-start sinks last', () => {
-	it('orders by start desc and sinks a missing start', () => {
+describe('sortNewestFirst — newest observed alert first, truly undated rows last', () => {
+	it('falls back to first_seen, then last_seen and id for deterministic archive ordering', () => {
 		const out = sortNewestFirst([
-			entry({ id: 'a', start_utc: '2026-06-10T00:00:00Z' }),
-			entry({ id: 'b', start_utc: '2026-06-20T00:00:00Z' }),
-			entry({ id: 'c' }),
+			entry({ id: 'undated-z' }),
+			entry({ id: 'archive-old', first_seen_utc: '2026-06-15T00:00:00Z' }),
+			entry({ id: 'current', start_utc: '2026-06-18T00:00:00Z' }),
+			entry({ id: 'archive-new', first_seen_utc: '2026-06-20T00:00:00Z' }),
+			entry({
+				id: 'tie-older-observation',
+				first_seen_utc: '2026-06-10T00:00:00Z',
+				last_seen_utc: '2026-06-11T00:00:00Z',
+			}),
+			entry({
+				id: 'tie-newer-observation',
+				first_seen_utc: '2026-06-10T00:00:00Z',
+				last_seen_utc: '2026-06-12T00:00:00Z',
+			}),
+			entry({ id: 'undated-a' }),
 		]);
-		expect(out.map((e) => e.id)).toEqual(['b', 'a', 'c']);
+		expect(out.map((e) => e.id)).toEqual([
+			'archive-new',
+			'current',
+			'archive-old',
+			'tie-newer-observation',
+			'tie-older-observation',
+			'undated-a',
+			'undated-z',
+		]);
 	});
 });
 
@@ -215,7 +248,7 @@ describe('safeAlertUrl — http/https only, hostname exposed', () => {
 });
 
 describe('deriveSpan + enumerateDates — the legacy fallback + every-day-selectable', () => {
-	it('derives min→max active date across every window', () => {
+	it('derives the provider-local min→max active date across every window', () => {
 		expect(
 			deriveSpan([
 				entry({ start_utc: '2026-06-05T00:00:00Z', end_utc: '2026-06-06T00:00:00Z' }),
@@ -223,7 +256,7 @@ describe('deriveSpan + enumerateDates — the legacy fallback + every-day-select
 					active_periods: [{ start_utc: '2026-06-01T00:00:00Z', end_utc: '2026-06-20T00:00:00Z' }],
 				}),
 			]),
-		).toEqual({ start: '2026-06-01', end: '2026-06-20' });
+		).toEqual({ start: '2026-05-31', end: '2026-06-19' });
 	});
 	it('returns null when nothing is datable', () => {
 		expect(deriveSpan([entry({}), entry({ routes: ['10'] })])).toBeNull();

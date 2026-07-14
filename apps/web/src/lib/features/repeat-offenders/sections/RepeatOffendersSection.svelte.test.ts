@@ -14,6 +14,7 @@ const rankedLadder = {
 		locale: 'en',
 		domain: [0, 100],
 		unit: '%',
+		rowLabel: 'Trip',
 		xLabel: 'Severe-delay rate',
 		rows: [
 			{

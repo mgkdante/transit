@@ -102,16 +102,39 @@ def test_cron_workflows_carry_failure_and_recovery_alert_steps() -> None:
     for filename, slug in CRON_WORKFLOWS.items():
         path = WORKFLOWS / filename
         doc = _load(path)
+        if filename == "daily-warm-rollups.yml":
+            notify = doc["jobs"]["notify"]
+            assert set(notify["needs"]) == {"prepare", "rollups", "publish", "retention"}
+            assert notify["if"] == "always()"
+            notify_steps = notify["steps"]
+            alert_steps = [
+                step for step in notify_steps if "alert-issue.sh" in str(step.get("run", ""))
+            ]
+            assert len(alert_steps) == 1
+            alert_step = alert_steps[0]
+            assert f"fire {slug}" in alert_step["run"]
+            assert f"resolve {slug}" in alert_step["run"]
+            assert "PREPARE_RESULT" in alert_step["env"]
+            assert "ROLLUPS_RESULT" in alert_step["env"]
+            assert "PUBLISH_RESULT" in alert_step["env"]
+            assert "RETENTION_RESULT" in alert_step["env"]
+            assert "GH_TOKEN" in alert_step["env"]
+            assert "GH_REPO" in alert_step["env"]
+            continue
         steps = _steps(doc)
 
         failure_steps = [
-            s for s in steps
-            if isinstance(s.get("if"), str) and "failure()" in s["if"]
+            s
+            for s in steps
+            if isinstance(s.get("if"), str)
+            and "failure()" in s["if"]
             and "alert-issue.sh" in (s.get("run", ""))
         ]
         success_steps = [
-            s for s in steps
-            if isinstance(s.get("if"), str) and "success()" in s["if"]
+            s
+            for s in steps
+            if isinstance(s.get("if"), str)
+            and "success()" in s["if"]
             and "alert-issue.sh" in (s.get("run", ""))
         ]
         assert len(failure_steps) == 1, f"{filename}: expected one failure() alert step"

@@ -23,6 +23,10 @@ vi.mock('$app/state', () => ({
 	},
 }));
 vi.mock('$app/navigation', () => ({ replaceState }));
+vi.mock('$lib/v1', async () => ({
+	...(await import('$lib/v1/history')),
+	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
+}));
 
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';
 

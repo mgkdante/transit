@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import logging
+from collections import Counter
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 
@@ -50,6 +53,24 @@ BUILD_REPORTING_AGGREGATE_ROWCOUNTS = {
     table_name: index
     for index, table_name in enumerate(BUILD_REPORTING_AGGREGATE_TABLES, start=10)
 }
+
+APPEND_ONLY_DAILY_STAGES = (
+    ("route_percentile_daily", "route_delay_percentile_daily"),
+    ("stop_percentile_daily", "stop_delay_percentile_daily"),
+    ("route_scheduled_trips_daily", "route_scheduled_trips_daily"),
+    ("route_cancellation_daily", "route_cancellation_daily"),
+    ("route_occupancy_band_daily", "route_occupancy_band_daily"),
+    ("route_occupancy_band_hourly", "route_occupancy_band_hourly"),
+    ("stop_occupancy_band_daily", "stop_occupancy_band_daily"),
+    ("route_service_span_daily", "route_service_span_daily"),
+    ("route_skipped_stop_daily", "route_skipped_stop_daily"),
+    ("route_delay_by_crowding_daily", "route_delay_by_crowding_daily"),
+    ("route_delay_spine", "route_delay_spine"),
+    ("route_headway_shift_daily", "route_headway_shift_daily"),
+    ("stop_delay_spine", "stop_delay_spine"),
+    ("stop_delay_shift_daily", "stop_delay_shift_daily"),
+    ("repeat_offender_daily_spine", "repeat_offender_daily_spine"),
+)
 
 # Deterministic ROW-DELETE counts for the append-only daily tables that lack a
 # DELETE branch above (the crowding/spine tables already return 13/16/9/4). Used
@@ -176,6 +197,13 @@ class FakeConnection:
         ):
             return IterableResult([FakeRow(p) for p in self.trip_delay_periods])
 
+        if (
+            "SELECT EXISTS" in sql
+            and "gold.warm_rollup_periods" in sql
+            and "period_start_utc = :period_start_utc" in sql
+        ):
+            return ScalarResult(False)
+
         # Append-only daily missing-days SELECTs (no DATE_BIN; sargable
         # snapshot_date_key window minus the warm_rollup_periods watermark).
         # Default to no missing days so the daily loops are noops here —
@@ -265,6 +293,14 @@ class FakeConnection:
 
         if "DELETE FROM gold.repeat_offender_daily_spine" in sql:
             return RowcountResult(6)
+
+        # Retained alert archive is lifecycle-managed beside (not inside) the
+        # aggregate registry, so its dry-run COUNT needs the scalar-result seam.
+        if "SELECT COUNT(*)" in sql and "FROM gold.alert_archive_entry" in sql:
+            return ScalarResult(2)
+
+        if "DELETE FROM gold.alert_archive_entry" in sql:
+            return RowcountResult(2)
 
         for table_name, rowcount in BUILD_REPORTING_AGGREGATE_ROWCOUNTS.items():
             if f"INSERT INTO gold.{table_name}" in sql:
@@ -399,6 +435,191 @@ class FakeEngine:
         yield self._connection
 
 
+class TransactionTrackingEngine(FakeEngine):
+    def __init__(self, connection: FakeConnection) -> None:
+        super().__init__(connection)
+        self.transactions: list[dict[str, object]] = []
+
+    @contextmanager
+    def begin(self):
+        started_at = len(self._connection.executed)
+        try:
+            yield self._connection
+        except Exception:
+            self.transactions.append(
+                {
+                    "status": "rolled_back",
+                    "statements": tuple(self._connection.executed[started_at:]),
+                }
+            )
+            raise
+        else:
+            self.transactions.append(
+                {
+                    "status": "committed",
+                    "statements": tuple(self._connection.executed[started_at:]),
+                }
+            )
+
+
+class FailingReportingConnection(FakeConnection):
+    def __init__(self, fail_table: str) -> None:
+        super().__init__()
+        self.fail_table = fail_table
+
+    def execute(self, statement, params=None):  # noqa: ANN001
+        sql = str(statement)
+        if f"INSERT INTO gold.{self.fail_table}" in sql:
+            self.executed.append(sql)
+            raise RuntimeError(f"forced failure for {self.fail_table}")
+        return super().execute(statement, params)
+
+
+class ResumableTripDelayConnection(FakeConnection):
+    """Transaction-local state for the resumable 5-minute builder tests."""
+
+    def __init__(self, engine: ResumableTripDelayEngine) -> None:
+        super().__init__()
+        self.engine = engine
+        self.pending_summaries: set[datetime] = set()
+        self.pending_watermarks: set[datetime] = set()
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def execute(self, statement, params=None):  # noqa: ANN001
+        sql = str(statement)
+        bound = dict(params or {})
+        self.calls.append((sql, bound))
+
+        if (
+            "fact_trip_delay_snapshot" in sql
+            and "warm_rollup_periods" in sql
+            and "NOT IN" in sql
+            and "DATE_BIN" in sql
+        ):
+            self.executed.append(sql)
+            missing = [
+                period
+                for period in self.engine.periods
+                if self.engine.stale_missing_read or period not in self.engine.committed_watermarks
+            ]
+            return IterableResult([FakeRow(period) for period in missing])
+
+        if "pg_advisory_xact_lock" in sql:
+            self.executed.append(sql)
+            return RowcountResult(1)
+
+        if (
+            "SELECT EXISTS" in sql
+            and "gold.warm_rollup_periods" in sql
+            and "period_start_utc = :period_start_utc" in sql
+        ):
+            self.executed.append(sql)
+            period = bound["period_start_utc"]
+            return ScalarResult(period in self.engine.committed_watermarks)
+
+        if "INSERT INTO gold.trip_delay_summary_5m" in sql:
+            self.executed.append(sql)
+            period = bound["period_start_utc"]
+            self.engine.summary_attempts[period] += 1
+            if self.engine.should_fail(period, "summary"):
+                raise RuntimeError(f"forced interruption during summary for {period.isoformat()}")
+            self.pending_summaries.add(period)
+            return RowcountResult(1)
+
+        if (
+            "INSERT INTO gold.warm_rollup_periods" in sql
+            and bound.get("rollup_kind") == "trip_delay_summary_5m"
+        ):
+            self.executed.append(sql)
+            period = bound["period_start_utc"]
+            self.engine.watermark_attempts[period] += 1
+            if self.engine.should_fail(period, "watermark"):
+                raise RuntimeError(f"forced interruption during watermark for {period.isoformat()}")
+            self.pending_watermarks.add(period)
+            return RowcountResult(1)
+
+        return super().execute(statement, params)
+
+
+class ResumableTripDelayEngine:
+    """Fake transactional store that commits or discards each connection's writes."""
+
+    def __init__(
+        self,
+        periods: list[datetime],
+        *,
+        fail_period: datetime | None = None,
+        fail_step: str | None = None,
+        stale_missing_read: bool = False,
+    ) -> None:
+        self.periods = periods
+        self.fail_period = fail_period
+        self.fail_step = fail_step
+        self.stale_missing_read = stale_missing_read
+        self.failure_raised = False
+        self.committed_summaries: set[datetime] = set()
+        self.committed_watermarks: set[datetime] = set()
+        self.summary_attempts: Counter[datetime] = Counter()
+        self.watermark_attempts: Counter[datetime] = Counter()
+        self.transactions: list[dict[str, object]] = []
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def should_fail(self, period: datetime, step: str) -> bool:
+        if not self.failure_raised and period == self.fail_period and step == self.fail_step:
+            self.failure_raised = True
+            return True
+        return False
+
+    @contextmanager
+    def begin(self):
+        conn = ResumableTripDelayConnection(self)
+        try:
+            yield conn
+        except Exception:
+            status = "rolled_back"
+            raise
+        else:
+            status = "committed"
+            self.committed_summaries.update(conn.pending_summaries)
+            self.committed_watermarks.update(conn.pending_watermarks)
+        finally:
+            self.calls.extend(conn.calls)
+            self.transactions.append(
+                {
+                    "status": status,
+                    "statements": tuple(conn.executed),
+                    "pending_summaries": frozenset(conn.pending_summaries),
+                    "pending_watermarks": frozenset(conn.pending_watermarks),
+                }
+            )
+
+
+def _rollup_stage_events(caplog) -> list[dict[str, object]]:  # noqa: ANN001
+    events: list[dict[str, object]] = []
+    for record in caplog.records:
+        try:
+            payload = json.loads(record.getMessage())
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if payload.get("event") == "warm_rollup_stage":
+            events.append(payload)
+    return events
+
+
+def _reporting_transactions(
+    engine: TransactionTrackingEngine,
+) -> list[dict[str, object]]:
+    return [
+        transaction
+        for transaction in engine.transactions
+        if any(
+            f"DELETE FROM gold.{table_name}" in statement
+            for statement in transaction["statements"]
+            for table_name in BUILD_REPORTING_AGGREGATE_TABLES
+        )
+    ]
+
+
 def _fake_settings(**kwargs) -> Settings:
     defaults = {
         "DATABASE_URL": None,
@@ -428,6 +649,110 @@ def test_build_trip_delay_rollup_inserts_new_periods() -> None:
 
     period_upserts = [s for s in conn.executed if "INSERT INTO gold.warm_rollup_periods" in s]
     assert len(period_upserts) == 3
+
+
+def test_trip_delay_5m_interruption_keeps_completed_periods_and_rerun_resumes(
+    caplog,  # noqa: ANN001
+) -> None:
+    caplog.set_level(logging.INFO, logger=rollups.__name__)
+    periods = [
+        datetime(2026, 3, 25, 8, 0, tzinfo=UTC),
+        datetime(2026, 3, 25, 8, 5, tzinfo=UTC),
+        datetime(2026, 3, 25, 8, 10, tzinfo=UTC),
+        datetime(2026, 3, 25, 8, 15, tzinfo=UTC),
+        datetime(2026, 3, 25, 8, 20, tzinfo=UTC),
+    ]
+    engine = ResumableTripDelayEngine(
+        periods,
+        fail_period=periods[3],
+        fail_step="summary",
+    )
+
+    with pytest.raises(RuntimeError, match="forced interruption during summary") as raised:
+        build_warm_rollups("stm", engine=engine)
+
+    assert str(raised.value) == (
+        f"forced interruption during summary for {periods[3].isoformat()}"
+    )
+    assert engine.committed_summaries == set(periods[:3])
+    assert engine.committed_watermarks == set(periods[:3])
+    error = _rollup_stage_events(caplog)[-1]
+    assert error["status"] == "error"
+    assert error["rows"] == 3
+
+    resumed = build_warm_rollups("stm", engine=engine)
+
+    assert resumed.built_trip_delay_periods == 2
+    assert engine.committed_summaries == set(periods)
+    assert engine.committed_watermarks == set(periods)
+    assert engine.summary_attempts == Counter(
+        {periods[0]: 1, periods[1]: 1, periods[2]: 1, periods[3]: 2, periods[4]: 1}
+    )
+    assert engine.watermark_attempts == Counter({period: 1 for period in periods})
+
+
+def test_trip_delay_5m_watermark_failure_rolls_back_only_that_period() -> None:
+    periods = [
+        datetime(2026, 3, 25, 9, 0, tzinfo=UTC),
+        datetime(2026, 3, 25, 9, 5, tzinfo=UTC),
+        datetime(2026, 3, 25, 9, 10, tzinfo=UTC),
+    ]
+    engine = ResumableTripDelayEngine(
+        periods,
+        fail_period=periods[1],
+        fail_step="watermark",
+    )
+
+    with pytest.raises(RuntimeError, match="forced interruption during watermark"):
+        build_warm_rollups("stm", engine=engine)
+
+    assert engine.committed_summaries == {periods[0]}
+    assert engine.committed_watermarks == {periods[0]}
+    assert periods[1] not in engine.committed_summaries
+    assert periods[1] not in engine.committed_watermarks
+    failed = next(
+        transaction for transaction in engine.transactions if transaction["status"] == "rolled_back"
+    )
+    assert failed["pending_summaries"] == frozenset({periods[1]})
+    assert failed["pending_watermarks"] == frozenset()
+
+
+def test_trip_delay_5m_locked_recheck_skips_stale_missing_periods() -> None:
+    periods = [
+        datetime(2026, 3, 25, 10, 0, tzinfo=UTC),
+        datetime(2026, 3, 25, 10, 5, tzinfo=UTC),
+    ]
+    engine = ResumableTripDelayEngine(periods, stale_missing_read=True)
+
+    first = build_warm_rollups("stm", engine=engine)
+    second = build_warm_rollups("stm", engine=engine)
+
+    assert first.built_trip_delay_periods == 2
+    assert second.built_trip_delay_periods == 0
+    assert engine.summary_attempts == Counter({periods[0]: 1, periods[1]: 1})
+
+    period_transactions = [
+        transaction
+        for transaction in engine.transactions
+        if any("pg_advisory_xact_lock" in sql for sql in transaction["statements"])
+    ]
+    assert len(period_transactions) == 4
+    assert all(transaction["status"] == "committed" for transaction in period_transactions)
+    assert all(
+        transaction["statements"][0].find("pg_advisory_xact_lock") >= 0
+        and "SELECT EXISTS" in transaction["statements"][1]
+        for transaction in period_transactions
+    )
+
+    lock_keys = [
+        params["lock_key"] for sql, params in engine.calls if "pg_advisory_xact_lock" in sql
+    ]
+    assert lock_keys == [
+        "transit.warm_rollup.trip_delay_summary_5m|stm|2026-03-25T10:00:00+00:00",
+        "transit.warm_rollup.trip_delay_summary_5m|stm|2026-03-25T10:05:00+00:00",
+        "transit.warm_rollup.trip_delay_summary_5m|stm|2026-03-25T10:00:00+00:00",
+        "transit.warm_rollup.trip_delay_summary_5m|stm|2026-03-25T10:05:00+00:00",
+    ]
 
 
 def test_build_warm_rollups_empty_facts_is_noop() -> None:
@@ -1002,7 +1327,10 @@ def test_route_service_span_daily_upsert_shape() -> None:
     assert "f.snapshot_date_key IN (" in compact
     assert "'YYYYMMDD')::integer, :date_key" in compact
     # FIX-2: the LAST trip's terminal (latest captured) delay, not its first observation.
-    assert "ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc DESC, f.entity_index DESC))[1] AS last_obs_delay" in compact
+    assert (
+        "ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc DESC, "
+        "f.entity_index DESC))[1] AS last_obs_delay" in compact
+    )
     assert "MAX(last_obs_delay) FILTER (WHERE rn_last = 1)" in compact
     # span derived from first/last observed trip start.
     assert "MAX(trip_start_utc) - MIN(trip_start_utc)" in compact
@@ -1071,6 +1399,123 @@ def test_build_warm_rollups_result_display_dict() -> None:
     assert "completed_at_utc" in d
 
 
+def test_build_warm_rollups_emits_machine_readable_stage_checkpoints(caplog) -> None:  # noqa: ANN001
+    caplog.set_level(logging.INFO, logger=rollups.__name__)
+    conn = FakeConnection(trip_delay_periods=[datetime(2026, 3, 25, 12, 0, tzinfo=UTC)])
+    engine = FakeEngine(conn)
+
+    result = build_warm_rollups("stm", engine=engine)
+
+    events = _rollup_stage_events(caplog)
+    started = [event for event in events if event["status"] == "started"]
+    completed = [event for event in events if event["status"] == "completed"]
+    expected_stage_ids = [
+        ("trip_delay_5m", "trip_delay_summary_5m", "trip_delay_summary_5m"),
+        *[("append_only_daily", kind, table) for kind, table in APPEND_ONLY_DAILY_STAGES],
+        *[
+            ("reporting_aggregate", "reporting_aggregate", table)
+            for table in BUILD_REPORTING_AGGREGATE_TABLES
+        ],
+    ]
+
+    assert [
+        (event["stage"], event["kind"], event["table"]) for event in started
+    ] == expected_stage_ids
+    assert [
+        (event["stage"], event["kind"], event["table"]) for event in completed
+    ] == expected_stage_ids
+    assert all(event["provider_id"] == "stm" for event in events)
+    assert all(event["event"] == "warm_rollup_stage" for event in events)
+    assert all("duration_seconds" not in event for event in started)
+    assert all(isinstance(event["duration_seconds"], float) for event in completed)
+    assert all(event["duration_seconds"] >= 0 for event in completed)
+    assert all(isinstance(event["rows"], int) for event in completed)
+    assert events == [item for pair in zip(started, completed, strict=True) for item in pair]
+
+    payload = result.display_dict()
+    prior_contract_keys = {
+        "provider_id",
+        "skipped_not_seeded",
+        "since_utc",
+        "built_trip_delay_periods",
+        "built_route_percentile_days",
+        "built_stop_percentile_days",
+        "built_route_scheduled_trips_days",
+        "built_route_cancellation_days",
+        "built_route_occupancy_days",
+        "built_route_occupancy_hourly_days",
+        "built_stop_occupancy_days",
+        "built_route_service_span_days",
+        "built_route_skipped_stop_days",
+        "built_route_delay_by_crowding_days",
+        "built_route_delay_spine_days",
+        "built_route_headway_shift_daily_days",
+        "built_stop_delay_spine_days",
+        "built_stop_delay_shift_daily_days",
+        "built_repeat_offender_daily_spine_days",
+        "reporting_aggregate_row_counts",
+        "completed_at_utc",
+    }
+    assert prior_contract_keys < payload.keys()
+    assert payload["built_trip_delay_periods"] == 1
+    assert payload["reporting_aggregate_row_counts"] == dict(BUILD_REPORTING_AGGREGATE_ROWCOUNTS)
+    assert payload["completed_stage_receipts"] == completed
+
+
+def test_reporting_aggregates_commit_in_one_transaction_per_table() -> None:
+    engine = TransactionTrackingEngine(FakeConnection())
+
+    build_warm_rollups("stm", engine=engine)
+
+    transactions = _reporting_transactions(engine)
+    assert len(transactions) == len(BUILD_REPORTING_AGGREGATE_TABLES)
+    for transaction, table_name in zip(transactions, BUILD_REPORTING_AGGREGATE_TABLES, strict=True):
+        statements = transaction["statements"]
+        assert transaction["status"] == "committed"
+        assert sum(f"DELETE FROM gold.{table_name}" in sql for sql in statements) == 1
+        assert sum(f"INSERT INTO gold.{table_name}" in sql for sql in statements) == 1
+        assert all(
+            other_table == table_name
+            or f"DELETE FROM gold.{other_table}" not in "\n".join(statements)
+            for other_table in BUILD_REPORTING_AGGREGATE_TABLES
+        )
+
+
+def test_reporting_stage_failure_logs_error_reraises_and_keeps_prior_commits(
+    caplog,  # noqa: ANN001
+) -> None:
+    caplog.set_level(logging.INFO, logger=rollups.__name__)
+    failed_table = "repeated_problem_route_stop"
+    engine = TransactionTrackingEngine(FailingReportingConnection(failed_table))
+
+    with pytest.raises(RuntimeError, match=f"forced failure for {failed_table}"):
+        build_warm_rollups("stm", engine=engine)
+
+    transactions = _reporting_transactions(engine)
+    assert [transaction["status"] for transaction in transactions] == [
+        "committed",
+        "committed",
+        "rolled_back",
+    ]
+    for transaction, table_name in zip(
+        transactions,
+        BUILD_REPORTING_AGGREGATE_TABLES[:3],
+        strict=True,
+    ):
+        assert any(f"DELETE FROM gold.{table_name}" in sql for sql in transaction["statements"])
+
+    events = _rollup_stage_events(caplog)
+    error = events[-1]
+    assert error["provider_id"] == "stm"
+    assert error["stage"] == "reporting_aggregate"
+    assert error["kind"] == "reporting_aggregate"
+    assert error["table"] == failed_table
+    assert error["status"] == "error"
+    assert isinstance(error["duration_seconds"], float)
+    assert error["duration_seconds"] >= 0
+    assert error.get("rows") is None
+
+
 def test_prune_warm_rollup_storage_deletes_old_periods() -> None:
     conn = FakeConnection()
     engine = FakeEngine(conn)
@@ -1132,8 +1577,10 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.stop_delay_shift_daily"] == 5
     # route_scheduled_trips_daily — the GC2/H1 append-only scheduled universe (0073), 730d pruning.
     assert result.deleted_row_counts["gold.route_scheduled_trips_daily"] == 17
-    # repeat_offender_daily_spine — the S14 append-only per-entity offender spine (0075), 730d pruning.
+    # repeat_offender_daily_spine — the S14 append-only per-entity offender
+    # spine (0075), 730d pruning.
     assert result.deleted_row_counts["gold.repeat_offender_daily_spine"] == 6
+    assert result.deleted_row_counts["gold.alert_archive_entry"] == 2
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
     # 23 prior MINUS the 6 route delay-cube fold tables (dropped in 0064) MINUS the 2 stop_delay
@@ -1143,7 +1590,7 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     # GC2/H3 route_occupancy_band_hourly (0074) PLUS the S14 repeat_offender_daily_spine (0075)
     # MINUS the S14 route_habit_score drop (0076 — no longer retention-registered); each
     # retention-registered table emits one dry-run COUNT.
-    assert len(count_queries) == 21
+    assert len(count_queries) == 22
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:

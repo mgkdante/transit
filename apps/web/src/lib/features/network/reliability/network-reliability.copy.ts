@@ -9,7 +9,8 @@
 // (mirrors the raw-FR /v1 headers); EN is the parallel translation.
 
 import type { Locale } from '$lib/i18n';
-import type { SurfaceHeadCopy } from '$lib/components/surface';
+import type { HistoryNavigatorLabels, SurfaceHeadCopy } from '$lib/components/surface';
+import type { HistoryCorrection } from '$lib/v1/history';
 import type { VerdictCopy } from '$lib/v1/verdict';
 
 export interface NetworkReliabilityCopy extends SurfaceHeadCopy {
@@ -117,9 +118,14 @@ export interface NetworkReliabilityCopy extends SurfaceHeadCopy {
 		/** The two retard-series choices for the toggle. */
 		readonly retardP90: string;
 		readonly retardAvg: string;
+		readonly retardAvgLabel: string;
 		/** Accessible group label for the retard-series toggle. */
 		readonly retardToggleLabel: string;
 		readonly summary: string;
+		/** Accessible title when the selected retained range has delay but no OTP readings. */
+		readonly delayOnlySummary: string;
+		/** Accessible title when the selected retained range has OTP but no delay readings. */
+		readonly onTimeOnlySummary: string;
 		/** Accessible summary of the vehicles-in-service context sparkline. */
 		readonly vehiclesSpark: string;
 		/** Caption shown under the vehicles context sparkline. */
@@ -198,6 +204,17 @@ export interface NetworkReliabilityCopy extends SurfaceHeadCopy {
 		readonly d7: string;
 		readonly d30: string;
 		readonly d90: string;
+	};
+	/** Retained-history controls, corrections, and metric-scope honesty. */
+	readonly history: {
+		readonly navigator: HistoryNavigatorLabels;
+		readonly coverage: (from: string, to: string) => string;
+		readonly selection: (from: string, to: string) => string;
+		readonly correction: Record<HistoryCorrection['reason'], string>;
+		readonly partial: string;
+		readonly noData: string;
+		readonly currentOnly: string;
+		readonly dailyOnly: string;
 	};
 	/** Shown in place of a metric value when the contract reports null. */
 	readonly noData: string;
@@ -280,9 +297,12 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 			onTimeLabel: 'On-time %',
 			retardLabel: 'Slowest 10% (min)',
 			retardP90: 'Slowest 10%',
-			retardAvg: 'Typical',
+			retardAvg: 'Average',
+			retardAvgLabel: 'Average delay (min)',
 			retardToggleLabel: 'Delay series',
 			summary: 'Daily on-time % and the chosen delay series over the recent network trend.',
+			delayOnlySummary: 'Chosen daily delay series over the selected network history.',
+			onTimeOnlySummary: 'Daily on-time percentage over the selected network history.',
 			vehiclesSpark: 'Vehicles in service, recent days',
 			vehiclesContext: 'Vehicles reporting each day',
 		},
@@ -321,6 +341,34 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		},
 		grain: { label: 'Trend grain', day: 'Day', week: 'Week', month: 'Month' },
 		window: { label: 'Trend window', d7: '7d', d30: '30d', d90: '90d' },
+		history: {
+			navigator: {
+				group: 'Retained history',
+				picker: {
+					group: 'Retained history range',
+					start: 'From',
+					end: 'To',
+					clear: 'Return to current snapshot',
+					anyStart: 'Earliest',
+					anyEnd: 'Latest',
+				},
+				previous: 'Previous range',
+				next: 'Next range',
+			},
+			coverage: (from, to) => `Retained coverage: ${from} to ${to}`,
+			selection: (from, to) => `Selected range: ${from} to ${to}`,
+			correction: {
+				malformed: 'The invalid date range was replaced with the current snapshot.',
+				'outside-coverage': 'The unavailable date range was replaced with the current snapshot.',
+				gap: 'The range inside a retained-data gap was replaced with the current snapshot.',
+				unpublished: 'The unpublished date range was replaced with the current snapshot.',
+			},
+			partial: 'Coverage is partial for this range. Missing dates and metrics remain no data.',
+			noData: 'No data is retained for this range.',
+			currentOnly: 'Time-of-day and weekday views remain from the current snapshot.',
+			dailyOnly:
+				'Slowest-10% delay and vehicles are exact daily readings; they are not pooled into week or month.',
+		},
 		noData: 'no data',
 		units: { pct: '%', min: ' min' },
 		verdict: {
@@ -405,10 +453,14 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 			onTimeLabel: 'Ponctualité %',
 			retardLabel: '10 % les plus lents (min)',
 			retardP90: '10 % les plus lents',
-			retardAvg: 'Typique',
+			retardAvg: 'Moyen',
+			retardAvgLabel: 'Retard moyen (min)',
 			retardToggleLabel: 'Série de retard',
 			summary:
 				'Ponctualité quotidienne et la série de retard choisie sur la tendance récente du réseau.',
+			delayOnlySummary:
+				'Série quotidienne de retard choisie sur l’historique sélectionné du réseau.',
+			onTimeOnlySummary: 'Ponctualité quotidienne sur l’historique sélectionné du réseau.',
 			vehiclesSpark: 'Véhicules en service, jours récents',
 			vehiclesContext: 'Véhicules signalés chaque jour',
 		},
@@ -450,6 +502,37 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		},
 		grain: { label: 'Granularité de tendance', day: 'Jour', week: 'Semaine', month: 'Mois' },
 		window: { label: 'Fenêtre de tendance', d7: '7 j', d30: '30 j', d90: '90 j' },
+		history: {
+			navigator: {
+				group: 'Historique conservé',
+				picker: {
+					group: 'Plage de l’historique conservé',
+					start: 'Du',
+					end: 'Au',
+					clear: 'Revenir à l’instantané actuel',
+					anyStart: 'Au plus tôt',
+					anyEnd: 'Au plus tard',
+				},
+				previous: 'Plage précédente',
+				next: 'Plage suivante',
+			},
+			coverage: (from, to) => `Couverture conservée : du ${from} au ${to}`,
+			selection: (from, to) => `Plage choisie : du ${from} au ${to}`,
+			correction: {
+				malformed: 'La plage de dates invalide a été remplacée par l’instantané actuel.',
+				'outside-coverage':
+					'La plage de dates non disponible a été remplacée par l’instantané actuel.',
+				gap: 'La plage dans une lacune des données a été remplacée par l’instantané actuel.',
+				unpublished: 'La plage non publiée a été remplacée par l’instantané actuel.',
+			},
+			partial:
+				'La couverture est partielle pour cette plage. Les dates et mesures absentes restent sans données.',
+			noData: 'Aucune donnée n’est conservée pour cette plage.',
+			currentOnly:
+				'Les vues par moment de la journée et par type de jour restent celles de l’instantané actuel.',
+			dailyOnly:
+				'Le retard des 10 % les plus lents et les véhicules sont des lectures quotidiennes exactes; ils ne sont pas regroupés par semaine ou par mois.',
+		},
 		noData: 'aucune donnée',
 		units: { pct: '%', min: ' min' },
 		verdict: {

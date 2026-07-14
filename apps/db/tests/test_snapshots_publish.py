@@ -312,6 +312,7 @@ def test_publish_static_writes_expected_keys() -> None:
     # Covers every query issued by build_routes_index, build_stops_index,
     # build_labels, the route_ids SELECT, build_route, and build_all_stops_data.
     dispatch = {
+        "publish.lock.try_acquire": [True],
         # _static_stamp: loaded_at_utc of the current dataset version.
         "publish.static_stamp": [
             {"loaded_at_utc": _dt.datetime(2026, 6, 1, 0, 0, tzinfo=_dt.timezone.utc)},
@@ -393,7 +394,7 @@ def test_publish_static_writes_expected_keys() -> None:
     assert ri["routes"][0]["reliability"] is True
 
 
-def test_publish_historic_writes_expected_keys(tmp_path) -> None:
+def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> None:
     """Historic tier writes network_trend, hotspots, repeat_offenders, alert_history,
     provenance (top-level), per-route reliability, per-stop reliability and receipts.
 
@@ -404,9 +405,9 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     import datetime
     from contextlib import contextmanager
 
+    from transit_ops.snapshots.contract import NetworkTrend
     from transit_ops.snapshots.publish import _publish_historic
     from transit_ops.snapshots.storage import LocalSnapshotStorage
-    from transit_ops.snapshots.contract import NetworkTrend
 
     class _FakeResult:
         def __init__(self, rows):
@@ -450,7 +451,35 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     # weekly/monthly/weak-stop reads that once shared spine SQL now carry unique
     # names, so the hand-coded FakeConnHistoric.execute spine branch is gone.
     dispatch = {
+        "publish.lock.try_acquire": [True],
+        "history.hotspots.timezone": [{"timezone": "UTC"}],
+        "history.hotspots.names": [],
+        "history.hotspots.route_daily": [],
+        "history.hotspots.stop_daily": [],
+        "history.repeat_offenders.timezone": [{"timezone": "UTC"}],
+        "history.repeat_offenders.names": [],
+        "history.repeat_offenders.daily": [],
+        # One real retained Network day proves the historic publisher wires the
+        # content-addressed month outside the compatibility payload list.
+        "history.network.delay": [
+            {
+                "local_date": datetime.date(2026, 6, 1),
+                "observation_count": 10,
+                "in_clamp_observation_count": 8,
+                "on_time_count": 7,
+                "severe_count": 1,
+                "sum_delay_seconds": 240,
+                "source_generated_utc": datetime.datetime(
+                    2026, 6, 2, 1, tzinfo=datetime.UTC
+                ),
+            }
+        ],
+        "history.network.fact": [],
+        "history.network.cancellation": [],
+        "history.network.occupancy": [],
         "receipts.network_daily": [
+            {"local_date": datetime.date(2025, 1, 1), "known_obs": 80, "on_time": 68,
+             "severe": 4, "pooled_delay_sec": 4000, "inclamp_obs": 80},
             {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
              "severe": 5, "pooled_delay_sec": 5000, "inclamp_obs": 100},
         ],
@@ -500,6 +529,7 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
              "start_utc": datetime.datetime(2026, 6, 1, 8, 0, tzinfo=datetime.timezone.utc),
              "end_utc": datetime.datetime(2026, 6, 1, 9, 0, tzinfo=datetime.timezone.utc)},
         ],
+        "alerts.archive.publish": [],
         "provenance.sources": [
             {"dataset_kind": "static_schedule", "storage_backend": "s3",
              "storage_path": "bucket/path", "source_url": None,
@@ -627,6 +657,10 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
             {"stop_id": "51234", "obs": 10, "severe": 1, "sum_delay_sec": 900},
         ],
         "receipts.accountability": [
+            {"provider_local_date": datetime.date(2025, 1, 1),
+             "affected_route_count": 2, "affected_stop_count": 7,
+             "delayed_trip_count": 20, "severe_delay_count": 4,
+             "alert_count": 1, "rider_impact_score": 0.2},
             {"provider_local_date": datetime.date(2026, 6, 1),
              "affected_route_count": 3, "affected_stop_count": 12,
              "delayed_trip_count": 45, "severe_delay_count": 5,
@@ -671,6 +705,21 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     assert any("historic/repeat_offenders.json" in k for k in key_set)
     assert any("historic/alert_history.json" in k for k in key_set)
     assert any("provenance.json" in k for k in key_set)
+    network_partition_keys = [
+        key
+        for key in keys
+        if "historic/history/network/generations/" in key and key.endswith("/2026-06.json")
+    ]
+    assert len(network_partition_keys) == 1
+    network_index_key = next(
+        key
+        for key in keys
+        if "historic/history/network/generations/" in key and key.endswith("/index.json")
+    )
+    assert keys.index(network_partition_keys[0]) < keys.index(network_index_key)
+    root_index_key = next(key for key in keys if "historic/history/index.json" in key)
+    assert keys.index(network_index_key) < keys.index(root_index_key)
+    assert keys[-1] == root_index_key
     # provenance is top-level (not under historic/)
     assert not any(k.endswith("historic/provenance.json") for k in key_set)
 
@@ -681,15 +730,31 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     # --- per-stop file for stop 51234 ---
     assert any("historic/stop_reliability/51234.json" in k for k in key_set)
 
-    # --- receipt for 2026-06-01 ---
+    # --- every current-run retained receipt, including a date >31 days old ---
+    assert any("historic/receipts/2025-01-01.json" in k for k in key_set)
     assert any("historic/receipts/2026-06-01.json" in k for k in key_set)
 
     # --- receipts discovery index (T7): exact set of receipt dates written ---
-    from transit_ops.snapshots.contract import ReceiptsIndex, RouteReliabilityIndex
     import pathlib
+
+    from transit_ops.snapshots import publish as snapshot_publish
+    from transit_ops.snapshots.contract import Receipt, ReceiptsIndex, RouteReliabilityIndex
+
     index_path = next(k for k in keys if "historic/receipts/index.json" in k)
     ri = ReceiptsIndex.model_validate_json(pathlib.Path(index_path).read_bytes())
-    assert ri.dates == ["2026-06-01"]
+    assert ri.dates == ["2025-01-01", "2026-06-01"]
+    assert [item.date for item in ri.available] == ri.dates
+    published_receipts = {
+        date: Receipt.model_validate_json(
+            pathlib.Path(
+                next(key for key in keys if key.endswith(f"historic/receipts/{date}.json"))
+            ).read_bytes()
+        )
+        for date in ri.dates
+    }
+    assert ri.collection_generation_id == snapshot_publish._receipts_collection_generation_id(
+        published_receipts
+    )
 
     # --- route-reliability discovery index: the EXACT set of routes published this
     # run (so the web list-badge gate never lags the published files like the static
@@ -747,6 +812,8 @@ class _RecordingConn:
         self.sql.append(s)
         import datetime as _dt
 
+        if query_name(statement) == "publish.lock.try_acquire":
+            return _ScalarResult(True)
         if "loaded_at_utc FROM core.dataset_versions" in s:
             return _StampResult(_dt.datetime(2026, 6, 1, 0, 0, tzinfo=_dt.timezone.utc))
         return _EmptyResult()
@@ -767,6 +834,14 @@ class _EmptyResult:
 
     def scalar_one(self):
         return 0
+
+
+class _ScalarResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one(self):
+        return self._value
 
 
 class _StampResult:
@@ -1079,6 +1154,9 @@ def test_static_publish_dataset_gate_skips_unchanged_but_rebuilds_on_change(monk
         def fetchone(self):
             return self._rows[0] if self._rows else None
 
+        def scalar_one(self):
+            return self._rows[0] if self._rows else None
+
     class _Conn:
         def __init__(self, *, skip_row: bool) -> None:
             self._skip_row = skip_row
@@ -1087,6 +1165,8 @@ def test_static_publish_dataset_gate_skips_unchanged_but_rebuilds_on_change(monk
         def execute(self, statement, params=None):
             s = str(statement)
             self.executed.append(s)
+            if query_name(statement) == "publish.lock.try_acquire":
+                return _Res([True])
             if "loaded_at_utc FROM core.dataset_versions" in s:
                 return _Res([{"loaded_at_utc": _STAMP}])
             # the dataset-skip probe: the ONLY query that CASTs the stamp against the state row.

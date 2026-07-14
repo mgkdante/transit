@@ -5,6 +5,7 @@ import type { WeakStop } from '$lib/v1';
 
 const labels: WeakStopsLabels = {
 	title: 'Weakest stops',
+	rowLabel: 'Stop',
 	xLabel: 'Avg delay',
 	unit: ' min',
 	stopHref: (id) => `/stop/${id}`,
@@ -37,6 +38,7 @@ describe('selectWeakStops — scalar/fallback (avg-delay magnitude)', () => {
 		expect(spec.sort).toBe('given'); // already ranked by the selector
 		expect(spec.rows[0].href).toBe('/stop/b');
 		expect(spec.rows.every((r) => r.severity != null)).toBe(true);
+		expect(spec.rowLabel).toBe('Stop');
 	});
 
 	it('falls back to a stop-id label when the name is missing', () => {

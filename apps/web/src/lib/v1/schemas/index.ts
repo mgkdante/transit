@@ -45,6 +45,8 @@ export * from './repeat_offenders';
 export * from './hotspots';
 export * from './network_trend';
 export * from './alert_history';
+export * from './alert_archive';
+export * from './history';
 
 // --- provenance --------------------------------------------------------------
 export * from './provenance';

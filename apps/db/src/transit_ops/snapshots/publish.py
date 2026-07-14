@@ -17,21 +17,45 @@ callers.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from transit_ops.db.connection import make_engine
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import get_settings
 from transit_ops.snapshots import builders, gate
+from transit_ops.snapshots.builders.historic.history_common import (
+    PointHistorySummary,
+    history_coverage,
+    history_date,
+    history_metric_coverage,
+    history_pointer_path,
+    history_utc_timestamp,
+    latest_history_timestamp,
+    readdress_history_directory,
+)
 from transit_ops.snapshots.contract import (
     PAYLOAD_METHODOLOGY,
     TOP_LEVEL_MODELS,
+    AlertArchiveIndex,
+    AlertArchivePage,
+    HistoricAvailabilityIndex,
+    HistoricCollectionIndex,
+    HistoricEntityDirectoryIndex,
+    HistoricFamilyAvailability,
+    HistoricHotspotsDay,
+    HistoricRepeatOffendersDay,
+    LineHistoryPartition,
+    NetworkHistoryPartition,
     PayloadEnvelope,
     ReceiptAvailability,
     ReceiptsIndex,
     RouteReliabilityIndex,
+    StopHistoryPartition,
 )
+from transit_ops.snapshots.serialization import snapshot_sha256
 from transit_ops.snapshots.storage import (
     HashGatedStorage,
     build_snapshot_storage,
@@ -41,8 +65,67 @@ from transit_ops.sql_registry import named_query
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
+
 # A work item handed to the parallel uploader: (rel_key, payload, tier).
 _PutItem = "tuple[str, object, str]"
+STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE = 100
+POINT_HISTORY_UPLOAD_BATCH_SIZE = 32
+HISTORY_PARTITION_UPLOAD_BATCH_SIZE = 32
+
+
+PointDayT = TypeVar(
+    "PointDayT",
+    HistoricHotspotsDay,
+    HistoricRepeatOffendersDay,
+    covariant=True,
+)
+
+
+class PointDayPlan(Protocol[PointDayT]):
+    """One-shot retained point-day stream consumed inside its DB connection."""
+
+    def iter_days(self) -> Iterator[PointDayT]: ...
+
+
+@dataclass(frozen=True)
+class HistoricPointPlanBundle:
+    hotspots: PointDayPlan[HistoricHotspotsDay]
+    repeat_offenders: PointDayPlan[HistoricRepeatOffendersDay]
+
+
+@dataclass(frozen=True)
+class HistoricValidationInputs:
+    """Named optional historic bundles consumed before their DB connection closes."""
+
+    all_items: list[tuple[str, object]]
+    route_items: list[tuple[str, object]]
+    stamp: str
+    prior_total: int | None
+    alert_archive: builders.AlertArchiveBundle | None = None
+    network_history: builders.NetworkHistoryPlan | None = None
+    line_history: builders.LineHistoryPlan | None = None
+    stop_history: builders.StopHistoryPlan | None = None
+    point_plans: HistoricPointPlanBundle | None = None
+
+
+def _build_historic_point_plans(
+    conn: Connection,
+    *,
+    provider_id: str,
+) -> HistoricPointPlanBundle:
+    return HistoricPointPlanBundle(
+        hotspots=builders.build_hotspots_history_plan(
+            conn,
+            provider_id=provider_id,
+        ),
+        repeat_offenders=builders.build_repeat_offenders_history_plan(
+            conn,
+            provider_id=provider_id,
+        ),
+    )
+
 
 # Dataset-level skip probe (static tier only): is the LAST completed static publish for
 # this provider already stamped at the current dataset version? generated_utc is stored as
@@ -62,9 +145,60 @@ _STATIC_SKIP_MATCH_SQL = named_query(
 # first publish is never blocked.
 _PRIOR_FILES_TOTAL_SQL = named_query(
     "publish.prior_files_total",
-    "SELECT files_total FROM core.snapshot_publish_state "
+    "SELECT COALESCE(stable_files_total, files_total) FROM core.snapshot_publish_state "
     "WHERE provider_id = :provider_id AND tier = :tier",
 )
+
+_PUBLISH_LOCK_SQL = named_query(
+    "publish.lock.try_acquire",
+    "SELECT pg_try_advisory_xact_lock("
+    "hashtext('transit.snapshot_publish:' || :provider_id), hashtext(:tier))",
+)
+
+_CLEAR_REFERENCED_HISTORIC_GC_MARKS_SQL = named_query(
+    "publish.historic_gc.clear_referenced",
+    "DELETE FROM core.snapshot_historic_gc_marks "
+    "WHERE provider_id = :provider_id "
+    "AND object_key = ANY(CAST(:object_keys AS text[]))",
+)
+
+
+class PublishLockUnavailableError(RuntimeError):
+    """A static/historic provider lane already has an active publisher."""
+
+    def __init__(self, *, provider_id: str, tier: str) -> None:
+        super().__init__(
+            f"snapshot publish already running for provider={provider_id!r}, tier={tier!r}"
+        )
+        self.provider_id = provider_id
+        self.tier = tier
+
+
+def _acquire_publish_lock(conn: object, *, provider_id: str, tier: str) -> None:
+    """Fail fast unless this transaction owns the provider/tier publish lane."""
+
+    acquired = conn.execute(  # type: ignore[attr-defined]
+        _PUBLISH_LOCK_SQL,
+        {"provider_id": provider_id, "tier": tier},
+    ).scalar_one()
+    if not acquired:
+        raise PublishLockUnavailableError(provider_id=provider_id, tier=tier)
+
+
+def _clear_referenced_historic_gc_marks(
+    conn: object,
+    provider_id: str,
+    object_keys: Sequence[str],
+) -> None:
+    """Reset continuous-unreachability age for every generation in the next graph."""
+
+    keys = sorted(set(object_keys))
+    if not keys:
+        return
+    conn.execute(  # type: ignore[attr-defined]
+        _CLEAR_REFERENCED_HISTORIC_GC_MARKS_SQL,
+        {"provider_id": provider_id, "object_keys": keys},
+    )
 
 
 # GC2 H4 — model-class -> methodology-family string, so the publisher can stamp
@@ -88,6 +222,227 @@ def _publish_generation_id(provider_id: str, stamp: str) -> str:
     return f"{provider_id}@{stamp}"
 
 
+def _receipts_collection_generation_id(receipts: Mapping[str, object]) -> str:
+    """Hash exact Receipt semantics while excluding only run-volatile envelope fields."""
+
+    canonical: list[dict[str, object]] = []
+    for date_str, receipt in sorted(receipts.items()):
+        if isinstance(receipt, PayloadEnvelope):
+            payload = receipt.model_dump(mode="json")
+        elif isinstance(receipt, Mapping):
+            payload = dict(receipt)
+        else:
+            raise TypeError("Receipt collection values must be payload models or mappings")
+        payload.pop("generated_utc", None)
+        payload.pop("publish_generation_id", None)
+        canonical.append({"date": date_str, "payload": payload})
+    return snapshot_sha256({"receipts": canonical})
+
+
+def _finalize_receipts_collection_generation(items: Sequence[tuple]) -> None:
+    """Pin the Receipts index after every Receipt carries its published semantics."""
+
+    receipts = {
+        payload.date: payload
+        for rel_key, payload, *_rest in items
+        if rel_key.startswith("historic/receipts/")
+        and rel_key != "historic/receipts/index.json"
+        and hasattr(payload, "date")
+    }
+    index = next(
+        (
+            payload
+            for rel_key, payload, *_rest in items
+            if rel_key == "historic/receipts/index.json" and isinstance(payload, ReceiptsIndex)
+        ),
+        None,
+    )
+    if index is not None:
+        index.collection_generation_id = _receipts_collection_generation_id(receipts)
+
+
+def _valid_history_dates(values: Sequence[object]) -> list[str]:
+    dates: set[str] = set()
+    for value in values:
+        try:
+            dates.add(history_date(value, field="date"))
+        except ValueError:
+            continue
+    return sorted(dates)
+
+
+def _valid_history_timestamps(values: Sequence[object]) -> list[str]:
+    timestamps: list[str] = []
+    for value in values:
+        try:
+            timestamps.append(history_utc_timestamp(value, field="generated_utc"))
+        except ValueError:
+            continue
+    return timestamps
+
+
+def _entity_family_availability(
+    *,
+    family: str,
+    directory: HistoricEntityDirectoryIndex,
+    indexes: Sequence[HistoricCollectionIndex],
+    metrics: Sequence[tuple[str, str]],
+    index_path: str | None = None,
+) -> HistoricFamilyAvailability:
+    dates = sorted({date for index in indexes for date in index.available_dates})
+    first, last, gaps = history_coverage(dates)
+    metric_dates: dict[str, list[str]] = {name: [] for name, _aggregation in metrics}
+    for index in indexes:
+        for coverage in index.metrics:
+            if coverage.metric.value not in metric_dates:
+                continue
+            metric_dates[coverage.metric.value].extend(
+                date
+                for date in index.available_dates
+                if (
+                    coverage.first_available_date is not None
+                    and coverage.last_available_date is not None
+                    and coverage.first_available_date <= date <= coverage.last_available_date
+                    and not any(gap.start_date <= date <= gap.end_date for gap in coverage.gaps)
+                )
+            )
+    return HistoricFamilyAvailability(
+        family=family,
+        selection_mode="range",
+        index_path=index_path or f"historic/history/{family}/index.json",
+        collection_generation_id=directory.collection_generation_id,
+        first_available_date=first,
+        last_available_date=last,
+        gaps=gaps,
+        metrics=[
+            history_metric_coverage(name, aggregation, metric_dates[name])
+            for name, aggregation in metrics
+        ],
+    )
+
+
+def _build_history_availability_index(
+    *,
+    stamp: str,
+    alert_index: AlertArchiveIndex,
+    receipts_index: ReceiptsIndex,
+    network_index: HistoricCollectionIndex,
+    line_directory: HistoricEntityDirectoryIndex,
+    line_indexes: Sequence[HistoricCollectionIndex],
+    stop_directory: HistoricEntityDirectoryIndex,
+    hotspots_index: HistoricCollectionIndex | None = None,
+    repeat_offenders_index: HistoricCollectionIndex | None = None,
+    stop_indexes: Sequence[HistoricCollectionIndex] | None = None,
+    stop_family: HistoricFamilyAvailability | None = None,
+    stop_generated_utc: str | None = None,
+    alert_index_path: str = "historic/alerts/index.json",
+    receipt_index_path: str = "historic/receipts/index.json",
+    network_index_path: str = "historic/history/network/index.json",
+    line_directory_path: str = "historic/history/lines/index.json",
+    stop_directory_path: str = "historic/history/stops/index.json",
+    hotspots_index_path: str | None = None,
+    repeat_offenders_index_path: str | None = None,
+) -> HistoricAvailabilityIndex:
+    """Build the exact seven-family discovery root from already-built child truth."""
+
+    if hotspots_index is None or repeat_offenders_index is None:
+        raise RuntimeError("retained-history root requires both exact point history children")
+
+    receipt_dates = _valid_history_dates(receipts_index.dates)
+    receipt_first, receipt_last, receipt_gaps = history_coverage(receipt_dates)
+    families = [
+        HistoricFamilyAvailability(
+            family="alerts",
+            selection_mode="range",
+            index_path=alert_index_path,
+            collection_generation_id=alert_index.collection_generation_id,
+            first_available_date=alert_index.first_available_date,
+            last_available_date=alert_index.last_available_date,
+        ),
+        HistoricFamilyAvailability(
+            family="hotspots",
+            selection_mode="date",
+            index_path=hotspots_index_path
+            or history_pointer_path("historic/history/hotspots", hotspots_index),
+            collection_generation_id=hotspots_index.collection_generation_id,
+            first_available_date=hotspots_index.first_available_date,
+            last_available_date=hotspots_index.last_available_date,
+            gaps=[gap.model_copy(deep=True) for gap in hotspots_index.gaps],
+        ),
+        _entity_family_availability(
+            family="lines",
+            directory=line_directory,
+            indexes=line_indexes,
+            metrics=builders.LINE_HISTORY_METRICS,
+            index_path=line_directory_path,
+        ),
+        HistoricFamilyAvailability(
+            family="network",
+            selection_mode="range",
+            index_path=network_index_path,
+            collection_generation_id=network_index.collection_generation_id,
+            first_available_date=network_index.first_available_date,
+            last_available_date=network_index.last_available_date,
+            gaps=[gap.model_copy(deep=True) for gap in network_index.gaps],
+            metrics=[metric.model_copy(deep=True) for metric in network_index.metrics],
+        ),
+        HistoricFamilyAvailability(
+            family="repeat_offenders",
+            selection_mode="date",
+            index_path=repeat_offenders_index_path
+            or history_pointer_path(
+                "historic/history/repeat_offenders",
+                repeat_offenders_index,
+            ),
+            collection_generation_id=repeat_offenders_index.collection_generation_id,
+            first_available_date=repeat_offenders_index.first_available_date,
+            last_available_date=repeat_offenders_index.last_available_date,
+            gaps=[gap.model_copy(deep=True) for gap in repeat_offenders_index.gaps],
+        ),
+        HistoricFamilyAvailability(
+            family="receipts",
+            selection_mode="date",
+            index_path=receipt_index_path,
+            collection_generation_id=receipts_index.collection_generation_id,
+            first_available_date=receipt_first,
+            last_available_date=receipt_last,
+            gaps=receipt_gaps,
+        ),
+        stop_family
+        or _entity_family_availability(
+            family="stops",
+            directory=stop_directory,
+            indexes=stop_indexes or (),
+            metrics=builders.STOP_HISTORY_METRICS,
+            index_path=stop_directory_path,
+        ),
+    ]
+    timestamp_candidates: list[object] = []
+    if alert_index.first_available_date is not None:
+        timestamp_candidates.append(alert_index.generated_utc)
+    if receipt_dates:
+        timestamp_candidates.append(receipts_index.generated_utc)
+    if network_index.available_dates:
+        timestamp_candidates.append(network_index.generated_utc)
+    if hotspots_index.available_dates:
+        timestamp_candidates.append(hotspots_index.generated_utc)
+    if repeat_offenders_index.available_dates:
+        timestamp_candidates.append(repeat_offenders_index.generated_utc)
+    timestamp_candidates.extend(index.generated_utc for index in line_indexes)
+    if stop_indexes is not None:
+        timestamp_candidates.extend(index.generated_utc for index in stop_indexes)
+    elif stop_generated_utc is not None:
+        timestamp_candidates.append(stop_generated_utc)
+    return HistoricAvailabilityIndex(
+        generated_utc=latest_history_timestamp(
+            _valid_history_timestamps(timestamp_candidates),
+            fallback=stamp,
+        ),
+        methodology_version="history-1",
+        families=sorted(families, key=lambda family: family.family),
+    )
+
+
 def _stamp_envelope(items: list, *, provider_id: str, stamp: str) -> None:
     """Stamp the H4 in-band accountability fields on every PayloadEnvelope in *items*.
 
@@ -100,6 +455,18 @@ def _stamp_envelope(items: list, *, provider_id: str, stamp: str) -> None:
     generation_id = _publish_generation_id(provider_id, stamp)
     for _rel_key, payload, _tier in items:
         if isinstance(payload, PayloadEnvelope):
+            # Content-addressed payloads must remain byte-stable across runs; a
+            # run generation id would invalidate their already-computed SHA/path.
+            if isinstance(
+                payload,
+                AlertArchivePage
+                | NetworkHistoryPartition
+                | LineHistoryPartition
+                | StopHistoryPartition
+                | HistoricHotspotsDay
+                | HistoricRepeatOffendersDay,
+            ):
+                continue
             payload.publish_generation_id = generation_id
             payload.methodology_version = _METHODOLOGY_BY_MODEL.get(type(payload))
 
@@ -113,7 +480,13 @@ def _concurrency(settings: object) -> int:
         return 16
 
 
-def _parallel_put(storage: object, items: list, *, concurrency: int) -> list[str]:
+def _parallel_put(
+    storage: object,
+    items: list,
+    *,
+    concurrency: int,
+    write_mode: str = "normal",
+) -> list[str]:
     """Upload every ``(rel_key, payload, tier)`` in *items* and return the keys.
 
     Uploads run through a bounded :class:`ThreadPoolExecutor` so the per-file
@@ -132,20 +505,64 @@ def _parallel_put(storage: object, items: list, *, concurrency: int) -> list[str
     """
     if not items:
         return []
+    if write_mode not in {"normal", "immutable"}:
+        raise ValueError(f"unknown snapshot write mode {write_mode!r}")
+
+    def put(item: tuple[str, object, str]) -> str:
+        rel_key, payload, tier = item
+        if write_mode == "immutable":
+            return storage.put_immutable_json(rel_key, payload)  # type: ignore[attr-defined]
+        return storage.put_json(rel_key, payload, tier=tier)  # type: ignore[attr-defined]
+
     if concurrency <= 1:
-        return [
-            storage.put_json(rel_key, payload, tier=tier)  # type: ignore[attr-defined]
-            for (rel_key, payload, tier) in items
-        ]
+        return [put(item) for item in items]
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = [
-            pool.submit(storage.put_json, rel_key, payload, tier=tier)  # type: ignore[attr-defined]
-            for (rel_key, payload, tier) in items
-        ]
+        futures = [pool.submit(put, item) for item in items]
         # Resolve in submission order; the first exception re-raises here, and
         # the `with` block still joins the remaining workers on the way out.
         return [future.result() for future in futures]
+
+
+def _flush_historic_partition_batch(
+    storage: object,
+    batch: list[tuple[str, object, str]],
+    *,
+    concurrency: int,
+) -> list[str]:
+    """Fully upload one bounded immutable-child batch before its parent can advance."""
+
+    if not batch:
+        return []
+    written = _parallel_put(
+        storage,
+        batch,
+        concurrency=concurrency,
+        write_mode="immutable",
+    )
+    batch.clear()
+    return written
+
+
+def _publish_stages(
+    storage: object,
+    stages: list,
+    *,
+    concurrency: int,
+) -> list[str]:
+    """Publish ordered stages, waiting for every child stage before its pointer."""
+
+    written: list[str] = []
+    for stage, write_mode in stages:
+        written.extend(
+            _parallel_put(
+                storage,
+                stage,
+                concurrency=concurrency,
+                write_mode=write_mode,
+            )
+        )
+    return written
 
 
 @dataclass(frozen=True)
@@ -182,9 +599,11 @@ _RECORD_STATE_SQL = named_query(
     "publish.state.upsert",
     "INSERT INTO core.snapshot_publish_state "
     "(provider_id, tier, generated_utc, files_written, files_skipped, files_total, "
+    " stable_files_total, "
     " gate_checks_run, gate_errors, gate_warnings, gate_verdict, gate_generated_utc, "
     " updated_at_utc) "
     "VALUES (:provider_id, :tier, :generated_utc, :written, :skipped, :total, "
+    " :stable_total, "
     " :gate_checks_run, :gate_errors, :gate_warnings, :gate_verdict, "
     " CAST(:gate_generated_utc AS timestamptz), now()) "
     "ON CONFLICT (provider_id, tier) DO UPDATE SET "
@@ -192,6 +611,7 @@ _RECORD_STATE_SQL = named_query(
     "files_written = EXCLUDED.files_written, "
     "files_skipped = EXCLUDED.files_skipped, "
     "files_total = EXCLUDED.files_total, "
+    "stable_files_total = EXCLUDED.stable_files_total, "
     "gate_checks_run = EXCLUDED.gate_checks_run, "
     "gate_errors = EXCLUDED.gate_errors, "
     "gate_warnings = EXCLUDED.gate_warnings, "
@@ -238,6 +658,7 @@ def _record_publish_state(
     written: int,
     skipped: int,
     total: int,
+    stable_total: int | None = None,
     gate_report: dict | None = None,  # type: ignore[type-arg]
 ) -> None:
     """Upsert the per-tier publish-state row inside the caller's transaction.
@@ -256,6 +677,7 @@ def _record_publish_state(
             "written": written,
             "skipped": skipped,
             "total": total,
+            "stable_total": total if stable_total is None else stable_total,
             **_gate_summary(gate_report),
         },
     )
@@ -277,8 +699,7 @@ _STATIC_STAMP_SQL = named_query(
 # marts, which derived from the same facts.
 _DISTINCT_HISTORIC_ROUTE_IDS_SQL = named_query(
     "route.spine.route_ids",
-    "SELECT DISTINCT route_id FROM gold.route_delay_spine"
-    " WHERE provider_id = :provider_id",
+    "SELECT DISTINCT route_id FROM gold.route_delay_spine WHERE provider_id = :provider_id",
 )
 
 # Per-route static-file enumerator: every route in the current dim.
@@ -296,9 +717,13 @@ def _static_stamp(conn: object, provider_id: str) -> str:
     changes. Falls back to day-truncated now() when no version row exists.
     """
 
-    row = conn.execute(  # type: ignore[attr-defined]
-        _STATIC_STAMP_SQL, {"provider_id": provider_id}
-    ).mappings().fetchone()
+    row = (
+        conn.execute(  # type: ignore[attr-defined]
+            _STATIC_STAMP_SQL, {"provider_id": provider_id}
+        )
+        .mappings()
+        .fetchone()
+    )
     if row is not None and row["loaded_at_utc"] is not None:
         return builders._iso(row["loaded_at_utc"])
     return utc_now().strftime("%Y-%m-%dT00:00:00Z")
@@ -396,7 +821,9 @@ def _publish_live(
             try:
                 gate.record(gate_report, rel_key, payload)  # type: ignore[arg-type]
             except Exception:  # noqa: BLE001 — never let a gate crash abort the live cycle
-                logger.exception("live gate check crashed for %s (skipped, cycle continues)", rel_key)
+                logger.exception(
+                    "live gate check crashed for %s (skipped, cycle continues)", rel_key
+                )
     written: list[str] = []
     for rel_key, payload, tier in items:
         written.append(storage.put_json(rel_key, payload, tier=tier))  # type: ignore[attr-defined]
@@ -405,14 +832,15 @@ def _publish_live(
 
 def _build_historic_items(
     conn: object, *, provider_id: str, settings: object, stamp: str
-) -> tuple[list, list, list]:
+) -> tuple[list, list, list, object]:
     """Build every historic-tier payload; return ``(items, route_items, stages)``.
 
     * *items* — the full ordered (rel_key, payload, tier) list, over which the gate
       runs a single build-then-gate pass (payload build precedes any upload).
     * *route_items* — the per-route subset (for the batch-level empty-route/coverage
       checks).
-    * *stages* — the SAME items partitioned into ordered upload stages that MUST be
+    * *stages* — ``(items, write_mode)`` pairs partitioning the ordered upload
+      stages that MUST be
       uploaded one stage at a time, each stage COMPLETING before the next begins. A
       discovery index is its own singleton stage placed AFTER its per-entity stage, so
       it never advertises an entity whose file is still in flight (the pointer-last
@@ -464,7 +892,9 @@ def _build_historic_items(
     route_items = [
         (
             f"historic/route_reliability/{route_id}.json",
-            builders.build_route_reliability(conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp),  # type: ignore[arg-type]
+            builders.build_route_reliability(
+                conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp
+            ),  # type: ignore[arg-type]
             "historic",
         )
         for (route_id,) in route_rows
@@ -486,7 +916,9 @@ def _build_historic_items(
     )
 
     # --- per-stop reliability files (batched build) ---
-    all_stops_rel = builders.build_stop_reliability(conn, provider_id=provider_id, generated_utc=stamp)  # type: ignore[arg-type]
+    all_stops_rel = builders.build_stop_reliability(
+        conn, provider_id=provider_id, generated_utc=stamp
+    )  # type: ignore[arg-type]
     stop_items = [
         (f"historic/stop_reliability/{stop_id}.json", stop_rel, "historic")
         for stop_id, stop_rel in sorted(all_stops_rel.items())
@@ -514,8 +946,7 @@ def _build_historic_items(
         ReceiptAvailability(
             date=date_str,
             has_data=bool(
-                receipt.affected_routes or receipt.affected_stops
-                or receipt.otp_pct is not None
+                receipt.affected_routes or receipt.affected_stops or receipt.otp_pct is not None
             ),
             has_schedule=bool(
                 receipt.service_states is not None
@@ -535,20 +966,61 @@ def _build_historic_items(
         "historic",
     )
 
+    # --- retained alert archive: immutable generation pages + stable pointer ---
+    # The legacy newest-500 flat file above remains untouched. This collection is
+    # built from the message-complete Gold archive and uploaded pointer-last.
+    alert_archive = builders.build_alert_archive(
+        conn,
+        provider_id,
+        generated_utc=stamp,  # type: ignore[arg-type]
+    )
+    alert_page_items = [
+        (path, page, "historic_immutable") for path, page in alert_archive.page_items
+    ]
+    alert_index_item = (
+        "historic/alerts/index.json",
+        alert_archive.index,
+        "historic",
+    )
+
     # Ordered upload stages: each stage completes before the next; a discovery index
     # is a singleton stage after its per-entity stage (pointer-last invariant).
     stages: list = [
-        flat_items,
-        route_items,
-        [route_index_item],
-        stop_items,
-        receipt_items,
-        [receipts_index_item],
+        (flat_items, "normal"),
+        (route_items, "normal"),
+        ([route_index_item], "normal"),
+        (stop_items, "normal"),
+        (receipt_items, "normal"),
+        ([receipts_index_item], "normal"),
+        (alert_page_items, "immutable"),
+        ([alert_index_item], "normal"),
     ]
-    for stage in stages:
+    for stage, _write_mode in stages:
         items.extend(stage)
 
-    return items, route_items, stages
+    return items, route_items, stages, alert_archive
+
+
+def _stable_item_total(items: list) -> int:
+    """Logical surface count, excluding immutable generation objects."""
+
+    return sum(1 for item in items if not _is_immutable_item(item[0], item[2]))
+
+
+def _is_immutable_item(rel_key: str, tier: str | None = None) -> bool:
+    """Recognize immutable items by declared tier or generation-path identity."""
+
+    return tier == "historic_immutable" or "/generations/" in rel_key
+
+
+def _stable_outcome_total(storage: object) -> int:
+    """Count stable mutable outcomes while path-filtering mislabeled generations."""
+
+    mutable_outcomes = [
+        *storage.written,  # type: ignore[attr-defined]
+        *storage.skipped,  # type: ignore[attr-defined]
+    ]
+    return sum(1 for rel_key in mutable_outcomes if not _is_immutable_item(rel_key))
 
 
 def _find_network_trend(items: list) -> tuple[str, object] | None:
@@ -557,6 +1029,133 @@ def _find_network_trend(items: list) -> tuple[str, object] | None:
         if rel_key == "historic/network_trend.json":
             return (rel_key, payload)
     return None
+
+
+def _publish_point_history_days(
+    plan: PointDayPlan[HistoricHotspotsDay] | PointDayPlan[HistoricRepeatOffendersDay],
+    *,
+    family: str,
+    storage: object,
+    report: gate.GateReport,
+    analytics_report: object | None,
+    force: bool,
+    concurrency: int,
+) -> tuple[PointHistorySummary, list[str]]:
+    """Gate and upload one point plan in bounded batches, retaining exact refs only."""
+
+    summary = PointHistorySummary(family)
+    written: list[str] = []
+    batch: list[tuple[str, object, str]] = []
+    batch_limit = min(POINT_HISTORY_UPLOAD_BATCH_SIZE, max(1, concurrency))
+
+    def flush_batch() -> None:
+        if not batch:
+            return
+        written.extend(
+            _parallel_put(
+                storage,
+                batch,
+                concurrency=concurrency,
+                write_mode="immutable",
+            )
+        )
+        batch.clear()
+
+    for payload in plan.iter_days():
+        ref = summary.observe(payload)
+        if analytics_report is not None:
+            gate.record(analytics_report, ref.path, payload)  # type: ignore[arg-type]
+            report.results.extend(gate.check_point_history_day_ref(ref, payload, family=family))
+            report.checks_run += 1
+        else:
+            report.results.extend(
+                [
+                    *gate.check_payload(ref.path, payload),
+                    *gate.check_point_history_day_ref(ref, payload, family=family),
+                ]
+            )
+            report.payload_sha256[ref.path] = ref.sha256 or snapshot_sha256(payload)
+            report.payloads_checked += 1
+            report.checks_run += 2
+        gate.enforce(report, force=force)
+        batch.append((ref.path, payload, "historic_immutable"))
+        if len(batch) >= batch_limit:
+            flush_batch()
+    flush_batch()
+    return summary, written
+
+
+def _build_point_history_index_item(
+    summary: PointHistorySummary,
+    *,
+    provider_id: str,
+    stamp: str,
+    report: gate.GateReport,
+    analytics_report: object | None,
+    force: bool,
+) -> tuple[str, HistoricCollectionIndex, str]:
+    index = summary.build_index(fallback_generated_utc=stamp)
+    _stamp_envelope(
+        [("unused", index, "historic")],
+        provider_id=provider_id,
+        stamp=stamp,
+    )
+    rel_key = history_pointer_path(f"historic/history/{summary.family}", index)
+    findings = gate.check_point_history_index(
+        index,
+        rel_key=rel_key,
+        family=summary.family,
+        expected_refs=summary.refs,
+        fallback_generated_utc=stamp,
+    )
+    if analytics_report is not None:
+        gate.record(analytics_report, rel_key, index)  # type: ignore[arg-type]
+        analytics_report.results.extend(findings)  # type: ignore[attr-defined]
+        analytics_report.checks_run += 1  # type: ignore[attr-defined]
+    else:
+        report.results.extend([*gate.check_payload(rel_key, index), *findings])
+        report.payload_sha256[rel_key] = snapshot_sha256(index)
+        report.payloads_checked += 1
+        report.checks_run += 2
+    gate.enforce(report, force=force)
+    return (rel_key, index, "historic_immutable")
+
+
+def _validate_point_history_plan(
+    plan: PointDayPlan[HistoricHotspotsDay] | PointDayPlan[HistoricRepeatOffendersDay],
+    *,
+    family: str,
+    provider_id: str,
+    stamp: str,
+    report: gate.GateReport,
+) -> tuple[PointHistorySummary, HistoricCollectionIndex, str]:
+    """Consume a fresh one-shot point plan and record the publish-identical graph."""
+
+    summary = PointHistorySummary(family)
+    for payload in plan.iter_days():
+        ref = summary.observe(payload)
+        gate.record(report, ref.path, payload)
+        report.results.extend(gate.check_point_history_day_ref(ref, payload, family=family))
+        report.checks_run += 1
+    index = summary.build_index(fallback_generated_utc=stamp)
+    _stamp_envelope(
+        [("unused", index, "historic")],
+        provider_id=provider_id,
+        stamp=stamp,
+    )
+    rel_key = history_pointer_path(f"historic/history/{family}", index)
+    gate.record(report, rel_key, index)
+    report.results.extend(
+        gate.check_point_history_index(
+            index,
+            rel_key=rel_key,
+            family=family,
+            expected_refs=summary.refs,
+            fallback_generated_utc=stamp,
+        )
+    )
+    report.checks_run += 1
+    return summary, index, rel_key
 
 
 def _publish_historic(
@@ -575,43 +1174,698 @@ def _publish_historic(
     *stamp* is the day-truncated DATA-time stamp every artifact carries; when
     omitted (direct callers / older tests) it defaults to today's truncated UTC.
 
-    When *gate_report* is supplied the FULL payload set is built into memory FIRST,
-    the value gate runs over it (with the batch-level coverage/empty-route aggregates),
-    then ``gate.enforce`` is called BEFORE any upload — so a failed gate uploads NOTHING
-    (all-or-nothing) and the caller's transaction rolls back with state un-advanced.
+    Compatibility payloads remain one build/gate pass. Retained point-date families stream
+    one day at a time and Network, Line, and Stop history stream one month at a time through
+    structural gates and immutable storage. Only compact refs and coverage scalars survive
+    between artifacts. Compatibility stages publish only after every retained immutable child
+    succeeds. Every family index publishes before the exact seven-family root, which activates
+    last. A failed run may leave harmless unreferenced immutable objects, but never a new parent
+    pointing to incomplete children.
 
     Uploads run STAGED: within each stage puts fan out through a bounded thread pool,
     but a stage COMPLETES before the next begins, so a discovery index (its own stage)
     is only PUT after every per-entity file in the preceding stage finished — the
     pointer-last invariant. Only the upload is staged; the build+gate is one pass.
+
+    Partition batching bounds in-flight payload memory and overlaps remote immutable
+    probes/writes. Builders and gates still query and recompute the complete retained
+    graph each run; closed-month delta reuse remains a separate follow-up.
     """
     if stamp is None:
         stamp = _historic_stamp()
 
     concurrency = _concurrency(settings)
+    root_rel_key = "historic/history/index.json"
+    capture_stable_version = getattr(storage, "capture_stable_version", None)
+    stable_activation_supported = getattr(storage, "stable_activation_supported", True)
+    root_version = (
+        capture_stable_version(root_rel_key)
+        if stable_activation_supported and callable(capture_stable_version)
+        else None
+    )
 
-    items, route_items, stages = _build_historic_items(
+    items, route_items, stages, alert_archive = _build_historic_items(
         conn, provider_id=provider_id, settings=settings, stamp=stamp
     )
     _stamp_envelope(items, provider_id=provider_id, stamp=stamp)  # GC2 H4
+    _finalize_receipts_collection_generation(items)
+    receipts_index = next(
+        (
+            payload
+            for rel_key, payload, _tier in items
+            if rel_key == "historic/receipts/index.json" and isinstance(payload, ReceiptsIndex)
+        ),
+        None,
+    )
+    receipt_items = [
+        (rel_key, payload)
+        for rel_key, payload, _tier in items
+        if rel_key.startswith("historic/receipts/") and rel_key != "historic/receipts/index.json"
+    ]
+    receipt_findings = (
+        gate.check_receipts_collection(receipts_index, receipt_items)
+        if receipts_index is not None
+        else []
+    )
+
+    network_history = builders.build_network_history_plan(
+        conn,  # type: ignore[arg-type]
+        provider_id=provider_id,
+        generated_utc=stamp,
+    )
+    line_history = builders.build_line_history_plan(
+        conn,  # type: ignore[arg-type]
+        provider_id=provider_id,
+        generated_utc=stamp,
+    )
+    stop_history = builders.build_stop_history_plan(
+        conn,  # type: ignore[arg-type]
+        provider_id=provider_id,
+        generated_utc=stamp,
+    )
+    point_plans = _build_historic_point_plans(conn, provider_id=provider_id)
+    effective_report = gate_report or gate.new_report(provider_id, "historic", stamp)
+    alert_findings = gate.check_alert_archive_bundle(
+        alert_archive.index,
+        alert_archive.page_items,
+        provider_timezone=alert_archive.provider_timezone,
+    )
 
     if gate_report is not None:
         for rel_key, payload, _tier in items:
             gate.record(gate_report, rel_key, payload)  # type: ignore[arg-type]
+        gate_report.results.extend([*alert_findings, *receipt_findings])  # type: ignore[attr-defined]
+        gate_report.checks_run += 1  # type: ignore[attr-defined]
+    else:
+        effective_report.results.extend([*alert_findings, *receipt_findings])
+        effective_report.payloads_checked = len(alert_archive.page_items) + 1
+        effective_report.checks_run = 2
+    gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+
+    hotspot_summary, hotspot_keys = _publish_point_history_days(
+        point_plans.hotspots,
+        family="hotspots",
+        storage=storage,
+        report=effective_report,  # type: ignore[arg-type]
+        analytics_report=gate_report,
+        force=force,
+        concurrency=concurrency,
+    )
+    repeat_offenders_summary, repeat_offender_keys = _publish_point_history_days(
+        point_plans.repeat_offenders,
+        family="repeat_offenders",
+        storage=storage,
+        report=effective_report,  # type: ignore[arg-type]
+        analytics_report=gate_report,
+        force=force,
+        concurrency=concurrency,
+    )
+    hotspot_index_item = _build_point_history_index_item(
+        hotspot_summary,
+        provider_id=provider_id,
+        stamp=stamp,
+        report=effective_report,  # type: ignore[arg-type]
+        analytics_report=gate_report,
+        force=force,
+    )
+    repeat_offenders_index_item = _build_point_history_index_item(
+        repeat_offenders_summary,
+        provider_id=provider_id,
+        stamp=stamp,
+        report=effective_report,  # type: ignore[arg-type]
+        analytics_report=gate_report,
+        force=force,
+    )
+    hotspot_index_path, hotspots_index, _tier = hotspot_index_item
+    repeat_offenders_index_path, repeat_offenders_index, _tier = repeat_offenders_index_item
+
+    network_summary = gate.NetworkHistoryStreamSummary()
+    network_keys: list[str] = []
+    network_batch: list[tuple[str, object, str]] = []
+    for ref, partition in network_history.iter_partition_items():
+        if gate_report is not None:
+            gate.record(gate_report, ref.path, partition)  # type: ignore[arg-type]
+            partition_findings = []
+        else:
+            partition_findings = gate.check_network_history_partition(
+                partition,
+                rel_key=ref.path,
+            )
+            effective_report.payloads_checked += 1  # type: ignore[attr-defined]
+            effective_report.checks_run += 2  # type: ignore[attr-defined]
+        effective_report.results.extend(  # type: ignore[attr-defined]
+            [
+                *partition_findings,
+                *gate.check_network_history_partition_ref(ref, partition),
+            ]
+        )
+        gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+        network_summary.observe(ref, partition)
+        network_batch.append((ref.path, partition, "historic_immutable"))
+        if len(network_batch) >= HISTORY_PARTITION_UPLOAD_BATCH_SIZE:
+            network_keys.extend(
+                _flush_historic_partition_batch(
+                    storage,
+                    network_batch,
+                    concurrency=concurrency,
+                )
+            )
+    network_keys.extend(
+        _flush_historic_partition_batch(
+            storage,
+            network_batch,
+            concurrency=concurrency,
+        )
+    )
+
+    line_build_summary = builders.LineHistoryStreamSummary()
+    line_gate_summary = gate.LineHistoryStreamSummary()
+    line_keys: list[str] = []
+    line_batch: list[tuple[str, object, str]] = []
+    for ref, partition in line_history.iter_partition_items():
+        if gate_report is not None:
+            gate.record(gate_report, ref.path, partition)  # type: ignore[arg-type]
+            partition_findings = []
+        else:
+            partition_findings = gate.check_line_history_partition(
+                partition,
+                rel_key=ref.path,
+            )
+            effective_report.payloads_checked += 1  # type: ignore[attr-defined]
+            effective_report.checks_run += 2  # type: ignore[attr-defined]
+        effective_report.results.extend(  # type: ignore[attr-defined]
+            [
+                *partition_findings,
+                *gate.check_line_history_partition_ref(ref, partition),
+            ]
+        )
+        gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+        line_gate_summary.observe(ref, partition)
+        line_build_summary.observe(ref, partition)
+        line_batch.append((ref.path, partition, "historic_immutable"))
+        if len(line_batch) >= HISTORY_PARTITION_UPLOAD_BATCH_SIZE:
+            line_keys.extend(
+                _flush_historic_partition_batch(
+                    storage,
+                    line_batch,
+                    concurrency=concurrency,
+                )
+            )
+    line_keys.extend(
+        _flush_historic_partition_batch(
+            storage,
+            line_batch,
+            concurrency=concurrency,
+        )
+    )
+
+    stop_build_summary = builders.StopHistoryStreamSummary()
+    stop_gate_summary = gate.StopHistoryStreamSummary()
+    stop_keys: list[str] = []
+    stop_batch: list[tuple[str, object, str]] = []
+    for ref, partition in stop_history.iter_partition_items():
+        if gate_report is not None:
+            gate.record(  # type: ignore[arg-type]
+                gate_report,
+                ref.path,
+                partition,
+                retain_sha=False,
+            )
+            partition_findings = []
+        else:
+            partition_findings = gate.check_stop_history_partition(
+                partition,
+                rel_key=ref.path,
+            )
+            effective_report.payloads_checked += 1  # type: ignore[attr-defined]
+            effective_report.checks_run += 2  # type: ignore[attr-defined]
+        effective_report.results.extend(  # type: ignore[attr-defined]
+            [
+                *partition_findings,
+                *gate.check_stop_history_partition_ref(ref, partition),
+            ]
+        )
+        gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+        stop_gate_summary.observe(ref, partition)
+        stop_build_summary.observe(ref, partition)
+        stop_batch.append((ref.path, partition, "historic_immutable"))
+        if len(stop_batch) >= HISTORY_PARTITION_UPLOAD_BATCH_SIZE:
+            stop_keys.extend(
+                _flush_historic_partition_batch(
+                    storage,
+                    stop_batch,
+                    concurrency=concurrency,
+                )
+            )
+    stop_keys.extend(
+        _flush_historic_partition_batch(
+            storage,
+            stop_batch,
+            concurrency=concurrency,
+        )
+    )
+
+    network_index = network_history.build_index(network_summary.detached_refs())
+    _stamp_envelope(
+        [("historic/history/network/index.json", network_index, "historic")],
+        provider_id=provider_id,
+        stamp=stamp,
+    )
+    network_index_path = history_pointer_path("historic/history/network", network_index)
+    network_index_item = [(network_index_path, network_index, "historic_immutable")]
+    stream_findings = gate.check_network_history_stream_index(
+        network_index,
+        network_summary,
+        fallback_generated_utc=stamp,
+    )
+    if gate_report is not None:
+        gate.record(  # type: ignore[arg-type]
+            gate_report,
+            network_index_path,
+            network_index,
+        )
+        gate_report.results.extend(stream_findings)  # type: ignore[attr-defined]
+        gate_report.checks_run += 1  # type: ignore[attr-defined]
+    else:
+        effective_report.results.extend(  # type: ignore[attr-defined]
+            [
+                *gate.check_network_history_index(
+                    network_index,
+                    rel_key=network_index_path,
+                ),
+                *stream_findings,
+            ]
+        )
+        effective_report.payloads_checked += 1  # type: ignore[attr-defined]
+        effective_report.checks_run += 2  # type: ignore[attr-defined]
+    gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+
+    line_indexes = line_build_summary.build_indexes(fallback_generated_utc=stamp)
+    line_stamp_items = [
+        (
+            f"historic/history/lines/{index.entity_id.encode('utf-8').hex()}/index.json",
+            index,
+            "historic",
+        )
+        for index in line_indexes
+        if index.entity_id
+    ]
+    _stamp_envelope(line_stamp_items, provider_id=provider_id, stamp=stamp)
+    line_index_paths = {
+        index.entity_id or "": history_pointer_path(
+            f"historic/history/lines/{index.entity_id.encode('utf-8').hex()}",
+            index,
+        )
+        for index in line_indexes
+        if index.entity_id
+    }
+    line_index_items = [
+        (line_index_paths[index.entity_id or ""], index, "historic_immutable")
+        for index in line_indexes
+        if index.entity_id
+    ]
+    line_stream_findings = gate.check_line_history_stream_indexes(
+        line_indexes,
+        line_gate_summary,
+        fallback_generated_utc=stamp,
+    )
+    if gate_report is not None:
+        for rel_key, payload, _tier in line_index_items:
+            gate.record(gate_report, rel_key, payload)  # type: ignore[arg-type]
+        gate_report.results.extend(line_stream_findings)  # type: ignore[attr-defined]
+        gate_report.checks_run += 1  # type: ignore[attr-defined]
+    else:
+        effective_report.results.extend(  # type: ignore[attr-defined]
+            [
+                *(
+                    finding
+                    for rel_key, payload, _tier in line_index_items
+                    for finding in gate.check_line_history_index(payload, rel_key=rel_key)
+                ),
+                *line_stream_findings,
+            ]
+        )
+        effective_report.payloads_checked += len(line_index_items)  # type: ignore[attr-defined]
+        effective_report.checks_run += len(line_index_items) + 1  # type: ignore[attr-defined]
+    gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+
+    stop_pointer_summary = builders.StopHistoryPointerSummary()
+    stop_directory_summary = gate.StopHistoryDirectorySummary()
+    stop_index_paths: dict[str, str] = {}
+    stop_referenced_generation_keys: set[str] = set()
+    for stop_index in stop_build_summary.iter_indexes(fallback_generated_utc=stamp):
+        if not stop_index.entity_id:
+            continue
+        stop_stamp_item = [
+            (
+                f"historic/history/stops/{stop_index.entity_id.encode('utf-8').hex()}/index.json",
+                stop_index,
+                "historic",
+            )
+        ]
+        _stamp_envelope(stop_stamp_item, provider_id=provider_id, stamp=stamp)
+        rel_key = history_pointer_path(
+            f"historic/history/stops/{stop_index.entity_id.encode('utf-8').hex()}",
+            stop_index,
+        )
+        payload = stop_index
+        stop_index_paths[stop_index.entity_id] = rel_key
+        stop_referenced_generation_keys.add(rel_key)
+        stop_referenced_generation_keys.update(ref.path for ref in stop_index.partitions)
+        stop_stream_findings = gate.check_stop_history_stream_index(
+            payload,
+            stop_gate_summary,
+            fallback_generated_utc=stamp,
+        )
+        if gate_report is not None:
+            gate.record(gate_report, rel_key, payload)  # type: ignore[arg-type]
+            gate_report.results.extend(stop_stream_findings)  # type: ignore[attr-defined]
+            gate_report.checks_run += 1  # type: ignore[attr-defined]
+        else:
+            effective_report.results.extend(  # type: ignore[attr-defined]
+                [
+                    *gate.check_stop_history_index(payload, rel_key=rel_key),
+                    *stop_stream_findings,
+                ]
+            )
+            effective_report.payloads_checked += 1  # type: ignore[attr-defined]
+            effective_report.checks_run += 2  # type: ignore[attr-defined]
+        gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+        stop_pointer_summary.observe(stop_index, index_path=rel_key)
+        stop_directory_summary.observe(stop_index, index_path=rel_key)
+    stop_complete_findings = gate.check_stop_history_stream_entities(
+        stop_directory_summary,
+        stop_gate_summary,
+    )
+    effective_report.results.extend(stop_complete_findings)  # type: ignore[attr-defined]
+    effective_report.checks_run += 1  # type: ignore[attr-defined]
+    gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+
+    line_directory_summary = gate.LineHistoryDirectorySummary.from_indexes(
+        [index.model_copy(deep=True) for index in line_indexes],
+        index_paths=line_index_paths,
+    )
+    line_directory = readdress_history_directory(
+        line_build_summary.build_directory(
+            [index.model_copy(deep=True) for index in line_indexes],
+            fallback_generated_utc=stamp,
+        ),
+        line_index_paths,
+    )
+    _stamp_envelope(
+        [("historic/history/lines/index.json", line_directory, "historic")],
+        provider_id=provider_id,
+        stamp=stamp,
+    )
+    line_directory_path = history_pointer_path("historic/history/lines", line_directory)
+    line_directory_item = [(line_directory_path, line_directory, "historic_immutable")]
+    line_directory_findings = gate.check_line_history_stream_directory(
+        line_directory,
+        line_directory_summary,
+        fallback_generated_utc=stamp,
+    )
+    if gate_report is not None:
+        gate.record(  # type: ignore[arg-type]
+            gate_report,
+            line_directory_path,
+            line_directory,
+        )
+        gate_report.results.extend(line_directory_findings)  # type: ignore[attr-defined]
+        gate_report.checks_run += 1  # type: ignore[attr-defined]
+    else:
+        effective_report.results.extend(  # type: ignore[attr-defined]
+            [
+                *gate.check_line_history_directory(
+                    line_directory,
+                    rel_key=line_directory_path,
+                ),
+                *line_directory_findings,
+            ]
+        )
+        effective_report.payloads_checked += 1  # type: ignore[attr-defined]
+        effective_report.checks_run += 2  # type: ignore[attr-defined]
+    gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+
+    stop_directory = stop_pointer_summary.build_directory(fallback_generated_utc=stamp)
+    _stamp_envelope(
+        [("historic/history/stops/index.json", stop_directory, "historic")],
+        provider_id=provider_id,
+        stamp=stamp,
+    )
+    stop_directory_path = history_pointer_path("historic/history/stops", stop_directory)
+    stop_directory_item = [(stop_directory_path, stop_directory, "historic_immutable")]
+    stop_directory_findings = gate.check_stop_history_stream_directory(
+        stop_directory,
+        stop_directory_summary,
+        fallback_generated_utc=stamp,
+    )
+    if gate_report is not None:
+        gate.record(  # type: ignore[arg-type]
+            gate_report,
+            stop_directory_path,
+            stop_directory,
+        )
+        gate_report.results.extend(stop_directory_findings)  # type: ignore[attr-defined]
+        gate_report.checks_run += 1  # type: ignore[attr-defined]
+    else:
+        effective_report.results.extend(  # type: ignore[attr-defined]
+            [
+                *gate.check_stop_history_directory(
+                    stop_directory,
+                    rel_key=stop_directory_path,
+                ),
+                *stop_directory_findings,
+            ]
+        )
+        effective_report.payloads_checked += 1  # type: ignore[attr-defined]
+        effective_report.checks_run += 2  # type: ignore[attr-defined]
+    gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+
+    if receipts_index is None:
+        raise RuntimeError("historic retained-history root requires the built ReceiptsIndex child")
+    if not isinstance(alert_archive.index, AlertArchiveIndex):
+        raise RuntimeError(
+            "historic retained-history root requires the built AlertArchiveIndex child"
+        )
+    root_alert_index = alert_archive.index
+    alert_index_path = history_pointer_path("historic/alerts", root_alert_index)
+    receipt_index_path = history_pointer_path("historic/receipts", receipts_index)
+    if gate_report is not None:
+        gate.record(gate_report, alert_index_path, root_alert_index)  # type: ignore[arg-type]
+        gate.record(gate_report, receipt_index_path, receipts_index)  # type: ignore[arg-type]
+    else:
+        effective_report.results.extend(  # type: ignore[attr-defined]
+            [
+                *gate.check_alert_archive_index(
+                    root_alert_index,
+                    rel_key=alert_index_path,
+                ),
+                *gate.check_receipts_index(
+                    receipts_index,
+                    rel_key=receipt_index_path,
+                ),
+            ]
+        )
+        effective_report.payloads_checked += 2  # type: ignore[attr-defined]
+        effective_report.checks_run += 2  # type: ignore[attr-defined]
+    gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+    root = _build_history_availability_index(
+        stamp=stamp,
+        alert_index=root_alert_index,
+        receipts_index=receipts_index,
+        network_index=network_index,
+        line_directory=line_directory,
+        line_indexes=line_indexes,
+        stop_directory=stop_directory,
+        hotspots_index=hotspots_index,
+        repeat_offenders_index=repeat_offenders_index,
+        stop_family=stop_pointer_summary.build_family(
+            stop_directory,
+            index_path=stop_directory_path,
+        ),
+        stop_generated_utc=stop_pointer_summary.generated_utc,
+        alert_index_path=alert_index_path,
+        receipt_index_path=receipt_index_path,
+        network_index_path=network_index_path,
+        line_directory_path=line_directory_path,
+        stop_directory_path=stop_directory_path,
+        hotspots_index_path=hotspot_index_path,
+        repeat_offenders_index_path=repeat_offenders_index_path,
+    )
+    root_item = [(root_rel_key, root, "historic")]
+    _stamp_envelope(root_item, provider_id=provider_id, stamp=stamp)
+    root_graph_findings = gate.check_history_availability_graph(
+        root,
+        alert_index=root_alert_index,
+        receipts_index=receipts_index,
+        network_index=network_index,
+        line_directory=line_directory,
+        line_indexes=[index.model_copy(deep=True) for index in line_indexes],
+        stop_directory=stop_directory,
+        hotspots_index=hotspots_index,
+        repeat_offenders_index=repeat_offenders_index,
+        stop_summary=stop_directory_summary,
+        fallback_generated_utc=stamp,
+        alert_index_path=alert_index_path,
+        receipt_index_path=receipt_index_path,
+        network_index_path=network_index_path,
+        line_directory_path=line_directory_path,
+        stop_directory_path=stop_directory_path,
+        hotspots_index_path=hotspot_index_path,
+        repeat_offenders_index_path=repeat_offenders_index_path,
+    )
+    if gate_report is not None:
+        gate.record(gate_report, root_rel_key, root)  # type: ignore[arg-type]
+        gate_report.results.extend(root_graph_findings)  # type: ignore[attr-defined]
+        gate_report.checks_run += 1  # type: ignore[attr-defined]
+    else:
+        effective_report.results.extend(
+            [
+                *gate.check_history_availability_index(
+                    root,
+                    rel_key=root_rel_key,
+                ),
+                *root_graph_findings,
+            ]
+        )
+        effective_report.payloads_checked += 1  # type: ignore[attr-defined]
+        effective_report.checks_run += 2  # type: ignore[attr-defined]
+    gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
+
+    if gate_report is not None:
         gate.finalize_batch(
             gate_report,  # type: ignore[arg-type]
             route_payloads=[(k, p) for (k, p, _t) in route_items],
-            current_total=len(items),
+            current_total=_stable_item_total(items) + 1,
             prior_files_total=prior_files_total,
             network_trend=_find_network_trend(items),
         )
-        # Enforce BEFORE the first put — a failed gate uploads nothing.
-        gate.enforce(gate_report, force=force)  # type: ignore[arg-type]
+    gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
 
-    written: list[str] = []
-    for stage in stages:
-        written.extend(_parallel_put(storage, stage, concurrency=concurrency))
-    return written
+    point_index_keys = _parallel_put(
+        storage,
+        [hotspot_index_item, repeat_offenders_index_item],
+        concurrency=concurrency,
+        write_mode="immutable",
+    )
+    compatibility_keys = _publish_stages(
+        storage,
+        stages,
+        concurrency=concurrency,
+    )
+    root_family_index_keys = _parallel_put(
+        storage,
+        [
+            (alert_index_path, root_alert_index, "historic_immutable"),
+            (receipt_index_path, receipts_index, "historic_immutable"),
+            *network_index_item,
+        ],
+        concurrency=concurrency,
+        write_mode="immutable",
+    )
+    line_index_keys = _parallel_put(
+        storage,
+        line_index_items,
+        concurrency=concurrency,
+        write_mode="immutable",
+    )
+    stop_index_keys: list[str] = []
+    stop_index_batch: list[tuple[str, object, str]] = []
+    for stop_index in stop_build_summary.iter_indexes(fallback_generated_utc=stamp):
+        if not stop_index.entity_id:
+            continue
+        stop_index_batch.append(
+            (
+                stop_index_paths[stop_index.entity_id],
+                stop_index,
+                "historic_immutable",
+            )
+        )
+        if len(stop_index_batch) >= STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE:
+            _stamp_envelope(stop_index_batch, provider_id=provider_id, stamp=stamp)
+            stop_index_keys.extend(
+                _parallel_put(
+                    storage,
+                    stop_index_batch,
+                    concurrency=concurrency,
+                    write_mode="immutable",
+                )
+            )
+            stop_index_batch = []
+    if stop_index_batch:
+        _stamp_envelope(stop_index_batch, provider_id=provider_id, stamp=stamp)
+        stop_index_keys.extend(
+            _parallel_put(
+                storage,
+                stop_index_batch,
+                concurrency=concurrency,
+                write_mode="immutable",
+            )
+        )
+    line_directory_keys = _parallel_put(
+        storage,
+        line_directory_item,
+        concurrency=concurrency,
+        write_mode="immutable",
+    )
+    stop_directory_keys = _parallel_put(
+        storage,
+        stop_directory_item,
+        concurrency=concurrency,
+        write_mode="immutable",
+    )
+    referenced_generation_keys = {
+        hotspot_index_path,
+        repeat_offenders_index_path,
+        network_index_path,
+        line_directory_path,
+        stop_directory_path,
+        alert_index_path,
+        receipt_index_path,
+        *(ref.path for ref in hotspot_summary.refs),
+        *(ref.path for ref in repeat_offenders_summary.refs),
+        *(ref.path for ref in network_index.partitions),
+        *(line_index_paths.values()),
+        *(ref.path for index in line_indexes for ref in index.partitions),
+        *stop_referenced_generation_keys,
+        *(ref.path for month in root_alert_index.months for ref in month.pages),
+    }
+    if not all("/generations/" in path for path in referenced_generation_keys):
+        raise RuntimeError("historic GC mark clearing requires only immutable generation keys")
+    _clear_referenced_historic_gc_marks(
+        conn,
+        provider_id,
+        sorted(referenced_generation_keys),
+    )
+    activate_stable_json = getattr(storage, "activate_stable_json", None)
+    if root_version is not None and callable(activate_stable_json):
+        root_key = activate_stable_json(
+            root_rel_key,
+            root,
+            expected_version=root_version,
+            tier="historic",
+        )
+    else:
+        root_key = storage.put_json(  # type: ignore[attr-defined]
+            root_rel_key,
+            root,
+            tier="historic",
+        )
+    return [
+        *hotspot_keys,
+        *repeat_offender_keys,
+        *network_keys,
+        *line_keys,
+        *stop_keys,
+        *point_index_keys,
+        *compatibility_keys,
+        *root_family_index_keys,
+        *line_index_keys,
+        *stop_index_keys,
+        *line_directory_keys,
+        *stop_directory_keys,
+        root_key,
+    ]
 
 
 def _publish_static(
@@ -659,11 +1913,15 @@ def _publish_static(
     if bm is not None:
         head_items.append(("static/basemap.json", bm, "static"))
     for lang in ("fr", "en"):
-        head_items.append((
-            f"labels/{lang}.json",
-            builders.build_labels(conn, provider_id=provider_id, lang=lang, generated_utc=stamp),  # type: ignore[arg-type]
-            "static",
-        ))
+        head_items.append(
+            (
+                f"labels/{lang}.json",
+                builders.build_labels(
+                    conn, provider_id=provider_id, lang=lang, generated_utc=stamp
+                ),  # type: ignore[arg-type]
+                "static",
+            )
+        )
     _stamp_envelope(head_items, provider_id=provider_id, stamp=stamp)  # GC2 H4
     written.extend(_parallel_put(storage, head_items, concurrency=concurrency))
 
@@ -675,7 +1933,9 @@ def _publish_static(
     route_items = [
         (
             f"static/routes/{route_id}.json",
-            builders.build_route(conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp),  # type: ignore[arg-type]
+            builders.build_route(
+                conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp
+            ),  # type: ignore[arg-type]
             "static",
         )
         for (route_id,) in route_rows
@@ -791,12 +2051,15 @@ def publish_snapshot(
                 written=len(keys),
                 skipped=0,
                 total=len(keys),
+                stable_total=len(keys),
                 gate_report=live_report.to_dict() if live_report is not None else None,
             )
         if live_report is not None:
             gate.enforce(live_report, force=True)  # WARN-only: never aborts live
         return PublishResult(
-            provider_id=provider_id, tier=tier, keys_written=keys,
+            provider_id=provider_id,
+            tier=tier,
+            keys_written=keys,
             gate_report=live_report.to_dict() if live_report is not None else None,
         )
 
@@ -812,6 +2075,7 @@ def publish_snapshot(
     # static / historic — hash-gated against a bucket-stored per-tier state object.
 
     with engine.begin() as conn:  # type: ignore[attr-defined]
+        _acquire_publish_lock(conn, provider_id=provider_id, tier=tier)
         stamp = stamp_fn(conn, provider_id) if stamp_fn is not None else _historic_stamp()
         gated = HashGatedStorage(
             storage,
@@ -847,10 +2111,11 @@ def publish_snapshot(
                 )
         report = None  # the value-gate report for a successful gated publish (FIX-6)
         if tier == "historic":
-            # Historic gate: build the whole set, inspect it, enforce BEFORE the first
-            # put so a failed gate uploads NOTHING and this txn rolls back with state
-            # un-advanced. force bypasses ERROR abort (a logged override). The coverage
-            # baseline is the prior publish's WHOLE-tier files_total (None on first run).
+            # Historic gate: compatibility payloads are gated before their mutable stage,
+            # while retained month partitions stream through the gate one at a time. A
+            # later failure can leave harmless unreferenced immutable months, but no new
+            # retained pointer is written. force bypasses ERROR abort (a logged override).
+            # Coverage uses the prior publish's WHOLE-tier files_total (None on first run).
             report = gate.new_report(provider_id, tier, stamp) if gate_enabled else None
             prior_total = (
                 _prior_files_total(conn, provider_id=provider_id, tier=tier)
@@ -886,22 +2151,27 @@ def publish_snapshot(
         else:
             publisher(conn, gated, provider_id=provider_id, settings=settings, stamp=stamp)
         gated.flush_state()
+        physical_written = len(gated.written) + len(gated.immutable_written)
+        physical_skipped = len(gated.skipped) + len(gated.immutable_skipped)
+        physical_total = physical_written + physical_skipped
+        stable_total = _stable_outcome_total(gated)
         _record_publish_state(
             conn,
             provider_id=provider_id,
             tier=tier,
             generated_utc=stamp,
-            written=len(gated.written),
-            skipped=len(gated.skipped),
-            total=len(gated.written) + len(gated.skipped),
+            written=physical_written,
+            skipped=physical_skipped,
+            total=physical_total,
+            stable_total=stable_total,
             gate_report=report.to_dict() if report is not None else None,
         )
 
     return PublishResult(
         provider_id=provider_id,
         tier=tier,
-        keys_written=list(gated.written),
-        keys_skipped=list(gated.skipped),
+        keys_written=[*gated.written, *gated.immutable_written],
+        keys_skipped=[*gated.skipped, *gated.immutable_skipped],
         gate_report=report.to_dict() if report is not None else None,
     )
 
@@ -926,6 +2196,10 @@ class _CollectingStorage:
         self.collected.append((rel_key, payload))
         return rel_key
 
+    def put_immutable_json(self, rel_key: str, payload: object) -> str:
+        self.collected.append((rel_key, payload))
+        return rel_key
+
 
 def collect_payloads(
     provider_id: str,
@@ -933,13 +2207,20 @@ def collect_payloads(
     tier: str,
     settings: object = None,
     engine: object = None,
-) -> tuple[list[tuple[str, object]], list[tuple[str, object]], str, int | None]:
+    include_archive_bundle: bool = False,
+    include_network_bundle: bool = False,
+    include_line_bundle: bool = False,
+    include_stop_bundle: bool = False,
+    include_point_bundle: bool = False,
+    _historic_consumer: Callable[[HistoricValidationInputs], object] | None = None,
+) -> tuple | object:
     """Build every payload for *tier* WITHOUT uploading; return the collected set.
 
-    Returns ``(all_items, route_items, stamp, prior_files_total)`` — reusing the exact
-    same build code the publisher runs, so a validate-snapshots audit sees what a real
-    publish would. Reads run on a plain ``engine.connect()`` (no transaction opened),
-    so nothing is ever committed and nothing is written to the bucket.
+    Returns the legacy ``(all_items, route_items, stamp, prior_files_total)`` tuple when
+    no optional historic bundle is requested; otherwise returns named
+    ``HistoricValidationInputs``. Both paths reuse the exact build code the publisher
+    runs, so validation sees publish-identical payloads. Reads run on a plain
+    ``engine.connect()`` and never write to the bucket.
     """
     settings = settings or get_settings()
     engine = engine or make_engine(settings)  # type: ignore[arg-type]
@@ -955,19 +2236,64 @@ def collect_payloads(
 
         if tier == "historic":
             stamp = _historic_stamp()
-            items, route_items, _stages = _build_historic_items(
+            items, route_items, _stages, _alert_archive = _build_historic_items(
                 conn, provider_id=provider_id, settings=settings, stamp=stamp
             )
             # Stamp the H4 envelope here too (mirrors _publish_historic) so the audit
             # sees published bytes. (Static is already stamped inside _publish_static.)
             _stamp_envelope(items, provider_id=provider_id, stamp=stamp)
-            prior_total = _prior_files_total(conn, provider_id=provider_id, tier=tier)
-            return (
-                [(k, p) for (k, p, _t) in items],
-                [(k, p) for (k, p, _t) in route_items],
-                stamp,
-                prior_total,
+            _finalize_receipts_collection_generation(items)
+            network_history = None
+            if include_network_bundle:
+                network_history = builders.build_network_history_plan(
+                    conn,  # type: ignore[arg-type]
+                    provider_id=provider_id,
+                    generated_utc=stamp,
+                )
+            line_history = None
+            if include_line_bundle:
+                line_history = builders.build_line_history_plan(
+                    conn,  # type: ignore[arg-type]
+                    provider_id=provider_id,
+                    generated_utc=stamp,
+                )
+            stop_history = None
+            if include_stop_bundle:
+                stop_history = builders.build_stop_history_plan(
+                    conn,  # type: ignore[arg-type]
+                    provider_id=provider_id,
+                    generated_utc=stamp,
+                )
+            point_plans = (
+                _build_historic_point_plans(conn, provider_id=provider_id)
+                if include_point_bundle
+                else None
             )
+            prior_total = _prior_files_total(conn, provider_id=provider_id, tier=tier)
+            result = HistoricValidationInputs(
+                all_items=[(k, p) for (k, p, _t) in items],
+                route_items=[(k, p) for (k, p, _t) in route_items],
+                stamp=stamp,
+                prior_total=prior_total,
+                alert_archive=_alert_archive if include_archive_bundle else None,
+                network_history=network_history,
+                line_history=line_history,
+                stop_history=stop_history,
+                point_plans=point_plans,
+            )
+            if _historic_consumer is not None:
+                return _historic_consumer(result)
+            if any(
+                (
+                    include_archive_bundle,
+                    include_network_bundle,
+                    include_line_bundle,
+                    include_stop_bundle,
+                    include_point_bundle,
+                )
+            ):
+                return result
+            return (result.all_items, result.route_items, result.stamp, result.prior_total)
 
         if tier == "static":
             stamp = _static_stamp(conn, provider_id)
@@ -984,6 +2310,7 @@ def validate_snapshots(
     tier: str = "historic",
     settings: object = None,
     engine: object = None,
+    _collected: HistoricValidationInputs | tuple | None = None,
 ) -> gate.GateReport:
     """Read-only pre-publish audit: build every payload, run the gate, return the report.
 
@@ -991,17 +2318,349 @@ def validate_snapshots(
     the returned report). The historic tier additionally runs the batch-level
     coverage-delta + empty-route aggregates via ``gate.finalize_batch``.
     """
-    all_items, route_items, stamp, prior_total = collect_payloads(
-        provider_id, tier=tier, settings=settings, engine=engine
+    if _collected is None and tier == "historic":
+        result = collect_payloads(
+            provider_id,
+            tier=tier,
+            settings=settings,
+            engine=engine,
+            include_archive_bundle=True,
+            include_network_bundle=True,
+            include_line_bundle=True,
+            include_stop_bundle=True,
+            include_point_bundle=True,
+            _historic_consumer=lambda collected: validate_snapshots(
+                provider_id,
+                tier=tier,
+                settings=settings,
+                engine=engine,
+                _collected=collected,
+            ),
+        )
+        if not isinstance(result, gate.GateReport):
+            raise TypeError("historic validation consumer must return a GateReport")
+        return result
+    collected = _collected or collect_payloads(
+        provider_id,
+        tier=tier,
+        settings=settings,
+        engine=engine,
     )
+    if isinstance(collected, HistoricValidationInputs):
+        all_items = collected.all_items
+        route_items = collected.route_items
+        stamp = collected.stamp
+        prior_total = collected.prior_total
+        alert_archive = collected.alert_archive
+        network_history = collected.network_history
+        line_history = collected.line_history
+        stop_history = collected.stop_history
+        point_plans = collected.point_plans
+    elif isinstance(collected, tuple):
+        all_items, route_items, stamp, prior_total = collected[:4]
+        alert_archive = None
+        network_history = None
+        line_history = None
+        stop_history = None
+        point_plans = None
+    else:
+        raise TypeError("snapshot collection must be a tuple or HistoricValidationInputs")
     report = gate.new_report(provider_id, tier, stamp)
     for rel_key, payload in all_items:
         gate.record(report, rel_key, payload)
     if tier == "historic":
+        hotspot_summary: PointHistorySummary | None = None
+        hotspots_index: HistoricCollectionIndex | None = None
+        hotspots_index_path: str | None = None
+        repeat_offenders_summary: PointHistorySummary | None = None
+        repeat_offenders_index: HistoricCollectionIndex | None = None
+        repeat_offenders_index_path: str | None = None
+        if point_plans is not None:
+            hotspot_summary, hotspots_index, hotspots_index_path = _validate_point_history_plan(
+                point_plans.hotspots,
+                family="hotspots",
+                provider_id=provider_id,
+                stamp=stamp,
+                report=report,
+            )
+            repeat_offenders_summary, repeat_offenders_index, repeat_offenders_index_path = (
+                _validate_point_history_plan(
+                    point_plans.repeat_offenders,
+                    family="repeat_offenders",
+                    provider_id=provider_id,
+                    stamp=stamp,
+                    report=report,
+                )
+            )
+        receipts_index = next(
+            (
+                payload
+                for rel_key, payload in all_items
+                if rel_key == "historic/receipts/index.json" and isinstance(payload, ReceiptsIndex)
+            ),
+            None,
+        )
+        receipt_items = [
+            (rel_key, payload)
+            for rel_key, payload in all_items
+            if rel_key.startswith("historic/receipts/")
+            and rel_key != "historic/receipts/index.json"
+        ]
+        if receipts_index is not None:
+            report.results.extend(gate.check_receipts_collection(receipts_index, receipt_items))
+            report.checks_run += 1
+        if alert_archive is not None:
+            report.results.extend(
+                gate.check_alert_archive_bundle(
+                    alert_archive.index,
+                    alert_archive.page_items,
+                    provider_timezone=alert_archive.provider_timezone,
+                )
+            )
+        if network_history is not None:
+            network_summary = gate.NetworkHistoryStreamSummary()
+            for ref, payload in network_history.iter_partition_items():
+                gate.record(report, ref.path, payload)
+                report.results.extend(gate.check_network_history_partition_ref(ref, payload))
+                network_summary.observe(ref, payload)
+            network_index = network_history.build_index(network_summary.detached_refs())
+            _stamp_envelope(
+                [("historic/history/network/index.json", network_index, "historic")],
+                provider_id=provider_id,
+                stamp=stamp,
+            )
+            network_index_path = history_pointer_path(
+                "historic/history/network",
+                network_index,
+            )
+            gate.record(
+                report,
+                network_index_path,
+                network_index,
+            )
+            report.results.extend(
+                gate.check_network_history_stream_index(
+                    network_index,
+                    network_summary,
+                    fallback_generated_utc=stamp,
+                )
+            )
+            report.checks_run += 1
+        line_indexes: list[HistoricCollectionIndex] = []
+        line_directory: HistoricEntityDirectoryIndex | None = None
+        if line_history is not None:
+            line_build_summary = builders.LineHistoryStreamSummary()
+            line_gate_summary = gate.LineHistoryStreamSummary()
+            for ref, payload in line_history.iter_partition_items():
+                gate.record(report, ref.path, payload)
+                report.results.extend(gate.check_line_history_partition_ref(ref, payload))
+                line_gate_summary.observe(ref, payload)
+                line_build_summary.observe(ref, payload)
+            line_indexes = line_build_summary.build_indexes(fallback_generated_utc=stamp)
+            line_index_items = [
+                (
+                    f"historic/history/lines/{index.entity_id.encode('utf-8').hex()}/index.json",
+                    index,
+                    "historic",
+                )
+                for index in line_indexes
+                if index.entity_id
+            ]
+            _stamp_envelope(line_index_items, provider_id=provider_id, stamp=stamp)
+            line_index_paths = {
+                index.entity_id or "": history_pointer_path(
+                    f"historic/history/lines/{index.entity_id.encode('utf-8').hex()}",
+                    index,
+                )
+                for index in line_indexes
+                if index.entity_id
+            }
+            for payload in line_indexes:
+                if not payload.entity_id:
+                    continue
+                rel_key = line_index_paths[payload.entity_id]
+                gate.record(report, rel_key, payload)
+            report.results.extend(
+                gate.check_line_history_stream_indexes(
+                    line_indexes,
+                    line_gate_summary,
+                    fallback_generated_utc=stamp,
+                )
+            )
+            report.checks_run += 1
+            directory_summary = gate.LineHistoryDirectorySummary.from_indexes(
+                [index.model_copy(deep=True) for index in line_indexes],
+                index_paths=line_index_paths,
+            )
+            line_directory = readdress_history_directory(
+                line_build_summary.build_directory(
+                    [index.model_copy(deep=True) for index in line_indexes],
+                    fallback_generated_utc=stamp,
+                ),
+                line_index_paths,
+            )
+            _stamp_envelope(
+                [("historic/history/lines/index.json", line_directory, "historic")],
+                provider_id=provider_id,
+                stamp=stamp,
+            )
+            line_directory_path = history_pointer_path(
+                "historic/history/lines",
+                line_directory,
+            )
+            gate.record(report, line_directory_path, line_directory)
+            report.results.extend(
+                gate.check_line_history_stream_directory(
+                    line_directory,
+                    directory_summary,
+                    fallback_generated_utc=stamp,
+                )
+            )
+            report.checks_run += 1
+
+        stop_pointer_summary: builders.StopHistoryPointerSummary | None = None
+        stop_directory_summary: gate.StopHistoryDirectorySummary | None = None
+        stop_directory: HistoricEntityDirectoryIndex | None = None
+        if stop_history is not None:
+            stop_build_summary = builders.StopHistoryStreamSummary()
+            stop_gate_summary = gate.StopHistoryStreamSummary()
+            for ref, payload in stop_history.iter_partition_items():
+                gate.record(report, ref.path, payload, retain_sha=False)
+                report.results.extend(gate.check_stop_history_partition_ref(ref, payload))
+                stop_gate_summary.observe(ref, payload)
+                stop_build_summary.observe(ref, payload)
+            stop_pointer_summary = builders.StopHistoryPointerSummary()
+            stop_directory_summary = gate.StopHistoryDirectorySummary()
+            for index in stop_build_summary.iter_indexes(fallback_generated_utc=stamp):
+                if not index.entity_id:
+                    continue
+                index_item = [
+                    (
+                        f"historic/history/stops/{index.entity_id.encode('utf-8').hex()}/index.json",
+                        index,
+                        "historic",
+                    )
+                ]
+                _stamp_envelope(index_item, provider_id=provider_id, stamp=stamp)
+                _legacy_rel_key, payload, _tier = index_item[0]
+                rel_key = history_pointer_path(
+                    f"historic/history/stops/{index.entity_id.encode('utf-8').hex()}",
+                    payload,
+                )
+                gate.record(report, rel_key, payload)
+                report.results.extend(
+                    gate.check_stop_history_stream_index(
+                        payload,
+                        stop_gate_summary,
+                        fallback_generated_utc=stamp,
+                    )
+                )
+                report.checks_run += 1
+                stop_pointer_summary.observe(index, index_path=rel_key)
+                stop_directory_summary.observe(index, index_path=rel_key)
+            report.results.extend(
+                gate.check_stop_history_stream_entities(
+                    stop_directory_summary,
+                    stop_gate_summary,
+                )
+            )
+            report.checks_run += 1
+            stop_directory = stop_pointer_summary.build_directory(fallback_generated_utc=stamp)
+            _stamp_envelope(
+                [("historic/history/stops/index.json", stop_directory, "historic")],
+                provider_id=provider_id,
+                stamp=stamp,
+            )
+            stop_directory_path = history_pointer_path(
+                "historic/history/stops",
+                stop_directory,
+            )
+            gate.record(report, stop_directory_path, stop_directory)
+            report.results.extend(
+                gate.check_stop_history_stream_directory(
+                    stop_directory,
+                    stop_directory_summary,
+                    fallback_generated_utc=stamp,
+                )
+            )
+            report.checks_run += 1
+
+        if (
+            alert_archive is not None
+            and isinstance(alert_archive.index, AlertArchiveIndex)
+            and network_history is not None
+            and line_directory is not None
+            and stop_directory is not None
+            and hotspots_index is not None
+            and repeat_offenders_index is not None
+        ):
+            if receipts_index is None:
+                raise RuntimeError("historic validation requires the built ReceiptsIndex child")
+            if stop_pointer_summary is None or stop_directory_summary is None:
+                raise RuntimeError("historic validation requires compact Stop pointer truth")
+            alert_index_path = history_pointer_path("historic/alerts", alert_archive.index)
+            receipt_index_path = history_pointer_path("historic/receipts", receipts_index)
+            gate.record(report, alert_index_path, alert_archive.index)
+            gate.record(report, receipt_index_path, receipts_index)
+            root = _build_history_availability_index(
+                stamp=stamp,
+                alert_index=alert_archive.index,
+                receipts_index=receipts_index,
+                network_index=network_index,
+                line_directory=line_directory,
+                line_indexes=line_indexes,
+                stop_directory=stop_directory,
+                hotspots_index=hotspots_index,
+                repeat_offenders_index=repeat_offenders_index,
+                stop_family=stop_pointer_summary.build_family(
+                    stop_directory,
+                    index_path=stop_directory_path,
+                ),
+                stop_generated_utc=stop_pointer_summary.generated_utc,
+                alert_index_path=alert_index_path,
+                receipt_index_path=receipt_index_path,
+                network_index_path=network_index_path,
+                line_directory_path=line_directory_path,
+                stop_directory_path=stop_directory_path,
+                hotspots_index_path=hotspots_index_path,
+                repeat_offenders_index_path=repeat_offenders_index_path,
+            )
+            _stamp_envelope(
+                [("historic/history/index.json", root, "historic")],
+                provider_id=provider_id,
+                stamp=stamp,
+            )
+            gate.record(report, "historic/history/index.json", root)
+            report.results.extend(
+                gate.check_history_availability_graph(
+                    root,
+                    alert_index=alert_archive.index,
+                    receipts_index=receipts_index,
+                    network_index=network_index,
+                    line_directory=line_directory,
+                    line_indexes=[index.model_copy(deep=True) for index in line_indexes],
+                    stop_directory=stop_directory,
+                    hotspots_index=hotspots_index,
+                    repeat_offenders_index=repeat_offenders_index,
+                    stop_summary=stop_directory_summary,
+                    fallback_generated_utc=stamp,
+                    alert_index_path=alert_index_path,
+                    receipt_index_path=receipt_index_path,
+                    network_index_path=network_index_path,
+                    line_directory_path=line_directory_path,
+                    stop_directory_path=stop_directory_path,
+                    hotspots_index_path=hotspots_index_path,
+                    repeat_offenders_index_path=repeat_offenders_index_path,
+                )
+            )
+            report.checks_run += 1
         gate.finalize_batch(
             report,
             route_payloads=route_items,
-            current_total=len(all_items),
+            current_total=(
+                sum(1 for key, _payload in all_items if not _is_immutable_item(key))
+                + (1 if line_directory is not None and stop_directory is not None else 0)
+            ),
             prior_files_total=prior_total,
             network_trend=next(
                 ((k, p) for (k, p) in all_items if k == "historic/network_trend.json"), None

@@ -65,6 +65,8 @@ export const ManifestHistoricFilesSchema = z.object({
 	hotspots: z.string().optional(),
 	network_trend: z.string().optional(),
 	alert_history: z.string().optional(),
+	alerts_index: z.string().optional(),
+	history_index: z.string().optional(),
 	provenance: z.string().optional(),
 	ttl_s: z.number().int().optional(),
 });

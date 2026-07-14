@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { compile } from 'svelte/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AlertHistory } from '$lib/v1/schemas';
+import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '$lib/v1/schemas';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import { alertHistoryCopy } from './alerts.copy';
 import AlertHistoryScreen from './AlertHistory.svelte';
@@ -55,8 +55,20 @@ const { fixture } = vi.hoisted(() => ({
 	} as AlertHistory,
 }));
 
-vi.mock('$lib/v1', () => ({
+const ports = vi.hoisted(() => ({
 	getAlertHistory: vi.fn(),
+	getAlertArchiveIndex: vi.fn(),
+	getAlertArchiveRange: vi.fn(),
+}));
+const archiveState = vi.hoisted(() => ({
+	index: null as AlertArchiveIndex | null,
+	entries: [] as AlertArchiveEntry[],
+}));
+
+vi.mock('$lib/v1', () => ({
+	getAlertHistory: ports.getAlertHistory,
+	getAlertArchiveIndex: ports.getAlertArchiveIndex,
+	getAlertArchiveRange: ports.getAlertArchiveRange,
 }));
 
 // The SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the codec
@@ -87,15 +99,55 @@ function setUrl(path: string): void {
 	nav.url = new URL(path, 'http://localhost');
 }
 
-// createResource returns the shared fixture as already-settled data.
+// Synchronous resource seam for the broad rendering suite. The async resource
+// contract (abort, stale-response suppression, retry) is covered with the real
+// createResource in AlertHistory.async.svelte.test.ts.
 vi.mock('$lib/v1/resource.svelte', () => ({
-	createResource: () => ({
-		data: fixture,
-		error: null,
-		loading: false,
-		settled: true,
-		reload: vi.fn(),
-	}),
+	createResource: <T>(fetcher: (signal: AbortSignal) => Promise<T> | T) => {
+		const signal = new AbortController().signal;
+		let data: T | null = null;
+		let error: Error | null = null;
+		let rangeFetcher = false;
+
+		const pump = () => {
+			try {
+				const value = fetcher(signal);
+				rangeFetcher ||= value != null && typeof (value as Promise<T>).then === 'function';
+				if (rangeFetcher) {
+					const call = ports.getAlertArchiveRange.mock.calls.at(-1);
+					data = (
+						call == null
+							? null
+							: {
+									window: { ...(call[1] as object) },
+									entries: [...archiveState.entries],
+								}
+					) as T | null;
+					return;
+				}
+				if (value != null && typeof (value as Promise<T>).then === 'function') return;
+				data = value as T;
+				error = null;
+			} catch (cause) {
+				error = cause instanceof Error ? cause : new Error(String(cause));
+				data = null;
+			}
+		};
+
+		pump();
+		return {
+			get data() {
+				if (rangeFetcher) pump();
+				return data;
+			},
+			get error() {
+				return error;
+			},
+			loading: false,
+			settled: true,
+			reload: vi.fn(pump),
+		};
+	},
 }));
 
 const ORIGINAL_ALERTS = JSON.parse(JSON.stringify(fixture.alerts));
@@ -172,10 +224,53 @@ function seedAnalyticalFilterFixture(): void {
 	(fixture as AlertHistory).window_end = '2026-06-22';
 }
 
+function makeArchiveIndex(first = '2026-01-01', last = '2026-07-13'): AlertArchiveIndex {
+	return {
+		generated_utc: '2026-07-13T12:00:00Z' as AlertArchiveIndex['generated_utc'],
+		collection_generation_id: 'alerts-2026-07-13',
+		first_available_date: first,
+		last_available_date: last,
+		total_alerts: 42,
+		months: [],
+	};
+}
+
+function makeArchiveEntry(
+	id: string,
+	header: string,
+	from: string,
+	to: string,
+	overrides: Partial<AlertArchiveEntry> = {},
+): AlertArchiveEntry {
+	return {
+		id,
+		header_text_en: header,
+		severity: 'watch',
+		routes: ['24'],
+		stops: [],
+		start_utc: `${from}T09:00:00Z` as AlertArchiveEntry['start_utc'],
+		end_utc: `${to}T10:00:00Z` as AlertArchiveEntry['end_utc'],
+		first_seen_utc: `${from}T08:00:00Z` as AlertArchiveEntry['first_seen_utc'],
+		last_seen_utc: `${to}T11:00:00Z` as AlertArchiveEntry['last_seen_utc'],
+		duration_min: 60,
+		cause: 'CONSTRUCTION',
+		effect: 'DETOUR',
+		...overrides,
+	};
+}
+
 beforeEach(() => {
 	currentLocale.value = 'en';
 	resetArticleState();
 	Element.prototype.scrollIntoView = vi.fn();
+	archiveState.index = null;
+	archiveState.entries = [];
+	ports.getAlertHistory.mockReset();
+	ports.getAlertArchiveIndex.mockReset();
+	ports.getAlertArchiveRange.mockReset();
+	ports.getAlertHistory.mockImplementation(() => fixture as never);
+	ports.getAlertArchiveIndex.mockImplementation(() => archiveState.index as never);
+	ports.getAlertArchiveRange.mockImplementation(() => archiveState.entries as never);
 });
 
 afterEach(() => {
@@ -957,6 +1052,302 @@ describe('AlertHistory date window (?from/?to)', () => {
 		// The DateRangePicker renders its honest-absence AbsentValue (no selects).
 		expect(pick?.querySelector('[data-slot="date-range"]')).toBeNull();
 		expect(pick?.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+	});
+});
+
+describe('AlertHistory retained archive integration', () => {
+	it('keeps first-seen-only archive entries ahead of older current-shape entries', async () => {
+		(fixture as AlertHistory).window_start = '2026-06-20';
+		(fixture as AlertHistory).window_end = '2026-06-22';
+		archiveState.index = makeArchiveIndex();
+		archiveState.entries = [
+			makeArchiveEntry('archive-newest', 'Archive newest', '2026-06-21', '2026-06-21', {
+				start_utc: null,
+				end_utc: null,
+				first_seen_utc: '2026-06-21T08:00:00Z' as AlertArchiveEntry['first_seen_utc'],
+			}),
+			makeArchiveEntry('current-older', 'Current older', '2026-06-20', '2026-06-20'),
+		];
+
+		render(AlertHistoryScreen);
+		await waitFor(() => expect(ports.getAlertArchiveRange).toHaveBeenCalled());
+
+		const list = screen.getByRole('list', { name: /past service alerts, newest first/i });
+		const rows = within(list).getAllByRole('listitem');
+		expect(rows).toHaveLength(2);
+		expect(rows[0]).toHaveTextContent('Archive newest');
+		expect(rows[1]).toHaveTextContent('Current older');
+	});
+
+	it('loads the clamped current archive range before rendering every calculation', async () => {
+		(fixture as AlertHistory).window_start = '2026-06-20';
+		(fixture as AlertHistory).window_end = '2026-06-22';
+		archiveState.index = makeArchiveIndex();
+		archiveState.entries = [
+			makeArchiveEntry('archive-current', 'Archive current alert', '2026-06-21', '2026-06-21'),
+		];
+
+		const { container } = render(AlertHistoryScreen);
+
+		await waitFor(() =>
+			expect(ports.getAlertArchiveRange).toHaveBeenCalledWith(
+				archiveState.index,
+				{ from: '2026-06-20', to: '2026-06-22' },
+				expect.objectContaining({ signal: expect.any(AbortSignal) }),
+			),
+		);
+		expect(screen.getByText('Archive current alert')).toBeInTheDocument();
+		expect(screen.queryByText('Service alert')).toBeNull();
+		expect(within(card(container, 'alerts-window')).getByText('1')).toBeInTheDocument();
+		expect(
+			within(card(container, 'alerts-breakdown')).getByText('Construction'),
+		).toBeInTheDocument();
+		expect(container.querySelector('[data-slot="history-navigator"]')).not.toBeNull();
+		expect(nav.url.searchParams.get('from')).toBeNull();
+		expect(nav.url.searchParams.get('to')).toBeNull();
+		expect(container.querySelector('[data-slot="clear-filters"]')).toBeNull();
+	});
+
+	it('uses one selected cross-month archive array for filters, headline, breakdown, and log', async () => {
+		(fixture as AlertHistory).window_start = '2026-06-20';
+		(fixture as AlertHistory).window_end = '2026-06-22';
+		fixture.breakdown = {
+			by_cause: [{ key: 'SERVER_ONLY', count: 500, median_duration_min: 999 }],
+			by_effect: [],
+			by_severity: [],
+		};
+		archiveState.index = makeArchiveIndex();
+		archiveState.entries = [
+			makeArchiveEntry('older', 'Older retained alert', '2026-05-10', '2026-05-11', {
+				duration_min: 120,
+				cause: 'ACCIDENT',
+			}),
+			makeArchiveEntry('newer', 'Newer retained alert', '2026-06-20', '2026-06-20', {
+				duration_min: 60,
+			}),
+			makeArchiveEntry('other-route', 'Other route', '2026-06-15', '2026-06-15', {
+				routes: ['10'],
+			}),
+		];
+		setUrl('http://localhost/alerts?from=2026-05-01&to=2026-06-30&route=24&severity=watch');
+
+		const { container } = render(AlertHistoryScreen);
+
+		await waitFor(() =>
+			expect(ports.getAlertArchiveRange).toHaveBeenCalledWith(
+				archiveState.index,
+				{ from: '2026-05-01', to: '2026-06-30' },
+				expect.objectContaining({ signal: expect.any(AbortSignal) }),
+			),
+		);
+		expect(screen.getByText('Older retained alert')).toBeInTheDocument();
+		expect(screen.getByText('Newer retained alert')).toBeInTheDocument();
+		expect(screen.queryByText('Other route')).toBeNull();
+		expect(within(card(container, 'alerts-window')).getByText('2')).toBeInTheDocument();
+		expect(
+			within(card(container, 'alerts-window')).getByText('median duration 90 min'),
+		).toBeInTheDocument();
+		const causes = within(card(container, 'alerts-breakdown')).getByRole('list', {
+			name: /distribution by cause/i,
+		});
+		expect(within(causes).getByText('Accident')).toBeInTheDocument();
+		expect(within(causes).getByText('Construction')).toBeInTheDocument();
+		expect(within(causes).queryByText('SERVER_ONLY')).toBeNull();
+		expect(container.querySelector('[data-slot="alert-truncated"]')).toBeNull();
+	});
+
+	it('resolves localized archive source copy only when a hidden row is expanded', async () => {
+		currentLocale.value = 'fr';
+		(fixture as AlertHistory).window_start = '2026-06-20';
+		(fixture as AlertHistory).window_end = '2026-06-22';
+		archiveState.index = makeArchiveIndex();
+		archiveState.entries = [
+			...Array.from({ length: 25 }, (_, index) =>
+				makeArchiveEntry(`visible-${index}`, `Visible ${index}`, '2026-06-21', '2026-06-21'),
+			),
+			makeArchiveEntry('hidden-source', 'Your line', '2026-06-20', '2026-06-20', {
+				header_text: 'Votre ligne',
+				description: '<p>Avis caché &amp; <strong>nettoyé</strong>.</p>',
+				description_en: '<p>Hidden &amp; <strong>scrubbed</strong> notice.</p>',
+				url: 'https://stm.info/fr/infos/etat-du-service/travaux',
+			}),
+		];
+		setUrl('http://localhost/fr/alerts');
+
+		const { container } = render(AlertHistoryScreen);
+		await waitFor(() => expect(ports.getAlertArchiveRange).toHaveBeenCalled());
+		const logCard = card(container, 'alerts-log');
+
+		expect(logCard.querySelectorAll('[data-slot="alert-row"]')).toHaveLength(25);
+		expect(screen.queryByText('Avis caché & nettoyé.')).toBeNull();
+		expect(screen.queryByText('Hidden & scrubbed notice.')).toBeNull();
+
+		await fireEvent.click(
+			within(logCard).getByRole('button', { name: alertHistoryCopy.fr.more(1) }),
+		);
+		const localizedCopy = screen.getByText('Avis caché & nettoyé.');
+		const hiddenRow = localizedCopy.closest('[data-slot="alert-row"]') as HTMLElement;
+		expect(hiddenRow).not.toBeNull();
+		expect(hiddenRow.querySelector('strong')).toBeNull();
+		expect(screen.queryByText('Hidden & scrubbed notice.')).toBeNull();
+		const externalLink = within(hiddenRow).getByRole('link');
+		expect(externalLink).toHaveAttribute(
+			'href',
+			'https://stm.info/fr/infos/etat-du-service/travaux',
+		);
+		expect(externalLink).toHaveAttribute('target', '_blank');
+		expect(externalLink.getAttribute('rel')).toContain('noopener');
+	});
+
+	it('keeps the legacy newest-window fallback and truncation when the optional index is null', () => {
+		(fixture as AlertHistory).truncated = true;
+		(fixture as AlertHistory).total_in_window = 512;
+		archiveState.index = null;
+
+		render(AlertHistoryScreen);
+
+		expect(ports.getAlertArchiveRange).not.toHaveBeenCalled();
+		expect(document.querySelector('[data-slot="alert-truncated"]')).toHaveTextContent(
+			copyEn.truncatedNote(2, 512),
+		);
+	});
+
+	it('renders an archive-backed quiet range as healthy empty, not legacy rows', async () => {
+		(fixture as AlertHistory).window_start = '2026-06-20';
+		(fixture as AlertHistory).window_end = '2026-06-22';
+		archiveState.index = makeArchiveIndex();
+		archiveState.entries = [];
+
+		const { container } = render(AlertHistoryScreen);
+
+		await waitFor(() => expect(ports.getAlertArchiveRange).toHaveBeenCalled());
+		expect(container.querySelector('[data-slot="edge-state"]')).toHaveAttribute(
+			'data-variant',
+			'empty-avis',
+		);
+		expect(screen.queryByRole('list', { name: /past service alerts, newest first/i })).toBeNull();
+	});
+
+	it('normalizes an inverted complete range and preserves unrelated filters in one mirror', async () => {
+		(fixture as AlertHistory).window_start = '2026-06-20';
+		(fixture as AlertHistory).window_end = '2026-06-22';
+		archiveState.index = makeArchiveIndex();
+		archiveState.entries = [
+			makeArchiveEntry('older', 'Older retained alert', '2026-05-10', '2026-05-11'),
+		];
+		setUrl(
+			'http://localhost/alerts?from=2026-06-30&to=2026-05-01&affects=lines&severity=watch&route=24&stop=52458',
+		);
+
+		render(AlertHistoryScreen);
+
+		await waitFor(() => {
+			expect(Object.fromEntries(nav.url.searchParams)).toEqual({
+				affects: 'lines',
+				severity: 'watch',
+				route: '24',
+				stop: '52458',
+				from: '2026-05-01',
+				to: '2026-06-30',
+			});
+		});
+		expect(replaceState).toHaveBeenCalledTimes(1);
+	});
+
+	it.each([
+		['blank pair', '?from=&to='],
+		['half pair', '?from=2026-06-01'],
+		['impossible date', '?from=2026-02-30&to=2026-03-01'],
+		['outside coverage', '?from=2025-12-31&to=2026-06-01'],
+	])('corrects a %s once, removes both bounds, and announces it', async (_, query) => {
+		(fixture as AlertHistory).window_start = '2026-06-20';
+		(fixture as AlertHistory).window_end = '2026-06-22';
+		archiveState.index = makeArchiveIndex();
+		archiveState.entries = [
+			makeArchiveEntry('archive-current', 'Archive current alert', '2026-06-21', '2026-06-21'),
+		];
+		setUrl(`http://localhost/alerts${query}&route=24`);
+
+		render(AlertHistoryScreen);
+
+		await waitFor(() => {
+			expect(nav.url.searchParams.get('from')).toBeNull();
+			expect(nav.url.searchParams.get('to')).toBeNull();
+			expect(nav.url.searchParams.get('route')).toBe('24');
+		});
+		const announcement = document.querySelector('[data-slot="history-announcement"]');
+		expect(announcement).not.toHaveTextContent(/^\s*$/);
+		expect(replaceState).toHaveBeenCalledTimes(1);
+	});
+
+	it('announces a correction once outside collapsed controls before and after the mobile sheet opens', async () => {
+		localStorage.setItem('transit:quiet-mode', 'true');
+		(fixture as AlertHistory).window_start = '2026-06-20';
+		(fixture as AlertHistory).window_end = '2026-06-22';
+		archiveState.index = makeArchiveIndex();
+		archiveState.entries = [
+			makeArchiveEntry('archive-current', 'Archive current alert', '2026-06-21', '2026-06-21'),
+		];
+		setUrl('http://localhost/alerts?from=&to=&route=24');
+
+		const { container } = render(AlertHistoryScreen);
+		const expected = copyEn.filters.history.correction.malformed;
+
+		await waitFor(() => expect(nav.url.searchParams.has('from')).toBe(false));
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		await waitFor(() =>
+			expect(within(rail).getByRole('button', { name: copyEn.filters.railLabel })).toHaveAttribute(
+				'aria-expanded',
+				'false',
+			),
+		);
+		expect(screen.queryByRole('dialog')).toBeNull();
+
+		let liveRegions = container.querySelectorAll('[role="status"][aria-live="polite"]');
+		expect(liveRegions).toHaveLength(1);
+		expect(liveRegions[0]).toHaveTextContent(expected);
+		expect(liveRegions[0]?.closest('[data-slot="surface-rail"]')).toBeNull();
+		let navigatorCopies = container.querySelectorAll('[data-slot="history-announcement"]');
+		expect(navigatorCopies).toHaveLength(1);
+		expect(navigatorCopies[0]).toHaveTextContent(expected);
+		expect(navigatorCopies[0]).not.toHaveAttribute('role');
+
+		await fireEvent.click(screen.getByRole('button', { name: new RegExp(copyEn.rail.open, 'i') }));
+		expect(screen.getByRole('dialog', { name: copyEn.rail.label })).toBeInTheDocument();
+		liveRegions = container.querySelectorAll('[role="status"][aria-live="polite"]');
+		expect(liveRegions).toHaveLength(1);
+		navigatorCopies = container.querySelectorAll('[data-slot="history-announcement"]');
+		expect(navigatorCopies).toHaveLength(2);
+		for (const copy of navigatorCopies) {
+			expect(copy).toHaveTextContent(expected);
+			expect(copy).not.toHaveAttribute('role');
+			expect(copy).not.toHaveAttribute('aria-live');
+		}
+		expect(replaceState).toHaveBeenCalledTimes(1);
+	});
+
+	it('renders localized coverage, selection, and correction copy', async () => {
+		currentLocale.value = 'fr';
+		(fixture as AlertHistory).window_start = '2026-06-20';
+		(fixture as AlertHistory).window_end = '2026-06-22';
+		archiveState.index = makeArchiveIndex();
+		archiveState.entries = [
+			makeArchiveEntry('courant', 'Avis courant', '2026-06-21', '2026-06-21'),
+		];
+		setUrl('http://localhost/fr/alerts?from=&to=');
+
+		const { container } = render(AlertHistoryScreen);
+
+		await waitFor(() =>
+			expect(container.querySelector('[data-slot="history-coverage"]')).not.toBeNull(),
+		);
+		expect(container.querySelector('[data-slot="history-coverage"]')).toHaveTextContent('Archives');
+		expect(container.querySelector('[data-slot="history-selection"]')).toHaveTextContent(
+			'Sélection',
+		);
+		expect(document.querySelector('[data-slot="history-announcement"]')).not.toHaveTextContent(
+			/^\s*$/,
+		);
 	});
 });
 

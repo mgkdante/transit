@@ -43,6 +43,8 @@
 		vehiclesSpark: SparklineSpec | null;
 		/** True on the DAY grain (gates the vehicles row — vehicles is null on week/month). */
 		isDailyGrain: boolean;
+		/** Explainer family for the primary chart channel. */
+		metricKey: MetricKey;
 		info: (
 			key: MetricKey | SupplementalMetricKey,
 			name: string,
@@ -54,9 +56,10 @@
 		};
 		copy: NetworkReliabilityCopy;
 	}
-	let { trendSpec, vehiclesSpark, isDailyGrain, info, copy }: SectionTrendProps = $props();
+	let { trendSpec, vehiclesSpark, isDailyGrain, metricKey, info, copy }: SectionTrendProps =
+		$props();
 
-	const i = $derived(info('otp', copy.trendSection));
+	const i = $derived(info(metricKey, copy.trendSection));
 </script>
 
 <NetworkTile wide>

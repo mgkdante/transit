@@ -33,9 +33,25 @@ export {
 	getStop,
 	getNetworkTrend,
 	getHotspots,
+	getHotspotsHistoryDay,
+	getHotspotsHistoryIndex,
 	getRepeatOffenders,
+	getRepeatOffendersHistoryDay,
+	getRepeatOffendersHistoryIndex,
 	getAlertHistory,
+	getAdvertisedReceipt,
+	getAlertArchiveIndex,
+	getAlertArchiveRange,
 	getReceiptsIndex,
+	getHistoricAvailability,
+	getNetworkHistoryIndex,
+	getLineHistoryDirectory,
+	getStopHistoryDirectory,
+	getLineHistoryIndex,
+	getStopHistoryIndex,
+	loadNetworkHistoryRange,
+	loadLineHistoryRange,
+	loadStopHistoryRange,
 	getReceipt,
 	getRouteReliability,
 	getRouteReliabilityIndex,
@@ -47,6 +63,9 @@ export {
 	toSlimStopsIndex,
 } from './repositories';
 export type { SlimStopEntry, SlimStopsIndex } from './repositories';
+
+// --- retained-history selection, partition loading, and typed failures -------
+export * from './history';
 
 // --- boot + label resolution + context ---------------------------------------
 export { bootV1, loadManifest, resolveLabel, getV1Context, setV1Context } from './boot';
@@ -114,6 +133,7 @@ export type {
 	VerdictCopy,
 	VerdictSentenceArgs,
 } from './verdict';
+export { wilsonBounds } from './stats';
 
 // --- schemas (enums + contract types) — re-export the typed contract surface --
 export * from './schemas';

@@ -30,8 +30,16 @@
 		settled: boolean;
 		locale: Locale;
 		copy: StopReliabilityCopy;
+		/** Current-window copy by default; retained callers name the selected range. */
+		windowText?: string;
 	}
-	let { vm, settled, locale, copy }: SectionCrowdingProps = $props();
+	let {
+		vm,
+		settled,
+		locale,
+		copy,
+		windowText = copy.crowding.window,
+	}: SectionCrowdingProps = $props();
 
 	const explainerCopy = $derived(metricsCopy[locale]);
 	const info = $derived((key: MetricKey, name: string) => {
@@ -62,7 +70,7 @@
 				{@render metricInfo('occupancy', copy.crowding.heading)}
 			{/snippet}
 		</SectionHeading>
-		<p class="stop-reliability-window">{copy.crowding.window}</p>
+		<p class="stop-reliability-window">{windowText}</p>
 		<MetricDisplay
 			value={vm.dominantPct ?? copy.noDelay}
 			label={vm.dominant.label}

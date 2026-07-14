@@ -35,6 +35,8 @@ export interface HotspotPopoverEvidence {
 export interface HotspotLadderLabels {
 	/** Accessible name for the ladder (e.g. "Worst spots · severe-delay rate"). */
 	title: string;
+	/** Localized entity heading for the AT table (e.g. "Line" / "Arrêt"). */
+	rowLabel: string;
 	/** Value-axis (x) title — the severe-delay rate the bar encodes. */
 	xLabel: string;
 	/** Value unit suffix (e.g. "%"). */
@@ -134,6 +136,7 @@ export function selectHotspotLadder(
 			locale,
 			domain: SEVERE_DOMAIN,
 			unit: labels.unit,
+			rowLabel: labels.rowLabel,
 			xLabel: labels.xLabel,
 			ciLabel: labels.ciLabel,
 			rows,

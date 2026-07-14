@@ -13,7 +13,15 @@
 // features/map/mapAlerts, which imports alertDisplayText from here when it needs it.
 
 import type { Locale } from '$lib/i18n';
-import type { Alert } from '$lib/v1/schemas';
+
+/** The shared source-copy shape carried by live, current-history, and archive alerts. */
+export interface AlertDisplaySource {
+	readonly header_key?: string | null;
+	readonly header_text?: string | null;
+	readonly header_text_en?: string | null;
+	readonly description?: string | null;
+	readonly description_en?: string | null;
+}
 
 const GENERIC_ALERT_HEADERS = new Set([
 	'your stop',
@@ -33,6 +41,7 @@ function stripHtml(value: string): string {
 		.replace(/&lt;/gi, '<')
 		.replace(/&gt;/gi, '>')
 		.replace(/\s+/g, ' ')
+		.replace(/\s+([,.;:!?])/g, '$1')
 		.trim();
 }
 
@@ -45,9 +54,8 @@ function cleanText(value: string | null | undefined): string | null {
 	if (
 		normalized === 'none' ||
 		normalized === 'null' ||
-		normalized.includes("'text': none") ||
-		normalized.includes('"text": null') ||
-		normalized.includes('"text":null')
+		normalized === 'undefined' ||
+		/["']text["']\s*:\s*(?:none|null|undefined)\b/.test(normalized)
 	) {
 		return null;
 	}
@@ -61,7 +69,7 @@ function meaningfulHeader(value: string | null | undefined): string | null {
 	return GENERIC_ALERT_HEADERS.has(text.toLowerCase()) ? null : text;
 }
 
-export function alertDisplayText(alert: Alert, locale: Locale): string {
+export function alertDisplayText(alert: AlertDisplaySource, locale: Locale): string {
 	const descriptions =
 		locale === 'fr'
 			? [alert.description, alert.description_en]

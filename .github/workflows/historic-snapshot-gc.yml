@@ -1,0 +1,88 @@
+name: Historic snapshot GC marks
+
+on:
+  schedule:
+    - cron: "23 10 * * 1"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Non-destructive historic generation scan mode
+        required: true
+        type: choice
+        default: mark
+        options:
+          - dry-run
+          - mark
+
+concurrency:
+  group: daily-warm-rollups
+  cancel-in-progress: false
+
+jobs:
+  mark:
+    runs-on: ubuntu-latest
+    # The scan gets 90 minutes; ten minutes of job headroom preserve the always-run
+    # receipt upload if the first full inventory reaches that bound.
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        provider: [stm, octranspo, sto]
+    env:
+      APP_ENV: production
+      LOG_LEVEL: INFO
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      BRONZE_S3_ENDPOINT: https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com
+      BRONZE_S3_BUCKET: transit-raw
+      BRONZE_S3_REGION: auto
+      BRONZE_S3_ACCESS_KEY: ${{ secrets.BRONZE_S3_ACCESS_KEY }}
+      BRONZE_S3_SECRET_KEY: ${{ secrets.BRONZE_S3_SECRET_KEY }}
+      SNAPSHOT_R2_BUCKET: ${{ secrets.SNAPSHOT_R2_BUCKET }}
+      SNAPSHOT_STORAGE_BACKEND: s3
+    steps:
+      - uses: actions/checkout@v5
+      - name: Initialize provider receipt
+        shell: bash
+        run: |
+          mkdir -p apps/db/reports
+          printf '{"status":"fail","phase":"preflight","provider_id":"${{ matrix.provider }}"}\n' \
+            > "apps/db/reports/historic-gc-${{ matrix.provider }}.json"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+      - name: Install database package
+        working-directory: apps/db
+        run: uv sync --locked
+      - name: Apply database migrations
+        working-directory: apps/db
+        run: uv run python -m transit_ops.cli init-db
+      - name: Scan and mark unreachable generations
+        working-directory: apps/db
+        shell: bash
+        run: |
+          mkdir -p reports
+          mode="${{ github.event_name == 'schedule' && 'mark' || inputs.mode }}"
+          report_path="reports/historic-gc-${{ matrix.provider }}.json"
+          timeout_limit="90m"
+          set +e
+          timeout --signal=TERM "$timeout_limit" \
+            uv run python -m transit_ops.cli gc-historic-snapshots "${{ matrix.provider }}" \
+            --mode "$mode" \
+            --report-path "$report_path"
+          scan_status="$?"
+          set -e
+          if [[ "$scan_status" -eq 124 || "$scan_status" -eq 143 ]]; then
+            printf '{"status":"fail","phase":"scan","failure_type":"timeout","timeout_limit":"%s","provider_id":"%s"}\n' \
+              "$timeout_limit" "${{ matrix.provider }}" > "$report_path"
+          fi
+          exit "$scan_status"
+      - name: Upload provider GC receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: historic-gc-${{ matrix.provider }}-${{ github.run_id }}
+          path: apps/db/reports/historic-gc-${{ matrix.provider }}.json
+          if-no-files-found: error
+          retention-days: 30

@@ -55,6 +55,20 @@ export interface ReceiptCopy extends SurfaceHeadCopy {
 		/** Appended to an empty published shell (no data, no schedule). */
 		readonly emptyReason: string;
 	};
+	/** Advertised receipt history navigation and correction copy. */
+	readonly history: {
+		readonly group: string;
+		readonly previous: string;
+		readonly next: string;
+		readonly coverage: (first: string, last: string) => string;
+		readonly selection: (date: string) => string;
+		readonly correction: {
+			readonly malformed: string;
+			readonly 'outside-coverage': string;
+			readonly gap: string;
+			readonly unpublished: string;
+		};
+	};
 	/** Time-of-day cut (by-shift) section copy. */
 	readonly timeOfDay: {
 		readonly heading: string;
@@ -132,7 +146,7 @@ export interface ReceiptCopy extends SurfaceHeadCopy {
 	readonly noData: string;
 	/** Shown when the index carries no published receipt dates at all. */
 	readonly emptyIndex: string;
-	/** Shown when the chosen date resolves to a 404 (no receipt for that day). */
+	/** Defensive fallback when no receipt value is available without a repository error. */
 	readonly emptyReceipt: string;
 	/** Units appended to formatted values. */
 	readonly units: {
@@ -213,6 +227,20 @@ export const copy: Record<Locale, ReceiptCopy> = {
 			gapReason: 'no receipt',
 			scheduleOnlyFlag: 'schedule only',
 			emptyReason: 'empty day',
+		},
+		history: {
+			group: 'Browse published receipts',
+			previous: 'Previous date',
+			next: 'Next date',
+			coverage: (first, last) => `Available receipts: ${first}–${last}`,
+			selection: (date) => `Showing: ${date}`,
+			correction: {
+				malformed: 'That date was not valid. Showing the latest receipt.',
+				'outside-coverage':
+					'That date is outside the retained receipts. Showing the latest receipt.',
+				gap: 'That date falls in a publication gap. Showing the latest receipt.',
+				unpublished: 'That day was not published. Showing the latest receipt.',
+			},
 		},
 		timeOfDay: {
 			heading: 'By time of day',
@@ -333,6 +361,20 @@ export const copy: Record<Locale, ReceiptCopy> = {
 			gapReason: 'aucun reçu',
 			scheduleOnlyFlag: 'horaire seulement',
 			emptyReason: 'journée vide',
+		},
+		history: {
+			group: 'Parcourir les reçus publiés',
+			previous: 'Date précédente',
+			next: 'Date suivante',
+			coverage: (first, last) => `Reçus disponibles : ${first} au ${last}`,
+			selection: (date) => `Affichage : ${date}`,
+			correction: {
+				malformed: 'Cette date n’était pas valide. Affichage du reçu le plus récent.',
+				'outside-coverage':
+					'Cette date est hors des reçus conservés. Affichage du reçu le plus récent.',
+				gap: 'Cette date tombe dans une lacune de publication. Affichage du reçu le plus récent.',
+				unpublished: 'Cette journée n’a pas été publiée. Affichage du reçu le plus récent.',
+			},
 		},
 		timeOfDay: {
 			heading: 'Par moment de la journée',
