@@ -1862,6 +1862,34 @@ def _historic_publish_report(status: str) -> HistoricPublishProofReport:
     )
 
 
+def test_atomic_report_writer_preserves_preseed_until_complete_replacement(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    report_path = tmp_path / "proof.json"
+    preseed = '{"status":"fail","failures":["interrupted"]}\n'
+    completed = '{"status":"pass","failures":[]}\n'
+    report_path.write_text(preseed, encoding="utf-8")
+    original_replace = Path.replace
+    replacements: list[tuple[Path, Path]] = []
+
+    def recording_replace(source: Path, target: Path) -> Path:
+        assert report_path.read_text(encoding="utf-8") == preseed
+        assert source.parent == report_path.parent
+        assert source.read_text(encoding="utf-8") == completed
+        replacements.append((source, target))
+        return original_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", recording_replace)
+
+    cli_module._write_report_atomic(report_path, completed)  # noqa: SLF001
+
+    assert len(replacements) == 1
+    assert replacements[0][1] == report_path
+    assert report_path.read_text(encoding="utf-8") == completed
+    assert list(tmp_path.iterdir()) == [report_path]
+
+
 def test_verify_historic_publish_help() -> None:
     result = runner.invoke(app, ["verify-historic-publish", "--help"])
 
@@ -1899,12 +1927,14 @@ def test_verify_historic_publish_reads_receipts_and_writes_passing_report(
         sync_receipt,
         gate_report,
         settings,  # noqa: ANN001
+        isolate_process,
     ):
         recorded.update(
             provider_id=provider_id,
             sync_receipt=sync_receipt,
             gate_report=gate_report,
             settings=settings,
+            isolate_process=isolate_process,
         )
         return _historic_publish_report("pass")
 
@@ -1930,6 +1960,7 @@ def test_verify_historic_publish_reads_receipts_and_writes_passing_report(
         "sync_receipt": sync_receipt,
         "gate_report": gate_report,
         "settings": settings,
+        "isolate_process": True,
     }
     assert result.stdout == report_path.read_text(encoding="utf-8")
     assert (
@@ -1956,9 +1987,11 @@ def test_verify_historic_publish_writes_report_before_failed_exit(monkeypatch, t
         sync_receipt,
         gate_report,
         settings,  # noqa: ANN001
+        isolate_process,
     ):
         recorded["sync_receipt"] = sync_receipt
         recorded["gate_report"] = gate_report
+        recorded["isolate_process"] = isolate_process
         return _historic_publish_report("fail")
 
     monkeypatch.setattr(cli_module, "build_historic_publish_proof", fake_builder, raising=False)
@@ -1981,10 +2014,61 @@ def test_verify_historic_publish_writes_report_before_failed_exit(monkeypatch, t
     assert recorded == {
         "sync_receipt": sync_receipt,
         "gate_report": gate_report,
+        "isolate_process": True,
     }
     assert report_path.exists()
     assert result.stdout == report_path.read_text(encoding="utf-8")
     assert json.loads(result.stdout)["status"] == "fail"
+
+
+def test_verify_historic_publish_writes_failure_receipt_when_deadline_escapes(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _stub_verify_historic_publish_ready(monkeypatch)
+    sync_path = tmp_path / "sync.json"
+    gate_path = tmp_path / "gate.json"
+    report_path = tmp_path / "proof.json"
+    sync_path.write_text('{"provider_id":"stm","status":"synced"}', encoding="utf-8")
+    gate_path.write_text('{"provider_id":"stm","errors":0}', encoding="utf-8")
+
+    def deadline_builder(*args, **kwargs):  # noqa: ANN002, ANN003, ARG001
+        raise TimeoutError("private upstream detail")
+
+    monkeypatch.setattr(
+        cli_module,
+        "build_historic_publish_proof",
+        deadline_builder,
+        raising=False,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "verify-historic-publish",
+            "stm",
+            "--sync-report",
+            str(sync_path),
+            "--gate-report",
+            str(gate_path),
+            "--report-path",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert report_path.stat().st_size > 0
+    assert result.stdout == report_path.read_text(encoding="utf-8")
+    payload = json.loads(result.stdout)
+    assert payload["provider_id"] == "stm"
+    assert payload["status"] == "fail"
+    assert payload["failures"] == ["historic_proof_deadline_exceeded"]
+    assert payload["public"]["deadline"] == {
+        "exceeded": True,
+        "failure": "historic_proof_deadline_exceeded",
+        "receipt_source": "cli_exception_fallback",
+    }
+    assert "private upstream detail" not in result.stdout
 
 
 def test_verify_historic_publish_rejects_bad_json_before_builder(monkeypatch, tmp_path) -> None:

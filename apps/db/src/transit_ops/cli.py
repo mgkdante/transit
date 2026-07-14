@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import typer
 from alembic import command
@@ -66,7 +68,10 @@ from transit_ops.snapshots.gate import GateError
 from transit_ops.snapshots.historic_gc import run_historic_snapshot_gc
 from transit_ops.snapshots.publish import publish_snapshot, validate_snapshots
 from transit_ops.source_factory.runner import run_source_factory_rebuild
-from transit_ops.validation.historic_publish import build_historic_publish_proof
+from transit_ops.validation.historic_publish import (
+    HistoricPublishProofReport,
+    build_historic_publish_proof,
+)
 from transit_ops.validation.proof import build_retention_proof_report
 from transit_ops.validation.static_feeds import validate_static_feeds
 
@@ -145,6 +150,27 @@ def _preflight_report_path(report_path: Path | None) -> None:
             pass
     except OSError as exc:
         raise typer.BadParameter(f"--report-path is not writable: {report_path}") from exc
+
+
+def _write_report_atomic(report_path: Path, body: str) -> None:
+    temporary_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=report_path.parent,
+            prefix=f".{report_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            handle.write(body)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary_path.replace(report_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def _read_json_object(path: Path, *, option_name: str) -> dict[str, object]:
@@ -607,14 +633,34 @@ def verify_historic_publish_command(
     _preflight_report_path(report_path)
     sync_payload = _read_json_object(sync_report, option_name="--sync-report")
     gate_payload = _read_json_object(gate_report, option_name="--gate-report")
-    result = build_historic_publish_proof(
-        provider_id,
-        sync_receipt=sync_payload,
-        gate_report=gate_payload,
-        settings=settings,
-    )
+    try:
+        result = build_historic_publish_proof(
+            provider_id,
+            sync_receipt=sync_payload,
+            gate_report=gate_payload,
+            settings=settings,
+            isolate_process=True,
+        )
+    except TimeoutError:
+        result = HistoricPublishProofReport(
+            provider_id=provider_id,
+            verified_at_utc=datetime.now(UTC),
+            status="fail",
+            migration={"status": "unavailable"},
+            sync={"status": "unavailable"},
+            gate={"status": "unavailable"},
+            public={
+                "deadline": {
+                    "exceeded": True,
+                    "failure": "historic_proof_deadline_exceeded",
+                    "receipt_source": "cli_exception_fallback",
+                }
+            },
+            source_messages={"status": "unavailable"},
+            failures=("historic_proof_deadline_exceeded",),
+        )
     body = json.dumps(result.display_dict(), indent=2, sort_keys=True)
-    report_path.write_text(body + "\n", encoding="utf-8")
+    _write_report_atomic(report_path, body + "\n")
     typer.echo(body)
     if result.status != "pass":
         raise typer.Exit(code=1)

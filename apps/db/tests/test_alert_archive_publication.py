@@ -329,7 +329,7 @@ def test_all_content_addressed_partition_bytes_and_digests_ignore_run_stamps() -
         assert payload.publish_generation_id is None
 
 
-def test_archive_index_has_honest_dates_and_long_running_page_coverage() -> None:
+def test_archive_index_envelopes_observation_and_active_period_coverage() -> None:
     start = datetime(2026, 6, 20, tzinfo=UTC)
     end = datetime(2026, 8, 4, tzinfo=UTC)
     bundle, _ = _build(
@@ -345,7 +345,7 @@ def test_archive_index_has_honest_dates_and_long_running_page_coverage() -> None
 
     ref = bundle.index.months[0].pages[0]
     assert bundle.index.first_available_date == "2026-05-12"
-    assert bundle.index.last_available_date == "2026-07-31"
+    assert bundle.index.last_available_date == "2026-08-04"
     assert ref.coverage_start == "2026-06-20"
     assert ref.coverage_end == "2026-08-04"
 
@@ -549,12 +549,13 @@ def test_archive_tie_break_is_id_ascending_and_coverage_uses_provider_local_date
     page = bundle.page_items[0][1]
     ref = bundle.index.months[0].pages[0]
     assert [entry.id for entry in page.alerts] == ["a-alert", "z-alert"]
-    # 00:30Z is still the prior Montréal service date. The open future period
-    # widens the page selection range but does not change accrued index dates.
+    # 00:30Z is still the prior Montréal service date. The future active period
+    # must widen both the page and collection bounds so the public picker can
+    # actually select the advertised page coverage.
     assert ref.coverage_start == "2026-07-01"
     assert ref.coverage_end == "2026-08-04"
     assert bundle.index.first_available_date == "2026-07-01"
-    assert bundle.index.last_available_date == "2026-07-01"
+    assert bundle.index.last_available_date == "2026-08-04"
     assert not check_alert_archive_bundle(
         bundle.index,
         bundle.page_items,

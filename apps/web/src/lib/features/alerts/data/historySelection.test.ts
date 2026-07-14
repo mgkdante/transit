@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AlertHistory, IsoUtc } from '$lib/v1/schemas';
 import { AlertArchiveIndexSchema } from '$lib/v1/schemas';
+import { filterAlertLog } from '../selectors/alertLog';
 import {
 	currentAlertWindow,
 	resolveAlertHistoryRange,
@@ -87,6 +88,56 @@ describe('currentAlertWindow', () => {
 });
 
 describe('resolveAlertHistoryRange', () => {
+	it('makes a planned future alert reachable through its advertised page coverage', () => {
+		const index = AlertArchiveIndexSchema.parse({
+			generated_utc: GENERATED,
+			collection_generation_id: 'a'.repeat(64),
+			first_available_date: '2026-07-01',
+			last_available_date: '2026-07-01',
+			total_alerts: 1,
+			months: [
+				{
+					month: '2026-07',
+					total_alerts: 1,
+					pages: [
+						{
+							path: `historic/alerts/generations/${'a'.repeat(64)}/2026-07/page-0001.json`,
+							page: 1,
+							count: 1,
+							byte_size: 100,
+							sha256: 'a'.repeat(64),
+							coverage_start: '2026-07-01',
+							coverage_end: '2026-08-04',
+						},
+					],
+				},
+			],
+		});
+		const resolved = resolveAlertHistoryRange(
+			history({ window_start: '2026-07-01', window_end: '2026-07-01' }),
+			index,
+			'2026-08-04',
+			'2026-08-04',
+		);
+		const planned = {
+			id: 'planned-work',
+			active_periods: [
+				{ start_utc: utc('2026-08-04T08:00:00Z'), end_utc: utc('2026-08-04T12:00:00Z') },
+			],
+		};
+
+		expect(resolved.selection).toEqual({ from: '2026-08-04', to: '2026-08-04' });
+		expect(
+			filterAlertLog([planned], {
+				window: resolved.selection,
+				affects: null,
+				severity: null,
+				route: null,
+				stop: null,
+			}),
+		).toEqual([planned]);
+	});
+
 	it('treats every day inside archive bounds as available, including a quiet day', () => {
 		const resolved = resolveAlertHistoryRange(
 			history({ window_start: '2026-06-01', window_end: '2026-06-30' }),

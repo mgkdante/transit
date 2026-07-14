@@ -28,6 +28,7 @@ export { default as ReliabilityBadge } from './ReliabilityBadge.svelte';
 export { default as SearchInput } from './SearchInput.svelte';
 export { default as MapDrilldownLink } from './MapDrilldownLink.svelte';
 export { default as AffectedAlerts } from './AffectedAlerts.svelte';
+export { createRailDisclosureController } from './createRailDisclosureController.svelte';
 
 // Props interfaces, paired with their component (brand/ + dataviz/ convention:
 // every cross-surface primitive re-exports its Props so consumers can type props).
@@ -59,4 +60,5 @@ export type { MapDrilldownLinkProps } from './MapDrilldownLink.svelte';
 export type { ReliabilityPeriodVM } from './ReliabilityPane.svelte';
 export type { GrainSegment } from './GrainPicker.svelte';
 export type { AffectedAlertsCopy } from './AffectedAlerts.svelte';
+export type { RailDisclosureController } from './createRailDisclosureController.svelte';
 export type { SurfaceHeadCopy } from './copy';

@@ -17,6 +17,8 @@ import type { CrowdingDelayCell } from '$lib/v1';
 export interface CrowdingDelayLabels {
 	/** Accessible name + tooltip fallback (the sub-block heading). */
 	title: string;
+	/** Localized occupancy-band heading for the AT table mirror. */
+	rowLabel: string;
 	/** Localized value-axis title (e.g. "Avg delay"). */
 	xLabel: string;
 	/** Value unit suffix (e.g. " min"). */
@@ -79,6 +81,7 @@ export function selectCrowdingDelay(
 			locale,
 			domain: DELAY_POS_DOMAIN,
 			unit: labels.unit,
+			rowLabel: labels.rowLabel,
 			xLabel: labels.xLabel,
 			rows,
 			sort: 'given', // fixed occupancy axis, never re-sorted by value

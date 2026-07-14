@@ -13,7 +13,7 @@ concurrency:
 jobs:
   publish-historic-recovery:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: apps/db
@@ -99,6 +99,7 @@ jobs:
             | tee artifacts/historic-publish-recovery/historic-publish.json
 
       - name: Prove published historic snapshots
+        timeout-minutes: 38
         run: |
           published_providers="$(
             jq -ers '
@@ -207,7 +208,27 @@ jobs:
               exit 1
             fi
             proof_path="artifacts/historic-publish-recovery/public-proof-${provider}.json"
-            : > "$proof_path"
+            proof_seed_path="${proof_path}.seed"
+            jq -n --arg provider "$provider" '
+              {
+                provider_id: $provider,
+                verified_at_utc: null,
+                status: "fail",
+                migration: {status: "unavailable"},
+                sync: {status: "unavailable"},
+                gate: {status: "unavailable"},
+                public: {
+                  deadline: {
+                    exceeded: true,
+                    failure: "historic_proof_interrupted_before_completion",
+                    receipt_source: "workflow_preseed"
+                  }
+                },
+                source_messages: {status: "unavailable"},
+                failures: ["historic_proof_interrupted_before_completion"]
+              }
+            ' > "$proof_seed_path"
+            mv -f "$proof_seed_path" "$proof_path"
             uv run python -m transit_ops.cli verify-historic-publish "$provider" \
               --sync-report "artifacts/historic-publish-recovery/alert-archive-sync-${provider}.json" \
               --gate-report "artifacts/historic-publish-recovery/publish-gate-${provider}.json" \

@@ -160,6 +160,8 @@ export interface ReliabilityCopy {
 	readonly delayByCrowding: {
 		/** Sub-block overline. */
 		readonly heading: string;
+		/** Localized occupancy-band heading for the chart's AT table mirror. */
+		readonly bandHeader: string;
 		/** Secondary typical-delay caption appended to a band's avg delay (obs-weighted mean of daily band medians, not a pooled percentile; e.g. "typical 0.4 min"). */
 		readonly typical: (p50: string) => string;
 		/** Honest empty note when no per-band delay data exists at all. */
@@ -413,6 +415,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		},
 		delayByCrowding: {
 			heading: "Retard selon l'occupation",
+			bandHeader: "Niveau d'occupation",
 			typical: (p50) => `typique ${p50}`,
 			empty: 'Aucune donnée de retard par occupation',
 		},
@@ -662,6 +665,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		},
 		delayByCrowding: {
 			heading: 'Delay by crowding',
+			bandHeader: 'Crowding band',
 			typical: (p50) => `typical ${p50}`,
 			empty: 'No delay-by-crowding data yet',
 		},

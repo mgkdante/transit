@@ -6,6 +6,7 @@ import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
 
 const copy = networkReliabilityCopy.en;
+const motion = vi.hoisted(() => ({ reduced: false }));
 
 const { openSurface, live, network, trendSeries, weeklySeries, monthlySeries, byShift, byDaytype } =
 	vi.hoisted(() => ({
@@ -93,6 +94,15 @@ vi.mock('$lib/nav', async () => {
 		},
 	};
 });
+
+vi.mock('$lib/motion/reduced-motion.svelte', () => ({
+	prefersReducedMotion: {
+		get current() {
+			return motion.reduced;
+		},
+	},
+	isPrefersReducedMotion: () => motion.reduced,
+}));
 
 vi.mock('$lib/v1', async () => {
 	return {
@@ -685,6 +695,27 @@ describe('NetworkSurface service completeness (S9B GC2 ramp-in)', () => {
 });
 
 describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
+	it('uses instant ToC navigation when reduced motion is requested', async () => {
+		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+		const scrollIntoView = vi.fn();
+		Object.defineProperty(Element.prototype, 'scrollIntoView', {
+			configurable: true,
+			value: scrollIntoView,
+		});
+		motion.reduced = true;
+
+		try {
+			const { container } = render(NetworkSurface);
+			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+			await fireEvent.click(within(rail).getByRole('button', { name: copy.historicRegion }));
+			expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+		} finally {
+			motion.reduced = false;
+			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
+			else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+		}
+	});
+
 	it('renders ONE mobile pill labelled with the View heading + the active grain', () => {
 		const { container } = render(NetworkSurface);
 		// The SurfaceRail mobile pill replaces the old top-rail SurfaceControls + ControlsRail.
@@ -710,6 +741,45 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 		// The ONE sheet merges the view controls (the delay-series toggle) AND the region ToC.
 		expect(within(sheet).getByRole('radiogroup', { name: 'Delay series' })).toBeInTheDocument();
 		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
+	});
+
+	it('gives each rail presentation its own disabled-grain reason id', async () => {
+		const original = monthlySeries.slice();
+		monthlySeries.splice(0, monthlySeries.length);
+
+		try {
+			const { container } = render(NetworkSurface);
+			const railMobile = container.querySelector(
+				'[data-slot="surface-rail-mobile"]',
+			) as HTMLElement;
+			await fireEvent.click(railMobile.querySelector('button') as HTMLButtonElement);
+
+			const reasons = Array.from(
+				container.querySelectorAll<HTMLElement>('[data-slot="controls-reason"]'),
+			);
+			const reasonIds = reasons.map((reason) => reason.id);
+			expect(reasonIds).toHaveLength(2);
+			expect(new Set(reasonIds).size).toBe(reasonIds.length);
+			expect(reasonIds).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(/-desktop$/),
+					expect.stringMatching(/-mobile$/),
+				]),
+			);
+
+			const monthRadios = screen.getAllByRole('radio', { name: copy.grain.month });
+			expect(monthRadios).toHaveLength(2);
+			expect(monthRadios.map((radio) => radio.getAttribute('aria-describedby'))).toEqual(
+				expect.arrayContaining(reasonIds),
+			);
+			for (const radio of monthRadios) {
+				const describedBy = radio.getAttribute('aria-describedby');
+				expect(describedBy).not.toBeNull();
+				expect(container.querySelector(`#${describedBy}`)).not.toBeNull();
+			}
+		} finally {
+			monthlySeries.splice(0, monthlySeries.length, ...original);
+		}
 	});
 
 	it('minted a two-region ToC (Live now + Historic trend) on the shared TocNav', () => {

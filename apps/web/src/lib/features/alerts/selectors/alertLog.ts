@@ -14,6 +14,7 @@
 import type { AlertHistoryEntry, AlertBreakdownBucket, SeverityCode } from '$lib/v1/schemas';
 import { SEVERITY_CODES } from '$lib/v1/schemas';
 import type { DateWindow, AlertAffects } from '$lib/filters';
+import { providerLocalDateKey } from '$lib/utils/time';
 
 const SEVERITY_SET = new Set<string>(SEVERITY_CODES);
 
@@ -51,7 +52,8 @@ export function activeWindows(
  * as unbounded on that side (an ongoing/undated alert stays visible). An alert with NO
  * datable window at all is KEPT (honest: we cannot prove it falls outside — never a
  * silent drop). The window bounds are local calendar dates (YYYY-MM-DD); we compare the
- * DATE prefix of each ISO instant, so a same-day alert on `to` still counts.
+ * provider-local calendar key for each ISO instant, so a same-day alert on `to`
+ * still counts even when its UTC date differs.
  */
 export function alertMatchesWindow(entry: AlertHistoryEntry, window: DateWindow | null): boolean {
 	if (window == null) return true;
@@ -60,9 +62,9 @@ export function alertMatchesWindow(entry: AlertHistoryEntry, window: DateWindow 
 	const from = window.from;
 	const to = window.to;
 	for (const w of windows) {
-		// Date prefix (first 10 chars) of each bound; null = open (unbounded that side).
-		const s = w.start != null ? w.start.slice(0, 10) : null;
-		const e = w.end != null ? w.end.slice(0, 10) : null;
+		// Provider-local calendar keys; null = open/invalid (unbounded that side).
+		const s = providerLocalDateKey(w.start);
+		const e = providerLocalDateKey(w.end);
 		// Overlap test on inclusive spans: [s,e] ∩ [from,to] ≠ ∅
 		//   fails only when the window ends before `from` OR starts after `to`.
 		const endsBefore = e != null && e < from;
@@ -217,7 +219,7 @@ export function buildAlertRow(entry: AlertHistoryEntry, r: AlertRowResolvers): A
  * Derive the honest served span from the entries themselves (the legacy fallback when
  * the payload carries no window_start/window_end): the min→max active DATE across every
  * entry's windows. Returns null when nothing is datable (⇒ the surface hides the picker
- * with honest absence). Dates are local `YYYY-MM-DD` prefixes.
+ * with honest absence). Dates are provider-local `YYYY-MM-DD` keys.
  */
 export function deriveSpan(
 	entries: readonly AlertHistoryEntry[],
@@ -228,8 +230,8 @@ export function deriveSpan(
 		for (const w of activeWindows(e)) {
 			for (const bound of [w.start, w.end]) {
 				if (bound == null) continue;
-				const d = bound.slice(0, 10);
-				if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+				const d = providerLocalDateKey(bound);
+				if (d == null) continue;
 				if (min == null || d < min) min = d;
 				if (max == null || d > max) max = d;
 			}

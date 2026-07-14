@@ -95,6 +95,7 @@
 			locale,
 			{
 				title: copy.strip.weakStopsHeading,
+				rowLabel: copy.strip.worstNLabel,
 				xLabel: copy.strip.avgDelayMin,
 				unit: copy.units.min,
 				severeXLabel: copy.strip.severeRateLabel,

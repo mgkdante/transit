@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from contextvars import ContextVar
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from http.client import HTTPException
+from multiprocessing import get_context
 from pathlib import Path
-from typing import Literal, TypeVar
+from tempfile import NamedTemporaryFile
+from typing import Literal, TypeVar, cast
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
@@ -30,31 +37,125 @@ from transit_ops.snapshots.contract import (
     AlertHistory,
     HistoricAvailabilityIndex,
     HistoricCollectionIndex,
+    HistoricEntityDirectoryIndex,
     HistoricFamilyAvailability,
     HistoricHotspotsDay,
+    HistoricPartitionRef,
     HistoricRepeatOffendersDay,
+    LineHistoryPartition,
     Manifest,
     ManifestHistoricFiles,
+    NetworkHistoryPartition,
     Receipt,
     ReceiptsIndex,
     RouteReliability,
     RouteReliabilityIndex,
+    StopHistoryPartition,
 )
 from transit_ops.snapshots.gate import (
     CheckResult,
     Severity,
     check_alert_archive_index,
+    check_history_availability_graph,
     check_history_availability_index,
+    check_line_history_directory,
+    check_line_history_index,
+    check_line_history_partition,
+    check_line_history_partition_ref,
+    check_network_history_index,
+    check_network_history_partition,
+    check_network_history_partition_ref,
     check_point_history_day,
     check_point_history_index,
+    check_stop_history_directory,
+    check_stop_history_index,
+    check_stop_history_partition,
+    check_stop_history_partition_ref,
 )
 from transit_ops.snapshots.paths import safe_public_path as _safe_public_path
 
 SYNC_MAX_AGE = timedelta(hours=6)
 GATE_MAX_AGE = timedelta(hours=36)
 FUTURE_SKEW = timedelta(minutes=5)
+HISTORIC_PROOF_FETCH_CONCURRENCY = 8
+HISTORIC_PROOF_TIMEOUT_SECONDS = 35 * 60
+RANGE_PARTITION_SAMPLE_LIMIT_PER_FAMILY = 8
+RANGE_PARTITION_SAMPLING_METHOD = "sha256-generation-seeded-boundary-interior-v1"
 
 FetchBytes = Callable[[str], bytes]
+MonotonicClock = Callable[[], float]
+
+
+class HistoricProofDeadlineExceeded(TimeoutError):
+    """Raised internally when public proof work reaches its monotonic deadline."""
+
+
+@dataclass
+class _HistoricProofDeadline:
+    budget_seconds: float
+    monotonic: MonotonicClock
+    started_monotonic: float = field(init=False)
+    exceeded: bool = False
+    exceeded_elapsed_seconds: float | None = None
+    skipped_request_count: int = 0
+    cancelled_request_count: int = 0
+    abandoned_request_count: int = 0
+    whole_proof_process_terminated_count: int = 0
+    max_batch_size: int = 0
+
+    def __post_init__(self) -> None:
+        if self.budget_seconds <= 0:
+            raise ValueError("proof_timeout_seconds must be greater than zero")
+        self.started_monotonic = self.monotonic()
+
+    def elapsed_seconds(self) -> float:
+        return max(0.0, self.monotonic() - self.started_monotonic)
+
+    def remaining_seconds(self) -> float:
+        return max(0.0, self.budget_seconds - self.elapsed_seconds())
+
+    def is_expired(self) -> bool:
+        return self.exceeded or self.remaining_seconds() <= 0
+
+    def mark_exceeded(self, failures: list[str], *, skipped: int = 0) -> None:
+        if not self.exceeded:
+            self.exceeded = True
+            self.exceeded_elapsed_seconds = self.elapsed_seconds()
+        self.skipped_request_count += skipped
+        _add_failure(failures, "historic_proof_deadline_exceeded")
+
+    def record_batch(self, size: int) -> None:
+        self.max_batch_size = max(self.max_batch_size, size)
+
+    def record_shutdown(self, *, cancelled: int, abandoned: int) -> None:
+        self.cancelled_request_count += cancelled
+        self.abandoned_request_count += abandoned
+
+    def record_whole_proof_process_terminated(self) -> None:
+        self.whole_proof_process_terminated_count += 1
+
+    def evidence(self) -> dict[str, object]:
+        elapsed = self.exceeded_elapsed_seconds
+        if elapsed is None:
+            elapsed = self.elapsed_seconds()
+        return {
+            "budget_seconds": self.budget_seconds,
+            "elapsed_seconds": round(elapsed, 6),
+            "exceeded": self.exceeded,
+            "failure": "historic_proof_deadline_exceeded" if self.exceeded else None,
+            "fetch_batch_size_limit": HISTORIC_PROOF_FETCH_CONCURRENCY,
+            "max_batch_size": self.max_batch_size,
+            "skipped_request_count": self.skipped_request_count,
+            "cancelled_request_count": self.cancelled_request_count,
+            "abandoned_request_count": self.abandoned_request_count,
+            "whole_proof_process_terminated_count": self.whole_proof_process_terminated_count,
+        }
+
+
+_ACTIVE_PROOF_DEADLINE: ContextVar[_HistoricProofDeadline | None] = ContextVar(
+    "historic_publish_proof_deadline",
+    default=None,
+)
 
 
 @dataclass(frozen=True)
@@ -252,8 +353,20 @@ def _fetch_model(
         url=url,
         model_name=model_type.__name__,
     )
+    deadline = _ACTIVE_PROOF_DEADLINE.get()
+    if deadline is not None and deadline.is_expired():
+        deadline.mark_exceeded(failures, skipped=1)
+        artifact["error_type"] = HistoricProofDeadlineExceeded.__name__
+        _add_failure(failures, "historic_proof_deadline_exceeded", artifact)
+        return None, None, artifact
     try:
         raw = fetch_bytes(url)
+    except HistoricProofDeadlineExceeded:
+        if deadline is not None:
+            deadline.mark_exceeded(failures, skipped=1)
+        artifact["error_type"] = HistoricProofDeadlineExceeded.__name__
+        _add_failure(failures, "historic_proof_deadline_exceeded", artifact)
+        return None, None, artifact
     except (*OperationalErrorTypes, HTTPException) as exc:
         artifact["error_type"] = type(exc).__name__
         _add_failure(failures, "public_artifact_fetch_failed", artifact)
@@ -286,6 +399,126 @@ def _fetch_model(
     if artifact["status"] == "pending":
         artifact["status"] = "pass"
     return payload, raw, artifact
+
+
+ModelFetchResult = tuple[BaseModel | None, bytes | None, dict[str, object]]
+
+
+def _fetch_models_bounded(
+    requests: Sequence[tuple[str, type[BaseModel]]],
+    *,
+    public_root: str,
+    fetch_bytes: FetchBytes,
+    artifacts: dict[str, dict[str, object]],
+    failures: list[str],
+    query: str,
+    gate_digests: Mapping[str, object] | None,
+    bind_gate_digest: bool = True,
+) -> list[ModelFetchResult]:
+    """Fetch fixed-size windows and validate each window in stable input order."""
+
+    if not requests:
+        return []
+    deadline = _ACTIVE_PROOF_DEADLINE.get()
+    results: list[ModelFetchResult] = []
+
+    def deadline_results(count: int) -> list[ModelFetchResult]:
+        if count <= 0:
+            return []
+        if deadline is not None:
+            deadline.mark_exceeded(failures, skipped=count)
+        key = "<historic-proof-deadline>"
+        artifact = artifacts.get(key)
+        if artifact is None:
+            artifact = _artifact_entry(
+                artifacts,
+                key,
+                url=None,
+                model_name="HistoricProofDeadline",
+            )
+        artifact["skipped_request_count"] = int(artifact.get("skipped_request_count", 0)) + count
+        _add_failure(failures, "historic_proof_deadline_exceeded", artifact)
+        return [(None, None, artifact)] * count
+
+    def prefetched_reader(future_map: Mapping[str, Future[bytes]]) -> FetchBytes:
+        def prefetched(url: str) -> bytes:
+            future = future_map.get(url)
+            if future is None:
+                if deadline is not None and deadline.is_expired():
+                    raise HistoricProofDeadlineExceeded
+                raise ValueError("unsafe public path was not prefetched")
+            if deadline is None:
+                return future.result()
+            remaining = deadline.remaining_seconds()
+            if remaining <= 0:
+                raise HistoricProofDeadlineExceeded
+            try:
+                return future.result(timeout=remaining)
+            except FutureTimeoutError as exc:
+                if deadline.is_expired():
+                    raise HistoricProofDeadlineExceeded from exc
+                raise
+
+        return prefetched
+
+    for offset in range(0, len(requests), HISTORIC_PROOF_FETCH_CONCURRENCY):
+        if deadline is not None and deadline.is_expired():
+            results.extend(deadline_results(len(requests) - offset))
+            break
+
+        batch = requests[offset : offset + HISTORIC_PROOF_FETCH_CONCURRENCY]
+        worker_count = min(HISTORIC_PROOF_FETCH_CONCURRENCY, len(batch))
+        executor = ThreadPoolExecutor(max_workers=worker_count)
+        futures: dict[str, Future[bytes]] = {}
+        try:
+            for path, _ in batch:
+                if deadline is not None and deadline.is_expired():
+                    deadline.mark_exceeded(failures)
+                    break
+                try:
+                    safe_path = _safe_public_path(path)
+                except ValueError:
+                    continue
+                url = f"{public_root}{safe_path}?{query}"
+                if url not in futures:
+                    futures[url] = executor.submit(fetch_bytes, url)
+            if deadline is not None:
+                deadline.record_batch(len(futures))
+            prefetched = prefetched_reader(futures)
+
+            for path, model_type in batch:
+                payload, raw, artifact = _fetch_model(
+                    path,
+                    model_type,
+                    public_root=public_root,
+                    fetch_bytes=prefetched,
+                    artifacts=artifacts,
+                    failures=failures,
+                    query=query,
+                    gate_digests=gate_digests,
+                    bind_gate_digest=bind_gate_digest,
+                )
+                results.append((payload, raw, artifact))
+        finally:
+            cancelled = 0
+            abandoned = 0
+            for future in futures.values():
+                if future.done():
+                    continue
+                if future.cancel():
+                    cancelled += 1
+                elif not future.done():
+                    abandoned += 1
+            if deadline is not None:
+                deadline.record_shutdown(cancelled=cancelled, abandoned=abandoned)
+            executor.shutdown(wait=False, cancel_futures=True)
+
+        if deadline is not None and deadline.is_expired():
+            remaining_count = len(requests) - offset - len(batch)
+            results.extend(deadline_results(remaining_count))
+            break
+
+    return results
 
 
 def _read_migration_evidence(settings: Settings, engine: Engine) -> MigrationEvidence:
@@ -529,30 +762,6 @@ def _parse_gate_report(
     return display, generated_text, payload_sha256
 
 
-def _check_sync_expectations(
-    sync_values: dict[str, object],
-    expectations: AlertExpectations,
-    failures: list[str],
-) -> None:
-    if sync_values.get("source_count") != expectations.total_alerts:
-        _add_failure(failures, "sync_source_count_mismatch")
-    expected_from = (
-        date.fromisoformat(expectations.first_available_date)
-        if expectations.first_available_date is not None
-        else None
-    )
-    expected_to = (
-        date.fromisoformat(expectations.last_available_date)
-        if expectations.last_available_date is not None
-        else None
-    )
-    if (
-        sync_values.get("source_from") != expected_from
-        or sync_values.get("source_to") != expected_to
-    ):
-        _add_failure(failures, "sync_source_bounds_mismatch")
-
-
 def _index_evidence(
     path: str,
     payload: (AlertArchiveIndex | ReceiptsIndex | RouteReliabilityIndex | HistoricCollectionIndex),
@@ -629,6 +838,60 @@ def _point_family_edge(
     return matches[0] if len(matches) == 1 else None
 
 
+def _bind_partition_refs_to_gate(
+    refs: Sequence[HistoricPartitionRef],
+    *,
+    gate_digests: Mapping[str, object] | None,
+    failures: list[str],
+    failure_prefix: str,
+) -> dict[str, object]:
+    bound_count = 0
+    failure_count = 0
+    mismatch_count = 0
+    failure_paths: list[str] = []
+    for ref in refs:
+        path = ref.path
+        failure_code: str | None = None
+        try:
+            safe_path = _safe_public_path(path)
+        except ValueError:
+            safe_path = path
+            failure_code = f"{failure_prefix}_path_invalid"
+        advertised_digest = ref.sha256
+        gate_digest = gate_digests.get(safe_path) if gate_digests is not None else None
+        if failure_code is None and (
+            advertised_digest is None or _SHA256_RE.fullmatch(advertised_digest) is None
+        ):
+            failure_code = f"{failure_prefix}_ref_digest_invalid"
+        elif failure_code is None and (gate_digests is None or safe_path not in gate_digests):
+            failure_code = f"{failure_prefix}_gate_digest_missing"
+        elif failure_code is None and (
+            not isinstance(gate_digest, str) or _SHA256_RE.fullmatch(gate_digest) is None
+        ):
+            failure_code = f"{failure_prefix}_gate_digest_invalid"
+        elif failure_code is None and gate_digest != advertised_digest:
+            failure_code = f"{failure_prefix}_gate_digest_mismatch"
+            mismatch_count += 1
+
+        if failure_code is None:
+            bound_count += 1
+            continue
+        failure_count += 1
+        if len(failure_paths) < 32:
+            failure_paths.append(path)
+        _add_failure(failures, failure_code)
+
+    return {
+        "scope": "all_partition_refs",
+        "candidate_count": len(refs),
+        "gate_digest_bound_count": bound_count,
+        "gate_digest_failure_count": failure_count,
+        "gate_digest_mismatch_count": mismatch_count,
+        "gate_digest_failure_paths": failure_paths,
+        "gate_digest_failure_paths_truncated": failure_count > len(failure_paths),
+    }
+
+
 def _verify_point_history_family(
     family: PointFamily,
     *,
@@ -642,11 +905,11 @@ def _verify_point_history_family(
     failures: list[str],
     query: str,
     gate_digests: Mapping[str, object] | None,
-) -> list[str]:
+) -> tuple[list[str], HistoricCollectionIndex | None]:
     edge = _point_family_edge(root, family)
     if edge is None:
         _add_failure(failures, "public_history_root_invalid", root_artifact)
-        return []
+        return [], None
 
     index, raw, index_artifact = _fetch_model(
         edge.index_path,
@@ -660,7 +923,7 @@ def _verify_point_history_family(
         bind_gate_digest=True,
     )
     if index is None:
-        return []
+        return [], None
     indexes[family] = _index_evidence(edge.index_path, index)
 
     path_match = re.fullmatch(
@@ -721,9 +984,18 @@ def _verify_point_history_family(
         )
 
     if not index_is_valid or not path_sha256_matches:
-        return []
+        return [], index
 
     refs = index.partitions
+    partition_gate_binding = _bind_partition_refs_to_gate(
+        refs,
+        gate_digests=gate_digests,
+        failures=failures,
+        failure_prefix="public_point_partition",
+    )
+    family_index_evidence = indexes.get(family)
+    if isinstance(family_index_evidence, dict):
+        family_index_evidence["partition_gate_binding"] = partition_gate_binding
     boundary_refs = [] if not refs else [refs[0], *([] if len(refs) == 1 else [refs[-1]])]
     boundary_dates = [ref.coverage_start for ref in boundary_refs]
     model_type = _POINT_DAY_MODELS[family]
@@ -782,7 +1054,509 @@ def _verify_point_history_family(
             artifact=day_artifact,
             failure_code="public_point_day_invalid",
         )
-    return boundary_dates
+    return boundary_dates, index
+
+
+@dataclass(frozen=True)
+class _RangeHistoryGraph:
+    network_index: HistoricCollectionIndex | None
+    line_directory: HistoricEntityDirectoryIndex | None
+    line_indexes: tuple[HistoricCollectionIndex, ...]
+    stop_directory: HistoricEntityDirectoryIndex | None
+    stop_indexes: tuple[HistoricCollectionIndex, ...]
+    remote_sample_evidence: dict[str, object]
+
+
+@dataclass(frozen=True)
+class _RangePartitionCandidate:
+    family: Literal["network", "lines", "stops"]
+    ref: HistoricPartitionRef
+    model_type: type[BaseModel]
+    payload_checker: Callable[..., Sequence[CheckResult]]
+    ref_checker: Callable[[object, object], Sequence[CheckResult]]
+    parent_index_path: str
+    parent_index_gate_bound: bool
+    parent_index_gate_mismatch: bool
+
+
+def _bind_range_candidates_to_parent_indexes(
+    candidates: Sequence[_RangePartitionCandidate],
+    *,
+    failures: list[str],
+) -> dict[str, object]:
+    """Bind refs through the exact gate-digest-bound index that advertises them."""
+
+    bound_count = 0
+    failure_count = 0
+    mismatch_count = 0
+    failure_paths: list[str] = []
+    for candidate in candidates:
+        if candidate.parent_index_gate_bound:
+            bound_count += 1
+            continue
+        failure_count += 1
+        mismatch_count += candidate.parent_index_gate_mismatch
+        if len(failure_paths) < 32:
+            failure_paths.append(candidate.ref.path)
+        _add_failure(failures, "public_range_partition_parent_index_unbound")
+
+    parent_paths = sorted({candidate.parent_index_path for candidate in candidates})
+    return {
+        "scope": "all_partition_refs",
+        "binding_source": "exact_gate_bound_parent_indexes",
+        "candidate_count": len(candidates),
+        "parent_index_count": len(parent_paths),
+        "parent_index_paths": parent_paths,
+        "gate_digest_bound_count": bound_count,
+        "gate_digest_failure_count": failure_count,
+        "gate_digest_mismatch_count": mismatch_count,
+        "gate_digest_failure_paths": failure_paths,
+        "gate_digest_failure_paths_truncated": failure_count > len(failure_paths),
+    }
+
+
+def _verify_range_partition(
+    ref: object,
+    model_type: type[PayloadT],
+    *,
+    payload_checker: Callable[..., Sequence[CheckResult]],
+    ref_checker: Callable[[object, object], Sequence[CheckResult]],
+    family: str,
+    public_root: str,
+    fetch_bytes: FetchBytes,
+    artifacts: dict[str, dict[str, object]],
+    failures: list[str],
+    query: str,
+    gate_digests: Mapping[str, object] | None,
+    loaded: ModelFetchResult | None = None,
+) -> None:
+    path = getattr(ref, "path", "")
+    if loaded is None:
+        payload, _, artifact = _fetch_model(
+            path,
+            model_type,
+            public_root=public_root,
+            fetch_bytes=fetch_bytes,
+            artifacts=artifacts,
+            failures=failures,
+            query=query,
+            gate_digests=gate_digests,
+            bind_gate_digest=False,
+        )
+    else:
+        payload, _, artifact = loaded
+    if payload is None:
+        return
+    _record_checker_failures(
+        payload_checker(payload, rel_key=path),
+        failures=failures,
+        artifact=artifact,
+        failure_code=f"public_{family}_history_partition_invalid",
+    )
+    _record_checker_failures(
+        ref_checker(ref, payload),
+        failures=failures,
+        artifact=artifact,
+        failure_code=f"public_{family}_history_partition_ref_mismatch",
+    )
+
+
+def _partition_candidate_key(candidate: _RangePartitionCandidate) -> tuple[str, str, str]:
+    return (
+        candidate.ref.coverage_start,
+        candidate.ref.coverage_end,
+        candidate.ref.path,
+    )
+
+
+def _sample_range_partition_candidates(
+    candidates: Sequence[_RangePartitionCandidate],
+    *,
+    seed: str,
+) -> tuple[_RangePartitionCandidate, ...]:
+    sampled: list[_RangePartitionCandidate] = []
+    for family in ("network", "lines", "stops"):
+        ordered = sorted(
+            (candidate for candidate in candidates if candidate.family == family),
+            key=_partition_candidate_key,
+        )
+        if len(ordered) <= RANGE_PARTITION_SAMPLE_LIMIT_PER_FAMILY:
+            sampled.extend(ordered)
+            continue
+
+        boundaries = [ordered[0], ordered[-1]]
+        interiors = ordered[1:-1]
+        interiors.sort(
+            key=lambda candidate: (
+                hashlib.sha256(f"{seed}\0{family}\0{candidate.ref.path}".encode()).hexdigest(),
+                _partition_candidate_key(candidate),
+            )
+        )
+        chosen = [
+            *boundaries,
+            *interiors[: RANGE_PARTITION_SAMPLE_LIMIT_PER_FAMILY - len(boundaries)],
+        ]
+        sampled.extend(sorted(chosen, key=_partition_candidate_key))
+    return tuple(sampled)
+
+
+def _verify_range_partition_samples(
+    candidates: Sequence[_RangePartitionCandidate],
+    *,
+    seed: str,
+    public_root: str,
+    fetch_bytes: FetchBytes,
+    artifacts: dict[str, dict[str, object]],
+    failures: list[str],
+    query: str,
+    gate_digests: Mapping[str, object] | None,
+) -> dict[str, object]:
+    family_names = ("network", "lines", "stops")
+    family_evidence: dict[str, dict[str, object]] = {
+        family: {
+            "sample_count": 0,
+            "boundary_paths": [],
+            "sampled_paths": [],
+        }
+        for family in family_names
+    }
+    gate_digest_bound_count = 0
+    gate_digest_failure_count = 0
+    gate_digest_mismatch_count = 0
+    gate_digest_failure_paths: list[str] = []
+
+    for family in family_names:
+        family_candidates = [candidate for candidate in candidates if candidate.family == family]
+        binding = _bind_range_candidates_to_parent_indexes(
+            family_candidates,
+            failures=failures,
+        )
+        family_evidence[family].update(binding)
+        gate_digest_bound_count += cast(int, binding["gate_digest_bound_count"])
+        gate_digest_failure_count += cast(int, binding["gate_digest_failure_count"])
+        gate_digest_mismatch_count += cast(int, binding["gate_digest_mismatch_count"])
+        remaining = 32 - len(gate_digest_failure_paths)
+        if remaining > 0:
+            gate_digest_failure_paths.extend(
+                cast(list[str], binding["gate_digest_failure_paths"])[:remaining]
+            )
+
+    sampled = _sample_range_partition_candidates(candidates, seed=seed)
+    for family in family_names:
+        ordered = sorted(
+            (candidate for candidate in candidates if candidate.family == family),
+            key=_partition_candidate_key,
+        )
+        boundaries = [] if not ordered else [ordered[0].ref.path]
+        if len(ordered) > 1:
+            boundaries.append(ordered[-1].ref.path)
+        family_samples = [candidate.ref.path for candidate in sampled if candidate.family == family]
+        family_evidence[family]["boundary_paths"] = boundaries
+        family_evidence[family]["sampled_paths"] = family_samples
+        family_evidence[family]["sample_count"] = len(family_samples)
+
+    fetched = _fetch_models_bounded(
+        [(candidate.ref.path, candidate.model_type) for candidate in sampled],
+        public_root=public_root,
+        fetch_bytes=fetch_bytes,
+        artifacts=artifacts,
+        failures=failures,
+        query=query,
+        gate_digests=gate_digests,
+        bind_gate_digest=False,
+    )
+    for candidate, loaded in zip(sampled, fetched, strict=True):
+        _verify_range_partition(
+            candidate.ref,
+            candidate.model_type,
+            payload_checker=candidate.payload_checker,
+            ref_checker=candidate.ref_checker,
+            family=candidate.family,
+            public_root=public_root,
+            fetch_bytes=fetch_bytes,
+            artifacts=artifacts,
+            failures=failures,
+            query=query,
+            gate_digests=gate_digests,
+            loaded=loaded,
+        )
+
+    return {
+        "sampling_method": RANGE_PARTITION_SAMPLING_METHOD,
+        "sampling_seed": seed,
+        "sample_limit_per_family": RANGE_PARTITION_SAMPLE_LIMIT_PER_FAMILY,
+        "remote_existence_scope": "deterministic_samples_only",
+        "local_gate_binding_scope": "all_partition_refs",
+        "binding_source": "exact_gate_bound_parent_indexes",
+        "candidate_count": len(candidates),
+        "sample_count": len(sampled),
+        "sampled_paths": [candidate.ref.path for candidate in sampled],
+        "gate_digest_bound_count": gate_digest_bound_count,
+        "gate_digest_failure_count": gate_digest_failure_count,
+        "gate_digest_mismatch_count": gate_digest_mismatch_count,
+        "gate_digest_failure_paths": gate_digest_failure_paths,
+        "gate_digest_failure_paths_truncated": gate_digest_failure_count
+        > len(gate_digest_failure_paths),
+        "parent_index_count": len({candidate.parent_index_path for candidate in candidates}),
+        "families": family_evidence,
+    }
+
+
+def _verify_network_history_family(
+    *,
+    edge: HistoricFamilyAvailability,
+    expected_publish_generation_id: str | None,
+    public_root: str,
+    fetch_bytes: FetchBytes,
+    artifacts: dict[str, dict[str, object]],
+    indexes: dict[str, object],
+    failures: list[str],
+    query: str,
+    gate_digests: Mapping[str, object] | None,
+    loaded_index: ModelFetchResult,
+) -> tuple[HistoricCollectionIndex | None, tuple[_RangePartitionCandidate, ...]]:
+    index = cast(HistoricCollectionIndex | None, loaded_index[0])
+    artifact = loaded_index[2]
+    if index is None:
+        return None, ()
+    indexes["network"] = _index_evidence(edge.index_path, index)
+    _record_checker_failures(
+        check_network_history_index(index, rel_key=edge.index_path),
+        failures=failures,
+        artifact=artifact,
+        failure_code="public_network_history_index_invalid",
+    )
+    if (
+        expected_publish_generation_id is not None
+        and index.publish_generation_id != expected_publish_generation_id
+    ):
+        _add_failure(failures, "public_network_history_generation_mismatch", artifact)
+    return index, tuple(
+        _RangePartitionCandidate(
+            family="network",
+            ref=ref,
+            model_type=NetworkHistoryPartition,
+            payload_checker=check_network_history_partition,
+            ref_checker=check_network_history_partition_ref,
+            parent_index_path=edge.index_path,
+            parent_index_gate_bound=artifact.get("gate_sha256_matches") is True,
+            parent_index_gate_mismatch=(
+                "public_gate_digest_mismatch" in artifact.get("failures", [])
+            ),
+        )
+        for ref in index.partitions
+    )
+
+
+def _verify_entity_history_family(
+    family: Literal["lines", "stops"],
+    *,
+    edge: HistoricFamilyAvailability,
+    expected_publish_generation_id: str | None,
+    public_root: str,
+    fetch_bytes: FetchBytes,
+    artifacts: dict[str, dict[str, object]],
+    indexes: dict[str, object],
+    failures: list[str],
+    query: str,
+    gate_digests: Mapping[str, object] | None,
+    loaded_directory: ModelFetchResult,
+) -> tuple[
+    HistoricEntityDirectoryIndex | None,
+    tuple[HistoricCollectionIndex, ...],
+    tuple[_RangePartitionCandidate, ...],
+]:
+    if family == "lines":
+        directory_checker = check_line_history_directory
+        index_checker = check_line_history_index
+        partition_model = LineHistoryPartition
+        partition_checker = check_line_history_partition
+        ref_checker = check_line_history_partition_ref
+    else:
+        directory_checker = check_stop_history_directory
+        index_checker = check_stop_history_index
+        partition_model = StopHistoryPartition
+        partition_checker = check_stop_history_partition
+        ref_checker = check_stop_history_partition_ref
+
+    directory = cast(HistoricEntityDirectoryIndex | None, loaded_directory[0])
+    directory_artifact = loaded_directory[2]
+    if directory is None:
+        return None, (), ()
+    indexes[family] = {
+        "path": edge.index_path,
+        "family": directory.family,
+        "generated_utc": directory.generated_utc,
+        "publish_generation_id": directory.publish_generation_id,
+        "collection_generation_id": directory.collection_generation_id,
+        "first_available_date": directory.first_available_date,
+        "last_available_date": directory.last_available_date,
+        "entity_count": len(directory.entities),
+    }
+    _record_checker_failures(
+        directory_checker(directory, rel_key=edge.index_path),
+        failures=failures,
+        artifact=directory_artifact,
+        failure_code=f"public_{family}_history_directory_invalid",
+    )
+    if (
+        expected_publish_generation_id is not None
+        and directory.publish_generation_id != expected_publish_generation_id
+    ):
+        _add_failure(failures, f"public_{family}_history_generation_mismatch", directory_artifact)
+
+    children: list[HistoricCollectionIndex] = []
+    candidates: list[_RangePartitionCandidate] = []
+    child_fetches = _fetch_models_bounded(
+        [(child_edge.index_path, HistoricCollectionIndex) for child_edge in directory.entities],
+        public_root=public_root,
+        fetch_bytes=fetch_bytes,
+        artifacts=artifacts,
+        failures=failures,
+        query=query,
+        gate_digests=gate_digests,
+    )
+    for child_edge, loaded_child in zip(directory.entities, child_fetches, strict=True):
+        child = cast(HistoricCollectionIndex | None, loaded_child[0])
+        child_artifact = loaded_child[2]
+        if child is None:
+            continue
+        children.append(child)
+        _record_checker_failures(
+            index_checker(child, rel_key=child_edge.index_path),
+            failures=failures,
+            artifact=child_artifact,
+            failure_code=f"public_{family}_history_index_invalid",
+        )
+        if (
+            child.entity_id != child_edge.entity_id
+            or child.collection_generation_id != child_edge.collection_generation_id
+            or child.first_available_date != child_edge.first_available_date
+            or child.last_available_date != child_edge.last_available_date
+        ):
+            _add_failure(failures, f"public_{family}_history_edge_mismatch", child_artifact)
+        if (
+            expected_publish_generation_id is not None
+            and child.publish_generation_id != expected_publish_generation_id
+        ):
+            _add_failure(failures, f"public_{family}_history_generation_mismatch", child_artifact)
+        for ref in child.partitions:
+            candidates.append(
+                _RangePartitionCandidate(
+                    family=family,
+                    ref=ref,
+                    model_type=partition_model,
+                    payload_checker=partition_checker,
+                    ref_checker=ref_checker,
+                    parent_index_path=child_edge.index_path,
+                    parent_index_gate_bound=child_artifact.get("gate_sha256_matches") is True,
+                    parent_index_gate_mismatch=(
+                        "public_gate_digest_mismatch" in child_artifact.get("failures", [])
+                    ),
+                )
+            )
+    return directory, tuple(children), tuple(candidates)
+
+
+def _verify_range_history_graph(
+    *,
+    root: HistoricAvailabilityIndex,
+    root_artifact: dict[str, object],
+    expected_publish_generation_id: str | None,
+    public_root: str,
+    fetch_bytes: FetchBytes,
+    artifacts: dict[str, dict[str, object]],
+    indexes: dict[str, object],
+    failures: list[str],
+    query: str,
+    gate_digests: Mapping[str, object] | None,
+) -> _RangeHistoryGraph:
+    edges = {edge.family: edge for edge in root.families}
+    required = ("network", "lines", "stops")
+    if any(family not in edges for family in required):
+        _add_failure(failures, "public_history_root_invalid", root_artifact)
+        empty_evidence = _verify_range_partition_samples(
+            (),
+            seed=expected_publish_generation_id or root.publish_generation_id or root.generated_utc,
+            public_root=public_root,
+            fetch_bytes=fetch_bytes,
+            artifacts=artifacts,
+            failures=failures,
+            query=query,
+            gate_digests=gate_digests,
+        )
+        return _RangeHistoryGraph(None, None, (), None, (), empty_evidence)
+
+    top_level_fetches = _fetch_models_bounded(
+        [
+            (edges["network"].index_path, HistoricCollectionIndex),
+            (edges["lines"].index_path, HistoricEntityDirectoryIndex),
+            (edges["stops"].index_path, HistoricEntityDirectoryIndex),
+        ],
+        public_root=public_root,
+        fetch_bytes=fetch_bytes,
+        artifacts=artifacts,
+        failures=failures,
+        query=query,
+        gate_digests=gate_digests,
+    )
+
+    network_index, network_candidates = _verify_network_history_family(
+        edge=edges["network"],
+        expected_publish_generation_id=expected_publish_generation_id,
+        public_root=public_root,
+        fetch_bytes=fetch_bytes,
+        artifacts=artifacts,
+        indexes=indexes,
+        failures=failures,
+        query=query,
+        gate_digests=gate_digests,
+        loaded_index=top_level_fetches[0],
+    )
+    line_directory, line_indexes, line_candidates = _verify_entity_history_family(
+        "lines",
+        edge=edges["lines"],
+        expected_publish_generation_id=expected_publish_generation_id,
+        public_root=public_root,
+        fetch_bytes=fetch_bytes,
+        artifacts=artifacts,
+        indexes=indexes,
+        failures=failures,
+        query=query,
+        gate_digests=gate_digests,
+        loaded_directory=top_level_fetches[1],
+    )
+    stop_directory, stop_indexes, stop_candidates = _verify_entity_history_family(
+        "stops",
+        edge=edges["stops"],
+        expected_publish_generation_id=expected_publish_generation_id,
+        public_root=public_root,
+        fetch_bytes=fetch_bytes,
+        artifacts=artifacts,
+        indexes=indexes,
+        failures=failures,
+        query=query,
+        gate_digests=gate_digests,
+        loaded_directory=top_level_fetches[2],
+    )
+    remote_sample_evidence = _verify_range_partition_samples(
+        (*network_candidates, *line_candidates, *stop_candidates),
+        seed=expected_publish_generation_id or root.publish_generation_id or root.generated_utc,
+        public_root=public_root,
+        fetch_bytes=fetch_bytes,
+        artifacts=artifacts,
+        failures=failures,
+        query=query,
+        gate_digests=gate_digests,
+    )
+    return _RangeHistoryGraph(
+        network_index,
+        line_directory,
+        line_indexes,
+        stop_directory,
+        stop_indexes,
+        remote_sample_evidence,
+    )
 
 
 def _boundary_values(
@@ -817,10 +1591,17 @@ def _message_section(
         status = "no_data"
     elif expected_alert_count is None or public_alert_count is None:
         status = "unavailable"
+    elif expected_alert_count != public_alert_count:
+        status = "mismatch"
     elif database_source_text_count is None or public_source_text_count is None:
         status = "unavailable"
     elif database_source_text_count <= 0 or public_source_text_count <= 0:
         status = "missing"
+    elif (
+        database_source_text_count != public_source_text_count
+        or database_description_count != public_description_count
+    ):
+        status = "mismatch"
     else:
         status = "ok"
     return {
@@ -834,7 +1615,7 @@ def _message_section(
     }
 
 
-def build_historic_publish_proof(
+def _build_historic_publish_proof(
     provider_id: str,
     *,
     sync_receipt: Mapping[str, object],
@@ -851,7 +1632,7 @@ def build_historic_publish_proof(
     failures: list[str] = []
     artifacts: dict[str, dict[str, object]] = {}
 
-    sync, parsed_sync = _parse_sync_receipt(
+    sync, _ = _parse_sync_receipt(
         provider_id,
         sync_receipt,
         now_utc=now,
@@ -913,8 +1694,6 @@ def build_historic_publish_proof(
             )
         except OperationalErrorTypes:
             _add_failure(failures, "alert_expectations_read_failed")
-        else:
-            _check_sync_expectations(parsed_sync, expectations, failures)
 
     public_root = _public_root(resolved_settings, provider_id, failures)
     public: dict[str, object] = {
@@ -1061,7 +1840,7 @@ def build_historic_publish_proof(
                     history_root_artifact,
                 )
             if root_is_valid:
-                public["boundary_hotspots"] = _verify_point_history_family(
+                boundary_hotspots, hotspots_history_index = _verify_point_history_family(
                     "hotspots",
                     root=history_root,
                     root_artifact=history_root_artifact,
@@ -1074,7 +1853,8 @@ def build_historic_publish_proof(
                     query=proof_query,
                     gate_digests=gate_digests,
                 )
-                public["boundary_repeat_offenders"] = _verify_point_history_family(
+                public["boundary_hotspots"] = boundary_hotspots
+                boundary_repeat, repeat_history_index = _verify_point_history_family(
                     "repeat_offenders",
                     root=history_root,
                     root_artifact=history_root_artifact,
@@ -1086,6 +1866,46 @@ def build_historic_publish_proof(
                     failures=failures,
                     query=proof_query,
                     gate_digests=gate_digests,
+                )
+                public["boundary_repeat_offenders"] = boundary_repeat
+                range_graph = _verify_range_history_graph(
+                    root=history_root,
+                    root_artifact=history_root_artifact,
+                    expected_publish_generation_id=expected_publish_generation_id,
+                    public_root=public_root,
+                    fetch_bytes=resolved_fetch,
+                    artifacts=artifacts,
+                    indexes=indexes,
+                    failures=failures,
+                    query=proof_query,
+                    gate_digests=gate_digests,
+                )
+                public["range_partition_remote_sample"] = range_graph.remote_sample_evidence
+                root_edges = {edge.family: edge for edge in history_root.families}
+                _record_checker_failures(
+                    check_history_availability_graph(
+                        history_root,
+                        alert_index=alerts_index,
+                        receipts_index=receipts_index,
+                        network_index=range_graph.network_index,
+                        line_directory=range_graph.line_directory,
+                        line_indexes=list(range_graph.line_indexes),
+                        stop_directory=range_graph.stop_directory,
+                        stop_indexes=list(range_graph.stop_indexes),
+                        hotspots_index=hotspots_history_index,
+                        repeat_offenders_index=repeat_history_index,
+                        fallback_generated_utc=gate_generation or history_root.generated_utc,
+                        alert_index_path=root_edges["alerts"].index_path,
+                        receipt_index_path=root_edges["receipts"].index_path,
+                        network_index_path=root_edges["network"].index_path,
+                        line_directory_path=root_edges["lines"].index_path,
+                        stop_directory_path=root_edges["stops"].index_path,
+                        hotspots_index_path=root_edges["hotspots"].index_path,
+                        repeat_offenders_index_path=root_edges["repeat_offenders"].index_path,
+                    ),
+                    failures=failures,
+                    artifact=history_root_artifact,
+                    failure_code="public_history_graph_invalid",
                 )
 
         if alerts_index is not None:
@@ -1276,16 +2096,26 @@ def build_historic_publish_proof(
                 ):
                     _add_failure(failures, "public_route_generation_mismatch", route_artifact)
 
-    if expectations is not None and expectations.total_alerts > 0:
-        if expectations.archive_source_text_count <= 0 or not archive_public_source_text_count:
-            _add_failure(failures, "archive_source_text_missing")
-        if expectations.archive_description_count > 0 and not archive_public_description_count:
-            _add_failure(failures, "archive_source_description_missing")
-    if expectations is not None and expectations.legacy_alert_count > 0:
-        if expectations.legacy_source_text_count <= 0 or not legacy_public_source_text_count:
-            _add_failure(failures, "legacy_source_text_missing")
-        if expectations.legacy_description_count > 0 and not legacy_public_description_count:
-            _add_failure(failures, "legacy_source_description_missing")
+    if expectations is not None:
+        if archive_public_source_text_count != expectations.archive_source_text_count:
+            _add_failure(failures, "archive_source_text_count_mismatch")
+        if archive_public_description_count != expectations.archive_description_count:
+            _add_failure(failures, "archive_source_description_count_mismatch")
+        if legacy_public_source_text_count != expectations.legacy_source_text_count:
+            _add_failure(failures, "legacy_source_text_count_mismatch")
+        if legacy_public_description_count != expectations.legacy_description_count:
+            _add_failure(failures, "legacy_source_description_count_mismatch")
+
+        if expectations.total_alerts > 0:
+            if expectations.archive_source_text_count <= 0 or not archive_public_source_text_count:
+                _add_failure(failures, "archive_source_text_missing")
+            if expectations.archive_description_count > 0 and not archive_public_description_count:
+                _add_failure(failures, "archive_source_description_missing")
+        if expectations.legacy_alert_count > 0:
+            if expectations.legacy_source_text_count <= 0 or not legacy_public_source_text_count:
+                _add_failure(failures, "legacy_source_text_missing")
+            if expectations.legacy_description_count > 0 and not legacy_public_description_count:
+                _add_failure(failures, "legacy_source_description_missing")
 
     source_messages = {
         "archive": _message_section(
@@ -1329,8 +2159,223 @@ def build_historic_publish_proof(
     )
 
 
+def _deadline_failure_report(
+    provider_id: str,
+    *,
+    verified_at_utc: datetime,
+    deadline: _HistoricProofDeadline,
+) -> HistoricPublishProofReport:
+    return HistoricPublishProofReport(
+        provider_id=provider_id,
+        verified_at_utc=verified_at_utc,
+        status="fail",
+        migration={"status": "unavailable"},
+        sync={"status": "unavailable"},
+        gate={"status": "unavailable"},
+        public={
+            "base_url": None,
+            "manifest": {},
+            "history_root": {},
+            "indexes": {},
+            "artifacts": {},
+            "deadline": deadline.evidence(),
+        },
+        source_messages={
+            "archive": {"status": "unavailable"},
+            "legacy": {"status": "unavailable"},
+        },
+        failures=("historic_proof_deadline_exceeded",),
+    )
+
+
+def _report_from_display_dict(payload: Mapping[str, object]) -> HistoricPublishProofReport:
+    return HistoricPublishProofReport(
+        provider_id=cast(str, payload["provider_id"]),
+        verified_at_utc=datetime.fromisoformat(cast(str, payload["verified_at_utc"])),
+        status=cast(Literal["pass", "fail"], payload["status"]),
+        migration=cast(dict[str, object], payload["migration"]),
+        sync=cast(dict[str, object], payload["sync"]),
+        gate=cast(dict[str, object], payload["gate"]),
+        public=cast(dict[str, object], payload["public"]),
+        source_messages=cast(dict[str, object], payload["source_messages"]),
+        failures=tuple(cast(Sequence[str], payload["failures"])),
+    )
+
+
+def _isolated_proof_worker(
+    outcome_path: str,
+    provider_id: str,
+    sync_receipt: Mapping[str, object],
+    gate_report: Mapping[str, object],
+    settings: Settings | None,
+    engine: Engine | None,
+    fetch_bytes: FetchBytes | None,
+    migration_reader: MigrationReader | None,
+    expectations_reader: ExpectationsReader | None,
+    verified_at_utc: datetime,
+    proof_timeout_seconds: float,
+    monotonic: MonotonicClock | None,
+) -> None:
+    try:
+        outcome = {
+            "outcome": "result",
+            "report": build_historic_publish_proof(
+                provider_id,
+                sync_receipt=sync_receipt,
+                gate_report=gate_report,
+                settings=settings,
+                engine=engine,
+                fetch_bytes=fetch_bytes,
+                migration_reader=migration_reader,
+                expectations_reader=expectations_reader,
+                now_utc=verified_at_utc,
+                proof_timeout_seconds=proof_timeout_seconds,
+                monotonic=monotonic,
+                isolate_process=False,
+            ).display_dict(),
+        }
+    except BaseException as exc:
+        outcome = {
+            "outcome": "error",
+            "error_type": type(exc).__name__,
+        }
+    Path(outcome_path).write_text(json.dumps(outcome, sort_keys=True), encoding="utf-8")
+
+
+def build_historic_publish_proof(
+    provider_id: str,
+    *,
+    sync_receipt: Mapping[str, object],
+    gate_report: Mapping[str, object],
+    settings: Settings | None = None,
+    engine: Engine | None = None,
+    fetch_bytes: FetchBytes | None = None,
+    migration_reader: MigrationReader | None = None,
+    expectations_reader: ExpectationsReader | None = None,
+    now_utc: datetime | None = None,
+    proof_timeout_seconds: float = HISTORIC_PROOF_TIMEOUT_SECONDS,
+    monotonic: MonotonicClock | None = None,
+    isolate_process: bool = True,
+    isolation_start_method: Literal["spawn", "fork"] = "spawn",
+) -> HistoricPublishProofReport:
+    """Build one proof inside a verifier-owned monotonic deadline."""
+
+    verified_at_utc = (now_utc or datetime.now(UTC)).astimezone(UTC)
+    deadline = _HistoricProofDeadline(
+        budget_seconds=proof_timeout_seconds,
+        monotonic=monotonic or time.monotonic,
+    )
+
+    def run_proof() -> HistoricPublishProofReport:
+        token = _ACTIVE_PROOF_DEADLINE.set(deadline)
+        try:
+            report = _build_historic_publish_proof(
+                provider_id,
+                sync_receipt=sync_receipt,
+                gate_report=gate_report,
+                settings=settings,
+                engine=engine,
+                fetch_bytes=fetch_bytes,
+                migration_reader=migration_reader,
+                expectations_reader=expectations_reader,
+                now_utc=verified_at_utc,
+            )
+            if deadline.is_expired():
+                failures = list(report.failures)
+                deadline.mark_exceeded(failures)
+                report = replace(report, status="fail", failures=tuple(failures))
+            report.public["deadline"] = deadline.evidence()
+            return report
+        finally:
+            _ACTIVE_PROOF_DEADLINE.reset(token)
+
+    if not isolate_process:
+        return run_proof()
+
+    start_method = isolation_start_method
+    context = get_context(start_method)
+    with NamedTemporaryFile(
+        prefix="historic-publish-proof-",
+        suffix=".json",
+        delete=False,
+    ) as handle:
+        outcome_path = Path(handle.name)
+
+    process = context.Process(
+        target=_isolated_proof_worker,
+        args=(
+            str(outcome_path),
+            provider_id,
+            sync_receipt,
+            gate_report,
+            settings,
+            engine,
+            fetch_bytes,
+            migration_reader,
+            expectations_reader,
+            verified_at_utc,
+            proof_timeout_seconds,
+            monotonic,
+        ),
+        name="historic-publish-proof",
+        daemon=True,
+    )
+    try:
+        process.start()
+        supervisor_headroom = min(5.0, proof_timeout_seconds * 0.1)
+        worker_timeout = max(0.0, deadline.remaining_seconds() - supervisor_headroom)
+        process.join(timeout=worker_timeout)
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=0.05)
+            if process.is_alive():
+                process.kill()
+                process.join(timeout=0.05)
+            failures: list[str] = []
+            deadline.mark_exceeded(failures)
+            deadline.record_whole_proof_process_terminated()
+            report = _deadline_failure_report(
+                provider_id,
+                verified_at_utc=verified_at_utc,
+                deadline=deadline,
+            )
+            cast(dict[str, object], report.public["deadline"])["isolation_start_method"] = (
+                start_method
+            )
+            return report
+
+        raw_outcome = json.loads(outcome_path.read_text(encoding="utf-8"))
+        if not isinstance(raw_outcome, dict):
+            raise RuntimeError("historic proof worker wrote an invalid outcome")
+        if raw_outcome.get("outcome") == "error":
+            error_type = raw_outcome.get("error_type")
+            raise RuntimeError(f"historic proof worker failed ({error_type})")
+        report_payload = raw_outcome.get("report")
+        if not isinstance(report_payload, dict):
+            raise RuntimeError("historic proof worker omitted its report")
+        report = _report_from_display_dict(report_payload)
+        deadline_evidence = report.public.get("deadline")
+        if isinstance(deadline_evidence, dict):
+            deadline_evidence["isolation_start_method"] = start_method
+        if deadline.is_expired():
+            failures = list(report.failures)
+            deadline.mark_exceeded(failures)
+            final_deadline_evidence = deadline.evidence()
+            final_deadline_evidence["isolation_start_method"] = start_method
+            return replace(
+                report,
+                status="fail",
+                failures=tuple(failures),
+                public={**report.public, "deadline": final_deadline_evidence},
+            )
+        return report
+    finally:
+        outcome_path.unlink(missing_ok=True)
+
+
 __all__ = [
     "AlertExpectations",
+    "HISTORIC_PROOF_TIMEOUT_SECONDS",
     "HistoricPublishProofReport",
     "MigrationEvidence",
     "build_historic_publish_proof",

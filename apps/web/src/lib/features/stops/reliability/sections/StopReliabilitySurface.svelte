@@ -37,6 +37,7 @@
 	import { formatDateKey } from '$lib/utils/time';
 	import { fromSearchParams, resolveWindow, type DateWindow } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import {
 		availabilityFromCollectionIndex,
 		datesForAvailability,
@@ -399,11 +400,12 @@
 	let activeId = $state('');
 	onMount(() => observeActiveToc((id) => (activeId = id)));
 
-	// Smooth-scroll to a section when its TocNav row is tapped (TocNav is button-driven).
+	// Scroll to a section when its TocNav row is tapped (instant under reduced motion).
 	function navigate(id: string): void {
-		document
-			.querySelector(`[data-toc="${id}"]`)
-			?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		document.querySelector(`[data-toc="${id}"]`)?.scrollIntoView({
+			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
+			block: 'start',
+		});
 	}
 </script>
 

@@ -63,6 +63,7 @@
 	}
 
 	const fmt = (v: number | null): string => (v == null ? '' : String(v));
+	const fmtWithUnit = (v: number | null): string => (v == null ? '' : `${fmt(v)}${spec.unit}`);
 	// The full name still rides the tooltip header + the sr-only table + the drill, so a
 	// truncated tick is never a loss of information — only the axis label is shortened.
 </script>
@@ -120,14 +121,11 @@
 					{#snippet children({ data }: { data: MagnitudeDatum })}
 						<Tooltip.Header>{data.label}</Tooltip.Header>
 						<Tooltip.List>
-							<Tooltip.Item
-								label={spec.xLabel ?? spec.title}
-								value={`${fmt(data.value)}${spec.unit}`}
-							/>
+							<Tooltip.Item label={spec.xLabel ?? spec.title} value={fmtWithUnit(data.value)} />
 							{#if spec.ciLabel && data.wilsonLo != null && data.wilsonHi != null}
 								<Tooltip.Item
 									label={spec.ciLabel}
-									value={`${fmt(data.wilsonLo)}–${fmt(data.wilsonHi)}${spec.unit}`}
+									value={`${fmtWithUnit(data.wilsonLo)}–${fmtWithUnit(data.wilsonHi)}`}
 								/>
 							{/if}
 							{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
@@ -143,7 +141,7 @@
 	<table class="sr-only">
 		<caption>{spec.title}</caption>
 		<thead>
-			<tr><th scope="col">stop</th><th scope="col">{spec.unit}</th></tr>
+			<tr><th scope="col">{spec.rowLabel}</th><th scope="col">{spec.xLabel ?? spec.title}</th></tr>
 		</thead>
 		<tbody>
 			{#each spec.rows as r (r.key)}
@@ -152,10 +150,10 @@
 						{#if r.href}<a href={r.href}>{r.label}</a>{:else}{r.label}{/if}
 					</th>
 					<td>
-						{fmt(
+						{fmtWithUnit(
 							r.value,
 						)}{#if spec.ciLabel && r.wilsonLo != null && r.wilsonHi != null}&nbsp;({spec.ciLabel}
-							{fmt(r.wilsonLo)}–{fmt(r.wilsonHi)}){/if}
+							{fmtWithUnit(r.wilsonLo)}–{fmtWithUnit(r.wilsonHi)}){/if}
 					</td>
 				</tr>
 			{/each}

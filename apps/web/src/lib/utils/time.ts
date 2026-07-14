@@ -79,6 +79,30 @@ function parseIso(iso: string): Date | null {
 }
 
 /**
+ * Resolve an ISO instant to the provider's calendar-day key.
+ *
+ * Alert archive coverage is keyed in the STM provider timezone, not UTC and not the
+ * viewer's browser timezone. Using the raw `YYYY-MM-DD` prefix would therefore put
+ * evening Montréal alerts into the following day. `Intl` also owns the DST rules, so
+ * spring/fall transitions follow the same America/Toronto contract as the pipeline.
+ */
+export function providerLocalDateKey(iso: string | null | undefined): string | null {
+	if (iso == null) return null;
+	const date = parseIso(iso);
+	if (date == null) return null;
+	const parts = dateTimeFormat(localeTag('en'), {
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		timeZone: DISPLAY_TIME_ZONE,
+	}).formatToParts(date);
+	const year = parts.find((part) => part.type === 'year')?.value;
+	const month = parts.find((part) => part.type === 'month')?.value;
+	const day = parts.find((part) => part.type === 'day')?.value;
+	return year != null && month != null && day != null ? `${year}-${month}-${day}` : null;
+}
+
+/**
  * Format a UTC ISO timestamp into a localized America/Toronto string.
  *
  * Defaults to a medium date + short time (e.g. "Jun 15, 2026, 3:04 p.m.").

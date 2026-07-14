@@ -40,6 +40,7 @@ describe('checkAbsoluteDomain — magnitude kinds must carry a zero-based domain
 			mark: 'lollipop',
 			domain: [0, 8],
 			unit: 'min',
+			rowLabel: 'Stop',
 			rows: [],
 			sort: 'wilson-lower',
 			scale: 'severity',

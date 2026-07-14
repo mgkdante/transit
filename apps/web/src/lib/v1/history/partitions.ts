@@ -5,6 +5,7 @@ import type {
 	AlertArchivePage,
 	AlertArchivePageRef,
 } from '$lib/v1/schemas';
+import { providerLocalDateKey } from '$lib/utils/time';
 
 export const HISTORY_PARTITION_CONCURRENCY = 4;
 
@@ -221,8 +222,8 @@ function alertWindowOverlaps(
 	end: string | null | undefined,
 	window: DateWindow,
 ): boolean {
-	const startDate = start?.slice(0, 10) ?? null;
-	const endDate = end?.slice(0, 10) ?? null;
+	const startDate = providerLocalDateKey(start);
+	const endDate = providerLocalDateKey(end);
 	return (
 		!(endDate != null && endDate < window.from) && !(startDate != null && startDate > window.to)
 	);

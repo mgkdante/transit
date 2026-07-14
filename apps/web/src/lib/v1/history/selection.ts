@@ -153,17 +153,24 @@ export function availabilityFromAlertIndex(
 	index: AlertArchiveIndex | null,
 ): HistoryAvailability | null {
 	if (index === null) return null;
-	if (
-		!strictIsoDate(index.first_available_date) ||
-		!strictIsoDate(index.last_available_date) ||
-		index.first_available_date > index.last_available_date
-	) {
+	const pageRefs = index.months.flatMap((month) => month.pages);
+	const firstDates = [
+		index.first_available_date,
+		...pageRefs.map((ref) => ref.coverage_start),
+	].filter(strictIsoDate);
+	const lastDates = [index.last_available_date, ...pageRefs.map((ref) => ref.coverage_end)].filter(
+		strictIsoDate,
+	);
+	if (firstDates.length === 0 || lastDates.length === 0) {
 		return { kind: 'empty' };
 	}
+	const firstDate = firstDates.reduce((first, value) => (value < first ? value : first));
+	const lastDate = lastDates.reduce((last, value) => (value > last ? value : last));
+	if (firstDate > lastDate) return { kind: 'empty' };
 	return {
 		kind: 'continuous',
-		firstDate: index.first_available_date,
-		lastDate: index.last_available_date,
+		firstDate,
+		lastDate,
 		gaps: [],
 	};
 }

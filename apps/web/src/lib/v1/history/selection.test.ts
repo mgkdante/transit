@@ -144,6 +144,40 @@ describe('availability normalization', () => {
 		).toEqual({ kind: 'empty' });
 	});
 
+	it('widens alert availability through future active-period page coverage', () => {
+		const index = AlertArchiveIndexSchema.parse({
+			generated_utc: '2026-07-13T12:00:00Z',
+			collection_generation_id: 'generation',
+			first_available_date: '2026-07-01',
+			last_available_date: '2026-07-01',
+			total_alerts: 1,
+			months: [
+				{
+					month: '2026-07',
+					total_alerts: 1,
+					pages: [
+						{
+							path: `historic/alerts/generations/${'a'.repeat(64)}/2026-07/page-0001.json`,
+							page: 1,
+							count: 1,
+							byte_size: 100,
+							sha256: 'a'.repeat(64),
+							coverage_start: '2026-07-01',
+							coverage_end: '2026-08-04',
+						},
+					],
+				},
+			],
+		});
+
+		expect(availabilityFromAlertIndex(index)).toEqual({
+			kind: 'continuous',
+			firstDate: '2026-07-01',
+			lastDate: '2026-08-04',
+			gaps: [],
+		});
+	});
+
 	it('uses only receipt index dates; metadata cannot add a publication date', () => {
 		const index = ReceiptsIndexSchema.parse({
 			generated_utc: '2026-07-13T12:00:00Z',

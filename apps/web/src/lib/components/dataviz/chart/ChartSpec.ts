@@ -115,6 +115,8 @@ export interface MagnitudeBarsSpec extends ChartSpecBase {
 	readonly mark: 'bar' | 'lollipop';
 	readonly domain: AbsoluteDomain;
 	readonly unit: string;
+	/** Localized heading for the row entity/category column in the AT table mirror. */
+	readonly rowLabel: string;
 	/** Localized value-axis (x) title. */
 	readonly xLabel?: string;
 	readonly rows: readonly MagnitudeDatum[];

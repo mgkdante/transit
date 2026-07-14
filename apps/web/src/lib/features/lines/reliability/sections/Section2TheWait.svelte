@@ -543,6 +543,7 @@
 			locale,
 			{
 				title: terms.excessWait,
+				rowLabel: copy.crosstab.shiftHeader,
 				xLabel: terms.excessWait,
 				unit: ' min',
 				domain: HEADWAY_DOMAIN,
@@ -561,6 +562,7 @@
 			locale,
 			{
 				title: terms.spread,
+				rowLabel: copy.crosstab.shiftHeader,
 				xLabel: terms.spread,
 				unit: '',
 				domain: COV_DOMAIN,
@@ -579,6 +581,7 @@
 			locale,
 			{
 				title: terms.clumped,
+				rowLabel: copy.crosstab.shiftHeader,
 				xLabel: terms.clumped,
 				unit: '%',
 				domain: BUNCHED_DOMAIN,

@@ -72,6 +72,7 @@ if TYPE_CHECKING:
 _PutItem = "tuple[str, object, str]"
 STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE = 100
 POINT_HISTORY_UPLOAD_BATCH_SIZE = 32
+HISTORY_PARTITION_UPLOAD_BATCH_SIZE = 32
 
 
 PointDayT = TypeVar(
@@ -521,6 +522,26 @@ def _parallel_put(
         # Resolve in submission order; the first exception re-raises here, and
         # the `with` block still joins the remaining workers on the way out.
         return [future.result() for future in futures]
+
+
+def _flush_historic_partition_batch(
+    storage: object,
+    batch: list[tuple[str, object, str]],
+    *,
+    concurrency: int,
+) -> list[str]:
+    """Fully upload one bounded immutable-child batch before its parent can advance."""
+
+    if not batch:
+        return []
+    written = _parallel_put(
+        storage,
+        batch,
+        concurrency=concurrency,
+        write_mode="immutable",
+    )
+    batch.clear()
+    return written
 
 
 def _publish_stages(
@@ -1165,6 +1186,10 @@ def _publish_historic(
     but a stage COMPLETES before the next begins, so a discovery index (its own stage)
     is only PUT after every per-entity file in the preceding stage finished — the
     pointer-last invariant. Only the upload is staged; the build+gate is one pass.
+
+    Partition batching bounds in-flight payload memory and overlaps remote immutable
+    probes/writes. Builders and gates still query and recompute the complete retained
+    graph each run; closed-month delta reuse remains a separate follow-up.
     """
     if stamp is None:
         stamp = _historic_stamp()
@@ -1276,6 +1301,7 @@ def _publish_historic(
 
     network_summary = gate.NetworkHistoryStreamSummary()
     network_keys: list[str] = []
+    network_batch: list[tuple[str, object, str]] = []
     for ref, partition in network_history.iter_partition_items():
         if gate_report is not None:
             gate.record(gate_report, ref.path, partition)  # type: ignore[arg-type]
@@ -1295,11 +1321,27 @@ def _publish_historic(
         )
         gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
         network_summary.observe(ref, partition)
-        network_keys.append(storage.put_immutable_json(ref.path, partition))  # type: ignore[attr-defined]
+        network_batch.append((ref.path, partition, "historic_immutable"))
+        if len(network_batch) >= HISTORY_PARTITION_UPLOAD_BATCH_SIZE:
+            network_keys.extend(
+                _flush_historic_partition_batch(
+                    storage,
+                    network_batch,
+                    concurrency=concurrency,
+                )
+            )
+    network_keys.extend(
+        _flush_historic_partition_batch(
+            storage,
+            network_batch,
+            concurrency=concurrency,
+        )
+    )
 
     line_build_summary = builders.LineHistoryStreamSummary()
     line_gate_summary = gate.LineHistoryStreamSummary()
     line_keys: list[str] = []
+    line_batch: list[tuple[str, object, str]] = []
     for ref, partition in line_history.iter_partition_items():
         if gate_report is not None:
             gate.record(gate_report, ref.path, partition)  # type: ignore[arg-type]
@@ -1320,11 +1362,27 @@ def _publish_historic(
         gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
         line_gate_summary.observe(ref, partition)
         line_build_summary.observe(ref, partition)
-        line_keys.append(storage.put_immutable_json(ref.path, partition))  # type: ignore[attr-defined]
+        line_batch.append((ref.path, partition, "historic_immutable"))
+        if len(line_batch) >= HISTORY_PARTITION_UPLOAD_BATCH_SIZE:
+            line_keys.extend(
+                _flush_historic_partition_batch(
+                    storage,
+                    line_batch,
+                    concurrency=concurrency,
+                )
+            )
+    line_keys.extend(
+        _flush_historic_partition_batch(
+            storage,
+            line_batch,
+            concurrency=concurrency,
+        )
+    )
 
     stop_build_summary = builders.StopHistoryStreamSummary()
     stop_gate_summary = gate.StopHistoryStreamSummary()
     stop_keys: list[str] = []
+    stop_batch: list[tuple[str, object, str]] = []
     for ref, partition in stop_history.iter_partition_items():
         if gate_report is not None:
             gate.record(  # type: ignore[arg-type]
@@ -1350,7 +1408,22 @@ def _publish_historic(
         gate.enforce(effective_report, force=force)  # type: ignore[arg-type]
         stop_gate_summary.observe(ref, partition)
         stop_build_summary.observe(ref, partition)
-        stop_keys.append(storage.put_immutable_json(ref.path, partition))  # type: ignore[attr-defined]
+        stop_batch.append((ref.path, partition, "historic_immutable"))
+        if len(stop_batch) >= HISTORY_PARTITION_UPLOAD_BATCH_SIZE:
+            stop_keys.extend(
+                _flush_historic_partition_batch(
+                    storage,
+                    stop_batch,
+                    concurrency=concurrency,
+                )
+            )
+    stop_keys.extend(
+        _flush_historic_partition_batch(
+            storage,
+            stop_batch,
+            concurrency=concurrency,
+        )
+    )
 
     network_index = network_history.build_index(network_summary.detached_refs())
     _stamp_envelope(

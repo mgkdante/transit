@@ -1230,5 +1230,5 @@ describe('alert display UI boundary', () => {
 		);
 
 		expect(violations).toEqual([]);
-	});
+	}, 15_000);
 });

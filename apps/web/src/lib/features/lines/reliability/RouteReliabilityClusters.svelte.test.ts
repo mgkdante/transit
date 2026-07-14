@@ -1,13 +1,24 @@
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';
 import { reliabilityCopy } from './reliability.copy';
 import type { RouteReliability, IsoUtc } from '$lib/v1';
 
+const motion = vi.hoisted(() => ({ reduced: false }));
+
 vi.mock('$lib/v1', async () => ({
 	...(await import('$lib/v1/history')),
 	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
+}));
+
+vi.mock('$lib/motion/reduced-motion.svelte', () => ({
+	prefersReducedMotion: {
+		get current() {
+			return motion.reduced;
+		},
+	},
+	isPrefersReducedMotion: () => motion.reduced,
 }));
 
 const copy = reliabilityCopy.en;
@@ -291,6 +302,31 @@ const multiDay: RouteReliability = {
 };
 
 describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
+	it('uses instant ToC navigation when reduced motion is requested', async () => {
+		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+		const scrollIntoView = vi.fn();
+		Object.defineProperty(Element.prototype, 'scrollIntoView', {
+			configurable: true,
+			value: scrollIntoView,
+		});
+		motion.reduced = true;
+
+		try {
+			const { container } = render(RouteReliabilityClusters, {
+				props: { data: populated, locale: 'en' },
+			});
+			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+			await fireEvent.click(
+				within(rail).getByRole('button', { name: copy.sections.worstStops.label }),
+			);
+			expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+		} finally {
+			motion.reduced = false;
+			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
+			else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+		}
+	});
+
 	it('renders ONE mobile pill labelled with the View heading + the active grain', () => {
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: populated, locale: 'en' },
@@ -324,6 +360,42 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 		// The ONE sheet merges the grain controls (active-window readout) AND the section ToC.
 		expect(sheet.querySelector('[data-slot="active-window"]')).not.toBeNull();
 		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
+	});
+
+	it('gives each rail presentation its own disabled-grain reason id', async () => {
+		const withoutMonth: RouteReliability = {
+			...populated,
+			periods: populated.periods?.filter((period) => period.grain !== 'month'),
+		};
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: withoutMonth, locale: 'en' },
+		});
+		const railMobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		await fireEvent.click(railMobile.querySelector('button') as HTMLButtonElement);
+
+		const reasons = Array.from(
+			container.querySelectorAll<HTMLElement>('[data-slot="controls-reason"]'),
+		);
+		const reasonIds = reasons.map((reason) => reason.id);
+		expect(reasonIds).toHaveLength(2);
+		expect(new Set(reasonIds).size).toBe(reasonIds.length);
+		expect(reasonIds).toEqual(
+			expect.arrayContaining([
+				expect.stringMatching(/-desktop$/),
+				expect.stringMatching(/-mobile$/),
+			]),
+		);
+
+		const monthRadios = screen.getAllByRole('radio', { name: copy.controls.thisMonth });
+		expect(monthRadios).toHaveLength(2);
+		expect(monthRadios.map((radio) => radio.getAttribute('aria-describedby'))).toEqual(
+			expect.arrayContaining(reasonIds),
+		);
+		for (const radio of monthRadios) {
+			const describedBy = radio.getAttribute('aria-describedby');
+			expect(describedBy).not.toBeNull();
+			expect(container.querySelector(`#${describedBy}`)).not.toBeNull();
+		}
 	});
 });
 

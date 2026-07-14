@@ -337,6 +337,7 @@
 	const crowdingDelay = $derived(
 		selectCrowdingDelay(crowding.delayByCrowding, locale, {
 			title: copy.delayByCrowding.heading,
+			rowLabel: copy.delayByCrowding.bandHeader,
 			xLabel: copy.strip.avgDelayMin,
 			unit: copy.units.min,
 			bandLabel: (code) => bands[code],

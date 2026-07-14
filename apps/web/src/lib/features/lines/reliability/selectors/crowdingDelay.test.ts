@@ -6,6 +6,7 @@ import type { CrowdingDelayCell } from '$lib/v1';
 
 const labels: CrowdingDelayLabels = {
 	title: 'Delay by crowding',
+	rowLabel: 'Crowding band',
 	xLabel: 'Avg delay',
 	unit: ' min',
 	bandLabel: (code) => code,
@@ -26,6 +27,7 @@ describe('selectCrowdingDelay', () => {
 		expect(spec.domain).toEqual(DELAY_POS_DOMAIN);
 		expect(spec.domain[0]).toBe(0);
 		expect(spec.sort).toBe('given'); // fixed occupancy axis, never re-sorted by value
+		expect(spec.rowLabel).toBe('Crowding band');
 	});
 
 	it('gives present bands a value + note, absent bands a "no data" label + reason', () => {

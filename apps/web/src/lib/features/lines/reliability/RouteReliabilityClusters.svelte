@@ -30,6 +30,7 @@
 	import { formatDateKey } from '$lib/utils/time';
 	import { page } from '$app/state';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import {
 		fromSearchParams,
 		toSearchParams,
@@ -54,6 +55,10 @@
 		SurfaceRail,
 		type GrainSegment,
 	} from '$lib/components/surface';
+	import type {
+		SurfaceRailContext,
+		SurfaceRailPresentation,
+	} from '$lib/components/surface/SurfaceRail.svelte';
 	import { observeActiveToc, TocNav, type TocEntry } from '$lib/components/shared';
 	import { Button } from '$lib/components/ui/button';
 	import { toReliabilityClusters } from './clusters';
@@ -418,6 +423,13 @@
 			};
 		}),
 	);
+	function segmentsFor(presentation: SurfaceRailPresentation): GrainSegment<GrainMode>[] {
+		return segments.map((segment) =>
+			segment.describedById
+				? { ...segment, describedById: `${segment.describedById}-${presentation}` }
+				: segment,
+		);
+	}
 
 	// S7.5 P2: the DESKTOP rail is now the SHARED SurfaceControls primitive (generic over the
 	// GrainMode key). Availability is passed as EXPLICIT `available` flags (NOT the MIN_POINTS
@@ -491,11 +503,12 @@
 	let activeId = $state('');
 	onMount(() => observeActiveToc((id) => (activeId = id)));
 
-	// Smooth-scroll to a section when its TocNav row is tapped (TocNav is button-driven).
+	// Scroll to a section when its TocNav row is tapped (instant under reduced motion).
 	function navigate(id: string): void {
-		document
-			.querySelector(`[data-toc="${id}"]`)
-			?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		document.querySelector(`[data-toc="${id}"]`)?.scrollIntoView({
+			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
+			block: 'start',
+		});
 	}
 </script>
 
@@ -531,15 +544,20 @@
 		<!-- The rail content — the grain controls (GrainPicker + range pair + caption) + the
 		     section ToC. ONE definition, rendered by SurfaceRail in BOTH the desktop glass rail
 		     AND the mobile sheet (single source; both bind the same viewKey + track activeId). -->
-		{#snippet railContent({ closeSheet }: { closeSheet: () => void })}
+		{#snippet railContent({ closeSheet, presentation }: SurfaceRailContext)}
+			{@const presentedSegments = segmentsFor(presentation)}
 			<div class="reliability-control-body" data-slot="controls-body">
 				<span class="reliability-rail-view" data-slot="controls-rail-label"
 					>{copy.controls.viewLabel}</span
 				>
-				<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
+				<GrainPicker
+					segments={presentedSegments}
+					bind:value={viewKey}
+					label={copy.controls.grainLabel}
+				/>
 				<!-- Disabled-reason descriptions (honest-absence): one visually-hidden span per
 				     disabled segment, referenced by its radio via aria-describedby. -->
-				{#each segments as seg (seg.key)}
+				{#each presentedSegments as seg (seg.key)}
 					{#if seg.describedById}
 						<span id={seg.describedById} class="reliability-reason" data-slot="controls-reason"
 							>{disabledReason}</span

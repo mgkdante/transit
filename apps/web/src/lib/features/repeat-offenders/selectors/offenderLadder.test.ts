@@ -6,6 +6,7 @@ import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
 
 const labels = {
 	title: 'Worst offenders',
+	rowLabel: 'Trip',
 	xLabel: 'Severe-delay rate',
 	unit: '%',
 	ciLabel: '95% CI',
@@ -70,6 +71,7 @@ describe('selectOffenderLadder', () => {
 		expect(res.spec.sort).toBe('given');
 		expect(res.spec.mark).toBe('lollipop');
 		expect(res.spec.scale).toBe('severity');
+		expect(res.spec.rowLabel).toBe('Trip');
 		// DB order is PRESERVED — T1 (40) stays first even though T2 (90) is "worse".
 		expect(res.spec.rows.map((r) => r.value)).toEqual([40, 90]);
 	});

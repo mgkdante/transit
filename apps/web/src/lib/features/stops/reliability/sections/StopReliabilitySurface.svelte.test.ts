@@ -2,6 +2,8 @@ import { render, fireEvent, within } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { StopReliability, IsoUtc } from '$lib/v1';
 
+const motion = vi.hoisted(() => ({ reduced: false }));
+
 // Seed the grain rail from ?grain on load + mirror it back. Mock the SvelteKit page URL
 // (mutable) + a replaceState that UPDATES it, so the seed, availability clamp, AND the
 // round-trip mirror (incl. the day default-omit) are testable — the same harness the
@@ -24,6 +26,14 @@ vi.mock('$app/navigation', () => ({ replaceState }));
 vi.mock('$lib/v1', async () => ({
 	...(await import('$lib/v1/history')),
 	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
+}));
+vi.mock('$lib/motion/reduced-motion.svelte', () => ({
+	prefersReducedMotion: {
+		get current() {
+			return motion.reduced;
+		},
+	},
+	isPrefersReducedMotion: () => motion.reduced,
 }));
 
 import StopReliabilitySurface from './StopReliabilitySurface.svelte';
@@ -151,6 +161,29 @@ describe('StopReliabilitySurface — GLASS LEFT RAIL structure (P5.4)', () => {
 	beforeEach(() => {
 		mockUrl = new URL('http://localhost/stop/57191');
 		replaceState.mockClear();
+	});
+
+	it('uses instant ToC navigation when reduced motion is requested', async () => {
+		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+		const scrollIntoView = vi.fn();
+		Object.defineProperty(Element.prototype, 'scrollIntoView', {
+			configurable: true,
+			value: scrollIntoView,
+		});
+		motion.reduced = true;
+
+		try {
+			const { container } = render(StopReliabilitySurface, {
+				props: { data, locale: 'en' },
+			});
+			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+			await fireEvent.click(within(rail).getByRole('button', { name: 'Daily trend' }));
+			expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+		} finally {
+			motion.reduced = false;
+			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
+			else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+		}
 	});
 
 	it('renders the SurfaceRail: a desktop glass panel + a mobile pill that opens a dialog sheet', async () => {

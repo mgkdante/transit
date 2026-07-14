@@ -43,6 +43,7 @@
 		type DateWindow,
 	} from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
 	import {
 		fmtCount as sharedFmtCount,
@@ -69,6 +70,10 @@
 		HistoryNavigator,
 		type GrainSegment,
 	} from '$lib/components/surface';
+	import type {
+		SurfaceRailContext,
+		SurfaceRailPresentation,
+	} from '$lib/components/surface/SurfaceRail.svelte';
 	import {
 		availabilityFromCollectionIndex,
 		datesForAvailability,
@@ -397,6 +402,13 @@
 			};
 		}),
 	);
+	function grainSegmentsFor(presentation: SurfaceRailPresentation): GrainSegment<NetworkGrain>[] {
+		return grainSegments.map((segment) =>
+			segment.describedById
+				? { ...segment, describedById: `${segment.describedById}-${presentation}` }
+				: segment,
+		);
+	}
 
 	// Keep the selection on a POPULATED grain — the codec-owned clamp: a chosen coarse grain
 	// whose series is absent falls back to the richest present grain (day→week→month); an empty
@@ -612,11 +624,12 @@
 	// region the rail ToC highlights (client-only; each region carries data-toc below).
 	let activeId = $state('');
 	onMount(() => observeActiveToc((id) => (activeId = id)));
-	// Smooth-scroll to a region when its TocNav row is tapped (TocNav is button-driven).
+	// Scroll to a region when its TocNav row is tapped (instant under reduced motion).
 	function navigate(id: string): void {
-		document
-			.querySelector(`[data-toc="${id}"]`)
-			?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		document.querySelector(`[data-toc="${id}"]`)?.scrollIntoView({
+			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
+			block: 'start',
+		});
 	}
 	// The mobile pill summary — the active grain (mirrors the historic view controls).
 	const railSummary = $derived(grainLabels[grainKey] ?? grainKey);
@@ -693,7 +706,8 @@
 		<!-- The rail content — the View overline + the grain picker (when >1 grain is populated) +
 		     the window/delay toggles + the two-region ToC. ONE definition, rendered by SurfaceRail
 		     in BOTH the desktop glass rail AND the mobile sheet (single source). -->
-		{#snippet railContent({ closeSheet }: { closeSheet: () => void })}
+		{#snippet railContent({ closeSheet, presentation }: SurfaceRailContext)}
+			{@const presentedGrainSegments = grainSegmentsFor(presentation)}
 			<div class="network-control-body" data-slot="controls-body">
 				<span class="network-rail-view" data-slot="controls-rail-label">{t.viewControlsLabel}</span>
 				{#if history.index != null}
@@ -711,12 +725,16 @@
 					/>
 				{/if}
 				<!-- The grain radiogroup — rendered only when MORE THAN ONE grain carries data (a dead
-			     control otherwise). enable-iff-populated: an empty grain renders disabled. -->
+				     control otherwise). enable-iff-populated: an empty grain renders disabled. -->
 				{#if showGrainPicker}
-					<GrainPicker segments={grainSegments} bind:value={grainKey} label={t.grain.label} />
+					<GrainPicker
+						segments={presentedGrainSegments}
+						bind:value={grainKey}
+						label={t.grain.label}
+					/>
 					<!-- Disabled-reason descriptions (honest-absence): one visually-hidden span per
 				     disabled grain, referenced by its radio via aria-describedby. -->
-					{#each grainSegments as seg (seg.key)}
+					{#each presentedGrainSegments as seg (seg.key)}
 						{#if seg.describedById}
 							<span id={seg.describedById} class="network-reason" data-slot="controls-reason"
 								>{grainDisabledReason}</span

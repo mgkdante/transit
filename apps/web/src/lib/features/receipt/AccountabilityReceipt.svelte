@@ -23,7 +23,6 @@
   picker; every magnitude mark reads an ABSOLUTE domain literal (chart-doctrine).
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeNameFallback, stopNameFallback } from '$lib/site/absence';
@@ -46,7 +45,11 @@
 		type HistoryCorrection,
 	} from '$lib/v1/history';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { HistoryNavigator, ResourceBoundary } from '$lib/components/surface';
+	import {
+		createRailDisclosureController,
+		HistoryNavigator,
+		ResourceBoundary,
+	} from '$lib/components/surface';
 	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
 	import {
 		CollapsibleSection,
@@ -58,7 +61,6 @@
 	} from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
-	import { persisted } from '$lib/stores';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import type { SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import { EdgeState } from '$lib/components/edge';
@@ -87,47 +89,9 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
-	const railOpen = {
-		controls: persisted('receipt-controls', true),
-		toc: persisted('receipt-toc', true),
-	};
-	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
-		railOpen[key].value = next;
-	}
-	function setAllRailOpen(next: boolean): void {
-		setRailOpen('controls', next);
-		setRailOpen('toc', next);
-	}
-
-	let railSignalsReady = $state(false);
-	let lastRailCloseSignal = quietModeStore.closeSignal;
-	let lastRailOpenSignal = quietModeStore.openSignal;
-	onMount(() => {
-		let cancelled = false;
-		void (async () => {
-			await tick();
-			if (cancelled) return;
-			lastRailCloseSignal = quietModeStore.closeSignal;
-			lastRailOpenSignal = quietModeStore.openSignal;
-			if (quietModeStore.enabled) setAllRailOpen(false);
-			railSignalsReady = true;
-		})();
-		return () => {
-			cancelled = true;
-		};
-	});
-	$effect(() => {
-		const closeSignal = quietModeStore.closeSignal;
-		const openSignal = quietModeStore.openSignal;
-		if (!railSignalsReady) return;
-		if (closeSignal !== lastRailCloseSignal) {
-			lastRailCloseSignal = closeSignal;
-			setAllRailOpen(false);
-		}
-		if (openSignal !== lastRailOpenSignal) {
-			lastRailOpenSignal = openSignal;
-			setAllRailOpen(true);
-		}
+	const railDisclosures = createRailDisclosureController({
+		controls: 'receipt-controls',
+		toc: 'receipt-toc',
 	});
 
 	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
@@ -473,7 +437,9 @@
 	{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
 		<CollapsibleSection
 			title={t.rail.controls}
-			bind:open={() => railOpen.controls.value, (next) => setRailOpen('controls', next)}
+			bind:open={
+				() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
+			}
 		>
 			<div class="receipt-controls" data-slot="receipt-controls">
 				{#key navigatorRevision}
@@ -514,7 +480,9 @@
 					{activeId}
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
-					bind:open={() => railOpen.toc.value, (next) => setRailOpen('toc', next)}
+					bind:open={
+						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
+					}
 					onNavigate={(id) => {
 						closeSheet();
 						void navigate(id);

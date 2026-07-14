@@ -109,9 +109,9 @@ describe('Section4WorstStops — windowed severe-rate path (S7-B)', () => {
 	});
 
 	it('threads preRanked: windowed bar = severe_pct (%), NOT avg, for a <=0-avg worst stop', () => {
-		// the sr-only table is the AT mirror of the chart: <th>{unit}</th> + <td>{value}</td> in
-		// spec (worst-first) order. Windowed → unit '%', value = severe_pct; a preRanked:false
-		// regression would show ' min' + the avg (-1) for the worst stop. Pins the threading.
+		// The sr-only table is the AT mirror of the chart: its value heading names the metric and
+		// each value carries its own unit. Windowed → severe-rate heading + '%' values; a
+		// preRanked:false regression would show average-delay copy + the avg (-1).
 		const { container } = render(Section4WorstStops, {
 			props: {
 				punctuality: vm(
@@ -134,19 +134,19 @@ describe('Section4WorstStops — windowed severe-rate path (S7-B)', () => {
 				copy: reliabilityCopy.en,
 			},
 		});
-		const unitHeader = container
+		const metricHeader = container
 			.querySelector('table.sr-only thead th:nth-child(2)')
 			?.textContent?.trim();
-		expect(unitHeader).toBe('%'); // severe-rate unit, not ' min'
+		expect(metricHeader).toBe(reliabilityCopy.en.strip.severeRateLabel);
 		const firstRow = container.querySelector('table.sr-only tbody tr');
 		expect(firstRow?.getAttribute('data-key')).toBe('w'); // DB worst-first order preserved
 		const valueCell = firstRow?.querySelector('td')?.textContent ?? '';
-		expect(valueCell).toContain('40'); // the severe rate, NOT the -1 avg
+		expect(valueCell).toContain('40%'); // the severe rate, NOT the -1 avg
 		expect(valueCell).not.toContain('-1');
 		// the Wilson 95% interval is surfaced honestly in the AT mirror (Feature B)
 		expect(valueCell).toContain('95% CI');
-		expect(valueCell).toContain('30');
-		expect(valueCell).toContain('50');
+		expect(valueCell).toContain('30%');
+		expect(valueCell).toContain('50%');
 	});
 
 	it('degrades to the honest empty state when no stop is served', () => {

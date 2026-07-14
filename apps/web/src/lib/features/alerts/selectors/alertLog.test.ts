@@ -125,6 +125,17 @@ describe('alertMatchesWindow — inclusive, multi-period aware', () => {
 			),
 		).toBe(true);
 	});
+
+	it.each([
+		['summer previous day', '2026-08-05T00:30:00Z', '2026-08-04'],
+		['spring DST previous day', '2026-03-08T04:30:00Z', '2026-03-07'],
+		['fall DST previous day', '2026-11-01T03:30:00Z', '2026-10-31'],
+	])('matches %s in the STM provider-local calendar', (_label, instant, localDate) => {
+		const localWindow = { from: localDate, to: localDate };
+		expect(alertMatchesWindow(entry({ start_utc: instant, end_utc: instant }), localWindow)).toBe(
+			true,
+		);
+	});
 });
 
 describe('filterAlertLog — the four axes AND-ed', () => {
@@ -237,7 +248,7 @@ describe('safeAlertUrl — http/https only, hostname exposed', () => {
 });
 
 describe('deriveSpan + enumerateDates — the legacy fallback + every-day-selectable', () => {
-	it('derives min→max active date across every window', () => {
+	it('derives the provider-local min→max active date across every window', () => {
 		expect(
 			deriveSpan([
 				entry({ start_utc: '2026-06-05T00:00:00Z', end_utc: '2026-06-06T00:00:00Z' }),
@@ -245,7 +256,7 @@ describe('deriveSpan + enumerateDates — the legacy fallback + every-day-select
 					active_periods: [{ start_utc: '2026-06-01T00:00:00Z', end_utc: '2026-06-20T00:00:00Z' }],
 				}),
 			]),
-		).toEqual({ start: '2026-06-01', end: '2026-06-20' });
+		).toEqual({ start: '2026-05-31', end: '2026-06-19' });
 	});
 	it('returns null when nothing is datable', () => {
 		expect(deriveSpan([entry({}), entry({ routes: ['10'] })])).toBeNull();

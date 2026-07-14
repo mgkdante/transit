@@ -13,6 +13,7 @@ export {
 	formatRelative,
 	formatRelativeSeconds,
 	formatUtc,
+	providerLocalDateKey,
 } from './time';
 export type { TimeLang } from './time';
 

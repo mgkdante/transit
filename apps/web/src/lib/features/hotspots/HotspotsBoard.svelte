@@ -7,7 +7,7 @@
   or category-local filter state remain.
 -->
 <script lang="ts">
-	import { onDestroy, onMount, tick } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceKind } from '$lib/nav';
@@ -26,6 +26,7 @@
 	import type { HistoricCollectionIndex, HotspotEntry, Hotspots } from '$lib/v1/schemas';
 	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
 	import {
+		createRailDisclosureController,
 		HistoryNavigator,
 		ResourceBoundary,
 		GrainPicker,
@@ -43,7 +44,6 @@
 	} from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
-	import { persisted } from '$lib/stores';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
@@ -73,52 +73,9 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
-	const railOpen = {
-		controls: persisted('hotspots-controls', true),
-		toc: persisted('hotspots-toc', true),
-	};
-	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
-		railOpen[key].value = next;
-	}
-	function setAllRailOpen(next: boolean): void {
-		setRailOpen('controls', next);
-		setRailOpen('toc', next);
-	}
-
-	// QuietModeButton.init() deliberately re-emits the stored global state on each
-	// article mount. Cards consume that edge directly, but these rail disclosures
-	// already restore their own page-owned session choice. Start watching only
-	// after the mount edge settles, then mirror later reader actions into both
-	// persisted rail runes. A remembered collapsed default still wins on mount.
-	let railSignalsReady = $state(false);
-	let lastRailCloseSignal = quietModeStore.closeSignal;
-	let lastRailOpenSignal = quietModeStore.openSignal;
-	onMount(() => {
-		let cancelled = false;
-		void (async () => {
-			await tick();
-			if (cancelled) return;
-			lastRailCloseSignal = quietModeStore.closeSignal;
-			lastRailOpenSignal = quietModeStore.openSignal;
-			if (quietModeStore.enabled) setAllRailOpen(false);
-			railSignalsReady = true;
-		})();
-		return () => {
-			cancelled = true;
-		};
-	});
-	$effect(() => {
-		const closeSignal = quietModeStore.closeSignal;
-		const openSignal = quietModeStore.openSignal;
-		if (!railSignalsReady) return;
-		if (closeSignal !== lastRailCloseSignal) {
-			lastRailCloseSignal = closeSignal;
-			setAllRailOpen(false);
-		}
-		if (openSignal !== lastRailOpenSignal) {
-			lastRailOpenSignal = openSignal;
-			setAllRailOpen(true);
-		}
+	const railDisclosures = createRailDisclosureController({
+		controls: 'hotspots-controls',
+		toc: 'hotspots-toc',
 	});
 
 	const explainerCopy = $derived(metricsCopy[locale]);
@@ -326,7 +283,7 @@
 			return hotspots.mode === 'history' ? t.history.retainedVerdictNone : t.verdict.none;
 		}
 		if (topHotspot.otp_delta_pts == null) return t.verdict.topNoDelta(topHotspotName);
-		const points = `${Math.abs(Math.round(topHotspot.otp_delta_pts))}${t.units.pts}`;
+		const points = String(Math.abs(Math.round(topHotspot.otp_delta_pts)));
 		return t.verdict.topWithDelta(topHotspotName, points);
 	});
 	const topHotspotHref = $derived(topHotspot ? hrefFor(topHotspot) : null);
@@ -335,6 +292,7 @@
 		const entries = (activeLadder?.entries ?? []).filter((entry) => entry.type === kind);
 		const result = selectHotspotLadder(entries, cap, locale, {
 			title: t.ladder.heading,
+			rowLabel: kind === 'route' ? t.type.route : t.type.stop,
 			xLabel: t.ladder.severeRateLabel,
 			unit: t.units.pct,
 			ciLabel: t.ladder.ci,
@@ -505,7 +463,9 @@
 		{@const presentedGrainSegments = grainSegmentsFor(presentation)}
 		<CollapsibleSection
 			title={t.rail.controls}
-			bind:open={() => railOpen.controls.value, (next) => setRailOpen('controls', next)}
+			bind:open={
+				() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
+			}
 		>
 			<div class="hotspots-control-body" data-slot="controls-body">
 				{#if hasHistoryNavigator}
@@ -556,7 +516,9 @@
 					{activeId}
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
-					bind:open={() => railOpen.toc.value, (next) => setRailOpen('toc', next)}
+					bind:open={
+						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
+					}
 					onNavigate={(id) => {
 						closeSheet();
 						void navigate(id);

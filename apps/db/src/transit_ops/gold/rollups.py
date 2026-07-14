@@ -76,6 +76,28 @@ SELECT_MISSING_TRIP_DELAY_PERIODS = named_query(
     """
 )
 
+ACQUIRE_TRIP_DELAY_ROLLUP_PERIOD_LOCK = named_query(
+    "rollup.trip_delay.period_lock.acquire",
+    """
+    SELECT pg_advisory_xact_lock(
+        hashtextextended(CAST(:lock_key AS text), 0)
+    )
+    """,
+)
+
+SELECT_TRIP_DELAY_ROLLUP_PERIOD_BUILT = named_query(
+    "rollup.trip_delay.period_built",
+    """
+    SELECT EXISTS (
+        SELECT 1
+        FROM gold.warm_rollup_periods
+        WHERE provider_id = :provider_id
+          AND rollup_kind = 'trip_delay_summary_5m'
+          AND period_start_utc = :period_start_utc
+    )
+    """,
+)
+
 # ---------------------------------------------------------------------------
 # SQL — upserts
 # ---------------------------------------------------------------------------
@@ -2115,6 +2137,13 @@ class WarmRollupStageReceipt:
         }
 
 
+@dataclass
+class WarmRollupStageProgress:
+    """Durable work visible to the stage logger before the operation returns."""
+
+    committed_rows: int = 0
+
+
 @dataclass(frozen=True)
 class WarmRollupBuildResult:
     provider_id: str
@@ -2188,6 +2217,7 @@ def _run_warm_rollup_stage(
     kind: str,
     table: str,
     operation: Callable[[], int],
+    progress: WarmRollupStageProgress | None = None,
 ) -> WarmRollupStageReceipt:
     identity: dict[str, object] = {
         "event": "warm_rollup_stage",
@@ -2202,16 +2232,16 @@ def _run_warm_rollup_stage(
         rows = operation()
     except Exception:
         duration_seconds = round(time.perf_counter() - started_at, 3)
+        error_payload: dict[str, object] = {
+            **identity,
+            "status": "error",
+            "duration_seconds": duration_seconds,
+        }
+        if progress is not None:
+            error_payload["rows"] = progress.committed_rows
         logger.exception(
             "%s",
-            json.dumps(
-                {
-                    **identity,
-                    "status": "error",
-                    "duration_seconds": duration_seconds,
-                },
-                sort_keys=True,
-            ),
+            json.dumps(error_payload, sort_keys=True),
         )
         raise
 
@@ -2309,6 +2339,71 @@ def _build_percentile_days(
     return built
 
 
+def _trip_delay_period_lock_key(provider_id: str, period_start_utc: datetime) -> str:
+    period_utc = period_start_utc.astimezone(UTC)
+    return f"transit.warm_rollup.trip_delay_summary_5m|{provider_id}|{period_utc.isoformat()}"
+
+
+def _build_trip_delay_periods(
+    engine,  # noqa: ANN001
+    *,
+    provider_id: str,
+    since_utc: datetime | None,
+    now: datetime,
+    progress: WarmRollupStageProgress,
+) -> int:
+    """Build missing 5-minute summaries with one durable transaction per period.
+
+    Each candidate takes a stable provider+period transaction lock, then rechecks
+    its watermark so a stale missing-period list from a concurrent run is harmless.
+    One commit per bin costs more round trips on a cold backfill, but bounds an
+    interruption to the current five-minute bin instead of rolling back the backlog.
+    """
+    with engine.begin() as conn:
+        rows = conn.execute(
+            SELECT_MISSING_TRIP_DELAY_PERIODS,
+            {"provider_id": provider_id, "since_utc": since_utc},
+        ).fetchall()
+
+    built = 0
+    for row in rows:
+        period = row.period_start_utc
+        with engine.begin() as conn:
+            conn.execute(
+                ACQUIRE_TRIP_DELAY_ROLLUP_PERIOD_LOCK,
+                {"lock_key": _trip_delay_period_lock_key(provider_id, period)},
+            )
+            already_built = conn.execute(
+                SELECT_TRIP_DELAY_ROLLUP_PERIOD_BUILT,
+                {
+                    "provider_id": provider_id,
+                    "period_start_utc": period,
+                },
+            ).scalar_one()
+            if already_built:
+                continue
+            conn.execute(
+                UPSERT_TRIP_DELAY_SUMMARY_5M,
+                {
+                    "provider_id": provider_id,
+                    "period_start_utc": period,
+                    "built_at_utc": now,
+                },
+            )
+            conn.execute(
+                UPSERT_WARM_ROLLUP_PERIOD,
+                {
+                    "provider_id": provider_id,
+                    "rollup_kind": "trip_delay_summary_5m",
+                    "period_start_utc": period,
+                    "built_at_utc": now,
+                },
+            )
+        built += 1
+        progress.committed_rows = built
+    return built
+
+
 def build_warm_rollups(
     provider_id: str,
     *,
@@ -2318,7 +2413,8 @@ def build_warm_rollups(
 ) -> WarmRollupBuildResult:
     """Build 5-minute warm rollups for missing periods.
 
-    Idempotent: skips any period already recorded in warm_rollup_periods.
+    Resumable and idempotent: each summary + watermark commits atomically, and a
+    later run skips every period already recorded in warm_rollup_periods.
     Optionally restricted to periods with captured_at_utc >= since_utc.
     """
     if settings is None:
@@ -2368,41 +2464,20 @@ def build_warm_rollups(
     today_key = int(today_local.strftime("%Y%m%d"))
     floor_key = int((today_local - timedelta(days=percentile_lookback_days)).strftime("%Y%m%d"))
 
-    def build_trip_delay_stage() -> int:
-        built = 0
-        with engine.begin() as conn:
-            rows = conn.execute(
-                SELECT_MISSING_TRIP_DELAY_PERIODS,
-                {"provider_id": provider_id, "since_utc": since_utc},
-            ).fetchall()
-            for row in rows:
-                period = row.period_start_utc
-                conn.execute(
-                    UPSERT_TRIP_DELAY_SUMMARY_5M,
-                    {
-                        "provider_id": provider_id,
-                        "period_start_utc": period,
-                        "built_at_utc": now,
-                    },
-                )
-                conn.execute(
-                    UPSERT_WARM_ROLLUP_PERIOD,
-                    {
-                        "provider_id": provider_id,
-                        "rollup_kind": "trip_delay_summary_5m",
-                        "period_start_utc": period,
-                        "built_at_utc": now,
-                    },
-                )
-                built += 1
-        return built
-
+    trip_delay_progress = WarmRollupStageProgress()
     trip_delay_receipt = _run_warm_rollup_stage(
         provider_id=provider_id,
         stage="trip_delay_5m",
         kind="trip_delay_summary_5m",
         table="trip_delay_summary_5m",
-        operation=build_trip_delay_stage,
+        operation=lambda: _build_trip_delay_periods(
+            engine,
+            provider_id=provider_id,
+            since_utc=since_utc,
+            now=now,
+            progress=trip_delay_progress,
+        ),
+        progress=trip_delay_progress,
     )
     completed_stage_receipts.append(trip_delay_receipt)
     built_trip_delay = trip_delay_receipt.rows

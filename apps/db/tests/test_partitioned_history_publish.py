@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import re
+import threading
 from contextlib import contextmanager
 from copy import deepcopy
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -38,6 +40,7 @@ from transit_ops.snapshots.publish import (
     _stable_outcome_total,
 )
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
+from transit_ops.snapshots.storage import ImmutableKeyCollisionError
 
 
 @pytest.fixture(autouse=True)
@@ -79,6 +82,32 @@ def _network_history_plan():
         fact_rows=fact,
         cancellation_rows=cancellation,
         occupancy_rows=occupancy,
+        generated_utc="2026-07-13T00:00:00Z",
+    )
+
+
+def _large_network_history_plan(month_count: int = 70):
+    delay_rows = []
+    for offset in range(month_count):
+        year = 2020 + offset // 12
+        month = offset % 12 + 1
+        local_date = date(year, month, 1)
+        delay_rows.append(
+            {
+                "local_date": local_date,
+                "observation_count": 1,
+                "in_clamp_observation_count": 1,
+                "on_time_count": 1,
+                "severe_count": 0,
+                "sum_delay_seconds": 0,
+                "source_generated_utc": datetime(year, month, 2, tzinfo=UTC),
+            }
+        )
+    return build_network_history_plan_from_rows(
+        delay_rows=delay_rows,
+        fact_rows=[],
+        cancellation_rows=[],
+        occupancy_rows=[],
         generated_utc="2026-07-13T00:00:00Z",
     )
 
@@ -1696,7 +1725,7 @@ def test_line_history_invalid_later_partition_preserves_every_existing_pointer(
 
     assert all(store.objects[key] == value for key, value in expected_pointers.items())
     line_calls = [path for kind, path in store.calls if kind == "immutable" and "/lines/" in path]
-    assert line_calls == [bundle.partition_items[0][0]]
+    assert line_calls == []
     assert not any(kind == "normal" for kind, _path in store.calls)
 
 
@@ -1902,7 +1931,194 @@ def test_network_history_actual_historic_publish_is_structural_and_root_last(
     assert _stable_outcome_total(outcomes) == 1
 
 
-def test_network_history_actual_publish_builds_gates_and_uploads_one_month_at_a_time(
+def test_retained_partition_families_upload_through_the_bounded_parallel_seam(
+    monkeypatch,
+):
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=_network_history_plan(),
+        line_plan=_line_history_plan(),
+        stop_plan=_stop_history_plan(),
+    )
+    real_parallel_put = publish._parallel_put
+    partition_types: list[str] = []
+
+    def record_partition_batches(storage, items, **kwargs):  # noqa: ANN001, ANN202
+        names = {
+            type(payload).__name__
+            for _rel_key, payload, _tier in items
+            if type(payload).__name__.endswith("HistoryPartition")
+        }
+        partition_types.extend(sorted(names))
+        return real_parallel_put(storage, items, **kwargs)
+
+    monkeypatch.setattr(publish, "_parallel_put", record_partition_batches)
+
+    _publish_historic(
+        object(),
+        _RecordingStore(),
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=2),
+        stamp="2026-07-13T00:00:00Z",
+    )
+
+    assert set(partition_types) == {
+        "LineHistoryPartition",
+        "NetworkHistoryPartition",
+        "StopHistoryPartition",
+    }
+
+
+def test_network_partition_uploads_are_genuinely_concurrent_and_config_bounded(
+    monkeypatch,
+):
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=_network_history_plan(),
+        line_plan=_empty_line_history_plan(),
+        stop_plan=_empty_stop_history_plan(),
+    )
+
+    class ConcurrentNetworkStore(_RecordingStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.lock = threading.Lock()
+            self.both_started = threading.Event()
+            self.in_flight = 0
+            self.peak = 0
+
+        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
+            is_partition = "/history/network/generations/" in rel_key and not rel_key.endswith(
+                "/index.json"
+            )
+            if not is_partition:
+                return super().put_immutable_json(rel_key, payload)
+            with self.lock:
+                self.in_flight += 1
+                self.peak = max(self.peak, self.in_flight)
+                if self.in_flight == 2:
+                    self.both_started.set()
+            try:
+                if not self.both_started.wait(timeout=1):
+                    raise AssertionError("Network immutable children did not overlap")
+                return super().put_immutable_json(rel_key, payload)
+            finally:
+                with self.lock:
+                    self.in_flight -= 1
+
+    store = ConcurrentNetworkStore()
+    _publish_historic(
+        object(),
+        store,
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=3),
+        stamp="2026-07-13T00:00:00Z",
+    )
+
+    assert 1 < store.peak <= 3
+
+
+def test_network_partition_scale_fixture_uses_fixed_memory_batches_and_stable_order(
+    monkeypatch,
+):
+    plan = _large_network_history_plan()
+    expected_paths = [ref.path for ref, _partition in plan.iter_partition_items()]
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=plan,
+        line_plan=_empty_line_history_plan(),
+        stop_plan=_empty_stop_history_plan(),
+    )
+    batch_sizes: list[int] = []
+
+    def record_batches(_storage, items, **_kwargs):  # noqa: ANN001, ANN202
+        if items and all(
+            type(payload).__name__ == "NetworkHistoryPartition"
+            for _rel_key, payload, _tier in items
+        ):
+            batch_sizes.append(len(items))
+        return [rel_key for rel_key, _payload, _tier in items]
+
+    monkeypatch.setattr(publish, "_parallel_put", record_batches)
+
+    keys = _publish_historic(
+        object(),
+        _RecordingStore(),
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=10_000),
+        stamp="2026-07-13T00:00:00Z",
+    )
+
+    assert batch_sizes == [32, 32, 6]
+    assert keys[: len(expected_paths)] == expected_paths
+
+
+@pytest.mark.parametrize("failure_kind", ["upload", "collision"])
+def test_concurrent_delayed_network_child_failure_never_activates_parents(
+    monkeypatch,
+    failure_kind: str,
+):
+    plan = _network_history_plan()
+    bundle = plan.materialize()
+    first_path, second_path = [ref.path for ref in bundle.index.partitions]
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=plan,
+        line_plan=_empty_line_history_plan(),
+        stop_plan=_empty_stop_history_plan(),
+    )
+
+    class FailingConcurrentStore(_RecordingStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.second_started = threading.Event()
+
+        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
+            if rel_key == first_path:
+                if not self.second_started.wait(timeout=1):
+                    raise AssertionError("failing child did not run concurrently")
+                return super().put_immutable_json(rel_key, payload)
+            if rel_key == second_path:
+                self.second_started.set()
+                self.calls.append(("immutable", rel_key))
+                if failure_kind == "collision":
+                    raise ImmutableKeyCollisionError(rel_key)
+                raise RuntimeError("Network child upload failed")
+            return super().put_immutable_json(rel_key, payload)
+
+    store = FailingConcurrentStore()
+    old_pointers = {
+        "historic/history/network/index.json": b"old-network-index",
+        "historic/history/lines/index.json": b"old-lines-directory",
+        "historic/history/stops/index.json": b"old-stops-directory",
+        "historic/history/index.json": b"old-history-root",
+    }
+    store.objects.update(old_pointers)
+    expected_error = ImmutableKeyCollisionError if failure_kind == "collision" else RuntimeError
+    expected_message = "immutable key collision" if failure_kind == "collision" else "upload failed"
+
+    with pytest.raises(expected_error, match=expected_message):
+        _publish_historic(
+            object(),
+            store,
+            provider_id="stm",
+            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=2),
+            stamp="2026-07-13T00:00:00Z",
+        )
+
+    assert {key: store.objects[key] for key in old_pointers} == old_pointers
+    assert not any(
+        re.fullmatch(
+            r"historic/history/network/generations/[0-9a-f]{64}/index\.json",
+            rel_key,
+        )
+        for _kind, rel_key in store.calls
+    )
+    assert not any(rel_key.endswith("/index.json") for _kind, rel_key in store.calls)
+    assert not any(kind == "normal" for kind, _rel_key in store.calls)
+
+
+def test_network_history_actual_publish_builds_gates_then_uploads_a_bounded_batch(
     monkeypatch,
 ):
     bundle = _network_history_bundle()
@@ -1988,13 +2204,13 @@ def test_network_history_actual_publish_builds_gates_and_uploads_one_month_at_a_
         ("build", "2026-06"),
         ("gate-partition", "2026-06"),
         ("gate-ref", "2026-06"),
-        ("put-partition", "2026-06"),
         ("release", "2026-06"),
         ("build", "2026-07"),
         ("gate-partition", "2026-07"),
         ("gate-ref", "2026-07"),
-        ("put-partition", "2026-07"),
         ("release", "2026-07"),
+        ("put-partition", "2026-06"),
+        ("put-partition", "2026-07"),
         ("build-index", "network"),
         ("gate-index", "network"),
         ("put-index", "network"),

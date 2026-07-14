@@ -306,6 +306,16 @@ def build_alert_archive(
             finalize()
         month_models.append(AlertArchiveMonth(month=month, total_alerts=len(items), pages=refs))
 
+    page_refs = [ref for month in month_models for ref in month.pages]
+    first_available_date = min(
+        first_available_date,
+        *(ref.coverage_start for ref in page_refs),
+    )
+    last_available_date = max(
+        last_available_date,
+        *(ref.coverage_end for ref in page_refs),
+    )
+
     index = AlertArchiveIndex(
         generated_utc=generated_utc,
         collection_generation_id=_collection_generation_id(

@@ -32,7 +32,6 @@
   an honest cap note. Tokens only, no hex. All prose is in ./alerts.copy.
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { getAlertArchiveIndex, getAlertArchiveRange, getAlertHistory } from '$lib/v1';
@@ -52,7 +51,7 @@
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
 	import { fromSearchParams, type AlertAffects, type DateWindow } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { ResourceBoundary } from '$lib/components/surface';
+	import { createRailDisclosureController, ResourceBoundary } from '$lib/components/surface';
 	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
 	import {
 		CollapsibleSection,
@@ -63,7 +62,6 @@
 	} from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
-	import { persisted } from '$lib/stores';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import type { SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
 	import { ExplainedMetricCard } from '$lib/components/dataviz';
@@ -99,47 +97,9 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(alertHistoryCopy[locale]);
-	const railOpen = {
-		filters: persisted('alerts-filters', true),
-		toc: persisted('alerts-toc', true),
-	};
-	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
-		railOpen[key].value = next;
-	}
-	function setAllRailOpen(next: boolean): void {
-		setRailOpen('filters', next);
-		setRailOpen('toc', next);
-	}
-
-	let railSignalsReady = $state(false);
-	let lastRailCloseSignal = quietModeStore.closeSignal;
-	let lastRailOpenSignal = quietModeStore.openSignal;
-	onMount(() => {
-		let cancelled = false;
-		void (async () => {
-			await tick();
-			if (cancelled) return;
-			lastRailCloseSignal = quietModeStore.closeSignal;
-			lastRailOpenSignal = quietModeStore.openSignal;
-			if (quietModeStore.enabled) setAllRailOpen(false);
-			railSignalsReady = true;
-		})();
-		return () => {
-			cancelled = true;
-		};
-	});
-	$effect(() => {
-		const closeSignal = quietModeStore.closeSignal;
-		const openSignal = quietModeStore.openSignal;
-		if (!railSignalsReady) return;
-		if (closeSignal !== lastRailCloseSignal) {
-			lastRailCloseSignal = closeSignal;
-			setAllRailOpen(false);
-		}
-		if (openSignal !== lastRailOpenSignal) {
-			lastRailOpenSignal = openSignal;
-			setAllRailOpen(true);
-		}
+	const railDisclosures = createRailDisclosureController({
+		filters: 'alerts-filters',
+		toc: 'alerts-toc',
 	});
 
 	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
@@ -651,7 +611,9 @@
 	{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
 		<CollapsibleSection
 			title={t.filters.railLabel}
-			bind:open={() => railOpen.filters.value, (next) => setRailOpen('filters', next)}
+			bind:open={
+				() => railDisclosures.isOpen('filters'), (next) => railDisclosures.set('filters', next)
+			}
 		>
 			<AlertFilters
 				bind:affects
@@ -680,7 +642,9 @@
 					{activeId}
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
-					bind:open={() => railOpen.toc.value, (next) => setRailOpen('toc', next)}
+					bind:open={
+						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
+					}
 					onNavigate={(id) => {
 						closeSheet();
 						void navigate(id);

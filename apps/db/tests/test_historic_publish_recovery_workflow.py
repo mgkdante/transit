@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from transit_ops.validation.historic_publish import HISTORIC_PROOF_TIMEOUT_SECONDS
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 RECOVERY_WORKFLOW = WORKFLOWS / "historic-publish-recovery.yml"
@@ -149,7 +151,7 @@ def test_recovery_workflow_is_manual_bounded_and_serialized_with_daily_lane() ->
     assert document["concurrency"] == daily_document["concurrency"]
 
     assert job["runs-on"] == "ubuntu-latest"
-    assert job["timeout-minutes"] == 45
+    assert job["timeout-minutes"] == 90
     assert job["defaults"] == {"run": {"working-directory": "apps/db", "shell": "bash"}}
     assert _github_shell_template(job) == [
         "bash",
@@ -164,6 +166,11 @@ def test_recovery_workflow_is_manual_bounded_and_serialized_with_daily_lane() ->
     assert "shell" not in job
     assert all("shell" not in step for step in job["steps"])
     assert [step.get("name") for step in job["steps"]] == EXPECTED_STEP_NAMES
+    proof_timeout_minutes = _step(job, "Prove published historic snapshots")["timeout-minutes"]
+    assert proof_timeout_minutes == 38
+    assert HISTORIC_PROOF_TIMEOUT_SECONDS < proof_timeout_minutes * 60
+    assert job["timeout-minutes"] - proof_timeout_minutes >= 45
+    assert _step(job, "Upload historic recovery evidence")["if"] == "always()"
 
 
 def test_recovery_workflow_reuses_the_daily_lane_pinned_setup() -> None:
@@ -368,7 +375,27 @@ uv run python -m transit_ops.cli publish-all \\
         "  fi\n"
         '  proof_path="artifacts/historic-publish-recovery/'
         'public-proof-${provider}.json"\n'
-        '  : > "$proof_path"\n'
+        '  proof_seed_path="${proof_path}.seed"\n'
+        '  jq -n --arg provider "$provider" \'\n'
+        "    {\n"
+        "      provider_id: $provider,\n"
+        "      verified_at_utc: null,\n"
+        '      status: "fail",\n'
+        '      migration: {status: "unavailable"},\n'
+        '      sync: {status: "unavailable"},\n'
+        '      gate: {status: "unavailable"},\n'
+        "      public: {\n"
+        "        deadline: {\n"
+        "          exceeded: true,\n"
+        '          failure: "historic_proof_interrupted_before_completion",\n'
+        '          receipt_source: "workflow_preseed"\n'
+        "        }\n"
+        "      },\n"
+        '      source_messages: {status: "unavailable"},\n'
+        '      failures: ["historic_proof_interrupted_before_completion"]\n'
+        "    }\n"
+        '  \' > "$proof_seed_path"\n'
+        '  mv -f "$proof_seed_path" "$proof_path"\n'
         '  uv run python -m transit_ops.cli verify-historic-publish "$provider" \\\n'
         '    --sync-report "artifacts/historic-publish-recovery/'
         'alert-archive-sync-${provider}.json" \\\n'
@@ -607,7 +634,7 @@ def test_proof_step_rejects_invalid_or_empty_publish_results(
     [
         (
             "exit 0\n",
-            "did not write a nonempty report",
+            "is invalid or failed",
         ),
         (
             """\
@@ -734,7 +761,48 @@ def test_proof_step_rejects_stale_passing_report_not_rewritten_by_verifier(
     )
 
     assert result.returncode != 0
-    assert "did not write a nonempty report" in result.stderr
+    assert "is invalid or failed" in result.stderr
+    payload = json.loads((artifact_dir / "public-proof-stm.json").read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    assert payload["failures"] == ["historic_proof_interrupted_before_completion"]
+
+
+def test_proof_step_preseeds_nonempty_failure_receipt_before_verifier_runs(
+    tmp_path: Path,
+) -> None:
+    artifact_dir = tmp_path / "artifacts" / "historic-publish-recovery"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "historic-publish.json").write_text(
+        '[{"provider_id":"stm"}]',
+        encoding="utf-8",
+    )
+    _write_provider_discovery(artifact_dir, ["stm"])
+    _write_sync_receipt(artifact_dir, "stm", {"provider_id": "stm"})
+    environment = _fake_uv_environment(
+        tmp_path,
+        'if [[ "$*" == *"verify-historic-publish"* ]]; then exit 124; fi\nexit 0\n',
+    )
+    job = _only_job(_load(RECOVERY_WORKFLOW))
+
+    result = _run_step_script(
+        job,
+        "Prove published historic snapshots",
+        cwd=tmp_path,
+        environment=environment,
+    )
+
+    report_path = artifact_dir / "public-proof-stm.json"
+    assert result.returncode == 124
+    assert report_path.stat().st_size > 0
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert payload["provider_id"] == "stm"
+    assert payload["status"] == "fail"
+    assert payload["failures"] == ["historic_proof_interrupted_before_completion"]
+    assert payload["public"]["deadline"] == {
+        "exceeded": True,
+        "failure": "historic_proof_interrupted_before_completion",
+        "receipt_source": "workflow_preseed",
+    }
 
 
 @pytest.mark.parametrize(

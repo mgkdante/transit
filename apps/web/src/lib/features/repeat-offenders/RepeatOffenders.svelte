@@ -32,7 +32,7 @@
   re-derived client-side (DECISIONS D4). All prose comes from ./repeatOffenders.copy.
 -->
 <script lang="ts">
-	import { onDestroy, onMount, tick } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceKind, type SurfaceTarget } from '$lib/nav';
@@ -58,6 +58,7 @@
 	} from '$lib/v1/schemas';
 	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
 	import {
+		createRailDisclosureController,
 		HistoryNavigator,
 		ResourceBoundary,
 		GrainPicker,
@@ -80,7 +81,6 @@
 	} from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
-	import { persisted } from '$lib/stores';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
@@ -114,47 +114,9 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
-	const railOpen = {
-		controls: persisted('repeat-offenders-controls', true),
-		toc: persisted('repeat-offenders-toc', true),
-	};
-	function setRailOpen(key: keyof typeof railOpen, next: boolean): void {
-		railOpen[key].value = next;
-	}
-	function setAllRailOpen(next: boolean): void {
-		setRailOpen('controls', next);
-		setRailOpen('toc', next);
-	}
-
-	let railSignalsReady = $state(false);
-	let lastRailCloseSignal = quietModeStore.closeSignal;
-	let lastRailOpenSignal = quietModeStore.openSignal;
-	onMount(() => {
-		let cancelled = false;
-		void (async () => {
-			await tick();
-			if (cancelled) return;
-			lastRailCloseSignal = quietModeStore.closeSignal;
-			lastRailOpenSignal = quietModeStore.openSignal;
-			if (quietModeStore.enabled) setAllRailOpen(false);
-			railSignalsReady = true;
-		})();
-		return () => {
-			cancelled = true;
-		};
-	});
-	$effect(() => {
-		const closeSignal = quietModeStore.closeSignal;
-		const openSignal = quietModeStore.openSignal;
-		if (!railSignalsReady) return;
-		if (closeSignal !== lastRailCloseSignal) {
-			lastRailCloseSignal = closeSignal;
-			setAllRailOpen(false);
-		}
-		if (openSignal !== lastRailOpenSignal) {
-			lastRailOpenSignal = openSignal;
-			setAllRailOpen(true);
-		}
+	const railDisclosures = createRailDisclosureController({
+		controls: 'repeat-offenders-controls',
+		toc: 'repeat-offenders-toc',
 	});
 
 	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
@@ -379,6 +341,7 @@
 		const kindEntries = kindEntriesFor(kind);
 		const res = selectOffenderLadder(kindEntries, cap, locale, {
 			title: t.ladder.heading,
+			rowLabel: kind === 'trip' ? t.type.trip : t.type.vehicle,
 			xLabel: t.ladder.severeRateLabel,
 			unit: t.units.pct,
 			ciLabel: t.ladder.ci,
@@ -648,7 +611,9 @@
 		{#if hasGrains || hasHistoryNavigator}
 			<CollapsibleSection
 				title={t.rail.controls}
-				bind:open={() => railOpen.controls.value, (next) => setRailOpen('controls', next)}
+				bind:open={
+					() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
+				}
 			>
 				<div class="repeat-control-body" data-slot="controls-body">
 					{#if hasHistoryNavigator}
@@ -703,7 +668,9 @@
 					{activeId}
 					heading={t.rail.toc}
 					counterPrefix={t.rail.counterPrefix}
-					bind:open={() => railOpen.toc.value, (next) => setRailOpen('toc', next)}
+					bind:open={
+						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
+					}
 					onNavigate={(id) => {
 						closeSheet();
 						void navigate(id);

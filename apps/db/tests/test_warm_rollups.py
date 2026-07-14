@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 
@@ -195,6 +196,13 @@ class FakeConnection:
             and "DATE_BIN" in sql
         ):
             return IterableResult([FakeRow(p) for p in self.trip_delay_periods])
+
+        if (
+            "SELECT EXISTS" in sql
+            and "gold.warm_rollup_periods" in sql
+            and "period_start_utc = :period_start_utc" in sql
+        ):
+            return ScalarResult(False)
 
         # Append-only daily missing-days SELECTs (no DATE_BIN; sargable
         # snapshot_date_key window minus the warm_rollup_periods watermark).
@@ -467,6 +475,125 @@ class FailingReportingConnection(FakeConnection):
         return super().execute(statement, params)
 
 
+class ResumableTripDelayConnection(FakeConnection):
+    """Transaction-local state for the resumable 5-minute builder tests."""
+
+    def __init__(self, engine: ResumableTripDelayEngine) -> None:
+        super().__init__()
+        self.engine = engine
+        self.pending_summaries: set[datetime] = set()
+        self.pending_watermarks: set[datetime] = set()
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def execute(self, statement, params=None):  # noqa: ANN001
+        sql = str(statement)
+        bound = dict(params or {})
+        self.calls.append((sql, bound))
+
+        if (
+            "fact_trip_delay_snapshot" in sql
+            and "warm_rollup_periods" in sql
+            and "NOT IN" in sql
+            and "DATE_BIN" in sql
+        ):
+            self.executed.append(sql)
+            missing = [
+                period
+                for period in self.engine.periods
+                if self.engine.stale_missing_read or period not in self.engine.committed_watermarks
+            ]
+            return IterableResult([FakeRow(period) for period in missing])
+
+        if "pg_advisory_xact_lock" in sql:
+            self.executed.append(sql)
+            return RowcountResult(1)
+
+        if (
+            "SELECT EXISTS" in sql
+            and "gold.warm_rollup_periods" in sql
+            and "period_start_utc = :period_start_utc" in sql
+        ):
+            self.executed.append(sql)
+            period = bound["period_start_utc"]
+            return ScalarResult(period in self.engine.committed_watermarks)
+
+        if "INSERT INTO gold.trip_delay_summary_5m" in sql:
+            self.executed.append(sql)
+            period = bound["period_start_utc"]
+            self.engine.summary_attempts[period] += 1
+            if self.engine.should_fail(period, "summary"):
+                raise RuntimeError(f"forced interruption during summary for {period.isoformat()}")
+            self.pending_summaries.add(period)
+            return RowcountResult(1)
+
+        if (
+            "INSERT INTO gold.warm_rollup_periods" in sql
+            and bound.get("rollup_kind") == "trip_delay_summary_5m"
+        ):
+            self.executed.append(sql)
+            period = bound["period_start_utc"]
+            self.engine.watermark_attempts[period] += 1
+            if self.engine.should_fail(period, "watermark"):
+                raise RuntimeError(f"forced interruption during watermark for {period.isoformat()}")
+            self.pending_watermarks.add(period)
+            return RowcountResult(1)
+
+        return super().execute(statement, params)
+
+
+class ResumableTripDelayEngine:
+    """Fake transactional store that commits or discards each connection's writes."""
+
+    def __init__(
+        self,
+        periods: list[datetime],
+        *,
+        fail_period: datetime | None = None,
+        fail_step: str | None = None,
+        stale_missing_read: bool = False,
+    ) -> None:
+        self.periods = periods
+        self.fail_period = fail_period
+        self.fail_step = fail_step
+        self.stale_missing_read = stale_missing_read
+        self.failure_raised = False
+        self.committed_summaries: set[datetime] = set()
+        self.committed_watermarks: set[datetime] = set()
+        self.summary_attempts: Counter[datetime] = Counter()
+        self.watermark_attempts: Counter[datetime] = Counter()
+        self.transactions: list[dict[str, object]] = []
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def should_fail(self, period: datetime, step: str) -> bool:
+        if not self.failure_raised and period == self.fail_period and step == self.fail_step:
+            self.failure_raised = True
+            return True
+        return False
+
+    @contextmanager
+    def begin(self):
+        conn = ResumableTripDelayConnection(self)
+        try:
+            yield conn
+        except Exception:
+            status = "rolled_back"
+            raise
+        else:
+            status = "committed"
+            self.committed_summaries.update(conn.pending_summaries)
+            self.committed_watermarks.update(conn.pending_watermarks)
+        finally:
+            self.calls.extend(conn.calls)
+            self.transactions.append(
+                {
+                    "status": status,
+                    "statements": tuple(conn.executed),
+                    "pending_summaries": frozenset(conn.pending_summaries),
+                    "pending_watermarks": frozenset(conn.pending_watermarks),
+                }
+            )
+
+
 def _rollup_stage_events(caplog) -> list[dict[str, object]]:  # noqa: ANN001
     events: list[dict[str, object]] = []
     for record in caplog.records:
@@ -522,6 +649,110 @@ def test_build_trip_delay_rollup_inserts_new_periods() -> None:
 
     period_upserts = [s for s in conn.executed if "INSERT INTO gold.warm_rollup_periods" in s]
     assert len(period_upserts) == 3
+
+
+def test_trip_delay_5m_interruption_keeps_completed_periods_and_rerun_resumes(
+    caplog,  # noqa: ANN001
+) -> None:
+    caplog.set_level(logging.INFO, logger=rollups.__name__)
+    periods = [
+        datetime(2026, 3, 25, 8, 0, tzinfo=UTC),
+        datetime(2026, 3, 25, 8, 5, tzinfo=UTC),
+        datetime(2026, 3, 25, 8, 10, tzinfo=UTC),
+        datetime(2026, 3, 25, 8, 15, tzinfo=UTC),
+        datetime(2026, 3, 25, 8, 20, tzinfo=UTC),
+    ]
+    engine = ResumableTripDelayEngine(
+        periods,
+        fail_period=periods[3],
+        fail_step="summary",
+    )
+
+    with pytest.raises(RuntimeError, match="forced interruption during summary") as raised:
+        build_warm_rollups("stm", engine=engine)
+
+    assert str(raised.value) == (
+        f"forced interruption during summary for {periods[3].isoformat()}"
+    )
+    assert engine.committed_summaries == set(periods[:3])
+    assert engine.committed_watermarks == set(periods[:3])
+    error = _rollup_stage_events(caplog)[-1]
+    assert error["status"] == "error"
+    assert error["rows"] == 3
+
+    resumed = build_warm_rollups("stm", engine=engine)
+
+    assert resumed.built_trip_delay_periods == 2
+    assert engine.committed_summaries == set(periods)
+    assert engine.committed_watermarks == set(periods)
+    assert engine.summary_attempts == Counter(
+        {periods[0]: 1, periods[1]: 1, periods[2]: 1, periods[3]: 2, periods[4]: 1}
+    )
+    assert engine.watermark_attempts == Counter({period: 1 for period in periods})
+
+
+def test_trip_delay_5m_watermark_failure_rolls_back_only_that_period() -> None:
+    periods = [
+        datetime(2026, 3, 25, 9, 0, tzinfo=UTC),
+        datetime(2026, 3, 25, 9, 5, tzinfo=UTC),
+        datetime(2026, 3, 25, 9, 10, tzinfo=UTC),
+    ]
+    engine = ResumableTripDelayEngine(
+        periods,
+        fail_period=periods[1],
+        fail_step="watermark",
+    )
+
+    with pytest.raises(RuntimeError, match="forced interruption during watermark"):
+        build_warm_rollups("stm", engine=engine)
+
+    assert engine.committed_summaries == {periods[0]}
+    assert engine.committed_watermarks == {periods[0]}
+    assert periods[1] not in engine.committed_summaries
+    assert periods[1] not in engine.committed_watermarks
+    failed = next(
+        transaction for transaction in engine.transactions if transaction["status"] == "rolled_back"
+    )
+    assert failed["pending_summaries"] == frozenset({periods[1]})
+    assert failed["pending_watermarks"] == frozenset()
+
+
+def test_trip_delay_5m_locked_recheck_skips_stale_missing_periods() -> None:
+    periods = [
+        datetime(2026, 3, 25, 10, 0, tzinfo=UTC),
+        datetime(2026, 3, 25, 10, 5, tzinfo=UTC),
+    ]
+    engine = ResumableTripDelayEngine(periods, stale_missing_read=True)
+
+    first = build_warm_rollups("stm", engine=engine)
+    second = build_warm_rollups("stm", engine=engine)
+
+    assert first.built_trip_delay_periods == 2
+    assert second.built_trip_delay_periods == 0
+    assert engine.summary_attempts == Counter({periods[0]: 1, periods[1]: 1})
+
+    period_transactions = [
+        transaction
+        for transaction in engine.transactions
+        if any("pg_advisory_xact_lock" in sql for sql in transaction["statements"])
+    ]
+    assert len(period_transactions) == 4
+    assert all(transaction["status"] == "committed" for transaction in period_transactions)
+    assert all(
+        transaction["statements"][0].find("pg_advisory_xact_lock") >= 0
+        and "SELECT EXISTS" in transaction["statements"][1]
+        for transaction in period_transactions
+    )
+
+    lock_keys = [
+        params["lock_key"] for sql, params in engine.calls if "pg_advisory_xact_lock" in sql
+    ]
+    assert lock_keys == [
+        "transit.warm_rollup.trip_delay_summary_5m|stm|2026-03-25T10:00:00+00:00",
+        "transit.warm_rollup.trip_delay_summary_5m|stm|2026-03-25T10:05:00+00:00",
+        "transit.warm_rollup.trip_delay_summary_5m|stm|2026-03-25T10:00:00+00:00",
+        "transit.warm_rollup.trip_delay_summary_5m|stm|2026-03-25T10:05:00+00:00",
+    ]
 
 
 def test_build_warm_rollups_empty_facts_is_noop() -> None:

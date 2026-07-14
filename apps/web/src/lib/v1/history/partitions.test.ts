@@ -380,6 +380,26 @@ describe('stable alert page merging', () => {
 			),
 		).toEqual(['period-in', 'first-last-in']);
 	});
+
+	it('matches UTC instants against the STM provider-local calendar day', () => {
+		const entries = page('2026-08', 1, [
+			{
+				id: 'previous-local-day',
+				first_seen_utc: '2026-08-05T00:30:00Z',
+				last_seen_utc: '2026-08-05T00:30:00Z',
+				active_periods: [{ start_utc: '2026-08-05T00:30:00Z', end_utc: '2026-08-05T00:45:00Z' }],
+			},
+		]).alerts;
+
+		expect(
+			selectAlertEntriesForWindow(entries, { from: '2026-08-04', to: '2026-08-04' }).map(
+				(entry) => entry.id,
+			),
+		).toEqual(['previous-local-day']);
+		expect(selectAlertEntriesForWindow(entries, { from: '2026-08-05', to: '2026-08-05' })).toEqual(
+			[],
+		);
+	});
 });
 
 it('exports typed partition errors through the history barrel', () => {

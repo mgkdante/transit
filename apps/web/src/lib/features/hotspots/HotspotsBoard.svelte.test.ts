@@ -288,6 +288,19 @@ describe('HotspotsBoard article', () => {
 		).toHaveAttribute('href', '/stop/S1');
 	});
 
+	it.each([
+		['en', 'Worst hotspot: Berri-UQAM, 20 on-time points lost.'],
+		['fr', 'Pire point chaud : Berri-UQAM, 20 pts de ponctualité perdus.'],
+	] as const)(
+		'renders the %s verdict with the point unit exactly once',
+		(locale, expectedVerdict) => {
+			currentLocale.value = locale;
+			render(HotspotsBoard);
+
+			expect(screen.getByText(expectedVerdict)).toBeInTheDocument();
+		},
+	);
+
 	it('keeps a real chart touch click inside its open card while opening details', async () => {
 		const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
 		const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
