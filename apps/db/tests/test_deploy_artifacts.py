@@ -213,12 +213,10 @@ def test_weekly_pg_repack_workflow_is_dry_run_monitor() -> None:
 
 
 def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof() -> None:
-    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
 
     # Bronze prune runs after the warm-rollup prune, with defaults
-    # (1 batch x 5000 per phase) so a backlog can never blow the job timeout.
+    # (2 batches x 5000 per phase) so a backlog can never blow the job timeout.
     # Looped over every provider; bronze prune still runs after the warm-rollup prune.
     assert 'prune-bronze-storage "$provider"' in workflow
     assert workflow.index('prune-bronze-storage "$provider"') > workflow.index(
@@ -350,8 +348,13 @@ def test_compose_runtime_defaults_match_settings_retention_contract() -> None:
     settings = Settings(_env_file=None)
 
     worker_env = services["worker"]["environment"]
+    pruner_env = services["pruner"]["environment"]
     health_env = services["health"]["environment"]
 
+    for service_env in (worker_env, pruner_env, health_env):
+        assert service_env["SILVER_REALTIME_RETENTION_DAYS"] == (
+            "${SILVER_REALTIME_RETENTION_DAYS:-1}"
+        )
     assert (
         worker_env["SILVER_REALTIME_PRUNE_BATCH"]
         == f"${{SILVER_REALTIME_PRUNE_BATCH:-{settings.SILVER_REALTIME_PRUNE_BATCH}}}"
@@ -368,6 +371,10 @@ def test_compose_runtime_defaults_match_settings_retention_contract() -> None:
         health_env["BRONZE_STATIC_RETENTION_DAYS"]
         == f"${{BRONZE_STATIC_RETENTION_DAYS:-{settings.BRONZE_STATIC_RETENTION_DAYS}}}"
     )
+    assert worker_env["BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH"] == (
+        "${BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH:-5000}"
+    )
+    assert worker_env["BRONZE_PRUNE_MAX_BATCHES"] == ("${BRONZE_PRUNE_MAX_BATCHES:-2}")
 
 
 def test_compose_health_environment_excludes_stm_credentials() -> None:
@@ -417,6 +424,8 @@ def test_env_example_documents_all_runtime_knobs() -> None:
         "GOLD_FACT_RETENTION_DAYS=14",
         "BRONZE_REALTIME_RETENTION_DAYS=90",
         "GOLD_WARM_ROLLUP_RETENTION_DAYS=730",
+        "BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH=5000",
+        "BRONZE_PRUNE_MAX_BATCHES=2",
     }.issubset(assignments)
 
 

@@ -90,12 +90,12 @@ def test_bronze_prune_batch_knobs_default_and_display(
     settings = Settings(_env_file=None)
 
     assert settings.BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH == 5000
-    assert settings.BRONZE_PRUNE_MAX_BATCHES == 1
+    assert settings.BRONZE_PRUNE_MAX_BATCHES == 2
 
     display = settings.display_dict()
 
     assert display["BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH"] == 5000
-    assert display["BRONZE_PRUNE_MAX_BATCHES"] == 1
+    assert display["BRONZE_PRUNE_MAX_BATCHES"] == 2
 
 
 def test_silver_realtime_prune_batch_default_and_display(

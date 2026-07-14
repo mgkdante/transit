@@ -120,7 +120,7 @@ jobs:
           done
 
       # Bounded by BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH x BRONZE_PRUNE_MAX_BATCHES
-      # (5000 x 1 per phase, ~2-7 min) regardless of backlog. Exits 1 on any
+      # (5000 x 2 per phase by default) regardless of backlog. Exits 1 on any
       # R2 delete failure — a red job is the alert signal until slice-9.1.1o.
       # Capture-race-safe: the orphan-run delete is age-gated (bronze 90d), and
       # 07:00 UTC runs an hour after the 06:00 static pipeline anyway.

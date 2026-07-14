@@ -537,6 +537,7 @@ def test_prune_bronze_storage_help() -> None:
     assert "--dry-run" in result.stdout
     assert "--max-objects" in result.stdout
     assert "--max-batches" in result.stdout
+    assert "--require-exhausted" in result.stdout
 
 
 def test_prune_i3_storage_help() -> None:
@@ -819,6 +820,8 @@ def _bronze_prune_cli_result(
     provider_id: str,
     dry_run: bool,
     failed_object_counts: dict[str, int] | None = None,
+    *,
+    exhausted: bool = True,
 ):
     from transit_ops.maintenance import BronzeStoragePruneResult
 
@@ -837,7 +840,7 @@ def _bronze_prune_cli_result(
         },
         failed_object_counts=failed_object_counts or {"realtime": 0, "static": 0},
         batch_counts={"realtime": 0, "static": 0},
-        exhausted=True,
+        exhausted=exhausted,
         completed_at_utc=datetime(2026, 3, 27, 0, 0, 0, tzinfo=UTC),
     )
 
@@ -901,10 +904,81 @@ def test_prune_bronze_storage_exits_nonzero_when_r2_deletes_failed(monkeypatch) 
 
     live_result = runner.invoke(app, ["prune-bronze-storage", "stm"])
     assert live_result.exit_code == 1
+    assert json.loads(live_result.stdout)["failed_object_counts"] == {
+        "realtime": 2,
+        "static": 0,
+    }
 
     # Dry-run never exits nonzero — it deletes nothing.
     dry_result = runner.invoke(app, ["prune-bronze-storage", "stm", "--dry-run"])
     assert dry_result.exit_code == 0
+
+
+def test_prune_bronze_storage_require_exhausted_exits_after_json_for_live_backlog(
+    monkeypatch,
+) -> None:
+    def fake_prune_bronze_storage(
+        provider_id, *, settings, dry_run, max_objects=None, max_batches=None
+    ):  # noqa: ANN001
+        return _bronze_prune_cli_result(
+            provider_id,
+            dry_run,
+            exhausted=False,
+        )
+
+    monkeypatch.setattr(cli_module, "prune_bronze_storage", fake_prune_bronze_storage)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
+
+    result = runner.invoke(
+        app,
+        ["prune-bronze-storage", "stm", "--require-exhausted"],
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["exhausted"] is False
+
+
+def test_prune_bronze_storage_live_backlog_is_advisory_without_requirement(
+    monkeypatch,
+) -> None:
+    def fake_prune_bronze_storage(
+        provider_id, *, settings, dry_run, max_objects=None, max_batches=None
+    ):  # noqa: ANN001
+        return _bronze_prune_cli_result(
+            provider_id,
+            dry_run,
+            exhausted=False,
+        )
+
+    monkeypatch.setattr(cli_module, "prune_bronze_storage", fake_prune_bronze_storage)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
+
+    result = runner.invoke(app, ["prune-bronze-storage", "stm"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["exhausted"] is False
+
+
+def test_prune_bronze_storage_dry_run_never_fails_for_backlog(monkeypatch) -> None:
+    def fake_prune_bronze_storage(
+        provider_id, *, settings, dry_run, max_objects=None, max_batches=None
+    ):  # noqa: ANN001
+        return _bronze_prune_cli_result(
+            provider_id,
+            dry_run,
+            exhausted=False,
+        )
+
+    monkeypatch.setattr(cli_module, "prune_bronze_storage", fake_prune_bronze_storage)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
+
+    result = runner.invoke(
+        app,
+        ["prune-bronze-storage", "stm", "--dry-run", "--require-exhausted"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["exhausted"] is False
 
 
 def test_init_db_requires_database_url(monkeypatch) -> None:

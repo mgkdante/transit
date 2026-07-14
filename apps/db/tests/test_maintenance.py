@@ -1725,7 +1725,52 @@ class BronzePruneSettings:
     BRONZE_REALTIME_RETENTION_DAYS = 30
     BRONZE_STATIC_RETENTION_DAYS = 30
     BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH = 5000
-    BRONZE_PRUNE_MAX_BATCHES = 1
+    BRONZE_PRUNE_MAX_BATCHES = 2
+
+
+class SequencedBronzeConnection(RecordingConnection):
+    def __init__(self, realtime_batch_sizes: list[int]) -> None:
+        super().__init__()
+        self.realtime_batch_sizes = list(realtime_batch_sizes)
+        self.realtime_selects = 0
+
+    def execute(self, statement, params=None):  # noqa: ANN001
+        sql_text = str(statement)
+        is_realtime_select = (
+            "ingestion_object_id" in sql_text
+            and "realtime_snapshot_id" in sql_text
+            and "SELECT" in sql_text
+            and "DELETE" not in sql_text
+        )
+        is_static_select = (
+            "run_kind" in sql_text
+            and "static_schedule" in sql_text
+            and "SELECT" in sql_text
+            and "DELETE" not in sql_text
+        )
+        if is_realtime_select:
+            self.calls.append(sql_text)
+            self.executed.append((sql_text, params))
+            batch_size = self.realtime_batch_sizes.pop(0)
+            batch_number = self.realtime_selects
+            self.realtime_selects += 1
+            return IterableResult(
+                [
+                    (
+                        1000 + (batch_number * 10) + offset,
+                        2000 + (batch_number * 10) + offset,
+                        f"stm/trip_updates/batch-{batch_number}-{offset}.pb",
+                        "s3",
+                        3000 + (batch_number * 10) + offset,
+                    )
+                    for offset in range(batch_size)
+                ]
+            )
+        if is_static_select:
+            self.calls.append(sql_text)
+            self.executed.append((sql_text, params))
+            return IterableResult([])
+        return super().execute(statement, params)
 
 
 def _patch_bronze_storage(monkeypatch, storage: FakeBronzeStorage) -> None:  # noqa: ANN001
@@ -1791,6 +1836,44 @@ def test_prune_bronze_storage_sets_exhausted_only_when_both_phases_under_limit(
         max_batches=1,
     )
     assert realtime_full.exhausted is False
+
+
+def test_prune_bronze_storage_two_batches_exhaust_when_second_is_partial(
+    monkeypatch,
+) -> None:
+    storage = FakeBronzeStorage()
+    _patch_bronze_storage(monkeypatch, storage)
+
+    result = prune_bronze_storage(
+        "stm",
+        settings=BronzePruneSettings(),  # type: ignore[arg-type]
+        engine=RecordingEngine(SequencedBronzeConnection([3, 2])),  # type: ignore[arg-type]
+        max_objects=3,
+        max_batches=2,
+    )
+
+    assert result.batch_counts == {"realtime": 2, "static": 1}
+    assert result.deleted_object_counts == {"realtime": 5, "static": 0}
+    assert result.exhausted is True
+
+
+def test_prune_bronze_storage_two_full_batches_do_not_claim_exhaustion(
+    monkeypatch,
+) -> None:
+    storage = FakeBronzeStorage()
+    _patch_bronze_storage(monkeypatch, storage)
+
+    result = prune_bronze_storage(
+        "stm",
+        settings=BronzePruneSettings(),  # type: ignore[arg-type]
+        engine=RecordingEngine(SequencedBronzeConnection([3, 3])),  # type: ignore[arg-type]
+        max_objects=3,
+        max_batches=2,
+    )
+
+    assert result.batch_counts == {"realtime": 2, "static": 1}
+    assert result.deleted_object_counts == {"realtime": 6, "static": 0}
+    assert result.exhausted is False
 
 
 def test_prune_bronze_storage_excludes_failed_ids_from_next_batch(monkeypatch) -> None:

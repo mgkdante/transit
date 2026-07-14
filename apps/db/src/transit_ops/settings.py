@@ -205,7 +205,7 @@ class Settings(BaseSettings):
     BRONZE_I3_RETENTION_DAYS: int = 30
     SILVER_I3_CLOSED_RETENTION_DAYS: int = 90
     BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH: int = 5000
-    BRONZE_PRUNE_MAX_BATCHES: int = 1
+    BRONZE_PRUNE_MAX_BATCHES: int = 2
 
     # --- Nightly logical Postgres backups (stream pg_dump to Bronze R2) ---
     BACKUP_S3_PREFIX: str = "backups/postgres"

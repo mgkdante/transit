@@ -1082,6 +1082,11 @@ def prune_bronze_storage_command(
         min=1,
         help="Batches per phase this invocation (defaults to BRONZE_PRUNE_MAX_BATCHES).",
     ),
+    require_exhausted: bool = typer.Option(
+        False,
+        "--require-exhausted",
+        help="Exit 1 after the JSON receipt when a live run leaves eligible backlog.",
+    ),
 ) -> None:
     """Prune old Bronze R2 objects and raw metadata after downstream Silver data is gone."""
 
@@ -1099,7 +1104,9 @@ def prune_bronze_storage_command(
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
-    if not dry_run and any(result.failed_object_counts.values()):
+    if not dry_run and (
+        any(result.failed_object_counts.values()) or (require_exhausted and not result.exhausted)
+    ):
         raise typer.Exit(code=1)
 
 
