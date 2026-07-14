@@ -38,6 +38,7 @@ export default ts.config(
 	{
 		ignores: [
 			'.svelte-kit/',
+			'.vitest/',
 			'build/',
 			'dist/',
 			'node_modules/',
