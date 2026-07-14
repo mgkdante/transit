@@ -42,6 +42,7 @@ describe('strict ISO calendar dates and UTC arithmetic', () => {
 		expect(strictIsoDate('2026-02-30')).toBe(false);
 		expect(strictIsoDate('2026-13-01')).toBe(false);
 		expect(strictIsoDate('2026-2-01')).toBe(false);
+		expect(strictIsoDate('0000-01-01')).toBe(false);
 		expect(strictIsoDate(null)).toBe(false);
 	});
 

@@ -4,6 +4,7 @@
 // free-string severity label.
 
 import { z } from 'zod';
+import { HistoryDateSchema } from './history';
 import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const HotspotSchema = z.object({
@@ -69,3 +70,8 @@ export const HotspotsSchema = z.object({
 	...payloadEnvelopeFields(),
 });
 export type Hotspots = z.infer<typeof HotspotsSchema>;
+
+export const HistoricHotspotsDaySchema = HotspotsSchema.extend({
+	date: HistoryDateSchema,
+});
+export type HistoricHotspotsDay = z.infer<typeof HistoricHotspotsDaySchema>;

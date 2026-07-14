@@ -106,6 +106,7 @@ export function strictIsoDate(value: unknown): value is string {
 	const year = Number(match[1]);
 	const month = Number(match[2]);
 	const day = Number(match[3]);
+	if (year === 0) return false;
 	const candidate = new Date(0);
 	candidate.setUTCHours(0, 0, 0, 0);
 	candidate.setUTCFullYear(year, month - 1, day);

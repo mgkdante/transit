@@ -12,6 +12,7 @@
 // payload (no by_grain, no structured offender fields) still validates.
 
 import { z } from 'zod';
+import { HistoryDateSchema } from './history';
 import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const OffenderSchema = z.object({
@@ -81,6 +82,40 @@ export const RepeatOffenderGrainSchema = z.object({
 });
 export type RepeatOffenderGrain = z.infer<typeof RepeatOffenderGrainSchema>;
 
+export const HistoricRepeatOffenderGrainSchema = RepeatOffenderGrainSchema.extend({
+	grain: z.enum(['week', 'month']),
+	date: HistoryDateSchema,
+	window_end: HistoryDateSchema,
+}).superRefine((value, ctx) => {
+	if (value.date > value.window_end) {
+		ctx.addIssue({
+			code: 'custom',
+			path: ['date'],
+			message: 'historical repeat-offender window start cannot follow its end',
+		});
+		return;
+	}
+	const expectedDays = value.grain === 'week' ? 7 : 30;
+	const start = Date.parse(`${value.date}T00:00:00Z`);
+	const end = Date.parse(`${value.window_end}T00:00:00Z`);
+	const inclusiveDays = Math.round((end - start) / 86_400_000) + 1;
+	if (inclusiveDays !== expectedDays) {
+		ctx.addIssue({
+			code: 'custom',
+			path: ['window_end'],
+			message: `historical ${value.grain} endpoints must span ${expectedDays} days`,
+		});
+	}
+	if (value.window_days != null && value.window_days !== expectedDays) {
+		ctx.addIssue({
+			code: 'custom',
+			path: ['window_days'],
+			message: `historical ${value.grain} window_days must equal ${expectedDays}`,
+		});
+	}
+});
+export type HistoricRepeatOffenderGrain = z.infer<typeof HistoricRepeatOffenderGrainSchema>;
+
 export const RepeatOffendersSchema = z.object({
 	generated_utc: isoUtc(),
 	offenders: z.array(OffenderSchema).optional(),
@@ -91,3 +126,19 @@ export const RepeatOffendersSchema = z.object({
 	...payloadEnvelopeFields(),
 });
 export type RepeatOffenders = z.infer<typeof RepeatOffendersSchema>;
+
+export const HistoricRepeatOffendersDaySchema = RepeatOffendersSchema.extend({
+	date: HistoryDateSchema,
+	by_grain: z.array(HistoricRepeatOffenderGrainSchema).optional(),
+}).superRefine((value, ctx) => {
+	for (const [index, grain] of (value.by_grain ?? []).entries()) {
+		if (grain.window_end !== value.date) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['by_grain', index, 'window_end'],
+				message: 'historical repeat-offender grain window_end must equal payload date',
+			});
+		}
+	}
+});
+export type HistoricRepeatOffendersDay = z.infer<typeof HistoricRepeatOffendersDaySchema>;

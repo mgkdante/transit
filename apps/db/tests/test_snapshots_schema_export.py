@@ -19,3 +19,5 @@ def test_shared_history_schema_families_are_exported():
     assert "historic_network_history_partition" in exported
     assert "historic_line_history_partition" in exported
     assert "historic_stop_history_partition" in exported
+    assert "historic_hotspots_day" in exported
+    assert "historic_repeat_offenders_day" in exported

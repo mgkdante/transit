@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { ManifestSchema } from './manifest';
 import {
+	HistoricRepeatOffenderGrainSchema,
+	HistoricRepeatOffendersDaySchema,
+	RepeatOffenderGrainSchema,
+	RepeatOffendersSchema,
+} from './repeat_offenders';
+import {
 	HistoricAvailabilityIndexSchema,
 	HistoricCancellationMetricSchema,
 	HistoricCollectionIndexSchema,
@@ -188,6 +194,34 @@ describe('shared retained-history schemas', () => {
 					selection_mode: 'range',
 					index_path: indexPath,
 					collection_generation_id: POINTER_SHA,
+				}),
+			).toThrow();
+		}
+	});
+
+	it('accepts only immutable date-mode index edges for point families', () => {
+		for (const family of ['hotspots', 'repeat_offenders'] as const) {
+			const versioned = `historic/history/${family}/generations/${POINTER_SHA}/index.json`;
+			expect(
+				HistoricFamilyAvailabilitySchema.parse({
+					family,
+					selection_mode: 'date',
+					index_path: versioned,
+					collection_generation_id: POINTER_SHA,
+				}).index_path,
+			).toBe(versioned);
+			expect(() =>
+				HistoricFamilyAvailabilitySchema.parse({
+					family,
+					selection_mode: 'date',
+					index_path: `historic/history/${family}/index.json`,
+				}),
+			).toThrow();
+			expect(() =>
+				HistoricFamilyAvailabilitySchema.parse({
+					family,
+					selection_mode: 'range',
+					index_path: versioned,
 				}),
 			).toThrow();
 		}
@@ -456,6 +490,48 @@ describe('shared retained-history schemas', () => {
 			}
 			expect(() => daySchema.parse({ date: '0000-01-01', occupancy })).toThrow();
 		}
+	});
+});
+
+describe('HistoricRepeatOffendersDay contract', () => {
+	it('requires a real day date and exact real grain window endpoints', () => {
+		const grain = HistoricRepeatOffenderGrainSchema.parse({
+			grain: 'week',
+			date: '2026-07-07',
+			window_end: '2026-07-13',
+			window_days: 7,
+		});
+		expect(grain.date).toBe('2026-07-07');
+		expect(
+			HistoricRepeatOffendersDaySchema.parse({
+				generated_utc: ISO,
+				date: '2026-07-13',
+				by_grain: [grain],
+			}),
+		).toMatchObject({ date: '2026-07-13' });
+
+		for (const incomplete of [
+			{ grain: 'week', date: '2026-07-07' },
+			{ grain: 'week', window_end: '2026-07-13' },
+			{ grain: 'week', date: '2026-02-30', window_end: '2026-07-13' },
+			{ grain: 'week', date: '2026-07-14', window_end: '2026-07-13' },
+			{ grain: 'week', date: '2026-07-07', window_end: '2026-07-13', window_days: 6 },
+			{ grain: 'day', date: '2026-07-13', window_end: '2026-07-13' },
+			{ grain: 'week', date: '2026-07-10', window_end: '2026-07-13', window_days: 4 },
+		]) {
+			expect(() => HistoricRepeatOffenderGrainSchema.parse(incomplete)).toThrow();
+		}
+		expect(() => HistoricRepeatOffendersDaySchema.parse({ generated_utc: ISO })).toThrow();
+		expect(() =>
+			HistoricRepeatOffendersDaySchema.parse({
+				generated_utc: ISO,
+				date: '2026-07-12',
+				by_grain: [grain],
+			}),
+		).toThrow();
+
+		expect(RepeatOffendersSchema.parse({ generated_utc: ISO })).not.toHaveProperty('date');
+		expect(() => RepeatOffenderGrainSchema.parse({ grain: 'week' })).not.toThrow();
 	});
 });
 

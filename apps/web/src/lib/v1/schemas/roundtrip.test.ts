@@ -43,7 +43,9 @@ import {
 	ReceiptSchema,
 	ReceiptsIndexSchema,
 	RepeatOffendersSchema,
+	HistoricRepeatOffendersDaySchema,
 	HotspotsSchema,
+	HistoricHotspotsDaySchema,
 	NetworkTrendSchema,
 	AlertHistorySchema,
 	AlertArchivePageSchema,
@@ -155,7 +157,13 @@ const CASES: Case[] = [
 	['receipts', ReceiptSchema, { generated_utc: ISO, date: '2026-06-14' }],
 	['receipts_index', ReceiptsIndexSchema, { generated_utc: ISO }],
 	['repeat_offenders', RepeatOffendersSchema, { generated_utc: ISO }],
+	[
+		'historic_repeat_offenders_day',
+		HistoricRepeatOffendersDaySchema,
+		{ generated_utc: ISO, date: '2026-06-14' },
+	],
 	['hotspots', HotspotsSchema, { generated_utc: ISO }],
+	['historic_hotspots_day', HistoricHotspotsDaySchema, { generated_utc: ISO, date: '2026-06-14' }],
 	['network_trend', NetworkTrendSchema, { generated_utc: ISO }],
 	['alert_history', AlertHistorySchema, { generated_utc: ISO }],
 	[

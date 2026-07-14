@@ -57,7 +57,9 @@ PAYLOAD_METHODOLOGY: dict[str, str] = {
     "historic_route_reliability": "reliability-1",
     "historic_stop_reliability": "reliability-1",
     "historic_hotspots": "reliability-1",
+    "historic_hotspots_day": "reliability-1",
     "historic_repeat_offenders": "reliability-1",
+    "historic_repeat_offenders_day": "reliability-1",
     "historic_receipt": "receipt-1",
     "historic_receipts_index": "receipt-1",
     "historic_route_reliability_index": "reliability-1",
@@ -1817,6 +1819,56 @@ def _validate_iso_date(value: str) -> str:
     return value
 
 
+class HistoricHotspotsDay(Hotspots):
+    date: str
+
+    @field_validator("date")
+    @classmethod
+    def validate_date(cls, value: str) -> str:
+        return _validate_iso_date(value)
+
+
+class HistoricRepeatOffenderGrain(RepeatOffenderGrain):
+    grain: Literal["week", "month"]
+    date: str
+    window_end: str
+
+    @field_validator("date", "window_end")
+    @classmethod
+    def validate_dates(cls, value: str) -> str:
+        return _validate_iso_date(value)
+
+    @model_validator(mode="after")
+    def validate_window(self) -> Self:
+        start = date_type.fromisoformat(self.date)
+        end = date_type.fromisoformat(self.window_end)
+        if start > end:
+            raise ValueError("historical repeat-offender window start cannot follow its end")
+        inclusive_days = (end - start).days + 1
+        expected_days = 7 if self.grain == "week" else 30
+        if inclusive_days != expected_days:
+            raise ValueError(f"historical {self.grain} endpoints must span {expected_days} days")
+        if self.window_days is not None and self.window_days != expected_days:
+            raise ValueError(f"historical {self.grain} window_days must equal {expected_days}")
+        return self
+
+
+class HistoricRepeatOffendersDay(RepeatOffenders):
+    date: str
+    by_grain: list[HistoricRepeatOffenderGrain] = Field(default_factory=list)
+
+    @field_validator("date")
+    @classmethod
+    def validate_date(cls, value: str) -> str:
+        return _validate_iso_date(value)
+
+    @model_validator(mode="after")
+    def validate_grain_anchors(self) -> Self:
+        if any(grain.window_end != self.date for grain in self.by_grain):
+            raise ValueError("historical repeat-offender grain window_end must equal payload date")
+        return self
+
+
 class _HistoryDay(BaseModel):
     date: str
 
@@ -2105,7 +2157,9 @@ TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
     "historic_route_reliability": RouteReliability,
     "historic_stop_reliability": StopReliability,
     "historic_hotspots": Hotspots,
+    "historic_hotspots_day": HistoricHotspotsDay,
     "historic_repeat_offenders": RepeatOffenders,
+    "historic_repeat_offenders_day": HistoricRepeatOffendersDay,
     "historic_receipt": Receipt,
     "historic_receipts_index": ReceiptsIndex,
     "historic_route_reliability_index": RouteReliabilityIndex,

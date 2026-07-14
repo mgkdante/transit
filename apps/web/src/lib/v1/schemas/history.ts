@@ -3,7 +3,12 @@
 
 import { z } from 'zod';
 import { encodeHistoryEntityId } from '../history/entity';
-import { isHistoryEntityIndexPath, isHistoryFamilyIndexPath } from '../history/pointers';
+import {
+	isHistoryEntityIndexPath,
+	isHistoryFamilyIndexPath,
+	isRetainedPointHistoryFamily,
+	isRetainedRangeHistoryFamily,
+} from '../history/pointers';
 import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const HistorySelectionModeSchema = z.enum(['range', 'date']);
@@ -35,7 +40,9 @@ const isCanonicalDate = (value: string): boolean => {
 	return day >= 1 && day <= daysInMonth[month - 1];
 };
 
-const HistoryDateSchema = z.string().refine(isCanonicalDate, 'Expected a valid YYYY-MM-DD date.');
+export const HistoryDateSchema = z
+	.string()
+	.refine(isCanonicalDate, 'Expected a valid YYYY-MM-DD date.');
 const HistoryMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
 
 export const HistoricCoverageGapSchema = z.object({
@@ -96,14 +103,29 @@ export const HistoricFamilyAvailabilitySchema = z
 		metrics: z.array(HistoricMetricCoverageSchema).optional(),
 	})
 	.superRefine((value, ctx) => {
+		const family = value.family;
 		if (
-			(value.family === 'network' || value.family === 'lines' || value.family === 'stops') &&
-			!isHistoryFamilyIndexPath(value.family, value.index_path)
+			(isRetainedRangeHistoryFamily(family) || isRetainedPointHistoryFamily(family)) &&
+			!isHistoryFamilyIndexPath(family, value.index_path)
 		) {
 			ctx.addIssue({
 				code: 'custom',
 				path: ['index_path'],
-				message: `invalid ${value.family} history index_path`,
+				message: `invalid ${family} history index_path`,
+			});
+		}
+		if (isRetainedRangeHistoryFamily(family) && value.selection_mode !== 'range') {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['selection_mode'],
+				message: `${family} history requires range selection`,
+			});
+		}
+		if (isRetainedPointHistoryFamily(family) && value.selection_mode !== 'date') {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['selection_mode'],
+				message: `${family} history requires date selection`,
 			});
 		}
 	});

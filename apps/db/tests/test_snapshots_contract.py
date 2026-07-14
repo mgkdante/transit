@@ -1048,8 +1048,14 @@ def test_shared_history_families_and_manifest_pointer_are_registered():
 
     assert TOP_LEVEL_MODELS["historic_collection_index"].__name__ == "HistoricCollectionIndex"
     assert TOP_LEVEL_MODELS["historic_availability_index"].__name__ == "HistoricAvailabilityIndex"
+    assert TOP_LEVEL_MODELS["historic_hotspots_day"].__name__ == "HistoricHotspotsDay"
+    assert (
+        TOP_LEVEL_MODELS["historic_repeat_offenders_day"].__name__ == "HistoricRepeatOffendersDay"
+    )
     assert PAYLOAD_METHODOLOGY["historic_collection_index"] == "history-1"
     assert PAYLOAD_METHODOLOGY["historic_availability_index"] == "history-1"
+    assert PAYLOAD_METHODOLOGY["historic_hotspots_day"] == "reliability-1"
+    assert PAYLOAD_METHODOLOGY["historic_repeat_offenders_day"] == "reliability-1"
 
     historic = ManifestHistoricFiles()
     assert historic.history_index == "historic/history/index.json"

@@ -56,6 +56,8 @@ def test_web_mirror_has_same_schema_files_as_db_export() -> None:
     assert {
         "historic_collection_index.schema.json",
         "historic_availability_index.schema.json",
+        "historic_hotspots_day.schema.json",
+        "historic_repeat_offenders_day.schema.json",
     } <= web_names
 
 
