@@ -19,7 +19,7 @@
 
 import type { z } from 'zod';
 import { resolveUrl, entityUrl } from '$lib/v1/config';
-import { getEntityJson, getEntityJsonWithBytes, type FetchFn } from '$lib/v1/http';
+import { getEntityJson, getEntityJsonWithBytes, sha256Hex, type FetchFn } from '$lib/v1/http';
 import type { AdapterCtx, ContentAdapter } from './types';
 
 import { ManifestSchema, type Manifest } from '$lib/v1/schemas/manifest';
@@ -58,6 +58,9 @@ import {
 	HistoryArtifactContractError,
 	assertSafeHistoryArtifactPath,
 	encodeHistoryEntityId,
+	historyPointerPayloadSha,
+	isHistoryEntityIndexPath,
+	isHistoryFamilyIndexPath,
 } from '$lib/v1/history';
 
 import type { Locale } from '$lib/i18n';
@@ -186,17 +189,40 @@ async function readOptionalHistory<T>(
 	label: string,
 	ctx?: AdapterCtx,
 ): Promise<T | null> {
-	const value = await getEntityJson(
-		freshHistoryUrl(path, ctx?.freshHistoryParent),
-		schema,
-		label,
-		fetchOf(ctx),
-		{
-			cache: ctx?.freshHistoryParent ? 'reload' : SLOW_CACHE,
-			signal: ctx?.signal,
-		},
-	);
+	const url = freshHistoryUrl(path, ctx?.freshHistoryParent);
+	const init = {
+		cache: ctx?.freshHistoryParent ? ('reload' as const) : SLOW_CACHE,
+		signal: ctx?.signal,
+	};
+	const expectedSha = historyPointerPayloadSha(path);
+	if (expectedSha !== null) {
+		const raw = await getEntityJsonWithBytes(url, schema, label, fetchOf(ctx), init);
+		if (raw === undefined) return null;
+		if ((await sha256Hex(raw.bytes)) !== expectedSha) {
+			throw new HistoryArtifactContractError(path, 'advertised pointer payload SHA-256 mismatch');
+		}
+		return raw.value;
+	}
+	const value = await getEntityJson(url, schema, label, fetchOf(ctx), init);
 	return value ?? null;
+}
+
+function assertHistoryFamilyIndexPath(family: 'network' | 'lines' | 'stops', path: string): string {
+	if (!isHistoryFamilyIndexPath(family, path)) {
+		throw new HistoryArtifactContractError(path, `unsafe advertised ${family} history index path`);
+	}
+	return path;
+}
+
+function assertHistoryEntityIndexPath(
+	family: 'lines' | 'stops',
+	entityId: string,
+	path: string,
+): string {
+	if (!isHistoryEntityIndexPath(family, entityId, path)) {
+		throw new HistoryArtifactContractError(path, `unsafe advertised ${family} entity index path`);
+	}
+	return path;
 }
 
 function assertFamilyPartitionPath(
@@ -377,37 +403,37 @@ export const r2Adapter: ContentAdapter = {
 				'historic.historyIndex',
 				ctx,
 			),
-		networkHistoryIndex: async (ctx) =>
+		networkHistoryIndex: async (path, ctx) =>
 			readOptionalHistory(
-				'historic/history/network/index.json',
+				assertHistoryFamilyIndexPath('network', path),
 				HistoricCollectionIndexSchema,
 				'historic.networkHistoryIndex',
 				ctx,
 			),
-		lineHistoryDirectory: async (ctx) =>
+		lineHistoryDirectory: async (path, ctx) =>
 			readOptionalHistory(
-				'historic/history/lines/index.json',
+				assertHistoryFamilyIndexPath('lines', path),
 				HistoricEntityDirectoryIndexSchema,
 				'historic.lineHistoryDirectory',
 				ctx,
 			),
-		stopHistoryDirectory: async (ctx) =>
+		stopHistoryDirectory: async (path, ctx) =>
 			readOptionalHistory(
-				'historic/history/stops/index.json',
+				assertHistoryFamilyIndexPath('stops', path),
 				HistoricEntityDirectoryIndexSchema,
 				'historic.stopHistoryDirectory',
 				ctx,
 			),
-		lineHistoryIndex: async (entityId, ctx) =>
+		lineHistoryIndex: async (entityId, path, ctx) =>
 			readOptionalHistory(
-				`historic/history/lines/${encodeHistoryEntityId(entityId)}/index.json`,
+				assertHistoryEntityIndexPath('lines', entityId, path),
 				HistoricCollectionIndexSchema,
 				'historic.lineHistoryIndex',
 				ctx,
 			),
-		stopHistoryIndex: async (entityId, ctx) =>
+		stopHistoryIndex: async (entityId, path, ctx) =>
 			readOptionalHistory(
-				`historic/history/stops/${encodeHistoryEntityId(entityId)}/index.json`,
+				assertHistoryEntityIndexPath('stops', entityId, path),
 				HistoricCollectionIndexSchema,
 				'historic.stopHistoryIndex',
 				ctx,

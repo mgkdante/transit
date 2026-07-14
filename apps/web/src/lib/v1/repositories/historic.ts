@@ -23,6 +23,8 @@ import {
 	HistoryTransientPublicationError,
 	assertSafeHistoryArtifactPath,
 	encodeHistoryEntityId,
+	isHistoryEntityIndexPath,
+	isHistoryFamilyIndexPath,
 	loadHistoryPartitions,
 	mergeAlertArchivePages,
 	selectLineHistoryPartitionRefs,
@@ -84,10 +86,9 @@ function rootEdge(
 	}
 	const edge = matches[0];
 	if (edge === undefined) return null;
-	const expectedPath = familyIndexPath(family);
 	if (
 		edge.selection_mode !== 'range' ||
-		edge.index_path !== expectedPath ||
+		!isHistoryFamilyIndexPath(family, edge.index_path) ||
 		!SHA256.test(edge.collection_generation_id ?? '')
 	) {
 		throw new HistoryArtifactContractError(edge.index_path, `invalid ${family} root edge`);
@@ -112,10 +113,9 @@ function assertDirectory(
 	const paths = new Set<string>();
 	for (const entity of directory.entities ?? []) {
 		const encoded = encodeHistoryEntityId(entity.entity_id);
-		const expectedPath = `historic/history/${family}/${encoded}/index.json`;
 		if (
 			entity.encoded_id !== encoded ||
-			entity.index_path !== expectedPath ||
+			!isHistoryEntityIndexPath(family, entity.entity_id, entity.index_path) ||
 			!SHA256.test(entity.collection_generation_id)
 		) {
 			throw new HistoryArtifactContractError(entity.index_path, `invalid ${family} entity edge`);
@@ -149,39 +149,51 @@ function abortError(error: unknown): boolean {
 	return error instanceof Error && error.name === 'AbortError';
 }
 
-async function refreshRootPin(
+function freshHistoryCtx(ctx?: AdapterCtx): AdapterCtx {
+	return { ...ctx, freshHistoryParent: true };
+}
+
+async function refreshRootEdge(
 	family: 'network' | 'lines' | 'stops',
-	childGeneration: string,
 	ctx?: AdapterCtx,
-): Promise<void> {
+): Promise<HistoricFamilyAvailability | null> {
 	try {
-		const freshRoot = await adapter.historic.historyIndex({
-			...ctx,
-			freshHistoryParent: true,
-		});
-		const freshEdge = freshRoot == null ? null : rootEdge(freshRoot, family);
-		if (freshEdge?.collection_generation_id === childGeneration) return;
+		const freshRoot = await adapter.historic.historyIndex(freshHistoryCtx(ctx));
+		return freshRoot == null ? null : rootEdge(freshRoot, family);
 	} catch (error) {
 		if (abortError(error)) throw error;
+		return null;
 	}
-	throw new HistoryTransientPublicationError(
-		familyIndexPath(family),
-		`${family} generation still disagrees after one root refresh`,
-	);
+}
+
+function transientGeneration(family: 'network' | 'lines' | 'stops', message: string): never {
+	throw new HistoryTransientPublicationError(familyIndexPath(family), message);
 }
 
 async function getFamilyDirectory(
 	family: 'lines' | 'stops',
 	ctx?: AdapterCtx,
 ): Promise<HistoricEntityDirectoryIndex | null> {
+	return (await getFamilyDirectoryDiscovery(family, ctx))?.directory ?? null;
+}
+
+interface FamilyDirectoryDiscovery {
+	readonly directory: HistoricEntityDirectoryIndex;
+	readonly indexPath: string;
+}
+
+async function getFamilyDirectoryDiscovery(
+	family: 'lines' | 'stops',
+	ctx?: AdapterCtx,
+): Promise<FamilyDirectoryDiscovery | null> {
 	const root = await adapter.historic.historyIndex(ctx);
 	if (root === null) return null;
 	const edge = rootEdge(root, family);
 	if (edge === null) return null;
 	const directory =
 		family === 'lines'
-			? await adapter.historic.lineHistoryDirectory(ctx)
-			: await adapter.historic.stopHistoryDirectory(ctx);
+			? await adapter.historic.lineHistoryDirectory(edge.index_path, ctx)
+			: await adapter.historic.stopHistoryDirectory(edge.index_path, ctx);
 	if (directory === null) {
 		throw new HistoryArtifactContractError(
 			edge.index_path,
@@ -190,9 +202,35 @@ async function getFamilyDirectory(
 	}
 	assertDirectory(family, directory);
 	if (directory.collection_generation_id !== edge.collection_generation_id) {
-		await refreshRootPin(family, directory.collection_generation_id, ctx);
+		const freshEdge = await refreshRootEdge(family, ctx);
+		if (
+			freshEdge?.collection_generation_id === directory.collection_generation_id &&
+			freshEdge.index_path === edge.index_path
+		) {
+			return { directory, indexPath: edge.index_path };
+		}
+		if (freshEdge !== null) {
+			const freshDirectory =
+				family === 'lines'
+					? await adapter.historic.lineHistoryDirectory(freshEdge.index_path, freshHistoryCtx(ctx))
+					: await adapter.historic.stopHistoryDirectory(freshEdge.index_path, freshHistoryCtx(ctx));
+			if (freshDirectory === null) {
+				throw new HistoryArtifactContractError(
+					freshEdge.index_path,
+					'advertised history directory not found',
+				);
+			}
+			assertDirectory(family, freshDirectory);
+			if (freshDirectory.collection_generation_id === freshEdge.collection_generation_id) {
+				return { directory: freshDirectory, indexPath: freshEdge.index_path };
+			}
+		}
+		transientGeneration(
+			family,
+			`${family} generation still disagrees after one bounded pointer-chain refresh`,
+		);
 	}
-	return directory;
+	return { directory, indexPath: edge.index_path };
 }
 
 export async function getNetworkHistoryIndex(
@@ -202,13 +240,40 @@ export async function getNetworkHistoryIndex(
 	if (root === null) return null;
 	const edge = rootEdge(root, 'network');
 	if (edge === null) return null;
-	const index = await adapter.historic.networkHistoryIndex(ctx);
+	const index = await adapter.historic.networkHistoryIndex(edge.index_path, ctx);
 	if (index === null) {
 		throw new HistoryArtifactContractError(edge.index_path, 'advertised history index not found');
 	}
 	assertCollection('network', null, index);
 	if (index.collection_generation_id !== edge.collection_generation_id) {
-		await refreshRootPin('network', index.collection_generation_id!, ctx);
+		const freshEdge = await refreshRootEdge('network', ctx);
+		if (
+			freshEdge !== null &&
+			freshEdge.collection_generation_id === index.collection_generation_id &&
+			freshEdge.index_path === edge.index_path
+		) {
+			return index;
+		}
+		if (freshEdge !== null) {
+			const freshIndex = await adapter.historic.networkHistoryIndex(
+				freshEdge.index_path,
+				freshHistoryCtx(ctx),
+			);
+			if (freshIndex === null) {
+				throw new HistoryArtifactContractError(
+					freshEdge.index_path,
+					'advertised history index not found',
+				);
+			}
+			assertCollection('network', null, freshIndex);
+			if (freshIndex.collection_generation_id === freshEdge.collection_generation_id) {
+				return freshIndex;
+			}
+		}
+		transientGeneration(
+			'network',
+			'network generation still disagrees after one bounded pointer-chain refresh',
+		);
 	}
 	return index;
 }
@@ -230,14 +295,15 @@ async function getEntityHistoryIndex(
 	entityId: string,
 	ctx?: AdapterCtx,
 ): Promise<HistoricCollectionIndex | null> {
-	const directory = await getFamilyDirectory(family, ctx);
-	if (directory === null) return null;
+	const discovery = await getFamilyDirectoryDiscovery(family, ctx);
+	if (discovery === null) return null;
+	const { directory, indexPath: directoryPath } = discovery;
 	const edge = (directory.entities ?? []).find((entity) => entity.entity_id === entityId);
 	if (edge === undefined) return null;
 	const index =
 		family === 'lines'
-			? await adapter.historic.lineHistoryIndex(entityId, ctx)
-			: await adapter.historic.stopHistoryIndex(entityId, ctx);
+			? await adapter.historic.lineHistoryIndex(entityId, edge.index_path, ctx)
+			: await adapter.historic.stopHistoryIndex(entityId, edge.index_path, ctx);
 	if (index === null) {
 		throw new HistoryArtifactContractError(
 			edge.index_path,
@@ -250,31 +316,94 @@ async function getEntityHistoryIndex(
 		try {
 			freshDirectory =
 				family === 'lines'
-					? await adapter.historic.lineHistoryDirectory({
-							...ctx,
-							freshHistoryParent: true,
-						})
-					: await adapter.historic.stopHistoryDirectory({
-							...ctx,
-							freshHistoryParent: true,
-						});
+					? await adapter.historic.lineHistoryDirectory(directoryPath, freshHistoryCtx(ctx))
+					: await adapter.historic.stopHistoryDirectory(directoryPath, freshHistoryCtx(ctx));
 			if (freshDirectory !== null) assertDirectory(family, freshDirectory);
 		} catch (error) {
 			if (abortError(error)) throw error;
-			freshDirectory = null;
+			if (error instanceof HistoryArtifactContractError) throw error;
+			throw new HistoryTransientPublicationError(
+				edge.index_path,
+				`${family} directory could not be refreshed during bounded pointer-chain recovery`,
+			);
 		}
-		const freshEdge = (freshDirectory?.entities ?? []).find(
+		if (freshDirectory === null) {
+			throw new HistoryArtifactContractError(
+				directoryPath,
+				'advertised history directory not found',
+			);
+		}
+		let recoveryDirectory = freshDirectory;
+		let recoveryDirectoryPath = directoryPath;
+		let rootMatches =
+			recoveryDirectory.collection_generation_id === directory.collection_generation_id;
+		if (!rootMatches) {
+			const freshRootEdge = await refreshRootEdge(family, ctx);
+			if (freshRootEdge !== null && freshRootEdge.index_path !== recoveryDirectoryPath) {
+				const rootDirectory =
+					family === 'lines'
+						? await adapter.historic.lineHistoryDirectory(
+								freshRootEdge.index_path,
+								freshHistoryCtx(ctx),
+							)
+						: await adapter.historic.stopHistoryDirectory(
+								freshRootEdge.index_path,
+								freshHistoryCtx(ctx),
+							);
+				if (rootDirectory === null) {
+					throw new HistoryArtifactContractError(
+						freshRootEdge.index_path,
+						'advertised history directory not found',
+					);
+				}
+				assertDirectory(family, rootDirectory);
+				recoveryDirectory = rootDirectory;
+				recoveryDirectoryPath = freshRootEdge.index_path;
+			}
+			rootMatches =
+				freshRootEdge !== null &&
+				freshRootEdge.index_path === recoveryDirectoryPath &&
+				freshRootEdge.collection_generation_id === recoveryDirectory.collection_generation_id;
+		}
+		const freshEdge = (recoveryDirectory.entities ?? []).find(
 			(entity) => entity.entity_id === entityId,
 		);
 		if (
-			freshDirectory?.collection_generation_id !== directory.collection_generation_id ||
-			freshEdge?.collection_generation_id !== index.collection_generation_id
+			rootMatches &&
+			freshEdge !== undefined &&
+			freshEdge.collection_generation_id === index.collection_generation_id &&
+			freshEdge.index_path === edge.index_path
 		) {
-			throw new HistoryTransientPublicationError(
-				edge.index_path,
-				`${family} directory chain still disagrees after one directory refresh`,
-			);
+			return index;
 		}
+		if (rootMatches && freshEdge !== undefined) {
+			const freshIndex =
+				family === 'lines'
+					? await adapter.historic.lineHistoryIndex(
+							entityId,
+							freshEdge.index_path,
+							freshHistoryCtx(ctx),
+						)
+					: await adapter.historic.stopHistoryIndex(
+							entityId,
+							freshEdge.index_path,
+							freshHistoryCtx(ctx),
+						);
+			if (freshIndex === null) {
+				throw new HistoryArtifactContractError(
+					freshEdge.index_path,
+					'advertised entity history index not found',
+				);
+			}
+			assertCollection(family, entityId, freshIndex);
+			if (freshIndex.collection_generation_id === freshEdge.collection_generation_id) {
+				return freshIndex;
+			}
+		}
+		throw new HistoryTransientPublicationError(
+			edge.index_path,
+			`${family} directory chain still disagrees after one bounded pointer-chain refresh`,
+		);
 	}
 	return index;
 }

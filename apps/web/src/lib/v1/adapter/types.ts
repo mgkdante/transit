@@ -64,7 +64,7 @@ export interface AdapterCtx {
 	cache?: Map<string, unknown>;
 	/** Optional abort signal for the underlying requests. */
 	signal?: AbortSignal;
-	/** Force one immediate retained-history parent re-read with cache busting. */
+	/** Force one immediate retained-history pointer re-read with cache busting. */
 	freshHistoryParent?: boolean;
 }
 
@@ -98,11 +98,25 @@ export interface StaticPort {
 /** Historic tier (daily TTL): rollups + per-entity detail/receipts (404 -> null). */
 export interface HistoricPort {
 	historyIndex(ctx?: AdapterCtx): Promise<HistoricAvailabilityIndex | null>;
-	networkHistoryIndex(ctx?: AdapterCtx): Promise<HistoricCollectionIndex | null>;
-	lineHistoryDirectory(ctx?: AdapterCtx): Promise<HistoricEntityDirectoryIndex | null>;
-	stopHistoryDirectory(ctx?: AdapterCtx): Promise<HistoricEntityDirectoryIndex | null>;
-	lineHistoryIndex(entityId: string, ctx?: AdapterCtx): Promise<HistoricCollectionIndex | null>;
-	stopHistoryIndex(entityId: string, ctx?: AdapterCtx): Promise<HistoricCollectionIndex | null>;
+	networkHistoryIndex(path: string, ctx?: AdapterCtx): Promise<HistoricCollectionIndex | null>;
+	lineHistoryDirectory(
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<HistoricEntityDirectoryIndex | null>;
+	stopHistoryDirectory(
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<HistoricEntityDirectoryIndex | null>;
+	lineHistoryIndex(
+		entityId: string,
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<HistoricCollectionIndex | null>;
+	stopHistoryIndex(
+		entityId: string,
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<HistoricCollectionIndex | null>;
 	networkHistoryPartition(
 		path: string,
 		ctx?: AdapterCtx,

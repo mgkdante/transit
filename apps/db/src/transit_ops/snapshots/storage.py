@@ -8,10 +8,15 @@ instead (useful for development and CI).
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
+import os
 import pathlib
+import tempfile
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 from botocore.exceptions import ClientError
@@ -40,6 +45,7 @@ CACHE_CONTROL: dict[str, str] = {
 
 # S3/R2 error codes that mean "object does not exist" (mirror ingestion/storage).
 _NOT_FOUND_CODES = {"404", "NoSuchKey", "NotFound"}
+_PRECONDITION_FAILED_CODES = {"412", "PreconditionFailed"}
 
 
 # Backward-compatible import surface for older tests and callers. Serialization
@@ -54,9 +60,32 @@ class ImmutableKeyCollisionError(RuntimeError):
         super().__init__(f"immutable key collision: {rel_key}")
 
 
+class StableActivationConflictError(RuntimeError):
+    """A stable object changed after its activation version was captured."""
+
+    def __init__(self, rel_key: str) -> None:
+        super().__init__(f"stable activation conflict: {rel_key}")
+
+
 @dataclass(frozen=True)
 class ImmutablePutOutcome:
     """Atomic immutable write result used by the hash-gate accounting seam."""
+
+    key: str
+    written: bool
+
+
+@dataclass(frozen=True)
+class StableObjectVersion:
+    """Backend-specific version token captured before stable-object activation."""
+
+    rel_key: str
+    token: str | None
+
+
+@dataclass(frozen=True)
+class StableActivationOutcome:
+    """Conditional stable-object activation result."""
 
     key: str
     written: bool
@@ -70,6 +99,22 @@ def _lock_for_key(
 ) -> threading.Lock:
     with registry_lock:
         return locks.setdefault(rel_key, threading.Lock())
+
+
+@contextmanager
+def _exclusive_directory_lock(directory: pathlib.Path) -> Iterator[None]:
+    """Hold a process-safe advisory lock on an existing snapshot directory."""
+
+    directory.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+    finally:
+        os.close(descriptor)
 
 
 class SnapshotStorage:
@@ -171,6 +216,120 @@ class SnapshotStorage:
         with lock:
             return self._immutable_head(rel_key) is not None
 
+    def capture_stable_version(self, rel_key: str) -> StableObjectVersion:
+        """Capture the current stable object's R2 ETag, or absence."""
+
+        existing = self._immutable_head(rel_key)
+        if existing is None:
+            return StableObjectVersion(rel_key=rel_key, token=None)
+        etag = existing.get("ETag")
+        if not isinstance(etag, str) or not etag:
+            raise RuntimeError(f"stable object has no ETag: {rel_key}")
+        return StableObjectVersion(rel_key=rel_key, token=etag)
+
+    def activate_stable_json_outcome(
+        self,
+        rel_key: str,
+        payload: BaseModel | dict,  # type: ignore[type-arg]
+        *,
+        expected_version: StableObjectVersion,
+        tier: str,
+    ) -> StableActivationOutcome:
+        """Conditionally activate stable JSON against a captured version."""
+
+        if expected_version.rel_key != rel_key:
+            raise ValueError("stable activation version belongs to a different key")
+
+        body = snapshot_json_bytes(payload)
+        key = self.full_key(rel_key)
+        condition = (
+            {"IfNoneMatch": "*"}
+            if expected_version.token is None
+            else {"IfMatch": expected_version.token}
+        )
+        try:
+            self._thread_client().put_object(  # type: ignore[attr-defined]
+                Bucket=self._bucket,
+                Key=key,
+                Body=body,
+                ContentType="application/json",
+                CacheControl=CACHE_CONTROL[tier],
+                **condition,
+            )
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if code not in _PRECONDITION_FAILED_CODES and status != 412:
+                raise
+            try:
+                response = self._thread_client().get_object(  # type: ignore[attr-defined]
+                    Bucket=self._bucket,
+                    Key=key,
+                )
+            except ClientError as read_exc:
+                read_code = str(read_exc.response.get("Error", {}).get("Code", ""))
+                if read_code in _NOT_FOUND_CODES:
+                    raise StableActivationConflictError(rel_key) from exc
+                raise
+            response_body = response["Body"]
+            try:
+                active_body = response_body.read()
+            finally:
+                if hasattr(response_body, "close"):
+                    response_body.close()
+            if active_body == body:
+                return StableActivationOutcome(key=key, written=False)
+            raise StableActivationConflictError(rel_key) from exc
+        return StableActivationOutcome(key=key, written=True)
+
+    def activate_stable_json(
+        self,
+        rel_key: str,
+        payload: BaseModel | dict,  # type: ignore[type-arg]
+        *,
+        expected_version: StableObjectVersion,
+        tier: str,
+    ) -> str:
+        """Conditionally activate stable JSON and return its full key."""
+
+        return self.activate_stable_json_outcome(
+            rel_key,
+            payload,
+            expected_version=expected_version,
+            tier=tier,
+        ).key
+
+    def _verify_existing_immutable(
+        self,
+        rel_key: str,
+        body: bytes,
+        digest: str,
+        existing: dict,  # type: ignore[type-arg]
+        *,
+        require_exact_body: bool = False,
+    ) -> ImmutablePutOutcome:
+        metadata = existing.get("Metadata") or {}
+        prior_digest = metadata.get("sha256")
+        if prior_digest is not None and not require_exact_body:
+            if prior_digest == digest and existing.get("ContentLength") == len(body):
+                return ImmutablePutOutcome(key=self.full_key(rel_key), written=False)
+            raise ImmutableKeyCollisionError(rel_key)
+
+        key = self.full_key(rel_key)
+        response = self._thread_client().get_object(  # type: ignore[attr-defined]
+            Bucket=self._bucket,
+            Key=key,
+        )
+        response_body = response["Body"]
+        try:
+            prior_body = response_body.read()
+        finally:
+            if hasattr(response_body, "close"):
+                response_body.close()
+        if prior_body != body:
+            raise ImmutableKeyCollisionError(rel_key)
+        return ImmutablePutOutcome(key=key, written=False)
+
     def put_immutable_json_outcome(
         self,
         rel_key: str,
@@ -189,37 +348,34 @@ class SnapshotStorage:
             existing = self._immutable_head(rel_key)
             if existing is None:
                 key = self.full_key(rel_key)
-                self._thread_client().put_object(  # type: ignore[attr-defined]
-                    Bucket=self._bucket,
-                    Key=key,
-                    Body=body,
-                    ContentType="application/json",
-                    CacheControl=CACHE_CONTROL["historic_immutable"],
-                    Metadata={"sha256": digest},
-                )
+                try:
+                    self._thread_client().put_object(  # type: ignore[attr-defined]
+                        Bucket=self._bucket,
+                        Key=key,
+                        Body=body,
+                        ContentType="application/json",
+                        CacheControl=CACHE_CONTROL["historic_immutable"],
+                        Metadata={"sha256": digest},
+                        IfNoneMatch="*",
+                    )
+                except ClientError as exc:
+                    code = str(exc.response.get("Error", {}).get("Code", ""))
+                    status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+                    if code not in _PRECONDITION_FAILED_CODES and status != 412:
+                        raise
+                    existing = self._immutable_head(rel_key)
+                    if existing is None:
+                        raise
+                    return self._verify_existing_immutable(
+                        rel_key,
+                        body,
+                        digest,
+                        existing,
+                        require_exact_body=True,
+                    )
                 return ImmutablePutOutcome(key=key, written=True)
 
-            metadata = existing.get("Metadata") or {}
-            prior_digest = metadata.get("sha256")
-            if prior_digest is not None:
-                if prior_digest == digest and existing.get("ContentLength") == len(body):
-                    return ImmutablePutOutcome(key=self.full_key(rel_key), written=False)
-                raise ImmutableKeyCollisionError(rel_key)
-
-            key = self.full_key(rel_key)
-            response = self._thread_client().get_object(  # type: ignore[attr-defined]
-                Bucket=self._bucket,
-                Key=key,
-            )
-            response_body = response["Body"]
-            try:
-                prior_body = response_body.read()
-            finally:
-                if hasattr(response_body, "close"):
-                    response_body.close()
-            if prior_body != body:
-                raise ImmutableKeyCollisionError(rel_key)
-            return ImmutablePutOutcome(key=key, written=False)
+            return self._verify_existing_immutable(rel_key, body, digest, existing)
 
     def put_immutable_json(self, rel_key: str, payload: BaseModel | dict) -> str:  # type: ignore[type-arg]
         """Create or byte-verify a content-addressed historic object."""
@@ -282,6 +438,88 @@ class LocalSnapshotStorage:
         )
         with lock:
             return (self._root / self._prefix / rel_key).exists()
+
+    def capture_stable_version(self, rel_key: str) -> StableObjectVersion:
+        """Capture a stable local file's content version, or absence."""
+
+        dest = self._root / self._prefix / rel_key
+        try:
+            body = dest.read_bytes()
+        except FileNotFoundError:
+            return StableObjectVersion(rel_key=rel_key, token=None)
+        return StableObjectVersion(rel_key=rel_key, token=hashlib.sha256(body).hexdigest())
+
+    def activate_stable_json_outcome(
+        self,
+        rel_key: str,
+        payload: BaseModel | dict,  # type: ignore[type-arg]
+        *,
+        expected_version: StableObjectVersion,
+        tier: str,  # noqa: ARG002
+    ) -> StableActivationOutcome:
+        """Conditionally activate a stable local JSON file."""
+
+        if expected_version.rel_key != rel_key:
+            raise ValueError("stable activation version belongs to a different key")
+
+        body = snapshot_json_bytes(payload)
+        dest = self._root / self._prefix / rel_key
+        with _exclusive_directory_lock(dest.parent):
+            try:
+                active_body = dest.read_bytes()
+            except FileNotFoundError:
+                active_body = None
+            active_token = (
+                hashlib.sha256(active_body).hexdigest() if active_body is not None else None
+            )
+            if active_token != expected_version.token:
+                if active_body == body:
+                    return StableActivationOutcome(key=str(dest), written=False)
+                raise StableActivationConflictError(rel_key)
+            if active_body == body:
+                return StableActivationOutcome(key=str(dest), written=False)
+
+            if active_body is None:
+                try:
+                    with dest.open("xb") as destination:
+                        destination.write(body)
+                except FileExistsError:
+                    if dest.read_bytes() == body:
+                        return StableActivationOutcome(key=str(dest), written=False)
+                    raise StableActivationConflictError(rel_key) from None
+            else:
+                temporary_path: pathlib.Path | None = None
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        dir=dest.parent,
+                        prefix=f".{dest.name}.",
+                        suffix=".tmp",
+                        delete=False,
+                    ) as temporary:
+                        temporary.write(body)
+                        temporary_path = pathlib.Path(temporary.name)
+                    temporary_path.replace(dest)
+                finally:
+                    if temporary_path is not None:
+                        temporary_path.unlink(missing_ok=True)
+            return StableActivationOutcome(key=str(dest), written=True)
+
+    def activate_stable_json(
+        self,
+        rel_key: str,
+        payload: BaseModel | dict,  # type: ignore[type-arg]
+        *,
+        expected_version: StableObjectVersion,
+        tier: str,
+    ) -> str:
+        """Conditionally activate stable JSON and return its local path."""
+
+        return self.activate_stable_json_outcome(
+            rel_key,
+            payload,
+            expected_version=expected_version,
+            tier=tier,
+        ).key
 
     def put_immutable_json_outcome(
         self,
@@ -384,6 +622,19 @@ class HashGatedStorage:
     def full_key(self, rel_key: str) -> str:
         return self._inner.full_key(rel_key)  # type: ignore[attr-defined]
 
+    @property
+    def stable_activation_supported(self) -> bool:
+        """Whether the injected backend implements conditional stable activation."""
+
+        return callable(getattr(self._inner, "capture_stable_version", None)) and callable(
+            getattr(self._inner, "activate_stable_json_outcome", None)
+        )
+
+    def capture_stable_version(self, rel_key: str) -> StableObjectVersion:
+        """Delegate stable-object version capture to the storage backend."""
+
+        return self._inner.capture_stable_version(rel_key)  # type: ignore[attr-defined,no-any-return]
+
     def put_json(self, rel_key: str, payload: BaseModel | dict, *, tier: str) -> str:  # type: ignore[type-arg]
         body = snapshot_json_bytes(payload)
         digest = hashlib.md5(body).hexdigest()  # noqa: S324 — content fingerprint, not security
@@ -416,6 +667,32 @@ class HashGatedStorage:
                 self.immutable_written.append(rel_key)
             else:
                 self.immutable_skipped.append(rel_key)
+        return outcome.key
+
+    def activate_stable_json(
+        self,
+        rel_key: str,
+        payload: BaseModel | dict,  # type: ignore[type-arg]
+        *,
+        expected_version: StableObjectVersion,
+        tier: str,
+    ) -> str:
+        """Activate through backend CAS without using prior hash state to skip."""
+
+        body = snapshot_json_bytes(payload)
+        digest = hashlib.md5(body).hexdigest()  # noqa: S324 — content fingerprint, not security
+        outcome = self._inner.activate_stable_json_outcome(  # type: ignore[attr-defined]
+            rel_key,
+            payload,
+            expected_version=expected_version,
+            tier=tier,
+        )
+        with self._lock:
+            self._new[rel_key] = digest
+            if outcome.written:
+                self.written.append(rel_key)
+            else:
+                self.skipped.append(rel_key)
         return outcome.key
 
     def flush_state(self) -> str:

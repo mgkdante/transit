@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { HistoryArtifactContractError } from '$lib/v1/history';
+import { sha256Hex } from '$lib/v1/http';
 import { r2Adapter } from './r2';
 
 vi.mock('$app/environment', () => ({ browser: true }));
@@ -82,6 +83,10 @@ function json(body: unknown, status = 200): Response {
 		status,
 		headers: { 'content-type': 'application/json' },
 	});
+}
+
+async function payloadSha(value: unknown): Promise<string> {
+	return sha256Hex(new TextEncoder().encode(JSON.stringify(value)));
 }
 
 describe('r2 historic collection ports', () => {
@@ -187,21 +192,27 @@ describe('r2 historic collection ports', () => {
 		});
 		const ctx = { fetch: request as unknown as typeof fetch, signal: controller.signal };
 
-		await expect(r2Adapter.historic.networkHistoryIndex(ctx)).resolves.toMatchObject({
+		await expect(
+			r2Adapter.historic.networkHistoryIndex('historic/history/network/index.json', ctx),
+		).resolves.toMatchObject({
 			family: 'network',
 		});
-		await expect(r2Adapter.historic.lineHistoryDirectory(ctx)).resolves.toMatchObject({
+		await expect(
+			r2Adapter.historic.lineHistoryDirectory('historic/history/lines/index.json', ctx),
+		).resolves.toMatchObject({
 			family: 'lines',
 		});
-		await expect(r2Adapter.historic.stopHistoryDirectory(ctx)).resolves.toMatchObject({
+		await expect(
+			r2Adapter.historic.stopHistoryDirectory('historic/history/stops/index.json', ctx),
+		).resolves.toMatchObject({
 			family: 'stops',
 		});
-		await expect(r2Adapter.historic.lineHistoryIndex('A/B', ctx)).resolves.toMatchObject({
-			entity_id: 'A/B',
-		});
-		await expect(r2Adapter.historic.stopHistoryIndex('..', ctx)).resolves.toMatchObject({
-			entity_id: '..',
-		});
+		await expect(
+			r2Adapter.historic.lineHistoryIndex('A/B', 'historic/history/lines/412f42/index.json', ctx),
+		).resolves.toMatchObject({ entity_id: 'A/B' });
+		await expect(
+			r2Adapter.historic.stopHistoryIndex('..', 'historic/history/stops/2e2e/index.json', ctx),
+		).resolves.toMatchObject({ entity_id: '..' });
 		expect(request.mock.calls.map(([input]) => String(input))).toEqual([
 			'/data/v1/stm/historic/history/network/index.json',
 			'/data/v1/stm/historic/history/lines/index.json',
@@ -209,6 +220,80 @@ describe('r2 historic collection ports', () => {
 			'/data/v1/stm/historic/history/lines/412f42/index.json',
 			'/data/v1/stm/historic/history/stops/2e2e/index.json',
 		]);
+	});
+
+	it('reads exact versioned family, directory, and awkward-entity pointer paths', async () => {
+		const network = collectionIndex('network');
+		const lines = directory('lines');
+		const entity = collectionIndex('lines', 'A/B');
+		const networkPath = `historic/history/network/generations/${await payloadSha(network)}/index.json`;
+		const directoryPath = `historic/history/lines/generations/${await payloadSha(lines)}/index.json`;
+		const entityPath = `historic/history/lines/412f42/generations/${await payloadSha(entity)}/index.json`;
+		const request = vi.fn(async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url.endsWith(`/${networkPath}`)) return json(network);
+			if (url.endsWith(`/${directoryPath}`)) return json(lines);
+			if (url.endsWith(`/${entityPath}`)) return json(entity);
+			throw new Error(`unexpected URL ${url}`);
+		});
+		const ctx = { fetch: request as unknown as typeof fetch };
+
+		await expect(r2Adapter.historic.networkHistoryIndex(networkPath, ctx)).resolves.toMatchObject({
+			family: 'network',
+		});
+		await expect(
+			r2Adapter.historic.lineHistoryDirectory(directoryPath, ctx),
+		).resolves.toMatchObject({
+			family: 'lines',
+		});
+		await expect(
+			r2Adapter.historic.lineHistoryIndex('A/B', entityPath, ctx),
+		).resolves.toMatchObject({ entity_id: 'A/B' });
+		expect(request.mock.calls.map(([input]) => String(input))).toEqual([
+			`/data/v1/stm/${networkPath}`,
+			`/data/v1/stm/${directoryPath}`,
+			`/data/v1/stm/${entityPath}`,
+		]);
+	});
+
+	it('rejects a versioned pointer whose path SHA does not match the exact response bytes', async () => {
+		const path = `historic/history/network/generations/${'0'.repeat(64)}/index.json`;
+		const request = vi.fn(async () => json(collectionIndex('network')));
+
+		await expect(
+			r2Adapter.historic.networkHistoryIndex(path, {
+				fetch: request as unknown as typeof fetch,
+			}),
+		).rejects.toMatchObject({
+			name: 'HistoryArtifactContractError',
+			path,
+			message: expect.stringContaining('payload SHA-256 mismatch'),
+		});
+		expect(request).toHaveBeenCalledOnce();
+	});
+
+	it('rejects unsafe or cross-family pointer paths before fetch', async () => {
+		const request = vi.fn(async () => json(collectionIndex('network')));
+		const ctx = { fetch: request as unknown as typeof fetch };
+		const versioned = `generations/${'b'.repeat(64)}/index.json`;
+
+		await expect(
+			r2Adapter.historic.networkHistoryIndex(`historic/history/lines/${versioned}`, ctx),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		await expect(
+			r2Adapter.historic.lineHistoryDirectory(`historic/history/stops/${versioned}`, ctx),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		await expect(
+			r2Adapter.historic.lineHistoryIndex('A/B', `historic/history/lines/2e2e/${versioned}`, ctx),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		await expect(
+			r2Adapter.historic.lineHistoryIndex(
+				'A/B',
+				`historic/history/lines/412f42/${versioned}?raw=1`,
+				ctx,
+			),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		expect(request).not.toHaveBeenCalled();
 	});
 
 	it('returns exact raw partition bytes once and never places them in the request memo', async () => {
@@ -255,8 +340,8 @@ describe('r2 historic collection ports', () => {
 			freshHistoryParent: true,
 		};
 
-		await r2Adapter.historic.lineHistoryDirectory(ctx);
-		await r2Adapter.historic.lineHistoryDirectory(ctx);
+		await r2Adapter.historic.lineHistoryDirectory('historic/history/lines/index.json', ctx);
+		await r2Adapter.historic.lineHistoryDirectory('historic/history/lines/index.json', ctx);
 
 		const urls = request.mock.calls.map(([input]) => String(input));
 		expect(urls[0]).toMatch(
@@ -268,17 +353,48 @@ describe('r2 historic collection ports', () => {
 		expect(urls[1]).not.toBe(urls[0]);
 	});
 
+	it('cache-busts a fixed entity-index URL when recovery reloads the stale child', async () => {
+		const controller = new AbortController();
+		const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+			expect(init?.cache).toBe('reload');
+			expect(init?.signal).toBe(controller.signal);
+			return json(collectionIndex('lines', 'A/B'));
+		});
+
+		await expect(
+			r2Adapter.historic.lineHistoryIndex('A/B', 'historic/history/lines/412f42/index.json', {
+				fetch: request as unknown as typeof fetch,
+				signal: controller.signal,
+				freshHistoryParent: true,
+			}),
+		).resolves.toMatchObject({ entity_id: 'A/B' });
+
+		expect(String(request.mock.calls[0]?.[0])).toMatch(
+			/^\/data\/v1\/stm\/historic\/history\/lines\/412f42\/index\.json\?history_refresh=/,
+		);
+	});
+
 	it('keeps every new discovery/index/partition 404 transport-null', async () => {
 		const request = vi.fn(async () => json({}, 404));
 		const ctx = { fetch: request as unknown as typeof fetch };
 		const path = `historic/history/network/generations/${GENERATION}/2026-03.json`;
 
 		await expect(r2Adapter.historic.historyIndex(ctx)).resolves.toBeNull();
-		await expect(r2Adapter.historic.networkHistoryIndex(ctx)).resolves.toBeNull();
-		await expect(r2Adapter.historic.lineHistoryDirectory(ctx)).resolves.toBeNull();
-		await expect(r2Adapter.historic.stopHistoryDirectory(ctx)).resolves.toBeNull();
-		await expect(r2Adapter.historic.lineHistoryIndex('A/B', ctx)).resolves.toBeNull();
-		await expect(r2Adapter.historic.stopHistoryIndex('..', ctx)).resolves.toBeNull();
+		await expect(
+			r2Adapter.historic.networkHistoryIndex('historic/history/network/index.json', ctx),
+		).resolves.toBeNull();
+		await expect(
+			r2Adapter.historic.lineHistoryDirectory('historic/history/lines/index.json', ctx),
+		).resolves.toBeNull();
+		await expect(
+			r2Adapter.historic.stopHistoryDirectory('historic/history/stops/index.json', ctx),
+		).resolves.toBeNull();
+		await expect(
+			r2Adapter.historic.lineHistoryIndex('A/B', 'historic/history/lines/412f42/index.json', ctx),
+		).resolves.toBeNull();
+		await expect(
+			r2Adapter.historic.stopHistoryIndex('..', 'historic/history/stops/2e2e/index.json', ctx),
+		).resolves.toBeNull();
 		await expect(r2Adapter.historic.networkHistoryPartition(path, ctx)).resolves.toBeNull();
 	});
 });

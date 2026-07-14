@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import re
 from contextlib import contextmanager
 from copy import deepcopy
 from types import SimpleNamespace
@@ -148,6 +150,37 @@ class _MalformedStopPartitionPlan:
 
     def iter_partition_items(self):  # noqa: ANN201
         yield self.ref, self.partition
+
+
+class _MalformedNetworkRefPlan:
+    def __init__(self) -> None:
+        self.plan = _network_history_plan()
+        self.malformed_path: str | None = None
+
+    def iter_partition_items(self):  # noqa: ANN201
+        for position, (ref, partition) in enumerate(self.plan.iter_partition_items()):
+            malformed_ref = ref.model_copy(deep=True)
+            if position == 0:
+                malformed_ref.count = -1
+                self.malformed_path = malformed_ref.path
+            yield malformed_ref, partition
+
+    def build_index(self, refs):  # noqa: ANN001, ANN201
+        return self.plan.build_index(refs)
+
+
+class _MalformedLineRefPlan:
+    def __init__(self) -> None:
+        self.plan = _line_history_plan()
+        self.malformed_path: str | None = None
+
+    def iter_partition_items(self):  # noqa: ANN201
+        for position, (ref, partition) in enumerate(self.plan.iter_partition_items()):
+            malformed_ref = ref.model_copy(deep=True)
+            if position == 0:
+                malformed_ref.count = -1
+                self.malformed_path = malformed_ref.path
+            yield malformed_ref, partition
 
 
 class _MalformedStopIndexSummary:
@@ -413,11 +446,21 @@ class _RecordingStore:
         self.fail_index = fail_index
         self.fail_partition = fail_partition
 
+    def capture_stable_version(self, rel_key):  # noqa: ANN001, ANN201
+        body = self.objects.get(rel_key)
+        token = hashlib.sha256(body).hexdigest() if body is not None else None
+        return SimpleNamespace(rel_key=rel_key, token=token)
+
     def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
         body = snapshot_json_bytes(payload)
         self.calls.append(("immutable", rel_key))
         if self.fail_partition:
             raise RuntimeError("partition write failed")
+        if self.fail_index and re.fullmatch(
+            r"historic/history/network/generations/[0-9a-f]{64}/index\.json",
+            rel_key,
+        ):
+            raise RuntimeError("index write failed")
         if self.objects.get(rel_key) == body:
             self.immutable_skipped.append(rel_key)
         else:
@@ -427,10 +470,21 @@ class _RecordingStore:
 
     def put_json(self, rel_key, payload, *, tier):  # noqa: ANN001, ANN201, ARG002
         self.calls.append(("normal", rel_key))
-        if self.fail_index and rel_key == "historic/history/network/index.json":
-            raise RuntimeError("index write failed")
         self.objects[rel_key] = snapshot_json_bytes(payload)
         return rel_key
+
+    def activate_stable_json(
+        self,
+        rel_key,
+        payload,
+        *,
+        expected_version,
+        tier,
+    ):  # noqa: ANN001, ANN201
+        current = self.capture_stable_version(rel_key)
+        if current.token != expected_version.token:
+            raise RuntimeError("stable activation conflict")
+        return self.put_json(rel_key, payload, tier=tier)
 
 
 def _patch_minimal_historic(
@@ -562,25 +616,25 @@ def test_line_history_publish_is_pointer_last_after_all_network_and_line_immutab
 
     network_partitions = [ref.path for ref in network_bundle.index.partitions]
     line_partitions = [path for path, _partition in line_bundle.partition_items]
-    line_indexes = [_line_index_path(index.entity_id or "") for index in line_bundle.indexes]
-    expected = [
+    paths = [path for _kind, path in store.calls]
+    assert paths[: len(network_partitions) + len(line_partitions)] == [
         *network_partitions,
         *line_partitions,
-        compatibility_key,
-        "historic/receipts/index.json",
-        "historic/alerts/index.json",
-        "historic/history/network/index.json",
-        *line_indexes,
-        "historic/history/lines/index.json",
-        "historic/history/stops/index.json",
-        "historic/history/index.json",
     ]
-    assert [path for _kind, path in store.calls] == expected
-    assert keys == expected
+    assert keys == paths
     assert all(
         kind == "immutable"
         for kind, _path in store.calls[: len(network_partitions) + len(line_partitions)]
     )
+    assert paths.index(compatibility_key) < next(
+        index
+        for index, path in enumerate(paths)
+        if "/generations/" in path and path.endswith("/index.json")
+    )
+    assert "historic/history/network/index.json" not in paths
+    assert "historic/history/lines/index.json" not in paths
+    assert "historic/history/stops/index.json" not in paths
+    assert _reachable_history_graph(store)
     assert store.calls[-1] == ("normal", "historic/history/index.json")
 
 
@@ -825,8 +879,59 @@ def test_stop_history_gate_rejects_fabricated_current_or_line_only_day_fields(fi
     assert "stop_metric_vocabulary" in {finding.check for finding in findings}
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        pytest.param("headway", [], id="headway"),
+        pytest.param("habits", {}, id="habits"),
+        pytest.param("weak_stops", [], id="weak-stops"),
+        pytest.param("delay_by_crowding", [], id="crowding-breakdown"),
+    ],
+)
+def test_line_history_gate_rejects_fabricated_current_only_day_fields(
+    field: str,
+    value: object,
+):
+    bundle = _line_history_plan().materialize()
+    partition = bundle.partitions[0].model_dump(mode="json")
+    partition["days"][0][field] = value
+    ref = bundle.indexes[0].partitions[0]
+
+    findings = gate.check_line_history_partition(partition, rel_key=ref.path)
+
+    assert "line_metric_vocabulary" in {finding.check for finding in findings}
+
+
+def test_line_history_gate_preserves_exact_retained_day_vocabulary():
+    bundle = _line_history_plan().materialize()
+    partition = bundle.partitions[0].model_dump(mode="json")
+    expected = {
+        "date",
+        "delay",
+        "delay_percentiles",
+        "cancellation",
+        "occupancy",
+        "service_span",
+        "skipped_stops",
+    }
+
+    findings = gate.check_line_history_partition(
+        partition,
+        rel_key=bundle.indexes[0].partitions[0].path,
+    )
+
+    assert set(partition["days"][0]) == expected
+    assert "line_metric_vocabulary" not in {finding.check for finding in findings}
+
+
 def test_stop_history_and_global_root_publish_pointer_last(monkeypatch):
-    from transit_ops.snapshots.contract import AlertArchiveIndex, ReceiptsIndex
+    from transit_ops.snapshots.contract import (
+        AlertArchiveIndex,
+        HistoricAvailabilityIndex,
+        HistoricCollectionIndex,
+        HistoricEntityDirectoryIndex,
+        ReceiptsIndex,
+    )
 
     network_plan = _network_history_plan()
     line_plan = _line_history_plan()
@@ -836,7 +941,13 @@ def test_stop_history_and_global_root_publish_pointer_last(monkeypatch):
     stop_bundle = stop_plan.materialize()
     alert_index = AlertArchiveIndex(
         generated_utc="2026-07-11T00:00:00Z",
-        collection_generation_id="alert-generation",
+        collection_generation_id=snapshot_sha256(
+            {
+                "first_available_date": None,
+                "last_available_date": None,
+                "months": [],
+            }
+        ),
         first_available_date=None,
         last_available_date=None,
         total_alerts=0,
@@ -870,33 +981,33 @@ def test_stop_history_and_global_root_publish_pointer_last(monkeypatch):
         stamp="2026-07-13T00:00:00Z",
     )
 
-    immutable_paths = [
+    partition_paths = [
         *[ref.path for ref in network_bundle.index.partitions],
         *[path for path, _partition in line_bundle.partition_items],
         *[path for path, _partition in stop_bundle.partition_items],
     ]
-    line_indexes = [_line_index_path(index.entity_id or "") for index in line_bundle.indexes]
-    stop_indexes = [
-        f"historic/history/stops/{encode_history_entity_id(index.entity_id or '')}/index.json"
-        for index in stop_bundle.indexes
-    ]
-    expected = [
-        *immutable_paths,
-        "historic/receipts/index.json",
-        "historic/alerts/index.json",
-        "historic/history/network/index.json",
-        *line_indexes,
-        *stop_indexes,
-        "historic/history/lines/index.json",
-        "historic/history/stops/index.json",
-        "historic/history/index.json",
-    ]
-    assert [path for _kind, path in store.calls] == expected
-    assert keys == expected
-    assert all(kind == "immutable" for kind, _path in store.calls[: len(immutable_paths)])
-    root = publish.HistoricAvailabilityIndex.model_validate_json(
-        store.objects["historic/history/index.json"]
+    calls = {path: kind for kind, path in store.calls}
+    root_path = "historic/history/index.json"
+    assert store.calls[-1] == ("normal", root_path)
+    assert keys[-1] == root_path
+    assert all(calls[path] == "immutable" for path in partition_paths)
+    assert calls["historic/receipts/index.json"] == "normal"
+    assert calls["historic/alerts/index.json"] == "normal"
+    assert "historic/history/network/index.json" not in calls
+    assert "historic/history/lines/index.json" not in calls
+    assert "historic/history/stops/index.json" not in calls
+    assert not any(
+        path == _line_index_path(index.entity_id or "")
+        for index in line_bundle.indexes
+        for path in calls
     )
+    assert not any(
+        path == _stop_index_path(index.entity_id or "")
+        for index in stop_bundle.indexes
+        for path in calls
+    )
+
+    root = HistoricAvailabilityIndex.model_validate_json(store.objects[root_path])
     assert [family.family for family in root.families] == [
         "alerts",
         "lines",
@@ -904,53 +1015,141 @@ def test_stop_history_and_global_root_publish_pointer_last(monkeypatch):
         "receipts",
         "stops",
     ]
+    by_family = {family.family: family for family in root.families}
+    expected_patterns = {
+        "alerts": r"^historic/alerts/generations/([0-9a-f]{64})/index\.json$",
+        "lines": r"^historic/history/lines/generations/([0-9a-f]{64})/index\.json$",
+        "network": r"^historic/history/network/generations/([0-9a-f]{64})/index\.json$",
+        "receipts": r"^historic/receipts/generations/([0-9a-f]{64})/index\.json$",
+        "stops": r"^historic/history/stops/generations/([0-9a-f]{64})/index\.json$",
+    }
+    for family, pattern in expected_patterns.items():
+        index_path = by_family[family].index_path
+        match = re.fullmatch(pattern, index_path)
+        assert match is not None
+        assert calls[index_path] == "immutable"
+        assert hashlib.sha256(store.objects[index_path]).hexdigest() == match.group(1)
+
+    network_index = HistoricCollectionIndex.model_validate_json(
+        store.objects[by_family["network"].index_path]
+    )
+    assert network_index.collection_generation_id == by_family["network"].collection_generation_id
+
+    for family in ("lines", "stops"):
+        directory = HistoricEntityDirectoryIndex.model_validate_json(
+            store.objects[by_family[family].index_path]
+        )
+        assert directory.collection_generation_id == by_family[family].collection_generation_id
+        for entity in directory.entities:
+            pattern = (
+                rf"^historic/history/{family}/{entity.encoded_id}/generations/"
+                r"([0-9a-f]{64})/index\.json$"
+            )
+            match = re.fullmatch(pattern, entity.index_path)
+            assert match is not None
+            assert calls[entity.index_path] == "immutable"
+            assert hashlib.sha256(store.objects[entity.index_path]).hexdigest() == match.group(1)
+            index = HistoricCollectionIndex.model_validate_json(store.objects[entity.index_path])
+            assert index.entity_id == entity.entity_id
+            assert index.collection_generation_id == entity.collection_generation_id
+
+
+def _reachable_history_graph(store):  # noqa: ANN001, ANN202
+    from transit_ops.snapshots.contract import (
+        HistoricAvailabilityIndex,
+        HistoricEntityDirectoryIndex,
+    )
+
+    root_path = "historic/history/index.json"
+    root = HistoricAvailabilityIndex.model_validate_json(store.objects[root_path])
+    reachable = {root_path: store.objects[root_path]}
+    for family in root.families:
+        body = store.objects[family.index_path]
+        match = re.search(r"/generations/([0-9a-f]{64})/index\.json$", family.index_path)
+        assert match is not None
+        assert hashlib.sha256(body).hexdigest() == match.group(1)
+        reachable[family.index_path] = body
+        if family.family not in {"lines", "stops"}:
+            continue
+        directory = HistoricEntityDirectoryIndex.model_validate_json(body)
+        for entity in directory.entities:
+            entity_body = store.objects[entity.index_path]
+            entity_match = re.search(
+                r"/generations/([0-9a-f]{64})/index\.json$",
+                entity.index_path,
+            )
+            assert entity_match is not None
+            assert hashlib.sha256(entity_body).hexdigest() == entity_match.group(1)
+            reachable[entity.index_path] = entity_body
+    return reachable
+
+
+def test_historic_validate_records_the_same_versioned_pointer_graph_as_publish(monkeypatch):
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=_network_history_plan(),
+        line_plan=_line_history_plan(),
+        stop_plan=_stop_history_plan(),
+    )
+    stamp = "2026-07-13T00:00:00Z"
+    monkeypatch.setattr(publish, "_historic_stamp", lambda: stamp)
+    monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
+
+    class Engine:
+        @contextmanager
+        def connect(self):
+            yield object()
+
+    report = publish.validate_snapshots(
+        "stm",
+        tier="historic",
+        settings=SimpleNamespace(),
+        engine=Engine(),
+    )
+    store = _RecordingStore()
+    _publish_historic(
+        object(),
+        store,
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        stamp=stamp,
+    )
+
+    pointer_pattern = re.compile(r"/generations/[0-9a-f]{64}/index\.json$")
+    validated_pointers = {path for path in report.payload_sha256 if pointer_pattern.search(path)}
+    published_pointers = {path for _kind, path in store.calls if pointer_pattern.search(path)}
+    assert validated_pointers == published_pointers
+    assert len(validated_pointers) == 9
+    assert "historic/history/index.json" in report.payload_sha256
+    assert {
+        "historic/history/network/index.json",
+        "historic/history/lines/index.json",
+        "historic/history/stops/index.json",
+    }.isdisjoint(report.payload_sha256)
 
 
 @pytest.mark.parametrize("analytics_gate", [False, True])
 @pytest.mark.parametrize(
-    ("failure_stage", "error_message"),
+    "failure_stage",
     [
-        ("stop_immutable", "Stop immutable failed"),
-        ("stop_entity_index", "Stop entity index failed"),
-        ("stops_directory", "Stops directory failed"),
-        ("root", "History root failed"),
+        "network_index",
+        "alert_index",
+        "receipt_index",
+        "line_entity_index",
+        "stop_entity_index",
+        "lines_directory",
+        "stops_directory",
+        "root",
     ],
 )
-def test_stop_and_root_failure_stage_preserves_old_root_and_skips_later_pointers(
+def test_pointer_stage_failure_preserves_complete_previously_active_graph(
     monkeypatch,
     analytics_gate: bool,
     failure_stage: str,
-    error_message: str,
 ):
     network_plan = _network_history_plan()
     line_plan = _line_history_plan()
     stop_plan = _stop_history_plan()
-    line_bundle = line_plan.materialize()
-    stop_bundle = stop_plan.materialize()
-    stop_partition_paths = [path for path, _partition in stop_bundle.partition_items]
-    stop_index_path = _stop_index_path(stop_bundle.indexes[0].entity_id or "")
-    lines_directory_path = "historic/history/lines/index.json"
-    stops_directory_path = "historic/history/stops/index.json"
-    root_path = "historic/history/index.json"
-    targets = {
-        "stop_immutable": stop_partition_paths[-1],
-        "stop_entity_index": stop_index_path,
-        "stops_directory": stops_directory_path,
-        "root": root_path,
-    }
-    later_pointers = {
-        "stop_immutable": [
-            "historic/history/network/index.json",
-            *[_line_index_path(index.entity_id or "") for index in line_bundle.indexes],
-            stop_index_path,
-            lines_directory_path,
-            stops_directory_path,
-            root_path,
-        ],
-        "stop_entity_index": [lines_directory_path, stops_directory_path, root_path],
-        "stops_directory": [root_path],
-        "root": [],
-    }
     _patch_minimal_historic(
         monkeypatch,
         network_plan=network_plan,
@@ -959,22 +1158,65 @@ def test_stop_and_root_failure_stage_preserves_old_root_and_skips_later_pointers
     )
 
     class FailStage(_RecordingStore):
+        active_failure: str | None = None
+
         def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
-            if failure_stage == "stop_immutable" and rel_key == targets[failure_stage]:
+            patterns = {
+                "network_index": r"^historic/history/network/generations/[0-9a-f]{64}/index\.json$",
+                "alert_index": r"^historic/alerts/generations/[0-9a-f]{64}/index\.json$",
+                "receipt_index": r"^historic/receipts/generations/[0-9a-f]{64}/index\.json$",
+                "line_entity_index": (
+                    r"^historic/history/lines/[0-9a-f]+/generations/"
+                    r"[0-9a-f]{64}/index\.json$"
+                ),
+                "stop_entity_index": (
+                    r"^historic/history/stops/[0-9a-f]+/generations/"
+                    r"[0-9a-f]{64}/index\.json$"
+                ),
+                "lines_directory": (
+                    r"^historic/history/lines/generations/[0-9a-f]{64}/index\.json$"
+                ),
+                "stops_directory": (
+                    r"^historic/history/stops/generations/[0-9a-f]{64}/index\.json$"
+                ),
+            }
+            pattern = patterns.get(self.active_failure or "")
+            if pattern is not None and re.fullmatch(pattern, rel_key):
                 self.calls.append(("immutable", rel_key))
-                raise RuntimeError(error_message)
+                raise RuntimeError(f"{self.active_failure} failed")
             return super().put_immutable_json(rel_key, payload)
 
-        def put_json(self, rel_key, payload, *, tier):  # noqa: ANN001, ANN201
-            if failure_stage != "stop_immutable" and rel_key == targets[failure_stage]:
+        def activate_stable_json(
+            self,
+            rel_key,
+            payload,
+            *,
+            expected_version,
+            tier,
+        ):  # noqa: ANN001, ANN201
+            if self.active_failure == "root":
                 self.calls.append(("normal", rel_key))
-                raise RuntimeError(error_message)
-            return super().put_json(rel_key, payload, tier=tier)
+                raise RuntimeError("root failed")
+            return super().activate_stable_json(
+                rel_key,
+                payload,
+                expected_version=expected_version,
+                tier=tier,
+            )
 
     store = FailStage()
-    expected_pointers = _seed_complete_retained_pointers(store, line_bundle, stop_bundle)
+    _publish_historic(
+        object(),
+        store,
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        stamp="2026-07-12T00:00:00Z",
+        gate_report=_gate_report(analytics_gate),
+    )
+    old_graph = _reachable_history_graph(store)
+    store.active_failure = failure_stage
 
-    with pytest.raises(RuntimeError, match=error_message):
+    with pytest.raises(RuntimeError, match=rf"{failure_stage} failed"):
         _publish_historic(
             object(),
             store,
@@ -984,18 +1226,7 @@ def test_stop_and_root_failure_stage_preserves_old_root_and_skips_later_pointers
             gate_report=_gate_report(analytics_gate),
         )
 
-    assert store.objects[root_path] == expected_pointers[root_path]
-    assert all(
-        store.objects[path] == expected_pointers[path] for path in later_pointers[failure_stage]
-    )
-    assert not any(
-        kind == "normal" and path in later_pointers[failure_stage] for kind, path in store.calls
-    )
-    if failure_stage == "stop_immutable":
-        assert stop_partition_paths[0] in store.objects
-        assert targets[failure_stage] not in store.objects
-    else:
-        assert store.objects[targets[failure_stage]] == expected_pointers[targets[failure_stage]]
+    assert _reachable_history_graph(store) == old_graph
 
 
 @pytest.mark.parametrize("analytics_gate", [False, True])
@@ -1260,6 +1491,62 @@ def test_line_history_gate_rejects_empty_entity_duplicate_directory_identity_and
     }
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        pytest.param("entity_id", None, id="null-entity-id"),
+        pytest.param("entity_id", 7, id="mixed-entity-id"),
+        pytest.param("entity_id", [], id="unhashable-entity-id"),
+        pytest.param("encoded_id", [], id="unhashable-encoded-id"),
+        pytest.param("index_path", {}, id="unhashable-index-path"),
+    ],
+)
+def test_line_history_malformed_directory_identity_returns_findings_not_exceptions(
+    field: str,
+    value: object,
+):
+    directory = _line_history_plan().materialize().directory.model_dump(mode="json")
+    directory["entities"][0][field] = value
+
+    findings = gate.check_line_history_directory(
+        directory,
+        rel_key="historic/history/lines/index.json",
+    )
+
+    assert "contract" in {finding.check for finding in findings}
+
+
+@pytest.mark.parametrize("family", ["network", "line"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param(None, id="null"),
+        pytest.param(7, id="number"),
+        pytest.param([], id="list"),
+        pytest.param({}, id="object"),
+    ],
+)
+def test_history_index_malformed_partition_ref_path_returns_findings_not_exceptions(
+    family: str,
+    path: object,
+):
+    if family == "network":
+        bundle = _network_history_plan().materialize()
+        index = bundle.index.model_dump(mode="json")
+        rel_key = "historic/history/network/index.json"
+        check = gate.check_network_history_index
+    else:
+        bundle = _line_history_plan().materialize()
+        index = bundle.indexes[0].model_dump(mode="json")
+        rel_key = _line_index_path(bundle.indexes[0].entity_id or "")
+        check = gate.check_line_history_index
+    index["partitions"][0]["path"] = path
+
+    findings = check(index, rel_key=rel_key)
+
+    assert {"contract", "ref_path"}.intersection(finding.check for finding in findings)
+
+
 @pytest.mark.parametrize("analytics_gate", [False, True])
 def test_line_history_invalid_later_partition_preserves_every_existing_pointer(
     monkeypatch,
@@ -1373,17 +1660,19 @@ def test_line_history_entity_index_failure_preserves_directory_and_later_pointer
 ):
     line_plan = _line_history_plan()
     bundle = line_plan.materialize()
-    target = _line_index_path(bundle.indexes[1].entity_id or "")
-    later = _line_index_path(bundle.indexes[2].entity_id or "")
-    directory_key = "historic/history/lines/index.json"
+    encoded_target = encode_history_entity_id(bundle.indexes[1].entity_id or "")
     _patch_minimal_historic(monkeypatch, line_plan=line_plan)
 
     class FailEntityIndex(_RecordingStore):
-        def put_json(self, rel_key, payload, *, tier):  # noqa: ANN001, ANN201
-            if rel_key == target:
-                self.calls.append(("normal", rel_key))
+        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
+            if re.fullmatch(
+                rf"historic/history/lines/{encoded_target}/generations/"
+                r"[0-9a-f]{64}/index\.json",
+                rel_key,
+            ):
+                self.calls.append(("immutable", rel_key))
                 raise RuntimeError("Line entity index failed")
-            return super().put_json(rel_key, payload, tier=tier)
+            return super().put_immutable_json(rel_key, payload)
 
     store = FailEntityIndex()
     expected_pointers = _seed_retained_pointers(store, bundle)
@@ -1398,10 +1687,8 @@ def test_line_history_entity_index_failure_preserves_directory_and_later_pointer
             gate_report=_gate_report(analytics_gate),
         )
 
-    assert store.objects[target] == expected_pointers[target]
-    assert store.objects[later] == expected_pointers[later]
-    assert store.objects[directory_key] == expected_pointers[directory_key]
-    assert ("normal", directory_key) not in store.calls
+    assert all(store.objects[key] == value for key, value in expected_pointers.items())
+    assert "historic/history/index.json" not in store.objects
 
 
 @pytest.mark.parametrize("analytics_gate", [False, True])
@@ -1415,11 +1702,14 @@ def test_line_history_directory_failure_preserves_existing_directory_bytes(
     _patch_minimal_historic(monkeypatch, line_plan=line_plan)
 
     class FailDirectory(_RecordingStore):
-        def put_json(self, rel_key, payload, *, tier):  # noqa: ANN001, ANN201
-            if rel_key == directory_key:
-                self.calls.append(("normal", rel_key))
+        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
+            if re.fullmatch(
+                r"historic/history/lines/generations/[0-9a-f]{64}/index\.json",
+                rel_key,
+            ):
+                self.calls.append(("immutable", rel_key))
                 raise RuntimeError("Lines directory failed")
-            return super().put_json(rel_key, payload, tier=tier)
+            return super().put_immutable_json(rel_key, payload)
 
     store = FailDirectory()
     expected_pointers = _seed_retained_pointers(store, bundle)
@@ -1435,12 +1725,8 @@ def test_line_history_directory_failure_preserves_existing_directory_bytes(
         )
 
     assert store.objects[directory_key] == expected_pointers[directory_key]
-    assert all(
-        store.objects[_line_index_path(index.entity_id or "")]
-        != expected_pointers[_line_index_path(index.entity_id or "")]
-        for index in bundle.indexes
-    )
-    assert store.calls[-1] == ("normal", directory_key)
+    assert "historic/history/index.json" not in store.objects
+    assert store.calls[-1][0] == "immutable"
 
 
 def test_network_history_actual_historic_publish_is_structural_and_root_last(
@@ -1474,21 +1760,21 @@ def test_network_history_actual_historic_publish_is_structural_and_root_last(
     )
 
     assert len(checked) == len(bundle.partitions)
-    assert [path for _kind, path in store.calls] == [
-        *(ref.path for ref in bundle.index.partitions),
-        "historic/receipts/index.json",
-        "historic/alerts/index.json",
-        "historic/history/network/index.json",
-        "historic/history/lines/index.json",
-        "historic/history/stops/index.json",
-        "historic/history/index.json",
-    ]
+    paths = [path for _kind, path in store.calls]
+    assert paths[: len(bundle.index.partitions)] == [ref.path for ref in bundle.index.partitions]
+    assert "historic/history/network/index.json" not in paths
+    assert "historic/history/lines/index.json" not in paths
+    assert "historic/history/stops/index.json" not in paths
+    assert len(_reachable_history_graph(store)) == 6
     assert store.calls[-1] == ("normal", "historic/history/index.json")
 
     outcomes = SimpleNamespace(
-        written=["historic/history/network/index.json"],
+        written=["historic/history/index.json"],
         skipped=[],
-        immutable_written=[ref.path for ref in bundle.index.partitions],
+        immutable_written=[
+            *[ref.path for ref in bundle.index.partitions],
+            *[path for path in paths if path.endswith("/index.json")],
+        ],
         immutable_skipped=[],
     )
     assert _stable_outcome_total(outcomes) == 1
@@ -1557,13 +1843,14 @@ def test_network_history_actual_publish_builds_gates_and_uploads_one_month_at_a_
 
     class EventStore(_RecordingStore):
         def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
-            events.append(("put-partition", payload.month))
-            return super().put_immutable_json(rel_key, payload)
-
-        def put_json(self, rel_key, payload, *, tier):  # noqa: ANN001, ANN201
-            if rel_key == "historic/history/network/index.json":
+            if hasattr(payload, "month"):
+                events.append(("put-partition", payload.month))
+            elif re.fullmatch(
+                r"historic/history/network/generations/[0-9a-f]{64}/index\.json",
+                rel_key,
+            ):
                 events.append(("put-index", "network"))
-            return super().put_json(rel_key, payload, tier=tier)
+            return super().put_immutable_json(rel_key, payload)
 
     _publish_historic(
         object(),
@@ -1808,7 +2095,7 @@ def test_network_history_second_month_put_failure_preserves_existing_pointer(
 
 
 @pytest.mark.parametrize("analytics_gate", [False, True])
-def test_network_history_index_put_failure_leaves_children_and_preserves_existing_pointer(
+def test_network_history_index_put_failure_leaves_children_without_activating_root(
     monkeypatch,
     analytics_gate: bool,
 ):
@@ -1837,7 +2124,12 @@ def test_network_history_index_put_failure_leaves_children_and_preserves_existin
 
     assert {ref.path for ref in bundle.index.partitions}.issubset(store.objects)
     assert store.objects[index_key] == old_pointer
-    assert store.calls[-1] == ("normal", index_key)
+    assert store.calls[-1][0] == "immutable"
+    assert re.fullmatch(
+        r"historic/history/network/generations/[0-9a-f]{64}/index\.json",
+        store.calls[-1][1],
+    )
+    assert "historic/history/index.json" not in store.objects
 
 
 @pytest.mark.parametrize("analytics_gate", [False, True])
@@ -1948,7 +2240,22 @@ def test_network_history_validate_records_bundle_sha_and_preserves_alert_slot(mo
         engine=Engine(),
     )
     assert {ref.path for ref in bundle.index.partitions}.issubset(report.payload_sha256)
-    assert "historic/history/network/index.json" in report.payload_sha256
+    assert "historic/history/network/index.json" not in report.payload_sha256
+    versioned_indexes = [
+        path
+        for path in report.payload_sha256
+        if re.fullmatch(
+            r"historic/history/network/generations/[0-9a-f]{64}/index\.json",
+            path,
+        )
+    ]
+    assert len(versioned_indexes) == 1
+    match = re.fullmatch(
+        r"historic/history/network/generations/([0-9a-f]{64})/index\.json",
+        versioned_indexes[0],
+    )
+    assert match is not None
+    assert report.payload_sha256[versioned_indexes[0]] == match.group(1)
 
 
 @pytest.mark.parametrize(
@@ -2234,9 +2541,12 @@ def test_stop_history_publish_does_not_materialize_all_entity_indexes(monkeypatc
     assert len([key for key in keys if key.startswith("historic/history/stops/S")]) == 0
     assert (
         sum(
-            key.startswith("historic/history/stops/")
-            and key.endswith("/index.json")
-            and key != "historic/history/stops/index.json"
+            re.fullmatch(
+                r"historic/history/stops/[0-9a-f]+/generations/"
+                r"[0-9a-f]{64}/index\.json",
+                key,
+            )
+            is not None
             for key in keys
         )
         == 5
@@ -2314,9 +2624,12 @@ def test_stop_history_entity_indexes_upload_in_bounded_batches(monkeypatch):
 
     def record_batches(storage, items, **kwargs):  # noqa: ANN001, ANN202
         if items and all(
-            rel_key.startswith("historic/history/stops/")
-            and rel_key.endswith("/index.json")
-            and rel_key != "historic/history/stops/index.json"
+            re.fullmatch(
+                r"historic/history/stops/[0-9a-f]+/generations/"
+                r"[0-9a-f]{64}/index\.json",
+                rel_key,
+            )
+            is not None
             for rel_key, _payload, _tier in items
         ):
             batch_sizes.append(len(items))
@@ -2353,11 +2666,31 @@ def test_analytics_gate_does_not_retain_stop_generation_digests(monkeypatch):
 
     generation_paths = {path for path, _partition in stop_bundle.partition_items}
     assert generation_paths.isdisjoint(report.payload_sha256)
-    assert {
-        *(_stop_index_path(index.entity_id or "") for index in stop_bundle.indexes),
-        "historic/history/stops/index.json",
-        "historic/history/index.json",
-    }.issubset(report.payload_sha256)
+    entity_indexes = [
+        path
+        for path in report.payload_sha256
+        if re.fullmatch(
+            r"historic/history/stops/[0-9a-f]+/generations/"
+            r"[0-9a-f]{64}/index\.json",
+            path,
+        )
+    ]
+    directory_indexes = [
+        path
+        for path in report.payload_sha256
+        if re.fullmatch(
+            r"historic/history/stops/generations/[0-9a-f]{64}/index\.json",
+            path,
+        )
+    ]
+    assert len(entity_indexes) == len(stop_bundle.indexes)
+    assert len(directory_indexes) == 1
+    for path in [*entity_indexes, *directory_indexes]:
+        digest = re.search(r"/generations/([0-9a-f]{64})/index\.json$", path)
+        assert digest is not None
+        assert report.payload_sha256[path] == digest.group(1)
+    assert "historic/history/stops/index.json" not in report.payload_sha256
+    assert "historic/history/index.json" in report.payload_sha256
 
 
 def test_stop_gate_summary_hashes_refs_without_retaining_duplicate_ref_models():
@@ -2415,6 +2748,130 @@ def test_stop_history_malformed_gate_inputs_return_findings_not_exceptions(case:
         assert {"entity_order", "entity_identity"}.intersection(
             finding.check for finding in findings
         )
+
+
+@pytest.mark.parametrize(
+    "entity_id",
+    [
+        pytest.param([1], id="list"),
+        pytest.param(7, id="number"),
+        pytest.param({"bad": "id"}, id="object"),
+    ],
+)
+def test_stop_history_directory_malformed_entity_id_returns_findings_not_exceptions(
+    entity_id: object,
+):
+    directory = _stop_history_plan().materialize().directory.model_dump(mode="json")
+    directory["entities"][0]["entity_id"] = entity_id
+
+    findings = gate.check_stop_history_directory(
+        directory,
+        rel_key="historic/history/stops/index.json",
+    )
+
+    assert {"contract", "entity_identity"}.intersection(finding.check for finding in findings)
+
+
+@pytest.mark.parametrize(
+    "family",
+    [
+        pytest.param([], id="list"),
+        pytest.param({}, id="object"),
+        pytest.param(7, id="number"),
+        pytest.param(None, id="null"),
+    ],
+)
+def test_history_root_malformed_family_returns_findings_not_exceptions(family: object):
+    from transit_ops.snapshots.contract import AlertArchiveIndex, ReceiptsIndex
+
+    network = _network_history_plan().materialize().index
+    lines = _line_history_plan().materialize()
+    stops = _stop_history_plan().materialize()
+    alerts = AlertArchiveIndex(
+        generated_utc="2026-07-13T00:00:00Z",
+        collection_generation_id="alerts",
+        first_available_date=None,
+        last_available_date=None,
+        total_alerts=0,
+        months=[],
+    )
+    receipts = ReceiptsIndex(
+        generated_utc="2026-07-13T00:00:00Z",
+        collection_generation_id=publish._receipts_collection_generation_id({}),
+        dates=[],
+    )
+    root = publish._build_history_availability_index(  # noqa: SLF001
+        stamp="2026-07-13T00:00:00Z",
+        alert_index=alerts,
+        receipts_index=receipts,
+        network_index=network,
+        line_directory=lines.directory,
+        line_indexes=lines.indexes,
+        stop_directory=stops.directory,
+        stop_indexes=stops.indexes,
+    ).model_dump(mode="json")
+    root["families"][0]["family"] = family
+
+    findings = gate.check_history_availability_index(
+        root,
+        rel_key="historic/history/index.json",
+    )
+
+    assert {"contract", "family_order", "family_path"}.intersection(
+        finding.check for finding in findings
+    )
+
+
+@pytest.mark.parametrize(
+    ("family", "plan_type"),
+    [
+        pytest.param("network", _MalformedNetworkRefPlan, id="network"),
+        pytest.param("line", _MalformedLineRefPlan, id="line"),
+    ],
+)
+@pytest.mark.parametrize("analytics_gate", [False, True])
+@pytest.mark.parametrize("force", [False, True])
+def test_malformed_network_and_line_refs_preserve_gate_and_force_semantics(
+    monkeypatch,
+    family: str,
+    plan_type,
+    analytics_gate: bool,
+    force: bool,
+):
+    malformed_plan = plan_type()
+    plans = {f"{family}_plan": malformed_plan}
+    _patch_minimal_historic(monkeypatch, **plans)
+    store = _RecordingStore()
+    report = _gate_report(analytics_gate)
+
+    if not force:
+        with pytest.raises(gate.GateError) as exc_info:
+            _publish_historic(
+                object(),
+                store,
+                provider_id="stm",
+                settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+                stamp="2026-07-13T00:00:00Z",
+                gate_report=report,
+            )
+        assert "ref_count" in {finding.check for finding in exc_info.value.report.errors}
+        assert malformed_plan.malformed_path not in store.objects
+        assert not any(kind == "normal" for kind, _path in store.calls)
+        return
+
+    keys = _publish_historic(
+        object(),
+        store,
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        stamp="2026-07-13T00:00:00Z",
+        gate_report=report,
+        force=True,
+    )
+
+    assert keys[-1] == "historic/history/index.json"
+    if report is not None:
+        assert "ref_count" in {finding.check for finding in report.errors}
 
 
 @pytest.mark.parametrize("analytics_gate", [False, True])

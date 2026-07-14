@@ -374,7 +374,12 @@ class StopHistoryPointerSummary:
     )
     generated_utc: str | None = None
 
-    def observe(self, index: HistoricCollectionIndex) -> None:
+    def observe(
+        self,
+        index: HistoricCollectionIndex,
+        *,
+        index_path: str | None = None,
+    ) -> None:
         entity_id = index.entity_id
         if not entity_id:
             return
@@ -383,7 +388,7 @@ class StopHistoryPointerSummary:
             HistoricEntityIndexRef(
                 entity_id=entity_id,
                 encoded_id=encoded_id,
-                index_path=f"historic/history/stops/{encoded_id}/index.json",
+                index_path=index_path or f"historic/history/stops/{encoded_id}/index.json",
                 collection_generation_id=index.collection_generation_id or "",
                 first_available_date=index.first_available_date,
                 last_available_date=index.last_available_date,
@@ -436,12 +441,14 @@ class StopHistoryPointerSummary:
     def build_family(
         self,
         directory: HistoricEntityDirectoryIndex,
+        *,
+        index_path: str = "historic/history/stops/index.json",
     ) -> HistoricFamilyAvailability:
         first, last, gaps = history_coverage(self.available_dates)
         return HistoricFamilyAvailability(
             family="stops",
             selection_mode="range",
-            index_path="historic/history/stops/index.json",
+            index_path=index_path,
             collection_generation_id=directory.collection_generation_id,
             first_available_date=first,
             last_available_date=last,

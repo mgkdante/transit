@@ -342,6 +342,7 @@ def _historic_dispatch_conn(
     # crosstab/by_shift/by_daytype) are left unmapped ([]) to preserve the exact
     # published output the old dead needles gave, so the hand-coded spine branch is gone.
     dispatch = {
+        "publish.lock.try_acquire": [True],
         # Retained Network history stays empty in legacy publisher-order tests unless a
         # test explicitly supplies source rows. Keep the new query surface visible so
         # an accidental name change cannot silently fall through.
@@ -614,7 +615,9 @@ def test_historic_publish_uploads_index_after_receipts() -> None:
     assert index_key in keys
     # every receipt file appears in the upload log strictly before the index PUT
     receipt_positions = [
-        i for i, k in enumerate(store.keys) if k.startswith("historic/receipts/") and k != index_key
+        i
+        for i, k in enumerate(store.keys)
+        if k.startswith("historic/receipts/") and "/generations/" not in k and k != index_key
     ]
     index_position = store.keys.index(index_key)
     assert receipt_positions, "expected receipt files to be uploaded"
@@ -730,7 +733,7 @@ def test_historic_publish_completes_all_archive_pages_before_stable_index() -> N
     page_positions = [
         index
         for index, key in enumerate(store.keys)
-        if key.startswith("historic/alerts/generations/")
+        if key.startswith("historic/alerts/generations/") and "/page-" in key
     ]
     index_position = store.keys.index("historic/alerts/index.json")
     assert page_positions
@@ -748,8 +751,9 @@ def test_delayed_concurrent_archive_pages_all_finish_before_index() -> None:
 
     class _DelayedPages(_OrderTrackingStore):
         def put_immutable_json(self, rel_key: str, payload: object) -> str:
-            page_number = int(rel_key.rsplit("page-", 1)[1][:4])
-            time.sleep(0.004 * (4 - page_number))
+            if "page-" in rel_key:
+                page_number = int(rel_key.rsplit("page-", 1)[1][:4])
+                time.sleep(0.004 * (4 - page_number))
             return super().put_immutable_json(rel_key, payload)
 
     base = _archive_publish_row()
@@ -781,7 +785,7 @@ def test_delayed_concurrent_archive_pages_all_finish_before_index() -> None:
     pages = [
         index
         for index, key in enumerate(store.keys)
-        if key.startswith("historic/alerts/generations/")
+        if key.startswith("historic/alerts/generations/") and "/page-" in key
     ]
     assert len(pages) == 3
     assert max(pages) < store.keys.index("historic/alerts/index.json")
@@ -827,16 +831,19 @@ def test_historic_publish_counts_archive_pages_physically_but_not_in_stable_base
     )
 
     page_keys = [
-        key for key in result.keys_written if key.startswith("historic/alerts/generations/")
+        key
+        for key in result.keys_written
+        if key.startswith("historic/alerts/generations/") and "/page-" in key
     ]
+    generation_keys = [key for key in result.keys_written if "/generations/" in key]
     assert len(page_keys) == 1
     assert len(conn.state_writes) == 1
     state = conn.state_writes[0]
     assert state["written"] == len(result.keys_written)
     assert state["total"] == len(result.keys_written)
-    assert state["stable_total"] == state["total"] - len(page_keys)
+    assert state["stable_total"] == state["total"] - len(generation_keys)
     hash_state = store.get_json("_meta/publish_state_historic.json")
-    assert all(key not in hash_state["hashes"] for key in page_keys)
+    assert all(key not in hash_state["hashes"] for key in generation_keys)
 
 
 def test_unchanged_historic_republish_counts_immutable_skip_physically_and_exposes_it() -> None:
@@ -866,8 +873,11 @@ def test_unchanged_historic_republish_counts_immutable_skip_physically_and_expos
     )
 
     page_keys = [
-        key for key in first.keys_written if key.startswith("historic/alerts/generations/")
+        key
+        for key in first.keys_written
+        if key.startswith("historic/alerts/generations/") and "/page-" in key
     ]
+    generation_keys = [key for key in first.keys_written if "/generations/" in key]
     assert len(page_keys) == 1
     assert second.keys_written == []
     assert page_keys[0] in second.keys_skipped
@@ -877,7 +887,7 @@ def test_unchanged_historic_republish_counts_immutable_skip_physically_and_expos
     assert state["written"] == 0
     assert state["skipped"] == physical_skipped
     assert state["total"] == physical_skipped
-    assert state["stable_total"] == physical_skipped - len(page_keys)
+    assert state["stable_total"] == physical_skipped - len(generation_keys)
     assert second.display_dict()["files_skipped"] == physical_skipped
 
 
@@ -976,22 +986,17 @@ def test_all_history_families_republish_account_for_real_hash_gate_outcomes_end_
     public = set(first.keys_written)
     generation = {key for key in first.keys_written if "/generations/" in key}
     stable = public - generation
-    network_index_key = "historic/history/network/index.json"
-    line_index_key = "historic/history/lines/412f42/index.json"
-    stop_index_key = "historic/history/stops/532f31/index.json"
-    line_directory_key = "historic/history/lines/index.json"
-    stop_directory_key = "historic/history/stops/index.json"
     root_key = "historic/history/index.json"
     assert len(public) == len(first.keys_written)
-    assert len(generation) == 6
+    assert len(generation) == 13
+    assert root_key in public
     assert {
-        network_index_key,
-        line_index_key,
-        stop_index_key,
-        line_directory_key,
-        stop_directory_key,
-        root_key,
-    }.issubset(public)
+        "historic/history/network/index.json",
+        "historic/history/lines/412f42/index.json",
+        "historic/history/stops/532f31/index.json",
+        "historic/history/lines/index.json",
+        "historic/history/stops/index.json",
+    }.isdisjoint(public)
     assert first.keys_skipped == []
     assert second.keys_written == []
     assert Counter(second.keys_skipped) == Counter(first.keys_written)
@@ -1097,6 +1102,9 @@ class _RecordingStaticConn:
 
         from transit_ops.sql_registry import query_name
 
+        if query_name(statement) == "publish.lock.try_acquire":
+            return _StaticResult([True])
+
         route_row = [
             {
                 "route_id": "R1",
@@ -1182,3 +1190,114 @@ class _FakeEngine:
             yield self._conn
 
         return _cm()
+
+
+def test_concurrent_historic_publish_loser_stops_before_hash_load_or_any_write() -> None:
+    """One provider/tier transaction owns root, mutable files, hash state, and DB state."""
+    from transit_ops.snapshots import publish as snapshot_publish
+
+    class _TryLockResult:
+        def __init__(self, acquired: bool) -> None:
+            self.acquired = acquired
+
+        def scalar_one(self) -> bool:
+            return self.acquired
+
+    lane = threading.Lock()
+    base_conn = _historic_dispatch_conn()
+
+    class _LockedConn:
+        def __init__(self) -> None:
+            self.owns_lane = False
+
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN201
+            if query_name(statement) == "publish.lock.try_acquire":
+                self.owns_lane = lane.acquire(blocking=False)
+                return _TryLockResult(self.owns_lane)
+            return base_conn.execute(statement, params)
+
+    class _LockedEngine:
+        def begin(self):  # noqa: ANN201
+            conn = _LockedConn()
+
+            @contextmanager
+            def _transaction():
+                try:
+                    yield conn
+                finally:
+                    if conn.owns_lane:
+                        lane.release()
+
+            return _transaction()
+
+    class _PausedHashLoadStore(_OrderTrackingStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.load_started = threading.Event()
+            self.release_load = threading.Event()
+            self.hash_loads = 0
+
+        def get_json(self, rel_key: str):  # noqa: ANN201
+            if rel_key == "_meta/publish_state_historic.json":
+                self.hash_loads += 1
+                self.load_started.set()
+                if not self.release_load.wait(timeout=5):
+                    raise TimeoutError("test did not release the winning publisher")
+            return super().get_json(rel_key)
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    store = _PausedHashLoadStore()
+    engine = _LockedEngine()
+    winner_results: list[object] = []
+    winner_errors: list[BaseException] = []
+
+    def _run_winner() -> None:
+        try:
+            winner_results.append(
+                publish_snapshot(
+                    "stm",
+                    tier="historic",
+                    settings=_Settings(),
+                    engine=engine,
+                    storage=store,
+                    gate_enabled=False,
+                )
+            )
+        except BaseException as exc:  # noqa: BLE001 - surfaced below with full repr
+            winner_errors.append(exc)
+
+    winner = threading.Thread(target=_run_winner)
+    winner.start()
+    assert store.load_started.wait(timeout=5), "winner never reached hash-state load"
+
+    try:
+        with pytest.raises(
+            snapshot_publish.PublishLockUnavailableError,
+            match=r"provider='stm'.*tier='historic'",
+        ):
+            publish_snapshot(
+                "stm",
+                tier="historic",
+                settings=_Settings(),
+                engine=engine,
+                storage=store,
+                gate_enabled=False,
+            )
+
+        assert store.hash_loads == 1
+        assert store.keys == []
+        assert base_conn.state_writes == []
+    finally:
+        store.release_load.set()
+        winner.join(timeout=10)
+
+    assert not winner.is_alive()
+    assert winner_errors == []
+    assert len(winner_results) == 1
+    assert "historic/history/index.json" in store.store
+    assert "historic/network_trend.json" in store.store
+    assert "_meta/publish_state_historic.json" in store.store
+    assert len(base_conn.state_writes) == 1

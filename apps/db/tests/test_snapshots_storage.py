@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import multiprocessing
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -10,10 +11,12 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from botocore.exceptions import ClientError
 
+import transit_ops.snapshots.storage as storage_module
 from transit_ops.snapshots.contract import VehiclesFile
 from transit_ops.snapshots.storage import (
     CACHE_CONTROL,
     HashGatedStorage,
+    ImmutableKeyCollisionError,
     SnapshotStorage,
     state_fingerprint,
 )
@@ -49,6 +52,140 @@ class FakeS3Client:
         return {"Body": io.BytesIO(self.objects[key]["Body"])}
 
 
+class _ConditionalCreateRaceClient(FakeS3Client):
+    """Synchronize two missing HEADs and enforce S3 conditional-create semantics."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._state_lock = threading.Lock()
+        self._initial_head_barrier = threading.Barrier(2)
+        self._heads_to_synchronize = 2
+        self.successful_put_calls: list[str] = []
+        self.precondition_failures = 0
+
+    def head_object(self, **kw):
+        key = kw["Key"]
+        with self._state_lock:
+            self.head_calls.append(key)
+            obj = self.objects.get(key)
+            synchronize = self._heads_to_synchronize > 0
+            if synchronize:
+                self._heads_to_synchronize -= 1
+            response = (
+                {
+                    "ContentLength": obj.get("HeadContentLength", len(obj["Body"])),
+                    "Metadata": dict(obj.get("Metadata", {})),
+                }
+                if obj is not None
+                else None
+            )
+
+        if synchronize:
+            self._initial_head_barrier.wait(timeout=2)
+        if response is None:
+            raise ClientError({"Error": {"Code": "404", "Message": "missing"}}, "HeadObject")
+        return response
+
+    def put_object(self, **kw):
+        key = kw["Key"]
+        with self._state_lock:
+            self.put_calls.append(key)
+            if kw.get("IfNoneMatch") == "*" and key in self.objects:
+                self.precondition_failures += 1
+                raise ClientError(
+                    {
+                        "Error": {"Code": "PreconditionFailed", "Message": "already exists"},
+                        "ResponseMetadata": {"HTTPStatusCode": 412},
+                    },
+                    "PutObject",
+                )
+            self.objects[key] = kw
+            self.successful_put_calls.append(key)
+
+
+class _PreconditionRaceWinnerClient(FakeS3Client):
+    """Install a competing winner immediately before rejecting a conditional PUT."""
+
+    def __init__(self, *, winner_body: bytes, winner_metadata: dict[str, str]) -> None:
+        super().__init__()
+        self._winner_body = winner_body
+        self._winner_metadata = winner_metadata
+
+    def put_object(self, **kw):
+        key = kw["Key"]
+        self.put_calls.append(key)
+        assert kw.get("IfNoneMatch") == "*"
+        self.objects[key] = {
+            **kw,
+            "Body": self._winner_body,
+            "Metadata": self._winner_metadata,
+        }
+        raise ClientError(
+            {
+                "Error": {"Code": "PreconditionFailed", "Message": "already exists"},
+                "ResponseMetadata": {"HTTPStatusCode": 412},
+            },
+            "PutObject",
+        )
+
+
+class _StableCasClient(FakeS3Client):
+    """In-memory S3 fake that enforces If-Match and If-None-Match atomically."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._state_lock = threading.Lock()
+        self.conditional_puts: list[dict] = []
+        self.precondition_failures = 0
+
+    @staticmethod
+    def _etag(body: bytes) -> str:
+        return f'"{hashlib.sha256(body).hexdigest()}"'
+
+    def seed(self, key: str, body: bytes) -> None:
+        self.objects[key] = {"Body": body, "ETag": self._etag(body)}
+
+    def head_object(self, **kw):
+        key = kw["Key"]
+        with self._state_lock:
+            self.head_calls.append(key)
+            obj = self.objects.get(key)
+            if obj is None:
+                raise ClientError(
+                    {"Error": {"Code": "404", "Message": "missing"}},
+                    "HeadObject",
+                )
+            return {
+                "ContentLength": len(obj["Body"]),
+                "ETag": obj["ETag"],
+                "Metadata": dict(obj.get("Metadata", {})),
+            }
+
+    def put_object(self, **kw):
+        key = kw["Key"]
+        with self._state_lock:
+            self.put_calls.append(key)
+            self.conditional_puts.append(kw)
+            existing = self.objects.get(key)
+            failed = kw.get("IfNoneMatch") == "*" and existing is not None
+            if_match = kw.get("IfMatch")
+            failed = failed or (
+                if_match is not None and (existing is None or existing["ETag"] != if_match)
+            )
+            if failed:
+                self.precondition_failures += 1
+                raise ClientError(
+                    {
+                        "Error": {"Code": "PreconditionFailed", "Message": "stale version"},
+                        "ResponseMetadata": {"HTTPStatusCode": 412},
+                    },
+                    "PutObject",
+                )
+            etag = self._etag(kw["Body"])
+            self.objects[key] = {**kw, "ETag": etag}
+            return {"ETag": etag}
+
+
 class _CloseTrackingBody(io.BytesIO):
     def __init__(self, value: bytes) -> None:
         super().__init__(value)
@@ -71,6 +208,47 @@ class _LegacyBodyClient(FakeS3Client):
         body = _CloseTrackingBody(self.objects[key]["Body"])
         self.last_body = body
         return {"Body": body}
+
+
+def _attempt_local_stable_activation_in_process(
+    root: str,
+    rel_key: str,
+    expected_version: storage_module.StableObjectVersion,
+    candidate: int,
+    read_barrier,
+    result_queue,
+) -> None:
+    """Force two processes to capture the same active bytes before replacing them."""
+
+    original_read_bytes = storage_module.pathlib.Path.read_bytes
+    synchronized = False
+
+    def synchronized_read_bytes(path):
+        nonlocal synchronized
+        body = original_read_bytes(path)
+        if not synchronized and path.name == "index.json":
+            synchronized = True
+            try:
+                read_barrier.wait(timeout=1)
+            except threading.BrokenBarrierError:
+                pass
+        return body
+
+    storage_module.pathlib.Path.read_bytes = synchronized_read_bytes
+    store = storage_module.LocalSnapshotStorage(root, "v1/stm")
+    try:
+        outcome = store.activate_stable_json_outcome(
+            rel_key,
+            {"generation": f"candidate-{candidate}"},
+            expected_version=expected_version,
+            tier="historic",
+        )
+    except storage_module.StableActivationConflictError:
+        result_queue.put(("conflict", candidate, None))
+    except BaseException as exc:  # noqa: BLE001 - child errors must reach the parent
+        result_queue.put(("error", candidate, repr(exc)))
+    else:
+        result_queue.put(("outcome", candidate, outcome.written))
 
 
 def test_put_json_sets_headers():
@@ -646,6 +824,93 @@ def test_concurrent_duplicate_immutable_attempts_put_once_and_account_atomically
     assert client.put_calls.count(f"v1/stm/{key}") == 1
 
 
+def test_r2_cross_instance_concurrent_duplicate_immutable_attempts_create_once():
+    client = _ConditionalCreateRaceClient()
+    stores = [
+        SnapshotStorage(client, bucket="b", base_prefix="v1/stm"),
+        SnapshotStorage(client, bucket="b", base_prefix="v1/stm"),
+    ]
+    key = "historic/alerts/generations/abc/2026-07/page-0001.json"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(
+            pool.map(
+                lambda store: store.put_immutable_json_outcome(key, {"page": 1}),
+                stores,
+            )
+        )
+
+    full_key = f"v1/stm/{key}"
+    assert sorted(outcome.written for outcome in outcomes) == [False, True]
+    assert client.successful_put_calls == [full_key]
+    assert client.precondition_failures == 1
+    assert all(client.objects[full_key]["IfNoneMatch"] == "*" for _outcome in outcomes)
+
+
+def test_r2_cross_instance_concurrent_different_immutable_bytes_collide():
+    client = _ConditionalCreateRaceClient()
+    stores = [
+        SnapshotStorage(client, bucket="b", base_prefix="v1/stm"),
+        SnapshotStorage(client, bucket="b", base_prefix="v1/stm"),
+    ]
+    key = "historic/alerts/generations/abc/2026-07/page-0001.json"
+
+    def attempt(index: int):
+        try:
+            return stores[index].put_immutable_json_outcome(key, {"page": index})
+        except Exception as exc:  # noqa: BLE001 - the assertion below owns the exact type
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(attempt, range(2)))
+
+    outcomes = [result for result in results if not isinstance(result, Exception)]
+    collisions = [result for result in results if isinstance(result, ImmutableKeyCollisionError)]
+    assert len(outcomes) == 1 and outcomes[0].written is True
+    assert len(collisions) == 1
+    assert client.successful_put_calls == [f"v1/stm/{key}"]
+    assert client.precondition_failures == 1
+
+
+def test_r2_precondition_race_exact_verification_rejects_forged_matching_metadata():
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    key = "historic/alerts/generations/abc/2026-07/page-0001.json"
+    full_key = f"v1/stm/{key}"
+    requested_body = snapshot_json_bytes({"page": 1})
+    winner_body = snapshot_json_bytes({"page": 2})
+    assert len(winner_body) == len(requested_body)
+    client = _PreconditionRaceWinnerClient(
+        winner_body=winner_body,
+        winner_metadata={"sha256": hashlib.sha256(requested_body).hexdigest()},
+    )
+    store = SnapshotStorage(client, bucket="b", base_prefix="v1/stm")
+
+    with pytest.raises(ImmutableKeyCollisionError, match=f"immutable key collision: {key}"):
+        store.put_immutable_json_outcome(key, {"page": 1})
+
+    assert client.get_calls == [full_key]
+
+
+def test_r2_precondition_race_exact_verification_accepts_identical_winner():
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    key = "historic/alerts/generations/abc/2026-07/page-0001.json"
+    full_key = f"v1/stm/{key}"
+    requested_body = snapshot_json_bytes({"page": 1})
+    client = _PreconditionRaceWinnerClient(
+        winner_body=requested_body,
+        winner_metadata={"sha256": hashlib.sha256(requested_body).hexdigest()},
+    )
+    store = SnapshotStorage(client, bucket="b", base_prefix="v1/stm")
+
+    outcome = store.put_immutable_json_outcome(key, {"page": 1})
+
+    assert outcome.key == full_key
+    assert outcome.written is False
+    assert client.get_calls == [full_key]
+
+
 def test_distinct_immutable_keys_do_not_share_one_global_io_lock():
     class SlowHeadClient(FakeS3Client):
         def __init__(self) -> None:
@@ -690,3 +955,315 @@ def test_snapshot_immutable_put_uses_long_lived_immutable_cache_control():
     store.put_immutable_json(key, {"page": 1})
 
     assert client.objects[f"v1/stm/{key}"]["CacheControl"] == CACHE_CONTROL["historic_immutable"]
+
+
+def test_r2_stable_activation_captures_absence_and_conditionally_creates():
+    client = _StableCasClient()
+    store = SnapshotStorage(client, bucket="b", base_prefix="v1/stm")
+    rel_key = "historic/history/index.json"
+
+    version = store.capture_stable_version(rel_key)
+    outcome = store.activate_stable_json_outcome(
+        rel_key,
+        {"generation": "one"},
+        expected_version=version,
+        tier="historic",
+    )
+
+    assert version.rel_key == rel_key
+    assert version.token is None
+    assert outcome == storage_module.StableActivationOutcome(
+        key=f"v1/stm/{rel_key}",
+        written=True,
+    )
+    put = client.conditional_puts[-1]
+    assert put["IfNoneMatch"] == "*"
+    assert "IfMatch" not in put
+    assert put["CacheControl"] == CACHE_CONTROL["historic"]
+
+
+def test_r2_stable_activation_captures_etag_and_conditionally_replaces():
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    client = _StableCasClient()
+    store = SnapshotStorage(client, bucket="b", base_prefix="v1/stm")
+    rel_key = "historic/history/index.json"
+    full_key = f"v1/stm/{rel_key}"
+    client.seed(full_key, snapshot_json_bytes({"generation": "old"}))
+
+    version = store.capture_stable_version(rel_key)
+    outcome = store.activate_stable_json_outcome(
+        rel_key,
+        {"generation": "new"},
+        expected_version=version,
+        tier="historic",
+    )
+
+    assert version.token == client._etag(snapshot_json_bytes({"generation": "old"}))
+    assert outcome.written is True
+    put = client.conditional_puts[-1]
+    assert put["IfMatch"] == version.token
+    assert "IfNoneMatch" not in put
+
+
+def test_r2_stale_different_stable_activation_raises_typed_conflict():
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    client = _StableCasClient()
+    stores = [
+        SnapshotStorage(client, bucket="b", base_prefix="v1/stm"),
+        SnapshotStorage(client, bucket="b", base_prefix="v1/stm"),
+    ]
+    rel_key = "historic/history/index.json"
+    client.seed(f"v1/stm/{rel_key}", snapshot_json_bytes({"generation": "old"}))
+    versions = [store.capture_stable_version(rel_key) for store in stores]
+
+    stores[0].activate_stable_json_outcome(
+        rel_key,
+        {"generation": "winner"},
+        expected_version=versions[0],
+        tier="historic",
+    )
+    with pytest.raises(
+        storage_module.StableActivationConflictError,
+        match=f"stable activation conflict: {rel_key}",
+    ):
+        stores[1].activate_stable_json_outcome(
+            rel_key,
+            {"generation": "loser"},
+            expected_version=versions[1],
+            tier="historic",
+        )
+
+
+def test_r2_stale_identical_stable_activation_is_idempotent():
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    client = _StableCasClient()
+    stores = [
+        SnapshotStorage(client, bucket="b", base_prefix="v1/stm"),
+        SnapshotStorage(client, bucket="b", base_prefix="v1/stm"),
+    ]
+    rel_key = "historic/history/index.json"
+    full_key = f"v1/stm/{rel_key}"
+    client.seed(full_key, snapshot_json_bytes({"generation": "old"}))
+    versions = [store.capture_stable_version(rel_key) for store in stores]
+    payload = {"generation": "winner"}
+
+    stores[0].activate_stable_json_outcome(
+        rel_key,
+        payload,
+        expected_version=versions[0],
+        tier="historic",
+    )
+    outcome = stores[1].activate_stable_json_outcome(
+        rel_key,
+        payload,
+        expected_version=versions[1],
+        tier="historic",
+    )
+
+    assert outcome == storage_module.StableActivationOutcome(key=full_key, written=False)
+    assert client.get_calls == [full_key]
+
+
+def test_r2_two_publishers_from_same_version_cannot_activate_different_roots():
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    client = _StableCasClient()
+    stores = [
+        SnapshotStorage(client, bucket="b", base_prefix="v1/stm"),
+        SnapshotStorage(client, bucket="b", base_prefix="v1/stm"),
+    ]
+    rel_key = "historic/history/index.json"
+    full_key = f"v1/stm/{rel_key}"
+    client.seed(full_key, snapshot_json_bytes({"generation": "old"}))
+    versions = [store.capture_stable_version(rel_key) for store in stores]
+
+    def attempt(index: int):
+        try:
+            return stores[index].activate_stable_json_outcome(
+                rel_key,
+                {"generation": f"candidate-{index}"},
+                expected_version=versions[index],
+                tier="historic",
+            )
+        except storage_module.StableActivationConflictError as exc:
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(attempt, range(2)))
+
+    outcomes = [
+        result for result in results if isinstance(result, storage_module.StableActivationOutcome)
+    ]
+    conflicts = [
+        result
+        for result in results
+        if isinstance(result, storage_module.StableActivationConflictError)
+    ]
+    assert len(outcomes) == 1 and outcomes[0].written is True
+    assert len(conflicts) == 1
+    assert client.precondition_failures == 1
+
+
+def test_local_stable_activation_enforces_cross_instance_cas(tmp_path):
+    from transit_ops.snapshots.storage import LocalSnapshotStorage
+
+    stores = [
+        LocalSnapshotStorage(str(tmp_path), "v1/stm"),
+        LocalSnapshotStorage(str(tmp_path), "v1/stm"),
+    ]
+    rel_key = "historic/history/index.json"
+    absent = stores[0].capture_stable_version(rel_key)
+
+    created = stores[0].activate_stable_json_outcome(
+        rel_key,
+        {"generation": "old"},
+        expected_version=absent,
+        tier="historic",
+    )
+    versions = [store.capture_stable_version(rel_key) for store in stores]
+
+    def attempt(index: int):
+        try:
+            result = stores[index].activate_stable_json_outcome(
+                rel_key,
+                {"generation": f"candidate-{index}"},
+                expected_version=versions[index],
+                tier="historic",
+            )
+        except storage_module.StableActivationConflictError as exc:
+            result = exc
+        return index, result
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(attempt, range(2)))
+
+    winners = [
+        (index, result)
+        for index, result in results
+        if isinstance(result, storage_module.StableActivationOutcome)
+    ]
+    conflicts = [
+        result
+        for _index, result in results
+        if isinstance(result, storage_module.StableActivationConflictError)
+    ]
+
+    assert absent.token is None
+    assert created.written is True
+    assert len(winners) == 1 and winners[0][1].written is True
+    assert len(conflicts) == 1
+    winner_index = winners[0][0]
+    loser_index = 1 - winner_index
+    idempotent = stores[loser_index].activate_stable_json_outcome(
+        rel_key,
+        {"generation": f"candidate-{winner_index}"},
+        expected_version=versions[loser_index],
+        tier="historic",
+    )
+    assert idempotent.written is False
+
+
+def test_local_stable_activation_enforces_cross_process_cas(tmp_path):
+    store = storage_module.LocalSnapshotStorage(str(tmp_path), "v1/stm")
+    rel_key = "historic/history/index.json"
+    store.put_json(rel_key, {"generation": "old"}, tier="historic")
+    expected_version = store.capture_stable_version(rel_key)
+    context = multiprocessing.get_context("fork")
+    read_barrier = context.Barrier(2)
+    result_queue = context.Queue()
+    processes = [
+        context.Process(
+            target=_attempt_local_stable_activation_in_process,
+            args=(
+                str(tmp_path),
+                rel_key,
+                expected_version,
+                candidate,
+                read_barrier,
+                result_queue,
+            ),
+        )
+        for candidate in range(2)
+    ]
+
+    try:
+        for process in processes:
+            process.start()
+        for process in processes:
+            process.join(timeout=10)
+        results = [result_queue.get(timeout=2) for _process in processes]
+    finally:
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
+            process.join(timeout=2)
+        result_queue.close()
+        result_queue.join_thread()
+
+    assert [process.exitcode for process in processes] == [0, 0]
+    assert not [result for result in results if result[0] == "error"]
+    winners = [result for result in results if result[0] == "outcome"]
+    conflicts = [result for result in results if result[0] == "conflict"]
+    assert len(winners) == 1 and winners[0][2] is True
+    assert len(conflicts) == 1
+    active = store.get_json(rel_key)
+    assert active == {"generation": f"candidate-{winners[0][1]}"}
+    history_dir = tmp_path / "v1/stm/historic/history"
+    assert not list(history_dir.glob("*.lock"))
+    assert not list(history_dir.glob(".*.tmp"))
+
+
+def test_hash_gate_delegates_stable_activation_and_accounts_without_hash_skip():
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    client = _StableCasClient()
+    inner = SnapshotStorage(client, bucket="b", base_prefix="v1/stm")
+    state_key = "_meta/publish_state_historic.json"
+    rel_key = "historic/history/index.json"
+    payload = {"generation": "new"}
+    payload_digest = hashlib.md5(snapshot_json_bytes(payload)).hexdigest()
+    inner.put_json(rel_key, {"generation": "old"}, tier="historic")
+    inner.put_json(
+        state_key,
+        {
+            "fingerprint": state_fingerprint("historic"),
+            "hashes": {rel_key: payload_digest},
+        },
+        tier="internal",
+    )
+    gated = HashGatedStorage(
+        inner,
+        state_rel_key=state_key,
+        fingerprint=state_fingerprint("historic"),
+    )
+    gated.load()
+    version = gated.capture_stable_version(rel_key)
+
+    key = gated.activate_stable_json(
+        rel_key,
+        payload,
+        expected_version=version,
+        tier="historic",
+    )
+    second = HashGatedStorage(
+        inner,
+        state_rel_key=state_key,
+        fingerprint=state_fingerprint("historic"),
+    )
+    second.load()
+    repeated_key = second.activate_stable_json(
+        rel_key,
+        payload,
+        expected_version=version,
+        tier="historic",
+    )
+
+    assert key == repeated_key == f"v1/stm/{rel_key}"
+    assert gated.written == [rel_key]
+    assert gated.skipped == []
+    assert second.written == []
+    assert second.skipped == [rel_key]
+    assert client.precondition_failures == 1

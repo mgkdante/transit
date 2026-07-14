@@ -3,6 +3,7 @@
 
 import { z } from 'zod';
 import { encodeHistoryEntityId } from '../history/entity';
+import { isHistoryEntityIndexPath, isHistoryFamilyIndexPath } from '../history/pointers';
 import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const HistorySelectionModeSchema = z.enum(['range', 'date']);
@@ -83,16 +84,29 @@ export const HistoricCollectionIndexSchema = z.object({
 });
 export type HistoricCollectionIndex = z.infer<typeof HistoricCollectionIndexSchema>;
 
-export const HistoricFamilyAvailabilitySchema = z.object({
-	family: z.string(),
-	selection_mode: HistorySelectionModeSchema,
-	index_path: z.string(),
-	collection_generation_id: z.string().nullable().optional(),
-	first_available_date: z.string().nullable().optional(),
-	last_available_date: z.string().nullable().optional(),
-	gaps: z.array(HistoricCoverageGapSchema).optional(),
-	metrics: z.array(HistoricMetricCoverageSchema).optional(),
-});
+export const HistoricFamilyAvailabilitySchema = z
+	.object({
+		family: z.string(),
+		selection_mode: HistorySelectionModeSchema,
+		index_path: z.string(),
+		collection_generation_id: z.string().nullable().optional(),
+		first_available_date: z.string().nullable().optional(),
+		last_available_date: z.string().nullable().optional(),
+		gaps: z.array(HistoricCoverageGapSchema).optional(),
+		metrics: z.array(HistoricMetricCoverageSchema).optional(),
+	})
+	.superRefine((value, ctx) => {
+		if (
+			(value.family === 'network' || value.family === 'lines' || value.family === 'stops') &&
+			!isHistoryFamilyIndexPath(value.family, value.index_path)
+		) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['index_path'],
+				message: `invalid ${value.family} history index_path`,
+			});
+		}
+	});
 export type HistoricFamilyAvailability = z.infer<typeof HistoricFamilyAvailabilitySchema>;
 
 export const HistoricEntityIndexRefSchema = z
@@ -139,12 +153,11 @@ export const HistoricEntityDirectoryIndexSchema = z
 	})
 	.superRefine((value, ctx) => {
 		for (const [index, entity] of (value.entities ?? []).entries()) {
-			const expected = `historic/history/${value.family}/${entity.encoded_id}/index.json`;
-			if (entity.index_path !== expected) {
+			if (!isHistoryEntityIndexPath(value.family, entity.entity_id, entity.index_path)) {
 				ctx.addIssue({
 					code: 'custom',
 					path: ['entities', index, 'index_path'],
-					message: `entity index_path must equal ${expected}`,
+					message: `invalid ${value.family} entity index_path`,
 				});
 			}
 		}

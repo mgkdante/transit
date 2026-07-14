@@ -35,7 +35,7 @@
 	import { routeFor } from '$lib/nav';
 	import { fmtDelayMin } from '$lib/utils';
 	import { formatDateKey } from '$lib/utils/time';
-	import { fromSearchParams, type DateWindow } from '$lib/filters';
+	import { fromSearchParams, resolveWindow, type DateWindow } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import {
 		availabilityFromCollectionIndex,
@@ -160,8 +160,33 @@
 	const historyDates = $derived(
 		historyAvailability == null ? [] : datesForAvailability(historyAvailability),
 	);
+	const currentHistoryDates = $derived(
+		[...new Set((data.daily ?? []).map((point) => point.date))].sort(),
+	);
+	const availableHistoryDates = $derived(
+		historyDates.length > 0 ? historyDates : currentHistoryDates,
+	);
+	const currentHistoryWindow = $derived.by<DateWindow | undefined>(() => {
+		if (
+			history == null ||
+			!historyRequested ||
+			history.state !== 'current' ||
+			history.index != null ||
+			!history.request.hasFrom ||
+			!history.request.hasTo ||
+			history.request.rawFrom == null ||
+			history.request.rawTo == null
+		)
+			return undefined;
+
+		const candidate: DateWindow =
+			history.request.rawFrom <= history.request.rawTo
+				? { from: history.request.rawFrom, to: history.request.rawTo }
+				: { from: history.request.rawTo, to: history.request.rawFrom };
+		return resolveWindow(candidate, new Set(currentHistoryDates));
+	});
 	const historyWindow = $derived<DateWindow | undefined>(
-		explicitHistory ? (history?.resolved?.selection ?? undefined) : undefined,
+		explicitHistory ? (history?.resolved?.selection ?? undefined) : currentHistoryWindow,
 	);
 	const effectiveWindow = $derived<DateWindow | null>(
 		windowOverride !== undefined ? windowOverride : (historyWindow ?? null),
@@ -174,7 +199,7 @@
 		);
 	});
 	const historySelectionText = $derived.by<string | null>(() => {
-		if (!explicitHistory || historyWindow == null) return null;
+		if (!historyRequested || historyWindow == null) return null;
 		return copy.history.selection(
 			formatDateKey(historyWindow.from, locale),
 			formatDateKey(historyWindow.to, locale),
@@ -213,7 +238,7 @@
 		const grainValue = grain === 'day' ? null : grain;
 		if (history == null || windowOverride !== undefined)
 			return { grain: grainValue } as Record<string, string | null>;
-		const canonical = history.resolved?.canonicalWindow;
+		const canonical = history.resolved?.canonicalWindow ?? currentHistoryWindow;
 		const pendingExplicit = explicitHistory && history.resolved == null;
 		return {
 			grain: grainValue,
@@ -409,13 +434,13 @@
 					>{copy.controlsLabel}</span
 				>
 				<GrainPicker segments={grainSegments} bind:value={grain} label={copy.grain.label} />
-				{#if history?.index != null}
+				{#if availableHistoryDates.length > 0}
 					<HistoryNavigator
 						mode="range"
 						{locale}
 						labels={copy.history.navigator}
 						value={historyWindow}
-						availableDates={historyDates}
+						availableDates={availableHistoryDates}
 						coverageText={historyCoverageText}
 						selectionText={historySelectionText}
 						liveAnnouncement={false}

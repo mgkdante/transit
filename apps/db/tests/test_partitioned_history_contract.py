@@ -135,6 +135,62 @@ def test_partitioned_history_directory_pins_identity_and_generation():
         )
 
 
+@pytest.mark.parametrize("family", ["lines", "stops"])
+def test_partitioned_history_directory_accepts_exact_payload_versioned_entity_index_path(
+    family: str,
+):
+    entity_id = "A/B"
+    encoded_id = entity_id.encode("utf-8").hex()
+    payload_sha = "b" * 64
+
+    directory = HistoricEntityDirectoryIndex(
+        generated_utc=ISO,
+        family=family,
+        selection_mode="range",
+        collection_generation_id="directory-generation",
+        entities=[
+            HistoricEntityIndexRef(
+                entity_id=entity_id,
+                encoded_id=encoded_id,
+                index_path=(
+                    f"historic/history/{family}/{encoded_id}/generations/{payload_sha}/index.json"
+                ),
+                collection_generation_id="entity-generation",
+            )
+        ],
+    )
+
+    assert directory.entities[0].index_path.endswith(f"/{payload_sha}/index.json")
+
+
+@pytest.mark.parametrize(
+    "index_path",
+    [
+        "historic/history/lines/412f42/generations/not-a-sha/index.json",
+        f"historic/history/lines/4142/generations/{'a' * 64}/index.json",
+        f"historic/history/lines/412f42/generations/{'A' * 64}/index.json",
+    ],
+)
+def test_partitioned_history_directory_rejects_malformed_versioned_entity_index_path(
+    index_path: str,
+):
+    with pytest.raises(ValidationError):
+        HistoricEntityDirectoryIndex(
+            generated_utc=ISO,
+            family="lines",
+            selection_mode="range",
+            collection_generation_id="directory-generation",
+            entities=[
+                HistoricEntityIndexRef(
+                    entity_id="A/B",
+                    encoded_id="412f42",
+                    index_path=index_path,
+                    collection_generation_id="entity-generation",
+                )
+            ],
+        )
+
+
 def test_partitioned_history_metric_vocabulary_and_additive_defaults():
     coverage = HistoricMetricCoverage(
         metric="delay",

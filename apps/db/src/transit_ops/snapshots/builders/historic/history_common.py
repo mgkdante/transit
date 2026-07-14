@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from transit_ops.snapshots.contract import (
     HistoricCoverageGap,
+    HistoricEntityDirectoryIndex,
     HistoricMetricCoverage,
     HistoricPartitionRef,
     HistoryMetricAggregation,
@@ -74,6 +75,25 @@ def history_entity_directory_generation_id(
             "entities": payload.get("entities"),
         }
     )
+
+
+def history_pointer_path(prefix: str, payload: BaseModel | Mapping[str, Any]) -> str:
+    """Return the immutable exact-byte index path for one retained-history pointer."""
+
+    return f"{prefix.rstrip('/')}/generations/{snapshot_sha256(payload)}/index.json"
+
+
+def readdress_history_directory(
+    directory: HistoricEntityDirectoryIndex,
+    index_paths: Mapping[str, str],
+) -> HistoricEntityDirectoryIndex:
+    """Copy a directory onto exact child paths and recompute its semantic generation."""
+
+    result = directory.model_copy(deep=True)
+    for entity in result.entities:
+        entity.index_path = index_paths[entity.entity_id]
+    result.collection_generation_id = history_entity_directory_generation_id(result)
+    return result
 
 
 def history_date(value: object, *, field: str = "local_date") -> str:

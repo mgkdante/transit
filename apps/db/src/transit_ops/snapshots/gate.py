@@ -1173,6 +1173,11 @@ def check_alert_archive_index(payload: object, *, rel_key: str) -> list[CheckRes
             index.get("collection_generation_id"),
             "collection generation id does not match canonical ordered refs",
         )
+    _check_versioned_pointer_digest(
+        emit,
+        payload,
+        re.fullmatch(r"historic/alerts/generations/([0-9a-f]{64})/index\.json", rel_key),
+    )
     return emit.out
 
 
@@ -1268,6 +1273,9 @@ _NETWORK_HISTORY_PARTITION_PATH_RE = re.compile(
     r"historic/history/network/generations/([0-9a-f]{64})/(\d{4}-(?:0[1-9]|1[0-2]))\.json"
 )
 _NETWORK_HISTORY_INDEX_PATH = "historic/history/network/index.json"
+_NETWORK_HISTORY_VERSIONED_INDEX_PATH_RE = re.compile(
+    r"historic/history/network/generations/([0-9a-f]{64})/index\.json"
+)
 _NETWORK_HISTORY_METRICS = (
     ("delay", "additive"),
     ("delay_percentiles", "daily_only"),
@@ -1279,6 +1287,25 @@ _NETWORK_HISTORY_METRICS = (
 
 def _history_model_error(emit: _Emitter, exc: ValidationError) -> None:
     emit.err("contract", "", None, f"retained history payload violates its contract: {exc}")
+
+
+def _check_versioned_pointer_digest(
+    emit: _Emitter,
+    payload: object,
+    match: re.Match[str] | None,
+    *,
+    group: int = 1,
+) -> None:
+    if match is None:
+        return
+    expected = snapshot_sha256(payload)  # type: ignore[arg-type]
+    if match.group(group) != expected:
+        emit.err(
+            "pointer_sha256",
+            "",
+            match.group(group),
+            "versioned pointer path SHA does not match exact payload bytes",
+        )
 
 
 def _check_network_history_day(emit: _Emitter, day: dict, index: int) -> None:  # type: ignore[type-arg]
@@ -1511,7 +1538,12 @@ class NetworkHistoryStreamSummary:
     def observe(self, ref: object, partition: object) -> None:
         """Retain only one compact ref and structural scalars from a streamed month."""
 
-        self.refs.append(HistoricPartitionRef.model_validate(_coverage_dict(ref)))
+        try:
+            retained_ref = HistoricPartitionRef.model_validate(_coverage_dict(ref))
+        except (TypeError, ValidationError):
+            pass
+        else:
+            self.refs.append(retained_ref)
         value = _as_dict(partition)
         if not isinstance(value, dict):
             return
@@ -1628,8 +1660,10 @@ def check_network_history_index(payload: object, *, rel_key: str) -> list[CheckR
         HistoricCollectionIndex.model_validate(index)
     except ValidationError as exc:
         _history_model_error(emit, exc)
-    if rel_key != _NETWORK_HISTORY_INDEX_PATH:
-        emit.err("index_path", "", rel_key, "Network history index uses the wrong stable path")
+    versioned_match = _NETWORK_HISTORY_VERSIONED_INDEX_PATH_RE.fullmatch(rel_key)
+    if rel_key != _NETWORK_HISTORY_INDEX_PATH and versioned_match is None:
+        emit.err("index_path", "", rel_key, "Network history index uses a malformed path")
+    _check_versioned_pointer_digest(emit, payload, versioned_match)
     if (
         index.get("family") != "network"
         or index.get("selection_mode") != "range"
@@ -1684,7 +1718,8 @@ def check_network_history_index(payload: object, *, rel_key: str) -> list[CheckR
 
     refs = index.get("partitions") if isinstance(index.get("partitions"), list) else []
     ref_paths = [ref.get("path") for ref in refs if isinstance(ref, dict)]
-    if len(ref_paths) != len(set(ref_paths)):
+    string_ref_paths = [path for path in ref_paths if isinstance(path, str)]
+    if len(string_ref_paths) != len(set(string_ref_paths)):
         emit.err(
             "duplicate_ref_path",
             "partitions",
@@ -2002,7 +2037,13 @@ _LINE_HISTORY_PARTITION_PATH_RE = re.compile(
 _LINE_HISTORY_ENTITY_INDEX_PATH_RE = re.compile(
     r"historic/history/lines/((?:[0-9a-f]{2})+)/index\.json"
 )
+_LINE_HISTORY_VERSIONED_ENTITY_INDEX_PATH_RE = re.compile(
+    r"historic/history/lines/((?:[0-9a-f]{2})+)/generations/([0-9a-f]{64})/index\.json"
+)
 _LINE_HISTORY_DIRECTORY_PATH = "historic/history/lines/index.json"
+_LINE_HISTORY_VERSIONED_DIRECTORY_PATH_RE = re.compile(
+    r"historic/history/lines/generations/([0-9a-f]{64})/index\.json"
+)
 _LINE_HISTORY_METRICS = (
     ("delay", "additive"),
     ("delay_percentiles", "daily_only"),
@@ -2138,6 +2179,26 @@ def check_line_history_partition(payload: object, *, rel_key: str) -> list[Check
         emit.err("date_order", "days", dates, "Line partition dates must be ascending")
     for position, day in enumerate(days):
         if isinstance(day, dict):
+            unexpected = sorted(
+                set(day)
+                - {
+                    "date",
+                    "delay",
+                    "delay_percentiles",
+                    "cancellation",
+                    "occupancy",
+                    "service_span",
+                    "skipped_stops",
+                },
+                key=str,
+            )
+            if unexpected:
+                emit.err(
+                    "line_metric_vocabulary",
+                    f"days[{position}]",
+                    unexpected,
+                    "Line history day contains fabricated current-only fields",
+                )
             _check_line_history_day(emit, day, position)
     return emit.out
 
@@ -2245,7 +2306,12 @@ class LineHistoryStreamSummary:
             return
         entity_id = value["entity_id"]
         summary = self.entities.setdefault(entity_id, _LineEntityStream())
-        summary.refs.append(HistoricPartitionRef.model_validate(_coverage_dict(ref)))
+        try:
+            retained_ref = HistoricPartitionRef.model_validate(_coverage_dict(ref))
+        except (TypeError, ValidationError):
+            pass
+        else:
+            summary.refs.append(retained_ref)
         generated_utc = value.get("generated_utc")
         if isinstance(generated_utc, str):
             summary.generated_timestamps.append(generated_utc)
@@ -2375,7 +2441,12 @@ class LineHistoryDirectorySummary:
     generated_timestamps: list[str] = field(default_factory=list)
 
     @classmethod
-    def from_indexes(cls, indexes: list[object]) -> LineHistoryDirectorySummary:
+    def from_indexes(
+        cls,
+        indexes: list[object],
+        *,
+        index_paths: dict[str, str] | None = None,
+    ) -> LineHistoryDirectorySummary:
         summary = cls()
         for payload in indexes:
             value = _as_dict(payload)
@@ -2387,7 +2458,10 @@ class LineHistoryDirectorySummary:
                 HistoricEntityIndexRef(
                     entity_id=entity_id,
                     encoded_id=encoded_id,
-                    index_path=f"historic/history/lines/{encoded_id}/index.json",
+                    index_path=(index_paths or {}).get(
+                        entity_id,
+                        f"historic/history/lines/{encoded_id}/index.json",
+                    ),
                     collection_generation_id=str(value.get("collection_generation_id") or ""),
                     first_available_date=value.get("first_available_date"),
                     last_available_date=value.get("last_available_date"),
@@ -2470,15 +2544,17 @@ def check_line_history_index(payload: object, *, rel_key: str) -> list[CheckResu
         _history_model_error(emit, exc)
 
     match = _LINE_HISTORY_ENTITY_INDEX_PATH_RE.fullmatch(rel_key)
-    if match is None:
+    versioned_match = _LINE_HISTORY_VERSIONED_ENTITY_INDEX_PATH_RE.fullmatch(rel_key)
+    if match is None and versioned_match is None:
         emit.err("index_path", "", rel_key, "Line entity index uses a malformed path")
         path_entity = encoded_id = None
     else:
-        encoded_id = match.group(1)
+        encoded_id = (match or versioned_match).group(1)  # type: ignore[union-attr]
         try:
             path_entity = decode_history_entity_id(encoded_id)
         except ValueError:
             path_entity = None
+    _check_versioned_pointer_digest(emit, payload, versioned_match, group=2)
     entity_id = index.get("entity_id")
     if (
         index.get("family") != "lines"
@@ -2567,7 +2643,8 @@ def check_line_history_index(payload: object, *, rel_key: str) -> list[CheckResu
                 ref.get("sha256"),
                 "Line partition ref SHA does not match its path",
             )
-    if len(paths) != len(set(paths)):
+    string_paths = [path for path in paths if isinstance(path, str)]
+    if len(string_paths) != len(set(string_paths)):
         emit.err("duplicate_ref_path", "partitions", paths, "Line partition path is repeated")
     if len(months) != len(set(months)):
         emit.err("duplicate_month", "partitions", months, "Line month is referenced twice")
@@ -2610,8 +2687,10 @@ def check_line_history_directory(payload: object, *, rel_key: str) -> list[Check
         HistoricEntityDirectoryIndex.model_validate(directory)
     except ValidationError as exc:
         _history_model_error(emit, exc)
-    if rel_key != _LINE_HISTORY_DIRECTORY_PATH:
-        emit.err("directory_path", "", rel_key, "Lines directory uses the wrong stable path")
+    versioned_match = _LINE_HISTORY_VERSIONED_DIRECTORY_PATH_RE.fullmatch(rel_key)
+    if rel_key != _LINE_HISTORY_DIRECTORY_PATH and versioned_match is None:
+        emit.err("directory_path", "", rel_key, "Lines directory uses a malformed path")
+    _check_versioned_pointer_digest(emit, payload, versioned_match)
     if directory.get("family") != "lines" or directory.get("selection_mode") != "range":
         emit.err(
             "directory_identity",
@@ -2637,18 +2716,21 @@ def check_line_history_directory(payload: object, *, rel_key: str) -> list[Check
     raw_ids = [item.get("entity_id") for item in entities if isinstance(item, dict)]
     encoded_ids = [item.get("encoded_id") for item in entities if isinstance(item, dict)]
     index_paths = [item.get("index_path") for item in entities if isinstance(item, dict)]
-    if raw_ids != sorted(raw_ids):
+    string_raw_ids = [value for value in raw_ids if isinstance(value, str)]
+    if len(string_raw_ids) != len(raw_ids) or raw_ids != sorted(string_raw_ids):
         emit.err("entity_order", "entities", raw_ids, "Lines directory entities are not sorted")
-    if len(raw_ids) != len(set(raw_ids)):
+    if len(string_raw_ids) != len(set(string_raw_ids)):
         emit.err("duplicate_entity_id", "entities", raw_ids, "raw Line entity ID is repeated")
-    if len(encoded_ids) != len(set(encoded_ids)):
+    string_encoded_ids = [value for value in encoded_ids if isinstance(value, str)]
+    if len(string_encoded_ids) != len(set(string_encoded_ids)):
         emit.err(
             "duplicate_encoded_id",
             "entities",
             encoded_ids,
             "encoded Line entity ID is repeated",
         )
-    if len(index_paths) != len(set(index_paths)):
+    string_index_paths = [value for value in index_paths if isinstance(value, str)]
+    if len(string_index_paths) != len(set(string_index_paths)):
         emit.err("duplicate_index_path", "entities", index_paths, "Line index path is repeated")
     first_values: list[str] = []
     last_values: list[str] = []
@@ -2658,14 +2740,25 @@ def check_line_history_directory(payload: object, *, rel_key: str) -> list[Check
         entity_id = item.get("entity_id")
         try:
             expected_encoded = encode_history_entity_id(entity_id)
-        except (TypeError, ValueError):
+        except (AttributeError, TypeError, ValueError):
             expected_encoded = None
-        expected_path = (
+        legacy_path = (
             f"historic/history/lines/{expected_encoded}/index.json"
             if expected_encoded is not None
             else None
         )
-        if item.get("encoded_id") != expected_encoded or item.get("index_path") != expected_path:
+        versioned_path = (
+            re.fullmatch(
+                rf"historic/history/lines/{expected_encoded}/generations/"
+                r"[0-9a-f]{64}/index\.json",
+                item.get("index_path"),
+            )
+            if expected_encoded is not None and isinstance(item.get("index_path"), str)
+            else None
+        )
+        if item.get("encoded_id") != expected_encoded or (
+            item.get("index_path") != legacy_path and versioned_path is None
+        ):
             emit.err(
                 "entity_identity",
                 f"entities[{position}]",
@@ -2715,7 +2808,13 @@ _STOP_HISTORY_PARTITION_PATH_RE = re.compile(
 _STOP_HISTORY_ENTITY_INDEX_PATH_RE = re.compile(
     r"historic/history/stops/((?:[0-9a-f]{2})+)/index\.json"
 )
+_STOP_HISTORY_VERSIONED_ENTITY_INDEX_PATH_RE = re.compile(
+    r"historic/history/stops/((?:[0-9a-f]{2})+)/generations/([0-9a-f]{64})/index\.json"
+)
 _STOP_HISTORY_DIRECTORY_PATH = "historic/history/stops/index.json"
+_STOP_HISTORY_VERSIONED_DIRECTORY_PATH_RE = re.compile(
+    r"historic/history/stops/generations/([0-9a-f]{64})/index\.json"
+)
 _STOP_HISTORY_ROOT_PATH = "historic/history/index.json"
 _STOP_HISTORY_METRICS = (
     ("delay", "additive"),
@@ -3111,7 +3210,7 @@ class StopHistoryDirectorySummary:
     )
     generated_utc: str | None = None
 
-    def observe(self, payload: object) -> None:
+    def observe(self, payload: object, *, index_path: str | None = None) -> None:
         value = _as_dict(payload)
         if not isinstance(value, dict) or not isinstance(value.get("entity_id"), str):
             return
@@ -3121,7 +3220,7 @@ class StopHistoryDirectorySummary:
             entity = HistoricEntityIndexRef(
                 entity_id=entity_id,
                 encoded_id=encoded_id,
-                index_path=f"historic/history/stops/{encoded_id}/index.json",
+                index_path=index_path or f"historic/history/stops/{encoded_id}/index.json",
                 collection_generation_id=str(value.get("collection_generation_id") or ""),
                 first_available_date=value.get("first_available_date"),
                 last_available_date=value.get("last_available_date"),
@@ -3177,20 +3276,37 @@ class StopHistoryDirectorySummary:
                 pass
 
     @classmethod
-    def from_indexes(cls, indexes: list[object]) -> StopHistoryDirectorySummary:
+    def from_indexes(
+        cls,
+        indexes: list[object],
+        *,
+        index_paths: dict[str, str] | None = None,
+    ) -> StopHistoryDirectorySummary:
         summary = cls()
         for payload in indexes:
-            summary.observe(payload)
+            value = _as_dict(payload)
+            entity_id = value.get("entity_id") if isinstance(value, dict) else None
+            summary.observe(
+                payload,
+                index_path=(index_paths or {}).get(entity_id)
+                if isinstance(entity_id, str)
+                else None,
+            )
         summary.entities.sort(key=lambda item: item.entity_id)
         return summary
 
-    def family_dict(self, directory: object) -> dict:  # type: ignore[type-arg]
+    def family_dict(
+        self,
+        directory: object,
+        *,
+        index_path: str = "historic/history/stops/index.json",
+    ) -> dict:  # type: ignore[type-arg]
         directory_dict = _as_dict(directory)
         first, last, gaps = history_coverage(self.available_dates)
         return {
             "family": "stops",
             "selection_mode": "range",
-            "index_path": "historic/history/stops/index.json",
+            "index_path": index_path,
             "collection_generation_id": (
                 directory_dict.get("collection_generation_id")
                 if isinstance(directory_dict, dict)
@@ -3279,10 +3395,16 @@ def check_stop_history_index(payload: object, *, rel_key: str) -> list[CheckResu
     except ValidationError as exc:
         _history_model_error(emit, exc)
     match = _STOP_HISTORY_ENTITY_INDEX_PATH_RE.fullmatch(rel_key)
+    versioned_match = _STOP_HISTORY_VERSIONED_ENTITY_INDEX_PATH_RE.fullmatch(rel_key)
     try:
-        path_entity = decode_history_entity_id(match.group(1)) if match else None
+        path_entity = (
+            decode_history_entity_id((match or versioned_match).group(1))
+            if (match or versioned_match)
+            else None
+        )
     except ValueError:
         path_entity = None
+    _check_versioned_pointer_digest(emit, payload, versioned_match, group=2)
     if (
         index.get("family") != "stops"
         or index.get("selection_mode") != "range"
@@ -3311,7 +3433,7 @@ def check_stop_history_index(payload: object, *, rel_key: str) -> list[CheckResu
             emit.err("available_dates", "available_dates", dates, "Stop coverage is not canonical")
     months: list[str] = []
     paths: list[str] = []
-    encoded_id = match.group(1) if match else None
+    encoded_id = (match or versioned_match).group(1) if (match or versioned_match) else None
     for position, ref in enumerate(refs):
         if not isinstance(ref, dict):
             continue
@@ -3371,8 +3493,10 @@ def check_stop_history_directory(payload: object, *, rel_key: str) -> list[Check
         HistoricEntityDirectoryIndex.model_validate(directory)
     except ValidationError as exc:
         _history_model_error(emit, exc)
-    if rel_key != _STOP_HISTORY_DIRECTORY_PATH:
-        emit.err("directory_path", "", rel_key, "Stops directory uses the wrong path")
+    versioned_match = _STOP_HISTORY_VERSIONED_DIRECTORY_PATH_RE.fullmatch(rel_key)
+    if rel_key != _STOP_HISTORY_DIRECTORY_PATH and versioned_match is None:
+        emit.err("directory_path", "", rel_key, "Stops directory uses a malformed path")
+    _check_versioned_pointer_digest(emit, payload, versioned_match)
     if directory.get("family") != "stops" or directory.get("selection_mode") != "range":
         emit.err(
             "directory_identity",
@@ -3396,12 +3520,27 @@ def check_stop_history_directory(payload: object, *, rel_key: str) -> list[Check
     for position, item in enumerate(entities):
         if not isinstance(item, dict):
             continue
-        try:
-            encoded = encode_history_entity_id(item.get("entity_id"))
-        except (TypeError, ValueError):
+        entity_id = item.get("entity_id")
+        if isinstance(entity_id, str):
+            try:
+                encoded = encode_history_entity_id(entity_id)
+            except ValueError:
+                encoded = None
+        else:
             encoded = None
-        expected_path = f"historic/history/stops/{encoded}/index.json" if encoded else None
-        if item.get("encoded_id") != encoded or item.get("index_path") != expected_path:
+        legacy_path = f"historic/history/stops/{encoded}/index.json" if encoded else None
+        versioned_path = (
+            re.fullmatch(
+                rf"historic/history/stops/{encoded}/generations/"
+                r"[0-9a-f]{64}/index\.json",
+                item.get("index_path"),
+            )
+            if encoded and isinstance(item.get("index_path"), str)
+            else None
+        )
+        if item.get("encoded_id") != encoded or (
+            item.get("index_path") != legacy_path and versioned_path is None
+        ):
             emit.err(
                 "entity_identity",
                 f"entities[{position}]",
@@ -3467,11 +3606,28 @@ def check_history_availability_index(payload: object, *, rel_key: str) -> list[C
         "receipts": "historic/receipts/index.json",
         "stops": "historic/history/stops/index.json",
     }
+    versioned_paths = {
+        "alerts": re.compile(r"historic/alerts/generations/[0-9a-f]{64}/index\.json"),
+        "lines": re.compile(r"historic/history/lines/generations/[0-9a-f]{64}/index\.json"),
+        "network": re.compile(r"historic/history/network/generations/[0-9a-f]{64}/index\.json"),
+        "receipts": re.compile(r"historic/receipts/generations/[0-9a-f]{64}/index\.json"),
+        "stops": re.compile(r"historic/history/stops/generations/[0-9a-f]{64}/index\.json"),
+    }
     for position, item in enumerate(families):
         if not isinstance(item, dict):
             continue
         family = item.get("family")
-        if item.get("index_path") != expected_paths.get(family):
+        expected_path = expected_paths.get(family) if isinstance(family, str) else None
+        index_path = item.get("index_path")
+        versioned = versioned_paths.get(family) if isinstance(family, str) else None
+        if (
+            not isinstance(family, str)
+            or not isinstance(index_path, str)
+            or (
+                index_path != expected_path
+                and (versioned is None or not versioned.fullmatch(index_path))
+            )
+        ):
             emit.err(
                 "family_path",
                 f"families[{position}].index_path",
@@ -3494,6 +3650,7 @@ def _history_family_from_entity_children(
     directory: object,
     indexes: list[object],
     metrics: tuple[tuple[str, str], ...],
+    index_path: str | None = None,
 ) -> tuple[dict, bool]:  # type: ignore[type-arg]
     directory_dict = _as_dict(directory)
     index_dicts = [value for item in indexes if isinstance((value := _as_dict(item)), dict)]
@@ -3558,7 +3715,7 @@ def _history_family_from_entity_children(
         {
             "family": family,
             "selection_mode": "range",
-            "index_path": f"historic/history/{family}/index.json",
+            "index_path": index_path or f"historic/history/{family}/index.json",
             "collection_generation_id": (
                 directory_dict.get("collection_generation_id")
                 if isinstance(directory_dict, dict)
@@ -3614,6 +3771,11 @@ def check_history_availability_graph(
     fallback_generated_utc: str,
     stop_indexes: list[object] | None = None,
     stop_summary: StopHistoryDirectorySummary | None = None,
+    alert_index_path: str = "historic/alerts/index.json",
+    receipt_index_path: str = "historic/receipts/index.json",
+    network_index_path: str = "historic/history/network/index.json",
+    line_directory_path: str = "historic/history/lines/index.json",
+    stop_directory_path: str = "historic/history/stops/index.json",
 ) -> list[CheckResult]:
     """Reconcile the root against detached exact child indexes in this build."""
 
@@ -3637,6 +3799,7 @@ def check_history_availability_graph(
         directory=line_directory,
         indexes=line_indexes,
         metrics=_LINE_HISTORY_METRICS,
+        index_path=line_directory_path,
     )
     if stop_summary is None:
         stop_family, stop_malformed = _history_family_from_entity_children(
@@ -3644,16 +3807,17 @@ def check_history_availability_graph(
             directory=stop_directory,
             indexes=stop_indexes or [],
             metrics=_STOP_HISTORY_METRICS,
+            index_path=stop_directory_path,
         )
     else:
-        stop_family = stop_summary.family_dict(stop_directory)
+        stop_family = stop_summary.family_dict(stop_directory, index_path=stop_directory_path)
         stop_malformed = False
     malformed_graph = malformed_graph or line_malformed or stop_malformed
     expected_families = [
         {
             "family": "alerts",
             "selection_mode": "range",
-            "index_path": "historic/alerts/index.json",
+            "index_path": alert_index_path,
             "collection_generation_id": alerts.get("collection_generation_id"),
             "first_available_date": alerts.get("first_available_date"),
             "last_available_date": alerts.get("last_available_date"),
@@ -3664,7 +3828,7 @@ def check_history_availability_graph(
         {
             "family": "network",
             "selection_mode": "range",
-            "index_path": "historic/history/network/index.json",
+            "index_path": network_index_path,
             "collection_generation_id": network.get("collection_generation_id"),
             "first_available_date": network.get("first_available_date"),
             "last_available_date": network.get("last_available_date"),
@@ -3674,7 +3838,7 @@ def check_history_availability_graph(
         {
             "family": "receipts",
             "selection_mode": "date",
-            "index_path": "historic/receipts/index.json",
+            "index_path": receipt_index_path,
             "collection_generation_id": receipts.get("collection_generation_id"),
             "first_available_date": receipt_first,
             "last_available_date": receipt_last,
@@ -3861,6 +4025,11 @@ def check_receipts_index(payload: object, *, rel_key: str) -> list[CheckResult]:
         for f in ("has_data", "has_schedule"):
             if not isinstance(a.get(f), bool):
                 sub.err("not_bool", f, a.get(f), f"{f}={a.get(f)!r} is not a bool")
+    _check_versioned_pointer_digest(
+        emit,
+        payload,
+        re.fullmatch(r"historic/receipts/generations/([0-9a-f]{64})/index\.json", rel_key),
+    )
     return emit.out
 
 
@@ -4091,10 +4260,24 @@ def _route_checker(rel_key: str):  # noqa: ANN202
         return _EXACT_CHECKERS[rel_key]
     if rel_key in _INDEX_KINDS:
         return (_INDEX_CHECKERS.get(rel_key), _INDEX_KINDS[rel_key])
-    if _LINE_HISTORY_ENTITY_INDEX_PATH_RE.fullmatch(rel_key):
+    if _NETWORK_HISTORY_VERSIONED_INDEX_PATH_RE.fullmatch(rel_key):
+        return (check_network_history_index, "historic_network_history_index")
+    if _LINE_HISTORY_VERSIONED_DIRECTORY_PATH_RE.fullmatch(rel_key):
+        return (check_line_history_directory, "historic_line_history_directory")
+    if _STOP_HISTORY_VERSIONED_DIRECTORY_PATH_RE.fullmatch(rel_key):
+        return (check_stop_history_directory, "historic_stop_history_directory")
+    if _LINE_HISTORY_ENTITY_INDEX_PATH_RE.fullmatch(
+        rel_key
+    ) or _LINE_HISTORY_VERSIONED_ENTITY_INDEX_PATH_RE.fullmatch(rel_key):
         return (check_line_history_index, "historic_line_history_index")
-    if _STOP_HISTORY_ENTITY_INDEX_PATH_RE.fullmatch(rel_key):
+    if _STOP_HISTORY_ENTITY_INDEX_PATH_RE.fullmatch(
+        rel_key
+    ) or _STOP_HISTORY_VERSIONED_ENTITY_INDEX_PATH_RE.fullmatch(rel_key):
         return (check_stop_history_index, "historic_stop_history_index")
+    if re.fullmatch(r"historic/alerts/generations/[0-9a-f]{64}/index\.json", rel_key):
+        return (check_alert_archive_index, "historic_alert_archive_index")
+    if re.fullmatch(r"historic/receipts/generations/[0-9a-f]{64}/index\.json", rel_key):
+        return (check_receipts_index, "historic_receipts_index")
     for prefix, checker, kind in _PREFIX_CHECKERS:
         if prefix == "historic/history/lines/" and not _LINE_HISTORY_PARTITION_PATH_RE.fullmatch(
             rel_key

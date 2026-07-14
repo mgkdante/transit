@@ -138,7 +138,15 @@
 	// prompt when the window drops) from a bare ?from/?to whose bounds fall outside the published
 	// window (revert to the day view — there is no deliberate range intent to honour).
 	const explicitRangeToken = page.url.searchParams.get('grain') === 'range';
-	const seededRange = seed.window != null || explicitRangeToken;
+	const initialHistoryRequest = historyRangeRequestFromSearchParams(page.url.searchParams);
+	// Raw bound presence also seeds range mode. The shared codec intentionally drops a lone or
+	// malformed pair, but the retained coordinator still needs to see and announce that correction
+	// before the UI clears it; starting in day mode would clear the request first.
+	const seededRange =
+		seed.window != null ||
+		explicitRangeToken ||
+		initialHistoryRequest.hasFrom ||
+		initialHistoryRequest.hasTo;
 	// The single radiogroup selection — exactly one of day|week|month|range is active. A seeded
 	// window (?from&?to) or the ?grain=range hint implies range mode; otherwise the seeded grain
 	// (day|week|month), default day.
@@ -154,9 +162,7 @@
 	// otherwise the calendar grain). Kept as a named derived so the mapper/caption
 	// logic below reads unchanged from the prior single-select model.
 	const mode = $derived<GrainMode>(viewKey);
-	let localHistoryRequest = $state.raw<RawHistoryRangeRequest>(
-		historyRangeRequestFromSearchParams(page.url.searchParams),
-	);
+	let localHistoryRequest = $state.raw<RawHistoryRangeRequest>(initialHistoryRequest);
 	const activeHistoryRequest = $derived(history?.request ?? localHistoryRequest);
 	const emptyHistoryRequest = (): RawHistoryRangeRequest => ({
 		hasFrom: false,
@@ -289,6 +295,10 @@
 			history.index != null
 		)
 			return;
+		// The retained collection is optional. If it is absent but the current payload still
+		// carries both requested dates, preserve the existing local range affordance instead of
+		// collapsing back to day. No retained partition is fetched; the mapper pools current rows.
+		if (resolveWindow(rangeWindow, new Set(currentAvailableDates)) != null) return;
 		setHistoryRequest(emptyHistoryRequest());
 		if (!explicitRangeToken) viewKey = 'day';
 	});

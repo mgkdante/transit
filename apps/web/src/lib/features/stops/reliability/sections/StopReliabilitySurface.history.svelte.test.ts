@@ -495,6 +495,34 @@ describe('StopReliabilitySurface retained Stop history', () => {
 		expect(harness.page.url.searchParams.get('to')).toBeNull();
 	});
 
+	it('keeps current singleton controls and data when the optional retained index is absent', async () => {
+		harness.page.url = new URL(
+			`http://localhost/stop/${encodeURIComponent(ENTITY_ID)}?tab=reliability&grain=week&from=2026-07-11&to=2026-07-11&focus=keep`,
+		);
+		harness.getStopHistoryIndex.mockResolvedValue(null);
+		const history = createHistory();
+		const view = renderSurface(history);
+
+		await waitFor(() => expect(history.state).toBe('current'));
+		const rail = view.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		expect(within(rail).getAllByRole('region', { name: /stop reliability history/i })).toHaveLength(
+			1,
+		);
+		const bounds = rail.querySelectorAll<HTMLInputElement>('input[type="date"]');
+		expect(bounds).toHaveLength(2);
+		expect(bounds[0]).toHaveValue('2026-07-11');
+		expect(bounds[1]).toHaveValue('2026-07-11');
+		expect(view.container.querySelector('[data-slot="daily-range-verdict"]')).toHaveTextContent(
+			'100.0%',
+		);
+		expect(harness.loadStopHistoryRange).not.toHaveBeenCalled();
+		expect(harness.page.url.searchParams.get('from')).toBe('2026-07-11');
+		expect(harness.page.url.searchParams.get('to')).toBe('2026-07-11');
+		expect(harness.page.url.searchParams.get('grain')).toBe('week');
+		expect(harness.page.url.searchParams.get('tab')).toBe('reliability');
+		expect(harness.page.url.searchParams.get('focus')).toBe('keep');
+	});
+
 	it('keeps a measured zero severe share distinct from retained no-delay data', async () => {
 		harness.page.url = explicitUrl();
 		harness.loadStopHistoryRange.mockResolvedValue(zeroDelayPartitions);

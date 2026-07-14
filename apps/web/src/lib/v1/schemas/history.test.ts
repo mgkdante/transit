@@ -28,6 +28,7 @@ import {
 } from './history';
 
 const ISO = '2026-07-13T12:00:00Z';
+const POINTER_SHA = 'a'.repeat(64);
 
 describe('shared retained-history schemas', () => {
 	it('parses the exact selection-mode vocabulary and rejects drift', () => {
@@ -153,6 +154,45 @@ describe('shared retained-history schemas', () => {
 		expect(family.metrics?.[0]?.metric).toBe('delay');
 	});
 
+	it('accepts exact versioned family pointers while retaining fixed-path compatibility', () => {
+		for (const family of ['network', 'lines', 'stops'] as const) {
+			const legacy = `historic/history/${family}/index.json`;
+			const versioned = `historic/history/${family}/generations/${POINTER_SHA}/index.json`;
+			expect(
+				HistoricFamilyAvailabilitySchema.parse({
+					family,
+					selection_mode: 'range',
+					index_path: legacy,
+					collection_generation_id: POINTER_SHA,
+				}).index_path,
+			).toBe(legacy);
+			expect(
+				HistoricFamilyAvailabilitySchema.parse({
+					family,
+					selection_mode: 'range',
+					index_path: versioned,
+					collection_generation_id: POINTER_SHA,
+				}).index_path,
+			).toBe(versioned);
+		}
+
+		for (const indexPath of [
+			`historic/history/stops/generations/${POINTER_SHA}/index.json`,
+			`historic/history/lines/generations/${POINTER_SHA.toUpperCase()}/index.json`,
+			`historic/history/lines/generations/${POINTER_SHA}/index.json?raw=1`,
+			`https://evil.test/historic/history/lines/generations/${POINTER_SHA}/index.json`,
+		]) {
+			expect(() =>
+				HistoricFamilyAvailabilitySchema.parse({
+					family: 'lines',
+					selection_mode: 'range',
+					index_path: indexPath,
+					collection_generation_id: POINTER_SHA,
+				}),
+			).toThrow();
+		}
+	});
+
 	it('pins entity directory identity, family, range mode, and child generation', () => {
 		const entityId = 'A/B';
 		const encodedId = '412f42';
@@ -197,6 +237,43 @@ describe('shared retained-history schemas', () => {
 				entities: [{ ...ref, index_path: `historic/history/stops/${encodedId}/index.json` }],
 			}),
 		).toThrow();
+	});
+
+	it('accepts exact versioned awkward-entity pointers and rejects unsafe variants', () => {
+		const entityId = 'A/B';
+		const encodedId = '412f42';
+		const versioned = `historic/history/lines/${encodedId}/generations/${POINTER_SHA}/index.json`;
+		const base = {
+			generated_utc: ISO,
+			family: 'lines' as const,
+			selection_mode: 'range' as const,
+			collection_generation_id: POINTER_SHA,
+			entities: [
+				{
+					entity_id: entityId,
+					encoded_id: encodedId,
+					index_path: versioned,
+					collection_generation_id: POINTER_SHA,
+				},
+			],
+		};
+
+		expect(HistoricEntityDirectoryIndexSchema.parse(base).entities?.[0]?.index_path).toBe(
+			versioned,
+		);
+		for (const indexPath of [
+			`historic/history/stops/${encodedId}/generations/${POINTER_SHA}/index.json`,
+			`historic/history/lines/2e2e/generations/${POINTER_SHA}/index.json`,
+			`historic/history/lines/${encodedId}/generations/${POINTER_SHA.toUpperCase()}/index.json`,
+			`${versioned}#fragment`,
+		]) {
+			expect(() =>
+				HistoricEntityDirectoryIndexSchema.parse({
+					...base,
+					entities: [{ ...base.entities[0], index_path: indexPath }],
+				}),
+			).toThrow();
+		}
 	});
 
 	it('reports lone-surrogate entity IDs as Zod validation failures without throwing', () => {

@@ -312,6 +312,7 @@ def test_publish_static_writes_expected_keys() -> None:
     # Covers every query issued by build_routes_index, build_stops_index,
     # build_labels, the route_ids SELECT, build_route, and build_all_stops_data.
     dispatch = {
+        "publish.lock.try_acquire": [True],
         # _static_stamp: loaded_at_utc of the current dataset version.
         "publish.static_stamp": [
             {"loaded_at_utc": _dt.datetime(2026, 6, 1, 0, 0, tzinfo=_dt.timezone.utc)},
@@ -450,6 +451,7 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
     # weekly/monthly/weak-stop reads that once shared spine SQL now carry unique
     # names, so the hand-coded FakeConnHistoric.execute spine branch is gone.
     dispatch = {
+        "publish.lock.try_acquire": [True],
         # One real retained Network day proves the historic publisher wires the
         # content-addressed month outside the compatibility payload list.
         "history.network.delay": [
@@ -702,7 +704,11 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
         if "historic/history/network/generations/" in key and key.endswith("/2026-06.json")
     ]
     assert len(network_partition_keys) == 1
-    network_index_key = next(key for key in keys if "historic/history/network/index.json" in key)
+    network_index_key = next(
+        key
+        for key in keys
+        if "historic/history/network/generations/" in key and key.endswith("/index.json")
+    )
     assert keys.index(network_partition_keys[0]) < keys.index(network_index_key)
     root_index_key = next(key for key in keys if "historic/history/index.json" in key)
     assert keys.index(network_index_key) < keys.index(root_index_key)
@@ -799,6 +805,8 @@ class _RecordingConn:
         self.sql.append(s)
         import datetime as _dt
 
+        if query_name(statement) == "publish.lock.try_acquire":
+            return _ScalarResult(True)
         if "loaded_at_utc FROM core.dataset_versions" in s:
             return _StampResult(_dt.datetime(2026, 6, 1, 0, 0, tzinfo=_dt.timezone.utc))
         return _EmptyResult()
@@ -819,6 +827,14 @@ class _EmptyResult:
 
     def scalar_one(self):
         return 0
+
+
+class _ScalarResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one(self):
+        return self._value
 
 
 class _StampResult:
@@ -1131,6 +1147,9 @@ def test_static_publish_dataset_gate_skips_unchanged_but_rebuilds_on_change(monk
         def fetchone(self):
             return self._rows[0] if self._rows else None
 
+        def scalar_one(self):
+            return self._rows[0] if self._rows else None
+
     class _Conn:
         def __init__(self, *, skip_row: bool) -> None:
             self._skip_row = skip_row
@@ -1139,6 +1158,8 @@ def test_static_publish_dataset_gate_skips_unchanged_but_rebuilds_on_change(monk
         def execute(self, statement, params=None):
             s = str(statement)
             self.executed.append(s)
+            if query_name(statement) == "publish.lock.try_acquire":
+                return _Res([True])
             if "loaded_at_utc FROM core.dataset_versions" in s:
                 return _Res([{"loaded_at_utc": _STAMP}])
             # the dataset-skip probe: the ONLY query that CASTs the stamp against the state row.

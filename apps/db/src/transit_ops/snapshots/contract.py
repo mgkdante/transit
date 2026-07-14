@@ -1674,9 +1674,17 @@ class HistoricEntityDirectoryIndex(PayloadEnvelope):
     @model_validator(mode="after")
     def validate_entity_paths(self) -> Self:
         for entity in self.entities:
-            expected = f"historic/history/{self.family}/{entity.encoded_id}/index.json"
-            if entity.index_path != expected:
-                raise ValueError(f"entity index_path must equal {expected}")
+            prefix = f"historic/history/{self.family}/{entity.encoded_id}"
+            legacy = f"{prefix}/index.json"
+            versioned = re.fullmatch(
+                rf"{re.escape(prefix)}/generations/[0-9a-f]{{64}}/index\.json",
+                entity.index_path,
+            )
+            if entity.index_path != legacy and versioned is None:
+                raise ValueError(
+                    "entity index_path must be the legacy stable path or an exact-payload "
+                    "generation path"
+                )
         return self
 
 

@@ -34,6 +34,8 @@ import {
 const ISO = '2026-03-31T12:00:00Z';
 const GENERATION = 'b'.repeat(64);
 const NEXT_GENERATION = 'c'.repeat(64);
+const OLD_POINTER_SHA = 'd'.repeat(64);
+const NEW_POINTER_SHA = 'e'.repeat(64);
 
 function path(month: string, page: number): string {
 	return `historic/alerts/generations/${GENERATION}/${month}/page-${String(page).padStart(4, '0')}.json`;
@@ -107,6 +109,18 @@ function rootFamily(
 	};
 }
 
+function versionedFamilyPath(family: 'network' | 'lines' | 'stops', sha = OLD_POINTER_SHA): string {
+	return `historic/history/${family}/generations/${sha}/index.json`;
+}
+
+function versionedEntityPath(
+	family: 'lines' | 'stops',
+	encodedId: string,
+	sha = OLD_POINTER_SHA,
+): string {
+	return `historic/history/${family}/${encodedId}/generations/${sha}/index.json`;
+}
+
 function collectionIndex(
 	family: 'network' | 'lines' | 'stops',
 	generation = GENERATION,
@@ -140,6 +154,7 @@ function entityDirectory(
 	directoryGeneration = GENERATION,
 	entityId = 'A/B',
 	entityGeneration = GENERATION,
+	entityIndexPath?: string,
 ) {
 	const encodedId = Array.from(new TextEncoder().encode(entityId), (byte) =>
 		byte.toString(16).padStart(2, '0'),
@@ -153,7 +168,7 @@ function entityDirectory(
 			{
 				entity_id: entityId,
 				encoded_id: encodedId,
-				index_path: `historic/history/${family}/${encodedId}/index.json`,
+				index_path: entityIndexPath ?? `historic/history/${family}/${encodedId}/index.json`,
 				collection_generation_id: entityGeneration,
 			},
 		],
@@ -454,13 +469,80 @@ describe('retained family discovery and generation pins', () => {
 	});
 
 	it('rejects an unsafe root edge before reading its advertised child', async () => {
-		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(
-			availabilityRoot([rootFamily('network', GENERATION, 'https://evil.test/index.json')]),
-		);
+		const unsafeRoot = {
+			...availabilityRoot([]),
+			families: [
+				{
+					...rootFamily('network', GENERATION, 'https://evil.test/index.json'),
+					selection_mode: 'range' as const,
+				},
+			],
+		};
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(unsafeRoot);
 		const childPort = vi.spyOn(adapter.historic, 'networkHistoryIndex');
 
 		await expect(getNetworkHistoryIndex()).rejects.toBeInstanceOf(HistoryArtifactContractError);
 		expect(childPort).not.toHaveBeenCalled();
+	});
+
+	it('reads the exact versioned network child advertised by a cached root', async () => {
+		const oldPath = versionedFamilyPath('network');
+		const newerPath = versionedFamilyPath('network', NEW_POINTER_SHA);
+		const rootPort = vi
+			.spyOn(adapter.historic, 'historyIndex')
+			.mockResolvedValueOnce(availabilityRoot([rootFamily('network', GENERATION, oldPath)]))
+			.mockResolvedValue(availabilityRoot([rootFamily('network', NEXT_GENERATION, newerPath)]));
+		const oldIndex = collectionIndex('network', GENERATION);
+		const childPort = vi
+			.spyOn(adapter.historic, 'networkHistoryIndex')
+			.mockImplementation(async (path) =>
+				path === oldPath ? oldIndex : collectionIndex('network', NEXT_GENERATION),
+			);
+
+		await expect(getNetworkHistoryIndex()).resolves.toBe(oldIndex);
+		expect(rootPort).toHaveBeenCalledTimes(1);
+		expect(childPort).toHaveBeenCalledOnce();
+		expect(childPort).toHaveBeenCalledWith(oldPath, undefined);
+	});
+
+	it('does not fall back when an advertised immutable network child is missing', async () => {
+		const oldPath = versionedFamilyPath('network');
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(
+			availabilityRoot([rootFamily('network', GENERATION, oldPath)]),
+		);
+		const childPort = vi.spyOn(adapter.historic, 'networkHistoryIndex').mockResolvedValue(null);
+
+		await expect(getNetworkHistoryIndex()).rejects.toMatchObject({
+			name: 'HistoryArtifactContractError',
+			path: oldPath,
+		});
+		expect(childPort).toHaveBeenCalledOnce();
+		expect(childPort).toHaveBeenCalledWith(oldPath, undefined);
+	});
+
+	it('switches exact versioned network paths only inside one bounded mismatch recovery', async () => {
+		const oldPath = versionedFamilyPath('network');
+		const newPath = versionedFamilyPath('network', NEW_POINTER_SHA);
+		const rootPort = vi
+			.spyOn(adapter.historic, 'historyIndex')
+			.mockResolvedValueOnce(availabilityRoot([rootFamily('network', NEXT_GENERATION, oldPath)]))
+			.mockResolvedValueOnce(availabilityRoot([rootFamily('network', NEXT_GENERATION, newPath)]));
+		const staleIndex = collectionIndex('network', GENERATION);
+		const freshIndex = collectionIndex('network', NEXT_GENERATION);
+		const childPort = vi
+			.spyOn(adapter.historic, 'networkHistoryIndex')
+			.mockResolvedValueOnce(staleIndex)
+			.mockResolvedValueOnce(freshIndex);
+
+		await expect(getNetworkHistoryIndex()).resolves.toBe(freshIndex);
+		expect(rootPort).toHaveBeenCalledTimes(2);
+		expect(childPort).toHaveBeenCalledTimes(2);
+		expect(childPort).toHaveBeenNthCalledWith(1, oldPath, undefined);
+		expect(childPort).toHaveBeenNthCalledWith(
+			2,
+			newPath,
+			expect.objectContaining({ freshHistoryParent: true }),
+		);
 	});
 
 	it('treats an advertised network child 404 as strict contract failure', async () => {
@@ -494,6 +576,54 @@ describe('retained family discovery and generation pins', () => {
 		);
 	});
 
+	it('reloads a stale fixed network child once when its parent is already newer', async () => {
+		const root = availabilityRoot([rootFamily('network', NEXT_GENERATION)]);
+		const rootPort = vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(root);
+		const staleChild = collectionIndex('network', GENERATION);
+		const freshChild = collectionIndex('network', NEXT_GENERATION);
+		const childPort = vi
+			.spyOn(adapter.historic, 'networkHistoryIndex')
+			.mockResolvedValueOnce(staleChild)
+			.mockResolvedValueOnce(freshChild);
+
+		await expect(getNetworkHistoryIndex()).resolves.toBe(freshChild);
+		expect(rootPort).toHaveBeenCalledTimes(2);
+		expect(childPort).toHaveBeenCalledTimes(2);
+		expect(childPort).toHaveBeenNthCalledWith(
+			2,
+			'historic/history/network/index.json',
+			expect.objectContaining({ freshHistoryParent: true }),
+		);
+	});
+
+	it('keeps an advertised child 404 strict during the bounded network reload', async () => {
+		const root = availabilityRoot([rootFamily('network', NEXT_GENERATION)]);
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(root);
+		const childPort = vi
+			.spyOn(adapter.historic, 'networkHistoryIndex')
+			.mockResolvedValueOnce(collectionIndex('network', GENERATION))
+			.mockResolvedValueOnce(null);
+
+		await expect(getNetworkHistoryIndex()).rejects.toMatchObject({
+			name: 'HistoryArtifactContractError',
+			path: 'historic/history/network/index.json',
+		});
+		expect(childPort).toHaveBeenCalledTimes(2);
+	});
+
+	it('preserves abort identity during the bounded stale-child reload', async () => {
+		const root = availabilityRoot([rootFamily('network', NEXT_GENERATION)]);
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(root);
+		const abort = new DOMException('cancelled', 'AbortError');
+		const childPort = vi
+			.spyOn(adapter.historic, 'networkHistoryIndex')
+			.mockResolvedValueOnce(collectionIndex('network', GENERATION))
+			.mockRejectedValueOnce(abort);
+
+		await expect(getNetworkHistoryIndex()).rejects.toBe(abort);
+		expect(childPort).toHaveBeenCalledTimes(2);
+	});
+
 	it('fails closed with a typed transient error after exactly one persistent root mismatch', async () => {
 		const root = availabilityRoot([rootFamily('network', GENERATION)]);
 		const rootPort = vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(root);
@@ -520,9 +650,98 @@ describe('retained family discovery and generation pins', () => {
 		await expect(getLineHistoryIndex('A/B')).resolves.toBe(child);
 		expect(rootPort).toHaveBeenCalledTimes(1);
 		expect(childPort).toHaveBeenCalledTimes(1);
-		expect(directoryPort).toHaveBeenNthCalledWith(1, undefined);
+		expect(directoryPort).toHaveBeenNthCalledWith(
+			1,
+			'historic/history/lines/index.json',
+			undefined,
+		);
 		expect(directoryPort).toHaveBeenNthCalledWith(
 			2,
+			'historic/history/lines/index.json',
+			expect.objectContaining({ freshHistoryParent: true }),
+		);
+	});
+
+	it('reloads a stale fixed entity index once when its directory is already newer', async () => {
+		const root = availabilityRoot([rootFamily('lines', NEXT_GENERATION)]);
+		const directory = entityDirectory('lines', NEXT_GENERATION, 'A/B', NEXT_GENERATION);
+		const rootPort = vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(root);
+		const directoryPort = vi
+			.spyOn(adapter.historic, 'lineHistoryDirectory')
+			.mockResolvedValue(directory);
+		const staleChild = collectionIndex('lines', GENERATION, 'A/B');
+		const freshChild = collectionIndex('lines', NEXT_GENERATION, 'A/B');
+		const childPort = vi
+			.spyOn(adapter.historic, 'lineHistoryIndex')
+			.mockResolvedValueOnce(staleChild)
+			.mockResolvedValueOnce(freshChild);
+
+		await expect(getLineHistoryIndex('A/B')).resolves.toBe(freshChild);
+		expect(rootPort).toHaveBeenCalledTimes(1);
+		expect(directoryPort).toHaveBeenCalledTimes(2);
+		expect(childPort).toHaveBeenCalledTimes(2);
+		expect(directoryPort).toHaveBeenNthCalledWith(
+			2,
+			'historic/history/lines/index.json',
+			expect.objectContaining({ freshHistoryParent: true }),
+		);
+		expect(childPort).toHaveBeenNthCalledWith(
+			2,
+			'A/B',
+			'historic/history/lines/412f42/index.json',
+			expect.objectContaining({ freshHistoryParent: true }),
+		);
+	});
+
+	it('fails closed after one bounded entity child reload when the mismatch persists', async () => {
+		const root = availabilityRoot([rootFamily('lines', NEXT_GENERATION)]);
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(root);
+		const directoryPort = vi
+			.spyOn(adapter.historic, 'lineHistoryDirectory')
+			.mockResolvedValue(entityDirectory('lines', NEXT_GENERATION, 'A/B', NEXT_GENERATION));
+		const childPort = vi
+			.spyOn(adapter.historic, 'lineHistoryIndex')
+			.mockResolvedValue(collectionIndex('lines', GENERATION, 'A/B'));
+
+		await expect(getLineHistoryIndex('A/B')).rejects.toBeInstanceOf(
+			HistoryTransientPublicationError,
+		);
+		expect(directoryPort).toHaveBeenCalledTimes(2);
+		expect(childPort).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps the advertised directory 404 strict during entity-chain recovery', async () => {
+		const root = availabilityRoot([rootFamily('lines', NEXT_GENERATION)]);
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(root);
+		vi.spyOn(adapter.historic, 'lineHistoryDirectory')
+			.mockResolvedValueOnce(entityDirectory('lines', NEXT_GENERATION, 'A/B', NEXT_GENERATION))
+			.mockResolvedValueOnce(null);
+		vi.spyOn(adapter.historic, 'lineHistoryIndex').mockResolvedValueOnce(
+			collectionIndex('lines', GENERATION, 'A/B'),
+		);
+
+		await expect(getLineHistoryIndex('A/B')).rejects.toMatchObject({
+			name: 'HistoryArtifactContractError',
+			path: 'historic/history/lines/index.json',
+		});
+	});
+
+	it('reloads a stale fixed directory once when its root is already newer', async () => {
+		const root = availabilityRoot([rootFamily('stops', NEXT_GENERATION)]);
+		const rootPort = vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(root);
+		const staleDirectory = entityDirectory('stops', GENERATION, '..', GENERATION);
+		const freshDirectory = entityDirectory('stops', NEXT_GENERATION, '..', NEXT_GENERATION);
+		const directoryPort = vi
+			.spyOn(adapter.historic, 'stopHistoryDirectory')
+			.mockResolvedValueOnce(staleDirectory)
+			.mockResolvedValueOnce(freshDirectory);
+
+		await expect(getStopHistoryDirectory()).resolves.toBe(freshDirectory);
+		expect(rootPort).toHaveBeenCalledTimes(2);
+		expect(directoryPort).toHaveBeenCalledTimes(2);
+		expect(directoryPort).toHaveBeenNthCalledWith(
+			2,
+			'historic/history/stops/index.json',
 			expect.objectContaining({ freshHistoryParent: true }),
 		);
 	});
@@ -543,14 +762,24 @@ describe('retained family discovery and generation pins', () => {
 		await expect(getLineHistoryIndex('A/B')).rejects.toBeInstanceOf(
 			HistoryTransientPublicationError,
 		);
-		expect(rootPort).toHaveBeenCalledTimes(1);
+		expect(rootPort).toHaveBeenCalledTimes(2);
+		expect(rootPort).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ freshHistoryParent: true }),
+		);
 		expect(directoryPort).toHaveBeenCalledTimes(2);
 	});
 
 	it('validates the root-to-directory path and refreshes that root pin exactly once', async () => {
-		const badRoot = availabilityRoot([
-			rootFamily('lines', GENERATION, 'historic/history/stops/index.json'),
-		]);
+		const badRoot = {
+			...availabilityRoot([]),
+			families: [
+				{
+					...rootFamily('lines', GENERATION, 'historic/history/stops/index.json'),
+					selection_mode: 'range' as const,
+				},
+			],
+		};
 		const directoryPort = vi.spyOn(adapter.historic, 'lineHistoryDirectory');
 		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValueOnce(badRoot);
 		await expect(getLineHistoryDirectory()).rejects.toBeInstanceOf(HistoryArtifactContractError);
@@ -610,7 +839,64 @@ describe('retained family discovery and generation pins', () => {
 		const childPort = vi.spyOn(adapter.historic, 'stopHistoryIndex').mockResolvedValue(child);
 
 		await expect(getStopHistoryIndex('..')).resolves.toBe(child);
-		expect(childPort).toHaveBeenCalledWith('..', undefined);
+		expect(childPort).toHaveBeenCalledWith(
+			'..',
+			'historic/history/stops/2e2e/index.json',
+			undefined,
+		);
+	});
+
+	it('follows versioned directory and awkward entity pointers without fixed-path fallback', async () => {
+		const directoryPath = versionedFamilyPath('lines');
+		const entityPath = versionedEntityPath('lines', '412f42');
+		const rootPort = vi
+			.spyOn(adapter.historic, 'historyIndex')
+			.mockResolvedValueOnce(availabilityRoot([rootFamily('lines', GENERATION, directoryPath)]))
+			.mockResolvedValue(
+				availabilityRoot([
+					rootFamily('lines', NEXT_GENERATION, versionedFamilyPath('lines', NEW_POINTER_SHA)),
+				]),
+			);
+		const directory = entityDirectory('lines', GENERATION, 'A/B', GENERATION, entityPath);
+		const directoryPort = vi
+			.spyOn(adapter.historic, 'lineHistoryDirectory')
+			.mockResolvedValue(directory);
+		const index = collectionIndex('lines', GENERATION, 'A/B');
+		const childPort = vi.spyOn(adapter.historic, 'lineHistoryIndex').mockResolvedValue(index);
+
+		await expect(getLineHistoryIndex('A/B')).resolves.toBe(index);
+		expect(rootPort).toHaveBeenCalledOnce();
+		expect(directoryPort).toHaveBeenCalledWith(directoryPath, undefined);
+		expect(childPort).toHaveBeenCalledWith('A/B', entityPath, undefined);
+	});
+
+	it('keeps missing versioned directory and entity children strict without legacy fallback', async () => {
+		const directoryPath = versionedFamilyPath('lines');
+		const entityPath = versionedEntityPath('lines', '412f42');
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(
+			availabilityRoot([rootFamily('lines', GENERATION, directoryPath)]),
+		);
+		const directoryPort = vi.spyOn(adapter.historic, 'lineHistoryDirectory');
+		directoryPort.mockResolvedValueOnce(null);
+
+		await expect(getLineHistoryDirectory()).rejects.toMatchObject({
+			name: 'HistoryArtifactContractError',
+			path: directoryPath,
+		});
+		expect(directoryPort).toHaveBeenCalledOnce();
+		expect(directoryPort).toHaveBeenCalledWith(directoryPath, undefined);
+
+		directoryPort.mockResolvedValueOnce(
+			entityDirectory('lines', GENERATION, 'A/B', GENERATION, entityPath),
+		);
+		const childPort = vi.spyOn(adapter.historic, 'lineHistoryIndex').mockResolvedValueOnce(null);
+
+		await expect(getLineHistoryIndex('A/B')).rejects.toMatchObject({
+			name: 'HistoryArtifactContractError',
+			path: entityPath,
+		});
+		expect(childPort).toHaveBeenCalledOnce();
+		expect(childPort).toHaveBeenCalledWith('A/B', entityPath, undefined);
 	});
 });
 

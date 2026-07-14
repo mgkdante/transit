@@ -418,6 +418,69 @@ describe('RouteReliabilityClusters retained Line history', () => {
 		}
 	});
 
+	it.each([
+		['a lone bound', 'from=2026-01-31'],
+		['a malformed bound', 'from=not-a-date&to=2026-02-01'],
+	] as const)(
+		'announces and clears %s without losing the coordinator correction',
+		async (_, query) => {
+			harness.page.url = new URL(
+				`http://localhost/lines/A%2FB?tab=reliability&focus=keep&${query}`,
+			);
+			const history = createHistory();
+			const view = render(RouteReliabilityClusters, {
+				props: { data: current, locale: 'en', history },
+			});
+
+			try {
+				await waitFor(() => expect(history.state).toBe('current'));
+				const correction = reliabilityCopy.en.history.correction.malformed;
+				expect(
+					Array.from(view.container.querySelectorAll('[data-slot="history-correction"]')).filter(
+						(element) => element.textContent?.trim() === correction,
+					),
+				).toHaveLength(1);
+				expect(harness.loadLineHistoryRange).not.toHaveBeenCalled();
+				expect(harness.page.url.searchParams.get('from')).toBeNull();
+				expect(harness.page.url.searchParams.get('to')).toBeNull();
+				expect(harness.page.url.searchParams.get('tab')).toBe('reliability');
+				expect(harness.page.url.searchParams.get('focus')).toBe('keep');
+			} finally {
+				history.destroy();
+			}
+		},
+	);
+
+	it('keeps the current singleton range usable when the optional retained index is absent', async () => {
+		harness.page.url = new URL(
+			'http://localhost/lines/A%2FB?tab=reliability&from=2026-07-12&to=2026-07-12&focus=keep',
+		);
+		harness.getLineHistoryIndex.mockResolvedValue(null);
+		const history = createHistory();
+		const view = render(RouteReliabilityClusters, {
+			props: { data: current, locale: 'en', history },
+		});
+
+		try {
+			await waitFor(() => expect(history.state).toBe('current'));
+			const range = view.getByRole('radio', { name: reliabilityCopy.en.controls.dateRange });
+			expect(range).toHaveAttribute('aria-checked', 'true');
+			const rail = view.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+			expect(within(rail).getAllByRole('region', { name: /history/i })).toHaveLength(1);
+			const bounds = rail.querySelectorAll<HTMLInputElement>('input[type="date"]');
+			expect(bounds).toHaveLength(2);
+			expect(bounds[0]).toHaveValue('2026-07-12');
+			expect(bounds[1]).toHaveValue('2026-07-12');
+			expect(activeWindowText(view.container)).toContain('2026-07-12');
+			expect(harness.loadLineHistoryRange).not.toHaveBeenCalled();
+			expect(harness.page.url.searchParams.get('from')).toBe('2026-07-12');
+			expect(harness.page.url.searchParams.get('to')).toBe('2026-07-12');
+			expect(harness.page.url.searchParams.get('focus')).toBe('keep');
+		} finally {
+			history.destroy();
+		}
+	});
+
 	it('keeps both selected bounds visible and announces a partial range with no delay rows', async () => {
 		harness.page.url = new URL(
 			'http://localhost/lines/A%2FB?tab=reliability&from=2026-01-31&to=2026-02-01',
