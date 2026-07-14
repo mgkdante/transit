@@ -1,5 +1,10 @@
 import type { DateWindow } from '$lib/filters';
-import type { AlertArchiveIndex, HistoricCoverageGap, ReceiptsIndex } from '$lib/v1/schemas';
+import type {
+	AlertArchiveIndex,
+	HistoricCollectionIndex,
+	HistoricCoverageGap,
+	ReceiptsIndex,
+} from '$lib/v1/schemas';
 
 export type HistoryAvailability =
 	| { readonly kind: 'empty' }
@@ -160,6 +165,32 @@ export function availabilityFromAlertIndex(
 		lastDate: index.last_available_date,
 		gaps: [],
 	};
+}
+
+export function availabilityFromCollectionIndex(
+	index: HistoricCollectionIndex,
+): HistoryAvailability {
+	if (
+		!strictIsoDate(index.first_available_date) ||
+		!strictIsoDate(index.last_available_date) ||
+		index.first_available_date > index.last_available_date
+	) {
+		return { kind: 'empty' };
+	}
+	return {
+		kind: 'continuous',
+		firstDate: index.first_available_date,
+		lastDate: index.last_available_date,
+		gaps: validGaps(index.gaps ?? []),
+	};
+}
+
+export function defaultWindowFromCollectionIndex(index: HistoricCollectionIndex): DateWindow {
+	const availability = availabilityFromCollectionIndex(index);
+	if (availability.kind !== 'continuous') {
+		throw new RangeError('collection has no retained default window');
+	}
+	return { from: availability.firstDate, to: availability.lastDate };
 }
 
 export function availabilityFromReceiptsIndex(index: ReceiptsIndex | null): HistoryAvailability {

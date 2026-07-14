@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { AlertArchiveIndexSchema, ReceiptsIndexSchema } from '$lib/v1/schemas';
+import {
+	AlertArchiveIndexSchema,
+	HistoricCollectionIndexSchema,
+	ReceiptsIndexSchema,
+} from '$lib/v1/schemas';
 import type { DateWindow } from '$lib/filters';
 import {
 	addIsoDays,
 	availabilityFromAlertIndex,
+	availabilityFromCollectionIndex,
 	availabilityFromReceiptsIndex,
 	datesForAvailability,
+	defaultWindowFromCollectionIndex,
 	nextAvailableDate,
 	previousAvailableDate,
 	resolveHistoryDate,
@@ -54,6 +60,44 @@ describe('strict ISO calendar dates and UTC arithmetic', () => {
 });
 
 describe('availability normalization', () => {
+	it('derives reusable continuous availability and the full default window from a collection', () => {
+		const index = HistoricCollectionIndexSchema.parse({
+			generated_utc: '2026-07-13T12:00:00Z',
+			family: 'network',
+			selection_mode: 'range',
+			first_available_date: '2026-01-01',
+			last_available_date: '2026-06-30',
+			gaps: [{ start_date: '2026-02-10', end_date: '2026-02-12', reason: 'outage' }],
+		});
+
+		expect(availabilityFromCollectionIndex(index)).toEqual({
+			kind: 'continuous',
+			firstDate: '2026-01-01',
+			lastDate: '2026-06-30',
+			gaps: [{ start_date: '2026-02-10', end_date: '2026-02-12', reason: 'outage' }],
+		});
+		expect(defaultWindowFromCollectionIndex(index)).toEqual({
+			from: '2026-01-01',
+			to: '2026-06-30',
+		});
+	});
+
+	it('keeps an empty collection empty and refuses to fabricate a default window', () => {
+		const index = HistoricCollectionIndexSchema.parse({
+			generated_utc: '2026-07-13T12:00:00Z',
+			family: 'network',
+			selection_mode: 'range',
+			first_available_date: null,
+			last_available_date: null,
+			gaps: [],
+		});
+
+		expect(availabilityFromCollectionIndex(index)).toEqual({ kind: 'empty' });
+		expect(() => defaultWindowFromCollectionIndex(index)).toThrow(
+			'collection has no retained default window',
+		);
+	});
+
 	it('enumerates continuous coverage while excluding explicit inclusive gaps', () => {
 		expect(datesForAvailability(continuous)).toEqual([
 			'2026-03-01',
