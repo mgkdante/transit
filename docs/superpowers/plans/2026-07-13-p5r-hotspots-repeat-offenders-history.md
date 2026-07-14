@@ -140,7 +140,7 @@ cd apps/db
 uv run pytest tests/test_as_of_rankings_contract.py tests/test_snapshots_contract.py tests/test_snapshots_schema_export.py -q
 ```
 
-- [ ] Add RED web tests proving fixed and versioned point-family index paths are allowlisted only for `hotspots`/`repeat_offenders`, artifact paths require an exact payload SHA plus real date, and cross-family/traversal/query/fragment variants fail before fetch.
+- [ ] Add RED web tests proving existing range families retain their fixed/versioned index allowlist, while `hotspots`/`repeat_offenders` point-family indexes allow only exact versioned paths (never a mutable fixed alias); artifact paths require an exact payload SHA plus real date, and cross-family/traversal/query/fragment variants fail before fetch.
 - [ ] Run the RED web tests:
 
 ```bash
