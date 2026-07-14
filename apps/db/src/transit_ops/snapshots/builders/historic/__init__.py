@@ -36,6 +36,7 @@ from transit_ops.snapshots.builders._helpers import (
     _ROUTE_SCHEDULE_SQL,  # noqa: F401 - re-exported for attribute-path parity
     _STOP_NAMES_SQL,  # noqa: F401 - re-exported for attribute-path parity
 )
+from transit_ops.snapshots.builders.historic import hotspots_history as hotspots_history
 
 # --- shared spine kernel (value helpers, projector fold catalog, spine +
 #     windowed consumer helpers, headway / weak-stop kernels) ---
@@ -101,6 +102,11 @@ from transit_ops.snapshots.builders.historic.alert_archive import (
     _ALERT_ARCHIVE_SQL,
     AlertArchiveBundle,
     build_alert_archive,
+)
+from transit_ops.snapshots.builders.historic.hotspots_history import (
+    HotspotsHistoryPlan,
+    build_hotspots_history_plan,
+    build_hotspots_history_plan_from_rows,
 )
 from transit_ops.snapshots.builders.historic.line_history import (
     LINE_HISTORY_ENTITY_BATCH_SIZE,
@@ -241,10 +247,13 @@ __all__ = [
     "build_alert_history",
     "build_alert_archive",
     "build_hotspots",
+    "build_hotspots_history_plan",
+    "build_hotspots_history_plan_from_rows",
     "build_receipts",
     "build_repeat_offenders",
     "build_stop_reliability",
     "AlertArchiveBundle",
+    "HotspotsHistoryPlan",
     "NetworkHistoryBundle",
     "NetworkHistoryPlan",
     "LineHistoryBundle",

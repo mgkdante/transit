@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel
 
@@ -111,6 +113,109 @@ def history_date(value: object, *, field: str = "local_date") -> str:
         if parsed.isoformat() == value:
             return value
     raise ValueError(f"{field} must be a valid local calendar date")
+
+
+def iter_history_date_groups(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    field: str = "local_date",
+):  # type: ignore[no-untyped-def]
+    """Yield ordered date groups with at most one row of source lookahead.
+
+    Retained-history SQL owns the sort. Failing closed here prevents a later
+    append or query-plan change from silently corrupting bounded rolling state.
+    """
+
+    current: str | None = None
+    grouped: list[Mapping[str, Any]] = []
+    for row in rows:
+        local_date = history_date(row.get(field), field=field)
+        if current is not None and local_date < current:
+            raise ValueError(f"history rows must be ordered by {field}")
+        if current is not None and local_date != current:
+            yield current, grouped
+            grouped = []
+        current = local_date
+        grouped.append(row)
+    if current is not None:
+        yield current, grouped
+
+
+@dataclass(frozen=True)
+class _HistoryNameInterval:
+    name: str | None
+    valid_from_utc: datetime
+    valid_to_utc: datetime | None
+
+
+class HistoryNameIndex:
+    """Provider-local closing-instant lookup over append-only name intervals."""
+
+    def __init__(
+        self,
+        rows: Iterable[Mapping[str, Any]],
+        *,
+        provider_timezone: str,
+    ) -> None:
+        try:
+            self._timezone = ZoneInfo(provider_timezone)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(f"unknown provider timezone {provider_timezone!r}") from exc
+        intervals: dict[tuple[str, str], list[_HistoryNameInterval]] = defaultdict(list)
+        for row in rows:
+            kind = row.get("entity_kind")
+            entity_id = row.get("entity_id")
+            if kind not in {"route", "stop"}:
+                raise ValueError("history name entity_kind must be route or stop")
+            if not isinstance(entity_id, str) or not entity_id:
+                raise ValueError("history name entity_id must be nonempty")
+            name = row.get("name")
+            if name is not None and not isinstance(name, str):
+                raise ValueError("history name must be a string or null")
+            valid_from = _history_datetime(row.get("valid_from_utc"), field="valid_from_utc")
+            valid_to_value = row.get("valid_to_utc")
+            valid_to = (
+                None
+                if valid_to_value is None
+                else _history_datetime(valid_to_value, field="valid_to_utc")
+            )
+            intervals[(kind, entity_id)].append(_HistoryNameInterval(name, valid_from, valid_to))
+        self._intervals = {
+            key: tuple(sorted(values, key=lambda value: value.valid_from_utc))
+            for key, values in intervals.items()
+        }
+
+    def name_at(self, kind: str, entity_id: str, local_date: str) -> str | None:
+        """Resolve the interval in force immediately before next local midnight."""
+
+        parsed = date.fromisoformat(history_date(local_date, field="date"))
+        closing_utc = datetime.combine(
+            parsed + timedelta(days=1),
+            time.min,
+            tzinfo=self._timezone,
+        ).astimezone(UTC)
+        candidates = [
+            interval
+            for interval in self._intervals.get((kind, entity_id), ())
+            if interval.valid_from_utc < closing_utc
+            and (interval.valid_to_utc is None or interval.valid_to_utc >= closing_utc)
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda value: value.valid_from_utc).name
+
+    def names_at(
+        self,
+        kind: str,
+        entity_ids: Iterable[str],
+        local_date: str,
+    ) -> dict[str, str | None]:
+        """Resolve a deterministic map for one artifact date."""
+
+        return {
+            entity_id: self.name_at(kind, entity_id, local_date)
+            for entity_id in sorted(set(entity_ids))
+        }
 
 
 @dataclass
