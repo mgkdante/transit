@@ -2046,7 +2046,98 @@ def test_historic_publish_proof_records_http_failure_without_leaking_exception()
     artifact = report.public["artifacts"][failed_path]
     assert artifact["failures"] == ["public_artifact_fetch_failed"]
     assert artifact["error_type"] == "HTTPError"
+    assert artifact["http_status"] == 503
     assert "unavailable" not in str(report.display_dict())
+
+
+def test_historic_publish_proof_accepts_missing_live_owned_manifest() -> None:
+    fixture = _complete_public_fixture()
+
+    def fetch_override(url: str) -> bytes:
+        path = urlsplit(url).path.split("/v1/stm/", 1)[1]
+        if path == "manifest.json":
+            raise HTTPError(url, 404, "not found", hdrs=None, fp=None)
+        return fixture.public_bytes[path]
+
+    report = _build_report(fixture, fetch_override=fetch_override)
+
+    assert report.status == "pass"
+    assert "public_artifact_fetch_failed" not in report.failures
+    assert report.public["manifest"] == {}
+    manifest_artifact = report.public["artifacts"]["manifest.json"]
+    assert manifest_artifact["status"] == "optional_absent"
+    assert manifest_artifact["http_status"] == 404
+    assert manifest_artifact["failures"] == []
+    assert report.public["artifacts"]["historic/history/index.json"]["status"] == "pass"
+
+
+@pytest.mark.parametrize(
+    ("failed_path", "http_status"),
+    [
+        ("manifest.json", 403),
+        ("manifest.json", 503),
+        ("historic/history/index.json", 404),
+    ],
+)
+def test_historic_publish_proof_only_allows_manifest_not_found(
+    failed_path: str,
+    http_status: int,
+) -> None:
+    fixture = _complete_public_fixture()
+
+    def fetch_override(url: str) -> bytes:
+        path = urlsplit(url).path.split("/v1/stm/", 1)[1]
+        if path == failed_path:
+            raise HTTPError(url, http_status, "unavailable", hdrs=None, fp=None)
+        return fixture.public_bytes[path]
+
+    report = _build_report(fixture, fetch_override=fetch_override)
+
+    assert report.status == "fail"
+    assert "public_artifact_fetch_failed" in report.failures
+    artifact = report.public["artifacts"][failed_path]
+    assert artifact["status"] == "fail"
+    assert artifact["http_status"] == http_status
+    assert artifact["failures"] == ["public_artifact_fetch_failed"]
+
+
+def test_public_fetch_sends_explicit_transit_user_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request_headers: dict[str, str | None] = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):  # noqa: ANN002
+            return False
+
+        def read(self) -> bytes:
+            return b'{"ready":true}'
+
+    def fake_urlopen(request, timeout):  # noqa: ANN001, ARG001
+        request_headers.update(
+            {
+                "accept": request.get_header("Accept"),
+                "cache_control": request.get_header("Cache-control"),
+                "user_agent": request.get_header("User-agent"),
+            }
+        )
+        return Response()
+
+    monkeypatch.setattr(historic_publish_module, "urlopen", fake_urlopen)
+
+    payload = historic_publish_module._default_fetch_bytes(
+        "https://data.example.com/v1/stm/historic/history/index.json"
+    )
+
+    assert payload == b'{"ready":true}'
+    assert request_headers == {
+        "accept": "application/json",
+        "cache_control": "no-cache",
+        "user_agent": "transit-historic-proof/1.0 (+https://transit.yesid.dev)",
+    }
 
 
 def test_historic_publish_proof_records_incomplete_read_without_partial_body() -> None:

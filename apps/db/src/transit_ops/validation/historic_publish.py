@@ -17,6 +17,7 @@ from multiprocessing import get_context
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Literal, TypeVar, cast
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
@@ -79,6 +80,7 @@ GATE_MAX_AGE = timedelta(hours=36)
 FUTURE_SKEW = timedelta(minutes=5)
 HISTORIC_PROOF_FETCH_CONCURRENCY = 8
 HISTORIC_PROOF_TIMEOUT_SECONDS = 35 * 60
+PUBLIC_PROOF_USER_AGENT = "transit-historic-proof/1.0 (+https://transit.yesid.dev)"
 RANGE_PARTITION_SAMPLE_LIMIT_PER_FAMILY = 8
 RANGE_PARTITION_SAMPLING_METHOD = "sha256-generation-seeded-boundary-interior-v1"
 
@@ -279,7 +281,14 @@ def _artifact_entry(
 
 
 def _default_fetch_bytes(url: str) -> bytes:
-    request = Request(url, headers={"Accept": "application/json", "Cache-Control": "no-cache"})
+    request = Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "Cache-Control": "no-cache",
+            "User-Agent": PUBLIC_PROOF_USER_AGENT,
+        },
+    )
     with urlopen(request, timeout=30) as response:  # noqa: S310
         return response.read()
 
@@ -331,6 +340,7 @@ def _fetch_model(
     query: str | None = None,
     gate_digests: Mapping[str, object] | None = None,
     bind_gate_digest: bool = False,
+    optional_not_found: bool = False,
 ) -> tuple[PayloadT | None, bytes | None, dict[str, object]]:
     try:
         safe_path = _safe_public_path(path)
@@ -361,6 +371,15 @@ def _fetch_model(
         return None, None, artifact
     try:
         raw = fetch_bytes(url)
+    except HTTPError as exc:
+        artifact["http_status"] = exc.code
+        if optional_not_found and exc.code == 404:
+            artifact["error_type"] = type(exc).__name__
+            artifact["status"] = "optional_absent"
+            return None, None, artifact
+        artifact["error_type"] = type(exc).__name__
+        _add_failure(failures, "public_artifact_fetch_failed", artifact)
+        return None, None, artifact
     except HistoricProofDeadlineExceeded:
         if deadline is not None:
             deadline.mark_exceeded(failures, skipped=1)
@@ -1725,6 +1744,7 @@ def _build_historic_publish_proof(
             artifacts=artifacts,
             failures=failures,
             query=proof_query,
+            optional_not_found=True,
         )
         historic_files = ManifestHistoricFiles()
         if manifest is not None:
