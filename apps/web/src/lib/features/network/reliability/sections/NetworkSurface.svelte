@@ -35,7 +35,13 @@
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeNameFallback, describeAbsence } from '$lib/site/absence';
 	import { layout, routeFor } from '$lib/nav';
-	import { mapSearchFor, fromSearchParams, toSearchParams, emptyFilterState } from '$lib/filters';
+	import {
+		mapSearchFor,
+		fromSearchParams,
+		toSearchParams,
+		emptyFilterState,
+		type DateWindow,
+	} from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
 	import {
@@ -60,8 +66,15 @@
 		ResourceBoundary,
 		SurfaceRail,
 		GrainPicker,
+		HistoryNavigator,
 		type GrainSegment,
 	} from '$lib/components/surface';
+	import {
+		availabilityFromCollectionIndex,
+		datesForAvailability,
+		historyRangeRequestFromSearchParams,
+		type RawHistoryRangeRequest,
+	} from '$lib/v1/history';
 	import { observeActiveToc, TocNav, type TocEntry } from '$lib/components/shared';
 	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
@@ -86,6 +99,7 @@
 		type NetworkGrain,
 	} from '../data/presentGrains';
 	import { WINDOWS, bestFitWindow, windowedSeries, type WindowDays } from '../data/trendWindow';
+	import { createNetworkHistoryResource } from '../data/networkHistoryResource.svelte';
 	import { selectHeadlineKpis } from '../selectors/headlineKpis';
 	import { selectStatusMix } from '../selectors/statusMix';
 	import { selectOccupancyMix } from '../selectors/occupancyMix';
@@ -130,6 +144,10 @@
 
 	// Historic tier — the daily network trend (createResource, browser-only).
 	const trend = createResource(() => getNetworkTrend());
+	const history = createNetworkHistoryResource(
+		historyRangeRequestFromSearchParams(page.url.searchParams),
+	);
+	onMount(() => () => history.destroy());
 	// Honesty layer — the provider's feed-conformance verdict (provenance.json). Supplementary:
 	// a null/errored fetch renders nothing, never a blocking boundary.
 	const provenance = createResource(() => getProvenance());
@@ -266,12 +284,76 @@
 	// Live map cross-filters (DECISIONS A1) ride each band's spec `href` now (P5.2) —
 	// the legacy onSelect callbacks were plain navigations, so the URL IS the contract.
 
-	/* ── HISTORIC: grain (day/week/month) ─────────────────────────────────────────── */
-	const dailySeries = $derived<TrendPoint[]>(trend.data?.series ?? []);
-	const weeklySeries = $derived<TrendPoint[]>(trend.data?.weekly ?? []);
-	const monthlySeries = $derived<TrendPoint[]>(trend.data?.monthly ?? []);
+	/* ── HISTORIC: retained range ownership + grain (day/week/month) ──────────────── */
+	const emptyHistoryRequest = (): RawHistoryRangeRequest => ({
+		hasFrom: false,
+		hasTo: false,
+		rawFrom: null,
+		rawTo: null,
+	});
+	const historyRequested = $derived(history.request.hasFrom || history.request.hasTo);
+	// Optional discovery can legitimately be absent. The coordinator reports that as `current`,
+	// so a stale deep link must fall back to the singleton instead of leaving a permanent skeleton.
+	const explicitHistory = $derived(historyRequested && history.state !== 'current');
+	const retainedReady = $derived(history.state === 'ready' || history.state === 'partial');
+	const selectedTrend = $derived(
+		explicitHistory ? (retainedReady ? history.value : null) : trend.data,
+	);
+	const dailySeries = $derived<readonly TrendPoint[]>(selectedTrend?.series ?? []);
+	const weeklySeries = $derived<readonly TrendPoint[]>(selectedTrend?.weekly ?? []);
+	const monthlySeries = $derived<readonly TrendPoint[]>(selectedTrend?.monthly ?? []);
 	const allSeries = $derived({ daily: dailySeries, weekly: weeklySeries, monthly: monthlySeries });
 	const present = $derived(presentGrains(allSeries));
+
+	const historyAvailability = $derived(
+		history.index == null ? null : availabilityFromCollectionIndex(history.index),
+	);
+	const historyDates = $derived(
+		historyAvailability == null ? [] : datesForAvailability(historyAvailability),
+	);
+	const historyWindow = $derived(
+		explicitHistory ? (history.resolved?.selection ?? undefined) : undefined,
+	);
+	const historyCoverageText = $derived.by<string | null>(() => {
+		if (historyAvailability?.kind !== 'continuous') return null;
+		return t.history.coverage(
+			formatDateKey(historyAvailability.firstDate, locale),
+			formatDateKey(historyAvailability.lastDate, locale),
+		);
+	});
+	const historySelectionText = $derived.by<string | null>(() => {
+		if (!explicitHistory) return null;
+		const selection = history.resolved?.selection;
+		if (selection == null) return null;
+		return t.history.selection(
+			formatDateKey(selection.from, locale),
+			formatDateKey(selection.to, locale),
+		);
+	});
+	let historyAnnouncement = $state<string | null>(null);
+	let handledHistoryCorrection = '';
+	$effect(() => {
+		const correction = history.resolved?.correction;
+		if (correction == null || correction.key === handledHistoryCorrection) return;
+		handledHistoryCorrection = correction.key;
+		historyAnnouncement = t.history.correction[correction.reason];
+		history.setRequest(emptyHistoryRequest());
+	});
+
+	function selectHistoryRange(value: DateWindow | undefined): void {
+		historyAnnouncement = null;
+		handledHistoryCorrection = '';
+		history.setRequest(
+			value == null
+				? emptyHistoryRequest()
+				: {
+						hasFrom: true,
+						hasTo: true,
+						rawFrom: value.from,
+						rawTo: value.to,
+					},
+		);
+	}
 
 	// CONTRACT: the codec ($lib/filters) owns the URL seams — fromSearchParams enum-parses the
 	// ?grain seed (invalid values dropped); toSearchParams serializes it back (day = default →
@@ -323,17 +405,31 @@
 		if (present.size > 0 && !present.has(grainKey)) grainKey = defaultNetworkGrain(present);
 	});
 
-	// Mirror the resolved grain (day = default → omitted). Uses the shared codec's wire format +
-	// the batched mirror (MERGES, preserves other params — the recorded A1 mirror-path).
-	const grainWire = $derived.by<{ grain: string | null }>(() => {
+	// Mirror grain + retained range in ONE write. While discovery is pending, preserve the raw
+	// deep-link values; after resolution, only an accepted canonical range remains in the URL.
+	const historyWire = $derived.by<{
+		grain: string | null;
+		from: string | null;
+		to: string | null;
+	}>(() => {
 		const state = emptyFilterState();
 		if (grainKey !== 'day') state.grain = grainKey;
-		return { grain: toSearchParams(state).get('grain') };
+		const canonical = history.resolved?.canonicalWindow;
+		const pendingExplicit = explicitHistory && history.resolved == null;
+		return {
+			grain: toSearchParams(state).get('grain'),
+			from:
+				canonical?.from ??
+				(pendingExplicit && history.request.hasFrom ? history.request.rawFrom : null),
+			to:
+				canonical?.to ?? (pendingExplicit && history.request.hasTo ? history.request.rawTo : null),
+		};
 	});
-	$effect(() => mirrorSearchParams(grainWire));
+	$effect(() => mirrorSearchParams(historyWire));
 
 	/* ── HISTORIC: trend window (7/30/90-day, DAY grain only) ─────────────────────── */
-	const bestFit = $derived<WindowDays>(bestFitWindow(dailySeries.length));
+	const currentDailySeries = $derived<readonly TrendPoint[]>(trend.data?.series ?? []);
+	const bestFit = $derived<WindowDays>(bestFitWindow(currentDailySeries.length));
 
 	let windowKey = $state('7');
 	let windowSeeded = $state(false);
@@ -342,7 +438,7 @@
 		return (WINDOWS as readonly number[]).includes(d) ? (d as WindowDays) : bestFit;
 	});
 	const windowSegments = $derived.by<GrainSegment<string>[]>(() => {
-		const n = dailySeries.length;
+		const n = currentDailySeries.length;
 		const labels: Record<WindowDays, string> = {
 			7: t.window.d7,
 			30: t.window.d30,
@@ -359,7 +455,8 @@
 	// Default to the richest-fit window once the data settles, then clamp DOWN if a later
 	// (smaller) series no longer fits. The 7-day window always fits, so this never loops.
 	$effect(() => {
-		const n = dailySeries.length;
+		if (explicitHistory) return;
+		const n = currentDailySeries.length;
 		if (n === 0) return;
 		if (!windowSeeded) {
 			windowKey = String(bestFit);
@@ -369,37 +466,77 @@
 		}
 	});
 
+	/* ── HISTORIC mapping pass — ONE window slice shared by every mark ────────────── */
+	const windowed = $derived<readonly TrendPoint[]>(
+		explicitHistory
+			? grain === 'week'
+				? allSeries.weekly
+				: grain === 'month'
+					? allSeries.monthly
+					: allSeries.daily
+			: windowedSeries(grain, allSeries, windowDays),
+	);
+
 	/* ── HISTORIC: delay-series toggle (p90 vs avg) ───────────────────────────────── */
 	let retardKey = $state('p90');
+	const delayAvailabilityKnown = $derived(
+		explicitHistory &&
+			(history.state === 'ready' || history.state === 'partial' || history.state === 'no-data'),
+	);
+	const p90Available = $derived(
+		isDailyGrain && (!delayAvailabilityKnown || windowed.some((point) => point.p90_min != null)),
+	);
+	const avgAvailable = $derived(
+		!delayAvailabilityKnown || windowed.some((point) => point.avg_delay_min != null),
+	);
+	const showRetardPicker = $derived(!delayAvailabilityKnown || p90Available || avgAvailable);
 	const retardSegments = $derived.by<GrainSegment<string>[]>(() => [
 		// p90 has no week/month data → disabled on a coarse grain (never a flat-null line).
-		{ key: 'p90', label: t.trend.retardP90, available: isDailyGrain },
-		{ key: 'avg', label: t.trend.retardAvg },
+		{ key: 'p90', label: t.trend.retardP90, available: p90Available },
+		{ key: 'avg', label: t.trend.retardAvg, available: avgAvailable },
 	]);
 	// The EFFECTIVE retard series: the rider's pick on the day grain, forced to avg on week/month.
 	const effectiveRetard = $derived<'p90' | 'avg'>(
-		isDailyGrain && retardKey === 'p90' ? 'p90' : 'avg',
+		retardKey === 'p90' && p90Available ? 'p90' : avgAvailable ? 'avg' : 'p90',
 	);
-	// Snap the picker SELECTION to 'avg' on a coarse grain (keep the highlighted chip in lockstep
-	// with the plotted series — p90 is disabled there).
+	// Keep the highlighted choice on a channel that actually carries selected-range readings.
 	$effect(() => {
-		if (!isDailyGrain && retardKey === 'p90') retardKey = 'avg';
+		// Preserve the singleton contract: p90 has never existed at week/month grain, so the
+		// enabled Average control must own both the plotted channel and the roving-radio state.
+		if (!explicitHistory && !isDailyGrain && retardKey === 'p90') {
+			retardKey = 'avg';
+			return;
+		}
+		if (!delayAvailabilityKnown) return;
+		if (retardKey === 'p90' && !p90Available && avgAvailable) retardKey = 'avg';
+		if (retardKey === 'avg' && !avgAvailable && p90Available) retardKey = 'p90';
 	});
 	const retardLabel = $derived(
-		effectiveRetard === 'avg' ? t.metrics.delayP50 : t.trend.retardLabel,
+		effectiveRetard === 'avg' ? t.trend.retardAvgLabel : t.trend.retardLabel,
 	);
 
-	/* ── HISTORIC mapping pass — ONE window slice shared by every mark ────────────── */
-	const windowed = $derived<readonly TrendPoint[]>(windowedSeries(grain, allSeries, windowDays));
 	const trendSpec = $derived(
 		selectTrendChart(windowed, effectiveRetard, {
 			locale,
 			title: t.trend.summary,
 			onTimeLabel: t.trend.onTimeLabel,
 			retardLabel,
+			delayOnlyTitle: t.trend.delayOnlySummary,
+			onTimeOnlyTitle: t.trend.onTimeOnlySummary,
 			pctUnit: t.units.pct,
 			minUnit: t.units.min,
+			minimumPoints: explicitHistory ? 1 : 2,
 		}),
+	);
+	const retainedDelayOnly = $derived(
+		explicitHistory &&
+			!windowed.some((point) => point.otp_pct != null) &&
+			windowed.some((point) =>
+				effectiveRetard === 'p90' ? point.p90_min != null : point.avg_delay_min != null,
+			),
+	);
+	const trendMetricKey = $derived<MetricKey>(
+		retainedDelayOnly ? (effectiveRetard === 'p90' ? 'p50p90' : 'avgDelay') : 'otp',
 	);
 	const vehiclesSpark = $derived(
 		selectVehiclesSpark(windowed, {
@@ -512,6 +649,16 @@
 		{/snippet}
 	</Masthead>
 
+	<p
+		class="sr-only"
+		data-slot="history-page-announcement"
+		role="status"
+		aria-live="polite"
+		aria-atomic="true"
+	>
+		{historyAnnouncement ?? ''}
+	</p>
+
 	<!-- P5.4: the view controls (grain · window · delay series) + the two-region ToC live in a
 	     map-style GLASS LEFT RAIL (SurfaceRail) — a sticky floating panel beside the LIVE +
 	     HISTORIC regions on desktop, and ONE merged pill→sheet (controls + ToC together) on
@@ -524,7 +671,7 @@
 		{#snippet windowControls()}
 			<!-- Trend window (7/30/90-day) — DAY grain only; slices the tail. Week/month render
 			     their full short series → no window. -->
-			{#if isDailyGrain}
+			{#if isDailyGrain && !explicitHistory}
 				<GrainPicker
 					segments={windowSegments}
 					bind:value={windowKey}
@@ -533,12 +680,14 @@
 				/>
 			{/if}
 			<!-- Delay-series toggle: p90 vs avg. p90 disables on a coarse grain (no week/month data). -->
-			<GrainPicker
-				segments={retardSegments}
-				bind:value={retardKey}
-				label={t.trend.retardToggleLabel}
-				class="network-retard-toggle"
-			/>
+			{#if showRetardPicker}
+				<GrainPicker
+					segments={retardSegments}
+					bind:value={retardKey}
+					label={t.trend.retardToggleLabel}
+					class="network-retard-toggle"
+				/>
+			{/if}
 		{/snippet}
 
 		<!-- The rail content — the View overline + the grain picker (when >1 grain is populated) +
@@ -547,6 +696,20 @@
 		{#snippet railContent({ closeSheet }: { closeSheet: () => void })}
 			<div class="network-control-body" data-slot="controls-body">
 				<span class="network-rail-view" data-slot="controls-rail-label">{t.viewControlsLabel}</span>
+				{#if history.index != null}
+					<HistoryNavigator
+						mode="range"
+						{locale}
+						labels={t.history.navigator}
+						value={historyWindow}
+						availableDates={historyDates}
+						coverageText={historyCoverageText}
+						selectionText={historySelectionText}
+						announcement={historyAnnouncement}
+						liveAnnouncement={false}
+						onRangeChange={selectHistoryRange}
+					/>
+				{/if}
 				<!-- The grain radiogroup — rendered only when MORE THAN ONE grain carries data (a dead
 			     control otherwise). enable-iff-populated: an empty grain renders disabled. -->
 				{#if showGrainPicker}
@@ -701,22 +864,17 @@
 			>
 				<SectionHeading level={2} overline={t.historicRegion} number={2} />
 
-				<ResourceBoundary
-					resource={trend}
-					lang={locale}
-					isEmpty={(d) =>
-						(d.series?.length ?? 0) === 0 &&
-						(d.weekly?.length ?? 0) === 0 &&
-						(d.monthly?.length ?? 0) === 0}
-				>
-					<!-- The readouts read the module-level windowed VMs (not the boundary payload). -->
-					<!-- align="start": these tiles are HETEROGENEOUS (tall charts beside a
-					     one-line completeness note) — stretching them equal pads the short ones
-					     with dead space (measured ~360px empty in the crowding tile), the exact
-					     disease 0f274ae reverted on the receipt. Natural height is the ruling
-					     for mixed-kind rows; equal-height stays for uniform scalar boards. -->
+				{#snippet historicBoard()}
+					<!-- The readouts share the one selected range and one mapping pass. -->
 					<DashboardGrid minTile="360px" gutter={false} align="start">
-						<SectionTrend {trendSpec} {vehiclesSpark} {isDailyGrain} {info} copy={t} />
+						<SectionTrend
+							{trendSpec}
+							{vehiclesSpark}
+							{isDailyGrain}
+							metricKey={trendMetricKey}
+							{info}
+							copy={t}
+						/>
 
 						{#if cancelTrend.hasCancel}
 							<SectionCancellations
@@ -729,9 +887,6 @@
 							/>
 						{/if}
 
-						<!-- SERVICE COMPLETENESS (S9B · GC2): ALWAYS rendered — while the rate is null
-				     (ramp-in on prod today) the tile carries its honest-absence note; a citizen
-				     sees "no data + why", never a silently missing section. -->
 						<SectionCompleteness
 							latestDisplay={completenessDisplay}
 							{info}
@@ -744,9 +899,6 @@
 							<SectionCrowdingByDay days={occupancyDays} {info} copy={t} />
 						{/if}
 
-						<!-- The `network-shift` data-slot + the trailing-window caveat are COORDINATED here:
-				     the shift tile hosts the anchor when present, else the day-type tile; the caveat
-				     renders on the day-type tile when present, else the shift tile (never duplicated). -->
 						{#if hasShift}
 							<SectionByTimeOfDay
 								rows={shiftRows}
@@ -768,7 +920,45 @@
 							/>
 						{/if}
 					</DashboardGrid>
-				</ResourceBoundary>
+				{/snippet}
+
+				{#if explicitHistory}
+					{#if retainedReady && history.value != null}
+						<div class="network-history-notes" data-slot="history-scope-notes">
+							{#if history.state === 'partial'}
+								<p data-slot="history-partial">{t.history.partial}</p>
+							{/if}
+							<p data-slot="history-daily-only">{t.history.dailyOnly}</p>
+							{#if hasShift || hasDayType}
+								<p data-slot="history-current-only">{t.history.currentOnly}</p>
+							{/if}
+						</div>
+						{@render historicBoard()}
+					{:else if history.state === 'no-data'}
+						<EdgeState variant="empty" lang={locale} layout={edgeLayout} />
+						<p class="network-history-empty" data-slot="history-no-data">{t.history.noData}</p>
+					{:else if history.state === 'error'}
+						<EdgeState
+							variant="error-v1"
+							lang={locale}
+							layout={edgeLayout}
+							onRetry={() => history.retry()}
+						/>
+					{:else}
+						<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
+					{/if}
+				{:else}
+					<ResourceBoundary
+						resource={trend}
+						lang={locale}
+						isEmpty={(d) =>
+							(d.series?.length ?? 0) === 0 &&
+							(d.weekly?.length ?? 0) === 0 &&
+							(d.monthly?.length ?? 0) === 0}
+					>
+						{@render historicBoard()}
+					</ResourceBoundary>
+				{/if}
 			</section>
 		</div>
 	</div>
@@ -811,6 +1001,22 @@
 		flex-direction: column;
 		gap: 1rem;
 		min-width: 0;
+	}
+	.network-history-notes,
+	.network-history-empty {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.5;
+		color: var(--muted-foreground);
+	}
+	.network-history-notes {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+	.network-history-notes p {
+		margin: 0;
 	}
 
 	/* The view controls (View overline + grain picker + window/delay toggles), stacked in the

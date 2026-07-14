@@ -18,6 +18,8 @@ const opts = {
 	title: 'Network trend',
 	onTimeLabel: 'On-time %',
 	retardLabel: 'Slowest 10% (min)',
+	delayOnlyTitle: 'Chosen daily delay series',
+	onTimeOnlyTitle: 'Daily on-time percentage',
 	pctUnit: '%',
 	minUnit: ' min',
 } as const;
@@ -49,6 +51,60 @@ describe('selectTrendChart', () => {
 
 	it('degrades to honest absence below two real points (never a one-dot line)', () => {
 		const spec = selectTrendChart([{ date: 'a', otp_pct: 81 }], 'avg', opts);
+		expect(spec.kind).toBe('absence');
+	});
+
+	it('admits one published retained point only when the caller explicitly opts in', () => {
+		const spec = trendOf(
+			selectTrendChart([{ date: 'a', otp_pct: 81 }], 'avg', {
+				...opts,
+				minimumPoints: 1,
+			}),
+		);
+
+		expect(spec.points).toHaveLength(1);
+		expect(spec.minPointsForLine).toBe(2);
+		expect(spec.secondary).toBeUndefined();
+		expect(spec.title).toBe('Daily on-time percentage');
+	});
+
+	it.each([
+		['p90', { p90_min: 4 }, 'Slowest 10% (min)'],
+		['avg', { avg_delay_min: 1.5 }, 'Average delay (min)'],
+	] as const)(
+		'renders a retained %s-only point as a late-colour dated trend when OTP is unavailable',
+		(channel, point, expectedLabel) => {
+			const spec = selectTrendChart([{ date: 'a', otp_pct: null, ...point }], channel, {
+				...opts,
+				retardLabel: expectedLabel,
+				minimumPoints: 1,
+			});
+
+			expect(spec.kind).toBe('trend');
+			if (spec.kind !== 'trend') throw new Error(`expected trend, got ${spec.kind}`);
+			expect(spec.domain).toEqual([0, 15]);
+			expect(spec.title).toBe('Chosen daily delay series');
+			expect(spec.label).toBe(expectedLabel);
+			expect(spec.unit).toBe(' min');
+			expect(spec.points).toEqual([
+				expect.objectContaining({ x: 'a', y: Object.values(point)[0], y2: null }),
+			]);
+			expect(spec.colorVar).toBe('var(--dataviz-status-late)');
+			expect(spec.secondary).toBeUndefined();
+			expect(spec.target).toBeUndefined();
+		},
+	);
+
+	it('keeps a delay-only current singleton on the default honest-absence path', () => {
+		const spec = selectTrendChart(
+			[
+				{ date: 'a', otp_pct: null, p90_min: 4 },
+				{ date: 'b', otp_pct: null, p90_min: 5 },
+			],
+			'p90',
+			opts,
+		);
+
 		expect(spec.kind).toBe('absence');
 	});
 

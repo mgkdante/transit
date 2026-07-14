@@ -4,7 +4,7 @@
 // The pre-P5.2 note claiming TrendSpec "does not model" the dual series was STALE —
 // TrendSpec.secondary + TrendDatum.y2 are exactly this shape, and the live p90/avg
 // toggle simply re-emits the spec. The primary line is on-time %; the retard series
-// reads either p90 ("slowest 10%") or avg-delay ("typical") on its OWN FIXED
+// reads either p90 ("slowest 10%") or average delay on its OWN FIXED
 // DELAY_DIST_DOMAIN [0,15] (the p90-capable NAMED PAIRED constant — see domains.ts A2),
 // never the in-view max. null points are GAPS (never bridged).
 //
@@ -31,10 +31,16 @@ export interface TrendChartOptions {
 	readonly title: string;
 	/** Primary-series label (on-time %). */
 	readonly onTimeLabel: string;
-	/** The resolved retard-axis label (p90 or median — the toggle re-feeds this). */
+	/** The resolved delay-axis label (p90 or average — the toggle re-feeds this). */
 	readonly retardLabel: string;
+	/** Accessible title when retained evidence contains delay but no OTP channel. */
+	readonly delayOnlyTitle: string;
+	/** Accessible title when retained evidence contains OTP but no selected delay channel. */
+	readonly onTimeOnlyTitle: string;
 	readonly pctUnit: string;
 	readonly minUnit: string;
+	/** A published retained point is still real evidence even when it cannot form a line. */
+	readonly minimumPoints?: 1 | 2;
 }
 
 /**
@@ -50,15 +56,13 @@ export function selectTrendChart(
 	const retard = points.map((p) =>
 		effectiveRetard === 'avg' ? (p.avg_delay_min ?? null) : (p.p90_min ?? null),
 	);
-	const specPoints: TrendDatum[] = points.map((p, i) => ({
-		x: p.date,
-		xLabel: p.date,
-		y: onTime[i] ?? null,
-		y2: retard[i] ?? null,
-	}));
-
-	// Below two real points a trend has no shape — honest absence, never a one-dot line.
-	if (specPoints.filter((p) => p.y != null).length < 2) {
+	const minimumPoints = opts.minimumPoints ?? 2;
+	const hasPrimary = onTime.filter((value) => value != null).length >= minimumPoints;
+	const hasRetard = retard.filter((value) => value != null).length >= minimumPoints;
+	const allowRetardOnly = opts.minimumPoints === 1;
+	// Current trends still need two OTP points to form a shape. A retained-range caller may admit
+	// one published point in either channel instead of discarding real retained evidence.
+	if (!hasPrimary && !(allowRetardOnly && hasRetard)) {
 		return {
 			kind: 'absence',
 			title: opts.title,
@@ -67,10 +71,41 @@ export function selectTrendChart(
 			variant: 'block',
 		};
 	}
+	const retardOnly = allowRetardOnly && !hasPrimary && hasRetard;
+	if (retardOnly) {
+		const specPoints: TrendDatum[] = points.map((point, index) => ({
+			x: point.date,
+			xLabel: point.date,
+			y: retard[index] ?? null,
+			y2: null,
+		}));
+		return {
+			kind: 'trend',
+			title: opts.delayOnlyTitle,
+			locale: opts.locale,
+			xScale: 'band',
+			domain: DELAY_DIST_DOMAIN,
+			unit: opts.minUnit,
+			label: opts.retardLabel,
+			colorVar: 'var(--dataviz-status-late)',
+			points: specPoints,
+			hasBand: false,
+			minPointsForLine: 2,
+			minN: 0,
+		};
+	}
+
+	const specPoints: TrendDatum[] = points.map((p, i) => ({
+		x: p.date,
+		xLabel: p.date,
+		y: onTime[i] ?? null,
+		y2: retard[i] ?? null,
+	}));
+	const includeSecondary = !allowRetardOnly || hasRetard;
 
 	return {
 		kind: 'trend',
-		title: opts.title,
+		title: allowRetardOnly && !hasRetard ? opts.onTimeOnlyTitle : opts.title,
 		locale: opts.locale,
 		xScale: 'band',
 		// The zoom is computed over the ALREADY-windowed on-time series — the same slice every
@@ -81,11 +116,15 @@ export function selectTrendChart(
 		points: specPoints,
 		hasBand: false,
 		target: OTP_TREND_REFERENCE,
-		secondary: {
-			domain: [DELAY_DIST_DOMAIN[0], DELAY_DIST_DOMAIN[1]],
-			unit: opts.minUnit,
-			label: opts.retardLabel,
-		},
+		...(includeSecondary
+			? {
+					secondary: {
+						domain: DELAY_DIST_DOMAIN,
+						unit: opts.minUnit,
+						label: opts.retardLabel,
+					},
+				}
+			: {}),
 		// Metadata floors (network points carry no per-period n — the mark's comet dots
 		// read every point at the low-N radius, matching the legacy uniform dots).
 		minPointsForLine: 2,

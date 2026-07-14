@@ -96,6 +96,7 @@ vi.mock('$lib/nav', async () => {
 
 vi.mock('$lib/v1', async () => {
 	return {
+		...(await import('$lib/v1/history')),
 		STATUS_CODES: ['early', 'on_time', 'late', 'severe', 'unknown'],
 		OCCUPANCY_CODES: ['empty', 'many_seats', 'few_seats', 'standing', 'full'],
 		getV1Context: () => ({ manifest: { files: { live: { ttl_s: 30 } } }, labels: {}, lang: 'en' }),
@@ -126,6 +127,8 @@ vi.mock('$lib/v1', async () => {
 		}),
 		getNetworkTrend: vi.fn(),
 		getProvenance: vi.fn(),
+		getNetworkHistoryIndex: vi.fn().mockResolvedValue(null),
+		loadNetworkHistoryRange: vi.fn(),
 	};
 });
 
@@ -357,14 +360,33 @@ describe('NetworkSurface trend window + series', () => {
 		expect(within(group).getByRole('radio', { name: '90d' })).toBeDisabled();
 	});
 
-	it('offers a delay-series toggle (slowest 10% vs typical)', () => {
+	it('offers a delay-series toggle (slowest 10% vs average)', () => {
 		render(NetworkSurface);
 		const group = screen.getByRole('radiogroup', { name: 'Delay series' });
 		expect(within(group).getByRole('radio', { name: 'Slowest 10%' })).toBeInTheDocument();
-		expect(within(group).getByRole('radio', { name: 'Typical' })).toBeInTheDocument();
+		expect(within(group).getByRole('radio', { name: 'Average' })).toBeInTheDocument();
 	});
 
-	it('switches the retard channel from p90 to the avg/median series when "Typical" is picked', async () => {
+	it('preserves both delay choices on a sparse current singleton', () => {
+		const original = trendSeries.slice();
+		trendSeries.splice(
+			0,
+			trendSeries.length,
+			{ date: '2026-06-14', otp_pct: 78, avg_delay_min: null, p90_min: null },
+			{ date: '2026-06-15', otp_pct: 81, avg_delay_min: null, p90_min: null },
+		);
+
+		try {
+			render(NetworkSurface);
+			const group = screen.getByRole('radiogroup', { name: 'Delay series' });
+			expect(within(group).getByRole('radio', { name: 'Slowest 10%' })).not.toBeDisabled();
+			expect(within(group).getByRole('radio', { name: 'Average' })).not.toBeDisabled();
+		} finally {
+			trendSeries.splice(0, trendSeries.length, ...original);
+		}
+	});
+
+	it('switches the retard channel from p90 to the mean series when "Average" is picked', async () => {
 		// P5.2: TrendMark's sr-only table is the layout-independent read (LayerChart
 		// paints nothing in happy-dom). The secondary column header carries the resolved
 		// retard label; its cells carry the series.
@@ -382,8 +404,8 @@ describe('NetworkSurface trend window + series', () => {
 		expect(secondaryHeader()).toContain('Slowest 10% (min)');
 		expect(lastY2()).toBe('6');
 
-		await fireEvent.click(screen.getByRole('radio', { name: 'Typical' }));
-		expect(secondaryHeader()).toContain('Median delay');
+		await fireEvent.click(screen.getByRole('radio', { name: 'Average' }));
+		expect(secondaryHeader()).toContain('Average delay (min)');
 		expect(secondaryHeader()).not.toContain('Slowest 10% (min)');
 		expect(lastY2()).toBe('1.8');
 	});
@@ -448,8 +470,10 @@ describe('NetworkSurface trend grain (day/week/month)', () => {
 		await fireEvent.click(screen.getByRole('radio', { name: 'Week' }));
 		const delayGroup = screen.getByRole('radiogroup', { name: 'Delay series' });
 		expect(within(delayGroup).getByRole('radio', { name: 'Slowest 10%' })).toBeDisabled();
+		expect(within(delayGroup).getByRole('radio', { name: 'Slowest 10%' })).not.toBeChecked();
+		expect(within(delayGroup).getByRole('radio', { name: 'Average' })).toBeChecked();
 		const header = trendFigure(container).querySelectorAll('table.sr-only thead th')[2];
-		expect(header?.textContent).toContain('Median delay');
+		expect(header?.textContent).toContain('Average delay (min)');
 		expect(header?.textContent).not.toContain('Slowest 10% (min)');
 		const rows = trendRows(container);
 		expect(rows[rows.length - 1].querySelectorAll('td')[1]?.textContent).toBe('1.6');
