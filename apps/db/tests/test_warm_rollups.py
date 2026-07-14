@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 
@@ -50,6 +52,24 @@ BUILD_REPORTING_AGGREGATE_ROWCOUNTS = {
     table_name: index
     for index, table_name in enumerate(BUILD_REPORTING_AGGREGATE_TABLES, start=10)
 }
+
+APPEND_ONLY_DAILY_STAGES = (
+    ("route_percentile_daily", "route_delay_percentile_daily"),
+    ("stop_percentile_daily", "stop_delay_percentile_daily"),
+    ("route_scheduled_trips_daily", "route_scheduled_trips_daily"),
+    ("route_cancellation_daily", "route_cancellation_daily"),
+    ("route_occupancy_band_daily", "route_occupancy_band_daily"),
+    ("route_occupancy_band_hourly", "route_occupancy_band_hourly"),
+    ("stop_occupancy_band_daily", "stop_occupancy_band_daily"),
+    ("route_service_span_daily", "route_service_span_daily"),
+    ("route_skipped_stop_daily", "route_skipped_stop_daily"),
+    ("route_delay_by_crowding_daily", "route_delay_by_crowding_daily"),
+    ("route_delay_spine", "route_delay_spine"),
+    ("route_headway_shift_daily", "route_headway_shift_daily"),
+    ("stop_delay_spine", "stop_delay_spine"),
+    ("stop_delay_shift_daily", "stop_delay_shift_daily"),
+    ("repeat_offender_daily_spine", "repeat_offender_daily_spine"),
+)
 
 # Deterministic ROW-DELETE counts for the append-only daily tables that lack a
 # DELETE branch above (the crowding/spine tables already return 13/16/9/4). Used
@@ -405,6 +425,72 @@ class FakeEngine:
     @contextmanager
     def begin(self):
         yield self._connection
+
+
+class TransactionTrackingEngine(FakeEngine):
+    def __init__(self, connection: FakeConnection) -> None:
+        super().__init__(connection)
+        self.transactions: list[dict[str, object]] = []
+
+    @contextmanager
+    def begin(self):
+        started_at = len(self._connection.executed)
+        try:
+            yield self._connection
+        except Exception:
+            self.transactions.append(
+                {
+                    "status": "rolled_back",
+                    "statements": tuple(self._connection.executed[started_at:]),
+                }
+            )
+            raise
+        else:
+            self.transactions.append(
+                {
+                    "status": "committed",
+                    "statements": tuple(self._connection.executed[started_at:]),
+                }
+            )
+
+
+class FailingReportingConnection(FakeConnection):
+    def __init__(self, fail_table: str) -> None:
+        super().__init__()
+        self.fail_table = fail_table
+
+    def execute(self, statement, params=None):  # noqa: ANN001
+        sql = str(statement)
+        if f"INSERT INTO gold.{self.fail_table}" in sql:
+            self.executed.append(sql)
+            raise RuntimeError(f"forced failure for {self.fail_table}")
+        return super().execute(statement, params)
+
+
+def _rollup_stage_events(caplog) -> list[dict[str, object]]:  # noqa: ANN001
+    events: list[dict[str, object]] = []
+    for record in caplog.records:
+        try:
+            payload = json.loads(record.getMessage())
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if payload.get("event") == "warm_rollup_stage":
+            events.append(payload)
+    return events
+
+
+def _reporting_transactions(
+    engine: TransactionTrackingEngine,
+) -> list[dict[str, object]]:
+    return [
+        transaction
+        for transaction in engine.transactions
+        if any(
+            f"DELETE FROM gold.{table_name}" in statement
+            for statement in transaction["statements"]
+            for table_name in BUILD_REPORTING_AGGREGATE_TABLES
+        )
+    ]
 
 
 def _fake_settings(**kwargs) -> Settings:
@@ -1080,6 +1166,123 @@ def test_build_warm_rollups_result_display_dict() -> None:
         for table_name, rowcount in BUILD_REPORTING_AGGREGATE_ROWCOUNTS.items()
     }
     assert "completed_at_utc" in d
+
+
+def test_build_warm_rollups_emits_machine_readable_stage_checkpoints(caplog) -> None:  # noqa: ANN001
+    caplog.set_level(logging.INFO, logger=rollups.__name__)
+    conn = FakeConnection(trip_delay_periods=[datetime(2026, 3, 25, 12, 0, tzinfo=UTC)])
+    engine = FakeEngine(conn)
+
+    result = build_warm_rollups("stm", engine=engine)
+
+    events = _rollup_stage_events(caplog)
+    started = [event for event in events if event["status"] == "started"]
+    completed = [event for event in events if event["status"] == "completed"]
+    expected_stage_ids = [
+        ("trip_delay_5m", "trip_delay_summary_5m", "trip_delay_summary_5m"),
+        *[("append_only_daily", kind, table) for kind, table in APPEND_ONLY_DAILY_STAGES],
+        *[
+            ("reporting_aggregate", "reporting_aggregate", table)
+            for table in BUILD_REPORTING_AGGREGATE_TABLES
+        ],
+    ]
+
+    assert [
+        (event["stage"], event["kind"], event["table"]) for event in started
+    ] == expected_stage_ids
+    assert [
+        (event["stage"], event["kind"], event["table"]) for event in completed
+    ] == expected_stage_ids
+    assert all(event["provider_id"] == "stm" for event in events)
+    assert all(event["event"] == "warm_rollup_stage" for event in events)
+    assert all("duration_seconds" not in event for event in started)
+    assert all(isinstance(event["duration_seconds"], float) for event in completed)
+    assert all(event["duration_seconds"] >= 0 for event in completed)
+    assert all(isinstance(event["rows"], int) for event in completed)
+    assert events == [item for pair in zip(started, completed, strict=True) for item in pair]
+
+    payload = result.display_dict()
+    prior_contract_keys = {
+        "provider_id",
+        "skipped_not_seeded",
+        "since_utc",
+        "built_trip_delay_periods",
+        "built_route_percentile_days",
+        "built_stop_percentile_days",
+        "built_route_scheduled_trips_days",
+        "built_route_cancellation_days",
+        "built_route_occupancy_days",
+        "built_route_occupancy_hourly_days",
+        "built_stop_occupancy_days",
+        "built_route_service_span_days",
+        "built_route_skipped_stop_days",
+        "built_route_delay_by_crowding_days",
+        "built_route_delay_spine_days",
+        "built_route_headway_shift_daily_days",
+        "built_stop_delay_spine_days",
+        "built_stop_delay_shift_daily_days",
+        "built_repeat_offender_daily_spine_days",
+        "reporting_aggregate_row_counts",
+        "completed_at_utc",
+    }
+    assert prior_contract_keys < payload.keys()
+    assert payload["built_trip_delay_periods"] == 1
+    assert payload["reporting_aggregate_row_counts"] == dict(BUILD_REPORTING_AGGREGATE_ROWCOUNTS)
+    assert payload["completed_stage_receipts"] == completed
+
+
+def test_reporting_aggregates_commit_in_one_transaction_per_table() -> None:
+    engine = TransactionTrackingEngine(FakeConnection())
+
+    build_warm_rollups("stm", engine=engine)
+
+    transactions = _reporting_transactions(engine)
+    assert len(transactions) == len(BUILD_REPORTING_AGGREGATE_TABLES)
+    for transaction, table_name in zip(transactions, BUILD_REPORTING_AGGREGATE_TABLES, strict=True):
+        statements = transaction["statements"]
+        assert transaction["status"] == "committed"
+        assert sum(f"DELETE FROM gold.{table_name}" in sql for sql in statements) == 1
+        assert sum(f"INSERT INTO gold.{table_name}" in sql for sql in statements) == 1
+        assert all(
+            other_table == table_name
+            or f"DELETE FROM gold.{other_table}" not in "\n".join(statements)
+            for other_table in BUILD_REPORTING_AGGREGATE_TABLES
+        )
+
+
+def test_reporting_stage_failure_logs_error_reraises_and_keeps_prior_commits(
+    caplog,  # noqa: ANN001
+) -> None:
+    caplog.set_level(logging.INFO, logger=rollups.__name__)
+    failed_table = "repeated_problem_route_stop"
+    engine = TransactionTrackingEngine(FailingReportingConnection(failed_table))
+
+    with pytest.raises(RuntimeError, match=f"forced failure for {failed_table}"):
+        build_warm_rollups("stm", engine=engine)
+
+    transactions = _reporting_transactions(engine)
+    assert [transaction["status"] for transaction in transactions] == [
+        "committed",
+        "committed",
+        "rolled_back",
+    ]
+    for transaction, table_name in zip(
+        transactions,
+        BUILD_REPORTING_AGGREGATE_TABLES[:3],
+        strict=True,
+    ):
+        assert any(f"DELETE FROM gold.{table_name}" in sql for sql in transaction["statements"])
+
+    events = _rollup_stage_events(caplog)
+    error = events[-1]
+    assert error["provider_id"] == "stm"
+    assert error["stage"] == "reporting_aggregate"
+    assert error["kind"] == "reporting_aggregate"
+    assert error["table"] == failed_table
+    assert error["status"] == "error"
+    assert isinstance(error["duration_seconds"], float)
+    assert error["duration_seconds"] >= 0
+    assert error.get("rows") is None
 
 
 def test_prune_warm_rollup_storage_deletes_old_periods() -> None:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -2092,6 +2094,28 @@ REPORTING_AGGREGATE_UPSERTS = {
 
 
 @dataclass(frozen=True)
+class WarmRollupStageReceipt:
+    provider_id: str
+    stage: str
+    kind: str
+    table: str
+    duration_seconds: float
+    rows: int
+
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "event": "warm_rollup_stage",
+            "provider_id": self.provider_id,
+            "stage": self.stage,
+            "kind": self.kind,
+            "table": self.table,
+            "status": "completed",
+            "duration_seconds": self.duration_seconds,
+            "rows": self.rows,
+        }
+
+
+@dataclass(frozen=True)
 class WarmRollupBuildResult:
     provider_id: str
     since_utc: datetime | None
@@ -2116,6 +2140,7 @@ class WarmRollupBuildResult:
     # True when the provider is enrolled but not yet seeded (no gold.dim_provider
     # row): the build is a logged no-op rather than a crash.
     skipped_not_seeded: bool = False
+    completed_stage_receipts: tuple[WarmRollupStageReceipt, ...] = field(default_factory=tuple)
 
     def display_dict(self) -> dict[str, object]:
         return {
@@ -2140,6 +2165,9 @@ class WarmRollupBuildResult:
             "built_repeat_offender_daily_spine_days": self.built_repeat_offender_daily_spine_days,
             "reporting_aggregate_row_counts": self.reporting_aggregate_row_counts,
             "completed_at_utc": self.completed_at_utc.isoformat(),
+            "completed_stage_receipts": [
+                receipt.display_dict() for receipt in self.completed_stage_receipts
+            ],
         }
 
 
@@ -2151,6 +2179,52 @@ class WarmRollupBuildResult:
 def _safe_rowcount(result) -> int:  # noqa: ANN001
     rowcount = getattr(result, "rowcount", 0)
     return max(int(rowcount or 0), 0)
+
+
+def _run_warm_rollup_stage(
+    *,
+    provider_id: str,
+    stage: str,
+    kind: str,
+    table: str,
+    operation: Callable[[], int],
+) -> WarmRollupStageReceipt:
+    identity: dict[str, object] = {
+        "event": "warm_rollup_stage",
+        "provider_id": provider_id,
+        "stage": stage,
+        "kind": kind,
+        "table": table,
+    }
+    logger.info("%s", json.dumps({**identity, "status": "started"}, sort_keys=True))
+    started_at = time.perf_counter()
+    try:
+        rows = operation()
+    except Exception:
+        duration_seconds = round(time.perf_counter() - started_at, 3)
+        logger.exception(
+            "%s",
+            json.dumps(
+                {
+                    **identity,
+                    "status": "error",
+                    "duration_seconds": duration_seconds,
+                },
+                sort_keys=True,
+            ),
+        )
+        raise
+
+    receipt = WarmRollupStageReceipt(
+        provider_id=provider_id,
+        stage=stage,
+        kind=kind,
+        table=table,
+        duration_seconds=round(time.perf_counter() - started_at, 3),
+        rows=rows,
+    )
+    logger.info("%s", json.dumps(receipt.display_dict(), sort_keys=True))
+    return receipt
 
 
 def _build_percentile_days(
@@ -2276,8 +2350,8 @@ def build_warm_rollups(
             completed_at_utc=utc_now(),
             skipped_not_seeded=True,
         )
-    built_trip_delay = 0
     reporting_aggregate_row_counts: dict[str, int] = {}
+    completed_stage_receipts: list[WarmRollupStageReceipt] = []
     now = utc_now()
 
     # Provider-local "today" anchors the closed-day calendar for the append-only
@@ -2294,32 +2368,70 @@ def build_warm_rollups(
     today_key = int(today_local.strftime("%Y%m%d"))
     floor_key = int((today_local - timedelta(days=percentile_lookback_days)).strftime("%Y%m%d"))
 
-    with engine.begin() as conn:
-        # Trip delay summary
-        rows = conn.execute(
-            SELECT_MISSING_TRIP_DELAY_PERIODS,
-            {"provider_id": provider_id, "since_utc": since_utc},
-        ).fetchall()
-        for row in rows:
-            period = row.period_start_utc
-            conn.execute(
-                UPSERT_TRIP_DELAY_SUMMARY_5M,
-                {
-                    "provider_id": provider_id,
-                    "period_start_utc": period,
-                    "built_at_utc": now,
-                },
-            )
-            conn.execute(
-                UPSERT_WARM_ROLLUP_PERIOD,
-                {
-                    "provider_id": provider_id,
-                    "rollup_kind": "trip_delay_summary_5m",
-                    "period_start_utc": period,
-                    "built_at_utc": now,
-                },
-            )
-            built_trip_delay += 1
+    def build_trip_delay_stage() -> int:
+        built = 0
+        with engine.begin() as conn:
+            rows = conn.execute(
+                SELECT_MISSING_TRIP_DELAY_PERIODS,
+                {"provider_id": provider_id, "since_utc": since_utc},
+            ).fetchall()
+            for row in rows:
+                period = row.period_start_utc
+                conn.execute(
+                    UPSERT_TRIP_DELAY_SUMMARY_5M,
+                    {
+                        "provider_id": provider_id,
+                        "period_start_utc": period,
+                        "built_at_utc": now,
+                    },
+                )
+                conn.execute(
+                    UPSERT_WARM_ROLLUP_PERIOD,
+                    {
+                        "provider_id": provider_id,
+                        "rollup_kind": "trip_delay_summary_5m",
+                        "period_start_utc": period,
+                        "built_at_utc": now,
+                    },
+                )
+                built += 1
+        return built
+
+    trip_delay_receipt = _run_warm_rollup_stage(
+        provider_id=provider_id,
+        stage="trip_delay_5m",
+        kind="trip_delay_summary_5m",
+        table="trip_delay_summary_5m",
+        operation=build_trip_delay_stage,
+    )
+    completed_stage_receipts.append(trip_delay_receipt)
+    built_trip_delay = trip_delay_receipt.rows
+
+    def build_daily_stage(
+        *,
+        rollup_kind: str,
+        table_name: str,
+        upsert,  # noqa: ANN001
+        select_missing=SELECT_MISSING_PERCENTILE_DAYS,  # noqa: ANN001
+    ) -> int:
+        receipt = _run_warm_rollup_stage(
+            provider_id=provider_id,
+            stage="append_only_daily",
+            kind=rollup_kind,
+            table=table_name,
+            operation=lambda: _build_percentile_days(
+                engine,
+                provider_id=provider_id,
+                rollup_kind=rollup_kind,
+                upsert=upsert,
+                today_key=today_key,
+                floor_key=floor_key,
+                now=now,
+                select_missing=select_missing,
+            ),
+        )
+        completed_stage_receipts.append(receipt)
+        return receipt.rows
 
     # Append-only daily rollups (route/stop percentiles + cancellation + occupancy
     # band + service span + skipped stop). Built AFTER the 5m section commits and
@@ -2327,188 +2439,129 @@ def build_warm_rollups(
     # REPORTING_AGGREGATE_TABLES, so accrued history is never wiped. Each call
     # commits per-day in its own transaction (see _build_percentile_days), so a
     # cold-start build is resumable across runs.
-    built_route_percentile = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_route_percentile = build_daily_stage(
         rollup_kind="route_percentile_daily",
+        table_name="route_delay_percentile_daily",
         upsert=UPSERT_ROUTE_DELAY_PERCENTILE_DAILY,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
     )
-    built_stop_percentile = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_stop_percentile = build_daily_stage(
         rollup_kind="stop_percentile_daily",
+        table_name="stop_delay_percentile_daily",
         upsert=UPSERT_STOP_DELAY_PERCENTILE_DAILY,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
     )
     # Scheduled universe (GC2 H1) — MUST build BEFORE cancellation so the same run's
     # cancellation LEFT JOIN finds the scheduled row for the day. Reads silver (the
     # CURRENT edition), not the fact, but uses the trip-delay missing-day calendar so
     # it materializes exactly the closed days cancellation also builds. Append-only,
     # own watermark kind; :date_key is bound-but-unused by the scheduled upsert.
-    built_route_scheduled_trips = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_route_scheduled_trips = build_daily_stage(
         rollup_kind="route_scheduled_trips_daily",
+        table_name="route_scheduled_trips_daily",
         upsert=UPSERT_ROUTE_SCHEDULED_TRIPS_DAILY,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
     )
     # Cancellation reads fact_trip_delay_snapshot, so it reuses the default
     # trip-delay missing-day calendar. Occupancy reads fact_vehicle_snapshot,
     # so it MUST use SELECT_MISSING_OCCUPANCY_DAYS over its own source table.
-    built_route_cancellation = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_route_cancellation = build_daily_stage(
         rollup_kind="route_cancellation_daily",
+        table_name="route_cancellation_daily",
         upsert=UPSERT_ROUTE_CANCELLATION_DAILY,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
     )
-    built_route_occupancy = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_route_occupancy = build_daily_stage(
         rollup_kind="route_occupancy_band_daily",
+        table_name="route_occupancy_band_daily",
         upsert=UPSERT_ROUTE_OCCUPANCY_BAND_DAILY,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
         select_missing=SELECT_MISSING_OCCUPANCY_DAYS,
     )
     # Hour-grain route occupancy band reduction (migration 0074) — same
     # fact_vehicle_snapshot source as the daily rollup, so it MUST use
     # SELECT_MISSING_OCCUPANCY_DAYS (reusing the trip-delay calendar would
     # watermark-build empty reductions on delay-only days). daily == Σ hourly.
-    built_route_occupancy_hourly = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_route_occupancy_hourly = build_daily_stage(
         rollup_kind="route_occupancy_band_hourly",
+        table_name="route_occupancy_band_hourly",
         upsert=UPSERT_ROUTE_OCCUPANCY_BAND_HOURLY,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
         select_missing=SELECT_MISSING_OCCUPANCY_DAYS,
     )
     # Per-stop occupancy band reduction — twin of route occupancy, same
     # fact_vehicle_snapshot source, so it MUST use SELECT_MISSING_OCCUPANCY_DAYS too.
-    built_stop_occupancy = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_stop_occupancy = build_daily_stage(
         rollup_kind="stop_occupancy_band_daily",
+        table_name="stop_occupancy_band_daily",
         upsert=UPSERT_STOP_OCCUPANCY_BAND_DAILY,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
         select_missing=SELECT_MISSING_OCCUPANCY_DAYS,
     )
     # Service span reads fact_trip_delay_snapshot → default trip-delay calendar.
-    built_route_service_span = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_route_service_span = build_daily_stage(
         rollup_kind="route_service_span_daily",
+        table_name="route_service_span_daily",
         upsert=UPSERT_ROUTE_SERVICE_SPAN_DAILY,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
     )
     # Skipped-stop reads fact_trip_delay_snapshot (carried skip count) → default.
-    built_route_skipped_stop = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_route_skipped_stop = build_daily_stage(
         rollup_kind="route_skipped_stop_daily",
+        table_name="route_skipped_stop_daily",
         upsert=UPSERT_ROUTE_SKIPPED_STOP_DAILY,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
     )
     # Delay x crowding co-observation (FIX-3) reads fact_trip_delay_snapshot's carried
     # occupancy_status → default trip-delay calendar. APPEND-ONLY; ramps in from the deploy
     # (occupancy_status is forward-filled, NULL on historical fact rows).
-    built_route_delay_by_crowding = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_route_delay_by_crowding = build_daily_stage(
         rollup_kind="route_delay_by_crowding_daily",
+        table_name="route_delay_by_crowding_daily",
         upsert=UPSERT_ROUTE_DELAY_BY_CROWDING_DAILY,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
     )
     # Route delay spine — finest-grain additive delay metric family (hour x direction).
     # Reads fact_trip_delay_snapshot -> default trip-delay missing-day calendar.
     # APPEND-ONLY (NOT in REPORTING_AGGREGATE_TABLES); accrued history is never wiped.
-    built_route_delay_spine = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_route_delay_spine = build_daily_stage(
         rollup_kind="route_delay_spine",
+        table_name="route_delay_spine",
         upsert=UPSERT_ROUTE_DELAY_SPINE,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
     )
 
     # Headway shift-daily spine — finest-grain additive HEADWAY family (shift x direction).
     # Reads fact_trip_delay_snapshot -> default trip-delay missing-day calendar.
     # APPEND-ONLY (NOT in REPORTING_AGGREGATE_TABLES); accrued history is never wiped.
-    built_route_headway_shift_daily = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_route_headway_shift_daily = build_daily_stage(
         rollup_kind="route_headway_shift_daily",
+        table_name="route_headway_shift_daily",
         upsert=UPSERT_ROUTE_HEADWAY_SHIFT_DAILY,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
     )
 
     # Stop delay spine — finest-grain additive STOP-DELAY family (windowed worst-N ranking).
     # Reads fact_trip_delay_snapshot -> default trip-delay missing-day calendar. ALL-DAYS.
     # APPEND-ONLY (NOT in REPORTING_AGGREGATE_TABLES); accrued history is never wiped.
-    built_stop_delay_spine = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_stop_delay_spine = build_daily_stage(
         rollup_kind="stop_delay_spine",
+        table_name="stop_delay_spine",
         upsert=UPSERT_STOP_DELAY_SPINE,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
     )
 
     # Stop delay shift-daily — shift grain of the stop-delay family (GC1 / Step G4). Reads
     # fact_trip_delay_snapshot -> default trip-delay missing-day calendar. ALL-DAYS.
     # APPEND-ONLY (NOT in REPORTING_AGGREGATE_TABLES); accrued history is never wiped.
-    built_stop_delay_shift = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_stop_delay_shift = build_daily_stage(
         rollup_kind="stop_delay_shift_daily",
+        table_name="stop_delay_shift_daily",
         upsert=UPSERT_STOP_DELAY_SHIFT_DAILY,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
     )
 
     # Repeat-offender daily spine (S14) — daily per-entity (trip|vehicle) offender grain feeding
     # the windowed by_grain recurrence ladders. Reads fact_trip_delay_snapshot -> default
     # trip-delay missing-day calendar. ALL-DAYS. APPEND-ONLY (NOT in REPORTING_AGGREGATE_TABLES);
     # accrued history is never wiped. Fact predicates byte-identical to the scalar mart upsert.
-    built_repeat_offender_daily_spine = _build_percentile_days(
-        engine,
-        provider_id=provider_id,
+    built_repeat_offender_daily_spine = build_daily_stage(
         rollup_kind="repeat_offender_daily_spine",
+        table_name="repeat_offender_daily_spine",
         upsert=UPSERT_REPEAT_OFFENDER_DAILY_SPINE,
-        today_key=today_key,
-        floor_key=floor_key,
-        now=now,
     )
 
-    # Reporting aggregates (full DELETE+UPSERT refresh) in their own transaction,
-    # so a failure here never rolls back the committed 5m + daily-builder work.
-    with engine.begin() as conn:
-        for table_name in REPORTING_AGGREGATE_TABLES:
+    # Each reporting aggregate has its own transaction so a late-table failure
+    # preserves all completed earlier refreshes as well as the 5m + daily work.
+    for table_name in REPORTING_AGGREGATE_TABLES:
+
+        def refresh_reporting_aggregate(table_name: str = table_name) -> int:
             delete_params = {"provider_id": provider_id}
             upsert_params = {
                 "provider_id": provider_id,
@@ -2529,15 +2582,26 @@ def build_warm_rollups(
                     **upsert_params,
                     "open_window_days": open_window_days,
                 }
-            conn.execute(
-                DELETE_REPORTING_AGGREGATES[table_name],
-                delete_params,
-            )
-            result = conn.execute(
-                REPORTING_AGGREGATE_UPSERTS[table_name],
-                upsert_params,
-            )
-            reporting_aggregate_row_counts[table_name] = _safe_rowcount(result)
+            with engine.begin() as conn:
+                conn.execute(
+                    DELETE_REPORTING_AGGREGATES[table_name],
+                    delete_params,
+                )
+                result = conn.execute(
+                    REPORTING_AGGREGATE_UPSERTS[table_name],
+                    upsert_params,
+                )
+                return _safe_rowcount(result)
+
+        receipt = _run_warm_rollup_stage(
+            provider_id=provider_id,
+            stage="reporting_aggregate",
+            kind="reporting_aggregate",
+            table=table_name,
+            operation=refresh_reporting_aggregate,
+        )
+        completed_stage_receipts.append(receipt)
+        reporting_aggregate_row_counts[table_name] = receipt.rows
 
     return WarmRollupBuildResult(
         provider_id=provider_id,
@@ -2560,6 +2624,7 @@ def build_warm_rollups(
         built_stop_delay_spine_days=built_stop_delay_spine,
         built_stop_delay_shift_daily_days=built_stop_delay_shift,
         built_repeat_offender_daily_spine_days=built_repeat_offender_daily_spine,
+        completed_stage_receipts=tuple(completed_stage_receipts),
     )
 
 
