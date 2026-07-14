@@ -452,6 +452,13 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
     # names, so the hand-coded FakeConnHistoric.execute spine branch is gone.
     dispatch = {
         "publish.lock.try_acquire": [True],
+        "history.hotspots.timezone": [{"timezone": "UTC"}],
+        "history.hotspots.names": [],
+        "history.hotspots.route_daily": [],
+        "history.hotspots.stop_daily": [],
+        "history.repeat_offenders.timezone": [{"timezone": "UTC"}],
+        "history.repeat_offenders.names": [],
+        "history.repeat_offenders.daily": [],
         # One real retained Network day proves the historic publisher wires the
         # content-addressed month outside the compatibility payload list.
         "history.network.delay": [

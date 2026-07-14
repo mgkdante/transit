@@ -13,6 +13,11 @@ import pytest
 import transit_ops.validation.historic_publish as historic_publish_module
 from transit_ops.settings import Settings
 from transit_ops.snapshots.builders.historic.alert_archive import _collection_generation_id
+from transit_ops.snapshots.builders.historic.history_common import (
+    PointHistorySummary,
+    history_coverage,
+    history_pointer_path,
+)
 from transit_ops.snapshots.contract import (
     AlertArchiveEntry,
     AlertArchiveIndex,
@@ -21,6 +26,12 @@ from transit_ops.snapshots.contract import (
     AlertArchivePageRef,
     AlertHistory,
     AlertHistoryEntry,
+    HistoricAvailabilityIndex,
+    HistoricCollectionIndex,
+    HistoricFamilyAvailability,
+    HistoricHotspotsDay,
+    HistoricRepeatOffendersDay,
+    HistorySelectionMode,
     Manifest,
     ManifestFiles,
     ManifestHistoricFiles,
@@ -38,6 +49,9 @@ from transit_ops.validation.historic_publish import (
 )
 
 GENERATED_UTC = "2026-07-13T06:00:00+00:00"
+POINT_OLD_GENERATED_UTC = "2026-05-02T04:00:00Z"
+POINT_NEW_GENERATED_UTC = "2026-07-13T05:00:00Z"
+PUBLISH_GENERATION_ID = f"stm@{GENERATED_UTC}"
 NOW_UTC = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
 
 
@@ -45,6 +59,8 @@ NOW_UTC = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
 class PublicFixture:
     public_bytes: dict[str, bytes]
     page_paths: tuple[str, ...]
+    point_index_paths: dict[str, str]
+    point_day_paths: dict[str, tuple[str, ...]]
     fetch_calls: list[str]
     collection_generation_id: str
     expectations_reader: Callable[..., AlertExpectations]
@@ -52,6 +68,43 @@ class PublicFixture:
 
 def _json_bytes(model: object) -> bytes:
     return model.model_dump_json().encode("utf-8")  # type: ignore[attr-defined]
+
+
+def _point_history_family(
+    family: str,
+) -> tuple[HistoricCollectionIndex, str, dict[str, bytes], tuple[str, ...]]:
+    summary = PointHistorySummary(family)
+    public_bytes: dict[str, bytes] = {}
+    paths: list[str] = []
+    for local_date, generated_utc in (
+        ("2026-05-01", POINT_OLD_GENERATED_UTC),
+        ("2026-07-13", POINT_NEW_GENERATED_UTC),
+    ):
+        if family == "hotspots":
+            payload = HistoricHotspotsDay(
+                generated_utc=generated_utc,
+                methodology_version="reliability-1",
+                date=local_date,
+                hotspots=[],
+                by_grain=[],
+            )
+        else:
+            payload = HistoricRepeatOffendersDay(
+                generated_utc=generated_utc,
+                methodology_version="reliability-1",
+                date=local_date,
+                offenders=[],
+                by_grain=[],
+            )
+        ref = summary.observe(payload)
+        public_bytes[ref.path] = _json_bytes(payload)
+        paths.append(ref.path)
+
+    index = summary.build_index(fallback_generated_utc=GENERATED_UTC)
+    index.publish_generation_id = PUBLISH_GENERATION_ID
+    index_path = history_pointer_path(f"historic/history/{family}", index)
+    public_bytes[index_path] = _json_bytes(index)
+    return index, index_path, public_bytes, tuple(paths)
 
 
 def _archive_entry(alert_id: str, *, month: str) -> AlertArchiveEntry:
@@ -191,17 +244,88 @@ def _complete_public_fixture(*, empty_alerts: bool = False) -> PublicFixture:
             truncated=False,
         )
 
+    receipts_index = ReceiptsIndex(
+        generated_utc=GENERATED_UTC,
+        collection_generation_id="b" * 64,
+        dates=["2026-05-01", "2026-07-13"],
+    )
+    _, _, receipt_gaps = history_coverage(receipts_index.dates)
+    hotspots_index, hotspots_index_path, hotspots_bytes, hotspots_paths = _point_history_family(
+        "hotspots"
+    )
+    repeat_index, repeat_index_path, repeat_bytes, repeat_paths = _point_history_family(
+        "repeat_offenders"
+    )
+    history_root = HistoricAvailabilityIndex(
+        generated_utc=GENERATED_UTC,
+        methodology_version="history-1",
+        publish_generation_id=PUBLISH_GENERATION_ID,
+        families=[
+            HistoricFamilyAvailability(
+                family="alerts",
+                selection_mode=HistorySelectionMode.range,
+                index_path="historic/alerts/index.json",
+                collection_generation_id=collection_generation_id,
+                first_available_date=alert_index.first_available_date,
+                last_available_date=alert_index.last_available_date,
+            ),
+            HistoricFamilyAvailability(
+                family="hotspots",
+                selection_mode=HistorySelectionMode.date,
+                index_path=hotspots_index_path,
+                collection_generation_id=hotspots_index.collection_generation_id,
+                first_available_date=hotspots_index.first_available_date,
+                last_available_date=hotspots_index.last_available_date,
+                gaps=hotspots_index.gaps,
+            ),
+            HistoricFamilyAvailability(
+                family="lines",
+                selection_mode=HistorySelectionMode.range,
+                index_path="historic/history/lines/index.json",
+                collection_generation_id="c" * 64,
+            ),
+            HistoricFamilyAvailability(
+                family="network",
+                selection_mode=HistorySelectionMode.range,
+                index_path="historic/history/network/index.json",
+                collection_generation_id="d" * 64,
+            ),
+            HistoricFamilyAvailability(
+                family="receipts",
+                selection_mode=HistorySelectionMode.date,
+                index_path="historic/receipts/index.json",
+                collection_generation_id=receipts_index.collection_generation_id,
+                first_available_date=receipts_index.dates[0],
+                last_available_date=receipts_index.dates[-1],
+                gaps=receipt_gaps,
+            ),
+            HistoricFamilyAvailability(
+                family="repeat_offenders",
+                selection_mode=HistorySelectionMode.date,
+                index_path=repeat_index_path,
+                collection_generation_id=repeat_index.collection_generation_id,
+                first_available_date=repeat_index.first_available_date,
+                last_available_date=repeat_index.last_available_date,
+                gaps=repeat_index.gaps,
+            ),
+            HistoricFamilyAvailability(
+                family="stops",
+                selection_mode=HistorySelectionMode.range,
+                index_path="historic/history/stops/index.json",
+                collection_generation_id="e" * 64,
+            ),
+        ],
+    )
+
+    public_bytes.update(hotspots_bytes)
+    public_bytes.update(repeat_bytes)
     public_bytes.update(
         {
             "manifest.json": _json_bytes(_manifest()),
             "historic/alerts/index.json": _json_bytes(alert_index),
             "historic/alert_history.json": _json_bytes(alert_history),
-            "historic/receipts/index.json": _json_bytes(
-                ReceiptsIndex(
-                    generated_utc=GENERATED_UTC,
-                    dates=["2026-05-01", "2026-07-13"],
-                )
-            ),
+            "historic/history/index.json": _json_bytes(history_root),
+            "historic/receipts/index.json": _json_bytes(receipts_index),
             "historic/receipts/2026-05-01.json": _json_bytes(
                 Receipt(generated_utc=GENERATED_UTC, date="2026-05-01")
             ),
@@ -257,6 +381,14 @@ def _complete_public_fixture(*, empty_alerts: bool = False) -> PublicFixture:
     return PublicFixture(
         public_bytes=public_bytes,
         page_paths=page_paths,
+        point_index_paths={
+            "hotspots": hotspots_index_path,
+            "repeat_offenders": repeat_index_path,
+        },
+        point_day_paths={
+            "hotspots": hotspots_paths,
+            "repeat_offenders": repeat_paths,
+        },
         fetch_calls=fetch_calls,
         collection_generation_id=collection_generation_id,
         expectations_reader=expectations_reader,
@@ -372,9 +504,46 @@ def test_historic_publish_proof_passes_complete_public_contract() -> None:
     assert report.gate["errors"] == 0
     assert report.gate["checks_run"] == 24
     assert report.gate["payloads_checked"] == 11
-    assert {details["generated_utc"] for details in report.public["indexes"].values()} == {
+    compatibility_indexes = {
+        name: report.public["indexes"][name] for name in ("alerts", "receipts", "route_reliability")
+    }
+    assert {details["generated_utc"] for details in compatibility_indexes.values()} == {
         GENERATED_UTC
     }
+    history_root = report.public.get("history_root")
+    assert isinstance(history_root, dict)
+    assert history_root["path"] == "historic/history/index.json"
+    assert history_root["publish_generation_id"] == PUBLISH_GENERATION_ID
+    assert [family["family"] for family in history_root["families"]] == [
+        "alerts",
+        "hotspots",
+        "lines",
+        "network",
+        "receipts",
+        "repeat_offenders",
+        "stops",
+    ]
+    for family in ("hotspots", "repeat_offenders"):
+        index_evidence = report.public["indexes"].get(family)
+        assert isinstance(index_evidence, dict)
+        assert index_evidence["path"] == fixture.point_index_paths[family]
+        assert index_evidence["generated_utc"] == POINT_NEW_GENERATED_UTC
+        assert index_evidence["generated_utc"] != GENERATED_UTC
+        assert index_evidence["publish_generation_id"] == PUBLISH_GENERATION_ID
+        assert index_evidence["available_dates"] == ["2026-05-01", "2026-07-13"]
+        assert index_evidence["partition_count"] == 2
+    assert report.public.get("boundary_hotspots") == ["2026-05-01", "2026-07-13"]
+    assert report.public.get("boundary_repeat_offenders") == [
+        "2026-05-01",
+        "2026-07-13",
+    ]
+    for paths in fixture.point_day_paths.values():
+        for path in paths:
+            artifact = report.public["artifacts"].get(path)
+            assert isinstance(artifact, dict)
+            assert artifact["sha256_matches"] is True
+            assert artifact["byte_size_matches"] is True
+            assert artifact["date_matches"] is True
     assert set(fixture.page_paths) <= set(report.public["artifacts"])
     for page_path in fixture.page_paths:
         artifact = report.public["artifacts"][page_path]
@@ -403,7 +572,9 @@ def test_historic_publish_proof_treats_honest_empty_alerts_as_no_data() -> None:
     assert report.public["indexes"]["alerts"]["page_count"] == 0
     assert report.source_messages["archive"]["status"] == "no_data"
     assert report.source_messages["legacy"]["status"] == "no_data"
-    assert not any("/generations/" in urlsplit(url).path for url in fixture.fetch_calls)
+    assert not any(
+        "/historic/alerts/generations/" in urlsplit(url).path for url in fixture.fetch_calls
+    )
 
 
 def test_historic_publish_proof_rejects_forged_archive_generation_binding() -> None:
@@ -457,6 +628,13 @@ def test_historic_publish_proof_rejects_forged_archive_generation_binding() -> N
         "receipt_newest",
         "route_oldest",
         "route_newest",
+        "history_root",
+        "hotspots_history_index",
+        "repeat_offenders_history_index",
+        "hotspots_day_oldest",
+        "hotspots_day_newest",
+        "repeat_offenders_day_oldest",
+        "repeat_offenders_day_newest",
     ],
 )
 def test_historic_publish_proof_binds_every_fetched_task6_artifact_to_gate_digest(
@@ -474,6 +652,13 @@ def test_historic_publish_proof_binds_every_fetched_task6_artifact_to_gate_diges
         "receipt_newest": "historic/receipts/2026-07-13.json",
         "route_oldest": "historic/route_reliability/10.json",
         "route_newest": "historic/route_reliability/747.json",
+        "history_root": "historic/history/index.json",
+        "hotspots_history_index": fixture.point_index_paths["hotspots"],
+        "repeat_offenders_history_index": fixture.point_index_paths["repeat_offenders"],
+        "hotspots_day_oldest": fixture.point_day_paths["hotspots"][0],
+        "hotspots_day_newest": fixture.point_day_paths["hotspots"][-1],
+        "repeat_offenders_day_oldest": fixture.point_day_paths["repeat_offenders"][0],
+        "repeat_offenders_day_newest": fixture.point_day_paths["repeat_offenders"][-1],
     }
     path = target_paths[target]
     gate_report = _gate_report(fixture)
@@ -488,6 +673,73 @@ def test_historic_publish_proof_binds_every_fetched_task6_artifact_to_gate_diges
     artifact = report.public["artifacts"][path]
     assert artifact["failures"] == ["public_gate_digest_mismatch"]
     assert artifact["gate_sha256_matches"] is False
+
+
+def test_historic_publish_proof_accepts_advertised_published_empty_point_days() -> None:
+    fixture = _complete_public_fixture()
+
+    for path in fixture.point_day_paths["hotspots"]:
+        payload = HistoricHotspotsDay.model_validate_json(fixture.public_bytes[path])
+        assert payload.hotspots == []
+        assert payload.by_grain == []
+    for path in fixture.point_day_paths["repeat_offenders"]:
+        payload = HistoricRepeatOffendersDay.model_validate_json(fixture.public_bytes[path])
+        assert payload.offenders == []
+        assert payload.by_grain == []
+
+    report = _build_report(fixture)
+
+    assert report.status == "pass"
+    assert report.public["boundary_hotspots"] == ["2026-05-01", "2026-07-13"]
+    assert report.public["boundary_repeat_offenders"] == ["2026-05-01", "2026-07-13"]
+
+
+def test_historic_publish_proof_rejects_wrong_nonempty_point_root_edge() -> None:
+    fixture = _complete_public_fixture()
+    root_path = "historic/history/index.json"
+    root = HistoricAvailabilityIndex.model_validate_json(fixture.public_bytes[root_path])
+    hotspots = next(family for family in root.families if family.family == "hotspots")
+    hotspots.collection_generation_id = "f" * 64
+    _replace_public_model(fixture, root_path, root)
+
+    report = _build_report(fixture)
+
+    assert report.status == "fail"
+    assert "public_history_point_edge_mismatch" in report.failures
+    assert "public_history_point_edge_mismatch" in report.public["artifacts"][root_path]["failures"]
+
+
+def test_historic_publish_proof_rejects_point_index_bytes_at_old_digest_path() -> None:
+    fixture = _complete_public_fixture()
+    index_path = fixture.point_index_paths["hotspots"]
+    index = HistoricCollectionIndex.model_validate_json(fixture.public_bytes[index_path])
+    index.generated_utc = POINT_OLD_GENERATED_UTC
+    _replace_public_model(fixture, index_path, index)
+
+    report = _build_report(fixture)
+
+    assert report.status == "fail"
+    assert "public_point_index_path_digest_mismatch" in report.failures
+    assert (
+        "public_point_index_path_digest_mismatch"
+        in report.public["artifacts"][index_path]["failures"]
+    )
+
+
+def test_historic_publish_proof_rejects_point_day_bytes_at_old_ref_path() -> None:
+    fixture = _complete_public_fixture()
+    day_path = fixture.point_day_paths["hotspots"][0]
+    payload = HistoricHotspotsDay.model_validate_json(fixture.public_bytes[day_path])
+    payload.generated_utc = "2026-05-02T03:00:00+00:00"
+    _replace_public_model(fixture, day_path, payload)
+
+    report = _build_report(fixture)
+
+    assert report.status == "fail"
+    assert "public_point_day_sha256_mismatch" in report.failures
+    artifact = report.public["artifacts"][day_path]
+    assert "public_point_day_sha256_mismatch" in artifact["failures"]
+    assert artifact["sha256_matches"] is False
 
 
 @pytest.mark.parametrize(

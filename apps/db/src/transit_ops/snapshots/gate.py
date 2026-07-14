@@ -39,6 +39,8 @@ from transit_ops.snapshots.builders.historic.history_common import (
     history_entity_directory_generation_id,
     history_index_generation_id,
     history_metric_coverage,
+    history_point_ref,
+    history_pointer_path,
     history_utc_timestamp,
     latest_history_timestamp,
 )
@@ -47,7 +49,9 @@ from transit_ops.snapshots.contract import (
     HistoricCollectionIndex,
     HistoricEntityDirectoryIndex,
     HistoricEntityIndexRef,
+    HistoricHotspotsDay,
     HistoricPartitionRef,
+    HistoricRepeatOffendersDay,
     LineHistoryPartition,
     NetworkHistoryPartition,
     StopHistoryPartition,
@@ -3580,8 +3584,271 @@ def check_stop_history_directory(payload: object, *, rel_key: str) -> list[Check
     return emit.out
 
 
+_POINT_HISTORY_MODELS = {
+    "hotspots": HistoricHotspotsDay,
+    "repeat_offenders": HistoricRepeatOffendersDay,
+}
+
+
+def _point_history_family_from_path(rel_key: str, *, index: bool) -> str | None:
+    suffix = r"index\.json" if index else r"\d{4}-\d{2}-\d{2}\.json"
+    for family in _POINT_HISTORY_MODELS:
+        if re.fullmatch(
+            rf"historic/history/{family}/generations/[0-9a-f]{{64}}/{suffix}",
+            rel_key,
+        ):
+            return family
+    return None
+
+
+def check_point_history_day_ref(
+    ref: object,
+    payload: object,
+    *,
+    family: str,
+) -> list[CheckResult]:
+    """Bind one point-date ref to the exact self-identifying payload bytes."""
+
+    rel_key = str(getattr(ref, "path", None) or "<point-day>")
+    emit = _Emitter(f"historic_{family}_day_ref", rel_key)
+    model = _POINT_HISTORY_MODELS.get(family)
+    if model is None:
+        emit.err("point_family", "family", family, "unknown point history family")
+        return emit.out
+    try:
+        retained_ref = HistoricPartitionRef.model_validate(_coverage_dict(ref))
+    except ValidationError as exc:
+        _history_model_error(emit, exc)
+        return emit.out
+    try:
+        retained_payload = model.model_validate(_coverage_dict(payload))
+    except ValidationError as exc:
+        _history_model_error(emit, exc)
+        return emit.out
+    try:
+        expected = history_point_ref(family, retained_payload)
+    except ValueError as exc:
+        emit.err("point_payload", "envelope", None, str(exc))
+        return emit.out
+    if _coverage_dict(retained_ref) != _coverage_dict(expected):
+        emit.err(
+            "point_ref",
+            "ref",
+            _coverage_dict(retained_ref),
+            "point-date ref does not match the exact final payload bytes and date",
+        )
+    return emit.out
+
+
+def check_point_history_day(payload: object, *, rel_key: str) -> list[CheckResult]:
+    """Run family semantics and bind a point-day path to the payload bytes."""
+
+    family = _point_history_family_from_path(rel_key, index=False)
+    emit = _Emitter(f"historic_{family or 'point'}_history_day", rel_key)
+    if family is None:
+        emit.err("point_path", "", rel_key, "point history day path is malformed")
+        return emit.out
+    match = re.fullmatch(
+        rf"historic/history/{family}/generations/([0-9a-f]{{64}})/(\d{{4}}-\d{{2}}-\d{{2}})\.json",
+        rel_key,
+    )
+    assert match is not None
+    digest, local_date = match.groups()
+    body = snapshot_json_bytes(payload) if isinstance(payload, BaseModel | dict) else b""
+    try:
+        ref = HistoricPartitionRef(
+            path=rel_key,
+            coverage_start=local_date,
+            coverage_end=local_date,
+            count=1,
+            sha256=digest,
+            byte_size=max(1, len(body)),
+        )
+    except ValidationError as exc:
+        _history_model_error(emit, exc)
+        return emit.out
+    emit.out.extend(check_point_history_day_ref(ref, payload, family=family))
+    if family == "hotspots":
+        emit.out.extend(check_hotspots(payload, rel_key=rel_key))
+    else:
+        emit.out.extend(check_repeat_offenders(payload, rel_key=rel_key))
+    return emit.out
+
+
+def check_point_history_index(
+    payload: object,
+    *,
+    rel_key: str,
+    family: str | None = None,
+    expected_refs: object | None = None,
+    fallback_generated_utc: str | None = None,
+) -> list[CheckResult]:
+    """Validate one immutable point-family index and its exact date-ref summary."""
+
+    family = family or _point_history_family_from_path(rel_key, index=True)
+    emit = _Emitter(f"historic_{family or 'point'}_history_index", rel_key)
+    index = _as_dict(payload)
+    if not isinstance(index, dict):
+        emit.err("contract", "", payload, "point history index must be an object")
+        return emit.out
+    try:
+        HistoricCollectionIndex.model_validate(index)
+    except ValidationError as exc:
+        _history_model_error(emit, exc)
+    if family not in _POINT_HISTORY_MODELS:
+        emit.err("point_family", "family", family, "unknown point history family")
+        return emit.out
+    path_match = re.fullmatch(
+        rf"historic/history/{family}/generations/([0-9a-f]{{64}})/index\.json",
+        rel_key,
+    )
+    if path_match is None:
+        emit.err("index_path", "", rel_key, "point family index must use an exact-byte path")
+    _check_versioned_pointer_digest(emit, payload, path_match)
+    if (
+        index.get("family") != family
+        or index.get("selection_mode") != "date"
+        or index.get("entity_id") is not None
+    ):
+        emit.err(
+            "index_identity",
+            "family",
+            {
+                "family": index.get("family"),
+                "selection_mode": index.get("selection_mode"),
+                "entity_id": index.get("entity_id"),
+            },
+            "point family index identity or selection mode is wrong",
+        )
+    try:
+        normalized_generated = history_utc_timestamp(
+            index.get("generated_utc"), field="generated_utc"
+        )
+    except ValueError:
+        normalized_generated = None
+    if index.get("generated_utc") != normalized_generated:
+        emit.err(
+            "generated_utc",
+            "generated_utc",
+            index.get("generated_utc"),
+            "point family index timestamp must be canonical UTC Z",
+        )
+    if (
+        index.get("methodology_version") != "history-1"
+        or not isinstance(index.get("publish_generation_id"), str)
+        or not index.get("publish_generation_id")
+    ):
+        emit.err(
+            "index_envelope",
+            "methodology_version",
+            {
+                "methodology_version": index.get("methodology_version"),
+                "publish_generation_id": index.get("publish_generation_id"),
+            },
+            "point family index must carry the published history-1 envelope",
+        )
+    dates, malformed_dates = _history_graph_dates(index.get("available_dates"))
+    try:
+        first, last, gaps = history_coverage(dates)
+    except ValueError:
+        first, last, gaps = None, None, []
+        malformed_dates = True
+    if (
+        malformed_dates
+        or index.get("available_dates") != dates
+        or (
+            index.get("first_available_date"),
+            index.get("last_available_date"),
+            _coverage_dict(index.get("gaps") or []),
+        )
+        != (first, last, _coverage_dict(gaps))
+    ):
+        emit.err(
+            "available_dates",
+            "available_dates",
+            index.get("available_dates"),
+            "point history dates and coverage must be exact, unique, and sorted",
+        )
+    refs = index.get("partitions") if isinstance(index.get("partitions"), list) else []
+    ref_dates: list[str] = []
+    for position, ref in enumerate(refs):
+        if not isinstance(ref, dict):
+            emit.err("point_ref", f"partitions[{position}]", ref, "point ref must be an object")
+            continue
+        path = ref.get("path")
+        match = (
+            re.fullmatch(
+                rf"historic/history/{family}/generations/([0-9a-f]{{64}})/(\d{{4}}-\d{{2}}-\d{{2}})\.json",
+                path,
+            )
+            if isinstance(path, str)
+            else None
+        )
+        if match is None:
+            emit.err("ref_path", f"partitions[{position}].path", path, "point ref path is wrong")
+            continue
+        digest, local_date = match.groups()
+        ref_dates.append(local_date)
+        try:
+            canonical_date = history_date(local_date, field="date")
+        except ValueError:
+            canonical_date = None
+        if canonical_date is None or (
+            ref.get("coverage_start"),
+            ref.get("coverage_end"),
+            ref.get("count"),
+            ref.get("sha256"),
+        ) != (local_date, local_date, 1, digest):
+            emit.err(
+                "point_ref",
+                f"partitions[{position}]",
+                ref,
+                "point ref identity, coverage, count, or digest is wrong",
+            )
+        if not isinstance(ref.get("byte_size"), int) or ref.get("byte_size", 0) <= 0:
+            emit.err(
+                "point_ref",
+                f"partitions[{position}].byte_size",
+                ref.get("byte_size"),
+                "point ref byte size must be positive",
+            )
+    if ref_dates != dates or len(ref_dates) != len(set(ref_dates)):
+        emit.err(
+            "point_refs",
+            "partitions",
+            ref_dates,
+            "point refs must correspond one-for-one with available dates",
+        )
+    if expected_refs is not None:
+        expected = _coverage_dict(expected_refs)
+        if _coverage_dict(refs) != expected:
+            emit.err(
+                "stream_refs",
+                "partitions",
+                refs,
+                "point index refs do not exactly match streamed days",
+            )
+    if index.get("metrics") not in (None, []):
+        emit.err("metric_vocabulary", "metrics", index.get("metrics"), "point index has no metrics")
+    if index.get("collection_generation_id") != history_index_generation_id(index):
+        emit.err(
+            "collection_generation_id",
+            "collection_generation_id",
+            index.get("collection_generation_id"),
+            "point index generation mismatches exact semantics",
+        )
+    if fallback_generated_utc is not None and not index.get("generated_utc"):
+        emit.err(
+            "generated_utc",
+            "generated_utc",
+            index.get("generated_utc"),
+            "point index requires a generated timestamp",
+        )
+    return emit.out
+
+
 def check_history_availability_index(payload: object, *, rel_key: str) -> list[CheckResult]:
-    """Validate the exact stable five-family retained-history discovery root."""
+    """Validate the exact stable seven-family retained-history discovery root."""
 
     emit = _Emitter("historic_availability_index", rel_key)
     root = _as_dict(payload)
@@ -3596,22 +3863,45 @@ def check_history_availability_index(payload: object, *, rel_key: str) -> list[C
         emit.err("root_path", "", rel_key, "history availability root uses the wrong path")
     families = root.get("families") if isinstance(root.get("families"), list) else []
     names = [item.get("family") for item in families if isinstance(item, dict)]
-    expected_names = ["alerts", "lines", "network", "receipts", "stops"]
+    expected_names = [
+        "alerts",
+        "hotspots",
+        "lines",
+        "network",
+        "receipts",
+        "repeat_offenders",
+        "stops",
+    ]
     if names != expected_names:
         emit.err("family_order", "families", names, "history families must be exact and sorted")
     expected_paths = {
         "alerts": "historic/alerts/index.json",
+        "hotspots": None,
         "lines": "historic/history/lines/index.json",
         "network": "historic/history/network/index.json",
         "receipts": "historic/receipts/index.json",
+        "repeat_offenders": None,
         "stops": "historic/history/stops/index.json",
     }
     versioned_paths = {
         "alerts": re.compile(r"historic/alerts/generations/[0-9a-f]{64}/index\.json"),
+        "hotspots": re.compile(r"historic/history/hotspots/generations/[0-9a-f]{64}/index\.json"),
         "lines": re.compile(r"historic/history/lines/generations/[0-9a-f]{64}/index\.json"),
         "network": re.compile(r"historic/history/network/generations/[0-9a-f]{64}/index\.json"),
         "receipts": re.compile(r"historic/receipts/generations/[0-9a-f]{64}/index\.json"),
+        "repeat_offenders": re.compile(
+            r"historic/history/repeat_offenders/generations/[0-9a-f]{64}/index\.json"
+        ),
         "stops": re.compile(r"historic/history/stops/generations/[0-9a-f]{64}/index\.json"),
+    }
+    expected_modes = {
+        "alerts": "range",
+        "hotspots": "date",
+        "lines": "range",
+        "network": "range",
+        "receipts": "date",
+        "repeat_offenders": "date",
+        "stops": "range",
     }
     for position, item in enumerate(families):
         if not isinstance(item, dict):
@@ -3633,6 +3923,14 @@ def check_history_availability_index(payload: object, *, rel_key: str) -> list[C
                 f"families[{position}].index_path",
                 item.get("index_path"),
                 "family path is wrong",
+            )
+        expected_mode = expected_modes.get(family) if isinstance(family, str) else None
+        if item.get("selection_mode") != expected_mode:
+            emit.err(
+                "family_mode",
+                f"families[{position}].selection_mode",
+                item.get("selection_mode"),
+                "family selection mode is wrong",
             )
         if not item.get("collection_generation_id"):
             emit.err(
@@ -3769,6 +4067,8 @@ def check_history_availability_graph(
     line_indexes: list[object],
     stop_directory: object,
     fallback_generated_utc: str,
+    hotspots_index: object | None = None,
+    repeat_offenders_index: object | None = None,
     stop_indexes: list[object] | None = None,
     stop_summary: StopHistoryDirectorySummary | None = None,
     alert_index_path: str = "historic/alerts/index.json",
@@ -3776,15 +4076,38 @@ def check_history_availability_graph(
     network_index_path: str = "historic/history/network/index.json",
     line_directory_path: str = "historic/history/lines/index.json",
     stop_directory_path: str = "historic/history/stops/index.json",
+    hotspots_index_path: str | None = None,
+    repeat_offenders_index_path: str | None = None,
 ) -> list[CheckResult]:
     """Reconcile the root against detached exact child indexes in this build."""
 
     emit = _Emitter("historic_availability_graph", _STOP_HISTORY_ROOT_PATH)
+    missing_point_children = [
+        family
+        for family, child in (
+            ("hotspots", hotspots_index),
+            ("repeat_offenders", repeat_offenders_index),
+        )
+        if child is None
+    ]
+    if missing_point_children:
+        emit.err(
+            "missing_point_child",
+            "families",
+            missing_point_children,
+            "retained-history root graph requires both exact point family indexes",
+        )
+        return emit.out
     root = _as_dict(payload)
     alerts = _as_dict(alert_index)
     receipts = _as_dict(receipts_index)
     network = _as_dict(network_index)
-    if not all(isinstance(value, dict) for value in (root, alerts, receipts, network)):
+    hotspots = _as_dict(hotspots_index)
+    repeat_offenders = _as_dict(repeat_offenders_index)
+    if not all(
+        isinstance(value, dict)
+        for value in (root, alerts, receipts, network, hotspots, repeat_offenders)
+    ):
         emit.err(
             "history_root_graph",
             "families",
@@ -3792,6 +4115,32 @@ def check_history_availability_graph(
             "root and all singleton child indexes must be objects",
         )
         return emit.out
+    assert isinstance(hotspots, dict)
+    assert isinstance(repeat_offenders, dict)
+    hotspots_index_path = hotspots_index_path or history_pointer_path(
+        "historic/history/hotspots",
+        hotspots_index,
+    )
+    repeat_offenders_index_path = repeat_offenders_index_path or history_pointer_path(
+        "historic/history/repeat_offenders",
+        repeat_offenders_index,
+    )
+    emit.out.extend(
+        check_point_history_index(
+            hotspots_index,
+            rel_key=hotspots_index_path,
+            family="hotspots",
+            fallback_generated_utc=fallback_generated_utc,
+        )
+    )
+    emit.out.extend(
+        check_point_history_index(
+            repeat_offenders_index,
+            rel_key=repeat_offenders_index_path,
+            family="repeat_offenders",
+            fallback_generated_utc=fallback_generated_utc,
+        )
+    )
     receipt_dates, malformed_graph = _history_graph_dates(receipts.get("dates"))
     receipt_first, receipt_last, receipt_gaps = history_coverage(receipt_dates)
     line_family, line_malformed = _history_family_from_entity_children(
@@ -3824,6 +4173,16 @@ def check_history_availability_graph(
             "gaps": [],
             "metrics": [],
         },
+        {
+            "family": "hotspots",
+            "selection_mode": "date",
+            "index_path": hotspots_index_path,
+            "collection_generation_id": hotspots.get("collection_generation_id"),
+            "first_available_date": hotspots.get("first_available_date"),
+            "last_available_date": hotspots.get("last_available_date"),
+            "gaps": _coverage_dict(hotspots.get("gaps") or []),
+            "metrics": [],
+        },
         line_family,
         {
             "family": "network",
@@ -3843,6 +4202,16 @@ def check_history_availability_graph(
             "first_available_date": receipt_first,
             "last_available_date": receipt_last,
             "gaps": _coverage_dict(receipt_gaps),
+            "metrics": [],
+        },
+        {
+            "family": "repeat_offenders",
+            "selection_mode": "date",
+            "index_path": repeat_offenders_index_path,
+            "collection_generation_id": repeat_offenders.get("collection_generation_id"),
+            "first_available_date": repeat_offenders.get("first_available_date"),
+            "last_available_date": repeat_offenders.get("last_available_date"),
+            "gaps": _coverage_dict(repeat_offenders.get("gaps") or []),
             "metrics": [],
         },
         stop_family,
@@ -3869,6 +4238,22 @@ def check_history_availability_graph(
             not _append_history_graph_timestamp(
                 populated_timestamps,
                 network.get("generated_utc"),
+            )
+            or malformed_graph
+        )
+    if hotspots.get("available_dates"):
+        malformed_graph = (
+            not _append_history_graph_timestamp(
+                populated_timestamps,
+                hotspots.get("generated_utc"),
+            )
+            or malformed_graph
+        )
+    if repeat_offenders.get("available_dates"):
+        malformed_graph = (
+            not _append_history_graph_timestamp(
+                populated_timestamps,
+                repeat_offenders.get("generated_utc"),
             )
             or malformed_graph
         )
@@ -4278,6 +4663,10 @@ def _route_checker(rel_key: str):  # noqa: ANN202
         return (check_alert_archive_index, "historic_alert_archive_index")
     if re.fullmatch(r"historic/receipts/generations/[0-9a-f]{64}/index\.json", rel_key):
         return (check_receipts_index, "historic_receipts_index")
+    if _point_history_family_from_path(rel_key, index=True) is not None:
+        return (check_point_history_index, "historic_point_history_index")
+    if _point_history_family_from_path(rel_key, index=False) is not None:
+        return (check_point_history_day, "historic_point_history_day")
     for prefix, checker, kind in _PREFIX_CHECKERS:
         if prefix == "historic/history/lines/" and not _LINE_HISTORY_PARTITION_PATH_RE.fullmatch(
             rel_key

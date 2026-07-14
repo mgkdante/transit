@@ -28,6 +28,11 @@ from transit_ops.snapshots.contract import (
     AlertArchiveIndex,
     AlertArchivePage,
     AlertHistory,
+    HistoricAvailabilityIndex,
+    HistoricCollectionIndex,
+    HistoricFamilyAvailability,
+    HistoricHotspotsDay,
+    HistoricRepeatOffendersDay,
     Manifest,
     ManifestHistoricFiles,
     Receipt,
@@ -35,7 +40,14 @@ from transit_ops.snapshots.contract import (
     RouteReliability,
     RouteReliabilityIndex,
 )
-from transit_ops.snapshots.gate import check_alert_archive_index
+from transit_ops.snapshots.gate import (
+    CheckResult,
+    Severity,
+    check_alert_archive_index,
+    check_history_availability_index,
+    check_point_history_day,
+    check_point_history_index,
+)
 
 SYNC_MAX_AGE = timedelta(hours=6)
 GATE_MAX_AGE = timedelta(hours=36)
@@ -98,6 +110,14 @@ PayloadT = TypeVar("PayloadT", bound=BaseModel)
 _PERCENT_ESCAPE = re.compile(r"%([0-9a-fA-F]{2})")
 _ENCODED_UNSAFE_BYTES = {ord(character) for character in "./\\?#:@"}
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+PointFamily = Literal["hotspots", "repeat_offenders"]
+_POINT_DAY_MODELS: dict[
+    PointFamily,
+    type[HistoricHotspotsDay] | type[HistoricRepeatOffendersDay],
+] = {
+    "hotspots": HistoricHotspotsDay,
+    "repeat_offenders": HistoricRepeatOffendersDay,
+}
 
 
 def _has_source_text(alert: object) -> bool:
@@ -570,7 +590,7 @@ def _check_sync_expectations(
 
 def _index_evidence(
     path: str,
-    payload: AlertArchiveIndex | ReceiptsIndex | RouteReliabilityIndex,
+    payload: (AlertArchiveIndex | ReceiptsIndex | RouteReliabilityIndex | HistoricCollectionIndex),
 ) -> dict[str, object]:
     if isinstance(payload, AlertArchiveIndex):
         return {
@@ -588,11 +608,216 @@ def _index_evidence(
             "generated_utc": payload.generated_utc,
             "dates": list(payload.dates),
         }
+    if isinstance(payload, HistoricCollectionIndex):
+        return {
+            "path": path,
+            "family": payload.family,
+            "selection_mode": payload.selection_mode.value,
+            "generated_utc": payload.generated_utc,
+            "publish_generation_id": payload.publish_generation_id,
+            "collection_generation_id": payload.collection_generation_id,
+            "first_available_date": payload.first_available_date,
+            "last_available_date": payload.last_available_date,
+            "available_dates": list(payload.available_dates),
+            "gaps": [gap.model_dump(mode="json") for gap in payload.gaps],
+            "partition_count": len(payload.partitions),
+        }
     return {
         "path": path,
         "generated_utc": payload.generated_utc,
         "route_ids": list(payload.route_ids),
     }
+
+
+def _record_checker_failures(
+    findings: Sequence[CheckResult],
+    *,
+    failures: list[str],
+    artifact: dict[str, object],
+    failure_code: str,
+) -> bool:
+    errors = [finding for finding in findings if finding.severity is Severity.ERROR]
+    if findings:
+        artifact["contract_findings"] = [finding.to_dict() for finding in findings]
+    if errors:
+        _add_failure(failures, failure_code, artifact)
+    return not errors
+
+
+def _history_root_evidence(
+    path: str,
+    root: HistoricAvailabilityIndex,
+) -> dict[str, object]:
+    return {
+        "path": path,
+        "generated_utc": root.generated_utc,
+        "publish_generation_id": root.publish_generation_id,
+        "families": [family.model_dump(mode="json") for family in root.families],
+    }
+
+
+def _point_family_edge(
+    root: HistoricAvailabilityIndex,
+    family: PointFamily,
+) -> HistoricFamilyAvailability | None:
+    matches = [candidate for candidate in root.families if candidate.family == family]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _verify_point_history_family(
+    family: PointFamily,
+    *,
+    root: HistoricAvailabilityIndex,
+    root_artifact: dict[str, object],
+    expected_publish_generation_id: str | None,
+    public_root: str,
+    fetch_bytes: FetchBytes,
+    artifacts: dict[str, dict[str, object]],
+    indexes: dict[str, object],
+    failures: list[str],
+    query: str,
+    gate_digests: Mapping[str, object] | None,
+) -> list[str]:
+    edge = _point_family_edge(root, family)
+    if edge is None:
+        _add_failure(failures, "public_history_root_invalid", root_artifact)
+        return []
+
+    index, raw, index_artifact = _fetch_model(
+        edge.index_path,
+        HistoricCollectionIndex,
+        public_root=public_root,
+        fetch_bytes=fetch_bytes,
+        artifacts=artifacts,
+        failures=failures,
+        query=query,
+        gate_digests=gate_digests,
+        bind_gate_digest=True,
+    )
+    if index is None:
+        return []
+    indexes[family] = _index_evidence(edge.index_path, index)
+
+    path_match = re.fullmatch(
+        rf"historic/history/{family}/generations/([0-9a-f]{{64}})/index\.json",
+        edge.index_path,
+    )
+    raw_sha256 = hashlib.sha256(raw).hexdigest() if raw is not None else None
+    advertised_path_sha256 = path_match.group(1) if path_match is not None else None
+    path_sha256_matches = (
+        raw_sha256 is not None
+        and advertised_path_sha256 is not None
+        and raw_sha256 == advertised_path_sha256
+    )
+    index_artifact["path_sha256"] = advertised_path_sha256
+    index_artifact["path_sha256_matches"] = path_sha256_matches
+    if raw is not None and not path_sha256_matches:
+        _add_failure(
+            failures,
+            "public_point_index_path_digest_mismatch",
+            index_artifact,
+        )
+
+    index_is_valid = _record_checker_failures(
+        check_point_history_index(
+            index,
+            rel_key=edge.index_path,
+            family=family,
+        ),
+        failures=failures,
+        artifact=index_artifact,
+        failure_code="public_point_index_invalid",
+    )
+    if (
+        expected_publish_generation_id is not None
+        and index.publish_generation_id != expected_publish_generation_id
+    ):
+        _add_failure(
+            failures,
+            "public_point_index_generation_mismatch",
+            index_artifact,
+        )
+
+    expected_edge = HistoricFamilyAvailability(
+        family=family,
+        selection_mode=index.selection_mode,
+        index_path=edge.index_path,
+        collection_generation_id=index.collection_generation_id,
+        first_available_date=index.first_available_date,
+        last_available_date=index.last_available_date,
+        gaps=index.gaps,
+        metrics=index.metrics,
+    )
+    if edge.model_dump(mode="json") != expected_edge.model_dump(mode="json"):
+        _add_failure(
+            failures,
+            "public_history_point_edge_mismatch",
+            root_artifact,
+        )
+
+    if not index_is_valid or not path_sha256_matches:
+        return []
+
+    refs = index.partitions
+    boundary_refs = [] if not refs else [refs[0], *([] if len(refs) == 1 else [refs[-1]])]
+    boundary_dates = [ref.coverage_start for ref in boundary_refs]
+    model_type = _POINT_DAY_MODELS[family]
+    for ref in boundary_refs:
+        payload, day_raw, day_artifact = _fetch_model(
+            ref.path,
+            model_type,
+            public_root=public_root,
+            fetch_bytes=fetch_bytes,
+            artifacts=artifacts,
+            failures=failures,
+            query=query,
+            gate_digests=gate_digests,
+            bind_gate_digest=True,
+        )
+        if day_raw is not None:
+            day_sha256 = hashlib.sha256(day_raw).hexdigest()
+            day_artifact["advertised_sha256"] = ref.sha256
+            day_artifact["advertised_byte_size"] = ref.byte_size
+            day_artifact["sha256_matches"] = day_sha256 == ref.sha256
+            day_artifact["byte_size_matches"] = len(day_raw) == ref.byte_size
+            if day_sha256 != ref.sha256:
+                _add_failure(
+                    failures,
+                    "public_point_day_sha256_mismatch",
+                    day_artifact,
+                )
+            if len(day_raw) != ref.byte_size:
+                _add_failure(
+                    failures,
+                    "public_point_day_byte_size_mismatch",
+                    day_artifact,
+                )
+        if payload is None:
+            continue
+        day_artifact["expected_date"] = ref.coverage_start
+        day_artifact["actual_date"] = payload.date
+        day_artifact["date_matches"] = (
+            payload.date == ref.coverage_start == ref.coverage_end and ref.count == 1
+        )
+        if not day_artifact["date_matches"]:
+            _add_failure(
+                failures,
+                "public_point_day_date_mismatch",
+                day_artifact,
+            )
+        if payload.publish_generation_id is not None:
+            _add_failure(
+                failures,
+                "public_point_day_generation_mismatch",
+                day_artifact,
+            )
+        _record_checker_failures(
+            check_point_history_day(payload, rel_key=ref.path),
+            failures=failures,
+            artifact=day_artifact,
+            failure_code="public_point_day_invalid",
+        )
+    return boundary_dates
 
 
 def _boundary_values(
@@ -730,8 +955,11 @@ def build_historic_publish_proof(
     public: dict[str, object] = {
         "base_url": public_root,
         "manifest": {},
+        "history_root": {},
         "indexes": {},
+        "boundary_hotspots": [],
         "boundary_receipts": [],
+        "boundary_repeat_offenders": [],
         "boundary_routes": [],
         "artifacts": artifacts,
     }
@@ -765,6 +993,17 @@ def build_historic_publish_proof(
             if manifest.provider != provider_id:
                 _add_failure(failures, "manifest_provider_mismatch", manifest_artifact)
 
+        history_root, _, history_root_artifact = _fetch_model(
+            historic_files.history_index,
+            HistoricAvailabilityIndex,
+            public_root=public_root,
+            fetch_bytes=resolved_fetch,
+            artifacts=artifacts,
+            failures=failures,
+            query=proof_query,
+            gate_digests=gate_digests,
+            bind_gate_digest=True,
+        )
         alerts_index, _, alerts_index_artifact = _fetch_model(
             historic_files.alerts_index,
             AlertArchiveIndex,
@@ -829,6 +1068,60 @@ def build_historic_publish_proof(
             indexes[name] = _index_evidence(path, payload)
             if payload.generated_utc != gate_generation:
                 _add_failure(failures, "public_index_generation_mismatch", artifact)
+
+        if history_root is not None:
+            public["history_root"] = _history_root_evidence(
+                historic_files.history_index,
+                history_root,
+            )
+            root_is_valid = _record_checker_failures(
+                check_history_availability_index(
+                    history_root,
+                    rel_key=historic_files.history_index,
+                ),
+                failures=failures,
+                artifact=history_root_artifact,
+                failure_code="public_history_root_invalid",
+            )
+            expected_publish_generation_id = (
+                f"{provider_id}@{gate_generation}" if gate_generation is not None else None
+            )
+            if (
+                expected_publish_generation_id is not None
+                and history_root.publish_generation_id != expected_publish_generation_id
+            ):
+                _add_failure(
+                    failures,
+                    "public_history_root_generation_mismatch",
+                    history_root_artifact,
+                )
+            if root_is_valid:
+                public["boundary_hotspots"] = _verify_point_history_family(
+                    "hotspots",
+                    root=history_root,
+                    root_artifact=history_root_artifact,
+                    expected_publish_generation_id=expected_publish_generation_id,
+                    public_root=public_root,
+                    fetch_bytes=resolved_fetch,
+                    artifacts=artifacts,
+                    indexes=indexes,
+                    failures=failures,
+                    query=proof_query,
+                    gate_digests=gate_digests,
+                )
+                public["boundary_repeat_offenders"] = _verify_point_history_family(
+                    "repeat_offenders",
+                    root=history_root,
+                    root_artifact=history_root_artifact,
+                    expected_publish_generation_id=expected_publish_generation_id,
+                    public_root=public_root,
+                    fetch_bytes=resolved_fetch,
+                    artifacts=artifacts,
+                    indexes=indexes,
+                    failures=failures,
+                    query=proof_query,
+                    gate_digests=gate_digests,
+                )
 
         if alerts_index is not None:
             generation_findings = check_alert_archive_index(

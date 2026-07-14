@@ -14,6 +14,8 @@ stage-1 guarantees:
 
 from __future__ import annotations
 
+import json
+import re
 import threading
 import time
 from collections import Counter
@@ -146,7 +148,6 @@ def test_hash_gated_storage_is_thread_safe_and_consistent() -> None:
 
 def test_hash_gated_skip_does_no_put_under_concurrency() -> None:
     """A file whose hash matches prior state is skipped — no put_bytes."""
-    import json
 
     from transit_ops.snapshots.serialization import snapshot_json_bytes
 
@@ -293,6 +294,9 @@ class _OrderTrackingStore:
 def _historic_dispatch_conn(
     *,
     archive_rows=None,  # noqa: ANN001
+    hotspot_route_rows=None,  # noqa: ANN001
+    hotspot_stop_rows=None,  # noqa: ANN001
+    repeat_offender_daily_rows=None,  # noqa: ANN001
     network_delay_rows=None,  # noqa: ANN001
     network_fact_rows=None,  # noqa: ANN001
     line_delay_rows=None,  # noqa: ANN001
@@ -343,6 +347,13 @@ def _historic_dispatch_conn(
     # published output the old dead needles gave, so the hand-coded spine branch is gone.
     dispatch = {
         "publish.lock.try_acquire": [True],
+        "history.hotspots.timezone": [{"timezone": "UTC"}],
+        "history.hotspots.names": [],
+        "history.hotspots.route_daily": list(hotspot_route_rows or []),
+        "history.hotspots.stop_daily": list(hotspot_stop_rows or []),
+        "history.repeat_offenders.timezone": [{"timezone": "UTC"}],
+        "history.repeat_offenders.names": [],
+        "history.repeat_offenders.daily": list(repeat_offender_daily_rows or []),
         # Retained Network history stays empty in legacy publisher-order tests unless a
         # test explicitly supplies source rows. Keep the new query surface visible so
         # an accidental name change cannot silently fall through.
@@ -893,6 +904,7 @@ def test_unchanged_historic_republish_counts_immutable_skip_physically_and_expos
 
 def test_all_history_families_republish_account_for_real_hash_gate_outcomes_end_to_end() -> None:
     import datetime
+    import hashlib
 
     class _Settings:
         SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
@@ -958,8 +970,41 @@ def test_all_history_families_republish_account_for_real_hash_gate_outcomes_end_
             "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
         },
     ]
+    point_date = datetime.date(2026, 6, 1)
+    hotspot_route_rows = [
+        {
+            "local_date": point_date,
+            "route_id": "R1",
+            "observation_count": 40,
+            "on_time_count": 20,
+            "known_observation_count": 40,
+            "daily_present": 1,
+            "severe_count": 8,
+            "sum_delay_seconds": 12_000,
+            "in_clamp_observation_count": 40,
+            "peak_observation_count": 0,
+            "peak_severe_count": 0,
+            "peak_sum_delay_seconds": 0,
+            "peak_present": 0,
+            "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
+        }
+    ]
+    repeat_offender_daily_rows = [
+        {
+            "local_date": point_date,
+            "entity_kind": "trip",
+            "entity_id": "T1",
+            "route_id": "R1",
+            "observation_count": 30,
+            "severe_count": 1,
+            "sum_delay_seconds": 9_000,
+            "source_generated_utc": datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC),
+        }
+    ]
     store = _OrderTrackingStore()
     conn = _historic_dispatch_conn(
+        hotspot_route_rows=hotspot_route_rows,
+        repeat_offender_daily_rows=repeat_offender_daily_rows,
         network_delay_rows=network_rows,
         line_delay_rows=line_rows,
         stop_delay_rows=stop_rows,
@@ -988,15 +1033,61 @@ def test_all_history_families_republish_account_for_real_hash_gate_outcomes_end_
     stable = public - generation
     root_key = "historic/history/index.json"
     assert len(public) == len(first.keys_written)
-    assert len(generation) == 13
+    assert len(generation) == 17
     assert root_key in public
     assert {
+        "historic/history/hotspots/index.json",
         "historic/history/network/index.json",
         "historic/history/lines/412f42/index.json",
         "historic/history/stops/532f31/index.json",
         "historic/history/lines/index.json",
         "historic/history/stops/index.json",
+        "historic/history/repeat_offenders/index.json",
     }.isdisjoint(public)
+    assert any(
+        re.fullmatch(
+            r"historic/history/hotspots/generations/[0-9a-f]{64}/index\.json",
+            key,
+        )
+        for key in generation
+    )
+    point_days = {
+        key
+        for key in generation
+        if re.fullmatch(
+            r"historic/history/(?:hotspots|repeat_offenders)/generations/"
+            r"[0-9a-f]{64}/2026-06-01\.json",
+            key,
+        )
+    }
+    assert len(point_days) == 2
+    root = store.get_json(root_key)
+    root_families = {item["family"]: item for item in root["families"]}
+    assert sorted(root_families) == [
+        "alerts",
+        "hotspots",
+        "lines",
+        "network",
+        "receipts",
+        "repeat_offenders",
+        "stops",
+    ]
+    for family in ("hotspots", "repeat_offenders"):
+        index_path = root_families[family]["index_path"]
+        index = store.get_json(index_path)
+        assert index["available_dates"] == [point_date.isoformat()]
+        assert len(index["partitions"]) == 1
+        ref = index["partitions"][0]
+        assert ref["path"] in point_days
+        assert ref["coverage_start"] == ref["coverage_end"] == point_date.isoformat()
+        assert ref["count"] == 1
+    assert any(
+        re.fullmatch(
+            r"historic/history/repeat_offenders/generations/[0-9a-f]{64}/index\.json",
+            key,
+        )
+        for key in generation
+    )
     assert first.keys_skipped == []
     assert second.keys_written == []
     assert Counter(second.keys_skipped) == Counter(first.keys_written)
@@ -1021,6 +1112,9 @@ def test_all_history_families_republish_account_for_real_hash_gate_outcomes_end_
 
     hash_state = store.get_json(state_key)
     assert set(hash_state["hashes"]) == stable
+    assert point_days.isdisjoint(hash_state["hashes"])
+    for rel_key, digest in hash_state["hashes"].items():
+        assert digest == hashlib.md5(store.store[rel_key]).hexdigest()  # noqa: S324
     assert state_key not in hash_state["hashes"]
     assert first.display_dict()["files_written"] == len(public)
     assert second.display_dict()["files_skipped"] == len(public)
@@ -1301,3 +1395,21 @@ def test_concurrent_historic_publish_loser_stops_before_hash_load_or_any_write()
     assert "historic/network_trend.json" in store.store
     assert "_meta/publish_state_historic.json" in store.store
     assert len(base_conn.state_writes) == 1
+    root = store.get_json("historic/history/index.json")
+    families = {item["family"]: item for item in root["families"]}
+    assert sorted(families) == [
+        "alerts",
+        "hotspots",
+        "lines",
+        "network",
+        "receipts",
+        "repeat_offenders",
+        "stops",
+    ]
+    point_indexes = {families[family]["index_path"] for family in ("hotspots", "repeat_offenders")}
+    assert point_indexes.issubset(store.store)
+    assert all("/generations/" in path for path in point_indexes)
+    assert "historic/history/hotspots/index.json" not in store.store
+    assert "historic/history/repeat_offenders/index.json" not in store.store
+    hash_state = store.get_json("_meta/publish_state_historic.json")
+    assert point_indexes.isdisjoint(hash_state["hashes"])

@@ -6,7 +6,7 @@ import hashlib
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -14,10 +14,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel
 
 from transit_ops.snapshots.contract import (
+    HistoricCollectionIndex,
     HistoricCoverageGap,
     HistoricEntityDirectoryIndex,
+    HistoricHotspotsDay,
     HistoricMetricCoverage,
     HistoricPartitionRef,
+    HistoricRepeatOffendersDay,
     HistoryMetricAggregation,
     HistoryMetricName,
 )
@@ -406,6 +409,89 @@ def history_partition_ref(path: str, partition: BaseModel) -> HistoricPartitionR
         sha256=hashlib.sha256(body).hexdigest(),
         byte_size=len(body),
     )
+
+
+_POINT_HISTORY_MODELS = {
+    "hotspots": HistoricHotspotsDay,
+    "repeat_offenders": HistoricRepeatOffendersDay,
+}
+
+
+def history_point_ref(family: str, payload: BaseModel) -> HistoricPartitionRef:
+    """Address one self-identifying point day from its exact final bytes."""
+
+    model = _POINT_HISTORY_MODELS.get(family)
+    if model is None:
+        raise ValueError(f"unsupported point history family {family!r}")
+    if not isinstance(payload, model):
+        raise ValueError(f"point history payload does not match family {family!r}")
+    local_date = history_date(getattr(payload, "date", None), field="date")
+    if getattr(payload, "methodology_version", None) != "reliability-1":
+        raise ValueError("point history payload methodology must be reliability-1")
+    if getattr(payload, "publish_generation_id", None) is not None:
+        raise ValueError("point history payloads cannot carry a publish generation")
+    body = snapshot_json_bytes(payload)
+    digest = hashlib.sha256(body).hexdigest()
+    return HistoricPartitionRef(
+        path=f"historic/history/{family}/generations/{digest}/{local_date}.json",
+        coverage_start=local_date,
+        coverage_end=local_date,
+        count=1,
+        sha256=digest,
+        byte_size=len(body),
+    )
+
+
+@dataclass
+class PointHistorySummary:
+    """Compact exact-ref truth retained while point-day payloads stream away."""
+
+    family: str
+    refs: list[HistoricPartitionRef] = field(default_factory=list)
+    generated_utc: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.family not in _POINT_HISTORY_MODELS:
+            raise ValueError(f"unsupported point history family {self.family!r}")
+
+    def observe(self, payload: BaseModel) -> HistoricPartitionRef:
+        ref = history_point_ref(self.family, payload)
+        local_date = ref.coverage_start
+        if self.refs and local_date <= self.refs[-1].coverage_start:
+            problem = "duplicate" if local_date == self.refs[-1].coverage_start else "ordered"
+            raise ValueError(f"point history dates must be unique and ordered ({problem})")
+        self.refs.append(ref)
+        self.generated_utc = latest_history_timestamp(
+            candidate
+            for candidate in (self.generated_utc, getattr(payload, "generated_utc", None))
+            if candidate is not None
+        )
+        return ref
+
+    @property
+    def available_dates(self) -> list[str]:
+        return [ref.coverage_start for ref in self.refs]
+
+    def build_index(self, *, fallback_generated_utc: str) -> HistoricCollectionIndex:
+        first, last, gaps = history_coverage(self.available_dates)
+        index = HistoricCollectionIndex(
+            generated_utc=latest_history_timestamp(
+                (() if self.generated_utc is None else (self.generated_utc,)),
+                fallback=fallback_generated_utc,
+            ),
+            methodology_version="history-1",
+            publish_generation_id=None,
+            family=self.family,
+            selection_mode="date",
+            first_available_date=first,
+            last_available_date=last,
+            available_dates=self.available_dates,
+            gaps=gaps,
+            partitions=[ref.model_copy(deep=True) for ref in self.refs],
+            metrics=[],
+        )
+        index.collection_generation_id = history_index_generation_id(index)
+        return index
 
 
 def encode_history_entity_id(entity_id: str) -> str:

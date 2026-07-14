@@ -11,6 +11,7 @@ from test_partitioned_history_builders import _line_history_rows, _network_histo
 
 from transit_ops.snapshots import gate, publish
 from transit_ops.snapshots.builders.historic.history_common import (
+    PointHistorySummary,
     encode_history_entity_id,
     history_entity_directory_generation_id,
     history_index_generation_id,
@@ -37,6 +38,21 @@ from transit_ops.snapshots.publish import (
     _stable_outcome_total,
 )
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
+
+
+@pytest.fixture(autouse=True)
+def _empty_point_history_plans(monkeypatch: pytest.MonkeyPatch) -> None:
+    empty = SimpleNamespace(iter_days=lambda: iter(()))
+    monkeypatch.setattr(
+        publish.builders,
+        "build_hotspots_history_plan",
+        lambda *args, **kwargs: empty,
+    )
+    monkeypatch.setattr(
+        publish.builders,
+        "build_repeat_offenders_history_plan",
+        lambda *args, **kwargs: empty,
+    )
 
 
 def _network_history_bundle():
@@ -120,6 +136,22 @@ def _empty_stop_history_plan():
         occupancy_rows=[],
         generated_utc="2026-07-13T00:00:00Z",
     )
+
+
+def _empty_point_history_indexes(
+    stamp: str = "2026-07-13T00:00:00Z",
+):
+    indexes = tuple(
+        PointHistorySummary(family).build_index(fallback_generated_utc=stamp)
+        for family in ("hotspots", "repeat_offenders")
+    )
+    for index in indexes:
+        publish._stamp_envelope(  # noqa: SLF001
+            [("unused", index, "historic")],
+            provider_id="stm",
+            stamp=stamp,
+        )
+    return indexes
 
 
 def _many_stop_history_plan(count: int = 5):
@@ -554,6 +586,17 @@ def _patch_minimal_historic(
         lambda *args, **kwargs: stop_plan or _empty_stop_history_plan(),
         raising=False,
     )
+    empty_point_plan = SimpleNamespace(iter_days=lambda: iter(()))
+    monkeypatch.setattr(
+        publish.builders,
+        "build_hotspots_history_plan",
+        lambda *args, **kwargs: empty_point_plan,
+    )
+    monkeypatch.setattr(
+        publish.builders,
+        "build_repeat_offenders_history_plan",
+        lambda *args, **kwargs: empty_point_plan,
+    )
     monkeypatch.setattr(publish.gate, "check_alert_archive_bundle", lambda *args, **kwargs: [])
 
 
@@ -629,7 +672,7 @@ def test_line_history_publish_is_pointer_last_after_all_network_and_line_immutab
     assert paths.index(compatibility_key) < next(
         index
         for index, path in enumerate(paths)
-        if "/generations/" in path and path.endswith("/index.json")
+        if "/history/network/generations/" in path and path.endswith("/index.json")
     )
     assert "historic/history/network/index.json" not in paths
     assert "historic/history/lines/index.json" not in paths
@@ -711,6 +754,7 @@ def test_history_root_uses_exact_child_generations_and_metric_coverage():
         total_alerts=0,
         months=[],
     )
+    hotspots, repeat_offenders = _empty_point_history_indexes()
 
     root = publish._build_history_availability_index(  # noqa: SLF001
         stamp="2026-07-13T00:00:00Z",
@@ -721,13 +765,17 @@ def test_history_root_uses_exact_child_generations_and_metric_coverage():
         line_indexes=lines.indexes,
         stop_directory=stops.directory,
         stop_indexes=stops.indexes,
+        hotspots_index=hotspots,
+        repeat_offenders_index=repeat_offenders,
     )
 
     assert [family.family for family in root.families] == [
         "alerts",
+        "hotspots",
         "lines",
         "network",
         "receipts",
+        "repeat_offenders",
         "stops",
     ]
     by_family = {family.family: family for family in root.families}
@@ -779,6 +827,7 @@ def test_history_root_wholly_empty_uses_run_stamp_fallback():
     ).index
     lines = _empty_line_history_plan().materialize()
     stops = _empty_stop_history_plan().materialize()
+    hotspots, repeat_offenders = _empty_point_history_indexes(stamp)
     root = publish._build_history_availability_index(  # noqa: SLF001
         stamp=stamp,
         alert_index=AlertArchiveIndex(
@@ -799,14 +848,18 @@ def test_history_root_wholly_empty_uses_run_stamp_fallback():
         line_indexes=lines.indexes,
         stop_directory=stops.directory,
         stop_indexes=stops.indexes,
+        hotspots_index=hotspots,
+        repeat_offenders_index=repeat_offenders,
     )
 
     assert root.generated_utc == stamp
     assert [family.family for family in root.families] == [
         "alerts",
+        "hotspots",
         "lines",
         "network",
         "receipts",
+        "repeat_offenders",
         "stops",
     ]
     assert all(family.first_available_date is None for family in root.families)
@@ -817,8 +870,8 @@ def test_history_root_wholly_empty_uses_run_stamp_fallback():
     [
         lambda root: setattr(root, "generated_utc", "2020-01-01T00:00:00Z"),
         lambda root: setattr(root.families[0], "collection_generation_id", "wrong"),
-        lambda root: root.families[1].gaps.clear(),
-        lambda root: root.families[2].metrics.clear(),
+        lambda root: root.families[2].gaps.clear(),
+        lambda root: root.families[3].metrics.clear(),
     ],
 )
 def test_history_root_gate_reconciles_exact_detached_child_graph(mutation):  # noqa: ANN001
@@ -840,6 +893,7 @@ def test_history_root_gate_reconciles_exact_detached_child_graph(mutation):  # n
         collection_generation_id="receipt-generation",
         dates=["2026-06-01", "2026-07-02"],
     )
+    hotspots, repeat_offenders = _empty_point_history_indexes()
     root = publish._build_history_availability_index(  # noqa: SLF001
         stamp="2026-07-13T00:00:00Z",
         alert_index=alerts,
@@ -849,6 +903,8 @@ def test_history_root_gate_reconciles_exact_detached_child_graph(mutation):  # n
         line_indexes=lines.indexes,
         stop_directory=stops.directory,
         stop_indexes=stops.indexes,
+        hotspots_index=hotspots,
+        repeat_offenders_index=repeat_offenders,
     )
     mutation(root)
 
@@ -861,6 +917,8 @@ def test_history_root_gate_reconciles_exact_detached_child_graph(mutation):  # n
         line_indexes=lines.indexes,
         stop_directory=stops.directory,
         stop_indexes=stops.indexes,
+        hotspots_index=hotspots,
+        repeat_offenders_index=repeat_offenders,
         fallback_generated_utc="2026-07-13T00:00:00Z",
     )
 
@@ -1010,17 +1068,24 @@ def test_stop_history_and_global_root_publish_pointer_last(monkeypatch):
     root = HistoricAvailabilityIndex.model_validate_json(store.objects[root_path])
     assert [family.family for family in root.families] == [
         "alerts",
+        "hotspots",
         "lines",
         "network",
         "receipts",
+        "repeat_offenders",
         "stops",
     ]
     by_family = {family.family: family for family in root.families}
     expected_patterns = {
         "alerts": r"^historic/alerts/generations/([0-9a-f]{64})/index\.json$",
+        "hotspots": r"^historic/history/hotspots/generations/([0-9a-f]{64})/index\.json$",
         "lines": r"^historic/history/lines/generations/([0-9a-f]{64})/index\.json$",
         "network": r"^historic/history/network/generations/([0-9a-f]{64})/index\.json$",
         "receipts": r"^historic/receipts/generations/([0-9a-f]{64})/index\.json$",
+        "repeat_offenders": (
+            r"^historic/history/repeat_offenders/generations/"
+            r"([0-9a-f]{64})/index\.json$"
+        ),
         "stops": r"^historic/history/stops/generations/([0-9a-f]{64})/index\.json$",
     }
     for family, pattern in expected_patterns.items():
@@ -1119,7 +1184,7 @@ def test_historic_validate_records_the_same_versioned_pointer_graph_as_publish(m
     validated_pointers = {path for path in report.payload_sha256 if pointer_pattern.search(path)}
     published_pointers = {path for _kind, path in store.calls if pointer_pattern.search(path)}
     assert validated_pointers == published_pointers
-    assert len(validated_pointers) == 9
+    assert len(validated_pointers) == 11
     assert "historic/history/index.json" in report.payload_sha256
     assert {
         "historic/history/network/index.json",
@@ -1765,7 +1830,7 @@ def test_network_history_actual_historic_publish_is_structural_and_root_last(
     assert "historic/history/network/index.json" not in paths
     assert "historic/history/lines/index.json" not in paths
     assert "historic/history/stops/index.json" not in paths
-    assert len(_reachable_history_graph(store)) == 6
+    assert len(_reachable_history_graph(store)) == 8
     assert store.calls[-1] == ("normal", "historic/history/index.json")
 
     outcomes = SimpleNamespace(
@@ -2800,6 +2865,7 @@ def test_history_root_malformed_family_returns_findings_not_exceptions(family: o
         collection_generation_id=publish._receipts_collection_generation_id({}),
         dates=[],
     )
+    hotspots, repeat_offenders = _empty_point_history_indexes()
     root = publish._build_history_availability_index(  # noqa: SLF001
         stamp="2026-07-13T00:00:00Z",
         alert_index=alerts,
@@ -2809,6 +2875,8 @@ def test_history_root_malformed_family_returns_findings_not_exceptions(family: o
         line_indexes=lines.indexes,
         stop_directory=stops.directory,
         stop_indexes=stops.indexes,
+        hotspots_index=hotspots,
+        repeat_offenders_index=repeat_offenders,
     ).model_dump(mode="json")
     root["families"][0]["family"] = family
 
@@ -2933,6 +3001,7 @@ def test_history_root_gate_handles_malformed_stop_dates_gaps_and_metrics():
         collection_generation_id=publish._receipts_collection_generation_id({}),
         dates=[],
     )
+    hotspots, repeat_offenders = _empty_point_history_indexes()
     root = publish._build_history_availability_index(  # noqa: SLF001
         stamp="2026-07-13T00:00:00Z",
         alert_index=alerts,
@@ -2942,6 +3011,8 @@ def test_history_root_gate_handles_malformed_stop_dates_gaps_and_metrics():
         line_indexes=lines.indexes,
         stop_directory=stops.directory,
         stop_indexes=stops.indexes,
+        hotspots_index=hotspots,
+        repeat_offenders_index=repeat_offenders,
     )
     malformed = stops.indexes[0].model_dump(mode="json")
     malformed["available_dates"].append(None)
@@ -2956,6 +3027,8 @@ def test_history_root_gate_handles_malformed_stop_dates_gaps_and_metrics():
         line_indexes=lines.indexes,
         stop_directory=stops.directory,
         stop_indexes=[malformed],
+        hotspots_index=hotspots,
+        repeat_offenders_index=repeat_offenders,
         fallback_generated_utc="2026-07-13T00:00:00Z",
     )
 
@@ -3131,6 +3204,7 @@ def _root_gate_fixture():
         collection_generation_id="receipt-generation",
         dates=["2026-07-01"],
     )
+    hotspots, repeat_offenders = _empty_point_history_indexes()
     root = publish._build_history_availability_index(  # noqa: SLF001
         stamp="2026-07-13T00:00:00Z",
         alert_index=alerts,
@@ -3140,6 +3214,8 @@ def _root_gate_fixture():
         line_indexes=lines.indexes,
         stop_directory=stops.directory,
         stop_indexes=stops.indexes,
+        hotspots_index=hotspots,
+        repeat_offenders_index=repeat_offenders,
     )
     return SimpleNamespace(
         root=root,
@@ -3148,6 +3224,8 @@ def _root_gate_fixture():
         network=network,
         lines=lines,
         stops=stops,
+        hotspots=hotspots,
+        repeat_offenders=repeat_offenders,
     )
 
 
@@ -3164,6 +3242,8 @@ def test_history_root_gate_invalid_receipt_calendar_date_returns_finding_not_exc
         line_indexes=fixture.lines.indexes,
         stop_directory=fixture.stops.directory,
         stop_indexes=fixture.stops.indexes,
+        hotspots_index=fixture.hotspots,
+        repeat_offenders_index=fixture.repeat_offenders,
         fallback_generated_utc="2026-07-13T00:00:00Z",
     )
 
@@ -3188,6 +3268,8 @@ def test_history_root_gate_bad_populated_singleton_timestamp_returns_finding(
         line_indexes=fixture.lines.indexes,
         stop_directory=fixture.stops.directory,
         stop_indexes=fixture.stops.indexes,
+        hotspots_index=fixture.hotspots,
+        repeat_offenders_index=fixture.repeat_offenders,
         fallback_generated_utc="2026-07-13T00:00:00Z",
     )
 
