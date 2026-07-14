@@ -19,7 +19,7 @@
   Tokens only; --primary interactive-only.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
@@ -30,6 +30,7 @@
 		createLiveStore,
 		getV1Context,
 		alertsForStop,
+		historyRangeRequestFromSearchParams,
 		type StopFile,
 		type StopReliability,
 		type StopDeparture,
@@ -63,6 +64,10 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { formatUtc } from '$lib/utils/time';
 	import { StopReliabilitySurface } from './reliability';
+	import {
+		createStopHistoryResource,
+		type StopHistoryResource,
+	} from './reliability/data/stopHistoryResource.svelte';
 	import { detailCopy } from './stops.copy';
 
 	interface StopDetailProps {
@@ -148,6 +153,42 @@
 	// state). A missing-snapshot 404 here is suppressed at the edge (one-time cache
 	// purge / future stops_index flag), not in this client code.
 	const reliability = createResource(() => getStopReliability(id));
+
+	function historyFor(stopId: string): StopHistoryResource {
+		return createStopHistoryResource(
+			stopId,
+			historyRangeRequestFromSearchParams(page.url.searchParams),
+		);
+	}
+	const initialHistoryEntityId = untrack(() => id);
+	let historyEntityId = initialHistoryEntityId;
+	let stopHistory = $state.raw<StopHistoryResource>(historyFor(initialHistoryEntityId));
+	$effect(() => {
+		const stopId = id;
+		if (stopId === historyEntityId) return;
+		const previous = stopHistory;
+		historyEntityId = stopId;
+		stopHistory = historyFor(stopId);
+		previous.destroy();
+	});
+	onMount(() => () => stopHistory.destroy());
+	const stopHistoryRequested = $derived(stopHistory.request.hasFrom || stopHistory.request.hasTo);
+	const historyOnlyReliability = $derived.by<StopReliability | null>(() => {
+		if (!stopHistoryRequested) return null;
+		const generatedUtc =
+			stopHistory.index?.generated_utc ??
+			reliability.data?.generated_utc ??
+			stop.data?.generated_utc;
+		return generatedUtc == null ? null : { id, generated_utc: generatedUtc };
+	});
+	const reliabilityIsEmpty = (value: StopReliability | null): boolean =>
+		value == null ||
+		((value.periods?.length ?? 0) === 0 &&
+			(value.habits?.matrix?.length ?? 0) === 0 &&
+			value.occupancy_mix == null &&
+			(value.day_of_week?.length ?? 0) === 0 &&
+			(value.by_route?.length ?? 0) === 0 &&
+			(value.daily?.length ?? 0) === 0);
 
 	// --- HONEST ABSENCE: infer WHY the live board is empty --------------------
 	// The stop's own service window is derived from its static schedule times
@@ -528,26 +569,23 @@
 			</ResourceBoundary>
 		{:else if key === 'reliability'}
 			<!-- HISTORIC: the decomposed reliability surface. It owns the codec-seeded grain
-			     rail + the operator 2-col board + the NEW daily-trend / range-verdict section
-			     (the only stop surface with a real date window, the S8B DateRangePicker seam).
+			     rail, shared retained-history navigator, operator board, and daily trend.
 			     Mirrors how RouteDetail mounts <RouteReliabilityClusters>. -->
-			<ResourceBoundary
-				resource={reliability}
-				lang={locale}
-				isEmpty={(r: StopReliability | null) =>
-					r == null ||
-					((r.periods?.length ?? 0) === 0 &&
-						r.occupancy_mix == null &&
-						(r.day_of_week?.length ?? 0) === 0 &&
-						(r.by_route?.length ?? 0) === 0 &&
-						(r.daily?.length ?? 0) === 0)}
-			>
-				{#snippet children(r: StopReliability | null)}
-					{#if r != null}
-						<StopReliabilitySurface data={r} {locale} />
-					{/if}
-				{/snippet}
-			</ResourceBoundary>
+			{#if reliability.settled && reliability.error == null && reliabilityIsEmpty(reliability.data) && historyOnlyReliability != null && stopHistory.state !== 'current'}
+				{#key id}
+					<StopReliabilitySurface data={historyOnlyReliability} {locale} history={stopHistory} />
+				{/key}
+			{:else}
+				<ResourceBoundary resource={reliability} lang={locale} isEmpty={reliabilityIsEmpty}>
+					{#snippet children(r: StopReliability | null)}
+						{#if r != null}
+							{#key id}
+								<StopReliabilitySurface data={r} {locale} history={stopHistory} />
+							{/key}
+						{/if}
+					{/snippet}
+				</ResourceBoundary>
+			{/if}
 		{/if}
 	{/snippet}
 </EntityDetail>

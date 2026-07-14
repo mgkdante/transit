@@ -14,6 +14,7 @@ import type { VerdictCopy } from '$lib/v1/verdict';
 export interface StopReliabilityCopy {
 	readonly byRoute: string;
 	readonly noRouteBreakdown: string;
+	readonly viewLine: (routeId: string) => string;
 	/** Section heading over the shared ReliabilityPane (OTP / delay / severe). */
 	readonly paneHeading: string;
 	/** Short metric NAMES the (i) explainer trigger announces beside a heading. */
@@ -47,6 +48,19 @@ export interface StopReliabilityCopy {
 		readonly month: string;
 		/** Caption naming the resolved roll-up window. */
 		readonly window: (grain: string) => string;
+	};
+	readonly history: {
+		readonly navigator: import('$lib/components/surface/HistoryNavigator.svelte').HistoryNavigatorLabels;
+		readonly coverage: (from: string, to: string) => string;
+		readonly selection: (from: string, to: string) => string;
+		readonly correction: Record<import('$lib/v1').HistoryCorrection['reason'], string>;
+		readonly partial: string;
+		readonly noData: string;
+		readonly currentOnly: string;
+		readonly loading: string;
+		readonly ready: string;
+		readonly error: string;
+		readonly retry: string;
 	};
 	/**
 	 * §C5.6 one-line reliability verdict at the top of the Reliability pane — the SHARED
@@ -144,23 +158,6 @@ export interface StopReliabilityCopy {
 		readonly caveat: string;
 		/** Shown below MIN_N: too few pooled observations to print a share. */
 		readonly belowMinN: (n: number) => string;
-		/**
-		 * S8B date-range picker labels (the DateRangePicker over the dated daily[]
-		 * series). Bilingual, caller-owned — the primitive itself owns no copy.
-		 */
-		readonly range: {
-			/** Accessible group label over the start/end pair. */
-			readonly group: string;
-			/** Start-bound select label. */
-			readonly start: string;
-			/** End-bound select label. */
-			readonly end: string;
-			/** Clear affordance (resets to the full window). */
-			readonly clear: string;
-			/** Neutral placeholder options (full-window sentinels). */
-			readonly anyStart: string;
-			readonly anyEnd: string;
-		};
 	};
 	/** No-data string for a route row whose delay is absent. */
 	readonly noDelay: string;
@@ -170,6 +167,7 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 	fr: {
 		byRoute: 'Retard moyen par ligne',
 		noRouteBreakdown: 'Aucun détail par ligne pour cet arrêt.',
+		viewLine: (routeId) => `Voir la ligne ${routeId}`,
 		paneHeading: 'Ponctualité et retard',
 		metrics: {
 			otp: 'Ponctualité',
@@ -193,6 +191,37 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 					: grain === 'month'
 						? 'Regroupé par mois.'
 						: 'Regroupé par jour.',
+		},
+		history: {
+			navigator: {
+				group: 'Historique de fiabilité de l’arrêt',
+				picker: {
+					group: 'Plage de dates',
+					start: 'Du',
+					end: 'Au',
+					clear: 'Revenir au portrait actuel',
+					anyStart: 'Première date',
+					anyEnd: 'Dernière date',
+				},
+				previous: 'Plage précédente',
+				next: 'Plage suivante',
+			},
+			coverage: (from, to) => `Historique disponible du ${from} au ${to}.`,
+			selection: (from, to) => `Plage choisie : du ${from} au ${to}.`,
+			correction: {
+				malformed: 'La plage invalide a été remplacée par le portrait actuel.',
+				'outside-coverage': 'La plage non disponible a été remplacée par le portrait actuel.',
+				gap: 'La plage traverse une lacune dans les données conservées.',
+				unpublished: 'La plage non publiée a été remplacée par le portrait actuel.',
+			},
+			partial: 'Cette plage ne couvre qu’une partie des mesures conservées.',
+			noData: 'Aucune donnée conservée pour cette plage.',
+			currentOnly:
+				'L’identité, les périodes, les habitudes, les jours, les heures et le détail par ligne restent basés sur le portrait actuel.',
+			loading: 'Chargement de la plage conservée…',
+			ready: 'Plage conservée chargée.',
+			error: 'Impossible de charger cette plage conservée.',
+			retry: 'Réessayer',
 		},
 		verdict: {
 			windowPhrase: {
@@ -273,26 +302,20 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 			pooledAvg: 'Retard moyen',
 			observations: 'Observations',
 			wilsonCaption: (lo, hi) => `Intervalle de confiance à 95 % : ${lo} – ${hi} %`,
-			rangeWindow: (days, from, to) => `${days} jours avec données · ${from} au ${to}`,
+			rangeWindow: (days, from, to) =>
+				`${days} ${days === 1 ? 'jour' : 'jours'} avec données · ${from} au ${to}`,
 			singleDay: (date) => `Journée du ${date}`,
 			caveat:
 				'La « part des retards graves » est un indicateur indirect (retards > 5 min); un arrêt n’a pas de ponctualité programmée. Ne pas comparer au taux de ponctualité d’une ligne.',
 			belowMinN: (n) =>
 				`Trop peu d’observations sur cette période (${n}) pour afficher un pourcentage fiable.`,
-			range: {
-				group: 'Choisir une plage de dates',
-				start: 'Du',
-				end: 'Au',
-				clear: 'Toute la période',
-				anyStart: 'Début',
-				anyEnd: 'Fin',
-			},
 		},
 		noDelay: 'Aucune donnée',
 	},
 	en: {
 		byRoute: 'Avg delay by route',
 		noRouteBreakdown: 'No per-route breakdown for this stop.',
+		viewLine: (routeId) => `View line ${routeId}`,
 		paneHeading: 'On-time and delay',
 		metrics: {
 			otp: 'On-time %',
@@ -316,6 +339,37 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 					: grain === 'month'
 						? 'Rolled up by month.'
 						: 'Rolled up by day.',
+		},
+		history: {
+			navigator: {
+				group: 'Stop reliability history',
+				picker: {
+					group: 'Date range',
+					start: 'From',
+					end: 'To',
+					clear: 'Return to current snapshot',
+					anyStart: 'First date',
+					anyEnd: 'Last date',
+				},
+				previous: 'Previous range',
+				next: 'Next range',
+			},
+			coverage: (from, to) => `History available from ${from} to ${to}.`,
+			selection: (from, to) => `Selected range: ${from} to ${to}.`,
+			correction: {
+				malformed: 'The invalid date range was replaced with the current snapshot.',
+				'outside-coverage': 'The unavailable date range was replaced with the current snapshot.',
+				gap: 'The selected range crosses a gap in retained data.',
+				unpublished: 'The unpublished date range was replaced with the current snapshot.',
+			},
+			partial: 'This range has only partial retained metric coverage.',
+			noData: 'No data is retained for this range.',
+			currentOnly:
+				'Identity, periods, habits, weekday, time-of-day, and by-line detail still use the current snapshot.',
+			loading: 'Loading retained range…',
+			ready: 'Retained range loaded.',
+			error: 'This retained range could not be loaded.',
+			retry: 'Retry',
 		},
 		verdict: {
 			windowPhrase: {
@@ -396,20 +450,13 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 			pooledAvg: 'Average delay',
 			observations: 'Observations',
 			wilsonCaption: (lo, hi) => `95% confidence interval: ${lo}–${hi}%`,
-			rangeWindow: (days, from, to) => `${days} days with data · ${from} to ${to}`,
+			rangeWindow: (days, from, to) =>
+				`${days} ${days === 1 ? 'day' : 'days'} with data · ${from} to ${to}`,
 			singleDay: (date) => `Day of ${date}`,
 			caveat:
 				'“Severe-delay share” is a proxy (delays over 5 min); a stop has no scheduled on-time definition. Do not compare it to a line’s on-time rate.',
 			belowMinN: (n) =>
 				`Too few observations over this window (${n}) to print a reliable percentage.`,
-			range: {
-				group: 'Pick a date range',
-				start: 'From',
-				end: 'To',
-				clear: 'Full window',
-				anyStart: 'Earliest',
-				anyEnd: 'Latest',
-			},
 		},
 		noDelay: 'No data',
 	},

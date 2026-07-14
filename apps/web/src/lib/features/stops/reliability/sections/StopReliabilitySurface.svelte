@@ -8,20 +8,21 @@
       mirrored back via mirrorSearchParam (day default omitted), and availability =
       EXPLICIT `available` flags per grain (a stop has ONE snapshot per grain, not an
       N-bucket series, so NOT the MIN_POINTS bucket clamp — that would wrongly disable
-      every stop grain). The rail holds the grain picker + a vertical section ToC of
-      the PRESENT sections (active-highlighted via observeActiveToc); it renders in a
-      sticky glass panel on desktop and ONE pill→sheet on mobile (single source);
+      every stop grain). The rail holds the grain picker, the shared retained-history
+      navigator, and a vertical section ToC of the PRESENT sections
+      (active-highlighted via observeActiveToc); it renders in a sticky glass panel on
+      desktop and ONE pill→sheet on mobile (single source);
     - ONE mapping pass through the pure selectors, each section a pure presenter;
     - the operator 2-col board (dow + time-of-day on one row, crowding + by-route
       next; percentiles + habits full-width heroes) + the daily-trend hero, all in the
       content column beside the rail;
-    - the S8B seam: a {from,to} DateWindow prop that clips the daily trend + verdict
-      (default = full window). This surface owns NO date picker — the window is
-      section-local, INSIDE SectionDailyTrend (it clips only that trend, not the rail).
+    - a test-only {from,to} DateWindow override for the daily trend + verdict. In
+      production the shared navigator owns the retained range; that range also drives
+      crowding when retained occupancy is available.
 
-  DATE-RANGE HONESTY: grain is a day|week|month trailing-window RADIOGROUP; the ONLY
-  thing S8B's picker ranges over is the dated daily[] series (SectionDailyTrend) —
-  the periods[] grains are single snapshots, never a fabricated span.
+  DATE-RANGE HONESTY: grain is a day|week|month current-snapshot RADIOGROUP. Retained
+  ranges replace only the dated daily[] and occupancy views; periods[], habits,
+  weekday, time-of-day, and by-line data stay explicitly labelled current-only.
 
   Two-rail note: StopDetail's `next` tab keeps its own ControlsRail (status/route
   chips). The grain radiogroup here binds ONE `grain` state; SurfaceRail is a layout
@@ -30,23 +31,31 @@
 -->
 <script lang="ts">
 	import { page } from '$app/state';
-	import type { Locale } from '$lib/i18n';
+	import { localizeHref, type Locale } from '$lib/i18n';
+	import { routeFor } from '$lib/nav';
 	import { fmtDelayMin } from '$lib/utils';
-	import { fromSearchParams, resolveWindow, type DateWindow } from '$lib/filters';
+	import { formatDateKey } from '$lib/utils/time';
+	import { fromSearchParams, type DateWindow } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import type { StopReliability } from '$lib/v1';
+	import {
+		availabilityFromCollectionIndex,
+		datesForAvailability,
+		type RawHistoryRangeRequest,
+		type StopReliability,
+	} from '$lib/v1';
 	import type { OccupancyCode } from '$lib/v1/schemas';
 	import {
 		ReliabilityPane,
 		SurfaceRail,
 		GrainPicker,
-		DateRangePicker,
+		HistoryNavigator,
 		type GrainSegment,
 	} from '$lib/components/surface';
 	import { observeActiveToc, TocNav, type TocEntry } from '$lib/components/shared';
 	import { onMount } from 'svelte';
 	import { DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
+	import { Button } from '$lib/components/ui/button';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
@@ -64,12 +73,15 @@
 		STOP_GRAINS,
 		type StopGrain,
 	} from '../data/presentGrains';
+	import { applyRetainedStopHistory, clearRetainedStopHistory } from '../data/retainedHistory';
+	import type { StopHistoryResource } from '../data/stopHistoryResource.svelte';
 	import { selectGradedPeriods, selectDayPercentiles } from '../selectors/gradedPeriods';
 	import { selectRankedRoutes } from '../selectors/rankedRoutes';
 	import { selectWeekdaySeasonality } from '../selectors/weekdaySeasonality';
 	import { selectTimeOfDay } from '../selectors/timeOfDay';
 	import { selectHabitsHeatmap } from '../selectors/habitsHeatmap';
 	import { selectCrowdingMix } from '../selectors/crowdingMix';
+	import type { ExactDailyRangeIngredients } from '../selectors/dailyRange';
 	import { stopReliabilityCopy } from '../stops-reliability.copy';
 
 	import SectionPercentiles from './SectionPercentiles.svelte';
@@ -85,15 +97,17 @@
 		data: StopReliability;
 		/** Active locale (FR canonical). */
 		locale: Locale;
-		/**
-		 * S8B SEAM (test/override): a {from,to} window forced from OUTSIDE, bypassing
-		 * the internal codec-driven picker. `undefined` (default) = the surface owns
-		 * the window itself (seeded from ?from/?to, driven by its DateRangePicker);
-		 * `null` = force the full window. Production mounts pass nothing.
-		 */
+		/** Test-only daily verdict/chart override; production uses the history resource. */
 		window?: DateWindow | null;
+		/** Stop-keyed retained range resource, owned by StopDetail. */
+		history?: StopHistoryResource;
 	}
-	let { data, locale, window: windowOverride = undefined }: StopReliabilitySurfaceProps = $props();
+	let {
+		data,
+		locale,
+		window: windowOverride = undefined,
+		history,
+	}: StopReliabilitySurfaceProps = $props();
 
 	const copy = $derived(stopReliabilityCopy[locale]);
 
@@ -126,63 +140,91 @@
 		if (settled && !present.has(grain)) grain = dfltGrain;
 	});
 
-	/* ── date-range window (B1): codec-seeded, DateRangePicker-driven ──────────────
-	   The ONLY thing the S8B picker ranges over is the dated daily[] series. The
-	   surface OWNS the window (seeded from ?from/?to via the shared codec, validated
-	   against the real daily dates by resolveWindow, then mirrored back so a windowed
-	   view is deep-linkable). An external `window` prop (tests) overrides this. */
-
-	// The real dated days the daily series carries, ascending — the picker's coverage
-	// source (options are these ONLY, so an out-of-window pick is impossible). Dedupe
-	// defensively (filter → findIndex, NOT a mutable Set — a Set held in a $derived trips
-	// svelte/prefer-svelte-reactivity, matching the RRC datedPeriods pattern) so the
-	// option keys stay unique.
-	const availableDates = $derived(
-		(data.daily ?? [])
-			.map((p) => p.date)
-			.filter((d): d is string => !!d)
-			.filter((d, i, arr) => arr.indexOf(d) === i)
-			.slice()
-			.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
-	);
-
-	// The picked window (undefined = full series). Seeded ONCE from the codec's
-	// shape-valid {from,to}; the availability clamp below validates it against the real
-	// dated days (an out-of-coverage bound is dropped — the URL is a hint, never data).
-	let pickedWindow = $state<DateWindow | undefined>(seed.window);
-	// One-shot availability clamp: drop a seeded window whose bounds the series has no
-	// day for (resolveWindow returns undefined unless BOTH bounds are real dates).
-	let windowSettled = $state(false);
-	$effect(() => {
-		if (windowSettled) return;
-		windowSettled = true;
-		pickedWindow = resolveWindow(pickedWindow, new Set(availableDates));
+	/* ── retained date-range ownership ─────────────────────────────────────────── */
+	const emptyHistoryRequest = (): RawHistoryRangeRequest => ({
+		hasFrom: false,
+		hasTo: false,
+		rawFrom: null,
+		rawTo: null,
 	});
-
-	// The effective window driving the daily trend + verdict: an external prop
-	// (undefined = not passed) hands control to the internal picker; otherwise the
-	// prop wins (test/override, incl. an explicit null = force the full window).
+	const historyRequested = $derived(
+		history != null && (history.request.hasFrom || history.request.hasTo),
+	);
+	const explicitHistory = $derived(
+		history != null && historyRequested && history.state !== 'current',
+	);
+	const retainedReady = $derived(history?.state === 'ready' || history?.state === 'partial');
+	const historyAvailability = $derived(
+		history?.index == null ? null : availabilityFromCollectionIndex(history.index),
+	);
+	const historyDates = $derived(
+		historyAvailability == null ? [] : datesForAvailability(historyAvailability),
+	);
+	const historyWindow = $derived<DateWindow | undefined>(
+		explicitHistory ? (history?.resolved?.selection ?? undefined) : undefined,
+	);
 	const effectiveWindow = $derived<DateWindow | null>(
-		windowOverride !== undefined ? windowOverride : (pickedWindow ?? null),
+		windowOverride !== undefined ? windowOverride : (historyWindow ?? null),
 	);
-
-	// Mirror grain + the picked window (?grain / ?from / ?to) in ONE batched call:
-	// replaceState updates page.url async, so back-to-back single writes clobber each
-	// other. mirrorSearchParams MERGES — it preserves StopDetail's ?tab. The 'day'
-	// default is omitted for a clean canonical URL; an absent window nulls from/to.
-	// When the window is externally overridden the surface owns NO from/to (the picker
-	// is not mounted), so we only mirror grain.
-	$effect(() => {
-		if (windowOverride !== undefined) {
-			mirrorSearchParams({ grain: grain === 'day' ? null : grain });
-			return;
-		}
-		mirrorSearchParams({
-			grain: grain === 'day' ? null : grain,
-			from: pickedWindow?.from ?? null,
-			to: pickedWindow?.to ?? null,
-		});
+	const historyCoverageText = $derived.by<string | null>(() => {
+		if (historyAvailability?.kind !== 'continuous') return null;
+		return copy.history.coverage(
+			formatDateKey(historyAvailability.firstDate, locale),
+			formatDateKey(historyAvailability.lastDate, locale),
+		);
 	});
+	const historySelectionText = $derived.by<string | null>(() => {
+		if (!explicitHistory || historyWindow == null) return null;
+		return copy.history.selection(
+			formatDateKey(historyWindow.from, locale),
+			formatDateKey(historyWindow.to, locale),
+		);
+	});
+	let historyAnnouncement = $state<string | null>(null);
+	let handledHistoryCorrection = '';
+	$effect(() => {
+		const correction = history?.resolved?.correction;
+		if (correction == null || correction.key === handledHistoryCorrection) return;
+		handledHistoryCorrection = correction.key;
+		historyAnnouncement = copy.history.correction[correction.reason];
+		history?.setRequest(emptyHistoryRequest());
+	});
+	const historyLiveAnnouncement = $derived.by(() => {
+		if (historyAnnouncement != null) return historyAnnouncement;
+		if (!explicitHistory) return '';
+		if (history?.state === 'loading-index' || history?.state === 'loading-range')
+			return copy.history.loading;
+		if (history?.state === 'partial') return copy.history.partial;
+		if (history?.state === 'no-data') return copy.history.noData;
+		if (history?.state === 'error') return copy.history.error;
+		if (history?.state === 'ready') return copy.history.ready;
+		return '';
+	});
+	function selectHistoryRange(value: DateWindow | undefined): void {
+		historyAnnouncement = null;
+		handledHistoryCorrection = '';
+		history?.setRequest(
+			value == null
+				? emptyHistoryRequest()
+				: { hasFrom: true, hasTo: true, rawFrom: value.from, rawTo: value.to },
+		);
+	}
+	const historyWire = $derived.by<Record<string, string | null>>(() => {
+		const grainValue = grain === 'day' ? null : grain;
+		if (history == null || windowOverride !== undefined)
+			return { grain: grainValue } as Record<string, string | null>;
+		const canonical = history.resolved?.canonicalWindow;
+		const pendingExplicit = explicitHistory && history.resolved == null;
+		return {
+			grain: grainValue,
+			from:
+				canonical?.from ??
+				(pendingExplicit && history.request.hasFrom ? history.request.rawFrom : null),
+			to:
+				canonical?.to ?? (pendingExplicit && history.request.hasTo ? history.request.rawTo : null),
+		};
+	});
+	$effect(() => mirrorSearchParams(historyWire));
 
 	// Grain radiogroup wiring: EXPLICIT `available` flags (NOT the bucket clamp) — one
 	// snapshot per grain, so a grain is enabled iff the stop carries that grain. The
@@ -201,6 +243,27 @@
 	const grainSummary = $derived(grainLabels[grain] ?? grain);
 
 	/* ── ONE mapping pass — each section reads its pure VM slice ────────────────── */
+	const selectedData = $derived.by<StopReliability>(() => {
+		if (!explicitHistory) return data;
+		if (retainedReady && history?.value != null) {
+			return applyRetainedStopHistory(data, history.value);
+		}
+		return clearRetainedStopHistory(data);
+	});
+	const exactDailyRange = $derived.by<ExactDailyRangeIngredients | null>(() => {
+		if (!retainedReady || history?.value == null || historyWindow == null) return null;
+		const delay = history.value.aggregate.delay.value;
+		if (delay == null) return null;
+		return {
+			daysWithData: history.value.retainedDayCount,
+			from: historyWindow.from,
+			to: historyWindow.to,
+			observationCount: delay.observationCount,
+			inClampObservationCount: delay.inClampObservationCount,
+			severeCount: delay.severeCount,
+			sumDelaySeconds: delay.sumDelaySeconds,
+		};
+	});
 	const gradedPeriods = $derived(
 		selectGradedPeriods(data.periods, grain, (g) => copy.grain[g as StopGrain] ?? g),
 	);
@@ -225,7 +288,12 @@
 
 	const fmtMin = (v: number | null): string =>
 		fmtDelayMin(v, { rounding: 'fixed1', noData: copy.noDelay });
-	const rankedRoutes = $derived(selectRankedRoutes(data.by_route, fmtMin));
+	const rankedRoutes = $derived(
+		selectRankedRoutes(data.by_route, fmtMin, {
+			href: (routeId) => localizeHref(routeFor({ kind: 'line', id: routeId }), locale),
+			ariaLabel: copy.viewLine,
+		}),
+	);
 	const hasByRouteAssoc = $derived((data.by_route?.length ?? 0) > 0);
 
 	const rankedWeekdays = $derived(
@@ -248,15 +316,15 @@
 
 	const occupancyBands = $derived(linesDetailCopy[locale].occupancyBands);
 	const crowding = $derived(
-		selectCrowdingMix(data.occupancy_mix, (code: OccupancyCode) => occupancyBands[code], {
+		selectCrowdingMix(selectedData.occupancy_mix, (code: OccupancyCode) => occupancyBands[code], {
 			title: copy.crowding.barLabel,
 			locale,
 		}),
 	);
-
-	// The reliability resource has always loaded by the time this surface mounts
-	// (StopDetail guards on it), so crowding's no-telemetry chip may render.
-	const crowdingSettled = true;
+	const crowdingSettled = $derived(!explicitHistory || retainedReady);
+	const crowdingWindowText = $derived(
+		explicitHistory && historySelectionText != null ? historySelectionText : copy.crowding.window,
+	);
 
 	// The (i) affordance for the ReliabilityPane heading (its intrinsic OTP/delay/severe).
 	const explainerCopy = $derived(metricsCopy[locale]);
@@ -267,11 +335,10 @@
 
 	/* ── section ToC (P5.4 GLASS LEFT RAIL wayfinding) ──────────────────────────
 	   A vertical jump list of the PRESENT sections (built off the SAME conditions
-	   that mount each tile below, so the ToC never lists a stood-down section). No
-	   ↻/∞ scope glyph here: this surface has no page-level window (the daily-trend
-	   date range is section-local, INSIDE SectionDailyTrend — it clips only that
-	   trend, not the other sections), so every section reads its own scope. The
-	   observer keys on each tile's [data-toc] anchor (minted below, locale-free). */
+	   that mount each tile below, so the ToC never lists a stood-down section).
+	   Retained selection applies only to the trend and crowding sections; all other
+	   sections keep their explicit current-only scope. The observer keys on each
+	   tile's [data-toc] anchor (minted below, locale-free). */
 	const sectionNav = $derived(
 		[
 			{ id: 'stop-rel-trend', label: copy.trend.heading, present: true },
@@ -328,11 +395,9 @@
 {/snippet}
 
 <div class="stop-reliability">
-	<!-- P5.4: the grain picker + the section ToC live in a map-style GLASS LEFT RAIL
-	     (SurfaceRail) — a sticky floating panel beside the sections on desktop, and ONE
-	     merged pill→sheet menu (grain + ToC together) on mobile. --primary lives only on
-	     the active grain chip. The daily-trend date range stays SECTION-LOCAL (inside
-	     SectionDailyTrend) — it is NOT hoisted into the rail. -->
+	<!-- P5.4: the grain picker + retained-history navigator + section ToC live in a
+	     map-style GLASS LEFT RAIL (SurfaceRail) — a sticky floating panel beside the
+	     sections on desktop, and ONE merged pill→sheet menu on mobile. -->
 	<div class="stop-reliability-layout">
 		<!-- The rail content — the grain radiogroup (+ resolved-window caption) + the
 		     section ToC. ONE definition, rendered by SurfaceRail in BOTH the desktop glass
@@ -344,6 +409,19 @@
 					>{copy.controlsLabel}</span
 				>
 				<GrainPicker segments={grainSegments} bind:value={grain} label={copy.grain.label} />
+				{#if history?.index != null}
+					<HistoryNavigator
+						mode="range"
+						{locale}
+						labels={copy.history.navigator}
+						value={historyWindow}
+						availableDates={historyDates}
+						coverageText={historyCoverageText}
+						selectionText={historySelectionText}
+						liveAnnouncement={false}
+						onRangeChange={selectHistoryRange}
+					/>
+				{/if}
 				<p class="stop-reliability-window" data-slot="active-window" aria-live="polite">
 					{windowCaption}
 				</p>
@@ -377,29 +455,51 @@
 			openAria={copy.nav.pillOpen}
 			closeAria={copy.nav.pillClose}
 		/>
+		<p
+			class="stop-history-announcement"
+			data-slot="history-page-announcement"
+			role="status"
+			aria-live="polite"
+			aria-atomic="true"
+		>
+			{historyLiveAnnouncement}
+		</p>
 
 		<!-- The sections — the content column beside the rail. -->
 		<div class="stop-reliability-content">
-			<!-- Daily-trend + range-verdict section (full-width hero): the dated series the
-			     S8B picker ranges over. The ONLY stop surface with a real date window (kept
-			     SECTION-LOCAL). The picker seats in the section's window-slot seam and drives
-			     `pickedWindow`; an external `window` prop overrides it (tests). -->
+			{#if historyAnnouncement}
+				<p class="stop-history-correction" data-slot="history-correction">
+					{historyAnnouncement}
+				</p>
+			{/if}
+			{#if explicitHistory}
+				<div class="stop-history-state" data-slot="history-state">
+					{#if history?.state === 'loading-index' || history?.state === 'loading-range'}
+						<p data-slot="history-loading">{copy.history.loading}</p>
+					{:else if history?.state === 'partial'}
+						<p data-slot="history-partial">{copy.history.partial}</p>
+					{:else if history?.state === 'no-data'}
+						<p data-slot="history-no-data">{copy.history.noData}</p>
+					{:else if history?.state === 'error'}
+						<p data-slot="history-error">{copy.history.error}</p>
+						<Button variant="outline" size="sm" onclick={() => history?.retry()}>
+							{copy.history.retry}
+						</Button>
+					{/if}
+					<p data-slot="history-current-only">{copy.history.currentOnly}</p>
+				</div>
+			{/if}
+			<!-- Daily-trend + range-verdict section (full-width hero): the dated retained
+			     series selected by the rail navigator. A `window` prop exists only for
+			     presenter-level tests. -->
 			<div class="stop-anchor stop-anchor--wide" id="stop-rel-trend" data-toc="stop-rel-trend">
-				<SectionDailyTrend daily={data.daily} {locale} {copy} window={effectiveWindow}>
-					{#snippet picker()}
-						<!-- B1: the SHARED DateRangePicker over the REAL dated daily days. Bound to
-						     the surface's own window state; hidden when the window is externally
-						     overridden (the owner drives it). Empty coverage → honest absence. -->
-						{#if windowOverride === undefined}
-							<DateRangePicker
-								bind:value={pickedWindow}
-								{availableDates}
-								{locale}
-								labels={copy.trend.range}
-							/>
-						{/if}
-					{/snippet}
-				</SectionDailyTrend>
+				<SectionDailyTrend
+					daily={selectedData.daily}
+					{locale}
+					{copy}
+					window={effectiveWindow}
+					exact={exactDailyRange}
+				/>
 			</div>
 
 			<!-- Hazard tape discerns the trend hero from the readouts board. -->
@@ -469,7 +569,13 @@
 
 				<!-- ROW: crowding + by-route (operator pairing). -->
 				<div class="stop-anchor" id="stop-rel-crowding" data-toc="stop-rel-crowding">
-					<SectionCrowding vm={crowding} settled={crowdingSettled} {locale} {copy} />
+					<SectionCrowding
+						vm={crowding}
+						settled={crowdingSettled}
+						{locale}
+						{copy}
+						windowText={crowdingWindowText}
+					/>
 				</div>
 				<div class="stop-anchor" id="stop-rel-by-route" data-toc="stop-rel-by-route">
 					<SectionByRoute rows={rankedRoutes} hasAssociations={hasByRouteAssoc} {locale} {copy} />
@@ -509,6 +615,38 @@
 		flex-direction: column;
 		gap: 1.25rem;
 		min-width: 0;
+	}
+	.stop-history-announcement {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+	.stop-history-state,
+	.stop-history-correction {
+		margin: 0;
+		padding: 0.75rem 1rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--foreground);
+		background: var(--surface-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+	}
+	.stop-history-state {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		color: var(--muted-foreground);
+	}
+	.stop-history-state p {
+		margin: 0;
 	}
 
 	/* The grain controls (View overline + GrainPicker + window caption), stacked in the

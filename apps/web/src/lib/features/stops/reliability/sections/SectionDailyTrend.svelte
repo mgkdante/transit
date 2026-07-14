@@ -8,12 +8,10 @@
   interval via $lib/v1/stats). Below MIN_N the pooled share is withheld (an honest
   note), and an empty window renders honest absence — never a fabricated span.
 
-  S8B SEAM: `window` is a {from,to} DateWindow prop that clips BOTH the trend and
-  the verdict. It defaults to the full window (null); S8B mounts its DateRangePicker
-  and drives this prop. This section owns NO picker + NO stop-specific range logic.
+  `window` clips BOTH the trend and verdict. The parent surface's one shared
+  HistoryNavigator owns the retained selection; this section owns no controls.
 -->
 <script lang="ts">
-	import type { Snippet } from 'svelte';
 	import type { Locale } from '$lib/i18n';
 	import { fmtDelayMin } from '$lib/utils';
 	import type { DateWindow } from '$lib/filters';
@@ -27,7 +25,7 @@
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { selectDailyTrend } from '../selectors/dailyTrend';
-	import { poolDailyRange } from '../selectors/dailyRange';
+	import { poolDailyRange, type ExactDailyRangeIngredients } from '../selectors/dailyRange';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
 
 	interface SectionDailyTrendProps {
@@ -37,19 +35,12 @@
 		locale: Locale;
 		/** The reliability copy bundle for this locale. */
 		copy: StopReliabilityCopy;
-		/**
-		 * S8B SEAM: the {from,to} window clipping the trend + verdict. null (default)
-		 * = the full served window; S8B's DateRangePicker drives this.
-		 */
+		/** The {from,to} window clipping the trend + verdict; null = full current series. */
 		window?: DateWindow | null;
-		/**
-		 * S8B: the date-range control that seats in the section's window-slot seam
-		 * (below the heading). The section owns NO picker logic — the surface supplies
-		 * the wired DateRangePicker; absent = no picker (the full-window default).
-		 */
-		picker?: Snippet;
+		/** Exact retained additive ingredients; bypasses rounded daily averages. */
+		exact?: ExactDailyRangeIngredients | null;
 	}
-	let { daily, locale, copy, window = null, picker }: SectionDailyTrendProps = $props();
+	let { daily, locale, copy, window = null, exact = null }: SectionDailyTrendProps = $props();
 
 	// The metric-explainer (i) — the ONE stop-detail section that was missing it
 	// (§C6 #5). The trend is a severe-share series, so it deep-links to /metrics#severe.
@@ -79,7 +70,7 @@
 	const hasWilsonBand = $derived(trendSpec.kind === 'trend' && trendSpec.hasBand);
 
 	// The pooled verdict over the window — EXACT counts → severe_pct + Wilson.
-	const verdict = $derived(poolDailyRange(daily, window));
+	const verdict = $derived(poolDailyRange(daily, window, exact));
 
 	// Percent / minute display helpers (honest-null → the styled AbsentValue).
 	const pct = (v: number | null): string | null => (v == null ? null : `${v.toFixed(1)}%`);
@@ -116,15 +107,6 @@
 			/>
 		{/snippet}
 	</SectionHeading>
-
-	<!-- S8B WINDOW SLOT: the surface's DateRangePicker seats here (bound to the window
-	     the trend + verdict below clip to). Chrome, discerned from the data canvas; the
-	     section owns no picker logic. Omitted when the caller supplies no picker. -->
-	{#if picker}
-		<div class="daily-range-controls" data-slot="daily-range-controls">
-			{@render picker()}
-		</div>
-	{/if}
 
 	{#if sectionEmpty}
 		<AbsentValue variant="block" reason="no-observations" {locale} />
@@ -188,13 +170,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
-	}
-	/* The date-range control zone — quiet chrome, discerned from the data canvas. */
-	.daily-range-controls {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem 1rem;
 	}
 	.daily-verdict {
 		display: flex;

@@ -64,6 +64,56 @@ describe('poolDailyRange', () => {
 		expect(v.avgDelayMin).toBe(1.8);
 	});
 
+	it('uses retained additive delay sums instead of re-pooling rounded daily averages', () => {
+		const roundedDaily: StopDailyPoint[] = [
+			{
+				date: '2026-01-31',
+				observation_count: 50,
+				severe_count: 5,
+				severe_pct: 10,
+				avg_delay_min: 1.2,
+			},
+			{
+				date: '2026-02-01',
+				observation_count: 50,
+				severe_count: 5,
+				severe_pct: 10,
+				avg_delay_min: 1.2,
+			},
+		];
+		const exact = {
+			daysWithData: 2,
+			from: '2026-01-31',
+			to: '2026-02-01',
+			observationCount: 100,
+			inClampObservationCount: 100,
+			severeCount: 10,
+			sumDelaySeconds: 7_500,
+		};
+
+		const v = poolDailyRange(roundedDaily, null, exact as never);
+
+		expect(v.avgDelayMin).toBe(1.3);
+		expect(v.severePct).toBe(10);
+		expect(v.observations).toBe(100);
+	});
+
+	it('rounds a negative retained average delay tie half away from zero', () => {
+		const v = poolDailyRange([], null, {
+			daysWithData: 1,
+			from: '2026-06-01',
+			to: '2026-06-01',
+			observationCount: 30,
+			inClampObservationCount: 30,
+			severeCount: 0,
+			sumDelaySeconds: -90,
+		});
+
+		// -90 seconds / 30 observations / 60 = -0.05 min, which the wire contract
+		// rounds half away from zero rather than collapsing to negative zero.
+		expect(v.avgDelayMin).toBe(-0.1);
+	});
+
 	it('withholds the pooled share below MIN_N (too thin to print a percentage)', () => {
 		const thin: StopDailyPoint[] = [
 			{ date: '2026-06-01', observation_count: 5, severe_count: 1, severe_pct: 20 },

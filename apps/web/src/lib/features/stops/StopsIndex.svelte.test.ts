@@ -10,6 +10,11 @@ const getStopsIndex = vi.fn();
 const getRoutesIndex = vi.fn();
 const getRoute = vi.fn();
 const getStopReliability = vi.fn();
+const historyCalls = vi.hoisted(() => ({
+	getStopHistoryDirectory: vi.fn(),
+	getStopHistoryIndex: vi.fn(),
+	loadStopHistoryRange: vi.fn(),
+}));
 
 // The SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the ?route
 // seed AND the round-trip mirror are testable. vi.hoisted runs above the mock
@@ -83,6 +88,7 @@ vi.mock('$lib/v1', async () => {
 		getRoutesIndex: (...a: unknown[]) => getRoutesIndex(...a),
 		getRoute: (...a: unknown[]) => getRoute(...a),
 		createReliabilityLoader,
+		...historyCalls,
 	};
 });
 
@@ -147,10 +153,24 @@ beforeEach(() => {
 	getRoute.mockResolvedValue(null);
 	setUrl('/stops');
 	replaceState.mockClear();
+	historyCalls.getStopHistoryDirectory.mockClear();
+	historyCalls.getStopHistoryIndex.mockClear();
+	historyCalls.loadStopHistoryRange.mockClear();
 });
 
 afterEach(() => {
 	vi.clearAllMocks();
+});
+
+describe('StopsIndex retained-history boundary', () => {
+	it('stays current and never fans out retained discovery or partitions across the listing', async () => {
+		render(StopsIndex);
+		await screen.findByRole('combobox', { name: 'Filter by line' });
+
+		expect(historyCalls.getStopHistoryDirectory).not.toHaveBeenCalled();
+		expect(historyCalls.getStopHistoryIndex).not.toHaveBeenCalled();
+		expect(historyCalls.loadStopHistoryRange).not.toHaveBeenCalled();
+	});
 });
 
 describe('StopsIndex — find by typing', () => {
