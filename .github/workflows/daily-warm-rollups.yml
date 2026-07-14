@@ -3,11 +3,7 @@ name: Daily Warm Rollups
 on:
   workflow_dispatch:
   schedule:
-    # GitHub Actions cron is UTC-based.
-    # 07:00 UTC runs after the static pipeline at 06:00 UTC.
-    # Daily warm rollups run inside the 14-day detail window (P3 repeat-offender
-    # mart needs the trailing 14d), then aggregates remain available for 730 days
-    # after detail rows prune. The historic /v1 snapshot publishes after rollups.
+    # GitHub Actions cron is UTC-based. This runs after the 06:00 UTC static lane.
     - cron: "0 7 * * *"
 
 permissions:
@@ -19,16 +15,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-warm-rollups:
+  prepare:
     runs-on: ubuntu-latest
-    # 25m headroom: rollups + 2 new marts + the historic /v1 publish (per-route
-    # reliability files + the alert_history view) all run in this job. The
-    # "8M-row alert_history" qualifier is obsolete after slice-9.1.1l's 0038
-    # legacy NULL-hash collapse shrank the i3 history fan-out.
-    timeout-minutes: 90  # tactical bump (was 50): STO enrollment doubled the provider loop and its first gated runs backfill the whole STO spine history; runs since 2026-06-30 cancelled at the 50-min cap. Structural relief lands when the STO backfill drains (steady-state ~2x STM's ~10 min).
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: apps/db
+        shell: bash
+    outputs:
+      providers: ${{ steps.discover.outputs.providers }}
     env:
       APP_ENV: production
       LOG_LEVEL: INFO
@@ -44,8 +39,187 @@ jobs:
       SNAPSHOT_STORAGE_BACKEND: s3
       SNAPSHOT_R2_BUCKET: ${{ secrets.SNAPSHOT_R2_BUCKET }}
       SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
-      # Public basemap pointer URLs (repo variables, not secrets). Unset -> empty
-      # string -> falsy -> manifest.basemap stays null and no basemap.json is written.
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      - name: Apply database migrations
+        run: |
+          mkdir -p artifacts/daily-warm-rollups/prepare
+          uv run python -m transit_ops.cli init-db 2>&1 \
+            | tee artifacts/daily-warm-rollups/prepare/migration-upgrade.txt
+
+      - name: Prove database migration head
+        run: |
+          {
+            uv run alembic heads
+            uv run alembic current --check-heads
+          } 2>&1 | tee artifacts/daily-warm-rollups/prepare/migration-head.txt
+
+      - name: Discover providers and sync alert archive
+        id: discover
+        run: |
+          artifact_dir="artifacts/daily-warm-rollups/prepare"
+          mkdir -p "$artifact_dir"
+          providers="$(uv run python -m transit_ops.cli list-providers)"
+          if [[ -z "$providers" ]]; then
+            echo "Provider discovery returned no providers" >&2
+            exit 1
+          fi
+          discovered_providers=()
+          declare -A seen_providers=()
+          while IFS= read -r provider; do
+            if [[ -z "$provider" ]]; then
+              echo "Provider discovery returned an empty provider id" >&2
+              exit 1
+            fi
+            if [[ ! "$provider" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+              echo "Provider discovery returned an unsafe provider id" >&2
+              exit 1
+            fi
+            if [[ -n "${seen_providers[$provider]+x}" ]]; then
+              echo "Provider discovery returned a duplicate provider id" >&2
+              exit 1
+            fi
+            seen_providers["$provider"]=1
+            discovered_providers+=("$provider")
+          done <<< "$providers"
+          providers_json="$(jq -cn --args '$ARGS.positional' "${discovered_providers[@]}")"
+          printf '%s\n' "$providers_json" > "$artifact_dir/provider-discovery.json"
+          printf 'providers=%s\n' "$providers_json" >> "$GITHUB_OUTPUT"
+          for provider in "${discovered_providers[@]}"; do
+            uv run python -m transit_ops.cli sync-alert-archive "$provider" \
+              | tee "$artifact_dir/alert-archive-sync-${provider}.json"
+          done
+
+      - name: Upload prepare evidence
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-warm-prepare-${{ github.run_id }}
+          path: apps/db/artifacts/daily-warm-rollups/prepare/
+          retention-days: 30
+          if-no-files-found: warn
+
+  rollups:
+    needs: prepare
+    runs-on: ubuntu-latest
+    # The command keeps its full 90-minute budget. Job headroom lets the
+    # always-run artifact step upload the stage receipt and partial log.
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        provider: ${{ fromJSON(needs.prepare.outputs.providers) }}
+    defaults:
+      run:
+        working-directory: apps/db
+        shell: bash
+    env:
+      APP_ENV: production
+      LOG_LEVEL: INFO
+      PROVIDER_TIMEZONE: America/Toronto
+      STM_PROVIDER_ID: stm
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      - name: Build warm rollups
+        timeout-minutes: 90
+        env:
+          PROVIDER_ID: ${{ matrix.provider }}
+        run: |
+          artifact_dir="artifacts/daily-warm-rollups/rollups"
+          mkdir -p "$artifact_dir"
+          receipt_path="$artifact_dir/rollup-stage-${PROVIDER_ID}.json"
+          log_path="$artifact_dir/rollup-${PROVIDER_ID}.log"
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          jq -n \
+            --arg provider_id "$PROVIDER_ID" \
+            --arg status "running" \
+            --arg started_utc "$started_at" \
+            '{provider_id: $provider_id, status: $status, started_utc: $started_utc}' \
+            > "$receipt_path"
+          set +e
+          uv run python -m transit_ops.cli build-warm-rollups "$PROVIDER_ID" 2>&1 \
+            | tee "$log_path"
+          command_status=${PIPESTATUS[0]}
+          set -e
+          if [[ "$command_status" -eq 0 ]]; then
+            stage_status="success"
+          else
+            stage_status="failure"
+          fi
+          jq -n \
+            --arg provider_id "$PROVIDER_ID" \
+            --arg status "$stage_status" \
+            --arg started_utc "$started_at" \
+            --arg completed_utc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson exit_code "$command_status" \
+            '{provider_id: $provider_id, status: $status, started_utc: $started_utc,
+              completed_utc: $completed_utc, exit_code: $exit_code}' \
+            > "$receipt_path"
+          exit "$command_status"
+
+      - name: Upload rollup receipt
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-warm-rollup-${{ matrix.provider }}-${{ github.run_id }}
+          path: |
+            apps/db/artifacts/daily-warm-rollups/rollups/rollup-stage-${{ matrix.provider }}.json
+            apps/db/artifacts/daily-warm-rollups/rollups/rollup-${{ matrix.provider }}.log
+          retention-days: 30
+          if-no-files-found: warn
+
+  publish:
+    needs: [prepare, rollups]
+    if: ${{ always() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/db
+        shell: bash
+    env:
+      APP_ENV: production
+      LOG_LEVEL: INFO
+      PROVIDER_TIMEZONE: America/Toronto
+      STM_PROVIDER_ID: stm
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      BRONZE_S3_ENDPOINT: https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com
+      BRONZE_S3_REGION: auto
+      BRONZE_S3_ACCESS_KEY: ${{ secrets.BRONZE_S3_ACCESS_KEY }}
+      BRONZE_S3_SECRET_KEY: ${{ secrets.BRONZE_S3_SECRET_KEY }}
+      SNAPSHOT_STORAGE_BACKEND: s3
+      SNAPSHOT_R2_BUCKET: ${{ secrets.SNAPSHOT_R2_BUCKET }}
+      SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
       SNAPSHOT_BASEMAP_PMTILES_URL: ${{ vars.SNAPSHOT_BASEMAP_PMTILES_URL }}
       SNAPSHOT_BASEMAP_STYLE_URL: ${{ vars.SNAPSHOT_BASEMAP_STYLE_URL }}
     steps:
@@ -63,103 +237,217 @@ jobs:
       - name: Install project dependencies
         run: uv sync --locked
 
-      - name: Sync retained alert archive (all providers)
-        # Archive accrual runs before the expensive warm build so a 90-minute
-        # rollup timeout cannot leave retained alert history stale.
+      - name: Download alert archive receipts
+        uses: actions/download-artifact@v5
+        with:
+          name: daily-warm-prepare-${{ github.run_id }}
+          path: apps/db/artifacts/daily-warm-rollups/prepare
+
+      - name: Publish gated historic snapshot
         run: |
-          for provider in $(uv run python -m transit_ops.cli list-providers); do
-            echo "::group::sync-alert-archive ${provider}"
-            uv run python -m transit_ops.cli sync-alert-archive "$provider"
-            echo "::endgroup::"
+          mkdir -p artifacts/daily-warm-rollups/publish
+          uv run python -m transit_ops.cli publish-all --tier historic \
+            --report-dir artifacts/daily-warm-rollups/publish \
+            | tee artifacts/daily-warm-rollups/publish/historic-publish.json
+
+      - name: Prove public historic snapshots and source messages
+        run: |
+          prepare_dir="artifacts/daily-warm-rollups/prepare"
+          publish_dir="artifacts/daily-warm-rollups/publish"
+          discovered_providers="$(
+            jq -ers '
+              def valid_provider_id:
+                type == "string"
+                and length > 0
+                and test("^[A-Za-z0-9][A-Za-z0-9._-]*$");
+              if length != 1 then
+                error("provider discovery must contain exactly one JSON document")
+              elif (.[0] | type) != "array" or (.[0] | length) == 0 then
+                error("provider discovery must be a nonempty array")
+              elif any(.[0][]; valid_provider_id | not) then
+                error("provider discovery contains an unsafe provider id")
+              elif (.[0] | unique | length) != (.[0] | length) then
+                error("provider discovery contains duplicate provider ids")
+              else
+                .[0][]
+              end
+            ' "$prepare_dir/provider-discovery.json"
+          )"
+          active_providers=()
+          while IFS= read -r provider; do
+            receipt="$prepare_dir/alert-archive-sync-${provider}.json"
+            receipt_json="$(
+              jq -ecs --arg provider "$provider" '
+                if length != 1 or (.[0] | type) != "object" then
+                  error("sync receipt must be one JSON object")
+                elif .[0].provider_id != $provider then
+                  error("sync receipt provider_id does not match discovery")
+                elif (
+                  .[0] | has("skipped_not_seeded")
+                  and (.skipped_not_seeded | type) != "boolean"
+                ) then
+                  error("sync receipt skipped_not_seeded must be boolean")
+                else
+                  .[0]
+                end
+              ' "$receipt"
+            )"
+            if [[ "$(jq -r '.skipped_not_seeded // false' <<< "$receipt_json")" != "true" ]]; then
+              active_providers+=("$provider")
+            fi
+          done <<< "$discovered_providers"
+          if [[ "${#active_providers[@]}" -eq 0 ]]; then
+            echo "Provider discovery returned no active providers" >&2
+            exit 1
+          fi
+          published_providers="$(
+            jq -ers '
+              def valid_provider_id:
+                type == "string"
+                and length > 0
+                and test("^[A-Za-z0-9][A-Za-z0-9._-]*$");
+              if length != 1 or (.[0] | type) != "array" or (.[0] | length) == 0 then
+                error("historic publish result must be one nonempty array")
+              elif any(.[0][];
+                (type != "object") or (.provider_id | valid_provider_id | not)
+              ) then
+                error("historic publish result contains an unsafe provider")
+              elif ([.[0][].provider_id] | unique | length) != (.[0] | length) then
+                error("historic publish result contains duplicate providers")
+              else
+                [.[0][].provider_id] | sort | .[]
+              end
+            ' "$publish_dir/historic-publish.json"
+          )"
+          active_provider_set="$(printf '%s\n' "${active_providers[@]}" | sort)"
+          if [[ "$active_provider_set" != "$published_providers" ]]; then
+            echo "Historic publish provider set does not match active sync receipts" >&2
+            exit 1
+          fi
+          for provider in "${active_providers[@]}"; do
+            proof_path="$publish_dir/public-proof-${provider}.json"
+            : > "$proof_path"
+            uv run python -m transit_ops.cli verify-historic-publish "$provider" \
+              --sync-report "$prepare_dir/alert-archive-sync-${provider}.json" \
+              --gate-report "$publish_dir/publish-gate-${provider}.json" \
+              --report-path "$proof_path"
+            if ! jq -es --arg provider "$provider" '
+              length == 1
+              and (.[0] | type) == "object"
+              and .[0].provider_id == $provider
+              and .[0].status == "pass"
+            ' "$proof_path" >/dev/null; then
+              echo "Historic publication proof failed for ${provider}" >&2
+              exit 1
+            fi
           done
 
-      - name: Build 5-minute warm rollups (all providers)
-        # One looped job over every provider; the expensive setup is paid once.
-        run: |
-          for provider in $(uv run python -m transit_ops.cli list-providers); do
-            echo "::group::build-warm-rollups ${provider}"
-            uv run python -m transit_ops.cli build-warm-rollups "$provider"
-            echo "::endgroup::"
-          done
-
-      - name: Publish historic /v1 snapshot to R2 (all providers)
-        # The value gate (--gate is the default) inspects the built payloads BEFORE
-        # upload; a gate ERROR aborts THAT provider's publish (state un-advanced) and
-        # makes publish-all exit non-zero so the job goes red. Per-provider gate
-        # reports are written under artifacts/ on BOTH success and failure (so the
-        # upload step below always captures the gate outcome).
-        run: |
-          mkdir -p artifacts
-          uv run python -m transit_ops.cli publish-all --tier historic --report-dir artifacts
-
-      - name: Upload publish gate reports
+      - name: Upload publish evidence
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: publish-gate-${{ github.run_id }}
-          # working-directory does not apply to `uses:` steps — workspace-relative.
-          path: apps/db/artifacts/publish-gate-*.json
+          name: daily-warm-publish-${{ github.run_id }}
+          path: apps/db/artifacts/daily-warm-rollups/publish/
           retention-days: 30
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
-      # Runs AFTER the historic publish so alert_history.json builds from the
-      # unpruned silver history first. Steady-state daily volume is tiny
-      # (~288 raw rows + a few hundred closed silver rows); the silver table is
-      # a few thousand rows post-0038. Exits 1 on any R2 delete failure.
-      - name: Prune i3 raw snapshots + closed silver history (all providers)
+  retention:
+    needs: [prepare, publish]
+    if: needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        provider: ${{ fromJSON(needs.prepare.outputs.providers) }}
+    defaults:
+      run:
+        working-directory: apps/db
+        shell: bash
+    env:
+      APP_ENV: production
+      LOG_LEVEL: INFO
+      PROVIDER_TIMEZONE: America/Toronto
+      STM_PROVIDER_ID: stm
+      BRONZE_STORAGE_BACKEND: s3
+      BRONZE_S3_ENDPOINT: https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com
+      BRONZE_S3_BUCKET: transit-raw
+      BRONZE_S3_REGION: auto
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      BRONZE_S3_ACCESS_KEY: ${{ secrets.BRONZE_S3_ACCESS_KEY }}
+      BRONZE_S3_SECRET_KEY: ${{ secrets.BRONZE_S3_SECRET_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      - name: Prune retained storage
+        env:
+          PROVIDER_ID: ${{ matrix.provider }}
         run: |
-          for provider in $(uv run python -m transit_ops.cli list-providers); do
-            uv run python -m transit_ops.cli prune-i3-storage "$provider"
-          done
+          uv run python -m transit_ops.cli prune-i3-storage "$PROVIDER_ID"
+          uv run python -m transit_ops.cli prune-warm-rollup-storage "$PROVIDER_ID"
+          uv run python -m transit_ops.cli prune-bronze-storage "$PROVIDER_ID" --require-exhausted
 
-      - name: Prune expired warm rollup rows (all providers)
-        run: |
-          for provider in $(uv run python -m transit_ops.cli list-providers); do
-            uv run python -m transit_ops.cli prune-warm-rollup-storage "$provider"
-          done
-
-      # Bounded by BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH x BRONZE_PRUNE_MAX_BATCHES
-      # (5000 x 2 per phase by default) regardless of backlog. Exits 1 on any
-      # R2 delete failure — a red job is the alert signal until slice-9.1.1o.
-      # Capture-race-safe: the orphan-run delete is age-gated (bronze 90d), and
-      # 07:00 UTC runs an hour after the 06:00 static pipeline anyway.
-      - name: Prune expired Bronze objects and raw metadata (all providers)
-        run: |
-          for provider in $(uv run python -m transit_ops.cli list-providers); do
-            uv run python -m transit_ops.cli prune-bronze-storage "$provider"
-          done
-
-      - name: Build retention proof report (all providers)
+      - name: Write retention proof
         if: always()
-        continue-on-error: true
+        env:
+          PROVIDER_ID: ${{ matrix.provider }}
         run: |
-          mkdir -p artifacts
-          for provider in $(uv run python -m transit_ops.cli list-providers); do
-            uv run python -m transit_ops.cli retention-proof-report "$provider" --report-path "artifacts/retention-proof-${provider}.json"
-          done
+          artifact_dir="artifacts/daily-warm-rollups/retention"
+          mkdir -p "$artifact_dir"
+          uv run python -m transit_ops.cli retention-proof-report "$PROVIDER_ID" --report-path \
+            "$artifact_dir/retention-proof-${PROVIDER_ID}.json"
 
-      - name: Upload retention proof artifact
+      - name: Upload retention receipts
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: retention-proof-${{ github.run_id }}
-          # working-directory does not apply to `uses:` steps — workspace-relative.
-          path: apps/db/artifacts/retention-proof.json
+          name: daily-warm-retention-${{ matrix.provider }}-${{ github.run_id }}
+          path: apps/db/artifacts/daily-warm-rollups/retention/retention-proof-${{ matrix.provider }}.json
           retention-days: 30
+          if-no-files-found: warn
 
-      # working-directory is db; the shared alert script lives at the repo root.
-      - name: Alert on failure
-        if: failure()
-        run: '../../.github/scripts/alert-issue.sh fire daily-warm-rollups "[alert] Daily Warm Rollups failed" "failed run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"'
+  notify:
+    needs: [prepare, rollups, publish, retention]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Update daily warm rollups issue
         env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          ROLLUPS_RESULT: ${{ needs.rollups.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          RETENTION_RESULT: ${{ needs.retention.result }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-
-      - name: Resolve alert on success
-        if: success()
-        run: '../../.github/scripts/alert-issue.sh resolve daily-warm-rollups "recovered in run ${{ github.run_id }}"'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+        run: |
+          results="prepare=${PREPARE_RESULT}, rollups=${ROLLUPS_RESULT}, publish=${PUBLISH_RESULT}, retention=${RETENTION_RESULT}"
+          if [[ "$PREPARE_RESULT" == "success" \
+            && "$ROLLUPS_RESULT" == "success" \
+            && "$PUBLISH_RESULT" == "success" \
+            && "$RETENTION_RESULT" == "success" ]]; then
+            .github/scripts/alert-issue.sh resolve daily-warm-rollups \
+              "recovered in run ${{ github.run_id }} (${results})"
+          else
+            .github/scripts/alert-issue.sh fire daily-warm-rollups \
+              "[alert] Daily Warm Rollups failed" \
+              "failed run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} (${results})"
+          fi

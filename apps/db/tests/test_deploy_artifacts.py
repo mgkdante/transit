@@ -215,20 +215,19 @@ def test_weekly_pg_repack_workflow_is_dry_run_monitor() -> None:
 def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof() -> None:
     workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
 
-    # Bronze prune runs after the warm-rollup prune, with defaults
-    # (2 batches x 5000 per phase) so a backlog can never blow the job timeout.
-    # Looped over every provider; bronze prune still runs after the warm-rollup prune.
-    assert 'prune-bronze-storage "$provider"' in workflow
-    assert workflow.index('prune-bronze-storage "$provider"') > workflow.index(
-        'prune-warm-rollup-storage "$provider"'
-    )
+    # Each provider gets a bounded, serial retention job after publication.
+    # Exhaustion is required so a capped backlog cannot silently keep growing.
+    assert 'prune-bronze-storage "$PROVIDER_ID" --require-exhausted' in workflow
+    assert workflow.index(
+        'prune-bronze-storage "$PROVIDER_ID" --require-exhausted'
+    ) > workflow.index('prune-warm-rollup-storage "$PROVIDER_ID"')
     # Proof report + artifact give the prune a daily visible receipt.
-    assert 'retention-proof-report "$provider" --report-path' in workflow
+    assert 'retention-proof-report "$PROVIDER_ID" --report-path' in workflow
     assert "actions/upload-artifact@v4" in workflow
     assert "if: always()" in workflow
     # upload-artifact paths are workspace-relative (working-directory does
     # not apply to `uses:` steps).
-    assert "apps/db/artifacts/retention-proof.json" in workflow
+    assert "apps/db/artifacts/daily-warm-rollups/retention/" in workflow
 
     timeout_match = re.search(r"timeout-minutes:\s*(\d+)", workflow)
     assert timeout_match is not None
@@ -285,8 +284,8 @@ def test_daily_warm_rollups_workflow_prunes_i3_after_historic_publish() -> None:
 
     # slice-9.1.1l: the i3 prune runs daily from this job, AFTER the historic
     # /v1 publish so alert_history.json builds from unpruned silver history.
-    assert 'prune-i3-storage "$provider"' in workflow
-    assert workflow.index('prune-i3-storage "$provider"') > workflow.index(
+    assert 'prune-i3-storage "$PROVIDER_ID"' in workflow
+    assert workflow.index('prune-i3-storage "$PROVIDER_ID"') > workflow.index(
         "publish-all --tier historic"
     )
 
@@ -295,9 +294,9 @@ def test_daily_warm_rollups_archives_alerts_before_expensive_build_and_publish()
     workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
 
     sync = workflow.index('sync-alert-archive "$provider"')
-    build = workflow.index('build-warm-rollups "$provider"')
+    build = workflow.index('build-warm-rollups "$PROVIDER_ID"')
     publish = workflow.index("publish-all --tier historic")
-    prune = workflow.index('prune-i3-storage "$provider"')
+    prune = workflow.index('prune-i3-storage "$PROVIDER_ID"')
 
     assert sync < build < publish < prune
 
