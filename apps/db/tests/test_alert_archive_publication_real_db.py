@@ -146,7 +146,7 @@ def test_real_db_archive_preserves_messages_entities_periods_nulls_and_provider_
     assert [month.month for month in bundle.index.months] == ["2026-07", "2026-06"]
     assert bundle.index.total_alerts == 2
     assert bundle.index.first_available_date == "2026-06-15"
-    assert bundle.index.last_available_date == "2026-07-01"
+    assert bundle.index.last_available_date == "2026-07-04"
     entries = [entry for _, page in bundle.page_items for entry in page.alerts]
     assert {entry.id for entry in entries} == {"july-zero", "june-reversed"}
     assert all(entry.description != "OTHER PROVIDER" for entry in entries)

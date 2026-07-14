@@ -356,7 +356,9 @@ def test_production_point_plans_are_bounded_closed_parity_exactly_addressed() ->
         )
 
     assert current_hotspots.hotspots == hotspot_days[-1].hotspots
-    assert current_hotspots.by_grain == hotspot_days[-1].by_grain
+    assert [value.model_dump(mode="json") for value in current_hotspots.by_grain] == [
+        value.model_dump(mode="json") for value in hotspot_days[-1].by_grain
+    ]
     assert current_repeat.offenders == repeat_days[-1].offenders
     assert [_repeat_grain_core(value) for value in current_repeat.by_grain] == [
         _repeat_grain_core(value) for value in repeat_days[-1].by_grain
