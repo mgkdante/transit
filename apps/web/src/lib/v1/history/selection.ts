@@ -199,6 +199,13 @@ export function availabilityFromReceiptsIndex(index: ReceiptsIndex | null): Hist
 	return dates.length === 0 ? { kind: 'empty' } : { kind: 'discrete', dates };
 }
 
+export function availabilityFromPointCollectionIndex(
+	index: HistoricCollectionIndex | null,
+): HistoryAvailability {
+	const dates = normalizedDates(index?.available_dates ?? []);
+	return dates.length === 0 ? { kind: 'empty' } : { kind: 'discrete', dates };
+}
+
 export function resolveHistoryDate(
 	rawDate: unknown,
 	availability: HistoryAvailability,

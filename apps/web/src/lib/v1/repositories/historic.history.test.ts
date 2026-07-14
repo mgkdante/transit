@@ -9,6 +9,11 @@ import {
 	HistoricCollectionIndexSchema,
 	HistoricEntityDirectoryIndexSchema,
 	HistoricAvailabilityIndexSchema,
+	type HistoricCollectionIndex,
+	HistoricHotspotsDaySchema,
+	type HistoricHotspotsDay,
+	HistoricRepeatOffendersDaySchema,
+	type HistoricRepeatOffendersDay,
 	LineHistoryPartitionSchema,
 	NetworkHistoryPartitionSchema,
 	ReceiptSchema,
@@ -20,10 +25,14 @@ import {
 	getAlertArchiveIndex,
 	getAlertArchiveRange,
 	getHistoricAvailability,
+	getHotspotsHistoryDay,
+	getHotspotsHistoryIndex,
 	getLineHistoryDirectory,
 	getLineHistoryIndex,
 	getNetworkHistoryIndex,
 	getReceipt,
+	getRepeatOffendersHistoryDay,
+	getRepeatOffendersHistoryIndex,
 	getStopHistoryDirectory,
 	getStopHistoryIndex,
 	loadLineHistoryRange,
@@ -266,6 +275,157 @@ async function entityArtifact(
 			byte_size: bytes.byteLength,
 		},
 	};
+}
+
+type PointFamily = 'hotspots' | 'repeat_offenders';
+
+function canonicalJson(value: unknown): string {
+	if (value === null || typeof value !== 'object') return JSON.stringify(value);
+	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+	const record = value as Record<string, unknown>;
+	return `{${Object.keys(record)
+		.sort()
+		.map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+		.join(',')}}`;
+}
+
+function internalDateGaps(dates: readonly string[]) {
+	const gaps: Array<{ start_date: string; end_date: string; reason: null }> = [];
+	for (let index = 1; index < dates.length; index += 1) {
+		const previous = new Date(`${dates[index - 1]}T00:00:00Z`);
+		const current = new Date(`${dates[index]}T00:00:00Z`);
+		previous.setUTCDate(previous.getUTCDate() + 1);
+		current.setUTCDate(current.getUTCDate() - 1);
+		if (previous <= current) {
+			gaps.push({
+				start_date: previous.toISOString().slice(0, 10),
+				end_date: current.toISOString().slice(0, 10),
+				reason: null,
+			});
+		}
+	}
+	return gaps;
+}
+
+interface PointArtifact<T> {
+	readonly value: T;
+	readonly bytes: Uint8Array;
+	readonly ref: {
+		readonly path: string;
+		readonly coverage_start: string;
+		readonly coverage_end: string;
+		readonly count: number;
+		readonly sha256: string;
+		readonly byte_size: number;
+	};
+}
+
+function pointArtifact(
+	family: 'hotspots',
+	date: string,
+): Promise<PointArtifact<HistoricHotspotsDay>>;
+function pointArtifact(
+	family: 'repeat_offenders',
+	date: string,
+): Promise<PointArtifact<HistoricRepeatOffendersDay>>;
+async function pointArtifact(
+	family: PointFamily,
+	date: string,
+): Promise<PointArtifact<HistoricHotspotsDay | HistoricRepeatOffendersDay>> {
+	const value =
+		family === 'hotspots'
+			? HistoricHotspotsDaySchema.parse({
+					generated_utc: ISO,
+					date,
+					hotspots: [],
+					by_grain: [],
+					methodology_version: 'reliability-1',
+					publish_generation_id: null,
+				})
+			: HistoricRepeatOffendersDaySchema.parse({
+					generated_utc: ISO,
+					date,
+					offenders: [],
+					by_grain: [],
+					methodology_version: 'reliability-1',
+					publish_generation_id: null,
+				});
+	const bytes = new TextEncoder().encode(` ${JSON.stringify(value)}\n`);
+	const sha = await sha256Hex(bytes);
+	return {
+		value,
+		bytes,
+		ref: {
+			path: `historic/history/${family}/generations/${sha}/${date}.json`,
+			coverage_start: date,
+			coverage_end: date,
+			count: 1,
+			sha256: sha,
+			byte_size: bytes.byteLength,
+		},
+	};
+}
+
+async function pointCollectionIndex(
+	family: PointFamily,
+	artifacts: Array<PointArtifact<HistoricHotspotsDay | HistoricRepeatOffendersDay>>,
+) {
+	const dates = artifacts.map((artifact) => artifact.value.date);
+	const base = {
+		generated_utc: ISO,
+		family,
+		selection_mode: 'date' as const,
+		entity_id: null,
+		first_available_date: dates[0] ?? null,
+		last_available_date: dates.at(-1) ?? null,
+		available_dates: dates,
+		gaps: internalDateGaps(dates),
+		partitions: artifacts.map((artifact) => artifact.ref),
+		metrics: [],
+		methodology_version: 'history-1',
+		publish_generation_id: 'published-run',
+	};
+	const generationBasis = {
+		family: base.family,
+		selection_mode: base.selection_mode,
+		entity_id: base.entity_id,
+		first_available_date: base.first_available_date,
+		last_available_date: base.last_available_date,
+		available_dates: base.available_dates,
+		gaps: base.gaps,
+		partitions: base.partitions,
+		metrics: base.metrics,
+	};
+	const collectionGeneration = await sha256Hex(
+		new TextEncoder().encode(canonicalJson(generationBasis)),
+	);
+	return HistoricCollectionIndexSchema.parse({
+		...base,
+		collection_generation_id: collectionGeneration,
+	});
+}
+
+function pointRootEdge(
+	index: ReturnType<typeof HistoricCollectionIndexSchema.parse>,
+	indexPath = `historic/history/${index.family}/generations/${OLD_POINTER_SHA}/index.json`,
+) {
+	return HistoricAvailabilityIndexSchema.parse({
+		generated_utc: ISO,
+		methodology_version: 'history-1',
+		publish_generation_id: 'published-run',
+		families: [
+			{
+				family: index.family,
+				selection_mode: 'date',
+				index_path: indexPath,
+				collection_generation_id: index.collection_generation_id,
+				first_available_date: index.first_available_date,
+				last_available_date: index.last_available_date,
+				gaps: index.gaps,
+				metrics: [],
+			},
+		],
+	});
 }
 
 function deferred<T>() {
@@ -897,6 +1057,403 @@ describe('retained family discovery and generation pins', () => {
 		});
 		expect(childPort).toHaveBeenCalledOnce();
 		expect(childPort).toHaveBeenCalledWith('A/B', entityPath, undefined);
+	});
+});
+
+describe('root-pinned point-family history', () => {
+	it('returns current-only null when the optional root or point family is absent', async () => {
+		const rootPort = vi
+			.spyOn(adapter.historic, 'historyIndex')
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce(HistoricAvailabilityIndexSchema.parse({ generated_utc: ISO }));
+		const hotspotsIndexPort = vi.spyOn(adapter.historic, 'hotspotsHistoryIndex');
+		const repeatIndexPort = vi.spyOn(adapter.historic, 'repeatOffendersHistoryIndex');
+
+		await expect(getHotspotsHistoryIndex()).resolves.toBeNull();
+		await expect(getRepeatOffendersHistoryIndex()).resolves.toBeNull();
+		expect(rootPort).toHaveBeenCalledTimes(2);
+		expect(hotspotsIndexPort).not.toHaveBeenCalled();
+		expect(repeatIndexPort).not.toHaveBeenCalled();
+	});
+
+	it('loads each exact immutable child and validates its complete root edge', async () => {
+		const hotspots = [
+			await pointArtifact('hotspots', '2026-03-29'),
+			await pointArtifact('hotspots', '2026-03-31'),
+		];
+		const repeats = [
+			await pointArtifact('repeat_offenders', '2026-03-29'),
+			await pointArtifact('repeat_offenders', '2026-03-31'),
+		];
+		const hotspotsIndex = await pointCollectionIndex('hotspots', hotspots);
+		const repeatIndex = await pointCollectionIndex('repeat_offenders', repeats);
+		const hotspotsPath = `historic/history/hotspots/generations/${OLD_POINTER_SHA}/index.json`;
+		const repeatPath = `historic/history/repeat_offenders/generations/${NEW_POINTER_SHA}/index.json`;
+		vi.spyOn(adapter.historic, 'historyIndex')
+			.mockResolvedValueOnce(pointRootEdge(hotspotsIndex, hotspotsPath))
+			.mockResolvedValueOnce(pointRootEdge(repeatIndex, repeatPath));
+		const hotspotsPort = vi
+			.spyOn(adapter.historic, 'hotspotsHistoryIndex')
+			.mockResolvedValue(hotspotsIndex);
+		const repeatPort = vi
+			.spyOn(adapter.historic, 'repeatOffendersHistoryIndex')
+			.mockResolvedValue(repeatIndex);
+
+		await expect(getHotspotsHistoryIndex()).resolves.toBe(hotspotsIndex);
+		await expect(getRepeatOffendersHistoryIndex()).resolves.toBe(repeatIndex);
+		expect(hotspotsPort).toHaveBeenCalledWith(hotspotsPath, undefined);
+		expect(repeatPort).toHaveBeenCalledWith(repeatPath, undefined);
+	});
+
+	it('treats an advertised missing index as corruption without current fallback', async () => {
+		const artifact = await pointArtifact('hotspots', '2026-03-29');
+		const index = await pointCollectionIndex('hotspots', [artifact]);
+		const root = pointRootEdge(index);
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue(root);
+		const indexPort = vi.spyOn(adapter.historic, 'hotspotsHistoryIndex').mockResolvedValue(null);
+
+		await expect(getHotspotsHistoryIndex()).rejects.toMatchObject({
+			name: 'HistoryArtifactContractError',
+			path: root.families?.[0]?.index_path,
+		});
+		expect(indexPort).toHaveBeenCalledOnce();
+	});
+
+	it('rejects malformed or duplicate point root edges before reading a child', async () => {
+		const artifact = await pointArtifact('hotspots', '2026-03-29');
+		const index = await pointCollectionIndex('hotspots', [artifact]);
+		const valid = pointRootEdge(index);
+		const edge = valid.families![0];
+		const invalidRoots = [
+			{ ...valid, families: [edge, edge] },
+			{ ...valid, families: [{ ...edge, selection_mode: 'range' }] },
+			{ ...valid, families: [{ ...edge, index_path: 'historic/history/hotspots/index.json' }] },
+			{
+				...valid,
+				families: [{ ...edge, index_path: edge.index_path.replace('/hotspots/', '/network/') }],
+			},
+			{ ...valid, families: [{ ...edge, collection_generation_id: GENERATION.toUpperCase() }] },
+			{
+				...valid,
+				families: [{ ...edge, metrics: [{ metric: 'delay', aggregation: 'daily_only' }] }],
+			},
+		];
+		const rootPort = vi.spyOn(adapter.historic, 'historyIndex');
+		const childPort = vi.spyOn(adapter.historic, 'hotspotsHistoryIndex');
+
+		for (const root of invalidRoots) {
+			rootPort.mockResolvedValueOnce(root as typeof valid);
+			await expect(getHotspotsHistoryIndex()).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		}
+		expect(childPort).not.toHaveBeenCalled();
+	});
+
+	it('refreshes the root and exact child at most once on a generation race', async () => {
+		const oldArtifact = await pointArtifact('hotspots', '2026-03-28');
+		const newArtifacts = [
+			await pointArtifact('hotspots', '2026-03-29'),
+			await pointArtifact('hotspots', '2026-03-31'),
+		];
+		const oldIndex = await pointCollectionIndex('hotspots', [oldArtifact]);
+		const newIndex = await pointCollectionIndex('hotspots', newArtifacts);
+		const oldPath = `historic/history/hotspots/generations/${OLD_POINTER_SHA}/index.json`;
+		const newPath = `historic/history/hotspots/generations/${NEW_POINTER_SHA}/index.json`;
+		const controller = new AbortController();
+		const ctx: AdapterCtx = { signal: controller.signal };
+		const rootPort = vi
+			.spyOn(adapter.historic, 'historyIndex')
+			.mockResolvedValueOnce(pointRootEdge(newIndex, oldPath))
+			.mockResolvedValueOnce(pointRootEdge(newIndex, newPath));
+		const indexPort = vi
+			.spyOn(adapter.historic, 'hotspotsHistoryIndex')
+			.mockResolvedValueOnce(oldIndex)
+			.mockResolvedValueOnce(newIndex);
+
+		await expect(getHotspotsHistoryIndex(ctx)).resolves.toBe(newIndex);
+		expect(rootPort).toHaveBeenCalledTimes(2);
+		expect(indexPort).toHaveBeenCalledTimes(2);
+		expect(rootPort).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ signal: controller.signal, freshHistoryParent: true }),
+		);
+		expect(indexPort).toHaveBeenNthCalledWith(
+			2,
+			newPath,
+			expect.objectContaining({ signal: controller.signal, freshHistoryParent: true }),
+		);
+	});
+
+	it('preserves abort identity and fails transiently after one persistent mismatch', async () => {
+		const artifact = await pointArtifact('repeat_offenders', '2026-03-29');
+		const index = await pointCollectionIndex('repeat_offenders', [artifact]);
+		const mismatchedRoot = pointRootEdge({
+			...index,
+			collection_generation_id: NEXT_GENERATION,
+		});
+		const abort = new DOMException('cancelled', 'AbortError');
+		const rootPort = vi
+			.spyOn(adapter.historic, 'historyIndex')
+			.mockResolvedValueOnce(mismatchedRoot)
+			.mockRejectedValueOnce(abort);
+		vi.spyOn(adapter.historic, 'repeatOffendersHistoryIndex').mockResolvedValue(index);
+
+		await expect(getRepeatOffendersHistoryIndex()).rejects.toBe(abort);
+		expect(rootPort).toHaveBeenCalledTimes(2);
+
+		vi.restoreAllMocks();
+		const persistentRoot = pointRootEdge({
+			...index,
+			collection_generation_id: NEXT_GENERATION,
+		});
+		const persistentRootPort = vi
+			.spyOn(adapter.historic, 'historyIndex')
+			.mockResolvedValue(persistentRoot);
+		vi.spyOn(adapter.historic, 'repeatOffendersHistoryIndex').mockResolvedValue(index);
+
+		await expect(getRepeatOffendersHistoryIndex()).rejects.toBeInstanceOf(
+			HistoryTransientPublicationError,
+		);
+		expect(persistentRootPort).toHaveBeenCalledTimes(2);
+	});
+
+	it('fails transiently when refreshed root first or last coverage still disagrees', async () => {
+		const artifacts = [
+			await pointArtifact('hotspots', '2026-03-29'),
+			await pointArtifact('hotspots', '2026-03-31'),
+		];
+		const index = await pointCollectionIndex('hotspots', artifacts);
+		const validRoot = pointRootEdge(index);
+		const edge = validRoot.families![0];
+		const mismatches = [
+			{ ...edge, first_available_date: '2026-03-28' },
+			{ ...edge, last_available_date: '2026-04-01' },
+		];
+
+		for (const mismatch of mismatches) {
+			vi.restoreAllMocks();
+			const rootPort = vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue({
+				...validRoot,
+				families: [mismatch],
+			});
+			const indexPort = vi.spyOn(adapter.historic, 'hotspotsHistoryIndex').mockResolvedValue(index);
+
+			await expect(getHotspotsHistoryIndex()).rejects.toBeInstanceOf(
+				HistoryTransientPublicationError,
+			);
+			expect(rootPort).toHaveBeenCalledTimes(2);
+			expect(indexPort).toHaveBeenCalledTimes(2);
+		}
+	});
+
+	it('rejects malformed point indexes and root coverage before selecting any date ref', async () => {
+		const first = await pointArtifact('hotspots', '2026-03-29');
+		const second = await pointArtifact('hotspots', '2026-03-31');
+		const valid = await pointCollectionIndex('hotspots', [first, second]);
+		const artifactPort = vi.spyOn(adapter.historic, 'hotspotsHistoryDay');
+		const invalidIndexes: HistoricCollectionIndex[] = [
+			{ ...valid, family: 'repeat_offenders' },
+			{ ...valid, selection_mode: 'range' },
+			{ ...valid, entity_id: 'not-null' },
+			{ ...valid, collection_generation_id: 'not-a-sha' },
+			{ ...valid, collection_generation_id: 'f'.repeat(64) },
+			{ ...valid, available_dates: ['2026-03-31', '2026-03-29'] },
+			{ ...valid, available_dates: ['2026-03-29', '2026-03-29'] },
+			{ ...valid, available_dates: ['2026-02-30', '2026-03-31'] },
+			{ ...valid, first_available_date: '2026-03-28' },
+			{ ...valid, last_available_date: '2026-04-01' },
+			{ ...valid, gaps: [] },
+			{
+				...valid,
+				gaps: [{ start_date: '2026-03-30', end_date: '2026-03-30', reason: 'outage' }],
+			},
+			{ ...valid, metrics: [{ metric: 'delay', aggregation: 'daily_only' }] },
+			{ ...valid, partitions: [first.ref, first.ref] },
+			{ ...valid, partitions: [second.ref, first.ref] },
+			{
+				...valid,
+				partitions: [{ ...first.ref, coverage_start: '2026-03-28' }, second.ref],
+			},
+			{
+				...valid,
+				partitions: [{ ...first.ref, coverage_end: '2026-03-30' }, second.ref],
+			},
+			{
+				...valid,
+				partitions: [{ ...first.ref, count: 2 }, second.ref],
+			},
+			{
+				...valid,
+				partitions: [
+					first.ref,
+					{
+						...second.ref,
+						path: second.ref.path.replace('/hotspots/', '/repeat_offenders/'),
+					},
+				],
+			},
+			{
+				...valid,
+				partitions: [first.ref, { ...second.ref, byte_size: 0 }],
+			},
+			{
+				...valid,
+				partitions: [first.ref, { ...second.ref, sha256: first.ref.sha256 }],
+			},
+		];
+
+		for (const index of invalidIndexes) {
+			await expect(getHotspotsHistoryDay('2026-03-29', index)).rejects.toBeInstanceOf(
+				HistoryArtifactContractError,
+			);
+		}
+		expect(artifactPort).not.toHaveBeenCalled();
+
+		const root = pointRootEdge(valid);
+		vi.spyOn(adapter.historic, 'historyIndex').mockResolvedValue({
+			...root,
+			families: root.families?.map((edge) => ({ ...edge, gaps: [] })),
+		});
+		vi.spyOn(adapter.historic, 'hotspotsHistoryIndex').mockResolvedValue(valid);
+		await expect(getHotspotsHistoryIndex()).rejects.toBeInstanceOf(
+			HistoryTransientPublicationError,
+		);
+	});
+
+	it('never calls the day port for latest, malformed, or unpublished dates', async () => {
+		const artifacts = [
+			await pointArtifact('hotspots', '2026-03-29'),
+			await pointArtifact('hotspots', '2026-03-31'),
+		];
+		const index = await pointCollectionIndex('hotspots', artifacts);
+		const dayPort = vi.spyOn(adapter.historic, 'hotspotsHistoryDay');
+
+		await expect(getHotspotsHistoryDay('2026-03-31', index)).rejects.toBeInstanceOf(RangeError);
+		await expect(getHotspotsHistoryDay('2026-02-30', index)).rejects.toBeInstanceOf(RangeError);
+		await expect(getHotspotsHistoryDay('2026-03-30', index)).rejects.toBeInstanceOf(RangeError);
+		expect(dayPort).not.toHaveBeenCalled();
+	});
+
+	it('loads valid older published-empty artifacts from exact raw bytes', async () => {
+		const hotspots = [
+			await pointArtifact('hotspots', '2026-03-29'),
+			await pointArtifact('hotspots', '2026-03-31'),
+		];
+		const repeats = [
+			await pointArtifact('repeat_offenders', '2026-03-29'),
+			await pointArtifact('repeat_offenders', '2026-03-31'),
+		];
+		const hotspotsIndex = await pointCollectionIndex('hotspots', hotspots);
+		const repeatIndex = await pointCollectionIndex('repeat_offenders', repeats);
+		const ctx: AdapterCtx = { signal: new AbortController().signal };
+		const hotspotsPort = vi
+			.spyOn(adapter.historic, 'hotspotsHistoryDay')
+			.mockResolvedValue(hotspots[0]);
+		const repeatPort = vi
+			.spyOn(adapter.historic, 'repeatOffendersHistoryDay')
+			.mockResolvedValue(repeats[0]);
+
+		await expect(getHotspotsHistoryDay('2026-03-29', hotspotsIndex, ctx)).resolves.toBe(
+			hotspots[0].value,
+		);
+		await expect(getRepeatOffendersHistoryDay('2026-03-29', repeatIndex, ctx)).resolves.toBe(
+			repeats[0].value,
+		);
+		expect(hotspots[0].value.hotspots).toEqual([]);
+		expect(repeats[0].value.offenders).toEqual([]);
+		expect(hotspotsPort).toHaveBeenCalledWith('2026-03-29', hotspots[0].ref.path, ctx);
+		expect(repeatPort).toHaveBeenCalledWith('2026-03-29', repeats[0].ref.path, ctx);
+	});
+
+	it('fails closed for an advertised day 404, exact-byte drift, and payload date drift', async () => {
+		const artifacts = [
+			await pointArtifact('hotspots', '2026-03-29'),
+			await pointArtifact('hotspots', '2026-03-31'),
+		];
+		const index = await pointCollectionIndex('hotspots', artifacts);
+		const port = vi.spyOn(adapter.historic, 'hotspotsHistoryDay');
+
+		port.mockResolvedValueOnce(null);
+		await expect(getHotspotsHistoryDay('2026-03-29', index)).rejects.toMatchObject({
+			name: 'HistoryArtifactContractError',
+			path: artifacts[0].ref.path,
+		});
+
+		await expect(
+			getHotspotsHistoryDay('2026-03-29', {
+				...index,
+				partitions: [
+					{ ...artifacts[0].ref, byte_size: artifacts[0].ref.byte_size + 1 },
+					artifacts[1].ref,
+				],
+			}),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+
+		const wrongSha = 'f'.repeat(64);
+		await expect(
+			getHotspotsHistoryDay('2026-03-29', {
+				...index,
+				partitions: [
+					{
+						...artifacts[0].ref,
+						sha256: wrongSha,
+						path: `historic/history/hotspots/generations/${wrongSha}/2026-03-29.json`,
+					},
+					artifacts[1].ref,
+				],
+			}),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		expect(port).toHaveBeenCalledTimes(1);
+
+		port.mockResolvedValueOnce({
+			...artifacts[0],
+			bytes: artifacts[0].bytes.slice(0, -1),
+		});
+		await expect(getHotspotsHistoryDay('2026-03-29', index)).rejects.toBeInstanceOf(
+			HistoryArtifactContractError,
+		);
+
+		const alteredBytes = artifacts[0].bytes.slice();
+		alteredBytes[0] = alteredBytes[0] === 32 ? 10 : 32;
+		port.mockResolvedValueOnce({ ...artifacts[0], bytes: alteredBytes });
+		await expect(getHotspotsHistoryDay('2026-03-29', index)).rejects.toBeInstanceOf(
+			HistoryArtifactContractError,
+		);
+
+		port.mockResolvedValueOnce({
+			...artifacts[0],
+			value: { ...artifacts[0].value, date: '2026-03-28' },
+		});
+		await expect(getHotspotsHistoryDay('2026-03-29', index)).rejects.toBeInstanceOf(
+			HistoryArtifactContractError,
+		);
+	});
+
+	it('rejects Repeat grain endpoints that disagree with the advertised date', async () => {
+		const artifacts = [
+			await pointArtifact('repeat_offenders', '2026-03-29'),
+			await pointArtifact('repeat_offenders', '2026-03-31'),
+		];
+		const index = await pointCollectionIndex('repeat_offenders', artifacts);
+		vi.spyOn(adapter.historic, 'repeatOffendersHistoryDay').mockResolvedValue({
+			...artifacts[0],
+			value: {
+				...artifacts[0].value,
+				by_grain: [
+					{
+						grain: 'week',
+						date: '2026-03-23',
+						window_end: '2026-03-30',
+						window_days: 7,
+						entries: [],
+						tray: [],
+					},
+				],
+			},
+		});
+
+		await expect(getRepeatOffendersHistoryDay('2026-03-29', index)).rejects.toBeInstanceOf(
+			HistoryArtifactContractError,
+		);
 	});
 });
 

@@ -34,8 +34,11 @@ import { RouteFileSchema } from '$lib/v1/schemas/route';
 import { StopsIndexSchema } from '$lib/v1/schemas/stops_index';
 import { StopFileSchema } from '$lib/v1/schemas/stop';
 import { NetworkTrendSchema } from '$lib/v1/schemas/network_trend';
-import { HotspotsSchema } from '$lib/v1/schemas/hotspots';
-import { RepeatOffendersSchema } from '$lib/v1/schemas/repeat_offenders';
+import { HistoricHotspotsDaySchema, HotspotsSchema } from '$lib/v1/schemas/hotspots';
+import {
+	HistoricRepeatOffendersDaySchema,
+	RepeatOffendersSchema,
+} from '$lib/v1/schemas/repeat_offenders';
 import { AlertHistorySchema } from '$lib/v1/schemas/alert_history';
 import { ReceiptsIndexSchema } from '$lib/v1/schemas/receipts_index';
 import { RouteReliabilityIndexSchema } from '$lib/v1/schemas/route_reliability_index';
@@ -61,6 +64,7 @@ import {
 	historyPointerPayloadSha,
 	isHistoryEntityIndexPath,
 	isHistoryFamilyIndexPath,
+	isHistoryPointArtifactPath,
 } from '$lib/v1/history';
 
 import type { Locale } from '$lib/i18n';
@@ -210,6 +214,27 @@ async function readOptionalHistory<T>(
 function assertHistoryFamilyIndexPath(family: 'network' | 'lines' | 'stops', path: string): string {
 	if (!isHistoryFamilyIndexPath(family, path)) {
 		throw new HistoryArtifactContractError(path, `unsafe advertised ${family} history index path`);
+	}
+	return path;
+}
+
+function assertPointHistoryIndexPath(
+	family: 'hotspots' | 'repeat_offenders',
+	path: string,
+): string {
+	if (!isHistoryFamilyIndexPath(family, path)) {
+		throw new HistoryArtifactContractError(path, `unsafe advertised ${family} history index path`);
+	}
+	return path;
+}
+
+function assertPointHistoryDayPath(
+	family: 'hotspots' | 'repeat_offenders',
+	date: string,
+	path: string,
+): string {
+	if (!isHistoryPointArtifactPath(family, date, path)) {
+		throw new HistoryArtifactContractError(path, `unsafe advertised ${family} history day path`);
 	}
 	return path;
 }
@@ -410,6 +435,20 @@ export const r2Adapter: ContentAdapter = {
 				'historic.networkHistoryIndex',
 				ctx,
 			),
+		hotspotsHistoryIndex: async (path, ctx) =>
+			readOptionalHistory(
+				assertPointHistoryIndexPath('hotspots', path),
+				HistoricCollectionIndexSchema,
+				'historic.hotspotsHistoryIndex',
+				ctx,
+			),
+		repeatOffendersHistoryIndex: async (path, ctx) =>
+			readOptionalHistory(
+				assertPointHistoryIndexPath('repeat_offenders', path),
+				HistoricCollectionIndexSchema,
+				'historic.repeatOffendersHistoryIndex',
+				ctx,
+			),
 		lineHistoryDirectory: async (path, ctx) =>
 			readOptionalHistory(
 				assertHistoryFamilyIndexPath('lines', path),
@@ -457,6 +496,20 @@ export const r2Adapter: ContentAdapter = {
 				assertFamilyPartitionPath('stops', entityId, path),
 				StopHistoryPartitionSchema,
 				'historic.stopHistoryPartition',
+				ctx,
+			),
+		hotspotsHistoryDay: async (date, path, ctx) =>
+			readRawHistoryPartition(
+				assertPointHistoryDayPath('hotspots', date, path),
+				HistoricHotspotsDaySchema,
+				'historic.hotspotsHistoryDay',
+				ctx,
+			),
+		repeatOffendersHistoryDay: async (date, path, ctx) =>
+			readRawHistoryPartition(
+				assertPointHistoryDayPath('repeat_offenders', date, path),
+				HistoricRepeatOffendersDaySchema,
+				'historic.repeatOffendersHistoryDay',
 				ctx,
 			),
 		alertArchiveIndex: async (ctx) => {

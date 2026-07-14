@@ -38,17 +38,17 @@ export class HistoryTransientPublicationError extends HistoryArtifactContractErr
 const ALERT_ARTIFACT_PATH =
 	/^historic\/alerts\/generations\/[0-9a-f]{64}\/\d{4}-(?:0[1-9]|1[0-2])\/page-\d{4}\.json$/;
 
-function canonicalJson(value: unknown): string {
+export function canonicalHistoryJson(value: unknown): string {
 	if (value === null || typeof value !== 'object') return JSON.stringify(value);
 	if (Array.isArray(value)) {
-		return `[${value.map((item) => (item === undefined ? 'null' : canonicalJson(item))).join(',')}]`;
+		return `[${value.map((item) => (item === undefined ? 'null' : canonicalHistoryJson(item))).join(',')}]`;
 	}
 
 	const record = value as Record<string, unknown>;
 	const members = Object.keys(record)
 		.filter((key) => record[key] !== undefined)
 		.sort()
-		.map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`);
+		.map((key) => `${JSON.stringify(key)}:${canonicalHistoryJson(record[key])}`);
 	return `{${members.join(',')}}`;
 }
 
@@ -104,7 +104,7 @@ export function selectAlertPageRefs(
 	const byPath = new Map<string, { ref: AlertArchivePageRef; bytes: string }>();
 	for (const month of index.months) {
 		for (const ref of month.pages) {
-			const bytes = canonicalJson(ref);
+			const bytes = canonicalHistoryJson(ref);
 			const existing = byPath.get(ref.path);
 			if (existing && existing.bytes !== bytes) {
 				throw new HistoryArtifactContractError(
@@ -186,7 +186,7 @@ export function mergeAlertArchivePages(pages: readonly AlertArchivePage[]): Aler
 	const byId = new Map<string, { entry: AlertArchiveEntry; canonical: string }>();
 	for (const page of pages) {
 		for (const entry of page.alerts) {
-			const canonical = canonicalJson(entry);
+			const canonical = canonicalHistoryJson(entry);
 			const existing = byId.get(entry.id);
 			if (!existing) {
 				byId.set(entry.id, { entry, canonical });

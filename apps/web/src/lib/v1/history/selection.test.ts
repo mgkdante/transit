@@ -9,6 +9,7 @@ import {
 	addIsoDays,
 	availabilityFromAlertIndex,
 	availabilityFromCollectionIndex,
+	availabilityFromPointCollectionIndex,
 	availabilityFromReceiptsIndex,
 	datesForAvailability,
 	defaultWindowFromCollectionIndex,
@@ -158,6 +159,24 @@ describe('availability normalization', () => {
 			dates: ['2026-03-01', '2026-03-03'],
 		});
 		expect(availabilityFromReceiptsIndex(null)).toEqual({ kind: 'empty' });
+	});
+
+	it('uses point-index available_dates as a discrete set instead of filling coverage gaps', () => {
+		const index = HistoricCollectionIndexSchema.parse({
+			generated_utc: '2026-07-13T12:00:00Z',
+			family: 'hotspots',
+			selection_mode: 'date',
+			first_available_date: '2026-03-01',
+			last_available_date: '2026-03-03',
+			available_dates: ['2026-03-01', '2026-03-03'],
+			gaps: [{ start_date: '2026-03-02', end_date: '2026-03-02' }],
+		});
+
+		expect(availabilityFromPointCollectionIndex(index)).toEqual({
+			kind: 'discrete',
+			dates: ['2026-03-01', '2026-03-03'],
+		});
+		expect(availabilityFromPointCollectionIndex(null)).toEqual({ kind: 'empty' });
 	});
 });
 

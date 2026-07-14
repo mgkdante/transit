@@ -67,6 +67,49 @@ function networkPartition() {
 	};
 }
 
+function pointIndex(family: 'hotspots' | 'repeat_offenders', refs: unknown[] = []) {
+	const dates = refs
+		.map((ref) => (ref as { coverage_start?: unknown }).coverage_start)
+		.filter((date): date is string => typeof date === 'string');
+	return {
+		generated_utc: ISO,
+		family,
+		selection_mode: 'date',
+		entity_id: null,
+		collection_generation_id: GENERATION,
+		first_available_date: dates[0] ?? null,
+		last_available_date: dates.at(-1) ?? null,
+		available_dates: dates,
+		gaps: [],
+		partitions: refs,
+		metrics: [],
+		methodology_version: 'history-1',
+		publish_generation_id: 'published-run',
+	};
+}
+
+function hotspotsDay(date = '2026-03-30') {
+	return {
+		generated_utc: ISO,
+		date,
+		hotspots: [],
+		by_grain: [],
+		methodology_version: 'reliability-1',
+		publish_generation_id: null,
+	};
+}
+
+function repeatOffendersDay(date = '2026-03-30') {
+	return {
+		generated_utc: ISO,
+		date,
+		offenders: [],
+		by_grain: [],
+		methodology_version: 'reliability-1',
+		publish_generation_id: null,
+	};
+}
+
 function alertIndex() {
 	return {
 		generated_utc: ISO,
@@ -396,5 +439,131 @@ describe('r2 historic collection ports', () => {
 			r2Adapter.historic.stopHistoryIndex('..', 'historic/history/stops/2e2e/index.json', ctx),
 		).resolves.toBeNull();
 		await expect(r2Adapter.historic.networkHistoryPartition(path, ctx)).resolves.toBeNull();
+	});
+
+	it('reads exact immutable point indexes and preserves raw day bytes and signals', async () => {
+		const controller = new AbortController();
+		const hotspotsIndex = pointIndex('hotspots');
+		const repeatIndex = pointIndex('repeat_offenders');
+		const hotspotsIndexPath = `historic/history/hotspots/generations/${await payloadSha(hotspotsIndex)}/index.json`;
+		const repeatIndexPath = `historic/history/repeat_offenders/generations/${await payloadSha(repeatIndex)}/index.json`;
+		const hotspots = hotspotsDay();
+		const repeat = repeatOffendersDay();
+		const hotspotsText = ` ${JSON.stringify(hotspots)}\n`;
+		const repeatText = `${JSON.stringify(repeat)}\n`;
+		const hotspotsSha = await sha256Hex(new TextEncoder().encode(hotspotsText));
+		const repeatSha = await sha256Hex(new TextEncoder().encode(repeatText));
+		const hotspotsPath = `historic/history/hotspots/generations/${hotspotsSha}/${hotspots.date}.json`;
+		const repeatPath = `historic/history/repeat_offenders/generations/${repeatSha}/${repeat.date}.json`;
+		const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			expect(init?.signal).toBe(controller.signal);
+			const url = String(input);
+			if (url.endsWith(`/${hotspotsIndexPath}`)) return json(hotspotsIndex);
+			if (url.endsWith(`/${repeatIndexPath}`)) return json(repeatIndex);
+			if (url.endsWith(`/${hotspotsPath}`)) return new Response(hotspotsText);
+			if (url.endsWith(`/${repeatPath}`)) return new Response(repeatText);
+			throw new Error(`unexpected URL ${url}`);
+		});
+		const ctx = {
+			fetch: request as unknown as typeof fetch,
+			cache: new Map<string, unknown>(),
+			signal: controller.signal,
+		};
+
+		await expect(r2Adapter.historic.hotspotsHistoryIndex(hotspotsIndexPath, ctx)).resolves.toEqual(
+			hotspotsIndex,
+		);
+		await expect(
+			r2Adapter.historic.repeatOffendersHistoryIndex(repeatIndexPath, ctx),
+		).resolves.toEqual(repeatIndex);
+		const rawHotspots = await r2Adapter.historic.hotspotsHistoryDay(
+			hotspots.date,
+			hotspotsPath,
+			ctx,
+		);
+		const rawRepeat = await r2Adapter.historic.repeatOffendersHistoryDay(
+			repeat.date,
+			repeatPath,
+			ctx,
+		);
+
+		expect(new TextDecoder().decode(rawHotspots?.bytes)).toBe(hotspotsText);
+		expect(new TextDecoder().decode(rawRepeat?.bytes)).toBe(repeatText);
+		expect(rawHotspots?.value.date).toBe(hotspots.date);
+		expect(rawRepeat?.value.date).toBe(repeat.date);
+		expect(ctx.cache.size).toBe(0);
+	});
+
+	it('rejects unsafe, mutable, cross-family, and date-mismatched point paths before fetch', async () => {
+		const request = vi.fn(async () => json(pointIndex('hotspots')));
+		const ctx = { fetch: request as unknown as typeof fetch };
+		const sha = 'f'.repeat(64);
+		const date = '2026-03-30';
+
+		await expect(
+			r2Adapter.historic.hotspotsHistoryIndex('historic/history/hotspots/index.json', ctx),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		await expect(
+			r2Adapter.historic.hotspotsHistoryIndex(
+				`historic/history/repeat_offenders/generations/${sha}/index.json`,
+				ctx,
+			),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		await expect(
+			r2Adapter.historic.hotspotsHistoryDay(
+				date,
+				`historic/history/hotspots/generations/${sha}/2026-03-29.json`,
+				ctx,
+			),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		await expect(
+			r2Adapter.historic.repeatOffendersHistoryDay(
+				date,
+				`historic/history/hotspots/generations/${sha}/${date}.json`,
+				ctx,
+			),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		await expect(
+			r2Adapter.historic.repeatOffendersHistoryDay(
+				date,
+				`historic/history/repeat_offenders/generations/${sha}/${date}.json?raw=1`,
+				ctx,
+			),
+		).rejects.toBeInstanceOf(HistoryArtifactContractError);
+		expect(request).not.toHaveBeenCalled();
+	});
+
+	it('cache-busts one point-index parent refresh and keeps point 404s transport-null', async () => {
+		const index = pointIndex('hotspots');
+		const path = `historic/history/hotspots/generations/${await payloadSha(index)}/index.json`;
+		const dayPath = `historic/history/hotspots/generations/${'a'.repeat(64)}/2026-03-30.json`;
+		const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url.includes('/index.json')) {
+				expect(init?.cache).toBe('reload');
+				return json(index);
+			}
+			return json({}, 404);
+		});
+		const freshCtx = {
+			fetch: request as unknown as typeof fetch,
+			freshHistoryParent: true,
+		};
+
+		await expect(r2Adapter.historic.hotspotsHistoryIndex(path, freshCtx)).resolves.toEqual(index);
+		expect(String(request.mock.calls[0]?.[0])).toMatch(
+			/^\/data\/v1\/stm\/historic\/history\/hotspots\/generations\/[0-9a-f]{64}\/index\.json\?history_refresh=/,
+		);
+		await expect(
+			r2Adapter.historic.hotspotsHistoryDay('2026-03-30', dayPath, {
+				fetch: request as unknown as typeof fetch,
+			}),
+		).resolves.toBeNull();
+		await expect(
+			r2Adapter.historic.repeatOffendersHistoryIndex(
+				`historic/history/repeat_offenders/generations/${'b'.repeat(64)}/index.json`,
+				{ fetch: async () => json({}, 404) },
+			),
+		).resolves.toBeNull();
 	});
 });

@@ -33,7 +33,8 @@ import type { StopsIndex } from '$lib/v1/schemas/stops_index';
 import type { StopFile } from '$lib/v1/schemas/stop';
 import type { NetworkTrend } from '$lib/v1/schemas/network_trend';
 import type { Hotspots } from '$lib/v1/schemas/hotspots';
-import type { RepeatOffenders } from '$lib/v1/schemas/repeat_offenders';
+import type { HistoricHotspotsDay } from '$lib/v1/schemas/hotspots';
+import type { HistoricRepeatOffendersDay, RepeatOffenders } from '$lib/v1/schemas/repeat_offenders';
 import type { AlertHistory } from '$lib/v1/schemas/alert_history';
 import type { ReceiptsIndex } from '$lib/v1/schemas/receipts_index';
 import type { RouteReliabilityIndex } from '$lib/v1/schemas/route_reliability_index';
@@ -99,6 +100,11 @@ export interface StaticPort {
 export interface HistoricPort {
 	historyIndex(ctx?: AdapterCtx): Promise<HistoricAvailabilityIndex | null>;
 	networkHistoryIndex(path: string, ctx?: AdapterCtx): Promise<HistoricCollectionIndex | null>;
+	hotspotsHistoryIndex(path: string, ctx?: AdapterCtx): Promise<HistoricCollectionIndex | null>;
+	repeatOffendersHistoryIndex(
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<HistoricCollectionIndex | null>;
 	lineHistoryDirectory(
 		path: string,
 		ctx?: AdapterCtx,
@@ -131,6 +137,16 @@ export interface HistoricPort {
 		path: string,
 		ctx?: AdapterCtx,
 	): Promise<RawJsonEntity<StopHistoryPartition> | null>;
+	hotspotsHistoryDay(
+		date: string,
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<RawJsonEntity<HistoricHotspotsDay> | null>;
+	repeatOffendersHistoryDay(
+		date: string,
+		path: string,
+		ctx?: AdapterCtx,
+	): Promise<RawJsonEntity<HistoricRepeatOffendersDay> | null>;
 	alertArchiveIndex(ctx?: AdapterCtx): Promise<AlertArchiveIndex | null>;
 	alertArchivePage(path: string, ctx?: AdapterCtx): Promise<AlertArchivePage | null>;
 	networkTrend(ctx?: AdapterCtx): Promise<NetworkTrend>;
