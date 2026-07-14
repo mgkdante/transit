@@ -21,9 +21,11 @@ from transit_ops.snapshots.contract import (
     HistoricAvailabilityIndex,
     HistoricCollectionIndex,
     HistoricHotspotsDay,
+    HistoricRepeatOffenderGrain,
     HistoricRepeatOffendersDay,
     HistorySelectionMode,
     Hotspot,
+    HotspotGrain,
     Offender,
 )
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
@@ -159,6 +161,30 @@ def test_point_payload_ref_gate_rejects_wrong_digest_size_date_and_stamp(
     )
 
     assert findings
+
+
+def test_point_payload_ref_gate_rejects_mislabeled_or_duplicate_grains() -> None:
+    hotspots = _hotspots_day()
+    hotspots.by_grain = [HotspotGrain(grain="day", date=hotspots.date, window_end=hotspots.date)]
+    hotspots.by_grain[0].grain = "nonsense"
+    hotspot_ref = history_common.history_point_ref("hotspots", hotspots)
+
+    repeat = _repeat_day()
+    week = HistoricRepeatOffenderGrain(
+        grain="week",
+        date="2026-06-25",
+        window_end=repeat.date,
+        window_days=7,
+    )
+    repeat.by_grain = [week, week.model_copy(deep=True)]
+    repeat_ref = history_common.history_point_ref("repeat_offenders", repeat)
+
+    assert gate.check_point_history_day_ref(hotspot_ref, hotspots, family="hotspots")
+    assert gate.check_point_history_day_ref(
+        repeat_ref,
+        repeat,
+        family="repeat_offenders",
+    )
 
 
 @pytest.mark.parametrize(
@@ -491,7 +517,7 @@ def test_point_indexes_extend_root_timestamp_and_exact_child_graph() -> None:
     assert findings
 
 
-def test_collect_keeps_legacy_extra_positions_and_appends_typed_point_bundle(
+def test_collect_names_historic_bundles_and_consumes_point_plans_in_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_minimal_historic(
@@ -517,15 +543,15 @@ def test_collect_keeps_legacy_extra_positions_and_appends_typed_point_bundle(
             finally:
                 connection.closed = True
 
-    def consume(collected):  # noqa: ANN001, ANN202
+    def consume(collected: publish.HistoricValidationInputs):  # noqa: ANN202
         assert not connection.closed
-        assert len(collected) == 9
-        assert collected[4].provider_timezone == "UTC"
-        assert hasattr(collected[5], "iter_partition_items")
-        assert hasattr(collected[6], "iter_partition_items")
-        assert hasattr(collected[7], "iter_partition_items")
-        bundle = collected[8]
-        assert isinstance(bundle, publish.HistoricPointPlanBundle)
+        assert collected.alert_archive is not None
+        assert collected.alert_archive.provider_timezone == "UTC"
+        assert collected.network_history is not None
+        assert collected.line_history is not None
+        assert collected.stop_history is not None
+        bundle = collected.point_plans
+        assert bundle is not None
         return (
             [day.date for day in bundle.hotspots.iter_days()],
             [day.date for day in bundle.repeat_offenders.iter_days()],
@@ -546,6 +572,68 @@ def test_collect_keeps_legacy_extra_positions_and_appends_typed_point_bundle(
 
     assert dates == (["2026-07-01"], ["2026-07-01"])
     assert connection.closed
+
+
+def test_validation_named_inputs_support_a_point_only_non_prefix_bundle() -> None:
+    point_plans = publish.HistoricPointPlanBundle(
+        hotspots=_PointPlan(),
+        repeat_offenders=_PointPlan(),
+    )
+    collected = publish.HistoricValidationInputs(
+        all_items=[],
+        route_items=[],
+        stamp=STAMP,
+        prior_total=None,
+        point_plans=point_plans,
+    )
+
+    report = publish.validate_snapshots(
+        "stm",
+        tier="historic",
+        _collected=collected,
+    )
+
+    assert report.errors == []
+
+
+def test_validation_named_inputs_support_range_archive_without_point_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=_network_history_plan(),
+        line_plan=_line_history_plan(),
+        stop_plan=_stop_history_plan(),
+    )
+    monkeypatch.setattr(publish, "_historic_stamp", lambda: STAMP)
+    monkeypatch.setattr(publish, "_prior_files_total", lambda *args, **kwargs: None)
+
+    class Engine:
+        @contextmanager
+        def connect(self):  # noqa: ANN201
+            yield object()
+
+    collected = publish.collect_payloads(
+        "stm",
+        tier="historic",
+        settings=SimpleNamespace(),
+        engine=Engine(),
+        include_archive_bundle=True,
+        include_network_bundle=True,
+        include_line_bundle=True,
+        include_stop_bundle=True,
+    )
+
+    assert isinstance(collected, publish.HistoricValidationInputs)
+    assert collected.point_plans is None
+    report = publish.validate_snapshots(
+        "stm",
+        tier="historic",
+        _collected=collected,
+    )
+
+    assert report.errors == []
+    assert "historic/history/index.json" not in report.payload_sha256
 
 
 def test_validation_records_the_exact_point_graph_published_from_fresh_plans(

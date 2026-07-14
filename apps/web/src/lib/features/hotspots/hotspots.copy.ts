@@ -26,6 +26,8 @@ export interface HotspotsCopy extends SurfaceHeadCopy {
 		readonly selection: (date: string) => string;
 		readonly correction: Record<HistoryCorrection['reason'], string>;
 		readonly retainedWindow: (date: string) => string;
+		readonly retainedTopSubtitle: string;
+		readonly retainedVerdictNone: string;
 	};
 	readonly rail: {
 		readonly label: string;
@@ -182,6 +184,10 @@ export const copy: Record<Locale, HotspotsCopy> = {
 					'Cette journée n’a pas été publiée. Affichage des points chauds les plus récents.',
 			},
 			retainedWindow: (date) => `Observations conservées disponibles se terminant le ${date}.`,
+			retainedTopSubtitle:
+				'Le pire point chaud des observations conservées sélectionnées et les preuves qui l’expliquent',
+			retainedVerdictNone:
+				'Aucun point chaud classé dans les observations conservées sélectionnées.',
 		},
 		rail: {
 			label: 'Vue et sommaire',
@@ -313,6 +319,9 @@ export const copy: Record<Locale, HotspotsCopy> = {
 				unpublished: 'That day was not published. Showing the latest hotspots.',
 			},
 			retainedWindow: (date) => `Available retained observations ending ${date}.`,
+			retainedTopSubtitle:
+				'The worst hotspot in the selected retained observations and the evidence behind it',
+			retainedVerdictNone: 'No hotspot ranks in the selected retained observations.',
 		},
 		rail: {
 			label: 'View & contents',

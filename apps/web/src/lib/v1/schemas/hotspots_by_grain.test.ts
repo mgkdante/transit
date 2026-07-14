@@ -103,4 +103,39 @@ describe('HistoricHotspotsDay contract', () => {
 			'date',
 		);
 	});
+
+	it('enforces canonical retained grain vocabulary, order, and payload-anchored endpoints', () => {
+		const valid = [
+			{ grain: 'day', date: '2026-07-13', window_end: '2026-07-13' },
+			{ grain: 'week', date: '2026-07-07', window_end: '2026-07-13' },
+			{ grain: 'month', date: '2026-06-14', window_end: '2026-07-13' },
+			{ grain: 'shift', date: null, window_end: null },
+		];
+		expect(
+			HistoricHotspotsDaySchema.parse({
+				generated_utc: '2026-07-13T12:00:00Z',
+				date: '2026-07-13',
+				by_grain: valid,
+			}).by_grain?.map((grain) => grain.grain),
+		).toEqual(['day', 'week', 'month', 'shift']);
+
+		for (const by_grain of [
+			[{ grain: 'nonsense', date: null, window_end: null }],
+			[valid[0], valid[0]],
+			[valid[1], valid[0]],
+			[{ grain: 'day', date: '2026-07-12', window_end: '2026-07-13' }],
+			[{ grain: 'week', date: '2026-07-07', window_end: '2026-07-12' }],
+			[{ grain: 'month', date: '2026-06-15', window_end: '2026-07-13' }],
+			[{ grain: 'shift', date: '2026-07-07', window_end: '2026-07-13' }],
+		]) {
+			expect(() =>
+				HistoricHotspotsDaySchema.parse({
+					generated_utc: '2026-07-13T12:00:00Z',
+					date: '2026-07-13',
+					by_grain,
+				}),
+			).toThrow();
+		}
+		expect(() => HotspotGrainSchema.parse({ grain: 'nonsense' })).not.toThrow();
+	});
 });

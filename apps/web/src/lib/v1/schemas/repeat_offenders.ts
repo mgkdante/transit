@@ -131,7 +131,18 @@ export const HistoricRepeatOffendersDaySchema = RepeatOffendersSchema.extend({
 	date: HistoryDateSchema,
 	by_grain: z.array(HistoricRepeatOffenderGrainSchema).optional(),
 }).superRefine((value, ctx) => {
+	const order = ['week', 'month'] as const;
+	let previousPosition = -1;
 	for (const [index, grain] of (value.by_grain ?? []).entries()) {
+		const position = order.indexOf(grain.grain);
+		if (position <= previousPosition) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['by_grain', index, 'grain'],
+				message: 'historical repeat-offender grains must be unique and in canonical order',
+			});
+		}
+		previousPosition = position;
 		if (grain.window_end !== value.date) {
 			ctx.addIssue({
 				code: 'custom',

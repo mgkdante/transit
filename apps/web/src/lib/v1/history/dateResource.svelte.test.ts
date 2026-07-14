@@ -551,6 +551,57 @@ describe('createHistoryDateResource failure, retry, cancellation, and refresh', 
 		expect(resource.request).toEqual(request('2026-03-03'));
 	});
 
+	it('normalizes explicit latest durably so a later index cannot resurrect it as history', async () => {
+		const expanded: TestIndex = {
+			id: 'point-b',
+			dates: [...index.dates, '2026-03-06'],
+		};
+		const indexes = [index, expanded];
+		const loader = makeLoader({
+			loadIndex: vi.fn(async () => indexes.shift() ?? expanded),
+			availability: vi.fn((accepted) => ({ kind: 'discrete' as const, dates: accepted.dates })),
+		});
+		const resource = create(loader, request('2026-03-05'));
+		await settle(resource);
+		expect(resource.request).toEqual(request());
+
+		dataRefresh.bumpEpoch();
+		flushSync();
+		await settle(resource);
+
+		expect(resource.request).toEqual(request());
+		expect(resource.state).toBe('current');
+		expect(loader.loadCurrent).toHaveBeenCalledTimes(2);
+		expect(loader.loadDate).not.toHaveBeenCalled();
+	});
+
+	it('keeps an unpublished correction event but forgets its raw date before later publication', async () => {
+		const expanded: TestIndex = {
+			id: 'point-b',
+			dates: ['2026-03-01', '2026-03-02', '2026-03-03', '2026-03-05'],
+		};
+		const indexes = [index, expanded];
+		const loader = makeLoader({
+			loadIndex: vi.fn(async () => indexes.shift() ?? expanded),
+			availability: vi.fn((accepted) => ({ kind: 'discrete' as const, dates: accepted.dates })),
+		});
+		const resource = create(loader, request('2026-03-02'));
+		await settle(resource);
+		const correction = resource.correction;
+		expect(correction?.reason).toBe('unpublished');
+		expect(resource.request).toEqual(request());
+
+		dataRefresh.bumpEpoch();
+		flushSync();
+		await settle(resource);
+
+		expect(resource.request).toEqual(request());
+		expect(resource.correction).toEqual(correction);
+		expect(resource.state).toBe('current');
+		expect(loader.loadCurrent).toHaveBeenCalledTimes(2);
+		expect(loader.loadDate).not.toHaveBeenCalled();
+	});
+
 	it('re-resolves a newly explicit date against the fresh index instead of stale refresh metadata', async () => {
 		const freshIndexPending = deferred<TestIndex | null>();
 		const currentRefresh = deferred<TestValue>();
@@ -593,7 +644,7 @@ describe('createHistoryDateResource failure, retry, cancellation, and refresh', 
 		expect(resource.state).toBe('history');
 	});
 
-	it('switches explicit current to default current during index refresh without waiting for discovery', async () => {
+	it('keeps normalized current independent of an in-flight index refresh', async () => {
 		const freshIndexPending = deferred<TestIndex | null>();
 		const loadIndex = vi
 			.fn<HistoryDateLoader<TestIndex, TestValue>['loadIndex']>()
@@ -603,10 +654,11 @@ describe('createHistoryDateResource failure, retry, cancellation, and refresh', 
 		const resource = create(loader, request('2026-03-05'));
 		await settle(resource);
 		expect(loader.loadCurrent).toHaveBeenCalledTimes(1);
+		expect(resource.request).toEqual(request());
 
 		dataRefresh.bumpEpoch();
 		flushSync();
-		expect(resource.state).toBe('loading-index');
+		expect(resource.state).toBe('loading-current');
 		resource.setRequest(request());
 		flushSync();
 		await vi.waitFor(() => {

@@ -51,10 +51,12 @@ from transit_ops.snapshots.builders.historic import (
     _STOP_REL_BY_ROUTE_SQL,
     _hotspots_by_grain,
 )
+from transit_ops.snapshots.builders.historic.ranking_kernel import (
+    MIN_N_OFFENDER,
+    build_offender_kind_ladder,
+    offender_severity,
+)
 from transit_ops.snapshots.builders.historic.small_surfaces import (
-    _MIN_N_OFFENDER,
-    _offender_kind_ladder,
-    _offender_severity,
     _repeat_offenders_by_grain,
 )
 from transit_ops.snapshots.contract import (
@@ -1984,21 +1986,21 @@ def test_build_repeat_offenders_scalar_additive_fields_and_order_stable() -> Non
 
 def test_offender_severity_matches_mart_vocabulary() -> None:
     # avg_sec is the UN-ROUNDED pooled mean in SECONDS (S14 review F2).
-    assert _offender_severity(10, 0.0) == "critical"  # recurrence >= 10
-    assert _offender_severity(0, 601.2) == "critical"  # avg 601.2s > 600s
-    assert _offender_severity(1, 600.0) in ("high", "watch")
-    assert _offender_severity(5, 0.0) == "high"  # recurrence >= 5
-    assert _offender_severity(4, 300.0) == "watch"  # below both ladders
-    assert _offender_severity(None, None) is None  # honest-None, never 'watch'
+    assert offender_severity(10, 0.0) == "critical"  # recurrence >= 10
+    assert offender_severity(0, 601.2) == "critical"  # avg 601.2s > 600s
+    assert offender_severity(1, 600.0) in ("high", "watch")
+    assert offender_severity(5, 0.0) == "high"  # recurrence >= 5
+    assert offender_severity(4, 300.0) == "watch"  # below both ladders
+    assert offender_severity(None, None) is None  # honest-None, never 'watch'
 
 
 def test_offender_severity_avg_boundary_is_strict_gt_600s() -> None:
     """The mart CASE is avg_delay_seconds > 600 (strict) — 600s exactly is NOT critical on avg,
     and the comparison happens on UN-ROUNDED pooled seconds: 600.4s must be critical even though
     it display-rounds to 10.0 min (S14 review F2 boundary case)."""
-    assert _offender_severity(0, 600.0) == "watch"  # exactly 600s -> not critical
-    assert _offender_severity(0, 600.4) == "critical"  # inside the minute-rounding tolerance
-    assert _offender_severity(0, 601.2) == "critical"
+    assert offender_severity(0, 600.0) == "watch"  # exactly 600s -> not critical
+    assert offender_severity(0, 600.4) == "critical"  # inside the minute-rounding tolerance
+    assert offender_severity(0, 601.2) == "critical"
 
 
 # --------------------------------------------------------------------------
@@ -2092,14 +2094,14 @@ def test_by_grain_min_n_floor_routes_to_tray_only_when_recurred() -> None:
     """MIN_N mutation-killer: an entity with obs < MIN_N_RATE is EXCLUDED from the ranked
     ladder. It reaches the tray ONLY if it still recurred (recurrence_days >= 2); a single-day
     sub-floor fluke is dropped entirely."""
-    assert _MIN_N_OFFENDER == 30  # pins the floor the test depends on
+    assert MIN_N_OFFENDER == 30  # pins the floor the test depends on
     rows = [
         # sub-floor but recurrent -> tray
         _offender_spine_row(
             "trip",
             "T_TRAY",
             "9",
-            obs=_MIN_N_OFFENDER - 1,
+            obs=MIN_N_OFFENDER - 1,
             severe=10,
             sum_sec=9000,
             recurrence_days=3,
@@ -2114,7 +2116,7 @@ def test_by_grain_min_n_floor_routes_to_tray_only_when_recurred() -> None:
             "vehicle",
             "V_RANKED",
             "51",
-            obs=_MIN_N_OFFENDER,
+            obs=MIN_N_OFFENDER,
             severe=15,
             sum_sec=12000,
             recurrence_days=4,
@@ -2168,10 +2170,9 @@ def test_by_grain_pooled_avg_honest_none_on_zero_denominator() -> None:
     assert week.tray[0].avg_delay_min is None
 
 
-def test_offender_ladder_history_route_tie_is_opt_in() -> None:
-    """The current helper keeps its stable-input tie behavior unless history explicitly opts
-    into route identity as a final tie key. This preserves current bytes while making retained
-    same-ID/different-route entries deterministic."""
+def test_offender_ladder_preserves_caller_order_for_exact_ties() -> None:
+    """Current bytes retain stable input ties; history gets deterministic ties by ordering
+    its source rows before calling the same public kernel."""
     rows = [
         dict(
             _offender_spine_row(
@@ -2189,12 +2190,9 @@ def test_offender_ladder_history_route_tie_is_opt_in() -> None:
         for route in ("Z", "A")
     ]
 
-    current, _, _ = _offender_kind_ladder(rows, "trip", {})
-    historical, _, _ = _offender_kind_ladder(
-        rows,
-        "trip",
-        {},
-        history_route_tie=True,
+    current, _, _ = build_offender_kind_ladder(rows, "trip", {})
+    historical, _, _ = build_offender_kind_ladder(
+        sorted(rows, key=lambda row: str(row["route_id"])), "trip", {}
     )
 
     assert [entry.route for entry in current] == ["Z", "A"]

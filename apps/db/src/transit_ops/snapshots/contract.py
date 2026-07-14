@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 from datetime import date as date_type
+from datetime import timedelta
 from enum import Enum
 from typing import Literal, Self
 
@@ -1819,13 +1820,39 @@ def _validate_iso_date(value: str) -> str:
     return value
 
 
+class HistoricHotspotGrain(HotspotGrain):
+    grain: Literal["day", "week", "month", "shift"]
+
+
 class HistoricHotspotsDay(Hotspots):
     date: str
+    by_grain: list[HistoricHotspotGrain] = Field(default_factory=list)
 
     @field_validator("date")
     @classmethod
     def validate_date(cls, value: str) -> str:
         return _validate_iso_date(value)
+
+    @model_validator(mode="after")
+    def validate_grain_identity(self) -> Self:
+        order = ("day", "week", "month", "shift")
+        positions = [order.index(grain.grain) for grain in self.by_grain]
+        if positions != sorted(set(positions)):
+            raise ValueError("historical hotspot grains must be unique and in canonical order")
+
+        end = date_type.fromisoformat(self.date)
+        window_days = {"day": 1, "week": 7, "month": 30}
+        for grain in self.by_grain:
+            if grain.grain == "shift":
+                if grain.date is not None or grain.window_end is not None:
+                    raise ValueError("historical hotspot shift endpoints must be null")
+                continue
+            expected_start = (end - timedelta(days=window_days[grain.grain] - 1)).isoformat()
+            if grain.date != expected_start or grain.window_end != self.date:
+                raise ValueError(
+                    f"historical hotspot {grain.grain} endpoints must anchor to payload date"
+                )
+        return self
 
 
 class HistoricRepeatOffenderGrain(RepeatOffenderGrain):
@@ -1864,6 +1891,12 @@ class HistoricRepeatOffendersDay(RepeatOffenders):
 
     @model_validator(mode="after")
     def validate_grain_anchors(self) -> Self:
+        order = ("week", "month")
+        positions = [order.index(grain.grain) for grain in self.by_grain]
+        if positions != sorted(set(positions)):
+            raise ValueError(
+                "historical repeat-offender grains must be unique and in canonical order"
+            )
         if any(grain.window_end != self.date for grain in self.by_grain):
             raise ValueError("historical repeat-offender grain window_end must equal payload date")
         return self

@@ -1,5 +1,98 @@
 {
   "$defs": {
+    "HistoricHotspotGrain": {
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/HotspotEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "grain": {
+          "enum": [
+            "day",
+            "week",
+            "month",
+            "shift"
+          ],
+          "title": "Grain",
+          "type": "string"
+        },
+        "total_ranked_routes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Ranked Routes"
+        },
+        "total_ranked_stops": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Ranked Stops"
+        },
+        "tray": {
+          "items": {
+            "$ref": "#/$defs/HotspotEntry"
+          },
+          "title": "Tray",
+          "type": "array"
+        },
+        "tray_total": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tray Total"
+        },
+        "window_end": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window End"
+        }
+      },
+      "required": [
+        "grain"
+      ],
+      "title": "HistoricHotspotGrain",
+      "type": "object"
+    },
     "Hotspot": {
       "properties": {
         "id": {
@@ -208,99 +301,12 @@
       ],
       "title": "HotspotEntry",
       "type": "object"
-    },
-    "HotspotGrain": {
-      "properties": {
-        "date": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Date"
-        },
-        "entries": {
-          "items": {
-            "$ref": "#/$defs/HotspotEntry"
-          },
-          "title": "Entries",
-          "type": "array"
-        },
-        "grain": {
-          "title": "Grain",
-          "type": "string"
-        },
-        "total_ranked_routes": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Total Ranked Routes"
-        },
-        "total_ranked_stops": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Total Ranked Stops"
-        },
-        "tray": {
-          "items": {
-            "$ref": "#/$defs/HotspotEntry"
-          },
-          "title": "Tray",
-          "type": "array"
-        },
-        "tray_total": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Tray Total"
-        },
-        "window_end": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Window End"
-        }
-      },
-      "required": [
-        "grain"
-      ],
-      "title": "HotspotGrain",
-      "type": "object"
     }
   },
   "properties": {
     "by_grain": {
       "items": {
-        "$ref": "#/$defs/HotspotGrain"
+        "$ref": "#/$defs/HistoricHotspotGrain"
       },
       "title": "By Grain",
       "type": "array"

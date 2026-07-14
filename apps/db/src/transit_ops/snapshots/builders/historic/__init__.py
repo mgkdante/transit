@@ -159,6 +159,12 @@ from transit_ops.snapshots.builders.historic.provenance import (
     _build_provenance_conformance,
     build_provenance,
 )
+from transit_ops.snapshots.builders.historic.ranking_kernel import (
+    SENTINEL_ENTITY_IDS as _SENTINEL_ENTITY_IDS,
+)
+from transit_ops.snapshots.builders.historic.ranking_kernel import (
+    otp_delta_points as _otp_delta_pts,
+)
 from transit_ops.snapshots.builders.historic.repeat_offenders_history import (
     RepeatOffendersHistoryPlan,
     build_repeat_offenders_history_plan,
@@ -201,10 +207,8 @@ from transit_ops.snapshots.builders.historic.small_surfaces import (
     _RECEIPTS_WORST_ROUTE_SQL,
     _RECEIPTS_WORST_STOP_SQL,
     _REPEAT_OFFENDERS_SQL,
-    _SENTINEL_ENTITY_IDS,
     _alert_breakdown,
     _hotspots_by_grain,
-    _otp_delta_pts,
     build_alert_history,
     build_hotspots,
     build_receipts,

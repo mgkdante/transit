@@ -501,6 +501,11 @@ describe('HistoricRepeatOffendersDay contract', () => {
 			window_end: '2026-07-13',
 			window_days: 7,
 		});
+		const month = HistoricRepeatOffenderGrainSchema.parse({
+			grain: 'month',
+			date: '2026-06-14',
+			window_end: '2026-07-13',
+		});
 		expect(grain.date).toBe('2026-07-07');
 		expect(
 			HistoricRepeatOffendersDaySchema.parse({
@@ -527,6 +532,20 @@ describe('HistoricRepeatOffendersDay contract', () => {
 				generated_utc: ISO,
 				date: '2026-07-12',
 				by_grain: [grain],
+			}),
+		).toThrow();
+		expect(() =>
+			HistoricRepeatOffendersDaySchema.parse({
+				generated_utc: ISO,
+				date: '2026-07-13',
+				by_grain: [grain, grain],
+			}),
+		).toThrow();
+		expect(() =>
+			HistoricRepeatOffendersDaySchema.parse({
+				generated_utc: ISO,
+				date: '2026-07-13',
+				by_grain: [month, grain],
 			}),
 		).toThrow();
 

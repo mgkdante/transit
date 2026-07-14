@@ -17,9 +17,10 @@ callers.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from transit_ops.db.connection import make_engine
 from transit_ops.ingestion.common import utc_now
@@ -64,27 +65,61 @@ from transit_ops.sql_registry import named_query
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
+
 # A work item handed to the parallel uploader: (rel_key, payload, tier).
 _PutItem = "tuple[str, object, str]"
 STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE = 100
 POINT_HISTORY_UPLOAD_BATCH_SIZE = 32
 
 
+PointDayT = TypeVar(
+    "PointDayT",
+    HistoricHotspotsDay,
+    HistoricRepeatOffendersDay,
+    covariant=True,
+)
+
+
+class PointDayPlan(Protocol[PointDayT]):
+    """One-shot retained point-day stream consumed inside its DB connection."""
+
+    def iter_days(self) -> Iterator[PointDayT]: ...
+
+
 @dataclass(frozen=True)
 class HistoricPointPlanBundle:
-    """Typed one-shot plans for the two retained point-date families."""
-
-    hotspots: object
-    repeat_offenders: object
+    hotspots: PointDayPlan[HistoricHotspotsDay]
+    repeat_offenders: PointDayPlan[HistoricRepeatOffendersDay]
 
 
-def _build_historic_point_plans(conn: object, *, provider_id: str) -> HistoricPointPlanBundle:
+@dataclass(frozen=True)
+class HistoricValidationInputs:
+    """Named optional historic bundles consumed before their DB connection closes."""
+
+    all_items: list[tuple[str, object]]
+    route_items: list[tuple[str, object]]
+    stamp: str
+    prior_total: int | None
+    alert_archive: builders.AlertArchiveBundle | None = None
+    network_history: builders.NetworkHistoryPlan | None = None
+    line_history: builders.LineHistoryPlan | None = None
+    stop_history: builders.StopHistoryPlan | None = None
+    point_plans: HistoricPointPlanBundle | None = None
+
+
+def _build_historic_point_plans(
+    conn: Connection,
+    *,
+    provider_id: str,
+) -> HistoricPointPlanBundle:
     return HistoricPointPlanBundle(
-        hotspots=builders.build_hotspots_history_plan(  # type: ignore[arg-type]
+        hotspots=builders.build_hotspots_history_plan(
             conn,
             provider_id=provider_id,
         ),
-        repeat_offenders=builders.build_repeat_offenders_history_plan(  # type: ignore[arg-type]
+        repeat_offenders=builders.build_repeat_offenders_history_plan(
             conn,
             provider_id=provider_id,
         ),
@@ -953,7 +988,7 @@ def _find_network_trend(items: list) -> tuple[str, object] | None:
 
 
 def _publish_point_history_days(
-    plan: object,
+    plan: PointDayPlan[HistoricHotspotsDay] | PointDayPlan[HistoricRepeatOffendersDay],
     *,
     family: str,
     storage: object,
@@ -982,7 +1017,7 @@ def _publish_point_history_days(
         )
         batch.clear()
 
-    for payload in plan.iter_days():  # type: ignore[attr-defined]
+    for payload in plan.iter_days():
         ref = summary.observe(payload)
         if analytics_report is not None:
             gate.record(analytics_report, ref.path, payload)  # type: ignore[arg-type]
@@ -1043,7 +1078,7 @@ def _build_point_history_index_item(
 
 
 def _validate_point_history_plan(
-    plan: object,
+    plan: PointDayPlan[HistoricHotspotsDay] | PointDayPlan[HistoricRepeatOffendersDay],
     *,
     family: str,
     provider_id: str,
@@ -1053,7 +1088,7 @@ def _validate_point_history_plan(
     """Consume a fresh one-shot point plan and record the publish-identical graph."""
 
     summary = PointHistorySummary(family)
-    for payload in plan.iter_days():  # type: ignore[attr-defined]
+    for payload in plan.iter_days():
         ref = summary.observe(payload)
         gate.record(report, ref.path, payload)
         report.results.extend(gate.check_point_history_day_ref(ref, payload, family=family))
@@ -2055,14 +2090,15 @@ def collect_payloads(
     include_line_bundle: bool = False,
     include_stop_bundle: bool = False,
     include_point_bundle: bool = False,
-    _historic_consumer: Callable[[tuple], object] | None = None,
+    _historic_consumer: Callable[[HistoricValidationInputs], object] | None = None,
 ) -> tuple | object:
     """Build every payload for *tier* WITHOUT uploading; return the collected set.
 
-    Returns ``(all_items, route_items, stamp, prior_files_total)`` — reusing the exact
-    same build code the publisher runs, so a validate-snapshots audit sees what a real
-    publish would. Reads run on a plain ``engine.connect()`` (no transaction opened),
-    so nothing is ever committed and nothing is written to the bucket.
+    Returns the legacy ``(all_items, route_items, stamp, prior_files_total)`` tuple when
+    no optional historic bundle is requested; otherwise returns named
+    ``HistoricValidationInputs``. Both paths reuse the exact build code the publisher
+    runs, so validation sees publish-identical payloads. Reads run on a plain
+    ``engine.connect()`` and never write to the bucket.
     """
     settings = settings or get_settings()
     engine = engine or make_engine(settings)  # type: ignore[arg-type]
@@ -2112,27 +2148,30 @@ def collect_payloads(
                 else None
             )
             prior_total = _prior_files_total(conn, provider_id=provider_id, tier=tier)
-            result = (
-                [(k, p) for (k, p, _t) in items],
-                [(k, p) for (k, p, _t) in route_items],
-                stamp,
-                prior_total,
+            result = HistoricValidationInputs(
+                all_items=[(k, p) for (k, p, _t) in items],
+                route_items=[(k, p) for (k, p, _t) in route_items],
+                stamp=stamp,
+                prior_total=prior_total,
+                alert_archive=_alert_archive if include_archive_bundle else None,
+                network_history=network_history,
+                line_history=line_history,
+                stop_history=stop_history,
+                point_plans=point_plans,
             )
-            extras: list[object] = []
-            if include_archive_bundle:
-                extras.append(_alert_archive)
-            if include_network_bundle:
-                extras.append(network_history)
-            if include_line_bundle:
-                extras.append(line_history)
-            if include_stop_bundle:
-                extras.append(stop_history)
-            if include_point_bundle:
-                extras.append(point_plans)
-            collected = (*result, *extras)
             if _historic_consumer is not None:
-                return _historic_consumer(collected)
-            return collected
+                return _historic_consumer(result)
+            if any(
+                (
+                    include_archive_bundle,
+                    include_network_bundle,
+                    include_line_bundle,
+                    include_stop_bundle,
+                    include_point_bundle,
+                )
+            ):
+                return result
+            return (result.all_items, result.route_items, result.stamp, result.prior_total)
 
         if tier == "static":
             stamp = _static_stamp(conn, provider_id)
@@ -2149,7 +2188,7 @@ def validate_snapshots(
     tier: str = "historic",
     settings: object = None,
     engine: object = None,
-    _collected: tuple | None = None,
+    _collected: HistoricValidationInputs | tuple | None = None,
 ) -> gate.GateReport:
     """Read-only pre-publish audit: build every payload, run the gate, return the report.
 
@@ -2185,17 +2224,25 @@ def validate_snapshots(
         settings=settings,
         engine=engine,
     )
-    if not isinstance(collected, tuple):
-        raise TypeError("snapshot collection must be a tuple")
-    all_items, route_items, stamp, prior_total = collected[:4]
-    alert_archive = collected[4] if len(collected) > 4 else None
-    network_history = collected[5] if len(collected) > 5 else None
-    line_history = collected[6] if len(collected) > 6 else None
-    stop_history = collected[7] if len(collected) > 7 else None
-    point_plans = next(
-        (value for value in collected[4:] if isinstance(value, HistoricPointPlanBundle)),
-        None,
-    )
+    if isinstance(collected, HistoricValidationInputs):
+        all_items = collected.all_items
+        route_items = collected.route_items
+        stamp = collected.stamp
+        prior_total = collected.prior_total
+        alert_archive = collected.alert_archive
+        network_history = collected.network_history
+        line_history = collected.line_history
+        stop_history = collected.stop_history
+        point_plans = collected.point_plans
+    elif isinstance(collected, tuple):
+        all_items, route_items, stamp, prior_total = collected[:4]
+        alert_archive = None
+        network_history = None
+        line_history = None
+        stop_history = None
+        point_plans = None
+    else:
+        raise TypeError("snapshot collection must be a tuple or HistoricValidationInputs")
     report = gate.new_report(provider_id, tier, stamp)
     for rel_key, payload in all_items:
         gate.record(report, rel_key, payload)
@@ -2422,6 +2469,8 @@ def validate_snapshots(
             and network_history is not None
             and line_directory is not None
             and stop_directory is not None
+            and hotspots_index is not None
+            and repeat_offenders_index is not None
         ):
             if receipts_index is None:
                 raise RuntimeError("historic validation requires the built ReceiptsIndex child")

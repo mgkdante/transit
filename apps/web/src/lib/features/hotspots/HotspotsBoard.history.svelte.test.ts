@@ -77,6 +77,7 @@ vi.mock('./selectors/hotspotLadder', async (importOriginal) => {
 });
 
 import HotspotsBoard from './HotspotsBoard.svelte';
+import { copy as hotspotsCopy } from './hotspots.copy';
 
 const AVAILABLE_DATES = ['2026-06-20', '2026-06-22', '2026-06-25'] as const;
 
@@ -91,7 +92,7 @@ const historyIndex: HistoricCollectionIndex = {
 function payload(
 	label: string,
 	generatedUtc: string,
-	options: { empty?: boolean; date?: string } = {},
+	options: { empty?: boolean; rankedEmpty?: boolean; date?: string } = {},
 ): Hotspots | HistoricHotspotsDay {
 	const value: Hotspots = {
 		generated_utc: generatedUtc as IsoUtc,
@@ -101,26 +102,27 @@ function payload(
 				grain: 'day',
 				date: options.date ?? '2026-06-25',
 				window_end: options.date ?? '2026-06-25',
-				entries: options.empty
-					? []
-					: [
-							{
-								rank: 1,
-								type: 'route',
-								id: '51',
-								name: `${label} line`,
-								severe_pct: 61,
-								observation_count: 120,
-							},
-							{
-								rank: 1,
-								type: 'stop',
-								id: 'S1',
-								name: `${label} stop`,
-								severe_pct: 52,
-								observation_count: 90,
-							},
-						],
+				entries:
+					options.empty || options.rankedEmpty
+						? []
+						: [
+								{
+									rank: 1,
+									type: 'route',
+									id: '51',
+									name: `${label} line`,
+									severe_pct: 61,
+									observation_count: 120,
+								},
+								{
+									rank: 1,
+									type: 'stop',
+									id: 'S1',
+									name: `${label} stop`,
+									severe_pct: 52,
+									observation_count: 90,
+								},
+							],
 				tray: options.empty
 					? []
 					: [
@@ -146,18 +148,19 @@ function payload(
 				grain: 'week',
 				date: options.date ?? '2026-06-25',
 				window_end: options.date ?? '2026-06-25',
-				entries: options.empty
-					? []
-					: [
-							{
-								rank: 1,
-								type: 'route',
-								id: '161',
-								name: `${label} week line`,
-								severe_pct: 57,
-								observation_count: 500,
-							},
-						],
+				entries:
+					options.empty || options.rankedEmpty
+						? []
+						: [
+								{
+									rank: 1,
+									type: 'route',
+									id: '161',
+									name: `${label} week line`,
+									severe_pct: 57,
+									observation_count: 500,
+								},
+							],
 				tray: [],
 			},
 		],
@@ -276,6 +279,12 @@ describe('HotspotsBoard retained date history', () => {
 			expect.objectContaining({ signal: expect.any(AbortSignal) }),
 		);
 		expect(screen.queryByText(/Current week line/)).toBeNull();
+		expect(
+			screen.getByText(
+				'The worst hotspot in the selected retained observations and the evidence behind it',
+			),
+		).toBeInTheDocument();
+		expect(screen.queryByText('The worst current hotspot and the evidence behind it')).toBeNull();
 		for (const caption of screen.getAllByText(/Available retained observations ending/)) {
 			expect(caption).toHaveTextContent('Jun 22');
 		}
@@ -287,6 +296,23 @@ describe('HotspotsBoard retained date history', () => {
 		expect(harness.state.url.searchParams.get('date')).toBe('2026-06-22');
 		expect(harness.state.url.searchParams.get('grain')).toBe('week');
 		expect(harness.state.url.searchParams.get('n')).toBe('5');
+	});
+
+	it('uses retained stand-down copy when a retained grain has tray evidence but no ranked hotspot', async () => {
+		reset('http://localhost/hotspots?date=2026-06-20');
+		harness.getHotspotsHistoryDay.mockResolvedValue(
+			payload('Retained tray only', '2026-06-20T23:59:59Z', {
+				date: '2026-06-20',
+				rankedEmpty: true,
+			}),
+		);
+		render(HotspotsBoard);
+
+		await screen.findAllByText('Retained tray only null tray');
+		expect(
+			screen.getByText('No hotspot ranks in the selected retained observations.'),
+		).toBeInTheDocument();
+		expect(screen.queryByText('Nothing is a hotspot right now.')).toBeNull();
 	});
 
 	it('canonicalizes an explicit latest date to current and cleans only date', async () => {
@@ -512,5 +538,24 @@ describe('HotspotsBoard retained date history', () => {
 		await waitFor(() => expect(harness.getHotspotsHistoryDay).toHaveBeenCalledTimes(2));
 		expect(harness.getHotspots).not.toHaveBeenCalled();
 		expect(harness.state.url.searchParams.get('date')).toBe('2026-06-22');
+	});
+
+	it('defines complete English and French retained-time copy without changing current copy', () => {
+		expect(hotspotsCopy.en.history.retainedTopSubtitle).toBe(
+			'The worst hotspot in the selected retained observations and the evidence behind it',
+		);
+		expect(hotspotsCopy.en.history.retainedVerdictNone).toBe(
+			'No hotspot ranks in the selected retained observations.',
+		);
+		expect(hotspotsCopy.fr.history.retainedTopSubtitle).toBe(
+			'Le pire point chaud des observations conservées sélectionnées et les preuves qui l’expliquent',
+		);
+		expect(hotspotsCopy.fr.history.retainedVerdictNone).toBe(
+			'Aucun point chaud classé dans les observations conservées sélectionnées.',
+		);
+		expect(hotspotsCopy.en.cards.top.subtitle).toBe(
+			'The worst current hotspot and the evidence behind it',
+		);
+		expect(hotspotsCopy.en.verdict.none).toBe('Nothing is a hotspot right now.');
 	});
 });

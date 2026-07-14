@@ -16,12 +16,12 @@ from transit_ops.snapshots.builders.historic.history_common import (
     iter_history_date_groups,
     latest_history_timestamp,
 )
-from transit_ops.snapshots.builders.historic.small_surfaces import (
-    _OFFENDER_SEVERITY_CRITICAL_AVG_SECONDS,
-    _OFFENDER_SEVERITY_CRITICAL_RECURRENCE,
-    _OFFENDER_SEVERITY_HIGH_RECURRENCE,
-    _OFFENDERS_TRAY_CAP,
-    _offender_kind_ladder,
+from transit_ops.snapshots.builders.historic.ranking_kernel import (
+    OFFENDER_SEVERITY_CRITICAL_AVG_SECONDS,
+    OFFENDER_SEVERITY_CRITICAL_RECURRENCE,
+    OFFENDER_SEVERITY_HIGH_RECURRENCE,
+    OFFENDERS_TRAY_CAP,
+    build_offender_kind_ladder,
 )
 from transit_ops.snapshots.contract import (
     REPEAT_OFFENDERS_BYTE_CEILING,
@@ -185,11 +185,11 @@ def _scalar_severity(recurrence_days: int, average_seconds: Decimal) -> str:
     """Apply the mutable mart's CASE to its already rounded seconds value."""
 
     if (
-        recurrence_days >= _OFFENDER_SEVERITY_CRITICAL_RECURRENCE
-        or average_seconds > _OFFENDER_SEVERITY_CRITICAL_AVG_SECONDS
+        recurrence_days >= OFFENDER_SEVERITY_CRITICAL_RECURRENCE
+        or average_seconds > OFFENDER_SEVERITY_CRITICAL_AVG_SECONDS
     ):
         return "critical"
-    if recurrence_days >= _OFFENDER_SEVERITY_HIGH_RECURRENCE:
+    if recurrence_days >= OFFENDER_SEVERITY_HIGH_RECURRENCE:
         return "high"
     return "watch"
 
@@ -274,17 +274,9 @@ def _grain(
     ]
     trip_rows = [row for row in rows if row["entity_kind"] == "trip"]
     vehicle_rows = [row for row in rows if row["entity_kind"] == "vehicle"]
-    trip_entries, trip_total, trip_tray = _offender_kind_ladder(
-        trip_rows,
-        "trip",
-        route_names,
-        history_route_tie=True,
-    )
-    vehicle_entries, vehicle_total, vehicle_tray = _offender_kind_ladder(
-        vehicle_rows,
-        "vehicle",
-        route_names,
-        history_route_tie=True,
+    trip_entries, trip_total, trip_tray = build_offender_kind_ladder(trip_rows, "trip", route_names)
+    vehicle_entries, vehicle_total, vehicle_tray = build_offender_kind_ladder(
+        vehicle_rows, "vehicle", route_names
     )
     entries = trip_entries + vehicle_entries
     union = trip_tray + vehicle_tray
@@ -306,7 +298,7 @@ def _grain(
         window_end=local_date,
         window_days=width_days,
         entries=entries,
-        tray=union[:_OFFENDERS_TRAY_CAP],
+        tray=union[:OFFENDERS_TRAY_CAP],
         total_ranked_trips=trip_total,
         total_ranked_vehicles=vehicle_total,
         tray_total=tray_total,

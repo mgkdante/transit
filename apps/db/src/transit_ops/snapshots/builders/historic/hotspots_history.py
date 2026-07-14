@@ -18,18 +18,18 @@ from transit_ops.snapshots.builders.historic.history_common import (
     iter_history_date_groups,
     latest_history_timestamp,
 )
-from transit_ops.snapshots.builders.historic.small_surfaces import (
-    _HOTSPOT_PEAK_SHIFTS,
-    _SENTINEL_ENTITY_IDS,
-    _hotspot_kind_ladder,
-    _merge_grain,
-    _otp_delta_pts,
+from transit_ops.snapshots.builders.historic.ranking_kernel import (
+    HOTSPOT_PEAK_SHIFTS,
+    SENTINEL_ENTITY_IDS,
+    build_hotspot_kind_ladder,
+    merge_hotspot_grain,
+    otp_delta_points,
 )
 from transit_ops.snapshots.contract import (
     HOTSPOTS_BYTE_CEILING,
+    HistoricHotspotGrain,
     HistoricHotspotsDay,
     Hotspot,
-    HotspotGrain,
 )
 from transit_ops.snapshots.serialization import snapshot_json_bytes
 from transit_ops.sql_registry import named_query
@@ -38,7 +38,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.engine import Connection
 
 
-_PEAK_SHIFT_IN_LITERAL = ", ".join(f"'{value}'" for value in _HOTSPOT_PEAK_SHIFTS)
+_PEAK_SHIFT_IN_LITERAL = ", ".join(f"'{value}'" for value in HOTSPOT_PEAK_SHIFTS)
 
 _HOTSPOTS_HISTORY_TIMEZONE_SQL = named_query(
     "history.hotspots.timezone",
@@ -366,7 +366,7 @@ def _scalar_hotspots(
 
     candidates: list[tuple[int, str, str, str, str, float | None]] = []
     for (kind, entity_id, route_id), value in counts.items():
-        if entity_id in _SENTINEL_ENTITY_IDS:
+        if entity_id in SENTINEL_ENTITY_IDS:
             continue
         denominator = (
             value.in_clamp_observation_count if kind == "route" else value.observation_count
@@ -385,14 +385,14 @@ def _scalar_hotspots(
                 value.on_time_count if value.on_time_known else None,
                 value.known_observation_count,
             )
-            delta = _otp_delta_pts(cell, net_route_otp)
+            delta = otp_delta_points(cell, net_route_otp)
         else:
             stop_value = stop_totals[entity_id]
             cell = _otp_pct_severe_proxy(
                 stop_value.observation_count,
                 stop_value.severe_count,
             )
-            delta = _otp_delta_pts(cell, net_stop_otp)
+            delta = otp_delta_points(cell, net_stop_otp)
         candidates.append((issue_count, kind, entity_id, route_id, severity, delta))
     candidates.sort(key=lambda value: (-value[0], value[1], value[2], value[3]))
     return [
@@ -418,7 +418,7 @@ def _ladder_rows(
 ) -> list[dict[str, object]]:
     grouped: dict[str, _Counts] = {}
     for (entity_kind, entity_id, _route_id), value in counts.items():
-        if entity_kind != kind or entity_id in _SENTINEL_ENTITY_IDS:
+        if entity_kind != kind or entity_id in SENTINEL_ENTITY_IDS:
             continue
         grouped[entity_id] = grouped.get(entity_id, _Counts()) + value
     id_field = "route_id" if kind == "route" else "stop_id"
@@ -439,21 +439,26 @@ def _grain(
     grain: str,
     local_date: str,
     names: HistoryNameIndex,
-) -> HotspotGrain | None:
+) -> HistoricHotspotGrain | None:
     route_rows = _ladder_rows(counts, kind="route")
     stop_rows = _ladder_rows(counts, kind="stop")
     route_names = names.names_at("route", (row["route_id"] for row in route_rows), local_date)
     stop_names = names.names_at("stop", (row["stop_id"] for row in stop_rows), local_date)
-    route_ladder = _hotspot_kind_ladder(route_rows, "route", route_names)
-    stop_ladder = _hotspot_kind_ladder(stop_rows, "stop", stop_names)
+    route_ladder = build_hotspot_kind_ladder(route_rows, "route", route_names)
+    stop_ladder = build_hotspot_kind_ladder(stop_rows, "stop", stop_names)
     parsed = date.fromisoformat(local_date)
     width = {"day": 1, "week": 7, "month": 30}.get(grain)
-    return _merge_grain(
+    merged = merge_hotspot_grain(
         route_ladder,
         stop_ladder,
         grain=grain,
-        win_start=None if width is None else parsed - timedelta(days=width - 1),
-        win_end=None if width is None else parsed,
+        window_start=None if width is None else parsed - timedelta(days=width - 1),
+        window_end=None if width is None else parsed,
+    )
+    return (
+        HistoricHotspotGrain.model_validate(merged.model_dump(mode="python"))
+        if merged is not None
+        else None
     )
 
 

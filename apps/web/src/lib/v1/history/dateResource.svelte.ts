@@ -121,6 +121,7 @@ export function createHistoryDateResource<TIndex, TValue>(
 	options: HistoryDateResourceOptions,
 ): HistoryDateResource<TIndex, TValue> {
 	let request = $state.raw<RawHistoryDateRequest>(snapshotRequest(options.initialRequest));
+	let correctionEvent = $state.raw<HistoryCorrection | null>(null);
 	let payloadRequest = snapshotRequest(options.initialRequest);
 	let payloadRevision = $state(0);
 	let destroyed = false;
@@ -171,6 +172,17 @@ export function createHistoryDateResource<TIndex, TValue>(
 		return { key: 'current', mode: 'current', date: null };
 	};
 
+	const normalizeResolvedCurrent = (
+		activeRequest: RawHistoryDateRequest,
+		resolved: ResolvedHistoryDate | null,
+	): void => {
+		if (!activeRequest.hasDate || resolved === null || resolved.canonicalDate !== null) return;
+		correctionEvent = resolved.correction;
+		const normalized = { hasDate: false, rawDate: null } as const;
+		request = normalized;
+		payloadRequest = normalized;
+	};
+
 	const acceptedPayload = (): PayloadAttempt<TValue> | null => {
 		if (destroyed || payloadResource.loading) return null;
 		const accepted = payloadResource.data;
@@ -219,7 +231,9 @@ export function createHistoryDateResource<TIndex, TValue>(
 						throw abortError();
 					}
 
+					const resolved = resolveAgainst(acceptedIndex, activeRequest) ?? EMPTY_RESOLUTION;
 					lane = laneFor(acceptedIndex, activeRequest) ?? lane;
+					normalizeResolvedCurrent(activeRequest, resolved);
 					if (lane.mode === 'history' && lane.date !== null && acceptedIndex.index !== null) {
 						value = await loader.loadDate(lane.date, acceptedIndex.index, signal);
 					} else {
@@ -324,7 +338,7 @@ export function createHistoryDateResource<TIndex, TValue>(
 				: null;
 		},
 		get correction() {
-			return currentResolved()?.correction ?? null;
+			return destroyed ? null : (correctionEvent ?? currentResolved()?.correction ?? null);
 		},
 		get mode() {
 			return currentResolved()?.canonicalDate != null ? 'history' : 'current';
@@ -349,9 +363,15 @@ export function createHistoryDateResource<TIndex, TValue>(
 		},
 		setRequest(nextRequest) {
 			if (destroyed) return;
-			const next = snapshotRequest(nextRequest);
-			if (sameRequest(request, next)) return;
+			let next = snapshotRequest(nextRequest);
+			correctionEvent = null;
 			const acceptedIndex = exactIndexAttempt();
+			const nextResolved = resolveAgainst(acceptedIndex, next);
+			if (next.hasDate && nextResolved !== null && nextResolved.canonicalDate === null) {
+				correctionEvent = nextResolved.correction;
+				next = { hasDate: false, rawDate: null };
+			}
+			if (sameRequest(request, next)) return;
 			const previousLane = laneFor(acceptedIndex, request)?.key ?? null;
 			const nextLane = laneFor(acceptedIndex, next)?.key ?? null;
 			request = next;

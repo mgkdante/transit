@@ -5,3 +5,4 @@ export * from './pointers';
 export * from './families';
 export * from './rangeResource.svelte';
 export * from './dateResource.svelte';
+export * from './datePresentation.svelte';

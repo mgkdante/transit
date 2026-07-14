@@ -16,6 +16,7 @@
 	import { describeAbsence } from '$lib/site/absence';
 	import {
 		availabilityFromPointCollectionIndex,
+		createHistoryCorrectionPresentation,
 		createHistoryDateResource,
 		getHotspots,
 		getHotspotsHistoryDay,
@@ -163,23 +164,12 @@
 			? null
 			: t.history.selection(formatDateKey(hotspots.selectedDate, locale)),
 	);
-	let historyAnnouncement = $state<string | null>(null);
-	let handledCorrectionKey = $state<string | null>(null);
-	let navigatorRevision = $state(0);
-	$effect(() => {
-		const correction = hotspots.correction;
-		if (correction && correction.key !== handledCorrectionKey) {
-			handledCorrectionKey = correction.key;
-			historyAnnouncement = t.history.correction[correction.reason];
-			navigatorRevision += 1;
-		}
-		if (hotspots.request.hasDate && hotspots.resolved != null && hotspots.canonicalDate == null) {
-			hotspots.setRequest({ hasDate: false, rawDate: null });
-		}
-	});
+	const historyCorrection = createHistoryCorrectionPresentation(
+		hotspots,
+		() => t.history.correction,
+	);
 	function selectHistoryDate(date: string | undefined): void {
-		historyAnnouncement = null;
-		handledCorrectionKey = null;
+		historyCorrection.clear();
 		hotspots.setRequest({
 			hasDate: date !== undefined,
 			rawDate: date ?? null,
@@ -332,7 +322,9 @@
 		topHotspot ? (topHotspot.name ?? t.unnamed(topHotspot.id)) : null,
 	);
 	const verdictLine = $derived.by<string>(() => {
-		if (!topHotspot || topHotspotName == null) return t.verdict.none;
+		if (!topHotspot || topHotspotName == null) {
+			return hotspots.mode === 'history' ? t.history.retainedVerdictNone : t.verdict.none;
+		}
 		if (topHotspot.otp_delta_pts == null) return t.verdict.topNoDelta(topHotspotName);
 		const points = `${Math.abs(Math.round(topHotspot.otp_delta_pts))}${t.units.pts}`;
 		return t.verdict.topWithDelta(topHotspotName, points);
@@ -404,7 +396,7 @@
 			sectionKey: 'hotspots-card-top',
 			number: 1,
 			title: t.cards.top.title,
-			subtitle: t.cards.top.subtitle,
+			subtitle: hotspots.mode === 'history' ? t.history.retainedTopSubtitle : t.cards.top.subtitle,
 			present: hotspots.data != null && !isEmpty,
 		},
 		{
@@ -517,7 +509,7 @@
 		>
 			<div class="hotspots-control-body" data-slot="controls-body">
 				{#if hasHistoryNavigator}
-					{#key navigatorRevision}
+					{#key historyCorrection.revision}
 						<HistoryNavigator
 							mode="date"
 							date={hotspots.selectedDate ?? undefined}
@@ -526,7 +518,7 @@
 							nextDate={hotspots.nextDate}
 							coverageText={historyCoverageText}
 							selectionText={historySelectionText}
-							announcement={historyAnnouncement}
+							announcement={historyCorrection.announcement}
 							liveAnnouncement={false}
 							{locale}
 							labels={t.history.navigator}
@@ -582,7 +574,7 @@
 			aria-live="polite"
 			aria-atomic="true"
 		>
-			{historyAnnouncement ?? ''}
+			{historyCorrection.announcement ?? ''}
 		</p>
 		<ResourceBoundary resource={hotspots} lang={locale}>
 			{#if isEmpty}

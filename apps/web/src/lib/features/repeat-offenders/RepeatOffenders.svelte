@@ -43,6 +43,7 @@
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
 	import {
 		availabilityFromPointCollectionIndex,
+		createHistoryCorrectionPresentation,
 		createHistoryDateResource,
 		getRepeatOffenders,
 		getRepeatOffendersHistoryDay,
@@ -198,27 +199,12 @@
 			? null
 			: t.history.selection(formatDateKey(offenders.selectedDate, locale)),
 	);
-	let historyAnnouncement = $state<string | null>(null);
-	let handledCorrectionKey = $state<string | null>(null);
-	let navigatorRevision = $state(0);
-	$effect(() => {
-		const correction = offenders.correction;
-		if (correction && correction.key !== handledCorrectionKey) {
-			handledCorrectionKey = correction.key;
-			historyAnnouncement = t.history.correction[correction.reason];
-			navigatorRevision += 1;
-		}
-		if (
-			offenders.request.hasDate &&
-			offenders.resolved != null &&
-			offenders.canonicalDate == null
-		) {
-			offenders.setRequest({ hasDate: false, rawDate: null });
-		}
-	});
+	const historyCorrection = createHistoryCorrectionPresentation(
+		offenders,
+		() => t.history.correction,
+	);
 	function selectHistoryDate(date: string | undefined): void {
-		historyAnnouncement = null;
-		handledCorrectionKey = null;
+		historyCorrection.clear();
 		offenders.setRequest({
 			hasDate: date !== undefined,
 			rawDate: date ?? null,
@@ -666,7 +652,7 @@
 			>
 				<div class="repeat-control-body" data-slot="controls-body">
 					{#if hasHistoryNavigator}
-						{#key navigatorRevision}
+						{#key historyCorrection.revision}
 							<HistoryNavigator
 								mode="date"
 								date={offenders.selectedDate ?? undefined}
@@ -675,7 +661,7 @@
 								nextDate={offenders.nextDate}
 								coverageText={historyCoverageText}
 								selectionText={historySelectionText}
-								announcement={historyAnnouncement}
+								announcement={historyCorrection.announcement}
 								liveAnnouncement={false}
 								{locale}
 								labels={t.history.navigator}
@@ -735,7 +721,7 @@
 			aria-live="polite"
 			aria-atomic="true"
 		>
-			{historyAnnouncement ?? ''}
+			{historyCorrection.announcement ?? ''}
 		</p>
 		<ResourceBoundary resource={offenders} lang={locale}>
 			{#if isEmpty}

@@ -2295,8 +2295,9 @@ def test_network_history_validate_records_bundle_sha_and_preserves_alert_slot(mo
         include_archive_bundle=True,
         include_network_bundle=True,
     )
-    assert collected[4] is archive
-    assert collected[5] is plan
+    assert isinstance(collected, publish.HistoricValidationInputs)
+    assert collected.alert_archive is archive
+    assert collected.network_history is plan
 
     report = publish.validate_snapshots(
         "stm",

@@ -1,8 +1,7 @@
-"""Small historic surfaces: hotspots, repeat offenders, receipts, alert history.
+"""Current small historic surfaces: hotspots, repeat offenders, receipts, alerts.
 
-Split out of the former monolithic ``historic.py`` (S7-close C3) verbatim. These
-four builders share the entity-name resolvers and the sentinel guard but no spine
-machinery, so they co-locate here.
+The ranking doctrine shared with immutable point history lives in
+``ranking_kernel``; this module owns the current snapshot queries and assembly.
 """
 
 from __future__ import annotations
@@ -19,7 +18,6 @@ from transit_ops.gold.reader import (
 )
 from transit_ops.snapshots.builders._helpers import (
     _ROUTE_NAMES_SQL,
-    MIN_N_RATE,
     _alert_active_periods,
     _avg_delay_min,
     _entity_name_maps,
@@ -35,8 +33,16 @@ from transit_ops.snapshots.builders._helpers import (
     _sane_en,
     _severe_pct,
     _severity_code,
-    _wilson_hi,
-    _wilson_lo,
+)
+from transit_ops.snapshots.builders.historic.ranking_kernel import (
+    HOTSPOT_PEAK_SHIFTS,
+    OFFENDERS_GRAINS,
+    OFFENDERS_TRAY_CAP,
+    SENTINEL_ENTITY_IDS,
+    build_hotspot_kind_ladder,
+    build_offender_kind_ladder,
+    merge_hotspot_grain,
+    otp_delta_points,
 )
 from transit_ops.snapshots.contract import (
     NOT_REPORTED_ROUTES_CAP,
@@ -45,7 +51,6 @@ from transit_ops.snapshots.contract import (
     AlertHistory,
     AlertHistoryEntry,
     Hotspot,
-    HotspotEntry,
     HotspotGrain,
     Hotspots,
     Offender,
@@ -55,7 +60,6 @@ from transit_ops.snapshots.contract import (
     ReceiptShiftCut,
     ReceiptWorstRoute,
     ReceiptWorstStop,
-    RepeatOffenderEntry,
     RepeatOffenderGrain,
     RepeatOffenders,
 )
@@ -71,27 +75,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 # Most-recent week period from gold.repeated_problem_route_stop.
 # Fall back to the max period_start_local of any grain if no 'week' rows exist.
-# Gold buckets NULL route/stop ids into these sentinels (rollups.py COALESCE).
-# They must NEVER surface to a citizen as a named entity. The publish SQL filters
-# them out; this set is the defense-in-depth publish-time invariant the builders
-# also enforce, so a future un-filtered query path can't leak a phantom entity.
-_SENTINEL_ENTITY_IDS = frozenset({"__unrouted__", "__unknown_stop__"})
-
-
-def _otp_delta_pts(cell_otp: int | None, network_otp: int | None) -> float | None:
-    """entity OTP minus the network baseline OTP, in percentage POINTS (1 dp).
-
-    Negative = the entity is worse than the network (that's why it's a hotspot).
-    Honest-None: the delta is None (NEVER 0) when EITHER the cell's own OTP or
-    the network baseline OTP is unknown for the period — a missing magnitude must
-    read as "no data", never as "exactly on par". Both inputs already carry the
-    upstream honest-None convention (_otp_pct / _otp_pct_severe_proxy).
-    """
-    if cell_otp is None or network_otp is None:
-        return None
-    return round(float(cell_otp) - float(network_otp), 1)
-
-
 # Selects the top-20 problem cells for the target period AND, per cell, the raw
 # OTP counts needed to compute otp_delta_pts honestly at read time:
 #   * route cells  -> real OTP counts from the route_spine_weekly CTE (the per-
@@ -115,7 +98,7 @@ def _otp_delta_pts(cell_otp: int | None, network_otp: int | None) -> float | Non
 # The per-kind JOIN keys (route_id vs stop_id) keep route and stop OTP from ever
 # cross-contaminating, and each kind subtracts its OWN-metric network baseline.
 # The OTP math + honest-None live in Python (_otp_pct / _otp_pct_severe_proxy /
-# _otp_delta_pts) so the convention matches the rest of the historic surface
+# otp_delta_points) so the convention matches the rest of the historic surface
 # byte-for-byte. Network baselines are week-grain only; on a non-week fallback
 # target the route/stop weekly joins miss and the delta is None.
 _HOTSPOTS_SQL = named_query(
@@ -248,13 +231,13 @@ def build_hotspots(conn: Connection, provider_id: str = "stm", *, generated_utc:
     the route on-time network baseline; stop cells use the documented severe-delay
     proxy (no on_time column at stop grain) vs a stop-grain severe-proxy network
     baseline, so the delta is never lenient-metric-minus-strict-metric. Honest-None
-    when either side is unknown (_otp_delta_pts).
+    when either side is unknown (otp_delta_points).
     """
     rows = list(conn.execute(_HOTSPOTS_SQL, {"provider_id": provider_id}).mappings())
     route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
     # Defense-in-depth: never publish a sentinel-bucket entity even if a query path
     # ever forgets the SQL filter (re-ranks over the surviving rows).
-    kept = [r for r in rows if str(r["entity_id"]) not in _SENTINEL_ENTITY_IDS]
+    kept = [r for r in rows if str(r["entity_id"]) not in SENTINEL_ENTITY_IDS]
     hotspots = []
     for i, r in enumerate(kept):
         kind = str(r["entity_kind"])
@@ -282,7 +265,7 @@ def build_hotspots(conn: Connection, provider_id: str = "stm", *, generated_utc:
                     else stop_names.get(str(r["entity_id"]))
                 ),
                 severity=r["severity_label"],
-                otp_delta_pts=_otp_delta_pts(cell_otp, network_otp),
+                otp_delta_pts=otp_delta_points(cell_otp, network_otp),
             )
         )
     # S12 additive: the evidence-rich by_grain ladders. The scalar hotspots[] above is
@@ -304,18 +287,12 @@ def build_hotspots(conn: Connection, provider_id: str = "stm", *, generated_utc:
 # Wilson LB does not demote an extreme tiny-n fluke (a 4-of-4-severe entity pins the
 # not-severe LB at 0.0%, n-independent), so a hard exclude to the un-ranked tray is the
 # only rail.
-_MIN_N_HOTSPOT = MIN_N_RATE  # 30 — the proportion reliability floor
-_HOTSPOTS_BY_GRAIN_CAP = 50  # ranked entries stored per (grain, KIND) — route
-# and stop are ranked SEPARATELY (WEB2), each cap 50
-_HOTSPOTS_TRAY_CAP = 60  # un-ranked tray entries stored per grain TOTAL
-# (the cross-kind union, capped after the sort)
 # The peak (rush-hour) shifts the 'shift' grain scopes to — the time-of-day cut where a
 # hotspot bites hardest. Both source paths share these kernel labels (route via the
 # hour->shift CASE, stop via gold.stop_delay_shift_daily.shift), so the two kinds bucket
 # the SAME observation to the SAME shift. These are FIXED kernel constants (never user
 # input), so they embed as SQL literals — no expanding bind needed.
-_HOTSPOT_PEAK_SHIFTS = ("am_peak", "pm_peak")
-_PEAK_SHIFT_IN_LITERAL = ", ".join(f"'{s}'" for s in _HOTSPOT_PEAK_SHIFTS)
+_PEAK_SHIFT_IN_LITERAL = ", ".join(f"'{s}'" for s in HOTSPOT_PEAK_SHIFTS)
 
 # Network-wide newest CLOSED day per spine (NO route filter — hotspots are all-per-city,
 # unlike the per-route weak_stops anchor). Read once per kind and threaded into windows.
@@ -414,177 +391,6 @@ def _hotspots_anchor(conn: Connection, sql, provider_id: str):  # noqa: ANN001, 
     return row["anchor"] if row else None
 
 
-def _severe_proxy_entry(
-    r, kind: str, names: dict, *, net_severe_pct: float | None
-) -> tuple[float, float, str, HotspotEntry] | None:
-    """Build one ranked HotspotEntry from a summed spine row, ranked on the NOT-severe
-    Wilson LB of the severe proxy. Returns None below MIN_N (caller routes it to the tray).
-
-    net_severe_pct = the window's network SEVERE %, so otp_delta_pts = the entity's own
-    severe-proxy OTP minus the network severe-proxy OTP (same metric, honest-None when
-    either side is unknown). Ranking key tuple = (wilson_lo ASC, -avg worst, id ASC).
-    """
-    obs = int(r["obs"] or 0)
-    severe = int(r["severe"] or 0)
-    id_col = "route_id" if kind == "route" else "stop_id"
-    eid = str(r[id_col])
-    if obs < _MIN_N_HOTSPOT:
-        return None
-    severe_k = obs - severe  # not-severe successes
-    w_lo = _wilson_lo(severe_k, obs)
-    w_hi = _wilson_hi(severe_k, obs)
-    if w_lo is None:  # defensive: obs>=30 guarantees non-None
-        return None
-    sum_sec = r["sum_delay_sec"]
-    avg_min = _avg_delay_min(float(sum_sec) / obs) if sum_sec is not None else None
-    cell_otp = _otp_pct_severe_proxy(obs, severe)  # severe proxy on-time %, both kinds
-    net_otp = None if net_severe_pct is None else 100.0 - net_severe_pct
-    entry = HotspotEntry(
-        rank=None,  # assigned after the full-set sort
-        type=kind,
-        id=eid,
-        name=names.get(eid),
-        otp_delta_pts=_otp_delta_pts(cell_otp, net_otp),
-        observation_count=_opt_int(obs),
-        severe_count=_opt_int(severe),
-        severe_pct=_severe_pct(obs, severe),
-        wilson_lo=w_lo,
-        wilson_hi=w_hi,
-        avg_delay_min=avg_min,
-    )
-    return (w_lo, -(avg_min or 0.0), eid, entry)
-
-
-def _tray_entry(r, kind: str, names: dict) -> HotspotEntry:
-    """An UN-ranked sub-MIN_N tray entry (rank=None). Carries the honest counts + severe %
-    (Wilson is None below the floor — a tiny-n interval is uninformative)."""
-    obs = int(r["obs"] or 0)
-    severe = int(r["severe"] or 0)
-    id_col = "route_id" if kind == "route" else "stop_id"
-    eid = str(r[id_col])
-    sum_sec = r["sum_delay_sec"]
-    avg_min = _avg_delay_min(float(sum_sec) / obs) if (sum_sec is not None and obs) else None
-    return HotspotEntry(
-        rank=None,
-        type=kind,
-        id=eid,
-        name=names.get(eid),
-        observation_count=_opt_int(obs),
-        severe_count=_opt_int(severe),
-        severe_pct=_severe_pct(obs, severe),
-        avg_delay_min=avg_min,
-    )
-
-
-def _network_severe_pct(rows, kind: str) -> float | None:
-    """The window's NETWORK severe % = Σsevere / Σobs across ALL entities in the window
-    (the same severe-proxy metric each entity ranks on). Honest-None on no observations."""
-    id_col = "route_id" if kind == "route" else "stop_id"
-    tot_obs = sum(int(r["obs"] or 0) for r in rows if str(r[id_col]))
-    tot_severe = sum(int(r["severe"] or 0) for r in rows if str(r[id_col]))
-    return _severe_pct(tot_obs, tot_severe) if tot_obs else None
-
-
-class _KindLadder:
-    """One kind's (route OR stop) ranked ladder for a grain window: the per-kind ranked
-    entries (already 1-based, capped, PER-KIND rank restart per WEB2), the pre-truncation
-    ranked count (the honest per-kind shown/total denominator), the un-ranked tray ROWS
-    (still raw spine rows so the cross-kind union can re-sort them before capping), and the
-    kind's name map (so the union can resolve tray entry names without threading it back)."""
-
-    __slots__ = ("kind", "entries", "total_ranked", "tray_rows", "names")
-
-    def __init__(
-        self,
-        kind: str,
-        entries: list[HotspotEntry],
-        total_ranked: int,
-        tray_rows: list,
-        names: dict,
-    ):  # noqa: ANN001
-        self.kind = kind
-        self.entries = entries
-        self.total_ranked = total_ranked
-        self.tray_rows = tray_rows
-        self.names = names
-
-
-def _hotspot_kind_ladder(rows, kind: str, names: dict) -> _KindLadder | None:
-    """Rank ONE kind's window rows on its own ladder (WEB2 per-kind ranking): the full MIN_N
-    set ranked worst-first by the not-severe Wilson LB, ranks assigned 1..N WITHIN this kind,
-    truncated to the per-kind cap; sub-MIN_N rows are held as raw tray rows for the union.
-    Returns None only when the kind has no row at all (honest absence at merge time)."""
-    rows = list(rows)
-    if not rows:
-        return None
-    net_severe = _network_severe_pct(rows, kind)
-    ranked: list[tuple] = []
-    tray_rows: list = []
-    for r in rows:
-        entry = _severe_proxy_entry(r, kind, names, net_severe_pct=net_severe)
-        if entry is None:
-            tray_rows.append(r)
-        else:
-            ranked.append(entry)
-    ranked.sort(key=lambda t: (t[0], t[1], t[2]))
-    total_ranked = len(ranked)  # pre-truncation per-kind count (the shown/total denominator)
-    entries: list[HotspotEntry] = []
-    for i, t in enumerate(ranked[:_HOTSPOTS_BY_GRAIN_CAP]):
-        e = t[3]
-        e.rank = i + 1  # 1-based WITHIN this kind's ladder (rank RESTARTS per kind, WEB2)
-        entries.append(e)
-    return _KindLadder(kind, entries, total_ranked, tray_rows, names)
-
-
-def _tray_severe(r, kind: str) -> float:  # noqa: ANN001
-    """A tray row's severe % for the union sort key (0.0 when no observations)."""
-    return _severe_pct(int(r["obs"] or 0), int(r["severe"] or 0)) or 0.0
-
-
-def _merge_grain(
-    route_l: _KindLadder | None, stop_l: _KindLadder | None, *, grain: str, win_start, win_end
-) -> HotspotGrain | None:
-    """Assemble ONE grain from the two PER-KIND ladders (WEB2): route + stop entries are each
-    already ranked on their OWN ladder (rank restarts per kind), so they simply CONCATENATE
-    into the mixed entries[] with per-kind order preserved (no cross-kind re-rank). The tray
-    is the cross-kind UNION of the sub-MIN_N rows, sorted by severe_pct DESC (then id ASC for
-    a stable order) and capped at the TOTAL tray budget; tray_total is the pre-cap union
-    size. Honest absence: return None when neither kind has any ranked entry or tray row."""
-    route_entries = route_l.entries if route_l else []
-    stop_entries = stop_l.entries if stop_l else []
-    route_tray_rows = route_l.tray_rows if route_l else []
-    stop_tray_rows = stop_l.tray_rows if stop_l else []
-    # entries[] = the two per-kind ladders concatenated (route first, then stop); each keeps
-    # its own 1..N rank. The web filters by type into per-kind tabs losslessly.
-    entries = list(route_entries) + list(stop_entries)
-    # tray union: worst-severe first across BOTH kinds, then id ASC for stability. Each
-    # tuple carries its own kind + name map so the union resolves names without a re-thread.
-    route_names = route_l.names if route_l else {}
-    stop_names = stop_l.names if stop_l else {}
-    union: list[tuple] = [
-        (_tray_severe(r, "route"), str(r["route_id"]), r, "route", route_names)
-        for r in route_tray_rows
-    ]
-    union += [
-        (_tray_severe(r, "stop"), str(r["stop_id"]), r, "stop", stop_names) for r in stop_tray_rows
-    ]
-    tray_total = len(union)
-    if not entries and tray_total == 0:
-        return None
-    union.sort(key=lambda t: (-t[0], t[1]))
-    tray = [_tray_entry(r, k, nm) for _, _, r, k, nm in union[:_HOTSPOTS_TRAY_CAP]]
-    return HotspotGrain(
-        grain=grain,
-        date=_iso_date(win_start) if win_start is not None else None,
-        window_end=_iso_date(win_end) if win_end is not None else None,
-        entries=entries,
-        tray=tray,
-        total_ranked_routes=(route_l.total_ranked if route_l else None),
-        total_ranked_stops=(stop_l.total_ranked if stop_l else None),
-        tray_total=tray_total,
-    )
-
-
 def _hotspots_by_grain(
     conn: Connection, provider_id: str, route_names: dict, stop_names: dict
 ) -> list[HotspotGrain]:
@@ -610,22 +416,22 @@ def _hotspots_by_grain(
                 _HOTSPOTS_ROUTE_WINDOW_SQL,
                 {"provider_id": provider_id, "win_start": r_start, "win_end": r_end},
             ).mappings()
-            route_l = _hotspot_kind_ladder(r_rows, "route", route_names)
+            route_l = build_hotspot_kind_ladder(r_rows, "route", route_names)
         if stop_windows is not None:
             s_start, s_end = stop_windows[grain]
             s_rows = conn.execute(
                 _HOTSPOTS_STOP_WINDOW_SQL,
                 {"provider_id": provider_id, "win_start": s_start, "win_end": s_end},
             ).mappings()
-            stop_l = _hotspot_kind_ladder(s_rows, "stop", stop_names)
+            stop_l = build_hotspot_kind_ladder(s_rows, "stop", stop_names)
         # window START/END for the merged label = the route window when present else stop's
         # (both anchor off the same feed, so they coincide save the rare split-anchor edge).
-        merged = _merge_grain(
+        merged = merge_hotspot_grain(
             route_l,
             stop_l,
             grain=grain,
-            win_start=r_start if r_start is not None else s_start,
-            win_end=r_end if r_end is not None else s_end,
+            window_start=r_start if r_start is not None else s_start,
+            window_end=r_end if r_end is not None else s_end,
         )
         if merged is not None:
             out.append(merged)
@@ -638,16 +444,20 @@ def _hotspots_by_grain(
             _HOTSPOTS_ROUTE_SHIFT_SQL,
             {"provider_id": provider_id, "win_start": r_start, "win_end": r_end},
         ).mappings()
-        route_shift = _hotspot_kind_ladder(r_rows, "route", route_names)
+        route_shift = build_hotspot_kind_ladder(r_rows, "route", route_names)
     if stop_windows is not None:
         s_start, s_end = stop_windows["week"]
         s_rows = conn.execute(
             _HOTSPOTS_STOP_SHIFT_SQL,
             {"provider_id": provider_id, "win_start": s_start, "win_end": s_end},
         ).mappings()
-        stop_shift = _hotspot_kind_ladder(s_rows, "stop", stop_names)
-    shift_merged = _merge_grain(
-        route_shift, stop_shift, grain="shift", win_start=None, win_end=None
+        stop_shift = build_hotspot_kind_ladder(s_rows, "stop", stop_names)
+    shift_merged = merge_hotspot_grain(
+        route_shift,
+        stop_shift,
+        grain="shift",
+        window_start=None,
+        window_end=None,
     )
     if shift_merged is not None:
         out.append(shift_merged)
@@ -722,23 +532,6 @@ def build_repeat_offenders(
 # ladders (trip + vehicle) with rank restarting per kind. recurrence_days ("N of M
 # observed days") is EVIDENCE, not the rank key. Grains are week|month ONLY — a
 # repeat offender is undefined on a single day (see RepeatOffenderGrain).
-_MIN_N_OFFENDER = MIN_N_RATE  # 30 — the proportion reliability floor
-_OFFENDERS_BY_GRAIN_CAP = 50  # ranked entries stored per (grain, KIND); trip and
-# vehicle are ranked SEPARATELY, each cap 50
-_OFFENDERS_TRAY_CAP = 60  # un-ranked tray entries stored per grain TOTAL
-_OFFENDERS_GRAINS = ("week", "month")  # week|month only — day is undefined for "repeat"
-# A sub-MIN_N entity reaches the tray ONLY when it STILL recurred: recurrence_days >= this.
-# Below the floor a single-day fluke carries no "repeat" signal, so it is dropped entirely.
-_OFFENDER_TRAY_MIN_RECURRENCE = 2
-# S14 D4 severity ladder — the SAME declared thresholds as the scalar mart CASE
-# (UPSERT_REPEAT_OFFENDER_DAILY, gold/rollups.py). Kept in ONE Python constant so the by_grain
-# entry severity reuses the mart's vocabulary WITHOUT touching any mart SQL threshold (D4:
-# document, don't rebaseline). Applied to the entry's OWN window (recurrence_days + avg_delay).
-# NOTE (2026-07-02): if the mart's CASE thresholds ever change, change them HERE too — the two
-# are the one repeat-offender severity vocabulary, deliberately duplicated across SQL + Python.
-_OFFENDER_SEVERITY_CRITICAL_RECURRENCE = 10
-_OFFENDER_SEVERITY_CRITICAL_AVG_SECONDS = 600
-_OFFENDER_SEVERITY_HIGH_RECURRENCE = 5
 
 # Newest CLOSED offender-spine day (NO entity filter — offenders are all-per-city). Read once
 # and threaded into the trailing week/month windows.
@@ -775,137 +568,6 @@ _OFFENDERS_WINDOW_SQL = named_query(
 )
 
 
-def _offender_severity(recurrence_days: int | None, avg_sec: float | None) -> str | None:
-    """The by_grain entry severity from the mart's declared vocabulary (S14 D4), applied to
-    the entry's OWN window. Honest-None when both inputs are unknown (never a fabricated
-    'watch'). avg_sec is the UN-ROUNDED pooled mean in SECONDS (Σsum_delay / Σobs), so the
-    600s boundary is compared at full precision like the mart CASE, not on the display-rounded
-    minute value (a 600.4s window must label critical on both ladders)."""
-    if recurrence_days is None and avg_sec is None:
-        return None
-    rec = recurrence_days or 0
-    if (
-        rec >= _OFFENDER_SEVERITY_CRITICAL_RECURRENCE
-        or (avg_sec or 0.0) > _OFFENDER_SEVERITY_CRITICAL_AVG_SECONDS
-    ):
-        return "critical"
-    if rec >= _OFFENDER_SEVERITY_HIGH_RECURRENCE:
-        return "high"
-    return "watch"
-
-
-def _offender_pooled_avg_sec(sum_sec: object, obs: int) -> float | None:
-    """Un-rounded pooled mean delay in SECONDS for a window (the severity comparator);
-    honest-None on a zero denominator."""
-    return float(sum_sec) / obs if (sum_sec is not None and obs) else None
-
-
-def _offender_window_val(sum_sec: object, obs: int) -> float | None:
-    """Pooled in-clamp avg delay (min) for a window: Σsum_delay / Σobs / 60, honest-None on a
-    zero denominator. Rounding is half-away (via _avg_delay_min), never Python round()."""
-    return _avg_delay_min(float(sum_sec) / obs) if (sum_sec is not None and obs) else None
-
-
-def _offender_ranked_entry(
-    r, kind: str, route_names: dict
-) -> tuple[float, float, str, RepeatOffenderEntry] | None:
-    """Build one ranked RepeatOffenderEntry from a summed spine row, ranked on the NOT-severe
-    Wilson LB of the severe proxy. Returns None below MIN_N (caller routes it to the tray).
-    Ranking key tuple = (wilson_lo ASC, -avg worst, id ASC)."""
-    obs = int(r["obs"] or 0)
-    severe = int(r["severe"] or 0)
-    eid = str(r["entity_id"])
-    if obs < _MIN_N_OFFENDER:
-        return None
-    not_severe_k = obs - severe  # not-severe successes
-    w_lo = _wilson_lo(not_severe_k, obs)
-    w_hi = _wilson_hi(not_severe_k, obs)
-    if w_lo is None:  # defensive: obs>=30 guarantees non-None
-        return None
-    rec_days = _opt_int(r["recurrence_days"])
-    avg_min = _offender_window_val(r["sum_delay_sec"], obs)
-    route_id = r["route_id"]
-    entry = RepeatOffenderEntry(
-        rank=None,  # assigned after the full-set sort
-        type=kind,
-        id=eid,
-        route=route_id,
-        route_name=(route_names.get(str(route_id)) if route_id is not None else None),
-        severity=_offender_severity(rec_days, _offender_pooled_avg_sec(r["sum_delay_sec"], obs)),
-        observation_count=_opt_int(obs),
-        severe_count=_opt_int(severe),
-        severe_pct=_severe_pct(obs, severe),
-        wilson_lo=w_lo,
-        wilson_hi=w_hi,
-        recurrence_days=rec_days,
-        observed_days=_opt_int(r["observed_days"]),
-        window_days=int(r["window_days"]),
-        avg_delay_min=avg_min,
-    )
-    return (w_lo, -(avg_min or 0.0), eid, entry)
-
-
-def _offender_tray_entry(r, kind: str, route_names: dict) -> RepeatOffenderEntry:
-    """An UN-ranked sub-MIN_N tray entry (rank=None) that STILL recurred. Carries the honest
-    counts + severe % + recurrence evidence (Wilson is None below the floor — a tiny-n interval
-    is uninformative)."""
-    obs = int(r["obs"] or 0)
-    severe = int(r["severe"] or 0)
-    route_id = r["route_id"]
-    avg_min = _offender_window_val(r["sum_delay_sec"], obs)
-    rec_days = _opt_int(r["recurrence_days"])
-    return RepeatOffenderEntry(
-        rank=None,
-        type=kind,
-        id=str(r["entity_id"]),
-        route=route_id,
-        route_name=(route_names.get(str(route_id)) if route_id is not None else None),
-        severity=_offender_severity(rec_days, _offender_pooled_avg_sec(r["sum_delay_sec"], obs)),
-        observation_count=_opt_int(obs),
-        severe_count=_opt_int(severe),
-        severe_pct=_severe_pct(obs, severe),
-        recurrence_days=rec_days,
-        observed_days=_opt_int(r["observed_days"]),
-        window_days=int(r["window_days"]),
-        avg_delay_min=avg_min,
-    )
-
-
-def _offender_kind_ladder(
-    rows,
-    kind: str,
-    route_names: dict,
-    *,
-    history_route_tie: bool = False,
-) -> tuple[list[RepeatOffenderEntry], int, list[RepeatOffenderEntry]]:
-    """Rank ONE kind's window rows on its own ladder (per-kind ranking): the full MIN_N set
-    ranked worst-first by the not-severe Wilson LB, ranks assigned 1..N WITHIN this kind,
-    truncated to the per-kind cap; sub-MIN_N rows that STILL recurred (recurrence_days>=2)
-    become un-ranked tray entries. Returns (entries, total_ranked, tray_entries)."""
-    ranked: list[tuple] = []
-    tray: list[RepeatOffenderEntry] = []
-    for r in rows:
-        entry = _offender_ranked_entry(r, kind, route_names)
-        if entry is None:
-            # sub-floor: keep ONLY if it still recurred (a single-day fluke has no signal).
-            if (r["recurrence_days"] or 0) >= _OFFENDER_TRAY_MIN_RECURRENCE:
-                tray.append(_offender_tray_entry(r, kind, route_names))
-        else:
-            ranked.append(entry)
-    if history_route_tie:
-        ranked.sort(key=lambda t: (t[0], t[1], t[2], str(t[3].route or "")))
-    else:
-        # Fixed current lane: preserve the original stable-input tie behavior exactly.
-        ranked.sort(key=lambda t: (t[0], t[1], t[2]))
-    total_ranked = len(ranked)  # pre-truncation per-kind count (the shown/total denominator)
-    entries: list[RepeatOffenderEntry] = []
-    for i, t in enumerate(ranked[:_OFFENDERS_BY_GRAIN_CAP]):
-        e = t[3]
-        e.rank = i + 1  # 1-based WITHIN this kind's ladder (rank RESTARTS per kind)
-        entries.append(e)
-    return entries, total_ranked, tray
-
-
 def _repeat_offenders_by_grain(
     conn: Connection, provider_id: str, route_names: dict
 ) -> list[RepeatOffenderGrain]:
@@ -918,7 +580,7 @@ def _repeat_offenders_by_grain(
         return []
     windows = GrainWindows(anchor)
     out: list[RepeatOffenderGrain] = []
-    for grain in _OFFENDERS_GRAINS:
+    for grain in OFFENDERS_GRAINS:
         win_start, win_end = windows[grain]
         window_days = (win_end - win_start).days + 1
         rows = list(
@@ -931,8 +593,12 @@ def _repeat_offenders_by_grain(
         # read-only) so the entry builders read window_days from one source.
         trip_rows = [dict(r, window_days=window_days) for r in rows if r["entity_kind"] == "trip"]
         veh_rows = [dict(r, window_days=window_days) for r in rows if r["entity_kind"] == "vehicle"]
-        trip_entries, trip_total, trip_tray = _offender_kind_ladder(trip_rows, "trip", route_names)
-        veh_entries, veh_total, veh_tray = _offender_kind_ladder(veh_rows, "vehicle", route_names)
+        trip_entries, trip_total, trip_tray = build_offender_kind_ladder(
+            trip_rows, "trip", route_names
+        )
+        veh_entries, veh_total, veh_tray = build_offender_kind_ladder(
+            veh_rows, "vehicle", route_names
+        )
         # entries[] = the two per-kind ladders concatenated (trip first, then vehicle); each
         # keeps its own 1..N rank. The web filters by type into per-kind tabs losslessly.
         entries = trip_entries + veh_entries
@@ -942,7 +608,7 @@ def _repeat_offenders_by_grain(
         if not entries and tray_total == 0:
             continue  # honest absence — omit the grain entirely
         union.sort(key=lambda e: (-(e.severe_pct or 0.0), e.id))
-        tray = union[:_OFFENDERS_TRAY_CAP]
+        tray = union[:OFFENDERS_TRAY_CAP]
         out.append(
             RepeatOffenderGrain(
                 grain=grain,
@@ -1215,25 +881,25 @@ def build_receipts(
     # 3. worst route per date: first row after ORDER BY avg_delay_seconds DESC
     worst_route: dict[str, ReceiptWorstRoute] = {}
     for r in conn.execute(_RECEIPTS_WORST_ROUTE_SQL, params).mappings():
-        if str(r["route_id"]) in _SENTINEL_ENTITY_IDS:
+        if str(r["route_id"]) in SENTINEL_ENTITY_IDS:
             continue  # defense-in-depth: never crown the routeless sentinel as worst
         ds = _iso_date(r["d"])
         if ds not in worst_route:  # first = max avg_delay (ordered DESC)
             # On-time-vs-network gap: the worst route's own daily OTP minus the
             # day's network baseline OTP (already computed in net[ds]). Honest-None
-            # when either side is unknown (_otp_delta_pts) — never a fabricated 0.
+            # when either side is unknown (otp_delta_points) — never a fabricated 0.
             route_otp = _otp_pct(r.get("on_time"), r.get("known_obs"))
             network_otp = net.get(ds, {}).get("otp_pct")
             worst_route[ds] = ReceiptWorstRoute(
                 id=str(r["route_id"]),
                 name=route_names.get(str(r["route_id"])),
-                otp_delta_pts=_otp_delta_pts(route_otp, network_otp),
+                otp_delta_pts=otp_delta_points(route_otp, network_otp),
             )
 
     # 4. worst stop per date: first row after ORDER BY avg_delay_seconds DESC
     worst_stop: dict[str, ReceiptWorstStop] = {}
     for r in conn.execute(_RECEIPTS_WORST_STOP_SQL, params).mappings():
-        if str(r["stop_id"]) in _SENTINEL_ENTITY_IDS:
+        if str(r["stop_id"]) in SENTINEL_ENTITY_IDS:
             continue  # defense-in-depth: never crown the unknown-stop sentinel as worst
         ds = _iso_date(r["d"])
         if ds not in worst_stop:  # first = max avg_delay (ordered DESC)
@@ -1277,7 +943,7 @@ def build_receipts(
     not_reported_total: dict[str, int] = {}
     for r in conn.execute(_RECEIPTS_NOT_REPORTED_ROUTES_SQL, params).mappings():
         rid = str(r["route_id"])
-        if rid in _SENTINEL_ENTITY_IDS:
+        if rid in SENTINEL_ENTITY_IDS:
             continue  # defense-in-depth: the sentinel is never a named not-reported route
         ds = _iso_date(r["local_date"])
         not_reported_total[ds] = not_reported_total.get(ds, 0) + 1  # honest PRE-cap count
