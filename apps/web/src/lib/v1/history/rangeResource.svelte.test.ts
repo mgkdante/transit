@@ -210,7 +210,12 @@ describe('createHistoryRangeResource current and resolution states', () => {
 	});
 
 	it('keeps empty availability honest with no correction and no partition request', async () => {
-		const loader = makeLoader({ availability: vi.fn(() => ({ kind: 'empty' as const })) });
+		const loader = makeLoader({
+			availability: vi.fn(() => ({ kind: 'empty' as const })),
+			defaultWindow: vi.fn(() => {
+				throw new Error('empty availability has no default window');
+			}),
+		});
 		const resource = create(loader, request('2026-01-10', '2026-01-20'));
 		await settle(resource);
 
@@ -221,6 +226,7 @@ describe('createHistoryRangeResource current and resolution states', () => {
 			intersectingGaps: [],
 			correction: null,
 		});
+		expect(loader.defaultWindow).not.toHaveBeenCalled();
 		expect(loader.load).not.toHaveBeenCalled();
 	});
 

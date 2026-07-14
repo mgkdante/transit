@@ -150,10 +150,19 @@ export function createHistoryRangeResource<TIndex, TValue>(
 
 	const resolveAgainstIndex = (accepted: TIndex): ResolvedHistoryRange | null => {
 		try {
+			const availability = loader.availability(accepted);
+			if (availability.kind === 'empty') {
+				return {
+					selection: null,
+					canonicalWindow: null,
+					intersectingGaps: [],
+					correction: null,
+				};
+			}
 			return resolveHistoryRange(
 				request.hasFrom ? request.rawFrom : undefined,
 				request.hasTo ? request.rawTo : undefined,
-				loader.availability(accepted),
+				availability,
 				loader.defaultWindow(accepted),
 			);
 		} catch (cause) {
