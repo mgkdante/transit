@@ -54,10 +54,10 @@ const baseProps = {
 
 describe('SurfaceRail — desktop glass rail', () => {
 	it('keeps direct rail children at natural height while the outer rail owns vertical scrolling', () => {
-		const desktopRailRule = Array.from(
-			source.matchAll(/\.surface-rail\s*\{([\s\S]*?)\}/g),
-			([, rule]) => rule,
-		).find((rule) => /^\s*overflow-y\s*:/m.test(rule)) ?? '';
+		const desktopRailRule =
+			Array.from(source.matchAll(/\.surface-rail\s*\{([\s\S]*?)\}/g), ([, rule]) => rule).find(
+				(rule) => /^\s*overflow-y\s*:/m.test(rule),
+			) ?? '';
 		const directChildRule =
 			source.match(/\.surface-rail\s*>\s*:global\(\*\)\s*\{([\s\S]*?)\}/)?.[1] ?? '';
 		const overflowY = Array.from(
