@@ -1,7 +1,7 @@
 <!--
   HealthStatus — the /status (data-health) surface screen.
 
-  Thin ORCHESTRATOR over two live resources + one mapping pass. Every derivation
+  Thin ORCHESTRATOR over three resources + one mapping pass. Every derivation
   lives in ./selectors and every block in ./sections; this file only fetches,
   maps, and lays the sections out.
 
@@ -10,17 +10,17 @@
   ManifestoCanvas, watermark, category rule, keywords and truthful dated meta.
   The lede opens the body column; DetailShell adds the hazard tape.
     · BODY → DetailShell (3-col at ≥1024): LEFT = the numbered ToC over the (up
-      to) 8 sections + a SEC n/m readout; CENTER = the 8 gated, single-title
+      to) 9 sections + a SEC n/m readout; CENTER = the 9 gated, single-title
       collapsible cards; RIGHT = per-feed stat cards (lanes
       passing / feeds fresh). Mobile: single column, the stat cards reflow to a top
       summary strip, the ToC becomes the floating TocPill.
 
-  The 8 sections keep their pipeline order (NO reorder — that is P5.3d) and there
-  is NO aggregate-verdict TerminalPanel yet (that is P5.3c). Each section still
-  STANDS DOWN when its slice is empty; the ToC + stat rail derive from the SAME
-  presence flags so a stood-down section is simply absent from the nav.
+  The original 8 sections keep their pipeline order and retained-history coverage
+  appends as section 9. Each section still STANDS DOWN when its slice is empty;
+  the ToC + stat rail derive from the SAME presence flags so a stood-down section
+  is simply absent from the nav.
 
-  Two resources, BOTH freshness:true — so the shared dataPulse epoch re-runs both
+  Three resources, ALL freshness:true — so the shared dataPulse epoch re-runs them
   on a new publish (auto-refresh, no polling). HONESTY: a null/absent slice stands
   its section DOWN or shows the styled absence, never a fabricated value. DOCTRINE:
   status marks ride the dataviz status scale (StatusDot), never --primary.
@@ -31,8 +31,10 @@
 	import {
 		getProvenance,
 		getDataHealth,
+		getHistoricAvailability,
 		freshnessRelative,
 		type DataHealth,
+		type HistoricAvailabilityIndex,
 		type Provenance,
 	} from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -65,6 +67,7 @@
 	} from './selectors/provenanceViews';
 	import { selectLaneRows, type LaneLabels, type LaneRow } from './selectors/laneHealth';
 	import { selectEnvelope } from './selectors/envelope';
+	import { selectHistoryCoverage } from './selectors/historyCoverage';
 	import SectionLanes from './sections/SectionLanes.svelte';
 	import SectionFreshness from './sections/SectionFreshness.svelte';
 	import SectionSources from './sections/SectionSources.svelte';
@@ -73,6 +76,7 @@
 	import SectionRetention from './sections/SectionRetention.svelte';
 	import SectionConformance from './sections/SectionConformance.svelte';
 	import SectionEnvelope from './sections/SectionEnvelope.svelte';
+	import SectionHistoryCoverage from './sections/SectionHistoryCoverage.svelte';
 
 	const PIPELINE_NOTE_KINDS = {
 		history_freeze: 'pipeline-note',
@@ -90,13 +94,17 @@
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
 
-	// The two honesty documents. `freshness: true` on BOTH wires the shared
+	// The three honesty documents. `freshness: true` on each wires the shared
 	// newest-data contribution AND the dataPulse-epoch auto-refresh: a new publish
-	// bumps the epoch and both resources re-run, so /status advances with no polling.
+	// bumps the epoch and all resources re-run, so /status advances with no polling.
 	const provenance = createResource(() => getProvenance(), { freshness: true });
 	// data_health.json lives on the LIVE lane; null when not published yet (legacy
 	// manifest / 404) → the lanes section stands down honestly.
 	const dataHealth = createResource(() => getDataHealth(), { freshness: true });
+	// The optional retained-history discovery root is independently retryable. A
+	// legacy root with no families stands down; a partial real root stays visible
+	// and the selector names every omitted public family honestly.
+	const historicAvailability = createResource(() => getHistoricAvailability(), { freshness: true });
 
 	// ── Localized pass-through helpers handed to the sections ────────────────────
 	function verdictFor(status: string | null | undefined) {
@@ -140,6 +148,10 @@
 		return (value.lanes?.length ?? 0) === 0 && (value.feeds?.length ?? 0) === 0;
 	}
 
+	function historyAvailabilityIsEmpty(value: HistoricAvailabilityIndex): boolean {
+		return (value.families?.length ?? 0) === 0;
+	}
+
 	// The lane-label bundle the selector interpolates (i18n stays here).
 	const laneLabels = $derived<LaneLabels>({
 		laneLabel: (key) => t.lanes.laneLabel[key] ?? key,
@@ -156,6 +168,8 @@
 	// with the SAME flags — one source of truth for "is this section present".
 	const prov = $derived(provenance.data ?? null);
 	const dh = $derived(dataHealth.data ?? null);
+	const historyRoot = $derived(historicAvailability.data ?? null);
+	const historyCoverageRows = $derived(selectHistoryCoverage(historyRoot));
 	const freshness = $derived(prov ? freshnessOf(prov) : []);
 	const sources = $derived(prov ? sourcesOf(prov) : []);
 	const gaps = $derived(prov ? gapsOf(prov) : []);
@@ -179,7 +193,7 @@
 			envelope.methodologyVersion != null,
 	);
 
-	// ── Section presence registry (order = pipeline order; numbers frozen 1–8) ────
+	// ── Section presence registry (original numbers frozen 1–8; coverage = 9) ─────
 	// Each section carries its FIXED number (matching the parent card badge) and a
 	// presence flag; the ToC lists only present sections but keeps their own number,
 	// so a stood-down section leaves a gap in the run rather than re-sequencing.
@@ -207,6 +221,12 @@
 			present: conformance != null,
 		},
 		{ id: 'health-envelope', number: 8, title: t.envelope.section, present: hasEnvelope },
+		{
+			id: 'health-history-coverage',
+			number: 9,
+			title: t.historyCoverage.section,
+			present: historyCoverageRows.length > 0,
+		},
 	]);
 
 	const tocEntries = $derived.by((): TocEntry[] =>
@@ -395,7 +415,7 @@
 			backHref={localizeHref('/', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
-			metaPending={provenance.loading || dataHealth.loading}
+			metaPending={provenance.loading || dataHealth.loading || historicAvailability.loading}
 			titleId="status-title"
 		>
 			{#snippet controls()}
@@ -476,6 +496,18 @@
 									</span>
 								</p>
 							</TerminalPanel>
+						</div>
+					{/if}
+					{#if !historyRoot || historyAvailabilityIsEmpty(historyRoot)}
+						<div class="health-resource-state" aria-label={t.overview.retainedHistory}>
+							<SectionLabel text={t.overview.retainedHistory} variant="metric" />
+							<ResourceBoundary
+								resource={historicAvailability}
+								lang={locale}
+								isEmpty={historyAvailabilityIsEmpty}
+							>
+								{#snippet children(_value)}{/snippet}
+							</ResourceBoundary>
 						</div>
 					{/if}
 				</div>
@@ -629,6 +661,23 @@
 					<SectionEnvelope {envelope} copy={t} {locale} />
 				</CollapsibleSection>
 			{/if}
+
+			<!-- ── Retained-history coverage inventory ─────────────────────── -->
+			{#if historyCoverageRows.length > 0}
+				<CollapsibleSection
+					title={t.historyCoverage.section}
+					headerVariant="article-summary"
+					index={8}
+					anchor="health-history-coverage"
+					sectionKey="status-card-health-history-coverage"
+					open={true}
+					closeSignal={quietModeStore.closeSignal}
+					openSignal={quietModeStore.openSignal + cardOpenSignal('health-history-coverage')}
+					bulkCollapsed={quietModeStore.enabled}
+				>
+					<SectionHistoryCoverage rows={historyCoverageRows} copy={t} {locale} />
+				</CollapsibleSection>
+			{/if}
 		</div>
 	{/snippet}
 </DetailShell>
@@ -724,7 +773,7 @@
 	}
 
 	/* ── Center sections ───────────────────────────────────────────────────────
-	   The eight parent cards keep the existing body presenters in pipeline order;
+	   The parent cards keep the existing body presenters in pipeline order;
 	   this column owns only their inter-card spacing. */
 	.health-sections {
 		display: flex;

@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { DataHealth, IsoUtc, Provenance } from '$lib/v1/schemas';
+import type { DataHealth, HistoricAvailabilityIndex, IsoUtc, Provenance } from '$lib/v1/schemas';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';
@@ -28,8 +28,18 @@ const en = copy.en;
 const localeContext = (locale: 'en' | 'fr') =>
 	new Map([[Symbol.for('transit.i18n.locale'), () => locale]]);
 const overviewCopy = {
-	en: { title: 'Overview', dailyRecord: 'Daily record', liveFeeds: 'Live feeds' },
-	fr: { title: 'Vue d’ensemble', dailyRecord: 'Bilan quotidien', liveFeeds: 'Flux en direct' },
+	en: {
+		title: 'Overview',
+		dailyRecord: 'Daily record',
+		liveFeeds: 'Live feeds',
+		retainedHistory: 'Retained history',
+	},
+	fr: {
+		title: 'Vue d’ensemble',
+		dailyRecord: 'Bilan quotidien',
+		liveFeeds: 'Flux en direct',
+		retainedHistory: 'Historique conservé',
+	},
 } as const;
 
 /** Brand an ISO string as the contract's IsoUtc (the runtime value is plain). */
@@ -138,6 +148,61 @@ const richDataHealth: DataHealth = {
 	feeds: [{ feed: 'realtime_vehicles', status: 'succeeded', age_s: 40 }],
 };
 
+const richHistory: HistoricAvailabilityIndex = {
+	generated_utc: iso('2026-07-14T12:00:00Z'),
+	families: [
+		{
+			family: 'alerts',
+			selection_mode: 'range',
+			index_path: 'historic/alerts/index.json',
+			first_available_date: '2026-05-20',
+			last_available_date: '2026-07-14',
+		},
+		{
+			family: 'receipts',
+			selection_mode: 'date',
+			index_path: 'historic/receipts/index.json',
+			first_available_date: '2026-06-12',
+			last_available_date: '2026-07-13',
+		},
+		{
+			family: 'network',
+			selection_mode: 'range',
+			index_path: 'historic/history/network/index.json',
+			first_available_date: '2026-05-01',
+			last_available_date: '2026-07-13',
+		},
+		{
+			family: 'lines',
+			selection_mode: 'range',
+			index_path: 'historic/history/lines/index.json',
+			first_available_date: '2026-05-01',
+			last_available_date: '2026-07-13',
+		},
+		{
+			family: 'stops',
+			selection_mode: 'range',
+			index_path: 'historic/history/stops/index.json',
+			first_available_date: '2026-05-08',
+			last_available_date: '2026-07-13',
+		},
+		{
+			family: 'hotspots',
+			selection_mode: 'date',
+			index_path: 'historic/history/hotspots/index.json',
+			first_available_date: '2026-06-01',
+			last_available_date: '2026-07-13',
+		},
+		{
+			family: 'repeat_offenders',
+			selection_mode: 'date',
+			index_path: 'historic/history/repeat_offenders/index.json',
+			first_available_date: '2026-06-01',
+			last_available_date: '2026-07-13',
+		},
+	],
+};
+
 interface ResourceState<T> {
 	data: T | null;
 	error: Error | null;
@@ -165,6 +230,8 @@ function stripEnvelope(prov: Provenance): Provenance {
 	return rest as Provenance;
 }
 let dataHealthState: ResourceState<DataHealth> = ready(richDataHealth);
+let historyState: ResourceState<HistoricAvailabilityIndex> = ready(richHistory);
+const historyReload = vi.fn();
 
 function resetStatusStorage(): void {
 	for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
@@ -182,15 +249,17 @@ vi.mock('$lib/nav', async () => ({ layout: { isDesktop: true } }));
 // live in a vi.hoisted block so both the (hoisted) vi.mock factories AND the test
 // bodies can reference them. freshnessRelative delegates to the real module so
 // relative-age math stays honest.
-const { getProvenance, getDataHealth } = vi.hoisted(() => ({
+const { getProvenance, getDataHealth, getHistoricAvailability } = vi.hoisted(() => ({
 	getProvenance: vi.fn(),
 	getDataHealth: vi.fn(),
+	getHistoricAvailability: vi.fn(),
 }));
 vi.mock('$lib/v1', async () => {
 	const freshness = await import('$lib/v1/freshness');
 	return {
 		getProvenance,
 		getDataHealth,
+		getHistoricAvailability,
 		freshnessRelative: freshness.freshnessRelative,
 	};
 });
@@ -203,25 +272,31 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: (fetcher: () => unknown) => {
 		getProvenance.mockClear();
 		getDataHealth.mockClear();
+		getHistoricAvailability.mockClear();
 		try {
 			fetcher();
 		} catch {
 			// fetchers are stubbed to return undefined; ignore.
 		}
 		const isDataHealth = getDataHealth.mock.calls.length > 0;
-		const state = isDataHealth ? dataHealthState : provenanceState;
+		const isHistory = getHistoricAvailability.mock.calls.length > 0;
+		const state = isHistory ? historyState : isDataHealth ? dataHealthState : provenanceState;
 		return {
 			...state,
-			reload: vi.fn(),
+			reload: isHistory ? historyReload : vi.fn(),
 		};
 	},
 }));
 
-beforeEach(resetStatusStorage);
+beforeEach(() => {
+	resetStatusStorage();
+	historyReload.mockReset();
+});
 
 afterEach(() => {
 	provenanceState = ready(richProvenance);
 	dataHealthState = ready(richDataHealth);
+	historyState = ready(richHistory);
 	resetStatusStorage();
 });
 
@@ -240,7 +315,7 @@ describe('HealthStatus — full manifest render', () => {
 		for (const keyword of en.article.tags) {
 			expect(within(keywords).getByText(keyword)).toBeInTheDocument();
 		}
-		expect(header).toHaveTextContent(en.article.sections(8));
+		expect(header).toHaveTextContent(en.article.sections(9));
 		expect(header).toHaveTextContent('2026');
 		expect(container.querySelector('[data-slot="detail-shell-header"]')).toBeNull();
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
@@ -266,6 +341,7 @@ describe('HealthStatus — full manifest render', () => {
 			en.retention.section,
 			en.conformance.section,
 			en.envelope.section,
+			en.historyCoverage.section,
 		]) {
 			const trigger = within(center).getByRole('button', { name: title });
 			const card = trigger.closest('[data-slot="card"]') as HTMLElement;
@@ -279,6 +355,33 @@ describe('HealthStatus — full manifest render', () => {
 		}
 	});
 
+	it('mounts the retained-history card and matching ToC entry from the same valid inventory', () => {
+		const { container } = render(HealthStatus);
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+
+		expect(
+			within(center).getByRole('button', { name: en.historyCoverage.section }),
+		).toBeInTheDocument();
+		expect(
+			within(left).getByRole('button', { name: en.historyCoverage.section }),
+		).toBeInTheDocument();
+		expect(
+			within(center).getByRole('table', { name: en.historyCoverage.tableLabel }),
+		).toBeInTheDocument();
+	});
+
+	it('uses one stable locale-free disclosure key for retained-history coverage', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/health/HealthStatus.svelte'),
+			'utf8',
+		);
+
+		expect(source).toContain('sectionKey="status-card-health-history-coverage"');
+		expect(source).toContain('anchor="health-history-coverage"');
+		expect(source).not.toContain('status-card-health-history-coverage-fr');
+	});
+
 	it('opts every Status section and stat card into title-only article-summary headers', () => {
 		const { container } = render(HealthStatus);
 		const sectionCards = Array.from(
@@ -288,7 +391,7 @@ describe('HealthStatus — full manifest render', () => {
 			container.querySelectorAll<HTMLElement>('.health-stat-rail > [data-slot="card"]'),
 		);
 
-		expect(sectionCards).toHaveLength(9);
+		expect(sectionCards).toHaveLength(10);
 		expect(railCards).toHaveLength(4);
 		for (const card of [...sectionCards, ...railCards]) {
 			expect(card).toHaveAttribute('data-header-variant', 'article-summary');
@@ -308,6 +411,7 @@ describe('HealthStatus — full manifest render', () => {
 	it('keeps status article meta honestly absent when no status document is available', () => {
 		provenanceState = ready<Provenance>(null);
 		dataHealthState = ready<DataHealth>(null);
+		historyState = ready<HistoricAvailabilityIndex>(null);
 		const { container } = render(HealthStatus);
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
 
@@ -449,6 +553,18 @@ describe('HealthStatus — full manifest render', () => {
 		expect(src).toMatch(
 			/createResource\(\(\) => getDataHealth\(\),\s*\{\s*freshness:\s*true\s*\}\)/,
 		);
+		expect(src).toMatch(
+			/createResource\(\(\) => getHistoricAvailability\(\),\s*\{\s*freshness:\s*true\s*\}\)/,
+		);
+	});
+
+	it('states the live cadence as a 30-second operating target rather than a browser guarantee', () => {
+		expect(copy.en.lanes.cadence.live).toMatch(/30-second operating target/i);
+		expect(copy.en.lanes.cadence.live).toMatch(/may take longer/i);
+		expect(copy.fr.lanes.cadence.live).toMatch(/cible d’exploitation de 30 secondes/i);
+		expect(copy.fr.lanes.cadence.live).toMatch(/peut prendre plus de temps/i);
+		expect(copy.en.lanes.cadence.live).not.toContain('~57');
+		expect(copy.fr.lanes.cadence.live).not.toContain('~57');
 	});
 
 	it('renders one per-feed freshness row with a humanized age + verdict', () => {
@@ -535,9 +651,10 @@ describe('HealthStatus — full manifest render', () => {
 });
 
 describe('HealthStatus — Overview and independent resources', () => {
-	it('keeps Overview visible with two labelled loading regions', () => {
+	it('keeps Overview visible with three labelled loading regions', () => {
 		provenanceState = { data: null, error: null, loading: true, settled: false };
 		dataHealthState = { data: null, error: null, loading: true, settled: false };
+		historyState = { data: null, error: null, loading: true, settled: false };
 		const { container } = render(HealthStatus);
 
 		const overview = screen
@@ -546,6 +663,7 @@ describe('HealthStatus — Overview and independent resources', () => {
 		expect(within(overview).getByText(en.lede)).toBeInTheDocument();
 		expect(within(overview).getByText(overviewCopy.en.dailyRecord)).toBeInTheDocument();
 		expect(within(overview).getByText(overviewCopy.en.liveFeeds)).toBeInTheDocument();
+		expect(within(overview).getByText(overviewCopy.en.retainedHistory)).toBeInTheDocument();
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
 		expect(header.querySelector('.header__meta')).toHaveAttribute('data-pending', 'true');
 		expect(header.querySelector('.header__meta-skeleton')).toHaveAttribute('aria-hidden', 'true');
@@ -583,6 +701,44 @@ describe('HealthStatus — Overview and independent resources', () => {
 		expect(screen.getByRole('alert')).toBeInTheDocument();
 	});
 
+	it('keeps a history-root failure retryable without mounting a false card or ToC entry', async () => {
+		historyState = {
+			data: null,
+			error: new Error('history down'),
+			loading: false,
+			settled: true,
+		};
+		const { container } = render(HealthStatus);
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		const overview = within(center)
+			.getByText(overviewCopy.en.retainedHistory)
+			.closest('.health-resource-state') as HTMLElement;
+
+		expect(within(center).queryByRole('button', { name: en.historyCoverage.section })).toBeNull();
+		expect(within(left).queryByRole('button', { name: en.historyCoverage.section })).toBeNull();
+		expect(overview.querySelector('[data-variant="error-v1"]')).not.toBeNull();
+		await fireEvent.click(within(overview).getByRole('button', { name: 'Retry' }));
+		expect(historyReload).toHaveBeenCalledOnce();
+	});
+
+	it('stands a null or legacy history root down while keeping its honest Overview state', () => {
+		for (const history of [null, { generated_utc: iso('2026-07-14T12:00:00Z') }] as const) {
+			historyState = ready(history as HistoricAvailabilityIndex | null);
+			const { container, unmount } = render(HealthStatus);
+			const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+			const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+			const overview = within(center)
+				.getByText(overviewCopy.en.retainedHistory)
+				.closest('.health-resource-state') as HTMLElement;
+
+			expect(within(center).queryByRole('button', { name: en.historyCoverage.section })).toBeNull();
+			expect(within(left).queryByRole('button', { name: en.historyCoverage.section })).toBeNull();
+			expect(overview.querySelector('[data-variant="empty"]')).not.toBeNull();
+			unmount();
+		}
+	});
+
 	it('keeps both responsive copies of a Status rail card synchronized', async () => {
 		render(HealthStatus);
 		const lanes = screen.getAllByRole('button', { name: en.statRail.lanes.title });
@@ -596,6 +752,7 @@ describe('HealthStatus — Overview and independent resources', () => {
 	it('renders the French Overview and resource-region labels from locale context', () => {
 		provenanceState = { data: null, error: null, loading: true, settled: false };
 		dataHealthState = { data: null, error: null, loading: true, settled: false };
+		historyState = { data: null, error: null, loading: true, settled: false };
 		render(HealthStatus, { context: localeContext('fr') });
 
 		const overview = screen
@@ -603,6 +760,7 @@ describe('HealthStatus — Overview and independent resources', () => {
 			.closest('[data-slot="card"]') as HTMLElement;
 		expect(within(overview).getByText(overviewCopy.fr.dailyRecord)).toBeInTheDocument();
 		expect(within(overview).getByText(overviewCopy.fr.liveFeeds)).toBeInTheDocument();
+		expect(within(overview).getByText(overviewCopy.fr.retainedHistory)).toBeInTheDocument();
 	});
 });
 
@@ -667,7 +825,7 @@ describe('HealthStatus — S11 pipeline lanes', () => {
 		expect(screen.queryByRole('list', { name: en.lanes.listLabel })).toBeNull();
 		expect(screen.queryByText(en.lanes.section)).toBeNull();
 		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
-		expect(within(left).getByText(/SEC\s*02\s*\/\s*08/)).toBeInTheDocument();
+		expect(within(left).getByText(/SEC\s*02\s*\/\s*09/)).toBeInTheDocument();
 	});
 });
 
