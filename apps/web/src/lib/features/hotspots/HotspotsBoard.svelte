@@ -7,18 +7,29 @@
   or category-local filter state remain.
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceKind } from '$lib/nav';
 	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { describeAbsence } from '$lib/site/absence';
-	import { getHotspots } from '$lib/v1';
-	import type { HotspotEntry } from '$lib/v1/schemas';
-	import { createResource } from '$lib/v1/resource.svelte';
+	import {
+		availabilityFromPointCollectionIndex,
+		createHistoryDateResource,
+		getHotspots,
+		getHotspotsHistoryDay,
+		getHotspotsHistoryIndex,
+		historyDateRequestFromSearchParams,
+	} from '$lib/v1';
+	import type { HistoricCollectionIndex, HotspotEntry, Hotspots } from '$lib/v1/schemas';
 	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
-	import { ResourceBoundary, GrainPicker, type GrainSegment } from '$lib/components/surface';
+	import {
+		HistoryNavigator,
+		ResourceBoundary,
+		GrainPicker,
+		type GrainSegment,
+	} from '$lib/components/surface';
 	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
 	import { AbsentValue } from '$lib/components/edge';
 	import {
@@ -34,7 +45,7 @@
 	import { persisted } from '$lib/stores';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
-	import { formatUtc } from '$lib/utils/time';
+	import { formatDateKey, formatUtc } from '$lib/utils/time';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type {
@@ -120,10 +131,60 @@
 	});
 	const severeInfo = $derived(info('severe', t.ladder.severeRateLabel));
 
-	const hotspots = createResource(() => getHotspots(), { freshness: true });
+	const hotspots = createHistoryDateResource<HistoricCollectionIndex, Hotspots>(
+		{
+			loadIndex: (signal) => getHotspotsHistoryIndex({ signal }),
+			availability: (index) => availabilityFromPointCollectionIndex(index),
+			loadCurrent: (signal) => getHotspots({ signal }),
+			loadDate: (date, index, signal) => getHotspotsHistoryDay(date, index, { signal }),
+		},
+		{
+			initialRequest: historyDateRequestFromSearchParams(page.url.searchParams),
+			freshness: true,
+		},
+	);
+	onDestroy(() => hotspots.destroy());
 	const generatedUtc = $derived(hotspots.data?.generated_utc ?? null);
 	const ladders = $derived(ladderByGrain(hotspots.data?.by_grain));
 	const present = $derived(presentGrains(hotspots.data?.by_grain));
+	const availableDates = $derived(hotspots.availableDates);
+	const dateOptions = $derived(availableDates.map((date) => ({ date })));
+	const hasHistoryNavigator = $derived(availableDates.length > 0);
+	const historyCoverageText = $derived(
+		availableDates.length === 0
+			? null
+			: t.history.coverage(
+					formatDateKey(availableDates[0], locale),
+					formatDateKey(availableDates[availableDates.length - 1], locale),
+				),
+	);
+	const historySelectionText = $derived(
+		hotspots.selectedDate == null
+			? null
+			: t.history.selection(formatDateKey(hotspots.selectedDate, locale)),
+	);
+	let historyAnnouncement = $state<string | null>(null);
+	let handledCorrectionKey = $state<string | null>(null);
+	let navigatorRevision = $state(0);
+	$effect(() => {
+		const correction = hotspots.correction;
+		if (correction && correction.key !== handledCorrectionKey) {
+			handledCorrectionKey = correction.key;
+			historyAnnouncement = t.history.correction[correction.reason];
+			navigatorRevision += 1;
+		}
+		if (hotspots.request.hasDate && hotspots.resolved != null && hotspots.canonicalDate == null) {
+			hotspots.setRequest({ hasDate: false, rawDate: null });
+		}
+	});
+	function selectHistoryDate(date: string | undefined): void {
+		historyAnnouncement = null;
+		handledCorrectionKey = null;
+		hotspots.setRequest({
+			hasDate: date !== undefined,
+			rawDate: date ?? null,
+		});
+	}
 
 	let grainKey = $state<HotspotGrainKey>(
 		(() => {
@@ -173,7 +234,7 @@
 	const cap = $derived(worstNCap(worstN));
 	const worstSegments = $derived<GrainSegment<WorstN>[]>(buildWorstNSegments(t.worstN.all));
 
-	const wire = $derived.by<{ grain: string | null; n: string | null }>(() => {
+	const wire = $derived.by<{ date: string | null; grain: string | null; n: string | null }>(() => {
 		const state = emptyFilterState();
 		if (worstN !== DEFAULT_WORST_N) state.worstN = worstN;
 		const grainParam =
@@ -185,7 +246,11 @@
 							state.grain = grainKey;
 							return toSearchParams(state).get('grain');
 						})();
-		return { grain: grainParam, n: toSearchParams(state).get('n') };
+		const dateParam =
+			hotspots.request.hasDate && hotspots.resolved == null
+				? hotspots.request.rawDate
+				: hotspots.canonicalDate;
+		return { date: dateParam, grain: grainParam, n: toSearchParams(state).get('n') };
 	});
 	$effect(() => mirrorSearchParams(wire));
 
@@ -318,10 +383,17 @@
 	}
 	const routeTray = $derived(trayFor('route'));
 	const stopTray = $derived(trayFor('stop'));
-	const windowCaption = $derived(t.window[grainKey]);
+	const windowCaption = $derived(
+		hotspots.mode === 'history' && hotspots.selectedDate != null
+			? t.history.retainedWindow(formatDateKey(hotspots.selectedDate, locale))
+			: t.window[grainKey],
+	);
 	const controlsSummary = $derived(grainLabels[grainKey] ?? '');
 	const isEmpty = $derived(present.size === 0);
-	const showCombinedRail = $derived(hotspots.settled && hotspots.data != null && present.size > 0);
+	const showCombinedRail = $derived(
+		(hotspots.data != null && present.size > 0) ||
+			(hotspots.mode === 'history' && hasHistoryNavigator),
+	);
 	const showWorstN = $derived(
 		routeLadder.total > SMALLEST_WORST_N || stopLadder.total > SMALLEST_WORST_N,
 	);
@@ -444,6 +516,24 @@
 			bind:open={() => railOpen.controls.value, (next) => setRailOpen('controls', next)}
 		>
 			<div class="hotspots-control-body" data-slot="controls-body">
+				{#if hasHistoryNavigator}
+					{#key navigatorRevision}
+						<HistoryNavigator
+							mode="date"
+							date={hotspots.selectedDate ?? undefined}
+							{dateOptions}
+							previousDate={hotspots.previousDate}
+							nextDate={hotspots.nextDate}
+							coverageText={historyCoverageText}
+							selectionText={historySelectionText}
+							announcement={historyAnnouncement}
+							liveAnnouncement={false}
+							{locale}
+							labels={t.history.navigator}
+							onDateChange={selectHistoryDate}
+						/>
+					{/key}
+				{/if}
 				{#if showGrainPicker}
 					<GrainPicker
 						segments={presentedGrainSegments}
@@ -485,6 +575,15 @@
 	{/snippet}
 
 	{#snippet center()}
+		<p
+			class="hotspots-history-live"
+			data-slot="history-page-announcement"
+			role="status"
+			aria-live="polite"
+			aria-atomic="true"
+		>
+			{historyAnnouncement ?? ''}
+		</p>
 		<ResourceBoundary resource={hotspots} lang={locale}>
 			{#if isEmpty}
 				<div class="hotspots-note" data-slot="hotspots-empty">
@@ -570,6 +669,17 @@
 		flex-wrap: wrap;
 	}
 	.hotspots-reason {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+	.hotspots-history-live {
 		position: absolute;
 		width: 1px;
 		height: 1px;

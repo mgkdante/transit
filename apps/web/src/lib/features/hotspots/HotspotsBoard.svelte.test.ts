@@ -32,7 +32,35 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 const { payload } = vi.hoisted(() => ({ payload: { current: null as Hotspots | null } }));
 const capturedLadders = vi.hoisted(() => ({ current: [] as unknown[] }));
 
-vi.mock('$lib/v1', () => ({ getHotspots: vi.fn() }));
+vi.mock('$lib/v1', () => ({
+	getHotspots: vi.fn(),
+	getHotspotsHistoryIndex: vi.fn(),
+	getHotspotsHistoryDay: vi.fn(),
+	availabilityFromPointCollectionIndex: vi.fn(() => ({ kind: 'empty' })),
+	historyDateRequestFromSearchParams: vi.fn(() => ({ hasDate: false, rawDate: null })),
+	createHistoryDateResource: vi.fn(() => ({
+		request: { hasDate: false, rawDate: null },
+		index: null,
+		resolved: null,
+		availableDates: [],
+		selectedDate: null,
+		canonicalDate: null,
+		previousDate: null,
+		nextDate: null,
+		correction: null,
+		mode: 'current',
+		state: 'current',
+		value: payload.current,
+		data: payload.current,
+		error: null,
+		loading: false,
+		settled: true,
+		setRequest: vi.fn(),
+		retry: vi.fn(),
+		reload: vi.fn(),
+		destroy: vi.fn(),
+	})),
+}));
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({
 		data: payload.current,
