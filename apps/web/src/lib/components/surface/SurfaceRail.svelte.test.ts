@@ -53,6 +53,24 @@ const baseProps = {
 };
 
 describe('SurfaceRail — desktop glass rail', () => {
+	it('keeps direct rail children at natural height while the outer rail owns vertical scrolling', () => {
+		const desktopRailRule = Array.from(
+			source.matchAll(/\.surface-rail\s*\{([\s\S]*?)\}/g),
+			([, rule]) => rule,
+		).find((rule) => /^\s*overflow-y\s*:/m.test(rule)) ?? '';
+		const directChildRule =
+			source.match(/\.surface-rail\s*>\s*:global\(\*\)\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		const overflowY = Array.from(
+			desktopRailRule.matchAll(/^\s*overflow-y\s*:\s*([^;]+)\s*;/gm),
+			([, value]) => value.trim(),
+		);
+
+		expect(overflowY).toEqual(['auto']);
+		expect(desktopRailRule).not.toMatch(/^\s*overflow\s*:[^;]*(?:hidden|clip)[^;]*;/m);
+		expect(desktopRailRule).not.toMatch(/^\s*height\s*:/m);
+		expect(directChildRule).toMatch(/(?:^|[;\s])(?:flex:\s*none|flex-shrink:\s*0)\s*;/);
+	});
+
 	it('renders the rail content in the sticky aside', () => {
 		const { container } = render(SurfaceRail, { props: baseProps });
 		const aside = container.querySelector('[data-slot="surface-rail"]');

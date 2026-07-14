@@ -150,6 +150,9 @@
 			border-radius: var(--radius-xl);
 			z-index: var(--z-rail);
 		}
+		.surface-rail > :global(*) {
+			flex: none;
+		}
 	}
 
 	/* ── Mobile pill + sheet (<1024) ────────────────────────────────────────────── */
