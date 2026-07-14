@@ -21,4 +21,5 @@ regexes = [
   '''(?m)^BRONZE_S3_SECRET_KEY=$''',
   '''https://eccfb9bedd87d413eaf4cac6ae2285d3\.r2\.cloudflarestorage\.com''',
   '''^route-55-midday$''',
+  '''^vehicle-vehicle-normal-55$''',
 ]

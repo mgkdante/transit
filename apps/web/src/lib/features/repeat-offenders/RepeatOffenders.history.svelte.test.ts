@@ -585,18 +585,18 @@ describe('RepeatOffenders retained date history', () => {
 				kind: 'trip',
 				card: 'repeat-trips',
 				names: ['Retained trip normal', 'Retained trip null', 'Retained trip zero'],
-				normalKey: 'trip-trip-normal-11',
-				nullKey: 'trip-trip-null-',
-				zeroKey: 'trip-trip-zero-0',
+				normalDatumId: 'trip-trip-normal-11',
+				nullDatumId: 'trip-trip-null-',
+				zeroDatumId: 'trip-trip-zero-0',
 				normalHref: '/lines/11',
 			},
 			{
 				kind: 'vehicle',
 				card: 'repeat-vehicles',
 				names: ['Retained vehicle normal', 'Retained vehicle null', 'Retained vehicle zero'],
-				normalKey: 'vehicle-vehicle-normal-55',
-				nullKey: 'vehicle-vehicle-null-',
-				zeroKey: 'vehicle-vehicle-zero-0',
+				normalDatumId: 'vehicle-vehicle-normal-55',
+				nullDatumId: 'vehicle-vehicle-null-',
+				zeroDatumId: 'vehicle-vehicle-zero-0',
 				normalHref: '/lines/55',
 			},
 		] as const) {
@@ -627,7 +627,7 @@ describe('RepeatOffenders retained date history', () => {
 				tableRows.map((row) => within(row).getByRole('rowheader').textContent?.trim()),
 			).toEqual(fixture.names);
 
-			const normal = chartRows.find((row) => row.key === fixture.normalKey)!;
+			const normal = chartRows.find((row) => row.key === fixture.normalDatumId)!;
 			expect(normal.href).toBe(fixture.normalHref);
 			expect(normal.tapPopover?.action).toMatchObject({
 				href: fixture.normalHref,
@@ -636,7 +636,7 @@ describe('RepeatOffenders retained date history', () => {
 			const normalTableRow = within(table).getByText(fixture.names[0]).closest('tr')!;
 			expect(within(normalTableRow).getByRole('link')).toHaveAttribute('href', fixture.normalHref);
 
-			const nullRow = chartRows.find((row) => row.key === fixture.nullKey)!;
+			const nullRow = chartRows.find((row) => row.key === fixture.nullDatumId)!;
 			expect(nullRow).toMatchObject({
 				value: null,
 				n: null,
@@ -652,7 +652,7 @@ describe('RepeatOffenders retained date history', () => {
 			expect(within(nullTableRow).queryByRole('link')).toBeNull();
 			expect(nullTableRow.querySelectorAll('[data-slot="absent-value"]')).toHaveLength(3);
 
-			const zeroRow = chartRows.find((row) => row.key === fixture.zeroKey)!;
+			const zeroRow = chartRows.find((row) => row.key === fixture.zeroDatumId)!;
 			expect(zeroRow).toMatchObject({
 				value: 0,
 				n: 0,
