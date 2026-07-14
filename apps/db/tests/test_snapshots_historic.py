@@ -53,6 +53,7 @@ from transit_ops.snapshots.builders.historic import (
 )
 from transit_ops.snapshots.builders.historic.small_surfaces import (
     _MIN_N_OFFENDER,
+    _offender_kind_ladder,
     _offender_severity,
     _repeat_offenders_by_grain,
 )
@@ -2165,6 +2166,39 @@ def test_by_grain_pooled_avg_honest_none_on_zero_denominator() -> None:
     grains = _repeat_offenders_by_grain(conn, "stm", {})
     week = next(g for g in grains if g.grain == "week")
     assert week.tray[0].avg_delay_min is None
+
+
+def test_offender_ladder_history_route_tie_is_opt_in() -> None:
+    """The current helper keeps its stable-input tie behavior unless history explicitly opts
+    into route identity as a final tie key. This preserves current bytes while making retained
+    same-ID/different-route entries deterministic."""
+    rows = [
+        dict(
+            _offender_spine_row(
+                "trip",
+                "SAME",
+                route,
+                obs=100,
+                severe=50,
+                sum_sec=30_000,
+                recurrence_days=3,
+                observed_days=3,
+            ),
+            window_days=7,
+        )
+        for route in ("Z", "A")
+    ]
+
+    current, _, _ = _offender_kind_ladder(rows, "trip", {})
+    historical, _, _ = _offender_kind_ladder(
+        rows,
+        "trip",
+        {},
+        history_route_tie=True,
+    )
+
+    assert [entry.route for entry in current] == ["Z", "A"]
+    assert [entry.route for entry in historical] == ["A", "Z"]
 
 
 # --------------------------------------------------------------------------

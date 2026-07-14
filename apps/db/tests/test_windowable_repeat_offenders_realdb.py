@@ -6,8 +6,8 @@ ranking + Wilson paths run real assertions (the DB-PR-1 lesson: a too-sparse see
 vacuous). Two mutation killers:
   * the MIN_N footgun (a 4-of-4-severe fluke pins the not-severe Wilson LB at 0.0% and would rank #1
     without the `if obs < _MIN_N_OFFENDER` exclude), and
-  * the recurrence_days PARITY invariant: recurrence_days == COUNT(DISTINCT date WHERE the entity was
-    severe that day) over the window, seeded across multiple dated rows so a wrong aggregation
+  * the recurrence_days PARITY invariant: recurrence_days == COUNT(DISTINCT date WHERE the entity
+    was severe that day) over the window, seeded across multiple dated rows so a wrong aggregation
     (SUM of severe days, or an un-DISTINCT count) reds.
 """
 
@@ -51,7 +51,8 @@ def _seeded(rows):  # noqa: ANN001
             )
             conn.execute(
                 text(
-                    "INSERT INTO core.providers (provider_id, display_name, timezone, provider_key) "
+                    "INSERT INTO core.providers "
+                    "(provider_id, display_name, timezone, provider_key) "
                     "VALUES (:p, 'dense repeat-offenders seed', 'America/Toronto', :p) "
                     "ON CONFLICT (provider_id) DO NOTHING"
                 ),
@@ -65,8 +66,16 @@ def _seeded(rows):  # noqa: ANN001
             for kind, eid, day, obs, severe, sum_sec in rows:
                 conn.execute(
                     ins,
-                    {"p": _PROVIDER, "k": kind, "e": eid, "r": _ROUTE, "d": day,
-                     "n": obs, "sev": severe, "sum": sum_sec},
+                    {
+                        "p": _PROVIDER,
+                        "k": kind,
+                        "e": eid,
+                        "r": _ROUTE,
+                        "d": day,
+                        "n": obs,
+                        "sev": severe,
+                        "sum": sum_sec,
+                    },
                 )
             yield conn
         finally:
@@ -90,16 +99,20 @@ def _month(grains):  # noqa: ANN001
 def test_ranks_per_kind_by_not_severe_wilson_lower_bound() -> None:
     """trip and vehicle rank on SEPARATE ladders (rank restarts per kind); within a kind the
     high-n chronic-severe entity ranks worse (lower not-severe Wilson LB)."""
-    with _seeded(_one_day([
-        ("trip", "T_BAD", 900, 360, 900 * 200),   # 40% severe
-        ("trip", "T_OK", 100, 20, 100 * 90),      # 20% severe
-        ("vehicle", "V_BAD", 200, 100, 200 * 220),
-    ])) as conn:
+    with _seeded(
+        _one_day(
+            [
+                ("trip", "T_BAD", 900, 360, 900 * 200),  # 40% severe
+                ("trip", "T_OK", 100, 20, 100 * 90),  # 20% severe
+                ("vehicle", "V_BAD", 200, 100, 200 * 220),
+            ]
+        )
+    ) as conn:
         week = _week(_repeat_offenders_by_grain(conn, _PROVIDER, {}))
     trips = [e for e in week.entries if e.type == "trip"]
     vehs = [e for e in week.entries if e.type == "vehicle"]
     assert [e.id for e in trips] == ["T_BAD", "T_OK"]
-    assert [e.rank for e in trips] == [1, 2]     # rank restarts per kind
+    assert [e.rank for e in trips] == [1, 2]  # rank restarts per kind
     assert [e.rank for e in vehs] == [1]
     assert trips[0].wilson_lo < trips[1].wilson_lo
 
@@ -108,10 +121,14 @@ def test_min_n_floor_excludes_tiny_fluke() -> None:
     """THE MUTATION KILLER. A 4-of-4-severe fluke pins the not-severe Wilson LB at 0.0% and would
     rank #1 without the MIN_N=30 exclude. Deleting `if obs < _MIN_N_OFFENDER` must red this."""
     assert _wilson_lo(0, 4) == 0.0
-    with _seeded(_one_day([
-        ("trip", "fluke", 4, 4, 4 * 600),           # n<30 -> excluded from ranking
-        ("trip", "chronic", 900, 360, 900 * 200),   # clears MIN_N
-    ])) as conn:
+    with _seeded(
+        _one_day(
+            [
+                ("trip", "fluke", 4, 4, 4 * 600),  # n<30 -> excluded from ranking
+                ("trip", "chronic", 900, 360, 900 * 200),  # clears MIN_N
+            ]
+        )
+    ) as conn:
         week = _week(_repeat_offenders_by_grain(conn, _PROVIDER, {}))
     ids = [e.id for e in week.entries]
     assert "fluke" not in ids
@@ -127,15 +144,17 @@ def test_recurrence_days_equals_distinct_severe_days_parity() -> None:
     rows = [
         # 3 severe days (severe_delay_count > 0) + 1 clean day (severe = 0). Each day >=? obs; the
         # WINDOW sum clears MIN_N (4 x 30 = 120 obs).
-        ("trip", "T", days[0], 30, 5, 30 * 200),   # severe day
-        ("trip", "T", days[1], 30, 8, 30 * 200),   # severe day
-        ("trip", "T", days[2], 30, 3, 30 * 200),   # severe day
-        ("trip", "T", days[3], 30, 0, 30 * 60),    # CLEAN day (0 severe) -> not counted
+        ("trip", "T", days[0], 30, 5, 30 * 200),  # severe day
+        ("trip", "T", days[1], 30, 8, 30 * 200),  # severe day
+        ("trip", "T", days[2], 30, 3, 30 * 200),  # severe day
+        ("trip", "T", days[3], 30, 0, 30 * 60),  # CLEAN day (0 severe) -> not counted
     ]
     with _seeded(rows) as conn:
         week = _week(_repeat_offenders_by_grain(conn, _PROVIDER, {}))
     entry = next(e for e in week.entries if e.id == "T")
-    assert entry.recurrence_days == 3, "recurrence_days must be DISTINCT severe days (3), not 16 severe or 4 days"
+    assert entry.recurrence_days == 3, (
+        "recurrence_days must be DISTINCT severe days (3), not 16 severe or 4 days"
+    )
     assert entry.observed_days == 4, "observed_days = DISTINCT observed dates (4)"
     assert entry.observation_count == 120  # 30 x 4 days summed over the window
 
@@ -147,7 +166,7 @@ def test_sub_floor_tray_only_when_recurred() -> None:
     rows = [
         ("vehicle", "V_TRAY", days[0], 10, 3, 10 * 300),  # sub-floor, day 1 severe
         ("vehicle", "V_TRAY", days[1], 10, 2, 10 * 300),  # sub-floor, day 2 severe -> recurrence 2
-        ("vehicle", "V_FLUKE", days[0], 5, 5, 5 * 600),   # sub-floor, single severe day -> dropped
+        ("vehicle", "V_FLUKE", days[0], 5, 5, 5 * 600),  # sub-floor, single severe day -> dropped
     ]
     with _seeded(rows) as conn:
         week = _week(_repeat_offenders_by_grain(conn, _PROVIDER, {}))
@@ -186,18 +205,26 @@ def test_window_days_and_grain_set() -> None:
 
 def test_honest_absence_omits_grain() -> None:
     """No qualifying entity -> the grain is OMITTED; an empty spine -> no grains at all."""
-    with _seeded(_one_day([("trip", "tiny", 5, 1, 5 * 120)])) as conn:  # sub-floor, 1 day -> dropped
+    with _seeded(
+        _one_day([("trip", "tiny", 5, 1, 5 * 120)])
+    ) as conn:  # sub-floor, 1 day -> dropped
         assert _repeat_offenders_by_grain(conn, _PROVIDER, {}) == []
 
 
 def test_end_to_end_build_emits_by_grain() -> None:
     """Wiring gate: build_repeat_offenders() (the full publisher path) must recompose + attach
     by_grain. A missing call or dropped kwarg leaves by_grain=[] -> this fails."""
-    with _seeded(_one_day([
-        ("trip", "chronic", 900, 360, 900 * 200),
-        ("vehicle", "vok", 100, 10, 100 * 90),
-    ])) as conn:
-        out = build_repeat_offenders(conn, provider_id=_PROVIDER, generated_utc="2026-06-30T00:00:00Z")
+    with _seeded(
+        _one_day(
+            [
+                ("trip", "chronic", 900, 360, 900 * 200),
+                ("vehicle", "vok", 100, 10, 100 * 90),
+            ]
+        )
+    ) as conn:
+        out = build_repeat_offenders(
+            conn, provider_id=_PROVIDER, generated_utc="2026-06-30T00:00:00Z"
+        )
     assert {g.grain for g in out.by_grain} == {"week", "month"}
 
 
@@ -213,10 +240,45 @@ def test_byte_ceiling_probe() -> None:
         rows.append(("trip", f"T{i:03d}", _ANCHOR, 200, 200 - (i % 60), 200 * 300))
         rows.append(("vehicle", f"V{i:03d}", _ANCHOR, 200, 200 - (i % 60), 200 * 300))
     with _seeded(_one_day([(k, e, n, sev, sm) for (k, e, _d, n, sev, sm) in rows])) as conn:
-        out = build_repeat_offenders(conn, provider_id=_PROVIDER, generated_utc="2026-06-30T00:00:00Z")
+        out = build_repeat_offenders(
+            conn, provider_id=_PROVIDER, generated_utc="2026-06-30T00:00:00Z"
+        )
     size = len(_body(out))
     assert size <= REPEAT_OFFENDERS_BYTE_CEILING, (
         f"seeded repeat_offenders.json {size}B exceeds ceiling {REPEAT_OFFENDERS_BYTE_CEILING}B"
     )
-    print(f"\n[S14 size probe] seeded repeat_offenders.json = {size} bytes "
-          f"(ceiling {REPEAT_OFFENDERS_BYTE_CEILING})")
+    print(
+        f"\n[S14 size probe] seeded repeat_offenders.json = {size} bytes "
+        f"(ceiling {REPEAT_OFFENDERS_BYTE_CEILING})"
+    )
+
+
+def test_as_of_history_executes_one_closed_spine_stream_and_recomposes_windows() -> None:
+    """The immutable scalar parity target is the equivalent 14 CLOSED local-date spine
+    window. The fixed mutable mart's instant `now()-14d` window can include the open local day,
+    so literal newest parity is asserted only when those source windows are aligned."""
+    from transit_ops.snapshots.builders import historic
+
+    days = [_ANCHOR - timedelta(days=offset) for offset in range(4)]
+    rows = [
+        ("trip", "T", days[0], 30, 5, 30 * 400),
+        ("trip", "T", days[1], 30, 4, 30 * 400),
+        ("trip", "T", days[2], 30, 3, 30 * 400),
+        ("trip", "T", days[3], 30, 0, 30 * 100),
+    ]
+    with _seeded(rows) as conn:
+        payload = list(historic.build_repeat_offenders_history_plan(conn, _PROVIDER).iter_days())[
+            -1
+        ]
+
+    assert payload.date == _ANCHOR.isoformat()
+    assert [
+        (value.id, value.recurrence_days, value.window_days) for value in payload.offenders
+    ] == [("T", 3, 14)]
+    week = _week(payload.by_grain)
+    entry = next(value for value in week.entries if value.id == "T")
+    assert entry.observation_count == 120
+    assert entry.recurrence_days == 3
+    assert entry.observed_days == 4
+    assert week.date == (_ANCHOR - timedelta(days=6)).isoformat()
+    assert week.window_end == _ANCHOR.isoformat()

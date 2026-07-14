@@ -37,6 +37,9 @@ from transit_ops.snapshots.builders._helpers import (
     _STOP_NAMES_SQL,  # noqa: F401 - re-exported for attribute-path parity
 )
 from transit_ops.snapshots.builders.historic import hotspots_history as hotspots_history
+from transit_ops.snapshots.builders.historic import (
+    repeat_offenders_history as repeat_offenders_history,
+)
 
 # --- shared spine kernel (value helpers, projector fold catalog, spine +
 #     windowed consumer helpers, headway / weak-stop kernels) ---
@@ -156,6 +159,11 @@ from transit_ops.snapshots.builders.historic.provenance import (
     _build_provenance_conformance,
     build_provenance,
 )
+from transit_ops.snapshots.builders.historic.repeat_offenders_history import (
+    RepeatOffendersHistoryPlan,
+    build_repeat_offenders_history_plan,
+    build_repeat_offenders_history_plan_from_rows,
+)
 from transit_ops.snapshots.builders.historic.route_reliability import (
     _ROUTE_CANCELLATION_DAILY_SQL,
     _ROUTE_CROWDING_DELAY_SQL,
@@ -251,9 +259,12 @@ __all__ = [
     "build_hotspots_history_plan_from_rows",
     "build_receipts",
     "build_repeat_offenders",
+    "build_repeat_offenders_history_plan",
+    "build_repeat_offenders_history_plan_from_rows",
     "build_stop_reliability",
     "AlertArchiveBundle",
     "HotspotsHistoryPlan",
+    "RepeatOffendersHistoryPlan",
     "NetworkHistoryBundle",
     "NetworkHistoryPlan",
     "LineHistoryBundle",

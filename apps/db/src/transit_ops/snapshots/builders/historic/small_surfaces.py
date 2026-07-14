@@ -872,7 +872,11 @@ def _offender_tray_entry(r, kind: str, route_names: dict) -> RepeatOffenderEntry
 
 
 def _offender_kind_ladder(
-    rows, kind: str, route_names: dict
+    rows,
+    kind: str,
+    route_names: dict,
+    *,
+    history_route_tie: bool = False,
 ) -> tuple[list[RepeatOffenderEntry], int, list[RepeatOffenderEntry]]:
     """Rank ONE kind's window rows on its own ladder (per-kind ranking): the full MIN_N set
     ranked worst-first by the not-severe Wilson LB, ranks assigned 1..N WITHIN this kind,
@@ -888,7 +892,11 @@ def _offender_kind_ladder(
                 tray.append(_offender_tray_entry(r, kind, route_names))
         else:
             ranked.append(entry)
-    ranked.sort(key=lambda t: (t[0], t[1], t[2]))
+    if history_route_tie:
+        ranked.sort(key=lambda t: (t[0], t[1], t[2], str(t[3].route or "")))
+    else:
+        # Fixed current lane: preserve the original stable-input tie behavior exactly.
+        ranked.sort(key=lambda t: (t[0], t[1], t[2]))
     total_ranked = len(ranked)  # pre-truncation per-kind count (the shown/total denominator)
     entries: list[RepeatOffenderEntry] = []
     for i, t in enumerate(ranked[:_OFFENDERS_BY_GRAIN_CAP]):
