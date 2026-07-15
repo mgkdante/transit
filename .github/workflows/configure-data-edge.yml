@@ -1,0 +1,50 @@
+name: Configure Data Edge
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: transit-data-edge-production
+  cancel-in-progress: false
+
+jobs:
+  configure-data-edge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    defaults:
+      run:
+        working-directory: apps/data-proxy
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Run data-edge tests
+        run: node --test "test/*.test.mjs"
+
+      - name: Apply public snapshot CORS
+        run: bunx wrangler@4.100.0 r2 bucket cors set transit-snapshots --file r2-cors.json --force
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Configure direct R2 edge caching
+        run: node scripts/configure-data-edge.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: 8a4ad7999bd6c2259b5b4acd52f39015
+
+      - name: Run production smoke
+        run: bash smoke.sh

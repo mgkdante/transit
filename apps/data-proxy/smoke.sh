@@ -1,28 +1,49 @@
 #!/usr/bin/env bash
-# Prod smoke for the transit-data-proxy worker (slice-9.1.1p).
+# Prod smoke for direct R2 snapshot serving plus the compatibility data Worker.
 #
-# This script is the slice's failing prod test: it stays red (curl exit 6,
-# could not resolve transit.yesid.dev) until the operator creates the proxied
-# AAAA record and deploys the worker; exit 0 proves the canonical URLs baked
-# into the published manifest resolve end to end, while data.yesid.dev keeps
-# working untouched as the fallback origin.
+# Browser bulk reads and absolute URLs published into the manifest use the R2
+# custom domain. The more expensive Worker route remains a backwards-compatible
+# `/data/*` surface and still owns `/api/v1/*`.
 #
 # Usage: bash apps/data-proxy/smoke.sh
 #   CANONICAL_BASE / FALLBACK_BASE / APEX_BASE override the probed hosts.
 set -euo pipefail
 
-CANONICAL_BASE="${CANONICAL_BASE:-https://transit.yesid.dev/data}"
-FALLBACK_BASE="${FALLBACK_BASE:-https://data.yesid.dev}"
+CANONICAL_BASE="${CANONICAL_BASE:-https://data.yesid.dev}"
+FALLBACK_BASE="${FALLBACK_BASE:-https://transit.yesid.dev/data}"
+BROWSER_ORIGIN="${BROWSER_ORIGIN:-https://transit.yesid.dev}"
 MAX_TIME=15
+EDGE_MAX_ATTEMPTS="${EDGE_MAX_ATTEMPTS:-12}"
+EDGE_RETRY_DELAY_S="${EDGE_RETRY_DELAY_S:-3}"
 KPIS_MAX_ATTEMPTS="${KPIS_MAX_ATTEMPTS:-24}"
 KPIS_RETRY_DELAY_S="${KPIS_RETRY_DELAY_S:-5}"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 ok() { echo "ok: $*"; }
 
+[[ "$EDGE_MAX_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] \
+  || fail "EDGE_MAX_ATTEMPTS must be a positive integer"
+[[ "$EDGE_RETRY_DELAY_S" =~ ^[0-9]+$ ]] \
+  || fail "EDGE_RETRY_DELAY_S must be a non-negative integer"
+
 headers_of() {
   # -I HEAD probe; CRLF stripped so greps can anchor on line ends.
   curl -fsSI --max-time "$MAX_TIME" "$1" | tr -d '\r'
+}
+
+get_headers_of() {
+  # Use a real GET so this proves the same cache object browsers consume. The
+  # body is discarded, while response headers remain available for the gate.
+  local url="$1"
+  shift
+  curl -fsS --max-time "$MAX_TIME" -D - -o /dev/null "$@" "$url" | tr -d '\r'
+}
+
+response_headers_of() {
+  # Unlike get_headers_of, keep 4xx responses available for negative cache checks.
+  local url="$1"
+  shift
+  curl -sS --max-time "$MAX_TIME" -D - -o /dev/null "$@" "$url" | tr -d '\r'
 }
 
 status_of() {
@@ -43,48 +64,111 @@ assert_object() {
   ok "$url -> 200 application/json '${cache_control}'"
 }
 
-# --- canonical host: manifest + all three tiers + provenance (hard asserts;
+assert_edge_hit() {
+  local url="$1" headers attempt
+
+  # Cloudflare configuration can take a short time to converge. Repeat the
+  # exact browser-origin GET until CORS and cache reuse are both observable.
+  for ((attempt = 1; attempt <= EDGE_MAX_ATTEMPTS; attempt++)); do
+    if headers="$(get_headers_of "$url" -H "Origin: $BROWSER_ORIGIN")"; then
+      if grep -qi '^access-control-allow-origin: \*$' <<<"$headers" \
+        && grep -qi '^cf-cache-status: HIT$' <<<"$headers" \
+        && grep -Eqi '^age: [1-9][0-9]*$' <<<"$headers"; then
+        ok "$url browser-origin edge gate -> CORS + HIT with positive Age"
+        return
+      fi
+    fi
+
+    if [ "$attempt" -lt "$EDGE_MAX_ATTEMPTS" ]; then
+      echo "wait: $url edge gate not ready (attempt $attempt/$EDGE_MAX_ATTEMPTS); retrying in ${EDGE_RETRY_DELAY_S}s" >&2
+      sleep "$EDGE_RETRY_DELAY_S"
+    fi
+  done
+
+  fail "$url exhausted $EDGE_MAX_ATTEMPTS attempts without browser-origin CORS, HIT, and positive Age"
+}
+
+assert_range_preflight() {
+  local url="$1" headers attempt
+
+  for ((attempt = 1; attempt <= EDGE_MAX_ATTEMPTS; attempt++)); do
+    if headers="$(curl -sS --max-time "$MAX_TIME" -D - -o /dev/null -X OPTIONS \
+      -H "Origin: $BROWSER_ORIGIN" \
+      -H 'Access-Control-Request-Method: GET' \
+      -H 'Access-Control-Request-Headers: range' \
+      "$url" | tr -d '\r')" \
+      && grep -Eq '^HTTP/[^ ]+ 2[0-9][0-9]' <<<"$headers" \
+      && grep -qi '^access-control-allow-origin: \*$' <<<"$headers" \
+      && grep -Eqi '^access-control-allow-methods:.*GET' <<<"$headers" \
+      && grep -Eqi '^access-control-allow-headers:.*range' <<<"$headers"; then
+      ok "$url Range preflight -> allowed"
+      return
+    fi
+
+    if [ "$attempt" -lt "$EDGE_MAX_ATTEMPTS" ]; then
+      echo "wait: $url Range preflight not ready (attempt $attempt/$EDGE_MAX_ATTEMPTS); retrying in ${EDGE_RETRY_DELAY_S}s" >&2
+      sleep "$EDGE_RETRY_DELAY_S"
+    fi
+  done
+
+  fail "$url exhausted $EDGE_MAX_ATTEMPTS attempts without a valid Range preflight"
+}
+
+assert_missing_edge_bypass() {
+  local url="$1" headers attempt
+
+  for attempt in 1 2; do
+    headers="$(response_headers_of "$url" -H "Origin: $BROWSER_ORIGIN")" \
+      || fail "$url missing-object cache probe failed"
+    grep -Eq '^HTTP/[^ ]+ 404' <<<"$headers" \
+      || fail "$url missing-object cache probe did not return 404"
+    if grep -qi '^cf-cache-status: HIT$' <<<"$headers"; then
+      fail "$url returned CF-Cache-Status: HIT on a missing direct-R2 object"
+    fi
+    if grep -Eqi '^age: [1-9][0-9]*$' <<<"$headers"; then
+      fail "$url returned Age on a missing direct-R2 object"
+    fi
+  done
+  ok "$url missing direct-R2 object remains uncacheable"
+}
+
+# --- direct R2 custom domain: manifest + all three tiers + provenance (hard asserts;
 # --- historic went publicly live 2026-06-10, values from snapshots/storage.py) ---
 assert_object "$CANONICAL_BASE/v1/stm/manifest.json" "public, max-age=30"
 curl -fsS --max-time "$MAX_TIME" "$CANONICAL_BASE/v1/stm/manifest.json" \
   | grep -q '"provider":"stm"' || fail "manifest body missing \"provider\":\"stm\""
 ok "manifest body carries provider stm"
+assert_edge_hit "$CANONICAL_BASE/v1/stm/manifest.json"
+assert_range_preflight "$CANONICAL_BASE/v1/stm/static/basemap/montreal.pmtiles"
+assert_missing_edge_bypass "$CANONICAL_BASE/v1/stm/definitely-missing.json"
 
 assert_object "$CANONICAL_BASE/v1/stm/live/vehicles.json" "public, max-age=30"
 assert_object "$CANONICAL_BASE/v1/stm/static/routes_index.json" "public, max-age=86400, stale-while-revalidate=86400|public, max-age=604800"
 assert_object "$CANONICAL_BASE/v1/stm/historic/network_trend.json" "public, max-age=3600, stale-while-revalidate=86400|public, max-age=86400"
 assert_object "$CANONICAL_BASE/v1/stm/provenance.json" "public, max-age=3600, stale-while-revalidate=86400|public, max-age=86400"
 
-# --- negatives: clean 404/405, and errors are never cacheable ---
-[ "$(status_of "$CANONICAL_BASE/v1/stm/definitely-missing.json")" = "404" ] \
+# --- compatibility Worker negatives: clean 404/405 and errors never cacheable ---
+[ "$(status_of "$FALLBACK_BASE/v1/stm/definitely-missing.json")" = "404" ] \
   || fail "missing key must return 404"
 ok "missing key -> 404"
 
-curl -sI --max-time "$MAX_TIME" "$CANONICAL_BASE/v1/stm/definitely-missing.json" \
+curl -sI --max-time "$MAX_TIME" "$FALLBACK_BASE/v1/stm/definitely-missing.json" \
   | tr -d '\r' | grep -qi '^cache-control: no-store' \
   || fail "404 response must carry cache-control: no-store"
 ok "404 carries cache-control: no-store"
 
-[ "$(status_of "$CANONICAL_BASE/secrets.txt")" = "404" ] \
+[ "$(status_of "$FALLBACK_BASE/secrets.txt")" = "404" ] \
   || fail "path outside v1/ must return 404"
 ok "non-v1 path -> 404"
 
-[ "$(status_of -X POST "$CANONICAL_BASE/v1/stm/manifest.json")" = "405" ] \
+[ "$(status_of -X POST "$FALLBACK_BASE/v1/stm/manifest.json")" = "405" ] \
   || fail "POST must return 405"
 ok "POST -> 405"
 
-# --- CORS: the recorded slice-9.2 dev decision (fetch canonical host directly) ---
-headers_of "$CANONICAL_BASE/v1/stm/manifest.json" >/dev/null # resolvability guard
-curl -fsSI --max-time "$MAX_TIME" -H 'Origin: http://localhost:5173' \
-  "$CANONICAL_BASE/v1/stm/manifest.json" | tr -d '\r' \
-  | grep -qi '^access-control-allow-origin: \*' \
-  || fail "manifest must carry access-control-allow-origin: *"
-ok "access-control-allow-origin: * present"
-
-# --- fallback origin untouched: data.yesid.dev keeps serving ---
+# --- compatibility Worker route remains live during the cutover. ---
 [ "$(status_of "$FALLBACK_BASE/v1/stm/manifest.json")" = "200" ] \
-  || fail "fallback $FALLBACK_BASE manifest must still return 200"
-ok "fallback $FALLBACK_BASE manifest -> 200"
+  || fail "compatibility route $FALLBACK_BASE manifest must still return 200"
+ok "compatibility route $FALLBACK_BASE manifest -> 200"
 
 # --- /api/v1/kpis: public KPI endpoint (frozen v1 contract, src/kpis.js) ---
 # APEX_BASE is independent from CANONICAL_BASE because the latter ends in
@@ -137,4 +221,4 @@ vitals_status="$(status_of -X POST -H 'content-type: application/json' -d '{}' \
 [ "$vitals_status" != "405" ] || fail "/api/vitals returned 405 — route scope leaked past /api/v1/*"
 ok "/api/vitals still reaches the web app (status $vitals_status)"
 
-echo "SMOKE OK: canonical + fallback serving, kpis live, negatives clean"
+echo "SMOKE OK: direct R2 + compatibility serving, kpis live, negatives clean"
