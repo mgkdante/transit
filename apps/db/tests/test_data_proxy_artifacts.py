@@ -158,6 +158,15 @@ def test_smoke_script_asserts_canonical_and_fallback_objects() -> None:
     assert "405" in text
     assert "no-store" in text
     assert "access-control-allow-origin" in text
+    assert 'BROWSER_ORIGIN="${BROWSER_ORIGIN:-https://transit.yesid.dev}"' in text
+    assert "Origin: $BROWSER_ORIGIN" in text
+    # Direct R2 is not cost-optimized until Cloudflare's edge actually reuses the
+    # object. The deployment smoke must warm one canonical URL, repeat the same
+    # GET, and require a HIT with a positive Age rather than accepting DYNAMIC.
+    assert "assert_edge_hit" in text
+    assert "cf-cache-status: hit" in text.lower()
+    assert "^age: [1-9][0-9]*$" in text
+    assert "edge gate" in text.lower()
     # The deployment gate must fail if a future Worker publish drops the KPI
     # route or sends it back to the web app's HTML catch-all.
     assert "/api/v1/kpis" in text
@@ -202,9 +211,11 @@ def test_smoke_recovers_when_kpi_route_appears_after_propagation(
             method=GET
             status_only=false
             head_only=false
+            dump_headers=false
             for ((index = 1; index <= $#; index++)); do
               argument="${!index}"
               [ "$argument" = "-w" ] && status_only=true
+              [ "$argument" = "-D" ] && dump_headers=true
               case "$argument" in -*I*) head_only=true ;; esac
               if [ "$argument" = "-X" ]; then
                 next=$((index + 1))
@@ -236,6 +247,28 @@ def test_smoke_recovers_when_kpi_route_appears_after_propagation(
               printf 'HTTP/2 200\r\n'
               printf 'content-type: application/json\r\n'
               printf 'cache-control: %s\r\n' "$cache_control"
+              printf 'access-control-allow-origin: *\r\n\r\n'
+              exit 0
+            fi
+
+            if [ "$dump_headers" = true ]; then
+              if [ "$method" = OPTIONS ]; then
+                printf 'HTTP/2 204\r\n'
+                printf 'access-control-allow-origin: *\r\n'
+                printf 'access-control-allow-methods: GET, HEAD\r\n'
+                printf 'access-control-allow-headers: range\r\n\r\n'
+                exit 0
+              fi
+              if [[ "$url" == */definitely-missing.json ]]; then
+                printf 'HTTP/2 404\r\n'
+                printf 'content-type: application/json\r\n\r\n'
+                exit 0
+              fi
+              printf 'HTTP/2 200\r\n'
+              printf 'content-type: application/json\r\n'
+              printf 'cache-control: public, max-age=30\r\n'
+              printf 'cf-cache-status: HIT\r\n'
+              printf 'age: 2\r\n'
               printf 'access-control-allow-origin: *\r\n\r\n'
               exit 0
             fi
