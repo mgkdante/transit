@@ -53,7 +53,19 @@ def test_freshness_probe_workflow_schedule_permissions_and_secrets() -> None:
     on = _on_block(doc)
     crons = [entry["cron"] for entry in on["schedule"]]
     assert "*/15 * * * *" in crons
+    # Hourly lane for backup-freshness (the pg_dump artifact changes nightly;
+    # 96x/day paid a python-toolchain setup per run for no signal).
+    assert "7 * * * *" in crons
     assert "workflow_dispatch" in on
+
+    # Cadence split: probe skips the hourly cron; backup-freshness runs ONLY on
+    # the hourly cron (or manual dispatch). Without these gates both jobs run on
+    # every tick and the recadence silently regresses.
+    assert doc["jobs"]["probe"]["if"] == "github.event.schedule != '7 * * * *'"
+    assert (
+        doc["jobs"]["backup-freshness"]["if"]
+        == "github.event_name == 'workflow_dispatch' || github.event.schedule == '7 * * * *'"
+    )
 
     assert doc["permissions"]["contents"] == "read"
     assert doc["permissions"]["issues"] == "write"

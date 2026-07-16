@@ -12,7 +12,7 @@ runs:
     - name: Prepare cache directories
       shell: bash
       working-directory: ${{ github.workspace }}
-      run: mkdir -p ~/.bun/install/cache .turbo/cache apps/web/.vitest/cache
+      run: mkdir -p ~/.bun/install/cache apps/web/.vitest/cache
 
     - name: Cache Bun install cache
       uses: actions/cache@v5
@@ -22,21 +22,14 @@ runs:
         restore-keys: |
           ${{ runner.os }}-bun-
 
-    - name: Cache Turbo
-      uses: actions/cache@v5
-      with:
-        path: .turbo/cache
-        key: ${{ runner.os }}-turbo-${{ github.job }}-${{ github.ref_name }}-${{ hashFiles('bun.lock', 'turbo.json', 'apps/**/package.json', 'packages/**/package.json') }}
-        restore-keys: |
-          ${{ runner.os }}-turbo-${{ github.job }}-${{ github.ref_name }}-
-          ${{ runner.os }}-turbo-${{ github.job }}-
-          ${{ runner.os }}-turbo-
-
     - name: Cache Vitest
       uses: actions/cache@v5
       with:
         path: apps/web/.vitest/cache
-        key: ${{ runner.os }}-vitest-web-${{ hashFiles('bun.lock', 'apps/web/vite.config.ts', 'apps/web/src/**/*.ts', 'apps/web/src/**/*.svelte') }}
+        # Key on config only: hashing every src file made each commit a cache
+        # miss, uploading a fresh ~full cache per run. restore-keys already
+        # provide the warm fallback; vitest invalidates stale entries itself.
+        key: ${{ runner.os }}-vitest-web-${{ hashFiles('bun.lock', 'apps/web/vite.config.ts') }}
         restore-keys: |
           ${{ runner.os }}-vitest-web-
 

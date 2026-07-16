@@ -1,0 +1,14 @@
+# Monthly grouped GitHub Actions updates (pattern ported from yesid.dev).
+# Target develop: the develop-push deploy to dev.transit.yesid.dev doubles as
+# a smoke test for action bumps before they ride a promotion to main.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    target-branch: "develop"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
