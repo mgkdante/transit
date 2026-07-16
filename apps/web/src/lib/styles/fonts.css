@@ -1,6 +1,13 @@
 /*
  * fonts.css — latin + latin-ext ONLY @font-face for the two app typefaces.
  *
+ * The four vendored woff2 files in static/fonts are now the sole font source.
+ * To re-pin from the original @fontsource-variable/inter@5.2.8 and
+ * @fontsource-variable/jetbrains-mono@5.2.8 packages, install those exact
+ * versions temporarily, copy latin + latin-ext wght-normal, refresh the ranges
+ * from wght.css, version the public filenames, update these URLs + app.html
+ * preloads, then remove the packages again.
+ *
  * WHY: the bare `import '@fontsource-variable/inter'` (and jetbrains-mono) pulls
  * the package `index.css`, which ships @font-face for EVERY subset — cyrillic,
  * cyrillic-ext, greek, greek-ext, vietnamese, latin-ext, latin — i.e. up to 7
@@ -14,11 +21,10 @@
  * VERBATIM from the @fontsource-variable package CSS, so the families resolve
  * exactly as before — zero visual change, just fewer bytes.
  *
- * The `src` points at STABLE, content-stable copies under /fonts/ (pinned from
- * node_modules, cached immutable by _headers, and the SAME URLs app.html
+ * The `src` points at stable copies under /fonts/ (pinned from the original
+ * packages, cached immutable by _headers, and the SAME URLs app.html
  * preloads — so the preload actually warms the request the @font-face issues,
- * instead of a hashed bundle path the preload would miss). Regenerate the pinned
- * copies if @fontsource-variable/inter or /jetbrains-mono is bumped.
+ * instead of a hashed bundle path the preload would miss).
  */
 
 /* ── Inter Variable (body + headings) ─────────────────────────────────────── */

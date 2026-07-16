@@ -3,7 +3,7 @@
 // Re-exports the cross-cutting component families so a surface can pull from
 // a single import root:
 //
-//   import { AppShell, MissionControlGrid, StatusDot, Heatmap } from '$lib/components';
+//   import { AppShell, DashboardGrid, StatusDot, StatusBadge } from '$lib/components';
 //
 // Each family owns its own `index.ts`; this file just composes them. The
 // star-exports below are flat — every family namespaces its exports with a
@@ -11,12 +11,12 @@
 //
 //   brand   — metro-board brand primitives (StatusDot, MetricDisplay, …)
 //   shell   — responsive app-shell chrome (AppShell, NavPill, RightPanel, …)
-//   layout  — the four responsive grid recipes (MissionControlGrid, …)
-//   dataviz — SVG data-viz kit + token helpers (Heatmap, TrendLine, …)
+//   layout  — responsive grids and page shells (DashboardGrid, RailLayout, …)
+//   dataviz — non-chart data-viz primitives + token helpers (StatusBadge, RankedRow, …)
 //   edge    — edge-condition primitive (EdgeState)
 //   map     — MapLibre stage + null-safe basemap resolver (MapStage, …)
 //
-// NOTE: ui/* (shadcn-style primitives: button, card, dialog, tabs, …) is
+// NOTE: ui/* (shadcn-style primitives: button, card, sheet, tabs, …) is
 // deliberately NOT re-exported here. Each `ui/<name>` owns its own barrel
 // and is import-per-component to keep tree-shaking tight and avoid pulling
 // the whole primitive set into every surface — import those directly, e.g.

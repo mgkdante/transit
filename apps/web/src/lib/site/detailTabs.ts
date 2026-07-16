@@ -1,6 +1,4 @@
-export const DETAIL_TABS = ['detail', 'schedule', 'reliability'] as const;
-
-export type DetailTab = (typeof DETAIL_TABS)[number];
+export type DetailTab = 'detail' | 'schedule' | 'reliability';
 
 export function detailTabFromSearchParams(searchParams: URLSearchParams): DetailTab {
 	const value = searchParams.get('tab');

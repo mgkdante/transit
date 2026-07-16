@@ -31,7 +31,7 @@
 		<!-- Basemap origin (MapLibre glyph PBFs) preconnect is scoped to the /map route
 		     head (src/routes/[[lang=locale]]/map/+page.svelte) so home/lines/etc. do not
 		     pay a wasted connection warmup to protomaps.github.io. -->
-		<!-- Fonts: self-hosted via @fontsource-variable (no external requests). Preload
+		<!-- Fonts: vendored from pinned Fontsource packages (no external requests). Preload
 		     the latin variable woff2 for Inter (body/headings) + JetBrains Mono (mono
 		     numerals) on the LCP path. These point at content-stable copies under
 		     /fonts/ (cached immutable by _headers); the @font-face that consumes them

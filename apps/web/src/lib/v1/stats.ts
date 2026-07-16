@@ -11,11 +11,9 @@
 /** Proportion reliability floor (OTP / cancellation / silent / on-time-band %). */
 export const MIN_N_RATE = 30;
 /** Below this denominator, show the raw fraction — a percentage string is forbidden. */
-export const RATE_DISPLAY_FLOOR = 10;
-/** 4..MIN_N_RATE → render raw marks (strip/dot), not a summary. */
-export const STRIP_FLOOR = 4;
+const RATE_DISPLAY_FLOOR = 10;
 /** n ≤ this → prose, never a chart. */
-export const SENTENCE_FLOOR = 3;
+const SENTENCE_FLOOR = 3;
 /** A connected time-series line needs at least this many real points. */
 export const MIN_POINTS_FOR_LINE = 7;
 /** 95% two-sided Wilson score interval. */
@@ -26,7 +24,7 @@ export type DisplayTier = 'full' | 'strip' | 'sentence' | 'none';
 
 /**
  * The honest display tier for a sample size. `none` when n is missing/zero;
- * `sentence` for n ≤ {@link SENTENCE_FLOOR}; `strip` for STRIP_FLOOR..<MIN_N_RATE;
+ * `sentence` for n ≤ {@link SENTENCE_FLOOR}; `strip` for 4..<MIN_N_RATE;
  * `full` at/above {@link MIN_N_RATE}. Unknown depth (null/undefined) → `none` so a
  * caller never assumes `full` off a missing count.
  */

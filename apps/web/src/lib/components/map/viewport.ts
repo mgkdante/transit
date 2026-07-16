@@ -6,7 +6,7 @@ export const MONTREAL_MAP_BOUNDS: [[number, number], [number, number]] = [
 	[-74.1, 45.25],
 	[-73.2, 45.75],
 ];
-export const MONTREAL_MAP_CENTER: [number, number] = [-73.5673, 45.5017];
+const MONTREAL_MAP_CENTER: [number, number] = [-73.5673, 45.5017];
 
 export type MapViewportOptions = {
 	bounds: [[number, number], [number, number]];

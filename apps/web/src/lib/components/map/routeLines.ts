@@ -184,7 +184,7 @@ export function addRouteLineLayers(map: MapLibreMap): void {
 	} as unknown as LayerSpecification);
 }
 
-export function retintRouteLineLayers(map: MapLibreMap): void {
+function retintRouteLineLayers(map: MapLibreMap): void {
 	const routeYellow = resolveColor('var(--accent-text)', 'rgb(255, 182, 39)');
 	const casing = resolveColor('var(--background)', 'rgb(20, 20, 20)');
 	map.setPaintProperty(ROUTE_LINE_CASING_LAYER, 'line-color', casing);
