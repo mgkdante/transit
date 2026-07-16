@@ -90,6 +90,7 @@ test("creates the scoped JSON cache rule and enables both tiered-cache settings"
   assert.deepEqual(CACHE_RULE.action_parameters, {
     cache: true,
     edge_ttl: { mode: "bypass_by_default" },
+    browser_ttl: { mode: "respect_origin" },
   });
   assert.equal(CACHE_RULE.ref, CACHE_RULE_REF);
 });
@@ -231,7 +232,13 @@ test("production deploys and the manual edge lane use the same owned configurati
   );
 });
 
-test("the production smoke proves missing direct-R2 JSON never becomes an edge hit", () => {
+test("the production smoke pins browser freshness and rejects edge-cached 404s", () => {
+  assert.match(
+    smokeScript,
+    /assert_edge_hit "\$CANONICAL_BASE\/v1\/stm\/manifest\.json" "public, max-age=30"/,
+  );
+  assert.match(smokeScript, /expected_cache_control/);
+  assert.match(smokeScript, /cache-control.*expected_cache_control/i);
   assert.match(smokeScript, /assert_missing_edge_bypass/);
   assert.match(
     smokeScript,

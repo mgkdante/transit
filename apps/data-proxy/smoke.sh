@@ -65,16 +65,17 @@ assert_object() {
 }
 
 assert_edge_hit() {
-  local url="$1" headers attempt
+  local url="$1" expected_cache_control="$2" headers attempt
 
   # Cloudflare configuration can take a short time to converge. Repeat the
   # exact browser-origin GET until CORS and cache reuse are both observable.
   for ((attempt = 1; attempt <= EDGE_MAX_ATTEMPTS; attempt++)); do
     if headers="$(get_headers_of "$url" -H "Origin: $BROWSER_ORIGIN")"; then
       if grep -qi '^access-control-allow-origin: \*$' <<<"$headers" \
+        && grep -Eqi "^cache-control: (${expected_cache_control})$" <<<"$headers" \
         && grep -qi '^cf-cache-status: HIT$' <<<"$headers" \
         && grep -Eqi '^age: [1-9][0-9]*$' <<<"$headers"; then
-        ok "$url browser-origin edge gate -> CORS + HIT with positive Age"
+        ok "$url browser-origin edge gate -> CORS + '${expected_cache_control}' + HIT with positive Age"
         return
       fi
     fi
@@ -85,7 +86,7 @@ assert_edge_hit() {
     fi
   done
 
-  fail "$url exhausted $EDGE_MAX_ATTEMPTS attempts without browser-origin CORS, HIT, and positive Age"
+  fail "$url exhausted $EDGE_MAX_ATTEMPTS attempts without browser-origin CORS, '${expected_cache_control}', HIT, and positive Age"
 }
 
 assert_range_preflight() {
@@ -138,7 +139,7 @@ assert_object "$CANONICAL_BASE/v1/stm/manifest.json" "public, max-age=30"
 curl -fsS --max-time "$MAX_TIME" "$CANONICAL_BASE/v1/stm/manifest.json" \
   | grep -q '"provider":"stm"' || fail "manifest body missing \"provider\":\"stm\""
 ok "manifest body carries provider stm"
-assert_edge_hit "$CANONICAL_BASE/v1/stm/manifest.json"
+assert_edge_hit "$CANONICAL_BASE/v1/stm/manifest.json" "public, max-age=30"
 assert_range_preflight "$CANONICAL_BASE/v1/stm/static/basemap/montreal.pmtiles"
 assert_missing_edge_bypass "$CANONICAL_BASE/v1/stm/definitely-missing.json"
 
