@@ -20,6 +20,7 @@
 	import { ChevronToggle } from '$lib/components/brand';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { ToggleGroup, ToggleGroupItem } from '$lib/components/ui/toggle-group';
+	import SegmentedChoice from '$lib/components/surface/SegmentedChoice.svelte';
 	import { persisted } from '$lib/stores/persisted.svelte';
 
 	const locale: Locale = getLocale();
@@ -36,6 +37,7 @@
 		persistKey = undefined,
 		allLabel = defaultAllLabel,
 		density = 'compact',
+		variant = 'default',
 		onSelect,
 		testIdPrefix = undefined,
 	}: {
@@ -54,9 +56,14 @@
 		allLabel?: Record<Locale, string>;
 		/** Compact is the shared alerts/default density; spacious is opt-in. */
 		density?: 'compact' | 'spacious';
+		/** Opt-in joined frame; the existing vertical filter remains the default. */
+		variant?: 'default' | 'joined-grid';
 		onSelect: (key: string | null) => void;
 		testIdPrefix?: string | undefined;
 	} = $props();
+	const uid = $props.id();
+	const collapseId = `filter-group-${uid}`;
+	const labelId = `${collapseId}-label`;
 
 	// Keyed → session-scoped (survives a locale switch, paints directly in its
 	// restored state via persisted()'s synchronous seed); unkeyed → local rune.
@@ -72,6 +79,13 @@
 
 	// Map activeKey to ToggleGroup value: null → '__all__', string → string.
 	const groupValue = $derived(activeKey ?? '__all__');
+	const joinedOptions = $derived([
+		{ key: '__all__', label: allLabel[locale] },
+		...items.map((item) => ({
+			...item,
+			testId: testIdPrefix ? `${testIdPrefix}-${item.key}` : undefined,
+		})),
+	]);
 
 	function handleValueChange(value: string) {
 		if (!value) {
@@ -82,68 +96,97 @@
 		}
 		onSelect(value === '__all__' ? null : value);
 	}
+
+	function handleJoinedSelection(value: string): void {
+		if (allowDeselect && activeKey !== null && value === activeKey) {
+			onSelect(null);
+			return;
+		}
+		handleValueChange(value);
+	}
 </script>
 
-<div data-density={density}>
+<div data-density={density} data-variant={variant}>
 	{#if collapsible}
 		<button
 			type="button"
+			id={labelId}
 			class="tap-press flex w-full items-center justify-between label-section text-sm font-semibold py-2.5 min-h-11 transition-colors hover:text-[var(--foreground)] active:text-[var(--foreground)]"
+			aria-expanded={isOpen}
+			aria-controls={collapseId}
 			onclick={toggleOpen}
 		>
 			{label}
 			<ChevronToggle open={isOpen} size="sm" direction="down" />
 		</button>
 	{:else}
-		<div class="label-section text-sm font-semibold">
+		<div id={labelId} class="label-section text-sm font-semibold">
 			{label}
 		</div>
 	{/if}
 
-	<div class="filter-collapse" class:filter-open={!collapsible || isOpen}>
+	<div
+		id={collapseId}
+		class="filter-collapse"
+		class:filter-open={!collapsible || isOpen}
+		inert={collapsible && !isOpen}
+		aria-hidden={collapsible && !isOpen ? 'true' : undefined}
+	>
 		<div class="filter-collapse-inner">
-			<ToggleGroup
-				type="single"
-				value={groupValue}
-				onValueChange={handleValueChange}
-				class="mt-2 flex w-full flex-col gap-1"
-				orientation="vertical"
-			>
-				<ToggleGroupItem value="__all__">
-					{#snippet child({ props })}
-						<button
-							{...props}
-							class="tap-press filter-btn w-full rounded py-3 min-h-11 text-left transition-colors"
-							class:px-2={density === 'compact'}
-							class:text-sm={density === 'compact'}
-							class:px-3={density === 'spacious'}
-							class:text-base={density === 'spacious'}
-							class:active={activeKey === null}
-						>
-							{allLabel[locale]}
-						</button>
-					{/snippet}
-				</ToggleGroupItem>
-
-				{#each items as item (item.key)}
-					<ToggleGroupItem value={item.key}>
+			{#if variant === 'joined-grid'}
+				<SegmentedChoice
+					options={joinedOptions}
+					value={groupValue}
+					{label}
+					onSelect={handleJoinedSelection}
+					variant="joined-grid"
+					class="mt-2"
+				/>
+			{:else}
+				<ToggleGroup
+					type="single"
+					aria-labelledby={labelId}
+					value={groupValue}
+					onValueChange={handleValueChange}
+					class="mt-2 flex w-full flex-col gap-1"
+					orientation="vertical"
+				>
+					<ToggleGroupItem value="__all__">
 						{#snippet child({ props })}
 							<button
 								{...props}
-								class="tap-press filter-btn w-full rounded border border-border py-3 min-h-11 text-left text-[var(--muted-foreground)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)] active:border-[var(--primary)] active:text-[var(--primary)]"
+								class="tap-press filter-btn w-full rounded py-3 min-h-11 text-left transition-colors"
 								class:px-2={density === 'compact'}
 								class:text-sm={density === 'compact'}
 								class:px-3={density === 'spacious'}
 								class:text-base={density === 'spacious'}
-								class:tag-active={activeKey === item.key}
-								data-testid={testIdPrefix ? `${testIdPrefix}-${item.key}` : undefined}
+								class:active={activeKey === null}
 							>
-								{item.label}
+								{allLabel[locale]}
 							</button>
 						{/snippet}
 					</ToggleGroupItem>
-				{/each}
-			</ToggleGroup>
+
+					{#each items as item (item.key)}
+						<ToggleGroupItem value={item.key}>
+							{#snippet child({ props })}
+								<button
+									{...props}
+									class="tap-press filter-btn w-full rounded border border-border py-3 min-h-11 text-left text-[var(--muted-foreground)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)] active:border-[var(--primary)] active:text-[var(--primary)]"
+									class:px-2={density === 'compact'}
+									class:text-sm={density === 'compact'}
+									class:px-3={density === 'spacious'}
+									class:text-base={density === 'spacious'}
+									class:tag-active={activeKey === item.key}
+									data-testid={testIdPrefix ? `${testIdPrefix}-${item.key}` : undefined}
+								>
+									{item.label}
+								</button>
+							{/snippet}
+						</ToggleGroupItem>
+					{/each}
+				</ToggleGroup>
+			{/if}
 		</div>
 	</div>
 </div>

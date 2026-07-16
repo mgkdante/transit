@@ -1,7 +1,7 @@
 <!--
   MapDetailAlerts — the severity-coded alerts rail shared by every selection detail
-  (vehicle / route / stop). Stands down to a quiet "no alerts" note when empty, never
-  blank-hides. Self-contained: owns its markup + scoped styling.
+  (vehicle / route / stop). Known-empty stands down to a quiet healthy note;
+  unavailable data stays neutral. Self-contained: owns markup + scoped styling.
 -->
 <script lang="ts">
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
@@ -9,10 +9,11 @@
 	import type { Alert } from '$lib/v1/schemas';
 	import { alertDisplayText } from '$lib/v1/alertDisplay';
 	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
+	import { StateNotice } from '$lib/components/edge';
 	import type { MapSelectionDetailCopy } from './mapSelectionDetail.copy';
 
 	interface Props {
-		alerts: readonly Alert[];
+		alerts: readonly Alert[] | null;
 		locale: Locale;
 		t: MapSelectionDetailCopy;
 		compact?: boolean;
@@ -28,7 +29,16 @@
 
 <section class="map-alerts" aria-label={t.alerts}>
 	<h3>{t.alerts}</h3>
-	{#if alerts.length > 0}
+	{#if alerts == null}
+		<StateNotice
+			title={t.alertsUnavailable}
+			glyph="○"
+			tone="neutral"
+			presentation="silo"
+			role="status"
+			ariaLive="polite"
+		/>
+	{:else if alerts.length > 0}
 		<ul>
 			{#each alerts.slice(0, compact ? 2 : 4) as alert (alert.id)}
 				{@const cause = causeLabel(alert.cause, locale)}
@@ -63,7 +73,14 @@
 			{/each}
 		</ul>
 	{:else}
-		<p>{t.noAlerts}</p>
+		<StateNotice
+			title={t.noAlerts}
+			glyph="●"
+			tone="positive"
+			presentation="silo"
+			role="status"
+			ariaLive="polite"
+		/>
 	{/if}
 </section>
 
@@ -179,16 +196,6 @@
 		font-size: var(--text-caption);
 		font-weight: 500;
 		color: var(--foreground);
-	}
-	/* Empty state — quiet, distinct from an active alert. */
-	.map-alerts p {
-		margin: 0;
-		border: 1px dashed var(--border-subtle);
-		border-radius: var(--radius-md);
-		background: var(--muted);
-		padding: 0.5rem 0.75rem;
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.map-alert-button,

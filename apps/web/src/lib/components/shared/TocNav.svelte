@@ -206,7 +206,7 @@
 
 	.toc-sub-item {
 		/* padding-left set inline based on heading depth */
-		font-size: 13px;
+		font-size: var(--text-caption);
 		min-height: 36px;
 		color: color-mix(in srgb, var(--foreground) 20%, transparent);
 	}
@@ -224,7 +224,6 @@
 		height: 6px;
 		border-radius: 50%;
 		background: var(--primary);
-		box-shadow: 0 0 8px color-mix(in srgb, var(--glow) 40%, transparent);
 	}
 
 	.toc-counter-text {

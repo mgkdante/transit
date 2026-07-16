@@ -40,8 +40,9 @@ describe('HeatmapMark — frozen-gutter / scroll split (PR-WEB-6)', () => {
 		expect(container.querySelector('[data-slot="scroll-frame-gutter"]')).not.toBeNull();
 		const scroller = container.querySelector('[data-slot="scroll-frame-scroller"]');
 		expect(scroller).not.toBeNull();
-		// the scroll region is labelled by the (scrollable) hour dimension for AT.
-		expect(scroller?.getAttribute('aria-label')).toBe('Hour of day');
+		// happy-dom has no real overflow; ScrollFrame keeps the fitting grid out of the tab order.
+		expect(scroller).not.toHaveAttribute('aria-label');
+		expect(scroller).not.toHaveAttribute('tabindex');
 	});
 
 	it('still renders the full sr-only table (the layout-independent AT mirror)', () => {

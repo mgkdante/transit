@@ -33,7 +33,7 @@
 	import { cornerMetaLabels } from '$lib/components/brand';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import MapDrilldownLink from '$lib/components/surface/MapDrilldownLink.svelte';
-	import { MaybeValue } from '$lib/components/edge';
+	import { MaybeValue, StateNotice } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, metricName } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -324,7 +324,13 @@
 						{:else}
 							<!-- Trip is broadcasting but reports no remaining stops: an honest
 							     note rather than a fabricated empty list. -->
-							<p class="trip-novalue" data-testid="trip-no-stops">{t.noRemainingStops}</p>
+							<StateNotice
+								title={t.noRemainingStops}
+								presentation="silo"
+								role="status"
+								ariaLive="polite"
+								data-testid="trip-no-stops"
+							/>
 						{/if}
 					</div>
 				</div>
@@ -586,10 +592,6 @@
 	.trip-stop-link:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
-	}
-	.trip-novalue {
-		color: var(--muted-foreground);
-		font-size: var(--text-body);
 	}
 	.trip-prediction-caveat {
 		margin: 0.5rem 0 0;

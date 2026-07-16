@@ -143,6 +143,11 @@ export function routeModeHint(type: number): RouteModeHint {
 	};
 }
 
+/** Canonical mode key for a GTFS route_type; null for an unmapped future type. */
+export function routeModeKey(type: number): TransitModeKey | null {
+	return modeKeyForTag(routeModeHint(type).tag);
+}
+
 /**
  * Dedupe key for collapsing search results to ONE row per logical stop. A métro
  * station (real mode 'metro', or a 'Station …' name pre-field) is attached to

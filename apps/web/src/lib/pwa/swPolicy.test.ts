@@ -9,6 +9,7 @@ import {
 	KILL_FLAG_PATH,
 	precachePathnames,
 	shouldHandle,
+	shouldIntercept,
 	shouldKill,
 } from './swPolicy';
 
@@ -145,6 +146,68 @@ describe('shouldHandle — scope guard', () => {
 		expect(shouldHandle({ method: 'GET', headers: headers() }, u('/sw-kill.json'), ORIGIN)).toBe(
 			false,
 		);
+	});
+});
+
+describe('shouldIntercept — only requests with a service-worker strategy', () => {
+	const precache = new Set(['/favicon.svg', '/offline.html']);
+	const headers = (h: Record<string, string> = {}) => ({
+		get: (n: string) => h[n.toLowerCase()] ?? null,
+	});
+
+	it('intercepts navigations for the network-first offline strategy', () => {
+		expect(
+			shouldIntercept(
+				{ method: 'GET', mode: 'navigate', headers: headers() },
+				u('/lines/51'),
+				ORIGIN,
+				precache,
+			),
+		).toBe(true);
+	});
+
+	it('intercepts shell assets for the cache-first strategy', () => {
+		expect(
+			shouldIntercept(
+				{ method: 'GET', mode: 'cors', headers: headers() },
+				u('/_app/immutable/entry/start.abc.js'),
+				ORIGIN,
+				precache,
+			),
+		).toBe(true);
+	});
+
+	it('leaves arbitrary same-origin GET requests to the browser', () => {
+		expect(
+			shouldIntercept(
+				{ method: 'GET', mode: 'cors', headers: headers({ accept: '*/*' }) },
+				u('/lines/51?tab=schedule'),
+				ORIGIN,
+				precache,
+			),
+		).toBe(false);
+	});
+
+	it('keeps data requests outside the service worker', () => {
+		expect(
+			shouldIntercept(
+				{ method: 'GET', mode: 'cors', headers: headers() },
+				u('/data/v1/stm/manifest.json'),
+				ORIGIN,
+				precache,
+			),
+		).toBe(false);
+	});
+
+	it('keeps Range requests outside the service worker', () => {
+		expect(
+			shouldIntercept(
+				{ method: 'GET', mode: 'cors', headers: headers({ range: 'bytes=0-1023' }) },
+				u('/basemap.pmtiles'),
+				ORIGIN,
+				precache,
+			),
+		).toBe(false);
 	});
 });
 

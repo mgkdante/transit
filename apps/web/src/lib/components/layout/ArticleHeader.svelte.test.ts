@@ -9,6 +9,9 @@ const TAGS_ARIA = 'Article keywords';
 const controls = createRawSnippet(() => ({
 	render: () => '<button type="button" data-testid="article-control">Control</button>',
 }));
+const actions = createRawSnippet(() => ({
+	render: () => '<a href="/map" data-testid="article-action">Map</a>',
+}));
 
 const baseProps = {
 	watermark: 'Method',
@@ -19,6 +22,8 @@ const baseProps = {
 	backHref: '/',
 	backLabel: '← Back to the dashboard',
 	meta: [{ text: 'Jul 9, 2026', datetime: '2026-07-09T12:00:00Z' }, '12 metrics', '2 families'],
+	edgeLeft: 'LINE 24',
+	edgeRight: 'JUL 9 2026',
 	controls,
 };
 
@@ -45,6 +50,23 @@ describe('ArticleHeader — article anatomy', () => {
 		expect(screen.getByText('12 metrics')).toBeInTheDocument();
 		expect(screen.getByText('2 families')).toBeInTheDocument();
 		expect(screen.getByTestId('article-control')).toBeInTheDocument();
+	});
+
+	it('keeps auxiliary actions before a centered collapse-control row that is always last', () => {
+		const { container } = render(ArticleHeader, {
+			props: { ...baseProps, actions },
+		});
+		const content = container.querySelector('.header__content') as HTMLElement;
+		const actionRow = container.querySelector('[data-slot="article-header-actions"]');
+		const controlRow = container.querySelector('[data-slot="article-header-controls"]');
+
+		expect(actionRow).toContainElement(screen.getByTestId('article-action'));
+		expect(controlRow).toContainElement(screen.getByTestId('article-control'));
+		expect(Array.from(content.children).at(-1)).toBe(controlRow);
+
+		const article = source('src/lib/components/layout/ArticleHeader.svelte');
+		expect(article).toMatch(/\.header__actions[^{]*\{[\s\S]*?justify-content:\s*center/);
+		expect(article).toMatch(/\.header__controls[^{]*\{[\s\S]*?justify-content:\s*center/);
 	});
 
 	it('renders structured dated meta as semantic time', () => {
@@ -122,6 +144,8 @@ describe('ArticleHeader — article anatomy', () => {
 			'canvas[data-testid="manifesto-canvas"]',
 			'.manifesto__warm-glow',
 			'.header__watermark',
+			'.header__edge-left',
+			'.header__edge-right',
 		]) {
 			expect(container.querySelector(selector), selector).toHaveAttribute('aria-hidden', 'true');
 		}
@@ -152,9 +176,13 @@ describe('ArticleHeader — exact source contract', () => {
 		expect(article).toMatch(/\.header__cat-line[\s\S]*?max-width:\s*calc\(100% - 2rem\)/);
 	});
 
-	it('never renders vertical edge titles or glow on title text', () => {
+	it('renders source-aligned factual edge labels without a title glow', () => {
+		const { container } = render(ArticleHeader, { props: baseProps });
 		const article = source('src/lib/components/layout/ArticleHeader.svelte');
-		expect(article).not.toMatch(/edgeLeft|edgeRight|header__edge/);
+		expect(container.querySelector('.header__edge-left')).toHaveTextContent(baseProps.edgeLeft);
+		expect(container.querySelector('.header__edge-right')).toHaveTextContent(baseProps.edgeRight);
+		expect(article).toMatch(/left:\s*24px[\s\S]*?rotate\(-90deg\)/);
+		expect(article).toMatch(/right:\s*24px[\s\S]*?rotate\(90deg\)/);
 		expect(article).not.toMatch(/text-shadow/);
 	});
 

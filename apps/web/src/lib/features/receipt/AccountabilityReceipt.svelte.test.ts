@@ -540,7 +540,12 @@ describe('AccountabilityReceipt honesty', () => {
 		render(AccountabilityReceipt);
 		// An empty index renders the more-informative localized emptyIndex message,
 		// NOT the generic boundary empty — and the headline figures must NOT render.
-		expect(await screen.findByText(/No receipts have been published yet/i)).toBeInTheDocument();
+		const message = await screen.findByText(/No receipts have been published yet/i);
+		expect(message).toBeInTheDocument();
+		expect(message.closest('[data-component="state-notice"]')).toHaveAttribute(
+			'data-presentation',
+			'card',
+		);
 		expect(screen.queryByText('82%')).not.toBeInTheDocument();
 	});
 

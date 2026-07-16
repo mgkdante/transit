@@ -13,8 +13,6 @@ export interface StopsIndexCopy extends SurfaceHeadCopy {
 	readonly searchPlaceholder: string;
 	/** Accessible label for the search field. */
 	readonly searchLabel: string;
-	/** Prompt shown before the rider types a query. */
-	readonly searchPrompt: string;
 	/** Shown when a query matches no stops. */
 	readonly noMatches: string;
 	/** "+N more" note builder when the filtered set exceeds the cap. */
@@ -34,62 +32,80 @@ export interface StopsIndexCopy extends SurfaceHeadCopy {
 	/** Honest note when a picked line has no published stop list. */
 	readonly noLineStops: string;
 	/** Direction group heading inside a line's stop list. */
-	readonly direction: (dir: number) => string;
+	readonly direction: (dir: number, headsign?: string | null) => string;
 	/** Reliability sort control (published order | worst reliability first). */
 	readonly sortLabel: string;
 	readonly sortDefault: string;
 	readonly sortWorst: string;
-	/**
-	 * Idle-state network stop-picture band (§C5.5) — shown before the rider types,
-	 * turning the dead prompt into a live census + a way in.
-	 */
-	readonly census: {
-		/** Mono overline over the census band. */
+	/** Polite status while every eligible stop is measured before ranking once. */
+	readonly rankingPending: string;
+	readonly inventory: {
 		readonly label: string;
-		/** "{n} stops" served-catalogue count (already-fetched stops index). */
-		readonly stops: (n: string) => string;
-		/** "{n} lines" served-catalogue count (already-fetched routes index). */
-		readonly lines: (n: string) => string;
-		/** Worst-stop teaser link text into /repeat-offenders. */
-		readonly worstTeaser: string;
-		/** Caption over the example-query chips. */
-		readonly examplesLabel: string;
-		/** The tappable example queries that fill the search box. */
-		readonly examples: readonly string[];
+		readonly stops: string;
+		readonly bus: string;
+		readonly metro: string;
+		readonly lines: string;
+		readonly unavailable: string;
+	};
+	readonly browse: {
+		readonly heading: string;
+		readonly lede: string;
+		readonly chooseLine: (short: string, long?: string | null) => string;
+		readonly showMoreLines: (n: number) => string;
+		readonly progressLabel: string;
+		readonly progress: (shown: number, total: number) => string;
+		readonly loadMore: (n: number) => string;
 	};
 }
 
 export interface StopDetailCopy {
 	/** Station-voice kicker (EntityDetail). */
 	readonly kicker: string;
-	/** Back-link label into the stops index ("← Stops"), keeps nav in-chrome. */
+	/** Back-link label into the stops index, keeps nav in-chrome. */
 	readonly back: string;
-	/** Framing lede under the stop name in the detail head (detail-head rhythm). */
-	readonly detailLede: string;
+	/** Article-cover labels. Every value rendered beside them comes from /v1. */
+	readonly article: {
+		readonly watermark: string;
+		readonly tagsAria: string;
+		readonly stopId: string;
+		readonly provider: string;
+		readonly updated: string;
+	};
 	/** Live-map drilldown action. */
 	readonly viewOnMap: string;
 	readonly viewStopOnMap: (stop: string) => string;
 	/** Tab labels, keyed by tab key. */
 	readonly tabs: {
-		readonly next: string;
+		readonly detail: string;
 		readonly schedule: string;
-		readonly info: string;
 		readonly reliability: string;
+	};
+	/** The one collapsible, nonessential card inside Detail. */
+	readonly detailCard: {
+		readonly title: string;
+		readonly summary: string;
 	};
 	/** "Next departures" pane. */
 	readonly next: {
-		/** D3: the TerminalPanel framing the live departures board. */
+		/** Legacy terminal labels retained for saved copy compatibility. */
 		readonly terminal: { readonly title: string; readonly tag: string };
 		/** Section label over the departures list. */
 		readonly heading: string;
 		/** Shown when the live board has no upcoming departures for this stop. */
 		readonly none: string;
-		/** Delay caption — "+N min late" / "N min early" / "on time". */
+		/** Delay caption, including an explicit unknown state when realtime is absent. */
 		readonly late: (min: number) => string;
 		readonly early: (min: number) => string;
 		readonly onTime: string;
+		readonly noDelay: string;
 		/** Fallback label when a departure has no route code. */
 		readonly route: string;
+		readonly table: {
+			readonly caption: string;
+			readonly route: string;
+			readonly departure: string;
+			readonly status: string;
+		};
 		/** Controls-rail label collecting the departure filter chips + count. */
 		readonly controlsLabel: string;
 		/** Departures status / route filter affordances. */
@@ -112,7 +128,7 @@ export interface StopDetailCopy {
 	};
 	/**
 	 * Live service alerts affecting THIS stop (alerts whose stops[] lists this
-	 * stop, or whose routes[] serve it). Surfaced in the info pane; stands down
+	 * stop, or whose routes[] serve it). Surfaced in the Detail card; stands down
 	 * when none are active.
 	 */
 	readonly alerts: AffectedAlertsCopy;
@@ -129,6 +145,12 @@ export interface StopDetailCopy {
 	readonly schedule: {
 		readonly heading: string;
 		readonly none: string;
+		readonly table: {
+			readonly caption: string;
+			readonly route: string;
+			readonly destination: string;
+			readonly departures: string;
+		};
 		/** "+N more times" note when a route's time list is capped. */
 		readonly moreTimes: (n: number) => string;
 	};
@@ -145,29 +167,39 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		lede: 'Cherchez un arrêt par nom ou par code pour voir ses prochains passages et sa fiabilité. On n’invente jamais de données.',
 		searchPlaceholder: 'Nom ou code d’arrêt…',
 		searchLabel: 'Rechercher un arrêt',
-		searchPrompt: 'Commencez à taper pour filtrer les arrêts.',
 		noMatches: 'Aucun arrêt ne correspond à cette recherche.',
 		more: (n) => `+${n} autres arrêts, affinez la recherche`,
 		mapAction: 'Carte',
 		viewStopOnMap: (stop) => `Voir l’arrêt ${stop} sur la carte`,
-		controlsLabel: 'Contrôles',
+		controlsLabel: 'Filtres',
 		lineLabel: 'Filtrer par ligne',
 		linePlaceholder: 'Numéro ou nom de ligne…',
 		lineClear: 'Effacer le filtre de ligne',
 		lineEmpty: 'Aucune ligne ne correspond.',
 		onLineHeading: (short) => `Arrêts de la ligne ${short}`,
 		noLineStops: 'Aucune liste d’arrêts publiée pour cette ligne.',
-		direction: (dir) => `Direction ${dir}`,
+		direction: (dir, headsign) =>
+			headsign ? `Direction ${dir} · ${headsign}` : `Direction ${dir}`,
 		sortLabel: 'Trier',
 		sortDefault: 'Ordre du parcours',
 		sortWorst: 'Moins fiables',
-		census: {
-			label: 'Le réseau en un coup d’œil',
-			stops: (n) => `${n} arrêts`,
-			lines: (n) => `${n} lignes`,
-			worstTeaser: 'Voir les arrêts les moins fiables →',
-			examplesLabel: 'Essayez',
-			examples: ['Berri-UQAM', 'Côte-Vertu', 'Place-des-Arts'],
+		rankingPending: 'Calcul du classement de fiabilité des arrêts filtrés…',
+		inventory: {
+			label: 'Inventaire du réseau',
+			stops: 'Arrêts',
+			bus: 'Bus',
+			metro: 'Métro',
+			lines: 'Lignes',
+			unavailable: 'Indisponible',
+		},
+		browse: {
+			heading: 'Parcourir les arrêts par ligne',
+			lede: 'Choisissez une ligne pour voir tous ses arrêts publiés, regroupés par direction.',
+			chooseLine: (short, long) => `Voir les arrêts de la ligne ${short}${long ? ` ${long}` : ''}`,
+			showMoreLines: (n) => `Afficher ${n} autres lignes`,
+			progressLabel: 'Progression du catalogue des arrêts',
+			progress: (shown, total) => `${shown} arrêts sur ${total} affichés`,
+			loadMore: (n) => `Afficher ${n} autres arrêts`,
 		},
 	},
 	en: {
@@ -177,29 +209,39 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		lede: 'Search a stop by name or code to see its next departures and reliability. We never invent data.',
 		searchPlaceholder: 'Stop name or code…',
 		searchLabel: 'Search stops',
-		searchPrompt: 'Start typing to filter stops.',
 		noMatches: 'No stops match this search.',
 		more: (n) => `+${n} more stops, refine the search`,
 		mapAction: 'Map',
 		viewStopOnMap: (stop) => `View stop ${stop} on map`,
-		controlsLabel: 'Controls',
+		controlsLabel: 'Filters',
 		lineLabel: 'Filter by line',
 		linePlaceholder: 'Line number or name…',
 		lineClear: 'Clear line filter',
 		lineEmpty: 'No lines match.',
 		onLineHeading: (short) => `Stops on line ${short}`,
 		noLineStops: 'No published stop list for this line.',
-		direction: (dir) => `Direction ${dir}`,
+		direction: (dir, headsign) =>
+			headsign ? `Direction ${dir} · ${headsign}` : `Direction ${dir}`,
 		sortLabel: 'Sort',
 		sortDefault: 'Route order',
 		sortWorst: 'Least reliable',
-		census: {
-			label: 'The network at a glance',
-			stops: (n) => `${n} stops`,
-			lines: (n) => `${n} lines`,
-			worstTeaser: 'See the least reliable stops →',
-			examplesLabel: 'Try',
-			examples: ['Berri-UQAM', 'Côte-Vertu', 'Place-des-Arts'],
+		rankingPending: 'Calculating reliability ranking for the filtered stops…',
+		inventory: {
+			label: 'Network inventory',
+			stops: 'Stops',
+			bus: 'Bus',
+			metro: 'Metro',
+			lines: 'Lines',
+			unavailable: 'Not available',
+		},
+		browse: {
+			heading: 'Browse stops by line',
+			lede: 'Choose a line to see every published stop, grouped by direction.',
+			chooseLine: (short, long) => `Browse stops on line ${short}${long ? ` ${long}` : ''}`,
+			showMoreLines: (n) => `Show ${n} more lines`,
+			progressLabel: 'Stop catalogue progress',
+			progress: (shown, total) => `Showing ${shown} of ${total} stops`,
+			loadMore: (n) => `Load ${n} more stops`,
 		},
 	},
 };
@@ -207,12 +249,21 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 export const detailCopy: Record<Locale, StopDetailCopy> = {
 	fr: {
 		kicker: 'ARRÊT',
-		back: 'Arrêts',
-		detailLede:
-			'Prochains passages en direct, horaire prévu et fiabilité historique de cet arrêt. Mesuré à partir du contrat /v1.',
+		back: '← Retour aux arrêts',
+		article: {
+			watermark: 'Arrêt',
+			tagsAria: 'Données d’identité de l’arrêt',
+			stopId: 'ID arrêt',
+			provider: 'Fournisseur',
+			updated: 'Mis à jour',
+		},
 		viewOnMap: 'Voir sur la carte',
 		viewStopOnMap: (stop) => `Voir l’arrêt ${stop} sur la carte`,
-		tabs: { next: 'Prochains', schedule: 'Horaire', info: 'Info', reliability: 'Fiabilité' },
+		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
+		detailCard: {
+			title: 'Informations sur l’arrêt',
+			summary: 'Position, accessibilité, lignes desservies et avis de service actifs.',
+		},
 		next: {
 			terminal: { title: 'passages-en-direct', tag: 'EN DIRECT' },
 			heading: 'Prochains passages',
@@ -220,7 +271,14 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			late: (min) => `+${min} min de retard`,
 			early: (min) => `${Math.abs(min)} min d’avance`,
 			onTime: 'à l’heure',
+			noDelay: 'Temps réel indisponible',
 			route: 'Ligne',
+			table: {
+				caption: 'Prochains passages en direct',
+				route: 'Ligne',
+				departure: 'Passage',
+				status: 'État',
+			},
 			controlsLabel: 'Filtres',
 			filter: {
 				statusLabel: 'Filtrer par statut',
@@ -255,17 +313,32 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 		schedule: {
 			heading: 'Horaire prévu',
 			none: 'Aucun horaire prévu pour cet arrêt.',
+			table: {
+				caption: 'Horaire prévu par ligne',
+				route: 'Ligne',
+				destination: 'Destination',
+				departures: 'Passages',
+			},
 			moreTimes: (n) => `+${n} autres passages`,
 		},
 	},
 	en: {
 		kicker: 'STOP',
-		back: 'Stops',
-		detailLede:
-			'Live next departures, planned schedule and historic reliability for this stop. Measured from the /v1 contract.',
+		back: '← Back to stops',
+		article: {
+			watermark: 'Stop',
+			tagsAria: 'Stop identity data',
+			stopId: 'Stop ID',
+			provider: 'Provider',
+			updated: 'Updated',
+		},
 		viewOnMap: 'View on map',
 		viewStopOnMap: (stop) => `View stop ${stop} on map`,
-		tabs: { next: 'Next', schedule: 'Schedule', info: 'Info', reliability: 'Reliability' },
+		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },
+		detailCard: {
+			title: 'Stop information',
+			summary: 'Position, accessibility, routes served and active service alerts.',
+		},
 		next: {
 			terminal: { title: 'live-departures', tag: 'LIVE' },
 			heading: 'Next departures',
@@ -273,7 +346,14 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			late: (min) => `+${min} min late`,
 			early: (min) => `${Math.abs(min)} min early`,
 			onTime: 'on time',
+			noDelay: 'Realtime unavailable',
 			route: 'Line',
+			table: {
+				caption: 'Live next departures',
+				route: 'Line',
+				departure: 'Departure',
+				status: 'Status',
+			},
 			controlsLabel: 'Filters',
 			filter: {
 				statusLabel: 'Filter by status',
@@ -308,6 +388,12 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 		schedule: {
 			heading: 'Scheduled service',
 			none: 'No scheduled service for this stop.',
+			table: {
+				caption: 'Scheduled service by line',
+				route: 'Line',
+				destination: 'Destination',
+				departures: 'Departures',
+			},
 			moreTimes: (n) => `+${n} more times`,
 		},
 	},

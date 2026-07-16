@@ -13,6 +13,8 @@
 // (`top: var(--chrome-offset)`), the sticky box has pinned → stuck. `rootMargin`
 // = the negative chrome offset makes the trip point exactly the pin line.
 
+import { findScrollParent } from './viewportPresence';
+
 /** Observe a sticky element and toggle `data-stuck="true|false"` on it as it
  *  pins / unpins under the chrome. Returns a cleanup fn for onMount/$effect.
  *  No-op (returns a bare cleanup) when IntersectionObserver is unavailable. */
@@ -61,17 +63,4 @@ export function observeStuck(el: HTMLElement): () => void {
 		sentinel.remove();
 		if (addedRelative) parent.style.position = parentPosition;
 	};
-}
-
-/** Nearest ancestor that scrolls vertically (overflow auto/scroll), or null for
- *  the viewport. Transit document surfaces scroll inside `#main`, so the sticky
- *  observer must root there rather than the window. */
-function findScrollParent(el: HTMLElement): HTMLElement | null {
-	let node = el.parentElement;
-	while (node) {
-		const oy = getComputedStyle(node).overflowY;
-		if (oy === 'auto' || oy === 'scroll') return node;
-		node = node.parentElement;
-	}
-	return null;
 }

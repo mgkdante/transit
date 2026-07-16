@@ -164,7 +164,7 @@ export function selectVehiclesSpark(
 		xLabels: points.map((p) => p.date),
 		colorVar: 'var(--dataviz-status-unknown)',
 		showLast: true,
-		width: 320,
+		width: '100%',
 		height: 56,
 	};
 }

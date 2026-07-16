@@ -1,10 +1,8 @@
-"""Artifact contracts for the transit-data-proxy Cloudflare Worker (slice-9.1.1p).
+"""Serving-artifact contracts for the public snapshot surface.
 
-The worker serves the canonical snapshot URLs (https://transit.yesid.dev/data/...)
-already baked into the published manifest. These tests pin the wrangler config,
-the deploy workflow, and the .env.example base URL to each other so the canonical
-``cd apps/db && uv run pytest`` gate covers the JS surface; the behavioral suite itself
-runs under ``node --test`` (bridged below when node is available).
+Bulk browser reads use the R2 custom domain directly. The data-proxy Worker remains
+the compatibility `/data/*` route and owns `/api/v1/*`. These tests keep that split,
+the deploy workflow, and the publisher's absolute public URLs from drifting.
 """
 
 from __future__ import annotations
@@ -114,21 +112,21 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
     assert f"wrangler@{declared_wrangler}" in wrangler_step["run"]
 
 
-def test_env_example_public_base_url_matches_worker_route() -> None:
+def test_env_example_publishes_absolute_urls_to_direct_r2_custom_domain() -> None:
     lines = ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
     (base_url_line,) = [line for line in lines if line.startswith("SNAPSHOT_PUBLIC_BASE_URL=")]
     base_url = base_url_line.split("=", 1)[1]
 
-    assert base_url == "https://transit.yesid.dev/data"
+    assert base_url == "https://data.yesid.dev"
 
-    route = next(
+    compatibility_route = next(
         route for route in _wrangler_config()["routes"] if route["pattern"].endswith("/data/*")
     )
-    host_and_path = base_url.removeprefix("https://")
-    assert route["pattern"] == f"{host_and_path}/*"
+    assert compatibility_route["pattern"] == "transit.yesid.dev/data/*"
+    assert base_url.removeprefix("https://") not in compatibility_route["pattern"]
 
 
-def test_smoke_script_asserts_canonical_and_fallback_objects() -> None:
+def test_smoke_script_asserts_direct_r2_and_compatibility_objects() -> None:
     smoke = PROXY_DIR / "smoke.sh"
 
     assert smoke.exists(), "smoke.sh is the prod verification gate for this slice"
@@ -140,7 +138,7 @@ def test_smoke_script_asserts_canonical_and_fallback_objects() -> None:
     assert syntax_check.returncode == 0, syntax_check.stderr
 
     text = smoke.read_text(encoding="utf-8")
-    # Canonical host and untouched fallback origin both probed.
+    # Direct R2 custom domain and compatibility Worker route are both probed.
     assert "transit.yesid.dev/data" in text
     assert "data.yesid.dev" in text
     # All three cache tiers hard-asserted (storage.py CACHE_CONTROL values;

@@ -117,6 +117,17 @@ export function tocElement(id: string): Element | null {
 	return document.getElementById(id);
 }
 
+/** Open the shared disclosure that owns a TOC target before scrolling to it. */
+export function openCollapsedTocTarget(id: string): boolean {
+	const target = tocElement(id);
+	const trigger = target?.querySelector<HTMLButtonElement>(
+		'[data-section-trigger][aria-expanded="false"]',
+	);
+	if (!trigger) return false;
+	trigger.click();
+	return true;
+}
+
 /** Wait until the target's scroll container stops changing height. The card
  *  expand/collapse animates 300ms (grid-rows), and `scrollIntoView` computes —
  *  and CLAMPS — its destination against the geometry at call time, so

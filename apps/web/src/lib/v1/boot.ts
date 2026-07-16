@@ -12,11 +12,13 @@
 // text, falling back to the raw code.
 
 import { getContext, setContext } from 'svelte';
+import { browser } from '$app/environment';
 import type { Locale } from '$lib/i18n';
 import { DEFAULT_LOCALE } from '$lib/i18n';
 import type { AdapterCtx } from '$lib/v1/adapter';
 import type { Manifest } from '$lib/v1/schemas';
 import { getLabels, getManifest } from '$lib/v1/repositories';
+import { installBrowserAdapterManifest } from '$lib/v1/adapter/browserManifest';
 
 /**
  * The resolved snapshot context every surface reads. Built once at boot and
@@ -65,7 +67,9 @@ export async function bootV1(lang: Locale = DEFAULT_LOCALE, ctx?: AdapterCtx): P
 	// Labels are an enhancement, not a hard dependency, a missing/never-published
 	// labels file degrades to the manifest base (resolveLabel then falls back to
 	// raw codes), never an error.
-	const langLabels = await getLabels(lang, ctx).catch(() => ({}) as Record<string, string>);
+	const langLabels = await getLabels(lang, { ...ctx, manifest }).catch(
+		() => ({}) as Record<string, string>,
+	);
 	const labels: Record<string, string> = { ...manifest.labels, ...langLabels };
 	return { manifest, labels, lang };
 }
@@ -92,8 +96,9 @@ export function resolveLabel(code: string, labels: Record<string, string>): stri
  * stays reactive across EN/FR swaps and re-boots without the root remounting,
  * and callers never capture a stale initial value.
  */
-export function setV1Context(reader: () => V1Context): void {
+export function setV1Context(reader: () => V1Context | undefined): void {
 	setContext(KEY, reader);
+	if (browser) installBrowserAdapterManifest(() => reader()?.manifest);
 }
 
 /**
@@ -101,11 +106,12 @@ export function setV1Context(reader: () => V1Context): void {
  * before any surface mounts, so a missing context is a wiring bug, not a state.
  */
 export function getV1Context(): V1Context {
-	const reader = getContext<(() => V1Context) | undefined>(KEY);
-	if (!reader) {
+	const reader = getContext<(() => V1Context | undefined) | undefined>(KEY);
+	const context = reader?.();
+	if (!context) {
 		throw new Error(
 			'[v1] getV1Context() called before setV1Context(), boot the v1 context in the root layout first.',
 		);
 	}
-	return reader();
+	return context;
 }

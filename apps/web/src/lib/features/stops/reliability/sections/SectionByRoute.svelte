@@ -8,14 +8,11 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { RankedRow } from '$lib/components/dataviz';
 	import { AbsentValue } from '$lib/components/edge';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { RankedRouteRow } from '../selectors/rankedRoutes';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
+	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';
 
 	interface SectionByRouteProps {
 		/** The ranked route rows (empty when no real-delay route survived). */
@@ -24,35 +21,25 @@
 		hasAssociations: boolean;
 		locale: Locale;
 		copy: StopReliabilityCopy;
+		presentation?: 'standalone' | 'article-body';
 	}
-	let { rows, hasAssociations, locale, copy }: SectionByRouteProps = $props();
-
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
+	let {
+		rows,
+		hasAssociations,
+		locale,
+		copy,
+		presentation = 'standalone',
+	}: SectionByRouteProps = $props();
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
-		class="stop-metric-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
-		side="bottom"
-	/>
-{/snippet}
-
 {#if rows.length > 0 || hasAssociations}
-	<div class="stop-tile stop-reliability-routes" data-slot="stop-by-route">
-		<SectionHeading level={2} overline={copy.byRoute} class="stop-tile-heading">
-			{#snippet explainer()}
-				{@render metricInfo('avgDelay', copy.byRoute)}
-			{/snippet}
-		</SectionHeading>
+	<StopReliabilityPresenter
+		heading={copy.byRoute}
+		metricKey="avgDelay"
+		{locale}
+		{presentation}
+		dataSlot="stop-by-route"
+	>
 		{#if rows.length > 0}
 			<ul class="stop-reliability-route-list" role="list">
 				{#each rows as row (row.key)}
@@ -81,15 +68,10 @@
 			<!-- Every by-route association carries a null avg delay (too few readings). -->
 			<AbsentValue variant="block" reason="no-observations" {locale} />
 		{/if}
-	</div>
+	</StopReliabilityPresenter>
 {/if}
 
 <style>
-	.stop-reliability-routes {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
 	.stop-reliability-route-list {
 		display: flex;
 		flex-direction: column;

@@ -55,12 +55,14 @@ import type {
 } from '$lib/v1/schemas/history';
 
 /**
- * Per-request adapter context. Threaded from `event` in SSR loads so reads use
- * `event.fetch` (request dedupe + inlining) and share a single fetch memo.
+ * Adapter read context. SSR loads thread it from `event` for request dedupe;
+ * browser consumers can reuse an already-loaded manifest across related reads.
  */
 export interface AdapterCtx {
 	/** SSR fetch (event.fetch); defaults to the global fetch when omitted. */
 	fetch?: FetchFn;
+	/** Authoritative manifest already loaded by the caller; avoids resolving it again. */
+	manifest?: Manifest;
 	/** Per-request memo (App.Locals.v1Cache) so manifest/labels fetch once per request. */
 	cache?: Map<string, unknown>;
 	/** Optional abort signal for the underlying requests. */

@@ -124,7 +124,7 @@ export interface VehicleMapDetail {
 	readonly nextStopAbsence: AbsenceReasonKey;
 	readonly pastStops: readonly MapStopRef[];
 	readonly nextStops: readonly MapStopRef[];
-	readonly alerts: readonly Alert[];
+	readonly alerts: readonly Alert[] | null;
 	/**
 	 * GTFS route_type of this vehicle's route (null when unknown). The surface uses
 	 * route_type 1 (metro) plus the metro realtime gap to explain a missing delay
@@ -141,7 +141,7 @@ export interface StopMapDetail {
 	readonly departures: readonly StopDeparture[];
 	readonly vehicles: readonly Vehicle[];
 	readonly routeTimes: readonly StopRouteTimes[];
-	readonly alerts: readonly Alert[];
+	readonly alerts: readonly Alert[] | null;
 }
 
 export interface RouteMapDetail {
@@ -152,7 +152,7 @@ export interface RouteMapDetail {
 	readonly direction: RouteDirection | null;
 	readonly directions: readonly RouteDirectionStops[];
 	readonly vehicles: readonly Vehicle[];
-	readonly alerts: readonly Alert[];
+	readonly alerts: readonly Alert[] | null;
 }
 
 export type MapSelectionDetail = VehicleMapDetail | StopMapDetail | RouteMapDetail;
@@ -462,7 +462,10 @@ export function resolveMapSelection(
 			nextStopAbsence,
 			pastStops,
 			nextStops,
-			alerts: (context.alerts ?? []).filter((alert) => alertMatchesVehicle(alert, vehicle)),
+			alerts:
+				context.alerts == null
+					? null
+					: context.alerts.filter((alert) => alertMatchesVehicle(alert, vehicle)),
 			routeType: route?.type ?? null,
 		};
 	}
@@ -486,7 +489,10 @@ export function resolveMapSelection(
 			direction,
 			directions: routeDirectionStops(route, selectedVariant),
 			vehicles: vehiclesOnRoute(context.index, route.id),
-			alerts: (context.alerts ?? []).filter((alert) => alertMatchesRoute(alert, route.id)),
+			alerts:
+				context.alerts == null
+					? null
+					: context.alerts.filter((alert) => alertMatchesRoute(alert, route.id)),
 		};
 	}
 
@@ -505,6 +511,9 @@ export function resolveMapSelection(
 			context.index.byStopId.get(stop.id) ?? [],
 			context.now ?? new Date(),
 		),
-		alerts: (context.alerts ?? []).filter((alert) => alertMatchesStop(alert, stop.id)),
+		alerts:
+			context.alerts == null
+				? null
+				: context.alerts.filter((alert) => alertMatchesStop(alert, stop.id)),
 	};
 }

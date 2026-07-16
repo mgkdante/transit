@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { checkAbsoluteDomain, isMagnitudeKind, MAGNITUDE_KINDS, type ChartSpec } from './ChartSpec';
+import {
+	chartViewportPolicy,
+	checkAbsoluteDomain,
+	isMagnitudeKind,
+	MAGNITUDE_KINDS,
+	type ChartSpec,
+} from './ChartSpec';
 
 // The ChartSpec invariant is the type-system enforcement of Chart Doctrine law #1:
 // every cross-view MAGNITUDE mark carries an explicit absolute domain (never /max,
@@ -9,6 +15,27 @@ import { checkAbsoluteDomain, isMagnitudeKind, MAGNITUDE_KINDS, type ChartSpec }
 // part-to-whole / heatmap / metric / absence kinds are exempt.
 
 const base = { title: 't', locale: 'en' } as const;
+
+describe('chart viewport policy', () => {
+	it('keeps simple families fluid, dense families readable, and heatmaps self-managed', () => {
+		for (const kind of ['sparkline', 'bullet', 'stacked-share', 'service-span'] as const) {
+			expect(chartViewportPolicy(kind)).toEqual({ layout: 'fluid' });
+		}
+
+		for (const kind of [
+			'trend',
+			'histogram',
+			'dot-strip',
+			'magnitude-bars',
+			'dumbbell',
+			'line',
+		] as const) {
+			expect(chartViewportPolicy(kind)).toEqual({ layout: 'dense', mobileMinWidth: '48rem' });
+		}
+
+		expect(chartViewportPolicy('heatmap')).toEqual({ layout: 'self-managed' });
+	});
+});
 
 describe('isMagnitudeKind', () => {
 	it('flags exactly the cross-view magnitude kinds', () => {

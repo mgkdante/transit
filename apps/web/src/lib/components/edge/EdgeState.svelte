@@ -21,11 +21,11 @@
                             données").
 
   DOCTRINE
-    Edge conditions are DATA verdicts, so their colour rides the dataviz status
+    Edge-condition glyphs and non-error verdict rules ride the dataviz status
     scale, NEVER --primary/--success/--destructive:
       stale  -> --dataviz-status-late   (amber)
       empty-avis -> --dataviz-status-on-time (green)
-      error  -> --dataviz-status-severe (red)
+      error  -> --dataviz-status-severe glyph (red), normal card border
     The lone --primary touch is the retry BUTTON (an interactive affordance,
     not a data mark). Surfaces stay solid (no alpha on the card bg).
 
@@ -45,6 +45,11 @@
 	import type { Locale } from '$lib/i18n';
 	import type { AbsenceReason } from '$lib/site/serviceWindow';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { DEFAULT_LOADING_SKELETON_DELAY_MS } from './loading';
+	import StateNotice, {
+		type StateNoticePresentation,
+		type StateNoticeTone,
+	} from './StateNotice.svelte';
 
 	/** The edge condition this instance renders. */
 	type EdgeVariant =
@@ -90,6 +95,13 @@
 		emptyReason?: AbsenceReason | null;
 		/** Optional extra classes on the root. */
 		class?: string;
+		/**
+		 * Grace period before a loading skeleton becomes visible. The default avoids
+		 * flashing a placeholder for fast cached reads; pass 0 for static specimens.
+		 */
+		skeletonDelayMs?: number;
+		/** Message geometry. Skeleton composition continues to use `layout`. */
+		presentation?: Exclude<StateNoticePresentation, 'pill'>;
 	}
 
 	let {
@@ -100,6 +112,8 @@
 		onRetry,
 		emptyReason,
 		class: className,
+		skeletonDelayMs = DEFAULT_LOADING_SKELETON_DELAY_MS,
+		presentation = 'responsive',
 	}: EdgeStateProps = $props();
 
 	/* ── Bilingual copy ──────────────────────────────────────────────────────
@@ -253,31 +267,13 @@
 		en: 'Loading…',
 	};
 
-	/* ── Per-variant doctrine accent ─────────────────────────────────────────
-	   Edge verdict colours ride the dataviz status scale (DATA), never the
-	   semantic affordance tokens. text-* gives the glyph its hue; the rule maps
-	   the matching border-rule var for the accent bar. */
-	const ACCENT: Record<Exclude<EdgeVariant, 'skeleton'>, { text: string; rule: string }> = {
-		'stale-offline': {
-			text: 'text-dataviz-status-late',
-			rule: 'var(--dataviz-status-late)',
-		},
-		'no-results': {
-			text: 'text-dataviz-status-unknown',
-			rule: 'var(--dataviz-status-unknown)',
-		},
-		empty: {
-			text: 'text-dataviz-status-unknown',
-			rule: 'var(--dataviz-status-unknown)',
-		},
-		'empty-avis': {
-			text: 'text-dataviz-status-on-time',
-			rule: 'var(--dataviz-status-on-time)',
-		},
-		'error-v1': {
-			text: 'text-dataviz-status-severe',
-			rule: 'var(--dataviz-status-severe)',
-		},
+	/* Semantic colour belongs to the notice glyph/meta, never its frame. */
+	const TONE: Record<Exclude<EdgeVariant, 'skeleton'>, StateNoticeTone> = {
+		'stale-offline': 'warning',
+		'no-results': 'neutral',
+		empty: 'neutral',
+		'empty-avis': 'positive',
+		'error-v1': 'error',
 	};
 
 	// Keep the ONE shared clock alive while this edge state is on screen so the
@@ -286,6 +282,28 @@
 	$effect(() => sharedClock.subscribe());
 
 	const isSkeleton = $derived(variant === 'skeleton');
+	let skeletonRevealed = $state(false);
+
+	// Keep the skeleton mounted from the first render so it reserves its final
+	// geometry during SSR/hydration, but reveal and announce it only when the load
+	// outlives the shared grace period. Effect cleanup prevents a fast resource
+	// from revealing a stale skeleton after its loaded content has replaced it.
+	$effect(() => {
+		const active = isSkeleton;
+		const delay = Math.max(0, skeletonDelayMs);
+
+		skeletonRevealed = false;
+		if (!active) return;
+		if (delay === 0) {
+			skeletonRevealed = true;
+			return;
+		}
+
+		const timeout = setTimeout(() => {
+			skeletonRevealed = true;
+		}, delay);
+		return () => clearTimeout(timeout);
+	});
 
 	/**
 	 * The inferred reason, applied ONLY on the empty variant. Other variants
@@ -317,7 +335,7 @@
 		}
 		return COPY[variant as Exclude<EdgeVariant, 'skeleton'>][lang];
 	});
-	const accent = $derived(isSkeleton ? null : ACCENT[variant as Exclude<EdgeVariant, 'skeleton'>]);
+	const tone = $derived(isSkeleton ? null : TONE[variant as Exclude<EdgeVariant, 'skeleton'>]);
 
 	/** Relative "MAJ il y a 4 min" string for the stale variant. */
 	const staleDelta = $derived(
@@ -336,6 +354,20 @@
 	const skeletonColumns = $derived(layout === 'desktop' ? [0, 1, 2] : [0]);
 </script>
 
+{#snippet staleMeta()}
+	{#if staleDelta}
+		<span data-slot="edge-stale-delta">{staleDelta}</span>
+	{/if}
+{/snippet}
+
+{#snippet retryAction()}
+	{#if variant === 'error-v1' && onRetry}
+		<button type="button" class="edge-retry" onclick={onRetry} data-slot="edge-retry">
+			{RETRY_LABEL[lang]}
+		</button>
+	{/if}
+{/snippet}
+
 {#if isSkeleton}
 	<!--
 	  Skeleton, layout-aware loading scaffold.
@@ -346,18 +378,23 @@
 	-->
 	<div
 		class={cn(
-			'rounded-lg border border-border bg-card p-4 shadow-card',
+			'rounded-lg border border-border bg-card p-4',
 			layout === 'desktop' ? 'grid grid-cols-3 gap-4' : 'flex flex-col gap-3',
+			!skeletonRevealed && 'edge-skeleton-pending',
 			className,
 		)}
 		data-slot="edge-state"
 		data-variant="skeleton"
 		data-layout={layout}
-		role="status"
-		aria-busy="true"
-		aria-live="polite"
+		data-loading-state={skeletonRevealed ? 'visible' : 'pending'}
+		role={skeletonRevealed ? 'status' : undefined}
+		aria-busy={skeletonRevealed ? 'true' : undefined}
+		aria-live={skeletonRevealed ? 'polite' : undefined}
+		aria-hidden={skeletonRevealed ? undefined : 'true'}
 	>
-		<span class="sr-only">{LOADING_LABEL[lang]}</span>
+		{#if skeletonRevealed}
+			<span class="sr-only">{LOADING_LABEL[lang]}</span>
+		{/if}
 		{#each skeletonColumns as col (col)}
 			<div class="flex flex-col gap-3" aria-hidden="true">
 				<!-- Volet / card header -->
@@ -378,61 +415,31 @@
 			</div>
 		{/each}
 	</div>
-{:else if copy && accent}
-	<!--
-	  Message variants, glyph + title + body + (stale delta | retry).
-	  role/aria-live escalate for error-v1. The accent bar + glyph carry the
-	  doctrine colour; copy stays on the foreground/muted scale.
-	-->
-	<div
-		class={cn(
-			'flex flex-col items-center gap-3 rounded-lg border border-border bg-card text-center shadow-card edge-accent-bar',
-			layout === 'desktop' ? 'p-8' : 'p-6',
-			className,
-		)}
-		style="--edge-rule: {accent.rule};"
+{:else if copy && tone}
+	<StateNotice
+		title={copy.title}
+		body={copy.body}
+		glyph={copy.glyph}
+		{tone}
+		{presentation}
+		role={liveRole}
+		ariaLive={variant === 'error-v1' ? 'assertive' : 'polite'}
+		meta={staleDelta ? staleMeta : undefined}
+		action={variant === 'error-v1' && onRetry ? retryAction : undefined}
+		class={className}
 		data-slot="edge-state"
 		data-variant={variant}
 		data-layout={layout}
-		role={liveRole}
-		aria-live={variant === 'error-v1' ? 'assertive' : 'polite'}
-	>
-		<!-- Glyph: doctrine-coloured + text label, never colour alone. -->
-		<span
-			class={cn('font-mono leading-none', accent.text)}
-			style="font-size: var(--text-heading);"
-			aria-hidden="true">{copy.glyph}</span
-		>
-
-		<div class="flex flex-col gap-1.5">
-			<span class="font-heading font-bold text-body text-[var(--foreground)]">{copy.title}</span>
-			<p
-				class={cn(
-					'font-body text-small text-[var(--muted-foreground)]',
-					layout === 'desktop' ? 'max-w-md' : 'max-w-xs',
-				)}
-			>
-				{copy.body}
-			</p>
-		</div>
-
-		{#if staleDelta}
-			<!-- Last-MAJ delta, amber mono caption, the proof of HOW stale. -->
-			<span class={cn('font-mono text-caption', accent.text)} data-slot="edge-stale-delta">
-				{staleDelta}
-			</span>
-		{/if}
-
-		{#if variant === 'error-v1' && onRetry}
-			<!-- Retry, the lone interactive affordance (the only --primary touch). -->
-			<button type="button" class="edge-retry" onclick={onRetry} data-slot="edge-retry">
-				{RETRY_LABEL[lang]}
-			</button>
-		{/if}
-	</div>
+	/>
 {/if}
 
 <style>
+	/* Reserve the eventual skeleton geometry without flashing it during fast,
+	   cache-hit loads. `visibility` keeps the box in layout and is SSR-safe. */
+	.edge-skeleton-pending {
+		visibility: hidden;
+	}
+
 	/* Visually-hidden label, readable by AT, invisible on screen. */
 	.sr-only {
 		position: absolute;
@@ -444,12 +451,6 @@
 		clip: rect(0, 0, 0, 0);
 		white-space: nowrap;
 		border: 0;
-	}
-
-	/* Accent bar, a 3px top rule in the variant's doctrine colour. Pulled from
-	   the --edge-rule custom prop set inline per variant. */
-	.edge-accent-bar {
-		border-top: 3px solid var(--edge-rule);
 	}
 
 	/* Retry button, interactive affordance, so --primary is doctrine-clean here.

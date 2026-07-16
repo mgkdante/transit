@@ -350,9 +350,11 @@ describe('ChartDatumPopover dismissal and cleanup', () => {
 				),
 			).toHaveLength(1);
 			expect(documentAdd.mock.calls.filter(([type]) => type === 'keydown')).toHaveLength(1);
-			expect(windowAdd.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(1);
-			expect(windowAdd.mock.calls.filter(([type]) => type === 'resize')).toHaveLength(1);
-			expect(windowAdd.mock.calls.filter(([type]) => type === 'orientationchange')).toHaveLength(1);
+			expect(windowAdd.mock.calls.filter(([type]) => String(type) === 'scroll')).toHaveLength(1);
+			expect(windowAdd.mock.calls.filter(([type]) => String(type) === 'resize')).toHaveLength(1);
+			expect(
+				windowAdd.mock.calls.filter(([type]) => String(type) === 'orientationchange'),
+			).toHaveLength(1);
 		});
 
 		const documentListeners = documentAdd.mock.calls.filter(

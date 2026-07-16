@@ -100,7 +100,7 @@
 <style>
 	.map-filter-pill-container {
 		position: fixed;
-		bottom: calc(2.5rem + env(safe-area-inset-bottom, 0px));
+		bottom: var(--map-mobile-control-bottom);
 		left: 0.75rem;
 		transform: none;
 		z-index: var(--z-sheet);

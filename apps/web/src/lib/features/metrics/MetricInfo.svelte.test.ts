@@ -9,6 +9,8 @@
 
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import MetricInfo from './MetricInfo.svelte';
 
 const base = {
@@ -18,7 +20,21 @@ const base = {
 	linkLabel: 'How this is measured',
 };
 
+const source = readFileSync(
+	resolve(process.cwd(), 'src/lib/features/metrics/MetricInfo.svelte'),
+	'utf-8',
+);
+
 describe('MetricInfo trigger', () => {
+	it('keeps the shared dashboard and network information popover free of colored glow', () => {
+		const popoverRule = source.match(/\.metric-info__pop\s*\{([\s\S]*?)\n\t\}/)?.[1] ?? '';
+
+		expect(popoverRule).not.toMatch(
+			/box-shadow:[^;]*(?:--shadow-(?:card|section|glow)|--(?:primary|accent|glow))[^;]*;/,
+		);
+		expect(popoverRule).toMatch(/box-shadow:[^;]*rgb\(0 0 0 \/[^;]*;/);
+	});
+
 	it('is a button with an accessible name and starts collapsed', () => {
 		render(MetricInfo, { props: base });
 		const trigger = screen.getByRole('button', { name: 'About on-time %' });
@@ -33,6 +49,10 @@ describe('MetricInfo trigger', () => {
 		await fireEvent.click(trigger);
 
 		expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		expect(trigger).toHaveAttribute('aria-controls');
+		const popover = screen.getByRole('dialog', { name: 'About on-time %' });
+		expect(popover).toHaveAttribute('id', trigger.getAttribute('aria-controls'));
+		expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
 		expect(screen.getByText('The share of readings that landed on time.')).toBeInTheDocument();
 		const link = screen.getByRole('link', { name: /How this is measured/ });
 		expect(link).toHaveAttribute('href', '/metrics#otp');
@@ -53,10 +73,10 @@ describe('MetricInfo trigger', () => {
 		const trigger = screen.getByRole('button', { name: 'About on-time %' });
 
 		await fireEvent.click(trigger);
-		expect(screen.queryByRole('tooltip')).toBeInTheDocument();
+		expect(screen.queryByRole('dialog')).toBeInTheDocument();
 
 		await fireEvent.keyDown(trigger, { key: 'Escape' });
-		expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 		expect(trigger).toHaveAttribute('aria-expanded', 'false');
 	});
 });
@@ -73,7 +93,7 @@ describe('MetricInfo hover group', () => {
 
 		// Hover the group → opens.
 		await fireEvent.mouseEnter(root);
-		expect(screen.getByRole('tooltip')).toBeInTheDocument();
+		expect(screen.getByRole('dialog')).toBeInTheDocument();
 
 		// Pointer crosses the gap toward the tip: leaving the trigger schedules a
 		// short grace close, but re-entering the group (onto the tip) inside the
@@ -82,7 +102,7 @@ describe('MetricInfo hover group', () => {
 		await fireEvent.mouseEnter(root);
 
 		vi.advanceTimersByTime(200);
-		expect(screen.queryByRole('tooltip')).toBeInTheDocument();
+		expect(screen.queryByRole('dialog')).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: /How this is measured/ })).toBeInTheDocument();
 	});
 
@@ -92,12 +112,12 @@ describe('MetricInfo hover group', () => {
 		const root = container.querySelector('.metric-info') as HTMLElement;
 
 		await fireEvent.mouseEnter(root);
-		expect(screen.getByRole('tooltip')).toBeInTheDocument();
+		expect(screen.getByRole('dialog')).toBeInTheDocument();
 
 		// Leave and never come back: the grace timer elapses and it closes.
 		await fireEvent.mouseLeave(root);
-		expect(screen.queryByRole('tooltip')).toBeInTheDocument(); // still open during grace
+		expect(screen.queryByRole('dialog')).toBeInTheDocument(); // still open during grace
 		await vi.advanceTimersByTimeAsync(200);
-		expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 	});
 });

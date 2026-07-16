@@ -3,9 +3,25 @@ import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import { visualizer } from 'rollup-plugin-visualizer';
-import type { Plugin } from 'vite';
+import type { Plugin, ViteDevServer } from 'vite';
 
 export const ISLAND_CENTERED_BASEMAP_BBOX = [-74.176, 45.237, -73.276, 45.867] as const;
+export const DEV_MANIFEST_PREVIEW_SOURCE = 'https://data.yesid.dev/v1/stm/manifest.json';
+export const DEV_BASEMAP_PREVIEW_SOURCE = 'https://data.yesid.dev/v1/stm/static/basemap.json';
+
+const CANONICAL_SITE_ORIGIN = 'https://transit.yesid.dev';
+
+function canonicalDataUrl(value: unknown): URL | null {
+	if (typeof value !== 'string') return null;
+	try {
+		const url = new URL(value);
+		return url.origin === CANONICAL_SITE_ORIGIN && /^\/data\/v1(?:\/|$)/.test(url.pathname)
+			? url
+			: null;
+	} catch {
+		return null;
+	}
+}
 
 function mapRuntimeManualChunks(id: string): string | undefined {
 	if (id.endsWith('.css')) return undefined;
@@ -16,10 +32,81 @@ function mapRuntimeManualChunks(id: string): string | undefined {
 
 export function previewManifestForIslandCenteredBasemap<T>(manifest: T): T {
 	if (!manifest || typeof manifest !== 'object') return manifest;
+	const source = manifest as { basemap?: unknown; provider?: unknown };
+	const basemapUrl = canonicalDataUrl(source.basemap);
+	const provider = typeof source.provider === 'string' ? source.provider : '';
+	const providerPrefix = `/data/v1/${provider}/`;
+	const basemap =
+		basemapUrl && provider && basemapUrl.pathname.startsWith(providerPrefix)
+			? `${basemapUrl.pathname.slice(providerPrefix.length)}${basemapUrl.search}${basemapUrl.hash}`
+			: source.basemap;
 	return {
 		...manifest,
 		bbox: [...ISLAND_CENTERED_BASEMAP_BBOX],
+		...(basemap !== source.basemap ? { basemap } : {}),
 	};
+}
+
+export function previewBasemapForDirectDevData<T>(descriptor: T): T {
+	if (!descriptor || typeof descriptor !== 'object') return descriptor;
+	const url = canonicalDataUrl((descriptor as { url?: unknown }).url);
+	if (!url) return descriptor;
+
+	return {
+		...descriptor,
+		url: `${url.pathname}${url.search}${url.hash}`,
+	};
+}
+
+interface DevJsonPreview {
+	path: string;
+	source: string;
+	header: string;
+	transform: (value: unknown) => unknown;
+}
+
+function registerDevJsonPreview(server: ViteDevServer, preview: DevJsonPreview): void {
+	type PreviewResult = { ok: true; body: string } | { ok: false; status: number };
+	let inFlight: Promise<PreviewResult> | null = null;
+
+	function loadPreview(): Promise<PreviewResult> {
+		if (inFlight) return inFlight;
+		const pending = (async (): Promise<PreviewResult> => {
+			const upstream = await fetch(preview.source);
+			if (!upstream.ok) return { ok: false, status: upstream.status };
+			return { ok: true, body: JSON.stringify(preview.transform(await upstream.json())) };
+		})();
+		inFlight = pending;
+		const clear = () => {
+			if (inFlight === pending) inFlight = null;
+		};
+		void pending.then(clear, clear);
+		return pending;
+	}
+
+	server.middlewares.use(preview.path, async (req, res, next) => {
+		if (req.method !== 'GET') return next();
+		try {
+			const result = await loadPreview();
+			if (!result.ok) {
+				res.statusCode = result.status;
+				res.setHeader('content-type', 'application/json; charset=utf-8');
+				res.setHeader('cache-control', 'no-store');
+				res.end(JSON.stringify({ error: 'dev preview upstream unavailable' }));
+				return;
+			}
+			res.statusCode = 200;
+			res.setHeader('content-type', 'application/json; charset=utf-8');
+			res.setHeader('cache-control', 'no-store');
+			res.setHeader('x-transit-dev-preview', preview.header);
+			res.end(result.body);
+		} catch {
+			res.statusCode = 502;
+			res.setHeader('content-type', 'application/json; charset=utf-8');
+			res.setHeader('cache-control', 'no-store');
+			res.end(JSON.stringify({ error: 'dev preview upstream unavailable' }));
+		}
+	});
 }
 
 function islandCenteredManifestPreviewPlugin(command: string): Plugin {
@@ -28,19 +115,17 @@ function islandCenteredManifestPreviewPlugin(command: string): Plugin {
 		apply: 'serve',
 		configureServer(server) {
 			if (command !== 'serve') return;
-			server.middlewares.use('/data/v1/stm/manifest.json', async (_req, res, next) => {
-				try {
-					const upstream = await fetch('https://transit.yesid.dev/data/v1/stm/manifest.json');
-					if (!upstream.ok) return next();
-					const manifest = previewManifestForIslandCenteredBasemap(await upstream.json());
-					res.statusCode = 200;
-					res.setHeader('content-type', 'application/json; charset=utf-8');
-					res.setHeader('cache-control', 'no-store');
-					res.setHeader('x-transit-dev-preview', 'island-centered-basemap-bbox');
-					res.end(JSON.stringify(manifest));
-				} catch {
-					next();
-				}
+			registerDevJsonPreview(server, {
+				path: '/data/v1/stm/manifest.json',
+				source: DEV_MANIFEST_PREVIEW_SOURCE,
+				header: 'island-centered-basemap-bbox',
+				transform: previewManifestForIslandCenteredBasemap,
+			});
+			registerDevJsonPreview(server, {
+				path: '/data/v1/stm/static/basemap.json',
+				source: DEV_BASEMAP_PREVIEW_SOURCE,
+				header: 'direct-r2-basemap-url',
+				transform: previewBasemapForDirectDevData,
 			});
 		},
 	};
@@ -60,18 +145,18 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 					},
 				},
 	},
-	// Dev-only snapshot proxy. In production the /v1 contract is served same-origin
-	// by the transit.yesid.dev/data/* zone-route worker (transit-data-proxy);
-	// locally we proxy `/data/*` to that live worker so the app fetches relative
-	// `/data/v1/...` URLs without CORS or a hardcoded origin. NO rewrite — the
-	// full `/data/v1/...` path is the worker's servable key (and the pmtiles
-	// basemap relies on its Range/206 passthrough), so we keep the prefix intact.
+	// Dev-only snapshot proxy. Production keeps serving the same-origin `/data/v1`
+	// contract through transit-data-proxy. Local development bypasses that quota-
+	// limited Worker and reads the public R2 custom domain directly; R2 exposes the
+	// same objects at `/v1`, so strip only the local `/data` mount prefix. Vite's
+	// proxy preserves the request method and headers, including HEAD and Range.
 	server: {
 		proxy: {
 			'/data': {
-				target: 'https://transit.yesid.dev',
+				target: 'https://data.yesid.dev',
 				changeOrigin: true,
 				secure: true,
+				rewrite: (path) => path.replace(/^\/data\/v1(?=\/|$)/, '/v1'),
 			},
 		},
 	},

@@ -9,47 +9,33 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { fmtDelayMin } from '$lib/utils';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { MetricDisplay } from '$lib/components/brand';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
+	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';
 
 	interface SectionPercentilesProps {
 		/** The typical (p50) / worst-case (p90) pair (null fields → honest absence). */
 		percentiles: { p50: number | null; p90: number | null };
 		locale: Locale;
 		copy: StopReliabilityCopy;
+		presentation?: 'standalone' | 'article-body';
 	}
-	let { percentiles, locale, copy }: SectionPercentilesProps = $props();
-
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
+	let {
+		percentiles,
+		locale,
+		copy,
+		presentation = 'standalone',
+	}: SectionPercentilesProps = $props();
 	const min = (v: number | null): string | null => fmtDelayMin(v, { rounding: 'fixed1' });
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
-		class="stop-metric-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
-		side="bottom"
-	/>
-{/snippet}
-
-<div class="stop-tile stop-reliability-percentiles" data-slot="stop-percentiles">
-	<SectionHeading level={2} overline={copy.percentiles.heading} class="stop-tile-heading">
-		{#snippet explainer()}
-			{@render metricInfo('p50p90', copy.percentiles.heading)}
-		{/snippet}
-	</SectionHeading>
+<StopReliabilityPresenter
+	heading={copy.percentiles.heading}
+	metricKey="p50p90"
+	{locale}
+	{presentation}
+	dataSlot="stop-percentiles"
+>
 	<div class="stop-reliability-percentile-tiles">
 		<MetricDisplay
 			value={min(percentiles.p50)}
@@ -70,14 +56,9 @@
 			size="md"
 		/>
 	</div>
-</div>
+</StopReliabilityPresenter>
 
 <style>
-	.stop-reliability-percentiles {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
 	.stop-reliability-percentile-tiles {
 		display: flex;
 		flex-wrap: wrap;

@@ -1,38 +1,40 @@
 <!--
-  NetworkTile — the ONE shared network-section panel (§C6 / §C5.7).
+  NetworkTile — the thin /network adapter around the shared article disclosure card.
 
-  The bordered `--card` tile chassis that every /network content section wrapped in
-  its own byte-identical `.network-tile` CSS block (duplicated 8×). Extracted here so
-  the chassis lives ONCE: a flex-column card on --card, 1rem padding, --radius-lg,
-  the soft --shadow-card bevel (E1 glow map: content tiles rest, no drill-in hover).
-
-  Props:
-    · `wide`     — the two-column-spanning variant (grid-column: 1 / -1), used by the
-      trend tile; default false.
-    · `as`       — the wrapper element ('div' default; 'section' for a landmark-less
-      section wrapper where the caller wants one).
-    · `class`    — extra classes (e.g. the histogram's own inner-layout class).
-    · `dataSlot` — the `data-slot` hook some sections carry for tests/CSS targeting.
-  Everything else spreads onto the root. Chrome only — no --primary, no data marks.
+  Network sections own only their responsive grid placement here. The shared
+  CollapsibleSection owns the solid card surface, accessible trigger, article-summary
+  header, chevron, persisted open state, whole-card pointer behavior, and bulk signals.
 -->
 <script lang="ts">
-	import { cn } from '$lib/utils';
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
+	import CollapsibleSection from '$lib/components/shared/CollapsibleSection.svelte';
+	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { cn } from '$lib/utils';
 
 	interface NetworkTileProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> {
+		title: string;
+		subtitle?: string;
+		sectionKey: string;
 		wide?: boolean;
 		as?: 'div' | 'section';
 		dataSlot?: string;
+		index?: number | null;
 		class?: string;
+		headerActions?: Snippet;
 		children?: Snippet;
 	}
 
 	let {
+		title,
+		subtitle,
+		sectionKey,
 		wide = false,
 		as = 'div',
 		dataSlot,
+		index = null,
 		class: className,
+		headerActions,
 		children,
 		...rest
 	}: NetworkTileProps = $props();
@@ -40,31 +42,34 @@
 
 <svelte:element
 	this={as}
-	class={cn('network-tile', wide && 'network-tile--wide', className)}
+	class={cn('network-section', wide && 'network-section--wide', className)}
 	data-slot={dataSlot}
+	data-network-section={sectionKey}
 	{...rest}
 >
-	{@render children?.()}
+	<CollapsibleSection
+		{title}
+		{subtitle}
+		headerVariant="article-summary"
+		{sectionKey}
+		{index}
+		closeSignal={quietModeStore.closeSignal}
+		openSignal={quietModeStore.openSignal}
+		bulkCollapsed={quietModeStore.enabled}
+		{headerActions}
+	>
+		{@render children?.()}
+	</CollapsibleSection>
 </svelte:element>
 
 <style>
-	.network-tile {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
+	.network-section {
+		width: 100%;
 		min-width: 0;
-		/* Fill the grid cell so a row of tiles reads as ONE equal-height geometric board. */
-		height: 100%;
-		padding: 1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
-		/* E1 glow map: content tiles rest on --shadow-card (the soft card bevel);
-		   they carry no drill-in, so no interactive hover-lift. */
-		box-shadow: var(--shadow-card);
+		align-self: start;
 	}
-	/* The two-column-spanning variant (the trend tile). */
-	.network-tile--wide {
+
+	.network-section--wide {
 		grid-column: 1 / -1;
 	}
 </style>

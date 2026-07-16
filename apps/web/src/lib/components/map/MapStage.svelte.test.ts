@@ -56,7 +56,7 @@ describe('MapStage', () => {
 			/@media \(max-width: 768px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*bottom:\s*calc\(1rem \+ env\(safe-area-inset-bottom, 0px\)\)/,
 		);
 		expect(s).toMatch(
-			/@media \(max-width: 768px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*max-width:\s*calc\(100vw - 5\.25rem\)/,
+			/@media \(max-width: 768px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*max-width:\s*calc\(100% - 1\.5rem\)/,
 		);
 	});
 
@@ -88,23 +88,51 @@ describe('MapStage', () => {
 		expect(s).toContain('styleInited = true;');
 	});
 
-	it('keeps mobile attribution visible in compact and expanded states', () => {
+	it('wraps mobile attribution inside the visible map in compact and expanded states', () => {
 		const s = source();
 
 		expect(s).toMatch(
 			/\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*z-index:\s*12/,
 		);
 		expect(s).toMatch(
-			/\.map-stage\s*:global\(\.maplibregl-ctrl-attrib-inner\)\s*\{[\s\S]*white-space:\s*nowrap/,
+			/\.map-stage\s*:global\(\.maplibregl-ctrl-attrib-inner\)\s*\{[\s\S]*white-space:\s*normal/,
 		);
-		expect(s).not.toMatch(
+		expect(s).toMatch(
 			/\.map-stage\s*:global\(\.maplibregl-ctrl-attrib-inner\)\s*\{[\s\S]*overflow-wrap:\s*anywhere/,
 		);
 		expect(s).toMatch(
 			/@media \(max-width: 768px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-attrib\.maplibregl-compact\)\s*\{[\s\S]*margin:\s*0/,
 		);
 		expect(s).toMatch(
-			/@media \(max-width: 768px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-attrib\.maplibregl-compact-show\)\s*\{[\s\S]*max-width:\s*calc\(100vw - 5\.25rem\)/,
+			/@media \(max-width: 768px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-attrib\)\s*\{[\s\S]*max-width:\s*100%/,
+		);
+		expect(s).toMatch(
+			/@media \(max-width: 768px\)[\s\S]*\.map-stage\s*:global\(\.maplibregl-ctrl-attrib\.maplibregl-compact-show\)\s*\{[\s\S]*max-width:\s*100%/,
+		);
+	});
+
+	it('keeps mobile map controls above expanded attribution through one shared clearance', () => {
+		const hero = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/map/MapHero.svelte'),
+			'utf-8',
+		);
+		const nearMe = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/map/MapNearMeControl.svelte'),
+			'utf-8',
+		);
+		const controls = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/map/MapFilterPill.svelte'),
+			'utf-8',
+		);
+
+		expect(hero).toMatch(
+			/--map-mobile-control-bottom:\s*calc\(5\.25rem \+ env\(safe-area-inset-bottom, 0px\)\)/,
+		);
+		expect(nearMe).toMatch(
+			/@media \(max-width: 768px\)[\s\S]*bottom:\s*var\(--map-mobile-control-bottom\)/,
+		);
+		expect(controls).toMatch(
+			/\.map-filter-pill-container\s*\{[\s\S]*bottom:\s*var\(--map-mobile-control-bottom\)/,
 		);
 	});
 });

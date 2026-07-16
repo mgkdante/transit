@@ -109,6 +109,14 @@ function resetStatusStorage(): void {
 	sessionStorage.removeItem('transit.persisted:health-conformance-members');
 }
 
+async function openHealthToc(left: HTMLElement): Promise<HTMLElement> {
+	const trigger = await waitFor(() =>
+		within(left).getByRole('button', { name: copy.en.toc.label }),
+	);
+	if (trigger.getAttribute('aria-expanded') === 'false') await fireEvent.click(trigger);
+	return trigger;
+}
+
 beforeEach(() => {
 	cleanup();
 	quietModeStore.resetForTest();
@@ -174,13 +182,16 @@ describe('HealthStatus — async reveal navigation', () => {
 		const card = await waitFor(() =>
 			within(center).getByRole('button', { name: copy.en.historyCoverage.section }),
 		);
-		expect(
-			within(left).getByRole('button', { name: copy.en.historyCoverage.section }),
-		).toBeInTheDocument();
+		const toc = await waitFor(() => within(left).getByRole('button', { name: copy.en.toc.label }));
 		expect(card).toHaveAttribute('aria-expanded', 'false');
+		expect(toc).toHaveAttribute('aria-expanded', 'false');
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
 		expect(card).toHaveAttribute('aria-expanded', 'true');
+		expect(toc).toHaveAttribute('aria-expanded', 'true');
+		expect(
+			within(left).getByRole('button', { name: copy.en.historyCoverage.section }),
+		).toBeInTheDocument();
 	});
 
 	it('opens and scrolls a retained-history hash only after the async card and ToC exist', async () => {
@@ -277,6 +288,7 @@ describe('HealthStatus — async reveal navigation', () => {
 			expandedAtScroll.push(target.getAttribute('aria-expanded'));
 		});
 
+		await openHealthToc(left);
 		await fireEvent.click(within(left).getByRole('button', { name: copy.en.lanes.section }));
 
 		await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
@@ -316,6 +328,7 @@ describe('HealthStatus — async reveal navigation', () => {
 		dataHealthGate.resolve(dataHealthFixture);
 
 		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		await openHealthToc(left);
 		await waitFor(() =>
 			expect(within(left).getByRole('button', { name: copy.en.freshness.section })).toBeVisible(),
 		);

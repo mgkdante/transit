@@ -36,7 +36,7 @@ export interface HistoryCoverageMetricView {
 	readonly aggregation: HistoryMetricAggregation;
 	readonly firstDate: string | null;
 	readonly lastDate: string | null;
-	readonly gaps: readonly HistoryCoverageGapView[];
+	readonly gaps: readonly HistoryCoverageGapView[] | null;
 }
 
 export interface HistoryCoverageFamilyView {
@@ -45,7 +45,7 @@ export interface HistoryCoverageFamilyView {
 	readonly selectionMode: HistorySelectionMode | null;
 	readonly firstDate: string | null;
 	readonly lastDate: string | null;
-	readonly gaps: readonly HistoryCoverageGapView[];
+	readonly gaps: readonly HistoryCoverageGapView[] | null;
 	readonly metrics: readonly HistoryCoverageMetricView[];
 	readonly currentOnlySections: readonly string[];
 }
@@ -54,8 +54,9 @@ function date(value: string | null | undefined): string | null {
 	return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-function gaps(values: readonly HistoricCoverageGap[] | undefined): HistoryCoverageGapView[] {
-	return (values ?? []).map((gap) => ({
+function gaps(values: readonly HistoricCoverageGap[] | undefined): HistoryCoverageGapView[] | null {
+	if (values === undefined) return null;
+	return values.map((gap) => ({
 		startDate: gap.start_date,
 		endDate: gap.end_date,
 		reason: gap.reason?.trim() || null,

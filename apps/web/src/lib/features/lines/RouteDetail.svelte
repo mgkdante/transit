@@ -1,24 +1,25 @@
 <!--
   RouteDetail — the per-line detail screen (slice-9.3).
 
-  Composes the surface spine: an EntityDetail tabbed scaffold (Détail / Horaire /
-  Fiabilité) headed by a SectionHeading. Each pane owns its own data load wrapped
-  in a ResourceBoundary, so skeleton / error / empty render per-pane without
-  bespoke plumbing:
+  Composes the surface spine: an ArticleHeader cover over an EntityDetail tabbed
+  scaffold (Détail / Horaire / Fiabilité). The server identity seed owns the
+  first-render title; each pane keeps its established ResourceBoundary so
+  skeleton / error / empty render per-pane without bespoke plumbing:
 
     - detail + schedule  → static getRoute(id)            (RouteFile | null)
     - reliability        → historic getRouteReliability(id) (RouteReliability | null)
 
   A null load (HTTP 404) is the empty signal, not an error — ResourceBoundary
-  routes it to the empty edge state. Raw reliability periods are mapped to the
-  spine's normalized ReliabilityPeriodVM; domain vocabulary (OTP / delay / p90 /
-  severe) is intrinsic to ReliabilityPane. Locale via getLocale(); non-intrinsic
-  copy is co-located. Tokens, no hex; --primary stays interactive-only.
+  routes it to the empty edge state. The article focus controls subscribe only
+  the article disclosure sequence consistently across Detail, Schedule, and
+  Reliability. Locale via getLocale(); non-intrinsic copy is co-located. Tokens,
+  no hex; --primary stays interactive-only.
 -->
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { mirrorSearchParam } from '$lib/site/urlMirror';
+	import type { DetailTab } from '$lib/site/detailTabs';
+	import { createDetailTabController } from '$lib/site/detailTabController.svelte';
 	import { getLocale, localizeHref } from '$lib/i18n';
 	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { mapHrefFor, routeFor } from '$lib/nav';
@@ -33,9 +34,11 @@
 		historyRangeRequestFromSearchParams,
 	} from '$lib/v1';
 	import type { RouteFile, RouteReliability, Provenance, StopPrediction, Vehicle } from '$lib/v1';
-	import { createResource } from '$lib/v1/resource.svelte';
+	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
+	import type { IdentitySeed } from '$lib/v1/serverContext';
 	import { minutesSinceMidnight } from '$lib/utils/time';
 	import { sharedClock } from '$lib/stores';
+	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import { inferAbsenceReason } from '$lib/site/serviceWindow';
 	import { EdgeState } from '$lib/components/edge';
 	import {
@@ -46,12 +49,16 @@
 		AffectedAlerts,
 	} from '$lib/components/surface';
 	import { RankedRow } from '$lib/components/dataviz';
-	import { ListDetailGrid } from '$lib/components/layout';
+	import {
+		ArticleHeader,
+		ArticleSectionStack,
+		type ArticleMetaEntry,
+	} from '$lib/components/layout';
+	import { ScheduleTable, type ScheduleRow } from '$lib/components/schedule';
+	import { articleNavigationCopy, CollapsibleSection, type TocEntry } from '$lib/components/shared';
+	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
-	import { cornerMetaLabels } from '$lib/components/brand';
 	import { formatUtc } from '$lib/utils/time';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
@@ -76,9 +83,13 @@
 	interface RouteDetailProps {
 		/** The route id this surface details. */
 		id: string;
+		/** Server-resolved identity used by the article cover on the first render. */
+		seed: IdentitySeed;
+		/** Server-loaded static route; absent only when that read failed. */
+		routeSeed?: ResourceSeed<RouteFile | null>;
 	}
 
-	let { id }: RouteDetailProps = $props();
+	let { id, seed, routeSeed }: RouteDetailProps = $props();
 
 	const locale = getLocale();
 	const t = $derived(detailCopy[locale]);
@@ -91,27 +102,25 @@
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
 
-	type TabKey = 'detail' | 'schedule' | 'reliability';
-	const tabs = $derived<{ key: TabKey; label: string }[]>([
+	const tabs = $derived<{ key: DetailTab; label: string }[]>([
 		{ key: 'detail', label: t.tabs.detail },
 		{ key: 'schedule', label: t.tabs.schedule },
 		{ key: 'reliability', label: t.tabs.reliability },
 	]);
-	// Deep-linkable tab: seed from ?tab on load (an unknown value falls to the default — the URL is a
-	// hint, never a data source), then mirror the active tab to ?tab so a view is shareable. We use
-	// replaceState (not pushState) so switching tabs never spams the history stack; the default tab is
-	// OMITTED from the URL for a clean canonical /lines/<id>.
-	const TAB_KEYS: readonly TabKey[] = ['detail', 'schedule', 'reliability'];
-	const readTab = (): TabKey => {
-		const p = page.url.searchParams.get('tab');
-		return TAB_KEYS.includes(p as TabKey) ? (p as TabKey) : 'detail';
-	};
-	let active = $state<TabKey>(readTab());
-	// Mirror the active tab to ?tab (omit the 'detail' default for a clean canonical URL).
-	$effect(() => mirrorSearchParam('tab', active === 'detail' ? null : active));
+	// One controller owns both directions: external URL changes update the selected tab,
+	// while local tab clicks use replaceState and omit the canonical Detail parameter.
+	const detailTabController = createDetailTabController(page.url);
+	$effect(() => detailTabController.syncFromUrl(page.url));
 
 	// detail + schedule share the static route file (reactive to `id`).
-	const route = createResource<RouteFile | null>(() => getRoute(id));
+	const route = createResource<RouteFile | null>(() => getRoute(id), {
+		key: () => id,
+		seed: () => routeSeed,
+	});
+	const articleTitle = $derived.by(() => {
+		const longName = route.data?.id === id ? route.data.long?.trim() : null;
+		return seed.name.trim() === id && longName ? `${id} ${longName}` : seed.name;
+	});
 	// reliability is the historic per-route archive (reactive to `id`). The route PAGE
 	// always probes route_reliability/{id}.json and TRUSTS the file as the source of
 	// truth — it does NOT gate on the routes-index `reliability` flag. That flag is a
@@ -123,15 +132,18 @@
 	// history); a route with genuinely no file fail-softs to null → the surface shows its
 	// honest empty. (The LIST loader keeps the flag-skip — there it avoids N guaranteed
 	// 404s across every row; here it is a single request.)
-	const reliability = createResource<RouteReliability | null>(() => {
-		// Capture `id` SYNCHRONOUSLY: createResource tracks the fetcher's reactive reads
-		// only during its synchronous portion (Svelte 5 stops $effect dependency tracking
-		// at the first await/microtask). Reading `id` after an await would drop it as a
-		// dependency, so client nav /lines/A → /lines/B would keep showing A's reliability
-		// under B's header. Mirrors MapHero's capture-key-first convention.
-		const routeId = id;
-		return getRouteReliability(routeId);
-	});
+	const reliability = createResource<RouteReliability | null>(
+		() => {
+			// Capture `id` SYNCHRONOUSLY: createResource tracks the fetcher's reactive reads
+			// only during its synchronous portion (Svelte 5 stops $effect dependency tracking
+			// at the first await/microtask). Reading `id` after an await would drop it as a
+			// dependency, so client nav /lines/A → /lines/B would keep showing A's reliability
+			// under B's header. Mirrors MapHero's capture-key-first convention.
+			const routeId = id;
+			return getRouteReliability(routeId);
+		},
+		{ key: () => id },
+	);
 
 	function historyFor(routeId: string): LineHistoryResource {
 		return createLineHistoryResource(
@@ -174,6 +186,7 @@
 	const routeVerdict = $derived(
 		verdictHeadline ? selectVerdict(verdictHeadline, 'day', locale, relCopy.verdict) : null,
 	);
+	const hasHeaderVerdict = $derived(routeVerdict?.ban != null);
 	const headerVerdictCurrentOnly = $derived(
 		(lineHistory.request.hasFrom || lineHistory.request.hasTo) && lineHistory.state !== 'current',
 	);
@@ -184,22 +197,37 @@
 	// fail-soft: the static directions/stops render regardless). start()/stop()
 	// are browser-only and idempotent.
 	const manifest = getV1Context().manifest;
-	const live = createLiveStore(manifest);
+	const live = createLiveStore(manifest, {
+		families: ['vehicles', 'trips', 'alerts', 'network'],
+	});
 	onMount(() => {
 		live.start();
 		return () => live.stop();
 	});
 
-	// CornerMeta readouts (A4) — REAL data only. Provider is always present from the
-	// manifest; the generated stamp prefers the live tier (the head's freshest data),
-	// falling back to the reliability build; a datum that isn't present drops its
-	// corner (never fabricated).
-	const cm = cornerMetaLabels[locale];
+	// Article-cover metadata uses only values published by the manifest or a loaded
+	// data tier. Missing values stand down instead of becoming decorative filler.
 	const shortName = manifest.short_name?.trim() || manifest.display_name;
-	const cornerGeneratedUtc = $derived(live.generatedUtc ?? reliability.data?.generated_utc ?? null);
-	const cornerGeneratedStamp = $derived(
-		cornerGeneratedUtc != null ? formatUtc(cornerGeneratedUtc, locale) : null,
+	const articleGeneratedUtc = $derived(
+		live.generatedUtc ?? route.data?.generated_utc ?? reliability.data?.generated_utc ?? null,
 	);
+	const articleEdgeLeft = $derived(`${t.kicker} ${id}`);
+	const articleEdgeRight = $derived(
+		articleGeneratedUtc ? formatUtc(articleGeneratedUtc, locale) : shortName,
+	);
+	const articleTags = $derived<readonly string[]>(shortName ? [id, shortName] : [id]);
+	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
+		const entries: ArticleMetaEntry[] = [];
+		if (shortName) entries.push({ label: t.article.provider, text: shortName });
+		if (articleGeneratedUtc) {
+			entries.push({
+				label: t.article.generated,
+				text: formatUtc(articleGeneratedUtc, locale),
+				datetime: articleGeneratedUtc,
+			});
+		}
+		return entries;
+	});
 
 	// Per-stop SOONEST predicted arrival on this route, derived from the live
 	// trips of every bus currently on the route (NO per-stop fetch, a route has
@@ -276,12 +304,70 @@
 		return delay == null ? Number.NEGATIVE_INFINITY : delay;
 	}
 
-	// The Detail pane lays the live roster + affected alerts into a ListDetailGrid
-	// LIST column beside the directions-with-stops DETAIL pane. The list column is
-	// rendered ONLY when it has content (a live bus on the route OR an active alert)
-	// so it stands down entirely otherwise and the directions take the full width
-	// (never an empty bordered list column).
+	// The live-service article section renders only when it has content (a live bus
+	// on the route or an active alert), so the disclosure sequence never contains an
+	// empty card.
 	const hasListColumn = $derived(roster.length > 0 || routeAlerts.length > 0);
+	const articleNav = $derived(articleNavigationCopy[locale]);
+	const detailTocEntries = $derived.by<TocEntry[]>(() => {
+		if (route.data == null) return [];
+		const entries: TocEntry[] = [];
+		if (hasListColumn) {
+			entries.push({
+				id: 'line-detail-live',
+				title: t.liveService.title,
+				level: 2,
+				badge: { kind: 'number', value: 1 },
+				children: [],
+			});
+		}
+		const offset = entries.length;
+		entries.push(
+			{
+				id: 'line-detail-profile',
+				title: t.profile.title,
+				level: 2,
+				badge: { kind: 'number', value: offset + 1 },
+				children: [],
+			},
+			{
+				id: 'line-detail-directions',
+				title: t.directions,
+				level: 2,
+				badge: { kind: 'number', value: offset + 2 },
+				children: [],
+			},
+		);
+		return entries;
+	});
+	const scheduleTocEntries = $derived.by<TocEntry[]>(() =>
+		route.data == null
+			? []
+			: [
+					{
+						id: 'line-schedule-span',
+						title: t.serviceSpan,
+						level: 2,
+						badge: { kind: 'number', value: 1 },
+						children: [],
+					},
+					{
+						id: 'line-schedule-periods',
+						title: t.servicePeriods,
+						level: 2,
+						badge: { kind: 'number', value: 2 },
+						children: [],
+					},
+				],
+	);
+	const articleToc = $derived({
+		entries: { detail: detailTocEntries, schedule: scheduleTocEntries },
+		heading: articleNav.heading,
+		sectionKey: `line-${id}-toc`,
+		counterPrefix: 'SEC',
+		openAria: articleNav.openAria,
+		closeAria: articleNav.closeAria,
+	});
 
 	// HONEST ABSENCE — show the inferred-reason note in the Detail pane only once the
 	// live tier has settled (a tick has landed) AND no bus is on the route. Never
@@ -322,51 +408,51 @@
 	/>
 {/snippet}
 
-<EntityDetail
-	kicker={t.kicker}
-	back={{ href: localizeHref('/lines', locale), label: t.back }}
-	lede={t.detailLede}
-	{tabs}
-	bind:active
->
-	{#snippet cornerMeta()}
-		<!-- A4: blueprint-margin corners — provider · generated (real data from the
-		     manifest + the live/reliability tiers). aria-hidden, hidden < 768px. -->
-		<CornerMeta>
-			{#snippet topLeft()}<span class="line-corner">{cm.line} · {id}</span>{/snippet}
-			{#snippet topRight()}{#if cornerGeneratedStamp}<span class="line-corner"
-						>{cm.generated} · {cornerGeneratedStamp}</span
-					>{/if}{/snippet}
-			{#snippet bottomLeft()}<span class="line-corner">{cm.provider} · {shortName}</span>{/snippet}
-		</CornerMeta>
-	{/snippet}
-
-	{#snippet header()}
-		<SectionHeading heading={id} level={1} dot />
-	{/snippet}
-
-	{#snippet meta()}
-		<MapDrilldownLink
-			href={mapHrefFor({ route: id }, locale)}
-			label={t.viewOnMap}
-			ariaLabel={t.viewRouteOnMap(id)}
-		/>
-	{/snippet}
-
-	{#snippet banner()}
-		<!-- §C5.4: the always-visible verdict band above the tabs (verdict sentence + the
-		     OTP BAN), from the §0 headline. Renders only once the archive loads (honest
-		     absence otherwise — no fabricated verdict). -->
+{#snippet routeBanner()}
+	<div class="route-verdict-banner">
 		{#if routeVerdict}
-			<div class="route-verdict-banner">
-				<VerdictBanner result={routeVerdict} />
-				{#if headerVerdictCurrentOnly}
-					<p class="route-verdict-scope" data-slot="header-verdict-current-only">
-						{relCopy.history.headerCurrentOnly}
-					</p>
-				{/if}
-			</div>
+			<VerdictBanner result={routeVerdict} />
 		{/if}
+		{#if headerVerdictCurrentOnly}
+			<p class="route-verdict-scope" data-slot="header-verdict-current-only">
+				{relCopy.history.headerCurrentOnly}
+			</p>
+		{/if}
+	</div>
+{/snippet}
+
+<EntityDetail
+	{tabs}
+	{articleToc}
+	bind:active={detailTabController.active}
+	paneOwnedRailKeys={['reliability']}
+	banner={hasHeaderVerdict ? routeBanner : undefined}
+>
+	{#snippet articleHeader()}
+		<ArticleHeader
+			watermark={t.article.watermark}
+			category={t.kicker}
+			title={articleTitle}
+			tags={articleTags}
+			tagsAria={t.article.tagsAria}
+			backHref={localizeHref('/lines', locale)}
+			backLabel={t.article.back}
+			meta={articleMeta}
+			edgeLeft={articleEdgeLeft}
+			edgeRight={articleEdgeRight}
+			titleId="line-title"
+		>
+			{#snippet controls()}
+				<QuietModeButton />
+			{/snippet}
+			{#snippet actions()}
+				<MapDrilldownLink
+					href={mapHrefFor({ route: id }, locale)}
+					label={t.viewOnMap}
+					ariaLabel={t.viewRouteOnMap(id)}
+				/>
+			{/snippet}
+		</ArticleHeader>
 	{/snippet}
 
 	{#snippet pane(key)}
@@ -379,199 +465,273 @@
 					     mobile). The list column stands down entirely when no live bus is on
 					     the route AND no alert is active (hasListColumn) so the directions take
 					     the whole width, never an empty bordered column. -->
-					<ListDetailGrid listWidth="360px" label={t.tabs.detail}>
-						{#snippet list()}
+					<ArticleSectionStack>
+						{#key id}
 							{#if hasListColumn}
-								<div class="route-aside">
-									<!-- LIVE: service alerts affecting this route (stands down when none). -->
-									<AffectedAlerts
-										alerts={routeAlerts}
-										{locale}
-										copy={t.alerts}
-										testId="route-alerts"
-									/>
+								<CollapsibleSection
+									title={t.liveService.title}
+									subtitle={t.liveService.summary}
+									headerVariant="article-summary"
+									index={0}
+									anchor="line-detail-live"
+									sectionKey={`line-detail-${id}-live`}
+									closeSignal={quietModeStore.closeSignal}
+									openSignal={quietModeStore.openSignal}
+									bulkCollapsed={quietModeStore.enabled}
+								>
+									<div class="route-aside">
+										<!-- LIVE: service alerts affecting this route (stands down when none). -->
+										<AffectedAlerts
+											alerts={routeAlerts}
+											{locale}
+											copy={t.alerts}
+											testId="route-alerts"
+										/>
 
-									<!-- LIVE: current-buses roster — the vehicles running this route right
+										<!-- LIVE: current-buses roster — the vehicles running this route right
 									     now, worst-delay first, each linking to its trip. Stands down
 									     entirely when no live bus is on the route (metro / feed gap). -->
-									{#if roster.length > 0}
-										<div class="route-roster" data-testid="route-roster">
-											<div class="route-section-head">
-												<SectionHeading level={2} overline={t.roster.heading} />
-												<span class="route-roster-count">{t.roster.count(roster.length)}</span>
-											</div>
-											<ul class="route-roster-list" aria-label={t.roster.listLabel}>
-												{#each roster as bus, bi (bus.id)}
-													<li class="route-roster-item">
-														{#if bus.trip}
+										{#if roster.length > 0}
+											<div class="route-roster" data-testid="route-roster">
+												<div class="route-section-head">
+													<SectionHeading level={2} overline={t.roster.heading} />
+													<span class="route-roster-count">{t.roster.count(roster.length)}</span>
+												</div>
+												<ul class="route-roster-list" aria-label={t.roster.listLabel}>
+													{#each roster as bus, bi (bus.id)}
+														<li class="route-roster-item">
+															{#if bus.trip}
+																<a
+																	class="route-roster-link"
+																	href={tripHref(bus.trip)}
+																	aria-label={t.roster.viewTrip(bus.id)}
+																>
+																	<RankedRow
+																		bare
+																		rank={bi + 1}
+																		title={t.roster.busLabel(bus.id)}
+																		subtitle={bus.next_stop != null
+																			? t.roster.nextStop(bus.next_stop)
+																			: undefined}
+																		severity={delaySeverity(bus.delay_min)}
+																		colorVar={delayColorVar(bus.delay_min)}
+																		value={bus.delay_min ?? null}
+																		domain={DELAY_POS_DOMAIN}
+																		unit=" min"
+																		display={rosterDelayLabel(bus.delay_min)}
+																	/>
+																	<ChevronRightIcon
+																		size={14}
+																		strokeWidth={2.4}
+																		aria-hidden="true"
+																	/>
+																</a>
+															{:else}
+																<!-- No trip id to link to: still surface the bus + its map link. -->
+																<div class="route-roster-link route-roster-link--static">
+																	<RankedRow
+																		bare
+																		rank={bi + 1}
+																		title={t.roster.busLabel(bus.id)}
+																		subtitle={bus.next_stop != null
+																			? t.roster.nextStop(bus.next_stop)
+																			: undefined}
+																		severity={delaySeverity(bus.delay_min)}
+																		colorVar={delayColorVar(bus.delay_min)}
+																		value={bus.delay_min ?? null}
+																		domain={DELAY_POS_DOMAIN}
+																		unit=" min"
+																		display={rosterDelayLabel(bus.delay_min)}
+																	/>
+																</div>
+															{/if}
 															<a
-																class="route-roster-link"
-																href={tripHref(bus.trip)}
-																aria-label={t.roster.viewTrip(bus.id)}
+																class="route-roster-map"
+																href={mapHrefFor({ vehicle: bus.id }, locale)}
+																aria-label={t.roster.viewBusOnMap(bus.id)}
 															>
-																<RankedRow
-																	bare
-																	rank={bi + 1}
-																	title={t.roster.busLabel(bus.id)}
-																	subtitle={bus.next_stop != null
-																		? t.roster.nextStop(bus.next_stop)
-																		: undefined}
-																	severity={delaySeverity(bus.delay_min)}
-																	colorVar={delayColorVar(bus.delay_min)}
-																	value={bus.delay_min ?? null}
-																	domain={DELAY_POS_DOMAIN}
-																	unit=" min"
-																	display={rosterDelayLabel(bus.delay_min)}
-																/>
-																<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
+																<MapPinIcon size={13} strokeWidth={2.4} aria-hidden="true" />
+																<span>{t.roster.mapAction}</span>
 															</a>
-														{:else}
-															<!-- No trip id to link to: still surface the bus + its map link. -->
-															<div class="route-roster-link route-roster-link--static">
-																<RankedRow
-																	bare
-																	rank={bi + 1}
-																	title={t.roster.busLabel(bus.id)}
-																	subtitle={bus.next_stop != null
-																		? t.roster.nextStop(bus.next_stop)
-																		: undefined}
-																	severity={delaySeverity(bus.delay_min)}
-																	colorVar={delayColorVar(bus.delay_min)}
-																	value={bus.delay_min ?? null}
-																	domain={DELAY_POS_DOMAIN}
-																	unit=" min"
-																	display={rosterDelayLabel(bus.delay_min)}
-																/>
-															</div>
-														{/if}
-														<a
-															class="route-roster-map"
-															href={mapHrefFor({ vehicle: bus.id }, locale)}
-															aria-label={t.roster.viewBusOnMap(bus.id)}
-														>
-															<MapPinIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-															<span>{t.roster.mapAction}</span>
-														</a>
-													</li>
-												{/each}
-											</ul>
+														</li>
+													{/each}
+												</ul>
+											</div>
+										{/if}
+									</div>
+								</CollapsibleSection>
+							{/if}
+
+							<CollapsibleSection
+								title={t.profile.title}
+								subtitle={t.profile.summary}
+								headerVariant="article-summary"
+								index={hasListColumn ? 1 : 0}
+								anchor="line-detail-profile"
+								sectionKey={`line-detail-${id}-profile`}
+								closeSignal={quietModeStore.closeSignal}
+								openSignal={quietModeStore.openSignal}
+								bulkCollapsed={quietModeStore.enabled}
+							>
+								<div class="route-profile-grid">
+									<MetricDisplay
+										value={String(file.directions?.length ?? 0)}
+										label={t.profile.directions}
+										size="sm"
+									/>
+									<MetricDisplay
+										value={String(
+											(file.directions ?? []).reduce(
+												(total, direction) => total + (direction.stops?.length ?? 0),
+												0,
+											),
+										)}
+										label={t.profile.stops}
+										size="sm"
+									/>
+									<MetricDisplay
+										value={file.first_departure ?? null}
+										absentReason="no-observations"
+										{locale}
+										label={t.firstDeparture}
+										size="sm"
+									/>
+									<MetricDisplay
+										value={file.last_departure ?? null}
+										absentReason="no-observations"
+										{locale}
+										label={t.lastDeparture}
+										size="sm"
+									/>
+								</div>
+							</CollapsibleSection>
+
+							<CollapsibleSection
+								title={t.directions}
+								headerVariant="article-summary"
+								index={hasListColumn ? 2 : 1}
+								anchor="line-detail-directions"
+								sectionKey={`line-detail-${id}-directions`}
+								closeSignal={quietModeStore.closeSignal}
+								openSignal={quietModeStore.openSignal}
+								bulkCollapsed={quietModeStore.enabled}
+							>
+								<div class="route-section">
+									{#if live.generatedUtc != null || live.ageSeconds != null}
+										<div class="route-section-head route-section-head--meta">
+											<FreshnessStamp
+												variant="live"
+												generatedUtc={live.generatedUtc}
+												ageSeconds={live.ageSeconds}
+												isStale={live.isStale}
+												{locale}
+											/>
 										</div>
 									{/if}
-								</div>
-							{/if}
-						{/snippet}
-
-						{#snippet detail()}
-							<div class="route-section route-directions-pane">
-								<div class="route-section-head">
-									<SectionHeading level={2} overline={t.directions} />
-									{#if live.generatedUtc != null || live.ageSeconds != null}
-										<FreshnessStamp
-											variant="live"
-											generatedUtc={live.generatedUtc}
-											ageSeconds={live.ageSeconds}
-											isStale={live.isStale}
-											{locale}
-										/>
-									{/if}
-								</div>
-								<!-- HONEST ABSENCE: when no live bus is on this route, STATE the
-								     inferred reason (metro has no realtime / service closed — opens at
+									<!-- HONEST ABSENCE: when no live bus is on this route, STATE the
+									     inferred reason (metro has no realtime / service closed — opens at
 								     FIRST / scheduled-but-silent) instead of leaving the live readout
 								     to silently say "no live bus" per stop. emptyReason is null when no
 								     reason is derivable → the EdgeState shows the plain honest no-data
 								     copy, never a fabricated reason. -->
-								{#if showAbsenceNote}
-									<EdgeState
-										variant="empty"
-										lang={locale}
-										layout="mobile"
-										emptyReason={absenceReason}
-										class="route-absence-note"
-									/>
-								{/if}
-								<!-- The loved bidirectional layout, now its own reusable component
+									{#if showAbsenceNote}
+										<EdgeState
+											variant="empty"
+											lang={locale}
+											layout="mobile"
+											emptyReason={absenceReason}
+											class="route-absence-note"
+										/>
+									{/if}
+									<!-- The loved bidirectional layout, now its own reusable component
 									     (LineDirections) — both directions side-by-side when the pane is
 									     wide, each a column of its ordered stops + the live readout. -->
-								<LineDirections directions={file.directions} {predictions} {locale} copy={t} />
-							</div>
-						{/snippet}
-					</ListDetailGrid>
+									<LineDirections directions={file.directions} {predictions} {locale} copy={t} />
+								</div>
+							</CollapsibleSection>
+						{/key}
+					</ArticleSectionStack>
 				{/snippet}
 			</ResourceBoundary>
 		{:else if key === 'schedule'}
 			<ResourceBoundary resource={route} lang={locale}>
 				{#snippet children(file)}
-					<!-- @container: container-type rides this PARENT wrapper; the two-column
-					     layout below targets its DESCENDANT .route-schedule-grid (never the
-					     wrapper itself — the self-target trap). When the schedule pane is
-					     wide (≥40rem) the service-span block + the periods grid sit side by
-					     side; below that they stack. -->
 					<div class="route-schedule-cq">
-						<!-- Operator: "some text to explain to people what everything is." A plain-language
-						     intro frames the planned schedule + points to the Reliability tab for real OTP. -->
-						<p class="route-schedule-intro" data-slot="schedule-intro">{t.scheduleIntro}</p>
-						<div class="route-section route-schedule-grid" data-slot="route-schedule">
-							<div class="route-schedule-span">
-								<div class="route-departures">
-									<div class="route-metric-cell">
-										<MetricDisplay
-											value={file.first_departure ?? null}
-											emptyLabel={t.noData}
-											absentReason="not-in-schedule"
-											{locale}
-											label={t.firstDeparture}
-											size="sm"
-										/>
-										{@render scheduleInfo('serviceSpan', t.firstDeparture)}
-									</div>
-									<div class="route-metric-cell">
-										<MetricDisplay
-											value={file.last_departure ?? null}
-											emptyLabel={t.noData}
-											absentReason="not-in-schedule"
-											{locale}
-											label={t.lastDeparture}
-											size="sm"
-										/>
-										{@render scheduleInfo('serviceSpan', t.lastDeparture)}
+						<ArticleSectionStack data-section-sequence="line-schedule">
+							<CollapsibleSection
+								title={t.serviceSpan}
+								headerVariant="article-summary"
+								index={0}
+								anchor="line-schedule-span"
+								sectionKey={`line-schedule-${id}-span`}
+								closeSignal={quietModeStore.closeSignal}
+								openSignal={quietModeStore.openSignal}
+								bulkCollapsed={quietModeStore.enabled}
+							>
+								<!-- Keep the explanatory copy inside the first disclosure so every tab's
+								     first card shares the same top edge with the rail. -->
+								<p class="route-schedule-intro" data-slot="schedule-intro">{t.scheduleIntro}</p>
+								<div class="route-schedule-span">
+									<div class="route-departures">
+										<div class="route-metric-cell">
+											<MetricDisplay
+												value={file.first_departure ?? null}
+												emptyLabel={t.noData}
+												absentReason="not-in-schedule"
+												{locale}
+												label={t.firstDeparture}
+												size="sm"
+											/>
+											{@render scheduleInfo('serviceSpan', t.firstDeparture)}
+										</div>
+										<div class="route-metric-cell">
+											<MetricDisplay
+												value={file.last_departure ?? null}
+												emptyLabel={t.noData}
+												absentReason="not-in-schedule"
+												{locale}
+												label={t.lastDeparture}
+												size="sm"
+											/>
+											{@render scheduleInfo('serviceSpan', t.lastDeparture)}
+										</div>
 									</div>
 								</div>
-							</div>
-							<div class="route-schedule-periods">
-								<div class="route-label-row">
-									<SectionLabel text={t.servicePeriods} variant="metric" />
+							</CollapsibleSection>
+							<CollapsibleSection
+								title={t.servicePeriods}
+								headerVariant="article-summary"
+								index={1}
+								anchor="line-schedule-periods"
+								sectionKey={`line-schedule-${id}-periods`}
+								closeSignal={quietModeStore.closeSignal}
+								openSignal={quietModeStore.openSignal}
+								bulkCollapsed={quietModeStore.enabled}
+							>
+								{#snippet headerActions()}
 									{@render scheduleInfo('headway', t.servicePeriods)}
+								{/snippet}
+								<div class="route-schedule-periods">
+									{#if (file.service_periods ?? []).length > 0}
+										<ScheduleTable
+											mode="service"
+											rows={(file.service_periods ?? []).map(
+												(period): ScheduleRow => ({
+													kind: 'service',
+													period: period.shift,
+													window: period.window,
+													headway: fmtMin(period.headway_min),
+												}),
+											)}
+											{locale}
+											labels={t.scheduleTable}
+										/>
+									{:else}
+										<EdgeState variant="empty" lang={locale} />
+									{/if}
 								</div>
-								{#if (file.service_periods ?? []).length > 0}
-									<ul class="route-periods">
-										{#each file.service_periods ?? [] as sp, spi (sp.shift + '-' + spi)}
-											<li class="route-period">
-												<SectionLabel text={sp.shift} variant="metric" />
-												<div class="route-period-metrics">
-													{#if sp.window}
-														<div class="route-metric-cell">
-															<MetricDisplay value={sp.window} label={t.window} size="sm" />
-															{@render scheduleInfo('serviceSpan', t.window)}
-														</div>
-													{/if}
-													{#if sp.headway_min != null}
-														<div class="route-metric-cell">
-															<MetricDisplay
-																value={fmtMin(sp.headway_min)}
-																label={t.headway}
-																size="sm"
-															/>
-															{@render scheduleInfo('headway', t.headway)}
-														</div>
-													{/if}
-												</div>
-											</li>
-										{/each}
-									</ul>
-								{/if}
-							</div>
-						</div>
+							</CollapsibleSection>
+						</ArticleSectionStack>
 					</div>
 				{/snippet}
 			</ResourceBoundary>
@@ -583,6 +743,9 @@
 						{locale}
 						directionHeadsigns={dirHeadsigns}
 						history={lineHistory}
+						articleSummary={detailTabController.active === 'reliability' && hasHeaderVerdict
+							? routeBanner
+							: undefined}
 					/>
 				{/key}
 			{:else}
@@ -594,6 +757,9 @@
 								{locale}
 								directionHeadsigns={dirHeadsigns}
 								history={lineHistory}
+								articleSummary={detailTabController.active === 'reliability' && hasHeaderVerdict
+									? routeBanner
+									: undefined}
 							/>
 						{/key}
 					{/snippet}
@@ -615,32 +781,21 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
-	.line-corner {
-		white-space: nowrap;
-	}
 	.route-section {
 		display: flex;
 		flex-direction: column;
 		gap: 1.25rem;
 	}
-	/* Detail-tab LIST column: the live roster + affected alerts stacked. On desktop
-	   ListDetailGrid gives it a fixed 360px column with its own scroll + a divider
-	   rule; here we just space its stacked children. */
+	.route-profile-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+		gap: 1rem;
+	}
+	/* Live roster + affected alerts share one article section. */
 	.route-aside {
 		display: flex;
 		flex-direction: column;
 		gap: 1.25rem;
-	}
-	/* Detail-tab DETAIL pane: the directions-with-stops fill the flexing column.
-	   On desktop ListDetailGrid scrolls it independently of the list; the inner pad
-	   keeps the stop rows off the divider rule so the two panes breathe. */
-	@media (min-width: 1024px) {
-		.route-aside {
-			padding-inline-end: 1.5rem;
-		}
-		.route-directions-pane {
-			padding-inline-start: 1.5rem;
-		}
 	}
 	.route-section-head {
 		display: flex;
@@ -649,11 +804,8 @@
 		justify-content: space-between;
 		gap: 0.75rem;
 	}
-	/* A section label sitting next to its (i) metric-explainer affordance. */
-	.route-label-row {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
+	.route-section-head--meta {
+		justify-content: flex-end;
 	}
 	/* Current-buses roster: one row per live vehicle, worst-delay first. */
 	.route-roster {
@@ -743,36 +895,15 @@
 		align-items: flex-start;
 		gap: 0.375rem;
 	}
-	.route-periods {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: grid;
-		gap: 1rem;
-		grid-template-columns: 1fr;
-	}
-	@media (min-width: 640px) {
-		.route-periods {
-			grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
-		}
-	}
-
-	/* ── SCHEDULE pane: 2-column-when-it-fits (@container) ──────────────────────
-	   container-type rides this PARENT wrapper; the grid below targets its
-	   DESCENDANT .route-schedule-grid — NEVER this same element (the self-target
-	   trap). Below the threshold the grid stays a single stacked column; at ≥40rem
-	   of CONTAINER width it splits into LEFT (service-span / first-last) + RIGHT
-	   (the .route-periods grid), using the inset pane's own width, not the
-	   viewport. */
 	.route-schedule-cq {
-		container-type: inline-size;
-		container-name: route-schedule;
+		display: flex;
+		flex-direction: column;
 	}
 	/* Plain-language schedule intro (operator): explains what the schedule shows + sends the
 	   reader to the Reliability tab for real-world punctuality. Reads at foreground weight so
 	   it is actually noticed, with a measure so it stays comfortable to read. */
 	.route-schedule-intro {
-		margin: 0 0 1.25rem;
+		margin: 0 0 var(--space-card-gap);
 		max-width: 64ch;
 		font-size: var(--text-small);
 		line-height: 1.5;
@@ -786,30 +917,6 @@
 	.route-schedule-periods {
 		display: flex;
 		flex-direction: column;
-		gap: 1.25rem;
-	}
-	@container route-schedule (min-width: 40rem) {
-		.route-schedule-grid {
-			display: grid;
-			grid-template-columns: minmax(0, 18rem) minmax(0, 1fr);
-			gap: 1.5rem 2rem;
-			align-items: start;
-		}
-	}
-
-	.route-period {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		padding: 1rem 1.25rem;
-		background-color: var(--card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		box-shadow: var(--shadow-card);
-	}
-	.route-period-metrics {
-		display: flex;
-		flex-wrap: wrap;
 		gap: 1.25rem;
 	}
 	@media (prefers-reduced-motion: reduce) {

@@ -41,11 +41,15 @@
 	const i = $derived(info('cancellation', copy.completeness.section));
 </script>
 
-<NetworkTile dataSlot="completeness-section">
+<NetworkTile
+	title={copy.completeness.section}
+	subtitle={copy.completeness.explainer}
+	sectionKey="network-service-completeness"
+	dataSlot="completeness-section"
+>
 	<ExplainedMetricCard
 		label={copy.completeness.metric}
 		value={latestDisplay}
-		explanation={copy.completeness.explainer}
 		note={latestDisplay == null ? copy.completeness.standDown : undefined}
 		absentReason="no-observations"
 		emptyLabel={noData}

@@ -154,6 +154,12 @@ describe('selectVehiclesSpark', () => {
 		expect(spec?.domain[0]).toBeGreaterThanOrEqual(0);
 	});
 
+	it('fills its reporting row instead of forcing a 320px canvas into a narrower card', () => {
+		const spec = selectVehiclesSpark(points, sparkOpts);
+
+		expect(spec?.width).toBe('100%');
+	});
+
 	it('stands down (null) when no point carries a vehicles reading', () => {
 		expect(selectVehiclesSpark([{ date: 'a', vehicles: null }], sparkOpts)).toBeNull();
 	});

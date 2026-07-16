@@ -156,8 +156,7 @@
 		transition:
 			opacity var(--duration-normal) var(--ease-default),
 			fill var(--duration-normal) var(--ease-default),
-			stroke var(--duration-normal) var(--ease-default),
-			filter var(--duration-normal) var(--ease-default);
+			stroke var(--duration-normal) var(--ease-default);
 	}
 
 	.q-wave--far {
@@ -171,14 +170,12 @@
 	.quiet-mode-toggle[data-collapsed='true'] .q-core {
 		fill: var(--primary);
 		stroke: var(--primary);
-		filter: drop-shadow(0 0 4px color-mix(in srgb, var(--glow) 60%, transparent));
 	}
 
 	/* Pinned: the bookmark fills solid --primary (the saved preference). */
 	.quiet-mode-toggle[data-remembered='true'] .r-bookmark {
 		fill: var(--primary);
 		stroke: var(--primary);
-		filter: drop-shadow(0 0 4px color-mix(in srgb, var(--glow) 55%, transparent));
 	}
 
 	@media (prefers-reduced-motion: reduce) {

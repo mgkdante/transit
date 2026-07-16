@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import StopsIndex from './StopsIndex.svelte';
 
@@ -10,6 +10,7 @@ const getStopsIndex = vi.fn();
 const getRoutesIndex = vi.fn();
 const getRoute = vi.fn();
 const getStopReliability = vi.fn();
+let viewportRequestsEnabled = true;
 const historyCalls = vi.hoisted(() => ({
 	getStopHistoryDirectory: vi.fn(),
 	getStopHistoryIndex: vi.fn(),
@@ -77,7 +78,7 @@ vi.mock('$lib/v1', async () => {
 			get: (id: string) => cache.get(id) ?? EMPTY,
 			request,
 			reliability: (_node: Element, id: string) => {
-				request(id);
+				if (viewportRequestsEnabled) request(id);
 				return { destroy() {} };
 			},
 			inFlight: 0,
@@ -98,9 +99,33 @@ vi.mock('$lib/v1', async () => {
 const STOPS = {
 	generated_utc: '2026-06-16T02:00:00Z',
 	stops: [
-		{ id: '57191', name: 'Van Horne / Rockland', lat: 45.5, lon: -73.6, code: '57191' },
-		{ id: '11000', name: 'Station Crémazie', lat: 45.55, lon: -73.62, code: '11000' },
-		{ id: '22000', name: 'Papineau / Rachel', lat: 45.53, lon: -73.57, code: '22000' },
+		{
+			id: '57191',
+			name: 'Van Horne / Rockland',
+			lat: 45.5,
+			lon: -73.6,
+			code: '57191',
+			mode: 'bus',
+			routes: ['161'],
+		},
+		{
+			id: '11000',
+			name: 'Station Crémazie',
+			lat: 45.55,
+			lon: -73.62,
+			code: '11000',
+			mode: 'metro',
+			routes: ['2'],
+		},
+		{
+			id: '22000',
+			name: 'Papineau / Rachel',
+			lat: 45.53,
+			lon: -73.57,
+			code: '22000',
+			mode: 'bus',
+			routes: ['29'],
+		},
 	],
 };
 const ROUTES = {
@@ -119,14 +144,28 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 			loading: true,
 			settled: false,
 		});
-		void Promise.resolve(fetcher())
-			.then((d) => {
-				state.data = d;
-			})
-			.finally(() => {
-				state.loading = false;
-				state.settled = true;
-			});
+		let sequence = 0;
+		$effect(() => {
+			const token = ++sequence;
+			let active = true;
+			state.loading = true;
+			state.error = null;
+			void Promise.resolve(fetcher())
+				.then((d) => {
+					if (active && token === sequence) state.data = d;
+				})
+				.catch((error) => {
+					if (active && token === sequence) state.error = error;
+				})
+				.finally(() => {
+					if (!active || token !== sequence) return;
+					state.loading = false;
+					state.settled = true;
+				});
+			return () => {
+				active = false;
+			};
+		});
 		return {
 			get data() {
 				return state.data;
@@ -146,6 +185,7 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 }));
 
 beforeEach(() => {
+	viewportRequestsEnabled = true;
 	getStopsIndex.mockResolvedValue(STOPS);
 	getRoutesIndex.mockResolvedValue(ROUTES);
 	// Default: no stop has published reliability (404 → null → no badge, honest).
@@ -173,10 +213,247 @@ describe('StopsIndex retained-history boundary', () => {
 	});
 });
 
+describe('StopsIndex blueprint listing header', () => {
+	it('renders one local SVG hero and ten named straight detail sheets', async () => {
+		const { container } = render(StopsIndex);
+		await screen.findByRole('combobox', { name: 'Filter by line' });
+
+		const header = container.querySelector('[data-slot="blueprint-listing-header"]');
+		expect(header).not.toBeNull();
+		if (!header) return;
+
+		const drawings = [...header.querySelectorAll<SVGElement>('[data-blueprint-part]')];
+		expect(drawings.map((drawing) => drawing.dataset.blueprintPart)).toEqual([
+			'stops-plan',
+			'stops-glass-shelter',
+			'stops-simple-shelter',
+			'stops-post',
+			'stops-station-section',
+			'stops-bus',
+			'stops-signal',
+			'stops-metro-platform-circulation-plan',
+			'stops-heated-glass-shelter-section',
+			'stops-accessible-bus-curb-section',
+			'stops-passenger-information-equipment',
+		]);
+		expect(header.querySelectorAll('[data-blueprint-layer="hero"]')).toHaveLength(1);
+		expect(header.querySelectorAll('.edge-detail')).toHaveLength(10);
+		expect(drawings.every((drawing) => drawing.tagName.toLowerCase() === 'svg')).toBe(true);
+		expect(header.querySelector('picture, img, canvas, image')).toBeNull();
+		expect(header.querySelector('[href^="http"], [href^="//"]')).toBeNull();
+		expect(header.querySelector('[transform]')).toBeNull();
+		for (const element of header.querySelectorAll<HTMLElement>('[style]')) {
+			expect(element.getAttribute('style')).not.toMatch(/(?:transform|rotate|skew)/i);
+		}
+	});
+
+	it('places controls and result data after the shared header separator', async () => {
+		const { container } = render(StopsIndex);
+		await screen.findByRole('combobox', { name: 'Filter by line' });
+
+		const header = container.querySelector('[data-slot="blueprint-listing-header"]');
+		expect(header).not.toBeNull();
+		if (!header) return;
+
+		expect(header.querySelectorAll('h1')).toHaveLength(1);
+		expect(header.querySelector('.blueprint-bg')).toHaveAttribute('aria-hidden', 'true');
+		expect(container.querySelector('[data-slot="listing-edge-title"]')).toHaveTextContent('Stops.');
+		const separator = container.querySelector('[data-testid="listing-page-separator"]');
+		const search = container.querySelector<HTMLElement>('[data-slot="listing-search-field"]');
+		const controls = container.querySelector<HTMLElement>('[data-slot="listing-filter-panel"]');
+		const stats = header.querySelector('[data-slot="listing-header-stats"]');
+		const data = container.querySelector('[data-slot="entity-list"]');
+		expect(separator).not.toBeNull();
+		expect(search).not.toBeNull();
+		expect(controls).not.toBeNull();
+		expect(screen.getByRole('button', { name: 'Filters' })).toBeInTheDocument();
+		expect(container.querySelector('[data-slot="listing-filter-column"]')).toContainElement(search);
+		expect(container.querySelector('[data-slot="listing-filter-column"]')).toContainElement(
+			controls,
+		);
+		expect(container.querySelectorAll('[data-slot="listing-filter-section"]')).toHaveLength(2);
+		expect(stats).toHaveAccessibleName('Network inventory');
+		expect(
+			[...stats!.querySelectorAll('[data-slot="listing-header-stat"]')].map((stat) => [
+				stat.querySelector('dt')?.textContent,
+				stat.querySelector('dd')?.textContent?.trim(),
+			]),
+		).toEqual([
+			['Stops', '3'],
+			['Bus', '2'],
+			['Metro', '1'],
+			['Lines', '2'],
+		]);
+		expect(data).not.toBeNull();
+		expect(separator?.compareDocumentPosition(search as Node) ?? 0).toBe(
+			Node.DOCUMENT_POSITION_FOLLOWING,
+		);
+		expect(separator?.compareDocumentPosition(data as Node) ?? 0).toBe(
+			Node.DOCUMENT_POSITION_FOLLOWING,
+		);
+	});
+
+	it('shows unknown mode inventory as a dash when the snapshot lacks complete mode coverage', async () => {
+		const stop = STOPS.stops[0] as unknown as { mode: string | undefined };
+		const originalMode = stop.mode;
+		stop.mode = undefined;
+		try {
+			const { container } = render(StopsIndex);
+			await screen.findByRole('combobox', { name: 'Filter by line' });
+			const statValue = (label: string) =>
+				[...container.querySelectorAll('[data-slot="listing-header-stat"]')]
+					.find((stat) => stat.querySelector('dt')?.textContent === label)
+					?.querySelector('dd');
+
+			expect(statValue('Bus')).toHaveTextContent('—');
+			expect(statValue('Metro')).toHaveTextContent('—');
+		} finally {
+			stop.mode = originalMode;
+		}
+	});
+});
+
+describe('StopsIndex listing system', () => {
+	it('gates the route-driven catalogue on the routes index error boundary', async () => {
+		getRoutesIndex.mockRejectedValue(new Error('routes unavailable'));
+		const { container } = render(StopsIndex);
+
+		await waitFor(() =>
+			expect(
+				container.querySelector('[data-slot="edge-state"][data-variant="error-v1"]'),
+			).not.toBeNull(),
+		);
+		expect(screen.queryByRole('heading', { name: 'Browse stops by line' })).not.toBeInTheDocument();
+	});
+
+	it('keeps inventory in the header and makes per-line cards the entire idle body', async () => {
+		const { container } = render(StopsIndex);
+		await screen.findByRole('combobox', { name: 'Filter by line' });
+
+		expect(container.querySelector('[data-slot="listing-header-stats"]')).toBeInTheDocument();
+		expect(container.querySelector('[data-slot="listing-intro"]')).toBeNull();
+		expect(container.querySelector('[data-slot="listing-overview-card"]')).toBeNull();
+		expect(container.querySelector('[data-slot="stops-census"]')).toBeNull();
+		expect(container.querySelector('.stops-browse-card')).toBeNull();
+		const list = container.querySelector('[data-slot="entity-list"]');
+		expect(list).toHaveClass('entity-list--cards', 'entity-list--grid');
+		expect(list?.querySelectorAll(':scope > li > [data-slot="card"]')).toHaveLength(
+			ROUTES.routes.length,
+		);
+		expect(screen.getByRole('button', { name: /line 80 Bus Avenue du Parc/i })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /line 11 Bus Mont-Royal/i })).toBeInTheDocument();
+		expect(
+			screen.getByRole('button', { name: /Browse stops on line 80 Bus Avenue du Parc/i }),
+		).toBeInTheDocument();
+	});
+
+	it('identifies a street stop as Bus in the shared result row', async () => {
+		const { container } = render(StopsIndex);
+		await fireEvent.input(screen.getByRole('textbox', { name: 'Search stops' }), {
+			target: { value: 'rockland' },
+		});
+
+		await screen.findByRole('link', { name: /Van Horne \/ Rockland/i });
+		expect(
+			container.querySelector('[data-slot="entity-result-row"] .entity-row-tag'),
+		).toHaveTextContent('Bus');
+		expect(container.querySelectorAll('[data-slot="entity-result-row"]')).toHaveLength(1);
+	});
+
+	it('provides a browsable line catalogue that selects the existing shareable route axis', async () => {
+		getRoute.mockResolvedValue({
+			generated_utc: '2026-06-16T02:00:00Z',
+			id: '80',
+			directions: [{ dir: 0, headsign: 'South', stops: [{ id: '22000', seq: 1 }] }],
+		});
+		render(StopsIndex);
+
+		expect(
+			await screen.findByRole('heading', { name: 'Browse stops by line' }),
+		).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: /line 80 Bus Avenue du Parc/i }));
+		await waitFor(() => {
+			const last = replaceState.mock.calls.at(-1)?.[0] as URL | undefined;
+			expect(last?.searchParams.get('route')).toBe('80');
+		});
+	});
+
+	it('shows the shared loading scaffold instead of a false empty state while a picked line loads', async () => {
+		let resolveRoute!: (value: {
+			generated_utc: string;
+			id: string;
+			directions: Array<{
+				dir: number;
+				headsign: string;
+				stops: Array<{ id: string; seq: number }>;
+			}>;
+		}) => void;
+		getRoute.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					resolveRoute = resolve;
+				}),
+		);
+		const { container } = render(StopsIndex);
+
+		expect(
+			await screen.findByRole('heading', { name: 'Browse stops by line' }),
+		).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: /line 80 Bus Avenue du Parc/i }));
+		await waitFor(() => expect(getRoute).toHaveBeenCalledWith('80'));
+
+		expect(screen.queryByText('No published stop list for this line.')).not.toBeInTheDocument();
+		expect(
+			container.querySelector('[data-slot="edge-state"][data-variant="skeleton"]'),
+		).not.toBeNull();
+
+		resolveRoute({
+			generated_utc: '2026-06-16T02:00:00Z',
+			id: '80',
+			directions: [{ dir: 0, headsign: 'South', stops: [{ id: '22000', seq: 1 }] }],
+		});
+		expect(await screen.findByRole('heading', { name: 'Direction 0 · South' })).toBeInTheDocument();
+	});
+
+	it('reveals a selected line stop catalogue in accessible batches of 50', async () => {
+		const routeStops = Array.from({ length: 120 }, (_, i) => ({
+			id: `route-stop-${i}`,
+			name: `Route stop ${i + 1}`,
+			seq: i + 1,
+		}));
+		getRoute.mockResolvedValue({
+			generated_utc: '2026-06-16T02:00:00Z',
+			id: '80',
+			directions: [
+				{ dir: 0, headsign: 'South', stops: routeStops.slice(0, 60) },
+				{ dir: 1, headsign: 'North', stops: routeStops.slice(60) },
+			],
+		});
+		setUrl('/stops?route=80');
+		const { container } = render(StopsIndex);
+
+		await waitFor(() => expect(getRoute).toHaveBeenCalledWith('80'));
+		await waitFor(() =>
+			expect(container.querySelectorAll('[data-slot="entity-result-row"]')).toHaveLength(50),
+		);
+		expect(screen.getByRole('heading', { name: 'Direction 0 · South' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'Direction 1 · North' })).toBeInTheDocument();
+		expect(screen.getByRole('status', { name: 'Stop catalogue progress' })).toHaveTextContent(
+			'Showing 50 of 120 stops',
+		);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Load 50 more stops' }));
+		expect(container.querySelectorAll('[data-slot="entity-result-row"]')).toHaveLength(100);
+		await fireEvent.click(screen.getByRole('button', { name: 'Load 20 more stops' }));
+		expect(container.querySelectorAll('[data-slot="entity-result-row"]')).toHaveLength(120);
+		expect(screen.queryByRole('button', { name: /more stops/ })).not.toBeInTheDocument();
+	});
+});
+
 describe('StopsIndex — find by typing', () => {
 	it('keeps the stop detail link and adds a separate filtered-map link', async () => {
 		render(StopsIndex);
-		await fireEvent.input(screen.getByRole('searchbox', { name: 'Search stops' }), {
+		await fireEvent.input(screen.getByRole('textbox', { name: 'Search stops' }), {
 			target: { value: 'rockland' },
 		});
 		expect(await screen.findByRole('link', { name: /Van Horne \/ Rockland/i })).toHaveAttribute(
@@ -187,25 +464,30 @@ describe('StopsIndex — find by typing', () => {
 			'href',
 			'/map?stop=57191&focus=stop%3A57191',
 		);
+		const list = document.querySelector('[data-slot="entity-list"]');
+		expect(list).toHaveClass('entity-list--cards');
+		expect(list?.querySelectorAll('[data-slot="card"]')).toHaveLength(1);
 	});
 
 	it('finds an accented station typed without accents and tags it as métro', async () => {
-		render(StopsIndex);
-		await fireEvent.input(screen.getByRole('searchbox', { name: 'Search stops' }), {
+		const { container } = render(StopsIndex);
+		await fireEvent.input(screen.getByRole('textbox', { name: 'Search stops' }), {
 			target: { value: 'cremazie' },
 		});
 		expect(await screen.findByRole('link', { name: /Station Crémazie/i })).toHaveAttribute(
 			'href',
 			'/stop/11000',
 		);
-		expect(screen.getByText('Métro')).toBeInTheDocument();
+		expect(
+			container.querySelector('[data-slot="entity-result-row"] .entity-row-tag'),
+		).toHaveTextContent('Métro');
 	});
 });
 
 describe('StopsIndex — reliability badges (honest probe)', () => {
 	it('shows NO badge for a stop whose history 404s (never a fabricated 0%)', async () => {
 		render(StopsIndex);
-		await fireEvent.input(screen.getByRole('searchbox', { name: 'Search stops' }), {
+		await fireEvent.input(screen.getByRole('textbox', { name: 'Search stops' }), {
 			target: { value: 'rockland' },
 		});
 		await screen.findByRole('link', { name: /Van Horne \/ Rockland/i });
@@ -225,13 +507,96 @@ describe('StopsIndex — reliability badges (honest probe)', () => {
 				: Promise.resolve(null),
 		);
 		render(StopsIndex);
-		await fireEvent.input(screen.getByRole('searchbox', { name: 'Search stops' }), {
+		await fireEvent.input(screen.getByRole('textbox', { name: 'Search stops' }), {
 			target: { value: 'rockland' },
 		});
 		await screen.findByRole('link', { name: /Van Horne \/ Rockland/i });
 		await waitFor(() =>
 			expect(document.querySelector('[data-slot="reliability-badge"]')).not.toBeNull(),
 		);
+	});
+
+	it('requests every eligible stop and freezes source order until one terminal ranking can commit', async () => {
+		viewportRequestsEnabled = false;
+		const gates = new Map<
+			string,
+			{
+				promise: Promise<{
+					generated_utc: string;
+					id: string;
+					periods: Array<{ grain: string; otp_pct: number }>;
+				}>;
+				resolve: (value: {
+					generated_utc: string;
+					id: string;
+					periods: Array<{ grain: string; otp_pct: number }>;
+				}) => void;
+			}
+		>();
+		getStopReliability.mockImplementation((id: string) => {
+			let resolve!: (value: {
+				generated_utc: string;
+				id: string;
+				periods: Array<{ grain: string; otp_pct: number }>;
+			}) => void;
+			const promise = new Promise<{
+				generated_utc: string;
+				id: string;
+				periods: Array<{ grain: string; otp_pct: number }>;
+			}>((done) => {
+				resolve = done;
+			});
+			gates.set(id, { promise, resolve });
+			return promise;
+		});
+		getRoute.mockResolvedValue({
+			generated_utc: '2026-06-16T02:00:00Z',
+			id: '80',
+			directions: [
+				{
+					dir: 0,
+					headsign: 'South',
+					stops: [
+						{ id: '57191', seq: 1 },
+						{ id: '11000', seq: 2 },
+						{ id: '22000', seq: 3 },
+					],
+				},
+			],
+		});
+		setUrl('/stops?route=80');
+		render(StopsIndex);
+		await screen.findByRole('heading', { name: 'Direction 0 · South' });
+		const stopOrder = () =>
+			screen
+				.getAllByRole('listitem')
+				.map((row) => within(row).getAllByRole('link')[0].getAttribute('href'));
+
+		await screen.getByTestId('stops-sort-worst').click();
+		await waitFor(() => expect(getStopReliability).toHaveBeenCalledTimes(3));
+		expect(new Set(getStopReliability.mock.calls.map(([id]) => id))).toEqual(
+			new Set(['57191', '11000', '22000']),
+		);
+		expect(stopOrder()).toEqual(['/stop/57191', '/stop/11000', '/stop/22000']);
+		expect(screen.getByTestId('stops-ranking-status')).toHaveTextContent(
+			'Calculating reliability ranking for the filtered stops…',
+		);
+
+		const resolve = (id: string, otp: number) =>
+			gates.get(id)?.resolve({
+				generated_utc: '2026-06-16T02:00:00Z',
+				id,
+				periods: [{ grain: 'day', otp_pct: otp }],
+			});
+		resolve('11000', 50);
+		await waitFor(() => expect(screen.getByText('50%')).toBeInTheDocument());
+		// One severe answer cannot reorder a partially measured list.
+		expect(stopOrder()).toEqual(['/stop/57191', '/stop/11000', '/stop/22000']);
+
+		resolve('57191', 90);
+		resolve('22000', 70);
+		await waitFor(() => expect(stopOrder()).toEqual(['/stop/11000', '/stop/22000', '/stop/57191']));
+		expect(screen.getByTestId('stops-ranking-status')).toHaveTextContent('');
 	});
 });
 
@@ -272,7 +637,12 @@ describe('StopsIndex — find by line', () => {
 		setUrl('/stops?route=80');
 		render(StopsIndex);
 		await waitFor(() => expect(getRoute).toHaveBeenCalledWith('80'));
-		expect(await screen.findByText('No published stop list for this line.')).toBeInTheDocument();
+		const message = await screen.findByText('No published stop list for this line.');
+		expect(message).toBeInTheDocument();
+		expect(message.closest('[data-component="state-notice"]')).toHaveAttribute(
+			'data-presentation',
+			'silo',
+		);
 	});
 
 	it('exposes an accessible combobox (a11y AA) with the line-filter label', async () => {

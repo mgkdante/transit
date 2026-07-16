@@ -276,7 +276,7 @@
 					</span>
 					<span class="block-value" class:block-value--empty={!hasDist}>
 						{#if hasDist}
-							<span data-slot="delay-dist-readout">
+							<span data-slot="delay-dist-readout" data-card-interactive>
 								{copy.strip.p50Min}
 								<MaybeValue value={min(p50)} reason="no-observations" {locale} />
 								·

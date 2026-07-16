@@ -19,14 +19,11 @@
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { MetricDisplay } from '$lib/components/brand';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { AbsentValue } from '$lib/components/edge';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { selectDailyTrend } from '../selectors/dailyTrend';
 	import { poolDailyRange, type ExactDailyRangeIngredients } from '../selectors/dailyRange';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
+	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';
 
 	interface SectionDailyTrendProps {
 		/** The stop's dated daily series (trailing ~90 days, SERVE-THE-COUNTS). */
@@ -39,16 +36,17 @@
 		window?: DateWindow | null;
 		/** Exact retained additive ingredients; bypasses rounded daily averages. */
 		exact?: ExactDailyRangeIngredients | null;
+		/** The article disclosure owns the card and heading in article-body mode. */
+		presentation?: 'standalone' | 'article-body';
 	}
-	let { daily, locale, copy, window = null, exact = null }: SectionDailyTrendProps = $props();
-
-	// The metric-explainer (i) — the ONE stop-detail section that was missing it
-	// (§C6 #5). The trend is a severe-share series, so it deep-links to /metrics#severe.
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
+	let {
+		daily,
+		locale,
+		copy,
+		window = null,
+		exact = null,
+		presentation = 'standalone',
+	}: SectionDailyTrendProps = $props();
 
 	// The dated severe-share trend (A3), clipped to the window. Honest absence when
 	// fewer than 2 real points survive.
@@ -89,25 +87,16 @@
 	const sectionEmpty = $derived(!hasTrend && verdict.daysWithData === 0);
 </script>
 
-<section
-	class="stop-tile stop-tile--wide daily-trend"
-	data-slot="stop-daily-trend"
-	data-mount="daily-range"
+<StopReliabilityPresenter
+	as="section"
+	heading={copy.trend.heading}
+	metricKey="severe"
+	{locale}
+	{presentation}
+	spacing="comfortable"
+	dataSlot="stop-daily-trend"
+	dataMount="daily-range"
 >
-	<SectionHeading level={2} overline={copy.trend.heading} class="stop-tile-heading">
-		{#snippet explainer()}
-			{@const i = info('severe', copy.trend.heading)}
-			<MetricInfo
-				class="stop-metric-info"
-				tip={i.tip}
-				href={i.href}
-				label={i.label}
-				linkLabel={i.linkLabel}
-				side="bottom"
-			/>
-		{/snippet}
-	</SectionHeading>
-
 	{#if sectionEmpty}
 		<AbsentValue variant="block" reason="no-observations" {locale} />
 	{:else}
@@ -163,14 +152,9 @@
 			<p class="daily-verdict-note">{copy.trend.caveat}</p>
 		</div>
 	{/if}
-</section>
+</StopReliabilityPresenter>
 
 <style>
-	.daily-trend {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
 	.daily-verdict {
 		display: flex;
 		flex-direction: column;

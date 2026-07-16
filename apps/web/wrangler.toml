@@ -29,16 +29,17 @@ routes = [
 binding = "ASSETS"
 directory = ".svelte-kit/cloudflare"
 
-# SSR /v1 boot path. A Worker's fetch to its OWN zone (transit.yesid.dev/data/*)
-# bypasses the sibling data-proxy route and hits a non-existent origin (523), so
-# server-side rendering can't reach the snapshot contract over a same-origin URL.
-# A service binding calls transit-data-proxy DIRECTLY (no DNS/route hop), so
-# +layout.server.ts boots the contract through `platform.env.DATA` and ships real
-# data in the first paint — no /v1-unreachable flash. Re-run ../data-proxy/smoke.sh
-# is NOT needed for this (binding-only, the public /data/* route is untouched).
+# Compatibility fallback for computed API work and old `/data/*` links. Normal
+# SSR snapshot reads prefer the direct SNAPSHOTS binding below.
 [[services]]
 binding = "DATA"
 service = "transit-data-proxy"
+
+# Direct snapshot reads for SSR. Browser bulk traffic uses the R2 custom domain;
+# this binding gives the app Worker the same no-proxy path server-side.
+[[r2_buckets]]
+binding = "SNAPSHOTS"
+bucket_name = "transit-snapshots"
 
 # ── Web-Vitals RUM (slice-9.7 item D) — INERT BY DEFAULT ────────────────────
 # The web app ships a Core-Web-Vitals collector ($lib/vitals/collect.ts) + a
@@ -69,10 +70,10 @@ service = "transit-data-proxy"
 # WEB_VITALS binding above — flag on + binding present = data flows.
 # PUBLIC_VITALS_ENABLED = "true"
 PUBLIC_SITE_ORIGIN = "https://transit.yesid.dev"
-PUBLIC_V1_BASE = "/data/v1"
+PUBLIC_V1_BASE = "https://data.yesid.dev/v1"
 PUBLIC_INDEXING = "true"
 # Provider copy identity for SSR-visible SEO when the manifest is absent (the
-# manifest is the primary source via the DATA binding; this is the fallback +
+# manifest is the primary source via the SNAPSHOTS binding; this is the fallback +
 # keeps titles keyworded until the manifest republishes with short_name/city).
 # Per-deploy: each provider sets its own.
 PUBLIC_PROVIDER_SHORT_NAME = "STM"
@@ -93,7 +94,7 @@ routes = [
 
 [env.dev.vars]
 PUBLIC_SITE_ORIGIN = "https://dev.transit.yesid.dev"
-PUBLIC_V1_BASE = "https://transit.yesid.dev/data/v1"
+PUBLIC_V1_BASE = "https://data.yesid.dev/v1"
 PUBLIC_INDEXING = "false"
 PUBLIC_PROVIDER_SHORT_NAME = "STM"
 PUBLIC_PROVIDER_CITY = "Montréal"
@@ -104,3 +105,7 @@ PUBLIC_TWITTER_CREATOR = ""
 [[env.dev.services]]
 binding = "DATA"
 service = "transit-data-proxy"
+
+[[env.dev.r2_buckets]]
+binding = "SNAPSHOTS"
+bucket_name = "transit-snapshots"

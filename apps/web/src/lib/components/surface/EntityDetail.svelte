@@ -11,23 +11,26 @@
   styles the two shells share.
 -->
 <script lang="ts" generics="K extends string">
-	import type { Snippet } from 'svelte';
+	import { tick, untrack, type Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '$lib/components/ui/tabs';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import { Surface } from '$lib/components/layout';
+	import { DetailShell, Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
 	import { getLocale } from '$lib/i18n';
 	import { resolveBreadcrumbTrail } from '$lib/seo/routeSeo';
+	import {
+		TocNav,
+		openCollapsedTocTarget,
+		reconcileActiveToc,
+		revealTocTarget,
+		type TocEntry,
+	} from '$lib/components/shared';
 	import { cn } from '$lib/utils';
 	import Breadcrumb from './Breadcrumb.svelte';
 
-	interface EntityDetailProps {
-		/** Mono station-voice overline (e.g. "LIGNE", "ARRÊT"). */
-		kicker: string;
-		/** Surface-specific heading (SectionHeading for lines, StopLabel for stops). */
-		header: Snippet;
+	interface EntityDetailSharedProps {
 		/**
 		 * Optional lede paragraph under the heading (muted, ~52ch) — the framing
 		 * sentence in the detail-head rhythm (kicker → display title → lede → meta).
@@ -57,6 +60,20 @@
 		active: K;
 		/** Renders the pane body for a given tab key. */
 		pane: Snippet<[K]>;
+		/** Pane keys whose content already owns a complete desktop/mobile rail. The
+		 *  outer article tab rail becomes a toolbar so the page never nests rails. */
+		paneOwnedRailKeys?: readonly K[];
+		/** Article-pane section navigation. Tabs stay in the stable top toolbar;
+		 * this config restores the Yesid article ToC in the wide left rail and
+		 * floating mobile pill for panes that expose section anchors. */
+		articleToc?: {
+			entries: Partial<Record<K, TocEntry[]>>;
+			heading: string;
+			sectionKey: string;
+			counterPrefix?: string;
+			openAria: string;
+			closeAria: string;
+		};
 		/**
 		 * Optional back affordance ("← Lines") that keeps navigation inside the app
 		 * chrome: a localized index href + label. Omitted ⇒ no back link.
@@ -65,10 +82,26 @@
 		/** Optional extra classes on the surface root. */
 		class?: string;
 	}
+	type EntityDetailModeProps =
+		| {
+				/** Mono station-voice overline (e.g. "LIGNE", "ARRÊT"). */
+				kicker: string;
+				/** Surface-specific classic heading. */
+				header: Snippet;
+				articleHeader?: never;
+		  }
+		| {
+				/** Complete article cover rendered outside the padded Surface. */
+				articleHeader: Snippet;
+				kicker?: never;
+				header?: never;
+		  };
+	type EntityDetailProps = EntityDetailSharedProps & EntityDetailModeProps;
 
 	let {
 		kicker,
 		header,
+		articleHeader,
 		lede,
 		meta,
 		cornerMeta,
@@ -76,6 +109,8 @@
 		tabs,
 		active = $bindable(),
 		pane,
+		paneOwnedRailKeys = [],
+		articleToc,
 		back,
 		class: className,
 	}: EntityDetailProps = $props();
@@ -89,76 +124,245 @@
 	// the SSR entity seed), so this matches the JSON-LD trail exactly today.
 	const locale = getLocale();
 	const trail = $derived(resolveBreadcrumbTrail(page.url.pathname, locale));
+	const paneOwnsRail = $derived(paneOwnedRailKeys.includes(active));
+	const articleTocEntries = $derived(articleToc?.entries[active] ?? []);
+	let activeTocId = $state('');
+	let tabViewport = $state<HTMLElement>();
+	let tabsMoreEnd = $state(false);
+	let previousTocIds: string[] = [];
+	$effect(() => {
+		const nextIds = articleTocEntries.map((entry) => entry.id);
+		const currentId = untrack(() => activeTocId);
+		const nextActiveId = reconcileActiveToc(currentId, previousTocIds, nextIds);
+		if (nextActiveId !== currentId) activeTocId = nextActiveId;
+		previousTocIds = nextIds;
+	});
+	function navigateArticleToc(id: string): void {
+		const reduced =
+			typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+		void revealTocTarget(id, {
+			beforeReveal: openCollapsedTocTarget,
+			behavior: reduced ? 'auto' : 'smooth',
+		});
+	}
+
+	function measureTabOverflow(): void {
+		if (!tabViewport) return;
+		tabsMoreEnd = tabViewport.scrollLeft + tabViewport.clientWidth < tabViewport.scrollWidth - 1;
+	}
+
+	function guardScrolledTouchActivation(node: HTMLElement) {
+		let touchStart: { x: number; y: number; scrollLeft: number } | null = null;
+		let suppressActivation = false;
+
+		const onPointerDown = (event: PointerEvent) => {
+			touchStart =
+				event.pointerType === 'touch'
+					? { x: event.clientX, y: event.clientY, scrollLeft: node.scrollLeft }
+					: null;
+			suppressActivation = false;
+		};
+		const onPointerMove = (event: PointerEvent) => {
+			if (!touchStart || event.pointerType !== 'touch') return;
+			const deltaX = Math.abs(event.clientX - touchStart.x);
+			const deltaY = Math.abs(event.clientY - touchStart.y);
+			if (deltaX > 8 && deltaX > deltaY) suppressActivation = true;
+		};
+		const onScroll = () => {
+			measureTabOverflow();
+			if (touchStart && Math.abs(node.scrollLeft - touchStart.scrollLeft) > 1) {
+				suppressActivation = true;
+			}
+		};
+		const onClick = (event: MouseEvent) => {
+			const target = event.target as Element | null;
+			if (!suppressActivation || !target?.closest('[role="tab"]')) return;
+			event.preventDefault();
+			event.stopPropagation();
+			event.stopImmediatePropagation();
+			suppressActivation = false;
+			touchStart = null;
+		};
+
+		node.addEventListener('pointerdown', onPointerDown, { passive: true });
+		node.addEventListener('pointermove', onPointerMove, { passive: true });
+		node.addEventListener('scroll', onScroll, { passive: true });
+		node.addEventListener('click', onClick, true);
+
+		return {
+			destroy() {
+				node.removeEventListener('pointerdown', onPointerDown);
+				node.removeEventListener('pointermove', onPointerMove);
+				node.removeEventListener('scroll', onScroll);
+				node.removeEventListener('click', onClick, true);
+			},
+		};
+	}
+
+	$effect(() => {
+		const viewport = tabViewport;
+		if (!viewport) return;
+		measureTabOverflow();
+		if (typeof ResizeObserver !== 'function') return;
+
+		const observer = new ResizeObserver(measureTabOverflow);
+		observer.observe(viewport);
+		const tabList = viewport.querySelector('[role="tablist"]');
+		if (tabList) observer.observe(tabList);
+		return () => observer.disconnect();
+	});
+
+	$effect(() => {
+		const selected = active;
+		const viewport = tabViewport;
+		let cancelled = false;
+		void tick().then(() => {
+			if (cancelled || !viewport || selected !== active) return;
+			const activeTab = viewport.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+			const reduced =
+				typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+			if (activeTab) {
+				const desiredLeft =
+					activeTab.offsetLeft - (viewport.clientWidth - activeTab.offsetWidth) / 2;
+				const maxLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+				const left = Math.min(Math.max(0, desiredLeft), maxLeft);
+				if (typeof viewport.scrollTo === 'function') {
+					viewport.scrollTo({ behavior: reduced ? 'auto' : 'smooth', left });
+				} else {
+					viewport.scrollLeft = left;
+				}
+			}
+			measureTabOverflow();
+		});
+
+		return () => {
+			cancelled = true;
+		};
+	});
 </script>
 
-<Surface as="div" class={cn('entity-detail-surface', className)} data-slot="entity-detail">
-	<!-- A4 (slice-9.7): route/stop detail is a DATA DASHBOARD — it fills the
-	     rail-inset <main> width edge-to-edge (Surface is full-bleed by default
-	     after A1), keeping the page gutter (--space-page-x, from the
-	     surface-shell--gutter) and the "never
-	     behind the left rail" boundary (AppShell's <main> padding-left, untouched).
-	     The masthead (breadcrumb + back + kicker + heading) and the tabs + their
-	     data panes (tables / charts / crosstabs) all share the gutter-aligned left
-	     edge and span the full bleed width. EntityDetail's own template carries no
-	     long-form prose paragraphs to re-cap — the honest no-data notes / caveats
-	     live in the caller panes (RouteDetail / StopDetail), which own their own
-	     reading measures; .surface-measure is available there if they need it. -->
-	<div class="surface-head" class:surface-head--cornered={cornerMeta}>
-		{#if cornerMeta}
-			{@render cornerMeta()}
-		{/if}
-		{#if trail.length > 1}
-			<Breadcrumb {trail} {locale} />
-		{/if}
-		{#if back}
-			<a class="surface-back" href={back.href}>
-				<ChevronLeftIcon size={14} strokeWidth={2.4} aria-hidden="true" />
-				{back.label}
-			</a>
-		{/if}
-		<SectionLabel text={kicker} variant="station" />
-		{@render header()}
-		{#if lede}
-			<p class="surface-detail-lede">{lede}</p>
-		{/if}
-		{#if meta}
-			<div class="surface-detail-meta">{@render meta()}</div>
-		{/if}
+{#snippet tabList(article: boolean)}
+	<div class="entity-tabs" class:entity-tabs--article={article} data-slot="entity-detail-tabs">
+		<div
+			bind:this={tabViewport}
+			use:guardScrolledTouchActivation
+			class="entity-tabs__scroll"
+			data-slot="entity-detail-tabs-scroll"
+		>
+			<!-- One tab list DOM serves mobile and desktop. It never moves when panes change. -->
+			<TabsList variant="line" class="w-full flex-nowrap justify-start">
+				{#each tabs as t (t.key)}
+					<TabsTrigger value={t.key}>
+						{#snippet child({ props })}
+							<button {...props} class="station-tab" class:active={t.key === active}
+								>{t.label}</button
+							>
+						{/snippet}
+					</TabsTrigger>
+				{/each}
+			</TabsList>
+		</div>
+		<span
+			class="entity-tabs__fade"
+			class:entity-tabs__fade--visible={tabsMoreEnd}
+			data-slot="entity-detail-tabs-fade"
+			aria-hidden="true"
+		></span>
 	</div>
+{/snippet}
 
-	<Separator variant="hazard" />
+{#snippet tabPanes()}
+	{#each tabs as t (t.key)}
+		<TabsContent value={t.key} class={cn('surface-pane', articleHeader && 'surface-pane--article')}>
+			{@render pane(t.key)}
+		</TabsContent>
+	{/each}
+{/snippet}
 
-	{#if banner}
-		<!-- §C5.4/§C5.6: the always-visible verdict banner above the tabs — the payoff is
-		     never buried behind a tab. Its own register between the head and the tab strip. -->
-		<div class="surface-banner" data-slot="entity-detail-banner">{@render banner()}</div>
+{#snippet articleToolbar()}
+	{@render tabList(true)}
+{/snippet}
+
+{#snippet articleRail()}
+	{#if articleToc}
+		{#key articleToc.sectionKey}
+			<TocNav
+				entries={articleTocEntries}
+				activeId={activeTocId}
+				onNavigate={navigateArticleToc}
+				heading={articleToc.heading}
+				sectionKey={articleToc.sectionKey}
+				counterPrefix={articleToc.counterPrefix}
+			/>
+		{/key}
 	{/if}
+{/snippet}
 
-	<Tabs bind:value={active}>
-		<!-- overflow-x:auto (P5.3d §C4 P10): at 390px the 4-tab strip (Next / Schedule
-		     / Info / Reliability) overran its container and clipped the last tab
-		     ("Reliabilit…"). The scroller reveals it instead of clipping — THE named
-		     mobile overflow bug. flex-nowrap keeps the tabs on one scrollable row. -->
-		<TabsList variant="line" class="w-full flex-nowrap justify-start overflow-x-auto">
-			{#each tabs as t (t.key)}
-				<!-- Signage-active tab look (the yesid StationTabs pattern): bits-ui owns
-				     behavior / ARIA / roving-tabindex via {...props}; the child <button> owns
-				     the markup + the theme-invariant metro-signage active chip (--signage-*),
-				     replacing the bare underline. -->
-				<TabsTrigger value={t.key}>
-					{#snippet child({ props })}
-						<button {...props} class="station-tab" class:active={t.key === active}>{t.label}</button
-						>
-					{/snippet}
-				</TabsTrigger>
-			{/each}
-		</TabsList>
+{#snippet articleCenter()}
+	{@render tabPanes()}
+{/snippet}
 
-		{#each tabs as t (t.key)}
-			<TabsContent value={t.key} class="surface-pane">{@render pane(t.key)}</TabsContent>
-		{/each}
-	</Tabs>
-</Surface>
+{#snippet articleSummary()}
+	{#if banner}
+		<div class="surface-banner surface-banner--article" data-slot="entity-detail-banner">
+			{@render banner()}
+		</div>
+	{/if}
+{/snippet}
+
+<Tabs bind:value={active}>
+	{#if articleHeader}
+		<DetailShell
+			{articleHeader}
+			toolbar={articleToolbar}
+			summary={paneOwnsRail || !banner ? undefined : articleSummary}
+			left={articleTocEntries.length > 0 ? articleRail : undefined}
+			paneOwnedRail={paneOwnsRail}
+			center={articleCenter}
+			tocEntries={articleTocEntries}
+			bind:activeId={activeTocId}
+			onNavigate={articleToc ? navigateArticleToc : undefined}
+			tocOpenAria={articleToc?.openAria}
+			tocCloseAria={articleToc?.closeAria}
+			class={cn('entity-detail-article', className)}
+		/>
+	{:else}
+		<Surface as="div" class={cn('entity-detail-surface', className)} data-slot="entity-detail">
+			{#if header && kicker}
+				<div class="surface-head" class:surface-head--cornered={cornerMeta}>
+					{#if cornerMeta}
+						{@render cornerMeta()}
+					{/if}
+					{#if trail.length > 1}
+						<Breadcrumb {trail} {locale} />
+					{/if}
+					{#if back}
+						<a class="surface-back" href={back.href}>
+							<ChevronLeftIcon size={14} strokeWidth={2.4} aria-hidden="true" />
+							{back.label}
+						</a>
+					{/if}
+					<SectionLabel text={kicker} variant="station" />
+					{@render header()}
+					{#if lede}
+						<p class="surface-detail-lede">{lede}</p>
+					{/if}
+					{#if meta}
+						<div class="surface-detail-meta">{@render meta()}</div>
+					{/if}
+				</div>
+				<Separator variant="hazard" />
+			{/if}
+
+			{#if banner}
+				<div class="surface-banner" data-slot="entity-detail-banner">{@render banner()}</div>
+			{/if}
+
+			{@render tabList(false)}
+			{@render tabPanes()}
+		</Surface>
+	{/if}
+</Tabs>
 
 <style>
 	/* Anchor for the optional D2 rotated edge word's zero-width absolute rail. */
@@ -202,6 +406,9 @@
 	.surface-banner {
 		margin-block: 0.25rem 1rem;
 	}
+	.surface-banner--article {
+		margin: 0;
+	}
 	/* Meta row — the mono-micro chips (the stop's ARRÊT plate, the map drilldown)
 	   below the lede; a flex row that wraps on narrow viewports. */
 	.surface-detail-meta {
@@ -211,12 +418,54 @@
 		gap: 0.5rem 1rem;
 	}
 
+	/* One normal-flow primary strip directly under the article hazard separator. */
+	.entity-tabs {
+		position: relative;
+		--entity-tabs-max-width: 46rem;
+		width: 100%;
+		min-width: 0;
+		background: var(--primary);
+	}
+	.entity-tabs__scroll {
+		width: min(100%, var(--entity-tabs-max-width));
+		margin-inline: auto;
+		min-width: 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+		overscroll-behavior-inline: contain;
+		touch-action: pan-x pan-y;
+		scrollbar-width: none;
+	}
+	.entity-tabs__scroll::-webkit-scrollbar {
+		display: none;
+	}
+	.entity-tabs :global([role='tablist']) {
+		width: 100%;
+		min-width: max-content;
+		padding: 0.5rem var(--space-page-x);
+	}
+	.entity-tabs__fade {
+		position: absolute;
+		z-index: 1;
+		inset-block: 0;
+		inset-inline-end: 0;
+		width: clamp(2rem, 8vw, 5rem);
+		background: linear-gradient(to right, transparent, var(--primary));
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity var(--duration-fast) var(--ease-out);
+	}
+	.entity-tabs__fade--visible {
+		opacity: 1;
+	}
+
 	/* Signage-active tab (yesid StationTabs parity). The child <button> replaces the
 	   bare line-variant trigger: a quiet mono tab that, when active, becomes a
 	   theme-invariant metro-signage chip (--signage-bg/--signage-text — the same
 	   amber-on-dark sign in both themes; real signs don't reskin when the lights
 	   change). The active VISUAL only — behavior/ARIA stay on the bits-ui trigger. */
 	.station-tab {
+		flex: 1 0 max-content;
 		min-width: max-content;
 		/* Tap-target floor (P5.3d §C4 P10): the tab was 41px tall → 44px. */
 		min-height: var(--size-tap-min);
@@ -227,7 +476,7 @@
 		padding: 0.5rem 1rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
-		color: var(--muted-foreground);
+		color: var(--primary-foreground);
 		background: transparent;
 		border: none;
 		border-bottom: 3px solid transparent;
@@ -236,7 +485,7 @@
 			background var(--duration-fast) var(--ease-out);
 	}
 	.station-tab:hover {
-		color: var(--foreground);
+		color: var(--primary-foreground);
 	}
 	.station-tab.active {
 		background: var(--signage-bg);
@@ -286,6 +535,9 @@
 	}
 	:global(.surface-pane) {
 		padding-top: 1.25rem;
+	}
+	:global(.surface-pane--article) {
+		padding-top: 0;
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.surface-back,

@@ -255,7 +255,9 @@
 	});
 
 	// Live tier — one store for this surface (v1 context booted before mount).
-	const live = createLiveStore(manifest);
+	const live = createLiveStore(manifest, {
+		families: ['vehicles', 'trips', 'departures', 'alerts'],
+	});
 	onMount(() => {
 		live.start();
 		return () => live.stop();
@@ -464,7 +466,7 @@
 			stops: stopList,
 			routes: contextRoutes,
 			stopFiles: contextStopFiles,
-			alerts: alertList,
+			alerts: live.alerts?.alerts ?? null,
 		}),
 	);
 	const hoverDetail = $derived(
@@ -473,7 +475,7 @@
 			stops: stopList,
 			routes: contextRoutes,
 			stopFiles: contextStopFiles,
-			alerts: alertList,
+			alerts: live.alerts?.alerts ?? null,
 		}),
 	);
 	// Per-bus stale-GPS note (pure module): { ageS } when a focused VEHICLE detail's
@@ -1226,6 +1228,10 @@
 		   MAP CANVAS never reads either var, so resizing the panel can not resize it. */
 		--app-right-detail-offset: 360px;
 		--map-detail-offset: 0rem;
+		/* One mobile bottom-chrome baseline. It keeps both touch controls above the
+		   fully expanded MapLibre attribution instead of letting three independent
+		   bottom offsets overlap. */
+		--map-mobile-control-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
 		/* Map-internal stacking ladder (P5.3d §C4 P5). Source of truth + docs:
 		   lib/features/map/mapZ.ts. Deliberately NOT global --z-* tokens — these
 		   order overlays WITHIN the canvas only and are all capped under --z-nav. */

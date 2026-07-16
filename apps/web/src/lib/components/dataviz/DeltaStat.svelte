@@ -77,6 +77,7 @@
 	)}
 	style="color: {colorVar};"
 	data-slot="delta-stat"
+	role="img"
 	aria-label={ariaLabel}
 	{...restProps}
 >

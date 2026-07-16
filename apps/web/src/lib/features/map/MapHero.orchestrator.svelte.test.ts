@@ -21,9 +21,32 @@ const harness = vi.hoisted(() => {
 			return Reflect.get(target, property, receiver);
 		},
 	});
+	const liveStore = {
+		vehicles: { generated_utc: '2026-06-20T12:00:00Z', vehicles: [] },
+		trips: null,
+		departures: null,
+		alerts: { generated_utc: '2026-06-20T12:00:00Z', alerts: [alert] },
+		network: null,
+		index: {
+			byVehicleId: new Map(),
+			byTripId: new Map(),
+			byStopId: new Map(),
+			vehiclesByRoute: new Map(),
+			vehiclesByStop: new Map(),
+		},
+		generatedUtc: '2026-06-20T12:00:00Z',
+		ageSeconds: 30,
+		isStale: false,
+		loading: false,
+		error: null,
+		start: vi.fn(),
+		stop: vi.fn(),
+		refresh: vi.fn(),
+	};
 
 	return {
 		alert,
+		createLiveStore: vi.fn((_manifest: unknown, _options?: unknown) => liveStore),
 		identityReceivers,
 		goto: vi.fn(async (_target: string, _options?: Record<string, unknown>) => {}),
 		afterNavigate: vi.fn(),
@@ -121,28 +144,7 @@ vi.mock('$lib/v1', () => ({
 	getStopsIndexSlim: () => ({ generated_utc: '2026-06-20T12:00:00Z', stops: harness.stops }),
 	getRoute: () => null,
 	getStop: () => null,
-	createLiveStore: () => ({
-		vehicles: { generated_utc: '2026-06-20T12:00:00Z', vehicles: [] },
-		trips: null,
-		departures: null,
-		alerts: { generated_utc: '2026-06-20T12:00:00Z', alerts: [harness.alert] },
-		network: null,
-		index: {
-			byVehicleId: new Map(),
-			byTripId: new Map(),
-			byStopId: new Map(),
-			vehiclesByRoute: new Map(),
-			vehiclesByStop: new Map(),
-		},
-		generatedUtc: '2026-06-20T12:00:00Z',
-		ageSeconds: 30,
-		isStale: false,
-		loading: false,
-		error: null,
-		start: vi.fn(),
-		stop: vi.fn(),
-		refresh: vi.fn(),
-	}),
+	createLiveStore: harness.createLiveStore,
 }));
 
 vi.mock('$lib/v1/resource.svelte', () => ({
@@ -206,6 +208,7 @@ afterEach(() => {
 	document.body.innerHTML = '';
 	harness.goto.mockClear();
 	harness.afterNavigate.mockClear();
+	harness.createLiveStore.mockClear();
 	harness.identityReceivers.length = 0;
 });
 
@@ -213,6 +216,9 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 	it('swaps custom detail in place, preserves alert identity, and restores Back without redirecting', async () => {
 		const documentPathBefore = window.location.pathname;
 		render(MapHero);
+		expect(harness.createLiveStore.mock.calls[0]?.[1]).toEqual({
+			families: ['vehicles', 'trips', 'departures', 'alerts'],
+		});
 
 		const stage = await screen.findByTestId('map-stage-stub');
 		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));

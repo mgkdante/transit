@@ -14,6 +14,16 @@ import type { HistoryCorrection } from '$lib/v1/history';
 import type { VerdictCopy } from '$lib/v1/verdict';
 
 export interface NetworkReliabilityCopy extends SurfaceHeadCopy {
+	readonly lede: string;
+	/** Shared magazine-cover article header copy. */
+	readonly article: {
+		readonly watermark: string;
+		readonly back: string;
+		readonly tagsAria: string;
+		readonly tags: readonly string[];
+		readonly generated: string;
+		readonly sections: (count: number) => string;
+	};
 	/** D3: the TerminalPanel framing the LIVE control-room band. */
 	readonly liveTerminal: {
 		/** Mono terminal-window title (e.g. "control-room"). */
@@ -246,6 +256,14 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		kicker: 'NETWORK · LIVE',
 		heading: 'Network health',
 		lede: 'Live network-wide on-time performance, crowding and feed freshness, measured from the /v1 contract. We never invent data: a missing signal shows as “no data”, not a fabricated zero.',
+		article: {
+			watermark: 'Network',
+			back: '← Back to the dashboard',
+			tagsAria: 'Page keywords',
+			tags: ['network', 'live service', 'reliability', 'crowding', 'open data'],
+			generated: 'Generated',
+			sections: (count) => `${count} sections`,
+		},
 		liveTerminal: {
 			title: 'control-room',
 			tag: 'LIVE',
@@ -401,6 +419,14 @@ export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 		kicker: 'RÉSEAU · EN DIRECT',
 		heading: 'Santé du réseau',
 		lede: 'Ponctualité, achalandage et fraîcheur du flux à l’échelle du réseau, mesurés à partir du contrat /v1. On n’invente jamais de données : un signal absent s’affiche « aucune donnée », jamais un zéro fabriqué.',
+		article: {
+			watermark: 'Réseau',
+			back: '← Retour au tableau de bord',
+			tagsAria: 'Mots-clés de la page',
+			tags: ['réseau', 'service en direct', 'fiabilité', 'achalandage', 'données ouvertes'],
+			generated: 'Généré',
+			sections: (count) => `${count} sections`,
+		},
 		liveTerminal: {
 			title: 'salle-de-contrôle',
 			tag: 'EN DIRECT',

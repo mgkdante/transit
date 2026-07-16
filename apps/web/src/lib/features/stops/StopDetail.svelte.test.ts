@@ -1,9 +1,20 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
+import {
+	render as renderSvelte,
+	screen,
+	fireEvent,
+	waitFor,
+	within,
+} from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { StopFile, StopReliability, StopDeparture } from '$lib/v1';
+import type { IdentitySeed } from '$lib/v1/serverContext';
+import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import StopDetail from './StopDetail.svelte';
+
+const stopDetailSource = () =>
+	readFileSync(resolve(process.cwd(), 'src/lib/features/stops/StopDetail.svelte'), 'utf-8');
 
 const stopDetailNav = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/stop/57191'), state: {} };
@@ -16,7 +27,9 @@ const stopDetailNav = vi.hoisted(() => {
 });
 
 vi.mock('$app/state', () => ({ page: stopDetailNav.page }));
-vi.mock('$app/navigation', () => ({ replaceState: stopDetailNav.replaceState }));
+vi.mock('$app/navigation', () => ({
+	replaceState: stopDetailNav.replaceState,
+}));
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // A static stop file (info + schedule). Minimal; the reliability + live tiers
@@ -286,6 +299,7 @@ const stopHistoryHarness = vi.hoisted(() => ({
 	getStopHistoryDirectory: vi.fn(),
 	getStopHistoryIndex: vi.fn(),
 	loadStopHistoryRange: vi.fn(),
+	createLiveStore: vi.fn(),
 }));
 const reliabilityReloadSpy = vi.fn();
 let reliabilityResourceState: {
@@ -319,9 +333,15 @@ vi.mock('$lib/v1', async () => {
 		getStop: (id: string) => getStopSpy(id),
 		getStopReliability: (id: string) => getStopReliabilitySpy(id),
 		getProvenance: () => provenanceData,
-		getV1Context: () => ({ manifest: { files: { live: { ttl_s: 30 } } }, labels: {}, lang: 'en' }),
-		createLiveStore: () =>
-			useSilentBoard ? silentBoardLiveStore : useEmptyLive ? emptyLiveStore : liveStore,
+		getV1Context: () => ({
+			manifest: {
+				short_name: 'STM',
+				display_name: 'Société de transport de Montréal',
+				files: { live: { ttl_s: 30 } },
+			},
+			labels: {},
+			lang: 'en',
+		}),
 		alertsForStop: affected.alertsForStop,
 		STATUS_LABELS: enumLabels.STATUS_LABELS,
 		...stopHistoryHarness,
@@ -376,9 +396,347 @@ function reset() {
 	stopHistoryHarness.getStopHistoryIndex.mockReset();
 	stopHistoryHarness.getStopHistoryIndex.mockResolvedValue(null);
 	stopHistoryHarness.loadStopHistoryRange.mockReset();
+	stopHistoryHarness.createLiveStore
+		.mockReset()
+		.mockImplementation(() =>
+			useSilentBoard ? silentBoardLiveStore : useEmptyLive ? emptyLiveStore : liveStore,
+		);
 	reliabilityResourceState = null;
 	reliabilityReloadSpy.mockClear();
+	quietModeStore.resetForTest();
+	sessionStorage.removeItem('transit.persisted:stop-reliability-controls');
+	sessionStorage.removeItem('transit.persisted:stop-reliability-toc');
 }
+
+type StopDetailTestProps = { id: string; seed?: IdentitySeed };
+
+/** Keep the legacy coverage concise while exercising the production-required SSR seed. */
+function render(_component: typeof StopDetail, options: { props: StopDetailTestProps }) {
+	const seededProps = {
+		seed: { id: options.props.id, name: stopFileData.name ?? `#${options.props.id}` },
+		...options.props,
+	};
+	const view = renderSvelte(StopDetail, { props: seededProps });
+	return {
+		...view,
+		rerender: (props: StopDetailTestProps) =>
+			view.rerender({
+				seed: {
+					id: props.id,
+					name: props.id === stopFileData.id ? stopFileData.name : `#${props.id}`,
+				},
+				...props,
+			}),
+	};
+}
+
+function articleCardFor(body: Element | null): HTMLElement {
+	const card = body?.closest('[data-slot="card"]');
+	if (!(card instanceof HTMLElement))
+		throw new Error('Expected article card around presenter body');
+	return card;
+}
+
+describe('StopDetail article contract', () => {
+	it('uses the server identity seed for the first-render title and renders one article head', () => {
+		reset();
+		const { container } = render(StopDetail, {
+			props: { id: '57191', seed: { id: '57191', name: 'Seeded station name' } },
+		});
+		expect(stopHistoryHarness.createLiveStore.mock.calls[0]?.[1]).toEqual({
+			families: ['departures', 'alerts', 'network'],
+		});
+
+		expect(
+			screen.getByRole('heading', { level: 1, name: 'Seeded station name' }),
+		).toBeInTheDocument();
+		expect(container.querySelectorAll('h1')).toHaveLength(1);
+		expect(container.querySelectorAll('[data-slot="article-header"]')).toHaveLength(1);
+		expect(container.querySelector('.surface-head')).toBeNull();
+	});
+
+	it('recovers the real client name when the server seed had to fall back to the id', () => {
+		reset();
+		render(StopDetail, {
+			props: { id: '57191', seed: { id: '57191', name: '57191' } },
+		});
+
+		expect(screen.getByRole('heading', { level: 1, name: 'Test stop' })).toBeInTheDocument();
+	});
+
+	it('exposes exactly the canonical Detail, Schedule and Reliability tabs', () => {
+		reset();
+		render(StopDetail, { props: { id: '57191' } });
+
+		expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.trim())).toEqual([
+			'Detail',
+			'Schedule',
+			'Reliability',
+		]);
+	});
+
+	it('keeps exactly one centered reliability summary while its owning rail changes by tab', async () => {
+		reset();
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+		const summaries = () =>
+			container.querySelectorAll<HTMLElement>('[data-slot="stop-reliability-summary"]');
+		const summary = () => summaries()[0];
+
+		expect(summaries()).toHaveLength(1);
+		expect(summary()).toHaveTextContent('Severe-delay share');
+		expect(summary()).toHaveTextContent('6%');
+		expect(summary()).toHaveTextContent('Average delay');
+		expect(summary()).toHaveTextContent('3.2 min');
+		expect(summary().closest('[data-slot="detail-shell-summary"]')).not.toBeNull();
+		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
+		expect(summaries()).toHaveLength(1);
+		expect(summary().closest('[data-slot="detail-shell-summary"]')).not.toBeNull();
+		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		expect(summaries()).toHaveLength(1);
+		expect(summary().closest('[data-slot="reliability-rail-summary"]')).not.toBeNull();
+		expect(container.querySelector('[data-slot="detail-shell-summary"]')).toBeNull();
+	});
+
+	it('reserves no summary gap when this stop has no summary metrics', async () => {
+		reset();
+		reliabilityData = HABITS_ONLY_RELIABILITY;
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+
+		expect(container.querySelector('[data-slot="stop-reliability-summary"]')).toBeNull();
+		expect(container.querySelector('[data-slot="detail-shell-summary"]')).toBeNull();
+
+		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		expect(container.querySelector('[data-slot="reliability-rail-summary"]')).toBeNull();
+		expect(container.querySelector('[data-slot="reliability-rail-layout"]')).not.toBeNull();
+	});
+
+	it('uses one disclosure frame around live departures instead of nesting a terminal card', () => {
+		reset();
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+		const departuresCard = container.querySelector(
+			'[data-toc="stop-detail-departures"]',
+		) as HTMLElement;
+
+		expect(departuresCard.querySelector('[data-slot="terminal-panel"]')).toBeNull();
+		expect(
+			within(departuresCard).getByRole('table', { name: 'Live next departures' }),
+		).toBeInTheDocument();
+	});
+
+	it('localizes the article identity labels without replacing their real values', () => {
+		reset();
+		currentLocale = 'fr';
+		render(StopDetail, {
+			props: { id: '57191', seed: { id: '57191', name: 'Station test' } },
+		});
+
+		expect(screen.getByRole('link', { name: '← Retour aux arrêts' })).toHaveAttribute(
+			'href',
+			'/fr/stops',
+		);
+		expect(screen.getByRole('list', { name: 'Données d’identité de l’arrêt' })).toHaveTextContent(
+			'ID arrêt 57191',
+		);
+		expect(screen.getAllByText('STM').length).toBeGreaterThan(0);
+	});
+
+	it.each(['next', 'info', 'unknown'])(
+		'normalizes the legacy/unknown %s tab to a clean Detail URL without dropping range filters',
+		async (legacy) => {
+			reset();
+			stopDetailNav.page.url = new URL(
+				`http://localhost/stop/57191?tab=${legacy}&from=2026-01-31&to=2026-02-01&line=51`,
+			);
+			render(StopDetail, { props: { id: '57191' } });
+
+			await waitFor(() => expect(stopDetailNav.replaceState).toHaveBeenCalled());
+			const normalized = stopDetailNav.replaceState.mock.calls
+				.map(([url]) => new URL(url as string | URL, 'http://localhost'))
+				.find(
+					(url) =>
+						!url.searchParams.has('tab') &&
+						url.searchParams.get('from') === '2026-01-31' &&
+						url.searchParams.get('to') === '2026-02-01' &&
+						url.searchParams.get('line') === '51',
+				);
+			expect(normalized).toBeDefined();
+		},
+	);
+
+	it('does not let the inactive reliability pane restore a legacy tab while shallow state lags', async () => {
+		reset();
+		const initial = new URL(
+			'http://localhost/stop/57191?tab=next&from=2026-01-31&to=2026-02-01&line=51',
+		);
+		stopDetailNav.page.url = initial;
+		window.history.replaceState({}, '', `${initial.pathname}${initial.search}`);
+		stopDetailNav.replaceState.mockImplementation(() => undefined);
+
+		try {
+			render(StopDetail, { props: { id: '57191' } });
+			await waitFor(() => expect(stopDetailNav.replaceState).toHaveBeenCalled());
+			await Promise.resolve();
+
+			const finalWrite = new URL(
+				stopDetailNav.replaceState.mock.calls.at(-1)?.[0] as string | URL,
+				window.location.origin,
+			);
+			expect(finalWrite.searchParams.has('tab')).toBe(false);
+			expect(finalWrite.searchParams.get('from')).toBe('2026-01-31');
+			expect(finalWrite.searchParams.get('to')).toBe('2026-02-01');
+			expect(finalWrite.searchParams.get('line')).toBe('51');
+		} finally {
+			stopDetailNav.replaceState.mockImplementation((url: string | URL) => {
+				stopDetailNav.page.url = new URL(url, 'http://localhost');
+			});
+			window.history.replaceState({}, '', '/');
+		}
+	});
+
+	it('keeps the default Detail URL clean and carries one bulk disclosure state across article panes', async () => {
+		reset();
+		stopFileData = {
+			...STOP_FILE,
+			scheduled: [{ route: '51', headsign: 'Nord', times: ['08:00'] }],
+		} as unknown as StopFile;
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+
+		expect(stopDetailNav.page.url.searchParams.has('tab')).toBe(false);
+		const tabs = container.querySelector<HTMLElement>('[data-slot="entity-detail-tabs"]');
+		expect(container.querySelector('[data-slot="detail-shell-toolbar"]')).toContainElement(
+			tabs as HTMLElement,
+		);
+		const detailCards = Array.from(
+			container.querySelectorAll<HTMLElement>('[data-toc^="stop-detail-"]'),
+		);
+		expect(detailCards).toHaveLength(2);
+		for (const card of detailCards) {
+			expect(card.querySelector('[data-section-trigger]')).toHaveAttribute('aria-expanded', 'true');
+		}
+		const focus = screen.getByTestId('quiet-mode-toggle');
+		await fireEvent.click(focus);
+		await waitFor(() => {
+			for (const card of detailCards) {
+				expect(card.querySelector('[data-section-trigger]')).toHaveAttribute(
+					'aria-expanded',
+					'false',
+				);
+			}
+		});
+
+		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
+		expect(container.querySelector('[data-slot="detail-shell-toolbar"]')).toContainElement(tabs);
+		const scheduleCard = container.querySelector(
+			'[data-toc="stop-schedule-service"]',
+		) as HTMLElement;
+		expect(scheduleCard.querySelector('[data-section-trigger]')).toHaveAttribute(
+			'aria-expanded',
+			'false',
+		);
+
+		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
+		for (const card of detailCards) {
+			expect(card.querySelector('[data-section-trigger]')).toHaveAttribute(
+				'aria-expanded',
+				'false',
+			);
+		}
+
+		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		expect(container.querySelector('[data-slot="detail-shell-toolbar"]')).toContainElement(tabs);
+		expect(container.querySelector('[data-slot="reliability-pane"]')).not.toBeNull();
+	});
+
+	it('uses the shared connected section stack for Detail and Schedule cards', async () => {
+		reset();
+		stopFileData = {
+			...STOP_FILE,
+			scheduled: [{ route: '51', headsign: 'Nord', times: ['08:00'] }],
+		} as unknown as StopFile;
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+		const detailStack = container.querySelector(
+			'[data-slot="article-section-stack"]',
+		) as HTMLElement;
+		const detailCards = Array.from(detailStack?.children ?? []);
+
+		expect(detailStack).not.toBeNull();
+		expect(detailCards).toHaveLength(2);
+		for (const card of detailCards) {
+			expect(card.matches('[data-slot="card"].section-card[data-toc^="stop-detail-"]')).toBe(true);
+			expect(card.querySelector('[data-section-trigger]')).not.toBeNull();
+		}
+
+		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
+		const scheduleStack = container.querySelector(
+			'[data-slot="article-section-stack"][data-section-sequence="stop-schedule"]',
+		) as HTMLElement;
+		const scheduleCards = Array.from(scheduleStack?.children ?? []);
+
+		expect(scheduleCards).toHaveLength(1);
+		expect(
+			scheduleCards[0]?.matches(
+				'[data-slot="card"].section-card[data-toc="stop-schedule-service"]',
+			),
+		).toBe(true);
+		expect(scheduleCards[0]?.querySelector('[data-section-trigger]')).not.toBeNull();
+	});
+
+	it('does not retain a page-local Detail card-stack gap', () => {
+		const source = stopDetailSource();
+
+		expect(source).toContain('ArticleSectionStack');
+		expect(source).not.toMatch(/\.stop-detail\s*\{/);
+	});
+
+	it('renders article navigation that follows the active Detail and Schedule sections', async () => {
+		reset();
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+		const rail = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+
+		expect(within(rail).getByRole('button', { name: 'On this page' })).toBeInTheDocument();
+		expect(within(rail).getByRole('button', { name: 'Next departures' })).toBeInTheDocument();
+		expect(within(rail).getByRole('button', { name: 'Stop information' })).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
+		expect(within(rail).getByRole('button', { name: 'Scheduled service' })).toBeInTheDocument();
+	});
+
+	it('preserves a manual facts-card choice across a tab round-trip', async () => {
+		reset();
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+		const headerContent = container.querySelector('.header__content') as HTMLElement;
+		const actionRow = container.querySelector('[data-slot="article-header-actions"]');
+		const controlRow = container.querySelector('[data-slot="article-header-controls"]');
+		const factsCard = container.querySelector('[data-toc="stop-detail-facts"]') as HTMLElement;
+		const trigger = within(factsCard).getByRole('button');
+
+		expect(actionRow).not.toBeNull();
+		expect(actionRow?.querySelector('a')).not.toBeNull();
+		expect(controlRow).toContainElement(screen.getByTestId('quiet-mode-controls'));
+		expect(Array.from(headerContent.children).at(-1)).toBe(controlRow);
+
+		await fireEvent.click(trigger);
+		expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
+		expect(screen.getByTestId('quiet-mode-toggle')).toBeVisible();
+		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
+		expect(trigger).toHaveAttribute('aria-expanded', 'false');
+	});
+
+	it('remounts the persisted facts-card state when the stop id changes in place', async () => {
+		reset();
+		const view = render(StopDetail, { props: { id: '57191' } });
+		const firstCard = view.container.querySelector('[data-toc="stop-detail-facts"]') as HTMLElement;
+
+		await fireEvent.click(within(firstCard).getByRole('button'));
+		expect(within(firstCard).getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+		await view.rerender({ id: 'NEW', seed: { id: 'NEW', name: 'New stop' } });
+
+		const nextCard = view.container.querySelector('[data-toc="stop-detail-facts"]') as HTMLElement;
+		expect(nextCard).not.toBe(firstCard);
+		expect(within(nextCard).getByRole('button')).toHaveAttribute('aria-expanded', 'true');
+	});
+});
 
 describe('StopDetail retained-history ownership', () => {
 	it('keeps the default singleton surface intact and loads no retained partition', async () => {
@@ -470,7 +828,9 @@ describe('StopDetail retained-history singleton boundary', () => {
 		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 		const habits = view.container.querySelector('[data-slot="stop-habits"]');
 		expect(habits).not.toBeNull();
-		expect(within(habits as HTMLElement).getByText('Severe delays by hour')).toBeInTheDocument();
+		expect(
+			within(articleCardFor(habits)).getByRole('button', { name: 'Severe delays by hour' }),
+		).toBeInTheDocument();
 		expect(stopHistoryHarness.loadStopHistoryRange).not.toHaveBeenCalled();
 	});
 
@@ -487,7 +847,9 @@ describe('StopDetail retained-history singleton boundary', () => {
 		await waitFor(() => expect(stopHistoryHarness.loadStopHistoryRange).toHaveBeenCalledOnce());
 		const habits = view.container.querySelector('[data-slot="stop-habits"]');
 		expect(habits).not.toBeNull();
-		expect(within(habits as HTMLElement).getByText('Severe delays by hour')).toBeInTheDocument();
+		expect(
+			within(articleCardFor(habits)).getByRole('button', { name: 'Severe delays by hour' }),
+		).toBeInTheDocument();
 	});
 
 	it.each([
@@ -590,26 +952,22 @@ describe('StopDetail map drilldown', () => {
 	});
 });
 
-describe('StopDetail framing head (§C5.6)', () => {
-	it('renders the stop NAME as a real display h1 (the framing head its index already has)', () => {
+describe('StopDetail article head', () => {
+	it('renders the stop NAME as the article h1', () => {
 		reset();
 		render(StopDetail, { props: { id: '57191' } });
 
-		// The stop name is the display-scale page title (a real <h1>), not a flat span.
 		expect(screen.getByRole('heading', { level: 1, name: 'Test stop' })).toBeInTheDocument();
 	});
 
-	it('demotes the ARRÊT id plate to a meta chip + shows the framing lede', () => {
+	it('shows real stop identity/provider metadata and a single back link', () => {
 		reset();
-		render(StopDetail, { props: { id: '57191' } });
+		const { container } = render(StopDetail, { props: { id: '57191' } });
 
-		// The ARRÊT plate renders the id (no name, no orphan separator) as a non-heading chip.
-		const plate = document.querySelector('[data-slot="stop-label"].stop-detail-plate');
-		expect(plate).not.toBeNull();
-		expect(plate?.textContent).toContain('ARRÊT 57191');
-		expect(plate?.tagName).toBe('DIV');
-		// The framing lede sits under the head.
-		expect(screen.getByText(/Live next departures, planned schedule/)).toBeInTheDocument();
+		expect(screen.getAllByText(/Stop ID/i).length).toBeGreaterThan(0);
+		expect(screen.getAllByText('57191').length).toBeGreaterThan(0);
+		expect(screen.getAllByText('STM').length).toBeGreaterThan(0);
+		expect(container.querySelectorAll('a[href="/stops"]')).toHaveLength(1);
 	});
 });
 
@@ -654,10 +1012,11 @@ describe('StopDetail reliability — habits heatmap', () => {
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 
 		// P5.4: the label also appears in the SurfaceRail section ToC (desktop + mobile),
-		// so scope the section-heading assertion to the habits tile itself (getByText would
-		// otherwise match the ToC copies too).
+		// so scope the heading assertion to the one article card that owns this body.
 		const habitsTile = container.querySelector('[data-slot="stop-habits"]') as HTMLElement;
-		expect(within(habitsTile).getByText('Severe delays by hour')).toBeInTheDocument();
+		expect(
+			within(articleCardFor(habitsTile)).getByRole('button', { name: 'Severe delays by hour' }),
+		).toBeInTheDocument();
 		// P5.2: the heatmap is the classed-tier <Chart> mark — a labelled figure (the
 		// sr-only table is the AT mirror; LayerChart paints only in a real layout).
 		expect(
@@ -684,7 +1043,11 @@ describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 		const crowding = document.querySelector('[data-slot="stop-crowding"]') as HTMLElement;
 		expect(crowding).not.toBeNull();
 		// Honest framing: buses OBSERVED AT this stop, not a stop attribute.
-		expect(within(crowding).getByText('Crowding on buses seen here')).toBeInTheDocument();
+		expect(
+			within(articleCardFor(crowding)).getByRole('button', {
+				name: 'Crowding on buses seen here',
+			}),
+		).toBeInTheDocument();
 		expect(
 			within(crowding).getByText(/How full the buses observed at this stop ran/),
 		).toBeInTheDocument();
@@ -714,7 +1077,9 @@ describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 		// styled honest-absence chip renders in its place (keeps the heading framing).
 		const empty = document.querySelector('[data-slot="stop-crowding-empty"]') as HTMLElement;
 		expect(empty).not.toBeNull();
-		expect(within(empty).getByText('Crowding on buses seen here')).toBeInTheDocument();
+		expect(
+			within(articleCardFor(empty)).getByRole('button', { name: 'Crowding on buses seen here' }),
+		).toBeInTheDocument();
 		// The ONE styled honest-absence chip (calm "no data, not enough readings yet"),
 		// not a plain easy-to-miss note.
 		const chip = within(empty)
@@ -785,7 +1150,11 @@ describe('StopDetail reliability — occupancy-only stop is not gated out as emp
 
 		const crowding = document.querySelector('[data-slot="stop-crowding"]') as HTMLElement;
 		expect(crowding).not.toBeNull();
-		expect(within(crowding).getByText('Crowding on buses seen here')).toBeInTheDocument();
+		expect(
+			within(articleCardFor(crowding)).getByRole('button', {
+				name: 'Crowding on buses seen here',
+			}),
+		).toBeInTheDocument();
 		// Dominant band (standing, 40%) surfaces — proof the section rendered, not the
 		// reliability empty state.
 		expect(within(crowding).getAllByText('Standing').length).toBeGreaterThan(0);
@@ -827,7 +1196,9 @@ describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
 
 		const weekday = document.querySelector('[data-slot="stop-weekday"]') as HTMLElement;
 		expect(weekday).not.toBeNull();
-		expect(within(weekday).getByText('By day of week')).toBeInTheDocument();
+		expect(
+			within(articleCardFor(weekday)).getByRole('button', { name: 'By day of week' }),
+		).toBeInTheDocument();
 
 		// Friday (9.4) worst → rank 1; Monday (2.4) and Wednesday (3.1) follow; Sunday
 		// (null mean) is dropped entirely — never a fabricated 0-delay bar.
@@ -898,7 +1269,9 @@ describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
 
 		const weekday = document.querySelector('[data-slot="stop-weekday"]') as HTMLElement;
 		expect(weekday).not.toBeNull();
-		expect(within(weekday).getByText('Par jour de la semaine')).toBeInTheDocument();
+		expect(
+			within(articleCardFor(weekday)).getByRole('button', { name: 'Par jour de la semaine' }),
+		).toBeInTheDocument();
 		expect(within(weekday).getByText('Vendredi')).toBeInTheDocument();
 		expect(within(weekday).getByText('Lundi')).toBeInTheDocument();
 		// Never the raw ISO key or the English label.
@@ -917,7 +1290,9 @@ describe('StopDetail reliability — by time of day (shift + day-type grains)', 
 		const tod = document.querySelector('[data-slot="stop-time-of-day"]') as HTMLElement;
 		expect(tod).not.toBeNull();
 		// Section heading + the day-type sub-comparison heading.
-		expect(within(tod).getByText('By time of day')).toBeInTheDocument();
+		expect(
+			within(articleCardFor(tod)).getByRole('button', { name: 'By time of day' }),
+		).toBeInTheDocument();
 		expect(within(tod).getByText('Weekday vs weekend')).toBeInTheDocument();
 
 		// The shift list uses the SHARED lines vocabulary (AM peak / PM peak …).
@@ -1036,7 +1411,10 @@ describe('StopDetail live departures — status filter', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Early' }));
 		await fireEvent.click(screen.getByRole('button', { name: '80' }));
 
-		expect(screen.getByTestId('departures-filter-empty')).toBeInTheDocument();
+		const empty = screen.getByTestId('departures-filter-empty');
+		expect(empty).toBeInTheDocument();
+		expect(empty).toHaveAttribute('data-component', 'state-notice');
+		expect(empty).toHaveAttribute('data-presentation', 'silo');
 		expect(screen.getByText('Showing 0 of 3 departures')).toBeInTheDocument();
 	});
 });
@@ -1079,7 +1457,7 @@ describe('StopDetail — service alerts affecting this stop', () => {
 	it('surfaces alerts that list this stop OR a route it serves, and hides unrelated ones', () => {
 		reset();
 		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
 
 		const alerts = document.querySelector('[data-testid="stop-alerts"]') as HTMLElement;
 		expect(alerts).not.toBeNull();
@@ -1103,7 +1481,7 @@ describe('StopDetail — service alerts affecting this stop', () => {
 		reset();
 		currentLocale = 'fr';
 		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'Détail' }));
 
 		const alerts = document.querySelector('[data-testid="stop-alerts"]') as HTMLElement;
 		expect(within(alerts).getByText('Avis de service')).toBeInTheDocument();
@@ -1119,7 +1497,7 @@ describe('StopDetail — service alerts affecting this stop', () => {
 		reset();
 		useEmptyLive = true; // empty live store: no alerts loaded
 		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
 
 		expect(document.querySelector('[data-testid="stop-alerts"]')).toBeNull();
 	});
@@ -1132,7 +1510,7 @@ describe('StopDetail — service alerts affecting this stop', () => {
 		stopFileData = STOP_FILE_BY_CODE;
 		alertsData = { generated_utc: '2026-06-15T12:00:00Z', alerts: ALERTS_BY_CODE as typeof ALERTS };
 		render(StopDetail, { props: { id: 'STATION-1' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
 
 		const alerts = document.querySelector('[data-testid="stop-alerts"]') as HTMLElement;
 		expect(alerts).not.toBeNull();
@@ -1161,7 +1539,7 @@ describe('StopDetail — per-stop state resets on navigation', () => {
 
 // ── S8B widget tests ─────────────────────────────────────────────────────────
 // Colored next-departure statuses (5-tone + severe representable + colour+glyph),
-// the column-major 5-col schedule grid + honest per-route gaps, the 2-col Info
+// the semantic scheduled-service table + honest per-route gaps, the 2-col Info
 // pane with tri-state accessibility. All read the shared kernels (delayTone /
 // STATUS_LABELS / AbsentValue) — no invented per-surface vocabulary.
 
@@ -1209,8 +1587,8 @@ describe('StopDetail live departures — colored statuses (S8B)', () => {
 	});
 });
 
-describe('StopDetail schedule — 5-col column-major grid + honest gaps (S8B/B4)', () => {
-	it('renders a 5-column grid with an explicit row count (ceil(n/5))', () => {
+describe('StopDetail schedule — semantic timetable + honest gaps', () => {
+	it('renders route, destination and departures in one scoped schedule table', async () => {
 		reset();
 		stopFileData = {
 			...STOP_FILE,
@@ -1223,26 +1601,29 @@ describe('StopDetail schedule — 5-col column-major grid + honest gaps (S8B/B4)
 			],
 		} as unknown as StopFile;
 		const { container } = render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
-		const grid = container.querySelector('.stop-schedule-times') as HTMLElement;
-		expect(grid).not.toBeNull();
-		// 6 times over 5 columns → ceil(6/5) = 2 rows (column-major vertical fill).
-		expect((grid.getAttribute('style') ?? '').replace(/\s/g, '')).toContain('--sched-rows:2');
+		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
+		const table = screen.getByRole('table', { name: 'Scheduled service by line' });
+		expect(within(table).getByRole('columnheader', { name: 'Line' })).toBeInTheDocument();
+		expect(within(table).getByRole('columnheader', { name: 'Destination' })).toBeInTheDocument();
+		expect(within(table).getByRole('columnheader', { name: 'Departures' })).toBeInTheDocument();
+		expect(within(table).getByText('51')).toBeInTheDocument();
+		expect(within(table).getByText('Nord')).toBeInTheDocument();
+		expect(container.querySelectorAll('.stop-schedule-time time')).toHaveLength(6);
 	});
 
-	it('states an honest per-route absence when a listed route has NO times', () => {
+	it('states an honest per-route absence inside the route table row', async () => {
 		reset();
 		stopFileData = {
 			...STOP_FILE,
 			scheduled: [{ route: '99', headsign: 'Vide', times: [] }],
 		} as unknown as StopFile;
 		const { container } = render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
-		// The route header still renders; its times block is an honest AbsentValue, not
-		// a silently empty grid.
+		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
+		const table = screen.getByRole('table', { name: 'Scheduled service by line' });
 		expect(container.querySelector('.stop-schedule-times')).toBeNull();
-		const route = container.querySelector('.stop-schedule-route') as HTMLElement;
-		expect(route.querySelector('[data-slot]')?.textContent ?? route.textContent).not.toBe('99');
+		const row = table.querySelector('tbody tr') as HTMLElement;
+		expect(row).toHaveTextContent('99');
+		expect(row.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 	});
 });
 
@@ -1250,7 +1631,7 @@ describe('StopDetail info — 2-col layout + tri-state accessibility (S8B/A3)', 
 	it('lays the Info pane out as facts (left) + alerts (right)', () => {
 		reset();
 		const { container } = render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
 		const info = container.querySelector('.stop-info') as HTMLElement;
 		expect(info).not.toBeNull();
 		// The facts column + the alerts block are the two grid children.
@@ -1262,7 +1643,7 @@ describe('StopDetail info — 2-col layout + tri-state accessibility (S8B/A3)', 
 		reset();
 		stopFileData = { ...STOP_FILE, wheelchair: true } as unknown as StopFile;
 		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
 		expect(screen.getByText('Wheelchair accessible')).toBeInTheDocument();
 	});
 
@@ -1270,7 +1651,7 @@ describe('StopDetail info — 2-col layout + tri-state accessibility (S8B/A3)', 
 		reset();
 		stopFileData = { ...STOP_FILE, wheelchair: false } as unknown as StopFile;
 		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
 		expect(screen.getByText('Not wheelchair accessible')).toBeInTheDocument();
 	});
 
@@ -1279,7 +1660,7 @@ describe('StopDetail info — 2-col layout + tri-state accessibility (S8B/A3)', 
 		// STOP_FILE has no `wheelchair` field → the tri-state renders the label with a
 		// styled absence chip, never dropping the accessibility field silently.
 		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
 		// The label still shows (the field is not omitted)...
 		expect(screen.getByText('Accessibility')).toBeInTheDocument();
 		// ...and neither the YES nor NO copy is present (it is the unknown chip).

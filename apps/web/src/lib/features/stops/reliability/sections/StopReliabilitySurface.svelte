@@ -3,15 +3,15 @@
 
   The single component StopDetail mounts in its reliability pane (mirroring how
   RouteDetail mounts RouteReliabilityClusters). It owns:
-    - the map-style GLASS LEFT RAIL (SurfaceRail) + $lib/filters codec: grain is
+    - the shared responsive left rail (SurfaceRail) + $lib/filters codec: grain is
       seeded ONCE from ?grain (ENUM-GUARDED to day|week|month — never a cast),
       mirrored back via mirrorSearchParam (day default omitted), and availability =
       EXPLICIT `available` flags per grain (a stop has ONE snapshot per grain, not an
       N-bucket series, so NOT the MIN_POINTS bucket clamp — that would wrongly disable
       every stop grain). The rail holds the grain picker, the shared retained-history
       navigator, and a vertical section ToC of the PRESENT sections
-      (active-highlighted via observeActiveToc); it renders in a sticky glass panel on
-      desktop and ONE pill→sheet on mobile (single source);
+      (active-highlighted via observeActiveToc); it renders as a sticky bare rail on
+      desktop and ONE glass pill→sheet on mobile (single source);
     - ONE mapping pass through the pure selectors, each section a pure presenter;
     - the operator 2-col board (dow + time-of-day on one row, crowding + by-route
       next; percentiles + habits full-width heroes) + the daily-trend hero, all in the
@@ -46,18 +46,26 @@
 	} from '$lib/v1';
 	import type { OccupancyCode } from '$lib/v1/schemas';
 	import {
+		ArticleControlDisclosure,
+		ArticleControlStack,
+		createRailDisclosureController,
 		ReliabilityPane,
-		SurfaceRail,
 		GrainPicker,
 		HistoryNavigator,
 		type GrainSegment,
 	} from '$lib/components/surface';
-	import { observeActiveToc, TocNav, type TocEntry } from '$lib/components/shared';
-	import { onMount } from 'svelte';
-	import { DashboardGrid } from '$lib/components/layout';
-	import { Separator } from '$lib/components/ui/separator';
+	import {
+		CollapsibleSection,
+		observeActiveToc,
+		revealTocTarget,
+		TocNav,
+		type TocEntry,
+	} from '$lib/components/shared';
+	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import { onMount, type Snippet } from 'svelte';
+	import { ArticleSectionStack, ReliabilityRailLayout } from '$lib/components/layout';
 	import { Button } from '$lib/components/ui/button';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import { StateNotice } from '$lib/components/edge';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -102,15 +110,25 @@
 		window?: DateWindow | null;
 		/** Stop-keyed retained range resource, owned by StopDetail. */
 		history?: StopHistoryResource;
+		/** Shared detail-page summary, aligned above the article cards beside the rail. */
+		articleSummary?: Snippet;
+		/** Only the visible reliability pane owns grain and retained-range URL state. */
+		syncUrl?: boolean;
 	}
 	let {
 		data,
 		locale,
 		window: windowOverride = undefined,
 		history,
+		articleSummary,
+		syncUrl = true,
 	}: StopReliabilitySurfaceProps = $props();
 
 	const copy = $derived(stopReliabilityCopy[locale]);
+	const railDisclosures = createRailDisclosureController({
+		controls: 'stop-reliability-controls',
+		toc: 'stop-reliability-toc',
+	});
 
 	/* ── grain: codec-seeded, SurfaceRail-driven ──────────────────────────────── */
 	// The set of calendar grains this stop's periods[] actually carry (availability).
@@ -250,12 +268,14 @@
 				canonical?.to ?? (pendingExplicit && history.request.hasTo ? history.request.rawTo : null),
 		};
 	});
-	$effect(() => mirrorSearchParams(historyWire));
+	$effect(() => {
+		if (syncUrl) mirrorSearchParams(historyWire);
+	});
 
 	// Grain radiogroup wiring: EXPLICIT `available` flags (NOT the bucket clamp) — one
 	// snapshot per grain, so a grain is enabled iff the stop carries that grain. The
 	// SAME segments + `grain` binding drive the ONE GrainPicker SurfaceRail renders in
-	// both the desktop glass panel AND the mobile sheet (single source, no divergence).
+	// both the bare desktop rail AND the mobile sheet (single source, no divergence).
 	const grainLabels = $derived<Partial<Record<StopGrain, string>>>({
 		day: copy.grain.day,
 		week: copy.grain.week,
@@ -359,7 +379,7 @@
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
 
-	/* ── section ToC (P5.4 GLASS LEFT RAIL wayfinding) ──────────────────────────
+	/* ── section ToC (P5.4 responsive left-rail wayfinding) ─────────────────────
 	   A vertical jump list of the PRESENT sections (built off the SAME conditions
 	   that mount each tile below, so the ToC never lists a stood-down section).
 	   Retained selection applies only to the trend and crowding sections; all other
@@ -394,17 +414,35 @@
 			children: [],
 		})),
 	);
+	const openableAnchors = $derived(new Set(tocEntries.map((entry) => entry.id)));
+	const sectionIndex = (id: string): number => sectionNav.findIndex((section) => section.id === id);
+	const sectionKey = (id: string): string => `stop-reliability-card-${id}`;
 
 	// One IntersectionObserver over the present tiles' [data-toc] anchors owns the
 	// active section the rail ToC highlights (client-only).
 	let activeId = $state('');
+	let cardOpenSignals = $state<Record<string, number>>({});
+	let navigationGeneration = 0;
 	onMount(() => observeActiveToc((id) => (activeId = id)));
 
-	// Scroll to a section when its TocNav row is tapped (instant under reduced motion).
-	function navigate(id: string): void {
-		document.querySelector(`[data-toc="${id}"]`)?.scrollIntoView({
+	function openCard(id: string): void {
+		cardOpenSignals = {
+			...cardOpenSignals,
+			[id]: (cardOpenSignals[id] ?? 0) + 1,
+		};
+	}
+	function cardOpenSignal(id: string): number {
+		return quietModeStore.openSignal + (cardOpenSignals[id] ?? 0);
+	}
+
+	// A ToC jump first opens its data disclosure, waits for its layout to settle,
+	// then scrolls. Filters and the ToC itself remain visible in the independent rail.
+	async function navigate(id: string): Promise<void> {
+		const generation = ++navigationGeneration;
+		await revealTocTarget(id, {
+			beforeReveal: openableAnchors.has(id) ? openCard : undefined,
+			isCurrent: () => generation === navigationGeneration,
 			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
-			block: 'start',
 		});
 	}
 </script>
@@ -422,37 +460,54 @@
 {/snippet}
 
 <div class="stop-reliability">
-	<!-- P5.4: the grain picker + retained-history navigator + section ToC live in a
-	     map-style GLASS LEFT RAIL (SurfaceRail) — a sticky floating panel beside the
-	     sections on desktop, and ONE merged pill→sheet menu on mobile. -->
-	<div class="stop-reliability-layout">
+	<!-- P5.4: the grain picker + retained-history navigator + section ToC live in the
+	     shared SurfaceRail — a sticky bare rail beside the sections on desktop, and
+	     ONE merged glass pill→sheet menu on mobile. -->
+	<div data-slot="stop-reliability-sections">
 		<!-- The rail content — the grain radiogroup (+ resolved-window caption) + the
-		     section ToC. ONE definition, rendered by SurfaceRail in BOTH the desktop glass
-		     panel AND the mobile sheet (single source; both bind the same grain + track
+		     section ToC. ONE definition, rendered by SurfaceRail in BOTH the bare desktop
+		     rail AND the mobile sheet (single source; both bind the same grain + track
 		     activeId). -->
 		{#snippet railContent({ closeSheet }: { closeSheet: () => void })}
-			<div class="stop-reliability-control-body" data-slot="controls-body">
-				<span class="stop-reliability-view" data-slot="controls-rail-label"
-					>{copy.controlsLabel}</span
-				>
-				<GrainPicker segments={grainSegments} bind:value={grain} label={copy.grain.label} />
-				{#if availableHistoryDates.length > 0}
-					<HistoryNavigator
-						mode="range"
-						{locale}
-						labels={copy.history.navigator}
-						value={historyWindow}
-						availableDates={availableHistoryDates}
-						coverageText={historyCoverageText}
-						selectionText={historySelectionText}
-						liveAnnouncement={false}
-						onRangeChange={selectHistoryRange}
-					/>
-				{/if}
+			{#snippet historyControls()}
+				<HistoryNavigator
+					mode="range"
+					{locale}
+					labels={copy.history.navigator}
+					value={historyWindow}
+					availableDates={availableHistoryDates}
+					coverageText={historyCoverageText}
+					selectionText={historySelectionText}
+					liveAnnouncement={false}
+					onRangeChange={selectHistoryRange}
+				/>
+			{/snippet}
+			{#snippet primaryControls()}
+				<GrainPicker
+					segments={grainSegments}
+					bind:value={grain}
+					label={copy.grain.label}
+					variant="time-grid"
+				/>
+			{/snippet}
+			{#snippet windowCaptionControl()}
 				<p class="stop-reliability-window" data-slot="active-window" aria-live="polite">
 					{windowCaption}
 				</p>
-			</div>
+			{/snippet}
+
+			<ArticleControlDisclosure
+				title={copy.controlsLabel}
+				bind:open={
+					() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
+				}
+			>
+				<ArticleControlStack
+					history={availableHistoryDates.length > 0 ? historyControls : undefined}
+					primary={primaryControls}
+					caption={windowCaptionControl}
+				/>
+			</ArticleControlDisclosure>
 
 			<!-- Section ToC (wayfinding) — the ONE shared TocNav, identical to the metrics /
 			     status / network / lines rails: a numbered jump list of the PRESENT sections
@@ -463,152 +518,279 @@
 				<TocNav
 					entries={tocEntries}
 					{activeId}
+					bind:open={
+						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
+					}
 					onNavigate={(id) => {
-						navigate(id);
 						closeSheet();
+						void navigate(id);
 					}}
 					heading={copy.nav.toc}
-					sectionKey="stop-reliability-toc"
 				/>
 			</div>
 		{/snippet}
 
-		<!-- The map-style GLASS LEFT RAIL: a sticky floating panel beside the sections on
-		     desktop; ONE pill→sheet (grain + ToC merged into one menu) on mobile. -->
-		<SurfaceRail
+		{#snippet reliabilityContent()}
+			<p
+				class="stop-history-announcement"
+				data-slot="history-page-announcement"
+				role="status"
+				aria-live="polite"
+				aria-atomic="true"
+			>
+				{historyLiveAnnouncement}
+			</p>
+
+			<!-- The sections — the content column beside the rail. -->
+			<div class="stop-reliability-content">
+				{#if historyAnnouncement}
+					<p class="stop-history-correction" data-slot="history-correction">
+						{historyAnnouncement}
+					</p>
+				{/if}
+				{#if explicitHistory}
+					{#if history?.state === 'no-data'}
+						<StateNotice
+							title={copy.history.noData}
+							body={copy.history.currentOnly}
+							presentation="responsive"
+							data-slot="history-no-data"
+						/>
+					{:else}
+						<div class="stop-history-state" data-slot="history-state">
+							{#if history?.state === 'loading-index' || history?.state === 'loading-range'}
+								<p data-slot="history-loading">{copy.history.loading}</p>
+							{:else if history?.state === 'partial'}
+								<p data-slot="history-partial">{copy.history.partial}</p>
+							{:else if history?.state === 'error'}
+								<p data-slot="history-error">{copy.history.error}</p>
+								<Button variant="outline" size="sm" onclick={() => history?.retry()}>
+									{copy.history.retry}
+								</Button>
+							{/if}
+							<p data-slot="history-current-only">{copy.history.currentOnly}</p>
+						</div>
+					{/if}
+				{/if}
+				<!-- Every present reliability disclosure follows one connected, source-ordered
+			     article sequence. Conditional cards stand down without leaving a grid hole. -->
+				<ArticleSectionStack>
+					<!-- Daily-trend + range-verdict section: the dated retained series selected by
+				     the rail navigator. A `window` prop exists only for presenter-level tests. -->
+					<div class="stop-anchor" id="stop-rel-trend">
+						<CollapsibleSection
+							title={copy.trend.heading}
+							headerVariant="article-summary"
+							anchor="stop-rel-trend"
+							index={sectionIndex('stop-rel-trend')}
+							sectionKey={sectionKey('stop-rel-trend')}
+							open={true}
+							closeSignal={quietModeStore.closeSignal}
+							openSignal={cardOpenSignal('stop-rel-trend')}
+							bulkCollapsed={quietModeStore.enabled}
+						>
+							{#snippet headerActions()}
+								{@render metricInfo('severe', copy.trend.heading)}
+							{/snippet}
+							<SectionDailyTrend
+								daily={selectedData.daily}
+								{locale}
+								{copy}
+								window={effectiveWindow}
+								exact={exactDailyRange}
+								presentation="article-body"
+							/>
+						</CollapsibleSection>
+					</div>
+
+					<!-- Each present tile keeps its locale-free id/data-toc anchor so the rail ToC
+				     can jump to and highlight it. -->
+					{#if dayPercentiles != null}
+						<div class="stop-anchor" id="stop-rel-percentiles">
+							<CollapsibleSection
+								title={copy.percentiles.heading}
+								headerVariant="article-summary"
+								anchor="stop-rel-percentiles"
+								index={sectionIndex('stop-rel-percentiles')}
+								sectionKey={sectionKey('stop-rel-percentiles')}
+								open={true}
+								closeSignal={quietModeStore.closeSignal}
+								openSignal={cardOpenSignal('stop-rel-percentiles')}
+								bulkCollapsed={quietModeStore.enabled}
+							>
+								{#snippet headerActions()}
+									{@render metricInfo('p50p90', copy.percentiles.heading)}
+								{/snippet}
+								<SectionPercentiles
+									percentiles={dayPercentiles}
+									{locale}
+									{copy}
+									presentation="article-body"
+								/>
+							</CollapsibleSection>
+						</div>
+					{/if}
+
+					{#if gradedPeriods.length > 0}
+						<div class="stop-anchor" id="stop-rel-pane">
+							<CollapsibleSection
+								title={copy.paneHeading}
+								headerVariant="article-summary"
+								anchor="stop-rel-pane"
+								index={sectionIndex('stop-rel-pane')}
+								sectionKey={sectionKey('stop-rel-pane')}
+								open={true}
+								closeSignal={quietModeStore.closeSignal}
+								openSignal={cardOpenSignal('stop-rel-pane')}
+								bulkCollapsed={quietModeStore.enabled}
+							>
+								{#snippet headerActions()}
+									{@render metricInfo('otp', copy.metrics.otp)}
+									{@render metricInfo('avgDelay', copy.metrics.avgDelay)}
+									{@render metricInfo('severe', copy.metrics.severe)}
+								{/snippet}
+								<div class="stop-reliability-pane-body" data-slot="stop-reliability-pane">
+									<!-- §C5.6: the one-line reliability verdict at the top of the pane. -->
+									<VerdictBanner result={stopVerdict} />
+									<ReliabilityPane periods={gradedPeriods} {locale} />
+								</div>
+							</CollapsibleSection>
+						</div>
+					{/if}
+
+					<!-- ROW 1: habits (full-width hero). -->
+					{#if habits.hasHabits}
+						<div class="stop-anchor" id="stop-rel-habits">
+							<CollapsibleSection
+								title={copy.habits.heading}
+								headerVariant="article-summary"
+								anchor="stop-rel-habits"
+								index={sectionIndex('stop-rel-habits')}
+								sectionKey={sectionKey('stop-rel-habits')}
+								open={true}
+								closeSignal={quietModeStore.closeSignal}
+								openSignal={cardOpenSignal('stop-rel-habits')}
+								bulkCollapsed={quietModeStore.enabled}
+							>
+								{#snippet headerActions()}
+									{@render metricInfo('habits', copy.habits.heading)}
+								{/snippet}
+								<SectionHabits matrix={habits.matrix} {locale} {copy} presentation="article-body" />
+							</CollapsibleSection>
+						</div>
+					{/if}
+
+					<!-- ROW: dow + time-of-day (operator pairing). An absent mate lets the survivor span. -->
+					{#if hasWeekday}
+						<div class="stop-anchor" id="stop-rel-weekday">
+							<CollapsibleSection
+								title={copy.weekday.heading}
+								headerVariant="article-summary"
+								anchor="stop-rel-weekday"
+								index={sectionIndex('stop-rel-weekday')}
+								sectionKey={sectionKey('stop-rel-weekday')}
+								open={true}
+								closeSignal={quietModeStore.closeSignal}
+								openSignal={cardOpenSignal('stop-rel-weekday')}
+								bulkCollapsed={quietModeStore.enabled}
+							>
+								{#snippet headerActions()}
+									{@render metricInfo('seasonality', copy.weekday.heading)}
+								{/snippet}
+								<SectionWeekday rows={rankedWeekdays} {locale} {copy} presentation="article-body" />
+							</CollapsibleSection>
+						</div>
+					{/if}
+					{#if timeOfDay.hasTimeOfDay}
+						<div class="stop-anchor" id="stop-rel-time">
+							<CollapsibleSection
+								title={copy.timeOfDay.heading}
+								headerVariant="article-summary"
+								anchor="stop-rel-time"
+								index={sectionIndex('stop-rel-time')}
+								sectionKey={sectionKey('stop-rel-time')}
+								open={true}
+								closeSignal={quietModeStore.closeSignal}
+								openSignal={cardOpenSignal('stop-rel-time')}
+								bulkCollapsed={quietModeStore.enabled}
+							>
+								{#snippet headerActions()}
+									{@render metricInfo('severe', copy.timeOfDay.heading)}
+								{/snippet}
+								<SectionTimeOfDay
+									shiftRows={timeOfDay.shiftRows}
+									dayTypeRows={timeOfDay.dayTypeRows}
+									{locale}
+									{copy}
+									presentation="article-body"
+								/>
+							</CollapsibleSection>
+						</div>
+					{/if}
+
+					<!-- ROW: crowding + by-route (operator pairing). -->
+					<div class="stop-anchor" id="stop-rel-crowding">
+						<CollapsibleSection
+							title={copy.crowding.heading}
+							headerVariant="article-summary"
+							anchor="stop-rel-crowding"
+							index={sectionIndex('stop-rel-crowding')}
+							sectionKey={sectionKey('stop-rel-crowding')}
+							open={true}
+							closeSignal={quietModeStore.closeSignal}
+							openSignal={cardOpenSignal('stop-rel-crowding')}
+							bulkCollapsed={quietModeStore.enabled}
+						>
+							{#snippet headerActions()}
+								{@render metricInfo('occupancy', copy.crowding.heading)}
+							{/snippet}
+							<SectionCrowding
+								vm={crowding}
+								settled={crowdingSettled}
+								{locale}
+								{copy}
+								windowText={crowdingWindowText}
+								presentation="article-body"
+							/>
+						</CollapsibleSection>
+					</div>
+					<div class="stop-anchor" id="stop-rel-by-route">
+						<CollapsibleSection
+							title={copy.byRoute}
+							headerVariant="article-summary"
+							anchor="stop-rel-by-route"
+							index={sectionIndex('stop-rel-by-route')}
+							sectionKey={sectionKey('stop-rel-by-route')}
+							open={true}
+							closeSignal={quietModeStore.closeSignal}
+							openSignal={cardOpenSignal('stop-rel-by-route')}
+							bulkCollapsed={quietModeStore.enabled}
+						>
+							{#snippet headerActions()}
+								{@render metricInfo('avgDelay', copy.byRoute)}
+							{/snippet}
+							<SectionByRoute
+								rows={rankedRoutes}
+								hasAssociations={hasByRouteAssoc}
+								{locale}
+								{copy}
+								presentation="article-body"
+							/>
+						</CollapsibleSection>
+					</div>
+				</ArticleSectionStack>
+			</div>
+		{/snippet}
+
+		<ReliabilityRailLayout
 			rail={railContent}
+			content={reliabilityContent}
+			{articleSummary}
 			label={copy.controlsLabel}
 			summary={grainSummary}
 			openAria={copy.nav.pillOpen}
 			closeAria={copy.nav.pillClose}
 		/>
-		<p
-			class="stop-history-announcement"
-			data-slot="history-page-announcement"
-			role="status"
-			aria-live="polite"
-			aria-atomic="true"
-		>
-			{historyLiveAnnouncement}
-		</p>
-
-		<!-- The sections — the content column beside the rail. -->
-		<div class="stop-reliability-content">
-			{#if historyAnnouncement}
-				<p class="stop-history-correction" data-slot="history-correction">
-					{historyAnnouncement}
-				</p>
-			{/if}
-			{#if explicitHistory}
-				<div class="stop-history-state" data-slot="history-state">
-					{#if history?.state === 'loading-index' || history?.state === 'loading-range'}
-						<p data-slot="history-loading">{copy.history.loading}</p>
-					{:else if history?.state === 'partial'}
-						<p data-slot="history-partial">{copy.history.partial}</p>
-					{:else if history?.state === 'no-data'}
-						<p data-slot="history-no-data">{copy.history.noData}</p>
-					{:else if history?.state === 'error'}
-						<p data-slot="history-error">{copy.history.error}</p>
-						<Button variant="outline" size="sm" onclick={() => history?.retry()}>
-							{copy.history.retry}
-						</Button>
-					{/if}
-					<p data-slot="history-current-only">{copy.history.currentOnly}</p>
-				</div>
-			{/if}
-			<!-- Daily-trend + range-verdict section (full-width hero): the dated retained
-			     series selected by the rail navigator. A `window` prop exists only for
-			     presenter-level tests. -->
-			<div class="stop-anchor stop-anchor--wide" id="stop-rel-trend" data-toc="stop-rel-trend">
-				<SectionDailyTrend
-					daily={selectedData.daily}
-					{locale}
-					{copy}
-					window={effectiveWindow}
-					exact={exactDailyRange}
-				/>
-			</div>
-
-			<!-- Hazard tape discerns the trend hero from the readouts board. -->
-			<Separator variant="hazard" hazardSize="sm" />
-
-			<!-- The readouts board. Operator layout: dow + time-of-day on ONE row, crowding +
-			     by-route on the NEXT (explicit 2-tile pairing); percentiles + habits are
-			     full-width heroes. Each {#if} stand-down keeps a readout out of the grid
-			     entirely; an absent pair-mate lets its survivor span the row (the grid
-			     reflows). Each present tile is wrapped in a locale-free [id]/[data-toc] anchor
-			     so the rail ToC can jump to + highlight it. -->
-			<DashboardGrid minTile="340px" gutter={false}>
-				{#if dayPercentiles != null}
-					<div class="stop-anchor" id="stop-rel-percentiles" data-toc="stop-rel-percentiles">
-						<SectionPercentiles percentiles={dayPercentiles} {locale} {copy} />
-					</div>
-				{/if}
-
-				{#if gradedPeriods.length > 0}
-					<div class="stop-anchor" id="stop-rel-pane" data-toc="stop-rel-pane">
-						<div class="stop-tile" data-slot="stop-reliability-pane">
-							<SectionHeading
-								level={2}
-								overline={copy.paneHeading}
-								class="stop-tile-heading stop-tile-heading--metrics"
-							>
-								{#snippet explainer()}
-									{@render metricInfo('otp', copy.metrics.otp)}
-									{@render metricInfo('avgDelay', copy.metrics.avgDelay)}
-									{@render metricInfo('severe', copy.metrics.severe)}
-								{/snippet}
-							</SectionHeading>
-							<!-- §C5.6: the one-line reliability verdict at the top of the pane. -->
-							<VerdictBanner result={stopVerdict} />
-							<ReliabilityPane periods={gradedPeriods} {locale} />
-						</div>
-					</div>
-				{/if}
-
-				<!-- ROW 1: habits (full-width hero). -->
-				{#if habits.hasHabits}
-					<div
-						class="stop-anchor stop-anchor--wide"
-						id="stop-rel-habits"
-						data-toc="stop-rel-habits"
-					>
-						<SectionHabits matrix={habits.matrix} {locale} {copy} />
-					</div>
-				{/if}
-
-				<!-- ROW: dow + time-of-day (operator pairing). An absent mate lets the survivor span. -->
-				{#if hasWeekday}
-					<div class="stop-anchor" id="stop-rel-weekday" data-toc="stop-rel-weekday">
-						<SectionWeekday rows={rankedWeekdays} {locale} {copy} />
-					</div>
-				{/if}
-				{#if timeOfDay.hasTimeOfDay}
-					<div class="stop-anchor" id="stop-rel-time" data-toc="stop-rel-time">
-						<SectionTimeOfDay
-							shiftRows={timeOfDay.shiftRows}
-							dayTypeRows={timeOfDay.dayTypeRows}
-							{locale}
-							{copy}
-						/>
-					</div>
-				{/if}
-
-				<!-- ROW: crowding + by-route (operator pairing). -->
-				<div class="stop-anchor" id="stop-rel-crowding" data-toc="stop-rel-crowding">
-					<SectionCrowding
-						vm={crowding}
-						settled={crowdingSettled}
-						{locale}
-						{copy}
-						windowText={crowdingWindowText}
-					/>
-				</div>
-				<div class="stop-anchor" id="stop-rel-by-route" data-toc="stop-rel-by-route">
-					<SectionByRoute rows={rankedRoutes} hasAssociations={hasByRouteAssoc} {locale} {copy} />
-				</div>
-			</DashboardGrid>
-		</div>
 	</div>
 </div>
 
@@ -619,28 +801,11 @@
 		width: 100%;
 	}
 
-	/* The 2-col layout (P5.4): the map-style GLASS LEFT RAIL (SurfaceRail) + the content
-	   column at ≥1024; a single column below, where the rail collapses to the mobile
-	   pill→sheet. The content column is the rail's sticky CONTAINING BLOCK, so the glass
-	   rail stays pinned over the sections. */
-	.stop-reliability-layout {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: clamp(1.5rem, 4vw, 2rem);
-		width: 100%;
-	}
-	@media (min-width: 1024px) {
-		.stop-reliability-layout {
-			grid-template-columns: 15rem minmax(0, 1fr);
-			gap: 2rem;
-			align-items: start;
-		}
-	}
 	/* The content column — the daily-trend hero + the readouts board. */
 	.stop-reliability-content {
 		display: flex;
 		flex-direction: column;
-		gap: 1.25rem;
+		gap: var(--space-card-gap);
 		min-width: 0;
 	}
 	.stop-history-announcement {
@@ -676,30 +841,6 @@
 		margin: 0;
 	}
 
-	/* The grain controls (View overline + GrainPicker + window caption), stacked in the
-	   rail. Rendered by railContent in BOTH the desktop glass rail and the mobile sheet. */
-	.stop-reliability-control-body {
-		display: flex;
-		flex-direction: column;
-		align-items: stretch;
-		gap: 0.5rem;
-		min-width: 0;
-	}
-	/* The "View" overline — the quiet mono rail label. */
-	.stop-reliability-view {
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-eyebrow);
-		color: var(--muted-foreground);
-	}
-	/* The grain radiogroup wraps so a long localized segment never overflows the narrow
-	   rail; the active-chip accent lives in GrainPicker. */
-	.stop-reliability :global([data-slot='grain-picker']) {
-		min-width: 0;
-		flex-wrap: wrap;
-	}
 	/* Resolved-window caption — quiet mono, on its own row beneath the grain chips. */
 	.stop-reliability-window {
 		margin: 0;
@@ -719,51 +860,27 @@
 		min-width: 0;
 	}
 
-	/* Section anchor wrapper: the locale-free [id]/[data-toc] jump target the rail ToC +
-	   the IntersectionObserver key on. Inside the DashboardGrid it IS the grid cell, so it
-	   fills the stretched row height and its inner .stop-tile fills it (equal-height rows).
-	   The daily-trend anchor sits in the flex content column (no grid parent) — the wide
-	   grid-column rule there is inert. */
+	/* Section anchor wrapper: the locale-free id complements the card's data-toc target. */
 	.stop-anchor {
 		display: flex;
 		flex-direction: column;
 		min-width: 0;
 	}
-	.stop-anchor > :global(.stop-tile) {
+	.stop-anchor > :global([data-slot='card'].section-card) {
 		flex: 1;
+		min-width: 0;
 	}
 	/* Smooth jump-to from the ToC (reduced-motion users get the instant default). */
 	@media (prefers-reduced-motion: no-preference) {
-		.stop-reliability-layout {
+		:global([data-slot='reliability-rail-layout']) {
 			scroll-behavior: smooth;
 		}
 	}
 
-	/* Shared tile chrome — the section components render `.stop-tile` roots, so the chrome
-	   is declared :global here (the orchestrator owns the board's card frame in one place).
-	   Chrome only (--card bg, --border); the dataviz marks inside bring their own scale. */
-	.stop-reliability :global(.stop-tile) {
+	.stop-reliability-pane-body {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 		min-width: 0;
-		padding: 1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
-	}
-	.stop-reliability :global(.stop-tile-heading) {
-		display: inline-flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.375rem;
-	}
-	/* The 7×24 habits matrix is a wide readout — its anchor wrapper spans the whole board
-	   on desktop, collapsing to a single column on mobile (auto-fit reflow handles <lg).
-	   The span rides the ANCHOR (the grid cell), not the inner .stop-tile--wide. */
-	@media (min-width: 1024px) {
-		.stop-reliability .stop-anchor--wide {
-			grid-column: 1 / -1;
-		}
 	}
 </style>

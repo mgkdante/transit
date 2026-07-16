@@ -29,6 +29,51 @@ function errorResponse(status, extraHeaders = {}) {
   });
 }
 
+function ifMatchSatisfied(value, httpEtag) {
+  return (
+    value.trim() === "*" ||
+    value.split(",").some((candidate) => candidate.trim() === httpEtag)
+  );
+}
+
+function ifUnmodifiedSinceSatisfied(value, uploaded) {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return true;
+  return uploaded instanceof Date && uploaded.getTime() <= timestamp;
+}
+
+function failedConditionalStatus(headers, object) {
+  const ifMatch = headers.get("if-match");
+  if (ifMatch !== null) {
+    if (!ifMatchSatisfied(ifMatch, object.httpEtag)) return 412;
+  } else {
+    const ifUnmodifiedSince = headers.get("if-unmodified-since");
+    if (
+      ifUnmodifiedSince !== null &&
+      !ifUnmodifiedSinceSatisfied(ifUnmodifiedSince, object.uploaded)
+    ) {
+      return 412;
+    }
+  }
+
+  return headers.has("if-none-match") || headers.has("if-modified-since")
+    ? 304
+    : 412;
+}
+
+function hasConditionalHeaders(headers) {
+  return (
+    headers.has("if-match") ||
+    headers.has("if-none-match") ||
+    headers.has("if-modified-since") ||
+    headers.has("if-unmodified-since")
+  );
+}
+
+function isR2InvalidRange(error) {
+  return error instanceof Error && /\(10039\)\s*$/.test(error.message);
+}
+
 export default {
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
@@ -65,14 +110,24 @@ export default {
     // Range support (pmtiles partial reads): forward the client Range header to
     // R2 so it returns just the requested byte slice plus the object's
     // .range ({offset,length}) and .size. HEAD never carries a body/range.
-    const rangeHeader = request.method === "GET" ? request.headers.get("range") : null;
+    const rangeHeader =
+      request.method === "GET" ? request.headers.get("range") : null;
+    const conditionalHead =
+      request.method === "HEAD" && hasConditionalHeaders(request.headers);
     let object;
-    if (request.method === "HEAD") {
-      object = await env.SNAPSHOTS.head(key);
-    } else {
-      const getOptions = { onlyIf: request.headers };
-      if (rangeHeader) getOptions.range = request.headers;
-      object = await env.SNAPSHOTS.get(key, getOptions);
+    try {
+      if (request.method === "HEAD" && !conditionalHead) {
+        object = await env.SNAPSHOTS.head(key);
+      } else {
+        const getOptions = { onlyIf: request.headers };
+        if (rangeHeader) getOptions.range = request.headers;
+        object = await env.SNAPSHOTS.get(key, getOptions);
+      }
+    } catch (error) {
+      if (rangeHeader && isR2InvalidRange(error)) {
+        return errorResponse(416, { "accept-ranges": "bytes" });
+      }
+      throw error;
     }
     if (object === null) {
       return errorResponse(404);
@@ -85,18 +140,29 @@ export default {
     headers.set("accept-ranges", "bytes");
 
     if (request.method === "HEAD") {
+      if (
+        conditionalHead &&
+        (object.body === undefined || object.body === null)
+      ) {
+        const status = failedConditionalStatus(request.headers, object);
+        if (status === 412) headers.set("cache-control", "no-store");
+        return new Response(null, { status, headers });
+      }
       return new Response(null, { status: 200, headers });
     }
     if (object.body === undefined || object.body === null) {
-      // onlyIf precondition failed (If-None-Match matched) — R2 returns the
-      // object metadata without a body.
-      return new Response(null, { status: 304, headers });
+      const status = failedConditionalStatus(request.headers, object);
+      if (status === 412) headers.set("cache-control", "no-store");
+      return new Response(null, { status, headers });
     }
     // A satisfied Range request → 206 Partial Content with Content-Range.
     if (rangeHeader && object.range) {
       const offset = object.range.offset ?? 0;
       const length = object.range.length ?? object.size - offset;
-      headers.set("content-range", `bytes ${offset}-${offset + length - 1}/${object.size}`);
+      headers.set(
+        "content-range",
+        `bytes ${offset}-${offset + length - 1}/${object.size}`,
+      );
       headers.set("content-length", String(length));
       return new Response(object.body, { status: 206, headers });
     }

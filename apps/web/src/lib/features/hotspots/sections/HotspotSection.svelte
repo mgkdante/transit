@@ -51,30 +51,6 @@
 		copy,
 	}: HotspotSectionProps = $props();
 
-	let chartViewport = $state<HTMLDivElement | null>(null);
-	let chartScrollable = $state(false);
-	let chartMoreEnd = $state(false);
-
-	function measureChartOverflow(): void {
-		const viewport = chartViewport;
-		if (!viewport) return;
-		const overflowX = getComputedStyle(viewport).overflowX;
-		const scrollRange = viewport.scrollWidth - viewport.clientWidth;
-		chartScrollable = (overflowX === 'auto' || overflowX === 'scroll') && scrollRange > 1;
-		chartMoreEnd = chartScrollable && viewport.scrollLeft < scrollRange - 1;
-	}
-
-	$effect(() => {
-		const viewport = chartViewport;
-		if (!viewport) return;
-		measureChartOverflow();
-		if (typeof ResizeObserver === 'undefined') return;
-		const observer = new ResizeObserver(measureChartOverflow);
-		observer.observe(viewport);
-		if (viewport.firstElementChild) observer.observe(viewport.firstElementChild);
-		return () => observer.disconnect();
-	});
-
 	const headingText = $derived(
 		ladder.total > ladder.shown
 			? `${heading} ${copy.shownOfTotal(ladder.shown, ladder.total)}`
@@ -99,23 +75,7 @@
 			</SectionHeading>
 		</div>
 		<p class="caption" data-slot="hotspot-window">{windowCaption}</p>
-		<div class="hotspot-chart-shell" data-slot="hotspot-chart-shell" data-more-end={chartMoreEnd}>
-			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-			<div
-				bind:this={chartViewport}
-				class="hotspot-chart-viewport"
-				data-slot="hotspot-chart-viewport"
-				data-card-interactive
-				role={chartScrollable ? 'region' : undefined}
-				aria-label={chartScrollable ? chartScrollLabel : undefined}
-				tabindex={chartScrollable ? 0 : undefined}
-				onscroll={measureChartOverflow}
-			>
-				<div class="hotspot-chart-canvas" data-slot="hotspot-chart-canvas">
-					<Chart spec={ladder.spec} />
-				</div>
-			</div>
-		</div>
+		<Chart spec={ladder.spec} scrollLabel={chartScrollLabel} />
 	{:else}
 		<div class="hotspot-section-head">
 			<SectionHeading level={3} overline={heading} />
@@ -174,25 +134,6 @@
 		display: flex;
 		align-items: center;
 		min-width: 0;
-	}
-	.hotspot-chart-shell,
-	.hotspot-chart-viewport,
-	.hotspot-chart-canvas {
-		min-width: 0;
-	}
-	.hotspot-chart-shell {
-		position: relative;
-	}
-	.hotspot-chart-shell::after {
-		display: none;
-	}
-	.hotspot-chart-viewport {
-		overflow-x: visible;
-		overflow-y: visible;
-	}
-	.hotspot-chart-viewport:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
 	}
 	.caption {
 		margin: 0;
@@ -262,29 +203,6 @@
 		.caption,
 		.hotspot-tray-table {
 			font-size: var(--text-detail-body-desktop);
-		}
-	}
-	@media (max-width: 1023px) {
-		.hotspot-chart-shell[data-more-end='true']::after {
-			content: '';
-			display: block;
-			position: absolute;
-			inset-block: 0;
-			inset-inline-end: 0;
-			width: 2rem;
-			background: linear-gradient(to right, transparent, var(--card));
-			pointer-events: none;
-		}
-		.hotspot-chart-viewport {
-			max-width: 100%;
-			overflow-x: auto;
-			overflow-y: hidden;
-			scrollbar-width: thin;
-			overscroll-behavior-inline: contain;
-			touch-action: pan-x pan-y;
-		}
-		.hotspot-chart-canvas {
-			min-width: 48rem;
 		}
 	}
 	@media (max-width: 28rem) {

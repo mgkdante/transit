@@ -6,7 +6,7 @@
 	import { routeFor } from '$lib/nav';
 	import type { Chip } from '$lib/filters';
 	import type { Alert, OccupancyCode, StatusCode } from '$lib/v1/schemas';
-	import { AbsentValue, MaybeValue } from '$lib/components/edge';
+	import { AbsentValue, MaybeValue, StateNotice } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import {
 		metricInfoFor,
@@ -594,7 +594,7 @@
 										{#each route.pastTimes.slice(-4) as time (`past-${route.route}-${time}`)}
 											<li>{time}</li>
 										{:else}
-											<li>{t.noData}</li>
+											<li><StateNotice title={t.noData} presentation="pill" /></li>
 										{/each}
 									</ul>
 								</div>
@@ -604,7 +604,7 @@
 										{#each route.futureTimes.slice(0, 4) as time (`future-${route.route}-${time}`)}
 											<li>{time}</li>
 										{:else}
-											<li>{t.noData}</li>
+											<li><StateNotice title={t.noData} presentation="pill" /></li>
 										{/each}
 									</ul>
 								</div>

@@ -392,7 +392,7 @@ describe('HealthStatus — full manifest render', () => {
 		);
 
 		expect(sectionCards).toHaveLength(10);
-		expect(railCards).toHaveLength(4);
+		expect(railCards).toHaveLength(2);
 		for (const card of [...sectionCards, ...railCards]) {
 			expect(card).toHaveAttribute('data-header-variant', 'article-summary');
 			const heading = card.querySelector('h2.section-heading') as HTMLHeadingElement;
@@ -481,48 +481,61 @@ describe('HealthStatus — full manifest render', () => {
 			/@media\s*\(min-width:\s*1024px\)[\s\S]*?\.health-lede\s*\{[\s\S]*?font-size:\s*var\(--text-detail-body-desktop\)[\s\S]*?line-height:\s*1\.9/,
 		);
 		expect(src).toMatch(
-			/\.health-stat__sub\s*\{[\s\S]*?font-size:\s*0\.95rem[\s\S]*?line-height:\s*1\.45/,
+			/\.health-stat__sub\s*\{[\s\S]*?font-size:\s*var\(--text-small\)[\s\S]*?line-height:\s*1\.45/,
 		);
 	});
 
-	it('pins the mobile Status rail to one full-width track below the shell breakpoint', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/health/HealthStatus.svelte'),
-			'utf8',
-		);
-		expect(source).toMatch(
-			/:global\(\.detail-shell-mobile-summary\) \.health-stat-rail\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
-		);
-		expect(source).toMatch(
-			/:global\(\.detail-shell-mobile-summary\)[\s\S]*?\.health-stat-rail[\s\S]*?:global\(\[data-slot='card'\]\)\s*\{[^}]*width:\s*100%;/,
-		);
-		expect(source).not.toMatch(/flex:\s*1 1 10rem/);
-	});
-
-	it('renders approved Lanes and Feeds icons in both responsive rail mounts', () => {
+	it('uses one wide left rail and renders At a glance once below its navigation', () => {
 		const { container } = render(HealthStatus);
-		for (const rail of container.querySelectorAll('.health-stat-rail')) {
-			expect(rail.querySelector('[data-testid="section-grid-icon"]')).not.toBeNull();
-			expect(rail.querySelector('[data-testid="section-list-icon"]')).not.toBeNull();
-		}
+		const grid = container.querySelector('.detail-shell-grid') as HTMLElement;
+		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		const toc = left.querySelector('.health-toc-rail') as HTMLElement;
+		const summary = left.querySelector('[data-slot="health-at-a-glance"]') as HTMLElement;
+
+		expect(grid).toHaveClass('detail-shell-grid--two');
+		expect(container.querySelectorAll('[data-slot="detail-shell-left"]')).toHaveLength(1);
+		expect(container.querySelector('[data-slot="detail-shell-right"]')).toBeNull();
+		expect(container.querySelector('[data-slot="detail-shell-mobile-summary"]')).toBeNull();
+		expect(container.querySelectorAll('.health-stat-rail')).toHaveLength(1);
+		expect(summary).toHaveAccessibleName(en.statRail.label);
+		expect(toc.compareDocumentPosition(summary)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 	});
 
-	it('independently closes mobile Lanes while Feeds stays open and the desktop copy follows', async () => {
+	it('renders approved Lanes and Feeds icons once in the left rail summary', () => {
 		const { container } = render(HealthStatus);
-		const mobile = container.querySelector(
-			'[data-slot="detail-shell-mobile-summary"]',
-		) as HTMLElement;
-		const lanes = within(mobile).getByRole('button', { name: en.statRail.lanes.title });
-		const feeds = within(mobile).getByRole('button', { name: en.statRail.feeds.title });
+		const rail = container.querySelector('.health-stat-rail') as HTMLElement;
+
+		expect(rail.querySelectorAll('[data-testid="section-grid-icon"]')).toHaveLength(1);
+		expect(rail.querySelectorAll('[data-testid="section-list-icon"]')).toHaveLength(1);
+	});
+
+	it('independently closes Lanes while Feeds stays open in the single summary', async () => {
+		const { container } = render(HealthStatus);
+		const rail = container.querySelector('.health-stat-rail') as HTMLElement;
+		const lanes = within(rail).getByRole('button', { name: en.statRail.lanes.title });
+		const feeds = within(rail).getByRole('button', { name: en.statRail.feeds.title });
 		const laneCard = lanes.closest('[data-slot="card"]') as HTMLElement;
 
 		await fireEvent.click(lanes);
 
-		for (const trigger of screen.getAllByRole('button', { name: en.statRail.lanes.title })) {
-			expect(trigger).toHaveAttribute('aria-expanded', 'false');
-		}
+		expect(lanes).toHaveAttribute('aria-expanded', 'false');
 		expect(laneCard.querySelector('.section-body')).toHaveAttribute('data-state', 'closed');
 		expect(feeds).toHaveAttribute('aria-expanded', 'true');
+	});
+
+	it('uses the shared ArticleSectionStack for primary cards without a page-owned card gap', () => {
+		const { container } = render(HealthStatus);
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/health/HealthStatus.svelte'),
+			'utf8',
+		);
+		const stack = container.querySelector('[data-slot="article-section-stack"]');
+
+		expect(stack).toHaveClass('health-sections');
+		expect(source).toContain('ArticleSectionStack');
+		expect(source).not.toMatch(
+			/\.health-sections\s*\{[^}]*?(?:display:\s*flex|flex-direction:\s*column|gap:)/s,
+		);
 	});
 
 	it('renders the surface head + a semantic neutral update time, never the live "LIVE" chip', () => {
@@ -637,7 +650,7 @@ describe('HealthStatus — full manifest render', () => {
 		const { container } = render(HealthStatus);
 		// The caption also appears in the left-rail ToC now (P5.3b), so scope the
 		// section-heading assertion to the center sections column.
-		const sections = container.querySelector('[data-slot="health-sections"]') as HTMLElement;
+		const sections = container.querySelector('[data-testid="health-sections"]') as HTMLElement;
 		expect(within(sections).getByText(en.conformance.section)).toBeInTheDocument();
 		const list = screen.getByRole('list', { name: en.conformance.membersListLabel });
 		for (const member of richProvenance.conformance!.unknown_members!) {
@@ -681,7 +694,7 @@ describe('HealthStatus — Overview and independent resources', () => {
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
 
 		expect(within(center).getByRole('button', { name: en.lanes.section })).toBeInTheDocument();
-		expect(screen.getAllByRole('button', { name: en.statRail.lanes.title })).toHaveLength(2);
+		expect(screen.getByRole('button', { name: en.statRail.lanes.title })).toBeInTheDocument();
 		expect(screen.getByRole('alert')).toBeInTheDocument();
 	});
 
@@ -697,7 +710,7 @@ describe('HealthStatus — Overview and independent resources', () => {
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
 
 		expect(within(center).getByRole('button', { name: en.freshness.section })).toBeInTheDocument();
-		expect(screen.getAllByRole('button', { name: en.statRail.feeds.title })).toHaveLength(2);
+		expect(screen.getByRole('button', { name: en.statRail.feeds.title })).toBeInTheDocument();
 		expect(screen.getByRole('alert')).toBeInTheDocument();
 	});
 
@@ -739,14 +752,13 @@ describe('HealthStatus — Overview and independent resources', () => {
 		}
 	});
 
-	it('keeps both responsive copies of a Status rail card synchronized', async () => {
+	it('keeps the single Status summary card independently collapsible', async () => {
 		render(HealthStatus);
-		const lanes = screen.getAllByRole('button', { name: en.statRail.lanes.title });
+		const lanes = screen.getByRole('button', { name: en.statRail.lanes.title });
 
-		await fireEvent.click(lanes[0]);
+		await fireEvent.click(lanes);
 
-		expect(lanes[0]).toHaveAttribute('aria-expanded', 'false');
-		expect(lanes[1]).toHaveAttribute('aria-expanded', 'false');
+		expect(lanes).toHaveAttribute('aria-expanded', 'false');
 	});
 
 	it('renders the French Overview and resource-region labels from locale context', () => {
@@ -838,7 +850,7 @@ describe('HealthStatus — S11 build-accountability envelope', () => {
 		const { container } = render(HealthStatus);
 		// The caption also appears in the left-rail ToC now (P5.3b), so scope the
 		// section-heading assertion to the center sections column.
-		const sections = container.querySelector('[data-slot="health-sections"]') as HTMLElement;
+		const sections = container.querySelector('[data-testid="health-sections"]') as HTMLElement;
 		expect(within(sections).getByText(en.envelope.section)).toBeInTheDocument();
 		expect(screen.getByText('gen-prov-xyz')).toBeInTheDocument();
 		expect(screen.queryByText('gen-live-abc')).toBeNull();
@@ -930,7 +942,7 @@ describe('HealthStatus — honesty (sections stand down when absent)', () => {
 		const { container } = render(HealthStatus);
 		// The caption also appears in the left-rail ToC now (P5.3b), so scope the
 		// section-heading assertion to the center sections column.
-		const sections = container.querySelector('[data-slot="health-sections"]') as HTMLElement;
+		const sections = container.querySelector('[data-testid="health-sections"]') as HTMLElement;
 		expect(within(sections).getByText(en.conformance.section)).toBeInTheDocument();
 		expect(screen.queryByText(en.conformance.detailsTitle)).toBeNull();
 	});

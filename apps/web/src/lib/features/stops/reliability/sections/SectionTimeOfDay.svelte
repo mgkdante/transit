@@ -10,47 +10,34 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { RankedRow } from '$lib/components/dataviz';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { TimeOfDayRow } from '../selectors/timeOfDay';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
+	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';
 
 	interface SectionTimeOfDayProps {
 		shiftRows: readonly TimeOfDayRow[];
 		dayTypeRows: readonly TimeOfDayRow[];
 		locale: Locale;
 		copy: StopReliabilityCopy;
+		presentation?: 'standalone' | 'article-body';
 	}
-	let { shiftRows, dayTypeRows, locale, copy }: SectionTimeOfDayProps = $props();
-
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
+	let {
+		shiftRows,
+		dayTypeRows,
+		locale,
+		copy,
+		presentation = 'standalone',
+	}: SectionTimeOfDayProps = $props();
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
-		class="stop-metric-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
-		side="bottom"
-	/>
-{/snippet}
-
-<div class="stop-tile stop-reliability-tod" data-slot="stop-time-of-day">
-	<SectionHeading level={2} overline={copy.timeOfDay.heading} class="stop-tile-heading">
-		{#snippet explainer()}
-			{@render metricInfo('severe', copy.timeOfDay.heading)}
-		{/snippet}
-	</SectionHeading>
+<StopReliabilityPresenter
+	heading={copy.timeOfDay.heading}
+	metricKey="severe"
+	{locale}
+	{presentation}
+	dataSlot="stop-time-of-day"
+>
 	{#if shiftRows.length > 0}
 		<div class="stop-reliability-route-list" role="list" aria-label={copy.timeOfDay.heading}>
 			{#each shiftRows as row (row.key)}
@@ -89,14 +76,9 @@
 	{/if}
 
 	<p class="stop-reliability-caveat">{copy.timeOfDay.caveat}</p>
-</div>
+</StopReliabilityPresenter>
 
 <style>
-	.stop-reliability-tod {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
 	.stop-reliability-route-list {
 		display: flex;
 		flex-direction: column;

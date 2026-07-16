@@ -54,6 +54,44 @@ export type ChartKind =
 	| 'service-span'
 	| 'absence';
 
+export type ChartViewportLayout = 'fluid' | 'dense' | 'self-managed' | 'none';
+
+export interface ChartViewportPolicy {
+	readonly layout: ChartViewportLayout;
+	readonly mobileMinWidth?: string;
+}
+
+const FLUID_VIEWPORT = { layout: 'fluid' } as const satisfies ChartViewportPolicy;
+const DENSE_VIEWPORT = {
+	layout: 'dense',
+	mobileMinWidth: '48rem',
+} as const satisfies ChartViewportPolicy;
+const SELF_MANAGED_VIEWPORT = {
+	layout: 'self-managed',
+} as const satisfies ChartViewportPolicy;
+const NO_VIEWPORT = { layout: 'none' } as const satisfies ChartViewportPolicy;
+
+const CHART_VIEWPORT_POLICIES = {
+	'magnitude-bars': DENSE_VIEWPORT,
+	'dot-strip': DENSE_VIEWPORT,
+	dumbbell: DENSE_VIEWPORT,
+	line: DENSE_VIEWPORT,
+	trend: DENSE_VIEWPORT,
+	sparkline: FLUID_VIEWPORT,
+	cycle: NO_VIEWPORT,
+	histogram: DENSE_VIEWPORT,
+	bullet: FLUID_VIEWPORT,
+	metric: NO_VIEWPORT,
+	'stacked-share': FLUID_VIEWPORT,
+	heatmap: SELF_MANAGED_VIEWPORT,
+	'service-span': FLUID_VIEWPORT,
+	absence: NO_VIEWPORT,
+} as const satisfies Record<ChartKind, ChartViewportPolicy>;
+
+export function chartViewportPolicy(kind: ChartKind): ChartViewportPolicy {
+	return CHART_VIEWPORT_POLICIES[kind];
+}
+
 /**
  * The MAGNITUDE kinds — cross-view marks whose LENGTH/POSITION encodes the value, so
  * they are structurally required to carry an absolute `domain` (Chart Doctrine §6.2.3
@@ -235,7 +273,7 @@ export interface SparklineSpec extends ChartSpecBase {
 	/** Emphasise the most recent real point with a dot + its formatted value. */
 	readonly showLast?: boolean;
 	/** Drawn size in px (presentation; the legacy Sparkline call-site sizes). */
-	readonly width?: number;
+	readonly width?: number | '100%';
 	readonly height?: number;
 }
 

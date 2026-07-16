@@ -4,26 +4,22 @@
   A framed control-room panel: a titlebar carrying the three-aspect SIGNAL HEAD
   (proceed lit + caution/stop unlit at 25%), a mono --text-micro title, an
   optional tag + right meta slot; a body slot; and a mono footer-readout slot
-  for honest stats (n · window · generated_utc). The panel rests at
-  --shadow-section and wears the sanctioned rest-glow (use:cursorGlow, E2 —
-  hero panels + the nav pill are the ONLY rest-glow exceptions). Chassis:
-  2px --border-rule frame, radius --radius-lg, bg --surface-2 SOLID (the
-  occlusion law — no alpha so the blueprint grid never bleeds through).
+  for honest stats (n · window · generated_utc). The chassis is deliberately
+  flat: 2px --border-rule frame, radius --radius-lg, bg --surface-2 SOLID. Data
+  panels never carry cursor halos, pulsing lamps or decorative outer shadows.
 
   ABSORBED TerminalChrome (P5.3c · D3): the old TerminalChrome alias is RETIRED —
   this is now the ONE terminal-window idiom. Its string footer[] path lives on as
   the `footerItems` prop (label/value items), so the former consumers (home pulse,
   receipt, _kit) migrated to TerminalPanel directly with no visual change.
 
-  GLOW LAW: rest-glow is a pointer-tracked opacity gradient (cursorGlow),
-  NEVER a text-shadow. No text-shadow anywhere in this component (§C4 P4 /
-  the FORBIDDEN guard's text-shadow ban). --primary stays interactive-only.
+  --primary stays interactive-only. Focus indicators belong to the controls
+  inside the panel and are not removed by this flat-surface rule.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import StatusDot from './StatusDot.svelte';
 	import { Separator } from '$lib/components/ui/separator';
-	import { cursorGlow } from '@yesid/motion';
 	import { cn } from '$lib/utils';
 
 	export interface TerminalFooterItem {
@@ -46,8 +42,6 @@
 		footerItems?: TerminalFooterItem[];
 		/** Remove body padding (when children manage their own). */
 		noPadding?: boolean;
-		/** Disable the sanctioned rest-glow (e.g. dense-data framing). */
-		noGlow?: boolean;
 		/** Terminal body content. */
 		children?: Snippet;
 		class?: string;
@@ -62,25 +56,19 @@
 		footer,
 		footerItems,
 		noPadding = false,
-		noGlow = false,
 		children,
 		class: className,
 		...rest
 	}: TerminalPanelProps = $props();
 </script>
 
-<div
-	class={cn('terminal-panel', className)}
-	data-slot="terminal-panel"
-	use:cursorGlow={noGlow ? { intensity: 0 } : { intensity: 0.06 }}
-	{...rest}
->
-	<!-- Titlebar — three-aspect SIGNAL HEAD (proceed lit + pulsing; caution +
+<div class={cn('terminal-panel', className)} data-slot="terminal-panel" {...rest}>
+	<!-- Titlebar — three-aspect SIGNAL HEAD (proceed lit; caution +
 	     stop unlit at 25%). Window furniture, not a data mark — aria-hidden. -->
 	<div class="terminal-titlebar">
 		<div class="terminal-titlebar-lead">
 			<span class="signal-head" data-slot="signal-head" aria-hidden="true">
-				<StatusDot color="green" pulse size="sm" />
+				<StatusDot color="green" size="sm" />
 				<StatusDot color="caution" size="sm" class="opacity-25" />
 				<StatusDot color="stop" size="sm" class="opacity-25" />
 			</span>
@@ -129,8 +117,6 @@
 		/* SOLID surface — the occlusion law (§C1). No alpha; the grid never bleeds through. */
 		background: var(--surface-2);
 		overflow: hidden;
-		/* Sanctioned rest-glow chassis shadow (§C1 glow map). */
-		box-shadow: var(--shadow-section);
 	}
 
 	.terminal-titlebar {

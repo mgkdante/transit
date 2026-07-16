@@ -254,6 +254,7 @@
 			<span class="date-range__label">{singleLabel}</span>
 			<input
 				type="date"
+				name="history-date"
 				class="date-range__input"
 				value={date ?? ''}
 				min={singleMin}
@@ -275,6 +276,7 @@
 			<span class="date-range__label">{labels.start}</span>
 			<input
 				type="date"
+				name="history-from"
 				class="date-range__input"
 				value={start}
 				min={minDate}
@@ -287,6 +289,7 @@
 			<span class="date-range__label">{labels.end}</span>
 			<input
 				type="date"
+				name="history-to"
 				class="date-range__input"
 				value={end}
 				min={toMin}

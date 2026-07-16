@@ -17,10 +17,10 @@
 	      category rule + keyword-highlighted title + tag pills + meta row; flush to
 	      the viewport top). The exact two article controls ride its controls row;
       DetailShell adds the closing hazard tape. The lede leads the body column.
-    · The shell's 3-column body grid is `1fr 2fr 1fr` at ≥1024 (gap 2rem), collapsing to
-      a single column below. LEFT slot = the numbered TocNav + the SEC n/m reading-position
-      readout; CENTER = the provenance preamble + the per-metric cards; RIGHT = the
-      Provenance / Coverage / Freshness stat cards (reflowed to a mobileSummary strip < 1024).
+	· The shell's shared two-column article grid uses one wide LEFT rail plus the readable
+	  CENTER track at ≥1024, collapsing to the center below. LEFT = the numbered TocNav
+	  followed once by the Provenance / Coverage / Freshness At-a-glance cards; CENTER =
+	  the provenance preamble + the per-metric cards.
     · The LEFT rail's ToC carries its OWN user-driven collapse (its chevron, persisted via
       sectionKey="metrics-toc") AND follows FOCUS (yesid Quiet-Mode parity) — FOCUS ON
       folds it, FOCUS OFF reopens it; the reader's manual chevron still wins between
@@ -32,15 +32,16 @@
       retired) with its own persisted open-state (sectionKey `metrics-card-<anchor>`);
       FOCUS collapses everything, unfocus reopens everything; a mount/hashchange opener +
       ToC navigation still open a specific target card under FOCUS.
-    · MOBILE (< 1024): DetailShell renders the shared TocPill floating pill + drawer, driven
-      by the SAME activeId (which the shell owns via one observeActiveToc — no duplicate
-      observer here; this feature binds `activeId` back from the shell) + this feature's
-      open-then-scroll `navigate`.
+	· MOBILE (< 1024): DetailShell hides the desktop rail and renders the shared TocPill
+	  floating pill + drawer, driven by the SAME activeId (which the shell owns via one
+	  observeActiveToc — no duplicate observer here; this feature binds `activeId` back
+	  from the shell) + this feature's open-then-scroll `navigate`.
 
-  Composes: DetailShell (hazard tape + 3-col grid + observer + pill) + ArticleHeader
-  (cover) + SectionLabel + shared typed information cards (including SQL terminal
-  chrome) + the shared TOC + collapsible-card kit (CollapsibleSection / TocNav /
-  toc.ts). The co-located metrics/+layout.svelte is a bare pass-through.
+	Composes: DetailShell (hazard tape + two-column article grid + observer + pill) +
+	ArticleHeader (cover) + ArticleSectionStack + SectionLabel + shared typed information
+	cards (including SQL terminal chrome) + the shared TOC + collapsible-card kit
+	(CollapsibleSection / TocNav / toc.ts). The co-located metrics/+layout.svelte is a
+	bare pass-through.
 
   DOCTRINE: no data marks here (prose + SQL), so the dataviz scale is not in play;
   --primary appears only on interactive chrome (the TOC, the pill, the back-to-top
@@ -56,7 +57,8 @@
 	import { getProvenance } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ConformanceBadge, FreshnessStamp } from '$lib/components/surface';
-	import { ArticleHeader, DetailShell } from '$lib/components/layout';
+	import { ArticleHeader, ArticleSectionStack, DetailShell } from '$lib/components/layout';
+	import { StateNotice } from '$lib/components/edge';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
@@ -262,8 +264,8 @@
 	const cardOpenSignal = (anchor: string): number =>
 		(cardOpenSignals[anchor] ?? 0) + quietModeStore.openSignal;
 
-	// The responsive right rail is mounted twice (desktop + mobile summary), but
-	// each logical card has exactly one page-owned persisted state rune.
+	// The At-a-glance cards live once beneath the navigation in the wide left rail.
+	// Each card keeps its own page-owned persisted state rune.
 	const railOpen = {
 		provenance: persisted('metrics-rail-provenance', true),
 		coverage: persisted('metrics-rail-coverage', true),
@@ -372,9 +374,8 @@
 	}
 </script>
 
-<!-- The right-rail / mobile-summary stat cards — Provenance / Coverage / Freshness,
-     all built from data the page already has. The snippet mounts in both responsive
-     locations while each logical card binds to one page-owned persisted rune. -->
+<!-- The single At-a-glance stack — Provenance / Coverage / Freshness, all built
+	 from data the page already has and rendered once beneath the desktop ToC. -->
 {#snippet statCards()}
 	<div class="metrics-stat-rail">
 		<!-- Provenance: the live feed-conformance verdict (the same honesty signal
@@ -396,7 +397,12 @@
 					{#if provenance.data?.conformance}
 						<ConformanceBadge conformance={provenance.data.conformance} {locale} />
 					{:else}
-						<p class="metrics-stat__note" role="status">{t.statRail.provenance.unavailable}</p>
+						<StateNotice
+							title={t.statRail.provenance.unavailable}
+							presentation="silo"
+							role="status"
+							ariaLive="polite"
+						/>
 					{/if}
 				</div>
 			</CollapsibleSection>
@@ -447,7 +453,12 @@
 					<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
 				{/snippet}
 				<div class="metrics-stat__body" data-slot="stat-freshness">
-					<FreshnessStamp variant="updated" generatedUtc={provenance.data.generated_utc} {locale} />
+					<FreshnessStamp
+						class="metrics-freshness-stamp"
+						variant="updated"
+						generatedUtc={provenance.data.generated_utc}
+						{locale}
+					/>
 				</div>
 			</CollapsibleSection>
 		{/if}
@@ -485,13 +496,7 @@
 		</ArticleHeader>
 	{/snippet}
 
-	<!-- Mobile top summary strip — the right-rail stats reflowed above the sections
-		     (DetailShell hides this ≥1024, where the right rail carries them). -->
-	{#snippet mobileSummary()}
-		{@render statCards()}
-	{/snippet}
-
-	<!-- LEFT rail: the numbered ToC (its footer carries the ONE SEC n / m readout). -->
+	<!-- LEFT rail: the numbered ToC followed by the single At-a-glance stack. -->
 	{#snippet left()}
 		<div class="metrics-toc-rail">
 			<!-- The ToC keeps its OWN user-driven collapse (its chevron) + persists
@@ -510,19 +515,15 @@
 				openSignal={quietModeStore.openSignal}
 				bulkCollapsed={quietModeStore.enabled}
 			/>
+
+			<aside class="metrics-stat-aside" aria-label={t.statRail.label}>
+				{@render statCards()}
+			</aside>
 		</div>
 	{/snippet}
 
-	<!-- RIGHT rail: the three stat cards (desktop-sticky; reflowed to the top on
-		     mobile via mobileSummary above). -->
-	{#snippet right()}
-		<aside class="metrics-stat-aside" aria-label={t.statRail.label}>
-			{@render statCards()}
-		</aside>
-	{/snippet}
-
 	{#snippet center()}
-		<div class="sections-column" data-testid="metrics-sections">
+		<ArticleSectionStack data-testid="metrics-sections">
 			<!-- The opening Method + provenance card contains the lede and every
 			     cross-cutting convention inherited by the metric cards below. -->
 			<div class="section-block" id={PROVENANCE_ANCHOR}>
@@ -550,7 +551,12 @@
 							<!-- Supplementary provenance failed to load: degrade honestly with a
 							     localized stand-down line instead of a silent gap. The static
 							     methodology + structural-gaps card below are unaffected. -->
-							<p class="metrics-provenance-down" role="status">{t.provenance.unavailable}</p>
+							<StateNotice
+								title={t.provenance.unavailable}
+								presentation="silo"
+								role="status"
+								ariaLive="polite"
+							/>
 						{/if}
 
 						<!-- How we measure: the cross-cutting conventions every metric inherits
@@ -618,75 +624,78 @@
 			{#each groups as group (group.cluster)}
 				<div class="metrics-cluster">
 					<SectionHeading level={2} overline={group.label} class="metrics-cluster__overline" />
-					{#each group.entries as entry (entry.key)}
-						{@const metricIndex = orderedMetrics.findIndex((m) => m.key === entry.key)}
-						{@const note = methodologyNote(entry)}
-						<div class="section-block" id={entry.anchor}>
-							<CollapsibleSection
-								title={entry.name[locale]}
-								subtitle={entry.oneLiner[locale]}
-								headerVariant="article-summary"
-								anchor={entry.anchor}
-								index={metricIndex}
-								sectionKey={cardKey(entry.anchor)}
-								open={true}
-								closeSignal={cardCloseSignal}
-								openSignal={cardOpenSignal(entry.anchor)}
-								bulkCollapsed={quietModeStore.enabled}
-							>
-								<div class="metric__body">
-									<p class="metric__meta">
-										<code class="metric__sci">{entry.sciName}</code>
-										<span class="metrics-chip metrics-chip--meta">{confidenceMeaning(entry)}</span>
-									</p>
+					<ArticleSectionStack class="metrics-cluster__cards" data-slot-variant="metric-cluster">
+						{#each group.entries as entry (entry.key)}
+							{@const metricIndex = orderedMetrics.findIndex((m) => m.key === entry.key)}
+							{@const note = methodologyNote(entry)}
+							<div class="section-block" id={entry.anchor}>
+								<CollapsibleSection
+									title={entry.name[locale]}
+									subtitle={entry.oneLiner[locale]}
+									headerVariant="article-summary"
+									anchor={entry.anchor}
+									index={metricIndex}
+									sectionKey={cardKey(entry.anchor)}
+									open={true}
+									closeSignal={cardCloseSignal}
+									openSignal={cardOpenSignal(entry.anchor)}
+									bulkCollapsed={quietModeStore.enabled}
+								>
+									<div class="metric__body">
+										<p class="metric__meta">
+											<code class="metric__sci">{entry.sciName}</code>
+											<span class="metrics-chip metrics-chip--meta">{confidenceMeaning(entry)}</span
+											>
+										</p>
 
-									<div class="metric__information-stack">
-										<TypedInformationCard kind="definition" label={t.sections.definition}>
-											<EasterProse text={entry.definition[locale]} class="metric__prose" />
-										</TypedInformationCard>
-
-										<TypedInformationCard kind="math" label={t.sections.math}>
-											<p class="metric__prose metric__prose--mono">{entry.math[locale]}</p>
-										</TypedInformationCard>
-
-										<TypedInformationCard
-											kind="sql"
-											label={t.sections.sql}
-											code={entry.sql}
-											codeAriaLabel={`${t.sqlAria}: ${entry.sciName}`}
-										/>
-
-										<div class="metric__paired-information">
-											<TypedInformationCard kind="not-really" label={t.sections.notReally}>
-												<EasterProse
-													text={entry.notReally[locale]}
-													class="metric__prose metric__not"
-												/>
+										<div class="metric__information-stack">
+											<TypedInformationCard kind="definition" label={t.sections.definition}>
+												<EasterProse text={entry.definition[locale]} class="metric__prose" />
 											</TypedInformationCard>
 
-											<TypedInformationCard kind="caveat" label={t.sections.caveats}>
-												<ul class="metric__caveats">
-													{#each entry.caveats[locale] as caveat, i (i)}
-														<li>{caveat}</li>
-													{/each}
-												</ul>
+											<TypedInformationCard kind="math" label={t.sections.math}>
+												<p class="metric__prose metric__prose--mono">{entry.math[locale]}</p>
 											</TypedInformationCard>
+
+											<TypedInformationCard
+												kind="sql"
+												label={t.sections.sql}
+												code={entry.sql}
+												codeAriaLabel={`${t.sqlAria}: ${entry.sciName}`}
+											/>
+
+											<div class="metric__paired-information">
+												<TypedInformationCard kind="not-really" label={t.sections.notReally}>
+													<EasterProse
+														text={entry.notReally[locale]}
+														class="metric__prose metric__not"
+													/>
+												</TypedInformationCard>
+
+												<TypedInformationCard kind="caveat" label={t.sections.caveats}>
+													<ul class="metric__caveats">
+														{#each entry.caveats[locale] as caveat, i (i)}
+															<li>{caveat}</li>
+														{/each}
+													</ul>
+												</TypedInformationCard>
+											</div>
+
+											{#if note}
+												<TypedInformationCard kind="pipeline-note" label={t.sections.pipelineNote}>
+													<p class="metric__prose metric__pipeline-note" data-slot="pipeline-note">
+														{note}
+													</p>
+												</TypedInformationCard>
+											{/if}
 										</div>
 
-										{#if note}
-											<TypedInformationCard kind="pipeline-note" label={t.sections.pipelineNote}>
-												<p class="metric__prose metric__pipeline-note" data-slot="pipeline-note">
-													{note}
-												</p>
-											</TypedInformationCard>
-										{/if}
+										<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
 									</div>
-
-									<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
-								</div>
-							</CollapsibleSection>
-						</div>
-					{/each}
+								</CollapsibleSection>
+							</div>
+						{/each}
+					</ArticleSectionStack>
 				</div>
 			{/each}
 
@@ -756,7 +765,7 @@
 					</div>
 				</CollapsibleSection>
 			</div>
-		</div>
+		</ArticleSectionStack>
 	{/snippet}
 </DetailShell>
 
@@ -773,33 +782,18 @@
 		max-width: 60ch;
 	}
 
-	/* ── Left rail (ToC + SEC readout) ─────────────────────────────────────────
-	   The rail's own vertical rhythm; the SEC readout sits above the ToC. DetailShell
-	   shows/hides the whole left rail at 1024 (the floating TocPill covers below), so
-	   this only owns the in-rail stacking. */
+	/* ── Left rail (ToC + At a glance) ──────────────────────────────────────────
+	   DetailShell owns the wide desktop track and hides it below 1024, where the
+	   floating TocPill keeps article navigation available. */
 	.metrics-toc-rail {
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
+		gap: var(--space-card-gap);
 		min-width: 0;
 	}
 
-	/* ── Sections column (the reading measure) ─────────────────────────────────
-	   The center column of the 3-col template; caps to the article measure so the
-	   cards read at a comfortable width whatever the track resolves to. */
-	.sections-column {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-		width: 100%;
-		min-width: 0;
-		max-width: 60rem;
-	}
-
-	/* ── Right rail / mobile summary stat cards ────────────────────────────────
-	   Provenance / Coverage / Freshness — compact cards fed from data the page
-	   already has. On desktop they stack in the sticky right rail; on mobile each
-	   card occupies its own full-width summary row. */
+	/* ── At-a-glance cards ─────────────────────────────────────────────────────
+	   Provenance / Coverage / Freshness stay in one stack under the ToC. */
 	.metrics-stat-aside {
 		min-width: 0;
 	}
@@ -807,15 +801,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-card-gap);
-	}
-	:global(.detail-shell-mobile-summary) .metrics-stat-rail {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		align-items: start;
-	}
-	:global(.detail-shell-mobile-summary) .metrics-stat-rail > :global([data-slot='card']) {
-		width: 100%;
-		min-width: 0;
 	}
 	.metrics-stat__body {
 		display: flex;
@@ -827,11 +812,21 @@
 		flex-shrink: 0;
 		white-space: nowrap;
 	}
-	.metrics-stat__note {
-		margin: 0;
-		color: var(--muted-foreground);
-		font-size: 0.95rem;
-		line-height: 1.45;
+	/* The narrow left rail gives the timestamp its own line under UPDATED. */
+	.metrics-stat__body[data-slot='stat-freshness']
+		:global(.freshness-stamp--updated.metrics-freshness-stamp) {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		column-gap: 0.5rem;
+		row-gap: 0.25rem;
+		align-items: center;
+		justify-items: start;
+	}
+	.metrics-stat__body[data-slot='stat-freshness']
+		:global(.metrics-freshness-stamp .freshness-stamp-label),
+	.metrics-stat__body[data-slot='stat-freshness']
+		:global(.metrics-freshness-stamp .freshness-stamp-age) {
+		grid-column: 2;
 	}
 	.metrics-stat__count {
 		display: flex;
@@ -841,7 +836,7 @@
 	}
 	.metrics-stat__big {
 		font-family: var(--font-heading);
-		font-size: 1.75rem;
+		font-size: var(--text-stat-value);
 		font-weight: 800;
 		line-height: 1;
 		color: var(--foreground);
@@ -853,7 +848,7 @@
 	}
 	.metrics-stat__sub {
 		margin: 0;
-		font-size: 0.95rem;
+		font-size: var(--text-small);
 		line-height: 1.45;
 		color: var(--muted-foreground);
 	}
@@ -882,16 +877,6 @@
 	}
 	.metrics-conformance {
 		display: flex;
-	}
-	/* Provenance stand-down: a quiet, muted line that takes the badge's slot when
-	   the supplementary fetch fails. Not a data verdict (no dataviz status colour),
-	   not --primary; it just states the live check is momentarily out. */
-	.metrics-provenance-down {
-		margin: 0;
-		color: var(--muted-foreground);
-		font-size: var(--text-small);
-		line-height: 1.6;
-		max-width: 68ch;
 	}
 	/* How-we-measure: named convention notes inside the provenance preamble. Reads
 	   as discrete heading + body blocks, on the same muted prose voice as the rest of
@@ -959,12 +944,10 @@
 
 	/* ── Cluster bands ───────────────────────────────────────────────────────── */
 	.metrics-cluster {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
+		min-width: 0;
 	}
 	:global(.metrics-cluster__overline) {
-		margin-block-end: 0.25rem;
+		margin-block-end: var(--space-card-gap);
 	}
 
 	/* The .section-block elements carry the deep-link target id (so /metrics#otp

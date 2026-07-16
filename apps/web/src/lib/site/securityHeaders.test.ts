@@ -88,9 +88,9 @@ describe('securityHeaders — production set', () => {
 describe('contentSecurityPolicy — invariants', () => {
 	const csp = contentSecurityPolicy();
 
-	it('allows the basemap glyph host (else map labels break) and the /v1 origin', () => {
+	it('allows the basemap glyph host and the direct R2 /v1 origin', () => {
 		expect(csp).toContain('https://protomaps.github.io');
-		expect(csp).toContain('https://transit.yesid.dev');
+		expect(csp).toContain('https://data.yesid.dev');
 	});
 
 	it('allows Cloudflare Web Analytics beacon in script-src', () => {
@@ -104,8 +104,8 @@ describe('contentSecurityPolicy — invariants', () => {
 		expect(csp).toContain('upgrade-insecure-requests');
 	});
 
-	it('drops the retired data.yesid.dev origin', () => {
-		expect(csp).not.toContain('data.yesid.dev');
+	it('keeps the quota-bearing transit data proxy out of connect-src', () => {
+		expect(csp).not.toMatch(/connect-src[^;]*https:\/\/transit\.yesid\.dev/);
 	});
 
 	it('narrows img-src off the broad https: wildcard, keeping the basemap + OG hosts', () => {

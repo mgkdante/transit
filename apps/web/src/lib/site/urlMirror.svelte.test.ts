@@ -61,6 +61,19 @@ describe('mirrorSearchParam', () => {
 		expect(u.hash).toBe('#rel-the-wait');
 	});
 
+	it('uses the current browser URL when page.url still reflects the previous shallow state', () => {
+		window.history.replaceState({}, '', '/lines/51?tab=schedule&line=51#service-profile');
+		mockUrl = new URL(`${window.location.origin}/lines/51?line=51#service-profile`);
+
+		mirrorSearchParam('tab', null);
+
+		expect(replaceState).toHaveBeenCalledOnce();
+		const u = new URL(replaceState.mock.calls[0][0] as string | URL, window.location.origin);
+		expect(u.searchParams.has('tab')).toBe(false);
+		expect(u.searchParams.get('line')).toBe('51');
+		expect(u.hash).toBe('#service-profile');
+	});
+
 	it('swallows a replaceState throw (router not initialized — SSR / test / pre-hydration)', () => {
 		replaceState.mockImplementation(() => {
 			throw new Error('Cannot call replaceState(...) before router is initialized');

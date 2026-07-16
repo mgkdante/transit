@@ -30,7 +30,6 @@
 <script lang="ts">
 	import { Chart, type ChartSpec, type SparklineSpec } from '$lib/components/dataviz/chart';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import NetworkTile from './NetworkTile.svelte';
@@ -62,12 +61,17 @@
 	const i = $derived(info(metricKey, copy.trendSection));
 </script>
 
-<NetworkTile wide>
-	<SectionHeading level={3} overline={copy.trendSection}>
-		{#snippet explainer()}
-			<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
-		{/snippet}
-	</SectionHeading>
+{#snippet trendInfo()}
+	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+{/snippet}
+
+<NetworkTile
+	wide
+	title={copy.trendSection}
+	subtitle={copy.trend.summary}
+	sectionKey="network-daily-trend"
+	headerActions={trendInfo}
+>
 	<div class="network-trend">
 		<Chart spec={trendSpec} />
 

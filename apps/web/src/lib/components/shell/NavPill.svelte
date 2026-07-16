@@ -7,11 +7,12 @@
 
   Content order (§C2.1, built exactly):
     BrandWordmark ("Transit" + orange dot → /) · divider · Map / Lines / Stops /
-    Network · divider · search (≥lg compact in-pill field; <lg inside the menu
-    dropdown) · divider · LangSwitch + ThemeToggle · hamburger → the menu.
+    Network · divider · search (≥lg compact in-pill field) · divider · Refresh +
+    compact Search + ThemeToggle + LangSwitch +
+    hamburger → the menu.
 
   The menu is a FLAT, unlabelled list of destinations (Map/Lines/Stops/Network
-  on <lg · Search on <lg · Metrics · Status · Hotspots · Receipt · Repeat
+  on <lg · Metrics · Status · Hotspots · Receipt · Repeat
   offenders · Alerts) closing with a "Yesid" link OUT to yesid.dev (external ↗).
   No text group-headings — a quiet hairline is the only separator between the
   primary surfaces and the secondary ones at compact widths. It opens as one
@@ -29,7 +30,6 @@
 -->
 <script lang="ts">
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import XIcon from '@lucide/svelte/icons/x';
 	import ArrowUpRightIcon from '@lucide/svelte/icons/arrow-up-right';
 	import { cn } from '$lib/utils';
 	import {
@@ -39,6 +39,7 @@
 		delocalizePath,
 		getLocale,
 		localizeHref,
+		localizeUrl,
 	} from '$lib/i18n';
 	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
 	import { SURFACE_NAV, AUDIT_NAV, YESID_HOUSE_LINK, isSurfaceActive } from '$lib/content/nav';
@@ -121,7 +122,6 @@
 					? 'Rechercher dans le réseau'
 					: 'Search the network',
 	);
-	const closeSearchAria = $derived(locale === 'fr' ? 'Fermer la recherche' : 'Close search');
 	const openMenuAria = $derived(locale === 'fr' ? 'Ouvrir le menu' : 'Open menu');
 	const closeMenuAria = $derived(locale === 'fr' ? 'Fermer le menu' : 'Close menu');
 	const menuAria = $derived(locale === 'fr' ? 'Menu de navigation' : 'Navigation menu');
@@ -132,7 +132,6 @@
 	// (AUDIT_NAV is active-aware, so a route rename lands in one place) from the
 	// accountability surfaces without a visible heading.
 	const auditLabel = $derived(locale === 'fr' ? 'Vérification' : 'Audit');
-	const searchGroupLabel = $derived(locale === 'fr' ? 'Recherche' : 'Search');
 	const primaryGroupLabel = $derived(locale === 'fr' ? 'Explorer' : 'Explore');
 	// The parent-brand "Yesid" link out to yesid.dev — the final burger-menu row,
 	// with an external ↗ affordance. NOT the pill's main click anymore.
@@ -142,6 +141,19 @@
 			? `${YESID_HOUSE_LINK.label.fr} (nouvel onglet)`
 			: `${YESID_HOUSE_LINK.label.en} (opens in a new tab)`,
 	);
+	const compactLanguageTarget = $derived.by(() => {
+		if (availableLocales.length < 2) return null;
+		const index = Math.max(0, availableLocales.indexOf(locale));
+		const target = availableLocales[(index + 1) % availableLocales.length];
+		return {
+			href: localizeUrl(url, target),
+			label: target === 'fr' ? 'Français' : 'English',
+			aria:
+				locale === 'fr'
+					? `Changer de langue : ${target === 'fr' ? 'Français' : 'English'}`
+					: `Switch language: ${target === 'fr' ? 'Français' : 'English'}`,
+		};
+	});
 
 	const navItems = $derived(
 		SURFACE_NAV.map((item) => ({
@@ -161,7 +173,6 @@
 	);
 
 	let menuOpen = $state(false);
-	let sheetSearchInput = $state<HTMLInputElement>();
 	// The hamburger toggle, so closing the menu (Escape / backdrop / nav-link) can
 	// return focus to its trigger — the pill is now the only mobile nav escape.
 	let menuToggle = $state<HTMLButtonElement>();
@@ -213,20 +224,10 @@
 		syncPillAnchor();
 	});
 
-	// Focus goes INTO the menu on open. On <lg the dropdown's search field is the natural
-	// first stop (and its autofocus/select aids fast search); ≥lg the search group is
-	// hidden, so focus lands on the menu container (tabindex=-1) — either way keyboard
-	// focus enters the menu, and closeMenu() returns it to the hamburger. This replaces
-	// the removed aria-hidden focusable backdrop as the a11y entry point.
+	// Focus goes into the menu container on open; closeMenu() returns it to the
+	// hamburger. Search is a persistent compact top-bar destination, not menu content.
 	$effect(() => {
 		if (!menuOpen || !menuEl) return;
-		const desktop =
-			typeof window !== 'undefined' && !!window.matchMedia?.('(min-width: 1024px)').matches;
-		if (!desktop && sheetSearchInput) {
-			sheetSearchInput.focus();
-			sheetSearchInput.select();
-			return;
-		}
 		menuEl.focus();
 	});
 
@@ -347,12 +348,12 @@
 
 		<span class="nav-divider nav-divider-collapsible" aria-hidden="true"></span>
 
-		<!-- SEARCH: a compact in-pill field ≥lg; below lg the menu dropdown carries the
-		     search field. -->
+		<!-- SEARCH: a compact in-pill field ≥lg; compact widths use the icon below. -->
 		<form class="nav-search" role="search" onsubmit={submitSearch} data-slot="nav-search">
 			<SearchIcon class="nav-search-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
 			<input
 				type="search"
+				name="network-search"
 				bind:value={search}
 				placeholder={searchPlaceholder}
 				aria-label={searchAria}
@@ -394,9 +395,17 @@
 
 		<span class="nav-divider" aria-hidden="true"></span>
 
-		<!-- CONTROLS: refresh (recovery affordance) · theme · language · menu. -->
+		<!-- CONTROLS: refresh · compact search · theme signal · language · menu. -->
 		<div class="nav-controls" data-slot="nav-controls">
 			<RefreshButton {locale} class="nav-control" />
+			<a
+				href={localizeHref('/search', locale)}
+				class="tap-press nav-control nav-compact-search"
+				aria-label={searchAria}
+				data-slot="nav-compact-search"
+			>
+				<SearchIcon size={17} strokeWidth={1.8} aria-hidden="true" />
+			</a>
 			<ThemeToggle {locale} class="nav-control" />
 			<LangSwitch {locale} {url} {availableLocales} class="nav-control" />
 
@@ -461,41 +470,6 @@
 				{/each}
 			</div>
 
-			<!-- SEARCH (compact only, <lg): the in-pill field is hidden below lg, so the
-			     dropdown carries the sole search entry there. Hidden ≥lg by CSS. The field
-			     is self-describing (placeholder + aria-label); no visible heading. -->
-			<div class="nav-menu-search-group" role="group" aria-label={searchGroupLabel}>
-				<form
-					class="nav-menu-search"
-					role="search"
-					onsubmit={submitSearch}
-					data-slot="nav-menu-search"
-				>
-					<SearchIcon class="nav-search-icon" size={16} strokeWidth={1.8} aria-hidden="true" />
-					<input
-						bind:this={sheetSearchInput}
-						type="search"
-						bind:value={search}
-						placeholder={searchPlaceholder}
-						aria-label={searchAria}
-						autocomplete="off"
-						spellcheck="false"
-						onfocus={openSearchResults}
-						oninput={handleSearchInput}
-						class="nav-menu-search-input"
-						data-slot="nav-menu-search-input"
-					/>
-					<button
-						type="button"
-						class="tap-press nav-menu-search-clear"
-						aria-label={closeSearchAria}
-						onclick={() => (search = '')}
-					>
-						<XIcon size={15} strokeWidth={2.3} aria-hidden="true" />
-					</button>
-				</form>
-			</div>
-
 			<!-- AUDIT (accountability/meta) surfaces — a flat continuation of the
 			     destination list, no visible heading; a quiet hairline (CSS) is the only
 			     separator from the primaries. The group aria-label is AT-only. -->
@@ -511,6 +485,21 @@
 					</a>
 				{/each}
 			</div>
+
+			{#if compactLanguageTarget}
+				<!-- At phone widths narrower than 360px, five 44px top controls cannot fit.
+				     The signpost moves here without removing the locale path from navigation. -->
+				<a
+					href={compactLanguageTarget.href}
+					class="nav-menu-language"
+					aria-label={compactLanguageTarget.aria}
+					data-sveltekit-preload-data="hover"
+					data-sveltekit-noscroll
+					onclick={closeMenu}
+				>
+					{compactLanguageTarget.label}
+				</a>
+			{/if}
 
 			<!-- Parent-brand "Yesid" link OUT to yesid.dev — the final menu row, with an
 			     external ↗ affordance + rel="noopener". This replaces the old pill-click
@@ -657,9 +646,7 @@
 		transform: translateX(-50%);
 	}
 
-	/* SEARCH — the compact in-pill field (≥lg). Below lg it is removed (the menu
-	   dropdown carries search); a search icon is not needed in the pill there because
-	   the hamburger opens the dropdown. */
+	/* SEARCH — full field at ≥lg. Compact widths get a persistent icon in controls. */
 	.nav-search {
 		position: relative;
 		display: none;
@@ -723,6 +710,30 @@
 		display: none;
 	}
 
+	.nav-compact-search {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		padding: 0;
+		color: var(--secondary-foreground);
+		background: transparent;
+		border-radius: var(--radius-lg);
+		text-decoration: none;
+		transition:
+			color var(--duration-fast) var(--ease-default),
+			background var(--duration-fast) var(--ease-default);
+	}
+	.nav-compact-search:hover {
+		color: var(--primary);
+		background: var(--muted);
+	}
+	.nav-compact-search:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 1px;
+	}
+
 	/* Hamburger — morphs to an ✕ on open. 44×44 hit area, brand-tint lines. */
 	.nav-menu-toggle {
 		display: inline-flex;
@@ -783,7 +794,7 @@
 	}
 
 	/* MENU — one anchored dropdown at every width. Compact widths retain the
-	   primary + search groups; ≥1024 hides those duplicates because the pill owns
+	   primary group; ≥1024 hides that duplicate because the pill owns
 	   them. The transparent backdrop remains the click-away dismiss surface. */
 	.nav-menu-backdrop {
 		position: fixed;
@@ -829,23 +840,34 @@
 	}
 
 	.nav-menu-primary-group,
-	.nav-menu-group,
-	.nav-menu-search-group {
+	.nav-menu-group {
 		display: grid;
 		gap: 0.375rem;
 	}
 
-	/* The Search + Audit groups sit under a hairline; the Explore group leads the
-	   dropdown at compact widths, so it takes no top rule. */
-	.nav-menu-search-group,
+	.nav-menu-language {
+		display: none;
+		min-height: 44px;
+		align-items: center;
+		margin-top: 0.5rem;
+		padding: 0.5rem;
+		font-family: var(--font-heading);
+		font-size: var(--text-small);
+		font-weight: 600;
+		color: var(--foreground);
+		text-decoration: none;
+		border-top: 1px solid var(--border-subtle);
+	}
+
+	/* Audit sits under a hairline; Explore leads the compact dropdown. */
 	.nav-menu-group {
 		margin-top: 0.5rem;
 		padding-top: 0.5rem;
 		border-top: 1px solid var(--border-subtle);
 	}
 
-	/* The in-pill primary links + search are hidden below lg; the dropdown's Explore +
-	   Search groups are hidden at and above lg (the pill is the desktop entry). The
+	/* The in-pill primary links + full search are hidden below lg; the dropdown's
+	   Explore group is hidden at and above lg (the pill is the desktop entry). The
 	   two dividers flanking the hidden links/search collapse with them so a compact
 	   pill reads Brand · | · Controls, not three empty rules. */
 	@media (min-width: 1024px) {
@@ -858,8 +880,8 @@
 		.nav-search {
 			display: flex;
 		}
-		.nav-menu-primary-group,
-		.nav-menu-search-group {
+		.nav-compact-search,
+		.nav-menu-primary-group {
 			display: none;
 		}
 		.nav-menu-group {
@@ -868,69 +890,6 @@
 			border-top: 0;
 		}
 	}
-
-	.nav-menu-search {
-		position: relative;
-		display: flex;
-		align-items: center;
-		min-width: 0;
-	}
-
-	.nav-menu-search :global(.nav-search-icon) {
-		position: absolute;
-		left: 0.75rem;
-		pointer-events: none;
-		color: var(--muted-foreground);
-	}
-
-	.nav-menu-search-input {
-		width: 100%;
-		min-width: 0;
-		height: 44px;
-		padding: 0 2.75rem 0 2.1rem;
-		font-size: var(--text-small);
-		color: var(--foreground);
-		background: color-mix(in srgb, var(--muted) 70%, transparent);
-		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-md);
-		transition:
-			border-color var(--duration-fast) var(--ease-default),
-			box-shadow var(--duration-fast) var(--ease-default);
-	}
-
-	.nav-menu-search-input::placeholder {
-		color: var(--muted-foreground);
-	}
-
-	.nav-menu-search-input:focus-visible {
-		border-color: var(--primary);
-		/* Same amber ring as the in-pill field + SearchInput (keyboard-visible focus). */
-		outline: none;
-		box-shadow: 0 0 0 2px var(--ring);
-	}
-
-	.nav-menu-search-clear {
-		position: absolute;
-		right: 0.375rem;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 44px;
-		height: 44px;
-		color: var(--muted-foreground);
-		background: transparent;
-		border: none;
-		border-radius: var(--radius-md);
-		cursor: pointer;
-		transition: color var(--duration-fast) var(--ease-default);
-	}
-
-	.nav-menu-search-clear:hover,
-	.nav-menu-search-clear:focus-visible {
-		color: var(--foreground);
-		outline: none;
-	}
-
 	.nav-menu-link {
 		display: flex;
 		min-width: 0;
@@ -1167,13 +1126,29 @@
 		}
 	}
 
+	@media (max-width: 359px) {
+		.nav-controls {
+			gap: 0;
+		}
+		.nav-divider {
+			margin-inline: 4px;
+		}
+		.nav-controls :global([data-slot='lang-switch']) {
+			display: none;
+		}
+		.nav-menu-language {
+			display: flex;
+		}
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.nav-pill,
 		.nav-menu-toggle,
 		.nav-menu-line,
 		.nav-search-input,
-		.nav-menu-search-input,
+		.nav-compact-search,
 		.nav-menu-link,
+		.nav-menu-language,
 		.nav-menu-house {
 			transition: none;
 		}

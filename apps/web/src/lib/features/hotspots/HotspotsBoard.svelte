@@ -26,13 +26,20 @@
 	import type { HistoricCollectionIndex, HotspotEntry, Hotspots } from '$lib/v1/schemas';
 	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
 	import {
+		ArticleControlDisclosure,
+		ArticleControlStack,
 		createRailDisclosureController,
 		HistoryNavigator,
 		ResourceBoundary,
 		GrainPicker,
 		type GrainSegment,
 	} from '$lib/components/surface';
-	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
+	import {
+		ArticleHeader,
+		ArticleSectionStack,
+		DetailShell,
+		type ArticleMetaEntry,
+	} from '$lib/components/layout';
 	import { AbsentValue } from '$lib/components/edge';
 	import {
 		CollapsibleSection,
@@ -461,54 +468,61 @@
 
 	{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
 		{@const presentedGrainSegments = grainSegmentsFor(presentation)}
-		<CollapsibleSection
+		{#snippet historyControls()}
+			{#key historyCorrection.revision}
+				<HistoryNavigator
+					mode="date"
+					date={hotspots.selectedDate ?? undefined}
+					{dateOptions}
+					previousDate={hotspots.previousDate}
+					nextDate={hotspots.nextDate}
+					coverageText={historyCoverageText}
+					selectionText={historySelectionText}
+					announcement={historyCorrection.announcement}
+					liveAnnouncement={false}
+					{locale}
+					labels={t.history.navigator}
+					onDateChange={selectHistoryDate}
+				/>
+			{/key}
+		{/snippet}
+		{#snippet primaryControls()}
+			<GrainPicker
+				segments={presentedGrainSegments}
+				bind:value={grainKey}
+				label={t.grain.label}
+				variant="time-grid"
+			/>
+			{#each presentedGrainSegments as segment (segment.key)}
+				{#if segment.describedById}
+					<span id={segment.describedById} class="hotspots-reason" data-slot="controls-reason">
+						{disabledReason}
+					</span>
+				{/if}
+			{/each}
+		{/snippet}
+		{#snippet secondaryControls()}
+			<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
+		{/snippet}
+		{#snippet windowCaptionControl()}
+			<p class="hotspots-window" data-slot="active-window" aria-live="polite">
+				{windowCaption}
+			</p>
+		{/snippet}
+
+		<ArticleControlDisclosure
 			title={t.rail.controls}
 			bind:open={
 				() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
 			}
 		>
-			<div class="hotspots-control-body" data-slot="controls-body">
-				{#if hasHistoryNavigator}
-					{#key historyCorrection.revision}
-						<HistoryNavigator
-							mode="date"
-							date={hotspots.selectedDate ?? undefined}
-							{dateOptions}
-							previousDate={hotspots.previousDate}
-							nextDate={hotspots.nextDate}
-							coverageText={historyCoverageText}
-							selectionText={historySelectionText}
-							announcement={historyCorrection.announcement}
-							liveAnnouncement={false}
-							{locale}
-							labels={t.history.navigator}
-							onDateChange={selectHistoryDate}
-						/>
-					{/key}
-				{/if}
-				{#if showGrainPicker}
-					<GrainPicker
-						segments={presentedGrainSegments}
-						bind:value={grainKey}
-						label={t.grain.label}
-						variant="time-grid"
-					/>
-					{#each presentedGrainSegments as segment (segment.key)}
-						{#if segment.describedById}
-							<span id={segment.describedById} class="hotspots-reason" data-slot="controls-reason">
-								{disabledReason}
-							</span>
-						{/if}
-					{/each}
-				{/if}
-				{#if showWorstN}
-					<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
-				{/if}
-				<p class="hotspots-window" data-slot="active-window" aria-live="polite">
-					{windowCaption}
-				</p>
-			</div>
-		</CollapsibleSection>
+			<ArticleControlStack
+				history={hasHistoryNavigator ? historyControls : undefined}
+				primary={showGrainPicker ? primaryControls : undefined}
+				secondary={showWorstN ? secondaryControls : undefined}
+				caption={windowCaptionControl}
+			/>
+		</ArticleControlDisclosure>
 		{#if tocEntries.length > 0}
 			<div class="hotspots-rail-toc" data-slot="section-toc">
 				<TocNav
@@ -544,7 +558,7 @@
 					<AbsentValue variant="block" reason="no-observations" {locale} />
 				</div>
 			{:else}
-				<div class="hotspots-sections" data-slot="hotspots-sections">
+				<ArticleSectionStack data-slot="hotspots-sections">
 					{#each sectionDefs as section (section.id)}
 						{#if section.present}
 							<CollapsibleSection
@@ -604,24 +618,13 @@
 							</CollapsibleSection>
 						{/if}
 					{/each}
-				</div>
+				</ArticleSectionStack>
 			{/if}
 		</ResourceBoundary>
 	{/snippet}
 </DetailShell>
 
 <style>
-	.hotspots-control-body {
-		display: flex;
-		flex-direction: column;
-		align-items: stretch;
-		gap: 0.75rem;
-		min-width: 0;
-	}
-	.hotspots-control-body :global([data-slot='grain-picker']) {
-		min-width: 0;
-		flex-wrap: wrap;
-	}
 	.hotspots-reason {
 		position: absolute;
 		width: 1px;
@@ -653,12 +656,6 @@
 	}
 	.hotspots-rail-toc {
 		margin-top: 0.25rem;
-	}
-	.hotspots-sections {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-card-gap);
-		min-width: 0;
 	}
 	.hotspots-article-prose {
 		display: flex;

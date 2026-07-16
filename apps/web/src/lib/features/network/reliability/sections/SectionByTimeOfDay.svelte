@@ -15,7 +15,6 @@
 	import type { Locale } from '$lib/i18n';
 	import { RankedRow } from '$lib/components/dataviz';
 	import { SEVERE_DOMAIN } from '$lib/features/reliability/shiftGrains';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import NetworkTile from './NetworkTile.svelte';
@@ -45,13 +44,17 @@
 	const i = $derived(info('severe', copy.shiftSection));
 </script>
 
-<NetworkTile {dataSlot}>
-	<SectionHeading level={3} overline={copy.shiftSection}>
-		{#snippet explainer()}
-			<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
-		{/snippet}
-	</SectionHeading>
-	<p class="network-shift-caption">{copy.shift.rowCaption}</p>
+{#snippet shiftInfo()}
+	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+{/snippet}
+
+<NetworkTile
+	title={copy.shiftSection}
+	subtitle={copy.shift.rowCaption}
+	sectionKey="network-by-time-of-day"
+	{dataSlot}
+	headerActions={shiftInfo}
+>
 	<div class="network-ranked" role="list" aria-label={copy.shift.shiftSummary}>
 		{#each rows as row (row.key)}
 			<RankedRow
@@ -80,7 +83,6 @@
 		gap: 0.5rem;
 		max-width: 100%;
 	}
-	.network-shift-caption,
 	.network-shift-caveat {
 		margin: 0;
 		font-family: var(--font-mono);

@@ -96,7 +96,11 @@
 	aria-label={spec.title}
 	data-slot="heatmap-mark"
 >
-	<ScrollFrame gutterWidth="3rem" scrollLabel={spec.colAxisLabel} class="dv-heatmap-scroll">
+	<ScrollFrame
+		gutterWidth="3rem"
+		scrollLabel={spec.colAxisLabel ?? spec.title}
+		class="dv-heatmap-scroll"
+	>
 		{#snippet gutter()}
 			<!-- FROZEN gutter: the day (row) axis ONLY, on the SAME band scale as the cells so the
 			     labels stay aligned to their rows while the grid scrolls. xDomain is a trivial single

@@ -62,7 +62,7 @@ describe('AbsentValue — doctrine + a11y', () => {
 
 	it('the glyph is decorative (aria-hidden) — meaning carried by the text', () => {
 		const { container } = render(AbsentValue, { props: { reason: 'not-reported', locale: 'en' } });
-		const glyph = container.querySelector('.absent-value-glyph');
+		const glyph = container.querySelector('[data-slot="state-notice-glyph"]');
 		expect(glyph).toHaveAttribute('aria-hidden', 'true');
 	});
 });
@@ -70,10 +70,10 @@ describe('AbsentValue — doctrine + a11y', () => {
 describe('AbsentValue — variants', () => {
 	it('inline is the default variant', () => {
 		const { container } = render(AbsentValue, { props: { reason: 'not-reported', locale: 'en' } });
-		expect(container.querySelector('[data-slot="absent-value"]')).toHaveAttribute(
-			'data-variant',
-			'inline',
-		);
+		const root = container.querySelector('[data-slot="absent-value"]');
+		expect(root).toHaveAttribute('data-variant', 'inline');
+		expect(root).toHaveAttribute('data-component', 'state-notice');
+		expect(root).toHaveAttribute('data-presentation', 'pill');
 	});
 
 	it('block renders a status region', () => {
@@ -82,6 +82,8 @@ describe('AbsentValue — variants', () => {
 		});
 		const root = container.querySelector('[data-slot="absent-value"]');
 		expect(root).toHaveAttribute('data-variant', 'block');
+		expect(root).toHaveAttribute('data-component', 'state-notice');
+		expect(root).toHaveAttribute('data-presentation', 'silo');
 		expect(root).toHaveAttribute('role', 'status');
 	});
 });

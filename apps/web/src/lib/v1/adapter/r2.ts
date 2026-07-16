@@ -12,15 +12,17 @@
 // We fall back to the contract defaults (snapshots/contract.py) when a manifest
 // pointer is omitted, so a partial manifest still resolves.
 //
-// Cache policy: the live tier reads with `cache: 'default'` (short TTL, freshness
-// matters); static + historic are long-TTL daily builds and read with
-// `cache: 'force-cache'`. The caller's `event.fetch` (ctx.fetch) is used in SSR
-// for request dedupe + payload inlining; otherwise the global fetch.
+// Cache policy follows URL mutability. Stable live/static/historic pointers use
+// `cache: 'default'` so normal HTTP freshness and revalidation apply. Strictly
+// generation-addressed history artifacts use `cache: 'force-cache'` because
+// their content cannot change. The caller's `event.fetch` (ctx.fetch) is used in
+// SSR for request dedupe + payload inlining; otherwise the global fetch.
 
 import type { z } from 'zod';
 import { resolveUrl, entityUrl } from '$lib/v1/config';
 import { getEntityJson, getEntityJsonWithBytes, sha256Hex, type FetchFn } from '$lib/v1/http';
 import type { AdapterCtx, ContentAdapter } from './types';
+import { browserAdapterManifest } from './browserManifest';
 
 import { ManifestSchema, type Manifest } from '$lib/v1/schemas/manifest';
 import { LabelsFileSchema } from '$lib/v1/schemas/labels';
@@ -110,10 +112,8 @@ const DEFAULTS = {
 
 const MANIFEST_MEMO_KEY = 'v1:manifest';
 
-// Per-tier cache hints. Live is short-TTL (freshness); static/historic are
-// daily builds and may serve from cache.
-const LIVE_CACHE: RequestCache = 'default';
-const SLOW_CACHE: RequestCache = 'force-cache';
+const MUTABLE_CACHE: RequestCache = 'default';
+const IMMUTABLE_CACHE: RequestCache = 'force-cache';
 let historyRefreshSequence = 0;
 
 function fetchOf(ctx?: AdapterCtx): FetchFn {
@@ -121,26 +121,38 @@ function fetchOf(ctx?: AdapterCtx): FetchFn {
 }
 
 /**
- * Fetch + memoize the manifest. Memoized on `ctx.cache` (App.Locals.v1Cache) so
- * a request that reads several families pays one manifest round-trip.
+ * Reuse the caller's authoritative manifest when supplied; otherwise fetch and
+ * memoize it on `ctx.cache` so related reads pay one manifest round-trip.
  */
 async function loadManifest(ctx?: AdapterCtx): Promise<Manifest> {
+	if (ctx?.manifest !== undefined) return ctx.manifest;
+	const bootManifest = browserAdapterManifest();
+	if (bootManifest !== null) return bootManifest;
 	const memo = ctx?.cache;
 	if (memo?.has(MANIFEST_MEMO_KEY)) {
-		return memo.get(MANIFEST_MEMO_KEY) as Manifest;
+		return await (memo.get(MANIFEST_MEMO_KEY) as Manifest | Promise<Manifest>);
 	}
 	const url = resolveUrl(DEFAULTS.manifest);
-	const manifest = await getEntityJson(url, ManifestSchema, 'manifest', fetchOf(ctx), {
-		cache: SLOW_CACHE,
+	const pending = getEntityJson(url, ManifestSchema, 'manifest', fetchOf(ctx), {
+		cache: MUTABLE_CACHE,
 		signal: ctx?.signal,
+	}).then((manifest) => {
+		// The manifest is the snapshot root — a 404 here is a real misconfig, not an
+		// empty entity. getEntityJson returns undefined on 404; surface it loudly.
+		if (manifest === undefined) {
+			throw new Error(`[v1.manifest] manifest not found at ${url}`);
+		}
+		return manifest;
 	});
-	// The manifest is the snapshot root — a 404 here is a real misconfig, not an
-	// empty entity. getEntityJson returns undefined on 404; surface it loudly.
-	if (manifest === undefined) {
-		throw new Error(`[v1.manifest] manifest not found at ${url}`);
+	memo?.set(MANIFEST_MEMO_KEY, pending);
+	try {
+		const manifest = await pending;
+		memo?.set(MANIFEST_MEMO_KEY, manifest);
+		return manifest;
+	} catch (error) {
+		if (memo?.get(MANIFEST_MEMO_KEY) === pending) memo.delete(MANIFEST_MEMO_KEY);
+		throw error;
 	}
-	memo?.set(MANIFEST_MEMO_KEY, manifest);
-	return manifest;
 }
 
 /** Read a whole-file family from a manifest-resolved relative path. */
@@ -173,7 +185,7 @@ async function readOptionalWhole<T>(
 ): Promise<T | null> {
 	const url = resolveUrl(relativePath);
 	const value = await getEntityJson(url, schema, label, fetchOf(ctx), {
-		cache: SLOW_CACHE,
+		cache: MUTABLE_CACHE,
 		signal: ctx?.signal,
 	});
 	return value ?? null;
@@ -194,11 +206,15 @@ async function readOptionalHistory<T>(
 	ctx?: AdapterCtx,
 ): Promise<T | null> {
 	const url = freshHistoryUrl(path, ctx?.freshHistoryParent);
+	const expectedSha = historyPointerPayloadSha(path);
 	const init = {
-		cache: ctx?.freshHistoryParent ? ('reload' as const) : SLOW_CACHE,
+		cache: ctx?.freshHistoryParent
+			? ('reload' as const)
+			: expectedSha === null
+				? MUTABLE_CACHE
+				: IMMUTABLE_CACHE,
 		signal: ctx?.signal,
 	};
-	const expectedSha = historyPointerPayloadSha(path);
 	if (expectedSha !== null) {
 		const raw = await getEntityJsonWithBytes(url, schema, label, fetchOf(ctx), init);
 		if (raw === undefined) return null;
@@ -272,7 +288,7 @@ async function readRawHistoryPartition<T>(
 	ctx?: AdapterCtx,
 ) {
 	const value = await getEntityJsonWithBytes(resolveUrl(path), schema, label, fetchOf(ctx), {
-		cache: SLOW_CACHE,
+		cache: IMMUTABLE_CACHE,
 		signal: ctx?.signal,
 	});
 	return value ?? null;
@@ -313,7 +329,7 @@ export const r2Adapter: ContentAdapter = {
 			const rel = manifest.labels?.[lang] ?? `labels/${lang}.json`;
 			const url = resolveUrl(rel);
 			const file = await getEntityJson(url, LabelsFileSchema, 'labels', fetchOf(ctx), {
-				cache: SLOW_CACHE,
+				cache: MUTABLE_CACHE,
 				signal: ctx?.signal,
 			});
 			return file?.labels ?? {};
@@ -327,7 +343,7 @@ export const r2Adapter: ContentAdapter = {
 				m.files.live.vehicles ?? DEFAULTS.live.vehicles,
 				VehiclesFileSchema,
 				'live.vehicles',
-				LIVE_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -337,7 +353,7 @@ export const r2Adapter: ContentAdapter = {
 				m.files.live.trips ?? DEFAULTS.live.trips,
 				TripsFileSchema,
 				'live.trips',
-				LIVE_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -347,7 +363,7 @@ export const r2Adapter: ContentAdapter = {
 				m.files.live.stop_departures ?? DEFAULTS.live.stop_departures,
 				StopDeparturesFileSchema,
 				'live.stopDepartures',
-				LIVE_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -357,7 +373,7 @@ export const r2Adapter: ContentAdapter = {
 				m.files.live.alerts ?? DEFAULTS.live.alerts,
 				AlertsFileSchema,
 				'live.alerts',
-				LIVE_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -367,7 +383,7 @@ export const r2Adapter: ContentAdapter = {
 				m.files.live.network ?? DEFAULTS.live.network,
 				NetworkFileSchema,
 				'live.network',
-				LIVE_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -380,7 +396,7 @@ export const r2Adapter: ContentAdapter = {
 				m.files.static?.routes_index ?? DEFAULTS.static.routes_index,
 				RoutesIndexSchema,
 				'static.routesIndex',
-				SLOW_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -392,7 +408,7 @@ export const r2Adapter: ContentAdapter = {
 				routeId,
 				RouteFileSchema,
 				'static.route',
-				SLOW_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -402,7 +418,7 @@ export const r2Adapter: ContentAdapter = {
 				m.files.static?.stops_index ?? DEFAULTS.static.stops_index,
 				StopsIndexSchema,
 				'static.stopsIndex',
-				SLOW_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -414,7 +430,7 @@ export const r2Adapter: ContentAdapter = {
 				stopId,
 				StopFileSchema,
 				'static.stop',
-				SLOW_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -529,7 +545,7 @@ export const r2Adapter: ContentAdapter = {
 				AlertArchivePageSchema,
 				'historic.alertArchivePage',
 				fetchOf(ctx),
-				{ cache: SLOW_CACHE, signal: ctx?.signal },
+				{ cache: IMMUTABLE_CACHE, signal: ctx?.signal, serverErrorRetries: 1 },
 			);
 			return value ?? null;
 		},
@@ -539,7 +555,7 @@ export const r2Adapter: ContentAdapter = {
 				m.files.historic?.network_trend ?? DEFAULTS.historic.network_trend,
 				NetworkTrendSchema,
 				'historic.networkTrend',
-				SLOW_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -549,7 +565,7 @@ export const r2Adapter: ContentAdapter = {
 				m.files.historic?.hotspots ?? DEFAULTS.historic.hotspots,
 				HotspotsSchema,
 				'historic.hotspots',
-				SLOW_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -559,7 +575,7 @@ export const r2Adapter: ContentAdapter = {
 				m.files.historic?.repeat_offenders ?? DEFAULTS.historic.repeat_offenders,
 				RepeatOffendersSchema,
 				'historic.repeatOffenders',
-				SLOW_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -569,7 +585,7 @@ export const r2Adapter: ContentAdapter = {
 				m.files.historic?.alert_history ?? DEFAULTS.historic.alert_history,
 				AlertHistorySchema,
 				'historic.alertHistory',
-				SLOW_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -579,7 +595,7 @@ export const r2Adapter: ContentAdapter = {
 				m.files.historic?.receipts_index ?? DEFAULTS.historic.receipts_index,
 				ReceiptsIndexSchema,
 				'historic.receiptsIndex',
-				SLOW_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -595,7 +611,7 @@ export const r2Adapter: ContentAdapter = {
 				RouteReliabilityIndexSchema,
 				'historic.routeReliabilityIndex',
 				fetchOf(ctx),
-				{ cache: SLOW_CACHE, signal: ctx?.signal },
+				{ cache: MUTABLE_CACHE, signal: ctx?.signal },
 			);
 			return value ?? null;
 		},
@@ -607,7 +623,7 @@ export const r2Adapter: ContentAdapter = {
 				date,
 				ReceiptSchema,
 				'historic.receipt',
-				SLOW_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -619,7 +635,7 @@ export const r2Adapter: ContentAdapter = {
 				routeId,
 				RouteReliabilitySchema,
 				'historic.routeReliability',
-				SLOW_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -631,7 +647,7 @@ export const r2Adapter: ContentAdapter = {
 				stopId,
 				StopReliabilitySchema,
 				'historic.stopReliability',
-				SLOW_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -648,7 +664,7 @@ export const r2Adapter: ContentAdapter = {
 			const rel = m.basemap ?? DEFAULTS.basemap;
 			const url = resolveUrl(rel);
 			const file = await getEntityJson(url, BasemapFileSchema, 'basemap', fetchOf(ctx), {
-				cache: SLOW_CACHE,
+				cache: MUTABLE_CACHE,
 				signal: ctx?.signal,
 			});
 			return file ?? null;
@@ -662,7 +678,7 @@ export const r2Adapter: ContentAdapter = {
 				m.files.historic?.provenance ?? DEFAULTS.provenance,
 				ProvenanceSchema,
 				'provenance',
-				SLOW_CACHE,
+				MUTABLE_CACHE,
 				ctx,
 			);
 		},
@@ -678,7 +694,7 @@ export const r2Adapter: ContentAdapter = {
 			const rel = m.files.live.data_health ?? DEFAULTS.live.data_health;
 			const url = resolveUrl(rel);
 			const value = await getEntityJson(url, DataHealthSchema, 'dataHealth', fetchOf(ctx), {
-				cache: LIVE_CACHE,
+				cache: MUTABLE_CACHE,
 				signal: ctx?.signal,
 			});
 			return value ?? null;

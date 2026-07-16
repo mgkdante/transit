@@ -7,7 +7,10 @@ describe('root layout SEO', () => {
 		const layout = readFileSync(resolve(process.cwd(), 'src/routes/+layout.svelte'), 'utf-8');
 		expect(layout).toContain('<SeoHead');
 		expect(layout).toContain('resolveRouteSeo');
-		expect(layout).toMatch(/title=\{seo\.title\}/);
+		expect(layout).toContain(
+			'const headTitle = $derived(isErrorStatus ? errorHead.title : seo.title)',
+		);
+		expect(layout).toMatch(/title=\{headTitle\}/);
 	});
 
 	it('SeoHead emits a non-empty <title> for axe and browser chrome', () => {

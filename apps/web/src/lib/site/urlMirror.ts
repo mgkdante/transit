@@ -12,10 +12,18 @@
 import { page } from '$app/state';
 import { replaceState } from '$app/navigation';
 
+function currentMirrorUrl(): URL {
+	const browserUrl = new URL(window.location.href);
+	const stateUrl = page.url;
+	return browserUrl.origin === stateUrl.origin && browserUrl.pathname === stateUrl.pathname
+		? browserUrl
+		: new URL(stateUrl);
+}
+
 export function mirrorSearchParam(key: string, value: string | null): void {
 	if (typeof window === 'undefined') return; // SSR: no URL to mirror
-	if (page.url.searchParams.get(key) === value) return; // already in sync — no write, no loop
-	const url = new URL(page.url);
+	const url = currentMirrorUrl();
+	if (url.searchParams.get(key) === value) return; // already in sync — no write, no loop
 	if (value === null) url.searchParams.delete(key);
 	else url.searchParams.set(key, value);
 	try {
@@ -28,16 +36,15 @@ export function mirrorSearchParam(key: string, value: string | null): void {
 
 /**
  * Mirror SEVERAL params in ONE replaceState. Use this — never N separate mirrorSearchParam calls
- * in the same tick — when a single view change touches multiple params (e.g. grain + from + to):
- * replaceState updates `page.url` ASYNCHRONOUSLY, so back-to-back single writes each clone the
- * STALE url and clobber one another (last write wins, dropping the others). Reading page.url ONCE
- * and writing the full set once is the only race-free option. `null` deletes a key; same
- * resilience contract as the singular form (idempotent no-op when nothing changes; swallows the
- * pre-router throw).
+ * in the same tick — when a single view change touches multiple params (e.g. grain + from + to).
+ * One atomic shallow write avoids intermediate URL states. Both helpers read the synchronous
+ * browser address when it belongs to the current page, because `page.url` can lag behind a prior
+ * shallow write. `null` deletes a key; same resilience contract as the singular form (idempotent
+ * no-op when nothing changes; swallows the pre-router throw).
  */
 export function mirrorSearchParams(params: Record<string, string | null>): void {
 	if (typeof window === 'undefined') return;
-	const url = new URL(page.url);
+	const url = currentMirrorUrl();
 	let changed = false;
 	for (const [key, value] of Object.entries(params)) {
 		const current = url.searchParams.get(key);

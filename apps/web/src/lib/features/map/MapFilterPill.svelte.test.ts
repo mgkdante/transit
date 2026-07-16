@@ -89,7 +89,7 @@ describe('MapFilterPill', () => {
 			'utf-8',
 		);
 
-		expect(source).toMatch(/bottom:\s*calc\(2\.5rem \+ env\(safe-area-inset-bottom, 0px\)\)/);
+		expect(source).toMatch(/bottom:\s*var\(--map-mobile-control-bottom\)/);
 		expect(source).toMatch(/left:\s*0\.75rem/);
 		expect(source).toMatch(/transform:\s*none/);
 		expect(source).toMatch(/max-height:\s*min\(72dvh,\s*calc\(100dvh - 7rem\)\)/);

@@ -14,7 +14,8 @@
 // are value-locked. The dataviz families are shared as of design v0.2.0, so
 // the whole dataviz scale is gate-locked to the brand base. As of design
 // v0.3.0 (P5.3a·E4) the shadow.glow-* basis and space.page-x floor were
-// reconciled to the brand base, shrinking the override register from 6 to 2.
+// reconciled to the brand base. The register now also documents Transit's calmer
+// public-dashboard type scale instead of allowing those changes to drift silently.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -34,12 +35,48 @@ const DECLARED_OVERRIDES: Record<string, { base: unknown; transit: unknown; why:
 	// P5.3a·E4 (design v0.3.0, 2026-07-03): the register dropped 6→2. transit
 	// RECONCILED the shadow.glow-{sm,md,lg} basis (--primary → --glow) and
 	// space.page-x mobile floor (1rem → 1.5rem) UP to the brand base, so those
-	// four paths are now SHARED-and-matching and need no override. The two
-	// scanability type re-pins below remain deliberate divergences.
-	'text.heading': {
-		base: { min: '1.25rem', preferred: '3vw', max: '1.5rem' },
-		transit: { min: '1.375rem', preferred: '3vw', max: '1.75rem' },
-		why: 'transit headings sized up one step for scanability on data pages',
+	// four paths are now SHARED-and-matching and need no override.
+	// Transit uses a calmer public-dashboard scale while keeping controls and dense
+	// chart annotations at the readable brand floors.
+	'text.hero': {
+		base: { min: '4rem', preferred: 'min(9vw, 11svh)', max: '8.125rem' },
+		transit: { min: '3.25rem', preferred: 'min(7.5vw, 9svh)', max: '6.5rem' },
+		why: 'citizen dashboard hero scale reduced for mobile and desktop scanability',
+	},
+	'text.hero-mobile': {
+		base: { min: '3rem', preferred: 'min(13vw, 8svh)', max: '4rem' },
+		transit: { min: '2.5rem', preferred: 'min(11vw, 7svh)', max: '3.25rem' },
+		why: 'compact hero scale prevents oversized mobile thesis text',
+	},
+	'text.display': {
+		base: { min: '2.5rem', preferred: '5vw', max: '4rem' },
+		transit: { min: '2.125rem', preferred: '4vw', max: '3.25rem' },
+		why: 'page display headings reduced one register',
+	},
+	'text.title': {
+		base: { min: '1.75rem', preferred: '4vw', max: '2.5rem' },
+		transit: { min: '1.625rem', preferred: '3vw', max: '2.125rem' },
+		why: 'surface titles reduced while preserving hierarchy',
+	},
+	'text.subheading': {
+		base: '1.1875rem',
+		transit: '1.125rem',
+		why: 'subheadings reduced to 18px',
+	},
+	'text.body': {
+		base: '1.0625rem',
+		transit: '1rem',
+		why: 'public dashboard body copy uses a readable 16px baseline',
+	},
+	'text.detail-body.mobile': {
+		base: '1.0625rem',
+		transit: '1rem',
+		why: 'longform mobile copy uses the 16px baseline',
+	},
+	'text.detail-body.desktop': {
+		base: '1.125rem',
+		transit: '1.0625rem',
+		why: 'longform desktop copy stays readable without 18px inflation',
 	},
 	'text.micro': {
 		base: '0.6875rem',

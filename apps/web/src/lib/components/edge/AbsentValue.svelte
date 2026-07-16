@@ -22,9 +22,9 @@
   "label, why" so AT announces the honest absence. Reduced-motion safe (static).
 -->
 <script lang="ts">
-	import { cn } from '$lib/utils';
 	import type { Locale } from '$lib/i18n';
 	import { describeAbsence, type AbsenceReasonKey } from '$lib/site/absence';
+	import StateNotice from './StateNotice.svelte';
 
 	type Variant = 'inline' | 'block';
 
@@ -51,100 +51,17 @@
 	const ariaLabel = $derived(`${d.label}, ${d.why}`);
 </script>
 
-{#if variant === 'inline'}
-	<span
-		class={cn('absent-value absent-value--inline', className)}
-		data-slot="absent-value"
-		data-variant="inline"
-		data-tone={d.tone}
-		aria-label={ariaLabel}
-	>
-		<!-- Subtle unknown glyph, the calm middle dot, decorative (text carries meaning). -->
-		<span class="absent-value-glyph" aria-hidden="true">·</span>
-		<span class="absent-value-label">{d.label}</span>
-		<span class="absent-value-sep" aria-hidden="true">·</span>
-		<span class="absent-value-why">{d.why}</span>
-	</span>
-{:else}
-	<div
-		class={cn('absent-value absent-value--block', className)}
-		data-slot="absent-value"
-		data-variant="block"
-		data-tone={d.tone}
-		role="status"
-		aria-label={ariaLabel}
-	>
-		<span class="absent-value-glyph" aria-hidden="true">·</span>
-		<span class="absent-value-label">{d.label}</span>
-		<p class="absent-value-why">{d.why}</p>
-	</div>
-{/if}
-
-<style>
-	/* The honest-absence accent rides the dataviz UNKNOWN scale (a DATA verdict),
-	   never the semantic affordance tokens. Calm + muted by design. */
-	.absent-value {
-		--absent-accent: var(--dataviz-status-unknown);
-		color: var(--muted-foreground);
-		font-family: var(--font-body);
-	}
-
-	/* Inline: a single muted in-row value, label · why. WRAPS gracefully — at a
-	   narrow container (e.g. a draggable-narrow detail panel) the label and why
-	   flow onto multiple lines instead of clipping or overflowing. The glyph and
-	   separator ride along as their own flex items, so a wrap breaks cleanly
-	   between the parts (and long unbroken tokens break mid-word as a last resort). */
-	.absent-value--inline {
-		display: inline-flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.375rem;
-		max-width: 100%;
-		padding: 0.125rem 0.5rem;
-		border: 1px solid color-mix(in srgb, var(--absent-accent) 38%, var(--border) 62%);
-		border-radius: var(--radius-pill);
-		background: color-mix(in srgb, var(--absent-accent) 12%, transparent);
-		font-size: var(--text-small);
-		line-height: 1.3;
-	}
-	.absent-value--inline .absent-value-label,
-	.absent-value--inline .absent-value-why {
-		min-width: 0;
-		overflow-wrap: anywhere;
-		word-break: break-word;
-	}
-	.absent-value--inline .absent-value-label {
-		font-weight: 600;
-		color: var(--foreground);
-	}
-
-	/* Block: a calm centered panel, glyph + label heading + why. */
-	.absent-value--block {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.375rem;
-		text-align: center;
-		padding: 1.5rem;
-	}
-	.absent-value--block .absent-value-label {
-		font-family: var(--font-heading);
-		font-weight: 700;
-		font-size: var(--text-body);
-		color: var(--foreground);
-	}
-	.absent-value--block .absent-value-why {
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
-		max-width: 24rem;
-		margin: 0;
-	}
-
-	/* The glyph carries the muted unknown accent (color + glyph + text). */
-	.absent-value-glyph,
-	.absent-value-sep {
-		color: var(--absent-accent);
-		font-family: var(--font-mono);
-		line-height: 1;
-	}
-</style>
+<StateNotice
+	title={d.label}
+	body={d.why}
+	glyph="·"
+	presentation={variant === 'inline' ? 'pill' : 'silo'}
+	tone="neutral"
+	role={variant === 'block' ? 'status' : undefined}
+	ariaLive={variant === 'block' ? 'polite' : undefined}
+	{ariaLabel}
+	class={className}
+	data-slot="absent-value"
+	data-variant={variant}
+	data-tone={d.tone}
+/>

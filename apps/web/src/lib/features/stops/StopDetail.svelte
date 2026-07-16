@@ -1,14 +1,11 @@
 <!--
   StopDetail — tabbed detail for one stop (slice-9.3).
 
-  Composes the surface spine's EntityDetail scaffold over four canonical tabs:
+  Composes the shared ArticleHeader + EntityDetail scaffold over three tabs:
 
-    next         LIVE  — the live store's per-stop departures board
-                         (live.index.byStopId.get(id)), with a freshness chip.
-    schedule    STATIC — the static stop's scheduled[] (route + headsign + times).
-    info        STATIC — position, code, accessibility + routes served.
-    reliability HISTORIC— per-period OTP/delay (→ ReliabilityPane) + by-route
-                         avg-delay breakdown.
+    detail      LIVE + STATIC — cohesive departures and stop-facts disclosures.
+    schedule    STATIC        — scheduled[] grouped by route and headsign.
+    reliability HISTORIC      — period, habit and retained-history analysis.
 
   Static + historic reads use createResource (browser-side, reactive to `id`);
   the live tier uses createLiveStore (start on mount, stop on destroy). Each pane
@@ -23,7 +20,8 @@
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { mirrorSearchParam } from '$lib/site/urlMirror';
+	import type { DetailTab } from '$lib/site/detailTabs';
+	import { createDetailTabController } from '$lib/site/detailTabController.svelte';
 	import {
 		getStop,
 		getStopReliability,
@@ -35,7 +33,7 @@
 		type StopReliability,
 		type StopDeparture,
 	} from '$lib/v1';
-	import { createResource } from '$lib/v1/resource.svelte';
+	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
 	import { sharedClock } from '$lib/stores';
 	import { minutesSinceMidnight } from '$lib/utils/time';
 	import { inferAbsenceReason, stopServiceWindow } from '$lib/site/serviceWindow';
@@ -50,17 +48,21 @@
 		MapDrilldownLink,
 		AffectedAlerts,
 	} from '$lib/components/surface';
-	import { EdgeState } from '$lib/components/edge';
-	import { ControlsRail } from '$lib/components/layout';
+	import { EdgeState, StateNotice } from '$lib/components/edge';
+	import {
+		ArticleHeader,
+		ArticleSectionStack,
+		ControlsRail,
+		type ArticleMetaEntry,
+	} from '$lib/components/layout';
+	import { articleNavigationCopy, CollapsibleSection, type TocEntry } from '$lib/components/shared';
+	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { Separator } from '$lib/components/ui/separator';
+	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+	import type { IdentitySeed } from '$lib/v1/serverContext';
 	import { layout, mapHrefFor } from '$lib/nav';
-	import StopLabel from '$lib/components/brand/StopLabel.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
-	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
-	import { cornerMetaLabels } from '$lib/components/brand';
 	import { Badge } from '$lib/components/ui/badge';
 	import { formatUtc } from '$lib/utils/time';
 	import { StopReliabilitySurface } from './reliability';
@@ -69,16 +71,23 @@
 		type StopHistoryResource,
 	} from './reliability/data/stopHistoryResource.svelte';
 	import { detailCopy } from './stops.copy';
+	import { stopReliabilityCopy } from './reliability/stops-reliability.copy';
 
 	interface StopDetailProps {
 		/** The stop id from the route param. */
 		id: string;
+		/** Server-resolved identity used by the article cover on the first render. */
+		seed: IdentitySeed;
+		/** Server-loaded static stop; absent only when that read failed. */
+		stopSeed?: ResourceSeed<StopFile | null>;
 	}
 
-	let { id }: StopDetailProps = $props();
+	let { id, seed, stopSeed }: StopDetailProps = $props();
 
 	const locale: Locale = getLocale();
 	const t = $derived(detailCopy[locale]);
+	const reliabilityT = $derived(stopReliabilityCopy[locale]);
+	const articleNav = $derived(articleNavigationCopy[locale]);
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 
 	// Per-route scheduled-times cap (the 5-col grid is dense, so a slightly higher cap
@@ -86,44 +95,80 @@
 	// the honest "+N more" note carries the remainder).
 	const SCHEDULE_CAP = 30;
 
-	type TabKey = 'next' | 'schedule' | 'info' | 'reliability';
 	const tabs = $derived([
-		{ key: 'next', label: t.tabs.next },
+		{ key: 'detail', label: t.tabs.detail },
 		{ key: 'schedule', label: t.tabs.schedule },
-		{ key: 'info', label: t.tabs.info },
 		{ key: 'reliability', label: t.tabs.reliability },
-	] as const satisfies readonly { key: TabKey; label: string }[]);
+	] as const satisfies readonly { key: DetailTab; label: string }[]);
+	const detailTocEntries = $derived<TocEntry[]>([
+		{
+			id: 'stop-detail-departures',
+			title: t.next.heading,
+			level: 2,
+			badge: { kind: 'number', value: 1 },
+			children: [],
+		},
+		{
+			id: 'stop-detail-facts',
+			title: t.detailCard.title,
+			level: 2,
+			badge: { kind: 'number', value: 2 },
+			children: [],
+		},
+	]);
+	const scheduleTocEntries = $derived<TocEntry[]>([
+		{
+			id: 'stop-schedule-service',
+			title: t.schedule.heading,
+			level: 2,
+			badge: { kind: 'number', value: 1 },
+			children: [],
+		},
+	]);
+	const articleToc = $derived({
+		entries: { detail: detailTocEntries, schedule: scheduleTocEntries },
+		heading: articleNav.heading,
+		sectionKey: `stop-${id}-toc`,
+		counterPrefix: 'SEC',
+		openAria: articleNav.openAria,
+		closeAria: articleNav.closeAria,
+	});
 
-	// A1: deep-linkable tab (RouteDetail parity). Seed from ?tab on load (an unknown
-	// value falls to the 'next' default — the URL is a HINT, never a data source), then
-	// mirror the active tab to ?tab so a view is shareable. replaceState (not pushState)
-	// keeps tab switches out of the history stack; the 'next' default is OMITTED for a
-	// clean canonical URL. ?tab is a DIFFERENT key than the surface's ?grain, so the two
-	// mirrors merge without clobbering (mirrorSearchParam is single-key).
-	const TAB_KEYS: readonly TabKey[] = ['next', 'schedule', 'info', 'reliability'];
-	const readTab = (): TabKey => {
-		const p = page.url.searchParams.get('tab');
-		return TAB_KEYS.includes(p as TabKey) ? (p as TabKey) : 'next';
-	};
-	let active = $state<TabKey>(readTab());
-	$effect(() => mirrorSearchParam('tab', active === 'next' ? null : active));
+	// One controller owns both directions: external URL changes update the selected tab,
+	// while local tab clicks use replaceState and omit the canonical Detail parameter.
+	const detailTabController = createDetailTabController(page.url);
+	$effect(() => detailTabController.syncFromUrl(page.url));
 
 	// --- live tier: per-stop departures board --------------------------------
 	const manifest = getV1Context().manifest;
-	const live = createLiveStore(manifest);
+	const live = createLiveStore(manifest, {
+		families: ['departures', 'alerts', 'network'],
+	});
 	onMount(() => {
 		live.start();
 		return () => live.stop();
 	});
 
-	// CornerMeta readouts (A4) — REAL data only: provider (always, from the manifest)
-	// + the live-tier generated stamp (the departures board's freshness); a missing
-	// datum drops its corner (never fabricated).
-	const cm = cornerMetaLabels[locale];
 	const shortName = manifest.short_name?.trim() || manifest.display_name;
-	const cornerGeneratedStamp = $derived(
-		live.generatedUtc != null ? formatUtc(live.generatedUtc, locale) : null,
+	const articleTags = $derived([`${t.article.stopId} ${id}`, shortName]);
+	const articleEdgeLeft = $derived(`${t.kicker} ${id}`);
+	const articleEdgeRight = $derived(
+		live.generatedUtc ? formatUtc(live.generatedUtc, locale) : shortName,
 	);
+	const articleMeta = $derived.by<ArticleMetaEntry[]>(() => {
+		const values: ArticleMetaEntry[] = [
+			{ label: t.article.stopId, text: id },
+			{ label: t.article.provider, text: shortName },
+		];
+		if (live.generatedUtc != null) {
+			values.push({
+				label: t.article.updated,
+				text: formatUtc(live.generatedUtc, locale),
+				datetime: live.generatedUtc,
+			});
+		}
+		return values;
+	});
 	// Departures for THIS stop from the authoritative per-stop board. null before
 	// the first tick (skeleton); [] is a real "no upcoming departures" verdict.
 	const departures = $derived<readonly StopDeparture[] | null>(
@@ -131,7 +176,15 @@
 	);
 
 	// --- static tier: stop detail (info + schedule) --------------------------
-	const stop = createResource(() => getStop(id));
+	const stop = createResource(() => getStop(id), {
+		key: () => id,
+		seed: () => stopSeed,
+	});
+	const articleTitle = $derived(
+		seed.name.trim() === id && stop.data?.id === id
+			? stop.data.name?.trim() || seed.name
+			: seed.name,
+	);
 
 	// --- live tier: service alerts affecting THIS stop ------------------------
 	// An alert affects this stop if it lists the stop id OR its public code in
@@ -152,7 +205,22 @@
 	// stop reliability probe stays unconditional + fail-soft (404 → null → empty
 	// state). A missing-snapshot 404 here is suppressed at the edge (one-time cache
 	// purge / future stops_index flag), not in this client code.
-	const reliability = createResource(() => getStopReliability(id));
+	const reliability = createResource(() => getStopReliability(id), { key: () => id });
+	const stopSummaryPeriod = $derived.by(() => {
+		const rows = (reliability.data?.periods ?? []).filter((period) => period.grain === 'day');
+		return rows.at(-1) ?? null;
+	});
+	const stopSummarySevere = $derived(
+		stopSummaryPeriod?.severe_pct == null
+			? null
+			: `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(stopSummaryPeriod.severe_pct)}%`,
+	);
+	const stopSummaryDelay = $derived(
+		stopSummaryPeriod?.avg_delay_min == null
+			? null
+			: `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(stopSummaryPeriod.avg_delay_min)} ${reliabilityT.trend.minUnit}`,
+	);
+	const hasStopSummary = $derived(stopSummarySevere != null || stopSummaryDelay != null);
 
 	function historyFor(stopId: string): StopHistoryResource {
 		return createStopHistoryResource(
@@ -261,8 +329,8 @@
 	// per-stop live-board filter state would otherwise carry over stale. Reading `id`
 	// registers the dependency: on each stop change we reset the departure filters for
 	// the new stop. Grain now lives in <StopReliabilitySurface> (codec-seeded, re-mounts
-	// with the keyed pane); `active` is owned by the ?tab mirror + seed, so neither is
-	// reset here (a deep-linked tab must survive).
+	// with the keyed pane); the tab controller owns the URL-backed active state, so it
+	// is not reset here (a deep-linked tab must survive).
 	$effect(() => {
 		void id;
 		statusFilter.clear();
@@ -305,282 +373,348 @@
 		});
 	});
 
-	// A departure's delay caption via the site-wide shared delayLabel. `t.next` omits
-	// a `noDelay` string, so an absent delay falls back to "on time" — the scheduled
-	// departure board reads no-realtime-delta as on time (NOT "no data"), preserving
-	// this surface's prior null/0 → on-time semantics.
+	// A departure's delay caption comes from the site-wide shared delayLabel. `t.next`
+	// supplies localized no-data copy so an absent realtime delta is never presented
+	// as an on-time observation.
 </script>
 
-<EntityDetail
-	kicker={t.kicker}
-	back={{ href: localizeHref('/stops', locale), label: t.back }}
-	lede={t.detailLede}
-	{tabs}
-	bind:active
->
-	{#snippet cornerMeta()}
-		<!-- A4: blueprint-margin corners — stop id · generated · provider (real data
-		     from the manifest + the live tier). aria-hidden, hidden < 768px. -->
-		<CornerMeta>
-			{#snippet topLeft()}<span class="stop-corner">{cm.stop} · {id}</span>{/snippet}
-			{#snippet topRight()}{#if cornerGeneratedStamp}<span class="stop-corner"
-						>{cm.generated} · {cornerGeneratedStamp}</span
-					>{/if}{/snippet}
-			{#snippet bottomLeft()}<span class="stop-corner">{cm.provider} · {shortName}</span>{/snippet}
-		</CornerMeta>
-	{/snippet}
+{#snippet stopInformation()}
+	<ResourceBoundary resource={stop} lang={locale}>
+		{#snippet children(s: StopFile | null)}
+			{#if s == null}
+				<EdgeState variant="empty" lang={locale} layout={edgeLayout} />
+			{:else}
+				<div class="stop-info">
+					<div class="stop-info-facts">
+						<div class="stop-info-metrics">
+							<MetricDisplay
+								value={`${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`}
+								label={t.info.position}
+								size="sm"
+							/>
+							{#if s.code}
+								<MetricDisplay value={s.code} label={t.info.code} size="sm" />
+							{/if}
+							{#if s.wheelchair === true}
+								<MetricDisplay value={t.info.wheelchairYes} label={t.info.wheelchair} size="sm" />
+							{:else if s.wheelchair === false}
+								<MetricDisplay value={t.info.wheelchairNo} label={t.info.wheelchair} size="sm" />
+							{:else}
+								<MetricDisplay
+									value={null}
+									absentReason="no-observations"
+									{locale}
+									label={t.info.wheelchair}
+									size="sm"
+								/>
+							{/if}
+						</div>
+						{#if (s.routes_served?.length ?? 0) > 0}
+							<div class="stop-info-routes">
+								<SectionLabel text={t.info.routesServed} variant="metric" />
+								<ul class="stop-info-route-chips">
+									{#each s.routes_served ?? [] as route (route)}
+										<li><Badge variant="tag" size="sm">{route}</Badge></li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+					</div>
+					<AffectedAlerts alerts={stopAlerts} {locale} copy={t.alerts} testId="stop-alerts" />
+				</div>
+			{/if}
+		{/snippet}
+	</ResourceBoundary>
+{/snippet}
 
-	{#snippet header()}
-		<!-- The framing head the stop index already earns (kicker + display title +
-		     lede, §C5.6): the stop NAME is the display-scale h1 (+ brand dot); the
-		     mono ARRÊT plate demotes to a meta chip below. -->
-		<SectionHeading heading={stop.data?.name ?? `#${id}`} level={1} dot />
-	{/snippet}
-
-	{#snippet meta()}
-		<StopLabel stop={id} label="" class="stop-detail-plate" />
-		<MapDrilldownLink
-			href={mapHrefFor({ stop: id }, locale)}
-			label={t.viewOnMap}
-			ariaLabel={t.viewStopOnMap(id)}
+{#snippet stopSummaryBanner()}
+	<div
+		class="stop-reliability-summary"
+		data-slot="stop-reliability-summary"
+		aria-label={reliabilityT.paneHeading}
+	>
+		<MetricDisplay
+			value={stopSummarySevere}
+			absentReason="no-observations"
+			{locale}
+			label={reliabilityT.metrics.severe}
+			size="sm"
 		/>
+		<MetricDisplay
+			value={stopSummaryDelay}
+			absentReason="no-observations"
+			{locale}
+			label={reliabilityT.metrics.avgDelay}
+			size="sm"
+		/>
+	</div>
+{/snippet}
+
+<EntityDetail
+	{tabs}
+	{articleToc}
+	bind:active={detailTabController.active}
+	paneOwnedRailKeys={['reliability']}
+	banner={hasStopSummary ? stopSummaryBanner : undefined}
+>
+	{#snippet articleHeader()}
+		<ArticleHeader
+			watermark={t.article.watermark}
+			category={t.kicker}
+			title={articleTitle}
+			tags={articleTags}
+			tagsAria={t.article.tagsAria}
+			backHref={localizeHref('/stops', locale)}
+			backLabel={t.back}
+			meta={articleMeta}
+			edgeLeft={articleEdgeLeft}
+			edgeRight={articleEdgeRight}
+			titleId="stop-title"
+		>
+			{#snippet controls()}
+				<QuietModeButton />
+			{/snippet}
+			{#snippet actions()}
+				<MapDrilldownLink
+					href={mapHrefFor({ stop: id }, locale)}
+					label={t.viewOnMap}
+					ariaLabel={t.viewStopOnMap(id)}
+				/>
+			{/snippet}
+		</ArticleHeader>
 	{/snippet}
 
 	{#snippet pane(key)}
-		{#if key === 'next'}
-			<!-- LIVE: per-stop departures board. Skeleton until the first tick. -->
-			{#if departures == null}
-				<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
-			{:else}
-				<!-- D3: the live departures board framed in the ONE TerminalPanel idiom.
-				     Existing board content wrapped untouched; the live freshness stamp
-				     moves to the panel's meta slot (the terminal's right readout). -->
-				<TerminalPanel
-					title={t.next.terminal.title}
-					tag={t.next.terminal.tag}
-					class="stop-next-terminal"
-				>
-					{#snippet meta()}
-						<FreshnessStamp
-							variant="live"
-							generatedUtc={live.generatedUtc}
-							ageSeconds={live.ageSeconds}
-							isStale={live.isStale}
-							{locale}
-						/>
-					{/snippet}
-					<div class="stop-next">
-						<div class="stop-next-head">
-							<SectionHeading level={2} overline={t.next.heading} />
-						</div>
-						{#if departures.length === 0}
-							<!-- HONEST ABSENCE: an empty live board STATES the inferred reason
+		{#if key === 'detail'}
+			<ArticleSectionStack>
+				{#key id}
+					<CollapsibleSection
+						title={t.next.heading}
+						headerVariant="article-summary"
+						index={0}
+						anchor="stop-detail-departures"
+						sectionKey={`stop-detail-${id}-departures`}
+						closeSignal={quietModeStore.closeSignal}
+						openSignal={quietModeStore.openSignal}
+						bulkCollapsed={quietModeStore.enabled}
+					>
+						{#snippet headerActions()}
+							<FreshnessStamp
+								variant="live"
+								generatedUtc={live.generatedUtc}
+								ageSeconds={live.ageSeconds}
+								isStale={live.isStale}
+								{locale}
+							/>
+						{/snippet}
+						<!-- LIVE: per-stop departures board. Skeleton until the first tick. -->
+						{#if departures == null}
+							<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
+						{:else}
+							<div class="stop-next">
+								{#if departures.length === 0}
+									<!-- HONEST ABSENCE: an empty live board STATES the inferred reason
 						     (service closed — opens at FIRST / no service at this hour /
 						     scheduled-but-silent) from the stop's own window + the live silent
 						     signal. emptyReason is null when no reason is derivable → the plain
 						     honest no-data copy, never a fabricated reason. -->
-							<EdgeState
-								variant="empty"
-								lang={locale}
-								layout={edgeLayout}
-								emptyReason={departuresAbsenceReason}
-							/>
-						{:else}
-							<!-- Combinable status chips + an optional by-route chip narrow the
+									<EdgeState
+										variant="empty"
+										lang={locale}
+										layout={edgeLayout}
+										emptyReason={departuresAbsenceReason}
+									/>
+								{:else}
+									<!-- Combinable status chips + an optional by-route chip narrow the
 						     board, collected into ONE ControlsRail (quiet infra chrome,
 						     discerned from the data canvas). Both default off (everything
 						     shown); the data marks are unchanged — these are INTERACTION
 						     controls, so --primary lives only on the active chip. -->
-							<ControlsRail label={t.next.controlsLabel}>
-								<div class="stop-chip-group" role="group" aria-label={t.next.filter.statusLabel}>
-									{#each DEPARTURE_TONES as tone (tone)}
-										<button
-											type="button"
-											class="stop-chip"
-											class:stop-chip--active={statusFilter.has(tone)}
-											aria-pressed={statusFilter.has(tone)}
-											onclick={() => toggleStatus(tone)}
+									<ControlsRail label={t.next.controlsLabel}>
+										<div
+											class="stop-chip-group"
+											role="group"
+											aria-label={t.next.filter.statusLabel}
 										>
-											<!-- colour + glyph redundancy: the tone's status fill tints the dot,
+											{#each DEPARTURE_TONES as tone (tone)}
+												<button
+													type="button"
+													class="stop-chip"
+													class:stop-chip--active={statusFilter.has(tone)}
+													aria-pressed={statusFilter.has(tone)}
+													onclick={() => toggleStatus(tone)}
+												>
+													<!-- colour + glyph redundancy: the tone's status fill tints the dot,
 										     and the glyph carries the meaning without colour (a11y). -->
-											<span
-												class="stop-chip-glyph"
-												style:color={toneColorVar(tone)}
-												aria-hidden="true">{TONE_GLYPH[tone]}</span
+													<span
+														class="stop-chip-glyph"
+														style:color={toneColorVar(tone)}
+														aria-hidden="true">{TONE_GLYPH[tone]}</span
+													>
+													{toneLabel(tone)}
+												</button>
+											{/each}
+										</div>
+										{#if departureRoutes.length > 1}
+											<div
+												class="stop-chip-group"
+												role="group"
+												aria-label={t.next.filter.routeLabel}
 											>
-											{toneLabel(tone)}
-										</button>
-									{/each}
-								</div>
-								{#if departureRoutes.length > 1}
-									<div class="stop-chip-group" role="group" aria-label={t.next.filter.routeLabel}>
-										<button
-											type="button"
-											class="stop-chip"
-											class:stop-chip--active={routeFilter == null}
-											aria-pressed={routeFilter == null}
-											onclick={() => (routeFilter = null)}
-										>
-											{t.next.filter.allRoutes}
-										</button>
-										{#each departureRoutes as route (route)}
-											<button
-												type="button"
-												class="stop-chip"
-												class:stop-chip--active={routeFilter === route}
-												aria-pressed={routeFilter === route}
-												onclick={() => (routeFilter = routeFilter === route ? null : route)}
-											>
-												{route}
-											</button>
-										{/each}
-									</div>
-								{/if}
-								<p class="stop-departures-count" aria-live="polite">
-									{t.next.filter.showing(filteredDepartures?.length ?? 0, departures.length)}
-								</p>
-							</ControlsRail>
+												<button
+													type="button"
+													class="stop-chip"
+													class:stop-chip--active={routeFilter == null}
+													aria-pressed={routeFilter == null}
+													onclick={() => (routeFilter = null)}
+												>
+													{t.next.filter.allRoutes}
+												</button>
+												{#each departureRoutes as route (route)}
+													<button
+														type="button"
+														class="stop-chip"
+														class:stop-chip--active={routeFilter === route}
+														aria-pressed={routeFilter === route}
+														onclick={() => (routeFilter = routeFilter === route ? null : route)}
+													>
+														{route}
+													</button>
+												{/each}
+											</div>
+										{/if}
+										<p class="stop-departures-count" aria-live="polite">
+											{t.next.filter.showing(filteredDepartures?.length ?? 0, departures.length)}
+										</p>
+									</ControlsRail>
 
-							<!-- Hazard tape discerns the controls zone from the data canvas. -->
-							<Separator variant="hazard" hazardSize="sm" />
+									<!-- Hazard tape discerns the controls zone from the data canvas. -->
+									<Separator variant="hazard" hazardSize="sm" />
 
-							{#if (filteredDepartures?.length ?? 0) === 0}
-								<p class="stop-departures-empty" data-testid="departures-filter-empty">
-									{t.next.filter.noMatches}
-								</p>
-							{:else}
-								<!-- The departure ROW LIST is the reusable ScheduleTable (board mode) —
-								     route · eta · colour+glyph delay caption, verbatim from the shared
-								     kernel. The filter/count/skeleton/empty state stay in StopDetail. -->
-								<ScheduleTable
-									mode="board"
-									rows={(filteredDepartures ?? []).map(
-										(d): ScheduleRow => ({
-											kind: 'board',
-											route: d.route,
-											eta_utc: d.eta_utc,
-											delay_min: d.delay_min,
-											trip: d.trip,
-										}),
-									)}
-									{locale}
-									delayCopy={t.next}
-									routeFallback={t.next.route}
-								/>
-							{/if}
-						{/if}
-					</div>
-				</TerminalPanel>
-			{/if}
-		{:else if key === 'schedule'}
-			<!-- STATIC: scheduled service grouped by route. -->
-			<ResourceBoundary
-				resource={stop}
-				lang={locale}
-				isEmpty={(s: StopFile | null) => (s?.scheduled?.length ?? 0) === 0}
-			>
-				{#snippet children(s: StopFile | null)}
-					<div class="stop-schedule">
-						<SectionHeading level={2} overline={t.schedule.heading} />
-						<!-- The per-route schedule grid is the reusable ScheduleTable (grid mode) —
-						     route code + headsign + the column-major times grid + honest per-route
-						     absence, verbatim. The pane-level empty/skeleton stays on ResourceBoundary. -->
-						<ScheduleTable
-							mode="grid"
-							rows={(s?.scheduled ?? []).map(
-								(entry): ScheduleRow => ({
-									kind: 'grid',
-									route: entry.route,
-									headsign: entry.headsign,
-									times: entry.times ?? [],
-								}),
-							)}
-							{locale}
-							cap={SCHEDULE_CAP}
-							moreLabel={t.schedule.moreTimes}
-						/>
-					</div>
-				{/snippet}
-			</ResourceBoundary>
-		{:else if key === 'info'}
-			<!-- STATIC: position, code, accessibility + routes served. -->
-			<ResourceBoundary resource={stop} lang={locale}>
-				{#snippet children(s: StopFile | null)}
-					{#if s == null}
-						<EdgeState variant="empty" lang={locale} layout={edgeLayout} />
-					{:else}
-						<!-- A3: an explicit 2-column layout — LEFT = the stop's own facts
-						     (position / code / accessibility / routes served), RIGHT = live service
-						     alerts. Collapses to one column on mobile; if there are no alerts the
-						     AffectedAlerts stands down and the left column spans the grid. -->
-						<div class="stop-info">
-							<div class="stop-info-facts">
-								<div class="stop-info-metrics">
-									<MetricDisplay
-										value={`${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`}
-										label={t.info.position}
-										size="sm"
-									/>
-									{#if s.code}
-										<MetricDisplay value={s.code} label={t.info.code} size="sm" />
-									{/if}
-									<!-- TRI-STATE accessibility: wheelchair is a plain optional boolean
-									     (NOT the GTFS 0/1/2 enum), so true→accessible, false→not
-									     accessible, ABSENT→an honest "unknown" (the styled absence chip)
-									     rather than silently omitting the field. -->
-									{#if s.wheelchair === true}
-										<MetricDisplay
-											value={t.info.wheelchairYes}
-											label={t.info.wheelchair}
-											size="sm"
-										/>
-									{:else if s.wheelchair === false}
-										<MetricDisplay
-											value={t.info.wheelchairNo}
-											label={t.info.wheelchair}
-											size="sm"
+									{#if (filteredDepartures?.length ?? 0) === 0}
+										<StateNotice
+											title={t.next.filter.noMatches}
+											presentation="silo"
+											role="status"
+											ariaLive="polite"
+											data-testid="departures-filter-empty"
 										/>
 									{:else}
-										<MetricDisplay
-											value={null}
-											absentReason="no-observations"
+										<!-- The departure ROW LIST is the reusable ScheduleTable (board mode) —
+								     route · eta · colour+glyph delay caption, verbatim from the shared
+								     kernel. The filter/count/skeleton/empty state stay in StopDetail. -->
+										<ScheduleTable
+											mode="board"
+											rows={(filteredDepartures ?? []).map(
+												(d): ScheduleRow => ({
+													kind: 'board',
+													route: d.route,
+													eta_utc: d.eta_utc,
+													delay_min: d.delay_min,
+													trip: d.trip,
+												}),
+											)}
 											{locale}
-											label={t.info.wheelchair}
-											size="sm"
+											labels={t.next.table}
+											delayCopy={t.next}
+											routeFallback={t.next.route}
 										/>
 									{/if}
-								</div>
-								{#if (s.routes_served?.length ?? 0) > 0}
-									<div class="stop-info-routes">
-										<SectionLabel text={t.info.routesServed} variant="metric" />
-										<ul class="stop-info-route-chips">
-											{#each s.routes_served ?? [] as route (route)}
-												<li><Badge variant="tag" size="sm">{route}</Badge></li>
-											{/each}
-										</ul>
-									</div>
 								{/if}
 							</div>
-							<!-- LIVE: service alerts affecting this stop (stands down when none). -->
-							<AffectedAlerts alerts={stopAlerts} {locale} copy={t.alerts} testId="stop-alerts" />
-						</div>
-					{/if}
-				{/snippet}
-			</ResourceBoundary>
+						{/if}
+					</CollapsibleSection>
+
+					<CollapsibleSection
+						title={t.detailCard.title}
+						subtitle={t.detailCard.summary}
+						headerVariant="article-summary"
+						index={1}
+						anchor="stop-detail-facts"
+						sectionKey={`stop-detail-${id}-facts`}
+						closeSignal={quietModeStore.closeSignal}
+						openSignal={quietModeStore.openSignal}
+						bulkCollapsed={quietModeStore.enabled}
+					>
+						{@render stopInformation()}
+					</CollapsibleSection>
+				{/key}
+			</ArticleSectionStack>
+		{:else if key === 'schedule'}
+			<!-- STATIC: scheduled service grouped by route. -->
+			<ArticleSectionStack data-section-sequence="stop-schedule">
+				{#key id}
+					<CollapsibleSection
+						title={t.schedule.heading}
+						headerVariant="article-summary"
+						index={0}
+						anchor="stop-schedule-service"
+						sectionKey={`stop-schedule-${id}-service`}
+						closeSignal={quietModeStore.closeSignal}
+						openSignal={quietModeStore.openSignal}
+						bulkCollapsed={quietModeStore.enabled}
+					>
+						<ResourceBoundary
+							resource={stop}
+							lang={locale}
+							isEmpty={(s: StopFile | null) => (s?.scheduled?.length ?? 0) === 0}
+						>
+							{#snippet children(s: StopFile | null)}
+								<div class="stop-schedule">
+									<!-- The per-route schedule grid is the reusable ScheduleTable (grid mode) —
+								     route code + headsign + the column-major times grid + honest per-route
+								     absence, verbatim. The pane-level empty/skeleton stays on ResourceBoundary. -->
+									<ScheduleTable
+										mode="grid"
+										rows={(s?.scheduled ?? []).map(
+											(entry): ScheduleRow => ({
+												kind: 'grid',
+												route: entry.route,
+												headsign: entry.headsign,
+												times: entry.times ?? [],
+											}),
+										)}
+										{locale}
+										labels={t.schedule.table}
+										cap={SCHEDULE_CAP}
+										moreLabel={t.schedule.moreTimes}
+									/>
+								</div>
+							{/snippet}
+						</ResourceBoundary>
+					</CollapsibleSection>
+				{/key}
+			</ArticleSectionStack>
 		{:else if key === 'reliability'}
 			<!-- HISTORIC: the decomposed reliability surface. It owns the codec-seeded grain
 			     rail, shared retained-history navigator, operator board, and daily trend.
 			     Mirrors how RouteDetail mounts <RouteReliabilityClusters>. -->
 			{#if reliability.settled && reliability.error == null && reliabilityIsEmpty(reliability.data) && historyOnlyReliability != null && stopHistory.state !== 'current'}
 				{#key id}
-					<StopReliabilitySurface data={historyOnlyReliability} {locale} history={stopHistory} />
+					<StopReliabilitySurface
+						data={historyOnlyReliability}
+						{locale}
+						history={stopHistory}
+						articleSummary={detailTabController.active === 'reliability' && hasStopSummary
+							? stopSummaryBanner
+							: undefined}
+						syncUrl={detailTabController.active === 'reliability'}
+					/>
 				{/key}
 			{:else}
 				<ResourceBoundary resource={reliability} lang={locale} isEmpty={reliabilityIsEmpty}>
 					{#snippet children(r: StopReliability | null)}
 						{#if r != null}
 							{#key id}
-								<StopReliabilitySurface data={r} {locale} history={stopHistory} />
+								<StopReliabilitySurface
+									data={r}
+									{locale}
+									history={stopHistory}
+									articleSummary={detailTabController.active === 'reliability' && hasStopSummary
+										? stopSummaryBanner
+										: undefined}
+									syncUrl={detailTabController.active === 'reliability'}
+								/>
 							{/key}
 						{/if}
 					{/snippet}
@@ -591,29 +725,16 @@
 </EntityDetail>
 
 <style>
-	.stop-corner {
-		white-space: nowrap;
+	.stop-reliability-summary {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-start;
+		gap: 1rem 2.5rem;
 	}
-	/* The ARRÊT plate as a meta chip: no left LED-lamp inset needed here (the head
-	   already carries the brand dot on the display title) — keep the mono voice. */
-	:global(.stop-detail-plate) {
-		padding-left: 0;
-	}
-	:global(.stop-detail-plate)::before {
-		display: none;
-	}
-
 	.stop-next {
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
-	}
-	.stop-next-head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
 	}
 	/* The live-departures ROW LIST styles (.stop-departures / .stop-departure*) now
 	   live with <ScheduleTable> (P5.3e board mode); StopDetail keeps only the board
@@ -630,7 +751,7 @@
 		gap: 1.25rem;
 	}
 
-	/* A3: the Info pane is an explicit 2-column grid — the stop's facts on the left, the
+	/* The Detail facts card is an explicit 2-column grid — stop facts on the left, the
 	   live alerts on the right. Reflows to one column on mobile (below). */
 	.stop-info > :only-child {
 		/* the pair-mate (alerts) rendered nothing — the survivor takes the row */
@@ -653,7 +774,7 @@
 	   live with <StopReliabilitySurface> and its section components (S8A re-seat); the
 	   per-route schedule grid (.stop-schedule-route* / .stop-schedule-times*) now lives
 	   with <ScheduleTable> (P5.3e grid mode), so StopDetail carries only the schedule
-	   pane WRAPPER (.stop-schedule) + the next / info pane chrome. */
+	   pane WRAPPER (.stop-schedule) + the detail-card chrome. */
 	.stop-info-metrics {
 		display: flex;
 		flex-wrap: wrap;
@@ -714,12 +835,6 @@
 		font-size: var(--text-small);
 		color: var(--muted-foreground);
 	}
-	.stop-departures-empty {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
-	}
 	@media (prefers-reduced-motion: reduce) {
 		.stop-chip {
 			transition: none;
@@ -727,7 +842,7 @@
 	}
 
 	@media (max-width: 48rem) {
-		/* A3: the 2-col Info pane collapses to a single column on a phone. */
+		/* The 2-column facts card collapses to one column on a phone. */
 		.stop-info {
 			grid-template-columns: minmax(0, 1fr);
 		}

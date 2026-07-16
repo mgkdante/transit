@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/svelte';
+import { describe, expect, it, vi } from 'vitest';
 import { createRawSnippet } from 'svelte';
 import EntityRow from './EntityRow.svelte';
 
@@ -16,6 +16,33 @@ describe('EntityRow base', () => {
 		});
 		const link = screen.getByRole('link', { name: /161 Van Horne/i });
 		expect(link).toHaveAttribute('href', '/lines/161');
+		expect(link).toHaveAttribute('data-sveltekit-preload-data', 'hover');
+		expect(link).toHaveAttribute('data-slot', 'entity-row');
+		expect(link).toHaveClass('entity-row', 'tap-press');
+		expect(screen.queryByRole('button')).not.toBeInTheDocument();
+	});
+
+	it('renders a choice as a native button and invokes its action once', async () => {
+		const onSelect = vi.fn();
+
+		render(EntityRow, {
+			props: {
+				onSelect,
+				ariaLabel: 'Browse stops for line 80',
+				glyph: '═',
+				title: '80',
+				subtitle: 'Avenue du Parc',
+			},
+		});
+
+		const choice = screen.getByRole('button', { name: 'Browse stops for line 80' });
+		expect(choice).toHaveAttribute('type', 'button');
+		expect(choice).toHaveAttribute('data-slot', 'entity-row');
+		expect(choice).toHaveClass('entity-row', 'tap-press');
+		expect(choice).not.toHaveAttribute('href');
+
+		await fireEvent.click(choice);
+		expect(onSelect).toHaveBeenCalledTimes(1);
 	});
 });
 

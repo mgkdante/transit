@@ -27,15 +27,18 @@
 	import HeatmapMark from './marks/HeatmapMark.svelte';
 	import StackedShareMark from './marks/StackedShareMark.svelte';
 	import ServiceSpanMark from './marks/ServiceSpanMark.svelte';
-	import type { ChartSpec } from './ChartSpec';
+	import ChartViewport from './ChartViewport.svelte';
+	import { chartViewportPolicy, type ChartSpec } from './ChartSpec';
 
 	export interface ChartProps {
 		/** The fully-derived spec from a selector — the renderer owns no business logic. */
 		spec: ChartSpec;
 		class?: string;
+		scrollLabel?: string;
 	}
 
-	let { spec, class: className }: ChartProps = $props();
+	let { spec, class: className, scrollLabel }: ChartProps = $props();
+	const viewportPolicy = $derived(chartViewportPolicy(spec.kind));
 </script>
 
 {#if spec.kind === 'absence'}
@@ -46,32 +49,40 @@
 		variant={spec.variant ?? 'block'}
 		class={className}
 	/>
-{:else if spec.kind === 'trend'}
-	<TrendMark {spec} class={className} />
-{:else if spec.kind === 'histogram'}
-	<HistogramMark {spec} class={className} />
-{:else if spec.kind === 'dot-strip'}
-	<DotStripMark {spec} class={className} />
-{:else if spec.kind === 'magnitude-bars'}
-	<MagnitudeBarsMark {spec} class={className} />
-{:else if spec.kind === 'dumbbell'}
-	<DumbbellMark {spec} class={className} />
-{:else if spec.kind === 'line'}
-	<LineMark {spec} class={className} />
-{:else if spec.kind === 'sparkline'}
-	<SparklineMark {spec} class={className} />
-{:else if spec.kind === 'bullet'}
-	<BulletMark {spec} class={className} />
-{:else if spec.kind === 'heatmap'}
-	<HeatmapMark {spec} class={className} />
-{:else if spec.kind === 'stacked-share'}
-	<StackedShareMark {spec} class={className} />
-{:else if spec.kind === 'service-span'}
-	<ServiceSpanMark {spec} class={className} />
 {:else}
-	<!--
-		Pending branches (added as each family migrates, each gate-green + browser-verified):
-		  metric → a scalar tile (no data mark) — the number IS the value voice
-		  cycle  → LayerChart weekday small-multiples (shared y + mean rule)
-	-->
+	<ChartViewport
+		layout={viewportPolicy.layout}
+		mobileMinWidth={viewportPolicy.mobileMinWidth}
+		label={scrollLabel ?? spec.title}
+	>
+		{#if spec.kind === 'trend'}
+			<TrendMark {spec} class={className} />
+		{:else if spec.kind === 'histogram'}
+			<HistogramMark {spec} class={className} />
+		{:else if spec.kind === 'dot-strip'}
+			<DotStripMark {spec} class={className} />
+		{:else if spec.kind === 'magnitude-bars'}
+			<MagnitudeBarsMark {spec} class={className} />
+		{:else if spec.kind === 'dumbbell'}
+			<DumbbellMark {spec} class={className} />
+		{:else if spec.kind === 'line'}
+			<LineMark {spec} class={className} />
+		{:else if spec.kind === 'sparkline'}
+			<SparklineMark {spec} class={className} />
+		{:else if spec.kind === 'bullet'}
+			<BulletMark {spec} class={className} />
+		{:else if spec.kind === 'heatmap'}
+			<HeatmapMark {spec} class={className} />
+		{:else if spec.kind === 'stacked-share'}
+			<StackedShareMark {spec} class={className} />
+		{:else if spec.kind === 'service-span'}
+			<ServiceSpanMark {spec} class={className} />
+		{:else}
+			<!--
+				Pending branches (added as each family migrates, each gate-green + browser-verified):
+				  metric → a scalar tile (no data mark) — the number IS the value voice
+				  cycle  → LayerChart weekday small-multiples (shared y + mean rule)
+			-->
+		{/if}
+	</ChartViewport>
 {/if}

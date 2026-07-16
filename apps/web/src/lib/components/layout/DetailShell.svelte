@@ -9,11 +9,10 @@
 	    · a header region: either a caller-owned complete `articleHeader` cover or the
 	      default full-bleed `.detail-header-grid` band around the `header` snippet;
     · the edge-to-edge closing `<Separator variant="hazard">` under the header;
-    · the 3-column body grid — `1fr 2fr 1fr` at ≥1024 (yesid's breakpoint, gap 2rem),
-      collapsing to a single column below. Left rail (ToC) + right rail (stat cards) are
-      sticky at `top: var(--chrome-offset)` (the single P5.3a offset knob). When no `right`
-      snippet is given with a rendered left rail the grid is 2-column (`1fr 3fr`);
-      with neither rail it is one full-width center track;
+	    · the adaptive body grid: one column below 1024; a wide rail plus readable center
+	      from 1024; and three explicit useful tracks from 1440 only when a caller provides
+	      distinct right-rail content. Supporting content follows the center at intermediate
+	      widths instead of shrinking every column. With neither rail the center is full width;
     · the mobile order: below 1024 the side rails are hidden, the right-rail stats reflow
       to a top `mobileSummary` strip, and the ToC becomes the floating `TocPill`;
     · ONE IntersectionObserver (`observeActiveToc` over `[data-toc]`/`[data-section-index]`)
@@ -37,6 +36,7 @@
 	import TocPill from '$lib/components/shared/TocPill.svelte';
 	import { observeActiveToc, type TocEntry } from '$lib/components/shared/toc';
 	import SurfaceRail, { type SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
+	import ArticleSummaryLane from './ArticleSummaryLane.svelte';
 
 	export interface DetailShellCombinedRailConfig {
 		label: string;
@@ -59,6 +59,11 @@
 		 * the closing hazard tape and everything below.
 		 */
 		articleHeader?: Snippet;
+		/** Stable full-width control row between the closing hazard strip and body grid. */
+		toolbar?: Snippet;
+		/** Stable article summary/verdict row. It is always aligned to the canonical
+		 * center track and never moves when a pane owns its own rail. */
+		summary?: Snippet;
 		/** Center column — the numbered sections (the 2fr / 3fr track). */
 		center: Snippet;
 		/** Right rail — stat cards (sticky, ≥1024). Omit ⇒ a 2-column grid. */
@@ -79,20 +84,25 @@
 		cta?: Snippet;
 		/** Extra classes on the shell root article. */
 		class?: string;
+		/** Keep the legacy left rail in normal document flow below 1024. */
+		leftMobile?: boolean;
+		/** The active pane owns its own internal rail; keep the outer left content as
+		    a full-width toolbar above one unconstrained center track. */
+		paneOwnedRail?: boolean;
 	}
 	type DetailShellLegacyRailProps = {
 		/** Left rail — ToC / reading-position readout / context (sticky, ≥1024). */
-		left: Snippet;
+		left?: Snippet;
 		combinedRail?: never;
 		combinedRailConfig?: never;
 		/** Optional distinct mobile-order entries for the pill. Default = `tocEntries`. */
 		mobileTocEntries?: TocEntry[];
 		/** Scroll-to-section handler for the pill (and the caller's TocNav reuse it). */
-		onNavigate: (id: string) => void;
+		onNavigate?: (id: string) => void;
 		/** aria-label for the pill's open control ("Table of contents"). */
-		tocOpenAria: string;
+		tocOpenAria?: string;
 		/** aria-label for the pill's close control. */
-		tocCloseAria: string;
+		tocCloseAria?: string;
 	};
 	type DetailShellCombinedRailProps = {
 		left?: never;
@@ -109,6 +119,8 @@
 	let {
 		header,
 		articleHeader,
+		toolbar,
+		summary,
 		left,
 		combinedRail,
 		combinedRailConfig,
@@ -122,6 +134,8 @@
 		tocOpenAria,
 		tocCloseAria,
 		cta,
+		leftMobile = false,
+		paneOwnedRail = false,
 		class: className,
 	}: DetailShellProps = $props();
 
@@ -167,6 +181,12 @@
 
 	<Separator variant="hazard" maxWidth="100%" class="detail-shell-tape" />
 
+	{#if toolbar}
+		<div class="detail-shell-toolbar" data-slot="detail-shell-toolbar">
+			<div class="detail-shell-toolbar__inner">{@render toolbar()}</div>
+		</div>
+	{/if}
+
 	<!-- Mobile top summary strip — the right-rail stats reflowed above the sections
 	     (hidden ≥1024, where the sticky right rail carries them). -->
 	{#if mobileSummary}
@@ -177,8 +197,10 @@
 
 	<div
 		class="detail-shell-grid"
+		class:detail-shell-grid--three={rendersLeftRail && Boolean(right)}
 		class:detail-shell-grid--two={rendersLeftRail && !right}
 		class:detail-shell-grid--single={!rendersLeftRail && !right}
+		class:detail-shell-grid--pane-owned={paneOwnedRail}
 	>
 		{#if combinedRail && combinedRailConfig}
 			<SurfaceRail
@@ -190,12 +212,21 @@
 				class={combinedRailConfig.class}
 			/>
 		{:else if left}
-			<aside class="detail-shell-rail detail-shell-rail--left" data-slot="detail-shell-left">
+			<aside
+				class="detail-shell-rail detail-shell-rail--left"
+				class:detail-shell-rail--mobile={leftMobile}
+				data-slot="detail-shell-left"
+			>
 				{@render left()}
 			</aside>
 		{/if}
 
 		<div class="detail-shell-center" data-slot="detail-shell-center">
+			{#if summary}
+				<ArticleSummaryLane data-slot="detail-shell-summary">
+					{@render summary()}
+				</ArticleSummaryLane>
+			{/if}
 			{@render center()}
 		</div>
 
@@ -213,12 +244,12 @@
 
 <!-- Floating mobile ToC pill (hides itself ≥1024 via its own breakpoint, so the sticky
      left rail takes over seamlessly at the SAME 1024 boundary the rails appear at). -->
-{#if !combinedRail && pillEntries.length > 0}
+{#if !combinedRail && pillEntries.length > 0 && onNavigate && tocOpenAria && tocCloseAria}
 	<TocPill
 		entries={pillEntries}
 		{activeId}
-		openAria={tocOpenAria!}
-		closeAria={tocCloseAria!}
+		openAria={tocOpenAria}
+		closeAria={tocCloseAria}
 		{onNavigate}
 	/>
 {/if}
@@ -226,6 +257,11 @@
 <style>
 	.detail-shell {
 		display: block;
+		--detail-rail-width: var(--layout-control-rail-width);
+		--detail-support-rail-width: var(--layout-support-rail-width);
+		--detail-center-min: var(--layout-article-main-min);
+		--detail-center-max: var(--container-content);
+		--detail-column-gap: 2rem;
 	}
 
 	/* Full-bleed header band: --manifesto ground + the global .detail-header-grid dot
@@ -245,6 +281,15 @@
 		margin-inline: auto;
 	}
 
+	.detail-shell-toolbar {
+		width: 100%;
+		padding: 0;
+		background: var(--primary);
+	}
+	.detail-shell-toolbar__inner {
+		width: 100%;
+	}
+
 	/* The mobile summary strip is a single-column band above the sections; the desktop
 	   rails collapse into the flow below 1024. */
 	.detail-shell-mobile-summary {
@@ -253,7 +298,7 @@
 		margin-block-start: 1.5rem;
 	}
 
-	/* Body: single column < 1024; the yesid 3-column detail grid ≥1024. Full-bleed
+	/* Body: single column < 1024; adaptive two/three-column article grid above. Full-bleed
 	   (gutter padding, no max-width cap) — the edge-to-edge detail rhythm; the center
 	   caps its own prose measure. */
 	.detail-shell-grid {
@@ -261,31 +306,48 @@
 		grid-template-columns: 1fr;
 		gap: var(--space-card-gap);
 		padding-inline: var(--space-page-x);
-		padding-block: 1.5rem;
+		padding-block: var(--layout-article-top-space);
+		min-width: 0;
+		overflow-x: clip;
 	}
 
 	/* The center column never overflows its track (long tables / <pre> scroll inside). */
 	.detail-shell-center {
 		min-width: 0;
+		width: 100%;
+		max-width: var(--detail-center-max);
 	}
 
 	/* Rails hidden below 1024 — the TocPill (left) + mobileSummary (right) stand in. */
 	.detail-shell-rail {
 		display: none;
 	}
+	.detail-shell-rail--mobile {
+		display: block;
+		min-width: 0;
+	}
 
 	@media (min-width: 1024px) {
 		.detail-shell-grid {
-			grid-template-columns: 1fr 2fr 1fr;
-			gap: 2rem;
-			padding-block: 2.5rem;
+			grid-template-columns: var(--detail-rail-width) minmax(0, var(--detail-center-max));
+			gap: var(--detail-column-gap);
+			padding-block: var(--layout-article-top-space);
+			align-items: stretch;
+			justify-content: center;
 		}
-		/* 2-column when a real left rail renders without a right rail. */
+		/* No right rail means two real tracks: the shared rail width plus the shared
+		   center cap. Outer whitespace centers the canvas instead of faking a third track. */
 		.detail-shell-grid--two {
-			grid-template-columns: 1fr 3fr;
+			grid-template-columns: var(--detail-rail-width) minmax(0, var(--detail-center-max));
+			justify-content: center;
 		}
 		/* One full-width center track when neither rail renders. */
 		.detail-shell-grid--single {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		/* Reliability/history panes already own a complete SurfaceRail. Their outer
+		   tab rail becomes a toolbar above one full-width track, avoiding nested rails. */
+		.detail-shell-grid--pane-owned {
 			grid-template-columns: minmax(0, 1fr);
 		}
 		/* The mobile summary strip is redundant once the sticky right rail is visible. */
@@ -300,6 +362,88 @@
 			align-self: start;
 			max-height: calc(100dvh - var(--chrome-offset));
 			overflow-y: auto;
+		}
+		.detail-shell-rail--left {
+			grid-column: 1;
+			justify-self: stretch;
+			width: 100%;
+		}
+		.detail-shell-grid > :global([data-slot='surface-rail']) {
+			grid-column: 1;
+			justify-self: stretch;
+			width: 100%;
+		}
+		.detail-shell-center {
+			grid-column: 2;
+			justify-self: stretch;
+			max-width: var(--detail-center-max);
+		}
+		/* Until the viewport can hold three useful columns, distinct support content
+		   follows the main article in its readable track instead of crushing it. */
+		.detail-shell-grid--three .detail-shell-rail--right {
+			position: static;
+			grid-column: 2;
+			grid-row: 2;
+			justify-self: stretch;
+			width: 100%;
+			max-height: none;
+			overflow: visible;
+		}
+		.detail-shell-grid--two .detail-shell-rail--left,
+		.detail-shell-grid--two > :global([data-slot='surface-rail']) {
+			justify-self: stretch;
+			width: 100%;
+		}
+		.detail-shell-grid--two .detail-shell-center {
+			justify-self: stretch;
+			max-width: var(--detail-center-max);
+		}
+		.detail-shell-grid--single .detail-shell-center {
+			grid-column: 1;
+		}
+		.detail-shell-grid--pane-owned .detail-shell-rail--left {
+			position: static;
+			grid-column: 1;
+			width: 100%;
+			max-height: none;
+			overflow: visible;
+			justify-self: stretch;
+		}
+		.detail-shell-grid--pane-owned .detail-shell-center {
+			grid-column: 1;
+			max-width: none;
+			justify-self: stretch;
+		}
+	}
+
+	@media (min-width: 1440px) {
+		.detail-shell-grid--three {
+			grid-template-columns:
+				var(--detail-rail-width)
+				minmax(var(--detail-center-min), var(--detail-center-max))
+				var(--detail-support-rail-width);
+			justify-content: center;
+		}
+		.detail-shell-grid--three .detail-shell-rail--right {
+			position: sticky;
+			grid-column: 3;
+			grid-row: 1;
+			justify-self: stretch;
+			width: 100%;
+			max-height: calc(100dvh - var(--chrome-offset));
+			overflow-y: auto;
+		}
+	}
+
+	@media (min-width: 1024px) and (max-width: 1279px) {
+		.detail-shell-grid {
+			gap: var(--detail-column-gap);
+		}
+		.detail-shell-rail--left,
+		.detail-shell-rail--right,
+		.detail-shell-center {
+			width: 100%;
+			justify-self: stretch;
 		}
 	}
 

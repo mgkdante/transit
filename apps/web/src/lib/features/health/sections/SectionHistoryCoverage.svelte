@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
+	import { StateNotice } from '$lib/components/edge';
 	import { formatDateKey } from '$lib/utils/time';
 	import type { HealthCopy } from '../health.copy';
 	import type {
@@ -26,8 +27,10 @@
 	}
 </script>
 
-{#snippet gapList(items: readonly HistoryCoverageGapView[])}
-	{#if items.length > 0}
+{#snippet gapList(items: readonly HistoryCoverageGapView[] | null)}
+	{#if items == null}
+		<StateNotice title={t.noGapInventory} presentation="pill" />
+	{:else if items.length > 0}
 		<ul class="gap-list">
 			{#each items as gap (`${gap.startDate}:${gap.endDate}:${gap.reason ?? ''}`)}
 				<li>
@@ -37,7 +40,7 @@
 			{/each}
 		</ul>
 	{:else}
-		<span class="honest-empty">{t.noDeclaredGaps}</span>
+		<StateNotice title={t.noDeclaredGaps} glyph="●" tone="positive" presentation="pill" />
 	{/if}
 {/snippet}
 
@@ -57,20 +60,24 @@
 				<tr data-family={row.key} data-published={row.published}>
 					<th scope="row" data-label={t.columns.family}>
 						<span class="family-name">{t.families[row.key]}</span>
-						{#if !row.published}<span class="unavailable">{t.unavailable}</span>{/if}
+						{#if !row.published}<StateNotice title={t.unavailable} presentation="pill" />{/if}
 					</th>
 					<td data-label={t.columns.window}>
 						{#if row.published}
-							<span class="window-value">{windowLabel(row.firstDate, row.lastDate)}</span>
+							{#if row.firstDate && row.lastDate}
+								<span class="window-value">{windowLabel(row.firstDate, row.lastDate)}</span>
+							{:else}
+								<StateNotice title={t.noCoverage} presentation="pill" />
+							{/if}
 						{:else}
-							<span class="honest-empty">{t.noCoverage}</span>
+							<StateNotice title={t.noCoverage} presentation="pill" />
 						{/if}
 					</td>
 					<td data-label={t.columns.selection}>
 						{#if row.selectionMode}
 							<span class="selection-chip">{t.selection[row.selectionMode]}</span>
 						{:else}
-							<span class="honest-empty">{t.unavailable}</span>
+							<StateNotice title={t.unavailable} presentation="pill" />
 						{/if}
 					</td>
 					<td data-label={t.columns.details}>
@@ -95,15 +102,19 @@
 														<span class="aggregation-chip">{t.aggregation[metric.aggregation]}</span
 														>
 													</div>
-													<span class="metric-window"
-														>{windowLabel(metric.firstDate, metric.lastDate)}</span
-													>
+													{#if metric.firstDate && metric.lastDate}
+														<span class="metric-window"
+															>{windowLabel(metric.firstDate, metric.lastDate)}</span
+														>
+													{:else}
+														<StateNotice title={t.noCoverage} presentation="pill" />
+													{/if}
 													{@render gapList(metric.gaps)}
 												</li>
 											{/each}
 										</ul>
 									{:else}
-										<span class="honest-empty">{t.noMetricInventory}</span>
+										<StateNotice title={t.noMetricInventory} presentation="pill" />
 									{/if}
 								</div>
 							{/if}
@@ -148,7 +159,6 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		background: var(--card);
-		box-shadow: var(--shadow-card);
 	}
 	.coverage-table th,
 	.coverage-table td {
@@ -191,8 +201,6 @@
 		font-size: var(--text-small);
 		font-variant-numeric: tabular-nums;
 	}
-	.unavailable,
-	.honest-empty,
 	.gap-reason,
 	.metric-window {
 		display: block;
@@ -304,7 +312,6 @@
 			border: 1px solid var(--border);
 			border-radius: var(--radius-lg);
 			background: var(--card);
-			box-shadow: var(--shadow-card);
 		}
 		.coverage-table th,
 		.coverage-table td {

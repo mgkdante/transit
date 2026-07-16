@@ -589,7 +589,7 @@
 		.map-near {
 			top: auto;
 			right: 0.75rem;
-			bottom: calc(3.35rem + env(safe-area-inset-bottom, 0px));
+			bottom: var(--map-mobile-control-bottom);
 			left: auto;
 			width: auto;
 			transform: none;

@@ -27,6 +27,8 @@ const harness = vi.hoisted(() => {
 		liveClock: { ageSeconds: 20 as number | null },
 	};
 });
+const networkManifest = vi.hoisted(() => ({ files: { live: { ttl_s: 30 } } }));
+const createLiveStoreSpy = vi.hoisted(() => vi.fn());
 
 const currentNetwork = {
 	generated_utc: '2026-06-16T02:00:00Z' as IsoUtc,
@@ -219,32 +221,35 @@ vi.mock('$lib/v1', async () => {
 	const history = await import('$lib/v1/history');
 	return {
 		...history,
-		getV1Context: () => ({ manifest: { files: { live: { ttl_s: 30 } } }, labels: {}, lang: 'en' }),
-		createLiveStore: () => ({
-			vehicles: null,
-			trips: null,
-			departures: null,
-			alerts: null,
-			network: currentNetwork,
-			index: {
-				vehiclesById: new Map(),
-				vehiclesByRoute: new Map(),
-				vehiclesByTrip: new Map(),
-				stopsById: new Map(),
-				tripsById: new Map(),
-				alertsById: new Map(),
-			},
-			generatedUtc: currentNetwork.generated_utc,
-			get ageSeconds() {
-				return harness.liveClock.ageSeconds;
-			},
-			isStale: false,
-			loading: false,
-			error: null,
-			start: vi.fn(),
-			stop: vi.fn(),
-			refresh: vi.fn(),
-		}),
+		getV1Context: () => ({ manifest: networkManifest, labels: {}, lang: 'en' }),
+		createLiveStore: (manifest: unknown, options?: unknown) => {
+			createLiveStoreSpy(manifest, options);
+			return {
+				vehicles: null,
+				trips: null,
+				departures: null,
+				alerts: null,
+				network: currentNetwork,
+				index: {
+					vehiclesById: new Map(),
+					vehiclesByRoute: new Map(),
+					vehiclesByTrip: new Map(),
+					stopsById: new Map(),
+					tripsById: new Map(),
+					alertsById: new Map(),
+				},
+				generatedUtc: currentNetwork.generated_utc,
+				get ageSeconds() {
+					return harness.liveClock.ageSeconds;
+				},
+				isStale: false,
+				loading: false,
+				error: null,
+				start: vi.fn(),
+				stop: vi.fn(),
+				refresh: vi.fn(),
+			};
+		},
 		getNetworkTrend: vi.fn(),
 		getProvenance: vi.fn(),
 		getNetworkHistoryIndex: harness.getNetworkHistoryIndex,
@@ -302,6 +307,7 @@ beforeEach(() => {
 	harness.loadNetworkHistoryRange.mockReset();
 	harness.getNetworkHistoryIndex.mockResolvedValue(historyIndex);
 	harness.loadNetworkHistoryRange.mockResolvedValue(retainedPartitions);
+	createLiveStoreSpy.mockClear();
 });
 
 afterEach(() => {
@@ -312,6 +318,9 @@ afterEach(() => {
 describe('NetworkSurface retained-history integration', () => {
 	it('keeps the default singleton unchanged while discovery never triggers a partition load', async () => {
 		const view = render(NetworkSurface);
+		expect(createLiveStoreSpy).toHaveBeenCalledWith(networkManifest, {
+			families: ['network'],
+		});
 
 		await waitFor(() => expect(harness.getNetworkHistoryIndex).toHaveBeenCalledTimes(1));
 		expect(harness.loadNetworkHistoryRange).not.toHaveBeenCalled();
@@ -582,11 +591,13 @@ describe('NetworkSurface retained-history integration', () => {
 		);
 		const view = render(NetworkSurface);
 
-		await waitFor(() =>
-			expect(view.container.querySelector('[data-slot="history-no-data"]')).toHaveTextContent(
-				'No data is retained for this range.',
-			),
-		);
+		await waitFor(() => {
+			const empty = view.container.querySelector('[data-slot="history-no-data"]');
+			expect(empty).toHaveTextContent('No data is retained for this range.');
+			expect(empty).toHaveAttribute('data-component', 'state-notice');
+			expect(empty).toHaveAttribute('data-presentation', 'responsive');
+		});
+		expect(view.container.querySelectorAll('[data-component="state-notice"]')).toHaveLength(1);
 		expect(trendRows(view.container)).toHaveLength(0);
 		expect(view.queryByRole('radiogroup', { name: 'Delay series' })).toBeNull();
 	});

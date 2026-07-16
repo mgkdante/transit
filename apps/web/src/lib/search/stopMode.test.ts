@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { modeKeyForTag, routeModeHint, stopGroupKey, stopModeHint, stopModeTag } from './stopMode';
+import {
+	modeKeyForTag,
+	routeModeHint,
+	routeModeKey,
+	stopGroupKey,
+	stopModeHint,
+	stopModeTag,
+} from './stopMode';
 
 describe('stopModeHint — real mode field wins over the name', () => {
 	it('tags metro/rail from the real mode regardless of the name', () => {
@@ -79,6 +86,13 @@ describe('routeModeHint — GTFS route_type → glyph + tag', () => {
 
 	it('defaults an unmapped type to the bus glyph with no tag', () => {
 		expect(routeModeHint(99)).toEqual({ glyph: '═', tag: null });
+	});
+});
+
+describe('routeModeKey — canonical GTFS route_type mode key', () => {
+	it('uses the shared mode vocabulary and stands down unknown types', () => {
+		expect([0, 1, 2, 3, 4].map(routeModeKey)).toEqual(['tram', 'metro', 'rail', 'bus', 'ferry']);
+		expect(routeModeKey(99)).toBeNull();
 	});
 });
 

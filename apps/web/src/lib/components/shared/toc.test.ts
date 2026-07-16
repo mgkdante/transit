@@ -17,6 +17,7 @@ import {
 	settleLayout,
 	observeActiveToc,
 	revealTocTarget,
+	openCollapsedTocTarget,
 	reconcileActiveToc,
 	type TocEntry,
 } from './toc';
@@ -79,6 +80,27 @@ describe('tocElement', () => {
 
 	it('returns null when nothing matches', () => {
 		expect(tocElement('does-not-exist')).toBeNull();
+	});
+});
+
+describe('openCollapsedTocTarget', () => {
+	it('opens only the owning shared disclosure before a TOC jump', () => {
+		const target = document.createElement('section');
+		target.setAttribute('data-toc', 'collapsed-section');
+		const trigger = document.createElement('button');
+		trigger.setAttribute('data-section-trigger', '');
+		trigger.setAttribute('aria-expanded', 'false');
+		const click = vi.spyOn(trigger, 'click');
+		target.appendChild(trigger);
+		document.body.appendChild(target);
+
+		try {
+			expect(openCollapsedTocTarget('collapsed-section')).toBe(true);
+			expect(click).toHaveBeenCalledOnce();
+			expect(openCollapsedTocTarget('missing-section')).toBe(false);
+		} finally {
+			target.remove();
+		}
 	});
 });
 

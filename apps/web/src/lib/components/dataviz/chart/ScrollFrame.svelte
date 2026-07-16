@@ -18,7 +18,7 @@
 		/** Width of the frozen left gutter (the axis column). Any CSS length. */
 		gutterWidth?: string;
 		/** a11y label for the scroll region (e.g. "Scroll sideways to see every hour"). */
-		scrollLabel?: string;
+		scrollLabel: string;
 		class?: string;
 		/** The pinned axis column (row labels). Aligned to the scroller's rows by the consumer. */
 		gutter: Snippet;
@@ -35,6 +35,7 @@
 	}: ScrollFrameProps = $props();
 
 	let scrollEl = $state<HTMLDivElement | null>(null);
+	let scrollable = $state(false);
 	// Default both OFF so a non-overflowing plot shows no shadow (and SSR is shadow-free).
 	let moreStart = $state(false);
 	let moreEnd = $state(false);
@@ -43,16 +44,19 @@
 		const el = scrollEl;
 		if (!el) return;
 		const max = el.scrollWidth - el.clientWidth;
-		moreStart = el.scrollLeft > 1;
-		moreEnd = max > 1 && el.scrollLeft < max - 1;
+		scrollable = max > 1;
+		moreStart = scrollable && el.scrollLeft > 1;
+		moreEnd = scrollable && el.scrollLeft < max - 1;
 	}
 
 	$effect(() => {
 		const el = scrollEl;
 		if (!el) return;
 		measure();
+		if (typeof ResizeObserver === 'undefined') return;
 		const ro = new ResizeObserver(measure);
 		ro.observe(el);
+		if (el.firstElementChild) ro.observe(el.firstElementChild);
 		return () => ro.disconnect();
 	});
 </script>
@@ -61,23 +65,24 @@
 	class={cn('dv-scrollframe', className)}
 	style:--sf-gutter={gutterWidth}
 	data-slot="scroll-frame"
+	data-card-interactive
+	data-scrollable={scrollable}
 	data-more-start={moreStart}
 	data-more-end={moreEnd}
 >
 	<div class="dv-scrollframe__gutter" data-slot="scroll-frame-gutter" aria-hidden="true">
 		{@render gutter()}
 	</div>
-	<!-- tabindex=0 is INTENTIONAL: a horizontally-scrollable region must be keyboard-operable
-	     (WCAG 2.1.1) so arrow-keys can scroll it once focused. The lint rule assumes a static
-	     group; a scroll container is the documented exception. -->
+	<!-- A real horizontal overflow becomes keyboard-operable; a fitting grid stays out of the
+	     tab order and does not advertise a fake scroll region. -->
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
 		bind:this={scrollEl}
 		class="dv-scrollframe__scroller"
 		data-slot="scroll-frame-scroller"
-		role="group"
-		aria-label={scrollLabel}
-		tabindex="0"
+		role={scrollable ? 'region' : undefined}
+		aria-label={scrollable ? scrollLabel : undefined}
+		tabindex={scrollable ? 0 : undefined}
 		onscroll={measure}
 	>
 		{@render scroller()}

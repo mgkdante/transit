@@ -79,11 +79,17 @@ jobs:
       - name: Set up JS workspace
         uses: ./.github/actions/setup
 
+      - name: Apply public snapshot CORS
+        working-directory: apps/data-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bunx wrangler@4.100.0 r2 bucket cors set transit-snapshots --file r2-cors.json --force
+
       - name: Build dev Worker
         working-directory: apps/web
         env:
           PUBLIC_SITE_ORIGIN: https://dev.transit.yesid.dev
-          PUBLIC_V1_BASE: https://transit.yesid.dev/data/v1
+          PUBLIC_V1_BASE: https://data.yesid.dev/v1
           PUBLIC_INDEXING: "false"
         run: bun run build
 
@@ -142,11 +148,17 @@ jobs:
       - name: Set up JS workspace
         uses: ./.github/actions/setup
 
+      - name: Apply public snapshot CORS
+        working-directory: apps/data-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bunx wrangler@4.100.0 r2 bucket cors set transit-snapshots --file r2-cors.json --force
+
       - name: Build production Worker
         working-directory: apps/web
         env:
           PUBLIC_SITE_ORIGIN: https://transit.yesid.dev
-          PUBLIC_V1_BASE: /data/v1
+          PUBLIC_V1_BASE: https://data.yesid.dev/v1
           PUBLIC_INDEXING: "true"
         run: bun run build
 

@@ -207,8 +207,26 @@ describe('DateRangePicker — a11y AA', () => {
 	it('wraps the pair in a labelled group and labels each input', () => {
 		const { getByRole } = renderPicker();
 		const group = getByRole('group', { name: 'Pick a date range' });
-		expect(within(group).getByLabelText('Pick a date range · From')).toBeInTheDocument();
-		expect(within(group).getByLabelText('Pick a date range · To')).toBeInTheDocument();
+		expect(within(group).getByLabelText('Pick a date range · From')).toHaveAttribute(
+			'name',
+			'history-from',
+		);
+		expect(within(group).getByLabelText('Pick a date range · To')).toHaveAttribute(
+			'name',
+			'history-to',
+		);
+	});
+
+	it('names the single-date field for browser form semantics', () => {
+		const { getByLabelText } = render(DateRangePicker, {
+			props: {
+				mode: 'single' as const,
+				dateOptions: [{ date: '2026-06-01' }],
+				locale: 'en' as const,
+				labels: { ...LABELS, single: 'Receipt day' },
+			},
+		});
+		expect(getByLabelText('Receipt day')).toHaveAttribute('name', 'history-date');
 	});
 
 	it('gives each native date input a 44px minimum touch target (WCAG 2.2 AA)', () => {

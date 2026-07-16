@@ -1,17 +1,42 @@
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
 import type { IsoUtc } from '$lib/v1/schemas';
 import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
+import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 
 const copy = networkReliabilityCopy.en;
 const motion = vi.hoisted(() => ({ reduced: false }));
+const networkSource = () =>
+	readFileSync(
+		resolve(process.cwd(), 'src/lib/features/network/reliability/sections/NetworkSurface.svelte'),
+		'utf-8',
+	);
+const detailShellSource = () =>
+	readFileSync(resolve(process.cwd(), 'src/lib/components/layout/DetailShell.svelte'), 'utf-8');
+const networkTileSource = () =>
+	readFileSync(
+		resolve(process.cwd(), 'src/lib/features/network/reliability/sections/NetworkTile.svelte'),
+		'utf-8',
+	);
+const liveHeadlineSource = () =>
+	readFileSync(
+		resolve(
+			process.cwd(),
+			'src/lib/features/network/reliability/sections/SectionLiveHeadline.svelte',
+		),
+		'utf-8',
+	);
 
+const networkManifest = vi.hoisted(() => ({ files: { live: { ttl_s: 30 } } }));
+const createLiveStoreSpy = vi.hoisted(() => vi.fn());
 const { openSurface, live, network, trendSeries, weeklySeries, monthlySeries, byShift, byDaytype } =
 	vi.hoisted(() => ({
 		openSurface: vi.fn(),
-		live: { ageSeconds: 20 as number | null },
+		live: { ageSeconds: 20 as number | null, hasNetwork: true },
 		network: {
 			generated_utc: '2026-06-16T02:00:00Z' as IsoUtc,
 			vehicles_in_service: 10,
@@ -109,32 +134,35 @@ vi.mock('$lib/v1', async () => {
 		...(await import('$lib/v1/history')),
 		STATUS_CODES: ['early', 'on_time', 'late', 'severe', 'unknown'],
 		OCCUPANCY_CODES: ['empty', 'many_seats', 'few_seats', 'standing', 'full'],
-		getV1Context: () => ({ manifest: { files: { live: { ttl_s: 30 } } }, labels: {}, lang: 'en' }),
-		createLiveStore: () => ({
-			vehicles: null,
-			trips: null,
-			departures: null,
-			alerts: null,
-			network,
-			index: {
-				vehiclesById: new Map(),
-				vehiclesByRoute: new Map(),
-				vehiclesByTrip: new Map(),
-				stopsById: new Map(),
-				tripsById: new Map(),
-				alertsById: new Map(),
-			},
-			generatedUtc: network.generated_utc,
-			get ageSeconds() {
-				return live.ageSeconds;
-			},
-			isStale: false,
-			loading: false,
-			error: null,
-			start: vi.fn(),
-			stop: vi.fn(),
-			refresh: vi.fn(),
-		}),
+		getV1Context: () => ({ manifest: networkManifest, labels: {}, lang: 'en' }),
+		createLiveStore: (manifest: unknown, options?: unknown) => {
+			createLiveStoreSpy(manifest, options);
+			return {
+				vehicles: null,
+				trips: null,
+				departures: null,
+				alerts: null,
+				network: live.hasNetwork ? network : null,
+				index: {
+					vehiclesById: new Map(),
+					vehiclesByRoute: new Map(),
+					vehiclesByTrip: new Map(),
+					stopsById: new Map(),
+					tripsById: new Map(),
+					alertsById: new Map(),
+				},
+				generatedUtc: network.generated_utc,
+				get ageSeconds() {
+					return live.ageSeconds;
+				},
+				isStale: false,
+				loading: false,
+				error: null,
+				start: vi.fn(),
+				stop: vi.fn(),
+				refresh: vi.fn(),
+			};
+		},
 		getNetworkTrend: vi.fn(),
 		getProvenance: vi.fn(),
 		getNetworkHistoryIndex: vi.fn().mockResolvedValue(null),
@@ -163,6 +191,264 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 		};
 	},
 }));
+
+beforeEach(() => {
+	createLiveStoreSpy.mockClear();
+	quietModeStore.resetForTest();
+	sessionStorage.clear();
+});
+
+afterEach(() => {
+	quietModeStore.resetForTest();
+});
+
+describe('NetworkSurface article shell', () => {
+	it('requests only the network live family', () => {
+		render(NetworkSurface);
+
+		expect(createLiveStoreSpy).toHaveBeenCalledWith(networkManifest, {
+			families: ['network'],
+		});
+	});
+
+	it('keeps the live ToC anchor mounted while the live tier is still loading', () => {
+		live.hasNetwork = false;
+		try {
+			const { container } = render(NetworkSurface);
+
+			expect(container.querySelector('[data-toc="net-live"]')).not.toBeNull();
+			expect(container.querySelector('[data-slot="terminal-panel"]')).toBeNull();
+		} finally {
+			live.hasNetwork = true;
+		}
+	});
+
+	it('renders one ArticleHeader inside one DetailShell with one combined rail presentation', () => {
+		const { container } = render(NetworkSurface);
+
+		expect(container.querySelectorAll('[data-slot="detail-shell"]')).toHaveLength(1);
+		expect(container.querySelectorAll('[data-slot="article-header"]')).toHaveLength(1);
+		expect(container.querySelectorAll('h1')).toHaveLength(1);
+		expect(container.querySelectorAll('.detail-shell-tape')).toHaveLength(1);
+		expect(container.querySelectorAll('[data-slot="surface-rail"]')).toHaveLength(1);
+		expect(container.querySelectorAll('[data-slot="surface-rail-mobile"]')).toHaveLength(1);
+		expect(screen.getByRole('heading', { level: 1, name: copy.heading })).toBeInTheDocument();
+		expect(screen.getByText(copy.lede)).toBeInTheDocument();
+		expect(container.querySelector('.network-content')).toContainElement(
+			screen.getByText(copy.lede),
+		);
+		expect(container.querySelector('.header__meta')).toHaveTextContent(copy.article.sections(2));
+		expect(container.querySelector('.header__meta time')).toHaveAttribute(
+			'datetime',
+			network.generated_utc,
+		);
+	});
+
+	it('keeps the control-room terminal inside the collapsible live-headline card', async () => {
+		const { container } = render(NetworkSurface);
+		const terminal = container.querySelector('[data-slot="terminal-panel"]') as HTMLElement;
+		const liveCard = container.querySelector(
+			'[data-network-section="network-live-headline"] > [data-slot="card"]',
+		) as HTMLElement;
+		const liveBody = liveCard.querySelector('.section-body') as HTMLElement;
+
+		expect(terminal).not.toBeNull();
+		expect(liveCard).toContainElement(terminal);
+		expect(liveBody).toContainElement(terminal);
+		expect(within(terminal).getByText(copy.liveTerminal.title)).toBeInTheDocument();
+		expect(terminal.querySelector('.terminal-tag')).toHaveTextContent(copy.liveTerminal.tag);
+		expect(within(terminal).getByText(copy.liveTerminal.footerLabel)).toBeInTheDocument();
+		expect(within(terminal).getByText(copy.liveTerminal.footerValue)).toBeInTheDocument();
+		expect(container.querySelector('[data-toc="net-live"]')).toContainElement(terminal);
+		expect(terminal.querySelector('[data-toc="net-live"]')).toBeNull();
+		expect(container.querySelector('[data-toc="net-historic"]')).not.toBeNull();
+
+		await fireEvent.click(within(liveCard).getByRole('button', { name: copy.liveSection }));
+		expect(liveBody).toHaveAttribute('data-state', 'closed');
+		expect(liveCard).toContainElement(terminal);
+	});
+
+	it('delegates the only active-section observer to DetailShell', () => {
+		expect(networkSource()).not.toContain('observeActiveToc');
+		expect(detailShellSource().match(/observeActiveToc\(/g)).toHaveLength(1);
+	});
+
+	it('delegates ToC target reveal to the shared helper', () => {
+		expect(networkSource()).toContain('revealTocTarget');
+		expect(networkSource()).not.toContain('document.querySelector(`[data-toc="${id}"]`)');
+	});
+
+	it('widens only the shared center cap while retaining the shared shell and terminal', () => {
+		const source = networkSource();
+
+		expect(source).toMatch(
+			/\.network-detail[^{]*\{[\s\S]*?--detail-center-max:\s*var\(--container-wide\)/,
+		);
+		expect(source).not.toContain('--detail-rail-width:');
+		expect(source).not.toContain('class="network-layout"');
+		expect(liveHeadlineSource()).toContain('<TerminalPanel');
+		expect(detailShellSource()).toContain('--detail-center-max: var(--container-content)');
+	});
+
+	it('renders the shared quiet-mode controls and wires every network section to collapse and expand', async () => {
+		const { container } = render(NetworkSurface);
+		const controls = screen.getByTestId('quiet-mode-controls');
+		const headerContent = container.querySelector('.header__content') as HTMLElement;
+		const actionRow = container.querySelector('[data-slot="article-header-actions"]');
+		const controlRow = container.querySelector('[data-slot="article-header-controls"]');
+
+		expect(within(controls).getAllByRole('button')).toHaveLength(2);
+		expect(within(controls).getByRole('button', { name: /Collapse all/ })).toBeInTheDocument();
+		expect(actionRow).not.toBeNull();
+		expect(actionRow?.querySelector('[data-slot="freshness-stamp"]')).not.toBeNull();
+		expect(controlRow).toContainElement(controls);
+		expect(Array.from(headerContent.children).at(-1)).toBe(controlRow);
+
+		const sectionTriggers = () =>
+			Array.from(container.querySelectorAll<HTMLButtonElement>('[data-section-trigger]'));
+		const sectionBodies = () =>
+			Array.from(container.querySelectorAll<HTMLElement>('[data-network-section] .section-body'));
+		expect(sectionTriggers().length).toBeGreaterThanOrEqual(10);
+		expect(
+			sectionTriggers().every((trigger) => trigger.getAttribute('aria-expanded') === 'true'),
+		).toBe(true);
+
+		await fireEvent.click(within(controls).getByRole('button', { name: /Collapse all/ }));
+		await waitFor(() =>
+			expect(
+				sectionTriggers().every((trigger) => trigger.getAttribute('aria-expanded') === 'false'),
+			).toBe(true),
+		);
+		expect(sectionBodies().every((body) => body.getAttribute('data-state') === 'closed')).toBe(
+			true,
+		);
+
+		await fireEvent.click(within(controls).getByRole('button', { name: /Expand all/ }));
+		await waitFor(() =>
+			expect(
+				sectionTriggers().every((trigger) => trigger.getAttribute('aria-expanded') === 'true'),
+			).toBe(true),
+		);
+		expect(sectionBodies().every((body) => body.getAttribute('data-state') === 'open')).toBe(true);
+	});
+
+	it('gives every visible Network article card exactly one shared outer disclosure', async () => {
+		const { container } = render(NetworkSurface);
+		const expectedKeys = [
+			'network-live-headline',
+			'network-reporting',
+			'network-status-mix',
+			'network-delay-histogram',
+			'network-daily-trend',
+			'network-cancellations',
+			'network-crowding-by-day',
+			'network-service-completeness',
+			'network-by-time-of-day',
+			'network-weekday-weekend',
+		];
+		const sectionWrappers = Array.from(
+			container.querySelectorAll<HTMLElement>('[data-network-section]'),
+		);
+
+		expect(sectionWrappers.map((section) => section.dataset.networkSection)).toEqual(expectedKeys);
+
+		for (const wrapper of sectionWrappers) {
+			const key = wrapper.dataset.networkSection;
+			expect(wrapper, key).not.toBeNull();
+			const card = wrapper.querySelector(':scope > [data-slot="card"]') as HTMLElement;
+			expect(card, key).not.toBeNull();
+			expect(card, key).toHaveAttribute('data-header-variant', 'article-summary');
+			expect(card.querySelector('[data-network-section]'), key).toBeNull();
+			const trigger = card.querySelector('[data-section-trigger]') as HTMLButtonElement;
+			expect(trigger, key).toHaveAttribute('aria-expanded', 'true');
+			expect(card.querySelector('[data-slot="chevron-toggle"]'), key).not.toBeNull();
+		}
+
+		const trend = container.querySelector(
+			'[data-network-section="network-daily-trend"] > [data-slot="card"]',
+		) as HTMLElement;
+		await fireEvent.click(within(trend).getByRole('button', { name: copy.trendSection }));
+		expect(sessionStorage.getItem('transit.persisted:network-daily-trend')).toBe('false');
+	});
+
+	it('uses the shared ArticleSectionStack rhythm for both primary card groups', () => {
+		const { container } = render(NetworkSurface);
+		const liveRegion = container.querySelector('[data-toc="net-live"]') as HTMLElement;
+		const historicRegion = container.querySelector('[data-toc="net-historic"]') as HTMLElement;
+		const liveStack = liveRegion.querySelector('.article-section-stack') as HTMLElement;
+		const historicStack = historicRegion.querySelector('.article-section-stack') as HTMLElement;
+
+		expect(liveStack).not.toBeNull();
+		expect(liveStack).toContainElement(
+			container.querySelector('[data-network-section="network-live-headline"]'),
+		);
+		expect(
+			container.querySelector('[data-network-section="network-live-headline"]'),
+		).toContainElement(container.querySelector('[data-slot="network-lede"]'));
+		expect(historicStack).not.toBeNull();
+		expect(historicStack).toContainElement(
+			container.querySelector('[data-network-section="network-daily-trend"]'),
+		);
+
+		const source = networkSource();
+		const localOuterStackRules =
+			source.match(/\.network-(?:live-content|history-board|region)\s*\{[^}]*\}/g) ?? [];
+		expect(localOuterStackRules.join('\n')).not.toMatch(/\bgap\s*:/);
+		expect(source).toMatch(
+			/\.network-history-companions\s*\{[^}]*gap:\s*var\(--space-card-gap\);/s,
+		);
+	});
+
+	it('uses deterministic full-width history rows followed by one responsive companion row', () => {
+		const { container } = render(NetworkSurface);
+		const board = container.querySelector('[data-slot="network-history-board"]') as HTMLElement;
+
+		expect(board).not.toBeNull();
+		expect(Array.from(board.children).map((child) => child.getAttribute('data-slot'))).toEqual([
+			'network-history-trend-row',
+			'network-history-cancellations-row',
+			'network-history-crowding-row',
+			'network-history-companion-row',
+		]);
+		expect(
+			board.querySelector(
+				'[data-slot="network-history-trend-row"] [data-network-section="network-daily-trend"]',
+			),
+		).not.toBeNull();
+		expect(
+			board.querySelector(
+				'[data-slot="network-history-cancellations-row"] [data-network-section="network-cancellations"]',
+			),
+		).not.toBeNull();
+		expect(
+			board.querySelector(
+				'[data-slot="network-history-crowding-row"] [data-network-section="network-crowding-by-day"]',
+			),
+		).not.toBeNull();
+
+		const companions = board.querySelector(
+			'[data-slot="network-history-companion-row"]',
+		) as HTMLElement;
+		expect(companions).not.toBeNull();
+		expect(companions).toHaveClass('network-history-companions');
+		expect(
+			companions.querySelector('[data-network-section="network-service-completeness"]'),
+		).not.toBeNull();
+		expect(
+			companions.querySelector('[data-network-section="network-by-time-of-day"]'),
+		).not.toBeNull();
+		expect(
+			companions.querySelector('[data-network-section="network-weekday-weekend"]'),
+		).not.toBeNull();
+	});
+
+	it('removes Network-only hazard dividers and decorative glow from the card composition', () => {
+		expect(networkSource()).not.toMatch(/<Separator\b/);
+		expect(networkSource()).not.toMatch(/import\s+\{\s*Separator\s*\}/);
+		expect(networkTileSource()).not.toMatch(/box-shadow\s*:|--shadow-card|drop-shadow\s*\(/);
+		expect(networkTileSource()).not.toMatch(/height:\s*100%/);
+	});
+});
 
 describe('NetworkSurface drilldown', () => {
 	// P5.2: the cross-filter rides each band's spec `href` (a focusable SVG link
@@ -708,7 +994,9 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 			const { container } = render(NetworkSurface);
 			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 			await fireEvent.click(within(rail).getByRole('button', { name: copy.historicRegion }));
-			expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+			await waitFor(() =>
+				expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' }),
+			);
 		} finally {
 			motion.reduced = false;
 			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
@@ -743,7 +1031,31 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
 	});
 
-	it('gives each rail presentation its own disabled-grain reason id', async () => {
+	it('keeps the one ToC disclosure remembered while its rail moves into the sheet', async () => {
+		const storageKey = 'transit.persisted:network-toc';
+		sessionStorage.removeItem(storageKey);
+		const { container } = render(NetworkSurface);
+		const desktopToc = container.querySelector(
+			'[data-slot="surface-rail"] [data-slot="section-toc"]',
+		) as HTMLElement;
+		const desktopToggle = within(desktopToc).getByRole('button', { name: copy.rail.toc });
+
+		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		await fireEvent.click(mobile.querySelector(':scope > button') as HTMLButtonElement);
+		const mobileToc = (mobile.querySelector('[role="dialog"]') as HTMLElement).querySelector(
+			'[data-slot="section-toc"]',
+		) as HTMLElement;
+		const mobileToggle = within(mobileToc).getByRole('button', { name: copy.rail.toc });
+		expect(mobileToggle).toBe(desktopToggle);
+
+		await fireEvent.click(mobileToggle);
+
+		expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
+		expect(desktopToggle).toHaveAttribute('aria-expanded', 'false');
+		expect(sessionStorage.getItem(storageKey)).toBe('false');
+	});
+
+	it('keeps one disabled-grain reason and one described radio as the rail moves', async () => {
 		const original = monthlySeries.slice();
 		monthlySeries.splice(0, monthlySeries.length);
 
@@ -758,20 +1070,13 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 				container.querySelectorAll<HTMLElement>('[data-slot="controls-reason"]'),
 			);
 			const reasonIds = reasons.map((reason) => reason.id);
-			expect(reasonIds).toHaveLength(2);
+			expect(reasonIds).toHaveLength(1);
 			expect(new Set(reasonIds).size).toBe(reasonIds.length);
-			expect(reasonIds).toEqual(
-				expect.arrayContaining([
-					expect.stringMatching(/-desktop$/),
-					expect.stringMatching(/-mobile$/),
-				]),
-			);
+			expect(reasonIds[0]).toMatch(/-(?:desktop|mobile)$/);
 
 			const monthRadios = screen.getAllByRole('radio', { name: copy.grain.month });
-			expect(monthRadios).toHaveLength(2);
-			expect(monthRadios.map((radio) => radio.getAttribute('aria-describedby'))).toEqual(
-				expect.arrayContaining(reasonIds),
-			);
+			expect(monthRadios).toHaveLength(1);
+			expect(monthRadios[0]?.getAttribute('aria-describedby')).toBe(reasonIds[0]);
 			for (const radio of monthRadios) {
 				const describedBy = radio.getAttribute('aria-describedby');
 				expect(describedBy).not.toBeNull();
@@ -798,5 +1103,26 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 		expect(labels.some((l) => l.includes(copy.historicRegion))).toBe(true);
 		// The old per-region scope glyph is gone — no ↻/∞ anywhere in the rail ToC.
 		expect(toc.textContent).not.toMatch(/[↻∞]/);
+	});
+});
+
+describe('NetworkSurface canonical article-control stack', () => {
+	it('orders label, history, primary grain, and secondary controls before the section ToC', () => {
+		const component = networkSource();
+		const tag = component.match(/<ArticleControlStack[\s\S]*?\/>/)?.[0] ?? '';
+		const primary =
+			component.match(/{#snippet primaryControls\(\)}([\s\S]*?){\/snippet}/)?.[1] ?? '';
+
+		expect(tag).not.toBe('');
+		expect(tag.indexOf('label=')).toBeLessThan(tag.indexOf('history='));
+		expect(tag.indexOf('history=')).toBeLessThan(tag.indexOf('primary='));
+		expect(tag.indexOf('primary=')).toBeLessThan(tag.indexOf('secondary='));
+		expect(tag).not.toContain('caption=');
+		expect(primary).toContain('variant="time-grid"');
+		expect(component.indexOf('data-slot="section-toc"')).toBeGreaterThan(
+			component.indexOf('<ArticleControlStack'),
+		);
+		expect(component).not.toMatch(/class=["']network-control-body/);
+		expect(component).not.toMatch(/\.network-control-body\s*\{/);
 	});
 });

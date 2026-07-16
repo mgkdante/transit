@@ -28,6 +28,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Path-derived locale → <html lang>. No Vary header: the representation is a
 	// pure function of the URL path, so each URL is independently cacheable.
 	const lang = pathLocale(event.url.pathname);
+	event.locals.locale = lang;
 
 	const response = await resolve(event, {
 		transformPageChunk: ({ html }) => html.replace('%lang%', lang),
