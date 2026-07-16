@@ -37,7 +37,7 @@ function distinctIds(entries: readonly AlertHistoryEntry[], field: EntityField):
  * group label names the type once — no "Line NN"/"Stop NNNNN" prefix), and the folded
  * search haystack is the id itself so typing is diacritics-insensitive + stable.
  */
-export function buildEntityOptions(
+function buildEntityOptions(
 	entries: readonly AlertHistoryEntry[],
 	field: EntityField,
 	fold: (raw: string) => string,

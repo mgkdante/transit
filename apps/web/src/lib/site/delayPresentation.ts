@@ -113,7 +113,7 @@ export const TONE_GLYPH: Record<ChipTone, string> = {
  * chip glyphs + row captions resolve the ONE status scale — on-time always
  * resolves (unlike a raw null → no-data track).
  */
-export const TONE_SAMPLE: Record<ChipTone, number> = {
+const TONE_SAMPLE: Record<ChipTone, number> = {
 	early: -1,
 	'on-time': 0,
 	late: 1,

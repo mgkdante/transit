@@ -19,7 +19,7 @@ export const OFFENDER_GRAINS: readonly OffenderGrainKey[] = ['week', 'month'];
 const GRAIN_SET: ReadonlySet<string> = new Set(OFFENDER_GRAINS);
 
 /** True when a served grain string is one this surface knows how to render. */
-export function isOffenderGrain(v: string): v is OffenderGrainKey {
+function isOffenderGrain(v: string): v is OffenderGrainKey {
 	return GRAIN_SET.has(v);
 }
 

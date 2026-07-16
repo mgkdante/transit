@@ -1232,9 +1232,9 @@
 		   fully expanded MapLibre attribution instead of letting three independent
 		   bottom offsets overlap. */
 		--map-mobile-control-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
-		/* Map-internal stacking ladder (P5.3d §C4 P5). Source of truth + docs:
-		   lib/features/map/mapZ.ts. Deliberately NOT global --z-* tokens — these
-		   order overlays WITHIN the canvas only and are all capped under --z-nav. */
+		/* Map-internal stacking ladder (P5.3d §C4 P5). These custom properties are
+		   the source of truth. Deliberately NOT global --z-* tokens — they order
+		   overlays WITHIN the canvas only and are all capped under --z-nav. */
 		--z-map-behind: -1;
 		--z-map-canvas: 1;
 		--z-map-popover-behind: 2;

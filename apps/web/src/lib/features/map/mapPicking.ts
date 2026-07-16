@@ -21,7 +21,7 @@ function numericProperty(feature: PickableMapFeature, key: string): number | nul
 	return Number.isFinite(value) ? value : null;
 }
 
-export function selectionFromFeature(feature: PickableMapFeature): MapSelection | null {
+function selectionFromFeature(feature: PickableMapFeature): MapSelection | null {
 	const layerId = feature.layer?.id;
 	if (layerId === VEHICLE_BODY_LAYER) {
 		const id = stringProperty(feature, 'id');

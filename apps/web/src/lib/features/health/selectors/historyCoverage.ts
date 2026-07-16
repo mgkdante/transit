@@ -13,7 +13,7 @@ import {
 	STOP_CURRENT_ONLY_SECTIONS,
 } from '$lib/v1/history/families';
 
-export const HISTORY_COVERAGE_FAMILIES = [
+const HISTORY_COVERAGE_FAMILIES = [
 	'alerts',
 	'receipts',
 	'network',
