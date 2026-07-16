@@ -412,9 +412,11 @@ describe('RepeatOffenders retained date history', () => {
 				message,
 			),
 		);
+		const navigatorCopy = container.querySelector('[data-slot="history-announcement"]');
 		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
 		await fireEvent.click(mobile.querySelector(':scope > button') as HTMLButtonElement);
-		expect(container.querySelectorAll('[data-slot="history-announcement"]')).toHaveLength(2);
+		expect(container.querySelectorAll('[data-slot="history-announcement"]')).toHaveLength(1);
+		expect(container.querySelector('[data-slot="history-announcement"]')).toBe(navigatorCopy);
 		for (const copy of container.querySelectorAll('[data-slot="history-announcement"]')) {
 			expect(copy).not.toHaveAttribute('role');
 			expect(copy).not.toHaveAttribute('aria-live');

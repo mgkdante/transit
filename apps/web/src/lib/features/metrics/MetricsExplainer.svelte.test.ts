@@ -90,29 +90,35 @@ beforeEach(resetMetricsStorage);
 afterEach(resetMetricsStorage);
 
 describe('MetricsExplainer', () => {
-	it('scopes the narrow freshness label treatment to the Metrics freshness rail', () => {
+	it('stacks the single-rail Metrics freshness date below its label', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
 			'utf8',
 		);
 		expect(source).toMatch(
-			/\.metrics-stat__body\[data-slot='stat-freshness'\]\s*:global\(\.freshness-stamp-label\)\s*\{[\s\S]*?flex-shrink:\s*0[\s\S]*?white-space:\s*nowrap/,
+			/\.metrics-stat__body\[data-slot='stat-freshness'\][\s\S]*?:global\(\.freshness-stamp--updated\.metrics-freshness-stamp\)\s*\{[\s\S]*?display:\s*grid[\s\S]*?grid-template-columns:\s*auto minmax\(0, 1fr\)/,
+		);
+		expect(source).toMatch(
+			/:global\(\.metrics-freshness-stamp \.freshness-stamp-label\)[\s\S]*?:global\(\.metrics-freshness-stamp \.freshness-stamp-age\)\s*\{[\s\S]*?grid-column:\s*2/,
 		);
 	});
 
-	it('stacks every mobile summary rail card in one full-width grid row', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
-			'utf8',
-		);
+	it('renders the single-rail freshness label immediately before its machine-readable date', () => {
+		provState.data = {
+			generated_utc: '2026-07-11T04:00:00Z',
+			conformance: { status: 'conformant', extra_row_count: 0, unknown_members: [] },
+			methodology: {},
+		};
+		const { container } = render(MetricsExplainer);
+		const freshness = container.querySelector(
+			'[data-slot="detail-shell-left"] [data-slot="stat-freshness"]',
+		) as HTMLElement;
+		const label = within(freshness).getByText('Updated');
+		const time = freshness.querySelector('time') as HTMLTimeElement;
 
-		expect(source).toMatch(
-			/:global\(\.detail-shell-mobile-summary\) \.metrics-stat-rail\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
-		);
-		expect(source).toMatch(
-			/:global\(\.detail-shell-mobile-summary\)[\s\S]*?\.metrics-stat-rail[\s\S]*?> :global\(\[data-slot='card'\]\)\s*\{[^}]*width:\s*100%;/,
-		);
-		expect(source).not.toMatch(/flex:\s*1 1 12rem/);
+		expect(time).not.toBeNull();
+		expect(time).toHaveAttribute('datetime', '2026-07-11T04:00:00Z');
+		expect(label.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	});
 
 	it('keeps every information kind in one foreground stack at every width', () => {
@@ -187,18 +193,61 @@ describe('MetricsExplainer', () => {
 		expect(container.textContent).toContain(en.confidence.levels.medium.meaning);
 	});
 
-	it('re-seats onto the DetailShell 3-col shell (left ToC rail · center sections · right stat rail)', () => {
+	it('uses one wide left rail for navigation then At a glance, plus one center column', () => {
+		provState.data = {
+			generated_utc: '2026-07-11T04:00:00Z',
+			conformance: { status: 'conformant', extra_row_count: 0, unknown_members: [] },
+			methodology: {},
+		};
 		const { container } = render(MetricsExplainer);
 
-		// P5.4c: the surface is now a DetailShell. The left rail carries the ToC,
-		// the center carries the sections column, the right rail carries the stat cards.
 		const grid = container.querySelector('.detail-shell-grid') as HTMLElement;
-		expect(grid).not.toBeNull();
-		expect(grid.querySelector('[data-slot="detail-shell-left"] .metrics-toc-rail')).not.toBeNull();
-		expect(grid.querySelector('[data-slot="detail-shell-center"] .sections-column')).not.toBeNull();
-		expect(
-			grid.querySelector('[data-slot="detail-shell-right"] .metrics-stat-rail'),
-		).not.toBeNull();
+		const left = grid.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		const toc = left.querySelector('.toc-nav') as HTMLElement;
+		const summary = left.querySelector('.metrics-stat-aside') as HTMLElement;
+
+		expect(grid).toHaveClass('detail-shell-grid--two');
+		expect(grid.querySelectorAll('[data-slot="detail-shell-left"]')).toHaveLength(1);
+		expect(grid.querySelectorAll('[data-slot="detail-shell-center"]')).toHaveLength(1);
+		expect(grid.querySelector('[data-slot="detail-shell-right"]')).toBeNull();
+		expect(container.querySelector('[data-slot="detail-shell-mobile-summary"]')).toBeNull();
+		expect(container.querySelectorAll('.metrics-stat-rail')).toHaveLength(1);
+		expect(summary).toHaveAttribute('aria-label', en.statRail.label);
+		expect(toc.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+
+	it('delegates the primary section rhythm to ArticleSectionStack without a local outer gap', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
+			'utf8',
+		);
+		const { container } = render(MetricsExplainer);
+		const stack = container.querySelector(
+			'[data-slot="detail-shell-center"] [data-slot="article-section-stack"]',
+		);
+
+		expect(stack).toHaveAttribute('data-testid', 'metrics-sections');
+		expect(source).toContain('ArticleSectionStack');
+		expect(source).not.toMatch(/\.sections-column\s*\{/);
+	});
+
+	it('delegates every multi-card metric cluster to the same shared card-gap primitive', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/metrics/MetricsExplainer.svelte'),
+			'utf8',
+		);
+		const { container } = render(MetricsExplainer);
+		const clusters = Array.from(container.querySelectorAll<HTMLElement>('.metrics-cluster'));
+
+		expect(clusters).toHaveLength(new Set(METRICS.map((entry) => entry.cluster)).size);
+		for (const cluster of clusters) {
+			const cardStack = cluster.querySelector(
+				':scope > [data-slot="article-section-stack"][data-slot-variant="metric-cluster"]',
+			);
+			expect(cardStack).not.toBeNull();
+			expect(cardStack?.querySelectorAll(':scope > .section-block').length).toBeGreaterThan(0);
+		}
+		expect(source).not.toMatch(/\.metrics-cluster\s*\{[^}]*\bgap\s*:/s);
 	});
 
 	it('opts every Metrics section and stat card into article-summary headers', () => {
@@ -218,12 +267,12 @@ describe('MetricsExplainer', () => {
 		);
 
 		expect(sectionCards).toHaveLength(METRICS.length + 3);
-		expect(railCards).toHaveLength(6);
+		expect(railCards).toHaveLength(3);
 		for (const card of [...sectionCards, ...railCards]) {
 			expect(card).toHaveAttribute('data-header-variant', 'article-summary');
 		}
 		expect(
-			container.querySelector('.metrics-toc-rail [data-header-variant="article-summary"]'),
+			container.querySelector('.metrics-toc-rail .toc-nav [data-header-variant="article-summary"]'),
 		).toBeNull();
 	});
 
@@ -651,6 +700,9 @@ describe('MetricsExplainer', () => {
 
 		const target = METRICS[3];
 		expect(cardTrigger(container, target.anchor)).toHaveAttribute('aria-expanded', 'false');
+		const toc = tocTrigger(container);
+		expect(toc).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(toc!);
 		await fireEvent.click(within(rail).getByRole('button', { name: target.name.en }));
 
 		expect(cardTrigger(container, target.anchor)).toHaveAttribute('aria-expanded', 'true');
@@ -699,7 +751,7 @@ describe('MetricsExplainer', () => {
 		}
 	});
 
-	it('collapses and expands left, center, and both responsive rail mounts', async () => {
+	it('collapses and expands the left rail and center sections together', async () => {
 		const { container } = render(MetricsExplainer);
 		await fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
 		for (const trigger of container.querySelectorAll('button.section-header')) {
@@ -711,21 +763,16 @@ describe('MetricsExplainer', () => {
 		}
 	});
 
-	it('keeps a mobile Coverage action scoped to Coverage across both responsive rail mounts', async () => {
+	it('keeps the single-rail Coverage action scoped to Coverage', async () => {
 		provState.data = {
 			generated_utc: '2026-07-10T12:00:00Z',
 			conformance: { status: 'conformant', extra_row_count: 0, unknown_members: [] },
 			methodology: {},
 		};
 		const { container } = render(MetricsExplainer);
-		const mobileSummary = container.querySelector(
-			'[data-slot="detail-shell-mobile-summary"]',
-		) as HTMLElement;
 		const coverage = screen.getAllByRole('button', { name: en.statRail.coverage.title });
-		expect(coverage).toHaveLength(2);
-		const mobileCoverage = within(mobileSummary).getByRole('button', {
-			name: en.statRail.coverage.title,
-		});
+		expect(coverage).toHaveLength(1);
+		const coverageTrigger = coverage[0];
 		const otherRailTriggers = Array.from(
 			container.querySelectorAll<HTMLButtonElement>('.metrics-stat-rail button.section-header'),
 		).filter((trigger) => !coverage.includes(trigger));
@@ -733,12 +780,12 @@ describe('MetricsExplainer', () => {
 			trigger.getAttribute('aria-expanded'),
 		);
 
-		await fireEvent.click(mobileCoverage);
+		await fireEvent.click(coverageTrigger);
 
-		const mobileCoverageBody = mobileCoverage
+		const coverageBody = coverageTrigger
 			.closest('[data-slot="card"]')
 			?.querySelector('[data-slot="collapsible-content"]');
-		expect(mobileCoverageBody).toHaveAttribute('data-state', 'closed');
+		expect(coverageBody).toHaveAttribute('data-state', 'closed');
 		for (const trigger of coverage) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		}

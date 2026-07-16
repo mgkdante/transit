@@ -59,6 +59,7 @@
 		className,
 	)}
 	data-slot="chart-legend"
+	data-card-interactive
 	aria-hidden="true"
 	{...restProps}
 >

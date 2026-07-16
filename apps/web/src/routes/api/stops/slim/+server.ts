@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getStopsIndex } from '$lib/v1/repositories/static';
 import { toSlimStopsIndex } from '$lib/v1/repositories/stopsSlim';
-import { bindingFetch } from '$lib/v1/binding';
+import { serverV1Context } from '$lib/v1/serverContext';
 
 export const prerender = false;
 
@@ -16,15 +16,11 @@ export const prerender = false;
 // as 503 and the client repo (`getStopsIndexSlim`) fails soft to a client-side
 // projection of the full index, so the map always resolves every stop.
 //
-// Reads over the `DATA` service binding on Cloudflare (a Worker cannot fetch its
-// own zone's /data/* route → 523); local dev / preview has no binding, so it
-// defers to the event `fetch` (the vite proxy serves /data in dev).
-export const GET: RequestHandler = async ({ platform, url, fetch }) => {
-	const binding = platform?.env?.DATA;
-	const ctx = binding ? { fetch: bindingFetch(binding, url.origin) } : { fetch };
-
+// Reads through the shared server context: direct R2 binding in production,
+// compatibility DATA binding only as fallback, and event.fetch in local dev.
+export const GET: RequestHandler = async (event) => {
 	try {
-		const slim = toSlimStopsIndex(await getStopsIndex(ctx));
+		const slim = toSlimStopsIndex(await getStopsIndex(serverV1Context(event)));
 		return json(slim, {
 			headers: {
 				// Static tier (daily republish). Cache at the edge + browser; SWR keeps a

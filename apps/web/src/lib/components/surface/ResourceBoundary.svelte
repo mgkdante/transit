@@ -9,7 +9,7 @@
   Render PRIORITY (first match wins):
     1. data present (and not isEmpty)  → the `children` snippet, given the data
     2. error                           → EdgeState error-v1 (with a retry)
-    3. loading / not settled           → EdgeState skeleton
+    3. loading / not settled           → delayed EdgeState skeleton (no fast-load flash)
     4. settled, no data                → EdgeState empty
 
   The edge density tracks the shell breakpoint (`layout.isDesktop` from $lib/nav),
@@ -21,7 +21,7 @@
 	import type { Resource } from '$lib/v1/resource.svelte';
 	import { asDataState } from '$lib/v1/data-state';
 	import { layout } from '$lib/nav';
-	import { EdgeState } from '$lib/components/edge';
+	import { EdgeState, type StateNoticePresentation } from '$lib/components/edge';
 	import type { AbsenceReason } from '$lib/site/serviceWindow';
 
 	interface ResourceBoundaryProps {
@@ -66,6 +66,8 @@
 		children: Snippet<[NonNullable<T>]>;
 		/** Optional extra classes forwarded to the edge states. */
 		class?: string;
+		/** Message-state geometry; loading skeleton composition remains layout-driven. */
+		presentation?: Exclude<StateNoticePresentation, 'pill'>;
 	}
 
 	let {
@@ -77,6 +79,7 @@
 		emptyVariant = 'empty',
 		children,
 		class: className,
+		presentation = 'responsive',
 	}: ResourceBoundaryProps = $props();
 
 	// An inferred reason only attaches to the neutral 'empty' variant; the good
@@ -102,13 +105,14 @@
 		{lang}
 		layout={edgeLayout}
 		onRetry={() => resource.reload()}
+		{presentation}
 		class={className}
 	/>
 {:else if state.kind === 'loading'}
 	<EdgeState variant="skeleton" {lang} layout={edgeLayout} class={className} />
 {:else if state.kind === 'no_results'}
 	<!-- A filter/search excluded everything (recoverable) — distinct from no data. -->
-	<EdgeState variant="no-results" {lang} layout={edgeLayout} class={className} />
+	<EdgeState variant="no-results" {lang} layout={edgeLayout} {presentation} class={className} />
 {:else}
 	<!-- state.kind === 'empty' — a genuine honest absence (with its reason). -->
 	<EdgeState
@@ -116,6 +120,7 @@
 		{lang}
 		layout={edgeLayout}
 		{emptyReason}
+		{presentation}
 		class={className}
 	/>
 {/if}

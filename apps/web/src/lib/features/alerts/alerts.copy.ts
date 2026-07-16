@@ -53,6 +53,8 @@ export interface AlertHistoryCopy extends SurfaceHeadCopy {
 	readonly empty: string;
 	/** Honest note when the served window was capped newest-first (truncated=true). */
 	readonly truncatedNote: (shown: number, total: number) => string;
+	/** Honest interim note while the complete selected archive range is still loading. */
+	readonly archivePreviewNote: (shown: number) => string;
 	/** Per-row meta captions. */
 	readonly meta: {
 		/** "From" caption for an alert with a start time. */
@@ -210,6 +212,8 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		empty: 'Aucun avis de service archivé pour le moment.',
 		truncatedNote: (shown, total) =>
 			`Fenêtre plafonnée : ${shown} avis les plus récents sur ${total} au total ; les décomptes et la répartition reflètent seulement ces avis.`,
+		archivePreviewNote: (shown) =>
+			`Chargement de la fenêtre complète. Affichage temporaire des ${shown} avis les plus récents ; les décomptes et la répartition seront mis à jour.`,
 		meta: {
 			from: 'À partir de',
 			until: 'Jusqu’à',
@@ -348,6 +352,8 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		empty: 'No archived service alerts yet.',
 		truncatedNote: (shown, total) =>
 			`Window capped: showing the ${shown} most recent of ${total} alerts; counts and the breakdown reflect only these.`,
+		archivePreviewNote: (shown) =>
+			`Loading the complete selected range. Showing the latest ${shown} ${shown === 1 ? 'alert' : 'alerts'} for now; counts and the breakdown will update.`,
 		meta: {
 			from: 'From',
 			until: 'Until',

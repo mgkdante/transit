@@ -33,6 +33,7 @@
 -->
 <script lang="ts">
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { getAlertArchiveIndex, getAlertArchiveRange, getAlertHistory } from '$lib/v1';
 	import type {
@@ -51,8 +52,18 @@
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
 	import { fromSearchParams, type AlertAffects, type DateWindow } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { createRailDisclosureController, ResourceBoundary } from '$lib/components/surface';
-	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
+	import {
+		ArticleControlDisclosure,
+		createRailDisclosureController,
+		ResourceBoundary,
+	} from '$lib/components/surface';
+	import {
+		ArticleHeader,
+		ArticleSectionStack,
+		DetailShell,
+		type ArticleMetaEntry,
+	} from '$lib/components/layout';
+	import { StateNotice } from '$lib/components/edge';
 	import {
 		CollapsibleSection,
 		TocNav,
@@ -127,6 +138,7 @@
 	// --- Codec seed (ONCE) ------------------------------------------------------
 	const rawHistoryFrom = page.url.searchParams.get('from');
 	const rawHistoryTo = page.url.searchParams.get('to');
+	const hasExplicitHistoryWindow = rawHistoryFrom !== null || rawHistoryTo !== null;
 	const seed = fromSearchParams(page.url.searchParams);
 	// Entity-type + severity are single-select scalars (absent = "all").
 	let affects = $state<'all' | AlertAffects>(seed.alertAffects ?? 'all');
@@ -175,6 +187,39 @@
 		return `${window.from}:${window.to}`;
 	}
 
+	// A paired date edit fires once for each field. Abort the old read immediately,
+	// then wait for the short edit burst to settle so From + To issue one range load.
+	const RANGE_CHANGE_DEBOUNCE_MS = 120;
+	let archiveLoadWindow = $state<DateWindow | null>(null);
+	let archiveLoadPrimed = false;
+	$effect(() => {
+		const selection = pickedWindow;
+		if (!windowSettled || alertArchiveIndex.data == null || selection == null) {
+			archiveLoadWindow = null;
+			return;
+		}
+
+		const next = { from: selection.from, to: selection.to };
+		if (!archiveLoadPrimed) {
+			archiveLoadPrimed = true;
+			archiveLoadWindow = next;
+			return;
+		}
+		if (
+			sameHistoryWindow(
+				untrack(() => archiveLoadWindow),
+				next,
+			)
+		)
+			return;
+
+		archiveLoadWindow = null;
+		const timer = window.setTimeout(() => {
+			archiveLoadWindow = next;
+		}, RANGE_CHANGE_DEBOUNCE_MS);
+		return () => window.clearTimeout(timer);
+	});
+
 	interface SelectedAlertRange {
 		readonly window: DateWindow;
 		readonly entries: readonly AlertArchiveEntry[];
@@ -184,7 +229,7 @@
 	const archiveRange = createResource<SelectedAlertRange | null>(
 		async (signal) => {
 			const index = alertArchiveIndex.data;
-			const selection = pickedWindow;
+			const selection = archiveLoadWindow;
 			if (!windowSettled || index == null || selection == null) {
 				rangeAttemptKey = null;
 				return null;
@@ -214,6 +259,33 @@
 			!alertArchiveIndex.settled ||
 			!windowSettled,
 	);
+	const useCompatibilityPayload = $derived.by(() => {
+		if (history.data == null || history.error != null) return false;
+		if (alertArchiveIndex.error != null) return false;
+		if (alertArchiveIndex.settled && alertArchiveIndex.data == null) return true;
+		// Until the advertised range confirms it, an empty compatibility array is
+		// not enough evidence for a citizen-facing "0 alerts" result.
+		if ((history.data.alerts?.length ?? 0) === 0) return false;
+		if (hasExplicitHistoryWindow) return false;
+		if (!alertArchiveIndex.settled) return true;
+		if (
+			!windowSettled ||
+			pickedWindow == null ||
+			defaultWindow == null ||
+			!sameHistoryWindow(pickedWindow, defaultWindow)
+		) {
+			return false;
+		}
+		const rangeError = archiveRange.error;
+		if (rangeAttemptKey === windowKey(pickedWindow) && rangeError != null) return false;
+		return selectedRangeData == null;
+	});
+	const previewingArchive = $derived(
+		useCompatibilityPayload &&
+			history.data?.truncated === true &&
+			alertArchiveIndex.data != null &&
+			selectedRangeData == null,
+	);
 	const displayError = $derived.by<Error | null>(() => {
 		// Read this unconditionally so a rejection wakes the derived value even when a
 		// just-changed selection briefly sees the preceding attempt key.
@@ -225,6 +297,7 @@
 	});
 	const displayLoading = $derived.by(() => {
 		if (displayError != null) return false;
+		if (useCompatibilityPayload) return false;
 		if (catalogLoading) return true;
 		if (alertArchiveIndex.data == null || pickedWindow == null) return false;
 		const matchingRange = selectedRangeData;
@@ -240,7 +313,9 @@
 		readonly entries: readonly AlertHistoryEntry[];
 	}
 	const displayData = $derived.by<AlertHistoryView | null>(() => {
-		if (displayError != null || displayLoading || history.data == null) return null;
+		if (displayError != null || history.data == null) return null;
+		if (useCompatibilityPayload) return { entries: history.data.alerts ?? [] };
+		if (displayLoading) return null;
 		if (alertArchiveIndex.data == null) return { entries: history.data.alerts ?? [] };
 		if (pickedWindow == null) return { entries: [] };
 		return selectedRangeData == null ? null : { entries: selectedRangeData.entries };
@@ -277,8 +352,9 @@
 		},
 	};
 
-	// The selected archive array is the only input to every calculation. Legacy rows
-	// are reachable only when the optional archive index is honestly absent.
+	// Every calculation reads one display array. The fast compatibility payload may
+	// render while the default retained range finishes, then the archive array swaps
+	// in atomically; a user-selected non-default range never inherits stale rows.
 	const entries = $derived<readonly AlertHistoryEntry[]>(displayData?.entries ?? []);
 	const sorted = $derived(sortNewestFirst(entries));
 	const historyCoverageText = $derived.by<string | null>(() => {
@@ -408,9 +484,11 @@
 	// The 'shown' count is the SERVED entry count (the population the newest-first
 	// server cap actually clipped) — never the client-filtered subset, which would
 	// misread as 'the N most recent' under an active filter (S15 review F1).
-	const truncated = $derived(alertArchiveIndex.data == null && history.data?.truncated === true);
+	const truncated = $derived(
+		useCompatibilityPayload && history.data?.truncated === true && !previewingArchive,
+	);
 	const totalInWindow = $derived(
-		alertArchiveIndex.data == null ? (history.data?.total_in_window ?? null) : null,
+		useCompatibilityPayload ? (history.data?.total_in_window ?? null) : null,
 	);
 
 	// --- Tier-2 breakdown -------------------------------------------------------
@@ -609,7 +687,7 @@
 	{/snippet}
 
 	{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
-		<CollapsibleSection
+		<ArticleControlDisclosure
 			title={t.filters.railLabel}
 			bind:open={
 				() => railDisclosures.isOpen('filters'), (next) => railDisclosures.set('filters', next)
@@ -634,7 +712,7 @@
 				onWindowChange={selectHistoryWindow}
 				onClear={clearFilters}
 			/>
-		</CollapsibleSection>
+		</ArticleControlDisclosure>
 		{#if tocEntries.length > 0}
 			<div class="alert-history-rail-toc" data-slot="section-toc">
 				<TocNav
@@ -663,7 +741,12 @@
 			isEmpty={(d: AlertHistoryView) => d.entries.length === 0}
 			emptyVariant="empty-avis"
 		>
-			<div class="alert-history-sections" data-slot="alert-sections">
+			<ArticleSectionStack data-slot="alert-sections">
+				{#if previewingArchive}
+					<p class="alert-history-preview" data-slot="alert-archive-preview" role="status">
+						{t.archivePreviewNote(entries.length)}
+					</p>
+				{/if}
 				{#each sectionDefs as section (section.id)}
 					{#if section.present}
 						<CollapsibleSection
@@ -717,9 +800,13 @@
 									{/if}
 
 									{#if !hasMatches}
-										<p class="alert-history-no-match" data-slot="alert-no-match">
-											{t.filters.noMatch}
-										</p>
+										<StateNotice
+											title={t.filters.noMatch}
+											presentation="silo"
+											role="status"
+											ariaLive="polite"
+											data-slot="alert-no-match"
+										/>
 									{:else}
 										<AlertLog
 											rows={visibleRows}
@@ -736,23 +823,28 @@
 						</CollapsibleSection>
 					{/if}
 				{/each}
-			</div>
+			</ArticleSectionStack>
 		</ResourceBoundary>
 	{/snippet}
 </DetailShell>
 
 <style>
-	.alert-history-sections {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-card-gap);
-		min-width: 0;
-	}
 	.alert-history-rail-toc {
 		margin-top: 0.25rem;
 	}
 	.alert-history-headline {
 		margin-bottom: 0.25rem;
+	}
+	.alert-history-preview {
+		margin: 0;
+		padding: 0.75rem 1rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.5;
+		color: var(--secondary-foreground);
+		background: color-mix(in srgb, var(--accent) 8%, transparent);
+		border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+		border-radius: var(--radius-sm);
 	}
 	.alert-history-content {
 		display: flex;
@@ -776,14 +868,6 @@
 	}
 	/* Honest cap note — quiet mono caption. */
 	.alert-history-truncated {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		line-height: 1.4;
-		color: var(--muted-foreground);
-	}
-	/* Honest no-match note — quiet mono caption, never an empty void or a "·". */
-	.alert-history-no-match {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);

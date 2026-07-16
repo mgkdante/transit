@@ -27,20 +27,18 @@ export async function getManifest(ctx?: AdapterCtx): Promise<Manifest> {
 }
 
 /**
- * Re-read the manifest FRESH from the edge, bypassing the boot path's per-request
- * memo AND the HTTP cache (`cache: 'reload'` + a cache-bust query). This is the
- * dataPulse engine's poll: boot reads the manifest ONCE with `force-cache`, so a
- * normal `getManifest()` would keep returning the booted bytes and never observe a
- * new publish. This variant always hits the origin so a strictly-newer
- * `generated_utc` can be detected and trigger the site-wide refresh.
+ * Re-read the manifest from one stable edge URL, bypassing only the boot path's
+ * per-request memo. Normal HTTP cache semantics avoid a forced network request
+ * when the response is still fresh; an expired response revalidates at the same
+ * shared cache key.
  *
  * Browser-only (it uses the global `fetch` against the same-origin `/data/v1`
  * base); never call it under SSR. Throws on a non-200 or a schema-invalid body so
  * the caller can swallow a transient failure and retry on the next tick.
  */
 export async function getManifestFresh(): Promise<Manifest> {
-	const url = `${resolveUrl('manifest.json')}?_=${Date.now()}`;
-	const res = await fetch(url, { cache: 'reload' });
+	const url = resolveUrl('manifest.json');
+	const res = await fetch(url);
 	if (!res.ok) {
 		throw new Error(`[v1.manifest] fresh manifest fetch failed: ${res.status} ${url}`);
 	}

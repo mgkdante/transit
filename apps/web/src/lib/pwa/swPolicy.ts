@@ -128,6 +128,28 @@ export function shouldHandle(
 }
 
 /**
+ * Should this request be intercepted with `FetchEvent.respondWith()`?
+ *
+ * Passing the scope guard is not enough: the worker must also own a concrete
+ * strategy for the request. Navigations use network-first and shell assets use
+ * cache-first. Arbitrary same-origin GET requests are left to the browser
+ * instead of being intercepted merely to call `fetch()` unchanged.
+ */
+export function shouldIntercept(
+	req: {
+		method?: string;
+		mode?: string;
+		headers?: { get(name: string): string | null };
+	},
+	url: URL,
+	origin: string,
+	precachedAssets: ReadonlySet<string>,
+): boolean {
+	if (!shouldHandle(req, url, origin)) return false;
+	return isNavigationRequest(req) || isShellAsset(url, precachedAssets);
+}
+
+/**
  * Given a kill-flag payload (or a fetch failure), should the SW kill itself?
  *
  * The operator deploys `static/sw-kill.json` with `{"disabled": true}` to

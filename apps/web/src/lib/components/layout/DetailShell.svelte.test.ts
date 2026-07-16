@@ -2,7 +2,7 @@
 //
 // Guards: the header rides the full-bleed `.detail-header-grid` band; the hazard tape
 // closes it; all slots render in their wrapper zones; the grid is 2-col without a right
-// rail and `1fr 2fr 1fr` (gap 2rem, 2.5rem block padding) at the yesid 1024 breakpoint;
+// rail, while real left/center/right callers retain three tracks at the yesid 1024 breakpoint;
 // the rails are sticky off the single --chrome-offset knob (never a literal); the mobile
 // summary strip is opt-in; and the floating TocPill renders only when there are entries.
 // Layout + wiring only — no data-mark assertions.
@@ -35,6 +35,8 @@ const entries: TocEntry[] = [{ id: 'sec-a', title: 'Section A', level: 2, childr
 
 const baseProps = {
 	header: mk('header'),
+	toolbar: mk('toolbar'),
+	summary: mk('fixed-summary'),
 	left: mk('left'),
 	center: mk('center'),
 	right: mk('right'),
@@ -80,6 +82,42 @@ const combinedProps = {
 
 const src = () =>
 	readFileSync(resolve(process.cwd(), 'src/lib/components/layout/DetailShell.svelte'), 'utf-8');
+const appCss = () => readFileSync(resolve(process.cwd(), 'src/app.css'), 'utf-8');
+
+function cssBlock(source: string, selector: string): string {
+	const start = source.indexOf(`${selector} {`);
+	if (start < 0) return '';
+	const bodyStart = source.indexOf('{', start) + 1;
+	let depth = 1;
+	for (let index = bodyStart; index < source.length; index += 1) {
+		if (source[index] === '{') depth += 1;
+		if (source[index] === '}') depth -= 1;
+		if (depth === 0) return source.slice(bodyStart, index);
+	}
+	return '';
+}
+
+function cssDeclaration(block: string, property: string): string {
+	return block.match(new RegExp(`${property}\\s*:\\s*([^;]+)`))?.[1]?.trim() ?? '';
+}
+
+function topLevelTracks(value: string): string[] {
+	const tracks: string[] = [];
+	let depth = 0;
+	let current = '';
+	for (const char of value.trim()) {
+		if (char === '(') depth += 1;
+		if (char === ')') depth -= 1;
+		if (/\s/.test(char) && depth === 0) {
+			if (current) tracks.push(current);
+			current = '';
+		} else {
+			current += char;
+		}
+	}
+	if (current) tracks.push(current);
+	return tracks;
+}
 
 beforeEach(() => {
 	tocObserver.cleanups = [];
@@ -131,6 +169,33 @@ describe('DetailShell — slots render in their zones', () => {
 		expect(right?.querySelector('[data-testid="right"]')).not.toBeNull();
 	});
 
+	it('renders one stable full-width toolbar between the hazard tape and body grid', () => {
+		const { container } = render(DetailShell, { props: baseProps });
+		const tape = container.querySelector('.detail-shell-tape');
+		const toolbar = container.querySelector('[data-slot="detail-shell-toolbar"]');
+		const grid = container.querySelector('.detail-shell-grid');
+
+		expect(toolbar?.querySelector('[data-testid="toolbar"]')).not.toBeNull();
+		expect(tape?.compareDocumentPosition(toolbar as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+		expect(toolbar?.compareDocumentPosition(grid as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+	});
+
+	it('starts the left rail level with one centered summary at the top of the main column', () => {
+		const { container } = render(DetailShell, { props: baseProps });
+		const toolbar = container.querySelector('[data-slot="detail-shell-toolbar"]');
+		const summary = container.querySelector('[data-slot="detail-shell-summary"]');
+		const grid = container.querySelector('.detail-shell-grid');
+		const left = container.querySelector('[data-slot="detail-shell-left"]');
+		const center = container.querySelector('[data-slot="detail-shell-center"]');
+
+		expect(summary?.querySelector('[data-testid="fixed-summary"]')).not.toBeNull();
+		expect(toolbar?.compareDocumentPosition(grid as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+		expect(left?.parentElement).toBe(grid);
+		expect(center?.parentElement).toBe(grid);
+		expect(summary?.closest('[data-slot="detail-shell-center"]')).toBe(center);
+		expect(center?.firstElementChild).toBe(summary);
+	});
+
 	it('renders the mobile summary strip when provided, omits it when absent', () => {
 		const { container } = render(DetailShell, { props: baseProps });
 		expect(
@@ -148,6 +213,31 @@ describe('DetailShell — slots render in their zones', () => {
 		const grid = container.querySelector('.detail-shell-grid');
 		expect(grid?.classList.contains('detail-shell-grid--two')).toBe(true);
 		expect(container.querySelector('[data-slot="detail-shell-right"]')).toBeNull();
+	});
+
+	it('selects the adaptive three-region path when a real right rail is supplied', () => {
+		const { container } = render(DetailShell, { props: baseProps });
+		const grid = container.querySelector('.detail-shell-grid');
+
+		expect(grid).toHaveClass('detail-shell-grid--three');
+		expect(grid).not.toHaveClass('detail-shell-grid--two');
+		expect(grid).not.toHaveClass('detail-shell-grid--single');
+		expect(container.querySelector('[data-slot="detail-shell-left"]')).not.toBeNull();
+		expect(container.querySelector('[data-slot="detail-shell-right"]')).not.toBeNull();
+	});
+
+	it('can keep one left rail in mobile flow and turn it into a toolbar for pane-owned rails', () => {
+		const { right: _drop, ...rest } = baseProps;
+		const { container } = render(DetailShell, {
+			props: { ...rest, leftMobile: true, paneOwnedRail: true },
+		});
+
+		expect(container.querySelector('.detail-shell-grid')).toHaveClass(
+			'detail-shell-grid--pane-owned',
+		);
+		expect(container.querySelector('[data-slot="detail-shell-left"]')).toHaveClass(
+			'detail-shell-rail--mobile',
+		);
 	});
 });
 
@@ -272,11 +362,89 @@ describe('DetailShell — dynamic ToC observation', () => {
 });
 
 describe('DetailShell — grid + sticky (source contract)', () => {
-	it('is a 1fr 2fr 1fr grid at 2rem gap / 2.5rem block padding on the ≥1024 breakpoint', () => {
+	it('declares exactly two shared tracks when no right rail exists', () => {
 		const s = src();
+		const twoColumnRule = cssBlock(s, '.detail-shell-grid--two');
+		const tracks = topLevelTracks(cssDeclaration(twoColumnRule, 'grid-template-columns'));
+
+		expect(tracks).toHaveLength(2);
+		expect(tracks[0]).toContain('var(--detail-rail-width)');
+		expect(tracks[1]).toContain('var(--detail-center-max)');
+		expect(appCss()).toMatch(/--layout-control-rail-width:\s*clamp\(16rem,\s*24vw,\s*22rem\)/);
+		expect(cssBlock(s, '.detail-shell')).toContain(
+			'--detail-rail-width: var(--layout-control-rail-width)',
+		);
+		expect(cssBlock(s, '.detail-shell')).toContain('--detail-center-max: var(--container-content)');
+		expect(cssBlock(s, '.detail-shell')).toContain('--detail-column-gap: 2rem');
+	});
+
+	it('keeps a useful two-column canvas until the viewport can support three wide columns', () => {
+		const s = src();
+		const desktop = s.slice(s.indexOf('@media (min-width: 1024px)'));
+		const wide = s.slice(s.indexOf('@media (min-width: 1440px)'));
+		const desktopTracks = topLevelTracks(
+			cssDeclaration(cssBlock(desktop, '.detail-shell-grid'), 'grid-template-columns'),
+		);
+		const wideTracks = topLevelTracks(
+			cssDeclaration(cssBlock(wide, '.detail-shell-grid--three'), 'grid-template-columns'),
+		);
+
+		expect(desktopTracks).toHaveLength(2);
+		expect(desktopTracks[0]).toContain('var(--detail-rail-width)');
+		expect(desktopTracks[1]).toContain('var(--detail-center-max)');
+		expect(cssBlock(desktop, '.detail-shell-grid--three .detail-shell-rail--right')).toMatch(
+			/grid-column:\s*2/,
+		);
+		expect(wideTracks).toHaveLength(3);
+		expect(wideTracks[0]).toContain('var(--detail-rail-width)');
+		expect(wideTracks[1]).toContain('var(--detail-center-min)');
+		expect(wideTracks[1]).toContain('var(--detail-center-max)');
+		expect(wideTracks[2]).toContain('var(--detail-support-rail-width)');
+		expect(cssBlock(wide, '.detail-shell-grid--three .detail-shell-rail--right')).toMatch(
+			/grid-column:\s*3/,
+		);
+		expect(s).not.toMatch(/minmax\(12rem,\s*var\(--detail-side-track/);
+	});
+
+	it('centers summary content inside the same capped main column used by every pane', () => {
+		const s = src();
+		const centerRule = cssBlock(s, '.detail-shell-center');
+		const summaryLane = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/layout/ArticleSummaryLane.svelte'),
+			'utf-8',
+		);
+
+		expect(centerRule).toContain('max-width: var(--detail-center-max)');
+		expect(s).toContain('<ArticleSummaryLane data-slot="detail-shell-summary">');
+		expect(summaryLane).toMatch(/\.article-summary-lane\s*\{[^}]*justify-content:\s*center/s);
+		expect(summaryLane).toMatch(/\.article-summary-lane__content\s*\{[^}]*text-align:\s*center/s);
+		expect(s).not.toMatch(/minmax\(0,\s*46rem\)/);
+	});
+
+	it('uses one lifted top-spacing token at every article breakpoint', () => {
+		const s = src();
+		const baseGrid = cssBlock(s, '.detail-shell-grid');
+		const desktop = s.slice(s.indexOf('@media (min-width: 1024px)'));
+		const desktopGrid = cssBlock(desktop, '.detail-shell-grid');
+
 		expect(s).toMatch(/@media\s*\(min-width:\s*1024px\)/);
-		expect(s).toMatch(
-			/\.detail-shell-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr\s+2fr\s+1fr[\s\S]*?gap:\s*2rem[\s\S]*?padding-block:\s*2\.5rem/,
+		expect(s).toMatch(/@media\s*\(min-width:\s*1440px\)/);
+		expect(s).toMatch(/gap:\s*var\(--detail-column-gap\)/);
+		expect(appCss()).toMatch(/--layout-article-top-space:\s*var\(--space-card-gap\)/);
+		expect(cssDeclaration(baseGrid, 'padding-block')).toBe('var(--layout-article-top-space)');
+		expect(cssDeclaration(desktopGrid, 'padding-block')).toBe('var(--layout-article-top-space)');
+		expect(s).not.toMatch(/padding-block:\s*2\.5rem/);
+	});
+
+	it('pins wide left and support rail geometry as shared app-level design tokens', () => {
+		expect(appCss()).toMatch(/--layout-control-rail-width:\s*clamp\(16rem,\s*24vw,\s*22rem\)/);
+		expect(appCss()).toMatch(/--layout-support-rail-width:\s*clamp\(16rem,\s*18vw,\s*20rem\)/);
+		expect(appCss()).toMatch(/--layout-article-main-min:\s*40rem/);
+		expect(cssBlock(src(), '.detail-shell')).toContain(
+			'--detail-support-rail-width: var(--layout-support-rail-width)',
+		);
+		expect(cssBlock(src(), '.detail-shell')).toContain(
+			'--detail-center-min: var(--layout-article-main-min)',
 		);
 	});
 

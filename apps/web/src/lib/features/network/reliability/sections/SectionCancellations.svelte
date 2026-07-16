@@ -43,7 +43,11 @@
 	const i = $derived(info('cancellation', copy.cancelSection));
 </script>
 
-<NetworkTile>
+<NetworkTile
+	title={copy.cancelSection}
+	subtitle={copy.cancel.summary}
+	sectionKey="network-cancellations"
+>
 	<div class="network-trend">
 		<ExplainedMetricCard
 			label={copy.cancel.metric}

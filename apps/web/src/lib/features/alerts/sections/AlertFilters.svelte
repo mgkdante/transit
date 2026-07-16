@@ -3,15 +3,16 @@
 
   The filter WIDGETS themselves (no chrome container): SurfaceRail owns the glass
   panel + the mobile pill→sheet, and renders THIS content as the single rail source
-  in both. A plain flex column collecting the five codec-backed axes:
-    · entity-type (Affects) — a shared FilterGroup (All | Lines | Stops)
-    · severity — a shared FilterGroup (All | Critical | High | Watch)
+  in both. The shared ArticleControlStack fixes the canonical rail order:
+    · retained-history range first
+    · entity-type (Affects) — a joined FilterGroup (All | Lines | Stops)
+    · severity — a joined FilterGroup (All | Critical | High | Watch)
     · Line — a typeahead LineCombobox over the distinct lines in the log
     · Stop — a typeahead LineCombobox over the distinct stops in the log
-	    · date range — the controlled HistoryNavigator (stacked: one field per row)
+	    · result count / clear affordance last when filters are active
 
   The two entity-type/severity radiogroups ride the shared $lib/components/filter
-  FilterGroup (bits-ui ToggleGroup + built-in "All" reset), and the clear affordance
+  FilterGroup joined variant (shared segmented-choice engine + explicit "All"), and the clear affordance
   rides FilterSummary. FilterGroup is CONTROLLED (activeKey + onSelect), so this file
   threads the surface's existing $bindable scalars through: the built-in "All" maps to
   the codec's 'all' sentinel (activeKey = x==='all' ? null : x; onSelect = (k)=> x = k
@@ -26,7 +27,7 @@
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import { SEVERITY_CODES } from '$lib/v1/schemas';
 	import type { AlertAffects, DateWindow } from '$lib/filters';
-	import { HistoryNavigator } from '$lib/components/surface';
+	import { ArticleControlStack, HistoryNavigator } from '$lib/components/surface';
 	import { FilterGroup, FilterSummary } from '$lib/components/filter';
 	import { LineCombobox, type LineComboboxOption } from '$lib/components/ui/line-combobox';
 	import { foldSearchText } from '$lib/search/normalize';
@@ -102,87 +103,100 @@
 	}
 </script>
 
+{#snippet summaryControls()}
+	<div class="alert-history-summary" data-slot="filter-summary-wrap">
+		<FilterSummary count={matchCount ?? 0} countLabel={copy.filters.summary} {onClear} />
+	</div>
+{/snippet}
+
 <div
 	class="alert-filters-body"
 	data-slot="alert-filters"
 	role="group"
 	aria-label={copy.filters.railLabel}
 >
-	<FilterGroup
-		label={copy.filters.entity.label}
-		items={entityItems}
-		activeKey={affects === 'all' ? null : affects}
-		allLabel={{ en: copy.filters.entity.all, fr: copy.filters.entity.all }}
-		onSelect={setAffects}
-	/>
-	<FilterGroup
-		label={copy.filters.severity.label}
-		items={severityItems}
-		activeKey={severity === 'all' ? null : severity}
-		allLabel={{ en: copy.filters.severity.all, fr: copy.filters.severity.all }}
-		onSelect={setSeverity}
-	/>
-	<!-- The two specific-entity typeahead pickers. The group label names the type once;
-	     each option is the bare id (no per-row prefix). Single-select, codec-mirrored. -->
-	<div class="alert-history-pick" data-slot="line-pick">
-		<span class="alert-history-pick-label" aria-hidden="true">{copy.filters.line.label}</span>
-		<LineCombobox
-			options={lineOptions}
-			bind:value={route}
-			label={copy.filters.line.label}
-			placeholder={copy.filters.line.placeholder}
-			clearLabel={copy.filters.line.clear}
-			emptyLabel={copy.filters.line.empty}
-			fold={foldSearchText}
-		/>
-	</div>
-	<div class="alert-history-pick" data-slot="stop-pick">
-		<span class="alert-history-pick-label" aria-hidden="true">{copy.filters.stop.label}</span>
-		<LineCombobox
-			options={stopOptions}
-			bind:value={stop}
-			label={copy.filters.stop.label}
-			placeholder={copy.filters.stop.placeholder}
-			clearLabel={copy.filters.stop.clear}
-			emptyLabel={copy.filters.stop.empty}
-			fold={foldSearchText}
-		/>
-	</div>
-	<!-- Presentation-only retained-history navigator. The page owns its selection,
-	     URL codec, catalog, range resource, and correction announcement. -->
-	<div class="alert-history-pick" data-slot="window-pick">
-		<HistoryNavigator
-			mode="range"
-			{locale}
-			labels={copy.filters.history.navigator}
-			value={window}
-			{availableDates}
-			coverageText={historyCoverageText}
-			selectionText={historySelectionText}
-			announcement={historyAnnouncement}
-			liveAnnouncement={false}
-			onRangeChange={onWindowChange}
-		/>
-	</div>
-	{#if filtersActive && matchCount != null}
-		<!-- Shared FilterSummary: the match count + the clear-filters link (BOUNDED swap
-		     of the old bespoke button). onClear = the surface's existing reset; the count
-		     is the already-computed filtered length. -->
-		<div class="alert-history-summary" data-slot="filter-summary-wrap">
-			<FilterSummary count={matchCount} countLabel={copy.filters.summary} {onClear} />
-		</div>
-	{/if}
+	<ArticleControlStack caption={filtersActive && matchCount != null ? summaryControls : undefined}>
+		{#snippet history()}
+			<!-- Presentation-only retained-history navigator. The page owns its selection,
+			     URL codec, catalog, range resource, and correction announcement. -->
+			<div class="alert-history-pick" data-slot="window-pick">
+				<HistoryNavigator
+					mode="range"
+					{locale}
+					labels={copy.filters.history.navigator}
+					value={window}
+					{availableDates}
+					coverageText={historyCoverageText}
+					selectionText={historySelectionText}
+					announcement={historyAnnouncement}
+					liveAnnouncement={false}
+					onRangeChange={onWindowChange}
+				/>
+			</div>
+		{/snippet}
+
+		{#snippet primary()}
+			<div class="alert-filter-groups">
+				<FilterGroup
+					label={copy.filters.entity.label}
+					items={entityItems}
+					activeKey={affects === 'all' ? null : affects}
+					allLabel={{ en: copy.filters.entity.all, fr: copy.filters.entity.all }}
+					variant="joined-grid"
+					onSelect={setAffects}
+				/>
+				<FilterGroup
+					label={copy.filters.severity.label}
+					items={severityItems}
+					activeKey={severity === 'all' ? null : severity}
+					allLabel={{ en: copy.filters.severity.all, fr: copy.filters.severity.all }}
+					variant="joined-grid"
+					onSelect={setSeverity}
+				/>
+			</div>
+		{/snippet}
+
+		{#snippet secondary()}
+			<!-- The two specific-entity typeahead pickers. The group label names the type once;
+			     each option is the bare id (no per-row prefix). Single-select, codec-mirrored. -->
+			<div class="alert-filter-specifics">
+				<div class="alert-history-pick" data-slot="line-pick">
+					<span class="alert-history-pick-label" aria-hidden="true">{copy.filters.line.label}</span>
+					<LineCombobox
+						options={lineOptions}
+						bind:value={route}
+						label={copy.filters.line.label}
+						placeholder={copy.filters.line.placeholder}
+						clearLabel={copy.filters.line.clear}
+						emptyLabel={copy.filters.line.empty}
+						fold={foldSearchText}
+					/>
+				</div>
+				<div class="alert-history-pick" data-slot="stop-pick">
+					<span class="alert-history-pick-label" aria-hidden="true">{copy.filters.stop.label}</span>
+					<LineCombobox
+						options={stopOptions}
+						bind:value={stop}
+						label={copy.filters.stop.label}
+						placeholder={copy.filters.stop.placeholder}
+						clearLabel={copy.filters.stop.clear}
+						emptyLabel={copy.filters.stop.empty}
+						fold={foldSearchText}
+					/>
+				</div>
+			</div>
+		{/snippet}
+	</ArticleControlStack>
 </div>
 
 <style>
-	/* The rail body: the filter widgets stacked in one column. Rendered by SurfaceRail
-	   in BOTH the desktop glass rail AND the mobile sheet (single source of truth). The
-	   glass panel + pill→sheet chrome is SurfaceRail's; this is just the controls. */
 	.alert-filters-body {
-		display: flex;
-		flex-direction: column;
-		align-items: stretch;
-		gap: 1rem;
+		min-width: 0;
+	}
+	.alert-filter-groups,
+	.alert-filter-specifics {
+		display: grid;
+		gap: 0.75rem;
 		min-width: 0;
 	}
 	/* Each labeled picker seats full-width in the narrow rail column (one per row). */

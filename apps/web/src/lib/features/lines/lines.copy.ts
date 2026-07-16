@@ -30,17 +30,35 @@ export interface LinesIndexCopy extends SurfaceHeadCopy {
 	readonly statusProblem: string;
 	/** SR caption when the problem filter is on but no line has loaded its verdict yet. */
 	readonly statusPending: string;
-	/** Accessible name for the one-line network verdict band above the grid (§C5.3). */
-	readonly networkVerdictLabel: string;
 	/** Polite caption while the worst-first ranking waits on the visible verdicts to settle. */
 	readonly rankingPending: string;
+	/** Existing GTFS route-type filter. */
+	readonly modeFilterLabel: string;
+	readonly modeAll: string;
+	/** Makes clear that `long` is the route name, never a one-sided destination. */
+	readonly routeName: (name: string) => string;
+	readonly directionsNote: string;
+	readonly inventory: {
+		readonly label: string;
+		readonly lines: string;
+		readonly bus: string;
+		readonly metro: string;
+		readonly modes: string;
+		readonly unavailable: string;
+	};
 }
 
 export interface RouteDetailCopy {
 	/** Station-voice overline above the line heading. */
 	readonly kicker: string;
-	/** Back-link label into the lines index ("← Lines"), keeps nav in-chrome. */
-	readonly back: string;
+	/** Article-cover labels; every displayed value still comes from route data. */
+	readonly article: {
+		readonly watermark: string;
+		readonly back: string;
+		readonly tagsAria: string;
+		readonly provider: string;
+		readonly generated: string;
+	};
 	/** Framing lede under the line id in the detail head (detail-head rhythm). */
 	readonly detailLede: string;
 	/** Tab labels, keyed by the EntityDetail tab key. */
@@ -48,6 +66,16 @@ export interface RouteDetailCopy {
 		readonly detail: string;
 		readonly schedule: string;
 		readonly reliability: string;
+	};
+	readonly profile: {
+		readonly title: string;
+		readonly summary: string;
+		readonly directions: string;
+		readonly stops: string;
+	};
+	readonly liveService: {
+		readonly title: string;
+		readonly summary: string;
 	};
 	/** Live-map drilldown action. */
 	readonly viewOnMap: string;
@@ -64,6 +92,12 @@ export interface RouteDetailCopy {
 	readonly weakStops: string;
 	/** Plain-language intro atop the Schedule tab — says what the schedule shows + where to find reliability. */
 	readonly scheduleIntro: string;
+	readonly scheduleTable: {
+		readonly caption: string;
+		readonly period: string;
+		readonly window: string;
+		readonly headway: string;
+	};
 	/** Direction-row helpers. */
 	readonly direction: (dir: number) => string;
 	readonly stopsCount: (n: number) => string;
@@ -140,7 +174,7 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		lede: 'Toutes les lignes du réseau, détail du parcours, horaire et fiabilité historique par ligne. Mesuré à partir du contrat /v1.',
 		filterLabel: 'Filtrer les lignes',
 		filterPlaceholder: 'Numéro ou nom de ligne…',
-		controlsLabel: 'Contrôles',
+		controlsLabel: 'Filtres',
 		mapAction: 'Carte',
 		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
 		more: (n) => `+${n} de plus`,
@@ -150,9 +184,21 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		statusFilterLabel: 'Fiabilité',
 		statusAll: 'Toutes',
 		statusProblem: 'En retard',
-		statusPending: 'Chargement de la fiabilité des lignes visibles…',
-		networkVerdictLabel: 'Verdict du réseau',
-		rankingPending: 'Classement des lignes visibles en cours…',
+		statusPending: 'Vérification de la fiabilité des lignes filtrées…',
+		rankingPending: 'Calcul du classement de fiabilité des lignes filtrées…',
+		modeFilterLabel: 'Mode',
+		modeAll: 'Tous les modes',
+		routeName: (name) => `Nom du parcours · ${name}`,
+		directionsNote:
+			'Ouvrez une ligne pour voir ensemble toutes les directions et destinations publiées.',
+		inventory: {
+			label: 'Inventaire du réseau',
+			lines: 'Lignes',
+			bus: 'Bus',
+			metro: 'Métro',
+			modes: 'Modes',
+			unavailable: 'Indisponible',
+		},
 	},
 	en: {
 		kicker: 'LINES · NETWORK',
@@ -160,7 +206,7 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		lede: 'Every line on the network, per-line route detail, schedule and historic reliability. Measured from the /v1 contract.',
 		filterLabel: 'Filter lines',
 		filterPlaceholder: 'Line number or name…',
-		controlsLabel: 'Controls',
+		controlsLabel: 'Filters',
 		mapAction: 'Map',
 		viewRouteOnMap: (route) => `View route ${route} on map`,
 		more: (n) => `+${n} more`,
@@ -170,19 +216,46 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		statusFilterLabel: 'Reliability',
 		statusAll: 'All',
 		statusProblem: 'Late',
-		statusPending: 'Loading reliability for the visible lines…',
-		networkVerdictLabel: 'Network verdict',
-		rankingPending: 'Ranking the visible lines…',
+		statusPending: 'Checking reliability for the filtered lines…',
+		rankingPending: 'Calculating reliability ranking for the filtered lines…',
+		modeFilterLabel: 'Mode',
+		modeAll: 'All modes',
+		routeName: (name) => `Route name · ${name}`,
+		directionsNote: 'Open a line to see every published direction and destination together.',
+		inventory: {
+			label: 'Network inventory',
+			lines: 'Lines',
+			bus: 'Bus',
+			metro: 'Metro',
+			modes: 'Modes',
+			unavailable: 'Not available',
+		},
 	},
 };
 
 export const detailCopy: Record<Locale, RouteDetailCopy> = {
 	fr: {
 		kicker: 'LIGNE',
-		back: 'Lignes',
+		article: {
+			watermark: 'Ligne',
+			back: '← Retour aux lignes',
+			tagsAria: 'Mots-clés de la ligne',
+			provider: 'Source',
+			generated: 'Mis à jour',
+		},
 		detailLede:
 			'Parcours en direct, horaire prévu et fiabilité historique de cette ligne. Mesuré à partir du contrat /v1.',
 		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
+		profile: {
+			title: 'Profil de service',
+			summary: 'Structure du parcours et plage de service planifiée.',
+			directions: 'Directions',
+			stops: 'Arrêts répertoriés',
+		},
+		liveService: {
+			title: 'Service en direct',
+			summary: 'Véhicules en service et avis actifs touchant cette ligne.',
+		},
 		viewOnMap: 'Voir sur la carte',
 		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
 		alerts: {
@@ -201,6 +274,12 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		headways: 'Intervalles',
 		scheduleIntro:
 			'Les horaires prévus de cette ligne : le premier et le dernier départ, puis l’intervalle prévu entre les bus pour chaque période de la journée. C’est l’offre PLANIFIÉE. Pour la ponctualité réelle, voyez l’onglet « Fiabilité ».',
+		scheduleTable: {
+			caption: 'Périodes de service planifiées',
+			period: 'Période',
+			window: 'Plage',
+			headway: 'Intervalle prévu',
+		},
 		weakStops: 'Arrêts les plus faibles',
 		direction: (dir) => `Direction ${dir}`,
 		stopsCount: (n) => (n === 1 ? '1 arrêt' : `${n} arrêts`),
@@ -253,10 +332,26 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 	},
 	en: {
 		kicker: 'LINE',
-		back: 'Lines',
+		article: {
+			watermark: 'Line',
+			back: '← Back to lines',
+			tagsAria: 'Line keywords',
+			provider: 'Source',
+			generated: 'Updated',
+		},
 		detailLede:
 			'Live route, planned schedule and historic reliability for this line. Measured from the /v1 contract.',
 		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },
+		profile: {
+			title: 'Service profile',
+			summary: 'Route structure and planned service span.',
+			directions: 'Directions',
+			stops: 'Listed stops',
+		},
+		liveService: {
+			title: 'Live service',
+			summary: 'Current vehicles and active alerts affecting this line.',
+		},
 		viewOnMap: 'View on map',
 		viewRouteOnMap: (route) => `View route ${route} on map`,
 		alerts: {
@@ -275,6 +370,12 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		headways: 'Headways',
 		scheduleIntro:
 			'This line’s planned schedule: the first and last departure, then the planned time between buses for each period of the day. This is the PLANNED service. For real-world punctuality, see the “Reliability” tab.',
+		scheduleTable: {
+			caption: 'Planned service periods',
+			period: 'Period',
+			window: 'Window',
+			headway: 'Planned headway',
+		},
 		weakStops: 'Weakest stops',
 		direction: (dir) => `Direction ${dir}`,
 		stopsCount: (n) => (n === 1 ? '1 stop' : `${n} stops`),

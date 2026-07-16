@@ -373,9 +373,11 @@ describe('HotspotsBoard retained date history', () => {
 		await waitFor(() =>
 			expect(rail.querySelector('[data-slot="history-announcement"]')).toHaveTextContent(message),
 		);
+		const navigatorCopy = rail.querySelector('[data-slot="history-announcement"]');
 		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
 		await fireEvent.click(mobile.querySelector(':scope > button') as HTMLButtonElement);
-		expect(container.querySelectorAll('[data-slot="history-announcement"]')).toHaveLength(2);
+		expect(container.querySelectorAll('[data-slot="history-announcement"]')).toHaveLength(1);
+		expect(container.querySelector('[data-slot="history-announcement"]')).toBe(navigatorCopy);
 		for (const copy of container.querySelectorAll('[data-slot="history-announcement"]')) {
 			expect(copy).not.toHaveAttribute('role');
 			expect(copy).not.toHaveAttribute('aria-live');
@@ -486,10 +488,12 @@ describe('HotspotsBoard retained date history', () => {
 
 		for (const card of ['hotspots-lines', 'hotspots-stops']) {
 			const section = container.querySelector(`[data-toc="${card}"]`)!;
-			const viewport = section.querySelector('[data-slot="hotspot-chart-viewport"]')!;
-			expect(viewport.querySelector('[data-slot="hotspot-chart-canvas"]')).not.toBeNull();
-			expect(viewport.querySelector('[data-slot="hotspot-tray-table"]')).toBeNull();
-			expect(viewport.closest(`[data-toc="${card}"]`)).toBe(section);
+			const output = section.querySelector('[data-slot="chart-output"]')!;
+			const viewport = output.querySelector('[data-slot="chart-viewport"]')!;
+			expect(viewport.querySelector('[data-slot="chart-canvas"]')).not.toBeNull();
+			expect(output.querySelector('[data-slot="hotspot-tray-table"]')).toBeNull();
+			expect(section.querySelector('[data-slot="hotspot-tray-table"]')).not.toBeNull();
+			expect(output.closest(`[data-toc="${card}"]`)).toBe(section);
 		}
 	});
 

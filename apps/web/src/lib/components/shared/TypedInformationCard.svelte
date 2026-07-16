@@ -43,7 +43,7 @@
 		data-slot="typed-information-card"
 		data-kind={kind}
 	>
-		<TerminalPanel title={label} tag="SQL" noPadding noGlow>
+		<TerminalPanel title={label} tag="SQL" noPadding>
 			<CodeBlock code={code ?? ''} ariaLabel={codeAriaLabel} embedded />
 		</TerminalPanel>
 	</div>
@@ -90,7 +90,6 @@
 		border: 1px solid color-mix(in srgb, var(--information-accent) 42%, var(--border) 58%);
 		border-radius: var(--radius-lg);
 		background: var(--surface-2);
-		box-shadow: var(--shadow-section);
 	}
 
 	.typed-information-card[data-kind='definition'] {

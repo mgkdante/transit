@@ -19,12 +19,12 @@
 	import { DashboardGrid } from '$lib/components/layout';
 	import { ExplainedMetricCard, RankedRow } from '$lib/components/dataviz';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { KpiCardVM } from '../selectors/headlineKpis';
 	import { NON_RESPONDING_DOMAIN, type SilentRow } from '../selectors/silentByRoute';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
+	import NetworkTile from './NetworkTile.svelte';
 
 	interface SectionReportingProps {
 		/** The reporting scalar cards (vehicles-in-service + non-responding, required ints). */
@@ -49,78 +49,76 @@
 	const hasSilentRows = $derived(silentRows.length > 0);
 </script>
 
-<section
-	class="network-reporting"
-	data-slot="reporting-section"
+<NetworkTile
+	as="section"
+	title={copy.reporting.heading}
+	sectionKey="network-reporting"
+	dataSlot="reporting-section"
 	aria-label={copy.reporting.heading}
 >
-	<SectionHeading level={3} overline={copy.reporting.heading} />
+	<div class="network-reporting">
+		<!-- The two required-int scalar cards (glance mode — the (i) carries the definition). -->
+		<DashboardGrid minTile="220px" gutter={false}>
+			{#each cards as card (card.label)}
+				{@const i = info(card.key, card.label)}
+				<ExplainedMetricCard
+					label={card.label}
+					value={card.value}
+					emptyLabel={noData}
+					{locale}
+					size="lg"
+				>
+					{#snippet info()}
+						<MetricInfo
+							tip={i.tip}
+							href={i.href}
+							label={i.label}
+							linkLabel={i.linkLabel}
+							side="bottom"
+						/>
+					{/snippet}
+				</ExplainedMetricCard>
+			{/each}
+		</DashboardGrid>
 
-	<!-- The two required-int scalar cards (glance mode — the (i) carries the definition). -->
-	<DashboardGrid minTile="220px" gutter={false}>
-		{#each cards as card (card.label)}
-			{@const i = info(card.key, card.label)}
-			<ExplainedMetricCard
-				label={card.label}
-				value={card.value}
-				emptyLabel={noData}
-				{locale}
-				size="lg"
-			>
-				{#snippet info()}
-					<MetricInfo
-						tip={i.tip}
-						href={i.href}
-						label={i.label}
-						linkLabel={i.linkLabel}
-						side="bottom"
-					/>
-				{/snippet}
-			</ExplainedMetricCard>
-		{/each}
-	</DashboardGrid>
+		<p class="network-reporting-caveat" data-slot="reporting-caveat">{copy.reporting.caveat}</p>
 
-	<!-- The GLOBAL-SIGNAL caveat: ONE honesty note for the whole row (consolidated — it
-	     subsumes the old per-list caption so there are not two overlapping notes). -->
-	<p class="network-reporting-caveat" data-slot="reporting-caveat">{copy.reporting.caveat}</p>
-
-	<!-- Silent scheduled trips, by line — worst first. Stands down when the list is null/empty
-	     (the non_responding scalar card above still carries the total). -->
-	{#if hasSilentRows}
-		<div class="network-silent-tile" data-slot="non-responding-section">
-			<SectionLabel text={copy.nonRespondingSection} variant="metric" />
-			<ul
-				class="network-silent"
-				role="list"
-				aria-label={copy.nonResponding.summary}
-				data-slot="non-responding-by-route"
-			>
-				{#each silentRows as row (row.key)}
-					<li class="network-silent-item">
-						<a
-							class="network-silent-link"
-							href={row.href}
-							data-sveltekit-preload-data="hover"
-							data-slot="silent-link"
-							aria-label={row.ariaLabel}
-						>
-							<RankedRow
-								bare
-								rank={row.rank}
-								title={row.title}
-								subtitle={row.subtitle}
-								severity={row.severity}
-								value={row.value}
-								domain={NON_RESPONDING_DOMAIN}
-								display={row.display}
-							/>
-						</a>
-					</li>
-				{/each}
-			</ul>
-		</div>
-	{/if}
-</section>
+		{#if hasSilentRows}
+			<div class="network-silent-tile" data-slot="non-responding-section">
+				<SectionLabel text={copy.nonRespondingSection} variant="metric" />
+				<ul
+					class="network-silent"
+					role="list"
+					aria-label={copy.nonResponding.summary}
+					data-slot="non-responding-by-route"
+				>
+					{#each silentRows as row (row.key)}
+						<li class="network-silent-item">
+							<a
+								class="network-silent-link"
+								href={row.href}
+								data-sveltekit-preload-data="hover"
+								data-slot="silent-link"
+								aria-label={row.ariaLabel}
+							>
+								<RankedRow
+									bare
+									rank={row.rank}
+									title={row.title}
+									subtitle={row.subtitle}
+									severity={row.severity}
+									value={row.value}
+									domain={NON_RESPONDING_DOMAIN}
+									display={row.display}
+								/>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+	</div>
+</NetworkTile>
 
 <style>
 	.network-reporting {

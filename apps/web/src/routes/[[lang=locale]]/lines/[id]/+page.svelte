@@ -4,7 +4,7 @@
 
   THIN mount: the feature screen (RouteDetail) owns all composition + data load
   and reads the active locale from getLocale() context. This page only forwards
-  the route id resolved by +page.ts (kept as a thin id+lang passthrough).
+  the server-resolved route identity seed.
   Everything beyond the mount lives in $lib/features/lines.
 -->
 <script lang="ts">
@@ -14,4 +14,4 @@
 	let { data }: { data: PageData } = $props();
 </script>
 
-<RouteDetail id={data.id} />
+<RouteDetail id={data.seed.id} seed={data.seed} routeSeed={data.routeSeed ?? undefined} />

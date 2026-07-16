@@ -39,6 +39,40 @@ function props(overrides: Record<string, unknown> = {}) {
 }
 
 describe('AlertFilters history composition', () => {
+	it('uses the shared control stack with history first and joined primary filters', () => {
+		const { container } = render(AlertFilters, {
+			props: props() as never,
+		});
+
+		const stack = container.querySelector('[data-slot="article-control-stack"]');
+		expect(stack).not.toBeNull();
+		expect(
+			Array.from(stack?.children ?? []).map((region) => region.getAttribute('data-region')),
+		).toEqual(['history', 'primary', 'secondary']);
+
+		const history = container.querySelector('[data-slot="window-pick"]') as HTMLElement;
+		const affects = within(container).getByText('Affects');
+		expect(history).not.toBeNull();
+		expect(history.compareDocumentPosition(affects) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+
+		const joinedGroups = container.querySelectorAll(
+			'[data-region="primary"] [data-slot="segmented-choice"][data-variant="joined-grid"]',
+		);
+		expect(joinedGroups).toHaveLength(2);
+		expect(joinedGroups[0]).toHaveAttribute('data-segment-count', '3');
+		expect(joinedGroups[1]).toHaveAttribute('data-segment-count', '4');
+	});
+
+	it('delegates outer control order and spacing without page-local stack geometry', () => {
+		expect(executableSource).toMatch(
+			/import\s*\{[^}]*\bArticleControlStack(?:\s+as\s+\w+)?[^}]*\}\s*from\s*['"]\$lib\/components\/surface['"]/,
+		);
+		expect(executableSource.match(/variant="joined-grid"/g)).toHaveLength(2);
+		const localBodyRule = source.match(/\.alert-filters-body\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		expect(localBodyRule).not.toMatch(/display\s*:\s*(?:flex|grid)/);
+		expect(localBodyRule).not.toMatch(/gap\s*:/);
+	});
+
 	it('uses one controlled HistoryNavigator and forwards a normalized complete range', async () => {
 		const onWindowChange = vi.fn();
 		const view = render(AlertFilters, {

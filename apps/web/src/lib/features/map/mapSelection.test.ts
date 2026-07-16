@@ -185,7 +185,18 @@ describe('resolveMapSelection', () => {
 		if (detail?.kind !== 'vehicle') throw new Error('expected vehicle detail');
 		expect(detail.pastStops.map((stop) => stop.id)).toEqual(['stop-1']);
 		expect(detail.nextStops.map((stop) => stop.id)).toEqual(['stop-2', 'stop-3']);
-		expect(detail?.alerts.map((alert) => alert.id)).toEqual(['route-alert', 'stop-alert']);
+		expect(detail?.alerts?.map((alert) => alert.id)).toEqual(['route-alert', 'stop-alert']);
+	});
+
+	it('preserves unknown alert availability instead of turning it into a healthy empty list', () => {
+		const unknown = resolveMapSelection({ kind: 'vehicle', id: 'veh-1' }, { index, stops, routes });
+		const knownEmpty = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, routes, alerts: [] },
+		);
+
+		expect(unknown?.alerts).toBeNull();
+		expect(knownEmpty?.alerts).toEqual([]);
 	});
 
 	it('keeps the stable route variant key when a vehicle sits on a duplicate direction id', () => {
@@ -274,7 +285,7 @@ describe('resolveMapSelection', () => {
 		});
 		expect(detail.routeTimes[0].liveDepartures).toHaveLength(1);
 		expect(detail?.vehicles.map((vehicle) => vehicle.id)).toEqual([]);
-		expect(detail?.alerts.map((alert) => alert.id)).toEqual(['stop-alert']);
+		expect(detail?.alerts?.map((alert) => alert.id)).toEqual(['stop-alert']);
 	});
 
 	it('wraps static scheduled next times to the next service day instead of showing no data', () => {
@@ -312,7 +323,7 @@ describe('resolveMapSelection', () => {
 			direction: { dir: 0, headsign: 'East' },
 		});
 		if (detail?.kind !== 'route') throw new Error('expected route detail');
-		expect(detail?.alerts.map((alert) => alert.id)).toEqual(['route-alert']);
+		expect(detail?.alerts?.map((alert) => alert.id)).toEqual(['route-alert']);
 		expect(detail?.vehicles.map((vehicle) => vehicle.id)).toEqual(['veh-1', 'veh-2']);
 		expect(detail.directions).toHaveLength(1);
 		expect(detail.directions[0].stops.map((stop) => stop.id)).toEqual([

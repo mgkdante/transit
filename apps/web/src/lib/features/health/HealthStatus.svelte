@@ -9,11 +9,10 @@
   architecture as /metrics) and the shared ArticleHeader cover: circuit grid,
   ManifestoCanvas, watermark, category rule, keywords and truthful dated meta.
   The lede opens the body column; DetailShell adds the hazard tape.
-    · BODY → DetailShell (3-col at ≥1024): LEFT = the numbered ToC over the (up
-      to) 9 sections + a SEC n/m readout; CENTER = the 9 gated, single-title
-      collapsible cards; RIGHT = per-feed stat cards (lanes
-      passing / feeds fresh). Mobile: single column, the stat cards reflow to a top
-      summary strip, the ToC becomes the floating TocPill.
+    · BODY → DetailShell (2-col at ≥1024): LEFT = the numbered ToC and one
+      at-a-glance stack (lanes passing / feeds fresh); CENTER = the gated,
+      single-title collapsible cards. Mobile keeps the same single summary and
+      replaces the rail navigation with the floating TocPill.
 
   The original 8 sections keep their pipeline order and retained-history coverage
   appends as section 9. Each section still STANDS DOWN when its slice is empty;
@@ -40,7 +39,12 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import { METHODOLOGY_METRIC_KEY } from '$lib/features/metrics/metrics.content';
-	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
+	import {
+		ArticleHeader,
+		ArticleSectionStack,
+		DetailShell,
+		type ArticleMetaEntry,
+	} from '$lib/components/layout';
 	import { ResourceBoundary } from '$lib/components/surface';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
@@ -424,36 +428,35 @@
 		</ArticleHeader>
 	{/snippet}
 
-	{#snippet mobileSummary()}
-		{@render statCards()}
-	{/snippet}
-
 	{#snippet left()}
-		<div class="health-toc-rail">
-			{#if tocEntries.length > 0}
-				<TocNav
-					entries={tocEntries}
-					{activeId}
-					onNavigate={navigate}
-					heading={t.toc.label}
-					counterPrefix={t.toc.counterPrefix}
-					sectionKey="status-toc"
-					closeSignal={quietModeStore.closeSignal}
-					openSignal={quietModeStore.openSignal}
-					bulkCollapsed={quietModeStore.enabled}
-				/>
-			{/if}
+		<div class="health-left-rail">
+			<div class="health-toc-rail">
+				{#if tocEntries.length > 0}
+					<TocNav
+						entries={tocEntries}
+						{activeId}
+						onNavigate={navigate}
+						heading={t.toc.label}
+						counterPrefix={t.toc.counterPrefix}
+						sectionKey="status-toc"
+						closeSignal={quietModeStore.closeSignal}
+						openSignal={quietModeStore.openSignal}
+						bulkCollapsed={quietModeStore.enabled}
+					/>
+				{/if}
+			</div>
+			<section
+				class="health-at-a-glance"
+				data-slot="health-at-a-glance"
+				aria-label={t.statRail.label}
+			>
+				{@render statCards()}
+			</section>
 		</div>
 	{/snippet}
 
-	{#snippet right()}
-		<aside class="health-stat-aside" aria-label={t.statRail.label}>
-			{@render statCards()}
-		</aside>
-	{/snippet}
-
 	{#snippet center()}
-		<div class="health-sections" data-slot="health-sections">
+		<ArticleSectionStack class="health-sections" data-testid="health-sections">
 			<CollapsibleSection
 				title={t.overview.title}
 				headerVariant="article-summary"
@@ -678,16 +681,15 @@
 					<SectionHistoryCoverage rows={historyCoverageRows} copy={t} {locale} />
 				</CollapsibleSection>
 			{/if}
-		</div>
+		</ArticleSectionStack>
 	{/snippet}
 </DetailShell>
 <!-- The floating mobile ToC pill now lives INSIDE DetailShell (it owns the observer +
      the pill); no separate render + no 1024–1279 re-show hack is needed — the shell's
      rails appear at the SAME 1024 boundary the pill hides at. -->
 
-<!-- Right-rail / mobile-summary stat cards — a compact pass/fail summary from the
-     lanes gate + feed freshness. Rendered ONCE and dropped into both the desktop
-     right rail and the mobile top strip. -->
+<!-- Left-rail stat cards — a compact pass/fail summary from the lanes gate + feed
+	 freshness, rendered once below the rail navigation at every viewport. -->
 {#snippet statCards()}
 	<div class="health-stat-rail">
 		{#if laneStat.total > 0}
@@ -762,25 +764,21 @@
 		min-width: 0;
 	}
 
-	/* ── Left rail (SEC readout + ToC) ─────────────────────────────────────────
-	   DetailShell shows/hides the whole left rail at 1024 (the floating TocPill covers
-	   below), so this only owns the in-rail stacking. */
+	/* ── Left rail (ToC + at-a-glance summary) ───────────────────────────────── */
+	.health-left-rail {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-card-gap);
+		min-width: 0;
+	}
 	.health-toc-rail {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
 		min-width: 0;
 	}
-
-	/* ── Center sections ───────────────────────────────────────────────────────
-	   The parent cards keep the existing body presenters in pipeline order;
-	   this column owns only their inter-card spacing. */
-	.health-sections {
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.75rem, 4vw, 2.75rem);
+	.health-at-a-glance {
 		min-width: 0;
-		max-width: var(--container-content);
 	}
 	/* Aggregate verdict panel — the pass-summary + worst-lane sentence inside the
 	   terminal frame. Not a data mark / no --primary; the summary reads in the
@@ -794,7 +792,7 @@
 	}
 	.health-aggregate__summary {
 		font-family: var(--font-heading);
-		font-size: 1.125rem;
+		font-size: var(--text-subheading);
 		font-weight: 700;
 		line-height: 1.2;
 		color: var(--foreground);
@@ -806,26 +804,11 @@
 		color: var(--muted-foreground);
 	}
 
-	/* ── Right rail / mobile summary stat cards ────────────────────────────────
-	   Lanes-passing + feeds-fresh, from data on the page. Desktop: sticky right
-	   rail. Mobile: reflowed into a one-track summary stack via mobileSummary. No data
-	   marks / no --primary — the counts read in the calm mono/heading voice. */
-	.health-stat-aside {
-		min-width: 0;
-	}
+	/* ── Left-rail stat cards ───────────────────────────────────────────────── */
 	.health-stat-rail {
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-card-gap);
-	}
-	:global(.detail-shell-mobile-summary) .health-stat-rail {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		align-items: start;
-	}
-	:global(.detail-shell-mobile-summary) .health-stat-rail :global([data-slot='card']) {
-		width: 100%;
-		min-width: 0;
 	}
 	.health-stat__body {
 		display: flex;
@@ -836,7 +819,7 @@
 	.health-stat__count {
 		margin: 0;
 		font-family: var(--font-heading);
-		font-size: 1.125rem;
+		font-size: var(--text-subheading);
 		font-weight: 700;
 		line-height: 1.2;
 		color: var(--foreground);
@@ -844,7 +827,7 @@
 	}
 	.health-stat__sub {
 		margin: 0;
-		font-size: 0.95rem;
+		font-size: var(--text-small);
 		line-height: 1.45;
 		color: var(--muted-foreground);
 	}

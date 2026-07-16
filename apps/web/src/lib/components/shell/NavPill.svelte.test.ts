@@ -51,6 +51,38 @@ describe('NavPill — structure', () => {
 		});
 		expect(getByRole('link', { name: 'Carte' })).toHaveAttribute('href', '/fr/map');
 		expect(getByRole('link', { name: 'Réseau' })).toHaveAttribute('href', '/fr/network');
+		expect(getByRole('link', { name: 'Rechercher dans le réseau' })).toHaveAttribute(
+			'href',
+			'/fr/search',
+		);
+	});
+
+	it('places compact Search between Refresh and Theme as a 44px native link', () => {
+		const { getByRole } = render(NavPill, {
+			props: { locale: 'en', url: new URL('https://transit.local/map') },
+		});
+		const search = getByRole('link', { name: 'Search the network' });
+		expect(search).toHaveAttribute('href', '/search');
+		expect(search).toHaveClass('nav-control', 'nav-compact-search');
+
+		const controls = search.closest('[data-slot="nav-controls"]');
+		expect(controls).not.toBeNull();
+		expect(Array.from(controls!.children).indexOf(search)).toBe(1);
+	});
+
+	it('keeps a localized language route in the menu for ultra-narrow phones', async () => {
+		const { getByRole, queryByTestId } = render(NavPill, {
+			props: { locale: 'en', url: new URL('https://transit.local/alerts?from=2026-07-01') },
+		});
+		await fireEvent.click(getByRole('button', { name: 'Open menu' }));
+		const menu = queryByTestId('nav-menu') as HTMLElement;
+		expect(within(menu).getByRole('link', { name: 'Switch language: Français' })).toHaveAttribute(
+			'href',
+			'/fr/alerts?from=2026-07-01',
+		);
+		expect(readSource()).toMatch(
+			/@media \(max-width: 359px\)[\s\S]*\[data-slot='lang-switch'\][\s\S]*display:\s*none;[\s\S]*\.nav-menu-language[\s\S]*display:\s*flex;/,
+		);
 	});
 
 	it('marks the active surface with aria-current on the matching link', () => {
@@ -256,24 +288,24 @@ describe('NavPill — the flat menu', () => {
 		);
 	});
 
-	it('keeps compact Search/Audit separators but clears the visible Audit divider at ≥lg (source)', () => {
+	it('keeps the compact Explore/Audit separator but clears it at ≥lg (source)', () => {
 		const source = readSource();
 		expect(source).toMatch(
-			/\.nav-menu-search-group,\s*\.nav-menu-group\s*\{\s*margin-top:\s*0\.5rem;\s*padding-top:\s*0\.5rem;\s*border-top:\s*1px solid var\(--border-subtle\);\s*\}/,
+			/\.nav-menu-group\s*\{\s*margin-top:\s*0\.5rem;\s*padding-top:\s*0\.5rem;\s*border-top:\s*1px solid var\(--border-subtle\);\s*\}/,
 		);
 		expect(source).toMatch(
-			/@media \(min-width: 1024px\)\s*\{[\s\S]*?\.nav-menu-primary-group,\s*\.nav-menu-search-group\s*\{\s*display:\s*none;\s*\}\s*\.nav-menu-group\s*\{\s*margin-top:\s*0;\s*padding-top:\s*0;\s*border-top:\s*0;\s*\}\s*\}/,
+			/@media \(min-width: 1024px\)\s*\{[\s\S]*?\.nav-menu-primary-group\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-menu-group\s*\{\s*margin-top:\s*0;\s*padding-top:\s*0;\s*border-top:\s*0;\s*\}/,
 		);
 	});
 
-	it('carries a search group in the menu sheet (the <lg search entry)', async () => {
+	it('keeps Search out of the burger menu because the top control owns it', async () => {
 		const { getByRole, queryByTestId } = render(NavPill, {
 			props: { locale: 'en', url: new URL('https://transit.local/map') },
 		});
 		await fireEvent.click(getByRole('button', { name: 'Open menu' }));
 		const menu = queryByTestId('nav-menu') as HTMLElement;
-		expect(within(menu).getByRole('group', { name: 'Search' })).toBeInTheDocument();
-		expect(menu.querySelector('[data-slot="nav-menu-search-input"]')).toBeInTheDocument();
+		expect(within(menu).queryByRole('group', { name: 'Search' })).not.toBeInTheDocument();
+		expect(menu.querySelector('[data-slot="nav-menu-search-input"]')).not.toBeInTheDocument();
 	});
 });
 
@@ -304,10 +336,9 @@ describe('NavPill — search', () => {
 
 	it('turns browser autofill off on the in-pill search box', () => {
 		const { getByRole } = render(NavPill, { props: { locale: 'en' } });
-		expect(getByRole('searchbox', { name: 'Search the network' })).toHaveAttribute(
-			'autocomplete',
-			'off',
-		);
+		const searchbox = getByRole('searchbox', { name: 'Search the network' });
+		expect(searchbox).toHaveAttribute('autocomplete', 'off');
+		expect(searchbox).toHaveAttribute('name', 'network-search');
 	});
 
 	it('scopes the search placeholder + aria-label to the line catalogue', () => {

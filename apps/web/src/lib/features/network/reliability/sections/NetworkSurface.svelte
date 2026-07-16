@@ -44,7 +44,7 @@
 	} from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
-	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
+	import { formatDateKey, formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import {
 		fmtCount as sharedFmtCount,
 		fmtDelayMin as sharedFmtDelayMin,
@@ -62,10 +62,12 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
 	import {
+		ArticleControlDisclosure,
+		ArticleControlStack,
+		createRailDisclosureController,
 		FreshnessStamp,
 		ConformanceBadge,
 		ResourceBoundary,
-		SurfaceRail,
 		GrainPicker,
 		HistoryNavigator,
 		type GrainSegment,
@@ -80,13 +82,15 @@
 		historyRangeRequestFromSearchParams,
 		type RawHistoryRangeRequest,
 	} from '$lib/v1/history';
-	import { observeActiveToc, TocNav, type TocEntry } from '$lib/components/shared';
-	import { Surface, DashboardGrid } from '$lib/components/layout';
-	import { Separator } from '$lib/components/ui/separator';
-	import { EdgeState } from '$lib/components/edge';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
-	import Masthead from '$lib/components/brand/Masthead.svelte';
-	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
+	import { revealTocTarget, TocNav, type TocEntry } from '$lib/components/shared';
+	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import {
+		ArticleHeader,
+		ArticleSectionStack,
+		DetailShell,
+		type ArticleMetaEntry,
+	} from '$lib/components/layout';
+	import { EdgeState, StateNotice } from '$lib/components/edge';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
 	import {
@@ -141,7 +145,7 @@
 	});
 
 	// Live tier — one store instance; the v1 context is booted by the time the tree renders.
-	const live = createLiveStore(getV1Context().manifest);
+	const live = createLiveStore(getV1Context().manifest, { families: ['network'] });
 	onMount(() => {
 		live.start();
 		return () => live.stop();
@@ -502,6 +506,10 @@
 		!delayAvailabilityKnown || windowed.some((point) => point.avg_delay_min != null),
 	);
 	const showRetardPicker = $derived(!delayAvailabilityKnown || p90Available || avgAvailable);
+	const showSecondaryControls = $derived((isDailyGrain && !explicitHistory) || showRetardPicker);
+	const hasViewControls = $derived(
+		history.index != null || showGrainPicker || showSecondaryControls,
+	);
 	const retardSegments = $derived.by<GrainSegment<string>[]>(() => [
 		// p90 has no week/month data → disabled on a coarse grain (never a flat-null line).
 		{ key: 'p90', label: t.trend.retardP90, available: p90Available },
@@ -620,161 +628,265 @@
 			children: [],
 		})),
 	);
-	// One IntersectionObserver over the two regions' [data-toc] anchors owns the active
-	// region the rail ToC highlights (client-only; each region carries data-toc below).
+	// DetailShell owns the one IntersectionObserver over the two regions' [data-toc]
+	// anchors and writes the active region back into this shared rail state.
 	let activeId = $state('');
-	onMount(() => observeActiveToc((id) => (activeId = id)));
+	const railDisclosures = createRailDisclosureController({
+		controls: 'network-controls',
+		toc: 'network-toc',
+	});
 	// Scroll to a region when its TocNav row is tapped (instant under reduced motion).
 	function navigate(id: string): void {
-		document.querySelector(`[data-toc="${id}"]`)?.scrollIntoView({
+		void revealTocTarget(id, {
 			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
-			block: 'start',
 		});
 	}
 	// The mobile pill summary — the active grain (mirrors the historic view controls).
 	const railSummary = $derived(grainLabels[grainKey] ?? grainKey);
+	const articleMeta = $derived.by<ArticleMetaEntry[]>(() => {
+		const entries: ArticleMetaEntry[] = [];
+		if (live.generatedUtc != null) {
+			entries.push({
+				label: t.article.generated,
+				text: formatUtc(live.generatedUtc, locale),
+				datetime: live.generatedUtc,
+			});
+		}
+		entries.push(t.article.sections(tocEntries.length));
+		return entries;
+	});
 </script>
 
-<Surface class="network">
-	<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede}>
-		{#snippet meta()}
-			<div class="network-feed-health">
-				<FreshnessStamp
-					variant="live"
-					generatedUtc={live.generatedUtc}
-					ageSeconds={live.ageSeconds}
-					isStale={live.isStale}
+<p
+	class="sr-only"
+	data-slot="history-page-announcement"
+	role="status"
+	aria-live="polite"
+	aria-atomic="true"
+>
+	{historyAnnouncement ?? ''}
+</p>
+
+<!-- The window + delay-series toggles — DAY-grain window slicer + the p90/avg series. Their
+     own snippet so it seats inside the combined rail body after the grain picker. -->
+{#snippet windowControls()}
+	<!-- Trend window (7/30/90-day) — DAY grain only; slices the tail. Week/month render
+	     their full short series → no window. -->
+	{#if isDailyGrain && !explicitHistory}
+		<GrainPicker
+			segments={windowSegments}
+			bind:value={windowKey}
+			label={t.window.label}
+			class="network-window"
+		/>
+	{/if}
+	<!-- Delay-series toggle: p90 vs avg. p90 disables on a coarse grain (no week/month data). -->
+	{#if showRetardPicker}
+		<GrainPicker
+			segments={retardSegments}
+			bind:value={retardKey}
+			label={t.trend.retardToggleLabel}
+			class="network-retard-toggle"
+		/>
+	{/if}
+{/snippet}
+
+{#snippet historicBoard()}
+	<!-- The readouts share the one selected range and one mapping pass. -->
+	<ArticleSectionStack class="network-history-board" data-slot="network-history-board">
+		<div class="network-history-row" data-slot="network-history-trend-row">
+			<SectionTrend
+				{trendSpec}
+				{vehiclesSpark}
+				{isDailyGrain}
+				metricKey={trendMetricKey}
+				{info}
+				copy={t}
+			/>
+		</div>
+
+		{#if cancelTrend.hasCancel}
+			<div class="network-history-row" data-slot="network-history-cancellations-row">
+				<SectionCancellations
+					vm={cancelTrend}
+					latestDisplay={fmtCancel(cancelTrend.latest)}
+					{info}
+					copy={t}
+					noData={t.noData}
 					{locale}
 				/>
-				<!-- Worker-cycle feed age — a SECOND freshness signal. Null → honest no-data. -->
-				{#if feedAge != null}
-					<span
-						class="network-feed-age"
-						data-slot="feed-age"
-						aria-label={`${t.feedAge.a11yPrefix} ${feedAge}`}
-					>
-						<span class="network-feed-age-label">{t.feedAge.label}</span>
-						<span class="network-feed-age-value">{feedAge}</span>
-					</span>
-				{/if}
-				<ConformanceBadge conformance={provenance.data?.conformance} {locale} />
 			</div>
-		{/snippet}
-	</Masthead>
+		{/if}
 
-	<p
-		class="sr-only"
-		data-slot="history-page-announcement"
-		role="status"
-		aria-live="polite"
-		aria-atomic="true"
-	>
-		{historyAnnouncement ?? ''}
-	</p>
+		{#if hasOccupancyTrend}
+			<div class="network-history-row" data-slot="network-history-crowding-row">
+				<SectionCrowdingByDay days={occupancyDays} {info} copy={t} />
+			</div>
+		{/if}
 
-	<!-- P5.4: the view controls (grain · window · delay series) + the two-region ToC live in a
-	     map-style GLASS LEFT RAIL (SurfaceRail) — a sticky floating panel beside the LIVE +
-	     HISTORIC regions on desktop, and ONE merged pill→sheet (controls + ToC together) on
-	     mobile. The view controls re-shape ONLY the historic region; the ToC jumps between the
-	     two regions. --primary lives only on the active control chip. -->
-	<div class="network-layout" data-slot="network-regions">
-		<!-- The window + delay-series toggles — DAY-grain window slicer + the p90/avg series. Their
-		     own snippet so it seats inside the rail body (after the grain picker). ONE definition,
-		     rendered by SurfaceRail in BOTH the desktop glass rail AND the mobile sheet. -->
-		{#snippet windowControls()}
-			<!-- Trend window (7/30/90-day) — DAY grain only; slices the tail. Week/month render
-			     their full short series → no window. -->
-			{#if isDailyGrain && !explicitHistory}
-				<GrainPicker
-					segments={windowSegments}
-					bind:value={windowKey}
-					label={t.window.label}
-					class="network-window"
+		<div class="network-history-companions" data-slot="network-history-companion-row">
+			<SectionCompleteness
+				latestDisplay={completenessDisplay}
+				{info}
+				copy={t}
+				noData={t.noData}
+				{locale}
+			/>
+
+			{#if hasShift}
+				<SectionByTimeOfDay
+					rows={shiftRows}
+					dataSlot="network-shift"
+					showCaveat={!hasDayType}
+					{info}
+					copy={t}
+					{locale}
 				/>
 			{/if}
-			<!-- Delay-series toggle: p90 vs avg. p90 disables on a coarse grain (no week/month data). -->
-			{#if showRetardPicker}
-				<GrainPicker
-					segments={retardSegments}
-					bind:value={retardKey}
-					label={t.trend.retardToggleLabel}
-					class="network-retard-toggle"
+			{#if hasDayType}
+				<SectionWeekday
+					rows={dayTypeRows}
+					dataSlot={hasShift ? undefined : 'network-shift'}
+					showCaveat={true}
+					{info}
+					copy={t}
+					{locale}
 				/>
 			{/if}
-		{/snippet}
+		</div>
+	</ArticleSectionStack>
+{/snippet}
 
-		<!-- The rail content — the View overline + the grain picker (when >1 grain is populated) +
-		     the window/delay toggles + the two-region ToC. ONE definition, rendered by SurfaceRail
-		     in BOTH the desktop glass rail AND the mobile sheet (single source). -->
-		{#snippet railContent({ closeSheet, presentation }: SurfaceRailContext)}
-			{@const presentedGrainSegments = grainSegmentsFor(presentation)}
-			<div class="network-control-body" data-slot="controls-body">
-				<span class="network-rail-view" data-slot="controls-rail-label">{t.viewControlsLabel}</span>
-				{#if history.index != null}
-					<HistoryNavigator
-						mode="range"
+<DetailShell
+	class="network-detail"
+	bind:activeId
+	{tocEntries}
+	combinedRailConfig={{
+		label: t.viewControlsLabel,
+		summary: railSummary,
+		openAria: t.rail.pillOpen,
+		closeAria: t.rail.pillClose,
+	}}
+>
+	{#snippet articleHeader()}
+		<ArticleHeader
+			watermark={t.article.watermark}
+			category={t.kicker}
+			title={t.heading}
+			tags={t.article.tags}
+			tagsAria={t.article.tagsAria}
+			backHref={localizeHref('/', locale)}
+			backLabel={t.article.back}
+			meta={articleMeta}
+			titleId="network-title"
+		>
+			{#snippet controls()}
+				<QuietModeButton />
+			{/snippet}
+			{#snippet actions()}
+				<div class="network-feed-health">
+					<FreshnessStamp
+						variant="live"
+						generatedUtc={live.generatedUtc}
+						ageSeconds={live.ageSeconds}
+						isStale={live.isStale}
 						{locale}
-						labels={t.history.navigator}
-						value={historyWindow}
-						availableDates={historyDates}
-						coverageText={historyCoverageText}
-						selectionText={historySelectionText}
-						announcement={historyAnnouncement}
-						liveAnnouncement={false}
-						onRangeChange={selectHistoryRange}
 					/>
-				{/if}
-				<!-- The grain radiogroup — rendered only when MORE THAN ONE grain carries data (a dead
-				     control otherwise). enable-iff-populated: an empty grain renders disabled. -->
-				{#if showGrainPicker}
-					<GrainPicker
-						segments={presentedGrainSegments}
-						bind:value={grainKey}
-						label={t.grain.label}
-					/>
-					<!-- Disabled-reason descriptions (honest-absence): one visually-hidden span per
-				     disabled grain, referenced by its radio via aria-describedby. -->
-					{#each presentedGrainSegments as seg (seg.key)}
-						{#if seg.describedById}
-							<span id={seg.describedById} class="network-reason" data-slot="controls-reason"
-								>{grainDisabledReason}</span
-							>
-						{/if}
-					{/each}
-				{/if}
-				{@render windowControls()}
-			</div>
+					<!-- Worker-cycle feed age — a SECOND freshness signal. Null → honest no-data. -->
+					{#if feedAge != null}
+						<span
+							class="network-feed-age"
+							data-slot="feed-age"
+							aria-label={`${t.feedAge.a11yPrefix} ${feedAge}`}
+						>
+							<span class="network-feed-age-label">{t.feedAge.label}</span>
+							<span class="network-feed-age-value">{feedAge}</span>
+						</span>
+					{/if}
+					<ConformanceBadge conformance={provenance.data?.conformance} {locale} />
+				</div>
+			{/snippet}
+		</ArticleHeader>
+	{/snippet}
 
-			<!-- Region ToC (wayfinding) — the ONE shared TocNav, identical to the metrics /
+	<!-- The View controls and two-region ToC are one combined-rail definition. DetailShell
+	     presents it once on desktop and once in the single mobile sheet. -->
+	{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
+		{@const presentedGrainSegments = grainSegmentsFor(presentation)}
+		{#snippet historyControls()}
+			<HistoryNavigator
+				mode="range"
+				{locale}
+				labels={t.history.navigator}
+				value={historyWindow}
+				availableDates={historyDates}
+				coverageText={historyCoverageText}
+				selectionText={historySelectionText}
+				announcement={historyAnnouncement}
+				liveAnnouncement={false}
+				onRangeChange={selectHistoryRange}
+			/>
+		{/snippet}
+		{#snippet primaryControls()}
+			<GrainPicker
+				segments={presentedGrainSegments}
+				bind:value={grainKey}
+				label={t.grain.label}
+				variant="time-grid"
+			/>
+			{#each presentedGrainSegments as seg (seg.key)}
+				{#if seg.describedById}
+					<span id={seg.describedById} class="network-reason" data-slot="controls-reason"
+						>{grainDisabledReason}</span
+					>
+				{/if}
+			{/each}
+		{/snippet}
+
+		{#if hasViewControls}
+			<ArticleControlDisclosure
+				title={t.viewControlsLabel}
+				bind:open={
+					() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
+				}
+			>
+				<ArticleControlStack
+					history={history.index != null ? historyControls : undefined}
+					primary={showGrainPicker ? primaryControls : undefined}
+					secondary={showSecondaryControls ? windowControls : undefined}
+				/>
+			</ArticleControlDisclosure>
+		{/if}
+
+		<!-- Region ToC (wayfinding) — the ONE shared TocNav, identical to the metrics /
 			     status / lines / stops rails: a numbered jump list with TocNav's own
 			     "SEC n/m" readout (the rail's ONLY position counter), the active region
 			     amber-highlighted. Picking a region also dismisses the mobile sheet through
 			     SurfaceRail's explicit closeSheet seam. -->
-			<div class="rail-toc" data-slot="section-toc">
-				<TocNav
-					entries={tocEntries}
-					{activeId}
-					onNavigate={(id) => {
-						navigate(id);
-						closeSheet();
-					}}
-					heading={t.rail.toc}
-					sectionKey="network-toc"
-				/>
-			</div>
+		<div class="rail-toc" data-slot="section-toc">
+			<TocNav
+				entries={tocEntries}
+				{activeId}
+				bind:open={() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)}
+				onNavigate={(id) => {
+					navigate(id);
+					closeSheet();
+				}}
+				heading={t.rail.toc}
+			/>
+		</div>
+	{/snippet}
+
+	{#snippet center()}
+		{#snippet liveTerminalMeta()}
+			<FreshnessStamp
+				variant="live"
+				generatedUtc={live.generatedUtc}
+				ageSeconds={live.ageSeconds}
+				isStale={live.isStale}
+				{locale}
+			/>
 		{/snippet}
-
-		<!-- The map-style GLASS LEFT RAIL: a sticky floating panel beside the regions on
-		     desktop; ONE pill→sheet (controls + ToC merged) on mobile. -->
-		<SurfaceRail
-			rail={railContent}
-			label={t.viewControlsLabel}
-			summary={railSummary}
-			openAria={t.rail.pillOpen}
-			closeAria={t.rail.pillClose}
-		/>
-
-		<!-- The two regions — the content column beside the rail. -->
 		<div class="network-content">
 			<!-- ── LIVE region ──────────────────────────────────────────────────────────────
 			     Four glance cards (C1) · the Reporting row (vehicles + non_responding + silent
@@ -784,34 +896,28 @@
 			     surface an honest-absence banner above the headline board via
 			     $lib/site/serviceWindow.inferAbsenceReason. Like /map this is a NETWORK-WIDE view with
 			     no single first/last window, so a "service closed / overnight" verdict needs a network
-			     service-span signal /v1 does not yet publish — not actionable web-side. -->
-			{#if kpis}
-				<!-- D3: the LIVE control-room band framed in the ONE TerminalPanel idiom.
-		     The existing region content is wrapped untouched (no new verdict copy);
-		     the panel adds the terminal chassis + an honest footer readout. -->
-				<TerminalPanel
-					title={t.liveTerminal.title}
-					tag={t.liveTerminal.tag}
-					class="network-live-terminal"
-					footerItems={[{ label: t.liveTerminal.footerLabel, value: t.liveTerminal.footerValue }]}
-				>
-					{#snippet meta()}
-						<FreshnessStamp
-							variant="live"
-							generatedUtc={live.generatedUtc}
-							ageSeconds={live.ageSeconds}
-							isStale={live.isStale}
+		     service-span signal /v1 does not yet publish — not actionable web-side. -->
+			<section class="network-region" id="net-live" data-toc="net-live" aria-label={t.liveRegion}>
+				{#if kpis}
+					<ArticleSectionStack class="network-live-content">
+						<SectionLiveHeadline
+							cards={kpis.headline}
+							{info}
+							noData={t.noData}
 							{locale}
+							copy={t}
+							terminal={{
+								title: t.liveTerminal.title,
+								tag: t.liveTerminal.tag,
+								footerItems: [
+									{
+										label: t.liveTerminal.footerLabel,
+										value: t.liveTerminal.footerValue,
+									},
+								],
+								meta: liveTerminalMeta,
+							}}
 						/>
-					{/snippet}
-					<section
-						class="network-region"
-						id="net-live"
-						data-toc="net-live"
-						aria-label={t.liveRegion}
-					>
-						<SectionHeading level={2} overline={t.liveRegion} number={1} />
-						<SectionLiveHeadline cards={kpis.headline} {info} noData={t.noData} {locale} />
 						<SectionReporting
 							cards={kpis.reporting}
 							{silentRows}
@@ -828,20 +934,18 @@
 							copy={t}
 						/>
 						<SectionDelayHistogram spec={delayHistogramSpec} {info} copy={t} />
-					</section>
-				</TerminalPanel>
-			{:else if live.error}
-				<EdgeState
-					variant="error-v1"
-					lang={locale}
-					layout={edgeLayout}
-					onRetry={() => live.refresh()}
-				/>
-			{:else}
-				<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
-			{/if}
-
-			<Separator variant="hazard" />
+					</ArticleSectionStack>
+				{:else if live.error}
+					<EdgeState
+						variant="error-v1"
+						lang={locale}
+						layout={edgeLayout}
+						onRetry={() => live.refresh()}
+					/>
+				{:else}
+					<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
+				{/if}
+			</section>
 
 			<!-- §0 NETWORK VERDICT BAND (§C5.7): the one-line at-a-glance answer between the LIVE
 	     and HISTORIC regions — the SHARED VerdictBanner off the live on_time_pct, plus the
@@ -868,8 +972,6 @@
 				{/if}
 			</section>
 
-			<Separator variant="hazard" />
-
 			<!-- ── HISTORIC region ──────────────────────────────────────────────────────────
 	     The readout board (the main trend spanning a wide cell). The three view controls
 	     (grain · window · delay series) live in the GLASS LEFT RAIL above (P5.4) — they
@@ -880,66 +982,6 @@
 				data-toc="net-historic"
 				aria-label={t.historicRegion}
 			>
-				<SectionHeading level={2} overline={t.historicRegion} number={2} />
-
-				{#snippet historicBoard()}
-					<!-- The readouts share the one selected range and one mapping pass. -->
-					<DashboardGrid minTile="360px" gutter={false} align="start">
-						<SectionTrend
-							{trendSpec}
-							{vehiclesSpark}
-							{isDailyGrain}
-							metricKey={trendMetricKey}
-							{info}
-							copy={t}
-						/>
-
-						{#if cancelTrend.hasCancel}
-							<SectionCancellations
-								vm={cancelTrend}
-								latestDisplay={fmtCancel(cancelTrend.latest)}
-								{info}
-								copy={t}
-								noData={t.noData}
-								{locale}
-							/>
-						{/if}
-
-						<SectionCompleteness
-							latestDisplay={completenessDisplay}
-							{info}
-							copy={t}
-							noData={t.noData}
-							{locale}
-						/>
-
-						{#if hasOccupancyTrend}
-							<SectionCrowdingByDay days={occupancyDays} {info} copy={t} />
-						{/if}
-
-						{#if hasShift}
-							<SectionByTimeOfDay
-								rows={shiftRows}
-								dataSlot="network-shift"
-								showCaveat={!hasDayType}
-								{info}
-								copy={t}
-								{locale}
-							/>
-						{/if}
-						{#if hasDayType}
-							<SectionWeekday
-								rows={dayTypeRows}
-								dataSlot={hasShift ? undefined : 'network-shift'}
-								showCaveat={true}
-								{info}
-								copy={t}
-								{locale}
-							/>
-						{/if}
-					</DashboardGrid>
-				{/snippet}
-
 				{#if explicitHistory}
 					{#if retainedReady && history.value != null}
 						<div class="network-history-notes" data-slot="history-scope-notes">
@@ -953,8 +995,13 @@
 						</div>
 						{@render historicBoard()}
 					{:else if history.state === 'no-data'}
-						<EdgeState variant="empty" lang={locale} layout={edgeLayout} />
-						<p class="network-history-empty" data-slot="history-no-data">{t.history.noData}</p>
+						<StateNotice
+							title={t.history.noData}
+							presentation="responsive"
+							role="status"
+							ariaLive="polite"
+							data-slot="history-no-data"
+						/>
 					{:else if history.state === 'error'}
 						<EdgeState
 							variant="error-v1"
@@ -979,14 +1026,12 @@
 				{/if}
 			</section>
 		</div>
-	</div>
-</Surface>
+	{/snippet}
+</DetailShell>
 
 <style>
-	/* Anchor for the D2 rotated edge word's zero-width absolute rail (it pins to
-	   the Surface's left gutter). */
-	:global(.surface-shell.network) {
-		position: relative;
+	:global([data-slot='detail-shell'].network-detail) {
+		--detail-center-max: var(--container-wide);
 	}
 	.network-feed-health {
 		display: flex;
@@ -995,33 +1040,14 @@
 		gap: 0.5rem 1.25rem;
 	}
 
-	/* The 2-col layout (P5.4): the map-style GLASS LEFT RAIL (SurfaceRail) + the content
-	   column at ≥1024; a single column below, where the rail collapses to the mobile
-	   pill→sheet. The content column is the rail's sticky CONTAINING BLOCK, so the glass
-	   rail stays pinned over the two regions. */
-	.network-layout {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: clamp(1.5rem, 4vw, 2rem);
-		width: 100%;
-	}
-	@media (min-width: 1024px) {
-		.network-layout {
-			grid-template-columns: 15rem minmax(0, 1fr);
-			gap: 2rem;
-			align-items: start;
-		}
-	}
-	/* The content column — the LIVE + verdict + HISTORIC regions stacked, at the page
-	   section rhythm; the hazard Separators between them ride the page flow here. */
+	/* The content column — the LIVE + verdict + HISTORIC regions stacked at page rhythm. */
 	.network-content {
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
 		min-width: 0;
 	}
-	.network-history-notes,
-	.network-history-empty {
+	.network-history-notes {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
@@ -1037,31 +1063,6 @@
 		margin: 0;
 	}
 
-	/* The view controls (View overline + grain picker + window/delay toggles), stacked in the
-	   rail. Rendered by railContent in BOTH the desktop glass rail and the mobile sheet. */
-	.network-control-body {
-		display: flex;
-		flex-direction: column;
-		align-items: stretch;
-		gap: 0.5rem;
-		min-width: 0;
-	}
-	/* The "View" overline — the quiet mono rail label. */
-	.network-rail-view {
-		flex: none;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-eyebrow);
-		color: var(--muted-foreground);
-	}
-	/* The grain / window / delay radiogroups wrap so a long localized segment never overflows
-	   the narrow rail; the active-chip accent lives in GrainPicker. */
-	.network-control-body :global([data-slot='grain-picker']) {
-		min-width: 0;
-		flex-wrap: wrap;
-	}
 	/* Visually-hidden disabled-reason description (mobile drawer + desktop rail) — carried for
 	   screen readers via aria-describedby on the disabled radio; never shown, never a layout box. */
 	.network-reason {
@@ -1085,19 +1086,24 @@
 		gap: 0.75rem;
 		min-width: 0;
 	}
-	/* Smooth jump-to from the TOC (reduced-motion users get the instant default). */
-	@media (prefers-reduced-motion: no-preference) {
-		.network-layout {
-			scroll-behavior: smooth;
-		}
-	}
-
-	/* A surface region (LIVE / HISTORIC) — its station label, control panel and readout board
-	   stacked. The hazard Separator between regions lives outside. */
+	/* A surface region owns a ToC anchor; its article cards stay independently collapsible. */
 	.network-region {
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
+	}
+	.network-history-row {
+		display: flex;
+		width: 100%;
+		min-width: 0;
+		flex-direction: column;
+	}
+	.network-history-companions {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr));
+		align-items: stretch;
+		gap: var(--space-card-gap);
+		width: 100%;
+		min-width: 0;
 	}
 	/* §0 verdict band between LIVE and HISTORIC — the VerdictBanner beside the Δ-vs-prior
 	   chip; wraps on a narrow phone so the chip drops beneath the sentence. */

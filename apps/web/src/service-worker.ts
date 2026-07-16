@@ -18,8 +18,7 @@
 //   /data/* + /v1 snapshots   PASSTHROUGH    — never intercepted, never cached.
 //   shell assets              CACHE-FIRST    — hashed /_app/immutable/* + the
 //                             precached static set (fonts/icons/manifest/offline).
-//   cross-origin / POST /     PASSTHROUGH    — left to the browser default.
-//   Range
+//   all other requests        PASSTHROUGH    — left to the browser default.
 //
 // KILL-SWITCH
 //   On activate AND (throttled) on navigations, the SW fetches /sw-kill.json
@@ -36,7 +35,7 @@ import {
 	isNavigationRequest,
 	isShellAsset,
 	precachePathnames,
-	shouldHandle,
+	shouldIntercept,
 	shouldKill,
 	type KillFlag,
 } from '$lib/pwa/swPolicy';
@@ -108,22 +107,17 @@ sw.addEventListener('fetch', (event) => {
 		return; // unparsable — let the browser handle it
 	}
 
-	// Only same-origin GET non-Range, non-data, non-kill-flag requests are ours.
-	if (!shouldHandle(req, url, ORIGIN)) return;
+	// Only navigations and shell assets have a service-worker strategy. Data,
+	// Range, cross-origin, non-GET, and arbitrary same-origin requests stay on
+	// the browser's native network path.
+	if (!shouldIntercept(req, url, ORIGIN, PRECACHE)) return;
 
 	if (isNavigationRequest(req)) {
 		event.respondWith(handleNavigation(event));
 		return;
 	}
 
-	if (isShellAsset(url, PRECACHE)) {
-		event.respondWith(cacheFirst(req));
-		return;
-	}
-
-	// Any other same-origin GET (e.g. an un-hashed asset): network-first with no
-	// caching — never risk serving it stale.
-	event.respondWith(fetch(req));
+	if (isShellAsset(url, PRECACHE)) event.respondWith(cacheFirst(req));
 });
 
 // --- message: allow clients to ping a kill check / skipWaiting -------------

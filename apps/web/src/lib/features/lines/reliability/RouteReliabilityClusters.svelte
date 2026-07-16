@@ -48,19 +48,29 @@
 		type RouteReliability,
 	} from '$lib/v1';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { onMount } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import {
+		ArticleControlDisclosure,
+		ArticleControlStack,
+		createRailDisclosureController,
 		GrainPicker,
 		HistoryNavigator,
-		SurfaceRail,
 		type GrainSegment,
 	} from '$lib/components/surface';
+	import { ArticleSectionStack, ReliabilityRailLayout } from '$lib/components/layout';
 	import type {
 		SurfaceRailContext,
 		SurfaceRailPresentation,
 	} from '$lib/components/surface/SurfaceRail.svelte';
-	import { observeActiveToc, TocNav, type TocEntry } from '$lib/components/shared';
+	import {
+		observeActiveToc,
+		openCollapsedTocTarget,
+		revealTocTarget,
+		TocNav,
+		type TocEntry,
+	} from '$lib/components/shared';
 	import { Button } from '$lib/components/ui/button';
+	import { StateNotice } from '$lib/components/edge';
 	import { toReliabilityClusters } from './clusters';
 	import { reliabilityCopy } from './reliability.copy';
 	import { applyRetainedLineHistory, clearRetainedLineHistory } from './data/retainedHistory';
@@ -86,6 +96,8 @@
 		class?: string;
 		/** Route-keyed retained range resource, owned by RouteDetail. */
 		history?: LineHistoryResource;
+		/** Shared article verdict, aligned with the reliability rail when this tab is active. */
+		articleSummary?: Snippet;
 	}
 
 	let {
@@ -94,9 +106,14 @@
 		directionHeadsigns = {},
 		class: className,
 		history,
+		articleSummary,
 	}: RouteReliabilityClustersProps = $props();
 
 	const copy = $derived(reliabilityCopy[locale]);
+	const railDisclosures = createRailDisclosureController({
+		controls: 'reliability-controls',
+		toc: 'reliability-toc',
+	});
 
 	/* ── control spine ────────────────────────────────────────────────────────
 	   The grain the snapshot strip answers for. The headline shows with ZERO
@@ -504,10 +521,10 @@
 	onMount(() => observeActiveToc((id) => (activeId = id)));
 
 	// Scroll to a section when its TocNav row is tapped (instant under reduced motion).
-	function navigate(id: string): void {
-		document.querySelector(`[data-toc="${id}"]`)?.scrollIntoView({
+	async function navigate(id: string): Promise<void> {
+		await revealTocTarget(id, {
+			beforeReveal: openCollapsedTocTarget,
 			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
-			block: 'start',
 		});
 	}
 </script>
@@ -520,7 +537,7 @@
 	     companion is published. --primary lives only on the active control chip. ONE shared
 	     GrainPicker owns the whole radiogroup — day|week|month PLUS the lines-only "range"
 	     segment — so exactly one chip is active at a time. -->
-	<div class="reliability-layout" data-slot="reliability-sections">
+	<div data-slot="reliability-sections">
 		<!-- The grain controls (GrainPicker + range pair + active-window caption). ONE definition,
 		     rendered in BOTH the desktop rail AND the mobile filter pill's drawer (single source). -->
 		<!-- The range start/end date pair — its own snippet so it seats in BOTH the desktop
@@ -546,14 +563,12 @@
 		     AND the mobile sheet (single source; both bind the same viewKey + track activeId). -->
 		{#snippet railContent({ closeSheet, presentation }: SurfaceRailContext)}
 			{@const presentedSegments = segmentsFor(presentation)}
-			<div class="reliability-control-body" data-slot="controls-body">
-				<span class="reliability-rail-view" data-slot="controls-rail-label"
-					>{copy.controls.viewLabel}</span
-				>
+			{#snippet primaryControls()}
 				<GrainPicker
 					segments={presentedSegments}
 					bind:value={viewKey}
 					label={copy.controls.grainLabel}
+					variant="time-grid"
 				/>
 				<!-- Disabled-reason descriptions (honest-absence): one visually-hidden span per
 				     disabled segment, referenced by its radio via aria-describedby. -->
@@ -564,12 +579,25 @@
 						>
 					{/if}
 				{/each}
-				{@render rangeControls()}
-				<!-- Active-window caption: names the window the selection resolves to. -->
+			{/snippet}
+			{#snippet activeWindowCaptionControl()}
 				<p class="reliability-window" data-slot="active-window" aria-live="polite">
 					{activeWindowCaption}
 				</p>
-			</div>
+			{/snippet}
+
+			<ArticleControlDisclosure
+				title={copy.controls.viewLabel}
+				bind:open={
+					() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
+				}
+			>
+				<ArticleControlStack
+					primary={primaryControls}
+					secondary={mode === 'range' ? rangeControls : undefined}
+					caption={activeWindowCaptionControl}
+				/>
+			</ArticleControlDisclosure>
 
 			<!-- Section TOC (wayfinding) — the ONE shared TocNav, identical to the metrics /
 			     status / network / stops rails: a numbered jump list with TocNav's own
@@ -580,119 +608,138 @@
 				<TocNav
 					entries={tocEntries}
 					{activeId}
+					bind:open={
+						() => railDisclosures.isOpen('toc'), (next) => railDisclosures.set('toc', next)
+					}
 					onNavigate={(id) => {
-						navigate(id);
+						void navigate(id);
 						closeSheet();
 					}}
 					heading={copy.controls.toc}
-					sectionKey="reliability-toc"
 				/>
 			</div>
 		{/snippet}
 
-		<!-- The map-style GLASS LEFT RAIL: a sticky floating panel beside the sections on
-		     desktop; ONE pill→sheet (grain + ToC merged into one menu) on mobile. -->
-		<SurfaceRail
+		{#snippet reliabilityContent()}
+			<p
+				class="reliability-history-announcement"
+				data-slot="history-page-announcement"
+				role="status"
+				aria-live="polite"
+				aria-atomic="true"
+			>
+				{historyLiveAnnouncement}
+			</p>
+
+			<!-- The five rider-question sections — the content column beside the rail. -->
+			<div class="reliability-content">
+				{#if historyAnnouncement}
+					<p class="reliability-history-correction" data-slot="history-correction">
+						{historyAnnouncement}
+					</p>
+				{/if}
+				{#if explicitHistory}
+					{#if history?.state === 'no-data'}
+						<StateNotice
+							title={copy.history.noData}
+							body={copy.history.currentOnly}
+							presentation="responsive"
+							data-slot="history-no-data"
+						/>
+					{:else}
+						<div class="reliability-history-state" data-slot="history-state">
+							{#if history?.state === 'loading-index' || history?.state === 'loading-range'}
+								<p data-slot="history-loading">{copy.history.loading}</p>
+							{:else if history?.state === 'partial'}
+								<p data-slot="history-partial">{copy.history.partial}</p>
+							{:else if history?.state === 'error'}
+								<p data-slot="history-error">{copy.history.error}</p>
+								<Button variant="outline" size="sm" onclick={() => history?.retry()}>
+									{copy.history.retry}
+								</Button>
+							{/if}
+							<p data-slot="history-current-only">{copy.history.currentOnly}</p>
+						</div>
+					{/if}
+				{/if}
+				<ArticleSectionStack>
+					<!-- §0 Verdict — "Can you count on this line?" The grain rail re-shapes only the trend. -->
+					<div class="reliability-band" id="rel-verdict" data-toc="rel-verdict" data-band="verdict">
+						<Section0Verdict vm={clusters.punctuality} {locale} {copy} {mode} />
+					</div>
+
+					<!-- §1 When to ride — the 7×24 heatmap hero + the time-of-day / weekday detail. -->
+					<div
+						class="reliability-band"
+						id="rel-when-to-ride"
+						data-toc="rel-when-to-ride"
+						data-band="when-to-ride"
+					>
+						<Section1WhenToRide
+							punctuality={clusters.punctuality}
+							habits={clusters.habits}
+							{locale}
+							{copy}
+							{mode}
+						/>
+					</div>
+
+					<!-- §2 The wait — scheduled-vs-observed headway + (detail) regularity + service span. -->
+					<div
+						class="reliability-band"
+						id="rel-the-wait"
+						data-toc="rel-the-wait"
+						data-band="the-wait"
+					>
+						<Section2TheWait
+							wait={clusters.waitRegularity}
+							serviceSpans={clusters.serviceDelivered.serviceSpans}
+							{locale}
+							{copy}
+							{directionHeadsigns}
+							{mode}
+						/>
+					</div>
+
+					<!-- §3 Will it run & will you fit — cancellations/skips + crowding (grain-windowed). -->
+					<div
+						class="reliability-band"
+						id="rel-run-and-fit"
+						data-toc="rel-run-and-fit"
+						data-band="run-and-fit"
+					>
+						<Section3RunAndFit
+							service={clusters.serviceDelivered}
+							crowding={clusters.crowding}
+							{locale}
+							{copy}
+							windowLabel={controlsSummary}
+							showServiceCompleteness={explicitHistory && retainedReady}
+						/>
+					</div>
+
+					<!-- §4 Where it's worst — the worst-N stops accountability lollipop. -->
+					<div
+						class="reliability-band"
+						id="rel-worst-stops"
+						data-toc="rel-worst-stops"
+						data-band="worst-stops"
+					>
+						<Section4WorstStops punctuality={clusters.punctuality} {locale} {copy} />
+					</div>
+				</ArticleSectionStack>
+			</div>
+		{/snippet}
+
+		<ReliabilityRailLayout
 			rail={railContent}
+			content={reliabilityContent}
+			{articleSummary}
 			label={copy.controls.viewLabel}
 			summary={controlsSummary}
 			openAria={copy.controls.filterPillOpen}
 			closeAria={copy.controls.filterPillClose}
 		/>
-		<p
-			class="reliability-history-announcement"
-			data-slot="history-page-announcement"
-			role="status"
-			aria-live="polite"
-			aria-atomic="true"
-		>
-			{historyLiveAnnouncement}
-		</p>
-
-		<!-- The five rider-question sections — the content column beside the rail. -->
-		<div class="reliability-content">
-			{#if historyAnnouncement}
-				<p class="reliability-history-correction" data-slot="history-correction">
-					{historyAnnouncement}
-				</p>
-			{/if}
-			{#if explicitHistory}
-				<div class="reliability-history-state" data-slot="history-state">
-					{#if history?.state === 'loading-index' || history?.state === 'loading-range'}
-						<p data-slot="history-loading">{copy.history.loading}</p>
-					{:else if history?.state === 'partial'}
-						<p data-slot="history-partial">{copy.history.partial}</p>
-					{:else if history?.state === 'no-data'}
-						<p data-slot="history-no-data">{copy.history.noData}</p>
-					{:else if history?.state === 'error'}
-						<p data-slot="history-error">{copy.history.error}</p>
-						<Button variant="outline" size="sm" onclick={() => history?.retry()}>
-							{copy.history.retry}
-						</Button>
-					{/if}
-					<p data-slot="history-current-only">{copy.history.currentOnly}</p>
-				</div>
-			{/if}
-			<!-- §0 Verdict — "Can you count on this line?" The grain rail re-shapes only the trend. -->
-			<div class="reliability-band" id="rel-verdict" data-toc="rel-verdict" data-band="verdict">
-				<Section0Verdict vm={clusters.punctuality} {locale} {copy} {mode} />
-			</div>
-
-			<!-- §1 When to ride — the 7×24 heatmap hero + the time-of-day / weekday detail. -->
-			<div
-				class="reliability-band"
-				id="rel-when-to-ride"
-				data-toc="rel-when-to-ride"
-				data-band="when-to-ride"
-			>
-				<Section1WhenToRide
-					punctuality={clusters.punctuality}
-					habits={clusters.habits}
-					{locale}
-					{copy}
-					{mode}
-				/>
-			</div>
-
-			<!-- §2 The wait — scheduled-vs-observed headway + (detail) regularity + service span. -->
-			<div class="reliability-band" id="rel-the-wait" data-toc="rel-the-wait" data-band="the-wait">
-				<Section2TheWait
-					wait={clusters.waitRegularity}
-					serviceSpans={clusters.serviceDelivered.serviceSpans}
-					{locale}
-					{copy}
-					{directionHeadsigns}
-					{mode}
-				/>
-			</div>
-
-			<!-- §3 Will it run & will you fit — cancellations/skips + crowding (grain-windowed). -->
-			<div
-				class="reliability-band"
-				id="rel-run-and-fit"
-				data-toc="rel-run-and-fit"
-				data-band="run-and-fit"
-			>
-				<Section3RunAndFit
-					service={clusters.serviceDelivered}
-					crowding={clusters.crowding}
-					{locale}
-					{copy}
-					windowLabel={controlsSummary}
-					showServiceCompleteness={explicitHistory && retainedReady}
-				/>
-			</div>
-
-			<!-- §4 Where it's worst — the worst-N stops accountability lollipop. -->
-			<div
-				class="reliability-band"
-				id="rel-worst-stops"
-				data-toc="rel-worst-stops"
-				data-band="worst-stops"
-			>
-				<Section4WorstStops punctuality={clusters.punctuality} {locale} {copy} />
-			</div>
-		</div>
 	</div>
 </div>
 
@@ -700,11 +747,6 @@
 	.reliability-clusters {
 		display: flex;
 		flex-direction: column;
-		/* §1.3 spacing rhythm: the BETWEEN-section gap must read clearly larger than any
-		   within-section gap (the "cramped" fix). 48→80px of whitespace groups each band
-		   as one unit by proximity (the spec's --space-section-y), well above the ~8–24px
-		   intra-section gaps — so sections never run together. */
-		gap: clamp(3rem, 7vw, 5rem);
 		width: 100%;
 		/* No per-surface sticky override: the floating pill sits OVER #main and the
 		   single --chrome-offset knob (AppShell → ControlsRail) clears it correctly
@@ -712,36 +754,12 @@
 		   the visual break. */
 	}
 
-	/* The 2-col layout (P5.4): the map-style GLASS LEFT RAIL (SurfaceRail) + the content
-	   column at ≥1024; a single column below, where the rail collapses to the mobile
-	   pill→sheet. The content column is the rail's sticky CONTAINING BLOCK, so the glass
-	   rail stays pinned over the sections. */
-	.reliability-layout {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: clamp(1.5rem, 4vw, 2rem);
-		width: 100%;
-	}
-	@media (min-width: 1024px) {
-		.reliability-layout {
-			grid-template-columns: 15rem minmax(0, 1fr);
-			gap: 2rem;
-			align-items: start;
-		}
-	}
-	/* The content column — the five rider-question sections at the page section rhythm. */
+	/* The shared ArticleSectionStack owns the five rider-question cards' vertical rhythm. */
 	.reliability-content {
 		display: flex;
 		flex-direction: column;
-		gap: clamp(3rem, 7vw, 5rem);
+		gap: var(--space-card-gap);
 		min-width: 0;
-	}
-
-	/* The grain radiogroup wraps so a long localized segment never overflows the narrow
-	   rail; the active-chip accent lives in GrainPicker. */
-	.reliability-clusters :global([data-slot='grain-picker']) {
-		min-width: 0;
-		flex-wrap: wrap;
 	}
 
 	/* The start + end date pair is now the SHARED DateRangePicker primitive (S8B), which
@@ -833,27 +851,6 @@
 	.reliability-clusters :global([data-surface-controls] [data-slot='controls-nav']) {
 		justify-content: space-between;
 	}
-	/* The "View" overline — same quiet mono voice as the shared ControlsRail label (we
-	   render it ourselves here so it can share the row with the nav). */
-	.reliability-rail-view {
-		flex: none;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-eyebrow);
-		color: var(--muted-foreground);
-	}
-	/* The grain controls (View overline + GrainPicker + range + caption), stacked in the
-	   rail. Rendered by railContent in BOTH the desktop glass rail and the mobile sheet. */
-	.reliability-control-body {
-		display: flex;
-		flex-direction: column;
-		align-items: stretch;
-		gap: 0.5rem;
-		min-width: 0;
-	}
-
 	/* Each band is a block in the content column (no longer full-bleed — the left rail now
 	   defines a 2-col reading measure). The [id] rule in app.css parks jumped-to sections
 	   below the floating chrome via --chrome-offset. */
@@ -862,18 +859,9 @@
 	}
 	/* Smooth jump-to from the TOC (reduced-motion users get the instant default). */
 	@media (prefers-reduced-motion: no-preference) {
-		.reliability-layout {
+		:global([data-slot='reliability-rail-layout']) {
 			scroll-behavior: smooth;
 		}
-	}
-	/* Section DIFFERENTIATION: each section AFTER the first opens with a quiet
-	   full-width hairline + extra top breathing room, so the sections read as
-	   distinct units rather than one long scroll. The adjacent-sibling selector
-	   leaves the first band (§0 Verdict) ruleless — the hazard separator already
-	   divides it from the control rail. */
-	.reliability-band + .reliability-band {
-		border-top: 1px solid var(--border);
-		padding-top: clamp(1.75rem, 4vw, 2.75rem);
 	}
 	/* #8 Blueprint frame: each GRAPH block carries a hairline card so its title (top) + chart +
 	   caption (bottom) read as ONE unit — a title can never be mistaken for the previous graph's

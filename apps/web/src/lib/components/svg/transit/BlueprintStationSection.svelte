@@ -238,13 +238,12 @@
 	<line x1="269" y1="28" x2="275" y2="28" stroke="currentColor" stroke-width="0.3" />
 	<line x1="269" y1="140" x2="275" y2="140" stroke="currentColor" stroke-width="0.3" />
 	<text
-		x="274"
+		x="266"
 		y="90"
 		font-family="JetBrains Mono"
 		font-size="4"
 		fill="currentColor"
-		text-anchor="middle"
-		transform="rotate(-90 274 90)">H = 9,2 m</text
+		text-anchor="end">H = 9,2 m</text
 	>
 
 	<!-- Platform height dimension (left) -->
@@ -252,13 +251,12 @@
 	<line x1="27" y1="112" x2="33" y2="112" stroke="currentColor" stroke-width="0.3" />
 	<line x1="27" y1="140" x2="33" y2="140" stroke="currentColor" stroke-width="0.3" />
 	<text
-		x="28"
+		x="34"
 		y="128"
 		font-family="JetBrains Mono"
 		font-size="3.5"
 		fill="currentColor"
-		text-anchor="middle"
-		transform="rotate(-90 28 128)">1,2 m</text
+		text-anchor="start">1,2 m</text
 	>
 
 	<!-- Section markers -->

@@ -25,8 +25,7 @@
        record / the method) — with the four question groups as the default
        unfiltered view. Cards share ONE chassis: big glyph + kind tag up top,
        heading-scale title, body-scale description, a hairline footer CTA.
-       Primary surfaces route via openSurface; reference surfaces are localized
-       links.
+	       Every destination is a native localized link.
 
   HONESTY unchanged: pre-tick/absent live tier stands every number down to the
   styled absence chip — never a fabricated 0. Brand primitives + tokens only.
@@ -36,7 +35,7 @@
 	import { onMount } from 'svelte';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { getV1Context, createLiveStore } from '$lib/v1';
-	import { openSurface, type SurfaceTarget } from '$lib/nav';
+	import { routeFor, type SurfaceTarget } from '$lib/nav';
 	import { otpVerdict } from '$lib/v1';
 	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
 	import { StatusBadge } from '$lib/components/dataviz';
@@ -54,7 +53,9 @@
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import { FreshnessStamp, SurfaceRail } from '$lib/components/surface';
 	import { FilterGroup, FilterSummary } from '$lib/components/filter';
+	import { observeViewportPresence } from '$lib/components/shared';
 	import { Surface } from '$lib/components/layout';
+	import { StateNotice } from '$lib/components/edge';
 	import { Separator } from '$lib/components/ui/separator';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import {
@@ -84,7 +85,7 @@
 	// the time the page tree renders, so getV1Context() is safe here. The store is
 	// null until the first client-side tick (start() no-ops during SSR), so the
 	// hero pulse stands down honestly on first paint and on a missing live tier.
-	const live = createLiveStore(manifest);
+	const live = createLiveStore(manifest, { families: ['vehicles', 'network'] });
 	onMount(() => {
 		live.start();
 		return () => live.stop();
@@ -382,8 +383,8 @@
 	];
 
 	// EXPLORE EVERYTHING — all surfaces grouped so the project's full scope is
-	// obvious. Primary surfaces (kind) route via openSurface; reference surfaces
-	// (href) are localized <a> links. Each carries a glyph + bilingual title +
+	// obvious. Primary and reference surfaces are native localized links. Each
+	// carries a glyph + bilingual title +
 	// a plain-words description + a TEMPO — the kind of answer the destination
 	// gives (live now / the record / the method), the second filter facet and
 	// the card's corner tag.
@@ -397,6 +398,11 @@
 	type Entry =
 		| (EntryBody & { readonly kind: 'surface'; readonly target: SurfaceTarget })
 		| (EntryBody & { readonly kind: 'link'; readonly href: string });
+
+	function entryHref(entry: Entry): string {
+		const href = entry.kind === 'surface' ? routeFor(entry.target) : entry.href;
+		return localizeHref(href, locale);
+	}
 
 	interface Group {
 		readonly key: 'where-bus' | 'trust-line' | 'promise' | 'method';
@@ -567,6 +573,10 @@
 	// card in them matches; a group with no matching card hides whole.
 	let activeQuestion = $state<Group['key'] | null>(null);
 	let activeTempo = $state<Tempo | null>(null);
+	let exploreVisible = $state(false);
+	function setExploreVisible(visible: boolean): void {
+		exploreVisible = visible;
+	}
 
 	const filtersActive = $derived(activeQuestion != null || activeTempo != null);
 	const visibleGroups = $derived(
@@ -640,7 +650,7 @@
 					>{/if}{/snippet}
 		</CornerMeta>
 
-		<div class="hero-left">
+		<div class="hero-left" data-slot="home-hero-intro">
 			<SectionLabel text={t.kicker} variant="station" class="hero-kicker" />
 			<SectionHeading
 				heading={t.thesis1}
@@ -668,9 +678,9 @@
 
 		<!-- The 1px vertical spine between the columns (build sheet §4: amber gradient,
 		     transparent → --line-amber 15–85% → transparent). Decorative. -->
-		<div class="hero-spine" aria-hidden="true"></div>
+		<div class="hero-spine" data-slot="home-mobile-hero-divider" aria-hidden="true"></div>
 
-		<div class="hero-right">
+		<div class="hero-right" data-slot="home-control-room">
 			<!-- No titlebar `status`: the FreshnessStamp in the panel head is the ONE
 			     freshness readout (a second ticking stamp in the chrome read as an echo). -->
 			<TerminalPanel
@@ -771,7 +781,7 @@
 	     below) carrying the two facets + the match summary; the four rider-question
 	     groups stay the default view, and a group hides whole when nothing in it
 	     matches. -->
-	<div class="hub-launch">
+	<div class="hub-launch" data-slot="home-explore" use:observeViewportPresence={setExploreVisible}>
 		{#snippet exploreRail()}
 			<div class="explore-filters" role="group" aria-label={t.filterLabel}>
 				<FilterGroup
@@ -805,6 +815,7 @@
 			summary={pillSummary}
 			openAria={t.filterOpen}
 			closeAria={t.filterClose}
+			mobileVisible={exploreVisible}
 		/>
 
 		<nav class="launch-content" aria-label={t.exploreNav}>
@@ -812,7 +823,13 @@
 				{@render launchGroup(group, entries)}
 			{/each}
 			{#if matchCount === 0}
-				<p class="launch-empty" role="status">{t.filterEmpty}</p>
+				<StateNotice
+					title={t.filterEmpty}
+					glyph="○"
+					presentation="silo"
+					role="status"
+					ariaLive="polite"
+				/>
 			{/if}
 		</nav>
 	</div>
@@ -901,15 +918,9 @@
 		<ul class="launch-grid">
 			{#each entries as entry (entry.glyph + entry.title.en)}
 				<li>
-					{#if entry.kind === 'surface'}
-						<button type="button" class="hub-tile" onclick={() => openSurface(entry.target)}>
-							{@render tileBody(entry)}
-						</button>
-					{:else}
-						<a class="hub-tile" href={localizeHref(entry.href, locale)}>
-							{@render tileBody(entry)}
-						</a>
-					{/if}
+					<a class="hub-tile" href={entryHref(entry)}>
+						{@render tileBody(entry)}
+					</a>
 				</li>
 			{/each}
 		</ul>
@@ -941,20 +952,21 @@
 	.hub-hero {
 		position: relative; /* CornerMeta host (A4 blueprint margins) */
 		display: grid;
-		gap: 2rem;
+		gap: 0;
 		/* 100dvh WITH the navbar inside (operator, 2026-07-09): the band starts at
 		   the viewport top — cancelling BOTH the layout's nav-clearance pad
 		   (--chrome-offset on the page wrapper) AND the hub Surface's top pad (its
 		   exposed var) — and spans exactly one viewport. The floating pill lives
 		   INSIDE the band; --chrome-offset as top padding keeps content clear of it. */
 		margin-top: calc(-1 * (var(--chrome-offset) + var(--surface-pad-y)));
-		min-height: 100dvh;
 		padding-top: var(--chrome-offset);
-		align-content: center;
 	}
 	@media (min-width: 1024px) {
 		.hub-hero {
 			grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
+			gap: 2rem;
+			min-height: 100dvh;
+			align-content: center;
 			align-items: center;
 		}
 	}
@@ -966,7 +978,18 @@
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
+		justify-content: center;
+		/* The chrome clearance belongs to the parent. Filling the remainder makes
+		   the intro + chrome exactly one stable mobile viewport when the copy fits;
+		   min-height lets short devices grow instead of clipping or forcing zoom. */
+		min-height: calc(100svh - var(--chrome-offset));
 		min-width: 0;
+	}
+	@media (min-width: 1024px) {
+		.hero-left {
+			justify-content: flex-start;
+			min-height: 0;
+		}
 	}
 	/* Kicker — mono micro, AMBER TEXT accent (yesid hero-kicker: --accent-text ink,
 	   12px, tracking 1px). Class lands on the SectionLabel root → :global. */
@@ -997,15 +1020,15 @@
 	.hero-statement {
 		margin: 1.5rem 0 0;
 		font-family: var(--font-heading);
-		font-size: clamp(1.625rem, min(3.5vw, 4svh), 2.75rem);
+		font-size: clamp(1.375rem, min(3vw, 3.5svh), 2.25rem);
 		font-weight: 700;
 		line-height: 1.1;
 		color: var(--foreground);
 	}
 	.hero-lede {
 		margin: 1.25rem 0 0;
-		font-size: var(--text-heading);
-		line-height: 1.7;
+		font-size: var(--text-body);
+		line-height: 1.65;
 		color: var(--secondary-foreground);
 		max-width: 52ch;
 	}
@@ -1052,14 +1075,27 @@
 		outline-offset: 2px;
 	}
 
-	/* The 1px vertical spine (yesid §4): amber gradient fading at both ends. */
+	/* One structural rule with two responsive forms. On mobile it closes the
+	   full-viewport intro with the same faded horizontal amber rule as yesid.dev;
+	   on desktop it returns to the vertical spine between the two hero columns. */
 	.hero-spine {
-		display: none;
+		display: block;
+		height: 1px;
+		width: calc(100% + var(--space-page-x) + var(--space-page-x));
+		margin-inline: calc(-1 * var(--space-page-x));
+		background: linear-gradient(
+			90deg,
+			transparent 0%,
+			var(--line-amber) 15%,
+			var(--line-amber) 85%,
+			transparent 100%
+		);
 	}
 	@media (min-width: 1024px) {
 		.hero-spine {
-			display: block;
 			width: 1px;
+			height: auto;
+			margin-inline: 0;
 			align-self: stretch;
 			background: linear-gradient(
 				180deg,
@@ -1073,6 +1109,30 @@
 
 	.hero-right {
 		min-width: 0;
+		padding-top: clamp(1.5rem, 6vw, 2.5rem);
+	}
+	@media (min-width: 1024px) {
+		.hero-right {
+			padding-top: 0;
+		}
+	}
+	/* Very short phones keep the approved type scale; only the surrounding air
+	   tightens so both CTAs can remain above the viewport boundary. */
+	@media (max-width: 1023px) and (max-height: 660px) {
+		.hero-statement {
+			margin-top: 0.875rem;
+		}
+		.hero-lede {
+			margin-top: 0.75rem;
+			line-height: 1.5;
+		}
+		.hero-ctas {
+			margin-top: 1rem;
+			gap: 0.5rem;
+		}
+		.hero-cta {
+			padding-block: 0.75rem;
+		}
 	}
 	:global(.hub-pulse) {
 		width: 100%;
@@ -1238,7 +1298,7 @@
 	/* §C5.1 hierarchy: the §2 heading steps DOWN a register so the hero thesis
 	   stays the apex. Scoped; the shared primitive is untouched. */
 	.hub-what :global(.section-heading-text) {
-		font-size: clamp(2.25rem, 5vw, 3.25rem);
+		font-size: clamp(1.875rem, 4vw, 2.75rem);
 		font-weight: 800;
 		letter-spacing: var(--tracking-tight);
 	}
@@ -1257,7 +1317,7 @@
 	   "smaller" but never a muted caption. */
 	.what-body {
 		color: var(--secondary-foreground);
-		font-size: var(--text-subheading);
+		font-size: var(--text-body);
 		line-height: 1.65;
 		max-width: 60ch;
 	}
@@ -1364,13 +1424,6 @@
 		gap: 2.5rem;
 		min-width: 0;
 	}
-	/* Honest empty state when the two facets intersect to nothing. */
-	.launch-empty {
-		margin: 0;
-		padding: 2rem 0;
-		font-size: var(--text-body);
-		color: var(--muted-foreground);
-	}
 	.launch-group {
 		display: flex;
 		flex-direction: column;
@@ -1462,7 +1515,7 @@
 	   the reserved amber GROUND conversion CTA. */
 	.hub-tile-glyph {
 		font-family: var(--font-mono);
-		font-size: clamp(2.25rem, 2.5vw, 2.75rem);
+		font-size: clamp(1.75rem, 2vw, 2.25rem);
 		line-height: 1;
 		color: var(--accent-text);
 	}

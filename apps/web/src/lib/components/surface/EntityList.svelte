@@ -12,6 +12,7 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { cn } from '$lib/utils';
 	import { DashboardGrid } from '$lib/components/layout';
+	import { Card } from '$lib/components/ui/card';
 
 	interface EntityListProps extends Omit<HTMLAttributes<HTMLUListElement>, 'children'> {
 		/** The full item set (sliced to `max` for render). */
@@ -37,6 +38,8 @@
 		grid?: boolean;
 		/** Min tile width for the grid board (grid mode only). Default 360px. */
 		minTile?: string;
+		/** Wrap every row in the shared Yesid-style listing Card chassis. */
+		cards?: boolean;
 		/** Optional extra classes on the list root. */
 		class?: string;
 	}
@@ -49,6 +52,7 @@
 		truncatedLabel,
 		grid = false,
 		minTile = '360px',
+		cards = false,
 		class: className,
 		...restProps
 	}: EntityListProps = $props();
@@ -64,6 +68,16 @@
 	const gridRest = $derived(restProps as Omit<HTMLAttributes<HTMLElement>, 'class'>);
 </script>
 
+{#snippet renderItem(item: T)}
+	{#if cards}
+		<Card class="entity-list-card h-full gap-0 py-0" interactive={false}>
+			{@render row(item)}
+		</Card>
+	{:else}
+		{@render row(item)}
+	{/if}
+{/snippet}
+
 {#if grid}
 	<!-- Grid mode: the SAME <li> rows ride the shared DashboardGrid auto-fit board
 	     (rendered as a semantic <ul>), so the list>listitem semantics survive and the
@@ -72,24 +86,28 @@
 		as="ul"
 		{minTile}
 		gutter={false}
-		class={cn('entity-list', 'entity-list--grid', className)}
+		class={cn('entity-list', 'entity-list--grid', cards && 'entity-list--cards', className)}
 		data-slot="entity-list"
 		{...gridRest}
 	>
 		{#each visible as item (key(item))}
-			<li class="entity-list-item">{@render row(item)}</li>
+			<li class="entity-list-item">{@render renderItem(item)}</li>
 		{/each}
 		{#if truncated && truncatedLabel}
-			<li class="entity-list-more" aria-hidden="true">{truncatedLabel}</li>
+			<li class="entity-list-more">{truncatedLabel}</li>
 		{/if}
 	</DashboardGrid>
 {:else}
-	<ul class={cn('entity-list', className)} data-slot="entity-list" {...restProps}>
+	<ul
+		class={cn('entity-list', cards && 'entity-list--cards', className)}
+		data-slot="entity-list"
+		{...restProps}
+	>
 		{#each visible as item (key(item))}
-			<li class="entity-list-item">{@render row(item)}</li>
+			<li class="entity-list-item">{@render renderItem(item)}</li>
 		{/each}
 		{#if truncated && truncatedLabel}
-			<li class="entity-list-more" aria-hidden="true">{truncatedLabel}</li>
+			<li class="entity-list-more">{truncatedLabel}</li>
 		{/if}
 	</ul>
 {/if}
@@ -111,11 +129,20 @@
 	.entity-list-item:last-child {
 		border-bottom: none;
 	}
+	.entity-list--cards:not(.entity-list--grid) {
+		gap: 1rem;
+	}
+	.entity-list--cards .entity-list-item {
+		border-bottom: none;
+	}
+	:global(.card-surface.entity-list-card) {
+		border-width: 3px;
+	}
 	/* Grid mode: each row becomes a bordered tile that fills its auto-fit cell — the
 	   stacked per-row rules give way to the card-gap rhythm. The board's grid track
 	   recipe is DashboardGrid's (only the list-mode flex defaults are overridden by
 	   the .dashboard-grid display:grid). */
-	.entity-list--grid .entity-list-item {
+	.entity-list--grid:not(.entity-list--cards) .entity-list-item {
 		border-bottom: none;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);

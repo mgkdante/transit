@@ -119,6 +119,58 @@ afterEach(() => {
 });
 
 describe('AlertHistory asynchronous catalog and range transitions', () => {
+	it('renders the fast compatibility payload while catalog and default archive reads settle', async () => {
+		const historyGate = deferred<AlertHistory>();
+		const indexGate = deferred<AlertArchiveIndex | null>();
+		ports.getAlertHistory.mockReturnValue(historyGate.promise);
+		ports.getAlertArchiveIndex.mockReturnValue(indexGate.promise);
+		render(AlertHistoryScreen);
+
+		historyGate.resolve({
+			...HISTORY,
+			alerts: [entry('compatibility', 'Fast compatibility row', '2026-06-21')],
+		});
+		await waitFor(() => expect(screen.getByText('Fast compatibility row')).toBeInTheDocument());
+		expect(rangeCalls).toHaveLength(0);
+
+		indexGate.resolve(INDEX);
+		await waitFor(() => expect(rangeCalls).toHaveLength(1));
+		expect(screen.getByText('Fast compatibility row')).toBeInTheDocument();
+
+		rangeCalls[0].gate.resolve([entry('archive', 'Complete archive row', '2026-06-21')]);
+		await waitFor(() => expect(screen.getByText('Complete archive row')).toBeInTheDocument());
+		expect(screen.queryByText('Fast compatibility row')).toBeNull();
+	});
+
+	it('renders a capped compatibility payload as an honest preview while the full range loads', async () => {
+		const historyGate = deferred<AlertHistory>();
+		const indexGate = deferred<AlertArchiveIndex | null>();
+		ports.getAlertHistory.mockReturnValue(historyGate.promise);
+		ports.getAlertArchiveIndex.mockReturnValue(indexGate.promise);
+		render(AlertHistoryScreen);
+
+		historyGate.resolve({
+			...HISTORY,
+			alerts: [entry('preview', 'Latest compatibility preview', '2026-06-21')],
+			truncated: true,
+			total_in_window: 3409,
+		});
+		await waitFor(() =>
+			expect(screen.getByText('Latest compatibility preview')).toBeInTheDocument(),
+		);
+
+		indexGate.resolve(INDEX);
+		await waitFor(() => expect(rangeCalls).toHaveLength(1));
+		expect(document.querySelector('[data-slot="alert-archive-preview"]')).toHaveTextContent(
+			/Loading the complete selected range.*latest 1 alert.*counts and the breakdown will update/i,
+		);
+
+		rangeCalls[0].gate.resolve([entry('archive', 'Complete archive result', '2026-06-21')]);
+		await waitFor(() => expect(screen.getByText('Complete archive result')).toBeInTheDocument());
+		expect(screen.queryByText('Latest compatibility preview')).toBeNull();
+		expect(document.querySelector('[data-slot="alert-archive-preview"]')).toBeNull();
+	});
+
 	it('omits numeric filter summaries while an advertised range is pending or failed', async () => {
 		nav.url = new URL('http://localhost/alerts?route=24');
 		render(AlertHistoryScreen);
@@ -190,7 +242,7 @@ describe('AlertHistory asynchronous catalog and range transitions', () => {
 		);
 	});
 
-	it('aborts superseded ranges and never renders retained data under the wrong selection', async () => {
+	it('debounces paired date edits, aborts the old range, and never renders stale rows', async () => {
 		render(AlertHistoryScreen);
 		await waitFor(() => expect(rangeCalls).toHaveLength(1));
 		rangeCalls[0].gate.resolve([entry('current', 'Current range', '2026-06-21')]);
@@ -199,24 +251,22 @@ describe('AlertHistory asynchronous catalog and range transitions', () => {
 		await fireEvent.change(screen.getByLabelText('Alert history range · From'), {
 			target: { value: '2026-05-01' },
 		});
-		await waitFor(() => expect(rangeCalls).toHaveLength(2));
-		expect(rangeCalls[0].signal.aborted).toBe(true);
+		await waitFor(() => expect(rangeCalls[0].signal.aborted).toBe(true));
+		expect(rangeCalls).toHaveLength(1);
 		expect(screen.queryByText('Current range')).toBeNull();
 		expect(document.querySelector('[data-variant="skeleton"]')).not.toBeNull();
 
 		await fireEvent.change(screen.getByLabelText('Alert history range · To'), {
 			target: { value: '2026-05-31' },
 		});
-		await waitFor(() => expect(rangeCalls).toHaveLength(3));
-		expect(rangeCalls[1].signal.aborted).toBe(true);
+		expect(rangeCalls).toHaveLength(1);
+		await waitFor(() => expect(rangeCalls).toHaveLength(2));
 
-		rangeCalls[1].gate.reject(new Error('superseded range failed'));
-		rangeCalls[2].gate.resolve([entry('selected', 'Selected range', '2026-05-20')]);
+		rangeCalls[1].gate.resolve([entry('selected', 'Selected range', '2026-05-20')]);
 		await waitFor(() => expect(screen.getByText('Selected range')).toBeInTheDocument());
 		expect(screen.queryByRole('alert')).toBeNull();
 		expect(screen.queryByText('Current range')).toBeNull();
-		expect(screen.queryByText('Superseded range')).toBeNull();
-		expect(rangeCalls[2].window).toEqual({ from: '2026-05-01', to: '2026-05-31' });
+		expect(rangeCalls[1].window).toEqual({ from: '2026-05-01', to: '2026-05-31' });
 	});
 
 	it('prioritizes a selected-range failure over stale data and retries that exact range', async () => {

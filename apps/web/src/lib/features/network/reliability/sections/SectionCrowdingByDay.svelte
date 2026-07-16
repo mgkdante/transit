@@ -11,7 +11,6 @@
 <script lang="ts">
 	import { Chart } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { OccupancyDay } from '../selectors/occupancyTrend';
@@ -35,12 +34,16 @@
 	const i = $derived(info('occupancy', copy.occupancyTrendSection));
 </script>
 
-<NetworkTile>
-	<SectionHeading level={3} overline={copy.occupancyTrendSection}>
-		{#snippet explainer()}
-			<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
-		{/snippet}
-	</SectionHeading>
+{#snippet crowdingInfo()}
+	<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+{/snippet}
+
+<NetworkTile
+	title={copy.occupancyTrendSection}
+	subtitle={copy.occupancyTrend.summary}
+	sectionKey="network-crowding-by-day"
+	headerActions={crowdingInfo}
+>
 	<ul
 		class="network-occupancy-days"
 		aria-label={copy.occupancyTrend.summary}

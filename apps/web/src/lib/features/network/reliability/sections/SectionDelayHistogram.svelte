@@ -16,7 +16,6 @@
 -->
 <script lang="ts">
 	import { Chart, type HistogramSpec, type AbsenceSpec } from '$lib/components/dataviz/chart';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import NetworkTile from './NetworkTile.svelte';
@@ -44,19 +43,16 @@
 
 {#if hasHistogram}
 	<section class="network-hist-section" data-slot="delay-histogram-section">
-		<NetworkTile class="network-hist-tile">
-			<SectionHeading level={3} overline={copy.delayHistogramSection}>
-				{#snippet explainer()}
-					<MetricInfo
-						tip={i.tip}
-						href={i.href}
-						label={i.label}
-						linkLabel={i.linkLabel}
-						side="bottom"
-					/>
-				{/snippet}
-			</SectionHeading>
-			<p class="network-hist-caption">{copy.delayHistogram.caption}</p>
+		{#snippet histogramInfo()}
+			<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+		{/snippet}
+		<NetworkTile
+			title={copy.delayHistogramSection}
+			subtitle={copy.delayHistogram.caption}
+			sectionKey="network-delay-histogram"
+			class="network-hist-tile"
+			headerActions={histogramInfo}
+		>
 			<div class="network-hist" data-slot="delay-histogram">
 				<Chart {spec} />
 			</div>
@@ -77,14 +73,6 @@
 		width: 100%;
 	}
 	.network-hist {
-		max-width: 100%;
-	}
-	.network-hist-caption {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		line-height: 1.4;
-		color: var(--muted-foreground);
 		max-width: 100%;
 	}
 </style>

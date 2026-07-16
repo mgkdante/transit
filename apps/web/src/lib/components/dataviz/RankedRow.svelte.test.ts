@@ -27,6 +27,7 @@ describe('RankedRow — the dataviz-row template contract', () => {
 	it('a regression delta (default higherIsBetter=false) is ▲ on the severity-critical token', () => {
 		const { container } = render(RankedRow, { props: { ...base, delta: 2.1 } });
 		const el = deltaEl(container)!;
+		expect(el).toHaveAttribute('role', 'img');
 		expect(el.getAttribute('aria-label')).toBe('change +2.1');
 		expect(el.textContent).toContain('▲');
 		expect(el.getAttribute('style')).toContain('var(--dataviz-severity-critical)');

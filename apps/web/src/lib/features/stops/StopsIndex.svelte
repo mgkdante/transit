@@ -10,11 +10,13 @@
         typed query stays EPHEMERAL local state — it is a keystroke stream, not
         shareable view state, so it is never mirrored to the URL.
 
-    (b) FIND BY LINE — a bits-ui typeahead combobox of every route. Picking a line
+    (b) FIND BY LINE — a bits-ui typeahead combobox and browsable route catalogue.
+        Picking a line
         loads that route's LOSSLESS static stop list (getRoute → directions[].stops)
         rather than the stops_index `routes[]` reverse index, which is CAPPED AT 5
         route-ids per stop and would silently drop stops for busy lines. The result
-        is stop-sequence ordered + direction-grouped (DECISION C1). The pick is
+        is stop-sequence ordered + direction-grouped (DECISION C1), with every
+        published direction represented in each 50-stop batch. The pick is
         codec-owned: it seeds from / mirrors to the existing `route` filter axis
         (?route=<id>), so a by-line view is shareable + round-trips. When a line has
         no published stop list, we say so honestly.
@@ -26,14 +28,15 @@
         history simply shows no badge (never a spinner storm, never a fabricated 0%).
         An optional worst-first sort keys off the LOADED verdict; unloaded rows sink.
 
-  Composes the surface spine (Masthead + ControlsRail + ResourceBoundary +
-  EntityList/EntityRow). Locale via getLocale(); all copy in stops.copy.ts. Tokens
+  Composes the listing spine (BlueprintListingHeader + ListingPageShell +
+  ResourceBoundary + EntityList/EntityResultRow). Locale via getLocale(); all copy
+  in stops.copy.ts. Tokens
   only, no hex; --primary stays interactive-only.
 -->
 <script lang="ts">
 	import { page } from '$app/state';
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { mapHrefFor } from '$lib/nav';
+	import { getLocale, type Locale } from '$lib/i18n';
+	import { layout, mapHrefFor } from '$lib/nav';
 	import {
 		getStopsIndex,
 		getRoutesIndex,
@@ -47,33 +50,31 @@
 		ResourceBoundary,
 		EntityList,
 		EntityRow,
-		SearchInput,
+		EntityResultRow,
 		ReliabilityBadge,
-		GrainPicker,
 		MapDrilldownLink,
+		createReliabilityListingController,
 	} from '$lib/components/surface';
-	import { Masthead } from '$lib/components/brand';
-	import { Surface, ControlsRail } from '$lib/components/layout';
+	import { BlueprintListingHeader, ListingPageShell } from '$lib/components/layout';
+	import { EdgeState, StateNotice } from '$lib/components/edge';
+	import {
+		FilterGroup,
+		ListingFilterPanel,
+		ListingFilterSection,
+		ListingSearchField,
+	} from '$lib/components/filter';
 	import { LineCombobox, type LineComboboxOption } from '$lib/components/ui/line-combobox';
 	import { fromSearchParams } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
-	import { stopGroupKey, stopModeHint, routeModeHint } from '$lib/search/stopMode';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
+	import { stopGroupKey, stopModeHint, stopModeTag, routeModeHint } from '$lib/search/stopMode';
 	import { indexCopy } from './stops.copy';
+	import StopsBlueprint from './StopsBlueprint.svelte';
 
 	const locale: Locale = getLocale();
 	const t = $derived(indexCopy[locale]);
-
-	// The OTP explainer (i) on the surface header (§C5.5 / §C6): a one-line tip +
-	// a localized deep link to /metrics#otp, the same `info()` shape every surface uses.
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const otpInfo = $derived.by(() => {
-		const i = metricInfoFor('otp', locale);
-		return { ...i, label: explainerCopy.info.trigger('OTP'), linkLabel: explainerCopy.info.link };
-	});
+	const listingSubtitle = $derived([t.kicker, t.subheading].filter(Boolean).join(' '));
+	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 
 	const index = createResource(() => getStopsIndex());
 	const routesIndex = createResource(() => getRoutesIndex());
@@ -84,8 +85,9 @@
 	const reliability = createReliabilityLoader('stop');
 	const observeReliability = reliability.reliability;
 
-	/** Max rows rendered at once — the catalogue is far too large to list whole. */
-	const CAP = 100;
+	/** Shared incremental batch — bounds both the stop DOM and the line chooser. */
+	const PAGE_SIZE = 50;
+	const SEARCH_CAP = 100;
 
 	// ── (a) find-by-typing — ephemeral, never mirrored ──────────────────────────
 	let query = $state('');
@@ -112,18 +114,18 @@
 	// The combobox options: every route, tagged with its mode glyph + long name,
 	// with a precomputed folded search haystack (id + short + long) so typing is
 	// diacritics-insensitive without re-folding per keystroke.
+	const routeCollator = new Intl.Collator(locale, { numeric: true, sensitivity: 'base' });
+	const sortedRoutes = $derived.by<RouteIndexEntry[]>(() =>
+		[...(routesIndex.data?.routes ?? [])].sort((a, b) => routeCollator.compare(a.short, b.short)),
+	);
 	const lineOptions = $derived.by<LineComboboxOption[]>(() => {
-		const all = routesIndex.data?.routes ?? [];
-		const collator = new Intl.Collator(locale, { numeric: true, sensitivity: 'base' });
-		return [...all]
-			.sort((a, b) => collator.compare(a.short, b.short))
-			.map((r) => ({
-				value: r.id,
-				label: r.short,
-				sublabel: r.long ?? undefined,
-				glyph: routeModeHint(r.type).glyph,
-				search: foldSearchText([r.id, r.short, r.long].filter(Boolean).join(' ')),
-			}));
+		return sortedRoutes.map((r) => ({
+			value: r.id,
+			label: r.short,
+			sublabel: r.long ?? undefined,
+			glyph: routeModeHint(r.type).glyph,
+			search: foldSearchText([r.id, r.short, r.long].filter(Boolean).join(' ')),
+		}));
 	});
 	const selectedLine = $derived<RouteIndexEntry | undefined>(
 		(routesIndex.data?.routes ?? []).find((r) => r.id === selectedLineId),
@@ -132,17 +134,22 @@
 	// The picked line's LOSSLESS static stop list. createResource re-runs when the
 	// id it reads changes; null id ⇒ no fetch (returns null). getRoute 404 ⇒ null
 	// ⇒ honest "no published stop list" state (never an error).
-	const lineRoute = createResource(() => {
-		const id = selectedLineId;
-		return id ? getRoute(id) : Promise.resolve(null);
-	});
+	const lineRoute = createResource(
+		() => {
+			const id = selectedLineId;
+			return id ? getRoute(id) : Promise.resolve(null);
+		},
+		{ key: () => selectedLineId },
+	);
 
 	// Join a route's directions[].stops back to the stops_index (for code/mode/route
 	// chips), preserving stop-sequence order and grouping BY DIRECTION (DECISION C1).
 	// A stop present in the route file but absent from the index still renders (id +
 	// seq name) so the list is never silently short.
 	interface LineStopGroup {
+		readonly key: string;
 		readonly dir: number;
+		readonly headsign?: string | null;
 		readonly stops: readonly StopIndexEntry[];
 	}
 	const lineStopGroups = $derived.by<LineStopGroup[]>(() => {
@@ -154,7 +161,7 @@
 		const byId: Record<string, StopIndexEntry> = {};
 		for (const s of index.data?.stops ?? []) byId[s.id] = s;
 		return route.directions
-			.map((d) => {
+			.map((d, directionIndex) => {
 				const seen: Record<string, true> = {};
 				const stops: StopIndexEntry[] = [];
 				// stops are published in sequence order; dedupe within a direction only.
@@ -170,7 +177,12 @@
 						},
 					);
 				}
-				return { dir: d.dir, stops };
+				return {
+					key: `${d.dir}:${directionIndex}:${d.headsign ?? ''}`,
+					dir: d.dir,
+					headsign: d.headsign,
+					stops,
+				};
 			})
 			.filter((g) => g.stops.length > 0);
 	});
@@ -188,30 +200,7 @@
 		return dedupeBy(ranked, stopGroupKey);
 	});
 
-	const overflow = $derived(Math.max(0, matches.length - CAP));
-
-	// ── (c) reliability sort (worst-first) — keys off the LOADED verdict ────────
-	type SortKey = 'default' | 'worst';
-	let sort = $state<SortKey>('default');
-	const sortSegments = $derived([
-		{ key: 'default', label: t.sortDefault },
-		{ key: 'worst', label: t.sortWorst },
-	]);
-	const VERDICT_RANK: Record<string, number> = { severe: 0, late: 1, on_time: 2 };
-	function worstRank(id: string): number {
-		const v = reliability.get(id).verdict;
-		return v == null ? 99 : (VERDICT_RANK[v] ?? 99);
-	}
-	// Apply worst-first to a list while keeping the source order as the stable
-	// tiebreak (so rows don't reshuffle violently as badges stream in). Honest: an
-	// unloaded / no-data row is NOT treated as "good" — it just lacks a rank.
-	function applySort(list: readonly StopIndexEntry[]): readonly StopIndexEntry[] {
-		if (sort === 'default') return list;
-		return list
-			.map((s, i) => ({ s, i }))
-			.sort((a, b) => worstRank(a.s.id) - worstRank(b.s.id) || a.i - b.i)
-			.map((x) => x.s);
-	}
+	const overflow = $derived(Math.max(0, matches.length - SEARCH_CAP));
 
 	// When a line is picked, its (direction-grouped, sequence-ordered) stops drive
 	// the result — optionally further narrowed by the free-text box (compose both).
@@ -221,314 +210,385 @@
 		if (!folded) return stops;
 		return stops.filter((s) => tokenMatchScore([s.name, s.code, s.id], folded) != null);
 	}
+
+	// ── (c) reliability sort (worst-first) ─────────────────────────────────────
+	type SortKey = 'default' | 'worst';
+	let sort = $state<SortKey>('default');
+	const sortAllLabel = { en: indexCopy.en.sortDefault, fr: indexCopy.fr.sortDefault };
+	const VERDICT_RANK: Record<string, number> = { severe: 0, late: 1, on_time: 2 };
+	// The complete active result set is eligible: every stop on a picked line, or
+	// every text match that the catalogue may rank before its existing render cap.
+	// Requesting enters the loader's existing four-wide queue, so this fills coverage
+	// without bypassing cache/concurrency. Source order remains frozen until every
+	// eligible snapshot is terminal, then one ranking is committed.
+	const reliabilityCandidates = $derived.by<readonly StopIndexEntry[]>(() =>
+		lineActive ? lineStopGroups.flatMap((group) => narrowByText(group.stops)) : matches,
+	);
+	const reliabilityListing = createReliabilityListingController({
+		loader: reliability,
+		candidates: () => reliabilityCandidates,
+		id: (stop) => stop.id,
+		requestWhen: () => sort === 'worst',
+		rankWhen: () => sort === 'worst',
+		rank: (snapshot) => (snapshot.verdict == null ? 99 : (VERDICT_RANK[snapshot.verdict] ?? 99)),
+	});
 	const visibleGroups = $derived.by<LineStopGroup[]>(() =>
 		lineStopGroups
-			.map((g) => ({ dir: g.dir, stops: applySort(narrowByText(g.stops)) }))
+			.map((g) => ({ ...g, stops: reliabilityListing.order(narrowByText(g.stops)) }))
 			.filter((g) => g.stops.length > 0),
 	);
-	const sortedMatches = $derived(applySort(matches));
+	const sortedMatches = $derived(reliabilityListing.order(matches));
 
-	// ── Idle-state census (§C5.5) ───────────────────────────────────────────────
-	// Turn the dead "start typing" prompt into a live network stop-picture, entirely
-	// from the two already-fetched indices — total stops + total lines — plus a
-	// worst-stop teaser into /repeat-offenders and tappable example queries. No new
-	// fetch: the counts are the length of the payloads the surface already loaded.
+	let visibleStopLimit = $state(PAGE_SIZE);
+	let stopPageKey = $state('');
+	$effect(() => {
+		const nextKey = `${selectedLineId ?? ''}|${folded}|${sort}`;
+		if (nextKey === stopPageKey) return;
+		stopPageKey = nextKey;
+		visibleStopLimit = PAGE_SIZE;
+	});
+	const lineStopTotal = $derived(
+		visibleGroups.reduce((total, group) => total + group.stops.length, 0),
+	);
+	const shownStopCount = $derived(Math.min(visibleStopLimit, lineStopTotal));
+	const nextStopBatch = $derived(Math.min(PAGE_SIZE, Math.max(0, lineStopTotal - shownStopCount)));
+	const pagedGroups = $derived.by<LineStopGroup[]>(() => {
+		const quotas = visibleGroups.map(() => 0);
+		let remaining = shownStopCount;
+		while (remaining > 0) {
+			let progressed = false;
+			for (let index = 0; index < visibleGroups.length && remaining > 0; index += 1) {
+				if (quotas[index] >= visibleGroups[index].stops.length) continue;
+				quotas[index] += 1;
+				remaining -= 1;
+				progressed = true;
+			}
+			if (!progressed) break;
+		}
+		return visibleGroups
+			.map((group, index) => ({ ...group, stops: group.stops.slice(0, quotas[index]) }))
+			.filter((group) => group.stops.length > 0);
+	});
+
 	const stopCount = $derived(index.data?.stops?.length ?? null);
 	const lineCount = $derived(routesIndex.data?.routes?.length ?? null);
-	const repeatOffendersHref = $derived(localizeHref('/repeat-offenders', locale));
+	const stopModesComplete = $derived(
+		index.data != null && index.data.stops.every((stop) => stop.mode != null),
+	);
+	const busStopCount = $derived(
+		!stopModesComplete || index.data == null
+			? null
+			: index.data.stops.filter((stop) => stop.mode === 'bus').length,
+	);
+	const metroStopCount = $derived(
+		!stopModesComplete || index.data == null
+			? null
+			: index.data.stops.filter((stop) => stop.mode === 'metro').length,
+	);
 	const numberFmt = $derived(new Intl.NumberFormat(locale));
+	const inventoryStats = $derived([
+		{
+			label: t.inventory.stops,
+			value: stopCount == null ? null : numberFmt.format(stopCount),
+		},
+		{
+			label: t.inventory.bus,
+			value: busStopCount == null ? null : numberFmt.format(busStopCount),
+		},
+		{
+			label: t.inventory.metro,
+			value: metroStopCount == null ? null : numberFmt.format(metroStopCount),
+		},
+		{
+			label: t.inventory.lines,
+			value: lineCount == null ? null : numberFmt.format(lineCount),
+		},
+	]);
+	let visibleLineLimit = $state(PAGE_SIZE);
+	const visibleBrowseLines = $derived(sortedRoutes.slice(0, visibleLineLimit));
+	const nextLineBatch = $derived(
+		Math.min(PAGE_SIZE, Math.max(0, sortedRoutes.length - visibleBrowseLines.length)),
+	);
 </script>
 
-{#snippet otpHeaderInfo()}
-	<MetricInfo
-		tip={otpInfo.tip}
-		href={otpInfo.href}
-		label={otpInfo.label}
-		linkLabel={otpInfo.linkLabel}
-		side="bottom"
+{#snippet listingBlueprint()}
+	<StopsBlueprint />
+{/snippet}
+
+{#snippet listingHeader()}
+	<BlueprintListingHeader
+		heading={t.heading}
+		subtitle={listingSubtitle}
+		description={t.lede}
+		statsLabel={t.inventory.label}
+		statsUnknownLabel={t.inventory.unavailable}
+		stats={inventoryStats}
+		blueprint={listingBlueprint}
 	/>
 {/snippet}
 
-<Surface class="stops-index">
-	<Masthead
-		kicker={t.kicker}
-		heading={t.heading}
-		subheading={t.subheading}
-		lede={t.lede}
-		explainer={otpHeaderInfo}
-	>
-		<!-- All controls collected into ONE ControlsRail: the free-text search, the
-		     by-line combobox, and the reliability sort. --primary lives only on the
-		     active sort segment / highlighted combobox option; the rail is quiet. -->
-		<ControlsRail label={t.controlsLabel} class="stops-controls-rail" sticky>
-			<SearchInput
-				id="stops-filter-input"
-				label={t.searchLabel}
-				placeholder={t.searchPlaceholder}
-				bind:value={query}
-			/>
-			<div class="stops-controls">
-				<div class="stops-control stops-control--line">
-					<!-- Visible caption only; the combobox self-labels via its aria-label,
-					     so this span is decorative (aria-hidden) — no dangling labelledby. -->
-					<span class="stops-control-label" aria-hidden="true">{t.lineLabel}</span>
-					<LineCombobox
-						options={lineOptions}
-						bind:value={selectedLineId}
-						label={t.lineLabel}
-						placeholder={t.linePlaceholder}
-						clearLabel={t.lineClear}
-						emptyLabel={t.lineEmpty}
-						fold={foldSearchText}
-					/>
-				</div>
-				<div class="stops-control">
-					<span class="stops-control-label" aria-hidden="true">{t.sortLabel}</span>
-					<GrainPicker segments={sortSegments} bind:value={sort} label={t.sortLabel} />
-				</div>
-			</div>
-		</ControlsRail>
-	</Masthead>
+{#snippet listingSearch()}
+	<ListingSearchField
+		label={t.searchLabel}
+		placeholder={t.searchPlaceholder}
+		testId="stops-filter-input"
+		bind:value={query}
+	/>
+{/snippet}
 
-	<ResourceBoundary resource={index} lang={locale}>
-		{#if lineActive}
-			<!-- BY-LINE view. We gate on the per-route fetch MANUALLY (not a nested
+{#snippet listingFilters()}
+	<ListingFilterPanel showSearch={false}>
+		<ListingFilterSection>
+			<div class="stops-line-filter">
+				<span class="label-section text-sm font-semibold">{t.lineLabel}</span>
+				<LineCombobox
+					options={lineOptions}
+					bind:value={selectedLineId}
+					label={t.lineLabel}
+					placeholder={t.linePlaceholder}
+					clearLabel={t.lineClear}
+					emptyLabel={t.lineEmpty}
+					fold={foldSearchText}
+				/>
+			</div>
+		</ListingFilterSection>
+
+		<ListingFilterSection>
+			<FilterGroup
+				label={t.sortLabel}
+				items={[{ key: 'worst', label: t.sortWorst }]}
+				activeKey={sort === 'default' ? null : sort}
+				allLabel={sortAllLabel}
+				allowDeselect={false}
+				collapsible
+				persistKey="stops-filter-sort-group"
+				testIdPrefix="stops-sort"
+				onSelect={(key) => (sort = key === 'worst' ? 'worst' : 'default')}
+			/>
+		</ListingFilterSection>
+	</ListingFilterPanel>
+{/snippet}
+
+<ListingPageShell
+	heading={t.heading}
+	filterLabel={t.controlsLabel}
+	filterPersistKey="stops-listing-filters"
+	header={listingHeader}
+	search={listingSearch}
+	filters={listingFilters}
+>
+	<ResourceBoundary resource={routesIndex} lang={locale}>
+		<ResourceBoundary resource={index} lang={locale}>
+			<p class="sr-only" role="status" aria-live="polite" data-testid="stops-ranking-status">
+				{reliabilityListing.rankingPending ? t.rankingPending : ''}
+			</p>
+			{#if lineActive}
+				<!-- BY-LINE view. We gate on the per-route fetch MANUALLY (not a nested
 			     ResourceBoundary) so a 404 / empty list states the SPECIFIC honest
 			     reason ("no published stop list for this line") rather than a generic
-			     no-data edge. While it loads, we simply hold the previous frame. -->
-			{#if visibleGroups.length === 0}
-				{#if lineRoute.settled}
-					<p class="stops-note">{folded ? t.noMatches : t.noLineStops}</p>
-				{/if}
-			{:else}
-				{#if selectedLine}
-					<h2 class="stops-line-heading">{t.onLineHeading(selectedLine.short)}</h2>
-				{/if}
-				{#each visibleGroups as group (group.dir)}
-					<section class="stops-line-group" aria-label={t.direction(group.dir)}>
-						<h3 class="stops-line-dir">{t.direction(group.dir)}</h3>
-						<EntityList items={group.stops} key={(s) => s.id} max={CAP}>
-							{#snippet row(stop)}
-								{@render stopRow(stop)}
-							{/snippet}
-						</EntityList>
-					</section>
-				{/each}
-			{/if}
-		{:else if !folded}
-			<!-- IDLE (§C5.5): a network stop-picture band instead of a dead prompt —
-			     live counts from the two fetched indices + a worst-stop teaser into
-			     /repeat-offenders + tappable example queries that fill the search box. -->
-			<div class="stops-census" data-slot="stops-census">
-				<span class="stops-census__label">{t.census.label}</span>
-				<p class="stops-census__counts">
-					{#if stopCount != null}
-						<span class="stops-census__stat">{t.census.stops(numberFmt.format(stopCount))}</span>
+			     no-data edge. A route transition never leaks the previous line or flashes
+			     that empty verdict: the shared delayed skeleton owns the pending frame. -->
+				{#if lineRoute.loading}
+					<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
+				{:else if visibleGroups.length === 0}
+					{#if lineRoute.settled}
+						<StateNotice
+							title={folded ? t.noMatches : t.noLineStops}
+							presentation="silo"
+							role="status"
+							ariaLive="polite"
+						/>
 					{/if}
-					{#if lineCount != null}
-						<span class="stops-census__dot" aria-hidden="true">·</span>
-						<span class="stops-census__stat">{t.census.lines(numberFmt.format(lineCount))}</span>
+				{:else}
+					{#if selectedLine}
+						<h2 class="stops-line-heading">{t.onLineHeading(selectedLine.short)}</h2>
 					{/if}
-				</p>
-				<a class="stops-census__teaser" href={repeatOffendersHref}>{t.census.worstTeaser}</a>
-				<div class="stops-census__examples">
-					<span class="stops-census__examples-label">{t.census.examplesLabel}</span>
-					<div class="stops-census__chips">
-						{#each t.census.examples as example (example)}
-							<button type="button" class="stops-census__chip" onclick={() => (query = example)}>
-								{example}
+					{#each pagedGroups as group (group.key)}
+						<section class="stops-line-group" aria-label={t.direction(group.dir, group.headsign)}>
+							<h3 class="stops-line-dir">{t.direction(group.dir, group.headsign)}</h3>
+							<EntityList items={group.stops} key={(s) => s.id} cards>
+								{#snippet row(stop)}
+									{@render stopRow(stop)}
+								{/snippet}
+							</EntityList>
+						</section>
+					{/each}
+					<div class="stops-batch-controls">
+						<p role="status" aria-label={t.browse.progressLabel}>
+							{t.browse.progress(shownStopCount, lineStopTotal)}
+						</p>
+						{#if nextStopBatch > 0}
+							<button
+								type="button"
+								class="stops-load-more tap-press"
+								onclick={() => (visibleStopLimit += PAGE_SIZE)}
+							>
+								{t.browse.loadMore(nextStopBatch)}
 							</button>
-						{/each}
+						{/if}
 					</div>
-				</div>
-				<p class="stops-note stops-census__prompt">{t.searchPrompt}</p>
-			</div>
-		{:else if matches.length === 0}
-			<p class="stops-note">{t.noMatches}</p>
-		{:else}
-			<EntityList
-				items={sortedMatches}
-				key={(s) => s.id}
-				max={CAP}
-				truncatedLabel={overflow > 0 ? t.more(overflow) : undefined}
-			>
-				{#snippet row(stop)}
-					{@render stopRow(stop)}
-				{/snippet}
-			</EntityList>
-		{/if}
+				{/if}
+			{:else if !folded}
+				<section class="stops-browse" aria-labelledby="stops-browse-heading">
+					<div class="stops-browse-head">
+						<h2 id="stops-browse-heading">{t.browse.heading}</h2>
+						<p>{t.browse.lede}</p>
+					</div>
+					<EntityList
+						items={visibleBrowseLines}
+						key={(route) => route.id}
+						grid
+						cards
+						minTile="360px"
+					>
+						{#snippet row(route)}
+							{@const modeHint = routeModeHint(route.type)}
+							{@const accessibleLineName = [modeHint.tag, route.long].filter(Boolean).join(' ')}
+							<EntityRow
+								onSelect={() => (selectedLineId = route.id)}
+								ariaLabel={t.browse.chooseLine(route.short, accessibleLineName)}
+								glyph={modeHint.glyph}
+								tag={modeHint.tag ?? undefined}
+								title={route.short}
+								subtitle={route.long ?? undefined}
+								meta="→"
+							/>
+						{/snippet}
+					</EntityList>
+					{#if nextLineBatch > 0}
+						<div class="stops-browse-more">
+							<button
+								type="button"
+								class="stops-load-more tap-press"
+								onclick={() => (visibleLineLimit += PAGE_SIZE)}
+							>
+								{t.browse.showMoreLines(nextLineBatch)}
+							</button>
+						</div>
+					{/if}
+				</section>
+			{:else if matches.length === 0}
+				<StateNotice title={t.noMatches} presentation="silo" role="status" ariaLive="polite" />
+			{:else}
+				<EntityList
+					items={sortedMatches}
+					key={(s) => s.id}
+					max={SEARCH_CAP}
+					cards
+					truncatedLabel={overflow > 0 ? t.more(overflow) : undefined}
+				>
+					{#snippet row(stop)}
+						{@render stopRow(stop)}
+					{/snippet}
+				</EntityList>
+			{/if}
+		</ResourceBoundary>
 	</ResourceBoundary>
-</Surface>
+</ListingPageShell>
 
 {#snippet stopRow(stop: StopIndexEntry)}
 	{@const hint = stopModeHint(stop)}
-	<div class="stop-result" use:observeReliability={stop.id}>
-		<EntityRow
-			target={{ kind: 'stop', id: stop.id }}
-			{locale}
-			glyph={hint.glyph}
-			title={stop.name}
-			subtitle={stop.code ?? undefined}
-			meta={hint.label ?? undefined}
-			routes={stop.routes}
-			class="stop-result-main"
-		/>
-		<ReliabilityBadge snapshot={reliability.get(stop.id)} {locale} class="stop-result-badge" />
-		<MapDrilldownLink
-			href={mapHrefFor({ stop: stop.id }, locale)}
-			label={t.mapAction}
-			ariaLabel={t.viewStopOnMap(stop.code ?? stop.name)}
+	{@const stopSnapshot = reliability.get(stop.id)}
+	<div use:observeReliability={stop.id}>
+		{#snippet stopMain()}
+			<EntityRow
+				target={{ kind: 'stop', id: stop.id }}
+				{locale}
+				glyph={hint.glyph}
+				tag={stopModeTag(stop) ?? undefined}
+				title={stop.name}
+				subtitle={stop.code ?? undefined}
+				routes={stop.routes}
+			/>
+		{/snippet}
+		{#snippet stopStatus()}
+			<ReliabilityBadge snapshot={stopSnapshot} {locale} />
+		{/snippet}
+		{#snippet stopAction()}
+			<MapDrilldownLink
+				href={mapHrefFor({ stop: stop.id }, locale)}
+				label={t.mapAction}
+				ariaLabel={t.viewStopOnMap(stop.code ?? stop.name)}
+			/>
+		{/snippet}
+		<EntityResultRow
+			children={stopMain}
+			status={stopSnapshot.otpPct == null ? undefined : stopStatus}
+			action={stopAction}
 		/>
 	</div>
 {/snippet}
 
 <style>
-	.stops-note {
-		color: var(--muted-foreground);
-		font-size: var(--text-small);
-		line-height: 1.5;
-		padding: 0.5rem 0.875rem;
-	}
-	/* Idle census band (§C5.5): a quiet card of live network counts + a way in. Not
-	   a data mark; the teaser + chips are interactive affordances (--primary). */
-	.stops-census {
+	.stops-browse {
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
-		padding: 1.25rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
+		gap: 1rem;
 	}
-	.stops-census__label {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: 600;
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-	.stops-census__counts {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.5rem;
-		margin: 0;
-	}
-	.stops-census__stat {
-		font-family: var(--font-heading);
-		font-size: 1.5rem;
-		font-weight: 800;
-		line-height: 1.1;
-		color: var(--foreground);
-		font-variant-numeric: tabular-nums;
-	}
-	.stops-census__dot {
-		color: var(--muted-foreground);
-	}
-	.stops-census__teaser {
-		align-self: flex-start;
-		display: inline-flex;
-		align-items: center;
-		min-height: 44px;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--primary);
-		text-decoration: none;
-	}
-	.stops-census__teaser:hover,
-	.stops-census__teaser:focus-visible {
-		text-decoration: underline;
-	}
-	.stops-census__teaser:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-		border-radius: var(--radius-sm);
-	}
-	.stops-census__examples {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem;
-	}
-	.stops-census__examples-label {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-	.stops-census__chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-	}
-	.stops-census__chip {
-		display: inline-flex;
-		align-items: center;
-		min-height: 44px;
-		padding: 0.375rem 0.75rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		background: var(--muted);
-		color: var(--foreground);
-		font-size: var(--text-caption);
-		cursor: pointer;
-		transition:
-			border-color var(--duration-fast) var(--ease-default),
-			color var(--duration-fast) var(--ease-default);
-	}
-	.stops-census__chip:hover,
-	.stops-census__chip:focus-visible {
-		border-color: var(--primary);
-		color: var(--primary);
-	}
-	.stops-census__chip:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-	.stops-census__prompt {
-		padding: 0;
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.stops-census__chip {
-			transition: none;
-		}
-	}
-	/* The control panel fills the header measure; its body lays the search box
-	   across the top with the line filter + sort beneath. */
-	:global(.stops-controls-rail) {
-		width: 100%;
-	}
-	:global(.stops-controls-rail [data-slot='controls-rail-body']) {
-		flex-direction: column;
-		align-items: stretch;
-		gap: 0.875rem;
-	}
-	.stops-controls {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 1.25rem;
-	}
-	.stops-control {
+	.stops-browse-head {
 		display: flex;
 		flex-direction: column;
 		gap: 0.375rem;
 	}
-	/* The line combobox wants room to breathe (typeahead + long line names). */
-	.stops-control--line {
-		flex: 1 1 18rem;
-		min-width: 0;
+	.stops-browse-head h2,
+	.stops-browse-head p {
+		margin: 0;
 	}
-	.stops-control-label {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: 600;
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
+	.stops-browse-head h2 {
+		font-size: var(--text-heading);
+		color: var(--foreground);
+	}
+	.stops-browse-head p {
+		max-width: 65ch;
+		font-size: var(--text-small);
+		line-height: 1.5;
 		color: var(--muted-foreground);
 	}
+	.stops-load-more:hover,
+	.stops-load-more:focus-visible {
+		border-color: var(--primary);
+		color: var(--primary);
+		outline: none;
+	}
+	.stops-browse-more,
+	.stops-batch-controls {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: center;
+		gap: 0.75rem;
+	}
+	.stops-batch-controls {
+		margin-top: var(--space-card-gap);
+	}
+	.stops-batch-controls p {
+		margin: 0;
+		font-size: var(--text-small);
+		color: var(--muted-foreground);
+	}
+	.stops-load-more {
+		min-height: var(--size-tap-min);
+		padding: 0.625rem 1rem;
+		border: 1px solid var(--border-brand);
+		border-radius: var(--radius-pill);
+		background: var(--surface-1);
+		color: var(--foreground);
+		font-family: var(--font-mono);
+		font-size: var(--text-control);
+		font-weight: 700;
+		cursor: pointer;
+	}
+	.stops-line-filter {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	.stops-line-filter :global([data-slot='line-combobox']) {
+		width: 100%;
+	}
 	.stops-line-heading {
+		margin: 0;
 		font-size: var(--text-body);
 		font-weight: 600;
 		color: var(--foreground);
@@ -545,39 +605,5 @@
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 		padding: 0.5rem 0.875rem 0.25rem;
-	}
-	.stop-result {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto auto;
-		align-items: center;
-		gap: 0.5rem;
-		padding-right: 0.5rem;
-	}
-	.stop-result :global(.stop-result-main) {
-		min-width: 0;
-	}
-	.stop-result :global(.stop-result-badge) {
-		flex: none;
-	}
-	@media (max-width: 32rem) {
-		/* On a narrow phone the badge tucks under the row body so the name + map
-		   action keep their room. */
-		.stop-result {
-			grid-template-columns: minmax(0, 1fr) auto;
-			grid-template-areas:
-				'main map'
-				'badge map';
-			row-gap: 0.25rem;
-		}
-		.stop-result :global(.stop-result-main) {
-			grid-area: main;
-		}
-		.stop-result :global(.stop-result-badge) {
-			grid-area: badge;
-			padding-left: 0.5rem;
-		}
-		.stop-result :global(.map-drilldown-link) {
-			grid-area: map;
-		}
 	}
 </style>

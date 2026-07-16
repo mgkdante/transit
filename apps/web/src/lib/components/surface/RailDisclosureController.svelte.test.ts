@@ -28,6 +28,18 @@ const consumers = [
 		file: 'src/lib/features/receipt/AccountabilityReceipt.svelte',
 		keys: ["controls: 'receipt-controls'", "toc: 'receipt-toc'"],
 	},
+	{
+		file: 'src/lib/features/lines/reliability/RouteReliabilityClusters.svelte',
+		keys: ["controls: 'reliability-controls'", "toc: 'reliability-toc'"],
+	},
+	{
+		file: 'src/lib/features/stops/reliability/sections/StopReliabilitySurface.svelte',
+		keys: ["controls: 'stop-reliability-controls'", "toc: 'stop-reliability-toc'"],
+	},
+	{
+		file: 'src/lib/features/network/reliability/sections/NetworkSurface.svelte',
+		keys: ["controls: 'network-controls'", "toc: 'network-toc'"],
+	},
 ] as const;
 
 beforeEach(() => {
@@ -126,7 +138,7 @@ describe('combined rail disclosure controller', () => {
 		expect(harness()).toHaveAttribute('data-toc-open', 'true');
 	});
 
-	it('is the single rail-disclosure state and signal owner for all four article surfaces', () => {
+	it('is the single rail-disclosure state and signal owner for every combined-rail surface', () => {
 		for (const consumer of consumers) {
 			const source = readFileSync(resolve(process.cwd(), consumer.file), 'utf8');
 			expect(source, consumer.file).toContain('createRailDisclosureController');

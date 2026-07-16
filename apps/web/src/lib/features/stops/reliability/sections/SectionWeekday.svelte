@@ -9,46 +9,27 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { RankedRow } from '$lib/components/dataviz';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { WeekdayRow } from '../selectors/weekdaySeasonality';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
+	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';
 
 	interface SectionWeekdayProps {
 		rows: readonly WeekdayRow[];
 		locale: Locale;
 		copy: StopReliabilityCopy;
+		presentation?: 'standalone' | 'article-body';
 	}
-	let { rows, locale, copy }: SectionWeekdayProps = $props();
-
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
+	let { rows, locale, copy, presentation = 'standalone' }: SectionWeekdayProps = $props();
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
-		class="stop-metric-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
-		side="bottom"
-	/>
-{/snippet}
-
-<div class="stop-tile stop-reliability-weekday" data-slot="stop-weekday">
-	<SectionHeading level={2} overline={copy.weekday.heading} class="stop-tile-heading">
-		{#snippet explainer()}
-			{@render metricInfo('seasonality', copy.weekday.heading)}
-		{/snippet}
-	</SectionHeading>
+<StopReliabilityPresenter
+	heading={copy.weekday.heading}
+	metricKey="seasonality"
+	{locale}
+	{presentation}
+	dataSlot="stop-weekday"
+>
 	<div class="stop-reliability-route-list" role="list" aria-label={copy.weekday.heading}>
 		{#each rows as row (row.key)}
 			<RankedRow
@@ -64,14 +45,9 @@
 		{/each}
 	</div>
 	<p class="stop-reliability-caveat">{copy.weekday.caveat}</p>
-</div>
+</StopReliabilityPresenter>
 
 <style>
-	.stop-reliability-weekday {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
 	.stop-reliability-route-list {
 		display: flex;
 		flex-direction: column;

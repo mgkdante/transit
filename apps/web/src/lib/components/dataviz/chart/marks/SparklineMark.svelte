@@ -23,6 +23,7 @@
 
 	const color = $derived(spec.colorVar ?? 'var(--dataviz-status-on-time)');
 	const width = $derived(spec.width ?? 96);
+	const widthCss = $derived(typeof width === 'number' ? `${width}px` : width);
 	const height = $derived(spec.height ?? 24);
 
 	type Row = { _i: number; x: string; y: number | null };
@@ -49,8 +50,15 @@
 	class={cn('dv-sparkline m-0 inline-block', className)}
 	aria-label={summary}
 	data-slot="sparkline-mark"
+	style:width={width === '100%' ? '100%' : undefined}
+	style:max-width="100%"
 >
-	<div class="dv-sparkline-plot" style="width: {width}px; height: {height}px;">
+	<div
+		class="dv-sparkline-plot"
+		style:width={widthCss}
+		style:max-width="100%"
+		style:height={`${height}px`}
+	>
 		<LcChart
 			data={rows}
 			x={(d: Row) => d.x}

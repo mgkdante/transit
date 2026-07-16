@@ -10,15 +10,12 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { MetricDisplay } from '$lib/components/brand';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { AbsentValue } from '$lib/components/edge';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { CrowdingVM } from '../selectors/crowdingMix';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
+	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';
 
 	interface SectionCrowdingProps {
 		/** The crowding view-model (mix/segments/dominant + hasCrowding). */
@@ -32,6 +29,7 @@
 		copy: StopReliabilityCopy;
 		/** Current-window copy by default; retained callers name the selected range. */
 		windowText?: string;
+		presentation?: 'standalone' | 'article-body';
 	}
 	let {
 		vm,
@@ -39,37 +37,21 @@
 		locale,
 		copy,
 		windowText = copy.crowding.window,
+		presentation = 'standalone',
 	}: SectionCrowdingProps = $props();
-
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
 
 	// The honest no-telemetry note shows once loaded but no crowding was attributed.
 	const showNoTelemetry = $derived(settled && !vm.hasCrowding);
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
-		class="stop-metric-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
-		side="bottom"
-	/>
-{/snippet}
-
 {#if vm.hasCrowding && vm.dominant != null && vm.spec}
-	<div class="stop-tile stop-reliability-crowding" data-slot="stop-crowding">
-		<SectionHeading level={2} overline={copy.crowding.heading} class="stop-tile-heading">
-			{#snippet explainer()}
-				{@render metricInfo('occupancy', copy.crowding.heading)}
-			{/snippet}
-		</SectionHeading>
+	<StopReliabilityPresenter
+		heading={copy.crowding.heading}
+		metricKey="occupancy"
+		{locale}
+		{presentation}
+		dataSlot="stop-crowding"
+	>
 		<p class="stop-reliability-window">{windowText}</p>
 		<MetricDisplay
 			value={vm.dominantPct ?? copy.noDelay}
@@ -78,24 +60,20 @@
 			size="md"
 		/>
 		<Chart spec={vm.spec} class="stop-crowding-bar" />
-	</div>
+	</StopReliabilityPresenter>
 {:else if showNoTelemetry}
-	<div class="stop-tile stop-reliability-crowding" data-slot="stop-crowding-empty">
-		<SectionHeading level={2} overline={copy.crowding.heading} class="stop-tile-heading">
-			{#snippet explainer()}
-				{@render metricInfo('occupancy', copy.crowding.heading)}
-			{/snippet}
-		</SectionHeading>
+	<StopReliabilityPresenter
+		heading={copy.crowding.heading}
+		metricKey="occupancy"
+		{locale}
+		{presentation}
+		dataSlot="stop-crowding-empty"
+	>
 		<AbsentValue variant="block" reason="no-observations" {locale} />
-	</div>
+	</StopReliabilityPresenter>
 {/if}
 
 <style>
-	.stop-reliability-crowding {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
 	.stop-reliability-window {
 		margin: 0;
 		font-family: var(--font-mono);

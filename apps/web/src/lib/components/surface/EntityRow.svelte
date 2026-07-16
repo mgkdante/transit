@@ -1,5 +1,5 @@
 <!--
-  EntityRow — a linkable row for one navigable entity (line / stop / vehicle).
+  EntityRow — a link or choice row for one transit entity (line / stop / vehicle).
 
   Resolves a semantic `SurfaceTarget` to a real localized `<a href>` via the nav
   layer (routeFor + localizeHref), so deep-links, hover-preload, right-click-open
@@ -16,11 +16,7 @@
 	import { localizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceTarget } from '$lib/nav';
 
-	export interface EntityRowProps {
-		/** The navigation intent this row resolves to. */
-		target: SurfaceTarget;
-		/** Active locale — localizes the href. */
-		locale: Locale;
+	interface EntityRowBaseProps {
 		/** Optional leading mono glyph (decorative). */
 		glyph?: string;
 		/**
@@ -42,13 +38,35 @@
 		metaSlot?: import('svelte').Snippet;
 		/** Optional short list of route ids shown as mono chips under the title. */
 		routes?: string[];
-		/** Optional extra classes on the anchor. */
+		/** Optional extra classes on the interactive row. */
 		class?: string;
 	}
+
+	export interface EntityRowLinkProps extends EntityRowBaseProps {
+		/** The navigation intent this row resolves to. */
+		target: SurfaceTarget;
+		/** Active locale — localizes the href. */
+		locale: Locale;
+		onSelect?: never;
+		ariaLabel?: never;
+	}
+
+	export interface EntityRowChoiceProps extends EntityRowBaseProps {
+		target?: never;
+		locale?: never;
+		/** Runs when the user selects this non-navigating row. */
+		onSelect: () => void;
+		/** Accessible name for the choice button. */
+		ariaLabel: string;
+	}
+
+	export type EntityRowProps = EntityRowLinkProps | EntityRowChoiceProps;
 
 	let {
 		target,
 		locale,
+		onSelect,
+		ariaLabel,
 		glyph,
 		swatch,
 		tag,
@@ -60,15 +78,11 @@
 		class: className,
 	}: EntityRowProps = $props();
 
-	const href = $derived(localizeHref(routeFor(target), locale));
+	const href = $derived(target && locale ? localizeHref(routeFor(target), locale) : undefined);
+	const rowClass = $derived(cn('entity-row tap-press', className));
 </script>
 
-<a
-	{href}
-	data-sveltekit-preload-data="hover"
-	class={cn('entity-row', className)}
-	data-slot="entity-row"
->
+{#snippet rowContent()}
 	{#if swatch}
 		<!-- The one allowed dynamic colour: a GUARDED GTFS brand swatch (sanitized
 		     #rrggbb by the caller), applied via an inline background. -->
@@ -100,7 +114,23 @@
 	{:else if meta}
 		<span class="entity-row-meta">{meta}</span>
 	{/if}
-</a>
+{/snippet}
+
+{#if href}
+	<a {href} data-sveltekit-preload-data="hover" class={rowClass} data-slot="entity-row">
+		{@render rowContent()}
+	</a>
+{:else if onSelect}
+	<button
+		type="button"
+		aria-label={ariaLabel}
+		onclick={onSelect}
+		class={rowClass}
+		data-slot="entity-row"
+	>
+		{@render rowContent()}
+	</button>
+{/if}
 
 <style>
 	.entity-row {
@@ -112,6 +142,14 @@
 		color: var(--foreground);
 		text-decoration: none;
 		transition: background-color var(--duration-fast) var(--ease-default);
+	}
+	button.entity-row {
+		width: 100%;
+		border: 0;
+		background: transparent;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
 	}
 	.entity-row:hover {
 		background-color: var(--muted);

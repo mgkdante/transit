@@ -51,8 +51,13 @@
 		metaPending?: boolean;
 		/** Accent color for the whole cover. Default: the brand primary. */
 		accent?: string;
-		/** The controls row under the meta (QuietModeButton + page controls). */
+		/** Optional page actions rendered before the final collapse-control row. */
+		actions?: Snippet;
+		/** The final centered article row. Reserved for collapse/remember controls. */
 		controls?: Snippet;
+		/** Factual desktop edge chrome. Omitted values stand down; never fabricate. */
+		edgeLeft?: string;
+		edgeRight?: string;
 		/** id for the h1 (aria-labelledby wiring). */
 		titleId?: string;
 	}
@@ -77,7 +82,10 @@
 		meta,
 		metaPending = false,
 		accent = 'var(--primary)',
+		actions,
 		controls,
+		edgeLeft,
+		edgeRight,
 		titleId,
 	}: ArticleHeaderProps = $props();
 
@@ -132,6 +140,17 @@
 			<div class="header__watermark" aria-hidden="true">
 				{watermark}
 			</div>
+
+			{#if edgeLeft}
+				<div class="header__edge header__edge-left hidden lg:block" aria-hidden="true">
+					{edgeLeft}
+				</div>
+			{/if}
+			{#if edgeRight}
+				<div class="header__edge header__edge-right hidden lg:block" aria-hidden="true">
+					{edgeRight}
+				</div>
+			{/if}
 		</div>
 
 		<div class="header__content">
@@ -188,8 +207,14 @@
 				{/if}
 			</div>
 
+			{#if actions}
+				<div class="header__actions" data-slot="article-header-actions">
+					{@render actions()}
+				</div>
+			{/if}
+
 			{#if controls}
-				<div class="header__controls">
+				<div class="header__controls" data-slot="article-header-controls">
 					{@render controls()}
 				</div>
 			{/if}
@@ -249,6 +274,28 @@
 		z-index: var(--z-base);
 	}
 
+	/* Source article edge labels: factual telemetry only, desktop only. */
+	.header__edge {
+		position: absolute;
+		top: 50%;
+		z-index: calc(var(--z-content) + 1);
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 2px;
+		color: var(--article-accent);
+		opacity: var(--chrome-ink-opacity);
+		text-transform: uppercase;
+		white-space: nowrap;
+	}
+	.header__edge-left {
+		left: 24px;
+		transform: translateY(-50%) rotate(-90deg);
+	}
+	.header__edge-right {
+		right: 24px;
+		transform: translateY(-50%) rotate(90deg);
+	}
+
 	.header__decoration {
 		z-index: calc(var(--z-content) + 1);
 	}
@@ -295,12 +342,18 @@
 		}
 	}
 
+	.header__actions,
 	.header__controls {
 		margin-top: 1.25rem;
-		display: inline-flex;
+		display: flex;
+		width: 100%;
 		flex-wrap: wrap;
+		align-items: center;
 		justify-content: center;
 		gap: 0.5rem;
+	}
+	.header__actions + .header__controls {
+		margin-top: 0.75rem;
 	}
 
 	/* ── Category line with ruled borders ──────────────────────── */
@@ -345,7 +398,7 @@
 	/* ── Title ─────────────────────────────────────────────────── */
 	.header__title {
 		font-family: var(--font-heading);
-		font-size: clamp(28px, 6vw, 56px);
+		font-size: clamp(26px, 4.5vw, 48px);
 		font-weight: 900;
 		text-transform: uppercase;
 		letter-spacing: -0.04em;

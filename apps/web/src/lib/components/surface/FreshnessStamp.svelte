@@ -4,9 +4,9 @@
   Two variants over one shared spine, so every surface shows freshness through a
   single component instead of a bespoke per-page chip/stamp:
 
-    variant="live"     — the pulsing "LIVE · 12s ago" chip for live surfaces: a
-                         status dot (green pulsing when fresh, amber + no pulse
-                         when stale), the LIVE label, the relative build age, and a
+    variant="live"     — the "LIVE · 12s ago" chip for live surfaces: a flat
+                         status dot (green when fresh, amber when stale), the LIVE
+                         label, the relative build age, and a
                          "stale" note when the feed is behind its budget.
     variant="updated"  — a CALM neutral "Updated 4 minutes ago" stamp for
                          static/historic surfaces: a non-pulsing neutral dot + the
@@ -51,7 +51,7 @@
 		 * updated variant ignores this (a daily document never reads "stale").
 		 */
 		isStale?: boolean;
-		/** "live" (pulsing LIVE chip) or "updated" (calm neutral stamp). */
+		/** "live" (current-data chip) or "updated" (calm neutral stamp). */
 		variant?: Variant;
 		/** UI language for the intrinsic labels. */
 		locale: Locale;
@@ -119,7 +119,7 @@
 		data-stale={isStale}
 		data-age-seconds={effectiveAge ?? undefined}
 	>
-		<StatusDot color={isStale ? 'caution' : 'on_time'} pulse={!isStale} label={t.live} />
+		<StatusDot color={isStale ? 'caution' : 'on_time'} label={t.live} />
 		<span class="freshness-stamp-label">{t.live}</span>
 		<!-- Visible relative age (ticks every second) + the machine-readable build
 		     timestamp on the <time> datetime for AT / scrapers. -->
@@ -130,9 +130,8 @@
 	</span>
 {:else}
 	<!-- Calm, minute-granular stamp → aria-live=polite announces each refresh. The
-	     live variant deliberately omits it: it ticks per-second and the pulsing dot
-	     + sr-only LIVE label already convey liveness, so per-second announcements
-	     would spam assistive tech. -->
+	     live variant deliberately omits it: it ticks per-second and the sr-only LIVE
+	     label already conveys liveness, so per-second announcements would spam assistive tech. -->
 	<span
 		class={cn('freshness-stamp freshness-stamp--updated', className)}
 		data-slot="freshness-stamp"

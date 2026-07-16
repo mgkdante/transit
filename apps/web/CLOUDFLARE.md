@@ -11,14 +11,16 @@ serving glue that ships in `apps/web/`.
   Cloudflare Worker with static assets. Production is
   `https://transit.yesid.dev`; the develop lane is
   `https://dev.transit.yesid.dev`.
-- **Data**: the `/v1` snapshot contract is published to Cloudflare R2 and served
-  by a **separate, more-specific zone-route Worker on
-  `transit.yesid.dev/data/*`**. The app NEVER bundles or co-hosts the snapshot
-  JSON — the snapshot-contract firewall keeps the pipeline output behind its own
-  worker with its own freshness rules.
+- **Data**: bulk browser reads use the R2 custom domain
+  `https://data.yesid.dev/v1`. The web Worker also has a direct `SNAPSHOTS` R2
+  binding for SSR. This keeps normal page traffic off the metered data-proxy
+  Worker while preserving the same published object contract.
+- **Compatibility/API Worker**: `transit.yesid.dev/data/*` remains available for
+  old links, and `transit.yesid.dev/api/v1/*` continues to serve computed public
+  endpoints. It is fallback transport, not the primary bulk-read path.
 - **Develop data**: `dev.transit.yesid.dev` deliberately reads the production
   `/v1` snapshot contract read-only for now (`PUBLIC_V1_BASE` points at
-  `https://transit.yesid.dev/data/v1`). That gives the web lane a real staging
+  `https://data.yesid.dev/v1`). That gives the web lane a real staging
   host without duplicating the data pipeline before a schema-contract change
   needs it.
 
@@ -34,8 +36,8 @@ What that means for the paths this slice owns:
 - `/_app/immutable/*`, `/og/*`, `/favicon.svg`, `/fonts/*` — **static assets**.
   The adapter excludes static files from the Worker invocation automatically, so
   these are served from the edge and pick up the rules in `static/_headers`.
-- `/data/*` — **must NOT be routed to this app at all**. It belongs to the
-  `transit-data-proxy` Worker. In production Cloudflare's more-specific
+- `/data/*` — **must NOT be routed to this app at all**. It is the compatibility
+  route owned by `transit-data-proxy`. In production Cloudflare's more-specific
   `transit.yesid.dev/data/*` route wins over the app route
   `transit.yesid.dev/*`. There is **no `/data` route in `src/routes/`**, so the
   adapter will not emit a Worker entry for it — but if a `/data` route is ever
@@ -75,24 +77,22 @@ and prevents the Worker from shadowing the data origin.
 | `/favicon.svg`       | `public, max-age=604800`                                      |
 | `/data/*`            | `no-store` (belt-and-suspenders; freshness is the worker's)  |
 
-**`/data/*` is never cached at this edge.** Stale transit data is the cardinal
-sin of this app — the on-time numbers must reflect the snapshot the worker
-serves, so we refuse to cache it here even though the app normally fetches it
-from the `transit-data-proxy` Worker.
+**`/data/*` is never cached by the web app.** It is only the compatibility route.
+The primary R2 objects carry their publisher-assigned freshness headers. R2 CORS
+is applied from `apps/data-proxy/r2-cors.json` before web deploys.
 
 ## Local dev — the `/data` proxy
 
-`vite.config.ts` adds a dev-only `server.proxy` so the app can fetch relative
-`/data/*` URLs locally without CORS or a hardcoded origin:
+`vite.config.ts` adds a dev-only `server.proxy` so local relative `/data/*`
+requests reach the direct R2 custom domain:
 
 ```
-/data/v1/stm/manifest.json  ->  https://transit.yesid.dev/data/v1/stm/manifest.json
+/data/v1/stm/manifest.json  ->  https://data.yesid.dev/v1/stm/manifest.json
 ```
 
-The `/data` prefix is preserved because it is part of the worker route. This is
-**dev only** — Vite's `server.proxy` does not run in the deployed Worker.
-Production resolves `/data/*` at the zone-route level, and SSR reads through the
-`DATA` service binding.
+The local `/data` prefix is removed before the R2 request. This is **dev only**.
+Production browser reads use the absolute R2 custom-domain base, while SSR reads
+through the `SNAPSHOTS` binding and falls back to `DATA` only if needed.
 
 ## Develop lane
 
@@ -103,11 +103,33 @@ Production resolves `/data/*` at the zone-route level, and SSR reads through the
   manages the exact-host edge certificate for this nested subdomain
 - Indexing: disabled (`PUBLIC_INDEXING=false`, static `robots.txt` disallows
   crawlers, and `sitemap.xml` emits an empty urlset)
-- Data: read-only production `/v1` snapshots via
-  `https://transit.yesid.dev/data/v1`
+- Data: read-only production `/v1` snapshots via `https://data.yesid.dev/v1`
 
 This lane is for web/UI integration and smoke checks. Do not add a separate dev
 snapshot bucket until a data-contract slice actually needs one.
+
+## Direct-R2 operator gate
+
+The browser cutover is complete only after both publisher values are set and a
+snapshot is republished:
+
+```text
+SNAPSHOT_PUBLIC_BASE_URL=https://data.yesid.dev
+SNAPSHOT_BASEMAP_PMTILES_URL=https://data.yesid.dev/v1/stm/static/basemap/montreal.pmtiles
+```
+
+The first value controls absolute `/v1` descriptor URLs. The second controls the
+high-volume PMTiles archive URL stored inside `static/basemap.json`. Updating
+only the first still leaves map range traffic on the compatibility Worker.
+
+R2 custom domains do not cache JSON by file type automatically. To minimize R2
+Class B reads, apply a Cache Rule for `data.yesid.dev/v1/*.json` that makes the
+responses cache-eligible while respecting the publisher's `Cache-Control`, and
+enable Smart Tiered Cache for the custom domain. After applying R2 CORS,
+republishing, and purging old objects, prove the gate with two identical public
+requests: the second response must report `CF-Cache-Status: HIT` and a positive
+`Age`. Until that receipt exists, direct R2 avoids Workers request quota but is
+not yet edge-cache optimized.
 
 ## Open Graph cards
 

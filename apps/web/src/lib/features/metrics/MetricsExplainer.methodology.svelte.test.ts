@@ -116,12 +116,12 @@ describe('MetricsExplainer — live pipeline note', () => {
 });
 
 describe('MetricsExplainer — responsive stat rail icons', () => {
-	it('renders the Provenance, Coverage, and Freshness SectionIcons in both rail mounts', () => {
+	it('renders the Provenance, Coverage, and Freshness SectionIcons in the shared rail', () => {
 		provState.data = richProvenance;
 		const { container } = render(MetricsExplainer);
 
 		const rails = container.querySelectorAll('.metrics-stat-rail');
-		expect(rails).toHaveLength(2);
+		expect(rails).toHaveLength(1);
 		for (const rail of rails) {
 			expect(within(rail as HTMLElement).getByTestId('section-layers-icon')).toBeInTheDocument();
 			expect(within(rail as HTMLElement).getByTestId('section-chart-icon')).toBeInTheDocument();
@@ -203,7 +203,12 @@ describe('MetricsExplainer — provenance edge states (supplementary, never bloc
 		const { container } = render(MetricsExplainer);
 
 		// Honest stand-down line takes the conformance badge's slot.
-		expect(screen.getByText(en.provenance.unavailable)).toBeInTheDocument();
+		const unavailable = screen.getByText(en.provenance.unavailable);
+		expect(unavailable).toBeInTheDocument();
+		expect(unavailable.closest('[data-component="state-notice"]')).toHaveAttribute(
+			'data-presentation',
+			'silo',
+		);
 
 		// The article never blanks or throws: the full methodology + structural-gaps
 		// card render exactly as on the happy path.

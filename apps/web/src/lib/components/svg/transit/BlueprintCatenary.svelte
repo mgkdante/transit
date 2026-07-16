@@ -178,13 +178,12 @@
 	<line x1="38" y1="42" x2="46" y2="42" stroke="currentColor" stroke-width="0.3" />
 	<line x1="38" y1="112" x2="46" y2="112" stroke="currentColor" stroke-width="0.3" />
 	<text
-		x="40"
+		x="48"
 		y="82"
 		font-family="JetBrains Mono"
 		font-size="5"
 		fill="currentColor"
-		text-anchor="middle"
-		transform="rotate(-90 40 82)">H = 5,5 m</text
+		text-anchor="start">H = 5,5 m</text
 	>
 
 	<!-- Pole spacing dimension (bottom) — span 1 -->

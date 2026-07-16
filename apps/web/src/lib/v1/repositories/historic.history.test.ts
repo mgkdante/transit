@@ -24,6 +24,7 @@ import {
 	getAdvertisedReceipt,
 	getAlertArchiveIndex,
 	getAlertArchiveRange,
+	clearAlertArchivePageMemoForTest,
 	getHistoricAvailability,
 	getHotspotsHistoryDay,
 	getHotspotsHistoryIndex,
@@ -438,7 +439,10 @@ function deferred<T>() {
 	return { promise, resolve, reject };
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+	clearAlertArchivePageMemoForTest();
+	vi.restoreAllMocks();
+});
 
 describe('historic repository collection seams', () => {
 	it('delegates optional indexes with the exact adapter context', async () => {
@@ -488,6 +492,28 @@ describe('historic repository collection seams', () => {
 		expect(partitionSignals).toHaveLength(2);
 		expect(partitionSignals[0]).toBe(partitionSignals[1]);
 		expect(partitionSignals[0].aborted).toBe(false);
+	});
+
+	it('reuses successfully parsed immutable pages across overlapping range reads', async () => {
+		const january = ref('2026-01', 1, '2026-01-01', '2026-03-05');
+		const march = ref('2026-03', 1, '2026-03-01', '2026-03-31');
+		const index = archiveIndex([january, march]);
+		const pagePort = vi
+			.spyOn(adapter.historic, 'alertArchivePage')
+			.mockImplementation(async (advertisedPath) =>
+				advertisedPath === january.path
+					? archivePage('2026-01', 1, 'old-running', '2026-03-05T12:00:00Z')
+					: archivePage('2026-03', 1, 'new', '2026-03-31T12:00:00Z'),
+			);
+
+		await getAlertArchiveRange(index, { from: '2026-03-01', to: '2026-03-10' });
+		await getAlertArchiveRange(index, { from: '2026-03-05', to: '2026-03-10' });
+
+		expect(pagePort).toHaveBeenCalledTimes(2);
+		expect(pagePort.mock.calls.map(([advertisedPath]) => advertisedPath)).toEqual([
+			january.path,
+			march.path,
+		]);
 	});
 
 	it('returns only entries that exactly intersect the requested range after loading a broad page', async () => {

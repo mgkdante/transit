@@ -1,11 +1,9 @@
 // createResource — a client-side reactive data resource for surface loads.
 //
-// THE scalable spine for static/historic /v1 reads. On Cloudflare a Worker's SSR
-// fetch to its OWN /data route 523s (it can't reach the sibling data-proxy), so
-// surface data is loaded in the BROWSER, where the flat repositories' global
-// fetch resolves the same-origin `/data/v1` base fine. `$effect` runs client-only
-// (never during SSR), so this is SSR-safe by construction: the first render shows
-// no data (the boundary renders a skeleton), then the effect fetches on mount.
+// THE scalable spine for client-reactive static/historic /v1 reads. Detail
+// routes can seed it from their direct-R2 server load; unseeded surfaces fetch
+// from the public R2 custom domain on mount. `$effect` runs client-only, so the
+// first unseeded render shows the shared skeleton and then resolves in place.
 //
 // Reactive by design: the fetcher reads its inputs (e.g. an entity id) when it is
 // INVOKED inside the effect, so changing those inputs (client nav /lines/A →
@@ -28,13 +26,39 @@
 // `noteDataGeneratedUtc` is latest-wins/monotonic so whichever tier published most
 // recently owns the readout.
 
+import { untrack } from 'svelte';
 import { dataRefresh } from '$lib/stores/refresh.svelte';
 
 /** A payload that may carry the server's build timestamp (latest-data anchor). */
 type MaybeFreshPayload = { readonly generated_utc?: string | null } | null | undefined;
 
 /** Options for {@link createResource}. */
-export interface ResourceOptions {
+export interface ResourceSeed<T> {
+	/** Entity key this server-provided value belongs to. */
+	readonly key: unknown;
+	/** Accepted server value; null is a settled, honest absence. */
+	readonly data: T | null;
+}
+
+export interface ResourceOptions<T> {
+	/**
+	 * Optional reactive gate. When false, no request is started; opening the gate
+	 * runs the fetcher and closing it aborts any in-flight request. Useful for
+	 * expensive resources that only power an interaction such as chrome search.
+	 */
+	readonly enabled?: () => boolean;
+	/**
+	 * Reactive identity for entity-scoped resources. A resolved value is exposed
+	 * only while it belongs to the current key, so client navigation can never
+	 * render entity A beneath entity B's heading.
+	 */
+	readonly key?: () => unknown;
+	/**
+	 * Optional server-provided value for the current key. A new matching seed is
+	 * accepted without a duplicate browser request. Manual/global refreshes still
+	 * fetch because the same seed is applied only once.
+	 */
+	readonly seed?: () => ResourceSeed<T> | undefined;
 	/**
 	 * Opt in to contributing the payload's `generated_utc` to the shared
 	 * newest-data timestamp (`dataRefresh.noteDataGeneratedUtc`). Only set this for
@@ -69,13 +93,20 @@ export interface Resource<T> {
  */
 export function createResource<T>(
 	fetcher: (signal: AbortSignal) => Promise<T>,
-	options: ResourceOptions = {},
+	options: ResourceOptions<T> = {},
 ): Resource<T> {
 	const wantsFreshness = options.freshness === true;
 	let data = $state<T | null>(null);
 	let error = $state<Error | null>(null);
 	let loading = $state(false);
 	let settled = $state(false);
+	const keyed = options.key !== undefined;
+	const unresolvedKey = Symbol('unresolved-resource-key');
+	let stateKey = $state.raw<unknown>(unresolvedKey);
+	let dataKey = $state.raw<unknown>(unresolvedKey);
+	let lastSeedKey: unknown = unresolvedKey;
+	let lastSeedData: T | null | typeof unresolvedKey = unresolvedKey;
+	let sawSeed = false;
 
 	// Bumped by reload() to force the effect to re-run without changing inputs.
 	let manual = $state(0);
@@ -96,6 +127,38 @@ export function createResource<T>(
 		// this fetch too (these surfaces have no load fn for invalidateAll to re-run).
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		dataRefresh.epoch;
+		const activeKey = options.key?.() ?? unresolvedKey;
+		const seed = options.seed?.();
+		const matchingSeed = seed !== undefined && (!keyed || Object.is(seed.key, activeKey));
+		const newSeed =
+			matchingSeed &&
+			(!sawSeed || !Object.is(seed.key, lastSeedKey) || !Object.is(seed.data, lastSeedData));
+
+		if (newSeed) {
+			seq += 1;
+			stateKey = activeKey;
+			dataKey = activeKey;
+			data = seed.data;
+			error = null;
+			loading = false;
+			settled = true;
+			sawSeed = true;
+			lastSeedKey = seed.key;
+			lastSeedData = seed.data;
+			return;
+		}
+
+		// Read the gate inside the effect so a reactive value controls the resource.
+		// Returning before controller creation keeps an unopened resource genuinely
+		// idle; if the gate closes, the previous effect cleanup aborts its request.
+		if (options.enabled?.() === false) {
+			stateKey = activeKey;
+			if (keyed && !Object.is(dataKey, activeKey)) data = null;
+			loading = false;
+			error = null;
+			return;
+		}
+
 		const token = ++seq;
 		const controller = new AbortController();
 		const cleanup = () => {
@@ -103,6 +166,16 @@ export function createResource<T>(
 			controller.abort();
 		};
 
+		stateKey = activeKey;
+		// `dataKey` is an output of this effect: a successful request records which
+		// entity owns `data`. Reading that output as an effect dependency makes the
+		// first response retrigger its own fetch once. Keep the identity check while
+		// excluding the owned output from dependency tracking.
+		if (keyed && !untrack(() => Object.is(dataKey, activeKey))) {
+			data = null;
+			dataKey = unresolvedKey;
+			settled = false;
+		}
 		loading = true;
 		error = null;
 
@@ -120,6 +193,7 @@ export function createResource<T>(
 			.then((value) => {
 				if (token !== seq) return;
 				data = value;
+				dataKey = activeKey;
 				// Freshness-bearing surfaces feed the shared newest-data timestamp from
 				// the payload's own server stamp (latest-wins/monotonic). One line, no
 				// per-page age math — the spine derives the relative age centrally.
@@ -142,15 +216,19 @@ export function createResource<T>(
 
 	return {
 		get data() {
+			if (keyed && !Object.is(options.key?.(), dataKey)) return null;
 			return data;
 		},
 		get error() {
+			if (keyed && !Object.is(options.key?.(), stateKey)) return null;
 			return error;
 		},
 		get loading() {
+			if (keyed && !Object.is(options.key?.(), stateKey)) return true;
 			return loading;
 		},
 		get settled() {
+			if (keyed && !Object.is(options.key?.(), stateKey)) return false;
 			return settled;
 		},
 		reload() {

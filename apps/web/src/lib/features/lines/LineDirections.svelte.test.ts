@@ -66,7 +66,8 @@ describe('LineDirections', () => {
 
 		// sA has a bus 2 min late; sB has none → the honest placeholder, never a time.
 		expect(screen.getByText('2 min late')).toBeInTheDocument();
-		expect(screen.getByText('No live bus')).toBeInTheDocument();
+		const empty = screen.getByText('No live bus').closest('[data-component="state-notice"]');
+		expect(empty).toHaveAttribute('data-presentation', 'pill');
 	});
 
 	it('renders nothing when the route carries no directions', () => {

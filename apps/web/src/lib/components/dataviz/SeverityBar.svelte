@@ -149,6 +149,7 @@
 			onfocus={showTip}
 			onblur={hideTip}
 			data-slot="severity-bar"
+			data-card-interactive
 			data-severity={severity}
 			{...restProps}
 		>
@@ -174,6 +175,7 @@
 		aria-valuenow={hasData ? Math.round(pct) : undefined}
 		aria-label={label ? `${label}, ${severity}` : severity}
 		data-slot="severity-bar"
+		data-card-interactive
 		data-severity={severity}
 		{...restProps}
 	>

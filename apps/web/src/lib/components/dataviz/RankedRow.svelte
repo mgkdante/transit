@@ -260,6 +260,7 @@
 	<span
 		class="dv-delta inline-flex shrink-0 items-center gap-1 font-mono text-caption tabular-nums"
 		style="color: {deltaVar};"
+		role="img"
 		aria-label={hasDelta ? `change ${deltaText}` : 'no change data'}
 	>
 		<span aria-hidden="true">{deltaGlyph}</span>

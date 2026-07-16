@@ -222,13 +222,12 @@
 	<line x1="18" y1="90" x2="26" y2="90" stroke="currentColor" stroke-width="0.3" />
 	<line x1="18" y1="100" x2="26" y2="100" stroke="currentColor" stroke-width="0.3" />
 	<text
-		x="15"
+		x="28"
 		y="97"
 		font-family="JetBrains Mono"
 		font-size="4"
 		fill="currentColor"
-		text-anchor="end"
-		transform="rotate(-90 15 97)">1435</text
+		text-anchor="start">1435</text
 	>
 
 	<!-- Turnout angle notation -->

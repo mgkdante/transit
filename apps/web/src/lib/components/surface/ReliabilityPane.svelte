@@ -213,7 +213,6 @@
 		background-color: var(--card);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
-		box-shadow: var(--shadow-card);
 	}
 	.reliability-metrics {
 		display: flex;

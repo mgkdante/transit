@@ -176,7 +176,10 @@ describe('TripDetail: a broadcasting trip', () => {
 	it('renders an honest note when a broadcasting trip reports no remaining stops', () => {
 		render(TripDetail, { props: { id: 'tEmpty' } });
 
-		expect(screen.getByTestId('trip-no-stops')).toBeInTheDocument();
+		const empty = screen.getByTestId('trip-no-stops');
+		expect(empty).toBeInTheDocument();
+		expect(empty).toHaveAttribute('data-component', 'state-notice');
+		expect(empty).toHaveAttribute('data-presentation', 'silo');
 		// No fabricated stop list.
 		expect(
 			screen.queryByRole('list', { name: 'Remaining stops on this trip' }),

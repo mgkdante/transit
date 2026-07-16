@@ -1,6 +1,8 @@
-import { render, screen, fireEvent, within } from '@testing-library/svelte';
-import { tick } from 'svelte';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
+import { createRawSnippet, tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';
 import { reliabilityCopy } from './reliability.copy';
 import type { RouteReliability, IsoUtc } from '$lib/v1';
@@ -22,6 +24,11 @@ vi.mock('$lib/motion/reduced-motion.svelte', () => ({
 }));
 
 const copy = reliabilityCopy.en;
+const source = () =>
+	readFileSync(
+		resolve(process.cwd(), 'src/lib/features/lines/reliability/RouteReliabilityClusters.svelte'),
+		'utf-8',
+	);
 
 /** Brand a plain string as IsoUtc for fixture literals (mirrors clusters.test.ts). */
 const utc = (value: string): IsoUtc => value as IsoUtc;
@@ -137,6 +144,56 @@ const activeWindowText = (container: HTMLElement): string =>
 	container.querySelector('[data-slot="active-window"]')?.textContent?.trim() ?? '';
 
 describe('RouteReliabilityClusters', () => {
+	it('places an optional article verdict in the shared summary lane before reliability cards', () => {
+		const articleSummary = createRawSnippet(() => ({
+			render: () => '<p data-testid="line-article-summary">Line verdict</p>',
+		}));
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: populated, locale: 'en', articleSummary },
+		});
+
+		expect(
+			container.querySelector(
+				'[data-slot="reliability-rail-summary"] [data-testid="line-article-summary"]',
+			),
+		).not.toBeNull();
+		expect(container.querySelectorAll('[data-testid="line-article-summary"]')).toHaveLength(1);
+	});
+
+	it('routes all five rider-question adapters through one shared connected stack', () => {
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: populated, locale: 'en' },
+		});
+		const stack = container.querySelector('[data-slot="article-section-stack"]') as HTMLElement;
+		const bands = Array.from(stack?.children ?? []);
+
+		expect(stack).not.toBeNull();
+		expect(bands).toHaveLength(5);
+		for (const band of bands) {
+			expect(band.matches('.reliability-band[data-band]')).toBe(true);
+			expect(
+				band.querySelector(':scope > section[data-section] > [data-slot="card"].section-card'),
+			).not.toBeNull();
+			expect(band.querySelector('[data-section-trigger]')).not.toBeNull();
+		}
+	});
+
+	it('removes the old 3-5rem page-local inter-card spacing rules', () => {
+		const component = source();
+
+		expect(component).toContain('ArticleSectionStack');
+		expect(component).toMatch(/\.reliability-content\s*\{[^}]*gap:\s*var\(--space-card-gap\);/s);
+		expect(component).not.toMatch(
+			/\.(?:reliability-clusters|reliability-content)\s*\{[^}]*gap:\s*clamp\(3rem,\s*7vw,\s*5rem\)/s,
+		);
+	});
+
+	it('uses card spacing without drawing standalone divider rules between bands', () => {
+		expect(source()).not.toMatch(
+			/\.reliability-band\s*\+\s*\.reliability-band\s*\{[^}]*border-top:/s,
+		);
+	});
+
 	it('renders all five rider-question section overlines + the §0 headline with populated data', () => {
 		render(RouteReliabilityClusters, { props: { data: populated, locale: 'en' } });
 
@@ -302,6 +359,19 @@ const multiDay: RouteReliability = {
 };
 
 describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
+	it('uses the shared ReliabilityRailLayout without a local desktop grid', () => {
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: populated, locale: 'en' },
+		});
+
+		expect(container.querySelectorAll('[data-slot="reliability-rail-layout"]')).toHaveLength(1);
+		expect(container.querySelectorAll('[data-slot="surface-rail"]')).toHaveLength(1);
+		expect(container.querySelectorAll('[data-slot="reliability-rail-content"]')).toHaveLength(1);
+		expect(source()).toContain('<ReliabilityRailLayout');
+		expect(source()).not.toContain('class="reliability-layout"');
+		expect(source()).not.toMatch(/grid-template-columns:[^;]*16rem/);
+	});
+
 	it('uses instant ToC navigation when reduced motion is requested', async () => {
 		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
 		const scrollIntoView = vi.fn();
@@ -319,7 +389,44 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 			await fireEvent.click(
 				within(rail).getByRole('button', { name: copy.sections.worstStops.label }),
 			);
-			expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+			await waitFor(() =>
+				expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' }),
+			);
+		} finally {
+			motion.reduced = false;
+			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
+			else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+		}
+	});
+
+	it('opens a collapsed rider-question section before ToC navigation scrolls to it', async () => {
+		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+		const scrollIntoView = vi.fn();
+		Object.defineProperty(Element.prototype, 'scrollIntoView', {
+			configurable: true,
+			value: scrollIntoView,
+		});
+		motion.reduced = true;
+
+		try {
+			const { container } = render(RouteReliabilityClusters, {
+				props: { data: populated, locale: 'en' },
+			});
+			const target = container.querySelector('[data-toc="rel-worst-stops"]') as HTMLElement;
+			const disclosure = target.querySelector('[data-section-trigger]') as HTMLButtonElement;
+			expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+			await fireEvent.click(disclosure);
+			expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+
+			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+			await fireEvent.click(
+				within(rail).getByRole('button', { name: copy.sections.worstStops.label }),
+			);
+
+			expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+			await waitFor(() =>
+				expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' }),
+			);
 		} finally {
 			motion.reduced = false;
 			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
@@ -362,7 +469,35 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 		expect(sheet.querySelector('[data-slot="section-toc"]')).not.toBeNull();
 	});
 
-	it('gives each rail presentation its own disabled-grain reason id', async () => {
+	it('keeps the one ToC disclosure remembered while its rail moves into the sheet', async () => {
+		const storageKey = 'transit.persisted:reliability-toc';
+		sessionStorage.removeItem(storageKey);
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: populated, locale: 'en' },
+		});
+		const desktopToc = container.querySelector(
+			'[data-slot="surface-rail"] [data-slot="section-toc"]',
+		) as HTMLElement;
+		const desktopToggle = within(desktopToc).getByRole('button', {
+			name: copy.controls.toc,
+		});
+
+		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		await fireEvent.click(mobile.querySelector(':scope > button') as HTMLButtonElement);
+		const mobileToc = (mobile.querySelector('[role="dialog"]') as HTMLElement).querySelector(
+			'[data-slot="section-toc"]',
+		) as HTMLElement;
+		const mobileToggle = within(mobileToc).getByRole('button', { name: copy.controls.toc });
+		expect(mobileToggle).toBe(desktopToggle);
+
+		await fireEvent.click(mobileToggle);
+
+		expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
+		expect(desktopToggle).toHaveAttribute('aria-expanded', 'false');
+		expect(sessionStorage.getItem(storageKey)).toBe('false');
+	});
+
+	it('keeps one disabled-grain reason and one described radio as the rail moves', async () => {
 		const withoutMonth: RouteReliability = {
 			...populated,
 			periods: populated.periods?.filter((period) => period.grain !== 'month'),
@@ -377,20 +512,13 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 			container.querySelectorAll<HTMLElement>('[data-slot="controls-reason"]'),
 		);
 		const reasonIds = reasons.map((reason) => reason.id);
-		expect(reasonIds).toHaveLength(2);
+		expect(reasonIds).toHaveLength(1);
 		expect(new Set(reasonIds).size).toBe(reasonIds.length);
-		expect(reasonIds).toEqual(
-			expect.arrayContaining([
-				expect.stringMatching(/-desktop$/),
-				expect.stringMatching(/-mobile$/),
-			]),
-		);
+		expect(reasonIds[0]).toMatch(/-(?:desktop|mobile)$/);
 
 		const monthRadios = screen.getAllByRole('radio', { name: copy.controls.thisMonth });
-		expect(monthRadios).toHaveLength(2);
-		expect(monthRadios.map((radio) => radio.getAttribute('aria-describedby'))).toEqual(
-			expect.arrayContaining(reasonIds),
-		);
+		expect(monthRadios).toHaveLength(1);
+		expect(monthRadios[0]?.getAttribute('aria-describedby')).toBe(reasonIds[0]);
 		for (const radio of monthRadios) {
 			const describedBy = radio.getAttribute('aria-describedby');
 			expect(describedBy).not.toBeNull();
@@ -401,3 +529,24 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 
 // (The §1/§2/§4 ↻/∞ scope-badge tests were removed with the scope glyph itself: the rail
 // now renders the shared TocNav, a plain numbered jump-list with no per-row scope marker.)
+
+describe('RouteReliabilityClusters canonical article-control stack', () => {
+	it('orders label, primary period, conditional range, and caption before the section ToC', () => {
+		const component = source();
+		const tag = component.match(/<ArticleControlStack[\s\S]*?\/>/)?.[0] ?? '';
+		const primary =
+			component.match(/{#snippet primaryControls\(\)}([\s\S]*?){\/snippet}/)?.[1] ?? '';
+
+		expect(tag).not.toBe('');
+		expect(tag.indexOf('label=')).toBeLessThan(tag.indexOf('primary='));
+		expect(tag.indexOf('primary=')).toBeLessThan(tag.indexOf('secondary='));
+		expect(tag.indexOf('secondary=')).toBeLessThan(tag.indexOf('caption='));
+		expect(tag).not.toContain('history=');
+		expect(primary).toContain('variant="time-grid"');
+		expect(component.indexOf('data-slot="section-toc"')).toBeGreaterThan(
+			component.indexOf('<ArticleControlStack'),
+		);
+		expect(component).not.toMatch(/class=["']reliability-control-body/);
+		expect(component).not.toMatch(/\.reliability-control-body\s*\{/);
+	});
+});

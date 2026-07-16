@@ -22,7 +22,7 @@
 
   DOCTRINE: this card paints NO data mark (the value's amber wayfinding voice
   lives inside MetricDisplay), so it stays off the affordance tokens entirely —
-  quiet card chrome (border + shadow + surface) only. Tokens only, no hex.
+  quiet flat card chrome (border + surface) only. Tokens only, no hex.
 -->
 <script lang="ts" module>
 	import type { AbsenceReasonKey } from '$lib/site/absence';
@@ -123,8 +123,7 @@
 </article>
 
 <style>
-	/* Card chrome: the yesid card aesthetic (--card surface, hairline border, soft
-	   card shadow) — matches .route-period. container-type lets the card flip its own
+	/* Card chrome: a flat --card surface + hairline border. container-type lets the card flip its own
 	   internal layout off ITS width, never the viewport. No data mark is painted
 	   here, so the card stays off the affordance tokens entirely (doctrine-clean). */
 	.explained-metric-card {
@@ -140,7 +139,6 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		background: var(--card);
-		box-shadow: var(--shadow-card);
 		min-width: 0;
 	}
 

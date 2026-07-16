@@ -8,6 +8,7 @@ describe('DeltaStat — the delta doctrine (glyph + dataviz colour + aria)', () 
 	it('a regression (default higherIsBetter=false) is ▲ on the severity-critical token', () => {
 		const { container } = render(DeltaStat, { props: { delta: 2.1 } });
 		const s = el(container);
+		expect(s).toHaveAttribute('role', 'img');
 		expect(s.getAttribute('aria-label')).toBe('change +2.1');
 		expect(s.textContent).toContain('▲');
 		expect(s.getAttribute('style')).toContain('var(--dataviz-severity-critical)');

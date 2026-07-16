@@ -99,7 +99,6 @@
 		border: 1px solid color-mix(in srgb, var(--publish-run-tone) 42%, var(--border) 58%);
 		border-radius: var(--radius-lg);
 		background: color-mix(in srgb, var(--publish-run-tone) 7%, var(--card) 93%);
-		box-shadow: var(--shadow-card);
 	}
 	.publish-run-header {
 		display: flex;

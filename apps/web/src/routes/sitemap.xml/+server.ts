@@ -1,18 +1,17 @@
 import type { RequestHandler } from './$types';
 import { readPublicSiteConfig } from '$lib/site/config';
 import { buildSitemapXml, type SitemapEntities } from '$lib/site/seoFiles';
-import { bindingFetch } from '$lib/v1/binding';
 import { getRoutesIndex, getStopsIndex } from '$lib/v1';
-import type { AdapterCtx } from '$lib/v1/adapter';
+import { serverV1Context } from '$lib/v1/serverContext';
 
 // sitemap.xml — DYNAMIC (request-time), not prerendered. It enumerates EVERY
 // per-entity URL: the 8 static surfaces PLUS one /lines/<id> and /stop/<id> per
 // snapshot entity, in BOTH locales (EN + /fr), with hreflang alternates.
 //
 // WHY dynamic: the route/stop ids only exist in the published snapshot indexes,
-// so they can't be known at build time. We fetch routes_index + stops_index over
-// the DATA service binding (same pattern as +layout.server.ts) and feed the ids
-// to the PURE buildSitemapXml() in $lib/site/seoFiles.
+// so they can't be known at build time. We fetch routes_index + stops_index
+// through the shared server snapshot context (direct R2 first, compatibility
+// Worker second) and feed the ids to buildSitemapXml().
 //
 // FAIL-SOFT, two ways (mirrors +layout.server.ts) — NEVER a 500, never an empty
 // 200 while static URLs exist:
@@ -27,17 +26,15 @@ export const prerender = false;
 
 const SITEMAP_CACHE_CONTROL = 'public, max-age=3600, s-maxage=14400';
 
-export const GET: RequestHandler = async ({ url, platform }) => {
+export const GET: RequestHandler = async (event) => {
+	const { platform } = event;
 	const config = readPublicSiteConfig();
-	const binding = platform?.env?.DATA;
+	const hasSnapshotTransport = Boolean(platform?.env?.SNAPSHOTS || platform?.env?.DATA);
 
 	let entities: SitemapEntities = {};
-	if (binding && config.indexing) {
+	if (hasSnapshotTransport && config.indexing) {
 		try {
-			const ctx: AdapterCtx = {
-				fetch: bindingFetch(binding, url.origin),
-				cache: new Map<string, unknown>(),
-			};
+			const ctx = serverV1Context(event);
 			// Fetch the two discovery indexes in parallel for the id lists. We do NOT
 			// fetch the manifest separately: each index loader already loads it
 			// internally (for URL resolution), and the static-tier publish time we'd

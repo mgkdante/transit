@@ -222,9 +222,158 @@ describe('createResource — reactivity to inputs read inside the fetcher', () =
 			cleanup();
 		}
 	});
+
+	it('defers an optional resource until its reactive enabled gate opens', async () => {
+		let enabled = $state(false);
+		const fetcher = vi.fn(async () => 'ready');
+		let resource!: ReturnType<typeof createResource<string>>;
+
+		const cleanup = $effect.root(() => {
+			resource = createResource(fetcher, { enabled: () => enabled });
+			flushSync();
+		});
+
+		try {
+			expect(fetcher).not.toHaveBeenCalled();
+			expect(resource.loading).toBe(false);
+			expect(resource.settled).toBe(false);
+
+			enabled = true;
+			flushSync();
+			await vi.waitFor(() => {
+				flushSync();
+				expect(resource.data).toBe('ready');
+			});
+			expect(fetcher).toHaveBeenCalledTimes(1);
+		} finally {
+			cleanup();
+		}
+	});
 });
 
 describe('createResource — cancellation ownership', () => {
+	it('does not refetch a keyed entity when its first response records the resolved key', async () => {
+		const key = $state('A');
+		const first = deferred<string>();
+		const fetcher = vi.fn(() => first.promise);
+		let resource!: ReturnType<typeof createResource<string>>;
+
+		const cleanup = $effect.root(() => {
+			resource = createResource(fetcher, { key: () => key });
+			flushSync();
+		});
+
+		try {
+			expect(fetcher).toHaveBeenCalledTimes(1);
+
+			first.resolve('entity-A');
+			await vi.waitFor(() => {
+				flushSync();
+				expect(resource.data).toBe('entity-A');
+			});
+			await Promise.resolve();
+			flushSync();
+
+			expect(fetcher).toHaveBeenCalledTimes(1);
+		} finally {
+			cleanup();
+		}
+	});
+
+	it('hides resolved entity A immediately when a keyed navigation starts loading entity B', async () => {
+		let key = $state('A');
+		const requests = new Map<string, ReturnType<typeof deferred<string>>>();
+		let resource!: ReturnType<typeof createResource<string>>;
+
+		const cleanup = $effect.root(() => {
+			resource = createResource(
+				() => {
+					const activeKey = key;
+					const pending = deferred<string>();
+					requests.set(activeKey, pending);
+					return pending.promise;
+				},
+				{ key: () => key },
+			);
+			flushSync();
+		});
+
+		try {
+			requests.get('A')?.resolve('entity-A');
+			await vi.waitFor(() => {
+				flushSync();
+				expect(resource.data).toBe('entity-A');
+			});
+
+			key = 'B';
+			flushSync();
+
+			// The heading has already changed to B. A must disappear in that same
+			// render rather than surviving under B until the network settles.
+			expect(resource.data).toBeNull();
+			expect(resource.loading).toBe(true);
+			expect(resource.settled).toBe(false);
+
+			requests.get('B')?.resolve('entity-B');
+			await vi.waitFor(() => {
+				flushSync();
+				expect(resource.data).toBe('entity-B');
+			});
+		} finally {
+			cleanup();
+		}
+	});
+
+	it('applies a matching server seed without a duplicate fetch and refreshes it on demand', async () => {
+		let key = $state('A');
+		let seed = $state<{ key: string; data: string | null } | undefined>({
+			key: 'A',
+			data: 'server-A',
+		});
+		const pending = deferred<string>();
+		const fetcher = vi.fn(() => {
+			// Keep the reactive key read synchronous, matching entity repositories.
+			void key;
+			return pending.promise;
+		});
+		let resource!: ReturnType<typeof createResource<string>>;
+
+		const cleanup = $effect.root(() => {
+			resource = createResource(fetcher, {
+				key: () => key,
+				seed: () => seed,
+			});
+			flushSync();
+		});
+
+		try {
+			expect(resource.data).toBe('server-A');
+			expect(resource.settled).toBe(true);
+			expect(fetcher).not.toHaveBeenCalled();
+
+			seed = { key: 'B', data: 'server-B' };
+			key = 'B';
+			flushSync();
+			expect(resource.data).toBe('server-B');
+			expect(fetcher).not.toHaveBeenCalled();
+
+			resource.reload();
+			flushSync();
+			expect(fetcher).toHaveBeenCalledTimes(1);
+			// A same-entity refresh keeps the accepted seed visible.
+			expect(resource.data).toBe('server-B');
+			expect(resource.loading).toBe(true);
+
+			pending.resolve('fresh-B');
+			await vi.waitFor(() => {
+				flushSync();
+				expect(resource.data).toBe('fresh-B');
+			});
+		} finally {
+			cleanup();
+		}
+	});
+
 	it('aborts superseded request A and lets only request B populate state', async () => {
 		let key = $state('A');
 		const requests: Array<{

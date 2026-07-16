@@ -163,13 +163,12 @@
 	<line x1="13" y1="26" x2="19" y2="26" stroke="currentColor" stroke-width="0.3" />
 	<line x1="13" y1="170" x2="19" y2="170" stroke="currentColor" stroke-width="0.3" />
 	<text
-		x="14"
+		x="22"
 		y="105"
 		font-family="JetBrains Mono"
 		font-size="4"
 		fill="currentColor"
-		text-anchor="middle"
-		transform="rotate(-90 14 105)">H = 6,3 m</text
+		text-anchor="start">H = 6,3 m</text
 	>
 
 	<!-- Signal head width dimension -->

@@ -54,6 +54,7 @@ function snap(partial: Partial<ReliabilitySnapshot>): ReliabilitySnapshot {
 // Query the URL seeds from — held in a hoisted box so the (hoisted) mock factory
 // can read the value a test sets just before render.
 const urlBox = vi.hoisted(() => ({ query: 'q=ber' }));
+const liveHarness = vi.hoisted(() => ({ createLiveStore: vi.fn() }));
 function setUrlQuery(q: string) {
 	urlBox.query = q;
 }
@@ -72,11 +73,7 @@ vi.mock('$lib/v1', () => ({
 	getRoutesIndex: vi.fn(),
 	getStopsIndex: vi.fn(),
 	getV1Context: () => ({ manifest: {}, labels: {}, lang: 'en' }),
-	createLiveStore: () => ({
-		vehicles: { generated_utc: '2026-06-16T00:00:00Z', vehicles: VEHICLES },
-		start: vi.fn(),
-		stop: vi.fn(),
-	}),
+	createLiveStore: liveHarness.createLiveStore,
 	createReliabilityLoader: (kind: 'route' | 'stop') => {
 		const store = kind === 'route' ? routeSnaps : stopSnaps;
 		return {
@@ -114,6 +111,14 @@ beforeEach(() => {
 	stopSnaps.clear();
 	resourceCall = 0;
 	setUrlQuery('q=ber');
+	liveHarness.createLiveStore.mockReset().mockReturnValue({
+		vehicles: { generated_utc: '2026-06-16T00:00:00Z', vehicles: VEHICLES },
+		generatedUtc: '2026-06-16T00:00:00Z',
+		ageSeconds: 0,
+		isStale: false,
+		start: vi.fn(),
+		stop: vi.fn(),
+	});
 });
 
 // ── Idle / empty ──────────────────────────────────────────────────────────────
@@ -121,6 +126,9 @@ describe('SearchSurface idle state', () => {
 	it('shows the instructional idle note before the rider types', () => {
 		setUrlQuery('');
 		render(SearchSurface);
+		expect(liveHarness.createLiveStore.mock.calls[0]?.[1]).toEqual({
+			families: ['vehicles'],
+		});
 		expect(screen.getByText('Search a line, stop or bus')).toBeInTheDocument();
 	});
 });

@@ -10,9 +10,8 @@
 #   /og/*.png          rebuilt only when copy changes -> 1 day CDN, swr 1 week
 #   /favicon.svg       stable brand mark              -> 1 week
 #   /data/*            LIVE snapshot contract         -> NEVER cached here
-#                      (the data.yesid.dev zone-route worker owns its own
-#                       freshness headers; a CDN cache here would serve stale
-#                       transit data — the cardinal sin of this app)
+#                      (compatibility route only; primary reads use the R2
+#                       custom domain and its object freshness headers)
 
 # Hashed build assets — safe to cache forever (filename changes on every edit).
 /_app/immutable/*
@@ -34,7 +33,7 @@
   Cache-Control: public, max-age=604800
 
 # Live snapshot contract — NEVER cached at this edge. Belt-and-suspenders:
-# /data/* is served by the data.yesid.dev zone-route worker (dev proxy in
+# /data/* is served by the compatibility zone-route worker (dev proxy in
 # vite.config.ts), so this app should not normally emit /data/* itself — but if
 # anything ever does, refuse to cache it. Freshness is the worker's job.
 /data/*
@@ -73,4 +72,4 @@
   Cross-Origin-Opener-Policy: same-origin
   Permissions-Policy: accelerometer=(), bluetooth=(), camera=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), payment=(), serial=(), usb=(), geolocation=(self)
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
-  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; img-src 'self' data: blob: https://protomaps.github.io https://transit.yesid.dev; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; connect-src 'self' https://transit.yesid.dev https://protomaps.github.io; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; img-src 'self' data: blob: https://protomaps.github.io https://transit.yesid.dev; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; connect-src 'self' https://data.yesid.dev https://protomaps.github.io; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests

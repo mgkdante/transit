@@ -30,7 +30,12 @@
 	{...restProps}
 >
 	{#snippet child({ props })}
-		<div {...props} class="collapsible-content {props.class ?? ''}">
+		<div
+			{...props}
+			class="collapsible-content {props.class ?? ''}"
+			inert={props['data-state'] === 'closed'}
+			aria-hidden={props['data-state'] === 'closed' ? 'true' : undefined}
+		>
 			<div class="collapsible-content__inner">
 				{@render children?.()}
 			</div>

@@ -15,6 +15,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import EdgeState from './EdgeState.svelte';
+import { DEFAULT_LOADING_SKELETON_DELAY_MS } from './loading';
 import type { Locale } from '$lib/i18n';
 
 const LOCALES: Locale[] = ['en', 'fr'];
@@ -34,7 +35,9 @@ const MESSAGE_VARIANTS = Object.keys(TITLES) as Array<keyof typeof TITLES>;
 describe('EdgeState — all 6 variants render in FR + EN', () => {
 	for (const lang of LOCALES) {
 		it(`skeleton renders a busy loading region (${lang})`, () => {
-			const { container } = render(EdgeState, { props: { variant: 'skeleton', lang } });
+			const { container } = render(EdgeState, {
+				props: { variant: 'skeleton', lang, skeletonDelayMs: 0 },
+			});
 			const root = container.querySelector('[data-slot="edge-state"]');
 			expect(root).not.toBeNull();
 			expect(root).toHaveAttribute('data-variant', 'skeleton');
@@ -52,6 +55,34 @@ describe('EdgeState — all 6 variants render in FR + EN', () => {
 			});
 		}
 	}
+});
+
+describe('EdgeState — delayed skeleton fallback', () => {
+	it('keeps the skeleton inert through the shared grace period, then announces a slow load', async () => {
+		vi.useFakeTimers();
+
+		try {
+			const { container } = render(EdgeState, {
+				props: { variant: 'skeleton', lang: 'en' },
+			});
+			const root = container.querySelector('[data-slot="edge-state"]');
+
+			expect(root).toHaveAttribute('data-loading-state', 'pending');
+			expect(root).toHaveAttribute('aria-hidden', 'true');
+			expect(root).not.toHaveAttribute('aria-busy');
+
+			await vi.advanceTimersByTimeAsync(DEFAULT_LOADING_SKELETON_DELAY_MS - 1);
+			expect(root).toHaveAttribute('data-loading-state', 'pending');
+
+			await vi.advanceTimersByTimeAsync(1);
+			expect(root).toHaveAttribute('data-loading-state', 'visible');
+			expect(root).not.toHaveAttribute('aria-hidden');
+			expect(root).toHaveAttribute('aria-busy', 'true');
+			expect(root).toHaveAttribute('role', 'status');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });
 
 describe('EdgeState — a11y verdict surface', () => {
@@ -72,9 +103,46 @@ describe('EdgeState — a11y verdict surface', () => {
 	it('the verdict glyph is decorative (aria-hidden) — meaning carried by the text', () => {
 		const { container } = render(EdgeState, { props: { variant: 'empty-avis', lang: 'fr' } });
 		// The glyph span is aria-hidden; the title text is what AT announces.
-		const glyph = container.querySelector('[aria-hidden="true"].font-mono');
+		const glyph = container.querySelector('[data-slot="state-notice-glyph"]');
 		expect(glyph).not.toBeNull();
 		expect(glyph!.textContent).toBe('●'); // empty-avis = the GOOD green dot
+	});
+});
+
+describe('EdgeState — card border treatment', () => {
+	it('keeps error-v1 on the normal card border without an alternate-colour top rule', () => {
+		const { container } = render(EdgeState, { props: { variant: 'error-v1', lang: 'en' } });
+		const root = container.querySelector('[data-slot="edge-state"]');
+
+		expect(root).toHaveAttribute('data-component', 'state-notice');
+		expect(root).not.toHaveClass('edge-accent-bar');
+		expect((root as HTMLElement).style.getPropertyValue('--edge-rule')).toBe('');
+	});
+
+	it.each([
+		['stale-offline', 'warning'],
+		['no-results', 'neutral'],
+		['empty', 'neutral'],
+		['empty-avis', 'positive'],
+		['error-v1', 'error'],
+	] as const)('%s keeps semantic colour in content, never in a top frame rule', (variant, tone) => {
+		const { container } = render(EdgeState, { props: { variant, lang: 'en' } });
+		const root = container.querySelector('[data-slot="edge-state"]');
+
+		expect(root).toHaveAttribute('data-component', 'state-notice');
+		expect(root).toHaveAttribute('data-tone', tone);
+		expect(root).toHaveAttribute('data-presentation', 'responsive');
+		expect(root).not.toHaveClass('edge-accent-bar');
+		expect((root as HTMLElement).style.getPropertyValue('--edge-rule')).toBe('');
+	});
+
+	it('accepts a compact silo presentation without changing its state semantics', () => {
+		const { container } = render(EdgeState, {
+			props: { variant: 'empty', lang: 'en', presentation: 'silo' },
+		});
+		const root = container.querySelector('[data-slot="edge-state"]');
+		expect(root).toHaveAttribute('data-variant', 'empty');
+		expect(root).toHaveAttribute('data-presentation', 'silo');
 	});
 });
 

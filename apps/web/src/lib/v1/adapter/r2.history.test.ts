@@ -121,6 +121,21 @@ function alertIndex() {
 	};
 }
 
+function alertPage() {
+	return {
+		generated_utc: ISO,
+		month: '2026-03',
+		page: 1,
+		alerts: [
+			{
+				id: 'alert-1',
+				first_seen_utc: ISO,
+				last_seen_utc: ISO,
+			},
+		],
+	};
+}
+
 function json(body: unknown, status = 200): Response {
 	return new Response(JSON.stringify(body), {
 		status,
@@ -133,6 +148,107 @@ async function payloadSha(value: unknown): Promise<string> {
 }
 
 describe('r2 historic collection ports', () => {
+	it('retries one server error for an immutable alert page and returns the second response', async () => {
+		let attempt = 0;
+		const page = alertPage();
+		const request = vi.fn(async () => {
+			attempt += 1;
+			if (attempt === 1) {
+				return new Response('{}', { status: 500, statusText: 'first failure' });
+			}
+			return json(page);
+		});
+
+		await expect(
+			r2Adapter.historic.alertArchivePage(SAFE_PAGE, {
+				fetch: request as unknown as typeof fetch,
+			}),
+		).resolves.toEqual(page);
+		expect(request).toHaveBeenCalledTimes(2);
+	});
+
+	it('propagates the second server error after one immutable alert-page retry', async () => {
+		let attempt = 0;
+		const request = vi.fn(async () => {
+			attempt += 1;
+			return new Response('{}', {
+				status: 500,
+				statusText: attempt === 1 ? 'first failure' : 'second failure',
+			});
+		});
+
+		await expect(
+			r2Adapter.historic.alertArchivePage(SAFE_PAGE, {
+				fetch: request as unknown as typeof fetch,
+			}),
+		).rejects.toThrow('HTTP 500 second failure');
+		expect(request).toHaveBeenCalledTimes(2);
+	});
+
+	it('does not retry a 429 response for an immutable alert page', async () => {
+		const request = vi.fn(
+			async () => new Response('{}', { status: 429, statusText: 'Too Many Requests' }),
+		);
+
+		await expect(
+			r2Adapter.historic.alertArchivePage(SAFE_PAGE, {
+				fetch: request as unknown as typeof fetch,
+			}),
+		).rejects.toThrow('HTTP 429 Too Many Requests');
+		expect(request).toHaveBeenCalledOnce();
+	});
+
+	it('uses normal revalidation for mutable roots and cache-first for immutable alert pages', async () => {
+		const observed: Array<{ path: string; cache: RequestCache | undefined }> = [];
+		const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const path = String(input).replace('/data/v1/stm/', '');
+			observed.push({ path, cache: init?.cache });
+			if (path === 'manifest.json') {
+				return json(
+					manifest({
+						alerts_index: 'historic/alerts/index.json',
+						alert_history: 'historic/alert_history.json',
+					}),
+				);
+			}
+			if (path === 'historic/alerts/index.json') return json(alertIndex());
+			if (path === 'historic/alert_history.json') {
+				return json({ generated_utc: ISO, alerts: [] });
+			}
+			if (path === SAFE_PAGE) {
+				return json({
+					generated_utc: ISO,
+					month: '2026-03',
+					page: 1,
+					alerts: [
+						{
+							id: 'alert-1',
+							first_seen_utc: ISO,
+							last_seen_utc: ISO,
+						},
+					],
+				});
+			}
+			throw new Error(`unexpected URL ${String(input)}`);
+		});
+		const ctx = {
+			fetch: request as unknown as typeof fetch,
+			cache: new Map<string, unknown>(),
+		};
+
+		await r2Adapter.manifest.get(ctx);
+		await r2Adapter.historic.alertArchiveIndex(ctx);
+		await r2Adapter.historic.alertHistory(ctx);
+		await r2Adapter.historic.alertArchivePage(SAFE_PAGE, ctx);
+
+		expect(observed).toEqual([
+			{ path: 'manifest.json', cache: 'default' },
+			{ path: 'historic/alerts/index.json', cache: 'default' },
+			{ path: 'historic/alert_history.json', cache: 'default' },
+			{ path: SAFE_PAGE, cache: 'force-cache' },
+		]);
+	});
+
 	it('keeps history root fixed, preserves Alert manifest pointers, forwards signals, and keeps page 404 transport-null', async () => {
 		const controller = new AbortController();
 		const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -219,7 +335,7 @@ describe('r2 historic collection ports', () => {
 		const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = String(input);
 			expect(init?.signal).toBe(controller.signal);
-			expect(init?.cache).toBe('force-cache');
+			expect(init?.cache).toBe('default');
 			if (url.endsWith('/historic/history/network/index.json')) {
 				return json(collectionIndex('network'));
 			}

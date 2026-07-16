@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Handler test for the DYNAMIC sitemap endpoint. The pure builders are covered
 // in src/lib/site/seoFiles.test.ts; here we exercise the wiring + fail-soft:
-//   (a) binding present + indexing on  -> entity URLs appear,
+//   (a) snapshot transport + indexing on -> entity URLs appear,
 //   (b) a thrown index fetch           -> degrades to static-only (no 500),
 //   (c) no binding                     -> static-only.
 //
-// We mock the v1 loaders ($lib/v1) and the binding wrapper ($lib/v1/binding) so
-// no real fetch happens, and pin indexing on via $lib/site/config.
+// We mock the v1 loaders ($lib/v1), so no real fetch happens, and pin indexing
+// on via $lib/site/config.
 
 const getRoutesIndex = vi.fn();
 const getStopsIndex = vi.fn();
@@ -15,14 +15,6 @@ const getStopsIndex = vi.fn();
 vi.mock('$lib/v1', () => ({
 	getRoutesIndex: (...args: unknown[]) => getRoutesIndex(...args),
 	getStopsIndex: (...args: unknown[]) => getStopsIndex(...args),
-}));
-
-// bindingFetch must NOT touch a real binding in the test — return a throwing
-// stub fetch (the handler never calls it directly; the mocked loaders do).
-vi.mock('$lib/v1/binding', () => ({
-	bindingFetch: () => () => {
-		throw new Error('no network in tests');
-	},
 }));
 
 // Pin indexing on with a known origin (avoids depending on env in the harness).
@@ -36,11 +28,17 @@ type Handler = typeof GET;
 
 const ORIGIN = 'https://transit.yesid.dev';
 
-/** Minimal RequestEvent shape the handler reads: `url` + `platform.env.DATA`. */
-function event(opts: { binding?: unknown } = {}) {
+/** Minimal RequestEvent shape the handler reads. */
+function event(opts: { binding?: unknown; snapshots?: unknown } = {}) {
+	const env = {
+		...(opts.binding === undefined ? {} : { DATA: opts.binding }),
+		...(opts.snapshots === undefined ? {} : { SNAPSHOTS: opts.snapshots }),
+	};
 	return {
+		fetch: vi.fn(),
+		locals: {},
 		url: new URL(`${ORIGIN}/sitemap.xml`),
-		platform: opts.binding === undefined ? undefined : { env: { DATA: opts.binding } },
+		platform: Object.keys(env).length === 0 ? undefined : { env },
 	} as unknown as Parameters<Handler>[0];
 }
 
@@ -54,7 +52,7 @@ beforeEach(() => {
 });
 
 describe('sitemap.xml handler', () => {
-	it('(a) binding present + indexing on: enumerates entity URLs', async () => {
+	it('(a) direct R2 snapshot binding + indexing on: enumerates entity URLs', async () => {
 		getRoutesIndex.mockResolvedValue({
 			generated_utc: '2026-06-20T07:00:00Z',
 			routes: [{ id: '11' }, { id: '747' }],
@@ -64,7 +62,7 @@ describe('sitemap.xml handler', () => {
 			stops: [{ id: '10001' }],
 		});
 
-		const res = await GET(event({ binding: { fetch: vi.fn() } }));
+		const res = await GET(event({ snapshots: { get: vi.fn() } }));
 		expect(res.status).toBe(200);
 		expect(res.headers.get('content-type')).toContain('application/xml');
 		const xml = await bodyOf(res);

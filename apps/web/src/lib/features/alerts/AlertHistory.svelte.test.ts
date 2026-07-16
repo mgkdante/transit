@@ -419,11 +419,13 @@ describe('AlertHistory article shell', () => {
 
 	it('opens one mobile sheet containing all filters followed by the TOC without a TocPill', async () => {
 		const { container } = render(AlertHistoryScreen);
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		const mobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
 		const pill = within(mobile).getByRole('button', { name: /Open filters and contents/ });
 		await fireEvent.click(pill);
 
 		const sheet = screen.getByRole('dialog', { name: 'Filters & contents' });
+		expect(sheet.querySelector('[data-slot="surface-rail"]')).toBe(rail);
 		const filters = sheet.querySelector('[data-slot="alert-filters"]') as HTMLElement;
 		const toc = sheet.querySelector('[data-slot="section-toc"]') as HTMLElement;
 		expect(filters).not.toBeNull();
@@ -443,7 +445,7 @@ describe('AlertHistory article shell', () => {
 		expect(screen.getByRole('dialog', { name: 'Filters & contents' })).toBeInTheDocument();
 		await fireEvent.click(within(sheet).getByRole('button', { name: 'Past alerts' }));
 		await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-		expect(document.activeElement).toBe(pill);
+		expect(container.querySelector('[data-slot="surface-rail"]')).toBe(rail);
 	});
 });
 
@@ -861,6 +863,8 @@ describe('AlertHistory filters — entity-type + severity radiogroups (codec-bac
 		const note = document.querySelector('[data-slot="alert-no-match"]');
 		expect(note).not.toBeNull();
 		expect(note).toHaveTextContent(copyEn.filters.noMatch);
+		expect(note).toHaveAttribute('data-component', 'state-notice');
+		expect(note).toHaveAttribute('data-presentation', 'silo');
 		expect(note?.textContent).not.toContain('·');
 	});
 
@@ -1309,15 +1313,17 @@ describe('AlertHistory retained archive integration', () => {
 		expect(liveRegions[0]?.closest('[data-slot="surface-rail"]')).toBeNull();
 		let navigatorCopies = container.querySelectorAll('[data-slot="history-announcement"]');
 		expect(navigatorCopies).toHaveLength(1);
-		expect(navigatorCopies[0]).toHaveTextContent(expected);
-		expect(navigatorCopies[0]).not.toHaveAttribute('role');
+		const navigatorCopy = navigatorCopies[0];
+		expect(navigatorCopy).toHaveTextContent(expected);
+		expect(navigatorCopy).not.toHaveAttribute('role');
 
 		await fireEvent.click(screen.getByRole('button', { name: new RegExp(copyEn.rail.open, 'i') }));
 		expect(screen.getByRole('dialog', { name: copyEn.rail.label })).toBeInTheDocument();
 		liveRegions = container.querySelectorAll('[role="status"][aria-live="polite"]');
 		expect(liveRegions).toHaveLength(1);
 		navigatorCopies = container.querySelectorAll('[data-slot="history-announcement"]');
-		expect(navigatorCopies).toHaveLength(2);
+		expect(navigatorCopies).toHaveLength(1);
+		expect(navigatorCopies[0]).toBe(navigatorCopy);
 		for (const copy of navigatorCopies) {
 			expect(copy).toHaveTextContent(expected);
 			expect(copy).not.toHaveAttribute('role');

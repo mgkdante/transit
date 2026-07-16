@@ -1,8 +1,9 @@
-// Live store — runes poller for the five live snapshot files.
+// Live store — runes poller for the selected live snapshot files.
 //
-// Polls vehicles / trips / stop_departures / alerts / network on the live tier's
-// ttl cadence (from the manifest, default 30s) and exposes them as reactive
-// runes. The actual HTTP is the adapter's job. There is NO app-level ETag/304
+// By default it polls vehicles / trips / stop_departures / alerts / network on
+// the live tier's ttl cadence (from the manifest, default 30s). A surface can
+// select only the families it actually reads, without changing the public store
+// shape. The actual HTTP is the adapter's job. There is NO app-level ETag/304
 // handling: conditional revalidation is the browser/edge HTTP cache's job (the
 // fetch uses cache: 'default' against the snapshot's cache-control), so JS always
 // sees a 200 — served from cache or origin — carrying Date/Age headers that keep
@@ -26,13 +27,15 @@
 //
 // Lifecycle: createLiveStore(manifest) builds an instance; call .start() from
 // onMount and .stop() from onDestroy (or use the $effect convenience in a
-// component). SSR-safe: start() no-ops without a browser, the initial render
-// shows whatever one-shot fetch the loader seeded (or empty state).
+// component). Polling pauses while the page is hidden or the browser is offline,
+// then performs one immediate single-flight refresh when it becomes active again.
+// SSR-safe: start() no-ops without a browser, the initial render shows whatever
+// one-shot fetch the loader seeded (or empty state).
 
 import { browser } from '$app/environment';
 import { ageSeconds } from '$lib/utils/time';
 import { dataRefresh, sharedClock } from '$lib/stores';
-import { adapter } from '$lib/v1/adapter';
+import { adapter, type AdapterCtx } from '$lib/v1/adapter';
 import type {
 	AlertsFile,
 	Manifest,
@@ -53,6 +56,16 @@ const DEFAULT_LIVE_TTL_S = 30;
  * 3× clears that band so only a genuine feed stall trips it. */
 const STALE_TTL_MULTIPLIER = 3;
 
+/** Every live family, in the stable order used by the default five-file poll. */
+export const LIVE_FAMILIES = ['vehicles', 'trips', 'departures', 'alerts', 'network'] as const;
+
+export type LiveFamily = (typeof LIVE_FAMILIES)[number];
+
+export interface LiveStoreOptions {
+	/** Families this surface reads. Omit to preserve the five-file default. */
+	readonly families?: readonly LiveFamily[];
+}
+
 /** The public reactive surface of a live store instance. */
 export interface LiveStore {
 	/** Live vehicle positions, or null before the first successful fetch. */
@@ -67,7 +80,7 @@ export interface LiveStore {
 	readonly network: NetworkFile | null;
 	/** O(1) lookup index rebuilt every tick from the current files. */
 	readonly index: LiveIndex;
-	/** DATA time of the current live build (from network.json), or null. */
+	/** DATA time of the current live build, preferring network.json when loaded. */
 	readonly generatedUtc: string | null;
 	/** Seconds since `generatedUtc`, or null when no build is loaded. */
 	readonly ageSeconds: number | null;
@@ -82,7 +95,7 @@ export interface LiveStore {
 	start(): void;
 	/** Stop polling and clear the timer. Idempotent. */
 	stop(): void;
-	/** Force one immediate refresh of all five files (returns when settled). */
+	/** Force one immediate refresh of the selected files (returns when settled). */
 	refresh(): Promise<void>;
 }
 
@@ -97,9 +110,11 @@ function liveTtlMs(manifest: Manifest): number {
  * staleness threshold). One instance per surface tree; share it via context if
  * several panels need the same tick.
  */
-export function createLiveStore(manifest: Manifest): LiveStore {
+export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = {}): LiveStore {
 	const ttlMs = liveTtlMs(manifest);
 	const staleThresholdS = (ttlMs / 1000) * STALE_TTL_MULTIPLIER;
+	const adapterCtx: AdapterCtx = { manifest };
+	const families = options.families ?? LIVE_FAMILIES;
 
 	let vehicles = $state<VehiclesFile | null>(null);
 	let trips = $state<TripsFile | null>(null);
@@ -115,6 +130,10 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 	// browser/edge cache) AND every chrome relative-time label ticks in lockstep.
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	let clockDispose: (() => void) | null = null;
+	let refreshInFlight: Promise<void> | null = null;
+	let refreshController: AbortController | null = null;
+	let refreshGeneration = 0;
+	let lifecycleWired = false;
 	let started = false;
 
 	const index = $derived(
@@ -122,9 +141,16 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 	);
 
 	// Live freshness anchors off network.json's generated_utc (the rollup the
-	// publisher stamps last). Falls back to the vehicles file when network is
-	// absent, so a partial tick still reports an age.
-	const generatedUtc = $derived(network?.generated_utc ?? vehicles?.generated_utc ?? null);
+	// publisher stamps last). A family-scoped store falls back through every other
+	// snapshot timestamp, so even a departures-only consumer reports honest age.
+	const generatedUtc = $derived(
+		network?.generated_utc ??
+			vehicles?.generated_utc ??
+			trips?.generated_utc ??
+			departures?.generated_utc ??
+			alerts?.generated_utc ??
+			null,
+	);
 	const ageSecondsValue = $derived.by<number | null>(() => {
 		if (!generatedUtc) return null;
 		// Read the SHARED SERVER clock: this re-derives every shared tick, so the
@@ -150,34 +176,129 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 	});
 
 	/**
-	 * Fetch all five files in parallel. Revalidation is the browser/edge HTTP
+	 * Fetch the selected files in parallel. Revalidation is the browser/edge HTTP
 	 * cache's job (cache: 'default' + the snapshot's cache-control); each fetch
 	 * resolves to a 200 — from cache or origin — whose Date/Age refreshes the
 	 * shared server-time anchor.
 	 */
-	async function refresh(): Promise<void> {
+	function refresh(): Promise<void> {
+		// All refresh entry points (timer, visibility/online resume, shared epoch,
+		// and explicit/manual calls) share one selected-family batch. This prevents a
+		// slow request from being multiplied when two triggers overlap.
+		if (refreshInFlight) return refreshInFlight;
+		const generation = refreshGeneration;
+		const controller = new AbortController();
+		const batchCtx: AdapterCtx = { ...adapterCtx, signal: controller.signal };
+		refreshController = controller;
 		loading = true;
-		try {
-			const [v, t, d, a, n] = await Promise.all([
-				adapter.live.vehicles(),
-				adapter.live.trips(),
-				adapter.live.stopDepartures(),
-				adapter.live.alerts(),
-				adapter.live.network(),
-			]);
-			vehicles = v;
-			trips = t;
-			departures = d;
-			alerts = a;
-			network = n;
-			// SINGLE authoritative writer: push the snapshot's own DATA timestamp into
-			// the shared chrome coordinator so the freshness readout tracks this poll.
-			dataRefresh.noteDataGeneratedUtc(n.generated_utc ?? v.generated_utc);
-			error = null;
-		} catch (e) {
-			error = e instanceof Error ? e : new Error(String(e));
-		} finally {
-			loading = false;
+		const pending = (async () => {
+			// Yield once so `refreshInFlight` is assigned before adapters run, even if
+			// an adapter were to throw synchronously.
+			await Promise.resolve();
+			try {
+				const [v, t, d, a, n] = await Promise.all([
+					families.includes('vehicles') ? adapter.live.vehicles(batchCtx) : null,
+					families.includes('trips') ? adapter.live.trips(batchCtx) : null,
+					families.includes('departures') ? adapter.live.stopDepartures(batchCtx) : null,
+					families.includes('alerts') ? adapter.live.alerts(batchCtx) : null,
+					families.includes('network') ? adapter.live.network(batchCtx) : null,
+				]);
+				// stop() invalidates the generation before aborting. Some test doubles or
+				// transports may ignore AbortSignal, so the generation guard is what makes
+				// late completion unable to repopulate an unmounted surface.
+				if (controller.signal.aborted || generation !== refreshGeneration) return;
+				// Commit only after every selected request has resolved. One failed family
+				// therefore leaves the previous complete snapshot intact.
+				if (v !== null) vehicles = v;
+				if (t !== null) trips = t;
+				if (d !== null) departures = d;
+				if (a !== null) alerts = a;
+				if (n !== null) network = n;
+				// SINGLE authoritative writer: push the snapshot's own DATA timestamp into
+				// the shared chrome coordinator so the freshness readout tracks this poll.
+				const polledGeneratedUtc =
+					n?.generated_utc ??
+					v?.generated_utc ??
+					t?.generated_utc ??
+					d?.generated_utc ??
+					a?.generated_utc ??
+					null;
+				if (polledGeneratedUtc != null) {
+					dataRefresh.noteDataGeneratedUtc(polledGeneratedUtc);
+				}
+				error = null;
+			} catch (e) {
+				const aborted =
+					controller.signal.aborted ||
+					(e instanceof DOMException
+						? e.name === 'AbortError'
+						: e instanceof Error && e.name === 'AbortError');
+				if (!aborted && generation === refreshGeneration) {
+					error = e instanceof Error ? e : new Error(String(e));
+				}
+			} finally {
+				if (refreshController === controller) {
+					loading = false;
+					refreshInFlight = null;
+					refreshController = null;
+				}
+			}
+		})();
+		refreshInFlight = pending;
+		return pending;
+	}
+
+	/** True when background polling is useful and can reach the network. */
+	function canPoll(): boolean {
+		const visible = typeof document === 'undefined' || document.visibilityState !== 'hidden';
+		const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+		return visible && online;
+	}
+
+	/** Pause only the background cadence; an in-flight batch is allowed to settle. */
+	function pausePolling(): void {
+		if (pollTimer) {
+			clearInterval(pollTimer);
+			pollTimer = null;
+		}
+	}
+
+	/** Resume with one immediate refresh and one interval, if currently active. */
+	function resumePolling(): void {
+		if (!started || pollTimer || !canPoll()) return;
+		pollTimer = setInterval(() => {
+			void refresh();
+		}, ttlMs);
+		void refresh();
+	}
+
+	function handleLifecycleChange(): void {
+		if (!started) return;
+		if (canPoll()) resumePolling();
+		else pausePolling();
+	}
+
+	function wireLifecycle(): void {
+		if (lifecycleWired) return;
+		lifecycleWired = true;
+		if (typeof document !== 'undefined') {
+			document.addEventListener('visibilitychange', handleLifecycleChange);
+		}
+		if (typeof window !== 'undefined') {
+			window.addEventListener('online', handleLifecycleChange);
+			window.addEventListener('offline', handleLifecycleChange);
+		}
+	}
+
+	function unwireLifecycle(): void {
+		if (!lifecycleWired) return;
+		lifecycleWired = false;
+		if (typeof document !== 'undefined') {
+			document.removeEventListener('visibilitychange', handleLifecycleChange);
+		}
+		if (typeof window !== 'undefined') {
+			window.removeEventListener('online', handleLifecycleChange);
+			window.removeEventListener('offline', handleLifecycleChange);
 		}
 	}
 
@@ -188,22 +309,20 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 		// (the data still ages visibly even when a poll is served unchanged from the
 		// browser/edge cache) on the SAME tick as every other chrome label.
 		clockDispose = sharedClock.subscribe();
-		void refresh();
-		pollTimer = setInterval(() => {
-			void refresh();
-		}, ttlMs);
+		wireLifecycle();
+		resumePolling();
 	}
 
 	function stop(): void {
-		if (pollTimer) {
-			clearInterval(pollTimer);
-			pollTimer = null;
-		}
+		started = false;
+		refreshGeneration += 1;
+		refreshController?.abort();
+		pausePolling();
+		unwireLifecycle();
 		if (clockDispose) {
 			clockDispose();
 			clockDispose = null;
 		}
-		started = false;
 	}
 
 	return {

@@ -58,6 +58,8 @@
 	} from '$lib/v1/schemas';
 	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
 	import {
+		ArticleControlDisclosure,
+		ArticleControlStack,
 		createRailDisclosureController,
 		HistoryNavigator,
 		ResourceBoundary,
@@ -66,6 +68,7 @@
 	} from '$lib/components/surface';
 	import {
 		ArticleHeader,
+		ArticleSectionStack,
 		DashboardGrid,
 		DetailShell,
 		type ArticleMetaEntry,
@@ -608,58 +611,62 @@
 
 	{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
 		{@const presentedGrainSegments = grainSegmentsFor(presentation)}
+		{#snippet historyControls()}
+			{#key historyCorrection.revision}
+				<HistoryNavigator
+					mode="date"
+					date={offenders.selectedDate ?? undefined}
+					{dateOptions}
+					previousDate={offenders.previousDate}
+					nextDate={offenders.nextDate}
+					coverageText={historyCoverageText}
+					selectionText={historySelectionText}
+					announcement={historyCorrection.announcement}
+					liveAnnouncement={false}
+					{locale}
+					labels={t.history.navigator}
+					onDateChange={selectHistoryDate}
+				/>
+			{/key}
+		{/snippet}
+		{#snippet primaryControls()}
+			<GrainPicker
+				segments={presentedGrainSegments}
+				bind:value={grainKey}
+				label={t.grain.label}
+				variant="time-grid"
+			/>
+			{#each presentedGrainSegments as segment (segment.key)}
+				{#if segment.describedById}
+					<span id={segment.describedById} class="repeat-grain-reason" data-slot="controls-reason">
+						{disabledReason}
+					</span>
+				{/if}
+			{/each}
+		{/snippet}
+		{#snippet secondaryControls()}
+			<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
+		{/snippet}
+		{#snippet windowCaptionControl()}
+			<p class="repeat-window" data-slot="active-window" aria-live="polite">
+				{windowCaption}
+			</p>
+		{/snippet}
+
 		{#if hasGrains || hasHistoryNavigator}
-			<CollapsibleSection
+			<ArticleControlDisclosure
 				title={t.rail.controls}
 				bind:open={
 					() => railDisclosures.isOpen('controls'), (next) => railDisclosures.set('controls', next)
 				}
 			>
-				<div class="repeat-control-body" data-slot="controls-body">
-					{#if hasHistoryNavigator}
-						{#key historyCorrection.revision}
-							<HistoryNavigator
-								mode="date"
-								date={offenders.selectedDate ?? undefined}
-								{dateOptions}
-								previousDate={offenders.previousDate}
-								nextDate={offenders.nextDate}
-								coverageText={historyCoverageText}
-								selectionText={historySelectionText}
-								announcement={historyCorrection.announcement}
-								liveAnnouncement={false}
-								{locale}
-								labels={t.history.navigator}
-								onDateChange={selectHistoryDate}
-							/>
-						{/key}
-					{/if}
-					{#if hasGrains}
-						<GrainPicker
-							segments={presentedGrainSegments}
-							bind:value={grainKey}
-							label={t.grain.label}
-						/>
-						{#each presentedGrainSegments as segment (segment.key)}
-							{#if segment.describedById}
-								<span
-									id={segment.describedById}
-									class="repeat-grain-reason"
-									data-slot="controls-reason"
-								>
-									{disabledReason}
-								</span>
-							{/if}
-						{/each}
-						{#if showWorstN}
-							<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
-						{/if}
-						<p class="repeat-window" data-slot="active-window" aria-live="polite">
-							{windowCaption}
-						</p>
-					{/if}
-				</div>
-			</CollapsibleSection>
+				<ArticleControlStack
+					history={hasHistoryNavigator ? historyControls : undefined}
+					primary={hasGrains ? primaryControls : undefined}
+					secondary={hasGrains && showWorstN ? secondaryControls : undefined}
+					caption={hasGrains ? windowCaptionControl : undefined}
+				/>
+			</ArticleControlDisclosure>
 		{/if}
 		{#if tocEntries.length > 0}
 			<div class="repeat-rail-toc" data-slot="section-toc">
@@ -696,7 +703,7 @@
 					<AbsentValue variant="block" reason="no-observations" {locale} />
 				</div>
 			{:else}
-				<div class="repeat-offenders-sections" data-slot="repeat-offenders-sections">
+				<ArticleSectionStack data-slot="repeat-offenders-sections">
 					{#each sectionDefs as section (section.id)}
 						{#if section.present}
 							<CollapsibleSection
@@ -832,24 +839,13 @@
 							</CollapsibleSection>
 						{/if}
 					{/each}
-				</div>
+				</ArticleSectionStack>
 			{/if}
 		</ResourceBoundary>
 	{/snippet}
 </DetailShell>
 
 <style>
-	.repeat-control-body {
-		display: flex;
-		flex-direction: column;
-		align-items: stretch;
-		gap: 0.75rem;
-		min-width: 0;
-	}
-	.repeat-control-body :global([data-slot='grain-picker']) {
-		min-width: 0;
-		flex-wrap: wrap;
-	}
 	.repeat-grain-reason {
 		position: absolute;
 		width: 1px;
@@ -881,12 +877,6 @@
 	}
 	.repeat-rail-toc {
 		margin-top: 0.25rem;
-	}
-	.repeat-offenders-sections {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-card-gap);
-		min-width: 0;
 	}
 	.repeat-offenders-article-prose {
 		display: flex;

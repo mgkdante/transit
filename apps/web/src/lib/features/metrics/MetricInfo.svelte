@@ -285,7 +285,7 @@
 		class="metric-info__trigger"
 		aria-label={label}
 		aria-expanded={open}
-		aria-describedby={open ? tipId : undefined}
+		aria-controls={open ? tipId : undefined}
 		onclick={toggle}
 	>
 		<span class="metric-info__glyph" aria-hidden="true">i</span>
@@ -295,7 +295,8 @@
 		<span
 			bind:this={pop}
 			id={tipId}
-			role="tooltip"
+			role="dialog"
+			aria-label={label}
 			class={cn('metric-info__pop', `metric-info__pop--${resolvedSide}`)}
 			class:metric-info__pop--placed={placed}
 			style="left: {fixedLeft}px; top: {fixedTop}px; transform: {transform};"
@@ -391,7 +392,11 @@
 		border-radius: var(--radius);
 		background: var(--popover);
 		color: var(--popover-foreground);
-		box-shadow: var(--shadow-card);
+		/* Information affordances keep neutral depth only. The shared card shadow
+		   carries a brand-colour halo, which made dashboard and network tips glow. */
+		box-shadow:
+			0 2px 8px rgb(0 0 0 / 0.28),
+			inset 0 1px 0 var(--edge-highlight);
 		/* Hidden until the first measurement lands (avoids a one-frame flash at 0,0). */
 		opacity: 0;
 	}

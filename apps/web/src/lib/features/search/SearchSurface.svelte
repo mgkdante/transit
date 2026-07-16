@@ -114,7 +114,7 @@
 	// Live tier: one store for this surface (the v1 context is booted before mount
 	// in the root layout). Polls vehicles on the live ttl; an exact unit-id query
 	// surfaces the matching bus. start()/stop() are browser-only + idempotent.
-	const live = createLiveStore(getV1Context().manifest);
+	const live = createLiveStore(getV1Context().manifest, { families: ['vehicles'] });
 	onMount(() => {
 		live.start();
 		return () => live.stop();

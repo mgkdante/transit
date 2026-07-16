@@ -50,7 +50,12 @@
 		HistoryNavigator,
 		ResourceBoundary,
 	} from '$lib/components/surface';
-	import { ArticleHeader, DetailShell, type ArticleMetaEntry } from '$lib/components/layout';
+	import {
+		ArticleHeader,
+		ArticleSectionStack,
+		DetailShell,
+		type ArticleMetaEntry,
+	} from '$lib/components/layout';
 	import {
 		CollapsibleSection,
 		TocNav,
@@ -63,7 +68,7 @@
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import type { SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';
-	import { EdgeState } from '$lib/components/edge';
+	import { EdgeState, StateNotice } from '$lib/components/edge';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import {
 		metricInfoFor,
@@ -495,7 +500,13 @@
 	{#snippet center()}
 		<ResourceBoundary resource={index} lang={locale}>
 			{#if !hasDates}
-				<p class="receipt-note" data-slot="receipt-empty-index">{t.emptyIndex}</p>
+				<StateNotice
+					title={t.emptyIndex}
+					presentation="card"
+					role="status"
+					ariaLive="polite"
+					data-slot="receipt-empty-index"
+				/>
 			{:else if receipt.error}
 				<EdgeState
 					variant="error-v1"
@@ -506,10 +517,16 @@
 			{:else if !selectedDate || receipt.loading || !receipt.settled || (receipt.data != null && !receiptReady)}
 				<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
 			{:else if receipt.data == null}
-				<p class="receipt-note" data-slot="receipt-empty">{t.emptyReceipt}</p>
+				<StateNotice
+					title={t.emptyReceipt}
+					presentation="card"
+					role="status"
+					ariaLive="polite"
+					data-slot="receipt-empty"
+				/>
 			{:else}
 				{@const r = receipt.data}
-				<div class="receipt-sections" data-slot="receipt-sections">
+				<ArticleSectionStack data-slot="receipt-sections">
 					{#each sectionDefs as section (section.id)}
 						{#if section.present}
 							<CollapsibleSection
@@ -614,7 +631,7 @@
 							</CollapsibleSection>
 						{/if}
 					{/each}
-				</div>
+				</ArticleSectionStack>
 			{/if}
 		</ResourceBoundary>
 	{/snippet}
@@ -622,8 +639,7 @@
 
 <style>
 	.receipt-controls,
-	.receipt-main-body,
-	.receipt-sections {
+	.receipt-main-body {
 		min-width: 0;
 	}
 	.receipt-controls :global([data-slot='date-range']) {
@@ -631,11 +647,6 @@
 	}
 	.receipt-rail-toc {
 		margin-top: 0.25rem;
-	}
-	.receipt-sections {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-card-gap);
 	}
 	.receipt-main-body {
 		display: flex;
@@ -706,12 +717,5 @@
 				'headline headline'
 				'affected affected';
 		}
-	}
-
-	.receipt-note {
-		color: var(--muted-foreground);
-		font-size: var(--text-small);
-		line-height: 1.5;
-		padding: 0.5rem 0.875rem;
 	}
 </style>

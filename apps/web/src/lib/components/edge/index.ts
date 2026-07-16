@@ -3,6 +3,16 @@
 // `import { EdgeState, AbsentValue } from '$lib/components/edge'`.
 
 export { default as EdgeState } from './EdgeState.svelte';
+export { DEFAULT_LOADING_SKELETON_DELAY_MS } from './loading';
+
+// StateNotice — the pure visual chassis for page, panel, and field state copy.
+// Semantic resolvers choose the words and tone; this component only lays them out.
+export { default as StateNotice } from './StateNotice.svelte';
+export type {
+	StateNoticePresentation,
+	StateNoticeProps,
+	StateNoticeTone,
+} from './StateNotice.svelte';
 
 // AbsentValue — the per-FIELD honest-absence VISUAL primitive (calm muted
 // "unknown · why"). Its business layer is the pure $lib/site/absence module.

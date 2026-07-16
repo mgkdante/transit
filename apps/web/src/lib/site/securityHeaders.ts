@@ -12,9 +12,8 @@
 //   • connect-src MUST include https://protomaps.github.io — MapLibre fetches
 //     the basemap glyph PBFs from there (basemap.ts BASEMAP_GLYPHS_URL);
 //     omitting it blanks every label on the live map.
-//   • connect-src MUST include https://transit.yesid.dev — the /v1 snapshot
-//     contract is read from PUBLIC_V1_BASE (absolute): cross-origin in dev,
-//     same-origin in prod.
+//   • connect-src MUST include https://data.yesid.dev — browser snapshot reads
+//     go straight to the R2 custom domain instead of consuming Worker requests.
 //   • worker-src blob: — pmtiles/maplibre spin up workers from blob URLs.
 //   • img-src is 'self' data: blob: + the basemap host + the OG-image origin —
 //     NOT a broad `https:` wildcard. The map bakes its vehicle/stop/pin sprites
@@ -38,6 +37,7 @@ const BASEMAP_IMG_HOST = 'https://protomaps.github.io';
 // OG-image origin — the social card lives at {origin}/og/{lang}.png. Same-origin
 // in prod; listed so a cross-origin fetch (dev, scrapers) still resolves.
 const OG_IMAGE_ORIGIN = 'https://transit.yesid.dev';
+const SNAPSHOT_ORIGIN = 'https://data.yesid.dev';
 // Cloudflare Web Analytics — its beacon.min.js loads from this host; allowlisted
 // in script-src so the CSP doesn't block it (operator keeps CF Web Analytics).
 const CF_INSIGHTS_HOST = 'https://static.cloudflareinsights.com';
@@ -72,7 +72,7 @@ function baseCspDirectives(): Record<string, string[]> {
 		'font-src': ["'self'"],
 		'style-src': ["'self'", "'unsafe-inline'"],
 		'script-src': ["'self'", "'unsafe-inline'", CF_INSIGHTS_HOST],
-		'connect-src': ["'self'", 'https://transit.yesid.dev', 'https://protomaps.github.io'],
+		'connect-src': ["'self'", SNAPSHOT_ORIGIN, 'https://protomaps.github.io'],
 		'worker-src': ["'self'", 'blob:'],
 		'manifest-src': ["'self'"],
 	};

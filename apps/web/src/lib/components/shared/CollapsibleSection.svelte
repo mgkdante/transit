@@ -41,6 +41,7 @@
 		openSignal = null,
 		bulkCollapsed = null,
 		icon,
+		headerActions,
 		children,
 	}: {
 		title: string;
@@ -88,6 +89,9 @@
 		 */
 		bulkCollapsed?: boolean | null;
 		icon?: Snippet;
+		/** Interactive actions rendered beside an article-summary disclosure button.
+		 *  Kept outside the button so popovers and links remain valid, independent controls. */
+		headerActions?: Snippet;
 		children?: Snippet;
 	} = $props();
 
@@ -206,32 +210,45 @@
 	<Collapsible bind:open={() => isOpen, setOpen}>
 		{#if collapsible}
 			{#if usesArticleSummary}
-				<h2 class="section-heading">
-					<CollapsibleTrigger>
-						{#snippet child({ props })}
-							<button
-								{...props}
-								type="button"
-								aria-describedby={subtitle ? subtitleId : undefined}
-								class="section-header section-header--article-summary {hasHeaderMark
-									? 'section-header--with-mark'
-									: ''} {subtitle ? '' : 'section-header--title-only'}"
-							>
-								{#if hasHeaderMark}
-									<span class="section-header__mark" aria-hidden="true">
-										{@render headerMark()}
-									</span>
-								{/if}
-								<span
-									class="section-title section-title--article-summary font-heading text-lg font-bold text-[var(--foreground)]"
+				<div
+					class="section-heading-row"
+					class:section-heading-row--actions={headerActions !== undefined}
+				>
+					<h2 class="section-heading">
+						<CollapsibleTrigger>
+							{#snippet child({ props })}
+								<button
+									{...props}
+									type="button"
+									data-section-trigger
+									aria-describedby={subtitle ? subtitleId : undefined}
+									class="section-header section-header--article-summary {hasHeaderMark
+										? 'section-header--with-mark'
+										: ''} {subtitle ? '' : 'section-header--title-only'}"
 								>
-									{title}
-								</span>
-								<ChevronToggle open={isOpen} direction="right" />
-							</button>
-						{/snippet}
-					</CollapsibleTrigger>
-				</h2>
+									{#if hasHeaderMark}
+										<span class="section-header__mark" aria-hidden="true">
+											{@render headerMark()}
+										</span>
+									{/if}
+									<span
+										class="section-title section-title--article-summary font-heading text-lg font-bold text-[var(--foreground)]"
+									>
+										{title}
+									</span>
+								</button>
+							{/snippet}
+						</CollapsibleTrigger>
+					</h2>
+					{#if headerActions}
+						<div class="section-header-actions" data-card-interactive>
+							{@render headerActions()}
+						</div>
+					{/if}
+					<span class="section-header__chevron" aria-hidden="true">
+						<ChevronToggle open={isOpen} direction="right" />
+					</span>
+				</div>
 				{#if subtitle}
 					<p
 						id={subtitleId}
@@ -249,6 +266,7 @@
 						<button
 							{...props}
 							type="button"
+							data-section-trigger
 							class="section-header flex w-full items-center gap-2.5 px-6 py-4 text-left"
 						>
 							{@render legacyHeaderContent()}
@@ -299,20 +317,42 @@
 
 	.section-heading {
 		margin: 0;
+		min-width: 0;
+	}
+
+	.section-heading-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 1.25rem;
+		align-items: center;
+		column-gap: 0.625rem;
+		padding-inline-end: 1.5rem;
+	}
+
+	.section-heading-row--actions {
+		grid-template-columns: minmax(0, 1fr) auto 1.25rem;
+	}
+
+	.section-header-actions {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		min-height: 44px;
+		padding: 0.875rem 0 0.5rem;
 	}
 
 	.section-header--article-summary {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) 1.25rem;
-		align-items: start;
+		width: 100%;
+		grid-template-columns: minmax(0, 1fr);
+		align-items: center;
 		column-gap: 0.625rem;
 		min-height: 44px;
-		padding: 1rem 1.5rem 0.375rem;
+		padding: 1rem 0 0.375rem 1.5rem;
 		text-align: left;
 	}
 
 	.section-header--article-summary.section-header--with-mark {
-		grid-template-columns: 1.75rem minmax(0, 1fr) 1.25rem;
+		grid-template-columns: 1.75rem minmax(0, 1fr);
 	}
 
 	.section-header--article-summary.section-header--title-only {
@@ -327,8 +367,12 @@
 		justify-content: center;
 	}
 
-	.section-header--article-summary :global([data-slot='chevron-toggle']) {
-		margin-block-start: 0.25rem;
+	.section-header__chevron {
+		display: inline-flex;
+		width: 1.25rem;
+		align-items: center;
+		justify-content: center;
+		align-self: center;
 	}
 
 	.section-title--article-summary {

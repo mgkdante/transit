@@ -140,6 +140,7 @@ export interface HealthCopy extends SurfaceHeadCopy {
 		>;
 		readonly unavailable: string;
 		readonly noCoverage: string;
+		readonly noGapInventory: string;
 		readonly noDeclaredGaps: string;
 		readonly familyGaps: string;
 		readonly metricCoverage: string;
@@ -389,6 +390,7 @@ export const copy: Record<Locale, HealthCopy> = {
 			},
 			unavailable: 'Not published in this history index',
 			noCoverage: 'No retained dates reported',
+			noGapInventory: 'No gap inventory published',
 			noDeclaredGaps: 'No gaps declared',
 			familyGaps: 'Family gaps',
 			metricCoverage: 'Metric coverage',
@@ -599,6 +601,7 @@ export const copy: Record<Locale, HealthCopy> = {
 			},
 			unavailable: 'Non publiée dans cet index historique',
 			noCoverage: 'Aucune date conservée signalée',
+			noGapInventory: 'Aucun inventaire des lacunes publié',
 			noDeclaredGaps: 'Aucune lacune déclarée',
 			familyGaps: 'Lacunes de la famille',
 			metricCoverage: 'Couverture par métrique',

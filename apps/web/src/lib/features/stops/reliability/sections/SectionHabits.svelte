@@ -12,28 +12,20 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import { ChartLegend } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
-	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { selectHabitsHeatmap, selectHabitsHeatmapSpec } from '../selectors/habitsHeatmap';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
+	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';
 
 	interface SectionHabitsProps {
 		/** The 7×24 severe-delay matrix (null cell = no data). */
 		matrix: (number | null)[][];
 		locale: Locale;
 		copy: StopReliabilityCopy;
+		presentation?: 'standalone' | 'article-body';
 	}
-	let { matrix, locale, copy }: SectionHabitsProps = $props();
-
-	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
-	});
+	let { matrix, locale, copy, presentation = 'standalone' }: SectionHabitsProps = $props();
 
 	// Full weekday names in row order (drop the ISO index-0 placeholder).
 	const habitsFullDays = $derived(copy.habits.weekdays.slice(1));
@@ -79,35 +71,20 @@
 	]);
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
-	{@const i = info(key, name)}
-	<MetricInfo
-		class="stop-metric-info"
-		tip={i.tip}
-		href={i.href}
-		label={i.label}
-		linkLabel={i.linkLabel}
-		side="bottom"
-	/>
-{/snippet}
-
-<div class="stop-tile stop-tile--wide stop-reliability-habits" data-slot="stop-habits">
-	<SectionHeading level={2} overline={copy.habits.heading} class="stop-tile-heading">
-		{#snippet explainer()}
-			{@render metricInfo('habits', copy.habits.heading)}
-		{/snippet}
-	</SectionHeading>
+<StopReliabilityPresenter
+	heading={copy.habits.heading}
+	metricKey="habits"
+	{locale}
+	{presentation}
+	spacing="comfortable"
+	dataSlot="stop-habits"
+>
 	<Chart {spec} />
 	<ChartLegend items={habitsLegend} />
 	<p class="stop-reliability-habits-caption">{copy.habits.caption}</p>
-</div>
+</StopReliabilityPresenter>
 
 <style>
-	.stop-reliability-habits {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
 	.stop-reliability-habits-caption {
 		margin: 0;
 		max-width: 100%;

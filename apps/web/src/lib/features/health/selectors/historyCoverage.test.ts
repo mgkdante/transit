@@ -136,7 +136,7 @@ describe('selectHistoryCoverage', () => {
 					aggregation: 'daily_only',
 					firstDate: '2026-05-01',
 					lastDate: '2026-07-13',
-					gaps: [],
+					gaps: null,
 				},
 			],
 		});
@@ -164,7 +164,7 @@ describe('selectHistoryCoverage', () => {
 			selectionMode: null,
 			firstDate: null,
 			lastDate: null,
-			gaps: [],
+			gaps: null,
 			metrics: [],
 		});
 	});

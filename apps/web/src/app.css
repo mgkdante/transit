@@ -13,6 +13,9 @@
 html {
 	-webkit-text-size-adjust: 100%;
 	text-size-adjust: 100%;
+	/* Respect the user's browser default while giving rem-based tokens a stable
+	   baseline. Never lock text scaling or disable pinch zoom. */
+	font-size: 100%;
 }
 button,
 [type='button'],
@@ -34,6 +37,16 @@ select {
    token (§C4 governance — census-born constants stay transit-local). */
 :root {
 	--size-tap-min: 44px;
+	/* One desktop measure for article controls and listing filters. Consumers keep
+	   their own mobile single-column/disclosure behavior below 1024px. */
+	--layout-control-rail-width: clamp(16rem, 24vw, 22rem);
+	/* A real third column is reserved for distinct supporting information. It stays
+	   useful rather than collapsing into the old narrow fractional side track. */
+	--layout-support-rail-width: clamp(16rem, 18vw, 20rem);
+	--layout-article-main-min: 40rem;
+	/* One lifted body offset for every ArticleHeader + DetailShell composition.
+	   Rails, verdicts, and first cards all begin on this same grid line. */
+	--layout-article-top-space: var(--space-card-gap);
 }
 
 /* Tap-feedback primitives (reduced-motion-guarded). */
@@ -85,13 +98,16 @@ select {
   --font-heading: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
   --font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-  --text-hero: clamp(4rem, min(9vw, 11svh), 8.125rem);
-  --text-hero-mobile: clamp(3rem, min(13vw, 8svh), 4rem);
-  --text-display: clamp(2.5rem, 5vw, 4rem);
-  --text-title: clamp(1.75rem, 4vw, 2.5rem);
-  --text-heading: clamp(1.375rem, 3vw, 1.75rem);
-  --text-subheading: 1.1875rem;
-  --text-body: 1.0625rem;
+  --text-hero: clamp(3.25rem, min(7.5vw, 9svh), 6.5rem);
+  --text-hero-mobile: clamp(2.5rem, min(11vw, 7svh), 3.25rem);
+  --text-display: clamp(2.125rem, 4vw, 3.25rem);
+  --text-title: clamp(1.625rem, 3vw, 2.125rem);
+  --text-heading: clamp(1.25rem, 3vw, 1.5rem);
+  --text-subheading: 1.125rem;
+  --text-body: 1rem;
+  --text-stat-value: 1.75rem;
+  --text-listing-title: clamp(2rem, 5vw, 3rem);
+  --text-listing-subtitle-desktop: 1.1rem;
   --text-small: 0.9375rem;
   --text-control: 0.9375rem;
   --text-tag: 0.9375rem;
@@ -217,6 +233,7 @@ html {
 
 /* No-overflow guarantees */
 body {
+	font-size: var(--text-body);
 	overflow-wrap: anywhere;
 	word-break: break-word;
 }

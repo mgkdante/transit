@@ -7,6 +7,7 @@ import {
 	HistoryArtifactContractError,
 	HistoryPartitionLoadError,
 	assertSafeHistoryArtifactPath,
+	createAlertArchivePageMemo,
 	loadHistoryPartitions,
 	mergeAlertArchivePages,
 	selectAlertEntriesForWindow,
@@ -271,6 +272,40 @@ describe('bounded partition loading', () => {
 		await Promise.resolve();
 		expect(rejectedWith).toMatchObject({ name: 'AbortError' });
 		expect(resolvedOutput).toBeNull();
+	});
+});
+
+describe('bounded parsed alert-page memo', () => {
+	function pageFor(pageNumber: number) {
+		return AlertArchivePageSchema.parse({
+			generated_utc: ISO,
+			month: '2026-03',
+			page: pageNumber,
+			alerts: [
+				{
+					id: `memo-${pageNumber}`,
+					first_seen_utc: '2026-03-01T00:00:00Z',
+					last_seen_utc: '2026-03-01T01:00:00Z',
+				},
+			],
+		});
+	}
+
+	it('uses LRU eviction so repeated range navigation cannot grow the memo without bound', () => {
+		const memo = createAlertArchivePageMemo(2);
+		const first = pageFor(1);
+		const second = pageFor(2);
+		const third = pageFor(3);
+
+		memo.remember('first', first);
+		memo.remember('second', second);
+		expect(memo.get('first')).toBe(first);
+		memo.remember('third', third);
+
+		expect(memo.size).toBe(2);
+		expect(memo.get('second')).toBeUndefined();
+		expect(memo.get('first')).toBe(first);
+		expect(memo.get('third')).toBe(third);
 	});
 });
 

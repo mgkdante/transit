@@ -6,13 +6,12 @@
 //     glyph when the live store is null (SSR / before the first tick / absent
 //     live tier), and reads real headline numbers when network.json reports
 //   · EXPLORE EVERYTHING wayfinding — all three groups + every surface entry,
-//     primary surfaces routing via openSurface, reference surfaces as localized
-//     <a> links
+//     every destination exposed as a native localized <a> link
 //   · bilingual copy (EN + FR) off the same component
 //
 // The hub reads getV1Context().manifest + createLiveStore + getLocale; we mock
 // $lib/v1 (a controllable live network) and $lib/i18n (the locale under test)
-// the same way the NetworkHealth surface test does, and $lib/nav for openSurface.
+// the same way the NetworkHealth surface test does, and $lib/nav for routeFor.
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -21,8 +20,7 @@ import type { NetworkFile } from '$lib/v1';
 import type { IsoUtc } from '$lib/v1/schemas';
 import Page from './+page.svelte';
 
-const { openSurface, state } = vi.hoisted(() => ({
-	openSurface: vi.fn(),
+const { state } = vi.hoisted(() => ({
 	// A mutable harness: `locale` drives the i18n mock, `network` is the live
 	// store payload (null = stood-down live tier). Tests flip these per case.
 	state: {
@@ -30,6 +28,23 @@ const { openSurface, state } = vi.hoisted(() => ({
 		network: null as NetworkFile | null,
 	},
 }));
+const createLiveStoreSpy = vi.hoisted(() => vi.fn());
+let homeIntersectionCallback: IntersectionObserverCallback | undefined;
+
+class HomeIntersectionObserverStub {
+	readonly root = null;
+	readonly rootMargin = '0px';
+	readonly thresholds = [0];
+	constructor(next: IntersectionObserverCallback) {
+		homeIntersectionCallback = next;
+	}
+	observe() {}
+	unobserve() {}
+	disconnect() {}
+	takeRecords() {
+		return [];
+	}
+}
 
 const manifest = {
 	provider: 'demo',
@@ -54,7 +69,9 @@ vi.mock('$lib/i18n', async () => {
 });
 
 vi.mock('$lib/nav', async () => {
-	return { openSurface };
+	const { routeFor } =
+		await vi.importActual<typeof import('$lib/nav/intent.svelte')>('$lib/nav/intent.svelte');
+	return { routeFor };
 });
 
 vi.mock('$lib/v1', async () => {
@@ -70,22 +87,25 @@ vi.mock('$lib/v1', async () => {
 	return {
 		otpVerdict,
 		getV1Context: () => ({ manifest, labels: {}, lang: state.locale }),
-		createLiveStore: () => ({
-			vehicles: null,
-			trips: null,
-			departures: null,
-			alerts: null,
-			network: state.network,
-			index: emptyLiveIndex(),
-			generatedUtc: state.network?.generated_utc ?? null,
-			ageSeconds: state.network ? 12 : null,
-			isStale: false,
-			loading: false,
-			error: null,
-			start: vi.fn(),
-			stop: vi.fn(),
-			refresh: vi.fn(),
-		}),
+		createLiveStore: (actualManifest: unknown, options?: unknown) => {
+			createLiveStoreSpy(actualManifest, options);
+			return {
+				vehicles: null,
+				trips: null,
+				departures: null,
+				alerts: null,
+				network: state.network,
+				index: emptyLiveIndex(),
+				generatedUtc: state.network?.generated_utc ?? null,
+				ageSeconds: state.network ? 12 : null,
+				isStale: false,
+				loading: false,
+				error: null,
+				start: vi.fn(),
+				stop: vi.fn(),
+				refresh: vi.fn(),
+			};
+		},
 	};
 });
 
@@ -105,10 +125,51 @@ const liveNetwork: NetworkFile = {
 afterEach(() => {
 	state.locale = 'en';
 	state.network = null;
-	openSurface.mockClear();
+	createLiveStoreSpy.mockClear();
+	homeIntersectionCallback = undefined;
+	vi.unstubAllGlobals();
 });
 
 describe('Home hub — identity + what-this-is', () => {
+	it('requests only the live families this surface reads', () => {
+		render(Page);
+
+		expect(createLiveStoreSpy).toHaveBeenCalledWith(manifest, {
+			families: ['vehicles', 'network'],
+		});
+	});
+
+	it('keeps the mobile intro in the first viewport and seats the control room after its divider', () => {
+		const { container } = render(Page);
+		const intro = container.querySelector('[data-slot="home-hero-intro"]') as HTMLElement;
+		const divider = container.querySelector(
+			'[data-slot="home-mobile-hero-divider"]',
+		) as HTMLElement;
+		const controlRoom = container.querySelector('[data-slot="home-control-room"]') as HTMLElement;
+
+		expect(intro).not.toBeNull();
+		expect(divider).not.toBeNull();
+		expect(controlRoom).not.toBeNull();
+		expect(intro.compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(
+			divider.compareDocumentPosition(controlRoom) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/routes/[[lang=locale]]/+page.svelte'),
+			'utf8',
+		);
+		expect(source).toMatch(
+			/\.hero-left\s*\{[\s\S]*?min-height:\s*calc\(100svh - var\(--chrome-offset\)\)/,
+		);
+		expect(source).toMatch(
+			/\.hero-spine\s*\{[\s\S]*?height:\s*1px[\s\S]*?linear-gradient\(\s*90deg/,
+		);
+		expect(source).toMatch(
+			/@media \(min-width: 1024px\)[\s\S]*?\.hero-spine\s*\{[\s\S]*?width:\s*1px[\s\S]*?linear-gradient\(\s*180deg/,
+		);
+	});
+
 	it('renders the two-line THESIS as the page heading, with the identity in the kicker', () => {
 		render(Page);
 		// P5-R R1: the h1 is the thesis (line 2 is the --primary accent), not the
@@ -230,10 +291,26 @@ describe('Home hub — explore everything wayfinding', () => {
 		expect(within(nav).getByText(/See it moving, know when it comes/i)).toBeInTheDocument();
 	});
 
-	it('routes a primary surface tile through openSurface', async () => {
+	it('renders primary surfaces as native localized links', () => {
 		render(Page);
-		await fireEvent.click(screen.getByRole('button', { name: /Live map/i }));
-		expect(openSurface).toHaveBeenCalledExactlyOnceWith({ kind: 'map' });
+		const nav = screen.getByRole('navigation', { name: /explore everything/i });
+		expect(within(nav).getByRole('link', { name: /Live map/i })).toHaveAttribute('href', '/map');
+		expect(within(nav).getByRole('link', { name: /The record Lines/i })).toHaveAttribute(
+			'href',
+			'/lines',
+		);
+		expect(within(nav).getByRole('link', { name: /Live now Stops/i })).toHaveAttribute(
+			'href',
+			'/stops',
+		);
+		expect(within(nav).getByRole('link', { name: /Live now Network health/i })).toHaveAttribute(
+			'href',
+			'/network',
+		);
+		expect(within(nav).getByRole('link', { name: /Live now Search/i })).toHaveAttribute(
+			'href',
+			'/search',
+		);
 	});
 
 	it('renders reference surfaces as localized <a> links (accountability + trust)', () => {
@@ -253,18 +330,44 @@ describe('Home hub — explore everything wayfinding', () => {
 
 	it('exposes every surface so the hub no longer hides the audit pages', () => {
 		render(Page);
-		// 5 primary surfaces are interactive buttons (map, lines, stops, network, search).
-		// 6 reference surfaces are links (4 accountability + how-we-measure + data-health).
-		// The page's interactive entries must cover the full surface inventory.
+		// All 11 destinations are native links, including the five primary surfaces.
+		// This preserves navigation before hydration, crawler discovery, and open-in-new-tab.
 		const buttons = screen.getAllByRole('button').filter((b) => b.classList.contains('hub-tile'));
 		const links = screen.getAllByRole('link').filter((a) => a.classList.contains('hub-tile'));
-		expect(buttons).toHaveLength(5);
-		expect(links).toHaveLength(6);
+		expect(buttons).toHaveLength(0);
+		expect(links).toHaveLength(11);
 	});
 });
 
 describe('Home hub — wayfinding v2 (informational pillars + filter rail)', () => {
-	it('opts both home filter facets into spacious density while retaining the 19rem rail and smaller legible paragraph', () => {
+	it('shows the mobile filters only while the stable Explore region is in view', async () => {
+		vi.stubGlobal('IntersectionObserver', HomeIntersectionObserverStub);
+		const { container } = render(Page);
+		const explore = container.querySelector('[data-slot="home-explore"]') as HTMLElement;
+
+		expect(explore).not.toBeNull();
+		expect(container.querySelector('[data-slot="surface-rail-mobile"]')).toBeNull();
+
+		homeIntersectionCallback?.(
+			[{ target: explore, isIntersecting: true } as unknown as IntersectionObserverEntry],
+			{} as IntersectionObserver,
+		);
+		await vi.waitFor(() =>
+			expect(container.querySelector('[data-slot="surface-rail-mobile"]')).not.toBeNull(),
+		);
+		expect(screen.getByText('11 destinations')).toBeInTheDocument();
+
+		homeIntersectionCallback?.(
+			[{ target: explore, isIntersecting: false } as unknown as IntersectionObserverEntry],
+			{} as IntersectionObserver,
+		);
+		await vi.waitFor(() =>
+			expect(container.querySelector('[data-slot="surface-rail-mobile"]')).toBeNull(),
+		);
+		expect(screen.queryByText('11 destinations')).toBeNull();
+	});
+
+	it('keeps the home paragraphs calm while retaining spacious filters and the 19rem rail', () => {
 		const { container } = render(Page);
 		const question = screen.getByRole('radio', { name: 'Where’s my bus?' });
 		const kind = screen.getByRole('radio', { name: 'The record' });
@@ -277,7 +380,10 @@ describe('Home hub — wayfinding v2 (informational pillars + filter rail)', () 
 		expect(src.match(/density="spacious"/g)).toHaveLength(2);
 		expect(src).toMatch(/grid-template-columns:\s*19rem\s+minmax\(0,\s*1fr\)/);
 		expect(src).toMatch(
-			/\.what-body\s*\{[\s\S]*?font-size:\s*var\(--text-subheading\)[\s\S]*?line-height:\s*1\.65/,
+			/\.what-body\s*\{[\s\S]*?font-size:\s*var\(--text-body\)[\s\S]*?line-height:\s*1\.65/,
+		);
+		expect(src).toMatch(
+			/\.hero-lede\s*\{[\s\S]*?font-size:\s*var\(--text-body\)[\s\S]*?line-height:\s*1\.65/,
 		);
 		expect(container.querySelector('.what-body')).toHaveClass('what-body');
 	});
@@ -295,14 +401,14 @@ describe('Home hub — wayfinding v2 (informational pillars + filter rail)', () 
 		}
 	});
 
-	it('reserves the filter rail: both facets render with the full-count summary', () => {
+	it('reserves the filter rail: both facets render before the mobile pill becomes relevant', () => {
 		render(Page);
 		// The two facet radiogroups are present in the default (unfiltered) view —
 		// the rail space is reserved, not conjured on demand.
 		expect(screen.getByRole('radio', { name: 'Where’s my bus?' })).toBeInTheDocument();
 		expect(screen.getByRole('radio', { name: 'The record' })).toBeInTheDocument();
-		// All 11 destinations count into the pill summary before any filtering.
-		expect(screen.getAllByText('11 destinations').length).toBeGreaterThanOrEqual(1);
+		// The pill itself is intentionally absent until Explore enters the viewport.
+		expect(screen.queryByText('11 destinations')).toBeNull();
 	});
 
 	it('filters to ONE group when a rider question is picked', async () => {
@@ -324,25 +430,31 @@ describe('Home hub — wayfinding v2 (informational pillars + filter rail)', () 
 		const nav = screen.getByRole('navigation', { name: /explore everything/i });
 		// Live-only surfaces drop out, record surfaces stay, and the all-method
 		// group hides whole rather than standing as an empty heading.
-		expect(within(nav).queryByRole('button', { name: /Live map/i })).toBeNull();
+		expect(within(nav).queryByRole('link', { name: /Live map/i })).toBeNull();
 		expect(within(nav).getByRole('link', { name: /Repeat offenders/i })).toBeInTheDocument();
 		expect(within(nav).queryByRole('heading', { name: 'Behind the numbers' })).toBeNull();
 		// Clear restores the four-group default view.
 		await fireEvent.click(screen.getByRole('button', { name: /clear filters/i }));
 		expect(within(nav).getByRole('heading', { name: 'Behind the numbers' })).toBeInTheDocument();
-		expect(within(nav).getByRole('button', { name: /Live map/i })).toBeInTheDocument();
+		expect(within(nav).getByRole('link', { name: /Live map/i })).toBeInTheDocument();
 	});
 
 	it('shows an honest empty state when the two facets intersect to nothing', async () => {
 		render(Page);
 		await fireEvent.click(screen.getByRole('radio', { name: 'Where’s my bus?' }));
 		await fireEvent.click(screen.getByRole('radio', { name: 'The record' }));
-		expect(screen.getByText(/nothing matches these filters/i)).toBeInTheDocument();
+		const message = screen.getByText(/nothing matches these filters/i);
+		expect(message).toBeInTheDocument();
+		expect(message.closest('[data-component="state-notice"]')).toHaveAttribute(
+			'data-presentation',
+			'silo',
+		);
 	});
 
 	it('tags every card with its KIND in the same words as the rail facet', () => {
 		render(Page);
-		const mapTile = screen.getByRole('button', { name: /Live map/i });
+		const nav = screen.getByRole('navigation', { name: /explore everything/i });
+		const mapTile = within(nav).getByRole('link', { name: /Live map/i });
 		expect(within(mapTile).getByText('Live now')).toBeInTheDocument();
 		const receiptTile = screen.getByRole('link', { name: /Daily receipt/i });
 		expect(within(receiptTile).getByText('The record')).toBeInTheDocument();

@@ -1,5 +1,7 @@
 import { render, screen, within, fireEvent, waitFor, act } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { RepeatOffenders as RepeatOffendersData, IsoUtc } from '$lib/v1/schemas';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
@@ -83,6 +85,12 @@ vi.mock('./selectors/offenderLadder', async (importOriginal) => {
 
 import RepeatOffenders from './RepeatOffenders.svelte';
 import { copy as repeatCopy } from './repeatOffenders.copy';
+
+const source = () =>
+	readFileSync(
+		resolve(process.cwd(), 'src/lib/features/repeat-offenders/RepeatOffenders.svelte'),
+		'utf-8',
+	);
 
 const GENERATED = '2026-06-20T02:00:00Z' as IsoUtc;
 let reconciliationIntersectionCallback: IntersectionObserverCallback | undefined;
@@ -1006,5 +1014,25 @@ describe('RepeatOffenders — legacy fallback ledger (by_grain absent)', () => {
 		expect(
 			screen.queryByRole('list', { name: /ranked by average delay/i }),
 		).not.toBeInTheDocument();
+	});
+});
+
+describe('RepeatOffenders canonical article-control stack', () => {
+	it('orders date, primary grain, Show, and caption before the section ToC', () => {
+		const component = source();
+		const tag = component.match(/<ArticleControlStack[\s\S]*?\/>/)?.[0] ?? '';
+		const primary =
+			component.match(/{#snippet primaryControls\(\)}([\s\S]*?){\/snippet}/)?.[1] ?? '';
+
+		expect(tag).not.toBe('');
+		expect(tag.indexOf('history=')).toBeLessThan(tag.indexOf('primary='));
+		expect(tag.indexOf('primary=')).toBeLessThan(tag.indexOf('secondary='));
+		expect(tag.indexOf('secondary=')).toBeLessThan(tag.indexOf('caption='));
+		expect(primary).toContain('variant="time-grid"');
+		expect(component.indexOf('data-slot="section-toc"')).toBeGreaterThan(
+			component.indexOf('<ArticleControlStack'),
+		);
+		expect(component).not.toMatch(/class=["']repeat-control-body/);
+		expect(component).not.toMatch(/\.repeat-control-body\s*\{/);
 	});
 });

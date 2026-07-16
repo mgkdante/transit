@@ -1,5 +1,7 @@
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { Hotspots, IsoUtc } from '$lib/v1/schemas';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
@@ -88,6 +90,9 @@ vi.mock('./selectors/hotspotLadder', async (importOriginal) => {
 });
 
 import HotspotsBoard from './HotspotsBoard.svelte';
+
+const source = () =>
+	readFileSync(resolve(process.cwd(), 'src/lib/features/hotspots/HotspotsBoard.svelte'), 'utf-8');
 import { copy as hotspotsCopy } from './hotspots.copy';
 
 // A populated day ladder (both kinds + one tray) and a populated week ladder, so
@@ -480,9 +485,10 @@ describe('HotspotsBoard article', () => {
 		expect(within(rail).queryByRole('button', { name: 'Stops' })).toBeNull();
 	});
 
-	it('puts two rail disclosures, grain, useful top-N, window, and TOC in one mobile sheet', async () => {
+	it('moves one rail with two disclosures, grain, useful top-N, window, and TOC into the mobile sheet', async () => {
 		payload.current = largeSeed();
 		const { container } = render(HotspotsBoard);
+		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		expect(container.querySelectorAll('[data-slot="surface-rail-mobile"]')).toHaveLength(1);
 		expect(container.querySelector('[data-slot="toc-pill"]')).toBeNull();
 
@@ -491,6 +497,7 @@ describe('HotspotsBoard article', () => {
 		await fireEvent.click(pill);
 		const sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
 		expect(sheet).not.toBeNull();
+		expect(sheet.querySelector('[data-slot="surface-rail"]')).toBe(rail);
 		expect(within(sheet).getByRole('button', { name: 'View controls' })).toBeInTheDocument();
 		expect(within(sheet).getByRole('button', { name: 'On this page' })).toBeInTheDocument();
 		expect(
@@ -505,13 +512,12 @@ describe('HotspotsBoard article', () => {
 		const reasonIds = Array.from(
 			container.querySelectorAll<HTMLElement>('[data-slot="controls-reason"]'),
 		).map((reason) => reason.id);
-		expect(reasonIds).toHaveLength(4);
-		expect(new Set(reasonIds)).toHaveLength(4);
-		expect(reasonIds.some((id) => id.endsWith('-desktop'))).toBe(true);
-		expect(reasonIds.some((id) => id.endsWith('-mobile'))).toBe(true);
+		expect(reasonIds).toHaveLength(2);
+		expect(new Set(reasonIds)).toHaveLength(2);
+		expect(reasonIds.every((id) => /-(?:desktop|mobile)$/.test(id))).toBe(true);
 	});
 
-	it('keeps rail disclosures independent, persisted, and synchronized across presentations', async () => {
+	it('keeps rail disclosures independent and persisted while moving the live rail', async () => {
 		const { container } = render(HotspotsBoard);
 		const desktop = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		const controls = within(desktop).getByRole('button', { name: 'View controls' });
@@ -531,6 +537,8 @@ describe('HotspotsBoard article', () => {
 		let sheet = mobile.querySelector('[role="dialog"]') as HTMLElement;
 		let mobileControls = within(sheet).getByRole('button', { name: 'View controls' });
 		let mobileToc = within(sheet).getByRole('button', { name: 'On this page' });
+		expect(mobileControls).toBe(controls);
+		expect(mobileToc).toBe(toc);
 		expect(mobileControls).toHaveAttribute('aria-expanded', 'false');
 		expect(mobileToc).toHaveAttribute('aria-expanded', 'false');
 
@@ -649,6 +657,9 @@ describe('HotspotsBoard article', () => {
 		);
 
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		const controls = within(rail).getByRole('button', { name: 'View controls' });
+		expect(controls).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(controls);
 		const day = within(rail)
 			.getAllByRole('radio')
 			.find((radio) => radio.textContent?.trim() === 'Day');
@@ -820,5 +831,25 @@ describe('HotspotsBoard article', () => {
 		expect(container.querySelector('[data-slot="active-window"]')).toBeNull();
 		expect(container.querySelectorAll('[data-toc^="hotspots-"]')).toHaveLength(0);
 		expect(container.querySelectorAll('table.sr-only tbody tr')).toHaveLength(0);
+	});
+});
+
+describe('HotspotsBoard canonical article-control stack', () => {
+	it('orders date, primary grain, Show, and caption before the section ToC', () => {
+		const component = source();
+		const tag = component.match(/<ArticleControlStack[\s\S]*?\/>/)?.[0] ?? '';
+		const primary =
+			component.match(/{#snippet primaryControls\(\)}([\s\S]*?){\/snippet}/)?.[1] ?? '';
+
+		expect(tag).not.toBe('');
+		expect(tag.indexOf('history=')).toBeLessThan(tag.indexOf('primary='));
+		expect(tag.indexOf('primary=')).toBeLessThan(tag.indexOf('secondary='));
+		expect(tag.indexOf('secondary=')).toBeLessThan(tag.indexOf('caption='));
+		expect(primary).toContain('variant="time-grid"');
+		expect(component.indexOf('data-slot="section-toc"')).toBeGreaterThan(
+			component.indexOf('<ArticleControlStack'),
+		);
+		expect(component).not.toMatch(/class=["']hotspots-control-body/);
+		expect(component).not.toMatch(/\.hotspots-control-body\s*\{/);
 	});
 });

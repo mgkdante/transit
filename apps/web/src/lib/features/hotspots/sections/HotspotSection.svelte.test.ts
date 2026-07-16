@@ -141,10 +141,6 @@ function renderSection() {
 	});
 }
 
-function cssRule(source: string, selector: RegExp): string {
-	return source.match(new RegExp(`${selector.source}\\s*\\{([^}]*)\\}`, selector.flags))?.[1] ?? '';
-}
-
 describe('HotspotSection evidence presentation', () => {
 	beforeEach(() => {
 		resizeObservers.length = 0;
@@ -183,40 +179,40 @@ describe('HotspotSection evidence presentation', () => {
 		expect(zeroRow.querySelector('[data-slot="absent-value"]')).toBeNull();
 	});
 
-	it('keeps a non-overflowing chart viewport out of the tab order and accessibility tree', () => {
+	it('uses the shared dense chart viewport and keeps fitting output out of the tab order', () => {
 		const { container } = renderSection();
 		const viewport = container.querySelector<HTMLElement>(
-			'[data-slot="hotspot-chart-viewport"]',
+			'[data-slot="chart-viewport"]',
 		) as HTMLElement;
+		const output = container.querySelector('[data-slot="chart-output"]');
 		expect(viewport).not.toBeNull();
 		expect(viewport).not.toHaveAttribute('role');
 		expect(viewport).not.toHaveAttribute('aria-label');
 		expect(viewport).not.toHaveAttribute('tabindex');
 		expect(viewport.children).toHaveLength(1);
-		expect(viewport.firstElementChild).toHaveAttribute('data-slot', 'hotspot-chart-canvas');
-		expect(viewport.querySelector('[data-slot="hotspot-window"]')).toBeNull();
-		expect(viewport.querySelector('[data-slot="hotspot-tray-table"]')).toBeNull();
+		expect(viewport.firstElementChild).toHaveAttribute('data-slot', 'chart-canvas');
+		expect(output).toHaveAttribute('data-chart-layout', 'dense');
+		expect(output?.querySelector('[data-slot="hotspot-window"]')).toBeNull();
+		expect(output?.querySelector('[data-slot="hotspot-tray-table"]')).toBeNull();
 		expect(container.querySelector('[data-slot="hotspot-window"]')).not.toBeNull();
 		expect(container.querySelector('[data-slot="hotspot-tray-table"]')).not.toBeNull();
-		expect(container.querySelector('[data-slot="hotspot-chart-shell"]')).toHaveAttribute(
-			'data-more-end',
-			'false',
-		);
+		expect(output).toHaveAttribute('data-more-end', 'false');
+		expect(container.querySelector('[data-slot="hotspot-chart-viewport"]')).toBeNull();
 	});
 
-	it('marks the chart viewport as a data-card-interactive boundary', () => {
+	it('inherits the shared chart output interaction boundary', () => {
 		const { container } = renderSection();
-		const viewport = container.querySelector('[data-slot="hotspot-chart-viewport"]');
+		const output = container.querySelector('[data-slot="chart-output"]');
 
-		expect(viewport).toHaveAttribute('data-card-interactive');
+		expect(output).toHaveAttribute('data-card-interactive');
 	});
 
 	it('adds keyboard semantics only for real overflow and hides the cue at the right edge', async () => {
 		const view = renderSection();
 		const viewport = view.container.querySelector<HTMLElement>(
-			'[data-slot="hotspot-chart-viewport"]',
+			'[data-slot="chart-viewport"]',
 		) as HTMLElement;
-		const shell = view.container.querySelector('[data-slot="hotspot-chart-shell"]');
+		const output = view.container.querySelector('[data-slot="chart-output"]');
 		const layout = mockHorizontalLayout(viewport, { clientWidth: 320, scrollWidth: 768 });
 		const observer = observerFor(viewport);
 		expect(observer).toBeDefined();
@@ -225,12 +221,12 @@ describe('HotspotSection evidence presentation', () => {
 
 		expect(within(view.container).getByRole('region', { name: chartScrollLabel })).toBe(viewport);
 		expect(viewport).toHaveAttribute('tabindex', '0');
-		expect(shell).toHaveAttribute('data-more-end', 'true');
+		expect(output).toHaveAttribute('data-more-end', 'true');
 
 		layout.scrollTo(448);
 		await fireEvent.scroll(viewport);
 		await tick();
-		expect(shell).toHaveAttribute('data-more-end', 'false');
+		expect(output).toHaveAttribute('data-more-end', 'false');
 
 		layout.resize({ clientWidth: 768, scrollWidth: 768 });
 		observer?.trigger();
@@ -238,38 +234,24 @@ describe('HotspotSection evidence presentation', () => {
 		expect(viewport).not.toHaveAttribute('role');
 		expect(viewport).not.toHaveAttribute('aria-label');
 		expect(viewport).not.toHaveAttribute('tabindex');
-		expect(shell).toHaveAttribute('data-more-end', 'false');
+		expect(output).toHaveAttribute('data-more-end', 'false');
 
 		await view.unmount();
 		expect(observer?.disconnect).toHaveBeenCalledTimes(1);
 	});
 
-	it('limits the 48rem chart floor and horizontal containment to the responsive viewport', () => {
+	it('contains no feature-local viewport measurement or overflow CSS', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/hotspots/sections/HotspotSection.svelte'),
 			'utf-8',
 		);
-		const mobileStart = source.indexOf('@media (max-width: 1023px)');
-		expect(mobileStart).toBeGreaterThan(-1);
-		const desktop = source.slice(0, mobileStart);
-		const mobile = source.slice(mobileStart);
-		expect(source.match(/min-width:\s*48rem/g)).toHaveLength(1);
-		expect(source.indexOf('min-width: 48rem')).toBeGreaterThan(mobileStart);
-		expect(cssRule(desktop, /\.hotspot-section/)).toMatch(/min-width:\s*0/);
-		expect(cssRule(desktop, /\.hotspot-chart-viewport/)).toMatch(/overflow-x:\s*visible/);
-
-		const viewportRule = cssRule(mobile, /\.hotspot-chart-viewport/);
-		expect(viewportRule).toMatch(/max-width:\s*100%/);
-		expect(viewportRule).toMatch(/overflow-x:\s*auto/);
-		expect(viewportRule).toMatch(/scrollbar-width:\s*thin/);
-		expect(viewportRule).toMatch(/overscroll-behavior-inline:\s*contain/);
-		expect(viewportRule).toMatch(/touch-action:\s*pan-x pan-y/);
-		expect(cssRule(mobile, /\.hotspot-chart-canvas/)).toMatch(/min-width:\s*48rem/);
-		expect(cssRule(desktop, /\.hotspot-chart-viewport:focus-visible/)).toMatch(
-			/outline:\s*2px solid var\(--ring\)/,
-		);
-		expect(cssRule(mobile, /\.hotspot-chart-shell\[data-more-end='true'\]::after/)).toMatch(
-			/pointer-events:\s*none/,
+		expect(source).not.toContain('measureChartOverflow');
+		expect(source).not.toContain('ResizeObserver');
+		expect(source).not.toContain('hotspot-chart-viewport');
+		expect(source).not.toContain('hotspot-chart-canvas');
+		expect(source).not.toMatch(/min-width:\s*48rem/);
+		expect(source).toMatch(
+			/<Chart\s+spec=\{ladder\.spec\}\s+scrollLabel=\{chartScrollLabel\}\s*\/>/,
 		);
 	});
 });

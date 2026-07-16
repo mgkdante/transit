@@ -7,7 +7,8 @@ Svelte 5 (runes) deployed as a **Cloudflare Worker** (Static Assets) at
 - **Package manager:** `bun` — `apps/web` is a member of the root **bun + turbo**
   workspace (the Python pipeline in `../db` is uv-managed; `../data-proxy` shares the
   root `bun.lock`). Run `bun install` once at the repo root.
-- **Reads only** the versioned `/v1` R2 snapshot contract over HTTP (never the DB).
+- **Reads only** the versioned `/v1` R2 snapshot contract (direct R2 custom
+  domain in browsers, direct bucket binding in SSR; never the DB).
 
 ## Commands
 

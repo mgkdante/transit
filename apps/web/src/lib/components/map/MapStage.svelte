@@ -367,6 +367,7 @@
 	.map-stage :global(.maplibregl-ctrl-bottom-right) {
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
 		bottom: 1rem;
+		max-width: calc(100% - var(--map-detail-offset, 0rem) - 2rem);
 		z-index: 12;
 		transition: right var(--duration-normal) var(--ease-out);
 	}
@@ -376,13 +377,13 @@
 		color: var(--muted-foreground);
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
-		/* Wide enough for the one-line credit; capped to the visible map gap. */
-		max-width: min(32rem, calc(100vw - var(--map-detail-offset, 0rem) - 1.5rem));
+		box-sizing: border-box;
+		max-width: min(32rem, 100%);
 	}
 
-	/* The basemap credit stays on a SINGLE line — never wraps. */
 	.map-stage :global(.maplibregl-ctrl-attrib-inner) {
-		white-space: nowrap;
+		white-space: normal;
+		overflow-wrap: anywhere;
 	}
 
 	.map-stage :global(.maplibregl-ctrl-attrib a) {
@@ -399,11 +400,11 @@
 		.map-stage :global(.maplibregl-ctrl-bottom-right) {
 			right: 0.75rem;
 			bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-			max-width: calc(100vw - 5.25rem);
+			max-width: calc(100% - 1.5rem);
 		}
 
 		.map-stage :global(.maplibregl-ctrl-attrib) {
-			max-width: calc(100vw - 5.25rem);
+			max-width: 100%;
 			line-height: 1.25;
 		}
 
@@ -415,7 +416,7 @@
 		}
 
 		.map-stage :global(.maplibregl-ctrl-attrib.maplibregl-compact-show) {
-			max-width: calc(100vw - 5.25rem);
+			max-width: 100%;
 		}
 	}
 </style>

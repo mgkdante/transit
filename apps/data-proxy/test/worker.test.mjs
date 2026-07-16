@@ -10,7 +10,15 @@ import worker from "../src/worker.js";
 const BASE = "https://transit.yesid.dev";
 
 class FakeR2Object {
-  constructor({ body, etag, contentType, cacheControl, size, range }) {
+  constructor({
+    body,
+    etag,
+    contentType,
+    cacheControl,
+    size,
+    range,
+    uploaded,
+  }) {
     this.body = body;
     this.etag = etag;
     this.contentType = contentType;
@@ -19,6 +27,7 @@ class FakeR2Object {
     // {offset,length} slice. Default size to the (string) body length.
     this.size = size ?? (typeof body === "string" ? body.length : undefined);
     this.range = range;
+    this.uploaded = uploaded ?? new Date("2026-07-15T12:00:00Z");
   }
 
   get httpEtag() {
@@ -37,6 +46,7 @@ class FakeR2Object {
       contentType: this.contentType,
       cacheControl: this.cacheControl,
       size: this.size,
+      uploaded: this.uploaded,
     });
   }
 }
@@ -55,9 +65,18 @@ class FakeR2Bucket {
     const object = this.objects.get(key);
     if (!object) return null;
     const onlyIf = options.onlyIf;
+    const ifMatch = onlyIf instanceof Headers ? onlyIf.get("if-match") : null;
+    if (ifMatch !== null && ifMatch.replaceAll('"', "") !== object.etag) {
+      return object.withoutBody();
+    }
     const ifNoneMatch =
-      onlyIf instanceof Headers ? onlyIf.get("if-none-match") : (onlyIf?.etagDoesNotMatch ?? null);
-    if (ifNoneMatch !== null && ifNoneMatch.replaceAll('"', "") === object.etag) {
+      onlyIf instanceof Headers
+        ? onlyIf.get("if-none-match")
+        : (onlyIf?.etagDoesNotMatch ?? null);
+    if (
+      ifNoneMatch !== null &&
+      ifNoneMatch.replaceAll('"', "") === object.etag
+    ) {
       // Precondition failed: the runtime returns R2Object (headers, no body).
       return object.withoutBody();
     }
@@ -70,6 +89,11 @@ class FakeR2Bucket {
       if (match) {
         const offset = Number(match[1]);
         const end = match[2] === "" ? object.size - 1 : Number(match[2]);
+        if (offset >= object.size || end < offset) {
+          throw new Error(
+            "get: The requested range is not satisfiable. (10039)",
+          );
+        }
         const length = end - offset + 1;
         return new FakeR2Object({
           body: object.body.slice(offset, end + 1),
@@ -130,7 +154,12 @@ test("GET missing key returns 404", async () => {
 });
 
 test("GET path outside /data/v1 returns 404", async () => {
-  for (const path of ["/data/secrets.txt", "/data/", "/healthz", "/v1/stm/manifest.json"]) {
+  for (const path of [
+    "/data/secrets.txt",
+    "/data/",
+    "/healthz",
+    "/v1/stm/manifest.json",
+  ]) {
     const response = await fetchWorker(path);
     assert.equal(response.status, 404, `expected 404 for ${path}`);
   }
@@ -138,17 +167,41 @@ test("GET path outside /data/v1 returns 404", async () => {
 
 test("POST returns 405 with Allow GET, HEAD, OPTIONS", async () => {
   for (const method of ["POST", "PUT", "DELETE", "PATCH"]) {
-    const response = await fetchWorker("/data/v1/stm/manifest.json", { method });
+    const response = await fetchWorker("/data/v1/stm/manifest.json", {
+      method,
+    });
     assert.equal(response.status, 405, `expected 405 for ${method}`);
     assert.equal(response.headers.get("allow"), "GET, HEAD, OPTIONS");
   }
 });
 
 test("HEAD returns 200 with headers and empty body", async () => {
-  const response = await fetchWorker("/data/v1/stm/manifest.json", { method: "HEAD" });
+  const response = await fetchWorker("/data/v1/stm/manifest.json", {
+    method: "HEAD",
+  });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("content-type"), "application/json");
   assert.equal(response.headers.get("cache-control"), "public, max-age=30");
+  assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
+  assert.equal(await response.text(), "");
+});
+
+test("conditional HEAD returns 304 when If-None-Match matches", async () => {
+  const response = await fetchWorker("/data/v1/stm/manifest.json", {
+    method: "HEAD",
+    headers: { "if-none-match": '"manifest-rev-7"' },
+  });
+  assert.equal(response.status, 304);
+  assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
+  assert.equal(await response.text(), "");
+});
+
+test("conditional HEAD returns 412 when If-Match fails", async () => {
+  const response = await fetchWorker("/data/v1/stm/manifest.json", {
+    method: "HEAD",
+    headers: { "if-match": '"different-revision"' },
+  });
+  assert.equal(response.status, 412);
   assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
   assert.equal(await response.text(), "");
 });
@@ -162,6 +215,60 @@ test("If-None-Match matching etag returns 304", async () => {
   assert.equal(await response.text(), "");
 });
 
+test("If-Match mismatch returns 412", async () => {
+  const response = await fetchWorker("/data/v1/stm/manifest.json", {
+    headers: { "if-match": '"different-revision"' },
+  });
+  assert.equal(response.status, 412);
+  assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
+  assert.equal(await response.text(), "");
+});
+
+test("satisfied If-Match is evaluated before matching If-None-Match", async () => {
+  for (const method of ["GET", "HEAD"]) {
+    const response = await fetchWorker("/data/v1/stm/manifest.json", {
+      method,
+      headers: {
+        "if-match": '"manifest-rev-7"',
+        "if-none-match": '"manifest-rev-7"',
+      },
+    });
+    assert.equal(response.status, 304, `expected 304 for ${method}`);
+    assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
+    assert.equal(await response.text(), "");
+  }
+});
+
+test("satisfied If-Unmodified-Since is evaluated before matching If-None-Match", async () => {
+  for (const method of ["GET", "HEAD"]) {
+    const response = await fetchWorker("/data/v1/stm/manifest.json", {
+      method,
+      headers: {
+        "if-unmodified-since": "Wed, 15 Jul 2026 12:00:01 GMT",
+        "if-none-match": '"manifest-rev-7"',
+      },
+    });
+    assert.equal(response.status, 304, `expected 304 for ${method}`);
+    assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
+    assert.equal(await response.text(), "");
+  }
+});
+
+test("failed If-Match keeps 412 precedence over If-None-Match", async () => {
+  for (const method of ["GET", "HEAD"]) {
+    const response = await fetchWorker("/data/v1/stm/manifest.json", {
+      method,
+      headers: {
+        "if-match": '"different-revision"',
+        "if-none-match": '"manifest-rev-7"',
+      },
+    });
+    assert.equal(response.status, 412, `expected 412 for ${method}`);
+    assert.equal(response.headers.get("etag"), '"manifest-rev-7"');
+    assert.equal(await response.text(), "");
+  }
+});
+
 test("GET response carries Access-Control-Allow-Origin star", async () => {
   const response = await fetchWorker("/data/v1/stm/static/routes_index.json");
   assert.equal(response.status, 200);
@@ -169,10 +276,15 @@ test("GET response carries Access-Control-Allow-Origin star", async () => {
 });
 
 test("OPTIONS preflight returns 204 with CORS headers", async () => {
-  const response = await fetchWorker("/data/v1/stm/manifest.json", { method: "OPTIONS" });
+  const response = await fetchWorker("/data/v1/stm/manifest.json", {
+    method: "OPTIONS",
+  });
   assert.equal(response.status, 204);
   assert.equal(response.headers.get("access-control-allow-origin"), "*");
-  assert.equal(response.headers.get("access-control-allow-methods"), "GET, HEAD, OPTIONS");
+  assert.equal(
+    response.headers.get("access-control-allow-methods"),
+    "GET, HEAD, OPTIONS",
+  );
   assert.equal(
     response.headers.get("access-control-allow-headers"),
     "If-None-Match, If-Modified-Since, Range",
@@ -186,9 +298,12 @@ test("OPTIONS preflight returns 204 with CORS headers", async () => {
 });
 
 test("GET with Range returns 206 with Content-Range + Accept-Ranges (pmtiles)", async () => {
-  const response = await fetchWorker("/data/v1/stm/static/basemap/montreal.pmtiles", {
-    headers: { Range: "bytes=0-99" },
-  });
+  const response = await fetchWorker(
+    "/data/v1/stm/static/basemap/montreal.pmtiles",
+    {
+      headers: { Range: "bytes=0-99" },
+    },
+  );
   assert.equal(response.status, 206);
   assert.equal(response.headers.get("content-range"), "bytes 0-99/200");
   assert.equal(response.headers.get("content-length"), "100");
@@ -197,8 +312,23 @@ test("GET with Range returns 206 with Content-Range + Accept-Ranges (pmtiles)", 
   assert.equal((await response.text()).length, 100);
 });
 
+test("GET with an unsatisfiable Range returns a controlled 416", async () => {
+  const response = await fetchWorker(
+    "/data/v1/stm/static/basemap/montreal.pmtiles",
+    {
+      headers: { Range: "bytes=999-1000" },
+    },
+  );
+  assert.equal(response.status, 416);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("access-control-allow-origin"), "*");
+  assert.equal(await response.text(), "");
+});
+
 test("GET without Range still returns 200 with full body + Accept-Ranges", async () => {
-  const response = await fetchWorker("/data/v1/stm/static/basemap/montreal.pmtiles");
+  const response = await fetchWorker(
+    "/data/v1/stm/static/basemap/montreal.pmtiles",
+  );
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("accept-ranges"), "bytes");
   assert.equal(response.headers.get("content-range"), null);
@@ -206,9 +336,12 @@ test("GET without Range still returns 200 with full body + Accept-Ranges", async
 });
 
 test("HEAD advertises Accept-Ranges", async () => {
-  const response = await fetchWorker("/data/v1/stm/static/basemap/montreal.pmtiles", {
-    method: "HEAD",
-  });
+  const response = await fetchWorker(
+    "/data/v1/stm/static/basemap/montreal.pmtiles",
+    {
+      method: "HEAD",
+    },
+  );
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("accept-ranges"), "bytes");
   assert.equal(await response.text(), "");
@@ -229,7 +362,9 @@ test("error responses are not cacheable and still carry CORS", async () => {
   assert.equal(missing.headers.get("cache-control"), "no-store");
   assert.equal(missing.headers.get("access-control-allow-origin"), "*");
 
-  const rejected = await fetchWorker("/data/v1/stm/manifest.json", { method: "POST" });
+  const rejected = await fetchWorker("/data/v1/stm/manifest.json", {
+    method: "POST",
+  });
   assert.equal(rejected.headers.get("cache-control"), "no-store");
   assert.equal(rejected.headers.get("access-control-allow-origin"), "*");
 

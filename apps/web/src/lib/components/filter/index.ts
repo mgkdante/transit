@@ -1,7 +1,7 @@
-// $lib/components/filter — the shared single-select filter family.
-// FilterGroup (controlled button group + "All") + FilterSummary (count + clear).
-// Ported from yesid.dev; both are controlled (no URL/state ownership) — the
-// consuming surface passes the current selection + callbacks.
+// $lib/components/filter — shared controlled groups, summaries, and listing rails.
 
 export { default as FilterGroup } from './FilterGroup.svelte';
 export { default as FilterSummary } from './FilterSummary.svelte';
+export { default as ListingFilterPanel } from './ListingFilterPanel.svelte';
+export { default as ListingFilterSection } from './ListingFilterSection.svelte';
+export { default as ListingSearchField } from './ListingSearchField.svelte';

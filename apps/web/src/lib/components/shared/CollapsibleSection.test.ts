@@ -63,6 +63,25 @@ describe('CollapsibleSection', () => {
 		expect(body?.getAttribute('data-state')).toBe('closed');
 	});
 
+	it('keeps closed content mounted but inert and hidden from assistive technology', async () => {
+		const { container } = render(CollapsibleSection, {
+			props: { title: 'Safe disclosure', open: false, collapsible: true, children: bodyContent },
+		});
+		const button = container.querySelector('button.section-header') as HTMLButtonElement;
+		const content = container.querySelector('.collapsible-content') as HTMLElement;
+		const childAction = container.querySelector('[data-testid="body-button"]');
+
+		expect(childAction).toBeInTheDocument();
+		expect(content).toHaveAttribute('data-state', 'closed');
+		expect(content).toHaveAttribute('inert');
+		expect(content).toHaveAttribute('aria-hidden', 'true');
+
+		await fireEvent.click(button);
+		expect(content).toHaveAttribute('data-state', 'open');
+		expect(content).not.toHaveAttribute('inert');
+		expect(content).not.toHaveAttribute('aria-hidden');
+	});
+
 	it('renders as a static div (not a button) when collapsible is false', () => {
 		const { container } = render(CollapsibleSection, {
 			props: { title: 'Static', open: true, collapsible: false },
@@ -85,9 +104,109 @@ describe('CollapsibleSection', () => {
 		const card = container.querySelector('.section-card') as HTMLElement;
 		expect(card.getAttribute('data-toc')).toBe('overview');
 	});
+
+	it('keeps the default disclosure chevron as the final centered visual with or without a mark', () => {
+		const icon = createRawSnippet(() => ({
+			render: () => '<svg data-testid="section-icon" aria-hidden="true"></svg>',
+		}));
+		for (const markProps of [{}, { index: 0 }, { icon }]) {
+			const view = render(CollapsibleSection, {
+				props: { title: 'Default heading', ...markProps },
+			});
+			const trigger = view.container.querySelector('button.section-header') as HTMLButtonElement;
+			const chevron = trigger.querySelector('[data-slot="chevron-toggle"]');
+
+			expect(trigger).toHaveClass('items-center');
+			expect(trigger.lastElementChild).toBe(chevron);
+			expect(chevron).toHaveAttribute('aria-hidden', 'true');
+			view.unmount();
+		}
+	});
 });
 
 describe('CollapsibleSection - article summary header', () => {
+	it('renders interactive header actions beside, never inside, the disclosure button', async () => {
+		const headerActions = createRawSnippet(() => ({
+			render: () => '<button type="button" data-testid="metric-info">Metric info</button>',
+		}));
+		const { container, getByTestId } = render(CollapsibleSection, {
+			props: {
+				title: 'Daily trend',
+				headerVariant: 'article-summary',
+				headerActions,
+			},
+		});
+		const disclosure = container.querySelector('button.section-header') as HTMLButtonElement;
+		const action = getByTestId('metric-info');
+
+		expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+		expect(disclosure.contains(action)).toBe(false);
+		expect(action.closest('[data-card-interactive]')).toBeInTheDocument();
+		await fireEvent.click(action);
+		expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+	});
+
+	it('keeps the article-summary chevron in the final row column after optional actions', () => {
+		const actions = createRawSnippet(() => ({
+			render: () => '<button type="button" data-testid="header-action">Inspect</button>',
+		}));
+		const icon = createRawSnippet(() => ({
+			render: () => '<svg data-testid="section-icon" aria-hidden="true"></svg>',
+		}));
+		for (const variant of [
+			{},
+			{ headerActions: actions },
+			{ headerActions: actions, index: 0 },
+			{ headerActions: actions, icon },
+		]) {
+			const view = render(CollapsibleSection, {
+				props: {
+					title: 'Connected heading',
+					headerVariant: 'article-summary',
+					...variant,
+				},
+			});
+			const row = view.container.querySelector('.section-heading-row') as HTMLElement;
+			const disclosure = row.querySelector('button[data-section-trigger]') as HTMLButtonElement;
+			const chevron = row.querySelector('[data-slot="chevron-toggle"]') as SVGElement;
+
+			expect(row.lastElementChild).toBe(chevron.parentElement);
+			expect(chevron.parentElement).toHaveClass('section-header__chevron');
+			expect(disclosure.contains(chevron)).toBe(false);
+			expect(chevron).toHaveAttribute('aria-hidden', 'true');
+			expect(row.querySelectorAll('button[data-section-trigger]')).toHaveLength(1);
+			view.unmount();
+		}
+	});
+
+	it('keeps nested header actions outside the disclosure and lets the far-right chevron toggle', async () => {
+		const headerActions = createRawSnippet(() => ({
+			render: () =>
+				'<div data-testid="action-shell"><button type="button" data-testid="nested-action">Inspect</button></div>',
+		}));
+		const { container, getByTestId } = render(CollapsibleSection, {
+			props: {
+				title: 'Interactive heading',
+				headerVariant: 'article-summary',
+				headerActions,
+				open: true,
+			},
+		});
+		const disclosure = container.querySelector('button[data-section-trigger]') as HTMLButtonElement;
+		const action = getByTestId('nested-action');
+		const chevron = container.querySelector('[data-slot="chevron-toggle"]') as SVGElement;
+		const body = container.querySelector('.section-body');
+
+		expect(disclosure.contains(action)).toBe(false);
+		expect(action.closest('[data-card-interactive]')).toBeInTheDocument();
+		await fireEvent.click(action);
+		expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+
+		await fireEvent.click(chevron);
+		expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+		expect(body).toHaveAttribute('data-state', 'closed');
+	});
+
 	it('uses a real h2 whose only child is the disclosure button', () => {
 		const { container } = render(CollapsibleSection, {
 			props: {
@@ -185,6 +304,8 @@ describe('CollapsibleSection - article summary header', () => {
 			/:global\(\[data-slot='card'\]\.section-card\.section-card--article-summary\)/,
 		);
 		const headingRule = cssRule(source, /\.section-heading/);
+		const headingRowRule = cssRule(source, /\.section-heading-row/);
+		const headingRowActionsRule = cssRule(source, /\.section-heading-row--actions/);
 		const headerRule = cssRule(source, /\.section-header--article-summary/);
 		const markedHeaderRule = cssRule(
 			source,
@@ -195,10 +316,7 @@ describe('CollapsibleSection - article summary header', () => {
 			/\.section-header--article-summary\.section-header--title-only/,
 		);
 		const markRule = cssRule(source, /\.section-header__mark/);
-		const chevronRule = cssRule(
-			source,
-			/\.section-header--article-summary :global\(\[data-slot='chevron-toggle'\]\)/,
-		);
+		const chevronRule = cssRule(source, /\.section-header__chevron/);
 		const titleRule = cssRule(source, /\.section-title--article-summary/);
 		const subtitleRule = cssRule(source, /\.section-subtitle--article-summary/);
 		const markedSubtitleRule = cssRule(
@@ -217,22 +335,29 @@ describe('CollapsibleSection - article summary header', () => {
 
 		expect(cardRule).toMatch(/padding-block:\s*0;/);
 		expect(headingRule).toMatch(/margin:\s*0;/);
+		expect(headingRowRule).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+1\.25rem;/);
+		expect(headingRowRule).toMatch(/align-items:\s*center;/);
+		expect(headingRowActionsRule).toMatch(
+			/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto\s+1\.25rem;/,
+		);
 		expect(headerRule).toMatch(/display:\s*grid;/);
-		expect(headerRule).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+1\.25rem;/);
-		expect(headerRule).toMatch(/align-items:\s*start;/);
+		expect(headerRule).toMatch(/width:\s*100%;/);
+		expect(headerRule).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+		expect(headerRule).toMatch(/align-items:\s*center;/);
 		expect(headerRule).toMatch(/column-gap:\s*0\.625rem;/);
 		expect(headerRule).toMatch(/min-height:\s*44px;/);
-		expect(headerRule).toMatch(/padding:\s*1rem\s+1\.5rem\s+0\.375rem;/);
-		expect(markedHeaderRule).toMatch(
-			/grid-template-columns:\s*1\.75rem\s+minmax\(0,\s*1fr\)\s+1\.25rem;/,
-		);
+		expect(headerRule).toMatch(/padding:\s*1rem\s+0\s+0\.375rem\s+1\.5rem;/);
+		expect(markedHeaderRule).toMatch(/grid-template-columns:\s*1\.75rem\s+minmax\(0,\s*1fr\);/);
 		expect(titleOnlyRule).toMatch(/padding-block:\s*1rem;/);
 		expect(markRule).toMatch(/display:\s*inline-flex;/);
 		expect(markRule).toMatch(/width:\s*1\.75rem;/);
 		expect(markRule).toMatch(/min-height:\s*1\.75rem;/);
 		expect(markRule).toMatch(/align-items:\s*center;/);
 		expect(markRule).toMatch(/justify-content:\s*center;/);
-		expect(chevronRule).toMatch(/margin-block-start:\s*0\.25rem;/);
+		expect(chevronRule).toMatch(/display:\s*inline-flex;/);
+		expect(chevronRule).toMatch(/align-items:\s*center;/);
+		expect(chevronRule).toMatch(/justify-content:\s*center;/);
+		expect(chevronRule).toMatch(/align-self:\s*center;/);
 		expect(titleRule).toMatch(/min-width:\s*0;/);
 		expect(titleRule).toMatch(/line-height:\s*1\.4;/);
 		expect(titleRule).toMatch(/text-wrap:\s*balance;/);

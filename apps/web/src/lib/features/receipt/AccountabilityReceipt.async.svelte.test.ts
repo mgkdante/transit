@@ -189,6 +189,7 @@ describe('AccountabilityReceipt — asynchronous date transitions', () => {
 			expect(within(rail).getByLabelText('Receipt day')).toHaveValue('2026-06-17'),
 		);
 		const desktopInput = within(rail).getByLabelText('Receipt day') as HTMLInputElement;
+		const navigator = rail.querySelector('[data-slot="history-navigator"]');
 		expect(desktopInput.min).toBe('2026-06-15');
 		expect(desktopInput.max).toBe('2026-06-17');
 		expect(within(rail).getByText('Available receipts: Jun 15–Jun 17')).toBeInTheDocument();
@@ -197,7 +198,8 @@ describe('AccountabilityReceipt — asynchronous date transitions', () => {
 		await fireEvent.click(within(container).getByRole('button', { name: /Open day controls/ }));
 		const sheet = within(container).getByRole('dialog', { name: 'Day & contents' });
 		expect(container.querySelectorAll('[data-slot="surface-rail"]')).toHaveLength(1);
-		expect(container.querySelectorAll('[data-slot="history-navigator"]')).toHaveLength(2);
+		expect(container.querySelectorAll('[data-slot="history-navigator"]')).toHaveLength(1);
+		expect(sheet.querySelector('[data-slot="history-navigator"]')).toBe(navigator);
 		await fireEvent.click(within(sheet).getByRole('button', { name: 'Previous date' }));
 		expect(within(container).getByRole('dialog', { name: 'Day & contents' })).toBeInTheDocument();
 		await waitFor(() =>
@@ -561,8 +563,9 @@ describe('AccountabilityReceipt — raw URL corrections', () => {
 			expect(liveRegions[0]?.closest('[data-slot="surface-rail"]')).toBeNull();
 			let navigatorCopies = container.querySelectorAll('[data-slot="history-announcement"]');
 			expect(navigatorCopies).toHaveLength(1);
-			expect(navigatorCopies[0]).toHaveTextContent(expected);
-			expect(navigatorCopies[0]).not.toHaveAttribute('role');
+			const navigatorCopy = navigatorCopies[0];
+			expect(navigatorCopy).toHaveTextContent(expected);
+			expect(navigatorCopy).not.toHaveAttribute('role');
 
 			await fireEvent.click(
 				within(container).getByRole('button', { name: new RegExp(bundle.rail.open, 'i') }),
@@ -573,7 +576,8 @@ describe('AccountabilityReceipt — raw URL corrections', () => {
 			liveRegions = container.querySelectorAll('[role="status"][aria-live="polite"]');
 			expect(liveRegions).toHaveLength(1);
 			navigatorCopies = container.querySelectorAll('[data-slot="history-announcement"]');
-			expect(navigatorCopies).toHaveLength(2);
+			expect(navigatorCopies).toHaveLength(1);
+			expect(navigatorCopies[0]).toBe(navigatorCopy);
 			for (const copy of navigatorCopies) {
 				expect(copy).toHaveTextContent(expected);
 				expect(copy).not.toHaveAttribute('role');

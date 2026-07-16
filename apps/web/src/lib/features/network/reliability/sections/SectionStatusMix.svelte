@@ -13,7 +13,6 @@
 <script lang="ts">
 	import { DashboardGrid } from '$lib/components/layout';
 	import { Chart, type ChartSpec } from '$lib/components/dataviz/chart';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import NetworkTile from './NetworkTile.svelte';
@@ -44,25 +43,31 @@
 
 <DashboardGrid minTile="320px" gutter={false}>
 	<!-- Status mix -->
-	<NetworkTile>
-		<SectionHeading level={3} overline={copy.statusSection} />
+	<NetworkTile
+		title={copy.statusSection}
+		subtitle={copy.statusBarLabel}
+		sectionKey="network-status-mix"
+	>
 		<Chart spec={statusSpec} />
 	</NetworkTile>
 
 	<!-- Crowding (occupancy) — only when telemetry was received this cycle -->
 	{#if hasOccupancy && occupancySpec}
-		<NetworkTile>
-			<SectionHeading level={3} overline={copy.occupancySection}>
-				{#snippet explainer()}
-					<MetricInfo
-						tip={occInfo.tip}
-						href={occInfo.href}
-						label={occInfo.label}
-						linkLabel={occInfo.linkLabel}
-						side="bottom"
-					/>
-				{/snippet}
-			</SectionHeading>
+		{#snippet occupancyInfo()}
+			<MetricInfo
+				tip={occInfo.tip}
+				href={occInfo.href}
+				label={occInfo.label}
+				linkLabel={occInfo.linkLabel}
+				side="bottom"
+			/>
+		{/snippet}
+		<NetworkTile
+			title={copy.occupancySection}
+			subtitle={copy.occupancyBarLabel}
+			sectionKey="network-occupancy-mix"
+			headerActions={occupancyInfo}
+		>
 			<Chart spec={occupancySpec} />
 		</NetworkTile>
 	{/if}

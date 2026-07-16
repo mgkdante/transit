@@ -55,9 +55,9 @@ export interface FetchCtx {
 	/** SSR-supplied fetch (event.fetch) for request dedupe; defaults to global fetch. */
 	fetch?: FetchFn;
 	/**
-	 * Cache mode forwarded to the underlying request. The live tier wants
-	 * fresh-ish reads ('no-cache' / 'default'); static + historic tiers are
-	 * long-TTL and can use the platform/browser cache ('force-cache').
+	 * Cache mode forwarded to the underlying request. Stable mutable URLs use
+	 * normal HTTP revalidation (`default`); generation-addressed immutable
+	 * artifacts may use the platform/browser cache (`force-cache`).
 	 */
 	cache?: RequestCache;
 	/** Optional AbortSignal to cancel an in-flight read. */
@@ -69,7 +69,11 @@ export interface RawJsonEntity<T> {
 	readonly bytes: Uint8Array;
 }
 
-type JsonRequestInit = { cache?: RequestCache; signal?: AbortSignal };
+type JsonRequestInit = {
+	cache?: RequestCache;
+	signal?: AbortSignal;
+	serverErrorRetries?: number;
+};
 
 function isAbortError(error: unknown): boolean {
 	return error instanceof DOMException
@@ -83,18 +87,25 @@ async function requestJsonResponse(
 	fetchFn: FetchFn,
 	init?: JsonRequestInit,
 ): Promise<Response | undefined> {
-	const res = await fetchFn(url, {
-		headers: { accept: 'application/json' },
-		cache: browser ? init?.cache : undefined,
-		signal: init?.signal,
-	});
+	let serverErrorRetries = init?.serverErrorRetries ?? 0;
+	while (true) {
+		const res = await fetchFn(url, {
+			headers: { accept: 'application/json' },
+			cache: browser ? init?.cache : undefined,
+			signal: init?.signal,
+		});
 
-	noteServerTime(res);
-	if (res.status === 404) return undefined;
-	if (!res.ok) {
-		throw new Error(`[v1.${label}] HTTP ${res.status} ${res.statusText} for ${url}`);
+		noteServerTime(res);
+		if (res.status === 404) return undefined;
+		if (!res.ok) {
+			if (res.status >= 500 && res.status <= 599 && serverErrorRetries > 0) {
+				serverErrorRetries -= 1;
+				continue;
+			}
+			throw new Error(`[v1.${label}] HTTP ${res.status} ${res.statusText} for ${url}`);
+		}
+		return res;
 	}
-	return res;
 }
 
 function invalidJson(label: string, url: string, cause: unknown): never {

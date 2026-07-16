@@ -18,18 +18,18 @@ describe('CodeBlock', () => {
 		expect(region.querySelector('.tok--string')).toHaveTextContent("'55'");
 	});
 
-	it('uses responsive detail-body typography for the SQL reading region', () => {
+	it('uses compact monospace typography for the SQL reading region', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/components/CodeBlock.svelte'),
 			'utf-8',
 		);
 		const preRule = source.match(/\.codeblock__pre\s*\{([\s\S]*?)\}/)?.[1];
 
-		expect(preRule).toMatch(/font-size:\s*var\(--text-detail-body-mobile\)/);
-		expect(preRule).toMatch(/line-height:\s*1\.8/);
-		expect(preRule).not.toMatch(/var\(--text-caption\)/);
-		expect(source).toMatch(
-			/@media\s*\(min-width:\s*1024px\)\s*\{[\s\S]*?\.codeblock__pre\s*\{[\s\S]*?font-size:\s*var\(--text-detail-body-desktop\)[\s\S]*?line-height:\s*1\.9/,
+		expect(preRule).toMatch(/font-size:\s*var\(--text-mono\)/);
+		expect(preRule).toMatch(/line-height:\s*1\.6/);
+		expect(preRule).not.toMatch(/var\(--text-detail-body/);
+		expect(source).not.toMatch(
+			/@media\s*\(min-width:\s*1024px\)\s*\{[\s\S]*?\.codeblock__pre\s*\{/,
 		);
 	});
 });

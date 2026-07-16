@@ -20,6 +20,7 @@ import type { DateWindow } from '$lib/filters';
 import {
 	HistoryArtifactContractError,
 	HistoryTransientPublicationError,
+	alertArchivePageMemo,
 	assertSafeHistoryArtifactPath,
 	encodeHistoryEntityId,
 	isHistoryEntityIndexPath,
@@ -504,15 +505,24 @@ export async function getAlertArchiveRange(
 	const pages = await loadHistoryPartitions(
 		refs,
 		async (ref, signal) => {
+			const memoized = alertArchivePageMemo.get(ref.path);
+			if (memoized !== undefined) return memoized;
+
 			const page = await adapter.historic.alertArchivePage(ref.path, { ...ctx, signal });
 			if (page === null) {
 				throw new HistoryArtifactContractError(ref.path, 'advertised history artifact not found');
 			}
+			alertArchivePageMemo.remember(ref.path, page);
 			return page;
 		},
 		{ signal: ctx?.signal },
 	);
 	return selectAlertEntriesForWindow(mergeAlertArchivePages(pages), window);
+}
+
+/** Test seam for the process-local parsed-page memo. */
+export function clearAlertArchivePageMemoForTest(): void {
+	alertArchivePageMemo.clear();
 }
 
 /** Fetch + validate the trailing network-trend series. */

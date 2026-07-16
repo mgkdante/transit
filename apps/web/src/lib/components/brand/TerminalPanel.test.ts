@@ -2,14 +2,14 @@
 //
 // TerminalPanel absorbed (and retired) TerminalChrome: strict superset (signal head + hazard
 // separator + title/tag/status/footer) PLUS the meta/footer snippet slots and
-// the sanctioned rest-glow (use:cursorGlow, E2). This gate locks:
-//   - the chassis rides the SOLID surface + border-rule frame + shadow-section
-//     (the occlusion + rest-glow law) with NO text-shadow anywhere;
+// a flat data chassis. This gate locks:
+//   - the chassis rides the SOLID surface + border-rule frame with no decorative
+//     cursor overlay or text shadow;
 //   - the titlebar renders the three-aspect signal head (aria-hidden furniture)
 //     and the mono title/tag;
 //   - the right meta slot (snippet) and, failing that, the status string;
 //   - the footer readout in both snippet and string (label/value) forms;
-//   - cursorGlow is attached (its auto-injected overlay is present on non-touch).
+//   - the signal head is static rather than pulse-glowing.
 
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
@@ -24,13 +24,13 @@ const dots = (c: HTMLElement) =>
 const textSnippet = (text: string) =>
 	createRawSnippet(() => ({ render: () => `<span>${text}</span>` }));
 
-describe('TerminalPanel — chassis (occlusion + rest-glow law)', () => {
+describe('TerminalPanel — flat data chassis', () => {
 	it('exposes the terminal-panel data-slot hook', () => {
 		const { container } = render(TerminalPanel, { props: { title: 'demo' } });
 		expect(root(container)).toBeInTheDocument();
 	});
 
-	it('rides the SOLID surface, border-rule frame, radius-lg and shadow-section — no alpha', () => {
+	it('rides the SOLID surface, border-rule frame and radius-lg — no alpha', () => {
 		const { container } = render(TerminalPanel, { props: { title: 'demo' } });
 		const style = getComputedStyle(root(container));
 		// Chassis tokens are set on the inline/authored style; assert the class
@@ -51,18 +51,9 @@ describe('TerminalPanel — chassis (occlusion + rest-glow law)', () => {
 		expect(html).not.toContain('text-shadow');
 	});
 
-	it('attaches cursorGlow at rest — the auto-injected glow overlay is present', () => {
+	it('does not attach a cursor-glow overlay', () => {
 		const { container } = render(TerminalPanel, { props: { title: 'demo' } });
-		const overlay = root(container).querySelector('[data-glow-overlay]');
-		expect(overlay, 'cursorGlow should auto-inject its overlay on non-touch').toBeTruthy();
-		expect(overlay).toHaveAttribute('aria-hidden', 'true');
-	});
-
-	it('drops the glow overlay opacity when noGlow is set (intensity 0)', () => {
-		// noGlow still attaches the action (overlay exists) but at zero intensity —
-		// the panel simply never lights. Structural assertion: overlay present.
-		const { container } = render(TerminalPanel, { props: { title: 'demo', noGlow: true } });
-		expect(root(container).querySelector('[data-glow-overlay]')).toBeTruthy();
+		expect(root(container).querySelector('[data-glow-overlay]')).toBeNull();
 	});
 });
 
@@ -71,6 +62,7 @@ describe('TerminalPanel — titlebar (signal head + title/tag/meta)', () => {
 		const { container } = render(TerminalPanel, { props: { title: 'demo' } });
 		expect(dots(container)).toHaveLength(3);
 		expect(head(container)).toHaveAttribute('aria-hidden', 'true');
+		expect(head(container).querySelector('.led-pulse')).toBeNull();
 	});
 
 	it('renders the mono title and optional tag', () => {

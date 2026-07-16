@@ -53,6 +53,7 @@
 	} from '$lib/seo/routeSeo';
 	import { breadcrumbJsonLd, organizationJsonLd, datasetJsonLd } from '$lib/seo/jsonld';
 	import { readPublicSiteConfig } from '$lib/site/config';
+	import { errorDocumentHead } from '$lib/site/errorPage';
 	import {
 		setV1Context,
 		bootV1,
@@ -123,18 +124,18 @@
 	// + search scope use, so the landmark, the highlight, and the scope never diverge.
 	const mainLabel = $derived(mainLandmarkLabel(seoPath));
 
-	// v1 snapshot context. The SSR boot (+layout.ts) can fail on Cloudflare — a
-	// Worker's fetch to its own zone can't reach the sibling /data route (523) —
-	// so when it does we RE-BOOT client-side: the browser reaches /data fine.
+	// v1 snapshot context. Production SSR prefers the direct R2 binding. If that
+	// authoritative attempt fails, the mounted browser gets one recovery attempt
+	// against the public R2 custom domain.
 	// `clientV1` holds that recovery; `v1` prefers the SSR value and falls back to
 	// it. The context reader stays live, so once the client boot lands every
 	// descendant that read getV1Context() at init sees the data without a remount.
 	let clientV1 = $state<V1Context | null>(null);
 	const v1 = $derived<V1Context | null>(data.v1 ?? clientV1);
-	setV1Context(() => (v1 ?? undefined) as V1Context);
+	setV1Context(() => v1 ?? undefined);
 
 	// Provider copy identity for the document head (resolved AFTER v1, since the
-	// keyworded SEO copy reads it). Manifest-first (live; SSR via the DATA service
+	// keyworded SEO copy reads it). Manifest-first (live; SSR via the SNAPSHOTS
 	// binding, client via boot) then env fallback (PUBLIC_PROVIDER_* — SSR-visible
 	// when the manifest is absent / not yet republished). Absent identity → neutral.
 	const providerShortName = $derived(v1?.manifest.short_name ?? siteConfig.providerShortName);
@@ -159,6 +160,10 @@
 	// $page.status >= 400. Such a URL must NOT be indexed and must NOT advertise a
 	// self-canonical (it would tell crawlers a broken URL is the canonical one).
 	const isErrorStatus = $derived(($page.status ?? 200) >= 400);
+	const errorHead = $derived(errorDocumentHead($page.status ?? 500, locale));
+	const headTitle = $derived(isErrorStatus ? errorHead.title : seo.title);
+	const headDescription = $derived(isErrorStatus ? errorHead.description : seo.description);
+	const headSiteName = $derived(isErrorStatus ? 'Transit' : seoSiteName);
 
 	// Site-wide structured data plus the per-surface BreadcrumbList on the stable
 	// detail surfaces (/route, /stop). The WebSite+SearchAction node is always-on
@@ -199,8 +204,9 @@
 	// bumps dataRefresh.epoch on a strictly-newer publish, which re-runs every
 	// createResource surface AND re-polls the live store — so the whole site swaps to
 	// the latest data on its own, no per-page wiring. Browser-only + ref-counted +
-	// tab-visibility aware inside the store; the effect cleanup disposes it.
-	$effect(() => dataPulse.subscribe());
+	// visibility/network aware inside the store; the boot manifest seeds its
+	// monotonic baseline before the first fresh check, and cleanup disposes it.
+	$effect(() => dataPulse.subscribe(v1?.manifest ?? null));
 
 	// True while a client-side (re-)boot is in flight — lets the edge state show a
 	// "retrying" affordance rather than a dead button.
@@ -223,9 +229,18 @@
 	let topSearch = $state('');
 	let addressSuggestions = $state<GeocodeSuggestion[]>([]);
 	let addressSessionToken = $state(createAddressSessionToken());
-	const searchRoutes = createResource(() => getRoutesIndex());
-	const searchStops = createResource(() => getStopsIndex());
-	const searchVehicles = createResource(() => getVehicles());
+	// Search indexes are interaction data, not page prerequisites. Keep the three
+	// requests idle on ordinary navigation and open them as soon as the user types.
+	const chromeSearchEnabled = $derived(topSearch.trim().length > 0);
+	const searchRoutes = createResource(() => getRoutesIndex(), {
+		enabled: () => chromeSearchEnabled,
+	});
+	const searchStops = createResource(() => getStopsIndex(), {
+		enabled: () => chromeSearchEnabled,
+	});
+	const searchVehicles = createResource(() => getVehicles(), {
+		enabled: () => chromeSearchEnabled,
+	});
 	const topSearchResults = $derived(
 		chromeSearchResults(
 			topSearch,
@@ -445,9 +460,9 @@
 </script>
 
 <SeoHead
-	title={seo.title}
-	description={seo.description}
-	siteName={seoSiteName}
+	title={headTitle}
+	description={headDescription}
+	siteName={headSiteName}
 	path={seoPath}
 	{locale}
 	siteOrigin={siteConfig.siteOrigin}
