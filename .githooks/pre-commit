@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Pre-commit hook — generated-file guards.
+# Bypass (last resort, document in the PR): git commit --no-verify
+set -euo pipefail
+
+staged() { git diff --cached --name-only --diff-filter=ACM; }
+
+# GUARD 1 — generated token outputs
+TOKEN_OUTPUT_REGEX='^(apps/web/src/lib/styles/tokens\.css|apps/web/src/lib/motion/tokens\.ts)$'
+TOKEN_APP_CSS='apps/web/src/app.css'
+TOKEN_SOURCE_REGEX='^(apps/web/tools/tokens/tokens\.json|apps/web/tools/tokens/build\.ts)$'
+
+app_css_token_region() {
+  awk '
+    /\/\* ===== TOKENS:START ===== \*\// { in_region=1 }
+    in_region { print }
+    /\/\* ===== TOKENS:END ===== \*\// { in_region=0 }
+  '
+}
+
+app_css_token_region_changed() {
+  local head_region staged_region
+  head_region="$(git show "HEAD:$TOKEN_APP_CSS" 2>/dev/null | app_css_token_region || true)"
+  staged_region="$(git show ":$TOKEN_APP_CSS" 2>/dev/null | app_css_token_region || true)"
+  [ "$head_region" != "$staged_region" ]
+}
+
+token_output_staged=0
+if staged | grep -qE "$TOKEN_OUTPUT_REGEX"; then
+  token_output_staged=1
+elif staged | grep -qx "$TOKEN_APP_CSS" && app_css_token_region_changed; then
+  token_output_staged=1
+fi
+
+if [ "$token_output_staged" -eq 1 ] && ! staged | grep -qE "$TOKEN_SOURCE_REGEX"; then
+  echo "ERROR 1/3: A generated token output is staged without a token source."
+  echo "           From apps/web, run 'bun tools/tokens/build.ts', then stage the"
+  echo "           output with tools/tokens/tokens.json or tools/tokens/build.ts."
+  echo "           app.css is allowed alone only outside its TOKENS:START/END region."
+  echo "           Bypass (last resort): git commit --no-verify"
+  exit 1
+fi
+
+# GUARD 2 — generated OG/icon assets
+ASSET_OUTPUT_REGEX='^(apps/web/static/og/.*\.png|apps/web/static/apple-touch-icon-180\.png)$'
+ASSET_SOURCE_REGEX='^(apps/web/scripts/build-og\.ts|apps/web/scripts/build-icons\.ts|apps/web/tools/tokens/tokens\.json)$'
+
+if staged | grep -qE "$ASSET_OUTPUT_REGEX" && ! staged | grep -qE "$ASSET_SOURCE_REGEX"; then
+  echo "ERROR 2/3: A generated OG/icon asset is staged without its generator or input."
+  echo "           From apps/web, run 'bun scripts/build-og.ts' or"
+  echo "           'bun scripts/build-icons.ts', then stage the output with its"
+  echo "           generator or tools/tokens/tokens.json."
+  echo "           Bypass (last resort): git commit --no-verify"
+  exit 1
+fi
+
+# GUARD 3 — vendored design system
+DESIGN_DIR_REGEX='^apps/web/vendor/design/'
+DESIGN_MANIFEST='apps/web/vendor/design/manifest.json'
+
+if staged | grep -qE "$DESIGN_DIR_REGEX" && ! staged | grep -qx "$DESIGN_MANIFEST"; then
+  echo "ERROR 3/3: A vendored design-system file is staged without manifest.json."
+  echo "           Do not hand-edit vendor/design. From apps/web, run:"
+  echo "             bun tools/design-sync.ts"
+  echo "           Then stage the synced files and manifest together."
+  echo "           Bypass (last resort): git commit --no-verify"
+  exit 1
+fi
+
+exit 0
