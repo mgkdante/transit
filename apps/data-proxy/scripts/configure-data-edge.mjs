@@ -19,6 +19,7 @@ export const CACHE_RULE = Object.freeze({
   action_parameters: Object.freeze({
     cache: true,
     edge_ttl: Object.freeze({ mode: "bypass_by_default" }),
+    browser_ttl: Object.freeze({ mode: "respect_origin" }),
   }),
   enabled: true,
 });
