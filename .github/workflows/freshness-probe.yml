@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       # Dependency-light: curl + jq + date + psql are preinstalled on
       # ubuntu-latest, and gh is too. No python toolchain bootstrap here.

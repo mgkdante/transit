@@ -38,7 +38,7 @@ jobs:
         working-directory: apps/db
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -46,7 +46,7 @@ jobs:
           python-version: "3.12"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
 
       - name: Install project dependencies
         run: uv sync --locked
@@ -68,7 +68,7 @@ jobs:
         working-directory: apps/db
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -76,7 +76,7 @@ jobs:
           python-version: "3.12"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
 
       - name: Install project dependencies
         run: uv sync --locked
@@ -126,7 +126,7 @@ jobs:
       COLUMNS: "200"
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -134,7 +134,7 @@ jobs:
           python-version: "3.12"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
 
       - name: Install project dependencies
         run: uv sync --locked
