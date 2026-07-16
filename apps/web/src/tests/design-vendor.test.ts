@@ -14,7 +14,7 @@ import { join, resolve, relative } from 'node:path';
 const VENDOR = resolve(process.cwd(), 'vendor/design');
 
 /** The deliberate pin. Bump via `bun tools/design-sync.ts --tag <next>`. */
-const PINNED_TAG = 'v0.3.0';
+const PINNED_TAG = 'v0.4.0';
 
 function walkFiles(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir).sort()) {

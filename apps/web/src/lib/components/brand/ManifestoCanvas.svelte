@@ -19,7 +19,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { isPrefersReducedMotion } from '$lib/motion';
-	import { subscribe, unsubscribe } from '$lib/motion/utils/ticker';
+	import { subscribe, unsubscribe } from '@yesid/motion/utils/ticker';
 
 	interface Props {
 		containerEl?: HTMLElement;

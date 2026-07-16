@@ -9,7 +9,7 @@ const ticker = vi.hoisted(() => ({
 const motion = vi.hoisted(() => ({ reduced: false }));
 
 vi.mock('$lib/motion', () => ({ isPrefersReducedMotion: () => motion.reduced }));
-vi.mock('$lib/motion/utils/ticker', () => ticker);
+vi.mock('@yesid/motion/utils/ticker', () => ticker);
 
 class IntersectionObserverStub {
 	observe = vi.fn();
