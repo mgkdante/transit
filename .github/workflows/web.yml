@@ -3,8 +3,31 @@ name: web
 on:
   pull_request:
     branches: [main, develop]
+    # Keep both paths lists identical (GH Actions has no reliable YAML-anchor
+    # support). db-only changes skip web CI/deploys entirely (~20+ min saved
+    # per db PR cycle; a db-only merge to main skips the idempotent redeploy).
+    paths:
+      - "apps/web/**"
+      - "apps/data-proxy/**"
+      - "packages/**"
+      - "bun.lock"
+      - ".bun-version"
+      - "package.json"
+      - "turbo.json"
+      - ".github/workflows/web.yml"
+      - ".github/actions/**"
   push:
     branches: [main, develop]
+    paths:
+      - "apps/web/**"
+      - "apps/data-proxy/**"
+      - "packages/**"
+      - "bun.lock"
+      - ".bun-version"
+      - "package.json"
+      - "turbo.json"
+      - ".github/workflows/web.yml"
+      - ".github/actions/**"
   workflow_dispatch:
     inputs:
       deploy_target:

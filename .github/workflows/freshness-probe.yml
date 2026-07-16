@@ -7,6 +7,10 @@ on:
     # manifest staleness is a real stall. Scheduled workflows only run from the
     # default branch — this probe goes live on merge to main.
     - cron: "*/15 * * * *"
+    # Hourly lane for backup-freshness only: the pg_dump artifact changes once
+    # nightly, so probing it 96x/day paid a full python-toolchain setup per run
+    # for no signal. github.event.schedule identifies which cron fired.
+    - cron: "7 * * * *"
 
 permissions:
   contents: read
@@ -18,6 +22,8 @@ concurrency:
 
 jobs:
   probe:
+    # Runs on dispatch and the */15 cron; skips the hourly backup-only cron.
+    if: github.event.schedule != '7 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -40,6 +46,10 @@ jobs:
   # R2-disabled outage class. Needs the python toolchain (the CLI reads R2),
   # unlike the bare-bash probe above.
   backup-freshness:
+    # Hourly cadence (24x/day, was 96x): the artifact only changes nightly and
+    # this job pays the python/uv toolchain setup. Alerting latency worst-case
+    # moves from 15 to 60 minutes on a nightly artifact — acceptable.
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '7 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -66,6 +76,8 @@ jobs:
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.15"
 
       - name: Install project dependencies
         run: uv sync --locked
