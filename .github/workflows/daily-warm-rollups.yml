@@ -41,7 +41,7 @@ jobs:
       SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -49,7 +49,7 @@ jobs:
           python-version: "3.12"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           version: "0.11.15"
 
@@ -108,7 +108,7 @@ jobs:
       - name: Upload prepare evidence
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: daily-warm-prepare-${{ github.run_id }}
           path: apps/db/artifacts/daily-warm-rollups/prepare/
@@ -138,7 +138,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -146,7 +146,7 @@ jobs:
           python-version: "3.12"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           version: "0.11.15"
 
@@ -193,7 +193,7 @@ jobs:
       - name: Upload rollup receipt
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: daily-warm-rollup-${{ matrix.provider }}-${{ github.run_id }}
           path: |
@@ -228,7 +228,7 @@ jobs:
       SNAPSHOT_BASEMAP_STYLE_URL: ${{ vars.SNAPSHOT_BASEMAP_STYLE_URL }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -236,7 +236,7 @@ jobs:
           python-version: "3.12"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           version: "0.11.15"
 
@@ -244,7 +244,7 @@ jobs:
         run: uv sync --locked
 
       - name: Download alert archive receipts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: daily-warm-prepare-${{ github.run_id }}
           path: apps/db/artifacts/daily-warm-rollups/prepare
@@ -351,7 +351,7 @@ jobs:
       - name: Upload publish evidence
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: daily-warm-publish-${{ github.run_id }}
           path: apps/db/artifacts/daily-warm-rollups/publish/
@@ -386,7 +386,7 @@ jobs:
       BRONZE_S3_SECRET_KEY: ${{ secrets.BRONZE_S3_SECRET_KEY }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -394,7 +394,7 @@ jobs:
           python-version: "3.12"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           version: "0.11.15"
 
@@ -422,7 +422,7 @@ jobs:
       - name: Upload retention receipts
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: daily-warm-retention-${{ matrix.provider }}-${{ github.run_id }}
           path: apps/db/artifacts/daily-warm-rollups/retention/retention-proof-${{ matrix.provider }}.json
@@ -436,7 +436,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Update daily warm rollups issue
         env:

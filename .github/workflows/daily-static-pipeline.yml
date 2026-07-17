@@ -46,7 +46,7 @@ jobs:
       SNAPSHOT_BASEMAP_STYLE_URL: ${{ vars.SNAPSHOT_BASEMAP_STYLE_URL }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -54,7 +54,7 @@ jobs:
           python-version: "3.12"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           version: "0.11.15"
 
@@ -88,7 +88,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Update daily static pipeline issue
         env:

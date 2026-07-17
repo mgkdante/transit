@@ -37,7 +37,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install go-pmtiles
         run: |
@@ -61,7 +61,7 @@ jobs:
           test "${SIZE}" -gt 100000
 
       - name: Upload to R2 (stable key, content-immutable)
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           # Keep in lockstep with the other workflows (pinned by the pytest contract).
