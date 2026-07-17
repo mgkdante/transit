@@ -2,18 +2,16 @@
 // design-sync — vendors the yesid.dev-design packages (@yesid/tokens,
 // @yesid/motion, @yesid/gates, @yesid/ui) into apps/web/vendor/design at a PINNED TAG.
 //
-// Why vendored-sync (P5.1, 2026-07-02): the design repo is local-only (not on
-// GitHub / npm yet — operator decision pending), so a file: dep on a sibling
-// repo would break CI checkouts. The committed vendor snapshot + this script
-// IS the pin: cascade = re-run at a new tag and review the diff (a deliberate
-// bump-PR, per the design repo's governance laws). Apps NEVER patch vendor/
-// code — upstream first, then bump.
+// The committed vendor snapshot + this script IS the pin: cascade = re-run at
+// a new tag and review the diff (a deliberate bump-PR, per the design repo's
+// governance laws). Apps NEVER patch vendor/ code — upstream first, then bump.
 //
 // Usage:
-//   bun tools/design-sync.ts --tag v0.2.0    # sync (requires ../yesid.dev-design)
-//   bun tools/design-sync.ts --check          # verify vendor tree matches manifest
-//                                              (no sibling repo needed — CI-safe)
-import { execSync } from 'node:child_process';
+//   bun tools/design-sync.ts --tag v0.6.0
+//   bun tools/design-sync.ts --tag v0.6.0 --source ../yesid.dev-design
+//   bun tools/design-sync.ts --tag v0.6.0 --source https://github.com/mgkdante/yesid.dev-design
+//   bun tools/design-sync.ts --check          # no source repo needed; CI-safe
+import { spawnSync } from 'node:child_process';
 import {
 	cpSync,
 	existsSync,
@@ -42,6 +40,39 @@ const PACKAGES = ['tokens', 'motion', 'gates', 'ui'] as const;
 // snapshot carries runtime + type surface only.
 const EXCLUDE =
 	/(^|\/)(__tests__\/|test-fixtures\/|scripts\/|research\/|vitest\.(?:config|setup)\.ts$|vitest\.d\.ts$|\.gitignore$)|\.test\.ts$/;
+
+function gitError(args: string[], result: ReturnType<typeof spawnSync>): Error {
+	const stderr = typeof result.stderr === 'string' ? result.stderr.trim() : '';
+	const stdout = typeof result.stdout === 'string' ? result.stdout.trim() : '';
+	return new Error(
+		`git ${args[0]} failed: ${stderr || stdout || `exit ${result.status ?? 'unknown'}`}`,
+	);
+}
+
+function runGit(args: string[]): string {
+	const result = spawnSync('git', args, { encoding: 'utf-8' });
+	if (result.status !== 0) throw gitError(args, result);
+	return result.stdout.trim();
+}
+
+function extractTaggedPackages(source: string, tag: string, destination: string): void {
+	const args = ['-C', source, 'archive', tag, 'packages', 'LICENSE'];
+	const archive = spawnSync('git', args, { maxBuffer: 128 * 1024 * 1024 });
+	if (archive.status !== 0) throw gitError(args, archive);
+	const extracted = spawnSync('tar', ['-x', '-C', destination], {
+		input: archive.stdout,
+		encoding: 'utf-8',
+	});
+	if (extracted.status !== 0) {
+		throw new Error(
+			`tar extraction failed: ${extracted.stderr.trim() || `exit ${extracted.status ?? 'unknown'}`}`,
+		);
+	}
+}
+
+function isGitUrl(source: string): boolean {
+	return /^(?:https?|ssh|git|file):\/\//i.test(source) || /^[^/\\\s]+@[^:\s]+:.+/.test(source);
+}
 
 function walkFiles(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir).sort()) {
@@ -86,6 +117,15 @@ const args = process.argv.slice(2);
 const checkOnly = args.includes('--check');
 const tagIdx = args.indexOf('--tag');
 const tag = tagIdx >= 0 ? args[tagIdx + 1] : undefined;
+const sourceIdx = args.indexOf('--source');
+const sourceArg = sourceIdx >= 0 ? args[sourceIdx + 1] : undefined;
+
+if (sourceIdx >= 0 && (!sourceArg || sourceArg.startsWith('--'))) {
+	console.error(
+		'usage: bun tools/design-sync.ts --tag <vX.Y.Z> [--source <path-or-git-url>] | --check',
+	);
+	process.exit(1);
+}
 
 if (checkOnly) {
 	if (!existsSync(MANIFEST)) {
@@ -109,44 +149,57 @@ if (checkOnly) {
 }
 
 if (!tag) {
-	console.error('usage: bun tools/design-sync.ts --tag <vX.Y.Z> | --check');
-	process.exit(1);
-}
-if (!existsSync(DESIGN_REPO)) {
-	console.error(`✗ design repo not found at ${DESIGN_REPO}`);
+	console.error(
+		'usage: bun tools/design-sync.ts --tag <vX.Y.Z> [--source <path-or-git-url>] | --check',
+	);
 	process.exit(1);
 }
 
-const commit = execSync(`git -C ${DESIGN_REPO} rev-list -1 ${tag}`, { encoding: 'utf-8' }).trim();
-const tmp = mkdtempSync(join(tmpdir(), 'design-sync-'));
+const remoteSource = sourceArg && isGitUrl(sourceArg) ? sourceArg : undefined;
+const sourceRoot = remoteSource ? mkdtempSync(join(tmpdir(), 'design-sync-source-')) : undefined;
 try {
-	execSync(`git -C ${DESIGN_REPO} archive ${tag} packages | tar -x -C ${tmp}`, {
-		stdio: 'inherit',
-		shell: '/bin/bash',
-	});
-	rmSync(VENDOR, { recursive: true, force: true });
-	for (const pkg of PACKAGES) {
-		const src = join(tmp, 'packages', pkg);
-		const dst = join(VENDOR, pkg);
-		for (const f of walkFiles(src)) {
-			const rel = relative(src, f);
-			if (EXCLUDE.test(rel)) continue;
-			const target = join(dst, rel);
-			mkdirSync(dirname(target), { recursive: true });
-			cpSync(f, target);
-		}
-		rewriteInternalWorkspaceDependencies(dst);
+	const designRepo = remoteSource
+		? join(sourceRoot as string, 'yesid.dev-design')
+		: resolve(sourceArg ?? DESIGN_REPO);
+	if (remoteSource) {
+		runGit(['clone', '--depth', '1', '--single-branch', '--branch', tag, remoteSource, designRepo]);
+	} else if (!existsSync(designRepo)) {
+		console.error(`✗ design repo not found at ${designRepo}`);
+		process.exit(1);
 	}
-	const manifest = {
-		repo: 'yesid.dev-design',
-		tag,
-		commit,
-		note: 'GENERATED by tools/design-sync.ts — never edit vendor/design by hand (one-direction flow).',
-		treeHash: treeHash(VENDOR),
-	};
-	writeFileSync(MANIFEST, JSON.stringify(manifest, null, '\t') + '\n', 'utf-8');
-	console.log(`✓ vendored @yesid/{${PACKAGES.join(',')}} at ${tag} (${commit.slice(0, 9)})`);
-	console.log(`  treeHash ${manifest.treeHash}`);
+
+	const commit = runGit(['-C', designRepo, 'rev-list', '-1', tag]);
+	const tmp = mkdtempSync(join(tmpdir(), 'design-sync-'));
+	try {
+		extractTaggedPackages(designRepo, tag, tmp);
+		rmSync(VENDOR, { recursive: true, force: true });
+		mkdirSync(VENDOR, { recursive: true });
+		cpSync(join(tmp, 'LICENSE'), join(VENDOR, 'LICENSE'));
+		for (const pkg of PACKAGES) {
+			const src = join(tmp, 'packages', pkg);
+			const dst = join(VENDOR, pkg);
+			for (const f of walkFiles(src)) {
+				const rel = relative(src, f);
+				if (EXCLUDE.test(rel)) continue;
+				const target = join(dst, rel);
+				mkdirSync(dirname(target), { recursive: true });
+				cpSync(f, target);
+			}
+			rewriteInternalWorkspaceDependencies(dst);
+		}
+		const manifest = {
+			repo: 'yesid.dev-design',
+			tag,
+			commit,
+			note: 'GENERATED by tools/design-sync.ts — never edit vendor/design by hand (one-direction flow).',
+			treeHash: treeHash(VENDOR),
+		};
+		writeFileSync(MANIFEST, JSON.stringify(manifest, null, '\t') + '\n', 'utf-8');
+		console.log(`✓ vendored @yesid/{${PACKAGES.join(',')}} at ${tag} (${commit.slice(0, 9)})`);
+		console.log(`  treeHash ${manifest.treeHash}`);
+	} finally {
+		rmSync(tmp, { recursive: true, force: true });
+	}
 } finally {
-	rmSync(tmp, { recursive: true, force: true });
+	if (sourceRoot) rmSync(sourceRoot, { recursive: true, force: true });
 }

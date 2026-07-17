@@ -1,4 +1,4 @@
-# @yesid/ui parity notes (waves 1 and 2)
+# @yesid/ui parity notes (waves 1, 2, and 4)
 
 Transit is the package baseline for wave 1. Its current primitive behavior and classes were ported as-is, with only package import-path changes. Differences found in yesid.dev were recorded here; no yesid.dev behavior was merged into the package and no consumer conditional was added.
 
@@ -6,7 +6,7 @@ Comparison snapshot:
 
 - Transit: `transit/apps/web/src/lib/components/ui/`
 - yesid.dev: `yesid.dev/apps/web/src/lib/components/ui/`
-- Families reviewed: badge, button, card, collapsible, resizable, scroll-area, separator, tabs, toggle, toggle-group, sheet, skeleton, line-combobox
+- Families reviewed: badge, button, card, collapsible, resizable, scroll-area, separator, tabs, toggle, toggle-group, sheet, skeleton, combobox (originally line-combobox)
 
 Both consumers currently use `bits-ui ^2.16.3`, `clsx ^2.1.1`, `svelte ^5.54.0`, `tailwind-merge ^3.5.0`, `tailwind-variants ^3.2.2`, and `paneforge ^1.0.2`. Transit also supplies `@lucide/svelte ^1.18.0` for Sheet and `@yesid/motion` for Button.
 
@@ -26,7 +26,7 @@ Both consumers currently use `bits-ui ^2.16.3`, `clsx ^2.1.1`, `svelte ^5.54.0`,
 | Toggle Group | Family-local implementation matches | Review only inherited Toggle styling | No co-located primitive test |
 | Sheet | Missing from yesid.dev | New surface for yesid.dev; no legacy behavior to preserve | No co-located primitive test |
 | Skeleton | Missing from yesid.dev | New surface for yesid.dev; no legacy behavior to preserve | No co-located primitive test |
-| Line Combobox | Missing from yesid.dev | Ported internally for parity, but withheld from the package export map until it has a third-consumer-safe public name | No co-located primitive test |
+| Combobox | Missing from yesid.dev | Wave 4 promotes the Transit source under a generic public name; Transit adopts through explicit import, type, component, and DOM-hook renames | Three package tests adapted from Transit consumer coverage |
 
 ## Detailed family differences
 
@@ -207,11 +207,11 @@ Transit-only; yesid.dev has no Skeleton family.
 
 Transit exports Root/Skeleton. It renders a ref-capable div with `data-slot="skeleton"`, `aria-hidden="true"`, caller classes/children/attributes, `rounded-md`, and solid `bg-muted`. A scoped two-second opacity pulse stops entirely under reduced motion. There is no legacy yesid.dev behavior to preserve.
 
-### Line Combobox
+### Combobox (Wave 4 promotion)
 
-Transit-only; yesid.dev has no Line Combobox family. The byte-faithful source is present under `src/primitives/line-combobox`, but wave 1 does not expose a `@yesid/ui/line-combobox` package subpath.
+Transit-only at extraction time; yesid.dev has no local Combobox family. Wave 1 kept the source internal under `src/primitives/line-combobox` because the Transit name did not pass the third-consumer test. Wave 4 promotes the same behavior at `@yesid/ui/combobox` for the gallery and future products.
 
-Transit exports Root/LineCombobox plus `LineComboboxOption` and `LineComboboxProps`. The API accepts a readonly option catalogue, bindable nullable selected value, accessible labels/copy, optional placeholder, a caller-provided fold function, and a root class.
+The generic package exports are Root/Combobox plus `ComboboxOption` and `ComboboxProps`. The API still accepts a readonly option catalogue, bindable nullable selected value, accessible labels/copy, optional placeholder, a caller-provided fold function, and a root class. No prop or option field changed. `label`, `placeholder`, `clearLabel`, and `emptyLabel` were already caller-owned, so no Transit copy entered the package and no new copy prop was required.
 
 Behavior/classes:
 
@@ -219,13 +219,36 @@ Behavior/classes:
 - Local ephemeral query, caller-defined folding, and token-AND filtering against each option's precomputed search haystack.
 - Optional glyph/sublabel, selected checkmark, empty state, clear control, and trigger.
 - Closing resets the typed query; clearing resets both query and value.
-- Tokenized card/listbox chrome, primary interaction states, and minimum tap-target sizing.
+- Tokenized card/listbox chrome, primary interaction states, and minimum tap-target sizing. The source expects the consumer variable `--size-tap-min`; Transit defines it as `44px`, and the gallery/bootstrap guide does the same.
 
-Naming decision: the implementation is largely entity-generic, but `LineCombobox`, `LineComboboxOption`, and `LineComboboxProps`, along with line-oriented examples in its source comments, are Transit-domain language. Those names do not pass the third-consumer test, so wave 1 preserves the Plan-required source byte-faithfully while withholding the family from the package export map. Before exposing it publicly, the package needs a genuinely generic name with deliberate compatibility aliasing; no app conditional is involved.
+Only names changed. Runtime state, bits-ui wiring, filtering, glyphs, copy inputs, markup shape, and CSS declarations remain the Transit implementation. The one pre-existing package adaptation remains `$lib/utils` to `../../cn/index.js`.
+
+| Transit source name | Package name |
+| --- | --- |
+| `line-combobox/line-combobox.svelte` | `combobox/combobox.svelte` |
+| `LineCombobox` | `Combobox` |
+| `LineComboboxOption` | `ComboboxOption` |
+| `LineComboboxProps` | `ComboboxProps` |
+| `line-combobox` class and `data-slot` prefix | `combobox` |
+| `Root` | `Root` (unchanged) |
+
+Transit has three rendered call sites. Its separate adoption change applies this map:
+
+| Transit call site | Old | New |
+| --- | --- | --- |
+| `features/stops/StopsIndex.svelte` line picker | `$lib/components/ui/line-combobox`, `LineCombobox`, `LineComboboxOption`, and `[data-slot='line-combobox']` | `@yesid/ui/combobox`, `Combobox`, `ComboboxOption`, and `[data-slot='combobox']` |
+| `features/alerts/sections/AlertFilters.svelte` line picker | `$lib/components/ui/line-combobox`, `LineCombobox`, `LineComboboxOption` | `@yesid/ui/combobox`, `Combobox`, `ComboboxOption` |
+| `features/alerts/sections/AlertFilters.svelte` stop picker | `$lib/components/ui/line-combobox`, `LineCombobox`, `LineComboboxOption` | `@yesid/ui/combobox`, `Combobox`, `ComboboxOption` |
+
+The shared import/type rename also reaches `features/alerts/selectors/entityOptions.ts`; it is supporting code, not a fourth rendered call site. All three component instances keep their existing props unchanged.
+
+No compatibility alias ships for `LineCombobox`: Wave 1 deliberately withheld that package subpath, so there is no published package API to preserve. Transit updates its three call sites when it takes the new tag.
+
+The source comments inherited from Transit claim that empty-plus-blur clears and that closing restores the selected label. The implementation does not bind bits-ui's `inputValue`; existing Transit tests prove the accessible label and bound-value clear, not those display-text claims. Wave 4 does not silently repair that pre-existing behavior during a naming-only port.
 
 ## Test and source-path adoption checklist
 
-Only Transit's co-located primitive test was ported unchanged apart from its package source path: `tabs/tabs-trigger.test.ts` contains two tests. yesid.dev's local Button test/harness was not merged because it asserts yesid.dev-only conversion behavior.
+Transit's only co-located primitive test was ported unchanged apart from its package source path: `tabs/tabs-trigger.test.ts` contains two tests. Combobox had no co-located Transit test, so `combobox/combobox.test.ts` adapts the portable consumer assertions from `StopsIndex.svelte.test.ts` and `AlertHistory.svelte.test.ts`: labelled combobox semantics, nullable bound-value clearing, and two-label-ready caller copy. It also locks the component's token-AND folded filtering and empty state. yesid.dev's local Button test/harness was not merged because it asserts yesid.dev-only conversion behavior.
 
 When yesid.dev flips imports, update or replace direct-source assertions deliberately:
 

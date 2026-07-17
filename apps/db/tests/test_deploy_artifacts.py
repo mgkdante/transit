@@ -1,5 +1,4 @@
 import math
-import re
 from pathlib import Path
 
 import yaml
@@ -214,6 +213,7 @@ def test_weekly_pg_repack_workflow_is_dry_run_monitor() -> None:
 
 def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof() -> None:
     workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
+    document = yaml.safe_load(workflow)
 
     # Each provider gets a bounded, serial retention job after publication.
     # Exhaustion is required so a capped backlog cannot silently keep growing.
@@ -229,15 +229,49 @@ def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof()
     # not apply to `uses:` steps).
     assert "apps/db/artifacts/daily-warm-rollups/retention/" in workflow
 
-    timeout_match = re.search(r"timeout-minutes:\s*(\d+)", workflow)
-    assert timeout_match is not None
-    assert int(timeout_match.group(1)) >= 35
+    assert document["jobs"]["retention"]["timeout-minutes"] >= 35
+
+
+def test_daily_warm_rollups_bounds_expensive_work_and_gates_publish() -> None:
+    document = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    rollups = document["jobs"]["rollups"]
+    build = next(step for step in rollups["steps"] if step["name"] == "Build warm rollups")
+    publish = document["jobs"]["publish"]
+
+    assert build["timeout-minutes"] == 75
+    assert publish["timeout-minutes"] == 90
+    assert publish["if"] == (
+        "${{ always() && needs.prepare.result == 'success' "
+        "&& needs.rollups.result == 'success' }}"
+    )
+
+
+def test_ci_runs_for_db_and_ci_contract_changes() -> None:
+    document = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
+    on = document.get("on", document.get(True, {}))
+    expected_paths = {
+        "apps/db/**",
+        ".github/workflows/**",
+        ".github/scripts/**",
+        ".github/actions/**",
+        ".bun-version",
+    }
+
+    assert set(on["pull_request"]["paths"]) == expected_paths
+    assert set(on["push"]["paths"]) == expected_paths
 
 
 def test_daily_static_pipeline_workflow_runs_gis_inside_pipeline_before_static_publish() -> None:
     workflow = (REPO_ROOT / ".github/workflows/daily-static-pipeline.yml").read_text(
         encoding="utf-8"
     )
+    document = yaml.safe_load(workflow)
 
     # slice-9.1.1v: GIS runs in-process as a best-effort tail of run-static-pipeline,
     # NOT as a separate YAML step (failure isolation lives in run_static_pipeline so a
@@ -254,6 +288,7 @@ def test_daily_static_pipeline_workflow_runs_gis_inside_pipeline_before_static_p
     )
     assert "concurrency" in workflow
     assert "group: daily-static-pipeline" in workflow
+    assert document["jobs"]["run-static-pipeline"]["timeout-minutes"] == 30
 
 
 def test_refresh_basemap_workflow_extract_is_square_and_centered_on_montreal_island() -> None:

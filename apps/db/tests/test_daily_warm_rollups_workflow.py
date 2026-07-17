@@ -218,7 +218,7 @@ def test_prepare_discovery_propagates_list_provider_failure(tmp_path: Path) -> N
     assert result.returncode == 23
 
 
-def test_rollups_are_serial_per_provider_with_a_full_budget_and_receipt() -> None:
+def test_rollups_are_serial_per_provider_with_a_bounded_budget_and_receipt() -> None:
     rollups = _load(DAILY_WORKFLOW)["jobs"]["rollups"]
 
     assert rollups["timeout-minutes"] == 100
@@ -228,7 +228,7 @@ def test_rollups_are_serial_per_provider_with_a_full_budget_and_receipt() -> Non
         "matrix": {"provider": "${{ fromJSON(needs.prepare.outputs.providers) }}"},
     }
     build = _step(rollups, "Build warm rollups")
-    assert build["timeout-minutes"] == 90
+    assert build["timeout-minutes"] == 75
     assert build["env"] == {"PROVIDER_ID": "${{ matrix.provider }}"}
     assert 'build-warm-rollups "$PROVIDER_ID"' in build["run"]
     assert "rollup-stage-${PROVIDER_ID}.json" in build["run"]
@@ -271,7 +271,7 @@ exit 0
     assert (artifact_dir / "rollup-stm.log").read_text() == "partial rollup output\n"
 
 
-def test_publish_runs_after_prepare_even_when_rollups_fail_and_proves_messages() -> None:
+def test_publish_requires_prepare_and_rollups_success_and_proves_messages() -> None:
     publish = _load(DAILY_WORKFLOW)["jobs"]["publish"]
 
     assert publish["env"]["SNAPSHOT_BASEMAP_PMTILES_URL"] == (
@@ -283,7 +283,8 @@ def test_publish_runs_after_prepare_even_when_rollups_fail_and_proves_messages()
     guard = publish["if"]
     assert "always()" in guard
     assert "needs.prepare.result == 'success'" in guard
-    assert "needs.rollups.result == 'success'" not in guard
+    assert "needs.rollups.result == 'success'" in guard
+    assert publish["timeout-minutes"] == 90
     download = _step(publish, "Download alert archive receipts")
     assert download["uses"] == "actions/download-artifact@v5"
     assert download["with"]["name"] == "daily-warm-prepare-${{ github.run_id }}"

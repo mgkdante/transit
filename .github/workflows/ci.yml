@@ -11,10 +11,18 @@ on:
     branches: [main, develop]
     paths:
       - "apps/db/**"
+      - ".github/workflows/**"
+      - ".github/scripts/**"
+      - ".github/actions/**"
+      - ".bun-version"
   push:
     branches: [main, develop]
     paths:
       - "apps/db/**"
+      - ".github/workflows/**"
+      - ".github/scripts/**"
+      - ".github/actions/**"
+      - ".bun-version"
 
 permissions:
   contents: read

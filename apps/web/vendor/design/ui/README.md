@@ -7,6 +7,7 @@ Source-shipped Svelte 5 UI primitives. Transit is the wave-1 behavior and stylin
 	import { Badge } from '@yesid/ui/badge';
 	import { Button } from '@yesid/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '@yesid/ui/card';
+	import { Combobox, type ComboboxOption } from '@yesid/ui/combobox';
 </script>
 
 <Card>
@@ -15,6 +16,11 @@ Source-shipped Svelte 5 UI primitives. Transit is the wave-1 behavior and stylin
 	<Button>Open queue</Button>
 </Card>
 ```
+
+`Combobox` preserves Transit's 44px minimum tap target through
+`var(--size-tap-min)`. Products must define `--size-tap-min: 44px` in their
+application CSS. Product copy, placeholders, labels, and options stay in the
+caller; see [`PARITY-NOTES.md`](PARITY-NOTES.md#combobox-wave-4-promotion).
 
 Because the package ships source, a Tailwind consumer must scan `@yesid/ui/src`. For a workspace consumer whose stylesheet is under `apps/web/src`, add:
 

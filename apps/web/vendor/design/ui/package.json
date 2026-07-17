@@ -12,6 +12,7 @@
     "./button": "./src/primitives/button/index.ts",
     "./card": "./src/primitives/card/index.ts",
     "./collapsible": "./src/primitives/collapsible/index.ts",
+    "./combobox": "./src/primitives/combobox/index.ts",
     "./resizable": "./src/primitives/resizable/index.ts",
     "./scroll-area": "./src/primitives/scroll-area/index.ts",
     "./separator": "./src/primitives/separator/index.ts",
