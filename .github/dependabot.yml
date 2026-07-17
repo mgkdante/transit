@@ -12,3 +12,30 @@ updates:
       github-actions:
         patterns:
           - "*"
+
+  # JS workspace (bun): root package.json + apps/web + apps/data-proxy.
+  # Grouped monthly to keep noise low; if a PR arrives without a bun.lock
+  # update, dependabot's bun support has regressed — pause this block and
+  # bump manually until fixed.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    target-branch: "main"
+    open-pull-requests-limit: 3
+    groups:
+      js-dependencies:
+        patterns:
+          - "*"
+
+  # Python pipeline (uv): apps/db pyproject + uv.lock.
+  - package-ecosystem: "uv"
+    directory: "/apps/db"
+    schedule:
+      interval: "monthly"
+    target-branch: "main"
+    open-pull-requests-limit: 3
+    groups:
+      py-dependencies:
+        patterns:
+          - "*"
