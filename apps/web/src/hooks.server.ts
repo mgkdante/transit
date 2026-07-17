@@ -1,8 +1,11 @@
-import type { Handle } from '@sveltejs/kit';
+import type { Handle, ServerInit } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { pathLocale } from '$lib/i18n';
 import { readPublicSiteConfig } from '$lib/site/config';
 import { securityHeaders } from '$lib/site/securityHeaders';
+import { configureTransitUi } from '$lib/ui/configure';
+
+export const init: ServerInit = configureTransitUi;
 
 // Server hooks — the request-time plumbing for the transit web app.
 //

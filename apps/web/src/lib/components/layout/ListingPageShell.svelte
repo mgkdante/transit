@@ -9,13 +9,9 @@
 -->
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
-	import { ChevronToggle } from '$lib/components/brand';
-	import { Separator } from '$lib/components/ui/separator';
-	import {
-		Collapsible,
-		CollapsibleContent,
-		CollapsibleTrigger,
-	} from '$lib/components/ui/collapsible';
+	import { ChevronToggle } from '@yesid/ui/brand';
+	import { Separator } from '@yesid/ui/separator';
+	import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@yesid/ui/collapsible';
 	import { isDesktopViewport, layout } from '$lib/nav';
 	import { persisted } from '$lib/stores';
 

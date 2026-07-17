@@ -17,9 +17,9 @@
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { ChevronToggle } from '$lib/components/brand';
+	import { ChevronToggle } from '@yesid/ui/brand';
 	import { getLocale, type Locale } from '$lib/i18n';
-	import { ToggleGroup, ToggleGroupItem } from '$lib/components/ui/toggle-group';
+	import { ToggleGroup, ToggleGroupItem } from '@yesid/ui/toggle-group';
 	import SegmentedChoice from '$lib/components/surface/SegmentedChoice.svelte';
 	import { persisted } from '$lib/stores/persisted.svelte';
 

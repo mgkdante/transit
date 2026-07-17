@@ -69,7 +69,7 @@
 		TocNav,
 		type TocEntry,
 	} from '$lib/components/shared';
-	import { Button } from '$lib/components/ui/button';
+	import { Button } from '@yesid/ui/button';
 	import { StateNotice } from '$lib/components/edge';
 	import { toReliabilityClusters } from './clusters';
 	import { reliabilityCopy } from './reliability.copy';

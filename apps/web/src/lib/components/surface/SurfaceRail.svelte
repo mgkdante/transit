@@ -20,7 +20,7 @@
 <script lang="ts">
 	import { onMount, tick, type Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
-	import { ChevronToggle } from '$lib/components/brand';
+	import { ChevronToggle } from '@yesid/ui/brand';
 	import { layout } from '$lib/nav/layout.svelte';
 	import { modalSheet } from '$lib/components/shared/modalSheet';
 

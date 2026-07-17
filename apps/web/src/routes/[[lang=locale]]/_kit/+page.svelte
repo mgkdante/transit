@@ -22,26 +22,20 @@
 
 	// Brand primitives.
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import StopLabel from '$lib/components/brand/StopLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
+	import { StopLabel } from '@yesid/ui/brand';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
-	import ChevronToggle from '$lib/components/brand/ChevronToggle.svelte';
-	import MetroStation from '$lib/components/brand/MetroStation.svelte';
+	import { ChevronToggle } from '@yesid/ui/brand';
+	import { MetroStation } from '@yesid/ui/brand';
 	import CornerMarks from '$lib/components/brand/CornerMarks.svelte';
 
 	// UI primitives.
-	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Separator } from '$lib/components/ui/separator';
-	import {
-		Card,
-		CardHeader,
-		CardTitle,
-		CardDescription,
-		CardContent,
-	} from '$lib/components/ui/card';
-	import { Tabs, TabsList, TabsTrigger, TabsContent } from '$lib/components/ui/tabs';
+	import { Button } from '@yesid/ui/button';
+	import { Badge } from '@yesid/ui/badge';
+	import { Separator } from '@yesid/ui/separator';
+	import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@yesid/ui/card';
+	import { Tabs, TabsList, TabsTrigger, TabsContent } from '@yesid/ui/tabs';
 
 	// Dataviz kit (non-chart primitives) + the ONE chart renderer (P5.2).
 	import {
@@ -59,9 +53,10 @@
 	import { EdgeState } from '$lib/components/edge';
 
 	// Chrome & layout (Set-B brand + layout primitives).
-	import { TerminalPanel, StickyPanel } from '$lib/components/brand';
+	import { StickyPanel } from '@yesid/ui/brand';
+	import { TerminalPanel } from '$lib/components/brand';
 	import { Footer, Surface } from '$lib/components/layout';
-	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
+	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '@yesid/ui/resizable';
 
 	// --- Gallery controls --------------------------------------------------------
 	let lang = $state<Locale>(DEFAULT_LOCALE);

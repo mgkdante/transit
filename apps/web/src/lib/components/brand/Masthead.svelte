@@ -31,9 +31,9 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
-	import SectionLabel from './SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import SectionHeading from './SectionHeading.svelte';
-	import { Separator } from '$lib/components/ui/separator';
+	import { Separator } from '@yesid/ui/separator';
 
 	export interface MastheadProps {
 		/** Mono station-voice overline (e.g. "NETWORK · LIVE"). */

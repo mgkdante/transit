@@ -25,7 +25,7 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).not.toContain('ResizablePaneGroup');
 		expect(source).not.toContain('ResizablePane');
 		expect(source).not.toContain('ResizableHandle');
-		expect(source).not.toContain("from '$lib/components/ui/resizable'");
+		expect(source).not.toContain("from '@yesid/ui/resizable'");
 		expect(source).not.toContain('onMapPaneResize');
 		expect(source).not.toContain('onPaneLayoutChange');
 	});

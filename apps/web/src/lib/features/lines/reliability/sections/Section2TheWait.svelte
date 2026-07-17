@@ -39,7 +39,7 @@
 	import { selectServiceSpan } from '../selectors/serviceSpan';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import MetricBullet from './MetricBullet.svelte';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';

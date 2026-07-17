@@ -16,7 +16,7 @@
 <script lang="ts">
 	import { cn, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { Locale } from '$lib/i18n';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import { SeverityBar } from '$lib/components/dataviz';
 	import { Chart, type SparklineSpec } from '$lib/components/dataviz/chart';

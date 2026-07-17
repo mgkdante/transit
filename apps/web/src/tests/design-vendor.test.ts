@@ -8,13 +8,44 @@
 //    PR that re-runs design-sync and updates THIS assertion.
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
 
 const VENDOR = resolve(process.cwd(), 'vendor/design');
+const APP_SRC = resolve(process.cwd(), 'src');
+
+const ADOPTED_LOCAL_PATHS = [
+	...[
+		'badge',
+		'button',
+		'card',
+		'collapsible',
+		'resizable',
+		'scroll-area',
+		'separator',
+		'sheet',
+		'skeleton',
+		'tabs',
+		'toggle',
+		'toggle-group',
+	].map((family) => `lib/components/ui/${family}`),
+	...[
+		'BlueprintShell',
+		'ChevronToggle',
+		'MetroStation',
+		'SectionLabel',
+		'StickyPanel',
+		'StopLabel',
+	].map((component) => `lib/components/brand/${component}.svelte`),
+	'lib/components/brand/StopLabel.svelte.test.ts',
+	'lib/components/shared/TerminalCursor.svelte',
+	'lib/components/shared/TocBadge.svelte',
+	'lib/components/shared/TocBadge.test.ts',
+	'lib/utils/create-cn.ts',
+] as const;
 
 /** The deliberate pin. Bump via `bun tools/design-sync.ts --tag <next>`. */
-const PINNED_TAG = 'v0.4.0';
+const PINNED_TAG = 'v0.5.0';
 
 function walkFiles(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir).sort()) {
@@ -55,5 +86,31 @@ describe('vendor/design integrity', () => {
 
 	it('vendor tree matches the manifest hash (vendored code is never hand-edited)', () => {
 		expect(treeHash(VENDOR)).toBe(manifest.treeHash);
+	});
+
+	it('vendors the @yesid/ui runtime surface without package tests', () => {
+		const uiRoot = join(VENDOR, 'ui');
+		const packageJson = JSON.parse(readFileSync(join(uiRoot, 'package.json'), 'utf-8')) as {
+			name: string;
+			dependencies: Record<string, string>;
+		};
+		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file));
+
+		expect(packageJson.name).toBe('@yesid/ui');
+		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
+		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
+		expect(files).toContain('src/primitives/button/button.svelte');
+		expect(files).toContain('src/brand/BlueprintShell.svelte');
+		expect(
+			files.filter((file) => /(?:^|\/)(?:test-fixtures\/|vitest\.)|\.test\.ts$/.test(file)),
+		).toEqual([]);
+	});
+});
+
+describe('@yesid/ui adoption', () => {
+	it('does not retain local copies of adopted package code', () => {
+		const retained = ADOPTED_LOCAL_PATHS.filter((path) => existsSync(join(APP_SRC, path)));
+
+		expect(retained).toEqual([]);
 	});
 });

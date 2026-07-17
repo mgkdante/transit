@@ -20,12 +20,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
-	import {
-		Collapsible,
-		CollapsibleTrigger,
-		CollapsibleContent,
-	} from '$lib/components/ui/collapsible';
-	import { ChevronToggle } from '$lib/components/brand';
+	import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@yesid/ui/collapsible';
+	import { ChevronToggle } from '@yesid/ui/brand';
 
 	let {
 		label,

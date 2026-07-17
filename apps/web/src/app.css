@@ -3,6 +3,7 @@
 
 /* Tailwind CSS v4 (CSS-first config, no tailwind.config.js) */
 @import 'tailwindcss';
+@source '../vendor/design/ui/src';
 
 /* Cross-browser mobile resets — Brave/Chrome/Safari Android consistency */
 *,

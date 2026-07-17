@@ -23,8 +23,8 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { ScrollArea } from '@yesid/ui/scroll-area';
+	import { SectionLabel } from '@yesid/ui/brand';
 
 	interface RightPanelProps {
 		/** Active locale (prop wins; falls back to context for isolated renders). */

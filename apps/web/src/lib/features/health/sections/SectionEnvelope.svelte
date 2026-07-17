@@ -17,7 +17,8 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import { MetricDisplay, SectionLabel } from '$lib/components/brand';
+	import { SectionLabel } from '@yesid/ui/brand';
+	import { MetricDisplay } from '$lib/components/brand';
 	import { AbsentValue } from '$lib/components/edge';
 	import WorkflowIcon from '@lucide/svelte/icons/workflow';
 	import type { EnvelopeView } from '../selectors/envelope';

@@ -24,7 +24,7 @@
 <script lang="ts">
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import SectionIcon from './SectionIcon.svelte';
-	import TocBadge from './TocBadge.svelte';
+	import { TocBadge } from '@yesid/ui/brand';
 	import { resolveTocCounter, type TocEntry } from './toc';
 
 	let {

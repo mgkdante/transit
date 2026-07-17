@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import { RankedRow } from '$lib/components/dataviz';
 	import type { TimeOfDayRow } from '../selectors/timeOfDay';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';

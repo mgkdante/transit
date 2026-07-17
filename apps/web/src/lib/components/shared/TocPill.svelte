@@ -13,8 +13,8 @@
   the same "don't scroll the page behind me" behaviour without the action.
 -->
 <script lang="ts">
-	import { ChevronToggle } from '$lib/components/brand';
-	import TocBadge from './TocBadge.svelte';
+	import { ChevronToggle } from '@yesid/ui/brand';
+	import { TocBadge } from '@yesid/ui/brand';
 	import { flattenToc, resolveTocCounter, tocElement, type TocEntry } from './toc';
 
 	let {

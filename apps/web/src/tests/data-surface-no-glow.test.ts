@@ -7,7 +7,7 @@ const read = (path: string): string => readFileSync(resolve(process.cwd(), path)
 describe('flat data-surface contract', () => {
 	it('keeps terminal and shared card chassis free of decorative outer glows', () => {
 		const terminal = read('src/lib/components/brand/TerminalPanel.svelte');
-		const card = read('src/lib/components/ui/card/card.svelte');
+		const card = read('vendor/design/ui/src/primitives/card/card.svelte');
 
 		expect(terminal).not.toContain('use:cursorGlow');
 		expect(terminal).not.toMatch(/box-shadow:\s*var\(--shadow-(?:section|card|glow)/);

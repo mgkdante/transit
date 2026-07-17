@@ -19,8 +19,8 @@
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
-	import * as Sheet from '$lib/components/ui/sheet';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import * as Sheet from '@yesid/ui/sheet';
+	import { SectionLabel } from '@yesid/ui/brand';
 
 	interface BottomSheetProps {
 		/** Whether the sheet is open (bindable — the shell/page owns this). */

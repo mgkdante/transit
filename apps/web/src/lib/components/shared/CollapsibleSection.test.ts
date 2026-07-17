@@ -390,11 +390,14 @@ describe('CollapsibleSection - article summary header', () => {
 
 	it('characterizes the unchanged content and chevron motion contracts', () => {
 		const contentSource = readFileSync(
-			resolve(process.cwd(), 'src/lib/components/ui/collapsible/collapsible-content.svelte'),
+			resolve(
+				process.cwd(),
+				'vendor/design/ui/src/primitives/collapsible/collapsible-content.svelte',
+			),
 			'utf-8',
 		);
 		const chevronSource = readFileSync(
-			resolve(process.cwd(), 'src/lib/components/brand/ChevronToggle.svelte'),
+			resolve(process.cwd(), 'vendor/design/ui/src/brand/ChevronToggle.svelte'),
 			'utf-8',
 		);
 		const collapsedRule = cssRule(contentSource, /\.collapsible-content/);

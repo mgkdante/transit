@@ -18,7 +18,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { DashboardGrid } from '$lib/components/layout';
 	import { ExplainedMetricCard, RankedRow } from '$lib/components/dataviz';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import type { KpiCardVM } from '../selectors/headlineKpis';

@@ -7,7 +7,7 @@
 	// adds tactile press feedback alongside the .tap-press CSS baseline. Both
 	// self-gate (pressBounce → touch only; tap-press → PRM-guarded). Vendored.
 	import { pressBounce } from '@yesid/motion';
-	import { ChevronToggle } from '$lib/components/brand';
+	import { ChevronToggle } from '@yesid/ui/brand';
 	import type { FilterStore } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
 	import { copy as MAP_COPY } from './map.copy';

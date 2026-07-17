@@ -1,6 +1,6 @@
 <!-- Full-header layered SVG composition, source-aligned with yesid.dev/blog. -->
 <script lang="ts">
-	import BlueprintShell from '$lib/components/brand/BlueprintShell.svelte';
+	import { BlueprintShell } from '@yesid/ui/brand';
 	import BlueprintBridge from '$lib/components/svg/transit/BlueprintBridge.svelte';
 	import BlueprintBusSide from '$lib/components/svg/transit/BlueprintBusSide.svelte';
 	import BlueprintTrackPlan from '$lib/components/svg/transit/BlueprintTrackPlan.svelte';

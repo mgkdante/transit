@@ -8,7 +8,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { ConformanceBadge } from '$lib/components/surface';
 	import { CollapsibleSection } from '$lib/components/shared';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import type { ProvenanceConformance } from '$lib/v1/schemas';
 	import type { HealthCopy } from '../health.copy';
