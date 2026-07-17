@@ -926,7 +926,7 @@ describe('AlertHistory specific-entity pickers (Line / Stop) — codec-seeded', 
 		seedFilterFixture();
 		render(AlertHistoryScreen);
 		// Two combobox pickers, each with its own labeled input; the group label names the
-		// type once (the LineCombobox input carries it as aria-label — no per-row prefix).
+		// type once (the Combobox input carries it as aria-label — no per-row prefix).
 		const linePick = document.querySelector('[data-slot="line-pick"]');
 		const stopPick = document.querySelector('[data-slot="stop-pick"]');
 		expect(linePick).not.toBeNull();
@@ -937,6 +937,8 @@ describe('AlertHistory specific-entity pickers (Line / Stop) — codec-seeded', 
 		expect(
 			within(stopPick as HTMLElement).getByRole('combobox', { name: copyEn.filters.stop.label }),
 		).toBeInTheDocument();
+		expect(linePick?.querySelector('[data-slot="combobox"]')).not.toBeNull();
+		expect(stopPick?.querySelector('[data-slot="combobox"]')).not.toBeNull();
 		// The old bespoke chip set / SearchInput is GONE.
 		expect(document.querySelector('[data-slot="entity-chips"]')).toBeNull();
 	});

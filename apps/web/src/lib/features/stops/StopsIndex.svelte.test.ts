@@ -646,10 +646,11 @@ describe('StopsIndex — find by line', () => {
 	});
 
 	it('exposes an accessible combobox (a11y AA) with the line-filter label', async () => {
-		render(StopsIndex);
+		const { container } = render(StopsIndex);
 		// bits-ui Combobox.Input carries role=combobox + our aria-label — the
 		// screen-reader entry point for find-by-line.
 		expect(await screen.findByRole('combobox', { name: 'Filter by line' })).toBeInTheDocument();
+		expect(container.querySelector('.stops-line-filter [data-slot="combobox"]')).not.toBeNull();
 	});
 
 	it('mirrors the picked line to ?route= (codec-owned, shareable) and drops it when cleared', async () => {

@@ -63,7 +63,7 @@
 		ListingFilterSection,
 		ListingSearchField,
 	} from '$lib/components/filter';
-	import { LineCombobox, type LineComboboxOption } from '$lib/components/ui/line-combobox';
+	import { Combobox, type ComboboxOption } from '@yesid/ui/combobox';
 	import { fromSearchParams } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
@@ -118,7 +118,7 @@
 	const sortedRoutes = $derived.by<RouteIndexEntry[]>(() =>
 		[...(routesIndex.data?.routes ?? [])].sort((a, b) => routeCollator.compare(a.short, b.short)),
 	);
-	const lineOptions = $derived.by<LineComboboxOption[]>(() => {
+	const lineOptions = $derived.by<ComboboxOption[]>(() => {
 		return sortedRoutes.map((r) => ({
 			value: r.id,
 			label: r.short,
@@ -341,7 +341,7 @@
 		<ListingFilterSection>
 			<div class="stops-line-filter">
 				<span class="label-section text-sm font-semibold">{t.lineLabel}</span>
-				<LineCombobox
+				<Combobox
 					options={lineOptions}
 					bind:value={selectedLineId}
 					label={t.lineLabel}
@@ -584,7 +584,7 @@
 		gap: 0.5rem;
 		min-width: 0;
 	}
-	.stops-line-filter :global([data-slot='line-combobox']) {
+	.stops-line-filter :global([data-slot='combobox']) {
 		width: 100%;
 	}
 	.stops-line-heading {
