@@ -41,17 +41,17 @@ jobs:
       SNAPSHOT_R2_BUCKET: ${{ secrets.SNAPSHOT_R2_BUCKET }}
       SNAPSHOT_STORAGE_BACKEND: s3
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - name: Initialize provider receipt
         shell: bash
         run: |
           mkdir -p apps/db/reports
           printf '{"status":"fail","phase":"preflight","provider_id":"${{ matrix.provider }}"}\n' \
             > "apps/db/reports/historic-gc-${{ matrix.provider }}.json"
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "0.11.15"
       - name: Install database package
@@ -82,7 +82,7 @@ jobs:
           exit "$scan_status"
       - name: Upload provider GC receipt
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: historic-gc-${{ matrix.provider }}-${{ github.run_id }}
           path: apps/db/reports/historic-gc-${{ matrix.provider }}.json

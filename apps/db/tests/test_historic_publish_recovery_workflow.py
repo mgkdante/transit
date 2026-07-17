@@ -181,9 +181,9 @@ def test_recovery_workflow_reuses_the_daily_lane_pinned_setup() -> None:
 
     assert recovery_setup == daily_job["steps"][:4]
     assert [step.get("uses") for step in recovery_setup] == [
-        "actions/checkout@v7",
-        "actions/setup-python@v6",
-        "astral-sh/setup-uv@v7",
+        "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+        "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+        "astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78",
         None,
     ]
     assert recovery_setup[1]["with"] == {"python-version": "3.12"}
@@ -1142,7 +1142,7 @@ def test_recovery_workflow_always_uploads_the_complete_evidence_directory() -> N
         "name": "Upload historic recovery evidence",
         "if": "always()",
         "continue-on-error": True,
-        "uses": "actions/upload-artifact@v7",
+        "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
         "with": {
             "name": "historic-publish-recovery-${{ github.run_id }}",
             "path": "apps/db/artifacts/historic-publish-recovery/",
