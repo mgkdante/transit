@@ -3,12 +3,12 @@
 // The /alerts surface offers TWO typeahead pickers (a "Line" and a "Stop" combobox)
 // over the distinct routes/stops PRESENT in the loaded log — so a rider can narrow to
 // alerts touching one line or one stop without a new fetch. This module builds those
-// {@link LineComboboxOption} lists: distinct ids, numeric-aware sort, a folded search
+// {@link ComboboxOption} lists: distinct ids, numeric-aware sort, a folded search
 // haystack per option. Copy-free (the visible label is just the bare id; the picker's
 // group label carries the "Line"/"Stop" type ONCE, so no per-row prefix). DOM-free.
 
 import type { AlertHistoryEntry } from '$lib/v1/schemas';
-import type { LineComboboxOption } from '$lib/components/ui/line-combobox';
+import type { ComboboxOption } from '@yesid/ui/combobox';
 
 /** Which id family a picker draws from an entry. */
 type EntityField = 'routes' | 'stops';
@@ -41,7 +41,7 @@ function buildEntityOptions(
 	entries: readonly AlertHistoryEntry[],
 	field: EntityField,
 	fold: (raw: string) => string,
-): LineComboboxOption[] {
+): ComboboxOption[] {
 	return distinctIds(entries, field).map((id) => ({
 		value: id,
 		label: id,
@@ -53,7 +53,7 @@ function buildEntityOptions(
 export function buildLineOptions(
 	entries: readonly AlertHistoryEntry[],
 	fold: (raw: string) => string,
-): LineComboboxOption[] {
+): ComboboxOption[] {
 	return buildEntityOptions(entries, 'routes', fold);
 }
 
@@ -61,6 +61,6 @@ export function buildLineOptions(
 export function buildStopOptions(
 	entries: readonly AlertHistoryEntry[],
 	fold: (raw: string) => string,
-): LineComboboxOption[] {
+): ComboboxOption[] {
 	return buildEntityOptions(entries, 'stops', fold);
 }

@@ -72,9 +72,9 @@ const immutableListings = [
 	},
 	{
 		file: 'src/lib/features/stops/StopsIndex.svelte',
-		// The approved site-wide no-data slice changed the empty renderer and added
-		// localized assistive inventory/mode text; controls remain immutable.
-		sha256: 'fe5bb565bbb6024c37b6c7d258cb61bf3f993ba9b88f9fba6eaaf77ba8186f22',
+		// The approved v0.6.0 adoption renamed only the combobox import, type, component,
+		// and DOM hook; the listing-control structure remains immutable.
+		sha256: '110de64542d4e0602630c56547384cc78bde0d2015a61d79ea0ed4b52aae8cdd',
 	},
 ] as const;
 

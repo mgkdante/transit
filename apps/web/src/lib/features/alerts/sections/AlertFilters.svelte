@@ -7,8 +7,8 @@
     · retained-history range first
     · entity-type (Affects) — a joined FilterGroup (All | Lines | Stops)
     · severity — a joined FilterGroup (All | Critical | High | Watch)
-    · Line — a typeahead LineCombobox over the distinct lines in the log
-    · Stop — a typeahead LineCombobox over the distinct stops in the log
+    · Line — a typeahead Combobox over the distinct lines in the log
+    · Stop — a typeahead Combobox over the distinct stops in the log
 	    · result count / clear affordance last when filters are active
 
   The two entity-type/severity radiogroups ride the shared $lib/components/filter
@@ -29,7 +29,7 @@
 	import type { AlertAffects, DateWindow } from '$lib/filters';
 	import { ArticleControlStack, HistoryNavigator } from '$lib/components/surface';
 	import { FilterGroup, FilterSummary } from '$lib/components/filter';
-	import { LineCombobox, type LineComboboxOption } from '$lib/components/ui/line-combobox';
+	import { Combobox, type ComboboxOption } from '@yesid/ui/combobox';
 	import { foldSearchText } from '$lib/search/normalize';
 
 	interface Props {
@@ -44,9 +44,9 @@
 		/** The page-owned retained-history window. */
 		window: DateWindow | undefined;
 		/** Line picker options (distinct lines in the log). */
-		lineOptions: readonly LineComboboxOption[];
+		lineOptions: readonly ComboboxOption[];
 		/** Stop picker options (distinct stops in the log). */
-		stopOptions: readonly LineComboboxOption[];
+		stopOptions: readonly ComboboxOption[];
 		/** The served span, every day selectable (empty ⇒ the picker hides via honest absence). */
 		availableDates: readonly string[];
 		/** True when any axis is active (shows the "clear filters" affordance). */
@@ -162,7 +162,7 @@
 			<div class="alert-filter-specifics">
 				<div class="alert-history-pick" data-slot="line-pick">
 					<span class="alert-history-pick-label" aria-hidden="true">{copy.filters.line.label}</span>
-					<LineCombobox
+					<Combobox
 						options={lineOptions}
 						bind:value={route}
 						label={copy.filters.line.label}
@@ -174,7 +174,7 @@
 				</div>
 				<div class="alert-history-pick" data-slot="stop-pick">
 					<span class="alert-history-pick-label" aria-hidden="true">{copy.filters.stop.label}</span>
-					<LineCombobox
+					<Combobox
 						options={stopOptions}
 						bind:value={stop}
 						label={copy.filters.stop.label}

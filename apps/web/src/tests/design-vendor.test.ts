@@ -20,6 +20,7 @@ const ADOPTED_LOCAL_PATHS = [
 		'button',
 		'card',
 		'collapsible',
+		'line-combobox',
 		'resizable',
 		'scroll-area',
 		'separator',
@@ -45,7 +46,7 @@ const ADOPTED_LOCAL_PATHS = [
 ] as const;
 
 /** The deliberate pin. Bump via `bun tools/design-sync.ts --tag <next>`. */
-const PINNED_TAG = 'v0.5.0';
+const PINNED_TAG = 'v0.6.0';
 
 function walkFiles(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir).sort()) {
@@ -97,9 +98,12 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file));
 
 		expect(packageJson.name).toBe('@yesid/ui');
+		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
 		expect(files).toContain('src/primitives/button/button.svelte');
+		expect(files).toContain('src/primitives/combobox/combobox.svelte');
+		expect(files).not.toContain('src/primitives/line-combobox/line-combobox.svelte');
 		expect(files).toContain('src/brand/BlueprintShell.svelte');
 		expect(
 			files.filter((file) => /(?:^|\/)(?:test-fixtures\/|vitest\.)|\.test\.ts$/.test(file)),
