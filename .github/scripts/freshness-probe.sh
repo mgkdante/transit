@@ -2,24 +2,28 @@
 #
 # freshness-probe.sh — external freshness probe for the transit pipeline
 # (slice-9.1.1o). Dependency-light bash (curl + jq + date + psql, all
-# preinstalled on ubuntu-latest; NO uv sync). Three checks:
+# preinstalled on ubuntu-latest; NO uv sync). Six checks:
 #
-#   A. Manifest live age — the public /v1 manifest's files.live.generated_utc
-#      must be younger than LIVE_MAX_AGE_SECONDS (cache-busted fetch).
-#   B. DB capture age — the worst (oldest) of the three realtime endpoints'
+#   A. Live manifest age — the public /v1 manifest's files.live.generated_utc
+#      must be younger than LIVE_MAX_AGE_SECONDS.
+#   B. Static ingestion heartbeat — the current static schedule's latest
+#      observation must be no older than the 36-hour daily-tier SLA.
+#   C. Historic publish heartbeat — the last successful historic-publish
+#      transaction must be no older than the same daily-tier SLA.
+#   D. DB capture age — the worst (oldest) of the three realtime endpoints'
 #      latest captured_at_utc must be younger than DB_MAX_AGE_SECONDS.
-#   C. Failed-run burst — fewer than FAILED_RUNS_ALERT_THRESHOLD failed
+#   E. Failed-run burst — fewer than FAILED_RUNS_ALERT_THRESHOLD failed
 #      raw.ingestion_runs in the last FAILED_RUNS_WINDOW_MINUTES. This is the
 #      ONLY detector for the silver-load-freeze incident class: during it,
-#      captures and publishes kept succeeding (so A and B stayed green) while
+#      captures and publishes kept succeeding (so A-D stayed green) while
 #      the silver load failed silently. The new run_kind='silver_load' rows
 #      (slice-9.1.1o) make those failures countable here.
-#   D. Stale newest silver snapshot — the newest silver.rt_feed_snapshots row
+#   F. Stale newest silver snapshot — the newest silver.rt_feed_snapshots row
 #      must be younger than SILVER_STALE_MAX_AGE_SECONDS. With silver now
 #      ephemeral (1-day retention; raw R2 is the rebuild source), a silent
 #      silver-load freeze must be caught even when raw capture stays green
-#      (Check A/B watch raw, not silver): this is the positive signal that the
-#      silver load is still ADVANCING, not just that raw is fresh.
+#      (Checks A-D do not prove silver is advancing): this is the positive signal
+#      that the silver load is still ADVANCING, not just that raw is fresh.
 #
 # Any failed check fires a single alert issue and exits nonzero (so the run
 # itself goes red); all-green resolves any open alert.
@@ -29,6 +33,7 @@ set -euo pipefail
 : "${DATABASE_URL:?DATABASE_URL must be set}"
 
 LIVE_MAX_AGE_SECONDS="${LIVE_MAX_AGE_SECONDS:-300}"
+DAILY_TIER_MAX_AGE_SECONDS=129600
 DB_MAX_AGE_SECONDS="${DB_MAX_AGE_SECONDS:-900}"
 FAILED_RUNS_WINDOW_MINUTES="${FAILED_RUNS_WINDOW_MINUTES:-30}"
 FAILED_RUNS_ALERT_THRESHOLD="${FAILED_RUNS_ALERT_THRESHOLD:-10}"
@@ -40,7 +45,7 @@ PROVIDER_ID="${PROVIDER_ID:-stm}"
 PSQL_URL="${DATABASE_URL//+psycopg/}"
 # These two values are shell-interpolated into the SQL below because psql's
 # :'var' interpolation does NOT fire through -c (it silently errored, making
-# Check B return the 999999 sentinel and Check C return 0 every run). Guard them
+# Check D return the 999999 sentinel and Check E return 0 every run). Guard them
 # strictly so a bad override can neither break nor inject into the query.
 [[ "$PROVIDER_ID" =~ ^[A-Za-z0-9_]+$ ]] || { echo "freshness-probe: invalid PROVIDER_ID '${PROVIDER_ID}'" >&2; exit 2; }
 [[ "$FAILED_RUNS_WINDOW_MINUTES" =~ ^[0-9]+$ ]] || FAILED_RUNS_WINDOW_MINUTES=30
@@ -54,27 +59,84 @@ fi
 
 failures=()
 
-# --- Check A: manifest live age ---------------------------------------------
+# --- Check A: live manifest age ---------------------------------------------
 manifest_url="${SNAPSHOT_PUBLIC_BASE_URL}/v1/${PROVIDER_ID}/manifest.json?probe=$(date -u +%s)"
 manifest_json="$(curl -fsS -H 'Cache-Control: no-cache' "$manifest_url" || true)"
-generated_utc="$(printf '%s' "$manifest_json" | jq -r '.files.live.generated_utc // empty' 2>/dev/null || true)"
+now_epoch="$(date -u +%s)"
 
-if [[ -z "$generated_utc" ]]; then
-  failures+=("manifest: fetch/parse failed for ${manifest_url}")
-else
+check_live_manifest_age() {
+  local generated_utc
+  local generated_epoch
+  local manifest_age
+
+  generated_utc="$(
+    printf '%s' "$manifest_json" \
+      | jq -r '.files.live.generated_utc // empty' 2>/dev/null \
+      || true
+  )"
+  if [[ -z "$generated_utc" ]]; then
+    failures+=("manifest: live generated_utc missing for ${manifest_url}")
+    return
+  fi
+
   generated_epoch="$(date -u -d "$generated_utc" +%s 2>/dev/null || echo "")"
   if [[ -z "$generated_epoch" ]]; then
-    failures+=("manifest: unparseable generated_utc '${generated_utc}'")
+    failures+=("manifest: live generated_utc unparseable '${generated_utc}'")
   else
-    now_epoch="$(date -u +%s)"
     manifest_age=$(( now_epoch - generated_epoch ))
     if (( manifest_age > LIVE_MAX_AGE_SECONDS )); then
       failures+=("manifest: live age ${manifest_age}s > ${LIVE_MAX_AGE_SECONDS}s")
     fi
   fi
+}
+
+check_live_manifest_age
+
+# --- Check B: static ingestion heartbeat ------------------------------------
+# last_seen_at_utc advances both when a new static_schedule edition is inserted
+# and when an unchanged edition is observed again. Do not use the manifest's
+# files.static.generated_utc: that is dataset-change time and may be weeks old.
+static_heartbeat_age="$(
+  psql "$PSQL_URL" -tA -v ON_ERROR_STOP=1 -c "
+    SELECT COALESCE(
+      EXTRACT(EPOCH FROM (now() - max(last_seen_at_utc)))::bigint,
+      999999
+    )
+    FROM core.dataset_versions
+    WHERE provider_id = '${PROVIDER_ID}'
+      AND dataset_kind = 'static_schedule'
+      AND is_current = true
+  " 2>/dev/null || echo "999999"
+)"
+static_heartbeat_age="${static_heartbeat_age//[[:space:]]/}"
+[[ "$static_heartbeat_age" =~ ^[0-9]+$ ]] || static_heartbeat_age=999999
+if (( static_heartbeat_age > DAILY_TIER_MAX_AGE_SECONDS )); then
+  failures+=("static_heartbeat: latest ingestion observation age ${static_heartbeat_age}s > ${DAILY_TIER_MAX_AGE_SECONDS}s")
 fi
 
-# --- Check B: worst-endpoint DB capture age ---------------------------------
+# --- Check C: successful historic publish heartbeat -------------------------
+# snapshot_publish_state.updated_at_utc stores PostgreSQL now(), the transaction-
+# start timestamp. Its row is upserted only after uploads and hash-state flush
+# succeed, then becomes visible only if the transaction commits. It is success-
+# qualified, not literal end time; generated_utc is data time, not a heartbeat.
+historic_heartbeat_age="$(
+  psql "$PSQL_URL" -tA -v ON_ERROR_STOP=1 -c "
+    SELECT COALESCE(
+      EXTRACT(EPOCH FROM (now() - max(updated_at_utc)))::bigint,
+      999999
+    )
+    FROM core.snapshot_publish_state
+    WHERE provider_id = '${PROVIDER_ID}'
+      AND tier = 'historic'
+  " 2>/dev/null || echo "999999"
+)"
+historic_heartbeat_age="${historic_heartbeat_age//[[:space:]]/}"
+[[ "$historic_heartbeat_age" =~ ^[0-9]+$ ]] || historic_heartbeat_age=999999
+if (( historic_heartbeat_age > DAILY_TIER_MAX_AGE_SECONDS )); then
+  failures+=("historic_heartbeat: latest successful publish age ${historic_heartbeat_age}s > ${DAILY_TIER_MAX_AGE_SECONDS}s")
+fi
+
+# --- Check D: worst-endpoint DB capture age ---------------------------------
 # Mirrors health/checks.py: latest captured_at_utc per realtime endpoint, then
 # the oldest of them as the worst case. The provider id is shell-interpolated
 # (validated ^[A-Za-z0-9_]+$ above) — NOT via psql's :'var', which does not fire
@@ -110,7 +172,7 @@ if (( capture_age > DB_MAX_AGE_SECONDS )); then
   failures+=("db_capture: worst-endpoint age ${capture_age}s > ${DB_MAX_AGE_SECONDS}s")
 fi
 
-# --- Check C: failed-run burst ----------------------------------------------
+# --- Check E: failed-run burst ----------------------------------------------
 failed_runs="$(
   psql "$PSQL_URL" -tA -v ON_ERROR_STOP=1 -c "
     SELECT count(*)
@@ -125,7 +187,7 @@ if (( failed_runs >= FAILED_RUNS_ALERT_THRESHOLD )); then
   failures+=("failed_runs: ${failed_runs} failed runs in ${FAILED_RUNS_WINDOW_MINUTES}m >= ${FAILED_RUNS_ALERT_THRESHOLD}")
 fi
 
-# --- Check D: stale newest silver snapshot ----------------------------------
+# --- Check F: stale newest silver snapshot ----------------------------------
 # silver.rt_feed_snapshots is the small snapshot-grain parent table; its newest
 # row is the high-water mark of the silver load. With ephemeral silver, a silent
 # silver-load freeze (raw capture still green) shows up here as a stalled

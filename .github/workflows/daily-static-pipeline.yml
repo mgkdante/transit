@@ -20,7 +20,8 @@ concurrency:
 jobs:
   run-static-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 90  # tactical bump (was 30): 9.2k-file WAN static publish exceeded it; structural fix = slice-9.1.1r hash-gated PUTs
+    # Static snapshot PUTs are hash-gated; keep bounded headroom over the observed max.
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: apps/db
@@ -80,17 +81,27 @@ jobs:
       - name: Publish static /v1 snapshot to R2 (all providers)
         run: uv run python -m transit_ops.cli publish-all --tier static
 
-      # working-directory is db; the shared alert script lives at the repo root.
-      - name: Alert on failure
-        if: failure()
-        run: '../../.github/scripts/alert-issue.sh fire daily-static-pipeline "[alert] Daily Static Pipeline failed" "failed run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+  notify:
+    needs: [run-static-pipeline]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
 
-      - name: Resolve alert on success
-        if: success()
-        run: '../../.github/scripts/alert-issue.sh resolve daily-static-pipeline "recovered in run ${{ github.run_id }}"'
+      - name: Update daily static pipeline issue
         env:
+          STATIC_RESULT: ${{ needs['run-static-pipeline'].result }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+        run: |
+          results="run-static-pipeline=${STATIC_RESULT}"
+          if [[ "$STATIC_RESULT" == "success" ]]; then
+            .github/scripts/alert-issue.sh resolve daily-static-pipeline \
+              "recovered in run ${{ github.run_id }} (${results})"
+          else
+            .github/scripts/alert-issue.sh fire daily-static-pipeline \
+              "[alert] Daily Static Pipeline failed" \
+              "failed run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} (${results})"
+          fi

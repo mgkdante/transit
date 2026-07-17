@@ -4,8 +4,8 @@ Two pure-bash scripts live at the REPO ROOT under .github/scripts (no uv, no
 python — they run on ubuntu-latest with gh/curl/jq/psql preinstalled):
 
   alert-issue.sh    — open/close a labeled GitHub issue as the alert channel.
-  freshness-probe.sh — manifest age + DB capture age + failed-run-burst probe,
-                       firing/resolving via alert-issue.sh.
+  freshness-probe.sh — live manifest age + DB heartbeat/capture ages +
+                       failed-run-burst probe, firing/resolving via alert-issue.sh.
 
 These tests stub gh / curl / psql / alert-issue.sh on PATH (harness cloned
 from tests/test_pipeline_scripts.py) and assert the command stream + exit
@@ -69,7 +69,7 @@ def _stubbed_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
         'printf \'%s\' "${CURL_OUTPUT:-}"\n',
     )
     # psql stub: pops the next line from PSQL_OUTPUTS (newline-separated) per
-    # invocation, simulating the two scalar queries the probe runs.
+    # invocation, simulating the five scalar queries the probe runs.
     _make_executable(
         bin_dir / "psql",
         "#!/usr/bin/env bash\n"
@@ -218,9 +218,31 @@ def test_alert_issue_propagates_gh_failure(tmp_path) -> None:
 # --- freshness-probe.sh ------------------------------------------------------
 
 
-def _manifest_json(generated_utc: datetime) -> str:
-    stamp = generated_utc.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return '{"files":{"live":{"generated_utc":"' + stamp + '"}}}'
+def _manifest_json(live_generated_utc: datetime) -> str:
+    def stamp(value: datetime) -> str:
+        return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    return '{"files":{"live":{"generated_utc":"' + stamp(live_generated_utc) + '"}}}'
+
+
+def _psql_outputs(
+    *,
+    static_heartbeat_age: int = 120,
+    historic_heartbeat_age: int = 120,
+    capture_age: int = 120,
+    failed_runs: int = 0,
+    silver_age: int = 120,
+) -> str:
+    return "\n".join(
+        str(value)
+        for value in (
+            static_heartbeat_age,
+            historic_heartbeat_age,
+            capture_age,
+            failed_runs,
+            silver_age,
+        )
+    )
 
 
 def _probe_env(tmp_path: Path):
@@ -242,7 +264,7 @@ def test_freshness_probe_green_path_resolves_alert(tmp_path) -> None:
     env, log = _probe_env(tmp_path)
     env.update(
         CURL_OUTPUT=_manifest_json(datetime.now(tz=UTC) - timedelta(seconds=60)),
-        PSQL_OUTPUTS="120\n0",  # capture age 120s (< 900), 0 failed runs
+        PSQL_OUTPUTS=_psql_outputs(),
     )
 
     result = _run(FRESHNESS_PROBE, [], env)
@@ -257,7 +279,7 @@ def test_freshness_probe_fires_on_stale_manifest(tmp_path) -> None:
     env, log = _probe_env(tmp_path)
     env.update(
         CURL_OUTPUT=_manifest_json(datetime.now(tz=UTC) - timedelta(seconds=1200)),
-        PSQL_OUTPUTS="120\n0",
+        PSQL_OUTPUTS=_psql_outputs(),
     )
 
     result = _run(FRESHNESS_PROBE, [], env)
@@ -267,11 +289,68 @@ def test_freshness_probe_fires_on_stale_manifest(tmp_path) -> None:
     assert any(ln.startswith("alert-issue|fire freshness") for ln in lines)
 
 
+def test_freshness_probe_fires_above_static_heartbeat_boundary(tmp_path) -> None:
+    env, log = _probe_env(tmp_path)
+    env.update(
+        CURL_OUTPUT=_manifest_json(datetime.now(tz=UTC) - timedelta(seconds=60)),
+        PSQL_OUTPUTS=_psql_outputs(static_heartbeat_age=129601),
+    )
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode != 0
+    assert "static_heartbeat: latest ingestion observation age 129601s > 129600s" in result.stderr
+    lines = _read_log(log)
+    assert len([ln for ln in lines if ln.startswith("alert-issue|fire freshness")]) == 1
+    command_log = log.read_text(encoding="utf-8")
+    assert command_log.count("core.dataset_versions") == 1
+    assert "max(last_seen_at_utc)" in command_log
+    assert "dataset_kind = 'static_schedule'" in command_log
+    assert "is_current = true" in command_log
+
+
+def test_freshness_probe_fires_above_historic_heartbeat_boundary(tmp_path) -> None:
+    env, log = _probe_env(tmp_path)
+    env.update(
+        CURL_OUTPUT=_manifest_json(datetime.now(tz=UTC) - timedelta(seconds=60)),
+        PSQL_OUTPUTS=_psql_outputs(historic_heartbeat_age=129601),
+    )
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode != 0
+    assert "historic_heartbeat: latest successful publish age 129601s > 129600s" in result.stderr
+    lines = _read_log(log)
+    assert len([ln for ln in lines if ln.startswith("alert-issue|fire freshness")]) == 1
+    command_log = log.read_text(encoding="utf-8")
+    assert command_log.count("core.snapshot_publish_state") == 1
+    assert "max(updated_at_utc)" in command_log
+    assert "tier = 'historic'" in command_log
+
+
+def test_freshness_probe_allows_daily_heartbeats_at_36_hour_boundary(tmp_path) -> None:
+    env, log = _probe_env(tmp_path)
+    env.update(
+        CURL_OUTPUT=_manifest_json(datetime.now(tz=UTC) - timedelta(seconds=60)),
+        PSQL_OUTPUTS=_psql_outputs(
+            static_heartbeat_age=129600,
+            historic_heartbeat_age=129600,
+        ),
+    )
+
+    result = _run(FRESHNESS_PROBE, [], env)
+
+    assert result.returncode == 0, result.stderr
+    lines = _read_log(log)
+    assert any(ln.startswith("alert-issue|resolve freshness") for ln in lines)
+    assert not any(ln.startswith("alert-issue|fire") for ln in lines)
+
+
 def test_freshness_probe_fires_on_stale_db_capture(tmp_path) -> None:
     env, log = _probe_env(tmp_path)
     env.update(
         CURL_OUTPUT=_manifest_json(datetime.now(tz=UTC) - timedelta(seconds=60)),
-        PSQL_OUTPUTS="5000\n0",  # capture age 5000s > 900
+        PSQL_OUTPUTS=_psql_outputs(capture_age=5000),
     )
 
     result = _run(FRESHNESS_PROBE, [], env)
@@ -285,7 +364,7 @@ def test_freshness_probe_fires_on_failed_run_burst(tmp_path) -> None:
     env, log = _probe_env(tmp_path)
     env.update(
         CURL_OUTPUT=_manifest_json(datetime.now(tz=UTC) - timedelta(seconds=60)),
-        PSQL_OUTPUTS="120\n42",  # 42 failed runs in window >= threshold 10
+        PSQL_OUTPUTS=_psql_outputs(failed_runs=42),
     )
 
     result = _run(FRESHNESS_PROBE, [], env)
@@ -299,7 +378,7 @@ def test_freshness_probe_fires_on_unparseable_manifest(tmp_path) -> None:
     env, log = _probe_env(tmp_path)
     env.update(
         CURL_OUTPUT="<<not json>>",
-        PSQL_OUTPUTS="120\n0",
+        PSQL_OUTPUTS=_psql_outputs(),
     )
 
     result = _run(FRESHNESS_PROBE, [], env)
@@ -313,7 +392,7 @@ def test_freshness_probe_fires_on_manifest_fetch_failure(tmp_path) -> None:
     env, log = _probe_env(tmp_path)
     env.update(
         CURL_FAIL_PATTERN="manifest.json",
-        PSQL_OUTPUTS="120\n0",
+        PSQL_OUTPUTS=_psql_outputs(),
     )
 
     result = _run(FRESHNESS_PROBE, [], env)

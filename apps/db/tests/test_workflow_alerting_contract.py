@@ -18,10 +18,15 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 PROBE = WORKFLOWS / "freshness-probe.yml"
+PROBE_SCRIPT = REPO_ROOT / ".github" / "scripts" / "freshness-probe.sh"
 CRON_WORKFLOWS = {
     "daily-static-pipeline.yml": "daily-static-pipeline",
     "daily-warm-rollups.yml": "daily-warm-rollups",
     "weekly-pg-repack.yml": "weekly-pg-repack",
+}
+DAILY_NOTIFY_JOBS = {
+    "daily-static-pipeline.yml": {"run-static-pipeline"},
+    "daily-warm-rollups.yml": {"prepare", "rollups", "publish", "retention"},
 }
 
 
@@ -99,6 +104,32 @@ def test_freshness_probe_workflow_schedule_permissions_and_secrets() -> None:
     assert "resolve backup" in backup_runs
 
 
+def test_freshness_probe_pins_daily_heartbeat_age_contract() -> None:
+    script = _raw(PROBE_SCRIPT)
+    flat_script = " ".join(script.split())
+
+    assert "DAILY_TIER_MAX_AGE_SECONDS=129600" in script
+    assert "max(last_seen_at_utc)" in script
+    assert (
+        "FROM core.dataset_versions "
+        "WHERE provider_id = '${PROVIDER_ID}' "
+        "AND dataset_kind = 'static_schedule' "
+        "AND is_current = true"
+    ) in flat_script
+    assert "max(updated_at_utc)" in script
+    assert (
+        "FROM core.snapshot_publish_state "
+        "WHERE provider_id = '${PROVIDER_ID}' "
+        "AND tier = 'historic'"
+    ) in flat_script
+    assert "static_heartbeat_age > DAILY_TIER_MAX_AGE_SECONDS" in script
+    assert "historic_heartbeat_age > DAILY_TIER_MAX_AGE_SECONDS" in script
+    assert 'check_manifest_age static "$DAILY_TIER_MAX_AGE_SECONDS"' not in script
+    assert 'check_manifest_age historic "$DAILY_TIER_MAX_AGE_SECONDS"' not in script
+    assert ".files.static.generated_utc" not in script
+    assert ".files.historic.generated_utc" not in script
+
+
 # --- cron workflows ----------------------------------------------------------
 
 
@@ -110,30 +141,55 @@ def test_cron_workflows_carry_issues_write_permission() -> None:
         assert perms["issues"] == "write", filename
 
 
-def test_cron_workflows_carry_failure_and_recovery_alert_steps() -> None:
-    for filename, slug in CRON_WORKFLOWS.items():
+def test_daily_workflows_use_cancellation_safe_notify_jobs() -> None:
+    for filename, expected_needs in DAILY_NOTIFY_JOBS.items():
         path = WORKFLOWS / filename
         doc = _load(path)
-        if filename == "daily-warm-rollups.yml":
-            notify = doc["jobs"]["notify"]
-            assert set(notify["needs"]) == {"prepare", "rollups", "publish", "retention"}
-            assert notify["if"] == "always()"
-            notify_steps = notify["steps"]
-            alert_steps = [
-                step for step in notify_steps if "alert-issue.sh" in str(step.get("run", ""))
-            ]
-            assert len(alert_steps) == 1
-            alert_step = alert_steps[0]
-            assert f"fire {slug}" in alert_step["run"]
-            assert f"resolve {slug}" in alert_step["run"]
-            assert "PREPARE_RESULT" in alert_step["env"]
-            assert "ROLLUPS_RESULT" in alert_step["env"]
-            assert "PUBLISH_RESULT" in alert_step["env"]
-            assert "RETENTION_RESULT" in alert_step["env"]
-            assert "GH_TOKEN" in alert_step["env"]
-            assert "GH_REPO" in alert_step["env"]
-            continue
-        steps = _steps(doc)
+        slug = CRON_WORKFLOWS[filename]
+        notify = doc["jobs"]["notify"]
+
+        needs = notify["needs"]
+        assert ({needs} if isinstance(needs, str) else set(needs)) == expected_needs
+        assert notify["if"] == "always()"
+        alert_steps = [
+            step
+            for step in notify["steps"]
+            if "alert-issue.sh" in str(step.get("run", ""))
+        ]
+        assert len(alert_steps) == 1
+        alert_step = alert_steps[0]
+        assert f"fire {slug}" in alert_step["run"]
+        assert f"resolve {slug}" in alert_step["run"]
+        assert '== "success"' in alert_step["run"]
+        assert "else" in alert_step["run"]
+        assert "GH_TOKEN" in alert_step["env"]
+        assert "GH_REPO" in alert_step["env"]
+
+        for job_name, job in doc["jobs"].items():
+            if job_name != "notify":
+                assert "alert-issue.sh" not in str(job.get("steps", ""))
+
+        result_expressions = {
+            value
+            for value in alert_step["env"].values()
+            if isinstance(value, str) and value.startswith("${{ needs")
+        }
+        expected_result_expressions = set()
+        for job in expected_needs:
+            if "-" in job:
+                expected_result_expressions.add("${{ needs['" + job + "'].result }}")
+            else:
+                expected_result_expressions.add(f"${{{{ needs.{job}.result }}}}")
+        assert result_expressions == expected_result_expressions
+        for variable in alert_step["env"]:
+            if variable.endswith("_RESULT"):
+                assert f'"${variable}"' in alert_step["run"]
+
+
+def test_weekly_workflow_carries_failure_and_recovery_alert_steps() -> None:
+    for filename in {"weekly-pg-repack.yml"}:
+        slug = CRON_WORKFLOWS[filename]
+        steps = _steps(_load(WORKFLOWS / filename))
 
         failure_steps = [
             s
