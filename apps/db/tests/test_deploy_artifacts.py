@@ -8,6 +8,37 @@ from transit_ops.settings import Settings
 DB_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
+EXPECTED_PINNED_ACTION_LINES = {
+    "actions/cache": (
+        "uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5"
+    ),
+    "actions/checkout": (
+        "uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7"
+    ),
+    "actions/download-artifact": (
+        "uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8"
+    ),
+    "actions/setup-node": (
+        "uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7"
+    ),
+    "actions/setup-python": (
+        "uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6"
+    ),
+    "actions/upload-artifact": (
+        "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"
+    ),
+    "astral-sh/setup-uv": (
+        "uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7"
+    ),
+    "cloudflare/wrangler-action": (
+        "uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4"
+    ),
+    "oven-sh/setup-bun": (
+        "uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2"
+    ),
+}
+DECLARED_UNMAPPED_EXTERNAL_ACTION_REFS: list[tuple[str, str]] = []
+
 # Third-party / local-tooling secrets the operator keeps in the root .env for AI
 # tooling and 1Password inject. NONE of them are app config, so NO container
 # should ever receive them — the whole point of scoping compose env per service.
@@ -204,7 +235,10 @@ def test_weekly_pg_repack_workflow_is_dry_run_monitor() -> None:
     assert "postgresql-16-repack" in workflow
     assert "postgresql-client-16" in workflow
     # The size-report artifact is the bloat signal a dry-run leaves behind.
-    assert "actions/upload-artifact@v7" in workflow
+    assert (
+        "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"
+        in workflow
+    )
     assert "pg-repack-size-report" in workflow
     # Dry-run is fast; no multi-hour WAN-rewrite headroom needed.
     assert "timeout-minutes: 30" in workflow
@@ -223,7 +257,10 @@ def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof()
     ) > workflow.index('prune-warm-rollup-storage "$PROVIDER_ID"')
     # Proof report + artifact give the prune a daily visible receipt.
     assert 'retention-proof-report "$PROVIDER_ID" --report-path' in workflow
-    assert "actions/upload-artifact@v7" in workflow
+    assert (
+        "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"
+        in workflow
+    )
     assert "if: always()" in workflow
     # upload-artifact paths are workspace-relative (working-directory does
     # not apply to `uses:` steps).
@@ -265,6 +302,95 @@ def test_ci_runs_for_db_and_ci_contract_changes() -> None:
 
     assert set(on["pull_request"]["paths"]) == expected_paths
     assert set(on["push"]["paths"]) == expected_paths
+
+
+def test_external_action_refs_use_sha_pins_with_major_version_comments() -> None:
+    action_files = [
+        *sorted((REPO_ROOT / ".github/workflows").glob("*.yml")),
+        *sorted((REPO_ROOT / ".github/actions").glob("**/action.yml")),
+    ]
+    declared_unmapped_refs = {
+        source_ref for _, source_ref in DECLARED_UNMAPPED_EXTERNAL_ACTION_REFS
+    }
+    observed_unmapped: list[tuple[str, str]] = []
+
+    for path in action_files:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip().removeprefix("- ")
+            if not stripped.startswith("uses: "):
+                continue
+            source_ref = stripped.removeprefix("uses: ").split(" # ", 1)[0]
+            if source_ref.startswith("./"):
+                continue
+            if source_ref in declared_unmapped_refs:
+                observed_unmapped.append(
+                    (path.relative_to(REPO_ROOT).as_posix(), source_ref)
+                )
+                continue
+            action = source_ref.rsplit("@", 1)[0]
+            assert action in EXPECTED_PINNED_ACTION_LINES, (
+                f"{path}: external action ref has no supplied SHA: {source_ref}"
+            )
+            assert stripped == EXPECTED_PINNED_ACTION_LINES[action]
+
+    assert observed_unmapped == DECLARED_UNMAPPED_EXTERNAL_ACTION_REFS
+
+
+def test_secret_scan_verifies_gitleaks_archive_before_extraction() -> None:
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/secret-scan.yml").read_text(encoding="utf-8")
+    )
+    install = next(
+        step for step in workflow["jobs"]["gitleaks"]["steps"] if step["name"] == "Install gitleaks"
+    )
+
+    assert install["env"] == {"GITLEAKS_VERSION": "8.30.1"}
+    expected_run = "\n".join(
+        [
+            (
+                'curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/'
+                'v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" '
+                "-o /tmp/gitleaks.tar.gz"
+            ),
+            (
+                'echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
+                '  /tmp/gitleaks.tar.gz" | sha256sum -c -'
+            ),
+            "tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks",
+            "sudo install /tmp/gitleaks /usr/local/bin/gitleaks",
+        ]
+    )
+    assert install["run"].strip() == expected_run
+
+
+def test_refresh_basemap_verifies_go_pmtiles_archive_before_extraction() -> None:
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/refresh-basemap.yml").read_text(encoding="utf-8")
+    )
+    install = next(
+        step
+        for step in workflow["jobs"]["refresh-basemap"]["steps"]
+        if step["name"] == "Install go-pmtiles"
+    )
+
+    assert workflow["env"]["PMTILES_VERSION"] == "1.30.3"
+    expected_run = "\n".join(
+        [
+            (
+                'curl -sSfL "https://github.com/protomaps/go-pmtiles/releases/download/'
+                'v${PMTILES_VERSION}/go-pmtiles_${PMTILES_VERSION}_Linux_x86_64.tar.gz" '
+                "-o /tmp/go-pmtiles.tar.gz"
+            ),
+            (
+                'echo "adda9f979b719416d0c0069f57401a21c32078c46870a94f9bbda95d850f199f'
+                '  /tmp/go-pmtiles.tar.gz" | sha256sum -c -'
+            ),
+            "tar -xzf /tmp/go-pmtiles.tar.gz pmtiles",
+            "sudo mv pmtiles /usr/local/bin/",
+            "pmtiles version",
+        ]
+    )
+    assert install["run"].strip() == expected_run
 
 
 def test_daily_static_pipeline_workflow_runs_gis_inside_pipeline_before_static_publish() -> None:

@@ -37,11 +37,13 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Install go-pmtiles
         run: |
-          curl -sSL "https://github.com/protomaps/go-pmtiles/releases/download/v${PMTILES_VERSION}/go-pmtiles_${PMTILES_VERSION}_Linux_x86_64.tar.gz" | tar xz pmtiles
+          curl -sSfL "https://github.com/protomaps/go-pmtiles/releases/download/v${PMTILES_VERSION}/go-pmtiles_${PMTILES_VERSION}_Linux_x86_64.tar.gz" -o /tmp/go-pmtiles.tar.gz
+          echo "adda9f979b719416d0c0069f57401a21c32078c46870a94f9bbda95d850f199f  /tmp/go-pmtiles.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/go-pmtiles.tar.gz pmtiles
           sudo mv pmtiles /usr/local/bin/
           pmtiles version
 
@@ -61,7 +63,7 @@ jobs:
           test "${SIZE}" -gt 100000
 
       - name: Upload to R2 (stable key, content-immutable)
-        uses: cloudflare/wrangler-action@v4
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           # Keep in lockstep with the other workflows (pinned by the pytest contract).
