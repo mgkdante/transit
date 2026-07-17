@@ -65,12 +65,12 @@ jobs:
           bun-version-file: .bun-version
 
       - name: Deploy worker with wrangler
-        run: bunx wrangler@4.100.0 deploy
+        run: bunx wrangler@4.111.0 deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
       - name: Apply public snapshot CORS
-        run: bunx wrangler@4.100.0 r2 bucket cors set transit-snapshots --file r2-cors.json --force
+        run: bunx wrangler@4.111.0 r2 bucket cors set transit-snapshots --file r2-cors.json --force
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
