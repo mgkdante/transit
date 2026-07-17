@@ -120,11 +120,39 @@ The Oracle-ready local stack runs Postgres, the realtime worker, the health API,
 Run:
 
 ```bash
+export POSTGRES_PASSWORD='<local-secret>'
 docker compose up -d postgres health caddy
 docker compose up -d worker
 ```
 
 Caddy proxies health traffic to the health service. Local defaults serve the proxy over HTTP through `CADDY_SITE_ADDRESS=:80` and host port `CADDY_HTTP_PORT=8080`. The Compose file also publishes container port 443 to `CADDY_HTTPS_PORT=8443` for later VM/TLS configuration.
+
+Compose refuses to start without `POSTGRES_PASSWORD`. It passes the raw secret to libpq through `PGPASSWORD` rather than embedding it in `DATABASE_URL`, so strong passwords containing URL-reserved characters remain valid. Postgres publishes on `POSTGRES_BIND_ADDRESS=127.0.0.1` by default; a production operator may select only the private VNIC address after recording the matching NSG, UFW, and `pg_hba.conf` receipts. That runtime change and restart require owner approval.
+
+### Existing Postgres volumes
+
+`POSTGRES_PASSWORD` initializes only an empty Postgres data directory. Changing the environment value does not rotate the database role password stored in an existing volume.
+
+For disposable local data, stop the stack, confirm the data can be lost, and remove only the Compose `postgres_data` volume before recreating it with the new secret. Volume removal is destructive; never use that path for retained or production data.
+
+For retained data, obtain owner approval and rotate in this order:
+
+1. Read the new secret into the current shell without putting it in shell history:
+
+   ```bash
+   read -rsp 'New Postgres password: ' POSTGRES_PASSWORD
+   export POSTGRES_PASSWORD
+   printf '\n'
+   ```
+
+   This satisfies the new Compose parser only. No service is recreated before the database role changes.
+2. Stop database clients with `docker compose stop worker pruner health` while leaving Postgres running.
+3. Open `docker compose exec postgres psql -U "${POSTGRES_USER:-transit}" -d "${POSTGRES_DB:-transit}"`, enter the current password, then run `\password <POSTGRES_USER value>` and enter the new password twice.
+4. Persist the same `POSTGRES_PASSWORD` in the runtime secret source.
+5. Run `docker compose up -d --force-recreate postgres worker pruner health` without removing `postgres_data`.
+6. Verify the new credential through the health and worker paths, verify the old password must fail, and retain the private-bind, NSG, UFW, and HBA receipts.
+
+Production rotation, recreation, and restart remain owner-gated.
 
 ## Oracle Production Status
 

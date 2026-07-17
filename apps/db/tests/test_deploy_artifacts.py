@@ -1,6 +1,11 @@
 import math
+import os
+import shutil
+import subprocess
 from pathlib import Path
+from urllib.parse import urlsplit
 
+import pytest
 import yaml
 
 from transit_ops.settings import Settings
@@ -68,6 +73,7 @@ HEALTH_ONLY_SETTINGS = {
 # (run_health_checks does not reach any STM feed).
 HEALTH_ENVIRONMENT_KEYS = {
     "DATABASE_URL",
+    "PGPASSWORD",
     "APP_ENV",
     "LOG_LEVEL",
     "STM_PROVIDER_ID",
@@ -130,9 +136,10 @@ def test_compose_pruner_service_runs_decoupled_prune_loop() -> None:
     assert not any(key.startswith("SNAPSHOT_") for key in pruner_keys)
     # It DOES get the DB url, the retention knobs, the pruner cadence, and pause.
     assert pruner["environment"]["DATABASE_URL"] == (
-        "postgresql://${POSTGRES_USER:-transit}:"
-        "${POSTGRES_PASSWORD:-transit-local-password}@postgres:5432/"
-        "${POSTGRES_DB:-transit}"
+        "postgresql://${POSTGRES_USER:-transit}@postgres:5432/${POSTGRES_DB:-transit}"
+    )
+    assert pruner["environment"]["PGPASSWORD"] == (
+        "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
     )
     assert {
         "PRUNER_SLEEP_SECONDS",
@@ -159,16 +166,82 @@ def test_compose_waits_for_postgres_health_before_app_services() -> None:
         }
 
 
-def test_compose_defaults_app_services_to_internal_postgres() -> None:
+def test_compose_requires_database_secret_and_binds_postgres_to_loopback() -> None:
     services = _compose()["services"]
     expected = (
-        "postgresql://${POSTGRES_USER:-transit}:"
-        "${POSTGRES_PASSWORD:-transit-local-password}@postgres:5432/"
+        "postgresql://${POSTGRES_USER:-transit}@postgres:5432/"
         "${POSTGRES_DB:-transit}"
     )
-    assert services["worker"]["environment"]["DATABASE_URL"] == expected
-    assert services["health"]["environment"]["DATABASE_URL"] == expected
-    assert services["postgres"]["ports"] == ["${POSTGRES_HOST_PORT:-5432}:5432"]
+    required_password = "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+    assert services["postgres"]["environment"]["POSTGRES_PASSWORD"] == required_password
+    for service_name in ("worker", "pruner", "health"):
+        environment = services[service_name]["environment"]
+        assert environment["DATABASE_URL"] == expected
+        assert environment["PGPASSWORD"] == required_password
+    assert services["postgres"]["ports"] == [
+        "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_HOST_PORT:-5432}:5432"
+    ]
+
+    known_password = "-".join(("transit", "local", "password"))
+    for rel in (
+        ".env.example",
+        ".gitleaks.toml",
+        "apps/db/docker-compose.yml",
+    ):
+        assert known_password not in (REPO_ROOT / rel).read_text(encoding="utf-8")
+
+    compose_text = (DB_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "${POSTGRES_PASSWORD:-" not in compose_text
+
+
+def test_compose_interpolation_rejects_missing_database_secret() -> None:
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("Docker Compose is unavailable in this environment")
+
+    env = os.environ.copy()
+    for password in (None, ""):
+        if password is None:
+            env.pop("POSTGRES_PASSWORD", None)
+        else:
+            env["POSTGRES_PASSWORD"] = password
+        rejected = subprocess.run(
+            [docker, "compose", "-f", "docker-compose.yml", "config"],
+            cwd=DB_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert rejected.returncode != 0
+        assert "POSTGRES_PASSWORD is required" in (rejected.stdout + rejected.stderr)
+
+    explicit_password = "fn4@explicit:/%test"
+    env["POSTGRES_PASSWORD"] = explicit_password
+    explicit = subprocess.run(
+        [docker, "compose", "-f", "docker-compose.yml", "config"],
+        cwd=DB_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert explicit.returncode == 0, explicit.stderr
+    rendered = yaml.safe_load(explicit.stdout)
+    assert rendered["services"]["postgres"]["environment"]["POSTGRES_PASSWORD"] == (
+        explicit_password
+    )
+    for service_name in ("worker", "pruner", "health"):
+        environment = rendered["services"][service_name]["environment"]
+        assert environment["PGPASSWORD"] == explicit_password
+        database_url = urlsplit(environment["DATABASE_URL"])
+        assert database_url.username == "transit"
+        assert database_url.password is None
+        assert database_url.hostname == "postgres"
+    postgres_port = rendered["services"]["postgres"]["ports"][0]
+    assert postgres_port["host_ip"] == "127.0.0.1"
+    assert postgres_port["target"] == 5432
+    assert str(postgres_port["published"]) == "5432"
 
 
 def test_caddyfile_proxies_only_health_service() -> None:
@@ -191,7 +264,8 @@ def test_env_example_documents_compose_runtime_contract() -> None:
     assert {
         "POSTGRES_DB=transit",
         "POSTGRES_USER=transit",
-        "POSTGRES_PASSWORD=transit-local-password",
+        "POSTGRES_PASSWORD=",
+        "POSTGRES_BIND_ADDRESS=127.0.0.1",
         "POSTGRES_HOST_PORT=5432",
         "CADDY_SITE_ADDRESS=:80",
         "CADDY_HTTP_PORT=8080",
@@ -201,6 +275,22 @@ def test_env_example_documents_compose_runtime_contract() -> None:
     assert not any(line.startswith("NE" "ON_") for line in assignments)
     assert not any(line.startswith("RAIL" "WAY_") for line in assignments)
     assert "Oracle VM Postgres" in env_example
+
+
+def test_readme_documents_owner_gated_existing_volume_rotation() -> None:
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "Existing Postgres volumes" in readme
+    assert "does not rotate" in readme
+    assert "read -rsp 'New Postgres password: ' POSTGRES_PASSWORD" in readme
+    assert "No service is recreated before the database role changes" in readme
+    assert "docker compose stop worker pruner health" in readme
+    assert '${POSTGRES_USER:-transit}' in readme
+    assert '${POSTGRES_DB:-transit}' in readme
+    assert r"\password" in readme
+    assert "docker compose up -d --force-recreate postgres worker pruner health" in readme
+    assert "destructive" in readme
+    assert "old password must fail" in readme
+    assert "owner approval" in readme
 
 
 def test_worker_dockerfile_ships_pg_dump_16_client() -> None:
@@ -293,6 +383,8 @@ def test_ci_runs_for_db_and_ci_contract_changes() -> None:
     )
     on = document.get("on", document.get(True, {}))
     expected_paths = {
+        ".env.example",
+        ".gitleaks.toml",
         "apps/db/**",
         ".github/workflows/**",
         ".github/scripts/**",
@@ -302,6 +394,26 @@ def test_ci_runs_for_db_and_ci_contract_changes() -> None:
 
     assert set(on["pull_request"]["paths"]) == expected_paths
     assert set(on["push"]["paths"]) == expected_paths
+
+
+def test_real_db_ci_proves_reserved_character_password_support() -> None:
+    document = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
+    job = document["jobs"]["real-db-tests"]
+    postgres_password = job["services"]["postgres"]["env"]["POSTGRES_PASSWORD"]
+
+    assert "@" in postgres_password
+    assert ":" in postgres_password
+    assert "/" in postgres_password
+    assert "%" in postgres_password
+    assert job["env"]["PGPASSWORD"] == postgres_password
+
+    for key in ("DATABASE_URL", "TRANSIT_TEST_DATABASE_URL"):
+        database_url = urlsplit(job["env"][key])
+        assert database_url.username == "transit_ci"
+        assert database_url.password is None
+        assert database_url.hostname == "localhost"
 
 
 def test_external_action_refs_use_sha_pins_with_major_version_comments() -> None:
@@ -495,11 +607,11 @@ def test_compose_worker_environment_covers_pipeline_settings_only() -> None:
     # keeps this contract honest as new fields land (plan-freshness trigger (b)).
     services = _compose()["services"]
     worker_keys = _environment_keys(services["worker"])
-    expected = set(Settings.model_fields) - HEALTH_ONLY_SETTINGS
+    expected = (set(Settings.model_fields) - HEALTH_ONLY_SETTINGS) | {"PGPASSWORD"}
     assert worker_keys == expected
     # Typo guard: every literal env var (minus the interpolated DATABASE_URL) must
     # be a real Settings field, or extra="ignore" would silently drop it.
-    assert (worker_keys - {"DATABASE_URL"}) <= set(Settings.model_fields)
+    assert (worker_keys - {"DATABASE_URL", "PGPASSWORD"}) <= set(Settings.model_fields)
     assert "STM_API_KEY" in worker_keys
 
 
@@ -542,7 +654,7 @@ def test_compose_health_environment_excludes_stm_credentials() -> None:
     health_keys = _environment_keys(services["health"])
     assert health_keys == HEALTH_ENVIRONMENT_KEYS
     assert "STM_API_KEY" not in health_keys
-    assert (health_keys - {"DATABASE_URL"}) <= set(Settings.model_fields)
+    assert (health_keys - {"DATABASE_URL", "PGPASSWORD"}) <= set(Settings.model_fields)
 
 
 def test_compose_postgres_environment_is_bootstrap_only() -> None:
