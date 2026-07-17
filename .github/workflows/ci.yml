@@ -10,6 +10,8 @@ on:
   pull_request:
     branches: [main, develop]
     paths:
+      - ".env.example"
+      - ".gitleaks.toml"
       - "apps/db/**"
       - ".github/workflows/**"
       - ".github/scripts/**"
@@ -18,6 +20,8 @@ on:
   push:
     branches: [main, develop]
     paths:
+      - ".env.example"
+      - ".gitleaks.toml"
       - "apps/db/**"
       - ".github/workflows/**"
       - ".github/scripts/**"
@@ -121,7 +125,7 @@ jobs:
         image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: transit_ci
-          POSTGRES_PASSWORD: transit_ci
+          POSTGRES_PASSWORD: "transit_ci@:/%"
           POSTGRES_DB: transit_ci
         ports:
           - 5432:5432
@@ -133,8 +137,9 @@ jobs:
     env:
       # alembic env.py resolves this through Settings.DATABASE_URL; the real-DB
       # tests read TRANSIT_TEST_DATABASE_URL. Same disposable container for both.
-      DATABASE_URL: postgresql+psycopg://transit_ci:transit_ci@localhost:5432/transit_ci
-      TRANSIT_TEST_DATABASE_URL: postgresql+psycopg://transit_ci:transit_ci@localhost:5432/transit_ci
+      DATABASE_URL: postgresql+psycopg://transit_ci@localhost:5432/transit_ci
+      TRANSIT_TEST_DATABASE_URL: postgresql+psycopg://transit_ci@localhost:5432/transit_ci
+      PGPASSWORD: "transit_ci@:/%"
       COLUMNS: "200"
     steps:
       - name: Check out repository
