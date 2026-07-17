@@ -204,7 +204,7 @@ def test_weekly_pg_repack_workflow_is_dry_run_monitor() -> None:
     assert "postgresql-16-repack" in workflow
     assert "postgresql-client-16" in workflow
     # The size-report artifact is the bloat signal a dry-run leaves behind.
-    assert "actions/upload-artifact@v4" in workflow
+    assert "actions/upload-artifact@v7" in workflow
     assert "pg-repack-size-report" in workflow
     # Dry-run is fast; no multi-hour WAN-rewrite headroom needed.
     assert "timeout-minutes: 30" in workflow
@@ -223,7 +223,7 @@ def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof()
     ) > workflow.index('prune-warm-rollup-storage "$PROVIDER_ID"')
     # Proof report + artifact give the prune a daily visible receipt.
     assert 'retention-proof-report "$PROVIDER_ID" --report-path' in workflow
-    assert "actions/upload-artifact@v4" in workflow
+    assert "actions/upload-artifact@v7" in workflow
     assert "if: always()" in workflow
     # upload-artifact paths are workspace-relative (working-directory does
     # not apply to `uses:` steps).

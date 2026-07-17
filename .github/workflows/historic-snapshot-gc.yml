@@ -41,7 +41,7 @@ jobs:
       SNAPSHOT_R2_BUCKET: ${{ secrets.SNAPSHOT_R2_BUCKET }}
       SNAPSHOT_STORAGE_BACKEND: s3
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Initialize provider receipt
         shell: bash
         run: |
@@ -51,7 +51,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "0.11.15"
       - name: Install database package
@@ -82,7 +82,7 @@ jobs:
           exit "$scan_status"
       - name: Upload provider GC receipt
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: historic-gc-${{ matrix.provider }}-${{ github.run_id }}
           path: apps/db/reports/historic-gc-${{ matrix.provider }}.json

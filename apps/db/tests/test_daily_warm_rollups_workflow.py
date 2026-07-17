@@ -118,7 +118,7 @@ def test_prepare_reuses_recovery_setup_migrates_and_emits_safe_provider_matrix()
     assert '>> "$GITHUB_OUTPUT"' in discover["run"]
     upload = _step(prepare, "Upload prepare evidence")
     assert upload["if"] == "always()"
-    assert upload["uses"] == "actions/upload-artifact@v4"
+    assert upload["uses"] == "actions/upload-artifact@v7"
     assert upload["with"]["if-no-files-found"] == "warn"
 
 
@@ -235,7 +235,7 @@ def test_rollups_are_serial_per_provider_with_a_bounded_budget_and_receipt() -> 
     assert "rollup-${PROVIDER_ID}.log" in build["run"]
     upload = _step(rollups, "Upload rollup receipt")
     assert upload["if"] == "always()"
-    assert upload["uses"] == "actions/upload-artifact@v4"
+    assert upload["uses"] == "actions/upload-artifact@v7"
     assert upload["with"]["if-no-files-found"] == "warn"
 
 
@@ -286,7 +286,7 @@ def test_publish_requires_prepare_and_rollups_success_and_proves_messages() -> N
     assert "needs.rollups.result == 'success'" in guard
     assert publish["timeout-minutes"] == 90
     download = _step(publish, "Download alert archive receipts")
-    assert download["uses"] == "actions/download-artifact@v5"
+    assert download["uses"] == "actions/download-artifact@v8"
     assert download["with"]["name"] == "daily-warm-prepare-${{ github.run_id }}"
     publish_run = _step(publish, "Publish gated historic snapshot")["run"]
     assert "publish-all" in publish_run
@@ -299,7 +299,7 @@ def test_publish_requires_prepare_and_rollups_success_and_proves_messages() -> N
     assert "--report-path" in proof
     upload = _step(publish, "Upload publish evidence")
     assert upload["if"] == "always()"
-    assert upload["uses"] == "actions/upload-artifact@v4"
+    assert upload["uses"] == "actions/upload-artifact@v7"
     assert upload["with"]["if-no-files-found"] == "warn"
 
 
@@ -416,7 +416,7 @@ def test_retention_is_serial_after_publish_and_requires_bronze_exhaustion() -> N
     assert 'retention-proof-report "$PROVIDER_ID" --report-path' in proof
     upload = _step(retention, "Upload retention receipts")
     assert upload["if"] == "always()"
-    assert upload["uses"] == "actions/upload-artifact@v4"
+    assert upload["uses"] == "actions/upload-artifact@v7"
     assert upload["with"]["if-no-files-found"] == "warn"
 
 
