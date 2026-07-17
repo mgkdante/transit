@@ -1,13 +1,13 @@
 # Monthly grouped GitHub Actions updates (pattern ported from yesid.dev).
-# Target develop: the develop-push deploy to dev.transit.yesid.dev doubles as
-# a smoke test for action bumps before they ride a promotion to main.
+# Target main: transit's develop is stale/diverged (155 behind, 20 unique
+# squash-promotes) — reconvergence is a Phase 2 hygiene item; until then main
 version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "monthly"
-    target-branch: "develop"
+    target-branch: "main"
     groups:
       github-actions:
         patterns:
