@@ -18,7 +18,7 @@
 	import type { StopDailyPoint } from '$lib/v1';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { MetricDisplay } from '$lib/components/brand';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import { AbsentValue } from '$lib/components/edge';
 	import { selectDailyTrend } from '../selectors/dailyTrend';
 	import { poolDailyRange, type ExactDailyRangeIngredients } from '../selectors/dailyRange';

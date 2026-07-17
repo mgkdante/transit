@@ -46,7 +46,7 @@
 		type ArticleMetaEntry,
 	} from '$lib/components/layout';
 	import { ResourceBoundary } from '$lib/components/surface';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import TerminalPanel from '$lib/components/brand/TerminalPanel.svelte';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import {

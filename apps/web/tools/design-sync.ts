@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // design-sync — vendors the yesid.dev-design packages (@yesid/tokens,
-// @yesid/motion, @yesid/gates) into apps/web/vendor/design at a PINNED TAG.
+// @yesid/motion, @yesid/gates, @yesid/ui) into apps/web/vendor/design at a PINNED TAG.
 //
 // Why vendored-sync (P5.1, 2026-07-02): the design repo is local-only (not on
 // GitHub / npm yet — operator decision pending), so a file: dep on a sibling
@@ -36,12 +36,12 @@ const DESIGN_REPO = resolve(webRoot, '../../../yesid.dev-design');
 const VENDOR = join(webRoot, 'vendor/design');
 const MANIFEST = join(VENDOR, 'manifest.json');
 
-const PACKAGES = ['tokens', 'motion', 'gates'] as const;
+const PACKAGES = ['tokens', 'motion', 'gates', 'ui'] as const;
 
 // Test/dev-only files stay in the design repo (its CI runs them); the vendor
 // snapshot carries runtime + type surface only.
 const EXCLUDE =
-	/(^|\/)(__tests__\/|scripts\/|research\/|vitest\.config\.ts$|\.gitignore$)|\.test\.ts$/;
+	/(^|\/)(__tests__\/|test-fixtures\/|scripts\/|research\/|vitest\.(?:config|setup)\.ts$|vitest\.d\.ts$|\.gitignore$)|\.test\.ts$/;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir).sort()) {
@@ -64,6 +64,22 @@ function treeHash(root: string): string {
 		h.update('\0');
 	}
 	return h.digest('hex');
+}
+
+/** Convert design-monorepo workspace links into standalone sibling file links. */
+function rewriteInternalWorkspaceDependencies(packageRoot: string): void {
+	const packageJsonPath = join(packageRoot, 'package.json');
+	const source = readFileSync(packageJsonPath, 'utf-8');
+	const rewritten = source.replace(
+		/("@yesid\/([^"]+)"\s*:\s*)"workspace:\*"/g,
+		(_match, prefix: string, sibling: string) => {
+			if (!PACKAGES.includes(sibling as (typeof PACKAGES)[number])) {
+				throw new Error(`cannot vendor unresolved workspace dependency @yesid/${sibling}`);
+			}
+			return `${prefix}"file:../${sibling}"`;
+		},
+	);
+	if (rewritten !== source) writeFileSync(packageJsonPath, rewritten, 'utf-8');
 }
 
 const args = process.argv.slice(2);
@@ -119,6 +135,7 @@ try {
 			mkdirSync(dirname(target), { recursive: true });
 			cpSync(f, target);
 		}
+		rewriteInternalWorkspaceDependencies(dst);
 	}
 	const manifest = {
 		repo: 'yesid.dev-design',

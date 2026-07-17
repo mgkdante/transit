@@ -22,7 +22,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { MaybeValue } from '$lib/components/edge';

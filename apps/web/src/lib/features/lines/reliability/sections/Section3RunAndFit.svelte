@@ -41,7 +41,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { fmtPct, fmtCount, fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
-	import { SectionLabel } from '$lib/components/brand';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import { ChartLegend } from '$lib/components/dataviz';

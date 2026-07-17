@@ -12,7 +12,7 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { cn } from '$lib/utils';
 	import { DashboardGrid } from '$lib/components/layout';
-	import { Card } from '$lib/components/ui/card';
+	import { Card } from '@yesid/ui/card';
 
 	interface EntityListProps extends Omit<HTMLAttributes<HTMLUListElement>, 'children'> {
 		/** The full item set (sliced to `max` for render). */

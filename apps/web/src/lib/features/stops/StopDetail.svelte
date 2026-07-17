@@ -57,13 +57,13 @@
 	} from '$lib/components/layout';
 	import { articleNavigationCopy, CollapsibleSection, type TocEntry } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import { Separator } from '$lib/components/ui/separator';
+	import { Separator } from '@yesid/ui/separator';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import type { IdentitySeed } from '$lib/v1/serverContext';
 	import { layout, mapHrefFor } from '$lib/nav';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import { Badge } from '$lib/components/ui/badge';
+	import { Badge } from '@yesid/ui/badge';
 	import { formatUtc } from '$lib/utils/time';
 	import { StopReliabilitySurface } from './reliability';
 	import {

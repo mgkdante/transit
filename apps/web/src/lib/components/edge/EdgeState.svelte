@@ -44,7 +44,7 @@
 	import { sharedClock } from '$lib/stores/clock.svelte';
 	import type { Locale } from '$lib/i18n';
 	import type { AbsenceReason } from '$lib/site/serviceWindow';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { Skeleton } from '@yesid/ui/skeleton';
 	import { DEFAULT_LOADING_SKELETON_DELAY_MS } from './loading';
 	import StateNotice, {
 		type StateNoticePresentation,

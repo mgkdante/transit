@@ -15,14 +15,10 @@
 -->
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
-	import {
-		Collapsible,
-		CollapsibleTrigger,
-		CollapsibleContent,
-	} from '$lib/components/ui/collapsible';
-	import { ChevronToggle } from '$lib/components/brand';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Card } from '$lib/components/ui/card';
+	import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@yesid/ui/collapsible';
+	import { ChevronToggle } from '@yesid/ui/brand';
+	import { Badge } from '@yesid/ui/badge';
+	import { Card } from '@yesid/ui/card';
 	import { persisted } from '$lib/stores';
 
 	type CollapsibleSectionHeaderVariant = 'default' | 'article-summary';

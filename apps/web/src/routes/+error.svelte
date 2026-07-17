@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import ErrorIllustration from '$lib/components/shared/ErrorIllustration.svelte';
-	import TerminalCursor from '$lib/components/shared/TerminalCursor.svelte';
-	import { Separator } from '$lib/components/ui/separator';
+	import { TerminalCursor } from '@yesid/ui/brand';
+	import { Separator } from '@yesid/ui/separator';
 	import { localizeHref, pathLocale, type Locale } from '$lib/i18n';
 	import { errorDocumentHead, errorPageCopy } from '$lib/site/errorPage';
 

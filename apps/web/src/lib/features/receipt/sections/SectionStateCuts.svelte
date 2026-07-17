@@ -13,7 +13,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { ExplainedMetricCard, RankedRow } from '$lib/components/dataviz';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';

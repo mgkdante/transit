@@ -13,10 +13,10 @@
 <script lang="ts" generics="K extends string">
 	import { tick, untrack, type Snippet } from 'svelte';
 	import { page } from '$app/state';
-	import { Tabs, TabsList, TabsTrigger, TabsContent } from '$lib/components/ui/tabs';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { Tabs, TabsList, TabsTrigger, TabsContent } from '@yesid/ui/tabs';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import { DetailShell, Surface } from '$lib/components/layout';
-	import { Separator } from '$lib/components/ui/separator';
+	import { Separator } from '@yesid/ui/separator';
 	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
 	import { getLocale } from '$lib/i18n';
 	import { resolveBreadcrumbTrail } from '$lib/seo/routeSeo';

@@ -20,7 +20,7 @@
 // deliberately NOT re-exported here. Each `ui/<name>` owns its own barrel
 // and is import-per-component to keep tree-shaking tight and avoid pulling
 // the whole primitive set into every surface — import those directly, e.g.
-//   import { Button } from '$lib/components/ui/button';
+//   import { Button } from '@yesid/ui/button';
 
 export * from './brand';
 export * from './shell';

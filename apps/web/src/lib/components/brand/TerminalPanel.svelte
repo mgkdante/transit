@@ -19,7 +19,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import StatusDot from './StatusDot.svelte';
-	import { Separator } from '$lib/components/ui/separator';
+	import { Separator } from '@yesid/ui/separator';
 	import { cn } from '$lib/utils';
 
 	export interface TerminalFooterItem {

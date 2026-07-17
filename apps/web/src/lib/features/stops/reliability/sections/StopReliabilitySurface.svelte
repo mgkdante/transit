@@ -64,7 +64,7 @@
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import { onMount, type Snippet } from 'svelte';
 	import { ArticleSectionStack, ReliabilityRailLayout } from '$lib/components/layout';
-	import { Button } from '$lib/components/ui/button';
+	import { Button } from '@yesid/ui/button';
 	import { StateNotice } from '$lib/components/edge';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';

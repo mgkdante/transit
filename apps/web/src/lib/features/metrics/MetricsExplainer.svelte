@@ -59,7 +59,7 @@
 	import { ConformanceBadge, FreshnessStamp } from '$lib/components/surface';
 	import { ArticleHeader, ArticleSectionStack, DetailShell } from '$lib/components/layout';
 	import { StateNotice } from '$lib/components/edge';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';

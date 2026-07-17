@@ -6,7 +6,7 @@ const read = (path: string): string => readFileSync(resolve(process.cwd(), path)
 
 describe('card frame consistency', () => {
 	it('keeps the shared card frame uniform on all four edges', () => {
-		const card = read('src/lib/components/ui/card/card.svelte');
+		const card = read('vendor/design/ui/src/primitives/card/card.svelte');
 
 		expect(card).not.toMatch(/(?:box-shadow|filter)\s*:/i);
 		expect(card).not.toContain('var(--edge-highlight)');

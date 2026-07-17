@@ -1,5 +1,5 @@
+import { createCn, createTwMergeConfig } from '@yesid/ui/cn';
 import { TRANSIT_VOCAB } from './cn-vocab';
-import { createCn, createTwMergeConfig } from './create-cn';
 
 export const cn = createCn(TRANSIT_VOCAB);
 

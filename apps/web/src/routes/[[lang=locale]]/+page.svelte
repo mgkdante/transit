@@ -46,7 +46,7 @@
 		fmtDelayMin as sharedFmtDelayMin,
 	} from '$lib/utils';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import CornerMeta from '$lib/components/brand/CornerMeta.svelte';
 	import { cornerMetaLabels } from '$lib/components/brand';
@@ -56,7 +56,7 @@
 	import { observeViewportPresence } from '$lib/components/shared';
 	import { Surface } from '$lib/components/layout';
 	import { StateNotice } from '$lib/components/edge';
-	import { Separator } from '$lib/components/ui/separator';
+	import { Separator } from '@yesid/ui/separator';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import {
 		metricInfoFor,

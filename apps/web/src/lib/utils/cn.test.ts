@@ -1,8 +1,9 @@
 import type { ClassValue } from 'clsx';
 import { describe, expect, it } from 'vitest';
+import { cn as uiCn, createCn } from '@yesid/ui/cn';
+import { configureTransitUi } from '$lib/ui/configure';
 import { cn } from './cn';
 import { TRANSIT_VOCAB } from './cn-vocab';
-import { createCn } from './create-cn';
 
 const LEGACY_OUTPUT_FIXTURES: Array<{
 	label: string;
@@ -112,5 +113,15 @@ describe('createCn', () => {
 			'text-consumer-accent text-consumer-label',
 		);
 		expect(consumerCn('text-signage-text text-consumer-accent')).toBe('text-consumer-accent');
+	});
+});
+
+describe('configureTransitUi', () => {
+	it('teaches package components the Transit dataviz color vocabulary', () => {
+		configureTransitUi();
+
+		expect(uiCn('text-dataviz-status-late text-dataviz-status-on-time')).toBe(
+			'text-dataviz-status-on-time',
+		);
 	});
 });

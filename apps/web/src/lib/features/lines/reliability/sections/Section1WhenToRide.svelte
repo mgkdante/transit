@@ -31,7 +31,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { fmtPct } from '$lib/utils';
 	import type { SeverityCode } from '$lib/v1/schemas';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { ChartLegend, DeltaStat } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';

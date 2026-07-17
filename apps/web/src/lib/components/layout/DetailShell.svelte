@@ -32,7 +32,7 @@
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
-	import { Separator } from '$lib/components/ui/separator';
+	import { Separator } from '@yesid/ui/separator';
 	import TocPill from '$lib/components/shared/TocPill.svelte';
 	import { observeActiveToc, type TocEntry } from '$lib/components/shared/toc';
 	import SurfaceRail, { type SurfaceRailContext } from '$lib/components/surface/SurfaceRail.svelte';

@@ -29,7 +29,7 @@
 -->
 <script lang="ts">
 	import { Chart, type ChartSpec, type SparklineSpec } from '$lib/components/dataviz/chart';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
 	import NetworkTile from './NetworkTile.svelte';

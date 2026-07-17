@@ -190,7 +190,7 @@ describe('ArticleHeader — exact source contract', () => {
 		const article = source('src/lib/components/layout/ArticleHeader.svelte');
 		expect(article).not.toMatch(/blueprint/i);
 		for (const path of [
-			'src/lib/components/brand/BlueprintShell.svelte',
+			'vendor/design/ui/src/brand/BlueprintShell.svelte',
 			'src/lib/components/svg/detail/BlueprintDetailBogie.svelte',
 			'src/lib/components/svg/transit/BlueprintBridge.svelte',
 			'src/lib/components/svg/transit/BlueprintCatenary.svelte',

@@ -36,7 +36,7 @@
 	import type { Locale } from '$lib/i18n';
 	import type { Alert, SeverityCode } from '$lib/v1/schemas';
 	import { formatUtc } from '$lib/utils/time';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { SectionLabel } from '@yesid/ui/brand';
 	// The contract-level alert helpers, now in the shared $lib/v1 kernel: the
 	// bilingual GTFS-RT cause/effect labels + the locale-aware display-text resolver
 	// (HTML scrub + generic-header guard). Both are pure + provider-agnostic.
