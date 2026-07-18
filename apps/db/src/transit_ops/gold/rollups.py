@@ -885,7 +885,10 @@ _HEADWAY_GAP_HIST_EDGES_SQL = (
 UPSERT_ROUTE_DELAY_SPINE = named_query(
     "rollup.route_delay_spine.upsert",
     f"""
-    WITH day_rows AS (
+    -- Keep the closed-day filter as an optimizer boundary. Without MATERIALIZED,
+    -- PostgreSQL can chase route-order incremental sorting through this CTE, walk the
+    -- provider/route index across the full fact, and apply snapshot_date_key afterward.
+    WITH day_rows AS MATERIALIZED (
         SELECT
             f.provider_id,
             f.route_id,

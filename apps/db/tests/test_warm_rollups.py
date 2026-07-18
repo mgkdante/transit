@@ -1674,6 +1674,14 @@ def test_route_delay_spine_reads_the_closed_day_fact_slice_once() -> None:
     assert compact.count("FROM gold.fact_trip_delay_snapshot AS f") == 1
 
 
+def test_route_delay_spine_materializes_the_date_slice_before_grouping() -> None:
+    from transit_ops.gold import rollups
+
+    compact = " ".join(str(rollups.UPSERT_ROUTE_DELAY_SPINE).split())
+
+    assert "WITH day_rows AS MATERIALIZED (" in compact
+
+
 def test_build_warm_rollups_wires_route_delay_spine_and_counts_it() -> None:
     conn = FakeConnection()
     engine = FakeEngine(conn)
