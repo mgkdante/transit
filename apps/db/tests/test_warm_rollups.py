@@ -1633,14 +1633,15 @@ def test_route_delay_spine_upsert_shape() -> None:
     assert "FROM gold.fact_trip_delay_snapshot" in sql
     assert "f.route_id IS NOT NULL" in sql
     assert "f.snapshot_date_key = :date_key" in compact
-    # Finest-grain GROUP BY (hour x direction); provider_local_date = :local_date.
-    # GC1 / Step G1: the main aggregation now selects from `binned AS b` LEFT JOIN the
-    # per-5m distinct-delayed CTE `delayed AS d`, so the GROUP BY carries the `b.` alias
-    # (+ d.delayed_trip_count, functionally dependent on the grain).
+    # The fact scan reduces once at the 5m grain needed for distinct trips, then the
+    # additive metrics fold to the stored hour x direction grain.
     assert ":local_date" in compact
     assert (
-        "GROUP BY b.provider_id, b.route_id, b.hour_of_day_local, b.direction_id, "
-        "d.delayed_trip_count" in compact
+        "GROUP BY s.provider_id, s.route_id, s.hour_of_day_local, s.direction_id, "
+        "s.bucket_5m" in compact
+    )
+    assert (
+        "GROUP BY p.provider_id, p.route_id, p.hour_of_day_local, p.direction_id" in compact
     )
     assert (
         "ON CONFLICT (provider_id, route_id, provider_local_date, "
@@ -1649,21 +1650,28 @@ def test_route_delay_spine_upsert_shape() -> None:
     # Finding D: unknown direction COALESCEs to 0 (matching the existing directional builder).
     assert "COALESCE(f.direction_id, 0)" in compact
     # Correction #1 / Finding A: the headline-share counts come from the EXACT live
-    # delay_seconds predicates, NOT from histogram bins. (GC1 aliased the aggregation
-    # source to `b`, so the outer count FILTERs carry the b. prefix.)
-    assert "b.delay_seconds >= -60 AND b.delay_seconds < 300" in compact
-    assert "b.delay_seconds > 300" in compact
-    assert "ABS(b.delay_seconds) <= 3600" in compact
+    # delay_seconds predicates, NOT from histogram bins.
+    assert "s.delay_seconds >= -60 AND s.delay_seconds < 300" in compact
+    assert "s.delay_seconds > 300" in compact
+    assert "ABS(s.delay_seconds) <= 3600" in compact
     # The histogram is a SEPARATE 21-bin array via width_bucket (p50/p90 + the chart only).
     assert "width_bucket" in compact
     assert "::smallint[]" in compact
-    # GC1 / Step G1: delayed_trip_count is now an additive spine column, computed as the
-    # SUM over 5m sub-buckets of COUNT(DISTINCT trip_id) FILTER (delay>0) to reproduce the
-    # legacy route_delay_hourly SUM chain byte-for-byte (predicate mirrors the 5m builder:
-    # delay_seconds > 0, no ghost clamp).
+    # delayed_trip_count is the SUM over 5m sub-buckets of COUNT(DISTINCT trip_id)
+    # FILTER (delay>0), reproducing the legacy route_delay_hourly chain byte-for-byte.
     assert "delayed_trip_count" in sql
-    assert "COUNT(DISTINCT f.trip_id) FILTER (WHERE f.delay_seconds > 0)" in compact
-    assert "DATE_BIN('5 minutes', f.captured_at_utc, TIMESTAMPTZ '2000-01-01')" in compact
+    assert "COUNT(DISTINCT s.trip_id)" in compact
+    assert "WHERE s.delay_seconds > 0" in compact
+    assert "DATE_BIN(" in compact
+    assert "'5 minutes', f.captured_at_utc, TIMESTAMPTZ '2000-01-01'" in compact
+
+
+def test_route_delay_spine_reads_the_closed_day_fact_slice_once() -> None:
+    from transit_ops.gold import rollups
+
+    compact = " ".join(str(rollups.UPSERT_ROUTE_DELAY_SPINE).split())
+
+    assert compact.count("FROM gold.fact_trip_delay_snapshot AS f") == 1
 
 
 def test_build_warm_rollups_wires_route_delay_spine_and_counts_it() -> None:

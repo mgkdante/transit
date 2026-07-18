@@ -885,13 +885,17 @@ _HEADWAY_GAP_HIST_EDGES_SQL = (
 UPSERT_ROUTE_DELAY_SPINE = named_query(
     "rollup.route_delay_spine.upsert",
     f"""
-    WITH binned AS (
+    WITH day_rows AS (
         SELECT
             f.provider_id,
             f.route_id,
             EXTRACT(HOUR FROM timezone(dp.timezone, f.captured_at_utc))::smallint
                 AS hour_of_day_local,
             COALESCE(f.direction_id, 0) AS direction_id,
+            DATE_BIN(
+                '5 minutes', f.captured_at_utc, TIMESTAMPTZ '2000-01-01'
+            ) AS bucket_5m,
+            f.trip_id,
             f.delay_seconds AS delay_seconds,
             CASE
                 WHEN f.delay_seconds IS NULL
@@ -908,42 +912,52 @@ UPSERT_ROUTE_DELAY_SPINE = named_query(
           AND f.route_id IS NOT NULL
           AND f.snapshot_date_key = :date_key
     ),
-    -- delayed_trip_count reproduces the legacy route_delay_hourly SUM chain BYTE-FOR-BYTE:
-    -- that value is SUM(trip_delay_summary_5m.delayed_trip_count), i.e. a SUM over the
-    -- 5-minute sub-buckets of COUNT(DISTINCT trip_id) FILTER (delay>0). A trip seen in two
-    -- 5m buckets of the same hour is counted twice, so we FIRST count distinct delayed trips
-    -- per 5m sub-bucket, THEN sum to the (route, hour, direction) grain. The 5m grain has NO
-    -- direction; adding it here is harmless because a trip carries ONE direction per row, so
-    -- the per-5m distinct-count SUM is unchanged by the extra split. Predicate mirrors the 5m
-    -- builder: delay_seconds > 0, NO ghost clamp (unlike the on_time/severe filters above).
-    delayed AS (
+    -- Reduce the filtered day ONCE at the required 5-minute distinct-trip grain. Every
+    -- other metric is additive, so the outer hour fold is exact while avoiding a second
+    -- fact-table scan solely for delayed_trip_count.
+    per5m AS (
         SELECT
-            per5m.provider_id,
-            per5m.route_id,
-            per5m.hour_of_day_local,
-            per5m.direction_id,
-            SUM(per5m.d)::integer AS delayed_trip_count
-        FROM (
-            SELECT
-                f.provider_id AS provider_id,
-                f.route_id AS route_id,
-                EXTRACT(HOUR FROM timezone(dp.timezone, f.captured_at_utc))::smallint
-                    AS hour_of_day_local,
-                COALESCE(f.direction_id, 0) AS direction_id,
-                COUNT(DISTINCT f.trip_id) FILTER (WHERE f.delay_seconds > 0) AS d
-            FROM gold.fact_trip_delay_snapshot AS f
-            INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
-            WHERE f.provider_id = :provider_id
-              AND f.route_id IS NOT NULL
-              AND f.snapshot_date_key = :date_key
-            GROUP BY
-                f.provider_id, f.route_id,
-                EXTRACT(HOUR FROM timezone(dp.timezone, f.captured_at_utc))::smallint,
-                COALESCE(f.direction_id, 0),
-                DATE_BIN('5 minutes', f.captured_at_utc, TIMESTAMPTZ '2000-01-01')
-        ) AS per5m
-        GROUP BY per5m.provider_id, per5m.route_id,
-                 per5m.hour_of_day_local, per5m.direction_id
+            s.provider_id,
+            s.route_id,
+            s.hour_of_day_local,
+            s.direction_id,
+            s.bucket_5m,
+            COUNT(*) AS observation_count,
+            COUNT(s.delay_seconds) AS delay_observation_count,
+            COUNT(*) FILTER (
+                WHERE s.delay_seconds >= -60 AND s.delay_seconds < 300
+            ) AS on_time_observation_count,
+            COUNT(*) FILTER (
+                WHERE s.delay_seconds > {SEVERE_DELAY_SECONDS}
+                  AND ABS(s.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
+            ) AS severe_delay_count,
+            SUM(s.delay_seconds) FILTER (WHERE s.bin_idx IS NOT NULL) AS sum_delay_seconds,
+            COUNT(*) FILTER (WHERE s.bin_idx = 0) AS bin_0_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 1) AS bin_1_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 2) AS bin_2_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 3) AS bin_3_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 4) AS bin_4_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 5) AS bin_5_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 6) AS bin_6_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 7) AS bin_7_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 8) AS bin_8_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 9) AS bin_9_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 10) AS bin_10_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 11) AS bin_11_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 12) AS bin_12_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 13) AS bin_13_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 14) AS bin_14_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 15) AS bin_15_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 16) AS bin_16_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 17) AS bin_17_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 18) AS bin_18_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 19) AS bin_19_count,
+            COUNT(*) FILTER (WHERE s.bin_idx = 20) AS bin_20_count,
+            COUNT(DISTINCT s.trip_id) FILTER (
+                WHERE s.delay_seconds > 0
+            ) AS delayed_trip_count
+        FROM day_rows AS s
+        GROUP BY s.provider_id, s.route_id, s.hour_of_day_local, s.direction_id, s.bucket_5m
     )
     INSERT INTO gold.route_delay_spine (
         provider_id, route_id, provider_local_date, hour_of_day_local, direction_id,
@@ -952,55 +966,39 @@ UPSERT_ROUTE_DELAY_SPINE = named_query(
         built_at_utc
     )
     SELECT
-        b.provider_id,
-        b.route_id,
+        p.provider_id,
+        p.route_id,
         :local_date,
-        b.hour_of_day_local,
-        b.direction_id,
+        p.hour_of_day_local,
+        p.direction_id,
         -- observation_count: every fact row in the grain (delay may be NULL).
-        COUNT(*)::integer,
+        SUM(p.observation_count)::integer,
         -- delay_observation_count: every non-null delay (ghost-INCLUSIVE), matching the 5m.
-        COUNT(b.delay_seconds)::integer,
+        SUM(p.delay_observation_count)::integer,
         -- on-time = delay in [-60, 300) via the EXACT live predicate (NOT bins).
         -- NULL-guarded: no usable delay -> on-time unknowable -> NULL (honest absence).
         CASE
-            WHEN COUNT(b.delay_seconds) = 0 THEN NULL
-            ELSE COUNT(*) FILTER (
-                WHERE b.delay_seconds >= -60 AND b.delay_seconds < 300
-            )::integer
+            WHEN SUM(p.delay_observation_count) = 0 THEN NULL
+            ELSE SUM(p.on_time_observation_count)::integer
         END,
         -- severe = delay > 300s via the EXACT live predicate (byte-identical to the 5m).
-        COUNT(*) FILTER (
-            WHERE b.delay_seconds > {SEVERE_DELAY_SECONDS}
-              AND ABS(b.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
-        )::integer,
+        SUM(p.severe_delay_count)::integer,
         -- pooled numerator for the rebaselined avg (ghost-excluded = in-clamp delays).
-        COALESCE(SUM(b.delay_seconds) FILTER (WHERE b.bin_idx IS NOT NULL), 0)::bigint,
+        COALESCE(SUM(p.sum_delay_seconds), 0)::bigint,
         ARRAY[
-            COUNT(*) FILTER (WHERE b.bin_idx = 0),  COUNT(*) FILTER (WHERE b.bin_idx = 1),
-            COUNT(*) FILTER (WHERE b.bin_idx = 2),  COUNT(*) FILTER (WHERE b.bin_idx = 3),
-            COUNT(*) FILTER (WHERE b.bin_idx = 4),  COUNT(*) FILTER (WHERE b.bin_idx = 5),
-            COUNT(*) FILTER (WHERE b.bin_idx = 6),  COUNT(*) FILTER (WHERE b.bin_idx = 7),
-            COUNT(*) FILTER (WHERE b.bin_idx = 8),  COUNT(*) FILTER (WHERE b.bin_idx = 9),
-            COUNT(*) FILTER (WHERE b.bin_idx = 10), COUNT(*) FILTER (WHERE b.bin_idx = 11),
-            COUNT(*) FILTER (WHERE b.bin_idx = 12), COUNT(*) FILTER (WHERE b.bin_idx = 13),
-            COUNT(*) FILTER (WHERE b.bin_idx = 14), COUNT(*) FILTER (WHERE b.bin_idx = 15),
-            COUNT(*) FILTER (WHERE b.bin_idx = 16), COUNT(*) FILTER (WHERE b.bin_idx = 17),
-            COUNT(*) FILTER (WHERE b.bin_idx = 18), COUNT(*) FILTER (WHERE b.bin_idx = 19),
-            COUNT(*) FILTER (WHERE b.bin_idx = 20)
+            SUM(p.bin_0_count),  SUM(p.bin_1_count),  SUM(p.bin_2_count),
+            SUM(p.bin_3_count),  SUM(p.bin_4_count),  SUM(p.bin_5_count),
+            SUM(p.bin_6_count),  SUM(p.bin_7_count),  SUM(p.bin_8_count),
+            SUM(p.bin_9_count),  SUM(p.bin_10_count), SUM(p.bin_11_count),
+            SUM(p.bin_12_count), SUM(p.bin_13_count), SUM(p.bin_14_count),
+            SUM(p.bin_15_count), SUM(p.bin_16_count), SUM(p.bin_17_count),
+            SUM(p.bin_18_count), SUM(p.bin_19_count), SUM(p.bin_20_count)
         ]::smallint[],
-        -- delayed_trip_count: joined from the per-5m distinct-count SUM (byte-parity above).
-        -- LEFT JOIN + COALESCE 0 keeps a grain with delays but zero positive-delay trips at 0.
-        COALESCE(d.delayed_trip_count, 0)::integer,
+        -- delayed_trip_count: SUM of the exact per-5m distinct positive-delay trip counts.
+        SUM(p.delayed_trip_count)::integer,
         :built_at_utc
-    FROM binned AS b
-    LEFT JOIN delayed AS d
-        ON  d.provider_id = b.provider_id
-        AND d.route_id = b.route_id
-        AND d.hour_of_day_local = b.hour_of_day_local
-        AND d.direction_id = b.direction_id
-    GROUP BY b.provider_id, b.route_id, b.hour_of_day_local, b.direction_id,
-             d.delayed_trip_count
+    FROM per5m AS p
+    GROUP BY p.provider_id, p.route_id, p.hour_of_day_local, p.direction_id
     ON CONFLICT (provider_id, route_id, provider_local_date, hour_of_day_local, direction_id)
     DO UPDATE SET
         observation_count        = EXCLUDED.observation_count,

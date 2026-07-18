@@ -101,13 +101,39 @@ def _seed(connection) -> None:  # noqa: ANN001
                  [(d, 0) for d in dir0_h8] + [(d, 1) for d in dir1_h8])
     _insert_rows(connection, cld, 997102, 997202, h9, [(d, 0) for d in dir0_h9])
 
+    # hour 10, dir 0: delayed-trip parity across adversarial 5m buckets. The repeated
+    # trip counts once in the first bucket and once again in the second; the positive
+    # ghost counts, while zero/negative delays and a NULL trip_id do not.
+    h10a = datetime.combine(cld, time(10, 1), tzinfo=TORONTO).astimezone(UTC)
+    h10b = datetime.combine(cld, time(10, 7), tzinfo=TORONTO).astimezone(UTC)
+    _insert_rows(
+        connection,
+        cld,
+        997104,
+        997204,
+        h10a,
+        [(60, 0), (120, 0), (7200, 0), (0, 0), (-30, 0), (60, 0)],
+        trip_ids=["repeat", "repeat", "ghost", "zero", "negative", None],
+    )
+    _insert_rows(
+        connection,
+        cld,
+        997105,
+        997205,
+        h10b,
+        [(60, 0)],
+        trip_ids=["repeat"],
+    )
+
     # An OPEN (today) row that must NOT be built (closed-day watermark).
     today = datetime.now(TORONTO).replace(hour=8, minute=0, second=0, microsecond=0)
     _insert_rows(connection, today.date(), 997103, 997203,
                  today.astimezone(UTC), [(100, 0)])
 
 
-def _insert_rows(connection, local_date, snapshot_id, run_id, captured_at, rows) -> None:  # noqa: ANN001
+def _insert_rows(  # noqa: ANN001
+    connection, local_date, snapshot_id, run_id, captured_at, rows, *, trip_ids=None
+) -> None:
     connection.execute(
         text(
             "INSERT INTO raw.ingestion_runs "
@@ -128,6 +154,7 @@ def _insert_rows(connection, local_date, snapshot_id, run_id, captured_at, rows)
     )
     date_key = int(local_date.strftime("%Y%m%d"))
     for idx, (delay, direction) in enumerate(rows):
+        trip_id = trip_ids[idx] if trip_ids is not None else f"t{snapshot_id}-{idx}"
         connection.execute(
             text(
                 """
@@ -142,7 +169,7 @@ def _insert_rows(connection, local_date, snapshot_id, run_id, captured_at, rows)
                 """
             ),
             {"p": PROVIDER, "s": snapshot_id, "ei": idx, "dk": date_key, "sld": local_date,
-             "ts": captured_at, "entity": f"e{snapshot_id}-{idx}", "trip": f"t{snapshot_id}-{idx}",
+             "ts": captured_at, "entity": f"e{snapshot_id}-{idx}", "trip": trip_id,
              "dir": direction, "delay": delay},
         )
 
@@ -152,7 +179,7 @@ def _spine_row(connection, hour, direction):  # noqa: ANN001
         text(
             """
             SELECT observation_count, delay_observation_count, on_time_observation_count,
-                   severe_delay_count, sum_delay_seconds, delay_histogram
+                   severe_delay_count, sum_delay_seconds, delay_histogram, delayed_trip_count
             FROM gold.route_delay_spine
             WHERE provider_id = :p AND route_id = '99S'
               AND hour_of_day_local = :h AND direction_id = :d
@@ -214,6 +241,44 @@ def test_spine_histograms_are_additive_across_hours(conn) -> None:  # noqa: ANN0
     combined = [a + b for a, b in zip(h8, h9)]
     assert combined[9] == 4               # 2 (h8) + 2 (h9): bins re-merge by addition
     assert sum(combined) == sum(h8) + sum(h9) == 17
+
+
+def test_spine_delayed_trips_are_distinct_per_5m_then_additive(conn) -> None:  # noqa: ANN001
+    r = _spine_row(conn, 10, 0)
+    assert r is not None
+    assert r["delayed_trip_count"] == 3
+
+
+def test_spine_plan_reads_the_closed_day_fact_slice_once(conn) -> None:  # noqa: ANN001
+    cld = _closed_local_date()
+    explain = text("EXPLAIN (FORMAT JSON)\n" + str(rollups.UPSERT_ROUTE_DELAY_SPINE))
+    raw_plan = conn.execute(
+        explain,
+        {
+            "provider_id": PROVIDER,
+            "local_date": cld,
+            "date_key": int(cld.strftime("%Y%m%d")),
+            "built_at_utc": datetime.now(UTC),
+        },
+    ).scalar_one()
+
+    def walk(node):  # noqa: ANN001, ANN202
+        yield node
+        for child in node.get("Plans", []):
+            yield from walk(child)
+
+    fact_nodes = [
+        node
+        for node in walk(raw_plan[0]["Plan"])
+        if node.get("Relation Name") == "fact_trip_delay_snapshot"
+    ]
+    assert len(fact_nodes) == 1
+    conditions = " ".join(
+        str(fact_nodes[0].get(key, ""))
+        for key in ("Index Cond", "Recheck Cond", "Filter")
+    )
+    assert "provider_id" in conditions
+    assert "snapshot_date_key" in conditions
 
 
 def test_spine_watermark_idempotent(conn) -> None:  # noqa: ANN001
