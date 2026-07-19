@@ -6,7 +6,7 @@ set -euo pipefail
 staged() { git diff --cached --name-only --diff-filter=ACM; }
 
 # GUARD 1 — generated token outputs
-TOKEN_OUTPUT_REGEX='^(apps/web/src/lib/styles/tokens\.css|apps/web/src/lib/motion/tokens\.ts)$'
+TOKEN_OUTPUT_REGEX='^apps/web/src/lib/styles/tokens\.css$'
 TOKEN_APP_CSS='apps/web/src/app.css'
 TOKEN_SOURCE_REGEX='^(apps/web/tools/tokens/tokens\.json|apps/web/tools/tokens/build\.ts)$'
 

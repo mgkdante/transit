@@ -41,7 +41,7 @@
 // stays unchanged for any non-freshness caller; FRESHNESS reads `serverNow`.
 
 import { browser } from '$app/environment';
-import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+import { isPrefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 
 /** Normal tick: per-second, so "12s ago" counts up smoothly. */
 const TICK_MS = 1000;

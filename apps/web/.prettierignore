@@ -11,7 +11,6 @@ pnpm-lock.yaml
 # (prettier would fight the `tokens:build && git diff` drift gate).
 src/app.css
 src/lib/styles/tokens.css
-src/lib/motion/tokens.ts
 src/lib/v1/schemas/json
 vendor/design
 

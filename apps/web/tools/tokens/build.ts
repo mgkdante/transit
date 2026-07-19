@@ -8,7 +8,7 @@
 //
 // Run: `bun run tokens:build` (script = `bun tools/tokens/build.ts`).
 // Source of truth: tools/tokens/tokens.json (DTCG; value drift vs the vendored
-// base is gated by src/tests/design-tokens-drift.test.ts). Emits 3 checked-in
+// base is gated by src/tests/design-tokens-drift.test.ts). Emits 2 checked-in
 // artifacts; CI `tokens:build && git diff --exit-code` keeps them in sync.
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -19,7 +19,6 @@ import {
 	generateThemeBlock,
 	replaceThemeRegion,
 } from '@yesid/tokens/src/generators/theme-block.ts';
-import { generateMotionTs } from '@yesid/tokens/src/generators/motion-ts.ts';
 
 const here = dirname(fileURLToPath(import.meta.url)); // web/tools/tokens
 const webRoot = resolve(here, '../..'); // web/
@@ -27,7 +26,6 @@ const webRoot = resolve(here, '../..'); // web/
 const TOKENS_JSON = resolve(here, 'tokens.json');
 const TOKENS_CSS = resolve(webRoot, 'src/lib/styles/tokens.css');
 const APP_CSS = resolve(webRoot, 'src/app.css');
-const MOTION_TS = resolve(webRoot, 'src/lib/motion/tokens.ts');
 
 interface BuildTarget {
 	path: string;
@@ -57,25 +55,11 @@ const CSS_HEADER: Array<[string, string]> = [
 	],
 ];
 
-const MOTION_HEADER: Array<[string, string]> = [
-	[
-		'// GENERATED FROM packages/tokens/tokens.json — DO NOT EDIT',
-		'// GENERATED FROM tools/tokens/tokens.json — DO NOT EDIT',
-	],
-	[
-		'// Repository artifact tests keep this in sync with the package-owned CSS.\n' +
-			'// Run `bun run tokens:build` to regenerate.',
-		'// A parity test in src/lib/motion/tokens.test.ts keeps this in sync\n' +
-			'// with tokens.css. Run `bun run tokens:build` to regenerate.',
-	],
-];
-
 function buildAll(): BuildTarget[] {
 	const tree = parseTokens(JSON.parse(readFileSync(TOKENS_JSON, 'utf-8')));
 
 	const tokensCss = restamp(generateTokensCss(tree), CSS_HEADER, 'tokens.css');
 	const themeBlock = restamp(generateThemeBlock(tree), CSS_HEADER, 'theme-block');
-	const motionTs = restamp(generateMotionTs(tree), MOTION_HEADER, 'motion tokens.ts');
 
 	// app.css: only the sentinel region (TOKENS:START..TOKENS:END) is generated;
 	// everything else is hand-maintained. The file must pre-exist with sentinels.
@@ -89,7 +73,6 @@ function buildAll(): BuildTarget[] {
 	return [
 		{ path: TOKENS_CSS, content: tokensCss },
 		{ path: APP_CSS, content: appCssContent },
-		{ path: MOTION_TS, content: motionTs },
 	];
 }
 

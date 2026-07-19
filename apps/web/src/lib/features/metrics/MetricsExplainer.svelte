@@ -74,7 +74,7 @@
 		settleLayout,
 		type TocEntry,
 	} from '$lib/components/shared';
-	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import {
 		METRICS,
 		METRIC_CLUSTER_ORDER,
@@ -368,7 +368,7 @@
 		await settleLayout(target);
 		if (generation !== navigationGeneration) return;
 		target?.scrollIntoView({
-			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
+			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
 			block: 'start',
 		});
 	}

@@ -7,7 +7,7 @@
 // to the reported positions with no loop. The only GL touch is `setData`.
 
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
-import { shouldAnimate } from '$lib/motion/policy';
+import { shouldAnimate } from '@yesid/motion/policy';
 import { VEHICLE_SOURCE, type VehicleFC } from '../vehicleLayer';
 import type { Coord } from '../polyline';
 import { BLEND_MS, MIN_RENDER_INTERVAL_MS } from './constants';

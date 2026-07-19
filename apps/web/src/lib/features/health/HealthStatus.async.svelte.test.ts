@@ -22,10 +22,11 @@ vi.mock('$lib/v1', async () => {
 
 vi.mock('$lib/nav', () => ({ layout: { isDesktop: true } }));
 
-vi.mock('$lib/motion/reduced-motion.svelte', () => ({
+vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	prefersReducedMotion: {
-		get current() {
-			return motion.reduced;
+		subscribe(run: (value: boolean) => void) {
+			run(motion.reduced);
+			return () => {};
 		},
 	},
 	isPrefersReducedMotion: () => motion.reduced,

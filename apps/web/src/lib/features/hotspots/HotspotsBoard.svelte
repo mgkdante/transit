@@ -51,7 +51,7 @@
 	} from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
-	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -424,7 +424,7 @@
 		await revealTocTarget(id, {
 			beforeReveal: openableAnchors.has(id) ? openCard : undefined,
 			isCurrent: () => generation === navigationGeneration,
-			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
+			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
 		});
 	}
 	$effect(() => {

@@ -15,7 +15,7 @@ Svelte 5 (runes) deployed as a **Cloudflare Worker** (Static Assets) at
 Run at the repo root once: `bun install`. Then, from `apps/web`:
 
 ```bash
-bun run tokens:build    # regenerate design tokens (src/lib/styles/tokens.css, app.css @theme region, motion/tokens.ts)
+bun run tokens:build    # regenerate Transit CSS tokens (src/lib/styles/tokens.css, app.css @theme region)
 bun run dev             # dev server
 bun run check           # svelte-check
 bun run build           # production build (adapter-cloudflare → .svelte-kit/cloudflare, workers mode)
@@ -35,6 +35,7 @@ Source of truth: `tools/tokens/tokens.json` (DTCG). Generators run under `bun`
 `bun run tokens:build && git diff --exit-code` so a stale or hand-edited generated file
 fails the build. Edit `tokens.json`, run `bun run tokens:build`, commit the result.
 Everything in `app.css` OUTSIDE the `TOKENS:START/END` sentinel region is hand-maintained.
+JavaScript motion tokens come from the immutable `@yesid/motion` customer snapshot.
 
 Brand doctrine: **orange = interactive only**; data is encoded with the SEPARATE
 `color.dataviz` scale (`--dataviz-*`), never the semantic `--success`/`--destructive`/

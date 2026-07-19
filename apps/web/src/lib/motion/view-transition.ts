@@ -17,7 +17,7 @@
 // settles before the new snapshot is captured. Mirrors the canonical SvelteKit
 // + startViewTransition recipe.
 
-import { isPrefersReducedMotion } from './reduced-motion.svelte';
+import { isPrefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 
 /** The slice of SvelteKit's `onNavigate` argument this helper needs. */
 export interface ViewTransitionNavigation {

@@ -43,7 +43,7 @@
 		type DateWindow,
 	} from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { formatDateKey, formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import {
 		fmtCount as sharedFmtCount,
@@ -638,7 +638,7 @@
 	// Scroll to a region when its TocNav row is tapped (instant under reduced motion).
 	function navigate(id: string): void {
 		void revealTocTarget(id, {
-			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
+			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
 		});
 	}
 	// The mobile pill summary — the active grain (mirrors the historic view controls).

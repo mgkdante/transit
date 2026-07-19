@@ -199,7 +199,7 @@ vi.mock('./mapCamera', () => ({
 	fitRouteBounds: () => true,
 }));
 
-vi.mock('$lib/motion/reduced-motion.svelte', () => ({
+vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	isPrefersReducedMotion: () => false,
 }));
 

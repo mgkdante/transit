@@ -30,7 +30,7 @@
 	import { formatDateKey } from '$lib/utils/time';
 	import { page } from '$app/state';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import {
 		fromSearchParams,
 		toSearchParams,
@@ -524,7 +524,7 @@
 	async function navigate(id: string): Promise<void> {
 		await revealTocTarget(id, {
 			beforeReveal: openCollapsedTocTarget,
-			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
+			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
 		});
 	}
 </script>

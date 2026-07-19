@@ -41,16 +41,53 @@ const ADOPTED_LOCAL_PATHS = [
 	'lib/utils/create-cn.ts',
 ] as const;
 
+const RETIRED_LOCAL_MOTION_PATHS = [
+	'lib/motion/actions/index.ts',
+	'lib/motion/actions/wordmarkHover.ts',
+	'lib/motion/index.ts',
+	'lib/motion/policy.ts',
+	'lib/motion/reduced-motion.svelte.ts',
+	'lib/motion/tokens.ts',
+	'lib/motion/utils/device.ts',
+	'lib/motion/utils/gsap.ts',
+] as const;
+
+const LOCAL_MOTION_IMPORT =
+	/(?:from\s+|import\s*\(\s*|vi\.mock\(\s*)['"](\$lib\/motion(?:\/[^'"]*)?)['"]/g;
+
+function findRetiredMotionImports(): string[] {
+	const violations: string[] = [];
+
+	for (const file of walkFiles(APP_SRC)) {
+		if (!/\.(?:svelte|ts)$/.test(file)) continue;
+
+		const source = readFileSync(file, 'utf-8');
+		for (const match of source.matchAll(LOCAL_MOTION_IMPORT)) {
+			const specifier = match[1];
+			if (
+				specifier === '$lib/motion/view-transition' ||
+				specifier.startsWith('$lib/motion/scrubs/')
+			) {
+				continue;
+			}
+
+			violations.push(`${relative(APP_SRC, file)} -> ${specifier}`);
+		}
+	}
+
+	return violations.sort();
+}
+
 const PINNED_RELEASE = {
-	tag: 'v0.7.0',
-	tagObject: '5dc9493180f65b78e98d130cf232793bfd1e843f',
-	peeledCommit: '35ce4c562745f848f02e089c4be99956806a5db8',
-	assetName: 'yesid.dev-design-v0.7.0.tar',
+	tag: 'v0.7.1',
+	tagObject: 'a4e50ea2662765ba70f44f21701ba29023025974',
+	peeledCommit: 'c0188172f07e6c4238b3397aa7e1b0d4ff154ee9',
+	assetName: 'yesid.dev-design-v0.7.1.tar',
 	assetSize: 3_491_840,
-	assetDigest: 'sha256:1fdba8c21d31aef16e8d8a82e2e3b697573cfd693219ec12d3351a2f90f9cfea',
+	assetDigest: 'sha256:edcdd687d515b3bb0af30da13bc5eaf4af0240c6489df2bfcacfa1c73d422f5f',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:d27659e78f6464654875b233cf223d6a599ca377d8eaec9a89917cfcd8a6463c',
-	treeHash: 'sha256:4bac9493d66874e76f02a083addc73b91355e9f0601229edc927bf4935372ffd',
+	treeHash: 'sha256:f8fdb98957a2449bf4678e3c6126ce5b529b9a2756ee37de98555493d331b8f4',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -134,5 +171,14 @@ describe('@yesid/ui adoption', () => {
 		const retained = ADOPTED_LOCAL_PATHS.filter((path) => existsSync(join(APP_SRC, path)));
 
 		expect(retained).toEqual([]);
+	});
+});
+
+describe('@yesid/motion adoption', () => {
+	it('keeps one upstream authority and only product-specific local motion', () => {
+		const retained = RETIRED_LOCAL_MOTION_PATHS.filter((path) => existsSync(join(APP_SRC, path)));
+
+		expect(retained).toEqual([]);
+		expect(findRetiredMotionImports()).toEqual([]);
 	});
 });

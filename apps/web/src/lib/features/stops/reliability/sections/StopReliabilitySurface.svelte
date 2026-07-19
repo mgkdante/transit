@@ -37,7 +37,7 @@
 	import { formatDateKey } from '$lib/utils/time';
 	import { fromSearchParams, resolveWindow, type DateWindow } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import {
 		availabilityFromCollectionIndex,
 		datesForAvailability,
@@ -442,7 +442,7 @@
 		await revealTocTarget(id, {
 			beforeReveal: openableAnchors.has(id) ? openCard : undefined,
 			isCurrent: () => generation === navigationGeneration,
-			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
+			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
 		});
 	}
 </script>
