@@ -2,12 +2,17 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { cn, type WithElementRef } from '../../cn/index.js';
 
+	export type SheetFooterProps = WithElementRef<
+		HTMLAttributes<HTMLDivElement>,
+		HTMLDivElement
+	>;
+
 	let {
 		ref = $bindable(null),
 		class: className,
 		children,
 		...restProps
-	}: WithElementRef<HTMLAttributes<HTMLDivElement>> = $props();
+	}: SheetFooterProps = $props();
 </script>
 
 <div

@@ -1,7 +1,7 @@
 // Token build — P5.1 (2026-07-02): the local engine fork (tools/tokens/src/,
 // ported from yesid.dev pre-turborepo) is RETIRED; generation now runs on the
 // vendored @yesid/tokens engine (vendor/design/tokens, pinned by
-// tools/design-sync.ts). The fork's only substantive divergence was these
+// vendor/design/manifest.json). The fork's only substantive divergence was these
 // header strings — the engine is byte-equivalent — so the outputs stay
 // byte-identical: the engine emits the design-repo headers and this script
 // re-stamps transit's provenance lines (a missing stamp throws loudly).
@@ -55,10 +55,6 @@ const CSS_HEADER: Array<[string, string]> = [
 		'/* GENERATED FROM packages/tokens/tokens.json - DO NOT EDIT */',
 		'/* GENERATED FROM tools/tokens/tokens.json — DO NOT EDIT */',
 	],
-	[
-		'/* Run `bun run --cwd packages/tokens build` to regenerate. */',
-		'/* Run `bun run tokens:build` to regenerate. */',
-	],
 ];
 
 const MOTION_HEADER: Array<[string, string]> = [
@@ -67,12 +63,10 @@ const MOTION_HEADER: Array<[string, string]> = [
 		'// GENERATED FROM tools/tokens/tokens.json — DO NOT EDIT',
 	],
 	[
-		'// A parity test in apps/web/src/lib/motion/tokens.test.ts keeps this in sync',
-		'// A parity test in src/lib/motion/tokens.test.ts keeps this in sync',
-	],
-	[
-		'// with tokens.css. Run `bun run --cwd packages/tokens build` to regenerate.',
-		'// with tokens.css. Run `bun run tokens:build` to regenerate.',
+		'// Repository artifact tests keep this in sync with the package-owned CSS.\n' +
+			'// Run `bun run tokens:build` to regenerate.',
+		'// A parity test in src/lib/motion/tokens.test.ts keeps this in sync\n' +
+			'// with tokens.css. Run `bun run tokens:build` to regenerate.',
 	],
 ];
 

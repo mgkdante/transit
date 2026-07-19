@@ -7,7 +7,7 @@
 	// --primary for interactivity. Never use this primitive to encode DATA.
 	export const toggleVariants = tv(
 		{
-			base: "hover:text-foreground hover:bg-muted aria-pressed:bg-primary/15 aria-pressed:text-primary aria-pressed:border-primary/30 data-[state=on]:bg-primary/15 data-[state=on]:text-primary data-[state=on]:border-primary/30 focus-visible:border-ring focus-visible:ring-ring/50 group/toggle inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full font-mono text-small font-medium text-muted-foreground outline-none transition-all focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+			base: "hover:text-foreground hover:bg-muted aria-pressed:bg-primary/10 aria-pressed:text-primary aria-pressed:border-primary/30 data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:border-primary/30 focus-visible:border-ring focus-visible:ring-ring/50 group/toggle inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full font-mono text-small font-medium text-muted-foreground outline-none transition-all focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
 			variants: {
 				variant: {
 					default: 'bg-transparent',

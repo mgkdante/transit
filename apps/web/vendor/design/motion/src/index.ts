@@ -1,9 +1,9 @@
 // @yesid/motion — the brand's pure motion layer, extracted from yesid.dev
 // @ 2bdb611d91749dc437c07586cb82129eabe9dfec (Tier 1 of the design system).
 //
-// Runtime contract: the consuming page must load @yesid/tokens' generated
-// tokens.css — magnetic/boop/cursorGlow read --duration-*/--ease-bounce/
-// --primary-rgb CSS custom properties at runtime (no import enforces this).
+// Runtime contract: consumers opt in to @yesid/tokens/tokens.css —
+// magnetic/boop/cursorGlow read --duration-*/--ease-bounce/--primary-rgb CSS
+// custom properties at runtime. No import is automatic.
 
 export {
 	boop,

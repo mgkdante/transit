@@ -2,12 +2,17 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { cn, type WithElementRef } from '../../cn/index.js';
 
+	export type SheetHeaderProps = WithElementRef<
+		HTMLAttributes<HTMLDivElement>,
+		HTMLDivElement
+	>;
+
 	let {
 		ref = $bindable(null),
 		class: className,
 		children,
 		...restProps
-	}: WithElementRef<HTMLAttributes<HTMLDivElement>> = $props();
+	}: SheetHeaderProps = $props();
 </script>
 
 <div

@@ -9,7 +9,7 @@
 	import { cn } from '../cn/index.js';
 	import type { SVGAttributes } from 'svelte/elements';
 
-	export interface ChevronToggleProps extends SVGAttributes<SVGSVGElement> {
+	export type ChevronToggleProps = Omit<SVGAttributes<SVGSVGElement>, 'children' | 'class'> & {
 		/** Whether the toggle is in open/expanded state */
 		open: boolean;
 		/** Arrow size */
@@ -17,7 +17,7 @@
 		/** Base direction — rotates 90deg when open */
 		direction?: 'right' | 'down';
 		class?: string;
-	}
+	};
 
 	let {
 		open,

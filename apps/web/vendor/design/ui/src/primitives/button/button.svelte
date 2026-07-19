@@ -64,11 +64,26 @@
 	export type ButtonVariant = VariantProps<typeof buttonVariants>['variant'];
 	export type ButtonSize = VariantProps<typeof buttonVariants>['size'];
 
-	export type ButtonProps = WithElementRef<HTMLButtonAttributes> &
-		WithElementRef<HTMLAnchorAttributes> & {
-			variant?: ButtonVariant;
-			size?: ButtonSize;
-		};
+	type ButtonOwnProps = {
+		variant?: ButtonVariant;
+		size?: ButtonSize;
+	};
+	type ForbidProps<Keys extends PropertyKey> = { [Key in Keys]?: never };
+	type AnchorOnlyProps = Exclude<keyof HTMLAnchorAttributes, keyof HTMLButtonAttributes>;
+	type ButtonOnlyProps = Exclude<keyof HTMLButtonAttributes, keyof HTMLAnchorAttributes>;
+
+	type ButtonElementProps =
+		| (WithElementRef<HTMLButtonAttributes, HTMLButtonElement> &
+				ForbidProps<Exclude<AnchorOnlyProps, 'href'>> & {
+				href?: null | undefined;
+		  })
+		| (WithElementRef<HTMLAnchorAttributes, HTMLAnchorElement> &
+				ForbidProps<Exclude<ButtonOnlyProps, 'disabled'>> & {
+				href: string;
+				disabled?: boolean;
+		  });
+
+	export type ButtonProps = ButtonOwnProps & ButtonElementProps;
 </script>
 
 <script lang="ts">
@@ -84,37 +99,35 @@
 		variant = 'default',
 		size = 'default',
 		ref = $bindable(null),
-		href = undefined,
-		type = 'button',
-		disabled,
-		children,
-		...restProps
+		...elementProps
 	}: ButtonProps = $props();
 </script>
 
-{#if href}
+{#if elementProps.href != null}
+	{@const { href, disabled, children, ...anchorProps } = elementProps}
 	<a
+		{...anchorProps}
 		bind:this={ref}
 		data-slot="button"
 		class={cn(buttonVariants({ variant, size }), className)}
 		href={disabled ? undefined : href}
-		aria-disabled={disabled}
+		aria-disabled={disabled || undefined}
 		role={disabled ? 'link' : undefined}
 		tabindex={disabled ? -1 : undefined}
 		use:pressBounce
-		{...restProps}
 	>
 		{@render children?.()}
 	</a>
 {:else}
+	{@const { href: _href, type = 'button', disabled, children, ...buttonProps } = elementProps}
 	<button
+		{...buttonProps}
 		bind:this={ref}
 		data-slot="button"
 		class={cn(buttonVariants({ variant, size }), className)}
 		{type}
 		{disabled}
 		use:pressBounce
-		{...restProps}
 	>
 		{@render children?.()}
 	</button>

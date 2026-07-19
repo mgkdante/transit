@@ -2,6 +2,8 @@
 
 Transit is the package baseline for wave 1. Its current primitive behavior and classes were ported as-is, with only package import-path changes. Differences found in yesid.dev were recorded here; no yesid.dev behavior was merged into the package and no consumer conditional was added.
 
+**Last updated:** 2026-07-17
+
 Comparison snapshot:
 
 - Transit: `transit/apps/web/src/lib/components/ui/`
@@ -9,6 +11,19 @@ Comparison snapshot:
 - Families reviewed: badge, button, card, collapsible, resizable, scroll-area, separator, tabs, toggle, toggle-group, sheet, skeleton, combobox (originally line-combobox)
 
 Both consumers currently use `bits-ui ^2.16.3`, `clsx ^2.1.1`, `svelte ^5.54.0`, `tailwind-merge ^3.5.0`, `tailwind-variants ^3.2.2`, and `paneforge ^1.0.2`. Transit also supplies `@lucide/svelte ^1.18.0` for Sheet and `@yesid/motion` for Button.
+
+## Prospective v0.7.0 U1 contract (not parity history)
+
+The adoption matrix and detailed family notes below preserve the extraction and wave-promotion snapshots. Their present-tense wording describes those historical comparison points. U1 does not rewrite that evidence; it prospectively tightens the shared package contract for `v0.7.0` as follows:
+
+- Button and Badge now use discriminated native-element props. `href == null` selects the button/span branch; every string, including the empty string, selects the anchor branch. Refs, events, and element-only attributes follow the rendered element.
+- Fixed-content `ChevronToggle`, `SectionLabel`, `StopLabel`, and `TerminalCursor` reject `children` and export their prop types. `CollapsibleContent` keeps consumer `children` but hides the low-level `child` hook that its wrapper uses internally.
+- Combobox makes its nullable selection optional and bindable, adds bindable `open`, forwards the selected bits-ui root behavior props and lifecycle callbacks, and keeps display text synchronized with external selection changes. Its local query still resets on close, and disabled state reaches the clear control.
+- Separator separates the delegated bits-ui default contract from the native hazard/gradient contracts. Custom variants no longer advertise or leak delegated-only props; they preserve native div attributes, outer refs, `data-slot`, and applied `maxWidth`.
+- Sheet exports named types for every direct and wrapped public part. Content's nested `portalProps` cannot replace its owned portal children, and `closeLabel` supplies caller-owned accessible close copy with `"Close"` as the fallback.
+- Toggle Group preserves the single/string and multiple/string-array prop union without a `never` cast. Root `value` remains bindable; Item `value` is a required input and only its element ref is bindable.
+
+These are API-honesty and state-wiring changes, not a claim that either consumer has completed adoption or visual verification. The historical record starts with the matrix below.
 
 ## Adoption matrix
 
@@ -32,7 +47,7 @@ Both consumers currently use `bits-ui ^2.16.3`, `clsx ^2.1.1`, `svelte ^5.54.0`,
 
 ### Badge
 
-Public surface matches: `Badge`, `badgeVariants`, `BadgeVariant`, and `BadgeSize`. Both implementations render an anchor when `href` is present and a span otherwise. Variants (`default`, `secondary`, `destructive`, `outline`, `ghost`, `link`, `tag`, `tag-active`, `number`), sizes (`default`, `xs`, `sm`), attributes, and defaults match.
+Historical extraction snapshot: the public surface matched through `Badge`, `badgeVariants`, `BadgeVariant`, and `BadgeSize`. Both implementations rendered an anchor when `href` was truthy and a span otherwise. Variants (`default`, `secondary`, `destructive`, `outline`, `ghost`, `link`, `tag`, `tag-active`, `number`), sizes (`default`, `xs`, `sm`), attributes, and defaults matched.
 
 Differences:
 
@@ -43,7 +58,7 @@ Differences:
 
 ### Button
 
-Common public surface matches: `Root`, `Button`, `buttonVariants`, `ButtonProps`, `ButtonVariant`, and `ButtonSize`. Button/anchor branching, disabled-link handling, default `type="button"`, forwarded props, variants other than `conversion`, sizes, and defaults match.
+Historical extraction snapshot: the common public surface matched through `Root`, `Button`, `buttonVariants`, `ButtonProps`, `ButtonVariant`, and `ButtonSize`. Button/anchor branching used the consumers' truthy-`href` behavior; disabled-link handling, default `type="button"`, forwarded props, variants other than `conversion`, sizes, and defaults matched.
 
 Differences:
 
@@ -126,7 +141,7 @@ Differences are non-visual today:
 
 ### Separator
 
-Exports and API match: `Separator`, `SeparatorVariant`, `HazardSize`; variants `default`, `hazard`, `gradient`; default variant, `hazardSize="md"`, `hazardAngle=-45`, orientation handling, label option, stripe periods, band thickness, animated gradient, data attributes, and reduced-motion fallback.
+Historical extraction snapshot: exports and API matched through `Separator`, `SeparatorVariant`, and `HazardSize`; variants `default`, `hazard`, and `gradient`; default variant, `hazardSize="md"`, `hazardAngle=-45`, orientation handling, label option, stripe periods, band thickness, animated gradient, data attributes, and reduced-motion fallback.
 
 Differences:
 
@@ -178,13 +193,13 @@ Differences:
 
 ### Toggle Group
 
-Exports, API, and effective class sets match: Root/ToggleGroup, Item/ToggleGroupItem, context-provided variant/size/spacing/orientation, defaults, bindable discriminated-union value cast, data attributes, segmented-control border joining, and gap calculation.
+Historical extraction snapshot: exports, API, and effective class sets matched through Root/ToggleGroup, Item/ToggleGroupItem, context-provided variant/size/spacing/orientation, defaults, the old bindable discriminated-union value cast, data attributes, segmented-control border joining, and gap calculation.
 
 Only formatting, class ordering, and comment wording differ locally. Adoption differences come from the Transit `toggleVariants` used by each Item, as documented above.
 
 ### Sheet
 
-Transit-only; yesid.dev has no Sheet family.
+Historical extraction snapshot: Sheet was Transit-only; yesid.dev had no Sheet family.
 
 Transit exports direct bits-ui Dialog Root, Trigger, Close, and Portal plus wrapped Content, Overlay, Header, Footer, Title, and Description. It also exports prefixed aliases, `sheetVariants`, and `SheetSide`.
 
@@ -209,7 +224,7 @@ Transit exports Root/Skeleton. It renders a ref-capable div with `data-slot="ske
 
 ### Combobox (Wave 4 promotion)
 
-Transit-only at extraction time; yesid.dev has no local Combobox family. Wave 1 kept the source internal under `src/primitives/line-combobox` because the Transit name did not pass the third-consumer test. Wave 4 promotes the same behavior at `@yesid/ui/combobox` for the gallery and future products.
+Historical extraction snapshot: Combobox was Transit-only and yesid.dev had no local Combobox family. Wave 1 kept the source internal under `src/primitives/line-combobox` because the Transit name did not pass the third-consumer test. Wave 4 promoted the same behavior at `@yesid/ui/combobox` for the gallery and future products.
 
 The generic package exports are Root/Combobox plus `ComboboxOption` and `ComboboxProps`. The API still accepts a readonly option catalogue, bindable nullable selected value, accessible labels/copy, optional placeholder, a caller-provided fold function, and a root class. No prop or option field changed. `label`, `placeholder`, `clearLabel`, and `emptyLabel` were already caller-owned, so no Transit copy entered the package and no new copy prop was required.
 

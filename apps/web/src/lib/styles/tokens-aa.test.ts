@@ -5,12 +5,8 @@
 // wayfinding amber, AND the dataviz status marks read ON A CARD (the worst-case
 // dataviz surface, since cards lift one step above the page).
 //
-// P5.1 (2026-07-02): the WCAG math + the pair tables moved to @yesid/gates
-// (vendored design system) — this file adapted yesid.dev's pattern originally,
-// and the engine + TRANSIT_* preset tables were extracted from THIS file's
-// pre-P5.1 inline implementation verbatim (git history holds it). The same
-// tables also gate the design repo's reconciled tokens.json upstream, so a
-// palette drift fails in BOTH repos with the actual ratio.
+// The neutral WCAG math lives in @yesid/gates. Transit owns the product-specific
+// pairs in tools/design-gates, so upstream stays consumer-neutral.
 //
 // Floors (WCAG 2.x): 4.5:1 for normal text, 3:1 for graphical objects /
 // large-scale data marks; the glyph-load-bearing occupancy dim bands carry
@@ -25,7 +21,7 @@ import {
 	TRANSIT_DATAVIZ_STATUS_ON_CARD,
 	TRANSIT_DATAVIZ_OCCUPANCY_ON_CARD,
 	TRANSIT_AA_PAIRS,
-} from '@yesid/gates/presets/transit';
+} from '../../../tools/design-gates';
 
 const tokens = JSON.parse(
 	readFileSync(resolve(process.cwd(), 'tools/tokens/tokens.json'), 'utf-8'),

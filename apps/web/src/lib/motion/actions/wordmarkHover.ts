@@ -1,7 +1,7 @@
 // wordmarkHover — P5.1 (2026-07-02): the local port (vendored from yesid.dev
 // pre-turborepo) is RETIRED in favor of the design-system copy
 // (@yesid/motion, vendored at vendor/design/motion and pinned by
-// tools/design-sync.ts). The signature brand interaction now ships from ONE
+// the schema-2 adoption manifest). The signature brand interaction now ships from ONE
 // place. Behavior-identical swap, verified against the old port:
 //   - durationSec() token values == the old literals (slow .3 / fast .15 /
 //     slower .5; the .25 effectWave literal is unchanged upstream),

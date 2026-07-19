@@ -40,3 +40,29 @@ Brand doctrine: **orange = interactive only**; data is encoded with the SEPARATE
 `color.dataviz` scale (`--dataviz-*`), never the semantic `--success`/`--destructive`/
 `--accent` tokens. Solid surfaces only (no alpha on card/popover). Dark-first; light theme
 also ships.
+
+## Design-system adoption
+
+`vendor/design` is a customer snapshot of one immutable `yesid.dev-design` Release. Its
+schema-2 manifest pins the Release asset, annotated tag object, peeled commit, package
+closure, adoption tool, exclusion policy, and installed tree. Never edit it by hand or run
+the tool from inside `vendor/design` while replacing that same directory.
+
+Use an external exact-tag bootstrap for a deliberate bump, then run the adopted tool only
+as the offline integrity gate:
+
+```bash
+design_tag=vX.Y.Z
+bootstrap_root="$(mktemp -d)"
+git clone --depth 1 --branch "$design_tag" \
+  https://github.com/mgkdante/yesid.dev-design "$bootstrap_root/yesid.dev-design"
+bun "$bootstrap_root/yesid.dev-design/tools/adopt.ts" \
+  --tag "$design_tag" \
+  --packages tokens,motion,gates,ui \
+  --dest vendor/design
+bun vendor/design/tools/adopt.ts --check --dest vendor/design
+```
+
+Run this from `apps/web`, review the complete vendored diff, update the exact pin in
+`src/tests/design-vendor.test.ts`, refresh the root lockfile, and run product checks. Package
+tests stay upstream; Transit owns its doctrine, integration, type, build, and browser proof.

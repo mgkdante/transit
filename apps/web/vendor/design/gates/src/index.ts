@@ -16,7 +16,6 @@ export {
 export {
 	brandHexViolations,
 	buildBrandHexPattern,
-	DEFAULT_BRAND_HEXES,
 	type BrandHexConfig,
 	type BrandHexResult,
 } from './engines/brandHex.js';
@@ -42,7 +41,7 @@ export {
 export {
 	colorMixViolations,
 	buildColorMixPatterns,
-	YESID_COLOR_MIX_DEFAULTS,
+	DEFAULT_COLOR_MIX_CONFIG,
 	type ColorMixFloorConfig,
 } from './engines/colorMixFloors.js';
 export {

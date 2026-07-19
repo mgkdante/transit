@@ -1,26 +1,93 @@
 {
   "name": "@yesid/ui",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
+  "svelte": "./src/index.ts",
   "description": "Source-shipped yesid brand UI primitives, ported byte-faithful from Transit with consumer-configurable class vocabulary.",
+  "sideEffects": [
+    "**/*.css"
+  ],
   "exports": {
-		".": "./src/index.ts",
-		"./brand": "./src/brand/index.ts",
-		"./cn": "./src/cn/index.ts",
-    "./badge": "./src/primitives/badge/index.ts",
-    "./button": "./src/primitives/button/index.ts",
-    "./card": "./src/primitives/card/index.ts",
-    "./collapsible": "./src/primitives/collapsible/index.ts",
-    "./combobox": "./src/primitives/combobox/index.ts",
-    "./resizable": "./src/primitives/resizable/index.ts",
-    "./scroll-area": "./src/primitives/scroll-area/index.ts",
-    "./separator": "./src/primitives/separator/index.ts",
-    "./sheet": "./src/primitives/sheet/index.ts",
-    "./skeleton": "./src/primitives/skeleton/index.ts",
-    "./tabs": "./src/primitives/tabs/index.ts",
-    "./toggle": "./src/primitives/toggle/index.ts",
-    "./toggle-group": "./src/primitives/toggle-group/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./brand": {
+      "types": "./src/brand/index.ts",
+      "svelte": "./src/brand/index.ts",
+      "default": "./src/brand/index.ts"
+    },
+    "./cn": {
+      "types": "./src/cn/index.ts",
+      "default": "./src/cn/index.ts"
+    },
+    "./badge": {
+      "types": "./src/primitives/badge/index.ts",
+      "svelte": "./src/primitives/badge/index.ts",
+      "default": "./src/primitives/badge/index.ts"
+    },
+    "./button": {
+      "types": "./src/primitives/button/index.ts",
+      "svelte": "./src/primitives/button/index.ts",
+      "default": "./src/primitives/button/index.ts"
+    },
+    "./card": {
+      "types": "./src/primitives/card/index.ts",
+      "svelte": "./src/primitives/card/index.ts",
+      "default": "./src/primitives/card/index.ts"
+    },
+    "./collapsible": {
+      "types": "./src/primitives/collapsible/index.ts",
+      "svelte": "./src/primitives/collapsible/index.ts",
+      "default": "./src/primitives/collapsible/index.ts"
+    },
+    "./combobox": {
+      "types": "./src/primitives/combobox/index.ts",
+      "svelte": "./src/primitives/combobox/index.ts",
+      "default": "./src/primitives/combobox/index.ts"
+    },
+    "./resizable": {
+      "types": "./src/primitives/resizable/index.ts",
+      "svelte": "./src/primitives/resizable/index.ts",
+      "default": "./src/primitives/resizable/index.ts"
+    },
+    "./scroll-area": {
+      "types": "./src/primitives/scroll-area/index.ts",
+      "svelte": "./src/primitives/scroll-area/index.ts",
+      "default": "./src/primitives/scroll-area/index.ts"
+    },
+    "./separator": {
+      "types": "./src/primitives/separator/index.ts",
+      "svelte": "./src/primitives/separator/index.ts",
+      "default": "./src/primitives/separator/index.ts"
+    },
+    "./sheet": {
+      "types": "./src/primitives/sheet/index.ts",
+      "svelte": "./src/primitives/sheet/index.ts",
+      "default": "./src/primitives/sheet/index.ts"
+    },
+    "./skeleton": {
+      "types": "./src/primitives/skeleton/index.ts",
+      "svelte": "./src/primitives/skeleton/index.ts",
+      "default": "./src/primitives/skeleton/index.ts"
+    },
+    "./tabs": {
+      "types": "./src/primitives/tabs/index.ts",
+      "svelte": "./src/primitives/tabs/index.ts",
+      "default": "./src/primitives/tabs/index.ts"
+    },
+    "./toggle": {
+      "types": "./src/primitives/toggle/index.ts",
+      "svelte": "./src/primitives/toggle/index.ts",
+      "default": "./src/primitives/toggle/index.ts"
+    },
+    "./toggle-group": {
+      "types": "./src/primitives/toggle-group/index.ts",
+      "svelte": "./src/primitives/toggle-group/index.ts",
+      "default": "./src/primitives/toggle-group/index.ts"
+    }
   },
   "scripts": {
     "test": "vitest run",

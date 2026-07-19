@@ -8,7 +8,7 @@ const END = '/* ===== TOKENS:END ===== */';
 const HEADER = `${START}
 /* GENERATED FROM packages/tokens/tokens.json - DO NOT EDIT */
 /* Hand-edits to this region will be overwritten on the next build. */
-/* Run \`bun run --cwd packages/tokens build\` to regenerate. */`;
+/* Run \`bun run tokens:build\` to regenerate. */`;
 
 const FOOTER = END;
 

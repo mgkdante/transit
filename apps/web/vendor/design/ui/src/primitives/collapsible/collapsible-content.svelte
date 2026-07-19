@@ -12,6 +12,7 @@
 -->
 <script lang="ts">
 	import { Collapsible as CollapsiblePrimitive } from 'bits-ui';
+	import type { WithoutChild } from '../../cn/index.js';
 
 	let {
 		ref = $bindable(null),
@@ -19,7 +20,7 @@
 		class: className,
 		children,
 		...restProps
-	}: CollapsiblePrimitive.ContentProps = $props();
+	}: WithoutChild<CollapsiblePrimitive.ContentProps> = $props();
 </script>
 
 <CollapsiblePrimitive.Content

@@ -1,6 +1,6 @@
 <script lang="ts" module>
 	import { cn, twMergeConfig, type WithElementRef } from '../../cn/index.js';
-	import type { HTMLAnchorAttributes } from 'svelte/elements';
+	import type { HTMLAnchorAttributes, HTMLAttributes } from 'svelte/elements';
 	import { type VariantProps, tv } from 'tailwind-variants';
 
 	// tv() runs its own tailwind-merge before cn() — pass { twMergeConfig } so the
@@ -24,7 +24,7 @@
 					secondary:
 						'bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80 [a]:active:bg-secondary/70',
 					destructive:
-						'bg-destructive/10 [a]:hover:bg-destructive/20 [a]:active:bg-destructive/30 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 text-destructive dark:bg-destructive/20',
+						'bg-destructive/10 [a]:hover:bg-destructive/20 [a]:active:bg-destructive/30 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 text-destructive dark:bg-destructive/15',
 					outline:
 						'border-border-subtle text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground [a]:active:bg-muted [a]:active:text-muted-foreground',
 					ghost:
@@ -56,30 +56,55 @@
 
 	export type BadgeVariant = VariantProps<typeof badgeVariants>['variant'];
 	export type BadgeSize = VariantProps<typeof badgeVariants>['size'];
+
+	type BadgeOwnProps = {
+		variant?: BadgeVariant;
+		size?: BadgeSize;
+	};
+	type AnchorOnlyProps = Exclude<keyof HTMLAnchorAttributes, keyof HTMLAttributes<HTMLSpanElement>>;
+	type ForbidProps<Keys extends PropertyKey> = { [Key in Keys]?: never };
+
+	type BadgeElementProps =
+		| (WithElementRef<HTMLAttributes<HTMLSpanElement>, HTMLSpanElement> &
+				ForbidProps<Exclude<AnchorOnlyProps, 'href'>> & {
+				href?: null | undefined;
+		  })
+		| (WithElementRef<HTMLAnchorAttributes, HTMLAnchorElement> & {
+				href: string;
+		  });
+
+	export type BadgeProps = BadgeOwnProps & BadgeElementProps;
 </script>
 
 <script lang="ts">
 	let {
 		ref = $bindable(null),
-		href,
 		class: className,
 		variant = 'default',
 		size = 'default',
-		children,
-		...restProps
-	}: WithElementRef<HTMLAnchorAttributes> & {
-		variant?: BadgeVariant;
-		size?: BadgeSize;
-	} = $props();
+		...elementProps
+	}: BadgeProps = $props();
 </script>
 
-<svelte:element
-	this={href ? 'a' : 'span'}
-	bind:this={ref}
-	data-slot="badge"
-	{href}
-	class={cn(badgeVariants({ variant, size }), className)}
-	{...restProps}
->
-	{@render children?.()}
-</svelte:element>
+{#if elementProps.href != null}
+	{@const { href, children, ...anchorProps } = elementProps}
+	<a
+		{...anchorProps}
+		bind:this={ref}
+		data-slot="badge"
+		{href}
+		class={cn(badgeVariants({ variant, size }), className)}
+	>
+		{@render children?.()}
+	</a>
+{:else}
+	{@const { href: _href, children, ...spanProps } = elementProps}
+	<span
+		{...spanProps}
+		bind:this={ref}
+		data-slot="badge"
+		class={cn(badgeVariants({ variant, size }), className)}
+	>
+		{@render children?.()}
+	</span>
+{/if}
