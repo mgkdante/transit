@@ -44,7 +44,6 @@ export default ts.config(
 			'node_modules/',
 			'.wrangler/',
 			'src/lib/styles/tokens.css',
-			'src/lib/motion/tokens.ts',
 			'src/lib/v1/schemas/json/',
 			'tools/tokens/**',
 			'vendor/',

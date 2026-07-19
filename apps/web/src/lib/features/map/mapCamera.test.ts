@@ -4,7 +4,7 @@ import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { RouteFile } from '$lib/v1';
 
 const mocks = vi.hoisted(() => ({ animate: true }));
-vi.mock('$lib/motion/policy', () => ({
+vi.mock('@yesid/motion/policy', () => ({
 	shouldAnimate: () => mocks.animate,
 }));
 

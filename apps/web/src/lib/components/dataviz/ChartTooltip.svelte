@@ -15,14 +15,14 @@
 
   Doctrine: surface tokens only (--popover / --border-strong / --shadow-card);
   NO --primary anywhere in the tooltip (it is not interactive chrome). The fade
-  is ~80ms and is gated on !prefersReducedMotion.current (snaps when reduced).
+  is ~80ms and is gated on !$prefersReducedMotion (snaps when reduced).
 -->
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { Portal } from 'bits-ui';
-	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import type { ChartTooltipRow, ChartTooltipSide } from './useChartTooltip.svelte';
 
 	export interface ChartTooltipProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
@@ -167,7 +167,7 @@
 		placed = true;
 	});
 
-	const animate = $derived(!prefersReducedMotion.current);
+	const animate = $derived(!$prefersReducedMotion);
 </script>
 
 <div

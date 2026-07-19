@@ -22,8 +22,8 @@
 // detaches via the returned destroy callback; per-frame work is rAF-coalesced
 // and only runs while scroll events actually fire.
 
-import { isPrefersReducedMotion } from '$lib/motion';
-import { isViewportAtMost } from '$lib/motion/utils/device';
+import { isPrefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
+import { isViewportAtMost } from '@yesid/motion/utils/device';
 
 /**
  * Start the draw-on-scroll scrub over a blueprint header's strokes: mostly

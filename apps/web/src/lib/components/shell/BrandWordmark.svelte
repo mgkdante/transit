@@ -18,8 +18,8 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { cn } from '$lib/utils';
-	import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
-	import { isTouchDevice } from '$lib/motion/utils/device';
+	import { isPrefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
+	import { isTouchDevice } from '@yesid/motion/utils/device';
 
 	interface Props {
 		/** Where the mark links. Default: the parent brand site. */
@@ -57,7 +57,7 @@
 		// and NOT under prefers-reduced-motion. Reduced-motion / touch users never
 		// fetch GSAP at all; everyone else fetches it off the critical path.
 		if (!animate || isTouchDevice() || isPrefersReducedMotion()) return;
-		void import('$lib/motion/actions')
+		void import('@yesid/motion/actions')
 			.then(({ wordmarkHover }) => {
 				// The component may have unmounted before the chunk resolved.
 				if (destroyed || !lettersEl) return;

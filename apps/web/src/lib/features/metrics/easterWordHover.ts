@@ -13,8 +13,8 @@
 // destroy, restoring the plain text node). Zero layout shift: the split chars keep
 // inline flow and only translate/rotate, and revert on cleanup.
 
-import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
-import { isTouchDevice } from '$lib/motion/utils/device';
+import { isPrefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
+import { isTouchDevice } from '@yesid/motion/utils/device';
 
 // The four effect builders, byte-mirrored from wordmarkHover's family (minus the
 // dot pulse). Each returns a gsap timeline over the split chars.
@@ -81,7 +81,8 @@ export function easterWordHover(
 	async function ensureLoaded(): Promise<boolean> {
 		if (split && gsapRef) return true;
 		try {
-			const { gsap, SplitText, ensureSplitTextRegistered } = await import('$lib/motion/utils/gsap');
+			const { gsap, SplitText, ensureSplitTextRegistered } =
+				await import('@yesid/motion/utils/gsap');
 			if (destroyed) return false;
 			ensureSplitTextRegistered();
 			gsapRef = gsap;

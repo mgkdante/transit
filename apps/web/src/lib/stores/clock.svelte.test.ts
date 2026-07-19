@@ -4,15 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // freshness clock: the per-second client tick PLUS a recorded client→server
 // offset, so age computed against it is immune to a skewed client clock.
 
-const mocks = vi.hoisted(() => ({ browser: true }));
+const mocks = vi.hoisted(() => ({ browser: true, reducedMotion: false }));
 vi.mock('$app/environment', () => ({
 	get browser() {
 		return mocks.browser;
 	},
 }));
-vi.mock('$lib/motion/reduced-motion.svelte', () => ({
-	isPrefersReducedMotion: () => false,
+vi.mock('@yesid/motion/stores/reducedMotion', () => ({
+	isPrefersReducedMotion: () => mocks.reducedMotion,
 }));
+
+let onMotionChange: (() => void) | undefined;
 
 async function loadClock() {
 	vi.resetModules();
@@ -22,13 +24,56 @@ async function loadClock() {
 describe('sharedClock — server-time anchor', () => {
 	beforeEach(() => {
 		mocks.browser = true;
+		mocks.reducedMotion = false;
+		onMotionChange = undefined;
 		vi.useFakeTimers();
+		vi.stubGlobal('window', {
+			matchMedia: () => ({
+				addEventListener: (_event: string, listener: () => void) => {
+					onMotionChange = listener;
+				},
+			}),
+		});
 		// Pin the client clock so `Date.now()` is deterministic.
 		vi.setSystemTime(new Date('2026-06-21T12:00:00Z'));
 	});
 
 	afterEach(() => {
 		vi.useRealTimers();
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+	});
+
+	it('uses a one-second cadence normally and a 30-second cadence under reduced motion', async () => {
+		const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+		const { sharedClock } = await loadClock();
+		const dispose = sharedClock.subscribe();
+
+		expect(setIntervalSpy).toHaveBeenLastCalledWith(expect.any(Function), 1_000);
+		dispose();
+
+		mocks.reducedMotion = true;
+		const { sharedClock: reducedClock } = await loadClock();
+		const disposeReduced = reducedClock.subscribe();
+
+		expect(setIntervalSpy).toHaveBeenLastCalledWith(expect.any(Function), 30_000);
+		disposeReduced();
+	});
+
+	it('restarts the active timer immediately when the OS motion preference changes', async () => {
+		const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+		const { sharedClock } = await loadClock();
+		const dispose = sharedClock.subscribe();
+
+		expect(onMotionChange).toBeTypeOf('function');
+		mocks.reducedMotion = true;
+		onMotionChange?.();
+		expect(setIntervalSpy).toHaveBeenLastCalledWith(expect.any(Function), 30_000);
+
+		mocks.reducedMotion = false;
+		onMotionChange?.();
+		expect(setIntervalSpy).toHaveBeenLastCalledWith(expect.any(Function), 1_000);
+		dispose();
 	});
 
 	it('defaults to zero offset: serverNow === now before any sample', async () => {

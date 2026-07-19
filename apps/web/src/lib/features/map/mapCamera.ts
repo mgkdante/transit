@@ -8,7 +8,7 @@
 // it takes a map instance + plain coords/bounds and moves the camera.
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
-import { shouldAnimate } from '$lib/motion/policy';
+import { shouldAnimate } from '@yesid/motion/policy';
 import type { RouteFile } from '$lib/v1';
 import { routeBoundsFromFile } from './mapGeo';
 

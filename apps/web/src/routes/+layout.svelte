@@ -67,7 +67,7 @@
 	import { registerServiceWorker } from '$lib/pwa/register';
 	import { decideFreshnessReload } from '$lib/pwa/appVersion';
 	import { startVitals } from '$lib/vitals/collect';
-	import { runViewTransition } from '$lib/motion';
+	import { runViewTransition } from '$lib/motion/view-transition';
 	import { AppShell } from '$lib/components/shell';
 	import { Footer } from '$lib/components/layout';
 	import { EdgeState } from '$lib/components/edge';

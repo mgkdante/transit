@@ -75,7 +75,7 @@
 	import { createShapeCacheManager } from './mapShapeCache';
 	import { vehicleAbsence } from './vehicleAbsence';
 	import { sharedClock, motionMode } from '$lib/stores';
-	import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+	import { isPrefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import MapFilters from './MapFilters.svelte';
 	import MapMotionControl from './MapMotionControl.svelte';
 	import MapSelectionDetail from './MapSelectionDetail.svelte';

@@ -30,10 +30,11 @@ vi.mock('$lib/v1', async () => ({
 	...(await import('$lib/v1/history')),
 	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
 }));
-vi.mock('$lib/motion/reduced-motion.svelte', () => ({
+vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	prefersReducedMotion: {
-		get current() {
-			return motion.reduced;
+		subscribe(run: (value: boolean) => void) {
+			run(motion.reduced);
+			return () => {};
 		},
 	},
 	isPrefersReducedMotion: () => motion.reduced,

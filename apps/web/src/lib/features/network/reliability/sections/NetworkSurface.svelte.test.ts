@@ -120,10 +120,11 @@ vi.mock('$lib/nav', async () => {
 	};
 });
 
-vi.mock('$lib/motion/reduced-motion.svelte', () => ({
+vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	prefersReducedMotion: {
-		get current() {
-			return motion.reduced;
+		subscribe(run: (value: boolean) => void) {
+			run(motion.reduced);
+			return () => {};
 		},
 	},
 	isPrefersReducedMotion: () => motion.reduced,

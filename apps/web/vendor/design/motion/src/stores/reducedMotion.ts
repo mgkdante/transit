@@ -19,6 +19,7 @@ function getInitialValue(): boolean {
 export const prefersReducedMotion = readable<boolean>(getInitialValue(), (set) => {
 	if (typeof window === 'undefined') return;
 	const mql = window.matchMedia(QUERY);
+	set(mql.matches);
 	const handler = (e: MediaQueryListEvent) => set(e.matches);
 	mql.addEventListener('change', handler);
 	return () => mql.removeEventListener('change', handler);
