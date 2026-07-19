@@ -60,8 +60,8 @@ DESIGN_MANIFEST='apps/web/vendor/design/manifest.json'
 
 if staged | grep -qE "$DESIGN_DIR_REGEX" && ! staged | grep -qx "$DESIGN_MANIFEST"; then
   echo "ERROR 3/3: A vendored design-system file is staged without manifest.json."
-  echo "           Do not hand-edit vendor/design. From apps/web, run:"
-  echo "             bun tools/design-sync.ts"
+  echo "           Do not hand-edit vendor/design or run its tool while replacing itself."
+  echo "           Use the external exact-tag bootstrap in apps/web/README.md."
   echo "           Then stage the synced files and manifest together."
   echo "           Bypass (last resort): git commit --no-verify"
   exit 1

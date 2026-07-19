@@ -2,9 +2,10 @@ import type { Token, TokenTree } from '../types.ts';
 import { serializeYaml } from '../serialize.ts';
 import { isLeaf, isClampToken } from '../parse.ts';
 
-interface DesignMdOptions {
-  /** Component names to list under ## Components. Child 3 populates this; Child 1 emits an empty array. */
-  components?: string[];
+export interface DesignMdOptions {
+  components?: readonly string[];
+  brandComponents?: readonly string[];
+  primitiveSubpaths?: readonly string[];
 }
 
 function yamlMap(tree: TokenTree, indent: number, transformKey?: (k: string) => string): string {
@@ -86,9 +87,16 @@ export function generateDesignMd(tree: TokenTree, opts: DesignMdOptions = {}): s
     }
   }
 
-  const componentsBlock = (opts.components ?? []).length
-    ? (opts.components ?? []).map((c) => `  ${c}: {}`).join('\n')
+  const components = opts.components ?? opts.brandComponents ?? [];
+  const componentsBlock = components.length
+    ? components.map((component) => `  ${component}: {}`).join('\n')
     : '  # see Notion design system page';
+  const brandComponents = opts.brandComponents ?? [];
+  const primitiveSubpaths = opts.primitiveSubpaths ?? [];
+  const componentInventory = brandComponents.length || primitiveSubpaths.length
+    ? `See \`@yesid/ui/brand\` (${brandComponents.length} components: ${brandComponents.map((name) => `\`${name}\``).join(', ')}) and
+${primitiveSubpaths.length} primitive subpaths (${primitiveSubpaths.map((name) => `\`@yesid/ui/${name}\``).join(', ')}).`
+    : 'See the public `@yesid/ui/brand` export and the `@yesid/ui/*` primitive subpath exports.';
 
   return `---
 version: alpha
@@ -96,7 +104,7 @@ name: yesid.dev
 description: Digital infrastructure that moves. Edge-to-edge, dark-first, four-color infrastructure doctrine (orange signage · yellow wayfinding · reflective white · structural black), motion-with-intent.
 
 # GENERATED FROM packages/tokens/tokens.json — DO NOT EDIT
-# Run \`bun run --cwd packages/tokens build\` to regenerate.
+# Run \`bun run tokens:build\` to regenerate.
 
 colors:
 ${flatColorMap(colors)}
@@ -175,8 +183,7 @@ Borders use semantic tokens (\`border\`, \`border-subtle\`, \`border-strong\`).
 
 ## Components
 
-See \`apps/web/src/lib/components/brand/\` (12 brand primitives) and \`apps/web/src/lib/components/ui/\`
-(19 shadcn-svelte primitives, customized with brand tokens). Design-system documentation:
+${componentInventory} Design-system documentation:
 Notion → Business → Brand.
 
 ## Do's and Don'ts

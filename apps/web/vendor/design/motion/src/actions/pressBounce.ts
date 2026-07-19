@@ -8,8 +8,8 @@
 // is <200ms scale feedback on user action — not a vestibular trigger.
 //
 // Pair with class="tap-press" (Layer 1 CSS baseline) for layered feedback.
-// The Layer 1 CSS ships as a copy-paste consumer snippet, not an import —
-// see packages/motion/tap-feedback.css.
+// Layer 1 is the optional @yesid/motion/tap-feedback.css public import and
+// remains copyable from packages/motion/tap-feedback.css.
 
 import { gsap } from '../utils/gsap';
 import { isTouchDevice } from '../utils/device';

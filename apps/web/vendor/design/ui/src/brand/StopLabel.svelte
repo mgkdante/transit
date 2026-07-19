@@ -2,13 +2,20 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { cn } from '../cn/index.js';
 
-	export interface StopLabelProps extends HTMLAttributes<HTMLDivElement> {
+	type StopLabelElementProps =
+		| (Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'class'> & {
+				as?: 'div';
+		  })
+		| (Omit<HTMLAttributes<HTMLHeadingElement>, 'children' | 'class'> & {
+				as: 'h1' | 'h2' | 'h3';
+		  });
+
+	export type StopLabelProps = StopLabelElementProps & {
 		stop: string;
 		label?: string;
 		prefix?: string;
-		as?: 'div' | 'h1' | 'h2' | 'h3';
 		class?: string;
-	}
+	};
 
 	let {
 		stop,

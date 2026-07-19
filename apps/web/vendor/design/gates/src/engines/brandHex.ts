@@ -2,20 +2,17 @@
 // apps/web/src/tests/brand-doctrine.test.ts (Gate 1). The interactive orange
 // and wayfinding amber must always flow through tokens; a literal hex in
 // source hard-codes one theme and can never reskin. Violations are detected on
-// comment-STRIPPED source. With the default hexes the compiled pattern is
-// byte-identical to the source gate: /#(?:e07800|ffb627)\b/i.
+// comment-STRIPPED source. Product hex policy is always supplied by consumers.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { walkFiltered } from './walk.js';
 import { blankComments, numbered } from './comments.js';
 
-export const DEFAULT_BRAND_HEXES = ['#E07800', '#FFB627'] as const;
-
 export interface BrandHexConfig {
 	/** Absolute scan root (the app's src/). */
 	root: string;
-	/** Brand hexes to ban (default: the four-color doctrine orange + amber). */
-	hexes?: readonly string[];
+	/** Consumer-owned brand hexes to ban. */
+	hexes: readonly string[];
 	/** Absolute paths where the hex is legitimately DEFINED (generated token css). */
 	allowlist?: ReadonlySet<string>;
 	/** Extensions scanned. Source gate: .svelte/.ts/.css minus tests. */
@@ -23,7 +20,15 @@ export interface BrandHexConfig {
 }
 
 export function buildBrandHexPattern(hexes: readonly string[]): RegExp {
-	const body = hexes.map((h) => h.replace(/^#/, '').toLowerCase()).join('|');
+	if (hexes.length === 0) throw new Error('brandHex: expected at least one brand hex');
+	const body = hexes
+		.map((hex) => {
+			if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+				throw new Error(`brandHex: expected a 6-digit hex color, got "${hex}"`);
+			}
+			return hex.slice(1).toLowerCase();
+		})
+		.join('|');
 	return new RegExp(`#(?:${body})\\b`, 'i');
 }
 
@@ -37,7 +42,7 @@ export interface BrandHexResult {
 export function brandHexViolations(config: BrandHexConfig): BrandHexResult {
 	const extensions = config.extensions ?? ['.svelte', '.ts', '.css'];
 	const allowlist = config.allowlist ?? new Set<string>();
-	const pattern = buildBrandHexPattern(config.hexes ?? DEFAULT_BRAND_HEXES);
+	const pattern = buildBrandHexPattern(config.hexes);
 	const rootAbs = resolve(config.root);
 	const files = walkFiltered(config.root, {
 		extensions,

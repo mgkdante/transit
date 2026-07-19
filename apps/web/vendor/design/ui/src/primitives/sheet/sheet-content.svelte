@@ -30,7 +30,19 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import type { Snippet } from 'svelte';
 	import SheetOverlay from './sheet-overlay.svelte';
-	import { cn, type WithoutChildrenOrChild } from '../../cn/index.js';
+	import {
+		cn,
+		type WithoutChildren,
+		type WithoutChildrenOrChild,
+	} from '../../cn/index.js';
+
+	export type SheetContentProps = WithoutChildrenOrChild<SheetPrimitive.ContentProps> & {
+		side?: SheetSide;
+		portalProps?: WithoutChildren<SheetPrimitive.PortalProps>;
+		showCloseButton?: boolean;
+		closeLabel?: string;
+		children: Snippet;
+	};
 
 	let {
 		ref = $bindable(null),
@@ -38,14 +50,10 @@
 		side = 'bottom',
 		portalProps,
 		showCloseButton = true,
+		closeLabel = 'Close',
 		children,
 		...restProps
-	}: WithoutChildrenOrChild<SheetPrimitive.ContentProps> & {
-		side?: SheetSide;
-		portalProps?: SheetPrimitive.PortalProps;
-		showCloseButton?: boolean;
-		children: Snippet;
-	} = $props();
+	}: SheetContentProps = $props();
 </script>
 
 <SheetPrimitive.Portal {...portalProps}>
@@ -65,7 +73,7 @@
 				class="ring-offset-background focus-visible:ring-ring text-muted-foreground hover:text-foreground absolute top-4 right-4 rounded-sm opacity-80 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
 			>
 				<XIcon aria-hidden="true" />
-				<span class="sr-only">Close</span>
+				<span class="sr-only">{closeLabel}</span>
 			</SheetPrimitive.Close>
 		{/if}
 	</SheetPrimitive.Content>

@@ -1,13 +1,9 @@
-// design-vendor.test.ts — P5.1 integrity gates on the vendored design system
-// (vendor/design, synced by tools/design-sync.ts).
+// design-vendor.test.ts — integrity gates on the vendored design system.
 //
-// 1. MANIFEST HASH: the vendor tree must match its manifest treeHash — vendored
-//    code is never hand-edited (one-direction flow: upstream in
-//    ../yesid.dev-design, tag, re-sync). Same algorithm as design-sync.ts.
-// 2. PIN: transit pins an exact design-system tag; bumping it is a deliberate
-//    PR that re-runs design-sync and updates THIS assertion.
+// The upstream adoption tool owns the hash algorithm and validates the complete
+// schema-2 trust record. Transit pins one exact immutable Release and keeps only
+// product tests plus this fast consumer-side integrity gate.
 import { describe, it, expect } from 'vitest';
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
 
@@ -45,8 +41,17 @@ const ADOPTED_LOCAL_PATHS = [
 	'lib/utils/create-cn.ts',
 ] as const;
 
-/** The deliberate pin. Bump via `bun tools/design-sync.ts --tag <next>`. */
-const PINNED_TAG = 'v0.6.0';
+const PINNED_RELEASE = {
+	tag: 'v0.7.0',
+	tagObject: '5dc9493180f65b78e98d130cf232793bfd1e843f',
+	peeledCommit: '35ce4c562745f848f02e089c4be99956806a5db8',
+	assetName: 'yesid.dev-design-v0.7.0.tar',
+	assetSize: 3_491_840,
+	assetDigest: 'sha256:1fdba8c21d31aef16e8d8a82e2e3b697573cfd693219ec12d3351a2f90f9cfea',
+	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
+	toolDigest: 'sha256:d27659e78f6464654875b233cf223d6a599ca377d8eaec9a89917cfcd8a6463c',
+	treeHash: 'sha256:4bac9493d66874e76f02a083addc73b91355e9f0601229edc927bf4935372ffd',
+} as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir).sort()) {
@@ -57,36 +62,48 @@ function walkFiles(dir: string, out: string[] = []): string[] {
 	return out;
 }
 
-/** Deterministic tree hash: sha256 over sorted 'relpath\0content\0' records. */
-function treeHash(root: string): string {
-	const h = createHash('sha256');
-	for (const f of walkFiles(root)) {
-		const rel = relative(root, f);
-		if (rel === 'manifest.json') continue;
-		h.update(rel);
-		h.update('\0');
-		h.update(readFileSync(f));
-		h.update('\0');
-	}
-	return h.digest('hex');
-}
-
 describe('vendor/design integrity', () => {
 	const manifest = JSON.parse(readFileSync(join(VENDOR, 'manifest.json'), 'utf-8')) as {
-		repo: string;
-		tag: string;
-		commit: string;
+		schema: number;
+		repository: string;
+		provenance: {
+			mode: string;
+			tag: { name: string; object: string; peeledCommit: string };
+			asset: { name: string; size: number; digest: string };
+		};
+		packages: string[];
+		exclusionPolicyDigest: string;
+		toolDigest: string;
 		treeHash: string;
 	};
 
-	it(`pins the deliberate design-system tag (${PINNED_TAG})`, () => {
-		expect(manifest.repo).toBe('yesid.dev-design');
-		expect(manifest.tag).toBe(PINNED_TAG);
-		expect(manifest.commit).toMatch(/^[0-9a-f]{40}$/);
+	it(`pins the immutable design-system Release (${PINNED_RELEASE.tag})`, () => {
+		expect(manifest.schema).toBe(2);
+		expect(manifest.repository).toBe('github.com/mgkdante/yesid.dev-design');
+		expect(manifest.provenance).toEqual({
+			mode: 'release',
+			tag: {
+				name: PINNED_RELEASE.tag,
+				object: PINNED_RELEASE.tagObject,
+				peeledCommit: PINNED_RELEASE.peeledCommit,
+			},
+			asset: {
+				name: PINNED_RELEASE.assetName,
+				size: PINNED_RELEASE.assetSize,
+				digest: PINNED_RELEASE.assetDigest,
+			},
+		});
+		expect(manifest.packages).toEqual(['tokens', 'motion', 'gates', 'ui']);
+		expect(manifest.exclusionPolicyDigest).toBe(PINNED_RELEASE.exclusionPolicyDigest);
+		expect(manifest.toolDigest).toBe(PINNED_RELEASE.toolDigest);
+		expect(manifest.treeHash).toBe(PINNED_RELEASE.treeHash);
 	});
 
-	it('vendor tree matches the manifest hash (vendored code is never hand-edited)', () => {
-		expect(treeHash(VENDOR)).toBe(manifest.treeHash);
+	it('carries the upstream adoption tool and retires the consumer implementation', () => {
+		const tool = join(VENDOR, 'tools/adopt.ts');
+
+		expect(existsSync(tool)).toBe(true);
+		expect(existsSync(resolve(process.cwd(), 'tools/design-sync.ts'))).toBe(false);
 	});
 
 	it('vendors the @yesid/ui runtime surface without package tests', () => {
@@ -105,6 +122,7 @@ describe('vendor/design integrity', () => {
 		expect(files).toContain('src/primitives/combobox/combobox.svelte');
 		expect(files).not.toContain('src/primitives/line-combobox/line-combobox.svelte');
 		expect(files).toContain('src/brand/BlueprintShell.svelte');
+		expect(existsSync(join(VENDOR, 'gates/src/presets'))).toBe(false);
 		expect(
 			files.filter((file) => /(?:^|\/)(?:test-fixtures\/|vitest\.)|\.test\.ts$/.test(file)),
 		).toEqual([]);

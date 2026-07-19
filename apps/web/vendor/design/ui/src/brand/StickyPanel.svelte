@@ -18,11 +18,13 @@
 	}: StickyPanelProps = $props();
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex (the overflowing panel must be keyboard-scrollable) -->
 <div
 	bind:this={ref}
 	class={cn('panel scrollbar-hidden', className)}
 	data-slot="sticky-panel"
 	style="top: {top};"
+	tabindex={0}
 	{...restProps}
 >
 	{@render children()}

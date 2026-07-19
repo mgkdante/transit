@@ -61,6 +61,9 @@ jobs:
       - name: Set up JS workspace
         uses: ./.github/actions/setup
 
+      - name: Design adoption integrity
+        run: bun vendor/design/tools/adopt.ts --check --dest vendor/design
+
       # P0.9 trust anchor: regenerate tokens and fail if the committed outputs drift.
       - name: Token drift gate
         run: |

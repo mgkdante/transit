@@ -1,20 +1,66 @@
 {
   "name": "@yesid/tokens",
-  "version": "0.2.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
-  "description": "DTCG-format design tokens + generators for yesid.dev. Source of truth: tokens.json.",
+  "description": "DTCG-format design tokens, package-owned generated tokens.css, and generators for yesid.dev. Source of truth: tokens.json.",
   "//": "figma:push runbook — emits FigmaVariable[] JSON on stdout; a separate orchestration step feeds it to the Figma MCP (see scripts/push-to-figma.ts header). verify-roundtrip.ts checks Figma state against tokens.json.",
+  "sideEffects": ["**/*.css"],
+  "exports": {
+    "./tokens.json": "./tokens.json",
+    "./tokens.css": "./tokens.css",
+    "./parse": {
+      "types": "./src/parse.ts",
+      "default": "./src/parse.ts"
+    },
+    "./serialize": {
+      "types": "./src/serialize.ts",
+      "default": "./src/serialize.ts"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "default": "./src/types.ts"
+    },
+    "./generators/tokens-css": {
+      "types": "./src/generators/tokens-css.ts",
+      "default": "./src/generators/tokens-css.ts"
+    },
+    "./generators/theme-block": {
+      "types": "./src/generators/theme-block.ts",
+      "default": "./src/generators/theme-block.ts"
+    },
+    "./generators/motion-ts": {
+      "types": "./src/generators/motion-ts.ts",
+      "default": "./src/generators/motion-ts.ts"
+    },
+    "./generators/design-md": {
+      "types": "./src/generators/design-md.ts",
+      "default": "./src/generators/design-md.ts"
+    },
+    "./src/parse.ts": {
+      "types": "./src/parse.ts",
+      "default": "./src/parse.ts"
+    },
+    "./src/generators/tokens-css.ts": {
+      "types": "./src/generators/tokens-css.ts",
+      "default": "./src/generators/tokens-css.ts"
+    },
+    "./src/generators/theme-block.ts": {
+      "types": "./src/generators/theme-block.ts",
+      "default": "./src/generators/theme-block.ts"
+    },
+    "./src/generators/motion-ts.ts": {
+      "types": "./src/generators/motion-ts.ts",
+      "default": "./src/generators/motion-ts.ts"
+    }
+  },
   "scripts": {
-    "build": "bun run build.ts",
     "figma:push": "bun scripts/push-to-figma.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "tsc --noEmit",
-    "lint:design-md": "design.md lint ../../DESIGN.md"
+    "check": "tsc --noEmit"
   },
   "devDependencies": {
-    "@google/design.md": "0.1.1",
     "@types/node": "^22.0.0",
     "typescript": "^5.5.0",
     "vitest": "^4.1.0"

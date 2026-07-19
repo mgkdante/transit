@@ -3,7 +3,7 @@
 // mixing brand tokens below the floor fail AA on brand surfaces; backgrounds/
 // borders may mix lower — only `color:` lines are scanned. The regexes are
 // ASSEMBLED from config but compile byte-identical to the source gate for the
-// default token list (primary|accent|blog-accent @ 85%, foreground @ 65%).
+// neutral semantic token defaults (primary|accent @ 85%, foreground @ 65%).
 //
 // Exemption contract (byte-equivalent): aria-hidden ornaments are WCAG 1.4.3
 // "pure decoration" — the marker on the line (or within `markerWindow` lines
@@ -19,8 +19,8 @@ export interface ColorMixFloorConfig {
 	markerWindow?: number;
 }
 
-export const YESID_COLOR_MIX_DEFAULTS = {
-	brandTokens: ['primary', 'accent', 'blog-accent'],
+export const DEFAULT_COLOR_MIX_CONFIG = {
+	brandTokens: ['primary', 'accent'],
 	brandFloor: 85,
 	foregroundFloor: 65,
 	exemptMarker: 'contrast-exempt',
@@ -43,11 +43,11 @@ export function buildColorMixPatterns(brandTokens: readonly string[]): {
 
 /** Scan one file's source; returns 'L<n>: <trimmed line>' entries. */
 export function colorMixViolations(src: string, config: ColorMixFloorConfig = {}): string[] {
-	const brandTokens = config.brandTokens ?? YESID_COLOR_MIX_DEFAULTS.brandTokens;
-	const brandFloor = config.brandFloor ?? YESID_COLOR_MIX_DEFAULTS.brandFloor;
-	const foregroundFloor = config.foregroundFloor ?? YESID_COLOR_MIX_DEFAULTS.foregroundFloor;
-	const exemptMarker = config.exemptMarker ?? YESID_COLOR_MIX_DEFAULTS.exemptMarker;
-	const markerWindow = config.markerWindow ?? YESID_COLOR_MIX_DEFAULTS.markerWindow;
+	const brandTokens = config.brandTokens ?? DEFAULT_COLOR_MIX_CONFIG.brandTokens;
+	const brandFloor = config.brandFloor ?? DEFAULT_COLOR_MIX_CONFIG.brandFloor;
+	const foregroundFloor = config.foregroundFloor ?? DEFAULT_COLOR_MIX_CONFIG.foregroundFloor;
+	const exemptMarker = config.exemptMarker ?? DEFAULT_COLOR_MIX_CONFIG.exemptMarker;
+	const markerWindow = config.markerWindow ?? DEFAULT_COLOR_MIX_CONFIG.markerWindow;
 	const { colorMixText, fgMixText } = buildColorMixPatterns(brandTokens);
 
 	const lines = src.split('\n');

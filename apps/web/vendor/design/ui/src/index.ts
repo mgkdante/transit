@@ -4,6 +4,7 @@ export {
 	createCn,
 	createTwMergeConfig,
 	twMergeConfig,
+	type ConfigureUiResult,
 	type UiConfiguration,
 	type UiVocabulary,
 	type WithoutChild,

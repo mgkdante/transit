@@ -4,14 +4,16 @@
 	import { cn } from '../../cn/index.js';
 	import { type ToggleVariants, toggleVariants } from '../toggle/index.js';
 
+	export type ToggleGroupItemProps = ToggleGroupPrimitive.ItemProps & ToggleVariants;
+
 	let {
 		ref = $bindable(null),
-		value = $bindable(),
+		value,
 		class: className,
 		size,
 		variant,
 		...restProps
-	}: ToggleGroupPrimitive.ItemProps & ToggleVariants = $props();
+	}: ToggleGroupItemProps = $props();
 
 	const ctx = getToggleGroupCtx();
 </script>

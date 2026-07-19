@@ -1,11 +1,11 @@
-/* @yesid/motion — tap-feedback CONSUMER SNIPPET (Layer 1 of the two-tier
+/* @yesid/motion — tap-feedback OPTIONAL PUBLIC STYLESHEET (Layer 1 of the two-tier
    tap-press system; pairs with the pressBounce action, Layer 2).
 
-   This is a COPY-PASTE block, NOT an imported stylesheet. @yesid/motion ships
-   pure actions and zero app-conditional CSS — a package cannot know a
-   consumer's Tailwind version, layer order, or @utility support, so the CSS
-   baseline lives here as documentation. Consumers paste these two utilities
-   into their own app.css hand region (the non-generated part) verbatim.
+   This is an OPTIONAL PUBLIC STYLESHEET: import @yesid/motion/tap-feedback.css
+   explicitly, or copy these two utilities into a consumer app.css hand region.
+   It remains copyable because a package cannot know a consumer's Tailwind
+   version, layer order, or @utility support. @yesid/motion ships no automatic
+   or app-conditional CSS.
 
    Two layers, by design (slice-19 hybrid primitive system):
      Layer 1 — this CSS: `.tap-press` / `.tap-feedback`. Instant scale/opacity

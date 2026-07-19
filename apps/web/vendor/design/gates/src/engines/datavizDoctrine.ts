@@ -14,9 +14,7 @@ export const DEFAULT_AFFORDANCE_TOKENS = ['primary', 'success', 'destructive', '
 
 /** Recognised allowlist markers (checked on ORIGINAL source, incl. comments). */
 export const DEFAULT_ALLOW_MARKERS = [
-	'doctrine-allow: interactive',
-	'AFFORDANCE MARKER',
-	'lone --primary touch',
+	'dataviz-allow: interactive',
 ] as const;
 
 export interface DatavizDoctrineConfig {

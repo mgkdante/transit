@@ -94,12 +94,10 @@ describe('Masthead — vertical zone order', () => {
 			props: { kicker: 'K', heading: 'T', meta, children },
 		});
 		const root = container.querySelector('[data-slot="masthead"]')!;
-		const kinds = Array.from(root.children).map(
-			(el) => el.getAttribute('data-slot') ?? el.className,
-		);
-		const headIdx = kinds.findIndex((k) => k.includes('masthead-head'));
-		const bodyIdx = kinds.indexOf('masthead-body');
-		const tapeIdx = kinds.findIndex((k) => k.includes('masthead-tape'));
+		const zones = Array.from(root.children);
+		const headIdx = zones.findIndex((zone) => zone.classList.contains('masthead-head'));
+		const bodyIdx = zones.findIndex((zone) => zone.getAttribute('data-slot') === 'masthead-body');
+		const tapeIdx = zones.findIndex((zone) => zone.classList.contains('masthead-tape'));
 		expect(headIdx).toBe(0);
 		expect(bodyIdx).toBeGreaterThan(headIdx);
 		expect(tapeIdx).toBeGreaterThan(bodyIdx);

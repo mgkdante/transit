@@ -2,11 +2,13 @@
 	import { Dialog as SheetPrimitive } from 'bits-ui';
 	import { cn, type WithoutChildrenOrChild } from '../../cn/index.js';
 
+	export type SheetOverlayProps = WithoutChildrenOrChild<SheetPrimitive.OverlayProps>;
+
 	let {
 		ref = $bindable(null),
 		class: className,
 		...restProps
-	}: WithoutChildrenOrChild<SheetPrimitive.OverlayProps> = $props();
+	}: SheetOverlayProps = $props();
 </script>
 
 <!--

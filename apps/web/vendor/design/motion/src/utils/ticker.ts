@@ -5,11 +5,10 @@
  * preserves their common contract: one persistent GSAP subscription, string
  * IDs that replace duplicate subscribers, and both explicit and disposer-based
  * unsubscribe paths. The package tests combine yesid.dev's many-subscriber
- * coverage with transit's stricter GSAP callback typing and reset assertion.
+ * coverage with transit's stricter GSAP callback typing.
  *
  * The internal GSAP callback intentionally remains registered when the last
  * app subscriber leaves, matching both consumers and avoiding add/remove churn.
- * `_resetForTests()` is the explicit teardown for isolated test modules.
  */
 
 import { gsap } from 'gsap';
@@ -44,17 +43,4 @@ export function subscribe(id: string, callback: TickerCallback): () => void {
 /** Remove a subscribed callback by ID. Unknown IDs are a no-op. */
 export function unsubscribe(id: string): void {
 	subscribers.delete(id);
-}
-
-/**
- * Remove the shared GSAP callback and clear subscribers for test isolation.
- *
- * @internal
- */
-export function _resetForTests(): void {
-	if (internalSubscription) {
-		gsap.ticker.remove(internalSubscription);
-		internalSubscription = null;
-	}
-	subscribers.clear();
 }

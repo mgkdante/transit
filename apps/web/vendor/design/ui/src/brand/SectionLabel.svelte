@@ -10,7 +10,7 @@
 	import { cn } from '../cn/index.js';
 	import type { HTMLAttributes } from 'svelte/elements';
 
-	export interface SectionLabelProps extends HTMLAttributes<HTMLSpanElement> {
+	export type SectionLabelProps = Omit<HTMLAttributes<HTMLSpanElement>, 'children' | 'class'> & {
 		/** Label text. */
 		text: string;
 		/** Visual style variant. */
@@ -18,7 +18,7 @@
 		/** Text alignment. */
 		align?: 'left' | 'center';
 		class?: string;
-	}
+	};
 
 	let {
 		text,

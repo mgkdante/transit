@@ -2,12 +2,14 @@
 	import { Dialog as SheetPrimitive } from 'bits-ui';
 	import { cn, type WithoutChild } from '../../cn/index.js';
 
+	export type SheetDescriptionProps = WithoutChild<SheetPrimitive.DescriptionProps>;
+
 	let {
 		ref = $bindable(null),
 		class: className,
 		children,
 		...restProps
-	}: WithoutChild<SheetPrimitive.DescriptionProps> = $props();
+	}: SheetDescriptionProps = $props();
 </script>
 
 <SheetPrimitive.Description

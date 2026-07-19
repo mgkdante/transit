@@ -1,11 +1,8 @@
 // brand-doctrine.test.ts — the lint that enforces the four-colour doctrine.
 //
-// P5.1 (2026-07-02): the detection ENGINES moved to @yesid/gates (the vendored
-// design system, vendor/design/gates — this file's own pre-P5.1 inline
-// implementation was their source, so detection is byte-equivalent; this
-// file's git history holds the originals). What remains here is transit's
-// CONFIG (roots, preset tables) + the negative controls that pin consumer
-// files. Three gates:
+// The neutral detection engines live in @yesid/gates. Transit owns its product
+// policy in tools/design-gates; upstream has no app-named presets.
+// Three gates:
 //
 //   1. NO RAW BRAND HEX — #E07800/#FFB627 must flow through tokens; banned
 //      across ALL of src except the generated token source where they are
@@ -25,7 +22,7 @@ import {
 	TRANSIT_BRAND_HEX_ALLOWLIST_REL,
 	TRANSIT_AFFORDANCE_TOKENS,
 	TRANSIT_ALLOW_MARKERS,
-} from '@yesid/gates/presets/transit';
+} from '../../tools/design-gates';
 
 const SRC = resolve(process.cwd(), 'src');
 const DATAVIZ = resolve(process.cwd(), 'src/lib/components/dataviz');

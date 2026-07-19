@@ -2,7 +2,11 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { cn } from '../cn/index.js';
 
-	let { class: className, ...restProps }: HTMLAttributes<HTMLSpanElement> = $props();
+	export type TerminalCursorProps = Omit<HTMLAttributes<HTMLSpanElement>, 'children' | 'class'> & {
+		class?: string;
+	};
+
+	let { class: className, ...restProps }: TerminalCursorProps = $props();
 </script>
 
 <span {...restProps} class={cn('terminal-cursor', className)} aria-hidden="true"></span>
