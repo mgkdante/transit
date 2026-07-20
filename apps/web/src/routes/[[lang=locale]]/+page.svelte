@@ -1,6 +1,6 @@
 <!--
   Home — the network entry surface, rebuilt on the yesid.dev home-hero geometry
-  (P5-R · R1; build sheet at docs/audits/p5-r/). Three movements:
+  Three movements:
 
     1. HERO — full-viewport, grid [1fr | 1px amber spine | 1fr]. LEFT: kicker
        (agency identity, amber text) → two-line THESIS at --text-hero (line 2

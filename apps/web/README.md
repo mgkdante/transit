@@ -1,4 +1,4 @@
-# apps/web — Transit citizen dashboard (slice-9.2)
+# apps/web — Transit citizen dashboard
 
 Public, anonymous, mobile-first STM citizen-accountability dashboard. SvelteKit 2 /
 Svelte 5 (runes) deployed as a **Cloudflare Worker** (Static Assets) at

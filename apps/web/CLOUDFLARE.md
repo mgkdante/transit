@@ -1,4 +1,4 @@
-# Cloudflare deploy notes — transit web (slice-9.2 P5)
+# Cloudflare deploy notes — Transit web
 
 How the SvelteKit app deploys to Cloudflare and how it talks to the `/v1`
 snapshot contract. Operational truth lives in the Transit Notion subtree
@@ -31,7 +31,7 @@ which paths invoke the SvelteKit Worker (SSR / dynamic) vs. which are served as
 static assets straight from the edge. We do not commit a hand-written
 `_routes.json`.
 
-What that means for the paths this slice owns:
+What that means for the relevant paths:
 
 - `/_app/immutable/*`, `/og/*`, `/favicon.svg`, `/fonts/*` — **static assets**.
   The adapter excludes static files from the Worker invocation automatically, so
@@ -46,8 +46,7 @@ What that means for the paths this slice owns:
 
 ### If you ever need explicit excludes
 
-`svelte.config.js` (owned by the main thread, not this slice) can pass excludes
-to the adapter:
+`svelte.config.js` can pass excludes to the adapter:
 
 ```js
 adapter({
@@ -108,10 +107,9 @@ through the `SNAPSHOTS` binding and falls back to `DATA` only if needed.
 This lane is for web/UI integration and smoke checks. Do not add a separate dev
 snapshot bucket until a data-contract slice actually needs one.
 
-## Direct-R2 operator gate
+## Direct-R2 cache verification
 
-The browser cutover is complete only after both publisher values are set and a
-snapshot is republished:
+The publisher uses these values before republishing a snapshot:
 
 ```text
 SNAPSHOT_PUBLIC_BASE_URL=https://data.yesid.dev
@@ -123,13 +121,11 @@ high-volume PMTiles archive URL stored inside `static/basemap.json`. Updating
 only the first still leaves map range traffic on the compatibility Worker.
 
 R2 custom domains do not cache JSON by file type automatically. To minimize R2
-Class B reads, apply a Cache Rule for `data.yesid.dev/v1/*.json` that makes the
+Class B reads, keep a Cache Rule for `data.yesid.dev/v1/*.json` that makes the
 responses cache-eligible while respecting the publisher's `Cache-Control`, and
-enable Smart Tiered Cache for the custom domain. After applying R2 CORS,
-republishing, and purging old objects, prove the gate with two identical public
-requests: the second response must report `CF-Cache-Status: HIT` and a positive
-`Age`. Until that receipt exists, direct R2 avoids Workers request quota but is
-not yet edge-cache optimized.
+enable Smart Tiered Cache for the custom domain. After a CORS, publisher, or
+cache-policy change, verify with two identical public requests: the second
+response should report `CF-Cache-Status: HIT` and a positive `Age`.
 
 ## Open Graph cards
 
