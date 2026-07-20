@@ -1,6 +1,6 @@
 import adapter from '@sveltejs/adapter-cloudflare';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
-import { projectRunes } from '@yesid/config/svelte/project-runes.js';
+import { relative, sep } from 'node:path';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -8,7 +8,12 @@ const config = {
 	compilerOptions: {
 		// Default to rune mode for project code, except node_modules.
 		// Can be removed in Svelte 6.
-		runes: projectRunes(import.meta.dirname),
+		runes: ({ filename }) => {
+			const relativePath = relative(import.meta.dirname, filename);
+			const pathSegments = relativePath.toLowerCase().split(sep);
+			const isExternalLibrary = pathSegments.includes('node_modules');
+			return isExternalLibrary ? undefined : true;
+		},
 	},
 	kit: {
 		// Cloudflare Worker (Static Assets) — see apps/web/wrangler.toml. /data/* is kept

@@ -9,6 +9,14 @@ name: CI
 on:
   pull_request:
     branches: [main, develop]
+    paths:
+      - ".env.example"
+      - ".gitleaks.toml"
+      - "apps/db/**"
+      - ".github/workflows/**"
+      - ".github/scripts/**"
+      - ".github/actions/**"
+      - ".bun-version"
   push:
     branches: [main, develop]
     paths:
@@ -22,63 +30,15 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  classify:
-    runs-on: ubuntu-latest
-    outputs:
-      classification: ${{ steps.classify.outputs.classification }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - uses: mgkdante/yesid.dev-design/.github/actions/classify-paths@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25
-        id: classify
-        with:
-          github-token: ${{ github.token }}
-          rules-json: >-
-            {
-              "schema": 1,
-              "always": {
-                "paths": [".bun-version", ".env.example", ".gitleaks.toml", ".github/shared-tooling.json", ".github/workflows/ci.yml"],
-                "prefixes": [".github/actions/", ".github/scripts/", ".github/shared-tooling/", ".github/workflows/"]
-              },
-              "jobs": {
-                "offline-tests-work": {
-                  "paths": [],
-                  "prefixes": ["apps/db/"]
-                },
-                "alembic-single-head-work": {
-                  "paths": [],
-                  "prefixes": ["apps/db/"]
-                },
-                "real-db-tests-work": {
-                  "paths": [],
-                  "prefixes": ["apps/db/"]
-                }
-              },
-              "ignore": {
-                "docs-only": {
-                  "paths": ["AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md", "LICENSE", "README.md", "SECURITY.md", "SUPPORT.md"],
-                  "prefixes": ["docs/"]
-                },
-                "irrelevant": {
-                  "paths": [".env.1password", ".gitattributes", ".gitignore", ".mcp.json", ".npmrc", "bun.lock", "package.json", "turbo.json"],
-                  "prefixes": [".claude/", ".codex/", ".githooks/", "apps/data-proxy/", "apps/web/", "packages/"]
-                }
-              }
-            }
-
   # 1. Offline suite — the same `uv run pytest tests` developers run locally with
   #    TRANSIT_TEST_DATABASE_URL unset. Real-DB regression files self-skip here.
-  offline-tests-work:
-    needs: [classify]
-    if: ${{ fromJSON(needs.classify.outputs.classification).relevant['offline-tests-work'] }}
+  offline-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -114,9 +74,7 @@ jobs:
   # 2. Single-head guard — `alembic heads` must report exactly one head, or a
   #    branched/forked migration chain will fail the empty-DB replay below and
   #    break the production `init-db` (which is `alembic upgrade head`).
-  alembic-single-head-work:
-    needs: [classify]
-    if: ${{ fromJSON(needs.classify.outputs.classification).relevant['alembic-single-head-work'] }}
+  alembic-single-head:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -154,9 +112,7 @@ jobs:
   #    empty-DB-replay failure class, then export TRANSIT_TEST_DATABASE_URL so the
   #    real-DB regression files run instead of self-skipping. The container is
   #    discarded with the runner — never points at production.
-  real-db-tests-work:
-    needs: [classify]
-    if: ${{ fromJSON(needs.classify.outputs.classification).relevant['real-db-tests-work'] }}
+  real-db-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -207,20 +163,3 @@ jobs:
 
       - name: Run real-DB regression suite
         run: uv run pytest tests
-
-  required-contexts:
-    needs: [classify, offline-tests-work, alembic-single-head-work, real-db-tests-work]
-    if: ${{ always() }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - context: offline-tests
-          - context: alembic-single-head
-          - context: real-db-tests
-    name: ${{ matrix.context }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: mgkdante/yesid.dev-design/.github/actions/required-context@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25
-        with:
-          needs-json: ${{ toJSON(needs) }}

@@ -38,15 +38,6 @@ EXPECTED_PINNED_ACTION_LINES = {
     "cloudflare/wrangler-action": (
         "uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4"
     ),
-    "mgkdante/yesid.dev-design/.github/actions/classify-paths": (
-        "uses: mgkdante/yesid.dev-design/.github/actions/classify-paths@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
-    ),
-    "mgkdante/yesid.dev-design/.github/actions/required-context": (
-        "uses: mgkdante/yesid.dev-design/.github/actions/required-context@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
-    ),
-    "mgkdante/yesid.dev-design/.github/actions/shared-tooling-drift": (
-        "uses: mgkdante/yesid.dev-design/.github/actions/shared-tooling-drift@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
-    ),
     "oven-sh/setup-bun": (
         "uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2"
     ),
@@ -401,8 +392,7 @@ def test_ci_runs_for_db_and_ci_contract_changes() -> None:
         ".bun-version",
     }
 
-    assert on["pull_request"]["branches"] == ["main", "develop"]
-    assert "paths" not in on["pull_request"]
+    assert set(on["pull_request"]["paths"]) == expected_paths
     assert set(on["push"]["paths"]) == expected_paths
 
 
@@ -410,7 +400,7 @@ def test_real_db_ci_proves_reserved_character_password_support() -> None:
     document = yaml.safe_load(
         (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     )
-    job = document["jobs"]["real-db-tests-work"]
+    job = document["jobs"]["real-db-tests"]
     postgres_password = job["services"]["postgres"]["env"]["POSTGRES_PASSWORD"]
 
     assert "@" in postgres_password
