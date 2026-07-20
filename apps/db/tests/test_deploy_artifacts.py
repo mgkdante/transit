@@ -277,8 +277,8 @@ def test_env_example_documents_compose_runtime_contract() -> None:
     assert "Oracle VM Postgres" in env_example
 
 
-def test_readme_documents_owner_gated_existing_volume_rotation() -> None:
-    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+def test_db_readme_documents_owner_gated_existing_volume_rotation() -> None:
+    readme = (DB_ROOT / "README.md").read_text(encoding="utf-8")
     assert "Existing Postgres volumes" in readme
     assert "does not rotate" in readme
     assert "read -rsp 'New Postgres password: ' POSTGRES_PASSWORD" in readme
@@ -710,7 +710,7 @@ def test_retention_docs_match_gold_fact_default_of_fourteen_days() -> None:
     assert "GOLD_FACT_RETENTION_DAYS=7" not in _active_lines(env_1password)
     assert "Gold facts keep 14 days" in env_example
     assert "keep 7 days" not in env_example
-    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    readme = (DB_ROOT / "README.md").read_text(encoding="utf-8")
     assert "Gold detail facts 14 days" in readme
     assert "Gold detail facts 7 days" not in readme
 

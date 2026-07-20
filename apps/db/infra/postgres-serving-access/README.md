@@ -1,6 +1,6 @@
 # PostgreSQL Serving Access
 
-Slice `slice-8.5` standardizes two external SQL roles.
+This directory defines two external SQL-role contracts.
 
 - `transit-reporting`: Gold-only reporting reader for the /v1 snapshot publisher and `transit.yesid.dev`.
 - `transit-db`: SQL developer reader for operator analysis. It can read `raw`, `core`, `silver`, and `gold`, and it can create temporary tables. It cannot write permanent objects.
