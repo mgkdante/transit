@@ -1,0 +1,11 @@
+{
+	"tasks": {
+		"build": {
+			"outputs": [".svelte-kit/**", "dist/**", ".wrangler/**"],
+			"env": ["PUBLIC_V1_BASE", "PUBLIC_V1_PROVIDER"]
+		},
+		"lint": {
+			"outputs": []
+		}
+	}
+}
