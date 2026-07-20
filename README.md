@@ -96,3 +96,5 @@ access may be required. Repository-facing rules live in [AGENTS.md](AGENTS.md).
 - [Support](SUPPORT.md)
 - [Security](SECURITY.md)
 - [MIT License](LICENSE)
+
+<!-- ST5 temporary docs-only classifier probe; close unmerged. -->
