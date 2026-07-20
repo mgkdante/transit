@@ -41,6 +41,7 @@ defaults:
 jobs:
   classify:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       classification: ${{ steps.classify.outputs.classification }}
     steps:
@@ -129,6 +130,7 @@ jobs:
     needs: [classify, ci-work]
     if: ${{ always() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: mgkdante/yesid.dev-design/.github/actions/required-context@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25
         with:

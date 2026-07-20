@@ -35,6 +35,7 @@ const ACTIONS = {
 } as const;
 const DB_WORK = ['offline-tests-work', 'alembic-single-head-work', 'real-db-tests-work'];
 const DB_CONTEXTS = ['offline-tests', 'alembic-single-head', 'real-db-tests'];
+const GOVERNED_PR_WORKFLOWS = ['.github/workflows/ci.yml', '.github/workflows/web.yml'];
 
 function text(path: string): string {
 	return readFileSync(join(ROOT, path), 'utf8');
@@ -136,6 +137,25 @@ function actionCount(source: string, action: string): number {
 	const reference = `${SOURCE_REPOSITORY}/${action}@${SOURCE_SHA}`;
 	return source.split(reference).length - 1;
 }
+
+describe('ST7 Transit workflow timeout governance', () => {
+	it('caps every job in the governed PR workflows with an explicit positive timeout', () => {
+		const uncapped: string[] = [];
+		const nonPositive: string[] = [];
+		for (const workflow of GOVERNED_PR_WORKFLOWS) {
+			for (const [jobName, job] of jobBlocks(text(workflow))) {
+				const timeout = job.match(/^ {4}timeout-minutes:\s*(\d+)\s*$/mu);
+				if (!timeout) {
+					uncapped.push(`${workflow}:${jobName}`);
+					continue;
+				}
+				if (Number(timeout[1]) <= 0) nonPositive.push(`${workflow}:${jobName}`);
+			}
+		}
+
+		expect({ uncapped, nonPositive }).toEqual({ uncapped: [], nonPositive: [] });
+	});
+});
 
 describe('ST5 Transit shared-tooling adoption', () => {
 	it('keeps push selectivity while making both PR workflows always report', () => {
