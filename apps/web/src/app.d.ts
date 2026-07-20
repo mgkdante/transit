@@ -38,6 +38,7 @@ declare global {
 				};
 				[key: string]: unknown;
 			};
+			ctx?: { waitUntil(promise: Promise<unknown>): void };
 			context?: { waitUntil(promise: Promise<unknown>): void };
 			caches?: CacheStorage;
 		}

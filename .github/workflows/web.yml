@@ -3,19 +3,6 @@ name: web
 on:
   pull_request:
     branches: [main, develop]
-    # Keep both paths lists identical (GH Actions has no reliable YAML-anchor
-    # support). db-only changes skip web CI/deploys entirely (~20+ min saved
-    # per db PR cycle; a db-only merge to main skips the idempotent redeploy).
-    paths:
-      - "apps/web/**"
-      - "apps/data-proxy/**"
-      - "packages/**"
-      - "bun.lock"
-      - ".bun-version"
-      - "package.json"
-      - "turbo.json"
-      - ".github/workflows/web.yml"
-      - ".github/actions/**"
   push:
     branches: [main, develop]
     paths:
@@ -41,6 +28,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: web-${{ github.ref }}
@@ -51,7 +39,46 @@ defaults:
     working-directory: apps/web
 
 jobs:
-  ci:
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      classification: ${{ steps.classify.outputs.classification }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: mgkdante/yesid.dev-design/.github/actions/classify-paths@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25
+        id: classify
+        with:
+          github-token: ${{ github.token }}
+          rules-json: >-
+            {
+              "schema": 1,
+              "always": {
+                "paths": [".bun-version", ".github/scripts/materialize-shared-config.mjs", ".github/shared-tooling.json", ".github/workflows/web.yml", ".npmrc", "bun.lock", "package.json", "turbo.json"],
+                "prefixes": [".github/actions/", ".github/scripts/", ".github/shared-tooling/", ".github/workflows/"]
+              },
+              "jobs": {
+                "ci-work": {
+                  "paths": [],
+                  "prefixes": ["apps/data-proxy/", "apps/web/", "packages/"]
+                }
+              },
+              "ignore": {
+                "docs-only": {
+                  "paths": ["AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md", "LICENSE", "README.md", "SECURITY.md", "SUPPORT.md"],
+                  "prefixes": ["docs/"]
+                },
+                "irrelevant": {
+                  "paths": [".env.1password", ".env.example", ".gitattributes", ".gitignore", ".gitleaks.toml", ".mcp.json"],
+                  "prefixes": [".claude/", ".codex/", ".githooks/", "apps/db/"]
+                }
+              }
+            }
+
+  ci-work:
+    needs: [classify]
+    if: ${{ fromJSON(needs.classify.outputs.classification).relevant['ci-work'] }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -60,6 +87,14 @@ jobs:
 
       - name: Set up JS workspace
         uses: ./.github/actions/setup
+
+      - name: Materialize shared config
+        working-directory: ${{ github.workspace }}
+        run: node .github/scripts/materialize-shared-config.mjs
+
+      - uses: mgkdante/yesid.dev-design/.github/actions/shared-tooling-drift@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25
+        with:
+          manifest: .github/shared-tooling.json
 
       - name: Design adoption integrity
         run: bun vendor/design/tools/adopt.ts --check --dest vendor/design
@@ -88,6 +123,16 @@ jobs:
 
       - name: Unit tests
         run: bun run test
+
+  ci:
+    name: ci
+    needs: [classify, ci-work]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: mgkdante/yesid.dev-design/.github/actions/required-context@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25
+        with:
+          needs-json: ${{ toJSON(needs) }}
 
   deploy-dev:
     name: deploy dev

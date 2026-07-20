@@ -21,6 +21,7 @@
 		"smoke": "bash apps/data-proxy/smoke.sh"
 	},
 	"devDependencies": {
+		"@yesid/config": "https://github.com/mgkdante/yesid.dev-design/releases/download/config-v0.2.0/yesid-config-v0.2.0.tgz",
 		"turbo": "^2.5.0"
 	},
 	"engines": {
