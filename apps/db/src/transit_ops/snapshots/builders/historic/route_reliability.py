@@ -64,6 +64,8 @@ from transit_ops.snapshots.contract import (
 from transit_ops.sql_registry import named_query
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from collections.abc import Mapping
+
     from sqlalchemy.engine import Connection
 
 
@@ -602,6 +604,8 @@ def build_route_reliability(
     route_id: str,
     generated_utc: str,
     weak_stops_limit: int = 100,
+    route_names: Mapping[str, str] | None = None,
+    stop_names: Mapping[str, str] | None = None,
 ) -> RouteReliability:
     """Build historic/route_reliability/{route_id}.json.
 
@@ -665,10 +669,12 @@ def build_route_reliability(
     headway_by_grain = _headway_by_grain(conn, params, scheduled)
 
     # --- weak_stops: worst N (weak_stops_limit) by average delay seconds ---
-    names = {
-        str(r["stop_id"]): r["stop_name"]
-        for r in conn.execute(_STOP_NAMES_SQL, params).mappings()
-    }
+    names = stop_names
+    if names is None:
+        names = {
+            str(r["stop_id"]): r["stop_name"]
+            for r in conn.execute(_STOP_NAMES_SQL, params).mappings()
+        }
     # Shared spine anchor (newest closed day for this route) — drives BOTH the scalar
     # weak_stops trailing-month window AND the windowed companion below (one MAX scan).
     weak_anchor = _stop_delay_anchor(conn, params)
@@ -684,10 +690,11 @@ def build_route_reliability(
     weak_stops_by_grain = _weak_stops_by_grain(conn, params, names, anchor=weak_anchor)
 
     # --- route display name: current dim first, dim_route_history fallback ---
-    route_names = {
-        str(r["route_id"]): r["route_name"]
-        for r in conn.execute(_ROUTE_NAMES_SQL, {"provider_id": provider_id}).mappings()
-    }
+    if route_names is None:
+        route_names = {
+            str(r["route_id"]): r["route_name"]
+            for r in conn.execute(_ROUTE_NAMES_SQL, {"provider_id": provider_id}).mappings()
+        }
 
     # --- day_of_week: per-route weekday seasonality (spine GROUP BY ISO dow) ---
     route_dow = _spine_route_dow(conn, params)

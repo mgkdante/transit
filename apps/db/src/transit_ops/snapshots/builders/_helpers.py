@@ -14,6 +14,7 @@ docstring and the per-tier modules for the publishing rationale.
 from __future__ import annotations
 
 import statistics
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -509,6 +510,15 @@ _ROUTE_SCHEDULE_SQL = named_query(
 )
 
 
+@dataclass(frozen=True)
+class StaticScheduleContext:
+    """Dataset and representative service IDs shared across one static publish."""
+
+    dataset_version_id: int | None
+    weekday_services: tuple[str, ...] = ()
+    weekend_services: tuple[str, ...] = ()
+
+
 def _representative_services(
     conn: Connection, *, provider_id: str, dataset_version_id: int
 ) -> tuple[list[str], list[str]]:
@@ -525,6 +535,32 @@ def _representative_services(
     if rep["weekend_date"] is not None:
         weekend = [row[0] for row in conn.execute(_ACTIVE_SERVICES_SQL, {**params, "repdate": rep["weekend_date"]})]
     return weekday, weekend
+
+
+def _static_schedule_context(
+    conn: Connection, *, provider_id: str
+) -> StaticScheduleContext:
+    """Resolve the static inputs once; standalone builders call this as their fallback."""
+
+    dv_row = (
+        conn.execute(_CURRENT_DATASET_VERSION_SQL, {"provider_id": provider_id})
+        .mappings()
+        .fetchone()
+    )
+    if dv_row is None:
+        return StaticScheduleContext(dataset_version_id=None)
+
+    dataset_version_id = int(dv_row["dataset_version_id"])
+    weekday_services, weekend_services = _representative_services(
+        conn,
+        provider_id=provider_id,
+        dataset_version_id=dataset_version_id,
+    )
+    return StaticScheduleContext(
+        dataset_version_id=dataset_version_id,
+        weekday_services=tuple(weekday_services),
+        weekend_services=tuple(weekend_services),
+    )
 
 
 # Display-name lookups resolve current-dim-first (pri 0) and fall back to the

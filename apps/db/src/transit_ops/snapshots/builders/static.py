@@ -12,19 +12,19 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from transit_ops.snapshots.builders._helpers import (
+    StaticScheduleContext,
     _BOARDABLE_STOP,
-    _CURRENT_DATASET_VERSION_SQL,
     _ROUTE_SCHEDULE_SQL,
     _SHIFT_ORDER,
     _SHIFT_WINDOWS,
     _gtfs_min,
     _infer_shift,
     _median_headway,
-    _representative_services,
     _round5,
     _route_sort_key,
     _sample_times,
     _shift_sort_min,
+    _static_schedule_context,
     _wallclock,
 )
 from transit_ops.snapshots.contract import (
@@ -447,7 +447,14 @@ _ROUTE_STOPS_SQL = named_query(
 )
 
 
-def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str, generated_utc: str) -> "RouteFile":
+def build_route(
+    conn: Connection,
+    *,
+    provider_id: str = "stm",
+    route_id: str,
+    generated_utc: str,
+    static_context: StaticScheduleContext | None = None,
+) -> "RouteFile":
     """Build static/routes/{route_id}.json — branches + shapes + stops + schedule.
 
     One RouteDirection is emitted per real branch ((direction, headsign) with its
@@ -458,15 +465,13 @@ def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str, ge
     """
     from collections import defaultdict
 
-    dv_row = conn.execute(_CURRENT_DATASET_VERSION_SQL, {"provider_id": provider_id}).mappings().fetchone()
-    if dv_row is None:
+    context = static_context or _static_schedule_context(conn, provider_id=provider_id)
+    if context.dataset_version_id is None:
         return RouteFile(generated_utc=generated_utc, id=route_id)
-    dv_id = dv_row["dataset_version_id"]
+    dv_id = context.dataset_version_id
     params = {"provider_id": provider_id, "dataset_version_id": dv_id, "route_id": route_id}
-
-    weekday_services, weekend_services = _representative_services(
-        conn, provider_id=provider_id, dataset_version_id=dv_id
-    )
+    weekday_services = list(context.weekday_services)
+    weekend_services = list(context.weekend_services)
 
     name_row = conn.execute(
         _ROUTE_NAME_TYPE_SQL,
@@ -590,7 +595,13 @@ _ALL_STOP_SCHEDULES_SQL = named_query(
 )
 
 
-def build_all_stops_data(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "dict[str, StopFile]":
+def build_all_stops_data(
+    conn: Connection,
+    *,
+    provider_id: str = "stm",
+    generated_utc: str,
+    static_context: StaticScheduleContext | None = None,
+) -> "dict[str, StopFile]":
     """Build all StopFile objects in a single two-query pass (representative weekday).
 
     Returns stop_id -> StopFile. The schedule is a representative all-day sample
@@ -602,13 +613,11 @@ def build_all_stops_data(conn: Connection, *, provider_id: str = "stm", generate
     logger = logging.getLogger(__name__)
     params_base = {"provider_id": provider_id}
 
-    dv_row = conn.execute(_CURRENT_DATASET_VERSION_SQL, params_base).mappings().fetchone()
-    if dv_row is None:
+    context = static_context or _static_schedule_context(conn, provider_id=provider_id)
+    if context.dataset_version_id is None:
         return {}
-    dv_id = dv_row["dataset_version_id"]
-    weekday_services, _weekend = _representative_services(
-        conn, provider_id=provider_id, dataset_version_id=dv_id
-    )
+    dv_id = context.dataset_version_id
+    weekday_services = list(context.weekday_services)
 
     stops: dict[str, StopFile] = {}
     for r in conn.execute(_ALL_STOPS_SQL, params_base).mappings():

@@ -1207,6 +1207,58 @@ def test_build_route_reliability_unknown_route_name_is_none() -> None:
     assert out.name is None
 
 
+def test_build_route_reliability_injected_names_match_two_route_fallback_bytes() -> None:
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    stop_rows = [{"stop_id": "S1", "stop_name": "Station Berri"}]
+    route_rows = [
+        {"route_id": "51", "route_name": "Boulevard Saint-Laurent"},
+        {"route_id": "165", "route_name": "Cote-Vertu"},
+    ]
+    dispatch = _route_reliability_dispatch(
+        weak=[
+            {
+                "stop_id": "S1",
+                "obs": 40,
+                "weighted_delay_sec": 7200.0,
+                "severe": 4,
+            }
+        ],
+        names=stop_rows,
+        route_names=route_rows,
+    )
+
+    fallback_conn = FakeConn(dispatch)
+    fallback = {
+        route_id: build_route_reliability(
+            fallback_conn,
+            route_id=route_id,
+            generated_utc="t",
+        )
+        for route_id in ("51", "165")
+    }
+
+    injected_conn = FakeConn(dispatch)
+    injected = {
+        route_id: build_route_reliability(
+            injected_conn,
+            route_id=route_id,
+            generated_utc="t",
+            route_names={"51": "Boulevard Saint-Laurent", "165": "Cote-Vertu"},
+            stop_names={"S1": "Station Berri"},
+        )
+        for route_id in ("51", "165")
+    }
+
+    assert all(
+        snapshot_json_bytes(injected[route_id]) == snapshot_json_bytes(fallback[route_id])
+        for route_id in fallback
+    )
+    injected_queries = [name for name, _params in injected_conn.executed_query_params]
+    assert "static.route_names" not in injected_queries
+    assert "static.stop_names" not in injected_queries
+
+
 def test_build_route_reliability_no_dataset_version_still_builds() -> None:
     """No current static dataset -> scheduled headway empty, but periods/habits
     from gold rollups still populate (graceful degradation)."""

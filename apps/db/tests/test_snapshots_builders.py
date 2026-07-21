@@ -1410,6 +1410,117 @@ def test_build_all_stops_data():
     assert sf.scheduled[0].times == ["17:46", "17:54"]
 
 
+def test_static_builders_injected_context_matches_two_route_fallback_bytes() -> None:
+    import datetime
+
+    from transit_ops.snapshots.builders import build_all_stops_data, build_route
+    from transit_ops.snapshots.builders._helpers import StaticScheduleContext
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    responses = {
+        "static.dataset_version": [{"dataset_version_id": 1}],
+        "static.rep_dates": [
+            {
+                "weekday_date": datetime.date(2026, 6, 3),
+                "weekend_date": datetime.date(2026, 6, 6),
+            }
+        ],
+        "static.active_services": [("svc",)],
+        "static.route_name_type": [{"route_long_name": "Cote-Vertu", "route_type": 3}],
+        "static.route_shapes": [
+            {
+                "shape_id": "shape-1",
+                "geojson": {"type": "LineString", "coordinates": []},
+                "direction_id": 0,
+                "trip_headsign": "Nord",
+                "trip_count": 2,
+            }
+        ],
+        "static.route_stops": [
+            {"stop_sequence": 1, "stop_id": "51234", "stop_name": "Cote-Vertu"}
+        ],
+        "static.route_schedule": [
+            {"direction_id": 0, "is_weekday": True, "departure_time": "07:00:00"},
+            {"direction_id": 0, "is_weekday": True, "departure_time": "07:08:00"},
+            {"direction_id": 0, "is_weekday": False, "departure_time": "09:00:00"},
+            {"direction_id": 0, "is_weekday": False, "departure_time": "09:12:00"},
+        ],
+        "static.all_stops": [
+            {
+                "stop_id": "51234",
+                "stop_code": "51234",
+                "stop_name": "Cote-Vertu",
+                "stop_lat": 45.49,
+                "stop_lon": -73.66,
+                "wheelchair_boarding": 1,
+            }
+        ],
+        "static.all_stop_schedules": [
+            {
+                "stop_id": "51234",
+                "route_id": "165",
+                "trip_headsign": "Nord",
+                "departure_time": "17:46:00",
+            },
+            {
+                "stop_id": "51234",
+                "route_id": "165",
+                "trip_headsign": "Nord",
+                "departure_time": "17:54:00",
+            },
+        ],
+    }
+    context = StaticScheduleContext(
+        dataset_version_id=1,
+        weekday_services=("svc",),
+        weekend_services=("svc",),
+    )
+
+    route_ids = ("165", "51")
+    fallback_route_conn = FakeConn(responses)
+    fallback_routes = {
+        route_id: build_route(fallback_route_conn, route_id=route_id, generated_utc="t")
+        for route_id in route_ids
+    }
+    injected_route_conn = FakeConn(responses)
+    injected_routes = {
+        route_id: build_route(
+            injected_route_conn,
+            route_id=route_id,
+            generated_utc="t",
+            static_context=context,
+        )
+        for route_id in route_ids
+    }
+
+    fallback_stops = build_all_stops_data(FakeConn(responses), generated_utc="t")
+    injected_stops_conn = FakeConn(responses)
+    injected_stops = build_all_stops_data(
+        injected_stops_conn,
+        generated_utc="t",
+        static_context=context,
+    )
+
+    assert all(
+        snapshot_json_bytes(injected_routes[route_id])
+        == snapshot_json_bytes(fallback_routes[route_id])
+        for route_id in route_ids
+    )
+    assert set(injected_stops) == set(fallback_stops)
+    assert all(
+        snapshot_json_bytes(injected_stops[stop_id])
+        == snapshot_json_bytes(fallback_stops[stop_id])
+        for stop_id in fallback_stops
+    )
+    context_queries = {
+        "static.dataset_version",
+        "static.rep_dates",
+        "static.active_services",
+    }
+    assert context_queries.isdisjoint(map(query_name, injected_route_conn.executed))
+    assert context_queries.isdisjoint(map(query_name, injected_stops_conn.executed))
+
+
 # --------------------------------------------------------------------------
 # generated_utc stamping per builder family (slice-9.1.1r)
 # --------------------------------------------------------------------------
