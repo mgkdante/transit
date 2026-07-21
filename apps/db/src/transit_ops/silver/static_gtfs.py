@@ -25,7 +25,7 @@ from transit_ops.ingestion.static_gtfs import build_static_ingestion_config
 from transit_ops.ingestion.storage import get_bronze_storage
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
-from transit_ops.silver._batch import execute_batched_insert
+from transit_ops.silver._batch import CopyTarget, execute_batched_insert, execute_copy_insert
 
 logger = logging.getLogger(__name__)
 
@@ -279,43 +279,26 @@ ROUTES_INSERT = text(
     """
 )
 
-TRIPS_INSERT = text(
-    """
-    INSERT INTO silver.trips (
-        dataset_version_id,
-        provider_id,
-        trip_id,
-        route_id,
-        service_id,
-        trip_headsign,
-        trip_short_name,
-        direction_id,
-        block_id,
-        shape_id,
-        route_pattern_id,
-        note_fr,
-        note_en,
-        wheelchair_accessible,
-        bikes_allowed
-    )
-    VALUES (
-        :dataset_version_id,
-        :provider_id,
-        :trip_id,
-        :route_id,
-        :service_id,
-        :trip_headsign,
-        :trip_short_name,
-        :direction_id,
-        :block_id,
-        :shape_id,
-        :route_pattern_id,
-        :note_fr,
-        :note_en,
-        :wheelchair_accessible,
-        :bikes_allowed
-    )
-    """
+TRIPS_COPY = CopyTarget(
+    "silver",
+    "trips",
+    (
+        "dataset_version_id",
+        "provider_id",
+        "trip_id",
+        "route_id",
+        "service_id",
+        "trip_headsign",
+        "trip_short_name",
+        "direction_id",
+        "block_id",
+        "shape_id",
+        "route_pattern_id",
+        "note_fr",
+        "note_en",
+        "wheelchair_accessible",
+        "bikes_allowed",
+    ),
 )
 
 DIRECTIONS_INSERT = text(
@@ -362,128 +345,76 @@ ROUTE_PATTERNS_INSERT = text(
     """
 )
 
-SHAPES_INSERT = text(
-    """
-    INSERT INTO silver.shapes (
-        dataset_version_id,
-        provider_id,
-        shape_id,
-        shape_pt_sequence,
-        shape_pt_lat,
-        shape_pt_lon,
-        route_pattern_id
-    )
-    VALUES (
-        :dataset_version_id,
-        :provider_id,
-        :shape_id,
-        :shape_pt_sequence,
-        :shape_pt_lat,
-        :shape_pt_lon,
-        :route_pattern_id
-    )
-    """
+SHAPES_COPY = CopyTarget(
+    "silver",
+    "shapes",
+    (
+        "dataset_version_id",
+        "provider_id",
+        "shape_id",
+        "shape_pt_sequence",
+        "shape_pt_lat",
+        "shape_pt_lon",
+        "route_pattern_id",
+    ),
 )
 
-TRANSLATIONS_INSERT = text(
-    """
-    INSERT INTO silver.translations (
-        dataset_version_id,
-        provider_id,
-        translation_row_number,
-        table_name,
-        field_name,
-        language,
-        record_id,
-        translation
-    )
-    VALUES (
-        :dataset_version_id,
-        :provider_id,
-        :translation_row_number,
-        :table_name,
-        :field_name,
-        :language,
-        :record_id,
-        :translation
-    )
-    """
+TRANSLATIONS_COPY = CopyTarget(
+    "silver",
+    "translations",
+    (
+        "dataset_version_id",
+        "provider_id",
+        "translation_row_number",
+        "table_name",
+        "field_name",
+        "language",
+        "record_id",
+        "translation",
+    ),
 )
 
-STOPS_INSERT = text(
-    """
-    INSERT INTO silver.stops (
-        dataset_version_id,
-        provider_id,
-        stop_id,
-        stop_code,
-        stop_name,
-        stop_desc,
-        stop_lat,
-        stop_lon,
-        zone_id,
-        stop_url,
-        location_type,
-        parent_station,
-        stop_timezone,
-        wheelchair_boarding,
-        platform_code
-    )
-    VALUES (
-        :dataset_version_id,
-        :provider_id,
-        :stop_id,
-        :stop_code,
-        :stop_name,
-        :stop_desc,
-        :stop_lat,
-        :stop_lon,
-        :zone_id,
-        :stop_url,
-        :location_type,
-        :parent_station,
-        :stop_timezone,
-        :wheelchair_boarding,
-        :platform_code
-    )
-    """
+STOPS_COPY = CopyTarget(
+    "silver",
+    "stops",
+    (
+        "dataset_version_id",
+        "provider_id",
+        "stop_id",
+        "stop_code",
+        "stop_name",
+        "stop_desc",
+        "stop_lat",
+        "stop_lon",
+        "zone_id",
+        "stop_url",
+        "location_type",
+        "parent_station",
+        "stop_timezone",
+        "wheelchair_boarding",
+        "platform_code",
+    ),
 )
 
-STOP_TIMES_INSERT = text(
-    """
-    INSERT INTO silver.stop_times (
-        dataset_version_id,
-        provider_id,
-        trip_id,
-        stop_sequence,
-        stop_id,
-        arrival_time,
-        departure_time,
-        stop_headsign,
-        pickup_type,
-        drop_off_type,
-        continuous_pickup,
-        continuous_drop_off,
-        shape_dist_traveled,
-        timepoint
-    )
-    VALUES (
-        :dataset_version_id,
-        :provider_id,
-        :trip_id,
-        :stop_sequence,
-        :stop_id,
-        :arrival_time,
-        :departure_time,
-        :stop_headsign,
-        :pickup_type,
-        :drop_off_type,
-        :continuous_pickup,
-        :continuous_drop_off,
-        :shape_dist_traveled,
-        :timepoint
-    )
-    """
+STOP_TIMES_COPY = CopyTarget(
+    "silver",
+    "stop_times",
+    (
+        "dataset_version_id",
+        "provider_id",
+        "trip_id",
+        "stop_sequence",
+        "stop_id",
+        "arrival_time",
+        "departure_time",
+        "stop_headsign",
+        "pickup_type",
+        "drop_off_type",
+        "continuous_pickup",
+        "continuous_drop_off",
+        "shape_dist_traveled",
+        "timepoint",
+    ),
 )
 
 CALENDAR_INSERT = text(
@@ -1126,7 +1057,8 @@ def _load_member_rows(
     provider_id: str,
     dataset_version_id: int,
     builder: Callable[..., dict[str, object]],
-    statement,
+    statement=None,
+    copy_target: CopyTarget | None = None,
     strict_gtfs: bool = True,
     conformance: list[dict[str, str]] | None = None,
 ) -> int:
@@ -1154,6 +1086,10 @@ def _load_member_rows(
             required_columns=required_columns,
         )
     )
+    if copy_target is not None:
+        return execute_copy_insert(connection, target=copy_target, rows=rows)
+    if statement is None:
+        raise ValueError("A SQL statement or COPY target is required.")
     return execute_batched_insert(
         connection, statement=statement, rows=rows, chunk_size=CHUNK_SIZE
     )
@@ -1198,9 +1134,7 @@ def _load_translation_rows(
             start=1,
         )
     )
-    return execute_batched_insert(
-        connection, statement=TRANSLATIONS_INSERT, rows=rows, chunk_size=CHUNK_SIZE
-    )
+    return execute_copy_insert(connection, target=TRANSLATIONS_COPY, rows=rows)
 
 
 def _txt_member_items(member_map: Mapping[str, str]) -> list[tuple[str, str]]:
@@ -1512,7 +1446,7 @@ def load_static_zip_to_silver(
                 provider_id=archive.provider_id,
                 dataset_version_id=dataset_version_id,
                 builder=_build_stop_record,
-                statement=STOPS_INSERT,
+                copy_target=STOPS_COPY,
             ),
             "trips": _load_member_rows(
                 connection,
@@ -1522,7 +1456,7 @@ def load_static_zip_to_silver(
                 provider_id=archive.provider_id,
                 dataset_version_id=dataset_version_id,
                 builder=_build_trip_record,
-                statement=TRIPS_INSERT,
+                copy_target=TRIPS_COPY,
             ),
             "stop_times": _load_member_rows(
                 connection,
@@ -1532,7 +1466,7 @@ def load_static_zip_to_silver(
                 provider_id=archive.provider_id,
                 dataset_version_id=dataset_version_id,
                 builder=_build_stop_time_record,
-                statement=STOP_TIMES_INSERT,
+                copy_target=STOP_TIMES_COPY,
             ),
             "calendar": _load_member_rows(
                 connection,
@@ -1612,7 +1546,7 @@ def load_static_zip_to_silver(
                 provider_id=archive.provider_id,
                 dataset_version_id=dataset_version_id,
                 builder=_build_shape_record,
-                statement=SHAPES_INSERT,
+                copy_target=SHAPES_COPY,
                 strict_gtfs=strict_gtfs,
                 conformance=conformance,
             ),

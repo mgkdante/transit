@@ -45,9 +45,55 @@ class FakeResult:
         return iter(self.rows)
 
 
+class RecordingCopy:
+    def __init__(self, rows: list[tuple[object, ...]]) -> None:
+        self.rows = rows
+
+    def __enter__(self) -> RecordingCopy:
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+        return False
+
+    def write_row(self, row) -> None:  # noqa: ANN001
+        self.rows.append(tuple(row))
+
+
+class RecordingCursor:
+    def __init__(self, copy_calls: list[dict[str, object]]) -> None:
+        self.copy_calls = copy_calls
+
+    def __enter__(self) -> RecordingCursor:
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+        return False
+
+    def copy(self, statement) -> RecordingCopy:  # noqa: ANN001
+        sql_text = statement.as_string() if hasattr(statement, "as_string") else str(statement)
+        rows: list[tuple[object, ...]] = []
+        self.copy_calls.append({"sql": sql_text, "rows": rows})
+        return RecordingCopy(rows)
+
+
+class RecordingDriverConnection:
+    def __init__(self, copy_calls: list[dict[str, object]]) -> None:
+        self.copy_calls = copy_calls
+
+    def cursor(self) -> RecordingCursor:
+        return RecordingCursor(self.copy_calls)
+
+
+class RecordingConnectionFacade:
+    def __init__(self, copy_calls: list[dict[str, object]]) -> None:
+        self.driver_connection = RecordingDriverConnection(copy_calls)
+
+
 class RecordingConnection:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
+        self.copy_calls: list[dict[str, object]] = []
+        self.connection = RecordingConnectionFacade(self.copy_calls)
 
     def execute(self, statement, params=None):  # noqa: ANN001
         sql_text = str(statement)
@@ -57,6 +103,15 @@ class RecordingConnection:
         if "SELECT dataset_version_id" in sql_text:
             return FakeResult(rows=[(700,)])
         return FakeResult()
+
+
+def _copy_rows_for(
+    connection: RecordingConnection,
+    table_name: str,
+) -> list[tuple[object, ...]]:
+    return next(
+        call["rows"] for call in connection.copy_calls if f'"silver"."{table_name}"' in call["sql"]
+    )
 
 
 class LookupResult:
@@ -452,12 +507,75 @@ def test_load_static_zip_to_silver_records_row_counts(tmp_path: Path) -> None:
         "calendar": 1,
         "calendar_dates": 1,
     }
-    assert "INSERT INTO silver.routes" in connection.calls[2][0]
-    assert "INSERT INTO silver.stops" in connection.calls[3][0]
-    assert "INSERT INTO silver.trips" in connection.calls[4][0]
-    assert "INSERT INTO silver.stop_times" in connection.calls[5][0]
-    assert "INSERT INTO silver.calendar" in connection.calls[6][0]
-    assert "INSERT INTO silver.calendar_dates" in connection.calls[7][0]
+    sql_calls = [sql for sql, _ in connection.calls]
+    assert any("INSERT INTO silver.routes" in sql for sql in sql_calls)
+    assert any("INSERT INTO silver.calendar" in sql for sql in sql_calls)
+    assert any("INSERT INTO silver.calendar_dates" in sql for sql in sql_calls)
+    assert not any("INSERT INTO silver.stops" in sql for sql in sql_calls)
+    assert not any("INSERT INTO silver.trips" in sql for sql in sql_calls)
+    assert not any("INSERT INTO silver.stop_times" in sql for sql in sql_calls)
+    assert [call["sql"].split(" (", 1)[0] for call in connection.copy_calls] == [
+        'COPY "silver"."stops"',
+        'COPY "silver"."trips"',
+        'COPY "silver"."stop_times"',
+    ]
+
+
+def test_static_bulk_copy_uses_one_stream_for_more_than_one_insert_chunk(
+    tmp_path: Path,
+) -> None:
+    members = _minimal_compliant_members()
+    members["stops.txt"] = "stop_id,stop_name\n" + "".join(
+        f"stop-{index},Stop {index}\n" for index in range(static_silver_module.CHUNK_SIZE + 1)
+    )
+    zip_path = tmp_path / "large-stops.zip"
+    _write_members_zip(zip_path, members)
+    connection = RecordingConnection()
+
+    result = load_static_zip_to_silver(
+        connection,
+        archive=_build_archive(zip_path),
+        bronze_storage=LocalBronzeStorageForTests(zip_path.read_bytes()),
+    )
+
+    assert result.row_counts["stops"] == static_silver_module.CHUNK_SIZE + 1
+    assert len(_copy_rows_for(connection, "stops")) == static_silver_module.CHUNK_SIZE + 1
+    assert not any("INSERT INTO silver.stops" in sql for sql, _ in connection.calls)
+
+
+def test_static_bulk_copy_skips_empty_and_missing_members(tmp_path: Path) -> None:
+    members = {
+        "routes.txt": "route_id,route_type\n",
+        "trips.txt": "route_id,service_id,trip_id\n",
+        "stops.txt": "stop_id\n",
+        "stop_times.txt": "trip_id,stop_id,stop_sequence\n",
+        "calendar.txt": (
+            "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,"
+            "start_date,end_date\n"
+            "weekday,1,1,1,1,1,0,0,20260324,20260630\n"
+        ),
+        "shapes.txt": "shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\n",
+        "translations.txt": "table_name,field_name,language,record_id,translation\n",
+    }
+    zip_path = tmp_path / "empty-bulk-members.zip"
+    _write_members_zip(zip_path, members)
+    connection = RecordingConnection()
+
+    result = load_static_zip_to_silver(
+        connection,
+        archive=_build_archive(zip_path),
+        bronze_storage=LocalBronzeStorageForTests(zip_path.read_bytes()),
+    )
+
+    assert result.row_counts == {
+        "routes": 0,
+        "stops": 0,
+        "trips": 0,
+        "stop_times": 0,
+        "calendar": 1,
+        "calendar_dates": 0,
+    }
+    assert connection.copy_calls == []
 
 
 def test_build_agency_record_synthesizes_agency_id_when_absent() -> None:
@@ -670,8 +788,15 @@ def test_load_static_zip_to_silver_loads_beta_first_static_members(tmp_path: Pat
     assert any("INSERT INTO silver.feed_info" in sql for sql in sql_calls)
     assert any("INSERT INTO silver.directions" in sql for sql in sql_calls)
     assert any("INSERT INTO silver.route_patterns" in sql for sql in sql_calls)
-    assert any("INSERT INTO silver.shapes" in sql for sql in sql_calls)
-    assert any("INSERT INTO silver.translations" in sql for sql in sql_calls)
+    assert not any("INSERT INTO silver.shapes" in sql for sql in sql_calls)
+    assert not any("INSERT INTO silver.translations" in sql for sql in sql_calls)
+    assert [call["sql"].split(" (", 1)[0] for call in connection.copy_calls] == [
+        'COPY "silver"."stops"',
+        'COPY "silver"."trips"',
+        'COPY "silver"."stop_times"',
+        'COPY "silver"."shapes"',
+        'COPY "silver"."translations"',
+    ]
 
     route_params = next(
         params
@@ -680,12 +805,80 @@ def test_load_static_zip_to_silver_loads_beta_first_static_members(tmp_path: Pat
     )
     assert route_params[0]["route_desc_detail"] == "Lignes de jour seulement"
 
-    trip_params = next(
-        params
-        for sql, params in connection.calls
-        if "INSERT INTO silver.trips" in sql
+    trip_rows = _copy_rows_for(connection, "trips")
+    assert trip_rows[0][10] == "1_1071"
+
+
+def test_static_bulk_copy_preserves_typed_values_nulls_and_source_text(
+    tmp_path: Path,
+) -> None:
+    members = _minimal_compliant_members()
+    members["trips.txt"] = (
+        "route_id,service_id,trip_id,trip_headsign,direction_id,note_fr\n"
+        "1,weekday,trip-1,Métro centre,1,Direction est\\ouest\n"
     )
-    assert trip_params[0]["route_pattern_id"] == "1_1071"
+    members["stops.txt"] = (
+        "stop_id,stop_name,stop_desc,stop_lat,stop_lon,location_type\n"
+        'stop-1,"Métro, Central","Ligne une\nLigne deux",45.5001,,0\n'
+    )
+    members["stop_times.txt"] = (
+        "trip_id,arrival_time,departure_time,stop_id,stop_sequence,shape_dist_traveled\n"
+        "trip-1,25:35:00,25:40:00,stop-1,12,123.5\n"
+    )
+    members["shapes.txt"] = (
+        "shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence,route_pattern_id\nshape-1,45.5,,7,\n"
+    )
+    members["translations.txt"] = (
+        "table_name,field_name,language,record_id,translation\n"
+        'stops,stop_name,en,stop-1,"Metro, Central\nLine two \\ accessible"\n'
+    )
+    zip_path = tmp_path / "typed-copy.zip"
+    _write_members_zip(zip_path, members)
+    connection = RecordingConnection()
+
+    result = load_static_zip_to_silver(
+        connection,
+        archive=_build_archive(zip_path),
+        bronze_storage=LocalBronzeStorageForTests(zip_path.read_bytes()),
+    )
+
+    assert result.row_counts["stops"] == 1
+    stop = _copy_rows_for(connection, "stops")[0]
+    assert stop == (
+        700,
+        "stm",
+        "stop-1",
+        None,
+        "Métro, Central",
+        "Ligne une\nLigne deux",
+        45.5001,
+        None,
+        None,
+        None,
+        0,
+        None,
+        None,
+        None,
+        None,
+    )
+    trip = _copy_rows_for(connection, "trips")[0]
+    assert trip[5] == "Métro centre"
+    assert trip[7] == 1
+    assert trip[11] == "Direction est\\ouest"
+    stop_time = _copy_rows_for(connection, "stop_times")[0]
+    assert stop_time[3:7] == (12, "stop-1", "25:35:00", "25:40:00")
+    assert stop_time[12] == 123.5
+    assert _copy_rows_for(connection, "shapes")[0][3:] == (7, 45.5, None, None)
+    assert _copy_rows_for(connection, "translations")[0] == (
+        700,
+        "stm",
+        1,
+        "stops",
+        "stop_name",
+        "en",
+        "stop-1",
+        "Metro, Central\nLine two \\ accessible",
+    )
 
 
 def test_load_static_zip_to_silver_records_all_txt_members_and_extra_rows(
@@ -826,13 +1019,9 @@ def test_load_static_zip_to_silver_preserves_sparse_trip_notes(tmp_path: Path) -
         require_beta_static_contract=True,
     )
 
-    trip_params = next(
-        params
-        for sql, params in connection.calls
-        if "INSERT INTO silver.trips" in sql
-    )
-    assert trip_params[0]["note_fr"] == "Direction est"
-    assert trip_params[0]["note_en"] == "Eastbound"
+    trip_rows = _copy_rows_for(connection, "trips")
+    assert trip_rows[0][11] == "Direction est"
+    assert trip_rows[0][12] == "Eastbound"
 
 
 def test_load_static_zip_to_silver_allows_missing_calendar_txt(tmp_path: Path) -> None:
