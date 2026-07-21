@@ -1735,6 +1735,299 @@ def _install_failure_persistence_spies(monkeypatch, engine: _RecordingFailureEng
     monkeypatch.setattr(orchestration, "insert_failed_ingestion_run", fake_insert_failed)
 
 
+def test_shared_capture_load_executor_preserves_order_payload_and_rounding(
+    monkeypatch,
+) -> None:
+    call_order: list[str] = []
+    capture_payload = {"kind": "capture", "rows": 5}
+    silver_payload = {"kind": "silver", "rows": 4}
+    durations = {
+        "capture-realtime[trip_updates]": 1.235,
+        "load-realtime-silver[trip_updates]": 2.346,
+    }
+
+    def fake_timed_step(label, step):  # noqa: ANN001, ANN202
+        call_order.append(label)
+        return step(), durations[label]
+
+    perf_values = iter([10.0, 10.1, 11.0, 12.3456])
+    monkeypatch.setattr(orchestration, "_run_timed_realtime_step", fake_timed_step)
+    monkeypatch.setattr(orchestration.time, "perf_counter", lambda: next(perf_values))
+    monkeypatch.setattr(
+        orchestration,
+        "utc_now",
+        lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    result = orchestration._run_capture_load_steps(
+        "stm",
+        "trip_updates",
+        capture_step=lambda: (
+            call_order.append("capture"),
+            SimpleNamespace(display_dict=lambda: capture_payload),
+        )[1],
+        silver_load_step=lambda: (
+            call_order.append("load"),
+            SimpleNamespace(display_dict=lambda: silver_payload),
+        )[1],
+        capture_label_prefix="capture-realtime",
+        silver_label_prefix="load-realtime-silver",
+        engine=object(),
+    )
+
+    assert call_order == [
+        "capture-realtime[trip_updates]",
+        "capture",
+        "load-realtime-silver[trip_updates]",
+        "load",
+    ]
+    assert result.display_dict() == {
+        "endpoint_key": "trip_updates",
+        "status": "succeeded",
+        "capture_duration_seconds": 1.235,
+        "silver_load_duration_seconds": 2.346,
+        "total_endpoint_duration_seconds": 2.346,
+        "capture_result": capture_payload,
+        "silver_load_result": silver_payload,
+        "error_message": None,
+    }
+
+
+def test_shared_capture_load_executor_capture_failure_skips_load_and_receipt(
+    monkeypatch,
+) -> None:
+    load_calls: list[str] = []
+    receipts: list[dict[str, object]] = []
+
+    def fake_timed_step(label, step):  # noqa: ANN001, ANN202
+        return step(), 0.25
+
+    def fail_capture():
+        raise RuntimeError("capture down")
+
+    perf_values = iter([20.0, 20.1, 20.4567, 20.789])
+    monkeypatch.setattr(orchestration, "_run_timed_realtime_step", fake_timed_step)
+    monkeypatch.setattr(orchestration.time, "perf_counter", lambda: next(perf_values))
+    monkeypatch.setattr(
+        orchestration,
+        "_persist_silver_load_failure",
+        lambda *args, **kwargs: receipts.append(kwargs),
+    )
+
+    result = orchestration._run_capture_load_steps(
+        "sto",
+        "service_alerts",
+        capture_step=fail_capture,
+        silver_load_step=lambda: load_calls.append("load"),
+        capture_label_prefix="capture-service-alerts",
+        silver_label_prefix="load-service-alerts-silver",
+        engine=object(),
+    )
+
+    assert load_calls == []
+    assert receipts == []
+    assert result.display_dict() == {
+        "endpoint_key": "service_alerts",
+        "status": "failed",
+        "capture_duration_seconds": 0.357,
+        "silver_load_duration_seconds": None,
+        "total_endpoint_duration_seconds": 0.789,
+        "capture_result": None,
+        "silver_load_result": None,
+        "error_message": "capture-service-alerts failed: capture down",
+    }
+
+
+def test_shared_capture_load_executor_load_failure_persists_exact_receipt(
+    monkeypatch,
+) -> None:
+    receipt_calls: list[tuple[object, dict[str, object]]] = []
+    capture_payload = {"snapshot_id": 20}
+    started_at_utc = datetime(2026, 7, 21, 12, 0, tzinfo=UTC)
+    engine = object()
+
+    def fake_timed_step(label, step):  # noqa: ANN001, ANN202
+        if label.startswith("capture-"):
+            return step(), 0.111
+        return step(), 0.222
+
+    def fail_load():
+        raise RuntimeError("silver down")
+
+    perf_values = iter([30.0, 30.1, 31.0, 31.5678, 32.3456])
+    monkeypatch.setattr(orchestration, "_run_timed_realtime_step", fake_timed_step)
+    monkeypatch.setattr(orchestration.time, "perf_counter", lambda: next(perf_values))
+    monkeypatch.setattr(orchestration, "utc_now", lambda: started_at_utc)
+    monkeypatch.setattr(
+        orchestration,
+        "_persist_silver_load_failure",
+        lambda receipt_engine, **kwargs: receipt_calls.append(
+            (receipt_engine, kwargs)
+        ),
+    )
+
+    result = orchestration._run_capture_load_steps(
+        "stm",
+        "i3_alerts",
+        capture_step=lambda: SimpleNamespace(display_dict=lambda: capture_payload),
+        silver_load_step=fail_load,
+        capture_label_prefix="capture-i3",
+        silver_label_prefix="load-i3-silver",
+        engine=engine,
+    )
+
+    assert receipt_calls == [
+        (
+            engine,
+            {
+                "provider_id": "stm",
+                "endpoint_key": "i3_alerts",
+                "error_message": "load-i3-silver failed: silver down",
+                "started_at_utc": started_at_utc,
+            },
+        )
+    ]
+    assert result.display_dict() == {
+        "endpoint_key": "i3_alerts",
+        "status": "failed",
+        "capture_duration_seconds": 0.111,
+        "silver_load_duration_seconds": 0.568,
+        "total_endpoint_duration_seconds": 2.346,
+        "capture_result": capture_payload,
+        "silver_load_result": None,
+        "error_message": "load-i3-silver failed: silver down",
+    }
+
+
+def test_shared_capture_load_executor_swallows_receipt_persistence_failure(
+    monkeypatch,
+) -> None:
+    capture_payload = {"snapshot_id": 20}
+
+    def fake_timed_step(label, step):  # noqa: ANN001, ANN202
+        if label.startswith("capture-"):
+            return step(), 0.111
+        return step(), 0.222
+
+    def fail_load():
+        raise RuntimeError("silver down")
+
+    perf_values = iter([40.0, 40.1, 41.0, 41.25, 42.0])
+    monkeypatch.setattr(orchestration, "_run_timed_realtime_step", fake_timed_step)
+    monkeypatch.setattr(orchestration.time, "perf_counter", lambda: next(perf_values))
+    monkeypatch.setattr(
+        orchestration,
+        "utc_now",
+        lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+
+    result = orchestration._run_capture_load_steps(
+        "stm",
+        "trip_updates",
+        capture_step=lambda: SimpleNamespace(display_dict=lambda: capture_payload),
+        silver_load_step=fail_load,
+        capture_label_prefix="capture-realtime",
+        silver_label_prefix="load-realtime-silver",
+        engine=_RecordingFailureEngine(explode=True),
+    )
+
+    assert result.status == "failed"
+    assert result.capture_result == capture_payload
+    assert result.error_message == "load-realtime-silver failed: silver down"
+
+
+@pytest.mark.parametrize(
+    ("adapter_name", "endpoint_key", "capture_label", "silver_label"),
+    [
+        (
+            "_capture_and_load_endpoint",
+            "trip_updates",
+            "capture-realtime",
+            "load-realtime-silver",
+        ),
+        ("_capture_and_load_i3_alerts", "i3_alerts", "capture-i3", "load-i3-silver"),
+        (
+            "_capture_and_load_service_alerts",
+            "service_alerts",
+            "capture-service-alerts",
+            "load-service-alerts-silver",
+        ),
+    ],
+)
+def test_capture_load_adapters_delegate_exact_labels(
+    monkeypatch,
+    adapter_name: str,
+    endpoint_key: str,
+    capture_label: str,
+    silver_label: str,
+) -> None:
+    executor_calls: list[dict[str, object]] = []
+    sentinel = orchestration.RealtimeEndpointCycleResult(
+        endpoint_key=endpoint_key,
+        status="succeeded",
+        capture_duration_seconds=0.1,
+        silver_load_duration_seconds=0.2,
+        total_endpoint_duration_seconds=0.3,
+        capture_result={"capture": True},
+        silver_load_result={"silver": True},
+        error_message=None,
+    )
+
+    def fake_executor(provider_id, delegated_endpoint_key, **kwargs):  # noqa: ANN001, ANN202
+        executor_calls.append(
+            {
+                "provider_id": provider_id,
+                "endpoint_key": delegated_endpoint_key,
+                "capture_label_prefix": kwargs["capture_label_prefix"],
+                "silver_label_prefix": kwargs["silver_label_prefix"],
+                "capture_callable": callable(kwargs["capture_step"]),
+                "silver_callable": callable(kwargs["silver_load_step"]),
+            }
+        )
+        return sentinel
+
+    def fail_eager_call(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        pytest.fail("thin adapters must not invoke capture/load before delegation")
+
+    monkeypatch.setattr(
+        orchestration,
+        "_run_capture_load_steps",
+        fake_executor,
+        raising=False,
+    )
+    monkeypatch.setattr(orchestration, "capture_realtime_feed", fail_eager_call)
+    monkeypatch.setattr(orchestration, "load_latest_realtime_to_silver", fail_eager_call)
+    monkeypatch.setattr(orchestration, "capture_i3_alerts", fail_eager_call)
+    monkeypatch.setattr(orchestration, "capture_service_alerts", fail_eager_call)
+    monkeypatch.setattr(orchestration, "load_latest_i3_to_silver", fail_eager_call)
+
+    adapter = getattr(orchestration, adapter_name)
+    kwargs = {
+        "settings": Settings(
+            _env_file=None,
+            DATABASE_URL="postgresql://user:pass@example.com/transit",
+        ),
+        "registry": object(),
+        "engine": object(),
+    }
+    if adapter_name == "_capture_and_load_endpoint":
+        result = adapter("stm", endpoint_key, **kwargs)
+    else:
+        result = adapter("stm", **kwargs)
+
+    assert result is sentinel
+    assert executor_calls == [
+        {
+            "provider_id": "stm",
+            "endpoint_key": endpoint_key,
+            "capture_label_prefix": capture_label,
+            "silver_label_prefix": silver_label,
+            "capture_callable": True,
+            "silver_callable": True,
+        }
+    ]
+
+
 def test_run_realtime_cycle_persists_gtfs_silver_load_failure_row(monkeypatch) -> None:
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)

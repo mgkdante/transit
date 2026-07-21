@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Protocol
 
 from sqlalchemy.engine import Engine
 
@@ -507,12 +508,18 @@ def _persist_silver_load_failure(
         )
 
 
-def _capture_and_load_endpoint(
+class _DisplayResult(Protocol):
+    def display_dict(self) -> dict[str, object]: ...
+
+
+def _run_capture_load_steps(
     provider_id: str,
     endpoint_key: str,
     *,
-    settings: Settings,
-    registry: ProviderRegistry,
+    capture_step: Callable[[], _DisplayResult],
+    silver_load_step: Callable[[], _DisplayResult],
+    capture_label_prefix: str,
+    silver_label_prefix: str,
     engine: Engine,
 ) -> RealtimeEndpointCycleResult:
     endpoint_started_at = time.perf_counter()
@@ -520,21 +527,15 @@ def _capture_and_load_endpoint(
     silver_load_duration_seconds: float | None = None
 
     logger.info(
-        "Running realtime capture step for provider '%s', endpoint '%s'.",
+        "Running capture step for provider '%s', endpoint '%s'.",
         provider_id,
         endpoint_key,
     )
     capture_started_at = time.perf_counter()
     try:
         capture_result, capture_duration_seconds = _run_timed_realtime_step(
-            f"capture-realtime[{endpoint_key}]",
-            lambda: capture_realtime_feed(
-                provider_id,
-                endpoint_key,
-                settings=settings,
-                registry=registry,
-                engine=engine,
-            ),
+            f"{capture_label_prefix}[{endpoint_key}]",
+            capture_step,
         )
     except Exception as exc:
         if capture_duration_seconds is None:
@@ -559,11 +560,11 @@ def _capture_and_load_endpoint(
             ),
             capture_result=None,
             silver_load_result=None,
-            error_message=f"capture-realtime failed: {exc}",
+            error_message=f"{capture_label_prefix} failed: {exc}",
         )
 
     logger.info(
-        "Running realtime Silver load step for provider '%s', endpoint '%s'.",
+        "Running Silver load step for provider '%s', endpoint '%s'.",
         provider_id,
         endpoint_key,
     )
@@ -571,14 +572,8 @@ def _capture_and_load_endpoint(
     silver_load_started_at_utc = utc_now()
     try:
         silver_load_result, silver_load_duration_seconds = _run_timed_realtime_step(
-            f"load-realtime-silver[{endpoint_key}]",
-            lambda: load_latest_realtime_to_silver(
-                provider_id,
-                endpoint_key,
-                settings=settings,
-                registry=registry,
-                engine=engine,
-            ),
+            f"{silver_label_prefix}[{endpoint_key}]",
+            silver_load_step,
         )
     except Exception as exc:
         if silver_load_duration_seconds is None:
@@ -590,133 +585,6 @@ def _capture_and_load_endpoint(
             "Realtime cycle Silver load failed for provider '%s', endpoint '%s': %s",
             provider_id,
             endpoint_key,
-            exc,
-        )
-        error_message = f"load-realtime-silver failed: {exc}"
-        _persist_silver_load_failure(
-            engine,
-            provider_id=provider_id,
-            endpoint_key=endpoint_key,
-            error_message=error_message,
-            started_at_utc=silver_load_started_at_utc,
-        )
-        return RealtimeEndpointCycleResult(
-            endpoint_key=endpoint_key,
-            status="failed",
-            capture_duration_seconds=capture_duration_seconds,
-            silver_load_duration_seconds=silver_load_duration_seconds,
-            total_endpoint_duration_seconds=round(
-                time.perf_counter() - endpoint_started_at,
-                3,
-            ),
-            capture_result=capture_result.display_dict(),
-            silver_load_result=None,
-            error_message=error_message,
-        )
-
-    return RealtimeEndpointCycleResult(
-        endpoint_key=endpoint_key,
-        status="succeeded",
-        capture_duration_seconds=capture_duration_seconds,
-        silver_load_duration_seconds=silver_load_duration_seconds,
-        total_endpoint_duration_seconds=round(
-            time.perf_counter() - endpoint_started_at,
-            3,
-        ),
-        capture_result=capture_result.display_dict(),
-        silver_load_result=silver_load_result.display_dict(),
-        error_message=None,
-    )
-
-
-def _capture_and_load_alert_endpoint(
-    provider_id: str,
-    *,
-    endpoint_key: str,
-    capture_fn: Callable[..., object],
-    capture_label_prefix: str,
-    silver_label_prefix: str,
-    settings: Settings,
-    registry: ProviderRegistry,
-    engine: Engine,
-) -> RealtimeEndpointCycleResult:
-    """Capture an alert feed and merge it into silver.i3_alerts.
-
-    Shared by STM's proprietary i3 JSON (capture_i3_alerts) and the generic
-    GTFS-RT service-alerts capture; both land in raw.i3_alert_snapshots and use
-    the same load_latest_i3_to_silver SCD-2 merge. Label/error prefixes are
-    passed in so each endpoint keeps its own operator-facing strings.
-    """
-    endpoint_started_at = time.perf_counter()
-    capture_duration_seconds: float | None = None
-    silver_load_duration_seconds: float | None = None
-
-    logger.info(
-        "Running alert capture step for provider '%s' (%s).", provider_id, endpoint_key
-    )
-    capture_started_at = time.perf_counter()
-    try:
-        capture_result, capture_duration_seconds = _run_timed_realtime_step(
-            f"{capture_label_prefix}[{endpoint_key}]",
-            lambda: capture_fn(
-                provider_id,
-                settings=settings,
-                registry=registry,
-                engine=engine,
-            ),
-        )
-    except Exception as exc:
-        if capture_duration_seconds is None:
-            capture_duration_seconds = round(
-                time.perf_counter() - capture_started_at,
-                3,
-            )
-        logger.error(
-            "Realtime cycle %s capture failed for provider '%s': %s",
-            endpoint_key,
-            provider_id,
-            exc,
-        )
-        return RealtimeEndpointCycleResult(
-            endpoint_key=endpoint_key,
-            status="failed",
-            capture_duration_seconds=capture_duration_seconds,
-            silver_load_duration_seconds=silver_load_duration_seconds,
-            total_endpoint_duration_seconds=round(
-                time.perf_counter() - endpoint_started_at,
-                3,
-            ),
-            capture_result=None,
-            silver_load_result=None,
-            error_message=f"{capture_label_prefix} failed: {exc}",
-        )
-
-    logger.info(
-        "Running alert Silver load step for provider '%s' (%s).",
-        provider_id,
-        endpoint_key,
-    )
-    silver_load_started_at = time.perf_counter()
-    silver_load_started_at_utc = utc_now()
-    try:
-        silver_load_result, silver_load_duration_seconds = _run_timed_realtime_step(
-            f"{silver_label_prefix}[{endpoint_key}]",
-            lambda: load_latest_i3_to_silver(
-                provider_id,
-                settings=settings,
-                engine=engine,
-            ),
-        )
-    except Exception as exc:
-        if silver_load_duration_seconds is None:
-            silver_load_duration_seconds = round(
-                time.perf_counter() - silver_load_started_at,
-                3,
-            )
-        logger.error(
-            "Realtime cycle %s Silver load failed for provider '%s': %s",
-            endpoint_key,
-            provider_id,
             exc,
         )
         error_message = f"{silver_label_prefix} failed: {exc}"
@@ -753,6 +621,68 @@ def _capture_and_load_alert_endpoint(
         capture_result=capture_result.display_dict(),
         silver_load_result=silver_load_result.display_dict(),
         error_message=None,
+    )
+
+
+def _capture_and_load_endpoint(
+    provider_id: str,
+    endpoint_key: str,
+    *,
+    settings: Settings,
+    registry: ProviderRegistry,
+    engine: Engine,
+) -> RealtimeEndpointCycleResult:
+    return _run_capture_load_steps(
+        provider_id,
+        endpoint_key,
+        capture_step=lambda: capture_realtime_feed(
+            provider_id,
+            endpoint_key,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+        ),
+        silver_load_step=lambda: load_latest_realtime_to_silver(
+            provider_id,
+            endpoint_key,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+        ),
+        capture_label_prefix="capture-realtime",
+        silver_label_prefix="load-realtime-silver",
+        engine=engine,
+    )
+
+
+def _capture_and_load_alert_endpoint(
+    provider_id: str,
+    *,
+    endpoint_key: str,
+    capture_fn: Callable[..., _DisplayResult],
+    capture_label_prefix: str,
+    silver_label_prefix: str,
+    settings: Settings,
+    registry: ProviderRegistry,
+    engine: Engine,
+) -> RealtimeEndpointCycleResult:
+    return _run_capture_load_steps(
+        provider_id,
+        endpoint_key,
+        capture_step=lambda: capture_fn(
+            provider_id,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+        ),
+        silver_load_step=lambda: load_latest_i3_to_silver(
+            provider_id,
+            settings=settings,
+            engine=engine,
+        ),
+        capture_label_prefix=capture_label_prefix,
+        silver_label_prefix=silver_label_prefix,
+        engine=engine,
     )
 
 
