@@ -20,10 +20,12 @@ import threading
 import time
 from collections import Counter
 from contextlib import contextmanager
+from types import SimpleNamespace
 
 import pytest
 
-from transit_ops.snapshots.publish import _parallel_put, publish_snapshot
+from transit_ops.snapshots import publish as snapshot_publish
+from transit_ops.snapshots.publish import _parallel_put, _publish_live, publish_snapshot
 from transit_ops.snapshots.storage import HashGatedStorage, SnapshotStorage
 from transit_ops.sql_registry import query_name
 
@@ -101,6 +103,132 @@ def test_parallel_put_propagates_first_failure() -> None:
     items = [(f"static/stops/{i}.json", {"i": i}, "static") for i in range(40)]
     with pytest.raises(RuntimeError, match="upload failed for 13"):
         _parallel_put(_Boom(), items, concurrency=8)
+
+
+# ---------------------------------------------------------------------------
+# Live publish — parallel children, serial manifest activation
+# ---------------------------------------------------------------------------
+
+
+_LIVE_CHILD_KEYS = (
+    "live/vehicles.json",
+    "live/trips.json",
+    "live/alerts.json",
+    "live/network.json",
+    "live/stop_departures.json",
+    "status/data_health.json",
+)
+_LIVE_KEYS = (*_LIVE_CHILD_KEYS, "manifest.json")
+
+
+def _stub_live_items(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        snapshot_publish,
+        "_build_live_items",
+        lambda *args, **kwargs: [(key, {"key": key}, "live") for key in _LIVE_KEYS],
+    )
+
+
+class _LiveStageProbe:
+    def __init__(self, *, fail_key: str | None = None) -> None:
+        self._fail_key = fail_key
+        self._lock = threading.Lock()
+        self.active_children = 0
+        self.peak_children = 0
+        self.started: list[str] = []
+        self.finished: list[str] = []
+        self.thread_by_key: dict[str, int] = {}
+        self.manifest_started_with_active_children: int | None = None
+        self.children_finished_before_manifest: set[str] | None = None
+
+    def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
+        is_manifest = rel_key == "manifest.json"
+        with self._lock:
+            self.started.append(rel_key)
+            self.thread_by_key[rel_key] = threading.get_ident()
+            if is_manifest:
+                self.manifest_started_with_active_children = self.active_children
+                self.children_finished_before_manifest = set(self.finished)
+            else:
+                self.active_children += 1
+                self.peak_children = max(self.peak_children, self.active_children)
+        try:
+            if not is_manifest:
+                time.sleep(0.02)
+            if rel_key == self._fail_key:
+                raise RuntimeError(f"live child upload failed: {rel_key}")
+            return rel_key
+        finally:
+            with self._lock:
+                if not is_manifest:
+                    self.active_children -= 1
+                self.finished.append(rel_key)
+
+
+def test_publish_live_parallelizes_children_then_writes_manifest_last(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_live_items(monkeypatch)
+    probe = _LiveStageProbe()
+    caller_thread = threading.get_ident()
+
+    keys = _publish_live(
+        object(),
+        probe,
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=3),
+        gen="2026-07-21T20:00:00Z",
+    )
+
+    assert 2 <= probe.peak_children <= 3
+    assert probe.manifest_started_with_active_children == 0
+    assert probe.children_finished_before_manifest == set(_LIVE_CHILD_KEYS)
+    assert probe.thread_by_key["manifest.json"] == caller_thread
+    assert caller_thread not in {probe.thread_by_key[key] for key in _LIVE_CHILD_KEYS}
+    assert probe.finished[-1] == "manifest.json"
+    assert keys == list(_LIVE_KEYS)
+
+
+def test_publish_live_child_failure_drains_pool_and_never_writes_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_live_items(monkeypatch)
+    failed_key = "live/trips.json"
+    probe = _LiveStageProbe(fail_key=failed_key)
+
+    with pytest.raises(RuntimeError, match=f"live child upload failed: {failed_key}"):
+        _publish_live(
+            object(),
+            probe,
+            provider_id="stm",
+            settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=3),
+            gen="2026-07-21T20:00:00Z",
+        )
+
+    assert set(probe.started) == set(_LIVE_CHILD_KEYS)
+    assert set(probe.finished) == set(_LIVE_CHILD_KEYS)
+    assert probe.active_children == 0
+    assert "manifest.json" not in probe.started
+
+
+def test_publish_live_concurrency_one_preserves_sequential_manifest_last(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_live_items(monkeypatch)
+    probe = _LiveStageProbe()
+
+    keys = _publish_live(
+        object(),
+        probe,
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        gen="2026-07-21T20:00:00Z",
+    )
+
+    assert probe.peak_children == 1
+    assert probe.started == list(_LIVE_KEYS)
+    assert probe.finished == list(_LIVE_KEYS)
+    assert keys == list(_LIVE_KEYS)
 
 
 # ---------------------------------------------------------------------------

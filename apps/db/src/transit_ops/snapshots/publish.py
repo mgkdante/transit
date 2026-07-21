@@ -802,8 +802,8 @@ def _publish_live(
 
     When *gate_report* is supplied the payloads are inspected before upload, but the
     live tier is WARN-ONLY (enforced with force=True by the caller) so a transient blip
-    never aborts the ~57s cycle and blinds the map. Files upload sequentially in list
-    order, manifest last.
+    never aborts the ~57s cycle and blinds the map. Child files upload through the
+    bounded pool; the manifest starts only after they all finish successfully.
 
     *gen* is the cycle's ONE publish stamp: the caller threads the same value it
     persists to snapshot_publish_state, so the manifest, envelope stamps, gate
@@ -825,9 +825,13 @@ def _publish_live(
                 logger.exception(
                     "live gate check crashed for %s (skipped, cycle continues)", rel_key
                 )
-    written: list[str] = []
-    for rel_key, payload, tier in items:
-        written.append(storage.put_json(rel_key, payload, tier=tier))  # type: ignore[attr-defined]
+    written = _parallel_put(
+        storage,
+        items[:-1],
+        concurrency=_concurrency(settings),
+    )
+    rel_key, payload, tier = items[-1]
+    written.append(storage.put_json(rel_key, payload, tier=tier))  # type: ignore[attr-defined]
     return written
 
 
