@@ -74,6 +74,37 @@ class FakeEngine:
         return _cm()
 
 
+class NamedRowsResult:
+    def __init__(self, rows):  # noqa: ANN001
+        self._rows = list(rows)
+
+    def mappings(self):  # noqa: ANN201
+        return self
+
+    def __iter__(self):
+        return iter(self._rows)
+
+    def fetchone(self):  # noqa: ANN201
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self):  # noqa: ANN201
+        return list(self._rows)
+
+    def scalar_one(self):  # noqa: ANN201
+        return self._rows[0] if self._rows else 0
+
+
+class RecordingNamedConn:
+    def __init__(self, responses):  # noqa: ANN001
+        self.responses = responses
+        self.queries: list[str | None] = []
+
+    def execute(self, statement, params=None):  # noqa: ANN001, ARG002
+        name = query_name(statement)
+        self.queries.append(name)
+        return NamedRowsResult(self.responses.get(name, []))
+
+
 class FakeStore:
     """Live-tier storage backend: records rel_keys and returns them.
 
@@ -392,6 +423,88 @@ def test_publish_static_writes_expected_keys() -> None:
     # 165 is in the reliability-availability set -> its entry carries reliability=True
     assert ri["routes"][0]["id"] == "165"
     assert ri["routes"][0]["reliability"] is True
+
+
+def test_publish_static_hoists_schedule_context_for_two_routes() -> None:
+    import datetime
+
+    from transit_ops.snapshots.publish import _publish_static
+
+    conn = RecordingNamedConn(
+        {
+            "static.dataset_version": [{"dataset_version_id": 1}],
+            "static.rep_dates": [
+                {
+                    "weekday_date": datetime.date(2026, 6, 3),
+                    "weekend_date": datetime.date(2026, 6, 6),
+                }
+            ],
+            "static.active_services": [("svc",)],
+            "static.dim_route_ids": [("101",), ("202",)],
+        }
+    )
+
+    class SequentialSettings(FakeSettings):
+        SNAPSHOT_PUBLISH_CONCURRENCY = 1
+
+    _publish_static(
+        conn,
+        FakeStore(),
+        provider_id="stm",
+        settings=SequentialSettings(),
+        stamp="t",
+    )
+
+    assert (
+        conn.queries.count("static.dataset_version"),
+        conn.queries.count("static.rep_dates"),
+        conn.queries.count("static.active_services"),
+    ) == (1, 1, 2)
+
+
+def test_publish_historic_hoists_name_catalogs_for_two_routes(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from transit_ops.snapshots import publish as snapshot_publish
+
+    conn = RecordingNamedConn(
+        {
+            "route.spine.route_ids": [("101",), ("202",)],
+            "static.route_names": [
+                {"route_id": "101", "route_name": "Route 101"},
+                {"route_id": "202", "route_name": "Route 202"},
+            ],
+            "static.stop_names": [{"stop_id": "S1", "stop_name": "Stop 1"}],
+        }
+    )
+
+    for name in (
+        "build_network_trend",
+        "build_hotspots",
+        "build_repeat_offenders",
+        "build_alert_history",
+        "build_provenance",
+    ):
+        monkeypatch.setattr(snapshot_publish.builders, name, lambda *args, **kwargs: object())
+    monkeypatch.setattr(snapshot_publish.builders, "build_stop_reliability", lambda *args, **kwargs: {})
+    monkeypatch.setattr(snapshot_publish.builders, "build_receipts", lambda *args, **kwargs: {})
+    monkeypatch.setattr(
+        snapshot_publish.builders,
+        "build_alert_archive",
+        lambda *args, **kwargs: SimpleNamespace(page_items=[], index=object()),
+    )
+
+    snapshot_publish._build_historic_items(
+        conn,
+        provider_id="stm",
+        settings=FakeSettings(),
+        stamp="t",
+    )
+
+    assert (
+        conn.queries.count("static.route_names"),
+        conn.queries.count("static.stop_names"),
+    ) == (1, 1)
 
 
 def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> None:

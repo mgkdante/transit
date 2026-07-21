@@ -26,6 +26,7 @@ from transit_ops.db.connection import make_engine
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import get_settings
 from transit_ops.snapshots import builders, gate
+from transit_ops.snapshots.builders._helpers import _static_schedule_context
 from transit_ops.snapshots.builders.historic.history_common import (
     PointHistorySummary,
     history_coverage,
@@ -889,16 +890,26 @@ def _build_historic_items(
         _DISTINCT_HISTORIC_ROUTE_IDS_SQL,
         {"provider_id": provider_id},
     ).fetchall()
+    route_ids = [str(route_id) for (route_id,) in route_rows if route_id is not None]
+    route_names, stop_names = (
+        builders._entity_name_maps(conn, provider_id=provider_id)  # type: ignore[arg-type]
+        if route_ids
+        else ({}, {})
+    )
     route_items = [
         (
             f"historic/route_reliability/{route_id}.json",
             builders.build_route_reliability(
-                conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp
+                conn,
+                provider_id=provider_id,
+                route_id=route_id,
+                generated_utc=stamp,
+                route_names=route_names,
+                stop_names=stop_names,
             ),  # type: ignore[arg-type]
             "historic",
         )
-        for (route_id,) in route_rows
-        if route_id is not None
+        for route_id in route_ids
     ]
 
     # --- route-reliability discovery index (exact set published this run) ---
@@ -909,7 +920,7 @@ def _build_historic_items(
     route_index_item = (
         "historic/route_reliability/index.json",
         RouteReliabilityIndex(
-            route_ids=sorted(str(route_id) for (route_id,) in route_rows if route_id is not None),
+            route_ids=sorted(route_ids),
             generated_utc=stamp,
         ),
         "historic",
@@ -1882,6 +1893,9 @@ def _publish_static(
 
     concurrency = _concurrency(settings)
     written: list[str] = []
+    static_context = _static_schedule_context(  # type: ignore[arg-type]
+        conn, provider_id=provider_id
+    )
 
     # --- indexes + basemap + labels (small fixed set, built sequentially) ---
     # Build the routes index + all per-stop data FIRST so the stops index can
@@ -1892,7 +1906,10 @@ def _publish_static(
         conn, provider_id=provider_id, generated_utc=stamp
     )
     all_stops = builders.build_all_stops_data(  # type: ignore[arg-type]
-        conn, provider_id=provider_id, generated_utc=stamp
+        conn,
+        provider_id=provider_id,
+        generated_utc=stamp,
+        static_context=static_context,
     )
     route_type_by_id = {e.id: e.type for e in routes_idx.routes}
     routes_served_by_stop = {sid: sf.routes_served for sid, sf in all_stops.items()}
@@ -1934,7 +1951,11 @@ def _publish_static(
         (
             f"static/routes/{route_id}.json",
             builders.build_route(
-                conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp
+                conn,
+                provider_id=provider_id,
+                route_id=str(route_id),
+                generated_utc=stamp,
+                static_context=static_context,
             ),  # type: ignore[arg-type]
             "static",
         )
