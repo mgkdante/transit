@@ -580,7 +580,14 @@ def _completed_gis_pair(
     manifest = row["manifest_json"]
     if not isinstance(manifest, Mapping) or "static_dataset_version_id" not in manifest:
         return None
-    if manifest["static_dataset_version_id"] != static_dataset_version_id:
+    receipt_static_dataset_version_id = manifest["static_dataset_version_id"]
+    static_pair_matches = (
+        receipt_static_dataset_version_id is None and static_dataset_version_id is None
+    ) or (
+        type(receipt_static_dataset_version_id) is int
+        and receipt_static_dataset_version_id == static_dataset_version_id
+    )
+    if not static_pair_matches:
         return None
 
     count_keys = (

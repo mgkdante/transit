@@ -213,7 +213,7 @@ def _archive(byte_size: int) -> BronzeGisArchive:
 def _loaded_gis_row(
     *,
     gis_dataset_version_id: int = 88,
-    static_dataset_version_id: int | None = 700,
+    static_dataset_version_id: object = 700,
     parser_version: str = PARSER_VERSION,
     match_count: int = 2,
     include_pair_receipt: bool = True,
@@ -339,6 +339,39 @@ def test_load_gis_zip_to_silver_reloads_invalid_receipt(
         archive=archive,
         bronze_storage=storage,
         static_dataset_version_id=700,
+    )
+
+    assert result.load_performed is True
+    assert storage.read_calls == [archive.storage_path]
+    assert _gis_mutations(connection)
+
+
+@pytest.mark.parametrize(
+    ("receipt_static_dataset_version_id", "resolved_static_dataset_version_id"),
+    [
+        pytest.param(700.0, 700, id="float-does-not-match-int"),
+        pytest.param(True, 1, id="bool-does-not-match-int"),
+    ],
+)
+def test_load_gis_zip_to_silver_reloads_non_integer_static_receipt(
+    tmp_path: Path,
+    receipt_static_dataset_version_id: object,
+    resolved_static_dataset_version_id: int,
+) -> None:
+    payload = _build_mixed_gis_zip(tmp_path)
+    archive = _archive(len(payload))
+    connection = RecordingConnection(
+        loaded_gis_row=_loaded_gis_row(
+            static_dataset_version_id=receipt_static_dataset_version_id,
+        ),
+    )
+    storage = FakeStorage(payload)
+
+    result = load_gis_zip_to_silver(
+        connection,
+        archive=archive,
+        bronze_storage=storage,
+        static_dataset_version_id=resolved_static_dataset_version_id,
     )
 
     assert result.load_performed is True
