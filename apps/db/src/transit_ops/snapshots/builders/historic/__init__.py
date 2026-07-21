@@ -192,6 +192,9 @@ from transit_ops.snapshots.builders.historic.route_reliability import (
     _route_weak_stops,
     build_route_reliability,
 )
+from transit_ops.snapshots.builders.historic.route_reliability_batch import (
+    build_all_route_reliability,
+)
 from transit_ops.snapshots.builders.historic.small_surfaces import (
     _ALERT_HISTORY_SQL,
     _HOTSPOTS_ROUTE_SHIFT_SQL,
@@ -256,6 +259,7 @@ __all__ = [
     "build_stop_history_plan_from_rows",
     "build_provenance",
     "build_route_reliability",
+    "build_all_route_reliability",
     "build_alert_history",
     "build_alert_archive",
     "build_hotspots",

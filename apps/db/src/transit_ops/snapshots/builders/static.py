@@ -13,6 +13,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from transit_ops.snapshots.builders._helpers import (
+    _ALL_ROUTE_SCHEDULES_SQL,
     _BOARDABLE_STOP,
     _ROUTE_SCHEDULE_SQL,
     _SHIFT_ORDER,
@@ -555,28 +556,6 @@ _ALL_ROUTE_STOPS_SQL = named_query(
     ORDER BY route_id, shape_id, stop_sequence
     """,
 )
-
-_ALL_ROUTE_SCHEDULES_SQL = named_query(
-    "static.all_route_schedules",
-    """
-    SELECT DISTINCT
-        t.route_id,
-        t.direction_id,
-        (t.service_id = ANY(:weekday_services)) AS is_weekday,
-        st.departure_time
-    FROM silver.trips AS t
-    JOIN silver.stop_times AS st
-        ON  st.trip_id            = t.trip_id
-        AND st.dataset_version_id = t.dataset_version_id
-        AND st.provider_id        = t.provider_id
-    WHERE t.provider_id        = :provider_id
-      AND t.dataset_version_id = :dataset_version_id
-      AND st.stop_sequence     = 1
-      AND st.departure_time IS NOT NULL
-      AND (t.service_id = ANY(:weekday_services) OR t.service_id = ANY(:weekend_services))
-    """,
-)
-
 
 _Row = Mapping[str, object]
 

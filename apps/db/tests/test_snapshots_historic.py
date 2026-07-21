@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime
 import re
 
+import pytest
 from _sqlfakes import NamedQueryConn
 
 from transit_ops.snapshots.builders import (
@@ -796,6 +797,33 @@ def test_build_route_reliability_weak_stops_sorted_desc_default_serves_all() -> 
     # the smallest (S5 = 30s -> 0.5 min) is now INCLUDED, not dropped
     assert out.weak_stops[-1].id == "S5"
     assert out.weak_stops[-1].avg_delay_min == 0.5
+
+
+def test_build_route_reliability_weak_stops_equal_averages_have_stable_bytes() -> None:
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    weak = [
+        {"stop_id": "Z9", "obs": 3, "weighted_delay_sec": 0, "severe": 0},
+        {"stop_id": "A1", "obs": 12, "weighted_delay_sec": 0, "severe": 0},
+    ]
+    names = [
+        {"stop_id": "A1", "stop_name": "Alpha"},
+        {"stop_id": "Z9", "stop_name": "Zulu"},
+    ]
+
+    forward = build_route_reliability(
+        FakeConn(_route_reliability_dispatch(weak=weak, names=names)),
+        route_id="51",
+        generated_utc="t",
+    )
+    reversed_input = build_route_reliability(
+        FakeConn(_route_reliability_dispatch(weak=list(reversed(weak)), names=names)),
+        route_id="51",
+        generated_utc="t",
+    )
+
+    assert [stop.id for stop in forward.weak_stops] == ["A1", "Z9"]
+    assert snapshot_json_bytes(forward) == snapshot_json_bytes(reversed_input)
 
 
 def test_build_route_reliability_weak_stops_respects_explicit_limit() -> None:
@@ -3770,3 +3798,431 @@ def test_provenance_methodology_keys_have_localized_labels() -> None:
         label_key = f"methodology.{dimension}"
         assert label_key in _STATIC_LABELS_FR
         assert label_key in _STATIC_LABELS_EN
+
+
+# --------------------------------------------------------------------------
+# Phase 2 F3b — provider-wide, set-based route reliability batching
+# --------------------------------------------------------------------------
+
+
+_BATCH_QUERY_ORDER = [
+    "route.spine.route_ids",
+    "static.route_names",
+    "static.stop_names",
+    "route.reliability.batch.percentile_daily",
+    "route.reliability.batch.daily",
+    "route.reliability.batch.spine_sections",
+    "route.reliability.batch.headway_observed",
+    "static.dataset_version",
+    "static.rep_dates",
+    "static.active_services",
+    "static.active_services",
+    "static.all_route_schedules",
+    "route.reliability.batch.headway_direction",
+    "route.reliability.batch.headway_windows",
+    "route.reliability.batch.weak_stops",
+    "route.reliability.batch.cancellations",
+    "route.reliability.batch.occupancy",
+    "route.reliability.batch.service_spans",
+    "route.reliability.batch.skipped_stops",
+    "route.reliability.batch.crowding_delay",
+]
+
+
+class _BatchResult:
+    def __init__(self, rows):  # noqa: ANN001
+        self._rows = list(rows)
+
+    def mappings(self):  # noqa: ANN201
+        return self
+
+    def __iter__(self):
+        return iter(self._rows)
+
+    def fetchone(self):  # noqa: ANN201
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self):  # noqa: ANN201
+        return list(self._rows)
+
+
+class _BatchPhysicalConn:
+    """Physical batch-query fixture; logical per-route reads never reach it."""
+
+    def __init__(
+        self,
+        route_ids=("R1", "R2"),
+        *,
+        current_dataset: bool = True,
+        reverse_rows: bool = False,
+    ) -> None:
+        self.route_ids = tuple(route_ids)
+        self.current_dataset = current_dataset
+        self.reverse_rows = reverse_rows
+        self.queries: list[str | None] = []
+
+    def _fixture_rows(self, name: str | None, params: dict) -> list:  # noqa: ANN001
+        fixture_routes = set(self.route_ids)
+        rows: list = []
+        if name == "route.spine.route_ids":
+            rows = [
+                {
+                    "route_id": route_id,
+                    "spine_anchor": datetime.date(2026, 6, 30),
+                }
+                for route_id in self.route_ids
+            ]
+        elif name == "static.route_names":
+            rows = [
+                {"route_id": "R1", "route_name": "Route One"},
+                {"route_id": "R2", "route_name": "Route Two"},
+                {"route_id": "FOREIGN", "route_name": "Must not leak"},
+            ]
+        elif name == "static.stop_names":
+            rows = [
+                {"stop_id": "S1", "stop_name": "Stop One"},
+                {"stop_id": "S2", "stop_name": "Stop Two"},
+            ]
+        elif name == "route.reliability.batch.daily":
+            rows = [
+                {
+                    "route_id": "R1",
+                    "d": datetime.date(2026, 6, 30),
+                    "known_obs": 100,
+                    "on_time": 80,
+                    "avg_delay_sec": 120.0,
+                    "severe": 5,
+                },
+                {
+                    "route_id": "R2",
+                    "d": datetime.date(2026, 6, 29),
+                    "known_obs": 50,
+                    "on_time": 25,
+                    "avg_delay_sec": 240.0,
+                    "severe": 10,
+                },
+                {
+                    "route_id": "FOREIGN",
+                    "d": datetime.date(2026, 6, 28),
+                    "known_obs": 999,
+                    "on_time": 999,
+                    "avg_delay_sec": 0.0,
+                    "severe": 0,
+                },
+            ]
+        elif name == "route.reliability.batch.headway_observed":
+            rows = [
+                {
+                    "route_id": "R1",
+                    "shift": "am_peak",
+                    "observed_headway_min": 11.0,
+                    "sample_count": 30,
+                    "headway_cov": 0.2,
+                    "bunched_count": 3,
+                },
+                {
+                    "route_id": "R2",
+                    "shift": "midday",
+                    "observed_headway_min": 7.0,
+                    "sample_count": 12,
+                    "headway_cov": 0.1,
+                    "bunched_count": 1,
+                },
+            ]
+        elif name == "static.dataset_version" and self.current_dataset:
+            rows = [{"dataset_version_id": 1}]
+        elif name == "static.rep_dates":
+            rows = [
+                {
+                    "weekday_date": datetime.date(2026, 6, 3),
+                    "weekend_date": datetime.date(2026, 6, 6),
+                }
+            ]
+        elif name == "static.active_services":
+            service = (
+                "svc_wd"
+                if params.get("repdate") == datetime.date(2026, 6, 3)
+                else "svc_we"
+            )
+            rows = [(service,)]
+        elif name == "static.all_route_schedules":
+            rows = [
+                {
+                    "route_id": "R1",
+                    "direction_id": 0,
+                    "is_weekday": True,
+                    "departure_time": departure,
+                }
+                for departure in ("07:00:00", "07:08:00", "07:16:00")
+            ] + [
+                {
+                    "route_id": "R2",
+                    "direction_id": 0,
+                    "is_weekday": True,
+                    "departure_time": departure,
+                }
+                for departure in ("12:00:00", "12:10:00")
+            ]
+        elif name == "route.reliability.batch.weak_stops":
+            rows = [
+                {
+                    "route_id": route_id,
+                    "section": "anchor",
+                    "anchor": datetime.date(2026, 6, 30),
+                }
+                for route_id in ("R1", "R2")
+            ] + [
+                {
+                    "route_id": "R1",
+                    "section": "legacy",
+                    "stop_id": "S1",
+                    "obs": 40,
+                    "weighted_delay_sec": 7200.0,
+                    "severe": 4,
+                },
+                {
+                    "route_id": "R2",
+                    "section": "legacy",
+                    "stop_id": "S2",
+                    "obs": 60,
+                    "weighted_delay_sec": 18000.0,
+                    "severe": 6,
+                },
+            ]
+        if name not in {"static.route_names", "static.stop_names"}:
+            rows = [
+                row
+                for row in rows
+                if not isinstance(row, dict)
+                or "route_id" not in row
+                or row["route_id"] in fixture_routes
+            ]
+        return list(reversed(rows)) if self.reverse_rows else rows
+
+    def execute(self, statement, params=None):  # noqa: ANN001
+        name = query_name(statement)
+        self.queries.append(name)
+        return _BatchResult(self._fixture_rows(name, dict(params or {})))
+
+
+def _batch_builder():  # noqa: ANN202
+    from transit_ops.snapshots import builders
+
+    builder = getattr(builders, "build_all_route_reliability", None)
+    assert callable(builder), "build_all_route_reliability must be exported"
+    return builder
+
+
+def test_build_all_route_reliability_preserves_public_assembler_signature() -> None:
+    import inspect
+
+    assert str(inspect.signature(build_route_reliability)) == (
+        "(conn: 'Connection', *, provider_id: 'str' = 'stm', route_id: 'str', "
+        "generated_utc: 'str', weak_stops_limit: 'int' = 100, "
+        "route_names: 'Mapping[str, str] | None' = None, "
+        "stop_names: 'Mapping[str, str] | None' = None) -> 'RouteReliability'"
+    )
+    assert callable(_batch_builder())
+
+
+def test_build_all_route_reliability_two_route_bytes_hashes_and_row_order() -> None:
+    import hashlib
+
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    expected = {
+        "R1": (2303, "bdada578d4b780789adf7b76c7f5d39a63411aef61477814965ccd10951974b7"),
+        "R2": (2301, "f7ec65b3449312c161660fe50579d3fc1779aba3565eb06b5729f155ae2b5970"),
+    }
+    outputs = []
+    for reverse_rows in (False, True):
+        conn = _BatchPhysicalConn(reverse_rows=reverse_rows)
+        built = _batch_builder()(
+            conn,
+            provider_id="stm",
+            generated_utc="2026-07-21T00:00:00Z",
+        )
+        assert list(built) == ["R1", "R2"]
+        assert conn.queries == _BATCH_QUERY_ORDER
+        actual = {
+            route_id: (
+                len(payload_bytes := snapshot_json_bytes(payload)),
+                hashlib.sha256(payload_bytes).hexdigest(),
+            )
+            for route_id, payload in built.items()
+        }
+        assert actual == expected
+        assert built["R1"].periods[0].otp_pct == 80
+        assert built["R2"].periods[0].otp_pct == 50
+        assert built["R1"].weak_stops[0].id == "S1"
+        assert built["R2"].weak_stops[0].id == "S2"
+        assert all(route_id != "FOREIGN" for route_id in built)
+        outputs.append({key: snapshot_json_bytes(value) for key, value in built.items()})
+        from transit_ops.snapshots.publish import _stamp_envelope
+
+        stamped_items = [
+            (
+                f"historic/route_reliability/{route_id}.json",
+                payload.model_copy(deep=True),
+                "historic",
+            )
+            for route_id, payload in built.items()
+        ]
+        _stamp_envelope(stamped_items, provider_id="stm", stamp="2026-07-21T00:00:00Z")
+        stamped = {
+            payload.id: (
+                len(payload_bytes := snapshot_json_bytes(payload)),
+                hashlib.sha256(payload_bytes).hexdigest(),
+            )
+            for _key, payload, _tier in stamped_items
+        }
+        assert stamped == {
+            "R1": (2336, "6d8142c7ae7d68416d1b3ae40e6952c3bd26f6a454c828abe285fb26b8425c7f"),
+            "R2": (2334, "af757368d526b63c7caae34c77160e021e099974ac5a1f1a7a64eaf89829f585"),
+        }
+    assert outputs[0] == outputs[1]
+
+
+@pytest.mark.parametrize("route_count", [2, 200])
+def test_build_all_route_reliability_has_constant_twenty_query_budget(route_count: int) -> None:
+    route_ids = tuple(f"R{index:03d}" for index in range(route_count))
+    conn = _BatchPhysicalConn(route_ids)
+
+    built = _batch_builder()(conn, provider_id="stm", generated_utc="t")
+
+    assert list(built) == sorted(route_ids)
+    assert conn.queries == _BATCH_QUERY_ORDER
+
+
+def test_build_all_route_reliability_shares_provider_static_rows_across_routes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import transit_ops.snapshots.builders.historic.route_reliability_batch as batch_module
+
+    class ManyServiceConn(_BatchPhysicalConn):
+        def _fixture_rows(self, name: str | None, params: dict) -> list:
+            if name == "static.active_services":
+                suffix = "wd" if params["repdate"] == datetime.date(2026, 6, 3) else "we"
+                return [(f"svc_{suffix}_{index}",) for index in range(50)]
+            return super()._fixture_rows(name, params)
+
+    seen: dict[str, list[tuple[object, ...]]] = {
+        "dataset": [],
+        "rep_dates": [],
+        "weekday_services": [],
+        "weekend_services": [],
+    }
+
+    def capture_shared_rows(
+        conn,
+        *,
+        provider_id: str,
+        route_id: str,
+        generated_utc: str,
+        route_names,
+        stop_names,
+    ) -> str:  # noqa: ANN001
+        del generated_utc, route_names, stop_names
+        checks = (
+            ("dataset", batch_module._CURRENT_DATASET_VERSION_SQL, {}),
+            ("rep_dates", batch_module._REP_DATES_SQL, {}),
+            (
+                "weekday_services",
+                batch_module._ACTIVE_SERVICES_SQL,
+                {"repdate": datetime.date(2026, 6, 3)},
+            ),
+            (
+                "weekend_services",
+                batch_module._ACTIVE_SERVICES_SQL,
+                {"repdate": datetime.date(2026, 6, 6)},
+            ),
+        )
+        for label, statement, params in checks:
+            result = conn.execute(
+                statement,
+                {"provider_id": provider_id, "route_id": route_id, **params},
+            )
+            seen[label].append(result._rows)
+        return route_id
+
+    monkeypatch.setattr(batch_module, "build_route_reliability", capture_shared_rows)
+    route_ids = tuple(f"R{index:03d}" for index in range(200))
+
+    built = batch_module.build_all_route_reliability(
+        ManyServiceConn(route_ids),
+        provider_id="stm",
+        generated_utc="t",
+    )
+
+    assert list(built) == sorted(route_ids)
+    assert all(len(rows) == 200 for rows in seen.values())
+    assert all(len({id(rows) for rows in route_rows}) == 1 for route_rows in seen.values())
+    assert len(seen["weekday_services"][0]) == 50
+    assert len(seen["weekend_services"][0]) == 50
+
+
+def test_build_all_route_reliability_empty_inventory_is_one_query() -> None:
+    conn = _BatchPhysicalConn(())
+
+    assert _batch_builder()(conn, provider_id="stm", generated_utc="t") == {}
+    assert conn.queries == ["route.spine.route_ids"]
+
+
+def test_build_all_route_reliability_without_static_dataset_uses_at_most_sixteen_queries() -> None:
+    conn = _BatchPhysicalConn(current_dataset=False)
+
+    _batch_builder()(conn, provider_id="stm", generated_utc="t")
+
+    assert len(conn.queries) <= 16
+    assert "static.rep_dates" not in conn.queries
+    assert "static.active_services" not in conn.queries
+    assert "static.all_route_schedules" not in conn.queries
+
+
+def test_route_batch_adapter_fails_closed_for_query_route_and_provider() -> None:
+    from sqlalchemy import text
+
+    from transit_ops.snapshots.builders.historic.route_reliability_batch import (
+        _InMemoryRouteConnection,
+    )
+
+    adapter = _InMemoryRouteConnection(provider_id="stm", route_id="R1", rows={})
+    with pytest.raises(RuntimeError, match="unknown logical route query"):
+        adapter.execute(text("-- q:test.unknown\nSELECT 1"))
+    with pytest.raises(RuntimeError, match="rejected route"):
+        adapter.execute(
+            _ROUTE_REL_DAILY_SQL,
+            {"provider_id": "stm", "route_id": "R2"},
+        )
+    with pytest.raises(RuntimeError, match="rejected provider"):
+        adapter.execute(
+            _ROUTE_REL_DAILY_SQL,
+            {"provider_id": "other", "route_id": "R1"},
+        )
+
+
+def test_route_batch_sql_is_set_based_partitioned_and_has_no_lateral_subplans() -> None:
+    from transit_ops.snapshots.builders.historic.route_reliability_batch import (
+        _CANCELLATIONS_SQL,
+        _DAILY_SQL,
+        _HEADWAY_WINDOWS_SQL,
+        _SERVICE_SPANS_SQL,
+        _SKIPPED_STOPS_SQL,
+        _SPINE_SECTIONS_SQL,
+        _WEAK_STOPS_SQL,
+    )
+
+    composite = "\n".join(
+        str(statement)
+        for statement in (_SPINE_SECTIONS_SQL, _HEADWAY_WINDOWS_SQL, _WEAK_STOPS_SQL)
+    ).upper()
+    assert "CROSS JOIN LATERAL" not in composite
+    assert "LIMIT 30" not in "\n".join(
+        str(statement)
+        for statement in (_DAILY_SQL, _CANCELLATIONS_SQL, _SERVICE_SPANS_SQL, _SKIPPED_STOPS_SQL)
+    ).upper()
+    for statement in (_DAILY_SQL, _CANCELLATIONS_SQL, _SERVICE_SPANS_SQL, _SKIPPED_STOPS_SQL):
+        sql = str(statement).upper()
+        assert "PARTITION BY ROUTE_ID" in sql
+        assert "ROUTE_RANK <= 30" in sql
+    assert "ROUTE_ID = :ROUTE_ID" not in composite

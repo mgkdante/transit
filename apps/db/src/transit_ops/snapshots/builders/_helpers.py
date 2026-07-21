@@ -509,6 +509,27 @@ _ROUTE_SCHEDULE_SQL = named_query(
     """
 )
 
+_ALL_ROUTE_SCHEDULES_SQL = named_query(
+    "static.all_route_schedules",
+    """
+    SELECT DISTINCT
+        t.route_id,
+        t.direction_id,
+        (t.service_id = ANY(:weekday_services)) AS is_weekday,
+        st.departure_time
+    FROM silver.trips AS t
+    JOIN silver.stop_times AS st
+        ON  st.trip_id            = t.trip_id
+        AND st.dataset_version_id = t.dataset_version_id
+        AND st.provider_id        = t.provider_id
+    WHERE t.provider_id        = :provider_id
+      AND t.dataset_version_id = :dataset_version_id
+      AND st.stop_sequence     = 1
+      AND st.departure_time IS NOT NULL
+      AND (t.service_id = ANY(:weekday_services) OR t.service_id = ANY(:weekend_services))
+    """,
+)
+
 
 @dataclass(frozen=True)
 class StaticScheduleContext:
@@ -531,9 +552,21 @@ def _representative_services(
     weekday: list[str] = []
     weekend: list[str] = []
     if rep["weekday_date"] is not None:
-        weekday = [row[0] for row in conn.execute(_ACTIVE_SERVICES_SQL, {**params, "repdate": rep["weekday_date"]})]
+        weekday = [
+            row[0]
+            for row in conn.execute(
+                _ACTIVE_SERVICES_SQL,
+                {**params, "repdate": rep["weekday_date"]},
+            )
+        ]
     if rep["weekend_date"] is not None:
-        weekend = [row[0] for row in conn.execute(_ACTIVE_SERVICES_SQL, {**params, "repdate": rep["weekend_date"]})]
+        weekend = [
+            row[0]
+            for row in conn.execute(
+                _ACTIVE_SERVICES_SQL,
+                {**params, "repdate": rep["weekend_date"]},
+            )
+        ]
     return weekday, weekend
 
 
