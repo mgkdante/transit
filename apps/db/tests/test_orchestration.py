@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 from datetime import UTC, datetime
@@ -7,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import transit_ops.ingestion.storage as bronze_storage_module
 import transit_ops.orchestration as orchestration
 from transit_ops.gold import GoldBuildResult, GoldRealtimeRefreshResult, GoldStaticRefreshResult
 from transit_ops.ingestion import I3IngestionResult, RealtimeIngestionResult, StaticIngestionResult
@@ -478,32 +480,41 @@ def test_run_realtime_worker_loop_targets_start_to_start_cadence(
             )
         ),
     )
+
+    def fake_cycle(  # noqa: ANN001
+        provider_id,
+        settings,
+        registry,
+        engine,
+        last_captures=None,
+        bronze_storage_resolver=None,
+    ):
+        cycle_calls.append(provider_id)
+        return orchestration.RealtimeCycleResult(
+            provider_id=provider_id,
+            status="succeeded",
+            started_at_utc=datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
+            completed_at_utc=datetime(2026, 3, 25, 0, 0, 1, tzinfo=UTC),
+            total_duration_seconds=1.0,
+            successful_endpoint_count=2,
+            failed_endpoint_count=0,
+            endpoint_results=[],
+            step_timings_seconds={
+                "capture_trip_updates": 0.25,
+                "load_trip_updates_to_silver": 0.5,
+                "capture_vehicle_positions": 0.25,
+                "load_vehicle_positions_to_silver": 0.5,
+                "refresh_gold_realtime": 0.25,
+            },
+            gold_build=None,
+            gold_build_duration_seconds=0.25,
+            gold_error_message=None,
+        )
+
     monkeypatch.setattr(
         orchestration,
-        "run_realtime_cycle",
-        lambda provider_id, settings, registry, engine, last_captures=None: (
-            cycle_calls.append(provider_id),
-            orchestration.RealtimeCycleResult(
-                provider_id=provider_id,
-                status="succeeded",
-                started_at_utc=datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
-                completed_at_utc=datetime(2026, 3, 25, 0, 0, 1, tzinfo=UTC),
-                total_duration_seconds=1.0,
-                successful_endpoint_count=2,
-                failed_endpoint_count=0,
-                endpoint_results=[],
-                step_timings_seconds={
-                    "capture_trip_updates": 0.25,
-                    "load_trip_updates_to_silver": 0.5,
-                    "capture_vehicle_positions": 0.25,
-                    "load_vehicle_positions_to_silver": 0.5,
-                    "refresh_gold_realtime": 0.25,
-                },
-                gold_build=None,
-                gold_build_duration_seconds=0.25,
-                gold_error_message=None,
-            ),
-        )[1],
+        "_run_realtime_cycle",
+        fake_cycle,
     )
     caplog.set_level(logging.INFO, logger="transit_ops.orchestration")
 
@@ -555,7 +566,12 @@ def test_run_realtime_worker_loop_warns_on_cycle_overrun(
         ),
     )
     def _fake_overrun_cycle(  # noqa: ANN001
-        provider_id, settings, registry, engine, last_captures=None
+        provider_id,
+        settings,
+        registry,
+        engine,
+        last_captures=None,
+        bronze_storage_resolver=None,
     ):
         return orchestration.RealtimeCycleResult(
             provider_id=provider_id,
@@ -578,7 +594,7 @@ def test_run_realtime_worker_loop_warns_on_cycle_overrun(
             gold_error_message=None,
         )
 
-    monkeypatch.setattr(orchestration, "run_realtime_cycle", _fake_overrun_cycle)
+    monkeypatch.setattr(orchestration, "_run_realtime_cycle", _fake_overrun_cycle)
     caplog.set_level(logging.WARNING, logger="transit_ops.orchestration")
 
     run_realtime_worker_loop(
@@ -648,13 +664,47 @@ def _worker_loop_cycle_result(provider_id: str):
     )
 
 
+class _ClosableS3Client:
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+def _worker_s3_settings(**overrides) -> Settings:
+    values = {
+        "_env_file": None,
+        "DATABASE_URL": "postgresql://user:pass@example.com/transit",
+        "BRONZE_STORAGE_BACKEND": "s3",
+        "BRONZE_S3_ENDPOINT": "https://example.r2.cloudflarestorage.com",
+        "BRONZE_S3_BUCKET": "bronze-bucket",
+        "BRONZE_S3_ACCESS_KEY": "access",
+        "BRONZE_S3_SECRET_KEY": "secret",
+        "BRONZE_S3_REGION": "auto",
+        "REALTIME_POLL_SECONDS": 10,
+    }
+    values.update(overrides)
+    return Settings(**values)
+
+
 def test_run_realtime_worker_loop_continues_after_cycle_raises(
     monkeypatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """An uncaught in-cycle exception is logged and the loop continues to the next cycle."""
     cycle_calls: list[str] = []
+    storage_identities: list[tuple[int, int]] = []
     sleep_calls: list[float] = []
+    client = _ClosableS3Client()
+    construction_calls = 0
+
+    def build_client(settings):  # noqa: ANN001, ANN202
+        nonlocal construction_calls
+        construction_calls += 1
+        return client
+
+    monkeypatch.setattr(bronze_storage_module, "build_s3_client", build_client)
 
     monkeypatch.setattr(
         orchestration,
@@ -665,23 +715,26 @@ def test_run_realtime_worker_loop_continues_after_cycle_raises(
     )
 
     def _flaky_cycle(  # noqa: ANN001
-        provider_id, settings, registry, engine, last_captures=None
+        provider_id,
+        settings,
+        registry,
+        engine,
+        last_captures=None,
+        bronze_storage_resolver=None,
     ):
         cycle_calls.append(provider_id)
+        storage = bronze_storage_resolver("s3")
+        storage_identities.append((id(storage), id(storage.client)))
         if len(cycle_calls) == 1:
             raise RuntimeError("transient capture failure")
         return _worker_loop_cycle_result(provider_id)
 
-    monkeypatch.setattr(orchestration, "run_realtime_cycle", _flaky_cycle)
+    monkeypatch.setattr(orchestration, "_run_realtime_cycle", _flaky_cycle)
     caplog.set_level(logging.ERROR, logger="transit_ops.orchestration")
 
     run_realtime_worker_loop(
         "stm",
-        settings=Settings(
-            _env_file=None,
-            DATABASE_URL="postgresql://user:pass@example.com/transit",
-            REALTIME_POLL_SECONDS=10,
-        ),
+        settings=_worker_s3_settings(),
         registry=object(),
         engine=object(),
         sleep_fn=sleep_calls.append,
@@ -690,6 +743,9 @@ def test_run_realtime_worker_loop_continues_after_cycle_raises(
 
     # The first cycle raised; the loop must NOT die — a second cycle ran.
     assert cycle_calls == ["stm", "stm"]
+    assert storage_identities[0] == storage_identities[1]
+    assert construction_calls == 1
+    assert client.close_calls == 1
     assert "transient capture failure" in caplog.text
 
 
@@ -709,14 +765,19 @@ def test_run_realtime_worker_loop_breaks_on_shutdown_flag(
     )
 
     def _cycle_then_request_shutdown(  # noqa: ANN001
-        provider_id, settings, registry, engine, last_captures=None
+        provider_id,
+        settings,
+        registry,
+        engine,
+        last_captures=None,
+        bronze_storage_resolver=None,
     ):
         cycle_calls.append(provider_id)
         # After draining this cycle, ask the worker to shut down.
         shutdown["requested"] = True
         return _worker_loop_cycle_result(provider_id)
 
-    monkeypatch.setattr(orchestration, "run_realtime_cycle", _cycle_then_request_shutdown)
+    monkeypatch.setattr(orchestration, "_run_realtime_cycle", _cycle_then_request_shutdown)
 
     run_realtime_worker_loop(
         "stm",
@@ -735,6 +796,355 @@ def test_run_realtime_worker_loop_breaks_on_shutdown_flag(
 
     # Exactly one cycle drained, then the flag broke the loop.
     assert cycle_calls == ["stm"]
+
+
+def _install_worker_storage_cycle_stubs(
+    monkeypatch,
+    call_order: list[str],
+    storage_identities: list[tuple[int, int]],
+) -> None:
+    def record_storage(resolver, backend: str = "s3") -> None:  # noqa: ANN001
+        storage = resolver(backend)
+        storage_identities.append((id(storage), id(storage.client)))
+
+    def capture_gtfs(  # noqa: ANN001
+        provider_id,
+        endpoint_key,
+        *,
+        settings,
+        registry,
+        engine,
+        bronze_storage_resolver,
+    ):
+        call_order.append(f"capture:{endpoint_key}")
+        record_storage(bronze_storage_resolver)
+        return _realtime_ingestion_result(endpoint_key, 20)
+
+    def load_gtfs(  # noqa: ANN001
+        provider_id,
+        endpoint_key,
+        *,
+        settings,
+        registry,
+        engine,
+        bronze_storage_resolver,
+    ):
+        call_order.append(f"load:{endpoint_key}")
+        record_storage(bronze_storage_resolver)
+        record_storage(bronze_storage_resolver)
+        return _realtime_silver_result(endpoint_key, 20)
+
+    def capture_i3(  # noqa: ANN001
+        provider_id,
+        *,
+        settings,
+        registry,
+        engine,
+        bronze_storage_resolver,
+    ):
+        call_order.append("capture:i3_alerts")
+        record_storage(bronze_storage_resolver)
+        return _i3_ingestion_result()
+
+    monkeypatch.setattr(orchestration, "_capture_realtime_feed", capture_gtfs, raising=False)
+    monkeypatch.setattr(
+        orchestration,
+        "_load_latest_realtime_to_silver",
+        load_gtfs,
+        raising=False,
+    )
+    monkeypatch.setattr(orchestration, "_capture_i3_alerts", capture_i3, raising=False)
+    monkeypatch.setattr(
+        orchestration,
+        "load_latest_i3_to_silver",
+        lambda provider_id, settings, engine: (
+            call_order.append("load:i3_alerts"),
+            _i3_silver_result(),
+        )[1],
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "refresh_gold_realtime",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("refresh-gold-realtime"),
+            _gold_refresh_result(),
+        )[1],
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "_best_effort_publish_live",
+        lambda provider_id, settings, engine, registry: (
+            call_order.append("publish-live"),
+            0,
+        )[1],
+    )
+
+
+def test_worker_reuses_one_s3_client_across_endpoints_and_cycles_in_order(
+    monkeypatch,
+) -> None:
+    call_order: list[str] = []
+    storage_identities: list[tuple[int, int]] = []
+    client = _ClosableS3Client()
+    construction_calls = 0
+    registry = _fake_registry_with_intervals(
+        trip_updates=0,
+        vehicle_positions=0,
+        i3_alerts=0,
+    )
+
+    def build_client(settings):  # noqa: ANN001, ANN202
+        nonlocal construction_calls
+        construction_calls += 1
+        return client
+
+    monkeypatch.setattr(bronze_storage_module, "build_s3_client", build_client)
+    monkeypatch.setattr(
+        orchestration,
+        "_validate_realtime_worker_startup",
+        lambda provider_id, settings, registry: registry.get_provider(provider_id),
+    )
+    _install_worker_storage_cycle_stubs(monkeypatch, call_order, storage_identities)
+
+    run_realtime_worker_loop(
+        "stm",
+        settings=_worker_s3_settings(
+            REALTIME_POLL_SECONDS=1,
+            SNAPSHOT_STORAGE_BACKEND="local",
+        ),
+        registry=registry,
+        engine=object(),
+        sleep_fn=lambda seconds: None,
+        max_cycles=2,
+        should_shutdown=lambda: False,
+    )
+
+    expected_cycle = [
+        "capture:trip_updates",
+        "load:trip_updates",
+        "capture:vehicle_positions",
+        "load:vehicle_positions",
+        "capture:i3_alerts",
+        "load:i3_alerts",
+        "refresh-gold-realtime",
+        "publish-live",
+    ]
+    assert call_order == expected_cycle * 2
+    assert len(storage_identities) == 14
+    assert len(set(storage_identities)) == 1
+    assert construction_calls == 1
+    assert client.close_calls == 1
+
+
+def test_worker_cycle_retries_constructor_after_endpoint_local_failure(
+    monkeypatch,
+) -> None:
+    call_order: list[str] = []
+    storage_identities: list[tuple[int, int]] = []
+    client = _ClosableS3Client()
+    outcomes = iter([RuntimeError("S3 constructor unavailable"), client])
+    construction_calls = 0
+
+    def build_client(settings):  # noqa: ANN001, ANN202
+        nonlocal construction_calls
+        construction_calls += 1
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(bronze_storage_module, "build_s3_client", build_client)
+    _install_worker_storage_cycle_stubs(monkeypatch, call_order, storage_identities)
+    scope = bronze_storage_module.BronzeStorageScope(
+        _worker_s3_settings(SNAPSHOT_STORAGE_BACKEND="local"),
+        project_root=orchestration._project_root(),
+    )
+
+    result = orchestration._run_realtime_cycle(
+        "stm",
+        settings=_worker_s3_settings(SNAPSHOT_STORAGE_BACKEND="local"),
+        registry=_fake_registry_with_intervals(),
+        engine=object(),
+        last_captures=None,
+        bronze_storage_resolver=scope.resolve,
+    )
+    scope.close()
+
+    assert [endpoint.status for endpoint in result.endpoint_results] == [
+        "failed",
+        "succeeded",
+        "succeeded",
+    ]
+    assert result.endpoint_results[0].error_message == (
+        "capture-realtime failed: S3 constructor unavailable"
+    )
+    assert call_order == [
+        "capture:trip_updates",
+        "capture:vehicle_positions",
+        "load:vehicle_positions",
+        "capture:i3_alerts",
+        "load:i3_alerts",
+        "refresh-gold-realtime",
+        "publish-live",
+    ]
+    assert construction_calls == 2
+    assert len(set(storage_identities)) == 1
+    assert client.close_calls == 1
+
+
+def test_worker_graceful_shutdown_closes_scope_once_without_resolving(
+    monkeypatch,
+) -> None:
+    instances = []
+
+    class RecordingScope:
+        def __init__(self, settings, *, project_root) -> None:  # noqa: ANN001
+            self.resolve_calls = 0
+            self.close_calls = 0
+            instances.append(self)
+
+        def resolve(self, storage_backend: str):  # noqa: ANN201
+            self.resolve_calls += 1
+            raise AssertionError("shutdown-before-cycle must not resolve storage")
+
+        def close(self) -> None:
+            self.close_calls += 1
+
+    monkeypatch.setattr(orchestration, "BronzeStorageScope", RecordingScope, raising=False)
+    monkeypatch.setattr(
+        orchestration,
+        "_validate_realtime_worker_startup",
+        lambda provider_id, settings, registry: SimpleNamespace(
+            provider=SimpleNamespace(provider_id=provider_id, display_name="STM")
+        ),
+    )
+
+    run_realtime_worker_loop(
+        "stm",
+        settings=_worker_s3_settings(),
+        registry=object(),
+        engine=object(),
+        max_cycles=None,
+        should_shutdown=lambda: True,
+    )
+
+    assert len(instances) == 1
+    assert instances[0].resolve_calls == 0
+    assert instances[0].close_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("pipeline_paused", "shutdown_results"),
+    [(False, [True]), (True, [False, True])],
+)
+def test_worker_without_first_cycle_never_constructs_s3(
+    monkeypatch,
+    pipeline_paused: bool,
+    shutdown_results: list[bool],
+) -> None:
+    monkeypatch.setattr(
+        bronze_storage_module,
+        "build_s3_client",
+        lambda settings: pytest.fail("worker without a cycle must not construct S3"),
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "_validate_realtime_worker_startup",
+        lambda provider_id, settings, registry: SimpleNamespace(
+            provider=SimpleNamespace(provider_id=provider_id, display_name="STM")
+        ),
+    )
+    shutdown = iter(shutdown_results)
+
+    run_realtime_worker_loop(
+        "stm",
+        settings=_worker_s3_settings(PIPELINE_PAUSED=pipeline_paused),
+        registry=object(),
+        engine=object(),
+        sleep_fn=lambda seconds: None,
+        max_cycles=None,
+        should_shutdown=lambda: next(shutdown),
+    )
+
+
+def test_worker_cleanup_failure_preserves_return_and_escaping_exception(
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    instances = []
+
+    class FailingCloseScope:
+        def __init__(self, settings, *, project_root) -> None:  # noqa: ANN001
+            self.close_calls = 0
+            instances.append(self)
+
+        def resolve(self, storage_backend: str):  # noqa: ANN201
+            raise AssertionError("storage must stay lazy in this lifecycle test")
+
+        def close(self) -> None:
+            self.close_calls += 1
+            raise RuntimeError("scope cleanup failed")
+
+    monkeypatch.setattr(orchestration, "BronzeStorageScope", FailingCloseScope, raising=False)
+    monkeypatch.setattr(
+        orchestration,
+        "_validate_realtime_worker_startup",
+        lambda provider_id, settings, registry: SimpleNamespace(
+            provider=SimpleNamespace(provider_id=provider_id, display_name="STM")
+        ),
+    )
+    caplog.set_level(logging.ERROR, logger="transit_ops.orchestration")
+
+    assert (
+        run_realtime_worker_loop(
+            "stm",
+            settings=_worker_s3_settings(),
+            registry=object(),
+            engine=object(),
+            max_cycles=None,
+            should_shutdown=lambda: True,
+        )
+        is None
+    )
+
+    def worker_escaped() -> bool:
+        raise RuntimeError("worker escaped")
+
+    with pytest.raises(RuntimeError, match="worker escaped"):
+        run_realtime_worker_loop(
+            "stm",
+            settings=_worker_s3_settings(),
+            registry=object(),
+            engine=object(),
+            max_cycles=None,
+            should_shutdown=worker_escaped,
+        )
+
+    assert [instance.close_calls for instance in instances] == [1, 1]
+    assert caplog.text.count("Failed to close worker Bronze storage scope") == 2
+
+
+def test_realtime_orchestration_public_signatures_are_unchanged() -> None:
+    cycle_signature = inspect.signature(run_realtime_cycle)
+    assert list(cycle_signature.parameters) == [
+        "provider_id",
+        "settings",
+        "registry",
+        "engine",
+        "last_captures",
+    ]
+    worker_signature = inspect.signature(run_realtime_worker_loop)
+    assert list(worker_signature.parameters) == [
+        "provider_id",
+        "settings",
+        "registry",
+        "engine",
+        "sleep_fn",
+        "max_cycles",
+        "perf_counter_fn",
+        "utc_now_fn",
+        "should_shutdown",
+    ]
 
 
 # --- PR-B / slice-9.8: dedicated pruner loop (decoupled retention) -------------

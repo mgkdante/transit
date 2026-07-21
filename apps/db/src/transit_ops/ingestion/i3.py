@@ -28,7 +28,11 @@ from transit_ops.ingestion.common import (
     utc_now,
 )
 from transit_ops.ingestion.service_alerts import convert_gtfs_rt_alerts_to_i3_payload
-from transit_ops.ingestion.storage import get_bronze_storage, resolve_local_bronze_root
+from transit_ops.ingestion.storage import (
+    BronzeStorageResolver,
+    get_bronze_storage,
+    resolve_local_bronze_root,
+)
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
@@ -353,6 +357,7 @@ def _run_alert_capture(
     build_storage_path: Callable[..., str],
     default_filename: str,
     missing_endpoint_message: str,
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> I3IngestionResult:
     """Shared capture body for proprietary i3 JSON and standard GTFS-RT alerts.
 
@@ -361,11 +366,7 @@ def _run_alert_capture(
     bronze object name, and the missing-endpoint message differ.
     """
     bronze_root = resolve_local_bronze_root(settings, project_root=_project_root())
-    bronze_storage = get_bronze_storage(
-        settings,
-        project_root=_project_root(),
-        storage_backend=config.storage_backend,
-    )
+    bronze_storage = bronze_storage_resolver(config.storage_backend)
     started_at_utc = utc_now()
 
     with engine.begin() as connection:
@@ -495,14 +496,14 @@ def _run_alert_capture(
         raise
 
 
-def capture_i3_alerts(
+def _capture_i3_alerts(
     provider_id: str,
     *,
-    settings: Settings | None = None,
+    settings: Settings,
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> I3IngestionResult:
-    settings = settings or get_settings()
     registry = registry or ProviderRegistry.from_project_root(
         project_root=_project_root(),
         settings=settings,
@@ -522,17 +523,18 @@ def capture_i3_alerts(
             "i3 alert feed endpoint was not found in core.feed_endpoints. "
             "Run seed-core before capture-i3."
         ),
+        bronze_storage_resolver=bronze_storage_resolver,
     )
 
 
-def capture_service_alerts(
+def _capture_service_alerts(
     provider_id: str,
     *,
-    settings: Settings | None = None,
+    settings: Settings,
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> I3IngestionResult:
-    settings = settings or get_settings()
     registry = registry or ProviderRegistry.from_project_root(
         project_root=_project_root(),
         settings=settings,
@@ -552,4 +554,47 @@ def capture_service_alerts(
             "service alerts feed endpoint was not found in core.feed_endpoints. "
             "Run seed-core before capture-service-alerts."
         ),
+        bronze_storage_resolver=bronze_storage_resolver,
+    )
+
+
+def _default_bronze_storage_resolver(settings: Settings) -> BronzeStorageResolver:
+    return lambda storage_backend: get_bronze_storage(
+        settings,
+        project_root=_project_root(),
+        storage_backend=storage_backend,
+    )
+
+
+def capture_i3_alerts(
+    provider_id: str,
+    *,
+    settings: Settings | None = None,
+    registry: ProviderRegistry | None = None,
+    engine: Engine | None = None,
+) -> I3IngestionResult:
+    settings = settings or get_settings()
+    return _capture_i3_alerts(
+        provider_id,
+        settings=settings,
+        registry=registry,
+        engine=engine,
+        bronze_storage_resolver=_default_bronze_storage_resolver(settings),
+    )
+
+
+def capture_service_alerts(
+    provider_id: str,
+    *,
+    settings: Settings | None = None,
+    registry: ProviderRegistry | None = None,
+    engine: Engine | None = None,
+) -> I3IngestionResult:
+    settings = settings or get_settings()
+    return _capture_service_alerts(
+        provider_id,
+        settings=settings,
+        registry=registry,
+        engine=engine,
+        bronze_storage_resolver=_default_bronze_storage_resolver(settings),
     )

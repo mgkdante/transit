@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -187,8 +188,9 @@ class FakeRegistry:
 
 
 class FakeBronzeStorage:
-    def __init__(self, payload: bytes) -> None:
+    def __init__(self, payload: bytes, prefix: str = "s3://bronze-bucket") -> None:
         self.payload = payload
+        self.prefix = prefix.rstrip("/")
         self.read_calls: list[str] = []
 
     def exists(self, storage_path: str) -> bool:
@@ -199,7 +201,7 @@ class FakeBronzeStorage:
         return self.payload
 
     def describe_location(self, storage_path: str) -> str:
-        return f"s3://bronze-bucket/{storage_path}"
+        return f"{self.prefix}/{storage_path}"
 
 
 def _build_trip_updates_bytes() -> bytes:
@@ -420,6 +422,37 @@ def test_find_latest_realtime_bronze_snapshot_resolves_local_file(tmp_path: Path
 
     assert snapshot.realtime_snapshot_id == 44
     assert snapshot.archive_full_path == str(target_path)
+
+
+@pytest.mark.parametrize("storage_backend", ["local", "s3"])
+def test_worker_private_snapshot_mapping_uses_historical_backend(
+    tmp_path: Path,
+    storage_backend: str,
+) -> None:
+    archive_path = tmp_path / "sample.pb"
+    _write_bytes(archive_path, _build_trip_updates_bytes())
+    row = _build_snapshot_row(
+        archive_path,
+        endpoint_key="trip_updates",
+        realtime_snapshot_id=45,
+    )
+    row["storage_backend"] = storage_backend
+    storage = FakeBronzeStorage(archive_path.read_bytes(), prefix=f"{storage_backend}://bronze")
+    resolved_backends: list[str] = []
+
+    snapshot = realtime_silver_module._find_latest_realtime_bronze_snapshot(
+        SnapshotLookupConnection(row),
+        provider_id="stm",
+        endpoint_key="trip_updates",
+        bronze_storage_resolver=lambda backend: (
+            resolved_backends.append(backend),
+            storage,
+        )[1],
+    )
+
+    assert resolved_backends == [storage_backend]
+    assert snapshot.storage_backend == storage_backend
+    assert snapshot.archive_full_path == f"{storage_backend}://bronze/{row['storage_path']}"
 
 
 def test_find_realtime_bronze_snapshots_filters_window_and_provider(
@@ -1206,10 +1239,7 @@ def test_load_latest_realtime_to_silver_uses_bronze_snapshot_without_api_key(
     }
 
 
-def test_load_latest_realtime_to_silver_reads_s3_backed_snapshot(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
+def test_load_latest_realtime_to_silver_reads_s3_backed_snapshot() -> None:
     payload = _build_vehicle_positions_bytes()
     fake_storage = FakeBronzeStorage(payload)
     lookup_row = {
@@ -1241,20 +1271,21 @@ def test_load_latest_realtime_to_silver_reads_s3_backed_snapshot(
         BRONZE_S3_REGION="auto",
     )
 
-    monkeypatch.setattr(
-        realtime_silver_module,
-        "get_bronze_storage",
-        lambda settings, project_root, storage_backend: fake_storage,
-    )
+    resolved: list[tuple[str, int]] = []
 
-    result = load_latest_realtime_to_silver(
+    result = realtime_silver_module._load_latest_realtime_to_silver(
         "stm",
         "vehicle_positions",
         settings=settings,
         registry=FakeRegistry(_build_manifest()),
         engine=engine,
+        bronze_storage_resolver=lambda backend: (
+            resolved.append((backend, id(fake_storage))),
+            fake_storage,
+        )[1],
     )
 
+    assert resolved == [("s3", id(fake_storage)), ("s3", id(fake_storage))]
     assert result.realtime_snapshot_id == 88
     assert result.archive_full_path == (
         "s3://bronze-bucket/stm/vehicle_positions/captured_at_utc=2026-03-25/sample.pb"
@@ -1265,3 +1296,22 @@ def test_load_latest_realtime_to_silver_reads_s3_backed_snapshot(
         "rt_vehicle_positions": 1,
     }
     assert fake_storage.read_calls == [lookup_row["storage_path"]]
+
+
+def test_realtime_silver_public_signatures_are_unchanged() -> None:
+    latest_signature = inspect.signature(find_latest_realtime_bronze_snapshot)
+    assert list(latest_signature.parameters) == [
+        "connection",
+        "provider_id",
+        "endpoint_key",
+        "settings",
+        "project_root",
+    ]
+    load_signature = inspect.signature(load_latest_realtime_to_silver)
+    assert list(load_signature.parameters) == [
+        "provider_id",
+        "endpoint_key",
+        "settings",
+        "registry",
+        "engine",
+    ]

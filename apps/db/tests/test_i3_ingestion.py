@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import inspect
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 import transit_ops.ingestion.i3 as i3_ingestion
 from transit_ops.ingestion.common import DownloadedArtifact, compute_sha256_hex
@@ -216,3 +220,99 @@ def test_capture_i3_alerts_persists_payload_and_registers_snapshot(
     assert connection.calls[1][1]["run_kind"] == "i3_alerts"
     assert connection.calls[2][1]["object_kind"] == "api_i3_json"
     assert "INSERT INTO raw.i3_alert_snapshots" in connection.calls[3][0]
+
+
+@pytest.mark.parametrize(
+    ("private_name", "builder_name", "metadata_name", "endpoint_key", "source_format"),
+    [
+        (
+            "_capture_i3_alerts",
+            "build_i3_ingestion_config",
+            "extract_i3_metadata",
+            "i3_alerts",
+            "api_i3_json",
+        ),
+        (
+            "_capture_service_alerts",
+            "build_service_alerts_ingestion_config",
+            "extract_service_alerts_metadata",
+            "service_alerts",
+            "gtfs_rt_alerts",
+        ),
+    ],
+)
+def test_worker_private_alert_capture_uses_injected_storage_resolver(
+    tmp_path: Path,
+    monkeypatch,
+    private_name: str,
+    builder_name: str,
+    metadata_name: str,
+    endpoint_key: str,
+    source_format: str,
+) -> None:
+    payload = b"normalized-alert-payload"
+    temp_path = tmp_path / f"{endpoint_key}.bin"
+    temp_path.write_bytes(payload)
+    artifact = DownloadedArtifact(
+        temp_path=temp_path,
+        byte_size=len(payload),
+        checksum_sha256=compute_sha256_hex(temp_path),
+        http_status_code=200,
+        source_url=f"https://example.com/{endpoint_key}",
+    )
+    config = i3_ingestion.I3IngestionConfig(
+        provider_id="stm",
+        endpoint_key=endpoint_key,
+        feed_kind=endpoint_key,
+        source_format=source_format,
+        source_url=artifact.source_url,
+        request_url=artifact.source_url,
+        request_headers={},
+        storage_backend="s3",
+        bronze_root=tmp_path / "bronze",
+        refresh_interval_seconds=300,
+    )
+    fake_storage = FakeBronzeStorage("s3://bronze-bucket")
+    resolved_backends: list[str] = []
+
+    monkeypatch.setattr(i3_ingestion, builder_name, lambda manifest, settings: config)
+    monkeypatch.setattr(i3_ingestion, "download_to_tempfile", lambda **kwargs: artifact)
+    monkeypatch.setattr(
+        i3_ingestion,
+        metadata_name,
+        lambda payload_bytes, provider_id: i3_ingestion.I3Metadata(
+            provider_id=provider_id,
+            endpoint_key=endpoint_key,
+            api_version="2.0",
+            alert_count=1,
+            raw_payload_json={"alerts": [{"id": "a1"}]},
+        ),
+    )
+
+    result = getattr(i3_ingestion, private_name)(
+        "stm",
+        settings=Settings(
+            _env_file=None,
+            DATABASE_URL="postgresql://user:pass@example.com/transit",
+        ),
+        registry=SimpleNamespace(get_provider=lambda provider_id: object()),
+        engine=FakeEngine(RecordingConnection()),
+        bronze_storage_resolver=lambda backend: (
+            resolved_backends.append(backend),
+            fake_storage,
+        )[1],
+    )
+
+    assert resolved_backends == ["s3"]
+    assert result.endpoint_key == endpoint_key
+    assert result.storage_backend == "s3"
+    assert fake_storage.persisted[0][1] == result.storage_path
+
+
+def test_alert_capture_public_signatures_are_unchanged() -> None:
+    for capture in (i3_ingestion.capture_i3_alerts, i3_ingestion.capture_service_alerts):
+        signature = inspect.signature(capture)
+        assert list(signature.parameters) == ["provider_id", "settings", "registry", "engine"]
+        assert signature.parameters["settings"].default is None
+        assert signature.parameters["registry"].default is None
+        assert signature.parameters["engine"].default is None
