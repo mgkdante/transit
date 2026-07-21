@@ -1350,7 +1350,9 @@ def test_historic_route_enumeration_excludes_unrouted_sentinel() -> None:
     the exclusion is a build-time invariant, not a SQL-level filter.
     """
     sql = str(_DISTINCT_HISTORIC_ROUTE_IDS_SQL)
-    assert "DISTINCT route_id FROM gold.route_delay_spine" in sql
+    assert "FROM gold.route_delay_spine" in sql
+    assert "MAX(provider_local_date) AS spine_anchor" in sql
+    assert "GROUP BY route_id" in sql
     assert "__unrouted__" not in sql
     assert "route_reliability_weekly" not in sql
     assert "route_reliability_monthly" not in sql
@@ -1465,3 +1467,108 @@ def test_static_publish_dataset_gate_skips_unchanged_but_rebuilds_on_change(monk
     calls.clear()
     _run(skip_row=True, fp_doc=stale_fp)
     assert len(calls) == 1, "a fingerprint change must force a full re-stamp rebuild"
+
+
+def test_publish_historic_uses_one_sorted_route_batch_and_preserves_hash_gate(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from transit_ops.snapshots import publish as snapshot_publish
+    from transit_ops.snapshots.contract import RouteReliability
+    from transit_ops.snapshots.storage import HashGatedStorage, state_fingerprint
+
+    stamp = "2026-07-21T00:00:00Z"
+    batch_calls: list[tuple[str, str]] = []
+
+    def build_batch(conn, *, provider_id, generated_utc):  # noqa: ANN001, ANN202
+        batch_calls.append((provider_id, generated_utc))
+        return {
+            "R2": RouteReliability(generated_utc=generated_utc, id="R2", name="Route Two"),
+            "R1": RouteReliability(generated_utc=generated_utc, id="R1", name="Route One"),
+        }
+
+    monkeypatch.setattr(
+        snapshot_publish.builders,
+        "build_all_route_reliability",
+        build_batch,
+        raising=False,
+    )
+
+    def old_loop(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        pytest.fail("publisher must not call the legacy per-route builder loop")
+
+    monkeypatch.setattr(snapshot_publish.builders, "build_route_reliability", old_loop)
+    for name in (
+        "build_network_trend",
+        "build_hotspots",
+        "build_repeat_offenders",
+        "build_alert_history",
+        "build_provenance",
+    ):
+        monkeypatch.setattr(snapshot_publish.builders, name, lambda *args, **kwargs: object())
+    monkeypatch.setattr(snapshot_publish.builders, "build_stop_reliability", lambda *a, **k: {})
+    monkeypatch.setattr(snapshot_publish.builders, "build_receipts", lambda *a, **k: {})
+    monkeypatch.setattr(
+        snapshot_publish.builders,
+        "build_alert_archive",
+        lambda *a, **k: SimpleNamespace(page_items=[], index=object()),
+    )
+
+    items, route_items, stages, _archive = snapshot_publish._build_historic_items(
+        RecordingNamedConn({}),
+        provider_id="stm",
+        settings=FakeSettings(),
+        stamp=stamp,
+    )
+
+    assert batch_calls == [("stm", stamp)]
+    assert [item[0] for item in route_items] == [
+        "historic/route_reliability/R1.json",
+        "historic/route_reliability/R2.json",
+    ]
+    route_index_item = next(
+        item for item in items if item[0] == "historic/route_reliability/index.json"
+    )
+    assert route_index_item[1].route_ids == ["R1", "R2"]
+    assert stages[1][0] is route_items
+    assert stages[2][0] == [route_index_item]
+
+    published_items = [*route_items, route_index_item]
+    snapshot_publish._stamp_envelope(published_items, provider_id="stm", stamp=stamp)
+    assert all(item[1].methodology_version == "reliability-1" for item in published_items)
+    assert all(item[1].publish_generation_id == f"stm@{stamp}" for item in published_items)
+
+    fingerprint = state_fingerprint("historic")
+    assert fingerprint == "v1|cc:public, max-age=3600, stale-while-revalidate=86400"
+    inner = StatefulFakeStore()
+    state_key = "_meta/publish_state_historic.json"
+
+    first = HashGatedStorage(inner, state_rel_key=state_key, fingerprint=fingerprint)
+    first.load()
+    for rel_key, payload, tier in published_items:
+        first.put_json(rel_key, payload, tier=tier)
+    first.flush_state()
+    assert first.written == [item[0] for item in published_items]
+
+    identical = HashGatedStorage(inner, state_rel_key=state_key, fingerprint=fingerprint)
+    identical.load()
+    for rel_key, payload, tier in published_items:
+        identical.put_json(rel_key, payload, tier=tier)
+    assert identical.written == []
+    assert identical.skipped == [item[0] for item in published_items]
+
+    changed_items = [
+        (rel_key, payload.model_copy(deep=True), tier)
+        for rel_key, payload, tier in published_items
+    ]
+    changed_items[0][1].name = "Changed Route One"
+    changed = HashGatedStorage(inner, state_rel_key=state_key, fingerprint=fingerprint)
+    changed.load()
+    for rel_key, payload, tier in changed_items:
+        changed.put_json(rel_key, payload, tier=tier)
+    assert changed.written == ["historic/route_reliability/R1.json"]
+    assert set(changed.skipped) == {
+        "historic/route_reliability/R2.json",
+        "historic/route_reliability/index.json",
+    }

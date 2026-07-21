@@ -465,7 +465,7 @@ def _route_weak_stops(
             if avg_sec is None:
                 continue
             weak_rows.append((str(r["stop_id"]), avg_sec))
-    weak_rows.sort(key=lambda t: t[1], reverse=True)
+    weak_rows.sort(key=lambda item: (-item[1], item[0]))
     return [
         WeakStop(id=sid, name=names.get(sid), avg_delay_min=_avg_delay_min(avg_sec))
         for sid, avg_sec in weak_rows[:weak_stops_limit]

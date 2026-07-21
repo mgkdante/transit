@@ -990,3 +990,46 @@ def test_stop_history_real_db_reconciles_routes_auxiliary_sources_and_compatibil
         if stop_id == main_stop
     )
     assert [day.date for day in main_compatibility.daily] == ["2026-05-31", "2026-06-02"]
+
+
+def test_route_reliability_batch_real_db_matches_standalone_bytes_and_scope(
+    line_history_conn,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from transit_ops.snapshots.builders import build_all_route_reliability
+
+    _extend_history_retention(monkeypatch)
+    stamp = "2026-07-13T00:00:00Z"
+    expected_route_ids = [
+        str(row[0])
+        for row in line_history_conn.execute(
+            text(
+                "SELECT DISTINCT route_id FROM gold.route_delay_spine "
+                "WHERE provider_id = :provider_id AND route_id IS NOT NULL ORDER BY route_id"
+            ),
+            {"provider_id": LINE_PROVIDER},
+        )
+    ]
+
+    batch = build_all_route_reliability(
+        line_history_conn,
+        provider_id=LINE_PROVIDER,
+        generated_utc=stamp,
+    )
+
+    assert list(batch) == expected_route_ids
+    for route_id, payload in batch.items():
+        batched_bytes = snapshot_json_bytes(payload)
+        standalone_bytes = snapshot_json_bytes(
+            build_route_reliability(
+                line_history_conn,
+                provider_id=LINE_PROVIDER,
+                route_id=route_id,
+                generated_utc=stamp,
+            )
+        )
+        assert batched_bytes == standalone_bytes
+        assert hashlib.sha256(batched_bytes).hexdigest() == hashlib.sha256(
+            standalone_bytes
+        ).hexdigest()
+        assert len(batched_bytes) <= ROUTE_RELIABILITY_BYTE_CEILING

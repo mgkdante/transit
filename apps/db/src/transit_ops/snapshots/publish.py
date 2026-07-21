@@ -37,6 +37,9 @@ from transit_ops.snapshots.builders.historic.history_common import (
     latest_history_timestamp,
     readdress_history_directory,
 )
+from transit_ops.snapshots.builders.historic.route_reliability_batch import (
+    _ROUTE_INVENTORY_SQL as _DISTINCT_HISTORIC_ROUTE_IDS_SQL,  # noqa: F401
+)
 from transit_ops.snapshots.contract import (
     PAYLOAD_METHODOLOGY,
     TOP_LEVEL_MODELS,
@@ -698,12 +701,6 @@ _STATIC_STAMP_SQL = named_query(
 # sentinel never appears and no historic/route_reliability/__unrouted__.json is
 # published. Same route set as the (now-dropped) route_reliability_weekly/monthly
 # marts, which derived from the same facts.
-_DISTINCT_HISTORIC_ROUTE_IDS_SQL = named_query(
-    "route.spine.route_ids",
-    "SELECT DISTINCT route_id FROM gold.route_delay_spine WHERE provider_id = :provider_id",
-)
-
-
 def _static_stamp(conn: object, provider_id: str) -> str:
     """Static-tier stamp = loaded_at_utc of the current static dataset version.
 
@@ -884,27 +881,16 @@ def _build_historic_items(
     ]
 
     # --- per-route reliability files (routes that have history) ---
-    route_rows = conn.execute(  # type: ignore[attr-defined]
-        _DISTINCT_HISTORIC_ROUTE_IDS_SQL,
-        {"provider_id": provider_id},
-    ).fetchall()
-    route_ids = [str(route_id) for (route_id,) in route_rows if route_id is not None]
-    route_names, stop_names = (
-        builders._entity_name_maps(conn, provider_id=provider_id)  # type: ignore[arg-type]
-        if route_ids
-        else ({}, {})
-    )
+    route_payloads = builders.build_all_route_reliability(
+        conn,
+        provider_id=provider_id,
+        generated_utc=stamp,
+    )  # type: ignore[arg-type]
+    route_ids = sorted(route_payloads)
     route_items = [
         (
             f"historic/route_reliability/{route_id}.json",
-            builders.build_route_reliability(
-                conn,
-                provider_id=provider_id,
-                route_id=route_id,
-                generated_utc=stamp,
-                route_names=route_names,
-                stop_names=stop_names,
-            ),  # type: ignore[arg-type]
+            route_payloads[route_id],
             "historic",
         )
         for route_id in route_ids
