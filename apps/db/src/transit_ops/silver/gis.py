@@ -210,6 +210,8 @@ class GisSilverLoadResult:
     stop_feature_count: int
     line_feature_count: int
     match_count: int
+    load_performed: bool = True
+    skipped_reason: str | None = None
 
     def display_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -238,6 +240,14 @@ class _ParsedGisZip:
     stop_features: list[_ParsedFeature]
     line_features: list[_ParsedFeature]
     crs: _CrsInfo
+
+
+@dataclass(frozen=True)
+class _CompletedGisPair:
+    shapefile_count: int
+    stop_feature_count: int
+    line_feature_count: int
+    match_count: int
 
 
 def _project_root() -> Path:
@@ -539,11 +549,59 @@ def _delete_existing_gis_rows(connection: Connection, *, dataset_version_id: int
         connection.execute(text(statement), {"dataset_version_id": dataset_version_id})
 
 
+def _completed_gis_pair(
+    connection: Connection,
+    *,
+    provider_id: str,
+    gis_dataset_version_id: int,
+    static_dataset_version_id: int | None,
+) -> _CompletedGisPair | None:
+    row = (
+        connection.execute(
+            text(
+                """
+                SELECT parser_version, manifest_json
+                FROM silver.gis_datasets
+                WHERE provider_id = :provider_id
+                  AND dataset_version_id = :dataset_version_id
+                """
+            ),
+            {
+                "provider_id": provider_id,
+                "dataset_version_id": gis_dataset_version_id,
+            },
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None or row["parser_version"] != PARSER_VERSION:
+        return None
+
+    manifest = row["manifest_json"]
+    if not isinstance(manifest, Mapping) or "static_dataset_version_id" not in manifest:
+        return None
+    if manifest["static_dataset_version_id"] != static_dataset_version_id:
+        return None
+
+    count_keys = (
+        "shapefile_count",
+        "stop_feature_count",
+        "line_feature_count",
+        "match_count",
+    )
+    counts = {key: manifest.get(key) for key in count_keys}
+    if any(type(value) is not int or value < 0 for value in counts.values()):
+        return None
+    return _CompletedGisPair(**counts)
+
+
 def _insert_gis_dataset(
     connection: Connection,
     *,
     archive: BronzeGisArchive,
     parsed: _ParsedGisZip,
+    static_dataset_version_id: int | None,
+    match_count: int,
 ) -> None:
     connection.execute(
         GIS_DATASET_INSERT,
@@ -564,6 +622,8 @@ def _insert_gis_dataset(
                 "shapefile_count": parsed.shapefile_count,
                 "stop_feature_count": len(parsed.stop_features),
                 "line_feature_count": len(parsed.line_features),
+                "static_dataset_version_id": static_dataset_version_id,
+                "match_count": match_count,
             },
         },
     )
@@ -882,11 +942,44 @@ def load_gis_zip_to_silver(
         archive_location = bronze_storage.describe_location(archive.storage_path)
         raise FileNotFoundError(f"Bronze GIS archive file not found: {archive_location}")
 
-    parsed = _parse_gis_zip(bronze_storage.read_bytes(archive.storage_path))
-    static_dataset_version_id = static_dataset_version_id or _current_static_dataset_version_id(
+    if static_dataset_version_id is None:
+        static_dataset_version_id = _current_static_dataset_version_id(
+            connection,
+            provider_id=archive.provider_id,
+        )
+
+    completed_pair = _completed_gis_pair(
         connection,
         provider_id=archive.provider_id,
+        gis_dataset_version_id=archive.dataset_version_id,
+        static_dataset_version_id=static_dataset_version_id,
     )
+    if completed_pair is not None:
+        row_counts = {
+            "gis_datasets": 1,
+            "gis_stop_features": completed_pair.stop_feature_count,
+            "gis_line_features": completed_pair.line_feature_count,
+            "gis_gtfs_matches": completed_pair.match_count,
+        }
+        return GisSilverLoadResult(
+            provider_id=archive.provider_id,
+            dataset_version_id=archive.dataset_version_id,
+            static_dataset_version_id=static_dataset_version_id,
+            source_ingestion_run_id=archive.source_ingestion_run_id,
+            source_ingestion_object_id=archive.source_ingestion_object_id,
+            storage_path=archive.storage_path,
+            archive_full_path=archive.archive_full_path,
+            content_hash=archive.checksum_sha256,
+            row_counts=row_counts,
+            shapefile_count=completed_pair.shapefile_count,
+            stop_feature_count=completed_pair.stop_feature_count,
+            line_feature_count=completed_pair.line_feature_count,
+            match_count=completed_pair.match_count,
+            load_performed=False,
+            skipped_reason="gis_static_pair_unchanged",
+        )
+
+    parsed = _parse_gis_zip(bronze_storage.read_bytes(archive.storage_path))
 
     stop_rows = [
         _stop_feature_row(archive=archive, feature=feature)
@@ -906,7 +999,13 @@ def load_gis_zip_to_silver(
     )
 
     _delete_existing_gis_rows(connection, dataset_version_id=archive.dataset_version_id)
-    _insert_gis_dataset(connection, archive=archive, parsed=parsed)
+    _insert_gis_dataset(
+        connection,
+        archive=archive,
+        parsed=parsed,
+        static_dataset_version_id=static_dataset_version_id,
+        match_count=len(match_rows),
+    )
     stop_count = execute_batched_insert(
         connection,
         statement=GIS_STOP_FEATURE_INSERT,

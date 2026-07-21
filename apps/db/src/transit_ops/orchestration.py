@@ -41,13 +41,13 @@ from transit_ops.maintenance import (
 )
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
-from transit_ops.snapshots.publish import publish_snapshot
 from transit_ops.silver import (
     load_latest_gis_to_silver,
     load_latest_i3_to_silver,
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
 )
+from transit_ops.snapshots.publish import publish_snapshot
 
 GTFS_REALTIME_ENDPOINTS = ("trip_updates", "vehicle_positions")
 I3_ALERT_ENDPOINT = "i3_alerts"
@@ -282,9 +282,9 @@ def _run_gis_steps_best_effort(
     """Run the GIS chain (ingest + silver load) as a best-effort tail.
 
     GIS must NEVER fail the static publish: any exception is logged and recorded,
-    the static pipeline result stays status='succeeded'. The silver load runs
-    unconditionally (even when GIS content is unchanged) so gis_gtfs_matches
-    re-key to the current static dataset version on every GTFS drop.
+    the static pipeline result stays status='succeeded'. The silver loader is
+    evaluated even when GIS content is unchanged; its pair receipt skips exact
+    GIS/static/parser repeats while a GTFS change still re-keys gis_gtfs_matches.
     """
     try:
         gis_ingestion, gis_ingestion_duration_seconds = _run_timed_static_step(

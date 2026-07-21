@@ -10,6 +10,7 @@ import pytest
 import shapefile
 
 from transit_ops.silver.gis import (
+    PARSER_VERSION,
     BronzeGisArchive,
     find_latest_gis_bronze_archive,
     load_gis_zip_to_silver,
@@ -65,9 +66,11 @@ class RecordingConnection:
         self,
         *,
         archive_row: dict[str, object] | None = None,
+        loaded_gis_row: dict[str, object] | None = None,
         static_dataset_version_id: int | None = 700,
     ) -> None:
         self.archive_row = archive_row
+        self.loaded_gis_row = loaded_gis_row
         self.static_dataset_version_id = static_dataset_version_id
         self.calls: list[tuple[str, object]] = []
 
@@ -76,6 +79,11 @@ class RecordingConnection:
         self.calls.append((sql_text, params))
         if "FROM core.dataset_versions AS dv" in sql_text:
             return FakeResult(mapping_value=self.archive_row)
+        if "FROM silver.gis_datasets" in sql_text:
+            loaded = self.loaded_gis_row
+            if loaded is not None and loaded["dataset_version_id"] != params["dataset_version_id"]:
+                loaded = None
+            return FakeResult(mapping_value=loaded)
         if "dataset_kind = 'static_schedule'" in sql_text:
             return FakeResult(scalar_value=self.static_dataset_version_id)
         if "FROM silver.stops" in sql_text:
@@ -95,9 +103,11 @@ class RecordingConnection:
 class FakeStorage:
     def __init__(self, payload: bytes) -> None:
         self.payload = payload
+        self.exists_calls: list[str] = []
         self.read_calls: list[str] = []
 
     def exists(self, storage_path: str) -> bool:
+        self.exists_calls.append(storage_path)
         return True
 
     def read_bytes(self, storage_path: str) -> bytes:
@@ -200,6 +210,201 @@ def _archive(byte_size: int) -> BronzeGisArchive:
     )
 
 
+def _loaded_gis_row(
+    *,
+    gis_dataset_version_id: int = 88,
+    static_dataset_version_id: int | None = 700,
+    parser_version: str = PARSER_VERSION,
+    match_count: int = 2,
+    include_pair_receipt: bool = True,
+) -> dict[str, object]:
+    manifest: dict[str, object] = {
+        "archive_full_path": "s3://bronze-bucket/stm/gis_static/stm_sig.zip",
+        "shapefile_count": 2,
+        "stop_feature_count": 1,
+        "line_feature_count": 1,
+        "match_count": match_count,
+    }
+    if include_pair_receipt:
+        manifest["static_dataset_version_id"] = static_dataset_version_id
+    return {
+        "dataset_version_id": gis_dataset_version_id,
+        "parser_version": parser_version,
+        "manifest_json": manifest,
+    }
+
+
+def _gis_mutations(connection: RecordingConnection) -> list[str]:
+    return [
+        sql
+        for sql, _ in connection.calls
+        if "DELETE FROM silver.gis_" in sql or "INSERT INTO silver.gis_" in sql
+    ]
+
+
+def test_load_gis_zip_to_silver_skips_completed_pair_before_payload_read() -> None:
+    archive = _archive(123)
+    connection = RecordingConnection(loaded_gis_row=_loaded_gis_row())
+    storage = FakeStorage(b"not-a-zip")
+
+    result = load_gis_zip_to_silver(
+        connection,
+        archive=archive,
+        bronze_storage=storage,
+        static_dataset_version_id=700,
+    )
+
+    assert storage.exists_calls == [archive.storage_path]
+    assert storage.read_calls == []
+    assert _gis_mutations(connection) == []
+    assert result.row_counts == {
+        "gis_datasets": 1,
+        "gis_stop_features": 1,
+        "gis_line_features": 1,
+        "gis_gtfs_matches": 2,
+    }
+    assert result.load_performed is False
+    assert result.skipped_reason == "gis_static_pair_unchanged"
+
+
+def test_load_gis_zip_to_silver_reloads_same_gis_for_changed_static_version(
+    tmp_path: Path,
+) -> None:
+    payload = _build_mixed_gis_zip(tmp_path)
+    archive = _archive(len(payload))
+    connection = RecordingConnection(
+        loaded_gis_row=_loaded_gis_row(static_dataset_version_id=699),
+    )
+    storage = FakeStorage(payload)
+
+    result = load_gis_zip_to_silver(
+        connection,
+        archive=archive,
+        bronze_storage=storage,
+        static_dataset_version_id=700,
+    )
+
+    assert result.load_performed is True
+    assert storage.read_calls == [archive.storage_path]
+    assert _gis_mutations(connection)
+    manifest = _insert_params(connection, "INSERT INTO silver.gis_datasets")["manifest_json"]
+    assert manifest["static_dataset_version_id"] == 700
+    assert manifest["match_count"] == 2
+
+
+def test_load_gis_zip_to_silver_reloads_changed_gis_dataset(tmp_path: Path) -> None:
+    payload = _build_mixed_gis_zip(tmp_path)
+    archive = _archive(len(payload))
+    connection = RecordingConnection(
+        loaded_gis_row=_loaded_gis_row(gis_dataset_version_id=87),
+    )
+    storage = FakeStorage(payload)
+
+    result = load_gis_zip_to_silver(
+        connection,
+        archive=archive,
+        bronze_storage=storage,
+        static_dataset_version_id=700,
+    )
+
+    assert result.load_performed is True
+    assert storage.read_calls == [archive.storage_path]
+    assert _gis_mutations(connection)
+
+
+@pytest.mark.parametrize(
+    "loaded_gis_row",
+    [
+        pytest.param(
+            _loaded_gis_row(include_pair_receipt=False),
+            id="legacy-receipt",
+        ),
+        pytest.param(
+            _loaded_gis_row(parser_version="transit_ops.silver.gis.v0"),
+            id="parser-version-changed",
+        ),
+    ],
+)
+def test_load_gis_zip_to_silver_reloads_invalid_receipt(
+    tmp_path: Path,
+    loaded_gis_row: dict[str, object],
+) -> None:
+    payload = _build_mixed_gis_zip(tmp_path)
+    archive = _archive(len(payload))
+    connection = RecordingConnection(loaded_gis_row=loaded_gis_row)
+    storage = FakeStorage(payload)
+
+    result = load_gis_zip_to_silver(
+        connection,
+        archive=archive,
+        bronze_storage=storage,
+        static_dataset_version_id=700,
+    )
+
+    assert result.load_performed is True
+    assert storage.read_calls == [archive.storage_path]
+    assert _gis_mutations(connection)
+
+
+def test_load_gis_zip_to_silver_skips_completed_pair_with_zero_matches() -> None:
+    archive = _archive(123)
+    connection = RecordingConnection(
+        loaded_gis_row=_loaded_gis_row(match_count=0),
+    )
+    storage = FakeStorage(b"not-a-zip")
+
+    result = load_gis_zip_to_silver(
+        connection,
+        archive=archive,
+        bronze_storage=storage,
+        static_dataset_version_id=700,
+    )
+
+    assert storage.read_calls == []
+    assert result.match_count == 0
+    assert result.row_counts["gis_gtfs_matches"] == 0
+    assert result.load_performed is False
+
+
+def test_load_gis_zip_to_silver_treats_no_static_dataset_as_explicit_pair(
+    tmp_path: Path,
+) -> None:
+    archive = _archive(123)
+    no_static_receipt = _loaded_gis_row(static_dataset_version_id=None, match_count=0)
+    unchanged_connection = RecordingConnection(
+        loaded_gis_row=no_static_receipt,
+        static_dataset_version_id=None,
+    )
+    unchanged_storage = FakeStorage(b"not-a-zip")
+
+    skipped = load_gis_zip_to_silver(
+        unchanged_connection,
+        archive=archive,
+        bronze_storage=unchanged_storage,
+    )
+
+    assert skipped.static_dataset_version_id is None
+    assert skipped.load_performed is False
+    assert unchanged_storage.read_calls == []
+
+    payload = _build_mixed_gis_zip(tmp_path)
+    changed_connection = RecordingConnection(
+        loaded_gis_row=no_static_receipt,
+        static_dataset_version_id=700,
+    )
+    changed_storage = FakeStorage(payload)
+
+    reloaded = load_gis_zip_to_silver(
+        changed_connection,
+        archive=_archive(len(payload)),
+        bronze_storage=changed_storage,
+    )
+
+    assert reloaded.static_dataset_version_id == 700
+    assert reloaded.load_performed is True
+    assert changed_storage.read_calls == [archive.storage_path]
+
+
 def test_load_gis_zip_to_silver_stages_stops_lines_wkb_crs_and_matches(
     tmp_path: Path,
 ) -> None:
@@ -216,6 +421,8 @@ def test_load_gis_zip_to_silver_stages_stops_lines_wkb_crs_and_matches(
 
     assert result.dataset_version_id == 88
     assert result.static_dataset_version_id == 700
+    assert result.load_performed is True
+    assert result.skipped_reason is None
     assert result.row_counts == {
         "gis_datasets": 1,
         "gis_stop_features": 1,
@@ -228,6 +435,8 @@ def test_load_gis_zip_to_silver_stages_stops_lines_wkb_crs_and_matches(
     assert dataset_params["dataset_version_id"] == 88
     assert dataset_params["source_crs_epsg"] == 4326
     assert dataset_params["manifest_json"]["shapefile_count"] == 2
+    assert dataset_params["manifest_json"]["static_dataset_version_id"] == 700
+    assert dataset_params["manifest_json"]["match_count"] == 2
 
     stop_rows = _insert_params(connection, "INSERT INTO silver.gis_stop_features")
     assert len(stop_rows) == 1
