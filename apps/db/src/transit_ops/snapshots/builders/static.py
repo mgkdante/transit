@@ -9,14 +9,15 @@ times reflect one coherent day rather than the union of all 144 service calendar
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from transit_ops.snapshots.builders._helpers import (
-    StaticScheduleContext,
     _BOARDABLE_STOP,
     _ROUTE_SCHEDULE_SQL,
     _SHIFT_ORDER,
     _SHIFT_WINDOWS,
+    StaticScheduleContext,
     _gtfs_min,
     _infer_shift,
     _median_headway,
@@ -230,7 +231,7 @@ def build_labels(
     provider_id: str = "stm",
     lang: str = "fr",
     generated_utc: str,
-) -> "LabelsFile":
+) -> "LabelsFile":  # noqa: UP037
     """Build labels/{lang}.json: static code translations + metric catalog labels.
 
     Every metric.* key is emitted in BOTH languages (with cross-language / raw-key
@@ -302,7 +303,9 @@ _STOPS_INDEX_SQL = named_query(
 )
 
 
-def build_routes_index(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "RoutesIndex":
+def build_routes_index(
+    conn: Connection, *, provider_id: str = "stm", generated_utc: str
+) -> "RoutesIndex":  # noqa: UP037
     """Build static/routes_index.json from gold.dim_route.
 
     Each entry carries a ``reliability`` flag (True when a per-route
@@ -363,7 +366,7 @@ def build_stops_index(
     generated_utc: str,
     routes_served_by_stop: dict[str, list[str]] | None = None,
     route_type_by_id: dict[str, int] | None = None,
-) -> "StopsIndex":
+) -> "StopsIndex":  # noqa: UP037
     """Build static/stops_index.json from gold.dim_stop.
 
     When *routes_served_by_stop* and *route_type_by_id* are supplied (threaded
@@ -385,7 +388,11 @@ def build_stops_index(
         full_routes = routes_by_stop.get(sid, [])
         # mode from the FULL served set (metro sorts first so it survives the
         # cap anyway, but deriving from the full set is robust regardless).
-        mode = _mode_from_route_types([type_by_id.get(rt) for rt in full_routes]) if full_routes else None
+        mode = (
+            _mode_from_route_types([type_by_id.get(rt) for rt in full_routes])
+            if full_routes
+            else None
+        )
         stops.append(
             StopIndexEntry(
                 id=sid,
@@ -441,10 +448,241 @@ _ROUTE_STOPS_SQL = named_query(
       AND t.dataset_version_id = :dataset_version_id
       AND t.route_id           = :route_id
       AND t.shape_id           = :shape_id
-    ORDER BY st.stop_sequence
+    ORDER BY st.stop_sequence, t.trip_id, st.stop_id
     LIMIT 400
     """
 )
+
+
+_ALL_ROUTE_METADATA_SQL = named_query(
+    "static.all_route_metadata",
+    """
+    SELECT route_id, route_long_name, route_type
+    FROM gold.dim_route
+    WHERE provider_id = :provider_id
+    ORDER BY route_id
+    """,
+)
+
+_ALL_ROUTE_SHAPES_SQL = named_query(
+    "static.all_route_shapes",
+    """
+    SELECT mrl.route_id, mrl.shape_id, mrl.geojson, t.direction_id,
+           t.trip_headsign, count(*) AS trip_count
+    FROM gold.map_route_lines AS mrl
+    JOIN silver.trips AS t
+        ON  t.provider_id        = mrl.provider_id
+        AND t.dataset_version_id = mrl.dataset_version_id
+        AND t.shape_id           = mrl.shape_id
+        AND t.route_id           = mrl.route_id
+    WHERE mrl.provider_id        = :provider_id
+      AND mrl.dataset_version_id = :dataset_version_id
+    GROUP BY mrl.route_id, mrl.shape_id, mrl.geojson,
+             t.direction_id, t.trip_headsign
+    ORDER BY mrl.route_id, t.direction_id, count(*) DESC, mrl.shape_id
+    """,
+)
+
+_ALL_ROUTE_STOPS_SQL = named_query(
+    "static.all_route_stops",
+    """
+    WITH ranked_shapes AS (
+        SELECT
+            mrl.route_id,
+            mrl.shape_id,
+            row_number() OVER (
+                PARTITION BY mrl.route_id, COALESCE(t.direction_id, 0), t.trip_headsign
+                ORDER BY t.direction_id ASC NULLS LAST, count(*) DESC, mrl.shape_id
+            ) AS shape_rank
+        FROM gold.map_route_lines AS mrl
+        JOIN silver.trips AS t
+            ON  t.provider_id        = mrl.provider_id
+            AND t.dataset_version_id = mrl.dataset_version_id
+            AND t.shape_id           = mrl.shape_id
+            AND t.route_id           = mrl.route_id
+        WHERE mrl.provider_id        = :provider_id
+          AND mrl.dataset_version_id = :dataset_version_id
+        GROUP BY mrl.route_id, mrl.shape_id, t.direction_id, t.trip_headsign
+    ), selected_shapes AS (
+        SELECT DISTINCT route_id, shape_id
+        FROM ranked_shapes
+        WHERE shape_rank = 1
+    ), stop_candidates AS (
+        SELECT
+            selected.route_id,
+            selected.shape_id,
+            st.stop_sequence,
+            st.stop_id,
+            ds.stop_name,
+            row_number() OVER (
+                PARTITION BY selected.route_id, selected.shape_id, st.stop_sequence
+                ORDER BY t.trip_id, st.stop_id
+            ) AS duplicate_rank
+        FROM selected_shapes AS selected
+        JOIN silver.trips AS t
+            ON  t.provider_id        = :provider_id
+            AND t.dataset_version_id = :dataset_version_id
+            AND t.route_id           = selected.route_id
+            AND t.shape_id           = selected.shape_id
+        JOIN silver.stop_times AS st
+            ON  st.trip_id            = t.trip_id
+            AND st.dataset_version_id = t.dataset_version_id
+            AND st.provider_id        = t.provider_id
+        LEFT JOIN gold.dim_stop AS ds
+            ON  ds.stop_id            = st.stop_id
+            AND ds.provider_id        = t.provider_id
+            AND ds.dataset_version_id = t.dataset_version_id
+    ), deduplicated_stops AS (
+        SELECT route_id, shape_id, stop_sequence, stop_id, stop_name
+        FROM stop_candidates
+        WHERE duplicate_rank = 1
+    ), ranked_stops AS (
+        SELECT
+            route_id,
+            shape_id,
+            stop_sequence,
+            stop_id,
+            stop_name,
+            row_number() OVER (
+                PARTITION BY route_id, shape_id
+                ORDER BY stop_sequence
+            ) AS stop_rank
+        FROM deduplicated_stops
+    )
+    SELECT route_id, shape_id, stop_sequence, stop_id, stop_name
+    FROM ranked_stops
+    WHERE stop_rank <= 400
+    ORDER BY route_id, shape_id, stop_sequence
+    """,
+)
+
+_ALL_ROUTE_SCHEDULES_SQL = named_query(
+    "static.all_route_schedules",
+    """
+    SELECT DISTINCT
+        t.route_id,
+        t.direction_id,
+        (t.service_id = ANY(:weekday_services)) AS is_weekday,
+        st.departure_time
+    FROM silver.trips AS t
+    JOIN silver.stop_times AS st
+        ON  st.trip_id            = t.trip_id
+        AND st.dataset_version_id = t.dataset_version_id
+        AND st.provider_id        = t.provider_id
+    WHERE t.provider_id        = :provider_id
+      AND t.dataset_version_id = :dataset_version_id
+      AND st.stop_sequence     = 1
+      AND st.departure_time IS NOT NULL
+      AND (t.service_id = ANY(:weekday_services) OR t.service_id = ANY(:weekend_services))
+    """,
+)
+
+
+_Row = Mapping[str, object]
+
+
+def _best_route_branches(shape_rows: Sequence[_Row]) -> dict[tuple, _Row]:
+    branches: dict[tuple, _Row] = {}
+    for row in shape_rows:
+        key = (int(row["direction_id"] or 0), row["trip_headsign"])
+        if key not in branches:
+            branches[key] = row
+    return branches
+
+
+def _assemble_route_file(
+    *,
+    route_id: str,
+    generated_utc: str,
+    name_row: _Row | None,
+    shape_rows: Sequence[_Row],
+    stops_by_shape: Mapping[object, Sequence[_Row]],
+    schedule_rows: Sequence[_Row],
+) -> RouteFile:
+    """Map already-fetched route rows to the canonical static route contract."""
+
+    from collections import defaultdict
+
+    long_name = name_row["route_long_name"] if name_row is not None else None
+    route_type = (
+        int(name_row["route_type"])
+        if name_row is not None and name_row["route_type"] is not None
+        else None
+    )
+
+    directions: list[RouteDirection] = []
+    for (dir_id, headsign), best in sorted(
+        _best_route_branches(shape_rows).items(),
+        key=lambda item: (item[0][0], str(item[0][1] or "")),
+    ):
+        stops = [
+            RouteStop(
+                id=str(row["stop_id"]),
+                seq=int(row["stop_sequence"]),
+                name=row["stop_name"],
+            )
+            for row in stops_by_shape.get(best["shape_id"], ())[:400]
+        ]
+        directions.append(
+            RouteDirection(dir=dir_id, headsign=headsign, shape=best["geojson"], stops=stops)
+        )
+
+    wd_by_dir: dict[int, list[str]] = defaultdict(list)
+    we_times: list[str] = []
+    for row in schedule_rows:
+        departure = str(row["departure_time"])
+        if row["is_weekday"]:
+            wd_by_dir[int(row["direction_id"] or 0)].append(departure)
+        else:
+            we_times.append(departure)
+
+    service_periods: list[ServicePeriod] = []
+    if wd_by_dir:
+        best_dir = min(
+            wd_by_dir,
+            key=lambda direction: (-len(set(wd_by_dir[direction])), direction),
+        )
+        shift_times: dict[str, list[str]] = defaultdict(list)
+        for departure in set(wd_by_dir[best_dir]):
+            shift_times[_infer_shift((_gtfs_min(departure) // 60) % 24)].append(departure)
+        for shift in _SHIFT_ORDER:
+            bucket = shift_times.get(shift)
+            if not bucket:
+                continue
+            minutes = [_shift_sort_min(departure, shift) for departure in bucket]
+            service_periods.append(
+                ServicePeriod(
+                    shift=shift,
+                    window=_SHIFT_WINDOWS[shift],
+                    headway_min=_median_headway(minutes),
+                )
+            )
+    if we_times:
+        service_periods.append(
+            ServicePeriod(
+                shift="weekend",
+                window=None,
+                headway_min=_median_headway(
+                    [_gtfs_min(departure) % 1440 for departure in set(we_times)]
+                ),
+            )
+        )
+
+    all_weekday = sorted(
+        {departure for departures in wd_by_dir.values() for departure in departures},
+        key=_gtfs_min,
+    )
+    span = all_weekday or sorted(set(we_times), key=_gtfs_min)
+    return RouteFile(
+        generated_utc=generated_utc,
+        id=route_id,
+        long=long_name,
+        type=route_type,
+        directions=directions,
+        service_periods=service_periods,
+        first_departure=_wallclock(span[0]) if span else None,
+        last_departure=_wallclock(span[-1]) if span else None,
+    )
 
 
 def build_route(
@@ -454,7 +692,7 @@ def build_route(
     route_id: str,
     generated_utc: str,
     static_context: StaticScheduleContext | None = None,
-) -> "RouteFile":
+) -> "RouteFile":  # noqa: UP037
     """Build static/routes/{route_id}.json — branches + shapes + stops + schedule.
 
     One RouteDirection is emitted per real branch ((direction, headsign) with its
@@ -463,8 +701,6 @@ def build_route(
     of the busiest direction on a representative weekday, per time-of-day shift,
     plus one 'weekend' period.  Times are wall-clock (GTFS >=24:00 normalised).
     """
-    from collections import defaultdict
-
     context = static_context or _static_schedule_context(conn, provider_id=provider_id)
     if context.dataset_version_id is None:
         return RouteFile(generated_utc=generated_utc, id=route_id)
@@ -473,90 +709,110 @@ def build_route(
     weekday_services = list(context.weekday_services)
     weekend_services = list(context.weekend_services)
 
-    name_row = conn.execute(
-        _ROUTE_NAME_TYPE_SQL,
-        {"provider_id": provider_id, "route_id": route_id},
-    ).mappings().fetchone()
-    long_name = name_row["route_long_name"] if name_row else None
-    # GTFS route_type for the self-describing mode field. Mirror build_routes_index:
-    # a legitimate route_type 0 (tram) is preserved; only a NULL is left as None
-    # (the contract field is optional, so an absent type renders as no-signal).
-    route_type = (
-        int(name_row["route_type"]) if name_row and name_row["route_type"] is not None else None
+    name_row = (
+        conn.execute(
+            _ROUTE_NAME_TYPE_SQL,
+            {"provider_id": provider_id, "route_id": route_id},
+        )
+        .mappings()
+        .fetchone()
+    )
+    shape_rows = list(conn.execute(_ROUTE_SHAPES_SQL, params).mappings())
+    stops_by_shape: dict[object, list[_Row]] = {}
+    for best in _best_route_branches(shape_rows).values():
+        stops_by_shape[best["shape_id"]] = list(
+            conn.execute(
+                _ROUTE_STOPS_SQL,
+                {**params, "shape_id": best["shape_id"]},
+            ).mappings()
+        )
+    schedule_rows = list(
+        conn.execute(
+            _ROUTE_SCHEDULE_SQL,
+            {
+                **params,
+                "weekday_services": weekday_services or [""],
+                "weekend_services": weekend_services or [""],
+            },
+        ).mappings()
     )
 
-    # --- branches: one per (direction, headsign), best (most-used) shape ---
-    branches: dict[tuple, dict] = {}
-    for row in conn.execute(_ROUTE_SHAPES_SQL, params).mappings():
-        key = (int(row["direction_id"] or 0), row["trip_headsign"])
-        if key not in branches:  # rows ordered direction, count DESC, shape_id
-            branches[key] = {"shape_id": row["shape_id"], "geojson": row["geojson"]}
-
-    directions: list[RouteDirection] = []
-    for (dir_id, headsign), best in sorted(branches.items(), key=lambda kv: (kv[0][0], str(kv[0][1] or ""))):
-        stop_rows = conn.execute(_ROUTE_STOPS_SQL, {**params, "shape_id": best["shape_id"]}).mappings()
-        stops = [
-            RouteStop(id=str(s["stop_id"]), seq=int(s["stop_sequence"]), name=s["stop_name"])
-            for s in stop_rows
-        ]
-        directions.append(
-            RouteDirection(dir=dir_id, headsign=headsign, shape=best["geojson"], stops=stops)
-        )
-
-    # --- schedule: distinct first-stop departures by daytype + direction ---
-    sched_rows = conn.execute(
-        _ROUTE_SCHEDULE_SQL,
-        {**params, "weekday_services": weekday_services or [""], "weekend_services": weekend_services or [""]},
-    ).mappings()
-    wd_by_dir: dict[int, list[str]] = defaultdict(list)
-    we_times: list[str] = []
-    for r in sched_rows:
-        t = str(r["departure_time"])
-        if r["is_weekday"]:
-            wd_by_dir[int(r["direction_id"] or 0)].append(t)
-        else:
-            we_times.append(t)
-
-    service_periods: list[ServicePeriod] = []
-    if wd_by_dir:
-        # busiest direction is representative of the route's frequency
-        best_dir = max(wd_by_dir, key=lambda d: len(set(wd_by_dir[d])))
-        shift_times: dict[str, list[str]] = defaultdict(list)
-        for t in set(wd_by_dir[best_dir]):
-            shift_times[_infer_shift((_gtfs_min(t) // 60) % 24)].append(t)
-        for shift in _SHIFT_ORDER:
-            bucket = shift_times.get(shift)
-            if not bucket:
-                continue
-            mins = [_shift_sort_min(t, shift) for t in bucket]
-            service_periods.append(
-                ServicePeriod(shift=shift, window=_SHIFT_WINDOWS[shift], headway_min=_median_headway(mins))
-            )
-    if we_times:
-        service_periods.append(
-            ServicePeriod(
-                shift="weekend",
-                window=None,
-                headway_min=_median_headway([_gtfs_min(t) % 1440 for t in set(we_times)]),
-            )
-        )
-
-    # span from the representative weekday (fallback weekend), wall-clock display
-    all_wd = sorted({t for ts in wd_by_dir.values() for t in ts}, key=_gtfs_min)
-    span = all_wd or sorted(set(we_times), key=_gtfs_min)
-    first_dep = _wallclock(span[0]) if span else None
-    last_dep = _wallclock(span[-1]) if span else None
-
-    return RouteFile(
+    return _assemble_route_file(
+        route_id=route_id,
         generated_utc=generated_utc,
-        id=route_id,
-        long=long_name,
-        type=route_type,
-        directions=directions,
-        service_periods=service_periods,
-        first_departure=first_dep,
-        last_departure=last_dep,
+        name_row=name_row,
+        shape_rows=shape_rows,
+        stops_by_shape=stops_by_shape,
+        schedule_rows=schedule_rows,
     )
+
+
+def build_all_routes_data(
+    conn: Connection,
+    *,
+    provider_id: str = "stm",
+    generated_utc: str,
+    static_context: StaticScheduleContext | None = None,
+) -> dict[str, RouteFile]:
+    """Build every static route file with four set-based queries."""
+
+    from collections import defaultdict
+
+    metadata_rows = list(
+        conn.execute(_ALL_ROUTE_METADATA_SQL, {"provider_id": provider_id}).mappings()
+    )
+    if not metadata_rows:
+        return {}
+
+    context = static_context or _static_schedule_context(conn, provider_id=provider_id)
+    if context.dataset_version_id is None:
+        return {
+            str(row["route_id"]): RouteFile(generated_utc=generated_utc, id=str(row["route_id"]))
+            for row in metadata_rows
+        }
+
+    params = {
+        "provider_id": provider_id,
+        "dataset_version_id": context.dataset_version_id,
+    }
+    shape_rows = list(conn.execute(_ALL_ROUTE_SHAPES_SQL, params).mappings())
+    stop_rows = list(conn.execute(_ALL_ROUTE_STOPS_SQL, params).mappings())
+    schedule_rows = list(
+        conn.execute(
+            _ALL_ROUTE_SCHEDULES_SQL,
+            {
+                **params,
+                "weekday_services": list(context.weekday_services) or [""],
+                "weekend_services": list(context.weekend_services) or [""],
+            },
+        ).mappings()
+    )
+
+    shapes_by_route: dict[str, list[_Row]] = defaultdict(list)
+    stops_by_route: dict[str, dict[object, list[_Row]]] = defaultdict(dict)
+    schedules_by_route: dict[str, list[_Row]] = defaultdict(list)
+    for row in shape_rows:
+        shapes_by_route[str(row["route_id"])].append(row)
+    for row in stop_rows:
+        route_stops = stops_by_route[str(row["route_id"])]
+        shape_stops = route_stops.setdefault(row["shape_id"], [])
+        if len(shape_stops) < 400:
+            shape_stops.append(row)
+    for row in schedule_rows:
+        schedules_by_route[str(row["route_id"])].append(row)
+
+    routes: dict[str, RouteFile] = {}
+    for metadata in metadata_rows:
+        route_id = str(metadata["route_id"])
+        routes[route_id] = _assemble_route_file(
+            route_id=route_id,
+            generated_utc=generated_utc,
+            name_row=metadata,
+            shape_rows=shapes_by_route[route_id],
+            stops_by_shape=stops_by_route[route_id],
+            schedule_rows=schedules_by_route[route_id],
+        )
+    return routes
 
 
 # ---------------------------------------------------------------------------
@@ -601,7 +857,7 @@ def build_all_stops_data(
     provider_id: str = "stm",
     generated_utc: str,
     static_context: StaticScheduleContext | None = None,
-) -> "dict[str, StopFile]":
+) -> "dict[str, StopFile]":  # noqa: UP037
     """Build all StopFile objects in a single two-query pass (representative weekday).
 
     Returns stop_id -> StopFile. The schedule is a representative all-day sample
@@ -646,7 +902,12 @@ def build_all_stops_data(
 
     schedule: dict[str, dict[tuple, list[str]]] = defaultdict(lambda: defaultdict(list))
     for r in conn.execute(
-        _ALL_STOP_SCHEDULES_SQL, {**params_base, "dataset_version_id": dv_id, "weekday_services": weekday_services or [""]}
+        _ALL_STOP_SCHEDULES_SQL,
+        {
+            **params_base,
+            "dataset_version_id": dv_id,
+            "weekday_services": weekday_services or [""],
+        },
     ).mappings():
         sid = str(r["stop_id"])
         key = (str(r["route_id"]), r["trip_headsign"] or "")
@@ -661,7 +922,11 @@ def build_all_stops_data(
         for (route_id, headsign), raw_times in route_map.items():
             routes_seen.add(route_id)
             scheduled.append(
-                ScheduledRoute(route=route_id, headsign=headsign or None, times=_sample_times(raw_times))
+                ScheduledRoute(
+                    route=route_id,
+                    headsign=headsign or None,
+                    times=_sample_times(raw_times),
+                )
             )
         scheduled.sort(key=lambda s: (_route_sort_key(s.route), s.headsign or ""))
         stops[sid] = StopFile(
@@ -684,7 +949,9 @@ def build_all_stops_data(
 # --------------------------------------------------------------------------
 
 
-def build_basemap(settings: object, *, generated_utc: str) -> "BasemapFile | None":
+def build_basemap(
+    settings: object, *, generated_utc: str
+) -> "BasemapFile | None":  # noqa: UP037
     """Build static/basemap.json — a pointer to the hosted PMTiles archive.
 
     Pure function (no DB): returns ``None`` when SNAPSHOT_BASEMAP_PMTILES_URL is

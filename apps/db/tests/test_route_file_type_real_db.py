@@ -25,6 +25,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from transit_ops.snapshots.builders import build_route
+from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
 
 DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
 
@@ -41,6 +42,9 @@ VERSION_ID = 930_001
 ROUTE_METRO = "1"
 ROUTE_BUS = "165"
 LOADED = datetime(2026, 6, 1, 0, 0, tzinfo=UTC)
+CONFLICT_SHAPE = "shape-conflict"
+CONFLICT_STOP_A = "stop-from-trip-a"
+CONFLICT_STOP_Z = "stop-from-trip-z"
 
 
 @pytest.fixture()
@@ -126,6 +130,131 @@ def _seed(connection) -> None:
         )
 
 
+def _seed_conflict_dimensions(connection) -> None:
+    connection.execute(
+        text(
+            """
+            INSERT INTO silver.routes
+                (dataset_version_id, provider_id, route_id, route_short_name,
+                 route_long_name, route_type, route_sort_order)
+            VALUES (:v, :p, :route, :route, 'Conflict route', 3, 2)
+            """
+        ),
+        {"v": VERSION_ID, "p": PROVIDER, "route": ROUTE_BUS},
+    )
+    connection.execute(
+        text(
+            """
+            INSERT INTO silver.stops
+                (dataset_version_id, provider_id, stop_id, stop_name)
+            VALUES
+                (:v, :p, :stop_a, 'Chosen by trip tie-break'),
+                (:v, :p, :stop_z, 'Rejected by trip tie-break')
+            """
+        ),
+        {
+            "v": VERSION_ID,
+            "p": PROVIDER,
+            "stop_a": CONFLICT_STOP_A,
+            "stop_z": CONFLICT_STOP_Z,
+        },
+    )
+    connection.execute(
+        text(
+            """
+            INSERT INTO gold.dim_stop
+                (provider_id, dataset_version_id, stop_id, stop_name)
+            VALUES
+                (:p, :v, :stop_a, 'Chosen by trip tie-break'),
+                (:p, :v, :stop_z, 'Rejected by trip tie-break')
+            """
+        ),
+        {
+            "v": VERSION_ID,
+            "p": PROVIDER,
+            "stop_a": CONFLICT_STOP_A,
+            "stop_z": CONFLICT_STOP_Z,
+        },
+    )
+    connection.execute(
+        text(
+            """
+            INSERT INTO silver.shapes
+                (dataset_version_id, provider_id, shape_id, shape_pt_sequence,
+                 shape_pt_lat, shape_pt_lon)
+            VALUES
+                (:v, :p, :shape, 1, 45.50, -73.60),
+                (:v, :p, :shape, 2, 45.51, -73.61)
+            """
+        ),
+        {"v": VERSION_ID, "p": PROVIDER, "shape": CONFLICT_SHAPE},
+    )
+
+
+def _replace_conflicting_trips(connection, *, reverse: bool) -> None:
+    connection.execute(
+        text(
+            """
+            DELETE FROM silver.stop_times
+            WHERE dataset_version_id = :v
+              AND trip_id IN ('trip-a', 'trip-z')
+            """
+        ),
+        {"v": VERSION_ID},
+    )
+    connection.execute(
+        text(
+            """
+            DELETE FROM silver.trips
+            WHERE dataset_version_id = :v
+              AND trip_id IN ('trip-a', 'trip-z')
+            """
+        ),
+        {"v": VERSION_ID},
+    )
+    rows = [
+        {
+            "v": VERSION_ID,
+            "p": PROVIDER,
+            "trip": "trip-a",
+            "route": ROUTE_BUS,
+            "shape": CONFLICT_SHAPE,
+            "stop": CONFLICT_STOP_A,
+        },
+        {
+            "v": VERSION_ID,
+            "p": PROVIDER,
+            "trip": "trip-z",
+            "route": ROUTE_BUS,
+            "shape": CONFLICT_SHAPE,
+            "stop": CONFLICT_STOP_Z,
+        },
+    ]
+    if reverse:
+        rows.reverse()
+    connection.execute(
+        text(
+            """
+            INSERT INTO silver.trips
+                (dataset_version_id, provider_id, trip_id, route_id, service_id,
+                 trip_headsign, direction_id, shape_id)
+            VALUES (:v, :p, :trip, :route, 'svc', 'Outbound', 0, :shape)
+            """
+        ),
+        rows,
+    )
+    connection.execute(
+        text(
+            """
+            INSERT INTO silver.stop_times
+                (dataset_version_id, provider_id, trip_id, stop_sequence, stop_id)
+            VALUES (:v, :p, :trip, 1, :stop)
+            """
+        ),
+        rows,
+    )
+
+
 def test_route_file_emits_metro_route_type(conn) -> None:
     rf = build_route(conn, provider_id=PROVIDER, route_id=ROUTE_METRO, generated_utc="t")
     assert rf.id == ROUTE_METRO
@@ -145,3 +274,47 @@ def test_route_file_type_is_none_for_unknown_route(conn) -> None:
     # field stays None (never a fabricated default).
     rf = build_route(conn, provider_id=PROVIDER, route_id="does_not_exist", generated_utc="t")
     assert rf.type is None
+
+
+def test_batched_routes_match_standalone_bytes_and_hashes(conn) -> None:
+    import transit_ops.snapshots.builders as builders
+
+    build_all_routes_data = getattr(builders, "build_all_routes_data", None)
+    assert callable(build_all_routes_data), "set-based static route builder is not exported"
+
+    batched = build_all_routes_data(conn, provider_id=PROVIDER, generated_utc="t")
+    assert list(batched) == [ROUTE_METRO, ROUTE_BUS]
+    for route_id, batch_route in batched.items():
+        standalone = build_route(
+            conn,
+            provider_id=PROVIDER,
+            route_id=route_id,
+            generated_utc="t",
+        )
+        assert snapshot_json_bytes(batch_route) == snapshot_json_bytes(standalone)
+        assert snapshot_sha256(batch_route) == snapshot_sha256(standalone)
+
+
+def test_conflicting_same_sequence_stops_are_input_order_invariant(conn) -> None:
+    from transit_ops.snapshots.builders import build_all_routes_data
+
+    _seed_conflict_dimensions(conn)
+
+    def route_bytes(*, reverse: bool) -> tuple[bytes, bytes]:
+        _replace_conflicting_trips(conn, reverse=reverse)
+        batched = build_all_routes_data(conn, provider_id=PROVIDER, generated_utc="t")[ROUTE_BUS]
+        standalone = build_route(
+            conn,
+            provider_id=PROVIDER,
+            route_id=ROUTE_BUS,
+            generated_utc="t",
+        )
+        assert [stop.id for stop in batched.directions[0].stops] == [CONFLICT_STOP_A]
+        return snapshot_json_bytes(batched), snapshot_json_bytes(standalone)
+
+    forward = route_bytes(reverse=False)
+    reversed_rows = route_bytes(reverse=True)
+
+    assert forward[0] == forward[1]
+    assert reversed_rows[0] == reversed_rows[1]
+    assert forward == reversed_rows

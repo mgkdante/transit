@@ -1349,7 +1349,14 @@ class _RecordingStaticConn:
             "publish.static_stamp": [{"loaded_at_utc": _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)}],
             "static.reliability_route_ids": [{"route_id": "R1"}],
             "route.spine.route_ids": [{"route_id": "R1"}],
-            "static.dim_route_ids": [{"route_id": "R1"}, {"route_id": "R2"}, {"route_id": "R3"}],
+            "static.all_route_metadata": [
+                {"route_id": "R1", "route_long_name": "One", "route_type": 3},
+                {"route_id": "R2", "route_long_name": "Two", "route_type": 3},
+                {"route_id": "R3", "route_long_name": "Three", "route_type": 3},
+            ],
+            "static.all_route_shapes": [],
+            "static.all_route_stops": [],
+            "static.all_route_schedules": [],
             "static.routes_index": route_row,
             "static.stops_index": stop_row,
             # static.all_stops stays unmapped -> [] (the pre-migration needle
@@ -1360,7 +1367,6 @@ class _RecordingStaticConn:
             "static.rep_dates": [
                 {"weekday_date": _dt.date(2026, 6, 3), "weekend_date": _dt.date(2026, 6, 6)}
             ],
-            "static.route_name_type": [{"route_long_name": "One", "route_type": 3}],
         }
         return _StaticResult(rows.get(query_name(statement), []))
 
