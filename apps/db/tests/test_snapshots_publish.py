@@ -293,7 +293,7 @@ def test_publish_static_writes_expected_keys() -> None:
     """Static tier writes indexes, labels, per-route and per-stop files.
 
     Uses a SQL-text-dispatching fake connection so it is robust to changes
-    in query ordering within build_route / build_all_stops_data.
+    in query ordering within build_all_routes_data / build_all_stops_data.
     """
     import datetime
     from contextlib import contextmanager
@@ -322,7 +322,6 @@ def test_publish_static_writes_expected_keys() -> None:
             return self._rows[0] if self._rows else None
 
         def fetchall(self):
-            # used by _publish_static for the route_ids loop: returns list of tuples
             result = []
             for r in self._rows:
                 if isinstance(r, dict):
@@ -340,7 +339,7 @@ def test_publish_static_writes_expected_keys() -> None:
 
     # Name-keyed dispatch (each query dispatches on its `-- q:<name>` marker).
     # Covers every query issued by build_routes_index, build_stops_index,
-    # build_labels, the route_ids SELECT, build_route, and build_all_stops_data.
+    # build_labels, build_all_routes_data, and build_all_stops_data.
     dispatch = {
         "publish.lock.try_acquire": [True],
         # _static_stamp: loaded_at_utc of the current dataset version.
@@ -360,20 +359,20 @@ def test_publish_static_writes_expected_keys() -> None:
         "static.labels": [
             {"label_key": "network_health", "label_fr": "Santé", "label_en": "Health"}
         ],
-        # route_ids for the per-route loop in _publish_static.
-        "static.dim_route_ids": [{"route_id": "165"}],
-        # dataset version (both build_route and build_all_stops_data use this).
+        # Dataset version shared by both batched static builders.
         "static.dataset_version": [{"dataset_version_id": 1}],
         "static.rep_dates": [
             {"weekday_date": datetime.date(2026, 6, 3), "weekend_date": datetime.date(2026, 6, 6)}
         ],
         # active-services (returns tuples for row[0] iteration).
         "static.active_services": [("svc_wd",)],
-        # route long name + route_type (self-describing mode field; 165 is a bus = type 3).
-        "static.route_name_type": [{"route_long_name": "Côte-Vertu", "route_type": 3}],
-        # route shapes (empty → no directions → no stop-sequence queries).
-        "static.route_shapes": [],
-        "static.route_schedule": [],
+        # One set-based route build: metadata plus the three dataset-backed families.
+        "static.all_route_metadata": [
+            {"route_id": "165", "route_long_name": "Côte-Vertu", "route_type": 3}
+        ],
+        "static.all_route_shapes": [],
+        "static.all_route_stops": [],
+        "static.all_route_schedules": [],
         # all stops (build_all_stops_data) — empty → no stop files written.
         "static.all_stops": [],
         "static.all_stop_schedules": [],
@@ -439,16 +438,34 @@ def test_publish_static_hoists_schedule_context_for_two_routes() -> None:
                 }
             ],
             "static.active_services": [("svc",)],
-            "static.dim_route_ids": [("101",), ("202",)],
+            "static.all_route_metadata": [
+                {"route_id": "202", "route_long_name": "Route 202", "route_type": 3},
+                {"route_id": "101", "route_long_name": "Route 101", "route_type": 3},
+            ],
+            "static.all_route_shapes": [],
+            "static.all_route_stops": [],
+            "static.all_route_schedules": [],
+            "static.all_stops": [
+                {
+                    "stop_id": "S1",
+                    "stop_code": "S1",
+                    "stop_name": "Stop 1",
+                    "stop_lat": 45.5,
+                    "stop_lon": -73.5,
+                    "wheelchair_boarding": 1,
+                }
+            ],
+            "static.all_stop_schedules": [],
         }
     )
 
     class SequentialSettings(FakeSettings):
         SNAPSHOT_PUBLISH_CONCURRENCY = 1
 
+    store = FakeStore()
     _publish_static(
         conn,
-        FakeStore(),
+        store,
         provider_id="stm",
         settings=SequentialSettings(),
         stamp="t",
@@ -459,6 +476,104 @@ def test_publish_static_hoists_schedule_context_for_two_routes() -> None:
         conn.queries.count("static.rep_dates"),
         conn.queries.count("static.active_services"),
     ) == (1, 1, 2)
+    assert [
+        conn.queries.count(name)
+        for name in (
+            "static.all_route_metadata",
+            "static.all_route_shapes",
+            "static.all_route_stops",
+            "static.all_route_schedules",
+        )
+    ] == [1, 1, 1, 1]
+    assert {
+        "static.dim_route_ids",
+        "static.route_name_type",
+        "static.route_shapes",
+        "static.route_stops",
+        "static.route_schedule",
+    }.isdisjoint(conn.queries)
+
+    route_keys = [key for key in store.keys if key.startswith("static/routes/")]
+    stop_keys = [key for key in store.keys if key.startswith("static/stops/")]
+    assert route_keys == ["static/routes/101.json", "static/routes/202.json"]
+    assert stop_keys == ["static/stops/S1.json"]
+    assert store.keys.index(route_keys[-1]) < store.keys.index(stop_keys[0])
+    payload_by_key = dict(zip(store.keys, store.payloads, strict=True))
+    for key in route_keys:
+        assert payload_by_key[key].methodology_version == "static-1"
+        assert payload_by_key[key].publish_generation_id == "stm@t"
+
+
+def test_publish_static_route_hash_gate_keeps_identical_bytes_and_rewrites_only_change() -> None:
+    import json
+
+    from transit_ops.snapshots.publish import _publish_static
+    from transit_ops.snapshots.storage import HashGatedStorage, state_fingerprint
+
+    class SequentialSettings(FakeSettings):
+        SNAPSHOT_PUBLISH_CONCURRENCY = 1
+
+    def route_conn(long_name):  # noqa: ANN001, ANN202
+        return RecordingNamedConn(
+            {
+                "static.dataset_version": [{"dataset_version_id": 1}],
+                "static.rep_dates": [],
+                "static.all_route_metadata": [
+                    {"route_id": "101", "route_long_name": long_name, "route_type": 3}
+                ],
+                "static.all_route_shapes": [],
+                "static.all_route_stops": [],
+                "static.all_route_schedules": [],
+            }
+        )
+
+    inner = StatefulFakeStore()
+    state_key = "_meta/publish_state_static.json"
+    fingerprint = state_fingerprint("static")
+
+    first = HashGatedStorage(inner, state_rel_key=state_key, fingerprint=fingerprint)
+    first.load()
+    _publish_static(
+        route_conn("Route 101"),
+        first,
+        provider_id="stm",
+        settings=SequentialSettings(),
+        stamp="t",
+    )
+    first.flush_state()
+    original_route_bytes = inner.store["static/routes/101.json"]
+
+    identical = HashGatedStorage(inner, state_rel_key=state_key, fingerprint=fingerprint)
+    identical.load()
+    _publish_static(
+        route_conn("Route 101"),
+        identical,
+        provider_id="stm",
+        settings=SequentialSettings(),
+        stamp="t",
+    )
+    assert identical.written == []
+    assert "static/routes/101.json" in identical.skipped
+    assert inner.store["static/routes/101.json"] == original_route_bytes
+
+    changed = HashGatedStorage(inner, state_rel_key=state_key, fingerprint=fingerprint)
+    changed.load()
+    _publish_static(
+        route_conn("Changed route"),
+        changed,
+        provider_id="stm",
+        settings=SequentialSettings(),
+        stamp="t",
+    )
+    assert changed.written == ["static/routes/101.json"]
+    assert set(changed.skipped) == {
+        "static/routes_index.json",
+        "static/stops_index.json",
+        "labels/fr.json",
+        "labels/en.json",
+    }
+    assert inner.store["static/routes/101.json"] != original_route_bytes
+    assert json.loads(inner.store[state_key])["fingerprint"] == fingerprint
 
 
 def test_publish_historic_hoists_name_catalogs_for_two_routes(monkeypatch) -> None:

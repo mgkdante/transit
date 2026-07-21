@@ -703,12 +703,6 @@ _DISTINCT_HISTORIC_ROUTE_IDS_SQL = named_query(
     "SELECT DISTINCT route_id FROM gold.route_delay_spine WHERE provider_id = :provider_id",
 )
 
-# Per-route static-file enumerator: every route in the current dim.
-_DIM_ROUTE_IDS_SQL = named_query(
-    "static.dim_route_ids",
-    "SELECT route_id FROM gold.dim_route WHERE provider_id = :provider_id ORDER BY route_id",
-)
-
 
 def _static_stamp(conn: object, provider_id: str) -> str:
     """Static-tier stamp = loaded_at_utc of the current static dataset version.
@@ -1946,24 +1940,20 @@ def _publish_static(
     _stamp_envelope(head_items, provider_id=provider_id, stamp=stamp)  # GC2 H4
     written.extend(_parallel_put(storage, head_items, concurrency=concurrency))
 
-    # --- per-route files (built sequentially on this conn, uploaded in pool) ---
-    route_rows = conn.execute(  # type: ignore[attr-defined]
-        _DIM_ROUTE_IDS_SQL,
-        {"provider_id": provider_id},
-    ).fetchall()
+    # --- per-route files (one set-based build, uploaded in pool) ---
+    all_routes = builders.build_all_routes_data(  # type: ignore[arg-type]
+        conn,
+        provider_id=provider_id,
+        generated_utc=stamp,
+        static_context=static_context,
+    )
     route_items = [
         (
             f"static/routes/{route_id}.json",
-            builders.build_route(
-                conn,
-                provider_id=provider_id,
-                route_id=str(route_id),
-                generated_utc=stamp,
-                static_context=static_context,
-            ),  # type: ignore[arg-type]
+            route_file,
             "static",
         )
-        for (route_id,) in route_rows
+        for route_id, route_file in sorted(all_routes.items())
     ]
     _stamp_envelope(route_items, provider_id=provider_id, stamp=stamp)  # GC2 H4
     written.extend(_parallel_put(storage, route_items, concurrency=concurrency))

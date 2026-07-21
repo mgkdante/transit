@@ -9,6 +9,8 @@ trip grouping, KPI aggregation, and manifest assembly.
 
 from __future__ import annotations
 
+import pytest
+
 from transit_ops.snapshots.builders import (
     _iso,
     build_alerts,
@@ -167,7 +169,8 @@ def test_build_vehicles_unknown_status_and_null_occupancy() -> None:
                     "occupancy_status": None,
                     "next_stop": None,
                     "updated_utc": "2026-05-31T12:00:00Z",
-                    "reported_utc": None,  # producer omitted the per-vehicle fix -> None (web falls back to updated_utc)
+                    # Producer omitted the fix; the web falls back to updated_utc.
+                    "reported_utc": None,
                     "delay_seconds": None,
                 }
             ]
@@ -965,8 +968,14 @@ def test_build_manifest_tier_inventories_from_state_table() -> None:
         {
             **_MANIFEST_PROVIDER_ROW,
             "snapshot_publish_state": [
-                {"tier": "static", "generated_utc": datetime.datetime(2026, 6, 1, 0, 0, tzinfo=datetime.timezone.utc)},
-                {"tier": "historic", "generated_utc": datetime.datetime(2026, 6, 13, 0, 0, tzinfo=datetime.timezone.utc)},
+                {
+                    "tier": "static",
+                    "generated_utc": datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC),
+                },
+                {
+                    "tier": "historic",
+                    "generated_utc": datetime.datetime(2026, 6, 13, tzinfo=datetime.UTC),
+                },
             ],
         }
     )
@@ -1022,9 +1031,15 @@ def test_build_labels_fr_includes_static_and_metric():
 
     class FakeConn:
         def execute(self, *a, **k):
-            return FakeResult([
-                {"label_key": "network_health", "label_fr": "Santé du réseau", "label_en": "Network Health"},
-            ])
+            return FakeResult(
+                [
+                    {
+                        "label_key": "network_health",
+                        "label_fr": "Santé du réseau",
+                        "label_en": "Network Health",
+                    },
+                ]
+            )
 
     lf = build_labels(FakeConn(), lang="fr", generated_utc="t")
     assert lf.labels["status.on_time"] == "À l'heure"
@@ -1302,12 +1317,23 @@ def test_build_route():
         # dataset version
         ("dataset_kind = 'static_schedule'", [{"dataset_version_id": 1}]),
         # rep-dates
-        ("generate_series", [{"weekday_date": datetime.date(2026, 6, 3), "weekend_date": datetime.date(2026, 6, 6)}]),
+        (
+            "generate_series",
+            [
+                {
+                    "weekday_date": datetime.date(2026, 6, 3),
+                    "weekend_date": datetime.date(2026, 6, 6),
+                }
+            ],
+        ),
         # active-services (returns tuples for row[0] iteration)
         ("extract(isodow FROM :repdate)", [("svc_wd",)]),
         # route long name + route_type (the build_route name query now also selects
         # route_type for the self-describing mode field; route 165 is a bus = type 3)
-        ("route_long_name, route_type FROM gold.dim_route", [{"route_long_name": "Côte-Vertu", "route_type": 3}]),
+        (
+            "route_long_name, route_type FROM gold.dim_route",
+            [{"route_long_name": "Côte-Vertu", "route_type": 3}],
+        ),
         # route shapes
         ("map_route_lines", [
             {"shape_id": "s1", "geojson": {"type": "LineString", "coordinates": []},
@@ -1378,7 +1404,15 @@ def test_build_all_stops_data():
         # dataset version (matched before rep-dates because it's more specific)
         ("dataset_kind = 'static_schedule'", [{"dataset_version_id": 1}]),
         # rep-dates
-        ("generate_series", [{"weekday_date": datetime.date(2026, 6, 3), "weekend_date": datetime.date(2026, 6, 6)}]),
+        (
+            "generate_series",
+            [
+                {
+                    "weekday_date": datetime.date(2026, 6, 3),
+                    "weekend_date": datetime.date(2026, 6, 6),
+                }
+            ],
+        ),
         # active-services
         ("extract(isodow FROM :repdate)", [("svc_wd",)]),
         # all stops
@@ -1388,8 +1422,18 @@ def test_build_all_stops_data():
         ]),
         # all stop schedules
         ("ANY(:weekday_services)", [
-            {"stop_id": "51234", "route_id": "165", "trip_headsign": "Nord", "departure_time": "17:46:00"},
-            {"stop_id": "51234", "route_id": "165", "trip_headsign": "Nord", "departure_time": "17:54:00"},
+            {
+                "stop_id": "51234",
+                "route_id": "165",
+                "trip_headsign": "Nord",
+                "departure_time": "17:46:00",
+            },
+            {
+                "stop_id": "51234",
+                "route_id": "165",
+                "trip_headsign": "Nord",
+                "departure_time": "17:54:00",
+            },
         ]),
     ]
 
@@ -1519,6 +1563,384 @@ def test_static_builders_injected_context_matches_two_route_fallback_bytes() -> 
     }
     assert context_queries.isdisjoint(map(query_name, injected_route_conn.executed))
     assert context_queries.isdisjoint(map(query_name, injected_stops_conn.executed))
+
+
+class _StaticRouteRowsConn:
+    """Route-aware result dispatcher for standalone/batched static parity tests."""
+
+    def __init__(self, responses):  # noqa: ANN001
+        self.responses = responses
+        self.executed: list[object] = []
+
+    def execute(self, statement, params=None):  # noqa: ANN001
+        self.executed.append(statement)
+        name = query_name(statement)
+        rows = list(self.responses.get(name, []))
+        params = params or {}
+        route_id = params.get("route_id")
+        if route_id is not None and name in {
+            "static.route_name_type",
+            "static.route_shapes",
+            "static.route_stops",
+            "static.route_schedule",
+        }:
+            rows = [row for row in rows if str(row.get("route_id", route_id)) == str(route_id)]
+        if name == "static.route_stops" and params.get("shape_id") is not None:
+            rows = [row for row in rows if row.get("shape_id") == params["shape_id"]]
+        return FakeResult(rows)
+
+
+def _static_route_batch_fixture():  # noqa: ANN201
+    from transit_ops.snapshots.builders._helpers import StaticScheduleContext
+
+    metadata = [
+        {"route_id": "R1", "route_long_name": "Alpha", "route_type": 3},
+        {"route_id": "R2", "route_long_name": "Beta", "route_type": 0},
+    ]
+    shapes = [
+        {
+            "route_id": "R1",
+            "shape_id": "r1-n",
+            "geojson": {"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
+            "direction_id": 0,
+            "trip_headsign": "North",
+            "trip_count": 9,
+        },
+        {
+            "route_id": "R1",
+            "shape_id": "r1-s",
+            "geojson": {"type": "LineString", "coordinates": [[1, 1], [0, 0]]},
+            "direction_id": 1,
+            "trip_headsign": "South",
+            "trip_count": 8,
+        },
+        {
+            "route_id": "R1",
+            "shape_id": "r1-n-less-used",
+            "geojson": {"type": "LineString", "coordinates": [[9, 9], [10, 10]]},
+            "direction_id": 0,
+            "trip_headsign": "North",
+            "trip_count": 1,
+        },
+        {
+            "route_id": "R2",
+            "shape_id": "r2",
+            "geojson": {"type": "LineString", "coordinates": [[2, 2], [3, 3]]},
+            "direction_id": 0,
+            "trip_headsign": None,
+            "trip_count": 3,
+        },
+    ]
+    stops = [
+        {
+            "route_id": "R1",
+            "shape_id": "r1-n",
+            "stop_sequence": 1,
+            "stop_id": "A",
+            "stop_name": "A Stop",
+        },
+        {
+            "route_id": "R1",
+            "shape_id": "r1-n",
+            "stop_sequence": 2,
+            "stop_id": "B",
+            "stop_name": "B Stop",
+        },
+        {
+            "route_id": "R1",
+            "shape_id": "r1-s",
+            "stop_sequence": 1,
+            "stop_id": "B",
+            "stop_name": "B Stop",
+        },
+        {
+            "route_id": "R1",
+            "shape_id": "r1-s",
+            "stop_sequence": 2,
+            "stop_id": "A",
+            "stop_name": "A Stop",
+        },
+        {"route_id": "R2", "shape_id": "r2", "stop_sequence": 1, "stop_id": "C", "stop_name": None},
+    ]
+    schedules = [
+        {"route_id": "R1", "direction_id": 0, "is_weekday": True, "departure_time": "07:00:00"},
+        {"route_id": "R1", "direction_id": 0, "is_weekday": True, "departure_time": "07:08:00"},
+        {"route_id": "R1", "direction_id": 1, "is_weekday": True, "departure_time": "25:15:00"},
+        {"route_id": "R1", "direction_id": 0, "is_weekday": False, "departure_time": "10:00:00"},
+        {"route_id": "R1", "direction_id": 0, "is_weekday": False, "departure_time": "10:12:00"},
+    ]
+    return (
+        StaticScheduleContext(
+            dataset_version_id=42,
+            weekday_services=("weekday",),
+            weekend_services=("weekend",),
+        ),
+        metadata,
+        shapes,
+        stops,
+        schedules,
+    )
+
+
+def _require_all_routes_builder():  # noqa: ANN201
+    import transit_ops.snapshots.builders as builders
+
+    candidate = getattr(builders, "build_all_routes_data", None)
+    assert callable(candidate), (
+        "build_all_routes_data must be exported before static batching can pass"
+    )
+    return candidate
+
+
+def test_build_all_routes_data_matches_standalone_bytes_and_hashes() -> None:
+    from transit_ops.snapshots.builders import build_route
+    from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
+
+    build_all_routes_data = _require_all_routes_builder()
+    context, metadata, shapes, stops, schedules = _static_route_batch_fixture()
+    legacy_responses = {
+        "static.route_name_type": metadata,
+        "static.route_shapes": shapes,
+        "static.route_stops": stops,
+        "static.route_schedule": schedules,
+    }
+    legacy = {
+        route_id: build_route(
+            _StaticRouteRowsConn(legacy_responses),
+            route_id=route_id,
+            generated_utc="2026-07-21T00:00:00Z",
+            static_context=context,
+        )
+        for route_id in ("R1", "R2")
+    }
+    batch_conn = _StaticRouteRowsConn(
+        {
+            "static.all_route_metadata": metadata,
+            "static.all_route_shapes": shapes,
+            "static.all_route_stops": stops,
+            "static.all_route_schedules": schedules,
+        }
+    )
+
+    batched = build_all_routes_data(
+        batch_conn,
+        generated_utc="2026-07-21T00:00:00Z",
+        static_context=context,
+    )
+
+    assert list(batched) == ["R1", "R2"]
+    assert {route_id: snapshot_sha256(route) for route_id, route in batched.items()} == {
+        "R1": "64706af2758ddcec60e443a4c43d4df5ed8063530d7a3222ddec39dcb6cfd606",
+        "R2": "bd9a76fd51d406683fb9e9581b2e66824d9ccbc476dbf358619378f6bc20a5f1",
+    }
+    for route_id in legacy:
+        assert snapshot_json_bytes(batched[route_id]) == snapshot_json_bytes(legacy[route_id])
+        assert snapshot_sha256(batched[route_id]) == snapshot_sha256(legacy[route_id])
+
+
+@pytest.mark.parametrize("route_count", [2, 200])
+def test_build_all_routes_data_uses_four_queries_independent_of_route_count(route_count) -> None:
+    from transit_ops.snapshots.builders._helpers import StaticScheduleContext
+
+    build_all_routes_data = _require_all_routes_builder()
+    route_ids = [f"R{i:03d}" for i in range(route_count)]
+    conn = _StaticRouteRowsConn(
+        {
+            "static.all_route_metadata": [
+                {"route_id": route_id, "route_long_name": route_id, "route_type": 3}
+                for route_id in route_ids
+            ],
+            "static.all_route_shapes": [
+                {
+                    "route_id": route_id,
+                    "shape_id": f"shape-{route_id}",
+                    "geojson": {"type": "LineString", "coordinates": []},
+                    "direction_id": 0,
+                    "trip_headsign": "Outbound",
+                    "trip_count": 1,
+                }
+                for route_id in route_ids
+            ],
+            "static.all_route_stops": [
+                {
+                    "route_id": route_id,
+                    "shape_id": f"shape-{route_id}",
+                    "stop_sequence": 1,
+                    "stop_id": f"stop-{route_id}",
+                    "stop_name": route_id,
+                }
+                for route_id in route_ids
+            ],
+            "static.all_route_schedules": [],
+        }
+    )
+
+    routes = build_all_routes_data(
+        conn,
+        generated_utc="t",
+        static_context=StaticScheduleContext(dataset_version_id=42),
+    )
+
+    names = [query_name(statement) for statement in conn.executed]
+    assert names == [
+        "static.all_route_metadata",
+        "static.all_route_shapes",
+        "static.all_route_stops",
+        "static.all_route_schedules",
+    ]
+    assert len(routes) == route_count
+    assert {
+        "static.route_name_type",
+        "static.route_shapes",
+        "static.route_stops",
+        "static.route_schedule",
+    }.isdisjoint(names)
+
+
+def test_build_all_routes_data_groups_stop_rows_once_by_route() -> None:
+    import inspect
+
+    from transit_ops.snapshots.builders import build_all_routes_data
+
+    source = inspect.getsource(build_all_routes_data)
+    assert "stops_by_route_shape.items()" not in source
+    assert 'stops_by_route[str(row["route_id"])]' in source
+
+
+def test_route_stop_queries_share_one_deterministic_set_based_contract() -> None:
+    from transit_ops.snapshots.builders.static import _ALL_ROUTE_STOPS_SQL, _ROUTE_STOPS_SQL
+
+    standalone = " ".join(str(_ROUTE_STOPS_SQL).split())
+    batched = " ".join(str(_ALL_ROUTE_STOPS_SQL).split())
+
+    assert "ORDER BY st.stop_sequence, t.trip_id, st.stop_id" in standalone
+    assert "LATERAL" not in batched
+    assert (
+        "PARTITION BY selected.route_id, selected.shape_id, st.stop_sequence" in batched
+    )
+    assert "ORDER BY t.trip_id, st.stop_id" in batched
+    assert "WHERE duplicate_rank = 1" in batched
+    assert "PARTITION BY route_id, shape_id ORDER BY stop_sequence" in batched
+    assert "WHERE stop_rank <= 400" in batched
+
+
+def test_build_all_routes_data_schedule_tie_is_input_order_invariant() -> None:
+    from transit_ops.snapshots.builders._helpers import StaticScheduleContext
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    build_all_routes_data = _require_all_routes_builder()
+    schedules = [
+        {"route_id": "R1", "direction_id": 0, "is_weekday": True, "departure_time": "07:00:00"},
+        {"route_id": "R1", "direction_id": 0, "is_weekday": True, "departure_time": "07:10:00"},
+        {"route_id": "R1", "direction_id": 1, "is_weekday": True, "departure_time": "16:00:00"},
+        {"route_id": "R1", "direction_id": 1, "is_weekday": True, "departure_time": "16:20:00"},
+    ]
+
+    def build(rows):  # noqa: ANN001, ANN202
+        conn = _StaticRouteRowsConn(
+            {
+                "static.all_route_metadata": [
+                    {"route_id": "R1", "route_long_name": "Route 1", "route_type": 3}
+                ],
+                "static.all_route_shapes": [],
+                "static.all_route_stops": [],
+                "static.all_route_schedules": rows,
+            }
+        )
+        return build_all_routes_data(
+            conn,
+            generated_utc="t",
+            static_context=StaticScheduleContext(dataset_version_id=42),
+        )["R1"]
+
+    forward = build(schedules)
+    reverse = build(list(reversed(schedules)))
+
+    assert snapshot_json_bytes(forward) == snapshot_json_bytes(reverse)
+    assert [period.shift for period in forward.service_periods] == ["am_peak"]
+
+
+@pytest.mark.parametrize(
+    "dataset_version_id, metadata",
+    [(42, []), (None, [{"route_id": "R1", "route_long_name": "ignored", "route_type": 3}])],
+)
+def test_build_all_routes_data_empty_or_unavailable_uses_one_query(
+    dataset_version_id, metadata
+) -> None:
+    from transit_ops.snapshots.builders import build_route
+    from transit_ops.snapshots.builders._helpers import StaticScheduleContext
+    from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+    build_all_routes_data = _require_all_routes_builder()
+    context = StaticScheduleContext(dataset_version_id=dataset_version_id)
+    conn = _StaticRouteRowsConn({"static.all_route_metadata": metadata})
+
+    routes = build_all_routes_data(conn, generated_utc="t", static_context=context)
+
+    assert [query_name(statement) for statement in conn.executed] == ["static.all_route_metadata"]
+    if dataset_version_id is None:
+        expected = build_route(
+            _StaticRouteRowsConn({}), route_id="R1", generated_utc="t", static_context=context
+        )
+        assert list(routes) == ["R1"]
+        assert snapshot_json_bytes(routes["R1"]) == snapshot_json_bytes(expected)
+    else:
+        assert routes == {}
+
+
+def test_build_all_routes_data_keeps_the_400_stop_branch_cap() -> None:
+    from transit_ops.snapshots.builders._helpers import StaticScheduleContext
+
+    build_all_routes_data = _require_all_routes_builder()
+    conn = _StaticRouteRowsConn(
+        {
+            "static.all_route_metadata": [
+                {"route_id": "R1", "route_long_name": "Route 1", "route_type": 3}
+            ],
+            "static.all_route_shapes": [
+                {
+                    "route_id": "R1",
+                    "shape_id": "shape-1",
+                    "geojson": {"type": "LineString", "coordinates": []},
+                    "direction_id": 0,
+                    "trip_headsign": None,
+                    "trip_count": 1,
+                }
+            ],
+            "static.all_route_stops": [
+                {
+                    "route_id": "R1",
+                    "shape_id": "shape-1",
+                    "stop_sequence": sequence,
+                    "stop_id": f"S{sequence}",
+                    "stop_name": None,
+                }
+                for sequence in range(1, 406)
+            ],
+            "static.all_route_schedules": [],
+        }
+    )
+
+    routes = build_all_routes_data(
+        conn,
+        generated_utc="t",
+        static_context=StaticScheduleContext(dataset_version_id=42),
+    )
+
+    assert len(routes["R1"].directions[0].stops) == 400
+    assert routes["R1"].directions[0].stops[-1].seq == 400
+
+
+def test_build_route_public_signature_is_unchanged() -> None:
+    import inspect
+
+    from transit_ops.snapshots.builders import build_route
+
+    assert str(inspect.signature(build_route)) == (
+        "(conn: 'Connection', *, provider_id: 'str' = 'stm', route_id: 'str', "
+        "generated_utc: 'str', static_context: 'StaticScheduleContext | None' = None) "
+        "-> \"'RouteFile'\""
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1897,9 +2319,10 @@ def test_build_stop_reliability_occupancy_mix_none_when_no_telemetry() -> None:
     publish occupancy_mix=None (honest-None), never a fabricated all-zero mix — an
     all-zero distribution is indistinguishable from a real all-empty fleet. Mirrors
     the route occupancy honesty path."""
+    import datetime as _dt
+
     from transit_ops.snapshots.builders.historic import build_stop_reliability
 
-    import datetime as _dt
     _anchor = _dt.date(2026, 6, 30)
     dispatch = [
         ("'__unrouted__'", []),

@@ -134,6 +134,7 @@ from transit_ops.snapshots.builders.live import (
 from transit_ops.snapshots.builders.static import (
     _STATIC_LABELS_EN,
     _STATIC_LABELS_FR,
+    build_all_routes_data,
     build_all_stops_data,
     build_basemap,
     build_labels,
@@ -156,6 +157,7 @@ __all__ = [
     "build_routes_index",
     "build_stops_index",
     "build_route",
+    "build_all_routes_data",
     "build_all_stops_data",
     "build_basemap",
     # historic
