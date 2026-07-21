@@ -18,7 +18,7 @@ from transit_ops.gtfs.types import (
     validate_wgs84_position,
 )
 from transit_ops.ingestion.common import project_root
-from transit_ops.ingestion.storage import get_bronze_storage
+from transit_ops.ingestion.storage import BronzeStorageResolver, get_bronze_storage
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver._batch import execute_batched_insert
@@ -293,6 +293,18 @@ def _project_root() -> Path:
     return project_root()
 
 
+def _default_bronze_storage_resolver(
+    settings: Settings,
+    *,
+    project_root: Path,
+) -> BronzeStorageResolver:
+    return lambda storage_backend: get_bronze_storage(
+        settings,
+        project_root=project_root,
+        storage_backend=storage_backend,
+    )
+
+
 def _blank_to_none(value: str) -> str | None:
     stripped = value.strip()
     return stripped or None
@@ -368,14 +380,9 @@ def _raw_entity_manifest(entity: gtfs_realtime_pb2.FeedEntity) -> dict[str, obje
 def _row_to_bronze_realtime_snapshot(
     row,
     *,
-    settings: Settings,
-    project_root: Path,
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> BronzeRealtimeSnapshot:
-    bronze_storage = get_bronze_storage(
-        settings,
-        project_root=project_root,
-        storage_backend=str(row["storage_backend"]),
-    )
+    bronze_storage = bronze_storage_resolver(str(row["storage_backend"]))
 
     return BronzeRealtimeSnapshot(
         provider_id=str(row["provider_id"]),
@@ -395,13 +402,12 @@ def _row_to_bronze_realtime_snapshot(
     )
 
 
-def find_latest_realtime_bronze_snapshot(
+def _find_latest_realtime_bronze_snapshot(
     connection: Connection,
     *,
     provider_id: str,
     endpoint_key: str,
-    settings: Settings,
-    project_root: Path,
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> BronzeRealtimeSnapshot:
     snapshot_row = connection.execute(
         text(
@@ -444,8 +450,26 @@ def find_latest_realtime_bronze_snapshot(
         )
     return _row_to_bronze_realtime_snapshot(
         snapshot_row,
-        settings=settings,
-        project_root=project_root,
+        bronze_storage_resolver=bronze_storage_resolver,
+    )
+
+
+def find_latest_realtime_bronze_snapshot(
+    connection: Connection,
+    *,
+    provider_id: str,
+    endpoint_key: str,
+    settings: Settings,
+    project_root: Path,
+) -> BronzeRealtimeSnapshot:
+    return _find_latest_realtime_bronze_snapshot(
+        connection,
+        provider_id=provider_id,
+        endpoint_key=endpoint_key,
+        bronze_storage_resolver=_default_bronze_storage_resolver(
+            settings,
+            project_root=project_root,
+        ),
     )
 
 
@@ -462,8 +486,15 @@ def find_realtime_bronze_snapshots(
         SELECT_REALTIME_SNAPSHOTS_IN_WINDOW,
         {"provider_id": provider_id, "start_utc": start_utc, "end_utc": end_utc},
     ).mappings()
+    bronze_storage_resolver = _default_bronze_storage_resolver(
+        settings,
+        project_root=project_root,
+    )
     return [
-        _row_to_bronze_realtime_snapshot(row, settings=settings, project_root=project_root)
+        _row_to_bronze_realtime_snapshot(
+            row,
+            bronze_storage_resolver=bronze_storage_resolver,
+        )
         for row in rows
     ]
 
@@ -1007,15 +1038,15 @@ def load_realtime_snapshots_to_silver(
     )
 
 
-def load_latest_realtime_to_silver(
+def _load_latest_realtime_to_silver(
     provider_id: str,
     endpoint_key: str,
     *,
-    settings: Settings | None = None,
+    settings: Settings,
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> RealtimeSilverLoadResult:
-    settings = settings or get_settings()
     registry = registry or ProviderRegistry.from_project_root(
         project_root=_project_root(),
         settings=settings,
@@ -1026,18 +1057,13 @@ def load_latest_realtime_to_silver(
     engine = engine or make_engine(settings)
 
     with engine.connect() as connection:
-        snapshot = find_latest_realtime_bronze_snapshot(
+        snapshot = _find_latest_realtime_bronze_snapshot(
             connection,
             provider_id=manifest.provider.provider_id,
             endpoint_key=realtime_feed.endpoint_key,
-            settings=settings,
-            project_root=_project_root(),
+            bronze_storage_resolver=bronze_storage_resolver,
         )
-    bronze_storage = get_bronze_storage(
-        settings,
-        project_root=_project_root(),
-        storage_backend=snapshot.storage_backend,
-    )
+    bronze_storage = bronze_storage_resolver(snapshot.storage_backend)
 
     with engine.begin() as connection:
         return load_realtime_snapshot_to_silver(
@@ -1046,6 +1072,28 @@ def load_latest_realtime_to_silver(
             bronze_storage=bronze_storage,
             provider_bounds=provider_bounds,
         )
+
+
+def load_latest_realtime_to_silver(
+    provider_id: str,
+    endpoint_key: str,
+    *,
+    settings: Settings | None = None,
+    registry: ProviderRegistry | None = None,
+    engine: Engine | None = None,
+) -> RealtimeSilverLoadResult:
+    settings = settings or get_settings()
+    return _load_latest_realtime_to_silver(
+        provider_id,
+        endpoint_key,
+        settings=settings,
+        registry=registry,
+        engine=engine,
+        bronze_storage_resolver=_default_bronze_storage_resolver(
+            settings,
+            project_root=_project_root(),
+        ),
+    )
 
 
 def replay_realtime_silver_window(

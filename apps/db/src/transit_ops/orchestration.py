@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Protocol
 
@@ -36,6 +37,9 @@ from transit_ops.ingestion.common import (
     insert_failed_ingestion_run,
     utc_now,
 )
+from transit_ops.ingestion.i3 import _capture_i3_alerts, _capture_service_alerts
+from transit_ops.ingestion.realtime_gtfs import _capture_realtime_feed
+from transit_ops.ingestion.storage import BronzeStorageResolver, BronzeStorageScope
 from transit_ops.maintenance import (
     prune_gold_storage,
     prune_silver_storage,
@@ -48,6 +52,7 @@ from transit_ops.silver import (
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
 )
+from transit_ops.silver.realtime_gtfs import _load_latest_realtime_to_silver
 from transit_ops.snapshots.publish import publish_snapshot
 
 GTFS_REALTIME_ENDPOINTS = ("trip_updates", "vehicle_positions")
@@ -631,24 +636,50 @@ def _capture_and_load_endpoint(
     settings: Settings,
     registry: ProviderRegistry,
     engine: Engine,
+    bronze_storage_resolver: BronzeStorageResolver | None = None,
 ) -> RealtimeEndpointCycleResult:
+    if bronze_storage_resolver is None:
+        capture_step = partial(
+            capture_realtime_feed,
+            provider_id,
+            endpoint_key,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+        )
+        silver_load_step = partial(
+            load_latest_realtime_to_silver,
+            provider_id,
+            endpoint_key,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+        )
+    else:
+        capture_step = partial(
+            _capture_realtime_feed,
+            provider_id,
+            endpoint_key,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+            bronze_storage_resolver=bronze_storage_resolver,
+        )
+        silver_load_step = partial(
+            _load_latest_realtime_to_silver,
+            provider_id,
+            endpoint_key,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+            bronze_storage_resolver=bronze_storage_resolver,
+        )
+
     return _run_capture_load_steps(
         provider_id,
         endpoint_key,
-        capture_step=lambda: capture_realtime_feed(
-            provider_id,
-            endpoint_key,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-        ),
-        silver_load_step=lambda: load_latest_realtime_to_silver(
-            provider_id,
-            endpoint_key,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-        ),
+        capture_step=capture_step,
+        silver_load_step=silver_load_step,
         capture_label_prefix="capture-realtime",
         silver_label_prefix="load-realtime-silver",
         engine=engine,
@@ -660,21 +691,36 @@ def _capture_and_load_alert_endpoint(
     *,
     endpoint_key: str,
     capture_fn: Callable[..., _DisplayResult],
+    private_capture_fn: Callable[..., _DisplayResult],
     capture_label_prefix: str,
     silver_label_prefix: str,
     settings: Settings,
     registry: ProviderRegistry,
     engine: Engine,
+    bronze_storage_resolver: BronzeStorageResolver | None = None,
 ) -> RealtimeEndpointCycleResult:
-    return _run_capture_load_steps(
-        provider_id,
-        endpoint_key,
-        capture_step=lambda: capture_fn(
+    if bronze_storage_resolver is None:
+        capture_step = partial(
+            capture_fn,
             provider_id,
             settings=settings,
             registry=registry,
             engine=engine,
-        ),
+        )
+    else:
+        capture_step = partial(
+            private_capture_fn,
+            provider_id,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+            bronze_storage_resolver=bronze_storage_resolver,
+        )
+
+    return _run_capture_load_steps(
+        provider_id,
+        endpoint_key,
+        capture_step=capture_step,
         silver_load_step=lambda: load_latest_i3_to_silver(
             provider_id,
             settings=settings,
@@ -692,16 +738,19 @@ def _capture_and_load_i3_alerts(
     settings: Settings,
     registry: ProviderRegistry,
     engine: Engine,
+    bronze_storage_resolver: BronzeStorageResolver | None = None,
 ) -> RealtimeEndpointCycleResult:
     return _capture_and_load_alert_endpoint(
         provider_id,
         endpoint_key=I3_ALERT_ENDPOINT,
         capture_fn=capture_i3_alerts,
+        private_capture_fn=_capture_i3_alerts,
         capture_label_prefix="capture-i3",
         silver_label_prefix="load-i3-silver",
         settings=settings,
         registry=registry,
         engine=engine,
+        bronze_storage_resolver=bronze_storage_resolver,
     )
 
 
@@ -711,16 +760,19 @@ def _capture_and_load_service_alerts(
     settings: Settings,
     registry: ProviderRegistry,
     engine: Engine,
+    bronze_storage_resolver: BronzeStorageResolver | None = None,
 ) -> RealtimeEndpointCycleResult:
     return _capture_and_load_alert_endpoint(
         provider_id,
         endpoint_key=SERVICE_ALERTS_ENDPOINT,
         capture_fn=capture_service_alerts,
+        private_capture_fn=_capture_service_alerts,
         capture_label_prefix="capture-service-alerts",
         silver_label_prefix="load-service-alerts-silver",
         settings=settings,
         registry=registry,
         engine=engine,
+        bronze_storage_resolver=bronze_storage_resolver,
     )
 
 
@@ -731,6 +783,7 @@ def _capture_and_load_realtime_source(
     settings: Settings,
     registry: ProviderRegistry,
     engine: Engine,
+    bronze_storage_resolver: BronzeStorageResolver | None = None,
 ) -> RealtimeEndpointCycleResult:
     if endpoint_key == I3_ALERT_ENDPOINT:
         return _capture_and_load_i3_alerts(
@@ -738,6 +791,7 @@ def _capture_and_load_realtime_source(
             settings=settings,
             registry=registry,
             engine=engine,
+            bronze_storage_resolver=bronze_storage_resolver,
         )
     if endpoint_key == SERVICE_ALERTS_ENDPOINT:
         return _capture_and_load_service_alerts(
@@ -745,6 +799,7 @@ def _capture_and_load_realtime_source(
             settings=settings,
             registry=registry,
             engine=engine,
+            bronze_storage_resolver=bronze_storage_resolver,
         )
     return _capture_and_load_endpoint(
         provider_id,
@@ -752,6 +807,7 @@ def _capture_and_load_realtime_source(
         settings=settings,
         registry=registry,
         engine=engine,
+        bronze_storage_resolver=bronze_storage_resolver,
     )
 
 
@@ -788,26 +844,15 @@ def _best_effort_publish_live(
         return 1
 
 
-def run_realtime_cycle(
+def _run_realtime_cycle(
     provider_id: str,
     *,
     settings: Settings | None = None,
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
     last_captures: dict[str, datetime] | None = None,
+    bronze_storage_resolver: BronzeStorageResolver | None = None,
 ) -> RealtimeCycleResult:
-    """Run one realtime cycle for a provider.
-
-    When ``last_captures`` is provided, each endpoint is gated by the manifest's
-    ``refresh_interval_seconds`` — endpoints whose last successful capture was
-    within ``refresh_interval_seconds`` are skipped (returning a ``"skipped"``
-    status). The dict is mutated in place so the caller (typically
-    :func:`run_realtime_worker_loop`) can preserve state across cycles.
-
-    When ``last_captures`` is ``None`` (CLI single-cycle calls, tests), no
-    gating happens — every endpoint the provider's manifest publishes runs
-    unconditionally.
-    """
     settings = settings or get_settings()
     registry = registry or _provider_registry(settings)
     engine = _engine(settings, engine)
@@ -875,6 +920,7 @@ def run_realtime_cycle(
             settings=settings,
             registry=registry,
             engine=engine,
+            bronze_storage_resolver=bronze_storage_resolver,
         )
         endpoint_results.append(endpoint_result)
         if (
@@ -973,6 +1019,36 @@ def run_realtime_cycle(
     )
 
 
+def run_realtime_cycle(
+    provider_id: str,
+    *,
+    settings: Settings | None = None,
+    registry: ProviderRegistry | None = None,
+    engine: Engine | None = None,
+    last_captures: dict[str, datetime] | None = None,
+) -> RealtimeCycleResult:
+    """Run one realtime cycle for a provider.
+
+    When ``last_captures`` is provided, each endpoint is gated by the manifest's
+    ``refresh_interval_seconds`` — endpoints whose last successful capture was
+    within ``refresh_interval_seconds`` are skipped (returning a ``"skipped"``
+    status). The dict is mutated in place so the caller (typically
+    :func:`run_realtime_worker_loop`) can preserve state across cycles.
+
+    When ``last_captures`` is ``None`` (CLI single-cycle calls, tests), no
+    gating happens — every endpoint the provider's manifest publishes runs
+    unconditionally.
+    """
+    return _run_realtime_cycle(
+        provider_id,
+        settings=settings,
+        registry=registry,
+        engine=engine,
+        last_captures=last_captures,
+        bronze_storage_resolver=None,
+    )
+
+
 def _validate_realtime_worker_startup(
     provider_id: str,
     *,
@@ -1033,10 +1109,10 @@ def _install_worker_shutdown_handlers() -> Callable[[], bool]:
     return shutdown_requested.is_set
 
 
-def run_realtime_worker_loop(
+def _run_realtime_worker_loop(
     provider_id: str,
     *,
-    settings: Settings | None = None,
+    settings: Settings,
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
     sleep_fn: Callable[[float], None] = time.sleep,
@@ -1044,8 +1120,8 @@ def run_realtime_worker_loop(
     perf_counter_fn: Callable[[], float] = time.perf_counter,
     utc_now_fn: Callable[[], datetime] = utc_now,
     should_shutdown: Callable[[], bool] | None = None,
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> None:
-    settings = settings or get_settings()
     registry = registry or _provider_registry(settings)
     engine = _engine(settings, engine)
     if max_cycles is not None and max_cycles <= 0:
@@ -1114,12 +1190,13 @@ def run_realtime_worker_loop(
             provider_id,
         )
         try:
-            cycle_result = run_realtime_cycle(
+            cycle_result = _run_realtime_cycle(
                 provider_id,
                 settings=settings,
                 registry=registry,
                 engine=engine,
                 last_captures=last_captures,
+                bronze_storage_resolver=bronze_storage_resolver,
             )
         except Exception as exc:  # noqa: BLE001 — one bad cycle must not kill the loop
             cycle_duration_seconds = round(perf_counter_fn() - cycle_started_at, 3)
@@ -1222,6 +1299,40 @@ def run_realtime_worker_loop(
         )
         if computed_sleep_seconds:
             sleep_fn(computed_sleep_seconds)
+
+
+def run_realtime_worker_loop(
+    provider_id: str,
+    *,
+    settings: Settings | None = None,
+    registry: ProviderRegistry | None = None,
+    engine: Engine | None = None,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    max_cycles: int | None = None,
+    perf_counter_fn: Callable[[], float] = time.perf_counter,
+    utc_now_fn: Callable[[], datetime] = utc_now,
+    should_shutdown: Callable[[], bool] | None = None,
+) -> None:
+    settings = settings or get_settings()
+    bronze_storage_scope = BronzeStorageScope(settings, project_root=_project_root())
+    try:
+        return _run_realtime_worker_loop(
+            provider_id,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+            sleep_fn=sleep_fn,
+            max_cycles=max_cycles,
+            perf_counter_fn=perf_counter_fn,
+            utc_now_fn=utc_now_fn,
+            should_shutdown=should_shutdown,
+            bronze_storage_resolver=bronze_storage_scope.resolve,
+        )
+    finally:
+        try:
+            bronze_storage_scope.close()
+        except Exception:
+            logger.exception("Failed to close worker Bronze storage scope")
 
 
 def run_pruner_loop(

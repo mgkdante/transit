@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from botocore.exceptions import ClientError
 
+import transit_ops.ingestion.storage as storage_module
 from transit_ops.ingestion.storage import (
     BronzeStorageError,
     LocalBronzeStorage,
@@ -22,6 +23,7 @@ class FakeS3Client:
         self.upload_calls: list[tuple[str, str]] = []
         self.paginator_calls: list[str] = []
         self.paginator_pages: list[dict[str, object]] | None = None
+        self.close_calls = 0
 
     def upload_fileobj(self, fileobj, bucket: str, key: str) -> None:  # noqa: ANN001
         self.upload_calls.append((bucket, key))
@@ -41,6 +43,9 @@ class FakeS3Client:
         self.paginator_calls.append(operation_name)
         return FakeS3Paginator(self)
 
+    def close(self) -> None:
+        self.close_calls += 1
+
 
 class FakeS3Paginator:
     def __init__(self, client: FakeS3Client) -> None:
@@ -56,6 +61,133 @@ class FakeS3Paginator:
             if bucket == Bucket and key.startswith(Prefix)
         ]
         return [{"Contents": contents}]
+
+
+def _s3_settings() -> Settings:
+    return Settings(
+        _env_file=None,
+        BRONZE_STORAGE_BACKEND="s3",
+        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
+        BRONZE_S3_BUCKET="bronze-bucket",
+        BRONZE_S3_ACCESS_KEY="access",
+        BRONZE_S3_SECRET_KEY="secret",
+        BRONZE_S3_REGION="auto",
+    )
+
+
+def test_bronze_storage_scope_is_lazy(tmp_path: Path, monkeypatch) -> None:
+    construction_calls = 0
+
+    def build_client(settings):  # noqa: ANN001, ANN202
+        nonlocal construction_calls
+        construction_calls += 1
+        return FakeS3Client()
+
+    monkeypatch.setattr(storage_module, "build_s3_client", build_client)
+
+    storage_module.BronzeStorageScope(_s3_settings(), project_root=tmp_path)
+
+    assert construction_calls == 0
+
+
+def test_bronze_storage_scope_reuses_one_s3_storage_and_client(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = FakeS3Client()
+    construction_calls = 0
+
+    def build_client(settings):  # noqa: ANN001, ANN202
+        nonlocal construction_calls
+        construction_calls += 1
+        return client
+
+    monkeypatch.setattr(storage_module, "build_s3_client", build_client)
+    scope = storage_module.BronzeStorageScope(_s3_settings(), project_root=tmp_path)
+
+    first = scope.resolve("s3")
+    second = scope.resolve("s3")
+
+    assert first is second
+    assert first.client is client
+    assert second.client is client
+    assert construction_calls == 1
+
+
+def test_bronze_storage_scope_local_resolution_constructs_no_s3_client(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        storage_module,
+        "build_s3_client",
+        lambda settings: pytest.fail("local resolution must not construct S3"),
+    )
+    scope = storage_module.BronzeStorageScope(_s3_settings(), project_root=tmp_path)
+
+    first = scope.resolve("local")
+    second = scope.resolve("local")
+
+    assert first is second
+    assert isinstance(first, LocalBronzeStorage)
+
+
+def test_bronze_storage_scope_retries_failed_s3_construction(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = FakeS3Client()
+    outcomes = iter([RuntimeError("constructor unavailable"), client])
+    construction_calls = 0
+
+    def build_client(settings):  # noqa: ANN001, ANN202
+        nonlocal construction_calls
+        construction_calls += 1
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(storage_module, "build_s3_client", build_client)
+    scope = storage_module.BronzeStorageScope(_s3_settings(), project_root=tmp_path)
+
+    with pytest.raises(RuntimeError, match="constructor unavailable"):
+        scope.resolve("s3")
+
+    storage = scope.resolve("s3")
+
+    assert storage.client is client
+    assert construction_calls == 2
+
+
+def test_bronze_storage_scope_close_before_resolution_is_idempotent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        storage_module,
+        "build_s3_client",
+        lambda settings: pytest.fail("close-before-resolution must stay lazy"),
+    )
+    scope = storage_module.BronzeStorageScope(_s3_settings(), project_root=tmp_path)
+
+    scope.close()
+    scope.close()
+
+
+def test_bronze_storage_scope_closes_s3_client_exactly_once(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = FakeS3Client()
+    monkeypatch.setattr(storage_module, "build_s3_client", lambda settings: client)
+    scope = storage_module.BronzeStorageScope(_s3_settings(), project_root=tmp_path)
+    scope.resolve("s3")
+
+    scope.close()
+    scope.close()
+
+    assert client.close_calls == 1
 
 
 def test_get_bronze_storage_selects_local_backend(tmp_path: Path) -> None:

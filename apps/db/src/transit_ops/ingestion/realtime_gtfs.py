@@ -27,7 +27,11 @@ from transit_ops.ingestion.common import (
     project_root,
     utc_now,
 )
-from transit_ops.ingestion.storage import get_bronze_storage, resolve_local_bronze_root
+from transit_ops.ingestion.storage import (
+    BronzeStorageResolver,
+    get_bronze_storage,
+    resolve_local_bronze_root,
+)
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
@@ -293,15 +297,15 @@ def _download_to_tempfile(config: RealtimeIngestionConfig, temp_dir: Path) -> Do
     )
 
 
-def capture_realtime_feed(
+def _capture_realtime_feed(
     provider_id: str,
     endpoint_key: str,
     *,
-    settings: Settings | None = None,
+    settings: Settings,
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
+    bronze_storage_resolver: BronzeStorageResolver,
 ) -> RealtimeIngestionResult:
-    settings = settings or get_settings()
     registry = registry or ProviderRegistry.from_project_root(
         project_root=_project_root(),
         settings=settings,
@@ -309,11 +313,7 @@ def capture_realtime_feed(
     manifest = registry.get_provider(provider_id)
     config = build_realtime_ingestion_config(manifest, settings, endpoint_key)
     bronze_root = resolve_local_bronze_root(settings, project_root=_project_root())
-    bronze_storage = get_bronze_storage(
-        settings,
-        project_root=_project_root(),
-        storage_backend=config.storage_backend,
-    )
+    bronze_storage = bronze_storage_resolver(config.storage_backend)
     started_at_utc = utc_now()
 
     engine = engine or make_engine(settings)
@@ -437,3 +437,26 @@ def capture_realtime_feed(
         if persisted and storage_path is not None:
             _best_effort_delete_orphan(bronze_storage, storage_path)
         raise
+
+
+def capture_realtime_feed(
+    provider_id: str,
+    endpoint_key: str,
+    *,
+    settings: Settings | None = None,
+    registry: ProviderRegistry | None = None,
+    engine: Engine | None = None,
+) -> RealtimeIngestionResult:
+    settings = settings or get_settings()
+    return _capture_realtime_feed(
+        provider_id,
+        endpoint_key,
+        settings=settings,
+        registry=registry,
+        engine=engine,
+        bronze_storage_resolver=lambda storage_backend: get_bronze_storage(
+            settings,
+            project_root=_project_root(),
+            storage_backend=storage_backend,
+        ),
+    )

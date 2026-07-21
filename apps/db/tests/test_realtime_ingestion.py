@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import ssl
 from datetime import UTC, datetime
 from pathlib import Path
@@ -353,20 +354,22 @@ def test_capture_realtime_feed_uses_storage_abstraction_for_s3(
     )
 
     monkeypatch.setattr(realtime_gtfs, "_download_to_tempfile", lambda config, temp_dir: artifact)
-    monkeypatch.setattr(
-        realtime_gtfs,
-        "get_bronze_storage",
-        lambda settings, project_root, storage_backend: fake_storage,
-    )
+    resolved_backends: list[str] = []
 
-    result = capture_realtime_feed(
+    def resolve_storage(storage_backend: str) -> FakeBronzeStorage:
+        resolved_backends.append(storage_backend)
+        return fake_storage
+
+    result = realtime_gtfs._capture_realtime_feed(
         "stm",
         "vehicle_positions",
         settings=settings,
         registry=registry,
         engine=FakeEngine(connection),
+        bronze_storage_resolver=resolve_storage,
     )
 
+    assert resolved_backends == ["s3"]
     assert result.storage_backend == "s3"
     assert result.archive_full_path == f"s3://bronze-bucket/{result.storage_path}"
     assert result.storage_path.startswith("stm/vehicle_positions/captured_at_utc=")
@@ -492,19 +495,14 @@ def test_capture_realtime_feed_deletes_orphan_object_when_metadata_write_fails(
     )
 
     monkeypatch.setattr(realtime_gtfs, "_download_to_tempfile", lambda config, temp_dir: artifact)
-    monkeypatch.setattr(
-        realtime_gtfs,
-        "get_bronze_storage",
-        lambda settings, project_root, storage_backend: fake_storage,
-    )
-
     with pytest.raises(RuntimeError) as exc_info:
-        capture_realtime_feed(
+        realtime_gtfs._capture_realtime_feed(
             "stm",
             "vehicle_positions",
             settings=settings,
             registry=registry,
             engine=FakeEngine(connection),
+            bronze_storage_resolver=lambda storage_backend: fake_storage,
         )
 
     # The original metadata exception must still propagate.
@@ -514,6 +512,21 @@ def test_capture_realtime_feed_deletes_orphan_object_when_metadata_write_fails(
     assert len(fake_storage.persisted) == 1
     persisted_storage_path = fake_storage.persisted[0][1]
     assert fake_storage.deleted == [persisted_storage_path]
+
+
+def test_capture_realtime_feed_public_signature_is_unchanged() -> None:
+    signature = inspect.signature(capture_realtime_feed)
+
+    assert list(signature.parameters) == [
+        "provider_id",
+        "endpoint_key",
+        "settings",
+        "registry",
+        "engine",
+    ]
+    assert signature.parameters["settings"].default is None
+    assert signature.parameters["registry"].default is None
+    assert signature.parameters["engine"].default is None
 
 
 def test_capture_realtime_feed_swallows_delete_failure_and_propagates_original(

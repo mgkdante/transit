@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -55,6 +55,9 @@ class BronzeStorage:
 
     def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]:
         raise NotImplementedError
+
+
+type BronzeStorageResolver = Callable[[str], BronzeStorage]
 
 
 @dataclass(frozen=True)
@@ -287,6 +290,51 @@ def get_bronze_storage(
             storage_backend=resolved_backend.value,
             bucket=bucket_name,
             endpoint_url=endpoint_url,
-            client=s3_client or build_s3_client(settings),
+            client=s3_client if s3_client is not None else build_s3_client(settings),
         )
     raise ValueError(f"Unsupported BRONZE_STORAGE_BACKEND '{resolved_backend.value}'.")
+
+
+class BronzeStorageScope:
+    """Worker-lifetime owner for lazy Bronze storage and S3 client reuse."""
+
+    def __init__(self, settings: Settings, *, project_root: Path) -> None:
+        self._settings = settings
+        self._project_root = project_root
+        self._storage_by_backend: dict[StorageBackend, BronzeStorage] = {}
+        self._s3_client: object | None = None
+        self._closed = False
+
+    def resolve(self, storage_backend: str) -> BronzeStorage:
+        if self._closed:
+            raise RuntimeError("Bronze storage scope is closed.")
+
+        resolved_backend = StorageBackend(storage_backend)
+        cached_storage = self._storage_by_backend.get(resolved_backend)
+        if cached_storage is not None:
+            return cached_storage
+
+        s3_client = None
+        if resolved_backend == StorageBackend.S3:
+            s3_client = self._s3_client
+            if s3_client is None:
+                s3_client = build_s3_client(self._settings)
+                self._s3_client = s3_client
+
+        storage = get_bronze_storage(
+            self._settings,
+            project_root=self._project_root,
+            storage_backend=resolved_backend.value,
+            s3_client=s3_client,
+        )
+        self._storage_by_backend[resolved_backend] = storage
+        return storage
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+
+        close = getattr(self._s3_client, "close", None)
+        if callable(close):
+            close()
