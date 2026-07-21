@@ -160,6 +160,31 @@ def _gis_silver_result() -> GisSilverLoadResult:
     )
 
 
+def _skipped_gis_silver_result() -> GisSilverLoadResult:
+    return GisSilverLoadResult(
+        provider_id="stm",
+        dataset_version_id=9,
+        static_dataset_version_id=7,
+        source_ingestion_run_id=99,
+        source_ingestion_object_id=199,
+        storage_path="stm/gis_static/2026/06/10/stm_sig.zip",
+        archive_full_path="s3://transit-raw/stm/gis_static/2026/06/10/stm_sig.zip",
+        content_hash="f" * 64,
+        row_counts={
+            "gis_datasets": 1,
+            "gis_stop_features": 9000,
+            "gis_line_features": 800,
+            "gis_gtfs_matches": 8500,
+        },
+        shapefile_count=4,
+        stop_feature_count=9000,
+        line_feature_count=800,
+        match_count=8500,
+        load_performed=False,
+        skipped_reason="gis_static_pair_unchanged",
+    )
+
+
 def _patch_gis_steps(monkeypatch, call_order: list[str] | None = None) -> None:
     """Default-success GIS monkeypatches so static-pipeline tests never hit the network."""
 
@@ -1162,6 +1187,54 @@ def test_run_static_pipeline_runs_gis_when_static_unchanged(monkeypatch) -> None
     assert result.gis_ingestion is not None
     assert result.gis_silver_load is not None
     assert result.status == "succeeded"
+
+
+def test_run_static_pipeline_reports_gis_pair_skip_as_success(monkeypatch) -> None:
+    monkeypatch.setattr(
+        orchestration,
+        "ingest_static_feed",
+        lambda provider_id, settings, registry, engine: _static_ingestion_result(
+            content_changed=False,
+            status="skipped_unchanged",
+            storage_path=None,
+            archive_full_path=None,
+            ingestion_object_id=None,
+            skipped_reason="static_content_unchanged",
+        ),
+    )
+
+    def _should_not_run(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("static silver/gold must not run on unchanged path")
+
+    monkeypatch.setattr(orchestration, "load_latest_static_to_silver", _should_not_run)
+    monkeypatch.setattr(orchestration, "refresh_gold_static", _should_not_run)
+    monkeypatch.setattr(
+        orchestration,
+        "ingest_gis_feed",
+        lambda provider_id, *, settings, registry, engine: _gis_ingestion_result(
+            content_changed=False,
+            status="skipped_unchanged",
+            skipped_reason="gis_content_unchanged",
+        ),
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "load_latest_gis_to_silver",
+        lambda provider_id, *, settings, registry, engine: _skipped_gis_silver_result(),
+    )
+
+    result = run_static_pipeline(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=_FakeEngine(),
+    )
+
+    assert result.status == "succeeded"
+    assert result.gis_status == "succeeded"
+    assert result.gis_silver_load is not None
+    assert result.gis_silver_load["load_performed"] is False
+    assert result.gis_silver_load["skipped_reason"] == "gis_static_pair_unchanged"
 
 
 def test_run_static_pipeline_gis_ingest_failure_does_not_fail_pipeline(monkeypatch) -> None:
