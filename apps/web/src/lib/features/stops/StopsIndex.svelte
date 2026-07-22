@@ -37,14 +37,10 @@
 	import { page } from '$app/state';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { layout, mapHrefFor } from '$lib/nav';
-	import {
-		getStopsIndex,
-		getRoutesIndex,
-		getRoute,
-		createReliabilityLoader,
-		type StopIndexEntry,
-		type RouteIndexEntry,
-	} from '$lib/v1';
+	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
+	import { getRoute, getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
+	import type { RouteIndexEntry } from '$lib/v1/schemas/routes_index';
+	import type { StopIndexEntry } from '$lib/v1/schemas/stops_index';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import {
 		ResourceBoundary,

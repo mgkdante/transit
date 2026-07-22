@@ -6,10 +6,8 @@ const mocks = vi.hoisted(() => ({
 	getLabels: vi.fn(),
 }));
 
-vi.mock('$lib/v1/repositories', () => ({
-	getManifest: mocks.getManifest,
-	getLabels: mocks.getLabels,
-}));
+vi.mock('$lib/v1/repositories/manifest', () => ({ getManifest: mocks.getManifest }));
+vi.mock('$lib/v1/repositories/labels', () => ({ getLabels: mocks.getLabels }));
 
 import { bootV1 } from './boot';
 

@@ -27,8 +27,8 @@
 // one when their severity ties — the more-specific alert reads first. These are
 // pure filters: no de-duplication beyond what the feed carries, no fabrication.
 
-import type { Alert, SeverityCode } from './schemas';
-import { SEVERITY_CODES } from './schemas';
+import type { Alert } from './schemas/alerts';
+import { SEVERITY_CODES, type SeverityCode } from './schemas/types';
 
 /**
  * Rank a SeverityCode for descending sort — lower number = more severe.

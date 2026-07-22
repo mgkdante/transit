@@ -19,7 +19,9 @@
 <script lang="ts">
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { mapHrefFor, routeFor } from '$lib/nav';
-	import { getTrips, getStopsIndex, getV1Context } from '$lib/v1';
+	import { getTrips } from '$lib/v1/repositories/live';
+	import { getStopsIndex } from '$lib/v1/repositories/static';
+	import { getV1Context } from '$lib/v1/boot';
 	import type { TripsFile, Trip, StatusCode, StopsIndex } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { Surface } from '$lib/components/layout';

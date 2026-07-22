@@ -24,8 +24,7 @@
 <script lang="ts">
 	import type { AlertHistoryCopy } from '../alerts.copy';
 	import type { Locale } from '$lib/i18n';
-	import type { SeverityCode } from '$lib/v1/schemas';
-	import { SEVERITY_CODES } from '$lib/v1/schemas';
+	import { SEVERITY_CODES, type SeverityCode } from '$lib/v1/schemas/types';
 	import type { AlertAffects, DateWindow } from '$lib/filters';
 	import { ArticleControlStack, HistoryNavigator } from '$lib/components/surface';
 	import { FilterGroup, FilterSummary } from '$lib/components/filter';

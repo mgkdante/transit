@@ -54,7 +54,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { getProvenance } from '$lib/v1';
+	import { getProvenance } from '$lib/v1/repositories/provenance';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ConformanceBadge, FreshnessStamp } from '$lib/components/surface';
 	import { ArticleHeader, ArticleSectionStack, DetailShell } from '$lib/components/layout';

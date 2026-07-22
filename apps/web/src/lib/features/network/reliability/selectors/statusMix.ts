@@ -7,7 +7,8 @@
 // zero bands dropped). Each band carries the map cross-filter URL as `href` (the
 // legacy onSelect callback was always a navigation). Total 0 ⇒ an honest absence spec.
 
-import { STATUS_CODES, type StatusCode, type StatusDist } from '$lib/v1/schemas';
+import type { StatusDist } from '$lib/v1/schemas/network';
+import { STATUS_CODES, type StatusCode } from '$lib/v1/schemas/types';
 import type { ChartSpec } from '$lib/components/dataviz/chart';
 import { stackedShareSpec } from '$lib/components/dataviz/chart/share';
 import type { Locale } from '$lib/i18n/config';

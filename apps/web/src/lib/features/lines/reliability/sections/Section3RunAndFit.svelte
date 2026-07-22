@@ -56,7 +56,7 @@
 		SHARE_DOMAIN,
 		weekdayLabel,
 	} from '$lib/features/reliability/shiftGrains';
-	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
+	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas/types';
 	import { selectCrowdingDelay } from '../selectors/crowdingDelay';
 	import { otpTone, selectBullet } from '../selectors/bullet';
 	import { selectOccupancyShare } from '../selectors/occupancyShare';

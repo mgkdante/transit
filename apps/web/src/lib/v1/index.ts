@@ -1,4 +1,4 @@
-// $lib/v1 — the ONLY import surface the surface slices (9.3–9.7) use.
+// $lib/v1 — the stable compatibility facade for the v1 snapshot contract.
 //
 // Everything the UI needs to read the snapshot contract is re-exported here:
 //   - repositories  : per-family async data ports (manifest/labels/live/static/
@@ -12,8 +12,11 @@
 //   - schemas       : the closed enums + inferred contract types (StatusCode,
 //                     OccupancyCode, SeverityCode, Grain, Manifest, *File, …).
 //
-// Import from `$lib/v1` and nothing deeper — the sub-paths are implementation
-// detail that may move.
+// Use this facade for compatibility and type-only imports. Navigation-critical
+// production code may import the exact owning repository, history, schema, boot,
+// or live-store leaf when that preserves a lazy tier or a smaller client closure.
+// Features and routes must not reach into adapter/*; repositories and boot own
+// that boundary. Keep tier imports literal so Vite can preserve split points.
 
 // --- repositories (per-family ports + flat aliases) --------------------------
 export {

@@ -130,7 +130,7 @@ vi.mock('$lib/stores', () => ({
 	dataRefresh: {},
 }));
 
-vi.mock('$lib/v1', () => ({
+vi.mock('$lib/v1/boot', () => ({
 	getV1Context: () => ({
 		manifest: {
 			provider: 'stm',
@@ -139,11 +139,17 @@ vi.mock('$lib/v1', () => ({
 		labels: {},
 		lang: 'en',
 	}),
+}));
+vi.mock('$lib/v1/repositories/basemap', () => ({
 	getBasemap: () => null,
+}));
+vi.mock('$lib/v1/repositories/static', () => ({
 	getRoutesIndex: () => ({ generated_utc: '2026-06-20T12:00:00Z', routes: [] }),
 	getStopsIndexSlim: () => ({ generated_utc: '2026-06-20T12:00:00Z', stops: harness.stops }),
 	getRoute: () => null,
 	getStop: () => null,
+}));
+vi.mock('$lib/v1/live/store.svelte', () => ({
 	createLiveStore: harness.createLiveStore,
 }));
 

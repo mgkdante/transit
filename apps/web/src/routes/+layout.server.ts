@@ -1,6 +1,6 @@
 import type { LayoutServerLoad } from './$types';
 import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
-import { bootV1, type V1Context } from '$lib/v1';
+import { bootV1, type V1Context } from '$lib/v1/boot';
 import { serverV1Context } from '$lib/v1/serverContext';
 
 // Server layout load — boots the /v1 snapshot contract through the direct R2

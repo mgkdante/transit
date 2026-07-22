@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { flushSync } from 'svelte';
 import type { RouteReliability, RoutesIndex, StopReliability } from './schemas';
 
-// Hoisted fetch spies the loader reaches through the repositories barrel.
+// Hoisted fetch spies the loader reaches through the exact repository leaves.
 const routeFetch = vi.fn<(id: string) => Promise<RouteReliability | null>>();
 const stopFetch = vi.fn<(id: string) => Promise<StopReliability | null>>();
 // The internal availability index the ROUTE loader consults for `known:undefined`.
@@ -11,11 +11,14 @@ const routesIndexFetch = vi.fn<() => Promise<RoutesIndex>>();
 // source); the routes_index flag above is only the rollout fallback when this 404s.
 const routeReliabilityIndexFetch = vi.fn<() => Promise<Set<string> | null>>();
 
-vi.mock('./repositories', () => ({
+vi.mock('./repositories/historic', () => ({
 	getRouteReliability: (id: string) => routeFetch(id),
 	getStopReliability: (id: string) => stopFetch(id),
-	getRoutesIndex: () => routesIndexFetch(),
 	getRouteReliabilityIndex: () => routeReliabilityIndexFetch(),
+}));
+
+vi.mock('./repositories/static', () => ({
+	getRoutesIndex: () => routesIndexFetch(),
 }));
 
 import { createReliabilityLoader } from './reliabilitySnapshot.svelte';

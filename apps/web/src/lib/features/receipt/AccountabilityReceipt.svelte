@@ -35,7 +35,8 @@
 		fmtPct as sharedFmtPct,
 	} from '$lib/utils';
 	import { shiftLabel } from '$lib/features/reliability/shiftGrains';
-	import { getAdvertisedReceipt, getReceiptsIndex, type Receipt } from '$lib/v1';
+	import { getAdvertisedReceipt, getReceiptsIndex } from '$lib/v1/repositories/historic';
+	import type { Receipt } from '$lib/v1';
 	import {
 		availabilityFromReceiptsIndex,
 		datesForAvailability,
@@ -43,7 +44,7 @@
 		previousAvailableDate,
 		resolveHistoryDate,
 		type HistoryCorrection,
-	} from '$lib/v1/history';
+	} from '$lib/v1/history/selection';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import {
 		createRailDisclosureController,

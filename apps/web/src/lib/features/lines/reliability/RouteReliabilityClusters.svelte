@@ -34,7 +34,8 @@
 	import { fromSearchParams, toSearchParams, emptyFilterState, resolveWindow } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
 	import { describeAbsence } from '$lib/site/absence';
-	import { historyRangeRequestFromSearchParams, type RouteReliability } from '$lib/v1';
+	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
+	import type { RouteReliability } from '$lib/v1';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { onMount, type Snippet } from 'svelte';
 	import {

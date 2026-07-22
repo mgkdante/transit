@@ -130,46 +130,45 @@ vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	isPrefersReducedMotion: () => motion.reduced,
 }));
 
-vi.mock('$lib/v1', async () => {
-	return {
-		...(await import('$lib/v1/history')),
-		STATUS_CODES: ['early', 'on_time', 'late', 'severe', 'unknown'],
-		OCCUPANCY_CODES: ['empty', 'many_seats', 'few_seats', 'standing', 'full'],
-		getV1Context: () => ({ manifest: networkManifest, labels: {}, lang: 'en' }),
-		createLiveStore: (manifest: unknown, options?: unknown) => {
-			createLiveStoreSpy(manifest, options);
-			return {
-				vehicles: null,
-				trips: null,
-				departures: null,
-				alerts: null,
-				network: live.hasNetwork ? network : null,
-				index: {
-					vehiclesById: new Map(),
-					vehiclesByRoute: new Map(),
-					vehiclesByTrip: new Map(),
-					stopsById: new Map(),
-					tripsById: new Map(),
-					alertsById: new Map(),
-				},
-				generatedUtc: network.generated_utc,
-				get ageSeconds() {
-					return live.ageSeconds;
-				},
-				isStale: false,
-				loading: false,
-				error: null,
-				start: vi.fn(),
-				stop: vi.fn(),
-				refresh: vi.fn(),
-			};
-		},
-		getNetworkTrend: vi.fn(),
-		getProvenance: vi.fn(),
-		getNetworkHistoryIndex: vi.fn().mockResolvedValue(null),
-		loadNetworkHistoryRange: vi.fn(),
-	};
-});
+vi.mock('$lib/v1/boot', () => ({
+	getV1Context: () => ({ manifest: networkManifest, labels: {}, lang: 'en' }),
+}));
+vi.mock('$lib/v1/live/store.svelte', () => ({
+	createLiveStore: (manifest: unknown, options?: unknown) => {
+		createLiveStoreSpy(manifest, options);
+		return {
+			vehicles: null,
+			trips: null,
+			departures: null,
+			alerts: null,
+			network: live.hasNetwork ? network : null,
+			index: {
+				vehiclesById: new Map(),
+				vehiclesByRoute: new Map(),
+				vehiclesByTrip: new Map(),
+				stopsById: new Map(),
+				tripsById: new Map(),
+				alertsById: new Map(),
+			},
+			generatedUtc: network.generated_utc,
+			get ageSeconds() {
+				return live.ageSeconds;
+			},
+			isStale: false,
+			loading: false,
+			error: null,
+			start: vi.fn(),
+			stop: vi.fn(),
+			refresh: vi.fn(),
+		};
+	},
+}));
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getNetworkTrend: vi.fn(),
+	getNetworkHistoryIndex: vi.fn().mockResolvedValue(null),
+	loadNetworkHistoryRange: vi.fn(),
+}));
+vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: vi.fn() }));
 
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: (loader: () => unknown) => {

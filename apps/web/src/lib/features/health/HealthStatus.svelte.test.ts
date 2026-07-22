@@ -263,6 +263,15 @@ vi.mock('$lib/v1', async () => {
 		freshnessRelative: freshness.freshnessRelative,
 	};
 });
+vi.mock('$lib/v1/repositories/provenance', () => ({
+	getProvenance,
+}));
+vi.mock('$lib/v1/repositories/dataHealth', () => ({
+	getDataHealth,
+}));
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getHistoricAvailability,
+}));
 
 // createResource is mocked to return the fixture for the matching fetcher. The
 // component owns the arrow fetchers, so we can't compare identity — instead we

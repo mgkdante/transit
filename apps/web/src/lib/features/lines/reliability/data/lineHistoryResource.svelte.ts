@@ -1,10 +1,9 @@
-import {
-	createRetainedHistoryResource,
-	getLineHistoryIndex,
-	loadLineHistoryRange,
-	type HistoricCollectionIndex,
-	type HistoryRangeResource,
-	type RawHistoryRangeRequest,
+import { createRetainedHistoryResource } from '$lib/v1/history/retainedHistoryResource.svelte';
+import { getLineHistoryIndex, loadLineHistoryRange } from '$lib/v1/repositories/historic';
+import type {
+	HistoricCollectionIndex,
+	HistoryRangeResource,
+	RawHistoryRangeRequest,
 } from '$lib/v1';
 import { buildRetainedLineHistory, type RetainedLineHistory } from './retainedHistory';
 

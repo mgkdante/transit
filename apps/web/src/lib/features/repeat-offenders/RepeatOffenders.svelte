@@ -41,17 +41,18 @@
 	import { describeAbsence } from '$lib/site/absence';
 	import { fmtCount, fmtDelayMin, fmtDelayMin as sharedFmtDelayMin, fmtPct } from '$lib/utils';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
+	import { availabilityFromPointCollectionIndex } from '$lib/v1/history/selection';
+	import { createHistoryCorrectionPresentation } from '$lib/v1/history/datePresentation.svelte';
 	import {
-		availabilityFromPointCollectionIndex,
-		createHistoryCorrectionPresentation,
 		createHistoryDateResource,
+		historyDateRequestFromSearchParams,
+	} from '$lib/v1/history/dateResource.svelte';
+	import {
 		getRepeatOffenders,
 		getRepeatOffendersHistoryDay,
 		getRepeatOffendersHistoryIndex,
-		historyDateRequestFromSearchParams,
-		type RepeatOffenderEntry,
-		type Offender,
-	} from '$lib/v1';
+	} from '$lib/v1/repositories/historic';
+	import type { RepeatOffenderEntry, Offender } from '$lib/v1/schemas';
 	import type {
 		HistoricCollectionIndex,
 		RepeatOffenders as RepeatOffendersData,

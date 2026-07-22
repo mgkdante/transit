@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { HistoryArtifactContractError } from '$lib/v1/history';
 import { sha256Hex } from '$lib/v1/http';
+import type { Manifest } from '$lib/v1/schemas/manifest';
 import { r2Adapter } from './r2';
 
 vi.mock('$app/environment', () => ({ browser: true }));
@@ -681,5 +682,42 @@ describe('r2 historic collection ports', () => {
 				{ fetch: async () => json({}, 404) },
 			),
 		).resolves.toBeNull();
+	});
+
+	it('resolves provenance from its manifest pointer and keeps the default root required', async () => {
+		const provenance = { generated_utc: ISO };
+		const controller = new AbortController();
+		const request = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
+			String(input).endsWith('/historic/custom-provenance.json') ? json(provenance) : json({}, 404),
+		);
+
+		await expect(
+			r2Adapter.provenance.get({
+				fetch: request as unknown as typeof fetch,
+				manifest: manifest({
+					provenance: 'historic/custom-provenance.json',
+				}) as unknown as Manifest,
+				signal: controller.signal,
+			}),
+		).resolves.toEqual(provenance);
+		await expect(
+			r2Adapter.provenance.get({
+				fetch: request as unknown as typeof fetch,
+				manifest: manifest() as unknown as Manifest,
+				signal: controller.signal,
+			}),
+		).rejects.toThrow('[v1.provenance] expected file not found at /data/v1/stm/provenance.json');
+
+		expect(request.mock.calls.map(([input]) => String(input))).toEqual([
+			'/data/v1/stm/historic/custom-provenance.json',
+			'/data/v1/stm/provenance.json',
+		]);
+		for (const [, init] of request.mock.calls) {
+			expect(init).toEqual({
+				headers: { accept: 'application/json' },
+				cache: 'default',
+				signal: controller.signal,
+			});
+		}
 	});
 });

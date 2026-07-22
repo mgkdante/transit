@@ -9,10 +9,7 @@ const repositories = vi.hoisted(() => ({
 	loadNetworkHistoryRange: vi.fn(),
 }));
 
-vi.mock('$lib/v1', async () => ({
-	...(await import('$lib/v1/history')),
-	...repositories,
-}));
+vi.mock('$lib/v1/repositories/historic', () => repositories);
 
 const sha = 'a'.repeat(64);
 const index = {

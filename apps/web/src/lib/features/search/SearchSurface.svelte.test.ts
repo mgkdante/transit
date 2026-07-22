@@ -69,11 +69,17 @@ vi.mock('$app/stores', () => ({
 	},
 }));
 
-vi.mock('$lib/v1', () => ({
+vi.mock('$lib/v1/repositories/static', () => ({
 	getRoutesIndex: vi.fn(),
 	getStopsIndex: vi.fn(),
+}));
+vi.mock('$lib/v1/boot', () => ({
 	getV1Context: () => ({ manifest: {}, labels: {}, lang: 'en' }),
+}));
+vi.mock('$lib/v1/live/store.svelte', () => ({
 	createLiveStore: liveHarness.createLiveStore,
+}));
+vi.mock('$lib/v1/reliabilitySnapshot.svelte', () => ({
 	createReliabilityLoader: (kind: 'route' | 'stop') => {
 		const store = kind === 'route' ? routeSnaps : stopSnaps;
 		return {

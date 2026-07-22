@@ -1,10 +1,9 @@
-import {
-	createRetainedHistoryResource,
-	getNetworkHistoryIndex,
-	loadNetworkHistoryRange,
-	type HistoryRangeResource,
-	type RawHistoryRangeRequest,
-} from '$lib/v1';
+import { createRetainedHistoryResource } from '$lib/v1/history/retainedHistoryResource.svelte';
+import type {
+	HistoryRangeResource,
+	RawHistoryRangeRequest,
+} from '$lib/v1/history/rangeResource.svelte';
+import { getNetworkHistoryIndex, loadNetworkHistoryRange } from '$lib/v1/repositories/historic';
 import type { HistoricCollectionIndex } from '$lib/v1/schemas/history';
 import { buildRetainedNetworkTrend, type RetainedNetworkTrend } from './retainedTrend';
 

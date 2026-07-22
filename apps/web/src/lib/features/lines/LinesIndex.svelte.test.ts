@@ -26,13 +26,11 @@ const ROUTES = [
 	{ id: '99', short: '99', long: 'Villeray', type: 3 },
 ];
 
-// Mock the WHOLE $lib/v1 barrel (importing the real one pulls config that reads
-// import.meta.env, absent in the node-less test env). Provide just what
-// LinesIndex consumes: the routes loader, the lazy reliability loader, and the
-// trivial problem-verdict predicate.
-vi.mock('$lib/v1', () => ({
-	getRoutesIndex: vi.fn(),
-	isProblemVerdict: (v: string | null) => v === 'late' || v === 'severe',
+vi.mock('$lib/v1/repositories/static', () => ({ getRoutesIndex: vi.fn() }));
+vi.mock('$lib/v1/reliabilityVerdict', () => ({
+	isProblemVerdict: (verdict: string | null) => verdict === 'late' || verdict === 'severe',
+}));
+vi.mock('$lib/v1/reliabilitySnapshot.svelte', () => ({
 	createReliabilityLoader: () => {
 		const record = (target: string | { id: string; known?: boolean }) => {
 			const id = typeof target === 'string' ? target : target.id;
@@ -53,8 +51,8 @@ vi.mock('$lib/v1', () => ({
 			},
 		};
 	},
-	...historyCalls,
 }));
+vi.mock('$lib/v1/repositories/historic', () => historyCalls);
 
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({

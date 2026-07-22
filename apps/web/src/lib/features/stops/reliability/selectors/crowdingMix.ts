@@ -8,7 +8,8 @@
 // attributed to this stop, and an ALL-ZERO mix is ALSO treated as empty — in both
 // cases the section stands down (never a fabricated / even split).
 
-import { OCCUPANCY_CODES, type OccupancyCode, type OccupancyMix } from '$lib/v1/schemas';
+import { OCCUPANCY_CODES } from '$lib/v1/schemas/types';
+import type { OccupancyCode, OccupancyMix } from '$lib/v1/schemas';
 import type { StackedShareSpec } from '$lib/components/dataviz/chart';
 import { stackedShareSpec } from '$lib/components/dataviz/chart/share';
 import type { Locale } from '$lib/i18n/config';

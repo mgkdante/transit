@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { canonicalDetailTabLocation } from '$lib/site/detailTabs';
-import { getStop } from '$lib/v1';
+import { getStop } from '$lib/v1/repositories/static';
 import { serverV1Context, type IdentitySeed } from '$lib/v1/serverContext';
 
 export const load: PageServerLoad = async (event) => {

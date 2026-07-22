@@ -7,7 +7,7 @@
 
 import type { Locale } from '$lib/i18n';
 import type { StackedShareSpec, ShareSegment } from '$lib/components/dataviz/chart/ChartSpec';
-import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
+import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas/types';
 
 export interface OccupancyShareOpts {
 	/** Accessible name describing the mix (e.g. "Route 51 crowding mix"). */

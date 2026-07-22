@@ -11,8 +11,8 @@
 // inclusive and multi-period aware (see alertMatchesWindow). SSR-safe: pure data + pure
 // functions.
 
-import type { AlertHistoryEntry, AlertBreakdownBucket, SeverityCode } from '$lib/v1/schemas';
-import { SEVERITY_CODES } from '$lib/v1/schemas';
+import type { AlertBreakdownBucket, AlertHistoryEntry } from '$lib/v1/schemas/alert_history';
+import { SEVERITY_CODES, type SeverityCode } from '$lib/v1/schemas/types';
 import type { DateWindow, AlertAffects } from '$lib/filters';
 import { providerLocalDateKey } from '$lib/utils/time';
 

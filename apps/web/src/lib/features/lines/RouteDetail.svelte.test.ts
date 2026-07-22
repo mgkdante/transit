@@ -280,29 +280,28 @@ let routesIndexData: { generated_utc: string; routes: { id: string; reliability?
 	routes: [{ id: '161' }],
 };
 
-vi.mock('$lib/v1', async () => {
-	const affected =
-		await vi.importActual<typeof import('$lib/v1/affectedAlerts')>('$lib/v1/affectedAlerts');
-	const history = await vi.importActual<typeof import('$lib/v1/history')>('$lib/v1/history');
-	const stats = await vi.importActual<typeof import('$lib/v1/stats')>('$lib/v1/stats');
-	return {
-		...history,
-		wilsonBounds: stats.wilsonBounds,
-		getRoute: () => routeFileData,
-		getRouteReliability: (id: string) => getRouteReliabilitySpy(id),
-		getRoutesIndex: async () => routesIndexData,
-		getProvenance: () => provenanceData,
-		createLiveStore: (manifest: unknown, options?: unknown) => {
-			createLiveStoreSpy(manifest, options);
-			return liveStore;
-		},
-		getV1Context: () => ({ manifest: routeManifest, labels: {}, lang: 'en' }),
-		deriveRouteStopPredictions: () => PREDICTIONS,
-		alertsForRoute: affected.alertsForRoute,
-		getLineHistoryIndex: lineHistoryHarness.getLineHistoryIndex,
-		loadLineHistoryRange: lineHistoryHarness.loadLineHistoryRange,
-	};
-});
+vi.mock('$lib/v1/repositories/static', () => ({
+	getRoute: () => routeFileData,
+	getRoutesIndex: async () => routesIndexData,
+}));
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getRouteReliability: (id: string) => getRouteReliabilitySpy(id),
+	getLineHistoryIndex: lineHistoryHarness.getLineHistoryIndex,
+	loadLineHistoryRange: lineHistoryHarness.loadLineHistoryRange,
+}));
+vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: () => provenanceData }));
+vi.mock('$lib/v1/live/store.svelte', () => ({
+	createLiveStore: (manifest: unknown, options?: unknown) => {
+		createLiveStoreSpy(manifest, options);
+		return liveStore;
+	},
+}));
+vi.mock('$lib/v1/live/routeStopPredictions', () => ({
+	deriveRouteStopPredictions: () => PREDICTIONS,
+}));
+vi.mock('$lib/v1/boot', () => ({
+	getV1Context: () => ({ manifest: routeManifest, labels: {}, lang: 'en' }),
+}));
 
 vi.mock('$lib/v1/resource.svelte', () => ({
 	// The detail/schedule (route), reliability, AND provenance resources go through
@@ -537,10 +536,10 @@ describe('RouteDetail reliability fetch — the route page trusts the FILE', () 
 	// component's thunk (probe unconditionally) and assert the fetcher is always hit +
 	// that a present file flows through even when the flag says false.
 	async function routePageReliability(id: string): Promise<unknown> {
-		const v1 = (await import('$lib/v1')) as unknown as {
+		const historic = (await import('$lib/v1/repositories/historic')) as unknown as {
 			getRouteReliability: (id: string) => Promise<unknown>;
 		};
-		return v1.getRouteReliability(id);
+		return historic.getRouteReliability(id);
 	}
 
 	it('probes the file even when the index flag is false — a stale false must not hide data', async () => {

@@ -19,6 +19,15 @@ vi.mock('$lib/v1', async () => {
 		freshnessRelative: freshness.freshnessRelative,
 	};
 });
+vi.mock('$lib/v1/repositories/provenance', () => ({
+	getProvenance: ports.getProvenance,
+}));
+vi.mock('$lib/v1/repositories/dataHealth', () => ({
+	getDataHealth: ports.getDataHealth,
+}));
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getHistoricAvailability: ports.getHistoricAvailability,
+}));
 
 vi.mock('$lib/nav', () => ({ layout: { isDesktop: true } }));
 

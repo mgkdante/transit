@@ -27,15 +27,13 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import {
-		getProvenance,
-		getDataHealth,
-		getHistoricAvailability,
-		freshnessRelative,
-		type DataHealth,
-		type HistoricAvailabilityIndex,
-		type Provenance,
-	} from '$lib/v1';
+	import { freshnessRelative } from '$lib/v1/freshness';
+	import { getDataHealth } from '$lib/v1/repositories/dataHealth';
+	import { getHistoricAvailability } from '$lib/v1/repositories/historic';
+	import { getProvenance } from '$lib/v1/repositories/provenance';
+	import type { DataHealth } from '$lib/v1/schemas/data_health';
+	import type { HistoricAvailabilityIndex } from '$lib/v1/schemas/history';
+	import type { Provenance } from '$lib/v1/schemas/provenance';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import { METHODOLOGY_METRIC_KEY } from '$lib/features/metrics/metrics.content';

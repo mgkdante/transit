@@ -8,7 +8,7 @@ import {
 	type IsoUtc,
 	type LineHistoryPartition,
 } from '$lib/v1/schemas';
-import { historyRangeRequestFromSearchParams } from '$lib/v1/history';
+import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
 import {
 	createLineHistoryResource,
 	type LineHistoryResource,
@@ -40,15 +40,10 @@ vi.mock('$lib/site/urlMirror', () => ({
 	mirrorSearchParam: vi.fn(),
 }));
 vi.mock('$lib/nav', () => ({ layout: { isDesktop: true } }));
-vi.mock('$lib/v1', async () => {
-	const history = await import('$lib/v1/history');
-	return {
-		...history,
-		wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
-		getLineHistoryIndex: harness.getLineHistoryIndex,
-		loadLineHistoryRange: harness.loadLineHistoryRange,
-	};
-});
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getLineHistoryIndex: harness.getLineHistoryIndex,
+	loadLineHistoryRange: harness.loadLineHistoryRange,
+}));
 
 const entityId = 'A/B';
 const generatedUtc = '2026-07-13T12:00:00Z' as IsoUtc;

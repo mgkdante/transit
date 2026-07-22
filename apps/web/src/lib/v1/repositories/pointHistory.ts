@@ -2,13 +2,14 @@ import { adapter, type AdapterCtx } from '$lib/v1/adapter';
 import {
 	HistoryArtifactContractError,
 	HistoryTransientPublicationError,
-	addIsoDays,
 	canonicalHistoryJson,
+} from '$lib/v1/history/partitions';
+import {
 	isHistoryFamilyIndexPath,
 	isHistoryPointArtifactPath,
-	strictIsoDate,
 	type RetainedPointHistoryFamily,
-} from '$lib/v1/history';
+} from '$lib/v1/history/pointers';
+import { addIsoDays, strictIsoDate } from '$lib/v1/history/selection';
 import { sha256Hex, type RawJsonEntity } from '$lib/v1/http';
 import type {
 	HistoricAvailabilityIndex,

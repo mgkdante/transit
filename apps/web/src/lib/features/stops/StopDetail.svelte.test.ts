@@ -316,37 +316,30 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 	return { ...actual, getLocale: () => currentLocale };
 });
 
-// Mock $lib/v1 with a clean factory (importing the real barrel pulls the full
-// module graph incl. $app/environment, which the jsdom env can't boot). We DO
-// use the real alertsForStop selector — it's a pure file (type-only imports), so
-// vi.importActual on it is safe and keeps the keying logic genuinely under test.
-vi.mock('$lib/v1', async () => {
-	const affected =
-		await vi.importActual<typeof import('$lib/v1/affectedAlerts')>('$lib/v1/affectedAlerts');
-	const history = await vi.importActual<typeof import('$lib/v1/history')>('$lib/v1/history');
-	// STATUS_LABELS is the shared bilingual status vocabulary the departure-status chips +
-	// row captions read (S8B) — pass the REAL table through so the tone labels resolve.
-	const enumLabels =
-		await vi.importActual<typeof import('$lib/v1/enumLabels')>('$lib/v1/enumLabels');
-	return {
-		...history,
-		getStop: (id: string) => getStopSpy(id),
-		getStopReliability: (id: string) => getStopReliabilitySpy(id),
-		getProvenance: () => provenanceData,
-		getV1Context: () => ({
-			manifest: {
-				short_name: 'STM',
-				display_name: 'Société de transport de Montréal',
-				files: { live: { ttl_s: 30 } },
-			},
-			labels: {},
-			lang: 'en',
-		}),
-		alertsForStop: affected.alertsForStop,
-		STATUS_LABELS: enumLabels.STATUS_LABELS,
-		...stopHistoryHarness,
-	};
-});
+vi.mock('$lib/v1/repositories/static', () => ({
+	getStop: (id: string) => getStopSpy(id),
+}));
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getStopReliability: (id: string) => getStopReliabilitySpy(id),
+	getStopHistoryDirectory: stopHistoryHarness.getStopHistoryDirectory,
+	getStopHistoryIndex: stopHistoryHarness.getStopHistoryIndex,
+	loadStopHistoryRange: stopHistoryHarness.loadStopHistoryRange,
+}));
+vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: () => provenanceData }));
+vi.mock('$lib/v1/live/store.svelte', () => ({
+	createLiveStore: stopHistoryHarness.createLiveStore,
+}));
+vi.mock('$lib/v1/boot', () => ({
+	getV1Context: () => ({
+		manifest: {
+			short_name: 'STM',
+			display_name: 'Société de transport de Montréal',
+			files: { live: { ttl_s: 30 } },
+		},
+		labels: {},
+		lang: 'en',
+	}),
+}));
 
 // The resource mock calls the loader and uses its return as `data` — so getStop
 // vs getStopReliability resolve to the right fixture (RouteDetail-style pattern).

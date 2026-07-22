@@ -28,9 +28,9 @@ function bootManifest(): Manifest {
 	} as unknown as Manifest;
 }
 
-function json(body: unknown): Response {
+function json(body: unknown, status = 200): Response {
 	return new Response(JSON.stringify(body), {
-		status: 200,
+		status,
 		headers: { 'content-type': 'application/json' },
 	});
 }
@@ -84,5 +84,42 @@ describe('r2 live ports', () => {
 			'live/current-alerts.json',
 			'live/current-network.json',
 		]);
+	});
+
+	it('resolves data health from its manifest pointer and treats a default-path 404 as absent', async () => {
+		const customManifest = bootManifest();
+		customManifest.files.live.data_health = 'status/current-data-health.json';
+		const dataHealth = { generated_utc: ISO, lanes: [], feeds: [] };
+		const controller = new AbortController();
+		const request = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
+			String(input).endsWith('/status/current-data-health.json') ? json(dataHealth) : json({}, 404),
+		);
+
+		await expect(
+			r2Adapter.dataHealth.get({
+				fetch: request as unknown as typeof fetch,
+				manifest: customManifest,
+				signal: controller.signal,
+			}),
+		).resolves.toEqual(dataHealth);
+		await expect(
+			r2Adapter.dataHealth.get({
+				fetch: request as unknown as typeof fetch,
+				manifest: bootManifest(),
+				signal: controller.signal,
+			}),
+		).resolves.toBeNull();
+
+		expect(request.mock.calls.map(([input]) => String(input))).toEqual([
+			'/data/v1/stm/status/current-data-health.json',
+			'/data/v1/stm/status/data_health.json',
+		]);
+		for (const [, init] of request.mock.calls) {
+			expect(init).toEqual({
+				headers: { accept: 'application/json' },
+				cache: 'default',
+				signal: controller.signal,
+			});
+		}
 	});
 });

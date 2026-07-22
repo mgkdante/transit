@@ -35,20 +35,21 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { getAlertArchiveIndex, getAlertArchiveRange, getAlertHistory } from '$lib/v1';
-	import type {
-		AlertArchiveEntry,
-		AlertHistory,
-		AlertHistoryEntry,
-		SeverityCode,
-	} from '$lib/v1/schemas';
+	import {
+		getAlertArchiveIndex,
+		getAlertArchiveRange,
+		getAlertHistory,
+	} from '$lib/v1/repositories/historic';
+	import type { AlertArchiveEntry } from '$lib/v1/schemas/alert_archive';
+	import type { AlertHistory, AlertHistoryEntry } from '$lib/v1/schemas/alert_history';
+	import type { SeverityCode } from '$lib/v1/schemas/types';
 	import { createResource, type Resource } from '$lib/v1/resource.svelte';
 	import {
 		availabilityFromAlertIndex,
 		datesForAvailability,
 		type HistoryAvailability,
 		type HistoryCorrection,
-	} from '$lib/v1/history';
+	} from '$lib/v1/history/selection';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
 	import { fromSearchParams, type AlertAffects, type DateWindow } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';

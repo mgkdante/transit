@@ -8,7 +8,7 @@ const harness = vi.hoisted(() => ({
 	serverV1Context: vi.fn(),
 }));
 
-vi.mock('$lib/v1', () => ({
+vi.mock('$lib/v1/repositories/static', () => ({
 	getStop: (...args: unknown[]) => harness.getStop(...args),
 }));
 

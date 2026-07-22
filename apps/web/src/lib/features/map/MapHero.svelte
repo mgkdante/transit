@@ -26,18 +26,16 @@
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { themeStore } from '$lib/stores';
 	import { layout, isDesktopViewport } from '$lib/nav';
+	import { createLiveStore } from '$lib/v1/live/store.svelte';
+	import { getV1Context } from '$lib/v1/boot';
+	import { getBasemap } from '$lib/v1/repositories/basemap';
 	import {
-		createLiveStore,
-		getV1Context,
-		getBasemap,
 		getRoute,
 		getRoutesIndex,
 		getStop,
 		getStopsIndexSlim,
-		type RouteFile,
-		type StopFile,
-		type SlimStopEntry,
-	} from '$lib/v1';
+	} from '$lib/v1/repositories/static';
+	import type { RouteFile, StopFile, SlimStopEntry } from '$lib/v1';
 	import type { Alert } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { createFilterStore, fromSearchParams, type Chip } from '$lib/filters';

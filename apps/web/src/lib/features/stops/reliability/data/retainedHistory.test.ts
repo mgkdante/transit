@@ -135,14 +135,23 @@ function crossMonthFixture(): {
 }
 
 describe('buildRetainedStopHistory', () => {
-	it('uses the public $lib/v1 barrel from Stop feature production files', () => {
-		for (const file of ['retainedHistory.ts', 'stopHistoryResource.svelte.ts']) {
-			const source = readFileSync(
-				resolve(process.cwd(), 'src/lib/features/stops/reliability/data', file),
-				'utf8',
+	it('uses narrow v1 runtime leaves without crossing feature domains', () => {
+		const files = [
+			'src/lib/features/stops/reliability/data/retainedHistory.ts',
+			'src/lib/features/stops/reliability/data/stopHistoryResource.svelte.ts',
+		];
+		for (const file of files) {
+			const source = readFileSync(resolve(process.cwd(), file), 'utf8');
+			expect(source).not.toMatch(
+				/import\s+(?!type\b)[^;]+from '\$lib\/v1(?:\/(?:schemas|history))?';/,
 			);
-			expect(source).not.toMatch(/from '\$lib\/v1\//);
 		}
+
+		const retained = readFileSync(resolve(process.cwd(), files[0]), 'utf8');
+		const resource = readFileSync(resolve(process.cwd(), files[1]), 'utf8');
+		expect(retained).toContain("from '$lib/v1/history/families'");
+		expect(resource).toContain("from '$lib/v1/history/retainedHistoryResource.svelte'");
+		expect(resource).toContain("from '$lib/v1/repositories/historic'");
 	});
 
 	it('pools the exact cross-month severe-delay proxy and average ingredients', () => {

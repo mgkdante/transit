@@ -38,39 +38,39 @@ const { payload } = vi.hoisted(() => ({
 }));
 const capturedLadders = vi.hoisted(() => ({ current: [] as unknown[] }));
 
-vi.mock('$lib/v1', async () => {
-	const history = await import('$lib/v1/history');
-	return {
-		...history,
-		getRepeatOffenders: vi.fn(),
-		getRepeatOffendersHistoryIndex: vi.fn(),
-		getRepeatOffendersHistoryDay: vi.fn(),
-		availabilityFromPointCollectionIndex: vi.fn(() => ({ kind: 'empty' })),
-		historyDateRequestFromSearchParams: vi.fn(() => ({ hasDate: false, rawDate: null })),
-		createHistoryDateResource: vi.fn(() => ({
-			request: { hasDate: false, rawDate: null },
-			index: null,
-			resolved: null,
-			availableDates: [],
-			selectedDate: null,
-			canonicalDate: null,
-			previousDate: null,
-			nextDate: null,
-			correction: null,
-			mode: 'current',
-			state: 'current',
-			value: payload.current,
-			data: payload.current,
-			error: null,
-			loading: false,
-			settled: true,
-			setRequest: vi.fn(),
-			retry: vi.fn(),
-			reload: vi.fn(),
-			destroy: vi.fn(),
-		})),
-	};
-});
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getRepeatOffenders: vi.fn(),
+	getRepeatOffendersHistoryIndex: vi.fn(),
+	getRepeatOffendersHistoryDay: vi.fn(),
+}));
+vi.mock('$lib/v1/history/selection', () => ({
+	availabilityFromPointCollectionIndex: vi.fn(() => ({ kind: 'empty' })),
+}));
+vi.mock('$lib/v1/history/dateResource.svelte', () => ({
+	historyDateRequestFromSearchParams: vi.fn(() => ({ hasDate: false, rawDate: null })),
+	createHistoryDateResource: vi.fn(() => ({
+		request: { hasDate: false, rawDate: null },
+		index: null,
+		resolved: null,
+		availableDates: [],
+		selectedDate: null,
+		canonicalDate: null,
+		previousDate: null,
+		nextDate: null,
+		correction: null,
+		mode: 'current',
+		state: 'current',
+		value: payload.current,
+		data: payload.current,
+		error: null,
+		loading: false,
+		settled: true,
+		setRequest: vi.fn(),
+		retry: vi.fn(),
+		reload: vi.fn(),
+		destroy: vi.fn(),
+	})),
+}));
 vi.mock('./selectors/offenderLadder', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('./selectors/offenderLadder')>();
 	return {
