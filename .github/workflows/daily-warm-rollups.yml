@@ -24,6 +24,7 @@ jobs:
         shell: bash
     outputs:
       providers: ${{ steps.discover.outputs.providers }}
+      prepare_artifact_id: ${{ steps.upload-prepare-evidence.outputs.artifact-id }}
     env:
       APP_ENV: production
       LOG_LEVEL: INFO
@@ -106,11 +107,11 @@ jobs:
           done
 
       - name: Upload prepare evidence
+        id: upload-prepare-evidence
         if: always()
-        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: daily-warm-prepare-${{ github.run_id }}
+          name: daily-warm-prepare-${{ github.run_id }}-${{ github.run_attempt }}
           path: apps/db/artifacts/daily-warm-rollups/prepare/
           retention-days: 30
           if-no-files-found: warn
@@ -221,10 +222,9 @@ jobs:
 
       - name: Upload rollup receipts
         if: always()
-        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: daily-warm-rollups-${{ github.run_id }}
+          name: daily-warm-rollups-${{ github.run_id }}-${{ github.run_attempt }}
           path: apps/db/artifacts/daily-warm-rollups/rollups/
           retention-days: 30
           if-no-files-found: warn
@@ -273,7 +273,7 @@ jobs:
       - name: Download alert archive receipts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: daily-warm-prepare-${{ github.run_id }}
+          artifact-ids: ${{ needs.prepare.outputs.prepare_artifact_id }}
           path: apps/db/artifacts/daily-warm-rollups/prepare
 
       - name: Publish gated historic snapshot
@@ -377,10 +377,9 @@ jobs:
 
       - name: Upload publish evidence
         if: always()
-        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: daily-warm-publish-${{ github.run_id }}
+          name: daily-warm-publish-${{ github.run_id }}-${{ github.run_attempt }}
           path: apps/db/artifacts/daily-warm-rollups/publish/
           retention-days: 30
           if-no-files-found: warn
@@ -483,10 +482,9 @@ jobs:
 
       - name: Upload retention receipts
         if: always()
-        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: daily-warm-retention-${{ github.run_id }}
+          name: daily-warm-retention-${{ github.run_id }}-${{ github.run_attempt }}
           path: apps/db/artifacts/daily-warm-rollups/retention/
           retention-days: 30
           if-no-files-found: warn
