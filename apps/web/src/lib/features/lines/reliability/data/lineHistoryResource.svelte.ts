@@ -1,7 +1,5 @@
 import {
-	availabilityFromCollectionIndex,
-	createHistoryRangeResource,
-	defaultWindowFromCollectionIndex,
+	createRetainedHistoryResource,
 	getLineHistoryIndex,
 	loadLineHistoryRange,
 	type HistoricCollectionIndex,
@@ -19,21 +17,13 @@ export function createLineHistoryResource(
 	entityId: string,
 	initialRequest: RawHistoryRangeRequest,
 ): LineHistoryResource {
-	return createHistoryRangeResource(
-		{
-			loadIndex: (signal) => getLineHistoryIndex(entityId, { signal }),
-			availability: availabilityFromCollectionIndex,
-			defaultWindow: defaultWindowFromCollectionIndex,
-			load: async (resolved, index, signal) => {
-				if (resolved.selection === null) {
-					throw new RangeError('line history range requires a resolved selection');
-				}
-				const partitions = await loadLineHistoryRange(entityId, index, resolved.selection, {
-					signal,
-				});
-				return buildRetainedLineHistory(entityId, index, partitions, resolved.selection);
-			},
-		},
-		{ initialRequest },
-	);
+	return createRetainedHistoryResource({
+		initialRequest,
+		missingSelectionError: 'line history range requires a resolved selection',
+		loadIndex: (signal) => getLineHistoryIndex(entityId, { signal }),
+		loadRange: (index, selection, signal) =>
+			loadLineHistoryRange(entityId, index, selection, { signal }),
+		build: (index, partitions, selection) =>
+			buildRetainedLineHistory(entityId, index, partitions, selection),
+	});
 }

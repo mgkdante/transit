@@ -31,28 +31,17 @@
 	import { page } from '$app/state';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import {
-		fromSearchParams,
-		toSearchParams,
-		emptyFilterState,
-		resolveWindow,
-		type DateWindow,
-	} from '$lib/filters';
+	import { fromSearchParams, toSearchParams, emptyFilterState, resolveWindow } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
 	import { describeAbsence } from '$lib/site/absence';
-	import {
-		availabilityFromCollectionIndex,
-		datesForAvailability,
-		historyRangeRequestFromSearchParams,
-		type RawHistoryRangeRequest,
-		type RouteReliability,
-	} from '$lib/v1';
+	import { historyRangeRequestFromSearchParams, type RouteReliability } from '$lib/v1';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { onMount, type Snippet } from 'svelte';
 	import {
 		ArticleControlDisclosure,
 		ArticleControlStack,
 		createRailDisclosureController,
+		createRetainedHistoryUi,
 		GrainPicker,
 		HistoryNavigator,
 		type GrainSegment,
@@ -184,18 +173,6 @@
 	// otherwise the calendar grain). Kept as a named derived so the mapper/caption
 	// logic below reads unchanged from the prior single-select model.
 	const mode = $derived<GrainMode>(viewKey);
-	let localHistoryRequest = $state.raw<RawHistoryRangeRequest>(initialHistoryRequest);
-	const activeHistoryRequest = $derived(history?.request ?? localHistoryRequest);
-	const emptyHistoryRequest = (): RawHistoryRangeRequest => ({
-		hasFrom: false,
-		hasTo: false,
-		rawFrom: null,
-		rawTo: null,
-	});
-	function setHistoryRequest(request: RawHistoryRangeRequest): void {
-		if (history) history.setRequest(request);
-		else localHistoryRequest = request;
-	}
 
 	// Dated DAY-grain periods the contract carries (for the range picker), sorted
 	// ascending so the start/end dropdowns read oldest→newest. A day-grain period
@@ -211,15 +188,18 @@
 			.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
 	);
 	const currentAvailableDates = $derived(datedPeriods.map((period) => period.date));
-	const historyAvailability = $derived(
-		history?.index == null ? null : availabilityFromCollectionIndex(history.index),
-	);
-	const retainedAvailableDates = $derived(
-		historyAvailability == null ? [] : datesForAvailability(historyAvailability),
-	);
-	const availableDates = $derived(
-		retainedAvailableDates.length > 0 ? retainedAvailableDates : currentAvailableDates,
-	);
+	const historyUi = createRetainedHistoryUi({
+		resource: () => history,
+		initialRequest: initialHistoryRequest,
+		currentDates: () => currentAvailableDates,
+		copy: () => copy.history,
+		formatDate: (date) => formatDateKey(date, locale),
+		isCompleteRequest: ({ rawFrom, rawTo }) => Boolean(rawFrom && rawTo),
+		onCorrection: () => {
+			if (!explicitRangeToken) viewKey = 'day';
+		},
+	});
+	const availableDates = $derived(historyUi.availableDates);
 	const hasDatedPeriods = $derived(availableDates.length > 0);
 
 	// Which calendar grains the contract actually carries — so we never offer a
@@ -241,11 +221,7 @@
 		settled = true;
 		if (history == null) {
 			const window = resolveWindow(seed.window, new Set(currentAvailableDates));
-			setHistoryRequest(
-				window == null
-					? emptyHistoryRequest()
-					: { hasFrom: true, hasTo: true, rawFrom: window.from, rawTo: window.to },
-			);
+			historyUi.selectRange(window ?? undefined);
 			if (window) viewKey = 'range';
 			else if (viewKey === 'range' && !explicitRangeToken) viewKey = 'day';
 		}
@@ -254,59 +230,20 @@
 		else if (viewKey === 'range' && !hasDatedPeriods && history == null) viewKey = 'day';
 	});
 
-	let historyAnnouncement = $state<string | null>(null);
-	let handledHistoryCorrection = '';
-	const getRangeWindow = (): DateWindow | undefined => {
-		const from = activeHistoryRequest.rawFrom;
-		const to = activeHistoryRequest.rawTo;
-		if (!activeHistoryRequest.hasFrom || !activeHistoryRequest.hasTo || !from || !to)
-			return undefined;
-		return from <= to ? { from, to } : { from: to, to: from };
-	};
-	const setRangeWindow = (w: DateWindow | undefined): void => {
-		historyAnnouncement = null;
-		handledHistoryCorrection = '';
-		setHistoryRequest(
-			w == null
-				? emptyHistoryRequest()
-				: { hasFrom: true, hasTo: true, rawFrom: w.from, rawTo: w.to },
-		);
-	};
-
-	const rangeWindow = $derived(getRangeWindow());
+	const rangeWindow = $derived(historyUi.requestWindow);
 	const hasRangePick = $derived(mode === 'range' && rangeWindow != null);
 	const normalizedRange = $derived<{ start: string; end: string } | undefined>(
 		hasRangePick && rangeWindow ? { start: rangeWindow.from, end: rangeWindow.to } : undefined,
 	);
-	const historyRequested = $derived(activeHistoryRequest.hasFrom || activeHistoryRequest.hasTo);
-	const explicitHistory = $derived(
-		history != null && historyRequested && history.state !== 'current',
-	);
-	const retainedReady = $derived(history?.state === 'ready' || history?.state === 'partial');
-	const historyLiveAnnouncement = $derived.by(() => {
-		if (historyAnnouncement != null) return historyAnnouncement;
-		if (!explicitHistory) return '';
-		if (history?.state === 'loading-index' || history?.state === 'loading-range')
-			return copy.history.loading;
-		if (history?.state === 'partial') return copy.history.partial;
-		if (history?.state === 'no-data') return copy.history.noData;
-		if (history?.state === 'error') return copy.history.error;
-		if (history?.state === 'ready') return copy.history.ready;
-		return '';
-	});
+	const historyRequested = $derived(historyUi.requested);
+	const explicitHistory = $derived(historyUi.explicit);
+	const retainedReady = $derived(historyUi.ready);
+	const historyAnnouncement = $derived(historyUi.announcement);
+	const historyLiveAnnouncement = $derived(historyUi.liveAnnouncement);
 
 	$effect(() => {
 		if (mode === 'range' || !historyRequested) return;
-		setHistoryRequest(emptyHistoryRequest());
-	});
-
-	$effect(() => {
-		const correction = history?.resolved?.correction;
-		if (correction == null || correction.key === handledHistoryCorrection) return;
-		handledHistoryCorrection = correction.key;
-		historyAnnouncement = copy.history.correction[correction.reason];
-		setHistoryRequest(emptyHistoryRequest());
-		if (!explicitRangeToken) viewKey = 'day';
+		historyUi.clearRequest();
 	});
 
 	$effect(() => {
@@ -321,24 +258,16 @@
 		// carries both requested dates, preserve the existing local range affordance instead of
 		// collapsing back to day. No retained partition is fetched; the mapper pools current rows.
 		if (resolveWindow(rangeWindow, new Set(currentAvailableDates)) != null) return;
-		setHistoryRequest(emptyHistoryRequest());
+		historyUi.clearRequest();
 		if (!explicitRangeToken) viewKey = 'day';
 	});
 
-	const historyCoverageText = $derived.by<string | null>(() => {
-		if (historyAvailability?.kind !== 'continuous') return null;
-		return copy.history.coverage(
-			formatDateKey(historyAvailability.firstDate, locale),
-			formatDateKey(historyAvailability.lastDate, locale),
-		);
-	});
-	const historySelectionText = $derived.by<string | null>(() => {
-		if (normalizedRange == null) return null;
-		return copy.history.selection(
-			formatDateKey(normalizedRange.start, locale),
-			formatDateKey(normalizedRange.end, locale),
-		);
-	});
+	const historyCoverageText = $derived(historyUi.coverageText);
+	const historySelectionText = $derived(
+		normalizedRange == null
+			? null
+			: historyUi.selectionText({ from: normalizedRange.start, to: normalizedRange.end }),
+	);
 
 	// S7.5 P1: the SERIALIZED wire format for ?grain/?from/?to is now owned by the shared codec
 	// (toSearchParams) — the rail maps its view state to a minimal FilterState and lets the codec
@@ -553,7 +482,7 @@
 					coverageText={historyCoverageText}
 					selectionText={historySelectionText}
 					liveAnnouncement={false}
-					onRangeChange={setRangeWindow}
+					onRangeChange={historyUi.selectRange}
 				/>
 			{/if}
 		{/snippet}

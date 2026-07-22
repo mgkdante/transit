@@ -35,13 +35,7 @@
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeNameFallback, describeAbsence } from '$lib/site/absence';
 	import { layout, routeFor } from '$lib/nav';
-	import {
-		mapSearchFor,
-		fromSearchParams,
-		toSearchParams,
-		emptyFilterState,
-		type DateWindow,
-	} from '$lib/filters';
+	import { mapSearchFor, fromSearchParams, toSearchParams, emptyFilterState } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { formatDateKey, formatRelativeSeconds, formatUtc } from '$lib/utils/time';
@@ -65,6 +59,7 @@
 		ArticleControlDisclosure,
 		ArticleControlStack,
 		createRailDisclosureController,
+		createRetainedHistoryUi,
 		FreshnessStamp,
 		ConformanceBadge,
 		ResourceBoundary,
@@ -76,12 +71,7 @@
 		SurfaceRailContext,
 		SurfaceRailPresentation,
 	} from '$lib/components/surface/SurfaceRail.svelte';
-	import {
-		availabilityFromCollectionIndex,
-		datesForAvailability,
-		historyRangeRequestFromSearchParams,
-		type RawHistoryRangeRequest,
-	} from '$lib/v1/history';
+	import { historyRangeRequestFromSearchParams } from '$lib/v1/history';
 	import { revealTocTarget, TocNav, type TocEntry } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import {
@@ -294,17 +284,15 @@
 	// the legacy onSelect callbacks were plain navigations, so the URL IS the contract.
 
 	/* ── HISTORIC: retained range ownership + grain (day/week/month) ──────────────── */
-	const emptyHistoryRequest = (): RawHistoryRangeRequest => ({
-		hasFrom: false,
-		hasTo: false,
-		rawFrom: null,
-		rawTo: null,
+	const historyUi = createRetainedHistoryUi({
+		resource: () => history,
+		copy: () => t.history,
+		formatDate: (date) => formatDateKey(date, locale),
 	});
-	const historyRequested = $derived(history.request.hasFrom || history.request.hasTo);
 	// Optional discovery can legitimately be absent. The coordinator reports that as `current`,
 	// so a stale deep link must fall back to the singleton instead of leaving a permanent skeleton.
-	const explicitHistory = $derived(historyRequested && history.state !== 'current');
-	const retainedReady = $derived(history.state === 'ready' || history.state === 'partial');
+	const explicitHistory = $derived(historyUi.explicit);
+	const retainedReady = $derived(historyUi.ready);
 	const selectedTrend = $derived(
 		explicitHistory ? (retainedReady ? history.value : null) : trend.data,
 	);
@@ -314,55 +302,13 @@
 	const allSeries = $derived({ daily: dailySeries, weekly: weeklySeries, monthly: monthlySeries });
 	const present = $derived(presentGrains(allSeries));
 
-	const historyAvailability = $derived(
-		history.index == null ? null : availabilityFromCollectionIndex(history.index),
+	const historyDates = $derived(historyUi.availableDates);
+	const historyWindow = $derived(explicitHistory ? historyUi.resolvedWindow : undefined);
+	const historyCoverageText = $derived(historyUi.coverageText);
+	const historySelectionText = $derived(
+		explicitHistory ? historyUi.selectionText(historyUi.resolvedWindow) : null,
 	);
-	const historyDates = $derived(
-		historyAvailability == null ? [] : datesForAvailability(historyAvailability),
-	);
-	const historyWindow = $derived(
-		explicitHistory ? (history.resolved?.selection ?? undefined) : undefined,
-	);
-	const historyCoverageText = $derived.by<string | null>(() => {
-		if (historyAvailability?.kind !== 'continuous') return null;
-		return t.history.coverage(
-			formatDateKey(historyAvailability.firstDate, locale),
-			formatDateKey(historyAvailability.lastDate, locale),
-		);
-	});
-	const historySelectionText = $derived.by<string | null>(() => {
-		if (!explicitHistory) return null;
-		const selection = history.resolved?.selection;
-		if (selection == null) return null;
-		return t.history.selection(
-			formatDateKey(selection.from, locale),
-			formatDateKey(selection.to, locale),
-		);
-	});
-	let historyAnnouncement = $state<string | null>(null);
-	let handledHistoryCorrection = '';
-	$effect(() => {
-		const correction = history.resolved?.correction;
-		if (correction == null || correction.key === handledHistoryCorrection) return;
-		handledHistoryCorrection = correction.key;
-		historyAnnouncement = t.history.correction[correction.reason];
-		history.setRequest(emptyHistoryRequest());
-	});
-
-	function selectHistoryRange(value: DateWindow | undefined): void {
-		historyAnnouncement = null;
-		handledHistoryCorrection = '';
-		history.setRequest(
-			value == null
-				? emptyHistoryRequest()
-				: {
-						hasFrom: true,
-						hasTo: true,
-						rawFrom: value.from,
-						rawTo: value.to,
-					},
-		);
-	}
+	const historyAnnouncement = $derived(historyUi.announcement);
 
 	// CONTRACT: the codec ($lib/filters) owns the URL seams — fromSearchParams enum-parses the
 	// ?grain seed (invalid values dropped); toSearchParams serializes it back (day = default →
@@ -430,15 +376,10 @@
 	}>(() => {
 		const state = emptyFilterState();
 		if (grainKey !== 'day') state.grain = grainKey;
-		const canonical = history.resolved?.canonicalWindow;
-		const pendingExplicit = explicitHistory && history.resolved == null;
+		const windowWire = historyUi.wireWindow();
 		return {
 			grain: toSearchParams(state).get('grain'),
-			from:
-				canonical?.from ??
-				(pendingExplicit && history.request.hasFrom ? history.request.rawFrom : null),
-			to:
-				canonical?.to ?? (pendingExplicit && history.request.hasTo ? history.request.rawTo : null),
+			...windowWire,
 		};
 	});
 	$effect(() => mirrorSearchParams(historyWire));
@@ -824,7 +765,7 @@
 				selectionText={historySelectionText}
 				announcement={historyAnnouncement}
 				liveAnnouncement={false}
-				onRangeChange={selectHistoryRange}
+				onRangeChange={historyUi.selectRange}
 			/>
 		{/snippet}
 		{#snippet primaryControls()}

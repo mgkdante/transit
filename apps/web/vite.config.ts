@@ -183,7 +183,7 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 		noExternal: ['@yesid/ui', 'bits-ui', 'gsap'],
 	},
 	test: {
-		// Two projects: "data" = pure logic (node, fast), "dom" = components/stores (happy-dom).
+		// Data and DOM projects run together; the compiler-heavy SSR contract runs afterward.
 		projects: [
 			{
 				extends: true,
@@ -198,6 +198,7 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 					// leaking inside a shared worker. Process isolation removes the contamination at the
 					// source, so the suite runs file-parallel again (no more --no-file-parallelism crutch).
 					pool: 'forks',
+					sequence: { groupOrder: 0 },
 					setupFiles: ['./src/tests/setup.data.ts'],
 				},
 			},
@@ -211,9 +212,24 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 						'src/lib/**/*.svelte.test.ts',
 						'src/routes/**/*.test.ts',
 					],
+					exclude: ['src/routes/**/page.svelte.test.ts'],
 					environment: 'happy-dom',
 					globals: true,
 					pool: 'threads',
+					sequence: { groupOrder: 0 },
+					setupFiles: ['./src/tests/setup.dom.ts'],
+				},
+			},
+			{
+				extends: true,
+				test: {
+					name: 'ssr-contract',
+					include: ['src/routes/**/page.svelte.test.ts'],
+					environment: 'happy-dom',
+					globals: true,
+					pool: 'threads',
+					maxWorkers: 1,
+					sequence: { groupOrder: 1 },
 					setupFiles: ['./src/tests/setup.dom.ts'],
 				},
 			},

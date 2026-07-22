@@ -38,17 +38,13 @@
 	import { fromSearchParams, resolveWindow, type DateWindow } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import {
-		availabilityFromCollectionIndex,
-		datesForAvailability,
-		type RawHistoryRangeRequest,
-		type StopReliability,
-	} from '$lib/v1';
+	import { type StopReliability } from '$lib/v1';
 	import type { OccupancyCode } from '$lib/v1/schemas';
 	import {
 		ArticleControlDisclosure,
 		ArticleControlStack,
 		createRailDisclosureController,
+		createRetainedHistoryUi,
 		ReliabilityPane,
 		GrainPicker,
 		HistoryNavigator,
@@ -160,113 +156,47 @@
 	});
 
 	/* ── retained date-range ownership ─────────────────────────────────────────── */
-	const emptyHistoryRequest = (): RawHistoryRangeRequest => ({
-		hasFrom: false,
-		hasTo: false,
-		rawFrom: null,
-		rawTo: null,
-	});
-	const historyRequested = $derived(
-		history != null && (history.request.hasFrom || history.request.hasTo),
-	);
-	const explicitHistory = $derived(
-		history != null && historyRequested && history.state !== 'current',
-	);
-	const retainedReady = $derived(history?.state === 'ready' || history?.state === 'partial');
-	const historyAvailability = $derived(
-		history?.index == null ? null : availabilityFromCollectionIndex(history.index),
-	);
-	const historyDates = $derived(
-		historyAvailability == null ? [] : datesForAvailability(historyAvailability),
-	);
 	const currentHistoryDates = $derived(
 		[...new Set((data.daily ?? []).map((point) => point.date))].sort(),
 	);
-	const availableHistoryDates = $derived(
-		historyDates.length > 0 ? historyDates : currentHistoryDates,
-	);
+	const historyUi = createRetainedHistoryUi({
+		resource: () => history,
+		currentDates: () => currentHistoryDates,
+		copy: () => copy.history,
+		formatDate: (date) => formatDateKey(date, locale),
+	});
+	const historyRequested = $derived(historyUi.requested);
+	const explicitHistory = $derived(historyUi.explicit);
+	const retainedReady = $derived(historyUi.ready);
+	const availableHistoryDates = $derived(historyUi.availableDates);
 	const currentHistoryWindow = $derived.by<DateWindow | undefined>(() => {
 		if (
 			history == null ||
 			!historyRequested ||
 			history.state !== 'current' ||
 			history.index != null ||
-			!history.request.hasFrom ||
-			!history.request.hasTo ||
-			history.request.rawFrom == null ||
-			history.request.rawTo == null
+			historyUi.requestWindow == null
 		)
 			return undefined;
-
-		const candidate: DateWindow =
-			history.request.rawFrom <= history.request.rawTo
-				? { from: history.request.rawFrom, to: history.request.rawTo }
-				: { from: history.request.rawTo, to: history.request.rawFrom };
-		return resolveWindow(candidate, new Set(currentHistoryDates));
+		return resolveWindow(historyUi.requestWindow, new Set(currentHistoryDates));
 	});
 	const historyWindow = $derived<DateWindow | undefined>(
-		explicitHistory ? (history?.resolved?.selection ?? undefined) : currentHistoryWindow,
+		explicitHistory ? historyUi.resolvedWindow : currentHistoryWindow,
 	);
 	const effectiveWindow = $derived<DateWindow | null>(
 		windowOverride !== undefined ? windowOverride : (historyWindow ?? null),
 	);
-	const historyCoverageText = $derived.by<string | null>(() => {
-		if (historyAvailability?.kind !== 'continuous') return null;
-		return copy.history.coverage(
-			formatDateKey(historyAvailability.firstDate, locale),
-			formatDateKey(historyAvailability.lastDate, locale),
-		);
-	});
-	const historySelectionText = $derived.by<string | null>(() => {
-		if (!historyRequested || historyWindow == null) return null;
-		return copy.history.selection(
-			formatDateKey(historyWindow.from, locale),
-			formatDateKey(historyWindow.to, locale),
-		);
-	});
-	let historyAnnouncement = $state<string | null>(null);
-	let handledHistoryCorrection = '';
-	$effect(() => {
-		const correction = history?.resolved?.correction;
-		if (correction == null || correction.key === handledHistoryCorrection) return;
-		handledHistoryCorrection = correction.key;
-		historyAnnouncement = copy.history.correction[correction.reason];
-		history?.setRequest(emptyHistoryRequest());
-	});
-	const historyLiveAnnouncement = $derived.by(() => {
-		if (historyAnnouncement != null) return historyAnnouncement;
-		if (!explicitHistory) return '';
-		if (history?.state === 'loading-index' || history?.state === 'loading-range')
-			return copy.history.loading;
-		if (history?.state === 'partial') return copy.history.partial;
-		if (history?.state === 'no-data') return copy.history.noData;
-		if (history?.state === 'error') return copy.history.error;
-		if (history?.state === 'ready') return copy.history.ready;
-		return '';
-	});
-	function selectHistoryRange(value: DateWindow | undefined): void {
-		historyAnnouncement = null;
-		handledHistoryCorrection = '';
-		history?.setRequest(
-			value == null
-				? emptyHistoryRequest()
-				: { hasFrom: true, hasTo: true, rawFrom: value.from, rawTo: value.to },
-		);
-	}
+	const historyCoverageText = $derived(historyUi.coverageText);
+	const historySelectionText = $derived(
+		historyRequested ? historyUi.selectionText(historyWindow) : null,
+	);
+	const historyAnnouncement = $derived(historyUi.announcement);
+	const historyLiveAnnouncement = $derived(historyUi.liveAnnouncement);
 	const historyWire = $derived.by<Record<string, string | null>>(() => {
 		const grainValue = grain === 'day' ? null : grain;
 		if (history == null || windowOverride !== undefined)
 			return { grain: grainValue } as Record<string, string | null>;
-		const canonical = history.resolved?.canonicalWindow ?? currentHistoryWindow;
-		const pendingExplicit = explicitHistory && history.resolved == null;
-		return {
-			grain: grainValue,
-			from:
-				canonical?.from ??
-				(pendingExplicit && history.request.hasFrom ? history.request.rawFrom : null),
-			to:
-				canonical?.to ?? (pendingExplicit && history.request.hasTo ? history.request.rawTo : null),
-		};
+		return { grain: grainValue, ...historyUi.wireWindow(currentHistoryWindow) };
 	});
 	$effect(() => {
 		if (syncUrl) mirrorSearchParams(historyWire);
@@ -479,7 +409,7 @@
 					coverageText={historyCoverageText}
 					selectionText={historySelectionText}
 					liveAnnouncement={false}
-					onRangeChange={selectHistoryRange}
+					onRangeChange={historyUi.selectRange}
 				/>
 			{/snippet}
 			{#snippet primaryControls()}

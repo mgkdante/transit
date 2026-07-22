@@ -1,7 +1,5 @@
 import {
-	availabilityFromCollectionIndex,
-	createHistoryRangeResource,
-	defaultWindowFromCollectionIndex,
+	createRetainedHistoryResource,
 	getNetworkHistoryIndex,
 	loadNetworkHistoryRange,
 	type HistoryRangeResource,
@@ -18,19 +16,11 @@ export type NetworkHistoryResource = HistoryRangeResource<
 export function createNetworkHistoryResource(
 	initialRequest: RawHistoryRangeRequest,
 ): NetworkHistoryResource {
-	return createHistoryRangeResource(
-		{
-			loadIndex: (signal) => getNetworkHistoryIndex({ signal }),
-			availability: availabilityFromCollectionIndex,
-			defaultWindow: defaultWindowFromCollectionIndex,
-			load: async (resolved, index, signal) => {
-				if (resolved.selection === null) {
-					throw new RangeError('network history range requires a resolved selection');
-				}
-				const partitions = await loadNetworkHistoryRange(index, resolved.selection, { signal });
-				return buildRetainedNetworkTrend(index, partitions, resolved.selection);
-			},
-		},
-		{ initialRequest },
-	);
+	return createRetainedHistoryResource({
+		initialRequest,
+		missingSelectionError: 'network history range requires a resolved selection',
+		loadIndex: (signal) => getNetworkHistoryIndex({ signal }),
+		loadRange: (index, selection, signal) => loadNetworkHistoryRange(index, selection, { signal }),
+		build: buildRetainedNetworkTrend,
+	});
 }

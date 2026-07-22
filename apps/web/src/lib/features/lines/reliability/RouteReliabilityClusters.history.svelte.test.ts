@@ -451,6 +451,31 @@ describe('RouteReliabilityClusters retained Line history', () => {
 		},
 	);
 
+	it('keeps blank-bound range intent canonical when retained discovery fails', async () => {
+		harness.page.url = new URL(
+			'http://localhost/lines/A%2FB?tab=reliability&focus=keep&from=&to=2026-02-01',
+		);
+		harness.getLineHistoryIndex.mockRejectedValue(new Error('retained index unavailable'));
+		const history = createHistory();
+		const view = render(RouteReliabilityClusters, {
+			props: { data: current, locale: 'en', history },
+		});
+
+		try {
+			await waitFor(() => expect(history.state).toBe('error'));
+			expect(activeWindowText(view.container)).toBe(
+				reliabilityCopy.en.controls.activeWindow.rangePrompt,
+			);
+			expect(harness.page.url.searchParams.get('grain')).toBe('range');
+			expect(harness.page.url.searchParams.get('from')).toBeNull();
+			expect(harness.page.url.searchParams.get('to')).toBeNull();
+			expect(harness.page.url.searchParams.get('tab')).toBe('reliability');
+			expect(harness.page.url.searchParams.get('focus')).toBe('keep');
+		} finally {
+			history.destroy();
+		}
+	});
+
 	it('keeps the current singleton range usable when the optional retained index is absent', async () => {
 		harness.page.url = new URL(
 			'http://localhost/lines/A%2FB?tab=reliability&from=2026-07-12&to=2026-07-12&focus=keep',
