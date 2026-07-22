@@ -63,6 +63,37 @@ describe('serverV1Context', () => {
 		);
 	});
 
+	it.each([
+		['DOMException AbortError', new DOMException('Aborted', 'AbortError')],
+		['DOMException TimeoutError', new DOMException('Timed out', 'TimeoutError')],
+		['Error AbortError', Object.assign(new Error('Aborted'), { name: 'AbortError' })],
+		['Error TimeoutError', Object.assign(new Error('Timed out'), { name: 'TimeoutError' })],
+	])('does not retry %s through the compatibility Worker', async (_name, failure) => {
+		const workerFetch = fetchSpy();
+		const bucketGet = vi.fn(async () => {
+			throw failure;
+		});
+		const ctx = serverV1Context({
+			fetch: fetchSpy(),
+			locals: {},
+			platform: {
+				env: {
+					SNAPSHOTS: { get: bucketGet },
+					DATA: { fetch: workerFetch },
+				},
+			},
+			url: new URL('https://transit.yesid.dev/network'),
+		});
+
+		const caught = await ctx.fetch?.('https://data.yesid.dev/v1/stm/manifest.json').then(
+			() => undefined,
+			(error: unknown) => error,
+		);
+
+		expect.soft(caught).toBe(failure);
+		expect.soft(workerFetch).not.toHaveBeenCalled();
+	});
+
 	it('uses the Cloudflare DATA binding and preserves the per-request cache when available', async () => {
 		const requestFetch = fetchSpy();
 		const bindingFetch = fetchSpy();

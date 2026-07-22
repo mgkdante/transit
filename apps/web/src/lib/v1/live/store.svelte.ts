@@ -192,28 +192,47 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		refreshController = controller;
 		loading = true;
 		const pending = (async () => {
+			let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
+			let timedOut = false;
 			// Yield once so `refreshInFlight` is assigned before adapters run, even if
 			// an adapter were to throw synchronously.
 			await Promise.resolve();
 			try {
-				const [v, t, d, a, n] = await Promise.all([
+				const deadline = new Promise<never>((_, reject) => {
+					deadlineTimer = setTimeout(() => {
+						timedOut = true;
+						const timeout = new DOMException(
+							`Live refresh exceeded its ${ttlMs}ms deadline`,
+							'TimeoutError',
+						);
+						reject(timeout);
+						controller.abort();
+					}, ttlMs);
+				});
+				const reads = Promise.all([
 					families.includes('vehicles') ? adapter.live.vehicles(batchCtx) : null,
 					families.includes('trips') ? adapter.live.trips(batchCtx) : null,
 					families.includes('departures') ? adapter.live.stopDepartures(batchCtx) : null,
 					families.includes('alerts') ? adapter.live.alerts(batchCtx) : null,
 					families.includes('network') ? adapter.live.network(batchCtx) : null,
 				]);
+				const [v, t, d, a, n] = await Promise.race([reads, deadline]);
 				// stop() invalidates the generation before aborting. Some test doubles or
 				// transports may ignore AbortSignal, so the generation guard is what makes
 				// late completion unable to repopulate an unmounted surface.
 				if (controller.signal.aborted || generation !== refreshGeneration) return;
 				// Commit only after every selected request has resolved. One failed family
 				// therefore leaves the previous complete snapshot intact.
-				if (v !== null) vehicles = v;
-				if (t !== null) trips = t;
-				if (d !== null) departures = d;
-				if (a !== null) alerts = a;
-				if (n !== null) network = n;
+				if (v !== null && (vehicles === null || v.generated_utc !== vehicles.generated_utc)) {
+					vehicles = v;
+				}
+				if (t !== null && (trips === null || t.generated_utc !== trips.generated_utc)) trips = t;
+				if (d !== null && (departures === null || d.generated_utc !== departures.generated_utc)) {
+					departures = d;
+				}
+				if (a !== null && (alerts === null || a.generated_utc !== alerts.generated_utc)) alerts = a;
+				if (n !== null && (network === null || n.generated_utc !== network.generated_utc))
+					network = n;
 				// SINGLE authoritative writer: push the snapshot's own DATA timestamp into
 				// the shared chrome coordinator so the freshness readout tracks this poll.
 				const polledGeneratedUtc =
@@ -228,15 +247,16 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 				}
 				error = null;
 			} catch (e) {
-				const aborted =
-					controller.signal.aborted ||
+				const lifecycleAbort =
+					(controller.signal.aborted && !timedOut) ||
 					(e instanceof DOMException
 						? e.name === 'AbortError'
 						: e instanceof Error && e.name === 'AbortError');
-				if (!aborted && generation === refreshGeneration) {
+				if (!lifecycleAbort && generation === refreshGeneration) {
 					error = e instanceof Error ? e : new Error(String(e));
 				}
 			} finally {
+				if (deadlineTimer !== null) clearTimeout(deadlineTimer);
 				if (refreshController === controller) {
 					loading = false;
 					refreshInFlight = null;

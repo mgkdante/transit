@@ -24,7 +24,10 @@ export function serverV1Context(event: ServerV1Event): AdapterCtx {
 			? async (...args: Parameters<typeof directFetch>) => {
 					try {
 						return await directFetch(...args);
-					} catch {
+					} catch (error) {
+						const name =
+							error instanceof DOMException || error instanceof Error ? error.name : undefined;
+						if (name === 'AbortError' || name === 'TimeoutError') throw error;
 						return compatibilityFetch(...args);
 					}
 				}
