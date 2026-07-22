@@ -1,7 +1,5 @@
 import {
-	availabilityFromCollectionIndex,
-	createHistoryRangeResource,
-	defaultWindowFromCollectionIndex,
+	createRetainedHistoryResource,
 	getStopHistoryIndex,
 	loadStopHistoryRange,
 	type HistoricCollectionIndex,
@@ -19,21 +17,13 @@ export function createStopHistoryResource(
 	entityId: string,
 	initialRequest: RawHistoryRangeRequest,
 ): StopHistoryResource {
-	return createHistoryRangeResource(
-		{
-			loadIndex: (signal) => getStopHistoryIndex(entityId, { signal }),
-			availability: availabilityFromCollectionIndex,
-			defaultWindow: defaultWindowFromCollectionIndex,
-			load: async (resolved, index, signal) => {
-				if (resolved.selection === null) {
-					throw new RangeError('stop history range requires a resolved selection');
-				}
-				const partitions = await loadStopHistoryRange(entityId, index, resolved.selection, {
-					signal,
-				});
-				return buildRetainedStopHistory(entityId, index, partitions, resolved.selection);
-			},
-		},
-		{ initialRequest },
-	);
+	return createRetainedHistoryResource({
+		initialRequest,
+		missingSelectionError: 'stop history range requires a resolved selection',
+		loadIndex: (signal) => getStopHistoryIndex(entityId, { signal }),
+		loadRange: (index, selection, signal) =>
+			loadStopHistoryRange(entityId, index, selection, { signal }),
+		build: (index, partitions, selection) =>
+			buildRetainedStopHistory(entityId, index, partitions, selection),
+	});
 }
