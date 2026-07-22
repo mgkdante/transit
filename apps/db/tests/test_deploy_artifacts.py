@@ -350,12 +350,12 @@ def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof()
 
     # Each provider gets a bounded, serial retention job after publication.
     # Exhaustion is required so a capped backlog cannot silently keep growing.
-    assert 'prune-bronze-storage "$PROVIDER_ID" --require-exhausted' in workflow
+    assert 'prune-bronze-storage "$provider" --require-exhausted' in workflow
     assert workflow.index(
-        'prune-bronze-storage "$PROVIDER_ID" --require-exhausted'
-    ) > workflow.index('prune-warm-rollup-storage "$PROVIDER_ID"')
+        'prune-bronze-storage "$provider" --require-exhausted'
+    ) > workflow.index('prune-warm-rollup-storage "$provider"')
     # Proof report + artifact give the prune a daily visible receipt.
-    assert 'retention-proof-report "$PROVIDER_ID" --report-path' in workflow
+    assert 'retention-proof-report "$provider" --report-path' in workflow
     assert (
         "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"
         in workflow
@@ -365,7 +365,7 @@ def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof()
     # not apply to `uses:` steps).
     assert "apps/db/artifacts/daily-warm-rollups/retention/" in workflow
 
-    assert document["jobs"]["retention"]["timeout-minutes"] >= 35
+    assert document["jobs"]["retention"]["timeout-minutes"] == 150
 
 
 def test_daily_warm_rollups_bounds_expensive_work_and_gates_publish() -> None:
@@ -375,10 +375,14 @@ def test_daily_warm_rollups_bounds_expensive_work_and_gates_publish() -> None:
         )
     )
     rollups = document["jobs"]["rollups"]
-    build = next(step for step in rollups["steps"] if step["name"] == "Build warm rollups")
+    build = next(
+        step for step in rollups["steps"] if step["name"] == "Build warm rollups serially"
+    )
     publish = document["jobs"]["publish"]
 
-    assert build["timeout-minutes"] == 75
+    assert rollups["timeout-minutes"] == 250
+    assert build["timeout-minutes"] == 235
+    assert 'timeout --signal=TERM --kill-after=1m "75m"' in build["run"]
     assert publish["timeout-minutes"] == 90
     assert publish["if"] == (
         "${{ always() && needs.prepare.result == 'success' "
@@ -567,8 +571,8 @@ def test_daily_warm_rollups_workflow_prunes_i3_after_historic_publish() -> None:
 
     # slice-9.1.1l: the i3 prune runs daily from this job, AFTER the historic
     # /v1 publish so alert_history.json builds from unpruned silver history.
-    assert 'prune-i3-storage "$PROVIDER_ID"' in workflow
-    assert workflow.index('prune-i3-storage "$PROVIDER_ID"') > workflow.index(
+    assert 'prune-i3-storage "$provider"' in workflow
+    assert workflow.index('prune-i3-storage "$provider"') > workflow.index(
         "publish-all --tier historic"
     )
 
@@ -577,9 +581,9 @@ def test_daily_warm_rollups_archives_alerts_before_expensive_build_and_publish()
     workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(encoding="utf-8")
 
     sync = workflow.index('sync-alert-archive "$provider"')
-    build = workflow.index('build-warm-rollups "$PROVIDER_ID"')
+    build = workflow.index('build-warm-rollups "$provider"')
     publish = workflow.index("publish-all --tier historic")
-    prune = workflow.index('prune-i3-storage "$PROVIDER_ID"')
+    prune = workflow.index('prune-i3-storage "$provider"')
 
     assert sync < build < publish < prune
 

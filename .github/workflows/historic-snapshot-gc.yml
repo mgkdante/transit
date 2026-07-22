@@ -14,6 +14,9 @@ on:
           - dry-run
           - mark
 
+permissions:
+  contents: read
+
 concurrency:
   group: daily-warm-rollups
   cancel-in-progress: false
@@ -21,17 +24,14 @@ concurrency:
 jobs:
   mark:
     runs-on: ubuntu-latest
-    # The scan gets 90 minutes; ten minutes of job headroom preserve the always-run
-    # receipt upload if the first full inventory reaches that bound.
-    timeout-minutes: 100
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        provider: [stm, octranspo, sto]
+    # Three 90-minute scans plus kill grace fit inside the aggregate step; job
+    # headroom preserves the always-run receipt upload.
+    timeout-minutes: 300
     env:
       APP_ENV: production
       LOG_LEVEL: INFO
+      PROVIDER_PLAN: '["stm","octranspo","sto"]'
+      GC_MODE: ${{ github.event_name == 'schedule' && 'mark' || inputs.mode }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       BRONZE_S3_ENDPOINT: https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com
       BRONZE_S3_BUCKET: transit-raw
@@ -42,49 +42,110 @@ jobs:
       SNAPSHOT_STORAGE_BACKEND: s3
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - name: Initialize provider receipt
+
+      - name: Initialize provider receipts
         shell: bash
         run: |
+          provider_plan="$(
+            jq -cers '
+              def valid_provider_id:
+                type == "string"
+                and length > 0
+                and test("^[A-Za-z0-9][A-Za-z0-9._-]*$");
+              if length != 1 then
+                error("provider plan must contain exactly one JSON document")
+              elif (.[0] | type) != "array" then
+                error("provider plan must be an array")
+              elif (.[0] | length) == 0 then
+                error("provider plan must be nonempty")
+              elif any(.[0][]; valid_provider_id | not) then
+                error("provider plan contains an unsafe provider id")
+              elif (.[0] | unique | length) != (.[0] | length) then
+                error("provider plan contains duplicate provider ids")
+              else
+                .[0]
+              end
+            ' <<< "$PROVIDER_PLAN"
+          )"
+          provider_lines="$(jq -r '.[]' <<< "$provider_plan")" || exit "$?"
+          mapfile -t providers <<< "$provider_lines"
           mkdir -p apps/db/reports
-          printf '{"status":"fail","phase":"preflight","provider_id":"${{ matrix.provider }}"}\n' \
-            > "apps/db/reports/historic-gc-${{ matrix.provider }}.json"
+          for provider in "${providers[@]}"; do
+            printf '{"status":"fail","phase":"preflight","provider_id":"%s"}\n' \
+              "$provider" > "apps/db/reports/historic-gc-${provider}.json"
+          done
+
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
+
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "0.11.15"
+
       - name: Install database package
         working-directory: apps/db
         run: uv sync --locked
+
       - name: Apply database migrations
         working-directory: apps/db
         run: uv run python -m transit_ops.cli init-db
+
       - name: Scan and mark unreachable generations
         working-directory: apps/db
         shell: bash
+        timeout-minutes: 280
         run: |
           mkdir -p reports
-          mode="${{ github.event_name == 'schedule' && 'mark' || inputs.mode }}"
-          report_path="reports/historic-gc-${{ matrix.provider }}.json"
+          provider_plan="$(
+            jq -cers '
+              def valid_provider_id:
+                type == "string"
+                and length > 0
+                and test("^[A-Za-z0-9][A-Za-z0-9._-]*$");
+              if length != 1 then
+                error("provider plan must contain exactly one JSON document")
+              elif (.[0] | type) != "array" then
+                error("provider plan must be an array")
+              elif (.[0] | length) == 0 then
+                error("provider plan must be nonempty")
+              elif any(.[0][]; valid_provider_id | not) then
+                error("provider plan contains an unsafe provider id")
+              elif (.[0] | unique | length) != (.[0] | length) then
+                error("provider plan contains duplicate provider ids")
+              else
+                .[0]
+              end
+            ' <<< "$PROVIDER_PLAN"
+          )"
+          provider_lines="$(jq -r '.[]' <<< "$provider_plan")" || exit "$?"
+          mapfile -t providers <<< "$provider_lines"
           timeout_limit="90m"
-          set +e
-          timeout --signal=TERM "$timeout_limit" \
-            uv run python -m transit_ops.cli gc-historic-snapshots "${{ matrix.provider }}" \
-            --mode "$mode" \
-            --report-path "$report_path"
-          scan_status="$?"
-          set -e
-          if [[ "$scan_status" -eq 124 || "$scan_status" -eq 143 ]]; then
-            printf '{"status":"fail","phase":"scan","failure_type":"timeout","timeout_limit":"%s","provider_id":"%s"}\n' \
-              "$timeout_limit" "${{ matrix.provider }}" > "$report_path"
-          fi
-          exit "$scan_status"
-      - name: Upload provider GC receipt
+          aggregate_status=0
+          for provider in "${providers[@]}"; do
+            report_path="reports/historic-gc-${provider}.json"
+            set +e
+            timeout --signal=TERM --kill-after=1m "$timeout_limit" \
+              uv run python -m transit_ops.cli gc-historic-snapshots "$provider" \
+              --mode "$GC_MODE" \
+              --report-path "$report_path"
+            scan_status="$?"
+            set -e
+            if [[ "$scan_status" -eq 124 || "$scan_status" -eq 137 || "$scan_status" -eq 143 ]]; then
+              printf '{"status":"fail","phase":"scan","failure_type":"timeout","timeout_limit":"%s","provider_id":"%s"}\n' \
+                "$timeout_limit" "$provider" > "$report_path"
+            fi
+            if [[ "$aggregate_status" -eq 0 && "$scan_status" -ne 0 ]]; then
+              aggregate_status="$scan_status"
+            fi
+          done
+          exit "$aggregate_status"
+
+      - name: Upload provider GC receipts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: historic-gc-${{ matrix.provider }}-${{ github.run_id }}
-          path: apps/db/reports/historic-gc-${{ matrix.provider }}.json
+          name: historic-gc-${{ github.run_id }}
+          path: apps/db/reports/historic-gc-*.json
           if-no-files-found: error
           retention-days: 30

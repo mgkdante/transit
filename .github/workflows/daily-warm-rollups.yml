@@ -118,14 +118,9 @@ jobs:
   rollups:
     needs: prepare
     runs-on: ubuntu-latest
-    # Healthy backlog-inclusive runs finish under 60 minutes. The 75-minute
-    # command budget stops livelock while job headroom preserves receipt upload.
-    timeout-minutes: 100
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        provider: ${{ fromJSON(needs.prepare.outputs.providers) }}
+    # Three 75-minute provider bounds plus kill grace fit inside the aggregate
+    # step; job headroom preserves the always-run receipt upload.
+    timeout-minutes: 250
     defaults:
       run:
         working-directory: apps/db
@@ -136,6 +131,7 @@ jobs:
       PROVIDER_TIMEZONE: America/Toronto
       STM_PROVIDER_ID: stm
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PROVIDER_PLAN: ${{ needs.prepare.outputs.providers }}
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -153,52 +149,83 @@ jobs:
       - name: Install project dependencies
         run: uv sync --locked
 
-      - name: Build warm rollups
-        timeout-minutes: 75
-        env:
-          PROVIDER_ID: ${{ matrix.provider }}
+      - name: Build warm rollups serially
+        timeout-minutes: 235
         run: |
           artifact_dir="artifacts/daily-warm-rollups/rollups"
           mkdir -p "$artifact_dir"
-          receipt_path="$artifact_dir/rollup-stage-${PROVIDER_ID}.json"
-          log_path="$artifact_dir/rollup-${PROVIDER_ID}.log"
-          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          jq -n \
-            --arg provider_id "$PROVIDER_ID" \
-            --arg status "running" \
-            --arg started_utc "$started_at" \
-            '{provider_id: $provider_id, status: $status, started_utc: $started_utc}' \
-            > "$receipt_path"
-          set +e
-          uv run python -m transit_ops.cli build-warm-rollups "$PROVIDER_ID" 2>&1 \
-            | tee "$log_path"
-          command_status=${PIPESTATUS[0]}
-          set -e
-          if [[ "$command_status" -eq 0 ]]; then
-            stage_status="success"
-          else
-            stage_status="failure"
-          fi
-          jq -n \
-            --arg provider_id "$PROVIDER_ID" \
-            --arg status "$stage_status" \
-            --arg started_utc "$started_at" \
-            --arg completed_utc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --argjson exit_code "$command_status" \
-            '{provider_id: $provider_id, status: $status, started_utc: $started_utc,
-              completed_utc: $completed_utc, exit_code: $exit_code}' \
-            > "$receipt_path"
-          exit "$command_status"
+          provider_plan="$(
+            jq -cers '
+              def valid_provider_id:
+                type == "string"
+                and length > 0
+                and test("^[A-Za-z0-9][A-Za-z0-9._-]*$");
+              if length != 1 then
+                error("provider plan must contain exactly one JSON document")
+              elif (.[0] | type) != "array" then
+                error("provider plan must be an array")
+              elif (.[0] | length) == 0 then
+                error("provider plan must be nonempty")
+              elif any(.[0][]; valid_provider_id | not) then
+                error("provider plan contains an unsafe provider id")
+              elif (.[0] | unique | length) != (.[0] | length) then
+                error("provider plan contains duplicate provider ids")
+              else
+                .[0]
+              end
+            ' <<< "$PROVIDER_PLAN"
+          )"
+          provider_lines="$(jq -r '.[]' <<< "$provider_plan")" || exit "$?"
+          mapfile -t providers <<< "$provider_lines"
+          aggregate_status=0
+          for provider in "${providers[@]}"; do
+            receipt_path="$artifact_dir/rollup-stage-${provider}.json"
+            log_path="$artifact_dir/rollup-${provider}.log"
+            started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            jq -n \
+              --arg provider_id "$provider" \
+              --arg status "running" \
+              --arg started_utc "$started_at" \
+              '{provider_id: $provider_id, status: $status, started_utc: $started_utc}' \
+              > "$receipt_path"
+            set +e
+            timeout --signal=TERM --kill-after=1m "75m" \
+              uv run python -m transit_ops.cli build-warm-rollups "$provider" 2>&1 \
+              | tee "$log_path"
+            pipeline_status=("${PIPESTATUS[@]}")
+            set -e
+            command_status="${pipeline_status[0]}"
+            log_status="${pipeline_status[1]}"
+            if [[ "$log_status" -ne 0 ]]; then
+              command_status="$log_status"
+            fi
+            if [[ "$command_status" -eq 0 ]]; then
+              stage_status="success"
+            else
+              stage_status="failure"
+            fi
+            jq -n \
+              --arg provider_id "$provider" \
+              --arg status "$stage_status" \
+              --arg started_utc "$started_at" \
+              --arg completed_utc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --argjson exit_code "$command_status" \
+              '{provider_id: $provider_id, status: $status, started_utc: $started_utc,
+                completed_utc: $completed_utc, exit_code: $exit_code}' \
+              > "$receipt_path"
+            if [[ "$aggregate_status" -eq 0 && "$command_status" -ne 0 ]]; then
+              aggregate_status="$command_status"
+            fi
+          done
+          exit "$aggregate_status"
 
-      - name: Upload rollup receipt
+      - name: Upload rollup receipts
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: daily-warm-rollup-${{ matrix.provider }}-${{ github.run_id }}
-          path: |
-            apps/db/artifacts/daily-warm-rollups/rollups/rollup-stage-${{ matrix.provider }}.json
-            apps/db/artifacts/daily-warm-rollups/rollups/rollup-${{ matrix.provider }}.log
+          name: daily-warm-rollups-${{ github.run_id }}
+          path: apps/db/artifacts/daily-warm-rollups/rollups/
           retention-days: 30
           if-no-files-found: warn
 
@@ -362,12 +389,9 @@ jobs:
     needs: [prepare, publish]
     if: needs.publish.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        provider: ${{ fromJSON(needs.prepare.outputs.providers) }}
+    # The previous provider job allowed 45 minutes. Each serial prune group is
+    # hard-bounded at 40 minutes plus kill grace, with aggregate upload headroom.
+    timeout-minutes: 150
     defaults:
       run:
         working-directory: apps/db
@@ -384,6 +408,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       BRONZE_S3_ACCESS_KEY: ${{ secrets.BRONZE_S3_ACCESS_KEY }}
       BRONZE_S3_SECRET_KEY: ${{ secrets.BRONZE_S3_SECRET_KEY }}
+      PROVIDER_PLAN: ${{ needs.prepare.outputs.providers }}
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -401,31 +426,68 @@ jobs:
       - name: Install project dependencies
         run: uv sync --locked
 
-      - name: Prune retained storage
-        env:
-          PROVIDER_ID: ${{ matrix.provider }}
-        run: |
-          uv run python -m transit_ops.cli prune-i3-storage "$PROVIDER_ID"
-          uv run python -m transit_ops.cli prune-warm-rollup-storage "$PROVIDER_ID"
-          uv run python -m transit_ops.cli prune-bronze-storage "$PROVIDER_ID" --require-exhausted
-
-      - name: Write retention proof
-        if: always()
-        env:
-          PROVIDER_ID: ${{ matrix.provider }}
+      - name: Prune retained storage and write proofs
+        timeout-minutes: 130
         run: |
           artifact_dir="artifacts/daily-warm-rollups/retention"
           mkdir -p "$artifact_dir"
-          uv run python -m transit_ops.cli retention-proof-report "$PROVIDER_ID" --report-path \
-            "$artifact_dir/retention-proof-${PROVIDER_ID}.json"
+          provider_plan="$(
+            jq -cers '
+              def valid_provider_id:
+                type == "string"
+                and length > 0
+                and test("^[A-Za-z0-9][A-Za-z0-9._-]*$");
+              if length != 1 then
+                error("provider plan must contain exactly one JSON document")
+              elif (.[0] | type) != "array" then
+                error("provider plan must be an array")
+              elif (.[0] | length) == 0 then
+                error("provider plan must be nonempty")
+              elif any(.[0][]; valid_provider_id | not) then
+                error("provider plan contains an unsafe provider id")
+              elif (.[0] | unique | length) != (.[0] | length) then
+                error("provider plan contains duplicate provider ids")
+              else
+                .[0]
+              end
+            ' <<< "$PROVIDER_PLAN"
+          )"
+          provider_lines="$(jq -r '.[]' <<< "$provider_plan")" || exit "$?"
+          mapfile -t providers <<< "$provider_lines"
+          aggregate_status=0
+          for provider in "${providers[@]}"; do
+            set +e
+            timeout --signal=TERM --kill-after=1m "40m" \
+              bash --noprofile --norc -eo pipefail -c '
+                provider="$1"
+                uv run python -m transit_ops.cli prune-i3-storage "$provider"
+                uv run python -m transit_ops.cli prune-warm-rollup-storage "$provider"
+                uv run python -m transit_ops.cli prune-bronze-storage "$provider" --require-exhausted
+              ' _ "$provider"
+            prune_status="$?"
+            set -e
+            if [[ "$aggregate_status" -eq 0 && "$prune_status" -ne 0 ]]; then
+              aggregate_status="$prune_status"
+            fi
+
+            set +e
+            uv run python -m transit_ops.cli retention-proof-report "$provider" --report-path \
+              "$artifact_dir/retention-proof-${provider}.json"
+            proof_status="$?"
+            set -e
+            if [[ "$aggregate_status" -eq 0 && "$proof_status" -ne 0 ]]; then
+              aggregate_status="$proof_status"
+            fi
+          done
+          exit "$aggregate_status"
 
       - name: Upload retention receipts
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: daily-warm-retention-${{ matrix.provider }}-${{ github.run_id }}
-          path: apps/db/artifacts/daily-warm-rollups/retention/retention-proof-${{ matrix.provider }}.json
+          name: daily-warm-retention-${{ github.run_id }}
+          path: apps/db/artifacts/daily-warm-rollups/retention/
           retention-days: 30
           if-no-files-found: warn
 
