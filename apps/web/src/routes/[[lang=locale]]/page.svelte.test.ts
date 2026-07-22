@@ -14,8 +14,11 @@
 // the same way the NetworkHealth surface test does, and $lib/nav for routeFor.
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { parse, type AST } from 'svelte/compiler';
+import { createServer } from 'vite';
 import type { NetworkFile } from '$lib/v1';
 import type { IsoUtc } from '$lib/v1/schemas';
 import Page from './+page.svelte';
@@ -122,6 +125,79 @@ const liveNetwork: NetworkFile = {
 	occupancy_mix: { empty: 0.1, many_seats: 0.65, few_seats: 0.17, standing: 0.08, full: 0 },
 };
 
+const routePath = resolve(process.cwd(), 'src/routes/[[lang=locale]]/+page.svelte');
+const homeFeaturePath = resolve(process.cwd(), 'src/lib/features/home');
+
+function fingerprint(value: string): string {
+	return createHash('sha256').update(value).digest('hex');
+}
+
+function canonicalMarkup(markup: string): string {
+	const template = document.createElement('template');
+	template.innerHTML = markup;
+	function serialize(node: Node): string {
+		if (node.nodeType === Node.TEXT_NODE)
+			return node.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+		if (!(node instanceof Element)) return '';
+		const attributes = [...node.attributes]
+			.map(({ name, value }) => {
+				if (name !== 'class') return [name, value] as const;
+				return [
+					name,
+					value
+						.split(/\s+/)
+						.filter((token) => token && !/^(?:svelte-|s-)[\w-]+$/.test(token))
+						.sort()
+						.join(' '),
+				] as const;
+			})
+			.filter(([, value]) => value !== '')
+			.sort(([left], [right]) => left.localeCompare(right));
+		return `<${node.tagName.toLowerCase()}${attributes
+			.map(([name, value]) => ` ${name}=${JSON.stringify(value)}`)
+			.join('')}>${[...node.childNodes].map(serialize).join('')}</${node.tagName.toLowerCase()}>`;
+	}
+	return [...template.content.childNodes].map(serialize).join('');
+}
+
+function cssRecords(source: string): string[] {
+	const css = parse(source, { modern: true }).css;
+	if (css == null) return [];
+	const records: string[] = [];
+	function visit(
+		nodes: readonly (AST.CSS.Atrule | AST.CSS.Rule | AST.CSS.Declaration)[],
+		context: readonly string[] = [],
+	): void {
+		for (const node of nodes) {
+			if (node.type === 'Atrule') {
+				visit(node.block?.children ?? [], [...context, `@${node.name} ${node.prelude}`]);
+				continue;
+			}
+			if (node.type !== 'Rule') continue;
+			const declarations = node.block.children
+				.filter((child): child is AST.CSS.Declaration => child.type === 'Declaration')
+				.map((child) => `${child.property}:${child.value}`)
+				.join(';');
+			for (const selector of node.prelude.children) {
+				const text = source.slice(selector.start, selector.end).replace(/\s+/g, ' ').trim();
+				records.push(`${context.join(' > ')}|${text}|${declarations}`);
+			}
+		}
+	}
+	visit(css.children);
+	return records;
+}
+
+function homeCssFingerprint(): string {
+	const owners = ['HomeHero.svelte', 'HomeWhat.svelte', 'HomeExplore.svelte'].map((owner) =>
+		resolve(homeFeaturePath, owner),
+	);
+	const sources = owners.every(existsSync)
+		? owners.map((owner) => readFileSync(owner, 'utf8'))
+		: [readFileSync(routePath, 'utf8')];
+	return fingerprint(JSON.stringify(sources.flatMap(cssRecords).sort()));
+}
+
 afterEach(() => {
 	state.locale = 'en';
 	state.network = null;
@@ -155,10 +231,7 @@ describe('Home hub — identity + what-this-is', () => {
 			divider.compareDocumentPosition(controlRoom) & Node.DOCUMENT_POSITION_FOLLOWING,
 		).toBeTruthy();
 
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/routes/[[lang=locale]]/+page.svelte'),
-			'utf8',
-		);
+		const source = readFileSync(resolve(homeFeaturePath, 'HomeHero.svelte'), 'utf8');
 		expect(source).toMatch(
 			/\.hero-left\s*\{[\s\S]*?min-height:\s*calc\(100svh - var\(--chrome-offset\)\)/,
 		);
@@ -373,16 +446,15 @@ describe('Home hub — wayfinding v2 (informational pillars + filter rail)', () 
 		const kind = screen.getByRole('radio', { name: 'The record' });
 		for (const button of [question, kind]) expect(button).toHaveClass('px-3', 'text-base');
 
-		const src = readFileSync(
-			resolve(process.cwd(), 'src/routes/[[lang=locale]]/+page.svelte'),
-			'utf-8',
-		);
-		expect(src.match(/density="spacious"/g)).toHaveLength(2);
-		expect(src).toMatch(/grid-template-columns:\s*19rem\s+minmax\(0,\s*1fr\)/);
-		expect(src).toMatch(
+		const heroSource = readFileSync(resolve(homeFeaturePath, 'HomeHero.svelte'), 'utf8');
+		const whatSource = readFileSync(resolve(homeFeaturePath, 'HomeWhat.svelte'), 'utf8');
+		const exploreSource = readFileSync(resolve(homeFeaturePath, 'HomeExplore.svelte'), 'utf8');
+		expect(exploreSource.match(/density="spacious"/g)).toHaveLength(2);
+		expect(exploreSource).toMatch(/grid-template-columns:\s*19rem\s+minmax\(0,\s*1fr\)/);
+		expect(whatSource).toMatch(
 			/\.what-body\s*\{[\s\S]*?font-size:\s*var\(--text-body\)[\s\S]*?line-height:\s*1\.65/,
 		);
-		expect(src).toMatch(
+		expect(heroSource).toMatch(
 			/\.hero-lede\s*\{[\s\S]*?font-size:\s*var\(--text-body\)[\s\S]*?line-height:\s*1\.65/,
 		);
 		expect(container.querySelector('.what-body')).toHaveClass('what-body');
@@ -491,4 +563,81 @@ describe('Home hub — bilingual', () => {
 			'/fr/status',
 		);
 	});
+});
+
+describe('Home hub — movement boundary preservation', () => {
+	it('owns copy and each movement under the home feature domain', () => {
+		for (const owner of [
+			'home.copy.ts',
+			'HomeHero.svelte',
+			'HomeWhat.svelte',
+			'HomeExplore.svelte',
+		]) {
+			expect(existsSync(resolve(homeFeaturePath, owner)), owner).toBe(true);
+		}
+
+		const route = readFileSync(routePath, 'utf8');
+		const positions = ['<HomeHero', '<HomeWhat', '<HomeExplore'].map((component) =>
+			route.indexOf(component),
+		);
+		expect(positions.every((position) => position >= 0)).toBe(true);
+		expect(positions).toEqual([...positions].sort((left, right) => left - right));
+	});
+
+	it('locks the authored CSS output rule-by-rule while ownership moves', () => {
+		expect(homeCssFingerprint()).toBe(
+			'1f5126537ec32357aec52d7bc90677f0c991a0650245df7cf2d5453db21daffc',
+		);
+	});
+
+	it('locks canonical hydrated DOM in both locale/live states', () => {
+		state.locale = 'en';
+		state.network = null;
+		const enDom = render(Page);
+		const enDomHash = fingerprint(canonicalMarkup(enDom.container.innerHTML));
+		enDom.unmount();
+
+		state.locale = 'fr';
+		state.network = liveNetwork;
+		const frDom = render(Page);
+		const frDomHash = fingerprint(canonicalMarkup(frDom.container.innerHTML));
+		frDom.unmount();
+
+		expect({ enDomHash, frDomHash }).toEqual({
+			enDomHash: '51e7e368c2ca662a2d8bfb7a5b1056a965d3bbf3e71a608016dee83392ba72d3',
+			frDomHash: '7f4d93b4c49d49057078d76ee3c589cedf73c8544ca3c80b103ca708045d54b2',
+		});
+	});
+
+	it('locks canonical SSR output through the server compiler', async () => {
+		const server = await createServer({
+			configFile: 'vite.config.ts',
+			appType: 'custom',
+			logLevel: 'silent',
+			optimizeDeps: { noDiscovery: true },
+			server: { middlewareMode: true },
+		});
+		try {
+			const pageModule = (await server.ssrLoadModule(
+				'/src/routes/[[lang=locale]]/+page.svelte',
+			)) as { default: typeof Page };
+			const { render: renderSsr } = (await server.ssrLoadModule(
+				'svelte/server',
+			)) as typeof import('svelte/server');
+			const context = new Map<unknown, unknown>();
+			context.set(Symbol.for('transit.v1.context'), () => ({
+				manifest,
+				labels: {},
+				lang: 'en' as const,
+			}));
+			context.set(Symbol.for('transit.i18n.locale'), () => 'en' as const);
+			const { body } = renderSsr(pageModule.default, { context });
+
+			expect(fingerprint(canonicalMarkup(body))).toBe(
+				'11a12c4d77ba5c6c034384b3e3c2c6cc2361be3b302c3e06e445981f929bea2e',
+			);
+		} finally {
+			await server.close();
+		}
+	}, 20_000);
 });
