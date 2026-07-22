@@ -14,10 +14,10 @@ export type {
 	EntityKind,
 	AlertEntityKind,
 	AlertAffects,
-	DateWindow,
 	WorstN,
 	WorstNRung,
 } from './state';
+export type { DateWindow } from '$lib/v1/history/window';
 export {
 	STATUS_CODES,
 	OCCUPANCY_CODES,

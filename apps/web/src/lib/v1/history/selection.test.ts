@@ -4,7 +4,7 @@ import {
 	HistoricCollectionIndexSchema,
 	ReceiptsIndexSchema,
 } from '$lib/v1/schemas';
-import type { DateWindow } from '$lib/filters';
+import type { DateWindow } from '$lib/v1/history';
 import {
 	addIsoDays,
 	availabilityFromAlertIndex,
