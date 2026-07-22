@@ -590,12 +590,18 @@ def test_gc_blocks_a_conditional_read_version_conflict() -> None:
 
     def conflict(rel_key: str, expected_version: StoredObjectVersion) -> bytes:
         if rel_key == "historic/history/index.json":
-            raise StoredObjectVersionMismatchError(rel_key)
+            raise StoredObjectVersionMismatchError(
+                rel_key,
+                reason="metadata_mismatch:last_modified",
+            )
         return original_read(rel_key, expected_version)
 
     storage.read_bytes_at_version = conflict  # type: ignore[method-assign]
 
-    with pytest.raises(HistoricGcBlockedError, match="object_changed"):
+    with pytest.raises(
+        HistoricGcBlockedError,
+        match="object_changed:historic/history/index.json:metadata_mismatch:last_modified",
+    ):
         plan_historic_generation_gc(storage, now=NOW, mode="mark", provider_id="stm")
 
 
