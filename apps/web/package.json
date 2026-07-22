@@ -18,7 +18,7 @@
 		"lint": "eslint .",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
-		"test": "vitest run",
+		"test": "vitest run --maxWorkers=4",
 		"test:unit": "vitest",
 		"test:mobile-geometry": "bun scripts/test-mobile-geometry.ts"
 	},
