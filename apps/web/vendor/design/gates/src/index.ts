@@ -49,3 +49,11 @@ export {
 	type TvOnlyInUiConfig,
 	type TvGateResult,
 } from './engines/tvOnlyInUi.js';
+export {
+	sitemapCoverage,
+	ogCoverage,
+	type CoverageDiffInput,
+	type CoverageDiff,
+	type OgCoverageInput,
+	type OgCoverage,
+} from './engines/seoCoverage.js';

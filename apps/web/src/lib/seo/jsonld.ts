@@ -11,13 +11,27 @@
 // richer per-entity leaf label (the line name / stop name) is data-dependent and
 // remains a tracked follow-up (needs the data-binding SSR-seed).
 
+import {
+	SCHEMA_ORG_CONTEXT,
+	buildBreadcrumbListJsonLd,
+	buildDatasetJsonLd,
+	buildOrganizationJsonLd,
+	buildWebSiteJsonLd,
+	type JsonLdNode as SeoKitJsonLdNode,
+} from '@yesid/seo-kit/jsonld';
 import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
 
-/** Minimal structural typing for a schema.org node — every builder returns one. */
-export interface JsonLdNode {
-	'@context': 'https://schema.org';
-	'@type': string;
-	[key: string]: unknown;
+export type JsonLdNode = SeoKitJsonLdNode & { '@context': typeof SCHEMA_ORG_CONTEXT };
+
+function hasSchemaContext(node: SeoKitJsonLdNode): node is JsonLdNode {
+	return node['@context'] === SCHEMA_ORG_CONTEXT;
+}
+
+function contextual(node: SeoKitJsonLdNode): JsonLdNode {
+	if (!hasSchemaContext(node)) {
+		throw new Error('JSON-LD builder omitted the required schema.org context');
+	}
+	return node;
 }
 
 /**
@@ -47,21 +61,15 @@ export function websiteJsonLd({
 	siteName,
 	locale = DEFAULT_LOCALE,
 }: WebSiteJsonLdInput): JsonLdNode {
-	return {
-		'@context': 'https://schema.org',
-		'@type': 'WebSite',
-		name: siteName,
-		url: siteOrigin,
-		inLanguage: locale,
-		potentialAction: {
-			'@type': 'SearchAction',
-			target: {
-				'@type': 'EntryPoint',
-				urlTemplate: `${siteOrigin}/search?q={query}`,
-			},
-			'query-input': 'required name=query',
-		},
-	};
+	return contextual(
+		buildWebSiteJsonLd({
+			context: true,
+			name: siteName,
+			url: siteOrigin,
+			inLanguage: locale,
+			searchUrlTemplate: `${siteOrigin}/search?q={query}`,
+		}),
+	);
 }
 
 /** One crumb in a breadcrumb trail: a localized label and an absolute URL. */
@@ -78,17 +86,8 @@ export interface BreadcrumbItem {
  * empty trail so callers can spread it away without emitting an empty node.
  */
 export function breadcrumbJsonLd(items: readonly BreadcrumbItem[]): JsonLdNode | null {
-	if (items.length === 0) return null;
-	return {
-		'@context': 'https://schema.org',
-		'@type': 'BreadcrumbList',
-		itemListElement: items.map((item, index) => ({
-			'@type': 'ListItem',
-			position: index + 1,
-			name: item.name,
-			item: item.url,
-		})),
-	};
+	const node = buildBreadcrumbListJsonLd({ context: true, items, empty: 'null' });
+	return node === null ? null : contextual(node);
 }
 
 interface OrganizationJsonLdInput {
@@ -104,13 +103,14 @@ interface OrganizationJsonLdInput {
  * publisher/creator) can reference it without duplicating the object.
  */
 export function organizationJsonLd({ siteOrigin, siteName }: OrganizationJsonLdInput): JsonLdNode {
-	return {
-		'@context': 'https://schema.org',
-		'@type': 'Organization',
-		'@id': `${siteOrigin}#organization`,
-		name: siteName,
-		url: siteOrigin,
-	};
+	return contextual(
+		buildOrganizationJsonLd({
+			context: true,
+			id: `${siteOrigin}#organization`,
+			name: siteName,
+			url: siteOrigin,
+		}),
+	);
 }
 
 interface DatasetJsonLdInput {
@@ -139,20 +139,20 @@ export function datasetJsonLd({
 	description,
 	locale = DEFAULT_LOCALE,
 }: DatasetJsonLdInput): JsonLdNode {
-	return {
-		'@context': 'https://schema.org',
-		'@type': 'Dataset',
-		name,
-		description,
-		url: siteOrigin,
-		inLanguage: locale,
-		license: DATASET_LICENSE_URL,
-		isAccessibleForFree: true,
-		creator: {
-			'@type': 'Organization',
-			'@id': `${siteOrigin}#organization`,
-			name: siteName,
+	return contextual(
+		buildDatasetJsonLd({
+			context: true,
+			name,
+			description,
 			url: siteOrigin,
-		},
-	};
+			inLanguage: locale,
+			license: DATASET_LICENSE_URL,
+			isAccessibleForFree: true,
+			creator: buildOrganizationJsonLd({
+				id: `${siteOrigin}#organization`,
+				name: siteName,
+				url: siteOrigin,
+			}),
+		}),
+	);
 }

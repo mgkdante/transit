@@ -1,4 +1,7 @@
 import type { PublicSiteConfig } from './config';
+import { emitAlternateSitemapEntries, emitSitemapDocument } from '@yesid/seo-kit/sitemap';
+
+export { toW3CDate } from '@yesid/seo-kit/sitemap';
 
 // Static surfaces — the always-present, data-independent pages. Per-entity URLs
 // (/lines/[id], /stop/[id]) are NOT listed here; they are enumerated at request
@@ -84,55 +87,18 @@ Sitemap: ${config.siteOrigin}/sitemap.xml
 `;
 }
 
-// --- XML escaping ------------------------------------------------------------
-
-// Escape the five XML predefined entities so an id containing &, <, >, ', or "
-// can't break the document (entity ids are provider-supplied free strings).
-const XML_ESCAPES: Record<string, string> = {
-	'&': '&amp;',
-	'<': '&lt;',
-	'>': '&gt;',
-	"'": '&apos;',
-	'"': '&quot;',
-};
-
-function xmlEscape(value: string): string {
-	return value.replace(/[&<>'"]/g, (ch) => XML_ESCAPES[ch]);
-}
-
-// --- W3C date for <lastmod> --------------------------------------------------
-
-/**
- * Normalize a candidate stamp to a W3C Datetime string for <lastmod>, or null
- * when there is no usable stamp. Honesty: never fabricates a date — a missing or
- * unparseable input yields null and the <url> omits <lastmod> entirely.
- */
-export function toW3CDate(stamp: string | null | undefined): string | null {
-	const raw = stamp?.trim();
-	if (!raw) return null;
-	const ms = Date.parse(raw);
-	if (Number.isNaN(ms)) return null;
-	return new Date(ms).toISOString();
-}
-
-// --- <url> block assembly ----------------------------------------------------
-
-/** The hreflang alternate cluster (en / fr / x-default) for one path. */
-function alternates(siteOrigin: string, path: string): string {
-	const en = xmlEscape(`${siteOrigin}${path === '/' ? '/' : path}`);
-	const fr = xmlEscape(`${siteOrigin}/fr${path === '/' ? '' : path}`);
-	return (
-		`    <xhtml:link rel="alternate" hreflang="en" href="${en}"/>\n` +
-		`    <xhtml:link rel="alternate" hreflang="fr" href="${fr}"/>\n` +
-		`    <xhtml:link rel="alternate" hreflang="x-default" href="${en}"/>`
-	);
-}
-
-/** One <url> block for `path`, EN canonical loc + alternates + optional lastmod. */
-function urlBlock(siteOrigin: string, path: string, lastmod: string | null): string {
-	const loc = xmlEscape(`${siteOrigin}${path === '/' ? '/' : path}`);
-	const lastmodLine = lastmod ? `\n    <lastmod>${lastmod}</lastmod>` : '';
-	return `  <url>\n    <loc>${loc}</loc>${lastmodLine}\n${alternates(siteOrigin, path)}\n  </url>`;
+function localizedEntries(siteOrigin: string, path: string, lastmod: string | null): string[] {
+	const en = `${siteOrigin}${path === '/' ? '/' : path}`;
+	const fr = `${siteOrigin}/fr${path === '/' ? '' : path}`;
+	return emitAlternateSitemapEntries({
+		variants: [
+			{ hreflang: 'en', href: en },
+			{ hreflang: 'fr', href: fr },
+		],
+		xDefaultHref: en,
+		lastmod,
+		emptyElementStyle: 'compact',
+	});
 }
 
 /**
@@ -140,17 +106,7 @@ function urlBlock(siteOrigin: string, path: string, lastmod: string | null): str
  * each carrying the xhtml:link alternate cluster and an optional <lastmod>.
  */
 export function _sitemapEntries(siteOrigin: string, staticLastmod: string | null = null): string[] {
-	const lastmod = toW3CDate(staticLastmod);
-	// EN canonical + FR alternate as TWO separate <url> blocks (mirrors the prior
-	// behaviour: one block per path/locale, both with the full alternate cluster).
-	return PATHS.flatMap((path) => {
-		const enBlock = urlBlock(siteOrigin, path, lastmod);
-		// The FR block points its <loc> at the /fr URL but keeps the same cluster.
-		const frLoc = xmlEscape(`${siteOrigin}/fr${path === '/' ? '' : path}`);
-		const frLastmod = lastmod ? `\n    <lastmod>${lastmod}</lastmod>` : '';
-		const frBlock = `  <url>\n    <loc>${frLoc}</loc>${frLastmod}\n${alternates(siteOrigin, path)}\n  </url>`;
-		return [enBlock, frBlock];
-	});
+	return PATHS.flatMap((path) => localizedEntries(siteOrigin, path, staticLastmod));
 }
 
 /**
@@ -166,18 +122,7 @@ export function _entitySitemapEntries(
 	ids: readonly string[],
 	entityLastmod: string | null = null,
 ): string[] {
-	const lastmod = toW3CDate(entityLastmod);
-	return ids.flatMap((id) => {
-		// The path carries the PERCENT-ENCODED id segment (matching routeFor /
-		// entityUrl). xmlEscape happens inside alternates()/urlBlock via the same
-		// path string, so loc + hrefs are all percent-encoded then XML-escaped.
-		const path = entityPath(prefix, id);
-		const enBlock = urlBlock(siteOrigin, path, lastmod);
-		const frLoc = xmlEscape(`${siteOrigin}/fr${path}`);
-		const frLastmod = lastmod ? `\n    <lastmod>${lastmod}</lastmod>` : '';
-		const frBlock = `  <url>\n    <loc>${frLoc}</loc>${frLastmod}\n${alternates(siteOrigin, path)}\n  </url>`;
-		return [enBlock, frBlock];
-	});
+	return ids.flatMap((id) => localizedEntries(siteOrigin, entityPath(prefix, id), entityLastmod));
 }
 
 /**
@@ -191,12 +136,7 @@ export function _entitySitemapEntries(
 export function buildSitemapXml(config: PublicSiteConfig, entities: SitemapEntities = {}): string {
 	const urls: string[] = config.indexing ? collectUrlBlocks(config.siteOrigin, entities) : [];
 
-	return (
-		`<?xml version="1.0" encoding="UTF-8"?>\n` +
-		`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n` +
-		urls.join('\n') +
-		`\n</urlset>\n`
-	);
+	return emitSitemapDocument(urls, { trailingNewline: true });
 }
 
 /**

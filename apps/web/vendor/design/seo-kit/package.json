@@ -1,0 +1,40 @@
+{
+	"name": "@yesid/seo-kit",
+	"version": "0.8.0",
+	"private": true,
+	"type": "module",
+	"description": "Framework-neutral JSON-LD, sitemap, and Satori rendering primitives with consumer-owned policy and rasterization.",
+	"sideEffects": false,
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"default": "./src/index.ts"
+		},
+		"./jsonld": {
+			"types": "./src/jsonld.ts",
+			"default": "./src/jsonld.ts"
+		},
+		"./sitemap": {
+			"types": "./src/sitemap.ts",
+			"default": "./src/sitemap.ts"
+		},
+		"./satori": {
+			"types": "./src/satori.ts",
+			"default": "./src/satori.ts"
+		}
+	},
+	"scripts": {
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"check": "tsc --noEmit"
+	},
+	"peerDependencies": {
+		"satori": ">=0.10.0 <1"
+	},
+	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"satori": "^0.28.0",
+		"typescript": "^5.5.0",
+		"vitest": "^4.1.0"
+	}
+}
