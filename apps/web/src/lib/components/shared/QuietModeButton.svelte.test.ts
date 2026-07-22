@@ -74,12 +74,12 @@ describe('QuietModeButton source parity', () => {
 			`${process.cwd()}/src/lib/components/shared/QuietModeButton.svelte`,
 			'utf8',
 		);
-		// yesid.dev keeps the pair in ONE row at every viewport: the buttons shrink
-		// and their labels wrap INSIDE the fixed 44px-min targets. A max-width
-		// override that stacks .quiet-mode-controls is a transit-only deviation
-		// from the source control-row grammar (confirmed against live yesid.dev at
-		// 390px).
-		expect(source).not.toMatch(/@media\s*\(max-width:[\s\S]*?\.quiet-mode-controls/);
-		expect(source).toMatch(/min-width:\s*44px[\s\S]*?min-height:\s*44px/);
+
+		expect(source).toMatch(
+			/import\s*\{[\s\S]*QuietModeButton\s+as\s+UiQuietModeButton[\s\S]*type\s+QuietModeButtonCopy[\s\S]*\}\s*from\s*['"]@yesid\/ui\/brand['"]/,
+		);
+		expect(source).toContain('<UiQuietModeButton');
+		expect(source).toMatch(/activeEffect=["']none["']/);
+		expect(source).not.toMatch(/<(?:button|svg|style)\b/);
 	});
 });

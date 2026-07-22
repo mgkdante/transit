@@ -79,15 +79,15 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.8.0',
-	tagObject: '9cb29926a2c0715fec19f4b09e57a7da44722216',
-	peeledCommit: 'fa96aa676ad0bf23a2b970e786f5964018bd0d2a',
-	assetName: 'yesid.dev-design-v0.8.0.tar',
-	assetSize: 686_080,
-	assetDigest: 'sha256:29be1efb9f4c9b7a869901f5dbbfbc6ac2b08bb14faebea3928cd361189ce809',
+	tag: 'v0.9.0',
+	tagObject: '7eb6be22d84303dc9f8d240645cdcd4dbb24b8a8',
+	peeledCommit: 'c25ffb1f4058cb2df498e9d365517d0d304881a4',
+	assetName: 'yesid.dev-design-v0.9.0.tar',
+	assetSize: 706_560,
+	assetDigest: 'sha256:5a0c5a37cf112241c894674d713fb41aac8afb06fcf0841066674bbe2463d0cf',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:749861816f7b8a7e70a3b856f93f310183e0ff6dd5f288746681fb95be51087d',
-	treeHash: 'sha256:c2f632348993ea91bf3e21740ec3729f4f56454ad44920d9d8fcae16abeff626',
+	treeHash: 'sha256:34cabf1c46b6be765f4b353b6cefe06b5c2477a1cf480d17be7bbf8af4046fbd',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -147,11 +147,13 @@ describe('vendor/design integrity', () => {
 		const uiRoot = join(VENDOR, 'ui');
 		const packageJson = JSON.parse(readFileSync(join(uiRoot, 'package.json'), 'utf-8')) as {
 			name: string;
+			version: string;
 			dependencies: Record<string, string>;
 		};
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file));
 
 		expect(packageJson.name).toBe('@yesid/ui');
+		expect(packageJson.version).toBe('0.9.0');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -159,6 +161,7 @@ describe('vendor/design integrity', () => {
 		expect(files).toContain('src/primitives/combobox/combobox.svelte');
 		expect(files).not.toContain('src/primitives/line-combobox/line-combobox.svelte');
 		expect(files).toContain('src/brand/BlueprintShell.svelte');
+		expect(files).toContain('src/brand/QuietModeButton.svelte');
 		expect(existsSync(join(VENDOR, 'gates/src/presets'))).toBe(false);
 		expect(
 			files.filter((file) => /(?:^|\/)(?:test-fixtures\/|vitest\.)|\.test\.ts$/.test(file)),

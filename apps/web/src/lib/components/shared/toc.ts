@@ -9,13 +9,9 @@
 // ids are kept so the resolver stays general across future surfaces.
 
 import { tick } from 'svelte';
-import type { SectionIconName } from './SectionIcon.svelte';
+import type { TocBadgeSpec } from '@yesid/ui/brand';
 
-/** A TOC entry's leading mark. Mirrors the badge on the matching section card:
- *  a numbered card (`index`) -> number; an icon card -> the same SectionIcon shape. */
-export type TocBadgeSpec =
-	| { kind: 'number'; value: number }
-	| { kind: 'icon'; name: SectionIconName };
+export type { TocBadgeSpec };
 
 export interface TocEntry {
 	id: string;

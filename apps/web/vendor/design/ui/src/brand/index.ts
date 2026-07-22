@@ -7,6 +7,13 @@ export type { ChevronToggleProps } from './ChevronToggle.svelte';
 export { default as MetroStation } from './MetroStation.svelte';
 export type { MetroStationProps } from './MetroStation.svelte';
 
+export { default as QuietModeButton } from './QuietModeButton.svelte';
+export type {
+	QuietModeActiveEffect,
+	QuietModeButtonCopy,
+	QuietModeButtonProps,
+} from './QuietModeButton.svelte';
+
 export { default as SectionLabel } from './SectionLabel.svelte';
 export type { SectionLabelProps } from './SectionLabel.svelte';
 

@@ -49,7 +49,7 @@ describe('flat data-surface contract', () => {
 
 		expect(grainPicker).not.toContain('var(--shadow-glow-sm)');
 		expect(toc).not.toMatch(/\.toc-counter-dot\s*\{[^}]*box-shadow:/s);
-		expect(quietMode).not.toMatch(/filter:\s*drop-shadow/);
+		expect(quietMode).toMatch(/activeEffect=["']none["']/);
 		expect(freshnessStamp).not.toMatch(/<StatusDot[^>]*\bpulse(?:=|\s|\/>)/s);
 	});
 });
