@@ -9,11 +9,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from functools import partial
-from typing import Literal, Protocol, TypeVar
+from itertools import batched
+from typing import Literal, Protocol, TypeVar, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, ValidationError
@@ -63,10 +65,16 @@ from transit_ops.snapshots.gate import (
 )
 from transit_ops.snapshots.paths import safe_public_path
 from transit_ops.snapshots.publish import _acquire_publish_lock
-from transit_ops.snapshots.storage import StoredObjectVersion, build_snapshot_storage
+from transit_ops.snapshots.storage import (
+    StoredObjectVersion,
+    StoredObjectVersionMismatchError,
+    build_snapshot_storage,
+)
 
 GcMode = Literal["dry-run", "mark", "apply"]
 MIN_UNREACHABLE = timedelta(hours=48)
+HISTORIC_GC_READ_CONCURRENCY = 16
+_READ_BATCH_SIZE = 256
 
 _SHA = r"[0-9a-f]{64}"
 _MONTH = r"\d{4}-(?:0[1-9]|1[0-2])"
@@ -94,6 +102,11 @@ _LEGACY_ROOTS = {
     "hotspots": "historic/history/hotspots/index.json",
     "repeat_offenders": "historic/history/repeat_offenders/index.json",
 }
+_CANONICAL_ROOTS = {
+    "history": "historic/history/index.json",
+    "alerts": "historic/alerts/index.json",
+    "receipts": "historic/receipts/index.json",
+}
 
 
 class HistoricGcBlockedError(RuntimeError):
@@ -105,7 +118,11 @@ class HistoricGcUnsupportedError(RuntimeError):
 
 
 class HistoricGcStorage(Protocol):
-    def read_bytes(self, rel_key: str) -> bytes | None: ...
+    def read_bytes_at_version(
+        self,
+        rel_key: str,
+        expected_version: StoredObjectVersion,
+    ) -> bytes: ...
 
     def capture_object_version(self, rel_key: str) -> StoredObjectVersion | None: ...
 
@@ -173,7 +190,12 @@ class HistoricGcReport:
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
-def _decode_payload(raw: bytes, model: type[ModelT], *, path: str) -> ModelT:
+def _decode_payload[PayloadT: BaseModel](
+    raw: bytes,
+    model: type[PayloadT],
+    *,
+    path: str,
+) -> PayloadT:
     def reject_constant(_value: str) -> None:
         raise ValueError
 
@@ -184,65 +206,170 @@ def _decode_payload(raw: bytes, model: type[ModelT], *, path: str) -> ModelT:
         raise HistoricGcBlockedError(f"malformed_payload:{path}") from exc
 
 
+@dataclass(frozen=True)
+class _LoadRequest:
+    path: str
+    model: type[BaseModel]
+    checker: Callable[..., Sequence[CheckResult]] | None = None
+    optional: bool = False
+    expected_version: StoredObjectVersion | None = None
+
+
+@dataclass(frozen=True)
+class _LoadedObject:
+    path: str
+    version: StoredObjectVersion
+    payload: BaseModel
+    digest: str
+    byte_size: int
+
+
 @dataclass
 class _GraphWalker:
     storage: HistoricGcStorage
+    inventory: Mapping[str, StoredObjectVersion]
+    executor: ThreadPoolExecutor
+    initial_optional_roots: Mapping[str, StoredObjectVersion | None]
     reachable: set[str] = field(default_factory=set)
     observed: dict[str, StoredObjectVersion] = field(default_factory=dict)
-    optional_roots: dict[str, StoredObjectVersion | None] = field(default_factory=dict)
+    retained: dict[str, _LoadedObject] = field(default_factory=dict)
+    validated_leaf_refs: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
-    def _read_raw(
-        self,
-        path: str,
-        *,
-        optional: bool = False,
-        expected_version: StoredObjectVersion | None = None,
-    ) -> bytes | None:
+    def _fetch(self, request: _LoadRequest) -> _LoadedObject | None:
+        path = request.path
         try:
             safe_public_path(path)
         except (TypeError, ValueError) as exc:
             raise HistoricGcBlockedError(f"unsafe_path:{path}") from exc
-        before = self.storage.capture_object_version(path)
-        if before is None:
-            if optional:
+        version = self.inventory.get(path)
+        if version is None:
+            if request.optional:
                 return None
             raise HistoricGcBlockedError(f"missing_object:{path}")
-        if expected_version is not None and before != expected_version:
+        if request.expected_version is not None and version != request.expected_version:
             raise HistoricGcBlockedError(f"inventory_version_mismatch:{path}")
-        raw = self.storage.read_bytes(path)
-        after = self.storage.capture_object_version(path)
-        if raw is None or after is None:
-            raise HistoricGcBlockedError(f"object_disappeared:{path}")
-        if before != after:
-            raise HistoricGcBlockedError(f"object_changed:{path}")
-        self.observed[path] = before
+        try:
+            raw = self.storage.read_bytes_at_version(path, version)
+        except StoredObjectVersionMismatchError as exc:
+            raise HistoricGcBlockedError(f"object_changed:{path}") from exc
+        digest = hashlib.sha256(raw).hexdigest()
         if "/generations/" in path:
             match = _VERSIONED_DIGEST.search(path)
-            if match is None or hashlib.sha256(raw).hexdigest() != match.group(1):
+            if match is None or digest != match.group(1):
                 raise HistoricGcBlockedError(f"generation_digest_mismatch:{path}")
-            self.reachable.add(path)
-        return raw
+        return _LoadedObject(
+            path=path,
+            version=version,
+            payload=_decode_payload(raw, request.model, path=path),
+            digest=digest,
+            byte_size=len(raw),
+        )
+
+    def _record(
+        self,
+        request: _LoadRequest,
+        loaded: _LoadedObject | None,
+        *,
+        retain: bool,
+    ) -> _LoadedObject | None:
+        if loaded is None:
+            return None
+        if loaded.path != request.path:
+            raise HistoricGcBlockedError(f"path_conflict:{request.path}")
+        if request.expected_version is not None and loaded.version != request.expected_version:
+            raise HistoricGcBlockedError(f"inventory_version_mismatch:{request.path}")
+        if not isinstance(loaded.payload, request.model):
+            raise HistoricGcBlockedError(f"model_conflict:{request.path}")
+        if request.checker is not None:
+            self.require_checks(
+                request.checker(loaded.payload, rel_key=request.path),
+                path=request.path,
+            )
+        self.observed[request.path] = loaded.version
+        if "/generations/" in request.path:
+            self.reachable.add(request.path)
+        if retain:
+            self.retained[request.path] = loaded
+        return loaded
+
+    def iter_loaded(
+        self,
+        requests: Sequence[_LoadRequest],
+        *,
+        retain: bool,
+    ) -> Iterator[_LoadedObject | None]:
+        for request_batch in batched(requests, _READ_BATCH_SIZE):
+            ordered: list[
+                tuple[_LoadRequest, _LoadedObject | None, Future[_LoadedObject | None] | None]
+            ] = []
+            pending: dict[str, tuple[_LoadRequest, Future[_LoadedObject | None]]] = {}
+            for request in request_batch:
+                cached = self.retained.get(request.path)
+                if cached is not None:
+                    ordered.append((request, cached, None))
+                    continue
+                existing = pending.get(request.path)
+                if existing is not None:
+                    first, future = existing
+                    if (
+                        first.model is not request.model
+                        or first.optional != request.optional
+                        or first.expected_version != request.expected_version
+                    ):
+                        raise HistoricGcBlockedError(f"load_request_conflict:{request.path}")
+                    ordered.append((request, None, future))
+                    continue
+                future = self.executor.submit(self._fetch, request)
+                pending[request.path] = (request, future)
+                ordered.append((request, None, future))
+            for request, cached, future in ordered:
+                loaded = cached if future is None else future.result()
+                yield self._record(request, loaded, retain=retain)
+
+    def iter_unique_leaves[ContextT](
+        self,
+        entries: Sequence[tuple[ContextT, _LoadRequest, tuple[str, ...]]],
+    ) -> Iterator[tuple[ContextT, _LoadedObject]]:
+        pending: list[tuple[ContextT, _LoadRequest]] = []
+        for context, request, validation_key in entries:
+            prior = self.validated_leaf_refs.get(request.path)
+            if prior is not None:
+                if prior != validation_key:
+                    raise HistoricGcBlockedError(f"leaf_reference_conflict:{request.path}")
+                continue
+            self.validated_leaf_refs[request.path] = validation_key
+            pending.append((context, request))
+        loaded_items = self.iter_loaded([request for _context, request in pending], retain=False)
+        for (context, _request), loaded in zip(pending, loaded_items, strict=True):
+            assert loaded is not None
+            yield context, loaded
 
     def load(
         self,
         path: str,
         model: type[ModelT],
         *,
-        checker=None,
+        checker: Callable[..., Sequence[CheckResult]] | None = None,
         optional: bool = False,
         expected_version: StoredObjectVersion | None = None,
     ) -> ModelT | None:
-        raw = self._read_raw(
-            path,
-            optional=optional,
-            expected_version=expected_version,
+        loaded = next(
+            self.iter_loaded(
+                [
+                    _LoadRequest(
+                        path=path,
+                        model=model,
+                        checker=checker,
+                        optional=optional,
+                        expected_version=expected_version,
+                    )
+                ],
+                retain=True,
+            )
         )
-        if raw is None:
+        if loaded is None:
             return None
-        payload = _decode_payload(raw, model, path=path)
-        if checker is not None:
-            self.require_checks(checker(payload, rel_key=path), path=path)
-        return payload
+        return cast(ModelT, loaded.payload)
 
     @staticmethod
     def require_checks(findings: Sequence[CheckResult], *, path: str) -> None:
@@ -252,30 +379,35 @@ class _GraphWalker:
         if errors:
             raise HistoricGcBlockedError(f"gate_failed:{path}:{','.join(errors)}")
 
-    def require_exact_copy(self, prefix: str, payload: BaseModel) -> str:
+    def require_exact_copy(self, prefix: str, payload: ModelT) -> tuple[str, ModelT]:
         exact_path = history_pointer_path(prefix, payload)
         exact = self.load(exact_path, type(payload))
         if exact is None or exact.model_dump(mode="json") != payload.model_dump(mode="json"):
             raise HistoricGcBlockedError(f"pointer_copy_mismatch:{exact_path}")
-        return exact_path
+        return exact_path, exact
 
     def walk_alerts(self, path: str) -> AlertArchiveIndex:
         index = self.load(path, AlertArchiveIndex, checker=check_alert_archive_index)
         assert index is not None
-        for month in index.months:
-            for ref in month.pages:
-                page = self.load(ref.path, AlertArchivePage, checker=check_alert_archive_page)
-                assert page is not None
-                raw = self.storage.read_bytes(ref.path)
-                if (
-                    raw is None
-                    or hashlib.sha256(raw).hexdigest() != ref.sha256
-                    or len(raw) != ref.byte_size
-                    or len(page.alerts) != ref.count
-                    or page.month != month.month
-                    or page.page != ref.page
-                ):
-                    raise HistoricGcBlockedError(f"alert_page_ref_mismatch:{ref.path}")
+        refs = [(month, ref) for month in index.months for ref in month.pages]
+        entries = [
+            (
+                (month, ref),
+                _LoadRequest(ref.path, AlertArchivePage, check_alert_archive_page),
+                ("alerts", month.month, ref.model_dump_json()),
+            )
+            for month, ref in refs
+        ]
+        for (month, ref), loaded in self.iter_unique_leaves(entries):
+            page = cast(AlertArchivePage, loaded.payload)
+            if (
+                loaded.digest != ref.sha256
+                or loaded.byte_size != ref.byte_size
+                or len(page.alerts) != ref.count
+                or page.month != month.month
+                or page.page != ref.page
+            ):
+                raise HistoricGcBlockedError(f"alert_page_ref_mismatch:{ref.path}")
         return index
 
     def walk_receipts(self, path: str) -> ReceiptsIndex:
@@ -286,13 +418,16 @@ class _GraphWalker:
     def walk_network(self, path: str) -> HistoricCollectionIndex:
         index = self.load(path, HistoricCollectionIndex, checker=check_network_history_index)
         assert index is not None
-        for ref in index.partitions:
-            partition = self.load(
-                ref.path,
-                NetworkHistoryPartition,
-                checker=check_network_history_partition,
+        entries = [
+            (
+                ref,
+                _LoadRequest(ref.path, NetworkHistoryPartition, check_network_history_partition),
+                ("network", ref.model_dump_json()),
             )
-            assert partition is not None
+            for ref in index.partitions
+        ]
+        for ref, loaded in self.iter_unique_leaves(entries):
+            partition = cast(NetworkHistoryPartition, loaded.payload)
             self.require_checks(
                 check_network_history_partition_ref(ref, partition),
                 path=ref.path,
@@ -311,9 +446,16 @@ class _GraphWalker:
         )
         assert index is not None
         day_model = HistoricHotspotsDay if family == "hotspots" else HistoricRepeatOffendersDay
-        for ref in index.partitions:
-            day = self.load(ref.path, day_model, checker=check_point_history_day)
-            assert day is not None
+        entries = [
+            (
+                ref,
+                _LoadRequest(ref.path, day_model, check_point_history_day),
+                (family, ref.model_dump_json()),
+            )
+            for ref in index.partitions
+        ]
+        for ref, loaded in self.iter_unique_leaves(entries):
+            day = loaded.payload
             self.require_checks(
                 check_point_history_day_ref(ref, day, family=family),
                 path=ref.path,
@@ -341,9 +483,14 @@ class _GraphWalker:
         directory = self.load(path, HistoricEntityDirectoryIndex, checker=directory_checker)
         assert directory is not None
         indexes: list[HistoricCollectionIndex] = []
-        for edge in directory.entities:
-            child = self.load(edge.index_path, HistoricCollectionIndex, checker=index_checker)
-            assert child is not None
+        child_requests = [
+            _LoadRequest(edge.index_path, HistoricCollectionIndex, index_checker)
+            for edge in directory.entities
+        ]
+        child_results = self.iter_loaded(child_requests, retain=True)
+        for edge, loaded in zip(directory.entities, child_results, strict=True):
+            assert loaded is not None
+            child = cast(HistoricCollectionIndex, loaded.payload)
             if (
                 child.entity_id != edge.entity_id
                 or child.collection_generation_id != edge.collection_generation_id
@@ -352,27 +499,69 @@ class _GraphWalker:
             ):
                 raise HistoricGcBlockedError(f"entity_edge_mismatch:{edge.index_path}")
             indexes.append(child)
-            for ref in child.partitions:
-                partition = self.load(ref.path, partition_model, checker=partition_checker)
-                assert partition is not None
-                self.require_checks(ref_checker(ref, partition), path=ref.path)
+        refs = [ref for child in indexes for ref in child.partitions]
+        partition_entries = [
+            (
+                ref,
+                _LoadRequest(ref.path, partition_model, partition_checker),
+                (family, ref.model_dump_json()),
+            )
+            for ref in refs
+        ]
+        for ref, loaded in self.iter_unique_leaves(partition_entries):
+            self.require_checks(ref_checker(ref, loaded.payload), path=ref.path)
         return directory, indexes
 
     def walk_legacy_root(self, family: str, path: str) -> None:
-        initial_version = self.storage.capture_object_version(path)
-        self.optional_roots[path] = initial_version
+        initial_version = self.initial_optional_roots[path]
         if initial_version is None:
             return
         prefix = path.removesuffix("/index.json")
         if family == "network":
-            payload = self.walk_network(path)
+            payload = self.load(
+                path,
+                HistoricCollectionIndex,
+                checker=check_network_history_index,
+                expected_version=initial_version,
+            )
+            assert payload is not None
+            entries = [
+                (
+                    ref,
+                    _LoadRequest(
+                        ref.path,
+                        NetworkHistoryPartition,
+                        check_network_history_partition,
+                    ),
+                    ("network", ref.model_dump_json()),
+                )
+                for ref in payload.partitions
+            ]
+            for ref, loaded in self.iter_unique_leaves(entries):
+                self.require_checks(
+                    check_network_history_partition_ref(ref, loaded.payload),
+                    path=ref.path,
+                )
         elif family in {"hotspots", "repeat_offenders"}:
-            stable = self.load(path, HistoricCollectionIndex)
+            stable = self.load(
+                path,
+                HistoricCollectionIndex,
+                expected_version=initial_version,
+            )
             assert stable is not None
-            exact_path = self.require_exact_copy(prefix, stable)
+            exact_path, _exact = self.require_exact_copy(prefix, stable)
             self.walk_point(family, exact_path)
             return
         else:
+            payload = self.load(
+                path,
+                HistoricEntityDirectoryIndex,
+                checker=check_line_history_directory
+                if family == "lines"
+                else check_stop_history_directory,
+                expected_version=initial_version,
+            )
+            assert payload is not None
             payload, _indexes = self.walk_entities(family, path)
         self.require_exact_copy(prefix, payload)
         if family not in {"lines", "stops"}:
@@ -390,13 +579,19 @@ class _GraphWalker:
             self.require_exact_copy(edge.index_path.removesuffix("/index.json"), child)
 
 
-def _read_manifest(storage: HistoricGcStorage) -> Manifest:
-    """Read one coherent manifest body without pinning its live-cycle object version."""
+def _read_manifest(
+    storage: HistoricGcStorage,
+    version: StoredObjectVersion | None,
+) -> Manifest | None:
+    """Read a present manifest at one captured version; absence is a valid mode."""
 
+    if version is None:
+        return None
     path = "manifest.json"
-    raw = storage.read_bytes(path)
-    if raw is None:
-        raise HistoricGcBlockedError(f"missing_object:{path}")
+    try:
+        raw = storage.read_bytes_at_version(path, version)
+    except StoredObjectVersionMismatchError as exc:
+        raise HistoricGcBlockedError("manifest_changed") from exc
     return _decode_payload(raw, Manifest, path=path)
 
 
@@ -430,17 +625,57 @@ def _require_manifest_roots(manifest: Manifest, *, provider_id: str | None) -> N
 def _walk_reachable_graph(
     storage: HistoricGcStorage,
     *,
+    inventory: Mapping[str, StoredObjectVersion],
+    executor: ThreadPoolExecutor,
+    initial_optional_roots: Mapping[str, StoredObjectVersion | None],
+    manifest: Manifest | None,
     provider_id: str | None = None,
 ) -> tuple[
     set[str],
     dict[str, StoredObjectVersion],
-    tuple[str, tuple[tuple[str, str], ...]],
+    tuple[str, tuple[tuple[str, str], ...]] | None,
     dict[str, StoredObjectVersion | None],
 ]:
-    walker = _GraphWalker(storage)
-    manifest = _read_manifest(storage)
-    _require_manifest_roots(manifest, provider_id=provider_id)
-    history_path = manifest.files.historic.history_index
+    walker = _GraphWalker(
+        storage=storage,
+        inventory=inventory,
+        executor=executor,
+        initial_optional_roots=initial_optional_roots,
+    )
+    if manifest is None:
+        history_path = _CANONICAL_ROOTS["history"]
+        compatibility_alerts_path = _CANONICAL_ROOTS["alerts"]
+        compatibility_receipts_path = _CANONICAL_ROOTS["receipts"]
+        manifest_identity = None
+    else:
+        _require_manifest_roots(manifest, provider_id=provider_id)
+        history_path = manifest.files.historic.history_index
+        compatibility_alerts_path = manifest.files.historic.alerts_index
+        compatibility_receipts_path = manifest.files.historic.receipts_index
+        manifest_identity = _manifest_graph_identity(manifest)
+
+    list(
+        walker.iter_loaded(
+            [
+                _LoadRequest(
+                    history_path,
+                    HistoricAvailabilityIndex,
+                    check_history_availability_index,
+                ),
+                _LoadRequest(
+                    compatibility_alerts_path,
+                    AlertArchiveIndex,
+                    check_alert_archive_index,
+                ),
+                _LoadRequest(
+                    compatibility_receipts_path,
+                    ReceiptsIndex,
+                    check_receipts_index,
+                ),
+            ],
+            retain=True,
+        )
+    )
     root = walker.load(
         history_path,
         HistoricAvailabilityIndex,
@@ -448,10 +683,11 @@ def _walk_reachable_graph(
     )
     assert root is not None
 
-    compatibility_alerts_path = manifest.files.historic.alerts_index
     compatibility_alerts = walker.walk_alerts(compatibility_alerts_path)
-    walker.require_exact_copy("historic/alerts", compatibility_alerts)
-    compatibility_receipts_path = manifest.files.historic.receipts_index
+    compatibility_alerts_exact_path, compatibility_alerts_exact = walker.require_exact_copy(
+        "historic/alerts",
+        compatibility_alerts,
+    )
     compatibility_receipts = walker.walk_receipts(compatibility_receipts_path)
     walker.require_exact_copy("historic/receipts", compatibility_receipts)
 
@@ -468,7 +704,53 @@ def _walk_reachable_graph(
     if set(edges) != expected:
         raise HistoricGcBlockedError("history_root_family_set")
 
-    alert_index = walker.walk_alerts(edges["alerts"].index_path)
+    list(
+        walker.iter_loaded(
+            [
+                _LoadRequest(
+                    edges["alerts"].index_path,
+                    AlertArchiveIndex,
+                    check_alert_archive_index,
+                ),
+                _LoadRequest(
+                    edges["receipts"].index_path,
+                    ReceiptsIndex,
+                    check_receipts_index,
+                ),
+                _LoadRequest(
+                    edges["network"].index_path,
+                    HistoricCollectionIndex,
+                    check_network_history_index,
+                ),
+                _LoadRequest(
+                    edges["hotspots"].index_path,
+                    HistoricCollectionIndex,
+                    partial(check_point_history_index, family="hotspots"),
+                ),
+                _LoadRequest(
+                    edges["repeat_offenders"].index_path,
+                    HistoricCollectionIndex,
+                    partial(check_point_history_index, family="repeat_offenders"),
+                ),
+                _LoadRequest(
+                    edges["lines"].index_path,
+                    HistoricEntityDirectoryIndex,
+                    check_line_history_directory,
+                ),
+                _LoadRequest(
+                    edges["stops"].index_path,
+                    HistoricEntityDirectoryIndex,
+                    check_stop_history_directory,
+                ),
+            ],
+            retain=True,
+        )
+    )
+
+    if edges["alerts"].index_path == compatibility_alerts_exact_path:
+        alert_index = compatibility_alerts_exact
+    else:
+        alert_index = walker.walk_alerts(edges["alerts"].index_path)
     receipts_index = walker.walk_receipts(edges["receipts"].index_path)
     network_index = walker.walk_network(edges["network"].index_path)
     hotspots_index = walker.walk_point("hotspots", edges["hotspots"].index_path)
@@ -516,9 +798,9 @@ def _walk_reachable_graph(
         walker.walk_legacy_root(family, path)
     return (
         walker.reachable,
-        walker.observed,
-        _manifest_graph_identity(manifest),
-        walker.optional_roots,
+        dict(walker.observed),
+        manifest_identity,
+        dict(initial_optional_roots),
     )
 
 
@@ -534,13 +816,10 @@ def _known_generation_shape(path: str) -> bool:
     return True
 
 
-def _validate_generation_candidate(
-    walker: _GraphWalker,
-    version: StoredObjectVersion,
-) -> None:
+def _generation_candidate_request(version: StoredObjectVersion) -> _LoadRequest:
     path = version.rel_key
     model: type[BaseModel]
-    checker = None
+    checker: Callable[..., Sequence[CheckResult]] | None = None
     if re.fullmatch(rf"historic/alerts/generations/{_SHA}/index\.json", path):
         model, checker = AlertArchiveIndex, check_alert_archive_index
     elif re.fullmatch(
@@ -593,12 +872,49 @@ def _validate_generation_candidate(
             )
     else:  # Inventory shape validation runs before this dispatcher.
         raise HistoricGcBlockedError(f"unknown_generation_shape:{path}")
-    walker.load(
-        path,
-        model,
+    return _LoadRequest(
+        path=path,
+        model=model,
         checker=checker,
         expected_version=version,
     )
+
+
+def _capture_versions(
+    storage: HistoricGcStorage,
+    executor: ThreadPoolExecutor,
+    paths: Sequence[str],
+) -> dict[str, StoredObjectVersion | None]:
+    captured: dict[str, StoredObjectVersion | None] = {}
+    for path_batch in batched(paths, _READ_BATCH_SIZE):
+        futures = [
+            (path, executor.submit(storage.capture_object_version, path)) for path in path_batch
+        ]
+        for path, future in futures:
+            captured[path] = future.result()
+    return captured
+
+
+def _inventory_historic_objects(
+    storage: HistoricGcStorage,
+) -> tuple[dict[str, StoredObjectVersion], dict[str, StoredObjectVersion]]:
+    inventory: dict[str, StoredObjectVersion] = {}
+    candidates: dict[str, StoredObjectVersion] = {}
+    for version in storage.iter_object_versions("historic/"):
+        path = version.rel_key
+        try:
+            safe_public_path(path)
+        except (TypeError, ValueError) as exc:
+            raise HistoricGcBlockedError(f"unsafe_inventory_path:{path}") from exc
+        if path in inventory:
+            raise HistoricGcBlockedError(f"duplicate_inventory_key:{path}")
+        inventory[path] = version
+        if "/generations/" not in path:
+            continue
+        if not _known_generation_shape(path):
+            raise HistoricGcBlockedError(f"unknown_generation_shape:{path}")
+        candidates[path] = version
+    return inventory, candidates
 
 
 def plan_historic_generation_gc(
@@ -623,41 +939,69 @@ def plan_historic_generation_gc(
     if min_unreachable < timedelta(hours=48):
         raise ValueError("historic GC minimum unreachable age cannot be below 48 hours")
     now = now.astimezone(UTC)
-    reachable, roots, manifest_identity, optional_roots = _walk_reachable_graph(
-        storage,
-        provider_id=provider_id,
-    )
-    candidates: dict[str, StoredObjectVersion] = {}
-    for version in storage.iter_object_versions("historic/"):
-        if "/generations/" not in version.rel_key:
-            continue
-        try:
-            safe_public_path(version.rel_key)
-        except (TypeError, ValueError) as exc:
-            raise HistoricGcBlockedError(f"unsafe_inventory_path:{version.rel_key}") from exc
-        if not _known_generation_shape(version.rel_key):
-            raise HistoricGcBlockedError(f"unknown_generation_shape:{version.rel_key}")
-        if version.rel_key in candidates:
-            raise HistoricGcBlockedError(f"duplicate_inventory_key:{version.rel_key}")
-        candidates[version.rel_key] = version
+    with ThreadPoolExecutor(max_workers=HISTORIC_GC_READ_CONCURRENCY) as executor:
+        initial_versions = _capture_versions(
+            storage,
+            executor,
+            ["manifest.json", *_LEGACY_ROOTS.values()],
+        )
+        initial_manifest_version = initial_versions["manifest.json"]
+        manifest = _read_manifest(storage, initial_manifest_version)
+        optional_roots = {path: initial_versions[path] for path in _LEGACY_ROOTS.values()}
+        inventory, candidates = _inventory_historic_objects(storage)
+        reachable, roots, manifest_identity, optional_roots = _walk_reachable_graph(
+            storage,
+            inventory=inventory,
+            executor=executor,
+            initial_optional_roots=optional_roots,
+            manifest=manifest,
+            provider_id=provider_id,
+        )
 
-    missing = sorted(reachable - candidates.keys())
-    if missing:
-        raise HistoricGcBlockedError(f"reachable_generation_missing_from_inventory:{missing[0]}")
-    unreachable = sorted(candidates.keys() - reachable)
-    candidate_walker = _GraphWalker(storage)
-    for path in unreachable:
-        _validate_generation_candidate(candidate_walker, candidates[path])
-    current_manifest = _read_manifest(storage)
-    if _manifest_graph_identity(current_manifest) != manifest_identity:
-        raise HistoricGcBlockedError("manifest_changed_after_inventory")
-    for path, observed in optional_roots.items():
-        if storage.capture_object_version(path) != observed:
-            raise HistoricGcBlockedError(f"optional_root_changed_after_inventory:{path}")
-    for path, observed in {**roots, **candidate_walker.observed}.items():
-        current = storage.capture_object_version(path)
-        if current != observed:
-            raise HistoricGcBlockedError(f"object_changed_after_inventory:{path}")
+        missing = sorted(reachable - candidates.keys())
+        if missing:
+            raise HistoricGcBlockedError(
+                f"reachable_generation_missing_from_inventory:{missing[0]}"
+            )
+        unreachable = sorted(candidates.keys() - reachable)
+        candidate_walker = _GraphWalker(
+            storage=storage,
+            inventory=inventory,
+            executor=executor,
+            initial_optional_roots=optional_roots,
+        )
+        for path_batch in batched(unreachable, _READ_BATCH_SIZE):
+            requests = [_generation_candidate_request(candidates[path]) for path in path_batch]
+            for _loaded in candidate_walker.iter_loaded(requests, retain=False):
+                pass
+
+        observed_objects = {**roots, **candidate_walker.observed}
+        final_versions = _capture_versions(
+            storage,
+            executor,
+            sorted({"manifest.json", *optional_roots, *observed_objects}),
+        )
+        current_manifest_version = final_versions["manifest.json"]
+        if current_manifest_version != initial_manifest_version:
+            if current_manifest_version is None or initial_manifest_version is None:
+                raise HistoricGcBlockedError("manifest_changed_after_inventory")
+            current_manifest = _read_manifest(storage, current_manifest_version)
+            assert current_manifest is not None
+            if _manifest_graph_identity(current_manifest) != manifest_identity:
+                raise HistoricGcBlockedError("manifest_changed_after_inventory")
+            closing_manifest_version = _capture_versions(
+                storage,
+                executor,
+                ["manifest.json"],
+            )["manifest.json"]
+            if closing_manifest_version != current_manifest_version:
+                raise HistoricGcBlockedError("manifest_changed_after_inventory")
+        for path, observed in optional_roots.items():
+            if final_versions[path] != observed:
+                raise HistoricGcBlockedError(f"optional_root_changed_after_inventory:{path}")
+        for path, observed in observed_objects.items():
+            if final_versions[path] != observed:
+                raise HistoricGcBlockedError(f"object_changed_after_inventory:{path}")
 
     scan_id = str(uuid4())
     prior = existing_marks or {}

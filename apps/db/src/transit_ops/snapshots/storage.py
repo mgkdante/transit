@@ -68,6 +68,13 @@ class StableActivationConflictError(RuntimeError):
         super().__init__(f"stable activation conflict: {rel_key}")
 
 
+class StoredObjectVersionMismatchError(RuntimeError):
+    """An object no longer matches the version captured by an inventory."""
+
+    def __init__(self, rel_key: str) -> None:
+        super().__init__(f"snapshot object version changed: {rel_key}")
+
+
 @dataclass(frozen=True)
 class ImmutablePutOutcome:
     """Atomic immutable write result used by the hash-gate accounting seam."""
@@ -220,6 +227,52 @@ class SnapshotStorage:
         body = response["Body"]
         try:
             return body.read()
+        finally:
+            if hasattr(body, "close"):
+                body.close()
+
+    def read_bytes_at_version(
+        self,
+        rel_key: str,
+        expected_version: StoredObjectVersion,
+    ) -> bytes:
+        """Read bytes only when R2 still serves the inventoried object version."""
+
+        if expected_version.rel_key != rel_key:
+            raise ValueError("stored object version belongs to a different key")
+        key = self.full_key(rel_key)
+        try:
+            response = self._thread_client().get_object(  # type: ignore[attr-defined]
+                Bucket=self._bucket,
+                Key=key,
+                IfMatch=expected_version.etag,
+            )
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if (
+                code in _NOT_FOUND_CODES
+                or code in _PRECONDITION_FAILED_CODES
+                or status == 404
+                or status == 412
+            ):
+                raise StoredObjectVersionMismatchError(rel_key) from exc
+            raise
+
+        body = response.get("Body")
+        try:
+            if body is None or not hasattr(body, "read"):
+                raise StoredObjectVersionMismatchError(rel_key)
+            try:
+                actual_version = self._stored_version(rel_key, response)
+            except RuntimeError as exc:
+                raise StoredObjectVersionMismatchError(rel_key) from exc
+            if actual_version != expected_version:
+                raise StoredObjectVersionMismatchError(rel_key)
+            raw = body.read()
+            if not isinstance(raw, bytes) or len(raw) != expected_version.size:
+                raise StoredObjectVersionMismatchError(rel_key)
+            return raw
         finally:
             if hasattr(body, "close"):
                 body.close()
@@ -528,6 +581,31 @@ class LocalSnapshotStorage:
             return path.read_bytes()
         except FileNotFoundError:
             return None
+
+    def read_bytes_at_version(
+        self,
+        rel_key: str,
+        expected_version: StoredObjectVersion,
+    ) -> bytes:
+        """Read local bytes only while their captured version remains current."""
+
+        if expected_version.rel_key != rel_key:
+            raise ValueError("stored object version belongs to a different key")
+        path = self._root / self._prefix / rel_key
+        try:
+            raw = path.read_bytes()
+            stat = path.stat()
+        except FileNotFoundError:
+            raise StoredObjectVersionMismatchError(rel_key) from None
+        actual_version = StoredObjectVersion(
+            rel_key=rel_key,
+            etag=hashlib.sha256(raw).hexdigest(),
+            last_modified_utc=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
+            size=len(raw),
+        )
+        if actual_version != expected_version:
+            raise StoredObjectVersionMismatchError(rel_key)
+        return raw
 
     def capture_object_version(self, rel_key: str) -> StoredObjectVersion | None:
         """Capture a content token plus filesystem time and size."""
