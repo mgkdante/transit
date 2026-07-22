@@ -16,7 +16,7 @@
 
 import { adapter } from '$lib/v1/adapter';
 import type { AdapterCtx } from '$lib/v1/adapter';
-import type { DateWindow } from '$lib/filters';
+import type { DateWindow } from '../history/window';
 import {
 	HistoryArtifactContractError,
 	HistoryTransientPublicationError,

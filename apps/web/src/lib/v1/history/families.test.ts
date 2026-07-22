@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DateWindow } from '$lib/filters';
+import type { DateWindow } from '$lib/v1/history';
 import {
 	HistoricCollectionIndexSchema,
 	LineHistoryPartitionSchema,

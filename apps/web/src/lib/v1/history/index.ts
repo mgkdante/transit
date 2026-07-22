@@ -1,3 +1,4 @@
+export type { DateWindow } from './window';
 export * from './selection';
 export * from './partitions';
 export * from './entity';

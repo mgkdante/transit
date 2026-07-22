@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
-import type { DateWindow } from '$lib/filters';
+import type { DateWindow } from '$lib/v1/history';
 import {
 	createHistoryRangeResource,
 	historyRangeRequestFromSearchParams,

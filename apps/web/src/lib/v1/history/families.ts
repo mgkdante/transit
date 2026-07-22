@@ -1,4 +1,4 @@
-import type { DateWindow } from '$lib/filters';
+import type { DateWindow } from './window';
 import type {
 	HistoricCollectionIndex,
 	HistoricCancellationMetric,

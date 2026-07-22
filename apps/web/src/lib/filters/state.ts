@@ -12,6 +12,9 @@
 
 import type { StatusCode, OccupancyCode, SeverityCode, Grain } from '$lib/v1/schemas';
 import { STATUS_CODES, OCCUPANCY_CODES, SEVERITY_CODES, GRAINS } from '$lib/v1/schemas';
+import type { DateWindow } from '$lib/v1/history/window';
+
+export type { DateWindow } from '$lib/v1/history/window';
 
 export const ENTITY_KINDS = ['bus', 'stop'] as const;
 export type EntityKind = (typeof ENTITY_KINDS)[number];
@@ -28,27 +31,12 @@ export const ALERT_AFFECTS = ['lines', 'stops'] as const;
 export type AlertAffects = (typeof ALERT_AFFECTS)[number];
 
 /**
- * A closed, inclusive span of LOCAL calendar dates (America/Montréal service
- * days), each an ISO `YYYY-MM-DD` string with `from <= to`. This is the ONE
- * window shape the whole filter layer speaks — a "range" is simply "a window is
- * present" (both bounds set), never a separate {@link Grain} token. A single-day
- * pick is `{ from: d, to: d }`. Half-picked or inverted spans are never stored:
- * they normalize (see {@link normalizeWindow}) or drop to `undefined` so a
- * fabricated span never reaches a shared URL (honest-absence).
- */
-export interface DateWindow {
-	/** Inclusive span start — ISO `YYYY-MM-DD`, `<= to`. */
-	readonly from: string;
-	/** Inclusive span end — ISO `YYYY-MM-DD`, `>= from`. */
-	readonly to: string;
-}
-
-/**
  * SHAPE gate for an ISO calendar date (`YYYY-MM-DD`). Pure regex — DOM-free,
  * SSR-safe. This is the gate used BEFORE availability is known (the codec has no
  * data); availability (is this a real published day?) is validated surface-side
- * via {@link import('./grain').resolveWindow}. Lives here beside {@link DateWindow}
- * so the codec and every surface share one definition.
+ * via {@link import('./grain').resolveWindow}. The history domain owns
+ * {@link DateWindow}; this filter-layer gate keeps the codec and every surface
+ * on its canonical date shape.
  */
 export function isIsoDate(v: string | null | undefined): v is string {
 	return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);

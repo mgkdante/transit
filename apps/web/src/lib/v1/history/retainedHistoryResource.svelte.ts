@@ -1,4 +1,4 @@
-import type { DateWindow } from '$lib/filters';
+import type { DateWindow } from './window';
 import type { HistoricCollectionIndex } from '$lib/v1/schemas';
 import { availabilityFromCollectionIndex, defaultWindowFromCollectionIndex } from './selection';
 import {
