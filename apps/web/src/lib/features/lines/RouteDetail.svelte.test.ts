@@ -1,22 +1,33 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import {
+	fireEvent,
+	render as renderSvelte,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RouteFile, RouteReliability, StopPrediction, Vehicle } from '$lib/v1';
 import type { IdentitySeed } from '$lib/v1/serverContext';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import RouteDetail from './RouteDetail.svelte';
+
+vi.mock('@testing-library/svelte', { spy: true });
 
 const routeDetailSource = () =>
 	readFileSync(resolve(process.cwd(), 'src/lib/features/lines/RouteDetail.svelte'), 'utf-8');
 
 const routeDetailNav = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/lines/161'), state: {} };
+	const defaultReplaceState = (url: string | URL) => {
+		page.url = new URL(url, 'http://localhost');
+	};
 	return {
 		page,
-		replaceState: vi.fn((url: string | URL) => {
-			page.url = new URL(url, 'http://localhost');
-		}),
+		defaultReplaceState,
+		replaceState: vi.fn(defaultReplaceState),
 	};
 });
 const routeManifest = vi.hoisted(() => ({}));
@@ -53,9 +64,6 @@ const routeSeed = (id = '161', name = id === '161' ? '161 Van Horne' : id): Iden
 	id,
 	name,
 });
-
-const renderRoute = (id = '161', name?: string) =>
-	render(RouteDetail, { props: { id, seed: routeSeed(id, name) } });
 
 // Per-stop live predictions the Detail tab renders inline. sA has an approaching
 // bus (2 min late); sB has NONE → it must show the honest "no live bus".
@@ -280,6 +288,47 @@ let routesIndexData: { generated_utc: string; routes: { id: string; reliability?
 	routes: [{ id: '161' }],
 };
 
+function resetRouteSurfaceState(): void {
+	routeDetailNav.replaceState.mockReset().mockImplementation(routeDetailNav.defaultReplaceState);
+	liveAlerts = { generated_utc: '2026-06-15T12:00:00Z', alerts: ALERTS };
+	liveIndex = buildIndex(VEHICLES);
+	provenanceData = { generated_utc: '2026-06-15T12:00:00Z', gaps: ['metro_realtime'] };
+	routeFileData = ROUTE_FILE;
+	routesIndexData = { generated_utc: '2026-06-15T12:00:00Z', routes: [{ id: '161' }] };
+	getRouteReliabilitySpy.mockReset().mockResolvedValue(null);
+	lineHistoryHarness.getLineHistoryIndex.mockReset().mockResolvedValue(null);
+	lineHistoryHarness.loadLineHistoryRange.mockReset();
+	reliabilityResourceState = { data: null, error: null, loading: false, settled: true };
+	reliabilityReloadSpy.mockReset();
+	createLiveStoreSpy.mockReset();
+	liveStore.start.mockReset();
+	liveStore.stop.mockReset();
+	quietModeStore.resetForTest();
+}
+
+const routeSurface = createSurfaceHarness({
+	url: {
+		initial: '/lines/161',
+		origin: 'http://localhost',
+		set: (url) => {
+			routeDetailNav.page.url = url;
+			routeDetailNav.page.state = {};
+			window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+		},
+	},
+	storage: [
+		{
+			port: sessionStorage,
+			keys: ['transit.persisted:reliability-controls', 'transit.persisted:reliability-toc'],
+		},
+	],
+	resetters: [resetRouteSurfaceState],
+	mount: renderSvelte,
+});
+
+const renderRoute = (id = '161', name?: string) =>
+	routeSurface.mount(RouteDetail, { props: { id, seed: routeSeed(id, name) } });
+
 vi.mock('$lib/v1/repositories/static', () => ({
 	getRoute: () => routeFileData,
 	getRoutesIndex: async () => routesIndexData,
@@ -337,24 +386,10 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	},
 }));
 
-beforeEach(() => {
-	quietModeStore.resetForTest();
-	sessionStorage.removeItem('transit.persisted:reliability-controls');
-	sessionStorage.removeItem('transit.persisted:reliability-toc');
-	routeDetailNav.page.url = new URL('http://localhost/lines/161');
-	routeDetailNav.replaceState.mockClear();
-	liveAlerts = { generated_utc: '2026-06-15T12:00:00Z', alerts: ALERTS };
-	liveIndex = buildIndex(VEHICLES);
-	provenanceData = { generated_utc: '2026-06-15T12:00:00Z', gaps: ['metro_realtime'] };
-	routeFileData = ROUTE_FILE;
-	routesIndexData = { generated_utc: '2026-06-15T12:00:00Z', routes: [{ id: '161' }] };
-	getRouteReliabilitySpy.mockClear();
-	lineHistoryHarness.getLineHistoryIndex.mockReset();
-	lineHistoryHarness.getLineHistoryIndex.mockResolvedValue(null);
-	lineHistoryHarness.loadLineHistoryRange.mockReset();
-	reliabilityResourceState = { data: null, error: null, loading: false, settled: true };
-	reliabilityReloadSpy.mockClear();
-	createLiveStoreSpy.mockClear();
+beforeEach(() => routeSurface.reset());
+
+afterAll(() => {
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(34);
 });
 
 describe('RouteDetail article cover and focus scope', () => {

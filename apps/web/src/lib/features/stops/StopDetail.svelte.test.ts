@@ -7,22 +7,27 @@ import {
 } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StopFile, StopReliability, StopDeparture } from '$lib/v1';
 import type { IdentitySeed } from '$lib/v1/serverContext';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import StopDetail from './StopDetail.svelte';
+
+vi.mock('@testing-library/svelte', { spy: true });
 
 const stopDetailSource = () =>
 	readFileSync(resolve(process.cwd(), 'src/lib/features/stops/StopDetail.svelte'), 'utf-8');
 
 const stopDetailNav = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/stop/57191'), state: {} };
+	const defaultReplaceState = (url: string | URL) => {
+		page.url = new URL(url, 'http://localhost');
+	};
 	return {
 		page,
-		replaceState: vi.fn((url: string | URL) => {
-			page.url = new URL(url, 'http://localhost');
-		}),
+		defaultReplaceState,
+		replaceState: vi.fn(defaultReplaceState),
 	};
 });
 
@@ -308,6 +313,34 @@ let reliabilityResourceState: {
 	loading: boolean;
 	settled: boolean;
 } | null = null;
+const stopSurface = createSurfaceHarness({
+	url: {
+		initial: '/stop/57191',
+		origin: 'http://localhost',
+		set: (url) => {
+			stopDetailNav.page.url = url;
+			stopDetailNav.page.state = {};
+			window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+		},
+	},
+	locale: {
+		initial: 'en' as const,
+		set: (locale) => {
+			currentLocale = locale;
+		},
+	},
+	storage: [
+		{
+			port: sessionStorage,
+			keys: [
+				'transit.persisted:stop-reliability-controls',
+				'transit.persisted:stop-reliability-toc',
+			],
+		},
+	],
+	resetters: [resetStopSurfaceState],
+	mount: renderSvelte,
+});
 
 // Partial-mock i18n: keep the real routing helpers (localizeHref drives the map
 // drilldown href assertions) but make getLocale read the per-test currentLocale.
@@ -373,9 +406,8 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	},
 }));
 
-function reset() {
-	stopDetailNav.page.url = new URL('http://localhost/stop/57191');
-	stopDetailNav.replaceState.mockClear();
+function resetStopSurfaceState() {
+	stopDetailNav.replaceState.mockReset().mockImplementation(stopDetailNav.defaultReplaceState);
 	useEmptyLive = false;
 	useSilentBoard = false;
 	reliabilityData = RELIABILITY;
@@ -396,10 +428,13 @@ function reset() {
 		);
 	reliabilityResourceState = null;
 	reliabilityReloadSpy.mockClear();
+	liveStore.index.byStopId.clear();
+	liveStore.index.byStopId.set('57191', DEPARTURES);
+	liveStore.index.byStopId.set('99999', DEPARTURES_B);
 	quietModeStore.resetForTest();
-	sessionStorage.removeItem('transit.persisted:stop-reliability-controls');
-	sessionStorage.removeItem('transit.persisted:stop-reliability-toc');
 }
+
+beforeEach(() => stopSurface.reset());
 
 type StopDetailTestProps = { id: string; seed?: IdentitySeed };
 
@@ -409,7 +444,7 @@ function render(_component: typeof StopDetail, options: { props: StopDetailTestP
 		seed: { id: options.props.id, name: stopFileData.name ?? `#${options.props.id}` },
 		...options.props,
 	};
-	const view = renderSvelte(StopDetail, { props: seededProps });
+	const view = stopSurface.mount(StopDetail, { props: seededProps });
 	return {
 		...view,
 		rerender: (props: StopDetailTestProps) =>
@@ -423,6 +458,10 @@ function render(_component: typeof StopDetail, options: { props: StopDetailTestP
 	};
 }
 
+afterAll(() => {
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(68);
+});
+
 function articleCardFor(body: Element | null): HTMLElement {
 	const card = body?.closest('[data-slot="card"]');
 	if (!(card instanceof HTMLElement))
@@ -432,7 +471,6 @@ function articleCardFor(body: Element | null): HTMLElement {
 
 describe('StopDetail article contract', () => {
 	it('uses the server identity seed for the first-render title and renders one article head', () => {
-		reset();
 		const { container } = render(StopDetail, {
 			props: { id: '57191', seed: { id: '57191', name: 'Seeded station name' } },
 		});
@@ -449,7 +487,6 @@ describe('StopDetail article contract', () => {
 	});
 
 	it('recovers the real client name when the server seed had to fall back to the id', () => {
-		reset();
 		render(StopDetail, {
 			props: { id: '57191', seed: { id: '57191', name: '57191' } },
 		});
@@ -458,7 +495,6 @@ describe('StopDetail article contract', () => {
 	});
 
 	it('exposes exactly the canonical Detail, Schedule and Reliability tabs', () => {
-		reset();
 		render(StopDetail, { props: { id: '57191' } });
 
 		expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.trim())).toEqual([
@@ -469,7 +505,6 @@ describe('StopDetail article contract', () => {
 	});
 
 	it('keeps exactly one centered reliability summary while its owning rail changes by tab', async () => {
-		reset();
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 		const summaries = () =>
 			container.querySelectorAll<HTMLElement>('[data-slot="stop-reliability-summary"]');
@@ -491,7 +526,6 @@ describe('StopDetail article contract', () => {
 	});
 
 	it('reserves no summary gap when this stop has no summary metrics', async () => {
-		reset();
 		reliabilityData = HABITS_ONLY_RELIABILITY;
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 
@@ -504,7 +538,6 @@ describe('StopDetail article contract', () => {
 	});
 
 	it('uses one disclosure frame around live departures instead of nesting a terminal card', () => {
-		reset();
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 		const departuresCard = container.querySelector(
 			'[data-toc="stop-detail-departures"]',
@@ -517,7 +550,6 @@ describe('StopDetail article contract', () => {
 	});
 
 	it('localizes the article identity labels without replacing their real values', () => {
-		reset();
 		currentLocale = 'fr';
 		render(StopDetail, {
 			props: { id: '57191', seed: { id: '57191', name: 'Station test' } },
@@ -536,7 +568,6 @@ describe('StopDetail article contract', () => {
 	it.each(['next', 'info', 'unknown'])(
 		'normalizes the legacy/unknown %s tab to a clean Detail URL without dropping range filters',
 		async (legacy) => {
-			reset();
 			stopDetailNav.page.url = new URL(
 				`http://localhost/stop/57191?tab=${legacy}&from=2026-01-31&to=2026-02-01&line=51`,
 			);
@@ -557,7 +588,6 @@ describe('StopDetail article contract', () => {
 	);
 
 	it('does not let the inactive reliability pane restore a legacy tab while shallow state lags', async () => {
-		reset();
 		const initial = new URL(
 			'http://localhost/stop/57191?tab=next&from=2026-01-31&to=2026-02-01&line=51',
 		);
@@ -587,7 +617,6 @@ describe('StopDetail article contract', () => {
 	});
 
 	it('keeps the default Detail URL clean and carries one bulk disclosure state across article panes', async () => {
-		reset();
 		stopFileData = {
 			...STOP_FILE,
 			scheduled: [{ route: '51', headsign: 'Nord', times: ['08:00'] }],
@@ -641,7 +670,6 @@ describe('StopDetail article contract', () => {
 	});
 
 	it('uses the shared connected section stack for Detail and Schedule cards', async () => {
-		reset();
 		stopFileData = {
 			...STOP_FILE,
 			scheduled: [{ route: '51', headsign: 'Nord', times: ['08:00'] }],
@@ -682,7 +710,6 @@ describe('StopDetail article contract', () => {
 	});
 
 	it('renders article navigation that follows the active Detail and Schedule sections', async () => {
-		reset();
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 		const rail = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
 
@@ -695,7 +722,6 @@ describe('StopDetail article contract', () => {
 	});
 
 	it('preserves a manual facts-card choice across a tab round-trip', async () => {
-		reset();
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 		const headerContent = container.querySelector('.header__content') as HTMLElement;
 		const actionRow = container.querySelector('[data-slot="article-header-actions"]');
@@ -717,7 +743,6 @@ describe('StopDetail article contract', () => {
 	});
 
 	it('remounts the persisted facts-card state when the stop id changes in place', async () => {
-		reset();
 		const view = render(StopDetail, { props: { id: '57191' } });
 		const firstCard = view.container.querySelector('[data-toc="stop-detail-facts"]') as HTMLElement;
 
@@ -733,7 +758,6 @@ describe('StopDetail article contract', () => {
 
 describe('StopDetail retained-history ownership', () => {
 	it('keeps the default singleton surface intact and loads no retained partition', async () => {
-		reset();
 		const view = render(StopDetail, { props: { id: '57191' } });
 
 		expect(getStopSpy).toHaveBeenCalledWith('57191');
@@ -750,7 +774,6 @@ describe('StopDetail retained-history ownership', () => {
 	});
 
 	it('keeps discovery on the raw awkward stop id and aborts stale ownership on id changes', async () => {
-		reset();
 		stopHistoryHarness.getStopHistoryIndex.mockImplementation(() => new Promise(() => undefined));
 		const view = render(StopDetail, { props: { id: 'A/B ?#' } });
 
@@ -793,7 +816,6 @@ describe('StopDetail retained-history ownership', () => {
 	});
 
 	it('keeps retained query parameters out of line links', async () => {
-		reset();
 		stopDetailNav.page.url = new URL(
 			'http://localhost/stop/57191?tab=reliability&grain=day&from=2026-01-31&to=2026-02-01',
 		);
@@ -814,7 +836,6 @@ describe('StopDetail retained-history ownership', () => {
 
 describe('StopDetail retained-history singleton boundary', () => {
 	it('keeps a habits-only current singleton visible without an explicit retained range', async () => {
-		reset();
 		reliabilityData = HABITS_ONLY_RELIABILITY;
 		const view = render(StopDetail, { props: { id: '57191' } });
 
@@ -828,7 +849,6 @@ describe('StopDetail retained-history singleton boundary', () => {
 	});
 
 	it('preserves current habits while an explicit retained range loads', async () => {
-		reset();
 		reliabilityData = HABITS_ONLY_RELIABILITY;
 		stopDetailNav.page.url = new URL(
 			'http://localhost/stop/57191?tab=reliability&from=2026-01-31&to=2026-02-01',
@@ -851,7 +871,6 @@ describe('StopDetail retained-history singleton boundary', () => {
 	] as const)(
 		'keeps the existing ResourceBoundary empty for a default %s singleton',
 		async (_, value) => {
-			reset();
 			reliabilityData = value;
 			const view = render(StopDetail, { props: { id: '57191' } });
 
@@ -872,7 +891,6 @@ describe('StopDetail retained-history singleton boundary', () => {
 	] as const)(
 		'mounts StopReliabilitySurface for an explicit retained range over a %s singleton',
 		async (_, value) => {
-			reset();
 			reliabilityData = value;
 			stopDetailNav.page.url = new URL(
 				'http://localhost/stop/57191?tab=reliability&from=2026-01-31&to=2026-02-01',
@@ -890,7 +908,6 @@ describe('StopDetail retained-history singleton boundary', () => {
 	);
 
 	it('does not let retained discovery bypass a pending singleton boundary', async () => {
-		reset();
 		reliabilityData = null;
 		reliabilityResourceState = { data: null, error: null, loading: true, settled: false };
 		stopDetailNav.page.url = new URL(
@@ -907,7 +924,6 @@ describe('StopDetail retained-history singleton boundary', () => {
 	});
 
 	it('does not let retained discovery bypass a singleton error or its retry action', async () => {
-		reset();
 		reliabilityData = null;
 		reliabilityResourceState = {
 			data: null,
@@ -935,7 +951,6 @@ describe('StopDetail retained-history singleton boundary', () => {
 
 describe('StopDetail map drilldown', () => {
 	it('links directly to the live map filtered to this stop', () => {
-		reset();
 		render(StopDetail, { props: { id: '57191' } });
 
 		expect(screen.getByRole('link', { name: 'View stop 57191 on map' })).toHaveAttribute(
@@ -947,14 +962,12 @@ describe('StopDetail map drilldown', () => {
 
 describe('StopDetail article head', () => {
 	it('renders the stop NAME as the article h1', () => {
-		reset();
 		render(StopDetail, { props: { id: '57191' } });
 
 		expect(screen.getByRole('heading', { level: 1, name: 'Test stop' })).toBeInTheDocument();
 	});
 
 	it('shows real stop identity/provider metadata and a single back link', () => {
-		reset();
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 
 		expect(screen.getAllByText(/Stop ID/i).length).toBeGreaterThan(0);
@@ -971,7 +984,6 @@ describe('StopDetail reliability — grain picker', () => {
 	// bare getByRole('radiogroup') is ambiguous here). StopDetail keeps only the
 	// tab-scaffold + localized card-heading coverage below.
 	it('localizes the reliability card grain heading (EN) instead of the raw contract string', () => {
-		reset();
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 
@@ -984,7 +996,6 @@ describe('StopDetail reliability — grain picker', () => {
 	});
 
 	it('localizes the reliability card grain heading in FR (Jour, not the raw "day")', () => {
-		reset();
 		currentLocale = 'fr';
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Fiabilité' }));
@@ -1000,7 +1011,6 @@ describe('StopDetail reliability — grain picker', () => {
 
 describe('StopDetail reliability — habits heatmap', () => {
 	it('renders the habits heatmap when the matrix carries data', () => {
-		reset();
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 
@@ -1018,7 +1028,6 @@ describe('StopDetail reliability — habits heatmap', () => {
 	});
 
 	it('renders NO heatmap (not a fabricated grid) when habits is absent', () => {
-		reset();
 		reliabilityData = { ...RELIABILITY, habits: null };
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
@@ -1029,7 +1038,6 @@ describe('StopDetail reliability — habits heatmap', () => {
 
 describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 	it('renders the occupancy proportion bar when occupancy_mix is present', () => {
-		reset();
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 
@@ -1059,7 +1067,6 @@ describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 	});
 
 	it('stands the crowding BAR down but shows the honest no-telemetry note when occupancy_mix is null', () => {
-		reset();
 		reliabilityData = { ...RELIABILITY, occupancy_mix: null };
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
@@ -1082,7 +1089,6 @@ describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 	});
 
 	it('stands the crowding section down when occupancy_mix is absent (undefined)', () => {
-		reset();
 		reliabilityData = { ...RELIABILITY, occupancy_mix: undefined } as StopReliability;
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
@@ -1091,7 +1097,6 @@ describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 	});
 
 	it('stands down on an all-zero mix (no even split, no all-empty bar)', () => {
-		reset();
 		reliabilityData = {
 			...RELIABILITY,
 			occupancy_mix: { empty: 0, many_seats: 0, few_seats: 0, standing: 0, full: 0 },
@@ -1105,7 +1110,6 @@ describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 	});
 
 	it('renders the FR no-telemetry note when occupancy_mix is null', () => {
-		reset();
 		currentLocale = 'fr';
 		reliabilityData = { ...RELIABILITY, occupancy_mix: null };
 		render(StopDetail, { props: { id: '57191' } });
@@ -1123,7 +1127,6 @@ describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 
 describe('StopDetail reliability — occupancy-only stop is not gated out as empty', () => {
 	it('renders the crowding section for a stop with ONLY occupancy_mix (no periods/dow/by_route)', () => {
-		reset();
 		// A stop the pipeline emits with crowding telemetry but no delay periods,
 		// weekday series, or per-route breakdown. The widened isEmpty predicate must
 		// NOT gate the whole reliability tab to its empty state — the crowding section
@@ -1163,7 +1166,6 @@ describe('StopDetail reliability — occupancy-only stop is not gated out as emp
 
 describe('StopDetail reliability — by_route ranked bars', () => {
 	it('ranks routes worst-delay first and drops rows with no delay', () => {
-		reset();
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 
@@ -1183,7 +1185,6 @@ describe('StopDetail reliability — by_route ranked bars', () => {
 
 describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
 	it('ranks weekdays worst-delay first and drops a null-mean weekday (no fake-0 row)', () => {
-		reset();
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 
@@ -1212,7 +1213,6 @@ describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
 	});
 
 	it('gates the severe share on observation count (under-sampled weekday withheld)', () => {
-		reset();
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 
@@ -1230,7 +1230,6 @@ describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
 	});
 
 	it('stands the weekday section down when day_of_week is absent', () => {
-		reset();
 		reliabilityData = { ...RELIABILITY, day_of_week: undefined };
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
@@ -1240,7 +1239,6 @@ describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
 	});
 
 	it('stands the weekday section down when every weekday carries a null mean (no fake-0)', () => {
-		reset();
 		reliabilityData = {
 			...RELIABILITY,
 			day_of_week: [
@@ -1255,7 +1253,6 @@ describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
 	});
 
 	it('localizes weekday names in FR (Vendredi, not the ISO integer or EN name)', () => {
-		reset();
 		currentLocale = 'fr';
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Fiabilité' }));
@@ -1275,7 +1272,6 @@ describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
 
 describe('StopDetail reliability — by time of day (shift + day-type grains)', () => {
 	it('renders the by-time-of-day shift list + weekday/weekend comparison when present', () => {
-		reset();
 		reliabilityData = RELIABILITY_WITH_TOD;
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
@@ -1312,7 +1308,6 @@ describe('StopDetail reliability — by time of day (shift + day-type grains)', 
 	});
 
 	it('stands the whole section down when the stop carries no shift/day-type grains', () => {
-		reset();
 		// Default fixture = calendar grains only (day + week).
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
@@ -1322,7 +1317,6 @@ describe('StopDetail reliability — by time of day (shift + day-type grains)', 
 	});
 
 	it('drops an avg-only (severe-null) shift period — partition + ranker stay in lock-step', () => {
-		reset();
 		// A shift period carrying a real avg delay but a NULL severe share must NOT
 		// survive into the severe-share ranking: dropping it at partition time keeps
 		// the partition guard and the ranker consistent, and never fabricates a 0%
@@ -1350,7 +1344,6 @@ describe('StopDetail reliability — by time of day (shift + day-type grains)', 
 	});
 
 	it('keeps the GrainPicker calendar-only even when shift grains are present', () => {
-		reset();
 		reliabilityData = RELIABILITY_WITH_TOD;
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
@@ -1378,7 +1371,6 @@ describe('StopDetail reliability — by time of day (shift + day-type grains)', 
 
 describe('StopDetail live departures — status filter', () => {
 	it('narrows the board to late departures and back', async () => {
-		reset();
 		render(StopDetail, { props: { id: '57191' } });
 		// Next tab is the default active tab.
 
@@ -1397,7 +1389,6 @@ describe('StopDetail live departures — status filter', () => {
 	});
 
 	it('shows an honest empty state when a filter combination matches nothing', async () => {
-		reset();
 		render(StopDetail, { props: { id: '57191' } });
 
 		// Route 80's only departure is on-time → "Early" + route 80 matches nothing.
@@ -1414,7 +1405,6 @@ describe('StopDetail live departures — status filter', () => {
 
 describe('StopDetail live departures — HONEST ABSENCE (empty board)', () => {
 	it('states "scheduled, but no vehicle reporting" when a served route is silent in-window', () => {
-		reset();
 		// A 24h schedule window (00:00 → 23:59 → always open regardless of the test
 		// clock) on a served route (51) that the live network reports silent.
 		stopFileData = {
@@ -1430,7 +1420,6 @@ describe('StopDetail live departures — HONEST ABSENCE (empty board)', () => {
 	});
 
 	it('falls back to the generic honest no-data copy when no reason is derivable', () => {
-		reset();
 		// No schedule window + no silent signal → inferAbsenceReason returns null →
 		// the plain honest "Nothing to show", never a fabricated reason.
 		stopFileData = { ...STOP_FILE, scheduled: [] } as unknown as StopFile;
@@ -1448,7 +1437,6 @@ describe('StopDetail live departures — HONEST ABSENCE (empty board)', () => {
 
 describe('StopDetail — service alerts affecting this stop', () => {
 	it('surfaces alerts that list this stop OR a route it serves, and hides unrelated ones', () => {
-		reset();
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
 
@@ -1471,7 +1459,6 @@ describe('StopDetail — service alerts affecting this stop', () => {
 	});
 
 	it('localizes the alerts section + headlines in FR', () => {
-		reset();
 		currentLocale = 'fr';
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Détail' }));
@@ -1487,7 +1474,6 @@ describe('StopDetail — service alerts affecting this stop', () => {
 	});
 
 	it('stands the alerts section down when no live alert affects this stop', () => {
-		reset();
 		useEmptyLive = true; // empty live store: no alerts loaded
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
@@ -1496,7 +1482,6 @@ describe('StopDetail — service alerts affecting this stop', () => {
 	});
 
 	it('surfaces an alert the live feed targets by CODE when id != code (metro regression)', () => {
-		reset();
 		// The static index id ('STATION-1') differs from the public code ('10254');
 		// the live feed targets the stop by its CODE. The alert must surface — the
 		// old id-only keying silently missed it for the ~72 stops where id != code.
@@ -1513,7 +1498,6 @@ describe('StopDetail — service alerts affecting this stop', () => {
 
 describe('StopDetail — per-stop state resets on navigation', () => {
 	it('clears the departures status filter when the stop id changes', async () => {
-		reset();
 		const { rerender } = render(StopDetail, { props: { id: '57191' } });
 
 		// Narrow stop 57191 to "Late" → only the +4 min departure remains.
@@ -1545,7 +1529,6 @@ const SEVERE_DEPARTURES = [
 
 describe('StopDetail live departures — colored statuses (S8B)', () => {
 	it('offers all four tone chips incl. a representable SEVERE (not absorbed into late)', () => {
-		reset();
 		render(StopDetail, { props: { id: '57191' } });
 		// STATUS_LABELS (en) drive the chip text — severe is its own chip now.
 		expect(screen.getByRole('button', { name: /On-time/ })).toBeInTheDocument();
@@ -1555,7 +1538,6 @@ describe('StopDetail live departures — colored statuses (S8B)', () => {
 	});
 
 	it('tints each departure caption with the shared status fill AND a redundant glyph', () => {
-		reset();
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 		// The +4 late departure's caption carries the late status fill + the ▲ glyph.
 		const late = Array.from(container.querySelectorAll('.stop-departure-delay')).find((el) =>
@@ -1568,7 +1550,6 @@ describe('StopDetail live departures — colored statuses (S8B)', () => {
 	});
 
 	it('bands a >=5 min departure to the SEVERE tone (its own severe fill)', () => {
-		reset();
 		liveStore.index.byStopId.set('SEVERE-1', SEVERE_DEPARTURES);
 		const { container } = render(StopDetail, { props: { id: 'SEVERE-1' } });
 		const severe = Array.from(container.querySelectorAll('.stop-departure-delay')).find(
@@ -1582,7 +1563,6 @@ describe('StopDetail live departures — colored statuses (S8B)', () => {
 
 describe('StopDetail schedule — semantic timetable + honest gaps', () => {
 	it('renders route, destination and departures in one scoped schedule table', async () => {
-		reset();
 		stopFileData = {
 			...STOP_FILE,
 			scheduled: [
@@ -1605,7 +1585,6 @@ describe('StopDetail schedule — semantic timetable + honest gaps', () => {
 	});
 
 	it('states an honest per-route absence inside the route table row', async () => {
-		reset();
 		stopFileData = {
 			...STOP_FILE,
 			scheduled: [{ route: '99', headsign: 'Vide', times: [] }],
@@ -1622,7 +1601,6 @@ describe('StopDetail schedule — semantic timetable + honest gaps', () => {
 
 describe('StopDetail info — 2-col layout + tri-state accessibility (S8B/A3)', () => {
 	it('lays the Info pane out as facts (left) + alerts (right)', () => {
-		reset();
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
 		const info = container.querySelector('.stop-info') as HTMLElement;
@@ -1633,7 +1611,6 @@ describe('StopDetail info — 2-col layout + tri-state accessibility (S8B/A3)', 
 	});
 
 	it('renders accessibility as YES when wheelchair === true', () => {
-		reset();
 		stopFileData = { ...STOP_FILE, wheelchair: true } as unknown as StopFile;
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
@@ -1641,7 +1618,6 @@ describe('StopDetail info — 2-col layout + tri-state accessibility (S8B/A3)', 
 	});
 
 	it('renders accessibility as NO when wheelchair === false', () => {
-		reset();
 		stopFileData = { ...STOP_FILE, wheelchair: false } as unknown as StopFile;
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
@@ -1649,7 +1625,6 @@ describe('StopDetail info — 2-col layout + tri-state accessibility (S8B/A3)', 
 	});
 
 	it('renders an honest UNKNOWN (not a silent omit) when wheelchair is absent', () => {
-		reset();
 		// STOP_FILE has no `wheelchair` field → the tri-state renders the label with a
 		// styled absence chip, never dropping the accessibility field silently.
 		render(StopDetail, { props: { id: '57191' } });

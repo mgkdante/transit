@@ -15,14 +15,17 @@
 // data ports are stubbed so this gate stays env-free + off-network; createResource
 // hands back the per-repository fixture directly (keyed by the fetcher).
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render as renderSvelte, screen, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { DataHealth, HistoricAvailabilityIndex, IsoUtc, Provenance } from '$lib/v1/schemas';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';
+
+vi.mock('@testing-library/svelte', { spy: true });
 
 const en = copy.en;
 const localeContext = (locale: 'en' | 'fr') =>
@@ -233,15 +236,6 @@ let dataHealthState: ResourceState<DataHealth> = ready(richDataHealth);
 let historyState: ResourceState<HistoricAvailabilityIndex> = ready(richHistory);
 const historyReload = vi.fn();
 
-function resetStatusStorage(): void {
-	for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
-		const key = sessionStorage.key(index);
-		if (key?.startsWith('transit.persisted:status-')) sessionStorage.removeItem(key);
-	}
-	sessionStorage.removeItem('transit.persisted:health-conformance-members');
-	quietModeStore.resetForTest();
-}
-
 vi.mock('$lib/nav', async () => ({ layout: { isDesktop: true } }));
 
 // The barrel mock exports the two fetchers (distinct spy identities so the resource
@@ -297,16 +291,34 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	},
 }));
 
-beforeEach(() => {
-	resetStatusStorage();
-	historyReload.mockReset();
-});
-
-afterEach(() => {
+function resetHealthSurfaceState(): void {
 	provenanceState = ready(richProvenance);
 	dataHealthState = ready(richDataHealth);
 	historyState = ready(richHistory);
-	resetStatusStorage();
+	historyReload.mockReset();
+	getProvenance.mockReset();
+	getDataHealth.mockReset();
+	getHistoricAvailability.mockReset();
+	quietModeStore.resetForTest();
+}
+
+const healthSurface = createSurfaceHarness({
+	storage: [
+		{
+			port: sessionStorage,
+			keys: ['transit.persisted:health-conformance-members'],
+			prefixes: ['transit.persisted:status-'],
+		},
+	],
+	resetters: [resetHealthSurfaceState],
+	mount: renderSvelte,
+});
+const render = healthSurface.mount;
+
+beforeEach(() => healthSurface.reset());
+
+afterAll(() => {
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(38);
 });
 
 describe('HealthStatus — full manifest render', () => {
