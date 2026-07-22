@@ -2,26 +2,32 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any
 
 from transit_ops.settings import get_settings
 from transit_ops.snapshots.builders.historic.history_common import (
+    HistoryBatchLoader,
     HistoryDateMask,
+    HistoryEntityMetricPlan,
+    HistoryMetricRows,
+    build_history_entity_metric_plans,
+    clean_history_entity_ids,
     encode_history_entity_id,
+    group_history_entity_date_rows,
     history_coverage,
-    history_date,
     history_entity_directory_generation_id,
     history_index_generation_id,
     history_metric_coverage,
-    history_month,
-    history_partition_ref,
+    history_row_float,
     history_row_int,
-    history_row_timestamp,
     history_utc_timestamp,
     latest_history_timestamp,
+    prepare_history_row_batch_loader,
+    prepare_history_sql_batch_loader,
+    put_history_entity_metric,
+    put_history_entity_timestamps,
 )
 from transit_ops.snapshots.contract import (
     HistoricCollectionIndex,
@@ -35,11 +41,12 @@ from transit_ops.snapshots.contract import (
     StopHistoryDay,
     StopHistoryPartition,
 )
-from transit_ops.snapshots.serialization import snapshot_sha256
 from transit_ops.sql_registry import named_query
 
 if TYPE_CHECKING:  # pragma: no cover
     from sqlalchemy.engine import Connection
+
+_group_rows = group_history_entity_date_rows
 
 
 STOP_HISTORY_ENTITY_BATCH_SIZE = 100
@@ -146,10 +153,6 @@ _STOP_HISTORY_OCCUPANCY_SQL = named_query(
 )
 
 
-MetricRows = tuple[list[Mapping[str, Any]], ...]
-MetricType = TypeVar("MetricType")
-
-
 def _entity_id(row: Mapping[str, Any]) -> str:
     value = row.get("stop_id")
     if not isinstance(value, str) or not value:
@@ -157,51 +160,12 @@ def _entity_id(row: Mapping[str, Any]) -> str:
     return value
 
 
-def _group_rows(
-    rows: Iterable[Mapping[str, Any]],
-) -> dict[tuple[str, str], list[Mapping[str, Any]]]:
-    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
-    for row in rows:
-        grouped[(_entity_id(row), history_date(row.get("local_date")))].append(row)
-    return dict(grouped)
-
-
-def _float_value(row: Mapping[str, Any], field_name: str) -> float | None:
-    value = row.get(field_name)
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        raise ValueError(f"history row {field_name} must be numeric")
-    try:
-        return float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"history row {field_name} must be numeric") from exc
-
-
-def _put_metric(
-    target: dict[str, dict[str, MetricType]],
-    entity_id: str,
-    local_date: str,
-    value: MetricType,
-) -> None:
-    target.setdefault(entity_id, {})[local_date] = value
-
-
-def _put_timestamps(
-    target: dict[str, dict[str, list[str]]],
-    entity_id: str,
-    local_date: str,
-    rows: Iterable[Mapping[str, Any]],
-) -> None:
-    target.setdefault(entity_id, {})[local_date] = [history_row_timestamp(row) for row in rows]
-
-
 def _delay_metrics(
     rows: Iterable[Mapping[str, Any]],
 ) -> tuple[dict[str, dict[str, HistoricDelayMetric]], dict[str, dict[str, list[str]]]]:
     metrics: dict[str, dict[str, HistoricDelayMetric]] = {}
     timestamps: dict[str, dict[str, list[str]]] = {}
-    for (entity_id, local_date), grouped in _group_rows(rows).items():
+    for (entity_id, local_date), grouped in _group_rows(rows, entity_id_of=_entity_id).items():
         observation_count = sum(history_row_int(row, "observation_count") or 0 for row in grouped)
         if observation_count <= 0:
             continue
@@ -209,7 +173,7 @@ def _delay_metrics(
         delay_sum = sum(
             history_row_int(row, "sum_delay_seconds", minimum=None) or 0 for row in grouped
         )
-        _put_metric(
+        put_history_entity_metric(
             metrics,
             entity_id,
             local_date,
@@ -220,7 +184,7 @@ def _delay_metrics(
                 sum_delay_seconds=delay_sum,
             ),
         )
-        _put_timestamps(
+        put_history_entity_timestamps(
             timestamps,
             entity_id,
             local_date,
@@ -237,24 +201,24 @@ def _percentile_metrics(
 ]:
     metrics: dict[str, dict[str, HistoricDelayPercentiles]] = {}
     timestamps: dict[str, dict[str, list[str]]] = {}
-    for (entity_id, local_date), grouped in _group_rows(rows).items():
+    for (entity_id, local_date), grouped in _group_rows(rows, entity_id_of=_entity_id).items():
         if len(grouped) != 1:
             raise ValueError(f"duplicate Stop percentile day {entity_id}/{local_date}")
         row = grouped[0]
         observation_count = history_row_int(row, "observation_count") or 0
         if observation_count <= 0:
             raise ValueError("Stop percentile observation_count must be positive")
-        _put_metric(
+        put_history_entity_metric(
             metrics,
             entity_id,
             local_date,
             HistoricDelayPercentiles(
                 observation_count=observation_count,
-                p50_delay_seconds=_float_value(row, "p50_delay_seconds"),
-                p90_delay_seconds=_float_value(row, "p90_delay_seconds"),
+                p50_delay_seconds=history_row_float(row, "p50_delay_seconds"),
+                p90_delay_seconds=history_row_float(row, "p90_delay_seconds"),
             ),
         )
-        _put_timestamps(timestamps, entity_id, local_date, grouped)
+        put_history_entity_timestamps(timestamps, entity_id, local_date, grouped)
     return metrics, timestamps
 
 
@@ -267,15 +231,15 @@ def _occupancy_metrics(
     metrics: dict[str, dict[str, HistoricOccupancyMetric]] = {}
     timestamps: dict[str, dict[str, list[str]]] = {}
     bands = ("empty", "many_seats", "few_seats", "standing", "full")
-    for (entity_id, local_date), grouped in _group_rows(rows).items():
+    for (entity_id, local_date), grouped in _group_rows(rows, entity_id_of=_entity_id).items():
         observation_count = sum(history_row_int(row, "observation_count") or 0 for row in grouped)
         counts = {band: sum(history_row_int(row, band) or 0 for row in grouped) for band in bands}
         if observation_count != sum(counts.values()):
             raise ValueError("Stop occupancy observation_count must equal the sum of bands")
         if observation_count <= 0:
             continue
-        _put_metric(metrics, entity_id, local_date, HistoricOccupancyMetric(**counts))
-        _put_timestamps(
+        put_history_entity_metric(metrics, entity_id, local_date, HistoricOccupancyMetric(**counts))
+        put_history_entity_timestamps(
             timestamps,
             entity_id,
             local_date,
@@ -284,69 +248,16 @@ def _occupancy_metrics(
     return metrics, timestamps
 
 
-@dataclass(frozen=True)
-class _StopEntityPlan:
-    entity_id: str
-    metrics: tuple[dict[str, Any], ...]
-    timestamps: tuple[dict[str, list[str]], ...]
-    available_dates: tuple[str, ...]
-
-    def iter_partition_items(self) -> Iterator[tuple[HistoricPartitionRef, StopHistoryPartition]]:
-        encoded_id = encode_history_entity_id(self.entity_id)
-        for month in sorted({history_month(value) for value in self.available_dates}):
-            dates = [value for value in self.available_dates if history_month(value) == month]
-            days = [
-                StopHistoryDay(
-                    date=local_date,
-                    delay=self.metrics[0].get(local_date),
-                    delay_percentiles=self.metrics[1].get(local_date),
-                    occupancy=self.metrics[2].get(local_date),
-                )
-                for local_date in dates
-            ]
-            partition = StopHistoryPartition(
-                generated_utc=latest_history_timestamp(
-                    timestamp
-                    for local_date in dates
-                    for source in self.timestamps
-                    for timestamp in source.get(local_date, [])
-                ),
-                methodology_version="history-1",
-                entity_id=self.entity_id,
-                month=month,
-                days=days,
-            )
-            digest = snapshot_sha256(partition)
-            path = f"historic/history/stops/{encoded_id}/generations/{digest}/{month}.json"
-            yield history_partition_ref(path, partition), partition
-
-
 def _entity_plans_from_rows(
-    *,
     entity_ids: Sequence[str],
-    delay_rows: Iterable[Mapping[str, Any]],
-    percentile_rows: Iterable[Mapping[str, Any]],
-    occupancy_rows: Iterable[Mapping[str, Any]],
-) -> list[_StopEntityPlan]:
-    delay, delay_ts = _delay_metrics(delay_rows)
-    percentiles, percentile_ts = _percentile_metrics(percentile_rows)
-    occupancy, occupancy_ts = _occupancy_metrics(occupancy_rows)
-    metric_sources = (delay, percentiles, occupancy)
-    timestamp_sources = (delay_ts, percentile_ts, occupancy_ts)
-    plans: list[_StopEntityPlan] = []
-    for entity_id in sorted(set(entity_ids)):
-        entity_metrics = tuple(source.get(entity_id, {}) for source in metric_sources)
-        dates = tuple(sorted({date for source in entity_metrics for date in source}))
-        if dates:
-            plans.append(
-                _StopEntityPlan(
-                    entity_id=entity_id,
-                    metrics=entity_metrics,
-                    timestamps=tuple(source.get(entity_id, {}) for source in timestamp_sources),
-                    available_dates=dates,
-                )
-            )
-    return plans
+    rows: HistoryMetricRows,
+) -> list[HistoryEntityMetricPlan]:
+    sources = (_delay_metrics(rows[0]), _percentile_metrics(rows[1]), _occupancy_metrics(rows[2]))
+    return build_history_entity_metric_plans(
+        entity_ids=entity_ids,
+        metric_sources=tuple(metrics for metrics, _timestamps in sources),
+        timestamp_sources=tuple(timestamps for _metrics, timestamps in sources),
+    )
 
 
 @dataclass
@@ -581,19 +492,18 @@ class StopHistoryPlan:
     entity_ids: tuple[str, ...]
     generated_utc: str
     entity_batch_size: int
-    batch_loader: Callable[[list[str]], MetricRows]
+    batch_loader: HistoryBatchLoader
 
     def iter_partition_items(self) -> Iterator[tuple[HistoricPartitionRef, StopHistoryPartition]]:
         for start in range(0, len(self.entity_ids), self.entity_batch_size):
             batch = list(self.entity_ids[start : start + self.entity_batch_size])
-            rows = self.batch_loader(batch)
-            for entity_plan in _entity_plans_from_rows(
-                entity_ids=batch,
-                delay_rows=rows[0],
-                percentile_rows=rows[1],
-                occupancy_rows=rows[2],
-            ):
-                yield from entity_plan.iter_partition_items()
+            for entity_plan in _entity_plans_from_rows(batch, self.batch_loader(batch)):
+                yield from entity_plan.iter_partition_items(
+                    family="stops",
+                    metric_names=tuple(metric for metric, _aggregation in STOP_HISTORY_METRICS),
+                    day_model=StopHistoryDay,
+                    partition_model=StopHistoryPartition,
+                )
 
     def materialize(self) -> StopHistoryBundle:
         summary = StopHistoryStreamSummary()
@@ -605,15 +515,8 @@ class StopHistoryPlan:
         return StopHistoryBundle(
             partitions=partitions,
             indexes=indexes,
-            directory=summary.build_directory(
-                indexes,
-                fallback_generated_utc=self.generated_utc,
-            ),
+            directory=summary.build_directory(indexes, fallback_generated_utc=self.generated_utc),
         )
-
-
-def _clean_entity_ids(values: Iterable[object]) -> tuple[str, ...]:
-    return tuple(sorted({value for value in values if isinstance(value, str) and value}))
 
 
 def build_stop_history_plan_from_rows(
@@ -628,19 +531,15 @@ def build_stop_history_plan_from_rows(
     if entity_batch_size <= 0:
         raise ValueError("Stop history entity_batch_size must be positive")
     sources = tuple(tuple(rows) for rows in (delay_rows, percentile_rows, occupancy_rows))
-    discovered = _clean_entity_ids(
+    discovered = clean_history_entity_ids(
         [*(entity_ids or []), *(row.get("stop_id") for source in sources for row in source)]
     )
-
-    def load(batch: list[str]) -> MetricRows:
-        allowed = set(batch)
-        return tuple([row for row in source if row.get("stop_id") in allowed] for source in sources)
 
     return StopHistoryPlan(
         entity_ids=discovered,
         generated_utc=history_utc_timestamp(generated_utc, field="generated_utc"),
         entity_batch_size=entity_batch_size,
-        batch_loader=load,
+        batch_loader=prepare_history_row_batch_loader(sources, entity_field="stop_id"),
     )
 
 
@@ -663,22 +562,18 @@ def build_stop_history_plan(
         "warm_retention_days": settings.GOLD_WARM_ROLLUP_RETENTION_DAYS,
     }
     id_rows = conn.execute(_STOP_HISTORY_IDS_SQL, base_params).mappings()
-    entity_ids = _clean_entity_ids(row.get("stop_id") for row in id_rows)
+    entity_ids = clean_history_entity_ids(row.get("stop_id") for row in id_rows)
     queries = (
         _STOP_HISTORY_DELAY_SQL,
         _STOP_HISTORY_PERCENTILES_SQL,
         _STOP_HISTORY_OCCUPANCY_SQL,
     )
 
-    def load(batch: list[str]) -> MetricRows:
-        params = {**base_params, "entity_ids": batch}
-        return tuple(list(conn.execute(query, params).mappings()) for query in queries)
-
     return StopHistoryPlan(
         entity_ids=entity_ids,
         generated_utc=history_utc_timestamp(generated_utc, field="generated_utc"),
         entity_batch_size=entity_batch_size,
-        batch_loader=load,
+        batch_loader=prepare_history_sql_batch_loader(conn, queries, base_params=base_params),
     )
 
 

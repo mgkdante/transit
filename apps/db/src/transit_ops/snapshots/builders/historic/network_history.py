@@ -13,10 +13,12 @@ from transit_ops.snapshots.builders.historic.history_common import (
     history_date,
     history_index_generation_id,
     history_metric_coverage,
-    history_month,
-    history_partition_ref,
+    history_month_partition_ref,
+    history_optional_sum,
+    history_row_float,
     history_row_int,
     history_row_timestamp,
+    iter_history_month_groups,
     latest_history_timestamp,
 )
 from transit_ops.snapshots.contract import (
@@ -29,7 +31,6 @@ from transit_ops.snapshots.contract import (
     NetworkHistoryDay,
     NetworkHistoryPartition,
 )
-from transit_ops.snapshots.serialization import snapshot_sha256
 from transit_ops.sql_registry import named_query
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -174,39 +175,29 @@ class NetworkHistoryPlan:
     ) -> Iterator[tuple[HistoricPartitionRef, NetworkHistoryPartition]]:
         """Yield one content-addressed month, releasing it before building the next."""
 
-        months = sorted({history_month(local_date) for local_date in self.available_dates})
-        for month in months:
-            month_dates = [
-                local_date
-                for local_date in self.available_dates
-                if history_month(local_date) == month
-            ]
-            days = [
-                NetworkHistoryDay(
+        for month, dates in iter_history_month_groups(self.available_dates):
+            yield history_month_partition_ref(
+                lambda local_date: NetworkHistoryDay(
                     date=local_date,
                     delay=self.delay.get(local_date),
                     delay_percentiles=self.delay_percentiles.get(local_date),
                     vehicles=self.vehicles.get(local_date),
                     cancellation=self.cancellation.get(local_date),
                     occupancy=self.occupancy.get(local_date),
-                )
-                for local_date in month_dates
-            ]
-            timestamps = [
-                timestamp
-                for local_date in month_dates
-                for source in self.source_timestamps
-                for timestamp in source.get(local_date, [])
-            ]
-            partition = NetworkHistoryPartition(
-                generated_utc=latest_history_timestamp(timestamps),
-                methodology_version="history-1",
+                ),
+                lambda generated_utc, partition_month, days: NetworkHistoryPartition(
+                    generated_utc=generated_utc,
+                    methodology_version="history-1",
+                    month=partition_month,
+                    days=days,
+                ),
+                lambda digest, partition_month: (
+                    f"historic/history/network/generations/{digest}/{partition_month}.json"
+                ),
                 month=month,
-                days=days,
+                dates=dates,
+                source_timestamps=self.source_timestamps,
             )
-            digest = snapshot_sha256(partition)
-            path = f"historic/history/network/generations/{digest}/{partition.month}.json"
-            yield history_partition_ref(path, partition), partition
 
     def build_index(self, refs: Iterable[HistoricPartitionRef]) -> HistoricCollectionIndex:
         """Build the stable pointer from compact refs after every month has succeeded."""
@@ -261,23 +252,6 @@ class NetworkHistoryPlan:
         )
 
 
-def _optional_sum(values: Iterable[int | None]) -> int | None:
-    present = [value for value in values if value is not None]
-    return sum(present) if present else None
-
-
-def _float_value(row: Mapping[str, Any], field: str) -> float | None:
-    value = row.get(field)
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        raise ValueError(f"history row {field} must be numeric")
-    try:
-        return float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"history row {field} must be numeric") from exc
-
-
 def _group_rows(rows: Iterable[Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
     grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for row in rows:
@@ -295,10 +269,10 @@ def _delay_metrics(
         if observation_count <= 0:
             continue
         in_clamp = sum(history_row_int(row, "in_clamp_observation_count") or 0 for row in grouped)
-        on_time = _optional_sum(
+        on_time = history_optional_sum(
             history_row_int(row, "on_time_count", optional=True) for row in grouped
         )
-        severe = _optional_sum(
+        severe = history_optional_sum(
             history_row_int(row, "severe_count", optional=True) for row in grouped
         )
         delay_sum = sum(
@@ -337,7 +311,7 @@ def _fact_metrics(
         seen.add(local_date)
         observation_count = history_row_int(row, "observation_count") or 0
         vehicle_count = history_row_int(row, "vehicles") or 0
-        p90 = _float_value(row, "p90_delay_seconds")
+        p90 = history_row_float(row, "p90_delay_seconds")
         if vehicle_count > observation_count:
             raise ValueError("history row vehicles cannot exceed observation_count")
         if observation_count > 0 and p90 is not None:
@@ -360,15 +334,15 @@ def _cancellation_metrics(
     for local_date, grouped in _group_rows(rows).items():
         canceled = sum(history_row_int(row, "canceled_trip_days") or 0 for row in grouped)
         total = sum(history_row_int(row, "total_trip_days") or 0 for row in grouped)
-        scheduled = _optional_sum(
+        scheduled = history_optional_sum(
             history_row_int(row, "scheduled_trip_days", optional=True) for row in grouped
         )
         known_schedule_rows = [row for row in grouped if row.get("scheduled_trip_days") is not None]
-        delivered = _optional_sum(
+        delivered = history_optional_sum(
             history_row_int(row, "delivered_trip_days", optional=True)
             for row in known_schedule_rows
         )
-        silent = _optional_sum(
+        silent = history_optional_sum(
             history_row_int(row, "silent_trip_days", optional=True) for row in known_schedule_rows
         )
         if total <= 0 and (scheduled is None or scheduled <= 0):
