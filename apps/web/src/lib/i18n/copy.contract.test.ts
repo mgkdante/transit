@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, test } from 'vitest';
+import type { LocalizedCopy } from './copy';
 import * as i18n from './index';
 import { cornerMetaLabels } from '../components/brand/cornerMeta.copy';
 import { articleNavigationCopy } from '../components/shared/articleNavigation.copy';
@@ -25,6 +26,15 @@ import {
 	indexCopy as stopIndexCopy,
 } from '../features/stops/stops.copy';
 import { tripCopy } from '../features/trips/trips.copy';
+
+type ExpandedLocaleCopy = LocalizedCopy<{ readonly title: string }, 'fr' | 'en' | 'es'>;
+
+// @ts-expect-error Every configured noncanonical locale must remain required.
+const incompleteExpandedLocaleCopy: ExpandedLocaleCopy = {
+	fr: { title: 'Titre' },
+	en: { title: 'Title' },
+};
+void incompleteExpandedLocaleCopy;
 
 const COPY_EXPORTS = {
 	cornerMetaLabels,

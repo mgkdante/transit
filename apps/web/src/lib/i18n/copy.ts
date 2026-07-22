@@ -18,15 +18,14 @@ type CopyShape<Value> = Value extends (...args: infer Args) => infer Result
 						? boolean
 						: Value;
 
-type LocalizedCopy<Canonical extends object> = {
-	readonly fr: Canonical;
-	readonly en: CopyShape<NoInfer<Canonical>>;
+export type LocalizedCopy<Canonical extends object, SupportedLocale extends string = Locale> = {
+	readonly [Key in SupportedLocale]: Key extends 'fr' ? Canonical : CopyShape<NoInfer<Canonical>>;
 };
 
 /**
- * Defines a bilingual bundle from the canonical French shape. English must
- * provide the same keys and function signatures; the returned contract is
- * deeply readonly without cloning or reordering the supplied object.
+ * Defines localized copy from the canonical French shape. Every other configured
+ * locale must provide the same keys and function signatures; the returned contract
+ * is deeply readonly without cloning or reordering the supplied object.
  */
 export function defineCopy<Canonical extends object>(
 	copy: LocalizedCopy<Canonical>,
