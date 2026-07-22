@@ -248,6 +248,7 @@ class _ConditionalReadClient(FakeS3Client):
         self.body = body
         self.etag = '"inventory-etag"'
         self.modified = datetime(2026, 7, 3, tzinfo=UTC)
+        self.list_modified = self.modified
         self.content_length = len(body)
         self.error_code: str | None = None
         self.error_status: int | None = None
@@ -274,6 +275,19 @@ class _ConditionalReadClient(FakeS3Client):
             "ETag": self.etag,
             "LastModified": self.modified,
             "ContentLength": self.content_length,
+        }
+
+    def list_objects_v2(self, **kw):
+        return {
+            "Contents": [
+                {
+                    "Key": "v1/stm/historic/a.json",
+                    "ETag": self.etag,
+                    "LastModified": self.list_modified,
+                    "Size": self.content_length,
+                }
+            ],
+            "IsTruncated": False,
         }
 
 
@@ -1419,6 +1433,17 @@ def test_snapshot_storage_reads_the_inventoried_version_conditionally_and_closes
     assert client.last_body.was_closed
 
 
+def test_snapshot_storage_normalizes_list_timestamp_precision_before_conditional_read():
+    client = _ConditionalReadClient()
+    client.list_modified = client.modified.replace(microsecond=616_000)
+    storage = SnapshotStorage(client, bucket="snapshots", base_prefix="v1/stm")
+
+    version = next(storage.iter_object_versions("historic/"))
+
+    assert version.last_modified_utc == client.modified
+    assert storage.read_bytes_at_version(version.rel_key, version) == client.body
+
+
 @pytest.mark.parametrize("error_code", ["PreconditionFailed", "NoSuchKey"])
 def test_snapshot_storage_conditional_read_fails_closed_on_stale_or_missing_object(
     error_code: str,
@@ -1494,6 +1519,22 @@ def test_snapshot_storage_conditional_read_rejects_response_or_body_drift(drift:
 
     assert client.last_body is not None
     assert client.last_body.was_closed
+
+
+def test_snapshot_storage_conditional_read_identifies_every_mismatched_metadata_field():
+    client = _ConditionalReadClient()
+    version = StoredObjectVersion(
+        rel_key="historic/a.json",
+        etag='"expected"',
+        last_modified_utc=datetime(2026, 7, 2, tzinfo=UTC),
+        size=len(client.body) + 1,
+    )
+    storage = SnapshotStorage(client, bucket="snapshots", base_prefix="v1/stm")
+
+    with pytest.raises(StoredObjectVersionMismatchError) as error:
+        storage.read_bytes_at_version("historic/a.json", version)
+
+    assert error.value.reason == "metadata_mismatch:etag,last_modified,size"
 
 
 def test_snapshot_storage_conditional_read_rejects_a_version_for_another_key():

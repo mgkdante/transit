@@ -71,8 +71,9 @@ class StableActivationConflictError(RuntimeError):
 class StoredObjectVersionMismatchError(RuntimeError):
     """An object no longer matches the version captured by an inventory."""
 
-    def __init__(self, rel_key: str) -> None:
-        super().__init__(f"snapshot object version changed: {rel_key}")
+    def __init__(self, rel_key: str, *, reason: str = "version_mismatch") -> None:
+        self.reason = reason
+        super().__init__(f"snapshot object version changed: {rel_key}:{reason}")
 
 
 @dataclass(frozen=True)
@@ -256,22 +257,48 @@ class SnapshotStorage:
                 or status == 404
                 or status == 412
             ):
-                raise StoredObjectVersionMismatchError(rel_key) from exc
+                reason = (
+                    "precondition_failed"
+                    if code in _PRECONDITION_FAILED_CODES or status == 412
+                    else "object_missing"
+                )
+                raise StoredObjectVersionMismatchError(rel_key, reason=reason) from exc
             raise
 
         body = response.get("Body")
         try:
             if body is None or not hasattr(body, "read"):
-                raise StoredObjectVersionMismatchError(rel_key)
+                raise StoredObjectVersionMismatchError(rel_key, reason="response_body_missing")
             try:
                 actual_version = self._stored_version(rel_key, response)
             except RuntimeError as exc:
-                raise StoredObjectVersionMismatchError(rel_key) from exc
+                raise StoredObjectVersionMismatchError(
+                    rel_key,
+                    reason="response_metadata_invalid",
+                ) from exc
             if actual_version != expected_version:
-                raise StoredObjectVersionMismatchError(rel_key)
+                mismatches = [
+                    name
+                    for name, actual, expected in (
+                        ("etag", actual_version.etag, expected_version.etag),
+                        (
+                            "last_modified",
+                            actual_version.last_modified_utc,
+                            expected_version.last_modified_utc,
+                        ),
+                        ("size", actual_version.size, expected_version.size),
+                    )
+                    if actual != expected
+                ]
+                raise StoredObjectVersionMismatchError(
+                    rel_key,
+                    reason=f"metadata_mismatch:{','.join(mismatches)}",
+                )
             raw = body.read()
-            if not isinstance(raw, bytes) or len(raw) != expected_version.size:
-                raise StoredObjectVersionMismatchError(rel_key)
+            if not isinstance(raw, bytes):
+                raise StoredObjectVersionMismatchError(rel_key, reason="response_body_not_bytes")
+            if len(raw) != expected_version.size:
+                raise StoredObjectVersionMismatchError(rel_key, reason="response_body_size")
             return raw
         finally:
             if hasattr(body, "close"):
@@ -290,6 +317,8 @@ class SnapshotStorage:
             modified = modified.replace(tzinfo=UTC)
         else:
             modified = modified.astimezone(UTC)
+        # LIST may preserve milliseconds that GET/HEAD HTTP-date headers cannot represent.
+        modified = modified.replace(microsecond=0)
         if not isinstance(size, int) or isinstance(size, bool) or size < 0:
             raise RuntimeError(f"snapshot object has invalid size: {rel_key}")
         return StoredObjectVersion(
@@ -596,7 +625,7 @@ class LocalSnapshotStorage:
             raw = path.read_bytes()
             stat = path.stat()
         except FileNotFoundError:
-            raise StoredObjectVersionMismatchError(rel_key) from None
+            raise StoredObjectVersionMismatchError(rel_key, reason="object_missing") from None
         actual_version = StoredObjectVersion(
             rel_key=rel_key,
             etag=hashlib.sha256(raw).hexdigest(),
@@ -604,7 +633,7 @@ class LocalSnapshotStorage:
             size=len(raw),
         )
         if actual_version != expected_version:
-            raise StoredObjectVersionMismatchError(rel_key)
+            raise StoredObjectVersionMismatchError(rel_key, reason="metadata_mismatch")
         return raw
 
     def capture_object_version(self, rel_key: str) -> StoredObjectVersion | None:

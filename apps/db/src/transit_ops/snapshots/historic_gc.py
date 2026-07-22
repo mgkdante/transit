@@ -251,7 +251,7 @@ class _GraphWalker:
         try:
             raw = self.storage.read_bytes_at_version(path, version)
         except StoredObjectVersionMismatchError as exc:
-            raise HistoricGcBlockedError(f"object_changed:{path}") from exc
+            raise HistoricGcBlockedError(f"object_changed:{path}:{exc.reason}") from exc
         digest = hashlib.sha256(raw).hexdigest()
         if "/generations/" in path:
             match = _VERSIONED_DIGEST.search(path)
@@ -591,7 +591,7 @@ def _read_manifest(
     try:
         raw = storage.read_bytes_at_version(path, version)
     except StoredObjectVersionMismatchError as exc:
-        raise HistoricGcBlockedError("manifest_changed") from exc
+        raise HistoricGcBlockedError(f"manifest_changed:{exc.reason}") from exc
     return _decode_payload(raw, Manifest, path=path)
 
 
