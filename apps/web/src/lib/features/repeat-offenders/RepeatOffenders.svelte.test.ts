@@ -1,31 +1,41 @@
-import { render, screen, within, fireEvent, waitFor, act } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+	act,
+	fireEvent,
+	render as renderSvelte,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/svelte';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { RepeatOffenders as RepeatOffendersData, IsoUtc } from '$lib/v1/schemas';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
+import { createSurfaceHarness } from '../../../tests/surfaceHarness';
+
+vi.mock('@testing-library/svelte', { spy: true });
 
 // Mock the SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the ?grain
 // / ?n seed AND the round-trip mirror are testable (the HotspotsBoard urlseed pattern).
 // getLocale stays REAL → 'en'; $lib/i18n + $lib/nav stay REAL so the deep links resolve
 // to genuine /lines/<id> hrefs.
-let mockUrl = new URL('http://localhost/repeat-offenders');
-const replaceState = vi.hoisted(() =>
-	vi.fn((u: string | URL) => {
-		mockUrl = new URL(u, 'http://localhost');
-	}),
-);
+const nav = vi.hoisted(() => {
+	const page = { url: new URL('http://localhost/repeat-offenders'), state: {} };
+	const defaultReplaceState = (url: string | URL) => {
+		page.url = new URL(url, 'http://localhost');
+	};
+	return {
+		page,
+		defaultReplaceState,
+		replaceState: vi.fn(defaultReplaceState),
+	};
+});
 const navigate = vi.hoisted(() => vi.fn());
 vi.mock('$app/state', () => ({
-	page: {
-		get url() {
-			return mockUrl;
-		},
-		state: {},
-	},
+	page: nav.page,
 }));
-vi.mock('$app/navigation', () => ({ goto: navigate, replaceState }));
+vi.mock('$app/navigation', () => ({ goto: navigate, replaceState: nav.replaceState }));
 
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
 vi.mock('$lib/i18n', async (importOriginal) => {
@@ -199,14 +209,46 @@ function cardTrigger(container: HTMLElement, id: string): HTMLButtonElement {
 	) as HTMLButtonElement;
 }
 
-function resetRepeatState(): void {
-	for (const key of ['repeat-card-worst', 'repeat-card-trips', 'repeat-card-vehicles']) {
-		sessionStorage.removeItem(`transit.persisted:${key}`);
-	}
-	sessionStorage.removeItem('transit.persisted:repeat-offenders-controls');
-	sessionStorage.removeItem('transit.persisted:repeat-offenders-toc');
+function resetRepeatSurfaceState(): void {
+	nav.replaceState.mockReset().mockImplementation(nav.defaultReplaceState);
+	navigate.mockReset();
+	capturedLadders.current = [];
+	payload.current = seed();
+	reconciliationIntersectionCallback = undefined;
+	Element.prototype.scrollIntoView = vi.fn();
 	quietModeStore.resetForTest();
 }
+
+const repeatSurface = createSurfaceHarness({
+	url: {
+		initial: '/repeat-offenders',
+		origin: 'http://localhost',
+		set: (url) => {
+			nav.page.url = url;
+			nav.page.state = {};
+		},
+	},
+	locale: {
+		initial: 'en' as const,
+		set: (locale) => (currentLocale.value = locale),
+	},
+	storage: [
+		{
+			port: sessionStorage,
+			keys: [
+				'transit.persisted:repeat-offenders-controls',
+				'transit.persisted:repeat-offenders-toc',
+			],
+			prefixes: ['transit.persisted:repeat-card-'],
+		},
+	],
+	resetters: [resetRepeatSurfaceState],
+	mount: renderSvelte,
+});
+const render = repeatSurface.mount;
+
+beforeEach(() => repeatSurface.reset());
+afterAll(() => expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(32));
 
 type CapturedMagnitudeDatum = MagnitudeDatum & {
 	readonly tapPopover?: ChartDatumPopoverModel;
@@ -225,19 +267,6 @@ function capturedRow(key: string): CapturedMagnitudeDatum {
 }
 
 describe('RepeatOffenders — approved analytical article', () => {
-	beforeEach(() => {
-		mockUrl = new URL('http://localhost/repeat-offenders');
-		navigate.mockClear();
-		replaceState.mockClear();
-		currentLocale.value = 'en';
-		capturedLadders.current = [];
-		payload.current = seed();
-		resetRepeatState();
-		Element.prototype.scrollIntoView = vi.fn();
-	});
-
-	afterEach(resetRepeatState);
-
 	it('renders one article h1, the exact two quiet controls, and three simultaneous cards', () => {
 		const { container } = render(RepeatOffenders);
 		expect(screen.getAllByRole('heading', { level: 1, name: 'Repeat offenders' })).toHaveLength(1);
@@ -331,7 +360,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 	});
 
 	it('keeps conditional cards and contents destinations in the same fixed-number registry', () => {
-		mockUrl = new URL('http://localhost/repeat-offenders?grain=month');
+		repeatSurface.setUrl('/repeat-offenders?grain=month');
 		const { container } = render(RepeatOffenders);
 		expect(card(container, 'repeat-worst')).not.toBeNull();
 		expect(card(container, 'repeat-trips')).not.toBeNull();
@@ -429,7 +458,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 
 	it('applies remembered collapsed mode to a Vehicle card that mounts after a grain change', async () => {
 		localStorage.setItem('transit:quiet-mode', 'true');
-		mockUrl = new URL('http://localhost/repeat-offenders?grain=month');
+		repeatSurface.setUrl('/repeat-offenders?grain=month');
 		const { container } = render(RepeatOffenders);
 		expect(container.querySelector('[data-toc="repeat-vehicles"]')).toBeNull();
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
@@ -718,24 +747,9 @@ describe('RepeatOffenders — approved analytical article', () => {
 });
 
 describe('RepeatOffenders — S14 re-seat (by_grain ladders)', () => {
-	beforeEach(() => {
-		mockUrl = new URL('http://localhost/repeat-offenders');
-		navigate.mockClear();
-		replaceState.mockClear();
-		currentLocale.value = 'en';
-		capturedLadders.current = [];
-		payload.current = seed();
-		resetRepeatState();
-		Element.prototype.scrollIntoView = vi.fn();
-	});
-
-	afterEach(resetRepeatState);
-
 	it('renders the head and the worst-first recurrence ladder (a lollipop Chart, NOT a /worst bar)', () => {
 		const { container } = render(RepeatOffenders);
 		expect(screen.getByRole('heading', { name: 'Repeat offenders' })).toBeInTheDocument();
-		// Trip and vehicle ladders are simultaneous article cards. The week grain has one
-		// ranked entry per kind, so the two cards expose two sr-only rows in total.
 		expect(container.querySelectorAll('table.sr-only tbody tr')).toHaveLength(2);
 		expect(card(container, 'repeat-trips')).not.toBeNull();
 		expect(card(container, 'repeat-vehicles')).not.toBeNull();
@@ -758,17 +772,12 @@ describe('RepeatOffenders — S14 re-seat (by_grain ladders)', () => {
 
 	it('surfaces the natural-frequency recurrence line on a ranked row', () => {
 		render(RepeatOffenders);
-		// Scope to the ladder section (the hero's streak line repeats the same natural
-		// frequency for the #1 offender, so a bare query would be ambiguous).
 		const section = document.querySelector('[data-slot="offender-section"]') as HTMLElement;
-		// The per-row note carries "Late-prone on 5 of 7 observed days" (the sr-only table
-		// mirrors the note text).
 		expect(within(section).getByText(/Late-prone on 5 of 7 observed days/i)).toBeInTheDocument();
 	});
 
 	it('renders only article cards for offered kinds', () => {
-		// The month grain has only a trip entry, so no dead Vehicle card or TOC destination.
-		mockUrl = new URL('http://localhost/repeat-offenders?grain=month');
+		repeatSurface.setUrl('/repeat-offenders?grain=month');
 		const { container } = render(RepeatOffenders);
 		expect(card(container, 'repeat-trips')).not.toBeNull();
 		expect(container.querySelector('[data-toc="repeat-vehicles"]')).toBeNull();
@@ -777,45 +786,39 @@ describe('RepeatOffenders — S14 re-seat (by_grain ladders)', () => {
 
 	it('renders the un-ranked tray (sub-MIN_N entities), explicitly NOT ranked', () => {
 		render(RepeatOffenders);
-		// The week tray cell (99999, a VEHICLE) lives in the independent Vehicle card.
 		const tray = document.querySelector('[data-slot="offender-tray"]');
 		expect(tray).not.toBeNull();
 		expect(within(tray as HTMLElement).getByText(/not ranked/i)).toBeInTheDocument();
-		// The tray cell is a link but carries NO magnitude bar (not scored).
 		expect(within(tray as HTMLElement).queryAllByRole('progressbar')).toHaveLength(0);
 	});
 
 	it('seeds the grain rail from ?grain=month (a different ladder than the week default)', () => {
-		mockUrl = new URL('http://localhost/repeat-offenders?grain=month');
+		repeatSurface.setUrl('/repeat-offenders?grain=month');
 		render(RepeatOffenders);
-		// Scope to the ladder section (the #1-offender hero above it also links the worst).
 		const section = document.querySelector('[data-slot="offender-section"]') as HTMLElement;
-		// The month ladder ranks Van Horne (161) worst — its link resolves to /lines/161.
 		const links = within(section).getAllByRole('link', { name: /Van Horne/ });
 		expect(links).toHaveLength(2);
 		expect(links.every((link) => link.getAttribute('href') === '/lines/161')).toBe(true);
-		// The week-grain trip is NOT shown on the month grain.
 		expect(within(section).queryByRole('link', { name: /Montagne/ })).toBeNull();
 	});
 
 	it('mirrors a grain change to ?grain and OMITS the week default (clean canonical URL)', async () => {
 		render(RepeatOffenders);
-		// A clean URL at the week default writes nothing (idempotent default-omit).
-		expect(mockUrl.searchParams.get('grain')).toBeNull();
+		expect(nav.page.url.searchParams.get('grain')).toBeNull();
 		const month = Array.from(document.querySelectorAll<HTMLElement>('[role="radio"]')).find((el) =>
 			(el.textContent ?? '').toLowerCase().includes('month'),
 		);
 		expect(month).toBeDefined();
 		await fireEvent.click(month!);
-		expect(mockUrl.searchParams.get('grain')).toBe('month');
+		expect(nav.page.url.searchParams.get('grain')).toBe('month');
 	});
 
 	it('drops invalid grain and n seeds back to the canonical week/default-N URL', async () => {
-		mockUrl = new URL('http://localhost/repeat-offenders?grain=garbage&n=garbage');
+		repeatSurface.setUrl('/repeat-offenders?grain=garbage&n=garbage');
 		const { container } = render(RepeatOffenders);
 		await waitFor(() => {
-			expect(mockUrl.searchParams.get('grain')).toBeNull();
-			expect(mockUrl.searchParams.get('n')).toBeNull();
+			expect(nav.page.url.searchParams.get('grain')).toBeNull();
+			expect(nav.page.url.searchParams.get('n')).toBeNull();
 		});
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		expect(within(rail).getByRole('radio', { name: 'Week' })).toHaveAttribute(
@@ -830,9 +833,9 @@ describe('RepeatOffenders — S14 re-seat (by_grain ladders)', () => {
 			offenders: [],
 			by_grain: [seed().by_grain![1]!],
 		} satisfies RepeatOffendersData as RepeatOffendersData;
-		mockUrl = new URL('http://localhost/repeat-offenders?grain=week');
+		repeatSurface.setUrl('/repeat-offenders?grain=week');
 		const { container } = render(RepeatOffenders);
-		await waitFor(() => expect(mockUrl.searchParams.get('grain')).toBe('month'));
+		await waitFor(() => expect(nav.page.url.searchParams.get('grain')).toBe('month'));
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		expect(within(rail).getByRole('radio', { name: 'Week' })).toBeDisabled();
 		expect(within(rail).getByRole('radio', { name: 'Month' })).toHaveAttribute(
@@ -842,7 +845,6 @@ describe('RepeatOffenders — S14 re-seat (by_grain ladders)', () => {
 	});
 
 	it('seeds the worst-N cap from ?n and mirrors a change back to ?n', async () => {
-		// A week ladder with 6 ranked TRIP entries so the worst-N control renders (total > 5).
 		payload.current = {
 			generated_utc: GENERATED,
 			offenders: [],
@@ -865,15 +867,13 @@ describe('RepeatOffenders — S14 re-seat (by_grain ladders)', () => {
 				},
 			],
 		} satisfies RepeatOffendersData as RepeatOffendersData;
-		mockUrl = new URL('http://localhost/repeat-offenders?n=5');
+		repeatSurface.setUrl('/repeat-offenders?n=5');
 		const { container } = render(RepeatOffenders);
-		// ?n=5 caps the ladder to 5 of 6 → 5 sr-only body rows.
 		expect(container.querySelectorAll('table.sr-only tbody tr')).toHaveLength(5);
-		// The honest shown/total heading surfaces the truncation.
 		expect(screen.getByText(/5\/6/)).toBeInTheDocument();
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		await fireEvent.click(within(rail).getByRole('radio', { name: '10' }));
-		expect(mockUrl.searchParams.get('n')).toBeNull();
+		expect(nav.page.url.searchParams.get('n')).toBeNull();
 	});
 
 	it('shows the styled honest-absence empty state when NO grain is populated and no legacy list', () => {
@@ -892,18 +892,6 @@ describe('RepeatOffenders — S14 re-seat (by_grain ladders)', () => {
 });
 
 describe('RepeatOffenders — legacy fallback ledger (by_grain absent)', () => {
-	beforeEach(() => {
-		mockUrl = new URL('http://localhost/repeat-offenders');
-		navigate.mockClear();
-		replaceState.mockClear();
-		currentLocale.value = 'en';
-		capturedLadders.current = [];
-		resetRepeatState();
-		Element.prototype.scrollIntoView = vi.fn();
-	});
-
-	afterEach(resetRepeatState);
-
 	it('renders the scalar offenders[] as a ranked ledger worst-first, each linking to its route/stop', () => {
 		payload.current = {
 			generated_utc: GENERATED,
@@ -936,7 +924,6 @@ describe('RepeatOffenders — legacy fallback ledger (by_grain absent)', () => {
 		expect(items).toHaveLength(2);
 		const links = within(list).getAllByRole('link');
 		expect(links).toHaveLength(2);
-		// Worst-first order preserved: route 11 (12.4) then stop (6.2).
 		expect(links[0]).toHaveTextContent('Montagne / Sommet');
 		expect(links[0]).toHaveTextContent('12.4 min');
 		expect(links[0]).toHaveAttribute('href', '/lines/11');

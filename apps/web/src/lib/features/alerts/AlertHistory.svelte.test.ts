@@ -1,12 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import {
+	fireEvent,
+	render as renderSvelte,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/svelte';
 import { compile } from 'svelte/compiler';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '$lib/v1/schemas';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import { alertHistoryCopy } from './alerts.copy';
 import AlertHistoryScreen from './AlertHistory.svelte';
+
+vi.mock('@testing-library/svelte', { spy: true });
 
 const copyEn = alertHistoryCopy.en;
 
@@ -78,31 +87,27 @@ vi.mock('$lib/v1/repositories/historic', () => ({
 
 // The SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the codec
 // seed AND the round-trip mirror are testable. Hoisted so the mock factories can see it.
-const nav = vi.hoisted(() => ({ url: new URL('http://localhost/alerts') }));
-const replaceState = vi.hoisted(() =>
-	vi.fn((u: string | URL) => {
-		nav.url = new URL(u, 'http://localhost');
-	}),
-);
+const nav = vi.hoisted(() => {
+	const page = { url: new URL('http://localhost/alerts'), state: {} };
+	const defaultReplaceState = (url: string | URL) => {
+		page.url = new URL(url, 'http://localhost');
+	};
+	return {
+		page,
+		defaultReplaceState,
+		replaceState: vi.fn(defaultReplaceState),
+	};
+});
 vi.mock('$app/state', () => ({
-	page: {
-		get url() {
-			return nav.url;
-		},
-		state: {},
-	},
+	page: nav.page,
 }));
-vi.mock('$app/navigation', () => ({ replaceState }));
+vi.mock('$app/navigation', () => ({ replaceState: nav.replaceState }));
 
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
 vi.mock('$lib/i18n', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/i18n')>();
 	return { ...actual, getLocale: () => currentLocale.value };
 });
-
-function setUrl(path: string): void {
-	nav.url = new URL(path, 'http://localhost');
-}
 
 // Synchronous resource seam for the broad rendering suite. The async resource
 // contract (abort, stale-response suppression, retry) is covered with the real
@@ -155,8 +160,8 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	},
 }));
 
-const ORIGINAL_ALERTS = JSON.parse(JSON.stringify(fixture.alerts));
-const ORIGINAL_BREAKDOWN = JSON.parse(JSON.stringify(fixture.breakdown));
+const ORIGINAL_ALERTS = structuredClone(fixture.alerts);
+const ORIGINAL_BREAKDOWN = structuredClone(fixture.breakdown);
 
 function card(container: HTMLElement, id: string): HTMLElement {
 	return container.querySelector(`[data-toc="${id}"]`) as HTMLElement;
@@ -166,19 +171,6 @@ function cardTrigger(container: HTMLElement, id: string): HTMLButtonElement {
 	return card(container, id).querySelector(
 		'h2.section-heading > button.section-header',
 	) as HTMLButtonElement;
-}
-
-function resetArticleState(): void {
-	for (const key of [
-		'alerts-card-window',
-		'alerts-card-breakdown',
-		'alerts-card-log',
-		'alerts-filters',
-		'alerts-toc',
-	]) {
-		sessionStorage.removeItem(`transit.persisted:${key}`);
-	}
-	quietModeStore.resetForTest();
 }
 
 function seedAnalyticalFilterFixture(): void {
@@ -264,10 +256,20 @@ function makeArchiveEntry(
 	};
 }
 
-beforeEach(() => {
-	currentLocale.value = 'en';
-	resetArticleState();
-	Element.prototype.scrollIntoView = vi.fn();
+function seedArchive(entries: AlertArchiveEntry[] = []): void {
+	Object.assign(fixture, { window_start: '2026-06-20', window_end: '2026-06-22' });
+	archiveState.index = makeArchiveIndex();
+	archiveState.entries = entries;
+}
+
+function resetAlertSurfaceState(): void {
+	nav.replaceState.mockReset().mockImplementation(nav.defaultReplaceState);
+	fixture.alerts = structuredClone(ORIGINAL_ALERTS);
+	fixture.breakdown = structuredClone(ORIGINAL_BREAKDOWN);
+	delete (fixture as AlertHistory).window_start;
+	delete (fixture as AlertHistory).window_end;
+	delete (fixture as AlertHistory).total_in_window;
+	delete (fixture as AlertHistory).truncated;
 	archiveState.index = null;
 	archiveState.entries = [];
 	ports.getAlertHistory.mockReset();
@@ -276,20 +278,36 @@ beforeEach(() => {
 	ports.getAlertHistory.mockImplementation(() => fixture as never);
 	ports.getAlertArchiveIndex.mockImplementation(() => archiveState.index as never);
 	ports.getAlertArchiveRange.mockImplementation(() => archiveState.entries as never);
-});
+	Element.prototype.scrollIntoView = vi.fn();
+	quietModeStore.resetForTest();
+}
 
-afterEach(() => {
-	currentLocale.value = 'en';
-	fixture.alerts = JSON.parse(JSON.stringify(ORIGINAL_ALERTS));
-	fixture.breakdown = JSON.parse(JSON.stringify(ORIGINAL_BREAKDOWN));
-	delete (fixture as AlertHistory).window_start;
-	delete (fixture as AlertHistory).window_end;
-	delete (fixture as AlertHistory).total_in_window;
-	delete (fixture as AlertHistory).truncated;
-	setUrl('http://localhost/alerts');
-	replaceState.mockClear();
-	resetArticleState();
+const alertSurface = createSurfaceHarness({
+	url: {
+		initial: '/alerts',
+		origin: 'http://localhost',
+		set: (url) => {
+			nav.page.url = url;
+			nav.page.state = {};
+		},
+	},
+	locale: {
+		initial: 'en' as const,
+		set: (locale) => (currentLocale.value = locale),
+	},
+	storage: [
+		{
+			port: sessionStorage,
+			prefixes: ['transit.persisted:alerts-'],
+		},
+	],
+	resetters: [resetAlertSurfaceState],
+	mount: renderSvelte,
 });
+const render = alertSurface.mount;
+
+beforeEach(() => alertSurface.reset());
+afterAll(() => expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(58));
 
 describe('AlertHistory article shell', () => {
 	it('renders one article heading, exact metadata copy, and only the two shared reading controls', () => {
@@ -584,12 +602,9 @@ describe('AlertHistory log', () => {
 	});
 
 	it('cap note keeps the SERVED count under an active client filter (never the filtered subset)', () => {
-		// The server cap clipped the SERVED payload newest-first; a client-side
-		// severity filter narrows the visible list but must not shrink the "shown"
-		// number, or the note misreads as "the N most recent" (S15 review F1).
 		(fixture as AlertHistory).truncated = true;
 		(fixture as AlertHistory).total_in_window = 512;
-		setUrl('http://localhost/alerts?severity=critical');
+		alertSurface.setUrl('/alerts?severity=critical');
 		render(AlertHistoryScreen);
 		const note = document.querySelector('[data-slot="alert-truncated"]');
 		expect(note).not.toBeNull();
@@ -602,7 +617,6 @@ describe('AlertHistory headline', () => {
 		render(AlertHistoryScreen);
 		const card = document.querySelector('[data-slot="alert-headline"]');
 		expect(card).not.toBeNull();
-		// Two alerts in window; median of [2040, 210] = 1125.
 		expect(card).toHaveTextContent('2');
 		expect(card).toHaveTextContent(copyEn.headline.median(1125));
 	});
@@ -703,7 +717,7 @@ describe('AlertHistory analytical filter coherence', () => {
 		'$axis filtering drives the headline, derived breakdown, article metadata, and log together',
 		({ query, count, shown, causes, absentCauses }) => {
 			seedAnalyticalFilterFixture();
-			setUrl(`http://localhost/alerts${query}`);
+			alertSurface.setUrl(`/alerts${query}`);
 			const { container } = render(AlertHistoryScreen);
 
 			expect(within(card(container, 'alerts-window')).getByText(String(count))).toBeInTheDocument();
@@ -743,14 +757,14 @@ describe('AlertHistory analytical filter coherence', () => {
 
 	it('preserves affects, severity, route, stop, from, and to in the one batched URL mirror', async () => {
 		seedAnalyticalFilterFixture();
-		setUrl(
-			'http://localhost/alerts?affects=stops&severity=watch&route=24&stop=99999&from=2026-06-22&to=2026-06-22',
+		alertSurface.setUrl(
+			'/alerts?affects=stops&severity=watch&route=24&stop=99999&from=2026-06-22&to=2026-06-22',
 		);
 		render(AlertHistoryScreen);
 		await fireEvent.click(screen.getByRole('radio', { name: 'High' }));
 
 		await waitFor(() => {
-			expect(Object.fromEntries(nav.url.searchParams)).toMatchObject({
+			expect(Object.fromEntries(nav.page.url.searchParams)).toMatchObject({
 				affects: 'stops',
 				severity: 'high',
 				route: '24',
@@ -759,7 +773,7 @@ describe('AlertHistory analytical filter coherence', () => {
 				to: '2026-06-22',
 			});
 		});
-		const mirrored = new URL(String(replaceState.mock.calls.at(-1)?.[0]), 'http://localhost');
+		const mirrored = new URL(String(nav.replaceState.mock.calls.at(-1)?.[0]), 'http://localhost');
 		expect(Object.fromEntries(mirrored.searchParams)).toMatchObject({
 			affects: 'stops',
 			severity: 'high',
@@ -831,8 +845,7 @@ describe('AlertHistory filters — entity-type + severity radiogroups (codec-bac
 		expect(screen.getByText('Line closed')).toBeInTheDocument();
 		expect(screen.getByText('Detour')).toBeInTheDocument();
 		expect(screen.queryByText('Stop moved')).toBeNull();
-		// The pick mirrored to the codec ?affects key (round-trip persistence).
-		expect(nav.url.searchParams.get('affects')).toBe('lines');
+		expect(nav.page.url.searchParams.get('affects')).toBe('lines');
 	});
 
 	it('filters by entity type — "affects stops" excludes the lines-only alert', async () => {
@@ -855,7 +868,7 @@ describe('AlertHistory filters — entity-type + severity radiogroups (codec-bac
 
 		expect(logRows()).toHaveLength(1);
 		expect(screen.getByText('Line closed')).toBeInTheDocument();
-		expect(nav.url.searchParams.get('severity')).toBe('critical');
+		expect(nav.page.url.searchParams.get('severity')).toBe('critical');
 	});
 
 	it('shows the honest no-match note (never an empty void) when filters match nothing', async () => {
@@ -930,8 +943,6 @@ describe('AlertHistory specific-entity pickers (Line / Stop) — codec-seeded', 
 	it('exposes a labeled Line picker and a Stop picker (the type carried once, no per-row prefix)', () => {
 		seedFilterFixture();
 		render(AlertHistoryScreen);
-		// Two combobox pickers, each with its own labeled input; the group label names the
-		// type once (the Combobox input carries it as aria-label — no per-row prefix).
 		const linePick = document.querySelector('[data-slot="line-pick"]');
 		const stopPick = document.querySelector('[data-slot="stop-pick"]');
 		expect(linePick).not.toBeNull();
@@ -944,15 +955,13 @@ describe('AlertHistory specific-entity pickers (Line / Stop) — codec-seeded', 
 		).toBeInTheDocument();
 		expect(linePick?.querySelector('[data-slot="combobox"]')).not.toBeNull();
 		expect(stopPick?.querySelector('[data-slot="combobox"]')).not.toBeNull();
-		// The old bespoke chip set / SearchInput is GONE.
 		expect(document.querySelector('[data-slot="entity-chips"]')).toBeNull();
 	});
 
 	it('seeds the Line pick from ?route= and narrows the log to that line', () => {
 		seedFilterFixture();
-		setUrl('http://localhost/alerts?route=24');
+		alertSurface.setUrl('/alerts?route=24');
 		render(AlertHistoryScreen);
-		// Only B1 carries line 24.
 		expect(logRows()).toHaveLength(1);
 		expect(screen.getByText('Detour')).toBeInTheDocument();
 		expect(screen.queryByText('Line closed')).toBeNull();
@@ -961,7 +970,7 @@ describe('AlertHistory specific-entity pickers (Line / Stop) — codec-seeded', 
 
 	it('seeds the Stop pick from ?stop= and narrows the log to that stop (route 24 vs stop never collide)', () => {
 		seedFilterFixture();
-		setUrl('http://localhost/alerts?stop=52458');
+		alertSurface.setUrl('/alerts?stop=52458');
 		render(AlertHistoryScreen);
 		expect(logRows()).toHaveLength(1);
 		expect(screen.getByText('Stop moved')).toBeInTheDocument();
@@ -970,12 +979,10 @@ describe('AlertHistory specific-entity pickers (Line / Stop) — codec-seeded', 
 
 	it('seeds affects + severity from the URL (promoted axes round-trip)', () => {
 		seedFilterFixture();
-		setUrl('http://localhost/alerts?affects=lines&severity=critical');
+		alertSurface.setUrl('/alerts?affects=lines&severity=critical');
 		render(AlertHistoryScreen);
-		// affects=lines (L1 + B1) ∩ severity=critical (L1) → just L1.
 		expect(logRows()).toHaveLength(1);
 		expect(screen.getByText('Line closed')).toBeInTheDocument();
-		// The seeded axes are reflected on the radiogroups.
 		expect(
 			(
 				screen.getByRole('radio', { name: copyEn.filters.entity.lines }) as HTMLElement
@@ -1016,12 +1023,10 @@ describe('AlertHistory date window (?from/?to)', () => {
 
 	it('seeds ?from/?to and clips the log to alerts intersecting the span', () => {
 		seedWindowFixture();
-		// Payload carries the served span so availableDates covers the seed.
 		(fixture as AlertHistory).window_start = '2026-06-01';
 		(fixture as AlertHistory).window_end = '2026-06-30';
-		setUrl('http://localhost/alerts?from=2026-06-15&to=2026-06-25');
+		alertSurface.setUrl('/alerts?from=2026-06-15&to=2026-06-25');
 		render(AlertHistoryScreen);
-		// Only the late alert intersects [06-15, 06-25].
 		expect(logRows()).toHaveLength(1);
 		expect(screen.getByText('Late alert')).toBeInTheDocument();
 		expect(screen.queryByText('Early alert')).toBeNull();
@@ -1034,7 +1039,6 @@ describe('AlertHistory date window (?from/?to)', () => {
 		render(AlertHistoryScreen);
 		const picker = document.querySelector('[data-slot="date-range"]');
 		expect(picker).not.toBeNull();
-		// From + To are now native <input type="date"> calendar pickers (not <select>s).
 		expect((picker as HTMLElement).querySelectorAll('input[type="date"]').length).toBe(2);
 	});
 
@@ -1042,12 +1046,12 @@ describe('AlertHistory date window (?from/?to)', () => {
 		seedWindowFixture();
 		(fixture as AlertHistory).window_start = '2026-06-01';
 		(fixture as AlertHistory).window_end = '2026-06-30';
-		setUrl('http://localhost/alerts?from=2026-05-01&to=2026-07-01');
+		alertSurface.setUrl('/alerts?from=2026-05-01&to=2026-07-01');
 		render(AlertHistoryScreen);
 
 		await waitFor(() => {
-			expect(nav.url.searchParams.get('from')).toBeNull();
-			expect(nav.url.searchParams.get('to')).toBeNull();
+			expect(nav.page.url.searchParams.get('from')).toBeNull();
+			expect(nav.page.url.searchParams.get('to')).toBeNull();
 			expect(logRows()).toHaveLength(2);
 		});
 	});
@@ -1060,7 +1064,6 @@ describe('AlertHistory date window (?from/?to)', () => {
 		render(AlertHistoryScreen);
 		const pick = document.querySelector('[data-slot="window-pick"]');
 		expect(pick).not.toBeNull();
-		// The DateRangePicker renders its honest-absence AbsentValue (no selects).
 		expect(pick?.querySelector('[data-slot="date-range"]')).toBeNull();
 		expect(pick?.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 	});
@@ -1068,17 +1071,14 @@ describe('AlertHistory date window (?from/?to)', () => {
 
 describe('AlertHistory retained archive integration', () => {
 	it('keeps first-seen-only archive entries ahead of older current-shape entries', async () => {
-		(fixture as AlertHistory).window_start = '2026-06-20';
-		(fixture as AlertHistory).window_end = '2026-06-22';
-		archiveState.index = makeArchiveIndex();
-		archiveState.entries = [
+		seedArchive([
 			makeArchiveEntry('archive-newest', 'Archive newest', '2026-06-21', '2026-06-21', {
 				start_utc: null,
 				end_utc: null,
 				first_seen_utc: '2026-06-21T08:00:00Z' as AlertArchiveEntry['first_seen_utc'],
 			}),
 			makeArchiveEntry('current-older', 'Current older', '2026-06-20', '2026-06-20'),
-		];
+		]);
 
 		render(AlertHistoryScreen);
 		await waitFor(() => expect(ports.getAlertArchiveRange).toHaveBeenCalled());
@@ -1091,12 +1091,9 @@ describe('AlertHistory retained archive integration', () => {
 	});
 
 	it('loads the clamped current archive range before rendering every calculation', async () => {
-		(fixture as AlertHistory).window_start = '2026-06-20';
-		(fixture as AlertHistory).window_end = '2026-06-22';
-		archiveState.index = makeArchiveIndex();
-		archiveState.entries = [
+		seedArchive([
 			makeArchiveEntry('archive-current', 'Archive current alert', '2026-06-21', '2026-06-21'),
-		];
+		]);
 
 		const { container } = render(AlertHistoryScreen);
 
@@ -1114,21 +1111,18 @@ describe('AlertHistory retained archive integration', () => {
 			within(card(container, 'alerts-breakdown')).getByText('Construction'),
 		).toBeInTheDocument();
 		expect(container.querySelector('[data-slot="history-navigator"]')).not.toBeNull();
-		expect(nav.url.searchParams.get('from')).toBeNull();
-		expect(nav.url.searchParams.get('to')).toBeNull();
+		expect(nav.page.url.searchParams.get('from')).toBeNull();
+		expect(nav.page.url.searchParams.get('to')).toBeNull();
 		expect(container.querySelector('[data-slot="clear-filters"]')).toBeNull();
 	});
 
 	it('uses one selected cross-month archive array for filters, headline, breakdown, and log', async () => {
-		(fixture as AlertHistory).window_start = '2026-06-20';
-		(fixture as AlertHistory).window_end = '2026-06-22';
 		fixture.breakdown = {
 			by_cause: [{ key: 'SERVER_ONLY', count: 500, median_duration_min: 999 }],
 			by_effect: [],
 			by_severity: [],
 		};
-		archiveState.index = makeArchiveIndex();
-		archiveState.entries = [
+		seedArchive([
 			makeArchiveEntry('older', 'Older retained alert', '2026-05-10', '2026-05-11', {
 				duration_min: 120,
 				cause: 'ACCIDENT',
@@ -1139,8 +1133,8 @@ describe('AlertHistory retained archive integration', () => {
 			makeArchiveEntry('other-route', 'Other route', '2026-06-15', '2026-06-15', {
 				routes: ['10'],
 			}),
-		];
-		setUrl('http://localhost/alerts?from=2026-05-01&to=2026-06-30&route=24&severity=watch');
+		]);
+		alertSurface.setUrl('/alerts?from=2026-05-01&to=2026-06-30&route=24&severity=watch');
 
 		const { container } = render(AlertHistoryScreen);
 
@@ -1169,10 +1163,7 @@ describe('AlertHistory retained archive integration', () => {
 
 	it('resolves localized archive source copy only when a hidden row is expanded', async () => {
 		currentLocale.value = 'fr';
-		(fixture as AlertHistory).window_start = '2026-06-20';
-		(fixture as AlertHistory).window_end = '2026-06-22';
-		archiveState.index = makeArchiveIndex();
-		archiveState.entries = [
+		seedArchive([
 			...Array.from({ length: 25 }, (_, index) =>
 				makeArchiveEntry(`visible-${index}`, `Visible ${index}`, '2026-06-21', '2026-06-21'),
 			),
@@ -1182,8 +1173,8 @@ describe('AlertHistory retained archive integration', () => {
 				description_en: '<p>Hidden &amp; <strong>scrubbed</strong> notice.</p>',
 				url: 'https://stm.info/fr/infos/etat-du-service/travaux',
 			}),
-		];
-		setUrl('http://localhost/fr/alerts');
+		]);
+		alertSurface.setUrl('/fr/alerts');
 
 		const { container } = render(AlertHistoryScreen);
 		await waitFor(() => expect(ports.getAlertArchiveRange).toHaveBeenCalled());
@@ -1224,10 +1215,7 @@ describe('AlertHistory retained archive integration', () => {
 	});
 
 	it('renders an archive-backed quiet range as healthy empty, not legacy rows', async () => {
-		(fixture as AlertHistory).window_start = '2026-06-20';
-		(fixture as AlertHistory).window_end = '2026-06-22';
-		archiveState.index = makeArchiveIndex();
-		archiveState.entries = [];
+		seedArchive();
 
 		const { container } = render(AlertHistoryScreen);
 
@@ -1240,20 +1228,15 @@ describe('AlertHistory retained archive integration', () => {
 	});
 
 	it('normalizes an inverted complete range and preserves unrelated filters in one mirror', async () => {
-		(fixture as AlertHistory).window_start = '2026-06-20';
-		(fixture as AlertHistory).window_end = '2026-06-22';
-		archiveState.index = makeArchiveIndex();
-		archiveState.entries = [
-			makeArchiveEntry('older', 'Older retained alert', '2026-05-10', '2026-05-11'),
-		];
-		setUrl(
-			'http://localhost/alerts?from=2026-06-30&to=2026-05-01&affects=lines&severity=watch&route=24&stop=52458',
+		seedArchive([makeArchiveEntry('older', 'Older retained alert', '2026-05-10', '2026-05-11')]);
+		alertSurface.setUrl(
+			'/alerts?from=2026-06-30&to=2026-05-01&affects=lines&severity=watch&route=24&stop=52458',
 		);
 
 		render(AlertHistoryScreen);
 
 		await waitFor(() => {
-			expect(Object.fromEntries(nav.url.searchParams)).toEqual({
+			expect(Object.fromEntries(nav.page.url.searchParams)).toEqual({
 				affects: 'lines',
 				severity: 'watch',
 				route: '24',
@@ -1262,7 +1245,7 @@ describe('AlertHistory retained archive integration', () => {
 				to: '2026-06-30',
 			});
 		});
-		expect(replaceState).toHaveBeenCalledTimes(1);
+		expect(nav.replaceState).toHaveBeenCalledTimes(1);
 	});
 
 	it.each([
@@ -1271,40 +1254,34 @@ describe('AlertHistory retained archive integration', () => {
 		['impossible date', '?from=2026-02-30&to=2026-03-01'],
 		['outside coverage', '?from=2025-12-31&to=2026-06-01'],
 	])('corrects a %s once, removes both bounds, and announces it', async (_, query) => {
-		(fixture as AlertHistory).window_start = '2026-06-20';
-		(fixture as AlertHistory).window_end = '2026-06-22';
-		archiveState.index = makeArchiveIndex();
-		archiveState.entries = [
+		seedArchive([
 			makeArchiveEntry('archive-current', 'Archive current alert', '2026-06-21', '2026-06-21'),
-		];
-		setUrl(`http://localhost/alerts${query}&route=24`);
+		]);
+		alertSurface.setUrl(`/alerts${query}&route=24`);
 
 		render(AlertHistoryScreen);
 
 		await waitFor(() => {
-			expect(nav.url.searchParams.get('from')).toBeNull();
-			expect(nav.url.searchParams.get('to')).toBeNull();
-			expect(nav.url.searchParams.get('route')).toBe('24');
+			expect(nav.page.url.searchParams.get('from')).toBeNull();
+			expect(nav.page.url.searchParams.get('to')).toBeNull();
+			expect(nav.page.url.searchParams.get('route')).toBe('24');
 		});
 		const announcement = document.querySelector('[data-slot="history-announcement"]');
 		expect(announcement).not.toHaveTextContent(/^\s*$/);
-		expect(replaceState).toHaveBeenCalledTimes(1);
+		expect(nav.replaceState).toHaveBeenCalledTimes(1);
 	});
 
 	it('announces a correction once outside collapsed controls before and after the mobile sheet opens', async () => {
 		localStorage.setItem('transit:quiet-mode', 'true');
-		(fixture as AlertHistory).window_start = '2026-06-20';
-		(fixture as AlertHistory).window_end = '2026-06-22';
-		archiveState.index = makeArchiveIndex();
-		archiveState.entries = [
+		seedArchive([
 			makeArchiveEntry('archive-current', 'Archive current alert', '2026-06-21', '2026-06-21'),
-		];
-		setUrl('http://localhost/alerts?from=&to=&route=24');
+		]);
+		alertSurface.setUrl('/alerts?from=&to=&route=24');
 
 		const { container } = render(AlertHistoryScreen);
 		const expected = copyEn.filters.history.correction.malformed;
 
-		await waitFor(() => expect(nav.url.searchParams.has('from')).toBe(false));
+		await waitFor(() => expect(nav.page.url.searchParams.has('from')).toBe(false));
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		await waitFor(() =>
 			expect(within(rail).getByRole('button', { name: copyEn.filters.railLabel })).toHaveAttribute(
@@ -1336,18 +1313,13 @@ describe('AlertHistory retained archive integration', () => {
 			expect(copy).not.toHaveAttribute('role');
 			expect(copy).not.toHaveAttribute('aria-live');
 		}
-		expect(replaceState).toHaveBeenCalledTimes(1);
+		expect(nav.replaceState).toHaveBeenCalledTimes(1);
 	});
 
 	it('renders localized coverage, selection, and correction copy', async () => {
 		currentLocale.value = 'fr';
-		(fixture as AlertHistory).window_start = '2026-06-20';
-		(fixture as AlertHistory).window_end = '2026-06-22';
-		archiveState.index = makeArchiveIndex();
-		archiveState.entries = [
-			makeArchiveEntry('courant', 'Avis courant', '2026-06-21', '2026-06-21'),
-		];
-		setUrl('http://localhost/fr/alerts?from=&to=');
+		seedArchive([makeArchiveEntry('courant', 'Avis courant', '2026-06-21', '2026-06-21')]);
+		alertSurface.setUrl('/fr/alerts?from=&to=');
 
 		const { container } = render(AlertHistoryScreen);
 

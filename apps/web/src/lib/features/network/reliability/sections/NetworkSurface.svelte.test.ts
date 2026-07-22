@@ -1,5 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+	fireEvent,
+	render as renderSvelte,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/svelte';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
@@ -7,6 +13,9 @@ import type { IsoUtc } from '$lib/v1/schemas';
 import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { createSurfaceHarness } from '../../../../../tests/surfaceHarness';
+
+vi.mock('@testing-library/svelte', { spy: true });
 
 const copy = networkReliabilityCopy.en;
 const motion = vi.hoisted(() => ({ reduced: false }));
@@ -109,6 +118,44 @@ const { openSurface, live, network, trendSeries, weeklySeries, monthlySeries, by
 		] satisfies NetworkShift[] as NetworkShift[],
 	}));
 
+const networkDefaults = structuredClone(network);
+const trendDefaults = structuredClone(trendSeries);
+const weeklyDefaults = structuredClone(weeklySeries);
+const monthlyDefaults = structuredClone(monthlySeries);
+const shiftDefaults = structuredClone(byShift);
+const daytypeDefaults = structuredClone(byDaytype);
+
+function restoreArray<T>(target: T[], defaults: readonly T[]): void {
+	target.splice(0, target.length, ...structuredClone(defaults));
+}
+
+function resetNetworkSurfaceState(): void {
+	motion.reduced = false;
+	live.ageSeconds = 20;
+	live.hasNetwork = true;
+	Object.assign(network, structuredClone(networkDefaults));
+	restoreArray(trendSeries, trendDefaults);
+	restoreArray(weeklySeries, weeklyDefaults);
+	restoreArray(monthlySeries, monthlyDefaults);
+	restoreArray(byShift, shiftDefaults);
+	restoreArray(byDaytype, daytypeDefaults);
+	openSurface.mockClear();
+	createLiveStoreSpy.mockClear();
+	quietModeStore.resetForTest();
+}
+
+const networkSurface = createSurfaceHarness({
+	storage: [
+		{
+			port: sessionStorage,
+			keys: ['transit.persisted:network-daily-trend', 'transit.persisted:network-toc'],
+		},
+	],
+	resetters: [resetNetworkSurfaceState],
+	mount: renderSvelte,
+});
+const render = networkSurface.mount;
+
 vi.mock('$lib/nav', async () => {
 	return {
 		layout: { isDesktop: true },
@@ -192,18 +239,26 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	},
 }));
 
-beforeEach(() => {
-	createLiveStoreSpy.mockClear();
-	quietModeStore.resetForTest();
-	sessionStorage.clear();
-});
+beforeEach(() => networkSurface.reset());
 
 afterEach(() => {
 	quietModeStore.resetForTest();
 });
 
+afterAll(() => {
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(54);
+});
+
 describe('NetworkSurface article shell', () => {
 	it('requests only the network live family', () => {
+		const foreignKey = 'transit.persisted:stop-reliability-toc';
+		sessionStorage.setItem(foreignKey, 'keep');
+		try {
+			networkSurface.reset();
+			expect(sessionStorage.getItem(foreignKey)).toBe('keep');
+		} finally {
+			sessionStorage.removeItem(foreignKey);
+		}
 		render(NetworkSurface);
 
 		expect(createLiveStoreSpy).toHaveBeenCalledWith(networkManifest, {
@@ -213,14 +268,10 @@ describe('NetworkSurface article shell', () => {
 
 	it('keeps the live ToC anchor mounted while the live tier is still loading', () => {
 		live.hasNetwork = false;
-		try {
-			const { container } = render(NetworkSurface);
+		const { container } = render(NetworkSurface);
 
-			expect(container.querySelector('[data-toc="net-live"]')).not.toBeNull();
-			expect(container.querySelector('[data-slot="terminal-panel"]')).toBeNull();
-		} finally {
-			live.hasNetwork = true;
-		}
+		expect(container.querySelector('[data-toc="net-live"]')).not.toBeNull();
+		expect(container.querySelector('[data-slot="terminal-panel"]')).toBeNull();
 	});
 
 	it('renders one ArticleHeader inside one DetailShell with one combined rail presentation', () => {
@@ -480,7 +531,6 @@ describe('NetworkSurface drilldown', () => {
 		};
 		const { container } = render(NetworkSurface);
 		expect(rowFor(container as HTMLElement, 'Standing')).toBe('20%');
-		network.occupancy_mix = null;
 	});
 });
 
@@ -512,7 +562,6 @@ describe('NetworkSurface live cards (S9C)', () => {
 			/not reported in the live feed/i,
 		);
 		expect(within(tile).queryByText('no data')).toBeNull();
-		network.delay_p50_min = 1;
 	});
 
 	it('keeps a real measured 0% as a real value (never an absence chip)', () => {
@@ -523,7 +572,6 @@ describe('NetworkSurface live cards (S9C)', () => {
 			.closest('[data-slot="metric-display"]') as HTMLElement;
 		expect(within(tile).getByText('0%')).toBeInTheDocument();
 		expect(tile.querySelector('[data-slot="absent-value"]')).toBeNull();
-		network.coverage_pct = 95;
 	});
 
 	it('surfaces the worker-feed-age chip near the FreshnessStamp', () => {
@@ -540,14 +588,12 @@ describe('NetworkSurface live cards (S9C)', () => {
 		const value = chip.querySelector('.network-feed-age-value')?.textContent ?? '';
 		expect(value).toMatch(/minute/i);
 		expect(value).not.toMatch(/20 seconds/i);
-		live.ageSeconds = 20;
 	});
 
 	it('keeps the feed age null (no chip) when feed_freshness_s is null', () => {
 		network.feed_freshness_s = null;
 		render(NetworkSurface);
 		expect(document.querySelector('[data-slot="feed-age"]')).toBeNull();
-		network.feed_freshness_s = 20;
 	});
 });
 
@@ -593,10 +639,6 @@ describe('NetworkSurface reporting row (S9C vehicles-reporting own row)', () => 
 		expect(document.querySelector('[data-slot="non-responding-by-route"]')).toBeNull();
 		// The reporting section still stands (the non_responding scalar card carries the total).
 		expect(document.querySelector('[data-slot="reporting-section"]')).not.toBeNull();
-		network.non_responding_by_route = [
-			{ route_id: '51', count: 2 },
-			{ route_id: '105', count: 1 },
-		];
 	});
 });
 
@@ -626,16 +668,6 @@ describe('NetworkSurface delay distribution (ChartSpec re-seat)', () => {
 		render(NetworkSurface);
 		expect(document.querySelector('[data-slot="delay-histogram-section"]')).toBeNull();
 		expect(document.querySelector('[data-slot="delay-histogram"]')).toBeNull();
-		network.delay_histogram = [
-			{ lo_min: null, hi_min: -5, count: 1 },
-			{ lo_min: -5, hi_min: -2, count: 4 },
-			{ lo_min: -2, hi_min: 0, count: 12 },
-			{ lo_min: 0, hi_min: 2, count: 20 },
-			{ lo_min: 2, hi_min: 5, count: 30 },
-			{ lo_min: 5, hi_min: 10, count: 9 },
-			{ lo_min: 10, hi_min: 15, count: 3 },
-			{ lo_min: 15, hi_min: null, count: 2 },
-		];
 	});
 });
 
@@ -664,7 +696,6 @@ describe('NetworkSurface trend window + series', () => {
 	});
 
 	it('preserves both delay choices on a sparse current singleton', () => {
-		const original = trendSeries.slice();
 		trendSeries.splice(
 			0,
 			trendSeries.length,
@@ -672,14 +703,10 @@ describe('NetworkSurface trend window + series', () => {
 			{ date: '2026-06-15', otp_pct: 81, avg_delay_min: null, p90_min: null },
 		);
 
-		try {
-			render(NetworkSurface);
-			const group = screen.getByRole('radiogroup', { name: 'Delay series' });
-			expect(within(group).getByRole('radio', { name: 'Slowest 10%' })).not.toBeDisabled();
-			expect(within(group).getByRole('radio', { name: 'Average' })).not.toBeDisabled();
-		} finally {
-			trendSeries.splice(0, trendSeries.length, ...original);
-		}
+		render(NetworkSurface);
+		const group = screen.getByRole('radiogroup', { name: 'Delay series' });
+		expect(within(group).getByRole('radio', { name: 'Slowest 10%' })).not.toBeDisabled();
+		expect(within(group).getByRole('radio', { name: 'Average' })).not.toBeDisabled();
 	});
 
 	it('switches the retard channel from p90 to the mean series when "Average" is picked', async () => {
@@ -708,13 +735,6 @@ describe('NetworkSurface trend window + series', () => {
 });
 
 describe('NetworkSurface trend grain (day/week/month)', () => {
-	const weeklyOriginal = weeklySeries.slice();
-	const monthlyOriginal = monthlySeries.slice();
-	afterEach(() => {
-		weeklySeries.splice(0, weeklySeries.length, ...weeklyOriginal);
-		monthlySeries.splice(0, monthlySeries.length, ...monthlyOriginal);
-	});
-
 	const trendFigure = (container: HTMLElement) =>
 		container.querySelector('[data-slot="trend-mark"]') as HTMLElement;
 	const trendRows = (container: HTMLElement) =>
@@ -811,22 +831,6 @@ describe('NetworkSurface per-day crowding', () => {
 });
 
 describe('NetworkSurface by time of day + weekday/weekend', () => {
-	afterEach(() => {
-		byShift.splice(
-			0,
-			byShift.length,
-			{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
-			{ grain: 'pm_peak', otp_pct: 79, avg_delay_min: 2.6, severe_pct: 7.4 },
-			{ grain: 'night', otp_pct: null, avg_delay_min: null, severe_pct: null },
-		);
-		byDaytype.splice(
-			0,
-			byDaytype.length,
-			{ grain: 'weekday', otp_pct: 84, avg_delay_min: 1.9, severe_pct: 4.1 },
-			{ grain: 'weekend', otp_pct: 81, avg_delay_min: 2.3, severe_pct: 6.2 },
-		);
-	});
-
 	it('leads each by-time-of-day row with the real OTP %, ranked worst-punctuality first', () => {
 		render(NetworkSurface);
 		const list = screen.getByRole('list', { name: /ranked by time of day/i });
@@ -901,7 +905,6 @@ describe('NetworkSurface by time of day + weekday/weekend', () => {
 });
 
 describe('NetworkSurface trend window re-slice', () => {
-	const original = trendSeries.slice();
 	// Unique dates (TrendMark keys its sr-table rows by xLabel — real series never repeat a day).
 	const longSeries = Array.from({ length: 40 }, (_, i) => ({
 		date: `2026-${String(5 + Math.floor(i / 28)).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`,
@@ -915,9 +918,6 @@ describe('NetworkSurface trend window re-slice', () => {
 
 	beforeEach(() => {
 		trendSeries.splice(0, trendSeries.length, ...longSeries);
-	});
-	afterEach(() => {
-		trendSeries.splice(0, trendSeries.length, ...original);
 	});
 
 	it('re-slices the trend to fewer plotted days when 7d is picked after the 30d default', async () => {
@@ -950,9 +950,6 @@ describe('NetworkSurface OTP trend zoom (S9B min-span domain + reference)', () =
 
 describe('NetworkSurface service completeness (S9B GC2 ramp-in)', () => {
 	const original = trendSeries.slice();
-	afterEach(() => {
-		trendSeries.splice(0, trendSeries.length, ...original);
-	});
 
 	it('renders the completeness tile WITH its honest-absence note when every rate is null (B4)', () => {
 		// The base fixture carries no service_completeness_rate → the tile stays rendered
@@ -998,7 +995,6 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 				expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' }),
 			);
 		} finally {
-			motion.reduced = false;
 			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
 			else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
 		}
@@ -1033,7 +1029,6 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 
 	it('keeps the one ToC disclosure remembered while its rail moves into the sheet', async () => {
 		const storageKey = 'transit.persisted:network-toc';
-		sessionStorage.removeItem(storageKey);
 		const { container } = render(NetworkSurface);
 		const desktopToc = container.querySelector(
 			'[data-slot="surface-rail"] [data-slot="section-toc"]',
@@ -1056,34 +1051,27 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 	});
 
 	it('keeps one disabled-grain reason and one described radio as the rail moves', async () => {
-		const original = monthlySeries.slice();
 		monthlySeries.splice(0, monthlySeries.length);
 
-		try {
-			const { container } = render(NetworkSurface);
-			const railMobile = container.querySelector(
-				'[data-slot="surface-rail-mobile"]',
-			) as HTMLElement;
-			await fireEvent.click(railMobile.querySelector('button') as HTMLButtonElement);
+		const { container } = render(NetworkSurface);
+		const railMobile = container.querySelector('[data-slot="surface-rail-mobile"]') as HTMLElement;
+		await fireEvent.click(railMobile.querySelector('button') as HTMLButtonElement);
 
-			const reasons = Array.from(
-				container.querySelectorAll<HTMLElement>('[data-slot="controls-reason"]'),
-			);
-			const reasonIds = reasons.map((reason) => reason.id);
-			expect(reasonIds).toHaveLength(1);
-			expect(new Set(reasonIds).size).toBe(reasonIds.length);
-			expect(reasonIds[0]).toMatch(/-(?:desktop|mobile)$/);
+		const reasons = Array.from(
+			container.querySelectorAll<HTMLElement>('[data-slot="controls-reason"]'),
+		);
+		const reasonIds = reasons.map((reason) => reason.id);
+		expect(reasonIds).toHaveLength(1);
+		expect(new Set(reasonIds).size).toBe(reasonIds.length);
+		expect(reasonIds[0]).toMatch(/-(?:desktop|mobile)$/);
 
-			const monthRadios = screen.getAllByRole('radio', { name: copy.grain.month });
-			expect(monthRadios).toHaveLength(1);
-			expect(monthRadios[0]?.getAttribute('aria-describedby')).toBe(reasonIds[0]);
-			for (const radio of monthRadios) {
-				const describedBy = radio.getAttribute('aria-describedby');
-				expect(describedBy).not.toBeNull();
-				expect(container.querySelector(`#${describedBy}`)).not.toBeNull();
-			}
-		} finally {
-			monthlySeries.splice(0, monthlySeries.length, ...original);
+		const monthRadios = screen.getAllByRole('radio', { name: copy.grain.month });
+		expect(monthRadios).toHaveLength(1);
+		expect(monthRadios[0]?.getAttribute('aria-describedby')).toBe(reasonIds[0]);
+		for (const radio of monthRadios) {
+			const describedBy = radio.getAttribute('aria-describedby');
+			expect(describedBy).not.toBeNull();
+			expect(container.querySelector(`#${describedBy}`)).not.toBeNull();
 		}
 	});
 
