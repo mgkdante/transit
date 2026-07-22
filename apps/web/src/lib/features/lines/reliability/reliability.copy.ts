@@ -14,6 +14,7 @@
 //   - controls{}   — the grain control-spine labels + the active-window caption.
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
+import { historyCopy } from '$lib/components/surface/historyCopy';
 // The verdict copy shape is now the shared $lib/v1 kernel (hoisted so every OTP-headline
 // surface reuses the ONE verdict engine); re-export VerdictSentenceArgs for the callers
 // that still reference it from here.
@@ -205,19 +206,16 @@ export const reliabilityCopy = defineCopy({
 			tocPillClose: 'Fermer la liste des sections',
 		},
 		history: {
-			navigator: {
+			navigator: historyCopy('fr', {
+				mode: 'range',
 				group: 'Historique de fiabilité de la ligne',
 				picker: {
 					group: 'Plage de dates',
-					start: 'Du',
-					end: 'Au',
 					clear: 'Revenir au portrait actuel',
 					anyStart: 'Première date',
 					anyEnd: 'Dernière date',
 				},
-				previous: 'Plage précédente',
-				next: 'Plage suivante',
-			},
+			}),
 			coverage: (from: string, to: string) => `Historique disponible du ${from} au ${to}.`,
 			selection: (from: string, to: string) => `Plage choisie : du ${from} au ${to}.`,
 			correction: {
@@ -456,19 +454,16 @@ export const reliabilityCopy = defineCopy({
 			tocPillClose: 'Close section list',
 		},
 		history: {
-			navigator: {
+			navigator: historyCopy('en', {
+				mode: 'range',
 				group: 'Line reliability history',
 				picker: {
 					group: 'Date range',
-					start: 'From',
-					end: 'To',
 					clear: 'Return to current snapshot',
 					anyStart: 'First date',
 					anyEnd: 'Last date',
 				},
-				previous: 'Previous range',
-				next: 'Next range',
-			},
+			}),
 			coverage: (from, to) => `History available from ${from} to ${to}.`,
 			selection: (from, to) => `Selected range: ${from} to ${to}.`,
 			correction: {

@@ -13,6 +13,8 @@
 // ledger fields (the fallback path reads the same recurrence / type / caveat copy).
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
+import { articleCopy } from '$lib/components/layout/articleCopy';
+import { historyCopy } from '$lib/components/surface/historyCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export const copy = defineCopy({
@@ -21,29 +23,24 @@ export const copy = defineCopy({
 		heading: 'Repeat offenders',
 		subheading: '// RÉCIDIVISTES',
 		lede: 'The trips and vehicles that run severely late on day after day, ranked worst first by how reliably they slip. We never invent data: an absent reading shows as “no data”, never a fabricated zero.',
-		article: {
+		article: articleCopy('en', {
 			watermark: 'Repeat',
-			back: '← Back to the dashboard',
-			tagsAria: 'Page keywords',
 			tags: ['offenders', 'trips', 'vehicles', 'recurrence'],
-			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
-		},
+			sections: (count: number) => `${count} ${count === 1 ? 'section' : 'sections'}`,
+		}),
 		asOf: 'AS OF',
 		history: {
-			navigator: {
+			navigator: historyCopy('en', {
+				mode: 'date',
 				group: 'Browse retained repeat-offender history',
 				picker: {
 					group: 'Repeat-offender history',
-					start: 'From',
-					end: 'To',
 					clear: 'Current data',
 					anyStart: 'Earliest date',
 					anyEnd: 'Latest date',
 					single: 'History date',
 				},
-				previous: 'Previous date',
-				next: 'Next date',
-			},
+			}),
 			coverage: (first, last) => `History available: ${first} to ${last}.`,
 			selection: (date) => `Showing date: ${date}.`,
 			correction: {
@@ -173,29 +170,24 @@ export const copy = defineCopy({
 		heading: 'Récidivistes',
 		subheading: '// REPEAT OFFENDERS',
 		lede: 'Les voyages et les véhicules qui accumulent les retards graves jour après jour, classés du pire au moins pire selon la régularité de leurs ratés. On n’invente jamais de données : une lecture absente s’affiche « aucune donnée », jamais un zéro fabriqué.',
-		article: {
+		article: articleCopy('fr', {
 			watermark: 'Récidive',
-			back: '← Retour au tableau de bord',
-			tagsAria: 'Mots-clés de la page',
 			tags: ['récidivistes', 'voyages', 'véhicules', 'récurrence'],
 			sections: (count: number) => `${count} ${count === 1 ? 'section' : 'sections'}`,
-		},
+		}),
 		asOf: 'À JOUR AU',
 		history: {
-			navigator: {
+			navigator: historyCopy('fr', {
+				mode: 'date',
 				group: 'Parcourir l’historique conservé des récidivistes',
 				picker: {
 					group: 'Historique des récidivistes',
-					start: 'Du',
-					end: 'Au',
 					clear: 'Données actuelles',
 					anyStart: 'Première date',
 					anyEnd: 'Dernière date',
 					single: 'Date historique',
 				},
-				previous: 'Date précédente',
-				next: 'Date suivante',
-			},
+			}),
 			coverage: (first: string, last: string) => `Historique disponible : du ${first} au ${last}.`,
 			selection: (date: string) => `Date affichée : ${date}.`,
 			correction: {

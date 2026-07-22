@@ -26,6 +26,7 @@ export { default as ReliabilityRailLayout } from './ReliabilityRailLayout.svelte
 export type { ReliabilityRailLayoutProps } from './ReliabilityRailLayout.svelte';
 export { default as ArticleHeader } from './ArticleHeader.svelte';
 export type { ArticleHeaderProps, ArticleMetaEntry } from './ArticleHeader.svelte';
+export { articleCopy, type ArticleCopy, type ArticleCopyOptions } from './articleCopy';
 export { default as ArticleSectionStack } from './ArticleSectionStack.svelte';
 export type { ArticleSectionStackProps } from './ArticleSectionStack.svelte';
 export { default as ArticleSummaryLane } from './ArticleSummaryLane.svelte';

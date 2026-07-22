@@ -8,6 +8,8 @@
 // duplicated here.
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
+import { articleCopy } from '$lib/components/layout/articleCopy';
+import { historyCopy } from '$lib/components/surface/historyCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export const copy = defineCopy({
@@ -16,29 +18,24 @@ export const copy = defineCopy({
 		heading: 'Points chauds',
 		subheading: '// PIRES EN PREMIER',
 		lede: 'Les arrêts et les lignes qui tirent le réseau vers le bas, classés du pire au moins pire par le taux de retards graves. On n’invente jamais de données.',
-		article: {
+		article: articleCopy('fr', {
 			watermark: 'Points chauds',
-			back: '← Retour au tableau de bord',
-			tagsAria: 'Mots-clés de la page',
 			tags: ['chauds', 'lignes', 'arrêts', 'retards graves'],
 			sections: (count: number) => `${count} ${count === 1 ? 'section' : 'sections'}`,
-		},
+		}),
 		asOf: 'À JOUR AU',
 		history: {
-			navigator: {
+			navigator: historyCopy('fr', {
+				mode: 'date',
 				group: 'Parcourir l’historique conservé des points chauds',
 				picker: {
 					group: 'Historique des points chauds',
-					start: 'Du',
-					end: 'Au',
 					clear: 'Données actuelles',
 					anyStart: 'Première date',
 					anyEnd: 'Dernière date',
 					single: 'Date historique',
 				},
-				previous: 'Date précédente',
-				next: 'Date suivante',
-			},
+			}),
 			coverage: (first: string, last: string) => `Historique disponible : du ${first} au ${last}.`,
 			selection: (date: string) => `Date affichée : ${date}.`,
 			correction: {
@@ -155,29 +152,24 @@ export const copy = defineCopy({
 		heading: 'Hotspots',
 		subheading: '// WORST FIRST',
 		lede: 'The stops and lines dragging the network down, ranked worst first by their severe-delay rate. We never invent data.',
-		article: {
+		article: articleCopy('en', {
 			watermark: 'Hotspots',
-			back: '← Back to the dashboard',
-			tagsAria: 'Page keywords',
 			tags: ['hotspots', 'lines', 'stops', 'severe delay'],
-			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
-		},
+			sections: (count: number) => `${count} ${count === 1 ? 'section' : 'sections'}`,
+		}),
 		asOf: 'AS OF',
 		history: {
-			navigator: {
+			navigator: historyCopy('en', {
+				mode: 'date',
 				group: 'Browse retained hotspots history',
 				picker: {
 					group: 'Hotspots history',
-					start: 'From',
-					end: 'To',
 					clear: 'Current data',
 					anyStart: 'Earliest date',
 					anyEnd: 'Latest date',
 					single: 'History date',
 				},
-				previous: 'Previous date',
-				next: 'Next date',
-			},
+			}),
 			coverage: (first, last) => `History available: ${first} to ${last}.`,
 			selection: (date) => `Showing date: ${date}.`,
 			correction: {

@@ -10,6 +10,7 @@
 // Provider-agnostic: no STM / Montréal references.
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
+import { articleCopy } from '$lib/components/layout/articleCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export const copy = defineCopy({
@@ -18,15 +19,13 @@ export const copy = defineCopy({
 		heading: 'Accountability receipt',
 		subheading: '// RECEIPT',
 		lede: 'One day, one receipt: the headline reliability of the service, the day it covers, and the worst of it, issued daily with nothing hidden.',
-		article: {
+		article: articleCopy('en', {
 			watermark: 'Receipt',
-			back: '← Back to the dashboard',
-			tagsAria: 'Page keywords',
 			tags: ['receipt', 'reliability', 'service', 'accountability'],
 			generatedLabel: 'GENERATED',
 			selectedLabel: 'FOR',
-			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
-		},
+			sections: (count: number) => `${count} ${count === 1 ? 'section' : 'sections'}`,
+		}),
 		rail: {
 			label: 'Day & contents',
 			open: 'Open day controls and contents',
@@ -151,15 +150,13 @@ export const copy = defineCopy({
 		heading: "Reçu d'imputabilité",
 		subheading: '// REÇU',
 		lede: 'Un jour, un reçu : la fiabilité globale du service, la journée couverte et le pire de la journée, émis chaque jour, rien de caché.',
-		article: {
+		article: articleCopy('fr', {
 			watermark: 'Reçu',
-			back: '← Retour au tableau de bord',
-			tagsAria: 'Mots-clés de la page',
 			tags: ['reçu', 'fiabilité', 'service', 'imputabilité'],
 			generatedLabel: 'PRODUIT',
 			selectedLabel: 'POUR LE',
 			sections: (count: number) => `${count} ${count === 1 ? 'section' : 'sections'}`,
-		},
+		}),
 		rail: {
 			label: 'Jour et sommaire',
 			open: 'Ouvrir le choix du jour et le sommaire',

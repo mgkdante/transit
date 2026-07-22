@@ -14,20 +14,19 @@
 // EN is the parallel translation. PROVIDER-AGNOSTIC: no agency/city literals.
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
+import { articleCopy } from '$lib/components/layout/articleCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export const copy = defineCopy({
 	en: {
 		kicker: 'DATA · HONESTY',
-		article: {
+		article: articleCopy('en', {
 			watermark: 'Status',
-			back: '← Back to the dashboard',
-			tagsAria: 'Page keywords',
 			tags: ['data', 'feeds', 'freshness', 'known gaps'],
-			sections: (n) => `${n} ${n === 1 ? 'section' : 'sections'}`,
+			sections: (n: number) => `${n} ${n === 1 ? 'section' : 'sections'}`,
 			dailyAsOf: 'DAILY RECORD AS OF',
 			liveAsOf: 'LIVE FEEDS AS OF',
-		},
+		}),
 		heading: 'Data health',
 		lede: 'How fresh each source is, where it came from, what is knowingly missing, how long we keep it, and how cleanly the latest schedule matched the model behind this dashboard. A missing signal shows as “no data”, never a fabricated value.',
 		overview: {
@@ -230,15 +229,13 @@ export const copy = defineCopy({
 	},
 	fr: {
 		kicker: 'DONNÉES · HONNÊTETÉ',
-		article: {
+		article: articleCopy('fr', {
 			watermark: 'État',
-			back: '← Retour au tableau de bord',
-			tagsAria: 'Mots-clés de la page',
 			tags: ['données', 'flux', 'fraîcheur', 'lacunes connues'],
 			sections: (n: number) => `${n} ${n === 1 ? 'section' : 'sections'}`,
 			dailyAsOf: 'BILAN QUOTIDIEN À JOUR AU',
 			liveAsOf: 'FLUX EN DIRECT À JOUR AU',
-		},
+		}),
 		heading: 'Santé des données',
 		lede: 'À quel point chaque source est récente, d’où elle vient, ce qui manque sciemment, combien de temps on la garde et à quel point le dernier horaire correspondait au modèle derrière ce tableau de bord. Un signal absent s’affiche « aucune donnée », jamais une valeur fabriquée.',
 		overview: {
