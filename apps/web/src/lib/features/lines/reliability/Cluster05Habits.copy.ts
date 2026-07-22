@@ -5,88 +5,9 @@
 // summary, the scale legend (low/high/no-data), and the two sub-section
 // headings. FR is the canonical product voice; EN mirrors it.
 
-import type { Locale } from '$lib/i18n';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
 
-export interface HabitsBandCopy {
-	/** Heading above the time-of-day heatmap. */
-	readonly heatmapHeading: string;
-	/** Accessible summary for the heatmap (day × hour). */
-	readonly heatmapLabel: string;
-	/** Heading above the weekday-seasonality ranked list. */
-	readonly weekdayHeading: string;
-	/** Caption for a weekday row's mean-delay value. */
-	readonly avgDelay: string;
-	/** The weekday cycle plot — seven Mon→Sun panels of mean delay across weeks. */
-	readonly cycle: {
-		/** Whole-figure accessible summary (role=img label). */
-		readonly ariaLabel: string;
-		/** Per-panel mean-delay label, interpolated with the formatted mean. */
-		readonly mean: (value: string) => string;
-		/** Severe-delay-share label, interpolated with the formatted share. */
-		readonly severe: (value: string) => string;
-		/** Observation-count prefix, e.g. "n=420". */
-		readonly obs: (n: number) => string;
-		/** Steepest-trend annotation, given the weekday name + the signed delta. */
-		readonly steepest: (day: string, delta: string) => string;
-		/**
-		 * Plain caption beneath the cycle plot. `series` reads when the contract carries
-		 * an across-weeks series per weekday (true cycle plot); `single` reads when it
-		 * carries one value per weekday (the honest fixed-axis bar degrade).
-		 */
-		readonly captionSeries: string;
-		readonly captionSingle: string;
-	};
-	/** X-axis caption (hours run left→right). */
-	readonly hourAxisLabel: string;
-	/** Y-axis caption (days run top→bottom). */
-	readonly dayAxisLabel: string;
-	/** Tooltip/SR row label — what a single cell encodes. */
-	readonly cellValueLabel: string;
-	/**
-	 * Plain-language caption beneath the heatmap explaining the scale + how to read the
-	 * colour. Pairs with the resolved `scaleLegend` phrase.
-	 */
-	readonly scaleCaption: string;
-	/**
-	 * Operator ("today and this week look the same — explain why, stupid-easy"): the heatmap
-	 * is GRAIN-INVARIANT — it reads the line's FULL service history, so it is identical
-	 * whichever window the rail above is set to. This one-liner states that plainly so the
-	 * same-looking heatmap is never mistaken for a bug.
-	 */
-	readonly heatmapWindowNote: string;
-	/**
-	 * §1 takeaway SENTENCE (the verdict the section earmarks): names the line's worst
-	 * repeat-problem window + its calmest weekday, worded RELATIVE to the line itself
-	 * (its own peak hour), never an absolute "unreliable" claim.
-	 */
-	readonly bestTime: {
-		/** Lead clause: the worst day + hour. */
-		readonly lead: (worstDay: string, worstHour: string) => string;
-		/** Calm clause, appended only when a distinct calmest weekday exists. */
-		readonly calm: (calmDay: string) => string;
-	};
-	/**
-	 * RAW scale string (RouteHabits.scale) → a plain-language phrase for the
-	 * caption. The snake_case scale value is NEVER shown to a layperson; an
-	 * unmapped/null scale falls back to `heatmapHeading`.
-	 */
-	readonly scaleLegend: Readonly<Record<string, string>>;
-	/**
-	 * The CLASSED tiers (S7 P4): four plain-language labels calmest→worst, the no-data
-	 * label, and the glyph stamped on the worst tier (colour is never the sole channel).
-	 */
-	readonly tiers: {
-		readonly labels: readonly [string, string, string, string];
-		readonly noData: string;
-		readonly worstGlyph: string;
-	};
-	/** Full weekday names, ISO-indexed (index 0 unused; 1=Mon..7=Sun). */
-	readonly weekdays: readonly [string, string, string, string, string, string, string, string];
-	/** Heatmap row labels, Mon..Sun (length 7, in row order). */
-	readonly weekdaysShort: readonly [string, string, string, string, string, string, string];
-}
-
-export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
+export const habitsBandCopy = defineCopy({
 	fr: {
 		heatmapHeading: 'Problèmes récurrents par heure',
 		heatmapLabel: 'Carte thermique des problèmes par jour et par heure',
@@ -94,10 +15,10 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 		avgDelay: 'Retard moyen',
 		cycle: {
 			ariaLabel: 'Graphique cyclique du retard moyen par jour de la semaine, du lundi au dimanche',
-			mean: (value) => `Moyenne ${value}`,
-			severe: (value) => `Graves ${value}`,
-			obs: (n) => `n=${n}`,
-			steepest: (day, delta) => `Plus forte variation : ${day} (${delta})`,
+			mean: (value: string) => `Moyenne ${value}`,
+			severe: (value: string) => `Graves ${value}`,
+			obs: (n: number) => `n=${n}`,
+			steepest: (day: string, delta: string) => `Plus forte variation : ${day} (${delta})`,
 			captionSeries:
 				'Un panneau par jour, du lundi au dimanche, sur une échelle de retard fixe et partagée. La ligne pointillée marque la moyenne du jour; le losange indique la part des retards graves (n ≥ 5).',
 			captionSingle:
@@ -111,22 +32,37 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 		heatmapWindowNote:
 			'Ce portrait utilise tout l’historique de la ligne : il ne change pas selon la fenêtre choisie en haut. « Aujourd’hui », « Cette semaine » et « Ce mois-ci » affichent la même carte. (La fenêtre change plutôt la tendance, les taux et les comparaisons.)',
 		bestTime: {
-			lead: (d, h) => `Sur cette ligne, les retards récurrents culminent le ${d} vers ${h}.`,
-			calm: (d) => ` Le ${d} est habituellement sa journée la plus calme.`,
+			lead: (d: string, h: string) =>
+				`Sur cette ligne, les retards récurrents culminent le ${d} vers ${h}.`,
+			calm: (d: string) => ` Le ${d} est habituellement sa journée la plus calme.`,
 		},
 		scaleLegend: {
 			repeat_problem_relative: 'Problèmes récurrents (par rapport à la pire heure de la ligne)',
 			severe_relative: 'Retards graves (par rapport à la pire heure de la ligne)',
-		},
+		} as Readonly<Record<string, string>>,
 		// Plain-language reliability tiers, calmest → worst — they say what the colour MEANS
 		// to a rider (how unreliable that hour is) and double as the cell + tooltip readout.
 		tiers: {
-			labels: ['Rarement en retard', 'Parfois en retard', 'Souvent en retard', 'Très peu fiable'],
+			labels: [
+				'Rarement en retard',
+				'Parfois en retard',
+				'Souvent en retard',
+				'Très peu fiable',
+			] as const,
 			noData: 'Aucune donnée',
 			worstGlyph: '◆',
 		},
-		weekdays: ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
-		weekdaysShort: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'],
+		weekdays: [
+			'',
+			'Lundi',
+			'Mardi',
+			'Mercredi',
+			'Jeudi',
+			'Vendredi',
+			'Samedi',
+			'Dimanche',
+		] as const,
+		weekdaysShort: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'] as const,
 	},
 	en: {
 		heatmapHeading: 'Repeat problems by hour',
@@ -169,4 +105,6 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 		weekdays: ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
 		weekdaysShort: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
 	},
-};
+});
+
+export type HabitsBandCopy = (typeof habitsBandCopy)[Locale];

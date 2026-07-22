@@ -8,166 +8,14 @@
 // Domain-intrinsic labels (OTP / delay / occupancy bands) still live in the
 // shared primitives / lines vocabulary and are NOT duplicated here.
 
-import type { Locale } from '$lib/i18n';
-import type { VerdictCopy } from '$lib/v1/verdict';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
+import type { VerdictCopy, VerdictSentenceArgs } from '$lib/v1/verdict';
 
-export interface StopReliabilityCopy {
-	readonly byRoute: string;
-	readonly noRouteBreakdown: string;
-	readonly viewLine: (routeId: string) => string;
-	/** Section heading over the shared ReliabilityPane (OTP / delay / severe). */
-	readonly paneHeading: string;
-	/** Short metric NAMES the (i) explainer trigger announces beside a heading. */
-	readonly metrics: {
-		readonly otp: string;
-		readonly avgDelay: string;
-		readonly severe: string;
-	};
-	/** Controls-rail label collecting the grain picker + window caption ("View"). */
-	readonly controlsLabel: string;
-	/**
-	 * P5.4 GLASS LEFT RAIL wayfinding: the section ToC heading + the mobile
-	 * pill/sheet open+close aria. The rail merges the grain picker + this jump
-	 * list into ONE menu (desktop panel / mobile sheet).
-	 */
-	readonly nav: {
-		/** Section ToC heading ("Jump to"). */
-		readonly toc: string;
-		/** aria-label for the mobile rail pill's open control. */
-		readonly pillOpen: string;
-		/** aria-label for the mobile rail sheet's dismiss control. */
-		readonly pillClose: string;
-	};
-	/** Grain (roll-up) picker affordances. */
-	readonly grain: {
-		/** Accessible group label over the grain segments. */
-		readonly label: string;
-		/** Day / week / month segment labels. */
-		readonly day: string;
-		readonly week: string;
-		readonly month: string;
-		/** Caption naming the resolved roll-up window. */
-		readonly window: (grain: string) => string;
-	};
-	readonly history: {
-		readonly navigator: import('$lib/components/surface/HistoryNavigator.svelte').HistoryNavigatorLabels;
-		readonly coverage: (from: string, to: string) => string;
-		readonly selection: (from: string, to: string) => string;
-		readonly correction: Record<import('$lib/v1').HistoryCorrection['reason'], string>;
-		readonly partial: string;
-		readonly noData: string;
-		readonly currentOnly: string;
-		readonly loading: string;
-		readonly ready: string;
-		readonly error: string;
-		readonly retry: string;
-	};
-	/**
-	 * §C5.6 one-line reliability verdict at the top of the Reliability pane — the SHARED
-	 * VerdictBanner + selectVerdict, at stop scope. Stop OTP is a punctuality PROXY (no
-	 * scheduled-OTP concept at a stop), so the voice reads "on time" honestly off the
-	 * proxy; the Wilson hedge rides the period's own observation_count (never fabricated).
-	 */
-	readonly verdict: VerdictCopy;
-	/** Day-grain percentile clarity (typical vs worst-case delay). */
-	readonly percentiles: {
-		readonly heading: string;
-		readonly typical: string;
-		readonly typicalCaption: string;
-		readonly worstCase: string;
-		readonly worstCaseCaption: string;
-	};
-	/** Time-of-day habits heatmap (per-stop 7×24 severe-delay grid). */
-	readonly habits: {
-		readonly heading: string;
-		readonly label: string;
-		readonly cellValueLabel: string;
-		readonly hourAxisLabel: string;
-		readonly dayAxisLabel: string;
-		readonly caption: string;
-		readonly legend: {
-			readonly low: string;
-			readonly medium: string;
-			readonly high: string;
-			readonly noData: string;
-			/**
-			 * The four classed-tier labels, calmest → worst (P5.2 — the stop habits
-			 * heatmap bins onto the same 4 tiers as the lines §1 hero; words mirror
-			 * the severe-delay read). The worst tier also carries the ◆ glyph.
-			 */
-			readonly tiers: readonly [string, string, string, string];
-		};
-		readonly weekdays: readonly [string, string, string, string, string, string, string, string];
-		readonly weekdaysShort: readonly [string, string, string, string, string, string, string];
-	};
-	/** Weekday seasonality (day_of_week). */
-	readonly weekday: {
-		readonly heading: string;
-		readonly avgDelay: string;
-		readonly severeShare: string;
-		readonly caveat: string;
-	};
-	/** Time-of-day shift + day-type breakdown. */
-	readonly timeOfDay: {
-		readonly heading: string;
-		readonly severeShare: string;
-		readonly dayType: string;
-		readonly caveat: string;
-	};
-	/** Crowding (occupancy_mix). */
-	readonly crowding: {
-		readonly heading: string;
-		readonly window: string;
-		readonly barLabel: string;
-		readonly dominantLabel: string;
-		readonly noTelemetry: string;
-	};
-	/**
-	 * S8A daily delay-trend + range verdict (the new dated-series section). The
-	 * trend plots the served daily[] severe-share over time on the fixed [0,100]
-	 * domain; the verdict pools the counts over the selected window EXACTLY.
-	 */
-	readonly trend: {
-		/** Section heading over the dated series. */
-		readonly heading: string;
-		/** Accessible chart title (data + window). */
-		readonly chartTitle: string;
-		/** Primary-series label (severe-delay share). */
-		readonly severeLabel: string;
-		/** Secondary-series label (avg delay). */
-		readonly avgLabel: string;
-		/** Percent unit suffix. */
-		readonly pctUnit: string;
-		/** Minutes unit suffix. */
-		readonly minUnit: string;
-		/** Verdict block heading (the pooled read over the window). */
-		readonly verdictHeading: string;
-		/** Pooled severe-share tile label. */
-		readonly pooledSevere: string;
-		/** Pooled avg-delay tile label. */
-		readonly pooledAvg: string;
-		/** Observation-count tile label. */
-		readonly observations: string;
-		/** Wilson-interval caption under the pooled severe-share. */
-		readonly wilsonCaption: (lo: string, hi: string) => string;
-		/** Names the pooled window ("N days · from → to"), honest about gaps. */
-		readonly rangeWindow: (days: number, from: string, to: string) => string;
-		/** Names a single pooled day. */
-		readonly singleDay: (date: string) => string;
-		/** Honest caveat: SEVERE-proxy, not a certified on-time rate. */
-		readonly caveat: string;
-		/** Shown below MIN_N: too few pooled observations to print a share. */
-		readonly belowMinN: (n: number) => string;
-	};
-	/** No-data string for a route row whose delay is absent. */
-	readonly noDelay: string;
-}
-
-export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
+export const stopReliabilityCopy = defineCopy({
 	fr: {
 		byRoute: 'Retard moyen par ligne',
 		noRouteBreakdown: 'Aucun détail par ligne pour cet arrêt.',
-		viewLine: (routeId) => `Voir la ligne ${routeId}`,
+		viewLine: (routeId: string) => `Voir la ligne ${routeId}`,
 		paneHeading: 'Ponctualité et retard',
 		metrics: {
 			otp: 'Ponctualité',
@@ -185,7 +33,7 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 			day: 'Jour',
 			week: 'Semaine',
 			month: 'Mois',
-			window: (grain) =>
+			window: (grain: string) =>
 				grain === 'week'
 					? 'Regroupé par semaine.'
 					: grain === 'month'
@@ -206,8 +54,8 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 				previous: 'Plage précédente',
 				next: 'Plage suivante',
 			},
-			coverage: (from, to) => `Historique disponible du ${from} au ${to}.`,
-			selection: (from, to) => `Plage choisie : du ${from} au ${to}.`,
+			coverage: (from: string, to: string) => `Historique disponible du ${from} au ${to}.`,
+			selection: (from: string, to: string) => `Plage choisie : du ${from} au ${to}.`,
 			correction: {
 				malformed: 'La plage invalide a été remplacée par le portrait actuel.',
 				'outside-coverage': 'La plage non disponible a été remplacée par le portrait actuel.',
@@ -230,19 +78,21 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 				month: 'ce mois-ci',
 				range: 'sur la période',
 			},
-			reliable: ({ window, onTen, lateTen, hedge }) =>
+			reliable: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
 				`Arrêt fiable ${window}, environ ${onTen} passages sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
-			patchy: ({ window, onTen, lateTen, hedge }) =>
+			patchy: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
 				`Arrêt inégal ${window}, environ ${onTen} passages sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
-			unreliable: ({ window, onTen, lateTen, hedge }) =>
+			unreliable: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
 				`Arrêt peu fiable ${window}, seulement ${onTen} passages sur 10 à l’heure${hedge}; ${lateTen} sur 10 en retard.`,
 			tentative: ({ window, otp, n, lo, hi }) =>
 				`Environ ${otp} % des passages à l’heure ${window} (sûr à 95 % entre ${lo} et ${hi} %, n=${n}).`,
-			tooFew: (window, n) => `Mesure en cours ${window}, seulement ${n} passages suivis.`,
+			tooFew: (window: string, n: number) =>
+				`Mesure en cours ${window}, seulement ${n} passages suivis.`,
 			absent: 'Mesure de l’arrêt en cours. Pas encore de lecture de ponctualité.',
-			hedgeSimple: (otp) => ` (${otp} %)`,
-			hedgeCI: (otp, lo, hi) => ` (${otp} %, sûr à 95 % entre ${lo} et ${hi} %)`,
-		},
+			hedgeSimple: (otp: number) => ` (${otp} %)`,
+			hedgeCI: (otp: number, lo: number, hi: number) =>
+				` (${otp} %, sûr à 95 % entre ${lo} et ${hi} %)`,
+		} satisfies VerdictCopy,
 		percentiles: {
 			heading: 'Retard journalier',
 			typical: 'Retard typique',
@@ -263,10 +113,19 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 				medium: 'Moyen',
 				high: 'Élevé',
 				noData: 'Aucune donnée',
-				tiers: ['Rarement grave', 'Parfois grave', 'Souvent grave', 'Très peu fiable'],
+				tiers: ['Rarement grave', 'Parfois grave', 'Souvent grave', 'Très peu fiable'] as const,
 			},
-			weekdays: ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
-			weekdaysShort: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'],
+			weekdays: [
+				'',
+				'Lundi',
+				'Mardi',
+				'Mercredi',
+				'Jeudi',
+				'Vendredi',
+				'Samedi',
+				'Dimanche',
+			] as const,
+			weekdaysShort: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'] as const,
 		},
 		weekday: {
 			heading: 'Par jour de la semaine',
@@ -301,13 +160,13 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 			pooledSevere: 'Part des retards graves',
 			pooledAvg: 'Retard moyen',
 			observations: 'Observations',
-			wilsonCaption: (lo, hi) => `Intervalle de confiance à 95 % : ${lo} – ${hi} %`,
-			rangeWindow: (days, from, to) =>
+			wilsonCaption: (lo: string, hi: string) => `Intervalle de confiance à 95 % : ${lo} – ${hi} %`,
+			rangeWindow: (days: number, from: string, to: string) =>
 				`${days} ${days === 1 ? 'jour' : 'jours'} avec données · ${from} au ${to}`,
-			singleDay: (date) => `Journée du ${date}`,
+			singleDay: (date: string) => `Journée du ${date}`,
 			caveat:
 				'La « part des retards graves » est un indicateur indirect (retards > 5 min); un arrêt n’a pas de ponctualité programmée. Ne pas comparer au taux de ponctualité d’une ligne.',
-			belowMinN: (n) =>
+			belowMinN: (n: number) =>
 				`Trop peu d’observations sur cette période (${n}) pour afficher un pourcentage fiable.`,
 		},
 		noDelay: 'Aucune donnée',
@@ -390,7 +249,7 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 			absent: 'Still measuring this stop. No on-time reading yet.',
 			hedgeSimple: (otp) => ` (${otp}%)`,
 			hedgeCI: (otp, lo, hi) => ` (${otp}%, 95% sure between ${lo} and ${hi}%)`,
-		},
+		} satisfies VerdictCopy,
 		percentiles: {
 			heading: 'Daily delay',
 			typical: 'Typical delay',
@@ -460,4 +319,6 @@ export const stopReliabilityCopy: Record<Locale, StopReliabilityCopy> = {
 		},
 		noDelay: 'No data',
 	},
-};
+}) satisfies Readonly<Record<Locale, { readonly verdict: VerdictCopy }>>;
+
+export type StopReliabilityCopy = (typeof stopReliabilityCopy)[Locale];

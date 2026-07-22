@@ -5,169 +5,11 @@
 // labels — OTP / delay / p90 / severe — already live in the spine's
 // ReliabilityPane). FR is the canonical product voice; EN mirrors it.
 
-import type { Locale } from '$lib/i18n';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { AffectedAlertsCopy, SurfaceHeadCopy } from '$lib/components/surface';
 import type { OccupancyCode } from '$lib/v1/schemas';
 
-export interface LinesIndexCopy extends SurfaceHeadCopy {
-	/** Accessible label + placeholder for the filter input. */
-	readonly filterLabel: string;
-	readonly filterPlaceholder: string;
-	/** Mono group overline for the ControlsRail collecting search + sort + status. */
-	readonly controlsLabel: string;
-	/** Compact action linking one route into the live map. */
-	readonly mapAction: string;
-	readonly viewRouteOnMap: (route: string) => string;
-	/** "+N more" truncation note builder (count interpolated). */
-	readonly more: (n: number) => string;
-	/** Sort control (alphabetical | worst reliability first). */
-	readonly sortLabel: string;
-	readonly sortAlpha: string;
-	readonly sortWorst: string;
-	/** Reliability status filter (show only problem lines). */
-	readonly statusFilterLabel: string;
-	readonly statusAll: string;
-	readonly statusProblem: string;
-	/** SR caption when the problem filter is on but no line has loaded its verdict yet. */
-	readonly statusPending: string;
-	/** Polite caption while the worst-first ranking waits on the visible verdicts to settle. */
-	readonly rankingPending: string;
-	/** Existing GTFS route-type filter. */
-	readonly modeFilterLabel: string;
-	readonly modeAll: string;
-	/** Makes clear that `long` is the route name, never a one-sided destination. */
-	readonly routeName: (name: string) => string;
-	readonly directionsNote: string;
-	readonly inventory: {
-		readonly label: string;
-		readonly lines: string;
-		readonly bus: string;
-		readonly metro: string;
-		readonly modes: string;
-		readonly unavailable: string;
-	};
-}
-
-export interface RouteDetailCopy {
-	/** Station-voice overline above the line heading. */
-	readonly kicker: string;
-	/** Article-cover labels; every displayed value still comes from route data. */
-	readonly article: {
-		readonly watermark: string;
-		readonly back: string;
-		readonly tagsAria: string;
-		readonly provider: string;
-		readonly generated: string;
-	};
-	/** Framing lede under the line id in the detail head (detail-head rhythm). */
-	readonly detailLede: string;
-	/** Tab labels, keyed by the EntityDetail tab key. */
-	readonly tabs: {
-		readonly detail: string;
-		readonly schedule: string;
-		readonly reliability: string;
-	};
-	readonly profile: {
-		readonly title: string;
-		readonly summary: string;
-		readonly directions: string;
-		readonly stops: string;
-	};
-	readonly liveService: {
-		readonly title: string;
-		readonly summary: string;
-	};
-	/** Live-map drilldown action. */
-	readonly viewOnMap: string;
-	readonly viewRouteOnMap: (route: string) => string;
-	/**
-	 * Live service alerts affecting THIS route (alerts whose routes[] lists this
-	 * route id). Surfaced in the detail pane; stands down when none are active.
-	 */
-	readonly alerts: AffectedAlertsCopy;
-	/** Section headings inside the panes. */
-	readonly directions: string;
-	readonly servicePeriods: string;
-	readonly headways: string;
-	readonly weakStops: string;
-	/** Plain-language intro atop the Schedule tab — says what the schedule shows + where to find reliability. */
-	readonly scheduleIntro: string;
-	readonly scheduleTable: {
-		readonly caption: string;
-		readonly period: string;
-		readonly window: string;
-		readonly headway: string;
-	};
-	/** Direction-row helpers. */
-	readonly direction: (dir: number) => string;
-	readonly stopsCount: (n: number) => string;
-	/** Service-period field captions. */
-	readonly window: string;
-	readonly headway: string;
-	readonly firstDeparture: string;
-	readonly lastDeparture: string;
-	/** Headway field captions. */
-	readonly scheduled: string;
-	readonly observed: string;
-	readonly excessWait: string;
-	/** Tier-2 headway-regularity captions (busiest-direction rows). */
-	readonly regularityCov: string;
-	readonly bunched: string;
-	/** Weak-stop caption (observation-weighted mean delay). */
-	readonly avgDelay: string;
-	/** Tier-1/2 historic metric sections. */
-	readonly cancellations: string;
-	readonly cancellationRate: string;
-	readonly skippedStops: string;
-	readonly skippedStopRate: string;
-	readonly crowding: string;
-	/** Occupancy band labels (legend + a11y) keyed by OccupancyCode. */
-	readonly occupancyBands: Record<OccupancyCode, string>;
-	readonly serviceSpan: string;
-	readonly spanMinutes: string;
-	readonly firstTripDelay: string;
-	readonly lastTripDelay: string;
-	/** a11y trend summary builder: "… over the last N days". */
-	readonly lastNDays: (n: number) => string;
-	/**
-	 * Current-buses roster (the live vehicles running THIS route right now). Stands
-	 * down entirely when no live vehicle is on the route (metro, or a feed gap).
-	 */
-	readonly roster: {
-		/** Section heading. */
-		readonly heading: string;
-		/** a11y label for the roster list. */
-		readonly listLabel: string;
-		/** Bus row title builder (vehicle id/label). */
-		readonly busLabel: (id: string) => string;
-		/** Next-stop subtitle builder; shown only when the vehicle reports one. */
-		readonly nextStop: (stop: string) => string;
-		/** Accessible label for the per-bus trip link. */
-		readonly viewTrip: (id: string) => string;
-		/** Accessible label for the per-bus map drilldown. */
-		readonly viewBusOnMap: (id: string) => string;
-		/** Compact "map" pill text. */
-		readonly mapAction: string;
-		/** Count caption ("N buses running"). */
-		readonly count: (n: number) => string;
-		/** Honest unknown when the feed omits a bus's delay (never rendered as 0). */
-		readonly noData: string;
-	};
-	/** Detail-tab live per-stop readout (derived from the live trips on this route). */
-	readonly noLiveBus: string;
-	/** Shown when a bus is heading to this stop but the feed gave no precise ETA. */
-	readonly approaching: string;
-	readonly viewStop: (stop: string) => string;
-	/** Delay-tone labels reused for the approaching bus's on-time status. */
-	readonly early: (minutes: number) => string;
-	readonly late: (minutes: number) => string;
-	readonly onTime: string;
-	readonly noDelay: string;
-	/** Short value-level no-data label for an absent metric tile. */
-	readonly noData: string;
-}
-
-export const indexCopy: Record<Locale, LinesIndexCopy> = {
+export const indexCopy = defineCopy({
 	fr: {
 		kicker: 'LIGNES · RÉSEAU',
 		heading: 'Lignes',
@@ -176,8 +18,8 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		filterPlaceholder: 'Numéro ou nom de ligne…',
 		controlsLabel: 'Filtres',
 		mapAction: 'Carte',
-		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
-		more: (n) => `+${n} de plus`,
+		viewRouteOnMap: (route: string) => `Voir la ligne ${route} sur la carte`,
+		more: (n: number) => `+${n} de plus`,
 		sortLabel: 'Trier',
 		sortAlpha: 'Alphabétique',
 		sortWorst: 'Moins fiables',
@@ -188,7 +30,7 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		rankingPending: 'Calcul du classement de fiabilité des lignes filtrées…',
 		modeFilterLabel: 'Mode',
 		modeAll: 'Tous les modes',
-		routeName: (name) => `Nom du parcours · ${name}`,
+		routeName: (name: string) => `Nom du parcours · ${name}`,
 		directionsNote:
 			'Ouvrez une ligne pour voir ensemble toutes les directions et destinations publiées.',
 		inventory: {
@@ -231,9 +73,11 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 			unavailable: 'Not available',
 		},
 	},
-};
+}) satisfies Readonly<Record<Locale, SurfaceHeadCopy>>;
 
-export const detailCopy: Record<Locale, RouteDetailCopy> = {
+export type LinesIndexCopy = (typeof indexCopy)[Locale];
+
+export const detailCopy = defineCopy({
 	fr: {
 		kicker: 'LIGNE',
 		article: {
@@ -257,7 +101,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 			summary: 'Véhicules en service et avis actifs touchant cette ligne.',
 		},
 		viewOnMap: 'Voir sur la carte',
-		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
+		viewRouteOnMap: (route: string) => `Voir la ligne ${route} sur la carte`,
 		alerts: {
 			heading: 'Avis de service',
 			listLabel: 'Avis de service touchant cette ligne',
@@ -268,7 +112,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 			severity: { critical: 'Critique', high: 'Élevé', watch: 'À surveiller' },
 			more: (n) => `+${n} de plus`,
 			showLess: 'Réduire',
-		},
+		} satisfies AffectedAlertsCopy,
 		directions: 'Directions',
 		servicePeriods: 'Périodes de service',
 		headways: 'Intervalles',
@@ -281,8 +125,8 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 			headway: 'Intervalle prévu',
 		},
 		weakStops: 'Arrêts les plus faibles',
-		direction: (dir) => `Direction ${dir}`,
-		stopsCount: (n) => (n === 1 ? '1 arrêt' : `${n} arrêts`),
+		direction: (dir: number) => `Direction ${dir}`,
+		stopsCount: (n: number) => (n === 1 ? '1 arrêt' : `${n} arrêts`),
 		window: 'Plage',
 		headway: 'Intervalle',
 		firstDeparture: 'Premier départ',
@@ -304,28 +148,28 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 			few_seats: 'Peu de places',
 			standing: 'Debout',
 			full: 'Plein',
-		},
+		} satisfies Record<OccupancyCode, string>,
 		serviceSpan: 'Plage de service',
 		spanMinutes: 'Durée (min)',
 		firstTripDelay: 'Retard 1er trajet',
 		lastTripDelay: 'Retard dernier trajet',
-		lastNDays: (n) => `sur les ${n} derniers jours`,
+		lastNDays: (n: number) => `sur les ${n} derniers jours`,
 		roster: {
 			heading: 'Bus en service',
 			listLabel: 'Bus en service sur cette ligne',
-			busLabel: (id) => `Bus ${id}`,
-			nextStop: (stop) => `Prochain arrêt ${stop}`,
-			viewTrip: (id) => `Voir le trajet du bus ${id}`,
-			viewBusOnMap: (id) => `Voir le bus ${id} sur la carte`,
+			busLabel: (id: string) => `Bus ${id}`,
+			nextStop: (stop: string) => `Prochain arrêt ${stop}`,
+			viewTrip: (id: string) => `Voir le trajet du bus ${id}`,
+			viewBusOnMap: (id: string) => `Voir le bus ${id} sur la carte`,
 			mapAction: 'Carte',
-			count: (n) => (n === 1 ? '1 bus en service' : `${n} bus en service`),
+			count: (n: number) => (n === 1 ? '1 bus en service' : `${n} bus en service`),
 			noData: 'Aucune donnée',
 		},
 		noLiveBus: 'Aucun bus en direct',
 		approaching: 'À l’approche',
-		viewStop: (stop) => `Voir l’arrêt ${stop}`,
-		early: (minutes) => `${Math.abs(minutes)} min en avance`,
-		late: (minutes) => `${minutes} min en retard`,
+		viewStop: (stop: string) => `Voir l’arrêt ${stop}`,
+		early: (minutes: number) => `${Math.abs(minutes)} min en avance`,
+		late: (minutes: number) => `${minutes} min en retard`,
 		onTime: "À l'heure",
 		noDelay: 'Aucun retard',
 		noData: 'sans données',
@@ -364,7 +208,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 			severity: { critical: 'Critical', high: 'High', watch: 'Watch' },
 			more: (n) => `+${n} more`,
 			showLess: 'Show less',
-		},
+		} satisfies AffectedAlertsCopy,
 		directions: 'Directions',
 		servicePeriods: 'Service periods',
 		headways: 'Headways',
@@ -426,4 +270,6 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		noDelay: 'No delay',
 		noData: 'no data',
 	},
-};
+});
+
+export type RouteDetailCopy = (typeof detailCopy)[Locale];

@@ -4,9 +4,9 @@
 // count/age formatters, so the shape is inferred via `as const` rather than a hand-
 // written interface.
 
-import type { Locale } from '$lib/i18n';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
 
-export const MAP_SELECTION_DETAIL_COPY = {
+export const MAP_SELECTION_DETAIL_COPY = defineCopy({
 	en: {
 		bus: 'Bus',
 		stop: 'Stop',
@@ -107,7 +107,7 @@ export const MAP_SELECTION_DETAIL_COPY = {
 		infoLink: 'Comment c’est mesuré',
 		infoTrigger: (name: string) => `À propos de ${name}`,
 	},
-} as const;
+});
 
 /** The selection-detail copy for one locale (the shape both locales share). */
 export type MapSelectionDetailCopy = (typeof MAP_SELECTION_DETAIL_COPY)[Locale];

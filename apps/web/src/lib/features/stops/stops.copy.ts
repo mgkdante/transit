@@ -5,161 +5,10 @@
 // labels (OTP / delay / "LIVE" / tab vocabulary inside the spine primitives)
 // already live in those primitives and are NOT duplicated here.
 
-import type { Locale } from '$lib/i18n';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { AffectedAlertsCopy, SurfaceHeadCopy } from '$lib/components/surface';
 
-export interface StopsIndexCopy extends SurfaceHeadCopy {
-	/** Search field placeholder. */
-	readonly searchPlaceholder: string;
-	/** Accessible label for the search field. */
-	readonly searchLabel: string;
-	/** Shown when a query matches no stops. */
-	readonly noMatches: string;
-	/** "+N more" note builder when the filtered set exceeds the cap. */
-	readonly more: (n: number) => string;
-	/** Compact action linking one stop into the live map. */
-	readonly mapAction: string;
-	readonly viewStopOnMap: (stop: string) => string;
-	/** Mono group overline for the ControlsRail collecting search + line filter + sort. */
-	readonly controlsLabel: string;
-	/** By-line filter: label / placeholder / clear + empty-listbox copy for the combobox. */
-	readonly lineLabel: string;
-	readonly linePlaceholder: string;
-	readonly lineClear: string;
-	readonly lineEmpty: string;
-	/** Heading over the stops-on-a-line result list ("Stops on line {short}"). */
-	readonly onLineHeading: (short: string) => string;
-	/** Honest note when a picked line has no published stop list. */
-	readonly noLineStops: string;
-	/** Direction group heading inside a line's stop list. */
-	readonly direction: (dir: number, headsign?: string | null) => string;
-	/** Reliability sort control (published order | worst reliability first). */
-	readonly sortLabel: string;
-	readonly sortDefault: string;
-	readonly sortWorst: string;
-	/** Polite status while every eligible stop is measured before ranking once. */
-	readonly rankingPending: string;
-	readonly inventory: {
-		readonly label: string;
-		readonly stops: string;
-		readonly bus: string;
-		readonly metro: string;
-		readonly lines: string;
-		readonly unavailable: string;
-	};
-	readonly browse: {
-		readonly heading: string;
-		readonly lede: string;
-		readonly chooseLine: (short: string, long?: string | null) => string;
-		readonly showMoreLines: (n: number) => string;
-		readonly progressLabel: string;
-		readonly progress: (shown: number, total: number) => string;
-		readonly loadMore: (n: number) => string;
-	};
-}
-
-export interface StopDetailCopy {
-	/** Station-voice kicker (EntityDetail). */
-	readonly kicker: string;
-	/** Back-link label into the stops index, keeps nav in-chrome. */
-	readonly back: string;
-	/** Article-cover labels. Every value rendered beside them comes from /v1. */
-	readonly article: {
-		readonly watermark: string;
-		readonly tagsAria: string;
-		readonly stopId: string;
-		readonly provider: string;
-		readonly updated: string;
-	};
-	/** Live-map drilldown action. */
-	readonly viewOnMap: string;
-	readonly viewStopOnMap: (stop: string) => string;
-	/** Tab labels, keyed by tab key. */
-	readonly tabs: {
-		readonly detail: string;
-		readonly schedule: string;
-		readonly reliability: string;
-	};
-	/** The one collapsible, nonessential card inside Detail. */
-	readonly detailCard: {
-		readonly title: string;
-		readonly summary: string;
-	};
-	/** "Next departures" pane. */
-	readonly next: {
-		/** Legacy terminal labels retained for saved copy compatibility. */
-		readonly terminal: { readonly title: string; readonly tag: string };
-		/** Section label over the departures list. */
-		readonly heading: string;
-		/** Shown when the live board has no upcoming departures for this stop. */
-		readonly none: string;
-		/** Delay caption, including an explicit unknown state when realtime is absent. */
-		readonly late: (min: number) => string;
-		readonly early: (min: number) => string;
-		readonly onTime: string;
-		readonly noDelay: string;
-		/** Fallback label when a departure has no route code. */
-		readonly route: string;
-		readonly table: {
-			readonly caption: string;
-			readonly route: string;
-			readonly departure: string;
-			readonly status: string;
-		};
-		/** Controls-rail label collecting the departure filter chips + count. */
-		readonly controlsLabel: string;
-		/** Departures status / route filter affordances. */
-		readonly filter: {
-			/** Accessible group label over the status chips. */
-			readonly statusLabel: string;
-			/** On-time / late / early status chip labels. */
-			readonly onTime: string;
-			readonly late: string;
-			readonly early: string;
-			/** Accessible group label over the route chips. */
-			readonly routeLabel: string;
-			/** "All routes" reset chip. */
-			readonly allRoutes: string;
-			/** Shown when every departure is filtered out. */
-			readonly noMatches: string;
-			/** Live-region count of the shown vs total departures. */
-			readonly showing: (shown: number, total: number) => string;
-		};
-	};
-	/**
-	 * Live service alerts affecting THIS stop (alerts whose stops[] lists this
-	 * stop, or whose routes[] serve it). Surfaced in the Detail card; stands down
-	 * when none are active.
-	 */
-	readonly alerts: AffectedAlertsCopy;
-	/** "Info" pane. */
-	readonly info: {
-		readonly position: string;
-		readonly code: string;
-		readonly wheelchair: string;
-		readonly wheelchairYes: string;
-		readonly wheelchairNo: string;
-		readonly routesServed: string;
-	};
-	/** "Schedule" pane. */
-	readonly schedule: {
-		readonly heading: string;
-		readonly none: string;
-		readonly table: {
-			readonly caption: string;
-			readonly route: string;
-			readonly destination: string;
-			readonly departures: string;
-		};
-		/** "+N more times" note when a route's time list is capped. */
-		readonly moreTimes: (n: number) => string;
-	};
-	// The "Reliability" pane copy now lives in stops-reliability.copy.ts (S8A re-seat):
-	// <StopReliabilitySurface> + its section components read that bundle, so StopDetail
-	// keeps only the tabs/next/schedule/info/alerts copy here.
-}
-
-export const indexCopy: Record<Locale, StopsIndexCopy> = {
+export const indexCopy = defineCopy({
 	fr: {
 		kicker: 'ARRÊTS · CATALOGUE',
 		heading: 'Arrêts',
@@ -168,17 +17,17 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		searchPlaceholder: 'Nom ou code d’arrêt…',
 		searchLabel: 'Rechercher un arrêt',
 		noMatches: 'Aucun arrêt ne correspond à cette recherche.',
-		more: (n) => `+${n} autres arrêts, affinez la recherche`,
+		more: (n: number) => `+${n} autres arrêts, affinez la recherche`,
 		mapAction: 'Carte',
-		viewStopOnMap: (stop) => `Voir l’arrêt ${stop} sur la carte`,
+		viewStopOnMap: (stop: string) => `Voir l’arrêt ${stop} sur la carte`,
 		controlsLabel: 'Filtres',
 		lineLabel: 'Filtrer par ligne',
 		linePlaceholder: 'Numéro ou nom de ligne…',
 		lineClear: 'Effacer le filtre de ligne',
 		lineEmpty: 'Aucune ligne ne correspond.',
-		onLineHeading: (short) => `Arrêts de la ligne ${short}`,
+		onLineHeading: (short: string) => `Arrêts de la ligne ${short}`,
 		noLineStops: 'Aucune liste d’arrêts publiée pour cette ligne.',
-		direction: (dir, headsign) =>
+		direction: (dir: number, headsign?: string | null) =>
 			headsign ? `Direction ${dir} · ${headsign}` : `Direction ${dir}`,
 		sortLabel: 'Trier',
 		sortDefault: 'Ordre du parcours',
@@ -195,11 +44,12 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		browse: {
 			heading: 'Parcourir les arrêts par ligne',
 			lede: 'Choisissez une ligne pour voir tous ses arrêts publiés, regroupés par direction.',
-			chooseLine: (short, long) => `Voir les arrêts de la ligne ${short}${long ? ` ${long}` : ''}`,
-			showMoreLines: (n) => `Afficher ${n} autres lignes`,
+			chooseLine: (short: string, long?: string | null) =>
+				`Voir les arrêts de la ligne ${short}${long ? ` ${long}` : ''}`,
+			showMoreLines: (n: number) => `Afficher ${n} autres lignes`,
 			progressLabel: 'Progression du catalogue des arrêts',
-			progress: (shown, total) => `${shown} arrêts sur ${total} affichés`,
-			loadMore: (n) => `Afficher ${n} autres arrêts`,
+			progress: (shown: number, total: number) => `${shown} arrêts sur ${total} affichés`,
+			loadMore: (n: number) => `Afficher ${n} autres arrêts`,
 		},
 	},
 	en: {
@@ -244,9 +94,11 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 			loadMore: (n) => `Load ${n} more stops`,
 		},
 	},
-};
+}) satisfies Readonly<Record<Locale, SurfaceHeadCopy>>;
 
-export const detailCopy: Record<Locale, StopDetailCopy> = {
+export type StopsIndexCopy = (typeof indexCopy)[Locale];
+
+export const detailCopy = defineCopy({
 	fr: {
 		kicker: 'ARRÊT',
 		back: '← Retour aux arrêts',
@@ -258,7 +110,7 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			updated: 'Mis à jour',
 		},
 		viewOnMap: 'Voir sur la carte',
-		viewStopOnMap: (stop) => `Voir l’arrêt ${stop} sur la carte`,
+		viewStopOnMap: (stop: string) => `Voir l’arrêt ${stop} sur la carte`,
 		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
 		detailCard: {
 			title: 'Informations sur l’arrêt',
@@ -268,8 +120,8 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			terminal: { title: 'passages-en-direct', tag: 'EN DIRECT' },
 			heading: 'Prochains passages',
 			none: 'Aucun passage à venir pour le moment.',
-			late: (min) => `+${min} min de retard`,
-			early: (min) => `${Math.abs(min)} min d’avance`,
+			late: (min: number) => `+${min} min de retard`,
+			early: (min: number) => `${Math.abs(min)} min d’avance`,
 			onTime: 'à l’heure',
 			noDelay: 'Temps réel indisponible',
 			route: 'Ligne',
@@ -288,7 +140,7 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 				routeLabel: 'Filtrer par ligne',
 				allRoutes: 'Toutes les lignes',
 				noMatches: 'Aucun passage ne correspond à ce filtre.',
-				showing: (shown, total) => `${shown} sur ${total} passages affichés`,
+				showing: (shown: number, total: number) => `${shown} sur ${total} passages affichés`,
 			},
 		},
 		alerts: {
@@ -301,7 +153,7 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			severity: { critical: 'Critique', high: 'Élevé', watch: 'À surveiller' },
 			more: (n) => `+${n} de plus`,
 			showLess: 'Réduire',
-		},
+		} satisfies AffectedAlertsCopy,
 		info: {
 			position: 'Position',
 			code: 'Code d’arrêt',
@@ -319,7 +171,7 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 				destination: 'Destination',
 				departures: 'Passages',
 			},
-			moreTimes: (n) => `+${n} autres passages`,
+			moreTimes: (n: number) => `+${n} autres passages`,
 		},
 	},
 	en: {
@@ -376,7 +228,7 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			severity: { critical: 'Critical', high: 'High', watch: 'Watch' },
 			more: (n) => `+${n} more`,
 			showLess: 'Show less',
-		},
+		} satisfies AffectedAlertsCopy,
 		info: {
 			position: 'Position',
 			code: 'Stop code',
@@ -397,4 +249,6 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			moreTimes: (n) => `+${n} more times`,
 		},
 	},
-};
+});
+
+export type StopDetailCopy = (typeof detailCopy)[Locale];

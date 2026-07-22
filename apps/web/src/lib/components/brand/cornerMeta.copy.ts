@@ -6,30 +6,17 @@
 // These are decorative annotations (CornerMeta is aria-hidden), but they still
 // localize — en+fr for all copy is a hard law.
 
-import type { Locale } from '$lib/i18n';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
 
-export interface CornerMetaLabels {
-	/** Data provider (STM / OC Transpo …). */
-	readonly provider: string;
-	/** DATA time of the payload feeding the head. */
-	readonly generated: string;
-	/** Dataset version stamp. */
-	readonly dataset: string;
-	/** Entity kind labels. */
-	readonly line: string;
-	readonly stop: string;
-	readonly trip: string;
-	/** Live vehicle count. */
-	readonly vehicles: string;
-	/** Source-feed count. */
-	readonly sources: string;
-}
-
-export const cornerMetaLabels: Record<Locale, CornerMetaLabels> = {
+export const cornerMetaLabels = defineCopy({
 	fr: {
+		/** Data provider (STM / OC Transpo …). */
 		provider: 'FOURNISSEUR',
+		/** DATA time of the payload feeding the head. */
 		generated: 'GÉNÉRÉ',
+		/** Dataset version stamp. */
 		dataset: 'JEU DE DONNÉES',
+		/** Entity kind labels. */
 		line: 'LIGNE',
 		stop: 'ARRÊT',
 		trip: 'VOYAGE',
@@ -46,4 +33,6 @@ export const cornerMetaLabels: Record<Locale, CornerMetaLabels> = {
 		vehicles: 'VEHICLES',
 		sources: 'SOURCES',
 	},
-};
+});
+
+export type CornerMetaLabels = (typeof cornerMetaLabels)[Locale];

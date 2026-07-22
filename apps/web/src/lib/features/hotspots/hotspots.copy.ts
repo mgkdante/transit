@@ -7,144 +7,10 @@
 // by the spine primitives (the Chart's own a11y text, GrainPicker roles) are NOT
 // duplicated here.
 
-import type { Locale } from '$lib/i18n';
-import type { HistoryNavigatorLabels, SurfaceHeadCopy } from '$lib/components/surface';
-import type { HistoryCorrection } from '$lib/v1';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
+import type { SurfaceHeadCopy } from '$lib/components/surface';
 
-export interface HotspotsCopy extends SurfaceHeadCopy {
-	readonly article: {
-		readonly watermark: string;
-		readonly back: string;
-		readonly tagsAria: string;
-		readonly tags: readonly string[];
-		readonly sections: (count: number) => string;
-	};
-	readonly asOf: string;
-	readonly history: {
-		readonly navigator: HistoryNavigatorLabels;
-		readonly coverage: (first: string, last: string) => string;
-		readonly selection: (date: string) => string;
-		readonly correction: Record<HistoryCorrection['reason'], string>;
-		readonly retainedWindow: (date: string) => string;
-		readonly retainedTopSubtitle: string;
-		readonly retainedVerdictNone: string;
-	};
-	readonly rail: {
-		readonly label: string;
-		readonly open: string;
-		readonly close: string;
-		readonly controls: string;
-		readonly toc: string;
-		readonly counterPrefix: string;
-	};
-	readonly cards: {
-		readonly top: { readonly title: string; readonly subtitle: string };
-		readonly lines: { readonly title: string; readonly subtitle: string };
-		readonly stops: { readonly title: string; readonly subtitle: string };
-	};
-	readonly caveatLabel: string;
-	readonly grain: {
-		readonly label: string;
-		readonly day: string;
-		readonly week: string;
-		readonly month: string;
-		/** The PEAK-ONLY cut (DECISIONS DB1/WEB4) — a 4th rail segment: the am+pm rush of
-		 * the trailing week, not a per-row sub-breakdown. */
-		readonly shift: string;
-		readonly shiftCompact: string;
-	};
-	/** The trailing-window caption per grain (what aggregate the ranking reads). */
-	readonly window: {
-		readonly day: string;
-		readonly week: string;
-		readonly month: string;
-		/** The shift cut is PEAK-ONLY — the am+pm peak (rush-hour) periods of the trailing week. */
-		readonly shift: string;
-	};
-	/** The worst-N ladder control. */
-	readonly worstN: {
-		/** Radiogroup label (e.g. "Show" / "Afficher"). */
-		readonly label: string;
-		/** The uncapped rung label (e.g. "All" / "Tout"). */
-		readonly all: string;
-	};
-	/** Ladder section heading (the worst spots) + its value-axis label. */
-	readonly ladder: {
-		readonly heading: string;
-		/** Value-axis title — the severe-delay rate the bar encodes. */
-		readonly severeRateLabel: string;
-		/** Wilson-interval label surfaced in the tooltip + sr-only table. */
-		readonly ci: string;
-	};
-	readonly chart: {
-		readonly scroll: (sectionTitle: string) => string;
-		readonly popover: {
-			readonly averageDelay: string;
-			readonly readings: string;
-			readonly viewLine: string;
-			readonly viewStop: string;
-		};
-	};
-	/** The un-ranked tray (sub-MIN_N cells) heading + reason. */
-	readonly tray: {
-		/** Section heading (e.g. "Below the reliable-reading floor"). */
-		readonly heading: string;
-		/** Why these cells are not ranked (the MIN_N floor). */
-		readonly reason: string;
-		/** Accessible label over the tray table. */
-		readonly listLabel: string;
-		readonly columns: {
-			readonly item: string;
-			readonly typeId: string;
-			readonly readings: string;
-		};
-		/** One tray row's subtitle (kind · id). */
-		readonly rowSubtitle: (kind: string, id: string) => string;
-	};
-	/** Per-row evidence note fragments (severe% · avg min · n). */
-	readonly note: {
-		readonly severe: string;
-		readonly avg: string;
-		readonly samples: string;
-	};
-	/** OTP-points delta display (points of on-time lost vs baseline) — evidence field. */
-	readonly deltaLost: (pts: string) => string;
-	/**
-	 * §C5.10 verdict callout above the ladder: the #1 hotspot named + its on-time loss,
-	 * so the already-computed otp_delta_pts is finally SHOWN as the headline reading.
-	 */
-	readonly verdict: {
-		/** Accessible label for the callout region. */
-		readonly label: string;
-		/** The #1-hotspot sentence (name + delta) when a delta is present. */
-		readonly topWithDelta: (name: string, deltaPts: string) => string;
-		/** The #1-hotspot sentence when no delta is served (name only — honest absence). */
-		readonly topNoDelta: (name: string) => string;
-		/** Stand-down line when no hotspot ranks (published-empty). */
-		readonly none: string;
-	};
-	/** Mode tag chips by hotspot type (route / stop). */
-	readonly type: {
-		readonly route: string;
-		readonly stop: string;
-	};
-	/** Fallback row title when the roll-up published no name (just the id). */
-	readonly unnamed: (id: string) => string;
-	/** Accessible label for a row that links into its detail page. */
-	readonly viewDetail: (title: string) => string;
-	/** Honest shown/total heading suffix builder ("· 10/42"). */
-	readonly shownOfTotal: (shown: number, total: number) => string;
-	/** Honest caveat: a trailing-window ranking, not a certified league table. */
-	readonly caveat: string;
-	/** Units. */
-	readonly units: {
-		readonly pts: string;
-		readonly pct: string;
-		readonly min: string;
-	};
-}
-
-export const copy: Record<Locale, HotspotsCopy> = {
+export const copy = defineCopy({
 	fr: {
 		kicker: 'RESPONSABILITÉ · POINTS CHAUDS',
 		heading: 'Points chauds',
@@ -155,7 +21,7 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			back: '← Retour au tableau de bord',
 			tagsAria: 'Mots-clés de la page',
 			tags: ['chauds', 'lignes', 'arrêts', 'retards graves'],
-			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
+			sections: (count: number) => `${count} ${count === 1 ? 'section' : 'sections'}`,
 		},
 		asOf: 'À JOUR AU',
 		history: {
@@ -173,8 +39,8 @@ export const copy: Record<Locale, HotspotsCopy> = {
 				previous: 'Date précédente',
 				next: 'Date suivante',
 			},
-			coverage: (first, last) => `Historique disponible : du ${first} au ${last}.`,
-			selection: (date) => `Date affichée : ${date}.`,
+			coverage: (first: string, last: string) => `Historique disponible : du ${first} au ${last}.`,
+			selection: (date: string) => `Date affichée : ${date}.`,
 			correction: {
 				malformed: 'Cette date n’était pas valide. Affichage des points chauds les plus récents.',
 				'outside-coverage':
@@ -183,7 +49,8 @@ export const copy: Record<Locale, HotspotsCopy> = {
 				unpublished:
 					'Cette journée n’a pas été publiée. Affichage des points chauds les plus récents.',
 			},
-			retainedWindow: (date) => `Observations conservées disponibles se terminant le ${date}.`,
+			retainedWindow: (date: string) =>
+				`Observations conservées disponibles se terminant le ${date}.`,
 			retainedTopSubtitle:
 				'Le pire point chaud des observations conservées sélectionnées et les preuves qui l’expliquent',
 			retainedVerdictNone:
@@ -239,7 +106,8 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			ci: 'IC à 95 %',
 		},
 		chart: {
-			scroll: (sectionTitle) => `Faire défiler horizontalement le graphique ${sectionTitle}`,
+			scroll: (sectionTitle: string) =>
+				`Faire défiler horizontalement le graphique ${sectionTitle}`,
 			popover: {
 				averageDelay: 'Retard moyen',
 				readings: 'Relevés',
@@ -256,28 +124,28 @@ export const copy: Record<Locale, HotspotsCopy> = {
 				typeId: 'Type / ID',
 				readings: 'Relevés',
 			},
-			rowSubtitle: (kind, id) => `${kind} · ${id}`,
+			rowSubtitle: (kind: string, id: string) => `${kind} · ${id}`,
 		},
 		note: {
 			severe: 'graves',
 			avg: 'moy',
 			samples: 'n',
 		},
-		deltaLost: (pts) => `${pts} pts de ponctualité perdus`,
+		deltaLost: (pts: string) => `${pts} pts de ponctualité perdus`,
 		verdict: {
 			label: 'Point chaud n°1',
-			topWithDelta: (name, deltaPts) =>
+			topWithDelta: (name: string, deltaPts: string) =>
 				`Pire point chaud : ${name}, ${deltaPts} pts de ponctualité perdus.`,
-			topNoDelta: (name) => `Pire point chaud : ${name}.`,
+			topNoDelta: (name: string) => `Pire point chaud : ${name}.`,
 			none: 'Aucun point chaud pour l’instant.',
 		},
 		type: {
 			route: 'Ligne',
 			stop: 'Arrêt',
 		},
-		unnamed: (id) => `Élément ${id}`,
-		viewDetail: (title) => `Voir le détail de ${title}`,
-		shownOfTotal: (shown, total) => `· ${shown}/${total}`,
+		unnamed: (id: string) => `Élément ${id}`,
+		viewDetail: (title: string) => `Voir le détail de ${title}`,
+		shownOfTotal: (shown: number, total: number) => `· ${shown}/${total}`,
 		caveat:
 			'Classement sur fenêtre glissante, pondéré par les observations, pas un palmarès certifié; les petits échantillons varient.',
 		units: { pts: 'pts', pct: '%', min: ' min' },
@@ -412,4 +280,6 @@ export const copy: Record<Locale, HotspotsCopy> = {
 			'Trailing-window, observation-weighted ranking, not a certified league table; small samples vary.',
 		units: { pts: 'pts', pct: '%', min: ' min' },
 	},
-};
+}) satisfies Readonly<Record<Locale, SurfaceHeadCopy>>;
+
+export type HotspotsCopy = (typeof copy)[Locale];

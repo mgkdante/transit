@@ -9,176 +9,10 @@
 // product voice (mirrors the raw-FR /v1 headers); EN is the parallel translation.
 // Provider-agnostic: no STM / Montréal references.
 
-import type { Locale } from '$lib/i18n';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
-export interface ReceiptCopy extends SurfaceHeadCopy {
-	/** Shared article-cover copy for the Daily Receipt surface. */
-	readonly article: {
-		readonly watermark: string;
-		readonly back: string;
-		readonly tagsAria: string;
-		readonly tags: readonly string[];
-		readonly generatedLabel: string;
-		readonly selectedLabel: string;
-		readonly sections: (count: number) => string;
-	};
-	/** Combined day-picker and table-of-contents rail. */
-	readonly rail: {
-		readonly label: string;
-		readonly open: string;
-		readonly close: string;
-		readonly controls: string;
-		readonly toc: string;
-		readonly counterPrefix: string;
-	};
-	/** Fixed article-card titles and subtitles. */
-	readonly cards: {
-		readonly main: { readonly title: string; readonly subtitle: string };
-		readonly time: { readonly title: string; readonly subtitle: string };
-		readonly delivered: { readonly title: string; readonly subtitle: string };
-		readonly silent: { readonly title: string; readonly subtitle: string };
-	};
-	/** Label used by caveat information cards. */
-	readonly caveatLabel: string;
-	/** Accessible group label for the date selector (the index of receipt dates). */
-	readonly dateSelectLabel: string;
-	/** ControlsRail overline naming the date-selector control zone. */
-	readonly controlsLabel: string;
-	/** Smart date-picker (single-date calendar) copy. */
-	readonly datePicker: {
-		/** Select label ("Receipt day"). */
-		readonly label: string;
-		/** Appended to a gap-day option (no receipt published for the day). */
-		readonly gapReason: string;
-		readonly scheduleOnlyFlag: string;
-		/** Appended to an empty published shell (no data, no schedule). */
-		readonly emptyReason: string;
-	};
-	/** Advertised receipt history navigation and correction copy. */
-	readonly history: {
-		readonly group: string;
-		readonly previous: string;
-		readonly next: string;
-		readonly coverage: (first: string, last: string) => string;
-		readonly selection: (date: string) => string;
-		readonly correction: {
-			readonly malformed: string;
-			readonly 'outside-coverage': string;
-			readonly gap: string;
-			readonly unpublished: string;
-		};
-	};
-	/** Time-of-day cut (by-shift) section copy. */
-	readonly timeOfDay: {
-		readonly heading: string;
-		/** RankedRow subtitle (what the bar measures). */
-		readonly severeShare: string;
-		readonly caveat: string;
-	};
-	/** Service-state cuts (delivered / cancelled / silent) section copy. */
-	readonly stateCuts: {
-		readonly heading: string;
-		/** The heroed completeness metric label. */
-		readonly completenessLabel: string;
-		/** The "silent = scheduled but never appeared" explainer (S9 family). */
-		readonly explainer: string;
-		/** Ramp-in stand-down note under the completeness reading. */
-		readonly standDown: string;
-		/** Sub-label above the delivered/cancelled/silent share bars. */
-		readonly splitLabel: string;
-		readonly delivered: string;
-		readonly cancelled: string;
-		readonly silent: string;
-	};
-	/** Not-reported lines list section copy. */
-	readonly notReported: {
-		readonly heading: string;
-		/** Per-row line-label prefix. */
-		readonly rowLabel: string;
-		/** id → localized "N scheduled" display. */
-		readonly scheduled: (n: number) => string;
-		/** id → localized link accessible name ("View line 51"). */
-		readonly viewDetail: (id: string) => string;
-		/** shown, total → "Showing 50 of 200" honest truncation note. */
-		readonly shownOfTotal: (shown: number, total: number) => string;
-		/** The 'silent = scheduled but never appeared' explainer. */
-		readonly caveat: string;
-	};
-	/** Caption above the receipt body. */
-	readonly receiptSection: string;
-	/** TerminalPanel title bar text (the receipt "window" title). */
-	readonly terminalTitle: string;
-	/** TerminalPanel tag chip (a small label beside the title). */
-	readonly terminalTag: string;
-	/** Footer label for the day the receipt covers. */
-	readonly issuedLabel: string;
-	/** The headline metric labels. */
-	readonly metrics: {
-		readonly onTime: string;
-		readonly avgDelay: string;
-		readonly severe: string;
-		readonly riderImpact: string;
-	};
-	/** Section caption above the affected-counts row. */
-	readonly countsSection: string;
-	/** The affected-count labels. */
-	readonly counts: {
-		readonly routes: string;
-		readonly stops: string;
-		readonly alerts: string;
-		readonly vehicles: string;
-	};
-	/** Section caption above the worst-of-day callouts. */
-	readonly worstSection: string;
-	/** Worst-route / worst-stop row labels + their delta phrasing. */
-	readonly worst: {
-		readonly routeLabel: string;
-		readonly stopLabel: string;
-		/** Prefix read before a route's OTP delta (e.g. "On-time vs network"). */
-		readonly routeDeltaLabel: string;
-		/** Prefix read before a stop's average delay. */
-		readonly stopDelayLabel: string;
-	};
-	/** Honest caveat under the receipt: what this measure is and is not. */
-	readonly caveat: string;
-	/** Empty / no-data strings. */
-	readonly noData: string;
-	/** Shown when the index carries no published receipt dates at all. */
-	readonly emptyIndex: string;
-	/** Defensive fallback when no receipt value is available without a repository error. */
-	readonly emptyReceipt: string;
-	/** Units appended to formatted values. */
-	readonly units: {
-		readonly pct: string;
-		readonly min: string;
-		readonly pts: string;
-	};
-	/**
-	 * §C5.11 day-verdict sentence on the headline — templated ONLY from numbers already
-	 * present on the receipt (worst line + affected share + completeness). NO fabricated
-	 * baseline: when the S13 completeness cuts stand down (ramp-in), the verdict says
-	 * exactly that. The `worst` clause is omitted when no worst line is served.
-	 */
-	readonly dayVerdict: {
-		/** Accessible name for the verdict line. */
-		readonly label: string;
-		/** Lead reading of the day's on-time %. */
-		readonly otp: (otpPct: string) => string;
-		/** Worst-line clause (name + on-time points lost). */
-		readonly worst: (name: string, deltaPts: string) => string;
-		/** Affected-lines clause (count of lines touched). */
-		readonly affected: (lines: string) => string;
-		/** Completeness clause when the service-state cut is live. */
-		readonly completeness: (pct: string) => string;
-		/** Honest stand-down clause when the completeness cut is absent (ramp-in). */
-		readonly completenessStandDown: string;
-		/** Whole-verdict stand-down when the receipt carries no readable headline. */
-		readonly none: string;
-	};
-}
-
-export const copy: Record<Locale, ReceiptCopy> = {
+export const copy = defineCopy({
 	en: {
 		kicker: 'ACCOUNTABILITY · DAILY',
 		heading: 'Accountability receipt',
@@ -324,7 +158,7 @@ export const copy: Record<Locale, ReceiptCopy> = {
 			tags: ['reçu', 'fiabilité', 'service', 'imputabilité'],
 			generatedLabel: 'PRODUIT',
 			selectedLabel: 'POUR LE',
-			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
+			sections: (count: number) => `${count} ${count === 1 ? 'section' : 'sections'}`,
 		},
 		rail: {
 			label: 'Jour et sommaire',
@@ -366,8 +200,8 @@ export const copy: Record<Locale, ReceiptCopy> = {
 			group: 'Parcourir les reçus publiés',
 			previous: 'Date précédente',
 			next: 'Date suivante',
-			coverage: (first, last) => `Reçus disponibles : ${first} au ${last}`,
-			selection: (date) => `Affichage : ${date}`,
+			coverage: (first: string, last: string) => `Reçus disponibles : ${first} au ${last}`,
+			selection: (date: string) => `Affichage : ${date}`,
 			correction: {
 				malformed: 'Cette date n’était pas valide. Affichage du reçu le plus récent.',
 				'outside-coverage':
@@ -397,9 +231,9 @@ export const copy: Record<Locale, ReceiptCopy> = {
 		notReported: {
 			heading: 'Planifiés mais jamais apparus',
 			rowLabel: 'Ligne',
-			scheduled: (n) => `${n} planifiés`,
-			viewDetail: (id) => `Voir la ligne ${id}`,
-			shownOfTotal: (shown, total) => `Affichage de ${shown} sur ${total}`,
+			scheduled: (n: number) => `${n} planifiés`,
+			viewDetail: (id: string) => `Voir la ligne ${id}`,
+			shownOfTotal: (shown: number, total: number) => `Affichage de ${shown} sur ${total}`,
 			caveat:
 				'Des lignes planifiées aujourd’hui mais jamais apparues dans le flux en direct, silencieuses, pas explicitement annulées. Cette liste porte sur les lignes, pas des véhicules identifiables.',
 		},
@@ -440,12 +274,14 @@ export const copy: Record<Locale, ReceiptCopy> = {
 		},
 		dayVerdict: {
 			label: 'Verdict du jour',
-			otp: (otpPct) => `Le réseau a été à l’heure ${otpPct} ce jour-là`,
-			worst: (name, deltaPts) => `pire ligne ${name} (${deltaPts} perdus)`,
-			affected: (lines) => `${lines} lignes touchées`,
-			completeness: (pct) => `service assuré à ${pct}`,
+			otp: (otpPct: string) => `Le réseau a été à l’heure ${otpPct} ce jour-là`,
+			worst: (name: string, deltaPts: string) => `pire ligne ${name} (${deltaPts} perdus)`,
+			affected: (lines: string) => `${lines} lignes touchées`,
+			completeness: (pct: string) => `service assuré à ${pct}`,
 			completenessStandDown: 'complétude du service pas encore disponible',
 			none: 'Aucune lecture d’ensemble pour ce jour.',
 		},
 	},
-};
+}) satisfies Readonly<Record<Locale, SurfaceHeadCopy>>;
+
+export type ReceiptCopy = (typeof copy)[Locale];

@@ -10,163 +10,10 @@
 // FR is the canonical product voice; EN mirrors it. Shape: Record<Locale, …> so
 // the screen owns no inline strings.
 
-import type { Locale } from '$lib/i18n';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
-import type { MetricClusterKey, Confidence } from './metrics.content';
 
-export interface MetricsCopy extends SurfaceHeadCopy {
-	readonly lede: string;
-	/** Per-metric section labels (mono metric overlines on the page). */
-	readonly sections: {
-		readonly definition: string;
-		readonly math: string;
-		readonly sql: string;
-		readonly notReally: string;
-		readonly caveats: string;
-		/**
-		 * Overline above the live "Pipeline note (current run)" block — the verbatim
-		 * provenance.methodology string for this metric from the latest build, set
-		 * apart from the static science above it.
-		 */
-		readonly pipelineNote: string;
-	};
-	/** The provenance preamble — the honest framing every number inherits. */
-	readonly provenance: {
-		/** Overline above the preamble block. */
-		readonly label: string;
-		/** The doctrine paragraph (proxy / no AVL / NULL-not-0). */
-		readonly body: string;
-		/**
-		 * Honest stand-down line shown in place of the live conformance badge when
-		 * the supplementary provenance document fails to load. The static
-		 * methodology below it (incl. the structural-gaps card) always renders; this
-		 * just names that the live feed-conformance verdict is momentarily absent.
-		 */
-		readonly unavailable: string;
-		/**
-		 * "How we measure" — the cross-cutting measurement conventions every metric
-		 * inherits (S10, 2026-07-02). Sits inside the provenance preamble. Three
-		 * named notes: the capture-day vs GTFS-service-day time model, the 2026-07-01
-		 * half-away rounding rebaseline, and the doctrine constants (min_n_rate /
-		 * wilson_z), the last rendered DYNAMICALLY from the published
-		 * provenance.methodology (never hardcoded), with an honest-absence fallback.
-		 */
-		readonly howWeMeasure: {
-			/** Overline above the how-we-measure block. */
-			readonly label: string;
-			/** Capture-day vs GTFS-service-day time semantics (heading + body). */
-			readonly serviceDay: { readonly heading: string; readonly body: string };
-			/** The 2026-07-01 half-away-from-zero rounding rebaseline (heading + body). */
-			readonly rounding: { readonly heading: string; readonly body: string };
-			/**
-			 * Doctrine constants (heading + a templated body). `body(minN, wilsonZ)`
-			 * receives the served string values; `absent` is the honest-absence line
-			 * shown when provenance methodology has not loaded (never hardcode 30/1.96).
-			 */
-			readonly constants: {
-				readonly heading: string;
-				readonly body: (minN: string, wilsonZ: string) => string;
-				readonly absent: string;
-			};
-		};
-	};
-	/**
-	 * The structural-gaps ("Lacunes structurelles") card — an honest, named list of
-	 * what these metrics CANNOT tell the rider. Renders on the same spine as the
-	 * per-metric methodology cards (a collapsible section, registered in the ToC).
-	 */
-	readonly lacunes: {
-		/** ToC + card title. */
-		readonly title: string;
-		/** Lede paragraph framing the whole card. */
-		readonly lede: string;
-		/** The three named gaps; each a heading + plain-language body. */
-		readonly gaps: ReadonlyArray<{ readonly heading: string; readonly body: string }>;
-	};
-	/**
-	 * The "Live vehicle positions — almost real-time, not real-time" card. A clear,
-	 * detailed, honest explainer of how the live map DRAWS moving buses: the ~20-60s
-	 * GTFS-RT reporting cadence, what "Almost real-time" (smooth forward-projection)
-	 * means as a bounded, decaying ESTIMATE between reports, how a stale bus FREEZES
-	 * with a big "!" instead of being faked into motion, what "Raw" (measured only)
-	 * shows, and why both modes exist (honest-by-design; a proper prediction engine
-	 * is planned). Renders on the same collapsible-card spine as the metric sections.
-	 */
-	readonly livePositions: {
-		/** ToC + card title. */
-		readonly title: string;
-		/** Lede paragraph framing the whole card. */
-		readonly lede: string;
-		/** The named sub-points; each a heading + plain-language body. */
-		readonly points: ReadonlyArray<{ readonly heading: string; readonly body: string }>;
-	};
-	/** Confidence-legend strings (chip + one line each). */
-	readonly confidence: {
-		/** Overline above the legend. */
-		readonly label: string;
-		/** Chip text + meaning per confidence level. */
-		readonly levels: Record<Confidence, { readonly chip: string; readonly meaning: string }>;
-	};
-	/** The magazine-cover article header (P5-R R3a.2 — the yesid detail-header port). */
-	readonly article: {
-		/** The giant ghost word behind the cover. */
-		readonly watermark: string;
-		/** The back link under the nav (the article's one up-nav). */
-		readonly back: string;
-		/** aria-label for the keyword-pill list. */
-		readonly tagsAria: string;
-		/** Keyword pills; the first pill is the title-highlight candidate. */
-		readonly tags: readonly string[];
-	};
-	/**
-	 * Right-rail stat cards (P5.4c DetailShell re-seat). Three compact cards —
-	 * Provenance / Coverage / Freshness — built from data the page already has
-	 * (the conformance verdict, the metric/cluster counts + confidence legend, and
-	 * generated_utc). On mobile they reflow into the top summary strip.
-	 */
-	readonly statRail: {
-		/** Accessible label for the whole stat rail (aside). */
-		readonly label: string;
-		/** Provenance card: title + the "verdict unavailable" stand-down. */
-		readonly provenance: { readonly title: string; readonly unavailable: string };
-		/** Coverage card: title + the (already-pluralized) unit nouns. */
-		readonly coverage: {
-			readonly title: string;
-			readonly metrics: string;
-			readonly families: string;
-		};
-		/** Freshness card: title (the "Updated N ago" stamp fills the body). */
-		readonly freshness: { readonly title: string };
-	};
-	/** Jump-nav (table of contents) heading. */
-	readonly tocLabel: string;
-	/** Mono prefix for the TOC "{prefix} N / total" counter (yesid uses "SEC"). */
-	readonly tocCounterPrefix: string;
-	/** "Back to top" anchor link text. */
-	readonly backToTop: string;
-	/** Accessible label for the SQL <pre> block (e.g. "Defining SQL"). */
-	readonly sqlAria: string;
-	/** Mobile floating-pill ToC + sheet a11y strings. */
-	readonly tocPill: {
-		/** Pill button label / sheet trigger (e.g. "Contents"). */
-		readonly open: string;
-		/** Accessible label for the sheet dialog. */
-		readonly title: string;
-		/** Accessible label for the close button. */
-		readonly close: string;
-	};
-	/** Cluster overlines, keyed by cluster (mirror reliability.copy clusters). */
-	readonly clusters: Record<MetricClusterKey, string>;
-	/** (i)-affordance a11y strings (templated with the metric name). */
-	readonly info: {
-		/** Trigger aria-label, e.g. "About {name}" → "About On-time %". */
-		readonly trigger: (name: string) => string;
-		/** Popover link text → opens the explainer at this metric's anchor. */
-		readonly link: string;
-	};
-}
-
-export const metricsCopy: Record<Locale, MetricsCopy> = {
+export const metricsCopy = defineCopy({
 	fr: {
 		kicker: 'MÉTHODE · SCIENCE DES MESURES',
 		heading: 'Comment on mesure',
@@ -196,7 +43,7 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 				},
 				constants: {
 					heading: 'Constantes de la doctrine',
-					body: (minN, wilsonZ) =>
+					body: (minN: string, wilsonZ: string) =>
 						`Seuil « assez fiable » = ${minN} relevés à retard connu (min_n_rate) : sous ce seuil, un taux garde son observation_count brut mais est signalé peu fiable, jamais supprimé. Intervalle de confiance = score de Wilson à 95 %, z = ${wilsonZ} (wilson_z). Ces deux valeurs sont lues telles quelles depuis provenance.methodology de l’exécution en cours, pas codées en dur.`,
 					absent:
 						'Les constantes de la doctrine (min_n_rate, z de Wilson) sont lues depuis provenance.methodology de l’exécution en cours; ce document n’a pas pu être chargé pour l’instant, donc leurs valeurs exactes ne sont pas affichées ici. La méthodologie ci-dessous reste exacte.',
@@ -298,7 +145,7 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			habits: '05 Habitudes horaires',
 		},
 		info: {
-			trigger: (name) => `À propos de ${name}`,
+			trigger: (name: string) => `À propos de ${name}`,
 			link: 'Comment c’est mesuré',
 		},
 	},
@@ -437,4 +284,6 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			link: 'How this is measured',
 		},
 	},
-};
+}) satisfies Readonly<Record<Locale, SurfaceHeadCopy>>;
+
+export type MetricsCopy = (typeof metricsCopy)[Locale];

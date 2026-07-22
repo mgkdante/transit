@@ -10,165 +10,11 @@
 // breakdown, headline). S15: SEVERITY_WORDS was hoisted into $lib/v1/enumLabels
 // (SEVERITY_LABELS) — the copy reads THAT one vocabulary, never a local copy.
 
-import type { Locale } from '$lib/i18n';
-import type { SeverityCode } from '$lib/v1/schemas';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { SEVERITY_LABELS } from '$lib/v1/enumLabels';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
-import type { HistoryNavigatorLabels } from '$lib/components/surface';
-import type { HistoryCorrection } from '$lib/v1/history';
 
-export interface AlertHistoryCopy extends SurfaceHeadCopy {
-	readonly article: {
-		readonly watermark: string;
-		readonly back: string;
-		readonly tagsAria: string;
-		readonly tags: readonly string[];
-		readonly matches: (count: number) => string;
-		readonly sections: (count: number) => string;
-	};
-	readonly asOf: string;
-	readonly rail: {
-		readonly label: string;
-		readonly open: string;
-		readonly close: string;
-		readonly toc: string;
-		readonly counterPrefix: string;
-	};
-	readonly cards: {
-		readonly window: { readonly title: string; readonly subtitle: string };
-		readonly breakdown: { readonly title: string; readonly subtitle: string };
-		readonly log: { readonly title: string; readonly subtitle: string };
-	};
-	/** Section label over the chronological alert log. */
-	readonly logSection: string;
-	/** Accessible label for the alert list (the chronological history). */
-	readonly logListLabel: string;
-	/** Caption naming how many past alerts are shown (capped). */
-	readonly count: (shown: number, total: number) => string;
-	/** "+N more" disclosure label when the log overflows the visible cap. */
-	readonly more: (n: number) => string;
-	/** Label to collapse the expanded log back to the capped view. */
-	readonly showLess: string;
-	/** Shown when the archive carries no past alerts (honest empty state). */
-	readonly empty: string;
-	/** Honest note when the served window was capped newest-first (truncated=true). */
-	readonly truncatedNote: (shown: number, total: number) => string;
-	/** Honest interim note while the complete selected archive range is still loading. */
-	readonly archivePreviewNote: (shown: number) => string;
-	/** Per-row meta captions. */
-	readonly meta: {
-		/** "From" caption for an alert with a start time. */
-		readonly from: string;
-		/** "Until" caption for an alert with an end time. */
-		readonly until: string;
-		/** "Duration" caption + a localized minutes value builder. */
-		readonly duration: string;
-		readonly durationValue: (min: number) => string;
-		/** "Affected" caption naming the touched routes/stops. */
-		readonly routes: string;
-		readonly stops: string;
-		/** Estimated rider-impact passages caption + value builder. */
-		readonly impact: string;
-		readonly impactValue: (passages: number) => string;
-		/** Header + count caption for the multi-window list (>1 active period). */
-		readonly windows: string;
-		readonly windowsCount: (n: number) => string;
-		/** "Details" external-link caption + a hostname-aware accessible label. */
-		readonly link: string;
-		readonly linkAria: (host: string) => string;
-	};
-	/** Visually-hidden severity words, keyed by SeverityCode (a11y). */
-	readonly severity: Record<SeverityCode, string>;
-	/** The client-side filter rail over the alert log. */
-	readonly filters: {
-		/** Group label for the whole filter control panel (also the rail heading + mobile pill label). */
-		readonly railLabel: string;
-		/** aria-label for the mobile filter pill's open control. */
-		readonly pillOpen: string;
-		/** aria-label for the mobile filter sheet's dismiss control. */
-		readonly pillClose: string;
-		/** Collapsed-pill summary naming the current match count. */
-		readonly pillSummary: (matchCount: number) => string;
-		/** Entity-type axis: filter by what an alert affects (lines / stops). */
-		readonly entity: {
-			/** Radiogroup label. */
-			readonly label: string;
-			/** "All" — clears the entity filter. */
-			readonly all: string;
-			/** Alerts that affect at least one line. */
-			readonly lines: string;
-			/** Alerts that affect at least one stop. */
-			readonly stops: string;
-		};
-		/** Severity axis: filter by the alert's banded severity. */
-		readonly severity: {
-			/** Radiogroup label. */
-			readonly label: string;
-			/** "All" — clears the severity filter. */
-			readonly all: string;
-		};
-		/** The two specific-entity typeahead pickers (Line / Stop). The GROUP label carries
-		    the type ONCE, so an option is the bare id (no per-row prefix). */
-		readonly line: {
-			readonly label: string;
-			readonly placeholder: string;
-			readonly clear: string;
-			readonly empty: string;
-		};
-		readonly stop: {
-			readonly label: string;
-			readonly placeholder: string;
-			readonly clear: string;
-			readonly empty: string;
-		};
-		/** Retained-history range controls and page-owned status copy. */
-		readonly history: {
-			readonly navigator: HistoryNavigatorLabels;
-			readonly coverage: (from: string, to: string) => string;
-			readonly selection: (from: string, to: string) => string;
-			readonly correction: Record<HistoryCorrection['reason'], string>;
-		};
-		/** Honest no-match note shown when the active filters narrow the log to zero. */
-		readonly noMatch: string;
-		/** FilterSummary count templates ("{count} alert" / "{count} alerts"),
-		    keyed by Locale; the shared widget picks the plural form per locale. */
-		readonly summary: Record<Locale, { readonly singular: string; readonly plural: string }>;
-	};
-	/** The alerts-in-window headline card (ExplainedMetricCard). */
-	readonly headline: {
-		/** The metric label ("Alerts in window"). */
-		readonly label: string;
-		/** The big value builder (the in-window alert count). */
-		readonly value: (count: number) => string;
-		/** The always-visible plain-language explanation. */
-		readonly explanation: string;
-		/** Sublabel = the median resolved duration across the window's alerts. */
-		readonly median: (min: number) => string;
-		/** (i) affordance tip + link. */
-		readonly tip: string;
-		readonly linkLabel: string;
-	};
-	/** The cause / effect / severity distribution sections (Tier-2 breakdown). */
-	readonly breakdown: {
-		/** Section label over the whole distribution block. */
-		readonly section: string;
-		/** Sub-headings for the three distributions. */
-		readonly byCause: string;
-		readonly byEffect: string;
-		readonly bySeverity: string;
-		/** Accessible list labels for each distribution. */
-		readonly byCauseLabel: string;
-		readonly byEffectLabel: string;
-		readonly bySeverityLabel: string;
-		/** Per-bucket count caption ("N alerts") + median-duration subtitle. */
-		readonly buckets: (count: number) => string;
-		readonly median: (min: number) => string;
-		/** Fallback label for an unspecified cause/effect bucket (key="unknown"). */
-		readonly unspecified: string;
-	};
-}
-
-export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
+export const alertHistoryCopy = defineCopy({
 	fr: {
 		kicker: 'AVIS · ARCHIVE',
 		heading: 'Avis',
@@ -179,8 +25,10 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 			back: '← Retour au tableau de bord',
 			tagsAria: 'Mots-clés de la page',
 			tags: ['avis', 'archive', 'durée', 'portée'],
-			matches: (count) => `${count.toLocaleString('fr-CA')} résultat${count === 1 ? '' : 's'}`,
-			sections: (count) => `${count.toLocaleString('fr-CA')} section${count === 1 ? '' : 's'}`,
+			matches: (count: number) =>
+				`${count.toLocaleString('fr-CA')} résultat${count === 1 ? '' : 's'}`,
+			sections: (count: number) =>
+				`${count.toLocaleString('fr-CA')} section${count === 1 ? '' : 's'}`,
 		},
 		asOf: 'À JOUR AU',
 		rail: {
@@ -206,34 +54,34 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		},
 		logSection: 'Avis passés',
 		logListLabel: 'Avis de service passés, du plus récent au plus ancien',
-		count: (shown, total) => `${shown} sur ${total} avis affichés`,
-		more: (n) => `+${n} de plus`,
+		count: (shown: number, total: number) => `${shown} sur ${total} avis affichés`,
+		more: (n: number) => `+${n} de plus`,
 		showLess: 'Réduire',
 		empty: 'Aucun avis de service archivé pour le moment.',
-		truncatedNote: (shown, total) =>
+		truncatedNote: (shown: number, total: number) =>
 			`Fenêtre plafonnée : ${shown} avis les plus récents sur ${total} au total ; les décomptes et la répartition reflètent seulement ces avis.`,
-		archivePreviewNote: (shown) =>
+		archivePreviewNote: (shown: number) =>
 			`Chargement de la fenêtre complète. Affichage temporaire des ${shown} avis les plus récents ; les décomptes et la répartition seront mis à jour.`,
 		meta: {
 			from: 'À partir de',
 			until: 'Jusqu’à',
 			duration: 'Durée',
-			durationValue: (min) => `${min} min`,
+			durationValue: (min: number) => `${min} min`,
 			routes: 'Lignes touchées',
 			stops: 'Arrêts touchés',
 			impact: 'Passages touchés (est.)',
-			impactValue: (passages) => `${passages.toLocaleString('fr-CA')} passages`,
+			impactValue: (passages: number) => `${passages.toLocaleString('fr-CA')} passages`,
 			windows: 'Fenêtres de service',
-			windowsCount: (n) => `${n} fenêtres de service`,
+			windowsCount: (n: number) => `${n} fenêtres de service`,
 			link: 'Détails',
-			linkAria: (host) => `Ouvrir les détails de l’avis sur ${host} (nouvel onglet)`,
+			linkAria: (host: string) => `Ouvrir les détails de l’avis sur ${host} (nouvel onglet)`,
 		},
 		severity: SEVERITY_LABELS.fr,
 		filters: {
 			railLabel: 'Filtres',
 			pillOpen: 'Ouvrir les filtres',
 			pillClose: 'Fermer les filtres',
-			pillSummary: (matchCount) => `${matchCount.toLocaleString('fr-CA')} avis`,
+			pillSummary: (matchCount: number) => `${matchCount.toLocaleString('fr-CA')} avis`,
 			entity: {
 				label: 'Touche',
 				all: 'Tout',
@@ -270,8 +118,8 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 					previous: 'Période précédente',
 					next: 'Période suivante',
 				},
-				coverage: (from, to) => `Archives : du ${from} au ${to}`,
-				selection: (from, to) => `Sélection : du ${from} au ${to}`,
+				coverage: (from: string, to: string) => `Archives : du ${from} au ${to}`,
+				selection: (from: string, to: string) => `Sélection : du ${from} au ${to}`,
 				correction: {
 					malformed: 'La plage de dates invalide a été remplacée par la période courante.',
 					'outside-coverage':
@@ -288,10 +136,10 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		},
 		headline: {
 			label: 'Avis dans la fenêtre',
-			value: (count) => count.toLocaleString('fr-CA'),
+			value: (count: number) => count.toLocaleString('fr-CA'),
 			explanation:
 				'Le nombre d’avis de service actifs dans la plage de dates choisie, avec leur durée médiane. On compte les avis distincts, jamais une estimation.',
-			median: (min) => `durée médiane ${min} min`,
+			median: (min: number) => `durée médiane ${min} min`,
 			tip: 'Le nombre d’avis distincts dont la fenêtre active recoupe la plage choisie.',
 			linkLabel: 'Comment c’est mesuré',
 		},
@@ -303,8 +151,8 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 			byCauseLabel: 'Répartition des avis par cause',
 			byEffectLabel: 'Répartition des avis par effet',
 			bySeverityLabel: 'Répartition des avis par gravité',
-			buckets: (count) => `${count.toLocaleString('fr-CA')} avis`,
-			median: (min) => `durée médiane ${min} min`,
+			buckets: (count: number) => `${count.toLocaleString('fr-CA')} avis`,
+			median: (min: number) => `durée médiane ${min} min`,
 			unspecified: 'Non précisé',
 		},
 	},
@@ -447,4 +295,6 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 			unspecified: 'Unspecified',
 		},
 	},
-};
+}) satisfies Readonly<Record<Locale, SurfaceHeadCopy>>;
+
+export type AlertHistoryCopy = (typeof alertHistoryCopy)[Locale];

@@ -12,170 +12,10 @@
 // worst-N ladders, natural-frequency evidence, and trays) while KEEPING the legacy
 // ledger fields (the fallback path reads the same recurrence / type / caveat copy).
 
-import type { Locale } from '$lib/i18n';
-import type { HistoryNavigatorLabels, SurfaceHeadCopy } from '$lib/components/surface';
-import type { HistoryCorrection } from '$lib/v1';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
+import type { SurfaceHeadCopy } from '$lib/components/surface';
 
-export interface RepeatOffendersCopy extends SurfaceHeadCopy {
-	readonly article: {
-		readonly watermark: string;
-		readonly back: string;
-		readonly tagsAria: string;
-		readonly tags: readonly string[];
-		readonly sections: (count: number) => string;
-	};
-	readonly asOf: string;
-	readonly history: {
-		readonly navigator: HistoryNavigatorLabels;
-		readonly coverage: (first: string, last: string) => string;
-		readonly selection: (date: string) => string;
-		readonly correction: Record<HistoryCorrection['reason'], string>;
-		readonly retainedWindow: (date: string) => string;
-		readonly retainedWorstSubtitle: string;
-		readonly retainedHeroNone: string;
-	};
-	readonly rail: {
-		readonly label: string;
-		readonly open: string;
-		readonly close: string;
-		readonly controls: string;
-		readonly toc: string;
-		readonly counterPrefix: string;
-	};
-	readonly cards: {
-		readonly worst: { readonly title: string; readonly subtitle: string };
-		readonly trips: { readonly title: string; readonly subtitle: string };
-		readonly vehicles: { readonly title: string; readonly subtitle: string };
-	};
-	readonly caveatLabel: string;
-	/** Rail overline (e.g. "View" / "Vue") + the grain radiogroup label. */
-	readonly viewControlsLabel: string;
-	readonly grain: {
-		readonly label: string;
-		readonly week: string;
-		readonly month: string;
-	};
-	/** The trailing-window caption per grain (what window the recurrence reads). */
-	readonly window: {
-		readonly week: string;
-		readonly month: string;
-	};
-	/** The worst-N ladder control. */
-	readonly worstN: {
-		/** Radiogroup label (e.g. "Show" / "Afficher"). */
-		readonly label: string;
-		/** The uncapped rung label (e.g. "All" / "Tout"). */
-		readonly all: string;
-	};
-	/** The headline metric tile (ExplainedMetricCard). */
-	readonly headline: {
-		/** Metric label on the tile (the severe-delay rate the ladder ranks). */
-		readonly label: string;
-		/** The always-visible plain-language explanation of what the ladder shows. */
-		readonly explanation: string;
-	};
-	/**
-	 * §C5.12 #1-offender hero: the actual worst entity is the hero now (name + streak +
-	 * Wilson-bounded rate), and the old value=null definition card demotes to a lede + (i).
-	 */
-	readonly hero: {
-		/** Accessible label for the hero region. */
-		readonly label: string;
-		/** Overline over the #1 entity name. */
-		readonly overline: string;
-		/** The streak line (recurrence natural frequency); reuses `recurrence.naturalFrequency`. */
-		readonly streakLabel: string;
-		/** The severe-rate reading with its Wilson interval (rate% + 95% CI bounds). */
-		readonly rateWithCi: (ratePct: string, lo: string, hi: string) => string;
-		/** The severe-rate reading when no Wilson bounds are served (rate only). */
-		readonly rateNoCi: (ratePct: string) => string;
-		/** Stand-down when no offender ranks (published-empty). */
-		readonly none: string;
-	};
-	/** The ladder section heading + its value-axis label. */
-	readonly ladder: {
-		readonly heading: string;
-		/** Value-axis title — the severe-delay rate the bar encodes. */
-		readonly severeRateLabel: string;
-		/** Wilson-interval label surfaced in the tooltip + sr-only table. */
-		readonly ci: string;
-	};
-	readonly chart: {
-		readonly popover: {
-			readonly recurrence: string;
-			readonly averageDelay: string;
-			readonly readings: string;
-			readonly viewLine: string;
-		};
-	};
-	readonly evidenceTable: {
-		readonly caption: string;
-		readonly columns: {
-			readonly item: string;
-			readonly typeId: string;
-			readonly severeRate: string;
-			readonly recurrence: string;
-			readonly averageDelay: string;
-			readonly readings: string;
-		};
-	};
-	/** The natural-frequency recurrence line per row ("late-prone on N of M observed days"). */
-	readonly recurrence: {
-		/** N of M observed days (the natural-frequency template). */
-		readonly naturalFrequency: (lateDays: number, observedDays: number) => string;
-		/** Fallback when the recurrence counts are not recorded. */
-		readonly unknown: string;
-	};
-	/** Per-row evidence note fragments (severe% · recurrence · n). */
-	readonly note: {
-		readonly severe: string;
-		readonly samples: string;
-	};
-	/** The un-ranked tray (sub-MIN_N entities) heading + reason. */
-	readonly tray: {
-		readonly heading: string;
-		readonly reason: string;
-		readonly listLabel: string;
-		readonly rowSubtitle: (kind: string, id: string) => string;
-	};
-	/** Mono mode-tag labels for the entity-type discriminator. */
-	readonly type: {
-		readonly trip: string;
-		readonly vehicle: string;
-		/** Legacy scalar-ledger discriminators. */
-		readonly route: string;
-		readonly stop: string;
-		/** Any other / unknown discriminator value. */
-		readonly other: string;
-	};
-	/** Fallback entity title when the roll-up published no name (just the id). */
-	readonly unnamed: (id: string) => string;
-	/** Accessible label for a row that links into its detail page. */
-	readonly viewDetail: (title: string) => string;
-	/** Honest shown/total heading suffix builder ("· 10/42"). */
-	readonly shownOfTotal: (shown: number, total: number) => string;
-	/** Honest caveat under the ladder (observed-days denominator + trailing-window proxy). */
-	readonly caveat: string;
-	/** Units appended to formatted values. */
-	readonly units: {
-		readonly min: string;
-		readonly pct: string;
-	};
-
-	/* ── Legacy ledger (fallback path — by_grain absent) ─────────────────────────── */
-	/** Section caption above the legacy ranked list. */
-	readonly listSection: string;
-	/** Accessible summary of the legacy ranked list (role="list"). */
-	readonly listSummary: string;
-	/** Per-list caption: what the headline value + magnitude bar encode. */
-	readonly rowCaption: string;
-	/** Legacy subtitle prefix for a present recurrence string. */
-	readonly recurrenceLabel: string;
-	/** Legacy subtitle fallback when a row carries no recurrence string. */
-	readonly recurrenceUnknown: string;
-}
-
-export const copy: Record<Locale, RepeatOffendersCopy> = {
+export const copy = defineCopy({
 	en: {
 		kicker: 'ACCOUNTABILITY · REPEAT OFFENDERS',
 		heading: 'Repeat offenders',
@@ -338,7 +178,7 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 			back: '← Retour au tableau de bord',
 			tagsAria: 'Mots-clés de la page',
 			tags: ['récidivistes', 'voyages', 'véhicules', 'récurrence'],
-			sections: (count) => `${count} ${count === 1 ? 'section' : 'sections'}`,
+			sections: (count: number) => `${count} ${count === 1 ? 'section' : 'sections'}`,
 		},
 		asOf: 'À JOUR AU',
 		history: {
@@ -356,8 +196,8 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 				previous: 'Date précédente',
 				next: 'Date suivante',
 			},
-			coverage: (first, last) => `Historique disponible : du ${first} au ${last}.`,
-			selection: (date) => `Date affichée : ${date}.`,
+			coverage: (first: string, last: string) => `Historique disponible : du ${first} au ${last}.`,
+			selection: (date: string) => `Date affichée : ${date}.`,
 			correction: {
 				malformed: 'Cette date n’était pas valide. Affichage des récidivistes les plus récents.',
 				'outside-coverage':
@@ -366,7 +206,8 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 				unpublished:
 					'Cette journée n’a pas été publiée. Affichage des récidivistes les plus récents.',
 			},
-			retainedWindow: (date) => `Observations conservées disponibles se terminant le ${date}.`,
+			retainedWindow: (date: string) =>
+				`Observations conservées disponibles se terminant le ${date}.`,
 			retainedWorstSubtitle:
 				'Le pire récidiviste des observations conservées sélectionnées, son taux de retards graves et sa série',
 			retainedHeroNone: 'Aucun récidiviste classé dans les observations conservées sélectionnées.',
@@ -417,9 +258,9 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 			label: 'Pire récidiviste',
 			overline: 'Récidiviste n°1',
 			streakLabel: 'Série',
-			rateWithCi: (ratePct, lo, hi) =>
+			rateWithCi: (ratePct: string, lo: string, hi: string) =>
 				`${ratePct} des relevés en retard grave (sûr à 95 % entre ${lo} et ${hi} %).`,
-			rateNoCi: (ratePct) => `${ratePct} des relevés en retard grave.`,
+			rateNoCi: (ratePct: string) => `${ratePct} des relevés en retard grave.`,
 			none: 'Aucun récidiviste classé pour l’instant.',
 		},
 		ladder: {
@@ -447,7 +288,7 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 			},
 		},
 		recurrence: {
-			naturalFrequency: (lateDays, observedDays) =>
+			naturalFrequency: (lateDays: number, observedDays: number) =>
 				`Sujet aux retards ${lateDays} ${lateDays === 1 ? 'jour' : 'jours'} sur ${observedDays} ${observedDays === 1 ? 'observé' : 'observés'}`,
 			unknown: 'récurrence non consignée',
 		},
@@ -459,7 +300,7 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 			heading: 'Sous le seuil de lecture fiable',
 			reason: 'Trop peu d’observations pour un classement (moins de 30 relevés) · non classés.',
 			listLabel: 'Récidivistes non classés, sous le seuil d’observations',
-			rowSubtitle: (kind, id) => `${kind} · ${id}`,
+			rowSubtitle: (kind: string, id: string) => `${kind} · ${id}`,
 		},
 		type: {
 			trip: 'Voyage',
@@ -468,9 +309,9 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 			stop: 'Arrêt',
 			other: 'Entité',
 		},
-		unnamed: (id) => `Élément ${id}`,
-		viewDetail: (title) => `Voir le détail de ${title}`,
-		shownOfTotal: (shown, total) => `· ${shown}/${total}`,
+		unnamed: (id: string) => `Élément ${id}`,
+		viewDetail: (title: string) => `Voir le détail de ${title}`,
+		shownOfTotal: (shown: number, total: number) => `· ${shown}/${total}`,
 		caveat:
 			'Une estimation de récurrence sur fenêtre glissante, pas un bulletin certifié. Les « jours observés » ne comptent que les jours de service réellement relevés pour cette entité, donc le dénominateur reflète notre couverture, pas l’horaire complet, et les petits échantillons varient. Ouvrez une rangée pour voir la ligne fautive au complet.',
 		units: { min: ' min', pct: '%' },
@@ -481,4 +322,6 @@ export const copy: Record<Locale, RepeatOffendersCopy> = {
 		recurrenceLabel: 'récurrence',
 		recurrenceUnknown: 'récurrence non consignée',
 	},
-};
+}) satisfies Readonly<Record<Locale, SurfaceHeadCopy>>;
+
+export type RepeatOffendersCopy = (typeof copy)[Locale];
