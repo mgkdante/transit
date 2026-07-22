@@ -16,6 +16,23 @@ SETUP_STEP_NAMES = [
     "Set up uv",
     "Install project dependencies",
 ]
+UPLOAD_ACTION = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+DOWNLOAD_ACTION = "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+ATTEMPT_SCOPED_ARTIFACT_NAMES = {
+    "prepare": "daily-warm-prepare-${{ github.run_id }}-${{ github.run_attempt }}",
+    "rollups": "daily-warm-rollups-${{ github.run_id }}-${{ github.run_attempt }}",
+    "publish": "daily-warm-publish-${{ github.run_id }}-${{ github.run_attempt }}",
+    "retention": "daily-warm-retention-${{ github.run_id }}-${{ github.run_attempt }}",
+}
+ARTIFACT_UPLOAD_WITH = {
+    job_name: {
+        "name": ATTEMPT_SCOPED_ARTIFACT_NAMES[job_name],
+        "path": f"apps/db/artifacts/daily-warm-rollups/{job_name}/",
+        "retention-days": 30,
+        "if-no-files-found": "warn",
+    }
+    for job_name in ATTEMPT_SCOPED_ARTIFACT_NAMES
+}
 
 
 def _load(path: Path) -> dict:
@@ -113,6 +130,45 @@ def test_daily_workflow_keeps_triggers_concurrency_and_bounded_job_graph() -> No
     assert "matrix.provider" not in DAILY_WORKFLOW.read_text(encoding="utf-8")
 
 
+def test_evidence_uploads_are_attempt_scoped_required_and_exact() -> None:
+    jobs = _load(DAILY_WORKFLOW)["jobs"]
+    upload_steps = [
+        (job_name, step)
+        for job_name, job in jobs.items()
+        for step in job["steps"]
+        if step.get("uses") == UPLOAD_ACTION
+    ]
+
+    assert len(upload_steps) == len(ATTEMPT_SCOPED_ARTIFACT_NAMES)
+    assert {job_name for job_name, _ in upload_steps} == set(ATTEMPT_SCOPED_ARTIFACT_NAMES)
+    for job_name, upload in upload_steps:
+        assert upload["if"] == "always()"
+        assert "continue-on-error" not in upload
+        assert upload["with"] == ARTIFACT_UPLOAD_WITH[job_name]
+
+
+def test_publish_uses_prepare_artifact_id_when_only_failed_jobs_and_dependents_rerun() -> None:
+    jobs = _load(DAILY_WORKFLOW)["jobs"]
+    prepare_upload = _step(jobs["prepare"], "Upload prepare evidence")
+    prepare_download = _step(jobs["publish"], "Download alert archive receipts")
+
+    assert prepare_upload["id"] == "upload-prepare-evidence"
+    assert jobs["prepare"]["outputs"] == {
+        "providers": "${{ steps.discover.outputs.providers }}",
+        "prepare_artifact_id": "${{ steps.upload-prepare-evidence.outputs.artifact-id }}",
+    }
+    assert "prepare" in jobs["publish"]["needs"]
+    assert prepare_download == {
+        "name": "Download alert archive receipts",
+        "uses": DOWNLOAD_ACTION,
+        "with": {
+            "artifact-ids": "${{ needs.prepare.outputs.prepare_artifact_id }}",
+            "path": "apps/db/artifacts/daily-warm-rollups/prepare",
+        },
+    }
+    assert "github.run_attempt" not in json.dumps(prepare_download["with"])
+
+
 def test_prepare_reuses_recovery_setup_migrates_and_emits_safe_provider_matrix() -> None:
     document = _load(DAILY_WORKFLOW)
     prepare = document["jobs"]["prepare"]
@@ -121,7 +177,10 @@ def test_prepare_reuses_recovery_setup_migrates_and_emits_safe_provider_matrix()
     assert prepare["steps"][:4] == recovery["steps"][:4]
     assert [step.get("name") for step in prepare["steps"][:4]] == SETUP_STEP_NAMES
     assert prepare["defaults"] == {"run": {"working-directory": "apps/db", "shell": "bash"}}
-    assert prepare["outputs"] == {"providers": "${{ steps.discover.outputs.providers }}"}
+    assert prepare["outputs"] == {
+        "providers": "${{ steps.discover.outputs.providers }}",
+        "prepare_artifact_id": "${{ steps.upload-prepare-evidence.outputs.artifact-id }}",
+    }
 
     run_bodies = "\n".join(str(step["run"]) for step in prepare["steps"] if "run" in step)
     assert run_bodies.index("transit_ops.cli init-db") < run_bodies.index(
@@ -143,8 +202,9 @@ def test_prepare_reuses_recovery_setup_migrates_and_emits_safe_provider_matrix()
     assert '>> "$GITHUB_OUTPUT"' in discover["run"]
     upload = _step(prepare, "Upload prepare evidence")
     assert upload["if"] == "always()"
-    assert upload["continue-on-error"] is True
-    assert upload["uses"] == "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+    assert "continue-on-error" not in upload
+    assert upload["uses"] == UPLOAD_ACTION
+    assert upload["with"]["name"] == ATTEMPT_SCOPED_ARTIFACT_NAMES["prepare"]
     assert upload["with"]["if-no-files-found"] == "warn"
 
 
@@ -260,9 +320,10 @@ def test_rollups_are_serial_per_provider_with_a_bounded_budget_and_receipt() -> 
     assert "${{" not in build["run"]
     upload = _step(rollups, "Upload rollup receipts")
     assert upload["if"] == "always()"
-    assert upload["uses"] == "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+    assert "continue-on-error" not in upload
+    assert upload["uses"] == UPLOAD_ACTION
     assert upload["with"]["if-no-files-found"] == "warn"
-    assert upload["with"]["name"] == "daily-warm-rollups-${{ github.run_id }}"
+    assert upload["with"]["name"] == ATTEMPT_SCOPED_ARTIFACT_NAMES["rollups"]
     assert upload["with"]["path"] == "apps/db/artifacts/daily-warm-rollups/rollups/"
     assert upload["with"]["retention-days"] == 30
     assert sum(step.get("uses") == upload["uses"] for step in rollups["steps"]) == 1
@@ -429,10 +490,11 @@ def test_publish_requires_prepare_and_rollups_success_and_proves_messages() -> N
     assert "needs.rollups.result == 'success'" in guard
     assert publish["timeout-minutes"] == 90
     download = _step(publish, "Download alert archive receipts")
-    assert download["uses"] == (
-        "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
-    )
-    assert download["with"]["name"] == "daily-warm-prepare-${{ github.run_id }}"
+    assert download["uses"] == DOWNLOAD_ACTION
+    assert download["with"] == {
+        "artifact-ids": "${{ needs.prepare.outputs.prepare_artifact_id }}",
+        "path": "apps/db/artifacts/daily-warm-rollups/prepare",
+    }
     publish_run = _step(publish, "Publish gated historic snapshot")["run"]
     assert "publish-all" in publish_run
     assert "--tier historic" in publish_run
@@ -444,8 +506,9 @@ def test_publish_requires_prepare_and_rollups_success_and_proves_messages() -> N
     assert "--report-path" in proof
     upload = _step(publish, "Upload publish evidence")
     assert upload["if"] == "always()"
-    assert upload["continue-on-error"] is True
-    assert upload["uses"] == "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+    assert "continue-on-error" not in upload
+    assert upload["uses"] == UPLOAD_ACTION
+    assert upload["with"]["name"] == ATTEMPT_SCOPED_ARTIFACT_NAMES["publish"]
     assert upload["with"]["if-no-files-found"] == "warn"
 
 
@@ -565,10 +628,10 @@ def test_retention_is_serial_after_publish_and_requires_bronze_exhaustion() -> N
     assert prune.count('if [[ "$aggregate_status" -eq 0 && "$proof_status" -ne 0 ]]; then') == 1
     upload = _step(retention, "Upload retention receipts")
     assert upload["if"] == "always()"
-    assert upload["continue-on-error"] is True
-    assert upload["uses"] == "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+    assert "continue-on-error" not in upload
+    assert upload["uses"] == UPLOAD_ACTION
     assert upload["with"]["if-no-files-found"] == "warn"
-    assert upload["with"]["name"] == "daily-warm-retention-${{ github.run_id }}"
+    assert upload["with"]["name"] == ATTEMPT_SCOPED_ARTIFACT_NAMES["retention"]
     assert upload["with"]["path"] == "apps/db/artifacts/daily-warm-rollups/retention/"
     assert upload["with"]["retention-days"] == 30
     assert sum(step.get("uses") == upload["uses"] for step in retention["steps"]) == 1
