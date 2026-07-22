@@ -1,15 +1,10 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "allowImportingTsExtensions": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "types": ["node", "vitest/globals"],
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
-  },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "svelte.config.js", "vitest.config.ts"]
+	"extends": "@yesid/config/tsconfig/library.json",
+	"compilerOptions": {
+		"module": "ES2022",
+		"isolatedModules": true,
+		"types": ["node", "vitest/globals"],
+		"lib": ["ES2022", "DOM", "DOM.Iterable"]
+	},
+	"include": ["src/**/*.ts", "src/**/*.svelte", "svelte.config.js", "vitest.config.ts"]
 }

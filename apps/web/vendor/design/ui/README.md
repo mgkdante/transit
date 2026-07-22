@@ -32,9 +32,9 @@ Because the package ships source, a Tailwind consumer must scan `@yesid/ui/src`.
 
 For a separately installed package, point the same directive at the installed source, for example `@source "../node_modules/@yesid/ui/src";`. The path is relative to the stylesheet containing the directive.
 
-## Prospective v0.7.0 component contracts
+## v0.7 public component contracts
 
-The source implements these contracts now; they become the public release contract with the prospective `v0.7.0` tag. They refine the historical extraction behavior recorded in [`PARITY-NOTES.md`](PARITY-NOTES.md) without rewriting that history.
+These contracts shipped in `v0.7.0` and remain current in `v0.7.1`. They refine the historical extraction behavior recorded in [`PARITY-NOTES.md`](PARITY-NOTES.md) without rewriting that history.
 
 - `ButtonProps` and `BadgeProps` discriminate on `href`. `null` or `undefined` selects the button/span branch; any string, including `href=""`, selects the anchor branch. Each branch exposes its real element ref, events, and attributes. Anchor-only attributes are rejected on button/span branches, and button-only attributes are rejected on the Button anchor branch except for the wrapper-owned disabled-link API.
 - Fixed-content brand components (`ChevronToggle`, `SectionLabel`, `StopLabel`, and `TerminalCursor`) do not accept `children`; their named prop types are exported from `@yesid/ui/brand`. `CollapsibleContent` still accepts consumer children, but it does not expose bits-ui's lower-level `child` render hook because the wrapper owns that hook for its animation scaffold.
@@ -43,7 +43,7 @@ The source implements these contracts now; they become the public release contra
 - Sheet exports named prop types for Root, Trigger, Close, Portal, Content, Overlay, Header, Footer, Title, and Description. `SheetContentProps.portalProps` excludes portal children because Content owns the portal body. `closeLabel` owns the close button's accessible copy and defaults to `"Close"`; callers provide localized copy when needed.
 - `ToggleGroupProps` preserves bits-ui's `type="single"`/string and `type="multiple"`/string-array discrimination while keeping `value` bindable and forwarding the correctly typed callback. The implementation uses branch-specific bindings rather than a `never` cast. `ToggleGroupItemProps.value` is a required input, not a bindable output; `ref` remains bindable and snippet children remain supported.
 
-## Prospective v0.7.0: internal cn configuration
+## v0.7 public cn configuration
 
 Primitives merge their package classes with the caller's `class` prop. The package uses one module-level merger and exposes a boot-time configuration hook:
 
@@ -68,8 +68,8 @@ const result: ConfigureUiResult = configureUi({
 <Badge class="text-metric-warning">Needs attention</Badge>
 ```
 
-`configureUi` is single-assignment per loaded ESM module graph. Its prospective
-`v0.7.0` return type is observable public API:
+`configureUi` is single-assignment per loaded ESM module graph. Its v0.7 return
+type is observable public API:
 
 ```ts
 export type ConfigureUiResult = 'initialized' | 'unchanged';
@@ -105,7 +105,7 @@ request, tenant, user, locale, or other runtime-scoped data.
 
 Package-owned `tailwind-variants` definitions use the base `twMergeConfig`, which keeps the primitive's own brand vocabulary deterministic. A primitive then passes the generated variant classes and the caller's `class` value to the dynamically configured `cn`; this second merge is where consumer vocabulary is applied.
 
-A provider/context API is deferred. The prospective `v0.7.0` contract has no
+A provider/context API is deferred. The v0.7 contract has no
 runtime-scoped configuration and no provider requirement; primitives remain
 import-only mechanical ports. A `cn` prop on every component remains rejected:
 it would pollute every public API and call site with plumbing unrelated to the

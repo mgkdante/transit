@@ -59,7 +59,7 @@ git clone --depth 1 --branch "$design_tag" \
   https://github.com/mgkdante/yesid.dev-design "$bootstrap_root/yesid.dev-design"
 bun "$bootstrap_root/yesid.dev-design/tools/adopt.ts" \
   --tag "$design_tag" \
-  --packages tokens,motion,gates,ui \
+  --packages tokens,motion,gates,seo-kit,ui \
   --dest vendor/design
 bun vendor/design/tools/adopt.ts --check --dest vendor/design
 ```

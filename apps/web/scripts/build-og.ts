@@ -18,8 +18,8 @@
 // src/lib/styles/tokens.css; this is a brand/marketing graphic, so brand orange
 // (--primary) is used as the accent here — it is not a UI data mark.
 
-import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
+import { renderSatoriPng } from '@yesid/seo-kit/satori';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -283,18 +283,22 @@ function loadFonts(): OgFont[] {
 
 // ── Render one card to PNG bytes ─────────────────────────────────────────────
 async function renderPng(copy: CardCopy, fonts: OgFont[]): Promise<Buffer> {
-	const svg = await satori(buildTree(copy) as Parameters<typeof satori>[0], {
-		width: WIDTH,
-		height: HEIGHT,
-		fonts: fonts.map((f) => ({
-			name: f.name,
-			data: f.data,
-			weight: f.weight,
-			style: f.style,
-		})),
-	});
-	const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: WIDTH } });
-	return Buffer.from(resvg.render().asPng());
+	return Buffer.from(
+		await renderSatoriPng(
+			buildTree(copy),
+			{
+				width: WIDTH,
+				height: HEIGHT,
+				fonts: fonts.map((f) => ({
+					name: f.name,
+					data: f.data,
+					weight: f.weight,
+					style: f.style,
+				})),
+			},
+			(svg) => new Resvg(svg, { fitTo: { mode: 'width', value: WIDTH } }).render().asPng(),
+		),
+	);
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────

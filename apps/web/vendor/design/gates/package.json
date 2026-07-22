@@ -1,6 +1,6 @@
 {
 	"name": "@yesid/gates",
-	"version": "0.7.1",
+	"version": "0.8.0",
 	"private": true,
 	"type": "module",
 	"description": "Pure, parameterized brand-quality gate engines. Product policy stays consumer-owned; this package is test-runner-agnostic and depends only on Node filesystem APIs.",

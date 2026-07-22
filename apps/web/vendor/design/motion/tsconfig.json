@@ -1,17 +1,12 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "allowImportingTsExtensions": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "types": ["node"],
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "paths": {
-      "$lib/motion/*": ["./src/*"]
-    }
-  },
-  "include": ["src/**/*.ts", "vitest.config.ts"]
+	"extends": "@yesid/config/tsconfig/library.json",
+	"compilerOptions": {
+		"module": "ES2022",
+		"types": ["node"],
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"paths": {
+			"$lib/motion/*": ["./src/*"]
+		}
+	},
+	"include": ["src/**/*.ts", "vitest.config.ts"]
 }

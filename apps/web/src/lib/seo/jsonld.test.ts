@@ -5,14 +5,20 @@ import {
 	organizationJsonLd,
 	datasetJsonLd,
 	DATASET_LICENSE_URL,
+	type JsonLdNode,
 } from './jsonld';
 
 const ORIGIN = 'https://transit.yesid.dev';
 const NAME = 'Transit · STM Analytics';
 
+function requiredContext(node: JsonLdNode): 'https://schema.org' {
+	return node['@context'];
+}
+
 describe('websiteJsonLd', () => {
 	it('is a schema.org WebSite node carrying name + url + inLanguage', () => {
 		const node = websiteJsonLd({ siteOrigin: ORIGIN, siteName: NAME });
+		expect(requiredContext(node)).toBe('https://schema.org');
 		expect(node['@context']).toBe('https://schema.org');
 		expect(node['@type']).toBe('WebSite');
 		expect(node.name).toBe(NAME);
