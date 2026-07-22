@@ -21,6 +21,7 @@ from transit_ops.snapshots.storage import (
     LocalSnapshotStorage,
     SnapshotStorage,
     StoredObjectVersion,
+    StoredObjectVersionMismatchError,
     state_fingerprint,
 )
 
@@ -239,6 +240,41 @@ class _CloseTrackingBody(io.BytesIO):
     def close(self) -> None:
         self.was_closed = True
         super().close()
+
+
+class _ConditionalReadClient(FakeS3Client):
+    def __init__(self, *, body: bytes = b'{"ok":true}') -> None:
+        super().__init__()
+        self.body = body
+        self.etag = '"inventory-etag"'
+        self.modified = datetime(2026, 7, 3, tzinfo=UTC)
+        self.content_length = len(body)
+        self.error_code: str | None = None
+        self.error_status: int | None = None
+        self.last_body: _CloseTrackingBody | None = None
+        self.get_requests: list[dict] = []
+
+    def get_object(self, **kw):
+        self.get_requests.append(kw)
+        if self.error_code is not None:
+            status = self.error_status
+            if status is None:
+                status = 412 if self.error_code in {"412", "PreconditionFailed"} else 404
+            raise ClientError(
+                {
+                    "Error": {"Code": self.error_code, "Message": "conditional read failed"},
+                    "ResponseMetadata": {"HTTPStatusCode": status},
+                },
+                "GetObject",
+            )
+        body = _CloseTrackingBody(self.body)
+        self.last_body = body
+        return {
+            "Body": body,
+            "ETag": self.etag,
+            "LastModified": self.modified,
+            "ContentLength": self.content_length,
+        }
 
 
 class _LegacyBodyClient(FakeS3Client):
@@ -1360,6 +1396,163 @@ def test_snapshot_storage_captures_head_metadata_and_missing_object():
     assert storage.capture_object_version("historic/missing.json") is None
 
 
+def test_snapshot_storage_reads_the_inventoried_version_conditionally_and_closes_body():
+    client = _ConditionalReadClient()
+    storage = SnapshotStorage(client, bucket="snapshots", base_prefix="v1/stm")
+    version = StoredObjectVersion(
+        rel_key="historic/a.json",
+        etag=client.etag,
+        last_modified_utc=client.modified,
+        size=len(client.body),
+    )
+
+    assert storage.read_bytes_at_version("historic/a.json", version) == client.body
+
+    assert client.get_requests == [
+        {
+            "Bucket": "snapshots",
+            "Key": "v1/stm/historic/a.json",
+            "IfMatch": client.etag,
+        }
+    ]
+    assert client.last_body is not None
+    assert client.last_body.was_closed
+
+
+@pytest.mark.parametrize("error_code", ["PreconditionFailed", "NoSuchKey"])
+def test_snapshot_storage_conditional_read_fails_closed_on_stale_or_missing_object(
+    error_code: str,
+):
+    client = _ConditionalReadClient()
+    client.error_code = error_code
+    storage = SnapshotStorage(client, bucket="snapshots", base_prefix="v1/stm")
+    version = StoredObjectVersion(
+        rel_key="historic/a.json",
+        etag=client.etag,
+        last_modified_utc=client.modified,
+        size=len(client.body),
+    )
+
+    with pytest.raises(StoredObjectVersionMismatchError, match="historic/a.json"):
+        storage.read_bytes_at_version("historic/a.json", version)
+
+
+@pytest.mark.parametrize("status", [404, 412])
+def test_snapshot_storage_conditional_read_uses_http_status_fallback(status: int):
+    client = _ConditionalReadClient()
+    client.error_code = "Unknown"
+    client.error_status = status
+    storage = SnapshotStorage(client, bucket="snapshots", base_prefix="v1/stm")
+    version = StoredObjectVersion(
+        rel_key="historic/a.json",
+        etag=client.etag,
+        last_modified_utc=client.modified,
+        size=len(client.body),
+    )
+
+    with pytest.raises(StoredObjectVersionMismatchError, match="historic/a.json"):
+        storage.read_bytes_at_version("historic/a.json", version)
+
+
+def test_snapshot_storage_conditional_read_propagates_non_version_storage_errors():
+    client = _ConditionalReadClient()
+    client.error_code = "AccessDenied"
+    client.error_status = 403
+    storage = SnapshotStorage(client, bucket="snapshots", base_prefix="v1/stm")
+    version = StoredObjectVersion(
+        rel_key="historic/a.json",
+        etag=client.etag,
+        last_modified_utc=client.modified,
+        size=len(client.body),
+    )
+
+    with pytest.raises(ClientError, match="AccessDenied"):
+        storage.read_bytes_at_version("historic/a.json", version)
+
+
+@pytest.mark.parametrize("drift", ["etag", "modified", "size", "truncated"])
+def test_snapshot_storage_conditional_read_rejects_response_or_body_drift(drift: str):
+    client = _ConditionalReadClient()
+    version = StoredObjectVersion(
+        rel_key="historic/a.json",
+        etag=client.etag,
+        last_modified_utc=client.modified,
+        size=len(client.body),
+    )
+    if drift == "etag":
+        client.etag = '"changed"'
+    elif drift == "modified":
+        client.modified = datetime(2026, 7, 4, tzinfo=UTC)
+    elif drift == "size":
+        client.content_length += 1
+    else:
+        client.body = client.body[:-1]
+    storage = SnapshotStorage(client, bucket="snapshots", base_prefix="v1/stm")
+
+    with pytest.raises(StoredObjectVersionMismatchError, match="historic/a.json"):
+        storage.read_bytes_at_version("historic/a.json", version)
+
+    assert client.last_body is not None
+    assert client.last_body.was_closed
+
+
+def test_snapshot_storage_conditional_read_rejects_a_version_for_another_key():
+    client = _ConditionalReadClient()
+    storage = SnapshotStorage(client, bucket="snapshots", base_prefix="v1/stm")
+    version = StoredObjectVersion(
+        rel_key="historic/other.json",
+        etag=client.etag,
+        last_modified_utc=client.modified,
+        size=len(client.body),
+    )
+
+    with pytest.raises(ValueError, match="different key"):
+        storage.read_bytes_at_version("historic/a.json", version)
+    assert client.get_requests == []
+
+
+def test_snapshot_storage_conditional_reads_use_and_reuse_thread_local_clients():
+    seeded_client = FakeS3Client()
+    created: list[_ConditionalReadClient] = []
+    factory_lock = threading.Lock()
+    task_barrier = threading.Barrier(4)
+
+    def factory() -> _ConditionalReadClient:
+        client = _ConditionalReadClient()
+        with factory_lock:
+            created.append(client)
+        return client
+
+    storage = SnapshotStorage(
+        seeded_client,
+        bucket="snapshots",
+        base_prefix="v1/stm",
+        client_factory=factory,
+    )
+
+    def read_twice(index: int) -> tuple[bytes, bytes]:
+        path = f"historic/{index}.json"
+        version = StoredObjectVersion(
+            rel_key=path,
+            etag='"inventory-etag"',
+            last_modified_utc=datetime(2026, 7, 3, tzinfo=UTC),
+            size=len(b'{"ok":true}'),
+        )
+        task_barrier.wait(timeout=2)
+        return (
+            storage.read_bytes_at_version(path, version),
+            storage.read_bytes_at_version(path, version),
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(read_twice, range(4)))
+
+    assert results == [(b'{"ok":true}', b'{"ok":true}')] * 4
+    assert seeded_client.get_calls == []
+    assert len(created) == 4
+    assert sorted(len(client.get_requests) for client in created) == [2, 2, 2, 2]
+
+
 def test_local_snapshot_storage_has_list_head_and_raw_read_parity(tmp_path):
     storage = LocalSnapshotStorage(str(tmp_path), "v1/stm")
     body = b'{"hello":"world"}'
@@ -1376,3 +1569,8 @@ def test_local_snapshot_storage_has_list_head_and_raw_read_parity(tmp_path):
     assert captured.last_modified_utc.tzinfo == UTC
     assert storage.read_bytes("historic/generations/a.json") == body
     assert storage.read_bytes("historic/missing.json") is None
+    assert storage.read_bytes_at_version("historic/generations/a.json", captured) == body
+
+    storage.put_bytes("historic/generations/a.json", b"changed", tier="historic_immutable")
+    with pytest.raises(StoredObjectVersionMismatchError):
+        storage.read_bytes_at_version("historic/generations/a.json", captured)

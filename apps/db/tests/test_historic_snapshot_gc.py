@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
+import time
+from collections import Counter
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
@@ -52,7 +55,7 @@ from transit_ops.snapshots.historic_gc import (
 )
 from transit_ops.snapshots.paths import safe_public_path
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
-from transit_ops.snapshots.storage import StoredObjectVersion
+from transit_ops.snapshots.storage import StoredObjectVersion, StoredObjectVersionMismatchError
 
 STAMP = "2026-07-13T06:00:00Z"
 NOW = datetime(2026, 7, 14, 12, tzinfo=UTC)
@@ -65,6 +68,15 @@ class MemorySnapshotStorage:
         self.objects: dict[str, bytes] = {}
         self.versions: dict[str, StoredObjectVersion] = {}
         self.iter_calls = 0
+        self.read_calls: list[str] = []
+        self.conditional_read_calls: list[str] = []
+        self.conditional_read_delay_seconds = 0.0
+        self.conditional_read_active = 0
+        self.conditional_read_peak = 0
+        self.version_delay_seconds = 0.0
+        self.version_active = 0
+        self.version_peak = 0
+        self._request_lock = threading.Lock()
 
     def put(self, rel_key: str, payload: object, *, modified: datetime = OLD) -> str:
         body = payload if isinstance(payload, bytes) else snapshot_json_bytes(payload)  # type: ignore[arg-type]
@@ -78,10 +90,44 @@ class MemorySnapshotStorage:
         return rel_key
 
     def read_bytes(self, rel_key: str) -> bytes | None:
+        self.read_calls.append(rel_key)
         return self.objects.get(rel_key)
 
+    def read_bytes_at_version(
+        self,
+        rel_key: str,
+        expected_version: StoredObjectVersion,
+    ) -> bytes:
+        with self._request_lock:
+            self.conditional_read_calls.append(rel_key)
+            self.conditional_read_active += 1
+            self.conditional_read_peak = max(
+                self.conditional_read_peak,
+                self.conditional_read_active,
+            )
+        try:
+            if self.conditional_read_delay_seconds:
+                time.sleep(self.conditional_read_delay_seconds)
+            current = self.versions.get(rel_key)
+            body = self.objects.get(rel_key)
+            if current != expected_version or body is None or len(body) != expected_version.size:
+                raise StoredObjectVersionMismatchError(rel_key)
+            return body
+        finally:
+            with self._request_lock:
+                self.conditional_read_active -= 1
+
     def capture_object_version(self, rel_key: str) -> StoredObjectVersion | None:
-        return self.versions.get(rel_key)
+        with self._request_lock:
+            self.version_active += 1
+            self.version_peak = max(self.version_peak, self.version_active)
+        try:
+            if self.version_delay_seconds:
+                time.sleep(self.version_delay_seconds)
+            return self.versions.get(rel_key)
+        finally:
+            with self._request_lock:
+                self.version_active -= 1
 
     def iter_object_versions(self, rel_prefix: str):
         self.iter_calls += 1
@@ -488,16 +534,78 @@ def test_gc_walks_all_seven_families_compatibility_roots_and_legacy_roots() -> N
     assert report.mode == "dry-run"
 
 
+def test_gc_accepts_a_registered_historic_only_provider_without_a_manifest() -> None:
+    storage, paths = _build_graph()
+    storage.objects.pop("manifest.json")
+    storage.versions.pop("manifest.json")
+
+    report = plan_historic_generation_gc(
+        storage,
+        now=NOW,
+        mode="dry-run",
+        provider_id="octranspo",
+    )
+
+    assert report.provider_id == "octranspo"
+    assert report.unreachable_keys == (paths["orphan"],)
+
+
+def test_gc_inventories_once_fetches_each_body_once_and_uses_bounded_parallelism() -> None:
+    storage, paths = _build_graph()
+    storage.conditional_read_delay_seconds = 0.002
+    storage.version_delay_seconds = 0.002
+
+    plan_historic_generation_gc(storage, now=NOW, mode="dry-run", provider_id="stm")
+
+    counts = Counter(storage.conditional_read_calls)
+    assert storage.iter_calls == 1
+    assert storage.read_calls == []
+    assert counts
+    assert set(counts.values()) == {1}
+    assert counts[paths["alert_page"]] == 1
+    assert 1 < storage.conditional_read_peak <= 16
+    assert 1 < storage.version_peak <= 16
+
+
+def test_gc_fetches_each_body_once_when_a_legacy_root_aliases_the_canonical_graph() -> None:
+    storage, paths = _build_graph()
+    root = HistoricAvailabilityIndex.model_validate_json(
+        storage.objects["historic/history/index.json"]
+    )
+    network_path = next(edge.index_path for edge in root.families if edge.family == "network")
+    storage.put("historic/history/network/index.json", storage.objects[network_path])
+
+    plan_historic_generation_gc(storage, now=NOW, mode="dry-run", provider_id="stm")
+
+    counts = Counter(storage.conditional_read_calls)
+    assert counts["historic/history/network/index.json"] == 1
+    assert counts[network_path] == 1
+    assert counts[paths["network_partition"]] == 1
+    assert set(counts.values()) == {1}
+
+
+def test_gc_blocks_a_conditional_read_version_conflict() -> None:
+    storage, _paths = _build_graph()
+    original_read = storage.read_bytes_at_version
+
+    def conflict(rel_key: str, expected_version: StoredObjectVersion) -> bytes:
+        if rel_key == "historic/history/index.json":
+            raise StoredObjectVersionMismatchError(rel_key)
+        return original_read(rel_key, expected_version)
+
+    storage.read_bytes_at_version = conflict  # type: ignore[method-assign]
+
+    with pytest.raises(HistoricGcBlockedError, match="object_changed"):
+        plan_historic_generation_gc(storage, now=NOW, mode="mark", provider_id="stm")
+
+
 @pytest.mark.parametrize(
     "mutation",
-    ["missing_manifest", "missing_history_root", "missing_alerts", "malformed_root", "bad_ref"],
+    ["missing_history_root", "missing_alerts", "malformed_root", "bad_ref"],
 )
 def test_gc_fails_closed_before_marking_on_incomplete_or_invalid_graph(mutation: str) -> None:
     storage, paths = _build_graph()
-    if mutation == "missing_manifest":
-        storage.objects.pop("manifest.json")
-        storage.versions.pop("manifest.json")
-    elif mutation == "missing_history_root":
+    if mutation == "missing_history_root":
         storage.objects.pop("historic/history/index.json")
         storage.versions.pop("historic/history/index.json")
     elif mutation == "missing_alerts":
@@ -637,6 +745,44 @@ def test_gc_tolerates_live_only_manifest_churn_during_inventory() -> None:
     assert report.provider_id == "stm"
 
 
+def test_gc_blocks_historic_manifest_churn_after_reading_live_only_replacement() -> None:
+    storage, _paths = _build_graph()
+    original_iter = storage.iter_object_versions
+    original_read = storage.read_bytes_at_version
+    manifest_reads = 0
+
+    def churn_live_manifest(rel_prefix: str):
+        manifest = Manifest.model_validate_json(storage.objects["manifest.json"])
+        manifest.files.live.generated_utc = "2026-07-14T12:00:30Z"
+        storage.put("manifest.json", manifest)
+        yield from original_iter(rel_prefix)
+
+    def churn_historic_manifest_after_read(
+        rel_key: str,
+        expected_version: StoredObjectVersion,
+    ) -> bytes:
+        nonlocal manifest_reads
+        raw = original_read(rel_key, expected_version)
+        if rel_key == "manifest.json":
+            manifest_reads += 1
+            if manifest_reads == 2:
+                manifest = Manifest.model_validate_json(raw)
+                manifest.files.historic.network_trend = "historic/alternate-network-trend.json"
+                storage.put("manifest.json", manifest)
+        return raw
+
+    storage.iter_object_versions = churn_live_manifest  # type: ignore[method-assign]
+    storage.read_bytes_at_version = churn_historic_manifest_after_read  # type: ignore[method-assign]
+
+    with pytest.raises(HistoricGcBlockedError, match="manifest_changed_after_inventory"):
+        plan_historic_generation_gc(
+            storage,
+            now=NOW,
+            mode="mark",
+            provider_id="stm",
+        )
+
+
 def test_gc_blocks_manifest_provider_change_after_inventory() -> None:
     storage, _paths = _build_graph()
     original_iter = storage.iter_object_versions
@@ -677,6 +823,72 @@ def test_gc_blocks_historic_manifest_pointer_change_after_inventory() -> None:
             mode="mark",
             provider_id="stm",
         )
+
+
+def test_gc_blocks_a_manifest_that_appears_during_inventory() -> None:
+    storage, _paths = _build_graph()
+    manifest = Manifest.model_validate_json(storage.objects.pop("manifest.json"))
+    storage.versions.pop("manifest.json")
+    original_iter = storage.iter_object_versions
+
+    def add_manifest(rel_prefix: str):
+        storage.put("manifest.json", manifest)
+        yield from original_iter(rel_prefix)
+
+    storage.iter_object_versions = add_manifest  # type: ignore[method-assign]
+
+    with pytest.raises(HistoricGcBlockedError, match="manifest_changed_after_inventory"):
+        plan_historic_generation_gc(
+            storage,
+            now=NOW,
+            mode="mark",
+            provider_id="octranspo",
+        )
+
+
+def test_gc_blocks_a_root_version_change_at_the_final_race_gate() -> None:
+    storage, _paths = _build_graph()
+    original_capture = storage.capture_object_version
+    changed = False
+
+    def change_root(rel_key: str) -> StoredObjectVersion | None:
+        nonlocal changed
+        if rel_key == "historic/history/index.json" and not changed:
+            changed = True
+            storage.versions[rel_key] = replace(storage.versions[rel_key], etag="changed")
+        return original_capture(rel_key)
+
+    storage.capture_object_version = change_root  # type: ignore[method-assign]
+
+    with pytest.raises(
+        HistoricGcBlockedError,
+        match="object_changed_after_inventory:historic/history/index.json",
+    ):
+        plan_historic_generation_gc(storage, now=NOW, mode="mark", provider_id="stm")
+
+
+def test_gc_reports_the_first_sorted_candidate_failure_despite_completion_order() -> None:
+    storage, _paths = _build_graph()
+    malformed_paths: list[str] = []
+    for raw in (b"not-json-a", b"not-json-b"):
+        digest = hashlib.sha256(raw).hexdigest()
+        path = f"historic/history/network/generations/{digest}/2025-01.json"
+        storage.put(path, raw)
+        malformed_paths.append(path)
+    first = min(malformed_paths)
+    original_read = storage.read_bytes_at_version
+
+    def delay_first(rel_key: str, version: StoredObjectVersion) -> bytes:
+        if rel_key == first:
+            time.sleep(0.02)
+        return original_read(rel_key, version)
+
+    storage.read_bytes_at_version = delay_first  # type: ignore[method-assign]
+
+    with pytest.raises(HistoricGcBlockedError, match="malformed_payload") as error:
+        plan_historic_generation_gc(storage, now=NOW, mode="mark", provider_id="stm")
+
+    assert first in str(error.value)
 
 
 def test_gc_blocks_optional_legacy_root_that_appears_during_inventory() -> None:
