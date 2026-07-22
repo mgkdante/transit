@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
@@ -27,6 +27,10 @@ from transit_ops.snapshots.contract import (
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
 
 _CANONICAL_ENTITY_ID = re.compile(r"(?:[0-9a-f]{2})+")
+
+HistoryRow = Mapping[str, Any]
+HistoryMetricRows = tuple[list[HistoryRow], ...]
+HistoryBatchLoader = Callable[[list[str]], HistoryMetricRows]
 
 
 def history_collection_generation_id(canonical: dict) -> str:  # type: ignore[type-arg]
@@ -351,6 +355,171 @@ def history_row_timestamp(row: Mapping[str, Any]) -> str:
     """Read and normalize the mandatory timestamp carried by a source aggregate."""
 
     return history_utc_timestamp(row.get("source_generated_utc"))
+
+
+def history_optional_sum(values: Iterable[int | None]) -> int | None:
+    present = [value for value in values if value is not None]
+    return sum(present) if present else None
+
+
+def history_row_float(row: HistoryRow, field: str) -> float | None:
+    value = row.get(field)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"history row {field} must be numeric")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"history row {field} must be numeric") from exc
+
+
+def group_history_entity_date_rows(
+    rows: Iterable[HistoryRow], *, entity_id_of: Callable[[HistoryRow], str]
+) -> dict[tuple[str, str], list[HistoryRow]]:
+    grouped: dict[tuple[str, str], list[HistoryRow]] = defaultdict(list)
+    for row in rows:
+        grouped[(entity_id_of(row), history_date(row.get("local_date")))].append(row)
+    return dict(grouped)
+
+
+def put_history_entity_metric[Metric](
+    target: dict[str, dict[str, Metric]],
+    entity_id: str,
+    local_date: str,
+    value: Metric,
+) -> None:
+    target.setdefault(entity_id, {})[local_date] = value
+
+
+def put_history_entity_timestamps(
+    target: dict[str, dict[str, list[str]]],
+    entity_id: str,
+    local_date: str,
+    rows: Iterable[HistoryRow],
+) -> None:
+    target.setdefault(entity_id, {})[local_date] = [history_row_timestamp(row) for row in rows]
+
+
+def clean_history_entity_ids(
+    values: Iterable[object], *, excluded: Iterable[str] = ()
+) -> tuple[str, ...]:
+    excluded_ids = set(excluded)
+    valid_ids = {
+        value for value in values if isinstance(value, str) and value and value not in excluded_ids
+    }
+    return tuple(sorted(valid_ids))
+
+
+@dataclass(frozen=True)
+class HistoryEntityMetricPlan:
+    entity_id: str
+    metrics: tuple[dict[str, Any], ...]
+    timestamps: tuple[dict[str, list[str]], ...]
+    available_dates: tuple[str, ...]
+
+    def iter_partition_items[Day, Partition: BaseModel](
+        self,
+        *,
+        family: str,
+        metric_names: Sequence[str],
+        day_model: Callable[..., Day],
+        partition_model: Callable[..., Partition],
+    ) -> Iterator[tuple[HistoricPartitionRef, Partition]]:
+        if len(metric_names) != len(self.metrics):
+            raise ValueError("history metric names and sources must have equal lengths")
+        metric_sources = tuple(zip(metric_names, self.metrics, strict=True))
+        path_prefix = f"historic/history/{family}/{encode_history_entity_id(self.entity_id)}"
+        for month, dates in iter_history_month_groups(self.available_dates):
+            yield history_month_partition_ref(
+                lambda local_date: day_model(
+                    date=local_date,
+                    **{name: source.get(local_date) for name, source in metric_sources},
+                ),
+                lambda generated_utc, partition_month, days: partition_model(
+                    generated_utc=generated_utc,
+                    methodology_version="history-1",
+                    entity_id=self.entity_id,
+                    month=partition_month,
+                    days=days,
+                ),
+                lambda digest, partition_month: (
+                    f"{path_prefix}/generations/{digest}/{partition_month}.json"
+                ),
+                month=month,
+                dates=dates,
+                source_timestamps=self.timestamps,
+            )
+
+
+def build_history_entity_metric_plans(
+    *,
+    entity_ids: Iterable[str],
+    metric_sources: Sequence[Mapping[str, dict[str, Any]]],
+    timestamp_sources: Sequence[Mapping[str, dict[str, list[str]]]],
+) -> list[HistoryEntityMetricPlan]:
+    if len(metric_sources) != len(timestamp_sources):
+        raise ValueError("history metric and timestamp sources must have equal lengths")
+    plans: list[HistoryEntityMetricPlan] = []
+    for entity_id in sorted(set(entity_ids)):
+        metrics = tuple(source.get(entity_id, {}) for source in metric_sources)
+        available_dates = tuple(sorted({value for source in metrics for value in source}))
+        if not available_dates:
+            continue
+        timestamps = tuple(source.get(entity_id, {}) for source in timestamp_sources)
+        plans.append(HistoryEntityMetricPlan(entity_id, metrics, timestamps, available_dates))
+    return plans
+
+
+def iter_history_month_groups(dates: Iterable[str]):  # type: ignore[no-untyped-def]
+    ordered = tuple(sorted(history_date(value, field="date") for value in dates))
+    for month in sorted({history_month(value) for value in ordered}):
+        yield month, tuple(value for value in ordered if history_month(value) == month)
+
+
+def history_month_partition_ref[Day, Partition: BaseModel](
+    day_builder: Callable[[str], Day],
+    partition_builder: Callable[[str, str, list[Day]], Partition],
+    path_builder: Callable[[str, str], str],
+    *,
+    month: str,
+    dates: Sequence[str],
+    source_timestamps: Sequence[Mapping[str, list[str]]],
+) -> tuple[HistoricPartitionRef, Partition]:
+    partition = partition_builder(
+        latest_history_timestamp(
+            timestamp
+            for local_date in dates
+            for source in source_timestamps
+            for timestamp in source.get(local_date, [])
+        ),
+        month,
+        [day_builder(local_date) for local_date in dates],
+    )
+    digest = snapshot_sha256(partition)
+    return history_partition_ref(path_builder(digest, month), partition), partition
+
+
+def prepare_history_row_batch_loader(
+    sources: Sequence[Sequence[HistoryRow]], *, entity_field: str
+) -> HistoryBatchLoader:
+    def load(batch: list[str]) -> HistoryMetricRows:
+        allowed = set(batch)
+        return tuple(
+            [row for row in source if row.get(entity_field) in allowed] for source in sources
+        )
+
+    return load
+
+
+def prepare_history_sql_batch_loader(
+    conn: Any, queries: Sequence[Any], *, base_params: Mapping[str, Any]
+) -> HistoryBatchLoader:
+    def load(batch: list[str]) -> HistoryMetricRows:
+        params = {**base_params, "entity_ids": batch}
+        return tuple(list(conn.execute(query, params).mappings()) for query in queries)
+
+    return load
 
 
 def history_gaps(dates: Iterable[str]) -> list[HistoricCoverageGap]:
