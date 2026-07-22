@@ -2,7 +2,7 @@
 
 Source-shipped Svelte 5 UI primitives. Transit is the wave-1 behavior and styling baseline. Consumers import individual families so unused primitives stay out of their bundle.
 
-**Last updated:** 2026-07-17
+**Last updated:** 2026-07-21
 
 ```svelte
 <script lang="ts">
@@ -112,3 +112,20 @@ it would pollute every public API and call site with plumbing unrelated to the
 component being used.
 
 There are no consumer checks or app conditionals in the package. A third product extends the vocabulary once at boot, scans the package source in Tailwind, and imports the same primitives as every other consumer.
+
+## v0.9 QuietModeButton contract
+
+`QuietModeButton` owns the shared two-button markup, icons, interaction geometry, active visuals, and reduced-motion CSS. The caller owns copy, state, persistence, locale resolution, and both actions:
+
+```svelte
+<QuietModeButton
+	{copy}
+	{enabled}
+	{remembered}
+	onToggle={toggleQuietMode}
+	onRememberToggle={toggleRemembered}
+	activeEffect="glow"
+/>
+```
+
+`activeEffect` is the neutral `'none' | 'glow'` visual policy. It does not select a product. Product adapters keep their existing local component paths and pass app-owned stores and localized copy into this controlled view.

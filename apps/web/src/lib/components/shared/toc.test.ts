@@ -8,6 +8,8 @@
 //   - observeActiveToc returns a no-op cleanup when there are no targets (the
 //     IntersectionObserver path needs a browser, exercised in the render tests).
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { tick } from 'svelte';
 import { describe, it, expect, vi } from 'vitest';
 import {
@@ -27,6 +29,19 @@ const entry = (id: string, title: string, children: TocEntry[] = []): TocEntry =
 	title,
 	level: 2,
 	children,
+});
+
+describe('TocBadgeSpec authority', () => {
+	it('re-exports the upstream package type instead of maintaining a local union', () => {
+		const source = readFileSync(resolve(process.cwd(), 'src/lib/components/shared/toc.ts'), 'utf8');
+
+		expect(source).toMatch(
+			/import\s+type\s+\{\s*TocBadgeSpec\s*\}\s+from\s+['"]@yesid\/ui\/brand['"]/,
+		);
+		expect(source).toMatch(/export\s+type\s+\{\s*TocBadgeSpec\s*\}/);
+		expect(source).not.toContain("from './SectionIcon.svelte'");
+		expect(source).not.toMatch(/export\s+type\s+TocBadgeSpec\s*=/);
+	});
 });
 
 describe('flattenToc', () => {

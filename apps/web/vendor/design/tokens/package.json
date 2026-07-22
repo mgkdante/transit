@@ -1,6 +1,6 @@
 {
   "name": "@yesid/tokens",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "description": "DTCG-format design tokens, package-owned generated tokens.css, and generators for yesid.dev. Source of truth: tokens.json.",

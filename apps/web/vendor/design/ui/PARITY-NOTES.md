@@ -424,3 +424,13 @@ Consumer adoption still needs these app-side changes and proofs:
 - Keep yesid.dev locale tests around the app-owned StopLabel prefix adapter.
 - Keep yesid.dev `scrollChain` behavior tests against the app action; the package fixture covers adapter setup/cleanup, while the app test remains responsible for wheel-boundary behavior.
 - Run each consumer's full tests/check/build plus dark/light/reduced-motion browser comparison after import replacement. Package and gallery verification alone do not prove a future cascade.
+
+## Wave 3: QuietModeButton
+
+Transit and yesid.dev share the same two-button DOM, SVG paths, class hooks, 44px minimum targets, active-state transitions, and reduced-motion cutoff. Their product controllers remain intentionally different: Transit owns literal EN/FR copy and its quiet-mode store, while yesid.dev owns CMS-backed locale copy, its store events, and the glow policy.
+
+The package therefore exposes a controlled `QuietModeButton` view. Consumers provide `copy`, `enabled`, `remembered`, `onToggle`, and `onRememberToggle`. `activeEffect="none"` preserves Transit's flat active marks; `activeEffect="glow"` adds yesid.dev's scoped core and bookmark filters. Neither variant imports product state, storage, locale, CMS, or SvelteKit code.
+
+Both products keep their existing local `shared/QuietModeButton.svelte` paths as thin adapters. Those adapters retain initialization and policy while deleting the duplicated markup, SVG, and CSS. Gallery is the third independent consumer of the same public contract.
+
+`CollapsibleSection` does not promote with this wave. Its two product implementations still differ in header composition, control signals, persistence, content ownership, and animation/inert semantics; extracting it would encode product policy before a third consumer establishes a shared contract.
