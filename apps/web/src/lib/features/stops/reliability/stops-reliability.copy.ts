@@ -9,6 +9,7 @@
 // shared primitives / lines vocabulary and are NOT duplicated here.
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
+import { historyCopy } from '$lib/components/surface/historyCopy';
 import type { VerdictCopy, VerdictSentenceArgs } from '$lib/v1/verdict';
 
 export const stopReliabilityCopy = defineCopy({
@@ -41,19 +42,16 @@ export const stopReliabilityCopy = defineCopy({
 						: 'Regroupé par jour.',
 		},
 		history: {
-			navigator: {
+			navigator: historyCopy('fr', {
+				mode: 'range',
 				group: 'Historique de fiabilité de l’arrêt',
 				picker: {
 					group: 'Plage de dates',
-					start: 'Du',
-					end: 'Au',
 					clear: 'Revenir au portrait actuel',
 					anyStart: 'Première date',
 					anyEnd: 'Dernière date',
 				},
-				previous: 'Plage précédente',
-				next: 'Plage suivante',
-			},
+			}),
 			coverage: (from: string, to: string) => `Historique disponible du ${from} au ${to}.`,
 			selection: (from: string, to: string) => `Plage choisie : du ${from} au ${to}.`,
 			correction: {
@@ -200,19 +198,16 @@ export const stopReliabilityCopy = defineCopy({
 						: 'Rolled up by day.',
 		},
 		history: {
-			navigator: {
+			navigator: historyCopy('en', {
+				mode: 'range',
 				group: 'Stop reliability history',
 				picker: {
 					group: 'Date range',
-					start: 'From',
-					end: 'To',
 					clear: 'Return to current snapshot',
 					anyStart: 'First date',
 					anyEnd: 'Last date',
 				},
-				previous: 'Previous range',
-				next: 'Next range',
-			},
+			}),
 			coverage: (from, to) => `History available from ${from} to ${to}.`,
 			selection: (from, to) => `Selected range: ${from} to ${to}.`,
 			correction: {

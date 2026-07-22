@@ -7,6 +7,7 @@
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { AffectedAlertsCopy, SurfaceHeadCopy } from '$lib/components/surface';
+import { articleCopy } from '$lib/components/layout/articleCopy';
 import type { OccupancyCode } from '$lib/v1/schemas';
 
 export const indexCopy = defineCopy({
@@ -80,13 +81,15 @@ export type LinesIndexCopy = (typeof indexCopy)[Locale];
 export const detailCopy = defineCopy({
 	fr: {
 		kicker: 'LIGNE',
-		article: {
-			watermark: 'Ligne',
-			back: '← Retour aux lignes',
-			tagsAria: 'Mots-clés de la ligne',
-			provider: 'Source',
-			generated: 'Mis à jour',
-		},
+		article: articleCopy(
+			'fr',
+			{
+				watermark: 'Ligne',
+				provider: 'Source',
+				generated: 'Mis à jour',
+			},
+			{ back: '← Retour aux lignes', tagsAria: 'Mots-clés de la ligne' },
+		),
 		detailLede:
 			'Parcours en direct, horaire prévu et fiabilité historique de cette ligne. Mesuré à partir du contrat /v1.',
 		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
@@ -176,13 +179,15 @@ export const detailCopy = defineCopy({
 	},
 	en: {
 		kicker: 'LINE',
-		article: {
-			watermark: 'Line',
-			back: '← Back to lines',
-			tagsAria: 'Line keywords',
-			provider: 'Source',
-			generated: 'Updated',
-		},
+		article: articleCopy(
+			'en',
+			{
+				watermark: 'Line',
+				provider: 'Source',
+				generated: 'Updated',
+			},
+			{ back: '← Back to lines', tagsAria: 'Line keywords' },
+		),
 		detailLede:
 			'Live route, planned schedule and historic reliability for this line. Measured from the /v1 contract.',
 		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },

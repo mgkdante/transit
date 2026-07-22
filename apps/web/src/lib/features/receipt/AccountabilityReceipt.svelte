@@ -50,6 +50,7 @@
 		HistoryNavigator,
 		ResourceBoundary,
 	} from '$lib/components/surface';
+	import { historyCopy } from '$lib/components/surface/historyCopy';
 	import {
 		ArticleHeader,
 		ArticleSectionStack,
@@ -459,7 +460,8 @@
 						announcement={historyAnnouncement}
 						liveAnnouncement={false}
 						{locale}
-						labels={{
+						labels={historyCopy(locale, {
+							mode: 'date',
 							group: t.history.group,
 							picker: {
 								group: t.dateSelectLabel,
@@ -472,7 +474,7 @@
 							},
 							previous: t.history.previous,
 							next: t.history.next,
-						}}
+						})}
 						onDateChange={selectDate}
 					/>
 				{/key}

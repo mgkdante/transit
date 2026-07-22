@@ -9,6 +9,8 @@
 // (mirrors the raw-FR /v1 headers); EN is the parallel translation.
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
+import { articleCopy } from '$lib/components/layout/articleCopy';
+import { historyCopy } from '$lib/components/surface/historyCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 import type { VerdictCopy, VerdictSentenceArgs } from '$lib/v1/verdict';
 
@@ -17,14 +19,12 @@ export const networkReliabilityCopy = defineCopy({
 		kicker: 'NETWORK · LIVE',
 		heading: 'Network health',
 		lede: 'Live network-wide on-time performance, crowding and feed freshness, measured from the /v1 contract. We never invent data: a missing signal shows as “no data”, not a fabricated zero.',
-		article: {
+		article: articleCopy('en', {
 			watermark: 'Network',
-			back: '← Back to the dashboard',
-			tagsAria: 'Page keywords',
 			tags: ['network', 'live service', 'reliability', 'crowding', 'open data'],
 			generated: 'Generated',
-			sections: (count) => `${count} sections`,
-		},
+			sections: (count: number) => `${count} sections`,
+		}),
 		liveTerminal: {
 			title: 'control-room',
 			tag: 'LIVE',
@@ -121,19 +121,16 @@ export const networkReliabilityCopy = defineCopy({
 		grain: { label: 'Trend grain', day: 'Day', week: 'Week', month: 'Month' },
 		window: { label: 'Trend window', d7: '7d', d30: '30d', d90: '90d' },
 		history: {
-			navigator: {
+			navigator: historyCopy('en', {
+				mode: 'range',
 				group: 'Retained history',
 				picker: {
 					group: 'Retained history range',
-					start: 'From',
-					end: 'To',
 					clear: 'Return to current snapshot',
 					anyStart: 'Earliest',
 					anyEnd: 'Latest',
 				},
-				previous: 'Previous range',
-				next: 'Next range',
-			},
+			}),
 			coverage: (from, to) => `Retained coverage: ${from} to ${to}`,
 			selection: (from, to) => `Selected range: ${from} to ${to}`,
 			correction: {
@@ -180,14 +177,12 @@ export const networkReliabilityCopy = defineCopy({
 		kicker: 'RÉSEAU · EN DIRECT',
 		heading: 'Santé du réseau',
 		lede: 'Ponctualité, achalandage et fraîcheur du flux à l’échelle du réseau, mesurés à partir du contrat /v1. On n’invente jamais de données : un signal absent s’affiche « aucune donnée », jamais un zéro fabriqué.',
-		article: {
+		article: articleCopy('fr', {
 			watermark: 'Réseau',
-			back: '← Retour au tableau de bord',
-			tagsAria: 'Mots-clés de la page',
 			tags: ['réseau', 'service en direct', 'fiabilité', 'achalandage', 'données ouvertes'],
 			generated: 'Généré',
 			sections: (count: number) => `${count} sections`,
-		},
+		}),
 		liveTerminal: {
 			title: 'salle-de-contrôle',
 			tag: 'EN DIRECT',
@@ -290,19 +285,16 @@ export const networkReliabilityCopy = defineCopy({
 		grain: { label: 'Granularité de tendance', day: 'Jour', week: 'Semaine', month: 'Mois' },
 		window: { label: 'Fenêtre de tendance', d7: '7 j', d30: '30 j', d90: '90 j' },
 		history: {
-			navigator: {
+			navigator: historyCopy('fr', {
+				mode: 'range',
 				group: 'Historique conservé',
 				picker: {
 					group: 'Plage de l’historique conservé',
-					start: 'Du',
-					end: 'Au',
 					clear: 'Revenir à l’instantané actuel',
 					anyStart: 'Au plus tôt',
 					anyEnd: 'Au plus tard',
 				},
-				previous: 'Plage précédente',
-				next: 'Plage suivante',
-			},
+			}),
 			coverage: (from: string, to: string) => `Couverture conservée : du ${from} au ${to}`,
 			selection: (from: string, to: string) => `Plage choisie : du ${from} au ${to}`,
 			correction: {

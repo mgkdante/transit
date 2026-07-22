@@ -11,6 +11,7 @@
 // the screen owns no inline strings.
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
+import { articleCopy } from '$lib/components/layout/articleCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export const metricsCopy = defineCopy({
@@ -109,12 +110,10 @@ export const metricsCopy = defineCopy({
 				},
 			},
 		},
-		article: {
+		article: articleCopy('fr', {
 			watermark: 'Méthode',
-			back: '← Retour au tableau de bord',
-			tagsAria: 'Mots-clés de la page',
 			tags: ['mesure', 'ponctualité', 'retards', 'calcul honnête', 'données ouvertes'],
-		},
+		}),
 		statRail: {
 			label: 'En bref',
 			provenance: {
@@ -244,12 +243,10 @@ export const metricsCopy = defineCopy({
 				},
 			},
 		},
-		article: {
+		article: articleCopy('en', {
 			watermark: 'Method',
-			back: '← Back to the dashboard',
-			tagsAria: 'Page keywords',
 			tags: ['measure', 'on-time', 'delays', 'honest math', 'open data'],
-		},
+		}),
 		statRail: {
 			label: 'At a glance',
 			provenance: {

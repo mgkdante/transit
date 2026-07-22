@@ -7,6 +7,7 @@
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { AffectedAlertsCopy, SurfaceHeadCopy } from '$lib/components/surface';
+import { articleCopy } from '$lib/components/layout/articleCopy';
 
 export const indexCopy = defineCopy({
 	fr: {
@@ -102,13 +103,16 @@ export const detailCopy = defineCopy({
 	fr: {
 		kicker: 'ARRÊT',
 		back: '← Retour aux arrêts',
-		article: {
-			watermark: 'Arrêt',
-			tagsAria: 'Données d’identité de l’arrêt',
-			stopId: 'ID arrêt',
-			provider: 'Fournisseur',
-			updated: 'Mis à jour',
-		},
+		article: articleCopy(
+			'fr',
+			{
+				watermark: 'Arrêt',
+				stopId: 'ID arrêt',
+				provider: 'Fournisseur',
+				updated: 'Mis à jour',
+			},
+			{ back: false, tagsAria: 'Données d’identité de l’arrêt' },
+		),
 		viewOnMap: 'Voir sur la carte',
 		viewStopOnMap: (stop: string) => `Voir l’arrêt ${stop} sur la carte`,
 		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
@@ -177,13 +181,16 @@ export const detailCopy = defineCopy({
 	en: {
 		kicker: 'STOP',
 		back: '← Back to stops',
-		article: {
-			watermark: 'Stop',
-			tagsAria: 'Stop identity data',
-			stopId: 'Stop ID',
-			provider: 'Provider',
-			updated: 'Updated',
-		},
+		article: articleCopy(
+			'en',
+			{
+				watermark: 'Stop',
+				stopId: 'Stop ID',
+				provider: 'Provider',
+				updated: 'Updated',
+			},
+			{ back: false, tagsAria: 'Stop identity data' },
+		),
 		viewOnMap: 'View on map',
 		viewStopOnMap: (stop) => `View stop ${stop} on map`,
 		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },

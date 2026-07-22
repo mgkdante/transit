@@ -12,6 +12,8 @@
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { SEVERITY_LABELS } from '$lib/v1/enumLabels';
+import { articleCopy } from '$lib/components/layout/articleCopy';
+import { historyCopy } from '$lib/components/surface/historyCopy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export const alertHistoryCopy = defineCopy({
@@ -20,16 +22,14 @@ export const alertHistoryCopy = defineCopy({
 		heading: 'Avis',
 		subheading: '// HISTORIQUE',
 		lede: 'Les avis de service passés, du plus récent au plus ancien, avec leur durée et leur portée. On n’invente jamais de données : un champ absent reste absent.',
-		article: {
+		article: articleCopy('fr', {
 			watermark: 'Avis',
-			back: '← Retour au tableau de bord',
-			tagsAria: 'Mots-clés de la page',
 			tags: ['avis', 'archive', 'durée', 'portée'],
 			matches: (count: number) =>
 				`${count.toLocaleString('fr-CA')} résultat${count === 1 ? '' : 's'}`,
 			sections: (count: number) =>
 				`${count.toLocaleString('fr-CA')} section${count === 1 ? '' : 's'}`,
-		},
+		}),
 		asOf: 'À JOUR AU',
 		rail: {
 			label: 'Filtres et sommaire',
@@ -105,19 +105,18 @@ export const alertHistoryCopy = defineCopy({
 				empty: 'Aucun arrêt touché.',
 			},
 			history: {
-				navigator: {
+				navigator: historyCopy('fr', {
+					mode: 'range',
 					group: 'Plage de l’historique des avis',
 					picker: {
 						group: 'Plage de l’historique des avis',
-						start: 'Du',
-						end: 'Au',
 						clear: 'Revenir à la période courante',
 						anyStart: 'Au plus tôt',
 						anyEnd: 'Au plus tard',
 					},
 					previous: 'Période précédente',
 					next: 'Période suivante',
-				},
+				}),
 				coverage: (from: string, to: string) => `Archives : du ${from} au ${to}`,
 				selection: (from: string, to: string) => `Sélection : du ${from} au ${to}`,
 				correction: {
@@ -161,15 +160,14 @@ export const alertHistoryCopy = defineCopy({
 		heading: 'Alerts',
 		subheading: '// HISTORY',
 		lede: 'Past service alerts, newest first, with their duration and reach. We never invent data: an absent field stays absent.',
-		article: {
+		article: articleCopy('en', {
 			watermark: 'Alerts',
-			back: '← Back to the dashboard',
-			tagsAria: 'Page keywords',
 			tags: ['alerts', 'archive', 'duration', 'reach'],
-			matches: (count) => `${count.toLocaleString('en-CA')} ${count === 1 ? 'match' : 'matches'}`,
-			sections: (count) =>
+			matches: (count: number) =>
+				`${count.toLocaleString('en-CA')} ${count === 1 ? 'match' : 'matches'}`,
+			sections: (count: number) =>
 				`${count.toLocaleString('en-CA')} ${count === 1 ? 'section' : 'sections'}`,
-		},
+		}),
 		asOf: 'AS OF',
 		rail: {
 			label: 'Filters & contents',
@@ -245,19 +243,16 @@ export const alertHistoryCopy = defineCopy({
 				empty: 'No affected stop.',
 			},
 			history: {
-				navigator: {
+				navigator: historyCopy('en', {
+					mode: 'range',
 					group: 'Alert history range',
 					picker: {
 						group: 'Alert history range',
-						start: 'From',
-						end: 'To',
 						clear: 'Return to current window',
 						anyStart: 'Earliest',
 						anyEnd: 'Latest',
 					},
-					previous: 'Previous range',
-					next: 'Next range',
-				},
+				}),
 				coverage: (from, to) => `Archive coverage: ${from} to ${to}`,
 				selection: (from, to) => `Selected: ${from} to ${to}`,
 				correction: {

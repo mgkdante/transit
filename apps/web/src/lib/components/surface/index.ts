@@ -26,6 +26,7 @@ export { default as SurfaceControls } from './SurfaceControls.svelte';
 export { default as SurfaceRail } from './SurfaceRail.svelte';
 export { default as DateRangePicker } from './DateRangePicker.svelte';
 export { default as HistoryNavigator } from './HistoryNavigator.svelte';
+export { historyCopy, type HistoryCopyInput } from './historyCopy';
 export { default as FreshnessStamp } from './FreshnessStamp.svelte';
 export { default as ConformanceBadge } from './ConformanceBadge.svelte';
 export { default as ReliabilityBadge } from './ReliabilityBadge.svelte';
