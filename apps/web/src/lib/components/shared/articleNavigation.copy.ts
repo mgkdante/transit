@@ -1,13 +1,7 @@
-import type { Locale } from '$lib/i18n';
-
-export interface ArticleNavigationCopy {
-	heading: string;
-	openAria: string;
-	closeAria: string;
-}
+import { defineCopy, type Locale } from '$lib/i18n/copy';
 
 /** Shared article-navigation chrome for every detail surface. */
-export const articleNavigationCopy: Record<Locale, ArticleNavigationCopy> = {
+export const articleNavigationCopy = defineCopy({
 	fr: {
 		heading: 'Sur cette page',
 		openAria: 'Ouvrir le sommaire',
@@ -18,4 +12,6 @@ export const articleNavigationCopy: Record<Locale, ArticleNavigationCopy> = {
 		openAria: 'Open contents',
 		closeAria: 'Close contents',
 	},
-};
+});
+
+export type ArticleNavigationCopy = (typeof articleNavigationCopy)[Locale];

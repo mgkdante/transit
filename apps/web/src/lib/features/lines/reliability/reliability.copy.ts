@@ -13,7 +13,7 @@
 //   - regularity{} — plain-language microcopy for the wait-regularity terms.
 //   - controls{}   — the grain control-spine labels + the active-window caption.
 
-import type { Locale } from '$lib/i18n';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
 // The verdict copy shape is now the shared $lib/v1 kernel (hoisted so every OTP-headline
 // surface reuses the ONE verdict engine); re-export VerdictSentenceArgs for the callers
 // that still reference it from here.
@@ -28,309 +28,7 @@ export type ReliabilityClusterKey =
 	| 'crowding'
 	| 'habits';
 
-export interface ReliabilityCopy {
-	/** Numbered cluster overlines ('01 Punctuality' / '01 Ponctualité' …). */
-	readonly clusters: Record<ReliabilityClusterKey, string>;
-	/** Snapshot-strip metric labels + the shared honest-state notes. */
-	readonly strip: {
-		/** Accessible name for the snapshot section landmark (band 00). */
-		readonly snapshotLabel: string;
-		readonly otpPct: string;
-		/** Tooltip label for a chart's target/goal tick (e.g. the 80% on-time target). */
-		readonly target: string;
-		readonly avgDelayMin: string;
-		/** Typical (median / p50) delay label — plain, not jargon. */
-		readonly p50Min: string;
-		/** Worst-case (p90) delay label — plain, not jargon. */
-		readonly p90Min: string;
-		readonly headwayRegularityCov: string;
-		readonly cancellationRatePct: string;
-		readonly skippedStopRatePct: string;
-		readonly serviceCompletenessPct: string;
-		/** Honest completeness fraction: "{canceled} of {total} trip-days canceled". */
-		readonly cancellationFraction: (canceled: string, total: string) => string;
-		/** Honest completeness fraction: "{skipped} of {total} stop updates skipped". */
-		readonly skippedFraction: (skipped: string, total: string) => string;
-		readonly serviceCompletenessFraction: (
-			delivered: string,
-			scheduled: string,
-			silent: string | null,
-		) => string;
-		/** Plain caption under the typical-delay (p50) tile. */
-		readonly p50Caption: string;
-		/** Plain caption under the worst-case (p90) tile. */
-		readonly p90Caption: string;
-		/** Heading for the typical→worst-case (p50→p90) delay distribution mark. */
-		readonly delayDistHeading: string;
-		/** Accessible / axis label for the delay distribution mark. */
-		readonly delayDistLabel: string;
-		/** Plain caption under the distribution (what the median line + tail mean). */
-		readonly delayDistCaption: string;
-		/** Nudge when the day grain has no percentile distribution (only week/month do). */
-		readonly percentileNudge: string;
-		/** Dedicated severe-delay-share label (NOT p90 — its own metric). */
-		readonly severePct: string;
-		/** Caption for the severe-share block (what the share counts). */
-		readonly severeCaption: string;
-		/** Heading for the weakest-stops accountability list. */
-		readonly weakStopsHeading: string;
-		/** a11y label for the worst-N (how-many-stops) selector. */
-		readonly worstNLabel: string;
-		/** §4 windowed value-axis title: the severe-delay rate the bar encodes (a share, [0,100]). */
-		readonly severeRateLabel: string;
-		/** Worst-N selector "All" segment (all served, <= the stored cap of 15). */
-		readonly worstNAll: string;
-		/** Per-row tooltip-note label words for the windowed §4 evidence (severe rate / avg / n). */
-		readonly weakStopNote: {
-			readonly severe: string;
-			readonly avg: string;
-			readonly samples: string;
-		};
-		/** Label for the per-stop Wilson 95% interval surfaced in the §4 tooltip + sr-only table. */
-		readonly weakStopCi: string;
-		/** Caption under the excess-wait magnitude (what 0 means). */
-		readonly excessWaitCaption: string;
-		/** Plain caption under the skipped-stop tile (what it counts). */
-		readonly skippedStopCaption: string;
-		/** Hint shown in the fixed chart readout before anything is hovered/focused. */
-		readonly trendReadoutHint: string;
-		/** Plain-language legend for the OTP Wilson confidence band + the 80% target rule. */
-		readonly wilsonBandCaption: string;
-		/** Ramp-in caveat shown on no-backfill metrics/sections. */
-		readonly rampInNote: string;
-		/** Explicit empty-state note for a metric/band with no data yet. */
-		readonly noDataNote: string;
-		/** Short value-level no-data label for a single absent metric tile. */
-		readonly noData: string;
-		/** Plain-language reading of the headway CoV (a regular/irregular caption, not a raw number dump). */
-		readonly regularity: {
-			readonly regular: string;
-			readonly irregular: string;
-		};
-	};
-	/** Per-band "when?" window captions — rendered under each band's primary label. */
-	readonly windows: {
-		/** Punctuality trend window. */
-		readonly trend: string;
-		/** Trend caption when the x-axis is the daily series (week / month / range grain). */
-		readonly trendByDay: string;
-		/** Trend caption when the x-axis is the 5 time-of-day shifts (day grain). */
-		readonly trendByTimeOfDay: string;
-		/** Crowding (occupancy mix) window. */
-		readonly crowding: string;
-		/** Weak-stops aggregate window. */
-		readonly weakStops: string;
-		/** Habits heatmap + day-of-week accumulation window. */
-		readonly habits: string;
-		/**
-		 * Service-span window — a single latest closed day, dated. `date` is the
-		 * row's ISO date; an absent date falls back to the un-dated phrase.
-		 */
-		readonly serviceSpan: (date: string | null) => string;
-	};
-	/** Peak vs off-peak ("by time of day") block labels. */
-	readonly peak: {
-		/** Block heading. */
-		readonly heading: string;
-		/** Day-type sub-heading (weekday vs weekend). */
-		readonly dayType: string;
-		/** Day-of-week severe-share label (the DoW block's second value). */
-		readonly dayOfWeekSevere: string;
-		/** Honest caveat for the trailing-window observation-weighted proxy. */
-		readonly caveat: string;
-		/** Day-type raw-grain → readable label. */
-		readonly weekday: string;
-		readonly weekend: string;
-		/** Cleveland strip-plot labels for the per-shift severe-share dot plot. */
-		readonly strip: {
-			/** Whole-strip accessible summary (figure aria-label). */
-			readonly ariaLabel: string;
-			/** All-day mean reference rule label, interpolated with the formatted mean. */
-			readonly mean: (value: string) => string;
-		};
-	};
-	/** Per-ISO-weekday occupancy small-multiple (P11) — in the 04 Crowding band. */
-	readonly byDow: {
-		/** Sub-block overline. */
-		readonly heading: string;
-		/** Plain caption under the Mon→Sun strips (what each strip reads). */
-		readonly caption: string;
-	};
-	/** Delay-by-crowding sub-block (in the 04 Crowding band) labels. */
-	readonly delayByCrowding: {
-		/** Sub-block overline. */
-		readonly heading: string;
-		/** Localized occupancy-band heading for the chart's AT table mirror. */
-		readonly bandHeader: string;
-		/** Secondary typical-delay caption appended to a band's avg delay (obs-weighted mean of daily band medians, not a pooled percentile; e.g. "typical 0.4 min"). */
-		readonly typical: (p50: string) => string;
-		/** Honest empty note when no per-band delay data exists at all. */
-		readonly empty: string;
-	};
-	/** By-shift-and-day-type OTP crosstab — now a stepped heatmap (01 Punctuality). */
-	readonly crosstab: {
-		/** Section overline. */
-		readonly heading: string;
-		/** Accessible header for the (visually-blank) shift corner cell. */
-		readonly shiftHeader: string;
-		/** Accessible header for the day-type column axis. */
-		readonly dayTypeHeader: string;
-		/** Honest caption under the grid (what the cells read + the no-data convention). */
-		readonly caption: string;
-		/** Whole-grid accessible summary (role=img label). */
-		readonly heatmapLabel: string;
-		/** The colour-scale legend buckets (sequential low→high OTP) + the no-data swatch. */
-		readonly legend: {
-			readonly low: string;
-			readonly mid: string;
-			readonly high: string;
-			readonly noData: string;
-		};
-		/** Annotation for the strongest (highest-OTP) trusted cell. */
-		readonly hottest: string;
-		/** Tooltip observation-count prefix, e.g. "n=420". */
-		readonly obs: (n: number) => string;
-		/** Honest reason a cell is greyed: too few observations to trust (n<30). */
-		readonly lowSample: string;
-	};
-	/** Plain-language microcopy for the wait-regularity terms. */
-	readonly regularityTerms: {
-		readonly scheduledGap: string;
-		readonly observedGap: string;
-		readonly excessWait: string;
-		readonly spread: string;
-		readonly clumped: string;
-		/** Plain-language "what is bunching + how to read this" explainer for §2. */
-		readonly bunchingHelp: string;
-	};
-	/** Service-span first→last timeline (in the 02 Wait & regularity band). */
-	readonly serviceSpanTimeline: {
-		/** Sub-block / chart heading. */
-		readonly heading: string;
-		/** Accessible summary for the whole timeline figure. */
-		readonly ariaLabel: (first: string, last: string) => string;
-		/** Label for the first-departure endpoint. */
-		readonly firstTrip: string;
-		/** Label for the last-departure endpoint. */
-		readonly lastTrip: string;
-		/** Span-length annotation (e.g. "Span 18h 30m"); `len` is the formatted duration. */
-		readonly span: (len: string) => string;
-		/** Trip-count annotation (e.g. "142 trips"); `n` is the formatted count. */
-		readonly trips: (n: string) => string;
-		/** a11y prefix for the first-trip punctuality marker. */
-		readonly firstDelay: string;
-		/** a11y prefix for the last-trip punctuality marker. */
-		readonly lastDelay: string;
-		/** Plain caption under the timeline (what early/late at each end means). */
-		readonly caption: string;
-	};
-	/** Unit suffixes appended to chart tick + tooltip values (axis metadata). */
-	readonly units: {
-		readonly pct: string;
-		readonly min: string;
-	};
-	/** Comparison-vs-prior (PR-WEB-3): the period-over-period Δ badges + their headings. */
-	readonly priorDelta: {
-		/** Heading for the on-time-by-time-of-day comparison (§1). */
-		readonly onTimeHeading: string;
-		/** Heading for the wait-by-shift comparison (§2). */
-		readonly waitHeading: string;
-		/** Trailing context for a SIGNIFICANT change, by resolved window grain. */
-		readonly vsPrior: { readonly day: string; readonly week: string; readonly month: string };
-		/** Neutral marker when a change exists but doesn't clear the 95% test. */
-		readonly withinNoise: string;
-		/** Honest-absence marker when there is no prior window to compare, by grain. */
-		readonly noPrior: { readonly day: string; readonly week: string; readonly month: string };
-		/** a11y nouns woven into the change label so it reads in full. */
-		readonly onTimeNoun: string;
-		readonly waitNoun: string;
-		/** Unit suffix for the on-time points delta (plural) + the ±1 singular form. */
-		readonly pts: string;
-		readonly ptOne: string;
-		/** One-line caption: what the comparison is + the significance gate. */
-		readonly caption: string;
-	};
-	/** Grain control-spine labels + the active-window caption. */
-	readonly controls: {
-		/** ControlsRail group overline ("View" / "Vue") — same voice as /stop + /network. */
-		readonly viewLabel: string;
-		/** Accessible label for the grain radiogroup itself. */
-		readonly grainLabel: string;
-		readonly today: string;
-		readonly thisWeek: string;
-		readonly thisMonth: string;
-		/** Segment label that opens the start+end date-range affordance. */
-		readonly dateRange: string;
-		readonly clearDates: string;
-		/** Field label for the range START date input. */
-		readonly rangeStart: string;
-		/** Field label for the range END date input. */
-		readonly rangeEnd: string;
-		/** Active-window caption rendered under the control spine. */
-		readonly activeWindow: {
-			readonly day: string;
-			readonly week: string;
-			readonly month: string;
-			/** Single-day range window — `date` is the one picked ISO date. */
-			readonly singleDay: (date: string) => string;
-			/**
-			 * Multi-day range window — `n` in-range days from `start` to `end`. Names
-			 * the aggregate explicitly so the averaged headline is never mistaken for a
-			 * single exact reading. No em dash; "to" joins the bounds.
-			 */
-			readonly range: (n: number, start: string, end: string) => string;
-			/** Multi-day selected window before a contributing-day count is available. */
-			readonly rangeSelection: (start: string, end: string) => string;
-			/** Prompt before a complete range is picked. */
-			readonly rangePrompt: string;
-		};
-		/** Section-TOC heading (wayfinding) in the sticky rail + the mobile TOC pill. */
-		readonly toc: string;
-		/** a11y: open/close the mobile grain filter pill drawer. */
-		readonly filterPillOpen: string;
-		readonly filterPillClose: string;
-		/** a11y: close the mobile section-jump (TOC) pill drawer. */
-		readonly tocPillClose: string;
-	};
-	readonly history: {
-		readonly navigator: import('$lib/components/surface/HistoryNavigator.svelte').HistoryNavigatorLabels;
-		readonly coverage: (from: string, to: string) => string;
-		readonly selection: (from: string, to: string) => string;
-		readonly correction: Record<import('$lib/v1').HistoryCorrection['reason'], string>;
-		readonly partial: string;
-		readonly noData: string;
-		readonly currentOnly: string;
-		readonly headerCurrentOnly: string;
-		readonly loading: string;
-		readonly ready: string;
-		readonly error: string;
-		readonly retry: string;
-	};
-	/**
-	 * Rider-question section framing (the 5-section rider-first IA): each section's
-	 * short overline `label` + the plain-language `question` it answers, plus the
-	 * progressive-disclosure expander labels.
-	 */
-	readonly sections: {
-		readonly verdict: {
-			readonly label: string;
-			readonly question: string;
-			/** D3: the TerminalPanel framing the §0 verdict block. */
-			readonly terminal: { readonly title: string; readonly tag: string };
-		};
-		readonly whenToRide: { readonly label: string; readonly question: string };
-		readonly theWait: { readonly label: string; readonly question: string };
-		readonly runAndFit: { readonly label: string; readonly question: string };
-		readonly worstStops: { readonly label: string; readonly question: string };
-		/** Progressive-disclosure expander labels (the analyst "Show the detail" layer). */
-		readonly detailShow: string;
-		readonly detailHide: string;
-	};
-	/** §0 plain-language reliability verdict (text-led, two-sided, numerically hedged). */
-	readonly verdict: VerdictCopy;
-}
-
-export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
+export const reliabilityCopy = defineCopy({
 	fr: {
 		clusters: {
 			punctuality: 'Ponctualité',
@@ -350,9 +48,10 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			cancellationRatePct: "Taux d'annulation",
 			skippedStopRatePct: "Taux d'arrêts ignorés",
 			serviceCompletenessPct: 'Service prévu assuré',
-			cancellationFraction: (c, total) => `${c} annulés sur ${total} jours-trajets`,
-			skippedFraction: (s, total) => `${s} ignorés sur ${total} mises à jour d'arrêt`,
-			serviceCompletenessFraction: (delivered, scheduled, silent) =>
+			cancellationFraction: (c: string, total: string) => `${c} annulés sur ${total} jours-trajets`,
+			skippedFraction: (s: string, total: string) =>
+				`${s} ignorés sur ${total} mises à jour d'arrêt`,
+			serviceCompletenessFraction: (delivered: string, scheduled: string, silent: string | null) =>
 				`${delivered} sur ${scheduled} jours-trajets prévus assurés${
 					silent == null ? '' : ` · ${silent} silencieux`
 				}`,
@@ -392,7 +91,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			crowding: '30 derniers jours',
 			weakStops: 'Cumul hebdomadaire',
 			habits: 'Toutes les données accumulées',
-			serviceSpan: (date) =>
+			serviceSpan: (date: string | null) =>
 				date ? `Dernière journée de service · ${date}` : 'Dernière journée de service',
 		},
 		peak: {
@@ -405,7 +104,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			weekend: 'Fin de semaine',
 			strip: {
 				ariaLabel: 'Retards graves par période',
-				mean: (value) => `Moyenne journée : ${value}`,
+				mean: (value: string) => `Moyenne journée : ${value}`,
 			},
 		},
 		byDow: {
@@ -416,7 +115,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		delayByCrowding: {
 			heading: "Retard selon l'occupation",
 			bandHeader: "Niveau d'occupation",
-			typical: (p50) => `typique ${p50}`,
+			typical: (p50: string) => `typique ${p50}`,
 			empty: 'Aucune donnée de retard par occupation',
 		},
 		crosstab: {
@@ -433,7 +132,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				noData: 'Sans données',
 			},
 			hottest: 'Meilleure ponctualité',
-			obs: (n) => `n=${n}`,
+			obs: (n: number) => `n=${n}`,
 			lowSample: 'moins de 30 observations',
 		},
 		regularityTerms: {
@@ -447,12 +146,12 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		},
 		serviceSpanTimeline: {
 			heading: 'Plage de service',
-			ariaLabel: (first, last) =>
+			ariaLabel: (first: string, last: string) =>
 				`Plage de service, du premier départ à ${first} au dernier à ${last}`,
 			firstTrip: 'Premier départ',
 			lastTrip: 'Dernier départ',
-			span: (len) => `Durée ${len}`,
-			trips: (n) => `${n} voyages`,
+			span: (len: string) => `Durée ${len}`,
+			trips: (n: string) => `${n} voyages`,
 			firstDelay: 'Retard du premier départ',
 			lastDelay: 'Retard du dernier départ',
 			caption:
@@ -494,10 +193,10 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				day: "Fenêtre : aujourd'hui (dernière journée close)",
 				week: 'Fenêtre : cette semaine (semaine la plus récente)',
 				month: 'Fenêtre : ce mois-ci (mois le plus récent)',
-				singleDay: (date) => `Fenêtre : ${date}`,
-				range: (n, start, end) =>
+				singleDay: (date: string) => `Fenêtre : ${date}`,
+				range: (n: number, start: string, end: string) =>
 					`Moyenne sur ${n} ${n === 1 ? 'jour' : 'jours'}, du ${start} au ${end}`,
-				rangeSelection: (start, end) => `Fenêtre : du ${start} au ${end}`,
+				rangeSelection: (start: string, end: string) => `Fenêtre : du ${start} au ${end}`,
 				rangePrompt: 'Fenêtre : choisissez une date de début et de fin',
 			},
 			toc: 'Aller à une section',
@@ -519,8 +218,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				previous: 'Plage précédente',
 				next: 'Plage suivante',
 			},
-			coverage: (from, to) => `Historique disponible du ${from} au ${to}.`,
-			selection: (from, to) => `Plage choisie : du ${from} au ${to}.`,
+			coverage: (from: string, to: string) => `Historique disponible du ${from} au ${to}.`,
+			selection: (from: string, to: string) => `Plage choisie : du ${from} au ${to}.`,
 			correction: {
 				malformed: 'La plage invalide a été remplacée par le portrait actuel.',
 				'outside-coverage': 'La plage non disponible a été remplacée par le portrait actuel.',
@@ -566,21 +265,22 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				month: 'ce mois-ci',
 				range: 'sur les jours choisis',
 			},
-			reliable: ({ window, onTen, lateTen, hedge }) =>
+			reliable: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
 				`Service fiable ${window}, environ ${onTen} trajets sur 10 à l'heure${hedge}; ${lateTen} sur 10 en retard.`,
-			patchy: ({ window, onTen, lateTen, hedge }) =>
+			patchy: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
 				`Service inégal ${window}, environ ${onTen} trajets sur 10 à l'heure${hedge}; ${lateTen} sur 10 en retard.`,
-			unreliable: ({ window, onTen, lateTen, hedge }) =>
+			unreliable: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
 				`Service peu fiable ${window}, seulement ${onTen} trajets sur 10 à l'heure${hedge}; ${lateTen} sur 10 en retard.`,
 			tentative: ({ window, otp, n, lo, hi }) =>
 				`Trop peu de trajets ${window} pour être certain, ${otp} % de ${n} trajets suivis à l'heure (probablement ${lo}–${hi} %).`,
-			tooFew: (window, n) =>
+			tooFew: (window: string, n: number) =>
 				`Mesure en cours ${window}, seulement ${n} trajets suivis jusqu'ici, pas assez pour juger la fiabilité.`,
 			absent:
 				"Mesure en cours, aucun trajet suivi pour l'instant, impossible de juger la fiabilité.",
-			hedgeSimple: (otp) => ` (${otp} %)`,
-			hedgeCI: (otp, lo, hi) => ` (${otp} %, sûr à 95 % entre ${lo} et ${hi} %)`,
-		},
+			hedgeSimple: (otp: number) => ` (${otp} %)`,
+			hedgeCI: (otp: number, lo: number, hi: number) =>
+				` (${otp} %, sûr à 95 % entre ${lo} et ${hi} %)`,
+		} satisfies VerdictCopy,
 	},
 	en: {
 		clusters: {
@@ -823,6 +523,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			absent: 'Still measuring, no tracked trips yet to say how reliable this line is.',
 			hedgeSimple: (otp) => ` (${otp}%)`,
 			hedgeCI: (otp, lo, hi) => ` (${otp}%, 95% sure between ${lo} and ${hi}%)`,
-		},
+		} satisfies VerdictCopy,
 	},
-};
+}) satisfies Readonly<Record<Locale, { readonly verdict: VerdictCopy }>>;
+
+export type ReliabilityCopy = (typeof reliabilityCopy)[Locale];

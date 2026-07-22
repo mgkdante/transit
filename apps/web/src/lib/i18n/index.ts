@@ -14,3 +14,5 @@ export {
 } from './routing';
 
 export { setLocaleContext, getLocale } from './context';
+
+export { defineCopy } from './copy';

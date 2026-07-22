@@ -13,278 +13,10 @@
 // Shape: `Record<Locale, {...}>` with EN + FR. FR is the canonical product voice;
 // EN is the parallel translation. PROVIDER-AGNOSTIC: no agency/city literals.
 
-import type { Locale } from '$lib/i18n';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
-export interface HealthCopy extends SurfaceHeadCopy {
-	readonly lede: string;
-	/** Always-present opening card and its two independent resource-state labels. */
-	readonly overview: {
-		readonly title: string;
-		readonly dailyRecord: string;
-		readonly liveFeeds: string;
-		readonly retainedHistory: string;
-	};
-	/** Shared yesid-style article header copy for /status. */
-	readonly article: {
-		readonly watermark: string;
-		readonly back: string;
-		readonly tagsAria: string;
-		readonly tags: readonly string[];
-		readonly sections: (count: number) => string;
-		/** Source labels used only when the daily and live documents have different stamps. */
-		readonly dailyAsOf: string;
-		readonly liveAsOf: string;
-	};
-	/** "as of" label preceding the generated-at article meta. */
-	readonly asOf: string;
-	/** Per-feed freshness table. */
-	readonly freshness: {
-		/** Section caption. */
-		readonly section: string;
-		/** Short caption under the section label. */
-		readonly note: string;
-		/** Accessible label for the whole freshness list. */
-		readonly listLabel: string;
-		/** Shown when age_s is null (no age signal for a feed). */
-		readonly noAge: string;
-	};
-	/** Source-feeds / lineage list. */
-	readonly sources: {
-		readonly section: string;
-		readonly note: string;
-		/** Accessible label for the lineage list. */
-		readonly listLabel: string;
-		/** Prefix read before a chain string (a11y). */
-		readonly chainPrefix: string;
-		/** Shown when last_loaded_utc is null. */
-		readonly neverLoaded: string;
-		/** Shown when chain is null/absent. */
-		readonly noChain: string;
-	};
-	/** Known-data-gaps honesty banner. */
-	readonly gaps: {
-		readonly section: string;
-		/** Lede sentence above the gap list. */
-		readonly lede: string;
-		/** Accessible label for the gaps list. */
-		readonly listLabel: string;
-		/**
-		 * Localized human sentences for known gap[] feed tokens (the raw payload
-		 * carries terse tokens like `metro_realtime`). A token absent here falls
-		 * back to its humanized form (underscores → spaces) at the call site.
-		 */
-		readonly tokens: Readonly<Record<string, string>>;
-	};
-	/**
-	 * Pipeline notes: the methodology[] strings NOT threaded into a /metrics card.
-	 * provenance.methodology publishes more notes than there are citizen metrics;
-	 * the surplus (history_freeze, service_time_conversion, alert_text_en,
-	 * network_no_data, alert_breakdown) lands here so EVERY published string
-	 * renders somewhere. Stands DOWN when none of these keys are present.
-	 */
-	readonly pipelineNotes: {
-		readonly section: string;
-		/** Short caption under the section label. */
-		readonly note: string;
-		/** Accessible label for the notes list. */
-		readonly listLabel: string;
-		/** Human label per un-threaded methodology key (the verbatim string follows). */
-		readonly labels: Readonly<Record<string, string>>;
-	};
-	/** Retention stat pair. */
-	readonly retention: {
-		readonly section: string;
-		readonly note: string;
-		/** Metric label for the detail-window stat. */
-		readonly detailLabel: string;
-		/** Metric label for the aggregate-window stat. */
-		readonly aggregateLabel: string;
-		/** Unit suffix appended to a day count (e.g. " days"). */
-		readonly daysUnit: string;
-	};
-	/** Published retained-history coverage, as accrued rather than promised. */
-	readonly historyCoverage: {
-		readonly section: string;
-		readonly note: string;
-		readonly tableLabel: string;
-		readonly columns: {
-			readonly family: string;
-			readonly window: string;
-			readonly selection: string;
-			readonly details: string;
-		};
-		readonly families: Readonly<
-			Record<
-				'alerts' | 'receipts' | 'network' | 'lines' | 'stops' | 'hotspots' | 'repeat_offenders',
-				string
-			>
-		>;
-		readonly selection: { readonly range: string; readonly date: string };
-		readonly aggregation: {
-			readonly additive: string;
-			readonly daily_only: string;
-			readonly current_only: string;
-		};
-		readonly metrics: Readonly<
-			Record<
-				| 'delay'
-				| 'delay_percentiles'
-				| 'vehicles'
-				| 'cancellation'
-				| 'occupancy'
-				| 'service_span'
-				| 'skipped_stops',
-				string
-			>
-		>;
-		readonly unavailable: string;
-		readonly noCoverage: string;
-		readonly noGapInventory: string;
-		readonly noDeclaredGaps: string;
-		readonly familyGaps: string;
-		readonly metricCoverage: string;
-		readonly noMetricInventory: string;
-		readonly currentOnlySections: string;
-		readonly currentOnlyNote: string;
-		readonly currentOnlySectionLabels: Readonly<Record<string, string>>;
-	};
-	/** Conformance section (full verdict + unknown-member list). */
-	readonly conformance: {
-		readonly section: string;
-		readonly note: string;
-		/** Collapsible card title for the full unknown-member list. */
-		readonly detailsTitle: string;
-		/** Metric label for the exact extra-row count. */
-		readonly extraRowsLabel: string;
-		/** Caption above the unknown-member list. */
-		readonly membersLabel: string;
-		/** Accessible label for the unknown-member list. */
-		readonly membersListLabel: string;
-	};
-	/**
-	 * Localized freshness-status verdict labels, keyed by the verdict bucket the
-	 * screen derives from the run status (`succeeded`/`failed`/`running`/…) +
-	 * `age_s`. `ok` = last load succeeded; `failed` = last load failed;
-	 * `running` = a load is in flight; `unknown` = no status reported.
-	 */
-	readonly statusVerdict: {
-		readonly ok: string;
-		readonly running: string;
-		readonly failed: string;
-		readonly unknown: string;
-	};
-	/**
-	 * Pipeline-lanes section (S11): one row per publish lane (live / static /
-	 * rollup) with last-publish age + file counts + the last value-gate verdict,
-	 * plus the MAINTENANCE honest not-applicable row (no public heartbeat).
-	 */
-	readonly lanes: {
-		/** D3: the TerminalPanel framing the pipeline-lanes board. */
-		readonly terminal: { readonly title: string; readonly tag: string };
-		readonly section: string;
-		/** Short caption under the section label. */
-		readonly note: string;
-		/** Accessible label for the lanes list. */
-		readonly listLabel: string;
-		/** lane key → localized lane label. */
-		readonly laneLabel: Readonly<Record<string, string>>;
-		/** lane key → localized scheduled-cadence line (stated as a schedule, not a promise). */
-		readonly cadence: Readonly<Record<string, string>>;
-		/** Caption before the "as scheduled" cadence line (a11y + label). */
-		readonly cadenceLabel: string;
-		/** Caption before the file counts (written / total). */
-		readonly filesLabel: string;
-		/** Formats a "{written} of {total} files" count line. */
-		readonly filesCount: (written: string, total: string) => string;
-		/** Caption before the last-publish age. */
-		readonly lastPublishLabel: string;
-		/** Localized gate-verdict words (map to the status chip tone). */
-		readonly gateVerdict: {
-			readonly pass: string;
-			readonly warn: string;
-			readonly fail: string;
-			readonly unknown: string;
-		};
-		/** Caption before the gate chip. */
-		readonly gateLabel: string;
-		/**
-		 * One-line explanation of WHAT the gate is (honest, not alarmist): value-level
-		 * checks that BLOCK a bad historic publish. Shown once beside the lanes list.
-		 */
-		readonly gateExplain: string;
-		/** The MAINTENANCE not-applicable row copy. */
-		readonly maintenanceLabel: string;
-		readonly maintenanceCadence: string;
-		readonly maintenanceReason: string;
-		/** Chip word for the not-applicable lane (no heartbeat). */
-		readonly notApplicable: string;
-	};
-	/**
-	 * Accountability-envelope section (S11): the deterministic publish stamp +
-	 * schema/methodology versions every payload carries, surfaced so the reader can
-	 * cite the exact build.
-	 */
-	readonly envelope: {
-		readonly section: string;
-		readonly note: string;
-		/** publish_generation_id — label + always-visible explanation (ExplainedMetricCard). */
-		readonly generationIdLabel: string;
-		readonly generationIdExplain: string;
-		/** schema_version — MetricDisplay row label. */
-		readonly schemaVersionLabel: string;
-		/** methodology_version — MetricDisplay row label. */
-		readonly methodologyVersionLabel: string;
-	};
-	/** Shown when a contract value is absent (honest no-data, never fabricated). */
-	readonly noData: string;
-	/**
-	 * Left-rail ToC (P5.4c DetailShell re-seat) — heading + SEC counter prefix +
-	 * mobile-pill a11y strings. The entry titles reuse each section's own caption.
-	 */
-	readonly toc: {
-		readonly label: string;
-		readonly counterPrefix: string;
-		readonly pill: { readonly open: string; readonly title: string; readonly close: string };
-	};
-	/**
-	 * Right-rail stat cards (P5.3b) — a compact pass/fail summary built from data on
-	 * the page: lanes passing over total (+ worst lane) and feeds fresh over total.
-	 * Reflows into the mobile top strip.
-	 */
-	readonly statRail: {
-		/** Accessible label for the whole stat rail (aside). */
-		readonly label: string;
-		/** Lanes card: title + "{pass} / {total}" pass-summary + "worst: {lane}" line. */
-		readonly lanes: {
-			readonly title: string;
-			readonly passing: (pass: string, total: string) => string;
-			readonly worst: (lane: string) => string;
-			readonly allClear: string;
-		};
-		/** Feeds card: title + "{ok} / {total}" fresh-summary. */
-		readonly feeds: {
-			readonly title: string;
-			readonly fresh: (ok: string, total: string) => string;
-		};
-	};
-	/**
-	 * Aggregate lane-gate verdict TerminalPanel (§C5.9) — the FIRST thing the page
-	 * says, before the section ledger: "N/M lanes passing" + the worst lane.
-	 */
-	readonly aggregate: {
-		/** TerminalPanel title (mono, --text-micro). */
-		readonly title: string;
-		/** The pass-summary sentence ("{pass} of {total} lanes passing"). */
-		readonly summary: (pass: string, total: string) => string;
-		/** Trailing "worst: {lane}" clause when a lane is failing. */
-		readonly worst: (lane: string) => string;
-		/** Shown in place of the worst clause when every applicable lane passes. */
-		readonly allClear: string;
-	};
-}
-
-export const copy: Record<Locale, HealthCopy> = {
+export const copy = defineCopy({
 	en: {
 		kicker: 'DATA · HONESTY',
 		article: {
@@ -503,7 +235,7 @@ export const copy: Record<Locale, HealthCopy> = {
 			back: '← Retour au tableau de bord',
 			tagsAria: 'Mots-clés de la page',
 			tags: ['données', 'flux', 'fraîcheur', 'lacunes connues'],
-			sections: (n) => `${n} ${n === 1 ? 'section' : 'sections'}`,
+			sections: (n: number) => `${n} ${n === 1 ? 'section' : 'sections'}`,
 			dailyAsOf: 'BILAN QUOTIDIEN À JOUR AU',
 			liveAsOf: 'FLUX EN DIRECT À JOUR AU',
 		},
@@ -536,7 +268,7 @@ export const copy: Record<Locale, HealthCopy> = {
 			listLabel: 'Lacunes de données déclarées',
 			tokens: {
 				metro_realtime: 'Métro : aucun flux temps réel',
-			},
+			} as Readonly<Record<string, string>>,
 		},
 		pipelineNotes: {
 			section: 'Notes du pipeline',
@@ -556,7 +288,7 @@ export const copy: Record<Locale, HealthCopy> = {
 				wilson_z: 'Cote z de l’intervalle de confiance',
 				service_span: 'Amplitude de service',
 				alert_history_window: 'Fenêtre d’historique des alertes',
-			},
+			} as Readonly<Record<string, string>>,
 		},
 		retention: {
 			section: 'Conservation',
@@ -622,7 +354,7 @@ export const copy: Record<Locale, HealthCopy> = {
 				weekday: 'Jour de semaine',
 				time_of_day: 'Moment de la journée',
 				by_route: 'Par ligne',
-			},
+			} as Readonly<Record<string, string>>,
 		},
 		conformance: {
 			section: 'Conformité du flux',
@@ -648,15 +380,15 @@ export const copy: Record<Locale, HealthCopy> = {
 				static: 'Horaire',
 				rollup: 'Agrégats',
 				maintenance: 'Maintenance',
-			},
+			} as Readonly<Record<string, string>>,
 			cadence: {
 				live: 'cible d’exploitation de 30 secondes; l’affichage peut prendre plus de temps',
 				static: 'chaque jour, 06:00 UTC',
 				rollup: 'chaque jour, 07:00 UTC',
-			},
+			} as Readonly<Record<string, string>>,
 			cadenceLabel: 'Cadence',
 			filesLabel: 'Fichiers',
-			filesCount: (written, total) => `${written} sur ${total} fichiers`,
+			filesCount: (written: string, total: string) => `${written} sur ${total} fichiers`,
 			lastPublishLabel: 'Dernière publication',
 			gateVerdict: {
 				pass: 'réussie',
@@ -692,20 +424,22 @@ export const copy: Record<Locale, HealthCopy> = {
 			label: 'En bref',
 			lanes: {
 				title: 'Lignes',
-				passing: (pass, total) => `${pass} / ${total} conformes`,
-				worst: (lane) => `pire : ${lane}`,
+				passing: (pass: string, total: string) => `${pass} / ${total} conformes`,
+				worst: (lane: string) => `pire : ${lane}`,
 				allClear: 'toutes les lignes conformes',
 			},
 			feeds: {
 				title: 'Flux',
-				fresh: (ok, total) => `${ok} / ${total} à jour`,
+				fresh: (ok: string, total: string) => `${ok} / ${total} à jour`,
 			},
 		},
 		aggregate: {
 			title: 'GATE PIPELINE',
-			summary: (pass, total) => `${pass} lignes conformes sur ${total}`,
-			worst: (lane) => `pire : ${lane}`,
+			summary: (pass: string, total: string) => `${pass} lignes conformes sur ${total}`,
+			worst: (lane: string) => `pire : ${lane}`,
 			allClear: 'toutes les lignes conformes',
 		},
 	},
-};
+}) satisfies Readonly<Record<Locale, SurfaceHeadCopy>>;
+
+export type HealthCopy = (typeof copy)[Locale];
