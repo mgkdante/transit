@@ -29,6 +29,7 @@ transit-ops = "transit_ops.cli:app"
 
 [dependency-groups]
 dev = [
+  "mypy>=1.20.2,<2.0",
   "pytest>=9.1.1,<10.0",
   "ruff>=0.15.22,<0.16",
 ]
@@ -48,3 +49,13 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["B", "E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/transit_ops/snapshots/publish.py"]
+follow_imports = "silent"
+strict = true
+warn_unused_ignores = true
+disallow_any_generics = true
+check_untyped_defs = true
+show_error_codes = true

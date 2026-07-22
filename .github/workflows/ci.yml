@@ -112,6 +112,9 @@ jobs:
       - name: Ruff (F-rules)
         run: uv run ruff check src tests --select F
 
+      - name: Mypy (snapshot publisher)
+        run: uv run mypy src/transit_ops/snapshots/publish.py
+
   # 2. Single-head guard — `alembic heads` must report exactly one head, or a
   #    branched/forked migration chain will fail the empty-DB replay below and
   #    break the production `init-db` (which is `alembic upgrade head`).
