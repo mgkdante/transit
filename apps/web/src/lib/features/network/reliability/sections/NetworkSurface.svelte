@@ -44,15 +44,12 @@
 		fmtDelayMin as sharedFmtDelayMin,
 		fmtPct as sharedFmtPct,
 	} from '$lib/utils';
-	import {
-		createLiveStore,
-		getNetworkTrend,
-		getProvenance,
-		getV1Context,
-		type OccupancyCode,
-		type StatusCode,
-		type TrendPoint,
-	} from '$lib/v1';
+	import { getV1Context } from '$lib/v1/boot';
+	import { createLiveStore } from '$lib/v1/live/store.svelte';
+	import { getNetworkTrend } from '$lib/v1/repositories/historic';
+	import { getProvenance } from '$lib/v1/repositories/provenance';
+	import type { TrendPoint } from '$lib/v1/schemas/network_trend';
+	import type { OccupancyCode, StatusCode } from '$lib/v1/schemas/types';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
 	import {
@@ -71,7 +68,7 @@
 		SurfaceRailContext,
 		SurfaceRailPresentation,
 	} from '$lib/components/surface/SurfaceRail.svelte';
-	import { historyRangeRequestFromSearchParams } from '$lib/v1/history';
+	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
 	import { revealTocTarget, TocNav, type TocEntry } from '$lib/components/shared';
 	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
 	import {

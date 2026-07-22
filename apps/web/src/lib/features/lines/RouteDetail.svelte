@@ -23,16 +23,14 @@
 	import { getLocale, localizeHref } from '$lib/i18n';
 	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { mapHrefFor, routeFor } from '$lib/nav';
-	import {
-		createLiveStore,
-		deriveRouteStopPredictions,
-		getRoute,
-		getRouteReliability,
-		getProvenance,
-		getV1Context,
-		alertsForRoute,
-		historyRangeRequestFromSearchParams,
-	} from '$lib/v1';
+	import { createLiveStore } from '$lib/v1/live/store.svelte';
+	import { deriveRouteStopPredictions } from '$lib/v1/live/routeStopPredictions';
+	import { getRoute } from '$lib/v1/repositories/static';
+	import { getRouteReliability } from '$lib/v1/repositories/historic';
+	import { getProvenance } from '$lib/v1/repositories/provenance';
+	import { getV1Context } from '$lib/v1/boot';
+	import { alertsForRoute } from '$lib/v1/affectedAlerts';
+	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
 	import type { RouteFile, RouteReliability, Provenance, StopPrediction, Vehicle } from '$lib/v1';
 	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
 	import type { IdentitySeed } from '$lib/v1/serverContext';

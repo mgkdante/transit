@@ -12,7 +12,7 @@
 
 import { adapter, type AdapterCtx } from '$lib/v1/adapter';
 import { resolveUrl } from '$lib/v1/config';
-import { ManifestSchema, type Manifest } from '$lib/v1/schemas';
+import { ManifestSchema, type Manifest } from '$lib/v1/schemas/manifest';
 
 /**
  * Fetch + validate the snapshot manifest (snapshot root pointer).

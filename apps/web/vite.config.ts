@@ -145,6 +145,22 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 					},
 				},
 	},
+	...(process.env.VITEST
+		? {}
+		: {
+				environments: {
+					client: {
+						build: {
+							rollupOptions: {
+								output: {
+									// Keep lazy adapter tiers out of the shell while avoiding tiny precache chunks.
+									experimentalMinChunkSize: 1_500,
+								},
+							},
+						},
+					},
+				},
+			}),
 	// Dev-only snapshot proxy. Production keeps serving the same-origin `/data/v1`
 	// contract through transit-data-proxy. Local development bypasses that quota-
 	// limited Worker and reads the public R2 custom domain directly; R2 exposes the

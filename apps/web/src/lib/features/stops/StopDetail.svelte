@@ -22,24 +22,20 @@
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import type { DetailTab } from '$lib/site/detailTabs';
 	import { createDetailTabController } from '$lib/site/detailTabController.svelte';
-	import {
-		getStop,
-		getStopReliability,
-		createLiveStore,
-		getV1Context,
-		alertsForStop,
-		historyRangeRequestFromSearchParams,
-		type StopFile,
-		type StopReliability,
-		type StopDeparture,
-	} from '$lib/v1';
+	import { getStop } from '$lib/v1/repositories/static';
+	import { getStopReliability } from '$lib/v1/repositories/historic';
+	import { createLiveStore } from '$lib/v1/live/store.svelte';
+	import { getV1Context } from '$lib/v1/boot';
+	import { alertsForStop } from '$lib/v1/affectedAlerts';
+	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
+	import type { StopFile, StopReliability, StopDeparture } from '$lib/v1';
 	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
 	import { sharedClock } from '$lib/stores';
 	import { minutesSinceMidnight } from '$lib/utils/time';
 	import { inferAbsenceReason, stopServiceWindow } from '$lib/site/serviceWindow';
 	import { depTone, toneColorVar, TONE_GLYPH, type ChipTone } from '$lib/site/delayPresentation';
 	import { ScheduleTable, type ScheduleRow } from '$lib/components/schedule';
-	import { STATUS_LABELS } from '$lib/v1';
+	import { STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { StatusCode } from '$lib/v1/schemas';
 	import {
 		EntityDetail,

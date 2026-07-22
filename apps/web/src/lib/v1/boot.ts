@@ -16,8 +16,9 @@ import { browser } from '$app/environment';
 import type { Locale } from '$lib/i18n';
 import { DEFAULT_LOCALE } from '$lib/i18n';
 import type { AdapterCtx } from '$lib/v1/adapter';
-import type { Manifest } from '$lib/v1/schemas';
-import { getLabels, getManifest } from '$lib/v1/repositories';
+import type { Manifest } from '$lib/v1/schemas/manifest';
+import { getLabels } from '$lib/v1/repositories/labels';
+import { getManifest } from '$lib/v1/repositories/manifest';
 import { installBrowserAdapterManifest } from '$lib/v1/adapter/browserManifest';
 
 /**

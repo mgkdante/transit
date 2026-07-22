@@ -17,8 +17,13 @@
 <script lang="ts">
 	import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
 	import { themeStore } from '$lib/stores';
-	import type { StatusCode, OccupancyCode } from '$lib/v1/schemas';
-	import { STATUS_CODES, OCCUPANCY_CODES, SEVERITY_CODES } from '$lib/v1/schemas';
+	import {
+		STATUS_CODES,
+		OCCUPANCY_CODES,
+		SEVERITY_CODES,
+		type StatusCode,
+		type OccupancyCode,
+	} from '$lib/v1/schemas/types';
 
 	// Brand primitives.
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';

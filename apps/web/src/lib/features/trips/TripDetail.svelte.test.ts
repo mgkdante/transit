@@ -44,8 +44,9 @@ let tripsData: TripsFile | null = TRIPS_FILE;
 // module graph incl. $app/environment, which the jsdom env can't boot).
 // getV1Context feeds the A4 CornerMeta corners (provider short_name); a minimal
 // manifest stub is enough for the head to render.
-vi.mock('$lib/v1', () => ({
-	getTrips: vi.fn(),
+vi.mock('$lib/v1/repositories/live', () => ({ getTrips: vi.fn() }));
+vi.mock('$lib/v1/repositories/static', () => ({ getStopsIndex: vi.fn() }));
+vi.mock('$lib/v1/boot', () => ({
 	getV1Context: () => ({
 		manifest: { short_name: 'STM', display_name: 'STM', dataset_version: 'test' },
 	}),

@@ -24,6 +24,10 @@ vi.mock('$lib/v1', () => ({
 	getReceipt: ports.getReceipt,
 	getAdvertisedReceipt: ports.getAdvertisedReceipt,
 }));
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getReceiptsIndex: ports.getReceiptsIndex,
+	getAdvertisedReceipt: ports.getAdvertisedReceipt,
+}));
 vi.mock('$app/state', () => ({
 	page: {
 		get url() {

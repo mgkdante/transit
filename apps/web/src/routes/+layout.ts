@@ -1,6 +1,6 @@
 import type { LayoutLoad } from './$types';
 import { DEFAULT_LOCALE } from '$lib/i18n';
-import { bootV1, type V1Context } from '$lib/v1';
+import { bootV1, type V1Context } from '$lib/v1/boot';
 
 // Universal layout load (runs SSR + client). Two jobs:
 //

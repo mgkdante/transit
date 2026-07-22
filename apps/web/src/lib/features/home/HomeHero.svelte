@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { localizeHref, type Locale } from '$lib/i18n';
-	import { createLiveStore, otpVerdict, type Manifest } from '$lib/v1';
+	import { createLiveStore } from '$lib/v1/live/store.svelte';
+	import { otpVerdict } from '$lib/v1/reliabilityVerdict';
+	import type { Manifest } from '$lib/v1';
 	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
 	import { StatusBadge } from '$lib/components/dataviz';
 	import { formatUtc } from '$lib/utils/time';

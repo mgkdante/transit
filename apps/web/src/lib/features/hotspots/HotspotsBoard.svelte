@@ -14,15 +14,17 @@
 	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { describeAbsence } from '$lib/site/absence';
+	import { availabilityFromPointCollectionIndex } from '$lib/v1/history/selection';
+	import { createHistoryCorrectionPresentation } from '$lib/v1/history/datePresentation.svelte';
 	import {
-		availabilityFromPointCollectionIndex,
-		createHistoryCorrectionPresentation,
 		createHistoryDateResource,
+		historyDateRequestFromSearchParams,
+	} from '$lib/v1/history/dateResource.svelte';
+	import {
 		getHotspots,
 		getHotspotsHistoryDay,
 		getHotspotsHistoryIndex,
-		historyDateRequestFromSearchParams,
-	} from '$lib/v1';
+	} from '$lib/v1/repositories/historic';
 	import type { HistoricCollectionIndex, HotspotEntry, Hotspots } from '$lib/v1/schemas';
 	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
 	import {

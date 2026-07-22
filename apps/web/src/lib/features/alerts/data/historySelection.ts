@@ -5,8 +5,9 @@ import {
 	strictIsoDate,
 	type HistoryAvailability,
 	type ResolvedHistoryRange,
-} from '$lib/v1/history';
-import type { AlertArchiveIndex, AlertHistory } from '$lib/v1/schemas';
+} from '$lib/v1/history/selection';
+import type { AlertArchiveIndex } from '$lib/v1/schemas/alert_archive';
+import type { AlertHistory } from '$lib/v1/schemas/alert_history';
 import { deriveSpan } from '../selectors/alertLog';
 
 function realDate(value: string | null | undefined): string | null {

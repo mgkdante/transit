@@ -1,19 +1,18 @@
 import type { DateWindow } from '$lib/filters';
 import { roundHalfAwayFromZero } from '$lib/utils';
-import {
-	mergeLineHistory,
-	selectLineHistoryPartitionRefs,
-	wilsonBounds,
-	type CancellationPeriod,
-	type HistoricCollectionIndex,
-	type HistoryRangeLoadResult,
-	type LineHistoryRange,
-	type LineHistoryPartition,
-	type OccupancyMix,
-	type ReliabilityPeriod,
-	type ServiceSpanPeriod,
-	type SkippedStopPeriod,
-	type RouteReliability,
+import { mergeLineHistory, selectLineHistoryPartitionRefs } from '$lib/v1/history/families';
+import { wilsonBounds } from '$lib/v1/stats';
+import type {
+	CancellationPeriod,
+	HistoricCollectionIndex,
+	HistoryRangeLoadResult,
+	LineHistoryRange,
+	LineHistoryPartition,
+	OccupancyMix,
+	ReliabilityPeriod,
+	ServiceSpanPeriod,
+	SkippedStopPeriod,
+	RouteReliability,
 } from '$lib/v1';
 
 export interface RetainedLineHistory {

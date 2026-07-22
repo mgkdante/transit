@@ -10,8 +10,9 @@
 //   · bilingual copy (EN + FR) off the same component
 //
 // The hub reads getV1Context().manifest + createLiveStore + getLocale; we mock
-// $lib/v1 (a controllable live network) and $lib/i18n (the locale under test)
-// the same way the NetworkHealth surface test does, and $lib/nav for routeFor.
+// the exact boot/live leaves (a controllable live network) and $lib/i18n (the
+// locale under test) the same way the NetworkHealth surface test does, and
+// $lib/nav for routeFor.
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -77,19 +78,16 @@ vi.mock('$lib/nav', async () => {
 	return { routeFor };
 });
 
-vi.mock('$lib/v1', async () => {
-	// otpVerdict is a pure 90/75-floor mapper the pulse tiles use for the verdict word;
-	// re-export the real implementation so the tone reads honestly under test.
-	const { otpVerdict } = await vi.importActual<typeof import('$lib/v1/reliabilityVerdict')>(
-		'$lib/v1/reliabilityVerdict',
-	);
+vi.mock('$lib/v1/boot', () => ({
+	getV1Context: () => ({ manifest, labels: {}, lang: state.locale }),
+}));
+
+vi.mock('$lib/v1/live/store.svelte', async () => {
 	// The hero's routes-live tile iterates a REAL LiveIndex (vehiclesByRoute Map),
 	// so the mocked store carries the real empty index, not a bare {}.
 	const { emptyLiveIndex } =
 		await vi.importActual<typeof import('$lib/v1/live/index')>('$lib/v1/live/index');
 	return {
-		otpVerdict,
-		getV1Context: () => ({ manifest, labels: {}, lang: state.locale }),
 		createLiveStore: (actualManifest: unknown, options?: unknown) => {
 			createLiveStoreSpy(actualManifest, options);
 			return {

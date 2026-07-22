@@ -55,15 +55,11 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/i18n')>();
 	return { ...actual, getLocale: () => harness.locale.value };
 });
-vi.mock('$lib/v1', async () => {
-	const history = await import('$lib/v1/history');
-	return {
-		...history,
-		getHotspots: harness.getHotspots,
-		getHotspotsHistoryIndex: harness.getHotspotsHistoryIndex,
-		getHotspotsHistoryDay: harness.getHotspotsHistoryDay,
-	};
-});
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getHotspots: harness.getHotspots,
+	getHotspotsHistoryIndex: harness.getHotspotsHistoryIndex,
+	getHotspotsHistoryDay: harness.getHotspotsHistoryDay,
+}));
 vi.mock('./selectors/hotspotLadder', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('./selectors/hotspotLadder')>();
 	return {

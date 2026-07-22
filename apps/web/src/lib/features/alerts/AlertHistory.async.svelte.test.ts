@@ -20,6 +20,11 @@ vi.mock('$lib/v1', () => ({
 	getAlertArchiveIndex: ports.getAlertArchiveIndex,
 	getAlertArchiveRange: ports.getAlertArchiveRange,
 }));
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getAlertHistory: ports.getAlertHistory,
+	getAlertArchiveIndex: ports.getAlertArchiveIndex,
+	getAlertArchiveRange: ports.getAlertArchiveRange,
+}));
 vi.mock('$app/state', () => ({
 	page: {
 		get url() {

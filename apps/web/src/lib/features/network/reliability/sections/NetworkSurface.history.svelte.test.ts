@@ -217,45 +217,45 @@ vi.mock('$lib/nav', () => ({
 	},
 }));
 
-vi.mock('$lib/v1', async () => {
-	const history = await import('$lib/v1/history');
-	return {
-		...history,
-		getV1Context: () => ({ manifest: networkManifest, labels: {}, lang: 'en' }),
-		createLiveStore: (manifest: unknown, options?: unknown) => {
-			createLiveStoreSpy(manifest, options);
-			return {
-				vehicles: null,
-				trips: null,
-				departures: null,
-				alerts: null,
-				network: currentNetwork,
-				index: {
-					vehiclesById: new Map(),
-					vehiclesByRoute: new Map(),
-					vehiclesByTrip: new Map(),
-					stopsById: new Map(),
-					tripsById: new Map(),
-					alertsById: new Map(),
-				},
-				generatedUtc: currentNetwork.generated_utc,
-				get ageSeconds() {
-					return harness.liveClock.ageSeconds;
-				},
-				isStale: false,
-				loading: false,
-				error: null,
-				start: vi.fn(),
-				stop: vi.fn(),
-				refresh: vi.fn(),
-			};
-		},
-		getNetworkTrend: vi.fn(),
-		getProvenance: vi.fn(),
-		getNetworkHistoryIndex: harness.getNetworkHistoryIndex,
-		loadNetworkHistoryRange: harness.loadNetworkHistoryRange,
-	};
-});
+vi.mock('$lib/v1/boot', () => ({
+	getV1Context: () => ({ manifest: networkManifest, labels: {}, lang: 'en' }),
+}));
+vi.mock('$lib/v1/live/store.svelte', () => ({
+	createLiveStore: (manifest: unknown, options?: unknown) => {
+		createLiveStoreSpy(manifest, options);
+		return {
+			vehicles: null,
+			trips: null,
+			departures: null,
+			alerts: null,
+			network: currentNetwork,
+			index: {
+				vehiclesById: new Map(),
+				vehiclesByRoute: new Map(),
+				vehiclesByTrip: new Map(),
+				stopsById: new Map(),
+				tripsById: new Map(),
+				alertsById: new Map(),
+			},
+			generatedUtc: currentNetwork.generated_utc,
+			get ageSeconds() {
+				return harness.liveClock.ageSeconds;
+			},
+			isStale: false,
+			loading: false,
+			error: null,
+			start: vi.fn(),
+			stop: vi.fn(),
+			refresh: vi.fn(),
+		};
+	},
+}));
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getNetworkTrend: vi.fn(),
+	getNetworkHistoryIndex: harness.getNetworkHistoryIndex,
+	loadNetworkHistoryRange: harness.loadNetworkHistoryRange,
+}));
+vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: vi.fn() }));
 
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: (loader: () => unknown) => {

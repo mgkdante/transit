@@ -38,7 +38,7 @@
 	import { fromSearchParams, resolveWindow, type DateWindow } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { type StopReliability } from '$lib/v1';
+	import type { StopReliability } from '$lib/v1';
 	import type { OccupancyCode } from '$lib/v1/schemas';
 	import {
 		ArticleControlDisclosure,

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/sv
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Locale } from '$lib/i18n';
 import type { StopReliability } from '$lib/v1';
-import { historyRangeRequestFromSearchParams } from '$lib/v1/history';
+import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
 import { encodeHistoryEntityId } from '$lib/v1/history/entity';
 import {
 	HistoricCollectionIndexSchema,
@@ -46,9 +46,7 @@ vi.mock('$lib/site/urlMirror', () => ({
 	mirrorSearchParams: harness.mirrorSearchParams,
 	mirrorSearchParam: vi.fn(),
 }));
-vi.mock('$lib/v1', async () => ({
-	...(await import('$lib/v1/history')),
-	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
+vi.mock('$lib/v1/repositories/historic', () => ({
 	getStopHistoryIndex: harness.getStopHistoryIndex,
 	loadStopHistoryRange: harness.loadStopHistoryRange,
 }));

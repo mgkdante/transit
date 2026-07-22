@@ -98,13 +98,19 @@ function resetReceiptState(): void {
 	quietModeStore.resetForTest();
 }
 
-// Mock $lib/v1 with a clean factory (importing the real barrel pulls the full
-// module graph incl. $app/environment, which jsdom can't boot). The two getters
-// are the only v1 surface this screen touches.
-vi.mock('$lib/v1', () => ({
+const ports = vi.hoisted(() => ({
 	getReceiptsIndex: vi.fn(),
 	getReceipt: vi.fn(),
 	getAdvertisedReceipt: vi.fn(),
+}));
+
+// Mock $lib/v1 with a clean factory (importing the real barrel pulls the full
+// module graph incl. $app/environment, which jsdom can't boot). The two getters
+// are the only v1 surface this screen touches.
+vi.mock('$lib/v1', () => ports);
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getReceiptsIndex: ports.getReceiptsIndex,
+	getAdvertisedReceipt: ports.getAdvertisedReceipt,
 }));
 
 // createResource is reactive in production (re-runs the fetcher when its inputs

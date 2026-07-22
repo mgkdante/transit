@@ -13,10 +13,7 @@ const builders = vi.hoisted(() => ({
 	buildRetainedLineHistory: vi.fn(),
 }));
 
-vi.mock('$lib/v1', async () => ({
-	...(await import('$lib/v1/history')),
-	...repositories,
-}));
+vi.mock('$lib/v1/repositories/historic', () => repositories);
 
 vi.mock('./retainedHistory', () => builders);
 

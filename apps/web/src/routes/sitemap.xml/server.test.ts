@@ -6,13 +6,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 //   (b) a thrown index fetch           -> degrades to static-only (no 500),
 //   (c) no binding                     -> static-only.
 //
-// We mock the v1 loaders ($lib/v1), so no real fetch happens, and pin indexing
-// on via $lib/site/config.
+// We mock the static v1 repository leaves, so no real fetch happens, and pin
+// indexing on via $lib/site/config.
 
 const getRoutesIndex = vi.fn();
 const getStopsIndex = vi.fn();
 
-vi.mock('$lib/v1', () => ({
+vi.mock('$lib/v1/repositories/static', () => ({
 	getRoutesIndex: (...args: unknown[]) => getRoutesIndex(...args),
 	getStopsIndex: (...args: unknown[]) => getStopsIndex(...args),
 }));

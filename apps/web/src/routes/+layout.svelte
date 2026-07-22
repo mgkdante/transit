@@ -54,14 +54,9 @@
 	import { breadcrumbJsonLd, organizationJsonLd, datasetJsonLd } from '$lib/seo/jsonld';
 	import { readPublicSiteConfig } from '$lib/site/config';
 	import { errorDocumentHead } from '$lib/site/errorPage';
-	import {
-		setV1Context,
-		bootV1,
-		getRoutesIndex,
-		getStopsIndex,
-		getVehicles,
-		type V1Context,
-	} from '$lib/v1';
+	import { setV1Context, bootV1, type V1Context } from '$lib/v1/boot';
+	import { getVehicles } from '$lib/v1/repositories/live';
+	import { getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { dataRefresh, dataPulse, themeStore } from '$lib/stores';
 	import { registerServiceWorker } from '$lib/pwa/register';

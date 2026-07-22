@@ -35,17 +35,13 @@ import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import {
 	getRouteReliability,
 	getRouteReliabilityIndex,
-	getRoutesIndex,
 	getStopReliability,
-} from './repositories';
-import type {
-	ReliabilityPeriod,
-	RouteReliability,
-	StopReliabilityPeriod,
-	StopReliability,
-} from './schemas';
+} from './repositories/historic';
+import { getRoutesIndex } from './repositories/static';
+import type { ReliabilityPeriod, RouteReliability } from './schemas/route_reliability';
+import type { StopReliability, StopReliabilityPeriod } from './schemas/stop_reliability';
 import { otpVerdict } from './reliabilityVerdict';
-import type { StatusCode } from './schemas';
+import type { StatusCode } from './schemas/types';
 
 /** The entity families that carry a per-id reliability archive. */
 export type ReliabilityKind = 'route' | 'stop';

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getLocale, type Locale } from '$lib/i18n';
-	import { getV1Context } from '$lib/v1';
+	import { getV1Context } from '$lib/v1/boot';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '@yesid/ui/separator';
 	import HomeHero from '$lib/features/home/HomeHero.svelte';

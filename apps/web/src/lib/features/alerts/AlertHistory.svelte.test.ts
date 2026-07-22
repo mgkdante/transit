@@ -70,6 +70,11 @@ vi.mock('$lib/v1', () => ({
 	getAlertArchiveIndex: ports.getAlertArchiveIndex,
 	getAlertArchiveRange: ports.getAlertArchiveRange,
 }));
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getAlertHistory: ports.getAlertHistory,
+	getAlertArchiveIndex: ports.getAlertArchiveIndex,
+	getAlertArchiveRange: ports.getAlertArchiveRange,
+}));
 
 // The SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the codec
 // seed AND the round-trip mirror are testable. Hoisted so the mock factories can see it.

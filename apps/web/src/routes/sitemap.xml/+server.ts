@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
 import { readPublicSiteConfig } from '$lib/site/config';
 import { buildSitemapXml, type SitemapEntities } from '$lib/site/seoFiles';
-import { getRoutesIndex, getStopsIndex } from '$lib/v1';
+import { getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
 import { serverV1Context } from '$lib/v1/serverContext';
 
 // sitemap.xml — DYNAMIC (request-time), not prerendered. It enumerates EVERY

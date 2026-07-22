@@ -1,10 +1,9 @@
-import {
-	createRetainedHistoryResource,
-	getStopHistoryIndex,
-	loadStopHistoryRange,
-	type HistoricCollectionIndex,
-	type HistoryRangeResource,
-	type RawHistoryRangeRequest,
+import { createRetainedHistoryResource } from '$lib/v1/history/retainedHistoryResource.svelte';
+import { getStopHistoryIndex, loadStopHistoryRange } from '$lib/v1/repositories/historic';
+import type {
+	HistoricCollectionIndex,
+	HistoryRangeResource,
+	RawHistoryRangeRequest,
 } from '$lib/v1';
 import { buildRetainedStopHistory, type RetainedStopHistory } from './retainedHistory';
 

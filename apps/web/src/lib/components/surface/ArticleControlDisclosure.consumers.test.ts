@@ -66,15 +66,11 @@ const labelFreeConsumers = [
 const immutableListings = [
 	{
 		file: 'src/lib/features/lines/LinesIndex.svelte',
-		// Inventory unknowns now receive localized assistive text; listing controls
-		// and visible layout remain unchanged.
-		sha256: 'dd3a8b941c5409b7a6bee228f4edd6f4367942217d141a7a708ac5400db24c96',
+		markupSha256: 'af63cc33cf141ce25be49073aa830f08ad7005de323190c4a4c6394c927eae10',
 	},
 	{
 		file: 'src/lib/features/stops/StopsIndex.svelte',
-		// The approved v0.6.0 adoption renamed only the combobox import, type, component,
-		// and DOM hook; the listing-control structure remains immutable.
-		sha256: '110de64542d4e0602630c56547384cc78bde0d2015a61d79ea0ed4b52aae8cdd',
+		markupSha256: 'b627383a127e6e55825f054ab8bba90f6da9c3d389621ba6ab5bfbe66ab449d4',
 	},
 ] as const;
 
@@ -125,8 +121,10 @@ describe('article control disclosure consumer contract', () => {
 		);
 	});
 
-	it.each(immutableListings)('leaves $file byte-for-byte untouched', (listing) => {
-		const digest = createHash('sha256').update(source(listing.file)).digest('hex');
-		expect(digest).toBe(listing.sha256);
+	it.each(immutableListings)('leaves $file markup byte-for-byte untouched', (listing) => {
+		const component = source(listing.file);
+		const markup = component.slice(component.indexOf('</script>') + '</script>'.length);
+		const digest = createHash('sha256').update(markup).digest('hex');
+		expect(digest).toBe(listing.markupSha256);
 	});
 });

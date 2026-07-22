@@ -43,17 +43,16 @@
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { layout } from '$lib/nav';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import {
-		getRoutesIndex,
-		getStopsIndex,
-		getV1Context,
-		createLiveStore,
-		createReliabilityLoader,
-		type RouteIndexEntry,
-		type StopIndexEntry,
-		type Vehicle,
-		type StatusCode,
-		type OccupancyCode,
+	import { getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
+	import { getV1Context } from '$lib/v1/boot';
+	import { createLiveStore } from '$lib/v1/live/store.svelte';
+	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
+	import type {
+		RouteIndexEntry,
+		StopIndexEntry,
+		Vehicle,
+		StatusCode,
+		OccupancyCode,
 	} from '$lib/v1';
 	import {
 		ResourceBoundary,

@@ -23,7 +23,7 @@
 	import UsersRoundIcon from '@lucide/svelte/icons/users-round';
 	import XIcon from '@lucide/svelte/icons/x';
 	import type { AlertEntityKind, EntityKind, FilterStore } from '$lib/filters';
-	import { STATUS_CODES, OCCUPANCY_CODES } from '$lib/v1/schemas';
+	import { STATUS_CODES, OCCUPANCY_CODES } from '$lib/v1/schemas/types';
 	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
 	import { statusVar, occupancyVar } from '$lib/components/dataviz';
 	import type { Locale } from '$lib/i18n';

@@ -33,7 +33,9 @@
 <script lang="ts">
 	import { getLocale } from '$lib/i18n';
 	import { mapHrefFor } from '$lib/nav';
-	import { getRoutesIndex, createReliabilityLoader, isProblemVerdict } from '$lib/v1';
+	import { getRoutesIndex } from '$lib/v1/repositories/static';
+	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
+	import { isProblemVerdict } from '$lib/v1/reliabilityVerdict';
 	import type { RouteIndexEntry } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import {

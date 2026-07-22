@@ -72,14 +72,18 @@ afterEach(() => {
 
 describe('vite production chunk contract', () => {
 	it('keeps the heavy map runtime isolated behind the map route', async () => {
-		const client = await resolveConfig(false);
+		const client = await resolveProductionConfig(false);
 		const build = Array.isArray(client) ? client[0]?.build : client.build;
 		const output = build?.rollupOptions?.output;
 		const firstOutput = Array.isArray(output) ? output[0] : output;
 		const manualChunks = firstOutput?.manualChunks;
+		const clientOutput = client.environments?.client?.build?.rollupOptions?.output;
+		const firstClientOutput = Array.isArray(clientOutput) ? clientOutput[0] : clientOutput;
 
 		expect(build?.chunkSizeWarningLimit).toBe(1100);
 		expect(typeof manualChunks).toBe('function');
+		expect(firstOutput?.experimentalMinChunkSize).toBeUndefined();
+		expect(firstClientOutput?.experimentalMinChunkSize).toBe(1_500);
 		if (typeof manualChunks !== 'function') return;
 
 		expect(manualChunks('/repo/node_modules/maplibre-gl/dist/maplibre-gl.js')).toBe(
@@ -91,12 +95,22 @@ describe('vite production chunk contract', () => {
 	});
 
 	it('does not emit the map vendor chunk for the SSR build', async () => {
-		const ssr = await resolveConfig(true);
+		const ssr = await resolveProductionConfig(true);
 		const build = Array.isArray(ssr) ? ssr[0]?.build : ssr.build;
 		const output = build?.rollupOptions?.output;
 		const firstOutput = Array.isArray(output) ? output[0] : output;
 
 		expect(firstOutput?.manualChunks).toBeUndefined();
+		expect(firstOutput?.experimentalMinChunkSize).toBeUndefined();
+	});
+
+	it('keeps production chunk merging out of the Vitest environment', async () => {
+		const testConfig = await resolveConfig(false);
+		const output = testConfig.build?.rollupOptions?.output;
+		const firstOutput = Array.isArray(output) ? output[0] : output;
+
+		expect(firstOutput?.experimentalMinChunkSize).toBeUndefined();
+		expect(testConfig.environments?.client).toBeUndefined();
 	});
 });
 
@@ -247,4 +261,15 @@ async function resolveConfig(
 		return Array.isArray(resolved) ? resolved[0] : resolved;
 	}
 	return Array.isArray(config) ? config[0] : config;
+}
+
+async function resolveProductionConfig(isSsrBuild: boolean): Promise<UserConfig> {
+	const vitest = process.env.VITEST;
+	delete process.env.VITEST;
+	try {
+		return await resolveConfig(isSsrBuild);
+	} finally {
+		if (vitest === undefined) delete process.env.VITEST;
+		else process.env.VITEST = vitest;
+	}
 }

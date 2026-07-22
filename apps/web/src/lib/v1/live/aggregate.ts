@@ -16,10 +16,15 @@
 //   - non_responding counts vehicles with status 'unknown' (the live "we have a
 //     vehicle but no usable status" bucket).
 
-import type { OccupancyCode, StatusCode, Vehicle } from '$lib/v1/schemas';
+import type { Vehicle } from '$lib/v1/schemas/vehicles';
 // The StatusDist / OccupancyMix key sets — the single source ($lib/v1/schemas,
 // derived from the zod enums). Imported, never re-declared (DRY).
-import { OCCUPANCY_CODES, STATUS_CODES } from '$lib/v1/schemas';
+import {
+	OCCUPANCY_CODES,
+	STATUS_CODES,
+	type OccupancyCode,
+	type StatusCode,
+} from '$lib/v1/schemas/types';
 
 /** Count of vehicles per status; every enum key present (missing -> 0). */
 export type StatusDist = Record<StatusCode, number>;

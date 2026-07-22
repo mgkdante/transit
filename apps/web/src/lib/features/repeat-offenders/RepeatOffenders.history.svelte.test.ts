@@ -53,15 +53,11 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/i18n')>();
 	return { ...actual, getLocale: () => harness.locale.value };
 });
-vi.mock('$lib/v1', async () => {
-	const history = await import('$lib/v1/history');
-	return {
-		...history,
-		getRepeatOffenders: harness.getRepeatOffenders,
-		getRepeatOffendersHistoryIndex: harness.getRepeatOffendersHistoryIndex,
-		getRepeatOffendersHistoryDay: harness.getRepeatOffendersHistoryDay,
-	};
-});
+vi.mock('$lib/v1/repositories/historic', () => ({
+	getRepeatOffenders: harness.getRepeatOffenders,
+	getRepeatOffendersHistoryIndex: harness.getRepeatOffendersHistoryIndex,
+	getRepeatOffendersHistoryDay: harness.getRepeatOffendersHistoryDay,
+}));
 vi.mock('./selectors/offenderLadder', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('./selectors/offenderLadder')>();
 	return {

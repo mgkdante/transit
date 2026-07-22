@@ -7,8 +7,8 @@
 // crowding is a DAILY artifact — week/month carry no per-point occupancy mix — so the
 // orchestrator only renders it on the day grain. Consumes the ALREADY-windowed series.
 
-import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
-import type { TrendPoint } from '$lib/v1/schemas';
+import type { TrendPoint } from '$lib/v1/schemas/network_trend';
+import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas/types';
 import type { StackedShareSpec } from '$lib/components/dataviz/chart';
 import { stackedShareSpec } from '$lib/components/dataviz/chart/share';
 import type { Locale } from '$lib/i18n/config';

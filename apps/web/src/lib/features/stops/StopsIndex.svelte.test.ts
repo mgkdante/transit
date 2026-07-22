@@ -40,11 +40,12 @@ function setUrl(path: string): void {
 	state.url = new URL(path, 'http://localhost');
 }
 
-// Mock ONLY the $lib/v1 surface the component touches (avoid importActual — the
-// real barrel pulls config that reads import.meta.env, which is absent in this
-// env). We ship a faithful-enough createReliabilityLoader('stop') that fetches
-// through getStopReliability so the honest-probe + badge paths are exercised.
-vi.mock('$lib/v1', async () => {
+vi.mock('$lib/v1/repositories/static', () => ({
+	getStopsIndex: (...args: unknown[]) => getStopsIndex(...args),
+	getRoutesIndex: (...args: unknown[]) => getRoutesIndex(...args),
+	getRoute: (...args: unknown[]) => getRoute(...args),
+}));
+vi.mock('$lib/v1/reliabilitySnapshot.svelte', async () => {
 	const { SvelteMap } = await import('svelte/reactivity');
 	function reliabilityVerdict(pct: number): string {
 		return pct >= 80 ? 'on_time' : pct >= 60 ? 'late' : 'severe';
@@ -84,14 +85,9 @@ vi.mock('$lib/v1', async () => {
 			inFlight: 0,
 		};
 	}
-	return {
-		getStopsIndex: (...a: unknown[]) => getStopsIndex(...a),
-		getRoutesIndex: (...a: unknown[]) => getRoutesIndex(...a),
-		getRoute: (...a: unknown[]) => getRoute(...a),
-		createReliabilityLoader,
-		...historyCalls,
-	};
+	return { createReliabilityLoader };
 });
+vi.mock('$lib/v1/repositories/historic', () => historyCalls);
 
 // A minimal reactive createResource stub: it invokes the fetcher once and exposes
 // its resolved value. Keyed by which /v1 fn the fetcher calls, so the stops index,

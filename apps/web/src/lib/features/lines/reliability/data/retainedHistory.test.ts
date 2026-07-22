@@ -215,22 +215,26 @@ function completeFixture(): {
 }
 
 describe('buildRetainedLineHistory', () => {
-	it('keeps Line feature history code behind the public $lib/v1 barrel', () => {
-		for (const file of ['retainedHistory.ts', 'lineHistoryResource.svelte.ts']) {
-			const source = readFileSync(
-				resolve(process.cwd(), 'src/lib/features/lines/reliability/data', file),
-				'utf8',
-			);
-			expect(source).not.toMatch(/from '\$lib\/v1\//);
-		}
-		for (const file of [
+	it('uses narrow v1 runtime leaves without crossing feature domains', () => {
+		const files = [
+			'src/lib/features/lines/reliability/data/retainedHistory.ts',
+			'src/lib/features/lines/reliability/data/lineHistoryResource.svelte.ts',
 			'src/lib/features/lines/RouteDetail.svelte',
 			'src/lib/features/lines/reliability/RouteReliabilityClusters.svelte',
 			'src/lib/features/lines/reliability/reliability.copy.ts',
-		]) {
+		];
+		for (const file of files) {
 			const source = readFileSync(resolve(process.cwd(), file), 'utf8');
-			expect(source).not.toMatch(/'\$lib\/v1\/history/);
+			expect(source).not.toMatch(
+				/import\s+(?!type\b)[^;]+from '\$lib\/v1(?:\/(?:schemas|history))?';/,
+			);
 		}
+
+		const retained = readFileSync(resolve(process.cwd(), files[0]), 'utf8');
+		const resource = readFileSync(resolve(process.cwd(), files[1]), 'utf8');
+		expect(retained).toContain("from '$lib/v1/history/families'");
+		expect(resource).toContain("from '$lib/v1/history/retainedHistoryResource.svelte'");
+		expect(resource).toContain("from '$lib/v1/repositories/historic'");
 	});
 
 	it('keeps an awkward entity isolated and pools the exact clipped range across months', () => {

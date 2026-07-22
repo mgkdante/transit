@@ -40,6 +40,9 @@ vi.mock('$lib/v1', () => ({
 		manifest: { short_name: 'STM', display_name: 'STM', dataset_version: 'test' },
 	}),
 }));
+vi.mock('$lib/v1/repositories/provenance', () => ({
+	getProvenance: vi.fn(),
+}));
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({
 		get data() {

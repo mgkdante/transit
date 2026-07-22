@@ -10,8 +10,8 @@
 // SSR-safe: this module is pure data + pure functions; it never touches the DOM,
 // `window`, or `localStorage`.
 
-import type { StatusCode, OccupancyCode, SeverityCode, Grain } from '$lib/v1/schemas';
-import { STATUS_CODES, OCCUPANCY_CODES, SEVERITY_CODES, GRAINS } from '$lib/v1/schemas';
+import type { StatusCode, OccupancyCode, SeverityCode, Grain } from '$lib/v1/schemas/types';
+import { STATUS_CODES, OCCUPANCY_CODES, SEVERITY_CODES, GRAINS } from '$lib/v1/schemas/types';
 import type { DateWindow } from '$lib/v1/history/window';
 
 export type { DateWindow } from '$lib/v1/history/window';
