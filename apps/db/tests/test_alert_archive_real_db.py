@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import uuid
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
 from transit_ops.gold.alert_archive import (
@@ -17,14 +16,9 @@ from transit_ops.gold.alert_archive import (
 )
 
 
-def test_alert_archive_provider_lock_serializes_concurrent_syncs() -> None:
-    database_url = os.getenv("TRANSIT_TEST_DATABASE_URL")
-    if not database_url:
-        pytest.skip("set TRANSIT_TEST_DATABASE_URL for the PostgreSQL archive proof")
-
-    engine = create_engine(database_url)
+def test_alert_archive_provider_lock_serializes_concurrent_syncs(real_db_engine) -> None:
     provider_id = f"archive-lock-{uuid.uuid4().hex[:10]}"
-    with engine.connect() as first, engine.connect() as second:
+    with real_db_engine.connect() as first, real_db_engine.connect() as second:
         first_transaction = first.begin()
         second_transaction = second.begin()
         try:
@@ -42,14 +36,9 @@ def test_alert_archive_provider_lock_serializes_concurrent_syncs() -> None:
                 first_transaction.rollback()
 
 
-def test_alert_archive_insert_update_and_unchanged_rerun() -> None:
-    database_url = os.getenv("TRANSIT_TEST_DATABASE_URL")
-    if not database_url:
-        pytest.skip("set TRANSIT_TEST_DATABASE_URL for the PostgreSQL archive proof")
-
+def test_alert_archive_insert_update_and_unchanged_rerun(real_db_engine, seed_provider) -> None:
     provider_id = f"archive-test-{uuid.uuid4().hex[:10]}"
-    engine = create_engine(database_url)
-    with engine.connect() as connection:
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
         try:
             if not connection.execute(
@@ -57,16 +46,7 @@ def test_alert_archive_insert_update_and_unchanged_rerun() -> None:
             ).scalar_one():
                 pytest.skip("database is not migrated through 0080_alert_archive")
 
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO core.providers (
-                        provider_id, provider_key, display_name, timezone
-                    ) VALUES (:provider_id, :provider_id, 'Archive test', 'America/Toronto')
-                    """
-                ),
-                {"provider_id": provider_id},
-            )
+            seed_provider(connection, provider_id, display_name="Archive test")
             endpoint_id = connection.execute(
                 text(
                     """
