@@ -7,7 +7,7 @@ import os
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.snapshots.builders import build_alert_archive
 
@@ -23,26 +23,15 @@ OTHER_PROVIDER = "other_archive_publish_test"
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
         for provider in (PROVIDER, OTHER_PROVIDER):
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO core.providers
-                        (provider_id, display_name, timezone, provider_key)
-                    VALUES (:provider, :provider, 'America/Toronto', :provider)
-                    """
-                ),
-                {"provider": provider},
-            )
+            seed_provider(connection, provider, display_name=provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def _insert(
