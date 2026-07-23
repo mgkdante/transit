@@ -22,19 +22,10 @@ Never point this at production.
 
 from __future__ import annotations
 
-import os
-
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.snapshots.builders import build_stop_departures, build_trips
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
-)
 
 # Explicit ids in the 99xxxx range so a botched rollback never collides with
 # real data; a dedicated provider keeps every query scoped to the fixture rows.
@@ -46,33 +37,23 @@ RT_SNAP_ID = 990401  # silver.rt_feed_snapshots.rt_feed_snapshot_id
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed_parents(connection)
+        _seed_parents(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
-def _seed_parents(connection) -> None:
+def _seed_parents(connection, seed_provider) -> None:
     """Seed the provider + ingestion + snapshot parent chain shared by all tests.
 
     Per-test trip/stop-time rows are inserted by each test so the SQL-side
     ``now()`` offsets stay close to query time (no clock-skew flakiness).
     """
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM stop-departures regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
+    seed_provider(connection, PROVIDER, display_name="STM stop-departures regression")
     connection.execute(
         text(
             """
