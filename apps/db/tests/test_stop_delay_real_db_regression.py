@@ -10,20 +10,12 @@ Never point this at production.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold import marts, rollups
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_stopdelay_test"
 STATIC_ENDPOINT_ID = 993401
@@ -38,17 +30,15 @@ PERIOD = datetime(2026, 6, 12, 12, 15, tzinfo=UTC)
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
         _ensure_delay_stop_columns(connection)
-        _seed_provider(connection)
+        _seed_provider(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def _ensure_delay_stop_columns(connection) -> None:  # noqa: ANN001
@@ -71,16 +61,8 @@ def _ensure_delay_stop_columns(connection) -> None:  # noqa: ANN001
         )
 
 
-def _seed_provider(connection) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM stop-delay regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
+def _seed_provider(connection, seed_provider) -> None:  # noqa: ANN001
+    seed_provider(connection, PROVIDER, display_name="STM stop-delay regression")
     endpoints = [
         (STATIC_ENDPOINT_ID, "static_schedule", "static_schedule", "gtfs_schedule_zip"),
         (TRIP_ENDPOINT_ID, "trip_updates", "trip_updates", "gtfs_rt_trip_updates"),
@@ -399,16 +381,20 @@ def test_refresh_attributes_delay_to_next_upcoming_stop(conn) -> None:  # noqa: 
         },
     )
 
-    row = conn.execute(
-        text(
-            """
+    row = (
+        conn.execute(
+            text(
+                """
             SELECT delay_seconds, delay_stop_id, delay_stop_sequence
             FROM gold.fact_trip_delay_snapshot
             WHERE provider_id = :p AND realtime_snapshot_id = :snapshot_id
             """
-        ),
-        {"p": PROVIDER, "snapshot_id": SNAPSHOT_ID},
-    ).mappings().one()
+            ),
+            {"p": PROVIDER, "snapshot_id": SNAPSHOT_ID},
+        )
+        .mappings()
+        .one()
+    )
 
     assert row["delay_seconds"] == 120
     assert row["delay_stop_id"] == "S2"
