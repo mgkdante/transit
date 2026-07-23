@@ -22,20 +22,12 @@ are idempotent.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.maintenance.silver import prune_realtime_silver_history
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_silverprune_test"
 TU_ENDPOINT_ID = 994010
@@ -50,28 +42,18 @@ CUTOFF = NOW - timedelta(days=RETENTION_DAYS)
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed_refs(connection)
+        _seed_refs(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
-def _seed_refs(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM silver prune regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
+def _seed_refs(connection, seed_provider) -> None:
+    seed_provider(connection, PROVIDER, display_name="STM silver prune regression")
     for endpoint_id, endpoint_key in (
         (TU_ENDPOINT_ID, "trip_updates"),
         (VP_ENDPOINT_ID, "vehicle_positions"),
