@@ -2,8 +2,64 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator
+from typing import Protocol
+
 import pytest
 import typer.rich_utils as _rich_utils
+from sqlalchemy import Connection, Engine, create_engine, text
+
+
+class SeedProvider(Protocol):
+    def __call__(
+        self,
+        connection: Connection,
+        provider_id: str,
+        *,
+        display_name: str,
+        timezone: str = "America/Toronto",
+    ) -> None: ...
+
+
+@pytest.fixture(scope="session")
+def real_db_engine() -> Iterator[Engine]:
+    database_url = os.environ.get("TRANSIT_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TRANSIT_TEST_DATABASE_URL not set — real-DB tests skipped")
+
+    engine = create_engine(database_url)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def seed_provider() -> SeedProvider:
+    def seed(
+        connection: Connection,
+        provider_id: str,
+        *,
+        display_name: str,
+        timezone: str = "America/Toronto",
+    ) -> None:
+        connection.execute(
+            text(
+                """
+                INSERT INTO core.providers
+                    (provider_id, display_name, timezone, provider_key)
+                VALUES (:provider_id, :display_name, :timezone, :provider_id)
+                """
+            ),
+            {
+                "provider_id": provider_id,
+                "display_name": display_name,
+                "timezone": timezone,
+            },
+        )
+
+    return seed
 
 
 @pytest.fixture(autouse=True)
