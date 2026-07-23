@@ -49,17 +49,20 @@ schema-2 manifest pins the Release asset, annotated tag object, peeled commit, p
 closure, adoption tool, exclusion policy, and installed tree. Never edit it by hand or run
 the tool from inside `vendor/design` while replacing that same directory.
 
-Use an external exact-tag bootstrap for a deliberate bump, then run the adopted tool only
-as the offline integrity gate:
+Use the tool from the immutable Release archive as an external bootstrap for a deliberate
+bump, then run the adopted tool only as the offline integrity gate:
 
 ```bash
 design_tag=vX.Y.Z
 bootstrap_root="$(mktemp -d)"
-git clone --depth 1 --branch "$design_tag" \
-  https://github.com/mgkdante/yesid.dev-design "$bootstrap_root/yesid.dev-design"
-bun "$bootstrap_root/yesid.dev-design/tools/adopt.ts" \
+archive_name="yesid.dev-design-${design_tag}.tar"
+gh release download "$design_tag" --repo mgkdante/yesid.dev-design \
+  --pattern "$archive_name" --dir "$bootstrap_root"
+mkdir "$bootstrap_root/extracted"
+tar -xf "$bootstrap_root/$archive_name" -C "$bootstrap_root/extracted"
+bun "$bootstrap_root/extracted/yesid.dev-design-${design_tag}/tools/adopt.ts" \
   --tag "$design_tag" \
-  --packages tokens,motion,gates,seo-kit,ui \
+  --packages tokens,motion,gates,seo-kit,ui,analytics \
   --dest vendor/design
 bun vendor/design/tools/adopt.ts --check --dest vendor/design
 ```
@@ -67,3 +70,5 @@ bun vendor/design/tools/adopt.ts --check --dest vendor/design
 Run this from `apps/web`, review the complete vendored diff, update the exact pin in
 `src/tests/design-vendor.test.ts`, refresh the root lockfile, and run product checks. Package
 tests stay upstream; Transit owns its doctrine, integration, type, build, and browser proof.
+The product-owned `src/lib/analytics/preset.ts` is configuration only; adopting the package
+does not mount analytics or grant storage or network authority.

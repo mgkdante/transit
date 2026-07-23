@@ -192,9 +192,9 @@ export async function adopt(
 function usage(): string {
 	return [
 		'Usage:',
-		'  bun tools/adopt.ts --tag vX.Y.Z --packages tokens,motion,gates,seo-kit,ui --dest vendor/design',
-		'  bun tools/adopt.ts --tag vX.Y.Z --packages tokens,motion,gates,seo-kit,ui --dest vendor/design --source ../yesid.dev-design',
-		'  bun tools/adopt.ts --tag vX.Y.Z --packages tokens,motion,gates,seo-kit,ui --dest vendor/design --archive ./yesid.dev-design-vX.Y.Z.tar',
+		'  bun tools/adopt.ts --tag vX.Y.Z --packages tokens,motion,gates,seo-kit,ui,analytics --dest vendor/design',
+		'  bun tools/adopt.ts --tag vX.Y.Z --packages tokens,motion,gates,seo-kit,ui,analytics --dest vendor/design --source ../yesid.dev-design',
+		'  bun tools/adopt.ts --tag vX.Y.Z --packages tokens,motion,gates,seo-kit,ui,analytics --dest vendor/design --archive ./yesid.dev-design-vX.Y.Z.tar',
 		'  bun tools/adopt.ts --check --dest vendor/design',
 		'',
 		'Default mode verifies and installs the immutable GitHub Release asset.',

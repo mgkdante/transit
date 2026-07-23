@@ -1,0 +1,10 @@
+{
+	"extends": "@yesid/config/tsconfig/library.json",
+	"compilerOptions": {
+		"module": "ES2022",
+		"noUncheckedIndexedAccess": true,
+		"types": ["node"],
+		"lib": ["ES2022", "DOM", "DOM.Iterable"]
+	},
+	"include": ["src/**/*.ts"]
+}

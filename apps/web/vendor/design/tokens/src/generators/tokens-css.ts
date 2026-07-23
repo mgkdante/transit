@@ -23,6 +23,13 @@ const PAIRED_DEFS: ReadonlyArray<{ name: string; line: string }> = [
   { name: 'input', line: '--input: var(--border);' },
 ];
 
+const BREAKPOINT_MEDIA = [
+  { token: 'tablet-min', feature: 'min-width' },
+  { token: 'tablet-max', feature: 'max-width' },
+  { token: 'desktop-min', feature: 'min-width' },
+  { token: 'desktop-max', feature: 'max-width' },
+] as const;
+
 interface FlatToken {
   cssName: string;
   token: Token;
@@ -73,6 +80,20 @@ function emitMedia(scheme: 'dark' | 'light', guard: string, items: FlatToken[]):
   );
 }
 
+function emitBreakpointMedia(tree: TokenTree): string {
+  const breakpoints = tree.breakpoint;
+  if (breakpoints === undefined) return '';
+  if (isLeaf(breakpoints)) throw new Error('breakpoint must be a token group');
+
+  return BREAKPOINT_MEDIA.map(({ token: tokenName, feature }) => {
+    const token = breakpoints[tokenName];
+    if (!isLeaf(token) || token.$type !== 'dimension' || typeof token.$value !== 'string') {
+      throw new Error(`breakpoint.${tokenName} must be a dimension token with a string value`);
+    }
+    return `@custom-media --${tokenName} (${feature}: ${serializeCss(token)});`;
+  }).join('\n');
+}
+
 export function generateTokensCss(tree: TokenTree): string {
   // :root holds brand + non-themed tokens (radius, duration, ease, z, opacity,
   // container, font, text, space, shadow, surface aliases, color.brand).
@@ -105,9 +126,11 @@ export function generateTokensCss(tree: TokenTree): string {
   // app.html inline script always sets one).
   const darkMedia = emitMedia('dark', ':root:not([data-theme="light"])', darkItems);
   const lightMedia = emitMedia('light', ':root:not([data-theme="dark"])', lightItems);
+  const breakpointMedia = emitBreakpointMedia(tree);
 
   return (
     HEADER + '\n' +
+    (breakpointMedia ? breakpointMedia + '\n\n' : '') +
     emitBlock(':root', null, rootItems, rootExtra) + '\n' +
     darkBlock + '\n' +
     lightBlock + '\n' +

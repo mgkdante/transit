@@ -61,6 +61,7 @@
 	},
 	"dependencies": {
 		"@lucide/svelte": "^1.18.0",
+		"@yesid/analytics": "file:vendor/design/analytics",
 		"@yesid/motion": "file:vendor/design/motion",
 		"@yesid/seo-kit": "file:vendor/design/seo-kit",
 		"@yesid/ui": "file:vendor/design/ui",

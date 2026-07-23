@@ -5,6 +5,7 @@
 // product tests plus this fast consumer-side integrity gate.
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, resolve, relative } from 'node:path';
 
 const VENDOR = resolve(process.cwd(), 'vendor/design');
@@ -79,15 +80,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.9.0',
-	tagObject: '7eb6be22d84303dc9f8d240645cdcd4dbb24b8a8',
-	peeledCommit: 'c25ffb1f4058cb2df498e9d365517d0d304881a4',
-	assetName: 'yesid.dev-design-v0.9.0.tar',
-	assetSize: 706_560,
-	assetDigest: 'sha256:5a0c5a37cf112241c894674d713fb41aac8afb06fcf0841066674bbe2463d0cf',
+	tag: 'v0.11.0',
+	tagObject: 'bb307bcac5dbc96ecfb3cec706dd267f55b6e08f',
+	peeledCommit: '1e03114f27f2490dad35c13575ca7b0b06bde247',
+	assetName: 'yesid.dev-design-v0.11.0.tar',
+	assetSize: 798_720,
+	assetDigest: 'sha256:4bc8181ae34f9cc3e1b21a508e53d3a0930cff436f0eba4c3278c3e1b0c5fb5a',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
-	toolDigest: 'sha256:749861816f7b8a7e70a3b856f93f310183e0ff6dd5f288746681fb95be51087d',
-	treeHash: 'sha256:34cabf1c46b6be765f4b353b6cefe06b5c2477a1cf480d17be7bbf8af4046fbd',
+	toolDigest: 'sha256:c3d4af6788407c6affd312172455da127c1e2e40cb0d623be6d51ca31672c18e',
+	treeHash: 'sha256:3c7d0e8f91adb6a70566847ef5e4702b75136db2e06488bfcd47e98c15c6cb10',
+	manifestDigest: '70c44fa29e553c634ea44f337c8f1497db50b66449e2e8b7b2c7fb537ddd84d9',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -100,7 +102,8 @@ function walkFiles(dir: string, out: string[] = []): string[] {
 }
 
 describe('vendor/design integrity', () => {
-	const manifest = JSON.parse(readFileSync(join(VENDOR, 'manifest.json'), 'utf-8')) as {
+	const manifestBytes = readFileSync(join(VENDOR, 'manifest.json'));
+	const manifest = JSON.parse(manifestBytes.toString('utf-8')) as {
 		schema: number;
 		repository: string;
 		provenance: {
@@ -130,10 +133,13 @@ describe('vendor/design integrity', () => {
 				digest: PINNED_RELEASE.assetDigest,
 			},
 		});
-		expect(manifest.packages).toEqual(['tokens', 'motion', 'gates', 'seo-kit', 'ui']);
+		expect(manifest.packages).toEqual(['tokens', 'motion', 'gates', 'seo-kit', 'ui', 'analytics']);
 		expect(manifest.exclusionPolicyDigest).toBe(PINNED_RELEASE.exclusionPolicyDigest);
 		expect(manifest.toolDigest).toBe(PINNED_RELEASE.toolDigest);
 		expect(manifest.treeHash).toBe(PINNED_RELEASE.treeHash);
+		expect(createHash('sha256').update(manifestBytes).digest('hex')).toBe(
+			PINNED_RELEASE.manifestDigest,
+		);
 	});
 
 	it('carries the upstream adoption tool and retires the consumer implementation', () => {
@@ -153,7 +159,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.9.0');
+		expect(packageJson.version).toBe('0.11.0');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -166,6 +172,30 @@ describe('vendor/design integrity', () => {
 		expect(
 			files.filter((file) => /(?:^|\/)(?:test-fixtures\/|vitest\.)|\.test\.ts$/.test(file)),
 		).toEqual([]);
+	});
+
+	it('vendors the exact @yesid/analytics runtime surface', () => {
+		const analyticsRoot = join(VENDOR, 'analytics');
+		const packageJson = JSON.parse(readFileSync(join(analyticsRoot, 'package.json'), 'utf-8')) as {
+			name: string;
+			version: string;
+		};
+		const files = walkFiles(analyticsRoot).map((file) => relative(analyticsRoot, file));
+
+		expect(packageJson).toMatchObject({
+			name: '@yesid/analytics',
+			version: '0.11.0',
+		});
+		expect(files).toEqual([
+			'package.json',
+			'src/client.ts',
+			'src/config.ts',
+			'src/consent.svelte.ts',
+			'src/index.ts',
+			'src/plausible.ts',
+			'src/policy.ts',
+			'tsconfig.json',
+		]);
 	});
 });
 
