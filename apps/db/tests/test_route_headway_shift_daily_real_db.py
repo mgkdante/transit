@@ -9,21 +9,14 @@ test_route_delay_spine_real_db_regression. Self-skips when TRANSIT_TEST_DATABASE
 
 from __future__ import annotations
 
-import os
 from contextlib import contextmanager
 from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold import rollups
 from transit_ops.settings import Settings
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-pytestmark = pytest.mark.skipif(
-    not DB_URL, reason="TRANSIT_TEST_DATABASE_URL not set - headway builder real-DB gate skipped"
-)
 
 PROVIDER = "stm_hw_builder"
 ENDPOINT_ID = 998001
@@ -55,14 +48,8 @@ def _build(connection) -> None:  # noqa: ANN001
     )
 
 
-def _provider_and_endpoint(connection) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            "INSERT INTO core.providers (provider_id, display_name, timezone, provider_key) "
-            "VALUES (:p, 'STM headway builder', 'America/Toronto', :p)"
-        ),
-        {"p": PROVIDER},
-    )
+def _provider_and_endpoint(connection, seed_provider) -> None:  # noqa: ANN001
+    seed_provider(connection, PROVIDER, display_name="STM headway builder")
     connection.execute(
         text(
             "INSERT INTO core.feed_endpoints "
@@ -103,47 +90,65 @@ def _insert_one_trip(connection, local_date, sid, rid, captured_at, trip_id, dir
                     :sld, NULL, NULL, 0, 0, NULL, NULL)
             """
         ),
-        {"p": PROVIDER, "s": sid, "dk": int(local_date.strftime("%Y%m%d")), "sld": local_date,
-         "ts": captured_at, "entity": f"e{sid}", "trip": trip_id, "dir": direction},
+        {
+            "p": PROVIDER,
+            "s": sid,
+            "dk": int(local_date.strftime("%Y%m%d")),
+            "sld": local_date,
+            "ts": captured_at,
+            "entity": f"e{sid}",
+            "trip": trip_id,
+            "dir": direction,
+        },
     )
 
 
 def _seed_starts(connection, local_date, starts, direction=0, base=998100) -> None:  # noqa: ANN001
     for i, t in enumerate(starts):
         cap = datetime.combine(local_date, t, tzinfo=TORONTO).astimezone(UTC)
-        _insert_one_trip(connection, local_date, base + i, base + 500 + i, cap, f"hw-{base}-{i}", direction)
+        _insert_one_trip(
+            connection,
+            local_date,
+            base + i,
+            base + 500 + i,
+            cap,
+            f"hw-{base}-{i}",
+            direction,
+        )
 
 
 def _headway_row(connection, shift="am_peak", direction=0):  # noqa: ANN001
-    return connection.execute(
-        text(
-            "SELECT gap_count, sum_gap_min, sum_gap_sq_min, bunched_gap_count, trip_count, "
-            "gap_histogram FROM gold.route_headway_shift_daily "
-            "WHERE provider_id = :p AND route_id = '99H' AND shift = :sh AND direction_id = :d"
-        ),
-        {"p": PROVIDER, "sh": shift, "d": direction},
-    ).mappings().one_or_none()
+    return (
+        connection.execute(
+            text(
+                "SELECT gap_count, sum_gap_min, sum_gap_sq_min, bunched_gap_count, trip_count, "
+                "gap_histogram FROM gold.route_headway_shift_daily "
+                "WHERE provider_id = :p AND route_id = '99H' AND shift = :sh AND direction_id = :d"
+            ),
+            {"p": PROVIDER, "sh": shift, "d": direction},
+        )
+        .mappings()
+        .one_or_none()
+    )
 
 
 @contextmanager
-def _conn():  # noqa: ANN202
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def _conn(real_db_engine):  # noqa: ANN001, ANN202
+    with real_db_engine.connect() as connection:
         tx = connection.begin()
         try:
             yield connection
         finally:
             tx.rollback()
-        engine.dispose()
 
 
-def test_builder_exact_moments_histogram_and_bunched() -> None:
+def test_builder_exact_moments_histogram_and_bunched(real_db_engine, seed_provider) -> None:  # noqa: ANN001
     """4 trip-starts on a weekday am_peak (gaps 2,10,10 min) -> exact stored moments/histogram.
     Oracle: gap_count=3, Σgap=22, Σgap²=204, bunched=1 (gap<0.5*median(=10)), trip_count=4,
     histogram bin3 ([2,3))=1 + bin9 ([10,12))=2 (sum 3)."""
     cld = _recent_weekday()
-    with _conn() as conn:
-        _provider_and_endpoint(conn)
+    with _conn(real_db_engine) as conn:
+        _provider_and_endpoint(conn, seed_provider)
         _seed_starts(conn, cld, [time(7, 0), time(7, 2), time(7, 12), time(7, 22)])
         _build(conn)
         row = _headway_row(conn)
@@ -159,11 +164,11 @@ def test_builder_exact_moments_histogram_and_bunched() -> None:
     assert hist[9] == 2  # gap 10 -> [10,12)
 
 
-def test_builder_clamp_drops_zero_and_over_240() -> None:
+def test_builder_clamp_drops_zero_and_over_240(real_db_engine, seed_provider) -> None:  # noqa: ANN001
     """Gaps of 0 (identical starts) and >=240 min are clamped out; only 0<gap<240 survive."""
     cld = _recent_weekday()
-    with _conn() as conn:
-        _provider_and_endpoint(conn)
+    with _conn(real_db_engine) as conn:
+        _provider_and_endpoint(conn, seed_provider)
         # starts: 7:00, 7:00 (gap 0 -> dropped), 7:05 (gap 5 -> kept), 11:05 (gap 240 -> dropped)
         _seed_starts(conn, cld, [time(7, 0), time(7, 0), time(7, 5), time(11, 5)])
         _build(conn)
@@ -173,11 +178,11 @@ def test_builder_clamp_drops_zero_and_over_240() -> None:
     assert float(row["sum_gap_min"]) == 5.0
 
 
-def test_builder_weekday_guard_skips_weekend_service_day() -> None:
+def test_builder_weekday_guard_skips_weekend_service_day(real_db_engine, seed_provider) -> None:  # noqa: ANN001
     """M2: a WEEKEND service day produces NO headway rows (the inner+outer ISODOW guards)."""
     sat = _recent_weekday(weekend=True)
-    with _conn() as conn:
-        _provider_and_endpoint(conn)
+    with _conn(real_db_engine) as conn:
+        _provider_and_endpoint(conn, seed_provider)
         _seed_starts(conn, sat, [time(7, 0), time(7, 6), time(7, 12)])
         _build(conn)
         row = _headway_row(conn)
