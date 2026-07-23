@@ -21,7 +21,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold import rollups
 from transit_ops.settings import Settings
@@ -62,9 +62,8 @@ class _Seed:
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):  # noqa: ANN001
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
         # Anchor the closed day in the PROVIDER timezone (America/Toronto) — the
         # same calendar the rollup closes days on (`now() AT TIME ZONE provider`,
@@ -80,25 +79,16 @@ def conn():
             .astimezone(UTC)
         )
         seed = _Seed(base_utc)
+        seed_provider(connection, PROVIDER, display_name="STM tier-2 regression")
         _seed(connection, seed)
         _build_rollups(connection)
         try:
             yield connection, seed
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def _seed(connection, seed: _Seed) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM tier-2 regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
     connection.execute(
         text(
             """
@@ -238,13 +228,6 @@ def _seed_span(connection, seed: _Seed) -> None:  # noqa: ANN001
     """
     connection.execute(
         text(
-            "INSERT INTO core.providers (provider_id, display_name, timezone, provider_key) "
-            "VALUES (:p, 'STM tier-2 span regression', 'America/Toronto', :p)"
-        ),
-        {"p": PROVIDER},
-    )
-    connection.execute(
-        text(
             "INSERT INTO core.feed_endpoints "
             "(feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format) "
             "VALUES (:eid, :p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates')"
@@ -271,9 +254,8 @@ def _seed_span(connection, seed: _Seed) -> None:  # noqa: ANN001
 
 
 @pytest.fixture()
-def conn_span():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn_span(real_db_engine, seed_provider):  # noqa: ANN001
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
         base_utc = (
             datetime.now(TORONTO)
@@ -281,13 +263,13 @@ def conn_span():
             .astimezone(UTC)
         )
         seed = _Seed(base_utc)
+        seed_provider(connection, PROVIDER, display_name="STM tier-2 span regression")
         _seed_span(connection, seed)
         _build_rollups(connection)
         try:
             yield connection, seed
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def test_service_span_regrains_on_service_day_with_terminal_delay(conn_span) -> None:  # noqa: ANN001
@@ -385,13 +367,6 @@ def _seed_crowding(connection, seed: _Seed) -> None:  # noqa: ANN001
     OLD dominant-band design censored); plus one NULL-occupancy row (excluded)."""
     connection.execute(
         text(
-            "INSERT INTO core.providers (provider_id, display_name, timezone, provider_key) "
-            "VALUES (:p, 'STM tier-2 crowding regression', 'America/Toronto', :p)"
-        ),
-        {"p": PROVIDER},
-    )
-    connection.execute(
-        text(
             "INSERT INTO core.feed_endpoints "
             "(feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format) "
             "VALUES (:eid, :p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates')"
@@ -416,9 +391,8 @@ def _seed_crowding(connection, seed: _Seed) -> None:  # noqa: ANN001
 
 
 @pytest.fixture()
-def conn_crowding():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn_crowding(real_db_engine, seed_provider):  # noqa: ANN001
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
         base_utc = (
             datetime.now(TORONTO)
@@ -426,13 +400,13 @@ def conn_crowding():
             .astimezone(UTC)
         )
         seed = _Seed(base_utc)
+        seed_provider(connection, PROVIDER, display_name="STM tier-2 crowding regression")
         _seed_crowding(connection, seed)
         _build_rollups(connection)
         try:
             yield connection, seed
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def test_delay_by_crowding_co_observes_per_band(conn_crowding) -> None:  # noqa: ANN001
