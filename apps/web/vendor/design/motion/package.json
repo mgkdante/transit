@@ -1,6 +1,6 @@
 {
   "name": "@yesid/motion",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "private": true,
   "type": "module",
   "description": "Pure brand motion actions extracted byte-faithful from yesid.dev @ 2bdb611d. Snappy Doctrine vocabulary (Tier 1): boop, magnetic, cursorGlow, sectionGlow, cardParallax, pressBounce, wordmarkHover + sectionMagnet. morphHover/scrollChain stay app-side (Tier 2).",

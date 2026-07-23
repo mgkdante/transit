@@ -1,6 +1,6 @@
 {
 	"name": "@yesid/analytics",
-	"version": "0.11.0",
+	"version": "0.11.1",
 	"private": true,
 	"type": "module",
 	"description": "Consumer-neutral, consent-aware analytics policy, client, sanitization, and injected Plausible transport primitives.",

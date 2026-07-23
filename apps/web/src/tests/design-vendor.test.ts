@@ -80,16 +80,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.11.0',
-	tagObject: 'bb307bcac5dbc96ecfb3cec706dd267f55b6e08f',
-	peeledCommit: '1e03114f27f2490dad35c13575ca7b0b06bde247',
-	assetName: 'yesid.dev-design-v0.11.0.tar',
+	tag: 'v0.11.1',
+	tagObject: '22443d66d2de3be26a395561b400a57452dcfc10',
+	peeledCommit: '5916438399e9f24030d5380aa2ea1158ba68fc9e',
+	assetName: 'yesid.dev-design-v0.11.1.tar',
 	assetSize: 798_720,
-	assetDigest: 'sha256:4bc8181ae34f9cc3e1b21a508e53d3a0930cff436f0eba4c3278c3e1b0c5fb5a',
+	assetDigest: 'sha256:1e62de2e76178a12e5e44060ee9568b910ae9e16ec923f87627e7e43be88ed7f',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:c3d4af6788407c6affd312172455da127c1e2e40cb0d623be6d51ca31672c18e',
-	treeHash: 'sha256:3c7d0e8f91adb6a70566847ef5e4702b75136db2e06488bfcd47e98c15c6cb10',
-	manifestDigest: '70c44fa29e553c634ea44f337c8f1497db50b66449e2e8b7b2c7fb537ddd84d9',
+	treeHash: 'sha256:f5aa5dc3325e7a2f33bbd529cf297987219ad81d80ec8a6fe74db146e4c9cffa',
+	manifestDigest: 'dcd3dec78edea3123e0fab23204988abae5520cb37e15049114eaa79080e0efe',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -159,7 +159,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.11.0');
+		expect(packageJson.version).toBe('0.11.1');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -184,7 +184,7 @@ describe('vendor/design integrity', () => {
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',
-			version: '0.11.0',
+			version: '0.11.1',
 		});
 		expect(files).toEqual([
 			'package.json',
