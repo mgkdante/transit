@@ -23,7 +23,6 @@ import os
 from contextlib import contextmanager
 
 import pytest
-from sqlalchemy import create_engine, text
 
 from transit_ops.gold.rollups import build_warm_rollups, provider_is_seeded
 
@@ -69,26 +68,19 @@ class _TxEngine:
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):  # noqa: ANN001
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
         # Seed ONLY the seeded provider into core.providers (→ dim_provider view).
-        connection.execute(
-            text(
-                """
-                INSERT INTO core.providers
-                    (provider_id, display_name, timezone, provider_key)
-                VALUES (:p, 'STM seed-guard regression', 'America/Toronto', :p)
-                """
-            ),
-            {"p": SEEDED_PROVIDER},
+        seed_provider(
+            connection,
+            SEEDED_PROVIDER,
+            display_name="STM seed-guard regression",
         )
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def test_provider_is_seeded_reflects_dim_provider_view(conn) -> None:
@@ -98,15 +90,11 @@ def test_provider_is_seeded_reflects_dim_provider_view(conn) -> None:
     assert provider_is_seeded(conn, SEEDED_PROVIDER) is True
 
 
-def test_provider_is_seeded_engine_overload_for_absent_provider() -> None:
+def test_provider_is_seeded_engine_overload_for_absent_provider(real_db_engine) -> None:  # noqa: ANN001
     """The Engine overload opens its own short-lived connection (the publish-all
     path). For a provider with no core.providers row it returns False without
     raising — read-only, so no fixture transaction is needed."""
-    engine = create_engine(DB_URL)
-    try:
-        assert provider_is_seeded(engine, UNSEEDED_PROVIDER) is False
-    finally:
-        engine.dispose()
+    assert provider_is_seeded(real_db_engine, UNSEEDED_PROVIDER) is False
 
 
 def test_build_warm_rollups_skips_unseeded_provider_without_noresultfound(conn) -> None:
