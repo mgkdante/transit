@@ -12,22 +12,14 @@ Each test runs in one transaction and rolls back. Never point this at production
 from __future__ import annotations
 
 import importlib.util
-import os
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold import rollups
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_alertcount_test"
 ENDPOINT_ID = 990032
@@ -41,18 +33,16 @@ D2_CAPTURED_2 = datetime(2026, 6, 9, 16, 0, tzinfo=UTC)
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
         _install_alert_count_views(connection)
-        _seed_provider_and_snapshots(connection)
+        _seed_provider_and_snapshots(connection, seed_provider)
         _seed_alert_rows(connection)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def _migration_0032():
@@ -76,16 +66,8 @@ def _install_alert_count_views(connection) -> None:  # noqa: ANN001
     connection.execute(text(impact_migration._IMPACT_VIEW))
 
 
-def _seed_provider_and_snapshots(connection) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM alert count regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
+def _seed_provider_and_snapshots(connection, seed_provider) -> None:  # noqa: ANN001
+    seed_provider(connection, PROVIDER, display_name="STM alert count regression")
     connection.execute(
         text(
             """
@@ -142,8 +124,12 @@ def _seed_alert_rows(connection) -> None:  # noqa: ANN001
     # partial unique index) and the reporting view still dedups them to 1.
     rows = [
         _alert_row(
-            SNAP_IDS[0], 0, D1_CAPTURED_1, "Elevator issue",
-            "legacy-elevator-hash", valid_to=D1_CAPTURED_2,
+            SNAP_IDS[0],
+            0,
+            D1_CAPTURED_1,
+            "Elevator issue",
+            "legacy-elevator-hash",
+            valid_to=D1_CAPTURED_2,
         ),
         _alert_row(SNAP_IDS[1], 0, D1_CAPTURED_2, "Elevator issue", "legacy-elevator-hash"),
         _alert_row(SNAP_IDS[2], 0, D2_CAPTURED_1, "Elevator issue", "realhash-a"),
