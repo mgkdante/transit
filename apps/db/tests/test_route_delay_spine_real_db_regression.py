@@ -14,23 +14,15 @@ and is watermark-idempotent. The seed is a hand-computed oracle (see the per-tes
 
 from __future__ import annotations
 
-import os
 from contextlib import contextmanager
 from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold import rollups
 from transit_ops.settings import Settings
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - spine real-DB regression skipped",
-)
 
 PROVIDER = "stm_spine_test"
 ENDPOINT_ID = 997001
@@ -60,28 +52,20 @@ def _build(connection) -> None:  # noqa: ANN001
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed(connection)
+        _seed(connection, seed_provider)
         _build(connection)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
-def _seed(connection) -> None:  # noqa: ANN001
+def _seed(connection, seed_provider) -> None:  # noqa: ANN001
     cld = _closed_local_date()
-    connection.execute(
-        text(
-            "INSERT INTO core.providers (provider_id, display_name, timezone, provider_key) "
-            "VALUES (:p, 'STM spine regression', 'America/Toronto', :p)"
-        ),
-        {"p": PROVIDER},
-    )
+    seed_provider(connection, PROVIDER, display_name="STM spine regression")
     connection.execute(
         text(
             "INSERT INTO core.feed_endpoints "
@@ -95,10 +79,11 @@ def _seed(connection) -> None:  # noqa: ANN001
     h9 = datetime.combine(cld, time(9, 0), tzinfo=TORONTO).astimezone(UTC)
     # hour 8, dir 0: 14 in-clamp delays + a 7200 ghost (ABS>3600) + a NULL.
     dir0_h8 = [-3600, -120, -61, -60, -30, 0, 59, 60, 61, 200, 299, 301, 1800, 3599, 7200, None]
-    dir1_h8 = [0, 60]            # second direction, same hour
-    dir0_h9 = [60, 60, 90]      # for the additivity property
-    _insert_rows(connection, cld, 997101, 997201, h8,
-                 [(d, 0) for d in dir0_h8] + [(d, 1) for d in dir1_h8])
+    dir1_h8 = [0, 60]  # second direction, same hour
+    dir0_h9 = [60, 60, 90]  # for the additivity property
+    _insert_rows(
+        connection, cld, 997101, 997201, h8, [(d, 0) for d in dir0_h8] + [(d, 1) for d in dir1_h8]
+    )
     _insert_rows(connection, cld, 997102, 997202, h9, [(d, 0) for d in dir0_h9])
 
     # hour 10, dir 0: delayed-trip parity across adversarial 5m buckets. The repeated
@@ -127,8 +112,7 @@ def _seed(connection) -> None:  # noqa: ANN001
 
     # An OPEN (today) row that must NOT be built (closed-day watermark).
     today = datetime.now(TORONTO).replace(hour=8, minute=0, second=0, microsecond=0)
-    _insert_rows(connection, today.date(), 997103, 997203,
-                 today.astimezone(UTC), [(100, 0)])
+    _insert_rows(connection, today.date(), 997103, 997203, today.astimezone(UTC), [(100, 0)])
 
 
 def _insert_rows(  # noqa: ANN001
@@ -149,8 +133,14 @@ def _insert_rows(  # noqa: ANN001
             " feed_timestamp_utc, entity_count, captured_at_utc) "
             "VALUES (:s, :r, :p, :e, :ts, :n, :ts)"
         ),
-        {"s": snapshot_id, "r": run_id, "p": PROVIDER, "e": ENDPOINT_ID,
-         "ts": captured_at, "n": len(rows)},
+        {
+            "s": snapshot_id,
+            "r": run_id,
+            "p": PROVIDER,
+            "e": ENDPOINT_ID,
+            "ts": captured_at,
+            "n": len(rows),
+        },
     )
     date_key = int(local_date.strftime("%Y%m%d"))
     for idx, (delay, direction) in enumerate(rows):
@@ -168,25 +158,38 @@ def _insert_rows(  # noqa: ANN001
                         :sld, NULL, NULL, :delay, 0, NULL, NULL)
                 """
             ),
-            {"p": PROVIDER, "s": snapshot_id, "ei": idx, "dk": date_key, "sld": local_date,
-             "ts": captured_at, "entity": f"e{snapshot_id}-{idx}", "trip": trip_id,
-             "dir": direction, "delay": delay},
+            {
+                "p": PROVIDER,
+                "s": snapshot_id,
+                "ei": idx,
+                "dk": date_key,
+                "sld": local_date,
+                "ts": captured_at,
+                "entity": f"e{snapshot_id}-{idx}",
+                "trip": trip_id,
+                "dir": direction,
+                "delay": delay,
+            },
         )
 
 
 def _spine_row(connection, hour, direction):  # noqa: ANN001
-    return connection.execute(
-        text(
-            """
+    return (
+        connection.execute(
+            text(
+                """
             SELECT observation_count, delay_observation_count, on_time_observation_count,
                    severe_delay_count, sum_delay_seconds, delay_histogram, delayed_trip_count
             FROM gold.route_delay_spine
             WHERE provider_id = :p AND route_id = '99S'
               AND hour_of_day_local = :h AND direction_id = :d
             """
-        ),
-        {"p": PROVIDER, "h": hour, "d": direction},
-    ).mappings().one_or_none()
+            ),
+            {"p": PROVIDER, "h": hour, "d": direction},
+        )
+        .mappings()
+        .one_or_none()
+    )
 
 
 def test_spine_hour8_dir0_exact_counts_and_histogram(conn) -> None:  # noqa: ANN001
@@ -206,17 +209,19 @@ def test_spine_hour8_dir0_exact_counts_and_histogram(conn) -> None:  # noqa: ANN
     assert len(hist) == 21
     # in-clamp only -> 14, NOT delay_observation_count(15) (the ghost has no bin).
     assert sum(hist) == 14
-    assert hist[5] == 1   # bin 5 = [-60,-30): the -60
-    assert hist[9] == 2   # bin 9 = [60,90): 60, 61
+    assert hist[5] == 1  # bin 5 = [-60,-30): the -60
+    assert hist[9] == 2  # bin 9 = [60,90): 60, 61
     assert hist[14] == 1  # bin 14 = [240,300): 299 (NOT severe)
-    assert hist[15] == 1  # bin 15 = [300,420): 301 (severe shares the bin -> why severe is a count, not a bin sum)
+    assert (
+        hist[15] == 1
+    )  # bin 15 = [300,420): 301 (severe shares the bin -> why severe is a count, not a bin sum)
 
 
 def test_spine_direction_split_not_merged(conn) -> None:  # noqa: ANN001
     r0 = _spine_row(conn, 8, 0)
     r1 = _spine_row(conn, 8, 1)
     assert r1 is not None
-    assert r1["observation_count"] == 2   # dir 1 is its OWN PK row
+    assert r1["observation_count"] == 2  # dir 1 is its OWN PK row
     assert r0["observation_count"] == 16  # not merged into dir 0
 
 
@@ -239,7 +244,7 @@ def test_spine_histograms_are_additive_across_hours(conn) -> None:  # noqa: ANN0
     assert h9[9] == 2 and h9[10] == 1
     assert sum(h9) == 3
     combined = [a + b for a, b in zip(h8, h9)]
-    assert combined[9] == 4               # 2 (h8) + 2 (h9): bins re-merge by addition
+    assert combined[9] == 4  # 2 (h8) + 2 (h9): bins re-merge by addition
     assert sum(combined) == sum(h8) + sum(h9) == 17
 
 
@@ -274,8 +279,7 @@ def test_spine_plan_reads_the_closed_day_fact_slice_once(conn) -> None:  # noqa:
     ]
     assert len(fact_nodes) == 1
     conditions = " ".join(
-        str(fact_nodes[0].get(key, ""))
-        for key in ("Index Cond", "Recheck Cond", "Filter")
+        str(fact_nodes[0].get(key, "")) for key in ("Index Cond", "Recheck Cond", "Filter")
     )
     assert "provider_id" in conditions
     assert "snapshot_date_key" in conditions
@@ -296,8 +300,7 @@ def test_spine_watermark_idempotent(conn) -> None:  # noqa: ANN001
         k
         for (k,) in conn.execute(
             text(
-                "SELECT DISTINCT rollup_kind FROM gold.warm_rollup_periods "
-                "WHERE provider_id = :p"
+                "SELECT DISTINCT rollup_kind FROM gold.warm_rollup_periods WHERE provider_id = :p"
             ),
             {"p": PROVIDER},
         )
