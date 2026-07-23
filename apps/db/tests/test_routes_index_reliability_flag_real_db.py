@@ -23,7 +23,7 @@ import os
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.snapshots.builders import build_routes_index
 
@@ -45,28 +45,18 @@ LOADED = datetime(2026, 6, 1, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
+        seed_provider(connection, PROVIDER, display_name="STM reliability-flag regression")
         _seed(connection)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def _seed(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM reliability-flag regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
     connection.execute(
         text(
             """
@@ -144,5 +134,3 @@ def test_reliability_flag_true_only_for_routes_with_history(conn) -> None:
     assert by_id[ROUTE_WITH].reliability is True
     # The route with NO history is flagged absent (the loader will skip it).
     assert by_id[ROUTE_WITHOUT].reliability is False
-
-
