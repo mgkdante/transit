@@ -18,22 +18,14 @@ Never point this at production.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold import rollups
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_headway_test"
 ENDPOINT_ID = 995001
@@ -44,28 +36,18 @@ LOCAL_TZ = ZoneInfo("America/Toronto")
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed_provider(connection)
+        _seed_provider(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
-def _seed_provider(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM headway regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
+def _seed_provider(connection, seed_provider) -> None:
+    seed_provider(connection, PROVIDER, display_name="STM headway regression")
     connection.execute(
         text(
             """
@@ -393,8 +375,12 @@ def _run_direction_headway_rollup(connection) -> None:
         # The upsert now binds the fact window (was a hardcoded 14-day literal).
         "fact_retention_days": 14,
     }
-    connection.execute(rollups.DELETE_REPORTING_AGGREGATES["route_headway_by_direction_shift"], params)
-    connection.execute(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_by_direction_shift"], params)
+    connection.execute(
+        rollups.DELETE_REPORTING_AGGREGATES["route_headway_by_direction_shift"], params
+    )
+    connection.execute(
+        rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_by_direction_shift"], params
+    )
 
 
 def _direction_headway_rows(connection, route_id: str) -> list[dict]:
