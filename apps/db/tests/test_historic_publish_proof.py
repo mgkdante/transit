@@ -8,7 +8,7 @@ from http.client import HTTPException, IncompleteRead, InvalidURL
 from multiprocessing import get_context
 from threading import Event
 from time import monotonic, sleep
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -62,6 +62,7 @@ from transit_ops.snapshots.gate import check_alert_archive_index
 from transit_ops.snapshots.serialization import snapshot_sha256
 from transit_ops.validation.historic_publish import (
     AlertExpectations,
+    HistoricPublishProofReport,
     MigrationEvidence,
     build_historic_publish_proof,
 )
@@ -2138,6 +2139,307 @@ def test_public_fetch_sends_explicit_transit_user_agent(
         "cache_control": "no-cache",
         "user_agent": "transit-historic-proof/1.0 (+https://transit.yesid.dev)",
     }
+
+
+def _transport_probe(
+    error_factory: Callable[[], Exception],
+    *,
+    failure_count: int | None = 1,
+    target_selector: Callable[[PublicFixture], str] | None = None,
+    on_failure: Callable[[], None] | None = None,
+    proof_timeout_seconds: float | None = None,
+    monotonic_clock: Callable[[], float] | None = None,
+) -> tuple[HistoricPublishProofReport, PublicFixture, int]:
+    fixture = _complete_public_fixture()
+    target = target_selector(fixture) if target_selector is not None else "manifest.json"
+    target_attempts = 0
+
+    def fetch_override(url: str) -> bytes:
+        nonlocal target_attempts
+        path = urlsplit(url).path.split("/v1/stm/", 1)[1]
+        if path == target:
+            target_attempts += 1
+            if failure_count is None or target_attempts <= failure_count:
+                if on_failure is not None:
+                    on_failure()
+                raise error_factory()
+        return fixture.public_bytes[path]
+
+    report = _build_report(
+        fixture,
+        fetch_override=fetch_override,
+        proof_timeout_seconds=proof_timeout_seconds,
+        monotonic_clock=monotonic_clock,
+    )
+    return report, fixture, target_attempts
+
+
+def test_historic_publish_proof_recovers_one_transient_timeout() -> None:
+    report, fixture, attempts = _transport_probe(lambda: TimeoutError("private transient timeout"))
+
+    assert report.status == "pass"
+    assert report.failures == ()
+    assert attempts == 2
+    assert report.public["deadline"]["transport"] == {
+        "attempts": len(fixture.fetch_calls),
+        "retries": 1,
+        "recovered": 1,
+        "exhausted": 0,
+    }
+    assert "private transient timeout" not in str(report.display_dict())
+
+
+@pytest.mark.parametrize(
+    "error_factory",
+    [
+        lambda: ConnectionError("private connection failure"),
+        lambda: IncompleteRead(b"private partial body", 100),
+        lambda: URLError(TimeoutError("private wrapped timeout")),
+        lambda: URLError(ConnectionError("private wrapped connection")),
+        lambda: URLError(IncompleteRead(b"private wrapped partial body", 100)),
+    ],
+    ids=[
+        "connection-family",
+        "incomplete-read",
+        "url-timeout",
+        "url-connection-family",
+        "url-incomplete-read",
+    ],
+)
+def test_historic_publish_proof_recovers_allowlisted_transport_failure(
+    error_factory: Callable[[], Exception],
+) -> None:
+    report, fixture, attempts = _transport_probe(error_factory)
+
+    assert report.status == "pass"
+    assert attempts == 2
+    assert report.public["deadline"]["transport"] == {
+        "attempts": len(fixture.fetch_calls),
+        "retries": 1,
+        "recovered": 1,
+        "exhausted": 0,
+    }
+    assert "private" not in str(report.display_dict())
+
+
+def test_historic_publish_proof_deadline_prevents_transient_retry() -> None:
+    clock_value = [0.0]
+
+    def monotonic_clock() -> float:
+        return clock_value[0]
+
+    def expire_deadline() -> None:
+        clock_value[0] = 1.0
+
+    report, _, attempts = _transport_probe(
+        lambda: TimeoutError("private timeout at deadline"),
+        on_failure=expire_deadline,
+        proof_timeout_seconds=1.0,
+        monotonic_clock=monotonic_clock,
+    )
+
+    assert report.status == "fail"
+    assert "historic_proof_deadline_exceeded" in report.failures
+    assert attempts == 1
+    assert report.public["deadline"]["transport"] == {
+        "attempts": 1,
+        "retries": 0,
+        "recovered": 0,
+        "exhausted": 0,
+    }
+    assert "private timeout at deadline" not in str(report.display_dict())
+
+
+def test_bounded_public_fetches_share_the_transient_retry_policy() -> None:
+    report, fixture, attempts = _transport_probe(
+        lambda: TimeoutError("private bounded-fetch timeout"),
+        target_selector=lambda fixture: next(iter(fixture.range_graph_paths.values()))[0],
+    )
+
+    assert report.status == "pass"
+    assert attempts == 2
+    assert report.public["deadline"]["transport"] == {
+        "attempts": len(fixture.fetch_calls),
+        "retries": 1,
+        "recovered": 1,
+        "exhausted": 0,
+    }
+    assert "private bounded-fetch timeout" not in str(report.display_dict())
+
+
+@pytest.mark.parametrize("http_status", [408, 429, 500, 503])
+def test_historic_publish_proof_never_retries_http_errors(http_status: int) -> None:
+    report, _, attempts = _transport_probe(
+        lambda: HTTPError(
+            "https://data.example.com/private",
+            http_status,
+            "private HTTP failure",
+            hdrs=None,
+            fp=None,
+        ),
+        failure_count=None,
+    )
+
+    assert report.status == "fail"
+    assert attempts == 1
+    artifact = report.public["artifacts"]["manifest.json"]
+    assert artifact["http_status"] == http_status
+    assert artifact["failures"] == ["public_artifact_fetch_failed"]
+    transport = report.public["deadline"]["transport"]
+    assert transport["retries"] == 0
+    assert transport["recovered"] == 0
+    assert transport["exhausted"] == 0
+    assert "private HTTP failure" not in str(report.display_dict())
+
+
+@pytest.mark.parametrize(
+    "error_factory",
+    [
+        lambda: InvalidURL("private invalid URL"),
+        lambda: URLError(ValueError("private semantic URL failure")),
+    ],
+    ids=["invalid-url", "url-semantic-reason"],
+)
+def test_historic_publish_proof_never_retries_nontransport_url_errors(
+    error_factory: Callable[[], Exception],
+) -> None:
+    report, _, attempts = _transport_probe(error_factory, failure_count=None)
+
+    assert report.status == "fail"
+    assert attempts == 1
+    transport = report.public["deadline"]["transport"]
+    assert transport["retries"] == 0
+    assert transport["recovered"] == 0
+    assert transport["exhausted"] == 0
+    assert "private" not in str(report.display_dict())
+
+
+def test_historic_publish_proof_fails_closed_after_transport_retry_exhaustion() -> None:
+    report, _, attempts = _transport_probe(
+        lambda: TimeoutError("private repeated timeout"),
+        failure_count=None,
+    )
+
+    assert report.status == "fail"
+    assert "public_artifact_fetch_failed" in report.failures
+    assert attempts == 2
+    artifact = report.public["artifacts"]["manifest.json"]
+    assert artifact["error_type"] == "TimeoutError"
+    assert artifact["failures"] == ["public_artifact_fetch_failed"]
+    transport = report.public["deadline"]["transport"]
+    assert transport["retries"] == 1
+    assert transport["recovered"] == 0
+    assert transport["exhausted"] == 1
+    assert "private repeated timeout" not in str(report.display_dict())
+
+
+@pytest.mark.parametrize(
+    "second_error_factory",
+    [
+        lambda: HTTPError(
+            "https://data.example.com/private",
+            503,
+            "private HTTP failure",
+            hdrs=None,
+            fp=None,
+        ),
+        lambda: InvalidURL("private invalid URL"),
+    ],
+    ids=["http-error", "invalid-url"],
+)
+def test_historic_publish_proof_exhausts_retry_on_permanent_second_failure(
+    second_error_factory: Callable[[], Exception],
+) -> None:
+    errors = iter(
+        (
+            lambda: TimeoutError("private initial timeout"),
+            second_error_factory,
+        )
+    )
+    report, fixture, attempts = _transport_probe(lambda: next(errors)(), failure_count=2)
+
+    assert report.status == "fail"
+    assert "public_artifact_fetch_failed" in report.failures
+    assert attempts == 2
+    assert report.public["deadline"]["transport"] == {
+        "attempts": len(fixture.fetch_calls),
+        "retries": 1,
+        "recovered": 0,
+        "exhausted": 1,
+    }
+    assert "private" not in str(report.display_dict())
+
+
+@pytest.mark.parametrize(
+    ("error_factory", "error_type", "http_status", "propagates"),
+    [
+        (lambda: TypeError("programming bug"), "TypeError", None, True),
+        (
+            lambda: HTTPError(
+                "https://data.example.com/private",
+                503,
+                "private HTTP failure",
+                hdrs=None,
+                fp=None,
+            ),
+            "HTTPError",
+            503,
+            False,
+        ),
+        (lambda: InvalidURL("private invalid URL"), "InvalidURL", None, False),
+        (lambda: ValueError("private value failure"), "ValueError", None, False),
+    ],
+    ids=["type-error", "http-error", "invalid-url", "value-error"],
+)
+def test_first_permanent_failure_keeps_its_behavior_after_crossing_deadline(
+    error_factory: Callable[[], Exception],
+    error_type: str,
+    http_status: int | None,
+    propagates: bool,
+) -> None:
+    fixture = _complete_public_fixture()
+    clock_value = [0.0]
+    physical_calls = 0
+
+    def fetch_override(url: str) -> bytes:
+        nonlocal physical_calls
+        physical_calls += 1
+        if physical_calls == 1:
+            clock_value[0] = 1.0
+            raise error_factory()
+        path = urlsplit(url).path.split("/v1/stm/", 1)[1]
+        return fixture.public_bytes[path]
+
+    if propagates:
+        with pytest.raises(TypeError, match="programming bug"):
+            _build_report(
+                fixture,
+                fetch_override=fetch_override,
+                proof_timeout_seconds=1.0,
+                monotonic_clock=lambda: clock_value[0],
+            )
+    else:
+        report = _build_report(
+            fixture,
+            fetch_override=fetch_override,
+            proof_timeout_seconds=1.0,
+            monotonic_clock=lambda: clock_value[0],
+        )
+        assert report.status == "fail"
+        assert "public_artifact_fetch_failed" in report.failures
+        artifact = report.public["artifacts"]["manifest.json"]
+        assert artifact["error_type"] == error_type
+        if http_status is not None:
+            assert artifact["http_status"] == http_status
+        assert report.public["deadline"]["transport"] == {
+            "attempts": 1,
+            "retries": 0,
+            "recovered": 0,
+            "exhausted": 0,
+        }
+        assert "private" not in str(report.display_dict())
+
+    assert physical_calls == 1
 
 
 def test_historic_publish_proof_records_incomplete_read_without_partial_body() -> None:

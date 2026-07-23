@@ -12,12 +12,13 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
-from http.client import HTTPException
+from http.client import HTTPException, IncompleteRead
 from multiprocessing import get_context
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from threading import Lock
 from typing import Literal, TypeVar, cast
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
@@ -104,6 +105,11 @@ class _HistoricProofDeadline:
     abandoned_request_count: int = 0
     whole_proof_process_terminated_count: int = 0
     max_batch_size: int = 0
+    transport_attempts: int = 0
+    transport_retries: int = 0
+    transport_recovered: int = 0
+    transport_exhausted: int = 0
+    _transport_lock: Lock = field(default_factory=Lock, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.budget_seconds <= 0:
@@ -136,10 +142,30 @@ class _HistoricProofDeadline:
     def record_whole_proof_process_terminated(self) -> None:
         self.whole_proof_process_terminated_count += 1
 
+    def record_transport_attempt(self, *, retry: bool) -> None:
+        with self._transport_lock:
+            self.transport_attempts += 1
+            self.transport_retries += int(retry)
+
+    def record_transport_recovered(self) -> None:
+        with self._transport_lock:
+            self.transport_recovered += 1
+
+    def record_transport_exhausted(self) -> None:
+        with self._transport_lock:
+            self.transport_exhausted += 1
+
     def evidence(self) -> dict[str, object]:
-        elapsed = self.exceeded_elapsed_seconds
-        if elapsed is None:
-            elapsed = self.elapsed_seconds()
+        with self._transport_lock:
+            transport = {
+                "attempts": self.transport_attempts,
+                "retries": self.transport_retries,
+                "recovered": self.transport_recovered,
+                "exhausted": self.transport_exhausted,
+            }
+            elapsed = self.exceeded_elapsed_seconds
+            if elapsed is None:
+                elapsed = self.elapsed_seconds()
         return {
             "budget_seconds": self.budget_seconds,
             "elapsed_seconds": round(elapsed, 6),
@@ -151,6 +177,7 @@ class _HistoricProofDeadline:
             "cancelled_request_count": self.cancelled_request_count,
             "abandoned_request_count": self.abandoned_request_count,
             "whole_proof_process_terminated_count": self.whole_proof_process_terminated_count,
+            "transport": transport,
         }
 
 
@@ -158,6 +185,53 @@ _ACTIVE_PROOF_DEADLINE: ContextVar[_HistoricProofDeadline | None] = ContextVar(
     "historic_publish_proof_deadline",
     default=None,
 )
+
+
+def _is_transient_transport_error(exc: Exception) -> bool:
+    if isinstance(exc, (HistoricProofDeadlineExceeded, HTTPError)):
+        return False
+    reason = exc.reason if isinstance(exc, URLError) else exc
+    return not isinstance(reason, HistoricProofDeadlineExceeded) and isinstance(
+        reason,
+        (TimeoutError, ConnectionError, IncompleteRead),
+    )
+
+
+def _retry_transient_fetch(
+    fetch_bytes: FetchBytes,
+    deadline: _HistoricProofDeadline | None,
+) -> FetchBytes:
+    def fetch(url: str) -> bytes:
+        retry = False
+        while True:
+            if deadline is not None and deadline.is_expired():
+                raise HistoricProofDeadlineExceeded
+            if deadline is not None:
+                deadline.record_transport_attempt(retry=retry)
+            try:
+                raw = fetch_bytes(url)
+            except HistoricProofDeadlineExceeded:
+                if retry and deadline is not None:
+                    deadline.record_transport_exhausted()
+                raise
+            except Exception as exc:
+                if retry:
+                    if deadline is not None:
+                        deadline.record_transport_exhausted()
+                        if deadline.is_expired():
+                            raise HistoricProofDeadlineExceeded from exc
+                    raise
+                if not _is_transient_transport_error(exc):
+                    raise
+                if deadline is not None and deadline.is_expired():
+                    raise HistoricProofDeadlineExceeded from exc
+                retry = True
+                continue
+            if retry and deadline is not None:
+                deadline.record_transport_recovered()
+            return raw
+
+    return fetch
 
 
 @dataclass(frozen=True)
@@ -1734,7 +1808,10 @@ def _build_historic_publish_proof(
     legacy_public_description_count: int | None = None
 
     if public_root is not None:
-        resolved_fetch = fetch_bytes or _default_fetch_bytes
+        resolved_fetch = _retry_transient_fetch(
+            fetch_bytes or _default_fetch_bytes,
+            _ACTIVE_PROOF_DEADLINE.get(),
+        )
         proof_query = f"proof={uuid4().hex}"
         manifest, _, manifest_artifact = _fetch_model(
             "manifest.json",
