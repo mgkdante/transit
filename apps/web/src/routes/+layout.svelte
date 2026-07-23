@@ -34,9 +34,10 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { updated } from '$app/state';
-	import { goto, onNavigate, beforeNavigate } from '$app/navigation';
+	import { goto, onNavigate, beforeNavigate, afterNavigate } from '$app/navigation';
 	import { browser } from '$app/environment';
 
+	import { transitAnalytics } from '$lib/analytics/runtime';
 	import {
 		setLocaleContext,
 		DEFAULT_LOCALE,
@@ -316,6 +317,10 @@
 	// (@view-transition + the ::view-transition-*(root) cross-fade, reduced-motion
 	// guarded). Canonical SvelteKit + View Transitions recipe.
 	onNavigate((navigation) => runViewTransition(navigation));
+
+	afterNavigate(({ to }) => {
+		if (to) void transitAnalytics.trackPageview(to.url);
+	});
 
 	// Freshness upgrade for long-lived sessions. SvelteKit's version poll
 	// (kit.version.pollInterval in svelte.config.js) flips `updated.current` true
