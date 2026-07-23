@@ -16,21 +16,13 @@ Each test runs inside one transaction and rolls back. Never point this at produc
 from __future__ import annotations
 
 import importlib.util
-import os
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold import rollups
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_otp_test"
 ENDPOINT_ID = 990030
@@ -41,16 +33,14 @@ PERIOD = datetime(2026, 6, 12, 12, 5, tzinfo=UTC)
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed_provider_and_snapshot(connection)
+        _seed_provider_and_snapshot(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def _migration_0030():
@@ -64,16 +54,8 @@ def _migration_0030():
     return module
 
 
-def _seed_provider_and_snapshot(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM OTP regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
+def _seed_provider_and_snapshot(connection, seed_provider) -> None:
+    seed_provider(connection, PROVIDER, display_name="STM OTP regression")
     connection.execute(
         text(
             """
@@ -206,9 +188,7 @@ def _insert_hourly(
             "route_id": route_id,
             "delay_obs": delay_obs,
             "on_time": on_time,
-            "observation_count": observation_count
-            if observation_count is not None
-            else delay_obs,
+            "observation_count": observation_count if observation_count is not None else delay_obs,
             "avg_delay_seconds": avg_delay_seconds,
             "built_at": BUILT_AT,
         },
@@ -268,16 +248,20 @@ def test_5m_upsert_counts_on_time_band_edges(conn) -> None:
         {"provider_id": PROVIDER, "period_start_utc": PERIOD, "built_at_utc": BUILT_AT},
     )
 
-    row = conn.execute(
-        text(
-            """
+    row = (
+        conn.execute(
+            text(
+                """
             SELECT observation_count, delay_observation_count, on_time_observation_count
             FROM gold.trip_delay_summary_5m
             WHERE provider_id = :p AND period_start_utc = :period AND route_id = '51'
             """
-        ),
-        {"p": PROVIDER, "period": PERIOD},
-    ).mappings().one()
+            ),
+            {"p": PROVIDER, "period": PERIOD},
+        )
+        .mappings()
+        .one()
+    )
 
     assert row["on_time_observation_count"] == 3
     assert row["delay_observation_count"] == 6
@@ -294,17 +278,21 @@ def test_hourly_rollup_null_guard_propagates_legacy_buckets(conn) -> None:
     )
 
     _run_route_delay_hourly_rollup(conn)
-    row = conn.execute(
-        text(
-            """
+    row = (
+        conn.execute(
+            text(
+                """
             SELECT delay_observation_count, on_time_observation_count
             FROM gold.route_delay_hourly
             WHERE provider_id = :p
               AND period_start_utc = date_trunc('hour', CAST(:period AS timestamptz))
             """
-        ),
-        {"p": PROVIDER, "period": PERIOD},
-    ).mappings().one()
+            ),
+            {"p": PROVIDER, "period": PERIOD},
+        )
+        .mappings()
+        .one()
+    )
     assert row["delay_observation_count"] == 10
     assert row["on_time_observation_count"] is None
 
@@ -337,16 +325,20 @@ def test_public_daily_view_null_guard(conn) -> None:
     _insert_hourly(conn, period=datetime(2026, 6, 12, 12, 0, tzinfo=UTC), delay_obs=6, on_time=5)
     _insert_hourly(conn, period=datetime(2026, 6, 12, 13, 0, tzinfo=UTC), delay_obs=4, on_time=None)
 
-    row = conn.execute(
-        text(
-            """
+    row = (
+        conn.execute(
+            text(
+                """
             SELECT delay_observation_count, on_time_observation_count
             FROM gold.public_route_reliability_daily
             WHERE provider_id = :p AND route_id = '51'
             """
-        ),
-        {"p": PROVIDER},
-    ).mappings().one()
+            ),
+            {"p": PROVIDER},
+        )
+        .mappings()
+        .one()
+    )
     assert row["delay_observation_count"] == 10
     assert row["on_time_observation_count"] is None
 
@@ -403,5 +395,3 @@ def test_migration_backfill_fills_buckets_within_fact_window(conn) -> None:
     }
     assert rows[PERIOD] == 2
     assert rows[datetime(2026, 6, 12, 12, 15, tzinfo=UTC)] is None
-
-
