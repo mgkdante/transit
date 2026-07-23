@@ -34,11 +34,10 @@ Never point this at production.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from transit_ops.gold.dim_history import _backfill_on_connection, parse_gtfs_name_rows
@@ -47,13 +46,6 @@ from transit_ops.gold.marts import (
     CLOSE_DIM_STOP_HISTORY,
     OPEN_DIM_ROUTE_HISTORY,
     OPEN_DIM_STOP_HISTORY,
-)
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
 )
 
 PROVIDER = "stm_dimhist_test"
@@ -81,28 +73,18 @@ V2_STOPS = [
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed(connection)
+        _seed(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
-def _seed(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM dim history regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
+def _seed(connection, seed_provider) -> None:
+    seed_provider(connection, PROVIDER, display_name="STM dim history regression")
     connection.execute(
         text(
             """
