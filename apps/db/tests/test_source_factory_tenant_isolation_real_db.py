@@ -18,34 +18,18 @@ rolls back.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import Connection, create_engine, text
+from sqlalchemy import Connection, text
 
 from transit_ops.source_factory.catalog import reset_source_factory_tables
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
-)
 
 PROVIDER_A = "mpp_iso_a"
 PROVIDER_B = "mpp_iso_b"
 
 
-def _seed_provider(connection: Connection, provider_id: str) -> None:
-    connection.execute(
-        text(
-            "INSERT INTO core.providers "
-            "(provider_id, provider_key, display_name, timezone) "
-            "VALUES (:pid, :pid, :name, 'America/Toronto')"
-        ),
-        {"pid": provider_id, "name": f"Isolation {provider_id}"},
-    )
+def _seed_source_chain(connection: Connection, provider_id: str) -> None:
     feed_endpoint_id = connection.execute(
         text(
             "INSERT INTO core.feed_endpoints "
@@ -82,17 +66,17 @@ def _count(connection: Connection, table: str, provider_id: str) -> int:
 
 
 @pytest.fixture()
-def conn() -> Iterator[Connection]:
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider) -> Iterator[Connection]:  # noqa: ANN001
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed_provider(connection, PROVIDER_A)
-        _seed_provider(connection, PROVIDER_B)
+        seed_provider(connection, PROVIDER_A, display_name=f"Isolation {PROVIDER_A}")
+        seed_provider(connection, PROVIDER_B, display_name=f"Isolation {PROVIDER_B}")
+        _seed_source_chain(connection, PROVIDER_A)
+        _seed_source_chain(connection, PROVIDER_B)
         try:
             yield connection
         finally:
             transaction.rollback()
-            engine.dispose()
 
 
 def test_per_provider_reset_leaves_other_providers_untouched(conn: Connection) -> None:
