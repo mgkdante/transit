@@ -20,7 +20,7 @@ import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.snapshots.builders import build_data_health
 from transit_ops.snapshots.contract import DATA_HEALTH_BYTE_CEILING
@@ -42,28 +42,18 @@ STATIC_GEN = NOW - timedelta(days=1)
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
+        seed_provider(connection, PROVIDER, display_name="STM data-health test")
         _seed(connection)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def _seed(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM data-health test', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
     # live lane — WITH gate telemetry (verdict warn).
     connection.execute(
         text(
@@ -135,10 +125,7 @@ def test_data_health_omits_tier_with_no_state_row(conn) -> None:
     # Drop the static row: build_data_health must OMIT the lane (honest not-applicable),
     # never fabricate a zero-age placeholder.
     conn.execute(
-        text(
-            "DELETE FROM core.snapshot_publish_state "
-            "WHERE provider_id = :p AND tier = 'static'"
-        ),
+        text("DELETE FROM core.snapshot_publish_state WHERE provider_id = :p AND tier = 'static'"),
         {"p": PROVIDER},
     )
     out = build_data_health(conn, provider_id=PROVIDER, generated_utc="t")
