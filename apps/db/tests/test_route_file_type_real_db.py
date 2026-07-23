@@ -18,21 +18,13 @@ Never point this at production. (CI has no Postgres — skipped there.)
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.snapshots.builders import build_route
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_route_type_test"
 ENDPOINT_ID = 930_001
@@ -48,27 +40,21 @@ CONFLICT_STOP_Z = "stop-from-trip-z"
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed(connection)
+        _seed(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
-def _seed(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM route-type regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
+def _seed(connection, seed_provider) -> None:
+    seed_provider(
+        connection,
+        PROVIDER,
+        display_name="STM route-type regression",
     )
     connection.execute(
         text(
