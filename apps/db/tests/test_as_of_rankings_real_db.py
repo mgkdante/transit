@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 
-import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.snapshots import gate, publish
 from transit_ops.snapshots.builders import historic
@@ -20,13 +18,6 @@ from transit_ops.snapshots.builders.historic.small_surfaces import (
 )
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
 from transit_ops.sql_registry import query_name
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - as-of ranking publication gate skipped",
-)
 
 PROVIDER = "stm_as_of_rankings_publish_test"
 STAMP = "2026-07-13T00:00:00Z"
@@ -46,21 +37,11 @@ class _NamedQueryConnection:
 
 
 @contextmanager
-def _seeded_connection():  # noqa: ANN201
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def _seeded_connection(real_db_engine, seed_provider):  # noqa: ANN201
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
+        seed_provider(connection, PROVIDER, display_name="As-of ranking publication")
         try:
-            connection.execute(
-                text(
-                    "INSERT INTO core.providers "
-                    "(provider_id, display_name, timezone, provider_key) "
-                    "VALUES (:provider_id, 'As-of ranking publication', "
-                    "'America/Toronto', :provider_id) "
-                    "ON CONFLICT (provider_id) DO NOTHING"
-                ),
-                {"provider_id": PROVIDER},
-            )
             for table in (
                 "repeat_offender",
                 "repeat_offender_daily_spine",
@@ -261,7 +242,6 @@ def _seeded_connection():  # noqa: ANN201
             yield connection
         finally:
             transaction.rollback()
-    engine.dispose()
 
 
 def _repeat_grain_core(grain) -> dict[str, object]:  # noqa: ANN001
@@ -271,9 +251,8 @@ def _repeat_grain_core(grain) -> dict[str, object]:  # noqa: ANN001
     return value
 
 
-def test_publish_advisory_transaction_lock_serializes_provider_history_lane() -> None:
-    engine = create_engine(DB_URL)
-    with engine.connect() as first, engine.connect() as second:
+def test_publish_advisory_transaction_lock_serializes_provider_history_lane(real_db_engine) -> None:
+    with real_db_engine.connect() as first, real_db_engine.connect() as second:
         first_tx = first.begin()
         second_tx = second.begin()
         params = {"provider_id": PROVIDER, "tier": "historic"}
@@ -293,11 +272,12 @@ def test_publish_advisory_transaction_lock_serializes_provider_history_lane() ->
             if first_tx.is_active:
                 first_tx.rollback()
             second_tx.rollback()
-    engine.dispose()
 
 
-def test_production_point_plans_are_bounded_closed_parity_exactly_addressed() -> None:
-    with _seeded_connection() as connection:
+def test_production_point_plans_are_bounded_closed_parity_exactly_addressed(
+    real_db_engine, seed_provider
+) -> None:
+    with _seeded_connection(real_db_engine, seed_provider) as connection:
         recorded = _NamedQueryConnection(connection)
         hotspot_plan = historic.build_hotspots_history_plan(recorded, PROVIDER)
         repeat_plan = historic.build_repeat_offenders_history_plan(recorded, PROVIDER)
