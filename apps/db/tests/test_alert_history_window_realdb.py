@@ -16,23 +16,15 @@ Each test runs inside one transaction and rolls back.
 
 from __future__ import annotations
 
-import os
 import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.silver.i3 import RawI3AlertSnapshot, load_i3_snapshot_to_silver
 from transit_ops.snapshots.builders import build_alert_history
 from transit_ops.snapshots.contract import ALERT_HISTORY_BYTE_CEILING
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB tests skipped",
-)
 
 PROVIDER = "stm_alerthistwin_test"
 ENDPOINT_ID = 994014
@@ -57,10 +49,14 @@ IN_ALERT = {
         {"language": "en", "text": "https://stm.info/en/alert/win-a"},
     ],
     "activePeriods": [
-        {"start": int((NOW - timedelta(days=9)).timestamp()),
-         "end": int((NOW - timedelta(days=8)).timestamp())},
-        {"start": int((NOW - timedelta(days=2)).timestamp()),
-         "end": int((NOW - timedelta(days=1)).timestamp())},
+        {
+            "start": int((NOW - timedelta(days=9)).timestamp()),
+            "end": int((NOW - timedelta(days=8)).timestamp()),
+        },
+        {
+            "start": int((NOW - timedelta(days=2)).timestamp()),
+            "end": int((NOW - timedelta(days=1)).timestamp()),
+        },
     ],
 }
 # Out-of-window alert (200 days old) — must be clamped OUT.
@@ -68,28 +64,18 @@ OUT_ALERT = {"id": "OLD-A", "header": "Vieil avis", "routes": ["24"]}
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):  # noqa: ANN001
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
+        seed_provider(connection, PROVIDER, display_name="STM alert-history window test")
         _seed(connection)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def _seed(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM alert-history window test', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
     connection.execute(
         text(
             """
@@ -164,8 +150,10 @@ def test_window_clamps_and_serves_multi_period(conn, capsys) -> None:  # noqa: A
     # Byte-ceiling probe + a timing sanity note on the 90d scan.
     size = len(out.model_dump_json().encode("utf-8"))
     with capsys.disabled():
-        print(f"\n[S15 alert_history probe] entries={len(out.alerts)} bytes={size} "
-              f"ceiling={ALERT_HISTORY_BYTE_CEILING} build={elapsed*1000:.0f}ms")
+        print(
+            f"\n[S15 alert_history probe] entries={len(out.alerts)} bytes={size} "
+            f"ceiling={ALERT_HISTORY_BYTE_CEILING} build={elapsed * 1000:.0f}ms"
+        )
     assert size <= ALERT_HISTORY_BYTE_CEILING
 
 
