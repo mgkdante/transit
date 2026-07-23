@@ -17,21 +17,13 @@ Never point this at production.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold import rollups
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_shiftgrain_test"
 TRIP_ENDPOINT_ID = 994401
@@ -42,26 +34,18 @@ BUILT_AT = datetime(2026, 6, 13, 12, 0, tzinfo=UTC)
 
 
 @pytest.fixture()
-def conn():  # noqa: ANN201
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):  # noqa: ANN001, ANN201
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed_provider(connection)
+        _seed_provider(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
-def _seed_provider(connection) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            "INSERT INTO core.providers (provider_id, display_name, timezone, provider_key) "
-            "VALUES (:p, 'STM shift-grain regression', 'America/Toronto', :p)"
-        ),
-        {"p": PROVIDER},
-    )
+def _seed_provider(connection, seed_provider) -> None:  # noqa: ANN001
+    seed_provider(connection, PROVIDER, display_name="STM shift-grain regression")
     connection.execute(
         text(
             "INSERT INTO core.feed_endpoints "
@@ -106,9 +90,19 @@ def _fact(connection, sid, idx, captured_at, *, stop_id, route_id, delay) -> Non
                     :sld, NULL, 0, :delay, 1, :stop, 1)
             """
         ),
-        {"p": PROVIDER, "s": sid, "ei": idx, "dk": DATE_KEY, "sld": LOCAL_DATE,
-         "ts": captured_at, "entity": f"e{sid}-{idx}", "trip": f"t{sid}-{idx}",
-         "route": route_id, "delay": delay, "stop": stop_id},
+        {
+            "p": PROVIDER,
+            "s": sid,
+            "ei": idx,
+            "dk": DATE_KEY,
+            "sld": LOCAL_DATE,
+            "ts": captured_at,
+            "entity": f"e{sid}-{idx}",
+            "trip": f"t{sid}-{idx}",
+            "route": route_id,
+            "delay": delay,
+            "stop": stop_id,
+        },
     )
 
 
@@ -121,9 +115,9 @@ def _seed_boundary_facts(connection) -> None:  # noqa: ANN001
     sid, run_id = 994500, 994600
     # 05:59 local -> hour 5 -> night ; 06:00 local -> hour 6 -> am_peak ; 07:00 -> am_peak.
     facts = [
-        (_at_local(5, 59), 100),   # night
-        (_at_local(6, 0), 200),    # am_peak (severe: >300? no -> not severe)
-        (_at_local(7, 0), 400),    # am_peak, severe (>300)
+        (_at_local(5, 59), 100),  # night
+        (_at_local(6, 0), 200),  # am_peak (severe: >300? no -> not severe)
+        (_at_local(7, 0), 400),  # am_peak, severe (>300)
     ]
     _snapshot(connection, sid, run_id, _at_local(6, 0), len(facts))
     for idx, (ts, delay) in enumerate(facts):
@@ -132,8 +126,10 @@ def _seed_boundary_facts(connection) -> None:  # noqa: ANN001
 
 def _run_builders(connection) -> None:  # noqa: ANN001
     binds = {
-        "provider_id": PROVIDER, "local_date": LOCAL_DATE,
-        "date_key": DATE_KEY, "built_at_utc": BUILT_AT,
+        "provider_id": PROVIDER,
+        "local_date": LOCAL_DATE,
+        "date_key": DATE_KEY,
+        "built_at_utc": BUILT_AT,
     }
     connection.execute(rollups.UPSERT_STOP_DELAY_SPINE, binds)
     connection.execute(rollups.UPSERT_STOP_DELAY_SHIFT_DAILY, binds)
@@ -174,31 +170,40 @@ def test_shift_bucketing_matches_route_spine_at_boundary(conn) -> None:  # noqa:
             {"p": PROVIDER},
         ).mappings()
     }
-    assert route_by_hour[5] == 1                              # night
-    assert route_by_hour[6] + route_by_hour[7] == 2          # am_peak
+    assert route_by_hour[5] == 1  # night
+    assert route_by_hour[6] + route_by_hour[7] == 2  # am_peak
 
 
 def test_cross_table_additive_parity_with_stop_spine(conn) -> None:  # noqa: ANN001
     _seed_boundary_facts(conn)
     _run_builders(conn)
 
-    spine = conn.execute(
-        text(
-            "SELECT observation_count, severe_delay_count, sum_delay_seconds "
-            "FROM gold.stop_delay_spine WHERE provider_id = :p AND stop_id = 'SX' AND route_id = '51'"
-        ),
-        {"p": PROVIDER},
-    ).mappings().one()
+    spine = (
+        conn.execute(
+            text(
+                "SELECT observation_count, severe_delay_count, sum_delay_seconds "
+                "FROM gold.stop_delay_spine WHERE provider_id = :p AND stop_id = 'SX' "
+                "AND route_id = '51'"
+            ),
+            {"p": PROVIDER},
+        )
+        .mappings()
+        .one()
+    )
 
-    shift_sum = conn.execute(
-        text(
-            "SELECT SUM(observation_count) AS obs, SUM(severe_delay_count) AS severe, "
-            "       SUM(sum_delay_seconds) AS delay "
-            "FROM gold.stop_delay_shift_daily WHERE provider_id = :p AND stop_id = 'SX' "
-            "  AND route_id = '51'"
-        ),
-        {"p": PROVIDER},
-    ).mappings().one()
+    shift_sum = (
+        conn.execute(
+            text(
+                "SELECT SUM(observation_count) AS obs, SUM(severe_delay_count) AS severe, "
+                "       SUM(sum_delay_seconds) AS delay "
+                "FROM gold.stop_delay_shift_daily WHERE provider_id = :p AND stop_id = 'SX' "
+                "  AND route_id = '51'"
+            ),
+            {"p": PROVIDER},
+        )
+        .mappings()
+        .one()
+    )
 
     # The shift table is a FINER PARTITION of the same in-clamp row set -> SUM-over-shifts
     # equals the stop_delay_spine per-(stop,route,date) counts exactly.
