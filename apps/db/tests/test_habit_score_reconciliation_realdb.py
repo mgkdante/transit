@@ -19,21 +19,12 @@ Self-skips when TRANSIT_TEST_DATABASE_URL is unset (the `real-db-tests` job sets
 
 from __future__ import annotations
 
-import os
 from contextlib import contextmanager
 from datetime import date
 
-import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold.reader import ROUTE_HABIT_SPINE_SQL, all_time_window
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - habit score reconciliation gate skipped",
-)
 
 _PROVIDER = "stm_habit_recon"
 _ROUTE = "R1"
@@ -106,19 +97,11 @@ def _frozen_mart_sql(*, div: str = "60") -> str:
 
 
 @contextmanager
-def _seeded_conn():  # noqa: ANN202
-    engine = create_engine(DB_URL)
-    with engine.connect() as conn:
+def _seeded_conn(real_db_engine, seed_provider):  # noqa: ANN001, ANN202
+    with real_db_engine.connect() as conn:
         tx = conn.begin()
         try:
-            conn.execute(
-                text(
-                    "INSERT INTO core.providers "
-                    "(provider_id, display_name, timezone, provider_key) "
-                    "VALUES (:p, 'habit recon seed', 'America/Toronto', :p)"
-                ),
-                {"p": _PROVIDER},
-            )
+            seed_provider(conn, _PROVIDER, display_name="habit recon seed")
             ins = text(
                 "INSERT INTO gold.route_delay_spine (provider_id, route_id, provider_local_date, "
                 "hour_of_day_local, direction_id, observation_count, delay_observation_count, "
@@ -130,13 +113,22 @@ def _seeded_conn():  # noqa: ANN202
             for d, h, obs, dobs, ot, sev, s, hist in _SEED_ROWS:
                 conn.execute(
                     ins,
-                    {"p": _PROVIDER, "r": _ROUTE, "d": d, "h": h, "obs": obs, "dobs": dobs,
-                     "ot": ot, "sev": sev, "sum": s, "hist": hist},
+                    {
+                        "p": _PROVIDER,
+                        "r": _ROUTE,
+                        "d": d,
+                        "h": h,
+                        "obs": obs,
+                        "dobs": dobs,
+                        "ot": ot,
+                        "sev": sev,
+                        "sum": s,
+                        "hist": hist,
+                    },
                 )
             yield conn
         finally:
             tx.rollback()
-    engine.dispose()
 
 
 def _reader_scores(conn) -> dict:  # noqa: ANN001
@@ -146,8 +138,12 @@ def _reader_scores(conn) -> dict:  # noqa: ANN001
         (int(r["day_of_week_iso"]), int(r["hour_of_day_local"])): r["repeat_problem_score"]
         for r in conn.execute(
             ROUTE_HABIT_SPINE_SQL,
-            {"provider_id": _PROVIDER, "route_id": _ROUTE,
-             "win_start": win_start, "win_end": win_end},
+            {
+                "provider_id": _PROVIDER,
+                "route_id": _ROUTE,
+                "win_start": win_start,
+                "win_end": win_end,
+            },
         ).mappings()
     }
 
@@ -162,10 +158,10 @@ def _frozen_scores(conn, *, div: str = "60") -> dict:  # noqa: ANN001
     }
 
 
-def test_all_time_reader_matches_frozen_mart_cell_for_cell() -> None:
+def test_all_time_reader_matches_frozen_mart_cell_for_cell(real_db_engine, seed_provider) -> None:
     """The reconciled all-time reader score == the OLD mart's score for every (dow, hour) cell
     (numeric equality), including the NULL-avg (zero-histogram) severe-only edge."""
-    with _seeded_conn() as conn:
+    with _seeded_conn(real_db_engine, seed_provider) as conn:
         reader = _reader_scores(conn)
         frozen = _frozen_scores(conn)
     assert frozen, "seed produced no frozen-mart rows"
@@ -186,11 +182,11 @@ def test_all_time_reader_matches_frozen_mart_cell_for_cell() -> None:
     assert float(reader[(4, 6)]) == 0.3333
 
 
-def test_mutation_killer_perturbed_divisor_breaks_parity() -> None:
+def test_mutation_killer_perturbed_divisor_breaks_parity(real_db_engine, seed_provider) -> None:
     """Sanity: perturbing the frozen mart's /60 divisor to /61 makes the frozen scores diverge
     from the reader, so the parity assertion above would FAIL. Proves the oracle is load-bearing
     (not a vacuous tautology)."""
-    with _seeded_conn() as conn:
+    with _seeded_conn(real_db_engine, seed_provider) as conn:
         reader = _reader_scores(conn)
         mutated = _frozen_scores(conn, div="61")
     # At least one non-NULL-avg cell must diverge under the perturbed divisor.
