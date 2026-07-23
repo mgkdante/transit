@@ -20,20 +20,12 @@ Never point this at production.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.silver.i3 import RawI3AlertSnapshot, load_i3_snapshot_to_silver
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_i3fk_test"
 ENDPOINT_ID = 990014
@@ -103,28 +95,18 @@ ALERT_BILINGUAL_NO_EN = {
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed(connection)
+        _seed(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
-def _seed(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM i3 FK regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
+def _seed(connection, seed_provider) -> None:
+    seed_provider(connection, PROVIDER, display_name="STM i3 FK regression")
     connection.execute(
         text(
             """
@@ -304,7 +286,9 @@ def _active_en(connection) -> dict:
                 """
             ),
             {"p": PROVIDER},
-        ).mappings().one()
+        )
+        .mappings()
+        .one()
     )
 
 
@@ -368,7 +352,9 @@ def test_gold_current_view_exposes_en_columns(conn) -> None:
                 """
             ),
             {"p": PROVIDER},
-        ).mappings().one()
+        )
+        .mappings()
+        .one()
     )
     assert row["alert_header_text_en"] == "Your line is interrupted"
     assert row["description_text_en"] == "Cancelled stops between A and B"
@@ -441,7 +427,9 @@ def test_migration_backfilled_superseded_seed_row(conn) -> None:
                 """
             ),
             {"p": PROVIDER},
-        ).mappings().one()
+        )
+        .mappings()
+        .one()
     )
     assert row["valid_to"] is not None, "seed row must be superseded (valid_to set)"
     assert row["alert_header_text_en"] == "Old alert"
