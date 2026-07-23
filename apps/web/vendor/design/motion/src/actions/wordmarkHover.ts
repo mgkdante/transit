@@ -38,6 +38,9 @@ export function wordmarkHover(node: HTMLElement, params: WordmarkHoverParams) {
 
 	let effectIndex = 0;
 	let isAnimating = false;
+	let destroyed = false;
+	let activeTimeline: { kill(): void } | undefined;
+	let autoPlayTimer: ReturnType<typeof setTimeout> | undefined;
 
 	// --- Effect pool ---
 
@@ -73,10 +76,11 @@ export function wordmarkHover(node: HTMLElement, params: WordmarkHoverParams) {
 	const effects = [effectBounce, effectWiggle, effectWave, effectSpin];
 
 	function playEffect() {
-		if (isAnimating || !splitInstance) return;
+		if (destroyed || isAnimating || !splitInstance) return;
 		isAnimating = true;
 
 		const tl = effects[effectIndex](splitInstance.chars);
+		activeTimeline = tl;
 
 		tl.fromTo(
 			dotEl,
@@ -86,7 +90,9 @@ export function wordmarkHover(node: HTMLElement, params: WordmarkHoverParams) {
 		);
 
 		tl.then(() => {
+			if (destroyed) return;
 			isAnimating = false;
+			if (activeTimeline === tl) activeTimeline = undefined;
 		});
 
 		effectIndex = (effectIndex + 1) % effects.length;
@@ -95,12 +101,23 @@ export function wordmarkHover(node: HTMLElement, params: WordmarkHoverParams) {
 	node.addEventListener('mouseenter', playEffect);
 
 	if (autoPlay) {
-		setTimeout(playEffect, autoPlayDelay);
+		autoPlayTimer = setTimeout(() => {
+			autoPlayTimer = undefined;
+			playEffect();
+		}, autoPlayDelay);
 	}
 
 	return {
 		destroy() {
+			if (destroyed) return;
+			destroyed = true;
+			if (autoPlayTimer !== undefined) {
+				clearTimeout(autoPlayTimer);
+				autoPlayTimer = undefined;
+			}
 			node.removeEventListener('mouseenter', playEffect);
+			activeTimeline?.kill();
+			activeTimeline = undefined;
 			splitInstance?.revert();
 		}
 	};
