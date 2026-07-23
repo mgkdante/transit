@@ -2,24 +2,16 @@
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 from psycopg.errors import UniqueViolation
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 import transit_ops.silver.static_gtfs as static_silver_module
 from transit_ops.silver.static_gtfs import BronzeStaticArchive, load_static_zip_to_silver
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - real-DB COPY tests skipped",
-)
 
 PARITY_PROVIDER = "f3c_copy_parity"
 ROLLBACK_PROVIDER = "f3c_copy_rollback"
@@ -118,15 +110,12 @@ def _archive(*, provider_id: str, base: int, checksum: str) -> BronzeStaticArchi
     )
 
 
-def _seed_lineage(connection, *, provider_id: str, base: int) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, provider_key, display_name, timezone)
-            VALUES (:provider_id, :provider_id, 'F3c COPY test', 'UTC')
-            """
-        ),
-        {"provider_id": provider_id},
+def _seed_lineage(connection, *, provider_id: str, base: int, seed_provider) -> None:  # noqa: ANN001
+    seed_provider(
+        connection,
+        provider_id,
+        display_name="F3c COPY test",
+        timezone="UTC",
     )
     connection.execute(
         text(
@@ -174,9 +163,7 @@ def _seed_lineage(connection, *, provider_id: str, base: int) -> None:  # noqa: 
     )
 
 
-def _seed_current_dataset_version(
-    connection, *, provider_id: str, base: int, checksum: str
-) -> int:  # noqa: ANN001
+def _seed_current_dataset_version(connection, *, provider_id: str, base: int, checksum: str) -> int:  # noqa: ANN001
     version_id = base + 4
     connection.execute(
         text(
@@ -232,13 +219,18 @@ def _cleanup(engine, provider_id: str) -> None:  # noqa: ANN001
         )
 
 
-def test_static_copy_round_trips_typed_rows_on_real_postgres() -> None:
-    engine = create_engine(DB_URL)
+def test_static_copy_round_trips_typed_rows_on_real_postgres(real_db_engine, seed_provider) -> None:
+    engine = real_db_engine
     _cleanup(engine, PARITY_PROVIDER)
     try:
         with engine.connect() as connection:
             transaction = connection.begin()
-            _seed_lineage(connection, provider_id=PARITY_PROVIDER, base=PARITY_BASE)
+            _seed_lineage(
+                connection,
+                provider_id=PARITY_PROVIDER,
+                base=PARITY_BASE,
+                seed_provider=seed_provider,
+            )
             payload = _zip_bytes(_edge_members())
             result = load_static_zip_to_silver(
                 connection,
@@ -314,15 +306,21 @@ def test_static_copy_round_trips_typed_rows_on_real_postgres() -> None:
             transaction.rollback()
     finally:
         _cleanup(engine, PARITY_PROVIDER)
-        engine.dispose()
 
 
-def test_static_copy_constraint_failure_rolls_back_the_entire_load() -> None:
-    engine = create_engine(DB_URL)
+def test_static_copy_constraint_failure_rolls_back_the_entire_load(
+    real_db_engine, seed_provider
+) -> None:
+    engine = real_db_engine
     _cleanup(engine, ROLLBACK_PROVIDER)
     try:
         with engine.begin() as connection:
-            _seed_lineage(connection, provider_id=ROLLBACK_PROVIDER, base=ROLLBACK_BASE)
+            _seed_lineage(
+                connection,
+                provider_id=ROLLBACK_PROVIDER,
+                base=ROLLBACK_BASE,
+                seed_provider=seed_provider,
+            )
             old_version_id = _seed_current_dataset_version(
                 connection,
                 provider_id=ROLLBACK_PROVIDER,
@@ -381,13 +379,14 @@ def test_static_copy_constraint_failure_rolls_back_the_entire_load() -> None:
                 )
     finally:
         _cleanup(engine, ROLLBACK_PROVIDER)
-        engine.dispose()
 
 
 def test_static_copy_late_builder_failure_preserves_error_and_rolls_back(
     monkeypatch: pytest.MonkeyPatch,
+    real_db_engine,
+    seed_provider,
 ) -> None:
-    engine = create_engine(DB_URL)
+    engine = real_db_engine
     _cleanup(engine, BUILDER_FAILURE_PROVIDER)
     started_copy_targets: list[str] = []
     completed_copy_targets: list[str] = []
@@ -406,6 +405,7 @@ def test_static_copy_late_builder_failure_preserves_error_and_rolls_back(
                 connection,
                 provider_id=BUILDER_FAILURE_PROVIDER,
                 base=BUILDER_FAILURE_BASE,
+                seed_provider=seed_provider,
             )
             old_version_id = _seed_current_dataset_version(
                 connection,
@@ -432,9 +432,7 @@ def test_static_copy_late_builder_failure_preserves_error_and_rolls_back(
                     bronze_storage=MemoryBronzeStorage(_zip_bytes(members)),
                 )
         assert type(exc_info.value) is ValueError
-        assert str(exc_info.value) == (
-            "translations.txt requires non-empty column 'translation'."
-        )
+        assert str(exc_info.value) == ("translations.txt requires non-empty column 'translation'.")
         assert started_copy_targets == [
             "stops",
             "trips",
@@ -478,4 +476,3 @@ def test_static_copy_late_builder_failure_preserves_error_and_rolls_back(
                 )
     finally:
         _cleanup(engine, BUILDER_FAILURE_PROVIDER)
-        engine.dispose()
