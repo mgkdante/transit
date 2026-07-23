@@ -24,22 +24,14 @@ Never point this at production.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.maintenance import (
     prune_bronze_realtime_objects,
     prune_bronze_static_objects,
-)
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
 )
 
 PROVIDER = "stm_bronze_prune_test"
@@ -50,18 +42,41 @@ STATIC_ENDPOINT_ID = 990023
 NOW = datetime.now(tz=UTC)
 
 # (run_id, object_id, snapshot_id, endpoint_id, captured_at, storage_path)
-TU_OLD_A = (990101, 990201, 990301, TU_ENDPOINT_ID, NOW - timedelta(days=40),
-            "bronze-prune-test/trip_updates/old-a.pb")
-TU_OLD_B = (990102, 990202, 990302, TU_ENDPOINT_ID, NOW - timedelta(days=39),
-            "bronze-prune-test/trip_updates/old-b.pb")
-TU_OLD_C = (990103, 990203, 990303, TU_ENDPOINT_ID, NOW - timedelta(days=38),
-            "bronze-prune-test/trip_updates/old-c.pb")
-TU_FRESH = (990104, 990204, 990304, TU_ENDPOINT_ID, NOW,
-            "bronze-prune-test/trip_updates/fresh.pb")
+TU_OLD_A = (
+    990101,
+    990201,
+    990301,
+    TU_ENDPOINT_ID,
+    NOW - timedelta(days=40),
+    "bronze-prune-test/trip_updates/old-a.pb",
+)
+TU_OLD_B = (
+    990102,
+    990202,
+    990302,
+    TU_ENDPOINT_ID,
+    NOW - timedelta(days=39),
+    "bronze-prune-test/trip_updates/old-b.pb",
+)
+TU_OLD_C = (
+    990103,
+    990203,
+    990303,
+    TU_ENDPOINT_ID,
+    NOW - timedelta(days=38),
+    "bronze-prune-test/trip_updates/old-c.pb",
+)
+TU_FRESH = (990104, 990204, 990304, TU_ENDPOINT_ID, NOW, "bronze-prune-test/trip_updates/fresh.pb")
 # vehicle_positions has a single 37d-old row that is also its LATEST snapshot:
 # old enough to be in the cutoff window, yet it must always survive.
-VP_OLD_LATEST = (990105, 990205, 990305, VP_ENDPOINT_ID, NOW - timedelta(days=37),
-                 "bronze-prune-test/vehicle_positions/old-latest.pb")
+VP_OLD_LATEST = (
+    990105,
+    990205,
+    990305,
+    VP_ENDPOINT_ID,
+    NOW - timedelta(days=37),
+    "bronze-prune-test/vehicle_positions/old-latest.pb",
+)
 
 REALTIME_ROWS = (TU_OLD_A, TU_OLD_B, TU_OLD_C, TU_FRESH, VP_OLD_LATEST)
 
@@ -95,28 +110,18 @@ class FakeBronzeStorage:
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed(connection)
+        _seed(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
-def _seed(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM bronze prune regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
+def _seed(connection, seed_provider) -> None:
+    seed_provider(connection, PROVIDER, display_name="STM bronze prune regression")
     for endpoint_id, endpoint_key, feed_kind, source_format in (
         (TU_ENDPOINT_ID, "trip_updates", "trip_updates", "gtfs_rt_trip_updates"),
         (VP_ENDPOINT_ID, "vehicle_positions", "vehicle_positions", "gtfs_rt_vehicle_positions"),
@@ -130,8 +135,13 @@ def _seed(connection) -> None:
                 VALUES (:e, :p, :key, :kind, :fmt)
                 """
             ),
-            {"e": endpoint_id, "p": PROVIDER, "key": endpoint_key,
-             "kind": feed_kind, "fmt": source_format},
+            {
+                "e": endpoint_id,
+                "p": PROVIDER,
+                "key": endpoint_key,
+                "kind": feed_kind,
+                "fmt": source_format,
+            },
         )
     for run_id, object_id, snapshot_id, endpoint_id, captured_at, storage_path in REALTIME_ROWS:
         run_kind = "trip_updates" if endpoint_id == TU_ENDPOINT_ID else "vehicle_positions"
@@ -144,8 +154,13 @@ def _seed(connection) -> None:
                 VALUES (:r, :p, :e, :kind, 'succeeded', :started)
                 """
             ),
-            {"r": run_id, "p": PROVIDER, "e": endpoint_id,
-             "kind": run_kind, "started": captured_at},
+            {
+                "r": run_id,
+                "p": PROVIDER,
+                "e": endpoint_id,
+                "kind": run_kind,
+                "started": captured_at,
+            },
         )
         connection.execute(
             text(
@@ -167,17 +182,29 @@ def _seed(connection) -> None:
                 VALUES (:s, :r, :o, :p, :e, :captured, :captured)
                 """
             ),
-            {"s": snapshot_id, "r": run_id, "o": object_id, "p": PROVIDER,
-             "e": endpoint_id, "captured": captured_at},
+            {
+                "s": snapshot_id,
+                "r": run_id,
+                "o": object_id,
+                "p": PROVIDER,
+                "e": endpoint_id,
+                "captured": captured_at,
+            },
         )
 
 
 def _seed_static_runs(connection) -> None:
     for run_id, object_id, storage_path in (
-        (STATIC_RUN_REFERENCED, STATIC_OBJECT_REFERENCED,
-         "bronze-prune-test/static/referenced.zip"),
-        (STATIC_RUN_UNREFERENCED, STATIC_OBJECT_UNREFERENCED,
-         "bronze-prune-test/static/unreferenced.zip"),
+        (
+            STATIC_RUN_REFERENCED,
+            STATIC_OBJECT_REFERENCED,
+            "bronze-prune-test/static/referenced.zip",
+        ),
+        (
+            STATIC_RUN_UNREFERENCED,
+            STATIC_OBJECT_UNREFERENCED,
+            "bronze-prune-test/static/unreferenced.zip",
+        ),
     ):
         connection.execute(
             text(
@@ -188,8 +215,7 @@ def _seed_static_runs(connection) -> None:
                 VALUES (:r, :p, :e, 'static_schedule', 'succeeded', :started)
                 """
             ),
-            {"r": run_id, "p": PROVIDER, "e": STATIC_ENDPOINT_ID,
-             "started": STATIC_STARTED_AT},
+            {"r": run_id, "p": PROVIDER, "e": STATIC_ENDPOINT_ID, "started": STATIC_STARTED_AT},
         )
         connection.execute(
             text(
@@ -211,8 +237,12 @@ def _seed_static_runs(connection) -> None:
             VALUES (:dv, :p, :e, :r, 'static_schedule', 'bronze-prune-test-hash', false)
             """
         ),
-        {"dv": DATASET_VERSION_ID, "p": PROVIDER, "e": STATIC_ENDPOINT_ID,
-         "r": STATIC_RUN_REFERENCED},
+        {
+            "dv": DATASET_VERSION_ID,
+            "p": PROVIDER,
+            "e": STATIC_ENDPOINT_ID,
+            "r": STATIC_RUN_REFERENCED,
+        },
     )
 
 
@@ -226,17 +256,14 @@ def _seed_objectless_run(connection, run_id: int, started_at: datetime, status: 
             VALUES (:r, :p, :e, 'trip_updates', :status, :started)
             """
         ),
-        {"r": run_id, "p": PROVIDER, "e": TU_ENDPOINT_ID,
-         "status": status, "started": started_at},
+        {"r": run_id, "p": PROVIDER, "e": TU_ENDPOINT_ID, "status": status, "started": started_at},
     )
 
 
 def _object_exists(connection, object_id: int) -> bool:
     return bool(
         connection.execute(
-            text(
-                "SELECT 1 FROM raw.ingestion_objects WHERE ingestion_object_id = :o"
-            ),
+            text("SELECT 1 FROM raw.ingestion_objects WHERE ingestion_object_id = :o"),
             {"o": object_id},
         ).first()
     )
@@ -245,9 +272,7 @@ def _object_exists(connection, object_id: int) -> bool:
 def _snapshot_exists(connection, snapshot_id: int) -> bool:
     return bool(
         connection.execute(
-            text(
-                "SELECT 1 FROM raw.realtime_snapshot_index WHERE realtime_snapshot_id = :s"
-            ),
+            text("SELECT 1 FROM raw.realtime_snapshot_index WHERE realtime_snapshot_id = :s"),
             {"s": snapshot_id},
         ).first()
     )
@@ -321,8 +346,13 @@ def test_realtime_prune_excludes_silver_referenced_snapshots(conn) -> None:
             VALUES (:id, :p, :e, :r, 'trip_updates', :snap)
             """
         ),
-        {"id": SILVER_SNAPSHOT_ROW_ID, "p": PROVIDER, "e": TU_ENDPOINT_ID,
-         "r": TU_OLD_A[0], "snap": TU_OLD_A[2]},
+        {
+            "id": SILVER_SNAPSHOT_ROW_ID,
+            "p": PROVIDER,
+            "e": TU_ENDPOINT_ID,
+            "r": TU_OLD_A[0],
+            "snap": TU_OLD_A[2],
+        },
     )
     storage = FakeBronzeStorage()
 
