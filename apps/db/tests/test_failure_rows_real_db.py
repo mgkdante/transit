@@ -30,21 +30,13 @@ reruns are idempotent. Never point this at production.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.ingestion.common import insert_failed_ingestion_run
 from transit_ops.maintenance import prune_bronze_realtime_objects
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_silver_load_test"
 TU_ENDPOINT_ID = 990031
@@ -78,28 +70,18 @@ class FakeBronzeStorage:
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed(connection)
+        _seed(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
-def _seed(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM silver_load regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
+def _seed(connection, seed_provider) -> None:
+    seed_provider(connection, PROVIDER, display_name="STM silver_load regression")
     for endpoint_id, endpoint_key, feed_kind, source_format in (
         (TU_ENDPOINT_ID, "trip_updates", "trip_updates", "gtfs_rt_trip_updates"),
         (I3_ENDPOINT_ID, "i3_alerts", "i3_alerts", "api_i3_json"),
@@ -112,8 +94,13 @@ def _seed(connection) -> None:
                 VALUES (:e, :p, :key, :kind, :fmt)
                 """
             ),
-            {"e": endpoint_id, "p": PROVIDER, "key": endpoint_key,
-             "kind": feed_kind, "fmt": source_format},
+            {
+                "e": endpoint_id,
+                "p": PROVIDER,
+                "key": endpoint_key,
+                "kind": feed_kind,
+                "fmt": source_format,
+            },
         )
     # A successful capture run for trip_updates WITH an object + snapshot (so it
     # is not orphaned and IS the latest run for the endpoint).
@@ -148,8 +135,14 @@ def _seed(connection) -> None:
             VALUES (:s, :r, :o, :p, :e, :at, :at)
             """
         ),
-        {"s": CAPTURE_SNAPSHOT_ID, "r": CAPTURE_RUN_ID, "o": CAPTURE_OBJECT_ID,
-         "p": PROVIDER, "e": TU_ENDPOINT_ID, "at": CAPTURE_AT},
+        {
+            "s": CAPTURE_SNAPSHOT_ID,
+            "r": CAPTURE_RUN_ID,
+            "o": CAPTURE_OBJECT_ID,
+            "p": PROVIDER,
+            "e": TU_ENDPOINT_ID,
+            "at": CAPTURE_AT,
+        },
     )
 
 
@@ -211,8 +204,7 @@ def test_orphan_prune_retains_fresh_failed_runs_real_db(conn) -> None:
     # seeds runs that already own ingestion_objects at higher ids, so max()
     # would target one of those and the re-id FK-violates on its child objects.
     conn.execute(
-        text("UPDATE raw.ingestion_runs SET ingestion_run_id = :new "
-             "WHERE ingestion_run_id = :old"),
+        text("UPDATE raw.ingestion_runs SET ingestion_run_id = :new WHERE ingestion_run_id = :old"),
         {"new": FRESH_FAILED_RUN_ID, "old": _fresh_run_id},
     )
     # Aged failure row — 40 days old, must be swept.
@@ -225,8 +217,12 @@ def test_orphan_prune_retains_fresh_failed_runs_real_db(conn) -> None:
             VALUES (:r, :p, :e, 'silver_load', 'failed', :at, :at)
             """
         ),
-        {"r": AGED_FAILED_RUN_ID, "p": PROVIDER, "e": TU_ENDPOINT_ID,
-         "at": NOW - timedelta(days=40)},
+        {
+            "r": AGED_FAILED_RUN_ID,
+            "p": PROVIDER,
+            "e": TU_ENDPOINT_ID,
+            "at": NOW - timedelta(days=40),
+        },
     )
 
     storage = FakeBronzeStorage()
