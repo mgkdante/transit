@@ -22,13 +22,12 @@ Never point this at production.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from google.transit import gtfs_realtime_pb2
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold.marts import build_gold_marts
 from transit_ops.gtfs.types import ProviderBounds
@@ -38,13 +37,6 @@ from transit_ops.silver.realtime_gtfs import (
     find_realtime_bronze_snapshots,
     load_realtime_snapshots_to_silver,
     replay_realtime_silver_window,
-)
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - real-DB drill-test skipped",
 )
 
 PROVIDER = "stm_replay_drill_test"
@@ -145,14 +137,12 @@ def settings(bronze_root: Path) -> Settings:
 
 
 @pytest.fixture()
-def engine():
-    eng = create_engine(DB_URL)
-    _cleanup(eng)
+def engine(real_db_engine):
+    _cleanup(real_db_engine)
     try:
-        yield eng
+        yield real_db_engine
     finally:
-        _cleanup(eng)
-        eng.dispose()
+        _cleanup(real_db_engine)
 
 
 def _cleanup(eng) -> None:  # noqa: ANN001
@@ -219,16 +209,8 @@ class _StubRegistry:
         return self._manifest
 
 
-def _seed_provider_and_static(connection) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'Replay drill', :tz, :p)
-            """
-        ),
-        {"p": PROVIDER, "tz": PROVIDER_TZ},
-    )
+def _seed_provider_and_static(connection, seed_provider) -> None:  # noqa: ANN001
+    seed_provider(connection, PROVIDER, display_name="Replay drill", timezone=PROVIDER_TZ)
     connection.execute(
         text(
             """
@@ -415,11 +397,11 @@ def _delay_facts(connection) -> dict[int, tuple[int, int]]:  # noqa: ANN001
 
 
 def test_replay_reconstructs_silver_and_gold_from_raw_after_prune(  # noqa: ANN001
-    engine, settings
+    engine, settings, seed_provider
 ) -> None:
     # --- 1. Seed raw bronze window + static schedule (committed). ---------------
     with engine.begin() as connection:
-        _seed_provider_and_static(connection)
+        _seed_provider_and_static(connection, seed_provider)
         _seed_raw_realtime_snapshots(connection)
 
     # --- 2. NORMAL load + Gold build -> capture the TRUTH. ----------------------
@@ -500,11 +482,11 @@ def test_replay_reconstructs_silver_and_gold_from_raw_after_prune(  # noqa: ANN0
     )
 
 
-def test_replay_empty_window_is_clean_noop(engine, settings) -> None:  # noqa: ANN001
+def test_replay_empty_window_is_clean_noop(engine, settings, seed_provider) -> None:  # noqa: ANN001
     # Seed the provider + static (so the registry/manifest resolve) but NO raw
     # realtime snapshots in the window.
     with engine.begin() as connection:
-        _seed_provider_and_static(connection)
+        _seed_provider_and_static(connection, seed_provider)
 
     result = replay_realtime_silver_window(
         PROVIDER,
