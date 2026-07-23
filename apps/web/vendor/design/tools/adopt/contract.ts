@@ -4,7 +4,7 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 
 export const REPOSITORY_ID = 'github.com/mgkdante/yesid.dev-design' as const;
 export const MANIFEST_SCHEMA = 2 as const;
-export const PACKAGE_NAMES = ['tokens', 'motion', 'gates', 'seo-kit', 'ui'] as const;
+export const PACKAGE_NAMES = ['tokens', 'motion', 'gates', 'seo-kit', 'ui', 'analytics'] as const;
 export type PackageName = (typeof PACKAGE_NAMES)[number];
 
 export const PACKAGE_EXCLUDE =

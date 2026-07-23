@@ -1,6 +1,11 @@
 /* GENERATED FROM packages/tokens/tokens.json - DO NOT EDIT */
 /* Run `bun run tokens:build` to regenerate. */
 
+@custom-media --tablet-min (min-width: 768px);
+@custom-media --tablet-max (max-width: 767px);
+@custom-media --desktop-min (min-width: 1024px);
+@custom-media --desktop-max (max-width: 1023px);
+
 :root {
   --primary: #E07800;
   --primary-hover: #C96A00;
@@ -103,6 +108,10 @@
   --opacity-dim: 0.3;
   --opacity-subtle: 0.15;
   --opacity-faint: 0.05;
+  --breakpoint-tablet-min: 768px;
+  --breakpoint-tablet-max: 767px;
+  --breakpoint-desktop-min: 1024px;
+  --breakpoint-desktop-max: 1023px;
   --container-content: 64rem;
   --container-wide: 72rem;
 

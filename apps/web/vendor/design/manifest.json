@@ -4,14 +4,14 @@
 	"provenance": {
 		"mode": "release",
 		"tag": {
-			"name": "v0.9.0",
-			"object": "7eb6be22d84303dc9f8d240645cdcd4dbb24b8a8",
-			"peeledCommit": "c25ffb1f4058cb2df498e9d365517d0d304881a4"
+			"name": "v0.11.0",
+			"object": "bb307bcac5dbc96ecfb3cec706dd267f55b6e08f",
+			"peeledCommit": "1e03114f27f2490dad35c13575ca7b0b06bde247"
 		},
 		"asset": {
-			"name": "yesid.dev-design-v0.9.0.tar",
-			"size": 706560,
-			"digest": "sha256:5a0c5a37cf112241c894674d713fb41aac8afb06fcf0841066674bbe2463d0cf"
+			"name": "yesid.dev-design-v0.11.0.tar",
+			"size": 798720,
+			"digest": "sha256:4bc8181ae34f9cc3e1b21a508e53d3a0930cff436f0eba4c3278c3e1b0c5fb5a"
 		}
 	},
 	"packages": [
@@ -19,9 +19,10 @@
 		"motion",
 		"gates",
 		"seo-kit",
-		"ui"
+		"ui",
+		"analytics"
 	],
 	"exclusionPolicyDigest": "sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300",
-	"toolDigest": "sha256:749861816f7b8a7e70a3b856f93f310183e0ff6dd5f288746681fb95be51087d",
-	"treeHash": "sha256:34cabf1c46b6be765f4b353b6cefe06b5c2477a1cf480d17be7bbf8af4046fbd"
+	"toolDigest": "sha256:c3d4af6788407c6affd312172455da127c1e2e40cb0d623be6d51ca31672c18e",
+	"treeHash": "sha256:3c7d0e8f91adb6a70566847ef5e4702b75136db2e06488bfcd47e98c15c6cb10"
 }
