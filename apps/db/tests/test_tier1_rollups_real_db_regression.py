@@ -17,26 +17,19 @@ FakeConnection unit tests cannot (they don't execute SQL):
     NO_DATA/NOT_BOARDABLE codes are excluded from observation_count; the daily
     reduction is append-only (idempotent on rebuild).
 """
+
 from __future__ import annotations
 
-import os
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold import rollups
 from transit_ops.settings import Settings
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_tier1_test"
 TU_ENDPOINT_ID = 993001
@@ -69,9 +62,8 @@ class _Seed:
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
         # Anchor in the provider timezone (America/Toronto) — the same calendar
         # the closed-day rollup filter uses (local_date < (now() AT TIME ZONE
@@ -85,25 +77,16 @@ def conn():
             .astimezone(UTC)
         )
         seed = _Seed(base_utc)
-        _seed(connection, seed)
+        _seed(connection, seed, seed_provider)
         _build_rollups(connection)
         try:
             yield connection, seed
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
-def _seed(connection, seed: _Seed) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM tier-1 regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
+def _seed(connection, seed: _Seed, seed_provider) -> None:  # noqa: ANN001
+    seed_provider(connection, PROVIDER, display_name="STM tier-1 regression")
     for endpoint_id, key, kind, fmt in (
         (TU_ENDPOINT_ID, "trip_updates", "trip_updates", "gtfs_rt_trip_updates"),
         (VP_ENDPOINT_ID, "vehicle_positions", "vehicle_positions", "gtfs_rt_vehicle_positions"),
@@ -129,13 +112,13 @@ def _seed(connection, seed: _Seed) -> None:  # noqa: ANN001
         captured_at = seed.closed_day_utc + timedelta(minutes=poll)
         snapshot_id = _insert_snapshot(connection, seed, captured_at, TU_ENDPOINT_ID, 4)
         rows = [
-            ("C1", "99C", local_date, 3),   # canceled, every poll
+            ("C1", "99C", local_date, 3),  # canceled, every poll
             ("N1", "99C", local_date, None),  # scheduled (NULL), every poll
         ]
         if poll == 0:
             rows += [
-                ("C2", "99C", local_date, 3),   # canceled, once
-                ("N2", "99C", local_date, 0),   # scheduled (0), once
+                ("C2", "99C", local_date, 3),  # canceled, once
+                ("N2", "99C", local_date, 0),  # scheduled (0), once
             ]
         _insert_trip_delay_rows(connection, snapshot_id, captured_at, rows)
 
@@ -291,17 +274,21 @@ def _decimal(value: object) -> Decimal:
 def test_cancellation_dedups_polls_and_keeps_null_scheduled_in_denominator(conn) -> None:  # noqa: ANN001
     connection, seed = conn
 
-    row = connection.execute(
-        text(
-            """
+    row = (
+        connection.execute(
+            text(
+                """
             SELECT total_trip_days, canceled_trip_days, cancellation_rate_pct
             FROM gold.route_cancellation_daily
             WHERE provider_id = :p AND route_id = '99C'
               AND provider_local_date = :d
             """
-        ),
-        {"p": PROVIDER, "d": seed.closed_local_date},
-    ).mappings().one()
+            ),
+            {"p": PROVIDER, "d": seed.closed_local_date},
+        )
+        .mappings()
+        .one()
+    )
 
     # Dedup: C1 (3 polls) + C2 (1 poll) = 2 distinct canceled trip-days, not 4.
     assert row["canceled_trip_days"] == 2
@@ -325,18 +312,22 @@ def test_cancellation_dedups_polls_and_keeps_null_scheduled_in_denominator(conn)
 def test_occupancy_band_counts_fold_code4_and_exclude_no_data(conn) -> None:  # noqa: ANN001
     connection, seed = conn
 
-    daily = connection.execute(
-        text(
-            """
+    daily = (
+        connection.execute(
+            text(
+                """
             SELECT observation_count, empty_count, many_seats_count,
                    few_seats_count, standing_count, full_count
             FROM gold.route_occupancy_band_daily
             WHERE provider_id = :p AND route_id = '99C'
               AND provider_local_date = :d
             """
-        ),
-        {"p": PROVIDER, "d": seed.closed_local_date},
-    ).mappings().one()
+            ),
+            {"p": PROVIDER, "d": seed.closed_local_date},
+        )
+        .mappings()
+        .one()
+    )
 
     assert daily["observation_count"] == 6  # code 7 (NO_DATA) excluded
     assert daily["empty_count"] == 0
@@ -346,8 +337,11 @@ def test_occupancy_band_counts_fold_code4_and_exclude_no_data(conn) -> None:  # 
     assert daily["full_count"] == 1
     # Band counts partition observation_count exactly.
     band_sum = (
-        daily["empty_count"] + daily["many_seats_count"] + daily["few_seats_count"]
-        + daily["standing_count"] + daily["full_count"]
+        daily["empty_count"]
+        + daily["many_seats_count"]
+        + daily["few_seats_count"]
+        + daily["standing_count"]
+        + daily["full_count"]
     )
     assert band_sum == daily["observation_count"]
 
@@ -372,8 +366,7 @@ def test_tier1_daily_rollups_are_append_only_idempotent(conn) -> None:  # noqa: 
         k
         for (k,) in connection.execute(
             text(
-                "SELECT DISTINCT rollup_kind FROM gold.warm_rollup_periods "
-                "WHERE provider_id = :p"
+                "SELECT DISTINCT rollup_kind FROM gold.warm_rollup_periods WHERE provider_id = :p"
             ),
             {"p": PROVIDER},
         )
