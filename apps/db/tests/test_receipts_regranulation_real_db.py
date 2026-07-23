@@ -19,11 +19,10 @@ it never appears in the output or the availability index.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.snapshots.builders import build_receipts
 from transit_ops.snapshots.builders.historic.small_surfaces import (
@@ -31,13 +30,6 @@ from transit_ops.snapshots.builders.historic.small_surfaces import (
     _RECEIPTS_WORST_STOP_SQL,
 )
 from transit_ops.snapshots.contract import ReceiptAvailability
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - S13 receipts real-DB tests skipped",
-)
 
 PROVIDER = "stm_s13_receipts_test"
 STATIC_ENDPOINT_ID = 994001
@@ -58,26 +50,18 @@ BUILT = datetime.combine(_ANCHOR + timedelta(days=4), time(3, 0), tzinfo=UTC)
 
 
 @pytest.fixture()
-def conn():  # noqa: ANN201
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):  # noqa: ANN001, ANN201
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed(connection)
+        _seed(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
-def _seed(c) -> None:  # noqa: ANN001
-    c.execute(
-        text(
-            "INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)"
-            " VALUES (:p, 'STM S13 receipts', 'America/Toronto', :p)"
-        ),
-        {"p": PROVIDER},
-    )
+def _seed(c, seed_provider) -> None:  # noqa: ANN001
+    seed_provider(c, PROVIDER, display_name="STM S13 receipts")
     # A static dataset version so gold.dim_route rows have their required FK.
     c.execute(
         text(
