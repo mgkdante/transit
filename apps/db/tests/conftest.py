@@ -19,6 +19,7 @@ class SeedProvider(Protocol):
         *,
         display_name: str,
         timezone: str = "America/Toronto",
+        ignore_existing: bool = False,
     ) -> None: ...
 
 
@@ -43,7 +44,9 @@ def seed_provider() -> SeedProvider:
         *,
         display_name: str,
         timezone: str = "America/Toronto",
+        ignore_existing: bool = False,
     ) -> None:
+        conflict_clause = " ON CONFLICT (provider_id) DO NOTHING" if ignore_existing else ""
         connection.execute(
             text(
                 """
@@ -51,6 +54,7 @@ def seed_provider() -> SeedProvider:
                     (provider_id, display_name, timezone, provider_key)
                 VALUES (:provider_id, :display_name, :timezone, :provider_id)
                 """
+                + conflict_clause
             ),
             {
                 "provider_id": provider_id,

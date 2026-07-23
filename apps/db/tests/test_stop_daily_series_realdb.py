@@ -18,43 +18,35 @@ from contextlib import contextmanager
 from datetime import date, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
-from test_spine_cutover_gate import DB_URL  # noqa: E402
+from sqlalchemy import text
 
 from transit_ops.snapshots.builders._helpers import _severe_pct
 from transit_ops.snapshots.builders.historic import build_stop_reliability
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL, reason="TRANSIT_TEST_DATABASE_URL not set - stop daily-series real-DB gate skipped"
-)
 
 _PROVIDER = "stm_daily_s8"
 _STOP = "S8STOP"
 
 
 @contextmanager
-def _seeded(rows):  # noqa: ANN001
+def _seeded(rows, real_db_engine, seed_provider):  # noqa: ANN001
     """rows = list of (stop_id, route_id, provider_local_date, obs, severe, sum_delay_sec).
 
     Rollback-isolated; clears any leftover committed rows for this provider first so a
     stale row can never pollute the read (the same pollution-defeat guard the sibling
     windowable real-DB tests use). The DELETE is in-tx, scoping only this test's read.
     """
-    engine = create_engine(DB_URL)
-    with engine.connect() as conn:
+    with real_db_engine.connect() as conn:
         tx = conn.begin()
         try:
             conn.execute(
                 text("DELETE FROM gold.stop_delay_spine WHERE provider_id = :p"),
                 {"p": _PROVIDER},
             )
-            conn.execute(
-                text(
-                    "INSERT INTO core.providers (provider_id, display_name, timezone, provider_key) "
-                    "VALUES (:p, 's8 daily seed', 'America/Toronto', :p) "
-                    "ON CONFLICT (provider_id) DO NOTHING"
-                ),
-                {"p": _PROVIDER},
+            seed_provider(
+                conn,
+                _PROVIDER,
+                display_name="s8 daily seed",
+                ignore_existing=True,
             )
             ins = text(
                 "INSERT INTO gold.stop_delay_spine (provider_id, stop_id, route_id, "
@@ -64,13 +56,19 @@ def _seeded(rows):  # noqa: ANN001
             for stop_id, route_id, day, obs, severe, sum_sec in rows:
                 conn.execute(
                     ins,
-                    {"p": _PROVIDER, "s": stop_id, "r": route_id, "d": day,
-                     "n": obs, "sev": severe, "sum": sum_sec},
+                    {
+                        "p": _PROVIDER,
+                        "s": stop_id,
+                        "r": route_id,
+                        "d": day,
+                        "n": obs,
+                        "sev": severe,
+                        "sum": sum_sec,
+                    },
                 )
             yield conn
         finally:
             tx.rollback()
-    engine.dispose()
 
 
 def _daily(conn):  # noqa: ANN001
@@ -79,7 +77,7 @@ def _daily(conn):  # noqa: ANN001
     return out[_STOP].daily
 
 
-def test_daily_serves_summed_counts_and_omits_zero_obs_day() -> None:
+def test_daily_serves_summed_counts_and_omits_zero_obs_day(real_db_engine, seed_provider) -> None:
     # Closed days INSIDE the trailing-90 window with an interior GAP day (today-2)
     # left UNSEEDED — a zero-observation day must be ABSENT, never zero-filled.
     d0 = date.today() - timedelta(days=4)
@@ -95,7 +93,7 @@ def test_daily_serves_summed_counts_and_omits_zero_obs_day() -> None:
         # (gap deliberately UNSEEDED -> zero-observation day -> absent)
         (_STOP, "R1", d3, 30, 0, 30 * 30),
     ]
-    with _seeded(rows) as conn:
+    with _seeded(rows, real_db_engine, seed_provider) as conn:
         daily = _daily(conn)
 
     by_date = {p.date: p for p in daily}
@@ -120,7 +118,7 @@ def test_daily_serves_summed_counts_and_omits_zero_obs_day() -> None:
     assert p3.severe_pct == 0.0
 
 
-def test_client_pooling_reproduces_served_rates_exactly() -> None:
+def test_client_pooling_reproduces_served_rates_exactly(real_db_engine, seed_provider) -> None:
     """Documents the SERVE-THE-COUNTS invariant: summing the served per-day counts
     over an arbitrary sub-range yields a severe_pct byte-identical to the server's
     per-day severe_pct helper applied to the same summed ingredients. This is the
@@ -128,10 +126,9 @@ def test_client_pooling_reproduces_served_rates_exactly() -> None:
     fabricated re-aggregation can drift the pooled rate."""
     base = date.today() - timedelta(days=10)
     rows = [
-        (_STOP, "R1", base + timedelta(days=i), 40 + i, i, (40 + i) * (60 + i))
-        for i in range(5)
+        (_STOP, "R1", base + timedelta(days=i), 40 + i, i, (40 + i) * (60 + i)) for i in range(5)
     ]
-    with _seeded(rows) as conn:
+    with _seeded(rows, real_db_engine, seed_provider) as conn:
         daily = _daily(conn)
 
     assert len(daily) == 5
