@@ -23,7 +23,7 @@ import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.maintenance import DELETE_ORPHANED_INGESTION_RUNS
 
@@ -49,28 +49,18 @@ CUTOFF = NOW - timedelta(days=30)
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
+        seed_provider(connection, PROVIDER, display_name="STM orphan-run i3 guard regression")
         _seed(connection)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def _seed(connection) -> None:
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM orphan-run i3 guard regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
-    )
     connection.execute(
         text(
             """
