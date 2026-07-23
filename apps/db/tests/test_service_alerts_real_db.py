@@ -12,24 +12,16 @@ CI/local-only. One transaction, rolled back.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
 import pytest
 from google.transit import gtfs_realtime_pb2
-from sqlalchemy import Connection, bindparam, create_engine, text
+from sqlalchemy import Connection, bindparam, text
 from sqlalchemy.dialects.postgresql import JSONB
 
 from transit_ops.ingestion.service_alerts import convert_gtfs_rt_alerts_to_i3_payload
 from transit_ops.silver.i3 import RawI3AlertSnapshot, load_i3_snapshot_to_silver
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
-)
 
 PROVIDER = "sto_alerts_test"
 
@@ -54,18 +46,10 @@ def _service_alerts_payload() -> dict[str, object]:
 
 
 @pytest.fixture()
-def seeded() -> Iterator[tuple[Connection, int]]:
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def seeded(real_db_engine, seed_provider) -> Iterator[tuple[Connection, int]]:  # noqa: ANN001
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        connection.execute(
-            text(
-                "INSERT INTO core.providers "
-                "(provider_id, provider_key, display_name, timezone) "
-                "VALUES (:p, :p, 'STO alerts test', 'America/Toronto')"
-            ),
-            {"p": PROVIDER},
-        )
+        seed_provider(connection, PROVIDER, display_name="STO alerts test")
         feed_endpoint_id = connection.execute(
             text(
                 "INSERT INTO core.feed_endpoints "
@@ -103,7 +87,6 @@ def seeded() -> Iterator[tuple[Connection, int]]:
             yield connection, snapshot_id
         finally:
             transaction.rollback()
-            engine.dispose()
 
 
 def test_service_alerts_merge_into_silver_and_gold(
@@ -139,10 +122,7 @@ def test_service_alerts_merge_into_silver_and_gold(
 
     entities = (
         connection.execute(
-            text(
-                "SELECT route_id FROM silver.i3_alert_informed_entities "
-                "WHERE provider_id = :p"
-            ),
+            text("SELECT route_id FROM silver.i3_alert_informed_entities WHERE provider_id = :p"),
             {"p": PROVIDER},
         )
         .scalars()
