@@ -8,26 +8,19 @@ Transit schema migrated to head:
 
 Never point this at production.
 """
+
 from __future__ import annotations
 
-import os
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold import rollups
 from transit_ops.settings import Settings
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_rollup_ghost_test"
 ENDPOINT_ID = 991001
@@ -44,9 +37,8 @@ class _NoCommitEngine:
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
         # Anchor in the provider timezone (America/Toronto) — the same calendar
         # the percentile rollup's closed-day filter uses (local_date < (now() AT
@@ -61,13 +53,12 @@ def conn():
             .astimezone(UTC)
         )
         seed = _SeedData(base_utc)
-        _seed(connection, seed)
+        _seed(connection, seed, seed_provider)
         _build_rollups(connection)
         try:
             yield connection, seed
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 class _SeedData:
@@ -83,20 +74,11 @@ class _SeedData:
         return self.snapshot_id, self.run_id
 
 
-def _seed(connection, seed: _SeedData) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (
-                :provider_id,
-                'STM capped ghost regression',
-                'America/Toronto',
-                :provider_id
-            )
-            """
-        ),
-        {"provider_id": PROVIDER},
+def _seed(connection, seed: _SeedData, seed_provider) -> None:  # noqa: ANN001
+    seed_provider(
+        connection,
+        PROVIDER,
+        display_name="STM capped ghost regression",
     )
     connection.execute(
         text(
@@ -200,7 +182,13 @@ def _insert_trip_delay_rows(
 ) -> None:
     snapshot_local_date = captured_at.astimezone(TORONTO).date()
     snapshot_date_key = int(snapshot_local_date.strftime("%Y%m%d"))
-    for entity_index, (trip_id, route_id, delay_seconds, start_date, stop_id) in enumerate(rows):
+    for entity_index, (
+        trip_id,
+        route_id,
+        delay_seconds,
+        start_date,
+        stop_id,
+    ) in enumerate(rows):
         connection.execute(
             text(
                 """
@@ -444,8 +432,7 @@ def test_percentile_rollup_closed_days_exclude_ghosts_and_today(conn) -> None:  
         k
         for (k,) in connection.execute(
             text(
-                "SELECT DISTINCT rollup_kind FROM gold.warm_rollup_periods "
-                "WHERE provider_id = :p"
+                "SELECT DISTINCT rollup_kind FROM gold.warm_rollup_periods WHERE provider_id = :p"
             ),
             {"p": PROVIDER},
         )
@@ -468,9 +455,7 @@ def test_percentile_rollup_closed_days_exclude_ghosts_and_today(conn) -> None:  
 
 def test_percentile_rollup_is_idempotent_on_rebuild(conn) -> None:  # noqa: ANN001
     connection, _seed = conn
-    count_sql = (
-        "SELECT count(*) FROM gold.route_delay_percentile_daily WHERE provider_id = :p"
-    )
+    count_sql = "SELECT count(*) FROM gold.route_delay_percentile_daily WHERE provider_id = :p"
     before = connection.execute(text(count_sql), {"p": PROVIDER}).scalar_one()
     # Re-running skips already-watermarked days (append-only — no duplicate rows).
     rollups.build_warm_rollups(
@@ -480,5 +465,3 @@ def test_percentile_rollup_is_idempotent_on_rebuild(conn) -> None:  # noqa: ANN0
     )
     after = connection.execute(text(count_sql), {"p": PROVIDER}).scalar_one()
     assert after == before
-
-
