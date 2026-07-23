@@ -14,21 +14,13 @@ production.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold import marts
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_dst_test"
 PROVIDER_TZ = "America/Toronto"
@@ -112,28 +104,18 @@ SCENARIOS = (
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed(connection)
+        _seed(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
-def _seed(connection) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:provider_id, 'STM DST regression', :timezone, :provider_id)
-            """
-        ),
-        {"provider_id": PROVIDER, "timezone": PROVIDER_TZ},
-    )
+def _seed(connection, seed_provider) -> None:  # noqa: ANN001
+    seed_provider(connection, PROVIDER, display_name="STM DST regression", timezone=PROVIDER_TZ)
     connection.execute(
         text(
             """
