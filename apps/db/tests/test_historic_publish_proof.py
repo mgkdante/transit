@@ -1029,14 +1029,46 @@ def test_historic_publish_proof_fails_when_final_fetch_crosses_deadline() -> Non
     assert report.public["deadline"]["exceeded"] is True
 
 
-def test_whole_proof_deadline_bounds_stalled_migration_reader() -> None:
+# The parent must not begin supervising before the child reaches its stall. This
+# 5.0 s readiness wait is approximately 13x the measured 0.37 s maximum entry
+# latency and is deliberately decoupled from the proof budget.
+class _ReadinessWaitingForkContext:
+    def __init__(self, entered) -> None:  # noqa: ANN001
+        self._real_context = get_context("fork")
+        self._entered = entered
+        self.readiness_wait_succeeded = False
+        self.readiness_latency_seconds = 0.0
+
+    def Process(self, *args, **kwargs):  # noqa: ANN002, ANN003, N802
+        process = self._real_context.Process(*args, **kwargs)
+        real_start = process.start
+
+        def start() -> None:
+            started = monotonic()
+            real_start()
+            self.readiness_wait_succeeded = self._entered.wait(5.0)
+            self.readiness_latency_seconds = monotonic() - started
+
+        process.start = start
+        return process
+
+    def __getattr__(self, name: str):
+        return getattr(self._real_context, name)
+
+
+def test_whole_proof_deadline_bounds_stalled_migration_reader(monkeypatch) -> None:
     fixture = _complete_public_fixture()
-    context = get_context("fork")
-    entered = context.Event()
+    entered = get_context("fork").Event()
+    context = _ReadinessWaitingForkContext(entered)
+    monkeypatch.setattr(
+        historic_publish_module,
+        "get_context",
+        lambda _start_method: context,
+    )
 
     def stalled_migration_reader(settings, engine):  # noqa: ANN001, ARG001
         entered.set()
-        sleep(1)
+        sleep(4)
         return MigrationEvidence(
             ("0081_snapshot_publish_stable_files",),
             ("0081_snapshot_publish_stable_files",),
@@ -1046,41 +1078,54 @@ def test_whole_proof_deadline_bounds_stalled_migration_reader() -> None:
     report = _build_report(
         fixture,
         migration_reader=stalled_migration_reader,
-        proof_timeout_seconds=0.1,
+        proof_timeout_seconds=2.0,
         isolate_process=True,
     )
     elapsed = monotonic() - started
 
+    assert context.readiness_wait_succeeded, (
+        "child never reached the stall within 5.0s "
+        f"(waited {context.readiness_latency_seconds:.2f}s)"
+    )
     assert entered.is_set()
-    assert elapsed < 0.4
+    assert elapsed < 2.5
     assert report.status == "fail"
     assert report.failures == ("historic_proof_deadline_exceeded",)
     assert report.public["deadline"]["whole_proof_process_terminated_count"] == 1
 
 
-def test_whole_proof_deadline_bounds_stalled_direct_fetch() -> None:
+def test_whole_proof_deadline_bounds_stalled_direct_fetch(monkeypatch) -> None:
     fixture = _complete_public_fixture()
-    context = get_context("fork")
-    entered = context.Event()
+    entered = get_context("fork").Event()
+    context = _ReadinessWaitingForkContext(entered)
+    monkeypatch.setattr(
+        historic_publish_module,
+        "get_context",
+        lambda _start_method: context,
+    )
 
     def stalled_fetch(url: str) -> bytes:
         path = urlsplit(url).path.split("/v1/stm/", 1)[1]
         if path == "manifest.json":
             entered.set()
-            sleep(1)
+            sleep(4)
         return fixture.public_bytes[path]
 
     started = monotonic()
     report = _build_report(
         fixture,
         fetch_override=stalled_fetch,
-        proof_timeout_seconds=0.1,
+        proof_timeout_seconds=2.0,
         isolate_process=True,
     )
     elapsed = monotonic() - started
 
+    assert context.readiness_wait_succeeded, (
+        "child never reached the stall within 5.0s "
+        f"(waited {context.readiness_latency_seconds:.2f}s)"
+    )
     assert entered.is_set()
-    assert elapsed < 0.4
+    assert elapsed < 2.5
     assert report.status == "fail"
     assert report.failures == ("historic_proof_deadline_exceeded",)
     assert report.public["deadline"]["whole_proof_process_terminated_count"] == 1
