@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.settings import get_settings
 from transit_ops.snapshots.builders import (
@@ -25,13 +24,6 @@ from transit_ops.snapshots.contract import (
 )
 from transit_ops.snapshots.publish import _entity_family_availability
 from transit_ops.snapshots.serialization import snapshot_json_bytes
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - partitioned history real-DB tests skipped",
-)
 
 PROVIDER = "stm_network_history_test"
 OTHER_PROVIDER = "stm_network_history_other_test"
@@ -114,9 +106,8 @@ def _insert_fact_snapshot(
 
 
 @pytest.fixture()
-def network_history_conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as conn:
+def network_history_conn(real_db_engine):  # noqa: ANN001
+    with real_db_engine.connect() as conn:
         tx = conn.begin()
         for provider_id, timezone in (
             (PROVIDER, "America/Toronto"),
@@ -274,7 +265,6 @@ def network_history_conn():
             yield conn
         finally:
             tx.rollback()
-            engine.dispose()
 
 
 def _extend_history_retention(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -284,9 +274,8 @@ def _extend_history_retention(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture()
-def line_history_conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as conn:
+def line_history_conn(real_db_engine):  # noqa: ANN001
+    with real_db_engine.connect() as conn:
         tx = conn.begin()
         for provider_id in (LINE_PROVIDER, LINE_OTHER_PROVIDER):
             conn.execute(
@@ -393,13 +382,11 @@ def line_history_conn():
             yield conn
         finally:
             tx.rollback()
-            engine.dispose()
 
 
 @pytest.fixture()
-def stop_history_conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as conn:
+def stop_history_conn(real_db_engine):  # noqa: ANN001
+    with real_db_engine.connect() as conn:
         tx = conn.begin()
         for provider_id in (STOP_PROVIDER, STOP_OTHER_PROVIDER):
             conn.execute(
@@ -514,7 +501,6 @@ def stop_history_conn():
             yield conn
         finally:
             tx.rollback()
-            engine.dispose()
 
 
 def test_network_history_real_db_matches_cross_month_sql(
