@@ -23,7 +23,6 @@ from transit_ops.core.models import FeedKind, ProviderManifest
 from transit_ops.db.connection import make_engine, test_connection
 from transit_ops.gold import (
     alert_archive_default_bounds,
-    backfill_alert_archive,
     backfill_dim_name_history,
     build_gold_marts,
     build_warm_rollups,
@@ -1071,58 +1070,6 @@ def sync_alert_archive_command(
         provider_id,
         from_date=effective_from,
         to_date=effective_to,
-        settings=settings,
-    )
-    typer.echo(json.dumps(result.display_dict(), indent=2))
-
-
-@app.command("backfill-alert-archive")
-def backfill_alert_archive_command(
-    provider_id: str,
-    from_date: str = typer.Option(  # noqa: B008
-        ...,
-        "--from",
-        help="First provider-local capture date to backfill (YYYY-MM-DD, inclusive).",
-    ),
-    to_date: str = typer.Option(  # noqa: B008
-        ...,
-        "--to",
-        help="Last provider-local capture date to backfill (YYYY-MM-DD, inclusive).",
-    ),
-    month_batch: int = typer.Option(
-        1,
-        "--month-batch",
-        help="Number of complete provider-local calendar months per committed batch.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Classify every batch without upserting archive rows.",
-    ),
-) -> None:
-    """Backfill the alert archive in resumable, oldest-first calendar batches."""
-
-    parsed_from = _parse_alert_archive_date(from_date, option_name="--from")
-    parsed_to = _parse_alert_archive_date(to_date, option_name="--to")
-    if parsed_from > parsed_to:
-        raise typer.BadParameter("--from must be on or before --to")
-    if month_batch <= 0:
-        raise typer.BadParameter("--month-batch must be positive")
-
-    settings = get_settings()
-    try:
-        _provider_registry(settings).get_provider(provider_id)
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    if _skip_if_unseeded(settings, provider_id, step="backfill-alert-archive"):
-        return
-
-    result = backfill_alert_archive(
-        provider_id,
-        from_date=parsed_from,
-        to_date=parsed_to,
-        month_batch=month_batch,
-        dry_run=dry_run,
         settings=settings,
     )
     typer.echo(json.dumps(result.display_dict(), indent=2))

@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 RECOVERY_WORKFLOW = WORKFLOWS / "historic-publish-recovery.yml"
 DAILY_WORKFLOW = WORKFLOWS / "daily-warm-rollups.yml"
+RETIRED_ALERT_ARCHIVE_BACKFILL_COMMAND = "backfill-" + "alert-archive"
 
 FORBIDDEN = {
     "build-warm-rollups",
@@ -23,7 +24,7 @@ FORBIDDEN = {
     "prune-bronze-storage",
     "prune-silver-storage",
     "prune-gold-storage",
-    "backfill-alert-archive",
+    RETIRED_ALERT_ARCHIVE_BACKFILL_COMMAND,
     "replay-realtime-silver",
 }
 
