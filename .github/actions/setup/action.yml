@@ -1,6 +1,12 @@
 name: Setup Transit JS workspace
 description: Install Bun and cache the Transit JavaScript workspace.
 
+inputs:
+  cache-vitest:
+    description: Whether to restore and save the Vitest cache.
+    required: false
+    default: "false"
+
 runs:
   using: composite
   steps:
@@ -9,10 +15,10 @@ runs:
       with:
         bun-version-file: .bun-version
 
-    - name: Prepare cache directories
+    - name: Prepare Bun cache directory
       shell: bash
       working-directory: ${{ github.workspace }}
-      run: mkdir -p ~/.bun/install/cache apps/web/.vitest/cache
+      run: mkdir -p ~/.bun/install/cache
 
     - name: Cache Bun install cache
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -22,7 +28,14 @@ runs:
         restore-keys: |
           ${{ runner.os }}-bun-
 
+    - name: Prepare Vitest cache directory
+      if: ${{ inputs.cache-vitest == 'true' }}
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: mkdir -p apps/web/.vitest/cache
+
     - name: Cache Vitest
+      if: ${{ inputs.cache-vitest == 'true' }}
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: apps/web/.vitest/cache
