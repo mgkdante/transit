@@ -23,11 +23,10 @@ captured on D+1 is excluded, so silent/delivered/completeness stay correct.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold.rollups import (
     UPSERT_ROUTE_CANCELLATION_DAILY,
@@ -37,13 +36,6 @@ from transit_ops.snapshots.builders._helpers import _representative_services
 from transit_ops.snapshots.builders.historic.network_trend import _TREND_CANCELLATION_SQL
 from transit_ops.snapshots.builders.historic.route_reliability import (
     _ROUTE_CANCELLATION_DAILY_SQL,
-)
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - scheduled-universe real-DB tests skipped",
 )
 
 PROVIDER = "stm_sched_test"
@@ -56,7 +48,7 @@ TUESDAY = date(2026, 6, 16)
 SATURDAY = date(2026, 6, 20)
 
 
-def _seed_provider_edition(connection, *, with_calendar: bool) -> None:  # noqa: ANN001
+def _seed_provider_edition(connection) -> None:  # noqa: ANN001
     connection.execute(
         text(
             "INSERT INTO core.providers (provider_id, display_name, timezone, provider_key) "
@@ -150,77 +142,56 @@ def _run_scheduled(connection, target: date) -> int | None:  # noqa: ANN001
     ).scalar()
 
 
-def _tx():  # noqa: ANN202
-    engine = create_engine(DB_URL)
-    connection = engine.connect()
-    tx = connection.begin()
-    return engine, connection, tx
+@pytest.fixture()
+def conn(real_db_engine):  # noqa: ANN001
+    with real_db_engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            yield connection
+        finally:
+            transaction.rollback()
 
 
-def test_scheduled_normal_weekly_calendar() -> None:
-    engine, conn, tx = _tx()
-    try:
-        _seed_provider_edition(conn, with_calendar=True)
-        _add_calendar(conn, "weekday", weekdays=True, saturday=False)
-        _add_trips(conn, "weekday", ["t1", "t2", "t3"])
-        # Monday: weekday service runs -> 3 scheduled trips.
-        assert _run_scheduled(conn, MONDAY) == 3
-        # Saturday: weekday service does NOT run -> no row -> None.
-        assert _run_scheduled(conn, SATURDAY) is None
-    finally:
-        tx.rollback()
-        conn.close()
-        engine.dispose()
+def test_scheduled_normal_weekly_calendar(conn) -> None:
+    _seed_provider_edition(conn)
+    _add_calendar(conn, "weekday", weekdays=True, saturday=False)
+    _add_trips(conn, "weekday", ["t1", "t2", "t3"])
+    # Monday: weekday service runs -> 3 scheduled trips.
+    assert _run_scheduled(conn, MONDAY) == 3
+    # Saturday: weekday service does NOT run -> no row -> None.
+    assert _run_scheduled(conn, SATURDAY) is None
 
 
-def test_scheduled_added_exception_type1() -> None:
-    engine, conn, tx = _tx()
-    try:
-        _seed_provider_edition(conn, with_calendar=True)
-        # weekday-only service; Saturday normally excluded by the weekly pattern.
-        _add_calendar(conn, "weekday", weekdays=True, saturday=False)
-        _add_trips(conn, "weekday", ["t1", "t2"])
-        # type=1 ADD on Saturday -> service active that date despite the weekly pattern.
-        _add_exception(conn, "weekday", SATURDAY, 1)
-        assert _run_scheduled(conn, SATURDAY) == 2
-    finally:
-        tx.rollback()
-        conn.close()
-        engine.dispose()
+def test_scheduled_added_exception_type1(conn) -> None:
+    _seed_provider_edition(conn)
+    # weekday-only service; Saturday normally excluded by the weekly pattern.
+    _add_calendar(conn, "weekday", weekdays=True, saturday=False)
+    _add_trips(conn, "weekday", ["t1", "t2"])
+    # type=1 ADD on Saturday -> service active that date despite the weekly pattern.
+    _add_exception(conn, "weekday", SATURDAY, 1)
+    assert _run_scheduled(conn, SATURDAY) == 2
 
 
-def test_scheduled_removed_exception_type2() -> None:
-    engine, conn, tx = _tx()
-    try:
-        _seed_provider_edition(conn, with_calendar=True)
-        _add_calendar(conn, "weekday", weekdays=True, saturday=False)
-        _add_trips(conn, "weekday", ["t1", "t2", "t3"])
-        # type=2 REMOVE on Monday -> service suppressed that date -> no scheduled trips.
-        _add_exception(conn, "weekday", MONDAY, 2)
-        assert _run_scheduled(conn, MONDAY) is None
-        # Tuesday unaffected -> still 3.
-        assert _run_scheduled(conn, TUESDAY) == 3
-    finally:
-        tx.rollback()
-        conn.close()
-        engine.dispose()
+def test_scheduled_removed_exception_type2(conn) -> None:
+    _seed_provider_edition(conn)
+    _add_calendar(conn, "weekday", weekdays=True, saturday=False)
+    _add_trips(conn, "weekday", ["t1", "t2", "t3"])
+    # type=2 REMOVE on Monday -> service suppressed that date -> no scheduled trips.
+    _add_exception(conn, "weekday", MONDAY, 2)
+    assert _run_scheduled(conn, MONDAY) is None
+    # Tuesday unaffected -> still 3.
+    assert _run_scheduled(conn, TUESDAY) == 3
 
 
-def test_scheduled_calendar_dates_only_feed() -> None:
-    engine, conn, tx = _tx()
-    try:
-        _seed_provider_edition(conn, with_calendar=False)
-        # NO silver.calendar rows; service defined purely by type=1 exceptions.
-        _add_trips(conn, "holiday", ["h1", "h2", "h3", "h4"])
-        _add_exception(conn, "holiday", MONDAY, 1)
-        # The OR branch fires with zero calendar rows -> non-empty scheduled_trip_count.
-        assert _run_scheduled(conn, MONDAY) == 4
-        # A date with no type=1 exception -> no service -> None.
-        assert _run_scheduled(conn, TUESDAY) is None
-    finally:
-        tx.rollback()
-        conn.close()
-        engine.dispose()
+def test_scheduled_calendar_dates_only_feed(conn) -> None:
+    _seed_provider_edition(conn)
+    # NO silver.calendar rows; service defined purely by type=1 exceptions.
+    _add_trips(conn, "holiday", ["h1", "h2", "h3", "h4"])
+    _add_exception(conn, "holiday", MONDAY, 1)
+    # The OR branch fires with zero calendar rows -> non-empty scheduled_trip_count.
+    assert _run_scheduled(conn, MONDAY) == 4
+    # A date with no type=1 exception -> no service -> None.
+    assert _run_scheduled(conn, TUESDAY) is None
 
 
 RT_ENDPOINT_ID = 993002
@@ -299,79 +270,61 @@ def _run_cancellation(connection, target: date) -> dict:  # noqa: ANN001
     )
 
 
-def test_cancellation_split_with_scheduled_universe() -> None:
-    engine, conn, tx = _tx()
-    try:
-        _seed_provider_edition(conn, with_calendar=True)
-        _add_calendar(conn, "weekday", weekdays=True, saturday=False)
-        # 5 scheduled trips; RT observed 4 trip-days (1 canceled, 3 delivered).
-        _add_trips(conn, "weekday", ["t1", "t2", "t3", "t4", "t5"])
-        _seed_fact_trip_days(conn, MONDAY, canceled=1, delivered=3)
-        # Build scheduled BEFORE cancellation (production order).
-        assert _run_scheduled(conn, MONDAY) == 5
-        row = _run_cancellation(conn, MONDAY)
-        # Old RT-observed fields UNCHANGED: total=4, canceled=1, rate=25.00.
-        assert row["total_trip_days"] == 4
-        assert row["canceled_trip_days"] == 1
-        assert float(row["cancellation_rate_pct"]) == 25.0
-        # New split: delivered = total - canceled = 3; scheduled = 5;
-        # silent = max(5 - 4, 0) = 1.
-        assert row["scheduled_trip_days"] == 5
-        assert row["delivered_trip_days"] == 3
-        assert row["silent_trip_days"] == 1
-    finally:
-        tx.rollback()
-        conn.close()
-        engine.dispose()
+def test_cancellation_split_with_scheduled_universe(conn) -> None:
+    _seed_provider_edition(conn)
+    _add_calendar(conn, "weekday", weekdays=True, saturday=False)
+    # 5 scheduled trips; RT observed 4 trip-days (1 canceled, 3 delivered).
+    _add_trips(conn, "weekday", ["t1", "t2", "t3", "t4", "t5"])
+    _seed_fact_trip_days(conn, MONDAY, canceled=1, delivered=3)
+    # Build scheduled BEFORE cancellation (production order).
+    assert _run_scheduled(conn, MONDAY) == 5
+    row = _run_cancellation(conn, MONDAY)
+    # Old RT-observed fields UNCHANGED: total=4, canceled=1, rate=25.00.
+    assert row["total_trip_days"] == 4
+    assert row["canceled_trip_days"] == 1
+    assert float(row["cancellation_rate_pct"]) == 25.0
+    # New split: delivered = total - canceled = 3; scheduled = 5;
+    # silent = max(5 - 4, 0) = 1.
+    assert row["scheduled_trip_days"] == 5
+    assert row["delivered_trip_days"] == 3
+    assert row["silent_trip_days"] == 1
 
 
-def test_cancellation_split_null_when_no_scheduled() -> None:
+def test_cancellation_split_null_when_no_scheduled(conn) -> None:
     """No silver schedule for the date -> scheduled/silent NULL (honest-unknown),
     delivered still known, old RT fields unchanged."""
-    engine, conn, tx = _tx()
-    try:
-        _seed_provider_edition(conn, with_calendar=True)
-        # calendar exists but NO trips -> scheduled rollup yields no R1 row for the date.
-        _add_calendar(conn, "weekday", weekdays=True, saturday=False)
-        _seed_fact_trip_days(conn, MONDAY, canceled=1, delivered=3)
-        _run_scheduled(conn, MONDAY)  # no scheduled row for R1
-        row = _run_cancellation(conn, MONDAY)
-        assert row["total_trip_days"] == 4
-        assert row["canceled_trip_days"] == 1
-        assert row["scheduled_trip_days"] is None
-        assert row["silent_trip_days"] is None
-        # delivered is ALWAYS known (total - canceled), independent of scheduled.
-        assert row["delivered_trip_days"] == 3
-    finally:
-        tx.rollback()
-        conn.close()
-        engine.dispose()
+    _seed_provider_edition(conn)
+    # calendar exists but NO trips -> scheduled rollup yields no R1 row for the date.
+    _add_calendar(conn, "weekday", weekdays=True, saturday=False)
+    _seed_fact_trip_days(conn, MONDAY, canceled=1, delivered=3)
+    _run_scheduled(conn, MONDAY)  # no scheduled row for R1
+    row = _run_cancellation(conn, MONDAY)
+    assert row["total_trip_days"] == 4
+    assert row["canceled_trip_days"] == 1
+    assert row["scheduled_trip_days"] is None
+    assert row["silent_trip_days"] is None
+    # delivered is ALWAYS known (total - canceled), independent of scheduled.
+    assert row["delivered_trip_days"] == 3
 
 
-def test_silent_clamped_at_zero_on_over_delivery() -> None:
+def test_silent_clamped_at_zero_on_over_delivery(conn) -> None:
     """RT reports MORE trip-days than scheduled (added/unscheduled service):
     silent clamps to 0, never negative; AND the read-time service_completeness_pct
     clamps to 100 (not 250) so the publish gate's 0-100 rate check never aborts (FIX-1)."""
-    engine, conn, tx = _tx()
-    try:
-        _seed_provider_edition(conn, with_calendar=True)
-        _add_calendar(conn, "weekday", weekdays=True, saturday=False)
-        _add_trips(conn, "weekday", ["t1", "t2"])  # only 2 scheduled
-        _seed_fact_trip_days(conn, MONDAY, canceled=0, delivered=5)  # 5 observed
-        assert _run_scheduled(conn, MONDAY) == 2
-        row = _run_cancellation(conn, MONDAY)
-        assert row["scheduled_trip_days"] == 2
-        assert row["silent_trip_days"] == 0  # max(2 - 5, 0)
-        # FIX-1: the read query CLAMPS completeness at 100 — 5 delivered / 2 scheduled
-        # = 250% raw, published as 100.0 (over-delivery reads as fully complete).
-        read = conn.execute(
-            _ROUTE_CANCELLATION_DAILY_SQL, {"provider_id": PROVIDER, "route_id": "R1"}
-        ).mappings().one()
-        assert float(read["service_completeness_pct"]) == 100.0
-    finally:
-        tx.rollback()
-        conn.close()
-        engine.dispose()
+    _seed_provider_edition(conn)
+    _add_calendar(conn, "weekday", weekdays=True, saturday=False)
+    _add_trips(conn, "weekday", ["t1", "t2"])  # only 2 scheduled
+    _seed_fact_trip_days(conn, MONDAY, canceled=0, delivered=5)  # 5 observed
+    assert _run_scheduled(conn, MONDAY) == 2
+    row = _run_cancellation(conn, MONDAY)
+    assert row["scheduled_trip_days"] == 2
+    assert row["silent_trip_days"] == 0  # max(2 - 5, 0)
+    # FIX-1: the read query CLAMPS completeness at 100 — 5 delivered / 2 scheduled
+    # = 250% raw, published as 100.0 (over-delivery reads as fully complete).
+    read = conn.execute(
+        _ROUTE_CANCELLATION_DAILY_SQL, {"provider_id": PROVIDER, "route_id": "R1"}
+    ).mappings().one()
+    assert float(read["service_completeness_pct"]) == 100.0
 
 
 def _add_route(connection, route_id: str) -> None:  # noqa: ANN001
@@ -424,63 +377,57 @@ def _seed_fact_trip_days_route(
         )
 
 
-def test_fully_dark_scheduled_day_emits_row_and_byte_parity() -> None:
+def test_fully_dark_scheduled_day_emits_row_and_byte_parity(conn) -> None:
     """FIX-4: a scheduled route with ZERO RT-observed trips emits a row (total=0,
     canceled=0, rate NULL, scheduled=N, delivered=0, silent=N); a route WITH RT
     observations on the same day is BYTE-UNCHANGED by the FULL-JOIN conversion."""
-    engine, conn, tx = _tx()
-    try:
-        _seed_provider_edition(conn, with_calendar=True)
-        _add_route(conn, "R2")  # dark route
-        _add_calendar(conn, "weekday", weekdays=True, saturday=False)
-        # R1: 5 scheduled + RT observed (1 canceled, 3 delivered) — the parity anchor.
-        _add_trips(conn, "weekday", ["t1", "t2", "t3", "t4", "t5"])
-        _seed_fact_trip_days(conn, MONDAY, canceled=1, delivered=3)
-        # R2: 4 scheduled, NO RT observations at all (fully dark).
-        _add_trips_route(conn, "weekday", "R2", ["u1", "u2", "u3", "u4"])
-        assert _run_scheduled(conn, MONDAY) is not None  # builds BOTH routes' scheduled
-        conn.execute(
-            UPSERT_ROUTE_CANCELLATION_DAILY,
-            {"provider_id": PROVIDER, "local_date": MONDAY,
-             "date_key": int(MONDAY.strftime("%Y%m%d")),
-             "built_at_utc": datetime(2026, 6, 16, tzinfo=UTC)},
-        )
-        rows = {
-            r["route_id"]: dict(r)
-            for r in conn.execute(
-                text(
-                    "SELECT route_id, total_trip_days, canceled_trip_days, "
-                    "cancellation_rate_pct, scheduled_trip_days, delivered_trip_days, "
-                    "silent_trip_days FROM gold.route_cancellation_daily "
-                    "WHERE provider_id = :p AND provider_local_date = :dt"
-                ),
-                {"p": PROVIDER, "dt": MONDAY},
-            ).mappings()
-        }
-        # R1 (had RT obs): byte-unchanged split — total=4, canceled=1, delivered=3, silent=1.
-        assert rows["R1"]["total_trip_days"] == 4
-        assert rows["R1"]["canceled_trip_days"] == 1
-        assert float(rows["R1"]["cancellation_rate_pct"]) == 25.0
-        assert rows["R1"]["scheduled_trip_days"] == 5
-        assert rows["R1"]["delivered_trip_days"] == 3
-        assert rows["R1"]["silent_trip_days"] == 1
-        # R2 (fully dark): a row EXISTS with honest zeros + NULL rate.
-        assert "R2" in rows, "fully-dark scheduled day must still emit a row (FIX-4)"
-        assert rows["R2"]["total_trip_days"] == 0
-        assert rows["R2"]["canceled_trip_days"] == 0
-        assert rows["R2"]["cancellation_rate_pct"] is None  # no RT denominator -> honest-NULL
-        assert rows["R2"]["scheduled_trip_days"] == 4
-        assert rows["R2"]["delivered_trip_days"] == 0
-        assert rows["R2"]["silent_trip_days"] == 4  # all scheduled trips silent
-        # gate invariant: delivered + canceled == total (0+0==0); silent<=scheduled.
-        assert (
-            rows["R2"]["delivered_trip_days"] + rows["R2"]["canceled_trip_days"]
-            == rows["R2"]["total_trip_days"]
-        )
-    finally:
-        tx.rollback()
-        conn.close()
-        engine.dispose()
+    _seed_provider_edition(conn)
+    _add_route(conn, "R2")  # dark route
+    _add_calendar(conn, "weekday", weekdays=True, saturday=False)
+    # R1: 5 scheduled + RT observed (1 canceled, 3 delivered) — the parity anchor.
+    _add_trips(conn, "weekday", ["t1", "t2", "t3", "t4", "t5"])
+    _seed_fact_trip_days(conn, MONDAY, canceled=1, delivered=3)
+    # R2: 4 scheduled, NO RT observations at all (fully dark).
+    _add_trips_route(conn, "weekday", "R2", ["u1", "u2", "u3", "u4"])
+    assert _run_scheduled(conn, MONDAY) is not None  # builds BOTH routes' scheduled
+    conn.execute(
+        UPSERT_ROUTE_CANCELLATION_DAILY,
+        {"provider_id": PROVIDER, "local_date": MONDAY,
+         "date_key": int(MONDAY.strftime("%Y%m%d")),
+         "built_at_utc": datetime(2026, 6, 16, tzinfo=UTC)},
+    )
+    rows = {
+        r["route_id"]: dict(r)
+        for r in conn.execute(
+            text(
+                "SELECT route_id, total_trip_days, canceled_trip_days, "
+                "cancellation_rate_pct, scheduled_trip_days, delivered_trip_days, "
+                "silent_trip_days FROM gold.route_cancellation_daily "
+                "WHERE provider_id = :p AND provider_local_date = :dt"
+            ),
+            {"p": PROVIDER, "dt": MONDAY},
+        ).mappings()
+    }
+    # R1 (had RT obs): byte-unchanged split — total=4, canceled=1, delivered=3, silent=1.
+    assert rows["R1"]["total_trip_days"] == 4
+    assert rows["R1"]["canceled_trip_days"] == 1
+    assert float(rows["R1"]["cancellation_rate_pct"]) == 25.0
+    assert rows["R1"]["scheduled_trip_days"] == 5
+    assert rows["R1"]["delivered_trip_days"] == 3
+    assert rows["R1"]["silent_trip_days"] == 1
+    # R2 (fully dark): a row EXISTS with honest zeros + NULL rate.
+    assert "R2" in rows, "fully-dark scheduled day must still emit a row (FIX-4)"
+    assert rows["R2"]["total_trip_days"] == 0
+    assert rows["R2"]["canceled_trip_days"] == 0
+    assert rows["R2"]["cancellation_rate_pct"] is None  # no RT denominator -> honest-NULL
+    assert rows["R2"]["scheduled_trip_days"] == 4
+    assert rows["R2"]["delivered_trip_days"] == 0
+    assert rows["R2"]["silent_trip_days"] == 4  # all scheduled trips silent
+    # gate invariant: delivered + canceled == total (0+0==0); silent<=scheduled.
+    assert (
+        rows["R2"]["delivered_trip_days"] + rows["R2"]["canceled_trip_days"]
+        == rows["R2"]["total_trip_days"]
+    )
 
 
 def _seed_capture_day_snapshot(
@@ -569,7 +516,7 @@ def _seed_fact_on_snapshot(
     )
 
 
-def test_cancellation_observed_universe_filtered_to_service_day() -> None:
+def test_cancellation_observed_universe_filtered_to_service_day(conn) -> None:
     """GC2 (P5.3e): a cross-midnight route where NAIVE capture-day counting inflates
     obs.total. Service-day MONDAY has 5 scheduled trips. RT observes:
       - 3 MONDAY-service trips captured MONDAY daytime (start_date=MONDAY, capture=MONDAY),
@@ -585,132 +532,108 @@ def test_cancellation_observed_universe_filtered_to_service_day() -> None:
     now equals the scheduled universe's service day (NOT the capture day) so silent /
     delivered / completeness are correct on cross-midnight routes.
     """
-    engine, conn, tx = _tx()
-    try:
-        _seed_provider_edition(conn, with_calendar=True)
-        _add_calendar(conn, "weekday", weekdays=True, saturday=False)
-        _add_trips(conn, "weekday", ["t1", "t2", "t3", "t4", "t5"])  # 5 scheduled on MONDAY
-        # Capture-day MONDAY snapshot (daytime) + capture-day TUESDAY snapshot (holds BOTH
-        # the MONDAY overnight tail and TUESDAY's own daytime service).
-        ts_mon = _seed_capture_day_snapshot(
-            conn, capture_day=MONDAY, hour=12, run_id=994001, snapshot_id=994001,
-        )
-        ts_tue = _seed_capture_day_snapshot(
-            conn, capture_day=TUESDAY, hour=2, run_id=994002, snapshot_id=994002,
-        )
-        # 3 MONDAY-service trips captured MONDAY daytime (start_date=MONDAY, capture=MONDAY).
-        for i in range(3):
-            _seed_fact_on_snapshot(
-                conn, trip_id=f"mon_day{i}", service_day=MONDAY, capture_day=MONDAY,
-                snapshot_id=994001, ts=ts_mon, entity_index=i,
-            )
-        # 1 MONDAY-service OVERNIGHT trip captured TUESDAY pre-dawn (the cross-midnight tail):
-        # start_date=MONDAY, capture=TUESDAY.
+    _seed_provider_edition(conn)
+    _add_calendar(conn, "weekday", weekdays=True, saturday=False)
+    _add_trips(conn, "weekday", ["t1", "t2", "t3", "t4", "t5"])  # 5 scheduled on MONDAY
+    # Capture-day MONDAY snapshot (daytime) + capture-day TUESDAY snapshot (holds BOTH
+    # the MONDAY overnight tail and TUESDAY's own daytime service).
+    ts_mon = _seed_capture_day_snapshot(
+        conn, capture_day=MONDAY, hour=12, run_id=994001, snapshot_id=994001,
+    )
+    ts_tue = _seed_capture_day_snapshot(
+        conn, capture_day=TUESDAY, hour=2, run_id=994002, snapshot_id=994002,
+    )
+    # 3 MONDAY-service trips captured MONDAY daytime (start_date=MONDAY, capture=MONDAY).
+    for i in range(3):
         _seed_fact_on_snapshot(
-            conn, trip_id="mon_overnight", service_day=MONDAY, capture_day=TUESDAY,
-            snapshot_id=994002, ts=ts_tue, entity_index=100,
+            conn, trip_id=f"mon_day{i}", service_day=MONDAY, capture_day=MONDAY,
+            snapshot_id=994001, ts=ts_mon, entity_index=i,
         )
-        # 1 TUESDAY-service trip captured TUESDAY daytime — a DIFFERENT service day
-        # (start_date=TUESDAY) that must NOT be folded into MONDAY's observed universe.
-        _seed_fact_on_snapshot(
-            conn, trip_id="tue_day", service_day=TUESDAY, capture_day=TUESDAY,
-            snapshot_id=994002, ts=ts_tue, entity_index=200,
-        )
-        assert _run_scheduled(conn, MONDAY) == 5
-        row = _run_cancellation(conn, MONDAY)
-        # Observed universe for MONDAY = 4 (3 daytime + 1 overnight tail), NOT 3 (which
-        # capture-day-only counting would give) and NOT 5 (which an unfiltered 2-day
-        # window would give by folding the TUESDAY-service trip in).
-        assert row["total_trip_days"] == 4, "observed universe must == service-day-MONDAY trips"
-        assert row["canceled_trip_days"] == 0
-        # The observed universe now shares the scheduled universe's service day:
-        assert row["scheduled_trip_days"] == 5
-        # silent = GREATEST(5 - 4, 0) = 1 — NOT under-counted (would be wrongly 0 if the
-        # TUESDAY-service trip inflated obs.total to 5).
-        assert row["silent_trip_days"] == 1
-        # delivered = total - canceled = 4 — NOT over-counted.
-        assert row["delivered_trip_days"] == 4
-        # Read-time completeness = 100 * 4 / 5 = 80.0 (would be a wrong 100 if inflated).
-        read = conn.execute(
-            _ROUTE_CANCELLATION_DAILY_SQL, {"provider_id": PROVIDER, "route_id": "R1"}
-        ).mappings().one()
-        assert float(read["service_completeness_pct"]) == 80.0
-    finally:
-        tx.rollback()
-        conn.close()
-        engine.dispose()
+    # 1 MONDAY-service OVERNIGHT trip captured TUESDAY pre-dawn (the cross-midnight tail):
+    # start_date=MONDAY, capture=TUESDAY.
+    _seed_fact_on_snapshot(
+        conn, trip_id="mon_overnight", service_day=MONDAY, capture_day=TUESDAY,
+        snapshot_id=994002, ts=ts_tue, entity_index=100,
+    )
+    # 1 TUESDAY-service trip captured TUESDAY daytime — a DIFFERENT service day
+    # (start_date=TUESDAY) that must NOT be folded into MONDAY's observed universe.
+    _seed_fact_on_snapshot(
+        conn, trip_id="tue_day", service_day=TUESDAY, capture_day=TUESDAY,
+        snapshot_id=994002, ts=ts_tue, entity_index=200,
+    )
+    assert _run_scheduled(conn, MONDAY) == 5
+    row = _run_cancellation(conn, MONDAY)
+    # Observed universe for MONDAY = 4 (3 daytime + 1 overnight tail), NOT 3 (which
+    # capture-day-only counting would give) and NOT 5 (which an unfiltered 2-day
+    # window would give by folding the TUESDAY-service trip in).
+    assert row["total_trip_days"] == 4, "observed universe must == service-day-MONDAY trips"
+    assert row["canceled_trip_days"] == 0
+    # The observed universe now shares the scheduled universe's service day:
+    assert row["scheduled_trip_days"] == 5
+    # silent = GREATEST(5 - 4, 0) = 1 — NOT under-counted (would be wrongly 0 if the
+    # TUESDAY-service trip inflated obs.total to 5).
+    assert row["silent_trip_days"] == 1
+    # delivered = total - canceled = 4 — NOT over-counted.
+    assert row["delivered_trip_days"] == 4
+    # Read-time completeness = 100 * 4 / 5 = 80.0 (would be a wrong 100 if inflated).
+    read = conn.execute(
+        _ROUTE_CANCELLATION_DAILY_SQL, {"provider_id": PROVIDER, "route_id": "R1"}
+    ).mappings().one()
+    assert float(read["service_completeness_pct"]) == 80.0
 
 
-def test_trend_cancel_delivered_filters_null_scheduled() -> None:
+def test_trend_cancel_delivered_filters_null_scheduled(conn) -> None:
     """FIX-2: the network-trend cancel SUM(delivered) is FILTERed to known-scheduled
     rows, so a route-day with NULL scheduled does NOT inflate Σdelivered."""
-    engine, conn, tx = _tx()
-    try:
-        _seed_provider_edition(conn, with_calendar=True)
-        _add_route(conn, "R2")
-        _add_calendar(conn, "weekday", weekdays=True, saturday=False)
-        # R1 scheduled (5 trips) + RT delivered 3. R2 has NO scheduled trips (calendar
-        # exists but no R2 trips) yet RT delivered 2 -> its scheduled is NULL.
-        _add_trips(conn, "weekday", ["t1", "t2", "t3", "t4", "t5"])
-        _seed_fact_trip_days(conn, MONDAY, canceled=0, delivered=3)          # R1
-        _seed_fact_trip_days_route(conn, MONDAY, "R2", canceled=0, delivered=2, base=500)
-        _run_scheduled(conn, MONDAY)  # only R1 gets a scheduled row
-        conn.execute(
-            UPSERT_ROUTE_CANCELLATION_DAILY,
-            {"provider_id": PROVIDER, "local_date": MONDAY,
-             "date_key": int(MONDAY.strftime("%Y%m%d")),
-             "built_at_utc": datetime(2026, 6, 16, tzinfo=UTC)},
-        )
-        row = conn.execute(
-            _TREND_CANCELLATION_SQL, {"provider_id": PROVIDER}
-        ).mappings().one()
-        # scheduled = 5 (R1 only). delivered FILTERed to known-scheduled = 3 (R1 only),
-        # NOT 5 (would be 3 + R2's 2 if the FILTER were missing).
-        assert row["scheduled"] == 5
-        assert row["delivered"] == 3
-    finally:
-        tx.rollback()
-        conn.close()
-        engine.dispose()
+    _seed_provider_edition(conn)
+    _add_route(conn, "R2")
+    _add_calendar(conn, "weekday", weekdays=True, saturday=False)
+    # R1 scheduled (5 trips) + RT delivered 3. R2 has NO scheduled trips (calendar
+    # exists but no R2 trips) yet RT delivered 2 -> its scheduled is NULL.
+    _add_trips(conn, "weekday", ["t1", "t2", "t3", "t4", "t5"])
+    _seed_fact_trip_days(conn, MONDAY, canceled=0, delivered=3)          # R1
+    _seed_fact_trip_days_route(conn, MONDAY, "R2", canceled=0, delivered=2, base=500)
+    _run_scheduled(conn, MONDAY)  # only R1 gets a scheduled row
+    conn.execute(
+        UPSERT_ROUTE_CANCELLATION_DAILY,
+        {"provider_id": PROVIDER, "local_date": MONDAY,
+         "date_key": int(MONDAY.strftime("%Y%m%d")),
+         "built_at_utc": datetime(2026, 6, 16, tzinfo=UTC)},
+    )
+    row = conn.execute(
+        _TREND_CANCELLATION_SQL, {"provider_id": PROVIDER}
+    ).mappings().one()
+    # scheduled = 5 (R1 only). delivered FILTERed to known-scheduled = 3 (R1 only),
+    # NOT 5 (would be 3 + R2's 2 if the FILTER were missing).
+    assert row["scheduled"] == 5
+    assert row["delivered"] == 3
 
 
-def test_representative_services_calendar_dates_only() -> None:
-    engine, conn, tx = _tx()
-    try:
-        _seed_provider_edition(conn, with_calendar=False)
-        _add_trips(conn, "holiday", ["h1", "h2"])
-        # Busiest weekday must resolve from calendar_dates alone (empty silver.calendar).
-        _add_exception(conn, "holiday", MONDAY, 1)
-        weekday, weekend = _representative_services(
-            conn, provider_id=PROVIDER, dataset_version_id=DVID
-        )
-        assert weekday == ["holiday"]
-        assert weekend == []
-    finally:
-        tx.rollback()
-        conn.close()
-        engine.dispose()
+def test_representative_services_calendar_dates_only(conn) -> None:
+    _seed_provider_edition(conn)
+    _add_trips(conn, "holiday", ["h1", "h2"])
+    # Busiest weekday must resolve from calendar_dates alone (empty silver.calendar).
+    _add_exception(conn, "holiday", MONDAY, 1)
+    weekday, weekend = _representative_services(
+        conn, provider_id=PROVIDER, dataset_version_id=DVID
+    )
+    assert weekday == ["holiday"]
+    assert weekend == []
 
 
-def test_representative_services_honors_type2_removal() -> None:
-    engine, conn, tx = _tx()
-    try:
-        _seed_provider_edition(conn, with_calendar=True)
-        # Two weekday services; svc_big has more trips so it drives the busiest-date pick.
-        _add_calendar(conn, "svc_big", weekdays=True, saturday=False)
-        _add_calendar(conn, "svc_small", weekdays=True, saturday=False)
-        _add_trips(conn, "svc_big", ["b1", "b2", "b3", "b4"])
-        _add_trips(conn, "svc_small", ["s1"])
-        # Remove svc_big from EVERY weekday in the resolution window so the active-service
-        # set on the busiest weekday never contains it (type=2 honored end-to-end).
-        for day in range(1, 31):
-            _add_exception(conn, "svc_big", date(2026, 6, day), 2)
-        weekday, _weekend = _representative_services(
-            conn, provider_id=PROVIDER, dataset_version_id=DVID
-        )
-        assert "svc_big" not in weekday
-        assert "svc_small" in weekday
-    finally:
-        tx.rollback()
-        conn.close()
-        engine.dispose()
+def test_representative_services_honors_type2_removal(conn) -> None:
+    _seed_provider_edition(conn)
+    # Two weekday services; svc_big has more trips so it drives the busiest-date pick.
+    _add_calendar(conn, "svc_big", weekdays=True, saturday=False)
+    _add_calendar(conn, "svc_small", weekdays=True, saturday=False)
+    _add_trips(conn, "svc_big", ["b1", "b2", "b3", "b4"])
+    _add_trips(conn, "svc_small", ["s1"])
+    # Remove svc_big from EVERY weekday in the resolution window so the active-service
+    # set on the busiest weekday never contains it (type=2 honored end-to-end).
+    for day in range(1, 31):
+        _add_exception(conn, "svc_big", date(2026, 6, day), 2)
+    weekday, _weekend = _representative_services(
+        conn, provider_id=PROVIDER, dataset_version_id=DVID
+    )
+    assert "svc_big" not in weekday
+    assert "svc_small" in weekday
