@@ -19,20 +19,12 @@ Each test runs inside one transaction and rolls back.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
 
 from transit_ops.maintenance import DELETE_ORPHANED_INGESTION_RUNS
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_orphanrun_i3_test"
 ENDPOINT_ID = 993014

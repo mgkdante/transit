@@ -19,19 +19,11 @@ Each test runs inside one transaction and rolls back — nothing persists.
 
 from __future__ import annotations
 
-import os
 from contextlib import contextmanager
 
 import pytest
 
 from transit_ops.gold.rollups import build_warm_rollups, provider_is_seeded
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
-)
 
 # An enrolled-but-unseeded provider: it has NO core.providers row, so the
 # gold.dim_provider view yields no row for it (the exact prod state of octranspo/sto).

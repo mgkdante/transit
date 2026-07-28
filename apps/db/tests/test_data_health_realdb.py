@@ -16,7 +16,6 @@ Each test runs inside one transaction and rolls back.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -24,13 +23,6 @@ from sqlalchemy import text
 
 from transit_ops.snapshots.builders import build_data_health
 from transit_ops.snapshots.contract import DATA_HEALTH_BYTE_CEILING
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB tests skipped",
-)
 
 PROVIDER = "stm_datahealth_test"
 NOW = datetime.now(UTC)
