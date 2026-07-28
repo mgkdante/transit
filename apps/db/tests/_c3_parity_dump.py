@@ -2,7 +2,7 @@
 
 Run BEFORE (C1+C2 working tree) and AFTER (C1+C2+C3 split) and byte-compare the
 two JSON dirs excluding generated_utc. Reuses the cutover-gate seed harness so the
-seed is a single owner. Not a pytest module (import-time DB_URL gate would skip it);
+seed is a single owner. Not auto-collected by pytest (matches neither test_*.py nor *_test.py);
 invoked directly with TRANSIT_TEST_DATABASE_URL set.
 """
 
