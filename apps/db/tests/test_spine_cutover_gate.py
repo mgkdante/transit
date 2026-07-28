@@ -38,7 +38,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold import rollups
 from transit_ops.settings import Settings
@@ -46,13 +46,6 @@ from transit_ops.snapshots.builders.historic import (
     build_hotspots,
     build_network_trend,
     build_route_reliability,
-)
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - spine cutover gate skipped",
 )
 
 PROVIDER = "stm_gate_test"
@@ -411,47 +404,43 @@ def _has_weak_stops(canon: dict) -> bool:
     return bool(ws) and all(s.get("id") for s in ws)
 
 
-@contextmanager
-def _seeded_conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
-        tx = connection.begin()
+@pytest.fixture()
+def conn(real_db_engine):  # noqa: ANN001
+    with real_db_engine.connect() as connection:
+        transaction = connection.begin()
         try:
             _seed(connection)
             _build(connection)
             yield connection
         finally:
-            tx.rollback()
-        engine.dispose()
+            transaction.rollback()
 
 
 @pytest.mark.skipif(
     not os.environ.get("SPINE_GOLDEN_REGEN"),
     reason="set SPINE_GOLDEN_REGEN=1 to regenerate the frozen golden",
 )
-def test_regenerate_golden() -> None:
+def test_regenerate_golden(conn) -> None:
     # Post-drop the source="fact" path is gone, so the golden re-baselines from the
     # spine. (Byte-identity to the fact output was proven at cutover, when both
     # existed; the committed golden remains that frozen fact oracle.)
-    with _seeded_conn() as connection:
-        anchor = _anchor_today(connection)
-        canon = _canonicalize(_render(connection), anchor)
+    anchor = _anchor_today(conn)
+    canon = _canonicalize(_render(conn), anchor)
     assert _has_delay_subtree(canon), "refusing to freeze an empty delay subtree (Finding E)"
     assert _has_weak_stops(canon), "refusing to freeze an empty weak_stops subtree (DB-PR-3)"
     GOLDEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     GOLDEN_PATH.write_text(json.dumps(canon, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def test_spine_matches_frozen_golden_on_count_and_share_fields() -> None:
+def test_spine_matches_frozen_golden_on_count_and_share_fields(conn) -> None:
     assert GOLDEN_PATH.exists(), (
         f"frozen golden missing: regenerate with SPINE_GOLDEN_REGEN=1 ({GOLDEN_PATH})"
     )
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     assert _has_delay_subtree(golden), "frozen golden has an empty delay subtree (Finding E)"
     assert _has_weak_stops(golden), "frozen golden has an empty weak_stops subtree (DB-PR-3)"
-    with _seeded_conn() as connection:
-        anchor = _anchor_today(connection)
-        canon_spine = _canonicalize(_render(connection), anchor)
+    anchor = _anchor_today(conn)
+    canon_spine = _canonicalize(_render(conn), anchor)
     # The committed golden is the source="fact" render frozen at cutover; the spine
     # reproduces every frozen field, only {avg/p50/p90} rebaselined (allow-move).
     _assert_frozen_match(golden, canon_spine)
@@ -459,14 +448,13 @@ def test_spine_matches_frozen_golden_on_count_and_share_fields() -> None:
     assert _zero_allow_move(golden) == _zero_allow_move(canon_spine)
 
 
-def test_network_by_shift_daytype_renders_from_spine() -> None:
+def test_network_by_shift_daytype_renders_from_spine(conn) -> None:
     """The network_trend by_shift/by_daytype grains derive from the spine across BOTH
     seeded routes (byte-identity to the dropped folds was proven at cutover); here we
     assert they render with in-range shares + full grain coverage."""
-    with _seeded_conn() as connection:
-        spine = build_network_trend(
-            connection, provider_id=PROVIDER, generated_utc=GENERATED_UTC
-        ).model_dump(mode="json")
+    spine = build_network_trend(
+        conn, provider_id=PROVIDER, generated_utc=GENERATED_UTC
+    ).model_dump(mode="json")
     for grain_key in ("by_shift", "by_daytype"):
         rows = {row["grain"]: row for row in spine[grain_key]}
         assert rows, grain_key
@@ -477,38 +465,37 @@ def test_network_by_shift_daytype_renders_from_spine() -> None:
     assert {row["grain"] for row in spine["by_daytype"]} == {"weekday", "weekend"}
 
 
-def test_repeated_problem_route_issue_count_matches_spine_weekly_severe() -> None:
+def test_repeated_problem_route_issue_count_matches_spine_weekly_severe(conn) -> None:
     """Task 5 full-drop: the repeated_problem_route_stop builder now derives its
     route-grain recurrence from gold.route_delay_spine. issue_count must equal the
     spine's per-(route, ISO-week) SUM(severe) — byte-identical to the (about-to-be-
     dropped) route_reliability_weekly.severe_delay_count it used to read."""
-    with _seeded_conn() as connection:
-        rp = {
-            (r["entity_id"], r["period_start_local"]): r["issue_count"]
-            for r in connection.execute(
-                text(
-                    "SELECT entity_id, period_start_local, issue_count "
-                    "FROM gold.repeated_problem_route_stop "
-                    "WHERE provider_id = :p AND entity_kind = 'route' AND period_grain = 'week'"
-                ),
-                {"p": PROVIDER},
-            ).mappings()
-        }
-        spine = {
-            (r["route_id"], r["wk"]): r["severe"]
-            for r in connection.execute(
-                text(
-                    "SELECT route_id, date_trunc('week', provider_local_date)::date AS wk, "
-                    "       SUM(severe_delay_count)::int AS severe "
-                    "FROM gold.route_delay_spine WHERE provider_id = :p "
-                    "GROUP BY route_id, date_trunc('week', provider_local_date)::date "
-                    "HAVING SUM(severe_delay_count) > 0"
-                ),
-                {"p": PROVIDER},
-            ).mappings()
-        }
-        # build_hotspots must execute its spine-derived weekly join without error.
-        hot = build_hotspots(connection, provider_id=PROVIDER, generated_utc=GENERATED_UTC)
+    rp = {
+        (r["entity_id"], r["period_start_local"]): r["issue_count"]
+        for r in conn.execute(
+            text(
+                "SELECT entity_id, period_start_local, issue_count "
+                "FROM gold.repeated_problem_route_stop "
+                "WHERE provider_id = :p AND entity_kind = 'route' AND period_grain = 'week'"
+            ),
+            {"p": PROVIDER},
+        ).mappings()
+    }
+    spine = {
+        (r["route_id"], r["wk"]): r["severe"]
+        for r in conn.execute(
+            text(
+                "SELECT route_id, date_trunc('week', provider_local_date)::date AS wk, "
+                "       SUM(severe_delay_count)::int AS severe "
+                "FROM gold.route_delay_spine WHERE provider_id = :p "
+                "GROUP BY route_id, date_trunc('week', provider_local_date)::date "
+                "HAVING SUM(severe_delay_count) > 0"
+            ),
+            {"p": PROVIDER},
+        ).mappings()
+    }
+    # build_hotspots must execute its spine-derived weekly join without error.
+    hot = build_hotspots(conn, provider_id=PROVIDER, generated_utc=GENERATED_UTC)
     assert rp, "expected route-grain repeated-problem rows from the seeded severe delays"
     assert spine, "expected severe delays in the spine"
     for key, severe in spine.items():
@@ -516,7 +503,7 @@ def test_repeated_problem_route_issue_count_matches_spine_weekly_severe() -> Non
     assert hot is not None  # renders off the spine-weekly OTP join
 
 
-def test_hotspots_by_grain_matches_hand_rolled_spine_wilson() -> None:
+def test_hotspots_by_grain_matches_hand_rolled_spine_wilson(conn) -> None:
     """S12 real-DB parity: the by_grain WEEK ladder ranks route entities by the
     not-severe Wilson LOWER bound over the per-route spine SUM(obs)/SUM(severe) for the
     same trailing-week window, EXACTLY reproducing a hand-rolled spine SUM + _wilson_lo.
@@ -524,32 +511,31 @@ def test_hotspots_by_grain_matches_hand_rolled_spine_wilson() -> None:
     from transit_ops.gold.reader import wilson_lo as _wlo
     from transit_ops.snapshots.builders.historic import _hotspots_by_grain
 
-    with _seeded_conn() as connection:
-        anchor = connection.execute(
+    anchor = conn.execute(
+        text(
+            "SELECT MAX(provider_local_date) AS a FROM gold.route_delay_spine "
+            "WHERE provider_id = :p"
+        ),
+        {"p": PROVIDER},
+    ).scalar_one()
+    win_start = anchor - timedelta(days=6)
+    # hand-rolled per-route SUM over the WEEK window off the spine (route universe)
+    hand = {
+        r["route_id"]: (int(r["obs"]), int(r["severe"]))
+        for r in conn.execute(
             text(
-                "SELECT MAX(provider_local_date) AS a FROM gold.route_delay_spine "
-                "WHERE provider_id = :p"
+                "SELECT route_id, SUM(delay_observation_count) AS obs, "
+                "       SUM(severe_delay_count) AS severe "
+                "FROM gold.route_delay_spine "
+                "WHERE provider_id = :p AND route_id <> '__unrouted__' "
+                "  AND provider_local_date >= :s AND provider_local_date <= :e "
+                "GROUP BY route_id"
             ),
-            {"p": PROVIDER},
-        ).scalar_one()
-        win_start = anchor - timedelta(days=6)
-        # hand-rolled per-route SUM over the WEEK window off the spine (route universe)
-        hand = {
-            r["route_id"]: (int(r["obs"]), int(r["severe"]))
-            for r in connection.execute(
-                text(
-                    "SELECT route_id, SUM(delay_observation_count) AS obs, "
-                    "       SUM(severe_delay_count) AS severe "
-                    "FROM gold.route_delay_spine "
-                    "WHERE provider_id = :p AND route_id <> '__unrouted__' "
-                    "  AND provider_local_date >= :s AND provider_local_date <= :e "
-                    "GROUP BY route_id"
-                ),
-                {"p": PROVIDER, "s": win_start, "e": anchor},
-            ).mappings()
-        }
-        names = _entity_name_maps_or_empty(connection)
-        grains = _hotspots_by_grain(connection, PROVIDER, names[0], names[1])
+            {"p": PROVIDER, "s": win_start, "e": anchor},
+        ).mappings()
+    }
+    names = _entity_name_maps_or_empty(conn)
+    grains = _hotspots_by_grain(conn, PROVIDER, names[0], names[1])
 
     by_grain = {g.grain: g for g in grains}
     assert "week" in by_grain, "expected a week ladder from the seeded spine"
@@ -575,15 +561,14 @@ def test_hotspots_by_grain_matches_hand_rolled_spine_wilson() -> None:
         assert e0.wilson_lo is not None and e0.wilson_hi is not None
 
 
-def test_hotspots_by_grain_payload_size_under_ceiling() -> None:
+def test_hotspots_by_grain_payload_size_under_ceiling(conn) -> None:
     """S12 real-DB size probe: the full published hotspots.json (scalar + by_grain) off
     the seeded gold stays comfortably under HOTSPOTS_BYTE_CEILING. Reports the measured
     size in the assert message so the operator can read the real-DB gauge."""
     from transit_ops.snapshots.contract import HOTSPOTS_BYTE_CEILING
     from transit_ops.snapshots.storage import _body
 
-    with _seeded_conn() as connection:
-        hot = build_hotspots(connection, provider_id=PROVIDER, generated_utc=GENERATED_UTC)
+    hot = build_hotspots(conn, provider_id=PROVIDER, generated_utc=GENERATED_UTC)
     size = len(_body(hot))
     assert size <= HOTSPOTS_BYTE_CEILING, (
         f"seeded hotspots.json {size}B exceeds ceiling {HOTSPOTS_BYTE_CEILING}B"
@@ -593,7 +578,7 @@ def test_hotspots_by_grain_payload_size_under_ceiling() -> None:
           f"(ceiling {HOTSPOTS_BYTE_CEILING})")
 
 
-def test_repeat_offenders_payload_size_under_ceiling() -> None:
+def test_repeat_offenders_payload_size_under_ceiling(conn) -> None:
     """S14 real-DB size probe: the full published repeat_offenders.json (scalar + by_grain) off
     the seeded gold stays under REPEAT_OFFENDERS_BYTE_CEILING. The seeded fixture may leave the
     0075 offender spine empty (by_grain honest-empty); this still guards the scalar path + the
@@ -602,8 +587,7 @@ def test_repeat_offenders_payload_size_under_ceiling() -> None:
     from transit_ops.snapshots.contract import REPEAT_OFFENDERS_BYTE_CEILING
     from transit_ops.snapshots.storage import _body
 
-    with _seeded_conn() as connection:
-        ro = build_repeat_offenders(connection, provider_id=PROVIDER, generated_utc=GENERATED_UTC)
+    ro = build_repeat_offenders(conn, provider_id=PROVIDER, generated_utc=GENERATED_UTC)
     size = len(_body(ro))
     assert size <= REPEAT_OFFENDERS_BYTE_CEILING, (
         f"seeded repeat_offenders.json {size}B exceeds ceiling {REPEAT_OFFENDERS_BYTE_CEILING}B"
@@ -618,11 +602,10 @@ def _entity_name_maps_or_empty(connection):  # noqa: ANN001, ANN202
     return _entity_name_maps(connection, provider_id=PROVIDER)
 
 
-def test_ghost_only_hour_otp_is_zero() -> None:
+def test_ghost_only_hour_otp_is_zero(conn) -> None:
     """Finding F: the night ghost-only hour (|delay|>3600) -> delay_obs counts the
     ghosts but on_time/severe exclude them, so otp_pct is 0 (a real 0%, not None)."""
-    with _seeded_conn() as connection:
-        spine = {(p["grain"], p["date"]): p for p in _render(connection)["periods"]}
+    spine = {(p["grain"], p["date"]): p for p in _render(conn)["periods"]}
     night_keys = [k for k in spine if k[0] == "night"]
     assert night_keys, "expected a night grain from the ghost-only hour"
     for k in night_keys:

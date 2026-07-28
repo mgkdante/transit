@@ -5,9 +5,9 @@ Self-skips when TRANSIT_TEST_DATABASE_URL is unset (the `real-db-tests` job sets
     TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:54329/transit_test" \
         uv run pytest tests/test_windowable_habits_realdb.py -v
 
-Reuses the rich, calendar-stable seed + the seeded-connection contextmanager from the
-spine cutover gate (7 identical closed days; ~3 delay obs per dow×hour cell — well under
-MIN_N=30, so the windowed heatmap must honestly suppress, never paint a sea of grey).
+Reuses the rich, calendar-stable seed + build helpers from the spine cutover gate via a
+module-local conn fixture (7 identical closed days; ~3 delay obs per dow×hour cell — well
+under MIN_N=30, so the windowed heatmap must honestly suppress, never paint a sea of grey).
 """
 
 from __future__ import annotations
@@ -18,13 +18,13 @@ from datetime import date
 import pytest
 from sqlalchemy import text
 
-# The cutover gate owns the seed + the disposable-connection contextmanager; reuse them.
+# The cutover gate owns the seed; reuse it (each module hosts its own conn fixture).
 from test_spine_cutover_gate import (  # noqa: E402
-    DB_URL,
     PROVIDER,
     ROUTE,
     _anchor_today,
-    _seeded_conn,
+    _build,
+    _seed,
 )
 
 from transit_ops.snapshots.builders.historic import (
@@ -34,9 +34,16 @@ from transit_ops.snapshots.builders.historic import (
     _spine_periods_by_grain,
 )
 
-pytestmark = pytest.mark.skipif(
-    not DB_URL, reason="TRANSIT_TEST_DATABASE_URL not set - windowable habits real-DB gate skipped"
-)
+@pytest.fixture()
+def conn(real_db_engine):  # noqa: ANN001
+    with real_db_engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            _seed(connection)
+            _build(connection)
+            yield connection
+        finally:
+            transaction.rollback()
 
 
 def _params() -> dict:
@@ -51,11 +58,10 @@ def _params() -> dict:
 # it cell-for-cell (with a /60-divisor mutation-killer).
 
 
-def test_windowed_habits_matrix_bounded_and_no_sentinel_leak() -> None:
+def test_windowed_habits_matrix_bounded_and_no_sentinel_leak(conn) -> None:
     """Every emitted matrix cell is in [0,1] (or None) — the 9999.9999 storage cap never leaks
     (the slice-9.1.1x sentinel guard, via _build_habits_matrix normalization)."""
-    with _seeded_conn() as conn:
-        out = _spine_habits_by_grain(conn, _params())
+    out = _spine_habits_by_grain(conn, _params())
     assert {h.grain for h in out} == {"day", "week", "month"}
     for h in out:
         if h.habits is None:
@@ -66,24 +72,22 @@ def test_windowed_habits_matrix_bounded_and_no_sentinel_leak() -> None:
                 assert cell != 9999.9999, "raw sentinel leaked onto the matrix"
 
 
-def test_windowed_habits_honest_absence_under_min_n() -> None:
+def test_windowed_habits_honest_absence_under_min_n(conn) -> None:
     """The seed's ~3 obs/cell is far below MIN_N=30, so every cell is suppressed: habits=None
     + cells_suppressed>0 + cells_observed==0 (one honest chip, never a grey 7x24 grid)."""
-    with _seeded_conn() as conn:
-        out = {h.grain: h for h in _spine_habits_by_grain(conn, _params())}
+    out = {h.grain: h for h in _spine_habits_by_grain(conn, _params())}
     m = out["month"]
     assert m.habits is None, "too-sparse window must suppress the heatmap entirely (no grey grid)"
     assert m.cells_suppressed > 0
     assert m.cells_observed == 0
 
 
-def test_periods_by_grain_no_histogram_and_prior_matches_identical_prior_day() -> None:
+def test_periods_by_grain_no_histogram_and_prior_matches_identical_prior_day(conn) -> None:
     """periods_by_grain emits the 3 grains; windowed by_shift/by_daytype periods carry NO 21-bin
     histogram (F1). S1: the seed is 7 IDENTICAL days, so the day-grain PRIOR window (anchor-1) is
     an identical day -> prior_observation_count == this period's observation_count (proving the
     prior denominator is known_obs, EDGE-9) and prior_otp_pct == otp_pct."""
-    with _seeded_conn() as conn:
-        out = {g.grain: g for g in _spine_periods_by_grain(conn, _params())}
+    out = {g.grain: g for g in _spine_periods_by_grain(conn, _params())}
     assert set(out) == {"day", "week", "month"}
     for g in out.values():
         for p in (*g.by_shift, *g.by_daytype):
@@ -103,18 +107,17 @@ def test_periods_by_grain_no_histogram_and_prior_matches_identical_prior_day() -
     assert checked > 0, "no by_shift period had observations to verify the prior against"
 
 
-def test_recomposition_sql_runs_and_clamps_in_range() -> None:
+def test_recomposition_sql_runs_and_clamps_in_range(conn) -> None:
     """The raw recomposition SQL executes and every score is within [0, 9999.9999] (the SQL
     LEAST clamp), proving the numeric composite + sentinel clamp fire server-side."""
-    with _seeded_conn() as conn:
-        anchor = _anchor_today(conn)
-        ws, we = _grain_windows(anchor)["month"]
-        rows = list(
-            conn.execute(
-                _ROUTE_HABIT_SPINE_SQL,
-                {"provider_id": PROVIDER, "route_id": ROUTE, "win_start": ws, "win_end": we},
-            ).mappings()
-        )
+    anchor = _anchor_today(conn)
+    ws, we = _grain_windows(anchor)["month"]
+    rows = list(
+        conn.execute(
+            _ROUTE_HABIT_SPINE_SQL,
+            {"provider_id": PROVIDER, "route_id": ROUTE, "win_start": ws, "win_end": we},
+        ).mappings()
+    )
     assert rows, "recomposition produced no rows over the full window"
     for r in rows:
         score = float(r["repeat_problem_score"])
