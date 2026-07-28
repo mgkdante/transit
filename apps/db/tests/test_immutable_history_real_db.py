@@ -11,23 +11,15 @@ Never point this at production.
 from __future__ import annotations
 
 import importlib.util
-import os
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.gold import rollups
 from transit_ops.settings import Settings
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_immutable_history_test"
 TRIP_ENDPOINT_ID = 993300
@@ -50,16 +42,14 @@ class _NoCommitEngine:
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine, seed_provider):  # noqa: ANN001
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        _seed_provider(connection)
+        _seed_provider(connection, seed_provider)
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def _migration_0033():
@@ -83,15 +73,11 @@ def _settings() -> Settings:
     )
 
 
-def _seed_provider(connection) -> None:  # noqa: ANN001
-    connection.execute(
-        text(
-            """
-            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
-            VALUES (:p, 'STM immutable history regression', 'America/Toronto', :p)
-            """
-        ),
-        {"p": PROVIDER},
+def _seed_provider(connection, seed_provider) -> None:  # noqa: ANN001
+    seed_provider(
+        connection,
+        PROVIDER,
+        display_name="STM immutable history regression",
     )
     for endpoint_id, endpoint_key, feed_kind, source_format in (
         (TRIP_ENDPOINT_ID, "trip_updates", "trip_updates", "gtfs_rt_trip_updates"),
@@ -274,9 +260,7 @@ def _checksum(connection, table_name: str) -> str:  # noqa: ANN001
     ).scalar_one()
 
 
-def test_frozen_hourly_rows_survive_fact_prune(
-    conn, monkeypatch: pytest.MonkeyPatch
-) -> None:  # noqa: ANN001
+def test_frozen_hourly_rows_survive_fact_prune(conn, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
     captured_at = BUILT_T - timedelta(hours=2)
     _insert_trip_fact(
         conn,
@@ -370,9 +354,7 @@ def test_frozen_hourly_rows_survive_fact_prune(
     assert stop_count == 1
 
 
-def test_citizen_closed_dates_untouched(
-    conn, monkeypatch: pytest.MonkeyPatch
-) -> None:  # noqa: ANN001
+def test_citizen_closed_dates_untouched(conn, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
     closed_date = date(2026, 5, 1)
     conn.execute(
         text(
@@ -438,9 +420,7 @@ def test_0033_backfill_matches_fact_counts(conn) -> None:  # noqa: ANN001
     assert severe == 1
 
 
-def test_boundary_hour_not_partially_rebuilt(
-    conn, monkeypatch: pytest.MonkeyPatch
-) -> None:  # noqa: ANN001
+def test_boundary_hour_not_partially_rebuilt(conn, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
     cutoff = BUILT_T.replace(minute=0, second=0, microsecond=0) - timedelta(days=10)
     sentinel_hour = cutoff - timedelta(hours=1)
     _insert_5m(conn, period=cutoff, severe=1)
@@ -484,9 +464,7 @@ def test_boundary_hour_not_partially_rebuilt(
     assert rebuilt == 3
 
 
-def test_rebuild_idempotent_under_pinned_clock(
-    conn, monkeypatch: pytest.MonkeyPatch
-) -> None:  # noqa: ANN001
+def test_rebuild_idempotent_under_pinned_clock(conn, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
     captured_at = BUILT_T - timedelta(hours=3)
     _insert_trip_fact(
         conn,
@@ -539,22 +517,26 @@ def test_window_edge_advance_freezes_exactly_one_hour(
     ).scalar_one()
 
     _run_build(conn, monkeypatch, BUILT_T + timedelta(hours=1))
-    rows = conn.execute(
-        text(
-            """
+    rows = (
+        conn.execute(
+            text(
+                """
             SELECT route_id, built_at_utc
             FROM gold.route_delay_hourly
             WHERE provider_id = :p
               AND period_start_utc IN (:first_hour, :second_hour)
             ORDER BY period_start_utc, route_id
             """
-        ),
-        {
-            "p": PROVIDER,
-            "first_hour": cutoff_t,
-            "second_hour": cutoff_t_plus_1h,
-        },
-    ).mappings().all()
+            ),
+            {
+                "p": PROVIDER,
+                "first_hour": cutoff_t,
+                "second_hour": cutoff_t_plus_1h,
+            },
+        )
+        .mappings()
+        .all()
+    )
 
     assert rows[0]["route_id"] == ROUTE
     assert rows[0]["built_at_utc"] == first_hour_built_at
