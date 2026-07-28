@@ -24,21 +24,11 @@ Each test runs inside one transaction and rolls back. Never point at production.
 
 from __future__ import annotations
 
-import os
-
-import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from transit_ops.snapshots.builders._helpers import (
     STATUS_BAND_CASE_SQL,
     _status_from_band,
-)
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB equivalence test skipped",
 )
 
 # Golden table: avg_delay_seconds -> status enum, the OLD _status_from_delay_seconds
@@ -58,10 +48,9 @@ _GOLDEN: list[tuple[float | None, str]] = [
 ]
 
 
-def test_status_band_case_sql_matches_old_python_bucketing() -> None:
+def test_status_band_case_sql_matches_old_python_bucketing(real_db_engine) -> None:
     """The 0020 CASE fragment + _status_from_band == the retired Python bucketing,
     at every band edge, evaluated by the real Postgres engine."""
-    engine = create_engine(DB_URL)
     band_case = STATUS_BAND_CASE_SQL.format(col="v.x")
     # Build a VALUES grid of doubled-precision delay seconds plus a NULL case, and
     # let Postgres emit the band label for each via the authoritative CASE.
@@ -76,15 +65,12 @@ def test_status_band_case_sql_matches_old_python_bucketing() -> None:
                {STATUS_BAND_CASE_SQL.format(col="NULL::double precision")} AS status_band
         """
     )
-    try:
-        with engine.connect() as conn:
-            transaction = conn.begin()
-            try:
-                rows = list(conn.execute(sql).mappings())
-            finally:
-                transaction.rollback()
-    finally:
-        engine.dispose()
+    with real_db_engine.connect() as conn:
+        transaction = conn.begin()
+        try:
+            rows = list(conn.execute(sql).mappings())
+        finally:
+            transaction.rollback()
 
     got: dict[float | None, str] = {}
     for r in rows:
