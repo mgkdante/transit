@@ -18,18 +18,10 @@ point this at production.
 from __future__ import annotations
 
 import importlib.util
-import os
 import pathlib
 
 import pytest
-from sqlalchemy import create_engine, text
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB pg_repack tests skipped",
-)
+from sqlalchemy import text
 
 
 def _load_0040():
@@ -44,15 +36,13 @@ def _load_0040():
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine):
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
         try:
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def _package_available(connection) -> bool:
