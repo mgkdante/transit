@@ -13,11 +13,11 @@
 	import type { Alert } from '$lib/v1/schemas';
 	import type { LatLon, WithDistance } from '$lib/components/map';
 	import type { GeocodePrecision } from '$lib/geocode/types';
-	import type { MapSelection, MapSelectionDetail } from './mapSelection';
-	import MapFilters from './MapFilters.svelte';
-	import MapMotionControl from './MapMotionControl.svelte';
-	import MapOverlayChrome from './MapOverlayChrome.svelte';
-	import { copy as MAP_COPY } from './map.copy';
+	import type { MapSelection, MapSelectionDetail } from '../mapSelection';
+	import MapFilters from '../MapFilters.svelte';
+	import MapMotionControl from '../MapMotionControl.svelte';
+	import MapOverlayChrome from '../MapOverlayChrome.svelte';
+	import { copy as MAP_COPY } from '../map.copy';
 
 	type NearMeOrigin = LatLon & { label: string; precision?: GeocodePrecision };
 

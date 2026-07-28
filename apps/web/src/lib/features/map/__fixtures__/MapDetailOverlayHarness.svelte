@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
 	import { createRawSnippet, type Snippet } from 'svelte';
-	import MapDetailOverlay from './MapDetailOverlay.svelte';
+	import MapDetailOverlay from '../MapDetailOverlay.svelte';
 
 	interface Props {
 		widthPx?: number;

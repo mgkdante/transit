@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFilterStore, emptyFilterState } from '$lib/filters';
 import { motionMode } from '$lib/stores';
-import MapFilterPillHarness from './MapFilterPillHarness.svelte';
+import MapFilterPillHarness from './__fixtures__/MapFilterPillHarness.svelte';
 
 beforeEach(() => {
 	// MapMotionControl reads the persisted motionMode store; reset to the RAW
