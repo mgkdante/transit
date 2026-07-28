@@ -17,23 +17,29 @@ in an issue before implementing them.
 
 ## Verification
 
-Install from the lockfile and run the JavaScript workspace gates:
+Install from the lockfile and run the core workspace commands:
 
 ```bash
 bun install --frozen-lockfile
 bun run check
-bun run test
 bun run build
+bun run test
 ```
 
-For data-pipeline changes, also run:
+For data-pipeline changes, also run the CI offline and migration-head gates:
 
 ```bash
 cd apps/db
-uv sync --frozen
-uv run ruff check .
-uv run pytest
+uv sync --locked
+env -u TRANSIT_TEST_DATABASE_URL COLUMNS=200 uv run pytest tests
+uv run ruff check src tests --select F
+uv run mypy src/transit_ops/snapshots/publish.py
+test "$(uv run alembic heads 2>/dev/null | grep -c '(head)' || true)" = "1"
 ```
+
+CI separately runs `uv run alembic upgrade head` and `uv run pytest tests`
+against its empty, disposable `postgis/postgis:16-3.4` service with `COLUMNS=200`,
+`DATABASE_URL`, `TRANSIT_TEST_DATABASE_URL`, and `PGPASSWORD` set.
 
 Behavior changes require a regression test. In the pull request, explain the
 problem, the boundary that owns the fix, and the commands or runtime evidence

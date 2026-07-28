@@ -64,22 +64,23 @@ bun install --frozen-lockfile
 bun run dev
 ```
 
-Run the root web gates:
+Run the core workspace commands:
 
 ```bash
 bun run check
-bun run test
 bun run build
+bun run test
 ```
 
-Set up and verify the data pipeline:
+Set up the data pipeline from its lockfile:
 
 ```bash
 cd apps/db
-uv sync --frozen
-uv run ruff check .
-uv run pytest
+uv sync --locked
 ```
+
+For the full data-pipeline verification battery, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 Copy `.env.example` to `.env` only for local work and provide the variables for
 the path you are exercising. Never commit credentials or production exports.
