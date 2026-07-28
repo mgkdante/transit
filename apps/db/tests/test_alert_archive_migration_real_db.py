@@ -7,13 +7,11 @@ Set TRANSIT_TEST_DATABASE_URL to a disposable database already migrated through
 from __future__ import annotations
 
 import importlib.util
-import os
 from pathlib import Path
 
-import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import inspect, text
 
 
 def _load_migration():
@@ -28,13 +26,8 @@ def _load_migration():
     return module
 
 
-def test_0080_upgrade_and_downgrade_are_transactional_on_postgres() -> None:
-    database_url = os.getenv("TRANSIT_TEST_DATABASE_URL")
-    if not database_url:
-        pytest.skip("set TRANSIT_TEST_DATABASE_URL for the PostgreSQL migration proof")
-
-    engine = create_engine(database_url)
-    with engine.connect() as connection:
+def test_0080_upgrade_and_downgrade_are_transactional_on_postgres(real_db_engine) -> None:
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
         try:
             connection.execute(text("DROP TABLE IF EXISTS gold.alert_archive_entry"))
