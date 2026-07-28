@@ -25,12 +25,11 @@ rolls back. Never point this at production.
 from __future__ import annotations
 
 import importlib.util
-import os
 import pathlib
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 import transit_ops.maintenance.i3 as i3_maintenance_module
 from transit_ops.maintenance import (
@@ -38,13 +37,6 @@ from transit_ops.maintenance import (
     prune_i3_silver_closed_rows,
 )
 from transit_ops.silver.i3 import compute_alert_content_hash
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB retention tests skipped",
-)
 
 PROVIDER = "stm_i3ret_test"
 ENDPOINT_ID = 991014
@@ -122,24 +114,22 @@ class _ExistingTransactionEngine:
 
 
 @pytest.fixture()
-def conn():
-    engine = create_engine(DB_URL)
-    with engine.connect() as connection:
+def conn(real_db_engine):  # noqa: ANN001
+    with real_db_engine.connect() as connection:
         transaction = connection.begin()
-        # These tests reconstruct the PRE-0039 world (legacy content_hash IS NULL
-        # rows) to exercise 0038's one-time collapse. At gate time the schema is
-        # at head, where 0039 enforces content_hash NOT NULL, so drop that
-        # constraint inside this rolled-back transaction to seed the legacy rows;
-        # the rollback restores it, and prod is never touched.
-        connection.execute(
-            text("ALTER TABLE silver.i3_alerts ALTER COLUMN content_hash DROP NOT NULL")
-        )
-        _seed(connection)
         try:
+            # These tests reconstruct the PRE-0039 world (legacy content_hash IS NULL
+            # rows) to exercise 0038's one-time collapse. At gate time the schema is
+            # at head, where 0039 enforces content_hash NOT NULL, so drop that
+            # constraint inside this rolled-back transaction to seed the legacy rows;
+            # the rollback restores it, and prod is never touched.
+            connection.execute(
+                text("ALTER TABLE silver.i3_alerts ALTER COLUMN content_hash DROP NOT NULL")
+            )
+            _seed(connection)
             yield connection
         finally:
             transaction.rollback()
-        engine.dispose()
 
 
 def _seed(connection) -> None:
