@@ -34,6 +34,7 @@ from transit_ops.snapshots.builders.historic import (
     _spine_periods_by_grain,
 )
 
+
 @pytest.fixture()
 def conn(real_db_engine):  # noqa: ANN001
     with real_db_engine.connect() as connection:
