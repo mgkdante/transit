@@ -15,6 +15,7 @@ from transit_ops.validation.historic_publish import HistoricPublishProofReport
 runner = CliRunner()
 LEGACY_ORACLE_REBUILD_COMMAND = "rebuild-" + "oracle-data"
 LEGACY_BETA_REBUILD_COMMAND = "rebuild-" + "beta-static"
+RETIRED_ALERT_ARCHIVE_BACKFILL_COMMAND = "backfill-" + "alert-archive"
 
 
 def test_cli_help() -> None:
@@ -49,11 +50,11 @@ def test_cli_help() -> None:
     assert "run-realtime-worker" in result.stdout
     assert "build-warm-rollups" in result.stdout
     assert "sync-alert-archive" in result.stdout
-    assert "backfill-alert-archive" in result.stdout
     assert "prune-warm-rollup-storage" in result.stdout
     assert "rebuild-source-factory" in result.stdout
     assert LEGACY_ORACLE_REBUILD_COMMAND not in result.stdout
     assert LEGACY_BETA_REBUILD_COMMAND not in result.stdout
+    assert RETIRED_ALERT_ARCHIVE_BACKFILL_COMMAND not in result.stdout
     assert "validate-static-feeds" in result.stdout
     assert "retention-proof-report" in result.stdout
     assert "recover" in result.stdout
@@ -547,18 +548,12 @@ def test_prune_i3_storage_help() -> None:
     assert "--dry-run" in result.stdout
 
 
-def test_alert_archive_command_help_exposes_bounded_sync_and_resumable_backfill() -> None:
+def test_sync_alert_archive_command_help_exposes_bounded_sync() -> None:
     sync_help = runner.invoke(app, ["sync-alert-archive", "--help"])
-    backfill_help = runner.invoke(app, ["backfill-alert-archive", "--help"])
 
     assert sync_help.exit_code == 0
     assert "--from" in sync_help.stdout
     assert "--to" in sync_help.stdout
-    assert backfill_help.exit_code == 0
-    assert "--from" in backfill_help.stdout
-    assert "--to" in backfill_help.stdout
-    assert "--month-batch" in backfill_help.stdout
-    assert "--dry-run" in backfill_help.stdout
 
 
 def test_sync_alert_archive_rejects_malformed_bound_before_service(monkeypatch) -> None:
@@ -575,35 +570,6 @@ def test_sync_alert_archive_rejects_malformed_bound_before_service(monkeypatch) 
 
     assert result.exit_code == 2
     assert "YYYY-MM-DD" in result.output
-    assert called is False
-
-
-def test_backfill_alert_archive_rejects_inverted_bounds_before_service(
-    monkeypatch,
-) -> None:
-    called = False
-
-    def fail_service(*args, **kwargs):  # noqa: ANN002, ANN003
-        nonlocal called
-        called = True
-        raise AssertionError("service must not be called")
-
-    monkeypatch.setattr(cli_module, "backfill_alert_archive", fail_service, raising=False)
-
-    result = runner.invoke(
-        app,
-        [
-            "backfill-alert-archive",
-            "stm",
-            "--from",
-            "2026-07-02",
-            "--to",
-            "2026-07-01",
-        ],
-    )
-
-    assert result.exit_code == 2
-    assert "on or before" in result.output
     assert called is False
 
 
@@ -646,66 +612,6 @@ def test_sync_alert_archive_defaults_to_provider_local_retained_window(
         "timezone": "America/Toronto",
         "retention_days": 730,
         "service": ("stm", date(2024, 7, 1), date(2026, 7, 12), settings),
-    }
-
-
-def test_backfill_alert_archive_passes_batch_and_dry_run(monkeypatch) -> None:
-    settings = SimpleNamespace(LOG_LEVEL="INFO")
-    seen: dict[str, object] = {}
-
-    class Registry:
-        def get_provider(self, provider_id):  # noqa: ANN001
-            seen["validated_provider"] = provider_id
-            return object()
-
-    class Result:
-        def display_dict(self):
-            return {"provider_id": "stm", "batches": []}
-
-    def fake_backfill(  # noqa: ANN001
-        provider_id, *, from_date, to_date, month_batch, dry_run, settings
-    ):
-        seen["service"] = (
-            provider_id,
-            from_date,
-            to_date,
-            month_batch,
-            dry_run,
-            settings,
-        )
-        return Result()
-
-    monkeypatch.setattr(cli_module, "get_settings", lambda: settings)
-    monkeypatch.setattr(cli_module, "_provider_registry", lambda current: Registry())
-    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
-    monkeypatch.setattr(cli_module, "backfill_alert_archive", fake_backfill, raising=False)
-
-    result = runner.invoke(
-        app,
-        [
-            "backfill-alert-archive",
-            "stm",
-            "--from",
-            "2026-01-20",
-            "--to",
-            "2026-06-03",
-            "--month-batch",
-            "2",
-            "--dry-run",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert seen == {
-        "validated_provider": "stm",
-        "service": (
-            "stm",
-            date(2026, 1, 20),
-            date(2026, 6, 3),
-            2,
-            True,
-            settings,
-        ),
     }
 
 
@@ -1013,13 +919,15 @@ def test_source_factory_help_is_available() -> None:
     assert "--report-dir" in result.stdout
 
 
-def test_legacy_rebuild_commands_are_removed() -> None:
+def test_retired_commands_are_removed() -> None:
     help_result = runner.invoke(app, ["--help"])
 
     assert help_result.exit_code == 0
     assert "rebuild-source-factory" in help_result.stdout
+    assert "sync-alert-archive" in help_result.stdout
     assert LEGACY_ORACLE_REBUILD_COMMAND not in help_result.stdout
     assert LEGACY_BETA_REBUILD_COMMAND not in help_result.stdout
+    assert RETIRED_ALERT_ARCHIVE_BACKFILL_COMMAND not in help_result.stdout
 
 
 class FakeSourceFactoryCliResult:
