@@ -3,20 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
 
 from transit_ops.snapshots.builders import build_alert_archive
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_archive_publish_test"
 OTHER_PROVIDER = "other_archive_publish_test"

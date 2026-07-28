@@ -19,20 +19,12 @@ Never point this at production. (CI has no Postgres — skipped there.)
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import text
 
 from transit_ops.snapshots.builders import build_routes_index
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set — real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_reliability_flag_test"
 ENDPOINT_ID = 920_001

@@ -15,7 +15,6 @@ one closed local day, idempotent on rebuild.
 """
 from __future__ import annotations
 
-import os
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -25,13 +24,6 @@ from sqlalchemy import text
 
 from transit_ops.gold import rollups
 from transit_ops.settings import Settings
-
-DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="TRANSIT_TEST_DATABASE_URL not set - real-DB regression tests skipped",
-)
 
 PROVIDER = "stm_tier2_test"
 ENDPOINT_ID = 995001
