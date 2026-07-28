@@ -172,7 +172,7 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 }));
 
 vi.mock('$lib/components/map', async () => {
-	const { default: MapStage } = await import('./MapStageStub.svelte');
+	const { default: MapStage } = await import('./__fixtures__/MapStageStub.svelte');
 	const noop = () => {};
 	return {
 		MapStage,

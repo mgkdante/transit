@@ -6,7 +6,7 @@ import type { Alert, StopIndexEntry } from '$lib/v1/schemas';
 import type { WithDistance } from '$lib/components/map';
 import type { StopMapDetail } from './mapSelection';
 import { copy as MAP_COPY } from './map.copy';
-import MapOverlayChromeHarness from './MapOverlayChromeHarness.svelte';
+import MapOverlayChromeHarness from './__fixtures__/MapOverlayChromeHarness.svelte';
 
 const stop: StopIndexEntry = {
 	id: 'stop-1',

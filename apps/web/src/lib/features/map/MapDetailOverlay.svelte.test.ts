@@ -7,7 +7,7 @@ import {
 	MAX_DETAIL_PANEL_WIDTH,
 } from './mapDetailPanes';
 import MapDetailOverlay from './MapDetailOverlay.svelte';
-import MapDetailOverlayHarness from './MapDetailOverlayHarness.svelte';
+import MapDetailOverlayHarness from './__fixtures__/MapDetailOverlayHarness.svelte';
 
 interface LiveState {
 	widthPx: number;

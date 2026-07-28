@@ -9,10 +9,10 @@
 	import type { FilterStore } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
 	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
-	import MapFilters from './MapFilters.svelte';
-	import MapFilterPill from './MapFilterPill.svelte';
-	import MapMotionControl from './MapMotionControl.svelte';
-	import { copy as MAP_COPY } from './map.copy';
+	import MapFilters from '../MapFilters.svelte';
+	import MapFilterPill from '../MapFilterPill.svelte';
+	import MapMotionControl from '../MapMotionControl.svelte';
+	import { copy as MAP_COPY } from '../map.copy';
 
 	interface Props {
 		store: FilterStore;
