@@ -1239,8 +1239,15 @@ def publish_snapshot_command(
         "--force",
         help="publish even when the gate finds ERROR-severity issues (logged override)",
     ),
+    full_historic_rebuild: bool = typer.Option(  # noqa: B008
+        False,
+        "--full-historic-rebuild",
+        help="request an explicit full rebuild of the historic tier",
+    ),
 ) -> None:
     """Build and publish the /v1 snapshot for a provider to R2 (or local)."""
+    if full_historic_rebuild and tier != "historic":
+        raise typer.BadParameter("--full-historic-rebuild requires --tier historic")
     settings = get_settings()
     if dry_run and settings.SNAPSHOT_STORAGE_BACKEND != "local":
         raise typer.BadParameter(
@@ -1254,6 +1261,7 @@ def publish_snapshot_command(
             registry=_provider_registry(settings),
             gate_enabled=gate,
             force=force,
+            full_historic_rebuild=full_historic_rebuild,
         )
     except GateError as exc:
         typer.echo(json.dumps(exc.report.to_dict(), indent=2), err=True)
@@ -1276,6 +1284,11 @@ def publish_all_command(
         "--force",
         help="publish even when the gate finds ERROR-severity issues (logged override)",
     ),
+    full_historic_rebuild: bool = typer.Option(  # noqa: B008
+        False,
+        "--full-historic-rebuild",
+        help="request an explicit full rebuild of the historic tier",
+    ),
     report_dir: Path | None = typer.Option(  # noqa: B008
         None,
         "--report-dir",
@@ -1288,6 +1301,8 @@ def publish_all_command(
     exits non-zero if any failed. A gate ERROR raises PER-PROVIDER (the others still
     publish) and makes the process exit non-zero so the workflow goes red.
     """
+    if full_historic_rebuild and tier != "historic":
+        raise typer.BadParameter("--full-historic-rebuild requires --tier historic")
     settings = get_settings()
     registry = _provider_registry(settings)
     engine = make_engine(settings)
@@ -1315,6 +1330,7 @@ def publish_all_command(
                 registry=registry,
                 gate_enabled=gate,
                 force=force,
+                full_historic_rebuild=full_historic_rebuild,
             )
             results.append(result.display_dict())
             # Write the gate report on SUCCESS too (not only on GateError) so CI /

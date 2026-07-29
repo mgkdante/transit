@@ -50,7 +50,15 @@ def _state_rows(connection) -> list[dict]:
             text(
                 """
                 SELECT provider_id, tier, generated_utc, files_written,
-                       files_skipped, files_total, stable_files_total, updated_at_utc
+                       files_skipped, files_total, stable_files_total,
+                       historic_files_reused, historic_scopes_reused,
+                       historic_scopes_rebuilt, historic_source_digest_ms,
+                       historic_build_ms, historic_gate_ms, historic_upload_ms,
+                       historic_parent_compose_ms, historic_compatibility_ms,
+                       historic_receipt_persist_ms,
+                       historic_receipt_rows_attempted,
+                       historic_receipt_rows_changed, historic_phase_detail,
+                       updated_at_utc
                 FROM core.snapshot_publish_state
                 WHERE provider_id = :p
                 ORDER BY tier
@@ -194,3 +202,96 @@ def test_pre_0081_null_stable_total_falls_back_to_physical_total(conn) -> None:
     row = _state_rows(conn)[0]
     assert row["stable_files_total"] is None
     assert _prior_files_total(conn, provider_id=PROVIDER, tier="historic") == 9
+
+
+def test_f7a_historic_telemetry_is_zero_reuse_and_live_static_stay_null(conn) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    telemetry = {
+        "historic_files_reused": 0,
+        "historic_scopes_reused": 0,
+        "historic_scopes_rebuilt": 4,
+        "source_digest_ms": 1.25,
+        "build_ms": 2.5,
+        "gate_ms": 3.75,
+        "upload_ms": 4.0,
+        "parent_compose_ms": 5.25,
+        "compatibility_ms": 6.5,
+        "receipt_persist_ms": 0.75,
+        "receipt_rows_attempted": 3,
+        "receipt_rows_changed": 2,
+        "receipt_persist_failed": False,
+        "schema_version": 1,
+    }
+    _record_publish_state(
+        conn,
+        provider_id=PROVIDER,
+        tier="historic",
+        generated_utc=T2,
+        written=12,
+        skipped=5,
+        total=17,
+        historic_telemetry=telemetry,
+    )
+    for tier in ("live", "static"):
+        _record_publish_state(
+            conn,
+            provider_id=PROVIDER,
+            tier=tier,
+            generated_utc=T2,
+            written=7,
+            skipped=2,
+            total=9,
+        )
+
+    rows = {row["tier"]: row for row in _state_rows(conn)}
+    historic = rows["historic"]
+    assert historic["historic_files_reused"] == 0
+    assert historic["historic_scopes_reused"] == 0
+    assert historic["historic_scopes_rebuilt"] == 4
+    assert historic["historic_source_digest_ms"] == pytest.approx(1.25)
+    assert historic["historic_build_ms"] == pytest.approx(2.5)
+    assert historic["historic_gate_ms"] == pytest.approx(3.75)
+    assert historic["historic_upload_ms"] == pytest.approx(4.0)
+    assert historic["historic_parent_compose_ms"] == pytest.approx(5.25)
+    assert historic["historic_compatibility_ms"] == pytest.approx(6.5)
+    assert historic["historic_receipt_persist_ms"] == pytest.approx(0.75)
+    assert historic["historic_receipt_rows_attempted"] == 3
+    assert historic["historic_receipt_rows_changed"] == 2
+    assert historic["historic_phase_detail"]["receipt_persist_failed"] is False
+
+    telemetry_columns = [name for name in historic if name.startswith("historic_")]
+    assert all(
+        rows[tier][column] is None
+        for tier in ("live", "static")
+        for column in telemetry_columns
+    )
+    sql_null_detail_tiers = set(
+        conn.execute(
+            text(
+                "SELECT tier FROM core.snapshot_publish_state "
+                "WHERE provider_id = :provider_id "
+                "AND tier IN ('live', 'static') "
+                "AND historic_phase_detail IS NULL"
+            ),
+            {"provider_id": PROVIDER},
+        ).scalars()
+    )
+    assert sql_null_detail_tiers == {"live", "static"}
+    for row in rows.values():
+        assert row["files_total"] == (
+            row["files_written"]
+            + row["files_skipped"]
+            + (row["historic_files_reused"] or 0)
+        )
+
+    with pytest.raises(IntegrityError):
+        with conn.begin_nested():
+            conn.execute(
+                text(
+                    "UPDATE core.snapshot_publish_state "
+                    "SET historic_files_reused = 1 "
+                    "WHERE provider_id = :provider_id AND tier = 'historic'"
+                ),
+                {"provider_id": PROVIDER},
+            )

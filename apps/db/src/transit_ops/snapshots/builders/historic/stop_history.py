@@ -10,9 +10,16 @@ from transit_ops.settings import get_settings
 from transit_ops.snapshots.builders.historic.history_common import (
     HistoryBatchLoader,
     HistoryDateMask,
+    HistoryDigestCollector,
+    HistoryDigestColumn,
     HistoryEntityMetricPlan,
     HistoryMetricRows,
+    HistoryPhaseContext,
+    HistoryScopeCardinality,
+    HistoryScopeSourceEvidence,
+    build_history_digest_query,
     build_history_entity_metric_plans,
+    build_history_inventory_digest_query,
     clean_history_entity_ids,
     encode_history_entity_id,
     group_history_entity_date_rows,
@@ -20,6 +27,8 @@ from transit_ops.snapshots.builders.historic.history_common import (
     history_entity_directory_generation_id,
     history_index_generation_id,
     history_metric_coverage,
+    history_named_query_sha256,
+    history_phase,
     history_row_float,
     history_row_int,
     history_utc_timestamp,
@@ -56,8 +65,8 @@ STOP_HISTORY_METRICS = (
     ("occupancy", "additive"),
 )
 
-_STOP_HISTORY_IDS_SQL = named_query(
-    "history.stops.ids",
+_STOP_HISTORY_IDS_INNER_SQL = named_query(
+    "history.stops.ids.inner",
     """
     WITH retained_ids AS (
         SELECT spine.stop_id
@@ -88,8 +97,8 @@ _STOP_HISTORY_IDS_SQL = named_query(
     """,
 )
 
-_STOP_HISTORY_DELAY_SQL = named_query(
-    "history.stops.delay",
+_STOP_HISTORY_DELAY_INNER_SQL = named_query(
+    "history.stops.delay.inner",
     """
     SELECT spine.stop_id,
            spine.provider_local_date AS local_date,
@@ -109,8 +118,8 @@ _STOP_HISTORY_DELAY_SQL = named_query(
     """,
 )
 
-_STOP_HISTORY_PERCENTILES_SQL = named_query(
-    "history.stops.percentiles",
+_STOP_HISTORY_PERCENTILES_INNER_SQL = named_query(
+    "history.stops.percentiles.inner",
     """
     SELECT pct.stop_id,
            pct.provider_local_date AS local_date,
@@ -128,8 +137,8 @@ _STOP_HISTORY_PERCENTILES_SQL = named_query(
     """,
 )
 
-_STOP_HISTORY_OCCUPANCY_SQL = named_query(
-    "history.stops.occupancy",
+_STOP_HISTORY_OCCUPANCY_INNER_SQL = named_query(
+    "history.stops.occupancy.inner",
     """
     SELECT occ.stop_id,
            occ.provider_local_date AS local_date,
@@ -150,6 +159,79 @@ _STOP_HISTORY_OCCUPANCY_SQL = named_query(
     GROUP BY occ.stop_id, occ.provider_local_date
     ORDER BY occ.stop_id, occ.provider_local_date
     """,
+)
+
+
+_STOP_HISTORY_IDS_DIGEST_SQL = build_history_inventory_digest_query(
+    _STOP_HISTORY_IDS_INNER_SQL,
+    wrapper_name="history.stops.ids",
+    source_name="ids",
+    entity_field="stop_id",
+)
+_STOP_HISTORY_DELAY_DIGEST_SQL = build_history_digest_query(
+    _STOP_HISTORY_DELAY_INNER_SQL,
+    wrapper_name="history.stops.delay",
+    source_name="delay",
+    columns=(
+        HistoryDigestColumn("stop_id", "text"),
+        HistoryDigestColumn("local_date", "date"),
+        HistoryDigestColumn("observation_count", "integer"),
+        HistoryDigestColumn("severe_count", "integer"),
+        HistoryDigestColumn("sum_delay_seconds", "integer"),
+        HistoryDigestColumn("source_generated_utc", "timestamptz"),
+    ),
+    entity_field="stop_id",
+    order_by=("stop_id", "local_date"),
+)
+_STOP_HISTORY_PERCENTILES_DIGEST_SQL = build_history_digest_query(
+    _STOP_HISTORY_PERCENTILES_INNER_SQL,
+    wrapper_name="history.stops.percentiles",
+    source_name="percentiles",
+    columns=(
+        HistoryDigestColumn("stop_id", "text"),
+        HistoryDigestColumn("local_date", "date"),
+        HistoryDigestColumn("observation_count", "integer"),
+        HistoryDigestColumn("p50_delay_seconds", "float8"),
+        HistoryDigestColumn("p90_delay_seconds", "float8"),
+        HistoryDigestColumn("source_generated_utc", "timestamptz"),
+    ),
+    entity_field="stop_id",
+    order_by=("stop_id", "local_date"),
+)
+_STOP_HISTORY_OCCUPANCY_DIGEST_SQL = build_history_digest_query(
+    _STOP_HISTORY_OCCUPANCY_INNER_SQL,
+    wrapper_name="history.stops.occupancy",
+    source_name="occupancy",
+    columns=(
+        HistoryDigestColumn("stop_id", "text"),
+        HistoryDigestColumn("local_date", "date"),
+        HistoryDigestColumn("observation_count", "integer"),
+        HistoryDigestColumn("empty", "integer"),
+        HistoryDigestColumn("many_seats", "integer"),
+        HistoryDigestColumn("few_seats", "integer"),
+        HistoryDigestColumn("standing", "integer"),
+        HistoryDigestColumn("full", "integer"),
+        HistoryDigestColumn("source_generated_utc", "timestamptz"),
+    ),
+    entity_field="stop_id",
+    order_by=("stop_id", "local_date"),
+)
+_STOP_HISTORY_IDS_SQL = _STOP_HISTORY_IDS_INNER_SQL
+_STOP_HISTORY_DELAY_SQL = _STOP_HISTORY_DELAY_INNER_SQL
+_STOP_HISTORY_PERCENTILES_SQL = _STOP_HISTORY_PERCENTILES_INNER_SQL
+_STOP_HISTORY_OCCUPANCY_SQL = _STOP_HISTORY_OCCUPANCY_INNER_SQL
+_STOP_HISTORY_SOURCE_NAMES = ("delay", "percentiles", "occupancy")
+_STOP_HISTORY_NAMED_QUERY_SHA256 = history_named_query_sha256(
+    (
+        _STOP_HISTORY_IDS_INNER_SQL,
+        _STOP_HISTORY_IDS_DIGEST_SQL,
+        _STOP_HISTORY_DELAY_INNER_SQL,
+        _STOP_HISTORY_DELAY_DIGEST_SQL,
+        _STOP_HISTORY_PERCENTILES_INNER_SQL,
+        _STOP_HISTORY_PERCENTILES_DIGEST_SQL,
+        _STOP_HISTORY_OCCUPANCY_INNER_SQL,
+        _STOP_HISTORY_OCCUPANCY_DIGEST_SQL,
+    )
 )
 
 
@@ -493,6 +575,7 @@ class StopHistoryPlan:
     generated_utc: str
     entity_batch_size: int
     batch_loader: HistoryBatchLoader
+    receipt_evidence: HistoryDigestCollector | None = None
 
     def iter_partition_items(self) -> Iterator[tuple[HistoricPartitionRef, StopHistoryPartition]]:
         for start in range(0, len(self.entity_ids), self.entity_batch_size):
@@ -517,6 +600,16 @@ class StopHistoryPlan:
             indexes=indexes,
             directory=summary.build_directory(indexes, fallback_generated_utc=self.generated_utc),
         )
+
+    def iter_receipt_source_evidence(self) -> Iterator[HistoryScopeSourceEvidence]:
+        if self.receipt_evidence is None:
+            return iter(())
+        return self.receipt_evidence.iter_scope_evidence()
+
+    def receipt_scope_cardinality(self) -> HistoryScopeCardinality:
+        if self.receipt_evidence is None:
+            return HistoryScopeCardinality(0, 0, 0, 0)
+        return self.receipt_evidence.scope_cardinality()
 
 
 def build_stop_history_plan_from_rows(
@@ -553,6 +646,7 @@ def build_stop_history_plan(
     provider_id: str = "stm",
     generated_utc: str,
     entity_batch_size: int = STOP_HISTORY_ENTITY_BATCH_SIZE,
+    phase_context: HistoryPhaseContext | None = None,
 ) -> StopHistoryPlan:
     if entity_batch_size <= 0:
         raise ValueError("Stop history entity_batch_size must be positive")
@@ -561,19 +655,39 @@ def build_stop_history_plan(
         "provider_id": provider_id,
         "warm_retention_days": settings.GOLD_WARM_ROLLUP_RETENTION_DAYS,
     }
-    id_rows = conn.execute(_STOP_HISTORY_IDS_SQL, base_params).mappings()
-    entity_ids = clean_history_entity_ids(row.get("stop_id") for row in id_rows)
-    queries = (
-        _STOP_HISTORY_DELAY_SQL,
-        _STOP_HISTORY_PERCENTILES_SQL,
-        _STOP_HISTORY_OCCUPANCY_SQL,
+    evidence = HistoryDigestCollector(
+        provider_id=provider_id,
+        family="stops",
+        source_names=_STOP_HISTORY_SOURCE_NAMES,
+        named_query_sha256=_STOP_HISTORY_NAMED_QUERY_SHA256,
+        inventory_required=True,
     )
-
+    with history_phase(phase_context, "source_digest"):
+        inventory_ids = evidence.consume_inventory_rows(
+            conn.execute(_STOP_HISTORY_IDS_DIGEST_SQL, base_params).mappings(),
+            entity_field="stop_id",
+        )
+    entity_ids = clean_history_entity_ids(inventory_ids)
+    queries = (
+        _STOP_HISTORY_DELAY_DIGEST_SQL,
+        _STOP_HISTORY_PERCENTILES_DIGEST_SQL,
+        _STOP_HISTORY_OCCUPANCY_DIGEST_SQL,
+    )
+    loader = prepare_history_sql_batch_loader(
+        conn,
+        queries,
+        base_params=base_params,
+        source_names=_STOP_HISTORY_SOURCE_NAMES,
+        digest_collector=evidence,
+        entity_field="stop_id",
+        phase_context=phase_context,
+    )
     return StopHistoryPlan(
         entity_ids=entity_ids,
         generated_utc=history_utc_timestamp(generated_utc, field="generated_utc"),
         entity_batch_size=entity_batch_size,
-        batch_loader=prepare_history_sql_batch_loader(conn, queries, base_params=base_params),
+        batch_loader=loader,
+        receipt_evidence=evidence,
     )
 
 

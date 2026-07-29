@@ -9,9 +9,16 @@ from typing import TYPE_CHECKING, Any
 from transit_ops.settings import get_settings
 from transit_ops.snapshots.builders.historic.history_common import (
     HistoryBatchLoader,
+    HistoryDigestCollector,
+    HistoryDigestColumn,
     HistoryEntityMetricPlan,
     HistoryMetricRows,
+    HistoryPhaseContext,
+    HistoryScopeCardinality,
+    HistoryScopeSourceEvidence,
+    build_history_digest_query,
     build_history_entity_metric_plans,
+    build_history_inventory_digest_query,
     clean_history_entity_ids,
     encode_history_entity_id,
     group_history_entity_date_rows,
@@ -19,7 +26,9 @@ from transit_ops.snapshots.builders.historic.history_common import (
     history_entity_directory_generation_id,
     history_index_generation_id,
     history_metric_coverage,
+    history_named_query_sha256,
     history_optional_sum,
+    history_phase,
     history_row_float,
     history_row_int,
     history_utc_timestamp,
@@ -61,8 +70,8 @@ LINE_HISTORY_METRICS = (
     ("skipped_stops", "additive"),
 )
 
-_LINE_HISTORY_IDS_SQL = named_query(
-    "history.lines.ids",
+_LINE_HISTORY_IDS_INNER_SQL = named_query(
+    "history.lines.ids.inner",
     """
     WITH retained_ids AS (
         SELECT sp.route_id
@@ -114,8 +123,8 @@ _LINE_HISTORY_IDS_SQL = named_query(
     """,
 )
 
-_LINE_HISTORY_DELAY_SQL = named_query(
-    "history.lines.delay",
+_LINE_HISTORY_DELAY_INNER_SQL = named_query(
+    "history.lines.delay.inner",
     """
     SELECT sp.route_id,
            sp.provider_local_date AS local_date,
@@ -139,8 +148,8 @@ _LINE_HISTORY_DELAY_SQL = named_query(
     """,
 )
 
-_LINE_HISTORY_PERCENTILES_SQL = named_query(
-    "history.lines.percentiles",
+_LINE_HISTORY_PERCENTILES_INNER_SQL = named_query(
+    "history.lines.percentiles.inner",
     """
     SELECT pct.route_id,
            pct.provider_local_date AS local_date,
@@ -159,8 +168,8 @@ _LINE_HISTORY_PERCENTILES_SQL = named_query(
     """,
 )
 
-_LINE_HISTORY_CANCELLATION_SQL = named_query(
-    "history.lines.cancellation",
+_LINE_HISTORY_CANCELLATION_INNER_SQL = named_query(
+    "history.lines.cancellation.inner",
     """
     SELECT can.route_id,
            can.provider_local_date AS local_date,
@@ -186,8 +195,8 @@ _LINE_HISTORY_CANCELLATION_SQL = named_query(
     """,
 )
 
-_LINE_HISTORY_OCCUPANCY_SQL = named_query(
-    "history.lines.occupancy",
+_LINE_HISTORY_OCCUPANCY_INNER_SQL = named_query(
+    "history.lines.occupancy.inner",
     """
     SELECT occ.route_id,
            occ.provider_local_date AS local_date,
@@ -211,8 +220,8 @@ _LINE_HISTORY_OCCUPANCY_SQL = named_query(
     """,
 )
 
-_LINE_HISTORY_SERVICE_SPAN_SQL = named_query(
-    "history.lines.service_span",
+_LINE_HISTORY_SERVICE_SPAN_INNER_SQL = named_query(
+    "history.lines.service_span.inner",
     """
     SELECT span.route_id,
            span.provider_local_date AS local_date,
@@ -233,8 +242,8 @@ _LINE_HISTORY_SERVICE_SPAN_SQL = named_query(
     """,
 )
 
-_LINE_HISTORY_SKIPPED_STOPS_SQL = named_query(
-    "history.lines.skipped_stops",
+_LINE_HISTORY_SKIPPED_STOPS_INNER_SQL = named_query(
+    "history.lines.skipped_stops.inner",
     """
     SELECT skip.route_id,
            skip.provider_local_date AS local_date,
@@ -252,6 +261,145 @@ _LINE_HISTORY_SKIPPED_STOPS_SQL = named_query(
     GROUP BY skip.route_id, skip.provider_local_date
     ORDER BY skip.route_id, skip.provider_local_date
     """,
+)
+
+
+_LINE_HISTORY_IDS_DIGEST_SQL = build_history_inventory_digest_query(
+    _LINE_HISTORY_IDS_INNER_SQL,
+    wrapper_name="history.lines.ids",
+    source_name="ids",
+    entity_field="route_id",
+)
+_LINE_HISTORY_DELAY_DIGEST_SQL = build_history_digest_query(
+    _LINE_HISTORY_DELAY_INNER_SQL,
+    wrapper_name="history.lines.delay",
+    source_name="delay",
+    columns=(
+        HistoryDigestColumn("route_id", "text"),
+        HistoryDigestColumn("local_date", "date"),
+        HistoryDigestColumn("observation_count", "integer"),
+        HistoryDigestColumn("in_clamp_observation_count", "integer"),
+        HistoryDigestColumn("on_time_count", "integer"),
+        HistoryDigestColumn("severe_count", "integer"),
+        HistoryDigestColumn("sum_delay_seconds", "integer"),
+        HistoryDigestColumn("source_generated_utc", "timestamptz"),
+    ),
+    entity_field="route_id",
+    order_by=("route_id", "local_date"),
+)
+_LINE_HISTORY_PERCENTILES_DIGEST_SQL = build_history_digest_query(
+    _LINE_HISTORY_PERCENTILES_INNER_SQL,
+    wrapper_name="history.lines.percentiles",
+    source_name="percentiles",
+    columns=(
+        HistoryDigestColumn("route_id", "text"),
+        HistoryDigestColumn("local_date", "date"),
+        HistoryDigestColumn("observation_count", "integer"),
+        HistoryDigestColumn("p50_delay_seconds", "float8"),
+        HistoryDigestColumn("p90_delay_seconds", "float8"),
+        HistoryDigestColumn("source_generated_utc", "timestamptz"),
+    ),
+    entity_field="route_id",
+    order_by=("route_id", "local_date"),
+)
+_LINE_HISTORY_CANCELLATION_DIGEST_SQL = build_history_digest_query(
+    _LINE_HISTORY_CANCELLATION_INNER_SQL,
+    wrapper_name="history.lines.cancellation",
+    source_name="cancellation",
+    columns=(
+        HistoryDigestColumn("route_id", "text"),
+        HistoryDigestColumn("local_date", "date"),
+        HistoryDigestColumn("canceled_trip_days", "integer"),
+        HistoryDigestColumn("total_trip_days", "integer"),
+        HistoryDigestColumn("scheduled_trip_days", "integer"),
+        HistoryDigestColumn("delivered_trip_days", "integer"),
+        HistoryDigestColumn("silent_trip_days", "integer"),
+        HistoryDigestColumn("source_generated_utc", "timestamptz"),
+    ),
+    entity_field="route_id",
+    order_by=("route_id", "local_date"),
+)
+_LINE_HISTORY_OCCUPANCY_DIGEST_SQL = build_history_digest_query(
+    _LINE_HISTORY_OCCUPANCY_INNER_SQL,
+    wrapper_name="history.lines.occupancy",
+    source_name="occupancy",
+    columns=(
+        HistoryDigestColumn("route_id", "text"),
+        HistoryDigestColumn("local_date", "date"),
+        HistoryDigestColumn("observation_count", "integer"),
+        HistoryDigestColumn("empty", "integer"),
+        HistoryDigestColumn("many_seats", "integer"),
+        HistoryDigestColumn("few_seats", "integer"),
+        HistoryDigestColumn("standing", "integer"),
+        HistoryDigestColumn("full", "integer"),
+        HistoryDigestColumn("source_generated_utc", "timestamptz"),
+    ),
+    entity_field="route_id",
+    order_by=("route_id", "local_date"),
+)
+_LINE_HISTORY_SERVICE_SPAN_DIGEST_SQL = build_history_digest_query(
+    _LINE_HISTORY_SERVICE_SPAN_INNER_SQL,
+    wrapper_name="history.lines.service_span",
+    source_name="service_span",
+    columns=(
+        HistoryDigestColumn("route_id", "text"),
+        HistoryDigestColumn("local_date", "date"),
+        HistoryDigestColumn("trip_count", "integer"),
+        HistoryDigestColumn("first_trip_start_utc", "timestamptz"),
+        HistoryDigestColumn("last_trip_start_utc", "timestamptz"),
+        HistoryDigestColumn("first_trip_delay_seconds", "integer"),
+        HistoryDigestColumn("last_trip_delay_seconds", "integer"),
+        HistoryDigestColumn("source_generated_utc", "timestamptz"),
+    ),
+    entity_field="route_id",
+    order_by=("route_id", "local_date"),
+)
+_LINE_HISTORY_SKIPPED_STOPS_DIGEST_SQL = build_history_digest_query(
+    _LINE_HISTORY_SKIPPED_STOPS_INNER_SQL,
+    wrapper_name="history.lines.skipped_stops",
+    source_name="skipped_stops",
+    columns=(
+        HistoryDigestColumn("route_id", "text"),
+        HistoryDigestColumn("local_date", "date"),
+        HistoryDigestColumn("skipped_stop_count", "integer"),
+        HistoryDigestColumn("stop_time_update_count", "integer"),
+        HistoryDigestColumn("source_generated_utc", "timestamptz"),
+    ),
+    entity_field="route_id",
+    order_by=("route_id", "local_date"),
+)
+_LINE_HISTORY_IDS_SQL = _LINE_HISTORY_IDS_INNER_SQL
+_LINE_HISTORY_DELAY_SQL = _LINE_HISTORY_DELAY_INNER_SQL
+_LINE_HISTORY_PERCENTILES_SQL = _LINE_HISTORY_PERCENTILES_INNER_SQL
+_LINE_HISTORY_CANCELLATION_SQL = _LINE_HISTORY_CANCELLATION_INNER_SQL
+_LINE_HISTORY_OCCUPANCY_SQL = _LINE_HISTORY_OCCUPANCY_INNER_SQL
+_LINE_HISTORY_SERVICE_SPAN_SQL = _LINE_HISTORY_SERVICE_SPAN_INNER_SQL
+_LINE_HISTORY_SKIPPED_STOPS_SQL = _LINE_HISTORY_SKIPPED_STOPS_INNER_SQL
+_LINE_HISTORY_SOURCE_NAMES = (
+    "delay",
+    "percentiles",
+    "cancellation",
+    "occupancy",
+    "service_span",
+    "skipped_stops",
+)
+_LINE_HISTORY_NAMED_QUERY_SHA256 = history_named_query_sha256(
+    (
+        _LINE_HISTORY_IDS_INNER_SQL,
+        _LINE_HISTORY_IDS_DIGEST_SQL,
+        _LINE_HISTORY_DELAY_INNER_SQL,
+        _LINE_HISTORY_DELAY_DIGEST_SQL,
+        _LINE_HISTORY_PERCENTILES_INNER_SQL,
+        _LINE_HISTORY_PERCENTILES_DIGEST_SQL,
+        _LINE_HISTORY_CANCELLATION_INNER_SQL,
+        _LINE_HISTORY_CANCELLATION_DIGEST_SQL,
+        _LINE_HISTORY_OCCUPANCY_INNER_SQL,
+        _LINE_HISTORY_OCCUPANCY_DIGEST_SQL,
+        _LINE_HISTORY_SERVICE_SPAN_INNER_SQL,
+        _LINE_HISTORY_SERVICE_SPAN_DIGEST_SQL,
+        _LINE_HISTORY_SKIPPED_STOPS_INNER_SQL,
+        _LINE_HISTORY_SKIPPED_STOPS_DIGEST_SQL,
+    )
 )
 
 
@@ -619,6 +767,7 @@ class LineHistoryPlan:
     generated_utc: str
     entity_batch_size: int
     batch_loader: HistoryBatchLoader
+    receipt_evidence: HistoryDigestCollector | None = None
 
     def iter_partition_items(self) -> Iterator[tuple[HistoricPartitionRef, LineHistoryPartition]]:
         for start in range(0, len(self.entity_ids), self.entity_batch_size):
@@ -643,6 +792,16 @@ class LineHistoryPlan:
             indexes=indexes,
             directory=summary.build_directory(indexes, fallback_generated_utc=self.generated_utc),
         )
+
+    def iter_receipt_source_evidence(self) -> Iterator[HistoryScopeSourceEvidence]:
+        if self.receipt_evidence is None:
+            return iter(())
+        return self.receipt_evidence.iter_scope_evidence()
+
+    def receipt_scope_cardinality(self) -> HistoryScopeCardinality:
+        if self.receipt_evidence is None:
+            return HistoryScopeCardinality(0, 0, 0, 0)
+        return self.receipt_evidence.scope_cardinality()
 
 
 def build_line_history_plan_from_rows(
@@ -693,6 +852,7 @@ def build_line_history_plan(
     provider_id: str = "stm",
     generated_utc: str,
     entity_batch_size: int = LINE_HISTORY_ENTITY_BATCH_SIZE,
+    phase_context: HistoryPhaseContext | None = None,
 ) -> LineHistoryPlan:
     if entity_batch_size <= 0:
         raise ValueError("Line history entity_batch_size must be positive")
@@ -701,25 +861,42 @@ def build_line_history_plan(
         "provider_id": provider_id,
         "warm_retention_days": settings.GOLD_WARM_ROLLUP_RETENTION_DAYS,
     }
-    id_rows = conn.execute(_LINE_HISTORY_IDS_SQL, base_params).mappings()
-    entity_ids = clean_history_entity_ids(
-        (row.get("route_id") for row in id_rows),
-        excluded=("__unrouted__",),
+    evidence = HistoryDigestCollector(
+        provider_id=provider_id,
+        family="lines",
+        source_names=_LINE_HISTORY_SOURCE_NAMES,
+        named_query_sha256=_LINE_HISTORY_NAMED_QUERY_SHA256,
+        inventory_required=True,
     )
+    with history_phase(phase_context, "source_digest"):
+        inventory_ids = evidence.consume_inventory_rows(
+            conn.execute(_LINE_HISTORY_IDS_DIGEST_SQL, base_params).mappings(),
+            entity_field="route_id",
+        )
+    entity_ids = clean_history_entity_ids(inventory_ids, excluded=("__unrouted__",))
     queries = (
-        _LINE_HISTORY_DELAY_SQL,
-        _LINE_HISTORY_PERCENTILES_SQL,
-        _LINE_HISTORY_CANCELLATION_SQL,
-        _LINE_HISTORY_OCCUPANCY_SQL,
-        _LINE_HISTORY_SERVICE_SPAN_SQL,
-        _LINE_HISTORY_SKIPPED_STOPS_SQL,
+        _LINE_HISTORY_DELAY_DIGEST_SQL,
+        _LINE_HISTORY_PERCENTILES_DIGEST_SQL,
+        _LINE_HISTORY_CANCELLATION_DIGEST_SQL,
+        _LINE_HISTORY_OCCUPANCY_DIGEST_SQL,
+        _LINE_HISTORY_SERVICE_SPAN_DIGEST_SQL,
+        _LINE_HISTORY_SKIPPED_STOPS_DIGEST_SQL,
     )
-
+    loader = prepare_history_sql_batch_loader(
+        conn,
+        queries,
+        base_params=base_params,
+        source_names=_LINE_HISTORY_SOURCE_NAMES,
+        digest_collector=evidence,
+        entity_field="route_id",
+        phase_context=phase_context,
+    )
     return LineHistoryPlan(
         entity_ids=entity_ids,
         generated_utc=history_utc_timestamp(generated_utc, field="generated_utc"),
         entity_batch_size=entity_batch_size,
-        batch_loader=prepare_history_sql_batch_loader(conn, queries, base_params=base_params),
+        batch_loader=loader,
+        receipt_evidence=evidence,
     )
 
 

@@ -1710,6 +1710,85 @@ def test_publish_all_skips_unseeded_and_publishes_seeded(monkeypatch) -> None:
     assert [r["provider_id"] for r in payload] == ["stm"]
 
 
+def test_publish_all_forwards_full_historic_rebuild_to_every_seeded_provider(
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+    provider_ids = ["octranspo", "stm", "sto"]
+    settings = SimpleNamespace(LOG_LEVEL="INFO")
+    registry = SimpleNamespace(list_provider_ids=lambda: provider_ids)
+
+    monkeypatch.setattr(cli_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli_module, "make_engine", lambda _settings: _FakeEngine())
+    monkeypatch.setattr(cli_module, "provider_is_seeded", lambda conn, provider_id: True)
+    monkeypatch.setattr(
+        cli_module,
+        "_provider_registry",
+        lambda _settings: registry,
+    )
+
+    def fake_publish_snapshot(
+        provider_id,
+        *,
+        tier,
+        settings,
+        registry,
+        gate_enabled,
+        force,
+        full_historic_rebuild,
+    ):  # noqa: ANN001
+        calls.append(
+            {
+                "provider_id": provider_id,
+                "tier": tier,
+                "settings": settings,
+                "registry": registry,
+                "gate_enabled": gate_enabled,
+                "force": force,
+                "full_historic_rebuild": full_historic_rebuild,
+            }
+        )
+        return SimpleNamespace(
+            display_dict=lambda: {"provider_id": provider_id, "tier": tier}
+        )
+
+    monkeypatch.setattr(cli_module, "publish_snapshot", fake_publish_snapshot)
+
+    result = runner.invoke(
+        app,
+        ["publish-all", "--tier", "historic", "--full-historic-rebuild"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        {
+            "provider_id": provider_id,
+            "tier": "historic",
+            "settings": settings,
+            "registry": registry,
+            "gate_enabled": True,
+            "force": False,
+            "full_historic_rebuild": True,
+        }
+        for provider_id in provider_ids
+    ]
+    assert json.loads(result.stdout) == [
+        {"provider_id": provider_id, "tier": "historic"} for provider_id in provider_ids
+    ]
+
+    monkeypatch.setattr(
+        cli_module,
+        "make_engine",
+        lambda _settings: pytest.fail("invalid rebuild tier must reject before engine I/O"),
+    )
+    rejected = runner.invoke(
+        app,
+        ["publish-all", "--tier", "live", "--full-historic-rebuild"],
+    )
+    assert rejected.exit_code == 2
+    assert "--full-historic-rebuild requires --tier historic" in rejected.output
+
+
 def test_publish_all_writes_gate_report_on_success(monkeypatch, tmp_path) -> None:
     """With --report-dir, publish-all writes publish-gate-{provider}.json on SUCCESS
     too (not only on GateError), so CI / status can always consume the gate outcome."""

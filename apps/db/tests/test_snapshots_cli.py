@@ -1,5 +1,6 @@
 """Tests for the publish-snapshot CLI command."""
 
+import json
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
@@ -46,6 +47,67 @@ def test_publish_snapshot_cmd(monkeypatch):
     assert called["provider_id"] == "stm"
     assert called["tier"] == "live"
     assert "manifest.json" in result.output
+
+
+def test_publish_snapshot_full_historic_rebuild_forwards_and_preserves_output(monkeypatch):
+    calls: list[dict[str, object]] = []
+    settings = SimpleNamespace(LOG_LEVEL="INFO")
+    registry = object()
+
+    def fake(provider_id, **kw):
+        calls.append({"provider_id": provider_id, **kw})
+        return PublishResult(
+            provider_id=provider_id,
+            tier=kw.get("tier", "live"),
+            keys_written=["historic/root.json"],
+        )
+
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli, "_provider_registry", lambda _settings: registry)
+    monkeypatch.setattr(cli, "publish_snapshot", fake)
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "publish-snapshot",
+            "stm",
+            "--tier",
+            "historic",
+            "--full-historic-rebuild",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        {
+            "provider_id": "stm",
+            "tier": "historic",
+            "settings": settings,
+            "registry": registry,
+            "gate_enabled": True,
+            "force": False,
+            "full_historic_rebuild": True,
+        }
+    ]
+    assert json.loads(result.stdout) == {
+        "provider_id": "stm",
+        "tier": "historic",
+        "keys_written": ["historic/root.json"],
+        "files_written": 1,
+        "files_skipped": 0,
+    }
+
+    rejected = CliRunner().invoke(
+        cli.app,
+        [
+            "publish-snapshot",
+            "stm",
+            "--tier",
+            "static",
+            "--full-historic-rebuild",
+        ],
+    )
+    assert rejected.exit_code == 2
+    assert "--full-historic-rebuild requires --tier historic" in rejected.output
 
 
 def test_publish_all_cmd_loops_every_provider(monkeypatch):

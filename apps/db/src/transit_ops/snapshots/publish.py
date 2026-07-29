@@ -16,12 +16,15 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar, cast
 
+from sqlalchemy import bindparam
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection, Engine
 
 from transit_ops.db.connection import make_engine
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import Settings, get_settings
 from transit_ops.snapshots import builders, gate
+from transit_ops.snapshots import historic_receipts as _historic
 from transit_ops.snapshots.builders._helpers import _static_schedule_context
 from transit_ops.snapshots.builders.historic.history_common import (
     PointHistorySummary,
@@ -56,6 +59,12 @@ from transit_ops.snapshots.contract import (
     RouteReliabilityIndex,
     StopHistoryPartition,
 )
+from transit_ops.snapshots.historic_receipts import (
+    _HistoricPhaseLedger,
+    _HistoricPublishRun,
+    persist_historic_receipts,
+    prepare_historic_receipt_preflight,
+)
 from transit_ops.snapshots.protocols import SnapshotOutcomeWriter, SnapshotPayload, SnapshotWriter
 from transit_ops.snapshots.serialization import snapshot_sha256
 from transit_ops.snapshots.storage import (
@@ -65,6 +74,10 @@ from transit_ops.snapshots.storage import (
 )
 from transit_ops.sql_registry import named_query
 
+HistoryScopeCardinality = _historic.HistoryScopeCardinality
+_HistoricPartitionObservation = _historic._HistoricPartitionObservation
+_next_historic_partition = _historic._next_historic_partition
+_receipt_cardinality_mapping = _historic._receipt_cardinality_mapping
 logger = logging.getLogger(__name__)
 
 # A work item handed to the parallel uploader: (rel_key, payload, tier).
@@ -581,15 +594,19 @@ class PublishResult:
     keys_written: list[str] = field(default_factory=list)
     keys_skipped: list[str] = field(default_factory=list)
     gate_report: dict[str, object] | None = None
+    historic_telemetry: dict[str, object] | None = None
 
     def display_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "provider_id": self.provider_id,
             "tier": self.tier,
             "keys_written": self.keys_written,
             "files_written": len(self.keys_written),
             "files_skipped": len(self.keys_skipped),
         }
+        if self.historic_telemetry is not None:
+            result["historic_telemetry"] = self.historic_telemetry
+        return result
 
 
 # --- per-tier publish-state upsert ------------------------------------------
@@ -603,11 +620,14 @@ _RECORD_STATE_SQL = named_query(
     "(provider_id, tier, generated_utc, files_written, files_skipped, files_total, "
     " stable_files_total, "
     " gate_checks_run, gate_errors, gate_warnings, gate_verdict, gate_generated_utc, "
-    " updated_at_utc) "
+    + _historic._HISTORIC_STATE_COLUMNS_SQL
+    + "updated_at_utc) "
     "VALUES (:provider_id, :tier, :generated_utc, :written, :skipped, :total, "
     " :stable_total, "
     " :gate_checks_run, :gate_errors, :gate_warnings, :gate_verdict, "
-    " CAST(:gate_generated_utc AS timestamptz), now()) "
+    " CAST(:gate_generated_utc AS timestamptz), "
+    + _historic._HISTORIC_STATE_VALUES_SQL
+    + "now()) "
     "ON CONFLICT (provider_id, tier) DO UPDATE SET "
     "generated_utc = EXCLUDED.generated_utc, "
     "files_written = EXCLUDED.files_written, "
@@ -619,8 +639,9 @@ _RECORD_STATE_SQL = named_query(
     "gate_warnings = EXCLUDED.gate_warnings, "
     "gate_verdict = EXCLUDED.gate_verdict, "
     "gate_generated_utc = EXCLUDED.gate_generated_utc, "
-    "updated_at_utc = now()",
-)
+    + _historic._HISTORIC_STATE_UPDATES_SQL
+    + "updated_at_utc = now()",
+).bindparams(bindparam("historic_phase_detail", type_=JSONB(none_as_null=True)))
 
 
 def _gate_summary(report: Mapping[str, object] | None) -> dict[str, object]:
@@ -662,6 +683,7 @@ def _record_publish_state(
     total: int,
     stable_total: int | None = None,
     gate_report: Mapping[str, object] | None = None,
+    historic_telemetry: Mapping[str, object] | None = None,
 ) -> None:
     """Upsert the per-tier publish-state row inside the caller's transaction.
 
@@ -681,6 +703,9 @@ def _record_publish_state(
             "total": total,
             "stable_total": total if stable_total is None else stable_total,
             **_gate_summary(gate_report),
+            **_historic._historic_publish_state_fields(
+                tier=tier, historic_telemetry=historic_telemetry
+            ),
         },
     )
 
@@ -1162,6 +1187,7 @@ def _publish_historic(
     gate_report: gate.GateReport | None = None,
     prior_files_total: int | None = None,
     force: bool = False,
+    _historic_run: _HistoricPublishRun | None = None,
 ) -> list[str]:
     """Build and upload all historic-tier snapshot files; return the list of keys written.
 
@@ -1188,6 +1214,7 @@ def _publish_historic(
     if stamp is None:
         stamp = _historic_stamp()
 
+    _historic._activate_historic_phase(_historic_run, "parent_compose")
     concurrency = _concurrency(settings)
     root_rel_key = "historic/history/index.json"
     capture_stable_version = getattr(storage, "capture_stable_version", None)
@@ -1198,6 +1225,7 @@ def _publish_historic(
         else None
     )
 
+    _historic._activate_historic_phase(_historic_run, "compatibility")
     items, route_items, stages, alert_archive = _build_historic_items(
         conn, provider_id=provider_id, settings=settings, stamp=stamp
     )
@@ -1222,20 +1250,10 @@ def _publish_historic(
         else []
     )
 
-    network_history = builders.build_network_history_plan(
-        conn,
-        provider_id=provider_id,
-        generated_utc=stamp,
-    )
-    line_history = builders.build_line_history_plan(
-        conn,
-        provider_id=provider_id,
-        generated_utc=stamp,
-    )
-    stop_history = builders.build_stop_history_plan(
-        conn,
-        provider_id=provider_id,
-        generated_utc=stamp,
+    network_history, line_history, stop_history = _historic._build_historic_history_plans(
+        _historic_run, conn, provider_id, stamp,
+        builders.build_network_history_plan, builders.build_line_history_plan,
+        builders.build_stop_history_plan,
     )
     point_plans = _build_historic_point_plans(conn, provider_id=provider_id)
     effective_report = gate_report or gate.new_report(provider_id, "historic", stamp)
@@ -1255,6 +1273,11 @@ def _publish_historic(
         effective_report.payloads_checked = len(alert_archive.page_items) + 1
         effective_report.checks_run = 2
     gate.enforce(effective_report, force=force)
+
+    _historic._prepare_historic_receipt_run(
+        _historic_run, conn, provider_id, (network_history, line_history, stop_history),
+        prepare_historic_receipt_preflight,
+    )
 
     hotspot_summary, hotspot_keys = _publish_point_history_days(
         point_plans.hotspots,
@@ -1293,132 +1316,152 @@ def _publish_historic(
     hotspot_index_path, hotspots_index, _tier = hotspot_index_item
     repeat_offenders_index_path, repeat_offenders_index, _tier = repeat_offenders_index_item
 
+    _historic._activate_historic_phase(_historic_run, "other")
     network_summary = gate.NetworkHistoryStreamSummary()
     network_keys: list[str] = []
     network_batch: list[_PutItem] = []
-    for ref, network_partition in network_history.iter_partition_items():
-        if gate_report is not None:
-            gate.record(gate_report, ref.path, network_partition)
-            partition_findings = []
-        else:
-            partition_findings = gate.check_network_history_partition(
-                network_partition,
-                rel_key=ref.path,
-            )
-            effective_report.payloads_checked += 1
-            effective_report.checks_run += 2
-        effective_report.results.extend(
-            [
-                *partition_findings,
-                *gate.check_network_history_partition_ref(ref, network_partition),
-            ]
-        )
-        gate.enforce(effective_report, force=force)
-        network_summary.observe(ref, network_partition)
-        network_batch.append((ref.path, network_partition, "historic_immutable"))
-        if len(network_batch) >= HISTORY_PARTITION_UPLOAD_BATCH_SIZE:
-            network_keys.extend(
-                _flush_historic_partition_batch(
-                    storage,
-                    network_batch,
-                    concurrency=concurrency,
+    network_iterator = iter(network_history.iter_partition_items())
+    for ref, network_partition, scope_class in _historic._iter_historic_partitions(
+        network_iterator, _historic_run, "network"
+    ):
+        with _historic._historic_child_gate_phase(_historic_run, "network", scope_class):
+            if gate_report is not None:
+                gate.record(gate_report, ref.path, network_partition)
+                partition_findings = []
+            else:
+                partition_findings = gate.check_network_history_partition(
+                    network_partition,
+                    rel_key=ref.path,
                 )
+                effective_report.payloads_checked += 1
+                effective_report.checks_run += 2
+            effective_report.results.extend(
+                [
+                    *partition_findings,
+                    *gate.check_network_history_partition_ref(ref, network_partition),
+                ]
             )
-    network_keys.extend(
-        _flush_historic_partition_batch(
-            storage,
-            network_batch,
-            concurrency=concurrency,
+            gate.enforce(effective_report, force=force)
+            network_summary.observe(ref, network_partition)
+        with _historic._historic_phase_context(_historic_run, "upload"):
+            network_batch.append((ref.path, network_partition, "historic_immutable"))
+            if len(network_batch) >= HISTORY_PARTITION_UPLOAD_BATCH_SIZE:
+                network_keys.extend(
+                    _flush_historic_partition_batch(
+                        storage,
+                        network_batch,
+                        concurrency=concurrency,
+                    )
+                )
+    with _historic._historic_phase_context(_historic_run, "upload"):
+        network_keys.extend(
+            _flush_historic_partition_batch(
+                storage,
+                network_batch,
+                concurrency=concurrency,
+            )
         )
-    )
 
     line_build_summary = builders.LineHistoryStreamSummary()
     line_gate_summary = gate.LineHistoryStreamSummary()
     line_keys: list[str] = []
     line_batch: list[_PutItem] = []
-    for ref, line_partition in line_history.iter_partition_items():
-        if gate_report is not None:
-            gate.record(gate_report, ref.path, line_partition)
-            partition_findings = []
-        else:
-            partition_findings = gate.check_line_history_partition(
-                line_partition,
-                rel_key=ref.path,
-            )
-            effective_report.payloads_checked += 1
-            effective_report.checks_run += 2
-        effective_report.results.extend(
-            [
-                *partition_findings,
-                *gate.check_line_history_partition_ref(ref, line_partition),
-            ]
-        )
-        gate.enforce(effective_report, force=force)
-        line_gate_summary.observe(ref, line_partition)
-        line_build_summary.observe(ref, line_partition)
-        line_batch.append((ref.path, line_partition, "historic_immutable"))
-        if len(line_batch) >= HISTORY_PARTITION_UPLOAD_BATCH_SIZE:
-            line_keys.extend(
-                _flush_historic_partition_batch(
-                    storage,
-                    line_batch,
-                    concurrency=concurrency,
+    line_iterator = iter(line_history.iter_partition_items())
+    for ref, line_partition, scope_class in _historic._iter_historic_partitions(
+        line_iterator, _historic_run, "lines"
+    ):
+        with _historic._historic_child_gate_phase(_historic_run, "lines", scope_class):
+            if gate_report is not None:
+                gate.record(gate_report, ref.path, line_partition)
+                partition_findings = []
+            else:
+                partition_findings = gate.check_line_history_partition(
+                    line_partition,
+                    rel_key=ref.path,
                 )
+                effective_report.payloads_checked += 1
+                effective_report.checks_run += 2
+            effective_report.results.extend(
+                [
+                    *partition_findings,
+                    *gate.check_line_history_partition_ref(ref, line_partition),
+                ]
             )
-    line_keys.extend(
-        _flush_historic_partition_batch(
-            storage,
-            line_batch,
-            concurrency=concurrency,
+            gate.enforce(effective_report, force=force)
+            line_gate_summary.observe(ref, line_partition)
+            line_build_summary.observe(ref, line_partition)
+        with _historic._historic_phase_context(_historic_run, "upload"):
+            line_batch.append((ref.path, line_partition, "historic_immutable"))
+            if len(line_batch) >= HISTORY_PARTITION_UPLOAD_BATCH_SIZE:
+                line_keys.extend(
+                    _flush_historic_partition_batch(
+                        storage,
+                        line_batch,
+                        concurrency=concurrency,
+                    )
+                )
+    with _historic._historic_phase_context(_historic_run, "upload"):
+        line_keys.extend(
+            _flush_historic_partition_batch(
+                storage,
+                line_batch,
+                concurrency=concurrency,
+            )
         )
-    )
 
     stop_build_summary = builders.StopHistoryStreamSummary()
     stop_gate_summary = gate.StopHistoryStreamSummary()
     stop_keys: list[str] = []
     stop_batch: list[_PutItem] = []
-    for ref, stop_partition in stop_history.iter_partition_items():
-        if gate_report is not None:
-            gate.record(
-                gate_report,
-                ref.path,
-                stop_partition,
-                retain_sha=False,
-            )
-            partition_findings = []
-        else:
-            partition_findings = gate.check_stop_history_partition(
-                stop_partition,
-                rel_key=ref.path,
-            )
-            effective_report.payloads_checked += 1
-            effective_report.checks_run += 2
-        effective_report.results.extend(
-            [
-                *partition_findings,
-                *gate.check_stop_history_partition_ref(ref, stop_partition),
-            ]
-        )
-        gate.enforce(effective_report, force=force)
-        stop_gate_summary.observe(ref, stop_partition)
-        stop_build_summary.observe(ref, stop_partition)
-        stop_batch.append((ref.path, stop_partition, "historic_immutable"))
-        if len(stop_batch) >= HISTORY_PARTITION_UPLOAD_BATCH_SIZE:
-            stop_keys.extend(
-                _flush_historic_partition_batch(
-                    storage,
-                    stop_batch,
-                    concurrency=concurrency,
+    stop_iterator = iter(stop_history.iter_partition_items())
+    for ref, stop_partition, scope_class in _historic._iter_historic_partitions(
+        stop_iterator, _historic_run, "stops"
+    ):
+        with _historic._historic_child_gate_phase(_historic_run, "stops", scope_class):
+            if gate_report is not None:
+                gate.record(
+                    gate_report,
+                    ref.path,
+                    stop_partition,
+                    retain_sha=False,
                 )
+                partition_findings = []
+            else:
+                partition_findings = gate.check_stop_history_partition(
+                    stop_partition,
+                    rel_key=ref.path,
+                )
+                effective_report.payloads_checked += 1
+                effective_report.checks_run += 2
+            effective_report.results.extend(
+                [
+                    *partition_findings,
+                    *gate.check_stop_history_partition_ref(ref, stop_partition),
+                ]
             )
-    stop_keys.extend(
-        _flush_historic_partition_batch(
-            storage,
-            stop_batch,
-            concurrency=concurrency,
+            gate.enforce(effective_report, force=force)
+            stop_gate_summary.observe(ref, stop_partition)
+            stop_build_summary.observe(ref, stop_partition)
+        with _historic._historic_phase_context(_historic_run, "upload"):
+            stop_batch.append((ref.path, stop_partition, "historic_immutable"))
+            if len(stop_batch) >= HISTORY_PARTITION_UPLOAD_BATCH_SIZE:
+                stop_keys.extend(
+                    _flush_historic_partition_batch(
+                        storage,
+                        stop_batch,
+                        concurrency=concurrency,
+                    )
+                )
+    with _historic._historic_phase_context(_historic_run, "upload"):
+        stop_keys.extend(
+            _flush_historic_partition_batch(
+                storage,
+                stop_batch,
+                concurrency=concurrency,
+            )
         )
-    )
 
+    _historic._activate_historic_phase(_historic_run, "parent_compose")
     network_index = network_history.build_index(network_summary.detached_refs())
     _stamp_envelope(
         [("historic/history/network/index.json", network_index, "historic")],
@@ -1736,6 +1779,12 @@ def _publish_historic(
         )
     gate.enforce(effective_report, force=force)
 
+    _historic._finalize_historic_receipt_run(
+        _historic_run, provider_id, _publish_generation_id(provider_id, stamp),
+        effective_report, gate_report is not None, force,
+    )
+
+    _historic._activate_historic_phase(_historic_run, "compatibility")
     point_index_keys = _parallel_put(
         storage,
         [hotspot_index_item, repeat_offenders_index_item],
@@ -1747,6 +1796,7 @@ def _publish_historic(
         stages,
         concurrency=concurrency,
     )
+    _historic._activate_historic_phase(_historic_run, "parent_compose")
     root_family_index_keys = _parallel_put(
         storage,
         [
@@ -1845,6 +1895,7 @@ def _publish_historic(
             root,
             tier="historic",
         )
+    _historic._activate_historic_phase(_historic_run, "other")
     return [
         *hotspot_keys,
         *repeat_offender_keys,
@@ -1980,6 +2031,7 @@ def publish_snapshot(
     storage: SnapshotWriter | None = None,
     gate_enabled: bool = True,
     force: bool = False,
+    full_historic_rebuild: bool = False,
 ) -> PublishResult:
     """Publish all snapshot files for *provider_id* to the configured backend.
 
@@ -2010,12 +2062,18 @@ def publish_snapshot(
         Publish even when the gate finds ERROR-severity issues (a logged
         "GATE OVERRIDDEN" warning lists them). Ignored on the live tier, which is
         already WARN-only.
+    full_historic_rebuild:
+        Record full-rebuild intent in historic telemetry; other tiers reject it
+        before constructing an engine or storage backend.
 
     Returns
     -------
     PublishResult
         Metadata about the completed publish operation.
     """
+    if full_historic_rebuild and tier != "historic":
+        raise ValueError("--full-historic-rebuild requires tier='historic'")
+
     settings = settings or get_settings()
 
     engine = engine or make_engine(settings)
@@ -2075,9 +2133,15 @@ def publish_snapshot(
 
     # static / historic — hash-gated against a bucket-stored per-tier state object.
 
-    with engine.begin() as conn:
+    historic_ledger = _HistoricPhaseLedger() if tier == "historic" else None
+    historic_run: _HistoricPublishRun | None = None
+    with _historic._historic_transaction_context(engine.begin(), historic_ledger) as conn:
         _acquire_publish_lock(conn, provider_id=provider_id, tier=tier)
         stamp = stamp_fn(conn, provider_id) if stamp_fn is not None else _historic_stamp()
+        historic_run = _historic._new_historic_publish_run(
+            historic_ledger, settings, stamp, full_historic_rebuild,
+            HISTORY_PARTITION_UPLOAD_BATCH_SIZE,
+        )
         gated = HashGatedStorage(
             storage,
             state_rel_key=f"_meta/publish_state_{tier}.json",
@@ -2132,6 +2196,7 @@ def publish_snapshot(
                 gate_report=report,
                 prior_files_total=prior_total,
                 force=force,
+                _historic_run=historic_run,
             )
         elif tier == "static" and gate_enabled:
             # Static gate: build the surface once into a collector (no network), run the
@@ -2151,29 +2216,44 @@ def publish_snapshot(
             )
         else:
             publisher(conn, gated, provider_id=provider_id, settings=settings, stamp=stamp)
-        gated.flush_state()
+        with _historic._historic_phase_context(historic_run, "hash_state_flush"):
+            gated.flush_state()
         physical_written = len(gated.written) + len(gated.immutable_written)
         physical_skipped = len(gated.skipped) + len(gated.immutable_skipped)
         physical_total = physical_written + physical_skipped
         stable_total = _stable_outcome_total(gated)
-        _record_publish_state(
-            conn,
-            provider_id=provider_id,
-            tier=tier,
-            generated_utc=stamp,
-            written=physical_written,
-            skipped=physical_skipped,
-            total=physical_total,
-            stable_total=stable_total,
-            gate_report=report.to_dict() if report is not None else None,
-        )
+        if historic_run is not None:
+            if historic_run.receipt_evidence_available:
+                with _historic._historic_receipt_persistence(historic_run):
+                    with conn.begin_nested():
+                        _historic._persist_historic_receipt_run(
+                            conn, provider_id, historic_run, persist_historic_receipts
+                        )
+            historic_state = _historic._snapshot_historic_telemetry(historic_run)
+        else:
+            historic_state = None
+        with _historic._historic_phase_context(historic_run, "state_upsert"):
+            _record_publish_state(
+                conn,
+                provider_id=provider_id,
+                tier=tier,
+                generated_utc=stamp,
+                written=physical_written,
+                skipped=physical_skipped,
+                total=physical_total,
+                stable_total=stable_total,
+                gate_report=report.to_dict() if report is not None else None,
+                historic_telemetry=historic_state,
+            )
 
+    historic_telemetry = _historic._finish_historic_telemetry(historic_run)
     return PublishResult(
         provider_id=provider_id,
         tier=tier,
         keys_written=[*gated.written, *gated.immutable_written],
         keys_skipped=[*gated.skipped, *gated.immutable_skipped],
         gate_report=report.to_dict() if report is not None else None,
+        historic_telemetry=historic_telemetry,
     )
 
 

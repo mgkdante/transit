@@ -274,6 +274,246 @@ def test_publish_rejects_unimplemented_tier() -> None:
         )
 
 
+def test_full_historic_rebuild_rejects_non_historic_before_io(monkeypatch) -> None:
+    from transit_ops.snapshots import publish as snapshot_publish
+
+    def forbidden(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        raise AssertionError("non-historic full-rebuild rejection must precede I/O setup")
+
+    monkeypatch.setattr(snapshot_publish, "get_settings", forbidden)
+    monkeypatch.setattr(snapshot_publish, "make_engine", forbidden)
+    monkeypatch.setattr(snapshot_publish, "build_snapshot_storage", forbidden)
+
+    for tier in ("live", "static"):
+        with pytest.raises(ValueError, match="requires tier='historic'"):
+            snapshot_publish.publish_snapshot(
+                "stm",
+                tier=tier,
+                full_historic_rebuild=True,
+            )
+
+
+def test_historic_phase_ledger_and_receipt_savepoint_are_exclusive_and_isolated(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from transit_ops.snapshots import publish as snapshot_publish
+
+    observation_fields = snapshot_publish._HistoricPartitionObservation.__dataclass_fields__
+    assert "partition" not in observation_fields
+    assert {"ref", "raw_day_count", "detached_summary"} <= set(observation_fields)
+
+    empty_one_entity = snapshot_publish.HistoryScopeCardinality(
+        entity_count=1,
+        month_count=0,
+        dense_scope_count=0,
+        observed_scope_count=0,
+    )
+    assert snapshot_publish._receipt_cardinality_mapping(
+        "network",
+        empty_one_entity,
+        (),
+    )[1]
+    assert not snapshot_publish._receipt_cardinality_mapping(
+        "lines",
+        empty_one_entity,
+        (),
+    )[1]
+    assert not snapshot_publish._receipt_cardinality_mapping(
+        "stops",
+        empty_one_entity,
+        (),
+    )[1]
+
+    class Clock:
+        def __init__(self) -> None:
+            self.value = 0
+
+        def __call__(self) -> int:
+            current = self.value
+            self.value += 10
+            return current
+
+    batch_ledger = snapshot_publish._HistoricPhaseLedger(clock=Clock())
+    batch_run = SimpleNamespace(ledger=batch_ledger)
+
+    def lazy_batch():
+        with batch_ledger.phase("source_digest"):
+            pass
+        yield object(), object()
+
+    _, _, batch_scope_build_ns = snapshot_publish._next_historic_partition(
+        iter(lazy_batch()),
+        batch_run,
+    )
+    assert batch_ledger.phase_ns["build"] > 0
+    assert batch_ledger.phase_ns["source_digest"] > 0
+    assert batch_scope_build_ns == 0
+
+    class Result:
+        def __init__(self, rows=()):  # noqa: ANN001
+            self.rows = list(rows)
+
+        def fetchone(self):  # noqa: ANN201
+            return self.rows[0] if self.rows else None
+
+        def scalar_one(self):  # noqa: ANN201
+            return self.rows[0][0] if self.rows else 0
+
+    events: list[str] = []
+    state_params: list[dict[str, object]] = []
+
+    class Connection:
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN201
+            name = query_name(statement)
+            if name == "publish.lock.try_acquire":
+                return Result([(True,)])
+            if name == "publish.prior_files_total":
+                return Result()
+            if name == "publish.state.upsert":
+                events.append("state_upsert")
+                state_params.append(dict(params))
+            return Result()
+
+        @contextmanager
+        def begin_nested(self):
+            events.append("savepoint_begin")
+            try:
+                yield self
+            except Exception:
+                events.append("savepoint_rollback")
+                raise
+            else:
+                events.append("savepoint_commit")
+
+    connection = Connection()
+
+    class Engine:
+        def begin(self):  # noqa: ANN201
+            @contextmanager
+            def transaction():
+                events.append("outer_begin")
+                try:
+                    yield connection
+                except Exception:
+                    events.append("outer_rollback")
+                    raise
+                else:
+                    events.append("outer_commit")
+
+            return transaction()
+
+    ledger = snapshot_publish._HistoricPhaseLedger(clock=Clock())
+    monkeypatch.setattr(
+        snapshot_publish,
+        "_HistoricPhaseLedger",
+        lambda: ledger,
+    )
+    monkeypatch.setattr(
+        snapshot_publish,
+        "_historic_stamp",
+        lambda: "2026-07-29T00:00:00Z",
+    )
+
+    def publish_historic(_conn, storage, *, _historic_run, **_kwargs):  # noqa: ANN001
+        with _historic_run.ledger.phase("build"):
+            with _historic_run.ledger.phase("source_digest"):
+                pass
+        for scope_class in (
+            "retention_edge",
+            "mutable_edge",
+            "settled_candidate",
+        ):
+            _historic_run.ledger.observe_scope("network", scope_class)
+            _historic_run.ledger.add_scope_detail_ns(
+                "network",
+                scope_class,
+                "partition_materialize",
+                1,
+            )
+            with _historic_run.ledger.phase(
+                "gate",
+                family="network",
+                scope_class=scope_class,
+                scope_metric="child_gate",
+            ):
+                pass
+            _historic_run.observations["network"].append(
+                SimpleNamespace(scope_class=scope_class)
+            )
+        _historic_run.receipt_evidence_available = True
+        _historic_run.receipt_cardinality_gate_passed = True
+        _historic_run.receipt_scope_cardinality = {
+            "network": {
+                "entity_count": 1,
+                "observed_scope_count": 3,
+                "cardinality_gate_passed": True,
+            }
+        }
+        _historic_run.entity_receipts = [SimpleNamespace(scope_count=3)]
+        _historic_run.complete_receipt_families = ("network", "lines", "stops")
+        _historic_run.receipt_rows_attempted = 1
+        _historic_run.receipt_json_bytes_attempted = 100
+        storage.put_json(
+            "historic/phase-ledger-fixture.json",
+            {"fixture": True},
+            tier="historic",
+        )
+        return ["historic/phase-ledger-fixture.json"]
+
+    def fail_receipts(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        events.append("receipt_write")
+        raise RuntimeError("receipt write failed")
+
+    monkeypatch.setattr(snapshot_publish, "_publish_historic", publish_historic)
+    monkeypatch.setattr(
+        snapshot_publish,
+        "persist_historic_receipts",
+        fail_receipts,
+    )
+
+    result = snapshot_publish.publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=FakeSettings(),
+        engine=Engine(),
+        storage=StatefulFakeStore(),
+        gate_enabled=False,
+    )
+
+    telemetry = result.historic_telemetry
+    assert telemetry is not None
+    assert telemetry["phase_ns"]["build"] == 20
+    assert telemetry["phase_ns"]["source_digest"] == 10
+    assert telemetry["publish_total_ns"] == sum(telemetry["phase_ns"].values())
+    assert telemetry["other_ms"] >= 0
+    assert {
+        scope_class: detail["scopes_rebuilt"]
+        for scope_class, detail in telemetry["family_scope_detail"]["network"].items()
+    } == {
+        "retention_edge": 1,
+        "mutable_edge": 1,
+        "settled_candidate": 1,
+    }
+    assert telemetry["receipt_rows_attempted"] == 1
+    assert telemetry["receipt_rows_changed"] == 0
+    assert telemetry["receipt_json_bytes_attempted"] == 100
+    assert telemetry["receipt_json_bytes_changed"] == 0
+    assert telemetry["receipt_persist_failed"] is True
+    assert telemetry["timing_complete"] is True
+    assert events.index("savepoint_begin") < events.index("receipt_write")
+    assert events.index("receipt_write") < events.index("savepoint_rollback")
+    assert events.index("savepoint_rollback") < events.index("state_upsert")
+    assert events.index("state_upsert") < events.index("outer_commit")
+    assert "savepoint_commit" not in events
+    assert "outer_rollback" not in events
+    assert len(state_params) == 1
+    assert state_params[0]["historic_phase_detail"]["timing_complete"] is False
+    assert state_params[0]["historic_receipt_rows_attempted"] == 1
+    assert state_params[0]["historic_receipt_rows_changed"] == 0
+
+
 def test_publish_accepts_registry_kwarg() -> None:
     """registry= is accepted without error (signature-compat with callers)."""
     store = FakeStore()
