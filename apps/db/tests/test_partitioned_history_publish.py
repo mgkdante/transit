@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import re
 import threading
+from collections import Counter
 from contextlib import contextmanager
 from copy import deepcopy
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
@@ -13,6 +15,7 @@ from test_partitioned_history_builders import _line_history_rows, _network_histo
 
 from transit_ops.snapshots import gate, publish
 from transit_ops.snapshots.builders.historic.history_common import (
+    HistoryDigestCollector,
     PointHistorySummary,
     encode_history_entity_id,
     history_entity_directory_generation_id,
@@ -35,12 +38,18 @@ from transit_ops.snapshots.builders.historic.stop_history import (
 from transit_ops.snapshots.builders.historic.stop_history import (
     build_stop_history_plan_from_rows,
 )
+from transit_ops.snapshots.historic_receipts import (
+    HistoricProviderContext,
+    HistoricReceiptPersistenceStats,
+    HistoricReceiptPreflight,
+    build_historic_common_envelope,
+)
 from transit_ops.snapshots.publish import (
     _publish_historic,
     _stable_outcome_total,
 )
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
-from transit_ops.snapshots.storage import ImmutableKeyCollisionError
+from transit_ops.snapshots.storage import ImmutableKeyCollisionError, LocalSnapshotStorage
 
 
 @pytest.fixture(autouse=True)
@@ -3718,3 +3727,409 @@ def test_historic_validate_malformed_singleton_returns_findings(
     )
 
     assert "history_root_graph" in {finding.check for finding in report.errors}
+
+
+@pytest.mark.parametrize(
+    ("full_historic_rebuild", "force"),
+    [
+        (False, False),
+        (False, True),
+        (True, False),
+        (True, True),
+    ],
+)
+def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_graph(
+    monkeypatch,
+    tmp_path,
+    full_historic_rebuild: bool,
+    force: bool,
+):
+    digest_sidecar_fields = (
+        "__f7_digest_entity_key",
+        "__f7_digest_month",
+        "__f7_digest_row_count",
+        "__f7_digest_min_date",
+        "__f7_digest_max_date",
+        "__f7_digest_sha256",
+    )
+
+    def receipt_collector(family, plan, entity_field):  # noqa: ANN001, ANN202
+        rows = []
+        for _ref, partition in plan.iter_partition_items():
+            entity_key = "" if entity_field is None else partition.entity_id
+            dates = [day.date for day in partition.days]
+            month = date.fromisoformat(f"{partition.month}-01")
+            for index, local_date in enumerate(dates):
+                row = {
+                    "local_date": local_date,
+                    "source_generated_utc": partition.generated_utc,
+                }
+                if entity_field is not None:
+                    row[entity_field] = entity_key
+                row.update(dict.fromkeys(digest_sidecar_fields))
+                if index == 0:
+                    row.update(
+                        {
+                            "__f7_digest_entity_key": entity_key,
+                            "__f7_digest_month": month,
+                            "__f7_digest_row_count": len(dates),
+                            "__f7_digest_min_date": dates[0],
+                            "__f7_digest_max_date": dates[-1],
+                            "__f7_digest_sha256": hashlib.sha256(
+                                f"{family}:{entity_key}:{partition.month}".encode()
+                            ).hexdigest(),
+                        }
+                    )
+                rows.append(row)
+        if family == "stops" and rows:
+            source_only_date = date(2025, 1, 1)
+            source_only_entity = rows[0]["stop_id"]
+            rows.append(
+                {
+                    "stop_id": source_only_entity,
+                    "local_date": source_only_date,
+                    "source_generated_utc": "2025-01-02T00:00:00Z",
+                    "__f7_digest_entity_key": source_only_entity,
+                    "__f7_digest_month": source_only_date,
+                    "__f7_digest_row_count": 1,
+                    "__f7_digest_min_date": source_only_date,
+                    "__f7_digest_max_date": source_only_date,
+                    "__f7_digest_sha256": hashlib.sha256(
+                        f"{family}:{source_only_entity}:source-only".encode()
+                    ).hexdigest(),
+                }
+            )
+        query_name = f"test.history.{family}"
+        collector = HistoryDigestCollector(
+            provider_id="stm",
+            family=family,
+            source_names=("fixture",),
+            named_query_sha256={query_name: "0" * 64},
+        )
+        collector.consume_source_rows(
+            "fixture",
+            rows,
+            entity_field=entity_field,
+        )
+        return collector
+
+    collectors = {
+        "network": receipt_collector("network", _network_history_plan(), None),
+        "lines": receipt_collector("lines", _line_history_plan(), "route_id"),
+        "stops": receipt_collector("stops", _stop_history_plan(), "stop_id"),
+    }
+
+    def common_envelope(family):  # noqa: ANN001, ANN202
+        return build_historic_common_envelope(
+            provider_id="stm",
+            provider_timezone="America/Toronto",
+            family=family,
+            installed_code_sha256="1" * 64,
+            family_manifest_sha256="2" * 64,
+            named_query_sha256={f"test.history.{family}": "0" * 64},
+            pyproject_sha256="3" * 64,
+            uv_lock_sha256="4" * 64,
+            schema_sha256="5" * 64,
+            alembic_sha256="6" * 64,
+            config_sha256="7" * 64,
+            gate_sha256="8" * 64,
+            runtime_sha256="9" * 64,
+            repository_alembic_head="0083_snapshot_historic_receipts",
+            database_alembic_head="0083_snapshot_historic_receipts",
+            configuration={"open_window_days": 10, "retention_days": 730},
+            runtime={"python": "test", "postgresql": "test"},
+            gate_values={"test": True},
+        )
+
+    preflights = {
+        family: HistoricReceiptPreflight(
+            available=True,
+            provider=HistoricProviderContext(
+                provider_id="stm",
+                timezone="America/Toronto",
+                today_local=date(2026, 7, 13),
+                open_window_days=10,
+                fact_retention_days=14,
+                retention_days=730,
+            ),
+            common_envelope=common_envelope(family),
+        )
+        for family in ("network", "lines", "stops")
+    }
+    settings = SimpleNamespace(
+        SNAPSHOT_PUBLISH_CONCURRENCY=1,
+        GOLD_REPORTING_OPEN_WINDOW_DAYS=10,
+        GOLD_FACT_RETENTION_DAYS=14,
+        GOLD_WARM_ROLLUP_RETENTION_DAYS=730,
+    )
+
+    def run_publish(label, *, rebuild, forced):  # noqa: ANN001, ANN202
+        calls = Counter()
+        persisted_receipts = []
+        state_rows = []
+        _patch_minimal_historic(monkeypatch)
+        build_compatibility = publish._build_historic_items
+
+        def counted_compatibility(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+            calls["query.compatibility"] += 1
+            return build_compatibility(*args, **kwargs)
+
+        def plan(family):  # noqa: ANN001, ANN202
+            calls[f"builder.{family}"] += 1
+            factory = {
+                "network": _network_history_plan,
+                "lines": _line_history_plan,
+                "stops": _stop_history_plan,
+            }[family]
+            return replace(factory(), receipt_evidence=collectors[family])
+
+        def prepare_preflight(*args, family, **kwargs):  # noqa: ANN002, ANN003, ANN202
+            calls[f"query.receipt_preflight.{family}"] += 1
+            return preflights[family]
+
+        def persist_receipts(
+            conn,  # noqa: ANN001, ARG001
+            *,
+            provider_id,  # noqa: ANN001, ARG001
+            receipts,
+            complete_families,
+        ):
+            calls["query.receipt_persist"] += 1
+            materialized = tuple(receipts)
+            assert tuple(complete_families) == ("network", "lines", "stops")
+            persisted_receipts.append(materialized)
+            attempted_bytes = sum(
+                len(receipt.as_sql_params()["common_envelope"].encode())
+                + len(receipt.as_sql_params()["month_receipts"].encode())
+                for receipt in materialized
+            )
+            return HistoricReceiptPersistenceStats(
+                rows_attempted=len(materialized),
+                rows_changed=len(materialized),
+                json_bytes_attempted=attempted_bytes,
+                json_bytes_changed=attempted_bytes,
+                stale_entities_deleted=0,
+                stale_months_deleted=0,
+            )
+
+        def record_state(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+            calls["query.state_upsert"] += 1
+            state_rows.append(kwargs)
+
+        class Connection:
+            @contextmanager
+            def begin_nested(self):
+                calls["transaction.receipt_savepoint"] += 1
+                yield self
+
+        connection = Connection()
+
+        class Engine:
+            @contextmanager
+            def begin(self):
+                calls["transaction.publish"] += 1
+                yield connection
+
+        monkeypatch.setattr(publish, "_historic_stamp", lambda: "2026-07-13T00:00:00Z")
+        monkeypatch.setattr(publish, "_build_historic_items", counted_compatibility)
+        monkeypatch.setattr(
+            publish.builders,
+            "build_network_history_plan",
+            lambda *args, **kwargs: plan("network"),
+        )
+        monkeypatch.setattr(
+            publish.builders,
+            "build_line_history_plan",
+            lambda *args, **kwargs: plan("lines"),
+        )
+        monkeypatch.setattr(
+            publish.builders,
+            "build_stop_history_plan",
+            lambda *args, **kwargs: plan("stops"),
+        )
+        monkeypatch.setattr(
+            publish,
+            "_acquire_publish_lock",
+            lambda *args, **kwargs: calls.update(["query.publish_lock"]),
+        )
+        monkeypatch.setattr(
+            publish,
+            "_prior_files_total",
+            lambda *args, **kwargs: calls.update(["query.prior_files_total"]),
+        )
+        monkeypatch.setattr(
+            publish,
+            "prepare_historic_receipt_preflight",
+            prepare_preflight,
+        )
+        monkeypatch.setattr(publish, "persist_historic_receipts", persist_receipts)
+        monkeypatch.setattr(publish, "_record_publish_state", record_state)
+
+        root = tmp_path / label
+        storage = LocalSnapshotStorage(str(root), "v1/stm")
+        result = publish.publish_snapshot(
+            "stm",
+            tier="historic",
+            settings=settings,
+            engine=Engine(),
+            storage=storage,
+            force=forced,
+            full_historic_rebuild=rebuild,
+        )
+        artifact_root = root / "v1" / "stm"
+        artifacts = {
+            path.relative_to(artifact_root).as_posix(): path.read_bytes()
+            for path in sorted(artifact_root.rglob("*"))
+            if path.is_file()
+        }
+        assert len(persisted_receipts) == 1
+        assert len(state_rows) == 1
+        return SimpleNamespace(
+            artifacts=artifacts,
+            builder_calls=Counter(
+                {
+                    key.removeprefix("builder."): value
+                    for key, value in calls.items()
+                    if key.startswith("builder.")
+                }
+            ),
+            query_calls=Counter(
+                {
+                    key: value
+                    for key, value in calls.items()
+                    if not key.startswith("builder.")
+                }
+            ),
+            receipts=persisted_receipts[0],
+            result=result,
+            state=state_rows[0],
+        )
+
+    baseline = run_publish("baseline", rebuild=False, forced=False)
+    candidate = run_publish(
+        "candidate",
+        rebuild=full_historic_rebuild,
+        forced=force,
+    )
+
+    assert candidate.artifacts
+    assert {
+        "_meta/publish_state_historic.json",
+        "historic/history/index.json",
+    } <= candidate.artifacts.keys()
+    assert candidate.artifacts == baseline.artifacts
+    assert candidate.builder_calls == baseline.builder_calls == Counter(
+        {"network": 1, "lines": 1, "stops": 1}
+    )
+    assert candidate.query_calls == baseline.query_calls == Counter(
+        {
+            "transaction.publish": 1,
+            "query.publish_lock": 1,
+            "query.prior_files_total": 1,
+            "query.compatibility": 1,
+            "query.receipt_preflight.network": 1,
+            "query.receipt_preflight.lines": 1,
+            "query.receipt_preflight.stops": 1,
+            "transaction.receipt_savepoint": 1,
+            "query.receipt_persist": 1,
+            "query.state_upsert": 1,
+        }
+    )
+    assert candidate.result.historic_telemetry is not None
+    telemetry = candidate.result.historic_telemetry
+    baseline_telemetry = baseline.result.historic_telemetry
+    assert baseline_telemetry is not None
+    assert telemetry["full_historic_rebuild"] is full_historic_rebuild
+    assert candidate.state["historic_telemetry"]["full_historic_rebuild"] is (
+        full_historic_rebuild
+    )
+    assert telemetry["historic_files_reused"] == 0
+    assert telemetry["historic_scopes_reused"] == 0
+    assert telemetry["historic_scopes_rebuilt"] > 0
+    assert telemetry["receipt_evidence_available"] is True
+    assert telemetry["receipt_persist_failed"] is False
+    assert telemetry["receipt_entity_count"] == len(candidate.receipts) > 0
+    assert telemetry["receipt_scope_count"] == sum(
+        receipt.scope_count for receipt in candidate.receipts
+    ) > 0
+    assert telemetry["receipt_rows_attempted"] == telemetry["receipt_entity_count"]
+    assert telemetry["receipt_rows_changed"] == telemetry["receipt_entity_count"]
+    assert telemetry["receipt_entity_count"] == baseline_telemetry["receipt_entity_count"]
+    assert telemetry["receipt_scope_count"] == baseline_telemetry["receipt_scope_count"]
+    assert (
+        telemetry["receipt_scope_cardinality"]
+        == baseline_telemetry["receipt_scope_cardinality"]
+    )
+    assert all(
+        family["cardinality_gate_passed"] is True
+        for family in telemetry["receipt_scope_cardinality"].values()
+    )
+    assert telemetry["receipt_scope_cardinality"]["stops"][
+        "source_only_scope_count"
+    ] == 1
+    assert telemetry["publish_total_ns"] == sum(telemetry["phase_ns"].values())
+    assert {
+        scope["origin_gate"]["force"]
+        for receipt in candidate.receipts
+        for scope in receipt.month_receipts.values()
+    } == {force}
+    family_metrics = {
+        "network": {
+            "delay",
+            "delay_percentiles",
+            "vehicles",
+            "cancellation",
+            "occupancy",
+        },
+        "lines": {
+            "delay",
+            "delay_percentiles",
+            "cancellation",
+            "occupancy",
+            "service_span",
+            "skipped_stops",
+        },
+        "stops": {
+            "delay",
+            "delay_percentiles",
+            "occupancy",
+        },
+    }
+    for receipt in candidate.receipts:
+        assert receipt.scope_count == len(receipt.month_receipts)
+        for month, scope in receipt.month_receipts.items():
+            detached = scope["detached_summary"]
+            assert set(detached) == {
+                "schema_version",
+                "family",
+                "entity_key",
+                "month",
+                "artifact_ref",
+                "partition_header",
+                "builder_summary_contribution",
+                "gate_summary_contribution",
+            }
+            assert detached["schema_version"] == 1
+            assert detached["family"] == receipt.family
+            assert detached["entity_key"] == receipt.entity_key
+            assert detached["month"] == month
+            assert detached["artifact_ref"] == {
+                "path": scope["artifact"]["path"],
+                "coverage_start": scope["scope_start"],
+                "coverage_end": scope["scope_end"],
+                "count": scope["artifact"]["day_count"],
+                "sha256": scope["artifact"]["sha256"],
+                "byte_size": scope["artifact"]["byte_size"],
+            }
+            builder = detached["builder_summary_contribution"]
+            gate_contribution = detached["gate_summary_contribution"]
+            assert set(builder["metric_dates"]) == family_metrics[receipt.family]
+            assert set(gate_contribution["metric_date_masks"]) == family_metrics[
+                receipt.family
+            ]
+            assert builder["partition_ref"] == detached["artifact_ref"]
+            assert gate_contribution["partition_ref"] == detached["artifact_ref"]
+            assert gate_contribution["raw_day_count"] == scope["raw_day_count"]
+            assert gate_contribution["unique_day_count"] == len(
+                gate_contribution["available_date_mask"]
+            )

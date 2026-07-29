@@ -1624,8 +1624,27 @@ def test_line_and_stop_history_sql_text_is_frozen():
         "stop.occupancy": "7f776febf4c89708a1625967915b7e9d710ec389b613a8107fb3987bb0b50a24",
     }
 
+    public_query_names = {
+        "line.ids": "history.lines.ids",
+        "line.delay": "history.lines.delay",
+        "line.percentiles": "history.lines.percentiles",
+        "line.cancellation": "history.lines.cancellation",
+        "line.occupancy": "history.lines.occupancy",
+        "line.service_span": "history.lines.service_span",
+        "line.skipped": "history.lines.skipped_stops",
+        "stop.ids": "history.stops.ids",
+        "stop.delay": "history.stops.delay",
+        "stop.percentiles": "history.stops.percentiles",
+        "stop.occupancy": "history.stops.occupancy",
+    }
+
     assert {
-        name: hashlib.sha256(str(statement).encode()).hexdigest()
+        name: hashlib.sha256(
+            (
+                f"-- q:{public_query_names[name]}\n"
+                + str(statement).split("\n", 1)[1]
+            ).encode()
+        ).hexdigest()
         for name, statement in statements.items()
     } == expected
 
@@ -1741,7 +1760,10 @@ def test_history_common_batch_loader_helpers_and_family_adoption():
     )
     sql_loader = common.prepare_history_sql_batch_loader(
         conn,
-        (stop._STOP_HISTORY_DELAY_SQL, stop._STOP_HISTORY_PERCENTILES_SQL),
+        (
+            stop._STOP_HISTORY_DELAY_DIGEST_SQL,
+            stop._STOP_HISTORY_PERCENTILES_DIGEST_SQL,
+        ),
         base_params={"provider_id": "stm"},
     )
     assert sql_loader(["A"]) == ([{"stop_id": "A"}], [{"stop_id": "B"}])

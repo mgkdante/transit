@@ -13,9 +13,12 @@ from transit_ops.snapshots.builders import (
     build_route_reliability,
     build_stop_reliability,
 )
-from transit_ops.snapshots.builders.historic.line_history import build_line_history
-from transit_ops.snapshots.builders.historic.network_history import build_network_history
-from transit_ops.snapshots.builders.historic.stop_history import build_stop_history
+from transit_ops.snapshots.builders.historic.line_history import build_line_history_plan
+from transit_ops.snapshots.builders.historic.network_history import (
+    build_network_history,
+    build_network_history_plan,
+)
+from transit_ops.snapshots.builders.historic.stop_history import build_stop_history_plan
 from transit_ops.snapshots.contract import (
     ROUTE_RELIABILITY_BYTE_CEILING,
     NetworkTrend,
@@ -509,11 +512,15 @@ def test_network_history_real_db_matches_cross_month_sql(
 ):
     stamp = "2026-07-13T00:00:00Z"
     _extend_history_retention(monkeypatch)
-    bundle = build_network_history(
+    plan = build_network_history_plan(
         network_history_conn,
         provider_id=PROVIDER,
         generated_utc=stamp,
     )
+    bundle = plan.materialize()
+    assert plan.receipt_evidence is not None and plan.receipt_evidence.complete
+    assert len(tuple(plan.iter_receipt_source_evidence())) == len(bundle.partitions)
+    assert plan.receipt_scope_cardinality().observed_scope_count == len(bundle.partitions)
 
     direct = network_history_conn.execute(
         text(
@@ -690,11 +697,15 @@ def test_line_history_real_db_matches_cross_month_sql_and_sparse_auxiliary_entit
         )
     )
     assert len(compatibility_before) <= ROUTE_RELIABILITY_BYTE_CEILING
-    bundle = build_line_history(
+    plan = build_line_history_plan(
         line_history_conn,
         provider_id=LINE_PROVIDER,
         generated_utc=stamp,
     )
+    bundle = plan.materialize()
+    assert plan.receipt_evidence is not None and plan.receipt_evidence.complete
+    assert len(tuple(plan.iter_receipt_source_evidence())) == len(bundle.partitions)
+    assert plan.receipt_scope_cardinality().observed_scope_count == len(bundle.partitions)
 
     assert [(partition.entity_id, partition.month) for partition in bundle.partitions] == [
         ("A", "2026-05"),
@@ -860,11 +871,15 @@ def test_stop_history_real_db_reconciles_routes_auxiliary_sources_and_compatibil
             generated_utc=stamp,
         ).items()
     }
-    bundle = build_stop_history(
+    plan = build_stop_history_plan(
         stop_history_conn,
         provider_id=STOP_PROVIDER,
         generated_utc=stamp,
     )
+    bundle = plan.materialize()
+    assert plan.receipt_evidence is not None and plan.receipt_evidence.complete
+    assert len(tuple(plan.iter_receipt_source_evidence())) == len(bundle.partitions)
+    assert plan.receipt_scope_cardinality().observed_scope_count == len(bundle.partitions)
 
     main_stop = "A/B é雪"
     aux_stop = "aux/%雪"

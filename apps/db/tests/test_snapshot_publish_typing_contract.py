@@ -14,7 +14,8 @@ def test_publish_module_has_no_type_suppressions_or_loc_growth() -> None:
     source = PUBLISH_PATH.read_text(encoding="utf-8")
 
     assert "# type: ignore" not in source
-    assert len(source.splitlines()) <= 2_670
+    # F7a instrumentation floor — owner-authorized program 2026-07-29; growth is hook-only, bulk lives in historic_receipts.py  # noqa: E501
+    assert len(source.splitlines()) <= 2_750
 
 
 def test_snapshot_writer_protocols_have_neutral_bounded_ownership() -> None:

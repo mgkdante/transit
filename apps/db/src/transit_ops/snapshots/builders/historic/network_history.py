@@ -4,17 +4,25 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from transit_ops.settings import get_settings
 from transit_ops.snapshots.builders.historic.history_common import (
+    HistoryDigestCollector,
+    HistoryDigestColumn,
+    HistoryPhaseContext,
+    HistoryScopeCardinality,
+    HistoryScopeSourceEvidence,
+    build_history_digest_query,
     history_coverage,
     history_date,
     history_index_generation_id,
     history_metric_coverage,
     history_month_partition_ref,
+    history_named_query_sha256,
     history_optional_sum,
+    history_phase,
     history_row_float,
     history_row_int,
     history_row_timestamp,
@@ -37,8 +45,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.engine import Connection
 
 
-_NETWORK_HISTORY_DELAY_SQL = named_query(
-    "history.network.delay",
+_NETWORK_HISTORY_DELAY_INNER_SQL = named_query(
+    "history.network.delay.inner",
     """
     SELECT sp.provider_local_date AS local_date,
            SUM(sp.delay_observation_count) AS observation_count,
@@ -62,8 +70,8 @@ _NETWORK_HISTORY_DELAY_SQL = named_query(
 )
 
 
-_NETWORK_HISTORY_FACT_SQL = named_query(
-    "history.network.fact",
+_NETWORK_HISTORY_FACT_INNER_SQL = named_query(
+    "history.network.fact.inner",
     """
     WITH source_bounds AS (
         SELECT now() - make_interval(days => :fact_retention_days) AS retention_floor_utc
@@ -91,8 +99,8 @@ _NETWORK_HISTORY_FACT_SQL = named_query(
 )
 
 
-_NETWORK_HISTORY_CANCELLATION_SQL = named_query(
-    "history.network.cancellation",
+_NETWORK_HISTORY_CANCELLATION_INNER_SQL = named_query(
+    "history.network.cancellation.inner",
     """
     SELECT rcd.provider_local_date AS local_date,
            SUM(rcd.canceled_trip_days) AS canceled_trip_days,
@@ -117,8 +125,8 @@ _NETWORK_HISTORY_CANCELLATION_SQL = named_query(
 )
 
 
-_NETWORK_HISTORY_OCCUPANCY_SQL = named_query(
-    "history.network.occupancy",
+_NETWORK_HISTORY_OCCUPANCY_INNER_SQL = named_query(
+    "history.network.occupancy.inner",
     """
     SELECT rob.provider_local_date AS local_date,
            SUM(rob.observation_count) AS observation_count,
@@ -138,6 +146,88 @@ _NETWORK_HISTORY_OCCUPANCY_SQL = named_query(
     GROUP BY rob.provider_local_date
     ORDER BY rob.provider_local_date
     """,
+)
+
+
+_NETWORK_HISTORY_DELAY_DIGEST_SQL = build_history_digest_query(
+    _NETWORK_HISTORY_DELAY_INNER_SQL,
+    wrapper_name="history.network.delay",
+    source_name="delay",
+    columns=(
+        HistoryDigestColumn("local_date", "date"),
+        HistoryDigestColumn("observation_count", "integer"),
+        HistoryDigestColumn("on_time_count", "integer"),
+        HistoryDigestColumn("severe_count", "integer"),
+        HistoryDigestColumn("sum_delay_seconds", "integer"),
+        HistoryDigestColumn("in_clamp_observation_count", "integer"),
+        HistoryDigestColumn("source_generated_utc", "timestamptz"),
+    ),
+    entity_field=None,
+    order_by=("local_date",),
+)
+_NETWORK_HISTORY_FACT_DIGEST_SQL = build_history_digest_query(
+    _NETWORK_HISTORY_FACT_INNER_SQL,
+    wrapper_name="history.network.fact",
+    source_name="fact",
+    columns=(
+        HistoryDigestColumn("local_date", "date"),
+        HistoryDigestColumn("observation_count", "integer"),
+        HistoryDigestColumn("p90_delay_seconds", "float8"),
+        HistoryDigestColumn("vehicles", "integer"),
+        HistoryDigestColumn("source_generated_utc", "timestamptz"),
+    ),
+    entity_field=None,
+    order_by=("local_date",),
+)
+_NETWORK_HISTORY_CANCELLATION_DIGEST_SQL = build_history_digest_query(
+    _NETWORK_HISTORY_CANCELLATION_INNER_SQL,
+    wrapper_name="history.network.cancellation",
+    source_name="cancellation",
+    columns=(
+        HistoryDigestColumn("local_date", "date"),
+        HistoryDigestColumn("canceled_trip_days", "integer"),
+        HistoryDigestColumn("total_trip_days", "integer"),
+        HistoryDigestColumn("scheduled_trip_days", "integer"),
+        HistoryDigestColumn("delivered_trip_days", "integer"),
+        HistoryDigestColumn("silent_trip_days", "integer"),
+        HistoryDigestColumn("source_generated_utc", "timestamptz"),
+    ),
+    entity_field=None,
+    order_by=("local_date",),
+)
+_NETWORK_HISTORY_OCCUPANCY_DIGEST_SQL = build_history_digest_query(
+    _NETWORK_HISTORY_OCCUPANCY_INNER_SQL,
+    wrapper_name="history.network.occupancy",
+    source_name="occupancy",
+    columns=(
+        HistoryDigestColumn("local_date", "date"),
+        HistoryDigestColumn("observation_count", "integer"),
+        HistoryDigestColumn("empty", "integer"),
+        HistoryDigestColumn("many_seats", "integer"),
+        HistoryDigestColumn("few_seats", "integer"),
+        HistoryDigestColumn("standing", "integer"),
+        HistoryDigestColumn("full", "integer"),
+        HistoryDigestColumn("source_generated_utc", "timestamptz"),
+    ),
+    entity_field=None,
+    order_by=("local_date",),
+)
+_NETWORK_HISTORY_DELAY_SQL = _NETWORK_HISTORY_DELAY_INNER_SQL
+_NETWORK_HISTORY_FACT_SQL = _NETWORK_HISTORY_FACT_INNER_SQL
+_NETWORK_HISTORY_CANCELLATION_SQL = _NETWORK_HISTORY_CANCELLATION_INNER_SQL
+_NETWORK_HISTORY_OCCUPANCY_SQL = _NETWORK_HISTORY_OCCUPANCY_INNER_SQL
+_NETWORK_HISTORY_SOURCE_NAMES = ("delay", "fact", "cancellation", "occupancy")
+_NETWORK_HISTORY_NAMED_QUERY_SHA256 = history_named_query_sha256(
+    (
+        _NETWORK_HISTORY_DELAY_INNER_SQL,
+        _NETWORK_HISTORY_DELAY_DIGEST_SQL,
+        _NETWORK_HISTORY_FACT_INNER_SQL,
+        _NETWORK_HISTORY_FACT_DIGEST_SQL,
+        _NETWORK_HISTORY_CANCELLATION_INNER_SQL,
+        _NETWORK_HISTORY_CANCELLATION_DIGEST_SQL,
+        _NETWORK_HISTORY_OCCUPANCY_INNER_SQL,
+        _NETWORK_HISTORY_OCCUPANCY_DIGEST_SQL,
+    )
 )
 
 
@@ -169,6 +259,7 @@ class NetworkHistoryPlan:
     available_dates: list[str]
     metric_dates: dict[str, set[str]]
     fallback_generated_utc: str
+    receipt_evidence: HistoryDigestCollector | None = None
 
     def iter_partition_items(
         self,
@@ -250,6 +341,16 @@ class NetworkHistoryPlan:
             partitions=[partition for _ref, partition in items],
             index=self.build_index(refs),
         )
+
+    def iter_receipt_source_evidence(self) -> Iterator[HistoryScopeSourceEvidence]:
+        if self.receipt_evidence is None:
+            return iter(())
+        return self.receipt_evidence.iter_scope_evidence()
+
+    def receipt_scope_cardinality(self) -> HistoryScopeCardinality:
+        if self.receipt_evidence is None:
+            return HistoryScopeCardinality(0, 0, 0, 0)
+        return self.receipt_evidence.scope_cardinality()
 
 
 def _group_rows(rows: Iterable[Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
@@ -456,6 +557,7 @@ def build_network_history_plan(
     *,
     provider_id: str = "stm",
     generated_utc: str,
+    phase_context: HistoryPhaseContext | None = None,
 ) -> NetworkHistoryPlan:
     """Read each retained source once and return a bounded month publication plan."""
 
@@ -468,19 +570,41 @@ def build_network_history_plan(
         "provider_id": provider_id,
         "fact_retention_days": settings.GOLD_FACT_RETENTION_DAYS,
     }
-    delay_rows = list(conn.execute(_NETWORK_HISTORY_DELAY_SQL, warm_params).mappings())
-    fact_rows = list(conn.execute(_NETWORK_HISTORY_FACT_SQL, fact_params).mappings())
-    cancellation_rows = list(
-        conn.execute(_NETWORK_HISTORY_CANCELLATION_SQL, warm_params).mappings()
+    evidence = HistoryDigestCollector(
+        provider_id=provider_id,
+        family="network",
+        source_names=_NETWORK_HISTORY_SOURCE_NAMES,
+        named_query_sha256=_NETWORK_HISTORY_NAMED_QUERY_SHA256,
     )
-    occupancy_rows = list(conn.execute(_NETWORK_HISTORY_OCCUPANCY_SQL, warm_params).mappings())
-    return build_network_history_plan_from_rows(
+    with history_phase(phase_context, "source_digest"):
+        delay_rows = evidence.consume_source_rows(
+            "delay",
+            conn.execute(_NETWORK_HISTORY_DELAY_DIGEST_SQL, warm_params).mappings(),
+            entity_field=None,
+        )
+        fact_rows = evidence.consume_source_rows(
+            "fact",
+            conn.execute(_NETWORK_HISTORY_FACT_DIGEST_SQL, fact_params).mappings(),
+            entity_field=None,
+        )
+        cancellation_rows = evidence.consume_source_rows(
+            "cancellation",
+            conn.execute(_NETWORK_HISTORY_CANCELLATION_DIGEST_SQL, warm_params).mappings(),
+            entity_field=None,
+        )
+        occupancy_rows = evidence.consume_source_rows(
+            "occupancy",
+            conn.execute(_NETWORK_HISTORY_OCCUPANCY_DIGEST_SQL, warm_params).mappings(),
+            entity_field=None,
+        )
+    plan = build_network_history_plan_from_rows(
         delay_rows=delay_rows,
         fact_rows=fact_rows,
         cancellation_rows=cancellation_rows,
         occupancy_rows=occupancy_rows,
         generated_utc=generated_utc,
     )
+    return replace(plan, receipt_evidence=evidence)
 
 
 def build_network_history(
