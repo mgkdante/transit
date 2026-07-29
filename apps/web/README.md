@@ -62,7 +62,7 @@ mkdir "$bootstrap_root/extracted"
 tar -xf "$bootstrap_root/$archive_name" -C "$bootstrap_root/extracted"
 bun "$bootstrap_root/extracted/yesid.dev-design-${design_tag}/tools/adopt.ts" \
   --tag "$design_tag" \
-  --packages tokens,motion,gates,seo-kit,ui,analytics \
+  --packages tokens,motion,gates,seo-kit,ui,analytics,i18n-core \
   --dest vendor/design
 bun vendor/design/tools/adopt.ts --check --dest vendor/design
 ```

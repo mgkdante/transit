@@ -11,6 +11,7 @@ export {
 	pathLocale,
 	isLocaleSwitch,
 	stripLocaleSegment,
+	isPrefixLocale,
 } from './routing';
 
 export { setLocaleContext, getLocale } from './context';

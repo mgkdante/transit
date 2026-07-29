@@ -1,56 +1,46 @@
 // Locale routing helpers — EN default unprefixed, FR `/fr` prefix.
 //
 // Adapted from yesid.dev slice-28.6 (apps/web/src/lib/utils/locale-routing.ts),
-// re-themed to transit's i18n config. The page-registry exemption set from
-// yesid.dev is replaced with a self-contained pass-through check (transit has no
-// page registry): external URLs, protocol-relative links, fragment/scheme links
-// and non-page endpoint surfaces (api/, sitemap.xml, robots.txt, *.json) are
-// never localized.
+// re-themed to transit's i18n config. Shared mechanics come from
+// @yesid/i18n-core; Transit keeps its locale levers, endpoint-exemption tail,
+// route-segment syntax, and URL-state preservation local.
 
+import { createLocaleRouting } from '@yesid/i18n-core';
 import type { Locale } from './config';
 import { DEFAULT_LOCALE, PREFIX_LOCALES } from './config';
-
-const PREFIX_SET: ReadonlySet<string> = new Set(PREFIX_LOCALES);
 
 /** The optional-param segment as it appears in SvelteKit route ids. */
 const LOCALE_SEGMENT = '/[[lang=locale]]';
 
 /** Endpoint/asset surfaces that are not localizable pages. */
-function isExempt(path: string): boolean {
-	// External, protocol-relative, fragment-only, or non-path (mailto:, tel:, etc.).
-	if (!path.startsWith('/') || path.startsWith('//')) return true;
-	const seg = path.replace(/^\/+/, '');
+function isPathExempt(path: string): boolean {
+	const segment = path.replace(/^\/+/, '');
+
 	if (
-		seg.startsWith('api/') ||
-		seg === 'sitemap.xml' ||
-		seg === 'robots.txt' ||
-		seg === 'manifest.webmanifest'
+		segment.startsWith('api/') ||
+		segment === 'sitemap.xml' ||
+		segment === 'robots.txt' ||
+		segment === 'manifest.webmanifest'
 	) {
 		return true;
 	}
-	// Raw data/asset files (e.g. /v1/network.json) are endpoints, not pages.
-	return /\.[a-z0-9]+$/i.test(seg);
+
+	return /\.[a-z0-9]+$/i.test(segment);
 }
 
-/** The leading path segment if it is a routable prefix locale, else null. */
-function prefixOf(pathname: string): Locale | null {
-	const seg = pathname.split('/')[1] ?? '';
-	return PREFIX_SET.has(seg) ? (seg as Locale) : null;
-}
+const routing = createLocaleRouting<Locale>({
+	defaultLocale: DEFAULT_LOCALE,
+	prefixLocales: PREFIX_LOCALES,
+	isPathExempt,
+	localeSegment: LOCALE_SEGMENT,
+	preserveSearchAndHash: true,
+});
 
 /** Locale encoded in a pathname ('/fr/about' → 'fr'), else DEFAULT_LOCALE. */
-export function pathLocale(pathname: string): Locale {
-	return prefixOf(pathname) ?? DEFAULT_LOCALE;
-}
+export const pathLocale = routing.pathLocale;
 
 /** '/fr/about' → '/about'; '/fr' → '/'; locale-less paths pass through. */
-export function delocalizePath(pathname: string): string {
-	if (pathname === '') return '/';
-	const p = prefixOf(pathname);
-	if (!p) return pathname;
-	const rest = pathname.slice(p.length + 1);
-	return rest === '' || rest === '/' ? '/' : rest;
-}
+export const delocalizePath = routing.delocalizePath;
 
 /**
  * Localize an internal page href for a target locale. Idempotent — any existing
@@ -59,12 +49,7 @@ export function delocalizePath(pathname: string): string {
  * Exempt surfaces (external/anchor/scheme links, endpoints, asset files) pass
  * through untouched.
  */
-export function localizeHref(path: string, locale: Locale): string {
-	if (isExempt(path)) return path;
-	const base = delocalizePath(path);
-	if (locale === DEFAULT_LOCALE || !PREFIX_SET.has(locale)) return base;
-	return base === '/' ? `/${locale}` : `/${locale}${base}`;
-}
+export const localizeHref = routing.localizeHref;
 
 /**
  * Localize a full URL for a target locale, PRESERVING its query string and hash.
@@ -73,9 +58,7 @@ export function localizeHref(path: string, locale: Locale): string {
  * switch instead of being silently dropped. Path handling (prefix strip/re-add,
  * exemptions, idempotency) is delegated to localizeHref.
  */
-export function localizeUrl(url: URL, locale: Locale): string {
-	return localizeHref(url.pathname, locale) + url.search + url.hash;
-}
+export const localizeUrl: (url: URL, locale: Locale) => string = routing.localizeUrl;
 
 /**
  * True when navigating from→to is a LOCALE SWITCH: the same canonical page in a
@@ -83,17 +66,11 @@ export function localizeUrl(url: URL, locale: Locale): string {
  * exactly these; consumers use it to gate snapshot/restore so a normal
  * navigation (to a different page) never triggers a state restore.
  */
-export function isLocaleSwitch(fromPathname: string, toPathname: string): boolean {
-	return (
-		delocalizePath(fromPathname) === delocalizePath(toPathname) &&
-		pathLocale(fromPathname) !== pathLocale(toPathname)
-	);
-}
+export const isLocaleSwitch = routing.isLocaleSwitch;
 
 /** '/[[lang=locale]]/about' → '/about' — route ids stay keyed by their
  *  canonical (unprefixed) form everywhere (route-seo, page lookups). */
-export function stripLocaleSegment(routeId: string): string {
-	if (routeId === LOCALE_SEGMENT) return '/';
-	if (routeId.startsWith(`${LOCALE_SEGMENT}/`)) return routeId.slice(LOCALE_SEGMENT.length);
-	return routeId;
-}
+export const stripLocaleSegment = routing.stripLocaleSegment;
+
+/** True when a route segment is one of Transit's configured prefix locales. */
+export const isPrefixLocale = routing.isPrefixLocale;
