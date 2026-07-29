@@ -1,0 +1,28 @@
+# Composite run steps do not inherit job defaults.run. Match .github/actions/setup:
+# every run step declares shell and working-directory explicitly.
+name: Setup Transit Python workspace
+description: Install Python, uv, and the Transit database workspace dependencies.
+
+inputs:
+  working-directory:
+    description: Directory containing the Python workspace.
+    required: false
+    default: "apps/db"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: "3.12"
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      with:
+        version: "0.11.15"
+
+    - name: Install project dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: uv sync --locked

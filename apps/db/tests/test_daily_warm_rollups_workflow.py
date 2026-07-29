@@ -12,9 +12,7 @@ RECOVERY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "historic-publish-reco
 
 SETUP_STEP_NAMES = [
     "Check out repository",
-    "Set up Python",
-    "Set up uv",
-    "Install project dependencies",
+    "Set up Python workspace",
 ]
 UPLOAD_ACTION = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
 DOWNLOAD_ACTION = "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
@@ -107,7 +105,7 @@ def test_daily_workflow_keeps_triggers_concurrency_and_bounded_job_graph() -> No
         "retention",
     }
     provider_jobs = [jobs["rollups"], jobs["retention"]]
-    assert [[step.get("name") for step in job["steps"][:4]] for job in provider_jobs] == [
+    assert [[step.get("name") for step in job["steps"][:2]] for job in provider_jobs] == [
         SETUP_STEP_NAMES,
         SETUP_STEP_NAMES,
     ]
@@ -116,17 +114,7 @@ def test_daily_workflow_keeps_triggers_concurrency_and_bounded_job_graph() -> No
         sum(str(step.get("uses", "")).startswith("actions/checkout@") for step in provider_steps)
         == 2
     )
-    assert (
-        sum(
-            str(step.get("uses", "")).startswith("actions/setup-python@") for step in provider_steps
-        )
-        == 2
-    )
-    assert (
-        sum(str(step.get("uses", "")).startswith("astral-sh/setup-uv@") for step in provider_steps)
-        == 2
-    )
-    assert sum(step.get("run") == "uv sync --locked" for step in provider_steps) == 2
+    assert sum(step.get("uses") == "./.github/actions/setup-py" for step in provider_steps) == 2
     assert "matrix.provider" not in DAILY_WORKFLOW.read_text(encoding="utf-8")
 
 
@@ -174,8 +162,8 @@ def test_prepare_reuses_recovery_setup_migrates_and_emits_safe_provider_matrix()
     prepare = document["jobs"]["prepare"]
     recovery = next(iter(_load(RECOVERY_WORKFLOW)["jobs"].values()))
 
-    assert prepare["steps"][:4] == recovery["steps"][:4]
-    assert [step.get("name") for step in prepare["steps"][:4]] == SETUP_STEP_NAMES
+    assert prepare["steps"][:2] == recovery["steps"][:2]
+    assert [step.get("name") for step in prepare["steps"][:2]] == SETUP_STEP_NAMES
     assert prepare["defaults"] == {"run": {"working-directory": "apps/db", "shell": "bash"}}
     assert prepare["outputs"] == {
         "providers": "${{ steps.discover.outputs.providers }}",

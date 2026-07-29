@@ -45,9 +45,7 @@ EXPECTED_ENV = {
 
 EXPECTED_STEP_NAMES = [
     "Check out repository",
-    "Set up Python",
-    "Set up uv",
-    "Install project dependencies",
+    "Set up Python workspace",
     "Apply database migrations",
     "Prove database migration head",
     "Sync retained alert archive (all providers)",
@@ -177,18 +175,11 @@ def test_recovery_workflow_is_manual_bounded_and_serialized_with_daily_lane() ->
 def test_recovery_workflow_reuses_the_daily_lane_pinned_setup() -> None:
     document = _load(RECOVERY_WORKFLOW)
     daily_document = _load(DAILY_WORKFLOW)
-    recovery_setup = _only_job(document)["steps"][:4]
+    recovery_setup = _only_job(document)["steps"][:2]
     daily_job = next(iter(daily_document["jobs"].values()))
 
-    assert recovery_setup == daily_job["steps"][:4]
-    assert [step.get("uses") for step in recovery_setup] == [
-        "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-        "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
-        "astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78",
-        None,
-    ]
-    assert recovery_setup[1]["with"] == {"python-version": "3.12"}
-    assert recovery_setup[3]["run"] == "uv sync --locked"
+    assert recovery_setup == daily_job["steps"][:2]
+    assert recovery_setup[1]["uses"] == "./.github/actions/setup-py"
 
 
 def test_recovery_workflow_runs_the_exact_bounded_recovery_sequence() -> None:
