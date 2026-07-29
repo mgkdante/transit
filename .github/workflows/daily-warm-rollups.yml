@@ -42,7 +42,7 @@ jobs:
       SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python workspace
         uses: ./.github/actions/setup-py
@@ -125,7 +125,7 @@ jobs:
       PROVIDER_PLAN: ${{ needs.prepare.outputs.providers }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python workspace
         uses: ./.github/actions/setup-py
@@ -235,7 +235,7 @@ jobs:
       SNAPSHOT_BASEMAP_STYLE_URL: ${{ vars.SNAPSHOT_BASEMAP_STYLE_URL }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python workspace
         uses: ./.github/actions/setup-py
@@ -380,7 +380,7 @@ jobs:
       PROVIDER_PLAN: ${{ needs.prepare.outputs.providers }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python workspace
         uses: ./.github/actions/setup-py
@@ -456,7 +456,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Update daily warm rollups issue
         env:
