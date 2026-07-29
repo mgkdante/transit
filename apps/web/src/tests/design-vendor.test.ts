@@ -80,16 +80,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.11.1',
-	tagObject: '22443d66d2de3be26a395561b400a57452dcfc10',
-	peeledCommit: '5916438399e9f24030d5380aa2ea1158ba68fc9e',
-	assetName: 'yesid.dev-design-v0.11.1.tar',
-	assetSize: 798_720,
-	assetDigest: 'sha256:1e62de2e76178a12e5e44060ee9568b910ae9e16ec923f87627e7e43be88ed7f',
+	tag: 'v0.12.0',
+	tagObject: 'aa48f0decf8015cb57cac31de8d8604c2211d4d8',
+	peeledCommit: '107c2dd621a7765f72dbab82461fef50b24bab4b',
+	assetName: 'yesid.dev-design-v0.12.0.tar',
+	assetSize: 819_200,
+	assetDigest: 'sha256:20c59d4cf2df4b7408fdebe6795b16faace40a7aa261e1577d4cfe70555fd4e9',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
-	toolDigest: 'sha256:c3d4af6788407c6affd312172455da127c1e2e40cb0d623be6d51ca31672c18e',
-	treeHash: 'sha256:f5aa5dc3325e7a2f33bbd529cf297987219ad81d80ec8a6fe74db146e4c9cffa',
-	manifestDigest: 'dcd3dec78edea3123e0fab23204988abae5520cb37e15049114eaa79080e0efe',
+	toolDigest: 'sha256:650011070755661770506f51bc07f99ba6905fc62a573a4fcf0b668c00cbe2b8',
+	treeHash: 'sha256:1c53d0e963b2c6b78c3b0f685ddd99aa352eb043980417c55d118b43a5341236',
+	manifestDigest: '32bef03ac6a30be92cfe6641eac54d28a5c5d54e6dad636624e72f4d61c990e2',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -133,9 +133,23 @@ describe('vendor/design integrity', () => {
 				digest: PINNED_RELEASE.assetDigest,
 			},
 		});
-		expect(manifest.packages).toEqual(['tokens', 'motion', 'gates', 'seo-kit', 'ui', 'analytics']);
+		expect(manifest.packages).toEqual([
+			'tokens',
+			'motion',
+			'gates',
+			'seo-kit',
+			'ui',
+			'analytics',
+			'i18n-core',
+		]);
 		expect(manifest.exclusionPolicyDigest).toBe(PINNED_RELEASE.exclusionPolicyDigest);
 		expect(manifest.toolDigest).toBe(PINNED_RELEASE.toolDigest);
+		expect(walkFiles(join(VENDOR, 'i18n-core')).sort()).toEqual([
+			join(VENDOR, 'i18n-core', 'package.json'),
+			join(VENDOR, 'i18n-core', 'src', 'index.ts'),
+			join(VENDOR, 'i18n-core', 'src', 'routing.ts'),
+			join(VENDOR, 'i18n-core', 'tsconfig.json'),
+		]);
 		expect(manifest.treeHash).toBe(PINNED_RELEASE.treeHash);
 		expect(createHash('sha256').update(manifestBytes).digest('hex')).toBe(
 			PINNED_RELEASE.manifestDigest,
@@ -159,7 +173,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.11.1');
+		expect(packageJson.version).toBe('0.12.0');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -184,7 +198,7 @@ describe('vendor/design integrity', () => {
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',
-			version: '0.11.1',
+			version: '0.12.0',
 		});
 		expect(files).toEqual([
 			'package.json',
