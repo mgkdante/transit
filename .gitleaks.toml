@@ -4,12 +4,6 @@ useDefault = true
 [allowlist]
 description = "Transit false positives and generated/local build outputs"
 paths = [
-  '''(^|/)node_modules/''',
-  '''(^|/)\.svelte-kit/''',
-  '''(^|/)\.turbo/''',
-  '''(^|/)\.wrangler/''',
-  '''(^|/)dist/''',
-  '''(^|/)build/''',
   '''(^|/)bun\.lock$''',
   '''(^|/)apps/web/static/fonts/''',
   '''(^|/)apps/web/scripts/og-fonts/''',

@@ -48,18 +48,8 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.12"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
-        with:
-          version: "0.11.15"
-
-      - name: Install project dependencies
-        run: uv sync --locked
+      - name: Set up Python workspace
+        uses: ./.github/actions/setup-py
 
       - name: Initialize database
         run: uv run python -m transit_ops.cli init-db

@@ -76,10 +76,9 @@ def test_freshness_probe_workflow_schedule_permissions_and_secrets() -> None:
     assert doc["permissions"]["issues"] == "write"
 
     raw = _raw(PROBE)
-    # The bare-bash `probe` job stays dependency-light (curl/jq/psql, no python).
-    # Scope the no-uv assertion to that job's step block, NOT the whole file: the
-    # sibling `backup-freshness` job legitimately needs the python CLI to read R2
-    # (the pg_dump runs as a VM cron, so its artifact has no other GHA watcher).
+    # The probe-scoped negative is retained deliberately so a future inline
+    # reintroduction in `backup-freshness` remains permitted while the bare-bash
+    # `probe` job stays dependency-light (curl/jq/psql, no python).
     probe_steps = yaml.safe_dump(doc["jobs"]["probe"]["steps"])
     assert "uv sync" not in probe_steps
     assert "astral-sh/setup-uv" not in probe_steps

@@ -97,19 +97,17 @@ def test_historic_gc_workflow_serializes_with_publication_and_keeps_provider_rec
         for index, step in enumerate(steps)
         if step.get("name") == "Initialize provider receipts"
     )
-    setup_python_index = next(
+    setup_index = next(
         index
         for index, step in enumerate(steps)
-        if str(step.get("uses", "")).startswith("actions/setup-python@")
+        if step.get("uses") == "./.github/actions/setup-py"
     )
     migration_index = next(
         index for index, step in enumerate(steps) if step.get("name") == "Apply database migrations"
     )
-    assert initialize_index < setup_python_index < migration_index
+    assert initialize_index < setup_index < migration_index
     rendered = WORKFLOW.read_text(encoding="utf-8")
-    assert rendered.count("actions/setup-python@") == 1
-    assert rendered.count("astral-sh/setup-uv@") == 1
-    assert rendered.count("uv sync --locked") == 1
+    assert rendered.count("./.github/actions/setup-py") == 1
     assert rendered.count("transit_ops.cli init-db") == 1
     initialize = _step(job, "Initialize provider receipts")["run"]
     assert '"phase":"preflight"' in initialize

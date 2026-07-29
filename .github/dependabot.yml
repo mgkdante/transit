@@ -4,7 +4,10 @@
 version: 2
 updates:
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/setup"
+      - "/.github/actions/setup-py"
     schedule:
       interval: "monthly"
     target-branch: "main"

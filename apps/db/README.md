@@ -7,9 +7,9 @@ publishes the versioned public snapshot consumed by the edge and web domains.
 Run commands from `apps/db`:
 
 ```bash
-uv sync --frozen
-uv run ruff check .
-uv run pytest
+cd apps/db
+uv sync --locked
+env -u TRANSIT_TEST_DATABASE_URL COLUMNS=200 uv run pytest tests
 uv run transit-ops --help
 ```
 
