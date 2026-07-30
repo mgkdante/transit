@@ -17,9 +17,9 @@
 <BlueprintShell labels={['SEC-LINES / NETWORK', 'DWG: TRANSIT-LINE-ELEV', 'SCALE NTS | REV.A']}>
 	{#snippet hero()}
 		<BlueprintBridge
+			class="h-full w-full"
 			data-blueprint-layer="hero"
 			data-blueprint-part="lines-bridge"
-			style="position:absolute;top:-12.5%;left:0;width:28%;height:75%;"
 		/>
 	{/snippet}
 
@@ -37,12 +37,12 @@
 		<BlueprintMr73Side
 			class="edge-detail"
 			data-blueprint-part="lines-metro-car"
-			style="top:-18%;left:22%;width:58%;height:65%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
+			style="top:-18%;left:-4%;width:58%;height:65%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 		/>
 		<BlueprintBusSide
 			class="edge-detail"
 			data-blueprint-part="lines-bus"
-			style="top:-2%;left:50%;width:50%;height:46%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
+			style="top:-2%;left:30%;width:50%;height:60%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 		/>
 		<BlueprintDetailBogie
 			class="edge-detail"
@@ -52,7 +52,7 @@
 		<BlueprintSignal
 			class="edge-detail"
 			data-blueprint-part="lines-signal"
-			style="top:0;left:38%;width:24%;height:27%;--blueprint-part-ink:var(--blueprint-ink-accent);"
+			style="top:0;left:8%;width:24%;height:27%;--blueprint-part-ink:var(--blueprint-ink-accent);"
 		/>
 		<BlueprintTurnoutCrossoverPlan
 			class="edge-detail"

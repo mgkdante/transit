@@ -57,12 +57,26 @@ select {
 	--blueprint-ink-accent: 0.3;
 }
 
-/* Keep each listing part on its assigned depth role when BlueprintShell applies
-   its broad light/mobile visibility boost. */
+/* BlueprintShell uses !important light/mobile opacity boosts. Repeating the part
+   attribute makes this app-owned role selector more specific than the vendor's
+   scoped selectors regardless of CSS chunk order, without touching the hero. */
 [data-slot='blueprint-listing-header']
 	.edge-details
-	[data-blueprint-part].edge-detail {
+	[data-blueprint-part][data-blueprint-part].edge-detail {
 	opacity: var(--blueprint-part-ink) !important;
+}
+
+/* Below the desktop breakpoint the listing copy stacks through the drawing, so
+   the protected-copy-zone rule implies every detail part renders quiet: the
+   drawing becomes a uniform wash and the copy stays the subject. Same selector
+   strength as the role rule above; the theme blocks keep the quiet VALUE right
+   per theme. */
+@media (max-width: 1023px) {
+	[data-slot='blueprint-listing-header']
+		.edge-details
+		[data-blueprint-part][data-blueprint-part].edge-detail {
+		opacity: var(--blueprint-ink-quiet) !important;
+	}
 }
 
 /* Tap-feedback primitives (reduced-motion-guarded). */
@@ -430,6 +444,9 @@ table {
    ═══════════════════════════════════════════════════════════════ */
 [data-theme='light'],
 .theme-light {
+	--blueprint-ink-quiet: 0.28;
+	--blueprint-ink-mid: 0.42;
+	--blueprint-ink-accent: 0.56;
 	--shadow-card: 0 1px 2px rgba(28, 24, 19, 0.06), 0 4px 12px rgba(28, 24, 19, 0.08), inset 0 1px 0 var(--edge-highlight);
 	--shadow-nav: 0 4px 24px rgba(28, 24, 19, 0.1), 0 0 0 1px rgba(28, 24, 19, 0.04);
 	--shadow-section: 0 8px 32px rgba(28, 24, 19, 0.08);
