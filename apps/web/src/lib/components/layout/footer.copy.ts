@@ -3,6 +3,7 @@ import { defineCopy } from '$lib/i18n/copy';
 export const footerCopy = defineCopy({
 	fr: {
 		navAria: 'Pied de page',
+		exploreLabel: 'Explorer',
 		statusPrefix: 'SYSTÈME',
 		liveLabel: 'En direct',
 		providerFallback: 'l’agence de transport',
@@ -13,6 +14,7 @@ export const footerCopy = defineCopy({
 	},
 	en: {
 		navAria: 'Footer',
+		exploreLabel: 'Explore',
 		statusPrefix: 'SYSTEM',
 		liveLabel: 'Live',
 		providerFallback: 'the transit agency',

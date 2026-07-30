@@ -117,6 +117,7 @@
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
 			class="map-detail-handle"
+			data-ripple-exempt
 			data-slot="map-detail-handle"
 			role="separator"
 			aria-orientation="vertical"

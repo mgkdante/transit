@@ -29,6 +29,7 @@
 	// that pulled all 7 subsets (cyrillic/greek/vietnamese/…). Side-effect import
 	// BEFORE app.css. See $lib/styles/fonts.css for the why + the pinned woff2.
 	import '$lib/styles/fonts.css';
+	import '@yesid/motion/ripple.css';
 	import '../app.css';
 
 	import { onMount } from 'svelte';
@@ -64,6 +65,7 @@
 	import { decideFreshnessReload } from '$lib/pwa/appVersion';
 	import { startVitals } from '$lib/vitals/collect';
 	import { runViewTransition } from '$lib/motion/view-transition';
+	import { initGlobalRipple } from '@yesid/motion/utils/globalRipple';
 	import { AppShell } from '$lib/components/shell';
 	import { Footer } from '$lib/components/layout';
 	import { EdgeState } from '$lib/components/edge';
@@ -302,10 +304,16 @@
 		}
 		void registerServiceWorker({ browser, production: import.meta.env.PROD });
 
+		const disposeRipple = initGlobalRipple({ exclude: '[data-ripple-exempt]' });
+
 		// Web-Vitals RUM (slice-9.7 D). INERT BY DEFAULT: a no-op unless
 		// PUBLIC_VITALS_ENABLED === 'true'. When off it registers no listeners and
 		// never imports web-vitals. Returns a disposer onMount tears down on unmount.
-		return startVitals();
+		const disposeVitals = startVitals();
+		return () => {
+			disposeRipple();
+			disposeVitals();
+		};
 	});
 
 	// SPA View Transitions — a tasteful root cross-fade between surfaces. The
