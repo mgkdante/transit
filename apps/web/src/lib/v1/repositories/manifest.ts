@@ -2,8 +2,9 @@
 //
 // The manifest is the snapshot root: it carries the dataset version, the file
 // pointers for every tier (live / static / historic / provenance), per-tier
-// ttl_s + generated_utc freshness anchors, and the FR label table. Boot reads
-// it once; freshness + the live store derive their cadence/staleness from it.
+// ttl_s + generated_utc freshness anchors, and per-language label file pointers.
+// Boot reads it once; freshness + the live store derive their cadence/staleness
+// from it.
 //
 // Repositories never touch fetch/URL/R2 directly — only the adapter port does
 // (it owns the R2 base URL, conditional-GET plumbing, and parsePort validation).

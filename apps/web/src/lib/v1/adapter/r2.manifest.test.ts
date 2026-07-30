@@ -58,6 +58,32 @@ describe('r2 manifest memo', () => {
 		);
 	});
 
+	it('selects the locale labels file from the manifest pointer', async () => {
+		const booted = {
+			...manifest(),
+			labels: {
+				fr: 'labels/fr-ca.json',
+				en: 'labels/en-ca.json',
+			},
+		};
+		const request = vi.fn(async (_input: RequestInfo | URL) =>
+			json({
+				generated_utc: ISO,
+				labels: { 'metric.network_health': 'État du réseau' },
+			}),
+		);
+
+		await expect(
+			r2Adapter.labels.get('fr', {
+				manifest: booted as never,
+				fetch: request as unknown as typeof fetch,
+			}),
+		).resolves.toEqual({ 'metric.network_health': 'État du réseau' });
+
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(String(request.mock.calls[0]?.[0])).toBe('/data/v1/stm/labels/fr-ca.json');
+	});
+
 	it('shares one pending manifest request between concurrent callers', async () => {
 		let release: (() => void) | undefined;
 		const gate = new Promise<void>((resolve) => {
