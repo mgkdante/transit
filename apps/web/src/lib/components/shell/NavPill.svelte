@@ -43,6 +43,7 @@
 	} from '$lib/i18n';
 	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
 	import { SURFACE_NAV, AUDIT_NAV, YESID_HOUSE_LINK, isSurfaceActive } from '$lib/content/nav';
+	import { footerCopy } from '$lib/components/layout/footer.copy';
 	// F (motion wiring): the pill nav links carry a subtle magnetic cursor-pull
 	// (≤3px). magnetic is MOTION-GATED — the vendored action no-ops under
 	// prefers-reduced-motion and on touch devices. Never edited.
@@ -131,7 +132,7 @@
 	// the group aria-labels so assistive tech can still tell the primary surfaces
 	// (AUDIT_NAV is active-aware, so a route rename lands in one place) from the
 	// accountability surfaces without a visible heading.
-	const auditLabel = $derived(locale === 'fr' ? 'Vérification' : 'Audit');
+	const auditLabel = $derived(footerCopy[locale].auditLabel);
 	const primaryGroupLabel = $derived(locale === 'fr' ? 'Explorer' : 'Explore');
 	// The parent-brand "Yesid" link out to yesid.dev — the final burger-menu row,
 	// with an external ↗ affordance. NOT the pill's main click anymore.

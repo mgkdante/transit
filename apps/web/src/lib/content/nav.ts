@@ -34,7 +34,7 @@ export interface SurfaceNavItem {
 	readonly activePrefixes: readonly string[];
 }
 
-/** An off-site link (portfolio) shown beside the IA nav. */
+/** The shared off-site parent-brand link used by chrome consumers such as BrandCluster and NavPill. */
 export interface ExternalNavLink {
 	readonly href: string;
 	readonly label: BilingualLabel;
@@ -106,17 +106,13 @@ export const SURFACE_NAV: readonly SurfaceNavItem[] = [
 	},
 ] as const;
 
-/** Off-site links — the portfolio at yesid.dev. */
-export const MENU_EXTRAS: readonly ExternalNavLink[] = [
-	{ href: 'https://yesid.dev', label: { en: 'yesid.dev', fr: 'yesid.dev' } },
-] as const;
-
 /**
- * The parent-brand link out to the yesid.dev portfolio, surfaced as the final
+ * The one shared parent-brand link out to the yesid.dev portfolio. BrandCluster
+ * uses it for the footer house wordmark, while NavPill uses it for the final
  * burger-menu row (with an external ↗ affordance + rel="noopener"). transit is a
- * yesid.dev product; the pill wordmark now reads "Transit" (the product home), so
- * the "Yesid" house link lives here in the menu rather than as the pill's main
- * click. One place for the label + href.
+ * yesid.dev product; the pill wordmark reads "Transit" (the product home), so the
+ * "Yesid" house link remains a separate chrome destination. One place for the
+ * label + href.
  */
 export const YESID_HOUSE_LINK: ExternalNavLink = {
 	href: 'https://yesid.dev',
@@ -172,10 +168,9 @@ export const AUDIT_NAV: readonly AuditNavItem[] = [
 ] as const;
 
 /**
- * Secondary in-app reference links — surfaced in the footer. Derived from
- * AUDIT_NAV so the footer and the side-nav Audit group can never drift: every
- * audit surface stays footer-reachable (no regression) while AUDIT_NAV is the
- * canonical list the rail iterates.
+ * Secondary in-app reference links. Derived from AUDIT_NAV so the main-landmark
+ * resolver and the side-nav Audit group can never drift. The footer consumes
+ * AUDIT_NAV directly, retaining the canonical grouped ordering at its surface.
  */
 export const SECONDARY_NAV: readonly SecondaryNavLink[] = AUDIT_NAV.map((item) => ({
 	href: item.href,

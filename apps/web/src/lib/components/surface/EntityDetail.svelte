@@ -247,6 +247,7 @@
 			bind:this={tabViewport}
 			use:guardScrolledTouchActivation
 			class="entity-tabs__scroll"
+			data-ripple-exempt
 			data-slot="entity-detail-tabs-scroll"
 		>
 			<!-- One tab list DOM serves mobile and desktop. It never moves when panes change. -->

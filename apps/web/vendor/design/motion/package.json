@@ -1,6 +1,6 @@
 {
   "name": "@yesid/motion",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "description": "Pure brand motion actions extracted byte-faithful from yesid.dev @ 2bdb611d. Snappy Doctrine vocabulary (Tier 1): boop, magnetic, cursorGlow, sectionGlow, cardParallax, pressBounce, wordmarkHover + sectionMagnet. morphHover/scrollChain stay app-side (Tier 2).",
@@ -32,6 +32,10 @@
       "types": "./src/utils/device.ts",
       "default": "./src/utils/device.ts"
     },
+    "./utils/globalRipple": {
+      "types": "./src/utils/globalRipple.ts",
+      "default": "./src/utils/globalRipple.ts"
+    },
     "./utils/gsap": {
       "types": "./src/utils/gsap.ts",
       "default": "./src/utils/gsap.ts"
@@ -48,6 +52,7 @@
       "types": "./src/utils/ticker.ts",
       "default": "./src/utils/ticker.ts"
     },
+    "./ripple.css": "./ripple.css",
     "./tap-feedback.css": "./tap-feedback.css"
   },
   "scripts": {

@@ -1,6 +1,6 @@
 {
   "name": "@yesid/ui",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "svelte": "./src/index.ts",
@@ -47,6 +47,11 @@
       "types": "./src/primitives/combobox/index.ts",
       "svelte": "./src/primitives/combobox/index.ts",
       "default": "./src/primitives/combobox/index.ts"
+    },
+    "./footer": {
+      "types": "./src/primitives/footer/index.ts",
+      "svelte": "./src/primitives/footer/index.ts",
+      "default": "./src/primitives/footer/index.ts"
     },
     "./resizable": {
       "types": "./src/primitives/resizable/index.ts",

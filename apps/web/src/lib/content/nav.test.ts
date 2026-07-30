@@ -4,11 +4,11 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import * as navigation from './nav';
 import {
 	SURFACE_NAV,
 	SECONDARY_NAV,
 	AUDIT_NAV,
-	MENU_EXTRAS,
 	YESID_HOUSE_LINK,
 	isSurfaceActive,
 	mainLandmarkLabel,
@@ -101,13 +101,13 @@ describe('AUDIT_NAV (side-nav Audit group)', () => {
 		}
 	});
 
-	it('stays footer-reachable: every audit surface is still in SECONDARY_NAV', () => {
-		// The footer consumes SECONDARY_NAV — promoting these into the side-nav must
-		// NOT drop footer reachability. SECONDARY_NAV is derived from AUDIT_NAV, so
-		// the two can never drift.
+	it('keeps SECONDARY_NAV as the derived compatibility view for main-landmark resolution', () => {
+		// Footer consumes AUDIT_NAV directly. SECONDARY_NAV remains the compatibility
+		// view for mainLandmarkLabel, derived from the same audit manifest so that
+		// resolver cannot drift from the routes in the Audit group.
 		const secondaryHrefs = SECONDARY_NAV.map((i) => i.href);
 		for (const item of AUDIT_NAV) {
-			expect(secondaryHrefs, `${item.href} dropped from footer`).toContain(item.href);
+			expect(secondaryHrefs, `${item.href} dropped from the derived view`).toContain(item.href);
 		}
 	});
 
@@ -161,20 +161,12 @@ describe('mainLandmarkLabel', () => {
 	});
 });
 
-describe('MENU_EXTRAS', () => {
-	it('are absolute off-site URLs with bilingual labels', () => {
-		for (const link of MENU_EXTRAS) {
-			expect(link.href).toMatch(/^https?:\/\//);
-			expect(link.label.en).toBeTruthy();
-			expect(link.label.fr).toBeTruthy();
-		}
-	});
-});
-
 describe('YESID_HOUSE_LINK', () => {
-	it('is the external "Yesid" link out to the yesid.dev portfolio (bilingual)', () => {
+	it('is the one exported parent-brand destination for every chrome consumer', () => {
 		expect(YESID_HOUSE_LINK.href).toBe('https://yesid.dev');
 		expect(YESID_HOUSE_LINK.label.en).toBe('Yesid');
 		expect(YESID_HOUSE_LINK.label.fr).toBe('Yesid');
+		expect(YESID_HOUSE_LINK.href).toMatch(/^https:\/\//);
+		expect(navigation).not.toHaveProperty('MENU_EXTRAS');
 	});
 });
