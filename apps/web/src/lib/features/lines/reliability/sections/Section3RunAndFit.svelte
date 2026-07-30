@@ -621,17 +621,6 @@
 	/* The fit sub-block's heading + its explainer (i), kept centred on the label. The
 	   label keeps a measure (min-width:0) so a long overline wraps cleanly; the (i)
 	   wrapper never shrinks (flex:none) so the glyph stays whole beside it. */
-	.label-with-info {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-	}
-	.label-with-info :global([data-slot='section-label']) {
-		min-width: 0;
-	}
-	.label-with-info :global(.cluster-info) {
-		flex: none;
-	}
 
 	/* Delay-by-crowding sub-block: a quiet ranked-by-axis list (band label + its
 	   avg delay), seated with its own overline. */

@@ -440,19 +440,6 @@
 		visibility: hidden;
 	}
 
-	/* Visually-hidden label, readable by AT, invisible on screen. */
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
-
 	/* Retry button, interactive affordance, so --primary is doctrine-clean here.
 	   Solid orange fill, brand pill, visible focus inherited from the base ring. */
 	.edge-retry {

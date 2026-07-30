@@ -78,24 +78,6 @@
 </div>
 
 <style>
-	.health-block {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-	.health-note {
-		margin: 0;
-		color: var(--muted-foreground);
-		font-size: var(--text-detail-body-mobile);
-		line-height: 1.8;
-		max-width: 60ch;
-	}
-	@media (min-width: 1024px) {
-		.health-note {
-			font-size: var(--text-detail-body-desktop);
-			line-height: 1.9;
-		}
-	}
 	.health-conformance-badge {
 		display: flex;
 	}

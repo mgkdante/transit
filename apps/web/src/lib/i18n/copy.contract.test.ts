@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import type { LocalizedCopy } from './copy';
 import * as i18n from './index';
 import { cornerMetaLabels } from '../components/brand/cornerMeta.copy';
+import { footerCopy } from '../components/layout/footer.copy';
 import { articleNavigationCopy } from '../components/shared/articleNavigation.copy';
 import { alertHistoryCopy } from '../features/alerts/alerts.copy';
 import { copy as healthCopy } from '../features/health/health.copy';
@@ -38,6 +39,7 @@ void incompleteExpandedLocaleCopy;
 
 const COPY_EXPORTS = {
 	cornerMetaLabels,
+	footerCopy,
 	articleNavigationCopy,
 	alertHistoryCopy,
 	healthCopy,
@@ -90,13 +92,14 @@ describe('bilingual copy contract', () => {
 			alertHistoryCopy: '9ce3d65aa3866cc1cf4aea1fd37bf31b97bbcbf46afb21b911d2311158cde5ec',
 			articleNavigationCopy: '2ca7f81b16d17ae3b0070c935081e0e36fab59e8798914aaaa5bcf3dd3503df8',
 			cornerMetaLabels: '2dc822ad168696db7d9fcb10c5637c64ee36e37c187fdb807f39140a2c112bf9',
+			footerCopy: '2809ebfcf4501af169f65a415f46be58b0e21ce3988f2c30b8de0026796f1514',
 			habitsBandCopy: '498737c12702c22aaa9cdbab83ddba5ef679a6a0f757dcaed59cfb9fc705200c',
 			healthCopy: '0b67efc9ccd036dcde33fe88f09800441c42dfa2bfb63976397bf0014c9a774b',
 			hotspotsCopy: '2995f1994b9d88b3f5b690f7a4c91158575bdfceb90335ae25773798b1149f43',
 			lineDetailCopy: '170459e5870ca0669daef05069156989c99309d28be4322caf15c0af9df1921b',
 			lineIndexCopy: '50b9f280c49f3aadb8330d27a350de6d8338db2a4671672ea0717fcf2bbb2406',
-			mapCopy: '9e35811b55d876901faa49c18044b0c40c72426c15c787afabc9525b96c0f617',
-			mapSelectionDetailCopy: 'f5f2a55e5a342bda461b667801ed2863bd69e26362b9c0a859ee1f5dfcb590cc',
+			mapCopy: 'f22f8d43abb8623e34b071caaf15f8ad27b507c9c4b7caa53a914028eefa02cf',
+			mapSelectionDetailCopy: 'b61a31369fbb939fc336b4e27001307b454e8d9795f05134c8acaac5450823fa',
 			metricsCopy: '836857439792b6506b8bb691d286186a816b29b09c0b5525d3f2cd9843f202e4',
 			networkReliabilityCopy: '1f17b10e6c9ff75c7ce6de97e87ffb9a48b88da32d53c807a1ad4b3e7c412cef',
 			receiptCopy: '065ec4d87da91e9edc4c06cf9ce74fae10670b42519c48deaedf427119f63a85',

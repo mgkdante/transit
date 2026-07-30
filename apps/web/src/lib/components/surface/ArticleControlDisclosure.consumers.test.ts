@@ -66,7 +66,10 @@ const labelFreeConsumers = [
 const immutableListings = [
 	{
 		file: 'src/lib/features/lines/LinesIndex.svelte',
-		markupSha256: 'af63cc33cf141ce25be49073aa830f08ad7005de323190c4a4c6394c927eae10',
+		// Deliberately re-based in 028: the lock hashes everything after </script>,
+		markupSha256:
+			// style block included, despite the test's "markup" name.
+			'ddb5948aabfce2a48d2a73f080799d29a704d26cedde57ce5639866be3556830',
 	},
 	{
 		file: 'src/lib/features/stops/StopsIndex.svelte',

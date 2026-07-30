@@ -58,12 +58,18 @@ export function sameNullableSelection(a: MapSelection | null, b: MapSelection | 
 	return sameSelection(a, b);
 }
 
-interface ResolveContext {
+export interface ResolveContext {
 	readonly index: LiveIndex;
 	readonly stops: readonly StopIndexEntry[];
 	readonly routes?: readonly RouteFile[] | null;
 	readonly stopFiles?: readonly StopFile[] | null;
 	readonly alerts?: readonly Alert[] | null;
+	/**
+	 * Whether the departures family has a successful file available for this
+	 * resolution. Omitted preserves the historical successful/available behavior.
+	 * Retained departures count as available even when the latest request failed.
+	 */
+	readonly departuresAvailable?: boolean;
 	readonly now?: Date;
 }
 
@@ -87,7 +93,8 @@ export interface StopRouteTimes {
 	readonly headsign: string | null;
 	readonly pastTimes: readonly string[];
 	readonly futureTimes: readonly string[];
-	readonly liveDepartures: readonly StopDeparture[];
+	/** Null when the live departures source is unavailable; [] is an honest empty board. */
+	readonly liveDepartures: readonly StopDeparture[] | null;
 }
 
 export interface RouteDirectionStops {
@@ -138,7 +145,8 @@ export interface StopMapDetail {
 	readonly id: string;
 	readonly title: string;
 	readonly stop: StopIndexEntry;
-	readonly departures: readonly StopDeparture[];
+	/** Null when the live departures source is unavailable; [] is an honest empty board. */
+	readonly departures: readonly StopDeparture[] | null;
 	readonly vehicles: readonly Vehicle[];
 	readonly routeTimes: readonly StopRouteTimes[];
 	readonly alerts: readonly Alert[] | null;
@@ -361,11 +369,11 @@ function splitTimes(
 
 function buildStopRouteTimes(
 	stopFile: StopFile | null,
-	departures: readonly StopDeparture[],
+	departures: readonly StopDeparture[] | null,
 	now: Date,
 ): StopRouteTimes[] {
 	const liveByRoute = new Map<string, StopDeparture[]>();
-	for (const departure of departures) {
+	for (const departure of departures ?? []) {
 		if (!departure.route) continue;
 		const current = liveByRoute.get(departure.route) ?? [];
 		current.push(departure);
@@ -381,7 +389,7 @@ function buildStopRouteTimes(
 			headsign: scheduled.headsign ?? null,
 			pastTimes: split.pastTimes,
 			futureTimes: split.futureTimes,
-			liveDepartures: liveByRoute.get(scheduled.route) ?? [],
+			liveDepartures: departures == null ? null : (liveByRoute.get(scheduled.route) ?? []),
 		});
 	}
 
@@ -498,17 +506,19 @@ export function resolveMapSelection(
 
 	const stop = findStop(context.stops, selection.id);
 	if (!stop) return null;
+	const departures =
+		context.departuresAvailable === false ? null : (context.index.byStopId.get(stop.id) ?? []);
 
 	return {
 		kind: 'stop',
 		id: stop.id,
 		title: stop.name,
 		stop,
-		departures: context.index.byStopId.get(stop.id) ?? [],
+		departures,
 		vehicles: vehiclesHeadingToStop(context.index, stop.id),
 		routeTimes: buildStopRouteTimes(
 			findStopFile(context.stopFiles, stop.id),
-			context.index.byStopId.get(stop.id) ?? [],
+			departures,
 			context.now ?? new Date(),
 		),
 		alerts:

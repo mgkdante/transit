@@ -78,18 +78,6 @@
 </div>
 
 <style>
-	.health-block {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-	.health-note {
-		margin: 0;
-		color: var(--muted-foreground);
-		font-size: var(--text-detail-body-mobile);
-		line-height: 1.8;
-		max-width: 60ch;
-	}
 	.publish-run-card {
 		--publish-run-tone: var(--dataviz-occupancy-standing);
 		display: flex;
@@ -146,7 +134,6 @@
 		max-width: 28rem;
 	}
 	@media (min-width: 1024px) {
-		.health-note,
 		.publish-run-explanation {
 			font-size: var(--text-detail-body-desktop);
 			line-height: 1.9;

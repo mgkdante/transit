@@ -35,6 +35,10 @@ interface FlatToken {
   token: Token;
 }
 
+const CSS_NAME_ALIASES: Readonly<Record<string, string>> = {
+  'size-stripH': 'strip-h',
+};
+
 /** Walk a subtree and yield CSS-name → token pairs. Skips $-prefixed metadata. */
 function flatten(tree: TokenTree, prefix = ''): FlatToken[] {
   const out: FlatToken[] = [];
@@ -42,7 +46,7 @@ function flatten(tree: TokenTree, prefix = ''): FlatToken[] {
     if (k.startsWith('$')) continue;
     const name = prefix ? `${prefix}-${k}` : k;
     if (isLeaf(v)) {
-      out.push({ cssName: name, token: v });
+      out.push({ cssName: CSS_NAME_ALIASES[name] ?? name, token: v });
     } else {
       out.push(...flatten(v as TokenTree, name));
     }

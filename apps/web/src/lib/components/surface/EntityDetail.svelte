@@ -247,6 +247,7 @@
 			bind:this={tabViewport}
 			use:guardScrolledTouchActivation
 			class="entity-tabs__scroll"
+			data-ripple-exempt
 			data-slot="entity-detail-tabs-scroll"
 		>
 			<!-- One tab list DOM serves mobile and desktop. It never moves when panes change. -->
@@ -442,7 +443,8 @@
 	.entity-tabs :global([role='tablist']) {
 		width: 100%;
 		min-width: max-content;
-		padding: 0.5rem var(--space-page-x);
+		padding-block: calc((var(--strip-h) - 3px - var(--size-tap-min)) / 2);
+		padding-inline: var(--space-page-x);
 	}
 	.entity-tabs__fade {
 		position: absolute;

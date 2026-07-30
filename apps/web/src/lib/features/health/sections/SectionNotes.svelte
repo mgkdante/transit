@@ -31,17 +31,22 @@
 </div>
 
 <style>
-	.health-block {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
 	.health-note {
 		margin: 0;
 		color: var(--foreground);
 		font-size: var(--text-detail-body-mobile);
 		line-height: 1.8;
 		max-width: 60ch;
+	}
+	/* Kept local alongside the local base rule above: the scoped base (0,2,0) would
+	   otherwise shadow the shared sheet's unscoped desktop override (0,1,0) — a
+	   section keeping a local override of any property the shared @media sets must
+	   keep its local @media too (S5-028 B-1). */
+	@media (min-width: 1024px) {
+		.health-note {
+			font-size: var(--text-detail-body-desktop);
+			line-height: 1.9;
+		}
 	}
 	.health-notes-list {
 		margin: 0;
@@ -62,11 +67,5 @@
 		color: var(--foreground);
 		max-width: 72ch;
 		overflow-wrap: anywhere;
-	}
-	@media (min-width: 1024px) {
-		.health-note {
-			font-size: var(--text-detail-body-desktop);
-			line-height: 1.9;
-		}
 	}
 </style>

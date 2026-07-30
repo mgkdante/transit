@@ -59,6 +59,7 @@
   --text-menu-label-desktop: 1.875rem;
   --text-menu-subtitle: 1rem;
   --text-micro: 0.6875rem;
+  --strip-h: 68px;
   --space-page-x: clamp(1.5rem, 4vw, 5rem);
   --space-section-y: clamp(3rem, 8vw, 6rem);
   --space-card-gap: clamp(1rem, 2vw, 1.5rem);

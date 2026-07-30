@@ -77,6 +77,8 @@
   --z-sheet: 50;
   --z-menu: 60;
   --z-nav: 70;
+  --z-overlay: 80;
+  --z-ripple: 90;
   --duration-instant: 100ms;
   --duration-fast: 150ms;
   --duration-normal: 200ms;

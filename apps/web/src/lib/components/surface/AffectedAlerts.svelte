@@ -302,17 +302,4 @@
 		font-weight: 500;
 		color: var(--foreground);
 	}
-	/* Visually-hidden severity word — readable by assistive tech, invisible on
-	   screen, so colour + glyph are never the sole severity channel. */
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
 </style>

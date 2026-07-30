@@ -2,9 +2,8 @@
 //
 // Boot order (fail-soft on the label leg):
 //   1. loadManifest()     , fetch the snapshot manifest (the file pointers +
-//                            base FR label table + dataset version).
-//   2. labels/{lang}.json , fetch the per-language label refinement and merge
-//                            it ON TOP of the manifest's base table.
+//                            dataset version).
+//   2. manifest.labels[lang], fetch the selected code -> text label dictionary.
 //   3. ready              , return { manifest, labels, lang } as the V1Context.
 //
 // The context is provided once (root layout) and read everywhere via
@@ -28,7 +27,7 @@ import { installBrowserAdapterManifest } from '$lib/v1/adapter/browserManifest';
 export interface V1Context {
 	/** The snapshot manifest (file pointers, dataset version, freshness anchors). */
 	readonly manifest: Manifest;
-	/** Merged code -> text dictionary for `lang` (manifest base + labels/{lang}). */
+	/** Code -> text dictionary loaded for `lang`. */
 	readonly labels: Record<string, string>;
 	/** The active UI language this context was built for. */
 	readonly lang: Locale;
@@ -53,10 +52,10 @@ export async function loadManifest(ctx?: AdapterCtx): Promise<Manifest> {
 /**
  * Build the ready V1Context for a language.
  *
- * Fetches the manifest then the per-language labels file, merging the language
- * refinement over the manifest's base `labels` table. The labels leg is
- * fail-soft: a missing/never-published labels file degrades to the manifest
- * base (and ultimately to raw-code fallback in resolveLabel), never an error.
+ * Fetches the manifest then the per-language labels file selected by
+ * `manifest.labels[lang]`. The labels leg is fail-soft: a missing/never-published
+ * labels file degrades to an empty table (and ultimately to raw-code fallback in
+ * resolveLabel), never an error.
  *
  * `ctx` carries the SSR `fetch` (event.fetch). It MUST be passed from a
  * SvelteKit `load` under SSR, the snapshot base is a same-origin relative path
@@ -66,12 +65,12 @@ export async function loadManifest(ctx?: AdapterCtx): Promise<Manifest> {
 export async function bootV1(lang: Locale = DEFAULT_LOCALE, ctx?: AdapterCtx): Promise<V1Context> {
 	const manifest = await loadManifest(ctx);
 	// Labels are an enhancement, not a hard dependency, a missing/never-published
-	// labels file degrades to the manifest base (resolveLabel then falls back to
-	// raw codes), never an error.
+	// labels file degrades to an empty table (resolveLabel then falls back to raw
+	// codes), never an error.
 	const langLabels = await getLabels(lang, { ...ctx, manifest }).catch(
 		() => ({}) as Record<string, string>,
 	);
-	const labels: Record<string, string> = { ...manifest.labels, ...langLabels };
+	const labels: Record<string, string> = langLabels;
 	return { manifest, labels, lang };
 }
 
