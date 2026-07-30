@@ -3,9 +3,9 @@ import { z } from 'zod';
 
 // getEntityJson is the single client fetch+validate primitive. PR-6 adds a
 // browser-only side effect: it captures the server's current time from the
-// response `Date` (+ `Age`) headers and feeds sharedClock.noteServerEpochMs so
+// response `Date` / `Age` headers and feeds sharedClock.noteServerEpochMs so
 // every freshness readout anchors to server time. These tests cover that capture
-// (Date+Age math, missing/NaN header skip, SSR no-op) without touching the
+// (cache-header reconciliation, missing/NaN header skip, SSR no-op) without touching the
 // existing fail-soft contract.
 
 const mocks = vi.hoisted(() => ({
@@ -63,6 +63,16 @@ describe('getEntityJson — server-time capture', () => {
 		const expected = Date.parse(dateHeader) + 12_000;
 		expect(mocks.noteServerEpochMs).toHaveBeenCalledTimes(1);
 		expect(mocks.noteServerEpochMs).toHaveBeenCalledWith(expected);
+	});
+
+	it('rejects an old cache sample whose Date/Age convention is ambiguous', async () => {
+		const { getEntityJson } = await loadHttp();
+		const dateHeader = 'Sun, 21 Jun 2026 12:00:12 GMT';
+		const fetchFn = fetchWithHeaders({ date: dateHeader, age: '42380' });
+
+		await getEntityJson('https://x/y.json', schema, 'live.test', fetchFn);
+
+		expect(mocks.noteServerEpochMs).not.toHaveBeenCalled();
 	});
 
 	it('treats a missing Age header as 0', async () => {

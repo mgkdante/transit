@@ -21,21 +21,27 @@ import type { z } from 'zod';
 import { parsePort } from '$lib/v1/schemas/parse';
 import { sharedClock } from '$lib/stores/clock.svelte';
 
+// Live snapshots and the manifest are cached for at most 30 seconds. Older
+// static/historic cache hits do not need to recalibrate the live clock, and
+// their Date/Age convention may be rewritten by an intermediary.
+const MAX_SERVER_TIME_CALIBRATION_AGE_S = 30;
+
 /**
  * Browser-only: estimate the SERVER's current time from a response and feed it
  * to the shared clock so every freshness readout is anchored to server time
  * (skew-immune), not the client's possibly-wrong clock.
  *
- *   serverEpochMs = Date.parse(<Date header>) + (<Age header> seconds * 1000)
+ * A standards-compliant cache leaves `Date` at origin response time and reports
+ * elapsed cache time in `Age`, so `Date + Age` is the receipt-time estimate.
+ * Some development/proxy paths rewrite `Date` to receipt time while preserving
+ * the upstream `Age`; adding both then double-counts the cache age and can move
+ * freshness hours into the future. Samples older than the live/manifest cache
+ * window are therefore ignored. The most recent valid clock offset keeps ticking
+ * locally, and the next short-lived live response recalibrates it.
  *
- * The `Date` header is the origin's response time; the `Age` header is how long
- * the response sat in an intermediary cache. The live file is
- * `cache-control: max-age=30`, so a cached hit can be up to ~30s old — adding
- * `Age` makes the estimate the server's CURRENT time at RECEIPT, not when the
- * body was first generated (without it freshness would over-report by up to 30s
- * and could falsely flip stale at the 2x-ttl=60s threshold). Fail-soft: skips
- * silently with no `Date` header / on a NaN parse; never throws (SSR-safe — the
- * whole call is browser-gated, and the server's own clock is already accurate).
+ * Fail-soft: skips silently with no `Date` header / on a NaN parse; never throws
+ * (SSR-safe — the whole call is browser-gated, and the server's own clock is
+ * already accurate).
  */
 function noteServerTime(res: Response): void {
 	if (!browser) return;
@@ -43,8 +49,10 @@ function noteServerTime(res: Response): void {
 	if (!dateHeader) return;
 	const dateMs = Date.parse(dateHeader);
 	if (Number.isNaN(dateMs)) return;
-	const ageMs = (Number.parseInt(res.headers.get('age') ?? '0', 10) || 0) * 1000;
-	sharedClock.noteServerEpochMs(dateMs + ageMs);
+	const parsedAgeSeconds = Number.parseInt(res.headers.get('age') ?? '0', 10);
+	const ageSeconds = Math.max(0, Number.isFinite(parsedAgeSeconds) ? parsedAgeSeconds : 0);
+	if (ageSeconds > MAX_SERVER_TIME_CALIBRATION_AGE_S) return;
+	sharedClock.noteServerEpochMs(dateMs + ageSeconds * 1000);
 }
 
 /** A fetch-shaped function. Matches both the global `fetch` and SvelteKit's `event.fetch`. */

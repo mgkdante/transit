@@ -36,6 +36,18 @@ declare global {
 						doubles?: number[];
 					}): void;
 				};
+				/**
+				 * READY-TO-ENABLE Cloudflare-managed geocode limiters. Their
+				 * counters are location-local, not globally distributed. They stay
+				 * absent until the account/config receipt selects the commented
+				 * Wrangler variant; otherwise the route uses its isolate bucket.
+				 */
+				GEOCODE_RATE_LIMITER?: {
+					limit(options: { key: string }): Promise<{ success: boolean }>;
+				};
+				GEOCODE_SHARED_RATE_LIMITER?: {
+					limit(options: { key: string }): Promise<{ success: boolean }>;
+				};
 				[key: string]: unknown;
 			};
 			ctx?: { waitUntil(promise: Promise<unknown>): void };

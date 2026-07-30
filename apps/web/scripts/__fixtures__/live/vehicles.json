@@ -1,0 +1,22 @@
+{
+	"generated_utc": "2026-07-30T12:00:00Z",
+	"vehicles": [
+		{
+			"id": "m1-probe-vehicle",
+			"lat": 45.5017,
+			"lon": -73.5673,
+			"status": "on_time",
+			"updated_utc": "2026-07-30T12:00:00Z",
+			"reported_utc": "2026-07-30T11:59:55Z",
+			"route": null,
+			"trip": "m1-probe-trip",
+			"next_stop": null,
+			"bearing": 90,
+			"speed_kmh": 24,
+			"delay_min": 0,
+			"occupancy": "many_seats"
+		}
+	],
+	"schema_version": 1,
+	"methodology_version": "m1-probe"
+}

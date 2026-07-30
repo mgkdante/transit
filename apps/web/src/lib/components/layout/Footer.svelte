@@ -8,8 +8,7 @@
                product mark + a bilingual tagline. transit.yesid.dev is a
                yesid.dev product, so the chrome carries the house mark, mirrors
                the TopBar brand cluster.
-      CENTER : the IA nav links (menuItems from $lib/content/nav), localized.
-      RIGHT  : the external portfolio link back to yesid.dev.
+      RIGHT  : localized Explore and Audit link groups from the canonical nav.
     Row 2 (below the hazard rule, departure-board rule):
       the active provider's open-data attribution (manifest.attribution, rendered
       verbatim as a per-provider licence obligation) + the unofficial-site
@@ -18,14 +17,16 @@
 
   DOCTRINE: orange --primary is INTERACTIVE-only. The footer-link underline draw
   and the status lamp are the only --primary marks; no data is painted here.
-  Bilingual via getLocale() context (no prop drilling) + the inline
-  Record<Locale, ...> copy pattern. Reduced-motion-safe (link transitions guarded).
+  Bilingual via getLocale() context (no prop drilling) + the co-located,
+  FR-canonical footer.copy.ts pattern. Reduced-motion-safe (link transitions guarded).
 -->
 <script lang="ts">
 	import { DEFAULT_LOCALE, getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { SURFACE_NAV, SECONDARY_NAV, MENU_EXTRAS } from '$lib/content/nav';
+	import { FooterGroup, FooterLink } from '@yesid/ui/footer';
+	import { SURFACE_NAV, AUDIT_NAV } from '$lib/content/nav';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
+	import { footerCopy } from './footer.copy';
 
 	interface FooterProps {
 		/** Active locale (prop wins; falls back to context for isolated renders). */
@@ -52,42 +53,29 @@
 	const now = new Date();
 	const systemDate = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
 
-	type CopyKey = 'navAria' | 'statusPrefix' | 'liveLabel';
-	const T: Record<Locale, Record<CopyKey, string>> = {
-		fr: { navAria: 'Pied de page', statusPrefix: 'SYSTÈME', liveLabel: 'En direct' },
-		en: { navAria: 'Footer', statusPrefix: 'SYSTEM', liveLabel: 'Live' },
-	};
-	const t = $derived(T[locale]);
+	const t = $derived(footerCopy[locale]);
 
 	// Provider-driven copy (multi-provider Layer A): the agency NAME comes from the
 	// manifest (display_name), with a neutral, provider-agnostic fallback for the
 	// brief window before the v1 context boots — NEVER a hardcoded 'STM'. The
 	// licence line is the manifest's verbatim attribution (a per-provider obligation).
-	const agencyName = $derived(
-		providerName ?? (locale === 'fr' ? 'l’agence de transport' : 'the transit agency'),
-	);
-	const tagline = $derived(
-		locale === 'fr'
-			? `Analytique citoyenne pour ${agencyName}`
-			: `Citizen analytics for ${agencyName}`,
-	);
-	const disclaimer = $derived(
-		locale === 'fr'
-			? `Site non officiel, sans affiliation avec ${agencyName}.`
-			: `Unofficial website, not affiliated with ${agencyName}.`,
-	);
+	const agencyName = $derived(providerName ?? t.providerFallback);
+	const tagline = $derived(t.tagline(agencyName));
+	const disclaimer = $derived(t.disclaimer(agencyName));
 
-	// IA links, locale-LESS hrefs from the shared SURFACE_NAV manifest, localized
-	// at render. The portfolio (off-site) links come from MENU_EXTRAS and render in
-	// the right cluster below.
-	const navLinks = $derived(
-		[...SURFACE_NAV, ...SECONDARY_NAV].map((item) => ({
+	// The two footer groups consume the canonical manifests directly, preserving
+	// their distinct wayfinding/accountability roles and manifest order.
+	const exploreLinks = $derived(
+		SURFACE_NAV.map((item) => ({
 			label: item.label[locale],
 			href: localizeHref(item.href, locale),
 		})),
 	);
-	const externalLinks = $derived(
-		MENU_EXTRAS.map((item) => ({ label: item.label[locale], href: item.href })),
+	const auditLinks = $derived(
+		AUDIT_NAV.map((item) => ({
+			label: item.label[locale],
+			href: localizeHref(item.href, locale),
+		})),
 	);
 </script>
 
@@ -105,36 +93,34 @@
 			<span class="mt-1 font-mono text-caption text-[var(--muted-foreground)]">{tagline}</span>
 		</div>
 
-		<!-- Center: IA nav links -->
-		<nav aria-label={t.navAria} class="flex flex-wrap justify-center gap-x-6 gap-y-2">
-			{#each navLinks as link (link.href)}
-				<a
-					href={link.href}
-					class="footer-link text-small text-[var(--secondary-foreground)] transition-colors hover:text-primary active:text-primary"
-				>
-					{link.label}
-				</a>
-			{/each}
+		<!-- Right: one labelled landmark, with the canonical Explore and Audit groups. -->
+		<nav aria-label={t.navAria} class="flex flex-wrap justify-center gap-x-8 gap-y-6">
+			<FooterGroup
+				label={t.exploreLabel}
+				role="group"
+				aria-label={t.exploreLabel}
+				class="items-center sm:items-start"
+			>
+				{#each exploreLinks as link (link.href)}
+					<FooterLink href={link.href}>{link.label}</FooterLink>
+				{/each}
+			</FooterGroup>
+			<FooterGroup
+				label={t.auditLabel}
+				role="group"
+				aria-label={t.auditLabel}
+				class="items-center sm:items-start"
+			>
+				{#each auditLinks as link (link.href)}
+					<FooterLink href={link.href}>{link.label}</FooterLink>
+				{/each}
+			</FooterGroup>
 		</nav>
-
-		<!-- Right: external (portfolio) links -->
-		<div class="flex items-center gap-4">
-			{#each externalLinks as link (link.href)}
-				<a
-					href={link.href}
-					target="_blank"
-					rel="noopener noreferrer"
-					class="footer-link text-small text-[var(--secondary-foreground)] transition-colors hover:text-primary active:text-primary"
-				>
-					{link.label}
-				</a>
-			{/each}
-		</div>
 	</div>
 
-	<!-- Row 2: Status bar, below the hazard rule. STM open-data attribution + the
-	     unofficial-site disclaimer (Honesty Gate #6) on the left; the live system
-	     readout on the right (the orange route-set lamp is the lone --primary touch). -->
+	<!-- Row 2: Status bar, below the hazard rule. Active-provider open-data attribution
+	     + the unofficial-site disclaimer (Honesty Gate #6) on the left; the live
+	     system readout on the right (the orange route-set lamp is the lone --primary touch). -->
 	<div
 		class="footer-status-border mx-auto flex max-w-5xl flex-col items-center gap-2 px-6 py-4 font-mono text-caption text-[var(--muted-foreground)] sm:flex-row sm:justify-between sm:px-10"
 	>
@@ -187,36 +173,10 @@
 		color: var(--secondary-foreground);
 	}
 
-	/* Underline draw, blueprint line at word scale (the lone --primary touch). */
-	.footer-link {
-		position: relative;
-		background-image: linear-gradient(var(--primary), var(--primary));
-		background-repeat: no-repeat;
-		background-position: 0 100%;
-		background-size: 0% 1px;
-		transition:
-			background-size var(--duration-fast) var(--ease-out),
-			color var(--duration-fast) var(--ease-default);
-	}
-	/* Tap-target floor (P5.3d §C4 P10): the ~23px text links keep their tight text
-	   box (so the word-scale underline stays glued to the baseline) but gain a
-	   --size-tap-min hit area via a centered transparent overlay — zero layout shift. */
-	.footer-link::after {
-		content: '';
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		translate: -50% -50%;
-		width: 100%;
-		min-height: var(--size-tap-min);
-	}
-	.footer-link:hover,
-	.footer-link:focus-visible {
-		background-size: 100% 1px;
-	}
-
+	/* FooterLink owns the underline and tap floor. Keep the footer-specific
+	   reduced-motion guarantee even though the leaf is shared. */
 	@media (prefers-reduced-motion: reduce) {
-		.footer-link {
+		:global([data-slot='footer-link']) {
 			transition: none;
 		}
 	}

@@ -37,16 +37,68 @@ const harness = vi.hoisted(() => {
 		generatedUtc: '2026-06-20T12:00:00Z',
 		ageSeconds: 30,
 		isStale: false,
+		vehiclesGeneratedUtc: '2026-06-20T12:00:00Z',
+		vehiclesAgeSeconds: 30,
+		vehiclesIsStale: false,
+		familyStates: {
+			vehicles: {
+				phase: 'ready',
+				active: true,
+				lastGoodAt: Date.parse('2026-06-20T12:00:30Z'),
+				retainedGeneration: '2026-06-20T12:00:00Z',
+				consecutiveFailures: 0,
+				error: null,
+				successRevision: 1,
+			},
+			trips: {
+				phase: 'idle',
+				active: false,
+				lastGoodAt: null,
+				retainedGeneration: null,
+				consecutiveFailures: 0,
+				error: null,
+				successRevision: 0,
+			},
+			departures: {
+				phase: 'idle',
+				active: false,
+				lastGoodAt: null,
+				retainedGeneration: null,
+				consecutiveFailures: 0,
+				error: null,
+				successRevision: 0,
+			},
+			alerts: {
+				phase: 'ready',
+				active: true,
+				lastGoodAt: Date.parse('2026-06-20T12:00:30Z'),
+				retainedGeneration: '2026-06-20T12:00:00Z',
+				consecutiveFailures: 0,
+				error: null,
+				successRevision: 1,
+			},
+			network: {
+				phase: 'idle',
+				active: false,
+				lastGoodAt: null,
+				retainedGeneration: null,
+				consecutiveFailures: 0,
+				error: null,
+				successRevision: 0,
+			},
+		},
 		loading: false,
 		error: null,
 		start: vi.fn(),
 		stop: vi.fn(),
 		refresh: vi.fn(),
+		subscribeFamilies: vi.fn(() => vi.fn()),
 	};
 
 	return {
 		alert,
 		createLiveStore: vi.fn((_manifest: unknown, _options?: unknown) => liveStore),
+		liveStore,
 		identityReceivers,
 		goto: vi.fn(async (_target: string, _options?: Record<string, unknown>) => {}),
 		afterNavigate: vi.fn(),
@@ -215,6 +267,7 @@ afterEach(() => {
 	harness.goto.mockClear();
 	harness.afterNavigate.mockClear();
 	harness.createLiveStore.mockClear();
+	harness.liveStore.subscribeFamilies.mockClear();
 	harness.identityReceivers.length = 0;
 });
 
@@ -222,8 +275,10 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 	it('swaps custom detail in place, preserves alert identity, and restores Back without redirecting', async () => {
 		const documentPathBefore = window.location.pathname;
 		render(MapHero);
+		// WHY(M1 #45): MapHero now keeps only vehicles + alerts as constructor
+		// baselines; stop departures are a committed-selection lease.
 		expect(harness.createLiveStore.mock.calls[0]?.[1]).toEqual({
-			families: ['vehicles', 'trips', 'departures', 'alerts'],
+			families: ['vehicles', 'alerts'],
 		});
 
 		const stage = await screen.findByTestId('map-stage-stub');
@@ -237,6 +292,7 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 			);
 			return body!;
 		});
+		expect(harness.liveStore.subscribeFamilies).toHaveBeenCalledWith(['departures']);
 		const sheet = document.querySelector('[data-slot="bottom-sheet"]');
 		expect(document.querySelectorAll('[data-slot="bottom-sheet"]')).toHaveLength(1);
 		expect(document.querySelector('.map-peek')).not.toBeInTheDocument();

@@ -17,9 +17,18 @@
 		generatedUtc: string | null;
 		ageSeconds: number | null;
 		isStale: boolean;
+		degraded?: boolean;
 	}
 
-	let { locale, kicker, heading, generatedUtc, ageSeconds, isStale }: Props = $props();
+	let {
+		locale,
+		kicker,
+		heading,
+		generatedUtc,
+		ageSeconds,
+		isStale,
+		degraded = false,
+	}: Props = $props();
 </script>
 
 <!-- Top-left: map title. A mono kicker overline + live freshness ride above a
@@ -27,7 +36,7 @@
 <div class="map-overlay map-head">
 	<div class="map-kicker-row">
 		<p class="map-kicker">{kicker}</p>
-		<MapFreshness placement="head" {generatedUtc} {ageSeconds} {isStale} {locale} />
+		<MapFreshness placement="head" {generatedUtc} {ageSeconds} {isStale} {degraded} {locale} />
 	</div>
 	<div class="map-title-row">
 		<h1 class="map-heading">{heading}<span class="map-dot">.</span></h1>

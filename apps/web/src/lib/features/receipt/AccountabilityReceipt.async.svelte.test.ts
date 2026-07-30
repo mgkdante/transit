@@ -172,6 +172,18 @@ afterEach(() => {
 });
 
 describe('AccountabilityReceipt — asynchronous date transitions', () => {
+	it('localizes a French not-reported line link through the canonical line route', async () => {
+		currentLocale.value = 'fr';
+		nav.url = new URL('http://localhost/fr/receipt');
+		const { container } = render(AccountabilityReceipt);
+		await waitFor(() => expect(ports.getAdvertisedReceipt).toHaveBeenCalledTimes(1));
+		receiptGates.get('2026-06-17')!.resolve(receipt('2026-06-17'));
+
+		expect(
+			await within(container).findByRole('link', { name: 'Voir la ligne 51' }),
+		).toHaveAttribute('href', '/fr/lines/51');
+	});
+
 	it('loads only an exact advertised date and skips an unpublished interior neighbor', async () => {
 		ports.getReceiptsIndex.mockResolvedValue({
 			generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,

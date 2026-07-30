@@ -38,6 +38,8 @@ select {
    token (§C4 governance — census-born constants stay transit-local). */
 :root {
 	--size-tap-min: 44px;
+	/* Plan 035 promotes this calibrated app-local strip height into the shared token set. */
+	--strip-h: 68px;
 	/* One desktop measure for article controls and listing filters. Consumers keep
 	   their own mobile single-column/disclosure behavior below 1024px. */
 	--layout-control-rail-width: clamp(16rem, 24vw, 22rem);
@@ -133,6 +135,8 @@ select {
   --z-index-sheet: var(--z-sheet);
   --z-index-menu: var(--z-menu);
   --z-index-nav: var(--z-nav);
+  --z-index-overlay: var(--z-overlay);
+  --z-index-ripple: var(--z-ripple);
   --width-content: var(--container-content);
   --width-wide: var(--container-wide);
   --spacing-page-x: var(--space-page-x);

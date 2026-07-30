@@ -18,18 +18,24 @@
 		generatedUtc: string | null;
 		ageSeconds: number | null;
 		isStale: boolean;
+		degraded?: boolean;
 		locale: Locale;
 		placement: 'head' | 'floating';
 	}
 
-	let { generatedUtc, ageSeconds, isStale, locale, placement }: Props = $props();
+	let { generatedUtc, ageSeconds, isStale, degraded = false, locale, placement }: Props = $props();
 
 	const hasFreshness = $derived(generatedUtc != null || ageSeconds != null);
 </script>
 
 {#if hasFreshness}
-	<div class="map-freshness" data-placement={placement} data-stale={isStale}>
-		<FreshnessStamp variant="live" {generatedUtc} {ageSeconds} {isStale} {locale} />
+	<div
+		class="map-freshness"
+		data-placement={placement}
+		data-stale={isStale}
+		data-degraded={degraded}
+	>
+		<FreshnessStamp variant="live" {generatedUtc} {ageSeconds} {isStale} {degraded} {locale} />
 	</div>
 {/if}
 
@@ -63,6 +69,10 @@
 	/* Stale feed: warm the chrome with the caution hue so the at-rest border
 	   echoes the dot's verdict — the inner dot/text still carry the meaning. */
 	.map-freshness[data-placement='floating'][data-stale='true'] {
+		border-color: color-mix(in srgb, var(--dataviz-status-late) 38%, var(--border) 62%);
+		background: color-mix(in srgb, var(--dataviz-status-late) 7%, var(--card) 86%);
+	}
+	.map-freshness[data-placement='floating'][data-degraded='true'] {
 		border-color: color-mix(in srgb, var(--dataviz-status-late) 38%, var(--border) 62%);
 		background: color-mix(in srgb, var(--dataviz-status-late) 7%, var(--card) 86%);
 	}
@@ -112,6 +122,10 @@
 		}
 
 		.map-freshness[data-placement='head'][data-stale='true'] {
+			border-color: color-mix(in srgb, var(--dataviz-status-late) 40%, var(--border) 60%);
+			background: color-mix(in srgb, var(--dataviz-status-late) 8%, var(--card) 90%);
+		}
+		.map-freshness[data-placement='head'][data-degraded='true'] {
 			border-color: color-mix(in srgb, var(--dataviz-status-late) 40%, var(--border) 60%);
 			background: color-mix(in srgb, var(--dataviz-status-late) 8%, var(--card) 90%);
 		}
