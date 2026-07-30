@@ -59,6 +59,8 @@ describe('ListingPageShell', () => {
 		expect(edgeTitle).toHaveTextContent('Lines.');
 		expect(shell?.querySelector('[data-slot="listing-accent-rail"]')).not.toBeNull();
 		expect(separator).not.toBeNull();
+		expect(separator).toHaveStyle({ maxWidth: '100%' });
+		expect(separator).toHaveClass('h-[3px]');
 		expect(rail?.tagName.toLowerCase()).toBe('aside');
 		expect(screen.getAllByTestId('filter-controls')).toHaveLength(1);
 		expect(separator?.compareDocumentPosition(rail as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
