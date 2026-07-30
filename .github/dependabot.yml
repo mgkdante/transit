@@ -25,7 +25,11 @@ updates:
     schedule:
       interval: "monthly"
     target-branch: "main"
-    open-pull-requests-limit: 3
+    # PAUSED 2026-07-30 per the doctrine above: the July group PR (#358) arrived
+    # without a bun.lock update, so bun support has regressed. Safe bumps land
+    # manually; the maplibre-gl 6 + web-vitals 6 majors are a deliberate
+    # post-map-program upgrade slice. Restore the limit when bun support returns.
+    open-pull-requests-limit: 0
     groups:
       js-dependencies:
         patterns:
