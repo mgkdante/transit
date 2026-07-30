@@ -410,9 +410,20 @@ export function validateBlueprintDensity(result, { theme, viewport }) {
 		}
 	}
 
+	// Hero engraved labels are non-gating by adjudication (the hero is the
+	// background wash; the D1 defect was detail labels competing at readable
+	// opacity) — but they must SURFACE, not vanish from the receipt.
+	const heroLabelWarnings = heroes.flatMap((part) =>
+		part.collisions.map(
+			(collision) =>
+				`${result.name}/${part.part}: hero label "${collision.text}" intersects ${collision.zone}`,
+		),
+	);
+
 	return {
 		failures,
 		labelWarnings,
+		heroLabelWarnings,
 		summary: {
 			partCount: result.parts.length,
 			roleCounts,

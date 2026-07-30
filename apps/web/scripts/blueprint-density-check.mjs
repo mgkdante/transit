@@ -69,7 +69,12 @@ try {
 	for (const route of routes) {
 		const result = await measure(page, route);
 		const validation = validateBlueprintDensity(result, { theme, viewport });
-		pages.push({ ...result, summary: validation.summary });
+		pages.push({
+			...result,
+			summary: validation.summary,
+			labelWarnings: validation.labelWarnings,
+			heroLabelWarnings: validation.heroLabelWarnings,
+		});
 		failures.push(...validation.failures);
 	}
 	await context.close();
