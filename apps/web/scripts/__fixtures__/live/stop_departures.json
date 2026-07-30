@@ -1,0 +1,15 @@
+{
+	"generated_utc": "2026-07-30T12:00:00Z",
+	"stops": {
+		"m1-probe-stop": [
+			{
+				"eta_utc": "2026-07-30T12:05:00Z",
+				"route": "24",
+				"trip": "m1-probe-trip",
+				"delay_min": 0
+			}
+		]
+	},
+	"schema_version": 1,
+	"methodology_version": "m1-probe"
+}

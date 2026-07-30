@@ -10,12 +10,12 @@
 // the shared server-time offset fresh. The runes only churn when the bytes a poll
 // returns actually change.
 //
-// Freshness (generatedUtc / ageSeconds / isStale) is derived from the live
-// network.json's generated_utc against the manifest's live ttl (stale once age
-// >= 3x ttl = 90s at the 30s live ttl) — NEVER a literal 90s, so it tracks the
-// publisher's cadence. 3x (not 2x) clears the band where a healthy snapshot's
-// age legitimately oscillates on normal poll/publish jitter, so only a genuine
-// feed stall trips it.
+// Aggregate freshness (generatedUtc / ageSeconds / isStale) uses the oldest
+// retained generation across active families, including a failed family whose
+// last good payload remains visible. Vehicle motion has a separate vehicles-only
+// derivation. Both compare against the manifest's live ttl (stale once age >= 3x
+// ttl = 90s at the 30s live ttl) — NEVER a literal 90s, so they track the
+// publisher's cadence.
 //
 // The age advances off the SHARED clock (`$lib/stores` sharedClock), not a
 // private interval, so the freshness here ticks in lockstep with every other
@@ -36,6 +36,8 @@ import { browser } from '$app/environment';
 import { ageSeconds } from '$lib/utils/time';
 import { dataRefresh, sharedClock } from '$lib/stores';
 import { adapter, type AdapterCtx } from '$lib/v1/adapter';
+import { untrack } from 'svelte';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type {
 	AlertsFile,
 	Manifest,
@@ -61,6 +63,26 @@ export const LIVE_FAMILIES = ['vehicles', 'trips', 'departures', 'alerts', 'netw
 
 export type LiveFamily = (typeof LIVE_FAMILIES)[number];
 
+export type LiveFamilyPhase = 'idle' | 'loading' | 'ready' | 'failed';
+
+/**
+ * Settlement state for one live family.
+ *
+ * `lastGoodAt` is the server-clock epoch ms when the last accepted success
+ * settled. `retainedGeneration` is that family's retained payload
+ * `generated_utc`. An unchanged successful payload advances `lastGoodAt` and
+ * clears failures, but preserves payload identity and `successRevision`.
+ */
+export interface LiveFamilyState {
+	readonly phase: LiveFamilyPhase;
+	readonly active: boolean;
+	readonly lastGoodAt: number | null;
+	readonly retainedGeneration: string | null;
+	readonly consecutiveFailures: number;
+	readonly error: Error | null;
+	readonly successRevision: number;
+}
+
 export interface LiveStoreOptions {
 	/** Families this surface reads. Omit to preserve the five-file default. */
 	readonly families?: readonly LiveFamily[];
@@ -80,16 +102,24 @@ export interface LiveStore {
 	readonly network: NetworkFile | null;
 	/** O(1) lookup index rebuilt every tick from the current files. */
 	readonly index: LiveIndex;
-	/** DATA time of the current live build, preferring network.json when loaded. */
+	/** Settlement state keyed by live family. */
+	readonly familyStates: Readonly<Record<LiveFamily, LiveFamilyState>>;
+	/** Oldest retained DATA time among active families. */
 	readonly generatedUtc: string | null;
 	/** Seconds since `generatedUtc`, or null when no build is loaded. */
 	readonly ageSeconds: number | null;
 	/** True once the live feed is >= 3x its ttl behind (90s at the 30s live ttl) —
 	 * 3x, not 2x, so normal poll/publish jitter never falsely flips it stale. */
 	readonly isStale: boolean;
+	/** Retained vehicles DATA time, independent of other live families. */
+	readonly vehiclesGeneratedUtc: string | null;
+	/** Seconds since `vehiclesGeneratedUtc`, or null before vehicles load. */
+	readonly vehiclesAgeSeconds: number | null;
+	/** Vehicles-only 3x-ttl staleness used by map motion. */
+	readonly vehiclesIsStale: boolean;
 	/** True while a poll is in flight. */
 	readonly loading: boolean;
-	/** Last poll error (cleared on the next success), or null. */
+	/** First active-family error; cleared when that family recovers or deactivates. */
 	readonly error: Error | null;
 	/** Begin polling on the live ttl cadence. Idempotent; browser-only. */
 	start(): void;
@@ -97,6 +127,8 @@ export interface LiveStore {
 	stop(): void;
 	/** Force one immediate refresh of the selected files (returns when settled). */
 	refresh(): Promise<void>;
+	/** Lease additional families; the idempotent disposer releases the lease. */
+	subscribeFamilies(families: readonly LiveFamily[]): () => void;
 }
 
 /** Resolve the live ttl (ms) from the manifest, falling back to the default. */
@@ -114,15 +146,35 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	const ttlMs = liveTtlMs(manifest);
 	const staleThresholdS = (ttlMs / 1000) * STALE_TTL_MULTIPLIER;
 	const adapterCtx: AdapterCtx = { manifest };
-	const families = options.families ?? LIVE_FAMILIES;
+	const baselineFamilies = new SvelteSet<LiveFamily>(options.families ?? LIVE_FAMILIES);
 
 	let vehicles = $state<VehiclesFile | null>(null);
 	let trips = $state<TripsFile | null>(null);
 	let departures = $state<StopDeparturesFile | null>(null);
 	let alerts = $state<AlertsFile | null>(null);
 	let network = $state<NetworkFile | null>(null);
-	let loading = $state(false);
-	let error = $state<Error | null>(null);
+
+	const familyRefCounts: Record<LiveFamily, number> = {
+		vehicles: baselineFamilies.has('vehicles') ? 1 : 0,
+		trips: baselineFamilies.has('trips') ? 1 : 0,
+		departures: baselineFamilies.has('departures') ? 1 : 0,
+		alerts: baselineFamilies.has('alerts') ? 1 : 0,
+		network: baselineFamilies.has('network') ? 1 : 0,
+	};
+	const familyRequestTokens: Record<LiveFamily, number> = {
+		vehicles: 0,
+		trips: 0,
+		departures: 0,
+		alerts: 0,
+		network: 0,
+	};
+	const familyStatesValue = $state<Record<LiveFamily, LiveFamilyState>>({
+		vehicles: initialFamilyState(familyRefCounts.vehicles > 0),
+		trips: initialFamilyState(familyRefCounts.trips > 0),
+		departures: initialFamilyState(familyRefCounts.departures > 0),
+		alerts: initialFamilyState(familyRefCounts.alerts > 0),
+		network: initialFamilyState(familyRefCounts.network > 0),
+	});
 
 	// One handle: the poll timer (live ttl cadence). The age/staleness derivation
 	// advances off the SHARED clock (started via `clockDispose` below) so the data
@@ -131,7 +183,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	let clockDispose: (() => void) | null = null;
 	let refreshInFlight: Promise<void> | null = null;
-	let refreshController: AbortController | null = null;
+	const activeControllers = new SvelteSet<AbortController>();
 	let refreshGeneration = 0;
 	let lifecycleWired = false;
 	let started = false;
@@ -140,17 +192,23 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		buildLiveIndex({ vehicles, trips, stopDepartures: departures, alerts, network }),
 	);
 
-	// Live freshness anchors off network.json's generated_utc (the rollup the
-	// publisher stamps last). A family-scoped store falls back through every other
-	// snapshot timestamp, so even a departures-only consumer reports honest age.
-	const generatedUtc = $derived(
-		network?.generated_utc ??
-			vehicles?.generated_utc ??
-			trips?.generated_utc ??
-			departures?.generated_utc ??
-			alerts?.generated_utc ??
-			null,
-	);
+	// Aggregate freshness is the oldest retained generation among ACTIVE families.
+	// Failed families keep participating while they retain data, so one fresher
+	// survivor cannot make the whole surface appear fresh.
+	const generatedUtc = $derived.by<string | null>(() => {
+		let oldest: string | null = null;
+		let oldestMs = Number.POSITIVE_INFINITY;
+		for (const family of LIVE_FAMILIES) {
+			const state = familyStatesValue[family];
+			if (!state.active || state.retainedGeneration == null) continue;
+			const generationMs = Date.parse(state.retainedGeneration);
+			if (!Number.isNaN(generationMs) && generationMs < oldestMs) {
+				oldest = state.retainedGeneration;
+				oldestMs = generationMs;
+			}
+		}
+		return oldest;
+	});
 	const ageSecondsValue = $derived.by<number | null>(() => {
 		if (!generatedUtc) return null;
 		// Read the SHARED SERVER clock: this re-derives every shared tick, so the
@@ -162,6 +220,27 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		return Number.isNaN(age) ? null : Math.max(0, age);
 	});
 	const isStale = $derived(ageSecondsValue == null ? false : ageSecondsValue >= staleThresholdS);
+	const vehiclesGeneratedUtc = $derived(vehicles?.generated_utc ?? null);
+	const vehiclesAgeSecondsValue = $derived.by<number | null>(() => {
+		if (!vehiclesGeneratedUtc) return null;
+		const age = ageSeconds(vehiclesGeneratedUtc, sharedClock.serverNow);
+		return Number.isNaN(age) ? null : Math.max(0, age);
+	});
+	const vehiclesIsStale = $derived(
+		vehiclesAgeSecondsValue == null ? false : vehiclesAgeSecondsValue >= staleThresholdS,
+	);
+	const loading = $derived(
+		LIVE_FAMILIES.some(
+			(family) => familyStatesValue[family].active && familyStatesValue[family].phase === 'loading',
+		),
+	);
+	const error = $derived.by<Error | null>(() => {
+		for (const family of LIVE_FAMILIES) {
+			const state = familyStatesValue[family];
+			if (state.active && state.error != null) return state.error;
+		}
+		return null;
+	});
 
 	// Honor the global "refresh data" press: re-poll immediately on an epoch bump
 	// instead of waiting for the next ttl tick. `epoch` starts at 0; we only react
@@ -175,97 +254,296 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		}
 	});
 
+	type LiveFamilyPayload = VehiclesFile | TripsFile | StopDeparturesFile | AlertsFile | NetworkFile;
+
+	function initialFamilyState(active: boolean): LiveFamilyState {
+		return {
+			phase: 'idle',
+			active,
+			lastGoodAt: null,
+			retainedGeneration: null,
+			consecutiveFailures: 0,
+			error: null,
+			successRevision: 0,
+		};
+	}
+
+	function inactiveOrSettledPhase(state: LiveFamilyState): LiveFamilyPhase {
+		if (!state.active) return 'idle';
+		if (state.error != null) return 'failed';
+		return state.retainedGeneration == null ? 'idle' : 'ready';
+	}
+
+	function activeFamilies(): LiveFamily[] {
+		return LIVE_FAMILIES.filter((family) => familyStatesValue[family].active);
+	}
+
+	function readFamily(family: LiveFamily, context: AdapterCtx): Promise<LiveFamilyPayload> {
+		switch (family) {
+			case 'vehicles':
+				return adapter.live.vehicles(context);
+			case 'trips':
+				return adapter.live.trips(context);
+			case 'departures':
+				return adapter.live.stopDepartures(context);
+			case 'alerts':
+				return adapter.live.alerts(context);
+			case 'network':
+				return adapter.live.network(context);
+		}
+	}
+
+	function currentFamilyPayload(family: LiveFamily): LiveFamilyPayload | null {
+		switch (family) {
+			case 'vehicles':
+				return vehicles;
+			case 'trips':
+				return trips;
+			case 'departures':
+				return departures;
+			case 'alerts':
+				return alerts;
+			case 'network':
+				return network;
+		}
+	}
+
+	function replaceFamilyPayload(family: LiveFamily, payload: LiveFamilyPayload): void {
+		switch (family) {
+			case 'vehicles':
+				vehicles = payload as VehiclesFile;
+				break;
+			case 'trips':
+				trips = payload as TripsFile;
+				break;
+			case 'departures':
+				departures = payload as StopDeparturesFile;
+				break;
+			case 'alerts':
+				alerts = payload as AlertsFile;
+				break;
+			case 'network':
+				network = payload as NetworkFile;
+				break;
+		}
+	}
+
+	function asError(value: unknown): Error {
+		return value instanceof Error ? value : new Error(String(value));
+	}
+
+	function isAbortError(value: unknown): boolean {
+		return value instanceof Error && value.name === 'AbortError';
+	}
+
+	function requestIsCurrent(
+		family: LiveFamily,
+		token: number,
+		generation: number,
+		controller: AbortController,
+	): boolean {
+		return (
+			generation === refreshGeneration &&
+			familyRequestTokens[family] === token &&
+			familyStatesValue[family].active &&
+			!controller.signal.aborted
+		);
+	}
+
+	function failFamily(family: LiveFamily, failure: Error): void {
+		const state = familyStatesValue[family];
+		familyStatesValue[family] = {
+			...state,
+			phase: 'failed',
+			consecutiveFailures: state.consecutiveFailures + 1,
+			error: failure,
+		};
+	}
+
+	async function settleFamily(
+		family: LiveFamily,
+		context: AdapterCtx,
+		controller: AbortController,
+		generation: number,
+		token: number,
+		pendingFamilies: SvelteSet<LiveFamily>,
+	): Promise<void> {
+		if (!requestIsCurrent(family, token, generation, controller)) {
+			pendingFamilies.delete(family);
+			return;
+		}
+
+		try {
+			// The adapter owns schema validation. Only its validated file reaches this
+			// settlement commit, then the guards are checked again.
+			const payload = await readFamily(family, context);
+			if (!requestIsCurrent(family, token, generation, controller)) return;
+
+			const retained = currentFamilyPayload(family);
+			const payloadGeneration =
+				typeof payload.generated_utc === 'string' ? payload.generated_utc : null;
+			const changed =
+				retained == null ||
+				payloadGeneration == null ||
+				retained.generated_utc !== payloadGeneration;
+			if (changed) replaceFamilyPayload(family, payload);
+
+			const state = familyStatesValue[family];
+			familyStatesValue[family] = {
+				...state,
+				phase: 'ready',
+				lastGoodAt: sharedClock.serverNow,
+				retainedGeneration: payloadGeneration ?? state.retainedGeneration,
+				consecutiveFailures: 0,
+				error: null,
+				successRevision: changed ? state.successRevision + 1 : state.successRevision,
+			};
+			if (payloadGeneration != null) {
+				dataRefresh.noteDataGeneratedUtc(payloadGeneration);
+			}
+		} catch (value) {
+			if (!requestIsCurrent(family, token, generation, controller)) return;
+			if (isAbortError(value)) {
+				const state = familyStatesValue[family];
+				familyStatesValue[family] = {
+					...state,
+					phase: inactiveOrSettledPhase(state),
+				};
+				return;
+			}
+			failFamily(family, asError(value));
+		} finally {
+			pendingFamilies.delete(family);
+		}
+	}
+
 	/**
-	 * Fetch the selected files in parallel. Revalidation is the browser/edge HTTP
-	 * cache's job (cache: 'default' + the snapshot's cache-control); each fetch
-	 * resolves to a 200 — from cache or origin — whose Date/Age refreshes the
-	 * shared server-time anchor.
+	 * Fetch one active-family snapshot with a shared deadline controller. Each
+	 * family owns its settlement and request token; allSettled only ends the cycle.
 	 */
-	function refresh(): Promise<void> {
-		// All refresh entry points (timer, visibility/online resume, shared epoch,
-		// and explicit/manual calls) share one selected-family batch. This prevents a
-		// slow request from being multiplied when two triggers overlap.
-		if (refreshInFlight) return refreshInFlight;
+	async function runBatch(requestedFamilies: readonly LiveFamily[]): Promise<void> {
+		const selectedFamilies = [
+			...new SvelteSet(requestedFamilies.filter((family) => familyStatesValue[family].active)),
+		];
+		if (selectedFamilies.length === 0) return;
+
 		const generation = refreshGeneration;
 		const controller = new AbortController();
-		const batchCtx: AdapterCtx = { ...adapterCtx, signal: controller.signal };
-		refreshController = controller;
-		loading = true;
-		const pending = (async () => {
-			let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
-			let timedOut = false;
-			// Yield once so `refreshInFlight` is assigned before adapters run, even if
-			// an adapter were to throw synchronously.
-			await Promise.resolve();
-			try {
-				const deadline = new Promise<never>((_, reject) => {
-					deadlineTimer = setTimeout(() => {
-						timedOut = true;
-						const timeout = new DOMException(
-							`Live refresh exceeded its ${ttlMs}ms deadline`,
-							'TimeoutError',
-						);
-						reject(timeout);
-						controller.abort();
-					}, ttlMs);
-				});
-				const reads = Promise.all([
-					families.includes('vehicles') ? adapter.live.vehicles(batchCtx) : null,
-					families.includes('trips') ? adapter.live.trips(batchCtx) : null,
-					families.includes('departures') ? adapter.live.stopDepartures(batchCtx) : null,
-					families.includes('alerts') ? adapter.live.alerts(batchCtx) : null,
-					families.includes('network') ? adapter.live.network(batchCtx) : null,
-				]);
-				const [v, t, d, a, n] = await Promise.race([reads, deadline]);
-				// stop() invalidates the generation before aborting. Some test doubles or
-				// transports may ignore AbortSignal, so the generation guard is what makes
-				// late completion unable to repopulate an unmounted surface.
-				if (controller.signal.aborted || generation !== refreshGeneration) return;
-				// Commit only after every selected request has resolved. One failed family
-				// therefore leaves the previous complete snapshot intact.
-				if (v !== null && (vehicles === null || v.generated_utc !== vehicles.generated_utc)) {
-					vehicles = v;
-				}
-				if (t !== null && (trips === null || t.generated_utc !== trips.generated_utc)) trips = t;
-				if (d !== null && (departures === null || d.generated_utc !== departures.generated_utc)) {
-					departures = d;
-				}
-				if (a !== null && (alerts === null || a.generated_utc !== alerts.generated_utc)) alerts = a;
-				if (n !== null && (network === null || n.generated_utc !== network.generated_utc))
-					network = n;
-				// SINGLE authoritative writer: push the snapshot's own DATA timestamp into
-				// the shared chrome coordinator so the freshness readout tracks this poll.
-				const polledGeneratedUtc =
-					n?.generated_utc ??
-					v?.generated_utc ??
-					t?.generated_utc ??
-					d?.generated_utc ??
-					a?.generated_utc ??
-					null;
-				if (polledGeneratedUtc != null) {
-					dataRefresh.noteDataGeneratedUtc(polledGeneratedUtc);
-				}
-				error = null;
-			} catch (e) {
-				const lifecycleAbort =
-					(controller.signal.aborted && !timedOut) ||
-					(e instanceof DOMException
-						? e.name === 'AbortError'
-						: e instanceof Error && e.name === 'AbortError');
-				if (!lifecycleAbort && generation === refreshGeneration) {
-					error = e instanceof Error ? e : new Error(String(e));
-				}
-			} finally {
-				if (deadlineTimer !== null) clearTimeout(deadlineTimer);
-				if (refreshController === controller) {
-					loading = false;
-					refreshInFlight = null;
-					refreshController = null;
-				}
-			}
-		})();
+		const batchContext: AdapterCtx = { ...adapterCtx, signal: controller.signal };
+		const pendingFamilies = new SvelteSet(selectedFamilies);
+		const batchTokens = new SvelteMap<LiveFamily, number>();
+		let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
+		for (const family of selectedFamilies) {
+			const token = familyRequestTokens[family] + 1;
+			familyRequestTokens[family] = token;
+			batchTokens.set(family, token);
+			familyStatesValue[family] = {
+				...familyStatesValue[family],
+				phase: 'loading',
+			};
+		}
+		activeControllers.add(controller);
+
+		// Publish refreshInFlight before adapters run. Besides synchronous-throw
+		// safety, this keeps overlapping lifecycle/epoch triggers in the same cycle.
+		await Promise.resolve();
+		try {
+			const reads = selectedFamilies.map((family) => {
+				const token = batchTokens.get(family);
+				return token == null
+					? Promise.resolve()
+					: settleFamily(family, batchContext, controller, generation, token, pendingFamilies);
+			});
+			const deadline = new Promise<void>((resolve) => {
+				deadlineTimer = setTimeout(() => {
+					const timeout = new DOMException(
+						`Live refresh exceeded its ${ttlMs}ms deadline`,
+						'TimeoutError',
+					);
+					for (const family of [...pendingFamilies]) {
+						const batchToken = batchTokens.get(family);
+						if (
+							batchToken == null ||
+							generation !== refreshGeneration ||
+							batchToken !== familyRequestTokens[family] ||
+							!familyStatesValue[family].active
+						) {
+							continue;
+						}
+						// Invalidate before aborting: a transport that ignores the signal
+						// cannot commit after the deadline.
+						familyRequestTokens[family] += 1;
+						failFamily(family, timeout);
+					}
+					controller.abort();
+					resolve();
+				}, ttlMs);
+			});
+
+			await Promise.race([Promise.allSettled(reads), deadline]);
+		} finally {
+			if (deadlineTimer != null) clearTimeout(deadlineTimer);
+			activeControllers.delete(controller);
+		}
+	}
+
+	function refresh(): Promise<void> {
+		// All refresh entry points (timer, visibility/online resume, shared epoch,
+		// and explicit/manual calls) share one active-family cycle.
+		if (refreshInFlight) return refreshInFlight;
+		const pending = runBatch(activeFamilies());
 		refreshInFlight = pending;
+		void pending.then(
+			() => {
+				if (refreshInFlight === pending) refreshInFlight = null;
+			},
+			() => {
+				if (refreshInFlight === pending) refreshInFlight = null;
+			},
+		);
 		return pending;
+	}
+
+	function subscribeFamilies(families: readonly LiveFamily[]): () => void {
+		// WHY(M1 cure 4): callers acquire leases inside selection effects. Keep this
+		// acquisition's family-state reads out of the caller's dependency graph, or
+		// each settlement tears down/recreates its own lease until Svelte kills the root.
+		return untrack(() => {
+			const leasedFamilies = [...new SvelteSet(families)];
+			const activatedFamilies: LiveFamily[] = [];
+			for (const family of leasedFamilies) {
+				const previous = familyRefCounts[family];
+				familyRefCounts[family] = previous + 1;
+				if (previous !== 0) continue;
+
+				const state = familyStatesValue[family];
+				const activeState = { ...state, active: true };
+				familyStatesValue[family] = {
+					...activeState,
+					phase: inactiveOrSettledPhase(activeState),
+				};
+				activatedFamilies.push(family);
+			}
+			if (activatedFamilies.length > 0) void runBatch(activatedFamilies);
+
+			let disposed = false;
+			return () => {
+				if (disposed) return;
+				disposed = true;
+				for (const family of leasedFamilies) {
+					const next = Math.max(0, familyRefCounts[family] - 1);
+					familyRefCounts[family] = next;
+					if (next !== 0) continue;
+
+					familyRequestTokens[family] += 1;
+					familyStatesValue[family] = {
+						...familyStatesValue[family],
+						phase: 'idle',
+						active: false,
+					};
+				}
+			};
+		});
 	}
 
 	/** True when background polling is useful and can reach the network. */
@@ -336,7 +614,18 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	function stop(): void {
 		started = false;
 		refreshGeneration += 1;
-		refreshController?.abort();
+		refreshInFlight = null;
+		for (const family of LIVE_FAMILIES) {
+			familyRequestTokens[family] += 1;
+			const state = familyStatesValue[family];
+			if (state.phase === 'loading') {
+				familyStatesValue[family] = {
+					...state,
+					phase: inactiveOrSettledPhase(state),
+				};
+			}
+		}
+		for (const controller of activeControllers) controller.abort();
 		pausePolling();
 		unwireLifecycle();
 		if (clockDispose) {
@@ -364,6 +653,9 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		get index() {
 			return index;
 		},
+		get familyStates() {
+			return familyStatesValue;
+		},
 		get generatedUtc() {
 			return generatedUtc;
 		},
@@ -372,6 +664,15 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		},
 		get isStale() {
 			return isStale;
+		},
+		get vehiclesGeneratedUtc() {
+			return vehiclesGeneratedUtc;
+		},
+		get vehiclesAgeSeconds() {
+			return vehiclesAgeSecondsValue;
+		},
+		get vehiclesIsStale() {
+			return vehiclesIsStale;
 		},
 		get loading() {
 			return loading;
@@ -382,5 +683,6 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		start,
 		stop,
 		refresh,
+		subscribeFamilies,
 	};
 }

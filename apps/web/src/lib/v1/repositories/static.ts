@@ -56,8 +56,15 @@ export async function getStopsIndexSlim(ctx?: AdapterCtx): Promise<SlimStopsInde
 			const body: unknown = await res.json();
 			if (isSlimStopsIndex(body)) return body;
 		}
-	} catch {
+	} catch (error) {
+		// A cancelled request is not an endpoint failure: re-throw so the caller's
+		// abort stays an abort instead of triggering a full 1.15 MB projection
+		// the consumer no longer wants (M1 cancellation contract).
+		if (error instanceof DOMException && error.name === 'AbortError') throw error;
 		// fall through to the full-index projection
+	}
+	if (ctx?.signal?.aborted) {
+		throw new DOMException('getStopsIndexSlim aborted', 'AbortError');
 	}
 	return toSlimStopsIndex(await adapter.static.stopsIndex(ctx));
 }

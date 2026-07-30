@@ -53,6 +53,14 @@ export const copy = defineCopy({
 		alertHasAria: 'Show markers with alerts',
 		liveUnavailable: 'Live data unavailable right now. The map and stops still work.',
 		liveNoVehicles: 'No vehicles to show right now.',
+		familyVehicles: 'vehicle positions',
+		familyTrips: 'trip details',
+		familyDepartures: 'departures',
+		familyAlerts: 'service alerts',
+		selectedFamilyFailure: (family: string, retained: boolean) =>
+			retained
+				? `Live data for ${family} is unavailable. Showing the last successful update.`
+				: `Live data for ${family} is unavailable right now.`,
 		feedNotResponding: (age) => `Live feed not responding. Last update ${age}.`,
 		motion: {
 			label: 'Motion',
@@ -112,6 +120,14 @@ export const copy = defineCopy({
 		liveUnavailable:
 			'Données en direct indisponibles pour l’instant. La carte et les arrêts fonctionnent toujours.',
 		liveNoVehicles: 'Aucun véhicule à afficher pour l’instant.',
+		familyVehicles: 'les positions des véhicules',
+		familyTrips: 'les détails des trajets',
+		familyDepartures: 'les départs',
+		familyAlerts: 'les alertes de service',
+		selectedFamilyFailure: (family: string, retained: boolean) =>
+			retained
+				? `Les données en direct pour ${family} sont indisponibles. La dernière mise à jour réussie reste affichée.`
+				: `Les données en direct pour ${family} sont indisponibles pour l’instant.`,
 		feedNotResponding: (age: string) =>
 			`Le flux en direct ne répond pas. Dernière mise à jour ${age}.`,
 		motion: {
