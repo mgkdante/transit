@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import type { LocalizedCopy } from './copy';
 import * as i18n from './index';
 import { cornerMetaLabels } from '../components/brand/cornerMeta.copy';
+import { footerCopy } from '../components/layout/footer.copy';
 import { articleNavigationCopy } from '../components/shared/articleNavigation.copy';
 import { alertHistoryCopy } from '../features/alerts/alerts.copy';
 import { copy as healthCopy } from '../features/health/health.copy';
@@ -38,6 +39,7 @@ void incompleteExpandedLocaleCopy;
 
 const COPY_EXPORTS = {
 	cornerMetaLabels,
+	footerCopy,
 	articleNavigationCopy,
 	alertHistoryCopy,
 	healthCopy,
@@ -90,6 +92,7 @@ describe('bilingual copy contract', () => {
 			alertHistoryCopy: '9ce3d65aa3866cc1cf4aea1fd37bf31b97bbcbf46afb21b911d2311158cde5ec',
 			articleNavigationCopy: '2ca7f81b16d17ae3b0070c935081e0e36fab59e8798914aaaa5bcf3dd3503df8',
 			cornerMetaLabels: '2dc822ad168696db7d9fcb10c5637c64ee36e37c187fdb807f39140a2c112bf9',
+			footerCopy: 'ff91c31db2bf676630987b635a72411169e20f65e378a8b4f6e5b1727651344b',
 			habitsBandCopy: '498737c12702c22aaa9cdbab83ddba5ef679a6a0f757dcaed59cfb9fc705200c',
 			healthCopy: '0b67efc9ccd036dcde33fe88f09800441c42dfa2bfb63976397bf0014c9a774b',
 			hotspotsCopy: '2995f1994b9d88b3f5b690f7a4c91158575bdfceb90335ae25773798b1149f43',

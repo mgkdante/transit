@@ -18,14 +18,15 @@
 
   DOCTRINE: orange --primary is INTERACTIVE-only. The footer-link underline draw
   and the status lamp are the only --primary marks; no data is painted here.
-  Bilingual via getLocale() context (no prop drilling) + the inline
-  Record<Locale, ...> copy pattern. Reduced-motion-safe (link transitions guarded).
+  Bilingual via getLocale() context (no prop drilling) + the co-located,
+  FR-canonical footer.copy.ts pattern. Reduced-motion-safe (link transitions guarded).
 -->
 <script lang="ts">
 	import { DEFAULT_LOCALE, getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { SURFACE_NAV, SECONDARY_NAV, MENU_EXTRAS } from '$lib/content/nav';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
+	import { footerCopy } from './footer.copy';
 
 	interface FooterProps {
 		/** Active locale (prop wins; falls back to context for isolated renders). */
@@ -52,30 +53,15 @@
 	const now = new Date();
 	const systemDate = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
 
-	type CopyKey = 'navAria' | 'statusPrefix' | 'liveLabel';
-	const T: Record<Locale, Record<CopyKey, string>> = {
-		fr: { navAria: 'Pied de page', statusPrefix: 'SYSTÈME', liveLabel: 'En direct' },
-		en: { navAria: 'Footer', statusPrefix: 'SYSTEM', liveLabel: 'Live' },
-	};
-	const t = $derived(T[locale]);
+	const t = $derived(footerCopy[locale]);
 
 	// Provider-driven copy (multi-provider Layer A): the agency NAME comes from the
 	// manifest (display_name), with a neutral, provider-agnostic fallback for the
 	// brief window before the v1 context boots — NEVER a hardcoded 'STM'. The
 	// licence line is the manifest's verbatim attribution (a per-provider obligation).
-	const agencyName = $derived(
-		providerName ?? (locale === 'fr' ? 'l’agence de transport' : 'the transit agency'),
-	);
-	const tagline = $derived(
-		locale === 'fr'
-			? `Analytique citoyenne pour ${agencyName}`
-			: `Citizen analytics for ${agencyName}`,
-	);
-	const disclaimer = $derived(
-		locale === 'fr'
-			? `Site non officiel, sans affiliation avec ${agencyName}.`
-			: `Unofficial website, not affiliated with ${agencyName}.`,
-	);
+	const agencyName = $derived(providerName ?? t.providerFallback);
+	const tagline = $derived(t.tagline(agencyName));
+	const disclaimer = $derived(t.disclaimer(agencyName));
 
 	// IA links, locale-LESS hrefs from the shared SURFACE_NAV manifest, localized
 	// at render. The portfolio (off-site) links come from MENU_EXTRAS and render in
