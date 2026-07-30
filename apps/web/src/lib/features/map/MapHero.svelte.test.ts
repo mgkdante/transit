@@ -56,6 +56,26 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain('<MapOverlayChrome');
 	});
 
+	it('wires M1 live resilience at the map call sites without widening other consumers', () => {
+		// WHY(M1 #3+#11/#45/#50): the frozen plan deliberately changes MapHero from
+		// an aggregate/all-family consumer to vehicles-only motion plus committed
+		// selection leases, grace, and abort-aware focused resource reads.
+		expect(source).toContain("families: ['vehicles', 'alerts']");
+		expect(source).toContain("live.subscribeFamilies(['trips'])");
+		expect(source).toContain("live.subscribeFamilies(['departures'])");
+		expect(source).toContain('createSelectionGrace<MapSelectionDetailModel>()');
+		expect(source).toContain('tickKey: live.vehiclesGeneratedUtc');
+		expect(source).toContain('stale: live.vehiclesIsStale');
+		expect(source).toContain('setStale(m, live.vehiclesIsStale)');
+		expect(source).toContain('data-motion-stale={live.vehiclesIsStale}');
+		expect(source).toContain('data-motion-tick-key={live.vehiclesGeneratedUtc ?? undefined}');
+		expect(source).toContain('live.familyStates.departures.retainedGeneration != null');
+		expect(source).toContain("family.phase === 'failed' || family.consecutiveFailures > 0");
+		expect(source).toContain('getStopsIndexSlim({ signal })');
+		expect(source).toContain('getRoute(id, { signal })');
+		expect(source).toContain('getStop(id, { signal })');
+	});
+
 	it('routes the detail to the desktop OVERLAY vs the mobile SHEET by layout', () => {
 		expect(source).toMatch(
 			/\{#if layout\.isDesktop && detailOpen\}[\s\S]*<MapDetailOverlay[\s\S]*\{\/if\}/,

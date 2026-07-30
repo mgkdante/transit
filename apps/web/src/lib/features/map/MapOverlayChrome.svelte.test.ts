@@ -83,14 +83,18 @@ describe('MapOverlayChrome', () => {
 		expect(container.querySelector('[data-placement="floating"]')).toBeInTheDocument();
 	});
 
-	it('shows the live-edge notice ONLY when a message is set, as a non-blocking polite status', async () => {
+	it('uses one always-mounted region for live-edge notices', async () => {
 		const store = createFilterStore(emptyFilterState());
 		const { container, rerender } = render(MapOverlayChromeHarness, {
 			props: { store, locale: 'en' },
 		});
 
-		// No message → no edge notice (normal operation: absent).
-		expect(container.querySelector('.map-live-edge')).not.toBeInTheDocument();
+		// WHY(M1 #34): MapOverlayChrome no longer mounts a second live region on
+		// demand. The single announcement owner stays present and empty at rest.
+		const idle = container.querySelector('.map-live-edge')!;
+		expect(idle).toBeInTheDocument();
+		expect(idle).toHaveAttribute('data-state', 'idle');
+		expect(idle.textContent?.trim()).toBe('');
 
 		await rerender({
 			store,

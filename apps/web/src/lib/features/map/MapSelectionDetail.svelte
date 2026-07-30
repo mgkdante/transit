@@ -486,7 +486,11 @@
 				<strong>{detail.stop.code ?? detail.stop.id}</strong>
 			</div>
 			<div class="map-stop-stats">
-				<span>{t.departures(detail.departures.length)}</span>
+				<span
+					>{detail.departures == null
+						? t.departuresUnavailable
+						: t.departures(detail.departures.length)}</span
+				>
 				<span>{t.vehiclesHeading(detail.vehicles.length)}</span>
 			</div>
 			{#if !compact && detail.vehicles.length > 0}
@@ -514,7 +518,7 @@
 					</ol>
 				</section>
 			{/if}
-			{#if detail.departures.length > 0 && !compact}
+			{#if detail.departures != null && detail.departures.length > 0 && !compact}
 				<ol class="map-departures" aria-label={t.departures(detail.departures.length)}>
 					{#each detail.departures.slice(0, 4) as departure (departure.trip ?? `${departure.route}:${departure.eta_utc}`)}
 						{@const vehicle = vehicleForDeparture(detail.vehicles, departure)}
@@ -611,18 +615,24 @@
 								<div class="map-time-col map-time-col--live">
 									<h4>{t.live}</h4>
 									<ul class="map-live-list" data-slot="live-departures">
-										{#each route.liveDepartures.slice(0, 3) as departure (`live-${route.route}-${departure.trip ?? departure.eta_utc}`)}
-											<li>
-												<time>{timeLabel(departure.eta_utc, locale)}</time>
-												<MapDelayTag delay={departure.delay_min} {locale} {t} />
+										{#if route.liveDepartures == null}
+											<li class="map-live-empty">
+												<StateNotice title={t.departuresUnavailable} presentation="pill" />
 											</li>
 										{:else}
-											<!-- No live departure right now: render an honest "no live data" row
+											{#each route.liveDepartures.slice(0, 3) as departure (`live-${route.route}-${departure.trip ?? departure.eta_utc}`)}
+												<li>
+													<time>{timeLabel(departure.eta_utc, locale)}</time>
+													<MapDelayTag delay={departure.delay_min} {locale} {t} />
+												</li>
+											{:else}
+												<!-- No live departure right now: render an honest "no live data" row
 											     (no prediction) rather than dropping the whole Live column. -->
-											<li class="map-live-empty">
-												<AbsentValue reason="no-prediction" {locale} />
-											</li>
-										{/each}
+												<li class="map-live-empty">
+													<AbsentValue reason="no-prediction" {locale} />
+												</li>
+											{/each}
+										{/if}
 									</ul>
 								</div>
 							</div>

@@ -34,7 +34,7 @@ describe('MapFeedStallBanner', () => {
 		expect(banner.getAttribute('aria-live')).toBe('polite');
 	});
 
-	it('renders nothing while the live feed is fresh (EN)', () => {
+	it('keeps one empty announcement region mounted while the live feed is fresh (EN)', () => {
 		render(MapFeedStallBanner, {
 			props: {
 				generatedUtc: new Date().toISOString(),
@@ -44,10 +44,12 @@ describe('MapFeedStallBanner', () => {
 			},
 		});
 
-		expect(screen.queryByRole('status')).not.toBeInTheDocument();
+		// WHY(M1 #34): the feed-stall banner now owns the one stable announcement
+		// region shared by family failures, global stalls, and live-edge recovery.
+		expect(screen.getByRole('status').textContent?.trim()).toBe('');
 	});
 
-	it('renders nothing while the live feed is fresh (FR)', () => {
+	it('keeps one empty announcement region mounted while the live feed is fresh (FR)', () => {
 		render(MapFeedStallBanner, {
 			props: {
 				generatedUtc: new Date().toISOString(),
@@ -57,6 +59,8 @@ describe('MapFeedStallBanner', () => {
 			},
 		});
 
-		expect(screen.queryByRole('status')).not.toBeInTheDocument();
+		// WHY(M1 #34): mounting once avoids competing polite regions and guarantees
+		// later priority changes update the same assistive-technology announcement.
+		expect(screen.getByRole('status').textContent?.trim()).toBe('');
 	});
 });

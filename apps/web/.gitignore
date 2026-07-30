@@ -10,3 +10,4 @@ node_modules
 !.env.example
 vite.config.ts.timestamp-*
 vite.config.js.timestamp-*
+scripts/__probe-debug__/

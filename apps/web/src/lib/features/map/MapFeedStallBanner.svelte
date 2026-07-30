@@ -1,20 +1,17 @@
 <!--
-  MapFeedStallBanner — top-of-map "live feed not responding" notice.
+  MapFeedStallBanner — the map's one live announcement owner.
 
-  Shown ONLY when the WHOLE live feed has genuinely stalled (`isStale` — the live
-  store's age past its 3x-ttl budget, 90s at the 30s live ttl). The pipeline
-  stamps every vehicle's `updated_utc` with the uniform snapshot capture time, so
-  staleness is a GLOBAL snapshot-freshness signal: this banner can flag the whole
-  feed going quiet, never one stuck bus. (That is why the former per-vehicle
-  silence fade + per-bus "!" marker were removed — they could only ever express
-  the same global signal, and flickered on normal poll jitter.)
+  Always mounted, empty at rest, and prioritized:
+  selected-family failure > global stall > live edge. The global stall still
+  means the oldest active retained generation crossed the 3x-ttl budget. Vehicle
+  motion uses its own vehicles-only staleness and is not controlled here.
 
   Calm CAUTION, not alarm: it is informational (role="status" + aria-live=polite,
   NOT alert), states a fact, and the rest of the map (basemap, stops, near-me)
   stays fully usable behind it (pointer-events: none). It mirrors the stale
   freshness chrome — the caution hue warms the border; the text carries meaning.
 
-  The last-update age comes from the SAME live-store freshness the floating
+  The global-stall age comes from the SAME aggregate freshness the floating
   freshness chip uses (generatedUtc + the ticking ageSeconds), formatted through
   the shared relative-time helper so it reads "2 minutes ago" / "il y a 2 minutes"
   and ticks in lockstep with the rest of the chrome.
@@ -38,9 +35,23 @@
 		isStale: boolean;
 		/** UI language for the intrinsic label. */
 		locale: Locale;
+		/** Highest-priority selected-family failure, already localized. */
+		selectedFamilyFailureMessage?: string | null;
+		/** Lowest-priority live-edge recovery/absence state. */
+		liveEdgeState?: 'unavailable' | 'no-vehicles' | null;
+		/** Lowest-priority live-edge recovery/absence message. */
+		liveEdgeMessage?: string | null;
 	}
 
-	let { generatedUtc, ageSeconds = undefined, isStale, locale }: Props = $props();
+	let {
+		generatedUtc,
+		ageSeconds = undefined,
+		isStale,
+		locale,
+		selectedFamilyFailureMessage = null,
+		liveEdgeState = null,
+		liveEdgeMessage = null,
+	}: Props = $props();
 
 	const t = $derived(MAP_COPY[locale]);
 
@@ -63,33 +74,48 @@
 	const relative = $derived(
 		effectiveAge == null ? '' : formatRelativeSeconds(effectiveAge, locale),
 	);
-	const message = $derived(t.feedNotResponding(relative));
+	const stallMessage = $derived(t.feedNotResponding(relative));
+	const state = $derived(
+		selectedFamilyFailureMessage
+			? 'selected-family-failure'
+			: isStale
+				? 'global-stall'
+				: liveEdgeMessage
+					? liveEdgeState
+					: 'idle',
+	);
+	const message = $derived(
+		selectedFamilyFailureMessage ?? (isStale ? stallMessage : (liveEdgeMessage ?? '')),
+	);
 </script>
 
-{#if isStale}
-	<div
-		class="map-overlay map-feed-stall"
-		data-slot="map-feed-stall"
-		role="status"
-		aria-live="polite"
-	>
-		{message}
-	</div>
-{/if}
+<!-- M1 #34: one stable live region owns every map-live announcement. Keeping it
+     mounted makes priority changes update one assistive-technology surface. -->
+<div
+	class="map-overlay map-live-edge"
+	class:map-feed-stall={state === 'global-stall'}
+	data-slot={state === 'global-stall' ? 'map-feed-stall' : undefined}
+	data-state={state}
+	role="status"
+	aria-live="polite"
+>
+	{message}
+</div>
 
 <style>
 	.map-overlay {
 		position: absolute;
 		z-index: var(--z-map-overlay);
 	}
-	/* Top-CENTRE banner. Centred between the left rail and the right detail offset
+	/* Shared top-centre announcement. Centred between the left rail and the right
+	   detail offset
 	   (the same offset the rest of the floating chrome tracks) so it never hides
 	   behind a pane. Token-driven (card surface + hairline + blur, like the rest of
 	   the floating chrome); non-interactive — it states a fact, it does not block
 	   the map. Sits just below the floating freshness/edge row. */
-	.map-feed-stall {
+	.map-live-edge {
 		/* Below the floating chrome (--chrome-offset knob) + the edge row it trails. */
-		top: calc(var(--chrome-offset) + 2.5rem);
+		top: var(--chrome-offset);
 		left: calc(var(--app-left-rail-offset, 0rem) / 2 + var(--map-detail-offset, 0rem) / 2);
 		right: 0;
 		margin-inline: auto;
@@ -102,15 +128,30 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 		background: color-mix(in srgb, var(--card) 88%, transparent);
-		/* Calm caution: the whole border warms with the caution hue (a data verdict),
-		   echoing the stale-freshness chrome — never an alarm red fill. */
-		border: 1px solid color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
+		border: 1px solid var(--border-hairline);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
 		/* Map GL escape hatch (§C4 P4): blur(12px), floats over the live canvas. */
 		backdrop-filter: blur(12px) saturate(1.1);
 		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		pointer-events: none;
+	}
+	.map-live-edge[data-state='idle'] {
+		width: 0;
+		max-width: 0;
+		padding: 0;
+		border: 0;
+		box-shadow: none;
+		backdrop-filter: none;
+		-webkit-backdrop-filter: none;
+	}
+	.map-live-edge[data-state='unavailable'],
+	.map-live-edge[data-state='selected-family-failure'],
+	.map-live-edge[data-state='global-stall'] {
+		border-color: color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
+	}
+	.map-feed-stall {
+		top: calc(var(--chrome-offset) + 2.5rem);
 	}
 
 	@media (max-width: 768px) {
