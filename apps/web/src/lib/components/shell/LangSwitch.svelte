@@ -41,8 +41,9 @@
 	const idx = $derived(Math.max(0, availableLocales.indexOf(locale)));
 	const next = $derived(availableLocales[(idx + 1) % availableLocales.length]);
 	const nextHref = $derived(localizeUrl(url, next));
+	const nextName = $derived(NAMES[next] ?? next);
 	const ariaLabel = $derived(
-		`${locale === 'fr' ? 'Changer de langue' : 'Switch language'}: ${NAMES[locale] ?? locale}`,
+		`${locale === 'fr' ? 'Changer de langue' : 'Switch language'}: ${nextName}`,
 	);
 
 	// One fingerboard per locale, alternating sides of the pole, current emphasised.
@@ -79,9 +80,10 @@
 		href={nextHref}
 		data-sveltekit-preload-data="hover"
 		data-sveltekit-noscroll
+		data-sveltekit-reload
 		class={cn('lang-post tap-press', className)}
 		aria-label={ariaLabel}
-		title={NAMES[locale] ?? locale}
+		title={nextName}
 		data-slot="lang-switch"
 	>
 		<svg viewBox="0 0 56 44" width="46" height="36" aria-hidden="true">
@@ -109,7 +111,7 @@
 				</g>
 			{/key}
 		</svg>
-		<span class="sr-only" aria-live="polite">{NAMES[locale] ?? locale}</span>
+		<span class="sr-only" aria-live="polite">{nextName}</span>
 	</a>
 {/if}
 

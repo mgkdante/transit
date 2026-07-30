@@ -29,6 +29,7 @@
 	// that pulled all 7 subsets (cyrillic/greek/vietnamese/…). Side-effect import
 	// BEFORE app.css. See $lib/styles/fonts.css for the why + the pinned woff2.
 	import '$lib/styles/fonts.css';
+	import '@yesid/motion/ripple.css';
 	import '../app.css';
 
 	import { onMount } from 'svelte';
@@ -64,6 +65,7 @@
 	import { decideFreshnessReload } from '$lib/pwa/appVersion';
 	import { startVitals } from '$lib/vitals/collect';
 	import { runViewTransition } from '$lib/motion/view-transition';
+	import { initGlobalRipple } from '@yesid/motion/utils/globalRipple';
 	import { AppShell } from '$lib/components/shell';
 	import { Footer } from '$lib/components/layout';
 	import { EdgeState } from '$lib/components/edge';
@@ -76,6 +78,7 @@
 		type ChromeSearchResult,
 		type ChromeSearchScope,
 	} from '$lib/search/chromeSearch';
+	import { createGooglePlacesSessionToken } from '$lib/geocode/sessionToken';
 	import type { GeocodeSuggestion, GeocodedLocation } from '$lib/geocode/types';
 	import type { LayoutData } from './$types';
 
@@ -224,7 +227,7 @@
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 	let topSearch = $state('');
 	let addressSuggestions = $state<GeocodeSuggestion[]>([]);
-	let addressSessionToken = $state(createAddressSessionToken());
+	let addressSessionToken = $state(createGooglePlacesSessionToken());
 	// Search indexes are interaction data, not page prerequisites. Keep the three
 	// requests idle on ordinary navigation and open them as soon as the user types.
 	const chromeSearchEnabled = $derived(topSearch.trim().length > 0);
@@ -302,10 +305,16 @@
 		}
 		void registerServiceWorker({ browser, production: import.meta.env.PROD });
 
+		const disposeRipple = initGlobalRipple({ exclude: '[data-ripple-exempt]' });
+
 		// Web-Vitals RUM (slice-9.7 D). INERT BY DEFAULT: a no-op unless
 		// PUBLIC_VITALS_ENABLED === 'true'. When off it registers no listeners and
 		// never imports web-vitals. Returns a disposer onMount tears down on unmount.
-		return startVitals();
+		const disposeVitals = startVitals();
+		return () => {
+			disposeRipple();
+			disposeVitals();
+		};
 	});
 
 	// SPA View Transitions — a tasteful root cross-fade between surfaces. The
@@ -352,7 +361,7 @@
 			return;
 		}
 		topSearch = '';
-		addressSessionToken = createAddressSessionToken();
+		addressSessionToken = createGooglePlacesSessionToken();
 		void goto(
 			localizeHref(chromeSearchResultHref(result, searchScope, $page.url.searchParams), locale),
 			{ noScroll: true },
@@ -414,7 +423,7 @@
 		if (!resolved) return;
 
 		topSearch = '';
-		addressSessionToken = createAddressSessionToken();
+		addressSessionToken = createGooglePlacesSessionToken();
 		void goto(
 			localizeHref(
 				chromeSearchResultHref(
@@ -452,10 +461,6 @@
 
 	function hasResultCoordinates(result: ChromeSearchResult): boolean {
 		return typeof result.lat === 'number' && typeof result.lon === 'number';
-	}
-
-	function createAddressSessionToken(): string {
-		return globalThis.crypto?.randomUUID?.() ?? `chrome-${Date.now()}-${Math.random()}`;
 	}
 </script>
 

@@ -37,6 +37,8 @@
 		generatedUtc: string | null;
 		ageSeconds: number | null;
 		isStale: boolean;
+		degraded?: boolean;
+		selectedFamilyFailureMessage?: string | null;
 		// Near-me surface — state (bindable open/query) + handlers, owned by MapHero.
 		nearMeOpen: boolean;
 		nearMeQuery: string;
@@ -74,6 +76,8 @@
 		generatedUtc,
 		ageSeconds,
 		isStale,
+		degraded = false,
+		selectedFamilyFailureMessage = null,
 		nearMeOpen = $bindable(),
 		nearMeQuery = $bindable(),
 		nearMeLoading,
@@ -106,6 +110,7 @@
 	{generatedUtc}
 	{ageSeconds}
 	{isStale}
+	{degraded}
 />
 
 <MapNearMeControl
@@ -137,33 +142,19 @@
 
 <MapFilterPill store={filtersStore} {locale} hidden={detailOpen} {controls} />
 
-<MapFreshness placement="floating" {generatedUtc} {ageSeconds} {isStale} {locale} />
+<MapFreshness placement="floating" {generatedUtc} {ageSeconds} {isStale} {degraded} {locale} />
 
-<!-- Feed-stall banner: a calm top-of-map caution shown ONLY when the WHOLE live
-     feed has genuinely stalled (live.isStale — age past the 3x-ttl budget). The
-     pipeline stamps every vehicle's updated_utc with the uniform snapshot capture
-     time, so THIS banner is a GLOBAL feed signal, never one stuck bus — which is why
-     the per-vehicle silence FADE (that keyed off the uniform updated_utc) was
-     dropped. A per-bus not-reporting "!" badge was RE-ADDED, but off each bus's OWN
-     reported_utc (its GTFS-RT GPS fix time), which IS per-vehicle — see liveTtl /
-     toVehicleFeatures. Informational (a polite status), non-blocking, absent in
-     normal operation. -->
-<MapFeedStallBanner {generatedUtc} {ageSeconds} {isStale} {locale} />
-
-<!-- Live-feed edge notice: a small, non-blocking pill centred near the top of
-     the canvas when the live feed is unreachable or currently has no vehicles.
-     It floats OVER the map (pointer-events: none) so the basemap, stops, and
-     near-me stay fully usable; it is not a boundary and never blanks the canvas. -->
-{#if liveEdgeMessage}
-	<div
-		class="map-overlay map-live-edge"
-		data-state={liveEdgeState}
-		role="status"
-		aria-live="polite"
-	>
-		{liveEdgeMessage}
-	</div>
-{/if}
+<!-- One stable announcement owner. It prioritizes a selected-family failure over
+     aggregate stall, then live edge; it stays empty at rest. -->
+<MapFeedStallBanner
+	{generatedUtc}
+	{ageSeconds}
+	{isStale}
+	{locale}
+	{selectedFamilyFailureMessage}
+	{liveEdgeState}
+	{liveEdgeMessage}
+/>
 
 {#if hoverDetail && isDesktop}
 	<div class="map-overlay map-peek" aria-live="polite">
@@ -208,39 +199,6 @@
 		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		pointer-events: none;
 	}
-	/* Live-feed edge notice: a calm, centred pill near the top of the canvas. Token-
-	   driven (card surface + hairline + blur, like the rest of the floating chrome),
-	   non-interactive (it states a fact; it does not block the map). Centred between
-	   the left rail and the right detail offset so it never hides behind a pane. */
-	.map-live-edge {
-		/* Clears the floating chrome via the single --chrome-offset knob. */
-		top: var(--chrome-offset);
-		left: calc(var(--app-left-rail-offset, 0rem) / 2 + var(--map-detail-offset, 0rem) / 2);
-		right: 0;
-		margin-inline: auto;
-		z-index: var(--z-map-filter);
-		width: max-content;
-		max-width: min(26rem, calc(100% - 2rem));
-		padding: 0.375rem 0.875rem;
-		text-align: center;
-		font-size: var(--text-caption);
-		line-height: 1.4;
-		color: var(--muted-foreground);
-		background: color-mix(in srgb, var(--card) 88%, transparent);
-		border: 1px solid var(--border-hairline);
-		border-radius: var(--radius-pill);
-		box-shadow: var(--shadow-card);
-		/* Map GL escape hatch (§C4 P4): blur(12px), floats over the live canvas. */
-		backdrop-filter: blur(12px) saturate(1.1);
-		-webkit-backdrop-filter: blur(12px) saturate(1.1);
-		pointer-events: none;
-	}
-	/* The feed-down state warms the WHOLE border with the caution hue (a data verdict),
-	   echoing the stale-freshness chrome; the text still carries the meaning. */
-	.map-live-edge[data-state='unavailable'] {
-		border-color: color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
-	}
-
 	@media (prefers-reduced-motion: reduce) {
 		:global(.mf-chip) {
 			transition: none;

@@ -22,6 +22,7 @@
 <script lang="ts">
 	import BrandWordmark from '$lib/components/shell/BrandWordmark.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
+	import { YESID_HOUSE_LINK } from '$lib/content/nav';
 
 	interface BrandClusterProps {
 		/** Which chrome surface this renders in — drives hooks + behaviour. */
@@ -40,7 +41,7 @@
 {#if variant === 'topbar'}
 	<div class="flex shrink-0 items-center gap-2 sm:gap-2.5" data-slot="topbar-brand">
 		<div class="topbar-brand-mark">
-			<BrandWordmark href="https://yesid.dev" />
+			<BrandWordmark href={YESID_HOUSE_LINK.href} />
 		</div>
 		<span class="topbar-divider" aria-hidden="true"></span>
 		<a href={productHref} class="topbar-home" aria-label={productAria} data-slot="topbar-home">
@@ -53,7 +54,7 @@
 	</div>
 {:else}
 	<span class="flex items-center gap-2">
-		<BrandWordmark href="https://yesid.dev" animate={false} />
+		<BrandWordmark href={YESID_HOUSE_LINK.href} animate={false} />
 		<span class="footer-divider" aria-hidden="true"></span>
 		<a
 			href={productHref}

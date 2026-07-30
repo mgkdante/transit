@@ -99,7 +99,9 @@
 		sameNullableSelection,
 		sameSelection,
 		type MapSelection,
+		type MapSelectionDetail as MapSelectionDetailModel,
 	} from './mapSelection';
+	import { createSelectionGrace } from './selectionGrace.svelte';
 	import type { GeocodedLocation, GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
 	import { hasCoordinates } from '$lib/geocode/types';
 
@@ -242,19 +244,24 @@
 	// Slim stops-index fast-path (§C8 item 3): the map only needs {id,name,lat,lon,code}
 	// (it plots points, labels them, and fetches the FULL per-stop record on click), so
 	// it loads the server-projected slim index instead of the 1.15 MB full catalogue.
-	const stops = createResource(() => getStopsIndexSlim());
-	const routesIndex = createResource(() => getRoutesIndex());
+	const stops = createResource((signal) => getStopsIndexSlim({ signal }));
+	const routesIndex = createResource((signal) => getRoutesIndex({ signal }));
 	const selectedRouteIds = $derived(Array.from(filters.routes).sort());
-	const selectedRoutes = createResource<RouteFile[]>(async () => {
-		const ids = selectedRouteIds;
-		if (ids.length === 0) return [];
-		const routes = await Promise.all(ids.map((id) => getRoute(id)));
-		return routes.filter((route): route is RouteFile => route != null);
-	});
+	const selectedRoutes = createResource<RouteFile[]>(
+		async (signal) => {
+			const ids = selectedRouteIds;
+			const routes = await Promise.all(ids.map((id) => getRoute(id, { signal })));
+			return routes.filter((route): route is RouteFile => route != null);
+		},
+		{
+			key: () => selectedRouteIds.join('\u0000'),
+			enabled: () => selectedRouteIds.length > 0,
+		},
+	);
 
 	// Live tier — one store for this surface (v1 context booted before mount).
 	const live = createLiveStore(manifest, {
-		families: ['vehicles', 'trips', 'departures', 'alerts'],
+		families: ['vehicles', 'alerts'],
 	});
 	onMount(() => {
 		live.start();
@@ -313,6 +320,13 @@
 	// resolver effect pans/fits once data is available, then strips the param.
 	let pendingFocus = $state<MapFocus | null>(null);
 
+	// Selection-scoped live families are ref-counted leases keyed strictly on the
+	// committed selection. Hover never activates a family or restarts polling.
+	$effect(() => {
+		if (selected?.kind === 'vehicle') return live.subscribeFamilies(['trips']);
+		if (selected?.kind === 'stop') return live.subscribeFamilies(['departures']);
+	});
+
 	const stopList = $derived(stops.data?.stops ?? []);
 	const nearbyStops = $derived<WithDistance<SlimStopEntry>[]>(
 		nearMeOrigin ? nearestStops(nearMeOrigin, stopList, 5, 1_200) : [],
@@ -334,14 +348,26 @@
 		}
 		return null;
 	});
-	const focusedRoute = createResource<RouteFile | null>(async () => {
-		const id = focusedRouteId;
-		return id ? getRoute(id) : null;
-	});
-	const focusedStop = createResource<StopFile | null>(async () => {
-		const id = focusedStopId;
-		return id ? getStop(id) : null;
-	});
+	const focusedRoute = createResource<RouteFile | null>(
+		async (signal) => {
+			const id = focusedRouteId;
+			return id ? getRoute(id, { signal }) : null;
+		},
+		{
+			key: () => focusedRouteId,
+			enabled: () => focusedRouteId != null,
+		},
+	);
+	const focusedStop = createResource<StopFile | null>(
+		async (signal) => {
+			const id = focusedStopId;
+			return id ? getStop(id, { signal }) : null;
+		},
+		{
+			key: () => focusedStopId,
+			enabled: () => focusedStopId != null,
+		},
+	);
 	const routeList = $derived(
 		selectedRouteIds.length === 0
 			? []
@@ -412,8 +438,13 @@
 	// time (every vehicle shares it), so it can only express global staleness, not
 	// one stuck bus.
 	const liveEdgeState = $derived.by<'unavailable' | 'no-vehicles' | null>(() => {
-		if (live.error != null && live.generatedUtc == null) return 'unavailable';
-		if (live.vehicles != null && !live.isStale && (live.vehicles.vehicles?.length ?? 0) === 0) {
+		const vehicles = live.familyStates.vehicles;
+		if (vehicles.phase === 'failed' && vehicles.retainedGeneration == null) return 'unavailable';
+		if (
+			live.vehicles != null &&
+			!live.vehiclesIsStale &&
+			(live.vehicles.vehicles?.length ?? 0) === 0
+		) {
 			return 'no-vehicles';
 		}
 		return null;
@@ -458,13 +489,15 @@
 					}
 				: null,
 	);
-	const selectedDetail = $derived(
+	const departuresAvailable = $derived(live.familyStates.departures.retainedGeneration != null);
+	const resolvedSelectedDetail = $derived(
 		resolveMapSelection(selected, {
 			index: live.index,
 			stops: stopList,
 			routes: contextRoutes,
 			stopFiles: contextStopFiles,
 			alerts: live.alerts?.alerts ?? null,
+			departuresAvailable,
 		}),
 	);
 	const hoverDetail = $derived(
@@ -474,8 +507,64 @@
 			routes: contextRoutes,
 			stopFiles: contextStopFiles,
 			alerts: live.alerts?.alerts ?? null,
+			departuresAvailable,
 		}),
 	);
+	const vehicleSelectionGrace = createSelectionGrace<MapSelectionDetailModel>();
+	const vehicleGraceState = $derived.by(() =>
+		vehicleSelectionGrace.update({
+			selection: selected?.kind === 'vehicle' ? { kind: 'vehicle', id: selected.id } : null,
+			resolvedDetail: resolvedSelectedDetail?.kind === 'vehicle' ? resolvedSelectedDetail : null,
+			vehicles: live.familyStates.vehicles,
+		}),
+	);
+	const selectedDetail = $derived(
+		selected?.kind === 'vehicle' ? vehicleGraceState.detail : resolvedSelectedDetail,
+	);
+	const selectionPresence = $derived(
+		selected?.kind === 'vehicle'
+			? vehicleGraceState.presence
+			: selectedDetail
+				? 'present'
+				: selected
+					? 'loading'
+					: 'gone',
+	);
+	const selectionSourceHealth = $derived(
+		selected?.kind === 'vehicle' ? vehicleGraceState.sourceHealth : 'ok',
+	);
+	const liveDegraded = $derived(
+		Object.values(live.familyStates).some(
+			(family) => family.active && (family.phase === 'failed' || family.consecutiveFailures > 0),
+		),
+	);
+	const selectedFamilyFailureMessage = $derived.by<string | null>(() => {
+		if (!selected) return null;
+		const candidates =
+			selected.kind === 'vehicle'
+				? ([
+						['vehicles', t.familyVehicles],
+						['trips', t.familyTrips],
+						['alerts', t.familyAlerts],
+					] as const)
+				: selected.kind === 'stop'
+					? ([
+							['departures', t.familyDepartures],
+							['vehicles', t.familyVehicles],
+							['alerts', t.familyAlerts],
+						] as const)
+					: ([
+							['vehicles', t.familyVehicles],
+							['alerts', t.familyAlerts],
+						] as const);
+		for (const [family, label] of candidates) {
+			const truth = live.familyStates[family];
+			if (truth.active && (truth.phase === 'failed' || truth.consecutiveFailures > 0)) {
+				return t.selectedFamilyFailure(label, truth.retainedGeneration != null);
+			}
+		}
+		return null;
+	});
 	// Per-bus stale-GPS note (pure module): { ageS } when a focused VEHICLE detail's
 	// OWN fix is past the cutoff, else null. Reads sharedClock.serverNow so the note
 	// appears/refreshes as a bus crosses the cutoff between polls.
@@ -970,8 +1059,8 @@
 				{ serverNow, ttlS: liveTtl },
 			),
 			{
-				tickKey: live.vehicles?.generated_utc ?? live.generatedUtc,
-				stale: live.isStale,
+				tickKey: live.vehiclesGeneratedUtc,
+				stale: live.vehiclesIsStale,
 				// FORWARD projection: speed + fix-time per bus, the route shape to walk,
 				// and the LIVE skew-free clock read each frame so the dot tracks
 				// estimated-NOW. Reduced motion / global stale / RAW mode snap to reported
@@ -993,7 +1082,7 @@
 			hoveredStopId,
 		);
 		setNearTarget(m, nearMeOrigin);
-		setStale(m, live.isStale);
+		setStale(m, live.vehiclesIsStale);
 	});
 
 	$effect(() => {
@@ -1003,6 +1092,7 @@
 			return;
 		}
 		if (selected && !selectedDetail) {
+			if (selected.kind === 'vehicle' && vehicleGraceState.presence !== 'gone') return;
 			if (waitingForSelectedDetail()) return;
 			closeDetail();
 		}
@@ -1139,6 +1229,8 @@
 			generatedUtc={live.generatedUtc}
 			ageSeconds={live.ageSeconds}
 			isStale={live.isStale}
+			degraded={liveDegraded}
+			{selectedFamilyFailureMessage}
 			bind:nearMeOpen
 			bind:nearMeQuery
 			{nearMeLoading}
@@ -1165,7 +1257,15 @@
 	</div>
 {/snippet}
 
-<div class="map-hero" bind:this={heroEl} bind:clientWidth={mapWidthPx}>
+<div
+	class="map-hero"
+	data-selection-presence={selectionPresence}
+	data-selection-source-health={selectionSourceHealth}
+	data-motion-stale={live.vehiclesIsStale}
+	data-motion-tick-key={live.vehiclesGeneratedUtc ?? undefined}
+	bind:this={heroEl}
+	bind:clientWidth={mapWidthPx}
+>
 	<!-- The map canvas is FULL-BLEED and FIXED: mapSurface (the .map-surface inset:0)
 	     fills the whole hero, and EVERY panel OVERLAYS it (absolute). The map sizes off
 	     its own container (MapStage's ResizeObserver) and never reads a panel width, so

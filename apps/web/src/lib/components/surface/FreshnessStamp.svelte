@@ -51,6 +51,12 @@
 		 * updated variant ignores this (a daily document never reads "stale").
 		 */
 		isStale?: boolean;
+		/**
+		 * Live variant only: at least one active family is failing while retained
+		 * data remains usable. Degraded freshness is caution, never green, but it
+		 * does not fabricate a globally stale verdict.
+		 */
+		degraded?: boolean;
 		/** "live" (current-data chip) or "updated" (calm neutral stamp). */
 		variant?: Variant;
 		/** UI language for the intrinsic labels. */
@@ -63,6 +69,7 @@
 		generatedUtc,
 		ageSeconds = undefined,
 		isStale = false,
+		degraded = false,
 		variant = 'live',
 		locale,
 		class: className,
@@ -117,9 +124,10 @@
 		data-slot="freshness-stamp"
 		data-variant="live"
 		data-stale={isStale}
+		data-degraded={degraded ? 'true' : undefined}
 		data-age-seconds={effectiveAge ?? undefined}
 	>
-		<StatusDot color={isStale ? 'caution' : 'on_time'} label={t.live} />
+		<StatusDot color={isStale || degraded ? 'caution' : 'on_time'} label={t.live} />
 		<span class="freshness-stamp-label">{t.live}</span>
 		<!-- Visible relative age (ticks every second) + the machine-readable build
 		     timestamp on the <time> datetime for AT / scrapers. -->

@@ -4,6 +4,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import type { Locale } from '$lib/i18n';
 	import type { LatLon, WithDistance } from '$lib/components/map';
+	import { createGooglePlacesSessionToken } from '$lib/geocode/sessionToken';
 	import type { GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
 	import type { StopIndexEntry } from '$lib/v1/schemas';
 	import type { MapCopy } from './map.copy';
@@ -46,7 +47,7 @@
 	let suggestions = $state<GeocodeSuggestion[]>([]);
 	let suggestionsLoading = $state(false);
 	let suggestionsOpen = $state(false);
-	let suggestionSessionToken = $state(createSuggestionSessionToken());
+	let suggestionSessionToken = $state(createGooglePlacesSessionToken());
 	let lastSelectedSuggestionLabel = $state('');
 	let rootEl = $state<HTMLElement>();
 	let inputEl = $state<HTMLInputElement>();
@@ -93,7 +94,7 @@
 		lastSelectedSuggestionLabel = result.label;
 		inputEl?.blur();
 		void onsuggestion(result, usedToken);
-		suggestionSessionToken = createSuggestionSessionToken();
+		suggestionSessionToken = createGooglePlacesSessionToken();
 	}
 
 	function closeSuggestions(): void {
@@ -175,10 +176,6 @@
 			controller.abort();
 		};
 	});
-
-	function createSuggestionSessionToken(): string {
-		return globalThis.crypto?.randomUUID?.() ?? `near-${Date.now()}-${Math.random()}`;
-	}
 </script>
 
 <svelte:window onpointerdown={handleWindowPointerDown} onkeydown={handleWindowKeydown} />

@@ -1,0 +1,36 @@
+/* @yesid/motion global ripple. Explicit opt-in import; never injected automatically. */
+
+/* Slice-23: site-wide click ripple — appended to <body> by
+   motion/utils/globalRipple.ts on every pointerdown. Two expanding
+   rings (outer brand-primary, inner accent) for Manifesto-style
+   click feedback that works on desktop + mobile. position: fixed
+   so ripples stay where pressed regardless of scroll. */
+.global-ripple {
+	position: fixed;
+	border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
+	border-radius: 50%;
+	transform: translate(-50%, -50%);
+	pointer-events: none;
+	z-index: var(--z-ripple);
+	animation: global-ripple-expand 1.2s ease-out forwards;
+}
+
+.global-ripple-inner {
+	position: fixed;
+	border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+	border-radius: 50%;
+	transform: translate(-50%, -50%);
+	pointer-events: none;
+	z-index: var(--z-ripple);
+	animation: global-ripple-inner-expand 0.8s ease-out forwards;
+}
+
+@keyframes global-ripple-expand {
+	0%   { width: 0;     height: 0;     opacity: 0.6; }
+	100% { width: 200px; height: 200px; opacity: 0;   }
+}
+
+@keyframes global-ripple-inner-expand {
+	0%   { width: 0;     height: 0;     opacity: 0.8; }
+	100% { width: 100px; height: 100px; opacity: 0;   }
+}
