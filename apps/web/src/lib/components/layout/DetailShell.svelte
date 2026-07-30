@@ -179,7 +179,7 @@
 		</div>
 	{/if}
 
-	<Separator variant="hazard" maxWidth="100%" class="detail-shell-tape" />
+	<Separator variant="hazard" hazardSize="sm" maxWidth="100%" class="detail-shell-tape" />
 
 	{#if toolbar}
 		<div class="detail-shell-toolbar" data-slot="detail-shell-toolbar">
