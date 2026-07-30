@@ -27,52 +27,52 @@
 		<BlueprintTrackPlan
 			class="edge-detail"
 			data-blueprint-part="lines-track-plan"
-			style="top:-4%;left:-3%;width:43%;height:58%;opacity:0.24;"
+			style="top:-10%;left:20%;width:55%;height:50%;--blueprint-part-ink:var(--blueprint-ink-mid);"
 		/>
 		<BlueprintCatenary
 			class="edge-detail"
 			data-blueprint-part="lines-catenary"
-			style="top:2%;right:-4%;width:48%;height:45%;opacity:0.24;"
+			style="top:-4%;left:52%;width:48%;height:48%;--blueprint-part-ink:var(--blueprint-ink-accent);"
 		/>
 		<BlueprintMr73Side
 			class="edge-detail"
 			data-blueprint-part="lines-metro-car"
-			style="bottom:-13%;left:20%;width:51%;height:62%;opacity:0.22;"
+			style="top:-18%;left:-4%;width:58%;height:65%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 		/>
 		<BlueprintBusSide
 			class="edge-detail"
 			data-blueprint-part="lines-bus"
-			style="bottom:-10%;right:-7%;width:35%;height:50%;opacity:0.23;"
+			style="top:-2%;left:30%;width:50%;height:60%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 		/>
 		<BlueprintDetailBogie
 			class="edge-detail"
 			data-blueprint-part="lines-bogie"
-			style="top:27%;left:3%;width:19%;height:48%;opacity:0.22;"
+			style="top:2%;left:2%;width:30%;height:30%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 		/>
 		<BlueprintSignal
 			class="edge-detail"
 			data-blueprint-part="lines-signal"
-			style="bottom:-4%;right:19%;width:9%;height:61%;opacity:0.28;"
+			style="top:0;left:8%;width:24%;height:27%;--blueprint-part-ink:var(--blueprint-ink-accent);"
 		/>
 		<BlueprintTurnoutCrossoverPlan
 			class="edge-detail"
 			data-blueprint-part="lines-turnout-crossover-plan"
-			style="top:-13%;left:30%;width:45%;height:55%;opacity:0.2;"
+			style="top:0;left:24%;width:52%;height:44%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 		/>
 		<BlueprintRailGaugeSection
 			class="edge-detail"
 			data-blueprint-part="lines-rail-sleeper-gauge-power-section"
-			style="bottom:-18%;left:-6%;width:28%;height:70%;opacity:0.22;"
+			style="top:36%;left:0;width:34%;height:24%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 		/>
 		<BlueprintPantographOverheadEquipment
 			class="edge-detail"
 			data-blueprint-part="lines-pantograph-overhead-equipment"
-			style="top:-15%;right:16%;width:28%;height:68%;opacity:0.22;"
+			style="top:4%;left:54%;width:46%;height:42%;--blueprint-part-ink:var(--blueprint-ink-mid);"
 		/>
 		<BlueprintSignallingCommunicationsEquipment
 			class="edge-detail"
 			data-blueprint-part="lines-signalling-communications-equipment"
-			style="bottom:-18%;right:-3%;width:29%;height:70%;opacity:0.21;"
+			style="top:20%;left:64%;width:36%;height:20%;--blueprint-part-ink:var(--blueprint-ink-mid);"
 		/>
 	{/snippet}
 </BlueprintShell>

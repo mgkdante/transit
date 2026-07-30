@@ -232,8 +232,23 @@ describe('StopsIndex blueprint listing header', () => {
 			'stops-accessible-bus-curb-section',
 			'stops-passenger-information-equipment',
 		]);
-		expect(header.querySelectorAll('[data-blueprint-layer="hero"]')).toHaveLength(1);
-		expect(header.querySelectorAll('.edge-detail')).toHaveLength(10);
+		const hero = header.querySelector<SVGElement>('[data-blueprint-layer="hero"]');
+		const details = [...header.querySelectorAll<SVGElement>('.edge-detail')];
+		expect(hero).not.toBeNull();
+		expect(hero).toHaveClass('h-full', 'w-full');
+		expect(hero).not.toHaveAttribute('style');
+		expect(details).toHaveLength(10);
+		const roleCounts = details.reduce(
+			(counts, detail) => {
+				const height = Number.parseFloat(detail.style.height);
+				if (height >= 55 && height <= 75) counts.anchor += 1;
+				else if (height >= 35 && height <= 50) counts.support += 1;
+				else if (height >= 15 && height <= 30) counts.detail += 1;
+				return counts;
+			},
+			{ anchor: 0, support: 0, detail: 0 },
+		);
+		expect(roleCounts).toEqual({ anchor: 2, support: 4, detail: 4 });
 		expect(drawings.every((drawing) => drawing.tagName.toLowerCase() === 'svg')).toBe(true);
 		expect(header.querySelector('picture, img, canvas, image')).toBeNull();
 		expect(header.querySelector('[href^="http"], [href^="//"]')).toBeNull();

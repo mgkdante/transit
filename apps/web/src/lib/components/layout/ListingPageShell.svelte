@@ -72,7 +72,12 @@
 
 	<div class="listing-main">
 		{@render header()}
-		<Separator variant="hazard" data-testid="listing-page-separator" />
+		<Separator
+			variant="hazard"
+			hazardSize="sm"
+			maxWidth="100%"
+			data-testid="listing-page-separator"
+		/>
 
 		<div class="listing-grid">
 			<aside class="listing-filter-column" data-slot="listing-filter-column">
