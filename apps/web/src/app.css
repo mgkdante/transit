@@ -50,6 +50,19 @@ select {
 	/* One lifted body offset for every ArticleHeader + DetailShell composition.
 	   Rails, verdicts, and first cards all begin on this same grid line. */
 	--layout-article-top-space: var(--space-card-gap);
+	/* Transit-local blueprint depth roles. The listing compositions share this
+	   three-step ladder; the hero artwork keeps BlueprintShell's own layer. */
+	--blueprint-ink-quiet: 0.14;
+	--blueprint-ink-mid: 0.22;
+	--blueprint-ink-accent: 0.3;
+}
+
+/* Keep each listing part on its assigned depth role when BlueprintShell applies
+   its broad light/mobile visibility boost. */
+[data-slot='blueprint-listing-header']
+	.edge-details
+	[data-blueprint-part].edge-detail {
+	opacity: var(--blueprint-part-ink) !important;
 }
 
 /* Tap-feedback primitives (reduced-motion-guarded). */

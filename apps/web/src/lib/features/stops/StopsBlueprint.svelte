@@ -19,9 +19,9 @@
 >
 	{#snippet hero()}
 		<BlueprintStopPlan
-			class="h-full w-full"
 			data-blueprint-layer="hero"
 			data-blueprint-part="stops-plan"
+			style="position:absolute;top:-12.5%;left:0;width:28%;height:75%;"
 		/>
 	{/snippet}
 
@@ -29,52 +29,52 @@
 		<BlueprintGlassShelter
 			class="edge-detail"
 			data-blueprint-part="stops-glass-shelter"
-			style="top:-3%;left:2%;width:32%;height:70%;opacity:0.25;"
+			style="top:-18%;left:22%;width:58%;height:65%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 		/>
 		<BlueprintSimpleShelter
 			class="edge-detail"
 			data-blueprint-part="stops-simple-shelter"
-			style="bottom:-5%;left:25%;width:30%;height:58%;opacity:0.22;"
+			style="top:-10%;left:20%;width:55%;height:50%;--blueprint-part-ink:var(--blueprint-ink-mid);"
 		/>
 		<BlueprintStopPost
 			class="edge-detail"
 			data-blueprint-part="stops-post"
-			style="top:1%;right:5%;width:11%;height:82%;opacity:0.28;"
+			style="top:-2%;left:76%;width:24%;height:48%;--blueprint-part-ink:var(--blueprint-ink-accent);"
 		/>
 		<BlueprintStationSection
 			class="edge-detail"
 			data-blueprint-part="stops-station-section"
-			style="bottom:-5%;right:14%;width:31%;height:60%;opacity:0.22;"
+			style="top:-4%;left:50%;width:50%;height:46%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 		/>
 		<BlueprintBusSide
 			class="edge-detail"
 			data-blueprint-part="stops-bus"
-			style="top:24%;left:44%;width:39%;height:52%;opacity:0.23;"
+			style="top:0;left:50%;width:50%;height:44%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 		/>
 		<BlueprintSignal
 			class="edge-detail"
 			data-blueprint-part="stops-signal"
-			style="bottom:-10%;left:11%;width:8%;height:58%;opacity:0.24;"
+			style="top:0;left:38%;width:24%;height:30%;--blueprint-part-ink:var(--blueprint-ink-accent);"
 		/>
 		<BlueprintMetroPlatformCirculationPlan
 			class="edge-detail"
 			data-blueprint-part="stops-metro-platform-circulation-plan"
-			style="top:-14%;left:24%;width:48%;height:56%;opacity:0.2;"
+			style="top:2%;left:24%;width:52%;height:42%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 		/>
 		<BlueprintHeatedGlassShelterSection
 			class="edge-detail"
 			data-blueprint-part="stops-heated-glass-shelter-section"
-			style="bottom:-18%;left:-5%;width:28%;height:70%;opacity:0.21;"
+			style="top:5%;left:0;width:34%;height:27%;--blueprint-part-ink:var(--blueprint-ink-quiet);"
 		/>
 		<BlueprintAccessibleBusCurbSection
 			class="edge-detail"
 			data-blueprint-part="stops-accessible-bus-curb-section"
-			style="bottom:-18%;right:-4%;width:38%;height:72%;opacity:0.22;"
+			style="top:20%;left:64%;width:36%;height:24%;--blueprint-part-ink:var(--blueprint-ink-mid);"
 		/>
 		<BlueprintPassengerInformationEquipment
 			class="edge-detail"
 			data-blueprint-part="stops-passenger-information-equipment"
-			style="top:-16%;right:17%;width:24%;height:76%;opacity:0.22;"
+			style="top:0;left:70%;width:30%;height:20%;--blueprint-part-ink:var(--blueprint-ink-mid);"
 		/>
 	{/snippet}
 </BlueprintShell>
