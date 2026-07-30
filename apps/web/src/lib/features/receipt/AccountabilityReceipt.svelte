@@ -26,7 +26,7 @@
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeNameFallback, stopNameFallback } from '$lib/site/absence';
-	import { layout } from '$lib/nav';
+	import { layout, routeFor } from '$lib/nav';
 	import { mirrorSearchParam } from '$lib/site/urlMirror';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
 	import {
@@ -290,7 +290,7 @@
 		selectNotReportedLines(currentReceipt?.service_states, {
 			routeName: (id, name) => name ?? routeNameFallback(id, locale),
 			rowLabel: t.notReported.rowLabel,
-			href: (id) => `/lines/${id}`,
+			href: (id) => localizeHref(routeFor({ kind: 'line', id }), locale),
 			viewDetail: (id) => t.notReported.viewDetail(id),
 			fmtScheduled: (v) => (v == null ? null : t.notReported.scheduled(v)),
 		}),

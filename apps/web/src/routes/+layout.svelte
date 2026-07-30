@@ -78,6 +78,7 @@
 		type ChromeSearchResult,
 		type ChromeSearchScope,
 	} from '$lib/search/chromeSearch';
+	import { createGooglePlacesSessionToken } from '$lib/geocode/sessionToken';
 	import type { GeocodeSuggestion, GeocodedLocation } from '$lib/geocode/types';
 	import type { LayoutData } from './$types';
 
@@ -226,7 +227,7 @@
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 	let topSearch = $state('');
 	let addressSuggestions = $state<GeocodeSuggestion[]>([]);
-	let addressSessionToken = $state(createAddressSessionToken());
+	let addressSessionToken = $state(createGooglePlacesSessionToken());
 	// Search indexes are interaction data, not page prerequisites. Keep the three
 	// requests idle on ordinary navigation and open them as soon as the user types.
 	const chromeSearchEnabled = $derived(topSearch.trim().length > 0);
@@ -360,7 +361,7 @@
 			return;
 		}
 		topSearch = '';
-		addressSessionToken = createAddressSessionToken();
+		addressSessionToken = createGooglePlacesSessionToken();
 		void goto(
 			localizeHref(chromeSearchResultHref(result, searchScope, $page.url.searchParams), locale),
 			{ noScroll: true },
@@ -422,7 +423,7 @@
 		if (!resolved) return;
 
 		topSearch = '';
-		addressSessionToken = createAddressSessionToken();
+		addressSessionToken = createGooglePlacesSessionToken();
 		void goto(
 			localizeHref(
 				chromeSearchResultHref(
@@ -460,10 +461,6 @@
 
 	function hasResultCoordinates(result: ChromeSearchResult): boolean {
 		return typeof result.lat === 'number' && typeof result.lon === 'number';
-	}
-
-	function createAddressSessionToken(): string {
-		return globalThis.crypto?.randomUUID?.() ?? `chrome-${Date.now()}-${Math.random()}`;
 	}
 </script>
 
