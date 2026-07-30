@@ -442,7 +442,8 @@
 	.entity-tabs :global([role='tablist']) {
 		width: 100%;
 		min-width: max-content;
-		padding: 0.5rem var(--space-page-x);
+		padding-block: calc((var(--strip-h) - 3px - var(--size-tap-min)) / 2);
+		padding-inline: var(--space-page-x);
 	}
 	.entity-tabs__fade {
 		position: absolute;
