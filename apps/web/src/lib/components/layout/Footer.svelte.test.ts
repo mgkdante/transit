@@ -11,6 +11,8 @@ const localeCases = [
 	{
 		locale: 'fr' as const,
 		navLabel: 'Pied de page',
+		exploreLabel: 'Explorer',
+		auditLabel: 'Vérification',
 		homeHref: '/fr',
 		tagline: `Analytique citoyenne pour ${PROVIDER_NAME}`,
 		disclaimer: `Site non officiel, sans affiliation avec ${PROVIDER_NAME}.`,
@@ -32,6 +34,8 @@ const localeCases = [
 	{
 		locale: 'en' as const,
 		navLabel: 'Footer',
+		exploreLabel: 'Explore',
+		auditLabel: 'Audit',
 		homeHref: '/',
 		tagline: `Citizen analytics for ${PROVIDER_NAME}`,
 		disclaimer: `Unofficial website, not affiliated with ${PROVIDER_NAME}.`,
@@ -56,8 +60,8 @@ afterEach(() => vi.useRealTimers());
 
 describe('Footer', () => {
 	it.each(localeCases)(
-		'renders the brand, localized $locale navigation, and external portfolio contract',
-		({ locale, navLabel, homeHref, tagline, links }) => {
+		'renders the brand and two localized navigation groups in canonical order',
+		({ locale, navLabel, exploreLabel, auditLabel, homeHref, tagline, links }) => {
 			const { getByTestId, getByRole, getByText } = render(Footer, {
 				props: {
 					locale,
@@ -77,17 +81,29 @@ describe('Footer', () => {
 			expect(getByText(tagline)).toBeInTheDocument();
 
 			const nav = getByRole('navigation', { name: navLabel });
+			expect(within(footer).getAllByRole('navigation')).toHaveLength(1);
+			const explore = within(nav).getByRole('group', { name: exploreLabel });
+			const audit = within(nav).getByRole('group', { name: auditLabel });
+			expect(nav.querySelectorAll('[role="group"]')).toHaveLength(2);
+			expect(explore).not.toBe(audit);
 			expect(
-				Array.from(nav.querySelectorAll('a'), (link) => [
+				Array.from(explore.querySelectorAll('a'), (link) => [
 					link.textContent?.trim(),
 					link.getAttribute('href'),
 				]),
-			).toEqual(links);
+			).toEqual(links.slice(0, 4));
+			expect(
+				Array.from(audit.querySelectorAll('a'), (link) => [
+					link.textContent?.trim(),
+					link.getAttribute('href'),
+				]),
+			).toEqual(links.slice(4));
 
-			const portfolio = within(footer).getByRole('link', { name: 'yesid.dev' });
-			expect(portfolio).toHaveAttribute('href', 'https://yesid.dev');
-			expect(portfolio).toHaveAttribute('target', '_blank');
-			expect(portfolio).toHaveAttribute('rel', 'noopener noreferrer');
+			// The house link belongs to BrandCluster, not a third CONNECT group.
+			const houseLinks = footer.querySelectorAll('a[href="https://yesid.dev"]');
+			expect(houseLinks).toHaveLength(1);
+			expect(houseLinks[0]).toHaveAttribute('target', '_blank');
+			expect(houseLinks[0]).toHaveAttribute('rel', 'noopener noreferrer');
 		},
 	);
 
@@ -108,7 +124,7 @@ describe('Footer', () => {
 			const footer = getByTestId('footer');
 			const attribution = footer.querySelector('.footer-honesty > span:first-child');
 			expect(attribution?.textContent).toBe(MANIFEST_ATTRIBUTION);
-			expect(footer.querySelector('.footer-disclaimer')).toHaveTextContent(disclaimer);
+			expect(footer.querySelector('.footer-disclaimer')?.textContent).toBe(disclaimer);
 
 			const statusDot = footer.querySelector('[data-slot="status-dot"]');
 			expect(statusDot).toBeInTheDocument();

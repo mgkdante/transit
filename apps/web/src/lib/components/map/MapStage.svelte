@@ -339,6 +339,7 @@
 		class={cn('map-stage', className)}
 		role="region"
 		aria-label={label}
+		data-ripple-exempt
 		data-slot="map-stage"
 	></div>
 {/if}

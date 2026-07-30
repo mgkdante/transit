@@ -200,7 +200,7 @@ describe('NavPill — the flat menu', () => {
 		},
 	);
 
-	it('localizes the Audit group + Yesid new-tab affordance in French', async () => {
+	it('uses the footer-owned Audit label in French and localizes the Yesid new-tab affordance', async () => {
 		const { getByRole, queryByTestId } = render(NavPill, {
 			props: { locale: 'fr', url: new URL('https://transit.local/fr/map') },
 		});
