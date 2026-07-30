@@ -1,7 +1,8 @@
 // manifest.ts — Zod mirror of manifest.schema.json (title: "Manifest").
 // The manifest is the snapshot root pointer: it names every file path per tier,
-// carries the label dictionary, bbox, attribution and dataset version. The web
-// client fetches it first, then resolves every other family relative to it.
+// carries per-language label file pointers, bbox, attribution and dataset
+// version. The web client fetches it first, then resolves every other family
+// relative to it.
 //
 // Honesty rule: where the JSON Schema allows null (anyOf [..., {type:null}]),
 // the field is .nullable(). Defaulted-but-not-required string paths stay

@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { isoUtc, payloadEnvelopeFields } from './types';
 
-/** The flat code->text dictionary carried by both the labels file and manifest. */
+/** The flat code->text dictionary carried by the labels file. */
 export const LabelsSchema = z.record(z.string(), z.string());
 export type Labels = z.infer<typeof LabelsSchema>;
 
