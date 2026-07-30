@@ -31,12 +31,12 @@ def test_setup_py_composite_pins_the_folded_setup_contract() -> None:
     assert len(steps) == 3
     assert (
         steps[0]["uses"]
-        == "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"
+        == "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97"
     )
     assert steps[0]["with"] == {"python-version": "3.12"}
     assert (
         steps[1]["uses"]
-        == "astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78"
+        == "astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9"
     )
     assert steps[1]["with"] == {"version": "0.11.15"}
     assert steps[2] == {

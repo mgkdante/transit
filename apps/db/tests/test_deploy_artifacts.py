@@ -15,10 +15,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 EXPECTED_PINNED_ACTION_LINES = {
     "actions/cache": (
-        "uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5"
+        "uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0"
     ),
     "actions/checkout": (
-        "uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7"
+        "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7"
     ),
     "actions/download-artifact": (
         "uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8"
@@ -27,25 +27,25 @@ EXPECTED_PINNED_ACTION_LINES = {
         "uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7"
     ),
     "actions/setup-python": (
-        "uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6"
+        "uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0"
     ),
     "actions/upload-artifact": (
         "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"
     ),
     "astral-sh/setup-uv": (
-        "uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7"
+        "uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0"
     ),
     "cloudflare/wrangler-action": (
         "uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4"
     ),
     "mgkdante/yesid.dev-design/.github/actions/classify-paths": (
-        "uses: mgkdante/yesid.dev-design/.github/actions/classify-paths@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
+        "uses: mgkdante/yesid.dev-design/.github/actions/classify-paths@107c2dd621a7765f72dbab82461fef50b24bab4b"
     ),
     "mgkdante/yesid.dev-design/.github/actions/required-context": (
-        "uses: mgkdante/yesid.dev-design/.github/actions/required-context@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
+        "uses: mgkdante/yesid.dev-design/.github/actions/required-context@107c2dd621a7765f72dbab82461fef50b24bab4b"
     ),
     "mgkdante/yesid.dev-design/.github/actions/shared-tooling-drift": (
-        "uses: mgkdante/yesid.dev-design/.github/actions/shared-tooling-drift@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
+        "uses: mgkdante/yesid.dev-design/.github/actions/shared-tooling-drift@107c2dd621a7765f72dbab82461fef50b24bab4b"
     ),
     "oven-sh/setup-bun": (
         "uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2"
