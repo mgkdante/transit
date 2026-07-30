@@ -72,14 +72,22 @@ describe('NavPill — structure', () => {
 
 	it('keeps a localized language route in the menu for ultra-narrow phones', async () => {
 		const { getByRole, queryByTestId } = render(NavPill, {
-			props: { locale: 'en', url: new URL('https://transit.local/alerts?from=2026-07-01') },
+			props: {
+				locale: 'en',
+				url: new URL('https://transit.local/alerts?from=2026-07-01#service'),
+			},
 		});
+		const wideSwitch = getByRole('link', { name: 'Switch language: Français' });
+		expect(wideSwitch).toHaveAttribute('href', '/fr/alerts?from=2026-07-01#service');
+		expect(wideSwitch).toHaveAttribute('data-sveltekit-reload');
+
 		await fireEvent.click(getByRole('button', { name: 'Open menu' }));
 		const menu = queryByTestId('nav-menu') as HTMLElement;
-		expect(within(menu).getByRole('link', { name: 'Switch language: Français' })).toHaveAttribute(
-			'href',
-			'/fr/alerts?from=2026-07-01',
-		);
+		const compactSwitch = within(menu).getByRole('link', {
+			name: 'Switch language: Français',
+		});
+		expect(compactSwitch).toHaveAttribute('href', '/fr/alerts?from=2026-07-01#service');
+		expect(compactSwitch).toHaveAttribute('data-sveltekit-reload');
 		expect(readSource()).toMatch(
 			/@media \(max-width: 359px\)[\s\S]*\[data-slot='lang-switch'\][\s\S]*display:\s*none;[\s\S]*\.nav-menu-language[\s\S]*display:\s*flex;/,
 		);

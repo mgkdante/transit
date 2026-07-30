@@ -41,6 +41,32 @@ service = "transit-data-proxy"
 binding = "SNAPSHOTS"
 bucket_name = "transit-snapshots"
 
+# ── ALTERNATE GEOCODE RATE-LIMITING VARIANT — READY TO ENABLE ─────────────
+# Default/shipped path: the repo-local token bucket in
+# src/lib/geocode/rateLimit.server.ts. It is best-effort per isolate.
+#
+# Account-verified upgrade path: uncomment BOTH bindings below only after the
+# orchestrator positively verifies that this account exposes Workers Rate
+# Limiting and validates this config with Wrangler >= 4.36. The route prefers
+# these bindings when present, so they replace (rather than stack with) the
+# isolate bucket during normal operation. Workers Rate Limiting counters are
+# location-local, not globally distributed. Its fixed windows cannot reproduce a
+# continuously-refilled token bucket: these 60-second limits retain the measured
+# burst capacities (54 trusted; 24 missing-IP) while avoiding the much looser
+# sustained rates a 10-second window would create. Boundary-window bursts and the
+# missing-IP 24/60 rate remain documented residuals. Namespace IDs must be
+# checked for collisions across the target Cloudflare account.
+#
+# [[ratelimits]]
+# name = "GEOCODE_RATE_LIMITER"
+# namespace_id = "1001"
+# simple = { limit = 54, period = 60 }
+#
+# [[ratelimits]]
+# name = "GEOCODE_SHARED_RATE_LIMITER"
+# namespace_id = "1002"
+# simple = { limit = 24, period = 60 }
+
 # ── Web-Vitals RUM (slice-9.7 item D) — INERT BY DEFAULT ────────────────────
 # The web app ships a Core-Web-Vitals collector ($lib/vitals/collect.ts) + a
 # beacon endpoint (/api/vitals → src/routes/api/vitals/+server.ts) that writes
@@ -101,6 +127,20 @@ PUBLIC_PROVIDER_CITY = "Montréal"
 PUBLIC_SITE_AUTHOR = "Yesid"
 PUBLIC_TWITTER_SITE = ""
 PUBLIC_TWITTER_CREATOR = ""
+
+# Wrangler rate-limit bindings are non-inheritable. If the account-verified
+# variant above is enabled, uncomment BOTH dev bindings too; the separate IDs
+# avoid coupling production and dev counters.
+#
+# [[env.dev.ratelimits]]
+# name = "GEOCODE_RATE_LIMITER"
+# namespace_id = "2001"
+# simple = { limit = 54, period = 60 }
+#
+# [[env.dev.ratelimits]]
+# name = "GEOCODE_SHARED_RATE_LIMITER"
+# namespace_id = "2002"
+# simple = { limit = 24, period = 60 }
 
 [[env.dev.services]]
 binding = "DATA"

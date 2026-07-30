@@ -496,6 +496,7 @@
 					aria-label={compactLanguageTarget.aria}
 					data-sveltekit-preload-data="hover"
 					data-sveltekit-noscroll
+					data-sveltekit-reload
 					onclick={closeMenu}
 				>
 					{compactLanguageTarget.label}
