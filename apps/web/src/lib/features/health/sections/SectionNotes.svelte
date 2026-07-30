@@ -31,11 +31,6 @@
 </div>
 
 <style>
-	.health-block {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
 	.health-note {
 		margin: 0;
 		color: var(--foreground);
@@ -62,11 +57,5 @@
 		color: var(--foreground);
 		max-width: 72ch;
 		overflow-wrap: anywhere;
-	}
-	@media (min-width: 1024px) {
-		.health-note {
-			font-size: var(--text-detail-body-desktop);
-			line-height: 1.9;
-		}
 	}
 </style>

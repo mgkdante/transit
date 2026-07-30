@@ -955,17 +955,6 @@
 	/* A sub-block overline + its explainer (i)s, kept centred on the label. The
 	   label keeps a measure (min-width:0) so a long overline wraps cleanly; each
 	   (i) wrapper never shrinks (flex:none) so the glyphs stay whole beside it. */
-	.label-with-info {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-	}
-	.label-with-info :global([data-slot='section-label']) {
-		min-width: 0;
-	}
-	.label-with-info :global(.cluster-info) {
-		flex: none;
-	}
 	/* S7 P5: the three per-shift regularity charts (excess / spread / bunching by shift),
 	   each its own labelled LayerChart magnitude-bars block, generous BETWEEN-chart air. */
 	.shift-charts {

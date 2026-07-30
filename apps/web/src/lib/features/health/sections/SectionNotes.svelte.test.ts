@@ -32,11 +32,16 @@ describe('SectionNotes', () => {
 			resolve(process.cwd(), 'src/lib/features/health/sections/SectionNotes.svelte'),
 			'utf8',
 		);
+		const sharedSource = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/health/sections/health-sections.css'),
+			'utf8',
+		);
 		expect(bodies).toHaveLength(notes.length);
 		for (const body of bodies) {
 			expect(body).not.toHaveClass('typed-information-body--mono');
 		}
 		expect(source).toMatch(/\.health-note\s*\{[\s\S]*?color:\s*var\(--foreground\)/);
 		expect(source).not.toMatch(/\.health-note\s*\{[\s\S]*?color:\s*var\(--muted-foreground\)/);
+		expect(sharedSource).toMatch(/\.health-note\s*\{[\s\S]*?color:\s*var\(--muted-foreground\)/);
 	});
 });

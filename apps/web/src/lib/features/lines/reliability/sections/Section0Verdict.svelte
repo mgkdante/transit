@@ -338,9 +338,6 @@
 		gap: 0.5rem;
 	}
 	.label-with-info {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
 		min-width: 0;
 	}
 	.block-window,

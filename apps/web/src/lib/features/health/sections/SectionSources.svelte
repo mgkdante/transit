@@ -36,32 +36,6 @@
 </div>
 
 <style>
-	.health-block {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-	.health-note {
-		margin: 0;
-		color: var(--muted-foreground);
-		font-size: var(--text-detail-body-mobile);
-		line-height: 1.8;
-		max-width: 60ch;
-	}
-	@media (min-width: 1024px) {
-		.health-note {
-			font-size: var(--text-detail-body-desktop);
-			line-height: 1.9;
-		}
-	}
-	.health-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.875rem;
-		padding: 0.75rem 0.25rem;
-		min-width: 0;
-	}
 	.health-row--source {
 		align-items: flex-start;
 	}
@@ -71,24 +45,10 @@
 		gap: 0.25rem;
 		min-width: 0;
 	}
-	.health-row-feed {
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--foreground);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
 	.health-row-chain {
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		color: var(--muted-foreground);
 		overflow-wrap: anywhere;
-	}
-	.health-row-age {
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--foreground);
-		flex-shrink: 0;
 	}
 </style>

@@ -1,0 +1,13 @@
+.label-with-info {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+}
+
+.label-with-info [data-slot='section-label'] {
+	min-width: 0;
+}
+
+.label-with-info .cluster-info {
+	flex: 0 0 auto;
+}

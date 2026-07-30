@@ -45,45 +45,11 @@
 </div>
 
 <style>
-	.health-block {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-	.health-note {
-		margin: 0;
-		color: var(--muted-foreground);
-		font-size: var(--text-detail-body-mobile);
-		line-height: 1.8;
-		max-width: 60ch;
-	}
-	@media (min-width: 1024px) {
-		.health-note {
-			font-size: var(--text-detail-body-desktop);
-			line-height: 1.9;
-		}
-	}
-	.health-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.875rem;
-		padding: 0.75rem 0.25rem;
-		min-width: 0;
-	}
 	.health-row-lead {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.5rem;
 		min-width: 0;
-	}
-	.health-row-feed {
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--foreground);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
 	}
 	.health-row-meta {
 		display: inline-flex;
@@ -99,11 +65,5 @@
 		text-transform: uppercase;
 		letter-spacing: var(--tracking-eyebrow);
 		color: var(--muted-foreground);
-	}
-	.health-row-age {
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--foreground);
-		flex-shrink: 0;
 	}
 </style>

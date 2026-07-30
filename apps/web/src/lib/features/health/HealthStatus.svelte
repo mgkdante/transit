@@ -25,6 +25,8 @@
   status marks ride the dataviz status scale (StatusDot), never --primary.
 -->
 <script lang="ts">
+	import './sections/health-sections.css';
+
 	import { onMount, tick } from 'svelte';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { freshnessRelative } from '$lib/v1/freshness';

@@ -180,16 +180,7 @@
 		gap: 0.5rem 1rem;
 	}
 	.label-with-info {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
 		min-width: 0;
-	}
-	.label-with-info :global([data-slot='section-label']) {
-		min-width: 0;
-	}
-	.label-with-info :global(.cluster-info) {
-		flex: none;
 	}
 	/* Quiet mono caption (window label), AA both themes. */
 	.caption {
