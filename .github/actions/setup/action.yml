@@ -21,7 +21,7 @@ runs:
       run: mkdir -p ~/.bun/install/cache
 
     - name: Cache Bun install cache
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.bun/install/cache
         key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock', '.bun-version') }}
@@ -36,7 +36,7 @@ runs:
 
     - name: Cache Vitest
       if: ${{ inputs.cache-vitest == 'true' }}
-      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: apps/web/.vitest/cache
         # Key on config only: hashing every src file made each commit a cache
