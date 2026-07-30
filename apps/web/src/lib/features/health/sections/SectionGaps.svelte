@@ -28,11 +28,6 @@
 </div>
 
 <style>
-	.health-block {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
 	.health-gaps {
 		display: flex;
 		flex-direction: column;

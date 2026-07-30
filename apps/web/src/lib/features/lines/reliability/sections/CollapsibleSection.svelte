@@ -1,4 +1,6 @@
 <script lang="ts">
+	import './reliability-sections.css';
+
 	import type { Snippet } from 'svelte';
 	import SharedCollapsibleSection from '$lib/components/shared/CollapsibleSection.svelte';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
