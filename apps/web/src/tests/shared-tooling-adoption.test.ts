@@ -26,7 +26,7 @@ type Manifest = Readonly<{
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const SOURCE_REPOSITORY = 'mgkdante/yesid.dev-design';
-const SOURCE_SHA = 'a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25';
+const SOURCE_SHA = '107c2dd621a7765f72dbab82461fef50b24bab4b';
 const BASE_DIGEST = 'sha256:588a4acf72f44593561112fc945d410548b56cf556bbbc9bc745c1f7b218424f';
 const ACTIONS = {
 	classifier: '.github/actions/classify-paths',
