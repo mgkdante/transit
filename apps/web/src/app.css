@@ -135,6 +135,8 @@ select {
   --z-index-sheet: var(--z-sheet);
   --z-index-menu: var(--z-menu);
   --z-index-nav: var(--z-nav);
+  --z-index-overlay: var(--z-overlay);
+  --z-index-ripple: var(--z-ripple);
   --width-content: var(--container-content);
   --width-wide: var(--container-wide);
   --spacing-page-x: var(--space-page-x);

@@ -10,8 +10,8 @@
 //
 // Transit-ONLY tokens (dataviz vehicle aliases, map-stop-fill, tracking.*,
 // light shadow re-pins) and base-ONLY tokens (component text sizes, cta
-// shadows, z.overlay/ripple, color.brand.glow) are legal — only SHARED paths
-// are value-locked. The dataviz families are shared as of design v0.2.0, so
+// shadows, color.brand.glow) are legal — only SHARED paths are value-locked,
+// including z.overlay and z.ripple. The dataviz families are shared as of design v0.2.0, so
 // the whole dataviz scale is gate-locked to the brand base. As of design
 // v0.3.0 (P5.3a·E4) the shadow.glow-* basis and space.page-x floor were
 // reconciled to the brand base. The register now also documents Transit's calmer
