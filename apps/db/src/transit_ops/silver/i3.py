@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.dialects import postgresql
@@ -247,13 +249,79 @@ SUPERSEDE_VANISHED_ALERTS = text(
     """
 ).bindparams(bindparam("content_hashes", expanding=True))
 
+UPSERT_ALERT_LANGUAGE_OBSERVATIONS = text(
+    """
+    INSERT INTO raw.alert_language_observations (
+        provider_id,
+        alert_logical_id,
+        observation_date,
+        has_explicit_fr,
+        has_explicit_en,
+        undetermined,
+        observed_at_utc
+    )
+    VALUES (
+        :provider_id,
+        :alert_logical_id,
+        :observation_date,
+        :has_explicit_fr,
+        :has_explicit_en,
+        :undetermined,
+        :observed_at_utc
+    )
+    ON CONFLICT (provider_id, alert_logical_id, observation_date)
+    DO UPDATE SET
+        has_explicit_fr = excluded.has_explicit_fr,
+        has_explicit_en = excluded.has_explicit_en,
+        undetermined = excluded.undetermined,
+        observed_at_utc = excluded.observed_at_utc
+    WHERE excluded.observed_at_utc
+          >= alert_language_observations.observed_at_utc
+    """
+)
+
+UPSERT_ALERT_FEED_OBSERVATION = text(
+    """
+    INSERT INTO raw.alert_feed_observations (
+        provider_id,
+        observation_date,
+        alert_count,
+        observed_at_utc
+    )
+    VALUES (
+        :provider_id,
+        :observation_date,
+        :alert_count,
+        :observed_at_utc
+    )
+    ON CONFLICT (provider_id, observation_date)
+    DO UPDATE SET
+        alert_count = excluded.alert_count,
+        observed_at_utc = excluded.observed_at_utc
+    WHERE excluded.observed_at_utc
+          >= alert_feed_observations.observed_at_utc
+    """
+)
+
 
 @dataclass(frozen=True)
 class RawI3AlertSnapshot:
     i3_alert_snapshot_id: int
     provider_id: str
+    provider_timezone: str
     captured_at_utc: datetime
     raw_payload_json: object
+
+
+@dataclass(frozen=True)
+class AlertLanguageObservation:
+    provider_id: str
+    alert_logical_id: str
+    observation_date: date
+    has_explicit_fr: bool
+    has_explicit_en: bool
+    undetermined: bool
+    observed_at_utc: datetime
 
 
 @dataclass(frozen=True)
@@ -362,6 +430,179 @@ def _text_en(payload: object) -> str | None:
             return _text(english.get("text") or english.get("value"))
         return _text(english)
     return None
+
+
+def _has_explicit_language(payload: object, accepted: set[str]) -> bool:
+    """Return whether non-empty text carries an explicit accepted language tag."""
+
+    if isinstance(payload, list):
+        return any(
+            isinstance(item, dict)
+            and _primary_language(item.get("language")) in accepted
+            and _text(item.get("text") or item.get("value")) is not None
+            for item in payload
+        )
+    if not isinstance(payload, dict):
+        return False
+    if (
+        _primary_language(payload.get("language")) in accepted
+        and _text(payload.get("text") or payload.get("value")) is not None
+    ):
+        return True
+    return any(
+        _primary_language(key) in accepted and _text(value) is not None
+        for key, value in payload.items()
+        if isinstance(key, str)
+    )
+
+
+_ALERT_HEADER_KEYS = ("header", "title", "summary", "header_texts")
+_ALERT_DESCRIPTION_KEYS = (
+    "description",
+    "body",
+    "message",
+    "description_texts",
+)
+_SCD_ENRICHMENT_KEYS = frozenset(
+    {
+        "alert_header_text_en",
+        "description_text_en",
+        "header_text_en",
+        "description_en",
+    }
+)
+
+
+def _without_explicit_english(payload: object) -> object:
+    if isinstance(payload, list):
+        return [
+            _without_explicit_english(item)
+            for item in payload
+            if not (
+                isinstance(item, dict)
+                and _primary_language(item.get("language")) in {"en", "eng"}
+            )
+        ]
+    if isinstance(payload, dict):
+        return {
+            key: _without_explicit_english(value)
+            for key, value in payload.items()
+            if not (
+                isinstance(key, str)
+                and _primary_language(key) in {"en", "eng"}
+            )
+        }
+    return payload
+
+
+def _fallback_alert_logical_id(raw_alert: dict[str, Any]) -> str:
+    enrichment_neutral: dict[str, object] = {}
+    text_keys = {*_ALERT_HEADER_KEYS, *_ALERT_DESCRIPTION_KEYS}
+    text_without_english = {
+        key: _without_explicit_english(value)
+        for key, value in raw_alert.items()
+        if key in text_keys
+    }
+    has_non_english_identity_text = any(
+        _text(value) is not None for value in text_without_english.values()
+    )
+    for key, value in raw_alert.items():
+        if key in _SCD_ENRICHMENT_KEYS:
+            continue
+        if key in text_keys and has_non_english_identity_text:
+            enrichment_neutral[key] = text_without_english[key]
+        else:
+            enrichment_neutral[key] = value
+    encoded = json.dumps(
+        enrichment_neutral,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+        default=str,
+    ).encode("utf-8")
+    return f"content:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def _provider_local_observation_date(snapshot: RawI3AlertSnapshot) -> date:
+    if snapshot.captured_at_utc.utcoffset() is None:
+        raise ValueError("captured_at_utc must be timezone-aware")
+    return snapshot.captured_at_utc.astimezone(
+        ZoneInfo(snapshot.provider_timezone)
+    ).date()
+
+
+def build_alert_language_observations(
+    snapshot: RawI3AlertSnapshot,
+) -> list[AlertLanguageObservation]:
+    """Classify the raw alert translations before any Silver SCD enrichment.
+
+    A provider id is the preferred logical identity. Providers that omit ids use
+    a content identity that excludes explicit EN when FR or untagged identity
+    text exists. EN appearing later therefore updates that same daily
+    observation. When EN is the only identity text, it stays in the hash so
+    distinct EN-only alerts cannot collapse.
+    """
+
+    observation_date = _provider_local_observation_date(snapshot)
+    latest_by_logical_id: dict[str, AlertLanguageObservation] = {}
+    for raw_alert in _payload_alerts(snapshot.raw_payload_json):
+        if not isinstance(raw_alert, dict):
+            continue
+        alert_id = _text(_value(raw_alert, "id", "alertId", "messageId"))
+        logical_id = (
+            f"id:{alert_id}" if alert_id else _fallback_alert_logical_id(raw_alert)
+        )
+        header = _value(raw_alert, *_ALERT_HEADER_KEYS)
+        description = _value(raw_alert, *_ALERT_DESCRIPTION_KEYS)
+        has_explicit_fr = _has_explicit_language(
+            header, {"fr", "fra"}
+        ) or _has_explicit_language(description, {"fr", "fra"})
+        has_explicit_en = _has_explicit_language(
+            header, {"en", "eng"}
+        ) or _has_explicit_language(description, {"en", "eng"})
+        latest_by_logical_id[logical_id] = AlertLanguageObservation(
+            provider_id=snapshot.provider_id,
+            alert_logical_id=logical_id,
+            observation_date=observation_date,
+            has_explicit_fr=has_explicit_fr,
+            has_explicit_en=has_explicit_en,
+            undetermined=not (has_explicit_fr or has_explicit_en),
+            observed_at_utc=snapshot.captured_at_utc,
+        )
+    return sorted(
+        latest_by_logical_id.values(),
+        key=lambda observation: observation.alert_logical_id,
+    )
+
+
+def record_alert_language_observations(
+    connection: Connection,
+    *,
+    snapshot: RawI3AlertSnapshot,
+) -> int:
+    """Upsert the latest per-alert and feed-level evidence for a provider day."""
+
+    observations = build_alert_language_observations(snapshot)
+    observation_date = _provider_local_observation_date(snapshot)
+    source_alert_count = sum(
+        isinstance(item, dict)
+        for item in _payload_alerts(snapshot.raw_payload_json)
+    )
+    connection.execute(
+        UPSERT_ALERT_FEED_OBSERVATION,
+        {
+            "provider_id": snapshot.provider_id,
+            "observation_date": observation_date,
+            "alert_count": source_alert_count,
+            "observed_at_utc": snapshot.captured_at_utc,
+        },
+    )
+    if observations:
+        connection.execute(
+            UPSERT_ALERT_LANGUAGE_OBSERVATIONS,
+            [asdict(observation) for observation in observations],
+        )
+    return len(observations)
 
 
 def _timestamp(value: object) -> datetime | None:
@@ -585,6 +826,11 @@ def load_i3_snapshot_to_silver(
     snapshot: RawI3AlertSnapshot,
     loaded_at_utc: datetime | None = None,
 ) -> I3SilverLoadResult:
+    # D2 observation seam: this reads the raw payload and writes the daily
+    # language evidence BEFORE normalize/INSERT can hit the monotonic SCD
+    # COALESCE. Both proprietary i3 JSON and converted GTFS-RT alerts arrive
+    # here through raw.i3_alert_snapshots.
+    record_alert_language_observations(connection, snapshot=snapshot)
     alert_rows, entity_rows, period_rows = normalize_i3_alert_payload(snapshot)
     connection.execute(
         DELETE_I3_ACTIVE_PERIODS,
@@ -693,9 +939,12 @@ def find_latest_i3_raw_snapshot(
             SELECT
                 i3.i3_alert_snapshot_id,
                 i3.provider_id,
+                p.timezone AS provider_timezone,
                 i3.captured_at_utc,
                 i3.raw_payload_json
             FROM raw.i3_alert_snapshots AS i3
+            INNER JOIN core.providers AS p
+                ON p.provider_id = i3.provider_id
             INNER JOIN raw.ingestion_runs AS ir
                 ON ir.ingestion_run_id = i3.ingestion_run_id
             WHERE i3.provider_id = :provider_id
@@ -714,6 +963,7 @@ def find_latest_i3_raw_snapshot(
     return RawI3AlertSnapshot(
         i3_alert_snapshot_id=int(row["i3_alert_snapshot_id"]),
         provider_id=str(row["provider_id"]),
+        provider_timezone=str(row["provider_timezone"]),
         captured_at_utc=row["captured_at_utc"],
         raw_payload_json=row["raw_payload_json"],
     )

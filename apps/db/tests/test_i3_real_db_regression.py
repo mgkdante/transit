@@ -151,6 +151,7 @@ def _load(connection, snap_id: int, alerts: list) -> object:
     snapshot = RawI3AlertSnapshot(
         i3_alert_snapshot_id=snap_id,
         provider_id=PROVIDER,
+        provider_timezone="America/Toronto",
         captured_at_utc=SNAP_TIMES[snap_id],
         raw_payload_json=alerts,
     )

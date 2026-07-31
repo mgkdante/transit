@@ -96,6 +96,7 @@ def test_service_alerts_merge_into_silver_and_gold(
     snapshot = RawI3AlertSnapshot(
         i3_alert_snapshot_id=snapshot_id,
         provider_id=PROVIDER,
+        provider_timezone="America/Toronto",
         captured_at_utc=datetime.now(UTC),
         raw_payload_json=_service_alerts_payload(),
     )
