@@ -28,7 +28,7 @@
 //      (dataviz/primary/accent/rule). Retired by P7; they can't return.
 //   2. RAW MS — a bare `<n>ms` duration/easing literal in a transition/animation.
 //      All motion flows through `--duration-*`/`--ease-*` (P2).
-//   3. TOKEN FALLBACKS — `var(--duration|ease|radius|space…, <fallback>)`. tokens
+//   3. TOKEN FALLBACKS — `var(--duration|ease|radius|space|measure…, <fallback>)`. tokens
 //      are always loaded; the fallback is where the drift/lies lived (P2).
 //   4. TEXT-SHADOW GLOW — `text-shadow` on a glow/primary/accent token. Glow is
 //      never text (P-glow law); a neutral legibility halo is fine.
@@ -36,6 +36,8 @@
 import { describe, it, expect } from 'vitest';
 import { resolve } from 'node:path';
 import { styleRegressionViolations, type ForbiddenPattern } from '@yesid/gates';
+
+const TOKEN_FALLBACK_PATTERN = /var\(--(duration|ease|radius|space|spacing|measure)[a-z0-9-]*,/;
 
 // The FORBIDDEN table — site-final (§C4). No entry may be relaxed or removed.
 const FORBIDDEN: readonly ForbiddenPattern[] = [
@@ -56,9 +58,9 @@ const FORBIDDEN: readonly ForbiddenPattern[] = [
 			'raw motion literal: a bare <n>ms in a transition/animation. Use --duration-* / --ease-* tokens (P2).',
 	},
 	{
-		pattern: /var\(--(duration|ease|radius|space|spacing)[a-z0-9-]*,/,
+		pattern: TOKEN_FALLBACK_PATTERN,
 		reason:
-			'token fallback: var(--token, <fallback>) for a duration/ease/radius/space token. tokens.css is always loaded — drop the fallback (P2 no-fallback law).',
+			'token fallback: var(--token, <fallback>) for a duration/ease/radius/space/measure token. tokens.css is always loaded — drop the fallback (P2 no-fallback law).',
 	},
 	{
 		pattern: /text-shadow:[^;]*var\(--(glow|primary|accent)/,
@@ -66,6 +68,13 @@ const FORBIDDEN: readonly ForbiddenPattern[] = [
 			'text-shadow glow: glow is never text (the glow-never-text law). A neutral legibility halo (e.g. var(--background)) is fine; a glow/primary/accent one is not.',
 	},
 ];
+
+describe('style regressions — token-fallback falsification', () => {
+	it('catches a measure-token fallback without banning a bare measure reference', () => {
+		expect(TOKEN_FALLBACK_PATTERN.test('max-width: var(--measure-body, 60rem);')).toBe(true);
+		expect(TOKEN_FALLBACK_PATTERN.test('max-width: var(--measure-body);')).toBe(false);
+	});
+});
 
 // Swept roots — site-wide after stage B. The whole component + route tree is
 // under the guard.
