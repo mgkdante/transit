@@ -710,11 +710,13 @@
 		}
 	}
 
-	function setNearMeOrigin(origin: NearMeOrigin, syncUrl = true): void {
+	// syncUrl ("write this origin to the URL?") and urlBacked ("does the URL own
+	// it?") are separate questions: a URL-adopted origin is owned by the URL yet
+	// must not echo back into it; a device fix is neither written nor owned.
+	function setNearMeOrigin(origin: NearMeOrigin, { syncUrl = true, urlBacked = true } = {}): void {
 		nearMeOrigin = origin;
 		nearMeError = null;
-		// A device fix never enters the URL — the URL is not its authority.
-		nearOriginUrlBacked = syncUrl;
+		nearOriginUrlBacked = urlBacked;
 		if (syncUrl) syncNearTargetToUrl(origin);
 		flyToNearMeOrigin(origin);
 	}
@@ -743,7 +745,7 @@
 		nearUrlKey = key;
 		nearMeOpen = true;
 		nearMeQuery = '';
-		setNearMeOrigin(nearTarget, false);
+		setNearMeOrigin(nearTarget, { syncUrl: false });
 	}
 
 	function clearNearMeOrigin(): void {
@@ -834,7 +836,7 @@
 					label: t.nearMeUseLocation,
 					precision: 'place',
 				} satisfies NearMeOrigin;
-				setNearMeOrigin(deviceOrigin, false);
+				setNearMeOrigin(deviceOrigin, { syncUrl: false, urlBacked: false });
 			},
 			(geoError) => {
 				nearMeLoading = false;

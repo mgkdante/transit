@@ -403,6 +403,23 @@ describe('MapHero near-me device location', () => {
 		// green-light a build that destroys the fix a microtask later.
 		await tick();
 		expect(screen.getByRole('button', { name: 'Clear location' })).toBeTruthy();
+
+		harness.setPageUrl('http://localhost/map');
+	});
+
+	it('retires a URL-adopted origin when the URL drops the near params (S5-377 B1 inverse)', async () => {
+		// A shared deep-link seeds the origin FROM the URL. That origin is owned
+		// by the URL (urlBacked) even though adopting it must not echo a write
+		// back — so when navigation drops the near params, the pin retires.
+		harness.setPageUrl('http://localhost/map?near=45.525686,-73.594764&nearLabel=Place+des+Arts');
+		render(MapHero);
+		await waitFor(() =>
+			expect(screen.getByRole('button', { name: 'Clear location' })).toBeTruthy(),
+		);
+
+		harness.setPageUrl('http://localhost/map');
+		await tick();
+		expect(screen.queryByRole('button', { name: 'Clear location' })).toBeNull();
 	});
 });
 
