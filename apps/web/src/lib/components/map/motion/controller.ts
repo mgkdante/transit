@@ -21,6 +21,8 @@ import {
 } from './projector';
 import { resolveMotionRuntime, type MotionRuntime } from './runtime';
 
+type RevisionedShapeResolver = ShapeResolver & { revision?: () => number };
+
 export interface VehicleMotionOptions {
 	tickKey?: string | null;
 	/** Global stale gate: snap + do not animate (whole feed behind). */
@@ -59,7 +61,7 @@ export function createVehicleMotionController(
 	// `set`; read every frame for projection.
 	let entries: VehicleEntry[] = [];
 	let tickKey: string | null = null;
-	let shapeFor: ShapeResolver | undefined;
+	let shapeFor: RevisionedShapeResolver | undefined;
 	let serverNowFn: () => number = () => Date.now();
 	let animating = false;
 	let frameHandle: number | null = null;
@@ -78,9 +80,20 @@ export function createVehicleMotionController(
 	// Monotonic timestamp of the last evaluated render, to coalesce work to ~30fps
 	// even when the resulting upload is skipped as byte-identical.
 	let lastRenderMs = Number.NEGATIVE_INFINITY;
-	// Successful per-fix geometry work, pinned by (non-null tick, vehicle id).
-	// Misses are deliberately absent so a shape that arrives mid-tick retries.
+	// A non-null tickKey identifies one immutable feature-coordinate snapshot, so
+	// successful geometry is pinned by (tickKey, vehicle id). This positive lookup
+	// stays ahead of revision logic: a global supply advance cannot invalidate a
+	// same-tick success. Revision-aware deterministic misses are also tick-scoped;
+	// plain resolvers retain the legacy per-frame retry path.
 	const invariantCache = new Map<string, { tickKey: string; invariants: ProjectionInvariants }>();
+	const invariantMissCache = new Map<string, { tickKey: string; missRevision: number }>();
+
+	function memoizeInvariantMiss(id: string, missRevision: number | undefined): null {
+		if (tickKey !== null && missRevision !== undefined) {
+			invariantMissCache.set(id, { tickKey, missRevision });
+		}
+		return null;
+	}
 
 	function resolveInvariants(entry: VehicleEntry): ProjectionInvariants | null {
 		const id = entry.feature.properties.id;
@@ -89,13 +102,18 @@ export function createVehicleMotionController(
 			if (cached?.tickKey === tickKey) return cached.invariants;
 		}
 		if (!entry.fix) return null;
+		const revision = shapeFor?.revision?.();
+		if (tickKey !== null && revision !== undefined) {
+			const cachedMiss = invariantMissCache.get(id);
+			if (cachedMiss?.tickKey === tickKey && cachedMiss.missRevision === revision) return null;
+		}
 		const shape = shapeFor?.(entry.feature) ?? null;
-		if (!shape || shape.length < 2) return null;
+		if (!shape || shape.length < 2) return memoizeInvariantMiss(id, revision);
 		const lengths = cumulativeLengths(shape);
-		if (lengths[lengths.length - 1] <= 0) return null;
+		if (lengths[lengths.length - 1] <= 0) return memoizeInvariantMiss(id, revision);
 		const coord = entry.feature.geometry.coordinates as Coord;
 		const projection = projectToPolyline(shape, coord, lengths);
-		if (!projection) return null;
+		if (!projection) return memoizeInvariantMiss(id, revision);
 		const rawFixUtc = entry.fix.reportedUtc ?? entry.fix.updatedUtc;
 		const invariants = {
 			fixEpochMs: Date.parse(rawFixUtc),
@@ -103,7 +121,10 @@ export function createVehicleMotionController(
 			lengths,
 			s0: projection.s,
 		};
-		if (tickKey !== null) invariantCache.set(id, { tickKey, invariants });
+		if (tickKey !== null) {
+			invariantMissCache.delete(id);
+			invariantCache.set(id, { tickKey, invariants });
+		}
 		return invariants;
 	}
 
@@ -115,9 +136,10 @@ export function createVehicleMotionController(
 		for (const id of displayed.keys()) {
 			if (!currentIds.has(id)) displayed.delete(id);
 		}
-		// Every cached value belongs to the prior tick. Clearing releases its strong
-		// shape-array pin while same-tick filter re-feeds never enter this helper.
+		// Every cached value belongs to the prior tick. Clearing releases the positive
+		// shape-array pins and miss records; same-tick re-feeds never enter this helper.
 		invariantCache.clear();
+		invariantMissCache.clear();
 	}
 
 	function stopLoop(): void {
@@ -203,6 +225,7 @@ export function createVehicleMotionController(
 		stopLoop();
 		blends.clear();
 		invariantCache.clear();
+		invariantMissCache.clear();
 		pendingBlendOrigins = null;
 		displayed.clear();
 		for (const f of features.features) {
@@ -228,7 +251,14 @@ export function createVehicleMotionController(
 		set(next: VehicleFC, options: VehicleMotionOptions = {}) {
 			const nextTickKey = options.tickKey ?? null;
 			const animate = options.animate ?? shouldAnimate('motion-gated');
-			shapeFor = options.shapeFor;
+			const nextShapeFor = options.shapeFor;
+			// Only a resolver identity change invalidates same-tick geometry. MapHero's
+			// stable resolver therefore preserves both caches across style re-feeds.
+			if (nextShapeFor !== shapeFor) {
+				invariantCache.clear();
+				invariantMissCache.clear();
+			}
+			shapeFor = nextShapeFor;
 			if (options.serverNowFn) serverNowFn = options.serverNowFn;
 
 			// Global stale or reduced-motion: show the reported positions, no

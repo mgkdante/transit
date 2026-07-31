@@ -678,6 +678,301 @@ describe('createVehicleMotionController — forward projection', () => {
 		c.destroy();
 	});
 
+	it('retries a same-revision miss on a new tick', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const shapeFor = Object.assign(
+			vi.fn<ShapeResolver>((candidate) =>
+				candidate.geometry.coordinates[1] === W[1] ? STRAIGHT : null,
+			),
+			{ revision: () => 0 },
+		);
+		const c = createVehicleMotionController(map, runtime);
+		const options = {
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor,
+			serverNowFn,
+		};
+
+		c.set(fcAt(W[0], W[1] + 0.1), { ...options, tickKey: 't1' });
+		expect(shapeFor).toHaveBeenCalledTimes(1);
+
+		c.set(fcAt(W[0], W[1]), { ...options, tickKey: 't2' });
+		expect(shapeFor).toHaveBeenCalledTimes(2);
+		frame(900, 0);
+		expect(lastLon(setData)).toBeGreaterThan(W[0]);
+		c.destroy();
+	});
+
+	it('skips a same-tick miss until revision advances, then upgrades', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		let revision = 0;
+		let suppliedShape: readonly Coord[] | null = null;
+		const shapeFor = Object.assign(
+			vi.fn<ShapeResolver>(() => suppliedShape),
+			{
+				revision: () => revision,
+			},
+		);
+		const c = createVehicleMotionController(map, runtime);
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor,
+			serverNowFn,
+		});
+		expect(shapeFor).toHaveBeenCalledTimes(1);
+
+		frame(40, 0);
+		frame(40, 0);
+		expect(shapeFor).toHaveBeenCalledTimes(1);
+
+		revision = 1;
+		frame(40, 0);
+		expect(shapeFor).toHaveBeenCalledTimes(2);
+		frame(40, 0);
+		expect(shapeFor).toHaveBeenCalledTimes(2);
+
+		suppliedShape = STRAIGHT;
+		revision = 2;
+		frame(40, 0);
+		expect(shapeFor).toHaveBeenCalledTimes(3);
+		expect(lastLon(setData)).toBeGreaterThan(W[0]);
+		c.destroy();
+	});
+
+	it('keeps a same-tick positive pinned when the global revision advances', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		let revision = 0;
+		const shapeFor = Object.assign(
+			vi.fn<ShapeResolver>(() => (revision === 0 ? STRAIGHT : NORTHBOUND)),
+			{ revision: () => revision },
+		);
+		const c = createVehicleMotionController(map, runtime);
+		c.set(fcAt(W[0], W[1], 17), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(0, 10),
+			shapeFor,
+			serverNowFn,
+		});
+		expect(lastFeature(setData).properties.bearing).toBe(90);
+		expect(shapeFor).toHaveBeenCalledTimes(1);
+
+		revision = 1;
+		frame(40, 0);
+
+		expect(shapeFor).toHaveBeenCalledTimes(1);
+		expect(lastFeature(setData).properties.bearing).toBe(90);
+		c.destroy();
+	});
+
+	it('clears a miss only when the resolver identity changes', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn } = controlledRuntime();
+		const first = Object.assign(
+			vi.fn<ShapeResolver>(() => null),
+			{ revision: () => 0 },
+		);
+		const replacement = Object.assign(
+			vi.fn<ShapeResolver>(() => STRAIGHT),
+			{
+				revision: () => 0,
+			},
+		);
+		const c = createVehicleMotionController(map, runtime);
+		const feed = fcAt(W[0], W[1]);
+		const options = {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor: first,
+			serverNowFn,
+		};
+
+		c.set(feed, options);
+		c.set(feed, options);
+		expect(first).toHaveBeenCalledTimes(1);
+
+		c.set(feed, { ...options, shapeFor: replacement });
+		expect(replacement).toHaveBeenCalledTimes(1);
+		expect(lastLon(setData)).toBeGreaterThan(W[0]);
+		c.destroy();
+	});
+
+	it('refreshes a same-tick positive when the resolver identity changes', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn } = controlledRuntime();
+		const first = Object.assign(
+			vi.fn<ShapeResolver>(() => STRAIGHT),
+			{ revision: () => 0 },
+		);
+		const replacement = Object.assign(
+			vi.fn<ShapeResolver>(() => NORTHBOUND),
+			{
+				revision: () => 0,
+			},
+		);
+		const c = createVehicleMotionController(map, runtime);
+		const feed = fcAt(W[0], W[1]);
+		const options = {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(0, 10),
+			shapeFor: first,
+			serverNowFn,
+		};
+
+		c.set(feed, options);
+		expect(lastFeature(setData).properties.bearing).toBe(90);
+
+		c.set(feed, { ...options, shapeFor: replacement });
+		expect(replacement).toHaveBeenCalledTimes(1);
+		expect(lastFeature(setData).properties.bearing).toBe(0);
+		c.destroy();
+	});
+
+	it('memoizes a degenerate-shape miss for one tick and revision', () => {
+		const { map } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const shapeFor = Object.assign(
+			vi.fn<ShapeResolver>(() => [W, W]),
+			{ revision: () => 0 },
+		);
+		const c = createVehicleMotionController(map, runtime);
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor,
+			serverNowFn,
+		});
+		frame(40, 0);
+		frame(40, 0);
+
+		expect(shapeFor).toHaveBeenCalledTimes(1);
+		c.destroy();
+	});
+
+	it('memoizes a null-projection miss for one tick and revision', () => {
+		const { map } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		let lengthReads = 0;
+		const shape = new Proxy<Coord[]>([W, E], {
+			get(target, property, receiver) {
+				if (property === 'length') {
+					lengthReads += 1;
+					// The first four reads build valid lengths; only projectToPolyline's
+					// own guard sees an empty shape and returns null.
+					return lengthReads >= 5 ? 0 : 2;
+				}
+				return Reflect.get(target, property, receiver);
+			},
+		});
+		const shapeFor = Object.assign(
+			vi.fn<ShapeResolver>(() => shape),
+			{ revision: () => 0 },
+		);
+		const c = createVehicleMotionController(map, runtime);
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor,
+			serverNowFn,
+		});
+		frame(40, 0);
+
+		expect(shapeFor).toHaveBeenCalledTimes(1);
+		c.destroy();
+	});
+
+	it('does not memoize the pre-resolver missing-fix exit', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn } = controlledRuntime();
+		let fix: VehicleFix | null = null;
+		const resolvedFix = fixFor(5, 10)('40061');
+		const shapeFor = Object.assign(
+			vi.fn<ShapeResolver>(() => STRAIGHT),
+			{ revision: () => 0 },
+		);
+		const c = createVehicleMotionController(map, runtime);
+		const feed = fcAt(W[0], W[1]);
+		const options = {
+			tickKey: 't1',
+			animate: true,
+			fixFor: () => fix,
+			shapeFor,
+			serverNowFn,
+		};
+
+		c.set(feed, options);
+		expect(shapeFor).not.toHaveBeenCalled();
+
+		fix = resolvedFix;
+		c.set(feed, options);
+		expect(shapeFor).toHaveBeenCalledTimes(1);
+		expect(lastLon(setData)).toBeGreaterThan(W[0]);
+		c.destroy();
+	});
+
+	it('clears a revisioned miss when the controller snaps', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn } = controlledRuntime();
+		let suppliedShape: readonly Coord[] | null = null;
+		const shapeFor = Object.assign(
+			vi.fn<ShapeResolver>(() => suppliedShape),
+			{
+				revision: () => 0,
+			},
+		);
+		const c = createVehicleMotionController(map, runtime);
+		const feed = fcAt(W[0], W[1]);
+		const options = {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor,
+			serverNowFn,
+		};
+
+		c.set(feed, options);
+		expect(shapeFor).toHaveBeenCalledTimes(1);
+		c.set(feed, { ...options, animate: false });
+
+		suppliedShape = STRAIGHT;
+		c.set(feed, options);
+		expect(shapeFor).toHaveBeenCalledTimes(2);
+		expect(lastLon(setData)).toBeGreaterThan(W[0]);
+		c.destroy();
+	});
+
+	it('does not memoize a revisioned miss without a tick key', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const shapeFor = Object.assign(
+			vi.fn<ShapeResolver>().mockReturnValueOnce(null).mockReturnValue(STRAIGHT),
+			{ revision: () => 0 },
+		);
+		const c = createVehicleMotionController(map, runtime);
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: null,
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor,
+			serverNowFn,
+		});
+		frame(40, 0);
+
+		expect(shapeFor).toHaveBeenCalledTimes(2);
+		expect(lastLon(setData)).toBeGreaterThan(W[0]);
+		c.destroy();
+	});
+
 	it('does not cache projection invariants without a tick key', () => {
 		const { map } = stubMap();
 		const { runtime, serverNowFn, frame } = controlledRuntime();

@@ -85,7 +85,7 @@ const harness = vi.hoisted(() => {
 	const motionSet = vi.fn(runMotionSet);
 	const motionDestroy = vi.fn(stopVehicleUploads);
 	const releaseLease = vi.fn();
-	const getRoute = vi.fn(() => null);
+	const getRoute = vi.fn(async (_id?: string, _options?: unknown) => null);
 	const getStop = vi.fn(() => null);
 	const toVehicleFeatures = vi.fn(
 		(
@@ -138,7 +138,7 @@ const harness = vi.hoisted(() => {
 		next_stop: 'stop-1',
 	};
 	const liveStore = {
-		vehicles: { generated_utc: '2026-06-20T12:00:00Z', vehicles: [] },
+		vehicles: { generated_utc: '2026-06-20T12:00:00Z', vehicles: [vehicle] },
 		trips: null,
 		departures: null,
 		alerts: { generated_utc: '2026-06-20T12:00:00Z', alerts: [alert] },
@@ -246,6 +246,7 @@ const harness = vi.hoisted(() => {
 		isPrefersReducedMotion: () => reducedMotion,
 		motionSet,
 		resetMotionSetImplementation: () => motionSet.mockImplementation(runMotionSet),
+		resetGetRouteImplementation: () => getRoute.mockImplementation(async () => null),
 		vehicleSourceSetData,
 		motionDestroy,
 		releaseLease,
@@ -253,6 +254,7 @@ const harness = vi.hoisted(() => {
 		getRoute,
 		getStop,
 		toVehicleFeatures,
+		vehicle,
 		stops: [
 			{
 				id: 'stop-1',
@@ -361,6 +363,21 @@ vi.mock('$lib/v1/repositories/static', () => ({
 vi.mock('$lib/v1/live/store.svelte', async () => {
 	const { mapHeroReceiptSignals: signals } =
 		await import('./__fixtures__/MapHeroReceiptSignals.svelte');
+	Object.defineProperty(harness.liveStore, 'vehicles', {
+		configurable: true,
+		get: () => {
+			const generation = signals.vehiclesGeneration;
+			return {
+				generated_utc: generation,
+				vehicles: [
+					{
+						...harness.vehicle,
+						route: generation === '2026-06-20T12:00:00Z' ? '24' : '55',
+					},
+				],
+			};
+		},
+	});
 	Object.defineProperty(harness.liveStore, 'vehiclesGeneratedUtc', {
 		configurable: true,
 		get: () => signals.vehiclesGeneration,
@@ -429,6 +446,7 @@ afterEach(() => {
 	document.body.innerHTML = '';
 	vi.clearAllMocks();
 	harness.resetMotionSetImplementation();
+	harness.resetGetRouteImplementation();
 	harness.identityReceivers.length = 0;
 	harness.isDesktop = false;
 	mapHeroReceiptSignals.reset();
@@ -601,6 +619,51 @@ describe('MapHero near-me device location', () => {
 });
 
 describe('MapHero map-layer feed lifecycle', () => {
+	it('keeps a cold raw map from prefetching shapes for a non-empty routed fleet', async () => {
+		render(MapHero);
+		await tick();
+
+		expect(harness.getRoute).not.toHaveBeenCalled();
+	});
+
+	it('prefetches immediately when raw toggles to smooth without a vehicle poll', async () => {
+		render(MapHero);
+		await tick();
+		expect(harness.getRoute).not.toHaveBeenCalled();
+
+		mapHeroReceiptSignals.setMotionMode('smooth');
+		await tick();
+
+		expect(harness.getRoute).toHaveBeenCalledExactlyOnceWith('24');
+	});
+
+	it('prefetches a newly polled route while smooth mode is active', async () => {
+		mapHeroReceiptSignals.setMotionMode('smooth');
+		render(MapHero);
+		await waitFor(() => expect(harness.getRoute).toHaveBeenCalledExactlyOnceWith('24'));
+
+		mapHeroReceiptSignals.setVehiclesGeneration('2026-06-20T12:00:30Z');
+
+		await waitFor(() => expect(harness.getRoute).toHaveBeenCalledWith('55'));
+		expect(harness.getRoute).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps selected-route linework fetching independently in raw mode', async () => {
+		render(MapHero);
+		await tick();
+		expect(harness.getRoute).not.toHaveBeenCalled();
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+
+		await waitFor(() =>
+			expect(harness.getRoute).toHaveBeenCalledWith(
+				'24',
+				expect.objectContaining({ signal: expect.anything() }),
+			),
+		);
+		expect(harness.getRoute.mock.calls.some((call) => call.length === 1)).toBe(false);
+	});
+
 	it('creates one motion controller across ready and two style loads', async () => {
 		render(MapHero);
 		await tick();

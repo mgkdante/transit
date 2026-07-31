@@ -72,15 +72,20 @@ describe('createShapeCacheManager.prefetch', () => {
 	it('caches a resolved shape so shapeFor upgrades a bus to its route polyline', async () => {
 		const getRoute = vi.fn(async (id: string) => routeFile(id));
 		const mgr = createShapeCacheManager(getRoute);
+		const revision = () => mgr.shapeFor.revision?.();
 
 		// Before any fetch resolves, the bus freezes (no shape).
 		expect(mgr.shapeFor(feature('161'))).toBeNull();
+		expect(revision()).toBe(0);
 
 		mgr.prefetch([vehicle('a', '161')]);
+		// Starting a request does not advertise new shape supply.
+		expect(revision()).toBe(0);
 		await flush();
 
 		// The point sits on the east leg → resolves to that variant.
 		expect(mgr.shapeFor(feature('161'))).toEqual(EAST_LEG);
+		expect(revision()).toBe(1);
 	});
 
 	it('fails soft and allows a later retry when a fetch rejects', async () => {
@@ -89,26 +94,40 @@ describe('createShapeCacheManager.prefetch', () => {
 			.mockRejectedValueOnce(new Error('network'))
 			.mockResolvedValueOnce(routeFile('161'));
 		const mgr = createShapeCacheManager(getRoute);
+		const revision = () => mgr.shapeFor.revision?.();
 
 		mgr.prefetch([vehicle('a', '161')]);
+		expect(revision()).toBe(0);
 		await flush();
 		// The failed route is un-cached (the requested flag was cleared on reject).
 		expect(mgr.shapeFor(feature('161'))).toBeNull();
+		// The catch-path un-ledger is itself a supply-state change.
+		expect(revision()).toBe(1);
 
 		// A subsequent poll retries the same route — now it resolves and caches.
 		mgr.prefetch([vehicle('a', '161')]);
+		expect(revision()).toBe(1);
 		await flush();
 		expect(mgr.shapeFor(feature('161'))).toEqual(EAST_LEG);
 		expect(getRoute).toHaveBeenCalledTimes(2);
+		expect(revision()).toBe(2);
 	});
 
-	it('does not cache a route that resolves to null or an empty shape set', async () => {
-		const getRoute = vi.fn(async (id: string) => (id === 'null-route' ? null : routeFile(id)));
+	it('ledgers null and empty results without advancing the revision', async () => {
+		const getRoute = vi.fn(async (id: string) =>
+			id === 'null-route' ? null : { ...routeFile(id), directions: [] },
+		);
 		const mgr = createShapeCacheManager(getRoute);
 
-		mgr.prefetch([vehicle('a', 'null-route')]);
+		mgr.prefetch([vehicle('a', 'null-route'), vehicle('b', 'empty-route')]);
 		await flush();
 		expect(mgr.shapeFor(feature('null-route'))).toBeNull();
+		expect(mgr.shapeFor(feature('empty-route'))).toBeNull();
+		expect(mgr.shapeFor.revision?.()).toBe(0);
+
+		mgr.prefetch([vehicle('a', 'null-route'), vehicle('b', 'empty-route')]);
+		await flush();
+		expect(getRoute).toHaveBeenCalledTimes(2);
 	});
 
 	it('evicts the oldest cached route once the cap is exceeded', async () => {
@@ -124,6 +143,30 @@ describe('createShapeCacheManager.prefetch', () => {
 		// point sits on every route's identical shape, so resolution proves presence.
 		expect(mgr.shapeFor(feature('r0'))).toBeNull();
 		expect(mgr.shapeFor(feature(`r${MAX_CACHED_ROUTE_SHAPES}`))).toEqual(EAST_LEG);
+
+		// Eviction removes the request-ledger entry too, so the old route can return.
+		mgr.prefetch([vehicle('again', 'r0')]);
+		expect(getRoute).toHaveBeenCalledTimes(MAX_CACHED_ROUTE_SHAPES + 2);
+		await flush();
+		expect(mgr.shapeFor(feature('r0'))).toEqual(EAST_LEG);
+	});
+
+	it('dedupes two prefetches while the first request is still pending', async () => {
+		let resolveRoute!: (route: RouteFile | null) => void;
+		const pending = new Promise<RouteFile | null>((resolve) => {
+			resolveRoute = resolve;
+		});
+		const getRoute = vi.fn(() => pending);
+		const mgr = createShapeCacheManager(getRoute);
+
+		mgr.prefetch([vehicle('a', '161')]);
+		mgr.prefetch([vehicle('b', '161')]);
+
+		expect(getRoute).toHaveBeenCalledTimes(1);
+
+		resolveRoute(routeFile('161'));
+		await flush();
+		expect(mgr.shapeFor(feature('161'))).toEqual(EAST_LEG);
 	});
 });
 

@@ -30,12 +30,13 @@ export const MAX_CACHED_ROUTE_SHAPES = 200;
 export interface ShapeCacheManager {
 	/**
 	 * Lazily fetch route shapes for the routes that currently have live buses
-	 * (deduped). Each route is requested at most once; a resolved shape is dropped
-	 * into the cache, which `shapeFor` reads — so that route's buses upgrade from
-	 * frozen to FORWARD projection on the next rAF frame, no re-feed needed. Fetches
-	 * are fire-and-forget + fail-soft (a failed/absent shape simply leaves the bus
-	 * frozen at its fix — never blocks). We do NOT bulk-fetch all routes: only the
-	 * distinct routes in the current vehicle set, which is small.
+	 * (deduped). Each route is requested at most once while ledgered/resident;
+	 * evicted routes may refetch. A resolved shape is dropped into the cache, which
+	 * `shapeFor` reads — so that route's buses upgrade from frozen to FORWARD
+	 * projection on the next rAF frame, no re-feed needed. Fetches are fire-and-
+	 * forget + fail-soft (a failed/absent shape simply leaves the bus frozen at its
+	 * fix — never blocks). We do NOT bulk-fetch all routes: only the distinct routes
+	 * in the current vehicle set, which is small.
 	 */
 	prefetch(vehicles: readonly Vehicle[]): void;
 	/**
@@ -46,14 +47,14 @@ export interface ShapeCacheManager {
 	 * controller (a cheap cache lookup), so a route shape that resolves mid-flight
 	 * upgrades the bus from frozen to projected without waiting for a re-feed.
 	 */
-	shapeFor: ShapeResolver;
+	shapeFor: ShapeResolver & { revision?: () => number };
 }
 
 /**
  * Create a route-shape cache manager backed by `getRoute` (the same on-demand
  * loader MapHero uses for the selected-route linework). The two caches are plain
- * (non-reactive) collections: a route is fetched at most once, and a resolved
- * shape is picked up by the next frame's `shapeFor` lookup with no re-feed.
+ * (non-reactive) collections: a route is requested once while ledgered/resident,
+ * and a resolved shape reaches the next frame's `shapeFor` lookup with no re-feed.
  */
 export function createShapeCacheManager(
 	getRoute: (routeId: string) => Promise<RouteFile | null>,
@@ -63,9 +64,10 @@ export function createShapeCacheManager(
 	// and thrash the feed effect; the controller's per-frame shapeFor reads it
 	// directly, so a newly-cached shape is picked up on the very next rAF frame.
 	const routeShapeCache = new Map<string, RouteShapes>();
-	// Routes already fetched (or null/empty result cached) so we never re-request.
-	// Plain Set for the same reason — a dedupe ledger, not reactive state.
+	// Routes already fetched (or null/empty result cached) while ledgered/resident.
+	// Plain Set for the same reason — a non-reactive dedupe ledger.
 	const routeShapeRequested = new Set<string>();
+	let revision = 0;
 
 	function prefetch(vehicles: readonly Vehicle[]): void {
 		for (const v of vehicles) {
@@ -82,25 +84,32 @@ export function createShapeCacheManager(
 					// unbounded; the visible route set is small so this rarely fires.
 					if (routeShapeCache.size >= MAX_CACHED_ROUTE_SHAPES) {
 						const oldest = routeShapeCache.keys().next().value;
-						if (oldest != null) routeShapeCache.delete(oldest);
+						if (oldest != null) {
+							routeShapeCache.delete(oldest);
+							routeShapeRequested.delete(oldest);
+							revision += 1;
+						}
 					}
 					routeShapeCache.set(id, shapes);
+					revision += 1;
 				})
 				.catch(() => {
 					// Fail-soft: leave the route un-cached → chord fallback. Allow a
 					// later retry by clearing the requested flag.
 					routeShapeRequested.delete(id);
+					revision += 1;
 				});
 		}
 	}
 
-	const shapeFor: ShapeResolver = (feature) => {
+	const shapeFor: ShapeCacheManager['shapeFor'] = (feature) => {
 		const routeId = feature.properties.route;
 		if (!routeId) return null;
 		const shapes = routeShapeCache.get(routeId);
 		if (!shapes || shapes.length === 0) return null;
 		return bestShapeForPoint(shapes, feature.geometry.coordinates as Coord);
 	};
+	shapeFor.revision = () => revision;
 
 	return { prefetch, shapeFor };
 }
