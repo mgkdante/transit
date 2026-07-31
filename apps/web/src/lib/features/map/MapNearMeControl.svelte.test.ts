@@ -1,6 +1,9 @@
+import { fireEvent, render } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import MapNearMeControl from './MapNearMeControl.svelte';
+import { copy } from './map.copy';
 
 describe('MapNearMeControl', () => {
 	const source = () => {
@@ -97,6 +100,32 @@ describe('MapNearMeControl', () => {
 		expect(s).toContain("if (precision === 'street')");
 		expect(s).toContain("if (precision === 'neighbourhood')");
 	});
+
+	it.each([
+		['en', 'Stops near me', 'Your searches are sent to our server and Google.'],
+		['fr', 'Arrêts près de moi', 'Vos recherches sont envoyées à notre serveur et à Google.'],
+	] as const)(
+		'renders the %s collection notice directly below the near-me search form',
+		async (locale, toggleLabel, expectedNotice) => {
+			const { getByRole, getByText } = render(MapNearMeControl, {
+				props: {
+					locale,
+					copy: copy[locale],
+					onuselocation: () => {},
+					onsearch: () => {},
+					onsuggestion: () => {},
+					onstopselect: () => {},
+					onclear: () => {},
+				},
+			});
+
+			await fireEvent.click(getByRole('button', { name: toggleLabel }));
+
+			const notice = getByText(expectedNotice);
+			expect(notice).toHaveClass('map-near-collection-notice');
+			expect(notice.previousElementSibling).toHaveClass('map-near-form');
+		},
+	);
 
 	it('keeps nearby stop rows wired to the map stop picker', () => {
 		const s = source();

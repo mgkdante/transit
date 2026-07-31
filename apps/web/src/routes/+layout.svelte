@@ -16,13 +16,20 @@
                       skip-link target #main lives on the wrapper inside it
 
   FAIL-SOFT: if +layout.ts could not boot the /v1 contract (manifest 404 /
-  unreachable), `data.v1` is null. We then render the `error-v1` edge state in
-  the shell `main` INSTEAD of the page tree — so no descendant ever calls
-  getV1Context() without a provider — and offer a retry that re-runs the load.
+  unreachable), `data.v1` is null. Data-dependent routes then render the
+  `error-v1` edge state instead of their page tree, so they never read a missing
+  context. Static legal placeholders remain available and carry static footer
+  attribution while the data contract is down.
 
   Adapted from the yesid.dev +layout.svelte chrome composition: gsap/lenis/seo/
   marketing stripped, re-themed to the transit shell. Tokens only.
 -->
+<script module lang="ts">
+	export function isDataIndependentRoute(pathname: string): boolean {
+		return pathname === '/privacy' || pathname === '/terms';
+	}
+</script>
+
 <script lang="ts">
 	// Self-hosted variable fonts — latin + latin-ext subsets ONLY (EN + FR), via
 	// a local @font-face sheet instead of the bare @fontsource-variable imports
@@ -71,6 +78,7 @@
 	import { EdgeState } from '$lib/components/edge';
 	import { layout } from '$lib/nav';
 	import { mainLandmarkLabel } from '$lib/content/nav';
+	import { legalCopy } from '$lib/features/legal/legal.copy';
 	import {
 		chromeSearchResultHref,
 		chromeSearchResults,
@@ -107,9 +115,11 @@
 	// Full-bleed surfaces own the whole viewport: #main must NOT scroll and must
 	// NOT carry a footer. The map fills height:100%, so a trailing footer would
 	// force the main column to scroll with the footer crammed under the canvas
-	// (the "squeezed footer" artifact). Only /map today; its STM/OSM attribution
-	// rides the map's own attribution control instead of the page footer.
+	// (the "squeezed footer" artifact). Only /map today. Its MapLibre control
+	// carries basemap attribution only; provider licensing belongs on the legal
+	// pages that remain reachable through the always-mounted NavPill.
 	const isFullBleed = $derived(seoPath === '/map');
+	const dataIndependentRoute = $derived(isDataIndependentRoute(seoPath));
 
 	// Context-aware chrome search: the active surface RESTRICTS the result blend
 	// and steers selection — /lines + /lines/* search only lines (→ /lines/<id>),
@@ -132,6 +142,10 @@
 	let clientV1 = $state<V1Context | null>(null);
 	const v1 = $derived<V1Context | null>(data.v1 ?? clientV1);
 	setV1Context(() => v1 ?? undefined);
+	const footerAttribution = $derived(
+		dataIndependentRoute ? legalCopy[locale].footerAttribution : v1?.manifest.attribution,
+	);
+	const footerProviderName = $derived(dataIndependentRoute ? undefined : v1?.manifest.display_name);
 
 	// Provider copy identity for the document head (resolved AFTER v1, since the
 	// keyworded SEO copy reads it). Manifest-first (live; SSR via the SNAPSHOTS
@@ -509,7 +523,7 @@
 			<div
 				class={isFullBleed ? 'min-h-0 grow' : 'grow shrink-0 basis-auto pt-[var(--chrome-offset)]'}
 			>
-				{#if !v1}
+				{#if !v1 && !isDataIndependentRoute(seoPath)}
 					<!-- /v1 contract unreachable: render the honest error state, never a
 					     crash. Retry (and an automatic client re-boot on mount) re-fetch
 					     the contract; the page tree renders the moment a context lands. -->
@@ -527,11 +541,7 @@
 				{/if}
 			</div>
 			{#if !isFullBleed}
-				<Footer
-					{locale}
-					attribution={v1?.manifest.attribution}
-					providerName={v1?.manifest.display_name}
-				/>
+				<Footer {locale} attribution={footerAttribution} providerName={footerProviderName} />
 			{/if}
 		</div>
 	{/snippet}

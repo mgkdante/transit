@@ -4,10 +4,12 @@ import type { LocalizedCopy } from './copy';
 import * as i18n from './index';
 import { cornerMetaLabels } from '../components/brand/cornerMeta.copy';
 import { footerCopy } from '../components/layout/footer.copy';
+import { navPillCopy } from '../components/shell/navPill.copy';
 import { articleNavigationCopy } from '../components/shared/articleNavigation.copy';
 import { alertHistoryCopy } from '../features/alerts/alerts.copy';
 import { copy as healthCopy } from '../features/health/health.copy';
 import { copy as hotspotsCopy } from '../features/hotspots/hotspots.copy';
+import { legalCopy } from '../features/legal/legal.copy';
 import {
 	detailCopy as lineDetailCopy,
 	indexCopy as lineIndexCopy,
@@ -40,10 +42,12 @@ void incompleteExpandedLocaleCopy;
 const COPY_EXPORTS = {
 	cornerMetaLabels,
 	footerCopy,
+	navPillCopy,
 	articleNavigationCopy,
 	alertHistoryCopy,
 	healthCopy,
 	hotspotsCopy,
+	legalCopy,
 	lineIndexCopy,
 	lineDetailCopy,
 	habitsBandCopy,
@@ -92,16 +96,18 @@ describe('bilingual copy contract', () => {
 			alertHistoryCopy: '9ce3d65aa3866cc1cf4aea1fd37bf31b97bbcbf46afb21b911d2311158cde5ec',
 			articleNavigationCopy: '2ca7f81b16d17ae3b0070c935081e0e36fab59e8798914aaaa5bcf3dd3503df8',
 			cornerMetaLabels: '2dc822ad168696db7d9fcb10c5637c64ee36e37c187fdb807f39140a2c112bf9',
-			footerCopy: '2809ebfcf4501af169f65a415f46be58b0e21ce3988f2c30b8de0026796f1514',
+			footerCopy: 'e3245cf5d7e6152bf5228ae6e3bf06cc965cc713755b5254fab136eebc642292',
 			habitsBandCopy: '498737c12702c22aaa9cdbab83ddba5ef679a6a0f757dcaed59cfb9fc705200c',
 			healthCopy: '0b67efc9ccd036dcde33fe88f09800441c42dfa2bfb63976397bf0014c9a774b',
 			hotspotsCopy: '2995f1994b9d88b3f5b690f7a4c91158575bdfceb90335ae25773798b1149f43',
 			lineDetailCopy: '170459e5870ca0669daef05069156989c99309d28be4322caf15c0af9df1921b',
 			lineIndexCopy: '50b9f280c49f3aadb8330d27a350de6d8338db2a4671672ea0717fcf2bbb2406',
-			mapCopy: 'f22f8d43abb8623e34b071caaf15f8ad27b507c9c4b7caa53a914028eefa02cf',
+			legalCopy: '964dbf1b15fbaa01381e11a826ee22bc5d0b51a35398c87c896645a79b9257ae',
+			mapCopy: 'd8a7eb75aab73724790a41b9ec0aee6e730c7b00f719037feedc0380940b6d83',
 			mapSelectionDetailCopy: 'b61a31369fbb939fc336b4e27001307b454e8d9795f05134c8acaac5450823fa',
 			metricsCopy: '836857439792b6506b8bb691d286186a816b29b09c0b5525d3f2cd9843f202e4',
 			networkReliabilityCopy: '1f17b10e6c9ff75c7ce6de97e87ffb9a48b88da32d53c807a1ad4b3e7c412cef',
+			navPillCopy: 'b32677b2593d411e62dc83c941c1c252005c8b6273a08bf7c115319078473b3b',
 			receiptCopy: '065ec4d87da91e9edc4c06cf9ce74fae10670b42519c48deaedf427119f63a85',
 			reliabilityCopy: 'fa3cb28ed9fa3a34ca1b996eaa2bb8dd937dcf98c7da0aa79c74dd6db5860c51',
 			repeatOffendersCopy: '3668c85d736fa84e9a4c7901a94237f150a61c1928e88d1650fad41b61b29b58',

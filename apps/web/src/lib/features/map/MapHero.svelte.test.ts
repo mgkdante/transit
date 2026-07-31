@@ -152,6 +152,9 @@ const harness = vi.hoisted(() => {
 	};
 });
 
+const originalSecureContext = Object.getOwnPropertyDescriptor(window, 'isSecureContext');
+const originalGeolocation = Object.getOwnPropertyDescriptor(navigator, 'geolocation');
+
 vi.mock('$app/stores', async () => {
 	const { readable } = await import('svelte/store');
 	return {
@@ -303,6 +306,61 @@ afterEach(() => {
 	document.body.innerHTML = '';
 	vi.clearAllMocks();
 	harness.identityReceivers.length = 0;
+	if (originalSecureContext) {
+		Object.defineProperty(window, 'isSecureContext', originalSecureContext);
+	} else {
+		Reflect.deleteProperty(window, 'isSecureContext');
+	}
+	if (originalGeolocation) {
+		Object.defineProperty(navigator, 'geolocation', originalGeolocation);
+	} else {
+		Reflect.deleteProperty(navigator, 'geolocation');
+	}
+});
+
+describe('MapHero near-me device location', () => {
+	it('pins a successful device fix without writing its coordinates or label to the URL', async () => {
+		const position: GeolocationPosition = {
+			coords: {
+				latitude: 45.525686,
+				longitude: -73.594764,
+				accuracy: 12,
+				altitude: null,
+				altitudeAccuracy: null,
+				heading: null,
+				speed: null,
+				toJSON: () => ({}),
+			},
+			timestamp: Date.parse('2026-06-20T12:00:30Z'),
+			toJSON: () => ({}),
+		};
+		const getCurrentPosition = vi.fn((success: PositionCallback) => success(position));
+		Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+		Object.defineProperty(navigator, 'geolocation', {
+			configurable: true,
+			value: { getCurrentPosition },
+		});
+
+		render(MapHero);
+		await fireEvent.click(screen.getByRole('button', { name: 'Stops near me' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+
+		await waitFor(() => expect(getCurrentPosition).toHaveBeenCalledTimes(1));
+		for (const [target] of harness.goto.mock.calls) {
+			const search = new URL(String(target), 'http://localhost/map').searchParams;
+			expect(search.has('near')).toBe(false);
+			expect(search.has('nearLabel')).toBe(false);
+			expect(search.has('nearPrecision')).toBe(false);
+		}
+		await waitFor(() =>
+			expect(harness.setNearTarget).toHaveBeenLastCalledWith(expect.anything(), {
+				lat: 45.525686,
+				lon: -73.594764,
+				label: 'Use my location',
+				precision: 'place',
+			}),
+		);
+	});
 });
 
 describe('MapHero map-layer feed lifecycle', () => {

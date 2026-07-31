@@ -818,8 +818,7 @@
 
 	function useNearMeLocation(): void {
 		nearMeOpen = true;
-		// Geolocation silently fails on http; surface the actual reason instead of a
-		// generic "place not found".
+		// Geolocation silently fails on http; surface the actual reason instead of "place not found".
 		if (typeof window !== 'undefined' && !window.isSecureContext) {
 			nearMeError = t.nearMeGeoInsecure;
 			return;
@@ -833,12 +832,13 @@
 		navigator.geolocation.getCurrentPosition(
 			(position) => {
 				nearMeLoading = false;
-				setNearMeOrigin({
+				const deviceOrigin = {
 					lat: position.coords.latitude,
 					lon: position.coords.longitude,
 					label: t.nearMeUseLocation,
-					precision: 'address',
-				});
+					precision: 'place',
+				} satisfies NearMeOrigin;
+				setNearMeOrigin(deviceOrigin, false);
 			},
 			(geoError) => {
 				nearMeLoading = false;

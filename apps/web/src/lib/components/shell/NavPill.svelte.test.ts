@@ -159,6 +159,13 @@ describe('NavPill — the flat menu', () => {
 		);
 		expect(within(audit).getByRole('link', { name: 'Alerts' })).toHaveAttribute('href', '/alerts');
 
+		const legal = within(menu).getByRole('group', { name: 'Legal' });
+		expect(within(legal).getByRole('link', { name: 'Privacy' })).toHaveAttribute(
+			'href',
+			'/privacy',
+		);
+		expect(within(legal).getByRole('link', { name: 'Terms' })).toHaveAttribute('href', '/terms');
+
 		// The parent-brand "Yesid" link is externalized (final menu row, external ↗).
 		const yesid = within(menu).getByRole('link', { name: /Yesid/ });
 		expect(yesid).toHaveTextContent('Yesid');
@@ -218,6 +225,15 @@ describe('NavPill — the flat menu', () => {
 		expect(within(audit).getByRole('link', { name: 'Récidivistes' })).toHaveAttribute(
 			'href',
 			'/fr/repeat-offenders',
+		);
+		const legal = within(menu).getByRole('group', { name: 'Juridique' });
+		expect(within(legal).getByRole('link', { name: 'Confidentialité' })).toHaveAttribute(
+			'href',
+			'/fr/privacy',
+		);
+		expect(within(legal).getByRole('link', { name: 'Conditions d’utilisation' })).toHaveAttribute(
+			'href',
+			'/fr/terms',
 		);
 		// The parent-brand link stays "Yesid" (brand name, not localized) with a FR
 		// new-tab affordance, and still points at the external house site.
@@ -318,6 +334,25 @@ describe('NavPill — the flat menu', () => {
 });
 
 describe('NavPill — search', () => {
+	it.each([
+		['en', 'Your searches are sent to our server and Google.'],
+		['fr', 'Vos recherches sont envoyées à notre serveur et à Google.'],
+	] as const)(
+		'renders the %s chrome collection notice beside the search input',
+		(locale, notice) => {
+			const { getByRole, getByText } = render(NavPill, { props: { locale } });
+			const search = getByRole('search');
+			expect(within(search).getByText(notice)).toBe(getByText(notice));
+			expect(within(search).getByRole('searchbox')).toBeInTheDocument();
+		},
+	);
+
+	it('keeps search results below the chrome collection notice', () => {
+		const source = readSource();
+		expect(source).toMatch(/\.nav-search-notice\s*\{[\s\S]*?top:\s*calc\(100% \+ 0\.25rem\)/);
+		expect(source).toMatch(/\.nav-search-results\s*\{[\s\S]*?top:\s*calc\(100% \+ 1\.75rem\)/);
+	});
+
 	it('renders selectable grouped chrome search results and fires select', async () => {
 		const onresultselect = vi.fn();
 		const { getByRole } = render(NavPill, {

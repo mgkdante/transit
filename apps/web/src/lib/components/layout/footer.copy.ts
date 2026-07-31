@@ -11,6 +11,7 @@ export const footerCopy = defineCopy({
 		disclaimer: (agencyName: string) => `Site non officiel, sans affiliation avec ${agencyName}.`,
 		// NavPill's inline AUDIT copy converges here in PR-3.
 		auditLabel: 'Vérification',
+		legalLabel: 'Juridique',
 	},
 	en: {
 		navAria: 'Footer',
@@ -21,5 +22,6 @@ export const footerCopy = defineCopy({
 		tagline: (agencyName: string) => `Citizen analytics for ${agencyName}`,
 		disclaimer: (agencyName: string) => `Unofficial website, not affiliated with ${agencyName}.`,
 		auditLabel: 'Audit',
+		legalLabel: 'Legal',
 	},
 });

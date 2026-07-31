@@ -11,9 +11,9 @@
     compact Search + ThemeToggle + LangSwitch +
     hamburger → the menu.
 
-  The menu is a FLAT, unlabelled list of destinations (Map/Lines/Stops/Network
-  on <lg · Metrics · Status · Hotspots · Receipt · Repeat
-  offenders · Alerts) closing with a "Yesid" link OUT to yesid.dev (external ↗).
+  The menu is a FLAT list of destinations (Map/Lines/Stops/Network on <lg ·
+  Metrics · Status · Hotspots · Receipt · Repeat offenders · Alerts · Privacy ·
+  Terms) closing with a "Yesid" link OUT to yesid.dev (external ↗).
   No text group-headings — a quiet hairline is the only separator between the
   primary surfaces and the secondary ones at compact widths. It opens as one
   anchored dropdown at every width; compact widths retain the primary + search
@@ -42,8 +42,15 @@
 		localizeUrl,
 	} from '$lib/i18n';
 	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
-	import { SURFACE_NAV, AUDIT_NAV, YESID_HOUSE_LINK, isSurfaceActive } from '$lib/content/nav';
+	import {
+		SURFACE_NAV,
+		AUDIT_NAV,
+		LEGAL_NAV,
+		YESID_HOUSE_LINK,
+		isSurfaceActive,
+	} from '$lib/content/nav';
 	import { footerCopy } from '$lib/components/layout/footer.copy';
+	import { navPillCopy } from './navPill.copy';
 	// F (motion wiring): the pill nav links carry a subtle magnetic cursor-pull
 	// (≤3px). magnetic is MOTION-GATED — the vendored action no-ops under
 	// prefers-reduced-motion and on touch devices. Never edited.
@@ -127,12 +134,11 @@
 	const closeMenuAria = $derived(locale === 'fr' ? 'Fermer le menu' : 'Close menu');
 	const menuAria = $derived(locale === 'fr' ? 'Menu de navigation' : 'Navigation menu');
 	const navAria = $derived(locale === 'fr' ? 'Navigation principale' : 'Primary navigation');
-	// The menu is a FLAT, unlabelled list of destinations (no visible "Audit" /
-	// "Explore" headings — simpler, less confusing). These strings survive only as
-	// the group aria-labels so assistive tech can still tell the primary surfaces
-	// (AUDIT_NAV is active-aware, so a route rename lands in one place) from the
-	// accountability surfaces without a visible heading.
+	// The menu remains visually flat. These strings are group aria-labels so
+	// assistive tech can distinguish primary, audit and legal destinations.
 	const auditLabel = $derived(footerCopy[locale].auditLabel);
+	const legalLabel = $derived(footerCopy[locale].legalLabel);
+	const searchCollectionNotice = $derived(navPillCopy[locale].searchCollectionNotice);
 	const primaryGroupLabel = $derived(locale === 'fr' ? 'Explorer' : 'Explore');
 	// The parent-brand "Yesid" link out to yesid.dev — the final burger-menu row,
 	// with an external ↗ affordance. NOT the pill's main click anymore.
@@ -170,6 +176,13 @@
 			href: localizeHref(item.href, locale),
 			label: item.label[locale],
 			active: isSurfaceActive(item, currentPath),
+		})),
+	);
+	const legalItems = $derived(
+		LEGAL_NAV.map((item) => ({
+			href: localizeHref(item.href, locale),
+			label: item.label[locale],
+			active: currentPath === item.href,
 		})),
 	);
 
@@ -364,6 +377,7 @@
 				oninput={handleSearchInput}
 				class="nav-search-input"
 			/>
+			<span class="nav-search-notice">{searchCollectionNotice}</span>
 			{#if showSearchResults}
 				<div class="nav-search-results" role="group" aria-label={searchAria}>
 					{#each searchResults as result (`${result.kind}:${result.id}`)}
@@ -476,6 +490,19 @@
 			     separator from the primaries. The group aria-label is AT-only. -->
 			<div class="nav-menu-group" role="group" aria-label={auditLabel} data-slot="nav-menu-audit">
 				{#each auditItems as item (item.key)}
+					<a
+						href={item.href}
+						class="nav-menu-link"
+						aria-current={item.active ? 'page' : undefined}
+						onclick={closeMenu}
+					>
+						<span>{item.label}</span>
+					</a>
+				{/each}
+			</div>
+
+			<div class="nav-menu-group" role="group" aria-label={legalLabel} data-slot="nav-menu-legal">
+				{#each legalItems as item (item.href)}
 					<a
 						href={item.href}
 						class="nav-menu-link"
@@ -690,6 +717,19 @@
 		   links) — the border-color shift alone was too quiet for a keyboard focus. */
 		outline: none;
 		box-shadow: 0 0 0 2px var(--ring);
+	}
+
+	.nav-search-notice {
+		position: absolute;
+		top: calc(100% + 0.25rem);
+		left: 0;
+		width: max-content;
+		max-width: min(28rem, calc(100vw - 2rem));
+		color: var(--muted-foreground);
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		line-height: 1.25;
+		white-space: nowrap;
 	}
 
 	.nav-controls {
@@ -982,7 +1022,7 @@
 	.nav-search-results {
 		position: absolute;
 		z-index: var(--z-nav);
-		top: calc(100% + 0.5rem);
+		top: calc(100% + 1.75rem);
 		left: 0;
 		width: min(max(100%, 28rem), calc(100vw - 2rem));
 		display: grid;

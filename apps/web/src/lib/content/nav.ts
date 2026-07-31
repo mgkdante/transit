@@ -167,15 +167,28 @@ export const AUDIT_NAV: readonly AuditNavItem[] = [
 	},
 ] as const;
 
+/** Legal reference pages, kept separate so chrome can render a distinct group. */
+export const LEGAL_NAV: readonly SecondaryNavLink[] = [
+	{
+		href: '/privacy',
+		label: { en: 'Privacy', fr: 'Confidentialité' },
+	},
+	{
+		href: '/terms',
+		label: { en: 'Terms', fr: 'Conditions d’utilisation' },
+	},
+] as const;
+
 /**
- * Secondary in-app reference links. Derived from AUDIT_NAV so the main-landmark
- * resolver and the side-nav Audit group can never drift. The footer consumes
- * AUDIT_NAV directly, retaining the canonical grouped ordering at its surface.
+ * Secondary in-app reference links. Derived from the Audit and Legal groups so
+ * main-landmark resolution and dead-link checks cannot drift from chrome.
  */
-export const SECONDARY_NAV: readonly SecondaryNavLink[] = AUDIT_NAV.map((item) => ({
-	href: item.href,
-	label: item.label,
-}));
+export const SECONDARY_NAV: readonly SecondaryNavLink[] = [...AUDIT_NAV, ...LEGAL_NAV].map(
+	(item) => ({
+		href: item.href,
+		label: item.label,
+	}),
+);
 
 /**
  * True when `currentPath` (a DELOCALIZED pathname, e.g. `/lines/1`) falls under

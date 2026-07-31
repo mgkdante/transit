@@ -242,6 +242,7 @@
 					</div>
 				{/if}
 			</form>
+			<p class="map-near-collection-notice">{t.nearMeCollectionNotice}</p>
 			{#if loading}
 				<p class="map-near-message">{t.nearMeLoading}</p>
 			{:else if error}
@@ -423,6 +424,13 @@
 	}
 	.map-near-form input:focus-visible {
 		border-color: color-mix(in srgb, var(--primary) 50%, var(--border) 50%);
+	}
+	.map-near-collection-notice {
+		margin: 0;
+		color: var(--muted-foreground);
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		line-height: 1.35;
 	}
 	.map-near-suggestions {
 		grid-column: 1 / -1;

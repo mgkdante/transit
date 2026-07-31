@@ -23,6 +23,8 @@ const SURFACES = [
 	'/receipt',
 	'/repeat-offenders',
 	'/alerts',
+	'/privacy',
+	'/terms',
 ] as const;
 
 describe('SEO static files', () => {
@@ -144,7 +146,7 @@ describe('sitemap entity enumeration', () => {
 		);
 
 		const locCount = (sitemap.match(/<loc>/g) ?? []).length;
-		// 12 surfaces + 2 routes + 3 stops = 17 entities x 2 locales = 34.
+		// 14 surfaces + 2 routes + 3 stops = 19 entities x 2 locales = 38.
 		expect(locCount).toBe((SURFACES.length + 2 + 3) * 2);
 	});
 
