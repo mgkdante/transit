@@ -88,44 +88,39 @@
 	<!-- Platform edge: the footer's top line is real hazard tape. -->
 	<div class="footer-gradient-sep" aria-hidden="true"></div>
 
-	<!-- Row 1: Main content -->
+	<!-- Row 1: full-bleed grouped columns — the Transit brand block plus the
+	     EXPLORE / AUDIT / LEGAL groups, edge to edge with page padding. -->
 	<div
-		class="mx-auto flex max-w-5xl flex-col items-center gap-6 px-6 pb-5 pt-10 sm:flex-row sm:items-start sm:justify-between sm:px-10 sm:pt-12"
+		class="grid w-full grid-cols-1 gap-10 px-6 pb-8 pt-10 sm:grid-cols-2 sm:px-10 sm:pt-12 lg:grid-cols-[1.5fr_1fr_1fr_1fr] lg:gap-8 lg:px-16 lg:pt-14"
 	>
-		<!-- Left: parent wordmark + transit product mark + tagline (shared cluster). -->
-		<div class="flex flex-col items-center sm:items-start">
+		<!-- Brand block: shared parent wordmark + Transit product mark + tagline. -->
+		<div class="flex flex-col items-start">
 			<BrandCluster variant="footer" productHref={localizeHref('/', locale)} />
-			<span class="mt-1 font-mono text-caption text-[var(--muted-foreground)]">{tagline}</span>
+			<span class="mt-2 font-mono text-xs text-[var(--muted-foreground)]">{tagline}</span>
 		</div>
 
-		<!-- Right: one labelled landmark with Explore, Audit and Legal groups. -->
-		<nav aria-label={t.navAria} class="flex flex-wrap justify-center gap-x-8 gap-y-6">
-			<FooterGroup
-				label={t.exploreLabel}
-				role="group"
-				aria-label={t.exploreLabel}
-				class="items-center sm:items-start"
-			>
+		<!-- EXPLORE: citizen-facing surfaces. -->
+		<nav aria-label={t.exploreLabel} class="flex flex-col gap-2">
+			<!-- Parity hold: the shared leaf ships a 44px tap floor; adopting it changes footer geometry (recorded owner follow-up, not a silent change). Applies to all three groups below. -->
+			<FooterGroup label={t.exploreLabel} style="--size-tap-min: 0px;">
 				{#each exploreLinks as link (link.href)}
 					<FooterLink href={link.href}>{link.label}</FooterLink>
 				{/each}
 			</FooterGroup>
-			<FooterGroup
-				label={t.auditLabel}
-				role="group"
-				aria-label={t.auditLabel}
-				class="items-center sm:items-start"
-			>
+		</nav>
+
+		<!-- AUDIT: accountability surfaces. -->
+		<nav aria-label={t.auditLabel} class="flex flex-col gap-2">
+			<FooterGroup label={t.auditLabel} style="--size-tap-min: 0px;">
 				{#each auditLinks as link (link.href)}
 					<FooterLink href={link.href}>{link.label}</FooterLink>
 				{/each}
 			</FooterGroup>
-			<FooterGroup
-				label={t.legalLabel}
-				role="group"
-				aria-label={t.legalLabel}
-				class="items-center sm:items-start"
-			>
+		</nav>
+
+		<!-- LEGAL: the policy pages. -->
+		<nav aria-label={t.legalLabel} data-testid="footer-legal" class="flex flex-col gap-2">
+			<FooterGroup label={t.legalLabel} style="--size-tap-min: 0px;">
 				{#each legalLinks as link (link.href)}
 					<FooterLink href={link.href}>{link.label}</FooterLink>
 				{/each}
@@ -137,7 +132,7 @@
 	     unofficial-site disclaimer (Honesty Gate #6) sit on the left; the live system
 	     readout sits on the right (the orange route-set lamp is the lone --primary touch). -->
 	<div
-		class="footer-status-border mx-auto flex max-w-5xl flex-col items-center gap-2 px-6 py-4 font-mono text-caption text-[var(--muted-foreground)] sm:flex-row sm:justify-between sm:px-10"
+		class="footer-status-border flex w-full flex-col items-center gap-2 px-6 py-4 font-mono text-caption text-[var(--muted-foreground)] sm:flex-row sm:justify-between sm:px-10 lg:px-16"
 	>
 		<p class="footer-honesty m-0 text-center sm:text-left">
 			{#if attributionProp}<span>{attributionProp}</span>{/if}
@@ -165,10 +160,9 @@
 		);
 	}
 
-	/* The status bar's top line is a BOLD departure-board rule — a full-width
-	   structural divider on the strong-border ink (P7: not a brand accent rule). */
+	/* Owner directive: match yesid.dev's bold amber departure-board divider. */
 	.footer-status-border {
-		border-top: 2px solid var(--border-strong);
+		border-top: 2px solid var(--border-rule-accent);
 	}
 
 	footer {

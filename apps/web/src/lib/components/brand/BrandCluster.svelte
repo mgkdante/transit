@@ -58,8 +58,8 @@
 		<span class="footer-divider" aria-hidden="true"></span>
 		<a
 			href={productHref}
-			data-testid="footer-home"
-			class="footer-product font-heading text-xl font-bold text-[var(--foreground)]"
+			data-testid="footer-wordmark"
+			class="footer-product font-heading text-2xl font-bold text-[var(--foreground)]"
 		>
 			transit
 		</a>
