@@ -36,7 +36,6 @@
 		color: var(--foreground);
 		font-size: var(--text-detail-body-mobile);
 		line-height: 1.8;
-		max-width: 60ch;
 	}
 	/* Kept local alongside the local base rule above: the scoped base (0,2,0) would
 	   otherwise shadow the shared sheet's unscoped desktop override (0,1,0) — a
@@ -65,7 +64,6 @@
 		font-size: inherit;
 		line-height: inherit;
 		color: var(--foreground);
-		max-width: 72ch;
 		overflow-wrap: anywhere;
 	}
 </style>

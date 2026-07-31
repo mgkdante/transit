@@ -179,6 +179,19 @@ describe('RouteReliabilityClusters', () => {
 		}
 	});
 
+	it('applies the display measure to the rider-question class emitted by the shared disclosure', () => {
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: populated, locale: 'en' },
+		});
+		const questions = container.querySelectorAll('.reliability-band .section-subtitle__text');
+
+		expect(questions).toHaveLength(5);
+		expect(source()).toMatch(
+			/:global\(\.reliability-band \.section-subtitle__text\)\s*\{[^}]*max-inline-size:\s*var\(--measure-display\)/s,
+		);
+		expect(source()).not.toContain('.section-question');
+	});
+
 	it('removes the old 3-5rem page-local inter-card spacing rules', () => {
 		const component = source();
 

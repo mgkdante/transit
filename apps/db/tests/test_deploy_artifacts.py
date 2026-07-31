@@ -540,7 +540,7 @@ def test_daily_static_pipeline_workflow_runs_gis_inside_pipeline_before_static_p
     )
     assert "concurrency" in workflow
     assert "group: daily-static-pipeline" in workflow
-    assert document["jobs"]["run-static-pipeline"]["timeout-minutes"] == 30
+    assert document["jobs"]["run-static-pipeline"]["timeout-minutes"] == 110
 
 
 def test_refresh_basemap_workflow_extract_is_square_and_centered_on_montreal_island() -> None:

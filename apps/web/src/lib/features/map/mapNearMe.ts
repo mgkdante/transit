@@ -2,8 +2,8 @@
 //
 // Side-effect-free string/coordinate logic extracted from MapHero so the
 // near-me input parsing and the URL-dedupe key are unit-testable. Nothing here
-// touches the map, stores, or reactive state; MapHero owns the stateful flow
-// (geocoding fetches, fly-to, URL sync) and calls these for the plain bits.
+// touches the map, stores, or reactive state; mapNearMeController owns the
+// stateful flow and calls these helpers for the plain parsing/identity bits.
 
 import type { LatLon } from '$lib/components/map';
 import { isInsideMontrealBounds } from '$lib/geocode/types';

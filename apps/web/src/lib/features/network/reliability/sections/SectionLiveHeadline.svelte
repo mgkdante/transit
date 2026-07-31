@@ -90,7 +90,6 @@
 
 <style>
 	.network-live-lede {
-		max-width: 68ch;
 		margin: 0 0 var(--space-card-gap);
 		color: var(--muted-foreground);
 		font-size: var(--text-subheading);

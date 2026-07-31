@@ -4,9 +4,8 @@
 // param) follows the same shape: clone the current search params, mutate them, and
 // resolve the goto path (`?<search>` when non-empty, else the bare pathname so the
 // query is dropped cleanly). That assembly is pulled out of MapHero so it is a
-// plain, testable transform: no goto, no stores, no reactive state. MapHero keeps
-// the thin goto() shells (which also own the local near-me state + the nearUrlKey
-// bookkeeping) and feeds the current params + pathname in.
+// plain, testable transform: no goto, no stores, no reactive state. The injected
+// controller seams feed these helpers the current params + pathname.
 
 import {
 	clearNearTargetSearchParams,

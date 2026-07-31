@@ -749,7 +749,6 @@
 	}
 	.health-lede {
 		margin: 0;
-		max-width: 60ch;
 		font-size: var(--text-detail-body-mobile);
 		line-height: 1.8;
 		color: var(--secondary-foreground);
