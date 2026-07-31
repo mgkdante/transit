@@ -20,11 +20,14 @@
 		class?: string;
 		onready?: (map: unknown) => void;
 		onstyleload?: (map: unknown) => void;
+		onthemerepaint?: (map: unknown) => void;
+		onerror?: (failure: { kind: 'construct'; retry: () => Promise<void> } | null) => void;
+		locale?: Record<string, string>;
 		// The rest of MapStage's props are accepted and ignored (camera/theme/etc).
 		[key: string]: unknown;
 	}
 
-	let { onready, onstyleload, class: className }: Props = $props();
+	let { onready, onstyleload, onthemerepaint, onerror, locale, class: className }: Props = $props();
 
 	type Handler = (e: unknown) => void;
 	const handlers = new SvelteMap<string, Handler[]>();
@@ -32,6 +35,7 @@
 	let pickCount = $state(0);
 	let featureStateSetCount = $state(0);
 	let featureStateRemoveCount = $state(0);
+	let retryCount = $state(0);
 	let pickLayer = STOPS_LAYER;
 
 	// A minimal fake MapLibre map: enough surface for installMapLayers /
@@ -106,6 +110,20 @@
 		onstyleload?.(fakeMap);
 	}
 
+	function themeRepaint(): void {
+		onthemerepaint?.(fakeMap);
+	}
+
+	function fail(): void {
+		onerror?.({
+			kind: 'construct',
+			retry: async () => {
+				retryCount += 1;
+				onerror?.(null);
+			},
+		});
+	}
+
 	function move(nextLayer: string): void {
 		pickLayer = nextLayer;
 		for (const handler of handlers.get('mousemove') ?? []) {
@@ -128,6 +146,8 @@
 	data-pick-count={pickCount}
 	data-feature-state-set-count={featureStateSetCount}
 	data-feature-state-remove-count={featureStateRemoveCount}
+	data-retry-count={retryCount}
+	data-locale={JSON.stringify(locale)}
 >
 	<button type="button" data-testid="map-stage-stub-pick" onclick={() => pick()} hidden>pick</button
 	>
@@ -142,6 +162,10 @@
 	<button type="button" data-testid="map-stage-stub-style-load" onclick={styleLoad} hidden>
 		style load
 	</button>
+	<button type="button" data-testid="map-stage-stub-theme-repaint" onclick={themeRepaint} hidden>
+		theme repaint
+	</button>
+	<button type="button" data-testid="map-stage-stub-error" onclick={fail} hidden>error</button>
 	<button
 		type="button"
 		data-testid="map-stage-stub-hover-vehicle"

@@ -150,6 +150,11 @@ export const MAP_LAYER_MODULES: readonly LayerModule[] = Object.freeze([
 	nearTargetModule,
 ]);
 
+export function retintMapLayers(map: MapLibreMap, beforeId?: string): void {
+	for (const module of MAP_LAYER_MODULES) module.prepare?.(map);
+	for (const module of MAP_LAYER_MODULES) module.install(map, beforeId);
+}
+
 export const PICKABLE_MAP_LAYERS: readonly string[] = Object.freeze(
 	MAP_LAYER_MODULES.flatMap((module) =>
 		module.pick

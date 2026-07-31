@@ -79,6 +79,34 @@ describe('installMapInteractions', () => {
 });
 
 describe('map layer feed invariants', () => {
+	it('retints through every prepare before install without feeding any module', async () => {
+		const api = (await import('./mapLayerModules')) as typeof import('./mapLayerModules') & {
+			retintMapLayers?: (map: MapLibreMap) => void;
+		};
+		const trace: string[] = [];
+		const feedSpies = [];
+		for (const module of MAP_LAYER_MODULES) {
+			if (module.prepare) {
+				vi.spyOn(module, 'prepare').mockImplementation(() => trace.push(`prepare:${module.id}`));
+			}
+			vi.spyOn(module, 'install').mockImplementation(() => trace.push(`install:${module.id}`));
+			feedSpies.push(vi.spyOn(module, 'feed'));
+		}
+
+		(api.retintMapLayers ?? (() => {}))({} as MapLibreMap);
+
+		expect(trace).toEqual([
+			'prepare:vehicles',
+			'prepare:near-target',
+			'install:routes',
+			'install:stops',
+			'install:vehicles',
+			'install:near-target',
+		]);
+		for (const feed of feedSpies) expect(feed).not.toHaveBeenCalled();
+		vi.restoreAllMocks();
+	});
+
 	it('passes the frozen motion option shape unchanged', () => {
 		const set = vi.fn();
 		const fixFor = vi.fn(() => null);

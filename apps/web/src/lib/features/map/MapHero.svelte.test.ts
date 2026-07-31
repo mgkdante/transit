@@ -213,6 +213,7 @@ const harness = vi.hoisted(() => {
 
 	return {
 		alert,
+		locale: 'en' as 'en' | 'fr',
 		isDesktop: false,
 		// reassigned by the $app/stores mock factory below
 		setPageUrl: (_href: string): void => {
@@ -301,7 +302,7 @@ vi.mock('$app/navigation', () => ({
 
 vi.mock('$lib/i18n', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/i18n')>();
-	return { ...actual, getLocale: () => 'en' as const };
+	return { ...actual, getLocale: () => harness.locale };
 });
 
 vi.mock('$lib/nav', () => ({
@@ -448,6 +449,7 @@ afterEach(() => {
 	harness.resetMotionSetImplementation();
 	harness.resetGetRouteImplementation();
 	harness.identityReceivers.length = 0;
+	harness.locale = 'en';
 	harness.isDesktop = false;
 	mapHeroReceiptSignals.reset();
 	harness.setReducedMotion(false);
@@ -483,6 +485,97 @@ async function settleAnimationFrames(count = 2): Promise<void> {
 function peekText(container: HTMLElement): string {
 	return container.querySelector('.map-peek')?.textContent?.replace(/\s+/gu, ' ').trim() ?? '';
 }
+
+describe('MapHero stage lifecycle', () => {
+	it('passes the exact English MapLibre locale dictionary to the stage', () => {
+		render(MapHero);
+
+		expect(screen.getByTestId('map-stage-stub').getAttribute('data-locale')).toBe(
+			JSON.stringify({
+				'Map.Title': 'Interactive map',
+				'AttributionControl.ToggleAttribution': 'Toggle attribution',
+			}),
+		);
+	});
+
+	it('retints every token surface on theme repaint without feed, motion, or emphasis replay', async () => {
+		const installSpies = [
+			harness.bakeVehicleSprites,
+			harness.bakeLocationPinSprite,
+			harness.addRouteLineSource,
+			harness.addRouteLineLayers,
+			harness.addStopsSource,
+			harness.addStopExceptionSource,
+			harness.addStopsLayer,
+			harness.addStopExceptionLayer,
+			harness.addVehicleSource,
+			harness.addVehicleLayers,
+			harness.addNearTargetSource,
+			harness.addNearTargetLayer,
+		];
+		render(MapHero);
+		await tick();
+		await fireEvent.click(screen.getByTestId('map-stage-stub-hover-vehicle'));
+		await tick();
+		const stage = screen.getByTestId('map-stage-stub');
+		const before = {
+			installs: installSpies.map((spy) => spy.mock.calls.length),
+			feeds: bulkCounts(),
+			stale: harness.setStale.mock.calls.length,
+			setData: harness.vehicleSourceSetData.mock.calls.length,
+			featureState: Number(stage.getAttribute('data-feature-state-set-count')),
+		};
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-theme-repaint'));
+		await tick();
+
+		expect(installSpies.map((spy) => spy.mock.calls.length)).toEqual(
+			before.installs.map((count) => count + 1),
+		);
+		expect(bulkCounts()).toEqual(before.feeds);
+		expect(harness.setStale).toHaveBeenCalledTimes(before.stale);
+		expect(harness.vehicleSourceSetData).toHaveBeenCalledTimes(before.setData);
+		expect(Number(stage.getAttribute('data-feature-state-set-count'))).toBe(before.featureState);
+	});
+
+	it('replaces dead map chrome with an English full-surface retry notice', async () => {
+		const view = render(MapHero);
+		expect(screen.queryByRole('alert')).toBeNull();
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-error'));
+
+		expect(await screen.findByRole('alert')).toHaveTextContent('Map unavailable');
+		expect(screen.getByRole('alert')).toHaveTextContent('The map could not start. Try again.');
+		expect(screen.queryByRole('button', { name: 'Stops near me' })).toBeNull();
+		expect(view.container.querySelector('.map-stage-error')).not.toBeNull();
+		const focusable = view.container.querySelectorAll(
+			'.map-surface button:not([hidden]), .map-surface a[href], .map-surface input:not([disabled]), .map-surface [tabindex]:not([tabindex="-1"])',
+		);
+		expect(focusable).toHaveLength(1);
+		expect(focusable[0]).toBe(screen.getByRole('button', { name: 'Retry map' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Retry map' }));
+
+		await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+		expect(screen.getByRole('button', { name: 'Stops near me' })).toBeTruthy();
+		expect(screen.getByTestId('map-stage-stub')).toHaveAttribute('data-retry-count', '1');
+	});
+
+	it('renders the same stage failure contract in French', async () => {
+		harness.locale = 'fr';
+		render(MapHero);
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-error'));
+
+		expect(await screen.findByRole('alert')).toHaveTextContent('Carte indisponible');
+		expect(screen.getByRole('button', { name: 'Réessayer la carte' })).toBeTruthy();
+		expect(screen.getByTestId('map-stage-stub').getAttribute('data-locale')).toBe(
+			JSON.stringify({
+				'Map.Title': 'Carte interactive',
+				'AttributionControl.ToggleAttribution': 'Afficher ou masquer les attributions',
+			}),
+		);
+	});
+});
 
 describe('MapHero near-me device location', () => {
 	it('pins a successful device fix without writing its coordinates or label to the URL', async () => {

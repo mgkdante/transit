@@ -26,7 +26,25 @@
 	// erased and never reach the server bundle.
 	import type { addProtocol } from 'maplibre-gl';
 
-	let pmtilesRegistered = false;
+	export interface MapStageImporters {
+		maplibre: () => Promise<Pick<typeof import('maplibre-gl'), 'Map' | 'addProtocol'>>;
+		css: () => Promise<unknown>;
+		pmtiles: () => Promise<typeof import('pmtiles')>;
+	}
+
+	const DEFAULT_IMPORTERS: MapStageImporters = {
+		maplibre: () => import('maplibre-gl'),
+		css: () => import('maplibre-gl/dist/maplibre-gl.css'),
+		pmtiles: () => import('pmtiles'),
+	};
+
+	export type MapStageFailureKind = 'importer' | 'protocol' | 'style' | 'construct' | 'setup';
+	export interface MapStageFailure {
+		readonly kind: MapStageFailureKind;
+		readonly retry: () => Promise<void>;
+	}
+
+	let pmtilesRegistration: Promise<void> | null = null;
 
 	/**
 	 * Register the pmtiles `Protocol` with MapLibre exactly once, process-wide.
@@ -34,18 +52,44 @@
 	 * the already-dynamically-imported maplibre `addProtocol` to avoid a second
 	 * import of the (large) maplibre module.
 	 */
-	async function registerPmtilesProtocol(add: typeof addProtocol): Promise<void> {
-		if (pmtilesRegistered) return;
-		const { Protocol } = await import('pmtiles');
-		const protocol = new Protocol();
-		add('pmtiles', protocol.tile);
-		pmtilesRegistered = true;
+	export async function registerPmtilesProtocol(
+		add: typeof addProtocol,
+		loadPmtiles: MapStageImporters['pmtiles'],
+	): Promise<void> {
+		if (pmtilesRegistration) return pmtilesRegistration;
+		const thisAttemptsPromise = (async () => {
+			const { Protocol } = await loadPmtiles();
+			const protocol = new Protocol();
+			add('pmtiles', protocol.tile);
+		})();
+		pmtilesRegistration = thisAttemptsPromise;
+		try {
+			await thisAttemptsPromise;
+		} catch (error) {
+			if (pmtilesRegistration === thisAttemptsPromise) pmtilesRegistration = null;
+			throw error;
+		}
+	}
+
+	export function collapsePopulatedAttribution(container: HTMLElement): boolean {
+		const attribution = container.querySelector<HTMLDetailsElement>(
+			'.maplibregl-ctrl-attrib.maplibregl-compact',
+		);
+		if (
+			!attribution?.classList.contains('maplibregl-compact-show') ||
+			attribution.classList.contains('maplibregl-attrib-empty')
+		) {
+			return false;
+		}
+		attribution.classList.remove('maplibregl-compact-show');
+		attribution.removeAttribute('open');
+		return true;
 	}
 </script>
 
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { cn } from '$lib/utils';
 	import type { BasemapFile } from '$lib/v1/schemas';
 	import { applyBasemapTheme, resolveBasemapStyle, type BasemapTheme } from './basemap';
@@ -83,7 +127,9 @@
 		 * theme/pointer change. When omitted, MapStage falls back to the `basemap`
 		 * prop value at construction (the legacy behaviour).
 		 */
-		basemapLoader?: () => Promise<BasemapFile | null>;
+		basemapLoader?: (ctx: { signal: AbortSignal }) => Promise<BasemapFile | null>;
+		/** Import indirection used by the behavioral boot harness; defaults are the production chunks. */
+		importers?: MapStageImporters;
 		/** Active app theme. Rebuilds the MapLibre style when dark/light changes. */
 		theme?: BasemapTheme;
 		/** Bbox the initial camera FITS to, as [minLon, minLat, maxLon, maxLat]. */
@@ -109,6 +155,12 @@
 		 * `setStyle` runs.
 		 */
 		onstyleload?: (map: MapLibreMap) => void;
+		/** Fired after a theme-only token repaint; sources and data remain installed. */
+		onthemerepaint?: (map: MapLibreMap) => void;
+		/** Fatal initialization state. null clears the state before an in-place retry. */
+		onerror?: (failure: MapStageFailure | null) => void;
+		/** Partial MapLibre locale table applied at construction. */
+		locale?: Record<string, string>;
 		/** Consumer styling on the host wrapper. */
 		class?: string;
 	}
@@ -119,6 +171,7 @@
 		zoom = 11,
 		basemap = undefined,
 		basemapLoader,
+		importers = DEFAULT_IMPORTERS,
 		theme = 'dark',
 		bounds,
 		maxBounds,
@@ -126,6 +179,9 @@
 		label = 'Transit map',
 		onready,
 		onstyleload,
+		onthemerepaint,
+		onerror,
+		locale,
 		class: className,
 	}: MapStageProps = $props();
 
@@ -164,88 +220,169 @@
 		return `${nextBounds?.join(',') ?? 'fallback'}:${fitPaddingKey(nextPadding)}`;
 	}
 
-	onMount(() => {
-		// Hard SSR guard: never instantiate WebGL on the server. (onMount already
-		// only runs client-side, but the explicit guard documents the contract and
-		// keeps the dynamic import dead-code on the server.)
-		if (!browser) return;
+	interface BootAttempt {
+		readonly generation: number;
+		readonly container: HTMLDivElement;
+		readonly controller: AbortController;
+		map: MapLibreMap | null;
+		observer: ResizeObserver | null;
+		initializing: boolean;
+		cleaned: boolean;
+	}
 
-		let disposed = false;
-		let resizeObserver: ResizeObserver | null = null;
+	let attemptKey = $state(0);
+	let mounted = false;
+	let retryPending = false;
+	let activeFailure: { kind: MapStageFailureKind; generation: number } | null = null;
+	let activeAttempt: BootAttempt | null = null;
 
-		(async () => {
-			// Dynamic imports — keep maplibre-gl + pmtiles OUT of the server bundle.
-			const maplibregl = (await import('maplibre-gl')).default;
-			await import('maplibre-gl/dist/maplibre-gl.css');
-			await registerPmtilesProtocol(maplibregl.addProtocol);
+	function isCurrentAttempt(attempt: BootAttempt): boolean {
+		return (
+			mounted &&
+			activeAttempt === attempt &&
+			attempt.generation === attemptKey &&
+			!attempt.controller.signal.aborted
+		);
+	}
 
-			// Resolve the basemap BEFORE constructing the Map so the first paint is
-			// hot: a hosted basemap (or null) is baked into the constructor style and
-			// no later `setStyle` has to wipe + rebuild the just-added layers. When no
-			// loader is supplied, fall back to the `basemap` prop value (legacy path).
-			// The loader is fail-soft — a rejected/absent basemap degrades to the
-			// minimal-dark style exactly like a null pointer, never blocking the mount.
-			const initialBasemap: BasemapFile | null = basemapLoader
-				? await basemapLoader().catch(() => null)
-				: (basemap ?? null);
+	function cleanupAttempt(attempt: BootAttempt): void {
+		if (attempt.cleaned) return;
+		attempt.cleaned = true;
+		attempt.initializing = false;
+		attempt.controller.abort();
+		attempt.observer?.disconnect();
+		attempt.observer = null;
+		const ownedMap = attempt.map;
+		attempt.map = null;
+		ownedMap?.remove();
+		if (activeAttempt === attempt) activeAttempt = null;
+		if (map === ownedMap) map = null;
+	}
 
-			// If the component was torn down mid-import, bail before creating a map.
-			if (disposed || !container) return;
+	function preflightWebgl(): void {
+		const canvas = document.createElement('canvas');
+		const context = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
+		if (!context) throw new Error('WebGL is unavailable');
+		context.getExtension('WEBGL_lose_context')?.loseContext();
+	}
 
-			// Seed the swap effect's baseline to the basemap we are about to PAINT, so
-			// the post-mount style effect treats this as the initial style and only
-			// fires `setStyle` on a genuine LATER theme/pointer change — never an
-			// immediate wipe of the layers the consumer adds via `onready`.
+	function failAttempt(attempt: BootAttempt, kind: MapStageFailureKind): void {
+		if (!isCurrentAttempt(attempt)) return;
+		activeFailure = { kind, generation: attempt.generation };
+		cleanupAttempt(attempt);
+		onerror?.({ kind, retry: () => retry(attempt.generation, kind) });
+	}
+
+	async function retry(generation: number, kind: MapStageFailureKind): Promise<void> {
+		if (
+			!mounted ||
+			retryPending ||
+			activeFailure?.generation !== generation ||
+			activeFailure.kind !== kind
+		) {
+			return;
+		}
+		retryPending = true;
+		if (kind === 'importer') {
+			window.location.reload();
+			return;
+		}
+		activeFailure = null;
+		onerror?.(null);
+		attemptKey += 1;
+		await tick();
+		try {
+			if (mounted) await startAttempt(attemptKey);
+		} finally {
+			retryPending = false;
+		}
+	}
+
+	async function startAttempt(generation: number): Promise<void> {
+		if (!mounted || !container || activeAttempt?.initializing) return;
+		const attempt: BootAttempt = {
+			generation,
+			container,
+			controller: new AbortController(),
+			map: null,
+			observer: null,
+			initializing: true,
+			cleaned: false,
+		};
+		activeAttempt = attempt;
+		const basemapPromise = Promise.resolve()
+			.then(() =>
+				basemapLoader ? basemapLoader({ signal: attempt.controller.signal }) : (basemap ?? null),
+			)
+			.catch(() => null);
+		let failureKind: MapStageFailureKind = 'importer';
+		try {
+			const [maplibreModule] = await Promise.all([importers.maplibre(), importers.css()]);
+			if (!isCurrentAttempt(attempt)) return;
+			const maplibregl = maplibreModule;
+			failureKind = 'protocol';
+			await registerPmtilesProtocol(maplibregl.addProtocol, importers.pmtiles);
+			if (!isCurrentAttempt(attempt)) return;
+			const initialBasemap = await basemapPromise;
+			if (!isCurrentAttempt(attempt)) return;
+
 			styleInited = true;
 			activeStyleKey = styleKey(initialBasemap);
 			activeTheme = theme;
-
+			failureKind = 'style';
 			const style: StyleSpecification = resolveBasemapStyle(
 				{ basemap: initialBasemap ? '' : null },
 				initialBasemap,
 				theme,
 			);
 
+			failureKind = 'construct';
+			preflightWebgl();
 			const instance = new maplibregl.Map({
-				container,
+				container: attempt.container,
 				style,
 				center,
 				zoom,
 				...mapViewportOptions(bounds, fitPadding, maxBounds),
-				// Honest chrome: attribution is owned by the basemap/snapshot, not us.
+				locale,
 				attributionControl: { compact: true },
 			});
+			attempt.map = instance;
+			map = instance;
 
-			// Notify the consumer once the style is ready, so it can add images /
-			// sources / layers (the live vehicle layer) without racing the load.
-			// A resize() on load is idiomatic insurance: if the container's final
-			// size wasn't settled when the GL context was created, this forces the
-			// drawing buffer + first frame to match the laid-out container.
+			failureKind = 'setup';
 			instance.on('load', () => {
-				if (disposed) return;
+				if (!isCurrentAttempt(attempt)) return;
 				instance.resize();
 				onready?.(instance);
 			});
+			const collapseAttribution = () => {
+				if (!isCurrentAttempt(attempt) || !collapsePopulatedAttribution(attempt.container)) return;
+				instance.off('styledata', collapseAttribution);
+				instance.off('sourcedata', collapseAttribution);
+			};
+			instance.on('styledata', collapseAttribution);
+			instance.on('sourcedata', collapseAttribution);
+			attempt.observer = new ResizeObserver(() => instance.resize());
+			attempt.observer.observe(attempt.container);
+			attempt.initializing = false;
+		} catch {
+			failAttempt(attempt, failureKind);
+		}
+	}
 
-			// MapLibre measures the container at construction. In a flex/grid parent
-			// (and after panel transitions / the rail collapsing) layout often hasn't
-			// settled yet, so the GL canvas mounts at the wrong size and paints BLANK
-			// until some later event fires a resize. Observing the container keeps the
-			// viewport in sync — the ResizeObserver fires once immediately, which
-			// repaints the initial frame, and again on every later size change.
-			resizeObserver = new ResizeObserver(() => instance.resize());
-			resizeObserver.observe(container);
-
-			map = instance;
-		})();
+	onMount(() => {
+		// Hard SSR guard: never instantiate WebGL on the server. (onMount already
+		// only runs client-side, but the explicit guard documents the contract and
+		// keeps the dynamic import dead-code on the server.)
+		if (!browser) return;
+		mounted = true;
+		void startAttempt(attemptKey);
 
 		// Teardown — release the GL context, event listeners, and DOM nodes.
 		return () => {
-			disposed = true;
-			resizeObserver?.disconnect();
-			resizeObserver = null;
-			map?.remove();
-			map = null;
+			mounted = false;
+			if (activeAttempt) cleanupAttempt(activeAttempt);
 		};
 	});
 
@@ -303,7 +440,7 @@
 			if (activeTheme !== t) {
 				applyBasemapTheme(m, t);
 				activeTheme = t;
-				onstyleload?.(m);
+				onthemerepaint?.(m);
 			}
 			return;
 		}
@@ -318,7 +455,7 @@
 			if (activeTheme !== t) {
 				applyBasemapTheme(m, t);
 				activeTheme = t;
-				onstyleload?.(m);
+				onthemerepaint?.(m);
 			}
 			return;
 		}
@@ -334,14 +471,16 @@
   payload carries no empty map shell that would flash before hydration.
 -->
 {#if browser}
-	<div
-		bind:this={container}
-		class={cn('map-stage', className)}
-		role="region"
-		aria-label={label}
-		data-ripple-exempt
-		data-slot="map-stage"
-	></div>
+	{#key attemptKey}
+		<div
+			bind:this={container}
+			class={cn('map-stage', className)}
+			role="region"
+			aria-label={label}
+			data-ripple-exempt
+			data-slot="map-stage"
+		></div>
+	{/key}
 {/if}
 
 <style>
