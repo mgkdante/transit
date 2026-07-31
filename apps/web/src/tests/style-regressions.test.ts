@@ -114,7 +114,6 @@ const DATA_TABLE_SITE = 'src/data/DataTable.svelte';
 // Exact migration debt as of 2026-07-30. Each later WS5 PR deletes its migrated site.
 // This is deliberately not a permissive allowlist: the observed inventory must equal it.
 const TO_MIGRATE_2026_07_30 = [
-	'src/health/sections/SectionHistoryCoverage.svelte',
 	'src/home/HomeHero.svelte',
 	'src/schedule/ScheduleTable.svelte',
 ] as const;

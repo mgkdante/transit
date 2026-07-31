@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
+	import DataTable, { type DataTableColumn } from '$lib/components/data/DataTable.svelte';
 	import { StateNotice } from '$lib/components/edge';
 	import { formatDateKey } from '$lib/utils/time';
 	import type { HealthCopy } from '../health.copy';
@@ -44,97 +45,116 @@
 	{/if}
 {/snippet}
 
+{#snippet familyCell(row: HistoryCoverageFamilyView)}
+	<span class="family-name">{t.families[row.key]}</span>
+	{#if !row.published}<StateNotice title={t.unavailable} presentation="pill" />{/if}
+{/snippet}
+
+{#snippet windowCell(row: HistoryCoverageFamilyView)}
+	{#if row.published}
+		{#if row.firstDate && row.lastDate}
+			<span class="window-value">{windowLabel(row.firstDate, row.lastDate)}</span>
+		{:else}
+			<StateNotice title={t.noCoverage} presentation="pill" />
+		{/if}
+	{:else}
+		<StateNotice title={t.noCoverage} presentation="pill" />
+	{/if}
+{/snippet}
+
+{#snippet selectionCell(row: HistoryCoverageFamilyView)}
+	{#if row.selectionMode}
+		<span class="selection-chip">{t.selection[row.selectionMode]}</span>
+	{:else}
+		<StateNotice title={t.unavailable} presentation="pill" />
+	{/if}
+{/snippet}
+
+{#snippet detailsCell(row: HistoryCoverageFamilyView)}
+	<div class="coverage-details">
+		{#if row.published}
+			<div class="detail-group">
+				<span class="detail-label">{t.familyGaps}</span>
+				{@render gapList(row.gaps)}
+			</div>
+			<div class="detail-group">
+				<span class="detail-label">{t.metricCoverage}</span>
+				{#if row.metrics.length > 0}
+					<ul class="metric-list">
+						{#each row.metrics as metric (metric.key)}
+							<li class="metric-row" data-metric={metric.key} data-aggregation={metric.aggregation}>
+								<div class="metric-head">
+									<span class="metric-name">{t.metrics[metric.key]}</span>
+									<span class="aggregation-chip">{t.aggregation[metric.aggregation]}</span>
+								</div>
+								{#if metric.firstDate && metric.lastDate}
+									<span class="metric-window">{windowLabel(metric.firstDate, metric.lastDate)}</span
+									>
+								{:else}
+									<StateNotice title={t.noCoverage} presentation="pill" />
+								{/if}
+								{@render gapList(metric.gaps)}
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<StateNotice title={t.noMetricInventory} presentation="pill" />
+				{/if}
+			</div>
+		{/if}
+		{#if row.currentOnlySections.length > 0}
+			<div class="detail-group current-only" data-slot="current-only-limitations">
+				<span class="detail-label">{t.currentOnlySections}</span>
+				<p>{t.currentOnlyNote}</p>
+				<ul class="current-only-list">
+					{#each row.currentOnlySections as section (section)}
+						<li>{sectionLabel(section)}</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
 <div class="coverage-block" data-slot="history-coverage-section">
 	<p class="coverage-note">{t.note}</p>
-	<table class="coverage-table" aria-label={t.tableLabel}>
-		<thead>
-			<tr>
-				<th scope="col">{t.columns.family}</th>
-				<th scope="col">{t.columns.window}</th>
-				<th scope="col">{t.columns.selection}</th>
-				<th scope="col">{t.columns.details}</th>
-			</tr>
-		</thead>
-		<tbody>
-			{#each rows as row (row.key)}
-				<tr data-family={row.key} data-published={row.published}>
-					<th scope="row" data-label={t.columns.family}>
-						<span class="family-name">{t.families[row.key]}</span>
-						{#if !row.published}<StateNotice title={t.unavailable} presentation="pill" />{/if}
-					</th>
-					<td data-label={t.columns.window}>
-						{#if row.published}
-							{#if row.firstDate && row.lastDate}
-								<span class="window-value">{windowLabel(row.firstDate, row.lastDate)}</span>
-							{:else}
-								<StateNotice title={t.noCoverage} presentation="pill" />
-							{/if}
-						{:else}
-							<StateNotice title={t.noCoverage} presentation="pill" />
-						{/if}
-					</td>
-					<td data-label={t.columns.selection}>
-						{#if row.selectionMode}
-							<span class="selection-chip">{t.selection[row.selectionMode]}</span>
-						{:else}
-							<StateNotice title={t.unavailable} presentation="pill" />
-						{/if}
-					</td>
-					<td data-label={t.columns.details}>
-						<div class="coverage-details">
-							{#if row.published}
-								<div class="detail-group">
-									<span class="detail-label">{t.familyGaps}</span>
-									{@render gapList(row.gaps)}
-								</div>
-								<div class="detail-group">
-									<span class="detail-label">{t.metricCoverage}</span>
-									{#if row.metrics.length > 0}
-										<ul class="metric-list">
-											{#each row.metrics as metric (metric.key)}
-												<li
-													class="metric-row"
-													data-metric={metric.key}
-													data-aggregation={metric.aggregation}
-												>
-													<div class="metric-head">
-														<span class="metric-name">{t.metrics[metric.key]}</span>
-														<span class="aggregation-chip">{t.aggregation[metric.aggregation]}</span
-														>
-													</div>
-													{#if metric.firstDate && metric.lastDate}
-														<span class="metric-window"
-															>{windowLabel(metric.firstDate, metric.lastDate)}</span
-														>
-													{:else}
-														<StateNotice title={t.noCoverage} presentation="pill" />
-													{/if}
-													{@render gapList(metric.gaps)}
-												</li>
-											{/each}
-										</ul>
-									{:else}
-										<StateNotice title={t.noMetricInventory} presentation="pill" />
-									{/if}
-								</div>
-							{/if}
-							{#if row.currentOnlySections.length > 0}
-								<div class="detail-group current-only" data-slot="current-only-limitations">
-									<span class="detail-label">{t.currentOnlySections}</span>
-									<p>{t.currentOnlyNote}</p>
-									<ul class="current-only-list">
-										{#each row.currentOnlySections as section (section)}
-											<li>{sectionLabel(section)}</li>
-										{/each}
-									</ul>
-								</div>
-							{/if}
-						</div>
-					</td>
-				</tr>
-			{/each}
-		</tbody>
-	</table>
+	<DataTable
+		{rows}
+		columns={[
+			{
+				key: 'family',
+				header: t.columns.family,
+				rowHeader: true,
+				width: '15%',
+				cell: familyCell,
+			},
+			{
+				key: 'window',
+				header: t.columns.window,
+				width: '18%',
+				cell: windowCell,
+			},
+			{
+				key: 'selection',
+				header: t.columns.selection,
+				width: '17%',
+				cell: selectionCell,
+			},
+			{
+				key: 'details',
+				header: t.columns.details,
+				cell: detailsCell,
+			},
+		] satisfies readonly DataTableColumn<HistoryCoverageFamilyView>[]}
+		key={(row) => row.key}
+		caption={t.tableLabel}
+		responsive={{ mode: 'stack', at: 'tablet' }}
+		frame="card"
+		borderCollapse="separate"
+		frameRadius={true}
+		headerBand="none"
+		tableAttrs={{ class: 'coverage-table', 'data-slot': 'history-coverage-table' }}
+	/>
 </div>
 
 <style>
@@ -151,41 +171,18 @@
 		font-size: var(--text-detail-body-mobile);
 		line-height: 1.8;
 	}
-	.coverage-table {
-		width: 100%;
-		table-layout: fixed;
-		border-collapse: separate;
-		border-spacing: 0;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
+	:global(table.coverage-table.data-table) {
+		font-size: inherit;
 	}
-	.coverage-table th,
-	.coverage-table td {
-		min-width: 0;
+	:global(table.coverage-table.data-table th),
+	:global(table.coverage-table.data-table td) {
 		padding: 0.875rem;
-		vertical-align: top;
-		text-align: left;
-		overflow-wrap: anywhere;
-		border-bottom: 1px solid var(--border);
 	}
-	.coverage-table thead th {
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		font-weight: 600;
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-		background: var(--muted);
+	:global(table.coverage-table.data-table tbody td) {
+		font-family: inherit;
 	}
-	.coverage-table thead th:first-child {
-		border-top-left-radius: calc(var(--radius-lg) - 1px);
-	}
-	.coverage-table thead th:last-child {
-		border-top-right-radius: calc(var(--radius-lg) - 1px);
-	}
-	.coverage-table tbody tr:last-child > * {
-		border-bottom: 0;
+	:global(table.coverage-table.data-table tbody tr + tr > *) {
+		border-top-color: var(--border);
 	}
 	.family-name,
 	.window-value,
@@ -287,65 +284,43 @@
 	}
 
 	@media (max-width: 1023px) {
-		.coverage-table,
-		.coverage-table tbody {
-			display: grid;
-			gap: 0.75rem;
-			border: 0;
-			background: transparent;
-			box-shadow: none;
-		}
-		.coverage-table thead {
-			position: absolute;
-			width: 1px;
-			height: 1px;
+		:global(
+			.data-table-frame[data-responsive='stack'][data-stack-at='tablet']
+				table.coverage-table.data-table
+				tbody
+				tr
+		) {
 			padding: 0;
-			margin: -1px;
-			overflow: hidden;
-			clip: rect(0, 0, 0, 0);
-			white-space: nowrap;
-			border: 0;
 		}
-		.coverage-table tbody tr {
-			display: grid;
-			grid-template-columns: minmax(0, 1fr);
-			border: 1px solid var(--border);
-			border-radius: var(--radius-lg);
-			background: var(--card);
-		}
-		.coverage-table th,
-		.coverage-table td {
-			display: grid;
+		:global(
+			.data-table-frame[data-responsive='stack'][data-stack-at='tablet']
+				table.coverage-table.data-table
+				tbody
+				th
+		),
+		:global(
+			.data-table-frame[data-responsive='stack'][data-stack-at='tablet']
+				table.coverage-table.data-table
+				tbody
+				td
+		) {
 			grid-template-columns: minmax(6.5rem, 0.35fr) minmax(0, 1fr);
 			gap: 0.75rem;
-			width: auto;
+			padding: 0.875rem;
 			border-bottom: 1px solid var(--border);
 		}
-		.coverage-table th::before,
-		.coverage-table td::before {
-			content: attr(data-label);
-			font-family: var(--font-mono);
-			font-size: var(--text-caption);
-			font-weight: 600;
-			letter-spacing: var(--tracking-eyebrow);
-			text-transform: uppercase;
-			color: var(--muted-foreground);
-		}
-		.coverage-table tbody tr > :last-child {
+		:global(
+			.data-table-frame[data-responsive='stack'][data-stack-at='tablet']
+				table.coverage-table.data-table
+				tbody
+				tr
+				> :last-child
+		) {
 			border-bottom: 0;
 		}
 	}
 
 	@media (min-width: 1024px) {
-		.coverage-table th:nth-child(1) {
-			width: 15%;
-		}
-		.coverage-table th:nth-child(2) {
-			width: 18%;
-		}
-		.coverage-table th:nth-child(3) {
-			width: 17%;
-		}
 		.coverage-note {
 			font-size: var(--text-detail-body-desktop);
 			line-height: 1.9;

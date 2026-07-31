@@ -194,7 +194,11 @@ describe('HotspotSection evidence presentation', () => {
 			'start',
 			'end',
 		]);
-		expect(linkedCells[2]).toHaveAttribute('data-numeric', 'true');
+		expect(linkedCells.map((cell) => cell.getAttribute('data-numeric'))).toEqual([
+			null,
+			null,
+			'true',
+		]);
 		for (const cell of linkedCells) {
 			expect(cell.querySelectorAll(':scope > .data-table-cell-content')).toHaveLength(1);
 			expect(cell.children).toHaveLength(1);
