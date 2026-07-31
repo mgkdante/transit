@@ -202,9 +202,7 @@ function scenarios(options) {
 		{
 			id: 'receipt-expanded',
 			path: '/receipt',
-			targets: [
-				target('receipt-day-verdict', '.receipt-day-verdict', ACTION.delete),
-			],
+			targets: [target('receipt-day-verdict', '.receipt-day-verdict', ACTION.delete)],
 		},
 		{
 			id: 'hotspots-expanded',
@@ -453,8 +451,7 @@ async function measureTarget(page, requiredTarget, phase) {
 				// live-fed copy ("about 8 in 10 trips" → "9 in 10") must join across
 				// the before/after phases.
 				const text =
-					element.textContent?.trim().replace(/\s+/g, ' ').replace(/\d+/g, '#').slice(0, 120) ??
-					'';
+					element.textContent?.trim().replace(/\s+/g, ' ').replace(/\d+/g, '#').slice(0, 120) ?? '';
 				const landmark = element.closest('[data-slot], [data-toc], [id]');
 				const identityBase = [
 					element.tagName.toLowerCase(),
