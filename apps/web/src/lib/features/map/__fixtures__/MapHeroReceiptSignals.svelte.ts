@@ -23,6 +23,9 @@ export const mapHeroReceiptSignals = {
 		get now() {
 			return serverNow;
 		},
+		serverNowContinuousMs() {
+			return serverNow;
+		},
 		subscribe: () => () => {},
 	},
 	get vehiclesGeneration() {

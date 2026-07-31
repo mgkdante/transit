@@ -9,12 +9,13 @@
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 import { shouldAnimate } from '@yesid/motion/policy';
 import { VEHICLE_SOURCE, type VehicleFC } from '../vehicleLayer';
-import type { Coord } from '../polyline';
+import { cumulativeLengths, projectToPolyline, type Coord } from '../polyline';
 import { BLEND_MS, MIN_RENDER_INTERVAL_MS } from './constants';
 import {
 	projectEntry,
 	type BlendState,
 	type FixResolver,
+	type ProjectionInvariants,
 	type ShapeResolver,
 	type VehicleEntry,
 } from './projector';
@@ -71,11 +72,53 @@ export function createVehicleMotionController(
 	// `set`, but in production its `now()` has advanced, so capturing startMs in
 	// `set` would mistime the blend window. null when no new-tick seed is pending.
 	let pendingBlendOrigins: Map<string, { coord: Coord; bearing: number }> | null = null;
-	// Last displayed coord/bearing per vehicle (the blend origin when the next fix
-	// arrives) so a correction starts from exactly where the dot sits, never snaps.
-	const displayed = new Map<string, { coord: Coord; bearing: number }>();
-	// Monotonic timestamp of the last setData, to coalesce frames to ~30fps.
-	let lastSetDataMs = Number.NEGATIVE_INFINITY;
+	// Last displayed moving fields per vehicle (the blend origin and dirty-check
+	// baseline) so a correction starts from exactly where the dot sits, never snaps.
+	const displayed = new Map<string, { coord: Coord; bearing: number; stale: number }>();
+	// Monotonic timestamp of the last evaluated render, to coalesce work to ~30fps
+	// even when the resulting upload is skipped as byte-identical.
+	let lastRenderMs = Number.NEGATIVE_INFINITY;
+	// Successful per-fix geometry work, pinned by (non-null tick, vehicle id).
+	// Misses are deliberately absent so a shape that arrives mid-tick retries.
+	const invariantCache = new Map<string, { tickKey: string; invariants: ProjectionInvariants }>();
+
+	function resolveInvariants(entry: VehicleEntry): ProjectionInvariants | null {
+		const id = entry.feature.properties.id;
+		if (tickKey !== null) {
+			const cached = invariantCache.get(id);
+			if (cached?.tickKey === tickKey) return cached.invariants;
+		}
+		if (!entry.fix) return null;
+		const shape = shapeFor?.(entry.feature) ?? null;
+		if (!shape || shape.length < 2) return null;
+		const lengths = cumulativeLengths(shape);
+		if (lengths[lengths.length - 1] <= 0) return null;
+		const coord = entry.feature.geometry.coordinates as Coord;
+		const projection = projectToPolyline(shape, coord, lengths);
+		if (!projection) return null;
+		const rawFixUtc = entry.fix.reportedUtc ?? entry.fix.updatedUtc;
+		const invariants = {
+			fixEpochMs: Date.parse(rawFixUtc),
+			shape,
+			lengths,
+			s0: projection.s,
+		};
+		if (tickKey !== null) invariantCache.set(id, { tickKey, invariants });
+		return invariants;
+	}
+
+	function pruneForNewTick(): void {
+		const currentIds = new Set(entries.map((entry) => entry.feature.properties.id));
+		for (const id of blends.keys()) {
+			if (!currentIds.has(id)) blends.delete(id);
+		}
+		for (const id of displayed.keys()) {
+			if (!currentIds.has(id)) displayed.delete(id);
+		}
+		// Every cached value belongs to the prior tick. Clearing releases its strong
+		// shape-array pin while same-tick filter re-feeds never enter this helper.
+		invariantCache.clear();
+	}
 
 	function stopLoop(): void {
 		if (frameHandle != null) cancelFrame(frameHandle);
@@ -103,7 +146,7 @@ export function createVehicleMotionController(
 			if (!throttled) setVehicleSourceData(map, { type: 'FeatureCollection', features: [] });
 			return;
 		}
-		if (throttled && now() - lastSetDataMs < MIN_RENDER_INTERVAL_MS) return;
+		if (throttled && now() - lastRenderMs < MIN_RENDER_INTERVAL_MS) return;
 		const serverNow = serverNowFn();
 		const nowMs = now();
 		// Seed any new-tick ease-correct blends NOW, off THIS render's clock, so the
@@ -118,17 +161,39 @@ export function createVehicleMotionController(
 			}
 			pendingBlendOrigins = null;
 		}
+		let dirty = false;
 		const features = entries.map((entry) => {
 			const id = entry.feature.properties.id;
 			const blend = blends.get(id);
-			const { feature } = projectEntry(entry, serverNow, nowMs, shapeFor, blend);
+			const invariants = resolveInvariants(entry);
+			const { feature } = projectEntry(
+				entry,
+				serverNow,
+				nowMs,
+				undefined,
+				blend,
+				invariants ?? undefined,
+			);
 			const coord = feature.geometry.coordinates as Coord;
-			displayed.set(id, { coord, bearing: feature.properties.bearing });
+			const bearing = feature.properties.bearing;
+			const stale = feature.properties.stale;
+			const prior = displayed.get(id);
+			if (
+				!prior ||
+				prior.coord[0] !== coord[0] ||
+				prior.coord[1] !== coord[1] ||
+				prior.bearing !== bearing ||
+				prior.stale !== stale
+			) {
+				dirty = true;
+			}
+			displayed.set(id, { coord, bearing, stale });
 			// A finished blend is dropped so steady-state frames skip the lerp.
 			if (blend && nowMs - blend.startMs >= BLEND_MS) blends.delete(id);
 			return feature;
 		});
-		lastSetDataMs = now();
+		lastRenderMs = now();
+		if (throttled && !dirty) return;
 		setVehicleSourceData(map, { type: 'FeatureCollection', features });
 	}
 
@@ -137,13 +202,18 @@ export function createVehicleMotionController(
 	function snap(features: VehicleFC): void {
 		stopLoop();
 		blends.clear();
+		invariantCache.clear();
 		pendingBlendOrigins = null;
 		displayed.clear();
 		for (const f of features.features) {
 			const coord = f.geometry.coordinates as Coord;
-			displayed.set(f.properties.id, { coord, bearing: f.properties.bearing });
+			displayed.set(f.properties.id, {
+				coord,
+				bearing: f.properties.bearing,
+				stale: f.properties.stale,
+			});
 		}
-		lastSetDataMs = now();
+		lastRenderMs = now();
 		setVehicleSourceData(map, features);
 	}
 
@@ -176,6 +246,7 @@ export function createVehicleMotionController(
 			tickKey = nextTickKey;
 
 			if (!sameTick) {
+				pruneForNewTick();
 				// A genuinely NEW file (new fix for every bus): record an ease-correct
 				// blend ORIGIN from each bus's CURRENT displayed position so the
 				// correction glides in instead of snapping. The blend `startMs` is set

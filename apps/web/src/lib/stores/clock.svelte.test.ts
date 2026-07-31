@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushSync } from 'svelte';
+import { sharedClock as reactiveSharedClock } from './clock.svelte';
 
 // sharedClock's server-time anchor (PR-6 clock-skew fix). `serverNow` is the
 // freshness clock: the per-second client tick PLUS a recorded client→server
@@ -106,6 +108,75 @@ describe('sharedClock — server-time anchor', () => {
 		// Both now and serverNow advanced by the same 3s; the offset is preserved.
 		expect(sharedClock.serverNow - before).toBe(3_000);
 		expect(sharedClock.serverNow).toBe(sharedClock.now - 5_000);
+	});
+
+	it('reads continuous server time from Date.now plus the latest offset between label ticks', async () => {
+		const { sharedClock } = await loadClock();
+		sharedClock.noteServerEpochMs(Date.now() + 5_000);
+		vi.setSystemTime(Date.now() + 250);
+
+		const continuous = (
+			sharedClock as typeof sharedClock & { serverNowContinuousMs?: () => number }
+		).serverNowContinuousMs;
+		expect(continuous).toBeTypeOf('function');
+		expect(continuous?.()).toBe(Date.now() + 5_000);
+		expect(sharedClock.serverNow).toBe(sharedClock.now + 5_000);
+	});
+
+	it('does not make a tracked effect depend on offset samples', async () => {
+		let runs = 0;
+		let observed = 0;
+		const cleanup = $effect.root(() => {
+			$effect(() => {
+				runs += 1;
+				observed = reactiveSharedClock.serverNowContinuousMs();
+			});
+		});
+		flushSync();
+		expect({ runs, observed }).toEqual({ runs: 1, observed: Date.now() });
+
+		reactiveSharedClock.noteServerEpochMs(Date.now() + 1_000);
+		flushSync();
+
+		expect(runs).toBe(1);
+		cleanup();
+	});
+
+	it('holds a sub-threshold backward re-anchor until its clock debt is repaid', async () => {
+		const { sharedClock } = await loadClock();
+		sharedClock.noteServerEpochMs(Date.now() + 1_000);
+		const beforeRewind = sharedClock.serverNowContinuousMs();
+
+		sharedClock.noteServerEpochMs(Date.now());
+		expect(sharedClock.serverNowContinuousMs()).toBe(beforeRewind);
+		vi.setSystemTime(Date.now() + 500);
+		expect(sharedClock.serverNowContinuousMs()).toBe(beforeRewind);
+		vi.setSystemTime(Date.now() + 500);
+		expect(sharedClock.serverNowContinuousMs()).toBe(beforeRewind);
+	});
+
+	it('accepts a super-threshold backward re-anchor once and resets the latch', async () => {
+		const { sharedClock } = await loadClock();
+		sharedClock.noteServerEpochMs(Date.now() + 1_000);
+		const beforeRewind = sharedClock.serverNowContinuousMs();
+
+		sharedClock.noteServerEpochMs(Date.now());
+		expect(sharedClock.serverNowContinuousMs()).toBe(beforeRewind);
+		sharedClock.noteServerEpochMs(Date.now() - 1_500);
+		const stepped = sharedClock.serverNowContinuousMs();
+		expect(stepped).toBe(beforeRewind - 2_500);
+
+		vi.setSystemTime(Date.now() + 100);
+		expect(sharedClock.serverNowContinuousMs()).toBe(stepped + 100);
+	});
+
+	it('passes a forward re-anchor through without clamping', async () => {
+		const { sharedClock } = await loadClock();
+		const beforeReanchor = sharedClock.serverNowContinuousMs();
+
+		sharedClock.noteServerEpochMs(Date.now() + 2_000);
+
+		expect(sharedClock.serverNowContinuousMs()).toBe(beforeReanchor + 2_000);
 	});
 
 	it('latest valid sample wins', async () => {

@@ -55,7 +55,7 @@
 	import { createShapeCacheManager } from './mapShapeCache';
 	import { vehicleAbsence } from './vehicleAbsence';
 	import { sharedClock, motionMode } from '$lib/stores';
-	import { isPrefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
+	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import MapFilters from './MapFilters.svelte';
 	import MapMotionControl from './MapMotionControl.svelte';
 	import MapSelectionDetail from './MapSelectionDetail.svelte';
@@ -771,7 +771,7 @@
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		layerRevision;
 		if (!m) return;
-		const reduceMotion = isPrefersReducedMotion();
+		const reduceMotion = $prefersReducedMotion;
 		// Smooth = forward-projection ("almost real-time"); raw = ping-on-load (snap
 		// every feed, no estimation), the honest default. Reading motionMode.current
 		// here registers it as an effect dependency so flipping the toggle re-feeds
@@ -804,7 +804,7 @@
 				// stale, and raw mode snap to reported positions instead.
 				fixFor,
 				shapeFor: animate ? shapeFor : undefined,
-				serverNowFn: () => sharedClock.serverNow,
+				serverNowFn: () => untrack(() => sharedClock.serverNowContinuousMs()),
 				animate,
 			},
 			stops: {
