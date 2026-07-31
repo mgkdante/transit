@@ -31,6 +31,7 @@
 	import type { HeadwayPeriod, SeverityCode, ServiceSpanPeriod } from '$lib/v1';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { DeltaStat } from '$lib/components/dataviz';
+	import DataTable, { type DataTableColumn } from '$lib/components/data/DataTable.svelte';
 	import { meanPriorDelta, type PriorDelta } from '../selectors/priorDelta';
 	import { selectHeadwayDumbbell } from '../selectors/headwayDumbbell';
 	import { selectShiftBars } from '../selectors/shiftBars';
@@ -674,6 +675,26 @@
 	</li>
 {/snippet}
 
+{#snippet directionShiftCell(row: DirectionRow)}
+	{row.label}
+{/snippet}
+
+{#snippet directionZeroCell(row: DirectionRow)}
+	{#if row.dir0 != null}
+		{min(row.dir0)}
+	{:else}
+		<AbsentValue variant="inline" reason="no-observations" {locale} />
+	{/if}
+{/snippet}
+
+{#snippet directionOneCell(row: DirectionRow)}
+	{#if row.dir1 != null}
+		{min(row.dir1)}
+	{:else}
+		<AbsentValue variant="inline" reason="no-observations" {locale} />
+	{/if}
+{/snippet}
+
 <CollapsibleSection
 	dataSection="the-wait"
 	number={3}
@@ -802,39 +823,36 @@
 					{#if hasAdvancedReveal}
 						<div class="shift-direction" data-slot="direction-gaps">
 							<SectionLabel text={t.directionGap} variant="metric" />
-							<!-- Semantic table (operator: a real table, desktop + mobile). Rows = shift ×
-							     day-type; columns = the two directions; a missing cell shows the honest
-							     no-data chip. The table reflows to stacked rows under ~28rem via CSS. -->
-							<table class="direction-table" data-slot="direction-table">
-								<thead>
-									<tr>
-										<th scope="col">{t.directionShiftCol}</th>
-										<th scope="col">{dir0Label}</th>
-										<th scope="col">{dir1Label}</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each directionRows as row (row.key)}
-										<tr>
-											<th scope="row">{row.label}</th>
-											<td data-col={dir0Label}>
-												{#if row.dir0 != null}{min(row.dir0)}{:else}<AbsentValue
-														variant="inline"
-														reason="no-observations"
-														{locale}
-													/>{/if}
-											</td>
-											<td data-col={dir1Label}>
-												{#if row.dir1 != null}{min(row.dir1)}{:else}<AbsentValue
-														variant="inline"
-														reason="no-observations"
-														{locale}
-													/>{/if}
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
+							<DataTable
+								rows={directionRows}
+								columns={[
+									{
+										key: 'shift',
+										header: t.directionShiftCol,
+										rowHeader: true,
+										cell: directionShiftCell,
+									},
+									{
+										key: 'direction-0',
+										header: dir0Label,
+										numeric: true,
+										cell: directionZeroCell,
+									},
+									{
+										key: 'direction-1',
+										header: dir1Label,
+										numeric: true,
+										cell: directionOneCell,
+									},
+								] satisfies readonly DataTableColumn<DirectionRow>[]}
+								key={(row) => row.key}
+								caption={t.directionGap}
+								responsive={{ mode: 'stack', at: 'compact' }}
+								frame="none"
+								borderCollapse="collapse"
+								headerBand="none"
+								tableAttrs={{ 'data-slot': 'direction-table' }}
+							/>
 						</div>
 					{/if}
 				{:else}
@@ -1055,81 +1073,6 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		margin-top: 0.875rem;
-	}
-	/* The observed-gap-by-direction TABLE. Tabular numbers, zebra rows, sticky-ish row
-	   headers; the two direction columns are right-aligned numerics. */
-	.direction-table {
-		width: 100%;
-		border-collapse: collapse;
-		font-variant-numeric: tabular-nums;
-		font-size: var(--text-small);
-	}
-	.direction-table th,
-	.direction-table td {
-		padding: 0.375rem 0.5rem;
-		text-align: right;
-		white-space: nowrap;
-	}
-	.direction-table thead th {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		text-transform: uppercase;
-		letter-spacing: var(--tracking-wide);
-		color: var(--muted-foreground);
-		border-bottom: 1px solid var(--border);
-	}
-	.direction-table th[scope='col']:first-child,
-	.direction-table th[scope='row'] {
-		text-align: left;
-		font-weight: 500;
-		color: var(--foreground);
-	}
-	.direction-table tbody tr + tr th[scope='row'],
-	.direction-table tbody tr + tr td {
-		border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
-	}
-	/* Mobile: under ~28rem the table reflows to stacked label/value rows so the two
-	   direction columns never clip — each cell announces its column via its data-col. */
-	@media (max-width: 28rem) {
-		.direction-table,
-		.direction-table thead,
-		.direction-table tbody,
-		.direction-table tr,
-		.direction-table th,
-		.direction-table td {
-			display: block;
-			text-align: left;
-			white-space: normal;
-		}
-		.direction-table thead {
-			position: absolute;
-			width: 1px;
-			height: 1px;
-			overflow: hidden;
-			clip: rect(0 0 0 0);
-		}
-		.direction-table tbody tr {
-			padding: 0.5rem 0;
-			border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
-		}
-		.direction-table th[scope='row'] {
-			margin-bottom: 0.25rem;
-		}
-		.direction-table td {
-			display: flex;
-			justify-content: space-between;
-			gap: 1rem;
-			padding: 0.125rem 0;
-			border: 0;
-		}
-		.direction-table td::before {
-			content: attr(data-col);
-			font-family: var(--font-mono);
-			font-size: var(--text-micro);
-			text-transform: uppercase;
-			letter-spacing: var(--tracking-wide);
-			color: var(--muted-foreground);
-		}
 	}
 	/* Service-span sub-block heading + its window label. */
 	.span-head {
