@@ -203,7 +203,7 @@ describe('sortNewestFirst — newest observed alert first, truly undated rows la
 
 describe('buildAlertRow', () => {
 	const resolvers = {
-		headline: () => 'Service alert',
+		headline: () => ({ text: 'Resolved', lang: 'en' as const, isFallback: false }),
 		windowTime: (iso: string | null | undefined) => (iso == null ? null : iso.slice(0, 10)),
 	};
 
@@ -228,6 +228,7 @@ describe('buildAlertRow', () => {
 		expect(vm.impactPassages).toBeNull();
 		expect(vm.periods).toHaveLength(2);
 		expect(vm.periods[1].until).toBeNull();
+		expect(vm.headline).toEqual({ text: 'Resolved', lang: 'en', isFallback: false });
 	});
 });
 

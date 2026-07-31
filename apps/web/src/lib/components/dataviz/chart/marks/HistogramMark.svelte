@@ -19,6 +19,7 @@
 	import { scaleLinear } from 'd3-scale';
 	import { cn } from '$lib/utils';
 	import ChartFrame from '../ChartFrame.svelte';
+	import { structuralLabels } from '../structuralLabels';
 	import HistogramBars from './HistogramBars.svelte';
 	import { DELAY_HISTOGRAM_DOMAIN } from '$lib/features/reliability/domains';
 	import type { HistogramBin, HistogramSpec } from '../ChartSpec';
@@ -29,6 +30,7 @@
 	}
 
 	let { spec, class: className }: HistogramMarkProps = $props();
+	const structure = $derived(structuralLabels(spec.locale));
 
 	const ON_TIME_LO = -60;
 	const ON_TIME_HI = 300;
@@ -94,7 +96,7 @@
 	const padding = { top: 12, right: 14, bottom: 40, left: 16 };
 
 	const fmtRange = (b: { lo: number | null; hi: number | null }): string =>
-		`${b.lo == null ? '-∞' : Math.round(b.lo / 60)} to ${b.hi == null ? '+∞' : Math.round(b.hi / 60)} min`;
+		`${b.lo == null ? '-∞' : Math.round(b.lo / 60)} ${structure.rangeTo} ${b.hi == null ? '+∞' : Math.round(b.hi / 60)} min`;
 	const sharePct = (count: number): string =>
 		total > 0 ? `${Math.round((count / total) * 100)}%` : '';
 	const minutesTick = (sec: number): string => `${Math.round(sec / 60)}`;
@@ -136,8 +138,8 @@
 				{#snippet children({ data: d }: { data: Bar })}
 					<Tooltip.Header>{fmtRange(d)}</Tooltip.Header>
 					<Tooltip.List>
-						<Tooltip.Item label="Trips" value={`${d.count}`} />
-						<Tooltip.Item label="Share" value={sharePct(d.count)} />
+						<Tooltip.Item label={structure.tripsTitle} value={`${d.count}`} />
+						<Tooltip.Item label={structure.share} value={sharePct(d.count)} />
 					</Tooltip.List>
 				{/snippet}
 			</Tooltip.Root>
@@ -148,7 +150,8 @@
 	<table class="sr-only">
 		<caption>{spec.title}</caption>
 		<thead>
-			<tr><th scope="col">bin (min)</th><th scope="col">trips</th></tr>
+			<tr><th scope="col">{structure.binMinutes}</th><th scope="col">{structure.tripsLower}</th></tr
+			>
 		</thead>
 		<tbody>
 			{#each spec.bins as b, i (i)}
