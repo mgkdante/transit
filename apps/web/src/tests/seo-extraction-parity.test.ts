@@ -28,7 +28,7 @@ describe('Phase 2 SEO extraction byte parity', () => {
 
 	it('freezes representative enabled and disabled sitemap bytes', () => {
 		expect(sha256(buildSitemapXml({ siteOrigin: ORIGIN, indexing: true }, SITEMAP_FIXTURE))).toBe(
-			'782b17dac4fabe3ba0c5fc01f1ac07f2b220c3064f1b45a92cb99291ff730b0c',
+			'3f43d5c0a73fda095e321b6dd472b74796614a88ca67a8fa4a51205dcec5433a',
 		);
 		expect(sha256(buildSitemapXml({ siteOrigin: ORIGIN, indexing: false }, SITEMAP_FIXTURE))).toBe(
 			'00233e0711aad7bd7807374dd5f2d97e96b8675cd45f44a8844ba5e32b79bcc7',

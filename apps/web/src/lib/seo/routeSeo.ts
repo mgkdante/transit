@@ -94,13 +94,13 @@ const HOME: BilingualSeo = {
 };
 
 const PRIVACY_DESCRIPTION: BilingualText = {
-	en: 'How Transit handles search, location and browser data, which services receive it, how long it may persist and how to ask privacy questions.',
-	fr: 'Comment Transit traite les recherches, la position et les données web, quels services les reçoivent, leur durée possible et comment poser une question.',
+	en: 'This privacy page is a placeholder while the full Transit policy is under legal review. The complete text will be published here once approved.',
+	fr: 'Cette page de confidentialité est provisoire pendant la révision juridique de Transit. Le texte complet sera publié ici une fois approuvé.',
 };
 
 const TERMS_DESCRIPTION: BilingualText = {
-	en: 'Terms for using Transit, including public-data attribution, service limitations, acceptable use, source-code licensing and applicable legal protections.',
-	fr: 'Conditions d’utilisation de Transit, notamment l’attribution des données publiques, les limites du service, l’usage acceptable et la licence du code source.',
+	en: 'This terms page is a placeholder while the Transit conditions of use are under legal review. The complete text will be published here once approved.',
+	fr: 'Cette page de conditions est provisoire pendant la révision juridique de Transit. Le texte complet sera publié ici une fois approuvé.',
 };
 
 const SURFACES: Record<string, BilingualSeo> = {

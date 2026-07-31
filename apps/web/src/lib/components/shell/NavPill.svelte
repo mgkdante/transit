@@ -139,6 +139,9 @@
 	const auditLabel = $derived(footerCopy[locale].auditLabel);
 	const legalLabel = $derived(footerCopy[locale].legalLabel);
 	const searchCollectionNotice = $derived(navPillCopy[locale].searchCollectionNotice);
+	// Route/stop-scoped surfaces never fire the geocode fetch, so a transmission
+	// notice there would claim what does not happen (S5-377 B3).
+	const transmitsSearches = $derived(searchScope === 'map' || searchScope === 'all');
 	const primaryGroupLabel = $derived(locale === 'fr' ? 'Explorer' : 'Explore');
 	// The parent-brand "Yesid" link out to yesid.dev — the final burger-menu row,
 	// with an external ↗ affordance. NOT the pill's main click anymore.
@@ -376,8 +379,11 @@
 				onfocus={openSearchResults}
 				oninput={handleSearchInput}
 				class="nav-search-input"
+				aria-describedby={transmitsSearches ? 'nav-search-notice' : undefined}
 			/>
-			<span class="nav-search-notice">{searchCollectionNotice}</span>
+			{#if transmitsSearches}
+				<span id="nav-search-notice" class="nav-search-notice">{searchCollectionNotice}</span>
+			{/if}
 			{#if showSearchResults}
 				<div class="nav-search-results" role="group" aria-label={searchAria}>
 					{#each searchResults as result (`${result.kind}:${result.id}`)}

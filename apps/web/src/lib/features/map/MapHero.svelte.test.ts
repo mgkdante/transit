@@ -113,6 +113,10 @@ const harness = vi.hoisted(() => {
 
 	return {
 		alert,
+		// reassigned by the $app/stores mock factory below
+		setPageUrl: (_href: string): void => {
+			throw new Error('setPageUrl used before the $app/stores mock factory ran');
+		},
 		createLiveStore: vi.fn((_manifest: unknown, _options?: unknown) => liveStore),
 		liveStore,
 		identityReceivers,
@@ -156,19 +160,20 @@ const originalSecureContext = Object.getOwnPropertyDescriptor(window, 'isSecureC
 const originalGeolocation = Object.getOwnPropertyDescriptor(navigator, 'geolocation');
 
 vi.mock('$app/stores', async () => {
-	const { readable } = await import('svelte/store');
-	return {
-		page: readable({
-			url: new URL('http://localhost/map'),
-			params: {},
-			route: { id: '/map' },
-			status: 200,
-			error: null,
-			data: {},
-			form: null,
-			state: {},
-		}),
-	};
+	const { writable } = await import('svelte/store');
+	const pageValue = (url: URL) => ({
+		url,
+		params: {},
+		route: { id: '/map' },
+		status: 200,
+		error: null,
+		data: {},
+		form: null,
+		state: {},
+	});
+	const store = writable(pageValue(new URL('http://localhost/map')));
+	harness.setPageUrl = (href: string) => store.set(pageValue(new URL(href)));
+	return { page: store };
 });
 
 vi.mock('$app/navigation', () => ({
@@ -360,6 +365,44 @@ describe('MapHero near-me device location', () => {
 				precision: 'place',
 			}),
 		);
+	});
+
+	it('keeps the device fix alive when a later navigation drops the near params (S5-377 B1)', async () => {
+		const position: GeolocationPosition = {
+			coords: {
+				latitude: 45.525686,
+				longitude: -73.594764,
+				accuracy: 12,
+				altitude: null,
+				altitudeAccuracy: null,
+				heading: null,
+				speed: null,
+				toJSON: () => ({}),
+			},
+			timestamp: Date.parse('2026-06-20T12:00:30Z'),
+			toJSON: () => ({}),
+		};
+		Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+		Object.defineProperty(navigator, 'geolocation', {
+			configurable: true,
+			value: { getCurrentPosition: vi.fn((success: PositionCallback) => success(position)) },
+		});
+
+		render(MapHero);
+		await fireEvent.click(screen.getByRole('button', { name: 'Stops near me' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+		await waitFor(() =>
+			expect(screen.getByRole('button', { name: 'Clear location' })).toBeTruthy(),
+		);
+
+		// A filter toggle rewrites the query string; the device origin is not
+		// URL-backed, so the URL sync-from must not destroy it.
+		harness.setPageUrl('http://localhost/map?routes=55');
+		// tick() flushes the URL-sync effect AND its DOM fallout before the
+		// assertion — a waitFor here would pass on its first pre-flush check and
+		// green-light a build that destroys the fix a microtask later.
+		await tick();
+		expect(screen.getByRole('button', { name: 'Clear location' })).toBeTruthy();
 	});
 });
 

@@ -335,8 +335,11 @@ describe('NavPill — the flat menu', () => {
 
 describe('NavPill — search', () => {
 	it.each([
-		['en', 'Your searches are sent to our server and Google.'],
-		['fr', 'Vos recherches sont envoyées à notre serveur et à Google.'],
+		['en', 'Your searches are sent to our server and its geocoding providers (Google, geo.ca).'],
+		[
+			'fr',
+			'Vos recherches sont envoyées à notre serveur et à ses fournisseurs de géocodage (Google, geo.ca).',
+		],
 	] as const)(
 		'renders the %s chrome collection notice beside the search input',
 		(locale, notice) => {
@@ -390,6 +393,33 @@ describe('NavPill — search', () => {
 			'placeholder',
 			'Search a line…',
 		);
+	});
+
+	it('shows the collection notice only where searches actually transmit (S5-377 B3)', () => {
+		// map/all scopes fire the geocode fetch; route/stop scopes never do, so the
+		// notice there would claim transmission that does not happen.
+		for (const searchScope of ['map', 'all'] as const) {
+			const { getByText, getByRole, unmount } = render(NavPill, {
+				props: { locale: 'en', searchScope },
+			});
+			const notice = getByText(
+				'Your searches are sent to our server and its geocoding providers (Google, geo.ca).',
+			);
+			expect(notice).toHaveAttribute('id', 'nav-search-notice');
+			expect(getByRole('searchbox', { name: 'Search the network' })).toHaveAttribute(
+				'aria-describedby',
+				'nav-search-notice',
+			);
+			unmount();
+		}
+		for (const searchScope of ['route', 'stop'] as const) {
+			const { queryByText, getByRole, unmount } = render(NavPill, {
+				props: { locale: 'en', searchScope },
+			});
+			expect(queryByText(/searches are sent/i)).toBeNull();
+			expect(getByRole('searchbox')).not.toHaveAttribute('aria-describedby');
+			unmount();
+		}
 	});
 
 	it('closes desktop search suggestions when the user clicks outside', async () => {

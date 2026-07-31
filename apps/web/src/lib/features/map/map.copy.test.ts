@@ -20,9 +20,11 @@ describe('map copy', () => {
 	});
 
 	it('discloses the near-me search recipients in both languages', () => {
-		expect(copy.en.nearMeCollectionNotice).toBe('Your searches are sent to our server and Google.');
+		expect(copy.en.nearMeCollectionNotice).toBe(
+			'Your searches are sent to our server and its geocoding providers (Google, geo.ca).',
+		);
 		expect(copy.fr.nearMeCollectionNotice).toBe(
-			'Vos recherches sont envoyées à notre serveur et à Google.',
+			'Vos recherches sont envoyées à notre serveur et à ses fournisseurs de géocodage (Google, geo.ca).',
 		);
 	});
 

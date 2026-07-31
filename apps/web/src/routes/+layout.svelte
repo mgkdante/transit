@@ -25,8 +25,10 @@
   marketing stripped, re-themed to the transit shell. Tokens only.
 -->
 <script module lang="ts">
+	import { LEGAL_NAV } from '$lib/content/nav';
+
 	export function isDataIndependentRoute(pathname: string): boolean {
-		return pathname === '/privacy' || pathname === '/terms';
+		return LEGAL_NAV.some((item) => item.href === pathname);
 	}
 </script>
 

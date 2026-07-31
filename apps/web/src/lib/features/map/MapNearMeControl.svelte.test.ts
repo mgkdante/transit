@@ -102,8 +102,16 @@ describe('MapNearMeControl', () => {
 	});
 
 	it.each([
-		['en', 'Stops near me', 'Your searches are sent to our server and Google.'],
-		['fr', 'Arrêts près de moi', 'Vos recherches sont envoyées à notre serveur et à Google.'],
+		[
+			'en',
+			'Stops near me',
+			'Your searches are sent to our server and its geocoding providers (Google, geo.ca).',
+		],
+		[
+			'fr',
+			'Arrêts près de moi',
+			'Vos recherches sont envoyées à notre serveur et à ses fournisseurs de géocodage (Google, geo.ca).',
+		],
 	] as const)(
 		'renders the %s collection notice directly below the near-me search form',
 		async (locale, toggleLabel, expectedNotice) => {
@@ -124,6 +132,11 @@ describe('MapNearMeControl', () => {
 			const notice = getByText(expectedNotice);
 			expect(notice).toHaveClass('map-near-collection-notice');
 			expect(notice.previousElementSibling).toHaveClass('map-near-form');
+			expect(notice).toHaveAttribute('id', 'map-near-collection-notice');
+			expect(getByRole('combobox')).toHaveAttribute(
+				'aria-describedby',
+				'map-near-collection-notice',
+			);
 		},
 	);
 

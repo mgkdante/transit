@@ -23,8 +23,8 @@ const SURFACES = [
 	'/receipt',
 	'/repeat-offenders',
 	'/alerts',
-	'/privacy',
-	'/terms',
+	// /privacy and /terms re-enter with WS8-B's real content — indexing
+	// placeholder pages under full-policy descriptions is the S5-377 B2 defect.
 ] as const;
 
 describe('SEO static files', () => {
@@ -146,7 +146,7 @@ describe('sitemap entity enumeration', () => {
 		);
 
 		const locCount = (sitemap.match(/<loc>/g) ?? []).length;
-		// 14 surfaces + 2 routes + 3 stops = 19 entities x 2 locales = 38.
+		// 12 surfaces + 2 routes + 3 stops = 17 entities x 2 locales = 34.
 		expect(locCount).toBe((SURFACES.length + 2 + 3) * 2);
 	});
 

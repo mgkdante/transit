@@ -209,15 +209,14 @@
 	// (or a deep-link like /map?status=late) restores the exact view; every toggle
 	// pushes the canonical query via goto (replaceState so the map view isn't
 	// disrupted + back/forward stay clean). One map, deep-linkable from anywhere.
+	// Every URL write here is an in-place rewrite: keep the map view (noScroll),
+	// the user's focus, and a clean back/forward stack.
+	const URL_REWRITE = { replaceState: true, keepFocus: true, noScroll: true } as const;
 	const filters = createFilterStore(fromSearchParams($page.url.searchParams), (search) => {
 		const nextSearchParams = new URLSearchParams(search);
 		copyNearTargetSearchParams($page.url.searchParams, nextSearchParams);
 		const nextSearch = nextSearchParams.toString();
-		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, {
-			replaceState: true,
-			keepFocus: true,
-			noScroll: true,
-		});
+		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, URL_REWRITE);
 	});
 
 	// Any client navigation can change the URL filter spine: browser back/forward,
@@ -316,6 +315,7 @@
 	let nearMeError = $state<string | null>(null);
 	let nearMeOrigin = $state<NearMeOrigin | null>(null);
 	let nearUrlKey = $state('');
+	let nearOriginUrlBacked = $state(true);
 	// One-shot "zoom to this picked entity" hint from the URL `focus` param. The
 	// resolver effect pans/fits once data is available, then strips the param.
 	let pendingFocus = $state<MapFocus | null>(null);
@@ -713,24 +713,27 @@
 	function setNearMeOrigin(origin: NearMeOrigin, syncUrl = true): void {
 		nearMeOrigin = origin;
 		nearMeError = null;
+		// A device fix never enters the URL — the URL is not its authority.
+		nearOriginUrlBacked = syncUrl;
 		if (syncUrl) syncNearTargetToUrl(origin);
 		flyToNearMeOrigin(origin);
 	}
 
 	function syncNearTargetToUrl(origin: NearMeOrigin): void {
 		nearUrlKey = nearTargetKey(origin);
-		void goto(buildNearTargetSearch($page.url.searchParams, $page.url.pathname, origin), {
-			replaceState: true,
-			keepFocus: true,
-			noScroll: true,
-		});
+		void goto(
+			buildNearTargetSearch($page.url.searchParams, $page.url.pathname, origin),
+			URL_REWRITE,
+		);
 	}
 
 	function syncNearTargetFromUrl(searchParams: URLSearchParams): void {
 		const nearTarget = nearTargetFromSearchParams(searchParams);
 		if (!nearTarget) {
 			nearUrlKey = '';
-			nearMeOrigin = null;
+			// Only a URL-backed origin answers to the URL; a device fix (privacy:
+			// coordinates never enter the query string) must survive URL moves.
+			if (nearOriginUrlBacked) nearMeOrigin = null;
 			return;
 		}
 
@@ -748,11 +751,8 @@
 		nearMeQuery = '';
 		nearMeError = null;
 		nearUrlKey = '';
-		void goto(clearNearTargetSearch($page.url.searchParams, $page.url.pathname), {
-			replaceState: true,
-			keepFocus: true,
-			noScroll: true,
-		});
+		nearOriginUrlBacked = true;
+		void goto(clearNearTargetSearch($page.url.searchParams, $page.url.pathname), URL_REWRITE);
 	}
 
 	// Pick up a one-shot `focus` param; the resolver effect below acts on it.
@@ -762,11 +762,7 @@
 	}
 
 	function clearFocusFromUrl(): void {
-		void goto(buildFocusClearSearch($page.url.searchParams, $page.url.pathname), {
-			replaceState: true,
-			keepFocus: true,
-			noScroll: true,
-		});
+		void goto(buildFocusClearSearch($page.url.searchParams, $page.url.pathname), URL_REWRITE);
 	}
 
 	// Zoom to a selection directly (click path) — data is already loaded, so no
