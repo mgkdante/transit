@@ -22,6 +22,8 @@ const PATHS = [
 	'/receipt',
 	'/repeat-offenders',
 	'/alerts',
+	'/privacy',
+	'/terms',
 	'/lines/1',
 	'/stop/5',
 ];
@@ -41,6 +43,8 @@ const SURFACE_PATHS = [
 	'/receipt',
 	'/repeat-offenders',
 	'/alerts',
+	'/privacy',
+	'/terms',
 ];
 
 // A representative identity (STM / Montréal) for the keyworded-copy path. The
@@ -101,6 +105,16 @@ describe('resolveRouteSeo', () => {
 		// Home title is the one keyworded title override.
 		expect(resolveRouteSeo('/', 'en', STM_IDENTITY).title).toBe('Live STM map');
 		expect(resolveRouteSeo('/', 'fr', STM_IDENTITY).title).toBe('Carte STM en direct');
+	});
+
+	it('keeps legal SEO provider-neutral even when an identity is available', () => {
+		for (const path of ['/privacy', '/terms']) {
+			for (const locale of ['en', 'fr'] as const) {
+				const { description } = resolveRouteSeo(path, locale, STM_IDENTITY);
+				expect(description).not.toContain('STM');
+				expect(description).not.toContain('Montréal');
+			}
+		}
 	});
 });
 

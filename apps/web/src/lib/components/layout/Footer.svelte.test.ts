@@ -13,6 +13,7 @@ const localeCases = [
 		navLabel: 'Pied de page',
 		exploreLabel: 'Explorer',
 		auditLabel: 'Vérification',
+		legalLabel: 'Juridique',
 		homeHref: '/fr',
 		tagline: `Analytique citoyenne pour ${PROVIDER_NAME}`,
 		disclaimer: `Site non officiel, sans affiliation avec ${PROVIDER_NAME}.`,
@@ -29,6 +30,8 @@ const localeCases = [
 			['Reçu quotidien', '/fr/receipt'],
 			['Récidivistes', '/fr/repeat-offenders'],
 			['Avis', '/fr/alerts'],
+			['Confidentialité', '/fr/privacy'],
+			['Conditions d’utilisation', '/fr/terms'],
 		],
 	},
 	{
@@ -36,6 +39,7 @@ const localeCases = [
 		navLabel: 'Footer',
 		exploreLabel: 'Explore',
 		auditLabel: 'Audit',
+		legalLabel: 'Legal',
 		homeHref: '/',
 		tagline: `Citizen analytics for ${PROVIDER_NAME}`,
 		disclaimer: `Unofficial website, not affiliated with ${PROVIDER_NAME}.`,
@@ -52,6 +56,8 @@ const localeCases = [
 			['Daily receipt', '/receipt'],
 			['Repeat offenders', '/repeat-offenders'],
 			['Alerts', '/alerts'],
+			['Privacy', '/privacy'],
+			['Terms', '/terms'],
 		],
 	},
 ] as const;
@@ -60,8 +66,8 @@ afterEach(() => vi.useRealTimers());
 
 describe('Footer', () => {
 	it.each(localeCases)(
-		'renders the brand and two localized navigation groups in canonical order',
-		({ locale, navLabel, exploreLabel, auditLabel, homeHref, tagline, links }) => {
+		'renders the brand and three localized navigation groups in canonical order',
+		({ locale, navLabel, exploreLabel, auditLabel, legalLabel, homeHref, tagline, links }) => {
 			const { getByTestId, getByRole, getByText } = render(Footer, {
 				props: {
 					locale,
@@ -84,8 +90,10 @@ describe('Footer', () => {
 			expect(within(footer).getAllByRole('navigation')).toHaveLength(1);
 			const explore = within(nav).getByRole('group', { name: exploreLabel });
 			const audit = within(nav).getByRole('group', { name: auditLabel });
-			expect(nav.querySelectorAll('[role="group"]')).toHaveLength(2);
+			const legal = within(nav).getByRole('group', { name: legalLabel });
+			expect(nav.querySelectorAll('[role="group"]')).toHaveLength(3);
 			expect(explore).not.toBe(audit);
+			expect(legal).not.toBe(audit);
 			expect(
 				Array.from(explore.querySelectorAll('a'), (link) => [
 					link.textContent?.trim(),
@@ -97,7 +105,13 @@ describe('Footer', () => {
 					link.textContent?.trim(),
 					link.getAttribute('href'),
 				]),
-			).toEqual(links.slice(4));
+			).toEqual(links.slice(4, 10));
+			expect(
+				Array.from(legal.querySelectorAll('a'), (link) => [
+					link.textContent?.trim(),
+					link.getAttribute('href'),
+				]),
+			).toEqual(links.slice(10));
 
 			// The house link belongs to BrandCluster, not a third CONNECT group.
 			const houseLinks = footer.querySelectorAll('a[href="https://yesid.dev"]');

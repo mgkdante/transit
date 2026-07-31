@@ -16,6 +16,7 @@
 	import { scaleBand, scaleLinear } from 'd3-scale';
 	import { cn } from '$lib/utils';
 	import ChartFrame from '../ChartFrame.svelte';
+	import { structuralLabels } from '../structuralLabels';
 	import type { DotStripDatum, DotStripSpec } from '../ChartSpec';
 	import type { SeverityCode } from '$lib/v1/schemas';
 
@@ -29,6 +30,7 @@
 	const groups = $derived([...new Set(spec.points.map((p) => p.group))]);
 	const reals = $derived(spec.points.filter((p) => p.value != null));
 	const xDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
+	const structure = $derived(structuralLabels(spec.locale));
 
 	const bySeverity = (sev: SeverityCode): DotStripDatum[] =>
 		reals.filter((p) => (p.severity ?? 'watch') === sev);
@@ -95,7 +97,7 @@
 	<table class="sr-only">
 		<caption>{spec.title}</caption>
 		<thead>
-			<tr><th scope="col">group</th><th scope="col">{spec.unit}</th></tr>
+			<tr><th scope="col">{structure.group}</th><th scope="col">{spec.unit}</th></tr>
 		</thead>
 		<tbody>
 			{#each spec.points as p (p.key)}

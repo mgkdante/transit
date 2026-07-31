@@ -41,7 +41,7 @@
 	// bilingual GTFS-RT cause/effect labels + the locale-aware display-text resolver
 	// (HTML scrub + generic-header guard). Both are pure + provider-agnostic.
 	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
-	import { alertDisplayText } from '$lib/v1/alertDisplay';
+	import { alertDisplayText, alertDisplayUrl } from '$lib/v1/alertDisplay';
 
 	/** Localized strings for this section — bilingual heading + the meta captions. */
 	export interface AffectedAlertsCopy {
@@ -63,6 +63,9 @@
 		readonly more: (n: number) => string;
 		/** Label to collapse the expanded list back to the capped view. */
 		readonly showLess: string;
+		readonly foreignLanguage: string;
+		readonly link: string;
+		readonly linkAria: (host: string) => string;
 	}
 
 	interface Props {
@@ -116,7 +119,7 @@
 		watch: '○',
 	};
 
-	function headline(alert: Alert): string {
+	function headline(alert: Alert) {
 		return alertDisplayText(alert, locale);
 	}
 
@@ -139,13 +142,22 @@
 				{@const effect = effectLabel(alert.effect, locale)}
 				{@const from = windowTime(alert.start_utc)}
 				{@const until = windowTime(alert.end_utc)}
+				{@const title = headline(alert)}
+				{@const url = alertDisplayUrl(alert, locale)}
 				<li class="affected-alert" data-severity={alert.severity}>
 					<p class="affected-alert-head">
 						<span class="affected-alert-dot" aria-hidden="true">
 							{SEVERITY_GLYPH[alert.severity]}
 						</span>
 						<span class="sr-only">{copy.severity[alert.severity]}</span>
-						<span class="affected-alert-title">{headline(alert)}</span>
+						<span class="affected-alert-title">
+							<span lang={title.lang && title.lang !== locale ? title.lang : undefined}
+								>{title.text}</span
+							>
+							{#if title.isFallback && title.lang && title.lang !== locale}
+								<span class="alert-language-marker">{copy.foreignLanguage}</span>
+							{/if}
+						</span>
 					</p>
 					{#if cause || effect || from || until}
 						<dl class="affected-alert-meta">
@@ -174,6 +186,19 @@
 								</div>
 							{/if}
 						</dl>
+					{/if}
+					{#if url}
+						<p class="affected-alert-link">
+							<a
+								href={url.href}
+								hreflang={url.lang}
+								target="_blank"
+								rel="noopener noreferrer"
+								aria-label={copy.linkAria(url.host)}
+							>
+								{copy.link} · {url.host}
+							</a>
+						</p>
 					{/if}
 				</li>
 			{/each}
@@ -301,5 +326,14 @@
 		font-size: var(--text-caption);
 		font-weight: 500;
 		color: var(--foreground);
+	}
+
+	/* The language marker is a quiet annotation beside the provider text,
+	   never part of the headline itself. */
+	.alert-language-marker {
+		margin-inline-start: 0.375rem;
+		color: var(--muted-foreground);
+		font-size: var(--text-caption);
+		font-weight: 400;
 	}
 </style>

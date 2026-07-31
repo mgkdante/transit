@@ -1,4 +1,4 @@
-import { render } from '@testing-library/svelte';
+import { fireEvent, render } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import Section2TheWait from './Section2TheWait.svelte';
 import { reliabilityCopy } from '../reliability.copy';
@@ -34,6 +34,17 @@ const waitVm = (headway: HeadwayPeriod[], windowed: boolean): WaitRegularityVM =
 	headway,
 	windowed,
 	isEmpty: headway.length === 0,
+});
+
+const directionHw = (
+	shift: string,
+	directionId: 0 | 1,
+	dayType: 'weekday' | 'weekend',
+	observed: number,
+): HeadwayPeriod => ({
+	...hw(shift, observed, 30, 0.25, null, null),
+	direction_id: directionId,
+	day_type: dayType,
 });
 
 const rowsByState = (container: HTMLElement, prior: string): HTMLElement[] =>
@@ -81,5 +92,61 @@ describe('Section2TheWait — wait vs prior (PR-WEB-3)', () => {
 	it('HIDES the comparison when the headway breakdown is not windowed', () => {
 		const { container } = mount(waitVm(headway, false));
 		expect(container.querySelector('[data-slot="wait-vs-prior"]')).toBeNull();
+	});
+});
+
+describe('Section2TheWait — direction DataTable contract', () => {
+	const headway: HeadwayPeriod[] = [
+		hw('am_peak', 10, 80, 0.2, 9, 70),
+		directionHw('am_peak', 0, 'weekday', 8.5),
+		directionHw('am_peak', 1, 'weekday', 12.25),
+		directionHw('am_peak', 0, 'weekend', 10.75),
+	];
+
+	it('names the table and keeps scoped, localized mobile labels reactive', async () => {
+		const wait = waitVm(headway, true);
+		const view = render(Section2TheWait, {
+			props: { wait, locale: 'en' as const, copy: reliabilityCopy.en, mode: 'week' },
+		});
+		await fireEvent.click(view.getByRole('button', { name: 'Show the detail' }));
+
+		const table = view.getByRole('table', { name: 'Observed gap by direction' });
+		expect(table.querySelectorAll('caption')).toHaveLength(1);
+		expect(table.querySelector('caption')).toHaveTextContent('Observed gap by direction');
+		expect(table.querySelectorAll('thead th[scope="col"]')).toHaveLength(3);
+		expect(table.querySelectorAll('tbody th[scope="row"]')).toHaveLength(2);
+		expect(table.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+
+		for (const row of table.querySelectorAll('tbody tr')) {
+			const cells = Array.from(row.querySelectorAll(':scope > th, :scope > td'));
+			expect(cells.map((cell) => cell.getAttribute('data-col'))).toEqual([
+				'Shift',
+				'Direction 1',
+				'Direction 2',
+			]);
+			for (const cell of cells) {
+				expect(cell.querySelectorAll(':scope > .data-table-cell-content')).toHaveLength(1);
+				expect(cell.children).toHaveLength(1);
+			}
+		}
+
+		await view.rerender({
+			wait,
+			locale: 'fr',
+			copy: reliabilityCopy.fr,
+			mode: 'week',
+		});
+
+		const localized = view.getByRole('table', {
+			name: 'Intervalle observé par direction',
+		});
+		expect(localized.querySelectorAll('caption')).toHaveLength(1);
+		for (const row of localized.querySelectorAll('tbody tr')) {
+			expect(
+				Array.from(row.querySelectorAll(':scope > th, :scope > td')).map((cell) =>
+					cell.getAttribute('data-col'),
+				),
+			).toEqual(['Période', 'Direction 1', 'Direction 2']);
+		}
 	});
 });

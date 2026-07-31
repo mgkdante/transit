@@ -28,14 +28,17 @@
 //      (dataviz/primary/accent/rule). Retired by P7; they can't return.
 //   2. RAW MS — a bare `<n>ms` duration/easing literal in a transition/animation.
 //      All motion flows through `--duration-*`/`--ease-*` (P2).
-//   3. TOKEN FALLBACKS — `var(--duration|ease|radius|space…, <fallback>)`. tokens
+//   3. TOKEN FALLBACKS — `var(--duration|ease|radius|space|measure…, <fallback>)`. tokens
 //      are always loaded; the fallback is where the drift/lies lived (P2).
 //   4. TEXT-SHADOW GLOW — `text-shadow` on a glow/primary/accent token. Glow is
 //      never text (P-glow law); a neutral legibility halo is fine.
 
 import { describe, it, expect } from 'vitest';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { styleRegressionViolations, type ForbiddenPattern } from '@yesid/gates';
+
+const TOKEN_FALLBACK_PATTERN = /var\(--(duration|ease|radius|space|spacing|measure)[a-z0-9-]*,/;
 
 // The FORBIDDEN table — site-final (§C4). No entry may be relaxed or removed.
 const FORBIDDEN: readonly ForbiddenPattern[] = [
@@ -56,9 +59,9 @@ const FORBIDDEN: readonly ForbiddenPattern[] = [
 			'raw motion literal: a bare <n>ms in a transition/animation. Use --duration-* / --ease-* tokens (P2).',
 	},
 	{
-		pattern: /var\(--(duration|ease|radius|space|spacing)[a-z0-9-]*,/,
+		pattern: TOKEN_FALLBACK_PATTERN,
 		reason:
-			'token fallback: var(--token, <fallback>) for a duration/ease/radius/space token. tokens.css is always loaded — drop the fallback (P2 no-fallback law).',
+			'token fallback: var(--token, <fallback>) for a duration/ease/radius/space/measure token. tokens.css is always loaded — drop the fallback (P2 no-fallback law).',
 	},
 	{
 		pattern: /text-shadow:[^;]*var\(--(glow|primary|accent)/,
@@ -66,6 +69,13 @@ const FORBIDDEN: readonly ForbiddenPattern[] = [
 			'text-shadow glow: glow is never text (the glow-never-text law). A neutral legibility halo (e.g. var(--background)) is fine; a glow/primary/accent one is not.',
 	},
 ];
+
+describe('style regressions — token-fallback falsification', () => {
+	it('catches a measure-token fallback without banning a bare measure reference', () => {
+		expect(TOKEN_FALLBACK_PATTERN.test('max-width: var(--measure-body, 60rem);')).toBe(true);
+		expect(TOKEN_FALLBACK_PATTERN.test('max-width: var(--measure-body);')).toBe(false);
+	});
+});
 
 // Swept roots — site-wide after stage B. The whole component + route tree is
 // under the guard.
@@ -78,6 +88,36 @@ const FORBIDDEN_ROOTS = ['src/lib/components', 'src/lib/features', 'src/routes']
 // 'src/lib/components' root a mark reads 'src/dataviz/chart/marks/…'); match on
 // the directory segment to stay independent of which root produced the hit.
 const FROZEN_MARKS_SEGMENT = 'dataviz/chart/marks/';
+
+const RAW_TABLE: ForbiddenPattern = {
+	pattern: /<table(?:\s|>)/,
+	reason: 'raw table inventory',
+};
+
+// S5-375 probe 4: the stacked cell wrapper's track pin is the CI-escape
+// mechanism — its PRESENCE is component-tested, its PLACEMENT was not.
+// Both stack blocks must pin .data-table-cell-content to track two.
+it('pins the DataTable cell wrapper to stack track two in both stack blocks', () => {
+	const source = readFileSync(
+		resolve(import.meta.dirname, '../lib/components/data/DataTable.svelte'),
+		'utf8',
+	);
+	const pins = source.match(/\.data-table-cell-content\s*\{[^}]*grid-column:\s*2/g) ?? [];
+	expect(pins).toHaveLength(2);
+});
+
+const EMPTY_RAW_TABLE_ALLOWLIST: readonly string[] = [];
+const FROZEN_MARKS_PREFIX = 'src/dataviz/chart/marks/';
+const DATA_TABLE_SITE = 'src/data/DataTable.svelte';
+// Exact migration debt as of 2026-07-30. Each later WS5 PR deletes its migrated site.
+// This is deliberately not a permissive allowlist: the observed inventory must equal it.
+const TO_MIGRATE_2026_07_30 = [
+	'src/health/sections/SectionHistoryCoverage.svelte',
+	'src/home/HomeHero.svelte',
+	'src/hotspots/sections/HotspotSection.svelte',
+	'src/repeat-offenders/sections/RepeatOffenderEvidenceTable.svelte',
+	'src/schedule/ScheduleTable.svelte',
+] as const;
 
 describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 	for (const rel of FORBIDDEN_ROOTS) {
@@ -102,4 +142,17 @@ describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 			}
 		});
 	}
+});
+
+describe('raw table inventory — WS5 shrinking gate', () => {
+	it('contains only DataTable, the dated migration debt, and the frozen marks prefix', () => {
+		const rawSites = FORBIDDEN_ROOTS.flatMap((rel) => {
+			const root = resolve(process.cwd(), rel);
+			return styleRegressionViolations({ root, forbidden: [RAW_TABLE] })[0].hits;
+		}).sort();
+		const nonFrozen = rawSites.filter((site) => !site.startsWith(FROZEN_MARKS_PREFIX));
+
+		expect(EMPTY_RAW_TABLE_ALLOWLIST).toEqual([]);
+		expect(nonFrozen).toEqual([DATA_TABLE_SITE, ...TO_MIGRATE_2026_07_30].sort());
+	});
 });
