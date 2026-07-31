@@ -25,11 +25,19 @@ const layerModulesSource = readFileSync(
 );
 const script = source.match(/<script(?:\s[^>]*)?>\r?\n([\s\S]*?)\r?\n<\/script>/u)?.[1];
 const mapStage = source.match(/<MapStage[\s\S]*?\/>/u)?.[0];
+const nearMeDependencies = script?.match(
+	/const nearMeController = createMapNearMeController\(\{([\s\S]*?)\r?\n\t\}\);\r?\n\tconst focusController/u,
+);
+const selectionLeaseEffect = script?.match(
+	/\/\/ Selection-scoped live families[\s\S]*?\$effect\(\(\) => \{[\s\S]*?\r?\n\t\}\);/u,
+)?.[0];
+const browserApiAccess =
+	/\b(?:navigator\s*(?:\.\s*geolocation|\[\s*['"]geolocation['"]\s*\])|(?:globalThis|window)\s*(?:\.\s*fetch|\[\s*['"]fetch['"]\s*\])|fetch\s*\()/gu;
 
 describe('MapHero orchestrator — structural law', () => {
-	it('keeps the script block at or below the 1,107-line ratchet', () => {
+	it('keeps the script block at or below the 872-line ratchet', () => {
 		expect(script).toBeDefined();
-		expect(script!.split(/\r?\n/u).length).toBeLessThanOrEqual(1_107);
+		expect(script!.split(/\r?\n/u).length).toBeLessThanOrEqual(872);
 	});
 
 	it('uses NO paneforge / resizable pane group (the map is full-bleed, never a pane)', () => {
@@ -78,13 +86,45 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain('<MapOverlayChrome');
 	});
 
+	it('delegates selection runes and transitions to the real selection controller', () => {
+		expect(source).toContain(
+			"import { createMapSelectionController } from './mapSelectionController.svelte'",
+		);
+		expect(source).toContain('const selectionController = createMapSelectionController();');
+		expect(source).toMatch(/function addSelectionFilter[\s\S]*?filters\.addVehicle/u);
+		expect(source).toMatch(
+			/function commitPickedSelection[\s\S]*?addSelectionFilter\(next\)[\s\S]*?selectionController\.selectPicked\(next\)/u,
+		);
+		expect(source).toMatch(/function selectPickedFeature[\s\S]*?commitPickedSelection\(next\)/u);
+		expect(source).toMatch(
+			/function selectNearbyStop[\s\S]*?commitPickedSelection\(\{ kind: 'stop', id: stop\.id \}\)/u,
+		);
+		expect(source).not.toMatch(/let (?:selected|hovered|selectionStack|detailOpen) = \$state/u);
+		expect(source).not.toContain('function promoteVehicleRoute');
+	});
+
+	it('acquires fetch and geolocation only in the sanctioned near-me dependency literal', () => {
+		expect(nearMeDependencies).toBeDefined();
+		expect(nearMeDependencies?.[1]).toContain('fetch: (input) => globalThis.fetch(input)');
+		expect(nearMeDependencies?.[1]).toContain(
+			"getGeolocation: () => (typeof navigator === 'undefined' ? null : navigator['geolocation'])",
+		);
+		expect(nearMeDependencies?.[1].match(browserApiAccess)).toEqual([
+			'globalThis.fetch',
+			"navigator['geolocation']",
+		]);
+
+		const outsideDependencies = script!.replace(nearMeDependencies![0], '');
+		expect(outsideDependencies.match(browserApiAccess)).toEqual(null);
+	});
+
 	it('wires M1 live resilience at the registry and map call sites without widening consumers', () => {
 		// WHY(M1 #3+#11/#45/#50): the frozen plan deliberately changes MapHero from
 		// an aggregate/all-family consumer to vehicles-only motion plus committed
 		// selection leases, grace, and abort-aware focused resource reads.
 		expect(source).toContain("families: ['vehicles', 'alerts']");
-		expect(source).toContain("live.subscribeFamilies(['trips'])");
-		expect(source).toContain("live.subscribeFamilies(['departures'])");
+		expect(selectionLeaseEffect).toContain("live.subscribeFamilies(['trips'])");
+		expect(selectionLeaseEffect).toContain("live.subscribeFamilies(['departures'])");
 		expect(source).toContain('createSelectionGrace<MapSelectionDetailModel>()');
 		expect(layerModulesSource).toContain('tickKey: vehicles.tickKey');
 		expect(layerModulesSource).toContain('stale: vehicles.stale');
@@ -104,6 +144,9 @@ describe('MapHero orchestrator — structural law', () => {
 		);
 		expect(source).toMatch(
 			/\{#if detailOpen && !layout\.isDesktop\}[\s\S]*<MapMobileDetailSheet[\s\S]*\{\/if\}/,
+		);
+		expect(source).toMatch(
+			/bind:open=\{\s*\(\) => selectionController\.detailOpen,\s*\(next\) => \{\s*if \(next\) selectionController\.detailOpen = true;\s*else closeDetail\(\);/u,
 		);
 	});
 });

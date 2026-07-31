@@ -74,6 +74,7 @@
 	import { nearTargetKey } from './mapNearMe';
 	import { createMapNearMeController, type NearMeOrigin } from './mapNearMeController.svelte';
 	import { createMapFocusController } from './mapFocusController.svelte';
+	import { createMapSelectionController } from './mapSelectionController.svelte';
 	import {
 		deriveMapFitPadding,
 		ISLAND_FIT_BOUNDS,
@@ -92,8 +93,6 @@
 	import { pickMapSelection } from './mapPicking';
 	import {
 		resolveMapSelection,
-		sameNullableSelection,
-		sameSelection,
 		type MapSelection,
 		type MapSelectionDetail as MapSelectionDetailModel,
 	} from './mapSelection';
@@ -178,7 +177,7 @@
 		buildTargetSearch: buildNearTargetSearch,
 		clearTargetSearch: clearNearTargetSearch,
 		focusOrigin: focusNearMeOrigin,
-		fetch: globalThis.fetch,
+		fetch: (input) => globalThis.fetch(input),
 		getGeolocation: () => (typeof navigator === 'undefined' ? null : navigator['geolocation']),
 		isSecureContext: () => typeof window === 'undefined' || window.isSecureContext,
 		translations: MAP_COPY[locale],
@@ -186,11 +185,7 @@
 	const focusController = createMapFocusController({
 		readFocus: parseMapFocus,
 		clearFocus: () => {
-			void goto(buildFocusClearSearch($page.url.searchParams, $page.url.pathname), {
-				replaceState: true,
-				keepFocus: true,
-				noScroll: true,
-			});
+			void goto(buildFocusClearSearch($page.url.searchParams, $page.url.pathname), URL_REWRITE);
 		},
 	});
 
@@ -280,10 +275,11 @@
 	let layerRevision = $state(0);
 	let interactionsMap: MapLibreMap | null = null;
 	let interactionDisposers: readonly (() => void)[] = [];
-	let selected = $state<MapSelection | null>(null);
-	let selectionStack = $state<MapSelection[]>([]);
-	let hovered = $state<MapSelection | null>(null);
-	let detailOpen = $state(false);
+	const selectionController = createMapSelectionController();
+	const selected = $derived(selectionController.selected);
+	const selectionStack = $derived(selectionController.stack);
+	const hovered = $derived(selectionController.hovered);
+	const detailOpen = $derived(selectionController.detailOpen);
 
 	// Selection-scoped live families are ref-counted leases keyed strictly on the
 	// committed selection. Hover never activates a family or restarts polling.
@@ -539,7 +535,7 @@
 		selectedDetail ? `${selectedDetail.kind}:${selectedDetail.id}` : 'empty',
 	);
 	function clearHover(m: MapLibreMap): void {
-		hovered = null;
+		selectionController.setHovered(null);
 		m.getCanvas().style.cursor = '';
 	}
 
@@ -549,33 +545,14 @@
 		return pickMapSelection(m.queryRenderedFeatures(e.point, { layers }));
 	}
 
-	function selectPickedFeature(m: MapLibreMap, e: MapMouseEvent): void {
-		const next = pickSelectionAt(m, e);
-		if (!next) return;
-		addSelectionFilter(next);
-		selectionStack = [];
-		selected = next;
-		detailOpen = true;
-		// A fresh pick always shows its detail: if the panel was sitting collapsed in
-		// the icon strip, expand it so the new selection is visible, never stranded.
-		detailCollapsed = false;
-		// Zoom to whatever was clicked, same as a search pick (data is already
-		// loaded — it's on the map). Point entities centre + zoom in; a route frames
-		// its linework.
-		focusSelection(next);
-	}
-
 	function addSelectionFilter(selection: MapSelection): void {
 		switch (selection.kind) {
-			case 'vehicle':
+			case 'vehicle': {
 				filters.addVehicle(selection.id);
-				// B3 — promote the bus's route to the filter spine so a `route=` param
-				// lands in the URL AND a removable route chip renders in MapFilters.
-				// Resolve it via the SAME live index the route-line highlight uses
-				// (byVehicleId.route), so chip + highlight stay in lockstep. A bus with
-				// no route id adds no chip (honest — addRoute('') is a no-op via trim).
-				promoteVehicleRoute(selection.id);
+				const route = live.index.byVehicleId.get(selection.id)?.route;
+				if (route) filters.addRoute(route);
 				break;
+			}
 			case 'stop':
 				filters.addStop(selection.id);
 				break;
@@ -585,42 +562,43 @@
 		}
 	}
 
-	/** Resolve a vehicle's route from the live index and add it to the filter store. */
-	function promoteVehicleRoute(vehicleId: string): void {
-		const route = live.index.byVehicleId.get(vehicleId)?.route;
-		if (route) filters.addRoute(route);
+	function commitPickedSelection(next: MapSelection): void {
+		addSelectionFilter(next);
+		selectionController.selectPicked(next);
+	}
+
+	function selectPickedFeature(m: MapLibreMap, e: MapMouseEvent): void {
+		const next = pickSelectionAt(m, e);
+		if (!next) return;
+		commitPickedSelection(next);
+		// A fresh pick always shows its detail: if the panel was sitting collapsed in
+		// the icon strip, expand it so the new selection is visible, never stranded.
+		detailCollapsed = false;
+		// Zoom to whatever was clicked, same as a search pick (data is already
+		// loaded — it's on the map). Point entities centre + zoom in; a route frames
+		// its linework.
+		focusSelection(next);
 	}
 
 	function hoverPickedFeature(m: MapLibreMap, e: MapMouseEvent): void {
 		const next = pickSelectionAt(m, e);
-		if (sameNullableSelection(hovered, next)) return;
-		hovered = next;
+		if (!selectionController.setHovered(next)) return;
 		m.getCanvas().style.cursor = next ? 'pointer' : '';
 	}
 
 	function closeDetail(): void {
-		detailOpen = false;
-		selected = null;
-		selectionStack = [];
+		selectionController.close();
 		// Re-open the panel expanded next time: a closed panel should not remember a
 		// collapsed strip (that would re-open as an empty rail with no obvious content).
 		detailCollapsed = false;
 	}
 
 	function selectFromDetail(next: MapSelection): void {
-		if (selected && !sameSelection(selected, next)) {
-			selectionStack = [...selectionStack, selected];
-		}
-		selected = next;
-		detailOpen = true;
+		selectionController.selectFromDetail(next);
 	}
 
 	function goBackDetail(): void {
-		const previous = selectionStack.at(-1);
-		if (!previous) return;
-		selectionStack = selectionStack.slice(0, -1);
-		selected = previous;
-		detailOpen = true;
+		selectionController.goBack();
 	}
 
 	function applyDetailFilter(chip: Chip): void {
@@ -714,10 +692,7 @@
 	}
 
 	function selectNearbyStop(stop: WithDistance<SlimStopEntry>): void {
-		filters.addStop(stop.id);
-		selectionStack = [];
-		selected = { kind: 'stop', id: stop.id };
-		detailOpen = true;
+		commitPickedSelection({ kind: 'stop', id: stop.id });
 		// A fresh pick always shows its detail: expand the panel if it was collapsed.
 		detailCollapsed = false;
 		focusCoordinate(map, [stop.lon, stop.lat], 15);
@@ -880,11 +855,7 @@
 	});
 
 	$effect(() => {
-		if (!detailOpen) {
-			selected = null;
-			selectionStack = [];
-			return;
-		}
+		if (!detailOpen) return;
 		if (selected && !selectedDetail) {
 			if (selected.kind === 'vehicle' && vehicleGraceState.presence !== 'gone') return;
 			if (waitingForSelectedDetail()) return;
@@ -1087,7 +1058,13 @@
 	     the open/mobile gate. -->
 	{#if detailOpen && !layout.isDesktop}
 		<MapMobileDetailSheet
-			bind:open={detailOpen}
+			bind:open={
+				() => selectionController.detailOpen,
+				(next) => {
+					if (next) selectionController.detailOpen = true;
+					else closeDetail();
+				}
+			}
 			{locale}
 			title={selectedDetail?.title}
 			surfaceKey={detailSurfaceKey}
