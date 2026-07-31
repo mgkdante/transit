@@ -5,7 +5,7 @@ import { render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DelayLabelCopy } from '$lib/site/delayPresentation';
 import { detailCopy } from '$lib/features/stops/stops.copy';
-import ScheduleTable, { type ScheduleRow } from './ScheduleTable.svelte';
+import ScheduleTable, { type ScheduleRow, type ScheduleTableProps } from './ScheduleTable.svelte';
 
 const scheduleTableSource = readFileSync(
 	resolve(process.cwd(), 'src/lib/components/schedule/ScheduleTable.svelte'),
@@ -178,7 +178,7 @@ describe('ScheduleTable — grid mode', () => {
 	it('exposes a row header in every mode and no scroll region without real overflow (S5-386 F4)', () => {
 		// rowHeader semantics moved off bespoke th markup onto a pure prop in the
 		// DataTable migration - nothing else pins the choice per mode.
-		const cases = [
+		const cases: Pick<ScheduleTableProps, 'rows' | 'mode' | 'labels'>[] = [
 			{
 				rows: [{ kind: 'grid', route: '51', headsign: 'Nord', times: ['08:00'] }],
 				mode: 'grid',
@@ -194,7 +194,7 @@ describe('ScheduleTable — grid mode', () => {
 				mode: 'service',
 				labels: SERVICE_LABELS,
 			},
-		] as const;
+		];
 		for (const props of cases) {
 			const view = render(ScheduleTable, { props: { ...props, locale: 'en' } });
 			expect(view.getAllByRole('rowheader').length).toBeGreaterThan(0);
