@@ -661,7 +661,6 @@
 	}
 	:global(.receipt-detail [data-slot='terminal-chrome']) {
 		width: 100%;
-		max-width: var(--container-content);
 		margin-inline: auto;
 	}
 
