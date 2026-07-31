@@ -62,6 +62,7 @@ def _snapshot(payload: object) -> RawI3AlertSnapshot:
     return RawI3AlertSnapshot(
         i3_alert_snapshot_id=505,
         provider_id="stm",
+        provider_timezone="America/Toronto",
         captured_at_utc=datetime(2026, 5, 25, 4, 5, 6, tzinfo=UTC),
         raw_payload_json=payload,
     )
@@ -148,16 +149,20 @@ def test_load_i3_snapshot_to_silver_inserts_alerts_and_entities() -> None:
     assert result.i3_alert_snapshot_id == 505
     assert result.alert_rows_inserted == 1
     assert result.informed_entity_rows_inserted == 2
-    # S15: the active-periods child DELETE runs first (FK order), and its INSERT
-    # runs after the entity insert. The rest of the sequence is unchanged.
-    assert "DELETE FROM silver.i3_alert_active_periods" in connection.calls[0][0]
-    assert "DELETE FROM silver.i3_alert_informed_entities" in connection.calls[1][0]
-    assert "DELETE FROM silver.i3_alerts" in connection.calls[2][0]
-    assert "INSERT INTO silver.i3_alerts" in connection.calls[3][0]
-    assert "SELECT content_hash, i3_alert_snapshot_id, alert_index" in connection.calls[4][0]
-    assert "INSERT INTO silver.i3_alert_informed_entities" in connection.calls[5][0]
-    assert "INSERT INTO silver.i3_alert_active_periods" in connection.calls[6][0]
-    assert "SET valid_to" in connection.calls[7][0]
+    # D2: feed + per-alert language observations are written from the raw
+    # payload before any Silver DELETE/INSERT can reach the monotonic SCD merge.
+    assert "INSERT INTO raw.alert_feed_observations" in connection.calls[0][0]
+    assert "INSERT INTO raw.alert_language_observations" in connection.calls[1][0]
+    # S15: the active-periods child DELETE stays first inside the Silver portion
+    # (FK order), and its INSERT runs after the entity insert.
+    assert "DELETE FROM silver.i3_alert_active_periods" in connection.calls[2][0]
+    assert "DELETE FROM silver.i3_alert_informed_entities" in connection.calls[3][0]
+    assert "DELETE FROM silver.i3_alerts" in connection.calls[4][0]
+    assert "INSERT INTO silver.i3_alerts" in connection.calls[5][0]
+    assert "SELECT content_hash, i3_alert_snapshot_id, alert_index" in connection.calls[6][0]
+    assert "INSERT INTO silver.i3_alert_informed_entities" in connection.calls[7][0]
+    assert "INSERT INTO silver.i3_alert_active_periods" in connection.calls[8][0]
+    assert "SET valid_to" in connection.calls[9][0]
     assert result.alerts_redirected_to_existing == 0
     assert result.entities_dropped_missing_parent == 0
 

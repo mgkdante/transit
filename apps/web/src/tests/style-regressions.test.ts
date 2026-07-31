@@ -116,8 +116,6 @@ const DATA_TABLE_SITE = 'src/data/DataTable.svelte';
 const TO_MIGRATE_2026_07_30 = [
 	'src/health/sections/SectionHistoryCoverage.svelte',
 	'src/home/HomeHero.svelte',
-	'src/hotspots/sections/HotspotSection.svelte',
-	'src/repeat-offenders/sections/RepeatOffenderEvidenceTable.svelte',
 	'src/schedule/ScheduleTable.svelte',
 ] as const;
 

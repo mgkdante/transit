@@ -119,6 +119,7 @@ def _load(connection, snap_id: int, captured: datetime, alerts: list) -> None:
         snapshot=RawI3AlertSnapshot(
             i3_alert_snapshot_id=snap_id,
             provider_id=PROVIDER,
+            provider_timezone="America/Toronto",
             captured_at_utc=captured,
             raw_payload_json=alerts,
         ),

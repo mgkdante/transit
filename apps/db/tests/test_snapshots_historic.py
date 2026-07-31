@@ -3743,22 +3743,30 @@ def test_provenance_methodology_documents_gtfs_service_time_conversion() -> None
     assert "01:00-01:59" in service_time
 
 
-def test_provenance_methodology_discloses_alert_text_en_honest_null() -> None:
+def test_provenance_methodology_discloses_monotonic_alert_text_en_truth() -> None:
     conn = FakeConn(
         [
             ("provenance.sources", []),
             ("provenance.freshness", []),
         ]
     )
-    out = build_provenance(conn, generated_utc="t")
+    out = build_provenance(conn, provider_id="sto", generated_utc="t")
 
     alert_en = out.methodology["alert_text_en"]
-    # EN text is present only where STM published it / for hashed rows.
     assert "header_text_en" in alert_en
-    assert "STM published" in alert_en
-    # Honest-NULL otherwise, including the pre-2026-06-09 legacy history tail.
-    assert "honest-NULL" in alert_en
-    assert "2026-06-09" in alert_en
+    assert "explicitly tagged English" in alert_en
+    assert "last explicit English value" in alert_en
+    assert "never been observed" in alert_en
+    assert "pre-coalescing observations" in alert_en
+    assert "Silver SCD" in alert_en
+    # Provider-agnostic (0037's residue is a pipeline fact, not an STM fact) —
+    # but the legacy tail itself MUST be disclosed: pre-2026-06-09 NULL-hash
+    # history entries carry no EN regardless of what the provider published
+    # (S5-378 B1 — "NULL only when never observed" alone is a false absolute).
+    assert "STM" not in alert_en
+    assert "legacy tail" in alert_en
+    assert "pre-2026-06-09" in alert_en
+    assert "regardless of what the provider published" in alert_en
 
 
 def test_build_provenance_empty_sources_still_valid() -> None:
