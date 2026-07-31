@@ -433,8 +433,8 @@ vi.mock('$lib/components/map', async () => {
 });
 
 vi.mock('./mapCamera', () => ({
-	focusCoordinate: () => true,
-	fitRouteBounds: () => true,
+	focusCoordinate: vi.fn(() => true),
+	fitRouteBounds: vi.fn(() => true),
 }));
 
 vi.mock('@yesid/motion/stores/reducedMotion', () => ({
@@ -708,6 +708,48 @@ describe('MapHero near-me device location', () => {
 		harness.setPageUrl('http://localhost/map');
 		await tick();
 		expect(screen.queryByRole('button', { name: 'Clear location' })).toBeNull();
+	});
+});
+
+describe('MapHero detail-panel camera isolation (protect #11)', () => {
+	// The ONE orchestrator-excepted behavioral test (fable-plan-m3-FROZEN.md,
+	// ORCHESTRATOR EXCEPTION): panel drag, keyboard resize, and collapse must
+	// produce ZERO camera calls — on the live map handle (stub counters) AND
+	// through the mapCamera module (mocked call counts).
+	it('drag, keyboard resize, and collapse never touch the camera', async () => {
+		harness.isDesktop = true;
+		const { container } = render(MapHero);
+		await tick();
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+		await tick();
+
+		const stub = () => screen.getByTestId('map-stage-stub');
+		const cameraCounts = () =>
+			['fit-bounds', 'ease-to', 'fly-to', 'set-max-bounds'].map(
+				(k) => stub().getAttribute(`data-${k}-count`) ?? '0',
+			);
+		const mapCameraMocks = await import('./mapCamera');
+		const focusCalls = () => vi.mocked(mapCameraMocks.focusCoordinate).mock.calls.length;
+		const fitCalls = () => vi.mocked(mapCameraMocks.fitRouteBounds).mock.calls.length;
+
+		const baselineStub = cameraCounts();
+		const baselineFocus = focusCalls();
+		const baselineFit = fitCalls();
+
+		const separator = container.querySelector('[role="separator"]') as HTMLElement;
+		expect(separator).not.toBeNull();
+		await fireEvent.pointerDown(separator, { clientX: 900 });
+		await fireEvent.pointerMove(separator, { clientX: 780 });
+		await fireEvent.pointerUp(separator, { clientX: 780 });
+		await fireEvent.keyDown(separator, { key: 'ArrowLeft' });
+		await fireEvent.keyDown(separator, { key: 'ArrowRight' });
+		await tick();
+		await fireEvent.click(screen.getByRole('button', { name: 'Collapse panel' }));
+		await tick();
+
+		expect(cameraCounts()).toEqual(baselineStub);
+		expect(focusCalls()).toBe(baselineFocus);
+		expect(fitCalls()).toBe(baselineFit);
 	});
 });
 

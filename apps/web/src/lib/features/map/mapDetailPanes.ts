@@ -7,14 +7,11 @@
 // chosen WIDTH as a scalar so the layout sticks across reloads. The map canvas
 // never reads this value, so resizing the detail panel can not resize the map.
 //
-// This is a thin wrapper over the SHARED `overlayWidth` factory, binding its own
-// storage key + band and re-exporting the named constants/functions (every import
-// site stays untouched). The factory was originally shared with the left-nav rail's
-// overlay width; the rail is gone (nav lives in the NavPill), so the detail panel is
-// the sole consumer now — the factory stays because it owns the SSR-safe clamp +
-// persist that this panel relies on.
+// The left-nav rail is gone, so the detail panel is the only remaining consumer of
+// this SSR-safe clamp + persistence behavior. Keep it local and keep every public
+// export stable.
 
-import { createOverlayWidth } from '$lib/components/shell/overlayWidth';
+import { browser } from '$app/environment';
 
 /** The localStorage key the chosen detail-panel width persists under. */
 export const DETAIL_PANEL_WIDTH_STORAGE_KEY = 'transit:detail-panel-width';
@@ -28,22 +25,36 @@ export const MIN_DETAIL_PANEL_WIDTH = 300;
 /** Ceiling (px) so the panel can never swallow the map. */
 export const MAX_DETAIL_PANEL_WIDTH = 560;
 
-const overlay = createOverlayWidth({
-	key: DETAIL_PANEL_WIDTH_STORAGE_KEY,
-	min: MIN_DETAIL_PANEL_WIDTH,
-	max: MAX_DETAIL_PANEL_WIDTH,
-	default: DEFAULT_DETAIL_PANEL_WIDTH,
-});
-
 /**
  * Clamp a candidate detail-panel width (px) into [MIN, MAX]. A non-finite /
  * degenerate input falls back to the default so a junk stored value can never
  * wedge the panel.
  */
-export const clampDetailPanelWidth = overlay.clamp;
+export function clampDetailPanelWidth(width: number): number {
+	if (!Number.isFinite(width)) return DEFAULT_DETAIL_PANEL_WIDTH;
+	return Math.min(Math.max(Math.round(width), MIN_DETAIL_PANEL_WIDTH), MAX_DETAIL_PANEL_WIDTH);
+}
 
 /** Read the persisted width, falling back to the default on SSR / absent / junk. */
-export const readStoredDetailPanelWidth = overlay.read;
+export function readStoredDetailPanelWidth(): number {
+	if (!browser) return DEFAULT_DETAIL_PANEL_WIDTH;
+	try {
+		const raw = localStorage.getItem(DETAIL_PANEL_WIDTH_STORAGE_KEY);
+		if (raw == null) return DEFAULT_DETAIL_PANEL_WIDTH;
+		const parsed = Number(raw);
+		if (!Number.isFinite(parsed)) return DEFAULT_DETAIL_PANEL_WIDTH;
+		return clampDetailPanelWidth(parsed);
+	} catch {
+		return DEFAULT_DETAIL_PANEL_WIDTH;
+	}
+}
 
 /** Persist a detail-panel width (browser-only; storage failures are swallowed). */
-export const writeStoredDetailPanelWidth = overlay.write;
+export function writeStoredDetailPanelWidth(width: number): void {
+	if (!browser) return;
+	try {
+		localStorage.setItem(DETAIL_PANEL_WIDTH_STORAGE_KEY, String(clampDetailPanelWidth(width)));
+	} catch {
+		/* private mode / disabled storage — session-only width is fine */
+	}
+}

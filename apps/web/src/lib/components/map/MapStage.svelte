@@ -351,17 +351,22 @@
 
 			failureKind = 'construct';
 			preflightWebgl();
+			const viewport = mapViewportOptions(bounds, fitPadding, maxBounds);
 			const instance = new maplibregl.Map({
 				container: attempt.container,
 				style,
 				center,
 				zoom,
-				...mapViewportOptions(bounds, fitPadding, maxBounds),
+				...viewport,
 				locale,
 				// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 				attributionControl: { compact: true },
 			});
 			attempt.map = instance;
+			activeLayoutSig = fitPaddingKey(fitPadding);
+			activeBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
+			activeCameraKey = cameraKey(center, zoom);
+			cameraOwner = 'fit';
 			map = instance;
 
 			failureKind = 'setup';
@@ -409,26 +414,53 @@
 		};
 	});
 
-	// Keep the camera in sync when center/zoom props change after creation. The
-	// constructor already applies the first camera, and chrome-only re-renders
-	// must not re-issue jumpTo because that can make the visible map twitch.
+	// Constructor framing owns boot/retry. Later HMR/prop-driven camera changes
+	// apply only while framing still owns the camera; user and focus moves persist.
+	type CameraOwner = 'fit' | 'user' | 'focus';
+	let cameraOwner: CameraOwner = 'fit';
 	let activeFitKey: string | null = null;
+	let activeLayoutSig: string | null = null;
+	let activeBoundsSig: string | null = null;
+	let activeCameraKey: string | null = null;
+
 	$effect(() => {
 		const m = map;
 		if (!m) return;
-		// Re-fit when the fit bounds, padding, OR maxBounds change. maxBounds is in
-		// the key (and re-applied via setMaxBounds) so a bounds/band tweak takes
-		// effect on HMR / prop change WITHOUT a hard reload — it was previously only
-		// applied once at construction, which is why tweaks "didn't land".
+		const claimCamera = (event: { originalEvent?: unknown; cameraIntent?: unknown }) => {
+			if (event.cameraIntent === 'focus') cameraOwner = 'focus';
+			else if (event.originalEvent) cameraOwner = 'user';
+		};
+		const claimBoxZoom = () => {
+			cameraOwner = 'user';
+		};
+		m.on('movestart', claimCamera);
+		m.on('boxzoomend', claimBoxZoom);
+		return () => {
+			m.off('movestart', claimCamera);
+			m.off('boxzoomend', claimBoxZoom);
+		};
+	});
+
+	$effect(() => {
+		const m = map;
+		if (!m) return;
 		const nextFitKey = `${fitKey(bounds, fitPadding)}|${maxBounds?.join(',') ?? ''}`;
 		if (activeFitKey === nextFitKey) return;
 		activeFitKey = nextFitKey;
+		const nextLayoutSig = fitPaddingKey(fitPadding);
+		const nextBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
+		const layoutChanged = activeLayoutSig !== nextLayoutSig;
+		const boundsChanged = activeBoundsSig !== nextBoundsSig;
+		if (!layoutChanged && !boundsChanged) return;
+		activeLayoutSig = nextLayoutSig;
+		activeBoundsSig = nextBoundsSig;
 		const viewport = mapViewportOptions(bounds, fitPadding, maxBounds);
-		m.setMaxBounds(viewport.maxBounds);
-		m.fitBounds(viewport.bounds, { ...viewport.fitBoundsOptions, duration: 0 });
+		if (boundsChanged) m.setMaxBounds(viewport.maxBounds);
+		if (cameraOwner === 'fit') {
+			m.fitBounds(viewport.bounds, { ...viewport.fitBoundsOptions, duration: 0 });
+		}
 	});
 
-	let activeCameraKey: string | null = null;
 	$effect(() => {
 		const m = map;
 		if (!m) return;
@@ -436,12 +468,8 @@
 		const nextZoom = zoom;
 		const nextCameraKey = cameraKey(nextCenter, nextZoom);
 		if (activeCameraKey === nextCameraKey) return;
-		if (activeCameraKey === null) {
-			activeCameraKey = nextCameraKey;
-			return;
-		}
 		activeCameraKey = nextCameraKey;
-		m.jumpTo({ center: nextCenter, zoom: nextZoom });
+		if (cameraOwner === 'fit') m.jumpTo({ center: nextCenter, zoom: nextZoom });
 	});
 
 	// Swap the basemap style ONLY when the basemap pointer or theme changes after
