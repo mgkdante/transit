@@ -79,6 +79,23 @@ const FORBIDDEN_ROOTS = ['src/lib/components', 'src/lib/features', 'src/routes']
 // the directory segment to stay independent of which root produced the hit.
 const FROZEN_MARKS_SEGMENT = 'dataviz/chart/marks/';
 
+const RAW_TABLE: ForbiddenPattern = {
+	pattern: /<table(?:\s|>)/,
+	reason: 'raw table inventory',
+};
+const EMPTY_RAW_TABLE_ALLOWLIST: readonly string[] = [];
+const FROZEN_MARKS_PREFIX = 'src/dataviz/chart/marks/';
+const DATA_TABLE_SITE = 'src/data/DataTable.svelte';
+// Exact migration debt as of 2026-07-30. Each later WS5 PR deletes its migrated site.
+// This is deliberately not a permissive allowlist: the observed inventory must equal it.
+const TO_MIGRATE_2026_07_30 = [
+	'src/health/sections/SectionHistoryCoverage.svelte',
+	'src/home/HomeHero.svelte',
+	'src/hotspots/sections/HotspotSection.svelte',
+	'src/repeat-offenders/sections/RepeatOffenderEvidenceTable.svelte',
+	'src/schedule/ScheduleTable.svelte',
+] as const;
+
 describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 	for (const rel of FORBIDDEN_ROOTS) {
 		const root = resolve(process.cwd(), rel);
@@ -102,4 +119,17 @@ describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 			}
 		});
 	}
+});
+
+describe('raw table inventory — WS5 shrinking gate', () => {
+	it('contains only DataTable, the dated migration debt, and the frozen marks prefix', () => {
+		const rawSites = FORBIDDEN_ROOTS.flatMap((rel) => {
+			const root = resolve(process.cwd(), rel);
+			return styleRegressionViolations({ root, forbidden: [RAW_TABLE] })[0].hits;
+		}).sort();
+		const nonFrozen = rawSites.filter((site) => !site.startsWith(FROZEN_MARKS_PREFIX));
+
+		expect(EMPTY_RAW_TABLE_ALLOWLIST).toEqual([]);
+		expect(nonFrozen).toEqual([DATA_TABLE_SITE, ...TO_MIGRATE_2026_07_30].sort());
+	});
 });
