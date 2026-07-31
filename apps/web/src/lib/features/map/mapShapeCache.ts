@@ -18,9 +18,10 @@ import type { Vehicle } from '$lib/v1/schemas';
 import {
 	bestShapeForPoint,
 	routeShapes,
+	type Coord,
 	type RouteShapes,
-} from '$lib/components/map/vehicleShapes';
-import type { Coord, ShapeResolver } from '$lib/components/map';
+	type ShapeResolver,
+} from '$lib/components/map';
 
 /** Cap distinct cached routes to bound memory over a long session; the visible
  *  set is small, so eviction is rare. LRU-ish: oldest insertion dropped first. */
