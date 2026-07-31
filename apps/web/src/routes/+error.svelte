@@ -127,7 +127,6 @@
 	}
 
 	.error-copy h1 {
-		max-width: 32rem;
 		margin: 0;
 		font-family: var(--font-heading);
 		font-size: 1.5rem;
@@ -138,7 +137,7 @@
 	}
 
 	.error-copy p {
-		max-width: 28rem;
+		max-width: var(--measure-notice);
 		margin: 0;
 		font-size: var(--text-body);
 		line-height: 1.625;
@@ -273,20 +272,18 @@
 		color: var(--foreground);
 	}
 	.err :global([data-slot='section-heading']) {
-		max-width: 28ch;
+		max-width: var(--measure-display);
 	}
 	.err :global(.err-heading .section-heading-text) {
 		justify-content: center;
 		text-align: center;
 	}
 	.err-body {
-		max-width: 44ch;
 		font-size: var(--text-subheading);
 		line-height: 1.6;
 		color: var(--muted-foreground);
 	}
 	.err-detail {
-		max-width: 44ch;
 		font-size: var(--text-caption);
 		word-break: break-word;
 		color: var(--muted-foreground);

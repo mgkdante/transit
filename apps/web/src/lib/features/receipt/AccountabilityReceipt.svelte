@@ -671,10 +671,9 @@
 		container-name: receipt;
 	}
 	/* §C5.11 day-verdict sentence — the day in one line, at foreground weight so it reads
-	   as the headline before the tile figures. Capped for readability. */
+	   as the headline before the tile figures and fills the already-bounded receipt lane. */
 	.receipt-day-verdict {
 		margin: 0 0 1rem;
-		max-width: 64ch;
 		font-family: var(--font-body);
 		font-size: var(--text-subheading);
 		line-height: 1.45;

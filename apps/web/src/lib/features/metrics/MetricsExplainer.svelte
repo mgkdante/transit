@@ -779,7 +779,6 @@
 	.metrics-lede {
 		margin: 0;
 		color: var(--secondary-foreground);
-		max-width: 60ch;
 	}
 
 	/* ── Left rail (ToC + At a glance) ──────────────────────────────────────────
@@ -872,7 +871,6 @@
 	.metrics-preamble {
 		margin: 0;
 		color: var(--muted-foreground);
-		max-width: 68ch;
 	}
 	.metrics-conformance {
 		display: flex;
@@ -986,7 +984,6 @@
 	.metric__prose {
 		margin: 0;
 		color: var(--foreground);
-		max-width: 68ch;
 	}
 	.metric__prose,
 	.metric__caveats,
@@ -1000,7 +997,6 @@
 		gap: 0.5rem;
 		margin: 0;
 		padding-inline-start: 1.1rem;
-		max-width: 72ch;
 	}
 	/* ── Structural-gaps card ─────────────────────────────────────────────────
 	   Same card spine as a metric section; the gap list reads as discrete named
