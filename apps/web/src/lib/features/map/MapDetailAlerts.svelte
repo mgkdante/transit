@@ -176,6 +176,11 @@
 		color: inherit;
 		font: inherit;
 		line-height: 1.35;
+		text-align: left;
+		background: transparent;
+		border: 0;
+		cursor: pointer;
+		transition: color var(--duration-fast) var(--ease-out);
 	}
 
 	/* The provider text and its language marker travel together; only the
@@ -190,11 +195,6 @@
 		color: var(--muted-foreground);
 		font-size: var(--text-caption);
 		font-weight: 400;
-		text-align: left;
-		background: transparent;
-		border: 0;
-		cursor: pointer;
-		transition: color var(--duration-fast) var(--ease-out);
 	}
 	.map-alert-button :global(svg) {
 		flex: none;
