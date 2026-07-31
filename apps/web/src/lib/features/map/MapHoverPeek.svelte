@@ -178,15 +178,15 @@
 	dl {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.625rem 0.875rem;
+		margin: 0;
 	}
 
 	/* S5-387 B1: AbsentValue's pill radius (9999px) clamps into a full ellipse
-	   when the notice wraps inside this narrow half-column - the peek scopes
-	   the surface back to a soft rectangle. */
-	.map-hover-peek :global([data-slot='absent-value'] .state-notice--pill) {
+	   when the notice wraps inside this narrow half-column — scope the SURFACE
+	   (StateNotice.svelte:126-132 owns the radius) back to a soft rectangle. */
+	.map-hover-peek :global([data-slot='absent-value'] [data-part='surface']) {
 		border-radius: var(--radius-sm);
-		gap: 0.625rem 0.875rem;
-		margin: 0;
 	}
 	dl > div {
 		display: flex;

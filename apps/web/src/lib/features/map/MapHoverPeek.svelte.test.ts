@@ -75,6 +75,22 @@ describe('MapHoverPeek', () => {
 		expectInert(container);
 	});
 
+	it('scopes the AbsentValue surface radius inside the narrow peek grid', () => {
+		const { container } = render(MapHoverPeek, {
+			props: { peek: { ...vehicleFresh, delayMin: null }, locale: 'en' },
+		});
+		// the scoped rule must reach the node that owns border-radius
+		expect(
+			container.querySelectorAll("[data-slot='absent-value'] [data-part='surface']"),
+		).toHaveLength(1);
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/map/MapHoverPeek.svelte'),
+			'utf8',
+		);
+		expect(source).toMatch(/\[data-slot='absent-value'\] \[data-part='surface'\]/u);
+		expect(source).toMatch(/dl \{[^}]*gap: 0\.625rem 0\.875rem;[^}]*\}/u);
+	});
+
 	it('renders the vehicle keep table and drops trip, alerts, actions, and links', () => {
 		const { container } = render(MapHoverPeek, { props: { peek: vehicleStale, locale: 'en' } });
 
