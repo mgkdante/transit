@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { render, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import type { OffenderEvidenceRow } from '../selectors/offenderEvidence';
@@ -53,18 +51,30 @@ describe('RepeatOffenderEvidenceTable', () => {
 		const table = within(container).getByRole('table', {
 			name: COPY.fr.evidenceTable.caption,
 		});
+		expect(table).toHaveAttribute('data-slot', 'offender-evidence-table');
+		expect(table.parentElement).toHaveAttribute('data-responsive', 'stack');
+		expect(table.parentElement).toHaveAttribute('data-stack-at', 'tablet');
 
+		const columnHeaders = within(table).getAllByRole('columnheader');
 		expect(
-			within(table)
-				.getAllByRole('columnheader')
-				.map((header) => header.textContent?.trim()),
+			columnHeaders.map((header) => ({
+				text: header.textContent?.trim(),
+				column: header.getAttribute('data-column'),
+				align: header.getAttribute('data-align'),
+				numeric: header.getAttribute('data-numeric'),
+			})),
 		).toEqual([
-			'Élément',
-			'Type / ID',
-			'Taux de retards graves',
-			'Récurrence',
-			'Retard moyen',
-			'Relevés',
+			{ text: 'Élément', column: 'item', align: 'start', numeric: null },
+			{ text: 'Type / ID', column: 'type-id', align: 'start', numeric: null },
+			{
+				text: 'Taux de retards graves',
+				column: 'severe-rate',
+				align: 'end',
+				numeric: 'true',
+			},
+			{ text: 'Récurrence', column: 'recurrence', align: 'start', numeric: null },
+			{ text: 'Retard moyen', column: 'average-delay', align: 'end', numeric: 'true' },
+			{ text: 'Relevés', column: 'readings', align: 'end', numeric: 'true' },
 		]);
 		expect(
 			within(table)
@@ -78,11 +88,16 @@ describe('RepeatOffenderEvidenceTable', () => {
 
 		const linkedRow = within(table).getByText(rows[0].title).closest('tr') as HTMLTableRowElement;
 		expect(linkedRow).toHaveTextContent('IC à 95 % 56 %–70 %');
-		expect(
-			Array.from(linkedRow.querySelectorAll('[data-col]')).map((cell) =>
-				cell.getAttribute('data-col'),
-			),
-		).toEqual([
+		const linkedCells = Array.from(linkedRow.querySelectorAll(':scope > th, :scope > td'));
+		expect(linkedCells.map((cell) => cell.getAttribute('data-column'))).toEqual([
+			'item',
+			'type-id',
+			'severe-rate',
+			'recurrence',
+			'average-delay',
+			'readings',
+		]);
+		expect(linkedCells.map((cell) => cell.getAttribute('data-col'))).toEqual([
 			'Élément',
 			'Type / ID',
 			'Taux de retards graves',
@@ -90,6 +105,26 @@ describe('RepeatOffenderEvidenceTable', () => {
 			'Retard moyen',
 			'Relevés',
 		]);
+		expect(linkedCells.map((cell) => cell.getAttribute('data-align'))).toEqual([
+			'start',
+			'start',
+			'end',
+			'start',
+			'end',
+			'end',
+		]);
+		expect(linkedCells.map((cell) => cell.getAttribute('data-numeric'))).toEqual([
+			null,
+			null,
+			'true',
+			null,
+			'true',
+			'true',
+		]);
+		for (const cell of linkedCells) {
+			expect(cell.querySelectorAll(':scope > .data-table-cell-content')).toHaveLength(1);
+			expect(cell.children).toHaveLength(1);
+		}
 
 		const nullRow = within(table).getByText(rows[1].title).closest('tr') as HTMLTableRowElement;
 		expect(nullRow.querySelectorAll('[data-slot="absent-value"]')).toHaveLength(3);
@@ -100,15 +135,5 @@ describe('RepeatOffenderEvidenceTable', () => {
 		expect(zeroRow).toHaveTextContent('0 %');
 		expect(zeroRow).toHaveTextContent('0 min');
 		expect(zeroRow).toHaveTextContent('0');
-
-		const source = readFileSync(
-			resolve(
-				process.cwd(),
-				'src/lib/features/repeat-offenders/sections/RepeatOffenderEvidenceTable.svelte',
-			),
-			'utf-8',
-		);
-		expect(source).toMatch(/@media \(max-width: 1023px\)/);
-		expect(source).toMatch(/content:\s*attr\(data-col\)/);
 	});
 });
