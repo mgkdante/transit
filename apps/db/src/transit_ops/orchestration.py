@@ -1063,7 +1063,8 @@ def _validate_realtime_worker_startup(
 
     manifest = registry.get_provider(provider_id)
     for endpoint_key in GTFS_REALTIME_ENDPOINTS:
-        build_realtime_ingestion_config(manifest, settings, endpoint_key)
+        if endpoint_key in manifest.feeds:
+            build_realtime_ingestion_config(manifest, settings, endpoint_key)
     # Alert feeds are optional and provider-specific: STM uses i3, others use
     # the generic GTFS-RT service-alerts feed. Validate whichever is configured.
     if I3_ALERT_ENDPOINT in manifest.feeds:

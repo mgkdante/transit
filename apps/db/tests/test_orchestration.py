@@ -10,6 +10,7 @@ import pytest
 
 import transit_ops.ingestion.storage as bronze_storage_module
 import transit_ops.orchestration as orchestration
+from transit_ops.core.models import ProviderManifest
 from transit_ops.gold import GoldBuildResult, GoldRealtimeRefreshResult, GoldStaticRefreshResult
 from transit_ops.ingestion import I3IngestionResult, RealtimeIngestionResult, StaticIngestionResult
 from transit_ops.ingestion.gis import GisIngestionResult
@@ -540,6 +541,41 @@ def test_run_realtime_worker_loop_targets_start_to_start_cadence(
     assert sleep_calls == [3, 286.75]
     assert '"computed_sleep_seconds": 286.75' in caplog.text
     assert '"effective_start_to_start_seconds": 300.0' in caplog.text
+
+
+def test_validate_realtime_worker_startup_accepts_static_only_manifest() -> None:
+    manifest = ProviderManifest.model_validate(
+        {
+            "provider": {
+                "provider_id": "static-only",
+                "display_name": "Static Only Transit",
+                "timezone": "America/Toronto",
+            },
+            "feeds": {
+                "static_schedule": {
+                    "endpoint_key": "static_schedule",
+                    "feed_kind": "static_schedule",
+                    "source_format": "gtfs_schedule_zip",
+                    "source_url": "https://example.test/static.zip",
+                    "auth": {"auth_type": "none"},
+                    "refresh_interval_seconds": 86400,
+                }
+            },
+        }
+    )
+    registry = SimpleNamespace(get_provider=lambda provider_id: manifest)
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
+    )
+
+    result = orchestration._validate_realtime_worker_startup(
+        "static-only",
+        settings=settings,
+        registry=registry,
+    )
+
+    assert result is manifest
 
 
 def test_run_realtime_worker_loop_warns_on_cycle_overrun(
