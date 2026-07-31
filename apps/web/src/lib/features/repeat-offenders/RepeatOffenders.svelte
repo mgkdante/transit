@@ -972,7 +972,6 @@
 		gap: 0.75rem;
 	}
 	:global(.dashboard-grid.repeat-offenders-ranked) {
-		max-width: var(--container-wide);
 		margin-inline: auto;
 	}
 	.repeat-offenders-item {
