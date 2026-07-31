@@ -67,6 +67,9 @@ from transit_ops.snapshots.gate import GateError
 from transit_ops.snapshots.historic_gc import run_historic_snapshot_gc
 from transit_ops.snapshots.publish import publish_snapshot, validate_snapshots
 from transit_ops.source_factory.runner import run_source_factory_rebuild
+from transit_ops.validation.alert_language_coverage import (
+    run_alert_language_coverage_measurement,
+)
 from transit_ops.validation.historic_publish import (
     HistoricPublishProofReport,
     build_historic_publish_proof,
@@ -784,6 +787,35 @@ def load_i3_silver(provider_id: str) -> None:
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("measure-alert-language-coverage")
+def measure_alert_language_coverage_command(
+    retain: bool = typer.Option(  # noqa: B008
+        False,
+        "--retain",
+        help=(
+            "Retain one dated database row per provider and 7/30-day window; "
+            "the JSON receipt is always written to stdout."
+        ),
+    ),
+) -> None:
+    """Measure 7/30-day explicit alert-language coverage from raw observations."""
+
+    settings = get_settings()
+    registry = _provider_registry(settings)
+    manifests = [
+        registry.get_provider(provider_id)
+        for provider_id in registry.list_provider_ids()
+    ]
+    with make_engine(settings).begin() as connection:
+        receipt = run_alert_language_coverage_measurement(
+            connection,
+            manifests=manifests,
+            measured_at_utc=datetime.now(UTC),
+            retain=retain,
+        )
+    typer.echo(json.dumps(receipt.display_dict(), indent=2, sort_keys=True))
 
 
 @app.command("build-gold-marts")

@@ -10,7 +10,11 @@ from transit_ops.ingestion.service_alerts import (
     _enum_name,
     convert_gtfs_rt_alerts_to_i3_payload,
 )
-from transit_ops.silver.i3 import RawI3AlertSnapshot, normalize_i3_alert_payload
+from transit_ops.silver.i3 import (
+    RawI3AlertSnapshot,
+    build_alert_language_observations,
+    normalize_i3_alert_payload,
+)
 
 
 def _build_alerts_protobuf() -> bytes:
@@ -112,6 +116,7 @@ def test_multi_period_url_flows_into_silver_rows_and_periods() -> None:
     snapshot = RawI3AlertSnapshot(
         i3_alert_snapshot_id=7,
         provider_id="sto",
+        provider_timezone="America/Toronto",
         captured_at_utc=datetime(2026, 6, 19, tzinfo=UTC),
         raw_payload_json=payload,
     )
@@ -174,6 +179,7 @@ def test_converted_payload_normalizes_into_silver_alert_rows() -> None:
     snapshot = RawI3AlertSnapshot(
         i3_alert_snapshot_id=1,
         provider_id="sto",
+        provider_timezone="America/Toronto",
         captured_at_utc=datetime(2026, 6, 19, tzinfo=UTC),
         raw_payload_json=payload,
     )
@@ -191,3 +197,24 @@ def test_converted_payload_normalizes_into_silver_alert_rows() -> None:
     assert len(entity_rows) == 1
     assert entity_rows[0]["route_id"] == "33"
     assert entity_rows[0]["stop_id"] == "S1"
+
+
+def test_converted_gtfs_rt_payload_uses_the_same_language_observation_seam() -> None:
+    """D2 parity: STO-style service alerts retain raw translation tags."""
+
+    payload = convert_gtfs_rt_alerts_to_i3_payload(_build_alerts_protobuf())
+    snapshot = RawI3AlertSnapshot(
+        i3_alert_snapshot_id=2,
+        provider_id="sto",
+        provider_timezone="America/Toronto",
+        captured_at_utc=datetime(2026, 6, 19, tzinfo=UTC),
+        raw_payload_json=payload,
+    )
+
+    (observation,) = build_alert_language_observations(snapshot)
+
+    assert observation.provider_id == "sto"
+    assert observation.alert_logical_id == "id:alert-1"
+    assert observation.has_explicit_fr is True
+    assert observation.has_explicit_en is True
+    assert observation.undetermined is False
