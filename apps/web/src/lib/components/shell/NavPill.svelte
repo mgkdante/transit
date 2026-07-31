@@ -736,6 +736,22 @@
 		font-size: var(--text-micro);
 		line-height: 1.25;
 		white-space: nowrap;
+		/* Focus-gated (owner directive 2026-07-31): the transmission disclosure
+		   appears only while the search is in use — idle chrome stays quiet. An
+		   opacity-only fade (no movement) is reduced-motion-safe by construction;
+		   visibility:hidden keeps the idle notice out of the accessibility tree,
+		   and aria-describedby resolves at focus time — exactly when it shows. */
+		opacity: 0;
+		visibility: hidden;
+		transition:
+			opacity var(--duration-fast) var(--ease-default),
+			visibility 0s linear var(--duration-fast);
+	}
+
+	.nav-search:focus-within .nav-search-notice {
+		opacity: 1;
+		visibility: visible;
+		transition-delay: 0s, 0s;
 	}
 
 	.nav-controls {

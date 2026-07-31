@@ -356,6 +356,20 @@ describe('NavPill — search', () => {
 		expect(source).toMatch(/\.nav-search-results\s*\{[\s\S]*?top:\s*calc\(100% \+ 1\.75rem\)/);
 	});
 
+	it('gates the collection notice on search focus (opacity-only fade)', () => {
+		const source = readSource();
+		// Idle: hidden and out of the accessibility tree.
+		expect(source).toMatch(
+			/\.nav-search-notice\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?visibility:\s*hidden/,
+		);
+		// In use: :focus-within reveals it (covers the input AND the result list).
+		expect(source).toMatch(
+			/\.nav-search:focus-within\s+\.nav-search-notice\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?visibility:\s*visible/,
+		);
+		// No transform in the reveal — the fade stays reduced-motion-safe.
+		expect(source).not.toMatch(/\.nav-search-notice\s*\{[^}]*transform:/);
+	});
+
 	it('renders selectable grouped chrome search results and fires select', async () => {
 		const onresultselect = vi.fn();
 		const { getByRole } = render(NavPill, {
