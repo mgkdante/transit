@@ -160,15 +160,14 @@
 	// (or a deep-link like /map?status=late) restores the exact view; every toggle
 	// pushes the canonical query via goto (replaceState so the map view isn't
 	// disrupted + back/forward stay clean). One map, deep-linkable from anywhere.
+	// Every URL write here is an in-place rewrite: keep the map view (noScroll),
+	// the user's focus, and a clean back/forward stack.
+	const URL_REWRITE = { replaceState: true, keepFocus: true, noScroll: true } as const;
 	const filters = createFilterStore(fromSearchParams($page.url.searchParams), (search) => {
 		const nextSearchParams = new URLSearchParams(search);
 		copyNearTargetSearchParams($page.url.searchParams, nextSearchParams);
 		const nextSearch = nextSearchParams.toString();
-		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, {
-			replaceState: true,
-			keepFocus: true,
-			noScroll: true,
-		});
+		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, URL_REWRITE);
 	});
 
 	const nearMeController = createMapNearMeController({

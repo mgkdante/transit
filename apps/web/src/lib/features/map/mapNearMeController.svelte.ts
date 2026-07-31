@@ -44,7 +44,7 @@ export interface MapNearMeController {
 	get error(): string | null;
 	get origin(): NearMeOrigin | null;
 	get urlKey(): string;
-	setOrigin(origin: NearMeOrigin, syncUrl?: boolean): void;
+	setOrigin(origin: NearMeOrigin, options?: { syncUrl?: boolean; urlBacked?: boolean }): void;
 	syncFromUrl(searchParams: URLSearchParams): void;
 	refocus(): void;
 	clear(): void;
@@ -69,6 +69,11 @@ export function createMapNearMeController(
 	let error = $state<string | null>(null);
 	let origin = $state<NearMeOrigin | null>(null);
 	let urlKey = $state('');
+	// S5-377 B1: syncUrl ("write this origin to the URL?") and urlBacked
+	// ("does the URL own it?") are separate questions — a URL-adopted origin
+	// is owned by the URL yet must not echo back into it; a device fix is
+	// neither written nor owned.
+	let urlBacked = $state(true);
 
 	function syncToUrl(nextOrigin: NearMeOrigin): void {
 		const url = dependencies.currentUrl();
@@ -79,9 +84,13 @@ export function createMapNearMeController(
 		);
 	}
 
-	function setOrigin(nextOrigin: NearMeOrigin, syncUrl = true): void {
+	function setOrigin(
+		nextOrigin: NearMeOrigin,
+		{ syncUrl = true, urlBacked: nextUrlBacked = true } = {},
+	): void {
 		origin = nextOrigin;
 		error = null;
+		urlBacked = nextUrlBacked;
 		if (syncUrl) syncToUrl(nextOrigin);
 		dependencies.focusOrigin(nextOrigin);
 	}
@@ -90,7 +99,9 @@ export function createMapNearMeController(
 		const nearTarget = dependencies.readTarget(searchParams);
 		if (!nearTarget) {
 			urlKey = '';
-			origin = null;
+			// Only a URL-backed origin answers to the URL; a device fix (privacy:
+			// coordinates never enter the query string) must survive URL moves.
+			if (urlBacked) origin = null;
 			return;
 		}
 
@@ -100,7 +111,7 @@ export function createMapNearMeController(
 		urlKey = key;
 		open = true;
 		query = '';
-		setOrigin(nearTarget, false);
+		setOrigin(nearTarget, { syncUrl: false });
 	}
 
 	function refocus(): void {
@@ -112,6 +123,7 @@ export function createMapNearMeController(
 		query = '';
 		error = null;
 		urlKey = '';
+		urlBacked = true;
 		const url = dependencies.currentUrl();
 		void dependencies.goto(
 			dependencies.clearTargetSearch(url.searchParams, url.pathname),
@@ -135,12 +147,17 @@ export function createMapNearMeController(
 		geolocation.getCurrentPosition(
 			(position) => {
 				loading = false;
-				setOrigin({
-					lat: position.coords.latitude,
-					lon: position.coords.longitude,
-					label: dependencies.translations.nearMeUseLocation,
-					precision: 'address',
-				});
+				// A device fix never enters the URL (WS8-A privacy: no coordinate
+				// leak) and honestly frames at place precision, not street level.
+				setOrigin(
+					{
+						lat: position.coords.latitude,
+						lon: position.coords.longitude,
+						label: dependencies.translations.nearMeUseLocation,
+						precision: 'place',
+					},
+					{ syncUrl: false, urlBacked: false },
+				);
 			},
 			(geoError) => {
 				loading = false;

@@ -89,7 +89,7 @@ beforeEach(() => {
 		lat: 45.5,
 		lon: -73.6,
 		label: 'Montréal',
-		source: 'nominatim',
+		source: 'geo_ca',
 		precision: 'place',
 	});
 	providers.geocodeMontrealSuggestions.mockResolvedValue([]);
@@ -236,6 +236,51 @@ describe('/api/geocode/montreal input contract', () => {
 		expect(await responseBody(response)).toEqual({ error: 'invalid_mode' });
 		expect(limit).not.toHaveBeenCalled();
 		expect(providerCallCount()).toBe(0);
+	});
+});
+
+describe('/api/geocode/montreal privacy cache contract', () => {
+	it('marks a missing Google Place Details result private and non-cacheable', async () => {
+		providers.googlePlaceDetails.mockResolvedValueOnce(null);
+
+		const response = await GET(event(`?placeId=ChIJabc&session=${VALID_SESSION}`));
+
+		expect(response.status).toBe(404);
+		expect(response.headers.get('cache-control')).toBe('private, no-store');
+	});
+
+	it('marks geo.ca fallback suggestions private and non-cacheable', async () => {
+		providers.googlePlacesAutocompleteSuggestions.mockResolvedValueOnce([]);
+		providers.geocodeMontrealSuggestions.mockResolvedValueOnce([
+			{
+				lat: 45.5,
+				lon: -73.6,
+				label: 'Montréal',
+				source: 'geo_ca',
+				precision: 'place',
+			},
+		]);
+
+		const response = await GET(event(`?q=Montr%C3%A9al&suggest=1&session=${VALID_SESSION}`));
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get('cache-control')).toBe('private, no-store');
+	});
+
+	it('marks a missing text-geocode result private and non-cacheable', async () => {
+		providers.geocodeMontreal.mockResolvedValueOnce(null);
+
+		const response = await GET(event('?q=Montr%C3%A9al'));
+
+		expect(response.status).toBe(404);
+		expect(response.headers.get('cache-control')).toBe('private, no-store');
+	});
+
+	it('marks a resolved text-geocode result private and non-cacheable', async () => {
+		const response = await GET(event('?q=Montr%C3%A9al'));
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get('cache-control')).toBe('private, no-store');
 	});
 });
 

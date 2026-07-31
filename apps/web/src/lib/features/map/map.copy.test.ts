@@ -19,6 +19,15 @@ describe('map copy', () => {
 		expect(copy.fr.nearMeSearchPlaceholder).toBe('Adresse, code postal ou coordonnées');
 	});
 
+	it('discloses the near-me search recipients in both languages', () => {
+		expect(copy.en.nearMeCollectionNotice).toBe(
+			'Your searches are sent to our server and its geocoding providers (Google, geo.ca).',
+		);
+		expect(copy.fr.nearMeCollectionNotice).toBe(
+			'Vos recherches sont envoyées à notre serveur et à ses fournisseurs de géocodage (Google, geo.ca).',
+		);
+	});
+
 	it('carries bilingual live-feed edge-state notices', () => {
 		for (const c of [copy.en, copy.fr]) {
 			expect(c.liveUnavailable.trim()).toBeTruthy();

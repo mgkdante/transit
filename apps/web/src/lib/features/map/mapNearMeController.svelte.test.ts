@@ -157,10 +157,35 @@ describe('map near-me controller', () => {
 		expect(first.focusOrigin).toHaveBeenCalledWith(target);
 
 		const second = createHarness();
-		second.controller.setOrigin(target, false);
+		second.controller.setOrigin(target, { syncUrl: false });
 		expect(second.goto).not.toHaveBeenCalled();
 		expect(second.controller.urlKey).toBe('');
 		expect(second.focusOrigin).toHaveBeenCalledWith(target);
+	});
+
+	it('keeps a device fix alive when a later URL sync carries no near target (S5-377 B1)', () => {
+		const harness = createHarness();
+		harness.controller.useLocation();
+		harness.succeedPosition();
+		expect(harness.controller.origin).not.toBeNull();
+
+		// A filter toggle rewrites the query string with no near params; the
+		// device fix is not URL-backed, so the sync-from must not destroy it.
+		harness.readTarget.mockReturnValue(null);
+		harness.controller.syncFromUrl(new URLSearchParams('routes=55'));
+		expect(harness.controller.origin).not.toBeNull();
+	});
+
+	it('retires a URL-adopted origin when the URL drops the near params (S5-377 B1 inverse)', () => {
+		const harness = createHarness();
+		harness.readTarget.mockReturnValue(target);
+		harness.controller.syncFromUrl(new URLSearchParams('near=45.501,-73.601'));
+		expect(harness.controller.origin).toEqual(target);
+
+		// The URL created it, the URL retires it.
+		harness.readTarget.mockReturnValue(null);
+		harness.controller.syncFromUrl(new URLSearchParams(''));
+		expect(harness.controller.origin).toBeNull();
 	});
 
 	it('refocuses the current origin when the map becomes ready', () => {
@@ -168,7 +193,7 @@ describe('map near-me controller', () => {
 		harness.controller.refocus();
 		expect(harness.focusOrigin).not.toHaveBeenCalled();
 
-		harness.controller.setOrigin(target, false);
+		harness.controller.setOrigin(target, { syncUrl: false });
 		harness.focusOrigin.mockClear();
 		harness.controller.refocus();
 
@@ -231,7 +256,7 @@ describe('map near-me controller', () => {
 			lat: 45.51,
 			lon: -73.57,
 			label: 'Use my location',
-			precision: 'address',
+			precision: 'place',
 		});
 		expect(harness.focusOrigin).toHaveBeenCalledWith(harness.controller.origin);
 	});

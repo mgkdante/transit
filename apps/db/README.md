@@ -74,3 +74,25 @@ Production rotation, recreation, and restart remain owner-gated.
 
 `.env.example` is the executable configuration reference. A retention change
 must update settings, environment examples, tests, and this list together.
+
+## Optional alert-language observation replay
+
+This slice does not implement a replay command. A one-off backfill can use the
+retained Bronze alert captures, bounded by `BRONZE_I3_RETENTION_DAYS=30`, to
+accelerate the first 30-day language-coverage window:
+
+1. Enumerate successful `i3_alerts` and `service_alerts` captures in chronological
+   order, retaining each capture's original UTC timestamp and provider timezone.
+2. Decode i3 JSON directly; convert GTFS-RT Service Alerts protobuf with the same
+   `convert_gtfs_rt_alerts_to_i3_payload` path used by live ingestion.
+3. Pass that raw, tagged payload to `record_alert_language_observations`. Never
+   read `silver.i3_alerts` or its coalesced English columns.
+4. Compare capture, alert, determined, and undetermined counts before retaining
+   the backfill receipt. Run before the Bronze prune if the full available
+   horizon matters.
+
+The daily observation upserts are timestamp-guarded and therefore replay-safe:
+an older replay cannot replace newer evidence for the same provider, logical
+alert, and provider-local date. The 30-day setting is a maximum available
+horizon, not a completeness promise; already-pruned captures and boundary-day
+timing can make the recoverable window shorter.

@@ -64,6 +64,7 @@ def _load(connection, alerts) -> object:  # noqa: ANN001
     snapshot = RawI3AlertSnapshot(
         i3_alert_snapshot_id=SNAP_ID,
         provider_id="stm",
+        provider_timezone="America/Toronto",
         captured_at_utc=CAPTURED,
         raw_payload_json=alerts,
     )

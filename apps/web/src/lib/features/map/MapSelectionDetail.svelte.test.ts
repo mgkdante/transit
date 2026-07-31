@@ -147,8 +147,12 @@ describe('MapSelectionDetail', () => {
 		expect(getByText('Sherbrooke / Saint-Denis')).toBeInTheDocument();
 		expect(getAllByText('Mont-Royal / Saint-Laurent').length).toBeGreaterThan(0);
 		expect(getByText('Van Horne / Rockland')).toBeInTheDocument();
-		expect(getByText('Route 24 is diverted via Pine & Clark.')).toBeInTheDocument();
-		expect(getByText('Stop 52618 moved to the northeast corner.')).toBeInTheDocument();
+		expect(
+			getByRole('button', { name: 'Select alert Route 24 is diverted via Pine & Clark.' }),
+		).toBeInTheDocument();
+		expect(
+			getByRole('button', { name: 'Select alert Stop 52618 moved to the northeast corner.' }),
+		).toBeInTheDocument();
 
 		if (detail?.kind !== 'vehicle') throw new Error('expected vehicle detail');
 		await fireEvent.click(getByRole('button', { name: 'Select route 24' }));
@@ -199,14 +203,19 @@ describe('MapSelectionDetail', () => {
 		};
 		const compactDetail = { ...detail, alerts: [alerts[0], alerts[1], hiddenAlert] };
 
-		const { container, queryByText } = render(MapSelectionDetail, {
+		const { getByRole, queryByRole } = render(MapSelectionDetail, {
 			props: { detail: compactDetail, locale: 'en', compact: true },
 		});
 
-		expect(container.querySelectorAll('.map-alert-button')).toHaveLength(2);
-		expect(queryByText('Route 24 is diverted via Pine & Clark.')).toBeInTheDocument();
-		expect(queryByText('Stop 52618 moved to the northeast corner.')).toBeInTheDocument();
-		expect(queryByText('Third source message & details.')).not.toBeInTheDocument();
+		expect(
+			getByRole('button', { name: 'Select alert Route 24 is diverted via Pine & Clark.' }),
+		).toBeInTheDocument();
+		expect(
+			getByRole('button', { name: 'Select alert Stop 52618 moved to the northeast corner.' }),
+		).toBeInTheDocument();
+		expect(
+			queryByRole('button', { name: 'Select alert Third source message & details.' }),
+		).not.toBeInTheDocument();
 	});
 
 	it('renders a per-bus not-reporting GPS note when the vehicle fix is stale', () => {
@@ -292,7 +301,9 @@ describe('MapSelectionDetail', () => {
 		expect(getAllByText('Next times').length).toBeGreaterThan(0);
 		expect(getByText('08:00')).toBeInTheDocument();
 		expect(getByText('23:50')).toBeInTheDocument();
-		expect(getByText('Stop 52618 moved to the northeast corner.')).toBeInTheDocument();
+		expect(
+			getByRole('button', { name: 'Select alert Stop 52618 moved to the northeast corner.' }),
+		).toBeInTheDocument();
 
 		await fireEvent.click(getByRole('button', { name: 'Select route 24' }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'route', id: '24' });
@@ -343,7 +354,9 @@ describe('MapSelectionDetail', () => {
 		expect(getByText('Sherbrooke / Saint-Denis')).toBeInTheDocument();
 		expect(getByText('Mont-Royal / Saint-Laurent')).toBeInTheDocument();
 		expect(getByText('Van Horne / Rockland')).toBeInTheDocument();
-		expect(getByText('Route 24 is diverted via Pine & Clark.')).toBeInTheDocument();
+		expect(
+			getByRole('button', { name: 'Select alert Route 24 is diverted via Pine & Clark.' }),
+		).toBeInTheDocument();
 
 		await fireEvent.click(getByRole('button', { name: 'Select stop Van Horne / Rockland' }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'stop', id: 'stop-3' });

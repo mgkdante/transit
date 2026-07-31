@@ -13,6 +13,9 @@ const EN_COPY: AffectedAlertsCopy = {
 	severity: { critical: 'Critical', high: 'High', watch: 'Watch' },
 	more: (n) => `+${n} more`,
 	showLess: 'Show less',
+	foreignLanguage: '(French only)',
+	link: 'Details',
+	linkAria: (host) => `Open alert details on ${host} (new tab)`,
 };
 
 const FR_COPY: AffectedAlertsCopy = {
@@ -25,6 +28,9 @@ const FR_COPY: AffectedAlertsCopy = {
 	severity: { critical: 'Critique', high: 'Élevé', watch: 'À surveiller' },
 	more: (n) => `+${n} de plus`,
 	showLess: 'Réduire',
+	foreignLanguage: '(en anglais seulement)',
+	link: 'Détails',
+	linkAria: (host) => `Ouvrir les détails sur ${host} (nouvel onglet)`,
 };
 
 // An alert carrying an EN + FR headline, a known GTFS-RT cause + effect, and an
@@ -129,6 +135,38 @@ describe('AffectedAlerts — rendering', () => {
 			props: { alerts: [ALERT_FULL], locale: 'en', copy: EN_COPY, testId: 'stop-alerts' },
 		});
 		expect(container.querySelector('[data-testid="stop-alerts"]')).not.toBeNull();
+	});
+
+	it('marks foreign provider text and safely links to the actual fallback language', () => {
+		render(AffectedAlerts, {
+			props: {
+				alerts: [
+					{
+						...ALERT_FULL,
+						description: 'Texte français seulement',
+						description_en: null,
+						header_text_en: null,
+						url: 'https://example.test/fr/avis',
+						url_en: 'javascript:alert(1)',
+					} as Alert,
+				],
+				locale: 'en',
+				copy: EN_COPY,
+			},
+		});
+		expect(screen.getByText('Texte français seulement')).toHaveAttribute('lang', 'fr');
+		expect(screen.getByText('(French only)')).toBeInTheDocument();
+		const link = screen.getByRole('link', { name: 'Open alert details on example.test (new tab)' });
+		expect(link).toHaveAttribute('href', 'https://example.test/fr/avis');
+		expect(link).toHaveAttribute('hreflang', 'fr');
+		expect(link).toHaveAttribute('target', '_blank');
+		expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+	});
+
+	it('does not mark a language-unknown header_key fallback', () => {
+		render(AffectedAlerts, { props: { alerts: [ALERT_BARE], locale: 'en', copy: EN_COPY } });
+		expect(screen.getByText('Réduction de service')).not.toHaveAttribute('lang');
+		expect(screen.queryByText('(French only)')).not.toBeInTheDocument();
 	});
 });
 

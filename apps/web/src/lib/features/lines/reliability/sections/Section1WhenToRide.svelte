@@ -339,6 +339,7 @@
 	const weekdayCycle = $derived(
 		selectWeekdayCycle(punctuality.dayOfWeek, locale, {
 			title: band.weekdayHeading,
+			xLabel: band.dayAxisLabel,
 			yLabel: copy.strip.avgDelayMin,
 			unit: ' min',
 			weekdayShort: (iso) => band.weekdaysShort[iso - 1],
@@ -527,7 +528,6 @@
 	/* Quiet mono caption (scale legend / honest caveat / cycle note), AA both themes. */
 	.caption {
 		margin: 0;
-		max-width: 52ch;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.4;
