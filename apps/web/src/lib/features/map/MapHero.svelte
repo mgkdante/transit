@@ -728,9 +728,9 @@
 
 	// Lazily fetch route shapes for the routes that currently have live buses
 	// (deduped). Tracks the vehicles poll + motion toggle (other reads untracked), so
-	// raw→smooth fires immediately while filter/hover does not re-trigger fetches.
-	// fetch/dedupe/evict + the per-frame resolver; a resolved shape is picked up by
-	// the controller's `shapeCache.shapeFor` on the next rAF frame, no re-feed needed.
+	// raw→smooth fires immediately while filter/hover never re-triggers fetches. The
+	// manager owns fetch/dedupe/evict + the per-frame resolver; a resolved shape is
+	// picked up by `shapeCache.shapeFor` on the next rAF frame, no re-feed needed.
 	$effect(() => {
 		const vehicles = live.vehicles?.vehicles ?? [];
 		if (motionMode.current !== 'smooth' || vehicles.length === 0) return;

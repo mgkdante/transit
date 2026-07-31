@@ -21,6 +21,10 @@ import {
 } from './projector';
 import { resolveMotionRuntime, type MotionRuntime } from './runtime';
 
+// The options type keeps the plain `ShapeResolver` shape (pinned by exact equality
+// in mapLayerModules.test.ts); a supplier MAY additionally carry a monotonic
+// `revision(): number` accessor (mapShapeCache does). The controller feature-detects
+// it to memoize per-tick resolution misses; plain resolvers retry every frame.
 type RevisionedShapeResolver = ShapeResolver & { revision?: () => number };
 
 export interface VehicleMotionOptions {
