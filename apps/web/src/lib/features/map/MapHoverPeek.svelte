@@ -111,7 +111,7 @@
 				</dd>
 			</div>
 			<div>
-				<dt>Type</dt>
+				<dt>{t.routeKind}</dt>
 				<dd>{routeModeHint(peek.type).tag ?? peek.type}</dd>
 			</div>
 		</dl>
@@ -178,6 +178,13 @@
 	dl {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	/* S5-387 B1: AbsentValue's pill radius (9999px) clamps into a full ellipse
+	   when the notice wraps inside this narrow half-column - the peek scopes
+	   the surface back to a soft rectangle. */
+	.map-hover-peek :global([data-slot='absent-value'] .state-notice--pill) {
+		border-radius: var(--radius-sm);
 		gap: 0.625rem 0.875rem;
 		margin: 0;
 	}

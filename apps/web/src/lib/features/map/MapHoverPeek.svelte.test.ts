@@ -64,6 +64,10 @@ describe('MapHoverPeek', () => {
 	it.each([
 		['vehicle-stale', vehicleStale],
 		['vehicle-fresh', vehicleFresh],
+		// S5-387 B1: the AbsentValue pill branch (delay unknown) is the shape
+		// whose wrapped notice clamped into an ellipse - it stays inert AND
+		// styled (the radius scope-override lives in the component).
+		['vehicle-delay-unknown', { ...vehicleFresh, delayMin: null }],
 		['route-populated', route],
 		['stop-populated', stop],
 	])('keeps the %s branch inert and non-live', (_name, peek) => {
