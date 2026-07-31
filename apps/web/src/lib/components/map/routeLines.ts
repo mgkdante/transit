@@ -139,7 +139,7 @@ function lineLayout(): LayerSpecification['layout'] {
 	return { 'line-cap': 'round', 'line-join': 'round' };
 }
 
-export function addRouteLineLayers(map: MapLibreMap): void {
+export function addRouteLineLayers(map: MapLibreMap, beforeId?: string): void {
 	if (map.getLayer(ROUTE_LINE_LAYER)) {
 		retintRouteLineLayers(map);
 		return;
@@ -147,41 +147,50 @@ export function addRouteLineLayers(map: MapLibreMap): void {
 	const routeYellow = resolveColor('var(--accent-text)', 'rgb(255, 182, 39)');
 	const casing = resolveColor('var(--background)', 'rgb(20, 20, 20)');
 
-	map.addLayer({
-		id: ROUTE_LINE_CASING_LAYER,
-		type: 'line',
-		source: ROUTE_LINE_SOURCE,
-		layout: lineLayout(),
-		paint: {
-			'line-color': casing,
-			'line-opacity': 0.9,
-			'line-width': CASING_WIDTH,
-		},
-	} as unknown as LayerSpecification);
+	map.addLayer(
+		{
+			id: ROUTE_LINE_CASING_LAYER,
+			type: 'line',
+			source: ROUTE_LINE_SOURCE,
+			layout: lineLayout(),
+			paint: {
+				'line-color': casing,
+				'line-opacity': 0.9,
+				'line-width': CASING_WIDTH,
+			},
+		} as unknown as LayerSpecification,
+		beforeId,
+	);
 
-	map.addLayer({
-		id: ROUTE_LINE_LAYER,
-		type: 'line',
-		source: ROUTE_LINE_SOURCE,
-		layout: lineLayout(),
-		paint: {
-			'line-color': routeYellow,
-			'line-opacity': 0.95,
-			'line-width': LINE_WIDTH,
-		},
-	} as unknown as LayerSpecification);
+	map.addLayer(
+		{
+			id: ROUTE_LINE_LAYER,
+			type: 'line',
+			source: ROUTE_LINE_SOURCE,
+			layout: lineLayout(),
+			paint: {
+				'line-color': routeYellow,
+				'line-opacity': 0.95,
+				'line-width': LINE_WIDTH,
+			},
+		} as unknown as LayerSpecification,
+		beforeId,
+	);
 
-	map.addLayer({
-		id: ROUTE_LINE_HIT_LAYER,
-		type: 'line',
-		source: ROUTE_LINE_SOURCE,
-		layout: lineLayout(),
-		paint: {
-			'line-color': routeYellow,
-			'line-opacity': 0,
-			'line-width': HIT_WIDTH,
-		},
-	} as unknown as LayerSpecification);
+	map.addLayer(
+		{
+			id: ROUTE_LINE_HIT_LAYER,
+			type: 'line',
+			source: ROUTE_LINE_SOURCE,
+			layout: lineLayout(),
+			paint: {
+				'line-color': routeYellow,
+				'line-opacity': 0,
+				'line-width': HIT_WIDTH,
+			},
+		} as unknown as LayerSpecification,
+		beforeId,
+	);
 }
 
 function retintRouteLineLayers(map: MapLibreMap): void {

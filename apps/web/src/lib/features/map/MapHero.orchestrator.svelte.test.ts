@@ -19,6 +19,10 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const source = readFileSync(resolve(process.cwd(), 'src/lib/features/map/MapHero.svelte'), 'utf-8');
+const layerModulesSource = readFileSync(
+	resolve(process.cwd(), 'src/lib/features/map/mapLayerModules.ts'),
+	'utf-8',
+);
 const script = source.match(/<script(?:\s[^>]*)?>\r?\n([\s\S]*?)\r?\n<\/script>/u)?.[1];
 
 describe('MapHero orchestrator — structural law', () => {
@@ -62,7 +66,7 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain('<MapOverlayChrome');
 	});
 
-	it('wires M1 live resilience at the map call sites without widening other consumers', () => {
+	it('wires M1 live resilience at the registry and map call sites without widening consumers', () => {
 		// WHY(M1 #3+#11/#45/#50): the frozen plan deliberately changes MapHero from
 		// an aggregate/all-family consumer to vehicles-only motion plus committed
 		// selection leases, grace, and abort-aware focused resource reads.
@@ -70,9 +74,9 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain("live.subscribeFamilies(['trips'])");
 		expect(source).toContain("live.subscribeFamilies(['departures'])");
 		expect(source).toContain('createSelectionGrace<MapSelectionDetailModel>()');
-		expect(source).toContain('tickKey: live.vehiclesGeneratedUtc');
-		expect(source).toContain('stale: live.vehiclesIsStale');
-		expect(source).toContain('setStale(m, live.vehiclesIsStale)');
+		expect(layerModulesSource).toContain('tickKey: vehicles.tickKey');
+		expect(layerModulesSource).toContain('stale: vehicles.stale');
+		expect(layerModulesSource).toContain('setStale(map, vehicles.stale)');
 		expect(source).toContain('data-motion-stale={live.vehiclesIsStale}');
 		expect(source).toContain('data-motion-tick-key={live.vehiclesGeneratedUtc ?? undefined}');
 		expect(source).toContain('live.familyStates.departures.retainedGeneration != null');
