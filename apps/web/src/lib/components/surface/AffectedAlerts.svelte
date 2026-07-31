@@ -327,4 +327,13 @@
 		font-weight: 500;
 		color: var(--foreground);
 	}
+
+	/* The language marker is a quiet annotation beside the provider text,
+	   never part of the headline itself. */
+	.alert-language-marker {
+		margin-inline-start: 0.375rem;
+		color: var(--muted-foreground);
+		font-size: var(--text-caption);
+		font-weight: 400;
+	}
 </style>

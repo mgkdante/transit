@@ -55,13 +55,15 @@
 						aria-labelledby={labelId}
 						onclick={() => onalertselect?.(alert)}
 					>
-						<span lang={display.lang && display.lang !== locale ? display.lang : undefined}>
-							{display.text}
+						<span class="map-alert-text">
+							<span lang={display.lang && display.lang !== locale ? display.lang : undefined}>
+								{display.text}
+							</span>
+							{#if marker}<span class="alert-language-marker">{t.foreignLanguage}</span>{/if}
 						</span>
-						{#if marker}<span class="alert-language-marker">{t.foreignLanguage}</span>{/if}
 						<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 						<span id={labelId} class="sr-only">
-							{t.selectAlertAction}{' '}
+							{t.selectAlertAction}
 							<span lang={display.lang && display.lang !== locale ? display.lang : undefined}>
 								{display.text}
 							</span>
@@ -174,6 +176,20 @@
 		color: inherit;
 		font: inherit;
 		line-height: 1.35;
+	}
+
+	/* The provider text and its language marker travel together; only the
+	   chevron sits at the far edge. The marker reads as a quiet annotation,
+	   never as part of the provider's own headline. */
+	.map-alert-text {
+		min-width: 0;
+	}
+
+	.map-alert-text .alert-language-marker {
+		margin-inline-start: 0.375rem;
+		color: var(--muted-foreground);
+		font-size: var(--text-caption);
+		font-weight: 400;
 		text-align: left;
 		background: transparent;
 		border: 0;
