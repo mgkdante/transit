@@ -5,7 +5,7 @@ import { getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
 import { serverV1Context } from '$lib/v1/serverContext';
 
 // sitemap.xml — DYNAMIC (request-time), not prerendered. It enumerates EVERY
-// per-entity URL: the 8 static surfaces PLUS one /lines/<id> and /stop/<id> per
+// per-entity URL: every PATHS static surface PLUS one /lines/<id> and /stop/<id> per
 // snapshot entity, in BOTH locales (EN + /fr), with hreflang alternates.
 //
 // WHY dynamic: the route/stop ids only exist in the published snapshot indexes,
@@ -15,8 +15,8 @@ import { serverV1Context } from '$lib/v1/serverContext';
 //
 // FAIL-SOFT, two ways (mirrors +layout.server.ts) — NEVER a 500, never an empty
 // 200 while static URLs exist:
-//   · no binding (local `vite dev` / `vite preview`) → static-only sitemap (the
-//     8 surfaces ×2 locales). Local dev therefore shows static-only, by design.
+//   · no binding (local `vite dev` / `vite preview`) → PATHS-only sitemap in
+//     both locales. Local dev therefore shows static-only, by design.
 //   · binding present but a fetch/parse throws (data-proxy down / contract gap)
 //     → also fall back to static-only.
 //
@@ -54,7 +54,7 @@ export const GET: RequestHandler = async (event) => {
 			};
 		} catch {
 			// Binding present but the index fetch/parse failed — degrade to static-only
-			// rather than 500. The 8 surfaces stay crawlable.
+			// rather than 500. Every PATHS surface stays crawlable.
 			entities = {};
 		}
 	}

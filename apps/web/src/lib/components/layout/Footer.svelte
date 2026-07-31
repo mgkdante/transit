@@ -8,10 +8,10 @@
                product mark + a bilingual tagline. transit.yesid.dev is a
                yesid.dev product, so the chrome carries the house mark, mirrors
                the TopBar brand cluster.
-      RIGHT  : localized Explore and Audit link groups from the canonical nav.
+      RIGHT  : localized Explore, Audit and Legal link groups from the canonical nav.
     Row 2 (below the hazard rule, departure-board rule):
-      the active provider's open-data attribution (manifest.attribution, rendered
-      verbatim as a per-provider licence obligation) + the unofficial-site
+      caller-supplied attribution (the active manifest's verbatim licence on data
+      routes, static under-review copy on legal placeholders) + the unofficial-site
       disclaimer (Honesty Gate #6) on the left; the live system-date readout on
       the right (the orange route-set lamp is the lone --primary touch).
 
@@ -23,7 +23,7 @@
 <script lang="ts">
 	import { DEFAULT_LOCALE, getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { FooterGroup, FooterLink } from '@yesid/ui/footer';
-	import { SURFACE_NAV, AUDIT_NAV } from '$lib/content/nav';
+	import { SURFACE_NAV, AUDIT_NAV, LEGAL_NAV } from '$lib/content/nav';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
 	import { footerCopy } from './footer.copy';
@@ -32,9 +32,9 @@
 		/** Active locale (prop wins; falls back to context for isolated renders). */
 		locale?: Locale;
 		/**
-		 * Per-provider open-data licence string (manifest.attribution), rendered
-		 * VERBATIM — a licence obligation, not cosmetic copy. Omitted ⇒ the
-		 * attribution line is hidden (never fabricate a licence we don't hold).
+		 * Caller-owned attribution rendered verbatim. Data routes supply the active
+		 * manifest licence; legal placeholders supply static under-review copy.
+		 * Omitted ⇒ the line is hidden (never fabricate a licence we do not hold).
 		 */
 		attribution?: string;
 		/** Provider display name (manifest.display_name); drives the tagline + disclaimer. */
@@ -57,14 +57,13 @@
 
 	// Provider-driven copy (multi-provider Layer A): the agency NAME comes from the
 	// manifest (display_name), with a neutral, provider-agnostic fallback for the
-	// brief window before the v1 context boots — NEVER a hardcoded 'STM'. The
-	// licence line is the manifest's verbatim attribution (a per-provider obligation).
+	// brief window before the v1 context boots — NEVER a hardcoded 'STM'.
 	const agencyName = $derived(providerName ?? t.providerFallback);
 	const tagline = $derived(t.tagline(agencyName));
 	const disclaimer = $derived(t.disclaimer(agencyName));
 
-	// The two footer groups consume the canonical manifests directly, preserving
-	// their distinct wayfinding/accountability roles and manifest order.
+	// The three footer groups consume the canonical manifests directly, preserving
+	// their distinct wayfinding/accountability/legal roles and manifest order.
 	const exploreLinks = $derived(
 		SURFACE_NAV.map((item) => ({
 			label: item.label[locale],
@@ -73,6 +72,12 @@
 	);
 	const auditLinks = $derived(
 		AUDIT_NAV.map((item) => ({
+			label: item.label[locale],
+			href: localizeHref(item.href, locale),
+		})),
+	);
+	const legalLinks = $derived(
+		LEGAL_NAV.map((item) => ({
 			label: item.label[locale],
 			href: localizeHref(item.href, locale),
 		})),
@@ -93,7 +98,7 @@
 			<span class="mt-1 font-mono text-caption text-[var(--muted-foreground)]">{tagline}</span>
 		</div>
 
-		<!-- Right: one labelled landmark, with the canonical Explore and Audit groups. -->
+		<!-- Right: one labelled landmark with Explore, Audit and Legal groups. -->
 		<nav aria-label={t.navAria} class="flex flex-wrap justify-center gap-x-8 gap-y-6">
 			<FooterGroup
 				label={t.exploreLabel}
@@ -115,12 +120,22 @@
 					<FooterLink href={link.href}>{link.label}</FooterLink>
 				{/each}
 			</FooterGroup>
+			<FooterGroup
+				label={t.legalLabel}
+				role="group"
+				aria-label={t.legalLabel}
+				class="items-center sm:items-start"
+			>
+				{#each legalLinks as link (link.href)}
+					<FooterLink href={link.href}>{link.label}</FooterLink>
+				{/each}
+			</FooterGroup>
 		</nav>
 	</div>
 
-	<!-- Row 2: Status bar, below the hazard rule. Active-provider open-data attribution
-	     + the unofficial-site disclaimer (Honesty Gate #6) on the left; the live
-	     system readout on the right (the orange route-set lamp is the lone --primary touch). -->
+	<!-- Row 2: Status bar, below the hazard rule. Caller-supplied attribution + the
+	     unofficial-site disclaimer (Honesty Gate #6) sit on the left; the live system
+	     readout sits on the right (the orange route-set lamp is the lone --primary touch). -->
 	<div
 		class="footer-status-border mx-auto flex max-w-5xl flex-col items-center gap-2 px-6 py-4 font-mono text-caption text-[var(--muted-foreground)] sm:flex-row sm:justify-between sm:px-10"
 	>

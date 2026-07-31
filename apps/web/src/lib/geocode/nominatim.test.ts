@@ -3,7 +3,6 @@ import {
 	geoCaSearchUrl,
 	geocodeMontreal,
 	geocodeMontrealSuggestions,
-	nominatimSearchUrl,
 	type GeocodeFetcher,
 } from './nominatim';
 
@@ -12,27 +11,6 @@ function jsonResponse(payload: unknown): Response {
 		headers: { 'content-type': 'application/json' },
 	});
 }
-
-describe('nominatimSearchUrl', () => {
-	it('bounds lookups to Canada and the Montréal provider area', () => {
-		const url = nominatimSearchUrl('H2X 1Y4');
-
-		expect(url.origin).toBe('https://nominatim.openstreetmap.org');
-		expect(url.searchParams.get('format')).toBe('jsonv2');
-		expect(url.searchParams.get('countrycodes')).toBe('ca');
-		expect(url.searchParams.get('bounded')).toBe('1');
-		expect(url.searchParams.get('limit')).toBe('8');
-		expect(url.searchParams.get('addressdetails')).toBe('1');
-		expect(url.searchParams.get('q')).toContain('H2X 1Y4');
-		expect(url.searchParams.get('q')).toContain('Montréal');
-	});
-
-	it('expands informal Montréal street intent before sending to Nominatim', () => {
-		const url = nominatimSearchUrl('1234 boul st laurent');
-
-		expect(url.searchParams.get('q')).toContain('1234 boulevard saint laurent');
-	});
-});
 
 describe('geoCaSearchUrl', () => {
 	it('uses the Canadian geolocator service with bounded source keys', () => {
@@ -151,42 +129,31 @@ describe('geocodeMontreal', () => {
 		]);
 	});
 
-	it('falls through to bounded Nominatim when Geo.ca only has a broad place for address intent', async () => {
-		const fetcher = vi.fn<GeocodeFetcher>(async (url) => {
-			if (url.origin === 'https://geolocator.api.geo.ca') {
-				return jsonResponse([
-					{
-						key: 'geonames',
-						name: 'Montreal',
-						category: 'City',
-						province: 'Quebec',
-						lat: 45.5031824,
-						lng: -73.5698065,
-					},
-				]);
-			}
+	it('keeps address-intent fallback on Geo.ca when it only has a broad place', async () => {
+		const fetcher = vi.fn<GeocodeFetcher>(async () => {
 			return jsonResponse([
 				{
-					lat: '45.520112',
-					lon: '-73.582141',
-					display_name: '1234 Boulevard Saint-Laurent, Montréal, Québec, Canada',
-					type: 'house',
-					class: 'building',
-					address: { house_number: '1234', road: 'Boulevard Saint-Laurent' },
+					key: 'geonames',
+					name: 'Montreal',
+					category: 'City',
+					province: 'Quebec',
+					lat: 45.5031824,
+					lng: -73.5698065,
 				},
 			]);
 		});
 
 		await expect(geocodeMontrealSuggestions('1234 boul st laurent', fetcher, 2)).resolves.toEqual([
 			{
-				lat: 45.520112,
-				lon: -73.582141,
-				label: '1234 Boulevard Saint-Laurent, Montréal, Québec, Canada',
-				source: 'nominatim',
-				precision: 'address',
+				lat: 45.5031824,
+				lon: -73.5698065,
+				label: 'Montreal',
+				source: 'geo_ca',
+				precision: 'place',
 			},
 		]);
-		expect(fetcher).toHaveBeenCalledTimes(2);
+		expect(fetcher).toHaveBeenCalledOnce();
+		expect(fetcher.mock.calls[0]?.[0].origin).toBe('https://geolocator.api.geo.ca');
 	});
 
 	it('uses Geo.ca interpolated street positions for full address searches', async () => {
@@ -246,7 +213,7 @@ describe('geocodeMontreal', () => {
 		]);
 	});
 
-	it('falls back to bounded Nominatim when Geo.ca has no usable Montréal candidate', async () => {
+	it('returns null without a public fallback when Geo.ca has no Montréal candidate', async () => {
 		const fetcher = vi.fn<GeocodeFetcher>(async (url) => {
 			if (url.origin === 'https://geolocator.api.geo.ca') {
 				return jsonResponse([
@@ -271,17 +238,12 @@ describe('geocodeMontreal', () => {
 			]);
 		});
 
-		await expect(geocodeMontreal('Berri-UQAM', fetcher)).resolves.toEqual({
-			lat: 45.5152,
-			lon: -73.5616,
-			label: 'Berri-UQAM, Montréal, Québec, Canada',
-			source: 'nominatim',
-			precision: 'place',
-		});
-		expect(fetcher).toHaveBeenCalledTimes(2);
+		await expect(geocodeMontreal('Berri-UQAM', fetcher)).resolves.toBeNull();
+		expect(fetcher).toHaveBeenCalledOnce();
+		expect(fetcher.mock.calls[0]?.[0].origin).toBe('https://geolocator.api.geo.ca');
 	});
 
-	it('falls back to bounded Nominatim when Geo.ca is unavailable', async () => {
+	it('returns null without a public fallback when Geo.ca is unavailable', async () => {
 		const fetcher = vi.fn<GeocodeFetcher>(async (url) => {
 			if (url.origin === 'https://geolocator.api.geo.ca') {
 				throw new Error('geo.ca unavailable');
@@ -297,17 +259,12 @@ describe('geocodeMontreal', () => {
 			]);
 		});
 
-		await expect(geocodeMontreal('Berri-UQAM', fetcher)).resolves.toEqual({
-			lat: 45.5152,
-			lon: -73.5616,
-			label: 'Berri-UQAM, Montréal, Québec, Canada',
-			source: 'nominatim',
-			precision: 'place',
-		});
-		expect(fetcher).toHaveBeenCalledTimes(2);
+		await expect(geocodeMontreal('Berri-UQAM', fetcher)).resolves.toBeNull();
+		expect(fetcher).toHaveBeenCalledOnce();
+		expect(fetcher.mock.calls[0]?.[0].origin).toBe('https://geolocator.api.geo.ca');
 	});
 
-	it('returns Nominatim suggestions when Geo.ca has no usable Montréal candidate', async () => {
+	it('returns no suggestions without a public fallback when Geo.ca has no Montréal candidate', async () => {
 		const fetcher = vi.fn<GeocodeFetcher>(async (url) => {
 			if (url.origin === 'https://geolocator.api.geo.ca') {
 				return jsonResponse([
@@ -332,27 +289,19 @@ describe('geocodeMontreal', () => {
 			]);
 		});
 
-		await expect(geocodeMontrealSuggestions('Berri-UQAM', fetcher)).resolves.toEqual([
-			{
-				lat: 45.5152,
-				lon: -73.5616,
-				label: 'Berri-UQAM, Montréal, Québec, Canada',
-				source: 'nominatim',
-				precision: 'place',
-			},
-		]);
-		expect(fetcher).toHaveBeenCalledTimes(2);
+		await expect(geocodeMontrealSuggestions('Berri-UQAM', fetcher)).resolves.toEqual([]);
+		expect(fetcher).toHaveBeenCalledOnce();
+		expect(fetcher.mock.calls[0]?.[0].origin).toBe('https://geolocator.api.geo.ca');
 	});
 
 	it('returns null on empty or out-of-bounds geocoder responses', async () => {
 		const emptyFetcher = vi.fn<GeocodeFetcher>(async () => jsonResponse([]));
 		await expect(geocodeMontreal('H2X', emptyFetcher)).resolves.toBeNull();
 
-		const farFetcher = vi.fn<GeocodeFetcher>(async (url) =>
-			url.origin === 'https://geolocator.api.geo.ca'
-				? jsonResponse([{ key: 'locate', name: 'Québec', lat: 46.8, lng: -71.2 }])
-				: jsonResponse([{ lat: '46.8', lon: '-71.2', display_name: 'Québec' }]),
+		const farFetcher = vi.fn<GeocodeFetcher>(async () =>
+			jsonResponse([{ key: 'locate', name: 'Québec', lat: 46.8, lng: -71.2 }]),
 		);
 		await expect(geocodeMontreal('G1R 5M1', farFetcher)).resolves.toBeNull();
+		expect(farFetcher).toHaveBeenCalledOnce();
 	});
 });

@@ -53,6 +53,7 @@
 	let inputEl = $state<HTMLInputElement>();
 
 	const suggestionListId = 'map-near-suggestions';
+	const noticeId = 'map-near-collection-notice';
 	const suggestionCache = new SvelteMap<string, GeocodeSuggestion[]>();
 	const showSuggestions = $derived(
 		open && suggestionsOpen && suggestions.length > 0 && shouldSuggestNearMeAddress(query),
@@ -206,6 +207,7 @@
 						aria-label={t.nearMeSearchPlaceholder}
 						aria-autocomplete="list"
 						aria-controls={suggestionListId}
+						aria-describedby={noticeId}
 						aria-expanded={showSuggestions}
 						autocomplete="street-address"
 						role="combobox"
@@ -242,6 +244,7 @@
 					</div>
 				{/if}
 			</form>
+			<p id={noticeId} class="map-near-collection-notice">{t.nearMeCollectionNotice}</p>
 			{#if loading}
 				<p class="map-near-message">{t.nearMeLoading}</p>
 			{:else if error}
@@ -423,6 +426,13 @@
 	}
 	.map-near-form input:focus-visible {
 		border-color: color-mix(in srgb, var(--primary) 50%, var(--border) 50%);
+	}
+	.map-near-collection-notice {
+		margin: 0;
+		color: var(--muted-foreground);
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		line-height: 1.35;
 	}
 	.map-near-suggestions {
 		grid-column: 1 / -1;

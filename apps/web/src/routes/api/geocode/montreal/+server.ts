@@ -70,7 +70,10 @@ export const GET: RequestHandler = async ({ url, request, fetch, platform }) => 
 			languageCode: 'en',
 		}).catch(() => null);
 		if (!detail) {
-			return json({ error: 'not_found' }, { status: 404 });
+			return json(
+				{ error: 'not_found' },
+				{ status: 404, headers: { 'cache-control': 'private, no-store' } },
+			);
 		}
 		return json(detail, {
 			headers: {
@@ -110,7 +113,7 @@ export const GET: RequestHandler = async ({ url, request, fetch, platform }) => 
 			{ results },
 			{
 				headers: {
-					'cache-control': 'public, max-age=900',
+					'cache-control': 'private, no-store',
 				},
 			},
 		);
@@ -118,12 +121,15 @@ export const GET: RequestHandler = async ({ url, request, fetch, platform }) => 
 
 	const result = await geocodeMontreal(parsed.value.query, fetch);
 	if (!result) {
-		return json({ error: 'not_found' }, { status: 404 });
+		return json(
+			{ error: 'not_found' },
+			{ status: 404, headers: { 'cache-control': 'private, no-store' } },
+		);
 	}
 
 	return json(result, {
 		headers: {
-			'cache-control': 'public, max-age=3600',
+			'cache-control': 'private, no-store',
 		},
 	});
 };
