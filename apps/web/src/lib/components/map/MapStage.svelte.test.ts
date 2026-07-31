@@ -6,37 +6,6 @@ describe('MapStage', () => {
 	const source = () =>
 		readFileSync(resolve(process.cwd(), 'src/lib/components/map/MapStage.svelte'), 'utf-8');
 
-	it('does not re-apply the same camera during chrome-only re-renders', () => {
-		const s = source();
-
-		expect(s).toContain('fitPadding?: MapFitPadding');
-		expect(s).toContain('fitPadding = 40');
-		// maxBounds (optional, looser than the fit bounds) is threaded through both
-		// viewport-option call sites so a left fit-padding can reveal west overflow.
-		expect(s).toContain('maxBounds?: readonly number[]');
-		expect(s).toContain('...mapViewportOptions(bounds, fitPadding, maxBounds)');
-		expect(s).toContain(
-			'function fitKey(nextBounds: readonly number[] | undefined, nextPadding: MapFitPadding): string',
-		);
-		expect(s).toContain('let activeFitKey: string | null = null');
-		// fit key folds maxBounds in so a band tweak re-runs the effect, and the
-		// new maxBounds is pushed via setMaxBounds before the camera refit.
-		expect(s).toContain('fitKey(bounds, fitPadding)');
-		expect(s).toContain("maxBounds?.join(',')");
-		expect(s).toContain('m.setMaxBounds(viewport.maxBounds)');
-		expect(s).toContain(
-			'm.fitBounds(viewport.bounds, { ...viewport.fitBoundsOptions, duration: 0 })',
-		);
-		expect(s).toContain('let activeCameraKey: string | null = null');
-		expect(s).toContain(
-			'function cameraKey(nextCenter: [number, number], nextZoom: number): string',
-		);
-		expect(s).toContain('const nextCameraKey = cameraKey(nextCenter, nextZoom)');
-		expect(s).toContain('if (activeCameraKey === nextCameraKey) return');
-		expect(s).toContain('activeCameraKey = nextCameraKey');
-		expect(s).toContain('m.jumpTo({ center: nextCenter, zoom: nextZoom })');
-	});
-
 	it('reserves a bottom-right attribution slot below the near-me control', () => {
 		const s = source();
 

@@ -36,6 +36,10 @@
 	let featureStateSetCount = $state(0);
 	let featureStateRemoveCount = $state(0);
 	let retryCount = $state(0);
+	let fitBoundsCount = $state(0);
+	let easeToCount = $state(0);
+	let flyToCount = $state(0);
+	let setMaxBoundsCount = $state(0);
 	let pickLayer = STOPS_LAYER;
 
 	// A minimal fake MapLibre map: enough surface for installMapLayers /
@@ -96,6 +100,18 @@
 				property,
 			});
 		},
+		fitBounds: () => {
+			fitBoundsCount += 1;
+		},
+		easeTo: () => {
+			easeToCount += 1;
+		},
+		flyTo: () => {
+			flyToCount += 1;
+		},
+		setMaxBounds: () => {
+			setMaxBoundsCount += 1;
+		},
 	};
 
 	function pick(nextLayer = STOPS_LAYER): void {
@@ -147,6 +163,10 @@
 	data-feature-state-set-count={featureStateSetCount}
 	data-feature-state-remove-count={featureStateRemoveCount}
 	data-retry-count={retryCount}
+	data-fit-bounds-count={fitBoundsCount}
+	data-ease-to-count={easeToCount}
+	data-fly-to-count={flyToCount}
+	data-set-max-bounds-count={setMaxBoundsCount}
 	data-locale={JSON.stringify(locale)}
 >
 	<button type="button" data-testid="map-stage-stub-pick" onclick={() => pick()} hidden>pick</button

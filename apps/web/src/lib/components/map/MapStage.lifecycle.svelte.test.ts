@@ -1,5 +1,5 @@
 import { cleanup, render, waitFor } from '@testing-library/svelte';
-import { tick, type Component } from 'svelte';
+import { flushSync, tick, type Component } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MapStage from './MapStage.svelte';
 
@@ -42,10 +42,15 @@ const harness = vi.hoisted(() => {
 		readonly handlers = new Map<string, Set<(...args: unknown[]) => void>>();
 		readonly container: HTMLElement;
 		readonly remove = vi.fn(() => this.container.replaceChildren());
-		readonly resize = vi.fn();
+		readonly resize = vi.fn(() => this.emit('movestart', {}));
 		readonly setMaxBounds = vi.fn();
-		readonly fitBounds = vi.fn();
-		readonly jumpTo = vi.fn();
+		readonly fitBounds = vi.fn((_bounds: unknown, _options?: Record<string, unknown>) =>
+			this.emit('movestart', {}),
+		);
+		readonly jumpTo = vi.fn((_options?: Record<string, unknown>) => this.emit('movestart', {}));
+		readonly easeTo = vi.fn((_options?: Record<string, unknown>) => this.emit('movestart', {}));
+		readonly flyTo = vi.fn((_options?: Record<string, unknown>) => this.emit('movestart', {}));
+		readonly getZoom = vi.fn(() => 11);
 		readonly setStyle = vi.fn();
 		readonly getStyle = vi.fn(() => ({ version: 8, sources: {}, layers: [] }));
 		readonly getLayer = vi.fn(() => undefined);
@@ -90,8 +95,8 @@ const harness = vi.hoisted(() => {
 			return this.on(type, once);
 		}
 
-		emit(type: string): void {
-			for (const handler of [...(this.handlers.get(type) ?? [])]) handler();
+		emit(type: string, payload: Record<string, unknown> = {}): void {
+			for (const handler of [...(this.handlers.get(type) ?? [])]) handler(payload);
 		}
 	}
 
@@ -190,6 +195,18 @@ function releaseImports(): void {
 	harness.state.runtime.resolve();
 	harness.state.css.resolve();
 	harness.state.pmtiles.resolve();
+}
+
+async function bootStage(extraProps: Record<string, unknown> = {}) {
+	const props = {
+		importers: harness.importers,
+		basemapLoader: vi.fn(async () => null),
+		...extraProps,
+	};
+	const view = render(Stage, { props });
+	releaseImports();
+	await waitFor(() => expect(harness.state.maps).toHaveLength(1));
+	return { view, props, map: harness.state.maps[0]! };
 }
 
 beforeEach(() => {
@@ -571,6 +588,7 @@ describe('MapStage boot lifecycle', () => {
 		await settle();
 
 		expect(harness.state.maps).toHaveLength(1);
+		expect(harness.state.constructorCalls).toBe(1);
 		expect(harness.state.maps[0]?.setStyle).not.toHaveBeenCalled();
 		expect(onstyleload).not.toHaveBeenCalled();
 		expect(onthemerepaint).toHaveBeenCalledTimes(1);
@@ -595,6 +613,261 @@ describe('MapStage boot lifecycle', () => {
 
 		harness.state.maps[0]?.emit('style.load');
 		expect(onstyleload).toHaveBeenCalledTimes(1);
+	});
+
+	it('uses the normalized constructor viewport as the first fit with zero boot fitBounds calls', async () => {
+		const bounds = [-74, 45, -73, 46];
+		const maxBounds = [-75, 44, -72, 47];
+		const fitPadding = { top: 10, right: 20, bottom: 30, left: 40 };
+		const { map } = await bootStage({ bounds, maxBounds, fitPadding });
+
+		expect(map.options).toMatchObject({
+			bounds: [
+				[-74, 45],
+				[-73, 46],
+			],
+			maxBounds: [
+				[-75, 44],
+				[-72, 47],
+			],
+			fitBoundsOptions: { padding: fitPadding },
+		});
+		expect(map.fitBounds).not.toHaveBeenCalled();
+		expect(map.setMaxBounds).not.toHaveBeenCalled();
+	});
+
+	it('coalesces fit-owned layout and bounds changes and applies prop camera changes', async () => {
+		const initial = {
+			bounds: [-74, 45, -73, 46],
+			maxBounds: [-75, 44, -72, 47],
+			fitPadding: { top: 10, right: 20, bottom: 30, left: 40 },
+			center: [-73.6, 45.5],
+			zoom: 11,
+		};
+		const { view, props, map } = await bootStage(initial);
+
+		await view.rerender({ ...props, ...initial, fitPadding: 48 });
+		await settle();
+		expect(map.fitBounds).toHaveBeenCalledTimes(1);
+		expect(map.setMaxBounds).not.toHaveBeenCalled();
+		expect(map.fitBounds.mock.calls[0]?.[1]).not.toHaveProperty('offset');
+
+		await view.rerender({
+			...props,
+			...initial,
+			fitPadding: 64,
+			bounds: [-73.9, 45.1, -73.1, 45.9],
+			maxBounds: [-74.8, 44.8, -72.8, 46.2],
+		});
+		await settle();
+		expect(map.setMaxBounds).toHaveBeenCalledTimes(1);
+		expect(map.fitBounds).toHaveBeenCalledTimes(2);
+
+		await view.rerender({
+			...props,
+			...initial,
+			fitPadding: 64,
+			bounds: [-73.9, 45.1, -73.1, 45.9],
+			maxBounds: [-74.8, 44.8, -72.8, 46.2],
+			center: [-73.7, 45.6],
+			zoom: 13,
+		});
+		await settle();
+		expect(map.jumpTo).toHaveBeenCalledWith({ center: [-73.7, 45.6], zoom: 13 });
+		expect(harness.state.constructorCalls).toBe(1);
+	});
+
+	it.each([
+		['wheel', 'movestart', { originalEvent: { type: 'wheel' } }],
+		['touch drag', 'movestart', { originalEvent: { type: 'touchmove' } }],
+		['keyboard camera', 'movestart', { originalEvent: { type: 'keydown' } }],
+		['box zoom', 'boxzoomend', {}],
+		['tagged focus', 'movestart', { cameraIntent: 'focus' }],
+	] as const)('%s ownership suppresses a layout-driven re-fit', async (_label, event, payload) => {
+		const { view, props, map } = await bootStage({ fitPadding: 40 });
+
+		map.emit(event, payload);
+		await view.rerender({ ...props, fitPadding: 80 });
+		await settle();
+
+		expect(map.fitBounds).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		['user', { originalEvent: { type: 'wheel' } }],
+		['focus', { cameraIntent: 'focus' }],
+	] as const)(
+		'records each changed signature while %s-owned, applying only current max bounds',
+		async (_owner, ownershipEvent) => {
+			const initialBounds = [-74, 45, -73, 46];
+			const initialMaxBounds = [-75, 44, -72, 47];
+			const changedBounds = [-73.9, 45.1, -73.1, 45.9];
+			const changedMaxBounds = [-74.8, 44.8, -72.8, 46.2];
+			const { view, props, map } = await bootStage({
+				bounds: initialBounds,
+				maxBounds: initialMaxBounds,
+				fitPadding: 40,
+				center: [-73.6, 45.5],
+				zoom: 11,
+			});
+
+			map.emit('movestart', ownershipEvent);
+			await view.rerender({
+				...props,
+				bounds: changedBounds,
+				maxBounds: initialMaxBounds,
+			});
+			await settle();
+			expect(map.setMaxBounds).toHaveBeenCalledTimes(1);
+			expect(map.setMaxBounds).toHaveBeenLastCalledWith([
+				[-75, 44],
+				[-72, 47],
+			]);
+
+			await view.rerender({ ...props, bounds: changedBounds, maxBounds: initialMaxBounds });
+			await settle();
+			expect(map.setMaxBounds).toHaveBeenCalledTimes(1);
+
+			await view.rerender({ ...props, bounds: changedBounds, maxBounds: changedMaxBounds });
+			await settle();
+			expect(map.setMaxBounds).toHaveBeenCalledTimes(2);
+			expect(map.setMaxBounds).toHaveBeenLastCalledWith([
+				[-74.8, 44.8],
+				[-72.8, 46.2],
+			]);
+
+			await view.rerender({
+				...props,
+				bounds: changedBounds,
+				maxBounds: changedMaxBounds,
+				fitPadding: 80,
+				center: [-73.7, 45.6],
+				zoom: 13,
+			});
+			await settle();
+			expect(map.setMaxBounds).toHaveBeenCalledTimes(2);
+			expect(map.fitBounds).not.toHaveBeenCalled();
+			expect(map.jumpTo).not.toHaveBeenCalled();
+		},
+	);
+
+	it('leaves fit ownership unchanged for untagged programmatic movement', async () => {
+		const { view, props, map } = await bootStage({ fitPadding: 40 });
+
+		map.emit('movestart', {});
+		await view.rerender({ ...props, fitPadding: 80 });
+		await settle();
+
+		expect(map.fitBounds).toHaveBeenCalledTimes(1);
+	});
+
+	it('keeps box-zoom user ownership through the following untagged movement', async () => {
+		const { view, props, map } = await bootStage({ fitPadding: 40 });
+
+		map.emit('boxzoomend');
+		map.emit('movestart', {});
+		await view.rerender({ ...props, fitPadding: 80 });
+		await settle();
+
+		expect(map.fitBounds).not.toHaveBeenCalled();
+	});
+
+	it('keeps fit ownership through untagged resize movement from load and ResizeObserver', async () => {
+		const { view, props, map } = await bootStage({ fitPadding: 40 });
+
+		map.emit('load');
+		expect(map.resize).toHaveBeenCalledTimes(1);
+		await view.rerender({ ...props, fitPadding: 60 });
+		await settle();
+		expect(map.fitBounds).toHaveBeenCalledTimes(1);
+
+		map.fitBounds.mockClear();
+		const observer = harness.state.observers[0]!;
+		observer.callback([], observer as unknown as ResizeObserver);
+		expect(map.resize).toHaveBeenCalledTimes(2);
+		await view.rerender({ ...props, fitPadding: 80 });
+		await settle();
+		expect(map.fitBounds).toHaveBeenCalledTimes(1);
+	});
+
+	it('re-derives constructor viewport and signatures from retry-time props', async () => {
+		harness.state.setupFailure = 'on:styledata';
+		let claimedUser = false;
+		const originalOn = harness.MapStub.prototype.on;
+		const setupClaim = vi.spyOn(harness.MapStub.prototype, 'on').mockImplementation(function (
+			this: InstanceType<typeof harness.MapStub>,
+			type,
+			handler,
+		) {
+			const result = originalOn.call(this, type, handler);
+			if (!claimedUser && type === 'load') {
+				claimedUser = true;
+				flushSync();
+				this.emit('movestart', { originalEvent: { type: 'wheel' } });
+			}
+			return result;
+		});
+		const failures: Failure[] = [];
+		const initialProps = {
+			importers: harness.importers,
+			basemapLoader: vi.fn(async () => null),
+			bounds: [-74, 45, -73, 46],
+			maxBounds: [-75, 44, -72, 47],
+			fitPadding: 40,
+			onerror: (failure: Failure | null) => {
+				if (failure) failures.push(failure);
+			},
+		};
+		const view = render(Stage, { props: initialProps });
+		releaseImports();
+		await waitFor(() => expect(failures).toHaveLength(1));
+		expect(claimedUser).toBe(true);
+		setupClaim.mockRestore();
+
+		const retryProps = {
+			...initialProps,
+			bounds: [-73.9, 45.1, -73.1, 45.9],
+			maxBounds: [-74.8, 44.8, -72.8, 46.2],
+			fitPadding: { top: 12, right: 24, bottom: 36, left: 48 },
+			center: [-73.7, 45.6],
+			zoom: 13,
+		};
+		await view.rerender(retryProps);
+		harness.state.setupFailure = null;
+		await failures[0]!.retry();
+		await waitFor(() => expect(harness.state.maps).toHaveLength(2));
+		const retriedMap = harness.state.maps[1]!;
+
+		expect(retriedMap.options).toMatchObject({
+			center: [-73.7, 45.6],
+			zoom: 13,
+			bounds: [
+				[-73.9, 45.1],
+				[-73.1, 45.9],
+			],
+			maxBounds: [
+				[-74.8, 44.8],
+				[-72.8, 46.2],
+			],
+			fitBoundsOptions: { padding: retryProps.fitPadding },
+		});
+		expect(retriedMap.fitBounds).not.toHaveBeenCalled();
+
+		await view.rerender({ ...retryProps, fitPadding: 72 });
+		await settle();
+		expect(retriedMap.fitBounds).toHaveBeenCalledTimes(1);
+	});
+
+	it('disposes camera ownership listeners with the map effect', async () => {
+		const { view, map } = await bootStage();
+		expect(map.handlers.get('movestart')).toHaveLength(1);
+		expect(map.handlers.get('boxzoomend')).toHaveLength(1);
+
+		view.unmount();
+		await settle();
+
+		expect(map.handlers.get('movestart')).toHaveLength(0);
+		expect(map.handlers.get('boxzoomend')).toHaveLength(0);
 	});
 });
 
