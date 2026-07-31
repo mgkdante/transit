@@ -175,6 +175,38 @@ describe('ScheduleTable — shared scroll chassis', () => {
 });
 
 describe('ScheduleTable — grid mode', () => {
+	it('exposes a row header in every mode and no scroll region without real overflow (S5-386 F4)', () => {
+		// rowHeader semantics moved off bespoke th markup onto a pure prop in the
+		// DataTable migration - nothing else pins the choice per mode.
+		const cases = [
+			{
+				rows: [{ kind: 'grid', route: '51', headsign: 'Nord', times: ['08:00'] }],
+				mode: 'grid',
+				labels: GRID_LABELS,
+			},
+			{
+				rows: [{ kind: 'board', route: '51', eta_utc: '2026-06-15T12:05:00Z', delay_min: 4 }],
+				mode: 'board',
+				labels: BOARD_LABELS,
+			},
+			{
+				rows: [{ kind: 'service', period: 'AM peak', window: '06:00–09:00', headway: '6.0 min' }],
+				mode: 'service',
+				labels: SERVICE_LABELS,
+			},
+		] as const;
+		for (const props of cases) {
+			const view = render(ScheduleTable, { props: { ...props, locale: 'en' } });
+			expect(view.getAllByRole('rowheader').length).toBeGreaterThan(0);
+			const frame = view.container.querySelector('.data-table-frame');
+			// jsdom reports no overflow, so the conditional keyboard region must
+			// be ABSENT here (the DataTable grain pins the positive arm).
+			expect(frame).not.toHaveAttribute('role');
+			expect(frame).not.toHaveAttribute('tabindex');
+			view.unmount();
+		}
+	});
+
 	it('renders one semantic scheduled-service table with a caption and scoped headers', () => {
 		const rows: ScheduleRow[] = [
 			{

@@ -2,7 +2,8 @@
   ScheduleTable — one semantic timetable chassis for rider-facing schedule data.
 
   The three modes keep their own row contracts while sharing the same caption,
-  scoped headers, row rhythm, mobile overflow and tabular-number treatment:
+  scoped headers, row rhythm and mobile overflow; tabular numerics ride the
+  numeric columns only (DataTable's data-numeric law - S5-386 F3):
 
     grid     planned departures grouped by route and destination
     board    live departures with scheduled/estimated time and realtime status
