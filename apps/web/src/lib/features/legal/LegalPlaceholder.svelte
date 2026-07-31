@@ -52,9 +52,11 @@
 	}
 
 	p {
-		/* WS4 measure law: legal prose rides the shared body measure, not a
-		   bespoke ch cap (the A6 gate caught this file, born after the census). */
-		max-width: var(--measure-body);
+		/* WS4 measure law (A6's first live catch; token corrected per S5-382
+		   finding 10): the 52rem page container makes --measure-body inert, so
+		   the nearest-equivalent token for the old 68ch cap is the lede
+		   measure. WS8-B's authoring pass re-adjudicates with real content. */
+		max-width: var(--measure-lede);
 		color: var(--secondary-foreground);
 		line-height: var(--leading-relaxed);
 	}

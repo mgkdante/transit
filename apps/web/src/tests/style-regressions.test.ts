@@ -127,6 +127,10 @@ const MEASURE_PATH_PREFIX_EXCLUSIONS = [
 		reason: 'legacy calibrated home measure',
 	},
 	{
+		prefix: 'src/lib/features/receipt/sections/SectionStateCuts.svelte',
+		reason: 'structural KPI-card wrapper (S5-382 B1)',
+	},
+	{
 		prefix: 'src/lib/features/home/HomeWhat.svelte',
 		reason: 'legacy calibrated home measure',
 	},
