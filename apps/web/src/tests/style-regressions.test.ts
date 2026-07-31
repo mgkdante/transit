@@ -238,7 +238,7 @@ const FROZEN_MARKS_PREFIX = 'src/dataviz/chart/marks/';
 const DATA_TABLE_SITE = 'src/data/DataTable.svelte';
 // Exact migration debt as of 2026-07-30. Each later WS5 PR deletes its migrated site.
 // This is deliberately not a permissive allowlist: the observed inventory must equal it.
-const TO_MIGRATE_2026_07_30 = ['src/home/HomeHero.svelte'] as const;
+const TO_MIGRATE_2026_07_30 = [] as const;
 
 it('pins the owner-directed footer divider as the only P7 stripe in Footer.svelte', () => {
 	const source = readFileSync(

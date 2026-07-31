@@ -298,14 +298,14 @@ describe('Home hub — live pulse honesty', () => {
 		expect(within(board).getByText('94%')).toBeInTheDocument(); // coverage
 		expect(within(board).getByText('1 min')).toBeInTheDocument(); // median delay
 		expect(within(board).getByText('7')).toBeInTheDocument(); // not reporting
-		const dist = screen.getByRole('group', { name: /fleet status/i });
+		const dist = screen.getByRole('table', { name: /fleet status/i });
 		expect(within(dist).getByText('8')).toBeInTheDocument(); // on-time vehicles (fixture)
 		// The crowding grid renders the occupancy shares as whole percents…
-		const crowd = screen.getByRole('group', { name: /crowding/i });
+		const crowd = screen.getByRole('table', { name: /crowding/i });
 		expect(within(crowd).getByText('65%')).toBeInTheDocument(); // many seats
 		// …and busiest-lines hides honestly while the live index is empty (the
 		// mocked store carries emptyLiveIndex): no fabricated route rows.
-		expect(screen.queryByRole('group', { name: /busiest lines/i })).toBeNull();
+		expect(screen.queryByRole('table', { name: /busiest lines/i })).toBeNull();
 		// The pulse verdict flips to LIVE when the tier reports (no STANDBY anywhere).
 		expect(screen.getAllByText('LIVE').length).toBeGreaterThanOrEqual(1);
 		expect(screen.queryByText('STANDBY')).toBeNull();
@@ -584,7 +584,7 @@ describe('Home hub — movement boundary preservation', () => {
 
 	it('locks the authored CSS output rule-by-rule while ownership moves', () => {
 		expect(homeCssFingerprint()).toBe(
-			'1f5126537ec32357aec52d7bc90677f0c991a0650245df7cf2d5453db21daffc',
+			'a60020d18ced95360d2106fde12e42a207fb490d29c03b615f42d0b9882cde30',
 		);
 	});
 
@@ -603,7 +603,7 @@ describe('Home hub — movement boundary preservation', () => {
 
 		expect({ enDomHash, frDomHash }).toEqual({
 			enDomHash: '51e7e368c2ca662a2d8bfb7a5b1056a965d3bbf3e71a608016dee83392ba72d3',
-			frDomHash: '7f4d93b4c49d49057078d76ee3c589cedf73c8544ca3c80b103ca708045d54b2',
+			frDomHash: '551691044e2943d60fcb5c9dd422fcfbe06d23a10f64167d4f1a4aa13e7d2d7c',
 		});
 	});
 

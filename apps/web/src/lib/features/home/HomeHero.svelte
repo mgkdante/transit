@@ -6,6 +6,7 @@
 	import type { Manifest } from '$lib/v1';
 	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
 	import { StatusBadge } from '$lib/components/dataviz';
+	import DataTable, { type DataTableColumn } from '$lib/components/data/DataTable.svelte';
 	import { formatUtc } from '$lib/utils/time';
 	import {
 		fmtCount as sharedFmtCount,
@@ -284,29 +285,44 @@
 <!-- ONE result-grid grammar for the terminal panel's three readouts (fleet /
      crowding / busiest lines): sr-caption, header band, gridlines, labels left
      (+ optional dataviz dot), values right-aligned in-column, natural width. -->
+{#snippet resultGridLabelCell(row: GridRow)}
+	<span class="pulse-dist-status">
+		{#if row.dotClass}<span class="pulse-dist-dot {row.dotClass}" aria-hidden="true"
+			></span>{/if}{row.label}
+	</span>
+{/snippet}
+
+{#snippet resultGridValueCell(row: GridRow)}
+	<span class="pulse-dist-value">{row.value}</span>
+{/snippet}
+
 {#snippet resultGrid(label: string, colA: string, colB: string, rows: GridRow[])}
-	<div class="pulse-dist" role="group" aria-label={label}>
+	<div class="pulse-dist">
 		<span class="pulse-dist-head label-metric">{label}</span>
-		<table class="pulse-dist-table">
-			<caption class="sr-only">{label}</caption>
-			<thead>
-				<tr>
-					<th scope="col">{colA}</th>
-					<th scope="col" class="pulse-dist-num">{colB}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each rows as row (row.key)}
-					<tr>
-						<td class="pulse-dist-status">
-							{#if row.dotClass}<span class="pulse-dist-dot {row.dotClass}" aria-hidden="true"
-								></span>{/if}{row.label}
-						</td>
-						<td class="pulse-dist-num pulse-dist-value">{row.value}</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+		<DataTable
+			{rows}
+			columns={[
+				{
+					key: 'label',
+					header: colA,
+					rowHeader: true,
+					cell: resultGridLabelCell,
+				},
+				{
+					key: 'value',
+					header: colB,
+					numeric: true,
+					cell: resultGridValueCell,
+				},
+			] satisfies readonly DataTableColumn<GridRow>[]}
+			key={(row) => row.key}
+			caption={label}
+			responsive={{ mode: 'none' }}
+			frame="gridlines"
+			borderCollapse="collapse"
+			headerBand="wash"
+			tableAttrs={{ class: 'pulse-dist-table', 'data-slot': 'home-pulse-dist-table' }}
+		/>
 	</div>
 {/snippet}
 
@@ -570,34 +586,34 @@
 		flex-direction: column;
 		gap: 0.5rem;
 	}
-	.pulse-dist-table {
+	.pulse-dist :global(.data-table-frame) {
 		width: max-content;
 		max-width: 100%;
-		border-collapse: collapse;
+	}
+	.pulse-dist :global(.data-table-frame[data-frame='gridlines'] .pulse-dist-table) {
+		width: max-content;
+		max-width: 100%;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		border: 1px solid var(--border-subtle);
 	}
-	.pulse-dist-table th,
-	.pulse-dist-table td {
+	.pulse-dist :global(.data-table-frame[data-frame='gridlines'] .pulse-dist-table th),
+	.pulse-dist :global(.data-table-frame[data-frame='gridlines'] .pulse-dist-table td) {
 		border: 1px solid var(--border-subtle);
 		padding: 0.375rem 0.875rem;
 	}
-	.pulse-dist-table th {
+	.pulse-dist :global(.pulse-dist-table thead th) {
 		text-align: left;
 		font-weight: 400;
 		text-transform: uppercase;
-		letter-spacing: 1.5px;
+		letter-spacing: var(--tracking-eyebrow);
 		color: var(--muted-foreground);
-		background-color: color-mix(in srgb, var(--foreground) 4%, transparent);
-	}
-	.pulse-dist-num {
-		text-align: right;
 	}
 	.pulse-dist-status {
 		color: var(--muted-foreground);
+		font-weight: 400;
 		text-transform: uppercase;
-		letter-spacing: 1.5px;
+		letter-spacing: var(--tracking-eyebrow);
 	}
 	.pulse-dist-dot {
 		display: inline-block;
