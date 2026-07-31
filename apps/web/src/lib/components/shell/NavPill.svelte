@@ -382,7 +382,11 @@
 				aria-describedby={transmitsSearches ? 'nav-search-notice' : undefined}
 			/>
 			{#if transmitsSearches}
-				<span id="nav-search-notice" class="nav-search-notice">{searchCollectionNotice}</span>
+				<!-- The sr-only node is the ALWAYS-PRESENT describedby target, so browse-
+				     mode screen-reader users can still discover the disclosure idle; the
+				     visible twin is decorative and focus-gated. -->
+				<span id="nav-search-notice" class="sr-only">{searchCollectionNotice}</span>
+				<span class="nav-search-notice" aria-hidden="true">{searchCollectionNotice}</span>
 			{/if}
 			{#if showSearchResults}
 				<div class="nav-search-results" role="group" aria-label={searchAria}>
@@ -736,6 +740,28 @@
 		font-size: var(--text-micro);
 		line-height: 1.25;
 		white-space: nowrap;
+		/* Focus-gated (owner directive 2026-07-31): the transmission disclosure
+		   appears only while the search is in use — idle chrome stays quiet. The
+		   visible span is decorative (aria-hidden); its sr-only twin above keeps
+		   the disclosure discoverable in browse mode and is the describedby
+		   target. Opacity-only (no movement); asymmetric timing — prompt in
+		   (fast), receding out (normal) — so it never blinks off mid-read. */
+		opacity: 0;
+		visibility: hidden;
+		transition:
+			opacity var(--duration-normal) var(--ease-default),
+			visibility 0s linear var(--duration-normal);
+	}
+
+	/* In use = focus anywhere in the form OR the results list open (a pointerdown
+	   elsewhere in the pill can drop focus while the list stays up). */
+	.nav-search:focus-within .nav-search-notice,
+	.nav-search:has(.nav-search-results) .nav-search-notice {
+		opacity: 1;
+		visibility: visible;
+		transition:
+			opacity var(--duration-fast) var(--ease-default),
+			visibility 0s linear 0s;
 	}
 
 	.nav-controls {
@@ -1194,6 +1220,7 @@
 		.nav-menu-toggle,
 		.nav-menu-line,
 		.nav-search-input,
+		.nav-search-notice,
 		.nav-compact-search,
 		.nav-menu-link,
 		.nav-menu-language,

@@ -343,9 +343,13 @@ describe('NavPill — search', () => {
 	] as const)(
 		'renders the %s chrome collection notice beside the search input',
 		(locale, notice) => {
-			const { getByRole, getByText } = render(NavPill, { props: { locale } });
+			const { getByRole } = render(NavPill, { props: { locale } });
 			const search = getByRole('search');
-			expect(within(search).getByText(notice)).toBe(getByText(notice));
+			const nodes = within(search).getAllByText(notice);
+			expect(nodes).toHaveLength(2);
+			const target = nodes.find((n) => n.id === 'nav-search-notice');
+			expect(target).toHaveClass('sr-only');
+			expect(nodes.find((n) => n !== target)).toHaveAttribute('aria-hidden', 'true');
 			expect(within(search).getByRole('searchbox')).toBeInTheDocument();
 		},
 	);
@@ -354,6 +358,23 @@ describe('NavPill — search', () => {
 		const source = readSource();
 		expect(source).toMatch(/\.nav-search-notice\s*\{[\s\S]*?top:\s*calc\(100% \+ 0\.25rem\)/);
 		expect(source).toMatch(/\.nav-search-results\s*\{[\s\S]*?top:\s*calc\(100% \+ 1\.75rem\)/);
+	});
+
+	it('gates the collection notice on search use (opacity-only fade)', () => {
+		const source = readSource();
+		// Idle: the visible twin is hidden; the sr-only target stays in the tree.
+		expect(source).toMatch(/\.nav-search-notice\s*\{[^}]*opacity:\s*0;[^}]*visibility:\s*hidden/);
+		expect(source).toMatch(/id="nav-search-notice"\s+class="sr-only"/);
+		// In use: focus anywhere in the form OR the results list open reveals it.
+		expect(source).toMatch(
+			/\.nav-search:focus-within\s+\.nav-search-notice,\s*\.nav-search:has\(\.nav-search-results\)\s+\.nav-search-notice\s*\{[^}]*opacity:\s*1;[^}]*visibility:\s*visible/,
+		);
+		// No movement in any notice rule — the fade stays reduced-motion-safe.
+		expect(source).not.toMatch(
+			/\.nav-search-notice\s*\{[^}]*(?:transform|translate|scale|rotate):/,
+		);
+		// House precedent: the notice transition is disabled under reduced motion.
+		expect(source).toMatch(/prefers-reduced-motion[\s\S]{0,400}\.nav-search-notice,/);
 	});
 
 	it('renders selectable grouped chrome search results and fires select', async () => {
@@ -399,13 +420,17 @@ describe('NavPill — search', () => {
 		// map/all scopes fire the geocode fetch; route/stop scopes never do, so the
 		// notice there would claim transmission that does not happen.
 		for (const searchScope of ['map', 'all'] as const) {
-			const { getByText, getByRole, unmount } = render(NavPill, {
+			const { getAllByText, getByRole, unmount } = render(NavPill, {
 				props: { locale: 'en', searchScope },
 			});
-			const notice = getByText(
+			const notices = getAllByText(
 				'Your searches are sent to our server and its geocoding providers (Google, geo.ca).',
 			);
-			expect(notice).toHaveAttribute('id', 'nav-search-notice');
+			expect(notices).toHaveLength(2);
+			const target = notices.find((n) => n.id === 'nav-search-notice');
+			expect(target).toBeDefined();
+			expect(target).toHaveClass('sr-only');
+			expect(notices.find((n) => n !== target)).toHaveAttribute('aria-hidden', 'true');
 			expect(getByRole('searchbox', { name: 'Search the network' })).toHaveAttribute(
 				'aria-describedby',
 				'nav-search-notice',
