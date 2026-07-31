@@ -204,7 +204,6 @@ function scenarios(options) {
 			path: '/receipt',
 			targets: [
 				target('receipt-day-verdict', '.receipt-day-verdict', ACTION.delete),
-				target('receipt-states-hero', '.receipt-states-hero', ACTION.notice, 'maxWidth'),
 			],
 		},
 		{
