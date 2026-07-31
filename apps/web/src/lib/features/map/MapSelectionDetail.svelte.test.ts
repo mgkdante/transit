@@ -189,46 +189,19 @@ describe('MapSelectionDetail', () => {
 		expect(window.location.href).toBe(locationBeforeAlertTap);
 	});
 
-	it('uses resolved source messages in compact mode and keeps the two-alert cap', () => {
-		const detail = resolveMapSelection(
-			{ kind: 'route', id: '24', direction: 0 },
-			{ index, stops, alerts, routes },
-		);
-		if (!detail) throw new Error('expected route detail');
-		const hiddenAlert: Alert = {
-			id: 'hidden-alert',
-			severity: 'watch',
-			header_key: 'Third alert',
-			description_en: '<p>Third source message &amp; details.</p>',
-		};
-		const compactDetail = { ...detail, alerts: [alerts[0], alerts[1], hiddenAlert] };
-
-		const { getByRole, queryByRole } = render(MapSelectionDetail, {
-			props: { detail: compactDetail, locale: 'en', compact: true },
-		});
-
-		expect(
-			getByRole('button', { name: 'Select alert Route 24 is diverted via Pine & Clark.' }),
-		).toBeInTheDocument();
-		expect(
-			getByRole('button', { name: 'Select alert Stop 52618 moved to the northeast corner.' }),
-		).toBeInTheDocument();
-		expect(
-			queryByRole('button', { name: 'Select alert Third source message & details.' }),
-		).not.toBeInTheDocument();
-	});
-
 	it('renders a per-bus not-reporting GPS note when the vehicle fix is stale', () => {
 		const detail = resolveMapSelection(
 			{ kind: 'vehicle', id: 'veh-1' },
 			{ index, stops, alerts, routes },
 		);
-		const { getByText, getByRole } = render(MapSelectionDetail, {
+		const { container, getByText } = render(MapSelectionDetail, {
 			props: { detail, locale: 'en', notReporting: { ageS: 180 } },
 		});
 
-		// The honest caution note shows, carries a relative age, and is role=status.
-		const note = getByRole('status');
+		// The honest caution note stays visible but is not a hover-driven live region.
+		const note = container.querySelector('.map-not-reporting')!;
+		expect(note).toBeInTheDocument();
+		expect(note).not.toHaveAttribute('role');
 		expect(note).toHaveTextContent('Not reporting GPS');
 		expect(note).toHaveTextContent('3 min');
 		// No em-dash in the copy (brand rule) — a middot separates the two halves.
@@ -253,13 +226,14 @@ describe('MapSelectionDetail', () => {
 			{ kind: 'vehicle', id: 'veh-1' },
 			{ index, stops, alerts, routes },
 		);
-		const { getByRole } = render(MapSelectionDetail, {
+		const { getByText, queryByRole } = render(MapSelectionDetail, {
 			props: { detail, locale: 'fr', notReporting: { ageS: 180 } },
 		});
 
-		const note = getByRole('status');
+		const note = getByText(/Pas de signal GPS/).closest('.map-not-reporting');
 		expect(note).toHaveTextContent('Pas de signal GPS');
 		expect(note).toHaveTextContent('dernière position il y a 3 min');
+		expect(queryByRole('status')).not.toBeInTheDocument();
 	});
 
 	it('hides the not-reporting note when notReporting is null', () => {

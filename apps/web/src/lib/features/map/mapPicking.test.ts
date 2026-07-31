@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ROUTE_LINE_HIT_LAYER, STOPS_LAYER, VEHICLE_BODY_LAYER } from '$lib/components/map';
+import {
+	ROUTE_LINE_HIT_LAYER,
+	STOP_EXCEPTION_LAYER,
+	STOPS_LAYER,
+	VEHICLE_BODY_LAYER,
+} from '$lib/components/map';
 import { pickMapSelection } from './mapPicking';
 
 interface FakeFeature {
@@ -37,6 +42,22 @@ describe('pickMapSelection', () => {
 		]);
 
 		expect(picked).toEqual({ kind: 'stop', id: '53355' });
+	});
+
+	it('maps the low-zoom stop exception layer to a stop selection', () => {
+		expect(pickMapSelection([feature(STOP_EXCEPTION_LAYER, { id: '53355' })])).toEqual({
+			kind: 'stop',
+			id: '53355',
+		});
+	});
+
+	it('keeps the ordinary stop ahead of its low-zoom sibling when both are present at z8', () => {
+		const picked = pickMapSelection([
+			feature(STOP_EXCEPTION_LAYER, { id: 'hovered-stop' }),
+			feature(STOPS_LAYER, { id: 'selected-stop' }),
+		]);
+
+		expect(picked).toEqual({ kind: 'stop', id: 'selected-stop' });
 	});
 
 	it('returns the selected route variant from a route hit line', () => {

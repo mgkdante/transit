@@ -1,10 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFilterStore, emptyFilterState } from '$lib/filters';
 import { motionMode } from '$lib/stores';
-import type { Alert, StopIndexEntry } from '$lib/v1/schemas';
+import type { StopIndexEntry } from '$lib/v1/schemas';
 import type { WithDistance } from '$lib/components/map';
-import type { StopMapDetail } from './mapSelection';
+import type { MapHoverPeek } from './mapHoverPeek';
 import { copy as MAP_COPY } from './map.copy';
 import MapOverlayChromeHarness from './__fixtures__/MapOverlayChromeHarness.svelte';
 
@@ -16,39 +16,14 @@ const stop: StopIndexEntry = {
 	lon: -73.57,
 };
 
-const stopDetail: StopMapDetail = {
+const stopPeek: MapHoverPeek = {
 	kind: 'stop',
 	id: 'stop-1',
 	title: 'Sherbrooke / Saint-Denis',
-	stop,
-	departures: [],
-	vehicles: [],
-	routeTimes: [],
-	alerts: [],
+	nameAbsent: false,
+	code: '52618',
+	vehicleCount: 0,
 };
-
-const hoverAlerts: Alert[] = [
-	{
-		id: 'hover-1',
-		severity: 'high',
-		header_key: 'Your stop',
-		description_en: '<p>Elevator closed &amp; shuttle available.</p>',
-	},
-	{
-		id: 'hover-2',
-		severity: 'watch',
-		header_key: 'Your line',
-		description_en: '<p>Route 24 boards on <strong>Clark</strong>.</p>',
-	},
-	{
-		id: 'hover-3',
-		severity: 'watch',
-		header_key: 'Third alert',
-		description_en: 'This compact overflow stays hidden.',
-	},
-];
-
-const stopAlertDetail: StopMapDetail = { ...stopDetail, alerts: hoverAlerts };
 
 beforeEach(() => {
 	localStorage.clear();
@@ -114,53 +89,27 @@ describe('MapOverlayChrome', () => {
 	it('renders the desktop hover peek only on desktop, and never on mobile', async () => {
 		const store = createFilterStore(emptyFilterState());
 		const { container, rerender } = render(MapOverlayChromeHarness, {
-			props: { store, locale: 'en', isDesktop: true, hoverDetail: stopDetail },
+			props: { store, locale: 'en', isDesktop: true, hoverPeek: stopPeek },
 		});
 
-		// Desktop + a hover detail → the peek renders the compact selection detail.
+		// Desktop + a hover model → the dedicated passive peek renders.
 		expect(container.querySelector('.map-peek')).toBeInTheDocument();
+		expect(container.querySelector('.map-peek')).not.toHaveAttribute('aria-live');
 
-		// Mobile (isDesktop false) → no peek even with a hover detail (the LAW: the peek
+		// Mobile (isDesktop false) → no peek even with a hover model (the LAW: the peek
 		// is desktop-only; mobile drives detail through the bottom sheet instead).
-		await rerender({ store, locale: 'en', isDesktop: false, hoverDetail: stopDetail });
+		await rerender({ store, locale: 'en', isDesktop: false, hoverPeek: stopPeek });
 		expect(container.querySelector('.map-peek')).not.toBeInTheDocument();
 	});
 
 	it('keeps the hover peek available even while the right detail rail is open', async () => {
 		const store = createFilterStore(emptyFilterState());
 		const { container } = render(MapOverlayChromeHarness, {
-			props: { store, locale: 'en', isDesktop: true, detailOpen: true, hoverDetail: stopDetail },
+			props: { store, locale: 'en', isDesktop: true, detailOpen: true, hoverPeek: stopPeek },
 		});
 
 		// detailOpen does NOT suppress the peek — both can show at once on desktop.
 		expect(container.querySelector('.map-peek')).toBeInTheDocument();
-	});
-
-	it('renders scrubbed compact alert messages, caps them at two, and preserves the alert object', async () => {
-		const store = createFilterStore(emptyFilterState());
-		const onalertselect = vi.fn();
-		const { container } = render(MapOverlayChromeHarness, {
-			props: {
-				store,
-				locale: 'en',
-				isDesktop: true,
-				hoverDetail: stopAlertDetail,
-				onalertselect,
-			},
-		});
-
-		const peek = container.querySelector('.map-peek') as HTMLElement;
-		expect(peek.querySelectorAll('.map-alert-button')).toHaveLength(2);
-		expect(peek).toHaveTextContent('Elevator closed & shuttle available.');
-		expect(peek).toHaveTextContent('Route 24 boards on Clark.');
-		expect(peek).not.toHaveTextContent('This compact overflow stays hidden.');
-
-		await fireEvent.click(
-			screen.getByRole('button', {
-				name: 'Select alert Elevator closed & shuttle available.',
-			}),
-		);
-		expect(onalertselect.mock.calls[0]?.[0]).toBe(hoverAlerts[0]);
 	});
 
 	it('hides the mobile filter pill while the detail sheet owns the bottom edge', async () => {

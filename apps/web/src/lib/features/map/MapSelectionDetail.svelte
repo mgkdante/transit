@@ -33,7 +33,6 @@
 	interface Props {
 		detail: MapSelectionDetail | null;
 		locale: Locale;
-		compact?: boolean;
 		onselect?: (selection: MapSelection) => void;
 		onfilter?: (chip: Chip) => void;
 		onalertselect?: (alert: Alert) => void;
@@ -43,15 +42,7 @@
 		notReporting?: { ageS: number } | null;
 	}
 
-	let {
-		detail,
-		locale,
-		compact = false,
-		onselect,
-		onfilter,
-		onalertselect,
-		notReporting = null,
-	}: Props = $props();
+	let { detail, locale, onselect, onfilter, onalertselect, notReporting = null }: Props = $props();
 
 	const t = $derived(MAP_SELECTION_DETAIL_COPY[locale]);
 
@@ -165,7 +156,7 @@
 {/snippet}
 
 {#if detail}
-	<article class:compact class="map-selection-detail" data-kind={detail.kind}>
+	<article class="map-selection-detail" data-kind={detail.kind}>
 		<header class="map-selection-head">
 			<p class="map-selection-kind">
 				{detail.kind === 'vehicle' ? t.bus : detail.kind === 'route' ? t.route : t.stop}
@@ -194,7 +185,7 @@
 				</button>
 			</div>
 			{#if notReporting}
-				<p class="map-not-reporting" role="status">
+				<p class="map-not-reporting">
 					<TriangleAlertIcon size={14} strokeWidth={2.4} aria-hidden="true" />
 					<span>{t.notReporting} · {t.lastPosition(formatAge(notReporting.ageS))}</span>
 					{@render mapInfo(stalenessInfo)}
@@ -302,83 +293,81 @@
 					</dd>
 				</div>
 			</dl>
-			{#if !compact}
-				{#if detail.pastStops.length > 0}
-					<section class="map-stop-sequence" aria-label={t.pastStops}>
-						<h3>{t.pastStops}</h3>
-						<ol>
-							{#each detail.pastStops as stop (stop.id)}
-								<li>
-									<button
-										type="button"
-										class="map-stop-action"
-										aria-label={t.selectStop(stopDisplayName(stop, locale))}
-										onclick={() => selectStop(stop.id)}
-									>
-										<span aria-label={stop.seq == null ? seqUnknownAria : undefined}>
-											{stop.seq ?? ''}
-										</span>
-										<strong>
-											{#if stop.nameAbsent}
-												{@render stopRefName(stop)}
-											{:else}
-												{stop.name}
-											{/if}
-										</strong>
-										<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-									</button>
-								</li>
-							{/each}
-						</ol>
-					</section>
-				{/if}
-				{#if detail.nextStops.length > 0}
-					<section class="map-stop-sequence" aria-label={t.nextStops}>
-						<h3>{t.nextStops}</h3>
-						<ol>
-							{#each detail.nextStops as stop (stop.id)}
-								<li>
-									<button
-										type="button"
-										class="map-stop-action"
-										aria-label={t.selectStop(stopDisplayName(stop, locale))}
-										onclick={() => selectStop(stop.id)}
-									>
-										<span aria-label={stop.seq == null ? seqUnknownAria : undefined}>
-											{stop.seq ?? ''}
-										</span>
-										<strong>
-											{#if stop.nameAbsent}
-												{@render stopRefName(stop)}
-											{:else}
-												{stop.name}
-											{/if}
-										</strong>
-										<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-										<!-- ETA absent for a known next stop: render an explicit "ETA
+			{#if detail.pastStops.length > 0}
+				<section class="map-stop-sequence" aria-label={t.pastStops}>
+					<h3>{t.pastStops}</h3>
+					<ol>
+						{#each detail.pastStops as stop (stop.id)}
+							<li>
+								<button
+									type="button"
+									class="map-stop-action"
+									aria-label={t.selectStop(stopDisplayName(stop, locale))}
+									onclick={() => selectStop(stop.id)}
+								>
+									<span aria-label={stop.seq == null ? seqUnknownAria : undefined}>
+										{stop.seq ?? ''}
+									</span>
+									<strong>
+										{#if stop.nameAbsent}
+											{@render stopRefName(stop)}
+										{:else}
+											{stop.name}
+										{/if}
+									</strong>
+									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
+								</button>
+							</li>
+						{/each}
+					</ol>
+				</section>
+			{/if}
+			{#if detail.nextStops.length > 0}
+				<section class="map-stop-sequence" aria-label={t.nextStops}>
+					<h3>{t.nextStops}</h3>
+					<ol>
+						{#each detail.nextStops as stop (stop.id)}
+							<li>
+								<button
+									type="button"
+									class="map-stop-action"
+									aria-label={t.selectStop(stopDisplayName(stop, locale))}
+									onclick={() => selectStop(stop.id)}
+								>
+									<span aria-label={stop.seq == null ? seqUnknownAria : undefined}>
+										{stop.seq ?? ''}
+									</span>
+									<strong>
+										{#if stop.nameAbsent}
+											{@render stopRefName(stop)}
+										{:else}
+											{stop.name}
+										{/if}
+									</strong>
+									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
+									<!-- ETA absent for a known next stop: render an explicit "ETA
 										     unavailable" marker (no prediction) instead of dropping the row. -->
-										<small>
-											<MaybeValue present={stop.etaUtc != null} reason="no-prediction" {locale}>
-												<time>{timeLabel(stop.etaUtc, locale)}</time>
-												<MapDelayTag
-													delay={stop.delayMin}
-													{locale}
-													{t}
-													ctx={{ metro: detailIsMetro }}
-												/>
-											</MaybeValue>
-										</small>
-									</button>
-								</li>
-							{/each}
-						</ol>
-					</section>
-				{/if}
-				<!-- Exit the map: open the trip's full analysis (only when a trip id is
-				     broadcast; a bus with no trip has no /trip surface to open). -->
-				{#if !compact && vehicleExitHref != null && vehicleTripId != null}
-					{@render openFullLink(vehicleExitHref, t.openFullTrip(vehicleTripId))}
-				{/if}
+									<small>
+										<MaybeValue present={stop.etaUtc != null} reason="no-prediction" {locale}>
+											<time>{timeLabel(stop.etaUtc, locale)}</time>
+											<MapDelayTag
+												delay={stop.delayMin}
+												{locale}
+												{t}
+												ctx={{ metro: detailIsMetro }}
+											/>
+										</MaybeValue>
+									</small>
+								</button>
+							</li>
+						{/each}
+					</ol>
+				</section>
+			{/if}
+			<!-- Exit the map: open the trip's full analysis (only when a trip id is
+			     broadcast; a bus with no trip has no /trip surface to open). -->
+			{#if vehicleExitHref != null && vehicleTripId != null}
+				{@render openFullLink(vehicleExitHref, t.openFullTrip(vehicleTripId))}
 			{/if}
 		{:else if detail.kind === 'route'}
 			<div class="map-selection-id">
@@ -400,7 +389,7 @@
 			<div class="map-stop-stats">
 				<span>{t.visibleBuses(detail.vehicles.length)}</span>
 			</div>
-			{#if !compact && detail.vehicles.length > 0}
+			{#if detail.vehicles.length > 0}
 				<section class="map-live-buses" aria-label={t.liveBuses}>
 					<h3>{t.liveBuses}</h3>
 					<ol>
@@ -430,7 +419,7 @@
 					</ol>
 				</section>
 			{/if}
-			{#if !compact && detail.directions.length > 0}
+			{#if detail.directions.length > 0}
 				<section class="map-stop-sequence" aria-label={t.stops}>
 					<h3>{t.stops}</h3>
 					{#each detail.directions as direction (direction.variantKey)}
@@ -477,7 +466,7 @@
 				</section>
 			{/if}
 			<!-- Exit the map: open the line's full reliability analysis. -->
-			{#if !compact && routeExitHref != null}
+			{#if routeExitHref != null}
 				{@render openFullLink(routeExitHref, t.openFullRoute(detail.id))}
 			{/if}
 		{:else}
@@ -493,7 +482,7 @@
 				>
 				<span>{t.vehiclesHeading(detail.vehicles.length)}</span>
 			</div>
-			{#if !compact && detail.vehicles.length > 0}
+			{#if detail.vehicles.length > 0}
 				<section class="map-live-buses" aria-label={t.liveBuses}>
 					<h3>{t.liveBuses}</h3>
 					<ol>
@@ -518,7 +507,7 @@
 					</ol>
 				</section>
 			{/if}
-			{#if detail.departures != null && detail.departures.length > 0 && !compact}
+			{#if detail.departures != null && detail.departures.length > 0}
 				<ol class="map-departures" aria-label={t.departures(detail.departures.length)}>
 					{#each detail.departures.slice(0, 4) as departure (departure.trip ?? `${departure.route}:${departure.eta_utc}`)}
 						{@const vehicle = vehicleForDeparture(detail.vehicles, departure)}
@@ -566,7 +555,7 @@
 					{/each}
 				</ol>
 			{/if}
-			{#if !compact && detail.routeTimes.length > 0}
+			{#if detail.routeTimes.length > 0}
 				<section class="map-route-times" aria-label={t.routes}>
 					<h3>{t.routes}</h3>
 					{#each detail.routeTimes as route (route.route)}
@@ -641,12 +630,12 @@
 				</section>
 			{/if}
 			<!-- Exit the map: open the stop's full detail (departures + reliability). -->
-			{#if !compact && stopExitHref != null}
+			{#if stopExitHref != null}
 				{@render openFullLink(stopExitHref, t.openFullStop(detail.stop.code ?? detail.stop.id))}
 			{/if}
 		{/if}
 
-		<MapDetailAlerts alerts={detail.alerts} {locale} {t} {compact} {onalertselect} />
+		<MapDetailAlerts alerts={detail.alerts} {locale} {t} {onalertselect} />
 	</article>
 {/if}
 
@@ -658,12 +647,6 @@
 		font-family: var(--font-body);
 		color: var(--foreground);
 	}
-	.map-selection-detail.compact {
-		gap: 0.75rem;
-		min-width: 14rem;
-		max-width: 18rem;
-	}
-
 	/* ── Header ───────────────────────────────────────────────── */
 	.map-selection-head {
 		display: flex;
@@ -671,9 +654,6 @@
 		gap: 0.375rem;
 		padding-bottom: 0.875rem;
 		border-bottom: 1px solid var(--border-subtle);
-	}
-	.compact .map-selection-head {
-		padding-bottom: 0.5rem;
 	}
 	.map-selection-kind {
 		display: inline-flex;
@@ -704,9 +684,6 @@
 		letter-spacing: var(--tracking-tight);
 		text-wrap: balance;
 		color: var(--foreground);
-	}
-	.compact .map-selection-title {
-		font-size: var(--text-subheading);
 	}
 	/* ── Identity + stat pills ────────────────────────────────── */
 	.map-selection-id,

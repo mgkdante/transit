@@ -75,6 +75,8 @@
 	import { createMapNearMeController, type NearMeOrigin } from './mapNearMeController.svelte';
 	import { createMapFocusController } from './mapFocusController.svelte';
 	import { createMapSelectionController } from './mapSelectionController.svelte';
+	import { createMapEmphasisController } from './mapEmphasisController.svelte';
+	import { resolveMapHoverPeek } from './mapHoverPeek';
 	import {
 		deriveMapFitPadding,
 		ISLAND_FIT_BOUNDS,
@@ -237,49 +239,32 @@
 		return () => live.stop();
 	});
 
-	// Keep the shared clock ticking while the map is mounted: every relative-time
-	// label (the freshness chip, the feed-stall banner age) re-derives off
-	// `sharedClock.serverNow`, so it must keep advancing between polls. (This once
-	// also drove the per-vehicle silence fade, now removed — buses are solid.)
+	// Keep one shared server-time tick alive for map freshness and relative-time copy.
 	$effect(() => sharedClock.subscribe());
 
-	// Tear down the motion loop and map interactions on component unmount. This
-	// effect has no tracked reads, so it runs once and reads the current controller
-	// only from its cleanup. Map-identity changes dispose the old resources earlier;
-	// their disposers are idempotent against this final cleanup.
 	$effect(() => () => {
 		untrack(() => vehicleMotion)?.destroy();
 		for (const dispose of interactionDisposers) dispose();
 	});
 
-	// Live tier ttl (seconds) → drives the global stale/banner windows (isStale fires
-	// at 3x ttl = 90s) AND sizes the per-bus not-reporting cutoff (threaded as `ttlS`
-	// into toVehicleFeatures, where a bus whose own reported_utc fix is past the window
-	// freezes + earns the "!" badge). Default 30s if the manifest omits it.
 	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
 
 	let map = $state<MapLibreMap | null>(null);
 	let vehicleMotion = $state<VehicleMotionController | null>(null);
 	let vehicleMotionMap: MapLibreMap | null = null;
 
-	// --- forward-projection shape supply --------------------------------------
-	// Per-route direction-variant polylines, fetched on-demand for the routes that
-	// currently have live buses (deduped by route id — far fewer than the ~600
-	// vehicles). Loaded through the same getRoute() path as the selected-route
-	// linework, then cached so a route is fetched at most once. The manager owns the
-	// (non-reactive) caches + the prefetch + the per-frame `shapeFor` resolver the
-	// controller reads to project a bus FORWARD along its street; until a shape
-	// resolves the bus FREEZES at its fix (we never dead-reckon on the raw bearing).
 	const shapeCache = createShapeCacheManager(getRoute);
 
 	let layerRevision = $state(0);
 	let interactionsMap: MapLibreMap | null = null;
 	let interactionDisposers: readonly (() => void)[] = [];
 	const selectionController = createMapSelectionController();
+	const emphasisController = createMapEmphasisController(selectionController);
 	const selected = $derived(selectionController.selected);
 	const selectionStack = $derived(selectionController.stack);
 	const hovered = $derived(selectionController.hovered);
 	const detailOpen = $derived(selectionController.detailOpen);
+	$effect(() => () => untrack(() => emphasisController.clear()));
 
 	// Selection-scoped live families are ref-counted leases keyed strictly on the
 	// committed selection. Hover never activates a family or restarts polling.
@@ -292,20 +277,19 @@
 	const nearbyStops = $derived<WithDistance<SlimStopEntry>[]>(
 		nearMeController.origin ? nearestStops(nearMeController.origin, stopList, 5, 1_200) : [],
 	);
-	const focusedSelection = $derived(selected ?? hovered);
 	const focusedRouteId = $derived.by<string | null>(() => {
-		if (!focusedSelection) return null;
-		if (focusedSelection.kind === 'route') return focusedSelection.id;
-		if (focusedSelection.kind === 'vehicle') {
-			return live.index.byVehicleId.get(focusedSelection.id)?.route ?? null;
+		if (!selected) return null;
+		if (selected.kind === 'route') return selected.id;
+		if (selected.kind === 'vehicle') {
+			return live.index.byVehicleId.get(selected.id)?.route ?? null;
 		}
 		return null;
 	});
 	const focusedStopId = $derived.by<string | null>(() => {
-		if (!focusedSelection) return null;
-		if (focusedSelection.kind === 'stop') return focusedSelection.id;
-		if (focusedSelection.kind === 'vehicle') {
-			return live.index.byVehicleId.get(focusedSelection.id)?.next_stop ?? null;
+		if (!selected) return null;
+		if (selected.kind === 'stop') return selected.id;
+		if (selected.kind === 'vehicle') {
+			return live.index.byVehicleId.get(selected.id)?.next_stop ?? null;
 		}
 		return null;
 	});
@@ -334,16 +318,6 @@
 			? []
 			: (selectedRoutes.data ?? []).filter((route) => selectedRouteIds.includes(route.id)),
 	);
-	// The id of the route whose line should be highlighted: a directly-selected
-	// route, OR the route a selected vehicle is working (so clicking a bus lights
-	// up its line). Null when nothing route-bearing is selected — no highlight,
-	// honest. Vehicles carry no direction, so the whole route lights up.
-	//
-	// B3 — for the vehicle case the highlight is GATED on the route still being in
-	// the filter spine: selecting a bus promotes its route to filters (the chip),
-	// so the line lights up; discarding that route chip removes it from
-	// filters.routes, which both drops the `route=` param AND un-highlights the
-	// line here — chip and highlight stay in lockstep.
 	const selectedRouteLineId = $derived.by<string | null>(() => {
 		if (selected?.kind === 'route') return selected.id;
 		if (selected?.kind === 'vehicle') {
@@ -428,9 +402,7 @@
 		return ids;
 	});
 	const selectedVehicleId = $derived(selected?.kind === 'vehicle' ? selected.id : null);
-	const hoveredVehicleId = $derived(hovered?.kind === 'vehicle' ? hovered.id : null);
 	const selectedStopId = $derived(selected?.kind === 'stop' ? selected.id : null);
-	const hoveredStopId = $derived(hovered?.kind === 'stop' ? hovered.id : null);
 	// The line to thicken: a directly-selected route honours its picked direction/
 	// variant; a selected vehicle lights up its whole route (no direction on a
 	// vehicle). Null when the selection bears no route (or the bus has no route id)
@@ -461,14 +433,12 @@
 			departuresAvailable,
 		}),
 	);
-	const hoverDetail = $derived(
-		resolveMapSelection(hovered, {
+	const hoverPeek = $derived(
+		resolveMapHoverPeek(hovered, {
 			index: live.index,
 			stops: stopList,
-			routes: contextRoutes,
-			stopFiles: contextStopFiles,
-			alerts: live.alerts?.alerts ?? null,
-			departuresAvailable,
+			routesIndex: routesIndex.data?.routes ?? [],
+			clock: sharedClock,
 		}),
 	);
 	const vehicleSelectionGrace = createSelectionGrace<MapSelectionDetailModel>();
@@ -530,7 +500,6 @@
 	// OWN fix is past the cutoff, else null. Reads sharedClock.serverNow so the note
 	// appears/refreshes as a bus crosses the cutoff between polls.
 	const selectedVehicleAbsence = $derived(vehicleAbsence(selectedDetail, sharedClock.serverNow));
-	const hoverVehicleAbsence = $derived(vehicleAbsence(hoverDetail, sharedClock.serverNow));
 	const detailSurfaceKey = $derived(
 		selectedDetail ? `${selectedDetail.kind}:${selectedDetail.id}` : 'empty',
 	);
@@ -811,7 +780,7 @@
 		const animate = motionFeedAnimate({ smoothMotion, reduceMotion });
 		// serverNow read UNTRACKED here so this poll/filter/selection effect is NOT
 		// re-run by the per-second clock tick (the controller's rAF loop advances
-		// projection between polls). Used only to bake the feed-time silenceAgeS prop.
+		// projection between polls). Used only for feed-time stale classification.
 		const serverNow = untrack(() => sharedClock.serverNow);
 		const filter = filters.state;
 		const stale = live.vehiclesIsStale;
@@ -826,7 +795,6 @@
 				filter,
 				alertIds: alertVehicleIds,
 				selectedId: selectedVehicleId,
-				hoveredId: hoveredVehicleId,
 				serverNow,
 				ttlS: liveTtl,
 				tickKey: live.vehiclesGeneratedUtc,
@@ -844,7 +812,6 @@
 				filter,
 				alertIds: alertEntitySets.stops,
 				selectedId: selectedStopId,
-				hoveredId: hoveredStopId,
 			},
 			nearTarget: {
 				target: nearMeController.origin,
@@ -852,6 +819,27 @@
 		};
 
 		for (const module of MAP_LAYER_MODULES) module.feed(m, ctx);
+	});
+
+	$effect(() => {
+		const m = map;
+		const entries = stopList;
+		void selected;
+		void hovered;
+		if (!m) return;
+		untrack(() => emphasisController.apply(m, entries));
+	});
+
+	let replayMap: MapLibreMap | null = null;
+	let replayRevision = -1;
+	$effect(() => {
+		const m = map;
+		const revision = layerRevision;
+		if (!m) return;
+		const shouldReplay = replayMap === m && replayRevision !== revision;
+		replayMap = m;
+		replayRevision = revision;
+		if (shouldReplay) untrack(() => emphasisController.replay(m));
 	});
 
 	$effect(() => {
@@ -1009,11 +997,7 @@
 			{detailOpen}
 			{liveEdgeState}
 			{liveEdgeMessage}
-			{hoverDetail}
-			{hoverVehicleAbsence}
-			onselect={selectFromDetail}
-			onfilter={applyDetailFilter}
-			onalertselect={selectAlertRelated}
+			{hoverPeek}
 			controls={mapControls}
 		/>
 	</div>

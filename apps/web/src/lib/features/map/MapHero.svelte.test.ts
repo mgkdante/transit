@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { toStopFeatures } from '$lib/components/map/stopsLayer';
 import MapHero from './MapHero.svelte';
+import { mapHeroReceiptSignals } from './__fixtures__/MapHeroReceiptSignals.svelte';
 
 const harness = vi.hoisted(() => {
 	const identityReceivers: unknown[] = [];
@@ -11,16 +13,81 @@ const harness = vi.hoisted(() => {
 	const addVehicleLayers = vi.fn();
 	const addStopsSource = vi.fn();
 	const addStopsLayer = vi.fn();
+	const addStopExceptionSource = vi.fn();
+	const addStopExceptionLayer = vi.fn();
 	const addRouteLineSource = vi.fn();
 	const addRouteLineLayers = vi.fn();
 	const addNearTargetSource = vi.fn();
 	const addNearTargetLayer = vi.fn();
 	const setRouteLines = vi.fn();
 	const setStops = vi.fn();
+	const stopExceptionSourceSetData = vi.fn();
+	const setStopException = vi.fn(
+		(
+			_map: unknown,
+			stopsById: Readonly<Record<string, { id: string }>>,
+			selectedStopId: string | null,
+			hoveredStopId: string | null,
+		) => {
+			const ids = [selectedStopId, hoveredStopId].filter(
+				(id, index, all): id is string =>
+					id != null && all.indexOf(id) === index && Object.hasOwn(stopsById, id),
+			);
+			stopExceptionSourceSetData({
+				type: 'FeatureCollection',
+				features: ids.map((id) => ({ properties: { id } })),
+			});
+		},
+	);
 	const setNearTarget = vi.fn();
 	const setStale = vi.fn();
-	const motionSet = vi.fn();
-	const motionDestroy = vi.fn();
+	const vehicleSourceSetData = vi.fn();
+	let vehicleMotionFrame: number | null = null;
+	let vehicleMotionFeatures: unknown = null;
+	const stopVehicleUploads = () => {
+		if (vehicleMotionFrame == null || typeof cancelAnimationFrame !== 'function') return;
+		cancelAnimationFrame(vehicleMotionFrame);
+		vehicleMotionFrame = null;
+	};
+	const uploadVehicleFrame = () => {
+		vehicleSourceSetData(vehicleMotionFeatures);
+		vehicleMotionFrame = requestAnimationFrame(uploadVehicleFrame);
+	};
+	const motionSet = vi.fn((features: unknown, options?: { animate?: boolean }) => {
+		vehicleMotionFeatures = features;
+		if (options?.animate && typeof requestAnimationFrame === 'function') {
+			if (vehicleMotionFrame == null) {
+				vehicleMotionFrame = requestAnimationFrame(uploadVehicleFrame);
+			}
+		} else {
+			stopVehicleUploads();
+			vehicleSourceSetData(features);
+		}
+	});
+	const motionDestroy = vi.fn(stopVehicleUploads);
+	const releaseLease = vi.fn();
+	const getRoute = vi.fn(() => null);
+	const getStop = vi.fn(() => null);
+	const toVehicleFeatures = vi.fn(
+		(
+			_items: unknown,
+			filter: { vehicles: ReadonlySet<string> },
+			_alertIds: unknown,
+			selectedId: string | null,
+		) => ({
+			type: 'FeatureCollection',
+			features: [
+				{
+					type: 'Feature',
+					geometry: { type: 'Point', coordinates: [-73.57, 45.51] },
+					properties: {
+						id: 'bus-1',
+						selected: selectedId === 'bus-1' || filter.vehicles.has('bus-1') ? 1 : 0,
+					},
+				},
+			],
+		}),
+	);
 	const createVehicleMotionController = vi.fn(() => ({
 		set: motionSet,
 		destroy: motionDestroy,
@@ -49,6 +116,7 @@ const harness = vi.hoisted(() => {
 		status: 'on_time' as const,
 		updated_utc: '2026-06-20T12:00:00Z',
 		route: '24',
+		next_stop: 'stop-1',
 	};
 	const liveStore = {
 		vehicles: { generated_utc: '2026-06-20T12:00:00Z', vehicles: [] },
@@ -61,7 +129,7 @@ const harness = vi.hoisted(() => {
 			byTripId: new Map(),
 			byStopId: new Map(),
 			vehiclesByRoute: new Map(),
-			vehiclesByStop: new Map(),
+			vehiclesByStop: new Map([['stop-1', new Set([vehicle.id])]]),
 		},
 		generatedUtc: '2026-06-20T12:00:00Z',
 		ageSeconds: 30,
@@ -121,11 +189,12 @@ const harness = vi.hoisted(() => {
 		start: vi.fn(),
 		stop: vi.fn(),
 		refresh: vi.fn(),
-		subscribeFamilies: vi.fn(() => vi.fn()),
+		subscribeFamilies: vi.fn(() => releaseLease),
 	};
 
 	return {
 		alert,
+		isDesktop: false,
 		// reassigned by the $app/stores mock factory below
 		setPageUrl: (_href: string): void => {
 			throw new Error('setPageUrl used before the $app/stores mock factory ran');
@@ -141,17 +210,26 @@ const harness = vi.hoisted(() => {
 		addVehicleLayers,
 		addStopsSource,
 		addStopsLayer,
+		addStopExceptionSource,
+		addStopExceptionLayer,
 		addRouteLineSource,
 		addRouteLineLayers,
 		addNearTargetSource,
 		addNearTargetLayer,
 		setRouteLines,
 		setStops,
+		setStopException,
+		stopExceptionSourceSetData,
 		setNearTarget,
 		setStale,
 		motionSet,
+		vehicleSourceSetData,
 		motionDestroy,
+		releaseLease,
 		createVehicleMotionController,
+		getRoute,
+		getStop,
+		toVehicleFeatures,
 		stops: [
 			{
 				id: 'stop-1',
@@ -204,7 +282,7 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 vi.mock('$lib/nav', () => ({
 	layout: {
 		get isDesktop() {
-			return false;
+			return harness.isDesktop;
 		},
 	},
 	isDesktopViewport: () => false,
@@ -216,25 +294,27 @@ vi.mock('$lib/nav', () => ({
 	},
 }));
 
-vi.mock('$lib/stores', () => ({
-	themeStore: {
-		current: 'dark',
-		isDark: true,
-		toggle: vi.fn(),
-		apply: vi.fn(),
-		init: vi.fn(),
-	},
-	sharedClock: {
-		serverNow: Date.parse('2026-06-20T12:00:30Z'),
-		now: Date.parse('2026-06-20T12:00:30Z'),
-		subscribe: () => () => {},
-	},
-	motionMode: {
-		current: 'raw',
-		set: vi.fn(),
-	},
-	dataRefresh: {},
-}));
+vi.mock('$lib/stores', async () => {
+	const { mapHeroReceiptSignals: signals } =
+		await import('./__fixtures__/MapHeroReceiptSignals.svelte');
+	return {
+		themeStore: {
+			current: 'dark',
+			isDark: true,
+			toggle: vi.fn(),
+			apply: vi.fn(),
+			init: vi.fn(),
+		},
+		sharedClock: signals.clock,
+		motionMode: {
+			get current() {
+				return signals.motionMode;
+			},
+			set: signals.setMotionMode,
+		},
+		dataRefresh: {},
+	};
+});
 
 vi.mock('$lib/v1/boot', () => ({
 	getV1Context: () => ({
@@ -252,48 +332,48 @@ vi.mock('$lib/v1/repositories/basemap', () => ({
 vi.mock('$lib/v1/repositories/static', () => ({
 	getRoutesIndex: () => ({ generated_utc: '2026-06-20T12:00:00Z', routes: [] }),
 	getStopsIndexSlim: () => ({ generated_utc: '2026-06-20T12:00:00Z', stops: harness.stops }),
-	getRoute: () => null,
-	getStop: () => null,
+	getRoute: harness.getRoute,
+	getStop: harness.getStop,
 }));
-vi.mock('$lib/v1/live/store.svelte', () => ({
-	createLiveStore: harness.createLiveStore,
-}));
+vi.mock('$lib/v1/live/store.svelte', async () => {
+	const { mapHeroReceiptSignals: signals } =
+		await import('./__fixtures__/MapHeroReceiptSignals.svelte');
+	Object.defineProperty(harness.liveStore, 'vehiclesGeneratedUtc', {
+		configurable: true,
+		get: () => signals.vehiclesGeneration,
+	});
+	return { createLiveStore: harness.createLiveStore };
+});
 
-vi.mock('$lib/v1/resource.svelte', () => ({
-	createResource: (loader: () => unknown) => {
-		const value = loader();
-		// Resolve synchronous static indexes immediately. The route/stop context
-		// loaders are async and irrelevant to a static-index stop detail, so they
-		// remain at the resource contract's pre-resolution null state.
-		const data =
-			value != null && typeof (value as Promise<unknown>).then === 'function' ? null : value;
-		return {
-			data,
-			error: null,
-			loading: false,
-			settled: true,
-			reload: vi.fn(),
-		};
-	},
-}));
+vi.mock('$lib/v1/resource.svelte', async () => {
+	const { createMapHeroResourceStub } = await import('./__fixtures__/MapHeroResourceStub.svelte');
+	return { createResource: createMapHeroResourceStub };
+});
 
 vi.mock('$lib/components/map', async () => {
 	const { default: MapStage } = await import('./__fixtures__/MapStageStub.svelte');
 	return {
 		MapStage,
 		STOPS_LAYER: 'stops',
+		STOPS_SOURCE: 'stops',
+		STOP_EXCEPTION_LAYER: 'stop-exception',
+		STOP_EXCEPTION_SOURCE: 'stop-exception',
 		VEHICLE_BODY_LAYER: 'vehicle-body',
+		VEHICLE_SOURCE: 'vehicles',
 		ROUTE_LINE_HIT_LAYER: 'route-lines-hit',
 		bakeVehicleSprites: harness.bakeVehicleSprites,
 		bakeLocationPinSprite: harness.bakeLocationPinSprite,
 		addVehicleSource: harness.addVehicleSource,
 		addVehicleLayers: harness.addVehicleLayers,
 		setStale: harness.setStale,
-		toVehicleFeatures: () => ({ type: 'FeatureCollection', features: [] }),
+		toVehicleFeatures: harness.toVehicleFeatures,
 		createVehicleMotionController: harness.createVehicleMotionController,
 		addStopsSource: harness.addStopsSource,
 		addStopsLayer: harness.addStopsLayer,
+		addStopExceptionSource: harness.addStopExceptionSource,
+		addStopExceptionLayer: harness.addStopExceptionLayer,
 		setStops: harness.setStops,
+		setStopException: harness.setStopException,
 		addRouteLineSource: harness.addRouteLineSource,
 		addRouteLineLayers: harness.addRouteLineLayers,
 		setRouteLines: harness.setRouteLines,
@@ -325,6 +405,8 @@ afterEach(() => {
 	document.body.innerHTML = '';
 	vi.clearAllMocks();
 	harness.identityReceivers.length = 0;
+	harness.isDesktop = false;
+	mapHeroReceiptSignals.reset();
 	if (originalSecureContext) {
 		Object.defineProperty(window, 'isSecureContext', originalSecureContext);
 	} else {
@@ -336,6 +418,26 @@ afterEach(() => {
 		Reflect.deleteProperty(navigator, 'geolocation');
 	}
 });
+
+function bulkCounts() {
+	return {
+		routes: harness.setRouteLines.mock.calls.length,
+		motion: harness.motionSet.mock.calls.length,
+		stops: harness.setStops.mock.calls.length,
+		nearTarget: harness.setNearTarget.mock.calls.length,
+	};
+}
+
+async function settleAnimationFrames(count = 2): Promise<void> {
+	for (let frame = 0; frame < count; frame += 1) {
+		await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
+	}
+	await tick();
+}
+
+function peekText(container: HTMLElement): string {
+	return container.querySelector('.map-peek')?.textContent?.replace(/\s+/gu, ' ').trim() ?? '';
+}
 
 describe('MapHero near-me device location', () => {
 	it('pins a successful device fix without writing its coordinates or label to the URL', async () => {
@@ -491,7 +593,9 @@ describe('MapHero map-layer feed lifecycle', () => {
 			harness.addRouteLineSource,
 			harness.addRouteLineLayers,
 			harness.addStopsSource,
+			harness.addStopExceptionSource,
 			harness.addStopsLayer,
+			harness.addStopExceptionLayer,
 			harness.addVehicleSource,
 			harness.addVehicleLayers,
 			harness.addNearTargetSource,
@@ -542,6 +646,353 @@ describe('MapHero map-layer feed lifecycle', () => {
 		for (const install of installSpies) expect(install).toHaveBeenCalledTimes(2);
 		for (const feed of feedSpies) expect(feed).toHaveBeenCalledTimes(3);
 		expect(harness.setStops.mock.lastCall?.[2]).toMatchObject({ status: ['late'] });
+	});
+
+	it('keeps a settled hover storm off every bulk feed and live-family lease', async () => {
+		mapHeroReceiptSignals.setMotionMode('smooth');
+		render(MapHero);
+		await tick();
+		await settleAnimationFrames();
+		const controlUploadStart = harness.vehicleSourceSetData.mock.calls.length;
+		await settleAnimationFrames(4);
+		const controlUploadDelta = harness.vehicleSourceSetData.mock.calls.length - controlUploadStart;
+		harness.getRoute.mockClear();
+		harness.getStop.mockClear();
+		const before = {
+			...bulkCounts(),
+			getRoute: harness.getRoute.mock.calls.length,
+			getStop: harness.getStop.mock.calls.length,
+			leases: harness.liveStore.subscribeFamilies.mock.calls.length,
+		};
+		const exceptionBefore = harness.stopExceptionSourceSetData.mock.calls.length;
+
+		for (let i = 0; i < 4; i += 1) {
+			await fireEvent.click(screen.getByTestId('map-stage-stub-hover-vehicle'));
+			await fireEvent.click(screen.getByTestId('map-stage-stub-hover-stop'));
+		}
+		await fireEvent.click(screen.getByTestId('map-stage-stub-mouseleave'));
+		const stormUploadStart = harness.vehicleSourceSetData.mock.calls.length;
+		await settleAnimationFrames(4);
+		const stormUploadDelta = harness.vehicleSourceSetData.mock.calls.length - stormUploadStart;
+
+		expect({
+			...bulkCounts(),
+			getRoute: harness.getRoute.mock.calls.length,
+			getStop: harness.getStop.mock.calls.length,
+			leases: harness.liveStore.subscribeFamilies.mock.calls.length,
+		}).toEqual(before);
+		expect(stormUploadDelta).toBe(controlUploadDelta);
+		const exceptionCalls = harness.stopExceptionSourceSetData.mock.calls.slice(exceptionBefore);
+		expect(exceptionCalls.length).toBeGreaterThan(0);
+		for (const [collection] of exceptionCalls) {
+			expect((collection as { features: unknown[] }).features.length).toBeLessThanOrEqual(2);
+		}
+	});
+
+	it('commits and closes a vehicle with one bulk mutation each while filter emphasis survives', async () => {
+		// Hold the newly selected route resource pending so this spy window measures
+		// only the selection/filter mutation, not a later independent network settle.
+		harness.getRoute.mockImplementation(() => new Promise<null>(() => {}) as never);
+		render(MapHero);
+		await tick();
+		const beforeCommit = bulkCounts();
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+		await waitFor(() =>
+			expect(bulkCounts()).toEqual({
+				routes: beforeCommit.routes + 1,
+				motion: beforeCommit.motion + 1,
+				stops: beforeCommit.stops + 1,
+				nearTarget: beforeCommit.nearTarget + 1,
+			}),
+		);
+		expect(
+			(
+				harness.motionSet.mock.lastCall?.[0] as {
+					features: Array<{ properties: { selected: number } }>;
+				}
+			).features[0]?.properties.selected,
+		).toBe(1);
+
+		const beforeClose = bulkCounts();
+		await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+		await waitFor(() =>
+			expect(bulkCounts()).toEqual({
+				routes: beforeClose.routes + 1,
+				motion: beforeClose.motion + 1,
+				stops: beforeClose.stops + 1,
+				nearTarget: beforeClose.nearTarget + 1,
+			}),
+		);
+
+		const vehicleFeed = harness.toVehicleFeatures.mock.lastCall;
+		expect(vehicleFeed?.[1].vehicles.has('bus-1')).toBe(true);
+		expect(vehicleFeed?.[3]).toBeNull();
+		expect(
+			(
+				harness.motionSet.mock.lastCall?.[0] as {
+					features: Array<{ properties: { selected: number } }>;
+				}
+			).features[0]?.properties.selected,
+		).toBe(1);
+	});
+
+	it('commits and closes a stop with one bulk mutation each while filter emphasis survives', async () => {
+		render(MapHero);
+		await tick();
+		const beforeCommit = bulkCounts();
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));
+		await waitFor(() =>
+			expect(bulkCounts()).toEqual({
+				routes: beforeCommit.routes + 1,
+				motion: beforeCommit.motion + 1,
+				stops: beforeCommit.stops + 1,
+				nearTarget: beforeCommit.nearTarget + 1,
+			}),
+		);
+
+		const beforeClose = bulkCounts();
+		await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+		await waitFor(() =>
+			expect(bulkCounts()).toEqual({
+				routes: beforeClose.routes + 1,
+				motion: beforeClose.motion + 1,
+				stops: beforeClose.stops + 1,
+				nearTarget: beforeClose.nearTarget + 1,
+			}),
+		);
+
+		const stopFeed = harness.setStops.mock.lastCall;
+		expect(stopFeed?.[2].stops.has('stop-1')).toBe(true);
+		expect(stopFeed?.[4]).toBeNull();
+		expect(
+			toStopFeatures(stopFeed?.[1] ?? [], stopFeed?.[2], stopFeed?.[3], stopFeed?.[4]).features[0]
+				?.properties.selected,
+		).toBe(1);
+	});
+
+	it('drives hover, mouseleave, detail swap, Back, and close through rendered feature state', async () => {
+		render(MapHero);
+		await tick();
+		mapHeroReceiptSignals.clearFeatureStateEvents();
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-hover-vehicle'));
+		await waitFor(() =>
+			expect(mapHeroReceiptSignals.featureStateEvents).toContainEqual({
+				operation: 'set',
+				target: { source: 'vehicles', id: 'bus-1' },
+				state: { hovered: true },
+			}),
+		);
+
+		mapHeroReceiptSignals.clearFeatureStateEvents();
+		await fireEvent.click(screen.getByTestId('map-stage-stub-mouseleave'));
+		await waitFor(() =>
+			expect(mapHeroReceiptSignals.featureStateEvents).toContainEqual({
+				operation: 'remove',
+				target: { source: 'vehicles', id: 'bus-1' },
+				property: 'hovered',
+			}),
+		);
+
+		mapHeroReceiptSignals.clearFeatureStateEvents();
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));
+		await waitFor(() =>
+			expect(mapHeroReceiptSignals.featureStateEvents).toContainEqual({
+				operation: 'set',
+				target: { source: 'stops', id: 'stop-1' },
+				state: { selected: true },
+			}),
+		);
+
+		mapHeroReceiptSignals.clearFeatureStateEvents();
+		await fireEvent.click(
+			screen.getByRole('button', {
+				name: 'Select alert Board at the temporary stop & follow signs.',
+			}),
+		);
+		await waitFor(() => {
+			expect(mapHeroReceiptSignals.featureStateEvents).toEqual(
+				expect.arrayContaining([
+					{
+						operation: 'remove',
+						target: { source: 'stops', id: 'stop-1' },
+						property: 'selected',
+					},
+					{
+						operation: 'set',
+						target: { source: 'stops', id: 'stop-2' },
+						state: { selected: true },
+					},
+				]),
+			);
+		});
+
+		mapHeroReceiptSignals.clearFeatureStateEvents();
+		await fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+		await waitFor(() => {
+			expect(mapHeroReceiptSignals.featureStateEvents).toEqual(
+				expect.arrayContaining([
+					{
+						operation: 'remove',
+						target: { source: 'stops', id: 'stop-2' },
+						property: 'selected',
+					},
+					{
+						operation: 'set',
+						target: { source: 'stops', id: 'stop-1' },
+						state: { selected: true },
+					},
+				]),
+			);
+		});
+
+		mapHeroReceiptSignals.clearFeatureStateEvents();
+		await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+		await waitFor(() =>
+			expect(mapHeroReceiptSignals.featureStateEvents).toContainEqual({
+				operation: 'remove',
+				target: { source: 'stops', id: 'stop-1' },
+				property: 'selected',
+			}),
+		);
+	});
+
+	it('keeps committed leases and static-resource calls unchanged during later hover', async () => {
+		const bulkCounts = () => ({
+			routes: harness.setRouteLines.mock.calls.length,
+			motion: harness.motionSet.mock.calls.length,
+			stops: harness.setStops.mock.calls.length,
+		});
+
+		render(MapHero);
+		await tick();
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+		await waitFor(() => {
+			expect(harness.liveStore.subscribeFamilies).toHaveBeenCalledWith(['trips']);
+			expect(harness.getRoute).toHaveBeenCalledWith('24', expect.any(Object));
+			expect(harness.getStop).toHaveBeenCalledWith('stop-1', expect.any(Object));
+		});
+		await tick();
+
+		const bulkBefore = bulkCounts();
+		const routeCallsBefore = harness.getRoute.mock.calls.length;
+		const stopCallsBefore = harness.getStop.mock.calls.length;
+		const leasesBefore = [...harness.liveStore.subscribeFamilies.mock.calls];
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-hover-stop'));
+		await fireEvent.click(screen.getByTestId('map-stage-stub-hover-vehicle'));
+		await fireEvent.click(screen.getByTestId('map-stage-stub-mouseleave'));
+		await tick();
+
+		expect(bulkCounts()).toEqual(bulkBefore);
+		expect(harness.getRoute).toHaveBeenCalledTimes(routeCallsBefore);
+		expect(harness.getStop).toHaveBeenCalledTimes(stopCallsBefore);
+		expect(harness.liveStore.subscribeFamilies.mock.calls).toEqual(leasesBefore);
+	});
+
+	it.each([
+		{
+			entity: 'vehicle',
+			hoverTrigger: 'map-stage-stub-hover-vehicle',
+			pickTrigger: 'map-stage-stub-pick-vehicle',
+			family: 'trips',
+		},
+		{
+			entity: 'stop',
+			hoverTrigger: 'map-stage-stub-hover-stop',
+			pickTrigger: 'map-stage-stub-pick',
+			family: 'departures',
+		},
+	])(
+		'keeps the $entity peek byte-equal before, during, and after its committed lease',
+		async ({ hoverTrigger, pickTrigger, family }) => {
+			harness.isDesktop = true;
+			const { container } = render(MapHero);
+			await tick();
+
+			await fireEvent.click(screen.getByTestId(hoverTrigger));
+			await tick();
+			const before = peekText(container);
+			expect(before).not.toBe('');
+			expect(harness.liveStore.subscribeFamilies).not.toHaveBeenCalled();
+
+			await fireEvent.click(screen.getByTestId(pickTrigger));
+			await waitFor(() =>
+				expect(harness.liveStore.subscribeFamilies).toHaveBeenCalledExactlyOnceWith([family]),
+			);
+			const during = peekText(container);
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Close panel' }));
+			await waitFor(() => expect(harness.releaseLease).toHaveBeenCalledTimes(1));
+			const after = peekText(container);
+
+			expect({ before, during, after }).toEqual({
+				before,
+				during: before,
+				after: before,
+			});
+			expect(harness.liveStore.subscribeFamilies).toHaveBeenCalledTimes(1);
+			expect(harness.releaseLease).toHaveBeenCalledTimes(1);
+		},
+	);
+
+	it('replays current emphasis once after a same-map style reinstall', async () => {
+		const order: string[] = [];
+		harness.setRouteLines.mockImplementation(() => order.push('routes'));
+		harness.setStops.mockImplementation(() => order.push('stops'));
+		harness.motionSet.mockImplementation(() => order.push('motion'));
+		harness.setNearTarget.mockImplementation(() => order.push('near-target'));
+		harness.setStopException.mockImplementation(() => order.push('exception'));
+		mapHeroReceiptSignals.observeFeatureState((event) => {
+			if (event.operation === 'set') order.push('feature-state');
+		});
+
+		render(MapHero);
+		await tick();
+		const stage = screen.getByTestId('map-stage-stub');
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-hover-vehicle'));
+		await tick();
+		const beforeStyle = Number(stage.getAttribute('data-feature-state-set-count'));
+		expect(beforeStyle).toBeGreaterThan(0);
+		order.length = 0;
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-style-load'));
+		await tick();
+
+		expect(Number(stage.getAttribute('data-feature-state-set-count'))).toBe(beforeStyle + 1);
+		expect(order.filter((event) => event === 'feature-state')).toHaveLength(1);
+		expect(order.filter((event) => event === 'exception')).toHaveLength(1);
+		const stateOrder = order.indexOf('feature-state');
+		for (const feed of ['routes', 'stops', 'motion', 'near-target']) {
+			expect(order.indexOf(feed), `${feed} must precede replay`).toBeLessThan(stateOrder);
+		}
+	});
+
+	it('re-feeds on a live generation but not on a shared-clock tick', async () => {
+		const bulkCounts = () => ({
+			routes: harness.setRouteLines.mock.calls.length,
+			motion: harness.motionSet.mock.calls.length,
+			stops: harness.setStops.mock.calls.length,
+		});
+
+		render(MapHero);
+		await tick();
+		const beforeClock = bulkCounts();
+
+		mapHeroReceiptSignals.advanceClock(1_000);
+		await tick();
+		expect(bulkCounts()).toEqual(beforeClock);
+
+		mapHeroReceiptSignals.setVehiclesGeneration('2026-06-20T12:00:30Z');
+		await tick();
+		expect(bulkCounts()).toEqual({
+			routes: beforeClock.routes + 1,
+			motion: beforeClock.motion + 1,
+			stops: beforeClock.stops + 1,
+		});
 	});
 });
 

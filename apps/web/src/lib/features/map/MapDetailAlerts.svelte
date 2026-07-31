@@ -16,11 +16,10 @@
 		alerts: readonly Alert[] | null;
 		locale: Locale;
 		t: MapSelectionDetailCopy;
-		compact?: boolean;
 		onalertselect?: (alert: Alert) => void;
 	}
 
-	let { alerts, locale, t, compact = false, onalertselect }: Props = $props();
+	let { alerts, locale, t, onalertselect }: Props = $props();
 	const uid = $props.id();
 
 	function displayAlert(alert: Alert) {
@@ -31,17 +30,10 @@
 <section class="map-alerts" aria-label={t.alerts}>
 	<h3>{t.alerts}</h3>
 	{#if alerts == null}
-		<StateNotice
-			title={t.alertsUnavailable}
-			glyph="○"
-			tone="neutral"
-			presentation="silo"
-			role="status"
-			ariaLive="polite"
-		/>
+		<StateNotice title={t.alertsUnavailable} glyph="○" tone="neutral" presentation="silo" />
 	{:else if alerts.length > 0}
 		<ul>
-			{#each alerts.slice(0, compact ? 2 : 4) as alert, index (alert.id)}
+			{#each alerts.slice(0, 4) as alert, index (alert.id)}
 				{@const cause = causeLabel(alert.cause, locale)}
 				{@const effect = effectLabel(alert.effect, locale)}
 				{@const display = displayAlert(alert)}
@@ -102,14 +94,7 @@
 			{/each}
 		</ul>
 	{:else}
-		<StateNotice
-			title={t.noAlerts}
-			glyph="●"
-			tone="positive"
-			presentation="silo"
-			role="status"
-			ariaLive="polite"
-		/>
+		<StateNotice title={t.noAlerts} glyph="●" tone="positive" presentation="silo" />
 	{/if}
 </section>
 

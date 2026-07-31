@@ -49,9 +49,21 @@ function codeOnly(text: string): string {
 const forbiddenIdentifiers = /\b(?:navigator|geolocation|fetch)\b/gu;
 
 describe('MapHero orchestrator — structural law', () => {
-	it('keeps the script block at or below the 872-line ratchet', () => {
+	it('lands M2a below the frozen 872-line script ratchet', () => {
 		expect(script).toBeDefined();
-		expect(script!.split(/\r?\n/u).length).toBeLessThanOrEqual(872);
+		expect(script!.split(/\r?\n/u).length).toBeLessThan(872);
+	});
+
+	it('keeps hover out of bulk feeds and replays emphasis only through the layer revision seam', () => {
+		expect(source).toContain(
+			"import { createMapEmphasisController } from './mapEmphasisController.svelte'",
+		);
+		expect(source).toContain("import { resolveMapHoverPeek } from './mapHoverPeek'");
+		expect(source).not.toContain('hoveredId:');
+		expect(source).not.toContain('const focusedSelection = $derived(selected ?? hovered)');
+		expect(source).toContain('const serverNow = untrack(() => sharedClock.serverNow)');
+		expect(source).toContain('untrack(() => emphasisController.apply(m, entries))');
+		expect(source).toContain('untrack(() => emphasisController.replay(m))');
 	});
 
 	it('uses NO paneforge / resizable pane group (the map is full-bleed, never a pane)', () => {

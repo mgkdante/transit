@@ -4,6 +4,8 @@ import {
 	addNearTargetSource,
 	addRouteLineLayers,
 	addRouteLineSource,
+	addStopExceptionLayer,
+	addStopExceptionSource,
 	addStopsLayer,
 	addStopsSource,
 	addVehicleLayers,
@@ -15,6 +17,7 @@ import {
 	setRouteLines,
 	setStale,
 	setStops,
+	STOP_EXCEPTION_LAYER,
 	STOPS_LAYER,
 	toVehicleFeatures,
 	VEHICLE_BODY_LAYER,
@@ -34,7 +37,6 @@ export type MapLayerFeedContext = Readonly<{
 		filter: Parameters<typeof toVehicleFeatures>[1];
 		alertIds: Parameters<typeof toVehicleFeatures>[2];
 		selectedId: Parameters<typeof toVehicleFeatures>[3];
-		hoveredId: Parameters<typeof toVehicleFeatures>[4];
 		serverNow: number;
 		ttlS: number;
 		tickKey: string | null;
@@ -49,7 +51,6 @@ export type MapLayerFeedContext = Readonly<{
 		filter: Parameters<typeof setStops>[2];
 		alertIds: Parameters<typeof setStops>[3];
 		selectedId: Parameters<typeof setStops>[4];
-		hoveredId: Parameters<typeof setStops>[5];
 	}>;
 	nearTarget: Readonly<{
 		target: Parameters<typeof setNearTarget>[1];
@@ -84,13 +85,15 @@ const stopsModule: LayerModule = {
 	id: 'stops',
 	install(map) {
 		addStopsSource(map);
+		addStopExceptionSource(map);
 		addStopsLayer(map);
+		addStopExceptionLayer(map);
 	},
 	feed(map, ctx) {
 		const stops = ctx.stops;
-		setStops(map, stops.items, stops.filter, stops.alertIds, stops.selectedId, stops.hoveredId);
+		setStops(map, stops.items, stops.filter, stops.alertIds, stops.selectedId);
 	},
-	pick: { layerIds: [STOPS_LAYER], priority: 20 },
+	pick: { layerIds: [STOPS_LAYER, STOP_EXCEPTION_LAYER], priority: 20 },
 };
 
 const vehiclesModule: LayerModule = {
@@ -107,14 +110,10 @@ const vehiclesModule: LayerModule = {
 	feed(map, ctx) {
 		const vehicles = ctx.vehicles;
 		vehicles.motion?.set(
-			toVehicleFeatures(
-				vehicles.items,
-				vehicles.filter,
-				vehicles.alertIds,
-				vehicles.selectedId,
-				vehicles.hoveredId,
-				{ serverNow: vehicles.serverNow, ttlS: vehicles.ttlS },
-			),
+			toVehicleFeatures(vehicles.items, vehicles.filter, vehicles.alertIds, vehicles.selectedId, {
+				serverNow: vehicles.serverNow,
+				ttlS: vehicles.ttlS,
+			}),
 			{
 				tickKey: vehicles.tickKey,
 				stale: vehicles.stale,

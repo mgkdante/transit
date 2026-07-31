@@ -18,13 +18,27 @@ export {
 	setStale,
 	toVehicleFeatures,
 	VEHICLE_BODY_LAYER,
+	VEHICLE_HIGHLIGHT_LAYER,
+	VEHICLE_SOURCE,
 } from './vehicleLayer';
 export type { VehicleFeature } from './vehicleLayer';
 export { createVehicleMotionController } from './vehicleMotion';
 export type { VehicleMotionController, ShapeResolver, FixResolver } from './vehicleMotion';
 export type { Coord } from './polyline';
 
-export { addStopsSource, addStopsLayer, setStops, STOPS_LAYER } from './stopsLayer';
+export {
+	addStopExceptionLayer,
+	addStopExceptionSource,
+	addStopsSource,
+	addStopsLayer,
+	setStopException,
+	setStops,
+	STOP_EXCEPTION_LAYER,
+	STOP_EXCEPTION_SOURCE,
+	STOP_HIGHLIGHT_LAYER,
+	STOPS_LAYER,
+	STOPS_SOURCE,
+} from './stopsLayer';
 export {
 	addRouteLineSource,
 	addRouteLineLayers,
