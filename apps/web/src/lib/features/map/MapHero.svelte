@@ -26,6 +26,7 @@
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { themeStore } from '$lib/stores';
 	import { layout, isDesktopViewport } from '$lib/nav';
+	import { StateNotice } from '$lib/components/edge';
 	import { createLiveStore } from '$lib/v1/live/store.svelte';
 	import { getV1Context } from '$lib/v1/boot';
 	import { getBasemap } from '$lib/v1/repositories/basemap';
@@ -90,6 +91,7 @@
 		installMapInteractions,
 		MAP_LAYER_MODULES,
 		PICKABLE_MAP_LAYERS,
+		retintMapLayers,
 		type MapLayerFeedContext,
 	} from './mapLayerModules';
 	import { pickMapSelection } from './mapPicking';
@@ -250,6 +252,7 @@
 	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
 
 	let map = $state<MapLibreMap | null>(null);
+	let mapFailure = $state<{ readonly retry: () => Promise<void> } | null>(null);
 	let vehicleMotion = $state<VehicleMotionController | null>(null);
 	let vehicleMotionMap: MapLibreMap | null = null;
 
@@ -700,12 +703,11 @@
 		// Prepare every module before installing any layer. bakeVehicleSprites owns
 		// STOP_ICON even though the stops module consumes it, so a per-module
 		// prepare/install loop would install stops before that shared asset exists.
-		for (const module of MAP_LAYER_MODULES) module.prepare?.(m);
 
 		// SF deliberately preserves append order. firstSymbolLayerId() is available
 		// for the owner-parked visual flip, but this slice passes no anchor.
 		const beforeId: string | undefined = undefined;
-		for (const module of MAP_LAYER_MODULES) module.install(m, beforeId);
+		retintMapLayers(m, beforeId);
 
 		// Controller identity belongs to this MapHero instance, not the static
 		// registry. Reuse it across style loads of the same map.
@@ -724,6 +726,9 @@
 
 	function onMapStyleLoad(m: MapLibreMap): void {
 		installMapLayers(m);
+	}
+	function onMapThemeRepaint(m: MapLibreMap): void {
+		retintMapLayers(m);
 	}
 
 	// Lazily fetch route shapes for the routes that currently have live buses
@@ -897,7 +902,7 @@
 	     repaint via the `theme` prop's lighter applyBasemapTheme path. -->
 	<MapStage
 		class="map-hero-stage"
-		basemapLoader={() => getBasemap()}
+		basemapLoader={({ signal }) => getBasemap({ signal })}
 		{theme}
 		center={mapInitialCenter}
 		bounds={ISLAND_FIT_BOUNDS}
@@ -905,6 +910,12 @@
 		fitPadding={mapFitPadding}
 		onready={onMapReady}
 		onstyleload={onMapStyleLoad}
+		onthemerepaint={onMapThemeRepaint}
+		onerror={(failure) => (mapFailure = failure)}
+		locale={{
+			'Map.Title': t.mapCanvasLabel,
+			'AttributionControl.ToggleAttribution': t.attributionToggle,
+		}}
 		label={t.mapLabel}
 	/>
 	<!-- The live framing vignette stays in MapSurfaceCanvasLayer. -->
@@ -957,6 +968,14 @@
 	/>
 {/snippet}
 
+{#snippet mapRetry()}
+	{#if mapFailure}
+		<button type="button" class="map-stage-retry" onclick={() => void mapFailure?.retry()}>
+			{t.mapRetry}
+		</button>
+	{/if}
+{/snippet}
+
 <!-- The map SURFACE — the full-bleed canvas plus every floating overlay (title,
      near-me, Controls panel, freshness, feed-stall, live-edge, hover peek). It fills
      the whole hero (inset:0). The right-edge chrome (near-me, peek, freshness) reads
@@ -973,33 +992,48 @@
 		     freshness, feed-stall, live-edge, and the desktop hover peek. ZERO state
 		     mutation: every value + handler + the shared `controls` snippet is passed
 		     down from this orchestrator. -->
-		<MapOverlayChrome
-			{locale}
-			{t}
-			generatedUtc={live.generatedUtc}
-			ageSeconds={live.ageSeconds}
-			isStale={live.isStale}
-			degraded={liveDegraded}
-			{selectedFamilyFailureMessage}
-			bind:nearMeOpen={nearMeController.open}
-			bind:nearMeQuery={nearMeController.query}
-			nearMeLoading={nearMeController.loading}
-			nearMeError={nearMeController.error}
-			nearMeOrigin={nearMeController.origin}
-			{nearbyStops}
-			onuselocation={nearMeController.useLocation}
-			onsearch={nearMeController.search}
-			onsuggestion={nearMeController.selectSuggestion}
-			onstopselect={selectNearbyStop}
-			onclear={nearMeController.clear}
-			isDesktop={layout.isDesktop}
-			filtersStore={filters}
-			{detailOpen}
-			{liveEdgeState}
-			{liveEdgeMessage}
-			{hoverPeek}
-			controls={mapControls}
-		/>
+		{#if mapFailure}
+			<div class="map-stage-error">
+				<StateNotice
+					title={t.mapErrorTitle}
+					body={t.mapErrorBody}
+					glyph="!"
+					tone="error"
+					presentation="card"
+					role="alert"
+					ariaLive="assertive"
+					action={mapRetry}
+				/>
+			</div>
+		{:else}
+			<MapOverlayChrome
+				{locale}
+				{t}
+				generatedUtc={live.generatedUtc}
+				ageSeconds={live.ageSeconds}
+				isStale={live.isStale}
+				degraded={liveDegraded}
+				{selectedFamilyFailureMessage}
+				bind:nearMeOpen={nearMeController.open}
+				bind:nearMeQuery={nearMeController.query}
+				nearMeLoading={nearMeController.loading}
+				nearMeError={nearMeController.error}
+				nearMeOrigin={nearMeController.origin}
+				{nearbyStops}
+				onuselocation={nearMeController.useLocation}
+				onsearch={nearMeController.search}
+				onsuggestion={nearMeController.selectSuggestion}
+				onstopselect={selectNearbyStop}
+				onclear={nearMeController.clear}
+				isDesktop={layout.isDesktop}
+				filtersStore={filters}
+				{detailOpen}
+				{liveEdgeState}
+				{liveEdgeMessage}
+				{hoverPeek}
+				controls={mapControls}
+			/>
+		{/if}
 	</div>
 {/snippet}
 
@@ -1104,5 +1138,31 @@
 		position: absolute;
 		inset: 0;
 		overflow: hidden;
+	}
+
+	.map-stage-error {
+		position: absolute;
+		z-index: var(--z-map-detail);
+		inset: 0;
+		display: grid;
+		place-items: center;
+		padding: 1rem;
+		background: color-mix(in srgb, var(--background) 88%, transparent);
+	}
+
+	.map-stage-error :global(.state-notice) {
+		width: min(100%, 30rem);
+	}
+
+	.map-stage-retry {
+		min-height: 2.5rem;
+		padding: 0.5rem 0.875rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		background: var(--primary);
+		color: var(--primary-foreground);
+		font: inherit;
+		font-weight: 700;
+		cursor: pointer;
 	}
 </style>

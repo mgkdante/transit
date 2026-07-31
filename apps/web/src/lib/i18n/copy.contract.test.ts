@@ -103,7 +103,7 @@ describe('bilingual copy contract', () => {
 			lineDetailCopy: '7cb8c2078f7d8c5fa6cf3ff73a2ad6642c829cdb3fa1a78b5c514342b89eb4b8',
 			lineIndexCopy: '50b9f280c49f3aadb8330d27a350de6d8338db2a4671672ea0717fcf2bbb2406',
 			legalCopy: '964dbf1b15fbaa01381e11a826ee22bc5d0b51a35398c87c896645a79b9257ae',
-			mapCopy: '6349594f40e53c2ded130cf3eee960678abd71de2eb69b98b0b9251560c3d001',
+			mapCopy: '6a6f1ae63f43e28bd430c165f0dd309073b2357556529a849c55ce16a7c1c973',
 			mapSelectionDetailCopy: '90888363cae6520c8ae006c09241b77faf572a9cc06dec64630ed1a9c04d3318',
 			metricsCopy: '836857439792b6506b8bb691d286186a816b29b09c0b5525d3f2cd9843f202e4',
 			networkReliabilityCopy: '1f17b10e6c9ff75c7ce6de97e87ffb9a48b88da32d53c807a1ad4b3e7c412cef',

@@ -69,13 +69,16 @@ describe('MapStage', () => {
 	it('resolves the basemap at construction for a hot first paint with no post-mount setStyle wipe (B2)', () => {
 		const s = source();
 
-		// A loader prop, awaited before the Map is built.
-		expect(s).toContain('basemapLoader?: () => Promise<BasemapFile | null>');
+		// A loader prop, started before the import barriers and awaited before the Map is built.
+		expect(s).toContain(
+			'basemapLoader?: (ctx: { signal: AbortSignal }) => Promise<BasemapFile | null>',
+		);
 		expect(s).toContain('basemapLoader');
-		expect(s).toContain('await basemapLoader().catch(() => null)');
+		expect(s).toContain('const basemapPromise = Promise.resolve()');
+		expect(s).toContain('basemapLoader({ signal: attempt.controller.signal })');
+		expect(s).toContain('const initialBasemap = await basemapPromise');
 		// The resolved basemap seeds BOTH the constructor style AND the swap baseline,
 		// so the swap effect treats it as the initial style (no immediate setStyle).
-		expect(s).toContain('const initialBasemap: BasemapFile | null = basemapLoader');
 		expect(s).toContain('activeStyleKey = styleKey(initialBasemap)');
 		expect(s).toMatch(/resolveBasemapStyle\(\s*\{ basemap: initialBasemap \? '' : null \}/);
 		// The swap effect ignores `undefined` (deferred to the loader) so a transient

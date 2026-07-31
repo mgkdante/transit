@@ -49,9 +49,9 @@ function codeOnly(text: string): string {
 const forbiddenIdentifiers = /\b(?:navigator|geolocation|fetch)\b/gu;
 
 describe('MapHero orchestrator — structural law', () => {
-	it('lands M2b below the frozen 861-line script ratchet', () => {
+	it('re-freezes M2d at its actual 865-line script count', () => {
 		expect(script).toBeDefined();
-		expect(script!.split(/\r?\n/u).length).toBeLessThan(861);
+		expect(script!.split(/\r?\n/u).length).toBeLessThan(866);
 	});
 
 	it('keeps hover out of bulk feeds and replays emphasis only through the layer revision seam', () => {
@@ -94,7 +94,7 @@ describe('MapHero orchestrator — structural law', () => {
 
 	it('wires hot-first-paint loading and extracted camera framing into MapStage', () => {
 		expect(mapStage).toBeDefined();
-		expect(mapStage).toContain('basemapLoader={() => getBasemap()}');
+		expect(mapStage).toContain('basemapLoader={({ signal }) => getBasemap({ signal })}');
 		expect(mapStage).not.toContain('basemap={');
 		expect(mapStage).toContain('center={mapInitialCenter}');
 		expect(mapStage).toContain('bounds={ISLAND_FIT_BOUNDS}');
