@@ -126,6 +126,28 @@ def test_observation_date_uses_the_exact_provider_local_midnight() -> None:
     assert after_midnight[0].observation_date.isoformat() == "2026-07-02"
 
 
+def test_observation_date_survives_the_fall_back_dst_boundary() -> None:
+    """S5-378 NB5: on 2026-11-01 Toronto falls back (EDT→EST, midnight moves
+    05:00Z→05:30Z is wrong — the offset flips 04:00→05:00 mid-day); a UTC
+    instant late that local day must still bucket to 2026-11-01."""
+
+    late_fall_back_day = build_alert_language_observations(
+        _snapshot(
+            {"alerts": [{"id": "dst", "header": "Avis"}]},
+            captured_at_utc=datetime(2026, 11, 2, 4, 59, tzinfo=UTC),
+        )
+    )
+    next_local_day = build_alert_language_observations(
+        _snapshot(
+            {"alerts": [{"id": "dst", "header": "Avis"}]},
+            captured_at_utc=datetime(2026, 11, 2, 5, 1, tzinfo=UTC),
+        )
+    )
+
+    assert late_fall_back_day[0].observation_date.isoformat() == "2026-11-01"
+    assert next_local_day[0].observation_date.isoformat() == "2026-11-02"
+
+
 def test_scd_enrichment_fields_cannot_leak_into_an_observation() -> None:
     """Falsification: a naive SCD reader reports EN; the raw seam must not."""
 
@@ -204,6 +226,46 @@ def test_no_provider_id_falls_back_to_enrichment_neutral_content_identity() -> N
 
     assert without_en.alert_logical_id.startswith("content:")
     assert without_en.alert_logical_id == with_en.alert_logical_id
+
+
+def test_no_provider_id_identity_survives_english_arriving_as_a_new_key() -> None:
+    """Break caught (S5-378 B2 shape B): an EN-only field left behind as
+    present-and-empty minting a second logical id — the day would then carry
+    two rows for one real alert and halve the EN percentage."""
+
+    base = {"header": [{"language": "fr", "text": "Interruption"}]}
+    enriched = {
+        "header": [{"language": "fr", "text": "Interruption"}],
+        "description": [{"language": "en", "text": "No service"}],
+    }
+
+    (without_en,) = build_alert_language_observations(_snapshot({"alerts": [base]}))
+    (with_en,) = build_alert_language_observations(
+        _snapshot({"alerts": [enriched]})
+    )
+
+    assert without_en.alert_logical_id == with_en.alert_logical_id
+    assert with_en.has_explicit_en
+
+
+def test_no_provider_id_identity_survives_single_object_english_translation() -> None:
+    """Break caught (S5-378 B2 shape F): the single-object translation form
+    ({"language": "en", "text": ...}) — accepted by _has_explicit_language —
+    never being stripped from the identity."""
+
+    base = {"header": [{"language": "fr", "text": "Interruption"}]}
+    enriched = {
+        "header": [{"language": "fr", "text": "Interruption"}],
+        "description": {"language": "en", "text": "No service"},
+    }
+
+    (without_en,) = build_alert_language_observations(_snapshot({"alerts": [base]}))
+    (with_en,) = build_alert_language_observations(
+        _snapshot({"alerts": [enriched]})
+    )
+
+    assert without_en.alert_logical_id == with_en.alert_logical_id
+    assert with_en.has_explicit_en
 
 
 def test_no_provider_id_keeps_distinct_english_only_alerts_separate() -> None:

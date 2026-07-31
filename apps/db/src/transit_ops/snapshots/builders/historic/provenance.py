@@ -203,10 +203,14 @@ def build_provenance(
                 "populated only from explicitly tagged English variants. Once "
                 "observed for a content version, Silver's monotonic merge retains "
                 "the last explicit English value when later raw observations omit "
-                "English or leave it untagged; the fields remain NULL only when "
-                "explicit English has never been observed for that content version. "
-                "Coverage is measured from pre-coalescing observations, never from "
-                "the monotonic English fields on Silver SCD rows."
+                "English or leave it untagged; the fields remain NULL when "
+                "explicit English has never been observed for that content "
+                "version, plus a legacy tail: history entries built solely from "
+                "pre-2026-06-09 NULL-hash rows carry no English text regardless "
+                "of what the provider published, until they age out of the "
+                "retention window. Coverage is measured from pre-coalescing "
+                "observations, never from the monotonic English fields on Silver "
+                "SCD rows."
             ),
             "alert_history_window": (
                 "historic/alert_history.json serves the full honest retention "

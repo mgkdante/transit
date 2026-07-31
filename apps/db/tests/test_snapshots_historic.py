@@ -3759,8 +3759,14 @@ def test_provenance_methodology_discloses_monotonic_alert_text_en_truth() -> Non
     assert "never been observed" in alert_en
     assert "pre-coalescing observations" in alert_en
     assert "Silver SCD" in alert_en
+    # Provider-agnostic (0037's residue is a pipeline fact, not an STM fact) —
+    # but the legacy tail itself MUST be disclosed: pre-2026-06-09 NULL-hash
+    # history entries carry no EN regardless of what the provider published
+    # (S5-378 B1 — "NULL only when never observed" alone is a false absolute).
     assert "STM" not in alert_en
-    assert "2026-06-09" not in alert_en
+    assert "legacy tail" in alert_en
+    assert "pre-2026-06-09" in alert_en
+    assert "regardless of what the provider published" in alert_en
 
 
 def test_build_provenance_empty_sources_still_valid() -> None:

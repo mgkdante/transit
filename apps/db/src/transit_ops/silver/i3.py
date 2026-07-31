@@ -484,6 +484,11 @@ def _without_explicit_english(payload: object) -> object:
             )
         ]
     if isinstance(payload, dict):
+        # The single-object translation form ({"language": "en", "text": ...})
+        # IS the English variant — strip the whole object, matching the form
+        # _has_explicit_language already accepts (S5-378 B2 shape F).
+        if _primary_language(payload.get("language")) in {"en", "eng"}:
+            return {}
         return {
             key: _without_explicit_english(value)
             for key, value in payload.items()
@@ -510,7 +515,14 @@ def _fallback_alert_logical_id(raw_alert: dict[str, Any]) -> str:
         if key in _SCD_ENRICHMENT_KEYS:
             continue
         if key in text_keys and has_non_english_identity_text:
-            enrichment_neutral[key] = text_without_english[key]
+            stripped = text_without_english[key]
+            # A field that only ever held English must be ABSENT from the
+            # identity, not present-and-empty — otherwise the alert that gains
+            # an English description mid-day mints a second logical id and the
+            # day double-counts (S5-378 B2 shape B).
+            if _text(stripped) is None:
+                continue
+            enrichment_neutral[key] = stripped
         else:
             enrichment_neutral[key] = value
     encoded = json.dumps(
