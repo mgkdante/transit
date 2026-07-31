@@ -93,6 +93,16 @@ const HOME: BilingualSeo = {
 	},
 };
 
+const PRIVACY_DESCRIPTION: BilingualText = {
+	en: 'This privacy page is a placeholder while the full Transit policy is under legal review. The complete text will be published here once approved.',
+	fr: 'Cette page de confidentialité est provisoire pendant la révision juridique de Transit. Le texte complet sera publié ici une fois approuvé.',
+};
+
+const TERMS_DESCRIPTION: BilingualText = {
+	en: 'This terms page is a placeholder while the Transit conditions of use are under legal review. The complete text will be published here once approved.',
+	fr: 'Cette page de conditions est provisoire pendant la révision juridique de Transit. Le texte complet sera publié ici une fois approuvé.',
+};
+
 const SURFACES: Record<string, BilingualSeo> = {
 	'/map': {
 		title: { en: 'Live map', fr: 'Carte en direct' },
@@ -214,6 +224,16 @@ const SURFACES: Record<string, BilingualSeo> = {
 			en: 'Past transit service alerts across the network, newest first, with their duration, cause, effect and reach, archived from the open /v1 data contract.',
 			fr: 'Les avis de service passés du réseau, du plus récent au plus ancien, avec durée, cause, effet et portée, archivés depuis le contrat ouvert /v1.',
 		},
+	},
+	'/privacy': {
+		title: { en: 'Privacy', fr: 'Confidentialité' },
+		description: () => PRIVACY_DESCRIPTION,
+		neutralDescription: PRIVACY_DESCRIPTION,
+	},
+	'/terms': {
+		title: { en: 'Terms', fr: 'Conditions d’utilisation' },
+		description: () => TERMS_DESCRIPTION,
+		neutralDescription: TERMS_DESCRIPTION,
 	},
 };
 

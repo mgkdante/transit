@@ -199,12 +199,18 @@ def build_provenance(
                 "repeated 01:00-01:59 hour follows that elapsed-time convention"
             ),
             "alert_text_en": (
-                "English alert text (header_text_en, description_en) is present "
-                "only where STM published an explicit English variant and only "
-                "for content-hashed rows captured since 2026-06-09; it is "
-                "honest-NULL otherwise, including for pre-2026-06-09 legacy "
-                "history entries built from NULL-hash rows, which carry no EN "
-                "text until they age out of the history window"
+                "English alert text fields (header_text_en, description_en) are "
+                "populated only from explicitly tagged English variants. Once "
+                "observed for a content version, Silver's monotonic merge retains "
+                "the last explicit English value when later raw observations omit "
+                "English or leave it untagged; the fields remain NULL when "
+                "explicit English has never been observed for that content "
+                "version, plus a legacy tail: history entries built solely from "
+                "pre-2026-06-09 NULL-hash rows carry no English text regardless "
+                "of what the provider published, until they age out of the "
+                "retention window. Coverage is measured from pre-coalescing "
+                "observations, never from the monotonic English fields on Silver "
+                "SCD rows."
             ),
             "alert_history_window": (
                 "historic/alert_history.json serves the full honest retention "

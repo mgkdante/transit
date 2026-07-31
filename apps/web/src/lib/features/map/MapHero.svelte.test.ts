@@ -118,6 +118,10 @@ const harness = vi.hoisted(() => {
 
 	return {
 		alert,
+		// reassigned by the $app/stores mock factory below
+		setPageUrl: (_href: string): void => {
+			throw new Error('setPageUrl used before the $app/stores mock factory ran');
+		},
 		createLiveStore: vi.fn((_manifest: unknown, _options?: unknown) => liveStore),
 		liveStore,
 		identityReceivers,
@@ -159,20 +163,24 @@ const harness = vi.hoisted(() => {
 	};
 });
 
+const originalSecureContext = Object.getOwnPropertyDescriptor(window, 'isSecureContext');
+const originalGeolocation = Object.getOwnPropertyDescriptor(navigator, 'geolocation');
+
 vi.mock('$app/stores', async () => {
-	const { readable } = await import('svelte/store');
-	return {
-		page: readable({
-			url: new URL('http://localhost/map'),
-			params: {},
-			route: { id: '/map' },
-			status: 200,
-			error: null,
-			data: {},
-			form: null,
-			state: {},
-		}),
-	};
+	const { writable } = await import('svelte/store');
+	const pageValue = (url: URL) => ({
+		url,
+		params: {},
+		route: { id: '/map' },
+		status: 200,
+		error: null,
+		data: {},
+		form: null,
+		state: {},
+	});
+	const store = writable(pageValue(new URL('http://localhost/map')));
+	harness.setPageUrl = (href: string) => store.set(pageValue(new URL(href)));
+	return { page: store };
 });
 
 vi.mock('$app/navigation', () => ({
@@ -309,6 +317,116 @@ afterEach(() => {
 	document.body.innerHTML = '';
 	vi.clearAllMocks();
 	harness.identityReceivers.length = 0;
+	if (originalSecureContext) {
+		Object.defineProperty(window, 'isSecureContext', originalSecureContext);
+	} else {
+		Reflect.deleteProperty(window, 'isSecureContext');
+	}
+	if (originalGeolocation) {
+		Object.defineProperty(navigator, 'geolocation', originalGeolocation);
+	} else {
+		Reflect.deleteProperty(navigator, 'geolocation');
+	}
+});
+
+describe('MapHero near-me device location', () => {
+	it('pins a successful device fix without writing its coordinates or label to the URL', async () => {
+		const position: GeolocationPosition = {
+			coords: {
+				latitude: 45.525686,
+				longitude: -73.594764,
+				accuracy: 12,
+				altitude: null,
+				altitudeAccuracy: null,
+				heading: null,
+				speed: null,
+				toJSON: () => ({}),
+			},
+			timestamp: Date.parse('2026-06-20T12:00:30Z'),
+			toJSON: () => ({}),
+		};
+		const getCurrentPosition = vi.fn((success: PositionCallback) => success(position));
+		Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+		Object.defineProperty(navigator, 'geolocation', {
+			configurable: true,
+			value: { getCurrentPosition },
+		});
+
+		render(MapHero);
+		await fireEvent.click(screen.getByRole('button', { name: 'Stops near me' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+
+		await waitFor(() => expect(getCurrentPosition).toHaveBeenCalledTimes(1));
+		for (const [target] of harness.goto.mock.calls) {
+			const search = new URL(String(target), 'http://localhost/map').searchParams;
+			expect(search.has('near')).toBe(false);
+			expect(search.has('nearLabel')).toBe(false);
+			expect(search.has('nearPrecision')).toBe(false);
+		}
+		await waitFor(() =>
+			expect(harness.setNearTarget).toHaveBeenLastCalledWith(expect.anything(), {
+				lat: 45.525686,
+				lon: -73.594764,
+				label: 'Use my location',
+				precision: 'place',
+			}),
+		);
+	});
+
+	it('keeps the device fix alive when a later navigation drops the near params (S5-377 B1)', async () => {
+		const position: GeolocationPosition = {
+			coords: {
+				latitude: 45.525686,
+				longitude: -73.594764,
+				accuracy: 12,
+				altitude: null,
+				altitudeAccuracy: null,
+				heading: null,
+				speed: null,
+				toJSON: () => ({}),
+			},
+			timestamp: Date.parse('2026-06-20T12:00:30Z'),
+			toJSON: () => ({}),
+		};
+		Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+		Object.defineProperty(navigator, 'geolocation', {
+			configurable: true,
+			value: { getCurrentPosition: vi.fn((success: PositionCallback) => success(position)) },
+		});
+
+		render(MapHero);
+		await fireEvent.click(screen.getByRole('button', { name: 'Stops near me' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+		await waitFor(() =>
+			expect(screen.getByRole('button', { name: 'Clear location' })).toBeTruthy(),
+		);
+
+		// A filter toggle rewrites the query string; the device origin is not
+		// URL-backed, so the URL sync-from must not destroy it.
+		harness.setPageUrl('http://localhost/map?routes=55');
+		// tick() flushes the URL-sync effect AND its DOM fallout before the
+		// assertion — a waitFor here would pass on its first pre-flush check and
+		// green-light a build that destroys the fix a microtask later.
+		await tick();
+		expect(screen.getByRole('button', { name: 'Clear location' })).toBeTruthy();
+
+		harness.setPageUrl('http://localhost/map');
+	});
+
+	it('retires a URL-adopted origin when the URL drops the near params (S5-377 B1 inverse)', async () => {
+		// A shared deep-link seeds the origin FROM the URL. That origin is owned
+		// by the URL (urlBacked) even though adopting it must not echo a write
+		// back — so when navigation drops the near params, the pin retires.
+		harness.setPageUrl('http://localhost/map?near=45.525686,-73.594764&nearLabel=Place+des+Arts');
+		render(MapHero);
+		await waitFor(() =>
+			expect(screen.getByRole('button', { name: 'Clear location' })).toBeTruthy(),
+		);
+
+		harness.setPageUrl('http://localhost/map');
+		await tick();
+		expect(screen.queryByRole('button', { name: 'Clear location' })).toBeNull();
+	});
 });
 
 describe('MapHero map-layer feed lifecycle', () => {

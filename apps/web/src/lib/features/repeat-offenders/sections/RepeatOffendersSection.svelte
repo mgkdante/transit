@@ -74,6 +74,7 @@
 			</SectionHeading>
 		</div>
 		<p class="caption" data-slot="offender-window">{windowCaption}</p>
+		<!-- HF guards the chart contract only; it imposes no constraint on the adjacent DataTable. -->
 		<div data-slot="offender-ladder" data-card-interactive>
 			<Chart spec={ladder.spec} />
 		</div>

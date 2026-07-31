@@ -60,6 +60,23 @@ describe('SURFACE_NAV manifest', () => {
 			expect(item.label.fr, item.href).toBeTruthy();
 		}
 	});
+
+	it('derives the legal destinations into SECONDARY_NAV with the approved labels', () => {
+		const legal = (
+			navigation as typeof navigation & {
+				LEGAL_NAV: readonly {
+					href: string;
+					label: { en: string; fr: string };
+				}[];
+			}
+		).LEGAL_NAV;
+
+		expect(legal).toEqual([
+			{ href: '/privacy', label: { en: 'Privacy', fr: 'Confidentialité' } },
+			{ href: '/terms', label: { en: 'Terms', fr: 'Conditions d’utilisation' } },
+		]);
+		expect(SECONDARY_NAV.slice(-2)).toEqual(legal);
+	});
 });
 
 describe('AUDIT_NAV (side-nav Audit group)', () => {
@@ -150,6 +167,14 @@ describe('mainLandmarkLabel', () => {
 		expect(mainLandmarkLabel('/metrics')).toEqual({
 			en: 'How we measure',
 			fr: 'Comment on mesure',
+		});
+	});
+
+	it('names both legal landmarks from the shared secondary navigation', () => {
+		expect(mainLandmarkLabel('/privacy')).toEqual({ en: 'Privacy', fr: 'Confidentialité' });
+		expect(mainLandmarkLabel('/terms')).toEqual({
+			en: 'Terms',
+			fr: 'Conditions d’utilisation',
 		});
 	});
 

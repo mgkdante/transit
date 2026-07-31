@@ -1,12 +1,10 @@
 export type GeocodePrecision = 'address' | 'street' | 'neighbourhood' | 'postal' | 'place';
 
-export type GeocodeSource = 'geo_ca' | 'nominatim' | 'google_places';
+export type GeocodeSource = 'geo_ca' | 'google_places';
 
 /**
- * The Montréal bias rectangle shared by every geocode provider (Google Places
- * locationRestriction, the Nominatim viewbox, the near-me coordinate guard) and
- * the Place-Details bounds check. ONE source of truth — was duplicated across
- * googlePlaces.ts / nominatim.ts / mapNear.ts / MapHero.svelte.
+ * The Montréal bias rectangle shared by Google Places locationRestriction,
+ * the near-me coordinate guard, and the Place-Details bounds check.
  */
 export const MONTREAL_BOUNDS = {
 	minLat: 45.35,
@@ -25,11 +23,6 @@ export function isInsideMontrealBounds(lat: number, lon: number): boolean {
 	);
 }
 
-/** Nominatim `viewbox` string (lon,lat order: left,top,right,bottom). */
-export function montrealViewbox(): string {
-	return `${MONTREAL_BOUNDS.minLon},${MONTREAL_BOUNDS.maxLat},${MONTREAL_BOUNDS.maxLon},${MONTREAL_BOUNDS.minLat}`;
-}
-
 export interface GeocodeSuggestion {
 	readonly lat?: number;
 	readonly lon?: number;
@@ -43,9 +36,8 @@ export interface GeocodeSuggestion {
 export interface GeocodedLocation extends GeocodeSuggestion {
 	readonly lat: number;
 	readonly lon: number;
-	// google_places joins geo_ca/nominatim once a Place-Details call resolves a
-	// placeId to exact coordinates (Google autocomplete itself is coordinate-less).
-	readonly source: 'geo_ca' | 'nominatim' | 'google_places';
+	// Google autocomplete itself is coordinate-less until Place Details resolves it.
+	readonly source: 'geo_ca' | 'google_places';
 }
 
 export function hasCoordinates(suggestion: GeocodeSuggestion): suggestion is GeocodedLocation {

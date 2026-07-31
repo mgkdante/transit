@@ -8,10 +8,10 @@
                product mark + a bilingual tagline. transit.yesid.dev is a
                yesid.dev product, so the chrome carries the house mark, mirrors
                the TopBar brand cluster.
-      RIGHT  : localized Explore and Audit link groups from the canonical nav.
+      RIGHT  : localized Explore, Audit and Legal link groups from the canonical nav.
     Row 2 (below the hazard rule, departure-board rule):
-      the active provider's open-data attribution (manifest.attribution, rendered
-      verbatim as a per-provider licence obligation) + the unofficial-site
+      caller-supplied attribution (the active manifest's verbatim licence on data
+      routes, static under-review copy on legal placeholders) + the unofficial-site
       disclaimer (Honesty Gate #6) on the left; the live system-date readout on
       the right (the orange route-set lamp is the lone --primary touch).
 
@@ -23,7 +23,7 @@
 <script lang="ts">
 	import { DEFAULT_LOCALE, getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { FooterGroup, FooterLink } from '@yesid/ui/footer';
-	import { SURFACE_NAV, AUDIT_NAV } from '$lib/content/nav';
+	import { SURFACE_NAV, AUDIT_NAV, LEGAL_NAV } from '$lib/content/nav';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
 	import { footerCopy } from './footer.copy';
@@ -32,9 +32,9 @@
 		/** Active locale (prop wins; falls back to context for isolated renders). */
 		locale?: Locale;
 		/**
-		 * Per-provider open-data licence string (manifest.attribution), rendered
-		 * VERBATIM — a licence obligation, not cosmetic copy. Omitted ⇒ the
-		 * attribution line is hidden (never fabricate a licence we don't hold).
+		 * Caller-owned attribution rendered verbatim. Data routes supply the active
+		 * manifest licence; legal placeholders supply static under-review copy.
+		 * Omitted ⇒ the line is hidden (never fabricate a licence we do not hold).
 		 */
 		attribution?: string;
 		/** Provider display name (manifest.display_name); drives the tagline + disclaimer. */
@@ -57,14 +57,13 @@
 
 	// Provider-driven copy (multi-provider Layer A): the agency NAME comes from the
 	// manifest (display_name), with a neutral, provider-agnostic fallback for the
-	// brief window before the v1 context boots — NEVER a hardcoded 'STM'. The
-	// licence line is the manifest's verbatim attribution (a per-provider obligation).
+	// brief window before the v1 context boots — NEVER a hardcoded 'STM'.
 	const agencyName = $derived(providerName ?? t.providerFallback);
 	const tagline = $derived(t.tagline(agencyName));
 	const disclaimer = $derived(t.disclaimer(agencyName));
 
-	// The two footer groups consume the canonical manifests directly, preserving
-	// their distinct wayfinding/accountability roles and manifest order.
+	// The three footer groups consume the canonical manifests directly, preserving
+	// their distinct wayfinding/accountability/legal roles and manifest order.
 	const exploreLinks = $derived(
 		SURFACE_NAV.map((item) => ({
 			label: item.label[locale],
@@ -77,52 +76,63 @@
 			href: localizeHref(item.href, locale),
 		})),
 	);
+	const legalLinks = $derived(
+		LEGAL_NAV.map((item) => ({
+			label: item.label[locale],
+			href: localizeHref(item.href, locale),
+		})),
+	);
 </script>
 
 <footer data-testid="footer" data-slot="footer" class="relative z-50 bg-[var(--muted)]">
 	<!-- Platform edge: the footer's top line is real hazard tape. -->
 	<div class="footer-gradient-sep" aria-hidden="true"></div>
 
-	<!-- Row 1: Main content -->
+	<!-- Row 1: full-bleed grouped columns — the Transit brand block plus the
+	     EXPLORE / AUDIT / LEGAL groups, edge to edge with page padding. -->
 	<div
-		class="mx-auto flex max-w-5xl flex-col items-center gap-6 px-6 pb-5 pt-10 sm:flex-row sm:items-start sm:justify-between sm:px-10 sm:pt-12"
+		class="grid w-full grid-cols-1 gap-10 px-6 pb-8 pt-10 sm:grid-cols-2 sm:px-10 sm:pt-12 lg:grid-cols-[1.5fr_1fr_1fr_1fr] lg:gap-8 lg:px-16 lg:pt-14"
 	>
-		<!-- Left: parent wordmark + transit product mark + tagline (shared cluster). -->
-		<div class="flex flex-col items-center sm:items-start">
+		<!-- Brand block: shared parent wordmark + Transit product mark + tagline. -->
+		<div class="flex flex-col items-start">
 			<BrandCluster variant="footer" productHref={localizeHref('/', locale)} />
-			<span class="mt-1 font-mono text-caption text-[var(--muted-foreground)]">{tagline}</span>
+			<span class="mt-2 font-mono text-xs text-[var(--muted-foreground)]">{tagline}</span>
 		</div>
 
-		<!-- Right: one labelled landmark, with the canonical Explore and Audit groups. -->
-		<nav aria-label={t.navAria} class="flex flex-wrap justify-center gap-x-8 gap-y-6">
-			<FooterGroup
-				label={t.exploreLabel}
-				role="group"
-				aria-label={t.exploreLabel}
-				class="items-center sm:items-start"
-			>
+		<!-- EXPLORE: citizen-facing surfaces. -->
+		<nav aria-label={t.exploreLabel} class="flex flex-col gap-2">
+			<!-- Parity hold: the shared leaf ships a 44px tap floor; adopting it changes footer geometry (recorded owner follow-up, not a silent change). Applies to all three groups below. -->
+			<FooterGroup label={t.exploreLabel} style="--size-tap-min: 0px;">
 				{#each exploreLinks as link (link.href)}
 					<FooterLink href={link.href}>{link.label}</FooterLink>
 				{/each}
 			</FooterGroup>
-			<FooterGroup
-				label={t.auditLabel}
-				role="group"
-				aria-label={t.auditLabel}
-				class="items-center sm:items-start"
-			>
+		</nav>
+
+		<!-- AUDIT: accountability surfaces. -->
+		<nav aria-label={t.auditLabel} class="flex flex-col gap-2">
+			<FooterGroup label={t.auditLabel} style="--size-tap-min: 0px;">
 				{#each auditLinks as link (link.href)}
+					<FooterLink href={link.href}>{link.label}</FooterLink>
+				{/each}
+			</FooterGroup>
+		</nav>
+
+		<!-- LEGAL: the policy pages. -->
+		<nav aria-label={t.legalLabel} data-testid="footer-legal" class="flex flex-col gap-2">
+			<FooterGroup label={t.legalLabel} style="--size-tap-min: 0px;">
+				{#each legalLinks as link (link.href)}
 					<FooterLink href={link.href}>{link.label}</FooterLink>
 				{/each}
 			</FooterGroup>
 		</nav>
 	</div>
 
-	<!-- Row 2: Status bar, below the hazard rule. Active-provider open-data attribution
-	     + the unofficial-site disclaimer (Honesty Gate #6) on the left; the live
-	     system readout on the right (the orange route-set lamp is the lone --primary touch). -->
+	<!-- Row 2: Status bar, below the hazard rule. Caller-supplied attribution + the
+	     unofficial-site disclaimer (Honesty Gate #6) sit on the left; the live system
+	     readout sits on the right (the orange route-set lamp is the lone --primary touch). -->
 	<div
-		class="footer-status-border mx-auto flex max-w-5xl flex-col items-center gap-2 px-6 py-4 font-mono text-caption text-[var(--muted-foreground)] sm:flex-row sm:justify-between sm:px-10"
+		class="footer-status-border flex w-full flex-col items-center gap-2 px-6 py-4 font-mono text-caption text-[var(--muted-foreground)] sm:flex-row sm:justify-between sm:px-10 lg:px-16"
 	>
 		<p class="footer-honesty m-0 text-center sm:text-left">
 			{#if attributionProp}<span>{attributionProp}</span>{/if}
@@ -150,10 +160,9 @@
 		);
 	}
 
-	/* The status bar's top line is a BOLD departure-board rule — a full-width
-	   structural divider on the strong-border ink (P7: not a brand accent rule). */
+	/* Owner directive: match yesid.dev's bold amber departure-board divider. */
 	.footer-status-border {
-		border-top: 2px solid var(--border-strong);
+		border-top: 2px solid var(--border-rule-accent);
 	}
 
 	footer {

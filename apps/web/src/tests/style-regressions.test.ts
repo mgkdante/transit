@@ -14,6 +14,9 @@
 // guard now runs over the whole component + route tree with EMPTY selector/value
 // allowlists (§C4: "Allowlists start and stay EMPTY."). Structural/legacy files
 // outside the prose-measure law use the documented path-prefix exclusions below.
+// Slice 040's binding owner directive restores one exact full-width footer
+// divider; that declaration is inventory-pinned below while every other hit
+// remains forbidden.
 //
 // FROZEN EXEMPTION (§C4 P8): the P5.2 chart marks under
 // `lib/components/dataviz/chart/marks/**` are FROZEN — the sweep does not touch
@@ -153,6 +156,8 @@ const EMPTY_MEASURE_LITERAL_ALLOWLIST: readonly string[] = [];
 // 'src/lib/components' root a mark reads 'src/dataviz/chart/marks/…'); match on
 // the directory segment to stay independent of which root produced the hit.
 const FROZEN_MARKS_SEGMENT = 'dataviz/chart/marks/';
+const OWNER_DIRECTED_FOOTER_DIVIDER = 'src/layout/Footer.svelte';
+const OWNER_DIRECTED_FOOTER_DECLARATION = 'border-top: 2px solid var(--border-rule-accent)';
 
 function measureHitPrefix(scanRoot: (typeof FORBIDDEN_ROOTS)[number], appPrefix: string) {
 	return appPrefix.replace(scanRoot, 'src');
@@ -232,10 +237,20 @@ const DATA_TABLE_SITE = 'src/data/DataTable.svelte';
 const TO_MIGRATE_2026_07_30 = [
 	'src/health/sections/SectionHistoryCoverage.svelte',
 	'src/home/HomeHero.svelte',
-	'src/hotspots/sections/HotspotSection.svelte',
-	'src/repeat-offenders/sections/RepeatOffenderEvidenceTable.svelte',
 	'src/schedule/ScheduleTable.svelte',
 ] as const;
+
+it('pins the owner-directed footer divider as the only P7 stripe in Footer.svelte', () => {
+	const source = readFileSync(
+		resolve(process.cwd(), 'src/lib/components/layout/Footer.svelte'),
+		'utf8',
+	);
+	const stripePattern = new RegExp(FORBIDDEN[0].pattern.source, 'g');
+	const statusRule = source.match(/\.footer-status-border\s*\{([^}]*)\}/)?.[1] ?? '';
+
+	expect(source.match(stripePattern)).toHaveLength(1);
+	expect(statusRule.replace(/\s+/g, ' ').trim()).toBe(`${OWNER_DIRECTED_FOOTER_DECLARATION};`);
+});
 
 describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 	for (const rel of FORBIDDEN_ROOTS) {
@@ -251,6 +266,8 @@ describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 				hits: r.hits
 					// Drop frozen-marks hits (§C4 P8) — the sweep never edits those files.
 					.filter((h) => !h.includes(FROZEN_MARKS_SEGMENT))
+					// Slice 040's owner-directed footer divider (pinned below).
+					.filter((h) => !(r.reason === FORBIDDEN[0].reason && h === OWNER_DIRECTED_FOOTER_DIVIDER))
 					// A6 exceptions are path-prefix exclusions for this pattern only.
 					.filter(
 						(h) => r.pattern !== BARE_PROSE_MEASURE_PATTERN || !isMeasurePathExcluded(rel, h),
