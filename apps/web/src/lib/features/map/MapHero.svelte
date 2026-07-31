@@ -41,16 +41,13 @@
 	import { createFilterStore, fromSearchParams, type Chip } from '$lib/filters';
 	import { copyNearTargetSearchParams } from '$lib/search/mapNear';
 	import { nearTargetFromSearchParams } from '$lib/search/mapNear';
-	import { parseMapFocus, type MapFocus } from '$lib/search/mapFocus';
+	import { parseMapFocus } from '$lib/search/mapFocus';
 	import { RightPanel } from '$lib/components/shell';
 	import {
 		MapStage,
 		createVehicleMotionController,
 		nearestStops,
-		centerFromProviderBbox,
 		liveTtlS,
-		type LatLon,
-		type MapFitPadding,
 		type WithDistance,
 		type VehicleMotionController,
 		type FixResolver,
@@ -74,7 +71,15 @@
 		buildFocusClearSearch,
 	} from './mapUrlSync';
 	import { motionFeedAnimate } from './motionFeed';
-	import { parseCoordinateQuery, nearTargetKey } from './mapNearMe';
+	import { nearTargetKey } from './mapNearMe';
+	import { createMapNearMeController, type NearMeOrigin } from './mapNearMeController.svelte';
+	import { createMapFocusController } from './mapFocusController.svelte';
+	import {
+		deriveMapFitPadding,
+		ISLAND_FIT_BOUNDS,
+		MAP_MAX_BOUNDS,
+		mapInitialCenter,
+	} from './mapCameraFraming';
 	import { copy as MAP_COPY } from './map.copy';
 	import { readStoredDetailPanelWidth } from './mapDetailPanes';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
@@ -93,35 +98,12 @@
 		type MapSelectionDetail as MapSelectionDetailModel,
 	} from './mapSelection';
 	import { createSelectionGrace } from './selectionGrace.svelte';
-	import type { GeocodedLocation, GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
-	import { hasCoordinates } from '$lib/geocode/types';
 
 	const locale: Locale = getLocale();
 	const t = $derived(MAP_COPY[locale]);
 	const theme = $derived(themeStore.current);
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
-	// Initial framing fits the ISLAND itself (OSM Île de Montréal extremes), NOT
-	// the wide basemap square — so the off-island south-shore EAST (Longueuil →
-	// Otterburn → past Saint-Basile-le-Grand) is cropped instead of eating the
-	// right half. On desktop a left reserve shifts the island RIGHT, clear of the
-	// filter panel, and reveals west map (Lac Saint-Louis) in the freed-up left.
-	// maxBounds stays the looser basemap square so that west overflow renders
-	// without MapLibre clamping. [minLon, minLat, maxLon, maxLat].
-	// Island bounds (verified OSM Île de Montréal extremes: W -73.9757 / E -73.4764
-	// / S 45.4022 / N 45.7028) — the camera FIT target.
-	const ISLAND_FIT_BOUNDS = [-73.9757, 45.4022, -73.4764, 45.7028] as const;
-	const mapInitialCenter = $derived(centerFromProviderBbox(ISLAND_FIT_BOUNDS));
-	const MAP_FIT_PADDING_PX = 40;
-
-	// HARD pan/view limit. East edge ~Saint-Basile-le-Grand (-73.30): far enough
-	// past the island NE tip (-73.476) to leave room for the right BAND/buffer the
-	// detail panel sits over (left maxBounds gives the same ~0.19° room for the
-	// perfect left band), but tight enough that the far sprawl (Otterburn →
-	// Carignan → Saint-Mathias) is still cropped. Fit padding only *positions* — it
-	// can't render a band where maxBounds has no room, which is why a tighter east
-	// edge made the right band vanish while the left one worked.
-	const MAP_MAX_BOUNDS = [-74.32, 45.3, -73.2, 45.82] as const;
 
 	// Hero width — window-reactive ONLY. The fit-padding fraction math runs off the
 	// WHOLE-HERO clientWidth. The map is full-bleed (it fills the hero), and every
@@ -131,7 +113,6 @@
 	// the padding. Seeded with a desktop default so the fraction applies before the
 	// first clientWidth measurement (a 0 here would fall back to the wide fit).
 	let mapWidthPx = $state(1280);
-	const fitWidthPx = $derived(mapWidthPx);
 
 	// Hydration-safe `isDesktopLayout` snapshot for the CAMERA-AFFECTING mapFitPadding.
 	// Seeded up front from matchMedia (`isDesktopViewport()`, SSR-safe → false on the
@@ -159,16 +140,6 @@
 		return () => mql.removeEventListener('change', onChange);
 	});
 
-	// Desktop frames the island into a roughly SQUARE central gap with generous
-	// left/right BUFFERS sized as a fraction of the width. The buffers (a) crop the
-	// off-island east (south-shore sprawl), (b) keep the whole island visible past
-	// the left filter panel and the right detail panel at their furthest, and
-	// (c), being static, never shift the map when a panel toggles. The island
-	// sits centred in the visible gap: human-centred, not math-centred on the full
-	// canvas. Tunable knobs:
-	const DESKTOP_LEFT_PAD_FRAC = 0.37; // clears rail + filter panel, with band
-	const DESKTOP_RIGHT_PAD_FRAC = 0.43; // buffer for the right detail panel + band
-	const DESKTOP_VERT_PAD_PX = 56; // small top/bottom → island fills the height (bigger)
 	// Right DETAIL panel — an absolute OVERLAY anchored flush to the map's right edge
 	// (NOT a paneforge pane). Its WIDTH is the `--app-right-detail-offset` CSS var on
 	// .map-hero; dragging the panel's left-edge handle writes a live clamped px width
@@ -182,19 +153,8 @@
 	let heroEl = $state<HTMLDivElement | null>(null);
 	let detailDragging = $state(false);
 	const detailResizeAria = $derived(t.detailResizeLabel);
-	// Reads the hydration-safe `isDesktopLayout` snapshot (not the hydration-flipping
-	// store); both it and fitWidthPx can change on a genuine viewport resize.
-	const mapFitPadding = $derived<MapFitPadding>(
-		isDesktopLayout && fitWidthPx > 0
-			? {
-					top: DESKTOP_VERT_PAD_PX,
-					bottom: DESKTOP_VERT_PAD_PX,
-					left: Math.round(fitWidthPx * DESKTOP_LEFT_PAD_FRAC),
-					right: Math.round(fitWidthPx * DESKTOP_RIGHT_PAD_FRAC),
-				}
-			: MAP_FIT_PADDING_PX,
-	);
-	type NearMeOrigin = LatLon & { label: string; precision?: GeocodePrecision };
+	// Reads the hydration-safe snapshot, never the hydration-flipping layout store.
+	const mapFitPadding = $derived(deriveMapFitPadding(isDesktopLayout, mapWidthPx));
 
 	// URL-DRIVEN filter state — the reusable spine. Seeded from the URL so a reload
 	// (or a deep-link like /map?status=late) restores the exact view; every toggle
@@ -210,19 +170,43 @@
 		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, URL_REWRITE);
 	});
 
+	const nearMeController = createMapNearMeController({
+		goto,
+		currentUrl: () => $page.url,
+		readTarget: nearTargetFromSearchParams,
+		targetKey: nearTargetKey,
+		buildTargetSearch: buildNearTargetSearch,
+		clearTargetSearch: clearNearTargetSearch,
+		focusOrigin: focusNearMeOrigin,
+		fetch: globalThis.fetch,
+		getGeolocation: () => (typeof navigator === 'undefined' ? null : navigator['geolocation']),
+		isSecureContext: () => typeof window === 'undefined' || window.isSecureContext,
+		translations: MAP_COPY[locale],
+	});
+	const focusController = createMapFocusController({
+		readFocus: parseMapFocus,
+		clearFocus: () => {
+			void goto(buildFocusClearSearch($page.url.searchParams, $page.url.pathname), {
+				replaceState: true,
+				keepFocus: true,
+				noScroll: true,
+			});
+		},
+	});
+
 	// Any client navigation can change the URL filter spine: browser back/forward,
 	// top-chrome search, cross-family drilldowns, or the filter pane itself.
 	// Replacing from the URL is side-effect-free, so own replaceState pushes are
 	// harmless and external search picks apply without a reload.
 	afterNavigate(() => {
 		filters.replace(fromSearchParams($page.url.searchParams));
-		syncNearTargetFromUrl($page.url.searchParams);
-		readFocusFromUrl($page.url.searchParams);
+		nearMeController.syncFromUrl($page.url.searchParams);
+		focusController.syncFromUrl($page.url.searchParams);
 	});
 
 	$effect(() => {
-		syncNearTargetFromUrl($page.url.searchParams);
-		readFocusFromUrl($page.url.searchParams);
+		nearMeController.syncFromUrl($page.url.searchParams);
+		focusController.syncFromUrl($page.url.searchParams);
 	});
 
 	// Basemap pointer (hosted Montréal PMTiles), or null → minimal-dark fallback.
@@ -300,16 +284,6 @@
 	let selectionStack = $state<MapSelection[]>([]);
 	let hovered = $state<MapSelection | null>(null);
 	let detailOpen = $state(false);
-	let nearMeOpen = $state(false);
-	let nearMeQuery = $state('');
-	let nearMeLoading = $state(false);
-	let nearMeError = $state<string | null>(null);
-	let nearMeOrigin = $state<NearMeOrigin | null>(null);
-	let nearUrlKey = $state('');
-	let nearOriginUrlBacked = $state(true);
-	// One-shot "zoom to this picked entity" hint from the URL `focus` param. The
-	// resolver effect pans/fits once data is available, then strips the param.
-	let pendingFocus = $state<MapFocus | null>(null);
 
 	// Selection-scoped live families are ref-counted leases keyed strictly on the
 	// committed selection. Hover never activates a family or restarts polling.
@@ -320,7 +294,7 @@
 
 	const stopList = $derived(stops.data?.stops ?? []);
 	const nearbyStops = $derived<WithDistance<SlimStopEntry>[]>(
-		nearMeOrigin ? nearestStops(nearMeOrigin, stopList, 5, 1_200) : [],
+		nearMeController.origin ? nearestStops(nearMeController.origin, stopList, 5, 1_200) : [],
 	);
 	const focusedSelection = $derived(selected ?? hovered);
 	const focusedRouteId = $derived.by<string | null>(() => {
@@ -701,69 +675,12 @@
 		}
 	}
 
-	// syncUrl ("write this origin to the URL?") and urlBacked ("does the URL own
-	// it?") are separate questions: a URL-adopted origin is owned by the URL yet
-	// must not echo back into it; a device fix is neither written nor owned.
-	function setNearMeOrigin(origin: NearMeOrigin, { syncUrl = true, urlBacked = true } = {}): void {
-		nearMeOrigin = origin;
-		nearMeError = null;
-		nearOriginUrlBacked = urlBacked;
-		if (syncUrl) syncNearTargetToUrl(origin);
-		flyToNearMeOrigin(origin);
-	}
-
-	function syncNearTargetToUrl(origin: NearMeOrigin): void {
-		nearUrlKey = nearTargetKey(origin);
-		void goto(
-			buildNearTargetSearch($page.url.searchParams, $page.url.pathname, origin),
-			URL_REWRITE,
-		);
-	}
-
-	function syncNearTargetFromUrl(searchParams: URLSearchParams): void {
-		const nearTarget = nearTargetFromSearchParams(searchParams);
-		if (!nearTarget) {
-			nearUrlKey = '';
-			// Only a URL-backed origin answers to the URL; a device fix (privacy:
-			// coordinates never enter the query string) must survive URL moves.
-			if (nearOriginUrlBacked) nearMeOrigin = null;
-			return;
-		}
-
-		const key = nearTargetKey(nearTarget);
-		if (nearUrlKey === key) return;
-
-		nearUrlKey = key;
-		nearMeOpen = true;
-		nearMeQuery = '';
-		setNearMeOrigin(nearTarget, { syncUrl: false });
-	}
-
-	function clearNearMeOrigin(): void {
-		nearMeOrigin = null;
-		nearMeQuery = '';
-		nearMeError = null;
-		nearUrlKey = '';
-		nearOriginUrlBacked = true;
-		void goto(clearNearTargetSearch($page.url.searchParams, $page.url.pathname), URL_REWRITE);
-	}
-
-	// Pick up a one-shot `focus` param; the resolver effect below acts on it.
-	function readFocusFromUrl(searchParams: URLSearchParams): void {
-		const focus = parseMapFocus(searchParams);
-		if (focus) pendingFocus = focus;
-	}
-
-	function clearFocusFromUrl(): void {
-		void goto(buildFocusClearSearch($page.url.searchParams, $page.url.pathname), URL_REWRITE);
-	}
-
 	// Zoom to a selection directly (click path) — data is already loaded, so no
 	// pending/retry needed. Shared with the URL-driven focus resolver below.
-	function focusSelection(selection: MapSelection): void {
-		if (selection.kind === 'stop') focusStop(selection.id);
-		else if (selection.kind === 'vehicle') focusVehicle(selection.id);
-		else focusRoute(selection.id);
+	function focusSelection(selection: MapSelection): boolean {
+		if (selection.kind === 'stop') return focusStop(selection.id);
+		if (selection.kind === 'vehicle') return focusVehicle(selection.id);
+		return focusRoute(selection.id);
 	}
 
 	function focusStop(id: string): boolean {
@@ -788,131 +705,12 @@
 	// reads the kind's reactive source so it re-runs when that data loads, then
 	// pans/fits and strips the param so it fires exactly once.
 	$effect(() => {
-		if (!pendingFocus || !map) return;
-		const focus = pendingFocus;
-		const resolved =
-			focus.kind === 'stop'
-				? focusStop(focus.id)
-				: focus.kind === 'vehicle'
-					? focusVehicle(focus.id)
-					: focusRoute(focus.id);
-		if (!resolved) return;
-		pendingFocus = null;
-		clearFocusFromUrl();
+		if (!map) return;
+		focusController.consume(focusSelection);
 	});
 
-	function flyToNearMeOrigin(origin: NearMeOrigin): void {
+	function focusNearMeOrigin(origin: NearMeOrigin): void {
 		focusCoordinate(map, [origin.lon, origin.lat], zoomForNearMePrecision(origin.precision));
-	}
-
-	function useNearMeLocation(): void {
-		nearMeOpen = true;
-		// Geolocation silently fails on http; surface the actual reason instead of "place not found".
-		if (typeof window !== 'undefined' && !window.isSecureContext) {
-			nearMeError = t.nearMeGeoInsecure;
-			return;
-		}
-		if (!navigator.geolocation) {
-			nearMeError = t.nearMeGeoUnavailable;
-			return;
-		}
-		nearMeLoading = true;
-		nearMeError = null;
-		navigator.geolocation.getCurrentPosition(
-			(position) => {
-				nearMeLoading = false;
-				const deviceOrigin = {
-					lat: position.coords.latitude,
-					lon: position.coords.longitude,
-					label: t.nearMeUseLocation,
-					precision: 'place',
-				} satisfies NearMeOrigin;
-				setNearMeOrigin(deviceOrigin, { syncUrl: false, urlBacked: false });
-			},
-			(geoError) => {
-				nearMeLoading = false;
-				nearMeError =
-					geoError.code === geoError.PERMISSION_DENIED
-						? t.nearMeGeoDenied
-						: geoError.code === geoError.TIMEOUT
-							? t.nearMeGeoTimeout
-							: t.nearMeGeoUnavailable;
-			},
-			{ enableHighAccuracy: true, timeout: 8_000, maximumAge: 60_000 },
-		);
-	}
-
-	async function searchNearMe(event: SubmitEvent): Promise<void> {
-		event.preventDefault();
-		const query = nearMeQuery.trim();
-		if (!query) return;
-
-		const manual = parseCoordinateQuery(query);
-		if (manual) {
-			setNearMeOrigin({ ...manual, label: query, precision: 'address' });
-			return;
-		}
-
-		await resolveNearMeQuery(query);
-	}
-
-	async function resolveNearMeQuery(query: string): Promise<void> {
-		nearMeLoading = true;
-		nearMeError = null;
-		try {
-			const response = await fetch(`/api/geocode/montreal?q=${encodeURIComponent(query)}`);
-			if (!response.ok) {
-				nearMeError = t.nearMeError;
-				return;
-			}
-			const result = (await response.json()) as GeocodedLocation;
-			nearMeQuery = result.label;
-			setNearMeOrigin(result);
-		} catch {
-			nearMeError = t.nearMeError;
-		} finally {
-			nearMeLoading = false;
-		}
-	}
-
-	async function selectNearMeSuggestion(
-		result: GeocodeSuggestion,
-		sessionToken: string,
-	): Promise<void> {
-		nearMeQuery = result.label;
-		if (hasCoordinates(result)) {
-			setNearMeOrigin(result);
-			return;
-		}
-		// A Google suggestion carries a placeId but no coordinates — resolve it by
-		// id via Place Details (reusing the autocomplete session) so we pin the EXACT
-		// place picked, not whatever a fresh text search of the label resolves.
-		if (result.placeId && result.source === 'google_places') {
-			await resolveNearMePlace(result.placeId, sessionToken);
-			return;
-		}
-		await resolveNearMeQuery(result.label);
-	}
-
-	async function resolveNearMePlace(placeId: string, sessionToken: string): Promise<void> {
-		nearMeLoading = true;
-		nearMeError = null;
-		try {
-			const response = await fetch(
-				`/api/geocode/montreal?placeId=${encodeURIComponent(placeId)}&session=${encodeURIComponent(sessionToken)}`,
-			);
-			if (!response.ok) {
-				nearMeError = t.nearMeError;
-				return;
-			}
-			const result = (await response.json()) as GeocodedLocation;
-			nearMeQuery = result.label;
-			setNearMeOrigin(result);
-		} catch {
-			nearMeError = t.nearMeError;
-		} finally {
-			nearMeLoading = false;
-		}
 	}
 
 	function selectNearbyStop(stop: WithDistance<SlimStopEntry>): void {
@@ -977,7 +775,7 @@
 	function onMapReady(m: MapLibreMap): void {
 		map = m;
 		installMapLayers(m);
-		if (nearMeOrigin) flyToNearMeOrigin(nearMeOrigin);
+		nearMeController.refocus();
 	}
 
 	function onMapStyleLoad(m: MapLibreMap): void {
@@ -1074,7 +872,7 @@
 				hoveredId: hoveredStopId,
 			},
 			nearTarget: {
-				target: nearMeOrigin,
+				target: nearMeController.origin,
 			},
 		};
 
@@ -1224,17 +1022,17 @@
 			isStale={live.isStale}
 			degraded={liveDegraded}
 			{selectedFamilyFailureMessage}
-			bind:nearMeOpen
-			bind:nearMeQuery
-			{nearMeLoading}
-			{nearMeError}
-			{nearMeOrigin}
+			bind:nearMeOpen={nearMeController.open}
+			bind:nearMeQuery={nearMeController.query}
+			nearMeLoading={nearMeController.loading}
+			nearMeError={nearMeController.error}
+			nearMeOrigin={nearMeController.origin}
 			{nearbyStops}
-			onuselocation={useNearMeLocation}
-			onsearch={searchNearMe}
-			onsuggestion={selectNearMeSuggestion}
+			onuselocation={nearMeController.useLocation}
+			onsearch={nearMeController.search}
+			onsuggestion={nearMeController.selectSuggestion}
 			onstopselect={selectNearbyStop}
-			onclear={clearNearMeOrigin}
+			onclear={nearMeController.clear}
 			isDesktop={layout.isDesktop}
 			filtersStore={filters}
 			{detailOpen}
