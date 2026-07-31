@@ -49,9 +49,9 @@ function codeOnly(text: string): string {
 const forbiddenIdentifiers = /\b(?:navigator|geolocation|fetch)\b/gu;
 
 describe('MapHero orchestrator — structural law', () => {
-	it('lands M2a below the frozen 872-line script ratchet', () => {
+	it('lands M2b below the frozen 861-line script ratchet', () => {
 		expect(script).toBeDefined();
-		expect(script!.split(/\r?\n/u).length).toBeLessThan(872);
+		expect(script!.split(/\r?\n/u).length).toBeLessThan(861);
 	});
 
 	it('keeps hover out of bulk feeds and replays emphasis only through the layer revision seam', () => {

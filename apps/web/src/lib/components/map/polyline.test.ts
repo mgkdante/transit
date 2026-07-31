@@ -101,6 +101,7 @@ describe('walkAlong', () => {
 		const atCorner = walkAlong(L_PATH, cum[1])!;
 		expect(atCorner.coord[0]).toBeCloseTo(CORNER[0], 6);
 		expect(atCorner.coord[1]).toBeCloseTo(CORNER[1], 6);
+		expect(atCorner.bearing).toBeCloseTo(90, 0);
 
 		// Walk into the north leg → heading north (~0°/360°).
 		const onNorthLeg = walkAlong(L_PATH, cum[1] + (cum[2] - cum[1]) * 0.5)!;

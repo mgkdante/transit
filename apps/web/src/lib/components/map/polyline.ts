@@ -171,9 +171,16 @@ export function walkAlong(
 	if (total <= 0) return { coord: coords[0], bearing: 0 };
 	const clamped = s <= 0 ? 0 : s >= total ? total : s;
 
-	// Find the segment containing `clamped` (linear scan; polylines are short).
-	let i = 1;
-	while (i < cum.length - 1 && cum[i] < clamped) i++;
+	// Lower-bound search: first segment endpoint whose cumulative distance is at
+	// or beyond the sample. Exact vertices stay owned by the preceding segment.
+	let low = 1;
+	let high = cum.length - 1;
+	while (low < high) {
+		const mid = Math.floor((low + high) / 2);
+		if (cum[mid] < clamped) low = mid + 1;
+		else high = mid;
+	}
+	const i = low;
 	const [aLon, aLat] = coords[i - 1];
 	const [bLon, bLat] = coords[i];
 	const segLen = cum[i] - cum[i - 1];

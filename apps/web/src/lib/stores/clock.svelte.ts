@@ -42,9 +42,12 @@
 
 import { browser } from '$app/environment';
 import { isPrefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
+import { untrack } from 'svelte';
 
 /** Normal tick: per-second, so "12s ago" counts up smoothly. */
 const TICK_MS = 1000;
+/** Rewinds below two Date-header quanta are held; larger re-anchors step once. */
+const MAX_CLOCK_REWIND_MS = 2_000;
 
 /**
  * Reduced-motion tick: a calmer 30s cadence. Freshness still advances honestly
@@ -64,6 +67,8 @@ let nowMs = $state(Date.now());
  * live poll feeds a fresh sample on every cycle, so the offset stays current.
  */
 let offsetMs = $state(0);
+/** Last frame-clock value returned, used only for the bounded rewind latch. */
+let lastContinuousServerNowMs = Number.NEGATIVE_INFINITY;
 
 /** Active reader count; the interval runs iff this is > 0. */
 let subscribers = 0;
@@ -157,6 +162,30 @@ export const sharedClock = {
 	 */
 	get serverNow(): number {
 		return nowMs + offsetMs;
+	},
+
+	/**
+	 * Continuous server clock for frame-driven consumers between the 1 Hz label
+	 * ticks. `offsetMs` is deliberately read through `untrack`: the offset remains
+	 * the one shared skew source, but an effect that installs this accessor must not
+	 * become reactive to the 1 Hz label clock or a fresh Date-header sample.
+	 *
+	 * Small backward re-anchors hold at the last returned value until Date.now()
+	 * repays at most two seconds of debt. A rewind of two seconds or more is treated
+	 * as a genuine server re-anchor and accepted once so the fleet cannot freeze
+	 * behind an unbounded monotonic clamp. Forward re-anchors always pass through.
+	 */
+	serverNowContinuousMs(): number {
+		const candidate = Date.now() + untrack(() => offsetMs);
+		if (candidate >= lastContinuousServerNowMs) {
+			lastContinuousServerNowMs = candidate;
+			return candidate;
+		}
+		if (lastContinuousServerNowMs - candidate < MAX_CLOCK_REWIND_MS) {
+			return lastContinuousServerNowMs;
+		}
+		lastContinuousServerNowMs = candidate;
+		return candidate;
 	},
 
 	/**

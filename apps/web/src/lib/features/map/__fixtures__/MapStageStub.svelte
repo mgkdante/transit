@@ -9,12 +9,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
-	import { STOP_EXCEPTION_LAYER } from '$lib/components/map/stopsLayer';
 	import { mapHeroReceiptSignals } from './MapHeroReceiptSignals.svelte';
 	// Test-only deep-import exception: this fixture is loaded from inside the
 	// MapHero suite's vi.mock factory. Going through $lib/components/map would
 	// cycle back into that factory while it is replacing the barrel's MapStage.
-	import { STOPS_LAYER } from '$lib/components/map/stopsLayer';
+	import { STOP_EXCEPTION_LAYER, STOPS_LAYER } from '$lib/components/map/stopsLayer';
 	import { VEHICLE_BODY_LAYER } from '$lib/components/map/vehicleLayer';
 
 	interface Props {

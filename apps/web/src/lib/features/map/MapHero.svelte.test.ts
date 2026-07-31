@@ -42,6 +42,19 @@ const harness = vi.hoisted(() => {
 	const setNearTarget = vi.fn();
 	const setStale = vi.fn();
 	const vehicleSourceSetData = vi.fn();
+	let reducedMotion = false;
+	const reducedMotionSubscribers = new Set<(value: boolean) => void>();
+	const prefersReducedMotion = {
+		subscribe(subscriber: (value: boolean) => void) {
+			subscriber(reducedMotion);
+			reducedMotionSubscribers.add(subscriber);
+			return () => reducedMotionSubscribers.delete(subscriber);
+		},
+	};
+	const setReducedMotion = (next: boolean) => {
+		reducedMotion = next;
+		for (const subscriber of reducedMotionSubscribers) subscriber(next);
+	};
 	let vehicleMotionFrame: number | null = null;
 	let vehicleMotionFeatures: unknown = null;
 	const stopVehicleUploads = () => {
@@ -50,10 +63,15 @@ const harness = vi.hoisted(() => {
 		vehicleMotionFrame = null;
 	};
 	const uploadVehicleFrame = () => {
+		if (vehicleMotionFrame == null) return;
 		vehicleSourceSetData(vehicleMotionFeatures);
 		vehicleMotionFrame = requestAnimationFrame(uploadVehicleFrame);
 	};
-	const motionSet = vi.fn((features: unknown, options?: { animate?: boolean }) => {
+	const runMotionSet = (
+		features: unknown,
+		options?: { animate?: boolean; serverNowFn?: () => number },
+	) => {
+		options?.serverNowFn?.();
 		vehicleMotionFeatures = features;
 		if (options?.animate && typeof requestAnimationFrame === 'function') {
 			if (vehicleMotionFrame == null) {
@@ -63,7 +81,8 @@ const harness = vi.hoisted(() => {
 			stopVehicleUploads();
 			vehicleSourceSetData(features);
 		}
-	});
+	};
+	const motionSet = vi.fn(runMotionSet);
 	const motionDestroy = vi.fn(stopVehicleUploads);
 	const releaseLease = vi.fn();
 	const getRoute = vi.fn(() => null);
@@ -222,7 +241,11 @@ const harness = vi.hoisted(() => {
 		stopExceptionSourceSetData,
 		setNearTarget,
 		setStale,
+		prefersReducedMotion,
+		setReducedMotion,
+		isPrefersReducedMotion: () => reducedMotion,
 		motionSet,
+		resetMotionSetImplementation: () => motionSet.mockImplementation(runMotionSet),
 		vehicleSourceSetData,
 		motionDestroy,
 		releaseLease,
@@ -397,16 +420,20 @@ vi.mock('./mapCamera', () => ({
 }));
 
 vi.mock('@yesid/motion/stores/reducedMotion', () => ({
-	isPrefersReducedMotion: () => false,
+	prefersReducedMotion: harness.prefersReducedMotion,
+	isPrefersReducedMotion: harness.isPrefersReducedMotion,
 }));
 
 afterEach(() => {
 	cleanup();
 	document.body.innerHTML = '';
 	vi.clearAllMocks();
+	harness.resetMotionSetImplementation();
 	harness.identityReceivers.length = 0;
 	harness.isDesktop = false;
 	mapHeroReceiptSignals.reset();
+	harness.setReducedMotion(false);
+	vi.unstubAllGlobals();
 	if (originalSecureContext) {
 		Object.defineProperty(window, 'isSecureContext', originalSecureContext);
 	} else {
@@ -971,19 +998,22 @@ describe('MapHero map-layer feed lifecycle', () => {
 		}
 	});
 
-	it('re-feeds on a live generation but not on a shared-clock tick', async () => {
+	it('re-feeds on a live generation but not across five seconds of shared-clock ticks', async () => {
 		const bulkCounts = () => ({
 			routes: harness.setRouteLines.mock.calls.length,
 			motion: harness.motionSet.mock.calls.length,
 			stops: harness.setStops.mock.calls.length,
 		});
 
+		mapHeroReceiptSignals.setMotionMode('smooth');
 		render(MapHero);
 		await tick();
 		const beforeClock = bulkCounts();
 
-		mapHeroReceiptSignals.advanceClock(1_000);
-		await tick();
+		for (let second = 0; second < 5; second += 1) {
+			mapHeroReceiptSignals.advanceClock(1_000);
+			await tick();
+		}
 		expect(bulkCounts()).toEqual(beforeClock);
 
 		mapHeroReceiptSignals.setVehiclesGeneration('2026-06-20T12:00:30Z');
@@ -993,6 +1023,42 @@ describe('MapHero map-layer feed lifecycle', () => {
 			motion: beforeClock.motion + 1,
 			stops: beforeClock.stops + 1,
 		});
+	});
+
+	it('reacts to reduced motion by snapping and cancelling the pending animated upload', async () => {
+		const frames = new Map<number, FrameRequestCallback>();
+		let nextFrame = 0;
+		vi.stubGlobal(
+			'requestAnimationFrame',
+			vi.fn((callback: FrameRequestCallback) => {
+				const handle = ++nextFrame;
+				frames.set(handle, callback);
+				return handle;
+			}),
+		);
+		vi.stubGlobal(
+			'cancelAnimationFrame',
+			vi.fn((handle: number) => {
+				frames.delete(handle);
+			}),
+		);
+		mapHeroReceiptSignals.setMotionMode('smooth');
+
+		render(MapHero);
+		await tick();
+		expect(harness.motionSet.mock.lastCall?.[1]).toMatchObject({ animate: true });
+		const pendingHandle = [...frames.keys()][0];
+		expect(pendingHandle).toBeTypeOf('number');
+		const pending = frames.get(pendingHandle);
+		expect(pending).toBeTypeOf('function');
+
+		harness.setReducedMotion(true);
+		await tick();
+		expect(harness.motionSet.mock.lastCall?.[1]).toMatchObject({ animate: false });
+		const uploadsAfterSnap = harness.vehicleSourceSetData.mock.calls.length;
+		pending?.(0);
+
+		expect(harness.vehicleSourceSetData).toHaveBeenCalledTimes(uploadsAfterSnap);
 	});
 });
 

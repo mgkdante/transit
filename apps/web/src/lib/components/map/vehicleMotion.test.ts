@@ -19,6 +19,8 @@ import { cumulativeLengths, projectToPolyline, type Coord } from './polyline';
 const W = [-73.7, 45.5] as Coord;
 const E = [-73.4, 45.5] as Coord; // ~23 km east of W
 const STRAIGHT: Coord[] = [W, E];
+const N = [-73.7, 45.7] as Coord;
+const NORTHBOUND: Coord[] = [W, N];
 
 const NOW_MS = Date.parse('2026-06-22T12:00:00Z');
 function isoAgo(seconds: number): string {
@@ -68,10 +70,14 @@ function fixFor(ageS: number, speedMps: number | null): FixResolver {
 /** Stub MapLibre map: only getSource('vehicles').setData is exercised. */
 function stubMap() {
 	const setData = vi.fn();
+	const setFeatureState = vi.fn();
+	const removeFeatureState = vi.fn();
 	const map = {
 		getSource: (id: string) => (id === VEHICLE_SOURCE ? { setData } : undefined),
+		setFeatureState,
+		removeFeatureState,
 	} as unknown as MapLibreMap;
-	return { map, setData };
+	return { map, setData, setFeatureState, removeFeatureState };
 }
 
 function lastLon(setData: ReturnType<typeof vi.fn>): number {
@@ -203,6 +209,65 @@ describe('projectEntry (pure)', () => {
 		expect(atMid).toBeGreaterThan(at0);
 		expect(atMid).toBeLessThan(atEnd);
 		expect(atEnd).toBeCloseTo(target, 5);
+	});
+
+	it('uses supplied per-fix invariants for projection and blending without resolving again', () => {
+		const entry = {
+			feature: feature(W[0], W[1], 17),
+			fix: { reportedUtc: 'invalid', updatedUtc: 'invalid', speedMps: 10 },
+		};
+		const lengths = cumulativeLengths(STRAIGHT);
+		const start = projectToPolyline(STRAIGHT, W, lengths);
+		if (!start) throw new Error('straight fixture must project');
+		const shapeFor = vi.fn<ShapeResolver>(() => NORTHBOUND);
+		const invariants = {
+			fixEpochMs: NOW_MS - 5_000,
+			shape: STRAIGHT,
+			lengths,
+			s0: start.s,
+		};
+
+		const target = projectEntry(entry, NOW_MS, 0, shapeFor, undefined, invariants);
+		expect(shapeFor).not.toHaveBeenCalled();
+		expect(target.result).toMatchObject({ frozen: false, stale: false });
+		expect(target.feature.geometry.coordinates[0]).toBeGreaterThan(W[0]);
+		expect(target.feature.geometry.coordinates[1]).toBeCloseTo(W[1], 5);
+		expect(target.feature.properties).toMatchObject({ bearing: 90, stale: 0 });
+
+		const origin = -73.71;
+		const blended = projectEntry(
+			entry,
+			NOW_MS,
+			1450,
+			shapeFor,
+			{ fromCoord: [origin, W[1]], fromBearing: 0, startMs: 1000 },
+			invariants,
+		).feature;
+		expect(blended.geometry.coordinates[0]).toBeGreaterThan(origin);
+		expect(blended.geometry.coordinates[0]).toBeLessThan(target.feature.geometry.coordinates[0]);
+		expect(blended.properties.bearing).toBeGreaterThan(0);
+		expect(blended.properties.bearing).toBeLessThan(90);
+		expect(shapeFor).not.toHaveBeenCalled();
+	});
+
+	it('uses the supplied invariant epoch to freeze and flag a stale fix', () => {
+		const entry = {
+			feature: feature(W[0], W[1], 200),
+			fix: { reportedUtc: isoAgo(1), updatedUtc: isoAgo(1), speedMps: 10 },
+		};
+		const lengths = cumulativeLengths(STRAIGHT);
+		const start = projectToPolyline(STRAIGHT, W, lengths);
+		if (!start) throw new Error('straight fixture must project');
+
+		const { feature: out, result } = projectEntry(entry, NOW_MS, 0, undefined, undefined, {
+			fixEpochMs: NOW_MS - STALE_CUTOFF_S * 1000,
+			shape: STRAIGHT,
+			lengths,
+			s0: start.s,
+		});
+		expect(result).toMatchObject({ frozen: true, stale: true });
+		expect(out.geometry.coordinates).toEqual([W[0], W[1]]);
+		expect(out.properties).toMatchObject({ bearing: 200, stale: 1 });
 	});
 });
 
@@ -414,6 +479,295 @@ describe('createVehicleMotionController — forward projection', () => {
 		expect(setData).toHaveBeenCalledTimes(0); // both inside the ~33ms gate
 		frame(40, 1000);
 		expect(setData).toHaveBeenCalledTimes(1); // cleared the gate
+		c.destroy();
+	});
+
+	it('skips an identical throttled frame after still evaluating the stationary bus', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const shapeFor = vi.fn(() => null);
+		const c = createVehicleMotionController(map, runtime);
+		c.set(fcAt(W[0], W[1], 33), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 0),
+			shapeFor,
+			serverNowFn,
+		});
+		setData.mockClear();
+		shapeFor.mockClear();
+
+		frame(40, 0);
+
+		expect(shapeFor).toHaveBeenCalledTimes(1);
+		expect(setData).not.toHaveBeenCalled();
+		c.destroy();
+	});
+
+	it('uploads a stale-only change even when coordinate and bearing stay fixed', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const c = createVehicleMotionController(map, runtime);
+		c.set(fcAt(W[0], W[1], 33), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(STALE_CUTOFF_S - 0.01, 0),
+			shapeFor: noShape,
+			serverNowFn,
+		});
+		const before = lastFeature(setData);
+		expect(before.properties.stale).toBe(0);
+		setData.mockClear();
+
+		frame(40, 20);
+
+		expect(setData).toHaveBeenCalledTimes(1);
+		const after = lastFeature(setData);
+		expect(after.geometry.coordinates).toEqual(before.geometry.coordinates);
+		expect(after.properties.bearing).toBe(before.properties.bearing);
+		expect(after.properties.stale).toBe(1);
+		c.destroy();
+	});
+
+	it('uploads a bearing-only late-shape upgrade at the same coordinate', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const shapeFor = vi.fn<ShapeResolver>().mockReturnValueOnce(null).mockReturnValue(STRAIGHT);
+		const c = createVehicleMotionController(map, runtime);
+		c.set(fcAt(W[0], W[1], 0), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(0, 10),
+			shapeFor,
+			serverNowFn,
+		});
+		const before = lastFeature(setData);
+		expect(before.properties.bearing).toBe(0);
+		setData.mockClear();
+
+		frame(40, 0);
+
+		expect(setData).toHaveBeenCalledTimes(1);
+		const after = lastFeature(setData);
+		expect(after.geometry.coordinates).toEqual(before.geometry.coordinates);
+		expect(after.properties.bearing).toBe(90);
+		expect(after.properties.stale).toBe(before.properties.stale);
+		c.destroy();
+	});
+
+	it('keeps evaluation cadence near 30fps when every stationary upload is skipped', () => {
+		const { map } = stubMap();
+		const controlled = controlledRuntime();
+		const serverNowFn = vi.fn(controlled.serverNowFn);
+		const c = createVehicleMotionController(map, controlled.runtime);
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 0),
+			shapeFor: noShape,
+			serverNowFn,
+		});
+		serverNowFn.mockClear();
+
+		for (let frame = 0; frame < 60; frame += 1) controlled.frame(1_000 / 60, 0);
+
+		expect(serverNowFn.mock.calls.length).toBeGreaterThanOrEqual(29);
+		expect(serverNowFn.mock.calls.length).toBeLessThanOrEqual(30);
+		c.destroy();
+	});
+
+	it('resolves projection invariants once per vehicle per non-null tick', () => {
+		const { map } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const shapeFor = vi.fn<ShapeResolver>(() => STRAIGHT);
+		const c = createVehicleMotionController(map, runtime);
+		const feed = fcAt(W[0], W[1]);
+		const options = {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor,
+			serverNowFn,
+		};
+		c.set(feed, options);
+		frame(40, 0);
+		frame(40, 0);
+		frame(40, 0);
+		c.set(feed, options);
+
+		expect(shapeFor).toHaveBeenCalledTimes(1);
+
+		c.set(feed, { ...options, tickKey: 't2' });
+		expect(shapeFor).toHaveBeenCalledTimes(2);
+		c.destroy();
+	});
+
+	it('parses a resolved fix epoch once per tick', () => {
+		const { map } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const resolvedFix = fixFor(5, 10);
+		const parse = vi.spyOn(Date, 'parse');
+		const c = createVehicleMotionController(map, runtime);
+		try {
+			c.set(fcAt(W[0], W[1]), {
+				tickKey: 't1',
+				animate: true,
+				fixFor: resolvedFix,
+				shapeFor: straightShape,
+				serverNowFn,
+			});
+			frame(40, 0);
+			frame(40, 0);
+			frame(40, 0);
+
+			expect(parse).toHaveBeenCalledTimes(1);
+		} finally {
+			c.destroy();
+			parse.mockRestore();
+		}
+	});
+
+	it('pins the resolved shape identity for one tick and refreshes it on the next tick', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const shapeFor = vi
+			.fn<ShapeResolver>()
+			.mockReturnValueOnce(STRAIGHT)
+			.mockReturnValue(NORTHBOUND);
+		const c = createVehicleMotionController(map, runtime);
+		const feed = fcAt(W[0], W[1], 17);
+		const options = {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(0, 10),
+			shapeFor,
+			serverNowFn,
+		};
+		c.set(feed, options);
+		expect(lastFeature(setData).properties.bearing).toBe(90);
+
+		frame(40, 0);
+		expect(shapeFor).toHaveBeenCalledTimes(1);
+		expect(lastFeature(setData).properties.bearing).toBe(90);
+
+		c.set(feed, { ...options, tickKey: 't2' });
+		expect(shapeFor).toHaveBeenCalledTimes(2);
+		frame(900, 0);
+		expect(lastFeature(setData).properties.bearing).toBe(0);
+		c.destroy();
+	});
+
+	it('retries an unresolved shape and upgrades the bus on the next frame', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const shapeFor = vi.fn<ShapeResolver>().mockReturnValueOnce(null).mockReturnValue(STRAIGHT);
+		const c = createVehicleMotionController(map, runtime);
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor,
+			serverNowFn,
+		});
+		expect(lastLon(setData)).toBe(W[0]);
+
+		frame(40, 0);
+
+		expect(shapeFor).toHaveBeenCalledTimes(2);
+		expect(lastLon(setData)).toBeGreaterThan(W[0]);
+		c.destroy();
+	});
+
+	it('does not cache projection invariants without a tick key', () => {
+		const { map } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const shapeFor = vi.fn<ShapeResolver>(() => STRAIGHT);
+		const c = createVehicleMotionController(map, runtime);
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: null,
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor,
+			serverNowFn,
+		});
+		frame(40, 0);
+		frame(40, 0);
+
+		expect(shapeFor).toHaveBeenCalledTimes(3);
+		c.destroy();
+	});
+
+	it('drops a departed mid-blend origin before the vehicle returns on a later tick', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const c = createVehicleMotionController(map, runtime);
+		const options = {
+			animate: true,
+			fixFor: fixFor(0, 0),
+			shapeFor: noShape,
+			serverNowFn,
+		};
+		c.set(fcAt(W[0], W[1]), { ...options, tickKey: 't1' });
+		c.set(fcAt(-73.55, W[1]), { ...options, tickKey: 't2' });
+		frame(450, 0);
+		const staleOrigin = lastLon(setData);
+		expect(staleOrigin).toBeGreaterThan(W[0]);
+		expect(staleOrigin).toBeLessThan(-73.55);
+
+		c.set({ type: 'FeatureCollection', features: [] }, { ...options, tickKey: 't3' });
+		c.set(fcAt(-73.5, W[1]), { ...options, tickKey: 't4' });
+
+		expect(lastLon(setData)).toBe(-73.5);
+		expect(lastLon(setData)).not.toBe(staleOrigin);
+		c.destroy();
+	});
+
+	it('retains the invariant and in-flight blend through a same-tick filter round trip', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const shapeFor = vi.fn<ShapeResolver>(() => STRAIGHT);
+		const c = createVehicleMotionController(map, runtime);
+		const options = {
+			animate: true,
+			fixFor: fixFor(0, 10),
+			shapeFor,
+			serverNowFn,
+		};
+		c.set(fcAt(W[0], W[1]), { ...options, tickKey: 't1' });
+		const corrected = fcAt(-73.55, W[1]);
+		c.set(corrected, { ...options, tickKey: 't2' });
+		frame(450, 0);
+		const midBlend = lastLon(setData);
+		expect(shapeFor).toHaveBeenCalledTimes(2);
+
+		c.set({ type: 'FeatureCollection', features: [] }, { ...options, tickKey: 't2' });
+		c.set(corrected, { ...options, tickKey: 't2' });
+
+		expect(shapeFor).toHaveBeenCalledTimes(2);
+		expect(lastLon(setData)).toBeCloseTo(midBlend, 6);
+		c.destroy();
+	});
+
+	it('never mutates emphasis feature state when a selected vehicle departs', () => {
+		const { map, setFeatureState, removeFeatureState } = stubMap();
+		const { runtime, serverNowFn } = controlledRuntime();
+		const c = createVehicleMotionController(map, runtime);
+		const selected = fcAt(W[0], W[1]);
+		selected.features[0].properties.selected = 1;
+		const options = {
+			animate: true,
+			fixFor: fixFor(0, 0),
+			shapeFor: noShape,
+			serverNowFn,
+		};
+		c.set(selected, { ...options, tickKey: 't1' });
+		setFeatureState.mockClear();
+		removeFeatureState.mockClear();
+
+		c.set({ type: 'FeatureCollection', features: [] }, { ...options, tickKey: 't2' });
+
+		expect(setFeatureState).not.toHaveBeenCalled();
+		expect(removeFeatureState).not.toHaveBeenCalled();
 		c.destroy();
 	});
 
