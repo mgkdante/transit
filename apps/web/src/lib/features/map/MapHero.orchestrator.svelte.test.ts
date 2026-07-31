@@ -1,354 +1,97 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import MapHero from './MapHero.svelte';
+/**
+ * MapHero — ORCHESTRATOR structural-law suite (source-string).
+ *
+ * After the de-monolith, MapHero is a THIN ORCHESTRATOR: it composes the child
+ * components (MapSurfaceCanvasLayer, MapOverlayChrome, MapDetailOverlay,
+ * MapMobileDetailSheet) and owns only cross-cutting state. The rendered DOM and the
+ * overlay LAW are render-tested on those CHILD components (MapDetailOverlay /
+ * MapOverlayChrome / MapHeadTitle / MapMobileDetailSheet / MapSurfaceCanvasLayer
+ * *.svelte.test.ts — those mount the leaves and assert the real DOM).
+ *
+ * The full MapHero mounts in MapHero.svelte.test.ts for lifecycle and interaction
+ * behavior. This companion reads source only for COMPOSITION + the ABSENCE of
+ * architectural anti-patterns (no paneforge, no ResizeObserver, no panel-driven
+ * map resize), which have no stable DOM footprint. It is a small, focused guard —
+ * NOT the old 161-assertion grep harness.
+ */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
 
-const harness = vi.hoisted(() => {
-	const identityReceivers: unknown[] = [];
-	const alertSource = {
-		id: 'mobile-orchestrator-alert',
-		severity: 'high',
-		header_key: 'Your stop',
-		description_en: '<p>Board at the temporary stop &amp; follow signs.</p>',
-		routes: ['24'],
-		// The alert belongs to the picked stop, but its first affected stop is a
-		// different one. That makes the real orchestrator perform an observable
-		// in-sheet selection swap while preserving stop-1 on its Back stack.
-		stops: ['stop-2', 'stop-1'],
-	};
-	const alert = new Proxy(alertSource, {
-		get(target, property, receiver) {
-			if (property === 'routes' || property === 'stops') identityReceivers.push(receiver);
-			return Reflect.get(target, property, receiver);
-		},
+const source = readFileSync(resolve(process.cwd(), 'src/lib/features/map/MapHero.svelte'), 'utf-8');
+const layerModulesSource = readFileSync(
+	resolve(process.cwd(), 'src/lib/features/map/mapLayerModules.ts'),
+	'utf-8',
+);
+const script = source.match(/<script(?:\s[^>]*)?>\r?\n([\s\S]*?)\r?\n<\/script>/u)?.[1];
+
+describe('MapHero orchestrator — structural law', () => {
+	it('keeps the script block at or below the 1,107-line ratchet', () => {
+		expect(script).toBeDefined();
+		expect(script!.split(/\r?\n/u).length).toBeLessThanOrEqual(1_107);
 	});
-	const liveStore = {
-		vehicles: { generated_utc: '2026-06-20T12:00:00Z', vehicles: [] },
-		trips: null,
-		departures: null,
-		alerts: { generated_utc: '2026-06-20T12:00:00Z', alerts: [alert] },
-		network: null,
-		index: {
-			byVehicleId: new Map(),
-			byTripId: new Map(),
-			byStopId: new Map(),
-			vehiclesByRoute: new Map(),
-			vehiclesByStop: new Map(),
-		},
-		generatedUtc: '2026-06-20T12:00:00Z',
-		ageSeconds: 30,
-		isStale: false,
-		vehiclesGeneratedUtc: '2026-06-20T12:00:00Z',
-		vehiclesAgeSeconds: 30,
-		vehiclesIsStale: false,
-		familyStates: {
-			vehicles: {
-				phase: 'ready',
-				active: true,
-				lastGoodAt: Date.parse('2026-06-20T12:00:30Z'),
-				retainedGeneration: '2026-06-20T12:00:00Z',
-				consecutiveFailures: 0,
-				error: null,
-				successRevision: 1,
-			},
-			trips: {
-				phase: 'idle',
-				active: false,
-				lastGoodAt: null,
-				retainedGeneration: null,
-				consecutiveFailures: 0,
-				error: null,
-				successRevision: 0,
-			},
-			departures: {
-				phase: 'idle',
-				active: false,
-				lastGoodAt: null,
-				retainedGeneration: null,
-				consecutiveFailures: 0,
-				error: null,
-				successRevision: 0,
-			},
-			alerts: {
-				phase: 'ready',
-				active: true,
-				lastGoodAt: Date.parse('2026-06-20T12:00:30Z'),
-				retainedGeneration: '2026-06-20T12:00:00Z',
-				consecutiveFailures: 0,
-				error: null,
-				successRevision: 1,
-			},
-			network: {
-				phase: 'idle',
-				active: false,
-				lastGoodAt: null,
-				retainedGeneration: null,
-				consecutiveFailures: 0,
-				error: null,
-				successRevision: 0,
-			},
-		},
-		loading: false,
-		error: null,
-		start: vi.fn(),
-		stop: vi.fn(),
-		refresh: vi.fn(),
-		subscribeFamilies: vi.fn(() => vi.fn()),
-	};
 
-	return {
-		alert,
-		createLiveStore: vi.fn((_manifest: unknown, _options?: unknown) => liveStore),
-		liveStore,
-		identityReceivers,
-		goto: vi.fn(async (_target: string, _options?: Record<string, unknown>) => {}),
-		afterNavigate: vi.fn(),
-		stops: [
-			{
-				id: 'stop-1',
-				name: 'Sherbrooke / Saint-Denis',
-				code: '52618',
-				lat: 45.51,
-				lon: -73.57,
-			},
-			{
-				id: 'stop-2',
-				name: 'Temporary stop / Clark',
-				code: '52619',
-				lat: 45.512,
-				lon: -73.572,
-			},
-		],
-	};
-});
+	it('uses NO paneforge / resizable pane group (the map is full-bleed, never a pane)', () => {
+		expect(source).not.toContain('ResizablePaneGroup');
+		expect(source).not.toContain('ResizablePane');
+		expect(source).not.toContain('ResizableHandle');
+		expect(source).not.toContain("from '@yesid/ui/resizable'");
+		expect(source).not.toContain('onMapPaneResize');
+		expect(source).not.toContain('onPaneLayoutChange');
+	});
 
-vi.mock('$app/stores', async () => {
-	const { readable } = await import('svelte/store');
-	return {
-		page: readable({
-			url: new URL('http://localhost/map'),
-			params: {},
-			route: { id: '/map' },
-			status: 200,
-			error: null,
-			data: {},
-			form: null,
-			state: {},
-		}),
-	};
-});
+	it('installs NO ResizeObserver in the orchestrator (MapStage owns the only one)', () => {
+		expect(source).not.toContain('new ResizeObserver');
+	});
 
-vi.mock('$app/navigation', () => ({
-	goto: harness.goto,
-	afterNavigate: harness.afterNavigate,
-}));
+	it('never re-fits / resizes the map from a panel change (the collapse toggle is a pure flip)', () => {
+		const toggle = source.match(/function toggleDetailCollapsed[\s\S]*?\n\t}/)?.[0] ?? '';
+		expect(toggle).toContain('detailCollapsed = !detailCollapsed');
+		expect(toggle).not.toMatch(/map\??\.resize|fitBounds|setCenter|setZoom|easeTo|flyTo|jumpTo/);
+	});
 
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
-	return { ...actual, getLocale: () => 'en' as const };
-});
+	it('keeps the hydration-safe layout snapshot independent of the hydration-flipping store', () => {
+		const fitPaddingBlock = source.match(/const mapFitPadding = \$derived[\s\S]*?\);/)?.[0] ?? '';
+		expect(source).toContain('let isDesktopLayout = $state(isDesktopViewport())');
+		expect(fitPaddingBlock).toContain('isDesktopLayout && fitWidthPx > 0');
+		expect(fitPaddingBlock).not.toContain('layout.isDesktop');
+	});
 
-vi.mock('$lib/nav', () => ({
-	layout: {
-		get isDesktop() {
-			return false;
-		},
-	},
-	isDesktopViewport: () => false,
-	routeFor: (target: { kind: string; id: string }) => {
-		if (target.kind === 'stop') return `/stop/${target.id}`;
-		if (target.kind === 'line') return `/lines/${target.id}`;
-		if (target.kind === 'trip') return `/trip/${target.id}`;
-		return '/map';
-	},
-}));
+	it('composes the extracted children (a thin orchestrator, not a god-file)', () => {
+		expect(source).toContain("import MapSurfaceCanvasLayer from './MapSurfaceCanvasLayer.svelte'");
+		expect(source).toContain("import MapOverlayChrome from './MapOverlayChrome.svelte'");
+		expect(source).toContain("import MapDetailOverlay from './MapDetailOverlay.svelte'");
+		expect(source).toContain("import MapMobileDetailSheet from './MapMobileDetailSheet.svelte'");
+		expect(source).toContain('<MapSurfaceCanvasLayer {mapBody} />');
+		expect(source).toContain('<MapOverlayChrome');
+	});
 
-vi.mock('$lib/stores', () => ({
-	themeStore: {
-		current: 'dark',
-		isDark: true,
-		toggle: vi.fn(),
-		apply: vi.fn(),
-		init: vi.fn(),
-	},
-	sharedClock: {
-		serverNow: Date.parse('2026-06-20T12:00:30Z'),
-		now: Date.parse('2026-06-20T12:00:30Z'),
-		subscribe: () => () => {},
-	},
-	motionMode: {
-		current: 'raw',
-		set: vi.fn(),
-	},
-	dataRefresh: {},
-}));
+	it('wires M1 live resilience at the registry and map call sites without widening consumers', () => {
+		// WHY(M1 #3+#11/#45/#50): the frozen plan deliberately changes MapHero from
+		// an aggregate/all-family consumer to vehicles-only motion plus committed
+		// selection leases, grace, and abort-aware focused resource reads.
+		expect(source).toContain("families: ['vehicles', 'alerts']");
+		expect(source).toContain("live.subscribeFamilies(['trips'])");
+		expect(source).toContain("live.subscribeFamilies(['departures'])");
+		expect(source).toContain('createSelectionGrace<MapSelectionDetailModel>()');
+		expect(layerModulesSource).toContain('tickKey: vehicles.tickKey');
+		expect(layerModulesSource).toContain('stale: vehicles.stale');
+		expect(layerModulesSource).toContain('setStale(map, vehicles.stale)');
+		expect(source).toContain('data-motion-stale={live.vehiclesIsStale}');
+		expect(source).toContain('data-motion-tick-key={live.vehiclesGeneratedUtc ?? undefined}');
+		expect(source).toContain('live.familyStates.departures.retainedGeneration != null');
+		expect(source).toContain("family.phase === 'failed' || family.consecutiveFailures > 0");
+		expect(source).toContain('getStopsIndexSlim({ signal })');
+		expect(source).toContain('getRoute(id, { signal })');
+		expect(source).toContain('getStop(id, { signal })');
+	});
 
-vi.mock('$lib/v1/boot', () => ({
-	getV1Context: () => ({
-		manifest: {
-			provider: 'stm',
-			files: { live: { ttl_s: 30 } },
-		},
-		labels: {},
-		lang: 'en',
-	}),
-}));
-vi.mock('$lib/v1/repositories/basemap', () => ({
-	getBasemap: () => null,
-}));
-vi.mock('$lib/v1/repositories/static', () => ({
-	getRoutesIndex: () => ({ generated_utc: '2026-06-20T12:00:00Z', routes: [] }),
-	getStopsIndexSlim: () => ({ generated_utc: '2026-06-20T12:00:00Z', stops: harness.stops }),
-	getRoute: () => null,
-	getStop: () => null,
-}));
-vi.mock('$lib/v1/live/store.svelte', () => ({
-	createLiveStore: harness.createLiveStore,
-}));
-
-vi.mock('$lib/v1/resource.svelte', () => ({
-	createResource: (loader: () => unknown) => {
-		const value = loader();
-		// Resolve synchronous static indexes immediately. The route/stop context
-		// loaders are async and irrelevant to a static-index stop detail, so they
-		// remain at the resource contract's pre-resolution null state.
-		const data =
-			value != null && typeof (value as Promise<unknown>).then === 'function' ? null : value;
-		return {
-			data,
-			error: null,
-			loading: false,
-			settled: true,
-			reload: vi.fn(),
-		};
-	},
-}));
-
-vi.mock('$lib/components/map', async () => {
-	const { default: MapStage } = await import('./__fixtures__/MapStageStub.svelte');
-	const noop = () => {};
-	return {
-		MapStage,
-		STOPS_LAYER: 'stops',
-		VEHICLE_BODY_LAYER: 'vehicle-body',
-		ROUTE_LINE_HIT_LAYER: 'route-lines-hit',
-		bakeVehicleSprites: noop,
-		bakeLocationPinSprite: noop,
-		addVehicleSource: noop,
-		addVehicleLayers: noop,
-		setStale: noop,
-		toVehicleFeatures: () => ({ type: 'FeatureCollection', features: [] }),
-		createVehicleMotionController: () => ({ set: noop, destroy: noop }),
-		addStopsSource: noop,
-		addStopsLayer: noop,
-		setStops: noop,
-		addRouteLineSource: noop,
-		addRouteLineLayers: noop,
-		setRouteLines: noop,
-		addNearTargetSource: noop,
-		addNearTargetLayer: noop,
-		setNearTarget: noop,
-		nearestStops: () => [],
-		centerFromProviderBbox: () => [-73.72, 45.52],
-	};
-});
-
-vi.mock('./mapCamera', () => ({
-	focusCoordinate: () => true,
-	fitRouteBounds: () => true,
-}));
-
-vi.mock('@yesid/motion/stores/reducedMotion', () => ({
-	isPrefersReducedMotion: () => false,
-}));
-
-afterEach(() => {
-	cleanup();
-	document.body.innerHTML = '';
-	harness.goto.mockClear();
-	harness.afterNavigate.mockClear();
-	harness.createLiveStore.mockClear();
-	harness.liveStore.subscribeFamilies.mockClear();
-	harness.identityReceivers.length = 0;
-});
-
-describe('MapHero mobile alert drilldown orchestrator', () => {
-	it('swaps custom detail in place, preserves alert identity, and restores Back without redirecting', async () => {
-		const documentPathBefore = window.location.pathname;
-		render(MapHero);
-		// WHY(M1 #45): MapHero now keeps only vehicles + alerts as constructor
-		// baselines; stop departures are a committed-selection lease.
-		expect(harness.createLiveStore.mock.calls[0]?.[1]).toEqual({
-			families: ['vehicles', 'alerts'],
-		});
-
-		const stage = await screen.findByTestId('map-stage-stub');
-		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));
-
-		const firstBody = await waitFor(() => {
-			const body = document.querySelector<HTMLElement>('[data-slot="bottom-sheet-body"]');
-			expect(body).toBeInTheDocument();
-			expect(within(body!).getByRole('heading', { level: 2 })).toHaveTextContent(
-				'Sherbrooke / Saint-Denis',
-			);
-			return body!;
-		});
-		expect(harness.liveStore.subscribeFamilies).toHaveBeenCalledWith(['departures']);
-		const sheet = document.querySelector('[data-slot="bottom-sheet"]');
-		expect(document.querySelectorAll('[data-slot="bottom-sheet"]')).toHaveLength(1);
-		expect(document.querySelector('.map-peek')).not.toBeInTheDocument();
-		expect(stage).toHaveAttribute('data-pick-count', '1');
-
-		const navigationCountBeforeAlert = harness.goto.mock.calls.length;
-		harness.identityReceivers.length = 0;
-		await fireEvent.click(
-			screen.getByRole('button', {
-				name: 'Select alert Board at the temporary stop & follow signs.',
-			}),
+	it('routes the detail to the desktop OVERLAY vs the mobile SHEET by layout', () => {
+		expect(source).toMatch(
+			/\{#if layout\.isDesktop && detailOpen\}[\s\S]*<MapDetailOverlay[\s\S]*\{\/if\}/,
 		);
-
-		await waitFor(() => {
-			const body = document.querySelector<HTMLElement>('[data-slot="bottom-sheet-body"]');
-			expect(body).toBe(firstBody);
-			expect(within(body!).getByRole('heading', { level: 2 })).toHaveTextContent(
-				'Temporary stop / Clark',
-			);
-		});
-
-		// The proxy records the receiver used by MapHero when it reads the alert's
-		// routing fields. Every receiver remains the exact published Alert object;
-		// no presenter or orchestrator clone was inserted along the callback path.
-		expect(harness.identityReceivers.length).toBeGreaterThan(0);
-		expect(harness.identityReceivers.every((receiver) => receiver === harness.alert)).toBe(true);
-
-		const alertNavigationCalls = harness.goto.mock.calls.slice(navigationCountBeforeAlert);
-		expect(alertNavigationCalls.length).toBeGreaterThan(0);
-		expect(alertNavigationCalls.at(-1)?.[0]).toBe('?route=24&stop=stop-1%2Cstop-2&alert=has_alert');
-		for (const [target, options] of alertNavigationCalls) {
-			expect(target).toMatch(/^\?/);
-			expect(new URL(String(target), 'http://localhost/map').pathname).toBe('/map');
-			expect(options).toMatchObject({ replaceState: true, keepFocus: true, noScroll: true });
-		}
-		expect(window.location.pathname).toBe(documentPathBefore);
-		expect(document.querySelectorAll('[data-slot="bottom-sheet"]')).toHaveLength(1);
-		expect(document.querySelector('[data-slot="bottom-sheet"]')).toBe(sheet);
-		expect(document.querySelector('.map-peek')).not.toBeInTheDocument();
-		expect(stage).toHaveAttribute('data-pick-count', '1');
-
-		const navigationCountBeforeBack = harness.goto.mock.calls.length;
-		await fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-
-		await waitFor(() => {
-			const body = document.querySelector<HTMLElement>('[data-slot="bottom-sheet-body"]');
-			expect(body).toBe(firstBody);
-			expect(within(body!).getByRole('heading', { level: 2 })).toHaveTextContent(
-				'Sherbrooke / Saint-Denis',
-			);
-		});
-		expect(harness.goto).toHaveBeenCalledTimes(navigationCountBeforeBack);
-		expect(window.location.pathname).toBe(documentPathBefore);
-		expect(document.querySelectorAll('[data-slot="bottom-sheet"]')).toHaveLength(1);
-		expect(document.querySelector('[data-slot="bottom-sheet"]')).toBe(sheet);
-		expect(document.querySelector('.map-peek')).not.toBeInTheDocument();
-		expect(stage).toHaveAttribute('data-pick-count', '1');
+		expect(source).toMatch(
+			/\{#if detailOpen && !layout\.isDesktop\}[\s\S]*<MapMobileDetailSheet[\s\S]*\{\/if\}/,
+		);
 	});
 });

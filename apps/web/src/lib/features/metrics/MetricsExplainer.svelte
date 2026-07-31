@@ -868,7 +868,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
-		max-width: var(--container-content);
 	}
 	.metrics-preamble {
 		margin: 0;

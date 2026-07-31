@@ -14,7 +14,7 @@
 //   layout  — responsive grids and page shells (DashboardGrid, RailLayout, …)
 //   dataviz — non-chart data-viz primitives + token helpers (StatusBadge, RankedRow, …)
 //   edge    — edge-condition primitive (EdgeState)
-//   map     — MapLibre stage + null-safe basemap resolver (MapStage, …)
+//   map     — MapLibre stage + externally consumed map-kit API (MapStage, …)
 //
 // NOTE: ui/* (shadcn-style primitives: button, card, sheet, tabs, …) is
 // deliberately NOT re-exported here. Each `ui/<name>` owns its own barrel

@@ -10,7 +10,7 @@
 // Side-effect-free: no stores, no map, no reactive reads. MapHero owns the two
 // $derived wrappers that pass the live clock in.
 
-import { fixAgeS, isVehicleStale } from '$lib/components/map/vehicleProjection';
+import { fixAgeS, isVehicleStale } from '$lib/components/map';
 import type { MapSelectionDetail } from './mapSelection';
 
 /**

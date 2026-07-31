@@ -1,8 +1,5 @@
 import type { LiveIndex } from '$lib/v1/live';
-import {
-	routeDirectionVariants,
-	type RouteDirectionVariant,
-} from '$lib/components/map/routeDirection';
+import { routeDirectionVariants, type RouteDirectionVariant } from '$lib/components/map';
 import type {
 	Alert,
 	RouteDirection,
