@@ -94,6 +94,10 @@
   --opacity-faint: 0.05;
   --container-content: 64rem;
   --container-wide: 72rem;
+  --measure-body: 60rem;
+  --measure-lede: 34rem;
+  --measure-notice: 28rem;
+  --measure-display: 28ch;
 
   /* shadcn alias — components reference --radius */
   --radius: var(--radius-md);

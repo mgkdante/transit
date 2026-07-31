@@ -45,22 +45,7 @@
 	import { RightPanel } from '$lib/components/shell';
 	import {
 		MapStage,
-		bakeVehicleSprites,
-		bakeLocationPinSprite,
-		addVehicleSource,
-		addVehicleLayers,
-		setStale,
-		toVehicleFeatures,
 		createVehicleMotionController,
-		addStopsSource,
-		addStopsLayer,
-		setStops,
-		addRouteLineSource,
-		addRouteLineLayers,
-		setRouteLines,
-		addNearTargetSource,
-		addNearTargetLayer,
-		setNearTarget,
 		nearestStops,
 		centerFromProviderBbox,
 		liveTtlS,
@@ -93,7 +78,13 @@
 	import { copy as MAP_COPY } from './map.copy';
 	import { readStoredDetailPanelWidth } from './mapDetailPanes';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
-	import { PICKABLE_MAP_LAYERS, pickMapSelection } from './mapPicking';
+	import {
+		installMapInteractions,
+		MAP_LAYER_MODULES,
+		PICKABLE_MAP_LAYERS,
+		type MapLayerFeedContext,
+	} from './mapLayerModules';
+	import { pickMapSelection } from './mapPicking';
 	import {
 		resolveMapSelection,
 		sameNullableSelection,
@@ -273,15 +264,14 @@
 	// also drove the per-vehicle silence fade, now removed — buses are solid.)
 	$effect(() => sharedClock.subscribe());
 
-	// Tear the motion controller down on component unmount: it owns a running rAF
-	// projection loop, which is otherwise only stopped inside installMapLayers when
-	// the MAP instance changes — so navigating away from /map would leak a live
-	// loop. This effect has no tracked reads, so it runs once and its cleanup fires
-	// only on unmount; it reads vehicleMotion lazily there to stop whatever
-	// controller is current. The map-instance-change path is unaffected: it destroys
-	// the OLD controller before creating a new one, so there is no double destroy
-	// (destroy() just cancels an already-cancelled loop, which is a no-op).
-	$effect(() => () => untrack(() => vehicleMotion)?.destroy());
+	// Tear down the motion loop and map interactions on component unmount. This
+	// effect has no tracked reads, so it runs once and reads the current controller
+	// only from its cleanup. Map-identity changes dispose the old resources earlier;
+	// their disposers are idempotent against this final cleanup.
+	$effect(() => () => {
+		untrack(() => vehicleMotion)?.destroy();
+		for (const dispose of interactionDisposers) dispose();
+	});
 
 	// Live tier ttl (seconds) → drives the global stale/banner windows (isStale fires
 	// at 3x ttl = 90s) AND sizes the per-bus not-reporting cutoff (threaded as `ttlS`
@@ -305,6 +295,7 @@
 
 	let layerRevision = $state(0);
 	let interactionsMap: MapLibreMap | null = null;
+	let interactionDisposers: readonly (() => void)[] = [];
 	let selected = $state<MapSelection | null>(null);
 	let selectionStack = $state<MapSelection[]>([]);
 	let hovered = $state<MapSelection | null>(null);
@@ -945,33 +936,39 @@
 		return false;
 	}
 
-	function installMapInteractions(m: MapLibreMap): void {
+	function ensureMapInteractions(m: MapLibreMap): void {
 		if (interactionsMap === m) return;
+		for (const dispose of interactionDisposers) dispose();
 		interactionsMap = m;
-
-		m.on('click', (e) => selectPickedFeature(m, e));
-		m.on('mousemove', (e) => hoverPickedFeature(m, e));
-		m.getCanvas().addEventListener('mouseleave', () => clearHover(m));
+		interactionDisposers = installMapInteractions(m, {
+			click: (event) => selectPickedFeature(m, event),
+			mousemove: (event) => hoverPickedFeature(m, event),
+			mouseleave: () => clearHover(m),
+		});
 	}
-
-	function installMapLayers(m: MapLibreMap): void {
-		bakeVehicleSprites(m);
-		bakeLocationPinSprite(m);
-		// Routes UNDER stops/buses; buses ride on top.
-		addRouteLineSource(m);
-		addRouteLineLayers(m);
-		addStopsSource(m);
-		addStopsLayer(m);
-		addVehicleSource(m);
-		addVehicleLayers(m);
+	function ensureVehicleMotion(m: MapLibreMap): void {
 		if (vehicleMotionMap !== m) {
 			vehicleMotion?.destroy();
 			vehicleMotion = createVehicleMotionController(m);
 			vehicleMotionMap = m;
 		}
-		addNearTargetSource(m);
-		addNearTargetLayer(m);
-		installMapInteractions(m);
+	}
+
+	function installMapLayers(m: MapLibreMap): void {
+		// Prepare every module before installing any layer. bakeVehicleSprites owns
+		// STOP_ICON even though the stops module consumes it, so a per-module
+		// prepare/install loop would install stops before that shared asset exists.
+		for (const module of MAP_LAYER_MODULES) module.prepare?.(m);
+
+		// SF deliberately preserves append order. firstSymbolLayerId() is available
+		// for the owner-parked visual flip, but this slice passes no anchor.
+		const beforeId: string | undefined = undefined;
+		for (const module of MAP_LAYER_MODULES) module.install(m, beforeId);
+
+		// Controller identity belongs to this MapHero instance, not the static
+		// registry. Reuse it across style loads of the same map.
+		ensureVehicleMotion(m);
+		ensureMapInteractions(m);
 		// Bump so the feed effect re-runs and re-pushes the vehicle/stop/route data
 		// MapLibre cleared from its custom sources on the style swap.
 		layerRevision += 1;
@@ -1020,12 +1017,9 @@
 		};
 	};
 
-	// Feed the layers: vehicles coloured/dimmed under the active filter + the stop
-	// catalogue; dim on stale. Reactive to filters.state so a chip toggle re-paints.
-	// Forward projection is now CLOCK-DRIVEN inside the controller's rAF loop (it
-	// reads serverNowFn each frame and projects each bus from its own latest fix to
-	// estimated-now), so this effect only re-feeds the latest FILES + filter/
-	// selection — it does NOT need to fire on the per-second clock tick.
+	// Feed every registered module from one synchronous, non-retained context.
+	// Forward projection is CLOCK-DRIVEN inside the controller's rAF loop, so this
+	// effect re-feeds files/filter/selection changes but not the per-second clock.
 	$effect(() => {
 		const m = map;
 		// Reading `layerRevision` registers the post-style-swap layer install as an
@@ -1042,45 +1036,49 @@
 		// and the controller switches between project and snap without a poll.
 		const smoothMotion = motionMode.current === 'smooth';
 		const animate = motionFeedAnimate({ smoothMotion, reduceMotion });
-		setRouteLines(m, routeLineRoutes, selectedRouteLine);
 		// serverNow read UNTRACKED here so this poll/filter/selection effect is NOT
 		// re-run by the per-second clock tick (the controller's rAF loop advances
 		// projection between polls). Used only to bake the feed-time silenceAgeS prop.
 		const serverNow = untrack(() => sharedClock.serverNow);
-		vehicleMotion?.set(
-			toVehicleFeatures(
-				live.vehicles?.vehicles ?? [],
-				filters.state,
-				alertVehicleIds,
-				selectedVehicleId,
-				hoveredVehicleId,
-				{ serverNow, ttlS: liveTtl },
-			),
-			{
+		const filter = filters.state;
+		const stale = live.vehiclesIsStale;
+		const ctx: MapLayerFeedContext = {
+			routes: {
+				items: routeLineRoutes,
+				selected: selectedRouteLine,
+			},
+			vehicles: {
+				motion: vehicleMotion,
+				items: live.vehicles?.vehicles ?? [],
+				filter,
+				alertIds: alertVehicleIds,
+				selectedId: selectedVehicleId,
+				hoveredId: hoveredVehicleId,
+				serverNow,
+				ttlS: liveTtl,
 				tickKey: live.vehiclesGeneratedUtc,
-				stale: live.vehiclesIsStale,
+				stale,
 				// FORWARD projection: speed + fix-time per bus, the route shape to walk,
-				// and the LIVE skew-free clock read each frame so the dot tracks
-				// estimated-NOW. Reduced motion / global stale / RAW mode snap to reported
-				// positions (animate=false inside the controller), so these are inert there.
+				// and the live skew-free clock read each frame. Reduced motion, global
+				// stale, and raw mode snap to reported positions instead.
 				fixFor,
 				shapeFor: animate ? shapeFor : undefined,
 				serverNowFn: () => sharedClock.serverNow,
-				// animate = smooth mode AND motion-gated allowed (reduced-motion off). In
-				// raw mode the controller SNAPS each ~30s feed (ping-on-load, no estimate).
 				animate,
 			},
-		);
-		setStops(
-			m,
-			stops.data?.stops ?? [],
-			filters.state,
-			alertEntitySets.stops,
-			selectedStopId,
-			hoveredStopId,
-		);
-		setNearTarget(m, nearMeOrigin);
-		setStale(m, live.vehiclesIsStale);
+			stops: {
+				items: stops.data?.stops ?? [],
+				filter,
+				alertIds: alertEntitySets.stops,
+				selectedId: selectedStopId,
+				hoveredId: hoveredStopId,
+			},
+			nearTarget: {
+				target: nearMeOrigin,
+			},
+		};
+
+		for (const module of MAP_LAYER_MODULES) module.feed(m, ctx);
 	});
 
 	$effect(() => {

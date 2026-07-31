@@ -6,6 +6,7 @@ import type { RouteDayOfWeek } from '$lib/v1';
 const WK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const labels: WeekdayCycleLabels = {
 	title: 'Weekday cycle',
+	xLabel: 'Day of week',
 	yLabel: 'Avg delay',
 	unit: ' min',
 	weekdayShort: (iso) => WK[iso - 1],
@@ -24,6 +25,7 @@ describe('selectWeekdayCycle', () => {
 		expect(spec.domain).toEqual(DELAY_DOW_DOMAIN);
 		expect(spec.domain[0]).toBe(0); // zero-based
 		expect(spec.xLabels).toEqual(WK); // fixed cycle order, never sorted by value
+		expect(spec.xLabel).toBe('Day of week');
 		expect(spec.series).toHaveLength(1);
 		expect(spec.series[0].points).toEqual([2.1, null, 3.4, null, null, null, null]);
 	});

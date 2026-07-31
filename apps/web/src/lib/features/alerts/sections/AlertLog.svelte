@@ -15,6 +15,7 @@
 	import type { AlertHistoryCopy } from '../alerts.copy';
 	import type { AlertRowVM } from '../selectors/alertLog';
 	import type { SeverityCode } from '$lib/v1/schemas';
+	import type { Locale } from '$lib/i18n';
 
 	interface Props {
 		/** The rows to render (already filtered + capped by the orchestrator). */
@@ -28,10 +29,11 @@
 		/** DOM id for the list (the disclosure's aria-controls). */
 		logId: string;
 		copy: AlertHistoryCopy;
+		locale: Locale;
 		/** Toggle the +N-more disclosure. */
 		onToggle: () => void;
 	}
-	let { rows, total, expanded, overflow, logId, copy, onToggle }: Props = $props();
+	let { rows, total, expanded, overflow, logId, copy, locale, onToggle }: Props = $props();
 
 	/** Glyph per severity — colour is never the sole channel (mirrors AffectedAlerts). */
 	const SEVERITY_GLYPH: Record<SeverityCode, string> = {
@@ -47,7 +49,16 @@
 			<p class="alert-history-row-head">
 				<span class="alert-history-dot" aria-hidden="true">{SEVERITY_GLYPH[row.severity]}</span>
 				<span class="sr-only">{copy.severity[row.severity]}</span>
-				<span class="alert-history-title">{row.headline}</span>
+				<span class="alert-history-title">
+					<span
+						lang={row.headline.lang && row.headline.lang !== locale ? row.headline.lang : undefined}
+					>
+						{row.headline.text}
+					</span>
+					{#if row.headline.isFallback && row.headline.lang && row.headline.lang !== locale}
+						<span class="alert-language-marker">{copy.foreignLanguage}</span>
+					{/if}
+				</span>
 			</p>
 			<dl class="alert-history-meta">
 				{#if row.periods.length > 1}
@@ -292,5 +303,14 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 		border-radius: var(--radius-sm);
+	}
+
+	/* The language marker is a quiet annotation beside the provider text,
+	   never part of the headline itself. */
+	.alert-language-marker {
+		margin-inline-start: 0.375rem;
+		color: var(--muted-foreground);
+		font-size: var(--text-caption);
+		font-weight: 400;
 	}
 </style>

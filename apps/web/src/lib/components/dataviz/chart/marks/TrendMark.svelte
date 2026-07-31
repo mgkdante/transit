@@ -30,6 +30,7 @@
 	import { curveMonotoneX } from 'd3-shape';
 	import { cn } from '$lib/utils';
 	import ChartFrame from '../ChartFrame.svelte';
+	import { structuralLabels } from '../structuralLabels';
 	import ChartLegend from '../../ChartLegend.svelte';
 	import type { TrendDatum, TrendSpec } from '../ChartSpec';
 
@@ -42,6 +43,7 @@
 
 	const data = $derived(spec.points.map((p) => ({ ...p })));
 	const isTime = $derived(spec.xScale === 'time');
+	const structure = $derived(structuralLabels(spec.locale));
 	const xOf = $derived((d: TrendDatum) => (isTime ? Number(d.x) : String(d.x)));
 
 	const xDomain = $derived.by<number[] | string[]>(() => {
@@ -200,7 +202,7 @@
 						{/if}
 						{#if d.bandLo != null && d.bandHi != null}
 							<Tooltip.Item
-								label="95% CI"
+								label={structure.confidenceInterval95}
 								value={`${num(d.bandLo)}-${num(d.bandHi)}${spec.unit}`}
 							/>
 						{/if}
@@ -253,7 +255,7 @@
 		<caption>{spec.title}</caption>
 		<thead>
 			<tr>
-				<th scope="col">x</th>
+				<th scope="col">{structure.x}</th>
 				<th scope="col">{spec.label}{spec.unit}</th>
 				{#if spec.secondary}<th scope="col">{spec.secondary.label}{spec.secondary.unit}</th>{/if}
 			</tr>

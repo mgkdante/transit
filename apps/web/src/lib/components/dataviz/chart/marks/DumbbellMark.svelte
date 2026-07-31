@@ -16,6 +16,7 @@
 	import { cn } from '$lib/utils';
 	import ChartFrame from '../ChartFrame.svelte';
 	import { categoryGutter } from '../axisGutter';
+	import { structuralLabels } from '../structuralLabels';
 	import type { DumbbellSpec, DumbbellDatum } from '../ChartSpec';
 	import type { SeverityCode } from '$lib/v1/schemas';
 
@@ -30,6 +31,7 @@
 	// A row needs BOTH endpoints to draw a connector + both dots.
 	const reals = $derived(spec.rows.filter((r) => r.scheduled != null && r.observed != null));
 	const xDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
+	const structure = $derived(structuralLabels(spec.locale));
 
 	const obsBySeverity = (sev: SeverityCode): DumbbellDatum[] =>
 		reals.filter((r) => (r.severity ?? 'watch') === sev);
@@ -107,7 +109,7 @@
 						/>
 						<Tooltip.Item label={spec.observedLabel} value={`${fmt(data.observed)}${spec.unit}`} />
 						{#if data.excess != null}
-							<Tooltip.Item label="gap" value={`${fmt(data.excess)}${spec.unit}`} />
+							<Tooltip.Item label={structure.gap} value={`${fmt(data.excess)}${spec.unit}`} />
 						{/if}
 						{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
 					</Tooltip.List>
@@ -120,7 +122,7 @@
 		<caption>{spec.title}</caption>
 		<thead>
 			<tr>
-				<th scope="col">row</th>
+				<th scope="col">{structure.row}</th>
 				<th scope="col">{spec.scheduledLabel}</th>
 				<th scope="col">{spec.observedLabel}</th>
 			</tr>
