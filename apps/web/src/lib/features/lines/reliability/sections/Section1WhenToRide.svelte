@@ -339,6 +339,7 @@
 	const weekdayCycle = $derived(
 		selectWeekdayCycle(punctuality.dayOfWeek, locale, {
 			title: band.weekdayHeading,
+			xLabel: band.dayAxisLabel,
 			yLabel: copy.strip.avgDelayMin,
 			unit: ' min',
 			weekdayShort: (iso) => band.weekdaysShort[iso - 1],

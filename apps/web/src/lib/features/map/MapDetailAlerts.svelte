@@ -7,7 +7,7 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '$lib/i18n';
 	import type { Alert } from '$lib/v1/schemas';
-	import { alertDisplayText } from '$lib/v1/alertDisplay';
+	import { alertDisplayText, alertDisplayUrl } from '$lib/v1/alertDisplay';
 	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
 	import { StateNotice } from '$lib/components/edge';
 	import type { MapSelectionDetailCopy } from './mapSelectionDetail.copy';
@@ -21,8 +21,9 @@
 	}
 
 	let { alerts, locale, t, compact = false, onalertselect }: Props = $props();
+	const uid = $props.id();
 
-	function displayAlert(alert: Alert): string {
+	function displayAlert(alert: Alert) {
 		return alertDisplayText(alert, locale);
 	}
 </script>
@@ -40,19 +41,45 @@
 		/>
 	{:else if alerts.length > 0}
 		<ul>
-			{#each alerts.slice(0, compact ? 2 : 4) as alert (alert.id)}
+			{#each alerts.slice(0, compact ? 2 : 4) as alert, index (alert.id)}
 				{@const cause = causeLabel(alert.cause, locale)}
 				{@const effect = effectLabel(alert.effect, locale)}
+				{@const display = displayAlert(alert)}
+				{@const marker = display.isFallback && display.lang && display.lang !== locale}
+				{@const url = alertDisplayUrl(alert, locale)}
+				{@const labelId = `${uid}-map-alert-label-${index}`}
 				<li data-severity={alert.severity}>
 					<button
 						type="button"
 						class="map-alert-button"
-						aria-label={t.selectAlert(displayAlert(alert))}
+						aria-labelledby={labelId}
 						onclick={() => onalertselect?.(alert)}
 					>
-						{displayAlert(alert)}
+						<span lang={display.lang && display.lang !== locale ? display.lang : undefined}>
+							{display.text}
+						</span>
+						{#if marker}<span class="alert-language-marker">{t.foreignLanguage}</span>{/if}
 						<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
+						<span id={labelId} class="sr-only">
+							{t.selectAlertAction}{' '}
+							<span lang={display.lang && display.lang !== locale ? display.lang : undefined}>
+								{display.text}
+							</span>
+							{#if marker}<span>{t.foreignLanguage}</span>{/if}
+						</span>
 					</button>
+					{#if url}
+						<a
+							class="map-alert-link"
+							href={url.href}
+							hreflang={url.lang}
+							target="_blank"
+							rel="noopener noreferrer"
+							aria-label={t.alertLinkAria(url.host)}
+						>
+							{t.alertLink} · {url.host}
+						</a>
+					{/if}
 					{#if cause || effect}
 						<dl class="map-alert-meta">
 							{#if cause}

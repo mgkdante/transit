@@ -14,6 +14,8 @@ import type { RouteDayOfWeek } from '$lib/v1';
 
 export interface WeekdayCycleLabels {
 	title: string;
+	/** Localized category-axis title (e.g. "Day of week"). */
+	xLabel: string;
 	/** Localized value-axis title + series label (e.g. "Avg delay"). */
 	yLabel: string;
 	/** Value unit suffix (e.g. " min"). */
@@ -57,6 +59,7 @@ export function selectWeekdayCycle(
 			title: labels.title,
 			locale,
 			xLabels: ISO_WEEK.map((iso) => labels.weekdayShort(iso)),
+			xLabel: labels.xLabel,
 			domain: DELAY_DOW_DOMAIN,
 			unit: labels.unit,
 			yLabel: labels.yLabel,

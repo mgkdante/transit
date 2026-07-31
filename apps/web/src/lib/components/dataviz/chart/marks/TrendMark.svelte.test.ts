@@ -29,4 +29,23 @@ describe('TrendMark primary-series voice', () => {
 			'Chosen daily delay series',
 		);
 	});
+
+	it('renders the French x header from the spec locale', () => {
+		const spec: TrendSpec = {
+			kind: 'trend',
+			title: 'Tendance de ponctualité',
+			locale: 'fr',
+			xScale: 'band',
+			domain: [0, 100],
+			unit: ' %',
+			label: 'À l’heure',
+			points: [{ x: 'AM', xLabel: 'Pointe AM', y: 82, bandLo: 78, bandHi: 86 }],
+			hasBand: true,
+			minPointsForLine: 2,
+			minN: 0,
+		};
+
+		const { container } = render(TrendMark, { props: { spec } });
+		expect(container.querySelector('table.sr-only thead th')).toHaveTextContent('axe x');
+	});
 });

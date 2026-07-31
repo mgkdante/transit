@@ -307,7 +307,7 @@ const alertSurface = createSurfaceHarness({
 const render = alertSurface.mount;
 
 beforeEach(() => alertSurface.reset());
-afterAll(() => expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(58));
+afterAll(() => expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(59));
 
 describe('AlertHistory article shell', () => {
 	it('renders one article heading, exact metadata copy, and only the two shared reading controls', () => {
@@ -590,6 +590,24 @@ describe('AlertHistory log', () => {
 		expect(link.getAttribute('rel')).toContain('noopener');
 		expect(link.getAttribute('target')).toBe('_blank');
 		expect(link).toHaveTextContent('stm.info');
+	});
+
+	it('language-tags foreign provider text and adds the UI-language sibling marker', () => {
+		fixture.alerts = [
+			{
+				id: 'foreign',
+				severity: 'watch',
+				header_key: 'Votre ligne',
+				description: 'Détour français seulement',
+				description_en: null,
+				routes: ['10'],
+				stops: [],
+			},
+		] as unknown as AlertHistory['alerts'];
+		fixture.breakdown = null;
+		render(AlertHistoryScreen);
+		expect(screen.getByText('Détour français seulement')).toHaveAttribute('lang', 'fr');
+		expect(screen.getByText('(French only)')).toBeInTheDocument();
 	});
 
 	it('shows the honest cap note when the served window was truncated', () => {

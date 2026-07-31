@@ -157,6 +157,9 @@ export const detailCopy = defineCopy({
 			severity: { critical: 'Critique', high: 'Élevé', watch: 'À surveiller' },
 			more: (n) => `+${n} de plus`,
 			showLess: 'Réduire',
+			foreignLanguage: '(en anglais seulement)',
+			link: 'Détails',
+			linkAria: (host: string) => `Ouvrir les détails de l’avis sur ${host} (nouvel onglet)`,
 		} satisfies AffectedAlertsCopy,
 		info: {
 			position: 'Position',
@@ -235,6 +238,9 @@ export const detailCopy = defineCopy({
 			severity: { critical: 'Critical', high: 'High', watch: 'Watch' },
 			more: (n) => `+${n} more`,
 			showLess: 'Show less',
+			foreignLanguage: '(French only)',
+			link: 'Details',
+			linkAria: (host) => `Open the alert details on ${host} (new tab)`,
 		} satisfies AffectedAlertsCopy,
 		info: {
 			position: 'Position',
