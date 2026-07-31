@@ -11,12 +11,35 @@
 //     enum leaves the field absent (and thus omitted from the URL).
 
 import { describe, it, expect } from 'vitest';
-import { fromSearchParams, toSearchParams } from './url';
+import { FILTER_SEARCH_PARAM_KEYS, fromSearchParams, toSearchParams } from './url';
 import { isEmptyFilterState } from './state';
 import type { FilterState } from './state';
 
 const sp = (q: string) => new URLSearchParams(q);
 const round = (q: string) => toSearchParams(fromSearchParams(sp(q))).toString();
+
+describe('filter URL key inventory', () => {
+	it('exports every canonical filter key in an immutable order', () => {
+		expect(FILTER_SEARCH_PARAM_KEYS).toEqual([
+			'route',
+			'stop',
+			'trip',
+			'vehicle',
+			'status',
+			'occupancy',
+			'entity',
+			'alert',
+			'grain',
+			'from',
+			'to',
+			'date',
+			'n',
+			'affects',
+			'severity',
+		]);
+		expect(Object.isFrozen(FILTER_SEARCH_PARAM_KEYS)).toBe(true);
+	});
+});
 
 describe('fromSearchParams — parsing + self-healing', () => {
 	it('collects comma-joined id sets, deduped', () => {

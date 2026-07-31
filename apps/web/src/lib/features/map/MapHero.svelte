@@ -21,7 +21,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/stores';
-	import { goto, afterNavigate } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { themeStore } from '$lib/stores';
@@ -40,7 +40,6 @@
 	import type { Alert } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { createFilterStore, fromSearchParams, type Chip } from '$lib/filters';
-	import { copyNearTargetSearchParams } from '$lib/search/mapNear';
 	import { nearTargetFromSearchParams } from '$lib/search/mapNear';
 	import { parseMapFocus } from '$lib/search/mapFocus';
 	import { RightPanel } from '$lib/components/shell';
@@ -75,6 +74,8 @@
 	import { nearTargetKey } from './mapNearMe';
 	import { createMapNearMeController, type NearMeOrigin } from './mapNearMeController.svelte';
 	import { createMapFocusController } from './mapFocusController.svelte';
+	import { isMapFocusReady } from './mapFocusReadiness';
+	import { createMapUrlCoordinator, MAP_URL_REWRITE } from './mapUrlCoordinator';
 	import { createMapSelectionController } from './mapSelectionController.svelte';
 	import { createMapEmphasisController } from './mapEmphasisController.svelte';
 	import { resolveMapHoverPeek } from './mapHoverPeek';
@@ -165,17 +166,14 @@
 	// disrupted + back/forward stay clean). One map, deep-linkable from anywhere.
 	// Every URL write here is an in-place rewrite: keep the map view (noScroll),
 	// the user's focus, and a clean back/forward stack.
-	const URL_REWRITE = { replaceState: true, keepFocus: true, noScroll: true } as const;
-	const filters = createFilterStore(fromSearchParams($page.url.searchParams), (search) => {
-		const nextSearchParams = new URLSearchParams(search);
-		copyNearTargetSearchParams($page.url.searchParams, nextSearchParams);
-		const nextSearch = nextSearchParams.toString();
-		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, URL_REWRITE);
-	});
-
+	const urlCoordinator = createMapUrlCoordinator($page.url, goto);
+	const filters = createFilterStore(
+		fromSearchParams($page.url.searchParams),
+		urlCoordinator.writeFilters,
+	);
 	const nearMeController = createMapNearMeController({
-		goto,
-		currentUrl: () => $page.url,
+		goto: urlCoordinator.goto,
+		currentUrl: urlCoordinator.currentUrl,
 		readTarget: nearTargetFromSearchParams,
 		targetKey: nearTargetKey,
 		buildTargetSearch: buildNearTargetSearch,
@@ -189,23 +187,23 @@
 	const focusController = createMapFocusController({
 		readFocus: parseMapFocus,
 		clearFocus: () => {
-			void goto(buildFocusClearSearch($page.url.searchParams, $page.url.pathname), URL_REWRITE);
+			const url = urlCoordinator.currentUrl();
+			void urlCoordinator.goto(
+				buildFocusClearSearch(url.searchParams, url.pathname),
+				MAP_URL_REWRITE,
+			);
 		},
 	});
 
-	// Any client navigation can change the URL filter spine: browser back/forward,
-	// top-chrome search, cross-family drilldowns, or the filter pane itself.
-	// Replacing from the URL is side-effect-free, so own replaceState pushes are
-	// harmless and external search picks apply without a reload.
-	afterNavigate(() => {
-		filters.replace(fromSearchParams($page.url.searchParams));
-		nearMeController.syncFromUrl($page.url.searchParams);
-		focusController.syncFromUrl($page.url.searchParams);
-	});
-
+	let ingestedUrlIdentity = '';
 	$effect(() => {
-		nearMeController.syncFromUrl($page.url.searchParams);
-		focusController.syncFromUrl($page.url.searchParams);
+		const url = $page.url;
+		const urlIdentity = `${url.pathname}${url.search}`;
+		if (urlIdentity === ingestedUrlIdentity) return;
+		ingestedUrlIdentity = urlIdentity;
+		filters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));
+		nearMeController.syncFromUrl(url.searchParams);
+		focusController.syncFromUrl(url.searchParams);
 	});
 
 	// Basemap pointer (hosted Montréal PMTiles), or null → minimal-dark fallback.
@@ -291,9 +289,6 @@
 	const focusedStopId = $derived.by<string | null>(() => {
 		if (!selected) return null;
 		if (selected.kind === 'stop') return selected.id;
-		if (selected.kind === 'vehicle') {
-			return live.index.byVehicleId.get(selected.id)?.next_stop ?? null;
-		}
 		return null;
 	});
 	const focusedRoute = createResource<RouteFile | null>(
@@ -517,21 +512,14 @@
 		return pickMapSelection(m.queryRenderedFeatures(e.point, { layers }));
 	}
 
+	const SELECTION_WRITE = { authority: 'selection', ownership: 'claim-new' } as const;
 	function addSelectionFilter(selection: MapSelection): void {
-		switch (selection.kind) {
-			case 'vehicle': {
-				filters.addVehicle(selection.id);
-				const route = live.index.byVehicleId.get(selection.id)?.route;
-				if (route) filters.addRoute(route);
-				break;
-			}
-			case 'stop':
-				filters.addStop(selection.id);
-				break;
-			case 'route':
-				filters.addRoute(selection.id);
-				break;
+		const chips: Chip[] = [{ kind: selection.kind, value: selection.id }];
+		if (selection.kind === 'vehicle') {
+			const route = live.index.byVehicleId.get(selection.id)?.route;
+			if (route) chips.push({ kind: 'route', value: route });
 		}
+		filters.applyChips(chips, SELECTION_WRITE);
 	}
 
 	function commitPickedSelection(next: MapSelection): void {
@@ -559,6 +547,7 @@
 	}
 
 	function closeDetail(): void {
+		filters.clearSelectionOwned();
 		selectionController.close();
 		// Re-open the panel expanded next time: a closed panel should not remember a
 		// collapsed strip (that would re-open as an empty rail with no obvious content).
@@ -609,13 +598,10 @@
 	}
 
 	function selectAlertRelated(alert: Alert): void {
-		filters.setAlerts(['has_alert']);
-		for (const route of alert.routes ?? []) {
-			filters.addRoute(route);
-		}
-		for (const stop of alert.stops ?? []) {
-			filters.addStop(stop);
-		}
+		const chips: Chip[] = [{ kind: 'alert', value: 'has_alert' }];
+		for (const value of alert.routes ?? []) chips.push({ kind: 'route', value });
+		for (const value of alert.stops ?? []) chips.push({ kind: 'stop', value });
+		filters.applyChips(chips, SELECTION_WRITE);
 		const firstStop = alert.stops?.[0];
 		const firstRoute = alert.routes?.[0];
 		if (firstStop) {
@@ -655,8 +641,20 @@
 	// reads the kind's reactive source so it re-runs when that data loads, then
 	// pans/fits and strips the param so it fires exactly once.
 	$effect(() => {
-		if (!map) return;
-		focusController.consume(focusSelection);
+		const pending = focusController.pending;
+		if (!map || !pending) return;
+		if (
+			!isMapFocusReady(pending, {
+				stopsSettled: stops.settled,
+				vehiclesPhase: live.familyStates.vehicles.phase,
+				selectedRouteIds,
+				selectedRoutesSettled: selectedRoutes.settled,
+				focusedRouteId,
+				focusedRouteSettled: focusedRoute.settled,
+			})
+		)
+			return;
+		focusController.consumeOnce(focusSelection);
 	});
 
 	function focusNearMeOrigin(origin: NearMeOrigin): void {

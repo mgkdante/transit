@@ -1,5 +1,5 @@
 import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
-import { fromSearchParams, toSearchString } from '$lib/filters';
+import { FILTER_SEARCH_PARAM_KEYS, fromSearchParams, toSearchString } from '$lib/filters';
 import type { GeocodePrecision, GeocodeSource, GeocodeSuggestion } from '$lib/geocode/types';
 import { routeFor } from '$lib/nav';
 import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
@@ -177,13 +177,14 @@ export function chromeSearchResultHref(
 	if (scope === 'stop' && result.kind === 'stop') {
 		return routeFor({ kind: 'stop', id: result.id });
 	}
-	return chromeSearchHref(result, currentSearchParams);
+	return chromeSearchHref(result, currentSearchParams, scope);
 }
 
 export function chromeSearchHref(
 	result: Pick<ChromeSearchResult, 'kind' | 'id'> &
 		Partial<Pick<ChromeSearchResult, 'label' | 'lat' | 'lon' | 'precision'>>,
 	currentSearchParams: URLSearchParams = new URLSearchParams(),
+	scope: ChromeSearchScope = 'all',
 ): string {
 	const state = fromSearchParams(currentSearchParams);
 	if (result.kind === 'route') {
@@ -194,12 +195,20 @@ export function chromeSearchHref(
 		state.vehicles.add(result.id);
 	}
 
-	const searchParams = new URLSearchParams(toSearchString(state));
+	const canonicalFilters = new URLSearchParams(toSearchString(state));
+	const searchParams =
+		scope === 'map' ? new URLSearchParams(currentSearchParams) : canonicalFilters;
+	if (scope === 'map') {
+		for (const key of FILTER_SEARCH_PARAM_KEYS) searchParams.delete(key);
+		for (const key of FILTER_SEARCH_PARAM_KEYS) {
+			for (const value of canonicalFilters.getAll(key)) searchParams.append(key, value);
+		}
+	}
 	if (result.kind === 'address') {
 		const target = addressTargetFromResult(result);
 		if (target) setNearTargetSearchParams(searchParams, target);
 	} else {
-		copyNearTargetSearchParams(currentSearchParams, searchParams);
+		if (scope !== 'map') copyNearTargetSearchParams(currentSearchParams, searchParams);
 		// Tell the map to zoom to the picked entity (one-shot; the map strips it).
 		setMapFocusSearchParams(searchParams, result.kind as MapFocusKind, result.id);
 	}

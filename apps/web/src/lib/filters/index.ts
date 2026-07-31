@@ -52,12 +52,12 @@ export {
 	clear,
 } from './state';
 
-export { fromSearchParams, toSearchParams, toSearchString } from './url';
+export { FILTER_SEARCH_PARAM_KEYS, fromSearchParams, toSearchParams, toSearchString } from './url';
 
 export type { MapFilterTarget } from './mapTarget';
 export { mapSearchFor } from './mapTarget';
 
-export type { FilterStore, PushUrl, Chip } from './store.svelte';
+export type { FilterStore, FilterWriteContext, PushUrl, Chip } from './store.svelte';
 export { createFilterStore } from './store.svelte';
 
 export type { DataTier } from './grain';

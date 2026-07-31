@@ -266,6 +266,16 @@ describe('chromeSearchHref', () => {
 			'/map?route=161&near=45.525686%2C-73.594764&nearLabel=Mile+End&focus=route%3A161',
 		);
 	});
+
+	it('preserves every non-filter occurrence verbatim when invoked from map scope', () => {
+		const current = new URLSearchParams(
+			'x=1&route=24&x=&near=45.5000000%2C-73.5000000&empty=&status=late&x=2',
+		);
+
+		expect(chromeSearchHref({ kind: 'route', id: '161' }, current, 'map')).toBe(
+			'/map?x=1&x=&near=45.5000000%2C-73.5000000&empty=&x=2&route=161%2C24&status=late&focus=route%3A161',
+		);
+	});
 });
 
 describe('scopeForPath', () => {
@@ -376,6 +386,16 @@ describe('chromeSearchResultHref', () => {
 	it('falls through to the map filter spine on map and all scope', () => {
 		expect(chromeSearchResultHref(routeResult, 'map')).toBe('/map?route=161&focus=route%3A161');
 		expect(chromeSearchResultHref(stopResult, 'all')).toBe('/map?stop=52819&focus=stop%3A52819');
+	});
+
+	it('drops foreign params when a non-map scope falls through to /map', () => {
+		const current = new URLSearchParams(
+			'x=1&x=&route=24&near=45.5000000%2C-73.5000000&nearLabel=Raw',
+		);
+
+		expect(chromeSearchResultHref(stopResult, 'all', current)).toBe(
+			'/map?route=24&stop=52819&near=45.500000%2C-73.500000&nearLabel=Raw&focus=stop%3A52819',
+		);
 	});
 
 	it('falls through to the map near target for an address (no detail route)', () => {

@@ -17,7 +17,7 @@
 
 	$effect(() => {
 		if (!mapReady) return;
-		controller.consume(props.resolveFocus);
+		controller.consumeOnce(props.resolveFocus);
 	});
 
 	function ingest(): void {
