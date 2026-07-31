@@ -730,7 +730,7 @@ describe('HotspotsBoard article', () => {
 		const zeroTitle = within(lineTable).getByText('Zero Route');
 		const zeroRow = zeroTitle.closest('tr') as HTMLTableRowElement;
 		expect(zeroRow).toHaveTextContent('Line · R3');
-		expect(zeroRow.querySelector('.hotspot-tray-readings')).toHaveTextContent('0');
+		expect(zeroRow.querySelector('[data-column="readings"]')).toHaveTextContent('0');
 		expect(zeroRow.querySelector('[data-slot="absent-value"]')).toBeNull();
 
 		const rankedTable = stopCard.querySelector('table.sr-only') as HTMLTableElement;
