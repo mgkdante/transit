@@ -60,12 +60,20 @@ jobs:
       - name: Run static + GIS Bronze -> Silver -> Gold pipeline (all providers)
         id: run-static-providers
         continue-on-error: true
+        # Explicit so the executable workflow test's bash -eo pipefail matches
+        # what actually runs here (S5-383 N3).
+        shell: bash
         # One looped job over every configured provider so onboarding a provider
         # needs no workflow edit and the expensive setup (uv sync / init-db /
         # seed-core) is paid once per cron, not once per provider (a matrix would).
         run: |
           aggregate_status=0
-          for provider in $(uv run python -m transit_ops.cli list-providers); do
+          # Assignment (unlike a for-list substitution) DOES trip errexit, and an
+          # empty registry is a hard failure - enumeration breaking must never
+          # read as green with zero providers attempted (S5-383 N1).
+          providers="$(uv run python -m transit_ops.cli list-providers)"
+          [[ -n "$providers" ]] || { echo "::error::list-providers returned nothing"; exit 1; }
+          for provider in $providers; do
             echo "::group::run-static-pipeline ${provider}"
             set +e
             timeout --signal=TERM --kill-after=1m "30m" uv run python -m transit_ops.cli run-static-pipeline "$provider"
