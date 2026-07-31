@@ -1,5 +1,5 @@
 import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FilterState } from '$lib/filters';
 import { minimalDarkStyle } from '$lib/components/map/basemap';
 import { STOP_EXCEPTION_LAYER } from '$lib/components/map/stopsLayer';
@@ -104,6 +104,9 @@ describe('map layer feed invariants', () => {
 			'install:near-target',
 		]);
 		for (const feed of feedSpies) expect(feed).not.toHaveBeenCalled();
+	});
+
+	afterEach(() => {
 		vi.restoreAllMocks();
 	});
 

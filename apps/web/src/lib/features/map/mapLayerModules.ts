@@ -150,6 +150,11 @@ export const MAP_LAYER_MODULES: readonly LayerModule[] = Object.freeze([
 	nearTargetModule,
 ]);
 
+// Prepare EVERY module before installing any layer (bakeVehicleSprites owns
+// STOP_ICON even though the stops module consumes it — a per-module loop would
+// install stops before that shared asset exists). Installs are idempotent
+// retints on re-entry, so this is BOTH the full first-install path and the
+// theme-only repaint path (no feed, no revision — the caller owns those).
 export function retintMapLayers(map: MapLibreMap, beforeId?: string): void {
 	for (const module of MAP_LAYER_MODULES) module.prepare?.(map);
 	for (const module of MAP_LAYER_MODULES) module.install(map, beforeId);

@@ -12,18 +12,25 @@
   resolver, so the "no PMTiles archive yet" state degrades to a self-contained
   minimal dark style with zero external fetches.
 
-  Lifecycle:
-    - onMount → dynamic import, register pmtiles protocol ONCE globally, create
-      the Map, wire it to the container div.
+  Lifecycle (attempt-based since M2d):
+    - onMount → the FIRST boot attempt: basemap fetch starts up front (abort-
+      aware, fail-soft), vendor+CSS imports overlap it, pmtiles registers ONCE
+      globally, then the Map constructs against the resolved basemap.
+    - a FAILED attempt (importer/protocol/style/construct/setup) cleans up its
+      own map/observer/abort scope and signals `onerror`; Retry bumps the keyed
+      host (MapLibre needs an empty container) and re-boots — except importer
+      failures, which reload the document (module-import failures cache).
     - $effect → after the map exists, keep center/zoom/basemap in sync when the
-      camera props actually change (jumpTo for camera, setStyle for basemap).
-    - teardown → `map.remove()` to release the GL context + listeners.
+      camera props actually change (jumpTo for camera, setStyle for basemap);
+      theme-only changes repaint via `onthemerepaint`, never setStyle.
+    - teardown → the active attempt's cleanup releases the GL context.
 -->
 <script module lang="ts">
 	// Module-scoped (shared across every MapStage instance). The pmtiles protocol
-	// "must be added once globally" (per the pmtiles docs), so we guard it with a
-	// module-level flag rather than a per-instance one. Type-only imports here are
-	// erased and never reach the server bundle.
+	// "must be added once globally" (per the pmtiles docs), so registration is one
+	// shared promise — reset only on ITS OWN rejection (identity-guarded) so a
+	// retry can re-attempt while a concurrent success is never clobbered.
+	// Type-only imports here are erased and never reach the server bundle.
 	import type { addProtocol } from 'maplibre-gl';
 
 	export interface MapStageImporters {
@@ -298,6 +305,12 @@
 		}
 	}
 
+	// One boot attempt, end to end. Ordering is the protect-#5 contract: the
+	// basemap promise starts FIRST (network-bound, abort-aware, fail-soft → null
+	// → the self-contained fallback), the vendor+CSS imports overlap it, pmtiles
+	// registers after maplibre, and construction waits for ALL of them so the
+	// first paint is hot — no post-mount setStyle rebuild. `failureKind` advances
+	// stage by stage so the single catch classifies honestly.
 	async function startAttempt(generation: number): Promise<void> {
 		if (!mounted || !container || activeAttempt?.initializing) return;
 		const attempt: BootAttempt = {
@@ -345,17 +358,24 @@
 				zoom,
 				...mapViewportOptions(bounds, fitPadding, maxBounds),
 				locale,
+				// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 				attributionControl: { compact: true },
 			});
 			attempt.map = instance;
 			map = instance;
 
 			failureKind = 'setup';
+			// resize() on load is idiomatic insurance: if the container's final size
+			// wasn't settled when the GL context was created, this forces the drawing
+			// buffer + first frame to match the laid-out container.
 			instance.on('load', () => {
 				if (!isCurrentAttempt(attempt)) return;
 				instance.resize();
 				onready?.(instance);
 			});
+			// One-shot attribution collapse: maplibre's compact control still STARTS
+			// expanded; once attribution populates (never on the empty fallback), we
+			// land the exact end state a user click produces, then detach.
 			const collapseAttribution = () => {
 				if (!isCurrentAttempt(attempt) || !collapsePopulatedAttribution(attempt.container)) return;
 				instance.off('styledata', collapseAttribution);
@@ -363,6 +383,9 @@
 			};
 			instance.on('styledata', collapseAttribution);
 			instance.on('sourcedata', collapseAttribution);
+			// MapLibre measures the container at construction; in a flex/grid parent
+			// layout may not have settled, so observing keeps the viewport in sync
+			// (fires once immediately, repainting the initial frame).
 			attempt.observer = new ResizeObserver(() => instance.resize());
 			attempt.observer.observe(attempt.container);
 			attempt.initializing = false;
