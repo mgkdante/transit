@@ -1,5 +1,5 @@
 import type { GeocodedLocation, GeocodePrecision } from './types';
-import { isInsideMontrealBounds, montrealViewbox } from './types';
+import { isInsideMontrealBounds } from './types';
 import { foldDiacritics } from '$lib/search/normalize';
 
 export type { GeocodedLocation, GeocodePrecision } from './types';
@@ -20,15 +20,6 @@ interface GeoCaResult {
 	tag?: unknown;
 }
 
-interface NominatimResult {
-	lat?: unknown;
-	lon?: unknown;
-	display_name?: unknown;
-	class?: unknown;
-	type?: unknown;
-	address?: unknown;
-}
-
 interface RankedLocation {
 	location: GeocodedLocation;
 	score: number;
@@ -39,19 +30,6 @@ export function geoCaSearchUrl(query: string): URL {
 	url.searchParams.set('q', withEnglishMontrealContext(normalizeAddressIntentInQuery(query)));
 	url.searchParams.set('lang', 'en');
 	url.searchParams.set('keys', GEO_CA_KEYS);
-	return url;
-}
-
-export function nominatimSearchUrl(query: string): URL {
-	const url = new URL('https://nominatim.openstreetmap.org/search');
-	const normalized = normalizeAddressIntentInQuery(query);
-	url.searchParams.set('format', 'jsonv2');
-	url.searchParams.set('countrycodes', 'ca');
-	url.searchParams.set('bounded', '1');
-	url.searchParams.set('limit', '8');
-	url.searchParams.set('addressdetails', '1');
-	url.searchParams.set('viewbox', montrealViewbox());
-	url.searchParams.set('q', `${normalized} Montréal Québec Canada`.trim());
 	return url;
 }
 
@@ -71,16 +49,6 @@ export async function geocodeMontrealSuggestions(
 	if (!query.trim() || limit <= 0) return [];
 
 	const geoCaResults = await geocodeGeoCaMontreal(query, fetcher).catch(() => []);
-	if (hasUsefulAutocompleteCandidates(query, geoCaResults)) return geoCaResults.slice(0, limit);
-
-	const nominatimResults = await geocodeNominatimMontreal(query, fetcher).catch(() => []);
-	if (isAddressIntentQuery(query)) {
-		const usefulNominatimResults = nominatimResults.filter(isUsefulForAddressIntent);
-		if (usefulNominatimResults.length > 0) return usefulNominatimResults.slice(0, limit);
-	}
-	if (nominatimResults.length > 0) {
-		return rankLocationResults(query, [...nominatimResults, ...geoCaResults]).slice(0, limit);
-	}
 	return geoCaResults.slice(0, limit);
 }
 
@@ -101,25 +69,6 @@ async function geocodeGeoCaMontreal(
 	if (!Array.isArray(payload)) return [];
 
 	return rankedGeoCaLocations(query, payload);
-}
-
-async function geocodeNominatimMontreal(
-	query: string,
-	fetcher: GeocodeFetcher,
-): Promise<GeocodedLocation[]> {
-	const response = await fetcher(nominatimSearchUrl(query), {
-		headers: {
-			accept: 'application/json',
-			'accept-language': 'en-CA,en;q=0.8',
-			'user-agent': 'transit.yesid.dev citizen map (https://transit.yesid.dev)',
-		},
-	});
-	if (!response.ok) return [];
-
-	const payload: unknown = await response.json();
-	if (!Array.isArray(payload)) return [];
-
-	return rankedNominatimLocations(query, payload);
 }
 
 function rankedGeoCaLocations(query: string, payload: unknown[]): GeocodedLocation[] {
@@ -153,52 +102,11 @@ function rankedGeoCaLocations(query: string, payload: unknown[]): GeocodedLocati
 	return rankedLocations(ranked);
 }
 
-function rankedNominatimLocations(query: string, payload: unknown[]): GeocodedLocation[] {
-	const ranked: RankedLocation[] = [];
-	for (const item of payload) {
-		const result = item as NominatimResult;
-		const lat = Number(result.lat);
-		const lon = Number(result.lon);
-		if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-		if (!isInsideMontrealBounds(lat, lon)) continue;
-
-		const label = typeof result.display_name === 'string' ? result.display_name : query.trim();
-		const precision = nominatimPrecision(result);
-		ranked.push({
-			location: {
-				lat,
-				lon,
-				label,
-				source: 'nominatim',
-				precision,
-			},
-			score: precisionScore(precision) + geoCaRelevanceScore(query, label),
-		});
-	}
-
-	return rankedLocations(ranked);
-}
-
 function rankedLocations(ranked: RankedLocation[]): GeocodedLocation[] {
 	return ranked
 		.sort((a, b) => b.score - a.score)
 		.map((item) => item.location)
 		.filter(uniqueLocation);
-}
-
-function rankLocationResults(
-	query: string,
-	locations: readonly GeocodedLocation[],
-): GeocodedLocation[] {
-	return rankedLocations(
-		locations.map((location) => ({
-			location,
-			score:
-				precisionScore(location.precision) +
-				geoCaRelevanceScore(query, location.label) +
-				providerScore(location.source),
-		})),
-	);
 }
 
 function uniqueLocation(
@@ -251,38 +159,6 @@ function geoCaPrecision(
 
 function hasStreetWord(value: string): boolean {
 	return /\b(?:rue|street|saint|sainte|boulevard|avenue|chemin|road|route)\b/.test(value);
-}
-
-function nominatimPrecision(result: NominatimResult): GeocodePrecision {
-	const type = typeof result.type === 'string' ? result.type.toLowerCase() : '';
-	const resultClass = typeof result.class === 'string' ? result.class.toLowerCase() : '';
-	const address =
-		result.address && typeof result.address === 'object'
-			? (result.address as Record<string, unknown>)
-			: {};
-
-	if (
-		typeof address.house_number === 'string' ||
-		type.includes('house') ||
-		type.includes('building') ||
-		resultClass.includes('building')
-	) {
-		return 'address';
-	}
-	if (resultClass.includes('highway') || type.includes('street') || type.includes('road')) {
-		return 'street';
-	}
-	if (type.includes('postcode')) return 'postal';
-	if (
-		type.includes('neighbourhood') ||
-		type.includes('neighborhood') ||
-		type.includes('suburb') ||
-		type.includes('quarter') ||
-		type.includes('borough')
-	) {
-		return 'neighbourhood';
-	}
-	return 'place';
 }
 
 function precisionScore(precision: GeocodePrecision): number {
@@ -346,38 +222,6 @@ function normalizeAddressIntentInQuery(query: string): string {
 		.replace(/\bst\b/gi, 'saint')
 		.replace(/\s+/g, ' ')
 		.trim();
-}
-
-function hasUsefulAutocompleteCandidates(
-	query: string,
-	results: readonly GeocodedLocation[],
-): boolean {
-	if (results.length === 0) return false;
-	if (!isAddressIntentQuery(query)) return true;
-	return results.some(isUsefulForAddressIntent);
-}
-
-function isAddressIntentQuery(query: string): boolean {
-	const normalized = normalizeSearchText(query);
-	return (
-		/^\s*\d{1,6}\b/.test(query) ||
-		CANADIAN_POSTAL_CODE_RE.test(query) ||
-		/\b(?:rue|street|saint|sainte|st|ste|boul|boulv|boulevard|blvd|bd|av|ave|avenue|ch|chemin)\b/.test(
-			normalized,
-		)
-	);
-}
-
-function isUsefulForAddressIntent(location: GeocodedLocation): boolean {
-	return (
-		location.precision === 'address' ||
-		location.precision === 'street' ||
-		location.precision === 'postal'
-	);
-}
-
-function providerScore(source: GeocodedLocation['source']): number {
-	return source === 'geo_ca' ? 2 : 0;
 }
 
 function normalizePostalCodeInQuery(query: string): string {
