@@ -739,8 +739,8 @@ describe('MapHero detail-panel camera isolation (protect #11)', () => {
 		const separator = container.querySelector('[role="separator"]') as HTMLElement;
 		expect(separator).not.toBeNull();
 		await fireEvent.pointerDown(separator, { clientX: 900 });
-		await fireEvent.pointerMove(window, { clientX: 780 });
-		await fireEvent.pointerUp(window, { clientX: 780 });
+		await fireEvent.pointerMove(separator, { clientX: 780 });
+		await fireEvent.pointerUp(separator, { clientX: 780 });
 		await fireEvent.keyDown(separator, { key: 'ArrowLeft' });
 		await fireEvent.keyDown(separator, { key: 'ArrowRight' });
 		await tick();

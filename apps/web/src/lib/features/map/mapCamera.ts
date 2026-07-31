@@ -21,7 +21,7 @@ function easeOut(t: number): number {
 	if (t >= 1) return 1;
 	let lower = 0;
 	let upper = 1;
-	let parameter = t;
+	let parameter = 0;
 	for (let iteration = 0; iteration < 24; iteration += 1) {
 		parameter = (lower + upper) / 2;
 		const x = parameter ** 3 - 0.6 * parameter ** 2 + 0.6 * parameter;
