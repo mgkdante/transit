@@ -2,9 +2,9 @@
   Test-only stub for MapStage — stands in for the WebGL GL canvas host in render-based
   tests so happy-dom never instantiates MapLibre. It mimics the MapStage contract just
   enough to drive MapHero's lifecycle: it fires `onready` with a fake MapLibre map on
-  mount (so installMapLayers/installMapInteractions register their handlers), and
-  exposes a hidden "pick" button that replays a registered map `click` with a stop
-  feature, so a render test can exercise the real selection → detail → URL spine.
+  mount, exposes a hidden style-load trigger that invokes `onstyleload`, and exposes a
+  hidden "pick" trigger that replays a registered map `click` with a stop feature so a
+  render test can exercise the real selection → detail → URL spine.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -30,12 +30,22 @@
 
 	// A minimal fake MapLibre map: enough surface for installMapLayers /
 	// installMapInteractions / pickSelectionAt to run without WebGL.
-	const fakeCanvas = { style: { cursor: '' }, addEventListener: () => {} };
+	const fakeCanvas = {
+		style: { cursor: '' },
+		addEventListener: () => {},
+		removeEventListener: () => {},
+	};
 	const fakeMap = {
 		on: (type: string, handler: Handler) => {
 			const list = handlers.get(type) ?? [];
 			list.push(handler);
 			handlers.set(type, list);
+		},
+		off: (type: string, handler: Handler) => {
+			handlers.set(
+				type,
+				(handlers.get(type) ?? []).filter((candidate) => candidate !== handler),
+			);
 		},
 		getCanvas: () => fakeCanvas,
 		getLayer: (id: string) => (id === STOPS_LAYER ? { id } : undefined),

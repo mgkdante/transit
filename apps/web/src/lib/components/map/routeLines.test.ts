@@ -197,6 +197,20 @@ describe('toRouteLineFeatures', () => {
 });
 
 describe('addRouteLineLayers', () => {
+	it('threads the requested anchor through every route line layer', () => {
+		const beforeIds: Array<string | undefined> = [];
+		const map = {
+			getLayer: () => undefined,
+			addLayer: (_layer: LayerSpecification, beforeId?: string) => {
+				beforeIds.push(beforeId);
+			},
+		} as unknown as MapLibreMap;
+
+		addRouteLineLayers(map, 'first-label');
+
+		expect(beforeIds).toEqual(['first-label', 'first-label', 'first-label']);
+	});
+
 	it('adds cased brand-yellow route lines with selected width and a wide hit layer', () => {
 		const layers: LayerSpecification[] = [];
 		const map = {

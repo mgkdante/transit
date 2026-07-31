@@ -20,6 +20,11 @@ const harness = vi.hoisted(() => {
 	const setNearTarget = vi.fn();
 	const setStale = vi.fn();
 	const motionSet = vi.fn();
+	const motionDestroy = vi.fn();
+	const createVehicleMotionController = vi.fn(() => ({
+		set: motionSet,
+		destroy: motionDestroy,
+	}));
 	const alertSource = {
 		id: 'mobile-orchestrator-alert',
 		severity: 'high',
@@ -133,6 +138,8 @@ const harness = vi.hoisted(() => {
 		setNearTarget,
 		setStale,
 		motionSet,
+		motionDestroy,
+		createVehicleMotionController,
 		stops: [
 			{
 				id: 'stop-1',
@@ -256,7 +263,6 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 
 vi.mock('$lib/components/map', async () => {
 	const { default: MapStage } = await import('./__fixtures__/MapStageStub.svelte');
-	const noop = () => {};
 	return {
 		MapStage,
 		STOPS_LAYER: 'stops',
@@ -268,7 +274,7 @@ vi.mock('$lib/components/map', async () => {
 		addVehicleLayers: harness.addVehicleLayers,
 		setStale: harness.setStale,
 		toVehicleFeatures: () => ({ type: 'FeatureCollection', features: [] }),
-		createVehicleMotionController: () => ({ set: harness.motionSet, destroy: noop }),
+		createVehicleMotionController: harness.createVehicleMotionController,
 		addStopsSource: harness.addStopsSource,
 		addStopsLayer: harness.addStopsLayer,
 		setStops: harness.setStops,
@@ -306,10 +312,22 @@ afterEach(() => {
 });
 
 describe('MapHero map-layer feed lifecycle', () => {
+	it('creates one motion controller across ready and two style loads', async () => {
+		render(MapHero);
+		await tick();
+		expect(harness.createVehicleMotionController).toHaveBeenCalledTimes(1);
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-style-load'));
+		await tick();
+		await fireEvent.click(screen.getByTestId('map-stage-stub-style-load'));
+		await tick();
+
+		expect(harness.createVehicleMotionController).toHaveBeenCalledTimes(1);
+	});
+
 	it('reinstalls and re-feeds after style load, then re-feeds after a filter mutation', async () => {
-		const installSpies = [
-			harness.bakeVehicleSprites,
-			harness.bakeLocationPinSprite,
+		const prepareSpies = [harness.bakeVehicleSprites, harness.bakeLocationPinSprite];
+		const layerInstallSpies = [
 			harness.addRouteLineSource,
 			harness.addRouteLineLayers,
 			harness.addStopsSource,
@@ -318,6 +336,11 @@ describe('MapHero map-layer feed lifecycle', () => {
 			harness.addVehicleLayers,
 			harness.addNearTargetSource,
 			harness.addNearTargetLayer,
+		];
+		const installSpies = [
+			harness.bakeVehicleSprites,
+			harness.bakeLocationPinSprite,
+			...layerInstallSpies,
 		];
 		const feedSpies = [
 			harness.setRouteLines,
@@ -331,6 +354,23 @@ describe('MapHero map-layer feed lifecycle', () => {
 		await tick();
 		for (const install of installSpies) expect(install).toHaveBeenCalledTimes(1);
 		for (const feed of feedSpies) expect(feed).toHaveBeenCalledTimes(1);
+		const lastPrepare = Math.max(
+			...prepareSpies.map((spy) => spy.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY),
+		);
+		const layerInstallOrder = layerInstallSpies.map(
+			(spy) => spy.mock.invocationCallOrder[0] ?? Number.NEGATIVE_INFINITY,
+		);
+		expect(lastPrepare).toBeLessThan(layerInstallOrder[0]);
+		for (let i = 1; i < layerInstallOrder.length; i += 1) {
+			expect(layerInstallOrder[i]).toBeGreaterThan(layerInstallOrder[i - 1]);
+		}
+		const motionReadyOrder =
+			harness.createVehicleMotionController.mock.invocationCallOrder[0] ?? Number.NEGATIVE_INFINITY;
+		expect(layerInstallOrder.at(-1)).toBeLessThan(motionReadyOrder);
+		for (const feed of feedSpies) {
+			expect(feed.mock.invocationCallOrder[0]).toBeGreaterThan(motionReadyOrder);
+		}
+		expect(harness.addRouteLineLayers).toHaveBeenNthCalledWith(1, expect.anything(), undefined);
 
 		await fireEvent.click(screen.getByTestId('map-stage-stub-style-load'));
 		await tick();
