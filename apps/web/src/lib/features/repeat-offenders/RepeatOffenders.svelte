@@ -961,7 +961,6 @@
 		align-items: center;
 		gap: 0.5rem;
 		margin: 0;
-		max-width: 72ch;
 		font-size: var(--text-small);
 		line-height: 1.55;
 		color: var(--muted-foreground);

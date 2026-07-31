@@ -121,7 +121,6 @@
 	}
 	.publish-run-explanation {
 		margin: 0;
-		max-width: 68ch;
 		color: var(--foreground);
 		font-size: var(--text-detail-body-mobile);
 		line-height: 1.8;

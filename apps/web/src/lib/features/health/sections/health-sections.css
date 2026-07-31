@@ -9,7 +9,6 @@
 	color: var(--muted-foreground);
 	font-size: var(--text-detail-body-mobile);
 	line-height: 1.8;
-	max-width: 60ch;
 }
 
 @media (min-width: 1024px) {

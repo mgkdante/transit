@@ -356,7 +356,7 @@
 	}
 	.trip-standdown-body {
 		margin: 0;
-		max-width: 52ch;
+		max-width: var(--measure-lede);
 		color: var(--muted-foreground);
 		font-size: var(--text-subheading);
 		line-height: 1.6;
@@ -597,7 +597,7 @@
 	}
 	.trip-prediction-caveat {
 		margin: 0.5rem 0 0;
-		max-width: 52ch;
+		max-width: var(--measure-body);
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		line-height: 1.4;

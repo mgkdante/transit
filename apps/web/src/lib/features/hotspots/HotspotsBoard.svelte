@@ -676,7 +676,6 @@
 	.hotspots-verdict-line {
 		display: inline-block;
 		margin: 0;
-		max-width: 60ch;
 		font-family: var(--font-heading);
 		font-size: var(--text-subheading);
 		font-weight: 700;

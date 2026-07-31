@@ -132,8 +132,16 @@ describe('RepeatOffenderEvidenceTable', () => {
 
 		const zeroRow = within(table).getByText(rows[2].title).closest('tr') as HTMLTableRowElement;
 		expect(zeroRow.querySelector('[data-slot="absent-value"]')).toBeNull();
-		expect(zeroRow).toHaveTextContent('0 %');
-		expect(zeroRow).toHaveTextContent('0 min');
-		expect(zeroRow).toHaveTextContent('0');
+		expect(
+			within(zeroRow.querySelector('[data-column="severe-rate"]') as HTMLElement).getByText('0 %'),
+		).toBeInTheDocument();
+		expect(
+			within(zeroRow.querySelector('[data-column="average-delay"]') as HTMLElement).getByText(
+				'0 min',
+			),
+		).toBeInTheDocument();
+		expect(
+			within(zeroRow.querySelector('[data-column="readings"]') as HTMLElement).getByText('0'),
+		).toBeInTheDocument();
 	});
 });

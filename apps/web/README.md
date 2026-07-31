@@ -23,6 +23,10 @@ bun run test            # vitest (data + dom projects)
 bun run og:build        # regenerate Open Graph cards (scripts/build-og.ts)
 ```
 
+`bun run test` is Vitest. Browser-level receipt and probe scripts under `scripts/`
+launch Chromium through `playwright-core` directly; there is no `@playwright/test`
+suite or config.
+
 Or from the repo root via turbo: `turbo run check`, `turbo run build`, `turbo run test`
 (spans the whole workspace). Deploy: `bun run deploy:web` (root) — `bun run build` then
 `wrangler deploy` (the `transit.yesid.dev/data/*` route stays on the data-proxy worker

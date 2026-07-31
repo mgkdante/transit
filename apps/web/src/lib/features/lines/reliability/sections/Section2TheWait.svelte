@@ -951,7 +951,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.375rem;
-		max-width: 64ch;
 	}
 	.direction-callout :global([data-slot='section-label']) {
 		color: var(--accent-text);
@@ -1099,7 +1098,6 @@
 	   quiet caption (it teaches the page's least-intuitive concept). */
 	.bunching-help {
 		margin: 0.25rem 0 0;
-		max-width: 60ch;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.5;

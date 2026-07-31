@@ -109,6 +109,9 @@
 		gap: 0.875rem;
 	}
 	.receipt-states-hero {
+		/* Structural KPI-card wrapper (ExplainedMetricCard), NOT prose — the
+		   lane keeps its calibrated cap; measure tokens never apply (S5-382 B1,
+		   A4 "never prose tokens" law). Path-excluded from the A6 gate. */
 		max-width: 24rem;
 	}
 	.receipt-states-split {

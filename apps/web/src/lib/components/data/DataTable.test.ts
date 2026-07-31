@@ -251,6 +251,11 @@ describe('DataTable', () => {
 		expect(componentSource).toMatch(
 			/\[data-stack-at='tablet'\]\[data-frame='card'\]\[data-collapse='separate'\]\[data-frame-radius='true'\]/,
 		);
+		// S5-384 finding 3: fixed layout is the mechanism the separate-dialect
+		// column widths depend on; nothing else pins it.
+		expect(componentSource).toMatch(
+			/\[data-collapse='separate'\] \.data-table \{[^}]*table-layout:\s*fixed/,
+		);
 		// S5-379 finding 1: the stacked pseudo-label mechanism itself. PR-2
 		// deleted the last consumer-side pin on it; deleting BOTH ::before
 		// blocks previously left every stacked row label-less with zero tests

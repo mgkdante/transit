@@ -2,5 +2,5 @@
 
 This directory stores provider manifests for GTFS / GTFS-RT providers.
 
-`stm.yaml` is the only active V1 provider manifest. Future providers can be
-added by placing additional validated YAML files in this directory.
+`octranspo.yaml`, `stm.yaml`, and `sto.yaml` are the active V1 provider manifests.
+Additional validated YAML files can be added here.

@@ -899,10 +899,9 @@
 	}
 	/* Plain-language schedule intro (operator): explains what the schedule shows + sends the
 	   reader to the Reliability tab for real-world punctuality. Reads at foreground weight so
-	   it is actually noticed, with a measure so it stays comfortable to read. */
+	   it is actually noticed and fills the already-bounded detail lane. */
 	.route-schedule-intro {
 		margin: 0 0 var(--space-card-gap);
-		max-width: 64ch;
 		font-size: var(--text-small);
 		line-height: 1.5;
 		color: var(--foreground);

@@ -831,7 +831,7 @@
 	   ONE definition for all five sections (was duplicated per-section, identical) — declared
 	   :global so the orchestrator owns the section heading scale in a single place. The §0
 	   VerdictBanner (--text-display) stays the apex; the title sits just under it. */
-	:global(.reliability-band .section-question) {
+	:global(.reliability-band .section-subtitle__text) {
 		margin: 0;
 		font-family: var(--font-heading);
 		font-size: var(--text-title);
@@ -839,7 +839,7 @@
 		line-height: 1.12;
 		letter-spacing: var(--tracking-tight);
 		color: var(--foreground);
-		max-inline-size: 28ch;
+		max-inline-size: var(--measure-display);
 		text-wrap: balance;
 	}
 </style>
