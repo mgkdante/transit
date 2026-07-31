@@ -251,6 +251,13 @@ describe('DataTable', () => {
 		expect(componentSource).toMatch(
 			/\[data-stack-at='tablet'\]\[data-frame='card'\]\[data-collapse='separate'\]\[data-frame-radius='true'\]/,
 		);
+		// S5-379 finding 1: the stacked pseudo-label mechanism itself. PR-2
+		// deleted the last consumer-side pin on it; deleting BOTH ::before
+		// blocks previously left every stacked row label-less with zero tests
+		// noticing. One pin per stack dialect.
+		expect(
+			componentSource.match(/:is\(th, td\)::before \{[^}]*content:\s*attr\(data-col\)/g),
+		).toHaveLength(2);
 	});
 
 	it('keeps unapproved row passthrough out of the frozen API', () => {

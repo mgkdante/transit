@@ -153,18 +153,52 @@ describe('HotspotSection evidence presentation', () => {
 
 	it('localizes a semantic evidence table and distinguishes linked, absent, and zero rows', () => {
 		const { container } = renderSection();
-		const table = container.querySelector(
-			'table[data-slot="hotspot-tray-table"]',
-		) as HTMLTableElement;
-		expect(table).not.toBeNull();
+		const table = within(container).getByRole('table', {
+			name: COPY.fr.tray.listLabel,
+		});
+		expect(table).toHaveAttribute('data-slot', 'hotspot-tray-table');
+		expect(table.parentElement).toHaveAttribute('data-responsive', 'stack');
+		expect(table.parentElement).toHaveAttribute('data-stack-at', 'compact');
 		const headers = within(table)
 			.getAllByRole('columnheader')
-			.map((header) => header.textContent?.trim());
-		expect(headers).toEqual(['Élément', 'Type / ID', 'Relevés']);
+			.map((header) => ({
+				text: header.textContent?.trim(),
+				column: header.getAttribute('data-column'),
+				align: header.getAttribute('data-align'),
+				numeric: header.getAttribute('data-numeric'),
+			}));
+		expect(headers).toEqual([
+			{ text: 'Élément', column: 'item', align: 'start', numeric: null },
+			{ text: 'Type / ID', column: 'type-id', align: 'start', numeric: null },
+			{ text: 'Relevés', column: 'readings', align: 'end', numeric: 'true' },
+		]);
 		expect(within(table).getByRole('link', { name: /Voir le détail/ })).toHaveAttribute(
 			'href',
 			'/stop/S2',
 		);
+
+		const linkedRow = within(table).getByText('Arrêt lié').closest('tr') as HTMLTableRowElement;
+		const linkedCells = Array.from(linkedRow.querySelectorAll(':scope > th, :scope > td'));
+		expect(linkedCells.map((cell) => cell.getAttribute('data-column'))).toEqual([
+			'item',
+			'type-id',
+			'readings',
+		]);
+		expect(linkedCells.map((cell) => cell.getAttribute('data-col'))).toEqual([
+			'Élément',
+			'Type / ID',
+			'Relevés',
+		]);
+		expect(linkedCells.map((cell) => cell.getAttribute('data-align'))).toEqual([
+			'start',
+			'start',
+			'end',
+		]);
+		expect(linkedCells[2]).toHaveAttribute('data-numeric', 'true');
+		for (const cell of linkedCells) {
+			expect(cell.querySelectorAll(':scope > .data-table-cell-content')).toHaveLength(1);
+			expect(cell.children).toHaveLength(1);
+		}
 
 		const nullRow = within(table)
 			.getByText('Élément sans lien')
@@ -249,6 +283,7 @@ describe('HotspotSection evidence presentation', () => {
 		expect(source).not.toContain('ResizeObserver');
 		expect(source).not.toContain('hotspot-chart-viewport');
 		expect(source).not.toContain('hotspot-chart-canvas');
+		// HF guards the chart viewport contract only; it does not constrain the tray DataTable.
 		expect(source).not.toMatch(/min-width:\s*48rem/);
 		expect(source).toMatch(
 			/<Chart\s+spec=\{ladder\.spec\}\s+scrollLabel=\{chartScrollLabel\}\s*\/>/,

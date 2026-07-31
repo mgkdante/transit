@@ -104,8 +104,10 @@ describe('RepeatOffendersSection article-card body', () => {
 		expect(container.querySelector('[data-slot="offender-recurrence"]')).toBeNull();
 		const ladder = container.querySelector('[data-slot="offender-ladder"]');
 		const table = container.querySelector('[data-slot="offender-evidence-table"]');
+		const tableFrame = ladder?.nextElementSibling;
 		expect(container.querySelectorAll('[data-slot="offender-evidence-table"]')).toHaveLength(1);
-		expect(ladder?.nextElementSibling).toBe(table);
+		expect(tableFrame).toHaveAttribute('data-slot', 'data-table-frame');
+		expect(tableFrame?.querySelector('[data-slot="offender-evidence-table"]')).toBe(table);
 		expect(screen.getByText(evidence[0].recurrence)).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: info.label })).toHaveAttribute(
 			'aria-expanded',
