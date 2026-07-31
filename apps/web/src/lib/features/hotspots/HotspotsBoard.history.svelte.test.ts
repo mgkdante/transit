@@ -479,7 +479,9 @@ describe('HotspotsBoard retained date history', () => {
 			.getByText('Retained 22 zero tray')
 			.closest('table') as HTMLTableElement;
 		const zeroRow = within(stopTable).getByText('Retained 22 zero tray').closest('tr')!;
-		expect(zeroRow.querySelector('[data-column="readings"]')).toHaveTextContent('0');
+		expect(
+			within(zeroRow.querySelector('[data-column="readings"]') as HTMLElement).getByText('0'),
+		).toBeInTheDocument();
 		expect(zeroRow.querySelector('[data-slot="absent-value"]')).toBeNull();
 
 		for (const card of ['hotspots-lines', 'hotspots-stops']) {

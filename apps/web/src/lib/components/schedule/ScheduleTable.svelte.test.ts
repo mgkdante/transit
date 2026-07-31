@@ -1,13 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { tick } from 'svelte';
 import { render, screen, within } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DelayLabelCopy } from '$lib/site/delayPresentation';
 import { detailCopy } from '$lib/features/stops/stops.copy';
 import ScheduleTable, { type ScheduleRow } from './ScheduleTable.svelte';
 
 const scheduleTableSource = readFileSync(
 	resolve(process.cwd(), 'src/lib/components/schedule/ScheduleTable.svelte'),
+	'utf8',
+);
+const dataTableSource = readFileSync(
+	resolve(process.cwd(), 'src/lib/components/data/DataTable.svelte'),
 	'utf8',
 );
 
@@ -40,15 +45,136 @@ const DELAY_COPY: DelayLabelCopy = {
 	onTime: 'on time',
 };
 
-describe('ScheduleTable — grid mode', () => {
-	it('keeps compact uppercase headers on one line with stable route and destination columns', () => {
-		expect(scheduleTableSource).toMatch(/\.schedule-table thead th \{[^}]*white-space:\s*nowrap;/);
-		expect(scheduleTableSource).toContain(".schedule-table-frame[data-mode='grid'] th:first-child");
-		expect(scheduleTableSource).toContain(
-			".schedule-table-frame[data-mode='grid'] th:nth-child(2)",
-		);
+const resizeObservers: ResizeObserverStub[] = [];
+
+class ResizeObserverStub {
+	readonly targets = new Set<Element>();
+	readonly observe = vi.fn((target: Element) => this.targets.add(target));
+	readonly disconnect = vi.fn(() => this.targets.clear());
+
+	constructor(private readonly callback: ResizeObserverCallback) {
+		resizeObservers.push(this);
+	}
+
+	trigger(): void {
+		this.callback([], this as unknown as ResizeObserver);
+	}
+}
+
+function observerFor(target: Element): ResizeObserverStub | undefined {
+	return resizeObservers.find((observer) => observer.targets.has(target));
+}
+
+function scheduleChassis(
+	container: HTMLElement,
+	caption: string,
+	mode: 'grid' | 'board' | 'service',
+) {
+	const table = within(container).getByRole('table', { name: caption });
+	const frame = table.parentElement as HTMLElement;
+
+	expect(frame).toHaveClass('data-table-frame', 'schedule-table-frame');
+	expect(frame).toHaveAttribute('data-mode', mode);
+	expect(frame).toHaveAttribute('data-responsive', 'scroll');
+	expect(frame).toHaveAttribute('data-frame', 'card');
+	expect(frame).toHaveAttribute('data-collapse', 'collapse');
+	expect(frame).toHaveAttribute('data-frame-radius', 'true');
+	expect(frame).toHaveAttribute('data-header-band', 'terminal');
+	expect(table).toHaveClass('data-table', 'schedule-table');
+	expect(table.querySelectorAll('caption')).toHaveLength(1);
+
+	return { table, frame };
+}
+
+describe('ScheduleTable — shared scroll chassis', () => {
+	beforeEach(() => {
+		resizeObservers.length = 0;
+		vi.stubGlobal('ResizeObserver', ResizeObserverStub);
 	});
 
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it('keeps overflow-x auto, the three legacy min-width values, and the labelled region wiring', async () => {
+		const gridView = render(ScheduleTable, {
+			props: {
+				rows: [{ kind: 'grid', route: '51', headsign: 'Nord', times: ['08:00'] }],
+				mode: 'grid',
+				locale: 'en',
+				labels: GRID_LABELS,
+			},
+		});
+		const { frame: gridFrame } = scheduleChassis(gridView.container, GRID_LABELS.caption, 'grid');
+		expect(gridFrame.style.getPropertyValue('--dt-min-width')).toBe('42rem');
+		expect(gridFrame.style.getPropertyValue('--dt-min-width-compact')).toBe('32rem');
+		expect(dataTableSource).toMatch(
+			/\.data-table-frame\[data-responsive='scroll'\]\s*\{[^}]*overflow-x:\s*auto/,
+		);
+		expect(dataTableSource).toMatch(
+			/\.data-table-frame\[data-responsive='scroll'\] \.data-table\s*\{[^}]*min-width:\s*var\(--dt-min-width,\s*100%\)/,
+		);
+		expect(dataTableSource).toMatch(
+			/min-width:\s*var\(--dt-min-width-compact,\s*var\(--dt-min-width,\s*100%\)\)/,
+		);
+		const responsiveBlocks = scheduleTableSource.match(/responsive=\{\{[\s\S]*?\n\s*\}\}/g) ?? [];
+		expect(responsiveBlocks).toHaveLength(3);
+		for (const block of responsiveBlocks) {
+			expect(block).toMatch(/mode:\s*'scroll'/);
+			expect(block).toMatch(/minWidth:\s*'(?:34|42)rem'/);
+			expect(block).toMatch(/minWidthCompact:\s*'32rem'/);
+			expect(block).toMatch(/scrollLabel:\s*labels\.caption/);
+		}
+
+		Object.defineProperties(gridFrame, {
+			clientWidth: { configurable: true, get: () => 320 },
+			scrollWidth: { configurable: true, get: () => 672 },
+		});
+		const observer = observerFor(gridFrame);
+		expect(observer).toBeDefined();
+		observer?.trigger();
+		await tick();
+		expect(within(gridView.container).getByRole('region', { name: GRID_LABELS.caption })).toBe(
+			gridFrame,
+		);
+		expect(gridFrame).toHaveAttribute('tabindex', '0');
+
+		const boardView = render(ScheduleTable, {
+			props: {
+				rows: [{ kind: 'board', route: '51', eta_utc: '2026-06-15T12:05:00Z', delay_min: 4 }],
+				mode: 'board',
+				locale: 'en',
+				labels: BOARD_LABELS,
+				delayCopy: DELAY_COPY,
+			},
+		});
+		const { frame: boardFrame } = scheduleChassis(
+			boardView.container,
+			BOARD_LABELS.caption,
+			'board',
+		);
+		expect(boardFrame.style.getPropertyValue('--dt-min-width')).toBe('34rem');
+		expect(boardFrame.style.getPropertyValue('--dt-min-width-compact')).toBe('32rem');
+
+		const serviceView = render(ScheduleTable, {
+			props: {
+				rows: [{ kind: 'service', period: 'AM peak', window: '06:00–09:00', headway: '6.0 min' }],
+				mode: 'service',
+				locale: 'en',
+				labels: SERVICE_LABELS,
+			},
+		});
+		const { frame: serviceFrame } = scheduleChassis(
+			serviceView.container,
+			SERVICE_LABELS.caption,
+			'service',
+		);
+		expect(serviceFrame.style.getPropertyValue('--dt-min-width')).toBe('34rem');
+		expect(serviceFrame.style.getPropertyValue('--dt-min-width-compact')).toBe('32rem');
+	});
+});
+
+describe('ScheduleTable — grid mode', () => {
 	it('renders one semantic scheduled-service table with a caption and scoped headers', () => {
 		const rows: ScheduleRow[] = [
 			{
@@ -79,6 +205,23 @@ describe('ScheduleTable — grid mode', () => {
 		expect(
 			within(table).getByRole('columnheader', { name: GRID_LABELS.departures }),
 		).toHaveAttribute('scope', 'col');
+		expect(
+			within(table).getByRole('columnheader', { name: GRID_LABELS.departures }),
+		).toHaveAttribute('data-align', 'end');
+		expect(
+			within(table).getByRole('columnheader', { name: GRID_LABELS.departures }),
+		).toHaveAttribute('data-numeric', 'true');
+		expect(table.querySelector('tbody [data-column="departures"]')).toHaveAttribute(
+			'data-align',
+			'end',
+		);
+		expect(table.querySelector('tbody [data-column="departures"]')).toHaveAttribute(
+			'data-numeric',
+			'true',
+		);
+		expect(scheduleTableSource).toMatch(
+			/\.stop-schedule-times\s*\{[^}]*justify-content:\s*flex-end/,
+		);
 		expect(container.querySelectorAll('tbody tr')).toHaveLength(1);
 		expect(screen.getByText('51')).toBeInTheDocument();
 		expect(screen.getByText('Nord')).toBeInTheDocument();
@@ -136,7 +279,7 @@ describe('ScheduleTable — board mode', () => {
 		const rows: ScheduleRow[] = [
 			{ kind: 'board', route: '51', eta_utc: '2026-06-15T12:05:00Z', delay_min: 4 },
 		];
-		render(ScheduleTable, {
+		const { container } = render(ScheduleTable, {
 			props: {
 				rows,
 				mode: 'board',
@@ -146,12 +289,24 @@ describe('ScheduleTable — board mode', () => {
 			},
 		});
 		const table = screen.getByRole('table', { name: BOARD_LABELS.caption });
+		scheduleChassis(container, BOARD_LABELS.caption, 'board');
 		expect(
 			within(table).getByRole('columnheader', { name: BOARD_LABELS.route }),
 		).toBeInTheDocument();
 		expect(
 			within(table).getByRole('columnheader', { name: BOARD_LABELS.departure }),
-		).toBeInTheDocument();
+		).toHaveAttribute('data-align', 'end');
+		expect(
+			within(table).getByRole('columnheader', { name: BOARD_LABELS.departure }),
+		).toHaveAttribute('data-numeric', 'true');
+		expect(table.querySelector('tbody [data-column="departure"]')).toHaveAttribute(
+			'data-align',
+			'end',
+		);
+		expect(table.querySelector('tbody [data-column="departure"]')).toHaveAttribute(
+			'data-numeric',
+			'true',
+		);
 		expect(
 			within(table).getByRole('columnheader', { name: BOARD_LABELS.status }),
 		).toBeInTheDocument();
@@ -241,21 +396,34 @@ describe('ScheduleTable — service mode', () => {
 			{ kind: 'service', period: 'AM peak', window: '06:00–09:00', headway: '6.0 min' },
 			{ kind: 'service', period: 'Midday', window: '09:00–15:00', headway: null },
 		];
-		render(ScheduleTable, {
+		const { container } = render(ScheduleTable, {
 			props: { rows, mode: 'service', locale: 'en', labels: SERVICE_LABELS },
 		});
 
 		const table = screen.getByRole('table', { name: SERVICE_LABELS.caption });
+		scheduleChassis(container, SERVICE_LABELS.caption, 'service');
 		expect(within(table).getAllByRole('row')).toHaveLength(3);
 		expect(
 			within(table).getByRole('columnheader', { name: SERVICE_LABELS.period }),
 		).toBeInTheDocument();
 		expect(
 			within(table).getByRole('columnheader', { name: SERVICE_LABELS.window }),
-		).toBeInTheDocument();
+		).toHaveAttribute('data-numeric', 'true');
 		expect(
 			within(table).getByRole('columnheader', { name: SERVICE_LABELS.headway }),
-		).toBeInTheDocument();
+		).toHaveAttribute('data-numeric', 'true');
+		expect(table.querySelector('tbody [data-column="period"]')).toHaveAttribute(
+			'data-align',
+			'start',
+		);
+		expect(table.querySelector('tbody [data-column="window"]')).toHaveAttribute(
+			'data-align',
+			'end',
+		);
+		expect(table.querySelector('tbody [data-column="headway"]')).toHaveAttribute(
+			'data-align',
+			'end',
+		);
 		expect(within(table).getByText('AM peak')).toBeInTheDocument();
 		expect(within(table).getByText('6.0 min')).toBeInTheDocument();
 		expect(table.querySelectorAll('[data-slot="absent-value"]')).toHaveLength(1);
