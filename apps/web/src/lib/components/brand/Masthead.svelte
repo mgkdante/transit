@@ -15,7 +15,7 @@
     surface heads carry.
   • TITLE — a REAL heading via SectionHeading (level defaults to 1 — a masthead is
     the page title) with the brand orange dot. Exactly ONE h1 + one dot per page.
-  • LEDE — a muted framing sentence, capped to the ~52ch reading measure.
+  • LEDE — a muted framing sentence, capped to the shared lede measure.
   • META — an optional mono-micro row (provider · window · generated_utc slots) — the
     zone ArticleShell owned; the caller drops a fully-composed snippet (e.g. a
     FreshnessStamp).
@@ -42,7 +42,7 @@
 		heading: string;
 		/** Optional mono subheading under the title (e.g. "// MESURE"). */
 		subheading?: string;
-		/** Optional lede paragraph (muted, ~52ch reading measure). */
+		/** Optional lede paragraph (muted, shared lede measure). */
 		lede?: string;
 		/** Heading level (1–6). Default 1 — a masthead is the page title. */
 		level?: 1 | 2 | 3 | 4 | 5 | 6;
@@ -135,13 +135,12 @@
 			padding-block: 1.75rem;
 		}
 	}
-	/* The framing sentence — muted, subheading-scale, ~52ch measure (the SurfaceHeader
-	   lede measure, so every surface head reads identically). */
+	/* The framing sentence — muted, subheading-scale, shared lede measure. */
 	.masthead-lede {
 		color: var(--muted-foreground);
 		font-size: var(--text-subheading);
 		line-height: 1.6;
-		max-width: 52ch;
+		max-width: var(--measure-lede);
 	}
 	/* Mono-micro meta row — provider · window · generated_utc chips below the lede. */
 	.masthead-meta {

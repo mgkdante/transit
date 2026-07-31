@@ -541,7 +541,6 @@
 		align-items: baseline;
 		gap: 0.375rem;
 		margin: 0;
-		max-width: 60ch;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.4;
@@ -560,7 +559,6 @@
 	   (§C4 P7: the former 3px accent left-stripe is retired). */
 	.heatmap-insight {
 		margin: 0;
-		max-width: 60ch;
 		font-size: var(--text-body);
 		line-height: 1.45;
 		font-weight: 500;

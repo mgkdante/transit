@@ -67,7 +67,5 @@
 		font-size: var(--text-subheading);
 		line-height: 1.45;
 		color: var(--foreground);
-		/* Cap the measure for readability (research: ~45–75ch). */
-		max-inline-size: 60ch;
 	}
 </style>
