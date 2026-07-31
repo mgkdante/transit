@@ -1,7 +1,15 @@
 import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import { describe, expect, it, vi } from 'vitest';
+import type { FilterState } from '$lib/filters';
 import { minimalDarkStyle } from '$lib/components/map/basemap';
-import { firstSymbolLayerId, installMapInteractions } from './mapLayerModules';
+import { STOP_EXCEPTION_LAYER } from '$lib/components/map/stopsLayer';
+import {
+	firstSymbolLayerId,
+	installMapInteractions,
+	MAP_LAYER_MODULES,
+	PICKABLE_MAP_LAYERS,
+	type MapLayerFeedContext,
+} from './mapLayerModules';
 
 function mapWithStyle(style: StyleSpecification): MapLibreMap {
 	return { getStyle: () => style } as unknown as MapLibreMap;
@@ -67,5 +75,67 @@ describe('installMapInteractions', () => {
 		expect(mapHandlers.get('click')?.size).toBe(0);
 		expect(mapHandlers.get('mousemove')?.size).toBe(0);
 		expect(canvasHandlers.get('mouseleave')?.size).toBe(0);
+	});
+});
+
+describe('map layer feed invariants', () => {
+	it('passes the frozen motion option shape unchanged', () => {
+		const set = vi.fn();
+		const fixFor = vi.fn(() => null);
+		const shapeFor = vi.fn(() => null);
+		const serverNowFn = vi.fn(() => 123_456);
+		const filter: FilterState = {
+			routes: new Set(),
+			stops: new Set(),
+			trips: new Set(),
+			vehicles: new Set(),
+		};
+		const context = {
+			routes: { items: [], selected: null },
+			vehicles: {
+				motion: { set },
+				items: [],
+				filter,
+				alertIds: new Set(),
+				selectedId: null,
+				serverNow: 123_456,
+				ttlS: 30,
+				tickKey: 'tick-1',
+				stale: false,
+				fixFor,
+				shapeFor,
+				serverNowFn,
+				animate: true,
+			},
+			stops: {
+				items: [],
+				filter,
+				alertIds: new Set(),
+				selectedId: null,
+			},
+			nearTarget: { target: null },
+		} as unknown as MapLayerFeedContext;
+		const map = {
+			getLayer: () => undefined,
+			setPaintProperty: vi.fn(),
+		} as unknown as MapLibreMap;
+
+		MAP_LAYER_MODULES.find((module) => module.id === 'vehicles')?.feed(map, context);
+
+		expect(set).toHaveBeenCalledWith(
+			{ type: 'FeatureCollection', features: [] },
+			{
+				tickKey: 'tick-1',
+				stale: false,
+				fixFor,
+				shapeFor,
+				serverNowFn,
+				animate: true,
+			},
+		);
+	});
+
+	it('registers the low-zoom stop exception as a sibling pick target', () => {
+		expect(PICKABLE_MAP_LAYERS).toContain(STOP_EXCEPTION_LAYER);
 	});
 });

@@ -1,18 +1,22 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { FilterState } from '$lib/filters';
 import { VehicleSchema } from '$lib/v1/schemas';
+import type { VehicleSilenceContext } from './vehicleLayer';
 import {
 	addVehicleLayers,
 	ICON_SIZE_Z11_DEFAULT,
-	ICON_SIZE_Z11_HOVER,
 	SILENT_BADGE_SCALE,
 	SILENT_ICON_SIZE_Z11,
 	SILENT_ICON_SIZE_Z15,
 	VEHICLE_BODY_LAYER,
 	VEHICLE_HEADING_LAYER,
+	VEHICLE_HIGHLIGHT_LAYER,
 	VEHICLE_SILENT_LAYER,
 	VEHICLE_SOURCE,
+	setStale,
 	toVehicleFeatures,
 } from './vehicleLayer';
 import { HEADING_ICON, SILENT_ICON } from './vehicleSprites';
@@ -54,7 +58,7 @@ const vehicles = [
 ].map((vehicle) => VehicleSchema.parse(vehicle));
 
 describe('toVehicleFeatures entity filtering', () => {
-	it('uses a MapLibre-valid top-level zoom expression for selected and hovered bus size', () => {
+	it('keeps icon-size on one static zoom ramp with no feature or feature-state branches', () => {
 		const layers: LayerSpecification[] = [];
 		const map = {
 			getLayer: () => undefined,
@@ -65,7 +69,9 @@ describe('toVehicleFeatures entity filtering', () => {
 
 		addVehicleLayers(map);
 
-		const layer = layers[0];
+		const layer = layers.find((candidate) => candidate.id === VEHICLE_BODY_LAYER);
+		expect(layer).toBeDefined();
+		if (!layer) throw new Error('expected vehicle body layer');
 		expect(layer).toMatchObject({
 			id: VEHICLE_BODY_LAYER,
 			type: 'symbol',
@@ -73,8 +79,9 @@ describe('toVehicleFeatures entity filtering', () => {
 		});
 		const layout = (layer.layout ?? {}) as Record<string, unknown>;
 		expect(usesTopLevelZoomExpression(layout['icon-size'])).toBe(true);
-		expect(JSON.stringify(layout['icon-size'])).toContain('selected');
-		expect(JSON.stringify(layout['icon-size'])).toContain('hovered');
+		expect(JSON.stringify(layout['icon-size'])).not.toContain('selected');
+		expect(JSON.stringify(layout['icon-size'])).not.toContain('hovered');
+		expect(JSON.stringify(layout['icon-size'])).not.toContain('feature-state');
 		// The bus glyph is UPRIGHT (legible at every bearing) — heading is the
 		// separate chevron layer, so the body itself never rotates.
 		expect(layout['icon-rotate']).toBeUndefined();
@@ -114,7 +121,7 @@ describe('toVehicleFeatures entity filtering', () => {
 		expect(headingIndex).toBeGreaterThan(bodyIndex);
 	});
 
-	it('branches icon-opacity on hover/selected on both vehicle layers (S5: fix hover-only)', () => {
+	it('re-sources hover and committed selection opacity to feature-state while retaining filter-only selection', () => {
 		const layers: LayerSpecification[] = [];
 		const map = {
 			getLayer: () => undefined,
@@ -128,18 +135,79 @@ describe('toVehicleFeatures entity filtering', () => {
 		for (const id of [VEHICLE_BODY_LAYER, VEHICLE_HEADING_LAYER]) {
 			const paint = (layers.find((l) => l.id === id)?.paint ?? {}) as Record<string, unknown>;
 			const opacity = JSON.stringify(paint['icon-opacity']);
+			expect(opacity).toContain('feature-state');
 			expect(opacity).toContain('hovered');
 			expect(opacity).toContain('selected');
-			// The default leg reads the `opacity` prop (constant 1 now the fade is gone)
-			// times the global stale-dim — not a static literal.
-			expect(opacity).toContain('opacity');
+			expect(opacity).toContain(JSON.stringify(['get', 'selected']));
+			expect(opacity).not.toContain(JSON.stringify(['get', 'hovered']));
+			expect(opacity).not.toContain(JSON.stringify(['get', 'opacity']));
 		}
 	});
 
-	it('rests buses at a solid base size; hover is a modest accent (S5: solid by default)', () => {
-		// The "only solid on hover" cause was a small base size jumping ~1.9× on hover.
+	it.each([
+		['fresh', false, 1],
+		['globally stale', true, 0.45],
+	] as const)(
+		'keeps hover, committed selection, and serialized selection ahead of the %s fallback',
+		(_name, stale, fallback) => {
+			const setPaintProperty = vi.fn();
+			const map = {
+				getLayer: (id: string) =>
+					id === VEHICLE_BODY_LAYER || id === VEHICLE_HEADING_LAYER ? { id } : undefined,
+				setPaintProperty,
+			} as unknown as MapLibreMap;
+			const expectedOpacity = [
+				'case',
+				['boolean', ['feature-state', 'hovered'], false],
+				1,
+				['boolean', ['feature-state', 'selected'], false],
+				0.95,
+				['==', ['get', 'selected'], 1],
+				0.95,
+				fallback,
+			];
+
+			setStale(map, stale);
+
+			expect(setPaintProperty.mock.calls).toEqual([
+				[VEHICLE_BODY_LAYER, 'icon-opacity', expectedOpacity],
+				[VEHICLE_HEADING_LAYER, 'icon-opacity', expectedOpacity],
+			]);
+		},
+	);
+
+	it('does not restore the retired per-vehicle silence opacity expression', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/map/vehicleLayer.ts'),
+			'utf8',
+		);
+
+		expect(source).not.toContain('SILENCE_OPACITY');
+	});
+
+	it('rests buses at a solid base size while the highlight layer carries interaction emphasis', () => {
 		expect(ICON_SIZE_Z11_DEFAULT).toBeGreaterThanOrEqual(0.7);
-		expect(ICON_SIZE_Z11_HOVER / ICON_SIZE_Z11_DEFAULT).toBeLessThan(1.5);
+	});
+
+	it('retints an existing highlight layer on a live theme change', () => {
+		const setPaintProperty = vi.fn();
+		const map = {
+			getLayer: (id: string) => ({ id }),
+			setPaintProperty,
+		} as unknown as MapLibreMap;
+
+		addVehicleLayers(map);
+
+		expect(setPaintProperty).toHaveBeenCalledWith(
+			VEHICLE_HIGHLIGHT_LAYER,
+			'circle-color',
+			'rgb(20, 20, 20)',
+		);
+		expect(setPaintProperty).toHaveBeenCalledWith(
+			VEHICLE_HIGHLIGHT_LAYER,
+			'circle-stroke-color',
+			'rgb(255, 95, 87)',
+		);
 	});
 
 	it('flags whether each bus reports a heading so the chevron layer can hide for headingless buses', () => {
@@ -160,21 +228,14 @@ describe('toVehicleFeatures entity filtering', () => {
 		]);
 	});
 
-	it('marks the hovered bus so the map can grow it without selecting it', () => {
-		const features = (
-			toVehicleFeatures as (
-				...args:
-					| Parameters<typeof toVehicleFeatures>
-					| [...Parameters<typeof toVehicleFeatures>, string]
-			) => ReturnType<typeof toVehicleFeatures>
-		)(vehicles, EMPTY_FILTER, new Set(), null, 'directional').features;
+	it('does not serialize hover or the retired silence-opacity debug fields', () => {
+		const features = toVehicleFeatures(vehicles, EMPTY_FILTER).features;
 
-		expect(
-			features.map((f) => [f.properties.id, f.properties.selected, f.properties.hovered]),
-		).toEqual([
-			['directional', 0, 1],
-			['no-direction', 0, 0],
-		]);
+		for (const feature of features) {
+			expect(feature.properties).not.toHaveProperty('hovered');
+			expect(feature.properties).not.toHaveProperty('opacity');
+			expect(feature.properties).not.toHaveProperty('silenceAgeS');
+		}
 	});
 
 	it('keeps only the selected bus when a vehicle filter is active', () => {
@@ -261,7 +322,7 @@ describe('toVehicleFeatures entity filtering', () => {
 	});
 });
 
-describe('toVehicleFeatures per-vehicle silence fade', () => {
+describe('toVehicleFeatures retired per-vehicle silence fade', () => {
 	const TTL = 30;
 	// A fresh bus + a long-silent bus (same shape, different report time).
 	function fleet(freshUtc: string, silentUtc: string) {
@@ -278,72 +339,26 @@ describe('toVehicleFeatures per-vehicle silence fade', () => {
 		].map((v) => VehicleSchema.parse(v));
 	}
 
-	it('defaults every bus to full opacity when no silence context is supplied', () => {
-		const features = toVehicleFeatures(vehicles, EMPTY_FILTER).features;
-		expect(features.map((f) => f.properties.opacity)).toEqual([1, 1]);
-	});
-
-	it('carries updated_utc into the feature opacity: fresh = full, long-silent = full (solid, no fade)', () => {
+	it('keeps VehicleSilenceContext only for the per-bus stale calculation', () => {
 		const now = Date.parse('2026-06-21T12:00:00Z');
-		const fresh = '2026-06-21T12:00:00Z'; // age 0 → full
-		const silent = '2026-06-21T11:55:00Z'; // age 300s — still full (the fade is gone)
-		const features = toVehicleFeatures(fleet(fresh, silent), EMPTY_FILTER, new Set(), null, null, {
+		const fresh = '2026-06-21T12:00:00Z';
+		const silent = '2026-06-21T11:55:00Z';
+		const silence: VehicleSilenceContext = {
 			serverNow: now,
 			ttlS: TTL,
-		}).features;
+		};
+		const features = toVehicleFeatures(
+			fleet(fresh, silent),
+			EMPTY_FILTER,
+			new Set(),
+			null,
+			silence,
+		).features;
 		const byId = Object.fromEntries(features.map((f) => [f.properties.id, f.properties]));
-		expect(byId.fresh.opacity).toBe(1);
-		// Buses are solid in normal operation — staleness is a global signal now.
-		expect(byId.silent.opacity).toBe(1);
-		// silenceAgeS is still carried (rounded seconds) for hover / debug.
-		expect(byId.silent.silenceAgeS).toBe(300);
-	});
-
-	it('keeps a mid-window bus at full opacity (no per-vehicle fade)', () => {
-		const now = Date.parse('2026-06-21T12:00:00Z');
-		const midAge = 67.5; // formerly inside the fade window
-		const reportedAt = new Date(now - midAge * 1000).toISOString();
-		const features = toVehicleFeatures(
-			fleet(reportedAt, reportedAt),
-			EMPTY_FILTER,
-			new Set(),
-			null,
-			null,
-			{ serverNow: now, ttlS: TTL },
-		).features;
-		expect(features[0].properties.opacity).toBe(1);
-	});
-
-	it('keeps a mid-window bus at full opacity (formerly the reduced-motion path)', () => {
-		const now = Date.parse('2026-06-21T12:00:00Z');
-		const midAge = 60; // formerly inside the fade window
-		const reportedAt = new Date(now - midAge * 1000).toISOString();
-		const features = toVehicleFeatures(
-			fleet(reportedAt, reportedAt),
-			EMPTY_FILTER,
-			new Set(),
-			null,
-			null,
-			{ serverNow: now, ttlS: TTL },
-		).features;
-		expect(features[0].properties.opacity).toBe(1);
-	});
-
-	it('drives a data-driven icon-opacity from the opacity property on both layers', () => {
-		const layers: LayerSpecification[] = [];
-		const map = {
-			getLayer: () => undefined,
-			addLayer: (nextLayer: LayerSpecification) => {
-				layers.push(nextLayer);
-			},
-		} as unknown as MapLibreMap;
-		addVehicleLayers(map);
-		for (const id of [VEHICLE_BODY_LAYER, VEHICLE_HEADING_LAYER]) {
-			const layer = layers.find((l) => l.id === id);
-			expect(layer).toBeDefined();
-			const paint = (layer?.paint ?? {}) as Record<string, unknown>;
-			expect(JSON.stringify(paint['icon-opacity'])).toContain('opacity');
-		}
+		expect(byId.fresh.stale).toBe(0);
+		expect(byId.silent.stale).toBe(1);
+		expect(byId.fresh).not.toHaveProperty('opacity');
+		expect(byId.silent).not.toHaveProperty('silenceAgeS');
 	});
 });
 
@@ -380,7 +395,7 @@ describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', ()
 	it('flags a bus whose OWN reported_utc is past the cutoff as stale:1, a fresh one stale:0', () => {
 		const fresh = new Date(now - 5 * 1000).toISOString(); // 5s old → fresh
 		const stale = new Date(now - (STALE_CUTOFF_S + 30) * 1000).toISOString(); // well past cutoff
-		const features = toVehicleFeatures(fleet(fresh, stale), EMPTY_FILTER, new Set(), null, null, {
+		const features = toVehicleFeatures(fleet(fresh, stale), EMPTY_FILTER, new Set(), null, {
 			serverNow: now,
 		}).features;
 		const byId = Object.fromEntries(features.map((f) => [f.properties.id, f.properties]));
@@ -393,7 +408,7 @@ describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', ()
 		const [v] = [
 			{ id: 'fallback', lat: 45.5, lon: -73.6, status: 'on_time', updated_utc: oldSnapshot },
 		].map((x) => VehicleSchema.parse(x));
-		const features = toVehicleFeatures([v], EMPTY_FILTER, new Set(), null, null, {
+		const features = toVehicleFeatures([v], EMPTY_FILTER, new Set(), null, {
 			serverNow: now,
 		}).features;
 		expect(features[0].properties.stale).toBe(1);
@@ -438,6 +453,33 @@ describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', ()
 		const silentIndex = layers.findIndex((l) => l.id === VEHICLE_SILENT_LAYER);
 		expect(silentIndex).toBeGreaterThan(bodyIndex);
 		expect(silentIndex).toBeGreaterThan(headingIndex);
+	});
+
+	it('installs a feature-state ring below the bus using the contrasting background casing', () => {
+		const layers: LayerSpecification[] = [];
+		const map = {
+			getLayer: () => undefined,
+			addLayer: (nextLayer: LayerSpecification) => {
+				layers.push(nextLayer);
+			},
+		} as unknown as MapLibreMap;
+
+		addVehicleLayers(map);
+
+		const highlight = layers.find((layer) => layer.id === VEHICLE_HIGHLIGHT_LAYER);
+		expect(highlight).toBeDefined();
+		if (!highlight) throw new Error('expected vehicle highlight layer');
+		expect(highlight).toMatchObject({ type: 'circle', source: VEHICLE_SOURCE });
+		const paint = (highlight.paint ?? {}) as Record<string, unknown>;
+		const renderedPaint = JSON.stringify(paint);
+		expect(renderedPaint).toContain('feature-state');
+		expect(renderedPaint).toContain('hovered');
+		expect(renderedPaint).toContain('selected');
+		expect(paint['circle-color']).toMatch(/^rgb/);
+		expect(paint['circle-stroke-color']).toMatch(/^rgb/);
+		expect(layers.findIndex((layer) => layer.id === VEHICLE_HIGHLIGHT_LAYER)).toBeLessThan(
+			layers.findIndex((layer) => layer.id === VEHICLE_BODY_LAYER),
+		);
 	});
 
 	it('sizes the big "!" badge at ~75% of the bus icon, scaling with zoom (S5.1: prominent flag)', () => {

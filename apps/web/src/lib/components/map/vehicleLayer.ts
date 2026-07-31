@@ -15,11 +15,11 @@
 import type { Map as MapLibreMap, LayerSpecification } from 'maplibre-gl';
 import type { Vehicle } from '$lib/v1/schemas';
 import type { EntityKind, FilterState } from '$lib/filters';
-import { bodyIconId, BUS_ICON, HEADING_ICON, SILENT_ICON } from './vehicleSprites';
-import { silenceAgeS } from './vehicleSilence';
+import { bodyIconId, BUS_ICON, HEADING_ICON, resolveColor, SILENT_ICON } from './vehicleSprites';
 import { fixAgeS, isVehicleStale } from './vehicleProjection';
 
 export const VEHICLE_SOURCE = 'vehicles';
+export const VEHICLE_HIGHLIGHT_LAYER = 'vehicle-highlight';
 export const VEHICLE_BODY_LAYER = 'vehicle-body';
 /** The rotated chevron overlay; same source, filtered to vehicles with a heading. */
 export const VEHICLE_HEADING_LAYER = 'vehicle-heading';
@@ -37,20 +37,8 @@ export interface VehicleFeature {
 		hasHeading: number;
 		route: string;
 		selected: number;
-		hovered: number;
 		// 1 = visible (matches the filter, or no narrowing filter); 0 = hidden.
 		matched: number;
-		// Per-vehicle opacity — now always 1 (buses are solid in normal operation).
-		// The old "going stale" fade was removed: `updated_utc` is the uniform
-		// snapshot capture time, so a per-vehicle fade could never single out a stuck
-		// bus and only flickered on poll jitter. Staleness is a global signal now
-		// (feed-not-responding banner + the global stale-dim). Still driven
-		// data-driven into icon-opacity; this is now a constant 1.
-		opacity: number;
-		// Seconds since the snapshot capture time (`updated_utc`, uniform across
-		// every vehicle on this feed), on the server clock. Carried for debugging /
-		// a future "last seen" hover; no longer drives opacity (the fade is gone).
-		silenceAgeS: number;
 		// 1 = this bus's OWN fix (reported_utc, fallback updated_utc) is past the
 		// staleness cutoff → it gets the per-bus "!" flag and is frozen (the S5
 		// reshape dropped this; it is back, now correctly per-bus). 0 = fresh, or
@@ -126,9 +114,7 @@ function iconFor(
 	return { body: BUS_ICON, matched: matched ? 1 : 0 };
 }
 
-/** Skew-free "now" + live ttl, once used to measure per-vehicle silence. The fade
- * was removed, so this no longer affects opacity (always 1); it is still passed so
- * `silenceAgeS` is computed on the server clock and the refresher stays wired. */
+/** Skew-free "now" + live ttl retained for the per-bus staleness cutoff. */
 export interface VehicleSilenceContext {
 	/** `sharedClock.serverNow` (epoch ms) — skew-corrected, server timeline. */
 	serverNow: number;
@@ -138,18 +124,13 @@ export interface VehicleSilenceContext {
 
 /** Build the GeoJSON FeatureCollection for the current vehicles under the filter.
  *
- * `silence` (optional) carries the skew-free clock + live ttl, but the per-vehicle
- * fade it once drove was REMOVED: every bus's `opacity` is now a constant 1 whether
- * or not `silence` is supplied (see vehicleSilence.ts for why — uniform snapshot
- * capture time). `silence` is kept so the per-frame refresher + `silenceAgeS`
- * ("last seen" data) stay wired; it no longer changes what's drawn. Staleness is
- * signalled globally instead. */
+ * `silence` carries the skew-free clock used to derive the per-bus `stale` flag.
+ * The retired per-vehicle opacity and debug-age properties are not serialized. */
 export function toVehicleFeatures(
 	vehicles: readonly Vehicle[],
 	filter: FilterState,
 	alertVehicleIds: ReadonlySet<string> = new Set(),
 	selectedVehicleId: string | null = null,
-	hoveredVehicleId: string | null = null,
 	silence?: VehicleSilenceContext,
 ): VehicleFC {
 	const dim = colourDimension(filter);
@@ -157,15 +138,6 @@ export function toVehicleFeatures(
 		type: 'FeatureCollection',
 		features: vehicles.map((v) => {
 			const { body, matched } = iconFor(v, filter, dim, alertVehicleIds);
-			// Snapshot capture age (uniform across vehicles); 0 when no clock is
-			// supplied. Carried as `silenceAgeS` for debugging — opacity is constant 1.
-			const ageS = silence ? silenceAgeS(v.updated_utc, silence.serverNow) : 0;
-			// Per-vehicle opacity is a constant 1: the old "going stale" fade was
-			// removed (uniform snapshot capture time made it honesty theatre).
-			// Staleness is a GLOBAL signal now (feed-stall banner + the global
-			// stale-dim via setStale); the per-bus "!" flag below carries per-bus
-			// silence. See vehicleSilence.ts for the full rationale.
-			const opacity = 1;
 			// Per-bus staleness off this bus's OWN fix time (reported_utc, falling
 			// back to updated_utc) — NOT the uniform snapshot age above. When a
 			// clock is supplied and the fix is past the cutoff, the bus is frozen +
@@ -186,10 +158,7 @@ export function toVehicleFeatures(
 					hasHeading: v.bearing != null ? 1 : 0,
 					route: v.route ?? '',
 					selected: selectedVehicleId === v.id || filter.vehicles.has(v.id) ? 1 : 0,
-					hovered: hoveredVehicleId === v.id ? 1 : 0,
 					matched,
-					opacity,
-					silenceAgeS: Number.isFinite(ageS) ? Math.round(ageS) : -1,
 					stale,
 				},
 			};
@@ -209,8 +178,6 @@ export function addVehicleSource(map: MapLibreMap): void {
 // Exported so the test asserts the resting size + accent ratio without parsing the
 // expression. Tune live in the GL eyeball loop.
 export const ICON_SIZE_Z11_DEFAULT = 0.78;
-export const ICON_SIZE_Z11_SELECTED = 0.88;
-export const ICON_SIZE_Z11_HOVER = 1.0;
 
 // Bus body zoom legs (the DEFAULT, unhovered/unselected size at each zoom stop).
 // The silent "!" badge is sized as a fixed FRACTION of these so it scales with the
@@ -222,23 +189,9 @@ const ICON_SIZE = [
 	['linear'],
 	['zoom'],
 	11,
-	[
-		'case',
-		['==', ['get', 'hovered'], 1],
-		ICON_SIZE_Z11_HOVER,
-		['==', ['get', 'selected'], 1],
-		ICON_SIZE_Z11_SELECTED,
-		ICON_SIZE_Z11_DEFAULT,
-	],
+	ICON_SIZE_Z11_DEFAULT,
 	15,
-	[
-		'case',
-		['==', ['get', 'hovered'], 1],
-		1.75,
-		['==', ['get', 'selected'], 1],
-		1.5,
-		ICON_SIZE_Z15_DEFAULT,
-	],
+	ICON_SIZE_Z15_DEFAULT,
 ];
 
 // The silent "!" badge is ~75% of the bus icon — big and prominent (it FILLS most
@@ -260,46 +213,93 @@ const SILENT_ICON_SIZE = [
 	SILENT_ICON_SIZE_Z15,
 ];
 
-// The feature's `opacity` property, read data-driven. The per-vehicle silence fade
-// was removed, so `opacity` is now a constant 1 (see toVehicleFeatures); `coalesce`
-// still defaults to full strength when the property is absent (legacy/no-clock
-// data). This is multiplied by the GLOBAL stale-dim via setStale, which is now the
-// ONLY thing that can move opacity below 1.
-const SILENCE_OPACITY = ['coalesce', ['get', 'opacity'], 1];
-
 /** Global stale-dim multiplier: 45% when the WHOLE live tier is behind, else 1. */
 const GLOBAL_STALE_OPACITY = 0.45;
 
-/**
- * Composed icon-opacity = the GLOBAL stale-dim factor.
- *
- * Since the per-vehicle fade was removed, `SILENCE_OPACITY` is a constant 1, so
- * this is now just the global stale multiplier: 1 in normal operation, 0.45 when
- * the WHOLE live tier is behind (every bus dims together, still faintly visible —
- * never erased). The `* SILENCE_OPACITY` term is retained as a harmless ×1 so the
- * expression shape stays stable if a per-vehicle signal is ever reintroduced.
- */
-function composedOpacity(globalStale: boolean): unknown {
-	const factor = globalStale ? GLOBAL_STALE_OPACITY : 1;
-	return factor === 1 ? SILENCE_OPACITY : ['*', SILENCE_OPACITY, factor];
-}
+const FEATURE_HOVERED = ['boolean', ['feature-state', 'hovered'], false];
+const FEATURE_SELECTED = ['boolean', ['feature-state', 'selected'], false];
 
 /**
- * icon-opacity with a hover/selected branch (mirrors stopsLayer): a HOVERED bus
- * pops to full strength and a SELECTED one to 0.95, otherwise the global stale-dim
- * factor (composedOpacity). Buses are SOLID by default now — there is no
- * per-vehicle aging fade to override — so this branch only ensures a hovered or
- * selected bus stays at full strength even while the whole tier is globally dimmed.
+ * Hover and committed selection ride feature-state; the serialized `selected`
+ * branch remains for URL/filter-only emphasis with no open detail.
  */
 function iconOpacityExpr(globalStale: boolean): unknown {
 	return [
 		'case',
-		['==', ['get', 'hovered'], 1],
+		FEATURE_HOVERED,
 		1,
+		FEATURE_SELECTED,
+		0.95,
 		['==', ['get', 'selected'], 1],
 		0.95,
-		composedOpacity(globalStale),
+		globalStale ? GLOBAL_STALE_OPACITY : 1,
 	];
+}
+
+/** Owner-retunable first ring candidate: primary outer stroke, separated from the
+ * primary bus fill by a background casing disc. */
+export const VEHICLE_HIGHLIGHT_STYLE = Object.freeze({
+	casingToken: 'var(--background)',
+	ringToken: 'var(--primary)',
+	hoverStrokeWidth: 2.5,
+	selectedStrokeWidth: 2,
+	hoverOpacity: 1,
+	selectedOpacity: 0.92,
+});
+
+const VEHICLE_HIGHLIGHT_RADIUS = [
+	'interpolate',
+	['linear'],
+	['zoom'],
+	11,
+	['case', FEATURE_HOVERED, 15, FEATURE_SELECTED, 13, 0],
+	15,
+	['case', FEATURE_HOVERED, 22, FEATURE_SELECTED, 19, 0],
+];
+
+function vehicleHighlightLayer(): LayerSpecification {
+	const casing = resolveColor(VEHICLE_HIGHLIGHT_STYLE.casingToken, 'rgb(20, 20, 20)');
+	const ring = resolveColor(VEHICLE_HIGHLIGHT_STYLE.ringToken, 'rgb(255, 95, 87)');
+	return {
+		id: VEHICLE_HIGHLIGHT_LAYER,
+		type: 'circle',
+		source: VEHICLE_SOURCE,
+		filter: ['==', ['get', 'matched'], 1],
+		paint: {
+			'circle-radius': VEHICLE_HIGHLIGHT_RADIUS,
+			'circle-color': casing,
+			'circle-stroke-color': ring,
+			'circle-stroke-width': [
+				'case',
+				FEATURE_HOVERED,
+				VEHICLE_HIGHLIGHT_STYLE.hoverStrokeWidth,
+				FEATURE_SELECTED,
+				VEHICLE_HIGHLIGHT_STYLE.selectedStrokeWidth,
+				0,
+			],
+			'circle-opacity': [
+				'case',
+				FEATURE_HOVERED,
+				VEHICLE_HIGHLIGHT_STYLE.hoverOpacity,
+				FEATURE_SELECTED,
+				VEHICLE_HIGHLIGHT_STYLE.selectedOpacity,
+				0,
+			],
+		},
+	} as unknown as LayerSpecification;
+}
+
+function retintVehicleHighlight(map: MapLibreMap): void {
+	map.setPaintProperty(
+		VEHICLE_HIGHLIGHT_LAYER,
+		'circle-color',
+		resolveColor(VEHICLE_HIGHLIGHT_STYLE.casingToken, 'rgb(20, 20, 20)'),
+	);
+	map.setPaintProperty(
+		VEHICLE_HIGHLIGHT_LAYER,
+		'circle-stroke-color',
+		resolveColor(VEHICLE_HIGHLIGHT_STYLE.ringToken, 'rgb(255, 95, 87)'),
+	);
 }
 
 /** Add the vehicle body + heading + per-bus silent-flag symbol layers. Non-matched
@@ -309,74 +309,80 @@ function iconOpacityExpr(globalStale: boolean): unknown {
  * the silent "!" badge shows ONLY for matched + per-bus-stale vehicles (frozen
  * buses whose own fix is past the cutoff). Idempotent. */
 export function addVehicleLayers(map: MapLibreMap): void {
-	if (map.getLayer(VEHICLE_BODY_LAYER)) return;
-	map.addLayer({
-		id: VEHICLE_BODY_LAYER,
-		type: 'symbol',
-		source: VEHICLE_SOURCE,
-		// Hide non-matched: a real filter (they disappear), not a dim.
-		filter: ['==', ['get', 'matched'], 1],
-		layout: {
-			'icon-image': ['get', 'body'],
-			// The bus glyph stays UPRIGHT — heading is the separate chevron layer.
-			'icon-rotation-alignment': 'viewport',
-			'icon-allow-overlap': true,
-			'icon-ignore-placement': true,
-			'icon-size': ICON_SIZE,
-		},
-		// Opacity is a constant 1 by default (the per-vehicle fade was removed);
-		// setStale swaps in the global stale-dim multiplier when the tier is behind.
-		paint: { 'icon-opacity': iconOpacityExpr(false) },
-		// maplibre's expression types are invariant + mutable; the literal is
-		// structurally correct, so cast through unknown.
-	} as unknown as LayerSpecification);
+	if (map.getLayer(VEHICLE_HIGHLIGHT_LAYER)) {
+		retintVehicleHighlight(map);
+	} else {
+		map.addLayer(
+			vehicleHighlightLayer(),
+			map.getLayer(VEHICLE_BODY_LAYER) ? VEHICLE_BODY_LAYER : undefined,
+		);
+	}
+	if (!map.getLayer(VEHICLE_BODY_LAYER)) {
+		map.addLayer({
+			id: VEHICLE_BODY_LAYER,
+			type: 'symbol',
+			source: VEHICLE_SOURCE,
+			// Hide non-matched: a real filter (they disappear), not a dim.
+			filter: ['==', ['get', 'matched'], 1],
+			layout: {
+				'icon-image': ['get', 'body'],
+				// The bus glyph stays UPRIGHT — heading is the separate chevron layer.
+				'icon-rotation-alignment': 'viewport',
+				'icon-allow-overlap': true,
+				'icon-ignore-placement': true,
+				'icon-size': ICON_SIZE,
+			},
+			paint: { 'icon-opacity': iconOpacityExpr(false) },
+		} as unknown as LayerSpecification);
+	}
 
-	if (map.getLayer(VEHICLE_HEADING_LAYER)) return;
 	// Drawn ABOVE the bus body so the direction tick is never occluded.
-	map.addLayer({
-		id: VEHICLE_HEADING_LAYER,
-		type: 'symbol',
-		source: VEHICLE_SOURCE,
-		// Matched AND reporting a heading — no fake arrows for headingless buses.
-		filter: ['all', ['==', ['get', 'matched'], 1], ['==', ['get', 'hasHeading'], 1]],
-		layout: {
-			'icon-image': HEADING_ICON,
-			'icon-rotate': ['coalesce', ['get', 'bearing'], 0],
-			'icon-rotation-alignment': 'map',
-			'icon-allow-overlap': true,
-			'icon-ignore-placement': true,
-			'icon-size': ICON_SIZE,
-		},
-		paint: { 'icon-opacity': iconOpacityExpr(false) },
-	} as unknown as LayerSpecification);
+	if (!map.getLayer(VEHICLE_HEADING_LAYER)) {
+		map.addLayer({
+			id: VEHICLE_HEADING_LAYER,
+			type: 'symbol',
+			source: VEHICLE_SOURCE,
+			// Matched AND reporting a heading — no fake arrows for headingless buses.
+			filter: ['all', ['==', ['get', 'matched'], 1], ['==', ['get', 'hasHeading'], 1]],
+			layout: {
+				'icon-image': HEADING_ICON,
+				'icon-rotate': ['coalesce', ['get', 'bearing'], 0],
+				'icon-rotation-alignment': 'map',
+				'icon-allow-overlap': true,
+				'icon-ignore-placement': true,
+				'icon-size': ICON_SIZE,
+			},
+			paint: { 'icon-opacity': iconOpacityExpr(false) },
+		} as unknown as LayerSpecification);
+	}
 
-	if (map.getLayer(VEHICLE_SILENT_LAYER)) return;
 	// The per-bus "!" not-reporting badge — drawn ABOVE the body + heading so a
 	// frozen, no-longer-reporting bus is FLAGGED (full opacity), never hidden.
 	// Shown only for matched + stale vehicles; staleness is per-bus now (each
 	// bus's own reported_utc age, set in toVehicleFeatures), not a global signal.
-	map.addLayer({
-		id: VEHICLE_SILENT_LAYER,
-		type: 'symbol',
-		source: VEHICLE_SOURCE,
-		filter: ['all', ['==', ['get', 'matched'], 1], ['==', ['get', 'stale'], 1]],
-		layout: {
-			'icon-image': SILENT_ICON,
-			// Float the big "!" just above the bus glyph (icon-offset is in icon px,
-			// applied before icon-size, so it tracks the glyph as it scales).
-			'icon-offset': [0, -16],
-			// ~75% of the bus icon — a prominent alert flag, scaling with zoom.
-			'icon-size': SILENT_ICON_SIZE,
-			'icon-allow-overlap': true,
-			'icon-ignore-placement': true,
-		},
-		paint: { 'icon-opacity': 1 },
-	} as unknown as LayerSpecification);
+	if (!map.getLayer(VEHICLE_SILENT_LAYER)) {
+		map.addLayer({
+			id: VEHICLE_SILENT_LAYER,
+			type: 'symbol',
+			source: VEHICLE_SOURCE,
+			filter: ['all', ['==', ['get', 'matched'], 1], ['==', ['get', 'stale'], 1]],
+			layout: {
+				'icon-image': SILENT_ICON,
+				// Float the big "!" just above the bus glyph (icon-offset is in icon px,
+				// applied before icon-size, so it tracks the glyph as it scales).
+				'icon-offset': [0, -16],
+				// ~75% of the bus icon — a prominent alert flag, scaling with zoom.
+				'icon-size': SILENT_ICON_SIZE,
+				'icon-allow-overlap': true,
+				'icon-ignore-placement': true,
+			},
+			paint: { 'icon-opacity': 1 },
+		} as unknown as LayerSpecification);
+	}
 }
 
 /** Apply the GLOBAL stale-dim (whole live tier behind). When stale, every bus is
- * multiplied by 45% together (the per-vehicle `opacity` property is a constant 1
- * now that the silence fade is gone, so this is the only signal that dims a bus).
+ * dimmed to 45% together.
  * Never extrapolate — this only dims, it never moves a bus.
  * BY DESIGN: VEHICLE_SILENT_LAYER is intentionally NOT dimmed here — it stays at
  * opacity 1 through a global stale so the per-bus not-reporting "!" flags remain

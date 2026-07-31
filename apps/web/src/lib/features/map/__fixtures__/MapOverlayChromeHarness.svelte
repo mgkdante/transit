@@ -7,13 +7,12 @@
   `controls` snippet plus sensible defaults for the live/near-me/peek props.
 -->
 <script lang="ts">
-	import type { FilterStore, Chip } from '$lib/filters';
+	import type { FilterStore } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
 	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
-	import type { Alert } from '$lib/v1/schemas';
 	import type { LatLon, WithDistance } from '$lib/components/map';
 	import type { GeocodePrecision } from '$lib/geocode/types';
-	import type { MapSelection, MapSelectionDetail } from '../mapSelection';
+	import type { MapHoverPeek } from '../mapHoverPeek';
 	import MapFilters from '../MapFilters.svelte';
 	import MapMotionControl from '../MapMotionControl.svelte';
 	import MapOverlayChrome from '../MapOverlayChrome.svelte';
@@ -40,13 +39,9 @@
 		liveEdgeState?: 'unavailable' | 'no-vehicles' | null;
 		liveEdgeMessage?: string | null;
 		// Hover peek.
-		hoverDetail?: MapSelectionDetail | null;
-		hoverVehicleAbsence?: { ageS: number } | null;
+		hoverPeek?: MapHoverPeek | null;
 		// Spies.
 		onstopselect?: (stop: WithDistance<StopIndexEntry>) => void;
-		onselect?: (selection: MapSelection) => void;
-		onfilter?: (chip: Chip) => void;
-		onalertselect?: (alert: Alert) => void;
 	}
 
 	let {
@@ -63,12 +58,8 @@
 		detailOpen = false,
 		liveEdgeState = null,
 		liveEdgeMessage = null,
-		hoverDetail = null,
-		hoverVehicleAbsence = null,
+		hoverPeek = null,
 		onstopselect = () => {},
-		onselect = () => {},
-		onfilter = () => {},
-		onalertselect = () => {},
 	}: Props = $props();
 
 	const t = $derived(MAP_COPY[locale]);
@@ -115,10 +106,6 @@
 	{detailOpen}
 	{liveEdgeState}
 	{liveEdgeMessage}
-	{hoverDetail}
-	{hoverVehicleAbsence}
-	{onselect}
-	{onfilter}
-	{onalertselect}
+	{hoverPeek}
 	controls={mapControls}
 />

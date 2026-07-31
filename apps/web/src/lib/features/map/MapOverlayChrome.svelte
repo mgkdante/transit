@@ -14,19 +14,18 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { Locale } from '$lib/i18n';
-	import type { FilterStore, Chip } from '$lib/filters';
+	import type { FilterStore } from '$lib/filters';
 	import type { LatLon, WithDistance } from '$lib/components/map';
 	import type { GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
-	import type { StopIndexEntry, Alert } from '$lib/v1/schemas';
+	import type { StopIndexEntry } from '$lib/v1/schemas';
 	import type { MapCopy } from './map.copy';
-	import type { MapSelection } from './mapSelection';
-	import type { MapSelectionDetail as MapSelectionDetailModel } from './mapSelection';
+	import type { MapHoverPeek as MapHoverPeekModel } from './mapHoverPeek';
 	import MapHeadTitle from './MapHeadTitle.svelte';
 	import MapNearMeControl from './MapNearMeControl.svelte';
 	import MapFilterPill from './MapFilterPill.svelte';
 	import MapFreshness from './MapFreshness.svelte';
 	import MapFeedStallBanner from './MapFeedStallBanner.svelte';
-	import MapSelectionDetail from './MapSelectionDetail.svelte';
+	import MapHoverPeek from './MapHoverPeek.svelte';
 
 	type NearMeOrigin = LatLon & { label: string; precision?: GeocodePrecision };
 
@@ -59,13 +58,7 @@
 		// Live-edge notice.
 		liveEdgeState: 'unavailable' | 'no-vehicles' | null;
 		liveEdgeMessage: string | null;
-		// Hover peek detail + its honest-null per-bus note.
-		hoverDetail: MapSelectionDetailModel | null;
-		hoverVehicleAbsence: { ageS: number } | null;
-		// Detail-derived handlers shared by the peek.
-		onselect: (selection: MapSelection) => void;
-		onfilter: (chip: Chip) => void;
-		onalertselect: (alert: Alert) => void;
+		hoverPeek: MapHoverPeekModel | null;
 		// The unified Controls render contract (desktop panel + mobile drawer).
 		controls: Snippet<[{ collapsible?: boolean; onselect?: () => void } | undefined]>;
 	}
@@ -94,11 +87,7 @@
 		detailOpen,
 		liveEdgeState,
 		liveEdgeMessage,
-		hoverDetail,
-		hoverVehicleAbsence,
-		onselect,
-		onfilter,
-		onalertselect,
+		hoverPeek,
 		controls,
 	}: Props = $props();
 </script>
@@ -156,17 +145,9 @@
 	{liveEdgeMessage}
 />
 
-{#if hoverDetail && isDesktop}
-	<div class="map-overlay map-peek" aria-live="polite">
-		<MapSelectionDetail
-			detail={hoverDetail}
-			{locale}
-			compact
-			notReporting={hoverVehicleAbsence}
-			{onselect}
-			{onfilter}
-			{onalertselect}
-		/>
+{#if hoverPeek && isDesktop}
+	<div class="map-overlay map-peek">
+		<MapHoverPeek peek={hoverPeek} {locale} />
 	</div>
 {/if}
 

@@ -35,10 +35,7 @@ function feature(route: string, lon = -73.59, lat = 45.5005): VehicleFeature {
 			hasHeading: 1,
 			route,
 			selected: 0,
-			hovered: 0,
 			matched: 1,
-			opacity: 1,
-			silenceAgeS: 0,
 			stale: 0,
 		},
 	};

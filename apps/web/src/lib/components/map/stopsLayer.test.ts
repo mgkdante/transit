@@ -1,7 +1,18 @@
-import type { LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
-import { describe, expect, it } from 'vitest';
+import type { LayerSpecification, Map as MapLibreMap, SourceSpecification } from 'maplibre-gl';
+import { describe, expect, it, vi } from 'vitest';
 import type { FilterState } from '$lib/filters';
-import { addStopsLayer, STOPS_LAYER, STOPS_SOURCE, toStopFeatures } from './stopsLayer';
+import {
+	addStopExceptionLayer,
+	addStopExceptionSource,
+	addStopsLayer,
+	setStopException,
+	STOP_EXCEPTION_LAYER,
+	STOP_EXCEPTION_SOURCE,
+	STOP_HIGHLIGHT_LAYER,
+	STOPS_LAYER,
+	STOPS_SOURCE,
+	toStopFeatures,
+} from './stopsLayer';
 import { STOP_ICON } from './vehicleSprites';
 
 function usesTopLevelZoomExpression(value: unknown): boolean {
@@ -14,16 +25,17 @@ function usesTopLevelZoomExpression(value: unknown): boolean {
 }
 
 describe('addStopsLayer', () => {
-	it('shows normal stops when low-zoom streets appear but allows selected stops from any zoom', () => {
-		let layer: LayerSpecification | null = null;
+	it('hands the base layer in at z8 with static size and feature-state paint emphasis', () => {
+		const layers: LayerSpecification[] = [];
 		const map = {
 			getLayer: () => undefined,
 			addLayer: (nextLayer: LayerSpecification) => {
-				layer = nextLayer;
+				layers.push(nextLayer);
 			},
 		} as unknown as MapLibreMap;
 
 		addStopsLayer(map);
+		const layer = layers.find((candidate) => candidate.id === STOPS_LAYER);
 		if (!layer) throw new Error('expected stops layer');
 		const rendered = layer as LayerSpecification & {
 			layout: Record<string, unknown>;
@@ -34,19 +46,68 @@ describe('addStopsLayer', () => {
 			id: STOPS_LAYER,
 			type: 'symbol',
 			source: STOPS_SOURCE,
-			minzoom: 0,
+			minzoom: 8,
 			layout: {
 				'icon-image': STOP_ICON,
 			},
 		});
-		expect(JSON.stringify(rendered.layout['icon-size'])).toContain('0.95');
 		expect(JSON.stringify(rendered.layout['icon-size'])).toContain('0');
-		expect(JSON.stringify(rendered.layout['icon-size'])).toContain('selected');
-		expect(JSON.stringify(rendered.layout['icon-size'])).toContain('hovered');
+		expect(JSON.stringify(rendered.layout['icon-size'])).not.toContain('selected');
+		expect(JSON.stringify(rendered.layout['icon-size'])).not.toContain('hovered');
+		expect(JSON.stringify(rendered.layout['icon-size'])).not.toContain('feature-state');
+		expect(JSON.stringify(rendered.paint['icon-opacity'])).toContain('feature-state');
 		expect(JSON.stringify(rendered.paint['icon-opacity'])).toContain('selected');
 		expect(JSON.stringify(rendered.paint['icon-opacity'])).toContain('hovered');
+		expect(JSON.stringify(rendered.paint['icon-opacity'])).toContain(
+			JSON.stringify(['get', 'selected']),
+		);
 		expect(usesTopLevelZoomExpression(rendered.layout['icon-size'])).toBe(true);
 		expect(usesTopLevelZoomExpression(rendered.paint['icon-opacity'])).toBe(true);
+	});
+
+	it('installs the minzoom-8 stop highlight below the stop symbol on the existing source', () => {
+		const layers: LayerSpecification[] = [];
+		const map = {
+			getLayer: () => undefined,
+			addLayer: (nextLayer: LayerSpecification) => {
+				layers.push(nextLayer);
+			},
+		} as unknown as MapLibreMap;
+
+		addStopsLayer(map);
+
+		const highlight = layers.find((layer) => layer.id === STOP_HIGHLIGHT_LAYER);
+		expect(highlight).toBeDefined();
+		expect(highlight).toMatchObject({
+			type: 'circle',
+			source: STOPS_SOURCE,
+			minzoom: 8,
+		});
+		expect(JSON.stringify(highlight?.paint)).toContain('feature-state');
+		expect(layers.findIndex((layer) => layer.id === STOP_HIGHLIGHT_LAYER)).toBeLessThan(
+			layers.findIndex((layer) => layer.id === STOPS_LAYER),
+		);
+	});
+
+	it('retints an existing stop highlight on a live theme change', () => {
+		const setPaintProperty = vi.fn();
+		const map = {
+			getLayer: (id: string) => ({ id }),
+			setPaintProperty,
+		} as unknown as MapLibreMap;
+
+		addStopsLayer(map);
+
+		expect(setPaintProperty).toHaveBeenCalledWith(
+			STOP_HIGHLIGHT_LAYER,
+			'circle-color',
+			'rgb(20, 20, 20)',
+		);
+		expect(setPaintProperty).toHaveBeenCalledWith(
+			STOP_HIGHLIGHT_LAYER,
+			'circle-stroke-color',
+			'rgb(255, 95, 87)',
+		);
 	});
 
 	it('hides stops when the shape filter selects buses only', () => {
@@ -140,29 +201,72 @@ describe('addStopsLayer', () => {
 		).toEqual([['s2', 1]]);
 	});
 
-	it('marks the hovered stop so the map can grow it without selecting it', () => {
-		const features = (
-			toStopFeatures as unknown as (...args: unknown[]) => ReturnType<typeof toStopFeatures>
-		)(
-			[
-				{ id: 's1', name: 'Stop 1', lat: 45.5, lon: -73.6 },
-				{ id: 's2', name: 'Stop 2', lat: 45.51, lon: -73.61 },
-			],
-			undefined,
-			new Set(),
-			null,
-			's2',
-		).features;
+	it('does not serialize hover into the bulk stop source', () => {
+		const features = toStopFeatures([
+			{ id: 's1', name: 'Stop 1', lat: 45.5, lon: -73.6 },
+			{ id: 's2', name: 'Stop 2', lat: 45.51, lon: -73.61 },
+		]).features;
 
-		expect(
-			features.map((feature) => [
-				feature.properties.id,
-				feature.properties.selected,
-				feature.properties.hovered,
-			]),
-		).toEqual([
-			['s1', 0, 0],
-			['s2', 0, 1],
+		for (const feature of features) expect(feature.properties).not.toHaveProperty('hovered');
+	});
+});
+
+describe('low-zoom stop exception', () => {
+	const stops = [
+		{ id: 's1', name: 'Stop 1', code: '1001', lat: 45.5, lon: -73.6 },
+		{ id: 's2', name: 'Stop 2', code: '1002', lat: 45.51, lon: -73.61 },
+	];
+
+	it('uses a dedicated non-promoted source and a data-property-styled maxzoom-8 layer', () => {
+		const sources: Array<[string, SourceSpecification]> = [];
+		const layers: LayerSpecification[] = [];
+		const map = {
+			getSource: () => undefined,
+			addSource: (id: string, source: SourceSpecification) => sources.push([id, source]),
+			getLayer: () => undefined,
+			addLayer: (layer: LayerSpecification) => layers.push(layer),
+		} as unknown as MapLibreMap;
+
+		addStopExceptionSource(map);
+		addStopExceptionLayer(map);
+
+		expect(sources).toHaveLength(1);
+		expect(sources[0]?.[0]).toBe(STOP_EXCEPTION_SOURCE);
+		expect(sources[0]?.[1]).not.toHaveProperty('promoteId');
+		const layer = layers.find((candidate) => candidate.id === STOP_EXCEPTION_LAYER);
+		expect(layer).toMatchObject({
+			type: 'symbol',
+			source: STOP_EXCEPTION_SOURCE,
+			maxzoom: 8,
+		});
+		const rendered = JSON.stringify(layer);
+		expect(rendered).toContain(JSON.stringify(['get', 'selected']));
+		expect(rendered).toContain(JSON.stringify(['get', 'hovered']));
+		expect(rendered).not.toContain('feature-state');
+	});
+
+	it('writes at most selected plus hovered and gives selected priority on the same stop', () => {
+		const setData = vi.fn();
+		const map = {
+			getSource: (id: string) => (id === STOP_EXCEPTION_SOURCE ? { setData } : undefined),
+		} as unknown as MapLibreMap;
+		const stopsById = Object.fromEntries(stops.map((stop) => [stop.id, stop]));
+
+		setStopException(map, stopsById, 's2', 's1');
+		let collection = setData.mock.calls.at(-1)?.[0] as {
+			features: Array<{ properties: Record<string, unknown> }>;
+		};
+		expect(collection.features).toHaveLength(2);
+		expect(collection.features.map((feature) => feature.properties)).toEqual([
+			expect.objectContaining({ id: 's2', selected: 1, hovered: 0 }),
+			expect.objectContaining({ id: 's1', selected: 0, hovered: 1 }),
 		]);
+
+		setStopException(map, stopsById, 's2', 's2');
+		collection = setData.mock.calls.at(-1)?.[0] as typeof collection;
+		expect(collection.features).toHaveLength(1);
+		expect(collection.features[0]?.properties).toEqual(
+			expect.objectContaining({ id: 's2', selected: 1, hovered: 0 }),
+		);
 	});
 });

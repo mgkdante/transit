@@ -15,6 +15,8 @@ describe('MapDetailAlerts', () => {
 			.closest('[data-component="state-notice"]');
 		expect(notice).toHaveAttribute('data-presentation', 'silo');
 		expect(notice).toHaveAttribute('data-tone', 'positive');
+		expect(notice).not.toHaveAttribute('role', 'status');
+		expect(notice).not.toHaveAttribute('aria-live');
 	});
 
 	it('renders unavailable alert data as a neutral notice, never a healthy zero', () => {
@@ -27,6 +29,8 @@ describe('MapDetailAlerts', () => {
 			.closest('[data-component="state-notice"]');
 		expect(notice).toHaveAttribute('data-presentation', 'silo');
 		expect(notice).toHaveAttribute('data-tone', 'neutral');
+		expect(notice).not.toHaveAttribute('role', 'status');
+		expect(notice).not.toHaveAttribute('aria-live');
 		expect(screen.queryByText('No alerts attached')).not.toBeInTheDocument();
 	});
 
