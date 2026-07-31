@@ -109,7 +109,6 @@
 
 	$effect(() => {
 		const element = frameElement;
-		responsive.mode;
 		if (!element) return;
 		measure();
 		if (typeof ResizeObserver === 'undefined') return;
