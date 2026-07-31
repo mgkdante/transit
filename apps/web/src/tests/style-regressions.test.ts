@@ -11,9 +11,9 @@
 // `lib/features/{map,lines}`; stage B cleared everything else —
 // `lib/components/**` (ui/brand/dataviz edge, shared, shell, layout, surface,
 // map canvas), `routes/**`, and the remaining `lib/features/**` surfaces. The
-// guard now runs over the whole component + route tree with an EMPTY allowlist
-// (§C4: "Allowlists start and stay EMPTY."). The FORBIDDEN table is site-final
-// and must never grow an exception.
+// guard now runs over the whole component + route tree. Slice 040's binding
+// owner directive restores one exact full-width footer divider; that declaration
+// is inventory-pinned below while every other hit remains forbidden.
 //
 // FROZEN EXEMPTION (§C4 P8): the P5.2 chart marks under
 // `lib/components/dataviz/chart/marks/**` are FROZEN — the sweep does not touch
@@ -88,6 +88,8 @@ const FORBIDDEN_ROOTS = ['src/lib/components', 'src/lib/features', 'src/routes']
 // 'src/lib/components' root a mark reads 'src/dataviz/chart/marks/…'); match on
 // the directory segment to stay independent of which root produced the hit.
 const FROZEN_MARKS_SEGMENT = 'dataviz/chart/marks/';
+const OWNER_DIRECTED_FOOTER_DIVIDER = 'src/layout/Footer.svelte';
+const OWNER_DIRECTED_FOOTER_DECLARATION = 'border-top: 2px solid var(--border-rule-accent)';
 
 const RAW_TABLE: ForbiddenPattern = {
 	pattern: /<table(?:\s|>)/,
@@ -119,6 +121,18 @@ const TO_MIGRATE_2026_07_30 = [
 	'src/schedule/ScheduleTable.svelte',
 ] as const;
 
+it('pins the owner-directed footer divider as the only P7 stripe in Footer.svelte', () => {
+	const source = readFileSync(
+		resolve(process.cwd(), 'src/lib/components/layout/Footer.svelte'),
+		'utf8',
+	);
+	const stripePattern = new RegExp(FORBIDDEN[0].pattern.source, 'g');
+	const statusRule = source.match(/\.footer-status-border\s*\{([^}]*)\}/)?.[1] ?? '';
+
+	expect(source.match(stripePattern)).toHaveLength(1);
+	expect(statusRule.replace(/\s+/g, ' ').trim()).toBe(`${OWNER_DIRECTED_FOOTER_DECLARATION};`);
+});
+
 describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 	for (const rel of FORBIDDEN_ROOTS) {
 		const root = resolve(process.cwd(), rel);
@@ -126,8 +140,11 @@ describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 		describe(rel, () => {
 			const results = styleRegressionViolations({ root, forbidden: FORBIDDEN }).map((r) => ({
 				...r,
-				// Drop frozen-marks hits (§C4 P8) — the sweep never edits those files.
-				hits: r.hits.filter((h) => !h.includes(FROZEN_MARKS_SEGMENT)),
+				hits: r.hits.filter(
+					(h) =>
+						!h.includes(FROZEN_MARKS_SEGMENT) &&
+						!(r.reason === FORBIDDEN[0].reason && h === OWNER_DIRECTED_FOOTER_DIVIDER),
+				),
 			}));
 
 			it('scans a non-empty tree (guards against a wrong path)', () => {
