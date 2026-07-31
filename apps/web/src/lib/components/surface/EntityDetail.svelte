@@ -393,15 +393,6 @@
 		}
 	}
 
-	/* Detail-head rhythm: the framing
-	   sentence under the display title — muted, subheading-scale, ~52ch measure,
-	   matching the Masthead lede so line/stop/trip heads read identically. */
-	.surface-detail-lede {
-		color: var(--muted-foreground);
-		font-size: var(--text-subheading);
-		line-height: 1.6;
-		max-width: 52ch;
-	}
 	/* Always-visible verdict banner (§C5.4/§C5.6) between the head and the tabs —
 	   quiet spacing so the VerdictBanner reads as its own register above the tab strip. */
 	.surface-banner {
