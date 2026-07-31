@@ -24,6 +24,7 @@ const layerModulesSource = readFileSync(
 	'utf-8',
 );
 const script = source.match(/<script(?:\s[^>]*)?>\r?\n([\s\S]*?)\r?\n<\/script>/u)?.[1];
+const mapStage = source.match(/<MapStage[\s\S]*?\/>/u)?.[0];
 
 describe('MapHero orchestrator — structural law', () => {
 	it('keeps the script block at or below the 1,107-line ratchet', () => {
@@ -53,8 +54,19 @@ describe('MapHero orchestrator — structural law', () => {
 	it('keeps the hydration-safe layout snapshot independent of the hydration-flipping store', () => {
 		const fitPaddingBlock = source.match(/const mapFitPadding = \$derived[\s\S]*?\);/)?.[0] ?? '';
 		expect(source).toContain('let isDesktopLayout = $state(isDesktopViewport())');
-		expect(fitPaddingBlock).toContain('isDesktopLayout && fitWidthPx > 0');
+		expect(fitPaddingBlock).toContain('deriveMapFitPadding(isDesktopLayout, mapWidthPx)');
 		expect(fitPaddingBlock).not.toContain('layout.isDesktop');
+	});
+
+	it('wires hot-first-paint loading and extracted camera framing into MapStage', () => {
+		expect(mapStage).toBeDefined();
+		expect(mapStage).toContain('basemapLoader={() => getBasemap()}');
+		expect(mapStage).not.toContain('basemap={');
+		expect(mapStage).toContain('center={mapInitialCenter}');
+		expect(mapStage).toContain('bounds={ISLAND_FIT_BOUNDS}');
+		expect(mapStage).toContain('maxBounds={MAP_MAX_BOUNDS}');
+		expect(mapStage).toContain('fitPadding={mapFitPadding}');
+		expect(mapStage).not.toContain('layout.isDesktop');
 	});
 
 	it('composes the extracted children (a thin orchestrator, not a god-file)', () => {
