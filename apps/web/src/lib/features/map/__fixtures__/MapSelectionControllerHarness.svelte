@@ -6,6 +6,13 @@
 	}
 
 	let { controller }: Props = $props();
+
+	// S5-385 B2: the inline template read shares ONE effect with the other
+	// outputs, so a co-updating rune masks a de-runed stack. This $derived's
+	// only dependency is the stack itself — it goes stale (and the pin red)
+	// unless stack is genuinely reactive. Mirrors MapHero's real consumption
+	// (const selectionStack = $derived(selectionController.stack)).
+	const stackSize = $derived(controller.stack.length);
 </script>
 
 <button type="button" onclick={() => controller.selectPicked({ kind: 'stop', id: 'stop-1' })}>
@@ -27,4 +34,4 @@
 
 <output data-testid="selected">{controller.selected?.id ?? ''}</output>
 <output data-testid="hovered">{controller.hovered?.id ?? ''}</output>
-<output data-testid="stack-size">{controller.stack.length}</output>
+<output data-testid="stack-size">{stackSize}</output>

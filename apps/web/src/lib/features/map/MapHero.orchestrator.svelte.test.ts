@@ -34,6 +34,20 @@ const selectionLeaseEffect = script?.match(
 const browserApiAccess =
 	/\b(?:navigator\s*(?:\.\s*geolocation|\[\s*['"]geolocation['"]\s*\])|(?:globalThis|window)\s*(?:\.\s*fetch|\[\s*['"]fetch['"]\s*\])|fetch\s*\()/gu;
 
+// S5-385 B1: the shape-based regex above stays for the exact-count pin on the
+// sanctioned literal, but the OUTSIDE check guards the raw identifiers over
+// the comment/CSS-stripped WHOLE file — optional chaining, destructuring,
+// computed/template access, bare references, and markup attributes all carry
+// the identifier even when they dodge the access shape.
+function codeOnly(text: string): string {
+	return text
+		.replace(/<style[\s\S]*?<\/style>/gu, '')
+		.replace(/<!--[\s\S]*?-->/gu, '')
+		.replace(/\/\*[\s\S]*?\*\//gu, '')
+		.replace(/(^|[^:'"`\\])\/\/.*$/gmu, '$1');
+}
+const forbiddenIdentifiers = /\b(?:navigator|geolocation|fetch)\b/gu;
+
 describe('MapHero orchestrator — structural law', () => {
 	it('keeps the script block at or below the 872-line ratchet', () => {
 		expect(script).toBeDefined();
@@ -114,8 +128,17 @@ describe('MapHero orchestrator — structural law', () => {
 			"navigator['geolocation']",
 		]);
 
-		const outsideDependencies = script!.replace(nearMeDependencies![0], '');
-		expect(outsideDependencies.match(browserApiAccess)).toEqual(null);
+		expect(codeOnly(nearMeDependencies![1]).match(forbiddenIdentifiers)).toEqual([
+			'fetch',
+			'fetch',
+			'navigator',
+			'navigator',
+			'geolocation',
+		]);
+
+		// The WHOLE source (script + markup), not just the script block.
+		const outsideDependencies = codeOnly(source.replace(nearMeDependencies![0], ''));
+		expect(outsideDependencies.match(forbiddenIdentifiers)).toEqual(null);
 	});
 
 	it('wires M1 live resilience at the registry and map call sites without widening consumers', () => {
