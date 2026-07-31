@@ -137,7 +137,6 @@
 	}
 	.caption {
 		margin: 0;
-		max-width: 52ch;
 		font-family: var(--font-mono);
 		font-size: var(--text-detail-body-mobile);
 		line-height: 1.5;

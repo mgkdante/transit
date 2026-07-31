@@ -112,7 +112,7 @@
 
 	.listing-header-subtitle {
 		margin: 0.35rem 0 0;
-		max-width: 70ch;
+		max-width: var(--measure-body);
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		color: var(--accent-text);
@@ -123,7 +123,7 @@
 
 	.listing-header-description {
 		margin: 0.375rem 0 0;
-		max-width: 65ch;
+		max-width: var(--measure-body);
 		font-size: var(--text-small);
 		color: var(--muted-foreground);
 		line-height: 1.4;

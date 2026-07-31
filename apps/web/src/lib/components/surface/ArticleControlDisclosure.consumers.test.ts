@@ -73,7 +73,8 @@ const immutableListings = [
 	},
 	{
 		file: 'src/lib/features/stops/StopsIndex.svelte',
-		markupSha256: 'b627383a127e6e55825f054ab8bba90f6da9c3d389621ba6ab5bfbe66ab449d4',
+		// WS4 rebases the whole post-script lock after deleting the StopsIndex prose cap.
+		markupSha256: '2a3f371e08911eb8c6234d3381823df1c44482648c90485bc4209dc70bb478d7',
 	},
 ] as const;
 

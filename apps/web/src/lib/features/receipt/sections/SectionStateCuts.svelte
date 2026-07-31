@@ -109,7 +109,7 @@
 		gap: 0.875rem;
 	}
 	.receipt-states-hero {
-		max-width: 24rem;
+		max-width: var(--measure-notice);
 	}
 	.receipt-states-split {
 		display: flex;

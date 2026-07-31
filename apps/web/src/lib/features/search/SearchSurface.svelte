@@ -663,7 +663,7 @@
 		color: var(--muted-foreground);
 		font-size: var(--text-small);
 		line-height: 1.5;
-		max-width: 40ch;
+		max-width: var(--measure-notice);
 	}
 
 	.search-results {

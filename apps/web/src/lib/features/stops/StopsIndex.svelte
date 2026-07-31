@@ -535,7 +535,6 @@
 		color: var(--foreground);
 	}
 	.stops-browse-head p {
-		max-width: 65ch;
 		font-size: var(--text-small);
 		line-height: 1.5;
 		color: var(--muted-foreground);

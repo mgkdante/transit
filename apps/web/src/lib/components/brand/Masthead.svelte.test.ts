@@ -119,8 +119,8 @@ describe('Masthead — vertical zone order', () => {
 });
 
 describe('Masthead — lede measure + tape (source contract)', () => {
-	it('caps the lede to the ~52ch surface reading measure', () => {
-		expect(mastheadSource()).toMatch(/\.masthead-lede\s*\{[^}]*max-width:\s*52ch/);
+	it('caps the lede with the shared lede measure', () => {
+		expect(mastheadSource()).toMatch(/\.masthead-lede\s*\{[^}]*max-width:\s*var\(--measure-lede\)/);
 	});
 
 	it('reuses the hazard Separator (does not reinvent the tape)', () => {

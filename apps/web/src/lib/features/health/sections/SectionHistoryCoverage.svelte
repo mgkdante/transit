@@ -146,7 +146,6 @@
 	}
 	.coverage-note {
 		margin: 0;
-		max-width: 68ch;
 		color: var(--muted-foreground);
 		font-size: var(--text-detail-body-mobile);
 		line-height: 1.8;

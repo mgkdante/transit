@@ -114,7 +114,6 @@
 <style>
 	.health-note--gate {
 		font-family: var(--font-mono);
-		max-width: 72ch;
 	}
 
 	.lanes-list {
@@ -212,6 +211,5 @@
 		font-size: var(--text-small);
 		line-height: 1.5;
 		color: var(--muted-foreground);
-		max-width: 60ch;
 	}
 </style>
