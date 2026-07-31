@@ -989,7 +989,6 @@
 	/* What the excess-wait magnitude encodes (0 = on schedule, not missing). */
 	.shift-caption {
 		margin: 0;
-		max-width: 52ch;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.4;
@@ -1039,7 +1038,6 @@
 	}
 	.compare-caption {
 		margin: 0;
-		max-width: 52ch;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.4;
@@ -1149,7 +1147,6 @@
 	/* What the first/last-trip endpoint markers encode (early ▼ / late ▲). */
 	.span-caption {
 		margin: 0;
-		max-width: 52ch;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.4;
