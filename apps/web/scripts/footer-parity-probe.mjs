@@ -274,7 +274,12 @@ async function collectFooterGeometry(page) {
 			let candidate;
 			while ((candidate = walker.nextNode())) {
 				for (const found of (candidate.textContent ?? '').matchAll(new RegExp(pattern, 'g'))) {
-					matches.push({ node: candidate, start: found.index, end: found.index + found[0].length, value: found[0] });
+					matches.push({
+						node: candidate,
+						start: found.index,
+						end: found.index + found[0].length,
+						value: found[0],
+					});
 				}
 			}
 			if (matches.length !== 1) {
