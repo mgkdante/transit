@@ -213,7 +213,9 @@ describe('HotspotSection evidence presentation', () => {
 		).not.toBeNull();
 
 		const zeroRow = within(table).getByText('Zéro servi').closest('tr') as HTMLTableRowElement;
-		expect(zeroRow).toHaveTextContent('0');
+		expect(
+			within(zeroRow.querySelector('[data-column="readings"]') as HTMLElement).getByText('0'),
+		).toBeInTheDocument();
 		expect(zeroRow.querySelector('[data-slot="absent-value"]')).toBeNull();
 	});
 
