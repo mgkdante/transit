@@ -63,13 +63,13 @@
 		setNearTarget,
 		nearestStops,
 		centerFromProviderBbox,
+		liveTtlS,
 		type LatLon,
 		type MapFitPadding,
 		type WithDistance,
 		type VehicleMotionController,
 		type FixResolver,
 	} from '$lib/components/map';
-	import { liveTtlS } from '$lib/components/map/vehicleSilence';
 	import { createShapeCacheManager } from './mapShapeCache';
 	import { vehicleAbsence } from './vehicleAbsence';
 	import { sharedClock, motionMode } from '$lib/stores';
@@ -135,23 +135,23 @@
 	// Hero width — window-reactive ONLY. The fit-padding fraction math runs off the
 	// WHOLE-HERO clientWidth. The map is full-bleed (it fills the hero), and every
 	// panel OVERLAYS it (absolute), so dragging or collapsing a panel never changes
-	// the hero width — the fit padding stays STABLE and MapStage's fitPadding effect
-	// never re-fits. Only a genuine viewport resize changes mapWidthPx. Seeded with a
-	// desktop default so the fraction padding applies even before the first
-	// clientWidth measurement (a 0 here would fall back to the wide fit).
+	// the hero width — the fit padding stays STABLE and MapStage never re-fits for
+	// a panel interaction. A genuine viewport resize changes mapWidthPx and re-derives
+	// the padding. Seeded with a desktop default so the fraction applies before the
+	// first clientWidth measurement (a 0 here would fall back to the wide fit).
 	let mapWidthPx = $state(1280);
 	const fitWidthPx = $derived(mapWidthPx);
 
-	// Layout snapshot for the CAMERA-AFFECTING derivation (mapFitPadding). Resolved
-	// ONCE up front from matchMedia (`isDesktopViewport()`, SSR-safe → false on the
+	// Hydration-safe `isDesktopLayout` snapshot for the CAMERA-AFFECTING mapFitPadding.
+	// Seeded up front from matchMedia (`isDesktopViewport()`, SSR-safe → false on the
 	// server) and refreshed only on a GENUINE viewport resize in onMount — NOT off the
 	// shared `layout.isDesktop` store. The store flips false→true during hydration (it
 	// reads `false` on the server), and the map's fitPadding effect re-runs fitBounds on
 	// any padding change, so deriving the padding off that store would re-fit and SHIFT
-	// the camera on the first paint. A matchMedia read at init is already the real value
-	// client-side, so the very first padding is correct and the camera fits once. The
-	// store still drives the non-camera chrome branches below (hover peek, the detail
-	// pane gate, motion control).
+	// the camera on first paint. A matchMedia read at init gives the real client value;
+	// mapFitPadding still re-derives on real width or breakpoint changes. The store
+	// drives only the non-camera chrome branches below (hover peek, the detail pane
+	// gate, motion control).
 	let isDesktopLayout = $state(isDesktopViewport());
 	onMount(() => {
 		if (typeof window === 'undefined') return;
@@ -191,8 +191,8 @@
 	let heroEl = $state<HTMLDivElement | null>(null);
 	let detailDragging = $state(false);
 	const detailResizeAria = $derived(t.detailResizeLabel);
-	// Reads the one-shot `isDesktopLayout` snapshot (not the hydration-flipping store)
-	// so the FIRST padding is already correct and the camera fits exactly once.
+	// Reads the hydration-safe `isDesktopLayout` snapshot (not the hydration-flipping
+	// store); both it and fitWidthPx can change on a genuine viewport resize.
 	const mapFitPadding = $derived<MapFitPadding>(
 		isDesktopLayout && fitWidthPx > 0
 			? {
@@ -1127,7 +1127,7 @@
 	}
 </script>
 
-<!-- The map canvas + its framing vignette. The hero renders exactly ONE MapStage
+<!-- The map canvas. The hero renders exactly ONE MapStage
      (one GL context, one onready). Because the detail/filter/rail panels all OVERLAY
      the map (absolute) rather than sit in its flow, opening/closing/dragging any of
      them never remounts the GL context and never changes the map's size — the canvas
@@ -1154,10 +1154,7 @@
 		onstyleload={onMapStyleLoad}
 		label={t.mapLabel}
 	/>
-
-	<!-- Edge framing: a token-driven vignette so the full-bleed canvas reads as a
-	     deliberate composition (panes float over it) rather than a raw GL square. -->
-	<div class="map-vignette" aria-hidden="true"></div>
+	<!-- The live framing vignette stays in MapSurfaceCanvasLayer. -->
 {/snippet}
 
 {#snippet detailPanel()}

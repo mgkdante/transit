@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { STALE_CUTOFF_S } from '$lib/components/map/vehicleProjection';
+import { STALE_CUTOFF_S } from '$lib/components/map';
 import type { Vehicle } from '$lib/v1/schemas';
 import type { MapSelectionDetail } from './mapSelection';
 import { vehicleAbsence } from './vehicleAbsence';
