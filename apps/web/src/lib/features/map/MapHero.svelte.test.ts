@@ -42,6 +42,14 @@ const harness = vi.hoisted(() => {
 			return Reflect.get(target, property, receiver);
 		},
 	});
+	const vehicle = {
+		id: 'bus-1',
+		lat: 45.51,
+		lon: -73.57,
+		status: 'on_time' as const,
+		updated_utc: '2026-06-20T12:00:00Z',
+		route: '24',
+	};
 	const liveStore = {
 		vehicles: { generated_utc: '2026-06-20T12:00:00Z', vehicles: [] },
 		trips: null,
@@ -49,7 +57,7 @@ const harness = vi.hoisted(() => {
 		alerts: { generated_utc: '2026-06-20T12:00:00Z', alerts: [alert] },
 		network: null,
 		index: {
-			byVehicleId: new Map(),
+			byVehicleId: new Map([[vehicle.id, vehicle]]),
 			byTripId: new Map(),
 			byStopId: new Map(),
 			vehiclesByRoute: new Map(),
@@ -292,7 +300,7 @@ vi.mock('$lib/components/map', async () => {
 		addNearTargetSource: harness.addNearTargetSource,
 		addNearTargetLayer: harness.addNearTargetLayer,
 		setNearTarget: harness.setNearTarget,
-		nearestStops: () => [],
+		nearestStops: () => [{ ...harness.stops[0], distanceM: 100 }],
 		centerFromProviderBbox: () => [-73.72, 45.52],
 		liveTtlS: (ttl: number | null | undefined) => Math.max(1, ttl ?? 30),
 		routeDirectionVariants: () => [],
@@ -413,6 +421,40 @@ describe('MapHero near-me device location', () => {
 		harness.setPageUrl('http://localhost/map');
 	});
 
+	it('promotes a nearby-stop pick through the same filter and selection path as a map pick', async () => {
+		const position: GeolocationPosition = {
+			coords: {
+				latitude: 45.525686,
+				longitude: -73.594764,
+				accuracy: 12,
+				altitude: null,
+				altitudeAccuracy: null,
+				heading: null,
+				speed: null,
+				toJSON: () => ({}),
+			},
+			timestamp: Date.parse('2026-06-20T12:00:30Z'),
+			toJSON: () => ({}),
+		};
+		Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+		Object.defineProperty(navigator, 'geolocation', {
+			configurable: true,
+			value: { getCurrentPosition: vi.fn((success: PositionCallback) => success(position)) },
+		});
+
+		render(MapHero);
+		await fireEvent.click(screen.getByRole('button', { name: 'Stops near me' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+		await fireEvent.click(
+			await screen.findByRole('button', { name: /Sherbrooke \/ Saint-Denis/u }),
+		);
+
+		await waitFor(() => {
+			const target = String(harness.goto.mock.calls.at(-1)?.[0]);
+			expect(new URL(target, 'http://localhost/map').searchParams.get('stop')).toBe('stop-1');
+		});
+	});
+
 	it('retires a URL-adopted origin when the URL drops the near params (S5-377 B1 inverse)', async () => {
 		// A shared deep-link seeds the origin FROM the URL. That origin is owned
 		// by the URL (urlBacked) even though adopting it must not echo a write
@@ -504,6 +546,24 @@ describe('MapHero map-layer feed lifecycle', () => {
 });
 
 describe('MapHero mobile alert drilldown orchestrator', () => {
+	it('promotes a picked vehicle and its route through the real MapHero path (#37)', async () => {
+		render(MapHero);
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+
+		await waitFor(() => {
+			const target = String(harness.goto.mock.calls.at(-1)?.[0]);
+			const search = new URL(target, 'http://localhost/map').searchParams;
+			expect(search.get('route')).toBe('24');
+			expect(search.get('vehicle')).toBe('bus-1');
+		});
+		expect(
+			(await screen.findAllByRole('heading', { level: 2 })).some(
+				(heading) => heading.textContent === 'Route 24',
+			),
+		).toBe(true);
+	});
+
 	it('swaps custom detail in place, preserves alert identity, and restores Back without redirecting', async () => {
 		const documentPathBefore = window.location.pathname;
 		render(MapHero);

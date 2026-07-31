@@ -13,6 +13,7 @@
 	// MapHero suite's vi.mock factory. Going through $lib/components/map would
 	// cycle back into that factory while it is replacing the barrel's MapStage.
 	import { STOPS_LAYER } from '$lib/components/map/stopsLayer';
+	import { VEHICLE_BODY_LAYER } from '$lib/components/map/vehicleLayer';
 
 	interface Props {
 		class?: string;
@@ -27,6 +28,7 @@
 	type Handler = (e: unknown) => void;
 	const handlers = new SvelteMap<string, Handler[]>();
 	let pickCount = $state(0);
+	let pickLayer = STOPS_LAYER;
 
 	// A minimal fake MapLibre map: enough surface for installMapLayers /
 	// installMapInteractions / pickSelectionAt to run without WebGL.
@@ -48,11 +50,18 @@
 			);
 		},
 		getCanvas: () => fakeCanvas,
-		getLayer: (id: string) => (id === STOPS_LAYER ? { id } : undefined),
-		queryRenderedFeatures: () => [{ layer: { id: STOPS_LAYER }, properties: { id: 'stop-1' } }],
+		getLayer: (id: string) =>
+			id === STOPS_LAYER || id === VEHICLE_BODY_LAYER ? { id } : undefined,
+		queryRenderedFeatures: () => [
+			{
+				layer: { id: pickLayer },
+				properties: { id: pickLayer === STOPS_LAYER ? 'stop-1' : 'bus-1' },
+			},
+		],
 	};
 
-	function pick(): void {
+	function pick(nextLayer = STOPS_LAYER): void {
+		pickLayer = nextLayer;
 		pickCount += 1;
 		for (const handler of handlers.get('click') ?? []) {
 			handler({ point: { x: 10, y: 10 } });
@@ -69,7 +78,16 @@
 </script>
 
 <div class={className} data-testid="map-stage-stub" data-pick-count={pickCount}>
-	<button type="button" data-testid="map-stage-stub-pick" onclick={pick} hidden>pick</button>
+	<button type="button" data-testid="map-stage-stub-pick" onclick={() => pick()} hidden>pick</button
+	>
+	<button
+		type="button"
+		data-testid="map-stage-stub-pick-vehicle"
+		onclick={() => pick(VEHICLE_BODY_LAYER)}
+		hidden
+	>
+		pick vehicle
+	</button>
 	<button type="button" data-testid="map-stage-stub-style-load" onclick={styleLoad} hidden>
 		style load
 	</button>

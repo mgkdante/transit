@@ -215,6 +215,19 @@ describe('map near-me controller', () => {
 		expect(harness.focusOrigin).toHaveBeenCalledOnce();
 	});
 
+	it('ignores the URL echo of a typed-search origin without clearing or repeating work', () => {
+		const harness = createHarness();
+		harness.controller.query = 'Place des Arts';
+		harness.controller.setOrigin(target);
+		harness.readTarget.mockReturnValue(target);
+
+		harness.controller.syncFromUrl(new URLSearchParams('near=45.501000%2C-73.601000'));
+
+		expect(harness.controller.query).toBe('Place des Arts');
+		expect(harness.goto).toHaveBeenCalledOnce();
+		expect(harness.focusOrigin).toHaveBeenCalledOnce();
+	});
+
 	it('clears local state and only removes near-me params from the live URL', () => {
 		const harness = createHarness();
 		harness.controller.open = true;
