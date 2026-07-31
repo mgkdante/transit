@@ -24,6 +24,7 @@
 	import { curveMonotoneX } from 'd3-shape';
 	import { cn } from '$lib/utils';
 	import ChartFrame from '../ChartFrame.svelte';
+	import { structuralLabels } from '../structuralLabels';
 	import ChartLegend from '../../ChartLegend.svelte';
 	import type { LineSpec, LineSeries } from '../ChartSpec';
 
@@ -33,6 +34,7 @@
 	}
 
 	let { spec, class: className }: LineMarkProps = $props();
+	const structure = $derived(structuralLabels(spec.locale));
 
 	// Neutral default sequence — the first series is the value voice, the rest mute + dash
 	// so they stay distinct without a colour zoo. The selector may override per series.
@@ -142,7 +144,7 @@
 		<caption>{spec.title}</caption>
 		<thead>
 			<tr>
-				<th scope="col">{spec.xLabel ?? 'x'}</th>
+				<th scope="col">{spec.xLabel ?? structure.x}</th>
 				{#each spec.series as s (s.key)}<th scope="col">{s.label}</th>{/each}
 			</tr>
 		</thead>

@@ -15,6 +15,7 @@ import type { AlertBreakdownBucket, AlertHistoryEntry } from '$lib/v1/schemas/al
 import { SEVERITY_CODES, type SeverityCode } from '$lib/v1/schemas/types';
 import type { DateWindow, AlertAffects } from '$lib/filters';
 import { providerLocalDateKey } from '$lib/utils/time';
+import type { AlertDisplayResult } from '$lib/v1/alertDisplay';
 
 const SEVERITY_SET = new Set<string>(SEVERITY_CODES);
 
@@ -155,7 +156,7 @@ export interface AlertRowPeriod {
 export interface AlertRowVM {
 	readonly id: string;
 	readonly severity: SeverityCode;
-	readonly headline: string;
+	readonly headline: AlertDisplayResult;
 	/** ALL active windows, localized (>1 ⇒ the presenter lists them as N service windows). */
 	readonly periods: readonly AlertRowPeriod[];
 	readonly durationMin: number | null;
@@ -169,7 +170,7 @@ export interface AlertRowVM {
 /** Resolvers the surface injects so this module stays copy-free + DOM-free. */
 export interface AlertRowResolvers {
 	/** The locale-aware headline (alertDisplayText over a shaped Alert). */
-	readonly headline: (entry: AlertHistoryEntry) => string;
+	readonly headline: (entry: AlertHistoryEntry) => AlertDisplayResult;
 	/** A localized wall-clock for an ISO bound, or null when absent/invalid. */
 	readonly windowTime: (iso: string | null | undefined) => string | null;
 }

@@ -414,7 +414,7 @@
 
 	// --- ONE mapping pass -------------------------------------------------------
 	/** The headline for a history entry, via the SAME resolver the live surfaces use. */
-	function headline(entry: AlertHistoryEntry): string {
+	function headline(entry: AlertHistoryEntry) {
 		return alertDisplayText(entry, locale);
 	}
 	/** A localized wall-clock for a window bound, or null when absent/invalid. */
@@ -816,6 +816,7 @@
 											{overflow}
 											{logId}
 											copy={t}
+											{locale}
 											onToggle={() => (expanded = !expanded)}
 										/>
 									{/if}
