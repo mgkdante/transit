@@ -29,7 +29,7 @@
 {#snippet motionHeader()}
 	<MapMotionControl {locale} copy={t} />
 {/snippet}
-{#snippet mapControls(opts?: { collapsible?: boolean; onselect?: () => void })}
+{#snippet mapControls(opts?: { collapsible?: boolean })}
 	<MapFilters
 		{store}
 		{locale}
@@ -38,7 +38,6 @@
 		collapsible={opts?.collapsible ?? true}
 		controlsMode={true}
 		header={motionHeader}
-		onselect={opts?.onselect}
 	/>
 {/snippet}
 

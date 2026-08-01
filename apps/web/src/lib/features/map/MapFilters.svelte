@@ -1,35 +1,25 @@
-<!--
-  MapFilters — the combinable state filter for the live map (slice-9.3).
-
-  This IS the colour legend AND the filter: status + crowding chips, each a
-  COLOUR swatch + label (no shape glyph — shape is the entity key's job, colour
-  is state). Toggling a chip REPAINTS the matching buses in that state's colour
-  and HIDES the rest; status × crowding combine (AND). All state lives in the
-  URL via the shared filter store, so a filtered view is shareable +
-  deep-linkable from anywhere (`/map?status=late`).
-
-  DOCTRINE: chips show the dataviz state colour (status/occupancy scales);
-  --primary stays interactive-only (the active-chip ring/affordance).
--->
 <script lang="ts">
 	import BusFrontIcon from '@lucide/svelte/icons/bus-front';
-	import GaugeIcon from '@lucide/svelte/icons/gauge';
-	import MapPinnedIcon from '@lucide/svelte/icons/map-pinned';
 	import PanelLeftCloseIcon from '@lucide/svelte/icons/panel-left-close';
-	import PanelLeftOpenIcon from '@lucide/svelte/icons/panel-left-open';
 	import RouteIcon from '@lucide/svelte/icons/route';
 	import TicketIcon from '@lucide/svelte/icons/ticket';
-	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-	import UsersRoundIcon from '@lucide/svelte/icons/users-round';
 	import XIcon from '@lucide/svelte/icons/x';
+	import { onMount, tick, type Snippet } from 'svelte';
+	import { browser } from '$app/environment';
 	import type { AlertEntityKind, EntityKind, FilterStore } from '$lib/filters';
-	import { STATUS_CODES, OCCUPANCY_CODES } from '$lib/v1/schemas/types';
-	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
-	import { statusVar, occupancyVar } from '$lib/components/dataviz';
 	import type { Locale } from '$lib/i18n';
-	import { copy as MAP_COPY } from './map.copy';
-	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
+	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
+	import { OCCUPANCY_CODES, STATUS_CODES } from '$lib/v1/schemas/types';
+	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
+	import { occupancyVar, statusVar } from '$lib/components/dataviz';
+	import MapFilterGroup from './MapFilterGroup.svelte';
+	import type { MapFilterGroupKind } from './MapFilterGroup.svelte';
+	import MapFilterRail from './MapFilterRail.svelte';
 	import MarkerGlyph from './MarkerGlyph.svelte';
+	import { copy as MAP_COPY } from './map.copy';
+
+	const STORAGE_KEY = 'transit:controls-rail';
+	type RailTarget = 'motion' | MapFilterGroupKind;
 
 	interface Props {
 		store: FilterStore;
@@ -37,23 +27,11 @@
 		routes?: readonly RouteIndexEntry[];
 		stops?: readonly StopIndexEntry[];
 		collapsible?: boolean;
-		/**
-		 * When true the panel doubles as the mobile controls sheet: the title reads
-		 * `t.controlsTitle` ("Controls") instead of `t.filterTitle` ("Filter"),
-		 * reflecting that the motion toggle (passed via `header`) sits inside it.
-		 */
 		controlsMode?: boolean;
-		/**
-		 * Optional snippet rendered at the very TOP of the panel (above the
-		 * controls header). Used to pin the motion toggle to the top of the sheet.
-		 * Receives `collapsed` (true when the panel is the narrow icon-only rail,
-		 * i.e. `panelOpen === false`) so the toggle can shrink to its square form on
-		 * the collapsed desktop rail while staying full on the drawer.
-		 */
-		header?: import('svelte').Snippet<[boolean]>;
-		onselect?: () => void;
+		header?: Snippet<[boolean]>;
 		class?: string;
 	}
+
 	let {
 		store,
 		locale,
@@ -62,13 +40,23 @@
 		collapsible = true,
 		controlsMode = false,
 		header,
-		onselect,
 		class: className = '',
 	}: Props = $props();
+
+	let rootEl = $state<HTMLElement | null>(null);
 	let filterOpen = $state(true);
+	let markersOpen = $state(true);
+	let alertsOpen = $state(true);
+	let activeOpen = $state(false);
+	let statusOpen = $state(true);
+	let crowdingOpen = $state(true);
+	let previousSelectedCount = 0;
+
 	const t = $derived(MAP_COPY[locale]);
 	const panelTitle = $derived(controlsMode ? t.controlsTitle : t.filterTitle);
 	const panelOpen = $derived(!collapsible || filterOpen);
+	const presentation = $derived<'desktop' | 'drawer'>(collapsible ? 'desktop' : 'drawer');
+	const controlsId = $derived(`map-filter-controls-${presentation}`);
 	const collator = $derived(new Intl.Collator(locale, { numeric: true, sensitivity: 'base' }));
 	const routeById = $derived(new Map(routes.map((route) => [route.id, route])));
 	const stopById = $derived(new Map(stops.map((stop) => [stop.id, stop])));
@@ -84,26 +72,32 @@
 		Array.from(store.vehicles).sort((a, b) => collator.compare(a, b)),
 	);
 	const selectedTripIds = $derived(Array.from(store.trips).sort((a, b) => collator.compare(a, b)));
+	const selectedCount = $derived(
+		selectedRoutes.length +
+			selectedStops.length +
+			selectedVehicleIds.length +
+			selectedTripIds.length,
+	);
+	const filterCount = $derived(store.chips.length);
 	const entityOptions = $derived([
 		{ kind: 'bus', label: t.entityBus },
 		{ kind: 'stop', label: t.entityStop, stop: true },
-	] satisfies {
-		kind: EntityKind;
-		label: string;
-		stop?: boolean;
-	}[]);
+	] satisfies { kind: EntityKind; label: string; stop?: boolean }[]);
 	const alertOptions = $derived([
 		{ kind: 'has_alert', label: t.alertHas, aria: t.alertHasAria },
-	] satisfies {
-		kind: AlertEntityKind;
-		label: string;
-		aria: string;
-	}[]);
+	] satisfies { kind: AlertEntityKind; label: string; aria: string }[]);
 
-	function clearFilters(): void {
-		store.clear();
-		onselect?.();
-	}
+	onMount(() => {
+		if (!collapsible) return;
+		filterOpen = !readRailCollapsed();
+	});
+
+	$effect(() => {
+		const count = selectedCount;
+		if (count > 0 && previousSelectedCount === 0) activeOpen = true;
+		if (count === 0) activeOpen = false;
+		previousSelectedCount = count;
+	});
 
 	function fallbackRoute(id: string): RouteIndexEntry {
 		return { id, short: id, type: 3 };
@@ -122,768 +116,704 @@
 		return stop.code ? `${stop.name} · ${stop.code}` : stop.name;
 	}
 
-	function removeRoute(route: RouteIndexEntry): void {
+	function readRailCollapsed(): boolean {
+		if (!browser) return false;
+		try {
+			return localStorage.getItem(STORAGE_KEY) === 'true';
+		} catch {
+			return false;
+		}
+	}
+
+	function persistRailState(collapsed: boolean): void {
+		if (!browser) return;
+		try {
+			localStorage.setItem(STORAGE_KEY, String(collapsed));
+		} catch {
+			// Storage denial must not block the controls.
+		}
+	}
+
+	function setPanelOpen(open: boolean): void {
+		filterOpen = open;
+		if (collapsible) persistRailState(!open);
+	}
+
+	async function togglePanel(open: boolean): Promise<void> {
+		setPanelOpen(open);
+		await tick();
+		rootEl?.querySelector<HTMLElement>(open ? '.mf-toggle' : '.mf-rail-expand')?.focus();
+	}
+
+	function toggleGroup(kind: MapFilterGroupKind): void {
+		if (kind === 'markers') markersOpen = !markersOpen;
+		else if (kind === 'alerts') alertsOpen = !alertsOpen;
+		else if (kind === 'active') activeOpen = !activeOpen;
+		else if (kind === 'status') statusOpen = !statusOpen;
+		else crowdingOpen = !crowdingOpen;
+	}
+
+	function openGroup(kind: MapFilterGroupKind): void {
+		if (kind === 'markers') markersOpen = true;
+		else if (kind === 'alerts') alertsOpen = true;
+		else if (kind === 'active') activeOpen = true;
+		else if (kind === 'status') statusOpen = true;
+		else crowdingOpen = true;
+	}
+
+	async function activateRail(target: RailTarget): Promise<void> {
+		if (target !== 'motion') openGroup(target);
+		setPanelOpen(true);
+		await tick();
+		const selector =
+			target === 'motion'
+				? '[data-testid="map-motion-switch"]'
+				: `[data-filter-group="${target}"] .mf-group-trigger`;
+		rootEl?.querySelector<HTMLElement>(selector)?.focus();
+	}
+
+	async function focusAfterRemoval(): Promise<void> {
+		await tick();
+		rootEl?.querySelector<HTMLElement>('[data-filter-group="active"] .mf-group-trigger')?.focus();
+	}
+
+	async function clearFilters(): Promise<void> {
+		store.clear();
+		await tick();
+		if (presentation === 'drawer') {
+			rootEl
+				?.closest<HTMLElement>('[data-m6b-controls-drawer]')
+				?.querySelector<HTMLElement>('[data-testid="map-filter-done"]')
+				?.focus();
+			return;
+		}
+		const fallback = collapsible && !filterOpen ? '.mf-rail-expand' : '.mf-toggle';
+		rootEl?.querySelector<HTMLElement>(fallback)?.focus();
+	}
+
+	async function removeRoute(route: RouteIndexEntry): Promise<void> {
 		store.removeRoute(route.id);
-		onselect?.();
+		await focusAfterRemoval();
 	}
 
-	function removeStop(stop: StopIndexEntry): void {
+	async function removeStop(stop: StopIndexEntry): Promise<void> {
 		store.removeStop(stop.id);
-		onselect?.();
+		await focusAfterRemoval();
 	}
 
-	function removeVehicle(id: string): void {
+	async function removeVehicle(id: string): Promise<void> {
 		store.removeVehicle(id);
-		onselect?.();
+		await focusAfterRemoval();
 	}
 
-	function removeTrip(id: string): void {
+	async function removeTrip(id: string): Promise<void> {
 		store.removeTrip(id);
-		onselect?.();
+		await focusAfterRemoval();
 	}
 
 	function toggleStatus(code: (typeof STATUS_CODES)[number]): void {
 		store.toggleStatus(code);
-		onselect?.();
 	}
 
 	function toggleOccupancy(code: (typeof OCCUPANCY_CODES)[number]): void {
 		store.toggleOccupancy(code);
-		onselect?.();
 	}
 
 	function toggleEntity(kind: EntityKind): void {
 		store.toggleEntity(kind);
-		onselect?.();
 	}
 
 	function toggleAlert(kind: AlertEntityKind): void {
 		store.toggleAlert(kind);
-		onselect?.();
 	}
 </script>
 
 <div
+	bind:this={rootEl}
 	class="map-filters {className}"
 	data-open={panelOpen}
 	data-collapsible={collapsible}
 	data-controls={controlsMode}
+	data-presentation={presentation}
 	role="group"
 	aria-label={panelTitle}
 >
-	<div class="mf-controls">
-		<div class="mf-head">
-			{#if collapsible}
-				<button
-					type="button"
-					class="mf-toggle"
-					aria-expanded={filterOpen}
-					aria-label={panelTitle}
-					onclick={() => (filterOpen = !filterOpen)}
-				>
-					<span class="mf-toggle-icon" aria-hidden="true">
-						{#if filterOpen}
-							<PanelLeftCloseIcon size={15} strokeWidth={2.2} />
-						{:else}
-							<PanelLeftOpenIcon size={15} strokeWidth={2.2} />
-						{/if}
-					</span>
-					{#if filterOpen}
+	<div id={controlsId} class="mf-expanded" aria-hidden={!panelOpen} inert={!panelOpen}>
+		<div class="mf-controls">
+			<div class="mf-head">
+				{#if collapsible}
+					<button
+						type="button"
+						class="mf-toggle"
+						aria-expanded={filterOpen}
+						aria-controls={controlsId}
+						aria-label={t.controlsCollapse}
+						onclick={() => void togglePanel(false)}
+					>
+						<PanelLeftCloseIcon size={16} strokeWidth={2.25} aria-hidden="true" />
 						<span class="mf-title">{panelTitle}</span>
-					{/if}
-				</button>
-			{:else}
-				<span class="mf-title">{panelTitle}</span>
+					</button>
+				{:else}
+					<span class="mf-title">{panelTitle}</span>
+				{/if}
+				{#if filterCount > 0}
+					<span class="mf-head-count">{filterCount}</span>
+				{/if}
+				{#if !store.isEmpty}
+					<button type="button" class="mf-clear" onclick={() => void clearFilters()}>
+						<XIcon size={15} strokeWidth={2.35} aria-hidden="true" />
+						<span>{t.filterClear}</span>
+					</button>
+				{/if}
+			</div>
+			{#if header}
+				<div class="mf-header" data-testid="map-filter-header">
+					{@render header(!panelOpen)}
+				</div>
 			{/if}
 		</div>
-		{#if header}
-			<div class="mf-header" data-testid="map-filter-header">{@render header(!panelOpen)}</div>
-		{/if}
-		<div class="mf-clear-row">
-			<button
-				type="button"
-				class="mf-chip mf-clear"
-				data-active={!store.isEmpty}
-				disabled={store.isEmpty}
-				aria-label={t.filterClear}
-				onclick={clearFilters}
+
+		<div class="mf-body">
+			<MapFilterGroup
+				kind="markers"
+				label={t.legendTitle}
+				open={markersOpen}
+				{presentation}
+				ontoggle={() => toggleGroup('markers')}
 			>
-				<span class="mf-clear-icon" aria-hidden="true">
-					<XIcon size={13} strokeWidth={2.35} />
-				</span>
-				{#if panelOpen}
-					<span class="mf-chip-text mf-clear-text">{t.filterClear}</span>
-				{/if}
-			</button>
-		</div>
-	</div>
-
-	<div class="mf-body" data-testid={!panelOpen && collapsible ? 'map-filter-rail' : undefined}>
-		{#if selectedRoutes.length > 0}
-			<div class="mf-group">
-				<span class="mf-group-label" aria-label={t.modeRoutes}>
-					<span class="mf-group-badge mf-group-badge-routes" data-icon="routes" aria-hidden="true">
-						<RouteIcon size={13} strokeWidth={2.35} />
-					</span>
-					{#if panelOpen}
-						<span class="mf-label-text">{t.modeRoutes}</span>
-					{/if}
-				</span>
 				<div class="mf-chips">
-					{#each selectedRoutes as route (route.id)}
+					{#each entityOptions as item (item.kind)}
 						<button
 							type="button"
-							class="mf-chip mf-route-chip"
-							data-on="true"
-							aria-label="{t.routeRemove} {route.short}"
-							aria-pressed="true"
-							style="--chip:var(--accent-text)"
-							onclick={() => removeRoute(route)}
+							class="mf-chip mf-shape-chip"
+							data-on={store.entities.includes(item.kind)}
+							aria-label={item.label}
+							aria-pressed={store.entities.includes(item.kind)}
+							onclick={() => toggleEntity(item.kind)}
 						>
-							<span class="mf-swatch"></span>
-							{#if panelOpen}
-								<span class="mf-chip-text">{routeDisplay(route)}</span>
-							{/if}
+							<span class:mf-shape-stop={item.stop} class="mf-glyph">
+								<MarkerGlyph kind={item.kind} />
+							</span>
+							<span class="mf-chip-text">{item.label}</span>
 						</button>
 					{/each}
 				</div>
-			</div>
-		{/if}
+			</MapFilterGroup>
 
-		{#if selectedStops.length > 0}
-			<div class="mf-group">
-				<span class="mf-group-label" aria-label={t.modeStops}>
-					<span class="mf-group-badge mf-group-badge-stops" data-icon="stops" aria-hidden="true">
-						<MapPinnedIcon size={13} strokeWidth={2.35} />
-					</span>
-					{#if panelOpen}
-						<span class="mf-label-text">{t.modeStops}</span>
-					{/if}
-				</span>
+			<MapFilterGroup
+				kind="alerts"
+				label={t.modeAlerts}
+				open={alertsOpen}
+				{presentation}
+				ontoggle={() => toggleGroup('alerts')}
+			>
 				<div class="mf-chips">
-					{#each selectedStops as stop (stop.id)}
+					{#each alertOptions as item (item.kind)}
 						<button
 							type="button"
-							class="mf-chip mf-id-chip"
-							data-on="true"
-							aria-label="{t.stopRemove} {stop.code ?? stop.id}"
-							aria-pressed="true"
-							style="--chip:var(--accent)"
-							onclick={() => removeStop(stop)}
+							class="mf-chip mf-alert-chip"
+							data-on={store.alerts.includes(item.kind)}
+							aria-label={item.aria}
+							aria-pressed={store.alerts.includes(item.kind)}
+							style="--chip:var(--dataviz-severity-high)"
+							onclick={() => toggleAlert(item.kind)}
 						>
 							<span class="mf-swatch"></span>
-							{#if panelOpen}
-								<span class="mf-chip-text">{stopDisplay(stop)}</span>
-							{/if}
+							<span class="mf-chip-text">{item.label}</span>
 						</button>
 					{/each}
 				</div>
-			</div>
-		{/if}
+			</MapFilterGroup>
 
-		{#if selectedVehicleIds.length > 0}
-			<div class="mf-group">
-				<span class="mf-group-label" aria-label={t.modeVehicles}>
-					<span class="mf-group-badge mf-group-badge-buses" data-icon="buses" aria-hidden="true">
-						<BusFrontIcon size={13} strokeWidth={2.35} />
-					</span>
-					{#if panelOpen}
-						<span class="mf-label-text">{t.modeVehicles}</span>
+			<MapFilterGroup
+				kind="active"
+				label={t.activeTitle}
+				open={activeOpen}
+				{presentation}
+				count={selectedCount}
+				ontoggle={() => toggleGroup('active')}
+			>
+				<div class="mf-active-groups">
+					{#if selectedRoutes.length > 0}
+						<div class="mf-active-set">
+							<span class="mf-active-label"><RouteIcon size={13} />{t.modeRoutes}</span>
+							<div class="mf-chips">
+								{#each selectedRoutes as route (route.id)}
+									<button
+										type="button"
+										class="mf-chip"
+										data-on="true"
+										aria-label="{t.routeRemove} {route.short}"
+										aria-pressed="true"
+										style="--chip:var(--accent-text)"
+										onclick={() => void removeRoute(route)}
+									>
+										<span class="mf-swatch"></span>
+										<span class="mf-chip-text">{routeDisplay(route)}</span>
+									</button>
+								{/each}
+							</div>
+						</div>
 					{/if}
-				</span>
+					{#if selectedStops.length > 0}
+						<div class="mf-active-set">
+							<span class="mf-active-label">{t.modeStops}</span>
+							<div class="mf-chips">
+								{#each selectedStops as stop (stop.id)}
+									<button
+										type="button"
+										class="mf-chip"
+										data-on="true"
+										aria-label="{t.stopRemove} {stop.code ?? stop.id}"
+										aria-pressed="true"
+										style="--chip:var(--accent)"
+										onclick={() => void removeStop(stop)}
+									>
+										<span class="mf-swatch"></span>
+										<span class="mf-chip-text">{stopDisplay(stop)}</span>
+									</button>
+								{/each}
+							</div>
+						</div>
+					{/if}
+					{#if selectedVehicleIds.length > 0}
+						<div class="mf-active-set">
+							<span class="mf-active-label"><BusFrontIcon size={13} />{t.modeVehicles}</span>
+							<div class="mf-chips">
+								{#each selectedVehicleIds as vehicleId (vehicleId)}
+									<button
+										type="button"
+										class="mf-chip"
+										data-on="true"
+										aria-label="{t.vehicleRemove} {vehicleId}"
+										aria-pressed="true"
+										style="--chip:var(--primary)"
+										onclick={() => void removeVehicle(vehicleId)}
+									>
+										<span class="mf-swatch"></span>
+										<span class="mf-chip-text">{t.vehicleLabel} {vehicleId}</span>
+									</button>
+								{/each}
+							</div>
+						</div>
+					{/if}
+					{#if selectedTripIds.length > 0}
+						<div class="mf-active-set">
+							<span class="mf-active-label"><TicketIcon size={13} />{t.modeTrips}</span>
+							<div class="mf-chips">
+								{#each selectedTripIds as tripId (tripId)}
+									<button
+										type="button"
+										class="mf-chip"
+										data-on="true"
+										aria-label="{t.tripRemove} {tripId}"
+										aria-pressed="true"
+										style="--chip:var(--primary)"
+										onclick={() => void removeTrip(tripId)}
+									>
+										<span class="mf-swatch"></span>
+										<span class="mf-chip-text">{t.tripLabel} {tripId}</span>
+									</button>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				</div>
+			</MapFilterGroup>
+
+			<MapFilterGroup
+				kind="status"
+				label={t.modeStatus}
+				open={statusOpen}
+				{presentation}
+				ontoggle={() => toggleGroup('status')}
+			>
 				<div class="mf-chips">
-					{#each selectedVehicleIds as vehicleId (vehicleId)}
+					{#each STATUS_CODES as code (code)}
 						<button
 							type="button"
-							class="mf-chip mf-id-chip"
-							data-on="true"
-							aria-label="{t.vehicleRemove} {vehicleId}"
-							aria-pressed="true"
-							style="--chip:var(--primary)"
-							onclick={() => removeVehicle(vehicleId)}
+							class="mf-chip"
+							data-on={store.status.includes(code)}
+							aria-label={STATUS_LABELS[locale][code]}
+							aria-pressed={store.status.includes(code)}
+							style="--chip:{statusVar(code)}"
+							onclick={() => toggleStatus(code)}
 						>
 							<span class="mf-swatch"></span>
-							{#if panelOpen}
-								<span class="mf-chip-text">{t.vehicleLabel} {vehicleId}</span>
-							{/if}
-						</button>
-					{/each}
-				</div>
-			</div>
-		{/if}
-
-		{#if selectedTripIds.length > 0}
-			<div class="mf-group">
-				<span class="mf-group-label" aria-label={t.modeTrips}>
-					<span class="mf-group-badge mf-group-badge-trips" data-icon="trips" aria-hidden="true">
-						<TicketIcon size={13} strokeWidth={2.35} />
-					</span>
-					{#if panelOpen}
-						<span class="mf-label-text">{t.modeTrips}</span>
-					{/if}
-				</span>
-				<div class="mf-chips">
-					{#each selectedTripIds as tripId (tripId)}
-						<button
-							type="button"
-							class="mf-chip mf-id-chip"
-							data-on="true"
-							aria-label="{t.tripRemove} {tripId}"
-							aria-pressed="true"
-							style="--chip:var(--primary)"
-							onclick={() => removeTrip(tripId)}
-						>
-							<span class="mf-swatch"></span>
-							{#if panelOpen}
-								<span class="mf-chip-text">{t.tripLabel} {tripId}</span>
-							{/if}
-						</button>
-					{/each}
-				</div>
-			</div>
-		{/if}
-
-		<div class="mf-group">
-			<span class="mf-group-label" aria-label={t.modeStatus}>
-				<span class="mf-group-badge mf-group-badge-status" data-icon="status" aria-hidden="true">
-					<GaugeIcon size={13} strokeWidth={2.35} />
-				</span>
-				{#if panelOpen}
-					<span class="mf-label-text">{t.modeStatus}</span>
-				{/if}
-			</span>
-			<div class="mf-chips">
-				{#each STATUS_CODES as code (code)}
-					<button
-						type="button"
-						class="mf-chip"
-						data-on={store.status.includes(code)}
-						aria-label={STATUS_LABELS[locale][code]}
-						aria-pressed={store.status.includes(code)}
-						style="--chip:{statusVar(code)}"
-						onclick={() => toggleStatus(code)}
-					>
-						<span class="mf-swatch"></span>
-						{#if panelOpen}
 							<span class="mf-chip-text">{STATUS_LABELS[locale][code]}</span>
-						{/if}
-					</button>
-				{/each}
-			</div>
-		</div>
+						</button>
+					{/each}
+				</div>
+			</MapFilterGroup>
 
-		<div class="mf-group">
-			<span class="mf-group-label" aria-label={t.modeOccupancy}>
-				<span
-					class="mf-group-badge mf-group-badge-crowding"
-					data-icon="crowding"
-					aria-hidden="true"
-				>
-					<UsersRoundIcon size={13} strokeWidth={2.35} />
-				</span>
-				{#if panelOpen}
-					<span class="mf-label-text">{t.modeOccupancy}</span>
-				{/if}
-			</span>
-			<div class="mf-chips">
-				{#each OCCUPANCY_CODES as code (code)}
-					<button
-						type="button"
-						class="mf-chip"
-						data-on={store.occupancy.includes(code)}
-						aria-label={OCCUPANCY_LABELS[locale][code]}
-						aria-pressed={store.occupancy.includes(code)}
-						style="--chip:{occupancyVar(code)}"
-						onclick={() => toggleOccupancy(code)}
-					>
-						<span class="mf-swatch"></span>
-						{#if panelOpen}
+			<MapFilterGroup
+				kind="crowding"
+				label={t.modeOccupancy}
+				open={crowdingOpen}
+				{presentation}
+				ontoggle={() => toggleGroup('crowding')}
+			>
+				<div class="mf-chips">
+					{#each OCCUPANCY_CODES as code (code)}
+						<button
+							type="button"
+							class="mf-chip"
+							data-on={store.occupancy.includes(code)}
+							aria-label={OCCUPANCY_LABELS[locale][code]}
+							aria-pressed={store.occupancy.includes(code)}
+							style="--chip:{occupancyVar(code)}"
+							onclick={() => toggleOccupancy(code)}
+						>
+							<span class="mf-swatch"></span>
 							<span class="mf-chip-text">{OCCUPANCY_LABELS[locale][code]}</span>
-						{/if}
-					</button>
-				{/each}
-			</div>
-		</div>
-
-		<div class="mf-group">
-			<span class="mf-group-label" aria-label={t.legendTitle}>
-				<span class="mf-group-badge mf-group-badge-shapes" data-icon="shapes" aria-hidden="true">
-					<MapPinnedIcon size={13} strokeWidth={2.35} />
-				</span>
-				{#if panelOpen}
-					<span class="mf-label-text">{t.legendTitle}</span>
-				{/if}
-			</span>
-			<div class="mf-chips">
-				{#each entityOptions as item (item.kind)}
-					<button
-						type="button"
-						class="mf-chip mf-shape-chip"
-						data-on={store.entities.includes(item.kind)}
-						aria-label={item.label}
-						aria-pressed={store.entities.includes(item.kind)}
-						onclick={() => toggleEntity(item.kind)}
-					>
-						<span class:mf-shape-stop={item.stop} class="mf-glyph">
-							<MarkerGlyph kind={item.kind} />
-						</span>
-						{#if panelOpen}
-							<span class="mf-chip-text">{item.label}</span>
-						{/if}
-					</button>
-				{/each}
-			</div>
-		</div>
-
-		<div class="mf-group">
-			<span class="mf-group-label" aria-label={t.modeAlerts}>
-				<span class="mf-group-badge mf-group-badge-alerts" data-icon="alerts" aria-hidden="true">
-					<TriangleAlertIcon size={13} strokeWidth={2.35} />
-				</span>
-				{#if panelOpen}
-					<span class="mf-label-text">{t.modeAlerts}</span>
-				{/if}
-			</span>
-			<div class="mf-chips">
-				{#each alertOptions as item (item.kind)}
-					<button
-						type="button"
-						class="mf-chip mf-alert-chip"
-						data-on={store.alerts.includes(item.kind)}
-						aria-label={item.aria}
-						aria-pressed={store.alerts.includes(item.kind)}
-						style="--chip:var(--dataviz-severity-high)"
-						onclick={() => toggleAlert(item.kind)}
-					>
-						<span class="mf-swatch"></span>
-						{#if panelOpen}
-							<span class="mf-chip-text">{item.label}</span>
-						{/if}
-					</button>
-				{/each}
-			</div>
+						</button>
+					{/each}
+				</div>
+			</MapFilterGroup>
 		</div>
 	</div>
+
+	{#if collapsible && !panelOpen}
+		<div class="mf-rail-layer">
+			<MapFilterRail
+				copy={t}
+				activeCount={selectedCount}
+				hasFilters={!store.isEmpty}
+				{controlsId}
+				onexpand={() => void togglePanel(true)}
+				onactivate={(target) => void activateRail(target)}
+				onclear={() => void clearFilters()}
+			/>
+		</div>
+	{/if}
 </div>
 
 <style>
 	.map-filters {
 		--mf-control-size: 2rem;
-		--mf-header-control-size: 2rem;
-		--mf-badge-size: 1.4rem;
-		--mf-badge-icon-size: 0.82rem;
 		--mf-swatch-size: 0.7rem;
-		/* The structural hairline tint: a brand-warmed border that reads on both
-		   the dark board and the cool-slate paper. */
 		--mf-edge: color-mix(in srgb, var(--border) 82%, var(--primary) 18%);
-
+		position: relative;
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
 		width: 16rem;
 		max-width: calc(100vw - 2rem);
 		max-height: min(72dvh, calc(100dvh - 7rem));
-		padding: 0.5rem 0.75rem 0.75rem;
 		background: color-mix(in srgb, var(--card) 90%, transparent);
 		border: 1px solid var(--mf-edge);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
-		/* Map GL escape hatch (§C4 P4): blur(12px) not the global 16px — floats over
-		   the live WebGL canvas where 16px induces compositing jank. */
 		backdrop-filter: blur(12px) saturate(1.1);
 		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		overflow: hidden;
-		transition:
-			width var(--duration-slow) var(--ease-out),
-			background-color var(--duration-slow) var(--ease-out),
-			border-color var(--duration-slow) var(--ease-out);
+		transition-property: width;
+		transition-duration: var(--duration-slow);
+		transition-timing-function: var(--ease-out);
 	}
+
 	.map-filters[data-open='false'] {
-		width: 4.95rem;
+		width: 5.75rem;
+		transition-duration: var(--duration-normal);
 	}
-	/* Header slot — pins the inline motion toggle to the very top of the sheet on
-	   mobile, divided from the controls header below by the same hairline. */
-	.mf-header {
+
+	.mf-expanded {
 		display: flex;
+		width: 16rem;
+		max-height: inherit;
+		min-height: 0;
+		flex: none;
 		flex-direction: column;
-		min-width: 0;
-		padding-bottom: 0.5rem;
-		border-bottom: 1px solid color-mix(in srgb, var(--mf-edge) 70%, transparent);
+		gap: 0.75rem;
+		padding: 0.5rem 0.75rem 0.75rem;
+		opacity: 1;
+		transition-property: opacity;
+		transition-duration: var(--duration-fast);
+		transition-delay: 100ms;
+		transition-timing-function: var(--ease-out);
 	}
+
+	.map-filters[data-open='false'] .mf-expanded {
+		pointer-events: none;
+		opacity: 0;
+		transition: none;
+	}
+
+	.mf-rail-layer {
+		position: absolute;
+		inset: 0;
+	}
+
 	.mf-controls {
 		display: flex;
+		flex: none;
 		flex-direction: column;
 		gap: 0.5rem;
 		min-width: 0;
 		padding-bottom: 0.5rem;
 		border-bottom: 1px solid color-mix(in srgb, var(--mf-edge) 70%, transparent);
 	}
+
 	.mf-head {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		gap: 0.5rem;
+		gap: 0.375rem;
 		min-width: 0;
 	}
+
 	.mf-toggle {
 		display: flex;
 		align-items: center;
+		min-width: 0;
+		min-height: 44px;
 		gap: 0.5rem;
-		width: 100%;
-		min-height: 2rem;
-		padding: 0.25rem 0.375rem;
-		margin: -0.25rem -0.375rem;
-		color: var(--muted-foreground);
-		background: none;
-		border: none;
+		padding: 0.375rem 0.5rem;
+		color: var(--foreground);
+		background: transparent;
+		border: 0;
 		border-radius: var(--radius-sm);
 		cursor: pointer;
-		overflow: hidden;
-		transition:
-			color var(--duration-fast) var(--ease-default),
-			background-color var(--duration-fast) var(--ease-default);
 	}
-	.mf-toggle-icon {
-		display: inline-grid;
-		place-items: center;
-		width: 1.6rem;
-		height: 1.6rem;
-		flex: none;
-		/* Neutral collapse affordance, matching the other overlay panels (left rail +
-		   right detail): muted by default, foreground + muted bg on hover. NOT the
-		   brand orange — --primary stays the active-chip affordance, not chrome. */
-		color: var(--muted-foreground);
-		border-radius: var(--radius-sm);
-		transition:
-			color var(--duration-fast) var(--ease-default),
-			background-color var(--duration-fast) var(--ease-default);
-	}
-	.mf-toggle:hover {
-		color: var(--foreground);
-	}
-	.mf-toggle:hover .mf-toggle-icon {
-		color: var(--foreground);
+
+	.mf-toggle:hover,
+	.mf-toggle:focus-visible {
 		background: var(--muted);
 	}
+
 	.mf-title {
+		min-width: 0;
+		overflow: hidden;
 		font-family: var(--font-mono);
 		font-size: var(--text-mono);
 		font-weight: 600;
 		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--foreground);
-		overflow: hidden;
 		text-overflow: ellipsis;
+		text-transform: uppercase;
 		white-space: nowrap;
 	}
-	.mf-clear-row {
+
+	.mf-head-count {
+		display: inline-grid;
+		min-width: 1.4rem;
+		height: 1.4rem;
+		place-items: center;
+		margin-left: auto;
+		padding: 0 0.375rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-variant-numeric: tabular-nums;
+		color: var(--primary-foreground);
+		background: var(--primary);
+		border-radius: var(--radius-pill);
+	}
+
+	.mf-clear {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 44px;
+		gap: 0.25rem;
+		padding: 0.375rem 0.5rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-weight: 700;
+		color: var(--primary);
+		background: color-mix(in srgb, var(--primary) 9%, var(--muted) 91%);
+		border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border) 70%);
+		border-radius: var(--radius-pill);
+		cursor: pointer;
+	}
+
+	.mf-header {
 		display: flex;
 		min-width: 0;
+		flex-direction: column;
+		padding-top: 0.125rem;
 	}
+
 	.mf-body {
 		display: flex;
-		flex-direction: column;
-		gap: 0.875rem;
-		min-height: 0;
 		min-width: 0;
+		min-height: 0;
+		flex: 1 1 auto;
+		flex-direction: column;
+		gap: 0.5rem;
 		overflow-y: auto;
 		padding-right: 0.5rem;
+		scrollbar-color: color-mix(in srgb, var(--primary) 40%, var(--border) 60%) transparent;
 		scrollbar-gutter: stable;
 		scrollbar-width: thin;
-		scrollbar-color: color-mix(in srgb, var(--primary) 40%, var(--border) 60%) transparent;
 	}
+
 	.mf-body::-webkit-scrollbar {
 		width: 0.375rem;
 	}
-	.mf-body::-webkit-scrollbar-track {
-		background: transparent;
-	}
+
 	.mf-body::-webkit-scrollbar-thumb {
 		background: color-mix(in srgb, var(--primary) 32%, var(--border) 68%);
 		border-radius: var(--radius-pill);
 	}
-	.mf-body::-webkit-scrollbar-thumb:hover {
-		background: color-mix(in srgb, var(--primary) 48%, var(--border) 52%);
-	}
-	.mf-group {
-		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
-		min-width: 0;
-	}
-	.mf-group-label {
-		display: flex;
-		align-items: center;
-		gap: 0.375rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: 600;
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-		min-width: 0;
-		overflow: hidden;
-	}
-	.mf-label-text {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.map-filters[data-open='true'] .mf-group-label {
-		position: relative;
-	}
-	/* Hairline rule trailing the overline label fills the row — gives each
-	   section a confident, edge-to-edge demarcation without a heavy divider. */
-	.map-filters[data-open='true'] .mf-group-label::after {
-		content: '';
-		flex: 1;
-		height: 1px;
-		min-width: 0.5rem;
-		background: linear-gradient(
-			to right,
-			color-mix(in srgb, var(--mf-edge) 80%, transparent),
-			transparent
-		);
-	}
-	.mf-group-badge {
-		display: inline-grid;
-		place-items: center;
-		width: var(--mf-badge-size);
-		height: var(--mf-badge-size);
-		flex: none;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		line-height: 1;
-		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 14%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
-		border-radius: var(--radius-sm);
-	}
-	.mf-group-badge :global(svg) {
-		width: var(--mf-badge-icon-size);
-		height: var(--mf-badge-icon-size);
-	}
-	.mf-group-badge-status {
-		color: var(--dataviz-status-late);
-		background: color-mix(in srgb, var(--dataviz-status-late) 15%, transparent);
-		border-color: color-mix(in srgb, var(--dataviz-status-late) 32%, transparent);
-	}
-	.mf-group-badge-crowding {
-		color: var(--dataviz-occupancy-standing);
-		background: color-mix(in srgb, var(--dataviz-occupancy-standing) 16%, transparent);
-		border-color: color-mix(in srgb, var(--dataviz-occupancy-standing) 32%, transparent);
-	}
-	.mf-group-badge-shapes {
-		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 14%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 32%, transparent);
-	}
-	.mf-group-badge-alerts {
-		color: var(--dataviz-severity-high);
-		background: color-mix(in srgb, var(--dataviz-severity-high) 14%, transparent);
-		border-color: color-mix(in srgb, var(--dataviz-severity-high) 32%, transparent);
-	}
-	.mf-group-badge-routes {
-		color: var(--accent-text);
-		background: color-mix(in srgb, var(--accent-text) 14%, transparent);
-		border-color: color-mix(in srgb, var(--accent-text) 32%, transparent);
-	}
-	.mf-group-badge-stops {
-		color: var(--map-stop-fill);
-		background: color-mix(in srgb, var(--map-stop-fill) 14%, transparent);
-		border-color: color-mix(in srgb, var(--map-stop-fill) 32%, transparent);
-	}
-	.mf-group-badge-buses,
-	.mf-group-badge-trips {
-		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 14%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 32%, transparent);
-	}
+
 	.mf-chips {
 		display: grid;
+		min-width: 0;
 		grid-template-columns: minmax(0, 1fr);
 		gap: 0.375rem;
-		min-width: 0;
+		padding: 0 0.5rem 0.375rem 2.5rem;
 	}
+
 	.mf-chip {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
 		justify-content: flex-start;
 		width: 100%;
-		min-height: var(--mf-control-size);
+		min-height: 2rem;
+		gap: 0.5rem;
+		padding: 0.375rem 0.75rem 0.375rem 0.5rem;
+		overflow: hidden;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
-		padding: 0.375rem 0.75rem 0.375rem 0.5rem;
-		text-align: left;
 		color: var(--muted-foreground);
+		text-align: left;
 		background: color-mix(in srgb, var(--muted) 70%, transparent);
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-pill);
 		cursor: pointer;
-		overflow: hidden;
 		transition:
 			color var(--duration-fast) var(--ease-default),
 			border-color var(--duration-fast) var(--ease-default),
 			background-color var(--duration-fast) var(--ease-default),
 			box-shadow var(--duration-fast) var(--ease-default);
 	}
-	.map-filters[data-open='false'] .mf-chip {
-		justify-content: center;
-		gap: 0;
-		width: var(--mf-control-size);
-		height: var(--mf-control-size);
-		min-height: var(--mf-control-size);
-		margin-inline: auto;
-		padding: 0;
+
+	.mf-chip:hover {
+		color: var(--foreground);
+		background: color-mix(in srgb, var(--chip, var(--primary)) 12%, var(--muted) 88%);
+		border-color: color-mix(in srgb, var(--chip, var(--primary)) 48%, var(--border) 52%);
 	}
+
+	.mf-chip[data-on='true'] {
+		color: var(--foreground);
+		font-weight: 600;
+		background: color-mix(in srgb, var(--chip, var(--primary)) 20%, var(--card));
+		border-color: var(--chip, var(--primary));
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--chip, var(--primary)) 28%, transparent);
+	}
+
 	.mf-chip-text {
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.mf-clear {
-		--chip: var(--primary);
-		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 9%, var(--muted) 91%);
-		border-color: color-mix(in srgb, var(--primary) 30%, var(--border) 70%);
-	}
-	.mf-clear[data-active='false'] {
-		color: var(--muted-foreground);
-		background: color-mix(in srgb, var(--muted) 70%, transparent);
-		border-color: var(--border-subtle);
-		cursor: not-allowed;
-		opacity: 0.5;
-	}
-	.mf-clear-icon {
-		display: inline-grid;
-		place-items: center;
-		width: var(--mf-swatch-size);
-		height: var(--mf-swatch-size);
-		flex: none;
-	}
-	.mf-clear-icon :global(svg) {
-		width: var(--mf-swatch-size);
-		height: var(--mf-swatch-size);
-	}
-	.mf-chip:hover {
-		color: var(--foreground);
-		background: color-mix(in srgb, var(--chip, var(--primary)) 12%, var(--muted) 88%);
-		border-color: color-mix(in srgb, var(--chip, var(--primary)) 48%, var(--border) 52%);
-	}
-	.mf-chip:hover .mf-swatch {
-		box-shadow: 0 0 0 1px color-mix(in srgb, var(--chip) 65%, transparent);
-	}
-	.mf-clear:disabled:hover {
-		color: var(--muted-foreground);
-		background: color-mix(in srgb, var(--muted) 70%, transparent);
-		border-color: var(--border-subtle);
-	}
-	.mf-clear:disabled:hover .mf-clear-icon {
-		box-shadow: none;
-	}
-	.mf-chip:active {
-		transform: translateY(0.5px);
-	}
-	/* Active: the chip adopts its state colour — tinted fill, full-strength
-	   border, and a soft tonal ring so the "on" state reads at a glance. */
-	.mf-chip[data-on='true'] {
-		color: var(--foreground);
-		font-weight: 600;
-		background: color-mix(in srgb, var(--chip) 20%, var(--card));
-		border-color: var(--chip);
-		box-shadow:
-			inset 0 0 0 1px color-mix(in srgb, var(--chip) 35%, transparent),
-			0 0 0 1px color-mix(in srgb, var(--chip) 28%, transparent);
-	}
-	.mf-chip[data-on='true']:hover {
-		background: color-mix(in srgb, var(--chip) 26%, var(--card));
-	}
-	.mf-chip[data-on='true'] .mf-swatch {
-		box-shadow:
-			0 0 0 1px color-mix(in srgb, var(--chip) 70%, transparent),
-			0 0 6px color-mix(in srgb, var(--chip) 45%, transparent);
-	}
-	/* Colour swatch only — the chip's state is its hue, never a shape. */
+
 	.mf-swatch {
 		width: var(--mf-swatch-size);
 		height: var(--mf-swatch-size);
-		border-radius: 50%;
-		background: var(--chip);
-		box-shadow: 0 0 0 1px color-mix(in srgb, var(--chip) 50%, transparent);
 		flex: none;
-		transition: box-shadow var(--duration-fast) var(--ease-default);
+		background: var(--chip, var(--primary));
+		border-radius: 50%;
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--chip, var(--primary)) 55%, transparent);
 	}
+
 	.mf-glyph {
 		display: inline-grid;
-		place-items: center;
 		width: 1.4rem;
 		height: 1.4rem;
+		place-items: center;
 		padding: 0.125rem;
 		flex: none;
 		color: var(--primary);
-		/* Knocked-out parts (windshield / headlights / pin hole) read as cut-outs
-		   against the panel surface, mirroring the sprite's halo cut. */
 		--marker-glyph-cut: var(--card);
 		background: color-mix(in srgb, var(--primary) 16%, transparent);
 		border: 1px solid color-mix(in srgb, var(--primary) 36%, transparent);
 		border-radius: var(--radius-sm);
-		transition:
-			color var(--duration-fast) var(--ease-default),
-			background-color var(--duration-fast) var(--ease-default),
-			border-color var(--duration-fast) var(--ease-default);
 	}
+
 	.mf-shape-stop {
 		color: var(--map-stop-fill);
 		background: color-mix(in srgb, var(--map-stop-fill) 16%, transparent);
 		border-color: color-mix(in srgb, var(--map-stop-fill) 36%, transparent);
 	}
-	.mf-shape-chip:hover .mf-glyph {
-		background: color-mix(in srgb, var(--primary) 22%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 48%, transparent);
-	}
-	.mf-shape-chip:hover .mf-shape-stop {
-		background: color-mix(in srgb, var(--map-stop-fill) 22%, transparent);
-		border-color: color-mix(in srgb, var(--map-stop-fill) 48%, transparent);
-	}
-	.mf-shape-chip[data-on='true'] {
-		color: var(--foreground);
-		font-weight: 600;
-		background: color-mix(in srgb, var(--primary) 16%, var(--card));
-		border-color: color-mix(in srgb, var(--primary) 58%, transparent);
-		box-shadow:
-			inset 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent),
-			0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent);
-	}
-	/* Active keeps the pictogram in its entity hue (bus orange / stop fill) — the
-	   map shows the bus orange in every state, so the legend stays faithful; the
-	   "on" signal is the brighter glyph box + the chip's own border/ring. */
-	.mf-shape-chip[data-on='true'] .mf-glyph {
-		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 26%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 55%, transparent);
-	}
-	.mf-shape-chip[data-on='true'] .mf-shape-stop {
-		color: var(--map-stop-fill);
-		background: color-mix(in srgb, var(--map-stop-fill) 26%, transparent);
-		border-color: color-mix(in srgb, var(--map-stop-fill) 55%, transparent);
-	}
+
 	.mf-alert-chip {
 		--chip: var(--dataviz-severity-high);
 	}
+
+	.mf-active-groups {
+		display: grid;
+		gap: 0.625rem;
+	}
+
+	.mf-active-set {
+		display: grid;
+		gap: 0.25rem;
+	}
+
+	.mf-active-label {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		padding-left: 2.5rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-weight: 600;
+		color: var(--muted-foreground);
+		text-transform: uppercase;
+	}
+
+	.map-filters[data-presentation='drawer'] {
+		width: 100%;
+		max-width: none;
+		max-height: none;
+		background: transparent;
+		border: 0;
+		border-radius: 0;
+		box-shadow: none;
+		backdrop-filter: none;
+		-webkit-backdrop-filter: none;
+		overflow: visible;
+	}
+
+	.map-filters[data-presentation='drawer'] .mf-expanded {
+		width: 100%;
+		max-width: none;
+		max-height: none;
+		padding: 0;
+	}
+
+	.map-filters[data-presentation='drawer'] .mf-controls {
+		display: contents;
+	}
+
+	.map-filters[data-presentation='drawer'] .mf-head {
+		position: sticky;
+		top: 0;
+		z-index: 1;
+		padding: 0.75rem 1rem 0.625rem;
+		background: color-mix(in srgb, var(--card) 96%, transparent);
+		border-bottom: 1px solid color-mix(in srgb, var(--mf-edge) 70%, transparent);
+	}
+
+	.map-filters[data-presentation='drawer'] .mf-header {
+		padding: 0.5rem 1rem 0.625rem;
+		border-bottom: 1px solid color-mix(in srgb, var(--mf-edge) 70%, transparent);
+	}
+
+	.map-filters[data-presentation='drawer'] .mf-body {
+		overflow: visible;
+		padding: 0.5rem 0.5rem 0.75rem;
+		scrollbar-gutter: auto;
+	}
+
+	.map-filters[data-presentation='drawer'] .mf-chip {
+		min-height: 44px;
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.map-filters,
-		.mf-toggle,
-		.mf-toggle-icon,
-		.mf-chip,
-		.mf-swatch,
-		.mf-glyph {
+		.mf-expanded,
+		.mf-chip {
 			transition: none;
-		}
-		.mf-chip:active {
-			transform: none;
 		}
 	}
 </style>

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -7,8 +7,6 @@ import { motionMode } from '$lib/stores';
 import MapFilterPillHarness from './__fixtures__/MapFilterPillHarness.svelte';
 
 beforeEach(() => {
-	// MapMotionControl reads the persisted motionMode store; reset to the RAW
-	// default so the drawer's motion switch starts unchecked each test.
 	localStorage.clear();
 	motionMode.set('raw');
 });
@@ -18,97 +16,175 @@ afterEach(() => {
 });
 
 describe('MapFilterPill', () => {
-	it('opens the unified Controls drawer and reuses the shared controls snippet', async () => {
+	it('keeps four live filter mutations inside the Sheet until one Done close', async () => {
 		let pushed = '';
+		let writes = 0;
 		const store = createFilterStore(emptyFilterState(), (search) => {
 			pushed = search;
+			writes += 1;
 		});
 
 		render(MapFilterPillHarness, { props: { store, locale: 'en' } });
 
-		expect(screen.queryByTestId('map-filter-drawer')).not.toBeInTheDocument();
+		const trigger = screen.getByRole('button', { name: 'Controls 0' });
+		expect(trigger).not.toHaveAttribute('aria-label');
+		trigger.focus();
+		await fireEvent.click(trigger);
 
-		// The pill button reads "Controls" (the unified panel title), not "Filter".
-		await fireEvent.click(screen.getByRole('button', { name: /controls 0/i }));
-		const drawer = screen.getByTestId('map-filter-drawer');
-		expect(drawer).toBeInTheDocument();
+		const dialog = screen.getByRole('dialog', { name: 'Controls' });
+		expect(dialog).toHaveAttribute('aria-modal', 'true');
+		await waitFor(() => expect(screen.getByTestId('map-filter-drawer-title')).toHaveFocus());
 
-		// The drawer renders MapFilters in controlsMode (data-controls="true"), the
-		// motion header (data-testid="map-filter-header"), and the motion switch
-		// (data-testid="map-motion-switch") — all the unified Controls, inside the
-		// drawer, one source of truth with the desktop overlay.
-		const controls = drawer.querySelector('.map-filters');
-		expect(controls).toHaveAttribute('data-controls', 'true');
-		const header = drawer.querySelector('[data-testid="map-filter-header"]');
-		expect(header).toBeInTheDocument();
-		const motionSwitch = drawer.querySelector('[data-testid="map-motion-switch"]');
-		expect(motionSwitch).toBeInTheDocument();
-		// The motion switch sits inside the header at the very top of the drawer.
-		expect(header!.contains(motionSwitch)).toBe(true);
+		for (const name of ['Stop', 'Show markers with alerts', 'Late', 'Standing']) {
+			await fireEvent.click(within(dialog).getByRole('button', { name }));
+			expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
+		}
 
-		await fireEvent.keyDown(window, { key: 'Escape' });
-		expect(screen.queryByTestId('map-filter-drawer')).not.toBeInTheDocument();
-
-		// Re-open and apply a filter from inside the drawer: it pushes to the URL
-		// spine AND closes the drawer (the shared onselect wired by the pill).
-		await fireEvent.click(screen.getByRole('button', { name: /controls 0/i }));
-		expect(screen.getByTestId('map-filter-drawer')).toBeInTheDocument();
-
-		await fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
-		expect(pushed).toBe('entity=stop');
+		expect(pushed).toBe('status=late&occupancy=standing&entity=stop&alert=has_alert');
 		expect(store.entities).toEqual(['stop']);
-		expect(screen.queryByTestId('map-filter-drawer')).not.toBeInTheDocument();
+		expect(store.alerts).toEqual(['has_alert']);
+		expect(store.status).toEqual(['late']);
+		expect(store.occupancy).toEqual(['standing']);
+		expect(writes).toBe(4);
+
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
+		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+		expect(writes).toBe(4);
+		expect(screen.getByRole('button', { name: 'Controls 4' })).toHaveFocus();
 	});
 
-	it('flips the motion mode from inside the drawer (the toggle is part of the unified controls)', async () => {
+	it('moves focus to the Active disclosure after removal and to Done after Clear disappears', async () => {
 		const store = createFilterStore(emptyFilterState());
+		store.addRoute('161');
+		store.addStop('53355');
 
+		render(MapFilterPillHarness, {
+			props: {
+				store,
+				locale: 'en',
+				routes: [{ id: '161', short: '161', long: 'Van Horne', type: 3 }],
+				stops: [
+					{
+						id: '53355',
+						code: '53355',
+						name: 'Van Horne / Rockland',
+						lat: 45.52,
+						lon: -73.62,
+					},
+				],
+			},
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Controls 2' }));
+		const dialog = screen.getByRole('dialog', { name: 'Controls' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Remove route 161' }));
+		await waitFor(() =>
+			expect(within(dialog).getByRole('button', { name: /^Active/ })).toHaveFocus(),
+		);
+
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Clear' }));
+		expect(within(dialog).queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+		await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Done' })).toHaveFocus());
+		expect(dialog).toBeInTheDocument();
+	});
+
+	it('uses Sheet dismissal for Escape and the overlay, restoring the surviving trigger', async () => {
+		const store = createFilterStore(emptyFilterState());
+		render(MapFilterPillHarness, { props: { store, locale: 'en' } });
+		const trigger = screen.getByRole('button', { name: 'Controls 0' });
+
+		trigger.focus();
+		await fireEvent.click(trigger);
+		await fireEvent.keyDown(document, { key: 'Escape' });
+		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+		expect(trigger).toHaveFocus();
+
+		await fireEvent.click(trigger);
+		await waitFor(() => expect(screen.getByTestId('map-filter-drawer-title')).toHaveFocus());
+		await waitFor(() =>
+			expect(
+				(Reflect.get(globalThis, 'bitsDismissableLayers') as Map<unknown, unknown>)?.size,
+			).toBeGreaterThan(0),
+		);
+		const overlay = document.querySelector<HTMLElement>(
+			'[data-slot="sheet-overlay"]:has(+ [data-m6b-controls-drawer])',
+		);
+		expect(overlay).toBeInTheDocument();
+		await fireEvent.pointerDown(overlay!, {
+			button: 0,
+			clientX: 1,
+			clientY: 1,
+			pointerType: 'mouse',
+		});
+		await fireEvent.click(overlay!);
+		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+		expect(trigger).toHaveFocus();
+	});
+
+	it('flips motion without closing the unified drawer', async () => {
+		const store = createFilterStore(emptyFilterState());
 		render(MapFilterPillHarness, { props: { store, locale: 'en' } });
 
-		await fireEvent.click(screen.getByRole('button', { name: /controls 0/i }));
-		const motionSwitch = screen
-			.getByTestId('map-filter-drawer')
-			.querySelector<HTMLButtonElement>('[data-testid="map-motion-switch"]')!;
+		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
+		const dialog = screen.getByRole('dialog', { name: 'Controls' });
+		const motionSwitch = within(dialog).getByRole('switch', { name: 'Motion' });
 		expect(motionSwitch).toHaveAttribute('aria-checked', 'false');
 
-		motionSwitch.click();
+		await fireEvent.click(motionSwitch);
 		expect(motionMode.current).toBe('smooth');
+		expect(dialog).toBeInTheDocument();
 	});
 
-	it('can be hidden while the mobile detail sheet owns the bottom edge', () => {
+	it('can hide the mobile presentation while detail chrome owns the bottom edge', () => {
 		const store = createFilterStore(emptyFilterState());
-
 		render(MapFilterPillHarness, { props: { store, locale: 'en', hidden: true } });
-
 		expect(screen.queryByTestId('map-filter-pill')).not.toBeInTheDocument();
 	});
 
-	it('keeps the floating drawer inside a phone viewport with safe bottom spacing', () => {
+	it('pins the uniquely keyed portal geometry, animation, PRM, and single scroll owner', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/map/MapFilterPill.svelte'),
 			'utf-8',
 		);
 
-		expect(source).toMatch(/bottom:\s*var\(--map-mobile-control-bottom\)/);
+		expect(source).toContain('data-m6b-controls-drawer');
 		expect(source).toMatch(/left:\s*0\.75rem/);
-		expect(source).toMatch(/transform:\s*none/);
+		expect(source).toMatch(/right:\s*auto/);
+		expect(source).toMatch(
+			/bottom:\s*calc\(5\.25rem \+ env\(safe-area-inset-bottom, 0px\) \+ 44px \+ 10px\)/,
+		);
+		expect(source).toMatch(/width:\s*min\(21rem,\s*calc\(100vw - 2rem\)\)/);
 		expect(source).toMatch(/max-height:\s*min\(72dvh,\s*calc\(100dvh - 7rem\)\)/);
-		expect(source).toMatch(/bottom:\s*calc\(100% \+ 10px\)/);
-		expect(source).toMatch(/padding-bottom:\s*calc\(1rem \+ env\(safe-area-inset-bottom, 0px\)\)/);
+		expect(source).toMatch(/overflow-y:\s*auto/);
+		expect(source).toMatch(/data-state='open'[\s\S]*var\(--duration-slow\)/);
+		expect(source).toMatch(/data-state='closed'[\s\S]*var\(--duration-normal\)/);
+		expect(source).toMatch(/prefers-reduced-motion:\s*reduce/);
+		// The PRM suppression must repeat the data-state-qualified selectors: the
+		// keyed open/close animation rules are (0,3,0), so an unqualified (0,2,0)
+		// PRM rule is dead CSS and reduced-motion users get the full entrance/exit.
+		const prmBlock = source.slice(source.indexOf('prefers-reduced-motion'));
+		expect(prmBlock).toMatch(
+			/\[data-m6b-controls-drawer\]\[data-slot='sheet-content'\]\[data-state='open'\]/,
+		);
+		expect(prmBlock).toMatch(
+			/\[data-m6b-controls-drawer\]\[data-slot='sheet-content'\]\[data-state='closed'\]/,
+		);
+		expect(source).not.toMatch(/:global\(\[data-slot=['"]sheet-(?:content|overlay)['"]\]\)\s*[,{]/);
+		expect(source).not.toContain('<svelte:window');
+		expect(source).not.toContain('map-filter-drawer-backdrop');
 	});
 
-	it('hides the pill at the single 1024px map breakpoint (matches layout.isDesktop + the panel-hide)', () => {
+	it('keeps the pill breakpoint at 1024px while the stall swap remains a separate 768px rule', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/map/MapFilterPill.svelte'),
 			'utf-8',
 		);
 
-		// Unified breakpoint: the pill is gone at >= 1024px (desktop renders the left
-		// Controls overlay instead). No dead 760/761 band.
 		expect(source).toMatch(
 			/@media \(min-width: 1024px\)[\s\S]*\.map-filter-pill-container[\s\S]*display:\s*none/,
 		);
-		expect(source).not.toContain('min-width: 761px');
-		expect(source).not.toContain('760px');
+		expect(source).toMatch(
+			/@media \(max-width: 768px\)[\s\S]*data-global-stall='true'[\s\S]*display:\s*none/,
+		);
 	});
 });

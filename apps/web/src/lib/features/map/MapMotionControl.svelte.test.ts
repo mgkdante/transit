@@ -8,6 +8,8 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import MapMotionControl from './MapMotionControl.svelte';
 import { copy } from './map.copy';
 import { motionMode } from '$lib/stores';
@@ -49,19 +51,17 @@ describe('MapMotionControl', () => {
 		expect(screen.getByText(copy.en.motion.hintSmooth)).toBeInTheDocument();
 	});
 
-	it('aria-label names the OPPOSITE action (the press performs the switch)', async () => {
+	it('keeps the switch name stable while aria-checked carries state in both locales', async () => {
 		const { rerender } = render(MapMotionControl, { locale: 'en', copy: copy.en });
-		// RAW → label invites going to smooth.
-		expect(screen.getByTestId('map-motion-switch')).toHaveAttribute(
-			'aria-label',
-			copy.en.motion.toSmooth,
-		);
+		expect(screen.getByRole('switch', { name: 'Motion' })).toHaveAttribute('aria-checked', 'false');
 		motionMode.set('smooth');
 		await rerender({ locale: 'en', copy: copy.en });
-		// SMOOTH → label invites going back to raw.
-		expect(screen.getByTestId('map-motion-switch')).toHaveAttribute(
-			'aria-label',
-			copy.en.motion.toRaw,
+		expect(screen.getByRole('switch', { name: 'Motion' })).toHaveAttribute('aria-checked', 'true');
+
+		await rerender({ locale: 'fr', copy: copy.fr });
+		expect(screen.getByRole('switch', { name: 'Mouvement' })).toHaveAttribute(
+			'aria-checked',
+			'true',
 		);
 	});
 
@@ -137,7 +137,7 @@ describe('MapMotionControl', () => {
 		expect(sw).toHaveClass('map-motion-round');
 		// Outline (non-filled) = RAW/OFF by default.
 		expect(sw).toHaveAttribute('aria-checked', 'false');
-		expect(sw).toHaveAttribute('aria-label', copy.en.motion.toSmooth);
+		expect(sw).toHaveAttribute('aria-label', copy.en.motion.label);
 		expect(screen.queryByText(copy.en.motion.hintRaw)).not.toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: copy.en.motion.explain })).not.toBeInTheDocument();
 		// Clicking the round switch still toggles the store; re-render shows the filled state.
@@ -147,13 +147,24 @@ describe('MapMotionControl', () => {
 		expect(screen.getByTestId('map-motion-switch')).toHaveAttribute('aria-checked', 'true');
 	});
 
-	it('EXPANDED label row carries the motion badge icon next to the overline', () => {
+	it('removes the duplicate label id while keeping the visible motion badge row', () => {
 		render(MapMotionControl, { locale: 'en', copy: copy.en });
-		const label = document.getElementById('map-motion-label');
-		expect(label).not.toBeNull();
-		// The overline keeps its text AND gains a small badge glyph (a Lucide svg),
-		// mirroring how the filter sections badge their section labels.
+		const label = document.querySelector('.map-motion-label');
+		expect(document.querySelectorAll('#map-motion-label')).toHaveLength(0);
+		expect(screen.getByRole('switch', { name: 'Motion' })).not.toHaveAttribute('aria-labelledby');
 		expect(label).toHaveTextContent(copy.en.motion.label);
 		expect(label?.querySelector('svg')).not.toBeNull();
+	});
+
+	it('keeps both switch forms and the motion link in the hard-44 inventory under a 160px cap', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/map/MapMotionControl.svelte'),
+			'utf-8',
+		);
+
+		expect(source).toMatch(/\.map-motion\s*\{[^}]*max-height:\s*160px/s);
+		expect(source).toMatch(/\.map-motion-switch\s*\{[^}]*min-height:\s*44px/s);
+		expect(source).toMatch(/\.map-motion-round\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/s);
+		expect(source).toMatch(/\.map-motion-explain\s*\{[^}]*min-height:\s*44px/s);
 	});
 });

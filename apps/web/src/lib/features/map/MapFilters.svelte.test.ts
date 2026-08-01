@@ -1,12 +1,15 @@
-import { fireEvent, render } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
+import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createRawSnippet } from 'svelte';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFilterStore, emptyFilterState } from '$lib/filters';
 import MapFilters from './MapFilters.svelte';
 
 describe('MapFilters', () => {
+	beforeEach(() => localStorage.removeItem('transit:controls-rail'));
+	afterEach(() => localStorage.removeItem('transit:controls-rail'));
+
 	const routeFixtures = [
 		{ id: '161', short: '161', long: 'Van Horne', type: 3 },
 		{ id: '24', short: '24', long: 'Sherbrooke', type: 3 },
@@ -16,14 +19,14 @@ describe('MapFilters', () => {
 		{ id: '53355', code: '53355', name: 'Van Horne / Rockland', lat: 45.52, lon: -73.62 },
 	];
 
-	it('renders status, crowding, and marker filters in one collapsible column panel', async () => {
+	it('renders ordered disclosures, an absent empty Clear, and a separate six-group glyph rail', async () => {
 		let pushed = '';
 		const store = createFilterStore(emptyFilterState(), (search) => {
 			pushed = search;
 		});
 
-		const { container, getByText, getByRole, getAllByText } = render(MapFilters, {
-			props: { store, locale: 'en' },
+		const { container, getByText, getByRole, getAllByText, queryByRole } = render(MapFilters, {
+			props: { store, locale: 'en', controlsMode: true, routes: routeFixtures },
 		});
 
 		expect(getByText('Status')).toBeTruthy();
@@ -35,50 +38,48 @@ describe('MapFilters', () => {
 			4,
 		);
 		expect(container.querySelector('.map-filters')).toHaveAttribute('data-open', 'true');
-		const inactiveClear = getByRole('button', { name: 'Clear' });
-		expect(inactiveClear).toBeDisabled();
-		expect(inactiveClear).toHaveAttribute('data-active', 'false');
-		expect(inactiveClear.closest('.mf-clear-row')).toBeInTheDocument();
-		expect(inactiveClear.querySelector('.mf-clear-icon')).toBeInTheDocument();
-		expect(inactiveClear).toHaveTextContent('Clear');
+		expect(queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+		expect(
+			Array.from(container.querySelectorAll('[data-filter-group]'), (group) =>
+				group.getAttribute('data-filter-group'),
+			),
+		).toEqual(['markers', 'alerts', 'active', 'status', 'crowding']);
+		for (const name of ['Markers', 'Alerts', 'Status', 'Crowding']) {
+			expect(getByRole('button', { name })).toHaveAttribute('aria-expanded', 'true');
+		}
+		expect(getByRole('button', { name: /^Active/ })).toHaveAttribute('aria-expanded', 'false');
 
 		const stop = getByRole('button', { name: 'Stop' });
 		await fireEvent.click(stop);
 
 		expect(pushed).toBe('entity=stop');
 		expect(store.entities).toEqual(['stop']);
-		expect(inactiveClear).not.toBeDisabled();
-		expect(inactiveClear).toHaveAttribute('data-active', 'true');
+		expect(getByRole('button', { name: 'Clear' })).toBeInTheDocument();
 
-		await fireEvent.click(getByRole('button', { name: 'Filter' }));
+		store.addRoute('161');
+		await waitFor(() =>
+			expect(getByRole('button', { name: /^Active/ })).toHaveAttribute('aria-expanded', 'true'),
+		);
+
+		await fireEvent.click(getByRole('button', { name: 'Collapse controls' }));
 		expect(container.querySelector('.map-filters')).toHaveAttribute('data-open', 'false');
+		expect(localStorage.getItem('transit:controls-rail')).toBe('true');
 
 		const rail = container.querySelector('[data-testid="map-filter-rail"]');
 		expect(rail).toBeInTheDocument();
-		expect(rail).not.toHaveTextContent('Status');
-		expect(rail).not.toHaveTextContent('Crowding');
-		expect(rail).not.toHaveTextContent('Markers');
-		expect(rail).not.toHaveTextContent('Alerts');
-		expect(rail?.querySelector('.mf-rail-title')).not.toBeInTheDocument();
-		expect(rail?.querySelector('.mf-rail-token')).not.toBeInTheDocument();
-		expect(rail?.querySelectorAll('.mf-group')).toHaveLength(4);
-		expect(rail?.querySelectorAll('.mf-group-badge[data-icon]')).toHaveLength(4);
-		expect(rail?.querySelectorAll('.mf-chip').length).toBeGreaterThanOrEqual(13);
-		expect(container.querySelector('.mf-title')).not.toBeInTheDocument();
-		const clear = getByRole('button', { name: 'Clear' });
-		expect(clear).toBeInTheDocument();
-		expect(clear.closest('.mf-clear-row')).toBeInTheDocument();
-		expect(clear.closest('.mf-head')).not.toBeInTheDocument();
-		expect(clear.querySelector('.mf-clear-icon')).toBeInTheDocument();
-		expect(clear.querySelector('.mf-clear-text')).not.toBeInTheDocument();
+		expect(rail?.querySelectorAll('.mf-rail-glyph')).toHaveLength(6);
+		expect(rail?.querySelectorAll('.mf-chip')).toHaveLength(0);
+		expect(
+			Array.from(rail?.querySelectorAll('.mf-rail-abbr') ?? [], (item) => item.textContent),
+		).toEqual(['Motion', 'Mark.', 'Alerts', 'Active', 'Status', 'Crowd']);
+		expect(within(rail as HTMLElement).getByRole('button', { name: 'Active 1' })).toHaveTextContent(
+			'1',
+		);
 
-		await fireEvent.click(getByRole('button', { name: 'Late' }));
-		expect(pushed).toBe('status=late&entity=stop');
-		expect(store.status).toEqual(['late']);
-
-		await fireEvent.click(getByRole('button', { name: 'Show markers with alerts' }));
-		expect(pushed).toBe('status=late&entity=stop&alert=has_alert');
-		expect(store.alerts).toEqual(['has_alert']);
+		await fireEvent.click(within(rail as HTMLElement).getByRole('button', { name: 'Markers' }));
+		expect(container.querySelector('.map-filters')).toHaveAttribute('data-open', 'true');
+		expect(localStorage.getItem('transit:controls-rail')).toBe('false');
+		await waitFor(() => expect(getByRole('button', { name: 'Markers' })).toHaveFocus());
 	});
 
 	it('renders active route, stop, and bus picks as removable filter sections', async () => {
@@ -115,6 +116,56 @@ describe('MapFilters', () => {
 
 		expect(pushed).toBe('');
 		expect(store.isEmpty).toBe(true);
+	});
+
+	it('expands the Motion glyph and focuses the full motion switch', async () => {
+		const store = createFilterStore(emptyFilterState());
+		const header = createRawSnippet(() => ({
+			render: () =>
+				'<button type="button" role="switch" aria-checked="false" aria-label="Motion" data-testid="map-motion-switch">Raw</button>',
+		}));
+		const { container, getByRole, getByTestId } = render(MapFilters, {
+			props: { store, locale: 'en', controlsMode: true, header },
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Collapse controls' }));
+		const rail = container.querySelector<HTMLElement>('[data-testid="map-filter-rail"]')!;
+		await fireEvent.click(within(rail).getByRole('button', { name: 'Motion' }));
+
+		expect(container.querySelector('.map-filters')).toHaveAttribute('data-open', 'true');
+		await waitFor(() => expect(getByTestId('map-motion-switch')).toHaveFocus());
+	});
+
+	it('includes the dynamic Active count in the localized rail name', async () => {
+		const store = createFilterStore(emptyFilterState());
+		store.addRoute('161');
+		const { container, getByRole } = render(MapFilters, {
+			props: { store, locale: 'fr', controlsMode: true, routes: routeFixtures },
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Réduire les contrôles' }));
+		const rail = container.querySelector<HTMLElement>('[data-testid="map-filter-rail"]')!;
+		expect(within(rail).getByRole('button', { name: 'Actifs 1' })).toHaveTextContent('1');
+	});
+
+	it('counts every active filter in the header while Active counts selected IDs only', () => {
+		const store = createFilterStore(emptyFilterState());
+		store.addRoute('161');
+		store.toggleEntity('stop');
+		store.toggleStatus('late');
+
+		const { container, getByRole } = render(MapFilters, {
+			props: {
+				store,
+				locale: 'en',
+				controlsMode: true,
+				collapsible: false,
+				routes: routeFixtures,
+			},
+		});
+
+		expect(container.querySelector('.mf-head-count')).toHaveTextContent('3');
+		expect(getByRole('button', { name: /^Active/ })).toHaveTextContent('1');
 	});
 
 	it('renders removable trip chips without the old drilldown bucket', async () => {
@@ -172,8 +223,7 @@ describe('MapFilters', () => {
 			props: { store, locale: 'en', controlsMode: true },
 		});
 
-		// The collapsible toggle button now reads "Controls", not "Filter".
-		expect(getByRole('button', { name: 'Controls' })).toBeInTheDocument();
+		expect(getByRole('button', { name: 'Collapse controls' })).toBeInTheDocument();
 		expect(queryByRole('button', { name: 'Filter' })).not.toBeInTheDocument();
 		expect(container.querySelector('.mf-title')).toHaveTextContent('Controls');
 		// The panel group's accessible name follows the same swap.
@@ -206,40 +256,35 @@ describe('MapFilters', () => {
 	it('keeps the Filter title and omits the header when controlsMode is off', () => {
 		const store = createFilterStore(emptyFilterState(), () => {});
 
-		const { container, getByRole } = render(MapFilters, {
+		const { container } = render(MapFilters, {
 			props: { store, locale: 'en' },
 		});
 
-		expect(getByRole('button', { name: 'Filter' })).toBeInTheDocument();
+		expect(container.querySelector('.mf-title')).toHaveTextContent('Filter');
 		expect(container.querySelector('.map-filters')).toHaveAttribute('data-controls', 'false');
 		expect(container.querySelector('[data-testid="map-filter-header"]')).not.toBeInTheDocument();
 	});
 
-	it('collapses by removing text without changing the panel spacing model', () => {
+	it('uses an in-flow fixed-width content wrapper clipped by a 5.75rem shell', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/map/MapFilters.svelte'),
 			'utf-8',
 		);
 
-		expect(source).not.toMatch(/\.map-filters\[data-open='false'\]\s*\{[^}]*padding:/);
-		expect(source).not.toMatch(/transition:\s*[^;{}]*padding/);
-		expect(source).not.toMatch(
-			/\.map-filters\[data-open='false'\]\s+\.mf-(?:head|body|group|group-label|chips)\s*\{[^}]*\b(?:align-items|justify-items|justify-content):\s*center/,
+		expect(source).toMatch(/\.map-filters\[data-open='false'\]\s*\{[^}]*width:\s*5\.75rem/);
+		expect(source).toMatch(/\.mf-expanded\s*\{[^}]*width:\s*16rem[^}]*flex:\s*none/s);
+		expect(source).not.toMatch(/\.mf-expanded\s*\{[^}]*position:\s*absolute/s);
+		expect(source).not.toMatch(/\.mf-expanded\s*\{[^}]*max-width:\s*100%/s);
+		expect(source).toMatch(/\.mf-rail-layer\s*\{[^}]*position:\s*absolute/s);
+		expect(source).toMatch(
+			/\.map-filters\s*\{[^}]*transition-property:\s*width[^}]*transition-duration:\s*var\(--duration-slow\)/s,
 		);
-		expect(source).not.toMatch(/data-scrollable/);
-		expect(source).not.toMatch(/bodyScrollable/);
-		expect(source).not.toMatch(/ResizeObserver/);
-		expect(source).toMatch(/\.map-filters\[data-open='false'\]\s*\{\s*width:\s*4\.95rem;\s*\}/);
-		expect(source).not.toMatch(/\.map-filters\[data-open='false'\]\[data-scrollable='true'\]/);
-		expect(
-			Array.from(
-				source.matchAll(/\.map-filters\[data-open='false'\](?:\s+\.[a-z-]+)?\s*\{/g),
-				(match) => match[0].replace(/\s+/g, ' '),
-			),
-		).toEqual([".map-filters[data-open='false'] {", ".map-filters[data-open='false'] .mf-chip {"]);
-		expect(source).toMatch(/\.mf-chip\s*\{[\s\S]*overflow:\s*hidden/);
-		expect(source).toMatch(/\.mf-chip-text\s*\{[\s\S]*white-space:\s*nowrap/);
-		expect(source).toMatch(/\.mf-label-text\s*\{[\s\S]*white-space:\s*nowrap/);
+		expect(source).toMatch(
+			/\.map-filters\[data-open='false'\]\s*\{[^}]*transition-duration:\s*var\(--duration-normal\)/s,
+		);
+		const shellRule = source.match(/\.map-filters\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+		expect(shellRule).not.toMatch(/transition-(?:property|duration):[^;]*(?:background|border)/);
+		expect(source).toContain("const STORAGE_KEY = 'transit:controls-rail'");
 	});
 
 	it('keeps desktop scrolling inside the filter card instead of the overlay wrapper', () => {
@@ -256,6 +301,106 @@ describe('MapFilters', () => {
 		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*overflow-y:\s*auto/);
 		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*padding-right:\s*0\.5rem/);
 		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*scrollbar-gutter:\s*stable/);
-		expect(source).not.toMatch(/\.map-filters\[data-scrollable='true'\]\s+\.mf-body/);
+		expect(source).toMatch(
+			/\.map-filters\[data-presentation='drawer'\][\s\S]*\.mf-body\s*\{[^}]*overflow:\s*visible/s,
+		);
+		expect(source).toMatch(
+			/\.map-filters\[data-presentation='drawer'\] \.mf-head\s*\{[^}]*position:\s*sticky/s,
+		);
+		expect(source).not.toMatch(
+			/\.map-filters\[data-presentation='drawer'\] \.mf-controls\s*\{[^}]*position:\s*sticky/s,
+		);
+	});
+
+	it('removes the onselect API and delegates presentation markup to the named stateless split', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/map/MapFilters.svelte'),
+			'utf-8',
+		);
+		const lineCount = source.split('\n').length - 1;
+
+		expect(source).not.toContain('onselect');
+		expect(source).toContain("import MapFilterGroup from './MapFilterGroup.svelte'");
+		expect(source).toContain("import MapFilterRail from './MapFilterRail.svelte'");
+		expect(lineCount).toBeLessThan(1_000);
+	});
+
+	it('removes onselect from the complete Controls snippet death graph', () => {
+		for (const relative of [
+			'src/lib/features/map/MapFilters.svelte',
+			'src/lib/features/map/MapFilterPill.svelte',
+			'src/lib/features/map/MapOverlayChrome.svelte',
+			'src/lib/features/map/__fixtures__/MapFilterPillHarness.svelte',
+			'src/lib/features/map/__fixtures__/MapOverlayChromeHarness.svelte',
+		]) {
+			expect(readFileSync(resolve(process.cwd(), relative), 'utf-8'), relative).not.toContain(
+				'onselect',
+			);
+		}
+	});
+
+	it('restores the persisted desktop rail state with a browser-safe localStorage key', async () => {
+		localStorage.setItem('transit:controls-rail', 'true');
+		const store = createFilterStore(emptyFilterState());
+		const { container } = render(MapFilters, {
+			props: { store, locale: 'en', controlsMode: true },
+		});
+
+		await waitFor(() =>
+			expect(container.querySelector('.map-filters')).toHaveAttribute('data-open', 'false'),
+		);
+	});
+
+	it('moves focus to the surviving Expand control when collapsed Clear disappears', async () => {
+		const store = createFilterStore(emptyFilterState());
+		store.addRoute('161');
+		const { getByRole } = render(MapFilters, {
+			props: { store, locale: 'en', controlsMode: true, routes: routeFixtures },
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Collapse controls' }));
+		await fireEvent.click(getByRole('button', { name: 'Clear' }));
+
+		expect(store.isEmpty).toBe(true);
+		expect(getByRole('button', { name: 'Expand controls' })).toHaveFocus();
+	});
+
+	it('hands focus between the desktop Collapse and Expand controls', async () => {
+		const store = createFilterStore(emptyFilterState());
+		const { getByRole } = render(MapFilters, {
+			props: { store, locale: 'en', controlsMode: true },
+		});
+
+		const collapse = getByRole('button', { name: 'Collapse controls' });
+		collapse.focus();
+		await fireEvent.click(collapse);
+		await waitFor(() => expect(getByRole('button', { name: 'Expand controls' })).toHaveFocus());
+
+		await fireEvent.click(getByRole('button', { name: 'Expand controls' }));
+		await waitFor(() => expect(getByRole('button', { name: 'Collapse controls' })).toHaveFocus());
+	});
+
+	it('keeps the frozen filter controls in the hard-44 inventory while desktop chips stay compact', () => {
+		const filtersSource = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/map/MapFilters.svelte'),
+			'utf-8',
+		);
+		const groupPath = resolve(process.cwd(), 'src/lib/features/map/MapFilterGroup.svelte');
+		const railPath = resolve(process.cwd(), 'src/lib/features/map/MapFilterRail.svelte');
+
+		expect(existsSync(groupPath)).toBe(true);
+		expect(existsSync(railPath)).toBe(true);
+		if (!existsSync(groupPath) || !existsSync(railPath)) return;
+
+		const groupSource = readFileSync(groupPath, 'utf-8');
+		const railSource = readFileSync(railPath, 'utf-8');
+		expect(filtersSource).toMatch(/\.mf-toggle\s*\{[^}]*min-height:\s*44px/s);
+		expect(filtersSource).toMatch(/\.mf-clear\s*\{[^}]*min-height:\s*44px/s);
+		expect(filtersSource).toMatch(
+			/data-presentation='drawer'[\s\S]*\.mf-chip\s*\{[^}]*min-height:\s*44px/s,
+		);
+		expect(filtersSource).toMatch(/\.mf-chip\s*\{[^}]*min-height:\s*2rem/s);
+		expect(groupSource).toMatch(/\.mf-group-trigger\s*\{[^}]*min-height:\s*44px/s);
+		expect(railSource).toMatch(/\.mf-rail-glyph\s*\{[^}]*min-height:\s*44px/s);
 	});
 });

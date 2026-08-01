@@ -29,6 +29,7 @@
 		generatedUtc?: string | null;
 		ageSeconds?: number | null;
 		isStale?: boolean;
+		selectedFamilyFailureMessage?: string | null;
 		// Near-me.
 		nearMeOrigin?: NearMeOrigin | null;
 		nearbyStops?: readonly WithDistance<StopIndexEntry>[];
@@ -52,6 +53,7 @@
 		generatedUtc = '2026-06-15T00:00:00Z',
 		ageSeconds = 12,
 		isStale = false,
+		selectedFamilyFailureMessage = null,
 		nearMeOrigin = null,
 		nearbyStops = [],
 		isDesktop = true,
@@ -71,7 +73,7 @@
 {#snippet motionHeader()}
 	<MapMotionControl {locale} copy={t} />
 {/snippet}
-{#snippet mapControls(opts?: { collapsible?: boolean; onselect?: () => void })}
+{#snippet mapControls(opts?: { collapsible?: boolean })}
 	<MapFilters
 		{store}
 		{locale}
@@ -80,7 +82,6 @@
 		collapsible={opts?.collapsible ?? true}
 		controlsMode={true}
 		header={motionHeader}
-		onselect={opts?.onselect}
 	/>
 {/snippet}
 
@@ -90,6 +91,7 @@
 	{generatedUtc}
 	{ageSeconds}
 	{isStale}
+	{selectedFamilyFailureMessage}
 	bind:nearMeOpen
 	bind:nearMeQuery
 	nearMeLoading={false}

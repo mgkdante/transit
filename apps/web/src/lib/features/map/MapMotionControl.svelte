@@ -64,14 +64,14 @@
 			class="map-motion-round"
 			role="switch"
 			aria-checked={smooth}
-			aria-label={smooth ? t.motion.toRaw : t.motion.toSmooth}
+			aria-label={t.motion.label}
 			data-testid="map-motion-switch"
 			onclick={() => motionMode.toggle()}
 		></button>
 	{:else}
 		<!-- Row 1: the label, prefixed by a small motion (Waves) badge mirroring how the
 		     filter sections badge their overline label. -->
-		<span class="map-motion-label" id="map-motion-label">
+		<span class="map-motion-label">
 			<span class="map-motion-badge" aria-hidden="true">
 				<WavesIcon size={13} strokeWidth={2.35} />
 			</span>
@@ -83,8 +83,7 @@
 			class="map-motion-switch"
 			role="switch"
 			aria-checked={smooth}
-			aria-labelledby="map-motion-label"
-			aria-label={smooth ? t.motion.toRaw : t.motion.toSmooth}
+			aria-label={t.motion.label}
 			data-testid="map-motion-switch"
 			onclick={() => motionMode.toggle()}
 		>
@@ -115,6 +114,7 @@
 		   keeps the longest hint from stretching the control to an awkward width. */
 		width: max-content;
 		max-width: 13.5rem;
+		max-height: 160px;
 		justify-self: start;
 	}
 	/* Collapsed rail: center the single square in the narrow rail, matching the
@@ -163,7 +163,7 @@
 		justify-self: start;
 		align-items: center;
 		gap: 0.375rem;
-		min-height: 2rem;
+		min-height: 44px;
 		padding: 0.25rem 0.5rem 0.25rem 0.375rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
@@ -223,9 +223,15 @@
 		font-size: var(--text-micro);
 		line-height: 1.4;
 		color: var(--muted-foreground);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.map-motion-explain {
+		display: inline-flex;
+		align-items: center;
 		justify-self: start;
+		min-height: 44px;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		color: var(--primary);
@@ -248,8 +254,8 @@
 	.map-motion-round {
 		display: inline-grid;
 		place-items: center;
-		width: 2rem;
-		height: 2rem;
+		width: 44px;
+		height: 44px;
 		padding: 0;
 		background: transparent;
 		border: 1px solid var(--border-subtle);
