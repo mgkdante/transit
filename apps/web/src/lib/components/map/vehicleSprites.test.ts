@@ -31,6 +31,8 @@ type DrawCommand = {
 
 type LoggedImageData = ImageData & { commands: DrawCommand[] };
 
+type Point = readonly [number, number];
+
 const FIXED_TEST_ALPHA_PIXELS = 40;
 const renderedImages: LoggedImageData[] = [];
 let fixedAlphaSchedule: number[] = [];
@@ -107,6 +109,165 @@ function canvasContext(): CanvasRenderingContext2D {
 		},
 	};
 	return context as unknown as CanvasRenderingContext2D;
+}
+
+function visibleDrawSignature(commands: DrawCommand[]): string {
+	let fillStyle = '';
+	let strokeStyle = '';
+	let composite = 'source-over';
+	let current: Point | null = null;
+	let start: Point | null = null;
+	let path: [string, unknown[]][] = [];
+	let drawable = false;
+	let subpathStartIndex = -1;
+	let subpathDrawable = false;
+	const stack: { fillStyle: string; strokeStyle: string; composite: string }[] = [];
+	const draws: unknown[] = [];
+	const samePoint = (left: Point | null, right: Point): boolean =>
+		left !== null && left[0] === right[0] && left[1] === right[1];
+	const resetPath = () => {
+		current = null;
+		start = null;
+		path = [];
+		drawable = false;
+		subpathStartIndex = -1;
+		subpathDrawable = false;
+	};
+	const discardPendingEmptySubpath = () => {
+		if (subpathStartIndex >= 0 && !subpathDrawable) path.splice(subpathStartIndex);
+	};
+
+	for (const command of commands) {
+		const { method, args } = command;
+		if (method === 'setFillStyle') {
+			fillStyle = String(args[0]);
+			continue;
+		}
+		if (method === 'setStrokeStyle') {
+			strokeStyle = String(args[0]);
+			continue;
+		}
+		if (method === 'setGlobalCompositeOperation') {
+			composite = String(args[0]);
+			continue;
+		}
+		if (method === 'save') {
+			stack.push({ fillStyle, strokeStyle, composite });
+			continue;
+		}
+		if (method === 'restore') {
+			const saved = stack.pop();
+			if (saved) ({ fillStyle, strokeStyle, composite } = saved);
+			continue;
+		}
+		if (method === 'beginPath') {
+			resetPath();
+			continue;
+		}
+		if (method === 'moveTo') {
+			discardPendingEmptySubpath();
+			const target = [Number(args[0]), Number(args[1])] as const;
+			current = target;
+			start = target;
+			subpathStartIndex = path.length;
+			subpathDrawable = false;
+			path.push(['moveTo', [...args]]);
+			continue;
+		}
+		if (method === 'lineTo') {
+			const target = [Number(args[0]), Number(args[1])] as const;
+			if (!current) {
+				current = target;
+				start = target;
+				subpathStartIndex = path.length;
+				subpathDrawable = false;
+				path.push(['moveTo', [...args]]);
+			} else if (!samePoint(current, target)) {
+				path.push(['lineTo', [...args]]);
+				current = target;
+				drawable = true;
+				subpathDrawable = true;
+			}
+			continue;
+		}
+		if (method === 'arc') {
+			const radius = Number(args[2]);
+			const startAngle = Number(args[3]);
+			const endAngle = Number(args[4]);
+			if (!(radius > 0) || startAngle === endAngle) continue;
+			path.push(['arc', [...args]]);
+			const end = [
+				Number(args[0]) + radius * Math.cos(endAngle),
+				Number(args[1]) + radius * Math.sin(endAngle),
+			] as const;
+			current = end;
+			start ??= [
+				Number(args[0]) + radius * Math.cos(startAngle),
+				Number(args[1]) + radius * Math.sin(startAngle),
+			];
+			drawable = true;
+			subpathDrawable = true;
+			continue;
+		}
+		if (method === 'arcTo') {
+			const first = [Number(args[0]), Number(args[1])] as const;
+			const second = [Number(args[2]), Number(args[3])] as const;
+			const radius = Number(args[4]);
+			if (!current) {
+				current = first;
+				start = first;
+				subpathStartIndex = path.length;
+				subpathDrawable = false;
+				path.push(['moveTo', [first[0], first[1]]]);
+			} else if (!(radius > 0) || samePoint(current, first) || samePoint(first, second)) {
+				if (!samePoint(current, first)) {
+					path.push(['lineTo', [first[0], first[1]]]);
+					current = first;
+					drawable = true;
+					subpathDrawable = true;
+				}
+			} else {
+				path.push(['arcTo', [...args]]);
+				current = second;
+				drawable = true;
+				subpathDrawable = true;
+			}
+			continue;
+		}
+		if (method === 'bezierCurveTo') {
+			const end = [Number(args[4]), Number(args[5])] as const;
+			const points = [
+				[Number(args[0]), Number(args[1])] as const,
+				[Number(args[2]), Number(args[3])] as const,
+				end,
+			];
+			if (!current || points.some((point) => !samePoint(current, point))) {
+				path.push(['bezierCurveTo', [...args]]);
+				current = end;
+				start ??= end;
+				drawable = true;
+				subpathDrawable = true;
+			}
+			continue;
+		}
+		if (method === 'closePath') {
+			if (subpathDrawable) path.push(['closePath', []]);
+			current = start;
+			continue;
+		}
+		if ((method === 'fill' || method === 'stroke') && drawable) {
+			const visiblePath =
+				subpathStartIndex >= 0 && !subpathDrawable ? path.slice(0, subpathStartIndex) : path;
+			draws.push({
+				method,
+				path: visiblePath,
+				paint: method === 'fill' ? fillStyle : strokeStyle,
+				composite,
+			});
+		}
+	}
+
+	return JSON.stringify(draws);
 }
 
 function bakeReceipt() {
@@ -224,10 +385,12 @@ describe('vehicle state badge baker', () => {
 		expect([...images.keys()].filter((id) => id.startsWith('veh-m-'))).toEqual(ids);
 		expect(Object.keys(receipt)).toEqual([
 			'stateBadges',
+			'stateBadgeImages',
 			'stateGlyphMasks',
 			'stateGlyphMaskImages',
 		]);
 		expect(Object.keys(receipt.stateBadges)).toEqual(ids);
+		expect(Object.keys(receipt.stateBadgeImages)).toEqual(ids);
 		expect(Object.keys(receipt.stateGlyphMasks)).toEqual(ids);
 		expect(Object.keys(receipt.stateGlyphMaskImages)).toEqual(ids);
 		expect(receipt.stateBadges).toEqual({
@@ -245,10 +408,12 @@ describe('vehicle state badge baker', () => {
 		expect(receipt.stateGlyphMasks).toEqual(receipt.stateBadges);
 		expect(Object.isFrozen(receipt)).toBe(true);
 		expect(Object.isFrozen(receipt.stateBadges)).toBe(true);
+		expect(Object.isFrozen(receipt.stateBadgeImages)).toBe(true);
 		expect(Object.isFrozen(receipt.stateGlyphMasks)).toBe(true);
 		expect(Object.isFrozen(receipt.stateGlyphMaskImages)).toBe(true);
 		for (const id of ids) {
 			expect(receipt.stateBadges[id]).toBe(countStateBadgePaintedPixels(images.get(id)!));
+			expect(receipt.stateBadgeImages[id]).toBe(images.get(id));
 			const glyphMask = receipt.stateGlyphMaskImages[id];
 			expect(glyphMask).toBeDefined();
 			expect(glyphMask).not.toBe(images.get(id));
@@ -296,7 +461,7 @@ describe('vehicle state badge baker', () => {
 	});
 
 	it('uses only the neutral silent-badge token pair while vector shape distinguishes every state', () => {
-		const { images } = bakeReceipt();
+		const { images, receipt } = bakeReceipt();
 		const expectModeBadges = <Code extends string>(
 			mode: 'status' | 'occupancy',
 			codes: readonly Code[],
@@ -307,7 +472,9 @@ describe('vehicle state badge baker', () => {
 			];
 			const signatures = new Set<string>();
 			for (const code of codes) {
-				const commands = images.get(stateBadgeIconId(mode, code))!.commands;
+				const id = stateBadgeIconId(mode, code);
+				const commands = images.get(id)!.commands;
+				const glyphCommands = (receipt.stateGlyphMaskImages[id] as LoggedImageData).commands;
 				expect(commands.some(({ method }) => method === 'beginPath')).toBe(true);
 				expect(
 					commands.some(({ method }) => ['moveTo', 'lineTo', 'arc', 'arcTo'].includes(method)),
@@ -326,7 +493,7 @@ describe('vehicle state badge baker', () => {
 						.filter(({ method }) => method === 'setFillStyle' || method === 'setStrokeStyle')
 						.every(({ args }) => neutralColors.includes(args[0] as string)),
 				).toBe(true);
-				signatures.add(JSON.stringify(commands.map(({ method, args }) => [method, args])));
+				signatures.add(visibleDrawSignature(glyphCommands));
 			}
 			expect(signatures.size).toBe(codes.length);
 		};
@@ -334,10 +501,40 @@ describe('vehicle state badge baker', () => {
 		expectModeBadges('status', STATUS_CODES);
 		expectModeBadges('occupancy', OCCUPANCY_CODES);
 
-		const onTime = images.get(stateBadgeIconId('status', 'on_time'))!.commands;
+		const onTime = (
+			receipt.stateGlyphMaskImages[stateBadgeIconId('status', 'on_time')] as LoggedImageData
+		).commands;
 		expect(
-			onTime.some(({ method, args }) => method === 'arc' && args[0] === 13 && args[1] === 13),
+			onTime.some(
+				({ method, args }) =>
+					method === 'arc' &&
+					args[0] === 13 &&
+					args[1] === 13 &&
+					Number(args[2]) > 0 &&
+					Number(args[3]) !== Number(args[4]),
+			),
 		).toBe(true);
+
+		const command = (method: string, args: unknown[] = []): DrawCommand => ({
+			method,
+			args,
+			fillStyle: '',
+			strokeStyle: '',
+		});
+		const triangle = [
+			command('beginPath'),
+			command('moveTo', [13, 18]),
+			command('lineTo', [8, 9]),
+			command('lineTo', [18, 9]),
+			command('closePath'),
+			command('fill'),
+		];
+		const triangleWithEmptySubpath = [
+			triangle[0]!,
+			command('moveTo', [0, 0]),
+			...triangle.slice(1),
+		];
+		expect(visibleDrawSignature(triangleWithEmptySubpath)).toBe(visibleDrawSignature(triangle));
 	});
 
 	it('exports the immutable frozen marker geometry used by the next map layer and full-size badge baker', () => {

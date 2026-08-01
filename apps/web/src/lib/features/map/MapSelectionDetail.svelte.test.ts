@@ -132,6 +132,30 @@ function detailValue(container: HTMLElement, label: string): HTMLElement {
 	return value;
 }
 
+function expectHiddenGlyph(
+	value: HTMLElement,
+	kind: 'status' | 'crowding',
+	code: string,
+	glyph: string,
+): void {
+	const node = value.querySelector<HTMLElement>(
+		`[data-m6d-glyph-kind="${kind}"][data-m6d-glyph-code="${code}"]`,
+	);
+	expect(node?.textContent).toBe(glyph);
+	expect(node).toHaveAttribute('aria-hidden', 'true');
+}
+
+function expectAccessibleContentName(value: HTMLElement, expected: string): void {
+	const probe = document.createElement('button');
+	probe.replaceChildren(...Array.from(value.childNodes, (node) => node.cloneNode(true)));
+	document.body.append(probe);
+	try {
+		expect(probe).toHaveAccessibleName(expected);
+	} finally {
+		probe.remove();
+	}
+}
+
 const vehicles: Vehicle[] = [
 	{
 		id: 'veh-1',
@@ -358,18 +382,22 @@ describe('MapSelectionDetail', () => {
 			statusLabel: 'Status',
 			crowdingLabel: 'Crowding',
 			status: '▲ Late',
+			statusName: 'Late',
 			occupancy: '▇ Standing',
+			occupancyName: 'Standing',
 		},
 		{
 			locale: 'fr',
 			statusLabel: 'Statut',
 			crowdingLabel: 'Achalandage',
 			status: '▲ En retard',
+			statusName: 'En retard',
 			occupancy: '▇ Debout',
+			occupancyName: 'Debout',
 		},
 	] as const)(
 		'prefixes normal $locale status-band values with hidden canonical glyphs',
-		({ locale, statusLabel, crowdingLabel, status, occupancy }) => {
+		({ locale, statusLabel, crowdingLabel, status, statusName, occupancy, occupancyName }) => {
 			const detail = resolveMapSelection(
 				{ kind: 'vehicle', id: 'veh-1' },
 				{ index, stops, alerts, routes },
@@ -380,14 +408,10 @@ describe('MapSelectionDetail', () => {
 
 			expect(statusValue).toHaveTextContent(status);
 			expect(occupancyValue).toHaveTextContent(occupancy);
-			expect(statusValue.querySelector('[data-m6d-glyph-kind="status"]')).toHaveAttribute(
-				'aria-hidden',
-				'true',
-			);
-			expect(occupancyValue.querySelector('[data-m6d-glyph-kind="crowding"]')).toHaveAttribute(
-				'aria-hidden',
-				'true',
-			);
+			expectHiddenGlyph(statusValue, 'status', 'late', '▲');
+			expectHiddenGlyph(occupancyValue, 'crowding', 'standing', '▇');
+			expectAccessibleContentName(statusValue, statusName);
+			expectAccessibleContentName(occupancyValue, occupancyName);
 		},
 	);
 
@@ -399,6 +423,7 @@ describe('MapSelectionDetail', () => {
 			status: '○ Unknown',
 			unknown: 'Unknown',
 			reason: 'not reported in the live feed',
+			occupancyName: 'Unknown, not reported in the live feed',
 			empty: 'Empty',
 		},
 		{
@@ -408,11 +433,12 @@ describe('MapSelectionDetail', () => {
 			status: '○ Inconnu',
 			unknown: 'Inconnu',
 			reason: 'non signalé dans le flux',
+			occupancyName: 'Inconnu, non signalé dans le flux en direct',
 			empty: 'Vide',
 		},
 	] as const)(
 		'keeps null occupancy honest with the no-data glyph in $locale',
-		({ locale, statusLabel, crowdingLabel, status, unknown, reason, empty }) => {
+		({ locale, statusLabel, crowdingLabel, status, unknown, reason, occupancyName, empty }) => {
 			const nullOccupancyIndex = buildLiveIndex({
 				vehicles: {
 					generated_utc: utc('2026-06-15T00:00:00Z'),
@@ -442,10 +468,10 @@ describe('MapSelectionDetail', () => {
 			expect(occupancyValue).toHaveTextContent(reason);
 			expect(occupancyValue).not.toHaveTextContent('▁');
 			expect(occupancyValue).not.toHaveTextContent(empty);
-			expect(occupancyValue.querySelector('[data-m6d-glyph-code="nodata"]')).toHaveAttribute(
-				'aria-hidden',
-				'true',
-			);
+			expectHiddenGlyph(statusValue, 'status', 'unknown', '○');
+			expectHiddenGlyph(occupancyValue, 'crowding', 'nodata', '◌');
+			expectAccessibleContentName(statusValue, unknown);
+			expectAccessibleContentName(occupancyValue, occupancyName);
 		},
 	);
 

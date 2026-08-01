@@ -277,6 +277,7 @@ export const stateBadgeIconId = (mode: 'status' | 'occupancy', code: string): st
 
 export type StateBadgeReceipt = Readonly<{
 	stateBadges: Readonly<Record<string, number>>;
+	stateBadgeImages: Readonly<Record<string, ImageData>>;
 	stateGlyphMasks: Readonly<Record<string, number>>;
 	stateGlyphMaskImages: Readonly<Record<string, ImageData>>;
 }>;
@@ -419,6 +420,7 @@ export function bakeVehicleSprites(map: MapLibreMap): StateBadgeReceipt {
 	const stateBadgeFill = resolveColor(SILENT_FILL_TOKEN, SILENT_FILL_FALLBACK);
 	const stateBadgeHalo = resolveColor(SILENT_HALO_TOKEN, SILENT_HALO_FALLBACK);
 	const stateBadges: Record<string, number> = {};
+	const stateBadgeImages: Record<string, ImageData> = {};
 	const stateGlyphMasks: Record<string, number> = {};
 	const stateGlyphMaskImages: Record<string, ImageData> = {};
 	const add = (id: string, img: ImageData) => {
@@ -442,6 +444,7 @@ export function bakeVehicleSprites(map: MapLibreMap): StateBadgeReceipt {
 		const image = stateBadgeImage(glyph, stateBadgeFill, stateBadgeHalo);
 		const mask = stateGlyphMaskImage(glyph, stateBadgeHalo);
 		stateBadges[id] = countStateBadgePaintedPixels(image);
+		stateBadgeImages[id] = image;
 		stateGlyphMaskImages[id] = mask;
 		stateGlyphMasks[id] = countStateBadgePaintedPixels(mask);
 		add(id, image);
@@ -453,6 +456,7 @@ export function bakeVehicleSprites(map: MapLibreMap): StateBadgeReceipt {
 		const image = stateBadgeImage(glyph, stateBadgeFill, stateBadgeHalo);
 		const mask = stateGlyphMaskImage(glyph, stateBadgeHalo);
 		stateBadges[id] = countStateBadgePaintedPixels(image);
+		stateBadgeImages[id] = image;
 		stateGlyphMaskImages[id] = mask;
 		stateGlyphMasks[id] = countStateBadgePaintedPixels(mask);
 		add(id, image);
@@ -488,6 +492,7 @@ export function bakeVehicleSprites(map: MapLibreMap): StateBadgeReceipt {
 
 	return Object.freeze({
 		stateBadges: Object.freeze(stateBadges),
+		stateBadgeImages: Object.freeze(stateBadgeImages),
 		stateGlyphMasks: Object.freeze(stateGlyphMasks),
 		stateGlyphMaskImages: Object.freeze(stateGlyphMaskImages),
 	});
