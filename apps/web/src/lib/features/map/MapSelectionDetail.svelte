@@ -378,6 +378,21 @@
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-sm);
 	}
+	.map-departures button {
+		display: inline-flex;
+		min-height: 2.75rem;
+		min-block-size: 2.75rem;
+		align-items: center;
+		padding-block: 0.5rem;
+		padding-inline: 0.75rem;
+	}
+	/* List-item display preserved: the ::marker triangle is the affordance. */
+	.map-selection-detail :global([data-slot='detail-schedule-tail'] > summary) {
+		min-height: 2.75rem;
+		min-block-size: 2.75rem;
+		padding-block: 0.5rem;
+		cursor: pointer;
+	}
 	@container right-panel (width < 26.25rem) {
 		.map-selection-detail :global([data-slot='detail-meta'].detail-stat-pills) {
 			display: none;

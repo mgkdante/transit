@@ -75,6 +75,7 @@
 		showCloseButton={false}
 		class={cn('max-h-[85svh] gap-0 p-0', className)}
 		data-slot="bottom-sheet"
+		data-m6c2-detail-sheet=""
 	>
 		<div
 			class="min-h-0 flex flex-1 flex-col"
@@ -114,7 +115,7 @@
 			</Sheet.Header>
 
 			<!-- Body — keyed on the active surface so swaps re-enter cleanly. -->
-			<div class="min-h-0 flex-1 overflow-y-auto" data-slot="bottom-sheet-body">
+			<div class="bottom-sheet-body min-h-0 flex-1 overflow-y-auto" data-slot="bottom-sheet-body">
 				{#key surfaceKey}
 					<div class="p-4">
 						{#if children}
@@ -140,3 +141,42 @@
 		</div>
 	</Sheet.Content>
 </Sheet.Root>
+
+<style>
+	.bottom-sheet-body {
+		container: right-panel / inline-size;
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		:global([data-m6c2-detail-sheet][data-slot='bottom-sheet'][data-state='open']) {
+			animation: m6c2-detail-sheet-in var(--duration-slow) var(--ease-out) both;
+			transition: none;
+		}
+		:global([data-m6c2-detail-sheet][data-slot='bottom-sheet'][data-state='closed']) {
+			animation: m6c2-detail-sheet-out var(--duration-normal) var(--ease-out) both;
+			transition: none;
+		}
+	}
+
+	@keyframes m6c2-detail-sheet-in {
+		from {
+			opacity: 0;
+			transform: translateY(0.75rem) scale(0.985);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0) scale(1);
+		}
+	}
+
+	@keyframes m6c2-detail-sheet-out {
+		from {
+			opacity: 1;
+			transform: translateY(0) scale(1);
+		}
+		to {
+			opacity: 0;
+			transform: translateY(0.5rem) scale(0.99);
+		}
+	}
+</style>

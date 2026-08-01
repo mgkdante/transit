@@ -180,7 +180,7 @@ describe('mapDetailPanes rail-offset publication', () => {
 			state: 'collapsed',
 			open: true,
 			collapsed: true,
-			expectedOffset: '3.7rem',
+			expectedOffset: 'var(--size-detail-rail)',
 		},
 		{
 			state: 'closed or mobile',

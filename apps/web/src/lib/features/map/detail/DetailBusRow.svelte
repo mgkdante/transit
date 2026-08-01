@@ -45,6 +45,8 @@
 		grid-template-columns: minmax(3.5rem, auto) minmax(0, 1fr) auto auto;
 		gap: 0.5rem;
 		width: 100%;
+		min-height: 2.75rem;
+		min-block-size: 2.75rem;
 		align-items: center;
 		padding: 0.5rem;
 		border: 0;

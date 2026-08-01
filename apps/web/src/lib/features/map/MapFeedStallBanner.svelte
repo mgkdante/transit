@@ -189,7 +189,7 @@
 		top: calc(var(--chrome-offset) + 2.5rem);
 	}
 
-	@media (max-width: 768px) {
+	@media (max-width: 1023.98px) {
 		.map-feed-stall {
 			top: auto;
 			bottom: var(--map-mobile-control-bottom);

@@ -77,8 +77,18 @@ describe('MapNearMeControl', () => {
 		expect(s).toMatch(/\.map-near-suggestions\s*\{[\s\S]*max-height:\s*min\(18rem/);
 		expect(s).toMatch(/\.map-near-suggestion span\s*\{[\s\S]*white-space:\s*normal/);
 		expect(s).toMatch(
-			/@media \(max-width: 768px\)[\s\S]*\.map-near-panel\s*\{[\s\S]*width:\s*min\(24rem/,
+			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-near-panel\s*\{[\s\S]*width:\s*min\(24rem/,
 		);
+	});
+
+	it('extends the compact amber toggle through the complete <1024 band', () => {
+		const s = source();
+		const compact = s.match(/@media \(max-width: 1023\.98px\)\s*\{([\s\S]*?)\n\t\}/)?.[1] ?? '';
+
+		expect(compact).toMatch(/\.map-near-toggle\s*\{[\s\S]*?width:\s*2\.75rem/);
+		expect(compact).toMatch(/\.map-near-toggle\s*\{[\s\S]*?height:\s*2\.75rem/);
+		expect(compact).toMatch(/\.map-near-toggle span\s*\{[\s\S]*?display:\s*none/);
+		expect(s).not.toContain('@media (max-width: 768px)');
 	});
 
 	it('renders Google autocomplete attribution with token-based light and dark styling', () => {

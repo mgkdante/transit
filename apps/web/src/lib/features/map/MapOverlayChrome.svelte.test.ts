@@ -1,4 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { compile } from 'svelte/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFilterStore, emptyFilterState } from '$lib/filters';
 import { motionMode } from '$lib/stores';
@@ -25,13 +28,42 @@ const stopPeek: MapHoverPeek = {
 	vehicleCount: 0,
 };
 
+const happyWindow = window as typeof window & {
+	happyDOM: { setInnerWidth(widthPx: number): void };
+};
+
+function installViewportMatchMedia(widthPx: number): void {
+	happyWindow.happyDOM.setInnerWidth(widthPx);
+	expect(window.matchMedia('(max-width: 1023.98px)').matches).toBe(widthPx < 1024);
+	expect(window.matchMedia('(min-width: 1024px)').matches).toBe(widthPx >= 1024);
+}
+
+function installCompiledCss(...paths: string[]): HTMLStyleElement {
+	const style = document.createElement('style');
+	style.dataset.m6c2TestCss = '';
+	style.textContent = paths
+		.map(
+			(path) =>
+				compile(readFileSync(resolve(process.cwd(), path), 'utf8'), {
+					filename: path,
+					generate: 'client',
+					css: 'external',
+				}).css?.code ?? '',
+		)
+		.join('\n');
+	document.head.append(style);
+	return style;
+}
+
 beforeEach(() => {
 	localStorage.clear();
 	motionMode.set('raw');
+	happyWindow.happyDOM.setInnerWidth(1280);
 });
 
 afterEach(() => {
 	localStorage.clear();
+	document.head.querySelectorAll('[data-m6c2-test-css]').forEach((style) => style.remove());
 	vi.restoreAllMocks();
 });
 
@@ -113,6 +145,64 @@ describe('MapOverlayChrome', () => {
 		expect(container.querySelector('.map-peek')).toBeInTheDocument();
 	});
 
+	it('suppresses the hover peek while near-me is open and restores it after close', async () => {
+		const store = createFilterStore(emptyFilterState());
+		const { container } = render(MapOverlayChromeHarness, {
+			props: { store, locale: 'en', isDesktop: true, hoverPeek: stopPeek },
+		});
+
+		expect(container.querySelector('.map-peek')).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: 'Stops near me' }));
+		expect(container.querySelector('.map-peek')).not.toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: 'Stops near me' }));
+		expect(container.querySelector('.map-peek')).toBeInTheDocument();
+	});
+
+	it('reads a near-me-published vertical clearance without moving its right-column anchor', async () => {
+		const store = createFilterStore(emptyFilterState());
+		const { container } = render(MapOverlayChromeHarness, {
+			props: { store, locale: 'en', isDesktop: true, hoverPeek: stopPeek },
+		});
+
+		await waitFor(() =>
+			expect(container.style.getPropertyValue('--map-near-clearance')).not.toBe(''),
+		);
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/map/MapOverlayChrome.svelte'),
+			'utf8',
+		);
+		const peekRule = source.match(/\.map-peek\s*\{[\s\S]*?\n\t\}/)?.[0] ?? '';
+		expect(peekRule).toContain('bottom: var(--map-near-clearance, 8.6rem)');
+		expect(peekRule).toContain('right: calc(var(--map-detail-offset, 0rem) + 1rem)');
+	});
+
+	it('fits the right-anchored peek between Controls and every frozen detail width', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/map/MapOverlayChrome.svelte'),
+			'utf8',
+		);
+		const peekRule = source.match(/\.map-peek\s*\{[\s\S]*?\n\t\}/)?.[0] ?? '';
+		const peekContentRule =
+			source.match(/\.map-peek\s+:global\(\.map-hover-peek\)\s*\{[\s\S]*?\n\t\}/)?.[0] ?? '';
+
+		const maxWidth = peekRule.match(/max-width:\s*([\s\S]*?);/)?.[1].replace(/\s+/g, '');
+		expect(maxWidth).toBe(
+			'min(20rem,calc(100%-var(--map-detail-offset,0rem)-var(--app-left-rail-offset,0rem)-18rem))',
+		);
+		expect(peekContentRule).toContain('min-width: 0');
+
+		for (const viewportWidth of [1024, 1280, 1440]) {
+			for (const detailWidth of [59.2, 300, 360, 560]) {
+				const controlsRight = 16 + 256;
+				const peekRight = viewportWidth - detailWidth - 16;
+				const peekWidth = Math.min(320, viewportWidth - detailWidth - 288);
+				expect(peekWidth).toBeGreaterThan(0);
+				expect(peekRight - peekWidth).toBeGreaterThanOrEqual(controlsRight);
+				expect(peekRight).toBeLessThanOrEqual(viewportWidth);
+			}
+		}
+	});
+
 	it('hides the mobile filter pill while the detail sheet owns the bottom edge', async () => {
 		const store = createFilterStore(emptyFilterState());
 		const { rerender } = render(MapOverlayChromeHarness, {
@@ -163,56 +253,42 @@ describe('MapOverlayChrome', () => {
 		expect(document.querySelectorAll('#map-motion-label')).toHaveLength(0);
 	});
 
-	it('swaps only a narrow global stall into the stable banner row and focuses near-me', async () => {
-		vi.spyOn(window, 'matchMedia').mockImplementation(
-			(query) =>
-				({
-					matches: query === '(max-width: 768px)',
-					media: query,
-					onchange: null,
-					addEventListener: () => {},
-					removeEventListener: () => {},
-					addListener: () => {},
-					removeListener: () => {},
-					dispatchEvent: () => true,
-				}) as MediaQueryList,
-		);
-		const store = createFilterStore(emptyFilterState());
-		const view = render(MapOverlayChromeHarness, {
-			props: { store, locale: 'en', isDesktop: false, isStale: false },
-		});
-		const stableRegion = screen.getByRole('status');
+	it.each([768, 769, 1023])(
+		'swaps a %dpx global stall into the stable banner row and focuses near-me',
+		async (widthPx) => {
+			installViewportMatchMedia(widthPx);
+			installCompiledCss('src/lib/features/map/MapFeedStallBanner.svelte');
+			const store = createFilterStore(emptyFilterState());
+			const view = render(MapOverlayChromeHarness, {
+				props: { store, locale: 'en', isDesktop: false, isStale: false },
+			});
+			view.container.style.setProperty('--map-mobile-control-bottom', '84px');
+			view.container.style.setProperty('--chrome-offset', '16px');
+			const stableRegion = screen.getByRole('status');
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
-		expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
+			await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
+			expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
 
-		await view.rerender({ store, locale: 'en', isDesktop: false, isStale: true });
-		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-		expect(screen.queryByTestId('map-filter-pill')).not.toBeInTheDocument();
-		expect(screen.getByRole('status')).toBe(stableRegion);
-		expect(stableRegion).toHaveAttribute('data-state', 'global-stall');
-		expect(screen.getByRole('button', { name: 'Stops near me' })).toHaveFocus();
+			await view.rerender({ store, locale: 'en', isDesktop: false, isStale: true });
+			await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+			expect(screen.queryByTestId('map-filter-pill')).not.toBeInTheDocument();
+			expect(screen.getByRole('status')).toBe(stableRegion);
+			expect(stableRegion).toHaveAttribute('data-state', 'global-stall');
+			expect(stableRegion).toHaveClass('map-feed-stall');
+			expect(getComputedStyle(stableRegion).top).toBe('auto');
+			expect(getComputedStyle(stableRegion).bottom).toBe('84px');
+			expect(getComputedStyle(stableRegion).right).toBe('calc(12px + 44px + 10px)');
+			expect(screen.getByRole('button', { name: 'Stops near me' })).toHaveFocus();
 
-		await view.rerender({ store, locale: 'en', isDesktop: false, isStale: false });
-		expect(screen.getByTestId('map-filter-pill')).toBeInTheDocument();
-		expect(screen.getByRole('status')).toBe(stableRegion);
-		expect(stableRegion).toHaveAttribute('data-state', 'idle');
-	});
+			await view.rerender({ store, locale: 'en', isDesktop: false, isStale: false });
+			expect(screen.getByTestId('map-filter-pill')).toBeInTheDocument();
+			expect(screen.getByRole('status')).toBe(stableRegion);
+			expect(stableRegion).toHaveAttribute('data-state', 'idle');
+		},
+	);
 
-	it('keeps an open Controls drawer present above 768px during a global stall', async () => {
-		vi.spyOn(window, 'matchMedia').mockImplementation(
-			(query) =>
-				({
-					matches: false,
-					media: query,
-					onchange: null,
-					addEventListener: () => {},
-					removeEventListener: () => {},
-					addListener: () => {},
-					removeListener: () => {},
-					dispatchEvent: () => true,
-				}) as MediaQueryList,
-		);
+	it('keeps the stall swap disabled at 1024px with the real complementary query keys', async () => {
+		installViewportMatchMedia(1024);
 		const store = createFilterStore(emptyFilterState());
 		const view = render(MapOverlayChromeHarness, {
 			props: { store, locale: 'en', isDesktop: false, isStale: false },
@@ -222,10 +298,149 @@ describe('MapOverlayChrome', () => {
 		expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
 
 		await view.rerender({ store, locale: 'en', isDesktop: false, isStale: true });
+		installCompiledCss(
+			'src/lib/features/map/MapFilterPill.svelte',
+			'src/lib/features/map/MapFeedStallBanner.svelte',
+		);
+		view.container.style.setProperty('--map-mobile-control-bottom', '84px');
+		view.container.style.setProperty('--chrome-offset', '16px');
 		expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
-		expect(screen.getByTestId('map-filter-pill')).toBeInTheDocument();
-		expect(screen.getByRole('status')).toHaveAttribute('data-state', 'global-stall');
+		const pill = screen.getByTestId('map-filter-pill');
+		expect(pill).toBeInTheDocument();
+		expect(getComputedStyle(pill).display).toBe('none');
+		const banner = screen.getByRole('status');
+		expect(banner).toHaveAttribute('data-state', 'global-stall');
+		expect(banner).toHaveClass('map-feed-stall');
+		expect(getComputedStyle(banner).top).not.toBe('auto');
+		expect(getComputedStyle(banner).bottom).not.toBe('84px');
+		expect(getComputedStyle(banner).right).toBe('0px');
 	});
+
+	it.each([
+		{
+			widthPx: 1023,
+			isStale: false,
+			failure: null,
+			state: 'idle',
+			placement: 'head',
+			hidden: false,
+		},
+		{
+			widthPx: 1023,
+			isStale: true,
+			failure: null,
+			state: 'global-stall',
+			placement: 'head',
+			hidden: true,
+		},
+		{
+			widthPx: 1023,
+			isStale: true,
+			failure: 'Vehicle positions unavailable',
+			state: 'selected-family-failure',
+			placement: 'head',
+			hidden: false,
+		},
+		{
+			widthPx: 1024,
+			isStale: false,
+			failure: null,
+			state: 'idle',
+			placement: 'floating',
+			hidden: false,
+		},
+		{
+			widthPx: 1024,
+			isStale: true,
+			failure: null,
+			state: 'global-stall',
+			placement: 'floating',
+			hidden: true,
+		},
+		{
+			widthPx: 1024,
+			isStale: true,
+			failure: 'Vehicle positions unavailable',
+			state: 'selected-family-failure',
+			placement: 'floating',
+			hidden: false,
+		},
+	] as const)(
+		'resolves the freshness/banner matrix at $widthPx for $state',
+		({ widthPx, isStale, failure, state, placement, hidden }) => {
+			installViewportMatchMedia(widthPx);
+			installCompiledCss(
+				'src/lib/features/map/MapFreshness.svelte',
+				'src/lib/features/map/MapFeedStallBanner.svelte',
+			);
+			const store = createFilterStore(emptyFilterState());
+			const { container } = render(MapOverlayChromeHarness, {
+				props: {
+					store,
+					locale: 'en',
+					isDesktop: widthPx >= 1024,
+					isStale,
+					selectedFamilyFailureMessage: failure,
+				},
+			});
+			container.style.setProperty('--map-mobile-control-bottom', '84px');
+			container.style.setProperty('--chrome-offset', '16px');
+			const owner = container.querySelector<HTMLElement>('[data-slot="map-freshness-owner"]');
+			const banner = screen.getByRole('status');
+
+			expect(screen.getByRole('status')).toHaveAttribute('data-state', state);
+			expect(owner).toHaveAttribute('data-active-placement', placement);
+			expect(owner).toHaveAttribute('data-suppressed', hidden ? 'true' : 'false');
+			expect(container.querySelectorAll('[data-placement]')).toHaveLength(hidden ? 0 : 2);
+			if (!hidden) {
+				const active = container.querySelector<HTMLElement>(`[data-placement="${placement}"]`)!;
+				const inactivePlacement = placement === 'head' ? 'floating' : 'head';
+				const inactive = container.querySelector<HTMLElement>(
+					`[data-placement="${inactivePlacement}"]`,
+				)!;
+				expect(getComputedStyle(active).display).not.toBe('none');
+				expect(getComputedStyle(inactive).display).toBe('none');
+			}
+			expect(container.querySelector('.map-feed-stall') != null).toBe(state === 'global-stall');
+			if (state === 'global-stall' && widthPx < 1024) {
+				expect(getComputedStyle(banner).top).toBe('auto');
+				expect(getComputedStyle(banner).bottom).toBe('84px');
+				expect(getComputedStyle(banner).right).toBe('calc(12px + 44px + 10px)');
+			} else {
+				expect(getComputedStyle(banner).top).not.toBe('auto');
+				expect(getComputedStyle(banner).bottom).not.toBe('84px');
+				expect(getComputedStyle(banner).right).toBe('0px');
+			}
+		},
+	);
+
+	it.each([768, 769, 1023, 1024])(
+		'computes the compact near-me move only inside the %dpx side of the convergence',
+		(widthPx) => {
+			installViewportMatchMedia(widthPx);
+			installCompiledCss('src/lib/features/map/MapNearMeControl.svelte');
+			const store = createFilterStore(emptyFilterState());
+			const { container } = render(MapOverlayChromeHarness, {
+				props: { store, locale: 'en', isDesktop: widthPx >= 1024 },
+			});
+			const toggle = container.querySelector<HTMLElement>('.map-near-toggle')!;
+			const label = toggle.querySelector<HTMLElement>('span')!;
+			const computed = getComputedStyle(toggle);
+
+			if (widthPx < 1024) {
+				expect(computed.width).toBe('44px');
+				expect(computed.height).toBe('44px');
+				expect(computed.minHeight).toBe('44px');
+				expect(computed.padding).toBe('0px');
+				expect(getComputedStyle(label).display).toBe('none');
+			} else {
+				expect(computed.width).not.toBe('44px');
+				expect(computed.height).not.toBe('44px');
+				expect(computed.minHeight).toBe('44px');
+				expect(getComputedStyle(label).display).not.toBe('none');
+			}
+		},
+	);
 
 	it('closes the portaled drawer at 1024px and hands focus to desktop Controls', async () => {
 		let desktopListener: ((event: MediaQueryListEvent) => void) | undefined;
@@ -301,19 +516,7 @@ describe('MapOverlayChrome', () => {
 	});
 
 	it('keeps Controls present when a selected-family failure outranks aggregate staleness', () => {
-		vi.spyOn(window, 'matchMedia').mockImplementation(
-			(query) =>
-				({
-					matches: query === '(max-width: 768px)',
-					media: query,
-					onchange: null,
-					addEventListener: () => {},
-					removeEventListener: () => {},
-					addListener: () => {},
-					removeListener: () => {},
-					dispatchEvent: () => true,
-				}) as MediaQueryList,
-		);
+		installViewportMatchMedia(1023);
 		const store = createFilterStore(emptyFilterState());
 		render(MapOverlayChromeHarness, {
 			props: {

@@ -61,7 +61,7 @@ export function publishRailOffset(
 	dragging: boolean,
 ): () => void {
 	const detailWidth = `${detailWidthPx}px`;
-	const effectiveOffset = open ? (collapsed ? '3.7rem' : detailWidth) : '0px';
+	const effectiveOffset = open ? (collapsed ? 'var(--size-detail-rail)' : detailWidth) : '0px';
 	const root = element.ownerDocument.documentElement;
 
 	element.style.setProperty('--app-right-detail-offset', detailWidth);

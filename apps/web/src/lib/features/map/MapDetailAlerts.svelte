@@ -157,7 +157,10 @@
 		align-items: center;
 		justify-content: space-between;
 		width: 100%;
-		padding: 0;
+		min-height: 2.75rem;
+		min-block-size: 2.75rem;
+		padding-block: 0.5rem;
+		padding-inline: 0;
 		color: inherit;
 		font: inherit;
 		line-height: 1.35;
@@ -166,6 +169,13 @@
 		border: 0;
 		cursor: pointer;
 		transition: color var(--duration-fast) var(--ease-out);
+	}
+	.map-alert-link {
+		display: inline-flex;
+		min-height: 2.75rem;
+		min-block-size: 2.75rem;
+		align-items: center;
+		padding-block: 0.5rem;
 	}
 
 	/* The provider text and its language marker travel together; only the
