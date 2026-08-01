@@ -169,7 +169,7 @@ describe('MapFilterPill', () => {
 		expect(prmBlock).toMatch(
 			/\[data-m6b-controls-drawer\]\[data-slot='sheet-content'\]\[data-state='closed'\]/,
 		);
-		expect(source).not.toMatch(/:global\(\[data-slot=['"]sheet-(?:content|overlay)['"]\]\)\s*\{/);
+		expect(source).not.toMatch(/:global\(\[data-slot=['"]sheet-(?:content|overlay)['"]\]\)\s*[,{]/);
 		expect(source).not.toContain('<svelte:window');
 		expect(source).not.toContain('map-filter-drawer-backdrop');
 	});

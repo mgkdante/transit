@@ -294,7 +294,7 @@
 		:global([data-m6b-controls-drawer][data-slot='sheet-content']),
 		:global([data-m6b-controls-drawer][data-slot='sheet-content'][data-state='open']),
 		:global([data-m6b-controls-drawer][data-slot='sheet-content'][data-state='closed']),
-		:global([data-slot='sheet-overlay']:has(+ [data-m6b-controls-drawer])) {
+		:global([data-slot='sheet-overlay'][data-state]:has(+ [data-m6b-controls-drawer])) {
 			animation: none;
 			transition: none;
 		}
