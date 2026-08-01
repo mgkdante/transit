@@ -11,7 +11,7 @@
 	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
 	import { OCCUPANCY_CODES, STATUS_CODES } from '$lib/v1/schemas/types';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
-	import { occupancyVar, statusVar } from '$lib/components/dataviz';
+	import { STATUS_GLYPH, occupancyGlyph, occupancyVar, statusVar } from '$lib/components/dataviz';
 	import MapFilterGroup from './MapFilterGroup.svelte';
 	import type { MapFilterGroupKind } from './MapFilterGroup.svelte';
 	import MapFilterRail from './MapFilterRail.svelte';
@@ -440,6 +440,12 @@
 							onclick={() => toggleStatus(code)}
 						>
 							<span class="mf-swatch"></span>
+							<span
+								class="mf-state-glyph"
+								data-m6d-glyph-kind="status"
+								data-m6d-glyph-code={code}
+								aria-hidden="true">{STATUS_GLYPH[code]}</span
+							>
 							<span class="mf-chip-text">{STATUS_LABELS[locale][code]}</span>
 						</button>
 					{/each}
@@ -465,6 +471,12 @@
 							onclick={() => toggleOccupancy(code)}
 						>
 							<span class="mf-swatch"></span>
+							<span
+								class="mf-state-glyph"
+								data-m6d-glyph-kind="crowding"
+								data-m6d-glyph-code={code}
+								aria-hidden="true">{occupancyGlyph(code)}</span
+							>
 							<span class="mf-chip-text">{OCCUPANCY_LABELS[locale][code]}</span>
 						</button>
 					{/each}

@@ -5,6 +5,7 @@
 	import type { Chip } from '$lib/filters';
 	import type { Alert } from '$lib/v1/schemas';
 	import { MaybeValue } from '$lib/components/edge';
+	import { STATUS_GLYPH, occupancyGlyph } from '$lib/components/dataviz';
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { MapSelection, MapSelectionDetail } from './mapSelection';
@@ -122,7 +123,15 @@
 				<DetailAttributeGrid>
 					<div>
 						<dt>{t.status}</dt>
-						<dd>{STATUS_LABELS[locale][detail.vehicle.status]}</dd>
+						<dd>
+							<span
+								class="detail-state-glyph"
+								data-m6d-glyph-kind="status"
+								data-m6d-glyph-code={detail.vehicle.status}
+								aria-hidden="true">{STATUS_GLYPH[detail.vehicle.status]}</span
+							>
+							{STATUS_LABELS[locale][detail.vehicle.status]}
+						</dd>
 					</div>
 					<div>
 						<dt>{t.nextStop}</dt>
@@ -154,6 +163,12 @@
 					<div>
 						<dt>{t.crowding}</dt>
 						<dd>
+							<span
+								class="detail-state-glyph"
+								data-m6d-glyph-kind="crowding"
+								data-m6d-glyph-code={detail.vehicle.occupancy ?? 'nodata'}
+								aria-hidden="true">{occupancyGlyph(detail.vehicle.occupancy)}</span
+							>
 							<MaybeValue present={detail.vehicle.occupancy != null} reason={absence} {locale}
 								>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
 							>

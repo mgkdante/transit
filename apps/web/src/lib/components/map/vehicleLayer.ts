@@ -3,8 +3,9 @@
 //
 // A vehicle is a single PAINTED BUS pictogram (vehicleSprites) baked UPRIGHT so
 // it reads at every bearing; heading is a SEPARATE chevron layer that rotates by
-// bearing and floats just ahead of the bus. NO state glyph — the FILTER carries
-// state by REPAINTING the bus colour and HIDING non-matches:
+// bearing and floats just ahead of the bus. A separate state-badge layer carries
+// the matching status/crowding glyph while the FILTER repaints the bus and hides
+// non-matches:
 //   · NO filter → everything shows, plain default orange (easy on the eye);
 //   · ALL of a dimension selected → everything shows, every state PAINTED in its
 //     own colour (the full picture, for the technical / curious);
@@ -15,7 +16,15 @@
 import type { Map as MapLibreMap, LayerSpecification } from 'maplibre-gl';
 import type { Vehicle } from '$lib/v1/schemas';
 import type { EntityKind, FilterState } from '$lib/filters';
-import { bodyIconId, BUS_ICON, HEADING_ICON, resolveColor, SILENT_ICON } from './vehicleSprites';
+import {
+	bodyIconId,
+	BUS_ICON,
+	HEADING_ICON,
+	resolveColor,
+	SILENT_ICON,
+	stateBadgeIconId,
+	VEHICLE_MARKER_GEOMETRY,
+} from './vehicleSprites';
 import { fixAgeS, isVehicleStale } from './vehicleProjection';
 
 export const VEHICLE_SOURCE = 'vehicles';
@@ -23,6 +32,8 @@ export const VEHICLE_HIGHLIGHT_LAYER = 'vehicle-highlight';
 export const VEHICLE_BODY_LAYER = 'vehicle-body';
 /** The rotated chevron overlay; same source, filtered to vehicles with a heading. */
 export const VEHICLE_HEADING_LAYER = 'vehicle-heading';
+/** The status/crowding shape-channel overlay; dynamically reads the feature's badge id. */
+export const VEHICLE_STATE_BADGE_LAYER = 'vehicle-state-badge';
 /** The per-bus "!" not-reporting badge overlay; same source, filtered to matched + stale. */
 export const VEHICLE_SILENT_LAYER = 'vehicle-silent';
 
@@ -32,6 +43,10 @@ export interface VehicleFeature {
 	properties: {
 		id: string;
 		body: string;
+		// Optional on the structural type so protected external test harnesses that
+		// construct VehicleFeature directly stay source-compatible. Production
+		// features from toVehicleFeatures always serialize a string.
+		mark?: string;
 		bearing: number;
 		// 1 = the vehicle reports a real heading (so the chevron layer shows + rotates).
 		hasHeading: number;
@@ -92,8 +107,9 @@ function matchesFilter(v: Vehicle, f: FilterState, alertVehicleIds: ReadonlySet<
 	return true;
 }
 
-/** Body icon id + match flag for a vehicle. Matched + a colour dim → the state-
- * coloured bus; otherwise the default orange bus. ONE bus glyph (no directional
+/** Body icon id + state-badge id + match flag for a vehicle. Matched + a colour
+ * dimension → the state-coloured bus and its shape-channel badge; otherwise the
+ * default orange bus and an empty badge id. ONE bus glyph (no directional
  * variants); the chevron layer carries heading on top. */
 function iconFor(
 	v: Vehicle,
@@ -102,16 +118,25 @@ function iconFor(
 	alertVehicleIds: ReadonlySet<string>,
 ): {
 	body: string;
+	mark: string;
 	matched: number;
 } {
 	const matched = matchesFilter(v, f, alertVehicleIds);
 	if (matched && dim === 'status') {
-		return { body: bodyIconId('status', v.status), matched: 1 };
+		return {
+			body: bodyIconId('status', v.status),
+			mark: stateBadgeIconId('status', v.status),
+			matched: 1,
+		};
 	}
 	if (matched && dim === 'occupancy' && v.occupancy != null) {
-		return { body: bodyIconId('occupancy', v.occupancy), matched: 1 };
+		return {
+			body: bodyIconId('occupancy', v.occupancy),
+			mark: stateBadgeIconId('occupancy', v.occupancy),
+			matched: 1,
+		};
 	}
-	return { body: BUS_ICON, matched: matched ? 1 : 0 };
+	return { body: BUS_ICON, mark: '', matched: matched ? 1 : 0 };
 }
 
 /** Skew-free "now" + live ttl retained for the per-bus staleness cutoff. */
@@ -137,7 +162,7 @@ export function toVehicleFeatures(
 	return {
 		type: 'FeatureCollection',
 		features: vehicles.map((v) => {
-			const { body, matched } = iconFor(v, filter, dim, alertVehicleIds);
+			const { body, mark, matched } = iconFor(v, filter, dim, alertVehicleIds);
 			// Per-bus staleness off this bus's OWN fix time (reported_utc, falling
 			// back to updated_utc) — NOT the uniform snapshot age above. When a
 			// clock is supplied and the fix is past the cutoff, the bus is frozen +
@@ -152,6 +177,7 @@ export function toVehicleFeatures(
 				properties: {
 					id: v.id,
 					body,
+					mark,
 					bearing: v.bearing ?? 0,
 					// A bus with no reported heading shows NO chevron (an honest "no
 					// heading", never a fake forward arrow).
@@ -177,12 +203,12 @@ export function addVehicleSource(map: MapLibreMap): void {
 // a bus appear (the old 0.55→1.05 jump was the real "only solid on hover" cause).
 // Exported so the test asserts the resting size + accent ratio without parsing the
 // expression. Tune live in the GL eyeball loop.
-export const ICON_SIZE_Z11_DEFAULT = 0.78;
+export const ICON_SIZE_Z11_DEFAULT = VEHICLE_MARKER_GEOMETRY.bodyIconSize.z11;
 
 // Bus body zoom legs (the DEFAULT, unhovered/unselected size at each zoom stop).
 // The silent "!" badge is sized as a fixed FRACTION of these so it scales with the
 // bus and stays ~75% of the bus icon at every zoom. Exported for the test.
-const ICON_SIZE_Z15_DEFAULT = 1.3;
+const ICON_SIZE_Z15_DEFAULT = VEHICLE_MARKER_GEOMETRY.bodyIconSize.z15;
 
 const ICON_SIZE = [
 	'interpolate',
@@ -199,7 +225,7 @@ const ICON_SIZE = [
 // the bus, not a replacement for it. Sized off the bus DEFAULT legs × 0.75 and
 // interpolated over the same zoom range so it tracks the bus at every zoom.
 // Exported (z11) so the test asserts the ~75% ratio without parsing the expression.
-export const SILENT_BADGE_SCALE = 0.75;
+export const SILENT_BADGE_SCALE = VEHICLE_MARKER_GEOMETRY.silentBadge.scale;
 export const SILENT_ICON_SIZE_Z11 = ICON_SIZE_Z11_DEFAULT * SILENT_BADGE_SCALE;
 export const SILENT_ICON_SIZE_Z15 = ICON_SIZE_Z15_DEFAULT * SILENT_BADGE_SCALE;
 
@@ -212,6 +238,30 @@ const SILENT_ICON_SIZE = [
 	15,
 	SILENT_ICON_SIZE_Z15,
 ];
+
+const STATE_BADGE_ICON_SIZE = [
+	'interpolate',
+	['linear'],
+	['zoom'],
+	11,
+	ICON_SIZE_Z11_DEFAULT * VEHICLE_MARKER_GEOMETRY.stateBadge.scale,
+	15,
+	ICON_SIZE_Z15_DEFAULT * VEHICLE_MARKER_GEOMETRY.stateBadge.scale,
+];
+
+/**
+ * Convert a semantic icon displacement to MapLibre's raw `icon-offset` space.
+ * MapLibre multiplies the raw offset by `icon-size`, so a separately scaled
+ * overlay divides out only its overlay scale here. The frozen geometry table
+ * remains the sole source of the intended displacement and scale.
+ */
+export function mapLibreRawIconOffset(
+	semanticOffset: readonly [number, number],
+	overlayScale: number,
+): readonly [number, number] {
+	if (!(overlayScale > 0)) throw new Error('MapLibre icon offset scale must be positive');
+	return [semanticOffset[0] / overlayScale, semanticOffset[1] / overlayScale];
+}
 
 /** Global stale-dim multiplier: 45% when the WHOLE live tier is behind, else 1. */
 const GLOBAL_STALE_OPACITY = 0.45;
@@ -302,10 +352,11 @@ function retintVehicleHighlight(map: MapLibreMap): void {
 	);
 }
 
-/** Add the vehicle body + heading + per-bus silent-flag symbol layers. Non-matched
+/** Add the vehicle body + heading + state badge + per-bus silent-flag symbol layers. Non-matched
  * features are filtered OUT (they disappear); opacity carries only the stale dim.
  * The bus body is UPRIGHT (it reads at every bearing); the chevron is a SEPARATE
  * layer that rotates by bearing and shows ONLY for vehicles reporting a heading;
+ * the state badge shows ONLY for a matched active status/crowding dimension;
  * the silent "!" badge shows ONLY for matched + per-bus-stale vehicles (frozen
  * buses whose own fix is past the cutoff). Idempotent. */
 export function addVehicleLayers(map: MapLibreMap): void {
@@ -356,6 +407,32 @@ export function addVehicleLayers(map: MapLibreMap): void {
 		} as unknown as LayerSpecification);
 	}
 
+	// The compact state badge is drawn ABOVE the heading and BELOW the silent
+	// alert. Its dynamic sprite id is empty outside matched state-filter modes,
+	// and the filter excludes those empty ids before MapLibre requests an image.
+	if (!map.getLayer(VEHICLE_STATE_BADGE_LAYER)) {
+		map.addLayer(
+			{
+				id: VEHICLE_STATE_BADGE_LAYER,
+				type: 'symbol',
+				source: VEHICLE_SOURCE,
+				filter: ['all', ['==', ['get', 'matched'], 1], ['!=', ['get', 'mark'], '']],
+				layout: {
+					'icon-image': ['get', 'mark'],
+					'icon-offset': mapLibreRawIconOffset(
+						VEHICLE_MARKER_GEOMETRY.stateBadge.offset,
+						VEHICLE_MARKER_GEOMETRY.stateBadge.scale,
+					),
+					'icon-size': STATE_BADGE_ICON_SIZE,
+					'icon-allow-overlap': true,
+					'icon-ignore-placement': true,
+				},
+				paint: { 'icon-opacity': iconOpacityExpr(false) },
+			} as unknown as LayerSpecification,
+			map.getLayer(VEHICLE_SILENT_LAYER) ? VEHICLE_SILENT_LAYER : undefined,
+		);
+	}
+
 	// The per-bus "!" not-reporting badge — drawn ABOVE the body + heading so a
 	// frozen, no-longer-reporting bus is FLAGGED (full opacity), never hidden.
 	// Shown only for matched + stale vehicles; staleness is per-bus now (each
@@ -370,7 +447,7 @@ export function addVehicleLayers(map: MapLibreMap): void {
 				'icon-image': SILENT_ICON,
 				// Float the big "!" just above the bus glyph (icon-offset is in icon px,
 				// applied before icon-size, so it tracks the glyph as it scales).
-				'icon-offset': [0, -16],
+				'icon-offset': VEHICLE_MARKER_GEOMETRY.silentBadge.offset,
 				// ~75% of the bus icon — a prominent alert flag, scaling with zoom.
 				'icon-size': SILENT_ICON_SIZE,
 				'icon-allow-overlap': true,
@@ -394,5 +471,8 @@ export function setStale(map: MapLibreMap, stale: boolean): void {
 	}
 	if (map.getLayer(VEHICLE_HEADING_LAYER)) {
 		map.setPaintProperty(VEHICLE_HEADING_LAYER, 'icon-opacity', opacity);
+	}
+	if (map.getLayer(VEHICLE_STATE_BADGE_LAYER)) {
+		map.setPaintProperty(VEHICLE_STATE_BADGE_LAYER, 'icon-opacity', opacity);
 	}
 }

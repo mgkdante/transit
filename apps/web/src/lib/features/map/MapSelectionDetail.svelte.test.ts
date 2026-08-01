@@ -125,6 +125,13 @@ function expectHard44(element: Element): void {
 	).toBeGreaterThanOrEqual(44);
 }
 
+function detailValue(container: HTMLElement, label: string): HTMLElement {
+	const term = [...container.querySelectorAll('dt')].find((node) => node.textContent === label);
+	const value = term?.parentElement?.querySelector<HTMLElement>('dd');
+	if (!value) throw new Error(`missing detail value for ${label}`);
+	return value;
+}
+
 const vehicles: Vehicle[] = [
 	{
 		id: 'veh-1',
@@ -340,8 +347,107 @@ describe('MapSelectionDetail', () => {
 		expect(chips).not.toHaveTextContent('Late');
 		expect(chips).not.toHaveTextContent('Standing');
 		expect(chips).not.toHaveTextContent('Trip trip-24-a');
-		expect(container.querySelector('[data-slot="detail-status-band"]')).toHaveTextContent('Late');
+		const statusBand = container.querySelector<HTMLElement>('[data-slot="detail-status-band"]')!;
+		expect(statusBand).toHaveTextContent('▲ Late');
+		expect(statusBand).toHaveTextContent('▇ Standing');
 	});
+
+	it.each([
+		{
+			locale: 'en',
+			statusLabel: 'Status',
+			crowdingLabel: 'Crowding',
+			status: '▲ Late',
+			occupancy: '▇ Standing',
+		},
+		{
+			locale: 'fr',
+			statusLabel: 'Statut',
+			crowdingLabel: 'Achalandage',
+			status: '▲ En retard',
+			occupancy: '▇ Debout',
+		},
+	] as const)(
+		'prefixes normal $locale status-band values with hidden canonical glyphs',
+		({ locale, statusLabel, crowdingLabel, status, occupancy }) => {
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{ index, stops, alerts, routes },
+			);
+			const { container } = render(MapSelectionDetail, { props: { detail, locale } });
+			const statusValue = detailValue(container, statusLabel);
+			const occupancyValue = detailValue(container, crowdingLabel);
+
+			expect(statusValue).toHaveTextContent(status);
+			expect(occupancyValue).toHaveTextContent(occupancy);
+			expect(statusValue.querySelector('[data-m6d-glyph-kind="status"]')).toHaveAttribute(
+				'aria-hidden',
+				'true',
+			);
+			expect(occupancyValue.querySelector('[data-m6d-glyph-kind="crowding"]')).toHaveAttribute(
+				'aria-hidden',
+				'true',
+			);
+		},
+	);
+
+	it.each([
+		{
+			locale: 'en',
+			statusLabel: 'Status',
+			crowdingLabel: 'Crowding',
+			status: '○ Unknown',
+			unknown: 'Unknown',
+			reason: 'not reported in the live feed',
+			empty: 'Empty',
+		},
+		{
+			locale: 'fr',
+			statusLabel: 'Statut',
+			crowdingLabel: 'Achalandage',
+			status: '○ Inconnu',
+			unknown: 'Inconnu',
+			reason: 'non signalé dans le flux',
+			empty: 'Vide',
+		},
+	] as const)(
+		'keeps null occupancy honest with the no-data glyph in $locale',
+		({ locale, statusLabel, crowdingLabel, status, unknown, reason, empty }) => {
+			const nullOccupancyIndex = buildLiveIndex({
+				vehicles: {
+					generated_utc: utc('2026-06-15T00:00:00Z'),
+					vehicles: [
+						{
+							...vehicles[0]!,
+							id: 'veh-no-occupancy',
+							status: 'unknown',
+							occupancy: null,
+						},
+					],
+				},
+				trips: { generated_utc: utc('2026-06-15T00:00:00Z'), trips: {} },
+				stopDepartures: { generated_utc: utc('2026-06-15T00:00:00Z'), stops: {} },
+			});
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-no-occupancy' },
+				{ index: nullOccupancyIndex, stops, alerts, routes },
+			);
+			const { container } = render(MapSelectionDetail, { props: { detail, locale } });
+			const statusValue = detailValue(container, statusLabel);
+			const occupancyValue = detailValue(container, crowdingLabel);
+
+			expect(statusValue).toHaveTextContent(status);
+			expect(occupancyValue).toHaveTextContent('◌');
+			expect(occupancyValue).toHaveTextContent(unknown);
+			expect(occupancyValue).toHaveTextContent(reason);
+			expect(occupancyValue).not.toHaveTextContent('▁');
+			expect(occupancyValue).not.toHaveTextContent(empty);
+			expect(occupancyValue.querySelector('[data-m6d-glyph-code="nodata"]')).toHaveAttribute(
+				'aria-hidden',
+				'true',
+			);
+		},
+	);
 
 	it('marks stop routes as the 420px rung and full departures as the 560px rung', () => {
 		const detail = resolveMapSelection(
@@ -968,13 +1074,16 @@ describe('MapSelectionDetail', () => {
 		const onselect = vi.fn();
 		const onfilter = vi.fn();
 		const onalertselect = vi.fn();
-		const { getAllByRole, getAllByText, getByRole, getByText } = render(MapSelectionDetail, {
-			props: { detail, locale: 'en', onselect, onfilter, onalertselect },
-		});
+		const { container, getAllByRole, getAllByText, getByRole, getByText } = render(
+			MapSelectionDetail,
+			{
+				props: { detail, locale: 'en', onselect, onfilter, onalertselect },
+			},
+		);
 
 		expect(getByRole('button', { name: 'Select bus veh-1' })).toBeInTheDocument();
-		expect(getByText('Late')).toBeInTheDocument();
-		expect(getAllByText('Standing').length).toBeGreaterThan(0);
+		expect(detailValue(container, 'Status')).toHaveTextContent('▲ Late');
+		expect(detailValue(container, 'Crowding')).toHaveTextContent('▇ Standing');
 		expect(getByText('Past stops')).toBeInTheDocument();
 		expect(getByText('Next stops')).toBeInTheDocument();
 		expect(getByText('Sherbrooke / Saint-Denis')).toBeInTheDocument();

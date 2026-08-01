@@ -18,8 +18,42 @@ describe('MapFilters', () => {
 	const stopFixtures = [
 		{ id: '53355', code: '53355', name: 'Van Horne / Rockland', lat: 45.52, lon: -73.62 },
 	];
+	const statusMappings = [
+		{ code: 'early', glyph: '▼', en: 'Early', fr: 'En avance' },
+		{ code: 'on_time', glyph: '●', en: 'On-time', fr: 'À l’heure' },
+		{ code: 'late', glyph: '▲', en: 'Late', fr: 'En retard' },
+		{ code: 'severe', glyph: '◆', en: 'Severe', fr: 'Sévère' },
+		{ code: 'unknown', glyph: '○', en: 'Unknown', fr: 'Inconnu' },
+	] as const;
+	const occupancyMappings = [
+		{ code: 'empty', glyph: '▁', en: 'Empty', fr: 'Vide' },
+		{ code: 'many_seats', glyph: '▃', en: 'Many seats', fr: 'Plusieurs places' },
+		{ code: 'few_seats', glyph: '▅', en: 'Few seats', fr: 'Peu de places' },
+		{ code: 'standing', glyph: '▇', en: 'Standing', fr: 'Debout' },
+		{ code: 'full', glyph: '█', en: 'Full', fr: 'Plein' },
+	] as const;
 
-	it('renders ordered disclosures, an absent empty Clear, and a separate six-group glyph rail', async () => {
+	function expectGlyphMappings(
+		container: HTMLElement,
+		kind: 'status' | 'crowding',
+		mappings: typeof statusMappings | typeof occupancyMappings,
+		locale: 'en' | 'fr',
+	): void {
+		const group = container.querySelector<HTMLElement>(`[data-filter-group="${kind}"]`)!;
+		for (const mapping of mappings) {
+			const label = mapping[locale];
+			const chip = within(group).getByRole('button', { name: label });
+			const glyph = chip.querySelector(
+				`[data-m6d-glyph-kind="${kind}"][data-m6d-glyph-code="${mapping.code}"]`,
+			);
+			expect(glyph).toHaveTextContent(mapping.glyph);
+			expect(glyph).toHaveAttribute('aria-hidden', 'true');
+			expect(chip.querySelector('.mf-chip-text')).toHaveTextContent(label);
+			expect(chip).toHaveAccessibleName(label);
+		}
+	}
+
+	it('renders ordered disclosures and reopens both state mappings from the six-group glyph rail', async () => {
 		let pushed = '';
 		const store = createFilterStore(emptyFilterState(), (search) => {
 			pushed = search;
@@ -76,10 +110,57 @@ describe('MapFilters', () => {
 			'1',
 		);
 
-		await fireEvent.click(within(rail as HTMLElement).getByRole('button', { name: 'Markers' }));
+		await fireEvent.click(within(rail as HTMLElement).getByRole('button', { name: 'Status' }));
 		expect(container.querySelector('.map-filters')).toHaveAttribute('data-open', 'true');
 		expect(localStorage.getItem('transit:controls-rail')).toBe('false');
-		await waitFor(() => expect(getByRole('button', { name: 'Markers' })).toHaveFocus());
+		await waitFor(() => expect(getByRole('button', { name: 'Status' })).toHaveFocus());
+		expectGlyphMappings(container, 'status', statusMappings, 'en');
+
+		await fireEvent.click(getByRole('button', { name: 'Collapse controls' }));
+		const crowdingRail = container.querySelector<HTMLElement>('[data-testid="map-filter-rail"]')!;
+		expect(crowdingRail.querySelectorAll('.mf-chip')).toHaveLength(0);
+		await fireEvent.click(within(crowdingRail).getByRole('button', { name: 'Crowding' }));
+		expect(container.querySelector('.map-filters')).toHaveAttribute('data-open', 'true');
+		await waitFor(() => expect(getByRole('button', { name: 'Crowding' })).toHaveFocus());
+		expectGlyphMappings(container, 'crowding', occupancyMappings, 'en');
+	});
+
+	it.each([
+		{ locale: 'en', collapsible: true, presentation: 'desktop' },
+		{ locale: 'fr', collapsible: true, presentation: 'desktop' },
+		{ locale: 'en', collapsible: false, presentation: 'drawer' },
+		{ locale: 'fr', collapsible: false, presentation: 'drawer' },
+	] as const)(
+		'renders canonical glyphs without changing $locale $presentation chip names',
+		({ locale, collapsible, presentation }) => {
+			const store = createFilterStore(emptyFilterState());
+			const { container } = render(MapFilters, {
+				props: { store, locale, collapsible, controlsMode: true },
+			});
+
+			expect(container.querySelector('.map-filters')).toHaveAttribute(
+				'data-presentation',
+				presentation,
+			);
+			expectGlyphMappings(container, 'status', statusMappings, locale);
+			expectGlyphMappings(container, 'crowding', occupancyMappings, locale);
+		},
+	);
+
+	it('keeps both D3 consumers on the dataviz glyph vocabulary', () => {
+		for (const relative of [
+			'src/lib/features/map/MapFilters.svelte',
+			'src/lib/features/map/MapSelectionDetail.svelte',
+		]) {
+			const source = readFileSync(resolve(process.cwd(), relative), 'utf8');
+			expect(source, relative).toMatch(
+				/import\s*\{[^}]*STATUS_GLYPH[^}]*occupancyGlyph[^}]*\}\s*from '\$lib\/components\/dataviz'/s,
+			);
+			expect(source.match(/STATUS_GLYPH\[/g), relative).toHaveLength(1);
+			expect(source.match(/occupancyGlyph\(/g), relative).toHaveLength(1);
+			expect(source, relative).not.toContain('OCCUPANCY_GLYPH');
+			expect(source, relative).not.toMatch(/['"](?:▼|●|▲|◆|○|▁|▃|▅|▇|█|◌)['"]/);
+		}
 	});
 
 	it('renders active route, stop, and bus picks as removable filter sections', async () => {
