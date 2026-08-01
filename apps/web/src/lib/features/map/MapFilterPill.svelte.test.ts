@@ -141,20 +141,32 @@ describe('MapFilterPill', () => {
 		expect(screen.queryByTestId('map-filter-pill')).not.toBeInTheDocument();
 	});
 
-	it('pins the uniquely keyed portal geometry, animation, PRM, and single scroll owner', () => {
+	it('pins the portaled drawer below the published nav edge without changing Sheet behavior', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/map/MapFilterPill.svelte'),
+			'utf-8',
+		);
+		const appShell = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/shell/AppShell.svelte'),
 			'utf-8',
 		);
 
 		expect(source).toContain('data-m6b-controls-drawer');
 		expect(source).toMatch(/left:\s*0\.75rem/);
 		expect(source).toMatch(/right:\s*auto/);
+		expect(appShell).toMatch(/:root\s*\{\s*--chrome-offset:/);
+		expect(source).toMatch(/--map-controls-drawer-gap:\s*10px/);
 		expect(source).toMatch(
-			/bottom:\s*calc\(5\.25rem \+ env\(safe-area-inset-bottom, 0px\) \+ 44px \+ 10px\)/,
+			/--map-controls-drawer-top:\s*calc\(\s*var\(--chrome-offset\)\s*-\s*var\(--space-card-gap\)\s*\+\s*var\(--map-controls-drawer-gap\)\s*\)/s,
 		);
+		expect(source).toMatch(
+			/--map-controls-drawer-bottom:\s*calc\(\s*5\.25rem\s*\+\s*env\(safe-area-inset-bottom, 0px\)\s*\+\s*44px\s*\+\s*var\(--map-controls-drawer-gap\)\s*\)/s,
+		);
+		expect(source).toMatch(/bottom:\s*var\(--map-controls-drawer-bottom\)/);
 		expect(source).toMatch(/width:\s*min\(21rem,\s*calc\(100vw - 2rem\)\)/);
-		expect(source).toMatch(/max-height:\s*min\(72dvh,\s*calc\(100dvh - 7rem\)\)/);
+		expect(source).toMatch(
+			/max-height:\s*min\(\s*72dvh,\s*calc\(\s*100dvh\s*-\s*var\(--map-controls-drawer-top\)\s*-\s*var\(--map-controls-drawer-bottom\)\s*\)\s*\)/s,
+		);
 		expect(source).toMatch(/overflow-y:\s*auto/);
 		expect(source).toMatch(/data-state='open'[\s\S]*var\(--duration-slow\)/);
 		expect(source).toMatch(/data-state='closed'[\s\S]*var\(--duration-normal\)/);

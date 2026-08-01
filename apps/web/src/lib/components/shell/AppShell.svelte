@@ -209,12 +209,19 @@
 	/* THE single vertical-chrome knob. Every sticky top + every heading anchor
 	   offset derives from this one value — no more scattered 5.5rem / 5rem / 7rem
 	   literals or the unset --nav-height fallback (the old three-system split).
-	   = the pill's top inset (1rem + notch) + the pill height + a 0.5rem breath.
+	   = the pill's top inset (1rem + notch) + the pill height + the structural
+	   card-gap token.
 	   --pill-h is published per breakpoint by NavPill (deterministic: content 44px
 	   + 2·padV + 2·2px border), so this calc tracks the real floating pill height
-	   at every width with no JS measurement. */
+	   at every width with no JS measurement. Publish on :root so portaled Sheet
+	   content reads the same channel as in-tree sticky chrome. */
+	:root {
+		--chrome-offset: calc(
+			1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + var(--space-card-gap)
+		);
+	}
+
 	.app-shell-root {
-		--chrome-offset: calc(1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + 0.5rem);
 		position: relative;
 	}
 

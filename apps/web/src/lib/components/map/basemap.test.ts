@@ -73,11 +73,14 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 		expect((src as { maxzoom?: number }).maxzoom).toBe(15);
 	});
 
-	it('decorates the public attribution with a one-line thank-you for OSM contributors', () => {
+	it('preserves the manifest attribution byte-for-byte without decorative chrome', () => {
 		const src = style.sources[BASEMAP_SOURCE_ID];
-		expect((src as { attribution?: string }).attribution).toBe(
-			'Big thanks to © OpenStreetMap contributors, © Protomaps <span class="transit-basemap-thanks" aria-label="thank you">🧡</span>',
-		);
+		const attribution = (src as { attribution?: string }).attribution;
+
+		expect(attribution).toContain(FILE.attribution);
+		expect(attribution).toBe(FILE.attribution);
+		expect(attribution).not.toContain('Big thanks to ');
+		expect(attribution).not.toContain('🧡');
 	});
 
 	it('keys land/water/roads on Protomaps source-layer names (not OpenMapTiles)', () => {
