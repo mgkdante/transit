@@ -24,7 +24,7 @@
 	import MapNearMeControl from './MapNearMeControl.svelte';
 	import MapFilterPill from './MapFilterPill.svelte';
 	import MapFreshness from './MapFreshness.svelte';
-	import MapFeedStallBanner from './MapFeedStallBanner.svelte';
+	import MapFeedStallBanner, { deriveMapFeedBannerState } from './MapFeedStallBanner.svelte';
 	import MapHoverPeek from './MapHoverPeek.svelte';
 
 	type NearMeOrigin = LatLon & { label: string; precision?: GeocodePrecision };
@@ -60,7 +60,7 @@
 		liveEdgeMessage: string | null;
 		hoverPeek: MapHoverPeekModel | null;
 		// The unified Controls render contract (desktop panel + mobile drawer).
-		controls: Snippet<[{ collapsible?: boolean; onselect?: () => void } | undefined]>;
+		controls: Snippet<[{ collapsible?: boolean } | undefined]>;
 	}
 
 	let {
@@ -90,6 +90,15 @@
 		hoverPeek,
 		controls,
 	}: Props = $props();
+
+	const feedBannerState = $derived(
+		deriveMapFeedBannerState({
+			selectedFamilyFailureMessage,
+			isStale,
+			liveEdgeState,
+			liveEdgeMessage,
+		}),
+	);
 </script>
 
 <MapHeadTitle
@@ -129,7 +138,13 @@
 	{@render controls(undefined)}
 </div>
 
-<MapFilterPill store={filtersStore} {locale} hidden={detailOpen} {controls} />
+<MapFilterPill
+	store={filtersStore}
+	{locale}
+	hidden={detailOpen}
+	stalled={feedBannerState === 'global-stall'}
+	{controls}
+/>
 
 <MapFreshness placement="floating" {generatedUtc} {ageSeconds} {isStale} {degraded} {locale} />
 
@@ -143,6 +158,7 @@
 	{selectedFamilyFailureMessage}
 	{liveEdgeState}
 	{liveEdgeMessage}
+	state={feedBannerState}
 />
 
 {#if hoverPeek && isDesktop}

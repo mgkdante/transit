@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFilterStore, emptyFilterState } from '$lib/filters';
 import { motionMode } from '$lib/stores';
 import type { StopIndexEntry } from '$lib/v1/schemas';
@@ -32,6 +32,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	localStorage.clear();
+	vi.restoreAllMocks();
 });
 
 describe('MapOverlayChrome', () => {
@@ -144,5 +145,187 @@ describe('MapOverlayChrome', () => {
 		);
 		expect(stopButton).toBeInTheDocument();
 		expect(stopButton).toHaveTextContent(stop.name);
+	});
+
+	it('keeps motion labels id-free across the dual Controls surfaces', async () => {
+		const store = createFilterStore(emptyFilterState());
+		const { container, rerender } = render(MapOverlayChromeHarness, {
+			props: { store, locale: 'en', isDesktop: true },
+		});
+
+		expect(document.querySelectorAll('#map-motion-label')).toHaveLength(0);
+		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
+		expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
+		expect(document.querySelectorAll('#map-motion-label')).toHaveLength(0);
+
+		await rerender({ store, locale: 'en', isDesktop: false });
+		expect(container.querySelector('.map-filter-panel')).toBeInTheDocument();
+		expect(document.querySelectorAll('#map-motion-label')).toHaveLength(0);
+	});
+
+	it('swaps only a narrow global stall into the stable banner row and focuses near-me', async () => {
+		vi.spyOn(window, 'matchMedia').mockImplementation(
+			(query) =>
+				({
+					matches: query === '(max-width: 768px)',
+					media: query,
+					onchange: null,
+					addEventListener: () => {},
+					removeEventListener: () => {},
+					addListener: () => {},
+					removeListener: () => {},
+					dispatchEvent: () => true,
+				}) as MediaQueryList,
+		);
+		const store = createFilterStore(emptyFilterState());
+		const view = render(MapOverlayChromeHarness, {
+			props: { store, locale: 'en', isDesktop: false, isStale: false },
+		});
+		const stableRegion = screen.getByRole('status');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
+		expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
+
+		await view.rerender({ store, locale: 'en', isDesktop: false, isStale: true });
+		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+		expect(screen.queryByTestId('map-filter-pill')).not.toBeInTheDocument();
+		expect(screen.getByRole('status')).toBe(stableRegion);
+		expect(stableRegion).toHaveAttribute('data-state', 'global-stall');
+		expect(screen.getByRole('button', { name: 'Stops near me' })).toHaveFocus();
+
+		await view.rerender({ store, locale: 'en', isDesktop: false, isStale: false });
+		expect(screen.getByTestId('map-filter-pill')).toBeInTheDocument();
+		expect(screen.getByRole('status')).toBe(stableRegion);
+		expect(stableRegion).toHaveAttribute('data-state', 'idle');
+	});
+
+	it('keeps an open Controls drawer present above 768px during a global stall', async () => {
+		vi.spyOn(window, 'matchMedia').mockImplementation(
+			(query) =>
+				({
+					matches: false,
+					media: query,
+					onchange: null,
+					addEventListener: () => {},
+					removeEventListener: () => {},
+					addListener: () => {},
+					removeListener: () => {},
+					dispatchEvent: () => true,
+				}) as MediaQueryList,
+		);
+		const store = createFilterStore(emptyFilterState());
+		const view = render(MapOverlayChromeHarness, {
+			props: { store, locale: 'en', isDesktop: false, isStale: false },
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
+		expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
+
+		await view.rerender({ store, locale: 'en', isDesktop: false, isStale: true });
+		expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
+		expect(screen.getByTestId('map-filter-pill')).toBeInTheDocument();
+		expect(screen.getByRole('status')).toHaveAttribute('data-state', 'global-stall');
+	});
+
+	it('closes the portaled drawer at 1024px and hands focus to desktop Controls', async () => {
+		let desktopListener: ((event: MediaQueryListEvent) => void) | undefined;
+		vi.spyOn(window, 'matchMedia').mockImplementation(
+			(query) =>
+				({
+					matches: false,
+					media: query,
+					onchange: null,
+					addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
+						if (query === '(min-width: 1024px)') {
+							desktopListener = listener as (event: MediaQueryListEvent) => void;
+						}
+					},
+					removeEventListener: () => {},
+					addListener: () => {},
+					removeListener: () => {},
+					dispatchEvent: () => true,
+				}) as MediaQueryList,
+		);
+		const store = createFilterStore(emptyFilterState());
+		const view = render(MapOverlayChromeHarness, {
+			props: { store, locale: 'en', isDesktop: false },
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
+		expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
+
+		await view.rerender({ store, locale: 'en', isDesktop: true });
+		desktopListener?.({ matches: true, media: '(min-width: 1024px)' } as MediaQueryListEvent);
+
+		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+		expect(screen.getByRole('button', { name: 'Collapse controls' })).toHaveFocus();
+	});
+
+	it('hands 1024px drawer focus to Expand when the desktop rail was persisted collapsed', async () => {
+		localStorage.setItem('transit:controls-rail', 'true');
+		let desktopListener: ((event: MediaQueryListEvent) => void) | undefined;
+		vi.spyOn(window, 'matchMedia').mockImplementation(
+			(query) =>
+				({
+					matches: false,
+					media: query,
+					onchange: null,
+					addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
+						if (query === '(min-width: 1024px)') {
+							desktopListener = listener as (event: MediaQueryListEvent) => void;
+						}
+					},
+					removeEventListener: () => {},
+					addListener: () => {},
+					removeListener: () => {},
+					dispatchEvent: () => true,
+				}) as MediaQueryList,
+		);
+		const store = createFilterStore(emptyFilterState());
+		const view = render(MapOverlayChromeHarness, {
+			props: { store, locale: 'en', isDesktop: false },
+		});
+		await waitFor(() =>
+			expect(document.querySelector('.map-filter-panel .map-filters')).toHaveAttribute(
+				'data-open',
+				'false',
+			),
+		);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
+		await view.rerender({ store, locale: 'en', isDesktop: true });
+		desktopListener?.({ matches: true, media: '(min-width: 1024px)' } as MediaQueryListEvent);
+
+		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+		expect(screen.getByRole('button', { name: 'Expand controls' })).toHaveFocus();
+	});
+
+	it('keeps Controls present when a selected-family failure outranks aggregate staleness', () => {
+		vi.spyOn(window, 'matchMedia').mockImplementation(
+			(query) =>
+				({
+					matches: query === '(max-width: 768px)',
+					media: query,
+					onchange: null,
+					addEventListener: () => {},
+					removeEventListener: () => {},
+					addListener: () => {},
+					removeListener: () => {},
+					dispatchEvent: () => true,
+				}) as MediaQueryList,
+		);
+		const store = createFilterStore(emptyFilterState());
+		render(MapOverlayChromeHarness, {
+			props: {
+				store,
+				locale: 'en',
+				isDesktop: false,
+				isStale: true,
+				selectedFamilyFailureMessage: 'Vehicle positions unavailable',
+			},
+		});
+
+		expect(screen.getByTestId('map-filter-pill')).toBeInTheDocument();
+		expect(screen.getByRole('status')).toHaveAttribute('data-state', 'selected-family-failure');
 	});
 });

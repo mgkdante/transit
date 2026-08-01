@@ -16,6 +16,32 @@
   the shared relative-time helper so it reads "2 minutes ago" / "il y a 2 minutes"
   and ticks in lockstep with the rest of the chrome.
 -->
+<script lang="ts" module>
+	export type MapFeedBannerState =
+		| 'selected-family-failure'
+		| 'global-stall'
+		| 'unavailable'
+		| 'no-vehicles'
+		| 'idle';
+
+	export function deriveMapFeedBannerState({
+		selectedFamilyFailureMessage,
+		isStale,
+		liveEdgeState,
+		liveEdgeMessage,
+	}: {
+		selectedFamilyFailureMessage: string | null;
+		isStale: boolean;
+		liveEdgeState: 'unavailable' | 'no-vehicles' | null;
+		liveEdgeMessage: string | null;
+	}): MapFeedBannerState {
+		if (selectedFamilyFailureMessage) return 'selected-family-failure';
+		if (isStale) return 'global-stall';
+		if (liveEdgeMessage && liveEdgeState) return liveEdgeState;
+		return 'idle';
+	}
+</script>
+
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { ageSeconds as ageFromUtc, formatRelativeSeconds } from '$lib/utils/time';
@@ -41,6 +67,8 @@
 		liveEdgeState?: 'unavailable' | 'no-vehicles' | null;
 		/** Lowest-priority live-edge recovery/absence message. */
 		liveEdgeMessage?: string | null;
+		/** Shared precedence result supplied by MapOverlayChrome. */
+		state?: MapFeedBannerState;
 	}
 
 	let {
@@ -51,6 +79,7 @@
 		selectedFamilyFailureMessage = null,
 		liveEdgeState = null,
 		liveEdgeMessage = null,
+		state = undefined,
 	}: Props = $props();
 
 	const t = $derived(MAP_COPY[locale]);
@@ -75,17 +104,23 @@
 		effectiveAge == null ? '' : formatRelativeSeconds(effectiveAge, locale),
 	);
 	const stallMessage = $derived(t.feedNotResponding(relative));
-	const state = $derived(
-		selectedFamilyFailureMessage
-			? 'selected-family-failure'
-			: isStale
-				? 'global-stall'
-				: liveEdgeMessage
-					? liveEdgeState
-					: 'idle',
+	const resolvedState = $derived(
+		state ??
+			deriveMapFeedBannerState({
+				selectedFamilyFailureMessage,
+				isStale,
+				liveEdgeState,
+				liveEdgeMessage,
+			}),
 	);
 	const message = $derived(
-		selectedFamilyFailureMessage ?? (isStale ? stallMessage : (liveEdgeMessage ?? '')),
+		resolvedState === 'selected-family-failure'
+			? (selectedFamilyFailureMessage ?? '')
+			: resolvedState === 'global-stall'
+				? stallMessage
+				: resolvedState === 'idle'
+					? ''
+					: (liveEdgeMessage ?? ''),
 	);
 </script>
 
@@ -93,9 +128,9 @@
      mounted makes priority changes update one assistive-technology surface. -->
 <div
 	class="map-overlay map-live-edge"
-	class:map-feed-stall={state === 'global-stall'}
-	data-slot={state === 'global-stall' ? 'map-feed-stall' : undefined}
-	data-state={state}
+	class:map-feed-stall={resolvedState === 'global-stall'}
+	data-slot={resolvedState === 'global-stall' ? 'map-feed-stall' : undefined}
+	data-state={resolvedState}
 	role="status"
 	aria-live="polite"
 >
@@ -157,9 +192,9 @@
 	@media (max-width: 768px) {
 		.map-feed-stall {
 			top: auto;
-			bottom: calc(8.5rem + env(safe-area-inset-bottom, 0px));
+			bottom: var(--map-mobile-control-bottom);
 			left: 0.75rem;
-			right: 0.75rem;
+			right: calc(0.75rem + 44px + 10px);
 			margin-inline: 0;
 			width: auto;
 			max-width: none;

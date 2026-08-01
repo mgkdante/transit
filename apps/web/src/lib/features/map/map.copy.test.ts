@@ -83,4 +83,27 @@ describe('map copy', () => {
 		expect(copy.fr.motion.smooth).toBe('Presque en temps réel');
 		expect(copy.fr.motion.raw).toBe('Brut');
 	});
+
+	it('uses frozen prefix-matching rail abbreviations and drawer actions', () => {
+		expect(copy.en.rail).toEqual({
+			motion: 'Motion',
+			markers: 'Mark.',
+			alerts: 'Alerts',
+			active: 'Active',
+			status: 'Status',
+			crowding: 'Crowd',
+		});
+		expect(copy.fr.rail).toEqual({
+			motion: 'Mouv.',
+			markers: 'Marq.',
+			alerts: 'Alertes',
+			active: 'Actifs',
+			status: 'Statut',
+			crowding: 'Achal.',
+		});
+		expect(copy.en.activeTitle).toBe('Active');
+		expect(copy.fr.activeTitle).toBe('Actifs');
+		expect(copy.en.controlsDone).toBe('Done');
+		expect(copy.fr.controlsDone).toBe('Terminé');
+	});
 });
