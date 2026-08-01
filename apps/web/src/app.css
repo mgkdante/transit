@@ -38,6 +38,10 @@ select {
    token (§C4 governance — census-born constants stay transit-local). */
 :root {
 	--size-tap-min: 44px;
+	--size-detail-panel: 360px;
+	--size-detail-rail: 3.7rem;
+	--shadow-detail-panel:
+		-12px 0 28px -20px rgb(0 0 0 / 0.45), inset 1px 0 0 var(--edge-highlight);
 	/* Plan 035 promotes this calibrated app-local strip height into the shared token set. */
 	--strip-h: 68px;
 	/* One desktop measure for article controls and listing filters. Consumers keep
@@ -109,6 +113,15 @@ select {
 
 /* shadcn-svelte component animations */
 @import 'tw-animate-css';
+
+@media (prefers-reduced-motion: reduce) {
+	[data-slot='sheet-content'],
+	[data-slot='bottom-sheet'],
+	[data-slot='sheet-overlay'] {
+		animation: none;
+		transition: none;
+	}
+}
 
 /* Map the dark: variant to attribute-based theme switching.
    .theme-dark wrapper included so dark: utilities also fire inside pinned-dark scenes. */
@@ -454,6 +467,8 @@ table {
 	--shadow-glow-md: 0 0 12px color-mix(in srgb, var(--primary) 12%, transparent);
 	--shadow-glow-lg: 0 0 24px color-mix(in srgb, var(--primary) 9%, transparent), 0 0 60px color-mix(in srgb, var(--primary) 4%, transparent);
 	--shadow-sheet: 0 -8px 32px rgba(28, 24, 19, 0.12);
+	--shadow-detail-panel:
+		-12px 0 28px -20px rgb(28 24 19 / 0.18), inset 1px 0 0 var(--edge-highlight);
 	/* Stronger brand grid on paper (operator: light needs more structural demarcation). */
 	--border-brand: color-mix(in srgb, var(--primary) 60%, transparent);
 }

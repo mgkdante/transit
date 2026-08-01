@@ -61,6 +61,14 @@
 	const showGoogleAttribution = $derived(
 		showSuggestions && suggestions.some((result) => result.attribution === 'google'),
 	);
+	const nearMeClearance = 'calc(5.1rem + 2.75rem + 0.75rem)';
+
+	$effect(() => {
+		const host = rootEl?.parentElement;
+		if (!host) return;
+		host.style.setProperty('--map-near-clearance', nearMeClearance);
+		return () => host.style.removeProperty('--map-near-clearance');
+	});
 
 	function shouldSuggestNearMeAddress(value: string): boolean {
 		const trimmed = value.trim();
@@ -592,7 +600,7 @@
 		}
 	}
 
-	@media (max-width: 768px) {
+	@media (max-width: 1023.98px) {
 		.map-near {
 			top: auto;
 			right: 0.75rem;

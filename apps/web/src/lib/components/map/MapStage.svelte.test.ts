@@ -101,7 +101,7 @@ describe('MapStage', () => {
 			/--map-mobile-control-bottom:\s*calc\(5\.25rem \+ env\(safe-area-inset-bottom, 0px\)\)/,
 		);
 		expect(nearMe).toMatch(
-			/@media \(max-width: 768px\)[\s\S]*bottom:\s*var\(--map-mobile-control-bottom\)/,
+			/@media \(max-width: 1023\.98px\)[\s\S]*bottom:\s*var\(--map-mobile-control-bottom\)/,
 		);
 		expect(controls).toMatch(
 			/\.map-filter-pill-container\s*\{[\s\S]*bottom:\s*var\(--map-mobile-control-bottom\)/,

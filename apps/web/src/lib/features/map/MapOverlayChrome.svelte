@@ -99,17 +99,34 @@
 			liveEdgeMessage,
 		}),
 	);
+	const freshnessSuppressed = $derived(feedBannerState === 'global-stall');
+	const freshnessGeneratedUtc = $derived(freshnessSuppressed ? null : generatedUtc);
+	const freshnessAgeSeconds = $derived(freshnessSuppressed ? null : ageSeconds);
 </script>
 
-<MapHeadTitle
-	{locale}
-	kicker={t.kicker}
-	heading={t.heading}
-	{generatedUtc}
-	{ageSeconds}
-	{isStale}
-	{degraded}
-/>
+<div
+	data-slot="map-freshness-owner"
+	data-active-placement={isDesktop ? 'floating' : 'head'}
+	data-suppressed={freshnessSuppressed ? 'true' : 'false'}
+>
+	<MapHeadTitle
+		{locale}
+		kicker={t.kicker}
+		heading={t.heading}
+		generatedUtc={freshnessGeneratedUtc}
+		ageSeconds={freshnessAgeSeconds}
+		{isStale}
+		{degraded}
+	/>
+	<MapFreshness
+		placement="floating"
+		generatedUtc={freshnessGeneratedUtc}
+		ageSeconds={freshnessAgeSeconds}
+		{isStale}
+		{degraded}
+		{locale}
+	/>
+</div>
 
 <MapNearMeControl
 	bind:open={nearMeOpen}
@@ -146,8 +163,6 @@
 	{controls}
 />
 
-<MapFreshness placement="floating" {generatedUtc} {ageSeconds} {isStale} {degraded} {locale} />
-
 <!-- One stable announcement owner. It prioritizes a selected-family failure over
      aggregate stall, then live edge; it stays empty at rest. -->
 <MapFeedStallBanner
@@ -161,7 +176,7 @@
 	state={feedBannerState}
 />
 
-{#if hoverPeek && isDesktop}
+{#if hoverPeek && isDesktop && !nearMeOpen}
 	<div class="map-overlay map-peek">
 		<MapHoverPeek peek={hoverPeek} {locale} />
 	</div>
@@ -181,9 +196,12 @@
 
 	.map-peek {
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
-		bottom: 1.15rem;
+		bottom: var(--map-near-clearance, 8.6rem);
 		z-index: var(--z-map-detail);
-		max-width: min(20rem, calc(100% - 2rem));
+		max-width: min(
+			20rem,
+			calc(100% - var(--map-detail-offset, 0rem) - var(--app-left-rail-offset, 0rem) - 18rem)
+		);
 		padding: 0.875rem;
 		background: color-mix(in srgb, var(--card) 92%, transparent);
 		border: 1px solid var(--border-hairline);
@@ -195,6 +213,9 @@
 		backdrop-filter: blur(12px) saturate(1.1);
 		-webkit-backdrop-filter: blur(12px) saturate(1.1);
 		pointer-events: none;
+	}
+	.map-peek :global(.map-hover-peek) {
+		min-width: 0;
 	}
 	@media (prefers-reduced-motion: reduce) {
 		:global(.mf-chip) {

@@ -292,7 +292,7 @@
 <div
 	class="map-detail-overlay"
 	bind:this={overlayElement}
-	style:width={collapsed ? '3.7rem' : `${dragWidthPx}px`}
+	style:width={collapsed ? 'var(--size-detail-rail)' : `${dragWidthPx}px`}
 	data-slot="map-detail-overlay"
 	data-detail-collapsed={collapsed ? 'true' : 'false'}
 	data-detail-dragging={dragging ? 'true' : 'false'}
@@ -351,6 +351,17 @@
 		overflow: clip;
 		box-shadow: var(--shadow-section);
 		pointer-events: auto;
+		animation: map-detail-overlay-in var(--duration-slow) var(--ease-out) both;
+	}
+	@keyframes map-detail-overlay-in {
+		from {
+			opacity: 0;
+			transform: translateY(0.75rem) scale(0.985);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0) scale(1);
+		}
 	}
 	.map-detail-overlay[data-detail-collapsed='false'] {
 		transition-property: width;
@@ -454,12 +465,13 @@
 	@media (prefers-reduced-motion: reduce) {
 		.map-detail-overlay[data-detail-collapsed='false'],
 		.map-detail-overlay[data-detail-collapsed='true'],
-		.map-detail-overlay[data-detail-snapping='true'],
+		.map-detail-overlay[data-detail-collapsed='false'][data-detail-snapping='true'],
 		.map-detail-overlay[data-detail-dragging='true'],
 		.map-detail-overlay[data-detail-collapsed='false'] .map-detail-content-frame,
 		:global(.map-detail-overlay[data-detail-collapsed='true'] [data-slot='right-panel-toggle']),
 		.map-detail-overlay[data-detail-collapsed='false'] .map-detail-handle::after,
 		.map-detail-overlay[data-detail-dragging='true'] .map-detail-handle::after {
+			animation: none;
 			transition: none;
 		}
 	}

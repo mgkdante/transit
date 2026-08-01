@@ -19,7 +19,15 @@ const PRESENCE_CSS_FILES = [
 	'src/lib/features/map/detail/DetailSection.svelte',
 ] as const;
 
-function compiledCss(file: (typeof PRESENCE_CSS_FILES)[number]): string {
+const DETAIL_TARGET_CSS_FILES = [
+	...PRESENCE_CSS_FILES,
+	'src/lib/features/map/detail/DetailInlineAction.svelte',
+	'src/lib/features/map/detail/DetailStopRow.svelte',
+	'src/lib/features/map/detail/DetailBusRow.svelte',
+	'src/lib/features/map/MapDetailAlerts.svelte',
+] as const;
+
+function compiledCss(file: string): string {
 	return (
 		compile(readFileSync(resolve(process.cwd(), file), 'utf8'), {
 			filename: file,
@@ -63,22 +71,31 @@ function splitContainerRules(css: string): {
 	return { base, rules };
 }
 
-function containerConditionMatches(condition: string, widthPx: number): boolean {
+const RIGHT_PANEL_INLINE_BORDER_PX = 1;
+
+function containerConditionMatches(condition: string, outerWidthPx: number): boolean {
+	// RightPanel owns one leading border. Translate both the named outer ladder
+	// threshold and the sampled outer box into the content-box values queried by CSS.
+	const contentWidthPx = outerWidthPx - RIGHT_PANEL_INLINE_BORDER_PX;
 	const range = condition.match(/\(width\s*([<>])\s*([\d.]+)rem\)/);
 	if (range) {
-		const boundaryPx = Number(range[2]) * 16;
-		return range[1] === '<' ? widthPx < boundaryPx : widthPx > boundaryPx;
+		const contentBoundaryPx = Number(range[2]) * 16;
+		return range[1] === '<'
+			? contentWidthPx < contentBoundaryPx
+			: contentWidthPx > contentBoundaryPx;
 	}
 	const legacy = condition.match(/\((min|max)-width:\s*([\d.]+)rem\)/);
 	if (!legacy) throw new Error(`unsupported container condition: ${condition}`);
-	const boundaryPx = Number(legacy[2]) * 16;
-	return legacy[1] === 'min' ? widthPx >= boundaryPx : widthPx <= boundaryPx;
+	const contentBoundaryPx = Number(legacy[2]) * 16;
+	return legacy[1] === 'min'
+		? contentWidthPx >= contentBoundaryPx
+		: contentWidthPx <= contentBoundaryPx;
 }
 
-function installContainerSizeSeam(widthPx: number): HTMLStyleElement {
+function installContainerSizeSeam(outerWidthPx: number): HTMLStyleElement {
 	const detailCss = splitContainerRules(compiledCss(PRESENCE_CSS_FILES[0]));
 	const activeQueries = detailCss.rules
-		.filter(({ condition }) => containerConditionMatches(condition, widthPx))
+		.filter(({ condition }) => containerConditionMatches(condition, outerWidthPx))
 		.map(({ body }) => body)
 		.join('\n');
 	const style = document.createElement('style');
@@ -92,6 +109,20 @@ function installContainerSizeSeam(widthPx: number): HTMLStyleElement {
 	].join('\n');
 	document.head.append(style);
 	return style;
+}
+
+function cssFloorPx(value: string): number {
+	if (value.endsWith('rem')) return Number.parseFloat(value) * 16;
+	if (value.endsWith('px')) return Number.parseFloat(value);
+	return 0;
+}
+
+function expectHard44(element: Element): void {
+	const computed = getComputedStyle(element);
+	expect(
+		Math.max(cssFloorPx(computed.minBlockSize), cssFloorPx(computed.minHeight)),
+		`${element.tagName.toLowerCase()}.${element.className} lacks a 44px floor`,
+	).toBeGreaterThanOrEqual(44);
 }
 
 const vehicles: Vehicle[] = [
@@ -397,7 +428,7 @@ describe('MapSelectionDetail', () => {
 
 	it.each([
 		{ widthPx: 300, metaDisplay: 'none', routesDisplay: 'none', tailVisibility: 'hidden' },
-		{ widthPx: 420, metaDisplay: 'flex', routesDisplay: 'grid', tailVisibility: 'hidden' },
+		{ widthPx: 421, metaDisplay: 'flex', routesDisplay: 'grid', tailVisibility: 'hidden' },
 		{ widthPx: 560, metaDisplay: 'flex', routesDisplay: 'grid', tailVisibility: 'visible' },
 	])(
 		'computes the presence table at a $widthPx px right-panel container',
@@ -464,8 +495,32 @@ describe('MapSelectionDetail', () => {
 	);
 
 	it.each([
+		{ outerWidthPx: 419, display: 'none' },
+		{ outerWidthPx: 420, display: 'none' },
+		{ outerWidthPx: 421, display: 'flex' },
+	])(
+		'switches detail chips at the outer $outerWidthPx px seam with the border intact',
+		({ outerWidthPx, display }) => {
+			const style = installContainerSizeSeam(outerWidthPx);
+			try {
+				const detail = resolveMapSelection(
+					{ kind: 'vehicle', id: 'veh-1' },
+					{ index, stops, alerts, routes },
+				);
+				const { container } = render(MapSelectionDetail, { props: { detail, locale: 'en' } });
+				expect(
+					getComputedStyle(container.querySelector('[data-slot="detail-meta"]')!).display,
+				).toBe(display);
+			} finally {
+				style.remove();
+			}
+		},
+	);
+
+	it.each([
 		{ widthPx: 543, visibility: 'hidden' },
-		{ widthPx: 544, visibility: 'visible' },
+		{ widthPx: 544, visibility: 'hidden' },
+		{ widthPx: 545, visibility: 'visible' },
 	])(
 		'switches the capped tail at the reachable $widthPx px boundary',
 		({ widthPx, visibility }) => {
@@ -656,6 +711,142 @@ describe('MapSelectionDetail', () => {
 			expect(filesForDeclaration.size).toBe(1);
 		}
 	});
+
+	it('pins every #16 family to a logical 2.75rem floor without adding tap-token usages', () => {
+		const sources = {
+			pills: readFileSync(
+				resolve(process.cwd(), 'src/lib/features/map/detail/DetailStatPills.svelte'),
+				'utf8',
+			),
+			stop: readFileSync(
+				resolve(process.cwd(), 'src/lib/features/map/detail/DetailStopRow.svelte'),
+				'utf8',
+			),
+			bus: readFileSync(
+				resolve(process.cwd(), 'src/lib/features/map/detail/DetailBusRow.svelte'),
+				'utf8',
+			),
+			section: readFileSync(
+				resolve(process.cwd(), 'src/lib/features/map/detail/DetailSection.svelte'),
+				'utf8',
+			),
+			detail: readFileSync(
+				resolve(process.cwd(), 'src/lib/features/map/MapSelectionDetail.svelte'),
+				'utf8',
+			),
+		};
+
+		for (const source of Object.values(sources)) expect(source).not.toContain('--size-tap-min');
+		expect(sources.pills).toMatch(/\.detail-pill\)[\s\S]*min-block-size:\s*2\.75rem/);
+		expect(sources.pills).toMatch(/::before[\s\S]*block-size:\s*2rem/);
+		expect(sources.stop).toMatch(/\.detail-stop-row\s*\{[\s\S]*min-block-size:\s*2\.75rem/);
+		expect(sources.bus).toMatch(/\.detail-bus-row\s*\{[\s\S]*min-block-size:\s*2\.75rem/);
+		expect(sources.section).toMatch(
+			/\.detail-section summary\s*\{[\s\S]*min-block-size:\s*2\.75rem/,
+		);
+		expect(sources.detail).toMatch(/\.map-departures button\s*\{[\s\S]*min-block-size:\s*2\.75rem/);
+		expect(sources.detail).toMatch(
+			/detail-schedule-tail[^}]*summary[^{]*\{[\s\S]*min-block-size:\s*2\.75rem/,
+		);
+	});
+
+	it.each(['en', 'fr'] as const)(
+		'inventories every visible %s detail target at 44px outside the APG separator',
+		(locale) => {
+			const style = document.createElement('style');
+			style.textContent = DETAIL_TARGET_CSS_FILES.map(compiledCss).join('\n');
+			document.head.append(style);
+			const vehicle = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{ index, stops, alerts, routes },
+			);
+			const stop = resolveMapSelection(
+				{ kind: 'stop', id: 'stop-1' },
+				{ index, stops, alerts, stopFiles, now: new Date('2026-06-15T16:30:00Z') },
+			);
+			const route = resolveMapSelection(
+				{ kind: 'route', id: '24' },
+				{ index, stops, alerts, routes },
+			);
+			if (vehicle?.kind !== 'vehicle' || stop?.kind !== 'stop' || route?.kind !== 'route') {
+				throw new Error('expected all three detail families');
+			}
+			const linkedAlert = {
+				...alerts[0]!,
+				url: 'https://example.test/a',
+				url_en: 'https://example.test/a',
+			};
+			const stopWithBranches = {
+				...stop,
+				alerts: [linkedAlert],
+				vehicles: [vehicles[0]!],
+				departures: [
+					...(stop.departures ?? []),
+					{ route: '18', trip: 'trip-18-a', eta_utc: utc('2026-06-15T00:26:00Z'), delay_min: 0 },
+					{ route: '80', trip: 'trip-80-a', eta_utc: utc('2026-06-15T00:36:00Z'), delay_min: 0 },
+				],
+			};
+			const vehicleWithSummary = {
+				...vehicle,
+				pastStops: [vehicle.nextStops[0]!],
+			};
+			const observedFamilies = new Set<string>();
+			const inventory = (container: HTMLElement) => {
+				for (const target of container.querySelectorAll(
+					'[data-slot="detail-body"] button, [data-slot="detail-body"] a[href], [data-slot="detail-body"] summary',
+				)) {
+					expectHard44(target);
+				}
+				for (const pill of container.querySelectorAll('.detail-pill')) expectHard44(pill);
+				for (const [family, selector] of [
+					['stat-pill', '.detail-pill'],
+					['stop-row', '.detail-stop-row'],
+					['bus-row', '.detail-bus-row'],
+					['section-summary', '.detail-section > details > summary'],
+					['alert-select', '.map-alert-button'],
+					['alert-link', '.map-alert-link'],
+					['departure-route', '[data-detail-focus-key$=":route"]'],
+					['departure-trip', '[data-detail-focus-key$=":trip"]'],
+					['schedule-tail', '[data-slot="detail-schedule-tail"] > summary'],
+				] as const) {
+					if (container.querySelector(selector)) observedFamilies.add(family);
+				}
+			};
+
+			try {
+				for (const detail of [vehicleWithSummary, stopWithBranches, route]) {
+					const rendered = render(MapSelectionDetail, { props: { detail, locale } });
+					inventory(rendered.container);
+					rendered.unmount();
+				}
+				const failed = render(MapSelectionDetail, {
+					props: {
+						detail: vehicleWithSummary,
+						locale,
+						selectionPresence: 'missing-grace',
+						selectionSourceHealth: 'failed',
+						onrefresh: () => {},
+					},
+				});
+				inventory(failed.container);
+				expect(failed.container.querySelector('.detail-retry')).toBeInTheDocument();
+				failed.unmount();
+				expect([...observedFamilies].sort()).toEqual([
+					'alert-link',
+					'alert-select',
+					'bus-row',
+					'departure-route',
+					'departure-trip',
+					'schedule-tail',
+					'section-summary',
+					'stat-pill',
+					'stop-row',
+				]);
+			} finally {
+				style.remove();
+			}
+		},
+	);
 	it('leaves the semantic identity to its shell and opens vehicle detail with a status band', () => {
 		const detail = resolveMapSelection(
 			{ kind: 'vehicle', id: 'veh-1' },
@@ -705,12 +896,29 @@ describe('MapSelectionDetail', () => {
 			source.match(/\.detail-source-state\[data-source-health\]\s*\{[\s\S]*?\}/)?.[0] ?? '';
 		const retryRule = source.match(/\.detail-retry\s*\{[\s\S]*?\}/)?.[0] ?? '';
 
-		expect(cautionRule).toContain('--dataviz-status-late');
-		expect(cautionRule).toContain('border-color: color-mix');
-		expect(cautionRule).toContain('background: color-mix');
-		expect(cautionRule).not.toContain('background: var(--muted)');
-		expect(cautionRule).not.toContain('--accent');
-		expect(retryRule).toContain('min-height: 2.75rem');
+		const declarations = (rule: string) =>
+			new Map(
+				rule
+					.slice(rule.indexOf('{') + 1, rule.lastIndexOf('}'))
+					.split(';')
+					.map((entry) => entry.trim())
+					.filter(Boolean)
+					.map((entry) => {
+						const separator = entry.indexOf(':');
+						return [entry.slice(0, separator).trim(), entry.slice(separator + 1).trim()];
+					}),
+			);
+		const cautionDeclarations = declarations(cautionRule);
+		const retryDeclarations = declarations(retryRule);
+
+		expect(cautionDeclarations.get('border-color')).toBe(
+			'color-mix(in srgb, var(--dataviz-status-late) 38%, var(--border) 62%)',
+		);
+		expect(cautionDeclarations.get('background')).toBe(
+			'color-mix(in srgb, var(--dataviz-status-late) 7%, var(--card) 86%)',
+		);
+		expect(cautionDeclarations.has('--accent')).toBe(false);
+		expect(retryDeclarations.get('min-height')).toBe('2.75rem');
 	});
 
 	it('marks missing-grace with a healthy source as stale without offering retry', () => {

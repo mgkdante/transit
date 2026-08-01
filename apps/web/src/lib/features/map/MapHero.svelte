@@ -1105,7 +1105,7 @@
 		   resolves to 0 when closed and 3.7rem when collapsed, so chrome clears the
 		   reachable strip. The MAP CANVAS never reads either var, so resizing the panel
 		   can not resize it. */
-		--app-right-detail-offset: 360px;
+		--app-right-detail-offset: var(--size-detail-panel);
 		--map-detail-offset: 0rem;
 		/* One mobile bottom-chrome baseline. It keeps both touch controls above the
 		   fully expanded MapLibre attribution instead of letting three independent

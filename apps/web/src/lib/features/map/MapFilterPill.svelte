@@ -29,7 +29,7 @@
 	const presentationHidden = $derived(hidden || stallHidesTrigger);
 
 	onMount(() => {
-		const narrowQuery = window.matchMedia('(max-width: 768px)');
+		const narrowQuery = window.matchMedia('(max-width: 1023.98px)');
 		const desktopQuery = window.matchMedia('(min-width: 1024px)');
 		const syncNarrow = () => (narrowBaseline = narrowQuery.matches);
 		const closeAtDesktop = (event: MediaQueryListEvent) => {
@@ -300,7 +300,7 @@
 		}
 	}
 
-	@media (max-width: 768px) {
+	@media (max-width: 1023.98px) {
 		.map-filter-pill-container[data-global-stall='true'] {
 			display: none;
 		}

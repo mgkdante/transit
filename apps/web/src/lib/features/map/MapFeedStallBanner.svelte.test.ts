@@ -73,10 +73,10 @@ describe('MapFeedStallBanner', () => {
 		);
 
 		expect(source).toMatch(
-			/@media \(max-width: 768px\)[\s\S]*\.map-feed-stall\s*\{[^}]*bottom:\s*var\(--map-mobile-control-bottom\)/s,
+			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-feed-stall\s*\{[^}]*bottom:\s*var\(--map-mobile-control-bottom\)/s,
 		);
 		expect(source).toMatch(
-			/@media \(max-width: 768px\)[\s\S]*\.map-feed-stall\s*\{[^}]*right:\s*calc\(0\.75rem \+ 44px \+ 10px\)/s,
+			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-feed-stall\s*\{[^}]*right:\s*calc\(0\.75rem \+ 44px \+ 10px\)/s,
 		);
 		expect(source).toMatch(/\.map-live-edge\s*\{[^}]*pointer-events:\s*none/s);
 	});

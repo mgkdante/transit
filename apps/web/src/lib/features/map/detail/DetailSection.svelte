@@ -69,6 +69,14 @@
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 	}
+	/* The floor keeps the UA's list-item display: ::marker (the disclosure
+	   triangle) is the summary's only expand affordance — display:flex kills it. */
+	.detail-section summary {
+		min-height: 2.75rem;
+		min-block-size: 2.75rem;
+		padding-block: 0.625rem;
+		cursor: pointer;
+	}
 	.detail-ladder-content {
 		visibility: hidden;
 		block-size: 0;

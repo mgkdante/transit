@@ -73,7 +73,7 @@ const selectors = {
 	mapStage: 'div[role="region"][data-slot="map-stage"]',
 	mapCanvas: 'canvas.maplibregl-canvas',
 	mapHero: '.map-hero',
-	vehicleHover: '.map-peek .map-selection-detail[data-kind="vehicle"]',
+	vehicleHover: '.map-peek .map-hover-peek[data-kind="vehicle"]',
 	freshness: '[data-slot="freshness-stamp"][data-age-seconds]',
 	stall: '[data-slot="map-feed-stall"]',
 	liveEdge: '.map-live-edge[data-state]',

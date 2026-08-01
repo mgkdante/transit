@@ -46,10 +46,13 @@ describe('RightPanel', () => {
 
 		expect(source).not.toMatch(/\.right-panel\[data-open='false'\]\s*\{[^}]*padding:/);
 		expect(source).not.toMatch(/transition:\s*[^;{}]*padding/);
-		expect(source).toMatch(/\.right-panel\[data-open='false'\]\s*\{\s*width:\s*3\.7rem;\s*\}/);
+		expect(source).toMatch(
+			/\.right-panel\[data-open='false'\]\s*\{\s*width:\s*var\(--size-detail-rail\);\s*\}/,
+		);
 		// The shell no longer animates width or its shadow: the map overlay owns motion.
 		expect(source).not.toMatch(/transition(?:-property)?\s*:\s*[^;{}]*(?:width|box-shadow)/);
-		expect(source).toContain('-12px 0 28px -20px rgba(0, 0, 0, 0.45)');
+		expect(source).toContain('box-shadow: var(--shadow-detail-panel)');
+		expect(source).not.toContain('rgba(0, 0, 0, 0.45)');
 		expect(source).not.toContain('@container right-panel (max-width: 18rem)');
 	});
 
@@ -70,7 +73,8 @@ describe('RightPanel', () => {
 			source.match(
 				/\.right-panel\[data-resizable='true'\]\[data-open='false'\]\s*\{[\s\S]*?\}/,
 			)?.[0] ?? '';
-		expect(collapsedResizable).toContain('width: 3.7rem');
+		expect(collapsedResizable).toContain('width: var(--size-detail-rail)');
+		expect(collapsedResizable).toContain('min-width: var(--size-detail-rail)');
 		expect(collapsedResizable).not.toContain('width: 100%');
 		// The dead combined selector that forced collapsed back to 100% is gone.
 		expect(source).not.toMatch(
@@ -204,5 +208,17 @@ describe('RightPanel', () => {
 		});
 
 		expect(container.querySelector('[data-slot="right-panel-footer"]')).toHaveClass('empty:hidden');
+	});
+
+	it('suppresses the swap-volet on first mount and retains it for keyed re-entries', async () => {
+		const { container, rerender } = render(RightPanel, {
+			props: { locale: 'en', title: 'Stop 52618', surfaceKey: 'stop:52618' },
+		});
+
+		expect(container.querySelector('.right-panel-body-inner')).not.toHaveClass('swap-volet');
+		await rerender({ locale: 'en', title: 'Route 161', surfaceKey: 'route:161' });
+		expect(container.querySelector('.right-panel-body-inner')).toHaveClass('swap-volet');
+		await rerender({ locale: 'en', title: 'Stop 52618', surfaceKey: 'stop:52618' });
+		expect(container.querySelector('.right-panel-body-inner')).toHaveClass('swap-volet');
 	});
 });

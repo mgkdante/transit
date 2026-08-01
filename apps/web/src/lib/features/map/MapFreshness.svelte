@@ -97,7 +97,7 @@
 		}
 	}
 
-	@media (max-width: 768px) {
+	@media (max-width: 1023.98px) {
 		.map-freshness[data-placement='floating'] {
 			display: none;
 		}

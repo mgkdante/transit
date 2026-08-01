@@ -92,6 +92,16 @@
 	const expandAria = $derived(locale === 'fr' ? 'Ouvrir le volet' : 'Expand panel');
 	const panelHeadingId = $derived(headingId ?? `right-panel-${surfaceKey}-heading`);
 	const panelBodyId = $derived(`${panelHeadingId}-body`);
+	let firstSurfaceKey = $state<string>();
+	let hasReentered = $state(false);
+
+	$effect(() => {
+		if (firstSurfaceKey === undefined) {
+			firstSurfaceKey = surfaceKey;
+		} else if (surfaceKey !== firstSurfaceKey) {
+			hasReentered = true;
+		}
+	});
 
 	function toggleCollapsed(): void {
 		if (ontogglecollapse) {
@@ -174,7 +184,7 @@
 	{#if !collapsed}
 		<ScrollArea id={panelBodyId} class="min-h-0 flex-1" data-slot="right-panel-body">
 			{#key surfaceKey}
-				<div class="swap-volet right-panel-body-inner p-4">
+				<div class={cn('right-panel-body-inner p-4', hasReentered && 'swap-volet')}>
 					{#if children}
 						{@render children()}
 					{:else}
@@ -202,14 +212,12 @@
 
 <style>
 	.right-panel {
-		width: 360px;
+		width: var(--size-detail-panel);
 		overflow: hidden;
 		/* Lift the dock off the map: a tight left-cast shadow + a hairline edge
 		   highlight on the leading border (yesid edge-highlight idiom), so the
 		   volet reads as a raised surface over the live canvas in both themes. */
-		box-shadow:
-			-12px 0 28px -20px rgba(0, 0, 0, 0.45),
-			inset 1px 0 0 var(--edge-highlight);
+		box-shadow: var(--shadow-detail-panel);
 		/* Size container so the swapped detail content can reflow against the dock's
 		   OWN width as it is dragged narrower in a resizable pane (grab-resize),
 		   independent of the viewport — content degrades gracefully, never clips. */
@@ -234,7 +242,7 @@
 	}
 
 	.right-panel[data-open='false'] {
-		width: 3.7rem;
+		width: var(--size-detail-rail);
 	}
 
 	/* EXPANDED in a resizable pane: fill the pane's allotted width (paneforge owns
@@ -250,8 +258,8 @@
 	   the pane's collapsedSize percent (both derive from 3.7rem), so the strip is a
 	   constant width across desktop widths and never leaves a gap in the pane. */
 	.right-panel[data-resizable='true'][data-open='false'] {
-		width: 3.7rem;
-		min-width: 3.7rem;
+		width: var(--size-detail-rail);
+		min-width: var(--size-detail-rail);
 	}
 
 	/* Reserve a stable scrollbar gutter so the dock body never shifts horizontally

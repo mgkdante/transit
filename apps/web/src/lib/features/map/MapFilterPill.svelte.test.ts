@@ -174,7 +174,7 @@ describe('MapFilterPill', () => {
 		expect(source).not.toContain('map-filter-drawer-backdrop');
 	});
 
-	it('keeps the pill breakpoint at 1024px while the stall swap remains a separate 768px rule', () => {
+	it('keeps the pill breakpoint at 1024px and moves the stall swap to the real <1024 query', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/map/MapFilterPill.svelte'),
 			'utf-8',
@@ -184,7 +184,9 @@ describe('MapFilterPill', () => {
 			/@media \(min-width: 1024px\)[\s\S]*\.map-filter-pill-container[\s\S]*display:\s*none/,
 		);
 		expect(source).toMatch(
-			/@media \(max-width: 768px\)[\s\S]*data-global-stall='true'[\s\S]*display:\s*none/,
+			/@media \(max-width: 1023\.98px\)[\s\S]*data-global-stall='true'[\s\S]*display:\s*none/,
 		);
+		expect(source).toContain("window.matchMedia('(max-width: 1023.98px)')");
+		expect(source).not.toContain("window.matchMedia('(max-width: 768px)')");
 	});
 });

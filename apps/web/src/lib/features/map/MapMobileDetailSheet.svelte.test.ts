@@ -1,5 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { compile } from 'svelte/compiler';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Alert, IsoUtc, StopIndexEntry } from '$lib/v1/schemas';
 import type { StopMapDetail, VehicleMapDetail } from './mapSelection';
@@ -24,6 +27,25 @@ const stopDetail: StopMapDetail = {
 	alerts: [],
 };
 
+const stopDetailWithLadder: StopMapDetail = {
+	...stopDetail,
+	departures: [
+		{ route: '1', trip: 'a', eta_utc: '2026-08-01T12:01:00Z' as IsoUtc, delay_min: 0 },
+		{ route: '2', trip: 'b', eta_utc: '2026-08-01T12:02:00Z' as IsoUtc, delay_min: 0 },
+		{ route: '3', trip: 'c', eta_utc: '2026-08-01T12:03:00Z' as IsoUtc, delay_min: 0 },
+		{ route: '4', trip: 'd', eta_utc: '2026-08-01T12:04:00Z' as IsoUtc, delay_min: 0 },
+	],
+	routeTimes: [
+		{
+			route: '1',
+			headsign: 'Centre-ville',
+			pastTimes: ['11:55'],
+			futureTimes: ['12:05'],
+			liveDepartures: [],
+		},
+	],
+};
+
 const mobileAlert: Alert = {
 	id: 'mobile-alert',
 	severity: 'high',
@@ -33,6 +55,60 @@ const mobileAlert: Alert = {
 };
 
 const stopDetailWithAlert: StopMapDetail = { ...stopDetail, alerts: [mobileAlert] };
+
+function compiledCss(path: string): string {
+	return (
+		compile(readFileSync(resolve(process.cwd(), path), 'utf8'), {
+			filename: path,
+			generate: 'client',
+			css: 'external',
+		}).css?.code ?? ''
+	);
+}
+
+function installMobileLadderSeam(outerWidthPx: number): HTMLStyleElement {
+	const detailCss = compiledCss('src/lib/features/map/MapSelectionDetail.svelte');
+	const marker = '@container right-panel';
+	const active: string[] = [];
+	let base = '';
+	let cursor = 0;
+	for (;;) {
+		const start = detailCss.indexOf(marker, cursor);
+		if (start < 0) {
+			base += detailCss.slice(cursor);
+			break;
+		}
+		base += detailCss.slice(cursor, start);
+		const open = detailCss.indexOf('{', start + marker.length);
+		let depth = 1;
+		let end = open + 1;
+		while (depth > 0 && end < detailCss.length) {
+			if (detailCss[end] === '{') depth += 1;
+			if (detailCss[end] === '}') depth -= 1;
+			end += 1;
+		}
+		const condition = detailCss.slice(start + marker.length, open).trim();
+		const range = condition.match(/\(width\s*<\s*([\d.]+)rem\)/);
+		const minimum = condition.match(/\(min-width:\s*([\d.]+)rem\)/);
+		const contentWidthPx = outerWidthPx;
+		const matches = range
+			? contentWidthPx < Number(range[1]) * 16
+			: minimum
+				? contentWidthPx >= Number(minimum[1]) * 16
+				: false;
+		if (matches) active.push(detailCss.slice(open + 1, end - 1));
+		cursor = end;
+	}
+	const style = document.createElement('style');
+	style.textContent = [
+		active.join('\n'),
+		compiledCss('src/lib/features/map/detail/DetailStatPills.svelte'),
+		compiledCss('src/lib/features/map/detail/DetailSection.svelte'),
+		base,
+	].join('\n');
+	document.head.append(style);
+	return style;
+}
 
 function baseProps(overrides: Record<string, unknown> = {}) {
 	return {
@@ -146,6 +222,38 @@ describe('MapMobileDetailSheet', () => {
 		expect(body).toBeInTheDocument();
 		expect(document.querySelector('[data-slot="sheet-title"]')).toHaveTextContent(stop.name);
 	});
+
+	it.each(['en', 'fr'] as const)(
+		'activates every right-panel ladder rung inside the 390px %s mobile sheet',
+		async (locale) => {
+			const style = installMobileLadderSeam(390);
+			try {
+				render(MapMobileDetailSheet, {
+					props: baseProps({ locale, selectedDetail: stopDetailWithLadder }),
+				});
+				const body = await waitFor(() => {
+					const element = document.querySelector<HTMLElement>('[data-slot="bottom-sheet-body"]');
+					expect(element).toBeInTheDocument();
+					return element!;
+				});
+				const sheetCss = compiledCss('src/lib/components/shell/BottomSheet.svelte');
+				expect(sheetCss).toMatch(
+					/\.bottom-sheet-body[^}]*\{[^}]*container:\s*right-panel\s*\/\s*inline-size/,
+				);
+				const chips = body.querySelector<HTMLElement>('[data-slot="detail-meta"]')!;
+				expect(getComputedStyle(chips).display).toBe('none');
+				const routeTimes = body.querySelector<HTMLElement>('[data-slot="detail-route-times"]')!;
+				expect(routeTimes).toBeInTheDocument();
+				expect(getComputedStyle(routeTimes).display).toBe('none');
+				expect(routeTimes.querySelector('[data-slot="detail-schedule-tail"]')).toBeInTheDocument();
+				const fullTail = body.querySelector<HTMLElement>('[data-ladder-content]')!;
+				expect(fullTail).toBeInTheDocument();
+				expect(getComputedStyle(fullTail).visibility).toBe('hidden');
+			} finally {
+				style.remove();
+			}
+		},
+	);
 
 	it('owns the localized identity and forwards retained-detail retry state to the body', async () => {
 		const onrefresh = vi.fn();
