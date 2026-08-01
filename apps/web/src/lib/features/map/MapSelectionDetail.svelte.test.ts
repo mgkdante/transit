@@ -1,13 +1,98 @@
 import { fireEvent, render } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { compile } from 'svelte/compiler';
 import { describe, expect, it, vi } from 'vitest';
 import { buildLiveIndex } from '$lib/v1/live';
 import type { Alert, IsoUtc, RouteFile, StopFile, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
 import MapSelectionDetail from './MapSelectionDetail.svelte';
+import DetailBusRow from './detail/DetailBusRow.svelte';
+import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
+import { detailActions } from './mapSelectionDetail.logic';
 import { resolveMapSelection } from './mapSelection';
 
 const utc = (value: string) => value as IsoUtc;
+
+const PRESENCE_CSS_FILES = [
+	'src/lib/features/map/MapSelectionDetail.svelte',
+	'src/lib/features/map/detail/DetailStatPills.svelte',
+	'src/lib/features/map/detail/DetailSection.svelte',
+] as const;
+
+function compiledCss(file: (typeof PRESENCE_CSS_FILES)[number]): string {
+	return (
+		compile(readFileSync(resolve(process.cwd(), file), 'utf8'), {
+			filename: file,
+			generate: 'client',
+			css: 'external',
+		}).css?.code ?? ''
+	);
+}
+
+function splitContainerRules(css: string): {
+	base: string;
+	rules: { condition: string; body: string }[];
+} {
+	const marker = '@container right-panel';
+	const rules: { condition: string; body: string }[] = [];
+	let base = '';
+	let cursor = 0;
+	for (;;) {
+		const start = css.indexOf(marker, cursor);
+		if (start < 0) {
+			base += css.slice(cursor);
+			break;
+		}
+		base += css.slice(cursor, start);
+		const open = css.indexOf('{', start + marker.length);
+		if (open < 0) throw new Error('unclosed right-panel container query');
+		let depth = 1;
+		let end = open + 1;
+		while (depth > 0 && end < css.length) {
+			if (css[end] === '{') depth += 1;
+			if (css[end] === '}') depth -= 1;
+			end += 1;
+		}
+		if (depth !== 0) throw new Error('unclosed right-panel container rule');
+		rules.push({
+			condition: css.slice(start + marker.length, open).trim(),
+			body: css.slice(open + 1, end - 1),
+		});
+		cursor = end;
+	}
+	return { base, rules };
+}
+
+function containerConditionMatches(condition: string, widthPx: number): boolean {
+	const range = condition.match(/\(width\s*([<>])\s*([\d.]+)rem\)/);
+	if (range) {
+		const boundaryPx = Number(range[2]) * 16;
+		return range[1] === '<' ? widthPx < boundaryPx : widthPx > boundaryPx;
+	}
+	const legacy = condition.match(/\((min|max)-width:\s*([\d.]+)rem\)/);
+	if (!legacy) throw new Error(`unsupported container condition: ${condition}`);
+	const boundaryPx = Number(legacy[2]) * 16;
+	return legacy[1] === 'min' ? widthPx >= boundaryPx : widthPx <= boundaryPx;
+}
+
+function installContainerSizeSeam(widthPx: number): HTMLStyleElement {
+	const detailCss = splitContainerRules(compiledCss(PRESENCE_CSS_FILES[0]));
+	const activeQueries = detailCss.rules
+		.filter(({ condition }) => containerConditionMatches(condition, widthPx))
+		.map(({ body }) => body)
+		.join('\n');
+	const style = document.createElement('style');
+	// Put activated query rules first on purpose: hides must beat later-emitted leaf defaults by
+	// specificity, not by a lucky bundle order. Happy DOM then computes the real flattened cascade.
+	style.textContent = [
+		activeQueries,
+		compiledCss(PRESENCE_CSS_FILES[1]),
+		compiledCss(PRESENCE_CSS_FILES[2]),
+		detailCss.base,
+	].join('\n');
+	document.head.append(style);
+	return style;
+}
 
 const vehicles: Vehicle[] = [
 	{
@@ -126,6 +211,547 @@ const index = buildLiveIndex({
 });
 
 describe('MapSelectionDetail', () => {
+	it('keeps body, identity, and action as mutually exclusive presentations', () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const identity = render(MapSelectionDetail, {
+			props: { detail, locale: 'en', presentation: 'identity' },
+		});
+		expect(identity.container.querySelector('[data-slot="detail-identity"]')).toHaveTextContent(
+			'Bus veh-1',
+		);
+		expect(identity.container.querySelector('[data-slot="detail-body"]')).not.toBeInTheDocument();
+		expect(
+			identity.container.querySelector('[data-slot="detail-footer-action"]'),
+		).not.toBeInTheDocument();
+
+		const action = render(MapSelectionDetail, {
+			props: { detail, locale: 'en', presentation: 'action' },
+		});
+		expect(action.container.querySelector('[data-slot="detail-footer-action"]')).toHaveAttribute(
+			'href',
+			'/trip/trip-24-a',
+		);
+		expect(action.container.querySelector('[data-slot="detail-body"]')).not.toBeInTheDocument();
+		expect(action.container.querySelector('[data-slot="detail-identity"]')).not.toBeInTheDocument();
+
+		const body = render(MapSelectionDetail, {
+			props: { detail, locale: 'en', presentation: 'body' },
+		});
+		expect(body.container.querySelector('[data-slot="detail-body"]')).toBeInTheDocument();
+		expect(body.container.querySelector('[data-slot="detail-identity"]')).not.toBeInTheDocument();
+		expect(
+			body.container.querySelector('[data-slot="detail-footer-action"]'),
+		).not.toBeInTheDocument();
+
+		const nullIdentity = render(MapSelectionDetail, {
+			props: { detail: null, locale: 'fr', presentation: 'identity' },
+		});
+		expect(nullIdentity.container.querySelector('[data-slot="detail-identity"]')).toHaveTextContent(
+			'Détails',
+		);
+	});
+
+	it('renders no action for an absent detail or a vehicle with no honest destination', () => {
+		const noDetail = render(MapSelectionDetail, {
+			props: { detail: null, locale: 'en', presentation: 'action' },
+		});
+		expect(
+			noDetail.container.querySelector('[data-slot="detail-footer-action"]'),
+		).not.toBeInTheDocument();
+		const noDestination = {
+			kind: 'vehicle',
+			id: 'veh-none',
+			title: 'ignored',
+			vehicle: {
+				id: 'veh-none',
+				lat: 45.5,
+				lon: -73.6,
+				status: 'unknown',
+				updated_utc: utc('2026-06-15T00:00:00Z'),
+				route: null,
+				trip: null,
+				next_stop: null,
+				bearing: null,
+				delay_min: null,
+				occupancy: null,
+			},
+			trip: null,
+			route: null,
+			routeDirection: null,
+			routeDirectionVariant: null,
+			nextStop: null,
+			nextStopAbsence: 'end-of-route',
+			pastStops: [],
+			nextStops: [],
+			alerts: [],
+			routeType: null,
+		} as const;
+		const noVehicleAction = render(MapSelectionDetail, {
+			props: { detail: noDestination, locale: 'en', presentation: 'action' },
+		});
+		expect(
+			noVehicleAction.container.querySelector('[data-slot="detail-footer-action"]'),
+		).not.toBeInTheDocument();
+	});
+
+	it('keeps vehicle chips to vehicle identity and route while status stays in the status band', () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const { container } = render(MapSelectionDetail, { props: { detail, locale: 'en' } });
+		const chips = container.querySelector('[data-slot="detail-meta"]')!;
+		expect(chips).toHaveTextContent('Bus veh-1');
+		expect(chips).toHaveTextContent('Route 24');
+		expect(chips).not.toHaveTextContent('Late');
+		expect(chips).not.toHaveTextContent('Standing');
+		expect(chips).not.toHaveTextContent('Trip trip-24-a');
+		expect(container.querySelector('[data-slot="detail-status-band"]')).toHaveTextContent('Late');
+	});
+
+	it('marks stop routes as the 420px rung and full departures as the 560px rung', () => {
+		const detail = resolveMapSelection(
+			{ kind: 'stop', id: 'stop-1' },
+			{ index, stops, alerts, stopFiles, now: new Date('2026-06-15T16:30:00Z') },
+		);
+		if (detail?.kind !== 'stop') throw new Error('expected stop detail');
+		const expandedDetail = {
+			...detail,
+			departures: [
+				...(detail.departures ?? []),
+				{ route: '18', trip: 'trip-18-a', eta_utc: utc('2026-06-15T00:26:00Z'), delay_min: 0 },
+				{ route: '80', trip: 'trip-80-a', eta_utc: utc('2026-06-15T00:36:00Z'), delay_min: 0 },
+			],
+		};
+		const { container } = render(MapSelectionDetail, {
+			props: { detail: expandedDetail, locale: 'en' },
+		});
+		const routeTimes = container.querySelector<HTMLElement>('[data-slot="detail-route-times"]')!;
+		const moreDepartures = container.querySelector<HTMLElement>(
+			'[data-slot="detail-more-departures"]',
+		)!;
+		expect(routeTimes).toHaveAttribute('data-ladder-min', '420');
+		expect(moreDepartures).toHaveAttribute('data-ladder-expand', '560');
+		expect(routeTimes.compareDocumentPosition(moreDepartures)).toBe(
+			Node.DOCUMENT_POSITION_FOLLOWING,
+		);
+		expect(
+			container.querySelector('[data-slot="detail-more-departures"] details'),
+		).not.toBeInTheDocument();
+		expect(
+			container.querySelector('[data-slot="detail-more-departures-content"]'),
+		).toBeInTheDocument();
+		expect(container.querySelector('[data-slot="detail-schedule-tail"]')).not.toHaveAttribute(
+			'open',
+		);
+	});
+
+	it('links the +N more indicator to the exact full-analysis action through DetailInlineAction', () => {
+		const detail = resolveMapSelection(
+			{ kind: 'stop', id: 'stop-1' },
+			{ index, stops, alerts, stopFiles, now: new Date('2026-06-15T16:30:00Z') },
+		);
+		if (detail?.kind !== 'stop') throw new Error('expected stop detail');
+		const expandedDetail = {
+			...detail,
+			departures: [
+				...(detail.departures ?? []),
+				{ route: '18', trip: 'trip-18-a', eta_utc: utc('2026-06-15T00:26:00Z'), delay_min: 0 },
+				{ route: '80', trip: 'trip-80-a', eta_utc: utc('2026-06-15T00:36:00Z'), delay_min: 0 },
+			],
+		};
+		const fullAction = detailActions(expandedDetail, 'en');
+		const { container } = render(MapSelectionDetail, {
+			props: { detail: expandedDetail, locale: 'en' },
+		});
+		const moreDepartures = container.querySelector<HTMLElement>(
+			'[data-slot="detail-more-departures"]',
+		)!;
+		const moreAction = moreDepartures.querySelector<HTMLAnchorElement>(
+			'[data-slot="detail-more-departures-action"]',
+		);
+
+		expect(fullAction).not.toBeNull();
+		expect(moreAction).toHaveClass('detail-inline-action');
+		expect(moreAction).toHaveAttribute('href', fullAction!.href);
+		expect(moreAction).toHaveTextContent('+1 more');
+		expect(moreDepartures.querySelector('h3')?.textContent ?? '').not.toContain('+1 more');
+	});
+
+	it('uses reachable, non-overlapping ladder thresholds and keeps the old dead tiers out', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/map/MapSelectionDetail.svelte'),
+			'utf8',
+		);
+		expect(source).toContain('width < 26.25rem');
+		expect(source).toContain('min-width: 34rem');
+		expect(source).not.toContain('max-width: 26.25rem');
+		expect(source).not.toContain('min-width: 26.25rem');
+		expect(source).not.toContain('min-width: 35rem');
+		expect(source).not.toMatch(/(?:max|min)-width:\s*(?:17|18)rem/);
+		expect(source).not.toContain('--accent');
+	});
+
+	it.each([
+		{ widthPx: 300, metaDisplay: 'none', routesDisplay: 'none', tailVisibility: 'hidden' },
+		{ widthPx: 420, metaDisplay: 'flex', routesDisplay: 'grid', tailVisibility: 'hidden' },
+		{ widthPx: 560, metaDisplay: 'flex', routesDisplay: 'grid', tailVisibility: 'visible' },
+	])(
+		'computes the presence table at a $widthPx px right-panel container',
+		({ widthPx, metaDisplay, routesDisplay, tailVisibility }) => {
+			const style = installContainerSizeSeam(widthPx);
+			try {
+				const vehicleDetail = resolveMapSelection(
+					{ kind: 'vehicle', id: 'veh-1' },
+					{ index, stops, alerts, routes },
+				);
+				const routeDetail = resolveMapSelection(
+					{ kind: 'route', id: '24' },
+					{ index, stops, alerts, routes },
+				);
+				const stop = resolveMapSelection(
+					{ kind: 'stop', id: 'stop-1' },
+					{ index, stops, alerts, stopFiles, now: new Date('2026-06-15T16:30:00Z') },
+				);
+				if (stop?.kind !== 'stop') throw new Error('expected stop detail');
+				const stopDetail = {
+					...stop,
+					departures: [
+						...(stop.departures ?? []),
+						{
+							route: '18',
+							trip: 'trip-18-a',
+							eta_utc: utc('2026-06-15T00:26:00Z'),
+							delay_min: 0,
+						},
+						{
+							route: '80',
+							trip: 'trip-80-a',
+							eta_utc: utc('2026-06-15T00:36:00Z'),
+							delay_min: 0,
+						},
+					],
+				};
+
+				for (const detail of [vehicleDetail, routeDetail]) {
+					const rendered = render(MapSelectionDetail, { props: { detail, locale: 'en' } });
+					expect(
+						getComputedStyle(rendered.container.querySelector('[data-slot="detail-meta"]')!),
+					).toHaveProperty('display', metaDisplay);
+				}
+				const renderedStop = render(MapSelectionDetail, {
+					props: { detail: stopDetail, locale: 'en' },
+				});
+				expect(
+					getComputedStyle(renderedStop.container.querySelector('[data-slot="detail-meta"]')!),
+				).toHaveProperty('display', metaDisplay);
+				expect(
+					getComputedStyle(
+						renderedStop.container.querySelector('[data-slot="detail-route-times"]')!,
+					),
+				).toHaveProperty('display', routesDisplay);
+				expect(
+					getComputedStyle(renderedStop.container.querySelector('[data-ladder-content]')!)
+						.visibility,
+				).toBe(tailVisibility);
+			} finally {
+				style.remove();
+			}
+		},
+	);
+
+	it.each([
+		{ widthPx: 543, visibility: 'hidden' },
+		{ widthPx: 544, visibility: 'visible' },
+	])(
+		'switches the capped tail at the reachable $widthPx px boundary',
+		({ widthPx, visibility }) => {
+			const style = installContainerSizeSeam(widthPx);
+			try {
+				const stop = resolveMapSelection(
+					{ kind: 'stop', id: 'stop-1' },
+					{ index, stops, alerts, stopFiles, now: new Date('2026-06-15T16:30:00Z') },
+				);
+				if (stop?.kind !== 'stop') throw new Error('expected stop detail');
+				const { container } = render(MapSelectionDetail, {
+					props: {
+						detail: {
+							...stop,
+							departures: [
+								...(stop.departures ?? []),
+								{
+									route: '18',
+									trip: 'trip-18-a',
+									eta_utc: utc('2026-06-15T00:26:00Z'),
+									delay_min: 0,
+								},
+								{
+									route: '80',
+									trip: 'trip-80-a',
+									eta_utc: utc('2026-06-15T00:36:00Z'),
+									delay_min: 0,
+								},
+							],
+						},
+						locale: 'en',
+					},
+				});
+				expect(getComputedStyle(container.querySelector('[data-ladder-content]')!).visibility).toBe(
+					visibility,
+				);
+			} finally {
+				style.remove();
+			}
+		},
+	);
+
+	it('composes each bus row name as entity, route, status, and delay', () => {
+		const { getByRole } = render(DetailBusRow, {
+			props: {
+				vehicle: vehicles[0],
+				etaUtc: utc('2026-06-15T00:06:00Z'),
+				locale: 'en',
+				t: MAP_SELECTION_DETAIL_COPY.en,
+				onselect: () => {},
+			},
+		});
+		expect(getByRole('button')).toHaveAccessibleName(
+			'Select bus veh-1, Route 24, 20:06, Late, Delay: 4 min late',
+		);
+	});
+
+	it('preserves a focused stop row through a same-entity refeed and reorder', async () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		if (detail?.kind !== 'vehicle') throw new Error('expected vehicle detail');
+		const { getByRole, rerender } = render(MapSelectionDetail, { props: { detail, locale: 'en' } });
+		const focused = getByRole('button', { name: /Select stop Mont-Royal \/ Saint-Laurent,/ });
+		focused.focus();
+
+		await rerender({ detail: { ...detail, nextStops: [...detail.nextStops] }, locale: 'en' });
+		expect(document.activeElement).toBe(focused);
+		await rerender({
+			detail: { ...detail, nextStops: [...detail.nextStops].reverse() },
+			locale: 'en',
+		});
+		expect(document.activeElement).toBe(focused);
+	});
+
+	it('keeps focus on a drill-in stop row through its selection callback', async () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const onselect = vi.fn();
+		const { getByRole } = render(MapSelectionDetail, {
+			props: { detail, locale: 'en', onselect },
+		});
+		const drillIn = getByRole('button', { name: /Select stop Mont-Royal \/ Saint-Laurent,/ });
+		drillIn.focus();
+		await fireEvent.click(drillIn);
+
+		expect(onselect).toHaveBeenCalledWith({ kind: 'stop', id: 'stop-2' });
+		expect(document.activeElement).toBe(drillIn);
+	});
+
+	it('preserves a focused null-trip departure through same-entity reordering', async () => {
+		const detail = resolveMapSelection(
+			{ kind: 'stop', id: 'stop-1' },
+			{ index, stops, alerts, stopFiles, now: new Date('2026-06-15T16:30:00Z') },
+		);
+		if (detail?.kind !== 'stop') throw new Error('expected stop detail');
+		const nullTripDepartures = [
+			{ route: '24', trip: null, eta_utc: utc('2026-06-15T00:06:00Z'), delay_min: 4 },
+			{ route: '55', trip: null, eta_utc: utc('2026-06-15T00:16:00Z'), delay_min: 0 },
+		];
+		const { container, rerender } = render(MapSelectionDetail, {
+			props: { detail: { ...detail, departures: nullTripDepartures }, locale: 'en' },
+		});
+		const focused = container.querySelector<HTMLButtonElement>(
+			'[data-departure-key="24:2026-06-15T00:06:00Z"] button',
+		)!;
+		focused.focus();
+
+		await rerender({
+			detail: { ...detail, departures: [...nullTripDepartures].reverse() },
+			locale: 'en',
+		});
+		expect(document.activeElement).toBe(focused);
+	});
+
+	it('keeps the sequence-unknown aria receipt on route stop rows', () => {
+		const detail = resolveMapSelection(
+			{ kind: 'route', id: '24' },
+			{ index, stops, alerts, routes },
+		);
+		if (detail?.kind !== 'route') throw new Error('expected route detail');
+		const direction = detail.directions[0]!;
+		const withUnknownSequence = {
+			...detail,
+			directions: [
+				{
+					...direction,
+					stops: [{ ...direction.stops[0]!, seq: null }, ...direction.stops.slice(1)],
+				},
+			],
+		};
+		const { getByRole } = render(MapSelectionDetail, {
+			props: { detail: withUnknownSequence, locale: 'en' },
+		});
+		expect(
+			getByRole('button', { name: 'Select stop Sherbrooke / Saint-Denis, Sequence unknown' }),
+		).toBeInTheDocument();
+	});
+
+	it('keeps the parent and exact seven leaves within the frozen ceilings with unique declaration fingerprints', () => {
+		const files = [
+			'MapSelectionDetail.svelte',
+			'detail/DetailStatPills.svelte',
+			'detail/DetailAttributeGrid.svelte',
+			'detail/DetailInlineAction.svelte',
+			'detail/DetailSection.svelte',
+			'detail/DetailStopRow.svelte',
+			'detail/DetailBusRow.svelte',
+			'detail/DetailEntityName.svelte',
+		];
+		const sources = files.map((file) => ({
+			file,
+			source: readFileSync(resolve(process.cwd(), `src/lib/features/map/${file}`), 'utf8'),
+		}));
+		expect(sources[0]!.source.split('\n').length).toBeLessThan(700);
+		expect(
+			sources.reduce((total, { source }) => total + source.split('\n').length, 0),
+		).toBeLessThanOrEqual(1520);
+		for (const { source } of sources) {
+			expect(source).not.toMatch(/(?:max|min)-width:\s*(?:17|18)rem/);
+			expect(source).not.toContain('--accent');
+		}
+
+		const fingerprints = sources.flatMap(({ file, source }) => {
+			const css = source.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+			return [...css.matchAll(/\{([^{}]+)\}/g)].flatMap((match) => {
+				const declaration = match[1]!
+					.replace(/\/\*[\s\S]*?\*\//g, '')
+					.split(';')
+					.map((part) => part.replace(/\s+/g, ' ').trim())
+					.filter((part) => part.includes(':'))
+					.join(';');
+				return declaration ? [`${declaration}::${file}`] : [];
+			});
+		});
+		const declarationFiles = new Map<string, Set<string>>();
+		for (const fingerprint of fingerprints) {
+			const [declaration, file] = fingerprint.split('::');
+			if (!declaration || !file) continue;
+			const filesForDeclaration = declarationFiles.get(declaration) ?? new Set<string>();
+			filesForDeclaration.add(file);
+			declarationFiles.set(declaration, filesForDeclaration);
+		}
+		for (const filesForDeclaration of declarationFiles.values()) {
+			expect(filesForDeclaration.size).toBe(1);
+		}
+	});
+	it('leaves the semantic identity to its shell and opens vehicle detail with a status band', () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const { container, queryByRole } = render(MapSelectionDetail, {
+			props: { detail, locale: 'en' },
+		});
+
+		expect(queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
+		expect(container.querySelector('[data-slot="detail-status-band"]')).toHaveTextContent(
+			'Next stop',
+		);
+	});
+
+	it('shows failed retained detail visually and forwards the retry affordance without a live region', async () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const onrefresh = vi.fn();
+		const { container, getByRole, getByText, queryByRole } = render(MapSelectionDetail, {
+			props: {
+				detail,
+				locale: 'en',
+				selectionPresence: 'missing-grace',
+				selectionSourceHealth: 'failed',
+				onrefresh,
+			},
+		});
+
+		expect(getByText('Live detail is unavailable')).toBeInTheDocument();
+		expect(queryByRole('status')).not.toBeInTheDocument();
+		const retry = getByRole('button', { name: 'Retry' });
+		expect(retry).toHaveClass('detail-retry');
+		await fireEvent.click(retry);
+		expect(onrefresh).toHaveBeenCalledTimes(1);
+		expect(container.querySelector('[data-source-health="failed"]')).toBeInTheDocument();
+	});
+
+	it('uses the warm calm-caution family for degraded detail and a 44px retry target', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/map/MapSelectionDetail.svelte'),
+			'utf8',
+		);
+		const cautionRule =
+			source.match(/\.detail-source-state\[data-source-health\]\s*\{[\s\S]*?\}/)?.[0] ?? '';
+		const retryRule = source.match(/\.detail-retry\s*\{[\s\S]*?\}/)?.[0] ?? '';
+
+		expect(cautionRule).toContain('--dataviz-status-late');
+		expect(cautionRule).toContain('border-color: color-mix');
+		expect(cautionRule).toContain('background: color-mix');
+		expect(cautionRule).not.toContain('background: var(--muted)');
+		expect(cautionRule).not.toContain('--accent');
+		expect(retryRule).toContain('min-height: 2.75rem');
+	});
+
+	it('marks missing-grace with a healthy source as stale without offering retry', () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const { getByText, queryByRole } = render(MapSelectionDetail, {
+			props: {
+				detail,
+				locale: 'en',
+				selectionPresence: 'missing-grace',
+				selectionSourceHealth: 'ok',
+			},
+		});
+
+		expect(getByText('Showing the last available detail')).toBeInTheDocument();
+		expect(queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+	});
+
+	it('allows a retry while missing-grace is refreshing', async () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const onrefresh = vi.fn();
+		const { getByRole, getByText } = render(MapSelectionDetail, {
+			props: {
+				detail,
+				locale: 'en',
+				selectionPresence: 'missing-grace',
+				selectionSourceHealth: 'retrying',
+				onrefresh,
+			},
+		});
+
+		expect(getByText('Refreshing live detail')).toBeInTheDocument();
+		await fireEvent.click(getByRole('button', { name: 'Retry' }));
+		expect(onrefresh).toHaveBeenCalledTimes(1);
+	});
+
 	it('renders a vehicle detail with status, crowding, next stop, and alerts', async () => {
 		const detail = resolveMapSelection(
 			{ kind: 'vehicle', id: 'veh-1' },
@@ -138,10 +764,9 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', onselect, onfilter, onalertselect },
 		});
 
-		expect(getAllByText('Bus').length).toBeGreaterThan(0);
 		expect(getByRole('button', { name: 'Select bus veh-1' })).toBeInTheDocument();
 		expect(getByText('Late')).toBeInTheDocument();
-		expect(getByText('Standing')).toBeInTheDocument();
+		expect(getAllByText('Standing').length).toBeGreaterThan(0);
 		expect(getByText('Past stops')).toBeInTheDocument();
 		expect(getByText('Next stops')).toBeInTheDocument();
 		expect(getByText('Sherbrooke / Saint-Denis')).toBeInTheDocument();
@@ -156,27 +781,13 @@ describe('MapSelectionDetail', () => {
 
 		if (detail?.kind !== 'vehicle') throw new Error('expected vehicle detail');
 		await fireEvent.click(getByRole('button', { name: 'Select route 24' }));
-		expect(onselect).toHaveBeenCalledWith({
-			kind: 'route',
-			id: '24',
-			direction: 0,
-			variantKey: detail.routeDirectionVariant?.key,
-		});
+		expect(onselect).toHaveBeenCalledWith({ kind: 'route', id: '24' });
 
 		await fireEvent.click(getByRole('button', { name: 'Select bus veh-1' }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'vehicle', id: 'veh-1' });
 
-		await fireEvent.click(getByRole('button', { name: 'Filter status Late' }));
-		expect(onfilter).toHaveBeenCalledWith({ kind: 'status', value: 'late' });
-
-		await fireEvent.click(getByRole('button', { name: 'Filter crowding Standing' }));
-		expect(onfilter).toHaveBeenCalledWith({ kind: 'occupancy', value: 'standing' });
-
-		await fireEvent.click(getByRole('button', { name: 'Filter trip trip-24-a' }));
-		expect(onfilter).toHaveBeenCalledWith({ kind: 'trip', value: 'trip-24-a' });
-
 		await fireEvent.click(
-			getAllByRole('button', { name: 'Select stop Mont-Royal / Saint-Laurent' })[0],
+			getAllByRole('button', { name: /Select stop Mont-Royal \/ Saint-Laurent,/ })[0],
 		);
 		expect(onselect).toHaveBeenCalledWith({ kind: 'stop', id: 'stop-2' });
 
@@ -266,20 +877,19 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', onselect, onfilter },
 		});
 
-		expect(getByText('Stop')).toBeInTheDocument();
-		expect(getByText('52618')).toBeInTheDocument();
-		expect(getByText('2 departures')).toBeInTheDocument();
+		expect(getByText('Stop code 52618')).toBeInTheDocument();
+		expect(getAllByText('2 departures').length).toBeGreaterThan(0);
 		expect(getByText('0 buses heading here')).toBeInTheDocument();
-		expect(getAllByText('Route 24').length).toBeGreaterThan(0);
-		expect(getAllByText('Past times').length).toBeGreaterThan(0);
-		expect(getAllByText('Next times').length).toBeGreaterThan(0);
-		expect(getByText('08:00')).toBeInTheDocument();
-		expect(getByText('23:50')).toBeInTheDocument();
+		expect(getAllByText(/Route 24/).length).toBeGreaterThan(0);
+		expect(getAllByText(/Past times:/).length).toBeGreaterThan(0);
+		expect(getAllByText(/Next times:/).length).toBeGreaterThan(0);
+		expect(getByText(/08:00/)).toBeInTheDocument();
+		expect(getByText(/23:50/)).toBeInTheDocument();
 		expect(
 			getByRole('button', { name: 'Select alert Stop 52618 moved to the northeast corner.' }),
 		).toBeInTheDocument();
 
-		await fireEvent.click(getByRole('button', { name: 'Select route 24' }));
+		await fireEvent.click(getByRole('button', { name: 'Select departure route 24' }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'route', id: '24' });
 
 		await fireEvent.click(getAllByRole('button', { name: 'Filter trip trip-24-a' })[0]);
@@ -302,10 +912,10 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', onselect },
 		});
 
-		await fireEvent.click(getByRole('button', { name: 'Select bus veh-1' }));
+		await fireEvent.click(getByRole('button', { name: /^Select bus veh-1,/ }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'vehicle', id: 'veh-1' });
 
-		await fireEvent.click(getByRole('button', { name: 'Select bus veh-2' }));
+		await fireEvent.click(getByRole('button', { name: /^Select bus veh-2,/ }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'vehicle', id: 'veh-2' });
 	});
 
@@ -320,9 +930,8 @@ describe('MapSelectionDetail', () => {
 		});
 
 		expect(getAllByText('Route 24').length).toBeGreaterThan(0);
-		expect(getByText('24')).toBeInTheDocument();
 		expect(getByText('Sherbrooke')).toBeInTheDocument();
-		expect(getAllByText('East').length).toBeGreaterThan(0);
+		expect(getAllByText('toward Van Horne / Rockland').length).toBeGreaterThan(0);
 		expect(getByText('2 buses visible')).toBeInTheDocument();
 		expect(getByText('Stops')).toBeInTheDocument();
 		expect(getByText('Sherbrooke / Saint-Denis')).toBeInTheDocument();
@@ -332,10 +941,10 @@ describe('MapSelectionDetail', () => {
 			getByRole('button', { name: 'Select alert Route 24 is diverted via Pine & Clark.' }),
 		).toBeInTheDocument();
 
-		await fireEvent.click(getByRole('button', { name: 'Select stop Van Horne / Rockland' }));
+		await fireEvent.click(getByRole('button', { name: /Select stop Van Horne \/ Rockland,/ }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'stop', id: 'stop-3' });
 
-		await fireEvent.click(getByRole('button', { name: 'Select bus veh-1' }));
+		await fireEvent.click(getByRole('button', { name: /^Select bus veh-1,/ }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'vehicle', id: 'veh-1' });
 	});
 
@@ -412,7 +1021,9 @@ describe('MapSelectionDetail', () => {
 		});
 
 		// The delay-grid cell (first absent-value in the detail grid) reads stale.
-		const absent = container.querySelector('.map-detail-grid [data-slot="absent-value"]');
+		const absent = [
+			...container.querySelectorAll('.map-detail-grid [data-slot="absent-value"]'),
+		].find((node) => node.textContent?.includes('this vehicle is not reporting'));
 		expect(absent).not.toBeNull();
 		expect(absent!.textContent).toContain('this vehicle is not reporting');
 	});
@@ -460,7 +1071,9 @@ describe('MapSelectionDetail', () => {
 		});
 
 		// The delay-grid cell (first absent-value in the detail grid) reads metro-no-realtime.
-		const absent = container.querySelector('.map-detail-grid [data-slot="absent-value"]');
+		const absent = [
+			...container.querySelectorAll('.map-detail-grid [data-slot="absent-value"]'),
+		].find((node) => node.textContent?.includes('live positions are not published here'));
 		expect(absent).not.toBeNull();
 		expect(absent!.textContent).toContain('live positions are not published here');
 		expect(absent!.textContent).not.toContain('not reported');
@@ -542,43 +1155,5 @@ describe('MapSelectionDetail', () => {
 
 		// The honest labelled fallback shows; the bare id alone is never rendered.
 		expect(getByText('Stop stop-2 (name unavailable)')).toBeInTheDocument();
-	});
-
-	it('uses phone-first wrapping for dense detail rows and action buttons', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapSelectionDetail.svelte'),
-			'utf-8',
-		);
-
-		expect(source).toMatch(
-			/@media \(max-width: 42rem\)[\s\S]*\.map-detail-grid div\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/,
-		);
-		expect(source).toMatch(
-			/@media \(max-width: 42rem\)[\s\S]*\.map-detail-grid dd\s*\{[\s\S]*white-space:\s*normal/,
-		);
-		expect(source).toMatch(
-			/@media \(max-width: 42rem\)[\s\S]*\.map-inline-action\s*\{[\s\S]*white-space:\s*normal/,
-		);
-	});
-
-	it('gives the Live arrivals a compact treatment at a narrow panel width (E4)', () => {
-		const source = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapSelectionDetail.svelte'),
-			'utf-8',
-		);
-
-		// The Live list carries the data-slot hook the compact treatment + tests anchor on.
-		expect(source).toMatch(/class="map-live-list" data-slot="live-departures"/);
-
-		// A narrow PANEL-width container query (right-panel, the dock's own width)
-		// collapses the Past/Next/Live three-up into a single tidy compact list —
-		// the Past column drops and the columns stack as a flex list. The query keys
-		// off the PARENT container (right-panel), not a self-target.
-		expect(source).toMatch(
-			/@container right-panel \(max-width: 17rem\)[\s\S]*\.map-time-columns\s*\{[\s\S]*flex-direction:\s*column/,
-		);
-		expect(source).toMatch(
-			/@container right-panel \(max-width: 17rem\)[\s\S]*\.map-time-col--past\s*\{[\s\S]*display:\s*none/,
-		);
 	});
 });

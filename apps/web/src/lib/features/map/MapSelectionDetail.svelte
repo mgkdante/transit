@@ -1,34 +1,31 @@
 <script lang="ts">
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-	import { localizeHref, type Locale } from '$lib/i18n';
-	import { routeFor } from '$lib/nav';
+	import { tick } from 'svelte';
+	import type { Locale } from '$lib/i18n';
 	import type { Chip } from '$lib/filters';
-	import type { Alert, OccupancyCode, StatusCode } from '$lib/v1/schemas';
-	import { AbsentValue, MaybeValue, StateNotice } from '$lib/components/edge';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import {
-		metricInfoFor,
-		type MetricKey,
-		type SupplementalMetricKey,
-	} from '$lib/features/metrics/metrics.content';
-	import { routeNameFallback, stopNameFallback } from '$lib/site/absence';
+	import type { Alert } from '$lib/v1/schemas';
+	import { MaybeValue } from '$lib/components/edge';
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
-	import type { MapSelection, MapSelectionDetail, MapStopRef } from './mapSelection';
+	import type { MapSelection, MapSelectionDetail } from './mapSelection';
+	import type { SelectionPresence, SelectionSourceHealth } from './selectionGrace.svelte';
 	import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
 	import {
+		detailActions,
+		detailIdentity,
 		directionLabel,
 		formatAge,
-		isDetailMetro,
-		stopDisplayName,
 		timeLabel,
 		vehicleFieldAbsence,
-		vehicleForDeparture,
 	} from './mapSelectionDetail.logic';
 	import MapDelayTag from './MapDelayTag.svelte';
 	import MapDetailAlerts from './MapDetailAlerts.svelte';
+	import DetailAttributeGrid from './detail/DetailAttributeGrid.svelte';
+	import DetailBusRow from './detail/DetailBusRow.svelte';
+	import DetailInlineAction from './detail/DetailInlineAction.svelte';
+	import DetailSection from './detail/DetailSection.svelte';
+	import DetailStatPills from './detail/DetailStatPills.svelte';
+	import DetailStopRow from './detail/DetailStopRow.svelte';
 
 	interface Props {
 		detail: MapSelectionDetail | null;
@@ -36,893 +33,339 @@
 		onselect?: (selection: MapSelection) => void;
 		onfilter?: (chip: Chip) => void;
 		onalertselect?: (alert: Alert) => void;
-		/** Set when this detail is a VEHICLE whose fix has gone stale (silent GPS) →
-		 * renders an honest, calm "Not reporting GPS · last updated position N ago"
-		 * caution note. `ageS` = seconds since the bus's OWN last fix. Null hides it. */
 		notReporting?: { ageS: number } | null;
+		selectionPresence?: SelectionPresence | null;
+		selectionSourceHealth?: SelectionSourceHealth | null;
+		onrefresh?: () => void;
+		presentation?: 'body' | 'identity' | 'action';
 	}
 
-	let { detail, locale, onselect, onfilter, onalertselect, notReporting = null }: Props = $props();
+	let {
+		detail,
+		locale,
+		onselect,
+		onfilter,
+		onalertselect,
+		notReporting = null,
+		selectionPresence = null,
+		selectionSourceHealth = null,
+		onrefresh,
+		presentation = 'body',
+	}: Props = $props();
 
 	const t = $derived(MAP_SELECTION_DETAIL_COPY[locale]);
-
-	// True when the FOCUSED detail is a metro route — drives the honest "no live data"
-	// reason on a missing metro delay (pure: mapSelectionDetail.logic.isDetailMetro).
-	const detailIsMetro = $derived(isDetailMetro(detail));
-
-	// Per-locale "sequence unknown" aria for a stop with no order index (seq null),
-	// so the position is honestly announced instead of an empty cell.
 	const seqUnknownAria = $derived(locale === 'fr' ? 'Séquence inconnue' : 'Sequence unknown');
+	const action = $derived(detail ? detailActions(detail, locale) : null);
+	let detailElement = $state<HTMLElement>();
 
-	function selectRoute(
-		route: string | null | undefined,
-		direction?: number | null,
-		variantKey?: string | null,
-	): void {
-		if (!route) return;
-		onselect?.({
-			kind: 'route',
-			id: route,
-			...(direction == null ? {} : { direction }),
-			...(variantKey == null ? {} : { variantKey }),
+	$effect.pre(() => {
+		const nextDetail = detail;
+		if (!nextDetail || presentation !== 'body') return;
+		const focusKey = document.activeElement?.getAttribute('data-detail-focus-key');
+		if (!focusKey) return;
+		void tick().then(() => {
+			[...(detailElement?.querySelectorAll<HTMLElement>('[data-detail-focus-key]') ?? [])]
+				.find((element) => element.dataset.detailFocusKey === focusKey)
+				?.focus();
 		});
-	}
+	});
 
+	function selectRoute(route: string | null | undefined): void {
+		if (route) onselect?.({ kind: 'route', id: route });
+	}
 	function selectStop(id: string): void {
 		onselect?.({ kind: 'stop', id });
 	}
-
 	function selectVehicle(id: string): void {
 		onselect?.({ kind: 'vehicle', id });
 	}
-
-	function filterStatus(code: StatusCode): void {
-		onfilter?.({ kind: 'status', value: code });
-	}
-
-	function filterOccupancy(code: OccupancyCode | null | undefined): void {
-		if (!code) return;
-		onfilter?.({ kind: 'occupancy', value: code });
-	}
-
 	function filterTrip(trip: string | null | undefined): void {
-		if (!trip) return;
-		onfilter?.({ kind: 'trip', value: trip });
+		if (trip) onfilter?.({ kind: 'trip', value: trip });
 	}
-
-	// ── Open full analysis (§C5.2) — the exit out of the map walled garden ───────
-	// Each kind branch links to its full detail surface: route→/lines/[id],
-	// stop→/stop/[id], vehicle→/trip/[trip] (only when the bus carries a trip id).
-	const routeExitHref = $derived.by<string | null>(() =>
-		detail?.kind === 'route'
-			? localizeHref(routeFor({ kind: 'line', id: detail.id }), locale)
-			: null,
-	);
-	const stopExitHref = $derived.by<string | null>(() =>
-		detail?.kind === 'stop'
-			? localizeHref(routeFor({ kind: 'stop', id: detail.stop.id }), locale)
-			: null,
-	);
-	const vehicleTripId = $derived(detail?.kind === 'vehicle' ? (detail.vehicle.trip ?? null) : null);
-	const vehicleExitHref = $derived.by<string | null>(() =>
-		vehicleTripId != null
-			? localizeHref(routeFor({ kind: 'trip', id: vehicleTripId }), locale)
-			: null,
-	);
-
-	// ── Metric-explainer (i) payloads (§C5.2) — wire the map's live concepts to the
-	// /metrics explainer: status/crowding/delay/ETA/staleness. Same shape site-wide.
-	function infoFor(key: MetricKey | SupplementalMetricKey, name: string) {
-		const i = metricInfoFor(key, locale);
-		return { ...i, label: t.infoTrigger(name), linkLabel: t.infoLink };
-	}
-	const delayInfo = $derived(infoFor('avgDelay', t.delay));
-	const crowdingInfo = $derived(infoFor('occupancy', t.crowding));
-	const otpInfo = $derived(infoFor('otp', t.status));
-	// ETA + staleness reuse the closest served explainer: ETA rides the delay basis;
-	// staleness (silent GPS) rides the silent-trip supplemental tip.
-	const etaInfo = $derived(infoFor('avgDelay', t.nextStop));
-	const stalenessInfo = $derived(infoFor('silentTrip', t.notReporting));
 </script>
 
-<!-- A stop name that NEVER leaks a bare id: when the static index did not name the
-     stop, render the honest labelled fallback ("Stop {id} (name unavailable)") via
-     the absence layer instead of the id alone. -->
-{#snippet stopRefName(ref: MapStopRef)}
-	{#if ref.nameAbsent}
-		<span class="map-inline-label">{stopNameFallback(ref.id, locale)}</span>
-	{:else}
-		<span class="map-inline-label">{ref.name}</span>
-	{/if}
-{/snippet}
-
-<!-- The "Open full analysis →" exit link out of the map (§C5.2). -->
-{#snippet openFullLink(href: string, aria: string)}
-	<a class="map-open-full" {href} aria-label={aria}>
-		<span>{t.openFull}</span>
-		<ArrowRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
-	</a>
-{/snippet}
-
-<!-- A small (i) affordance next to a map attribute label. -->
-{#snippet mapInfo(payload: { tip: string; href: string; label: string; linkLabel: string })}
-	<MetricInfo
-		tip={payload.tip}
-		href={payload.href}
-		label={payload.label}
-		linkLabel={payload.linkLabel}
-		side="bottom"
-	/>
-{/snippet}
-
-{#if detail}
-	<article class="map-selection-detail" data-kind={detail.kind}>
-		<header class="map-selection-head">
-			<p class="map-selection-kind">
-				{detail.kind === 'vehicle' ? t.bus : detail.kind === 'route' ? t.route : t.stop}
-			</p>
-			<h2 class="map-selection-title">{detail.title}</h2>
-		</header>
-
-		{#if detail.kind === 'vehicle'}
-			<!-- One honest absence reason for every absent live field in this panel
-			     (route / crowding / trip / delay): metro → "no live data here",
-			     stale → "this vehicle is not reporting", else → "not reported". -->
-			{@const vehicleAbsence = vehicleFieldAbsence({
-				stale: notReporting != null,
-				metro: detail.routeType === ROUTE_TYPE_METRO,
-			})}
-			<div class="map-selection-id">
-				<span>{t.bus}</span>
-				<button
-					type="button"
-					class="map-id-action"
-					aria-label={t.selectBus(detail.vehicle.id)}
-					onclick={() => selectVehicle(detail.vehicle.id)}
-				>
-					<strong>{detail.vehicle.id}</strong>
-					<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
-				</button>
-			</div>
-			{#if notReporting}
-				<p class="map-not-reporting">
-					<TriangleAlertIcon size={14} strokeWidth={2.4} aria-hidden="true" />
-					<span>{t.notReporting} · {t.lastPosition(formatAge(notReporting.ageS))}</span>
-					{@render mapInfo(stalenessInfo)}
+{#if presentation === 'identity'}
+	<span data-slot="detail-identity"
+		>{detail ? detailIdentity(detail, locale) : locale === 'fr' ? 'Détails' : 'Details'}</span
+	>
+{:else if presentation === 'action' && action}
+	<DetailInlineAction href={action.href} label={action.label} />
+{:else if presentation === 'body' && detail}
+	<article
+		bind:this={detailElement}
+		class="map-selection-detail"
+		data-kind={detail.kind}
+		data-slot="detail-body"
+	>
+		<!-- D1: identity is supplied by the desktop/mobile shell through detailIdentity(). -->
+		<div class="detail-status-band" data-slot="detail-status-band">
+			{#if selectionPresence === 'missing-grace'}
+				<p class="detail-source-state" data-source-health={selectionSourceHealth ?? 'stale'}>
+					{selectionSourceHealth === 'retrying'
+						? t.detailRetrying
+						: selectionSourceHealth === 'failed'
+							? t.detailFailed
+							: t.detailStale}
+					{#if selectionSourceHealth === 'retrying' || selectionSourceHealth === 'failed'}
+						<button class="detail-retry" type="button" onclick={() => onrefresh?.()}
+							>{t.retry}</button
+						>
+					{/if}
 				</p>
 			{/if}
-			<dl class="map-detail-grid">
-				<div>
-					<dt>{t.route}</dt>
-					<dd>
-						<MaybeValue present={detail.vehicle.route != null} reason={vehicleAbsence} {locale}>
-							{@const route = detail.vehicle.route!}
-							<button
-								type="button"
-								class="map-inline-action"
-								aria-label={t.selectRoute(route)}
-								onclick={() =>
-									selectRoute(
-										route,
-										detail.routeDirection?.dir ?? null,
-										detail.routeDirectionVariant?.key ?? null,
-									)}
-							>
-								{route}
-								<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-							</button>
-						</MaybeValue>
-					</dd>
-				</div>
-				<div>
-					<dt><span class="map-dt-label">{t.status}</span>{@render mapInfo(otpInfo)}</dt>
-					<dd>
-						<button
-							type="button"
-							class="map-inline-action"
-							aria-label={t.filterStatus(STATUS_LABELS[locale][detail.vehicle.status])}
-							onclick={() => filterStatus(detail.vehicle.status)}
-						>
-							{STATUS_LABELS[locale][detail.vehicle.status]}
-							<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-						</button>
-					</dd>
-				</div>
-				<div>
-					<dt><span class="map-dt-label">{t.crowding}</span>{@render mapInfo(crowdingInfo)}</dt>
-					<dd>
-						<MaybeValue present={detail.vehicle.occupancy != null} reason={vehicleAbsence} {locale}>
-							{@const occupancy = detail.vehicle.occupancy!}
-							<button
-								type="button"
-								class="map-inline-action"
-								aria-label={t.filterCrowding(OCCUPANCY_LABELS[locale][occupancy])}
-								onclick={() => filterOccupancy(occupancy)}
-							>
-								{OCCUPANCY_LABELS[locale][occupancy]}
-								<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-							</button>
-						</MaybeValue>
-					</dd>
-				</div>
-				<div>
-					<dt><span class="map-dt-label">{t.delay}</span>{@render mapInfo(delayInfo)}</dt>
-					<dd>
-						<MapDelayTag
-							delay={detail.vehicle.delay_min}
-							{locale}
-							{t}
-							ctx={{ stale: notReporting != null, metro: detail.routeType === ROUTE_TYPE_METRO }}
-						/>
-					</dd>
-				</div>
-				<div>
-					<dt><span class="map-dt-label">{t.nextStop}</span>{@render mapInfo(etaInfo)}</dt>
-					<dd>
-						<!-- No RESOLVED next stop: render the honest reason (unknown vs end of
-						     route) via the layer, never the raw next_stop id. -->
-						<MaybeValue present={detail.nextStop != null} reason={detail.nextStopAbsence} {locale}>
-							{@const nextStop = detail.nextStop!}
-							<button
-								type="button"
-								class="map-inline-action"
-								aria-label={t.selectStop(nextStop.name)}
-								onclick={() => selectStop(nextStop.id)}
-							>
-								<span class="map-inline-label">{nextStop.name}</span>
-								<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-							</button>
-						</MaybeValue>
-					</dd>
-				</div>
-				<div>
-					<dt>{t.trip}</dt>
-					<dd>
-						<MaybeValue present={detail.vehicle.trip != null} reason={vehicleAbsence} {locale}>
-							{@const trip = detail.vehicle.trip!}
-							<button
-								type="button"
-								class="map-inline-action"
-								aria-label={t.filterTrip(trip)}
-								onclick={() => filterTrip(trip)}
-							>
-								{trip}
-								<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-							</button>
-						</MaybeValue>
-					</dd>
-				</div>
-			</dl>
-			{#if detail.pastStops.length > 0}
-				<section class="map-stop-sequence" aria-label={t.pastStops}>
-					<h3>{t.pastStops}</h3>
-					<ol>
-						{#each detail.pastStops as stop (stop.id)}
-							<li>
-								<button
-									type="button"
-									class="map-stop-action"
-									aria-label={t.selectStop(stopDisplayName(stop, locale))}
-									onclick={() => selectStop(stop.id)}
-								>
-									<span aria-label={stop.seq == null ? seqUnknownAria : undefined}>
-										{stop.seq ?? ''}
-									</span>
-									<strong>
-										{#if stop.nameAbsent}
-											{@render stopRefName(stop)}
-										{:else}
-											{stop.name}
-										{/if}
-									</strong>
-									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-								</button>
-							</li>
-						{/each}
-					</ol>
-				</section>
-			{/if}
-			{#if detail.nextStops.length > 0}
-				<section class="map-stop-sequence" aria-label={t.nextStops}>
-					<h3>{t.nextStops}</h3>
-					<ol>
-						{#each detail.nextStops as stop (stop.id)}
-							<li>
-								<button
-									type="button"
-									class="map-stop-action"
-									aria-label={t.selectStop(stopDisplayName(stop, locale))}
-									onclick={() => selectStop(stop.id)}
-								>
-									<span aria-label={stop.seq == null ? seqUnknownAria : undefined}>
-										{stop.seq ?? ''}
-									</span>
-									<strong>
-										{#if stop.nameAbsent}
-											{@render stopRefName(stop)}
-										{:else}
-											{stop.name}
-										{/if}
-									</strong>
-									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-									<!-- ETA absent for a known next stop: render an explicit "ETA
-										     unavailable" marker (no prediction) instead of dropping the row. -->
-									<small>
-										<MaybeValue present={stop.etaUtc != null} reason="no-prediction" {locale}>
-											<time>{timeLabel(stop.etaUtc, locale)}</time>
-											<MapDelayTag
-												delay={stop.delayMin}
-												{locale}
-												{t}
-												ctx={{ metro: detailIsMetro }}
-											/>
-										</MaybeValue>
-									</small>
-								</button>
-							</li>
-						{/each}
-					</ol>
-				</section>
-			{/if}
-			<!-- Exit the map: open the trip's full analysis (only when a trip id is
-			     broadcast; a bus with no trip has no /trip surface to open). -->
-			{#if vehicleExitHref != null && vehicleTripId != null}
-				{@render openFullLink(vehicleExitHref, t.openFullTrip(vehicleTripId))}
-			{/if}
-		{:else if detail.kind === 'route'}
-			<div class="map-selection-id">
-				<span>{t.route}</span>
-				<strong>{detail.id}</strong>
-			</div>
-			<dl class="map-detail-grid">
-				<div>
-					<dt>{t.route}</dt>
-					<!-- No published long name: say "Route {id}" explicitly (the id IS the
-						     rider-facing route number), never a bare unlabelled id. -->
-					<dd>{detail.route.long ?? routeNameFallback(detail.id, locale)}</dd>
-				</div>
-				<div>
-					<dt>{t.direction}</dt>
-					<dd>{directionLabel(detail, t)}</dd>
-				</div>
-			</dl>
-			<div class="map-stop-stats">
-				<span>{t.visibleBuses(detail.vehicles.length)}</span>
-			</div>
-			{#if detail.vehicles.length > 0}
-				<section class="map-live-buses" aria-label={t.liveBuses}>
-					<h3>{t.liveBuses}</h3>
-					<ol>
-						{#each detail.vehicles.slice(0, 8) as vehicle (vehicle.id)}
-							<li>
-								<button
-									type="button"
-									class="map-vehicle-action"
-									aria-label={t.selectBus(vehicle.id)}
-									onclick={() => selectVehicle(vehicle.id)}
-								>
-									<strong>{vehicle.id}</strong>
-									<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
-									<small>
-										<span class="map-status-label">{STATUS_LABELS[locale][vehicle.status]}</span>
-										<MapDelayTag
-											delay={vehicle.delay_min}
-											{locale}
-											{t}
-											ctx={{ metro: detailIsMetro }}
-										/>
-									</small>
-									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-								</button>
-							</li>
-						{/each}
-					</ol>
-				</section>
-			{/if}
-			{#if detail.directions.length > 0}
-				<section class="map-stop-sequence" aria-label={t.stops}>
-					<h3>{t.stops}</h3>
-					{#each detail.directions as direction (direction.variantKey)}
-						<div class="map-direction-block">
-							<h4>
-								<span class="map-direction-name">
-									{direction.label}
-									{#if direction.labelInferred}
-										<!-- Synthesized "Direction {dir}" placeholder (no terminal/headsign):
-										     mark it inferred through the layer so it never reads as published. -->
-										<AbsentValue reason="inferred" {locale} />
-									{/if}
-								</span>
-								{#if direction.headsign && direction.headsign !== direction.label}
-									<small>{direction.headsign}</small>
-								{/if}
-							</h4>
-							<ol>
-								{#each direction.stops as stop (stop.id)}
-									<li>
-										<button
-											type="button"
-											class="map-stop-action"
-											aria-label={t.selectStop(stopDisplayName(stop, locale))}
-											onclick={() => selectStop(stop.id)}
-										>
-											<span aria-label={stop.seq == null ? seqUnknownAria : undefined}>
-												{stop.seq ?? ''}
-											</span>
-											<strong>
-												{#if stop.nameAbsent}
-													{@render stopRefName(stop)}
-												{:else}
-													{stop.name}
-												{/if}
-											</strong>
-											<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-										</button>
-									</li>
-								{/each}
-							</ol>
-						</div>
-					{/each}
-				</section>
-			{/if}
-			<!-- Exit the map: open the line's full reliability analysis. -->
-			{#if routeExitHref != null}
-				{@render openFullLink(routeExitHref, t.openFullRoute(detail.id))}
-			{/if}
-		{:else}
-			<div class="map-selection-id">
-				<span>{t.stopCode}</span>
-				<strong>{detail.stop.code ?? detail.stop.id}</strong>
-			</div>
-			<div class="map-stop-stats">
-				<span
-					>{detail.departures == null
-						? t.departuresUnavailable
-						: t.departures(detail.departures.length)}</span
-				>
-				<span>{t.vehiclesHeading(detail.vehicles.length)}</span>
-			</div>
-			{#if detail.vehicles.length > 0}
-				<section class="map-live-buses" aria-label={t.liveBuses}>
-					<h3>{t.liveBuses}</h3>
-					<ol>
-						{#each detail.vehicles.slice(0, 8) as vehicle (vehicle.id)}
-							<li>
-								<button
-									type="button"
-									class="map-vehicle-action"
-									aria-label={t.selectBus(vehicle.id)}
-									onclick={() => selectVehicle(vehicle.id)}
-								>
-									<strong>{vehicle.id}</strong>
-									<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
-									<small>
-										<span class="map-status-label">{STATUS_LABELS[locale][vehicle.status]}</span>
-										<MapDelayTag delay={vehicle.delay_min} {locale} {t} />
-									</small>
-									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-								</button>
-							</li>
-						{/each}
-					</ol>
-				</section>
-			{/if}
-			{#if detail.departures != null && detail.departures.length > 0}
-				<ol class="map-departures" aria-label={t.departures(detail.departures.length)}>
-					{#each detail.departures.slice(0, 4) as departure (departure.trip ?? `${departure.route}:${departure.eta_utc}`)}
-						{@const vehicle = vehicleForDeparture(detail.vehicles, departure)}
-						<li>
-							{#if departure.route}
-								<button
-									type="button"
-									class="map-inline-action"
-									aria-label={t.selectDepartureRoute(departure.route)}
-									onclick={() => selectRoute(departure.route)}
-								>
-									{t.route}
-									{departure.route}
-									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-								</button>
-							{:else}
-								<strong>{t.route}</strong>
-							{/if}
-							{#if departure.trip}
-								<button
-									type="button"
-									class="map-inline-action"
-									aria-label={t.filterTrip(departure.trip)}
-									onclick={() => filterTrip(departure.trip)}
-								>
-									{t.trip}
-									{departure.trip}
-									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-								</button>
-							{/if}
-							{#if vehicle}
-								<button
-									type="button"
-									class="map-inline-action"
-									aria-label={t.selectBus(vehicle.id)}
-									onclick={() => selectVehicle(vehicle.id)}
-								>
-									{t.bus}
-									{vehicle.id}
-									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-								</button>
-							{/if}
-							<MapDelayTag delay={departure.delay_min} {locale} {t} />
-						</li>
-					{/each}
-				</ol>
-			{/if}
-			{#if detail.routeTimes.length > 0}
-				<section class="map-route-times" aria-label={t.routes}>
-					<h3>{t.routes}</h3>
-					{#each detail.routeTimes as route (route.route)}
-						<article class="map-route-time">
-							<header>
-								<button
-									type="button"
-									class="map-inline-action"
-									aria-label={t.selectRoute(route.route)}
-									onclick={() => selectRoute(route.route)}
-								>
-									{t.route}
-									{route.route}
-									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-								</button>
-								{#if route.headsign}
-									<span>{route.headsign}</span>
-								{/if}
-							</header>
-							<!-- Past / Next / Live arrival columns. data-slot lets the CSS (and the
-							     E4 narrow-panel test) target the column block; at a narrow PANEL
-							     width the @container rule collapses this to a tidy single compact
-							     list — the Past column drops (least-essential) and Live/Next stack
-							     as a clean list, each keeping its delay tag. -->
-							<div class="map-time-columns" data-slot="route-time-columns">
-								<div class="map-time-col map-time-col--past">
-									<h4>{t.pastTimes}</h4>
-									<ul>
-										{#each route.pastTimes.slice(-4) as time (`past-${route.route}-${time}`)}
-											<li>{time}</li>
-										{:else}
-											<li><StateNotice title={t.noData} presentation="pill" /></li>
-										{/each}
-									</ul>
-								</div>
-								<div class="map-time-col map-time-col--next">
-									<h4>{t.nextTimes}</h4>
-									<ul>
-										{#each route.futureTimes.slice(0, 4) as time (`future-${route.route}-${time}`)}
-											<li>{time}</li>
-										{:else}
-											<li><StateNotice title={t.noData} presentation="pill" /></li>
-										{/each}
-									</ul>
-								</div>
-								<div class="map-time-col map-time-col--live">
-									<h4>{t.live}</h4>
-									<ul class="map-live-list" data-slot="live-departures">
-										{#if route.liveDepartures == null}
-											<li class="map-live-empty">
-												<StateNotice title={t.departuresUnavailable} presentation="pill" />
-											</li>
-										{:else}
-											{#each route.liveDepartures.slice(0, 3) as departure (`live-${route.route}-${departure.trip ?? departure.eta_utc}`)}
-												<li>
-													<time>{timeLabel(departure.eta_utc, locale)}</time>
-													<MapDelayTag delay={departure.delay_min} {locale} {t} />
-												</li>
-											{:else}
-												<!-- No live departure right now: render an honest "no live data" row
-											     (no prediction) rather than dropping the whole Live column. -->
-												<li class="map-live-empty">
-													<AbsentValue reason="no-prediction" {locale} />
-												</li>
-											{/each}
-										{/if}
-									</ul>
-								</div>
-							</div>
-						</article>
-					{/each}
-				</section>
-			{/if}
-			<!-- Exit the map: open the stop's full detail (departures + reliability). -->
-			{#if stopExitHref != null}
-				{@render openFullLink(stopExitHref, t.openFullStop(detail.stop.code ?? detail.stop.id))}
-			{/if}
-		{/if}
 
-		<MapDetailAlerts alerts={detail.alerts} {locale} {t} {onalertselect} />
+			{#if detail.kind === 'vehicle'}
+				{@const absence = vehicleFieldAbsence({
+					stale: notReporting != null,
+					metro: detail.routeType === ROUTE_TYPE_METRO,
+				})}
+				<DetailAttributeGrid>
+					<div>
+						<dt>{t.status}</dt>
+						<dd>{STATUS_LABELS[locale][detail.vehicle.status]}</dd>
+					</div>
+					<div>
+						<dt>{t.nextStop}</dt>
+						<dd>
+							<MaybeValue present={detail.nextStop != null} reason={detail.nextStopAbsence} {locale}
+								>{detail.nextStop!.name}</MaybeValue
+							>
+						</dd>
+					</div>
+					<div>
+						<dt>ETA</dt>
+						<dd>
+							{detail.nextStops[0]?.etaUtc
+								? timeLabel(detail.nextStops[0].etaUtc, locale)
+								: t.noData}
+						</dd>
+					</div>
+					<div>
+						<dt>{t.delay}</dt>
+						<dd>
+							<MapDelayTag
+								delay={detail.vehicle.delay_min}
+								{locale}
+								{t}
+								ctx={{ stale: notReporting != null, metro: detail.routeType === ROUTE_TYPE_METRO }}
+							/>
+						</dd>
+					</div>
+					<div>
+						<dt>{t.crowding}</dt>
+						<dd>
+							<MaybeValue present={detail.vehicle.occupancy != null} reason={absence} {locale}
+								>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
+							>
+						</dd>
+					</div>
+				</DetailAttributeGrid>
+			{:else if detail.kind === 'stop'}
+				<DetailAttributeGrid>
+					<div>
+						<dt>{t.departures(3)}</dt>
+						<dd>
+							{detail.departures == null
+								? t.departuresUnavailable
+								: t.departures(Math.min(3, detail.departures.length))}
+						</dd>
+					</div>
+				</DetailAttributeGrid>
+			{:else}
+				<DetailAttributeGrid
+					><div>
+						<dt>{t.liveBuses}</dt>
+						<dd>{t.visibleBuses(detail.vehicles.length)}</dd>
+					</div></DetailAttributeGrid
+				>
+			{/if}
+		</div>
+
+		{#if detail.alerts && detail.alerts.length > 0}
+			<MapDetailAlerts alerts={detail.alerts} {locale} {t} {onalertselect} />
+		{/if}
+		{#if detail.kind === 'vehicle'}
+			<DetailStatPills>
+				<button
+					type="button"
+					class="detail-pill"
+					aria-label={t.selectBus(detail.vehicle.id)}
+					onclick={() => selectVehicle(detail.vehicle.id)}>{t.bus} {detail.vehicle.id}</button
+				>
+				{#if detail.vehicle.route}<button
+						type="button"
+						class="detail-pill"
+						aria-label={t.selectRoute(detail.vehicle.route)}
+						onclick={() => selectRoute(detail.vehicle.route)}
+						>{t.route} {detail.vehicle.route}</button
+					>{/if}
+			</DetailStatPills>
+			{#if notReporting}<p class="map-not-reporting">
+					<TriangleAlertIcon size={14} aria-hidden="true" />{t.notReporting} · {t.lastPosition(
+						formatAge(notReporting.ageS),
+					)}
+				</p>{/if}
+			{#if detail.nextStops.length > 0}
+				<DetailSection title={t.nextStops} slot="detail-next-stops"
+					><ol>
+						{#each detail.nextStops as stop (stop.id)}<li>
+								<DetailStopRow {stop} {locale} {t} {seqUnknownAria} onselect={selectStop} />
+							</li>{/each}
+					</ol></DetailSection
+				>
+			{/if}
+			{#if detail.pastStops.length > 0}
+				<DetailSection title={t.pastStops} slot="detail-past-stops" collapsed
+					><ol>
+						{#each detail.pastStops as stop (stop.id)}<li>
+								<DetailStopRow {stop} {locale} {t} {seqUnknownAria} onselect={selectStop} />
+							</li>{/each}
+					</ol></DetailSection
+				>
+			{/if}
+		{:else if detail.kind === 'stop'}
+			<DetailStatPills
+				><span class="detail-pill">{t.stopCode} {detail.stop.code ?? detail.stop.id}</span><span
+					class="detail-pill">{t.vehiclesHeading(detail.vehicles.length)}</span
+				></DetailStatPills
+			>
+			{#if detail.departures && detail.departures.length > 0}
+				<DetailSection title={t.departures(detail.departures.length)} slot="detail-departures"
+					><ol class="map-departures">
+						{#each detail.departures.slice(0, 3) as departure (departure.trip ?? `${departure.route}:${departure.eta_utc}`)}
+							{@const departureKey = departure.trip ?? `${departure.route}:${departure.eta_utc}`}
+							<li data-departure-key={departureKey}>
+								{#if departure.route}<button
+										type="button"
+										data-detail-focus-key={`departure:${departureKey}:route`}
+										aria-label={t.selectDepartureRoute(departure.route)}
+										onclick={() => selectRoute(departure.route)}>{t.route} {departure.route}</button
+									>{/if}{#if departure.trip}<button
+										type="button"
+										data-detail-focus-key={`departure:${departureKey}:trip`}
+										aria-label={t.filterTrip(departure.trip)}
+										onclick={() => filterTrip(departure.trip)}>{t.trip} {departure.trip}</button
+									>{/if}<time>{timeLabel(departure.eta_utc, locale)}</time><MapDelayTag
+									delay={departure.delay_min}
+									{locale}
+									{t}
+								/>
+							</li>
+						{/each}
+					</ol></DetailSection
+				>
+			{/if}
+			{#if detail.routeTimes.length > 0}<DetailSection
+					title={t.routes}
+					slot="detail-route-times"
+					ladderMin={420}
+					>{#each detail.routeTimes as route (route.route)}<p>
+							{t.route}
+							{route.route}{route.headsign ? ` · ${route.headsign}` : ''}
+						</p>
+						<details data-slot="detail-schedule-tail">
+							<summary>{t.nextTimes}</summary>
+							<p>{t.pastTimes}: {route.pastTimes.join(', ')}</p>
+							<p>{t.nextTimes}: {route.futureTimes.join(', ')}</p>
+						</details>{/each}</DetailSection
+				>{/if}
+			{#if detail.departures && detail.departures.length > 3 && action}<DetailSection
+					title={`+${detail.departures.length - 3} ${t.more}`}
+					slot="detail-more-departures"
+					collapsed
+					ladderExpand={560}
+					inlineAction={{
+						href: action.href,
+						label: `+${detail.departures.length - 3} ${t.more}`,
+						dataSlot: 'detail-more-departures-action',
+					}}
+					><ol>
+						{#each detail.departures.slice(3) as departure (departure.trip ?? `${departure.route}:${departure.eta_utc}`)}<li
+							>
+								{departure.route}
+								{timeLabel(departure.eta_utc, locale)}
+							</li>{/each}
+					</ol></DetailSection
+				>{/if}
+			{#if detail.vehicles.length > 0}<DetailSection title={t.liveBuses} slot="detail-live-buses"
+					><ol>
+						{#each detail.vehicles.slice(0, 8) as vehicle (vehicle.id)}<li>
+								<DetailBusRow
+									{vehicle}
+									etaUtc={detail.departures?.find((departure) => departure.trip === vehicle.trip)
+										?.eta_utc ?? null}
+									{locale}
+									{t}
+									onselect={selectVehicle}
+								/>
+							</li>{/each}
+					</ol></DetailSection
+				>{/if}
+		{:else}
+			<DetailStatPills
+				><span class="detail-pill">{detailIdentity(detail, locale)}</span
+				>{#if detail.route.long}<span class="detail-pill">{detail.route.long}</span
+					>{/if}{#if detail.direction}<span class="detail-pill">{directionLabel(detail, t)}</span
+					>{/if}</DetailStatPills
+			>
+			{#if detail.vehicles.length > 0}<DetailSection title={t.liveBuses} slot="detail-live-buses"
+					><ol>
+						{#each detail.vehicles.slice(0, 8) as vehicle (vehicle.id)}<li>
+								<DetailBusRow {vehicle} {locale} {t} onselect={selectVehicle} />
+							</li>{/each}
+					</ol></DetailSection
+				>{/if}
+			{#if detail.directions.length > 0}<DetailSection title={t.stops} slot="detail-stops"
+					>{#each detail.directions as direction (direction.variantKey)}<div>
+							<h4>{direction.label}</h4>
+							<ol>
+								{#each direction.stops as stop (stop.id)}<li>
+										<DetailStopRow {stop} {locale} {t} {seqUnknownAria} onselect={selectStop} />
+									</li>{/each}
+							</ol>
+						</div>{/each}</DetailSection
+				>{/if}
+		{/if}
 	</article>
 {/if}
 
 <style>
 	.map-selection-detail {
-		display: flex;
-		flex-direction: column;
-		gap: 1.25rem;
-		font-family: var(--font-body);
+		display: grid;
+		gap: 1rem;
 		color: var(--foreground);
 	}
-	/* ── Header ───────────────────────────────────────────────── */
-	.map-selection-head {
-		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
-		padding-bottom: 0.875rem;
-		border-bottom: 1px solid var(--border-subtle);
-	}
-	.map-selection-kind {
-		display: inline-flex;
-		align-items: center;
+	.detail-status-band {
+		display: grid;
 		gap: 0.5rem;
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: 500;
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--accent-text);
 	}
-	/* Leading signage tick — a short brand rule before the kicker. */
-	.map-selection-kind::before {
-		content: '';
-		width: 1.35rem;
-		height: 2px;
-		border-radius: var(--radius-pill);
-		background: var(--primary);
-	}
-	.map-selection-title {
-		margin: 0;
-		font-family: var(--font-heading);
-		font-size: var(--text-heading);
-		font-weight: 600;
-		line-height: 1.08;
-		letter-spacing: var(--tracking-tight);
-		text-wrap: balance;
-		color: var(--foreground);
-	}
-	/* ── Identity + stat pills ────────────────────────────────── */
-	.map-selection-id,
-	.map-stop-stats {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.375rem;
-		align-items: center;
-	}
-	.map-selection-id span,
-	.map-stop-stats span {
-		display: inline-flex;
-		min-height: 1.85rem;
-		align-items: center;
-		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-pill);
-		background: var(--muted);
-		padding: 0.25rem 0.75rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		color: var(--muted-foreground);
-	}
-	.map-selection-id span {
-		font-size: var(--text-micro);
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		background: transparent;
-		border-color: transparent;
-		padding-inline: 0;
-		color: var(--muted-foreground);
-	}
-	.map-selection-id strong,
-	.map-id-action {
-		display: inline-flex;
-		min-height: 1.85rem;
-		align-items: center;
-		border: 1px solid var(--border-brand);
-		border-radius: var(--radius-pill);
-		background: color-mix(in srgb, var(--primary) 12%, transparent);
-		padding: 0.25rem 0.75rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		font-weight: 600;
-		color: var(--foreground);
-	}
-	.map-id-action {
-		gap: 0.375rem;
-		cursor: pointer;
-		transition:
-			color var(--duration-fast) var(--ease-out),
-			background-color var(--duration-fast) var(--ease-out),
-			border-color var(--duration-fast) var(--ease-out);
-	}
-	.map-id-action strong {
-		display: inline;
-		min-height: auto;
-		border: 0;
-		background: transparent;
-		padding: 0;
-	}
-	.map-id-action :global(svg) {
-		opacity: 0.55;
-		transition: transform var(--duration-fast) var(--ease-out);
-	}
-	.map-id-action:hover {
-		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 18%, transparent);
-		border-color: var(--border-brand-active);
-	}
-	.map-id-action:hover :global(svg) {
-		opacity: 1;
-		transform: translateX(2px);
-	}
-	/* ── Not-reporting note — calm, honest per-bus stale-GPS caution ──── */
+	.detail-source-state,
 	.map-not-reporting {
-		display: flex;
-		align-items: center;
-		gap: 0.375rem;
 		margin: 0;
-		padding: 0.375rem 0.5rem;
+		padding: 0.5rem;
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-md);
+		color: var(--muted-foreground);
+	}
+	.detail-source-state[data-source-health] {
+		border-color: color-mix(in srgb, var(--dataviz-status-late) 38%, var(--border) 62%);
+		background: color-mix(in srgb, var(--dataviz-status-late) 7%, var(--card) 86%);
+	}
+	.map-not-reporting {
 		background: var(--muted);
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		color: var(--muted-foreground);
-		overflow: hidden;
 	}
-	.map-not-reporting :global(svg) {
-		flex: none;
-		opacity: 0.75;
-	}
-
-	/* ── Attribute grid (status / crowding / delay …) ─────────── */
-	.map-detail-grid {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 0;
-		margin: 0;
-	}
-	.map-detail-grid div {
-		display: grid;
-		grid-template-columns: 5.75rem minmax(0, 1fr);
-		gap: 0.5rem;
+	.detail-retry {
+		display: inline-flex;
+		min-height: 2.75rem;
 		align-items: center;
-		min-height: 2.4rem;
-		border-bottom: 1px solid var(--border-subtle);
-		padding-block: 0.5rem;
-	}
-	.map-detail-grid div:last-child {
-		border-bottom: 0;
-	}
-	.map-detail-grid dt {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-	.map-detail-grid dd {
-		min-width: 0;
-		margin: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-size: var(--text-small);
+		margin-left: 0.5rem;
+		padding-inline: 0.75rem;
+		border-radius: var(--radius-md);
 		color: var(--foreground);
 	}
-	.map-inline-action {
-		display: inline-flex;
-		gap: 0.375rem;
-		max-width: 100%;
-		align-items: center;
-		justify-content: flex-start;
-		min-height: 1.7rem;
-		padding: 0.25rem 0.5rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		font-weight: 500;
-		color: var(--foreground);
-		text-align: left;
-		background: color-mix(in srgb, var(--primary) 9%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border) 72%);
-		border-radius: var(--radius-pill);
-		cursor: pointer;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		transition:
-			color var(--duration-fast) var(--ease-out),
-			background-color var(--duration-fast) var(--ease-out),
-			border-color var(--duration-fast) var(--ease-out);
-	}
-	/* The name shrinks + truncates inside the pill so a long stop name (e.g.
-	   "Next station") never pushes the chevron out or overflows a narrow rail. */
-	.map-inline-label {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.map-inline-action :global(svg) {
-		flex: none;
-		opacity: 0.5;
-		transition:
-			opacity var(--duration-fast) var(--ease-out),
-			transform var(--duration-fast) var(--ease-out);
-	}
-	.map-inline-action:hover {
-		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 16%, transparent);
-		border-color: var(--border-brand);
-	}
-	.map-inline-action:hover :global(svg) {
-		opacity: 1;
-		transform: translateX(2px);
-	}
-
-	.map-status-label {
-		color: var(--muted-foreground);
-	}
-	/* The attribute label + its (i) affordance share a baseline row inside the dt. */
-	.map-detail-grid dt {
-		display: inline-flex;
-		align-items: center;
+	.map-selection-detail ol {
+		display: grid;
 		gap: 0.25rem;
-	}
-	.map-dt-label {
-		min-width: 0;
-	}
-	/* "Open full analysis →" — the exit out of the map (§C5.2). An INTERACTION
-	   affordance (--primary), a quiet full-width link at the foot of each panel. */
-	.map-open-full {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		align-self: flex-start;
-		min-height: 2.25rem;
-		padding: 0.375rem 0.75rem;
-		border: 1px solid var(--border-brand);
-		border-radius: var(--radius-pill);
-		background: color-mix(in srgb, var(--primary) 9%, transparent);
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		font-weight: 600;
-		color: var(--foreground);
-		text-decoration: none;
-		transition:
-			color var(--duration-fast) var(--ease-out),
-			background-color var(--duration-fast) var(--ease-out),
-			border-color var(--duration-fast) var(--ease-out);
-	}
-	.map-open-full :global(svg) {
-		flex: none;
-		opacity: 0.55;
-		transition:
-			opacity var(--duration-fast) var(--ease-out),
-			transform var(--duration-fast) var(--ease-out);
-	}
-	.map-open-full:hover,
-	.map-open-full:focus-visible {
-		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 16%, transparent);
-		border-color: var(--border-brand-active);
-	}
-	.map-open-full:hover :global(svg),
-	.map-open-full:focus-visible :global(svg) {
-		opacity: 1;
-		transform: translateX(2px);
-	}
-	.map-open-full:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-	/* ── Departures list ──────────────────────────────────────── */
-	.map-departures {
-		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -930,393 +373,23 @@
 	.map-departures li {
 		display: flex;
 		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
 		gap: 0.5rem;
+		padding: 0.5rem;
 		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-md);
-		background: var(--muted);
-		padding: 0.5rem 0.625rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		overflow: hidden;
-	}
-
-	/* ── Section scaffolding (shared) ─────────────────────────── */
-	.map-stop-sequence,
-	.map-route-times,
-	.map-live-buses {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-	.map-stop-sequence h3,
-	.map-route-times h3,
-	.map-live-buses h3 {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: 500;
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--accent-text);
-	}
-	.map-stop-sequence h3::after,
-	.map-route-times h3::after,
-	.map-live-buses h3::after {
-		content: '';
-		flex: 1;
-		height: 1px;
-		background: var(--border-subtle);
-	}
-	.map-stop-sequence ol,
-	.map-route-times ul,
-	.map-live-buses ol {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-	}
-	.map-direction-block {
-		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
-	}
-	.map-direction-block + .map-direction-block {
-		margin-top: 0.5rem;
-	}
-	.map-direction-block h4,
-	.map-route-time h4 {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-	.map-direction-block h4 {
-		display: flex;
-		flex-direction: column;
-		gap: 0.125rem;
-		padding-bottom: 0.375rem;
-		color: var(--accent-text);
-	}
-	.map-direction-block h4 small {
-		text-transform: none;
-		letter-spacing: 0;
-		color: var(--muted-foreground);
-	}
-	/* The direction name + its inline inferred marker share a baseline row; the
-	   marker reads back its normal-case absence copy, not the uppercase eyebrow. */
-	.map-direction-name {
-		display: inline-flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.375rem;
-		text-transform: none;
-		letter-spacing: 0;
-	}
-	/* The no-live-data row in the Live arrivals column reads as a quiet absence,
-	   not an arrival; it carries no time, just the honest "no prediction" value. */
-	.map-live-empty {
-		color: var(--muted-foreground);
-	}
-
-	/* ── Stop sequence rows ───────────────────────────────────── */
-	.map-stop-action {
-		display: grid;
-		grid-template-columns: 1.9rem minmax(0, 1fr) auto;
-		gap: 0.625rem;
-		width: calc(100% + 1rem);
-		margin-inline: -0.5rem;
-		align-items: center;
-		padding: 0.5rem 0.5rem;
 		border-radius: var(--radius-sm);
-		color: var(--foreground);
-		text-align: left;
-		background: transparent;
-		border: 0;
-		border-bottom: 1px solid var(--border-subtle);
-		cursor: pointer;
-		transition: background-color var(--duration-fast) var(--ease-out);
 	}
-	.map-stop-action span {
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		text-align: center;
-		color: var(--muted-foreground);
-	}
-	.map-stop-action strong {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-size: var(--text-small);
-		font-weight: 500;
-		transition: color var(--duration-fast) var(--ease-out);
-	}
-	.map-stop-action :global(svg) {
-		opacity: 0.45;
-		transition:
-			opacity var(--duration-fast) var(--ease-out),
-			transform var(--duration-fast) var(--ease-out);
-	}
-	.map-stop-action small {
-		grid-column: 2;
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		margin-top: 0.125rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		color: var(--muted-foreground);
-	}
-	.map-stop-action small time {
-		font-weight: 600;
-		color: var(--foreground);
-	}
-	.map-stop-action:hover {
-		background: color-mix(in srgb, var(--primary) 7%, transparent);
-	}
-	.map-stop-action:hover strong {
-		color: var(--primary);
-	}
-	.map-stop-action:hover :global(svg) {
-		opacity: 1;
-		transform: translateX(2px);
-	}
-
-	/* ── Live-bus rows ────────────────────────────────────────── */
-	.map-vehicle-action {
-		display: grid;
-		grid-template-columns: minmax(3.5rem, auto) minmax(0, 1fr) auto auto;
-		gap: 0.5rem;
-		width: calc(100% + 1rem);
-		margin-inline: -0.5rem;
-		align-items: center;
-		padding: 0.5rem 0.5rem;
-		border-radius: var(--radius-sm);
-		color: var(--foreground);
-		text-align: left;
-		background: transparent;
-		border: 0;
-		border-bottom: 1px solid var(--border-subtle);
-		cursor: pointer;
-		transition: background-color var(--duration-fast) var(--ease-out);
-	}
-	.map-vehicle-action strong {
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		font-weight: 600;
-		color: var(--primary);
-	}
-	.map-vehicle-action > span {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-size: var(--text-small);
-		transition: color var(--duration-fast) var(--ease-out);
-	}
-	.map-vehicle-action small {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		color: var(--muted-foreground);
-	}
-	.map-vehicle-action :global(svg) {
-		opacity: 0.45;
-		transition:
-			opacity var(--duration-fast) var(--ease-out),
-			transform var(--duration-fast) var(--ease-out);
-	}
-	.map-vehicle-action:hover {
-		background: color-mix(in srgb, var(--primary) 7%, transparent);
-	}
-	.map-vehicle-action:hover > span {
-		color: var(--primary);
-	}
-	.map-vehicle-action:hover :global(svg) {
-		opacity: 1;
-		transform: translateX(2px);
-	}
-	/* ── Route-time card (stop detail) ────────────────────────── */
-	.map-route-times {
-		gap: 0.5rem;
-	}
-	.map-route-time {
-		display: flex;
-		flex-direction: column;
-		gap: 0.625rem;
-		padding: 0.75rem;
-		background: var(--card);
-		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-md);
-		box-shadow: var(--shadow-card);
-	}
-	.map-route-time header {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem;
-		padding-bottom: 0.5rem;
-		border-bottom: 1px solid var(--border-subtle);
-	}
-	.map-route-time header span {
-		font-size: var(--text-caption);
-		color: var(--muted-foreground);
-	}
-	.map-time-columns {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 0.75rem;
-	}
-	.map-time-columns h4 {
-		margin-bottom: 0.25rem;
-	}
-	.map-time-columns li {
-		display: flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.125rem 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		color: var(--foreground);
-	}
-	.map-time-columns li time {
-		font-weight: 600;
-	}
-	@media (max-width: 42rem) {
-		.map-detail-grid div {
-			grid-template-columns: minmax(0, 1fr);
-			align-items: start;
-			min-height: 0;
-			gap: 0.25rem;
-		}
-		.map-detail-grid dd {
-			white-space: normal;
-		}
-		.map-inline-action {
-			align-items: flex-start;
-			white-space: normal;
-		}
-		/* On phones the pill wraps instead of truncating, so the full name reads. */
-		.map-inline-label {
-			overflow: visible;
-			text-overflow: clip;
-			white-space: normal;
-		}
-		.map-stop-action {
-			align-items: start;
-		}
-		.map-stop-action span {
-			padding-top: 0.125rem;
-		}
-		.map-stop-action strong {
-			white-space: normal;
-		}
-		.map-time-columns {
-			grid-template-columns: minmax(0, 1fr);
-			gap: 0.375rem;
-		}
-	}
-	/* Graceful shrink inside the resizable right-panel dock. The viewport media
-	   query above misses the case the user hits most: dragging the dock narrower
-	   while the viewport stays wide. These container queries reflow against the
-	   PANEL'S OWN width (the `right-panel` container the dock declares), so the
-	   detail degrades — stacks, truncates, drops the least-essential text —
-	   instead of clipping or overflowing as the handle is dragged in. */
-	@container right-panel (max-width: 21rem) {
-		.map-detail-grid div {
-			grid-template-columns: minmax(0, 1fr);
-			align-items: start;
-			min-height: 0;
-			gap: 0.25rem;
-		}
-		.map-detail-grid dd {
-			white-space: normal;
-		}
-		.map-inline-action {
-			align-items: flex-start;
-			white-space: normal;
-		}
-		.map-inline-label {
-			overflow: visible;
-			text-overflow: clip;
-			white-space: normal;
-		}
-		.map-stop-action {
-			align-items: start;
-		}
-		.map-stop-action strong {
-			white-space: normal;
-		}
-		/* The verbose status word drops; the coloured delay tag still carries the
-		   state, so the live-bus row stays legible at a narrow width. */
-		.map-vehicle-action .map-status-label {
+	@container right-panel (width < 26.25rem) {
+		.map-selection-detail :global([data-slot='detail-meta'].detail-stat-pills) {
 			display: none;
 		}
-		.map-time-columns {
-			grid-template-columns: minmax(0, 1fr);
-			gap: 0.375rem;
-		}
-	}
-	/* E4 — cuter, compact arrivals when the dock is dragged NARROW. The Past/Next/
-	   Live three-up is unreadable in a thin rail, so below ~17rem of the PANEL'S OWN
-	   width (the `right-panel` container the dock declares) we collapse to a single
-	   tidy compact list: the Past column drops (the least-essential — riders watch
-	   what's COMING), and the Next + Live columns stack as a clean list, each row
-	   still carrying its coloured delay tag so the honest state survives. The honest
-	   empty states (the "No data" <li> and the no-live-departures stand-down) are
-	   untouched. The query targets DESCENDANTS of .right-panel (the parent declares
-	   the container) — never a self-target. */
-	@container right-panel (max-width: 17rem) {
-		.map-time-columns {
-			display: flex;
-			flex-direction: column;
-			gap: 0.5rem;
-		}
-		/* Drop the least-essential Past-times column; Next + Live carry the reading. */
-		.map-time-col--past {
+		.map-selection-detail :global([data-ladder-min='420']) {
 			display: none;
 		}
-		/* Compact each remaining column into a quiet stacked list with a tight gap. */
-		.map-time-col h4 {
-			margin-bottom: 0.125rem;
-		}
-		.map-time-columns li {
-			padding-block: 0.125rem;
-		}
-		/* The Live list reads as the cuter primary block: a touch more breathing room
-		   between its dated rows so the delay tags do not crowd at the narrow width. */
-		.map-live-list li {
-			gap: 0.375rem;
-		}
 	}
-	@media (prefers-reduced-motion: reduce) {
-		.map-inline-action,
-		.map-id-action,
-		.map-stop-action,
-		.map-vehicle-action,
-		.map-open-full,
-		.map-inline-action :global(svg),
-		.map-id-action :global(svg),
-		.map-stop-action :global(svg),
-		.map-vehicle-action :global(svg),
-		.map-open-full :global(svg) {
-			transition: none;
-		}
-		.map-inline-action:hover :global(svg),
-		.map-id-action:hover :global(svg),
-		.map-stop-action:hover :global(svg),
-		.map-vehicle-action:hover :global(svg),
-		.map-open-full:hover :global(svg),
-		.map-open-full:focus-visible :global(svg) {
-			transform: none;
+	@container right-panel (min-width: 34rem) {
+		.map-selection-detail :global([data-ladder-expand='560'] [data-ladder-content]) {
+			visibility: visible;
+			block-size: auto;
 		}
 	}
 </style>

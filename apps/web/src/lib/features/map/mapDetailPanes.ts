@@ -16,6 +16,9 @@ import { browser } from '$app/environment';
 /** The localStorage key the chosen detail-panel width persists under. */
 export const DETAIL_PANEL_WIDTH_STORAGE_KEY = 'transit:detail-panel-width';
 
+/** The localStorage key for the entity whose desktop detail rail is collapsed. */
+export const DETAIL_RAIL_STORAGE_KEY = 'transit:detail-rail';
+
 /** Default detail-panel width (px) — matches the RightPanel's 360px design width. */
 export const DEFAULT_DETAIL_PANEL_WIDTH = 360;
 
@@ -91,8 +94,43 @@ export function readStoredDetailPanelWidth(): number {
 export function writeStoredDetailPanelWidth(width: number): void {
 	if (!browser) return;
 	try {
-		localStorage.setItem(DETAIL_PANEL_WIDTH_STORAGE_KEY, String(clampDetailPanelWidth(width)));
+		Storage.prototype.setItem.call(
+			localStorage,
+			DETAIL_PANEL_WIDTH_STORAGE_KEY,
+			String(clampDetailPanelWidth(width)),
+		);
 	} catch {
 		/* private mode / disabled storage — session-only width is fine */
+	}
+}
+
+/** Read the surface key whose rail should restore as collapsed. */
+export function readStoredDetailRail(): string | null {
+	if (!browser) return null;
+	try {
+		const value = localStorage.getItem(DETAIL_RAIL_STORAGE_KEY);
+		return value ? value : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Persist a deliberate rail collapse for one selected surface. */
+export function writeStoredDetailRail(surfaceKey: string): void {
+	if (!browser) return;
+	try {
+		Storage.prototype.setItem.call(localStorage, DETAIL_RAIL_STORAGE_KEY, surfaceKey);
+	} catch {
+		/* private mode / disabled storage — session-only collapse is fine */
+	}
+}
+
+/** Clear a rail collapse when a detail expands, closes, or changes entity. */
+export function clearStoredDetailRail(): void {
+	if (!browser) return;
+	try {
+		localStorage.removeItem(DETAIL_RAIL_STORAGE_KEY);
+	} catch {
+		/* private mode / disabled storage — session-only collapse is fine */
 	}
 }

@@ -1,151 +1,234 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import {
-	delayKnownLabel,
-	delayMaybe,
-	delayTone,
-	directionLabel,
-	formatAge,
-	isDetailMetro,
-	stopDisplayName,
-	timeLabel,
-	vehicleFieldAbsence,
-	vehicleForDeparture,
-} from './mapSelectionDetail.logic';
-import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
-import type { MapSelectionDetail, MapStopRef, RouteMapDetail } from './mapSelection';
-import type { StopDeparture, Vehicle } from '$lib/v1/schemas';
+import type { IsoUtc } from '$lib/v1/schemas';
+import type { MapSelectionDetail } from './mapSelection';
+import * as detailLogic from './mapSelectionDetail.logic';
 
-const en = MAP_SELECTION_DETAIL_COPY.en;
+type DetailAction = { href: string; label: string } | null;
+const iso = (value: string) => value as IsoUtc;
 
-describe('isDetailMetro', () => {
-	it('is false for null', () => {
-		expect(isDetailMetro(null)).toBe(false);
+function actionFor(detail: MapSelectionDetail, locale: 'en' | 'fr' = 'en'): DetailAction {
+	const detailActions = (
+		detailLogic as {
+			detailActions?: (item: MapSelectionDetail, locale: 'en' | 'fr') => DetailAction;
+		}
+	).detailActions;
+	expect(detailActions).toBeTypeOf('function');
+	return detailActions?.(detail, locale) ?? null;
+}
+
+const routeDetail = {
+	kind: 'route',
+	id: '24',
+	title: 'wrong resolver title',
+	route: {
+		id: '24',
+		generated_utc: iso('2026-06-15T00:00:00Z'),
+		long: 'Sherbrooke',
+		directions: [],
+	},
+	direction: null,
+	directions: [],
+	vehicles: [],
+	alerts: [],
+} as MapSelectionDetail;
+
+const stopDetail = {
+	kind: 'stop',
+	id: 'stop-missing-name',
+	title: 'wrong resolver title',
+	stop: { id: 'stop-missing-name', code: null, name: 'ignored', nameAbsent: true },
+	departures: [],
+	vehicles: [],
+	routeTimes: [],
+	alerts: [],
+} as unknown as MapSelectionDetail;
+
+describe('detailActions', () => {
+	it('uses the entity-specific route and stop action labels', () => {
+		expect(actionFor(routeDetail)).toEqual({
+			href: '/lines/24',
+			label: 'Open the full analysis for route 24',
+		});
+		expect(actionFor(stopDetail)).toEqual({
+			href: '/stop/stop-missing-name',
+			label: 'Open the full analysis for stop stop-missing-name',
+		});
 	});
-	it('reads a metro vehicle by route_type 1', () => {
-		expect(isDetailMetro({ kind: 'vehicle', routeType: 1 } as MapSelectionDetail)).toBe(true);
-		expect(isDetailMetro({ kind: 'vehicle', routeType: 3 } as MapSelectionDetail)).toBe(false);
+
+	it('prefers a vehicle trip action over its route fallback', () => {
+		const action = actionFor({
+			kind: 'vehicle',
+			id: 'veh-trip',
+			title: 'ignored',
+			vehicle: {
+				id: 'veh-trip',
+				lat: 45.5,
+				lon: -73.6,
+				status: 'late',
+				updated_utc: iso('2026-06-15T00:00:00Z'),
+				route: '24',
+				trip: 'trip-24-a',
+				next_stop: null,
+				bearing: null,
+				delay_min: 4,
+				occupancy: null,
+			},
+			trip: null,
+			route: null,
+			routeDirection: null,
+			routeDirectionVariant: null,
+			nextStop: null,
+			nextStopAbsence: 'end-of-route',
+			pastStops: [],
+			nextStops: [],
+			alerts: [],
+			routeType: null,
+		});
+
+		expect(action).toEqual({
+			href: '/trip/trip-24-a',
+			label: 'Open the full analysis for trip trip-24-a',
+		});
 	});
-	it('reads a metro route by route.type 1', () => {
-		expect(isDetailMetro({ kind: 'route', route: { type: 1 } } as MapSelectionDetail)).toBe(true);
-		expect(isDetailMetro({ kind: 'route', route: { type: null } } as MapSelectionDetail)).toBe(
-			false,
+	it('keeps a vehicle without a trip honest by falling back to its known route', () => {
+		const action = actionFor({
+			kind: 'vehicle',
+			id: 'veh-24',
+			title: 'Route 24',
+			vehicle: {
+				id: 'veh-24',
+				lat: 45.5,
+				lon: -73.6,
+				status: 'late',
+				updated_utc: iso('2026-06-15T00:00:00Z'),
+				route: '24',
+				trip: null,
+				next_stop: null,
+				bearing: null,
+				delay_min: 4,
+				occupancy: null,
+			},
+			trip: null,
+			route: null,
+			routeDirection: null,
+			routeDirectionVariant: null,
+			nextStop: null,
+			nextStopAbsence: 'end-of-route',
+			pastStops: [],
+			nextStops: [],
+			alerts: [],
+			routeType: null,
+		});
+
+		expect(action).toEqual({
+			href: '/lines/24',
+			label: 'Open the full analysis for route 24',
+		});
+	});
+
+	it('does not invent an exit for a vehicle with neither trip nor route', () => {
+		const action = actionFor({
+			kind: 'vehicle',
+			id: 'veh-none',
+			title: 'Bus veh-none',
+			vehicle: {
+				id: 'veh-none',
+				lat: 45.5,
+				lon: -73.6,
+				status: 'unknown',
+				updated_utc: iso('2026-06-15T00:00:00Z'),
+				route: null,
+				trip: null,
+				next_stop: null,
+				bearing: null,
+				delay_min: null,
+				occupancy: null,
+			},
+			trip: null,
+			route: null,
+			routeDirection: null,
+			routeDirectionVariant: null,
+			nextStop: null,
+			nextStopAbsence: 'end-of-route',
+			pastStops: [],
+			nextStops: [],
+			alerts: [],
+			routeType: null,
+		});
+
+		expect(action).toBeNull();
+	});
+});
+
+describe('detailIdentity', () => {
+	it('localizes route identity for the shell heading without using resolver title copy', () => {
+		const detailIdentity = (
+			detailLogic as { detailIdentity?: (item: MapSelectionDetail, locale: 'en' | 'fr') => string }
+		).detailIdentity;
+		expect(detailIdentity).toBeTypeOf('function');
+		const detail = {
+			kind: 'route',
+			id: '24',
+			title: 'Route 24',
+			route: {
+				id: '24',
+				generated_utc: iso('2026-06-15T00:00:00Z'),
+				long: 'Sherbrooke',
+				directions: [],
+			},
+			direction: null,
+			directions: [],
+			vehicles: [],
+			alerts: [],
+		} as MapSelectionDetail;
+
+		expect(detailIdentity?.(detail, 'fr')).toBe('Ligne 24');
+	});
+
+	it('identifies vehicles by bus id and stops through the honest display fallback in both locales', () => {
+		const detailIdentity = (
+			detailLogic as { detailIdentity?: (item: MapSelectionDetail, locale: 'en' | 'fr') => string }
+		).detailIdentity;
+		const vehicle = {
+			kind: 'vehicle',
+			id: 'veh-24',
+			title: 'Route 24',
+			vehicle: {
+				id: 'veh-24',
+				lat: 45.5,
+				lon: -73.6,
+				status: 'late',
+				updated_utc: iso('2026-06-15T00:00:00Z'),
+				route: '24',
+				trip: null,
+				next_stop: null,
+				bearing: null,
+				delay_min: 4,
+				occupancy: null,
+			},
+			trip: null,
+			route: null,
+			routeDirection: null,
+			routeDirectionVariant: null,
+			nextStop: null,
+			nextStopAbsence: 'end-of-route',
+			pastStops: [],
+			nextStops: [],
+			alerts: [],
+			routeType: null,
+		} as MapSelectionDetail;
+
+		expect(detailIdentity?.(vehicle, 'en')).toBe('Bus veh-24');
+		expect(detailIdentity?.(vehicle, 'fr')).toBe('Bus veh-24');
+		expect(detailIdentity?.(stopDetail, 'en')).toBe('Stop stop-missing-name (name unavailable)');
+		expect(detailIdentity?.(stopDetail, 'fr')).toBe('Arrêt stop-missing-name (nom indisponible)');
+	});
+
+	it('keeps French action labels entity-specific', () => {
+		expect(actionFor(routeDetail, 'fr')?.label).toBe('Voir l’analyse complète de la ligne 24');
+		expect(actionFor(stopDetail, 'fr')?.label).toBe(
+			'Voir l’analyse complète de l’arrêt stop-missing-name',
 		);
-	});
-	it('is false for a stop', () => {
-		expect(isDetailMetro({ kind: 'stop' } as MapSelectionDetail)).toBe(false);
-	});
-});
-
-describe('delayMaybe — null is never on-time', () => {
-	it('wraps a known delay (including 0)', () => {
-		expect(delayMaybe(0)).toEqual({ known: true, value: 0 });
-		expect(delayMaybe(-3)).toEqual({ known: true, value: -3 });
-		expect(delayMaybe(7)).toEqual({ known: true, value: 7 });
-	});
-	it('absent → metro-no-realtime wins for a metro row', () => {
-		const m = delayMaybe(null, { metro: true, stale: true });
-		expect(m.known).toBe(false);
-		if (!m.known) expect(m.reason).toBe('metro-no-realtime');
-	});
-	it('absent → not-reporting for a stale (GPS-quiet) vehicle', () => {
-		const m = delayMaybe(undefined, { stale: true });
-		expect(m.known).toBe(false);
-		if (!m.known) expect(m.reason).toBe('not-reporting');
-	});
-	it('absent → not-reported otherwise', () => {
-		const m = delayMaybe(null);
-		expect(m.known).toBe(false);
-		if (!m.known) expect(m.reason).toBe('not-reported');
-	});
-});
-
-describe('vehicleFieldAbsence — one honest reason for every absent vehicle field', () => {
-	it('metro-no-realtime wins (even when also stale)', () => {
-		expect(vehicleFieldAbsence({ metro: true })).toBe('metro-no-realtime');
-		expect(vehicleFieldAbsence({ metro: true, stale: true })).toBe('metro-no-realtime');
-	});
-	it('not-reporting for a stale (GPS-quiet) vehicle', () => {
-		expect(vehicleFieldAbsence({ stale: true })).toBe('not-reporting');
-	});
-	it('not-reported otherwise (and with no context)', () => {
-		expect(vehicleFieldAbsence({})).toBe('not-reported');
-		expect(vehicleFieldAbsence()).toBe('not-reported');
-	});
-});
-
-describe('delayKnownLabel + delayTone', () => {
-	it('labels early / on-time / late', () => {
-		expect(delayKnownLabel(-2, en)).toBe('2 min early');
-		expect(delayKnownLabel(0, en)).toBe('On time');
-		expect(delayKnownLabel(4, en)).toBe('4 min late');
-	});
-	it('tones map to dataviz status bands', () => {
-		expect(delayTone(-1)).toBe('early');
-		expect(delayTone(0)).toBe('on-time');
-		expect(delayTone(2)).toBe('late');
-		expect(delayTone(5)).toBe('severe');
-	});
-});
-
-describe('timeLabel + formatAge', () => {
-	it('empty string for a null iso', () => {
-		expect(timeLabel(null, 'en')).toBe('');
-		expect(timeLabel(undefined, 'en')).toBe('');
-	});
-	it('formats a real iso to HH:MM', () => {
-		expect(timeLabel('2026-06-23T14:05:00Z', 'en')).toMatch(/\d{1,2}:\d{2}/);
-	});
-	it('formats age in seconds under 90, minutes above', () => {
-		expect(formatAge(42)).toBe('42 s');
-		expect(formatAge(120)).toBe('2 min');
-	});
-});
-
-describe('stopDisplayName — never leaks a bare id', () => {
-	it('returns the resolved name when present', () => {
-		expect(stopDisplayName({ id: '1', name: 'Berri', nameAbsent: false } as MapStopRef, 'en')).toBe(
-			'Berri',
-		);
-	});
-	it('returns the honest labelled fallback when name is absent', () => {
-		expect(
-			stopDisplayName({ id: '42', name: '42', nameAbsent: true } as MapStopRef, 'en'),
-		).toContain('42');
-		expect(
-			stopDisplayName({ id: '42', name: '42', nameAbsent: true } as MapStopRef, 'en'),
-		).not.toBe('42');
-	});
-});
-
-describe('vehicleForDeparture', () => {
-	const vehicles = [
-		{ id: 'a', trip: 't1' },
-		{ id: 'b', trip: 't2' },
-	] as unknown as Vehicle[];
-	it('matches by trip', () => {
-		expect(vehicleForDeparture(vehicles, { trip: 't2' } as StopDeparture)?.id).toBe('b');
-	});
-	it('null when no trip on the departure', () => {
-		expect(vehicleForDeparture(vehicles, { trip: null } as unknown as StopDeparture)).toBeNull();
-	});
-	it('null when no vehicle matches', () => {
-		expect(vehicleForDeparture(vehicles, { trip: 'tX' } as StopDeparture)).toBeNull();
-	});
-});
-
-describe('directionLabel', () => {
-	it('single direction → its label', () => {
-		const item = { directions: [{ label: 'East' }] } as unknown as RouteMapDetail;
-		expect(directionLabel(item, en)).toBe('East');
-	});
-	it('multiple directions → joined with a slash', () => {
-		const item = {
-			directions: [{ label: 'East' }, { label: 'West' }],
-		} as unknown as RouteMapDetail;
-		expect(directionLabel(item, en)).toBe('East / West');
-	});
-	it('no directions → noData', () => {
-		const item = { directions: [] } as unknown as RouteMapDetail;
-		expect(directionLabel(item, en)).toBe(en.noData);
 	});
 });

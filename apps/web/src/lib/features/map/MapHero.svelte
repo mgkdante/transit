@@ -918,22 +918,15 @@
 {/snippet}
 
 {#snippet detailPanel()}
-	<RightPanel
-		{locale}
-		title={selectedDetail?.title}
-		surfaceKey={detailSurfaceKey}
-		canGoBack={selectionStack.length > 0}
-		onback={goBackDetail}
-		onclose={closeDetail}
-		collapsed={detailCollapsed}
-		ontogglecollapse={toggleDetailCollapsed}
-		resizable
-	>
+	<!-- prettier-ignore --><RightPanel {locale} identity={detailIdentity} footer={detailFooter} surfaceKey={detailSurfaceKey} canGoBack={selectionStack.length > 0} onback={goBackDetail} onclose={closeDetail} collapsed={detailCollapsed} ontogglecollapse={toggleDetailCollapsed} resizable>
 		{#if selectedDetail}
 			<MapSelectionDetail
 				detail={selectedDetail}
 				{locale}
 				notReporting={selectedVehicleAbsence}
+				{selectionPresence}
+				{selectionSourceHealth}
+				onrefresh={live.refresh}
 				onselect={selectFromDetail}
 				onfilter={applyDetailFilter}
 				onalertselect={selectAlertRelated}
@@ -941,6 +934,9 @@
 		{/if}
 	</RightPanel>
 {/snippet}
+
+{#snippet detailIdentity()}<!-- prettier-ignore --><MapSelectionDetail detail={selectedDetail} {locale} presentation="identity" />{/snippet}
+{#snippet detailFooter()}<!-- prettier-ignore --><MapSelectionDetail detail={selectedDetail} {locale} presentation="action" onfilter={applyDetailFilter} />{/snippet}
 
 <!-- The unified Controls panel — ONE source of truth shared by the desktop
      overlay AND the mobile drawer (MapFilterPill). It is MapFilters in
@@ -1079,12 +1075,16 @@
 				}
 			}
 			{locale}
-			title={selectedDetail?.title}
+			identity={detailIdentity}
+			footer={detailFooter}
 			surfaceKey={detailSurfaceKey}
 			canGoBack={selectionStack.length > 0}
 			onback={goBackDetail}
 			{selectedDetail}
 			notReporting={selectedVehicleAbsence}
+			{selectionPresence}
+			{selectionSourceHealth}
+			onrefresh={live.refresh}
 			onselect={selectFromDetail}
 			onfilter={applyDetailFilter}
 			onalertselect={selectAlertRelated}
