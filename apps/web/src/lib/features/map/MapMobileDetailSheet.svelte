@@ -8,24 +8,32 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
+	import type { Snippet } from 'svelte';
 	import type { Chip } from '$lib/filters';
 	import type { Alert } from '$lib/v1/schemas';
 	import { BottomSheet } from '$lib/components/shell';
 	import type { MapSelection, MapSelectionDetail as MapSelectionDetailModel } from './mapSelection';
+	import type { SelectionPresence, SelectionSourceHealth } from './selectionGrace.svelte';
 	import MapSelectionDetail from './MapSelectionDetail.svelte';
+	import { detailActions, detailIdentity } from './mapSelectionDetail.logic';
 
 	interface Props {
 		open: boolean;
 		locale: Locale;
-		title: string | undefined;
+		title?: string;
 		surfaceKey: string;
 		canGoBack: boolean;
 		onback: () => void;
 		selectedDetail: MapSelectionDetailModel | null;
 		notReporting: { ageS: number } | null;
+		selectionPresence?: SelectionPresence | null;
+		selectionSourceHealth?: SelectionSourceHealth | null;
+		onrefresh?: () => void;
 		onselect: (selection: MapSelection) => void;
 		onfilter: (chip: Chip) => void;
 		onalertselect: (alert: Alert) => void;
+		identity?: Snippet;
+		footer?: Snippet;
 	}
 
 	let {
@@ -37,21 +45,56 @@
 		onback,
 		selectedDetail,
 		notReporting,
+		selectionPresence = null,
+		selectionSourceHealth = null,
+		onrefresh,
 		onselect,
 		onfilter,
 		onalertselect,
+		identity,
+		footer,
 	}: Props = $props();
+
+	const sheetTitle = $derived(selectedDetail ? detailIdentity(selectedDetail, locale) : title);
+	const hasAction = $derived(
+		selectedDetail ? detailActions(selectedDetail, locale) != null : false,
+	);
 </script>
 
-<BottomSheet bind:open {locale} {title} {surfaceKey} {canGoBack} {onback}>
+{#snippet resolvedIdentity()}
+	{#if selectedDetail}
+		<MapSelectionDetail detail={selectedDetail} {locale} presentation="identity" />
+	{/if}
+{/snippet}
+
+{#snippet resolvedFooter()}
+	{#if selectedDetail}
+		<MapSelectionDetail detail={selectedDetail} {locale} presentation="action" />
+	{/if}
+{/snippet}
+
+<BottomSheet
+	bind:open
+	{locale}
+	title={sheetTitle}
+	identity={identity ?? (selectedDetail ? resolvedIdentity : undefined)}
+	footer={footer ?? (hasAction ? resolvedFooter : undefined)}
+	{surfaceKey}
+	{canGoBack}
+	{onback}
+>
 	{#if selectedDetail}
 		<MapSelectionDetail
 			detail={selectedDetail}
 			{locale}
 			{notReporting}
+			{selectionPresence}
+			{selectionSourceHealth}
+			{onrefresh}
 			{onselect}
 			{onfilter}
 			{onalertselect}
+			presentation="body"
 		/>
 	{/if}
 </BottomSheet>

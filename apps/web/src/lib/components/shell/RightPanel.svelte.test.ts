@@ -1,4 +1,5 @@
 import { fireEvent, render } from '@testing-library/svelte';
+import { createRawSnippet } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -21,11 +22,14 @@ describe('RightPanel', () => {
 		await fireEvent.click(getByRole('button', { name: 'Collapse panel' }));
 
 		expect(onclose).not.toHaveBeenCalled();
-		expect(container.querySelector('[data-slot="right-panel"]')).toHaveAttribute(
-			'data-open',
-			'false',
+		const collapsedPanel = container.querySelector<HTMLElement>('[data-slot="right-panel"]')!;
+		expect(collapsedPanel).toHaveAttribute('data-open', 'false');
+		const collapsedHeading = getByRole('heading', { level: 2, name: 'Route 161' });
+		expect(collapsedHeading).toHaveClass('sr-only');
+		expect(collapsedPanel).toHaveAttribute('aria-labelledby', collapsedHeading.id);
+		expect(document.getElementById(collapsedPanel.getAttribute('aria-labelledby')!)).toBe(
+			collapsedHeading,
 		);
-		expect(queryByText('Route 161')).not.toBeInTheDocument();
 		expect(queryByText('Select something to inspect')).not.toBeInTheDocument();
 
 		await fireEvent.click(getByRole('button', { name: 'Expand panel' }));
@@ -43,6 +47,10 @@ describe('RightPanel', () => {
 		expect(source).not.toMatch(/\.right-panel\[data-open='false'\]\s*\{[^}]*padding:/);
 		expect(source).not.toMatch(/transition:\s*[^;{}]*padding/);
 		expect(source).toMatch(/\.right-panel\[data-open='false'\]\s*\{\s*width:\s*3\.7rem;\s*\}/);
+		// The shell no longer animates width or its shadow: the map overlay owns motion.
+		expect(source).not.toMatch(/transition(?:-property)?\s*:\s*[^;{}]*(?:width|box-shadow)/);
+		expect(source).toContain('-12px 0 28px -20px rgba(0, 0, 0, 0.45)');
+		expect(source).not.toContain('@container right-panel (max-width: 18rem)');
 	});
 
 	// B1 — inside a resizable pane the EXPANDED panel fills the pane (width:100%),
@@ -112,10 +120,89 @@ describe('RightPanel', () => {
 		const panel = container.querySelector('[data-slot="right-panel"]');
 		expect(panel).toHaveAttribute('data-resizable', 'true');
 		expect(panel).toHaveAttribute('data-open', 'false');
-		expect(queryByText('Route 161')).not.toBeInTheDocument();
+		expect(panel).toHaveAttribute('data-surface-key', 'route:161');
+		expect(queryByText('Route 161')?.closest('h2')).toHaveClass('sr-only');
+		const closeSeam = container.querySelector<HTMLButtonElement>('[data-slot="right-panel-close"]');
+		expect(closeSeam).toHaveAttribute('aria-hidden', 'true');
+		expect(closeSeam).toHaveAttribute('tabindex', '-1');
 
 		await fireEvent.click(getByRole('button', { name: 'Expand panel' }));
 
 		expect(ontogglecollapse).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		{ locale: 'en' as const, title: 'Details' },
+		{ locale: 'fr' as const, title: 'Détails' },
+	])('uses one labelled heading with the $locale generic-title fallback', ({ locale, title }) => {
+		const { container, getByRole } = render(RightPanel, { props: { locale } });
+
+		const panel = container.querySelector<HTMLElement>('[data-slot="right-panel"]')!;
+		const heading = getByRole('heading', { level: 2, name: title });
+
+		expect(heading).toBeInTheDocument();
+		expect(container.querySelectorAll('h2')).toHaveLength(1);
+		expect(panel).toHaveAttribute('aria-labelledby', heading.id);
+		expect(panel).not.toHaveAttribute('aria-label');
+		expect(panel).toHaveAttribute('tabindex', '-1');
+	});
+
+	it('uses the supplied identity snippet as its one semantic heading', () => {
+		const identity = createRawSnippet(() => ({ render: () => '<span>Route 161</span>' }));
+		const { getByRole, queryByRole } = render(RightPanel, {
+			props: { locale: 'en', headingId: 'detail-identity', identity },
+		});
+
+		const heading = getByRole('heading', { level: 2, name: 'Route 161' });
+		expect(heading).toHaveAttribute('id', 'detail-identity');
+		expect(heading).toHaveClass('right-panel-identity');
+		expect(queryByRole('heading', { level: 2, name: 'Details' })).not.toBeInTheDocument();
+	});
+
+	it('styles the shell-owned identity with the SectionLabel mono-caption recipe and tick', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/shell/RightPanel.svelte'),
+			'utf-8',
+		);
+		const identityRule = source.match(/\.right-panel-identity\s*\{[\s\S]*?\}/)?.[0] ?? '';
+		const tickRule = source.match(/\.right-panel-identity::before\s*\{[\s\S]*?\}/)?.[0] ?? '';
+
+		expect(identityRule).toContain('font-family: var(--font-mono)');
+		expect(identityRule).toContain('font-size: var(--text-caption)');
+		expect(identityRule).toContain('letter-spacing: var(--tracking-eyebrow');
+		expect(identityRule).toContain('text-transform: uppercase');
+		expect(identityRule).toContain('color: var(--muted-foreground)');
+		expect(tickRule).toContain("content: ''");
+		expect(tickRule).toContain('background: var(--primary)');
+		expect(source).not.toContain('--accent');
+	});
+
+	it('keeps stable control relationships and 44px header affordances', async () => {
+		const { container, getByRole } = render(RightPanel, {
+			props: { locale: 'en', title: 'Route 161', surfaceKey: 'route:161', canGoBack: true },
+		});
+		const body = container.querySelector<HTMLElement>('[data-slot="right-panel-body"]')!;
+		const toggle = getByRole('button', { name: 'Collapse panel' });
+
+		expect(toggle).toHaveAttribute('aria-controls', body.id);
+		for (const button of container.querySelectorAll<HTMLButtonElement>(
+			'button[data-slot^="right-panel-"]',
+		)) {
+			expect(button).toHaveClass('size-11');
+		}
+
+		await fireEvent.click(toggle);
+		const expand = getByRole('button', { name: 'Expand panel' });
+		expect(expand).toHaveAttribute('aria-controls', body.id);
+		expect(document.getElementById(expand.getAttribute('aria-controls')!)).toBeInTheDocument();
+	});
+
+	it('hides footer chrome when an honest action snippet renders nothing', () => {
+		const footer = createRawSnippet(() => ({ render: () => '<span></span>' }));
+		const { container } = render(RightPanel, {
+			props: { locale: 'en', title: 'Bus 123', footer },
+		});
+
+		expect(container.querySelector('[data-slot="right-panel-footer"]')).toHaveClass('empty:hidden');
 	});
 });

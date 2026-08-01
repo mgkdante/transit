@@ -31,6 +31,10 @@
 		locale?: Locale;
 		/** Optional panel title shown in the header row. */
 		title?: string;
+		/** Stable id for the shell-owned identity heading. */
+		headingId?: string;
+		/** Optional entity identity rendered inside the shell-owned heading. */
+		identity?: Snippet;
 		/**
 		 * A stable key for the active surface; changing it re-keys the body so the
 		 * swap-in transition replays. Wire to the active SurfaceTarget id.
@@ -60,6 +64,8 @@
 	let {
 		locale: localeProp,
 		title,
+		headingId,
+		identity,
 		surfaceKey = 'empty',
 		dismissible = true,
 		canGoBack = false,
@@ -84,7 +90,8 @@
 	const closeAria = $derived(locale === 'fr' ? 'Fermer le volet' : 'Close panel');
 	const collapseAria = $derived(locale === 'fr' ? 'Réduire le volet' : 'Collapse panel');
 	const expandAria = $derived(locale === 'fr' ? 'Ouvrir le volet' : 'Expand panel');
-	const panelAria = $derived(locale === 'fr' ? 'Détails de la sélection' : 'Selection details');
+	const panelHeadingId = $derived(headingId ?? `right-panel-${surfaceKey}-heading`);
+	const panelBodyId = $derived(`${panelHeadingId}-body`);
 
 	function toggleCollapsed(): void {
 		if (ontogglecollapse) {
@@ -97,18 +104,21 @@
 
 <aside
 	class={cn('right-panel flex h-full shrink-0 flex-col border-l border-border bg-card', className)}
-	aria-label={panelAria}
+	aria-labelledby={panelHeadingId}
+	tabindex="-1"
 	data-slot="right-panel"
 	data-open={collapsed ? 'false' : 'true'}
 	data-resizable={resizable ? 'true' : undefined}
+	data-surface-key={surfaceKey}
 >
 	<!-- Header row -->
-	<div class="flex h-12 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
+	<div class="flex h-14 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
 		<button
 			type="button"
-			class="tap-press -ml-1.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			class="tap-press -ml-1 inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			aria-label={collapsed ? expandAria : collapseAria}
 			aria-expanded={!collapsed}
+			aria-controls={panelBodyId}
 			onclick={toggleCollapsed}
 			data-slot="right-panel-toggle"
 		>
@@ -122,7 +132,7 @@
 		{#if canGoBack && !collapsed}
 			<button
 				type="button"
-				class="tap-press inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				class="tap-press inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 				aria-label={backAria}
 				onclick={() => onback?.()}
 				data-slot="right-panel-back"
@@ -131,17 +141,27 @@
 			</button>
 		{/if}
 
-		{#if !collapsed}
-			<div class="min-w-0 flex-1">
+		<h2
+			id={panelHeadingId}
+			class={cn('right-panel-identity m-0 min-w-0 flex-1', collapsed && 'sr-only')}
+		>
+			{#if identity}
+				{@render identity()}
+			{:else}
 				<SectionLabel text={title ?? defaultTitle} variant="station" />
-			</div>
-		{/if}
+			{/if}
+		</h2>
 
-		{#if dismissible && !collapsed}
+		{#if dismissible}
 			<button
 				type="button"
-				class="tap-press -mr-1.5 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				class={cn(
+					'tap-press -mr-1 inline-flex size-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+					collapsed && 'sr-only',
+				)}
 				aria-label={closeAria}
+				aria-hidden={collapsed ? 'true' : undefined}
+				tabindex={collapsed ? -1 : undefined}
 				onclick={() => onclose?.()}
 				data-slot="right-panel-close"
 			>
@@ -152,7 +172,7 @@
 
 	<!-- Swap-volet body — keyed so each surface swap re-enters with a slide-in. -->
 	{#if !collapsed}
-		<ScrollArea class="min-h-0 flex-1" data-slot="right-panel-body">
+		<ScrollArea id={panelBodyId} class="min-h-0 flex-1" data-slot="right-panel-body">
 			{#key surfaceKey}
 				<div class="swap-volet right-panel-body-inner p-4">
 					{#if children}
@@ -165,12 +185,14 @@
 				</div>
 			{/key}
 		</ScrollArea>
+	{:else}
+		<div id={panelBodyId} hidden data-slot="right-panel-body"></div>
 	{/if}
 
 	<!-- Sticky footer — pinned to the bottom for actions / provenance. -->
 	{#if footer && !collapsed}
 		<div
-			class="shrink-0 border-t border-border-subtle bg-card px-4 py-3"
+			class="empty:hidden shrink-0 border-t border-border-subtle bg-card px-4 py-3"
 			data-slot="right-panel-footer"
 		>
 			{@render footer()}
@@ -188,13 +210,27 @@
 		box-shadow:
 			-12px 0 28px -20px rgba(0, 0, 0, 0.45),
 			inset 1px 0 0 var(--edge-highlight);
-		transition:
-			width var(--duration-normal) var(--ease-out),
-			box-shadow var(--duration-normal) var(--ease-out);
 		/* Size container so the swapped detail content can reflow against the dock's
 		   OWN width as it is dragged narrower in a resizable pane (grab-resize),
 		   independent of the viewport — content degrades gracefully, never clips. */
 		container: right-panel / inline-size;
+	}
+	.right-panel-identity {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		letter-spacing: var(--tracking-eyebrow, 0.1em);
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.right-panel-identity::before {
+		width: 0.125rem;
+		height: 0.75rem;
+		flex: none;
+		background: var(--primary);
+		content: '';
 	}
 
 	.right-panel[data-open='false'] {
@@ -223,15 +259,6 @@
 	.right-panel-body-inner {
 		scrollbar-gutter: stable;
 	}
-	/* Tighten the body padding once the dock is dragged narrow so the detail keeps
-	   as much width as possible (pairs with MapSelectionDetail's container reflow).
-	   The scoped class beats the Tailwind p-4 utility, so this wins when it fires. */
-	@container right-panel (max-width: 18rem) {
-		.right-panel-body-inner {
-			padding: 0.8rem;
-		}
-	}
-
 	/* Swap-volet entrance — a subtle slide-in on each keyed surface change. */
 	.swap-volet {
 		animation: volet-in var(--duration-normal) var(--ease-out) both;
@@ -249,10 +276,6 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.right-panel {
-			transition: none;
-		}
-
 		.swap-volet {
 			animation: none;
 		}

@@ -17,6 +17,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+	import XIcon from '@lucide/svelte/icons/x';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
 	import * as Sheet from '@yesid/ui/sheet';
@@ -29,6 +30,8 @@
 		locale?: Locale;
 		/** Sheet title (visible heading + accessible name). */
 		title?: string;
+		/** Optional entity identity rendered inside the Sheet title. */
+		identity?: Snippet;
 		/** A stable key for the active surface; re-keys the body on swap. */
 		surfaceKey?: string;
 		/** Whether the active detail surface has a previous item to return to. */
@@ -46,6 +49,7 @@
 		open = $bindable(false),
 		locale: localeProp,
 		title,
+		identity,
 		surfaceKey = 'empty',
 		canGoBack = false,
 		onback,
@@ -62,64 +66,77 @@
 		locale === 'fr' ? 'Sélectionnez un élément' : 'Select something to inspect',
 	);
 	const backAria = $derived(locale === 'fr' ? 'Retour' : 'Back');
-	const sheetAria = $derived(locale === 'fr' ? 'Détails de la sélection' : 'Selection details');
+	const closeAria = $derived(locale === 'fr' ? 'Fermer les détails' : 'Close details');
 </script>
 
 <Sheet.Root bind:open>
 	<Sheet.Content
 		side="bottom"
+		showCloseButton={false}
 		class={cn('max-h-[85svh] gap-0 p-0', className)}
-		aria-label={sheetAria}
 		data-slot="bottom-sheet"
 	>
-		<!-- Drag affordance + title row. The primitive renders its own close X. -->
-		<Sheet.Header class="shrink-0 gap-2 border-b border-border-subtle px-4 pb-3 pt-3">
-			<span
-				class="mx-auto mb-1 h-1 w-9 rounded-full bg-border-strong"
-				aria-hidden="true"
-				data-slot="bottom-sheet-grabber"
-			></span>
-			<div class="flex min-w-0 items-center gap-2">
-				{#if canGoBack}
+		<div
+			class="min-h-0 flex flex-1 flex-col"
+			style="padding-bottom: env(safe-area-inset-bottom);"
+			data-slot="bottom-sheet-safe-area"
+		>
+			<Sheet.Header class="shrink-0 gap-2 border-b border-border-subtle px-4 pb-3 pt-3">
+				<div class="flex min-w-0 items-center gap-2">
+					{#if canGoBack}
+						<button
+							type="button"
+							class="tap-press -ml-1 inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							aria-label={backAria}
+							onclick={() => onback?.()}
+							data-slot="bottom-sheet-back"
+						>
+							<ArrowLeftIcon size={15} strokeWidth={2.3} aria-hidden="true" />
+						</button>
+					{/if}
+					<Sheet.Title class="min-w-0 flex-1">
+						{#if identity}
+							{@render identity()}
+						{:else}
+							<SectionLabel text={title ?? defaultTitle} variant="station" />
+						{/if}
+					</Sheet.Title>
 					<button
 						type="button"
-						class="tap-press -ml-1.5 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-						aria-label={backAria}
-						onclick={() => onback?.()}
-						data-slot="bottom-sheet-back"
+						class="tap-press -mr-1 inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						aria-label={closeAria}
+						onclick={() => (open = false)}
+						data-slot="bottom-sheet-close"
 					>
-						<ArrowLeftIcon size={15} strokeWidth={2.3} aria-hidden="true" />
+						<XIcon size={18} strokeWidth={2.3} aria-hidden="true" />
 					</button>
-				{/if}
-				<Sheet.Title class="min-w-0 flex-1">
-					<SectionLabel text={title ?? defaultTitle} variant="station" />
-				</Sheet.Title>
-			</div>
-		</Sheet.Header>
-
-		<!-- Body — keyed on the active surface so swaps re-enter cleanly. -->
-		<div class="min-h-0 flex-1 overflow-y-auto" data-slot="bottom-sheet-body">
-			{#key surfaceKey}
-				<div class="p-4">
-					{#if children}
-						{@render children()}
-					{:else}
-						<p class="px-1 py-6 text-center text-caption text-muted-foreground">
-							{emptyLabel}
-						</p>
-					{/if}
 				</div>
-			{/key}
-		</div>
+			</Sheet.Header>
 
-		<!-- Sticky footer — pinned to the bottom for actions / provenance. -->
-		{#if footer}
-			<div
-				class="shrink-0 border-t border-border-subtle bg-popover px-4 py-3"
-				data-slot="bottom-sheet-footer"
-			>
-				{@render footer()}
+			<!-- Body — keyed on the active surface so swaps re-enter cleanly. -->
+			<div class="min-h-0 flex-1 overflow-y-auto" data-slot="bottom-sheet-body">
+				{#key surfaceKey}
+					<div class="p-4">
+						{#if children}
+							{@render children()}
+						{:else}
+							<p class="px-1 py-6 text-center text-caption text-muted-foreground">
+								{emptyLabel}
+							</p>
+						{/if}
+					</div>
+				{/key}
 			</div>
-		{/if}
+
+			<!-- Sticky footer — pinned to the bottom for actions / provenance. -->
+			{#if footer}
+				<div
+					class="empty:hidden shrink-0 border-t border-border-subtle bg-popover px-4 py-3"
+					data-slot="bottom-sheet-footer"
+				>
+					{@render footer()}
+				</div>
+			{/if}
+		</div>
 	</Sheet.Content>
 </Sheet.Root>

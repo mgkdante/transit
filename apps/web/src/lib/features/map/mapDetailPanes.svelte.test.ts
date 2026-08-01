@@ -125,6 +125,22 @@ describe('mapDetailPanes persistence', () => {
 		expect(() => writeStoredDetailPanelWidth(440)).not.toThrow();
 	});
 
+	it('persists a collapsed rail by surface key and clears it on expansion', async () => {
+		const {
+			DETAIL_RAIL_STORAGE_KEY,
+			readStoredDetailRail,
+			writeStoredDetailRail,
+			clearStoredDetailRail,
+		} = await loadModule();
+
+		writeStoredDetailRail('stop:52618');
+		expect(DETAIL_RAIL_STORAGE_KEY).toBe('transit:detail-rail');
+		expect(readStoredDetailRail()).toBe('stop:52618');
+
+		clearStoredDetailRail();
+		expect(readStoredDetailRail()).toBeNull();
+	});
+
 	it('on the server returns the default and does not touch storage', async () => {
 		mocks.browser = false;
 		const getItem = vi.spyOn(Storage.prototype, 'getItem');
