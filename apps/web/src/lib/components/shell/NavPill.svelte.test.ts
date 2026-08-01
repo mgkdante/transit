@@ -620,6 +620,9 @@ describe('NavPill — the pill chassis + --pill-h contract (source)', () => {
 		const menuRule = baseMenuRule(source);
 
 		expect(source).toMatch(/class="nav-menu glass-chrome"/);
+		// Amendment K: absolute-in-fixed-wrapper is the deterministic anchor mechanism —
+		// a silent revert to `fixed` re-resolves against the viewport (the V−87 defect).
+		expect(menuRule).toContain('position: absolute;');
 		expect(menuRule).toContain('inset-block: auto;');
 		expect(menuRule).toContain(
 			'inset-block-start: calc(1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + 8px);',

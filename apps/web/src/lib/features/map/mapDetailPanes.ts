@@ -42,6 +42,13 @@ export function clampDetailPanelWidth(width: number): number {
  *
  * Svelte runs the returned cleanup before every effect re-run. That transient reset
  * and the next publication share a microtask, so only the new target is painted.
+ * Publishes FOUR properties across two elements: the hero-local
+ * --app-right-detail-offset (always the persisted width) and --map-detail-offset
+ * (effective occlusion), plus the :root --app-effective-rail-offset (the shell
+ * channel NavPill stages against) and --app-rail-offset-duration (0ms while
+ * `dragging`, absent otherwise — the pill tracks a live drag 1:1).
+ * @param open desktop panel visible; @param collapsed icon-rail state;
+ * @param dragging live width drag in progress.
  */
 export function publishRailOffset(
 	element: HTMLElement,

@@ -591,6 +591,12 @@
 		pointer-events: none;
 	}
 
+	/* The remaining-width query container (M6a): sized by the :root rail channel so
+	   container queries stage the pill against R = viewport − rail. z-index is
+	   MANDATORY — container-type implies layout containment, whose stacking context
+	   would otherwise paint the pill below the --z-menu backdrop. 100vw (never 100%)
+	   keeps R ≡ the @media basis at E=0 (100% excludes the classic scrollbar). The
+	   pill's position comes from its own translateX(−E/2) — this box never anchors. */
 	.nav-rail {
 		position: relative;
 		z-index: var(--z-nav);
@@ -899,6 +905,12 @@
 		pointer-events: auto;
 	}
 
+	/* The menu's positioned host (Amendments I/J/K): a same-named query container so
+	   the S4 fold reaches the menu subtree, and a FIXED, full-height, left-anchored,
+	   width-R box so the ABSOLUTE menu inside anchors deterministically against its
+	   right edge (V − E) in every browser — real Chrome does not treat container-type
+	   containment as a fixed containing block, so `fixed` here would silently resolve
+	   against the viewport instead. pointer-events: none — the menu re-enables its own. */
 	.nav-menu-rail {
 		position: fixed;
 		inset-block: 0;
