@@ -5,6 +5,7 @@
 // the vector branch's Protomaps source-layer reconciliation (slice-9.3 task 1.3)
 // — a wrong source-layer renders silently empty, so it must be locked by a test.
 
+import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import {
 	resolveBasemapStyle,
@@ -15,11 +16,15 @@ import {
 	BASEMAP_SOURCE_ID,
 } from './basemap';
 import { BasemapFileSchema } from '$lib/v1/schemas';
+import { PUBLISHED_BASEMAP_ATTRIBUTION } from './basemap.published.fixture';
+
+const PUBLISHED_BASEMAP_ATTRIBUTION_SHA256 =
+	'397c592de19b26c9d970389dcb144bfe6dc97b9b084d4e22f3e48b2e9f555514';
 
 // Parse through the schema so the branded `generated_utc` (IsoUtc) is satisfied.
 const FILE = BasemapFileSchema.parse({
 	url: 'https://transit.yesid.dev/data/v1/stm/static/basemap/montreal.pmtiles',
-	attribution: '© OpenStreetMap contributors, © Protomaps',
+	attribution: PUBLISHED_BASEMAP_ATTRIBUTION,
 	generated_utc: '2026-06-15T00:00:00Z',
 	min_zoom: 0,
 	max_zoom: 15,
@@ -73,12 +78,14 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 		expect((src as { maxzoom?: number }).maxzoom).toBe(15);
 	});
 
-	it('preserves the manifest attribution byte-for-byte without decorative chrome', () => {
+	it('preserves the published static/basemap.json attribution byte-for-byte', () => {
 		const src = style.sources[BASEMAP_SOURCE_ID];
 		const attribution = (src as { attribution?: string }).attribution;
 
-		expect(attribution).toContain(FILE.attribution);
-		expect(attribution).toBe(FILE.attribution);
+		expect(createHash('sha256').update(PUBLISHED_BASEMAP_ATTRIBUTION).digest('hex')).toBe(
+			PUBLISHED_BASEMAP_ATTRIBUTION_SHA256,
+		);
+		expect(attribution).toBe(PUBLISHED_BASEMAP_ATTRIBUTION);
 		expect(attribution).not.toContain('Big thanks to ');
 		expect(attribution).not.toContain('🧡');
 	});

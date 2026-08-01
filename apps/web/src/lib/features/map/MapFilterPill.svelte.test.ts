@@ -146,18 +146,13 @@ describe('MapFilterPill', () => {
 			resolve(process.cwd(), 'src/lib/features/map/MapFilterPill.svelte'),
 			'utf-8',
 		);
-		const appShell = readFileSync(
-			resolve(process.cwd(), 'src/lib/components/shell/AppShell.svelte'),
-			'utf-8',
-		);
 
 		expect(source).toContain('data-m6b-controls-drawer');
 		expect(source).toMatch(/left:\s*0\.75rem/);
 		expect(source).toMatch(/right:\s*auto/);
-		expect(appShell).toMatch(/:root\s*\{\s*--chrome-offset:/);
 		expect(source).toMatch(/--map-controls-drawer-gap:\s*10px/);
 		expect(source).toMatch(
-			/--map-controls-drawer-top:\s*calc\(\s*var\(--chrome-offset\)\s*-\s*var\(--space-card-gap\)\s*\+\s*var\(--map-controls-drawer-gap\)\s*\)/s,
+			/--map-controls-drawer-top:\s*calc\(\s*1rem\s*\+\s*env\(safe-area-inset-top,\s*0px\)\s*\+\s*var\(--pill-h\)\s*\+\s*var\(--map-controls-drawer-gap\)\s*\)/s,
 		);
 		expect(source).toMatch(
 			/--map-controls-drawer-bottom:\s*calc\(\s*5\.25rem\s*\+\s*env\(safe-area-inset-bottom, 0px\)\s*\+\s*44px\s*\+\s*var\(--map-controls-drawer-gap\)\s*\)/s,
