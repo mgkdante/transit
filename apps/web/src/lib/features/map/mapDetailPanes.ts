@@ -35,6 +35,44 @@ export function clampDetailPanelWidth(width: number): number {
 	return Math.min(Math.max(Math.round(width), MIN_DETAIL_PANEL_WIDTH), MAX_DETAIL_PANEL_WIDTH);
 }
 
+/**
+ * Publish the detail-panel width, the map-chrome clearance, and the document-level
+ * rail clearance from one state snapshot. The root channel lets fixed shell chrome
+ * react in CSS without a store, measurement loop, or route-level second writer.
+ *
+ * Svelte runs the returned cleanup before every effect re-run. That transient reset
+ * and the next publication share a microtask, so only the new target is painted.
+ * Publishes FOUR properties across two elements: the hero-local
+ * --app-right-detail-offset (always the persisted width) and --map-detail-offset
+ * (effective occlusion), plus the :root --app-effective-rail-offset (the shell
+ * channel NavPill stages against) and --app-rail-offset-duration (0ms while
+ * `dragging`, absent otherwise — the pill tracks a live drag 1:1).
+ * @param open desktop panel visible; @param collapsed icon-rail state;
+ * @param dragging live width drag in progress.
+ */
+export function publishRailOffset(
+	element: HTMLElement,
+	detailWidthPx: number,
+	open: boolean,
+	collapsed: boolean,
+	dragging: boolean,
+): () => void {
+	const detailWidth = `${detailWidthPx}px`;
+	const effectiveOffset = open ? (collapsed ? '3.7rem' : detailWidth) : '0px';
+	const root = element.ownerDocument.documentElement;
+
+	element.style.setProperty('--app-right-detail-offset', detailWidth);
+	element.style.setProperty('--map-detail-offset', effectiveOffset);
+	root.style.setProperty('--app-effective-rail-offset', effectiveOffset);
+	if (dragging) root.style.setProperty('--app-rail-offset-duration', '0ms');
+	else root.style.removeProperty('--app-rail-offset-duration');
+
+	return () => {
+		root.style.setProperty('--app-effective-rail-offset', '0px');
+		root.style.removeProperty('--app-rail-offset-duration');
+	};
+}
+
 /** Read the persisted width, falling back to the default on SSR / absent / junk. */
 export function readStoredDetailPanelWidth(): number {
 	if (!browser) return DEFAULT_DETAIL_PANEL_WIDTH;

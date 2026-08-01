@@ -195,10 +195,9 @@
 	let menuToggle = $state<HTMLButtonElement>();
 	let searchResultsOpen = $state(true);
 	let rootEl = $state<HTMLElement>();
-	// The pill capsule — measured so the anchored dropdown can pin its RIGHT edge to the
-	// pill's right edge (the pill is intrinsic-width + centred, so its right edge is
-	// near the viewport centre-right, not the far edge). We publish the pill's
-	// right-inset-from-viewport as a CSS var the base menu rule consumes.
+	// The pill capsule — measured so the anchored dropdown can pin its right edge to the
+	// pill's. While open, the published inset is menuRail.right − pill.right; without the
+	// wrapper it falls back to window.innerWidth − pill.right. At E = 0 they are identical.
 	let pillEl = $state<HTMLElement>();
 	// First menu-item, so opening the menu can move keyboard focus INTO the dropdown
 	// (the backdrop is no longer a focusable dismiss control).
@@ -214,22 +213,23 @@
 	// shadow while open so the dropdown reads as the elevated layer.
 	const overlayActive = $derived(menuOpen);
 
-	// Pin the dropdown's right edge to the pill's right edge at every width. The pill is
-	// intrinsic-width + centred in a full-width rail, so its right edge sits near the
-	// viewport centre-right; measuring it (viewport width − pill.right) gives the
-	// inset-inline-end the dropdown should use, published as --nav-pill-right on the
-	// rail. Recomputed whenever the menu opens or the viewport resizes.
+	// Pin the dropdown's right edge to the pill's at every width. The open menu rail
+	// supplies menuRail.right − pill.right; when absent, window.innerWidth − pill.right
+	// preserves the legacy measure (and is identical at E = 0). The FR/EN app is LTR,
+	// so the rail's inset-inline-start maps to left. Resync on open, resize and transition.
 	function syncPillAnchor(): void {
 		if (typeof window === 'undefined' || !rootEl || !pillEl) return;
 		const rect = pillEl.getBoundingClientRect();
-		const rightInset = Math.max(0, Math.round(window.innerWidth - rect.right));
+		const menuRail = rootEl.querySelector<HTMLElement>('.nav-menu-rail');
+		const anchorRight = menuRail?.getBoundingClientRect().right ?? window.innerWidth;
+		const rightInset = Math.max(0, Math.round(anchorRight - rect.right));
 		rootEl.style.setProperty('--nav-pill-right', `${rightInset}px`);
 	}
 	function onPillTransitionEnd(event: TransitionEvent): void {
 		if (
 			!menuOpen ||
 			event.target !== event.currentTarget ||
-			!event.propertyName.startsWith('padding')
+			!(event.propertyName === 'transform' || event.propertyName.startsWith('padding'))
 		) {
 			return;
 		}
@@ -326,126 +326,130 @@
 	aria-label={navAria}
 	data-slot="nav-pill-root"
 >
-	<div
-		bind:this={pillEl}
-		class="nav-pill"
-		class:nav-pill-compact={overlayActive}
-		data-testid="nav-pill"
-		data-slot="nav-pill"
-		ontransitionend={onPillTransitionEnd}
-	>
-		<!-- BRAND: the "Transit" product wordmark (→ /). transit.yesid.dev is a
+	<div class="nav-rail" data-slot="nav-rail">
+		<div
+			bind:this={pillEl}
+			class="nav-pill"
+			class:nav-pill-compact={overlayActive}
+			data-testid="nav-pill"
+			data-slot="nav-pill"
+			ontransitionend={onPillTransitionEnd}
+		>
+			<!-- BRAND: the "Transit" product wordmark (→ /). transit.yesid.dev is a
 		     yesid.dev product, but here the pill wordmark is the PRODUCT home (the
 		     parent-brand "Yesid" link lives in the menu), so it reads "Transit" with
 		     the orange terminal dot and routes to the dashboard root. -->
-		<BrandWordmark
-			href={localizeHref('/', locale)}
-			text="Transit"
-			external={false}
-			class="nav-wordmark"
-		/>
+			<BrandWordmark
+				href={localizeHref('/', locale)}
+				text="Transit"
+				external={false}
+				class="nav-wordmark"
+			/>
 
-		<span class="nav-divider nav-divider-collapsible" aria-hidden="true"></span>
+			<span class="nav-divider nav-divider-collapsible" aria-hidden="true"></span>
 
-		<!-- PRIMARY LINKS: Map / Lines / Stops / Network. Shown ≥lg; below lg the pill
+			<!-- PRIMARY LINKS: Map / Lines / Stops / Network. Shown ≥lg; below lg the pill
 		     drops them (they'd push the controls + hamburger off-screen) and the menu
 		     dropdown carries them instead — the hamburger is the compact nav entry. -->
-		<div class="nav-links" data-slot="nav-links">
-			{#each navItems as item (item.key)}
-				<a
-					href={item.href}
-					class="nav-pill-link"
-					aria-current={item.active ? 'page' : undefined}
-					use:magnetic={{ strength: 3, radius: 44 }}
-				>
-					{item.label}
-				</a>
-			{/each}
-		</div>
+			<div class="nav-links" data-slot="nav-links">
+				{#each navItems as item (item.key)}
+					<a
+						href={item.href}
+						class="nav-pill-link"
+						aria-current={item.active ? 'page' : undefined}
+						use:magnetic={{ strength: 3, radius: 44 }}
+					>
+						{item.label}
+					</a>
+				{/each}
+			</div>
 
-		<span class="nav-divider nav-divider-collapsible" aria-hidden="true"></span>
+			<span class="nav-divider nav-divider-collapsible" aria-hidden="true"></span>
 
-		<!-- SEARCH: a compact in-pill field ≥lg; compact widths use the icon below. -->
-		<form class="nav-search" role="search" onsubmit={submitSearch} data-slot="nav-search">
-			<SearchIcon class="nav-search-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
-			<input
-				type="search"
-				name="network-search"
-				bind:value={search}
-				placeholder={searchPlaceholder}
-				aria-label={searchAria}
-				autocomplete="off"
-				spellcheck="false"
-				onfocus={openSearchResults}
-				oninput={handleSearchInput}
-				class="nav-search-input"
-				aria-describedby={transmitsSearches ? 'nav-search-notice' : undefined}
-			/>
-			{#if transmitsSearches}
-				<!-- The sr-only node is the ALWAYS-PRESENT describedby target, so browse-
+			<!-- SEARCH: a compact in-pill field ≥lg; compact widths use the icon below. -->
+			<form class="nav-search" role="search" onsubmit={submitSearch} data-slot="nav-search">
+				<SearchIcon class="nav-search-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
+				<input
+					type="search"
+					name="network-search"
+					bind:value={search}
+					placeholder={searchPlaceholder}
+					aria-label={searchAria}
+					autocomplete="off"
+					spellcheck="false"
+					onfocus={openSearchResults}
+					oninput={handleSearchInput}
+					class="nav-search-input"
+					aria-describedby={transmitsSearches ? 'nav-search-notice' : undefined}
+				/>
+				{#if transmitsSearches}
+					<!-- The sr-only node is the ALWAYS-PRESENT describedby target, so browse-
 				     mode screen-reader users can still discover the disclosure idle; the
 				     visible twin is decorative and focus-gated. -->
-				<span id="nav-search-notice" class="sr-only">{searchCollectionNotice}</span>
-				<span class="nav-search-notice" aria-hidden="true">{searchCollectionNotice}</span>
-			{/if}
-			{#if showSearchResults}
-				<div class="nav-search-results" role="group" aria-label={searchAria}>
-					{#each searchResults as result (`${result.kind}:${result.id}`)}
-						<button
-							type="button"
-							class="nav-search-result"
-							aria-label={resultAria(result)}
-							onclick={() => selectResult(result)}
-						>
-							<span class="nav-search-main">
-								<span class="nav-search-kind">{resultKindLabel(result)}</span>
-								<span class="nav-search-label">{result.label}</span>
-							</span>
-							{#if result.meta}
-								<small>{result.meta}</small>
-							{/if}
-						</button>
-					{/each}
-					{#if showGoogleAttribution}
-						<div class="nav-google-attribution" aria-label="Powered by Google">
-							<span>Powered by</span>
-							<span class="nav-google-wordmark" aria-hidden="true">
-								<span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span>e</span>
-							</span>
-						</div>
-					{/if}
-				</div>
-			{/if}
-		</form>
+					<span id="nav-search-notice" class="sr-only">{searchCollectionNotice}</span>
+					<span class="nav-search-notice" aria-hidden="true">{searchCollectionNotice}</span>
+				{/if}
+				{#if showSearchResults}
+					<div class="nav-search-results" role="group" aria-label={searchAria}>
+						{#each searchResults as result (`${result.kind}:${result.id}`)}
+							<button
+								type="button"
+								class="nav-search-result"
+								aria-label={resultAria(result)}
+								onclick={() => selectResult(result)}
+							>
+								<span class="nav-search-main">
+									<span class="nav-search-kind">{resultKindLabel(result)}</span>
+									<span class="nav-search-label">{result.label}</span>
+								</span>
+								{#if result.meta}
+									<small>{result.meta}</small>
+								{/if}
+							</button>
+						{/each}
+						{#if showGoogleAttribution}
+							<div class="nav-google-attribution" aria-label="Powered by Google">
+								<span>Powered by</span>
+								<span class="nav-google-wordmark" aria-hidden="true">
+									<span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span
+										>e</span
+									>
+								</span>
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</form>
 
-		<span class="nav-divider" aria-hidden="true"></span>
+			<span class="nav-divider" aria-hidden="true"></span>
 
-		<!-- CONTROLS: refresh · compact search · theme signal · language · menu. -->
-		<div class="nav-controls" data-slot="nav-controls">
-			<RefreshButton {locale} class="nav-control" />
-			<a
-				href={localizeHref('/search', locale)}
-				class="tap-press nav-control nav-compact-search"
-				aria-label={searchAria}
-				data-slot="nav-compact-search"
-			>
-				<SearchIcon size={17} strokeWidth={1.8} aria-hidden="true" />
-			</a>
-			<ThemeToggle {locale} class="nav-control" />
-			<LangSwitch {locale} {url} {availableLocales} class="nav-control" />
+			<!-- CONTROLS: refresh · compact search · theme signal · language · menu. -->
+			<div class="nav-controls" data-slot="nav-controls">
+				<RefreshButton {locale} class="nav-control" />
+				<a
+					href={localizeHref('/search', locale)}
+					class="tap-press nav-control nav-compact-search"
+					aria-label={searchAria}
+					data-slot="nav-compact-search"
+				>
+					<SearchIcon size={17} strokeWidth={1.8} aria-hidden="true" />
+				</a>
+				<ThemeToggle {locale} class="nav-control" />
+				<LangSwitch {locale} {url} {availableLocales} class="nav-control" />
 
-			<button
-				bind:this={menuToggle}
-				type="button"
-				class="tap-press nav-menu-toggle"
-				aria-label={menuOpen ? closeMenuAria : openMenuAria}
-				aria-expanded={menuOpen}
-				onclick={toggleMenu}
-				data-slot="nav-menu-toggle"
-			>
-				<span class="nav-menu-line nav-menu-line-top"></span>
-				<span class="nav-menu-line nav-menu-line-bottom"></span>
-			</button>
+				<button
+					bind:this={menuToggle}
+					type="button"
+					class="tap-press nav-menu-toggle"
+					aria-label={menuOpen ? closeMenuAria : openMenuAria}
+					aria-expanded={menuOpen}
+					onclick={toggleMenu}
+					data-slot="nav-menu-toggle"
+				>
+					<span class="nav-menu-line nav-menu-line-top"></span>
+					<span class="nav-menu-line nav-menu-line-bottom"></span>
+				</button>
+			</div>
 		</div>
 	</div>
 
@@ -463,99 +467,101 @@
 			onclick={closeMenu}
 		></button>
 
-		<div
-			bind:this={menuEl}
-			class="nav-menu glass-chrome"
-			tabindex="-1"
-			role="dialog"
-			aria-modal="false"
-			aria-label={menuAria}
-			data-testid="nav-menu"
-			data-slot="nav-menu"
-		>
-			<!-- PRIMARY (compact only, <lg): the in-pill .nav-links row is hidden below lg,
+		<div class="nav-menu-rail">
+			<div
+				bind:this={menuEl}
+				class="nav-menu glass-chrome"
+				tabindex="-1"
+				role="dialog"
+				aria-modal="false"
+				aria-label={menuAria}
+				data-testid="nav-menu"
+				data-slot="nav-menu"
+			>
+				<!-- PRIMARY (compact only, <lg): the in-pill .nav-links row is hidden below lg,
 			     so the dropdown carries Map/Lines/Stops/Network there. Hidden ≥lg by CSS —
 			     the pill's own link row is the desktop entry. FLAT — no visible heading;
 			     the group aria-label carries the wayfinding grouping for AT. -->
-			<div
-				class="nav-menu-primary-group"
-				role="group"
-				aria-label={primaryGroupLabel}
-				data-slot="nav-menu-primary"
-			>
-				{#each navItems as item (item.key)}
-					<a
-						href={item.href}
-						class="nav-menu-link"
-						aria-current={item.active ? 'page' : undefined}
-						onclick={closeMenu}
-					>
-						<span>{item.label}</span>
-					</a>
-				{/each}
-			</div>
+				<div
+					class="nav-menu-primary-group"
+					role="group"
+					aria-label={primaryGroupLabel}
+					data-slot="nav-menu-primary"
+				>
+					{#each navItems as item (item.key)}
+						<a
+							href={item.href}
+							class="nav-menu-link"
+							aria-current={item.active ? 'page' : undefined}
+							onclick={closeMenu}
+						>
+							<span>{item.label}</span>
+						</a>
+					{/each}
+				</div>
 
-			<!-- AUDIT (accountability/meta) surfaces — a flat continuation of the
+				<!-- AUDIT (accountability/meta) surfaces — a flat continuation of the
 			     destination list, no visible heading; a quiet hairline (CSS) is the only
 			     separator from the primaries. The group aria-label is AT-only. -->
-			<div class="nav-menu-group" role="group" aria-label={auditLabel} data-slot="nav-menu-audit">
-				{#each auditItems as item (item.key)}
-					<a
-						href={item.href}
-						class="nav-menu-link"
-						aria-current={item.active ? 'page' : undefined}
-						onclick={closeMenu}
-					>
-						<span>{item.label}</span>
-					</a>
-				{/each}
-			</div>
+				<div class="nav-menu-group" role="group" aria-label={auditLabel} data-slot="nav-menu-audit">
+					{#each auditItems as item (item.key)}
+						<a
+							href={item.href}
+							class="nav-menu-link"
+							aria-current={item.active ? 'page' : undefined}
+							onclick={closeMenu}
+						>
+							<span>{item.label}</span>
+						</a>
+					{/each}
+				</div>
 
-			<div class="nav-menu-group" role="group" aria-label={legalLabel} data-slot="nav-menu-legal">
-				{#each legalItems as item (item.href)}
-					<a
-						href={item.href}
-						class="nav-menu-link"
-						aria-current={item.active ? 'page' : undefined}
-						onclick={closeMenu}
-					>
-						<span>{item.label}</span>
-					</a>
-				{/each}
-			</div>
+				<div class="nav-menu-group" role="group" aria-label={legalLabel} data-slot="nav-menu-legal">
+					{#each legalItems as item (item.href)}
+						<a
+							href={item.href}
+							class="nav-menu-link"
+							aria-current={item.active ? 'page' : undefined}
+							onclick={closeMenu}
+						>
+							<span>{item.label}</span>
+						</a>
+					{/each}
+				</div>
 
-			{#if compactLanguageTarget}
-				<!-- At phone widths narrower than 360px, five 44px top controls cannot fit.
+				{#if compactLanguageTarget}
+					<!-- At phone widths narrower than 360px, five 44px top controls cannot fit.
 				     The signpost moves here without removing the locale path from navigation. -->
-				<a
-					href={compactLanguageTarget.href}
-					class="nav-menu-language"
-					aria-label={compactLanguageTarget.aria}
-					data-sveltekit-preload-data="hover"
-					data-sveltekit-noscroll
-					data-sveltekit-reload
-					onclick={closeMenu}
-				>
-					{compactLanguageTarget.label}
-				</a>
-			{/if}
+					<a
+						href={compactLanguageTarget.href}
+						class="nav-menu-language"
+						aria-label={compactLanguageTarget.aria}
+						data-sveltekit-preload-data="hover"
+						data-sveltekit-noscroll
+						data-sveltekit-reload
+						onclick={closeMenu}
+					>
+						{compactLanguageTarget.label}
+					</a>
+				{/if}
 
-			<!-- Parent-brand "Yesid" link OUT to yesid.dev — the final menu row, with an
+				<!-- Parent-brand "Yesid" link OUT to yesid.dev — the final menu row, with an
 			     external ↗ affordance + rel="noopener". This replaces the old pill-click
 			     house link (the pill wordmark now reads "Transit"). -->
-			<a
-				href={YESID_HOUSE_LINK.href}
-				target="_blank"
-				rel="noopener noreferrer"
-				class="nav-menu-house"
-				aria-label={yesidHouseAria}
-				onclick={closeMenu}
-			>
-				<span class="nav-menu-house-wordmark"
-					><span>{yesidHouseLabel}</span><span class="text-primary">.</span></span
+				<a
+					href={YESID_HOUSE_LINK.href}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="nav-menu-house"
+					aria-label={yesidHouseAria}
+					onclick={closeMenu}
 				>
-				<ArrowUpRightIcon size={15} strokeWidth={2} aria-hidden="true" />
-			</a>
+					<span class="nav-menu-house-wordmark"
+						><span>{yesidHouseLabel}</span><span class="text-primary">.</span></span
+					>
+					<ArrowUpRightIcon size={15} strokeWidth={2} aria-hidden="true" />
+				</a>
+			</div>
 		</div>
 	{/if}
 </nav>
@@ -567,6 +573,7 @@
 	   pad 12 → 72px; ≤767 pad 8 → 64px; ≤479 pad 6 → 60px. */
 	:root {
 		--pill-h: 72px;
+		--app-effective-rail-offset: 0px;
 	}
 
 	/* The fixed, full-width rail: pointer-events-none so the map/content underneath
@@ -584,6 +591,22 @@
 		pointer-events: none;
 	}
 
+	/* The remaining-width query container (M6a): sized by the :root rail channel so
+	   container queries stage the pill against R = viewport − rail. z-index is
+	   MANDATORY — container-type implies layout containment, whose stacking context
+	   would otherwise paint the pill below the --z-menu backdrop. 100vw (never 100%)
+	   keeps R ≡ the @media basis at E=0 (100% excludes the classic scrollbar). The
+	   pill's position comes from its own translateX(−E/2) — this box never anchors. */
+	.nav-rail {
+		position: relative;
+		z-index: var(--z-nav);
+		width: calc(100vw - var(--app-effective-rail-offset, 0px));
+		display: flex;
+		justify-content: center;
+		container-type: inline-size;
+		container-name: nav-rail;
+	}
+
 	/* The pill — the yesid capsule chassis (SOLID-family glass): --radius-pill,
 	   2px --border-brand, 92% background mix, blur(16px), --shadow-nav. Intrinsic
 	   width (grows/shrinks with content), centred. pointer-events re-enabled. */
@@ -594,7 +617,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0;
-		max-width: calc(100vw - 1.5rem);
+		max-width: calc(100cqi - 1.5rem);
 		padding: 12px 28px;
 		background: color-mix(in srgb, var(--background) 92%, transparent);
 		border: 2px solid var(--border-brand);
@@ -604,7 +627,9 @@
 		-webkit-backdrop-filter: blur(16px) saturate(1.1);
 		transition:
 			padding var(--duration-normal) var(--ease-default),
-			box-shadow var(--duration-normal) var(--ease-default);
+			box-shadow var(--duration-normal) var(--ease-default),
+			transform var(--app-rail-offset-duration, var(--duration-normal)) var(--ease-default);
+		transform: translateX(calc(var(--app-effective-rail-offset, 0px) * -0.5));
 	}
 
 	/* Menu-open (compact) tier: tighten to 12/20 and drop the shadow so the
@@ -701,7 +726,7 @@
 	}
 
 	.nav-search-input {
-		width: clamp(11rem, 22vw, 20rem);
+		width: clamp(11rem, 22cqi, 20rem);
 		min-width: 0;
 		height: 36px;
 		padding: 0 0.75rem 0 1.9rem;
@@ -880,9 +905,26 @@
 		pointer-events: auto;
 	}
 
+	/* The menu's positioned host (Amendments I/J/K): a same-named query container so
+	   the S4 fold reaches the menu subtree, and a FIXED, full-height, left-anchored,
+	   width-R box so the ABSOLUTE menu inside anchors deterministically against its
+	   right edge (V − E) in every browser — real Chrome does not treat container-type
+	   containment as a fixed containing block, so `fixed` here would silently resolve
+	   against the viewport instead. pointer-events: none — the menu re-enables its own. */
+	.nav-menu-rail {
+		position: fixed;
+		inset-block: 0;
+		inset-inline-start: 0;
+		width: calc(100vw - var(--app-effective-rail-offset, 0px));
+		pointer-events: none;
+		z-index: var(--z-menu);
+		container-type: inline-size;
+		container-name: nav-rail;
+	}
+
 	.nav-menu {
 		pointer-events: auto;
-		position: fixed;
+		position: absolute;
 		inset-block: auto;
 		inset-block-start: calc(1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + 8px);
 		inset-inline-end: var(--nav-pill-right, 0.75rem);
@@ -962,6 +1004,47 @@
 			margin-top: 0;
 			padding-top: 0;
 			border-top: 0;
+		}
+	}
+
+	/* S2: the frozen desktop switch, now driven by remaining width. */
+	@container nav-rail (width < 1024px) {
+		.nav-search {
+			display: none;
+		}
+		.nav-compact-search {
+			display: inline-flex;
+		}
+	}
+
+	/* S3: FR-conservative fit is 799px; keep type and 44px targets untouched. */
+	@container nav-rail (width < 799px) {
+		.nav-pill {
+			padding: 12px 20px;
+		}
+		.nav-divider {
+			margin-inline: 12px;
+		}
+		.nav-links {
+			gap: 18px;
+		}
+	}
+
+	/* S4: the tightened FR composition needs 705px; fold links into Explore below it. */
+	@container nav-rail (width < 705px) {
+		.nav-links {
+			display: none;
+		}
+		.nav-divider-collapsible {
+			display: none;
+		}
+		.nav-menu-primary-group {
+			display: grid;
+		}
+		.nav-menu-group {
+			margin-top: 0.5rem;
+			padding-top: 0.5rem;
+			border-top: 1px solid var(--border-subtle);
 		}
 	}
 	.nav-menu-link {

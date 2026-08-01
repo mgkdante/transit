@@ -49,9 +49,9 @@ function codeOnly(text: string): string {
 const forbiddenIdentifiers = /\b(?:navigator|geolocation|fetch)\b/gu;
 
 describe('MapHero orchestrator — structural law', () => {
-	it('re-freezes M4a at its actual 863-line script count', () => {
+	it('re-freezes M6a at its actual 861-line script count', () => {
 		expect(script).toBeDefined();
-		expect(script!.split(/\r?\n/u).length).toBeLessThan(864);
+		expect(script!.split(/\r?\n/u).length).toBeLessThan(862);
 	});
 
 	it('uses one normal-script URL ingestion seam behind the shared three-writer coordinator', () => {
