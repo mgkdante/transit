@@ -86,7 +86,7 @@
 		mapInitialCenter,
 	} from './mapCameraFraming';
 	import { copy as MAP_COPY } from './map.copy';
-	import { readStoredDetailPanelWidth } from './mapDetailPanes';
+	import { publishRailOffset, readStoredDetailPanelWidth } from './mapDetailPanes';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import {
 		installMapInteractions,
@@ -866,10 +866,8 @@
 	$effect(() => {
 		const el = heroEl;
 		if (!el) return;
-		el.style.setProperty('--app-right-detail-offset', `${detailWidthPx}px`);
-		const chromeOffset =
-			layout.isDesktop && detailOpen ? (detailCollapsed ? '3.7rem' : `${detailWidthPx}px`) : '0rem';
-		el.style.setProperty('--map-detail-offset', chromeOffset);
+		const open = detailOpen && layout.isDesktop;
+		return publishRailOffset(el, detailWidthPx, open, detailCollapsed, detailDragging);
 	});
 
 	// Collapse/expand the right detail panel. A pure local toggle: it flips
@@ -1105,9 +1103,9 @@
 		/* The width of the RIGHT DETAIL overlay, written live by the drag handle into
 		   --app-right-detail-offset. The floating map chrome (near-me, peek, freshness,
 		   attribution) reads --map-detail-offset to shift clear of the open panel; it
-		   resolves to 0 when the detail is closed or collapsed (the overlay is gone /
-		   off the edge), so chrome sits flush to the map's own right edge again. The
-		   MAP CANVAS never reads either var, so resizing the panel can not resize it. */
+		   resolves to 0 when closed and 3.7rem when collapsed, so chrome clears the
+		   reachable strip. The MAP CANVAS never reads either var, so resizing the panel
+		   can not resize it. */
 		--app-right-detail-offset: 360px;
 		--map-detail-offset: 0rem;
 		/* One mobile bottom-chrome baseline. It keeps both touch controls above the

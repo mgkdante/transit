@@ -178,7 +178,7 @@ describe('NavPill — the flat menu', () => {
 	it.each([768, 1512])(
 		'resynchronizes the settled menu anchor at %ipx after the pill padding transition',
 		async (viewportWidth) => {
-			const { getByRole, getByTestId } = render(NavPill, {
+			const { getByRole, getByTestId, queryByTestId } = render(NavPill, {
 				props: { locale: 'en', url: new URL('https://transit.local/map') },
 			});
 			const root = getByRole('navigation', { name: 'Primary navigation' });
@@ -202,6 +202,20 @@ describe('NavPill — the flat menu', () => {
 			);
 
 			await fireEvent.click(getByRole('button', { name: 'Open menu' }));
+			const menuRail = queryByTestId('nav-menu')?.parentElement;
+			expect(menuRail).not.toBeNull();
+			vi.spyOn(menuRail!, 'getBoundingClientRect').mockReturnValue({
+				x: 0,
+				y: 0,
+				left: 0,
+				top: 0,
+				right: viewportWidth,
+				bottom: 900,
+				width: viewportWidth,
+				height: 900,
+				toJSON: () => ({}),
+			} as DOMRect);
+			await fireEvent(window, new Event('resize'));
 			await waitFor(() => expect(root.style.getPropertyValue('--nav-pill-right')).toBe('96px'));
 
 			pillRight -= 8;
@@ -212,6 +226,51 @@ describe('NavPill — the flat menu', () => {
 
 			await fireTransitionEnd(pill, 'padding-right');
 			expect(root.style.getPropertyValue('--nav-pill-right')).toBe('104px');
+		},
+	);
+
+	it.each([
+		{ offset: 560, viewportRight: 1512, wrapperRight: 952, pillRight: 900, expected: '52px' },
+		{ offset: 0, viewportRight: 1512, wrapperRight: 1512, pillRight: 1416, expected: '96px' },
+	])(
+		'publishes the menu-wrapper-relative anchor with a $offset px rail offset',
+		async ({ offset, viewportRight, wrapperRight, pillRight, expected }) => {
+			const { getByRole, getByTestId, queryByTestId } = render(NavPill, {
+				props: { locale: 'en', url: new URL('https://transit.local/map') },
+			});
+			const root = getByRole('navigation', { name: 'Primary navigation' });
+			const pill = getByTestId('nav-pill');
+			root.style.setProperty('--app-effective-rail-offset', `${offset}px`);
+			vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(viewportRight);
+			vi.spyOn(pill, 'getBoundingClientRect').mockReturnValue({
+				x: pillRight - 480,
+				y: 16,
+				left: pillRight - 480,
+				top: 16,
+				right: pillRight,
+				bottom: 88,
+				width: 480,
+				height: 72,
+				toJSON: () => ({}),
+			} as DOMRect);
+
+			await fireEvent.click(getByRole('button', { name: 'Open menu' }));
+			const menuRail = queryByTestId('nav-menu')?.parentElement;
+			expect(menuRail).not.toBeNull();
+			vi.spyOn(menuRail!, 'getBoundingClientRect').mockReturnValue({
+				x: 0,
+				y: 0,
+				left: 0,
+				top: 0,
+				right: wrapperRight,
+				bottom: 900,
+				width: wrapperRight,
+				height: 900,
+				toJSON: () => ({}),
+			} as DOMRect);
+
+			await fireEvent(window, new Event('resize'));
+			await waitFor(() => expect(root.style.getPropertyValue('--nav-pill-right')).toBe(expected));
 		},
 	);
 
@@ -303,22 +362,42 @@ describe('NavPill — the flat menu', () => {
 		);
 	});
 
-	it('hides the in-pill primary links below lg, shown ≥lg (source)', () => {
+	it('stages full links and compact search from the named pill rail (source)', () => {
 		const source = readSource();
-		// Base rule hides .nav-links; the ≥lg media query restores display:flex.
-		expect(source).toMatch(/\.nav-links\s*\{[\s\S]*display:\s*none;/);
+		expect(source.match(/class="nav-(?:menu-)?rail"/g)).toHaveLength(2);
+		expect(source).toMatch(/class="nav-rail"\s+data-slot="nav-rail"/);
 		expect(source).toMatch(
-			/@media \(min-width: 1024px\)\s*\{[\s\S]*\.nav-links\s*\{[\s\S]*display:\s*flex;/,
+			/\.nav-rail\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*var\(--z-nav\);[^}]*width:\s*calc\(100vw - var\(--app-effective-rail-offset, 0px\)\);[^}]*display:\s*flex;[^}]*justify-content:\s*center;[^}]*container-type:\s*inline-size;[^}]*container-name:\s*nav-rail;/,
+		);
+		expect(source).toMatch(
+			/\.nav-pill\s*\{[^}]*max-width:\s*calc\(100cqi - 1\.5rem\);[^}]*transform:\s*translateX\(calc\(var\(--app-effective-rail-offset, 0px\) \* -0\.5\)\);/,
+		);
+		expect(source).toMatch(/\.nav-search-input\s*\{[^}]*width:\s*clamp\(11rem, 22cqi, 20rem\);/);
+		expect(source).toMatch(
+			/@container nav-rail \(width < 1024px\)\s*\{[\s\S]*?\.nav-search\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-compact-search\s*\{\s*display:\s*inline-flex;\s*\}/,
 		);
 	});
 
-	it('keeps the compact Explore/Audit separator but clears it at ≥lg (source)', () => {
+	it('pins the tightened and folded stages plus the isolated menu rail (source)', () => {
 		const source = readSource();
+		expect(source).toMatch(/:root\s*\{[^}]*--app-effective-rail-offset:\s*0px;/);
 		expect(source).toMatch(
-			/\.nav-menu-group\s*\{\s*margin-top:\s*0\.5rem;\s*padding-top:\s*0\.5rem;\s*border-top:\s*1px solid var\(--border-subtle\);\s*\}/,
+			/\.nav-menu-rail\s*\{\s*position:\s*fixed;\s*inset-block:\s*0;\s*inset-inline-start:\s*0;\s*width:\s*calc\(100vw - var\(--app-effective-rail-offset, 0px\)\);\s*pointer-events:\s*none;\s*z-index:\s*var\(--z-menu\);\s*container-type:\s*inline-size;\s*container-name:\s*nav-rail;\s*\}/,
 		);
 		expect(source).toMatch(
-			/@media \(min-width: 1024px\)\s*\{[\s\S]*?\.nav-menu-primary-group\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-menu-group\s*\{\s*margin-top:\s*0;\s*padding-top:\s*0;\s*border-top:\s*0;\s*\}/,
+			/\.nav-pill\s*\{[^}]*transition:[^}]*transform var\(--app-rail-offset-duration, var\(--duration-normal\)\) var\(--ease-default\);/,
+		);
+		expect(source).toMatch(
+			/event\.propertyName === 'transform' \|\| event\.propertyName\.startsWith\('padding'\)/,
+		);
+		expect(source).toMatch(
+			/@container nav-rail \(width < 799px\)\s*\{[\s\S]*?\.nav-pill\s*\{\s*padding:\s*12px 20px;\s*\}[\s\S]*?\.nav-divider\s*\{\s*margin-inline:\s*12px;\s*\}[\s\S]*?\.nav-links\s*\{\s*gap:\s*18px;\s*\}/,
+		);
+		expect(source).toMatch(
+			/@container nav-rail \(width < 705px\)\s*\{[\s\S]*?\.nav-links\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-divider-collapsible\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.nav-menu-primary-group\s*\{\s*display:\s*grid;\s*\}[\s\S]*?\.nav-menu-group\s*\{\s*margin-top:\s*0\.5rem;\s*padding-top:\s*0\.5rem;\s*border-top:\s*1px solid var\(--border-subtle\);\s*\}/,
+		);
+		expect(source.indexOf('@container nav-rail (width < 1024px)')).toBeGreaterThan(
+			source.indexOf('@media (min-width: 1024px)'),
 		);
 	});
 

@@ -141,3 +141,78 @@ describe('mapDetailPanes persistence', () => {
 		setItem.mockRestore();
 	});
 });
+
+describe('mapDetailPanes rail-offset publication', () => {
+	beforeEach(() => {
+		document.documentElement.style.removeProperty('--app-effective-rail-offset');
+		document.documentElement.style.removeProperty('--app-rail-offset-duration');
+	});
+
+	afterEach(() => {
+		document.documentElement.style.removeProperty('--app-effective-rail-offset');
+		document.documentElement.style.removeProperty('--app-rail-offset-duration');
+	});
+
+	it.each([
+		{
+			state: 'open',
+			open: true,
+			collapsed: false,
+			expectedOffset: '440px',
+		},
+		{
+			state: 'collapsed',
+			open: true,
+			collapsed: true,
+			expectedOffset: '3.7rem',
+		},
+		{
+			state: 'closed or mobile',
+			open: false,
+			collapsed: false,
+			expectedOffset: '0px',
+		},
+	] as const)(
+		'publishes the exact $state panel, map-chrome, and root offsets',
+		async ({ open, collapsed, expectedOffset }) => {
+			const { publishRailOffset } = await loadModule();
+			const hero = document.createElement('div');
+
+			publishRailOffset(hero, 440, open, collapsed, false);
+
+			expect(hero.style.getPropertyValue('--app-right-detail-offset')).toBe('440px');
+			expect(hero.style.getPropertyValue('--map-detail-offset')).toBe(expectedOffset);
+			expect(document.documentElement.style.getPropertyValue('--app-effective-rail-offset')).toBe(
+				expectedOffset,
+			);
+			expect(document.documentElement.style.getPropertyValue('--app-rail-offset-duration')).toBe(
+				'',
+			);
+		},
+	);
+
+	it('publishes an instant drag duration, resets on cleanup, then restores the next target', async () => {
+		const { publishRailOffset } = await loadModule();
+		const hero = document.createElement('div');
+
+		const cleanup = publishRailOffset(hero, 360, true, false, true);
+		expect(document.documentElement.style.getPropertyValue('--app-effective-rail-offset')).toBe(
+			'360px',
+		);
+		expect(document.documentElement.style.getPropertyValue('--app-rail-offset-duration')).toBe(
+			'0ms',
+		);
+
+		cleanup();
+		expect(document.documentElement.style.getPropertyValue('--app-effective-rail-offset')).toBe(
+			'0px',
+		);
+		expect(document.documentElement.style.getPropertyValue('--app-rail-offset-duration')).toBe('');
+
+		publishRailOffset(hero, 420, true, false, false);
+		expect(document.documentElement.style.getPropertyValue('--app-effective-rail-offset')).toBe(
+			'420px',
+		);
+		expect(hero.style.getPropertyValue('--map-detail-offset')).toBe('420px');
+	});
+});
