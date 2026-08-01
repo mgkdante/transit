@@ -64,6 +64,8 @@ const KEY_ORDER = [
 	'severity',
 ] as const;
 
+export const FILTER_SEARCH_PARAM_KEYS = Object.freeze(KEY_ORDER);
+
 /** Wire key → the FilterState id-set field it maps to. */
 const SET_KEY_TO_FIELD: Record<'route' | 'stop' | 'trip' | 'vehicle', IdSetKey> = {
 	route: 'routes',

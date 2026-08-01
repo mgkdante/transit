@@ -49,9 +49,25 @@ function codeOnly(text: string): string {
 const forbiddenIdentifiers = /\b(?:navigator|geolocation|fetch)\b/gu;
 
 describe('MapHero orchestrator — structural law', () => {
-	it('re-freezes M2d at its actual 865-line script count', () => {
+	it('re-freezes M4a at its actual 863-line script count', () => {
 		expect(script).toBeDefined();
-		expect(script!.split(/\r?\n/u).length).toBeLessThan(866);
+		expect(script!.split(/\r?\n/u).length).toBeLessThan(864);
+	});
+
+	it('uses one normal-script URL ingestion seam behind the shared three-writer coordinator', () => {
+		expect(source.match(/<script(?:\s[^>]*)?>/gu)).toHaveLength(1);
+		expect(source).not.toMatch(/<script[^>]*context=["']module["']/u);
+		expect(source).not.toContain('afterNavigate');
+		expect(source.match(/urlCoordinator\.settle\(/gu)).toHaveLength(1);
+		expect(source.match(/filters\.replaceFromUrl\(/gu)).toHaveLength(1);
+		expect(source).toContain('const urlIdentity = `${url.pathname}${url.search}`');
+		expect(source.indexOf('const urlCoordinator = createMapUrlCoordinator')).toBeLessThan(
+			source.indexOf('const nearMeController = createMapNearMeController'),
+		);
+		expect(source).toContain('urlCoordinator.writeFilters');
+		expect(source).toContain('goto: urlCoordinator.goto');
+		expect(source).toContain('currentUrl: urlCoordinator.currentUrl');
+		expect(source.match(/urlCoordinator\.goto\(/gu)).toHaveLength(1);
 	});
 
 	it('keeps hover out of bulk feeds and replays emphasis only through the layer revision seam', () => {
@@ -117,9 +133,14 @@ describe('MapHero orchestrator — structural law', () => {
 			"import { createMapSelectionController } from './mapSelectionController.svelte'",
 		);
 		expect(source).toContain('const selectionController = createMapSelectionController();');
-		expect(source).toMatch(/function addSelectionFilter[\s\S]*?filters\.addVehicle/u);
+		expect(source).toMatch(
+			/function addSelectionFilter[\s\S]*?filters\.applyChips\(chips, SELECTION_WRITE\)/u,
+		);
 		expect(source).toMatch(
 			/function commitPickedSelection[\s\S]*?addSelectionFilter\(next\)[\s\S]*?selectionController\.selectPicked\(next\)/u,
+		);
+		expect(source).toMatch(
+			/function selectAlertRelated[\s\S]*?filters\.applyChips\(chips, SELECTION_WRITE\)/u,
 		);
 		expect(source).toMatch(/function selectPickedFeature[\s\S]*?commitPickedSelection\(next\)/u);
 		expect(source).toMatch(

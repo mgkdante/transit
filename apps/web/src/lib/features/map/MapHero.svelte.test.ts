@@ -85,8 +85,43 @@ const harness = vi.hoisted(() => {
 	const motionSet = vi.fn(runMotionSet);
 	const motionDestroy = vi.fn(stopVehicleUploads);
 	const releaseLease = vi.fn();
+	const stops = [
+		{
+			id: 'stop-1',
+			name: 'Sherbrooke / Saint-Denis',
+			code: '52618',
+			lat: 45.51,
+			lon: -73.57,
+		},
+		{
+			id: 'stop-2',
+			name: 'Temporary stop / Clark',
+			code: '52619',
+			lat: 45.512,
+			lon: -73.572,
+		},
+	];
+	type StopsIndex = { generated_utc: string; stops: typeof stops };
+	const defaultStopsIndex = (): StopsIndex => ({
+		generated_utc: '2026-06-20T12:00:00Z',
+		stops,
+	});
+	let stopsIndexResult: StopsIndex | Promise<StopsIndex> = defaultStopsIndex();
+	const getStopsIndexSlim = vi.fn(() => stopsIndexResult);
+	const deferStopsIndex = () => {
+		let resolve!: (value: StopsIndex) => void;
+		stopsIndexResult = new Promise<StopsIndex>((done) => {
+			resolve = done;
+		});
+		return { resolve, value: defaultStopsIndex() };
+	};
+	const resetStopsIndex = () => {
+		stopsIndexResult = defaultStopsIndex();
+	};
 	const getRoute = vi.fn(async (_id?: string, _options?: unknown) => null);
 	const getStop = vi.fn(() => null);
+	const focusCoordinate = vi.fn(() => true);
+	const fitRouteBounds = vi.fn(() => true);
 	const toVehicleFeatures = vi.fn(
 		(
 			_items: unknown,
@@ -137,6 +172,8 @@ const harness = vi.hoisted(() => {
 		route: '24',
 		next_stop: 'stop-1',
 	};
+	let liveVehicleVisible = true;
+	let detailFilter: ((chip: unknown) => void) | null = null;
 	const liveStore = {
 		vehicles: { generated_utc: '2026-06-20T12:00:00Z', vehicles: [vehicle] },
 		trips: null,
@@ -248,30 +285,34 @@ const harness = vi.hoisted(() => {
 		motionSet,
 		resetMotionSetImplementation: () => motionSet.mockImplementation(runMotionSet),
 		resetGetRouteImplementation: () => getRoute.mockImplementation(async () => null),
+		getStopsIndexSlim,
+		deferStopsIndex,
+		resetStopsIndex,
 		vehicleSourceSetData,
 		motionDestroy,
 		releaseLease,
 		createVehicleMotionController,
 		getRoute,
 		getStop,
+		focusCoordinate,
+		fitRouteBounds,
 		toVehicleFeatures,
 		vehicle,
-		stops: [
-			{
-				id: 'stop-1',
-				name: 'Sherbrooke / Saint-Denis',
-				code: '52618',
-				lat: 45.51,
-				lon: -73.57,
-			},
-			{
-				id: 'stop-2',
-				name: 'Temporary stop / Clark',
-				code: '52619',
-				lat: 45.512,
-				lon: -73.572,
-			},
-		],
+		stops,
+		get detailFilter() {
+			return detailFilter;
+		},
+		captureDetailFilter(next: ((chip: unknown) => void) | null) {
+			detailFilter = next;
+		},
+		get liveVehicleVisible() {
+			return liveVehicleVisible;
+		},
+		setLiveVehicleVisible(next: boolean) {
+			liveVehicleVisible = next;
+			if (next) liveStore.index.byVehicleId.set(vehicle.id, vehicle);
+			else liveStore.index.byVehicleId.delete(vehicle.id);
+		},
 	};
 });
 
@@ -357,25 +398,35 @@ vi.mock('$lib/v1/repositories/basemap', () => ({
 }));
 vi.mock('$lib/v1/repositories/static', () => ({
 	getRoutesIndex: () => ({ generated_utc: '2026-06-20T12:00:00Z', routes: [] }),
-	getStopsIndexSlim: () => ({ generated_utc: '2026-06-20T12:00:00Z', stops: harness.stops }),
+	getStopsIndexSlim: harness.getStopsIndexSlim,
 	getRoute: harness.getRoute,
 	getStop: harness.getStop,
 }));
 vi.mock('$lib/v1/live/store.svelte', async () => {
 	const { mapHeroReceiptSignals: signals } =
 		await import('./__fixtures__/MapHeroReceiptSignals.svelte');
+	const liveIndex = harness.liveStore.index;
+	Object.defineProperty(harness.liveStore, 'index', {
+		configurable: true,
+		get: () => {
+			void signals.vehiclesGeneration;
+			return liveIndex;
+		},
+	});
 	Object.defineProperty(harness.liveStore, 'vehicles', {
 		configurable: true,
 		get: () => {
 			const generation = signals.vehiclesGeneration;
 			return {
 				generated_utc: generation,
-				vehicles: [
-					{
-						...harness.vehicle,
-						route: generation === '2026-06-20T12:00:00Z' ? '24' : '55',
-					},
-				],
+				vehicles: harness.liveVehicleVisible
+					? [
+							{
+								...harness.vehicle,
+								route: generation === '2026-06-20T12:00:00Z' ? '24' : '55',
+							},
+						]
+					: [],
 			};
 		},
 	});
@@ -383,12 +434,29 @@ vi.mock('$lib/v1/live/store.svelte', async () => {
 		configurable: true,
 		get: () => signals.vehiclesGeneration,
 	});
+	Object.defineProperty(harness.liveStore.familyStates.vehicles, 'successRevision', {
+		configurable: true,
+		get: () => Number(signals.vehiclesGeneration.slice(17, 19)),
+	});
 	return { createLiveStore: harness.createLiveStore };
 });
 
 vi.mock('$lib/v1/resource.svelte', async () => {
 	const { createMapHeroResourceStub } = await import('./__fixtures__/MapHeroResourceStub.svelte');
 	return { createResource: createMapHeroResourceStub };
+});
+
+vi.mock('./MapSelectionDetail.svelte', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('./MapSelectionDetail.svelte')>();
+	return {
+		default: new Proxy(actual.default, {
+			apply(target, thisArg, args) {
+				const props = args[1] as { onfilter?: (chip: unknown) => void } | undefined;
+				harness.captureDetailFilter(props?.onfilter ?? null);
+				return Reflect.apply(target, thisArg, args);
+			},
+		}),
+	};
 });
 
 vi.mock('$lib/components/map', async () => {
@@ -433,8 +501,8 @@ vi.mock('$lib/components/map', async () => {
 });
 
 vi.mock('./mapCamera', () => ({
-	focusCoordinate: vi.fn(() => true),
-	fitRouteBounds: vi.fn(() => true),
+	focusCoordinate: harness.focusCoordinate,
+	fitRouteBounds: harness.fitRouteBounds,
 }));
 
 vi.mock('@yesid/motion/stores/reducedMotion', () => ({
@@ -448,9 +516,13 @@ afterEach(() => {
 	vi.clearAllMocks();
 	harness.resetMotionSetImplementation();
 	harness.resetGetRouteImplementation();
+	harness.resetStopsIndex();
+	harness.setLiveVehicleVisible(true);
+	harness.captureDetailFilter(null);
 	harness.identityReceivers.length = 0;
 	harness.locale = 'en';
 	harness.isDesktop = false;
+	harness.setPageUrl('http://localhost/map');
 	mapHeroReceiptSignals.reset();
 	harness.setReducedMotion(false);
 	vi.unstubAllGlobals();
@@ -711,6 +783,28 @@ describe('MapHero near-me device location', () => {
 	});
 });
 
+describe('MapHero one-shot focus readiness', () => {
+	it('waits for the stop index before one camera call and one replacement strip', async () => {
+		const deferred = harness.deferStopsIndex();
+		harness.setPageUrl('http://localhost/map?focus=stop:stop-1');
+		render(MapHero);
+		await tick();
+
+		expect(harness.focusCoordinate).not.toHaveBeenCalled();
+		expect(harness.goto).not.toHaveBeenCalled();
+
+		deferred.resolve(deferred.value);
+		await waitFor(() => expect(harness.focusCoordinate).toHaveBeenCalledOnce());
+		expect(harness.goto).toHaveBeenCalledOnce();
+		expect(new URL(String(harness.goto.mock.lastCall?.[0]), 'http://localhost').search).toBe('');
+		expect(harness.goto.mock.lastCall?.[1]).toMatchObject({ replaceState: true });
+
+		await tick();
+		expect(harness.focusCoordinate).toHaveBeenCalledOnce();
+		expect(harness.goto).toHaveBeenCalledOnce();
+	});
+});
+
 describe('MapHero detail-panel camera isolation (protect #11)', () => {
 	// The ONE orchestrator-excepted behavioral test (fable-plan-m3-FROZEN.md,
 	// ORCHESTRATOR EXCEPTION): panel drag, keyboard resize, and collapse must
@@ -914,7 +1008,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 		}
 	});
 
-	it('commits and closes a vehicle with one bulk mutation each while filter emphasis survives', async () => {
+	it('commits and closes a selection-owned vehicle with one bulk mutation each', async () => {
 		// Hold the newly selected route resource pending so this spy window measures
 		// only the selection/filter mutation, not a later independent network settle.
 		harness.getRoute.mockImplementation(() => new Promise<null>(() => {}) as never);
@@ -951,7 +1045,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 		);
 
 		const vehicleFeed = harness.toVehicleFeatures.mock.lastCall;
-		expect(vehicleFeed?.[1].vehicles.has('bus-1')).toBe(true);
+		expect(vehicleFeed?.[1].vehicles.has('bus-1')).toBe(false);
 		expect(vehicleFeed?.[3]).toBeNull();
 		expect(
 			(
@@ -959,10 +1053,36 @@ describe('MapHero map-layer feed lifecycle', () => {
 					features: Array<{ properties: { selected: number } }>;
 				}
 			).features[0]?.properties.selected,
-		).toBe(1);
+		).toBe(0);
 	});
 
-	it('commits and closes a stop with one bulk mutation each while filter emphasis survives', async () => {
+	it('releases an already selection-owned route through applyDetailFilter with zero rebuilds or goto', async () => {
+		harness.getRoute.mockImplementation(() => new Promise<null>(() => {}) as never);
+		render(MapHero);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+		await screen.findByRole('button', { name: 'Close' });
+		await waitFor(() => expect(harness.goto).toHaveBeenCalledOnce());
+		const detailFilter = await waitFor(() => {
+			expect(harness.detailFilter).not.toBeNull();
+			return harness.detailFilter!;
+		});
+		const beforeTouch = bulkCounts();
+		const navigationCount = harness.goto.mock.calls.length;
+
+		detailFilter({ kind: 'route', value: '24' });
+		await tick();
+
+		expect(bulkCounts()).toEqual(beforeTouch);
+		expect(harness.goto).toHaveBeenCalledTimes(navigationCount);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+		await waitFor(() => expect(harness.goto).toHaveBeenCalledTimes(navigationCount + 1));
+		const closed = new URL(String(harness.goto.mock.lastCall?.[0]), 'http://localhost');
+		expect(closed.searchParams.get('route')).toBe('24');
+		expect(closed.searchParams.has('vehicle')).toBe(false);
+	});
+
+	it('commits and closes a selection-owned stop with one bulk mutation each', async () => {
 		render(MapHero);
 		await tick();
 		const beforeCommit = bulkCounts();
@@ -989,12 +1109,77 @@ describe('MapHero map-layer feed lifecycle', () => {
 		);
 
 		const stopFeed = harness.setStops.mock.lastCall;
-		expect(stopFeed?.[2].stops.has('stop-1')).toBe(true);
+		expect(stopFeed?.[2].stops.has('stop-1')).toBe(false);
 		expect(stopFeed?.[4]).toBeNull();
 		expect(
 			toStopFeatures(stopFeed?.[1] ?? [], stopFeed?.[2], stopFeed?.[3], stopFeed?.[4]).features[0]
 				?.properties.selected,
-		).toBe(1);
+		).toBe(0);
+	});
+
+	it('keeps a pre-existing URL route while an echoed picked vehicle retires on close', async () => {
+		harness.setPageUrl('http://localhost/map?route=24');
+		render(MapHero);
+		await tick();
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+		await waitFor(() => expect(harness.goto).toHaveBeenCalledOnce());
+		const pickedTarget = String(harness.goto.mock.lastCall?.[0]);
+		expect(new URL(pickedTarget, 'http://localhost').searchParams.get('vehicle')).toBe('bus-1');
+
+		const beforeEchoFeed = bulkCounts();
+		harness.setPageUrl(new URL(pickedTarget, 'http://localhost').href);
+		await tick();
+		expect(bulkCounts()).toEqual(beforeEchoFeed);
+		expect(harness.goto).toHaveBeenCalledOnce();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+		await waitFor(() => expect(harness.goto).toHaveBeenCalledTimes(2));
+		const closed = new URL(String(harness.goto.mock.lastCall?.[0]), 'http://localhost');
+		expect(closed.searchParams.get('route')).toBe('24');
+		expect(closed.searchParams.has('vehicle')).toBe(false);
+	});
+
+	it('keeps equal filters after a genuine URL adoption reclassifies them as user-owned', async () => {
+		render(MapHero);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));
+		await waitFor(() => expect(harness.goto).toHaveBeenCalledOnce());
+		const pickedTarget = String(harness.goto.mock.lastCall?.[0]);
+
+		harness.setPageUrl(new URL(pickedTarget, 'http://localhost').href);
+		await tick();
+		harness.setPageUrl(`${new URL(pickedTarget, 'http://localhost').href}&x=1`);
+		await tick();
+		const navigationCount = harness.goto.mock.calls.length;
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+		await tick();
+		expect(harness.goto).toHaveBeenCalledTimes(navigationCount);
+		expect(harness.setStops.mock.lastCall?.[2].stops.has('stop-1')).toBe(true);
+	});
+
+	it('auto-close of a vanished vehicle clears its selection-owned URL filters', async () => {
+		render(MapHero);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+		await screen.findByRole('button', { name: 'Close' });
+
+		harness.setLiveVehicleVisible(false);
+		for (let revision = 2; revision <= 4; revision += 1) {
+			const generation = `2026-06-20T12:00:0${revision}Z`;
+			mapHeroReceiptSignals.setVehiclesGeneration(generation);
+			await waitFor(() =>
+				expect(document.querySelector('.map-hero')).toHaveAttribute(
+					'data-motion-tick-key',
+					generation,
+				),
+			);
+			await tick();
+		}
+
+		await waitFor(() => expect(screen.queryByRole('button', { name: 'Close' })).toBeNull());
+		const closed = new URL(String(harness.goto.mock.lastCall?.[0]), 'http://localhost');
+		expect(closed.searchParams.has('route')).toBe(false);
+		expect(closed.searchParams.has('vehicle')).toBe(false);
 	});
 
 	it('drives hover, mouseleave, detail swap, Back, and close through rendered feature state', async () => {
@@ -1084,7 +1269,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 		);
 	});
 
-	it('keeps committed leases and static-resource calls unchanged during later hover', async () => {
+	it('keeps vehicle leases and route reads unchanged during hover without fetching a stop', async () => {
 		const bulkCounts = () => ({
 			routes: harness.setRouteLines.mock.calls.length,
 			motion: harness.motionSet.mock.calls.length,
@@ -1097,8 +1282,8 @@ describe('MapHero map-layer feed lifecycle', () => {
 		await waitFor(() => {
 			expect(harness.liveStore.subscribeFamilies).toHaveBeenCalledWith(['trips']);
 			expect(harness.getRoute).toHaveBeenCalledWith('24', expect.any(Object));
-			expect(harness.getStop).toHaveBeenCalledWith('stop-1', expect.any(Object));
 		});
+		expect(harness.getStop).not.toHaveBeenCalled();
 		await tick();
 
 		const bulkBefore = bulkCounts();
@@ -1115,6 +1300,14 @@ describe('MapHero map-layer feed lifecycle', () => {
 		expect(harness.getRoute).toHaveBeenCalledTimes(routeCallsBefore);
 		expect(harness.getStop).toHaveBeenCalledTimes(stopCallsBefore);
 		expect(harness.liveStore.subscribeFamilies.mock.calls).toEqual(leasesBefore);
+	});
+
+	it('fetches the selected stop resource exactly once for a stop pick', async () => {
+		render(MapHero);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));
+
+		await waitFor(() => expect(harness.getStop).toHaveBeenCalledWith('stop-1', expect.any(Object)));
+		expect(harness.getStop).toHaveBeenCalledOnce();
 	});
 
 	it.each([
@@ -1329,9 +1522,11 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 
 		const alertNavigationCalls = harness.goto.mock.calls.slice(navigationCountBeforeAlert);
 		expect(alertNavigationCalls.length).toBeGreaterThan(0);
-		expect(alertNavigationCalls.at(-1)?.[0]).toBe('?route=24&stop=stop-1%2Cstop-2&alert=has_alert');
+		expect(alertNavigationCalls.at(-1)?.[0]).toBe(
+			'/map?route=24&stop=stop-1%2Cstop-2&alert=has_alert',
+		);
 		for (const [target, options] of alertNavigationCalls) {
-			expect(target).toMatch(/^\?/);
+			expect(target).toMatch(/^\/map(?:\?|$)/);
 			expect(new URL(String(target), 'http://localhost/map').pathname).toBe('/map');
 			expect(options).toMatchObject({ replaceState: true, keepFocus: true, noScroll: true });
 		}
