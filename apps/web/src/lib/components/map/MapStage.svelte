@@ -166,6 +166,8 @@
 		onthemerepaint?: (map: MapLibreMap) => void;
 		/** Fatal initialization state. null clears the state before an in-place retry. */
 		onerror?: (failure: MapStageFailure | null) => void;
+		/** Release consumer-owned map state while MapLibre's style is still live. */
+		onbeforeremove?: (map: MapLibreMap) => void;
 		/** Partial MapLibre locale table applied at construction. */
 		locale?: Record<string, string>;
 		/** Consumer styling on the host wrapper. */
@@ -188,6 +190,7 @@
 		onstyleload,
 		onthemerepaint,
 		onerror,
+		onbeforeremove,
 		locale,
 		class: className,
 	}: MapStageProps = $props();
@@ -261,9 +264,13 @@
 		attempt.observer = null;
 		const ownedMap = attempt.map;
 		attempt.map = null;
-		ownedMap?.remove();
-		if (activeAttempt === attempt) activeAttempt = null;
-		if (map === ownedMap) map = null;
+		try {
+			if (ownedMap) onbeforeremove?.(ownedMap);
+		} finally {
+			ownedMap?.remove();
+			if (activeAttempt === attempt) activeAttempt = null;
+			if (map === ownedMap) map = null;
+		}
 	}
 
 	function preflightWebgl(): void {

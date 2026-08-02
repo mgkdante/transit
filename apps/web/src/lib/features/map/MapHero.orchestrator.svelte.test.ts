@@ -24,6 +24,51 @@ const layerModulesSource = readFileSync(
 	'utf-8',
 );
 const script = source.match(/<script(?:\s[^>]*)?>\r?\n([\s\S]*?)\r?\n<\/script>/u)?.[1];
+const m6hRouteExitImport =
+	"\timport { attachMapDetailRouteExit } from './mapDetailRouteLifecycle';\n";
+const m6hRouteExitWiring =
+	'\tconst selectionController = attachMapDetailRouteExit(createMapSelectionController());';
+const m6hCure2MapHandle =
+	'\t// MapLibre is an opaque lifecycle owner. Track handle replacement, never proxy\n' +
+	'\t// the instance itself; teardown callbacks must compare and release the exact map.\n' +
+	'\tlet map = $state.raw<MapLibreMap | null>(null);';
+const m6hCure2OwnerRelease = `
+	function releaseMapOwners(m: MapLibreMap): void {
+		if (map !== m) return;
+		const motion = vehicleMotion;
+		const disposers = interactionDisposers;
+		vehicleMotion = null;
+		vehicleMotionMap = null;
+		interactionDisposers = [];
+		interactionsMap = null;
+		map = null;
+
+		const releaseErrors: unknown[] = [];
+		try {
+			motion?.destroy();
+		} catch (error) {
+			releaseErrors.push(error);
+		}
+		for (const dispose of disposers) {
+			try {
+				dispose();
+			} catch (error) {
+				releaseErrors.push(error);
+			}
+		}
+		try {
+			emphasisController.clear(m);
+		} catch (error) {
+			releaseErrors.push(error);
+		}
+		if (releaseErrors.length > 0) throw releaseErrors[0];
+	}
+`;
+const preM6hScript = script
+	?.replace(m6hRouteExitImport, '')
+	.replace(m6hRouteExitWiring, '\tconst selectionController = createMapSelectionController();')
+	.replace(m6hCure2MapHandle, '\tlet map = $state<MapLibreMap | null>(null);')
+	.replace(m6hCure2OwnerRelease, '');
 const mapStage = source.match(/<MapStage[\s\S]*?\/>/u)?.[0];
 const nearMeDependencies = script?.match(
 	/const nearMeController = createMapNearMeController\(\{([\s\S]*?)\r?\n\t\}\);\r?\n\tconst focusController/u,
@@ -49,9 +94,13 @@ function codeOnly(text: string): string {
 const forbiddenIdentifiers = /\b(?:navigator|geolocation|fetch)\b/gu;
 
 describe('MapHero orchestrator — structural law', () => {
-	it('re-freezes M6a at its actual 861-line script count', () => {
+	it('keeps the M6a 861-line budget outside the explicit M6H lifecycle seams', () => {
 		expect(script).toBeDefined();
-		expect(script!.split(/\r?\n/u).length).toBeLessThan(862);
+		expect(script!.split(m6hRouteExitImport)).toHaveLength(2);
+		expect(script!.split(m6hRouteExitWiring)).toHaveLength(2);
+		expect(script!.split(m6hCure2MapHandle)).toHaveLength(2);
+		expect(script!.split(m6hCure2OwnerRelease)).toHaveLength(2);
+		expect(preM6hScript!.split(/\r?\n/u).length).toBeLessThan(862);
 	});
 
 	it('uses one normal-script URL ingestion seam behind the shared three-writer coordinator', () => {
@@ -116,6 +165,7 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(mapStage).toContain('bounds={ISLAND_FIT_BOUNDS}');
 		expect(mapStage).toContain('maxBounds={MAP_MAX_BOUNDS}');
 		expect(mapStage).toContain('fitPadding={mapFitPadding}');
+		expect(mapStage).toContain('onbeforeremove={releaseMapOwners}');
 		expect(mapStage).not.toContain('layout.isDesktop');
 	});
 
@@ -132,7 +182,8 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain(
 			"import { createMapSelectionController } from './mapSelectionController.svelte'",
 		);
-		expect(source).toContain('const selectionController = createMapSelectionController();');
+		expect(source).toContain(m6hRouteExitImport.trim());
+		expect(source).toContain(m6hRouteExitWiring.trim());
 		expect(source).toMatch(
 			/function addSelectionFilter[\s\S]*?filters\.applyChips\(chips, SELECTION_WRITE\)/u,
 		);

@@ -7,6 +7,57 @@ function source(path: string): string {
 	return readFileSync(resolve(process.cwd(), path), 'utf8');
 }
 
+const M6H_ROUTE_EXIT_IMPORT =
+	"\timport { attachMapDetailRouteExit } from './mapDetailRouteLifecycle';\n";
+const M6H_ROUTE_EXIT_WIRING =
+	'\tconst selectionController = attachMapDetailRouteExit(createMapSelectionController());';
+const M6H_CURE2_MAP_HANDLE =
+	'\t// MapLibre is an opaque lifecycle owner. Track handle replacement, never proxy\n' +
+	'\t// the instance itself; teardown callbacks must compare and release the exact map.\n' +
+	'\tlet map = $state.raw<MapLibreMap | null>(null);';
+const M6H_CURE2_OWNER_RELEASE = `
+	function releaseMapOwners(m: MapLibreMap): void {
+		if (map !== m) return;
+		const motion = vehicleMotion;
+		const disposers = interactionDisposers;
+		vehicleMotion = null;
+		vehicleMotionMap = null;
+		interactionDisposers = [];
+		interactionsMap = null;
+		map = null;
+
+		const releaseErrors: unknown[] = [];
+		try {
+			motion?.destroy();
+		} catch (error) {
+			releaseErrors.push(error);
+		}
+		for (const dispose of disposers) {
+			try {
+				dispose();
+			} catch (error) {
+				releaseErrors.push(error);
+			}
+		}
+		try {
+			emphasisController.clear(m);
+		} catch (error) {
+			releaseErrors.push(error);
+		}
+		if (releaseErrors.length > 0) throw releaseErrors[0];
+	}
+`;
+const M6H_CURE2_STAGE_WIRING = '\n\t\tonbeforeremove={releaseMapOwners}';
+
+function withoutM6hLifecycle(value: string): string {
+	return value
+		.replace(M6H_ROUTE_EXIT_IMPORT, '')
+		.replace(M6H_ROUTE_EXIT_WIRING, '\tconst selectionController = createMapSelectionController();')
+		.replace(M6H_CURE2_MAP_HANDLE, '\tlet map = $state<MapLibreMap | null>(null);')
+		.replace(M6H_CURE2_OWNER_RELEASE, '')
+		.replace(M6H_CURE2_STAGE_WIRING, '');
+}
+
 function withoutComments(value: string): string {
 	return value
 		.replace(/<!--[^]*?-->/g, '')
@@ -92,18 +143,24 @@ describe('M6C-2 token and protected-surface contract', () => {
 		expect(rightPanel).not.toContain('rgba(0, 0, 0, 0.45)');
 	});
 
-	it('keeps the protected MapHero script bytes fixed and changes the style consumer only', () => {
+	it('keeps the M6C-2 MapHero bytes fixed outside the registered M6H lifecycle seams', () => {
 		const hero = source('src/lib/features/map/MapHero.svelte');
-		const protectedRegion = hero.split('\n').slice(19, 882).join('\n') + '\n';
+		expect(hero.split(M6H_ROUTE_EXIT_IMPORT)).toHaveLength(2);
+		expect(hero.split(M6H_ROUTE_EXIT_WIRING)).toHaveLength(2);
+		expect(hero.split(M6H_CURE2_MAP_HANDLE)).toHaveLength(2);
+		expect(hero.split(M6H_CURE2_OWNER_RELEASE)).toHaveLength(2);
+		expect(hero.split(M6H_CURE2_STAGE_WIRING)).toHaveLength(2);
+		const protectedHero = withoutM6hLifecycle(hero);
+		const protectedRegion = protectedHero.split('\n').slice(19, 882).join('\n') + '\n';
 		const digest = createHash('sha256').update(protectedRegion).digest('hex');
 		const liveConsumer = '--app-right-detail-offset: var(--size-detail-panel);';
-		const reconstructedPreEditHero = hero.replace(
+		const reconstructedPreEditHero = protectedHero.replace(
 			liveConsumer,
 			'--app-right-detail-offset: 360px;',
 		);
 
 		expect(digest).toBe('f1dcbc7ca685a9e31b581571e0f2d4ab27d5a025cff86792c5970ff9b3633a02');
-		expect(hero.split(liveConsumer)).toHaveLength(2);
+		expect(protectedHero.split(liveConsumer)).toHaveLength(2);
 		expect(createHash('sha256').update(reconstructedPreEditHero).digest('hex')).toBe(
 			'4e00edb78af11065fbd2f04d18e37fbead6a2acc4df71a231c7906c5a310820f',
 		);

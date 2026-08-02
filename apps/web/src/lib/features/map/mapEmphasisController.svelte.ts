@@ -132,10 +132,13 @@ export function createMapEmphasisController(
 	}
 
 	function clear(map: MapLibreMap | null = activeMap): void {
-		if (map) clearMap(map);
-		hoveredTarget = null;
-		selectedTargets = [];
-		if (map === activeMap) activeMap = null;
+		try {
+			if (map) clearMap(map);
+		} finally {
+			hoveredTarget = null;
+			selectedTargets = [];
+			if (map === activeMap) activeMap = null;
+		}
 	}
 
 	function replay(map: MapLibreMap): void {

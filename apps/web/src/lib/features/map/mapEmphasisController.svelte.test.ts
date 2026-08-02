@@ -159,6 +159,28 @@ describe('map emphasis controller', () => {
 		expect(emphasis.hoveredTarget).toEqual({ kind: 'vehicle', id: 'bus-a' });
 	});
 
+	it('detaches every retained target and map when live-map clear throws', () => {
+		const selection = createMapSelectionController();
+		const emphasis = createMapEmphasisController(selection);
+		const harness = mapHarness();
+
+		selection.selectPicked({ kind: 'stop', id: 'stop-a' });
+		selection.setHovered({ kind: 'vehicle', id: 'bus-a' });
+		emphasis.apply(harness.map, stops);
+		const clearError = new Error('exception source clear failed');
+		harness.setExceptionData.mockImplementationOnce(() => {
+			throw clearError;
+		});
+
+		expect(() => emphasis.clear()).toThrow(clearError);
+		expect(emphasis.selectedTargets).toEqual([]);
+		expect(emphasis.hoveredTarget).toBeNull();
+		const writesAfterFailedClear = harness.setExceptionData.mock.calls.length;
+
+		expect(() => emphasis.clear()).not.toThrow();
+		expect(harness.setExceptionData).toHaveBeenCalledTimes(writesAfterFailedClear);
+	});
+
 	it('keeps the low-zoom exception bounded for selected and hovered stops', () => {
 		const selection = createMapSelectionController();
 		const emphasis = createMapEmphasisController(selection);

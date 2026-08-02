@@ -1,10 +1,34 @@
 import { cleanup, render } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createRawSnippet, tick } from 'svelte';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-const harness = vi.hoisted(() => ({
-	setPath: (_pathname: string) => {},
-}));
+const harness = vi.hoisted(() => {
+	const beforeNavigateCallbacks: Array<(navigation: unknown) => unknown> = [];
+	const onNavigateCallbacks: Array<(navigation: unknown) => unknown> = [];
+	const transitionTransientStates: boolean[] = [];
+	let resolveViewTransition: () => void = () => {};
+	const runViewTransition = vi.fn(() => {
+		transitionTransientStates.push(
+			document.querySelector('[data-m6c2-detail-sheet]') != null ||
+				document.body.style.overflow === 'hidden' ||
+				document.body.style.pointerEvents === 'none',
+		);
+		return new Promise<void>((resolve) => {
+			resolveViewTransition = resolve;
+		});
+	});
+	return {
+		setPath: (_pathname: string) => {},
+		beforeNavigateCallbacks,
+		onNavigateCallbacks,
+		transitionTransientStates,
+		runViewTransition,
+		finishViewTransition: () => {
+			resolveViewTransition();
+			resolveViewTransition = () => {};
+		},
+	};
+});
 
 vi.mock('$app/stores', async () => {
 	const { writable } = await import('svelte/store');
@@ -36,8 +60,12 @@ vi.mock('$app/stores', async () => {
 vi.mock('$app/state', () => ({ updated: { current: false } }));
 vi.mock('$app/navigation', () => ({
 	goto: vi.fn(),
-	onNavigate: vi.fn(),
-	beforeNavigate: vi.fn(),
+	onNavigate: vi.fn((callback: (navigation: unknown) => unknown) => {
+		harness.onNavigateCallbacks.push(callback);
+	}),
+	beforeNavigate: vi.fn((callback: (navigation: unknown) => unknown) => {
+		harness.beforeNavigateCallbacks.push(callback);
+	}),
 	afterNavigate: vi.fn(),
 }));
 vi.mock('$app/environment', () => ({ browser: false }));
@@ -101,7 +129,7 @@ vi.mock('$lib/pwa/appVersion', () => ({
 	decideFreshnessReload: () => ({ reload: false, href: null }),
 }));
 vi.mock('$lib/vitals/collect', () => ({ startVitals: () => vi.fn() }));
-vi.mock('$lib/motion/view-transition', () => ({ runViewTransition: vi.fn() }));
+vi.mock('$lib/motion/view-transition', () => ({ runViewTransition: harness.runViewTransition }));
 vi.mock('@yesid/motion/utils/globalRipple', () => ({ initGlobalRipple: () => vi.fn() }));
 vi.mock('$lib/nav', () => ({ layout: { isDesktop: true } }));
 vi.mock('$lib/search/chromeSearch', () => ({
@@ -119,7 +147,29 @@ const children = createRawSnippet(() => ({
 	render: () => '<article data-testid="legal-child">Legal child</article>',
 }));
 
+let appStyle: HTMLStyleElement;
+
+beforeAll(() => {
+	appStyle = document.createElement('style');
+	appStyle.dataset.testAppCss = '';
+	// Vite's server-side CSS transform does not inject Tailwind utilities into
+	// Happy DOM. These are the exact two declarations emitted by the production
+	// build; installing them makes the assertion exercise computed overflow rather
+	// than class-token presence.
+	// Happy DOM does not expand the overflow shorthand into overflowY, so repeat
+	// the shorthand's Y-axis value explicitly for the computed-style assertion.
+	appStyle.textContent =
+		'.overflow-hidden{overflow:hidden;overflow-y:hidden}.overflow-y-auto{overflow-y:auto}';
+	document.head.append(appStyle);
+});
+
+afterAll(() => appStyle.remove());
+
 function renderWithoutV1(pathname: string, lang: 'en' | 'fr') {
+	harness.beforeNavigateCallbacks.length = 0;
+	harness.onNavigateCallbacks.length = 0;
+	harness.transitionTransientStates.length = 0;
+	harness.runViewTransition.mockClear();
 	harness.setPath(pathname);
 	return render(RootLayout, {
 		props: {
@@ -129,7 +179,11 @@ function renderWithoutV1(pathname: string, lang: 'en' | 'fr') {
 	});
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+	cleanup();
+	document.body.style.removeProperty('overflow');
+	document.body.style.removeProperty('pointer-events');
+});
 
 describe('root layout data-independent legal routes', () => {
 	it.each([
@@ -153,4 +207,110 @@ describe('root layout data-independent legal routes', () => {
 		expect(queryByTestId('legal-child')).not.toBeInTheDocument();
 		expect(getByTestId('root-layout-footer').textContent?.trim()).toBe('');
 	});
+
+	it.each([
+		['desktop overlay', 'data-slot', 'map-detail-overlay', false],
+		['mobile sheet', 'data-m6c2-detail-sheet', '', true],
+	] as const)(
+		'commits a panel-open map exit before the new URL can retain #main scroll lock: %s',
+		async (_panelKind, attribute, value, locksBody) => {
+			const { container } = renderWithoutV1('/map', 'en');
+			const main = container.querySelector('#main') as HTMLElement;
+			expect(getComputedStyle(main).overflowY).toBe('hidden');
+
+			const panel = document.createElement('div');
+			panel.setAttribute(attribute, value);
+			document.body.append(panel);
+			if (locksBody) {
+				document.body.style.overflow = 'hidden';
+				document.body.style.pointerEvents = 'none';
+			}
+			let completeNavigation: () => void;
+			const complete = new Promise<void>((resolve) => {
+				completeNavigation = resolve;
+			});
+			const navigation = {
+				from: { url: new URL('https://transit.yesid.dev/map') },
+				to: { url: new URL('https://transit.yesid.dev/lines') },
+				willUnload: false,
+				complete,
+			};
+
+			for (const callback of harness.beforeNavigateCallbacks) callback(navigation);
+			window.history.replaceState({}, '', '/lines');
+			const blocker = harness.onNavigateCallbacks.at(-1)?.(navigation);
+
+			try {
+				// SvelteKit commits root/page state only after every onNavigate callback
+				// returns. A panel-exit callback must therefore stay synchronous: the URL
+				// is already /lines here, and a promise would leave the live /map #main in
+				// place with overflow hidden.
+				if (!(blocker instanceof Promise)) {
+					harness.setPath('/lines');
+					await tick();
+				}
+
+				expect(window.location.pathname).toBe('/lines');
+				expect(getComputedStyle(main).overflowY).toBe('auto');
+				expect(harness.runViewTransition).not.toHaveBeenCalled();
+			} finally {
+				panel.remove();
+				document.body.style.removeProperty('overflow');
+				document.body.style.removeProperty('pointer-events');
+				harness.finishViewTransition();
+				completeNavigation!();
+				await blocker;
+				window.history.replaceState({}, '', '/');
+			}
+		},
+	);
+
+	it.each([
+		['a panel-closed map', false, [false]],
+		['a stale body lock without a live panel', true, [true]],
+	] as const)(
+		'preserves the normal View Transition for %s',
+		async (_state, lockBody, expectedTransitionState) => {
+			const { container } = renderWithoutV1('/map', 'en');
+			const main = container.querySelector('#main') as HTMLElement;
+			if (lockBody) {
+				document.body.style.overflow = 'hidden';
+				document.body.style.pointerEvents = 'none';
+			}
+			let completeNavigation: () => void;
+			const complete = new Promise<void>((resolve) => {
+				completeNavigation = resolve;
+			});
+			const navigation = {
+				from: { url: new URL('https://transit.yesid.dev/map') },
+				to: { url: new URL('https://transit.yesid.dev/lines') },
+				willUnload: false,
+				complete,
+			};
+
+			for (const callback of harness.beforeNavigateCallbacks) callback(navigation);
+			window.history.replaceState({}, '', '/lines');
+			const blocker = harness.onNavigateCallbacks.at(-1)?.(navigation);
+
+			try {
+				expect(blocker).toBeInstanceOf(Promise);
+				expect(harness.runViewTransition).toHaveBeenCalledOnce();
+				expect(harness.transitionTransientStates).toEqual(expectedTransitionState);
+				expect(getComputedStyle(main).overflowY).toBe('hidden');
+
+				harness.finishViewTransition();
+				await blocker;
+				harness.setPath('/lines');
+				await tick();
+				expect(getComputedStyle(main).overflowY).toBe('auto');
+			} finally {
+				document.body.style.removeProperty('overflow');
+				document.body.style.removeProperty('pointer-events');
+				harness.finishViewTransition();
+				completeNavigation!();
+				await blocker;
+				window.history.replaceState({}, '', '/');
+			}
+		},
+	);
 });

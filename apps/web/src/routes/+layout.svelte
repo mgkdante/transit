@@ -333,15 +333,22 @@
 		};
 	});
 
-	// SPA View Transitions — a tasteful root cross-fade between surfaces. The
-	// helper feature-detects `document.startViewTransition` AND respects
-	// `prefers-reduced-motion: reduce` (returning `undefined` so SvelteKit does
-	// its instant swap in both cases). On the happy path it resolves the DOM swap
-	// INSIDE startViewTransition and awaits `navigation.complete`, so the new
-	// surface settles within the transition. CSS side lives in app.css
-	// (@view-transition + the ::view-transition-*(root) cross-fade, reduced-motion
-	// guarded). Canonical SvelteKit + View Transitions recipe.
-	onNavigate((navigation) => runViewTransition(navigation));
+	// SPA View Transitions — a tasteful root cross-fade between settled surfaces.
+	// SvelteKit updates browser history before it awaits `onNavigate`, but it does
+	// not commit `$page` or the destination DOM until every returned promise has
+	// resolved. A map detail exit already has route-owned `beforeNavigate` teardown;
+	// waiting for that teardown here would therefore expose `/lines` while the live
+	// root still has `/map`'s full-bleed scroll lock. Skip the optional transition
+	// for that one transient exit and let Kit commit immediately. All other routes
+	// retain the existing feature-detected/reduced-motion-aware cross-fade.
+	let skipViewTransitionForMapDetailExit = false;
+
+	onNavigate((navigation) => {
+		const skipViewTransition = skipViewTransitionForMapDetailExit;
+		skipViewTransitionForMapDetailExit = false;
+		if (skipViewTransition) return;
+		return runViewTransition(navigation);
+	});
 
 	afterNavigate(({ to }) => {
 		if (to) void transitAnalytics.trackPageview(to.url);
@@ -355,6 +362,12 @@
 	// detected, so steady-state SPA navigation (and View Transitions) is unchanged.
 	// Cold loads are already kept fresh by the network-first service worker.
 	beforeNavigate((navigation) => {
+		skipViewTransitionForMapDetailExit =
+			typeof document !== 'undefined' &&
+			delocalizePath(navigation.from?.url.pathname ?? '') === '/map' &&
+			navigation.to != null &&
+			delocalizePath(navigation.to.url.pathname) !== '/map' &&
+			document.querySelector('[data-slot="map-detail-overlay"], [data-m6c2-detail-sheet]') != null;
 		const decision = decideFreshnessReload({
 			hasNewVersion: updated.current,
 			willUnload: navigation.willUnload,

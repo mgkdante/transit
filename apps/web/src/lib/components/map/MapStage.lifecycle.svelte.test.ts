@@ -1,5 +1,5 @@
 import { cleanup, render, waitFor } from '@testing-library/svelte';
-import { flushSync, tick, type Component } from 'svelte';
+import { flushSync, tick, unmount as unmountComponent, type Component } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MapStage from './MapStage.svelte';
 
@@ -478,6 +478,37 @@ describe('MapStage boot lifecycle', () => {
 		expect(signal?.aborted).toBe(true);
 		expect(harness.state.maps[0]?.remove).toHaveBeenCalledTimes(1);
 		expect(harness.state.observers[0]?.disconnect).toHaveBeenCalledTimes(1);
+	});
+
+	it('releases the consumer while the map is still live, before MapLibre removal', async () => {
+		const order: string[] = [];
+		const onbeforeremove = vi.fn((map: InstanceType<typeof harness.MapStub>) => {
+			order.push('consumer');
+			expect(map.remove).not.toHaveBeenCalled();
+		});
+		const { view, map } = await bootStage({ onbeforeremove });
+		map.remove.mockImplementation(() => {
+			order.push('map');
+			map.container.replaceChildren();
+		});
+
+		view.unmount();
+
+		expect(onbeforeremove).toHaveBeenCalledExactlyOnceWith(map);
+		expect(order).toEqual(['consumer', 'map']);
+	});
+
+	it('still removes MapLibre exactly once when consumer release throws', async () => {
+		const releaseError = new Error('consumer release failed');
+		const { view, map } = await bootStage({
+			onbeforeremove: () => {
+				throw releaseError;
+			},
+		});
+
+		await expect(unmountComponent(view.component)).rejects.toBe(releaseError);
+		view.unmount();
+		expect(map.remove).toHaveBeenCalledOnce();
 	});
 
 	it('uses one document reload for importer-class retry instead of re-importing in place', async () => {

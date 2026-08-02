@@ -77,6 +77,7 @@
 	import { isMapFocusReady } from './mapFocusReadiness';
 	import { createMapUrlCoordinator, MAP_URL_REWRITE } from './mapUrlCoordinator';
 	import { createMapSelectionController } from './mapSelectionController.svelte';
+	import { attachMapDetailRouteExit } from './mapDetailRouteLifecycle';
 	import { createMapEmphasisController } from './mapEmphasisController.svelte';
 	import { resolveMapHoverPeek } from './mapHoverPeek';
 	import {
@@ -249,7 +250,9 @@
 
 	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
 
-	let map = $state<MapLibreMap | null>(null);
+	// MapLibre is an opaque lifecycle owner. Track handle replacement, never proxy
+	// the instance itself; teardown callbacks must compare and release the exact map.
+	let map = $state.raw<MapLibreMap | null>(null);
 	let mapFailure = $state<{ readonly retry: () => Promise<void> } | null>(null);
 	let vehicleMotion = $state<VehicleMotionController | null>(null);
 	let vehicleMotionMap: MapLibreMap | null = null;
@@ -259,13 +262,44 @@
 	let layerRevision = $state(0);
 	let interactionsMap: MapLibreMap | null = null;
 	let interactionDisposers: readonly (() => void)[] = [];
-	const selectionController = createMapSelectionController();
+	const selectionController = attachMapDetailRouteExit(createMapSelectionController());
 	const emphasisController = createMapEmphasisController(selectionController);
 	const selected = $derived(selectionController.selected);
 	const selectionStack = $derived(selectionController.stack);
 	const hovered = $derived(selectionController.hovered);
 	const detailOpen = $derived(selectionController.detailOpen);
 	$effect(() => () => untrack(() => emphasisController.clear()));
+
+	function releaseMapOwners(m: MapLibreMap): void {
+		if (map !== m) return;
+		const motion = vehicleMotion;
+		const disposers = interactionDisposers;
+		vehicleMotion = null;
+		vehicleMotionMap = null;
+		interactionDisposers = [];
+		interactionsMap = null;
+		map = null;
+
+		const releaseErrors: unknown[] = [];
+		try {
+			motion?.destroy();
+		} catch (error) {
+			releaseErrors.push(error);
+		}
+		for (const dispose of disposers) {
+			try {
+				dispose();
+			} catch (error) {
+				releaseErrors.push(error);
+			}
+		}
+		try {
+			emphasisController.clear(m);
+		} catch (error) {
+			releaseErrors.push(error);
+		}
+		if (releaseErrors.length > 0) throw releaseErrors[0];
+	}
 
 	// Selection-scoped live families are ref-counted leases keyed strictly on the
 	// committed selection. Hover never activates a family or restarts polling.
@@ -908,6 +942,7 @@
 		onstyleload={onMapStyleLoad}
 		onthemerepaint={onMapThemeRepaint}
 		onerror={(failure) => (mapFailure = failure)}
+		onbeforeremove={releaseMapOwners}
 		locale={{
 			'Map.Title': t.mapCanvasLabel,
 			'AttributionControl.ToggleAttribution': t.attributionToggle,

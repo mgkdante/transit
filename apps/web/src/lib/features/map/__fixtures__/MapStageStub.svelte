@@ -13,7 +13,11 @@
 	// Test-only deep-import exception: this fixture is loaded from inside the
 	// MapHero suite's vi.mock factory. Going through $lib/components/map would
 	// cycle back into that factory while it is replacing the barrel's MapStage.
-	import { STOP_EXCEPTION_LAYER, STOPS_LAYER } from '$lib/components/map/stopsLayer';
+	import {
+		STOP_EXCEPTION_LAYER,
+		STOP_EXCEPTION_SOURCE,
+		STOPS_LAYER,
+	} from '$lib/components/map/stopsLayer';
 	import { VEHICLE_BODY_LAYER } from '$lib/components/map/vehicleLayer';
 
 	interface Props {
@@ -22,12 +26,21 @@
 		onstyleload?: (map: unknown) => void;
 		onthemerepaint?: (map: unknown) => void;
 		onerror?: (failure: { kind: 'construct'; retry: () => Promise<void> } | null) => void;
+		onbeforeremove?: (map: unknown) => void;
 		locale?: Record<string, string>;
 		// The rest of MapStage's props are accepted and ignored (camera/theme/etc).
 		[key: string]: unknown;
 	}
 
-	let { onready, onstyleload, onthemerepaint, onerror, locale, class: className }: Props = $props();
+	let {
+		onready,
+		onstyleload,
+		onthemerepaint,
+		onerror,
+		onbeforeremove,
+		locale,
+		class: className,
+	}: Props = $props();
 
 	type Handler = (e: unknown) => void;
 	const handlers = new SvelteMap<string, Handler[]>();
@@ -41,6 +54,12 @@
 	let flyToCount = $state(0);
 	let setMaxBoundsCount = $state(0);
 	let pickLayer = STOPS_LAYER;
+	const sources = new Map<string, { setData: (data: unknown) => void }>([
+		[STOP_EXCEPTION_SOURCE, { setData: () => {} }],
+	]);
+	let style:
+		| { getSource: (id: string) => { setData: (data: unknown) => void } | undefined }
+		| undefined;
 
 	// A minimal fake MapLibre map: enough surface for installMapLayers /
 	// installMapInteractions / pickSelectionAt to run without WebGL.
@@ -59,6 +78,7 @@
 		},
 	};
 	const fakeMap = {
+		getSource: (id: string) => style!.getSource(id),
 		on: (type: string, handler: Handler) => {
 			const list = handlers.get(type) ?? [];
 			list.push(handler);
@@ -152,7 +172,17 @@
 	}
 
 	onMount(() => {
+		style = { getSource: (id) => sources.get(id) };
 		onready?.(fakeMap);
+		return () => {
+			// Model MapLibre `remove()` precisely enough for teardown-order tests:
+			// `setStyle(null)` deletes the internal style before later owners dispose.
+			try {
+				onbeforeremove?.(fakeMap);
+			} finally {
+				style = undefined;
+			}
+		};
 	});
 </script>
 

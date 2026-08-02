@@ -1,8 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { toStopFeatures } from '$lib/components/map/stopsLayer';
+import {
+	setStopException as setRealStopException,
+	toStopFeatures,
+} from '$lib/components/map/stopsLayer';
 import MapHero from './MapHero.svelte';
+import MapHeroNavigationHarness from '../../../routes/__fixtures__/MapHeroNavigationHarness.svelte';
 import { mapHeroReceiptSignals } from './__fixtures__/MapHeroReceiptSignals.svelte';
 
 const harness = vi.hoisted(() => {
@@ -247,6 +251,10 @@ const harness = vi.hoisted(() => {
 		refresh: vi.fn(),
 		subscribeFamilies: vi.fn(() => releaseLease),
 	};
+	const beforeNavigateCallbacks: Array<(navigation: { to: { url: URL } | null }) => void> = [];
+	const beforeNavigate = vi.fn((callback: (navigation: { to: { url: URL } | null }) => void) => {
+		beforeNavigateCallbacks.push(callback);
+	});
 
 	return {
 		alert,
@@ -261,6 +269,12 @@ const harness = vi.hoisted(() => {
 		identityReceivers,
 		goto: vi.fn(async (_target: string, _options?: Record<string, unknown>) => {}),
 		afterNavigate: vi.fn(),
+		beforeNavigate,
+		beforeNavigateCallbacks,
+		runBeforeNavigate(href: string) {
+			const navigation = { to: { url: new URL(href) } };
+			for (const callback of beforeNavigateCallbacks) callback(navigation);
+		},
 		bakeVehicleSprites,
 		bakeLocationPinSprite,
 		addVehicleSource,
@@ -339,7 +353,10 @@ vi.mock('$app/stores', async () => {
 vi.mock('$app/navigation', () => ({
 	goto: harness.goto,
 	afterNavigate: harness.afterNavigate,
+	beforeNavigate: harness.beforeNavigate,
 }));
+
+vi.mock('$env/dynamic/public', () => ({ env: {} }));
 
 vi.mock('$lib/i18n', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/i18n')>();
@@ -379,6 +396,7 @@ vi.mock('$lib/stores', async () => {
 			},
 			set: signals.setMotionMode,
 		},
+		persisted: <T>(_key: string, initial: T) => ({ value: initial }),
 		dataRefresh: {},
 	};
 });
@@ -519,6 +537,7 @@ afterEach(() => {
 	harness.resetStopsIndex();
 	harness.setLiveVehicleVisible(true);
 	harness.captureDetailFilter(null);
+	harness.beforeNavigateCallbacks.length = 0;
 	harness.identityReceivers.length = 0;
 	harness.locale = 'en';
 	harness.isDesktop = false;
@@ -845,6 +864,157 @@ describe('MapHero detail-panel camera isolation (protect #11)', () => {
 		expect(cameraCounts()).toEqual(baselineStub);
 		expect(focusCalls()).toBe(baselineFocus);
 		expect(fitCalls()).toBe(baselineFit);
+	});
+});
+
+describe('MapHero route-exit detail teardown (M6H)', () => {
+	it.each([
+		['desktop', true, '[data-slot="map-detail-overlay"]'],
+		['mobile', false, '[data-slot="bottom-sheet"]'],
+	] as const)(
+		'commits the real /lines surface with zero uncaught errors after a panel-open %s map exit',
+		async (_viewport, isDesktop, panelSelector) => {
+			harness.isDesktop = isDesktop;
+			const defaultSetStopException = harness.setStopException.getMockImplementation();
+			harness.setStopException.mockImplementation(
+				setRealStopException as unknown as NonNullable<typeof defaultSetStopException>,
+			);
+			const pageErrors: unknown[] = [];
+			const recordError = (event: ErrorEvent) => pageErrors.push(event.error ?? event.message);
+			const recordRejection = (event: PromiseRejectionEvent) => pageErrors.push(event.reason);
+			window.addEventListener('error', recordError);
+			window.addEventListener('unhandledrejection', recordRejection);
+
+			try {
+				const view = render(MapHeroNavigationHarness, { props: { route: 'map' } });
+				await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+				await waitFor(() => expect(document.querySelector(panelSelector)).toBeInTheDocument());
+
+				harness.runBeforeNavigate('http://localhost/lines');
+				await tick();
+				try {
+					await view.rerender({ route: 'lines' });
+					await tick();
+				} catch (error) {
+					// Happy DOM has no Playwright `pageerror`; a rejected route commit is the
+					// equivalent uncaught browser error and belongs in the same receipt.
+					pageErrors.push(error);
+				}
+
+				expect.soft(pageErrors).toEqual([]);
+				const destinationHeading = screen.queryByRole('heading', { level: 1, name: 'Lines' });
+				const destinationShell = document.querySelector('[data-slot="listing-page-shell"]');
+				expect.soft(destinationHeading).toBeInTheDocument();
+				expect.soft(destinationShell).toBeInTheDocument();
+				expect.soft(document.querySelector('.map-hero')).not.toBeInTheDocument();
+				if (!isDesktop) {
+					const destinationDisclosure = document.querySelector(
+						'[data-slot="listing-filter-body"].collapsible-content[data-state="closed"]',
+					);
+					expect.soft(destinationDisclosure).toHaveAttribute('inert');
+					expect.soft(destinationDisclosure).toHaveAttribute('aria-hidden', 'true');
+					expect.soft([...document.querySelectorAll('[inert]')]).toEqual([destinationDisclosure]);
+					expect.soft(destinationHeading?.closest('[inert], [aria-hidden="true"]')).toBeNull();
+					expect.soft(destinationShell?.closest('[inert], [aria-hidden="true"]')).toBeNull();
+				}
+			} finally {
+				window.removeEventListener('error', recordError);
+				window.removeEventListener('unhandledrejection', recordRejection);
+				if (defaultSetStopException) {
+					harness.setStopException.mockImplementation(defaultSetStopException);
+				}
+			}
+		},
+	);
+
+	it('continues releasing later map owners when an earlier cleanup throws', async () => {
+		harness.isDesktop = true;
+		const view = render(MapHeroNavigationHarness, { props: { route: 'map' } });
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+		await waitFor(() =>
+			expect(document.querySelector('[data-slot="map-detail-overlay"]')).toBeInTheDocument(),
+		);
+		harness.runBeforeNavigate('http://localhost/lines');
+		await tick();
+
+		const teardownError = new Error('motion cleanup failed');
+		const exceptionCallsBeforeTeardown = harness.setStopException.mock.calls.length;
+		harness.motionDestroy.mockImplementationOnce(() => {
+			throw teardownError;
+		});
+		let receivedError: unknown;
+		try {
+			await view.rerender({ route: 'lines' });
+			await tick();
+		} catch (error) {
+			receivedError = error;
+		}
+
+		expect(receivedError).toBe(teardownError);
+		expect(harness.setStopException.mock.calls.length).toBe(exceptionCallsBeforeTeardown + 1);
+	});
+
+	it('closes the desktop panel and clears the published rail offset before leaving /map', async () => {
+		harness.isDesktop = true;
+		render(MapHero);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+
+		await waitFor(() => {
+			expect(document.querySelector('[data-slot="map-detail-overlay"]')).toBeInTheDocument();
+			expect(
+				document.documentElement.style.getPropertyValue('--app-effective-rail-offset'),
+			).not.toBe('0px');
+		});
+		const publishedOffset = document.documentElement.style.getPropertyValue(
+			'--app-effective-rail-offset',
+		);
+		const gotoCalls = harness.goto.mock.calls.length;
+
+		// Same-route filter rewrites are part of opening/using the map, not an exit.
+		harness.runBeforeNavigate('http://localhost/map?route=24&vehicle=bus-1');
+		await tick();
+		expect(document.querySelector('[data-slot="map-detail-overlay"]')).toBeInTheDocument();
+		expect(document.documentElement.style.getPropertyValue('--app-effective-rail-offset')).toBe(
+			publishedOffset,
+		);
+
+		harness.runBeforeNavigate('http://localhost/lines');
+		await tick();
+
+		expect.soft(document.querySelector('[data-slot="map-detail-overlay"]')).toBeNull();
+		expect
+			.soft(document.documentElement.style.getPropertyValue('--app-effective-rail-offset'))
+			.toBe('0px');
+		expect(harness.goto).toHaveBeenCalledTimes(gotoCalls);
+	});
+
+	it('destroys the mobile sheet lock before route commit and leaves no map-owned inert residue', async () => {
+		const view = render(MapHero);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+		await waitFor(() =>
+			expect(document.querySelector('[data-slot="bottom-sheet"]')).toBeInTheDocument(),
+		);
+
+		const destinationDisclosure = document.createElement('div');
+		destinationDisclosure.dataset.slot = 'listing-filter-body';
+		destinationDisclosure.dataset.state = 'closed';
+		destinationDisclosure.setAttribute('inert', '');
+		document.body.append(destinationDisclosure);
+
+		harness.runBeforeNavigate('http://localhost/lines');
+		await tick();
+		await new Promise((resolve) => setTimeout(resolve, 80));
+
+		expect.soft(document.querySelector('[data-slot="bottom-sheet"]')).toBeNull();
+		expect.soft(document.body.style.overflow).not.toBe('hidden');
+		expect(harness.goto).toHaveBeenCalledOnce();
+
+		// Model the destination commit. `/lines` deliberately owns one inert closed
+		// disclosure; the regression is stale map/modal isolation, not valid inert UI.
+		view.unmount();
+		await tick();
+		await new Promise((resolve) => setTimeout(resolve, 80));
+		expect([...document.querySelectorAll('[inert]')]).toEqual([destinationDisclosure]);
 	});
 });
 
