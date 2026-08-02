@@ -1,11 +1,12 @@
 // map/vehicleSprites.ts — browser-only canvas baker for vehicle + stop icons.
 //
 // A vehicle is a single PAINTED BUS pictogram — the filter REPAINTS the bus
-// fill (default orange → a status/occupancy colour) and HIDES non-matches, so
-// colour alone carries state and the map stays uncluttered. The bus glyph is
-// baked UPRIGHT and legible at every bearing: heading is rendered by a SEPARATE
-// rotated CHEVRON layer (see vehicleLayer.ts) that points the way the bus is
-// going, so the bus-front never reads upside-down. SHAPE encodes the entity:
+// fill (default orange → a status/occupancy colour) and HIDES non-matches. A
+// separate neutral vector state badge preserves a shape channel, so colour is
+// never the only state signal. The bus glyph is baked UPRIGHT and legible at every bearing:
+// heading is rendered by a SEPARATE rotated CHEVRON layer (see vehicleLayer.ts)
+// that points the way the bus is going, so the bus-front never reads upside-down.
+// SHAPE encodes the entity:
 //   · bus → a BUS-FRONT pictogram (PAINTED with the bus fill);
 //   · heading → a small CHEVRON (separate rotated layer; ONE sprite, neutral);
 //   · stop → a MAP-PIN pictogram (PAINTED with --map-stop-fill).
@@ -20,10 +21,20 @@ import {
 	type StatusCode,
 	type OccupancyCode,
 } from '$lib/v1/schemas';
-import { statusVar, occupancyVar } from '$lib/components/dataviz';
+import { STATUS_GLYPH, occupancyGlyph, occupancyVar, statusVar } from '$lib/components/dataviz';
+
+/** Frozen marker geometry: the map layer and non-Chromium receipt runner share this table. */
+export const VEHICLE_MARKER_GEOMETRY = Object.freeze({
+	box: 26,
+	bodyIconSize: Object.freeze({ z11: 0.78, z15: 1.3 }),
+	stateBadge: Object.freeze({ offset: Object.freeze([0, 20] as const), scale: 0.6 }),
+	silentBadge: Object.freeze({ offset: Object.freeze([0, -16] as const), scale: 0.75 }),
+	chevronAnnulus: Object.freeze({ inner: 4.9, outer: 10.8 }),
+	plateMargin: 2.4,
+});
 
 /** Logical icon box (px); baked at RATIO for retina crispness. */
-const SIZE = 26;
+const SIZE = VEHICLE_MARKER_GEOMETRY.box;
 /** Bake at the device pixel ratio (>=2) so glyphs stay crisp on retina. */
 const RATIO =
 	typeof window !== 'undefined' ? Math.max(2, Math.ceil(window.devicePixelRatio || 1)) : 2;
@@ -229,7 +240,7 @@ function silentBadgeImage(fill: string, halo: string): ImageData {
 	// Badge background — a rounded square filling most of the box (small margin so
 	// the halo ring stays inside the sprite). This is the prominent alert plate the
 	// fat "!" sits on, high-contrast against any bus colour beneath it.
-	const margin = 2.4;
+	const margin = VEHICLE_MARKER_GEOMETRY.plateMargin;
 	const side = SIZE - margin * 2;
 	roundedRect(ctx, margin, margin, side, side, side * 0.28);
 	ctx.fillStyle = fill;
@@ -260,15 +271,178 @@ function silentBadgeImage(fill: string, halo: string): ImageData {
 export const bodyIconId = (mode: 'status' | 'occupancy', code: string): string =>
 	`veh-${mode === 'status' ? 's' : 'o'}-${code}`;
 
+/** The compact glyph plate layered above a status/occupancy-painted bus body. */
+export const stateBadgeIconId = (mode: 'status' | 'occupancy', code: string): string =>
+	`veh-m-${mode === 'status' ? 's' : 'o'}-${code}`;
+
+export type StateBadgeReceipt = Readonly<{
+	stateBadges: Readonly<Record<string, number>>;
+	stateBadgeImages: Readonly<Record<string, ImageData>>;
+	stateGlyphMasks: Readonly<Record<string, number>>;
+	stateGlyphMaskImages: Readonly<Record<string, ImageData>>;
+}>;
+
+/**
+ * Count alpha-painted canvas pixels from an actual baked image (registered badge
+ * or glyph-only mask), normalize its DPR, then apply the frozen MapLibre
+ * state-badge scale. This stays pure so a non-Chromium runner can consume real
+ * ImageData without browser rasterization.
+ */
+export function countStateBadgePaintedPixels(image: ImageData): number {
+	if (image.width !== image.height || image.width % SIZE !== 0) {
+		throw new Error('[vehicleSprites] state badge image must be a square 26px DPR multiple');
+	}
+	const ratio = image.width / SIZE;
+	let opaquePixels = 0;
+	for (let index = 3; index < image.data.length; index += 4) {
+		if (image.data[index] > 0) opaquePixels += 1;
+	}
+	return Number(
+		((opaquePixels / ratio ** 2) * VEHICLE_MARKER_GEOMETRY.stateBadge.scale ** 2).toFixed(6),
+	);
+}
+
+function drawStateGlyph(
+	ctx: CanvasRenderingContext2D,
+	glyph: string,
+	paint: string,
+	holeFill: string | null,
+): void {
+	const c = SIZE / 2;
+	const side = SIZE - VEHICLE_MARKER_GEOMETRY.plateMargin * 2;
+	const left = VEHICLE_MARKER_GEOMETRY.plateMargin;
+	const top = left;
+	ctx.fillStyle = paint;
+
+	if (glyph === STATUS_GLYPH.early) {
+		ctx.beginPath();
+		ctx.moveTo(c, top + side * 0.72);
+		ctx.lineTo(left + side * 0.27, top + side * 0.3);
+		ctx.lineTo(left + side * 0.73, top + side * 0.3);
+		ctx.closePath();
+		ctx.fill();
+		return;
+	}
+	if (glyph === STATUS_GLYPH.on_time) {
+		ctx.beginPath();
+		ctx.arc(c, c, side * 0.18, 0, Math.PI * 2);
+		ctx.fill();
+		return;
+	}
+	if (glyph === STATUS_GLYPH.late) {
+		ctx.beginPath();
+		ctx.moveTo(c, top + side * 0.28);
+		ctx.lineTo(left + side * 0.27, top + side * 0.7);
+		ctx.lineTo(left + side * 0.73, top + side * 0.7);
+		ctx.closePath();
+		ctx.fill();
+		return;
+	}
+	if (glyph === STATUS_GLYPH.severe) {
+		ctx.beginPath();
+		ctx.moveTo(c, top + side * 0.23);
+		ctx.lineTo(left + side * 0.77, c);
+		ctx.lineTo(c, top + side * 0.77);
+		ctx.lineTo(left + side * 0.23, c);
+		ctx.closePath();
+		ctx.fill();
+		return;
+	}
+	if (glyph === STATUS_GLYPH.unknown) {
+		ctx.beginPath();
+		ctx.arc(c, c, side * 0.22, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.beginPath();
+		ctx.arc(c, c, side * 0.11, 0, Math.PI * 2);
+		if (holeFill === null) {
+			ctx.save();
+			ctx.globalCompositeOperation = 'destination-out';
+			ctx.fill();
+			ctx.restore();
+		} else {
+			ctx.fillStyle = holeFill;
+			ctx.fill();
+		}
+		return;
+	}
+	if (glyph === occupancyGlyph('full')) {
+		const inset = 2.8;
+		const near = Math.round((left + inset) * 10) / 10;
+		const far = Math.round((left + side - inset) * 10) / 10;
+		ctx.strokeStyle = paint;
+		ctx.lineWidth = 2.4;
+		ctx.beginPath();
+		ctx.moveTo(near, near);
+		ctx.lineTo(far, near);
+		ctx.lineTo(far, far);
+		ctx.lineTo(near, far);
+		ctx.closePath();
+		ctx.stroke();
+		ctx.beginPath();
+		ctx.moveTo(near, near);
+		ctx.lineTo(far, far);
+		ctx.moveTo(far, near);
+		ctx.lineTo(near, far);
+		ctx.stroke();
+		return;
+	}
+
+	let occupancyHeight: number;
+	if (glyph === occupancyGlyph('empty')) occupancyHeight = 0.12;
+	else if (glyph === occupancyGlyph('many_seats')) occupancyHeight = 0.28;
+	else if (glyph === occupancyGlyph('few_seats')) occupancyHeight = 0.45;
+	else if (glyph === occupancyGlyph('standing')) occupancyHeight = 0.62;
+	else throw new Error(`[vehicleSprites] unrecognized state glyph: ${glyph}`);
+	const h = side * occupancyHeight;
+	roundedRect(ctx, left + side * 0.2, top + side * 0.78 - h, side * 0.6, h, Math.min(1.2, h / 2));
+	ctx.fill();
+}
+
+/** Bake a compact halo-cut state mark using only vector paths, never font glyphs. */
+function stateBadgeImage(glyph: string, fill: string, halo: string): ImageData {
+	const { ctx, px } = newCtx();
+	ctx.lineJoin = 'round';
+	ctx.lineCap = 'round';
+
+	const margin = VEHICLE_MARKER_GEOMETRY.plateMargin;
+	const side = SIZE - margin * 2;
+	roundedRect(ctx, margin, margin, side, side, side * 0.28);
+	ctx.fillStyle = fill;
+	ctx.fill();
+	ctx.lineWidth = 2;
+	ctx.strokeStyle = halo;
+	ctx.stroke();
+	drawStateGlyph(ctx, glyph, halo, fill);
+
+	return ctx.getImageData(0, 0, px, px);
+}
+
+/** Bake only the shared vector glyph path on transparency for pixel-threshold receipts. */
+function stateGlyphMaskImage(glyph: string, fill: string): ImageData {
+	const { ctx, px } = newCtx();
+	ctx.lineJoin = 'round';
+	ctx.lineCap = 'round';
+	drawStateGlyph(ctx, glyph, fill, null);
+	return ctx.getImageData(0, 0, px, px);
+}
+
 /**
  * Bake + register every vehicle icon: the default orange bus, plus one painted
  * bus per status code and per occupancy code (the "repaint" palette the filter
  * swaps in), the single directional chevron, the per-bus silent "!" badge, and
  * the stop map-pin. Idempotent (re-removes before adding, so it re-bakes on a
- * theme change). Browser-only.
+ * theme change). Browser-only. Returns distinct alpha-derived registered-badge
+ * and glyph-mask receipts; threshold runners derive provenance from the exact
+ * `stateGlyphMaskImages` whose counts are recorded in `stateGlyphMasks`.
  */
-export function bakeVehicleSprites(map: MapLibreMap): void {
+export function bakeVehicleSprites(map: MapLibreMap): StateBadgeReceipt {
 	const busHalo = resolveColor(BUS_HALO_TOKEN, BUS_HALO_FALLBACK);
+	const stateBadgeFill = resolveColor(SILENT_FILL_TOKEN, SILENT_FILL_FALLBACK);
+	const stateBadgeHalo = resolveColor(SILENT_HALO_TOKEN, SILENT_HALO_FALLBACK);
+	const stateBadges: Record<string, number> = {};
+	const stateBadgeImages: Record<string, ImageData> = {};
+	const stateGlyphMasks: Record<string, number> = {};
+	const stateGlyphMaskImages: Record<string, ImageData> = {};
 	const add = (id: string, img: ImageData) => {
 		if (map.hasImage(id)) map.removeImage(id);
 		map.addImage(id, img, { pixelRatio: RATIO });
@@ -282,6 +456,30 @@ export function bakeVehicleSprites(map: MapLibreMap): void {
 
 	for (const code of OCCUPANCY_CODES as readonly OccupancyCode[]) {
 		addBus(bodyIconId('occupancy', code), resolveColor(occupancyVar(code), '#7a5fb0'));
+	}
+
+	for (const code of STATUS_CODES as readonly StatusCode[]) {
+		const id = stateBadgeIconId('status', code);
+		const glyph = STATUS_GLYPH[code];
+		const image = stateBadgeImage(glyph, stateBadgeFill, stateBadgeHalo);
+		const mask = stateGlyphMaskImage(glyph, stateBadgeHalo);
+		stateBadges[id] = countStateBadgePaintedPixels(image);
+		stateBadgeImages[id] = image;
+		stateGlyphMaskImages[id] = mask;
+		stateGlyphMasks[id] = countStateBadgePaintedPixels(mask);
+		add(id, image);
+	}
+
+	for (const code of OCCUPANCY_CODES as readonly OccupancyCode[]) {
+		const id = stateBadgeIconId('occupancy', code);
+		const glyph = occupancyGlyph(code);
+		const image = stateBadgeImage(glyph, stateBadgeFill, stateBadgeHalo);
+		const mask = stateGlyphMaskImage(glyph, stateBadgeHalo);
+		stateBadges[id] = countStateBadgePaintedPixels(image);
+		stateBadgeImages[id] = image;
+		stateGlyphMaskImages[id] = mask;
+		stateGlyphMasks[id] = countStateBadgePaintedPixels(mask);
+		add(id, image);
 	}
 
 	// Default (no filter) — yesid brand orange (--primary).
@@ -311,4 +509,11 @@ export function bakeVehicleSprites(map: MapLibreMap): void {
 	const stopFill = resolveColor(STOP_FILL_TOKEN, STOP_FILL_FALLBACK);
 	const stopHalo = resolveColor(STOP_HALO_TOKEN, STOP_HALO_FALLBACK);
 	add(STOP_ICON, stopPinImage(stopFill, stopHalo));
+
+	return Object.freeze({
+		stateBadges: Object.freeze(stateBadges),
+		stateBadgeImages: Object.freeze(stateBadgeImages),
+		stateGlyphMasks: Object.freeze(stateGlyphMasks),
+		stateGlyphMaskImages: Object.freeze(stateGlyphMaskImages),
+	});
 }

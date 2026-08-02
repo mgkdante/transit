@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compile } from 'svelte/compiler';
 import { describe, expect, it, vi } from 'vitest';
+import { occupancyGlyph } from '$lib/components/dataviz';
 import { buildLiveIndex } from '$lib/v1/live';
 import type { Alert, IsoUtc, RouteFile, StopFile, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
 import MapSelectionDetail from './MapSelectionDetail.svelte';
@@ -123,6 +124,37 @@ function expectHard44(element: Element): void {
 		Math.max(cssFloorPx(computed.minBlockSize), cssFloorPx(computed.minHeight)),
 		`${element.tagName.toLowerCase()}.${element.className} lacks a 44px floor`,
 	).toBeGreaterThanOrEqual(44);
+}
+
+function detailValue(container: HTMLElement, label: string): HTMLElement {
+	const term = [...container.querySelectorAll('dt')].find((node) => node.textContent === label);
+	const value = term?.parentElement?.querySelector<HTMLElement>('dd');
+	if (!value) throw new Error(`missing detail value for ${label}`);
+	return value;
+}
+
+function expectHiddenGlyph(
+	value: HTMLElement,
+	kind: 'status' | 'crowding',
+	code: string,
+	glyph: string,
+): void {
+	const node = value.querySelector<HTMLElement>(
+		`[data-m6d-glyph-kind="${kind}"][data-m6d-glyph-code="${code}"]`,
+	);
+	expect(node?.textContent).toBe(glyph);
+	expect(node).toHaveAttribute('aria-hidden', 'true');
+}
+
+function expectAccessibleContentName(value: HTMLElement, expected: string): void {
+	const probe = document.createElement('button');
+	probe.replaceChildren(...Array.from(value.childNodes, (node) => node.cloneNode(true)));
+	document.body.append(probe);
+	try {
+		expect(probe).toHaveAccessibleName(expected);
+	} finally {
+		probe.remove();
+	}
 }
 
 const vehicles: Vehicle[] = [
@@ -340,8 +372,136 @@ describe('MapSelectionDetail', () => {
 		expect(chips).not.toHaveTextContent('Late');
 		expect(chips).not.toHaveTextContent('Standing');
 		expect(chips).not.toHaveTextContent('Trip trip-24-a');
-		expect(container.querySelector('[data-slot="detail-status-band"]')).toHaveTextContent('Late');
+		const statusBand = container.querySelector<HTMLElement>('[data-slot="detail-status-band"]')!;
+		expect(statusBand).toHaveTextContent('▲ Late');
+		expect(statusBand).toHaveTextContent(`${occupancyGlyph('standing')} Standing`);
 	});
+
+	it.each([
+		{
+			locale: 'en',
+			statusLabel: 'Status',
+			crowdingLabel: 'Crowding',
+			status: '▲ Late',
+			statusName: 'Late',
+			occupancyName: 'Standing',
+		},
+		{
+			locale: 'fr',
+			statusLabel: 'Statut',
+			crowdingLabel: 'Achalandage',
+			status: '▲ En retard',
+			statusName: 'En retard',
+			occupancyName: 'Debout',
+		},
+	] as const)(
+		'prefixes normal $locale status-band values with hidden canonical glyphs',
+		({ locale, statusLabel, crowdingLabel, status, statusName, occupancyName }) => {
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{ index, stops, alerts, routes },
+			);
+			const { container } = render(MapSelectionDetail, { props: { detail, locale } });
+			const statusValue = detailValue(container, statusLabel);
+			const occupancyValue = detailValue(container, crowdingLabel);
+
+			expect(statusValue).toHaveTextContent(status);
+			expect(occupancyValue).toHaveTextContent(`${occupancyGlyph('standing')} ${occupancyName}`);
+			expectHiddenGlyph(statusValue, 'status', 'late', '▲');
+			expectHiddenGlyph(occupancyValue, 'crowding', 'standing', occupancyGlyph('standing'));
+			expectAccessibleContentName(statusValue, statusName);
+			expectAccessibleContentName(occupancyValue, occupancyName);
+		},
+	);
+
+	it.each([
+		{ locale: 'en', crowdingLabel: 'Crowding', name: 'Full' },
+		{ locale: 'fr', crowdingLabel: 'Achalandage', name: 'Plein' },
+	] as const)(
+		'renders the terminal full mark as the hidden canonical glyph in $locale',
+		({ locale, crowdingLabel, name }) => {
+			const fullIndex = buildLiveIndex({
+				vehicles: {
+					generated_utc: utc('2026-06-15T00:00:00Z'),
+					vehicles: [{ ...vehicles[0]!, id: 'veh-full', occupancy: 'full' }],
+				},
+				trips: { generated_utc: utc('2026-06-15T00:00:00Z'), trips: {} },
+				stopDepartures: { generated_utc: utc('2026-06-15T00:00:00Z'), stops: {} },
+			});
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-full' },
+				{ index: fullIndex, stops, alerts, routes },
+			);
+			const { container } = render(MapSelectionDetail, { props: { detail, locale } });
+			const occupancyValue = detailValue(container, crowdingLabel);
+			const glyph = occupancyGlyph('full');
+
+			expect(occupancyValue).toHaveTextContent(`${glyph} ${name}`);
+			expectHiddenGlyph(occupancyValue, 'crowding', 'full', glyph);
+			expectAccessibleContentName(occupancyValue, name);
+		},
+	);
+
+	it.each([
+		{
+			locale: 'en',
+			statusLabel: 'Status',
+			crowdingLabel: 'Crowding',
+			status: '○ Unknown',
+			unknown: 'Unknown',
+			reason: 'not reported in the live feed',
+			occupancyName: 'Unknown, not reported in the live feed',
+			empty: 'Empty',
+		},
+		{
+			locale: 'fr',
+			statusLabel: 'Statut',
+			crowdingLabel: 'Achalandage',
+			status: '○ Inconnu',
+			unknown: 'Inconnu',
+			reason: 'non signalé dans le flux',
+			occupancyName: 'Inconnu, non signalé dans le flux en direct',
+			empty: 'Vide',
+		},
+	] as const)(
+		'keeps null occupancy honest with the no-data glyph in $locale',
+		({ locale, statusLabel, crowdingLabel, status, unknown, reason, occupancyName, empty }) => {
+			const nullOccupancyIndex = buildLiveIndex({
+				vehicles: {
+					generated_utc: utc('2026-06-15T00:00:00Z'),
+					vehicles: [
+						{
+							...vehicles[0]!,
+							id: 'veh-no-occupancy',
+							status: 'unknown',
+							occupancy: null,
+						},
+					],
+				},
+				trips: { generated_utc: utc('2026-06-15T00:00:00Z'), trips: {} },
+				stopDepartures: { generated_utc: utc('2026-06-15T00:00:00Z'), stops: {} },
+			});
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-no-occupancy' },
+				{ index: nullOccupancyIndex, stops, alerts, routes },
+			);
+			const { container } = render(MapSelectionDetail, { props: { detail, locale } });
+			const statusValue = detailValue(container, statusLabel);
+			const occupancyValue = detailValue(container, crowdingLabel);
+			const noDataGlyph = occupancyGlyph(null);
+
+			expect(statusValue).toHaveTextContent(status);
+			expect(occupancyValue).toHaveTextContent(noDataGlyph);
+			expect(occupancyValue).toHaveTextContent(unknown);
+			expect(occupancyValue).toHaveTextContent(reason);
+			expect(occupancyValue).not.toHaveTextContent(occupancyGlyph('empty'));
+			expect(occupancyValue).not.toHaveTextContent(empty);
+			expectHiddenGlyph(statusValue, 'status', 'unknown', '○');
+			expectHiddenGlyph(occupancyValue, 'crowding', 'nodata', noDataGlyph);
+			expectAccessibleContentName(statusValue, unknown);
+			expectAccessibleContentName(occupancyValue, occupancyName);
+		},
+	);
 
 	it('marks stop routes as the 420px rung and full departures as the 560px rung', () => {
 		const detail = resolveMapSelection(
@@ -968,13 +1128,18 @@ describe('MapSelectionDetail', () => {
 		const onselect = vi.fn();
 		const onfilter = vi.fn();
 		const onalertselect = vi.fn();
-		const { getAllByRole, getAllByText, getByRole, getByText } = render(MapSelectionDetail, {
-			props: { detail, locale: 'en', onselect, onfilter, onalertselect },
-		});
+		const { container, getAllByRole, getAllByText, getByRole, getByText } = render(
+			MapSelectionDetail,
+			{
+				props: { detail, locale: 'en', onselect, onfilter, onalertselect },
+			},
+		);
 
 		expect(getByRole('button', { name: 'Select bus veh-1' })).toBeInTheDocument();
-		expect(getByText('Late')).toBeInTheDocument();
-		expect(getAllByText('Standing').length).toBeGreaterThan(0);
+		expect(detailValue(container, 'Status')).toHaveTextContent('▲ Late');
+		expect(detailValue(container, 'Crowding')).toHaveTextContent(
+			`${occupancyGlyph('standing')} Standing`,
+		);
 		expect(getByText('Past stops')).toBeInTheDocument();
 		expect(getByText('Next stops')).toBeInTheDocument();
 		expect(getByText('Sherbrooke / Saint-Denis')).toBeInTheDocument();

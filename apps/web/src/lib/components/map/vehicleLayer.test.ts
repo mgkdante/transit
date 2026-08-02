@@ -8,6 +8,7 @@ import type { VehicleSilenceContext } from './vehicleLayer';
 import {
 	addVehicleLayers,
 	ICON_SIZE_Z11_DEFAULT,
+	mapLibreRawIconOffset,
 	SILENT_BADGE_SCALE,
 	SILENT_ICON_SIZE_Z11,
 	SILENT_ICON_SIZE_Z15,
@@ -16,10 +17,17 @@ import {
 	VEHICLE_HIGHLIGHT_LAYER,
 	VEHICLE_SILENT_LAYER,
 	VEHICLE_SOURCE,
+	VEHICLE_STATE_BADGE_LAYER,
 	setStale,
 	toVehicleFeatures,
 } from './vehicleLayer';
-import { HEADING_ICON, SILENT_ICON } from './vehicleSprites';
+import {
+	BUS_ICON,
+	HEADING_ICON,
+	SILENT_ICON,
+	stateBadgeIconId,
+	VEHICLE_MARKER_GEOMETRY,
+} from './vehicleSprites';
 import { STALE_CUTOFF_S } from './vehicleProjection';
 
 function usesTopLevelZoomExpression(value: unknown): boolean {
@@ -132,7 +140,7 @@ describe('toVehicleFeatures entity filtering', () => {
 
 		addVehicleLayers(map);
 
-		for (const id of [VEHICLE_BODY_LAYER, VEHICLE_HEADING_LAYER]) {
+		for (const id of [VEHICLE_BODY_LAYER, VEHICLE_HEADING_LAYER, VEHICLE_STATE_BADGE_LAYER]) {
 			const paint = (layers.find((l) => l.id === id)?.paint ?? {}) as Record<string, unknown>;
 			const opacity = JSON.stringify(paint['icon-opacity']);
 			expect(opacity).toContain('feature-state');
@@ -153,7 +161,11 @@ describe('toVehicleFeatures entity filtering', () => {
 			const setPaintProperty = vi.fn();
 			const map = {
 				getLayer: (id: string) =>
-					id === VEHICLE_BODY_LAYER || id === VEHICLE_HEADING_LAYER ? { id } : undefined,
+					id === VEHICLE_BODY_LAYER ||
+					id === VEHICLE_HEADING_LAYER ||
+					id === VEHICLE_STATE_BADGE_LAYER
+						? { id }
+						: undefined,
 				setPaintProperty,
 			} as unknown as MapLibreMap;
 			const expectedOpacity = [
@@ -172,9 +184,148 @@ describe('toVehicleFeatures entity filtering', () => {
 			expect(setPaintProperty.mock.calls).toEqual([
 				[VEHICLE_BODY_LAYER, 'icon-opacity', expectedOpacity],
 				[VEHICLE_HEADING_LAYER, 'icon-opacity', expectedOpacity],
+				[VEHICLE_STATE_BADGE_LAYER, 'icon-opacity', expectedOpacity],
 			]);
+			expect(setPaintProperty).not.toHaveBeenCalledWith(
+				VEHICLE_SILENT_LAYER,
+				'icon-opacity',
+				expect.anything(),
+			);
 		},
 	);
+
+	it('serializes the exact state badge mark for every filter mode with status precedence', () => {
+		const [vehicle] = [
+			{
+				id: 'stateful',
+				lat: 45.5,
+				lon: -73.6,
+				status: 'on_time',
+				occupancy: 'full',
+				updated_utc: '2026-06-15T00:00:00Z',
+			},
+		].map((candidate) => VehicleSchema.parse(candidate));
+		const cases = [
+			['default', EMPTY_FILTER, '', 1, BUS_ICON],
+			['entity-only', { ...EMPTY_FILTER, entities: ['bus'] } as FilterState, '', 1, BUS_ICON],
+			[
+				'status',
+				{ ...EMPTY_FILTER, status: ['on_time'] } as FilterState,
+				stateBadgeIconId('status', 'on_time'),
+				1,
+				'veh-s-on_time',
+			],
+			[
+				'occupancy',
+				{ ...EMPTY_FILTER, occupancy: ['full'] } as FilterState,
+				stateBadgeIconId('occupancy', 'full'),
+				1,
+				'veh-o-full',
+			],
+			[
+				'both-active status precedence',
+				{ ...EMPTY_FILTER, status: ['on_time'], occupancy: ['full'] } as FilterState,
+				stateBadgeIconId('status', 'on_time'),
+				1,
+				'veh-s-on_time',
+			],
+			['unmatched', { ...EMPTY_FILTER, status: ['early'] } as FilterState, '', 0, BUS_ICON],
+		] as const;
+
+		for (const [name, filter, mark, matched, body] of cases) {
+			const properties = toVehicleFeatures([vehicle], filter).features[0].properties;
+			expect(properties, name).toMatchObject({ mark, matched, body });
+			expect(properties, `${name} mark property`).toHaveProperty('mark');
+		}
+
+		const withoutTelemetry = VehicleSchema.parse({ ...vehicle, occupancy: null });
+		const nullProperties = toVehicleFeatures([withoutTelemetry], {
+			...EMPTY_FILTER,
+			occupancy: ['full'],
+		}).features[0].properties;
+		expect(nullProperties).toMatchObject({ mark: '', matched: 0, body: BUS_ICON });
+		expect(nullProperties).toHaveProperty('mark');
+	});
+
+	it('adds exactly one dynamic state-badge layer from the frozen geometry table', () => {
+		const layers: LayerSpecification[] = [];
+		const map = {
+			getLayer: () => undefined,
+			addLayer: (nextLayer: LayerSpecification) => {
+				layers.push(nextLayer);
+			},
+		} as unknown as MapLibreMap;
+
+		addVehicleLayers(map);
+
+		expect(layers.map(({ id }) => id)).toEqual([
+			VEHICLE_HIGHLIGHT_LAYER,
+			VEHICLE_BODY_LAYER,
+			VEHICLE_HEADING_LAYER,
+			VEHICLE_STATE_BADGE_LAYER,
+			VEHICLE_SILENT_LAYER,
+		]);
+		expect(layers.filter(({ id }) => id === VEHICLE_STATE_BADGE_LAYER)).toHaveLength(1);
+		const badge = layers.find(({ id }) => id === VEHICLE_STATE_BADGE_LAYER);
+		expect(badge).toBeDefined();
+		if (!badge) throw new Error('expected vehicle state-badge layer');
+		expect(badge).toMatchObject({
+			id: VEHICLE_STATE_BADGE_LAYER,
+			type: 'symbol',
+			source: VEHICLE_SOURCE,
+			filter: ['all', ['==', ['get', 'matched'], 1], ['!=', ['get', 'mark'], '']],
+		});
+		const layout = (badge.layout ?? {}) as Record<string, unknown>;
+		const rawStateOffset = mapLibreRawIconOffset(
+			VEHICLE_MARKER_GEOMETRY.stateBadge.offset,
+			VEHICLE_MARKER_GEOMETRY.stateBadge.scale,
+		);
+		expect(layout).toMatchObject({
+			'icon-image': ['get', 'mark'],
+			'icon-offset': rawStateOffset,
+			'icon-allow-overlap': true,
+			'icon-ignore-placement': true,
+		});
+		expect(layout['icon-size']).toEqual([
+			'interpolate',
+			['linear'],
+			['zoom'],
+			11,
+			VEHICLE_MARKER_GEOMETRY.bodyIconSize.z11 * VEHICLE_MARKER_GEOMETRY.stateBadge.scale,
+			15,
+			VEHICLE_MARKER_GEOMETRY.bodyIconSize.z15 * VEHICLE_MARKER_GEOMETRY.stateBadge.scale,
+		]);
+		const body = layers.find(({ id }) => id === VEHICLE_BODY_LAYER);
+		expect((body?.layout as Record<string, unknown>)['icon-image']).toEqual(['get', 'body']);
+	});
+
+	it('normalizes the semantic state offset for MapLibre and clears the heading annulus', () => {
+		expect(VEHICLE_MARKER_GEOMETRY.stateBadge).toEqual({ offset: [0, 20], scale: 0.6 });
+		const rawOffset = mapLibreRawIconOffset(
+			VEHICLE_MARKER_GEOMETRY.stateBadge.offset,
+			VEHICLE_MARKER_GEOMETRY.stateBadge.scale,
+		);
+		expect(rawOffset).toEqual([0, 20 / 0.6]);
+
+		for (const [zoom, bodyScale, expectedTop, expectedAnnulus] of [
+			[11, VEHICLE_MARKER_GEOMETRY.bodyIconSize.z11, 9.516, 8.424],
+			[15, VEHICLE_MARKER_GEOMETRY.bodyIconSize.z15, 15.86, 14.04],
+		] as const) {
+			const effectiveDisplacement = rawOffset[1] * bodyScale * 0.6;
+			expect(effectiveDisplacement, `z${zoom} effective displacement`).toBeCloseTo(
+				20 * bodyScale,
+				12,
+			);
+
+			const spriteTop =
+				(20 - (VEHICLE_MARKER_GEOMETRY.box / 2) * VEHICLE_MARKER_GEOMETRY.stateBadge.scale) *
+				bodyScale;
+			const annulusOuter = VEHICLE_MARKER_GEOMETRY.chevronAnnulus.outer * bodyScale;
+			expect(spriteTop, `z${zoom} sprite top`).toBeCloseTo(expectedTop, 12);
+			expect(annulusOuter, `z${zoom} annulus outer`).toBeCloseTo(expectedAnnulus, 12);
+			expect(spriteTop, `z${zoom} clearance`).toBeGreaterThan(annulusOuter);
+		}
+	});
 
 	it('does not restore the retired per-vehicle silence opacity expression', () => {
 		const source = readFileSync(
