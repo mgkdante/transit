@@ -5,6 +5,7 @@ import MapStage from './MapStage.svelte';
 
 type FailureKind = 'importer' | 'protocol' | 'style' | 'construct' | 'setup';
 type Failure = Readonly<{ kind: FailureKind; retry: () => void | Promise<void> }>;
+const MAP_LISTENER_TYPES = ['load', 'styledata', 'sourcedata', 'movestart', 'boxzoomend'] as const;
 
 const harness = vi.hoisted(() => {
 	function deferred<T>() {
@@ -40,6 +41,7 @@ const harness = vi.hoisted(() => {
 
 	class MapStub {
 		readonly handlers = new Map<string, Set<(...args: unknown[]) => void>>();
+		readonly registrations: Array<[string, (...args: unknown[]) => void]> = [];
 		readonly container: HTMLElement;
 		readonly remove = vi.fn(() => this.container.replaceChildren());
 		readonly resize = vi.fn(() => this.emit('movestart', {}));
@@ -74,12 +76,13 @@ const harness = vi.hoisted(() => {
 			state.maps.push(this);
 		}
 
-		on(type: string, handler: (...args: unknown[]) => void): this {
+		on(type: string, handler: (...args: unknown[]) => void) {
 			if (state.setupFailure === `on:${type}`) throw new Error(`listener ${type} failed`);
 			const handlers = this.handlers.get(type) ?? new Set();
 			handlers.add(handler);
 			this.handlers.set(type, handlers);
-			return this;
+			this.registrations.push([type, handler]);
+			return { unsubscribe: () => this.off(type, handler) };
 		}
 
 		readonly off = vi.fn((type: string, handler: (...args: unknown[]) => void): this => {
@@ -92,7 +95,8 @@ const harness = vi.hoisted(() => {
 				this.off(type, once);
 				handler(...args);
 			};
-			return this.on(type, once);
+			this.on(type, once);
+			return this;
 		}
 
 		emit(type: string, payload: Record<string, unknown> = {}): void {
@@ -397,21 +401,46 @@ describe('MapStage boot lifecycle', () => {
 	);
 
 	it.each([
-		['load listener', (): void => void (harness.state.setupFailure = 'on:load'), 0],
-		['styledata listener', (): void => void (harness.state.setupFailure = 'on:styledata'), 0],
+		['load listener', (): void => void (harness.state.setupFailure = 'on:load'), 0, []],
+		[
+			'styledata listener',
+			(): void => void (harness.state.setupFailure = 'on:styledata'),
+			0,
+			['load'],
+		],
+		[
+			'sourcedata listener',
+			(): void => void (harness.state.setupFailure = 'on:sourcedata'),
+			0,
+			['load', 'styledata'],
+		],
+		[
+			'movestart listener',
+			(): void => void (harness.state.setupFailure = 'on:movestart'),
+			0,
+			['load', 'styledata', 'sourcedata'],
+		],
+		[
+			'boxzoomend listener',
+			(): void => void (harness.state.setupFailure = 'on:boxzoomend'),
+			0,
+			['load', 'styledata', 'sourcedata', 'movestart'],
+		],
 		[
 			'ResizeObserver construction',
 			(): void => void (harness.state.observerConstructorFailure = true),
 			0,
+			MAP_LISTENER_TYPES,
 		],
 		[
 			'ResizeObserver observation',
 			(): void => void (harness.state.observerObserveFailure = true),
 			1,
+			MAP_LISTENER_TYPES,
 		],
 	] as const)(
 		'cleans the constructed map and observer after fatal %s setup',
-		async (_label, arrange, expectedObservers) => {
+		async (_label, arrange, expectedObservers, expectedOffTypes) => {
 			arrange();
 			const failures: Failure[] = [];
 			render(Stage, {
@@ -426,7 +455,14 @@ describe('MapStage boot lifecycle', () => {
 			releaseImports();
 
 			await waitFor(() => expect(failures.at(-1)?.kind).toBe('setup'));
-			expect(harness.state.maps[0]?.remove).toHaveBeenCalledTimes(1);
+			const map = harness.state.maps[0]!;
+			expect(map.off.mock.calls.map(([type]) => type)).toEqual(expectedOffTypes);
+			expect(map.off.mock.calls).toEqual(map.registrations);
+			for (const type of MAP_LISTENER_TYPES) expect(map.handlers.get(type)?.size ?? 0).toBe(0);
+			for (const offOrder of map.off.mock.invocationCallOrder) {
+				expect(offOrder).toBeLessThan(map.remove.mock.invocationCallOrder[0]!);
+			}
+			expect(map.remove).toHaveBeenCalledTimes(1);
 			expect(harness.state.observers).toHaveLength(expectedObservers);
 			for (const observer of harness.state.observers) {
 				expect(observer.disconnect).toHaveBeenCalledTimes(1);
@@ -506,15 +542,27 @@ describe('MapStage boot lifecycle', () => {
 		const { view, map } = await bootStage({
 			onbeforeremove,
 		});
-		expect(map.handlers.get('movestart')).toHaveLength(1);
-		expect(map.handlers.get('boxzoomend')).toHaveLength(1);
+		const registeredHandlers = MAP_LISTENER_TYPES.map((type) => {
+			const handlers = [...(map.handlers.get(type) ?? [])];
+			expect(handlers).toHaveLength(1);
+			return handlers[0]!;
+		});
+		expect(registeredHandlers[1]).toBe(registeredHandlers[2]);
+		const mapRemoveError = new Error('MapLibre remove failed after listener cleanup');
+		map.remove.mockImplementation(() => {
+			map.container.replaceChildren();
+			throw mapRemoveError;
+		});
 
 		await expect(unmountComponent(view.component)).rejects.toBe(releaseError);
 		expect(onbeforeremove).toHaveBeenCalledExactlyOnceWith(map);
-		expect(map.off.mock.calls.map(([type]) => type)).toEqual(['movestart', 'boxzoomend']);
-		expect(map.handlers.get('movestart')).toHaveLength(0);
-		expect(map.handlers.get('boxzoomend')).toHaveLength(0);
+		expect(map.off.mock.calls).toEqual(
+			MAP_LISTENER_TYPES.map((type, index) => [type, registeredHandlers[index]]),
+		);
+		for (const type of MAP_LISTENER_TYPES) expect(map.handlers.get(type)?.size ?? 0).toBe(0);
+		const consumerOrder = onbeforeremove.mock.invocationCallOrder[0]!;
 		for (const offOrder of map.off.mock.invocationCallOrder) {
+			expect(consumerOrder).toBeLessThan(offOrder);
 			expect(offOrder).toBeLessThan(map.remove.mock.invocationCallOrder[0]!);
 		}
 		expect(map.remove).toHaveBeenCalledOnce();

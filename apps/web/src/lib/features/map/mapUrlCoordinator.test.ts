@@ -106,4 +106,20 @@ describe('map URL coordinator', () => {
 		);
 		expect(coordinator.currentUrl().pathname).toBe('/fr/map');
 	});
+
+	it('clears every queued URL token idempotently when its map owner is disposed', () => {
+		const { coordinator } = setup();
+		coordinator.goto('/map?route=24', MAP_URL_REWRITE);
+		coordinator.goto('/map?route=55', MAP_URL_REWRITE);
+
+		expect(coordinator).toMatchObject({
+			dispose: expect.any(Function),
+			pendingRequestCount: expect.any(Function),
+		});
+		expect(coordinator.pendingRequestCount()).toBe(2);
+		coordinator.dispose();
+		coordinator.dispose();
+		expect(coordinator.pendingRequestCount()).toBe(0);
+		expect(coordinator.settle(new URL('https://transit.example/map?route=55'))).toBe('adopt');
+	});
 });

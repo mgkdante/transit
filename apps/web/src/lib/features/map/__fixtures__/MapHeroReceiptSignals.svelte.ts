@@ -1,3 +1,5 @@
+import { SvelteMap } from 'svelte/reactivity';
+
 const BASE_TIME = Date.parse('2026-06-20T12:00:30Z');
 const BASE_GENERATION = '2026-06-20T12:00:00Z';
 
@@ -14,7 +16,27 @@ export interface MapHeroFeatureStateEvent {
 
 let featureStateEvents: MapHeroFeatureStateEvent[] = [];
 let featureStateObserver: ((event: MapHeroFeatureStateEvent) => void) | null = null;
-let mapStageListenerCounts: Readonly<Record<string, number>> = {};
+let mapStageSequence = 0;
+const mapStageListenerCounts = new SvelteMap<number, Record<string, number>>();
+const mapStageSourceCounts = new SvelteMap<number, Record<string, number>>();
+
+function aggregateCounts(
+	countsByStage: ReadonlyMap<number, Readonly<Record<string, number>>>,
+	includeReleased: boolean,
+): Readonly<Record<string, number>> {
+	const aggregate: Record<string, number> = {};
+	for (const counts of countsByStage.values()) {
+		for (const [type, count] of Object.entries(counts)) {
+			aggregate[type] = (aggregate[type] ?? 0) + count;
+		}
+	}
+	if (!includeReleased) {
+		for (const [type, count] of Object.entries(aggregate)) {
+			if (count === 0) delete aggregate[type];
+		}
+	}
+	return aggregate;
+}
 
 export const mapHeroReceiptSignals = {
 	clock: {
@@ -39,7 +61,10 @@ export const mapHeroReceiptSignals = {
 		return featureStateEvents;
 	},
 	get mapStageListenerCounts() {
-		return { ...mapStageListenerCounts };
+		return aggregateCounts(mapStageListenerCounts, true);
+	},
+	get mapStageSourceCounts() {
+		return aggregateCounts(mapStageSourceCounts, false);
 	},
 	advanceClock(deltaMs: number) {
 		serverNow += deltaMs;
@@ -60,8 +85,24 @@ export const mapHeroReceiptSignals = {
 	observeFeatureState(observer: ((event: MapHeroFeatureStateEvent) => void) | null) {
 		featureStateObserver = observer;
 	},
-	recordMapStageListenerCount(type: string, count: number) {
-		mapStageListenerCounts = { ...mapStageListenerCounts, [type]: count };
+	createMapStageReceipt() {
+		const stageId = ++mapStageSequence;
+		mapStageListenerCounts.set(stageId, {});
+		mapStageSourceCounts.set(stageId, {});
+		return {
+			recordListenerCount(type: string, count: number) {
+				mapStageListenerCounts.set(stageId, {
+					...mapStageListenerCounts.get(stageId),
+					[type]: count,
+				});
+			},
+			recordSourceCount(type: string, count: number) {
+				mapStageSourceCounts.set(stageId, {
+					...mapStageSourceCounts.get(stageId),
+					[type]: count,
+				});
+			},
+		};
 	},
 	reset() {
 		serverNow = BASE_TIME;
@@ -69,6 +110,8 @@ export const mapHeroReceiptSignals = {
 		currentMotionMode = 'raw';
 		featureStateEvents = [];
 		featureStateObserver = null;
-		mapStageListenerCounts = {};
+		mapStageSequence = 0;
+		mapStageListenerCounts.clear();
+		mapStageSourceCounts.clear();
 	},
 };

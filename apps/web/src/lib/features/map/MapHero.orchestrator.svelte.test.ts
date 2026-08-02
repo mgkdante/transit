@@ -67,6 +67,8 @@ const m6hCure2OwnerRelease = `
 `;
 const m6hCure3RecoveryImport =
 	"\timport { attachMapDetailNavigationRecovery } from './mapDetailNavigationRecovery';\n";
+const m6hCure6SvelteLifecycleImport = "\timport { onDestroy, onMount, untrack } from 'svelte';\n";
+const preM6hSvelteLifecycleImport = "\timport { onMount, untrack } from 'svelte';\n";
 const m6hCure4PageStoresImport = "\timport { navigating, page } from '$app/stores';\n";
 const preM6hPageStoresImport = "\timport { page } from '$app/stores';\n";
 const m6hCure5CoordinatorWiring = `
@@ -78,12 +80,15 @@ const m6hCure5CoordinatorWiring = `
 `;
 const preM6hCoordinatorWiring =
 	'\n\tconst urlCoordinator = createMapUrlCoordinator($page.url, goto);\n';
+const m6hCure6CoordinatorTeardown = '\tonDestroy(() => urlCoordinator.dispose());\n';
 const m6hCure5RecoveryWiring = `
 	const mapDetailNavigationRecovery = attachMapDetailNavigationRecovery({
 		currentIntent: urlCoordinator.currentIntent,
 		goto: urlCoordinator.goto,
 	});
 `;
+const m6hCure6NavigationObservation =
+	'\t$effect(() => mapDetailNavigationRecovery.observe($navigating?.to?.url ?? null));\n';
 const preM6hUrlIngestion = `
 	let ingestedUrlIdentity = '';
 	$effect(() => {
@@ -113,10 +118,13 @@ const m6hCure5RecoveryIngestion = `
 const preM6hScript = script
 	?.replace(m6hCure2MapHandle, '\tlet map = $state<MapLibreMap | null>(null);')
 	.replace(m6hCure2OwnerRelease, '')
+	.replace(m6hCure6SvelteLifecycleImport, preM6hSvelteLifecycleImport)
 	.replace(m6hCure4PageStoresImport, preM6hPageStoresImport)
 	.replace(m6hCure3RecoveryImport, '')
 	.replace(m6hCure5CoordinatorWiring, preM6hCoordinatorWiring)
+	.replace(m6hCure6CoordinatorTeardown, '')
 	.replace(m6hCure5RecoveryWiring, '')
+	.replace(m6hCure6NavigationObservation, '')
 	.replace(m6hCure5RecoveryIngestion, preM6hUrlIngestion);
 const mapStage = source.match(/<MapStage[\s\S]*?\/>/u)?.[0];
 const nearMeDependencies = script?.match(
@@ -148,10 +156,13 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(script).not.toContain(obsoleteM6hRouteExit);
 		expect(script!.split(m6hCure2MapHandle)).toHaveLength(2);
 		expect(script!.split(m6hCure2OwnerRelease)).toHaveLength(2);
+		expect(script!.split(m6hCure6SvelteLifecycleImport)).toHaveLength(2);
 		expect(script!.split(m6hCure4PageStoresImport)).toHaveLength(2);
 		expect(script!.split(m6hCure3RecoveryImport)).toHaveLength(2);
 		expect(script!.split(m6hCure5CoordinatorWiring)).toHaveLength(2);
+		expect(script!.split(m6hCure6CoordinatorTeardown)).toHaveLength(2);
 		expect(script!.split(m6hCure5RecoveryWiring)).toHaveLength(2);
+		expect(script!.split(m6hCure6NavigationObservation)).toHaveLength(2);
 		expect(script!.split(m6hCure5RecoveryIngestion)).toHaveLength(2);
 		expect(preM6hScript!.split(/\r?\n/u).length).toBeLessThan(862);
 	});
@@ -160,6 +171,7 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source.match(/<script(?:\s[^>]*)?>/gu)).toHaveLength(1);
 		expect(source).not.toMatch(/<script[^>]*context=["']module["']/u);
 		expect(source).not.toContain('afterNavigate');
+		expect(source.match(/mapDetailNavigationRecovery\.observe\(/gu)).toHaveLength(1);
 		expect(source.match(/mapDetailNavigationRecovery\.settle\(/gu)).toHaveLength(1);
 		expect(navigationRecoverySource.match(/settleUrl\(url\)/gu)).toHaveLength(1);
 		expect(source.match(/filters\.replaceFromUrl\(/gu)).toHaveLength(1);

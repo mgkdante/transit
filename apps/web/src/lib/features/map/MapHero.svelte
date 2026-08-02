@@ -18,7 +18,7 @@
   rides the brand surface palette; every mark rides a token, no hardcoded hex.
 -->
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { navigating, page } from '$app/stores';
 	import { goto } from '$app/navigation';
@@ -172,6 +172,7 @@
 		goto,
 		() => $page.state as Readonly<Record<string, unknown>>,
 	);
+	onDestroy(() => urlCoordinator.dispose());
 	const filters = createFilterStore(
 		fromSearchParams($page.url.searchParams),
 		urlCoordinator.writeFilters,
@@ -204,6 +205,7 @@
 		currentIntent: urlCoordinator.currentIntent,
 		goto: urlCoordinator.goto,
 	});
+	$effect(() => mapDetailNavigationRecovery.observe($navigating?.to?.url ?? null));
 
 	let observedPageUrl: URL | null = null;
 	let ingestedUrlIdentity = '';

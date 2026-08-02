@@ -68,6 +68,8 @@ export interface MapUrlCoordinator {
 	readonly goto: MapUrlNavigate;
 	readonly writeFilters: (search: string) => void;
 	readonly settle: (url: URL) => MapUrlSettlement;
+	readonly pendingRequestCount: () => number;
+	readonly dispose: () => void;
 }
 
 // One string serves as BOTH the token-matching key and the navigation target:
@@ -132,5 +134,9 @@ export function createMapUrlCoordinator(
 		goto: request,
 		writeFilters,
 		settle,
+		pendingRequestCount: () => requested.length,
+		dispose() {
+			requested.length = 0;
+		},
 	};
 }

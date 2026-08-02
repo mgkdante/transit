@@ -13,15 +13,20 @@ const harness = vi.hoisted(() => {
 	const identityReceivers: unknown[] = [];
 	const bakeVehicleSprites = vi.fn();
 	const bakeLocationPinSprite = vi.fn();
-	const addVehicleSource = vi.fn();
+	const sourceInstaller = (id: string) =>
+		vi.fn(
+			(map: { addSource: (sourceId: string, source: { setData(data: unknown): void }) => void }) =>
+				map.addSource(id, { setData: vi.fn() }),
+		);
+	const addVehicleSource = sourceInstaller('vehicles');
 	const addVehicleLayers = vi.fn();
-	const addStopsSource = vi.fn();
+	const addStopsSource = sourceInstaller('stops');
 	const addStopsLayer = vi.fn();
-	const addStopExceptionSource = vi.fn();
+	const addStopExceptionSource = sourceInstaller('stop-exception');
 	const addStopExceptionLayer = vi.fn();
-	const addRouteLineSource = vi.fn();
+	const addRouteLineSource = sourceInstaller('route-lines');
 	const addRouteLineLayers = vi.fn();
-	const addNearTargetSource = vi.fn();
+	const addNearTargetSource = sourceInstaller('near-target');
 	const addNearTargetLayer = vi.fn();
 	const setRouteLines = vi.fn();
 	const setStops = vi.fn();
@@ -89,6 +94,10 @@ const harness = vi.hoisted(() => {
 	const motionSet = vi.fn(runMotionSet);
 	const motionDestroy = vi.fn(stopVehicleUploads);
 	const releaseLease = vi.fn();
+	const urlCoordinators: Array<{
+		dispose(): void;
+		pendingRequestCount(): number;
+	}> = [];
 	const stops = [
 		{
 			id: 'stop-1',
@@ -254,9 +263,15 @@ const harness = vi.hoisted(() => {
 	type HarnessNavigation = {
 		from: { url: URL } | null;
 		to: { url: URL } | null;
+		type: 'goto' | 'link' | 'popstate';
+		delta?: number;
 	};
 	const beforeNavigateCallbacks: Array<(navigation: HarnessNavigation) => void> = [];
 	const afterNavigateCallbacks: Array<(navigation: HarnessNavigation) => void> = [];
+	let activeNavigation: HarnessNavigation | null = null;
+	let publishNavigating = (_navigation: HarnessNavigation | null): void => {
+		throw new Error('navigation publisher used before the $app/stores mock factory ran');
+	};
 	const beforeNavigate = vi.fn((callback: (navigation: HarnessNavigation) => void) => {
 		beforeNavigateCallbacks.push(callback);
 	});
@@ -279,12 +294,26 @@ const harness = vi.hoisted(() => {
 		setPageUrl: (_href: string, _state: Readonly<Record<string, unknown>> = {}): void => {
 			throw new Error('setPageUrl used before the $app/stores mock factory ran');
 		},
-		setNavigating: (_navigation: HarnessNavigation | null): void => {
-			throw new Error('setNavigating used before the $app/stores mock factory ran');
+		bindNavigatingStore(publish: (navigation: HarnessNavigation | null) => void): void {
+			publishNavigating = publish;
+		},
+		get activeNavigationTarget(): URL | null {
+			return activeNavigation?.to?.url ?? null;
+		},
+		get navigationActive(): boolean {
+			return activeNavigation != null;
+		},
+		resetNavigation(): void {
+			activeNavigation = null;
+			publishNavigating(null);
 		},
 		createLiveStore: vi.fn((_manifest: unknown, _options?: unknown) => liveStore),
 		liveStore,
 		identityReceivers,
+		urlCoordinators,
+		captureUrlCoordinator(coordinator: (typeof urlCoordinators)[number]) {
+			urlCoordinators.push(coordinator);
+		},
 		goto: vi.fn(async (_target: string, _options?: Record<string, unknown>) => {}),
 		afterNavigate,
 		afterNavigateCallbacks,
@@ -294,13 +323,38 @@ const harness = vi.hoisted(() => {
 			unregisterNavigationCallback(afterNavigateCallbacks, callback),
 		unregisterBeforeNavigate: (callback: (navigation: HarnessNavigation) => void) =>
 			unregisterNavigationCallback(beforeNavigateCallbacks, callback),
-		runBeforeNavigate(href: string, from = 'http://localhost/map') {
-			const navigation = { from: { url: new URL(from) }, to: { url: new URL(href) } };
-			for (const callback of beforeNavigateCallbacks) callback(navigation);
+		startNavigation(
+			href: string,
+			from = 'http://localhost/map',
+			options: { accepted?: boolean; type?: HarnessNavigation['type']; delta?: number } = {},
+		) {
+			const navigation: HarnessNavigation = {
+				from: { url: new URL(from) },
+				to: { url: new URL(href) },
+				type: options.type ?? 'goto',
+				...(options.delta == null ? {} : { delta: options.delta }),
+			};
+			const beforeNavigateDelivered = activeNavigation == null;
+			if (beforeNavigateDelivered) {
+				for (const callback of beforeNavigateCallbacks) callback(navigation);
+			}
+			if (options.accepted !== false) {
+				activeNavigation = navigation;
+				publishNavigating(navigation);
+			}
+			return { beforeNavigateDelivered, navigation };
 		},
 		runAfterNavigate(href: string, from = 'http://localhost/map') {
-			const navigation = { from: { url: new URL(from) }, to: { url: new URL(href) } };
+			const completedNavigation = activeNavigation;
+			const navigation: HarnessNavigation = {
+				from: { url: new URL(from) },
+				to: { url: new URL(href) },
+				type: completedNavigation?.type ?? 'goto',
+				...(completedNavigation?.delta == null ? {} : { delta: completedNavigation.delta }),
+			};
+			activeNavigation = null;
 			for (const callback of afterNavigateCallbacks) callback(navigation);
+			publishNavigating(null);
 		},
 		bakeVehicleSprites,
 		bakeLocationPinSprite,
@@ -379,7 +433,7 @@ vi.mock('$app/stores', async () => {
 	} | null>(null);
 	harness.setPageUrl = (href: string, state: Readonly<Record<string, unknown>> = {}) =>
 		store.set(pageValue(new URL(href), state));
-	harness.setNavigating = (navigation) => navigatingStore.set(navigation);
+	harness.bindNavigatingStore((navigation) => navigatingStore.set(navigation));
 	return { page: store, navigating: navigatingStore };
 });
 
@@ -399,6 +453,18 @@ vi.mock('$app/navigation', async () => {
 		goto: harness.goto,
 		afterNavigate: lifecycleRegistration(harness.afterNavigate, harness.unregisterAfterNavigate),
 		beforeNavigate: lifecycleRegistration(harness.beforeNavigate, harness.unregisterBeforeNavigate),
+	};
+});
+
+vi.mock('./mapUrlCoordinator', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('./mapUrlCoordinator')>();
+	return {
+		...actual,
+		createMapUrlCoordinator: (...args: Parameters<typeof actual.createMapUrlCoordinator>) => {
+			const coordinator = actual.createMapUrlCoordinator(...args);
+			harness.captureUrlCoordinator(coordinator);
+			return coordinator;
+		},
 	};
 });
 
@@ -585,8 +651,9 @@ afterEach(() => {
 	harness.captureDetailFilter(null);
 	harness.beforeNavigateCallbacks.length = 0;
 	harness.afterNavigateCallbacks.length = 0;
-	harness.setNavigating(null);
+	harness.resetNavigation();
 	harness.identityReceivers.length = 0;
+	harness.urlCoordinators.length = 0;
 	harness.locale = 'en';
 	harness.isDesktop = false;
 	harness.setPageUrl('http://localhost/map');
@@ -916,6 +983,51 @@ describe('MapHero detail-panel camera isolation (protect #11)', () => {
 });
 
 describe('MapHero route-exit detail teardown (M6H)', () => {
+	function startLastGotoNavigation(from = 'http://localhost/map') {
+		const [target, options] = harness.goto.mock.lastCall ?? [];
+		if (target == null) throw new Error('expected a queued map goto');
+		const url = new URL(String(target), from);
+		return {
+			...harness.startNavigation(url.href, from, { type: 'goto' }),
+			state: options?.state as Readonly<Record<string, unknown>> | undefined,
+			url,
+		};
+	}
+
+	async function settleLastGotoNavigation(from = 'http://localhost/map') {
+		const started = startLastGotoNavigation(from);
+		expect(started.beforeNavigateDelivered).toBe(true);
+		await tick();
+		harness.setPageUrl(started.url.href, started.state);
+		await tick();
+		harness.runAfterNavigate(started.url.href, from);
+		await tick();
+		return started.url;
+	}
+
+	async function commitSuppressedLastGotoNavigation(from: string) {
+		const started = startLastGotoNavigation(from);
+		expect(started.beforeNavigateDelivered).toBe(false);
+		await tick();
+		expect(harness.activeNavigationTarget?.href).toBe(started.url.href);
+		harness.setPageUrl(started.url.href, started.state);
+		await tick();
+		harness.runAfterNavigate(started.url.href, from);
+		await tick();
+		return started.url;
+	}
+
+	it('marks the router idle before after-navigation callbacks run', () => {
+		const activeStates: boolean[] = [];
+		harness.afterNavigateCallbacks.push(() => activeStates.push(harness.navigationActive));
+		const started = harness.startNavigation('http://localhost/map?status=late');
+		expect(started.beforeNavigateDelivered).toBe(true);
+
+		harness.runAfterNavigate('http://localhost/map?status=late');
+
+		expect(activeStates).toEqual([false]);
+	});
+
 	async function openStackedDetail(
 		isDesktop: boolean,
 		options: { settleSelectionUrl?: boolean } = {},
@@ -924,6 +1036,7 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 		render(MapHero);
 		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));
 		await screen.findByRole('heading', { level: 2, name: 'Sherbrooke / Saint-Denis' });
+		await settleLastGotoNavigation();
 		await fireEvent.click(
 			screen.getByRole('button', {
 				name: 'Select alert Board at the temporary stop & follow signs.',
@@ -931,12 +1044,14 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 		);
 		await screen.findByRole('heading', { level: 2, name: 'Temporary stop / Clark' });
 
-		const settledSelectionUrl = new URL(
-			String(harness.goto.mock.lastCall?.[0]),
-			'http://localhost/map',
-		);
+		const selectionStart = startLastGotoNavigation();
+		const settledSelectionUrl = selectionStart.url;
+		expect(selectionStart.beforeNavigateDelivered).toBe(true);
+		await tick();
 		if (options.settleSelectionUrl !== false) {
-			harness.setPageUrl(settledSelectionUrl.href);
+			harness.setPageUrl(settledSelectionUrl.href, selectionStart.state);
+			await tick();
+			harness.runAfterNavigate(settledSelectionUrl.href, 'http://localhost/map');
 			await tick();
 		}
 
@@ -997,7 +1112,12 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 		async (_viewport, isDesktop) => {
 			const before = await openStackedDetail(isDesktop);
 
-			harness.runBeforeNavigate('http://localhost/lines', before.settledSelectionUrl.href);
+			const attempt = harness.startNavigation(
+				'http://localhost/lines',
+				before.settledSelectionUrl.href,
+				{ accepted: false, type: 'link' },
+			);
+			expect(attempt.beforeNavigateDelivered).toBe(true);
 			await tick();
 
 			await expectStackedDetailPreserved(before);
@@ -1009,7 +1129,10 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 	it('does not treat a same-URL invalidation after cancellation as a redirect settlement', async () => {
 		const before = await openStackedDetail(true);
 
-		harness.runBeforeNavigate('http://localhost/lines', before.settledSelectionUrl.href);
+		harness.startNavigation('http://localhost/lines', before.settledSelectionUrl.href, {
+			accepted: false,
+			type: 'link',
+		});
 		harness.setPageUrl(before.settledSelectionUrl.href);
 		await tick();
 
@@ -1019,13 +1142,18 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 	it('clears a cancelled exit marker before a later intentional plain-map adoption', async () => {
 		const before = await openStackedDetail(true);
 
-		harness.runBeforeNavigate('http://localhost/lines', before.settledSelectionUrl.href);
+		harness.startNavigation('http://localhost/lines', before.settledSelectionUrl.href, {
+			accepted: false,
+			type: 'link',
+		});
 		await tick();
 
 		// A later navigation gets a fresh beforeNavigate callback because the exit was
 		// cancelled. That fresh attempt must retire the reversible recovery marker so
 		// an intentional plain /map adoption keeps its normal URL-driven semantics.
-		harness.runBeforeNavigate('http://localhost/map', before.settledSelectionUrl.href);
+		harness.startNavigation('http://localhost/map', before.settledSelectionUrl.href, {
+			type: 'goto',
+		});
 		harness.setPageUrl('http://localhost/map');
 		await tick();
 
@@ -1043,8 +1171,13 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 			from: { url: before.settledSelectionUrl },
 			to: { url: new URL('http://localhost/lines') },
 		};
-		harness.runBeforeNavigate(attemptedExit.to.url.href, attemptedExit.from.url.href);
-		harness.setNavigating(attemptedExit);
+		const exitStart = harness.startNavigation(
+			attemptedExit.to.url.href,
+			attemptedExit.from.url.href,
+			{ type: 'link' },
+		);
+		expect(exitStart.beforeNavigateDelivered).toBe(true);
+		await tick();
 
 		expect(harness.detailFilter).not.toBeNull();
 		harness.detailFilter?.({ kind: 'route', value: '55' });
@@ -1062,7 +1195,10 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 		};
 
 		// The newer coordinator-owned map intent wins without another before callback.
-		harness.setNavigating({ from: attemptedExit.from, to: { url: echoUrl } });
+		const echoStart = harness.startNavigation(echoUrl.href, attemptedExit.from.url.href, {
+			type: 'goto',
+		});
+		expect(echoStart.beforeNavigateDelivered).toBe(false);
 		harness.setPageUrl(echoUrl.href, echoNavigationState);
 		await tick();
 
@@ -1089,14 +1225,21 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 				to: { url: new URL('http://localhost/lines') },
 			};
 
-			harness.runBeforeNavigate(attemptedExit.to.url.href, attemptedExit.from.url.href);
-			harness.setNavigating(attemptedExit);
+			const exitStart = harness.startNavigation(
+				attemptedExit.to.url.href,
+				attemptedExit.from.url.href,
+				{ type: 'link' },
+			);
+			expect(exitStart.beforeNavigateDelivered).toBe(true);
+			await tick();
 			// Kit suppresses another before-navigation callback for an in-flight
 			// supersession or redirect. The winning commit carries a plain /map URL.
-			harness.setNavigating({
-				from: attemptedExit.from,
-				to: { url: new URL('http://localhost/map') },
-			});
+			const winnerStart = harness.startNavigation(
+				'http://localhost/map',
+				attemptedExit.from.url.href,
+				{ type: 'goto' },
+			);
+			expect(winnerStart.beforeNavigateDelivered).toBe(false);
 			harness.setPageUrl('http://localhost/map');
 			await tick();
 
@@ -1106,9 +1249,7 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 				// A recovery rewrite starts during the plain-map commit. Kit observes the
 				// new token before its focus-reset branch, aborts the original settlement,
 				// and commits this keepFocus URL instead.
-				harness.setPageUrl(before.settledSelectionUrl.href);
-				await tick();
-				harness.runAfterNavigate(before.settledSelectionUrl.href, before.settledSelectionUrl.href);
+				await commitSuppressedLastGotoNavigation('http://localhost/map');
 			} else {
 				// Without the recovery rewrite, Kit reaches its default focus reset. The
 				// mobile sheet trap retains focus; desktop exposes the shipped body falloff.
@@ -1120,7 +1261,7 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 				}
 				harness.runAfterNavigate('http://localhost/map', before.settledSelectionUrl.href);
 			}
-			harness.setNavigating(null);
+			harness.resetNavigation();
 			await tick();
 
 			await expectStackedDetailPreserved(before, {
@@ -1137,6 +1278,53 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 		},
 	);
 
+	it('preserves the exact focused Close node for a callback-suppressed back navigation behind a queued rewrite', async () => {
+		const before = await openStackedDetail(true, { settleSelectionUrl: false });
+		const currentMapUrl = 'http://localhost/map';
+		const queuedSelectionUrl = new URL(before.settledSelectionUrl.href);
+		const redirectedMapUrl = new URL(queuedSelectionUrl.href);
+		redirectedMapUrl.searchParams.set('history-redirected', '1');
+
+		const historyExit = harness.startNavigation('http://localhost/lines', currentMapUrl, {
+			type: 'popstate',
+			delta: -1,
+		});
+		expect(historyExit.beforeNavigateDelivered).toBe(false);
+		await tick();
+		const winnerStart = harness.startNavigation(redirectedMapUrl.href, currentMapUrl, {
+			type: 'goto',
+		});
+		expect(winnerStart.beforeNavigateDelivered).toBe(false);
+		harness.setPageUrl(redirectedMapUrl.href);
+		await tick();
+
+		const recoverySupersededOriginal =
+			harness.goto.mock.calls.length === before.state.gotoCalls + 1;
+		if (recoverySupersededOriginal) {
+			await commitSuppressedLastGotoNavigation(redirectedMapUrl.href);
+		} else {
+			document.body.tabIndex = -1;
+			document.body.focus();
+			document.body.removeAttribute('tabindex');
+			expect(document.activeElement).toBe(document.body);
+			harness.runAfterNavigate(redirectedMapUrl.href, currentMapUrl);
+		}
+		harness.resetNavigation();
+		await tick();
+
+		await expectStackedDetailPreserved(before, {
+			gotoCalls: before.state.gotoCalls + 1,
+		});
+		expect(harness.goto.mock.lastCall?.[0]).toBe(
+			`${queuedSelectionUrl.pathname}${queuedSelectionUrl.search}`,
+		);
+		expect(harness.goto.mock.lastCall?.[1]).toMatchObject({
+			replaceState: true,
+			keepFocus: true,
+			noScroll: true,
+		});
+	});
+
 	it.each([
 		['desktop', true],
 		['mobile', false],
@@ -1151,14 +1339,21 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 			const exactSelectionUrl = new URL(before.settledSelectionUrl.href);
 			expect(exactSelectionUrl.search).not.toBe('');
 
-			harness.runBeforeNavigate(attemptedExit.to.url.href, attemptedExit.from.url.href);
-			harness.setNavigating(attemptedExit);
+			const exitStart = harness.startNavigation(
+				attemptedExit.to.url.href,
+				attemptedExit.from.url.href,
+				{ type: 'link' },
+			);
+			expect(exitStart.beforeNavigateDelivered).toBe(true);
+			await tick();
 			// Kit preserves the original false keepfocus through redirect recursion and
 			// suppresses a second before-navigation callback for this winning settlement.
-			harness.setNavigating({
-				from: attemptedExit.from,
-				to: { url: exactSelectionUrl },
-			});
+			const winnerStart = harness.startNavigation(
+				exactSelectionUrl.href,
+				attemptedExit.from.url.href,
+				{ type: 'goto' },
+			);
+			expect(winnerStart.beforeNavigateDelivered).toBe(false);
 			harness.setPageUrl(exactSelectionUrl.href);
 			await tick();
 
@@ -1167,9 +1362,7 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 			if (recoverySupersededOriginal) {
 				// The corrective keepFocus rewrite uses the same URL bytes but a newer Kit
 				// token, aborting the original settlement before its default focus reset.
-				harness.setPageUrl(exactSelectionUrl.href);
-				await tick();
-				harness.runAfterNavigate(exactSelectionUrl.href, exactSelectionUrl.href);
+				await commitSuppressedLastGotoNavigation(exactSelectionUrl.href);
 			} else {
 				document.body.tabIndex = -1;
 				document.body.focus();
@@ -1177,7 +1370,7 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 				if (isDesktop) expect(document.activeElement).toBe(document.body);
 				harness.runAfterNavigate(exactSelectionUrl.href, before.settledSelectionUrl.href);
 			}
-			harness.setNavigating(null);
+			harness.resetNavigation();
 			await tick();
 
 			await expectStackedDetailPreserved(before, {
@@ -1207,23 +1400,28 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 			};
 			const exactQueuedSelectionUrl = new URL(before.settledSelectionUrl.href);
 
-			harness.runBeforeNavigate(attemptedExit.to.url.href, attemptedExit.from.url.href);
-			harness.setNavigating(attemptedExit);
+			const exitStart = harness.startNavigation(
+				attemptedExit.to.url.href,
+				attemptedExit.from.url.href,
+				{ type: 'link' },
+			);
+			expect(exitStart.beforeNavigateDelivered).toBe(false);
+			await tick();
 			// The winning non-map navigation redirects to the still-queued selection URL.
 			// URL ownership is therefore an old `echo`, but the winner itself has keepFocus false.
-			harness.setNavigating({
-				from: attemptedExit.from,
-				to: { url: exactQueuedSelectionUrl },
-			});
+			const winnerStart = harness.startNavigation(
+				exactQueuedSelectionUrl.href,
+				attemptedExit.from.url.href,
+				{ type: 'goto' },
+			);
+			expect(winnerStart.beforeNavigateDelivered).toBe(false);
 			harness.setPageUrl(exactQueuedSelectionUrl.href);
 			await tick();
 
 			const recoverySupersededOriginal =
 				harness.goto.mock.calls.length === before.state.gotoCalls + 1;
 			if (recoverySupersededOriginal) {
-				harness.setPageUrl(exactQueuedSelectionUrl.href);
-				await tick();
-				harness.runAfterNavigate(exactQueuedSelectionUrl.href, exactQueuedSelectionUrl.href);
+				await commitSuppressedLastGotoNavigation(exactQueuedSelectionUrl.href);
 			} else {
 				document.body.tabIndex = -1;
 				document.body.focus();
@@ -1231,7 +1429,7 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 				if (isDesktop) expect(document.activeElement).toBe(document.body);
 				harness.runAfterNavigate(exactQueuedSelectionUrl.href, attemptedExit.from.url.href);
 			}
-			harness.setNavigating(null);
+			harness.resetNavigation();
 			await tick();
 
 			await expectStackedDetailPreserved(before, {
@@ -1252,28 +1450,36 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 		['desktop', true],
 		['mobile', false],
 	] as const)(
-		'preserves the exact focused Close node for a query-bearing map redirect not previously special-cased on %s',
+		'preserves the exact focused Close node for a callback-suppressed arbitrary map adoption on %s',
 		async (_viewport, isDesktop) => {
-			const before = await openStackedDetail(isDesktop);
+			const before = await openStackedDetail(isDesktop, { settleSelectionUrl: false });
 			const attemptedExit = {
-				from: { url: before.settledSelectionUrl },
+				from: { url: new URL('http://localhost/map') },
 				to: { url: new URL('http://localhost/lines') },
 			};
 			const redirectedMapUrl = new URL(before.settledSelectionUrl.href);
 			redirectedMapUrl.searchParams.set('redirected', '1');
 
-			harness.runBeforeNavigate(attemptedExit.to.url.href, attemptedExit.from.url.href);
-			harness.setNavigating(attemptedExit);
-			harness.setNavigating({ from: attemptedExit.from, to: { url: redirectedMapUrl } });
+			const exitStart = harness.startNavigation(
+				attemptedExit.to.url.href,
+				attemptedExit.from.url.href,
+				{ type: 'link' },
+			);
+			expect(exitStart.beforeNavigateDelivered).toBe(false);
+			await tick();
+			const winnerStart = harness.startNavigation(
+				redirectedMapUrl.href,
+				attemptedExit.from.url.href,
+				{ type: 'goto' },
+			);
+			expect(winnerStart.beforeNavigateDelivered).toBe(false);
 			harness.setPageUrl(redirectedMapUrl.href);
 			await tick();
 
 			const recoverySupersededOriginal =
 				harness.goto.mock.calls.length === before.state.gotoCalls + 1;
 			if (recoverySupersededOriginal) {
-				harness.setPageUrl(before.settledSelectionUrl.href);
-				await tick();
-				harness.runAfterNavigate(before.settledSelectionUrl.href, before.settledSelectionUrl.href);
+				await commitSuppressedLastGotoNavigation(redirectedMapUrl.href);
 			} else {
 				document.body.tabIndex = -1;
 				document.body.focus();
@@ -1281,7 +1487,7 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 				if (isDesktop) expect(document.activeElement).toBe(document.body);
 				harness.runAfterNavigate(redirectedMapUrl.href, attemptedExit.from.url.href);
 			}
-			harness.setNavigating(null);
+			harness.resetNavigation();
 			await tick();
 
 			await expectStackedDetailPreserved(before, {
@@ -1297,6 +1503,39 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 			});
 		},
 	);
+
+	it('retains callback-independent focus intent through a non-winning map invalidation', async () => {
+		const before = await openStackedDetail(true, { settleSelectionUrl: false });
+		const currentMapUrl = 'http://localhost/map';
+		const queuedSelectionUrl = new URL(before.settledSelectionUrl.href);
+		const redirectedMapUrl = new URL(queuedSelectionUrl.href);
+		redirectedMapUrl.searchParams.set('redirected', 'winner');
+
+		const exitStart = harness.startNavigation('http://localhost/lines', currentMapUrl, {
+			type: 'link',
+		});
+		expect(exitStart.beforeNavigateDelivered).toBe(false);
+		await tick();
+
+		// A page-store invalidation can settle map bytes while the accepted live target
+		// is still off-map. It is not the winner and must not consume the obligation.
+		harness.setPageUrl(queuedSelectionUrl.href);
+		await tick();
+		expect(harness.goto).toHaveBeenCalledTimes(before.state.gotoCalls);
+
+		const winnerStart = harness.startNavigation(redirectedMapUrl.href, currentMapUrl, {
+			type: 'goto',
+		});
+		expect(winnerStart.beforeNavigateDelivered).toBe(false);
+		harness.setPageUrl(redirectedMapUrl.href);
+		await tick();
+
+		expect(harness.goto).toHaveBeenCalledTimes(before.state.gotoCalls + 1);
+		expect(harness.goto.mock.lastCall?.[0]).toBe(
+			`${queuedSelectionUrl.pathname}${queuedSelectionUrl.search}`,
+		);
+		expect(document.activeElement).toBe(before.close);
+	});
 
 	it.each([
 		['desktop', true, '[data-slot="map-detail-overlay"]'],
@@ -1319,8 +1558,16 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 				const view = render(MapHeroNavigationHarness, { props: { route: 'map' } });
 				await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
 				await waitFor(() => expect(document.querySelector(panelSelector)).toBeInTheDocument());
+				await settleLastGotoNavigation();
 
-				harness.runBeforeNavigate('http://localhost/lines');
+				const exitStart = harness.startNavigation(
+					'http://localhost/lines',
+					'http://localhost/map',
+					{
+						type: 'link',
+					},
+				);
+				expect(exitStart.beforeNavigateDelivered).toBe(true);
 				await tick();
 				try {
 					await view.rerender({ route: 'lines' });
@@ -1364,7 +1611,11 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 		await waitFor(() =>
 			expect(document.querySelector('[data-slot="map-detail-overlay"]')).toBeInTheDocument(),
 		);
-		harness.runBeforeNavigate('http://localhost/lines');
+		await settleLastGotoNavigation();
+		const exitStart = harness.startNavigation('http://localhost/lines', 'http://localhost/map', {
+			type: 'link',
+		});
+		expect(exitStart.beforeNavigateDelivered).toBe(true);
 		await tick();
 
 		const teardownError = new Error('motion cleanup failed');
@@ -1386,6 +1637,26 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 
 	it('releases listeners and URL intent across a whole-component map to lines to map to lines loop', async () => {
 		harness.isDesktop = true;
+		const mountedListenerCounts = {
+			load: 1,
+			styledata: 1,
+			sourcedata: 1,
+			movestart: 1,
+			boxzoomend: 1,
+			click: 1,
+			mousemove: 1,
+			'canvas:mouseleave': 1,
+		};
+		const releasedListenerCounts = Object.fromEntries(
+			Object.keys(mountedListenerCounts).map((type) => [type, 0]),
+		);
+		const mountedSourceCounts = {
+			'route-lines': 1,
+			stops: 1,
+			'stop-exception': 1,
+			vehicles: 1,
+			'near-target': 1,
+		};
 		const pageErrors: unknown[] = [];
 		const recordError = (event: ErrorEvent) => pageErrors.push(event.error ?? event.message);
 		const recordRejection = (event: PromiseRejectionEvent) => pageErrors.push(event.reason);
@@ -1396,12 +1667,14 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 			const view = render(MapHeroNavigationHarness, { props: { route: 'map' } });
 			await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
 			await screen.findByRole('button', { name: 'Close panel' });
+			expect(harness.urlCoordinators).toHaveLength(1);
+			expect(harness.urlCoordinators[0]?.pendingRequestCount()).toBe(1);
+			const firstRewriteStart = startLastGotoNavigation();
+			expect(firstRewriteStart.beforeNavigateDelivered).toBe(true);
+			await tick();
 			const firstMountListeners = mapHeroReceiptSignals.mapStageListenerCounts;
-			expect(firstMountListeners).toEqual({
-				click: 1,
-				mousemove: 1,
-				'canvas:mouseleave': 1,
-			});
+			expect(firstMountListeners).toEqual(mountedListenerCounts);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual(mountedSourceCounts);
 			const firstSelectionTarget = harness.goto.mock.lastCall?.[0];
 			const firstMountGotoCalls = harness.goto.mock.calls.length;
 			const firstNavigationRegistrations = {
@@ -1409,31 +1682,46 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 				before: harness.beforeNavigateCallbacks.length,
 			};
 
-			harness.runBeforeNavigate('http://localhost/lines');
+			const firstExitStart = harness.startNavigation(
+				'http://localhost/lines',
+				'http://localhost/map',
+				{ type: 'link' },
+			);
+			expect(firstExitStart.beforeNavigateDelivered).toBe(false);
 			await view.rerender({ route: 'lines' });
 			await tick();
-			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual({
-				click: 0,
-				mousemove: 0,
-				'canvas:mouseleave': 0,
-			});
+			harness.runAfterNavigate('http://localhost/lines');
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListenerCounts);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
 			expect(harness.beforeNavigateCallbacks).toHaveLength(0);
 			expect(harness.afterNavigateCallbacks).toHaveLength(0);
 			expect(harness.liveStore.stop).toHaveBeenCalledTimes(1);
 			expect(harness.releaseLease).toHaveBeenCalledTimes(1);
+			expect(harness.urlCoordinators[0]?.pendingRequestCount()).toBe(0);
 			expect(document.querySelector('.map-hero')).not.toBeInTheDocument();
 			expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
 
 			harness.setPageUrl('http://localhost/map');
 			await view.rerender({ route: 'map' });
 			await tick();
+			expect(harness.urlCoordinators).toHaveLength(2);
+			expect(
+				harness.urlCoordinators.map((coordinator) => coordinator.pendingRequestCount()),
+			).toEqual([0, 0]);
 			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(firstMountListeners);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual(mountedSourceCounts);
 			expect({
 				after: harness.afterNavigateCallbacks.length,
 				before: harness.beforeNavigateCallbacks.length,
 			}).toEqual(firstNavigationRegistrations);
 			await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
 			await screen.findByRole('button', { name: 'Close panel' });
+			expect(
+				harness.urlCoordinators.map((coordinator) => coordinator.pendingRequestCount()),
+			).toEqual([0, 1]);
+			const secondRewriteStart = startLastGotoNavigation();
+			expect(secondRewriteStart.beforeNavigateDelivered).toBe(true);
+			await tick();
 			expect(harness.goto).toHaveBeenCalledTimes(firstMountGotoCalls + 1);
 			expect(harness.goto.mock.lastCall?.[0]).toBe(firstSelectionTarget);
 			expect(
@@ -1448,19 +1736,25 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 			});
 			const secondMountGotoCalls = harness.goto.mock.calls.length;
 
-			harness.runBeforeNavigate('http://localhost/lines');
+			const secondExitStart = harness.startNavigation(
+				'http://localhost/lines',
+				'http://localhost/map',
+				{ type: 'link' },
+			);
+			expect(secondExitStart.beforeNavigateDelivered).toBe(false);
 			await view.rerender({ route: 'lines' });
 			await tick();
-			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual({
-				click: 0,
-				mousemove: 0,
-				'canvas:mouseleave': 0,
-			});
+			harness.runAfterNavigate('http://localhost/lines');
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListenerCounts);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
 			expect(harness.beforeNavigateCallbacks).toHaveLength(0);
 			expect(harness.afterNavigateCallbacks).toHaveLength(0);
 			expect(harness.liveStore.start).toHaveBeenCalledTimes(2);
 			expect(harness.liveStore.stop).toHaveBeenCalledTimes(2);
 			expect(harness.releaseLease).toHaveBeenCalledTimes(2);
+			expect(
+				harness.urlCoordinators.map((coordinator) => coordinator.pendingRequestCount()),
+			).toEqual([0, 0]);
 			expect(harness.goto).toHaveBeenCalledTimes(secondMountGotoCalls);
 			expect(document.querySelector('.map-hero')).not.toBeInTheDocument();
 			expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
@@ -1488,14 +1782,22 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 		const gotoCalls = harness.goto.mock.calls.length;
 
 		// Same-route filter rewrites are part of opening/using the map, not an exit.
-		harness.runBeforeNavigate('http://localhost/map?route=24&vehicle=bus-1');
+		const rewriteStart = harness.startNavigation(
+			'http://localhost/map?route=24&vehicle=bus-1',
+			'http://localhost/map',
+			{ type: 'goto' },
+		);
+		expect(rewriteStart.beforeNavigateDelivered).toBe(true);
 		await tick();
 		expect(document.querySelector('[data-slot="map-detail-overlay"]')).toBeInTheDocument();
 		expect(document.documentElement.style.getPropertyValue('--app-effective-rail-offset')).toBe(
 			publishedOffset,
 		);
 
-		harness.runBeforeNavigate('http://localhost/lines');
+		const exitStart = harness.startNavigation('http://localhost/lines', 'http://localhost/map', {
+			type: 'link',
+		});
+		expect(exitStart.beforeNavigateDelivered).toBe(false);
 		await tick();
 
 		expect(document.querySelector('[data-slot="map-detail-overlay"]')).toBeInTheDocument();
@@ -1522,7 +1824,13 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 		);
 		const sheet = document.querySelector('[data-slot="bottom-sheet"]');
 
-		harness.runBeforeNavigate('http://localhost/lines');
+		const rewriteStart = startLastGotoNavigation();
+		expect(rewriteStart.beforeNavigateDelivered).toBe(true);
+		await tick();
+		const exitStart = harness.startNavigation('http://localhost/lines', 'http://localhost/map', {
+			type: 'link',
+		});
+		expect(exitStart.beforeNavigateDelivered).toBe(false);
 		await tick();
 		await new Promise((resolve) => setTimeout(resolve, 80));
 

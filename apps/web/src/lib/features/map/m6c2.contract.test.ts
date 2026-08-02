@@ -47,6 +47,9 @@ const M6H_CURE2_OWNER_RELEASE = `
 const M6H_CURE2_STAGE_WIRING = '\n\t\tonbeforeremove={releaseMapOwners}';
 const M6H_CURE3_RECOVERY_IMPORT =
 	"\timport { attachMapDetailNavigationRecovery } from './mapDetailNavigationRecovery';\n";
+const M6H_CURE6_SVELTE_LIFECYCLE_IMPORT =
+	"\timport { onDestroy, onMount, untrack } from 'svelte';\n";
+const PRE_M6H_SVELTE_LIFECYCLE_IMPORT = "\timport { onMount, untrack } from 'svelte';\n";
 const M6H_CURE4_PAGE_STORES_IMPORT = "\timport { navigating, page } from '$app/stores';\n";
 const PRE_M6H_PAGE_STORES_IMPORT = "\timport { page } from '$app/stores';\n";
 const M6H_CURE5_COORDINATOR_WIRING = `
@@ -58,12 +61,15 @@ const M6H_CURE5_COORDINATOR_WIRING = `
 `;
 const PRE_M6H_COORDINATOR_WIRING =
 	'\n\tconst urlCoordinator = createMapUrlCoordinator($page.url, goto);\n';
+const M6H_CURE6_COORDINATOR_TEARDOWN = '\tonDestroy(() => urlCoordinator.dispose());\n';
 const M6H_CURE5_RECOVERY_WIRING = `
 	const mapDetailNavigationRecovery = attachMapDetailNavigationRecovery({
 		currentIntent: urlCoordinator.currentIntent,
 		goto: urlCoordinator.goto,
 	});
 `;
+const M6H_CURE6_NAVIGATION_OBSERVATION =
+	'\t$effect(() => mapDetailNavigationRecovery.observe($navigating?.to?.url ?? null));\n';
 const PRE_M6H_URL_INGESTION = `
 	let ingestedUrlIdentity = '';
 	$effect(() => {
@@ -96,10 +102,13 @@ function withoutM6hLifecycle(value: string): string {
 		.replace(M6H_CURE2_MAP_HANDLE, '\tlet map = $state<MapLibreMap | null>(null);')
 		.replace(M6H_CURE2_OWNER_RELEASE, '')
 		.replace(M6H_CURE2_STAGE_WIRING, '')
+		.replace(M6H_CURE6_SVELTE_LIFECYCLE_IMPORT, PRE_M6H_SVELTE_LIFECYCLE_IMPORT)
 		.replace(M6H_CURE4_PAGE_STORES_IMPORT, PRE_M6H_PAGE_STORES_IMPORT)
 		.replace(M6H_CURE3_RECOVERY_IMPORT, '')
 		.replace(M6H_CURE5_COORDINATOR_WIRING, PRE_M6H_COORDINATOR_WIRING)
+		.replace(M6H_CURE6_COORDINATOR_TEARDOWN, '')
 		.replace(M6H_CURE5_RECOVERY_WIRING, '')
+		.replace(M6H_CURE6_NAVIGATION_OBSERVATION, '')
 		.replace(M6H_CURE5_RECOVERY_INGESTION, PRE_M6H_URL_INGESTION);
 }
 
@@ -197,10 +206,13 @@ describe('M6C-2 token and protected-surface contract', () => {
 		expect(hero.split(M6H_CURE2_MAP_HANDLE)).toHaveLength(2);
 		expect(hero.split(M6H_CURE2_OWNER_RELEASE)).toHaveLength(2);
 		expect(hero.split(M6H_CURE2_STAGE_WIRING)).toHaveLength(2);
+		expect(hero.split(M6H_CURE6_SVELTE_LIFECYCLE_IMPORT)).toHaveLength(2);
 		expect(hero.split(M6H_CURE4_PAGE_STORES_IMPORT)).toHaveLength(2);
 		expect(hero.split(M6H_CURE3_RECOVERY_IMPORT)).toHaveLength(2);
 		expect(hero.split(M6H_CURE5_COORDINATOR_WIRING)).toHaveLength(2);
+		expect(hero.split(M6H_CURE6_COORDINATOR_TEARDOWN)).toHaveLength(2);
 		expect(hero.split(M6H_CURE5_RECOVERY_WIRING)).toHaveLength(2);
+		expect(hero.split(M6H_CURE6_NAVIGATION_OBSERVATION)).toHaveLength(2);
 		expect(hero.split(M6H_CURE5_RECOVERY_INGESTION)).toHaveLength(2);
 		const protectedHero = withoutM6hLifecycle(hero);
 		const protectedRegion = protectedHero.split('\n').slice(19, 882).join('\n') + '\n';

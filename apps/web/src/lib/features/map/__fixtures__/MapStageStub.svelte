@@ -13,11 +13,7 @@
 	// Test-only deep-import exception: this fixture is loaded from inside the
 	// MapHero suite's vi.mock factory. Going through $lib/components/map would
 	// cycle back into that factory while it is replacing the barrel's MapStage.
-	import {
-		STOP_EXCEPTION_LAYER,
-		STOP_EXCEPTION_SOURCE,
-		STOPS_LAYER,
-	} from '$lib/components/map/stopsLayer';
+	import { STOP_EXCEPTION_LAYER, STOPS_LAYER } from '$lib/components/map/stopsLayer';
 	import { VEHICLE_BODY_LAYER } from '$lib/components/map/vehicleLayer';
 
 	interface Props {
@@ -43,6 +39,7 @@
 	}: Props = $props();
 
 	type Handler = (e: unknown) => void;
+	const receipt = mapHeroReceiptSignals.createMapStageReceipt();
 	const handlers = new SvelteMap<string, Handler[]>();
 	const canvasHandlers = new SvelteMap<string, Handler[]>();
 	let pickCount = $state(0);
@@ -54,9 +51,7 @@
 	let flyToCount = $state(0);
 	let setMaxBoundsCount = $state(0);
 	let pickLayer = STOPS_LAYER;
-	const sources = new Map<string, { setData: (data: unknown) => void }>([
-		[STOP_EXCEPTION_SOURCE, { setData: () => {} }],
-	]);
+	const sources = new SvelteMap<string, { setData: (data: unknown) => void }>();
 	let style:
 		| { getSource: (id: string) => { setData: (data: unknown) => void } | undefined }
 		| undefined;
@@ -69,12 +64,12 @@
 			const list = canvasHandlers.get(type) ?? [];
 			list.push(handler);
 			canvasHandlers.set(type, list);
-			mapHeroReceiptSignals.recordMapStageListenerCount(`canvas:${type}`, list.length);
+			receipt.recordListenerCount(`canvas:${type}`, list.length);
 		},
 		removeEventListener: (type: string, handler: Handler) => {
 			const list = (canvasHandlers.get(type) ?? []).filter((candidate) => candidate !== handler);
 			canvasHandlers.set(type, list);
-			mapHeroReceiptSignals.recordMapStageListenerCount(`canvas:${type}`, list.length);
+			receipt.recordListenerCount(`canvas:${type}`, list.length);
 		},
 	};
 	const fakeMap = {
@@ -83,12 +78,22 @@
 			const list = handlers.get(type) ?? [];
 			list.push(handler);
 			handlers.set(type, list);
-			mapHeroReceiptSignals.recordMapStageListenerCount(type, list.length);
+			receipt.recordListenerCount(type, list.length);
+			return { unsubscribe: () => fakeMap.off(type, handler) };
 		},
 		off: (type: string, handler: Handler) => {
 			const list = (handlers.get(type) ?? []).filter((candidate) => candidate !== handler);
 			handlers.set(type, list);
-			mapHeroReceiptSignals.recordMapStageListenerCount(type, list.length);
+			receipt.recordListenerCount(type, list.length);
+		},
+		addSource: (id: string, source: { setData: (data: unknown) => void }) => {
+			if (sources.has(id)) return;
+			sources.set(id, source);
+			receipt.recordSourceCount(id, 1);
+		},
+		removeSource: (id: string) => {
+			if (!sources.delete(id)) return;
+			receipt.recordSourceCount(id, 0);
 		},
 		getCanvas: () => fakeCanvas,
 		getLayer: (id: string) =>
@@ -171,8 +176,17 @@
 		for (const handler of canvasHandlers.get('mouseleave') ?? []) handler({});
 	}
 
+	const mapStageHandlers: ReadonlyArray<readonly [string, Handler]> = [
+		['load', () => {}],
+		['styledata', () => {}],
+		['sourcedata', () => {}],
+		['movestart', () => {}],
+		['boxzoomend', () => {}],
+	];
+
 	onMount(() => {
 		style = { getSource: (id) => sources.get(id) };
+		for (const [type, handler] of mapStageHandlers) fakeMap.on(type, handler);
 		onready?.(fakeMap);
 		return () => {
 			// Model MapLibre `remove()` precisely enough for teardown-order tests:
@@ -180,6 +194,8 @@
 			try {
 				onbeforeremove?.(fakeMap);
 			} finally {
+				for (const [type, handler] of mapStageHandlers) fakeMap.off(type, handler);
+				for (const sourceId of [...sources.keys()]) fakeMap.removeSource(sourceId);
 				style = undefined;
 			}
 		};

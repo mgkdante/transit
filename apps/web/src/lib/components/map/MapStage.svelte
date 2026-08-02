@@ -391,35 +391,48 @@
 			map = instance;
 
 			failureKind = 'setup';
+			const ownMapListener = (type: string, listener: (event: unknown) => void): (() => void) => {
+				const subscription = instance.on(type, listener);
+				let active = true;
+				const dispose = () => {
+					if (!active) return;
+					active = false;
+					subscription.unsubscribe();
+				};
+				attempt.disposers.push(dispose);
+				return dispose;
+			};
 			// resize() on load is idiomatic insurance: if the container's final size
 			// wasn't settled when the GL context was created, this forces the drawing
 			// buffer + first frame to match the laid-out container.
-			instance.on('load', () => {
+			const handleLoad = () => {
 				if (!isCurrentAttempt(attempt)) return;
 				instance.resize();
 				onready?.(instance);
-			});
+			};
+			ownMapListener('load', handleLoad);
 			// One-shot attribution collapse: maplibre's compact control still STARTS
 			// expanded; once attribution populates (never on the empty fallback), we
 			// land the exact end state a user click produces, then detach.
+			let releaseStyleData = () => {};
+			let releaseSourceData = () => {};
 			const collapseAttribution = () => {
 				if (!isCurrentAttempt(attempt) || !collapsePopulatedAttribution(attempt.container)) return;
-				instance.off('styledata', collapseAttribution);
-				instance.off('sourcedata', collapseAttribution);
+				releaseStyleData();
+				releaseSourceData();
 			};
-			instance.on('styledata', collapseAttribution);
-			instance.on('sourcedata', collapseAttribution);
-			const claimCamera = (event: { originalEvent?: unknown; cameraIntent?: unknown }) => {
+			releaseStyleData = ownMapListener('styledata', collapseAttribution);
+			releaseSourceData = ownMapListener('sourcedata', collapseAttribution);
+			const claimCamera = (value: unknown) => {
+				const event = value as { originalEvent?: unknown; cameraIntent?: unknown };
 				if (event.cameraIntent === 'focus') cameraOwner = 'focus';
 				else if (event.originalEvent) cameraOwner = 'user';
 			};
 			const claimBoxZoom = () => {
 				cameraOwner = 'user';
 			};
-			instance.on('movestart', claimCamera);
-			attempt.disposers.push(() => instance.off('movestart', claimCamera));
-			instance.on('boxzoomend', claimBoxZoom);
-			attempt.disposers.push(() => instance.off('boxzoomend', claimBoxZoom));
+			ownMapListener('movestart', claimCamera);
+			ownMapListener('boxzoomend', claimBoxZoom);
 			// MapLibre measures the container at construction; in a flex/grid parent
 			// layout may not have settled, so observing keeps the viewport in sync
 			// (fires once immediately, repainting the initial frame).
