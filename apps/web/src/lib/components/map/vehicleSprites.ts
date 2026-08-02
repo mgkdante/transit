@@ -365,13 +365,33 @@ function drawStateGlyph(
 		}
 		return;
 	}
+	if (glyph === occupancyGlyph('full')) {
+		const inset = 2.8;
+		const near = Math.round((left + inset) * 10) / 10;
+		const far = Math.round((left + side - inset) * 10) / 10;
+		ctx.strokeStyle = paint;
+		ctx.lineWidth = 2.4;
+		ctx.beginPath();
+		ctx.moveTo(near, near);
+		ctx.lineTo(far, near);
+		ctx.lineTo(far, far);
+		ctx.lineTo(near, far);
+		ctx.closePath();
+		ctx.stroke();
+		ctx.beginPath();
+		ctx.moveTo(near, near);
+		ctx.lineTo(far, far);
+		ctx.moveTo(far, near);
+		ctx.lineTo(near, far);
+		ctx.stroke();
+		return;
+	}
 
 	let occupancyHeight: number;
 	if (glyph === occupancyGlyph('empty')) occupancyHeight = 0.12;
 	else if (glyph === occupancyGlyph('many_seats')) occupancyHeight = 0.28;
 	else if (glyph === occupancyGlyph('few_seats')) occupancyHeight = 0.45;
 	else if (glyph === occupancyGlyph('standing')) occupancyHeight = 0.62;
-	else if (glyph === occupancyGlyph('full')) occupancyHeight = 0.78;
 	else throw new Error(`[vehicleSprites] unrecognized state glyph: ${glyph}`);
 	const h = side * occupancyHeight;
 	roundedRect(ctx, left + side * 0.2, top + side * 0.78 - h, side * 0.6, h, Math.min(1.2, h / 2));

@@ -45,14 +45,14 @@ export const STATUS_GLYPH: Record<StatusCode, string> = {
  * Fill-level glyph per OccupancyCode — a DOUBLE channel paired with the
  * `--dataviz-occupancy-*` purple luminance ramp. Luminance alone fails AA on
  * near-black (the `empty` band is ~2.4:1), so the glyph is load-bearing, never
- * decorative: empty ▁ → full █, rising fill = rising crowding.
+ * decorative: four rising fill rungs ▁▃▅▇, then a boxed terminal mark for full.
  */
 export const OCCUPANCY_GLYPH: Record<OccupancyCode, string> = {
 	empty: '▁',
 	many_seats: '▃',
 	few_seats: '▅',
 	standing: '▇',
-	full: '█',
+	full: '⊠',
 };
 
 /** No-telemetry occupancy glyph — the honesty mark; NEVER the `empty` band. */

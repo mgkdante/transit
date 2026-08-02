@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compile } from 'svelte/compiler';
 import { describe, expect, it, vi } from 'vitest';
+import { occupancyGlyph } from '$lib/components/dataviz';
 import { buildLiveIndex } from '$lib/v1/live';
 import type { Alert, IsoUtc, RouteFile, StopFile, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
 import MapSelectionDetail from './MapSelectionDetail.svelte';
@@ -373,7 +374,7 @@ describe('MapSelectionDetail', () => {
 		expect(chips).not.toHaveTextContent('Trip trip-24-a');
 		const statusBand = container.querySelector<HTMLElement>('[data-slot="detail-status-band"]')!;
 		expect(statusBand).toHaveTextContent('▲ Late');
-		expect(statusBand).toHaveTextContent('▇ Standing');
+		expect(statusBand).toHaveTextContent(`${occupancyGlyph('standing')} Standing`);
 	});
 
 	it.each([
@@ -383,7 +384,6 @@ describe('MapSelectionDetail', () => {
 			crowdingLabel: 'Crowding',
 			status: '▲ Late',
 			statusName: 'Late',
-			occupancy: '▇ Standing',
 			occupancyName: 'Standing',
 		},
 		{
@@ -392,12 +392,11 @@ describe('MapSelectionDetail', () => {
 			crowdingLabel: 'Achalandage',
 			status: '▲ En retard',
 			statusName: 'En retard',
-			occupancy: '▇ Debout',
 			occupancyName: 'Debout',
 		},
 	] as const)(
 		'prefixes normal $locale status-band values with hidden canonical glyphs',
-		({ locale, statusLabel, crowdingLabel, status, statusName, occupancy, occupancyName }) => {
+		({ locale, statusLabel, crowdingLabel, status, statusName, occupancyName }) => {
 			const detail = resolveMapSelection(
 				{ kind: 'vehicle', id: 'veh-1' },
 				{ index, stops, alerts, routes },
@@ -407,11 +406,39 @@ describe('MapSelectionDetail', () => {
 			const occupancyValue = detailValue(container, crowdingLabel);
 
 			expect(statusValue).toHaveTextContent(status);
-			expect(occupancyValue).toHaveTextContent(occupancy);
+			expect(occupancyValue).toHaveTextContent(`${occupancyGlyph('standing')} ${occupancyName}`);
 			expectHiddenGlyph(statusValue, 'status', 'late', '▲');
-			expectHiddenGlyph(occupancyValue, 'crowding', 'standing', '▇');
+			expectHiddenGlyph(occupancyValue, 'crowding', 'standing', occupancyGlyph('standing'));
 			expectAccessibleContentName(statusValue, statusName);
 			expectAccessibleContentName(occupancyValue, occupancyName);
+		},
+	);
+
+	it.each([
+		{ locale: 'en', crowdingLabel: 'Crowding', name: 'Full' },
+		{ locale: 'fr', crowdingLabel: 'Achalandage', name: 'Plein' },
+	] as const)(
+		'renders the terminal full mark as the hidden canonical glyph in $locale',
+		({ locale, crowdingLabel, name }) => {
+			const fullIndex = buildLiveIndex({
+				vehicles: {
+					generated_utc: utc('2026-06-15T00:00:00Z'),
+					vehicles: [{ ...vehicles[0]!, id: 'veh-full', occupancy: 'full' }],
+				},
+				trips: { generated_utc: utc('2026-06-15T00:00:00Z'), trips: {} },
+				stopDepartures: { generated_utc: utc('2026-06-15T00:00:00Z'), stops: {} },
+			});
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-full' },
+				{ index: fullIndex, stops, alerts, routes },
+			);
+			const { container } = render(MapSelectionDetail, { props: { detail, locale } });
+			const occupancyValue = detailValue(container, crowdingLabel);
+			const glyph = occupancyGlyph('full');
+
+			expect(occupancyValue).toHaveTextContent(`${glyph} ${name}`);
+			expectHiddenGlyph(occupancyValue, 'crowding', 'full', glyph);
+			expectAccessibleContentName(occupancyValue, name);
 		},
 	);
 
@@ -461,15 +488,16 @@ describe('MapSelectionDetail', () => {
 			const { container } = render(MapSelectionDetail, { props: { detail, locale } });
 			const statusValue = detailValue(container, statusLabel);
 			const occupancyValue = detailValue(container, crowdingLabel);
+			const noDataGlyph = occupancyGlyph(null);
 
 			expect(statusValue).toHaveTextContent(status);
-			expect(occupancyValue).toHaveTextContent('◌');
+			expect(occupancyValue).toHaveTextContent(noDataGlyph);
 			expect(occupancyValue).toHaveTextContent(unknown);
 			expect(occupancyValue).toHaveTextContent(reason);
-			expect(occupancyValue).not.toHaveTextContent('▁');
+			expect(occupancyValue).not.toHaveTextContent(occupancyGlyph('empty'));
 			expect(occupancyValue).not.toHaveTextContent(empty);
 			expectHiddenGlyph(statusValue, 'status', 'unknown', '○');
-			expectHiddenGlyph(occupancyValue, 'crowding', 'nodata', '◌');
+			expectHiddenGlyph(occupancyValue, 'crowding', 'nodata', noDataGlyph);
 			expectAccessibleContentName(statusValue, unknown);
 			expectAccessibleContentName(occupancyValue, occupancyName);
 		},
@@ -1109,7 +1137,9 @@ describe('MapSelectionDetail', () => {
 
 		expect(getByRole('button', { name: 'Select bus veh-1' })).toBeInTheDocument();
 		expect(detailValue(container, 'Status')).toHaveTextContent('▲ Late');
-		expect(detailValue(container, 'Crowding')).toHaveTextContent('▇ Standing');
+		expect(detailValue(container, 'Crowding')).toHaveTextContent(
+			`${occupancyGlyph('standing')} Standing`,
+		);
 		expect(getByText('Past stops')).toBeInTheDocument();
 		expect(getByText('Next stops')).toBeInTheDocument();
 		expect(getByText('Sherbrooke / Saint-Denis')).toBeInTheDocument();

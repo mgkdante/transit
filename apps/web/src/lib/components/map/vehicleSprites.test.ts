@@ -447,7 +447,7 @@ describe('vehicle state badge baker', () => {
 			expect(countStateBadgePaintedPixels(receipt.stateGlyphMaskImages[id]!)).toBe(3.6);
 			const commands = glyphMasks[index]!.commands;
 			expect(commands.some(({ method }) => method === 'beginPath')).toBe(true);
-			expect(commands.some(({ method }) => method === 'fill')).toBe(true);
+			expect(commands.some(({ method }) => method === 'fill' || method === 'stroke')).toBe(true);
 			expect(
 				commands.some(({ method }) => ['fillText', 'strokeText', 'setFont'].includes(method)),
 			).toBe(false);
@@ -514,6 +514,22 @@ describe('vehicle state badge baker', () => {
 					Number(args[3]) !== Number(args[4]),
 			),
 		).toBe(true);
+
+		const full = (
+			receipt.stateGlyphMaskImages[stateBadgeIconId('occupancy', 'full')] as LoggedImageData
+		).commands;
+		expect(full.filter(({ method }) => method === 'stroke')).toHaveLength(2);
+		expect(
+			full.some(({ method, args }) => method === 'moveTo' && args[0] === 5.2 && args[1] === 5.2),
+		).toBe(true);
+		expect(
+			full.some(({ method, args }) => method === 'moveTo' && args[0] === 20.8 && args[1] === 5.2),
+		).toBe(true);
+		expect(
+			full.filter(
+				({ method, args }) => method === 'lineTo' && args[0] === 20.8 && args[1] === 20.8,
+			),
+		).toHaveLength(2);
 
 		const command = (method: string, args: unknown[] = []): DrawCommand => ({
 			method,

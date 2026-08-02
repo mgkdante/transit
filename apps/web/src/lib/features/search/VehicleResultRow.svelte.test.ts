@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
+import { occupancyGlyph } from '$lib/components/dataviz';
 import type { Vehicle } from '$lib/v1/schemas';
 import { copy } from './search.copy';
 import VehicleResultRow from './VehicleResultRow.svelte';
@@ -18,6 +19,23 @@ function vehicle(partial: Partial<Vehicle>): Vehicle {
 }
 
 describe('VehicleResultRow', () => {
+	it('renders the terminal full mark from the canonical helper at the real row size without polluting the label', () => {
+		const { container } = render(VehicleResultRow, {
+			props: {
+				vehicle: vehicle({ occupancy: 'full' }),
+				locale: 'en',
+				nextStopName: null,
+				copy: VEHICLE_COPY,
+				statusLabel: 'Late',
+				occupancyLabel: 'Full',
+			},
+		});
+		const mark = container.querySelector<HTMLElement>('.vehicle-row-crowd-glyph');
+		expect(mark).toHaveTextContent(occupancyGlyph('full'));
+		expect(mark).toHaveAttribute('aria-hidden', 'true');
+		expect(container.querySelector('.vehicle-row-crowd-label')).toHaveTextContent('Full');
+	});
+
 	it('renders status, signed delay, route tag, and resolved next stop', () => {
 		const { container } = render(VehicleResultRow, {
 			props: {

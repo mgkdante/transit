@@ -3,7 +3,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { STATUS_GLYPH, occupancyGlyph } from '$lib/components/dataviz';
 import { createFilterStore, emptyFilterState } from '$lib/filters';
+import { OCCUPANCY_CODES, type OccupancyCode, type StatusCode } from '$lib/v1/schemas';
 import MapFilters from './MapFilters.svelte';
 
 describe('MapFilters', () => {
@@ -19,18 +21,18 @@ describe('MapFilters', () => {
 		{ id: '53355', code: '53355', name: 'Van Horne / Rockland', lat: 45.52, lon: -73.62 },
 	];
 	const statusMappings = [
-		{ code: 'early', glyph: '▼', en: 'Early', fr: 'En avance' },
-		{ code: 'on_time', glyph: '●', en: 'On-time', fr: 'À l’heure' },
-		{ code: 'late', glyph: '▲', en: 'Late', fr: 'En retard' },
-		{ code: 'severe', glyph: '◆', en: 'Severe', fr: 'Sévère' },
-		{ code: 'unknown', glyph: '○', en: 'Unknown', fr: 'Inconnu' },
+		{ code: 'early', en: 'Early', fr: 'En avance' },
+		{ code: 'on_time', en: 'On-time', fr: 'À l’heure' },
+		{ code: 'late', en: 'Late', fr: 'En retard' },
+		{ code: 'severe', en: 'Severe', fr: 'Sévère' },
+		{ code: 'unknown', en: 'Unknown', fr: 'Inconnu' },
 	] as const;
 	const occupancyMappings = [
-		{ code: 'empty', glyph: '▁', en: 'Empty', fr: 'Vide' },
-		{ code: 'many_seats', glyph: '▃', en: 'Many seats', fr: 'Plusieurs places' },
-		{ code: 'few_seats', glyph: '▅', en: 'Few seats', fr: 'Peu de places' },
-		{ code: 'standing', glyph: '▇', en: 'Standing', fr: 'Debout' },
-		{ code: 'full', glyph: '█', en: 'Full', fr: 'Plein' },
+		{ code: 'empty', en: 'Empty', fr: 'Vide' },
+		{ code: 'many_seats', en: 'Many seats', fr: 'Plusieurs places' },
+		{ code: 'few_seats', en: 'Few seats', fr: 'Peu de places' },
+		{ code: 'standing', en: 'Standing', fr: 'Debout' },
+		{ code: 'full', en: 'Full', fr: 'Plein' },
 	] as const;
 
 	function expectGlyphMappings(
@@ -42,11 +44,15 @@ describe('MapFilters', () => {
 		const group = container.querySelector<HTMLElement>(`[data-filter-group="${kind}"]`)!;
 		for (const mapping of mappings) {
 			const label = mapping[locale];
+			const expectedGlyph =
+				kind === 'crowding'
+					? occupancyGlyph(mapping.code as OccupancyCode)
+					: STATUS_GLYPH[mapping.code as StatusCode];
 			const chip = within(group).getByRole('button', { name: label });
 			const glyph = chip.querySelector(
 				`[data-m6d-glyph-kind="${kind}"][data-m6d-glyph-code="${mapping.code}"]`,
 			);
-			expect(glyph).toHaveTextContent(mapping.glyph);
+			expect(glyph).toHaveTextContent(expectedGlyph);
 			expect(glyph).toHaveAttribute('aria-hidden', 'true');
 			expect(chip.querySelector('.mf-chip-text')).toHaveTextContent(label);
 			expect(chip).toHaveAccessibleName(label);
@@ -147,19 +153,32 @@ describe('MapFilters', () => {
 		},
 	);
 
-	it('keeps both D3 consumers on the dataviz glyph vocabulary', () => {
+	it('keeps every E-4 DOM consumer on the dataviz occupancy helper', () => {
+		for (const relative of [
+			'src/lib/features/map/MapFilters.svelte',
+			'src/lib/features/map/MapSelectionDetail.svelte',
+			'src/lib/features/search/VehicleResultRow.svelte',
+		]) {
+			const source = readFileSync(resolve(process.cwd(), relative), 'utf8');
+			expect(source, relative).toMatch(/import\s*\{[^}]*occupancyGlyph[^}]*\}/s);
+			expect(source.match(/occupancyGlyph\(/g), relative).toHaveLength(1);
+			expect(source, relative).not.toContain('OCCUPANCY_GLYPH');
+			expect(source, relative).not.toMatch(/['"](?:▼|●|▲|◆|○)['"]/);
+			for (const glyph of [
+				...OCCUPANCY_CODES.map((code) => occupancyGlyph(code)),
+				occupancyGlyph(null),
+				String.fromCodePoint(0x2588),
+			]) {
+				expect(source, relative).not.toContain(`'${glyph}'`);
+				expect(source, relative).not.toContain(`"${glyph}"`);
+			}
+		}
 		for (const relative of [
 			'src/lib/features/map/MapFilters.svelte',
 			'src/lib/features/map/MapSelectionDetail.svelte',
 		]) {
 			const source = readFileSync(resolve(process.cwd(), relative), 'utf8');
-			expect(source, relative).toMatch(
-				/import\s*\{[^}]*STATUS_GLYPH[^}]*occupancyGlyph[^}]*\}\s*from '\$lib\/components\/dataviz'/s,
-			);
 			expect(source.match(/STATUS_GLYPH\[/g), relative).toHaveLength(1);
-			expect(source.match(/occupancyGlyph\(/g), relative).toHaveLength(1);
-			expect(source, relative).not.toContain('OCCUPANCY_GLYPH');
-			expect(source, relative).not.toMatch(/['"](?:▼|●|▲|◆|○|▁|▃|▅|▇|█|◌)['"]/);
 		}
 	});
 
