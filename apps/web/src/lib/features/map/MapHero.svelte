@@ -18,9 +18,9 @@
   rides the brand surface palette; every mark rides a token, no hardcoded hex.
 -->
 <script lang="ts">
-	import { onDestroy, onMount, untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { navigating, page } from '$app/stores';
+	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 	import { getLocale, type Locale } from '$lib/i18n';
@@ -102,7 +102,6 @@
 		type MapSelectionDetail as MapSelectionDetailModel,
 	} from './mapSelection';
 	import { createSelectionGrace } from './selectionGrace.svelte';
-	import { createMapDetailNavigationLifecycle } from './mapDetailNavigationLifecycle';
 
 	const locale: Locale = getLocale();
 	const t = $derived(MAP_COPY[locale]);
@@ -167,12 +166,7 @@
 	// disrupted + back/forward stay clean). One map, deep-linkable from anywhere.
 	// Every URL write here is an in-place rewrite: keep the map view (noScroll),
 	// the user's focus, and a clean back/forward stack.
-	const urlCoordinator = createMapUrlCoordinator(
-		$page.url,
-		goto,
-		() => $page.state as Readonly<Record<string, unknown>>,
-	);
-	onDestroy(() => urlCoordinator.dispose());
+	const urlCoordinator = createMapUrlCoordinator($page.url, goto);
 	const filters = createFilterStore(
 		fromSearchParams($page.url.searchParams),
 		urlCoordinator.writeFilters,
@@ -201,36 +195,13 @@
 		},
 	});
 
-	const mapDetailNavigationLifecycle = createMapDetailNavigationLifecycle({
-		currentIntent: urlCoordinator.currentIntent,
-		goto: urlCoordinator.goto,
-	});
-	onMount(() => {
-		const unsubscribe = navigating.subscribe((navigation) => {
-			mapDetailNavigationLifecycle.recordAccepted(navigation?.to?.url ?? null);
-		});
-		return () => {
-			unsubscribe();
-			mapDetailNavigationLifecycle.dispose();
-		};
-	});
-
-	let observedPageUrl: URL | null = null;
 	let ingestedUrlIdentity = '';
 	$effect(() => {
 		const url = $page.url;
-		if (url === observedPageUrl) return;
-		observedPageUrl = url;
 		const urlIdentity = `${url.pathname}${url.search}`;
-		const mapSettlement = mapDetailNavigationLifecycle.settle(
-			url,
-			urlCoordinator.settle,
-			$page.state,
-		);
-		if (mapSettlement === 'recovered') return;
 		if (urlIdentity === ingestedUrlIdentity) return;
 		ingestedUrlIdentity = urlIdentity;
-		filters.replaceFromUrl(fromSearchParams(url.searchParams), mapSettlement);
+		filters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));
 		nearMeController.syncFromUrl(url.searchParams);
 		focusController.syncFromUrl(url.searchParams);
 	});
@@ -271,25 +242,9 @@
 	// Keep one shared server-time tick alive for map freshness and relative-time copy.
 	$effect(() => sharedClock.subscribe());
 
-	$effect(() => () => {
-		try {
-			untrack(() => vehicleMotion)?.destroy();
-		} catch {
-			// MapStage normally releases owners first; this fallback cannot abort the parent tree.
-		}
-		for (const dispose of interactionDisposers) {
-			try {
-				dispose();
-			} catch {
-				// Keep unwinding every remaining owner.
-			}
-		}
-	});
-
 	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
 
-	// MapStage supplies one revocable handle; the raw MapLibre instance never leaves it.
-	// Track handle identity so teardown releases only the matching logical map owner.
+	// Track map identity so teardown releases only the matching logical map owner.
 	let map = $state.raw<MapLibreMap | null>(null);
 	let mapFailure = $state<{ readonly retry: () => Promise<void> } | null>(null);
 	let vehicleMotion = $state<VehicleMotionController | null>(null);
@@ -306,7 +261,6 @@
 	const selectionStack = $derived(selectionController.stack);
 	const hovered = $derived(selectionController.hovered);
 	const detailOpen = $derived(selectionController.detailOpen);
-	$effect(() => () => untrack(() => emphasisController.clear()));
 
 	function releaseMapOwners(m: MapLibreMap): void {
 		if (map !== m) return;
@@ -336,8 +290,27 @@
 		} catch (error) {
 			releaseErrors.push(error);
 		}
-		if (releaseErrors.length > 0) throw releaseErrors[0];
+		if (releaseErrors.length === 1) throw releaseErrors[0];
+		if (releaseErrors.length > 1) {
+			throw new AggregateError(releaseErrors, 'MapHero owner cleanup failed');
+		}
 	}
+
+	$effect(() => () => {
+		const ownedMap = untrack(() => map);
+		if (!ownedMap) return;
+		try {
+			releaseMapOwners(ownedMap);
+		} catch (error) {
+			// This fallback covers parent-first destruction. The normal child-first path
+			// reports through MapStage's exception-isolated disposal boundary.
+			try {
+				console.error('MapHero cleanup failed', error);
+			} catch {
+				// Fault reporting cannot reopen the parent destruction path.
+			}
+		}
+	});
 
 	// Selection-scoped live families are ref-counted leases keyed strictly on the
 	// committed selection. Hover never activates a family or restarts polling.

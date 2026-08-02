@@ -1,32 +1,17 @@
 import { cleanup, render } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { KitNavigationSimulator } from '$lib/features/map/__fixtures__/KitNavigationSimulator';
 
 const harness = vi.hoisted(() => {
 	const beforeNavigateCallbacks: Array<(navigation: unknown) => unknown> = [];
 	const onNavigateCallbacks: Array<(navigation: unknown) => unknown> = [];
-	const transitionTransientStates: boolean[] = [];
-	let resolveViewTransition: () => void = () => {};
-	const runViewTransition = vi.fn(() => {
-		transitionTransientStates.push(
-			document.querySelector('[data-m6c2-detail-sheet]') != null ||
-				document.body.style.overflow === 'hidden' ||
-				document.body.style.pointerEvents === 'none',
-		);
-		return new Promise<void>((resolve) => {
-			resolveViewTransition = resolve;
-		});
-	});
+	const runViewTransition = vi.fn(async () => {});
 	return {
 		setPath: (_pathname: string) => {},
 		beforeNavigateCallbacks,
 		onNavigateCallbacks,
-		transitionTransientStates,
 		runViewTransition,
-		finishViewTransition: () => {
-			resolveViewTransition();
-			resolveViewTransition = () => {};
-		},
 	};
 });
 
@@ -147,28 +132,9 @@ const children = createRawSnippet(() => ({
 	render: () => '<article data-testid="legal-child">Legal child</article>',
 }));
 
-let appStyle: HTMLStyleElement;
-
-beforeAll(() => {
-	appStyle = document.createElement('style');
-	appStyle.dataset.testAppCss = '';
-	// Vite's server-side CSS transform does not inject Tailwind utilities into
-	// Happy DOM. These are the exact two declarations emitted by the production
-	// build; installing them makes the assertion exercise computed overflow rather
-	// than class-token presence.
-	// Happy DOM does not expand the overflow shorthand into overflowY, so repeat
-	// the shorthand's Y-axis value explicitly for the computed-style assertion.
-	appStyle.textContent =
-		'.overflow-hidden{overflow:hidden;overflow-y:hidden}.overflow-y-auto{overflow-y:auto}';
-	document.head.append(appStyle);
-});
-
-afterAll(() => appStyle.remove());
-
 function renderWithoutV1(pathname: string, lang: 'en' | 'fr') {
 	harness.beforeNavigateCallbacks.length = 0;
 	harness.onNavigateCallbacks.length = 0;
-	harness.transitionTransientStates.length = 0;
 	harness.runViewTransition.mockClear();
 	harness.setPath(pathname);
 	return render(RootLayout, {
@@ -209,163 +175,56 @@ describe('root layout data-independent legal routes', () => {
 	});
 
 	it.each([
-		['desktop overlay', 'data-slot', 'map-detail-overlay', false],
-		['mobile sheet', 'data-m6c2-detail-sheet', '', true],
+		['ordinary map exit', '/map', '/lines'],
+		['accepted target normalized at commit', '/map/', '/map'],
+		['localized accepted target normalized at commit', '/fr/map/', '/fr/map'],
 	] as const)(
-		'commits a panel-open map exit before the new URL can retain #main scroll lock: %s',
-		async (_panelKind, attribute, value, locksBody) => {
-			const { container } = renderWithoutV1('/map', 'en');
-			const main = container.querySelector('#main') as HTMLElement;
-			expect(getComputedStyle(main).overflowY).toBe('hidden');
-
-			const panel = document.createElement('div');
-			panel.setAttribute(attribute, value);
-			document.body.append(panel);
-			if (locksBody) {
-				document.body.style.overflow = 'hidden';
-				document.body.style.pointerEvents = 'none';
-			}
-			let completeNavigation: () => void;
-			const complete = new Promise<void>((resolve) => {
-				completeNavigation = resolve;
-			});
+		'delegates %s to the ordinary View Transition path',
+		async (_shape, fromPath, toPath) => {
+			renderWithoutV1(fromPath, fromPath.startsWith('/fr/') ? 'fr' : 'en');
 			const navigation = {
-				from: { url: new URL('https://transit.yesid.dev/map') },
-				to: { url: new URL('https://transit.yesid.dev/lines') },
+				from: { url: new URL(`https://transit.yesid.dev${fromPath}`) },
+				to: { url: new URL(`https://transit.yesid.dev${toPath}`) },
 				willUnload: false,
-				complete,
+				complete: Promise.resolve(),
 			};
 
-			for (const callback of harness.beforeNavigateCallbacks) callback(navigation);
-			window.history.replaceState({}, '', '/lines');
+			// No beforeNavigate delivery is assumed. Kit may suppress those callbacks
+			// while an accepted navigation is active; onNavigate still owns this transaction.
 			const blocker = harness.onNavigateCallbacks.at(-1)?.(navigation);
 
-			try {
-				// SvelteKit commits root/page state only after every onNavigate callback
-				// returns. A panel-exit callback must therefore stay synchronous: the URL
-				// is already /lines here, and a promise would leave the live /map #main in
-				// place with overflow hidden.
-				if (!(blocker instanceof Promise)) {
-					harness.setPath('/lines');
-					await tick();
-				}
-
-				expect(window.location.pathname).toBe('/lines');
-				expect(getComputedStyle(main).overflowY).toBe('auto');
-				expect(harness.runViewTransition).not.toHaveBeenCalled();
-			} finally {
-				panel.remove();
-				document.body.style.removeProperty('overflow');
-				document.body.style.removeProperty('pointer-events');
-				harness.finishViewTransition();
-				completeNavigation!();
-				await blocker;
-				window.history.replaceState({}, '', '/');
-			}
+			expect(harness.runViewTransition).toHaveBeenCalledOnce();
+			expect(harness.runViewTransition).toHaveBeenCalledWith(navigation);
+			await expect(blocker).resolves.toBeUndefined();
 		},
 	);
 
-	it.each([
-		['a panel-closed map', false, [false]],
-		['a stale body lock without a live panel', true, [true]],
-	] as const)(
-		'preserves the normal View Transition for %s',
-		async (_state, lockBody, expectedTransitionState) => {
-			const { container } = renderWithoutV1('/map', 'en');
-			const main = container.querySelector('#main') as HTMLElement;
-			if (lockBody) {
-				document.body.style.overflow = 'hidden';
-				document.body.style.pointerEvents = 'none';
-			}
-			let completeNavigation: () => void;
-			const complete = new Promise<void>((resolve) => {
-				completeNavigation = resolve;
-			});
-			const navigation = {
-				from: { url: new URL('https://transit.yesid.dev/map') },
-				to: { url: new URL('https://transit.yesid.dev/lines') },
-				willUnload: false,
-				complete,
-			};
+	it('commits the actual root #main from a locked map to a scrollable rendered document', async () => {
+		const view = renderWithoutV1('/map', 'en');
+		const main = view.container.querySelector<HTMLElement>('#main');
+		expect(main).toHaveClass('overflow-hidden');
+		expect(main).not.toHaveClass('overflow-y-auto');
+		const simulator = new KitNavigationSimulator({
+			publishPage: (href) => harness.setPath(new URL(href).pathname),
+			publishNavigating: () => {},
+			flushDom: tick,
+			activeElement: () => document.activeElement,
+			bodyElement: () => document.body,
+			resetFocus: () => document.body.focus(),
+		});
+		simulator.setPageUrl('https://transit.yesid.dev/map');
+		for (const callback of harness.onNavigateCallbacks) {
+			simulator.onNavigate(callback);
+		}
+		const accepted = simulator.startNavigation('https://transit.yesid.dev/privacy');
 
-			for (const callback of harness.beforeNavigateCallbacks) callback(navigation);
-			window.history.replaceState({}, '', '/lines');
-			const blocker = harness.onNavigateCallbacks.at(-1)?.(navigation);
+		await simulator.commitNavigation('https://transit.yesid.dev/privacy');
+		await expect(accepted.navigation.complete).resolves.toBeUndefined();
 
-			try {
-				expect(blocker).toBeInstanceOf(Promise);
-				expect(harness.runViewTransition).toHaveBeenCalledOnce();
-				expect(harness.transitionTransientStates).toEqual(expectedTransitionState);
-				expect(getComputedStyle(main).overflowY).toBe('hidden');
-
-				harness.finishViewTransition();
-				await blocker;
-				harness.setPath('/lines');
-				await tick();
-				expect(getComputedStyle(main).overflowY).toBe('auto');
-			} finally {
-				document.body.style.removeProperty('overflow');
-				document.body.style.removeProperty('pointer-events');
-				harness.finishViewTransition();
-				completeNavigation!();
-				await blocker;
-				window.history.replaceState({}, '', '/');
-			}
-		},
-	);
-
-	it.each([
-		['desktop overlay', 'data-slot', 'map-detail-overlay', false],
-		['mobile sheet', 'data-m6c2-detail-sheet', '', true],
-	] as const)(
-		'skips the transition for a callback-suppressed panel-open map exit: %s',
-		async (_panelKind, attribute, value, locksBody) => {
-			const { container } = renderWithoutV1('/map', 'en');
-			const main = container.querySelector('#main') as HTMLElement;
-			expect(getComputedStyle(main).overflowY).toBe('hidden');
-
-			const panel = document.createElement('div');
-			panel.setAttribute(attribute, value);
-			document.body.append(panel);
-			if (locksBody) {
-				document.body.style.overflow = 'hidden';
-				document.body.style.pointerEvents = 'none';
-			}
-			let completeNavigation: () => void;
-			const complete = new Promise<void>((resolve) => {
-				completeNavigation = resolve;
-			});
-			const navigation = {
-				from: { url: new URL('https://transit.yesid.dev/map') },
-				to: { url: new URL('https://transit.yesid.dev/lines') },
-				willUnload: false,
-				complete,
-			};
-
-			// Kit suppresses beforeNavigate while another accepted navigation is active.
-			// The final transaction callback is still authoritative and must decide from
-			// its own from/to pair rather than a flag set by the missing callback.
-			window.history.replaceState({}, '', '/lines');
-			const blocker = harness.onNavigateCallbacks.at(-1)?.(navigation);
-
-			try {
-				if (!(blocker instanceof Promise)) {
-					harness.setPath('/lines');
-					await tick();
-				}
-
-				expect(blocker).toBeUndefined();
-				expect(harness.runViewTransition).not.toHaveBeenCalled();
-				expect(getComputedStyle(main).overflowY).toBe('auto');
-			} finally {
-				panel.remove();
-				document.body.style.removeProperty('overflow');
-				document.body.style.removeProperty('pointer-events');
-				harness.finishViewTransition();
-				completeNavigation!();
-				await blocker;
-				window.history.replaceState({}, '', '/');
-			}
-		},
-	);
+		expect(view.container.querySelector('#main')).toBe(main);
+		expect(main).toHaveClass('overflow-y-auto');
+		expect(main).not.toHaveClass('overflow-hidden');
+		expect(view.getByTestId('legal-child')).toBeInTheDocument();
+		expect(harness.runViewTransition).toHaveBeenCalledWith(accepted.navigation);
+	});
 });

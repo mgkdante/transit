@@ -19,6 +19,7 @@ let featureStateObserver: ((event: MapHeroFeatureStateEvent) => void) | null = n
 let mapStageSequence = 0;
 const mapStageListenerCounts = new SvelteMap<number, Record<string, number>>();
 const mapStageSourceCounts = new SvelteMap<number, Record<string, number>>();
+const cleanupFaults = new SvelteMap<string, Error>();
 
 function aggregateCounts(
 	countsByStage: ReadonlyMap<number, Readonly<Record<string, number>>>,
@@ -85,6 +86,15 @@ export const mapHeroReceiptSignals = {
 	observeFeatureState(observer: ((event: MapHeroFeatureStateEvent) => void) | null) {
 		featureStateObserver = observer;
 	},
+	setCleanupFault(operation: string, error: Error) {
+		cleanupFaults.set(operation, error);
+	},
+	throwCleanupFault(operation: string) {
+		const error = cleanupFaults.get(operation);
+		if (!error) return;
+		cleanupFaults.delete(operation);
+		throw error;
+	},
 	createMapStageReceipt() {
 		const stageId = ++mapStageSequence;
 		mapStageListenerCounts.set(stageId, {});
@@ -113,5 +123,6 @@ export const mapHeroReceiptSignals = {
 		mapStageSequence = 0;
 		mapStageListenerCounts.clear();
 		mapStageSourceCounts.clear();
+		cleanupFaults.clear();
 	},
 };

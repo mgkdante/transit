@@ -7,12 +7,26 @@ function source(path: string): string {
 	return readFileSync(resolve(process.cwd(), path), 'utf8');
 }
 
-const OBSOLETE_M6H_ROUTE_EXIT = 'attachMapDetailRouteExit';
-const M6H_CURE2_MAP_HANDLE =
-	'\t// MapStage supplies one revocable handle; the raw MapLibre instance never leaves it.\n' +
-	'\t// Track handle identity so teardown releases only the matching logical map owner.\n' +
+const CURRENT_SHARED_CLOCK_TO_TTL = `
+	// Keep one shared server-time tick alive for map freshness and relative-time copy.
+	$effect(() => sharedClock.subscribe());
+
+	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);`;
+const BASE_SHARED_CLOCK_TO_TTL = `
+	// Keep one shared server-time tick alive for map freshness and relative-time copy.
+	$effect(() => sharedClock.subscribe());
+
+	$effect(() => () => {
+		untrack(() => vehicleMotion)?.destroy();
+		for (const dispose of interactionDisposers) dispose();
+	});
+
+	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);`;
+const CURRENT_MAP_HANDLE =
+	'\t// Track map identity so teardown releases only the matching logical map owner.\n' +
 	'\tlet map = $state.raw<MapLibreMap | null>(null);';
-const M6H_CURE2_OWNER_RELEASE = `
+const BASE_MAP_HANDLE = '\tlet map = $state<MapLibreMap | null>(null);';
+const CURRENT_OWNER_BOUNDARY = `
 	function releaseMapOwners(m: MapLibreMap): void {
 		if (map !== m) return;
 		const motion = vehicleMotion;
@@ -41,42 +55,29 @@ const M6H_CURE2_OWNER_RELEASE = `
 		} catch (error) {
 			releaseErrors.push(error);
 		}
-		if (releaseErrors.length > 0) throw releaseErrors[0];
-	}
-`;
-const M6H_CURE2_STAGE_WIRING = '\n\t\tonbeforeremove={releaseMapOwners}';
-const PRE_M6H_FALLBACK_CLEANUP = `
-	$effect(() => () => {
-		untrack(() => vehicleMotion)?.destroy();
-		for (const dispose of interactionDisposers) dispose();
-	});`;
-const M6H_DESIGN_FALLBACK_CLEANUP = `
-	$effect(() => () => {
-		try {
-			untrack(() => vehicleMotion)?.destroy();
-		} catch {
-			// MapStage normally releases owners first; this fallback cannot abort the parent tree.
+		if (releaseErrors.length === 1) throw releaseErrors[0];
+		if (releaseErrors.length > 1) {
+			throw new AggregateError(releaseErrors, 'MapHero owner cleanup failed');
 		}
-		for (const dispose of interactionDisposers) {
+	}
+
+	$effect(() => () => {
+		const ownedMap = untrack(() => map);
+		if (!ownedMap) return;
+		try {
+			releaseMapOwners(ownedMap);
+		} catch (error) {
+			// This fallback covers parent-first destruction. The normal child-first path
+			// reports through MapStage's exception-isolated disposal boundary.
 			try {
-				dispose();
+				console.error('MapHero cleanup failed', error);
 			} catch {
-				// Keep unwinding every remaining owner.
+				// Fault reporting cannot reopen the parent destruction path.
 			}
 		}
 	});`;
-const PRE_M6H_INTERACTION_PUBLICATION = `
-	function ensureMapInteractions(m: MapLibreMap): void {
-		if (interactionsMap === m) return;
-		for (const dispose of interactionDisposers) dispose();
-		interactionsMap = m;
-		interactionDisposers = installMapInteractions(m, {
-			click: (event) => selectPickedFeature(m, event),
-			mousemove: (event) => hoverPickedFeature(m, event),
-			mouseleave: () => clearHover(m),
-		});
-	}`;
-const M6H_DESIGN_INTERACTION_PUBLICATION = `
+const BASE_EMPHASIS_CLEANUP = '\t$effect(() => () => untrack(() => emphasisController.clear()));';
+const CURRENT_INTERACTION_PUBLICATION = `
 	function ensureMapInteractions(m: MapLibreMap): void {
 		if (interactionsMap === m) return;
 		const previousDisposers = interactionDisposers;
@@ -99,80 +100,33 @@ const M6H_DESIGN_INTERACTION_PUBLICATION = `
 		interactionDisposers = nextDisposers;
 		interactionsMap = m;
 	}`;
-const M6H_DESIGN_LIFECYCLE_IMPORT =
-	"\timport { createMapDetailNavigationLifecycle } from './mapDetailNavigationLifecycle';\n";
-const M6H_CURE6_SVELTE_LIFECYCLE_IMPORT =
-	"\timport { onDestroy, onMount, untrack } from 'svelte';\n";
-const PRE_M6H_SVELTE_LIFECYCLE_IMPORT = "\timport { onMount, untrack } from 'svelte';\n";
-const M6H_CURE4_PAGE_STORES_IMPORT = "\timport { navigating, page } from '$app/stores';\n";
-const PRE_M6H_PAGE_STORES_IMPORT = "\timport { page } from '$app/stores';\n";
-const M6H_CURE5_COORDINATOR_WIRING = `
-	const urlCoordinator = createMapUrlCoordinator(
-		$page.url,
-		goto,
-		() => $page.state as Readonly<Record<string, unknown>>,
-	);
-`;
-const PRE_M6H_COORDINATOR_WIRING =
-	'\n\tconst urlCoordinator = createMapUrlCoordinator($page.url, goto);\n';
-const M6H_CURE6_COORDINATOR_TEARDOWN = '\tonDestroy(() => urlCoordinator.dispose());\n';
-const M6H_DESIGN_LIFECYCLE_WIRING = `
-	const mapDetailNavigationLifecycle = createMapDetailNavigationLifecycle({
-		currentIntent: urlCoordinator.currentIntent,
-		goto: urlCoordinator.goto,
-	});`;
-const M6H_DESIGN_ACCEPTED_SUBSCRIPTION = `
-	onMount(() => {
-		const unsubscribe = navigating.subscribe((navigation) => {
-			mapDetailNavigationLifecycle.recordAccepted(navigation?.to?.url ?? null);
+const BASE_INTERACTION_PUBLICATION = `
+	function ensureMapInteractions(m: MapLibreMap): void {
+		if (interactionsMap === m) return;
+		for (const dispose of interactionDisposers) dispose();
+		interactionsMap = m;
+		interactionDisposers = installMapInteractions(m, {
+			click: (event) => selectPickedFeature(m, event),
+			mousemove: (event) => hoverPickedFeature(m, event),
+			mouseleave: () => clearHover(m),
 		});
-		return () => {
-			unsubscribe();
-			mapDetailNavigationLifecycle.dispose();
-		};
-	});
-`;
-const PRE_M6H_URL_INGESTION = `
-	let ingestedUrlIdentity = '';
-	$effect(() => {
-		const url = $page.url;
-		const urlIdentity = \`\${url.pathname}\${url.search}\`;
-		if (urlIdentity === ingestedUrlIdentity) return;
-		ingestedUrlIdentity = urlIdentity;
-		filters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));`;
-const M6H_DESIGN_LIFECYCLE_INGESTION = `
-	let observedPageUrl: URL | null = null;
-	let ingestedUrlIdentity = '';
-	$effect(() => {
-		const url = $page.url;
-		if (url === observedPageUrl) return;
-		observedPageUrl = url;
-		const urlIdentity = \`\${url.pathname}\${url.search}\`;
-		const mapSettlement = mapDetailNavigationLifecycle.settle(
-			url,
-			urlCoordinator.settle,
-			$page.state,
-		);
-		if (mapSettlement === 'recovered') return;
-		if (urlIdentity === ingestedUrlIdentity) return;
-		ingestedUrlIdentity = urlIdentity;
-		filters.replaceFromUrl(fromSearchParams(url.searchParams), mapSettlement);`;
+	}`;
+const CURRENT_STAGE_WIRING = '\n\t\tonbeforeremove={releaseMapOwners}';
 
-function withoutM6hLifecycle(value: string): string {
-	return value
-		.replace(M6H_CURE2_MAP_HANDLE, '\tlet map = $state<MapLibreMap | null>(null);')
-		.replace(M6H_CURE2_OWNER_RELEASE, '')
-		.replace(M6H_CURE2_STAGE_WIRING, '')
-		.replace(M6H_DESIGN_FALLBACK_CLEANUP, PRE_M6H_FALLBACK_CLEANUP)
-		.replace(M6H_DESIGN_INTERACTION_PUBLICATION, PRE_M6H_INTERACTION_PUBLICATION)
-		.replace(M6H_CURE6_SVELTE_LIFECYCLE_IMPORT, PRE_M6H_SVELTE_LIFECYCLE_IMPORT)
-		.replace(M6H_CURE4_PAGE_STORES_IMPORT, PRE_M6H_PAGE_STORES_IMPORT)
-		.replace(M6H_DESIGN_LIFECYCLE_IMPORT, '')
-		.replace(M6H_CURE5_COORDINATOR_WIRING, PRE_M6H_COORDINATOR_WIRING)
-		.replace(M6H_CURE6_COORDINATOR_TEARDOWN, '')
-		.replace(M6H_DESIGN_LIFECYCLE_WIRING, '')
-		.replace(M6H_DESIGN_ACCEPTED_SUBSCRIPTION, '')
-		.replace(M6H_DESIGN_LIFECYCLE_INGESTION, PRE_M6H_URL_INGESTION);
+function reconstructBaseMapHero(hero: string): string {
+	const replacements: ReadonlyArray<readonly [string, string]> = [
+		[CURRENT_SHARED_CLOCK_TO_TTL, BASE_SHARED_CLOCK_TO_TTL],
+		[CURRENT_MAP_HANDLE, BASE_MAP_HANDLE],
+		[CURRENT_OWNER_BOUNDARY, BASE_EMPHASIS_CLEANUP],
+		[CURRENT_INTERACTION_PUBLICATION, BASE_INTERACTION_PUBLICATION],
+		[CURRENT_STAGE_WIRING, ''],
+	];
+	let reconstructed = hero;
+	for (const [current, base] of replacements) {
+		expect(reconstructed.split(current)).toHaveLength(2);
+		reconstructed = reconstructed.replace(current, base);
+	}
+	return reconstructed;
 }
 
 function withoutComments(value: string): string {
@@ -260,38 +214,22 @@ describe('M6C-2 token and protected-surface contract', () => {
 		expect(rightPanel).not.toContain('rgba(0, 0, 0, 0.45)');
 	});
 
-	it('keeps the M6C-2 MapHero bytes fixed outside the registered M6H lifecycle seams', () => {
+	it('reconstructs the exact pre-M6H MapHero after removing only approved disposal seams', () => {
 		const hero = source('src/lib/features/map/MapHero.svelte');
-		expect(hero).not.toContain(OBSOLETE_M6H_ROUTE_EXIT);
+		const reconstructed = reconstructBaseMapHero(hero);
+		expect(hero).not.toContain('attachMapDetailRouteExit');
+		expect(hero).not.toContain('mapDetailNavigationLifecycle');
+		expect(hero).not.toContain('mapDisposalBarrier');
 		expect(
 			hero.split('\tconst selectionController = createMapSelectionController();'),
 		).toHaveLength(2);
-		expect(hero.split(M6H_CURE2_MAP_HANDLE)).toHaveLength(2);
-		expect(hero.split(M6H_CURE2_OWNER_RELEASE)).toHaveLength(2);
-		expect(hero.split(M6H_CURE2_STAGE_WIRING)).toHaveLength(2);
-		expect(hero.split(M6H_DESIGN_FALLBACK_CLEANUP)).toHaveLength(2);
-		expect(hero.split(M6H_DESIGN_INTERACTION_PUBLICATION)).toHaveLength(2);
-		expect(hero.split(M6H_CURE6_SVELTE_LIFECYCLE_IMPORT)).toHaveLength(2);
-		expect(hero.split(M6H_CURE4_PAGE_STORES_IMPORT)).toHaveLength(2);
-		expect(hero.split(M6H_DESIGN_LIFECYCLE_IMPORT)).toHaveLength(2);
-		expect(hero.split(M6H_CURE5_COORDINATOR_WIRING)).toHaveLength(2);
-		expect(hero.split(M6H_CURE6_COORDINATOR_TEARDOWN)).toHaveLength(2);
-		expect(hero.split(M6H_DESIGN_LIFECYCLE_WIRING)).toHaveLength(2);
-		expect(hero.split(M6H_DESIGN_ACCEPTED_SUBSCRIPTION)).toHaveLength(2);
-		expect(hero.split(M6H_DESIGN_LIFECYCLE_INGESTION)).toHaveLength(2);
-		const protectedHero = withoutM6hLifecycle(hero);
-		const protectedRegion = protectedHero.split('\n').slice(19, 882).join('\n') + '\n';
-		const digest = createHash('sha256').update(protectedRegion).digest('hex');
 		const liveConsumer = '--app-right-detail-offset: var(--size-detail-panel);';
-		const reconstructedPreEditHero = protectedHero.replace(
-			liveConsumer,
-			'--app-right-detail-offset: 360px;',
-		);
-
-		expect(digest).toBe('f1dcbc7ca685a9e31b581571e0f2d4ab27d5a025cff86792c5970ff9b3633a02');
-		expect(protectedHero.split(liveConsumer)).toHaveLength(2);
-		expect(createHash('sha256').update(reconstructedPreEditHero).digest('hex')).toBe(
-			'4e00edb78af11065fbd2f04d18e37fbead6a2acc4df71a231c7906c5a310820f',
+		expect(hero.split(liveConsumer)).toHaveLength(2);
+		expect(hero.match(/function releaseMapOwners\(/gu)).toHaveLength(1);
+		expect(hero).toContain('onbeforeremove={releaseMapOwners}');
+		expect(hero).toContain('const nextDisposers = installMapInteractions');
+		expect(createHash('sha256').update(reconstructed).digest('hex')).toBe(
+			'd95f375db5ca57f76a00eaf641c342a61961cae21b0003e9b5bbbb19a03c947f',
 		);
 	});
 

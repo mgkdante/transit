@@ -11,7 +11,6 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 	import { mapHeroReceiptSignals } from './MapHeroReceiptSignals.svelte';
-	import { createMapDisposalBarrier } from '$lib/components/map/mapDisposalBarrier';
 	// Test-only deep-import exception: this fixture is loaded from inside the
 	// MapHero suite's vi.mock factory. Going through $lib/components/map would
 	// cycle back into that factory while it is replacing the barrel's MapStage.
@@ -74,17 +73,12 @@
 			const list = (canvasHandlers.get(type) ?? []).filter((candidate) => candidate !== handler);
 			canvasHandlers.set(type, list);
 			receipt.recordListenerCount(`canvas:${type}`, list.length);
+			mapHeroReceiptSignals.throwCleanupFault(`canvas:${type}`);
 		},
 	};
 	function removeRawMap(): void {
-		for (const type of [...handlers.keys()]) {
-			handlers.set(type, []);
-			receipt.recordListenerCount(type, 0);
-		}
-		for (const type of [...canvasHandlers.keys()]) {
-			canvasHandlers.set(type, []);
-			receipt.recordListenerCount(`canvas:${type}`, 0);
-		}
+		// Real MapLibre remove() tears down its resources but retains Evented
+		// listener registries. Listener zero must come from explicit owner disposal.
 		for (const sourceId of [...sources.keys()]) {
 			sources.delete(sourceId);
 			receipt.recordSourceCount(sourceId, 0);
@@ -105,6 +99,7 @@
 			const list = (handlers.get(type) ?? []).filter((candidate) => candidate !== handler);
 			handlers.set(type, list);
 			receipt.recordListenerCount(type, list.length);
+			mapHeroReceiptSignals.throwCleanupFault(`map:${type}`);
 		},
 		addSource: (id: string, source: { setData: (data: unknown) => void }) => {
 			if (sources.has(id)) return;
@@ -144,6 +139,7 @@
 				target: { ...target },
 				property,
 			});
+			mapHeroReceiptSignals.throwCleanupFault('emphasis:removeFeatureState');
 		},
 		fitBounds: () => {
 			fitBoundsCount += 1;
@@ -159,8 +155,7 @@
 		},
 		remove: removeRawMap,
 	};
-	const barrier = createMapDisposalBarrier(rawFakeMap as unknown as MapLibreMap);
-	const guardedMap = barrier.map;
+	const map = rawFakeMap as unknown as MapLibreMap;
 
 	function pick(nextLayer = STOPS_LAYER): void {
 		pickLayer = nextLayer;
@@ -171,11 +166,11 @@
 	}
 
 	function styleLoad(): void {
-		onstyleload?.(guardedMap);
+		onstyleload?.(map);
 	}
 
 	function themeRepaint(): void {
-		onthemerepaint?.(guardedMap);
+		onthemerepaint?.(map);
 	}
 
 	function fail(): void {
@@ -210,12 +205,11 @@
 	onMount(() => {
 		style = { getSource: (id) => sources.get(id) };
 		for (const [type, handler] of mapStageHandlers) rawFakeMap.on(type, handler);
-		onready?.(guardedMap);
+		onready?.(map);
 		return () => {
-			barrier.dispose();
 			const cleanupErrors: unknown[] = [];
 			try {
-				onbeforeremove?.(guardedMap);
+				onbeforeremove?.(map);
 			} catch (error) {
 				cleanupErrors.push(error);
 			}
@@ -231,11 +225,12 @@
 			} catch (error) {
 				cleanupErrors.push(error);
 			}
-			if (cleanupErrors.length > 0 && oncleanupfailure) {
+			for (const error of cleanupErrors) {
 				try {
-					oncleanupfailure(cleanupErrors[0]);
+					if (oncleanupfailure) oncleanupfailure(error);
+					else console.error('MapStage cleanup failed', error);
 				} catch {
-					// A teardown observer cannot reopen the Svelte destructor boundary.
+					// Fault reporting cannot reopen the Svelte destructor boundary.
 				}
 			}
 		};

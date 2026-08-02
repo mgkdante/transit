@@ -9,6 +9,17 @@ function setup(href = 'https://transit.example/map') {
 }
 
 describe('map URL coordinator', () => {
+	it('exposes only the latest-intent composition surface needed by the map owners', () => {
+		const { coordinator } = setup();
+
+		expect(Object.keys(coordinator).sort()).toEqual([
+			'currentUrl',
+			'goto',
+			'settle',
+			'writeFilters',
+		]);
+	});
+
 	it('replaces every filter family while preserving unknown duplicates, empties, order, and raw near values', () => {
 		const { coordinator, navigate } = setup(
 			'https://transit.example/fr/map?x=1&route=old&x=&near=45.5000000%2C-73.5000000&empty=&status=late&x=2',
@@ -34,35 +45,6 @@ describe('map URL coordinator', () => {
 		coordinator.writeFilters('route=24');
 
 		expect(navigate.mock.calls.map(([target]) => target)).toEqual(['/map', '/map?route=24']);
-	});
-
-	it('stamps byte-identical rewrites with distinct causal receipts while preserving page state', () => {
-		const navigate = vi.fn<MapUrlNavigate>();
-		const coordinator = createMapUrlCoordinator(
-			new URL('https://transit.example/map'),
-			navigate,
-			() => ({ retained: 'page-state' }),
-		);
-
-		coordinator.goto('/map?route=24', MAP_URL_REWRITE);
-		coordinator.goto('/map?route=24', MAP_URL_REWRITE);
-
-		const firstState = navigate.mock.calls[0]?.[1].state;
-		const secondState = navigate.mock.calls[1]?.[1].state;
-		expect(firstState).toMatchObject({
-			retained: 'page-state',
-			__transitMapUrlRewrite: { revision: 1 },
-		});
-		expect(secondState).toMatchObject({
-			retained: 'page-state',
-			__transitMapUrlRewrite: { revision: 2 },
-		});
-		expect(
-			(firstState?.__transitMapUrlRewrite as { ownerId?: string } | undefined)?.ownerId,
-		).toBeTypeOf('string');
-		expect((secondState?.__transitMapUrlRewrite as { ownerId?: string } | undefined)?.ownerId).toBe(
-			(firstState?.__transitMapUrlRewrite as { ownerId?: string } | undefined)?.ownerId,
-		);
 	});
 
 	it('preserves a requested hash in the actual navigation target', () => {
@@ -117,21 +99,5 @@ describe('map URL coordinator', () => {
 			expect.objectContaining(MAP_URL_REWRITE),
 		);
 		expect(coordinator.currentUrl().pathname).toBe('/fr/map');
-	});
-
-	it('clears every queued URL token idempotently when its map owner is disposed', () => {
-		const { coordinator } = setup();
-		coordinator.goto('/map?route=24', MAP_URL_REWRITE);
-		coordinator.goto('/map?route=55', MAP_URL_REWRITE);
-
-		expect(coordinator).toMatchObject({
-			dispose: expect.any(Function),
-			pendingRequestCount: expect.any(Function),
-		});
-		expect(coordinator.pendingRequestCount()).toBe(2);
-		coordinator.dispose();
-		coordinator.dispose();
-		expect(coordinator.pendingRequestCount()).toBe(0);
-		expect(coordinator.settle(new URL('https://transit.example/map?route=55'))).toBe('adopt');
 	});
 });

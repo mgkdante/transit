@@ -333,19 +333,15 @@
 		};
 	});
 
-	// SPA View Transitions — a tasteful root cross-fade between settled surfaces.
-	// Decide the map-detail exception from this final transaction itself: Kit can
-	// suppress beforeNavigate callbacks while another accepted navigation is active.
-	onNavigate((navigation) => {
-		const isMapDetailExit =
-			typeof document !== 'undefined' &&
-			delocalizePath(navigation.from?.url.pathname ?? '') === '/map' &&
-			navigation.to != null &&
-			delocalizePath(navigation.to.url.pathname) !== '/map' &&
-			document.querySelector('[data-slot="map-detail-overlay"], [data-m6c2-detail-sheet]') != null;
-		if (isMapDetailExit) return;
-		return runViewTransition(navigation);
-	});
+	// SPA View Transitions — a tasteful root cross-fade between surfaces. The
+	// helper feature-detects `document.startViewTransition` AND respects
+	// `prefers-reduced-motion: reduce` (returning `undefined` so SvelteKit does
+	// its instant swap in both cases). On the happy path it resolves the DOM swap
+	// INSIDE startViewTransition and awaits `navigation.complete`, so the new
+	// surface settles within the transition. CSS side lives in app.css
+	// (@view-transition + the ::view-transition-*(root) cross-fade, reduced-motion
+	// guarded). Canonical SvelteKit + View Transitions recipe.
+	onNavigate((navigation) => runViewTransition(navigation));
 
 	afterNavigate(({ to }) => {
 		if (to) void transitAnalytics.trackPageview(to.url);

@@ -23,172 +23,8 @@ const layerModulesSource = readFileSync(
 	resolve(process.cwd(), 'src/lib/features/map/mapLayerModules.ts'),
 	'utf-8',
 );
-const navigationLifecycleSource = readFileSync(
-	resolve(process.cwd(), 'src/lib/features/map/mapDetailNavigationLifecycle.ts'),
-	'utf-8',
-);
 const script = source.match(/<script(?:\s[^>]*)?>\r?\n([\s\S]*?)\r?\n<\/script>/u)?.[1];
 const obsoleteM6hRouteExit = 'attachMapDetailRouteExit';
-const m6hCure2MapHandle =
-	'\t// MapStage supplies one revocable handle; the raw MapLibre instance never leaves it.\n' +
-	'\t// Track handle identity so teardown releases only the matching logical map owner.\n' +
-	'\tlet map = $state.raw<MapLibreMap | null>(null);';
-const m6hCure2OwnerRelease = `
-	function releaseMapOwners(m: MapLibreMap): void {
-		if (map !== m) return;
-		const motion = vehicleMotion;
-		const disposers = interactionDisposers;
-		vehicleMotion = null;
-		vehicleMotionMap = null;
-		interactionDisposers = [];
-		interactionsMap = null;
-		map = null;
-
-		const releaseErrors: unknown[] = [];
-		try {
-			motion?.destroy();
-		} catch (error) {
-			releaseErrors.push(error);
-		}
-		for (const dispose of disposers) {
-			try {
-				dispose();
-			} catch (error) {
-				releaseErrors.push(error);
-			}
-		}
-		try {
-			emphasisController.clear(m);
-		} catch (error) {
-			releaseErrors.push(error);
-		}
-		if (releaseErrors.length > 0) throw releaseErrors[0];
-	}
-`;
-const preM6hFallbackCleanup = `
-	$effect(() => () => {
-		untrack(() => vehicleMotion)?.destroy();
-		for (const dispose of interactionDisposers) dispose();
-	});`;
-const m6hDesignFallbackCleanup = `
-	$effect(() => () => {
-		try {
-			untrack(() => vehicleMotion)?.destroy();
-		} catch {
-			// MapStage normally releases owners first; this fallback cannot abort the parent tree.
-		}
-		for (const dispose of interactionDisposers) {
-			try {
-				dispose();
-			} catch {
-				// Keep unwinding every remaining owner.
-			}
-		}
-	});`;
-const preM6hInteractionPublication = `
-	function ensureMapInteractions(m: MapLibreMap): void {
-		if (interactionsMap === m) return;
-		for (const dispose of interactionDisposers) dispose();
-		interactionsMap = m;
-		interactionDisposers = installMapInteractions(m, {
-			click: (event) => selectPickedFeature(m, event),
-			mousemove: (event) => hoverPickedFeature(m, event),
-			mouseleave: () => clearHover(m),
-		});
-	}`;
-const m6hDesignInteractionPublication = `
-	function ensureMapInteractions(m: MapLibreMap): void {
-		if (interactionsMap === m) return;
-		const previousDisposers = interactionDisposers;
-		interactionDisposers = [];
-		interactionsMap = null;
-		const releaseErrors: unknown[] = [];
-		for (const dispose of previousDisposers) {
-			try {
-				dispose();
-			} catch (error) {
-				releaseErrors.push(error);
-			}
-		}
-		if (releaseErrors.length > 0) throw releaseErrors[0];
-		const nextDisposers = installMapInteractions(m, {
-			click: (event) => selectPickedFeature(m, event),
-			mousemove: (event) => hoverPickedFeature(m, event),
-			mouseleave: () => clearHover(m),
-		});
-		interactionDisposers = nextDisposers;
-		interactionsMap = m;
-	}`;
-const m6hDesignLifecycleImport =
-	"\timport { createMapDetailNavigationLifecycle } from './mapDetailNavigationLifecycle';\n";
-const m6hCure6SvelteLifecycleImport = "\timport { onDestroy, onMount, untrack } from 'svelte';\n";
-const preM6hSvelteLifecycleImport = "\timport { onMount, untrack } from 'svelte';\n";
-const m6hCure4PageStoresImport = "\timport { navigating, page } from '$app/stores';\n";
-const preM6hPageStoresImport = "\timport { page } from '$app/stores';\n";
-const m6hCure5CoordinatorWiring = `
-	const urlCoordinator = createMapUrlCoordinator(
-		$page.url,
-		goto,
-		() => $page.state as Readonly<Record<string, unknown>>,
-	);
-`;
-const preM6hCoordinatorWiring =
-	'\n\tconst urlCoordinator = createMapUrlCoordinator($page.url, goto);\n';
-const m6hCure6CoordinatorTeardown = '\tonDestroy(() => urlCoordinator.dispose());\n';
-const m6hDesignLifecycleWiring = `
-	const mapDetailNavigationLifecycle = createMapDetailNavigationLifecycle({
-		currentIntent: urlCoordinator.currentIntent,
-		goto: urlCoordinator.goto,
-	});`;
-const m6hDesignAcceptedSubscription = `
-	onMount(() => {
-		const unsubscribe = navigating.subscribe((navigation) => {
-			mapDetailNavigationLifecycle.recordAccepted(navigation?.to?.url ?? null);
-		});
-		return () => {
-			unsubscribe();
-			mapDetailNavigationLifecycle.dispose();
-		};
-	});
-`;
-const preM6hUrlIngestion = `
-	let ingestedUrlIdentity = '';
-	$effect(() => {
-		const url = $page.url;
-		const urlIdentity = \`\${url.pathname}\${url.search}\`;
-		if (urlIdentity === ingestedUrlIdentity) return;
-		ingestedUrlIdentity = urlIdentity;
-		filters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));`;
-const m6hDesignLifecycleIngestion = `
-	let observedPageUrl: URL | null = null;
-	let ingestedUrlIdentity = '';
-	$effect(() => {
-		const url = $page.url;
-		if (url === observedPageUrl) return;
-		observedPageUrl = url;
-		const urlIdentity = \`\${url.pathname}\${url.search}\`;
-		const mapSettlement = mapDetailNavigationLifecycle.settle(
-			url,
-			urlCoordinator.settle,
-			$page.state,
-		);
-		if (mapSettlement === 'recovered') return;
-		if (urlIdentity === ingestedUrlIdentity) return;
-		ingestedUrlIdentity = urlIdentity;
-		filters.replaceFromUrl(fromSearchParams(url.searchParams), mapSettlement);`;
-const preM6hScript = script
-	?.replace(m6hCure2MapHandle, '\tlet map = $state<MapLibreMap | null>(null);')
-	.replace(m6hCure2OwnerRelease, '')
-	.replace(m6hDesignFallbackCleanup, preM6hFallbackCleanup)
-	.replace(m6hDesignInteractionPublication, preM6hInteractionPublication)
-	.replace(m6hCure6SvelteLifecycleImport, preM6hSvelteLifecycleImport)
-	.replace(m6hCure4PageStoresImport, preM6hPageStoresImport)
-	.replace(m6hDesignLifecycleImport, '')
-	.replace(m6hCure5CoordinatorWiring, preM6hCoordinatorWiring)
-	.replace(m6hCure6CoordinatorTeardown, '')
-	.replace(m6hDesignLifecycleWiring, '')
-	.replace(m6hDesignAcceptedSubscription, '')
-	.replace(m6hDesignLifecycleIngestion, preM6hUrlIngestion);
 const mapStage = source.match(/<MapStage[\s\S]*?\/>/u)?.[0];
 const nearMeDependencies = script?.match(
 	/const nearMeController = createMapNearMeController\(\{([\s\S]*?)\r?\n\t\}\);\r?\n\tconst focusController/u,
@@ -214,55 +50,33 @@ function codeOnly(text: string): string {
 const forbiddenIdentifiers = /\b(?:navigator|geolocation|fetch)\b/gu;
 
 describe('MapHero orchestrator — structural law', () => {
-	it('keeps the M6a 861-line budget outside the explicit M6H lifecycle seams', () => {
+	it('owns no accepted-navigation ledger or recovery pass', () => {
+		expect(source).not.toContain('mapDetailNavigationLifecycle');
+		expect(source).not.toContain('navigating.subscribe');
+		expect(source).not.toContain('urlCoordinator.currentIntent');
+		expect(source).not.toContain('observedPageUrl');
+		expect(source).toContain('urlCoordinator.settle(url)');
+	});
+
+	it('keeps the orchestrator bounded after the disposal correction', () => {
 		expect(script).toBeDefined();
 		expect(script).not.toContain(obsoleteM6hRouteExit);
-		expect(script!.split(m6hCure2MapHandle)).toHaveLength(2);
-		expect(script!.split(m6hCure2OwnerRelease)).toHaveLength(2);
-		expect(script!.split(m6hDesignFallbackCleanup)).toHaveLength(2);
-		expect(script!.split(m6hDesignInteractionPublication)).toHaveLength(2);
-		expect(script!.split(m6hCure6SvelteLifecycleImport)).toHaveLength(2);
-		expect(script!.split(m6hCure4PageStoresImport)).toHaveLength(2);
-		expect(script!.split(m6hDesignLifecycleImport)).toHaveLength(2);
-		expect(script!.split(m6hCure5CoordinatorWiring)).toHaveLength(2);
-		expect(script!.split(m6hCure6CoordinatorTeardown)).toHaveLength(2);
-		expect(script!.split(m6hDesignLifecycleWiring)).toHaveLength(2);
-		expect(script!.split(m6hDesignAcceptedSubscription)).toHaveLength(2);
-		expect(script!.split(m6hDesignLifecycleIngestion)).toHaveLength(2);
-		expect(preM6hScript!.split(/\r?\n/u).length).toBeLessThan(862);
+		expect(script!.split(/\r?\n/u).length).toBe(918);
 	});
 
 	it('uses one normal-script URL ingestion seam behind the shared three-writer coordinator', () => {
 		expect(source.match(/<script(?:\s[^>]*)?>/gu)).toHaveLength(1);
 		expect(source).not.toMatch(/<script[^>]*context=["']module["']/u);
 		expect(source).not.toContain('afterNavigate');
-		expect(source.match(/mapDetailNavigationLifecycle\.recordAccepted\(/gu)).toHaveLength(1);
-		expect(source.match(/mapDetailNavigationLifecycle\.settle\(/gu)).toHaveLength(1);
-		expect(navigationLifecycleSource.match(/settleUrl\(url\)/gu)).toHaveLength(1);
 		expect(source.match(/filters\.replaceFromUrl\(/gu)).toHaveLength(1);
 		expect(source).toContain('const urlIdentity = `${url.pathname}${url.search}`');
-		expect(source).toContain('if (url === observedPageUrl) return;');
-		expect(source).toContain('navigating.subscribe((navigation) => {');
-		expect(source).not.toContain('$navigating');
-		expect(source).toContain('$page.state');
+		expect(source).toContain('urlCoordinator.settle(url)');
 		expect(source.indexOf('const urlCoordinator = createMapUrlCoordinator')).toBeLessThan(
 			source.indexOf('const nearMeController = createMapNearMeController'),
 		);
 		expect(source).toContain('urlCoordinator.writeFilters');
 		expect(source).toContain('goto: urlCoordinator.goto');
-		expect(source).toContain('currentIntent: urlCoordinator.currentIntent');
 		expect(source.match(/urlCoordinator\.goto\(/gu)).toHaveLength(1);
-	});
-
-	it('keeps accepted-target recovery independent of callbacks and URL ownership labels', () => {
-		expect(navigationLifecycleSource).not.toContain("from '$app/navigation'");
-		expect(navigationLifecycleSource).not.toContain('beforeNavigate');
-		expect(navigationLifecycleSource).not.toMatch(/settlement\s*[!=]==?\s*['"](?:echo|adopt)/u);
-		expect(navigationLifecycleSource).not.toContain('isPlainMap');
-		expect(navigationLifecycleSource).not.toContain('isExactRestore');
-		expect(navigationLifecycleSource).not.toContain('selectionController');
-		expect(navigationLifecycleSource).not.toContain('.close()');
-		expect(navigationLifecycleSource).not.toContain('map.remove');
 	});
 
 	it('keeps hover out of bulk feeds and replays emphasis only through the layer revision seam', () => {

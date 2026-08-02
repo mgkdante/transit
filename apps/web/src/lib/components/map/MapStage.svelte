@@ -100,7 +100,6 @@
 	import { cn } from '$lib/utils';
 	import type { BasemapFile } from '$lib/v1/schemas';
 	import { applyBasemapTheme, resolveBasemapStyle, type BasemapTheme } from './basemap';
-	import { createMapDisposalBarrier, type MapDisposalBarrier } from './mapDisposalBarrier';
 	import { mapViewportOptions, type MapFitPadding } from './viewport';
 	// Type-only import — erased at compile time, so it never pulls maplibre-gl
 	// into the server bundle. The RUNTIME import happens dynamically in onMount.
@@ -167,9 +166,9 @@
 		onthemerepaint?: (map: MapLibreMap) => void;
 		/** Fatal initialization state. null clears the state before an in-place retry. */
 		onerror?: (failure: MapStageFailure | null) => void;
-		/** Release consumer state through an already-inert handle before raw removal. */
+		/** Release consumer-owned map state before MapLibre removal. */
 		onbeforeremove?: (map: MapLibreMap) => void;
-		/** Receives the first teardown error after every cleanup step has run. */
+		/** Receives each teardown error after every cleanup step has run. */
 		oncleanupfailure?: (error: unknown) => void;
 		/** Partial MapLibre locale table applied at construction. */
 		locale?: Record<string, string>;
@@ -238,8 +237,7 @@
 		readonly generation: number;
 		readonly container: HTMLDivElement;
 		readonly controller: AbortController;
-		rawMap: MapLibreMap | null;
-		barrier: MapDisposalBarrier | null;
+		map: MapLibreMap | null;
 		observer: ResizeObserver | null;
 		disposers: Array<() => void>;
 		initializing: boolean;
@@ -261,21 +259,34 @@
 		);
 	}
 
+	function reportCleanupFailure(error: unknown): void {
+		try {
+			if (oncleanupfailure) oncleanupfailure(error);
+			else console.error('MapStage cleanup failed', error);
+		} catch {
+			// Fault reporting cannot reopen a disposal path.
+		}
+	}
+
+	function releaseWithoutEscape(dispose: () => void): void {
+		try {
+			dispose();
+		} catch (error) {
+			reportCleanupFailure(error);
+		}
+	}
+
 	function cleanupAttempt(attempt: BootAttempt): void {
 		if (attempt.cleaned) return;
 		attempt.cleaned = true;
 		attempt.initializing = false;
-		const rawMap = attempt.rawMap;
-		const barrier = attempt.barrier;
-		const guardedMap = barrier?.map ?? null;
-		attempt.rawMap = null;
-		attempt.barrier = null;
+		const ownedMap = attempt.map;
+		attempt.map = null;
 		const disposers = attempt.disposers.splice(0);
 		const observer = attempt.observer;
 		attempt.observer = null;
 		if (activeAttempt === attempt) activeAttempt = null;
-		if (map === guardedMap) map = null;
-		barrier?.dispose();
+		if (map === ownedMap) map = null;
 
 		const cleanupErrors: unknown[] = [];
 		const release = (dispose: () => void): void => {
@@ -287,16 +298,41 @@
 		};
 		release(() => attempt.controller.abort());
 		if (observer) release(() => observer.disconnect());
-		if (guardedMap && onbeforeremove) release(() => onbeforeremove(guardedMap));
+		if (ownedMap && onbeforeremove) release(() => onbeforeremove(ownedMap));
 		for (const dispose of disposers) release(dispose);
-		if (rawMap) release(() => rawMap.remove());
-		if (cleanupErrors.length > 0 && oncleanupfailure) {
+		// MapLibre remove() can throw in control teardown before it reaches its own
+		// style destruction. Isolate that resource release so sources still reach zero.
+		if (ownedMap) release(() => ownedMap.setStyle(null));
+		if (ownedMap) release(() => ownedMap.remove());
+		for (const error of cleanupErrors) reportCleanupFailure(error);
+	}
+
+	function ownMapListener(
+		attempt: BootAttempt,
+		instance: MapLibreMap,
+		type: string,
+		listener: (event: unknown) => void,
+	): () => void {
+		let active = true;
+		const dispose = () => {
+			if (!active) return;
+			instance.off(type, listener);
+			active = false;
+		};
+		// Ledger first: Evented registration can mutate and then throw. Cleanup must
+		// still know the exact listener identity in that partial-registration state.
+		attempt.disposers.push(dispose);
+		try {
+			instance.on(type, listener);
+		} catch (error) {
 			try {
-				oncleanupfailure(cleanupErrors[0]);
+				dispose();
 			} catch {
-				// Teardown observers cannot reopen the destruction path.
+				// The attempt ledger keeps the disposer active for the teardown retry.
 			}
+			throw error;
 		}
+		return dispose;
 	}
 
 	function preflightWebgl(): void {
@@ -350,8 +386,7 @@
 			generation,
 			container,
 			controller: new AbortController(),
-			rawMap: null,
-			barrier: null,
+			map: null,
 			observer: null,
 			disposers: [],
 			initializing: true,
@@ -397,36 +432,23 @@
 				// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 				attributionControl: { compact: true },
 			});
-			const barrier = createMapDisposalBarrier(instance);
-			attempt.rawMap = instance;
-			attempt.barrier = barrier;
+			attempt.map = instance;
 			activeLayoutSig = fitPaddingKey(fitPadding);
 			activeBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
 			activeCameraKey = cameraKey(center, zoom);
 			cameraOwner = 'fit';
-			map = barrier.map;
+			map = instance;
 
 			failureKind = 'setup';
-			const ownMapListener = (type: string, listener: (event: unknown) => void): (() => void) => {
-				const subscription = instance.on(type, listener);
-				let active = true;
-				const dispose = () => {
-					if (!active) return;
-					active = false;
-					subscription.unsubscribe();
-				};
-				attempt.disposers.push(dispose);
-				return dispose;
-			};
 			// resize() on load is idiomatic insurance: if the container's final size
 			// wasn't settled when the GL context was created, this forces the drawing
 			// buffer + first frame to match the laid-out container.
 			const handleLoad = () => {
 				if (!isCurrentAttempt(attempt)) return;
 				instance.resize();
-				onready?.(barrier.map);
+				onready?.(instance);
 			};
-			ownMapListener('load', handleLoad);
+			ownMapListener(attempt, instance, 'load', handleLoad);
 			// One-shot attribution collapse: maplibre's compact control still STARTS
 			// expanded; once attribution populates (never on the empty fallback), we
 			// land the exact end state a user click produces, then detach.
@@ -434,11 +456,11 @@
 			let releaseSourceData = () => {};
 			const collapseAttribution = () => {
 				if (!isCurrentAttempt(attempt) || !collapsePopulatedAttribution(attempt.container)) return;
-				releaseStyleData();
-				releaseSourceData();
+				releaseWithoutEscape(releaseStyleData);
+				releaseWithoutEscape(releaseSourceData);
 			};
-			releaseStyleData = ownMapListener('styledata', collapseAttribution);
-			releaseSourceData = ownMapListener('sourcedata', collapseAttribution);
+			releaseStyleData = ownMapListener(attempt, instance, 'styledata', collapseAttribution);
+			releaseSourceData = ownMapListener(attempt, instance, 'sourcedata', collapseAttribution);
 			const claimCamera = (value: unknown) => {
 				const event = value as { originalEvent?: unknown; cameraIntent?: unknown };
 				if (event.cameraIntent === 'focus') cameraOwner = 'focus';
@@ -447,12 +469,14 @@
 			const claimBoxZoom = () => {
 				cameraOwner = 'user';
 			};
-			ownMapListener('movestart', claimCamera);
-			ownMapListener('boxzoomend', claimBoxZoom);
+			ownMapListener(attempt, instance, 'movestart', claimCamera);
+			ownMapListener(attempt, instance, 'boxzoomend', claimBoxZoom);
 			// MapLibre measures the container at construction; in a flex/grid parent
 			// layout may not have settled, so observing keeps the viewport in sync
 			// (fires once immediately, repainting the initial frame).
-			attempt.observer = new ResizeObserver(() => instance.resize());
+			attempt.observer = new ResizeObserver(() => {
+				if (isCurrentAttempt(attempt)) instance.resize();
+			});
 			attempt.observer.observe(attempt.container);
 			attempt.initializing = false;
 		} catch {
@@ -555,8 +579,22 @@
 		}
 		activeStyleKey = nextStyleKey;
 		activeTheme = t;
-		m.once('style.load', () => onstyleload?.(m));
-		m.setStyle(resolveBasemapStyle({ basemap: b ? '' : null }, b, t));
+		const attempt = activeAttempt;
+		if (!attempt || attempt.map !== m) return;
+		let releaseStyleLoad = () => {};
+		const handleStyleLoad = () => {
+			releaseWithoutEscape(releaseStyleLoad);
+			if (!isCurrentAttempt(attempt)) return;
+			onstyleload?.(m);
+		};
+		releaseStyleLoad = ownMapListener(attempt, m, 'style.load', handleStyleLoad);
+		try {
+			m.setStyle(resolveBasemapStyle({ basemap: b ? '' : null }, b, t));
+		} catch (error) {
+			releaseWithoutEscape(releaseStyleLoad);
+			throw error;
+		}
+		return () => releaseWithoutEscape(releaseStyleLoad);
 	});
 </script>
 
