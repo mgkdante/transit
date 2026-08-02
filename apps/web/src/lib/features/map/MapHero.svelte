@@ -77,7 +77,6 @@
 	import { isMapFocusReady } from './mapFocusReadiness';
 	import { createMapUrlCoordinator, MAP_URL_REWRITE } from './mapUrlCoordinator';
 	import { createMapSelectionController } from './mapSelectionController.svelte';
-	import { attachMapDetailRouteExit } from './mapDetailRouteLifecycle';
 	import { createMapEmphasisController } from './mapEmphasisController.svelte';
 	import { resolveMapHoverPeek } from './mapHoverPeek';
 	import {
@@ -103,6 +102,7 @@
 		type MapSelectionDetail as MapSelectionDetailModel,
 	} from './mapSelection';
 	import { createSelectionGrace } from './selectionGrace.svelte';
+	import { attachMapDetailNavigationRecovery } from './mapDetailNavigationRecovery';
 
 	const locale: Locale = getLocale();
 	const t = $derived(MAP_COPY[locale]);
@@ -196,13 +196,20 @@
 		},
 	});
 
+	const mapDetailNavigationRecovery = attachMapDetailNavigationRecovery({
+		currentUrl: urlCoordinator.currentUrl,
+		goto: urlCoordinator.goto,
+	});
+
 	let ingestedUrlIdentity = '';
 	$effect(() => {
 		const url = $page.url;
 		const urlIdentity = `${url.pathname}${url.search}`;
 		if (urlIdentity === ingestedUrlIdentity) return;
 		ingestedUrlIdentity = urlIdentity;
-		filters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));
+		const mapSettlement = mapDetailNavigationRecovery.settle(url, urlCoordinator.settle);
+		if (mapSettlement === 'recovered') return;
+		filters.replaceFromUrl(fromSearchParams(url.searchParams), mapSettlement);
 		nearMeController.syncFromUrl(url.searchParams);
 		focusController.syncFromUrl(url.searchParams);
 	});
@@ -262,7 +269,7 @@
 	let layerRevision = $state(0);
 	let interactionsMap: MapLibreMap | null = null;
 	let interactionDisposers: readonly (() => void)[] = [];
-	const selectionController = attachMapDetailRouteExit(createMapSelectionController());
+	const selectionController = createMapSelectionController();
 	const emphasisController = createMapEmphasisController(selectionController);
 	const selected = $derived(selectionController.selected);
 	const selectionStack = $derived(selectionController.stack);

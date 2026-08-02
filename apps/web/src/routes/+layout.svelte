@@ -119,7 +119,7 @@
 	// force the main column to scroll with the footer crammed under the canvas
 	// (the "squeezed footer" artifact). Only /map today. Its MapLibre control
 	// carries basemap attribution only; provider licensing belongs on the legal
-	// pages that remain reachable through the always-mounted NavPill.
+	// pages linked from document-route footers.
 	const isFullBleed = $derived(seoPath === '/map');
 	const dataIndependentRoute = $derived(isDataIndependentRoute(seoPath));
 
@@ -336,11 +336,11 @@
 	// SPA View Transitions — a tasteful root cross-fade between settled surfaces.
 	// SvelteKit updates browser history before it awaits `onNavigate`, but it does
 	// not commit `$page` or the destination DOM until every returned promise has
-	// resolved. A map detail exit already has route-owned `beforeNavigate` teardown;
-	// waiting for that teardown here would therefore expose `/lines` while the live
-	// root still has `/map`'s full-bleed scroll lock. Skip the optional transition
-	// for that one transient exit and let Kit commit immediately. All other routes
-	// retain the existing feature-detected/reduced-motion-aware cross-fade.
+	// resolved. Map detail stays live until that commit, so holding the optional
+	// transition would also hold `/map`'s full-bleed scroll lock. Skip it for this
+	// one transient exit so commit can unmount the map and run its ordered teardown
+	// immediately. All other routes retain the feature-detected/reduced-motion-aware
+	// cross-fade.
 	let skipViewTransitionForMapDetailExit = false;
 
 	onNavigate((navigation) => {

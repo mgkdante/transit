@@ -251,9 +251,17 @@ const harness = vi.hoisted(() => {
 		refresh: vi.fn(),
 		subscribeFamilies: vi.fn(() => releaseLease),
 	};
-	const beforeNavigateCallbacks: Array<(navigation: { to: { url: URL } | null }) => void> = [];
-	const beforeNavigate = vi.fn((callback: (navigation: { to: { url: URL } | null }) => void) => {
+	type HarnessNavigation = {
+		from: { url: URL } | null;
+		to: { url: URL } | null;
+	};
+	const beforeNavigateCallbacks: Array<(navigation: HarnessNavigation) => void> = [];
+	const afterNavigateCallbacks: Array<(navigation: HarnessNavigation) => void> = [];
+	const beforeNavigate = vi.fn((callback: (navigation: HarnessNavigation) => void) => {
 		beforeNavigateCallbacks.push(callback);
+	});
+	const afterNavigate = vi.fn((callback: (navigation: HarnessNavigation) => void) => {
+		afterNavigateCallbacks.push(callback);
 	});
 
 	return {
@@ -264,16 +272,24 @@ const harness = vi.hoisted(() => {
 		setPageUrl: (_href: string): void => {
 			throw new Error('setPageUrl used before the $app/stores mock factory ran');
 		},
+		setNavigating: (_navigation: HarnessNavigation | null): void => {
+			throw new Error('setNavigating used before the $app/stores mock factory ran');
+		},
 		createLiveStore: vi.fn((_manifest: unknown, _options?: unknown) => liveStore),
 		liveStore,
 		identityReceivers,
 		goto: vi.fn(async (_target: string, _options?: Record<string, unknown>) => {}),
-		afterNavigate: vi.fn(),
+		afterNavigate,
+		afterNavigateCallbacks,
 		beforeNavigate,
 		beforeNavigateCallbacks,
-		runBeforeNavigate(href: string) {
-			const navigation = { to: { url: new URL(href) } };
+		runBeforeNavigate(href: string, from = 'http://localhost/map') {
+			const navigation = { from: { url: new URL(from) }, to: { url: new URL(href) } };
 			for (const callback of beforeNavigateCallbacks) callback(navigation);
+		},
+		runAfterNavigate(href: string, from = 'http://localhost/map') {
+			const navigation = { from: { url: new URL(from) }, to: { url: new URL(href) } };
+			for (const callback of afterNavigateCallbacks) callback(navigation);
 		},
 		bakeVehicleSprites,
 		bakeLocationPinSprite,
@@ -346,8 +362,13 @@ vi.mock('$app/stores', async () => {
 		state: {},
 	});
 	const store = writable(pageValue(new URL('http://localhost/map')));
+	const navigatingStore = writable<{
+		from: { url: URL } | null;
+		to: { url: URL } | null;
+	} | null>(null);
 	harness.setPageUrl = (href: string) => store.set(pageValue(new URL(href)));
-	return { page: store };
+	harness.setNavigating = (navigation) => navigatingStore.set(navigation);
+	return { page: store, navigating: navigatingStore };
 });
 
 vi.mock('$app/navigation', () => ({
@@ -538,6 +559,8 @@ afterEach(() => {
 	harness.setLiveVehicleVisible(true);
 	harness.captureDetailFilter(null);
 	harness.beforeNavigateCallbacks.length = 0;
+	harness.afterNavigateCallbacks.length = 0;
+	harness.setNavigating(null);
 	harness.identityReceivers.length = 0;
 	harness.locale = 'en';
 	harness.isDesktop = false;
@@ -868,6 +891,209 @@ describe('MapHero detail-panel camera isolation (protect #11)', () => {
 });
 
 describe('MapHero route-exit detail teardown (M6H)', () => {
+	async function openStackedDetail(isDesktop: boolean) {
+		harness.isDesktop = isDesktop;
+		render(MapHero);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));
+		await screen.findByRole('heading', { level: 2, name: 'Sherbrooke / Saint-Denis' });
+		await fireEvent.click(
+			screen.getByRole('button', {
+				name: 'Select alert Board at the temporary stop & follow signs.',
+			}),
+		);
+		await screen.findByRole('heading', { level: 2, name: 'Temporary stop / Clark' });
+
+		const settledSelectionUrl = new URL(
+			String(harness.goto.mock.lastCall?.[0]),
+			'http://localhost/map',
+		);
+		harness.setPageUrl(settledSelectionUrl.href);
+		await tick();
+
+		const surfaceSelector = isDesktop
+			? '[data-slot="map-detail-overlay"]'
+			: '[data-slot="bottom-sheet"]';
+		const closeLabel = isDesktop ? 'Close panel' : 'Close details';
+		const surface = document.querySelector<HTMLElement>(surfaceSelector);
+		const close = screen.getByRole('button', { name: closeLabel });
+		const back = screen.getByRole('button', { name: 'Back' });
+		const stopFeed = harness.setStops.mock.lastCall;
+		const state = {
+			bulk: bulkCounts(),
+			bodyOverflow: document.body.style.overflow,
+			gotoCalls: harness.goto.mock.calls.length,
+			releaseCalls: harness.releaseLease.mock.calls.length,
+			selectedStop: stopFeed?.[4],
+			selectionOwnedStops: [...(stopFeed?.[2].stops ?? [])],
+		};
+		close.focus();
+		expect(document.activeElement).toBe(close);
+
+		return {
+			back,
+			close,
+			closeLabel,
+			settledSelectionUrl,
+			state,
+			surface,
+			surfaceSelector,
+		};
+	}
+
+	async function expectStackedDetailPreserved(
+		before: Awaited<ReturnType<typeof openStackedDetail>>,
+		options: { gotoCalls?: number } = {},
+	) {
+		expect(document.querySelector(before.surfaceSelector)).toBe(before.surface);
+		expect(screen.getByRole('heading', { level: 2, name: 'Temporary stop / Clark' })).toBeVisible();
+		expect(screen.getByRole('button', { name: 'Back' })).toBe(before.back);
+		expect(screen.getByRole('button', { name: before.closeLabel })).toBe(before.close);
+		expect(document.activeElement).toBe(before.close);
+		expect(document.body.style.overflow).toBe(before.state.bodyOverflow);
+		expect(bulkCounts()).toEqual(before.state.bulk);
+		expect(harness.goto).toHaveBeenCalledTimes(options.gotoCalls ?? before.state.gotoCalls);
+		expect(harness.releaseLease).toHaveBeenCalledTimes(before.state.releaseCalls);
+		expect(harness.setStops.mock.lastCall?.[4]).toBe(before.state.selectedStop);
+		expect([...(harness.setStops.mock.lastCall?.[2].stops ?? [])]).toEqual(
+			before.state.selectionOwnedStops,
+		);
+	}
+
+	it.each([
+		['desktop', true],
+		['mobile', false],
+	] as const)(
+		'preserves panel, selection, stack, filters, and focus when a non-map navigation is cancelled on %s',
+		async (_viewport, isDesktop) => {
+			const before = await openStackedDetail(isDesktop);
+
+			harness.runBeforeNavigate('http://localhost/lines', before.settledSelectionUrl.href);
+			await tick();
+
+			await expectStackedDetailPreserved(before);
+			await fireEvent.click(before.back);
+			await screen.findByRole('heading', { level: 2, name: 'Sherbrooke / Saint-Denis' });
+		},
+	);
+
+	it('clears a cancelled exit marker before a later intentional plain-map adoption', async () => {
+		const before = await openStackedDetail(true);
+
+		harness.runBeforeNavigate('http://localhost/lines', before.settledSelectionUrl.href);
+		await tick();
+
+		// A later navigation gets a fresh beforeNavigate callback because the exit was
+		// cancelled. That fresh attempt must retire the reversible recovery marker so
+		// an intentional plain /map adoption keeps its normal URL-driven semantics.
+		harness.runBeforeNavigate('http://localhost/map', before.settledSelectionUrl.href);
+		harness.setPageUrl('http://localhost/map');
+		await tick();
+
+		expect(document.querySelector(before.surfaceSelector)).toBe(before.surface);
+		expect(harness.goto).toHaveBeenCalledTimes(before.state.gotoCalls);
+		expect([...(harness.setStops.mock.lastCall?.[2].stops ?? [])]).toEqual([]);
+		await fireEvent.click(before.close);
+		await tick();
+		expect(harness.goto).toHaveBeenCalledTimes(before.state.gotoCalls);
+	});
+
+	it('preserves a newer coordinator echo while a non-map attempt is in flight', async () => {
+		const before = await openStackedDetail(true);
+		const attemptedExit = {
+			from: { url: before.settledSelectionUrl },
+			to: { url: new URL('http://localhost/lines') },
+		};
+		harness.runBeforeNavigate(attemptedExit.to.url.href, attemptedExit.from.url.href);
+		harness.setNavigating(attemptedExit);
+
+		expect(harness.detailFilter).not.toBeNull();
+		harness.detailFilter?.({ kind: 'route', value: '55' });
+		await tick();
+		const echoUrl = new URL(String(harness.goto.mock.lastCall?.[0]), 'http://localhost/map');
+		expect(echoUrl.searchParams.get('route')?.split(',')).toContain('55');
+		const echoState = {
+			gotoCalls: harness.goto.mock.calls.length,
+			releaseCalls: harness.releaseLease.mock.calls.length,
+			selectedStop: harness.setStops.mock.lastCall?.[4],
+			selectionOwnedStops: [...(harness.setStops.mock.lastCall?.[2].stops ?? [])],
+		};
+
+		// The newer coordinator-owned map intent wins without another before callback.
+		harness.setNavigating({ from: attemptedExit.from, to: { url: echoUrl } });
+		harness.setPageUrl(echoUrl.href);
+		await tick();
+
+		expect(document.querySelector(before.surfaceSelector)).toBe(before.surface);
+		expect(document.activeElement).toBe(before.close);
+		expect(harness.goto).toHaveBeenCalledTimes(echoState.gotoCalls);
+		expect(harness.goto.mock.lastCall?.[0]).toBe(`${echoUrl.pathname}${echoUrl.search}`);
+		expect(harness.releaseLease).toHaveBeenCalledTimes(echoState.releaseCalls);
+		expect(harness.setStops.mock.lastCall?.[4]).toBe(echoState.selectedStop);
+		expect([...(harness.setStops.mock.lastCall?.[2].stops ?? [])]).toEqual(
+			echoState.selectionOwnedStops,
+		);
+	});
+
+	it.each([
+		['desktop', true],
+		['mobile', false],
+	] as const)(
+		'preserves panel, selection, stack, filters, and focus when a non-map navigation is superseded or redirected back to plain /map on %s',
+		async (_viewport, isDesktop) => {
+			const before = await openStackedDetail(isDesktop);
+			const attemptedExit = {
+				from: { url: before.settledSelectionUrl },
+				to: { url: new URL('http://localhost/lines') },
+			};
+
+			harness.runBeforeNavigate(attemptedExit.to.url.href, attemptedExit.from.url.href);
+			harness.setNavigating(attemptedExit);
+			// Kit suppresses another before-navigation callback for an in-flight
+			// supersession or redirect. The winning commit carries a plain /map URL.
+			harness.setNavigating({
+				from: attemptedExit.from,
+				to: { url: new URL('http://localhost/map') },
+			});
+			harness.setPageUrl('http://localhost/map');
+			await tick();
+
+			const recoverySupersededOriginal =
+				harness.goto.mock.calls.length === before.state.gotoCalls + 1;
+			if (recoverySupersededOriginal) {
+				// A recovery rewrite starts during the plain-map commit. Kit observes the
+				// new token before its focus-reset branch, aborts the original settlement,
+				// and commits this keepFocus URL instead.
+				harness.setPageUrl(before.settledSelectionUrl.href);
+				await tick();
+				harness.runAfterNavigate(before.settledSelectionUrl.href, before.settledSelectionUrl.href);
+			} else {
+				// Without the recovery rewrite, Kit reaches its default focus reset. The
+				// mobile sheet trap retains focus; desktop exposes the shipped body falloff.
+				if (isDesktop) {
+					document.body.tabIndex = -1;
+					document.body.focus();
+					document.body.removeAttribute('tabindex');
+					expect(document.activeElement).toBe(document.body);
+				}
+				harness.runAfterNavigate('http://localhost/map', before.settledSelectionUrl.href);
+			}
+			harness.setNavigating(null);
+			await tick();
+
+			await expectStackedDetailPreserved(before, {
+				gotoCalls: before.state.gotoCalls + 1,
+			});
+			expect(harness.goto.mock.lastCall?.[0]).toBe(
+				`${before.settledSelectionUrl.pathname}${before.settledSelectionUrl.search}`,
+			);
+			expect(harness.goto.mock.lastCall?.[1]).toMatchObject({
+				replaceState: true,
+				keepFocus: true,
+				noScroll: true,
+			});
+		},
+	);
+
 	it.each([
 		['desktop', true, '[data-slot="map-detail-overlay"]'],
 		['mobile', false, '[data-slot="bottom-sheet"]'],
@@ -954,9 +1180,9 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 		expect(harness.setStopException.mock.calls.length).toBe(exceptionCallsBeforeTeardown + 1);
 	});
 
-	it('closes the desktop panel and clears the published rail offset before leaving /map', async () => {
+	it('keeps the desktop panel until commit, then clears its published rail offset', async () => {
 		harness.isDesktop = true;
-		render(MapHero);
+		const view = render(MapHeroNavigationHarness, { props: { route: 'map' } });
 		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
 
 		await waitFor(() => {
@@ -981,39 +1207,49 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 		harness.runBeforeNavigate('http://localhost/lines');
 		await tick();
 
+		expect(document.querySelector('[data-slot="map-detail-overlay"]')).toBeInTheDocument();
+		expect(document.documentElement.style.getPropertyValue('--app-effective-rail-offset')).toBe(
+			publishedOffset,
+		);
+
+		await view.rerender({ route: 'lines' });
+		await tick();
+
 		expect.soft(document.querySelector('[data-slot="map-detail-overlay"]')).toBeNull();
 		expect
 			.soft(document.documentElement.style.getPropertyValue('--app-effective-rail-offset'))
 			.toBe('0px');
+		expect.soft(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
 		expect(harness.goto).toHaveBeenCalledTimes(gotoCalls);
 	});
 
-	it('destroys the mobile sheet lock before route commit and leaves no map-owned inert residue', async () => {
-		const view = render(MapHero);
+	it('keeps the mobile sheet lock until commit, then leaves no map-owned inert residue', async () => {
+		const view = render(MapHeroNavigationHarness, { props: { route: 'map' } });
 		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
 		await waitFor(() =>
 			expect(document.querySelector('[data-slot="bottom-sheet"]')).toBeInTheDocument(),
 		);
-
-		const destinationDisclosure = document.createElement('div');
-		destinationDisclosure.dataset.slot = 'listing-filter-body';
-		destinationDisclosure.dataset.state = 'closed';
-		destinationDisclosure.setAttribute('inert', '');
-		document.body.append(destinationDisclosure);
+		const sheet = document.querySelector('[data-slot="bottom-sheet"]');
 
 		harness.runBeforeNavigate('http://localhost/lines');
 		await tick();
 		await new Promise((resolve) => setTimeout(resolve, 80));
 
-		expect.soft(document.querySelector('[data-slot="bottom-sheet"]')).toBeNull();
-		expect.soft(document.body.style.overflow).not.toBe('hidden');
+		expect(document.querySelector('[data-slot="bottom-sheet"]')).toBe(sheet);
+		expect(document.body.style.overflow).toBe('hidden');
 		expect(harness.goto).toHaveBeenCalledOnce();
 
-		// Model the destination commit. `/lines` deliberately owns one inert closed
-		// disclosure; the regression is stale map/modal isolation, not valid inert UI.
-		view.unmount();
+		await view.rerender({ route: 'lines' });
 		await tick();
 		await new Promise((resolve) => setTimeout(resolve, 80));
+
+		expect.soft(document.querySelector('[data-slot="bottom-sheet"]')).toBeNull();
+		expect.soft(document.body.style.overflow).not.toBe('hidden');
+		const destinationDisclosure = document.querySelector(
+			'[data-slot="listing-filter-body"].collapsible-content[data-state="closed"]',
+		);
+		expect.soft(destinationDisclosure).toHaveAttribute('inert');
+		expect.soft(destinationDisclosure).toHaveAttribute('aria-hidden', 'true');
 		expect([...document.querySelectorAll('[inert]')]).toEqual([destinationDisclosure]);
 	});
 });

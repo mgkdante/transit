@@ -7,10 +7,7 @@ function source(path: string): string {
 	return readFileSync(resolve(process.cwd(), path), 'utf8');
 }
 
-const M6H_ROUTE_EXIT_IMPORT =
-	"\timport { attachMapDetailRouteExit } from './mapDetailRouteLifecycle';\n";
-const M6H_ROUTE_EXIT_WIRING =
-	'\tconst selectionController = attachMapDetailRouteExit(createMapSelectionController());';
+const OBSOLETE_M6H_ROUTE_EXIT = 'attachMapDetailRouteExit';
 const M6H_CURE2_MAP_HANDLE =
 	'\t// MapLibre is an opaque lifecycle owner. Track handle replacement, never proxy\n' +
 	'\t// the instance itself; teardown callbacks must compare and release the exact map.\n' +
@@ -48,14 +45,29 @@ const M6H_CURE2_OWNER_RELEASE = `
 	}
 `;
 const M6H_CURE2_STAGE_WIRING = '\n\t\tonbeforeremove={releaseMapOwners}';
+const M6H_CURE3_RECOVERY_IMPORT =
+	"\timport { attachMapDetailNavigationRecovery } from './mapDetailNavigationRecovery';\n";
+const M6H_CURE3_RECOVERY_WIRING = `
+	const mapDetailNavigationRecovery = attachMapDetailNavigationRecovery({
+		currentUrl: urlCoordinator.currentUrl,
+		goto: urlCoordinator.goto,
+	});
+`;
+const PRE_M6H_URL_INGESTION =
+	'\n\t\tfilters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));';
+const M6H_CURE3_RECOVERY_INGESTION = `
+		const mapSettlement = mapDetailNavigationRecovery.settle(url, urlCoordinator.settle);
+		if (mapSettlement === 'recovered') return;
+		filters.replaceFromUrl(fromSearchParams(url.searchParams), mapSettlement);`;
 
 function withoutM6hLifecycle(value: string): string {
 	return value
-		.replace(M6H_ROUTE_EXIT_IMPORT, '')
-		.replace(M6H_ROUTE_EXIT_WIRING, '\tconst selectionController = createMapSelectionController();')
 		.replace(M6H_CURE2_MAP_HANDLE, '\tlet map = $state<MapLibreMap | null>(null);')
 		.replace(M6H_CURE2_OWNER_RELEASE, '')
-		.replace(M6H_CURE2_STAGE_WIRING, '');
+		.replace(M6H_CURE2_STAGE_WIRING, '')
+		.replace(M6H_CURE3_RECOVERY_IMPORT, '')
+		.replace(M6H_CURE3_RECOVERY_WIRING, '')
+		.replace(M6H_CURE3_RECOVERY_INGESTION, PRE_M6H_URL_INGESTION);
 }
 
 function withoutComments(value: string): string {
@@ -145,11 +157,16 @@ describe('M6C-2 token and protected-surface contract', () => {
 
 	it('keeps the M6C-2 MapHero bytes fixed outside the registered M6H lifecycle seams', () => {
 		const hero = source('src/lib/features/map/MapHero.svelte');
-		expect(hero.split(M6H_ROUTE_EXIT_IMPORT)).toHaveLength(2);
-		expect(hero.split(M6H_ROUTE_EXIT_WIRING)).toHaveLength(2);
+		expect(hero).not.toContain(OBSOLETE_M6H_ROUTE_EXIT);
+		expect(
+			hero.split('\tconst selectionController = createMapSelectionController();'),
+		).toHaveLength(2);
 		expect(hero.split(M6H_CURE2_MAP_HANDLE)).toHaveLength(2);
 		expect(hero.split(M6H_CURE2_OWNER_RELEASE)).toHaveLength(2);
 		expect(hero.split(M6H_CURE2_STAGE_WIRING)).toHaveLength(2);
+		expect(hero.split(M6H_CURE3_RECOVERY_IMPORT)).toHaveLength(2);
+		expect(hero.split(M6H_CURE3_RECOVERY_WIRING)).toHaveLength(2);
+		expect(hero.split(M6H_CURE3_RECOVERY_INGESTION)).toHaveLength(2);
 		const protectedHero = withoutM6hLifecycle(hero);
 		const protectedRegion = protectedHero.split('\n').slice(19, 882).join('\n') + '\n';
 		const digest = createHash('sha256').update(protectedRegion).digest('hex');

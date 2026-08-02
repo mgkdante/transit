@@ -167,7 +167,7 @@ export const AUDIT_NAV: readonly AuditNavItem[] = [
 	},
 ] as const;
 
-/** Legal reference pages, kept separate so chrome can render a distinct group. */
+/** Legal reference pages, kept separate for the footer-only Legal group. */
 export const LEGAL_NAV: readonly SecondaryNavLink[] = [
 	{
 		href: '/privacy',

@@ -23,11 +23,12 @@ const layerModulesSource = readFileSync(
 	resolve(process.cwd(), 'src/lib/features/map/mapLayerModules.ts'),
 	'utf-8',
 );
+const navigationRecoverySource = readFileSync(
+	resolve(process.cwd(), 'src/lib/features/map/mapDetailNavigationRecovery.ts'),
+	'utf-8',
+);
 const script = source.match(/<script(?:\s[^>]*)?>\r?\n([\s\S]*?)\r?\n<\/script>/u)?.[1];
-const m6hRouteExitImport =
-	"\timport { attachMapDetailRouteExit } from './mapDetailRouteLifecycle';\n";
-const m6hRouteExitWiring =
-	'\tconst selectionController = attachMapDetailRouteExit(createMapSelectionController());';
+const obsoleteM6hRouteExit = 'attachMapDetailRouteExit';
 const m6hCure2MapHandle =
 	'\t// MapLibre is an opaque lifecycle owner. Track handle replacement, never proxy\n' +
 	'\t// the instance itself; teardown callbacks must compare and release the exact map.\n' +
@@ -64,11 +65,26 @@ const m6hCure2OwnerRelease = `
 		if (releaseErrors.length > 0) throw releaseErrors[0];
 	}
 `;
+const m6hCure3RecoveryImport =
+	"\timport { attachMapDetailNavigationRecovery } from './mapDetailNavigationRecovery';\n";
+const m6hCure3RecoveryWiring = `
+	const mapDetailNavigationRecovery = attachMapDetailNavigationRecovery({
+		currentUrl: urlCoordinator.currentUrl,
+		goto: urlCoordinator.goto,
+	});
+`;
+const preM6hUrlIngestion =
+	'\n\t\tfilters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));';
+const m6hCure3RecoveryIngestion = `
+		const mapSettlement = mapDetailNavigationRecovery.settle(url, urlCoordinator.settle);
+		if (mapSettlement === 'recovered') return;
+		filters.replaceFromUrl(fromSearchParams(url.searchParams), mapSettlement);`;
 const preM6hScript = script
-	?.replace(m6hRouteExitImport, '')
-	.replace(m6hRouteExitWiring, '\tconst selectionController = createMapSelectionController();')
-	.replace(m6hCure2MapHandle, '\tlet map = $state<MapLibreMap | null>(null);')
-	.replace(m6hCure2OwnerRelease, '');
+	?.replace(m6hCure2MapHandle, '\tlet map = $state<MapLibreMap | null>(null);')
+	.replace(m6hCure2OwnerRelease, '')
+	.replace(m6hCure3RecoveryImport, '')
+	.replace(m6hCure3RecoveryWiring, '')
+	.replace(m6hCure3RecoveryIngestion, preM6hUrlIngestion);
 const mapStage = source.match(/<MapStage[\s\S]*?\/>/u)?.[0];
 const nearMeDependencies = script?.match(
 	/const nearMeController = createMapNearMeController\(\{([\s\S]*?)\r?\n\t\}\);\r?\n\tconst focusController/u,
@@ -96,10 +112,12 @@ const forbiddenIdentifiers = /\b(?:navigator|geolocation|fetch)\b/gu;
 describe('MapHero orchestrator — structural law', () => {
 	it('keeps the M6a 861-line budget outside the explicit M6H lifecycle seams', () => {
 		expect(script).toBeDefined();
-		expect(script!.split(m6hRouteExitImport)).toHaveLength(2);
-		expect(script!.split(m6hRouteExitWiring)).toHaveLength(2);
+		expect(script).not.toContain(obsoleteM6hRouteExit);
 		expect(script!.split(m6hCure2MapHandle)).toHaveLength(2);
 		expect(script!.split(m6hCure2OwnerRelease)).toHaveLength(2);
+		expect(script!.split(m6hCure3RecoveryImport)).toHaveLength(2);
+		expect(script!.split(m6hCure3RecoveryWiring)).toHaveLength(2);
+		expect(script!.split(m6hCure3RecoveryIngestion)).toHaveLength(2);
 		expect(preM6hScript!.split(/\r?\n/u).length).toBeLessThan(862);
 	});
 
@@ -107,7 +125,10 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source.match(/<script(?:\s[^>]*)?>/gu)).toHaveLength(1);
 		expect(source).not.toMatch(/<script[^>]*context=["']module["']/u);
 		expect(source).not.toContain('afterNavigate');
-		expect(source.match(/urlCoordinator\.settle\(/gu)).toHaveLength(1);
+		expect(
+			source.match(/mapDetailNavigationRecovery\.settle\(url, urlCoordinator\.settle\)/gu),
+		).toHaveLength(1);
+		expect(navigationRecoverySource.match(/settleUrl\(url\)/gu)).toHaveLength(1);
 		expect(source.match(/filters\.replaceFromUrl\(/gu)).toHaveLength(1);
 		expect(source).toContain('const urlIdentity = `${url.pathname}${url.search}`');
 		expect(source.indexOf('const urlCoordinator = createMapUrlCoordinator')).toBeLessThan(
@@ -117,6 +138,19 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain('goto: urlCoordinator.goto');
 		expect(source).toContain('currentUrl: urlCoordinator.currentUrl');
 		expect(source.match(/urlCoordinator\.goto\(/gu)).toHaveLength(1);
+	});
+
+	it('keeps attempted-exit recovery reversible until a same-map settlement wins', () => {
+		expect(navigationRecoverySource).toContain('beforeNavigate((navigation) => {');
+		expect(navigationRecoverySource).toContain('pendingMapExit = null;');
+		expect(navigationRecoverySource).toContain("delocalizePath(url.pathname) !== '/map'");
+		expect(navigationRecoverySource).toContain("settlement !== 'adopt'");
+		expect(navigationRecoverySource).toContain("url.search !== ''");
+		expect(navigationRecoverySource).toContain('options.goto(');
+		expect(navigationRecoverySource).toContain('MAP_URL_REWRITE');
+		expect(navigationRecoverySource).not.toContain('selectionController');
+		expect(navigationRecoverySource).not.toContain('.close()');
+		expect(navigationRecoverySource).not.toContain('map.remove');
 	});
 
 	it('keeps hover out of bulk feeds and replays emphasis only through the layer revision seam', () => {
@@ -182,8 +216,8 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain(
 			"import { createMapSelectionController } from './mapSelectionController.svelte'",
 		);
-		expect(source).toContain(m6hRouteExitImport.trim());
-		expect(source).toContain(m6hRouteExitWiring.trim());
+		expect(source).toContain('const selectionController = createMapSelectionController();');
+		expect(source).not.toContain(obsoleteM6hRouteExit);
 		expect(source).toMatch(
 			/function addSelectionFilter[\s\S]*?filters\.applyChips\(chips, SELECTION_WRITE\)/u,
 		);
