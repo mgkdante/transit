@@ -82,10 +82,10 @@ const harness = vi.hoisted(() => {
 			return this;
 		}
 
-		off(type: string, handler: (...args: unknown[]) => void): this {
+		readonly off = vi.fn((type: string, handler: (...args: unknown[]) => void): this => {
 			this.handlers.get(type)?.delete(handler);
 			return this;
-		}
+		});
 
 		once(type: string, handler: (...args: unknown[]) => void): this {
 			const once = (...args: unknown[]) => {
@@ -500,14 +500,23 @@ describe('MapStage boot lifecycle', () => {
 
 	it('still removes MapLibre exactly once when consumer release throws', async () => {
 		const releaseError = new Error('consumer release failed');
-		const { view, map } = await bootStage({
-			onbeforeremove: () => {
-				throw releaseError;
-			},
+		const onbeforeremove = vi.fn(() => {
+			throw releaseError;
 		});
+		const { view, map } = await bootStage({
+			onbeforeremove,
+		});
+		expect(map.handlers.get('movestart')).toHaveLength(1);
+		expect(map.handlers.get('boxzoomend')).toHaveLength(1);
 
 		await expect(unmountComponent(view.component)).rejects.toBe(releaseError);
-		view.unmount();
+		expect(onbeforeremove).toHaveBeenCalledExactlyOnceWith(map);
+		expect(map.off.mock.calls.map(([type]) => type)).toEqual(['movestart', 'boxzoomend']);
+		expect(map.handlers.get('movestart')).toHaveLength(0);
+		expect(map.handlers.get('boxzoomend')).toHaveLength(0);
+		for (const offOrder of map.off.mock.invocationCallOrder) {
+			expect(offOrder).toBeLessThan(map.remove.mock.invocationCallOrder[0]!);
+		}
 		expect(map.remove).toHaveBeenCalledOnce();
 	});
 
@@ -889,7 +898,7 @@ describe('MapStage boot lifecycle', () => {
 		expect(retriedMap.fitBounds).toHaveBeenCalledTimes(1);
 	});
 
-	it('disposes camera ownership listeners with the map effect', async () => {
+	it('disposes camera ownership listeners with the owning boot attempt', async () => {
 		const { view, map } = await bootStage();
 		expect(map.handlers.get('movestart')).toHaveLength(1);
 		expect(map.handlers.get('boxzoomend')).toHaveLength(1);

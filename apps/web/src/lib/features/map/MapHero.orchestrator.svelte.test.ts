@@ -69,9 +69,18 @@ const m6hCure3RecoveryImport =
 	"\timport { attachMapDetailNavigationRecovery } from './mapDetailNavigationRecovery';\n";
 const m6hCure4PageStoresImport = "\timport { navigating, page } from '$app/stores';\n";
 const preM6hPageStoresImport = "\timport { page } from '$app/stores';\n";
-const m6hCure3RecoveryWiring = `
+const m6hCure5CoordinatorWiring = `
+	const urlCoordinator = createMapUrlCoordinator(
+		$page.url,
+		goto,
+		() => $page.state as Readonly<Record<string, unknown>>,
+	);
+`;
+const preM6hCoordinatorWiring =
+	'\n\tconst urlCoordinator = createMapUrlCoordinator($page.url, goto);\n';
+const m6hCure5RecoveryWiring = `
 	const mapDetailNavigationRecovery = attachMapDetailNavigationRecovery({
-		currentUrl: urlCoordinator.currentUrl,
+		currentIntent: urlCoordinator.currentIntent,
 		goto: urlCoordinator.goto,
 	});
 `;
@@ -83,7 +92,7 @@ const preM6hUrlIngestion = `
 		if (urlIdentity === ingestedUrlIdentity) return;
 		ingestedUrlIdentity = urlIdentity;
 		filters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));`;
-const m6hCure4RecoveryIngestion = `
+const m6hCure5RecoveryIngestion = `
 	let observedPageUrl: URL | null = null;
 	let ingestedUrlIdentity = '';
 	$effect(() => {
@@ -95,6 +104,7 @@ const m6hCure4RecoveryIngestion = `
 			url,
 			urlCoordinator.settle,
 			$navigating?.to?.url ?? null,
+			$page.state,
 		);
 		if (mapSettlement === 'recovered') return;
 		if (urlIdentity === ingestedUrlIdentity) return;
@@ -105,8 +115,9 @@ const preM6hScript = script
 	.replace(m6hCure2OwnerRelease, '')
 	.replace(m6hCure4PageStoresImport, preM6hPageStoresImport)
 	.replace(m6hCure3RecoveryImport, '')
-	.replace(m6hCure3RecoveryWiring, '')
-	.replace(m6hCure4RecoveryIngestion, preM6hUrlIngestion);
+	.replace(m6hCure5CoordinatorWiring, preM6hCoordinatorWiring)
+	.replace(m6hCure5RecoveryWiring, '')
+	.replace(m6hCure5RecoveryIngestion, preM6hUrlIngestion);
 const mapStage = source.match(/<MapStage[\s\S]*?\/>/u)?.[0];
 const nearMeDependencies = script?.match(
 	/const nearMeController = createMapNearMeController\(\{([\s\S]*?)\r?\n\t\}\);\r?\n\tconst focusController/u,
@@ -139,8 +150,9 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(script!.split(m6hCure2OwnerRelease)).toHaveLength(2);
 		expect(script!.split(m6hCure4PageStoresImport)).toHaveLength(2);
 		expect(script!.split(m6hCure3RecoveryImport)).toHaveLength(2);
-		expect(script!.split(m6hCure3RecoveryWiring)).toHaveLength(2);
-		expect(script!.split(m6hCure4RecoveryIngestion)).toHaveLength(2);
+		expect(script!.split(m6hCure5CoordinatorWiring)).toHaveLength(2);
+		expect(script!.split(m6hCure5RecoveryWiring)).toHaveLength(2);
+		expect(script!.split(m6hCure5RecoveryIngestion)).toHaveLength(2);
 		expect(preM6hScript!.split(/\r?\n/u).length).toBeLessThan(862);
 	});
 
@@ -154,26 +166,34 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain('const urlIdentity = `${url.pathname}${url.search}`');
 		expect(source).toContain('if (url === observedPageUrl) return;');
 		expect(source).toContain('$navigating?.to?.url ?? null');
+		expect(source).toContain('$page.state');
 		expect(source.indexOf('const urlCoordinator = createMapUrlCoordinator')).toBeLessThan(
 			source.indexOf('const nearMeController = createMapNearMeController'),
 		);
 		expect(source).toContain('urlCoordinator.writeFilters');
 		expect(source).toContain('goto: urlCoordinator.goto');
-		expect(source).toContain('currentUrl: urlCoordinator.currentUrl');
+		expect(source).toContain('currentIntent: urlCoordinator.currentIntent');
 		expect(source.match(/urlCoordinator\.goto\(/gu)).toHaveLength(1);
 	});
 
-	it('keeps attempted-exit recovery reversible until a same-map settlement wins', () => {
+	it('bases attempted-exit recovery on the actual winner and causal rewrite ownership', () => {
 		expect(navigationRecoverySource).toContain('beforeNavigate((navigation) => {');
 		expect(navigationRecoverySource).toContain('pendingMapExit = null;');
 		expect(navigationRecoverySource).toContain("delocalizePath(url.pathname) !== '/map'");
-		expect(navigationRecoverySource).toContain("settlement !== 'adopt'");
-		expect(navigationRecoverySource).toContain("const isPlainMap = url.search === ''");
-		expect(navigationRecoverySource).toContain('const isExactRestore =');
-		expect(navigationRecoverySource).toContain('url.pathname === recovery.restoreUrl.pathname');
-		expect(navigationRecoverySource).toContain('url.search === recovery.restoreUrl.search');
+		expect(navigationRecoverySource).not.toMatch(/settlement\s*[!=]==?\s*['"](?:echo|adopt)/u);
+		expect(navigationRecoverySource).not.toContain('isPlainMap');
+		expect(navigationRecoverySource).not.toContain('isExactRestore');
+		expect(navigationRecoverySource).toContain('const isLiveMapWinner =');
 		expect(navigationRecoverySource).toContain('navigationTarget.pathname === url.pathname');
-		expect(navigationRecoverySource).toContain('document.activeElement === recovery.focusTarget');
+		expect(navigationRecoverySource).toContain('navigationTarget.search === url.search');
+		expect(navigationRecoverySource).toContain('readMapUrlRewriteReceipt(navigationState)');
+		expect(navigationRecoverySource).toContain(
+			'winningReceipt?.ownerId === recovery.rewriteOwnerId',
+		);
+		expect(navigationRecoverySource).toContain(
+			'winningReceipt.revision > recovery.rewriteRevision',
+		);
+		expect(navigationRecoverySource).toContain('document.activeElement === focusTarget');
 		expect(navigationRecoverySource).toContain('options.goto(');
 		expect(navigationRecoverySource).toContain('MAP_URL_REWRITE');
 		expect(navigationRecoverySource).not.toContain('selectionController');

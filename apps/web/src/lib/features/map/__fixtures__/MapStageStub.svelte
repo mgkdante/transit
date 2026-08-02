@@ -69,12 +69,12 @@
 			const list = canvasHandlers.get(type) ?? [];
 			list.push(handler);
 			canvasHandlers.set(type, list);
+			mapHeroReceiptSignals.recordMapStageListenerCount(`canvas:${type}`, list.length);
 		},
 		removeEventListener: (type: string, handler: Handler) => {
-			canvasHandlers.set(
-				type,
-				(canvasHandlers.get(type) ?? []).filter((candidate) => candidate !== handler),
-			);
+			const list = (canvasHandlers.get(type) ?? []).filter((candidate) => candidate !== handler);
+			canvasHandlers.set(type, list);
+			mapHeroReceiptSignals.recordMapStageListenerCount(`canvas:${type}`, list.length);
 		},
 	};
 	const fakeMap = {
@@ -83,12 +83,12 @@
 			const list = handlers.get(type) ?? [];
 			list.push(handler);
 			handlers.set(type, list);
+			mapHeroReceiptSignals.recordMapStageListenerCount(type, list.length);
 		},
 		off: (type: string, handler: Handler) => {
-			handlers.set(
-				type,
-				(handlers.get(type) ?? []).filter((candidate) => candidate !== handler),
-			);
+			const list = (handlers.get(type) ?? []).filter((candidate) => candidate !== handler);
+			handlers.set(type, list);
+			mapHeroReceiptSignals.recordMapStageListenerCount(type, list.length);
 		},
 		getCanvas: () => fakeCanvas,
 		getLayer: (id: string) =>

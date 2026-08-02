@@ -14,6 +14,7 @@ export interface MapHeroFeatureStateEvent {
 
 let featureStateEvents: MapHeroFeatureStateEvent[] = [];
 let featureStateObserver: ((event: MapHeroFeatureStateEvent) => void) | null = null;
+let mapStageListenerCounts: Readonly<Record<string, number>> = {};
 
 export const mapHeroReceiptSignals = {
 	clock: {
@@ -37,6 +38,9 @@ export const mapHeroReceiptSignals = {
 	get featureStateEvents() {
 		return featureStateEvents;
 	},
+	get mapStageListenerCounts() {
+		return { ...mapStageListenerCounts };
+	},
 	advanceClock(deltaMs: number) {
 		serverNow += deltaMs;
 	},
@@ -56,11 +60,15 @@ export const mapHeroReceiptSignals = {
 	observeFeatureState(observer: ((event: MapHeroFeatureStateEvent) => void) | null) {
 		featureStateObserver = observer;
 	},
+	recordMapStageListenerCount(type: string, count: number) {
+		mapStageListenerCounts = { ...mapStageListenerCounts, [type]: count };
+	},
 	reset() {
 		serverNow = BASE_TIME;
 		vehiclesGeneration = BASE_GENERATION;
 		currentMotionMode = 'raw';
 		featureStateEvents = [];
 		featureStateObserver = null;
+		mapStageListenerCounts = {};
 	},
 };

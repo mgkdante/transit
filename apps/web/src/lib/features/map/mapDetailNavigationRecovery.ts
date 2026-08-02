@@ -1,9 +1,15 @@
 import { beforeNavigate } from '$app/navigation';
 import { delocalizePath } from '$lib/i18n';
-import { MAP_URL_REWRITE, type MapUrlNavigate, type MapUrlSettlement } from './mapUrlCoordinator';
+import {
+	MAP_URL_REWRITE,
+	readMapUrlRewriteReceipt,
+	type MapUrlIntent,
+	type MapUrlNavigate,
+	type MapUrlSettlement,
+} from './mapUrlCoordinator';
 
 interface MapDetailNavigationRecoveryOptions {
-	readonly currentUrl: () => URL;
+	readonly currentIntent: () => MapUrlIntent;
 	readonly goto: MapUrlNavigate;
 }
 
@@ -12,17 +18,21 @@ export interface MapDetailNavigationRecovery {
 		url: URL,
 		settleUrl: (url: URL) => MapUrlSettlement,
 		navigationTarget: URL | null,
+		navigationState: unknown,
 	): MapUrlSettlement | 'recovered';
 }
 
 type PendingMapExit = {
 	readonly restoreUrl: URL;
+	readonly rewriteOwnerId: string;
+	readonly rewriteRevision: number;
 	readonly focusTarget: HTMLElement | null;
 };
 
 /**
- * Records reversible detail state for a non-map attempt and intercepts only an
- * in-flight redirect/supersession that settles back on the live map.
+ * A map exit owns no teardown until it commits. If its live winning navigation
+ * settles back onto the still-mounted map, preserve the captured detail focus
+ * unless a newer map-owned rewrite already carries `keepFocus` for that winner.
  */
 export function attachMapDetailNavigationRecovery(
 	options: MapDetailNavigationRecoveryOptions,
@@ -47,9 +57,12 @@ export function attachMapDetailNavigationRecovery(
 			'[data-slot="map-detail-overlay"], [data-m6c2-detail-sheet]',
 		);
 		if (!detailSurface) return;
+		const intent = options.currentIntent();
 		const activeElement = document.activeElement;
 		pendingMapExit = {
-			restoreUrl: options.currentUrl(),
+			restoreUrl: intent.url,
+			rewriteOwnerId: intent.ownerId,
+			rewriteRevision: intent.revision,
 			focusTarget:
 				activeElement instanceof HTMLElement && detailSurface.contains(activeElement)
 					? activeElement
@@ -58,24 +71,25 @@ export function attachMapDetailNavigationRecovery(
 	});
 
 	return {
-		settle(url, settleUrl, navigationTarget) {
+		settle(url, settleUrl, navigationTarget, navigationState) {
 			const settlement = settleUrl(url);
 			if (pendingMapExit == null || delocalizePath(url.pathname) !== '/map') return settlement;
 			const recovery = pendingMapExit;
 			pendingMapExit = null;
-			const isPlainMap = url.search === '';
-			const isExactRestore =
+			const isLiveMapWinner =
 				navigationTarget != null &&
+				delocalizePath(navigationTarget.pathname) === '/map' &&
 				navigationTarget.pathname === url.pathname &&
-				navigationTarget.search === url.search &&
-				url.pathname === recovery.restoreUrl.pathname &&
-				url.search === recovery.restoreUrl.search &&
-				recovery.focusTarget?.isConnected === true &&
-				document.activeElement === recovery.focusTarget;
-			if (settlement !== 'adopt' || (!isPlainMap && !isExactRestore)) return settlement;
-			if (recovery.focusTarget?.isConnected) {
-				recovery.focusTarget.focus({ preventScroll: true });
-			}
+				navigationTarget.search === url.search;
+			const focusTarget = recovery.focusTarget;
+			const focusStillOwned =
+				focusTarget?.isConnected === true && document.activeElement === focusTarget;
+			const winningReceipt = readMapUrlRewriteReceipt(navigationState);
+			const protectedByNewerMapRewrite =
+				winningReceipt?.ownerId === recovery.rewriteOwnerId &&
+				winningReceipt.revision > recovery.rewriteRevision;
+			if (!isLiveMapWinner || !focusStillOwned || protectedByNewerMapRewrite) return settlement;
+			focusTarget.focus({ preventScroll: true });
 			void options.goto(
 				`${recovery.restoreUrl.pathname}${recovery.restoreUrl.search}`,
 				MAP_URL_REWRITE,

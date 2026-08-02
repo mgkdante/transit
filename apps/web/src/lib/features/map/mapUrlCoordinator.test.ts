@@ -21,7 +21,7 @@ describe('map URL coordinator', () => {
 		expect(navigate).toHaveBeenCalledOnce();
 		expect(navigate).toHaveBeenCalledWith(
 			'/fr/map?x=1&x=&near=45.5000000%2C-73.5000000&empty=&x=2&route=24&stop=S&trip=T&vehicle=V&status=early&occupancy=seated&entity=route&alert=has_alert&grain=day&from=2026-07-01&to=2026-07-31&date=2026-07-15&n=10&affects=lines&severity=high',
-			MAP_URL_REWRITE,
+			expect.objectContaining(MAP_URL_REWRITE),
 		);
 	});
 
@@ -34,6 +34,35 @@ describe('map URL coordinator', () => {
 		coordinator.writeFilters('route=24');
 
 		expect(navigate.mock.calls.map(([target]) => target)).toEqual(['/map', '/map?route=24']);
+	});
+
+	it('stamps byte-identical rewrites with distinct causal receipts while preserving page state', () => {
+		const navigate = vi.fn<MapUrlNavigate>();
+		const coordinator = createMapUrlCoordinator(
+			new URL('https://transit.example/map'),
+			navigate,
+			() => ({ retained: 'page-state' }),
+		);
+
+		coordinator.goto('/map?route=24', MAP_URL_REWRITE);
+		coordinator.goto('/map?route=24', MAP_URL_REWRITE);
+
+		const firstState = navigate.mock.calls[0]?.[1].state;
+		const secondState = navigate.mock.calls[1]?.[1].state;
+		expect(firstState).toMatchObject({
+			retained: 'page-state',
+			__transitMapUrlRewrite: { revision: 1 },
+		});
+		expect(secondState).toMatchObject({
+			retained: 'page-state',
+			__transitMapUrlRewrite: { revision: 2 },
+		});
+		expect(
+			(firstState?.__transitMapUrlRewrite as { ownerId?: string } | undefined)?.ownerId,
+		).toBeTypeOf('string');
+		expect((secondState?.__transitMapUrlRewrite as { ownerId?: string } | undefined)?.ownerId).toBe(
+			(firstState?.__transitMapUrlRewrite as { ownerId?: string } | undefined)?.ownerId,
+		);
 	});
 
 	it('matches normalized relative requests and consumes each settled echo only once', () => {
@@ -71,7 +100,10 @@ describe('map URL coordinator', () => {
 		expect(coordinator.settle(new URL('https://transit.example/fr/map?x='))).toBe('adopt');
 		coordinator.writeFilters('stop=S');
 
-		expect(navigate).toHaveBeenLastCalledWith('/fr/map?x=&stop=S', MAP_URL_REWRITE);
+		expect(navigate).toHaveBeenLastCalledWith(
+			'/fr/map?x=&stop=S',
+			expect.objectContaining(MAP_URL_REWRITE),
+		);
 		expect(coordinator.currentUrl().pathname).toBe('/fr/map');
 	});
 });

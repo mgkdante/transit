@@ -236,6 +236,7 @@
 		readonly controller: AbortController;
 		map: MapLibreMap | null;
 		observer: ResizeObserver | null;
+		disposers: Array<() => void>;
 		initializing: boolean;
 		cleaned: boolean;
 	}
@@ -259,17 +260,29 @@
 		if (attempt.cleaned) return;
 		attempt.cleaned = true;
 		attempt.initializing = false;
-		attempt.controller.abort();
-		attempt.observer?.disconnect();
-		attempt.observer = null;
 		const ownedMap = attempt.map;
 		attempt.map = null;
-		try {
-			if (ownedMap) onbeforeremove?.(ownedMap);
-		} finally {
-			ownedMap?.remove();
-			if (activeAttempt === attempt) activeAttempt = null;
-			if (map === ownedMap) map = null;
+		const disposers = attempt.disposers.splice(0);
+		const observer = attempt.observer;
+		attempt.observer = null;
+		if (activeAttempt === attempt) activeAttempt = null;
+		if (map === ownedMap) map = null;
+
+		const cleanupErrors: unknown[] = [];
+		const release = (dispose: () => void): void => {
+			try {
+				dispose();
+			} catch (error) {
+				cleanupErrors.push(error);
+			}
+		};
+		release(() => attempt.controller.abort());
+		if (observer) release(() => observer.disconnect());
+		if (ownedMap && onbeforeremove) release(() => onbeforeremove(ownedMap));
+		for (const dispose of disposers) release(dispose);
+		if (ownedMap) release(() => ownedMap.remove());
+		if (cleanupErrors.length > 0) {
+			throw cleanupErrors[0];
 		}
 	}
 
@@ -326,6 +339,7 @@
 			controller: new AbortController(),
 			map: null,
 			observer: null,
+			disposers: [],
 			initializing: true,
 			cleaned: false,
 		};
@@ -395,6 +409,17 @@
 			};
 			instance.on('styledata', collapseAttribution);
 			instance.on('sourcedata', collapseAttribution);
+			const claimCamera = (event: { originalEvent?: unknown; cameraIntent?: unknown }) => {
+				if (event.cameraIntent === 'focus') cameraOwner = 'focus';
+				else if (event.originalEvent) cameraOwner = 'user';
+			};
+			const claimBoxZoom = () => {
+				cameraOwner = 'user';
+			};
+			instance.on('movestart', claimCamera);
+			attempt.disposers.push(() => instance.off('movestart', claimCamera));
+			instance.on('boxzoomend', claimBoxZoom);
+			attempt.disposers.push(() => instance.off('boxzoomend', claimBoxZoom));
 			// MapLibre measures the container at construction; in a flex/grid parent
 			// layout may not have settled, so observing keeps the viewport in sync
 			// (fires once immediately, repainting the initial frame).
@@ -429,24 +454,6 @@
 	let activeLayoutSig: string | null = null;
 	let activeBoundsSig: string | null = null;
 	let activeCameraKey: string | null = null;
-
-	$effect(() => {
-		const m = map;
-		if (!m) return;
-		const claimCamera = (event: { originalEvent?: unknown; cameraIntent?: unknown }) => {
-			if (event.cameraIntent === 'focus') cameraOwner = 'focus';
-			else if (event.originalEvent) cameraOwner = 'user';
-		};
-		const claimBoxZoom = () => {
-			cameraOwner = 'user';
-		};
-		m.on('movestart', claimCamera);
-		m.on('boxzoomend', claimBoxZoom);
-		return () => {
-			m.off('movestart', claimCamera);
-			m.off('boxzoomend', claimBoxZoom);
-		};
-	});
 
 	$effect(() => {
 		const m = map;

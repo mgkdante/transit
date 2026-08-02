@@ -167,7 +167,11 @@
 	// disrupted + back/forward stay clean). One map, deep-linkable from anywhere.
 	// Every URL write here is an in-place rewrite: keep the map view (noScroll),
 	// the user's focus, and a clean back/forward stack.
-	const urlCoordinator = createMapUrlCoordinator($page.url, goto);
+	const urlCoordinator = createMapUrlCoordinator(
+		$page.url,
+		goto,
+		() => $page.state as Readonly<Record<string, unknown>>,
+	);
 	const filters = createFilterStore(
 		fromSearchParams($page.url.searchParams),
 		urlCoordinator.writeFilters,
@@ -197,7 +201,7 @@
 	});
 
 	const mapDetailNavigationRecovery = attachMapDetailNavigationRecovery({
-		currentUrl: urlCoordinator.currentUrl,
+		currentIntent: urlCoordinator.currentIntent,
 		goto: urlCoordinator.goto,
 	});
 
@@ -212,6 +216,7 @@
 			url,
 			urlCoordinator.settle,
 			$navigating?.to?.url ?? null,
+			$page.state,
 		);
 		if (mapSettlement === 'recovered') return;
 		if (urlIdentity === ingestedUrlIdentity) return;

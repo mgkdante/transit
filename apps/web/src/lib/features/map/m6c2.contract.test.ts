@@ -49,9 +49,18 @@ const M6H_CURE3_RECOVERY_IMPORT =
 	"\timport { attachMapDetailNavigationRecovery } from './mapDetailNavigationRecovery';\n";
 const M6H_CURE4_PAGE_STORES_IMPORT = "\timport { navigating, page } from '$app/stores';\n";
 const PRE_M6H_PAGE_STORES_IMPORT = "\timport { page } from '$app/stores';\n";
-const M6H_CURE3_RECOVERY_WIRING = `
+const M6H_CURE5_COORDINATOR_WIRING = `
+	const urlCoordinator = createMapUrlCoordinator(
+		$page.url,
+		goto,
+		() => $page.state as Readonly<Record<string, unknown>>,
+	);
+`;
+const PRE_M6H_COORDINATOR_WIRING =
+	'\n\tconst urlCoordinator = createMapUrlCoordinator($page.url, goto);\n';
+const M6H_CURE5_RECOVERY_WIRING = `
 	const mapDetailNavigationRecovery = attachMapDetailNavigationRecovery({
-		currentUrl: urlCoordinator.currentUrl,
+		currentIntent: urlCoordinator.currentIntent,
 		goto: urlCoordinator.goto,
 	});
 `;
@@ -63,7 +72,7 @@ const PRE_M6H_URL_INGESTION = `
 		if (urlIdentity === ingestedUrlIdentity) return;
 		ingestedUrlIdentity = urlIdentity;
 		filters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));`;
-const M6H_CURE4_RECOVERY_INGESTION = `
+const M6H_CURE5_RECOVERY_INGESTION = `
 	let observedPageUrl: URL | null = null;
 	let ingestedUrlIdentity = '';
 	$effect(() => {
@@ -75,6 +84,7 @@ const M6H_CURE4_RECOVERY_INGESTION = `
 			url,
 			urlCoordinator.settle,
 			$navigating?.to?.url ?? null,
+			$page.state,
 		);
 		if (mapSettlement === 'recovered') return;
 		if (urlIdentity === ingestedUrlIdentity) return;
@@ -88,8 +98,9 @@ function withoutM6hLifecycle(value: string): string {
 		.replace(M6H_CURE2_STAGE_WIRING, '')
 		.replace(M6H_CURE4_PAGE_STORES_IMPORT, PRE_M6H_PAGE_STORES_IMPORT)
 		.replace(M6H_CURE3_RECOVERY_IMPORT, '')
-		.replace(M6H_CURE3_RECOVERY_WIRING, '')
-		.replace(M6H_CURE4_RECOVERY_INGESTION, PRE_M6H_URL_INGESTION);
+		.replace(M6H_CURE5_COORDINATOR_WIRING, PRE_M6H_COORDINATOR_WIRING)
+		.replace(M6H_CURE5_RECOVERY_WIRING, '')
+		.replace(M6H_CURE5_RECOVERY_INGESTION, PRE_M6H_URL_INGESTION);
 }
 
 function withoutComments(value: string): string {
@@ -188,8 +199,9 @@ describe('M6C-2 token and protected-surface contract', () => {
 		expect(hero.split(M6H_CURE2_STAGE_WIRING)).toHaveLength(2);
 		expect(hero.split(M6H_CURE4_PAGE_STORES_IMPORT)).toHaveLength(2);
 		expect(hero.split(M6H_CURE3_RECOVERY_IMPORT)).toHaveLength(2);
-		expect(hero.split(M6H_CURE3_RECOVERY_WIRING)).toHaveLength(2);
-		expect(hero.split(M6H_CURE4_RECOVERY_INGESTION)).toHaveLength(2);
+		expect(hero.split(M6H_CURE5_COORDINATOR_WIRING)).toHaveLength(2);
+		expect(hero.split(M6H_CURE5_RECOVERY_WIRING)).toHaveLength(2);
+		expect(hero.split(M6H_CURE5_RECOVERY_INGESTION)).toHaveLength(2);
 		const protectedHero = withoutM6hLifecycle(hero);
 		const protectedRegion = protectedHero.split('\n').slice(19, 882).join('\n') + '\n';
 		const digest = createHash('sha256').update(protectedRegion).digest('hex');
