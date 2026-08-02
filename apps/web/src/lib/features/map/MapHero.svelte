@@ -20,7 +20,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { page } from '$app/stores';
+	import { navigating, page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 	import { getLocale, type Locale } from '$lib/i18n';
@@ -201,14 +201,21 @@
 		goto: urlCoordinator.goto,
 	});
 
+	let observedPageUrl: URL | null = null;
 	let ingestedUrlIdentity = '';
 	$effect(() => {
 		const url = $page.url;
+		if (url === observedPageUrl) return;
+		observedPageUrl = url;
 		const urlIdentity = `${url.pathname}${url.search}`;
+		const mapSettlement = mapDetailNavigationRecovery.settle(
+			url,
+			urlCoordinator.settle,
+			$navigating?.to?.url ?? null,
+		);
+		if (mapSettlement === 'recovered') return;
 		if (urlIdentity === ingestedUrlIdentity) return;
 		ingestedUrlIdentity = urlIdentity;
-		const mapSettlement = mapDetailNavigationRecovery.settle(url, urlCoordinator.settle);
-		if (mapSettlement === 'recovered') return;
 		filters.replaceFromUrl(fromSearchParams(url.searchParams), mapSettlement);
 		nearMeController.syncFromUrl(url.searchParams);
 		focusController.syncFromUrl(url.searchParams);

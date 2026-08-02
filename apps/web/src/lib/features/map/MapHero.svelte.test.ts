@@ -976,6 +976,16 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 		},
 	);
 
+	it('does not treat a same-URL invalidation after cancellation as a redirect settlement', async () => {
+		const before = await openStackedDetail(true);
+
+		harness.runBeforeNavigate('http://localhost/lines', before.settledSelectionUrl.href);
+		harness.setPageUrl(before.settledSelectionUrl.href);
+		await tick();
+
+		await expectStackedDetailPreserved(before);
+	});
+
 	it('clears a cancelled exit marker before a later intentional plain-map adoption', async () => {
 		const before = await openStackedDetail(true);
 
@@ -1085,6 +1095,63 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 			});
 			expect(harness.goto.mock.lastCall?.[0]).toBe(
 				`${before.settledSelectionUrl.pathname}${before.settledSelectionUrl.search}`,
+			);
+			expect(harness.goto.mock.lastCall?.[1]).toMatchObject({
+				replaceState: true,
+				keepFocus: true,
+				noScroll: true,
+			});
+		},
+	);
+
+	it.each([
+		['desktop', true],
+		['mobile', false],
+	] as const)(
+		'preserves the exact focused Close node when a redirect settles the byte-identical selection URL on %s',
+		async (_viewport, isDesktop) => {
+			const before = await openStackedDetail(isDesktop);
+			const attemptedExit = {
+				from: { url: before.settledSelectionUrl },
+				to: { url: new URL('http://localhost/lines') },
+			};
+			const exactSelectionUrl = new URL(before.settledSelectionUrl.href);
+			expect(exactSelectionUrl.search).not.toBe('');
+
+			harness.runBeforeNavigate(attemptedExit.to.url.href, attemptedExit.from.url.href);
+			harness.setNavigating(attemptedExit);
+			// Kit preserves the original false keepfocus through redirect recursion and
+			// suppresses a second before-navigation callback for this winning settlement.
+			harness.setNavigating({
+				from: attemptedExit.from,
+				to: { url: exactSelectionUrl },
+			});
+			harness.setPageUrl(exactSelectionUrl.href);
+			await tick();
+
+			const recoverySupersededOriginal =
+				harness.goto.mock.calls.length === before.state.gotoCalls + 1;
+			if (recoverySupersededOriginal) {
+				// The corrective keepFocus rewrite uses the same URL bytes but a newer Kit
+				// token, aborting the original settlement before its default focus reset.
+				harness.setPageUrl(exactSelectionUrl.href);
+				await tick();
+				harness.runAfterNavigate(exactSelectionUrl.href, exactSelectionUrl.href);
+			} else {
+				document.body.tabIndex = -1;
+				document.body.focus();
+				document.body.removeAttribute('tabindex');
+				if (isDesktop) expect(document.activeElement).toBe(document.body);
+				harness.runAfterNavigate(exactSelectionUrl.href, before.settledSelectionUrl.href);
+			}
+			harness.setNavigating(null);
+			await tick();
+
+			await expectStackedDetailPreserved(before, {
+				gotoCalls: before.state.gotoCalls + 1,
+			});
+			expect(harness.goto.mock.lastCall?.[0]).toBe(
+				`${exactSelectionUrl.pathname}${exactSelectionUrl.search}`,
 			);
 			expect(harness.goto.mock.lastCall?.[1]).toMatchObject({
 				replaceState: true,

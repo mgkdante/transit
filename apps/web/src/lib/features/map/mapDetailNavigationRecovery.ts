@@ -8,7 +8,11 @@ interface MapDetailNavigationRecoveryOptions {
 }
 
 export interface MapDetailNavigationRecovery {
-	settle(url: URL, settleUrl: (url: URL) => MapUrlSettlement): MapUrlSettlement | 'recovered';
+	settle(
+		url: URL,
+		settleUrl: (url: URL) => MapUrlSettlement,
+		navigationTarget: URL | null,
+	): MapUrlSettlement | 'recovered';
 }
 
 type PendingMapExit = {
@@ -54,12 +58,21 @@ export function attachMapDetailNavigationRecovery(
 	});
 
 	return {
-		settle(url, settleUrl) {
+		settle(url, settleUrl, navigationTarget) {
 			const settlement = settleUrl(url);
 			if (pendingMapExit == null || delocalizePath(url.pathname) !== '/map') return settlement;
 			const recovery = pendingMapExit;
 			pendingMapExit = null;
-			if (settlement !== 'adopt' || url.search !== '') return settlement;
+			const isPlainMap = url.search === '';
+			const isExactRestore =
+				navigationTarget != null &&
+				navigationTarget.pathname === url.pathname &&
+				navigationTarget.search === url.search &&
+				url.pathname === recovery.restoreUrl.pathname &&
+				url.search === recovery.restoreUrl.search &&
+				recovery.focusTarget?.isConnected === true &&
+				document.activeElement === recovery.focusTarget;
+			if (settlement !== 'adopt' || (!isPlainMap && !isExactRestore)) return settlement;
 			if (recovery.focusTarget?.isConnected) {
 				recovery.focusTarget.focus({ preventScroll: true });
 			}

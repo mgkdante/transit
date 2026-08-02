@@ -67,24 +67,46 @@ const m6hCure2OwnerRelease = `
 `;
 const m6hCure3RecoveryImport =
 	"\timport { attachMapDetailNavigationRecovery } from './mapDetailNavigationRecovery';\n";
+const m6hCure4PageStoresImport = "\timport { navigating, page } from '$app/stores';\n";
+const preM6hPageStoresImport = "\timport { page } from '$app/stores';\n";
 const m6hCure3RecoveryWiring = `
 	const mapDetailNavigationRecovery = attachMapDetailNavigationRecovery({
 		currentUrl: urlCoordinator.currentUrl,
 		goto: urlCoordinator.goto,
 	});
 `;
-const preM6hUrlIngestion =
-	'\n\t\tfilters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));';
-const m6hCure3RecoveryIngestion = `
-		const mapSettlement = mapDetailNavigationRecovery.settle(url, urlCoordinator.settle);
+const preM6hUrlIngestion = `
+	let ingestedUrlIdentity = '';
+	$effect(() => {
+		const url = $page.url;
+		const urlIdentity = \`\${url.pathname}\${url.search}\`;
+		if (urlIdentity === ingestedUrlIdentity) return;
+		ingestedUrlIdentity = urlIdentity;
+		filters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));`;
+const m6hCure4RecoveryIngestion = `
+	let observedPageUrl: URL | null = null;
+	let ingestedUrlIdentity = '';
+	$effect(() => {
+		const url = $page.url;
+		if (url === observedPageUrl) return;
+		observedPageUrl = url;
+		const urlIdentity = \`\${url.pathname}\${url.search}\`;
+		const mapSettlement = mapDetailNavigationRecovery.settle(
+			url,
+			urlCoordinator.settle,
+			$navigating?.to?.url ?? null,
+		);
 		if (mapSettlement === 'recovered') return;
+		if (urlIdentity === ingestedUrlIdentity) return;
+		ingestedUrlIdentity = urlIdentity;
 		filters.replaceFromUrl(fromSearchParams(url.searchParams), mapSettlement);`;
 const preM6hScript = script
 	?.replace(m6hCure2MapHandle, '\tlet map = $state<MapLibreMap | null>(null);')
 	.replace(m6hCure2OwnerRelease, '')
+	.replace(m6hCure4PageStoresImport, preM6hPageStoresImport)
 	.replace(m6hCure3RecoveryImport, '')
 	.replace(m6hCure3RecoveryWiring, '')
-	.replace(m6hCure3RecoveryIngestion, preM6hUrlIngestion);
+	.replace(m6hCure4RecoveryIngestion, preM6hUrlIngestion);
 const mapStage = source.match(/<MapStage[\s\S]*?\/>/u)?.[0];
 const nearMeDependencies = script?.match(
 	/const nearMeController = createMapNearMeController\(\{([\s\S]*?)\r?\n\t\}\);\r?\n\tconst focusController/u,
@@ -115,9 +137,10 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(script).not.toContain(obsoleteM6hRouteExit);
 		expect(script!.split(m6hCure2MapHandle)).toHaveLength(2);
 		expect(script!.split(m6hCure2OwnerRelease)).toHaveLength(2);
+		expect(script!.split(m6hCure4PageStoresImport)).toHaveLength(2);
 		expect(script!.split(m6hCure3RecoveryImport)).toHaveLength(2);
 		expect(script!.split(m6hCure3RecoveryWiring)).toHaveLength(2);
-		expect(script!.split(m6hCure3RecoveryIngestion)).toHaveLength(2);
+		expect(script!.split(m6hCure4RecoveryIngestion)).toHaveLength(2);
 		expect(preM6hScript!.split(/\r?\n/u).length).toBeLessThan(862);
 	});
 
@@ -125,12 +148,12 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source.match(/<script(?:\s[^>]*)?>/gu)).toHaveLength(1);
 		expect(source).not.toMatch(/<script[^>]*context=["']module["']/u);
 		expect(source).not.toContain('afterNavigate');
-		expect(
-			source.match(/mapDetailNavigationRecovery\.settle\(url, urlCoordinator\.settle\)/gu),
-		).toHaveLength(1);
+		expect(source.match(/mapDetailNavigationRecovery\.settle\(/gu)).toHaveLength(1);
 		expect(navigationRecoverySource.match(/settleUrl\(url\)/gu)).toHaveLength(1);
 		expect(source.match(/filters\.replaceFromUrl\(/gu)).toHaveLength(1);
 		expect(source).toContain('const urlIdentity = `${url.pathname}${url.search}`');
+		expect(source).toContain('if (url === observedPageUrl) return;');
+		expect(source).toContain('$navigating?.to?.url ?? null');
 		expect(source.indexOf('const urlCoordinator = createMapUrlCoordinator')).toBeLessThan(
 			source.indexOf('const nearMeController = createMapNearMeController'),
 		);
@@ -145,7 +168,12 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(navigationRecoverySource).toContain('pendingMapExit = null;');
 		expect(navigationRecoverySource).toContain("delocalizePath(url.pathname) !== '/map'");
 		expect(navigationRecoverySource).toContain("settlement !== 'adopt'");
-		expect(navigationRecoverySource).toContain("url.search !== ''");
+		expect(navigationRecoverySource).toContain("const isPlainMap = url.search === ''");
+		expect(navigationRecoverySource).toContain('const isExactRestore =');
+		expect(navigationRecoverySource).toContain('url.pathname === recovery.restoreUrl.pathname');
+		expect(navigationRecoverySource).toContain('url.search === recovery.restoreUrl.search');
+		expect(navigationRecoverySource).toContain('navigationTarget.pathname === url.pathname');
+		expect(navigationRecoverySource).toContain('document.activeElement === recovery.focusTarget');
 		expect(navigationRecoverySource).toContain('options.goto(');
 		expect(navigationRecoverySource).toContain('MAP_URL_REWRITE');
 		expect(navigationRecoverySource).not.toContain('selectionController');
