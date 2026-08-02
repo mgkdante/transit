@@ -14,10 +14,63 @@ describe('map URL coordinator', () => {
 
 		expect(Object.keys(coordinator).sort()).toEqual([
 			'currentUrl',
+			'dispose',
 			'goto',
 			'settle',
 			'writeFilters',
 		]);
+	});
+
+	it.each(['/fr/map?route=24', '/fr/map?route=55'])(
+		'retires every queued token and resets to the settled base before adopting %s',
+		(formerTarget) => {
+			const { coordinator } = setup('https://transit.example/map?near=1%2C2');
+			const settledBase = new URL('https://transit.example/fr/map?settled=1');
+			expect(coordinator.settle(settledBase)).toBe('adopt');
+			coordinator.goto('/fr/map?route=24', MAP_URL_REWRITE);
+			coordinator.goto('/fr/map?route=55', MAP_URL_REWRITE);
+
+			coordinator.dispose();
+			coordinator.dispose();
+
+			expect(coordinator.currentUrl().href).toBe(settledBase.href);
+			expect(coordinator.settle(new URL(formerTarget, settledBase))).toBe('adopt');
+		},
+	);
+
+	it('makes every outbound writer inert after disposal', () => {
+		const { coordinator, navigate } = setup('https://transit.example/map?settled=1');
+		coordinator.dispose();
+
+		coordinator.goto('/map?route=24', MAP_URL_REWRITE);
+		coordinator.writeFilters('route=55');
+
+		expect(navigate).not.toHaveBeenCalled();
+		expect(coordinator.currentUrl().href).toBe('https://transit.example/map?settled=1');
+	});
+
+	it('reports a pending rejection after disposal without restoring its retired intent', async () => {
+		let rejectNavigation!: (error: Error) => void;
+		const navigation = new Promise<void>((_resolve, reject) => {
+			rejectNavigation = reject;
+		});
+		const reportNavigationFailure = vi.fn();
+		const coordinator = createMapUrlCoordinator(
+			new URL('https://transit.example/map?settled=1'),
+			() => navigation,
+			{ reportNavigationFailure },
+		);
+		const error = new Error('late navigation rejection');
+		coordinator.goto('/map?route=24', MAP_URL_REWRITE);
+		coordinator.dispose();
+
+		rejectNavigation(error);
+		await expect(navigation).rejects.toBe(error);
+		await Promise.resolve();
+
+		expect(reportNavigationFailure).toHaveBeenCalledExactlyOnceWith(error);
+		expect(coordinator.currentUrl().href).toBe('https://transit.example/map?settled=1');
+		expect(coordinator.settle(new URL('https://transit.example/map?route=24'))).toBe('adopt');
 	});
 
 	it('replaces every filter family while preserving unknown duplicates, empties, order, and raw near values', () => {
@@ -47,13 +100,13 @@ describe('map URL coordinator', () => {
 		expect(navigate.mock.calls.map(([target]) => target)).toEqual(['/map', '/map?route=24']);
 	});
 
-	it('preserves a requested hash in the actual navigation target', () => {
+	it('drops a requested hash from the actual navigation target like the base coordinator', () => {
 		const { coordinator, navigate } = setup('https://transit.example/map#detail');
 
 		coordinator.goto('/map?route=24#detail', MAP_URL_REWRITE);
 
 		expect(navigate).toHaveBeenCalledWith(
-			'/map?route=24#detail',
+			'/map?route=24',
 			expect.objectContaining(MAP_URL_REWRITE),
 		);
 		expect(coordinator.settle(new URL('https://transit.example/map?route=24#detail'))).toBe('echo');
@@ -99,5 +152,21 @@ describe('map URL coordinator', () => {
 			expect.objectContaining(MAP_URL_REWRITE),
 		);
 		expect(coordinator.currentUrl().pathname).toBe('/fr/map');
+	});
+
+	it('observes and reports a rejected navigation while retiring its token and latest intent', async () => {
+		const navigationError = new Error('map URL navigation failed');
+		const navigate = vi.fn<MapUrlNavigate>(() => Promise.reject(navigationError));
+		const reportNavigationFailure = vi.fn();
+		const initial = new URL('https://transit.example/map?near=1%2C2');
+		const coordinator = createMapUrlCoordinator(initial, navigate, { reportNavigationFailure });
+
+		const navigation = coordinator.goto('/map?route=24', MAP_URL_REWRITE) as Promise<void>;
+		await expect(navigation).rejects.toBe(navigationError);
+		await Promise.resolve();
+
+		expect(reportNavigationFailure).toHaveBeenCalledExactlyOnceWith(navigationError);
+		expect(coordinator.currentUrl().href).toBe(initial.href);
+		expect(coordinator.settle(new URL('https://transit.example/map?route=24'))).toBe('adopt');
 	});
 });

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { tick } from 'svelte';
+import { settled, tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	setStopException as setRealStopException,
@@ -93,7 +93,10 @@ const harness = vi.hoisted(() => {
 	};
 	const motionSet = vi.fn(runMotionSet);
 	const motionDestroy = vi.fn(stopVehicleUploads);
-	const releaseLease = vi.fn();
+	let activeLeaseCount = 0;
+	const releaseLease = vi.fn(() => {
+		activeLeaseCount = Math.max(0, activeLeaseCount - 1);
+	});
 	const stops = [
 		{
 			id: 'stop-1',
@@ -254,7 +257,10 @@ const harness = vi.hoisted(() => {
 		start: vi.fn(),
 		stop: vi.fn(),
 		refresh: vi.fn(),
-		subscribeFamilies: vi.fn(() => releaseLease),
+		subscribeFamilies: vi.fn(() => {
+			activeLeaseCount += 1;
+			return releaseLease;
+		}),
 	};
 	type HarnessNavigation = import('./__fixtures__/KitNavigationSimulator').SimulatedNavigation;
 	type BeforeNavigation = import('./__fixtures__/KitNavigationSimulator').SimulatedBeforeNavigation;
@@ -266,8 +272,11 @@ const harness = vi.hoisted(() => {
 	let publishNavigating: (navigation: HarnessNavigation | null) => void = () => {
 		throw new Error('navigation publisher used before the $app/stores mock factory ran');
 	};
-	let flushDom = async (): Promise<void> => {
-		throw new Error('DOM flush used before the test harness was initialized');
+	let settleDom = async (): Promise<void> => {
+		throw new Error('DOM settlement used before the test harness was initialized');
+	};
+	let tickDom = async (): Promise<void> => {
+		throw new Error('DOM tick used before the test harness was initialized');
 	};
 	let router: import('./__fixtures__/KitNavigationSimulator').KitNavigationSimulator | null = null;
 	const navigationRouter = () => {
@@ -315,7 +324,8 @@ const harness = vi.hoisted(() => {
 			router = new Simulator({
 				publishPage: (href, state) => publishPage(href, state),
 				publishNavigating: (navigation) => publishNavigating(navigation),
-				flushDom: () => flushDom(),
+				settled: () => settleDom(),
+				tick: () => tickDom(),
 				activeElement: () => document.activeElement,
 				bodyElement: () => document.body,
 				resetFocus: resetKitFocus,
@@ -328,8 +338,9 @@ const harness = vi.hoisted(() => {
 			publishPage = nextPage;
 			publishNavigating = nextNavigating;
 		},
-		installDomFlush(nextFlush: () => Promise<void>): void {
-			flushDom = nextFlush;
+		installDomFlush(nextSettled: () => Promise<void>, nextTick: () => Promise<void>): void {
+			settleDom = nextSettled;
+			tickDom = nextTick;
 		},
 		resetNavigation(): void {
 			navigationRouter().reset();
@@ -402,6 +413,10 @@ const harness = vi.hoisted(() => {
 		stopVehicleUploads,
 		hasPendingVehicleMotionFrame: () => vehicleMotionFrame != null,
 		releaseLease,
+		activeLeaseCount: () => activeLeaseCount,
+		resetActiveLeaseCount: () => {
+			activeLeaseCount = 0;
+		},
 		createVehicleMotionController,
 		getRoute,
 		getStop,
@@ -637,7 +652,10 @@ vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	isPrefersReducedMotion: harness.isPrefersReducedMotion,
 }));
 
-harness.installDomFlush(async () => tick());
+harness.installDomFlush(
+	async () => settled(),
+	async () => tick(),
+);
 
 afterEach(() => {
 	cleanup();
@@ -647,6 +665,7 @@ afterEach(() => {
 	harness.resetGetRouteImplementation();
 	harness.resetStopsIndex();
 	harness.setLiveVehicleVisible(true);
+	harness.resetActiveLeaseCount();
 	harness.captureDetailFilter(null);
 	harness.resetNavigation();
 	harness.identityReceivers.length = 0;
@@ -781,6 +800,33 @@ describe('MapHero stage lifecycle', () => {
 });
 
 describe('MapHero near-me device location', () => {
+	it('ignores a device callback delivered after the map owner is destroyed', async () => {
+		let deliverPosition!: PositionCallback;
+		const getCurrentPosition = vi.fn((success: PositionCallback) => {
+			deliverPosition = success;
+		});
+		Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+		Object.defineProperty(navigator, 'geolocation', {
+			configurable: true,
+			value: { getCurrentPosition },
+		});
+		render(MapHero);
+		await fireEvent.click(screen.getByRole('button', { name: 'Stops near me' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+		await waitFor(() => expect(getCurrentPosition).toHaveBeenCalledOnce());
+		const focusCalls = harness.focusCoordinate.mock.calls.length;
+		const gotoCalls = harness.goto.mock.calls.length;
+
+		cleanup();
+		deliverPosition({
+			coords: { latitude: 45.525686, longitude: -73.594764 },
+		} as GeolocationPosition);
+		await tick();
+
+		expect(harness.focusCoordinate).toHaveBeenCalledTimes(focusCalls);
+		expect(harness.goto).toHaveBeenCalledTimes(gotoCalls);
+	});
+
 	it('pins a successful device fix without writing its coordinates or label to the URL', async () => {
 		const position: GeolocationPosition = {
 			coords: {
@@ -1072,10 +1118,12 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 		const from = before.currentUrl.href;
 		const publicationStart = harness.acceptedPublications.length;
 		if (shape === 'cancelled') {
-			const attempt = harness.startNavigation('http://localhost/lines', from, {
-				accepted: false,
-				type: 'link',
+			const releaseCancellation = harness.beforeNavigate((navigation) => {
+				if (navigation.to?.url.pathname === '/lines') navigation.cancel();
 			});
+			const attempt = harness.startNavigation('http://localhost/lines', from, { type: 'link' });
+			releaseCancellation();
+			expect(attempt.accepted).toBe(false);
 			expect(attempt.beforeNavigateDelivered).toBe(true);
 			await harness.flushEffects();
 			return {
@@ -1225,6 +1273,65 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 		},
 	);
 
+	it('contains and reports a throwing live stop without skipping sibling teardown owners', async () => {
+		const pageErrors = capturePageErrors();
+		const stopError = new Error('live stop failed');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const releaseClock = vi.fn();
+		const subscribe = vi
+			.spyOn(mapHeroReceiptSignals.clock, 'subscribe')
+			.mockReturnValue(releaseClock);
+		harness.liveStore.stop.mockImplementationOnce(() => {
+			throw stopError;
+		});
+		try {
+			const before = await openDetail(true);
+			expect(harness.activeLeaseCount()).toBe(1);
+			await commitLines(before.currentUrl);
+
+			expect(pageErrors.values).toEqual([]);
+			expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+			expect(harness.releaseLease).toHaveBeenCalledOnce();
+			expect(releaseClock).toHaveBeenCalledTimes(subscribe.mock.results.length);
+			expect(consoleError).toHaveBeenCalledWith('MapHero cleanup failed', stopError);
+		} finally {
+			subscribe.mockRestore();
+			pageErrors.dispose();
+		}
+	});
+
+	it('contains and reports a throwing selection lease without skipping sibling teardown owners', async () => {
+		const pageErrors = capturePageErrors();
+		const leaseError = new Error('selection lease release failed');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const releaseClock = vi.fn();
+		const subscribe = vi
+			.spyOn(mapHeroReceiptSignals.clock, 'subscribe')
+			.mockReturnValue(releaseClock);
+		harness.releaseLease.mockImplementationOnce(() => {
+			throw leaseError;
+		});
+		try {
+			const before = await openDetail(true);
+			await commitLines(before.currentUrl);
+
+			expect(pageErrors.values).toEqual([]);
+			expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+			expect(harness.liveStore.stop).toHaveBeenCalledOnce();
+			expect(harness.releaseLease).toHaveBeenCalledTimes(2);
+			expect(harness.activeLeaseCount()).toBe(0);
+			expect(releaseClock).toHaveBeenCalledTimes(subscribe.mock.results.length);
+			expect(consoleError).toHaveBeenCalledWith('MapHero cleanup failed', leaseError);
+		} finally {
+			subscribe.mockRestore();
+			pageErrors.dispose();
+		}
+	});
+
 	it.each([
 		['motion desktop', true, null],
 		['motion mobile', false, null],
@@ -1244,14 +1351,21 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				);
 				if (!operation) mapHeroReceiptSignals.setMotionMode('smooth');
 				const before = await openDetail(desktop);
+				if (operation === 'emphasis:removeFeatureState') {
+					await fireEvent.click(screen.getByTestId('map-stage-stub-hover-stop'));
+					await tick();
+				}
 				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(activeListeners);
 				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual(activeSources);
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(
+					operation === 'emphasis:removeFeatureState' ? 2 : 1,
+				);
+				expect(harness.activeLeaseCount()).toBe(1);
 				if (!operation) expect(harness.hasPendingVehicleMotionFrame()).toBe(true);
-				const error = new Error(`${operation ?? 'motion'} cleanup failed after mutation`);
-				if (operation) mapHeroReceiptSignals.setCleanupFault(operation, error);
+				const error = new Error(`${operation ?? 'motion'} cleanup failed before mutation`);
+				if (operation) mapHeroReceiptSignals.setCleanupFault(operation, error, 'before');
 				else {
 					harness.motionDestroy.mockImplementationOnce(() => {
-						harness.stopVehicleUploads();
 						throw error;
 					});
 				}
@@ -1260,8 +1374,10 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				expect(document.querySelector<HTMLElement>('#main')).toHaveClass('overflow-y-auto');
 				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
 				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
 				expect(harness.liveStore.stop).toHaveBeenCalledTimes(1);
 				expect(harness.releaseLease).toHaveBeenCalledTimes(1);
+				expect(harness.activeLeaseCount()).toBe(0);
 				if (!operation) expect(harness.hasPendingVehicleMotionFrame()).toBe(false);
 				expect(consoleError).toHaveBeenCalledWith('MapStage cleanup failed', error);
 				if (!desktop) expect(document.body.style.overflow).not.toBe('hidden');
@@ -1287,17 +1403,20 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 		try {
 			mapHeroReceiptSignals.setMotionMode('smooth');
 			const before = await openDetail(true);
+			await fireEvent.click(screen.getByTestId('map-stage-stub-hover-stop'));
+			await tick();
 			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(activeListeners);
 			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual(activeSources);
+			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(2);
+			expect(harness.activeLeaseCount()).toBe(1);
 			expect(harness.hasPendingVehicleMotionFrame()).toBe(true);
 			harness.motionDestroy.mockImplementationOnce(() => {
-				harness.stopVehicleUploads();
 				throw errors[0];
 			});
-			mapHeroReceiptSignals.setCleanupFault('map:click', errors[1]);
-			mapHeroReceiptSignals.setCleanupFault('map:mousemove', errors[2]);
-			mapHeroReceiptSignals.setCleanupFault('canvas:mouseleave', errors[3]);
-			mapHeroReceiptSignals.setCleanupFault('emphasis:removeFeatureState', errors[4]);
+			mapHeroReceiptSignals.setCleanupFault('map:click', errors[1], 'before');
+			mapHeroReceiptSignals.setCleanupFault('map:mousemove', errors[2], 'before');
+			mapHeroReceiptSignals.setCleanupFault('canvas:mouseleave', errors[3], 'before');
+			mapHeroReceiptSignals.setCleanupFault('emphasis:removeFeatureState', errors[4], 'before');
 
 			await commitLines(before.currentUrl);
 
@@ -1305,8 +1424,10 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 			expect(document.querySelector<HTMLElement>('#main')).toHaveClass('overflow-y-auto');
 			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
 			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
 			expect(harness.liveStore.stop).toHaveBeenCalledTimes(1);
 			expect(harness.releaseLease).toHaveBeenCalledTimes(1);
+			expect(harness.activeLeaseCount()).toBe(0);
 			expect(harness.hasPendingVehicleMotionFrame()).toBe(false);
 			const reported = consoleError.mock.calls.find(
 				([message]) => message === 'MapStage cleanup failed',
@@ -1316,6 +1437,24 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 		} finally {
 			pageErrors.dispose();
 		}
+	});
+
+	it('retains a twice-failed canvas receipt for the parent fallback and reaches zero', async () => {
+		const error = new Error('canvas cleanup failed twice before mutation');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const before = await openDetail(true);
+		mapHeroReceiptSignals.setCleanupFault('canvas:mouseleave', error, 'before', 2);
+
+		await commitLines(before.currentUrl);
+
+		expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+		expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+		expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+		expect(harness.activeLeaseCount()).toBe(0);
+		expect(consoleError).toHaveBeenCalledWith(
+			'MapStage cleanup failed',
+			expect.any(AggregateError),
+		);
 	});
 
 	it('reaches physical zero through three map to lines round trips', async () => {
@@ -1332,6 +1471,8 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				await screen.findByRole('button', { name: 'Close panel' });
 				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(activeListeners);
 				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual(activeSources);
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(1);
+				expect(harness.activeLeaseCount()).toBe(1);
 				const selectionUrl = harness.activeNavigation?.to?.url;
 				if (!selectionUrl) throw new Error('expected a selection navigation');
 				await harness.commitNavigation(selectionUrl.href);
@@ -1339,12 +1480,66 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				await harness.commitNavigation('http://localhost/lines');
 				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
 				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+				expect(harness.activeLeaseCount()).toBe(0);
 				expect(document.querySelector<HTMLElement>('#main')).toHaveClass('overflow-y-auto');
 			}
 			expect(pageErrors.values).toEqual([]);
 			expect(harness.liveStore.start).toHaveBeenCalledTimes(3);
 			expect(harness.liveStore.stop).toHaveBeenCalledTimes(3);
 			expect(harness.releaseLease).toHaveBeenCalledTimes(3);
+		} finally {
+			pageErrors.dispose();
+		}
+	});
+
+	it('bounds pre-mutation lease, canvas, and feature-state faults across three round trips', async () => {
+		harness.isDesktop = true;
+		const pageErrors = capturePageErrors();
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			render(MapHeroNavigationHarness);
+			for (let round = 0; round < 3; round += 1) {
+				if (round > 0) {
+					harness.startNavigation('http://localhost/map', 'http://localhost/lines');
+					await harness.commitNavigation('http://localhost/map');
+				}
+				await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+				await screen.findByRole('button', { name: 'Close panel' });
+				await fireEvent.click(screen.getByTestId('map-stage-stub-hover-stop'));
+				await tick();
+				expect(harness.activeLeaseCount()).toBe(1);
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(2);
+				const selectionUrl = harness.activeNavigation?.to?.url;
+				if (!selectionUrl) throw new Error('expected a selection navigation');
+				await harness.commitNavigation(selectionUrl.href);
+
+				harness.releaseLease.mockImplementationOnce(() => {
+					throw new Error(`round ${round} lease failed before mutation`);
+				});
+				mapHeroReceiptSignals.setCleanupFault(
+					'canvas:mouseleave',
+					new Error(`round ${round} canvas failed before mutation`),
+					'before',
+				);
+				mapHeroReceiptSignals.setCleanupFault(
+					'emphasis:removeFeatureState',
+					new Error(`round ${round} emphasis failed before mutation`),
+					'before',
+				);
+				harness.startNavigation('http://localhost/lines', selectionUrl.href);
+				await harness.commitNavigation('http://localhost/lines');
+
+				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+				expect(harness.activeLeaseCount()).toBe(0);
+			}
+			expect(pageErrors.values).toEqual([]);
+			expect(harness.releaseLease).toHaveBeenCalledTimes(6);
+			expect(
+				consoleError.mock.calls.filter(([message]) => message === 'MapStage cleanup failed'),
+			).toHaveLength(3);
 		} finally {
 			pageErrors.dispose();
 		}

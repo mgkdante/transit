@@ -22,6 +22,10 @@ export interface MapUrlRewriteOptions {
 export type MapUrlNavigate = (target: string, options: MapUrlRewriteOptions) => unknown;
 export type MapUrlSettlement = 'echo' | 'adopt';
 
+export interface MapUrlCoordinatorOptions {
+	readonly reportNavigationFailure?: (error: unknown) => unknown;
+}
+
 export const MAP_URL_REWRITE = {
 	replaceState: true,
 	keepFocus: true,
@@ -30,6 +34,7 @@ export const MAP_URL_REWRITE = {
 
 export interface MapUrlCoordinator {
 	readonly currentUrl: () => URL;
+	readonly dispose: () => void;
 	readonly goto: MapUrlNavigate;
 	readonly writeFilters: (search: string) => void;
 	readonly settle: (url: URL) => MapUrlSettlement;
@@ -40,23 +45,70 @@ function identity(url: URL): string {
 	return `${url.pathname}${url.search}`;
 }
 
-function navigationTarget(url: URL): string {
-	return `${identity(url)}${url.hash}`;
-}
-
 export function createMapUrlCoordinator(
 	initialUrl: URL,
 	navigate: MapUrlNavigate,
+	options: MapUrlCoordinatorOptions = {},
 ): MapUrlCoordinator {
+	interface RequestedNavigation {
+		readonly identity: string;
+		readonly url: URL;
+	}
+
+	let settledBase = new URL(initialUrl.href);
 	let latestIntent = new URL(initialUrl.href);
-	const requested: string[] = [];
+	let disposed = false;
+	const requested: RequestedNavigation[] = [];
+
+	function reportFailure(error: unknown): void {
+		try {
+			const reported = options.reportNavigationFailure
+				? options.reportNavigationFailure(error)
+				: console.error('Map URL navigation failed', error);
+			if (reported && typeof (reported as PromiseLike<unknown>).then === 'function') {
+				void Promise.resolve(reported).catch((reporterError) => {
+					try {
+						console.error('Map URL navigation failure reporter failed', reporterError);
+					} catch {
+						// Reporting must never create another unhandled navigation failure.
+					}
+				});
+			}
+		} catch (reporterError) {
+			try {
+				console.error('Map URL navigation failure reporter failed', reporterError);
+			} catch {
+				// Reporting must never reopen the navigation failure path.
+			}
+		}
+	}
+
+	function retireFailedRequest(token: RequestedNavigation, error: unknown): void {
+		if (!disposed) {
+			const index = requested.indexOf(token);
+			if (index !== -1) requested.splice(index, 1);
+			latestIntent = new URL(requested.at(-1)?.url.href ?? settledBase.href);
+		}
+		reportFailure(error);
+	}
 
 	function request(target: string, options: MapUrlRewriteOptions): unknown {
+		if (disposed) return undefined;
 		const next = new URL(target, latestIntent);
-		const nextIdentity = identity(next);
-		requested.push(nextIdentity);
+		const token = { identity: identity(next), url: new URL(next.href) };
+		requested.push(token);
 		latestIntent = next;
-		return navigate(navigationTarget(next), options);
+		let navigation: unknown;
+		try {
+			navigation = navigate(token.identity, options);
+		} catch (error) {
+			retireFailedRequest(token, error);
+			throw error;
+		}
+		if (navigation && typeof (navigation as PromiseLike<unknown>).then === 'function') {
+			void Promise.resolve(navigation).catch((error) => retireFailedRequest(token, error));
+		}
+		return navigation;
 	}
 
 	function writeFilters(search: string): void {
@@ -66,12 +118,13 @@ export function createMapUrlCoordinator(
 		for (const key of FILTER_SEARCH_PARAM_KEYS) {
 			for (const value of filters.getAll(key)) next.searchParams.append(key, value);
 		}
-		void request(navigationTarget(next), MAP_URL_REWRITE);
+		void request(identity(next), MAP_URL_REWRITE);
 	}
 
 	function settle(url: URL): MapUrlSettlement {
 		const settled = new URL(url.href);
-		const match = requested.indexOf(identity(settled));
+		settledBase = settled;
+		const match = requested.findIndex((token) => token.identity === identity(settled));
 		const cause: MapUrlSettlement = match === -1 ? 'adopt' : 'echo';
 		if (match === -1) requested.length = 0;
 		else requested.splice(0, match + 1);
@@ -79,8 +132,16 @@ export function createMapUrlCoordinator(
 		return cause;
 	}
 
+	function dispose(): void {
+		if (disposed) return;
+		disposed = true;
+		requested.length = 0;
+		latestIntent = new URL(settledBase.href);
+	}
+
 	return {
 		currentUrl: () => new URL(latestIntent.href),
+		dispose,
 		goto: request,
 		writeFilters,
 		settle,

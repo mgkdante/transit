@@ -159,7 +159,7 @@ describe('map emphasis controller', () => {
 		expect(emphasis.hoveredTarget).toEqual({ kind: 'vehicle', id: 'bus-a' });
 	});
 
-	it('detaches every retained target and map when live-map clear throws', () => {
+	it('retains only a pre-mutation failed feature-state receipt and clears it on retry', () => {
 		const selection = createMapSelectionController();
 		const emphasis = createMapEmphasisController(selection);
 		const harness = mapHarness();
@@ -167,18 +167,19 @@ describe('map emphasis controller', () => {
 		selection.selectPicked({ kind: 'stop', id: 'stop-a' });
 		selection.setHovered({ kind: 'vehicle', id: 'bus-a' });
 		emphasis.apply(harness.map, stops);
-		const clearError = new Error('exception source clear failed');
-		harness.setExceptionData.mockImplementationOnce(() => {
+		const clearError = new Error('feature-state clear failed before mutation');
+		harness.removeFeatureState.mockImplementationOnce(() => {
 			throw clearError;
 		});
 
 		expect(() => emphasis.clear()).toThrow(clearError);
+		expect(harness.states.size).toBe(1);
 		expect(emphasis.selectedTargets).toEqual([]);
-		expect(emphasis.hoveredTarget).toBeNull();
-		const writesAfterFailedClear = harness.setExceptionData.mock.calls.length;
+		expect(emphasis.hoveredTarget).toEqual({ kind: 'vehicle', id: 'bus-a' });
 
 		expect(() => emphasis.clear()).not.toThrow();
-		expect(harness.setExceptionData).toHaveBeenCalledTimes(writesAfterFailedClear);
+		expect(harness.states.size).toBe(0);
+		expect(emphasis.hoveredTarget).toBeNull();
 	});
 
 	it('keeps the low-zoom exception bounded for selected and hovered stops', () => {

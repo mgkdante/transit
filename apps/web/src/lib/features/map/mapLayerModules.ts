@@ -69,6 +69,10 @@ export interface LayerModule {
 	};
 }
 
+export interface MapInteractionRegistrationFailure extends AggregateError {
+	readonly disposers: readonly (() => void)[];
+}
+
 const routesModule: LayerModule = {
 	id: 'routes',
 	install(map, beforeId) {
@@ -191,8 +195,8 @@ export function installMapInteractions(
 		let pending = true;
 		return () => {
 			if (!pending) return;
-			pending = false;
 			rollback();
+			pending = false;
 		};
 	};
 	const register = (install: () => void, rollback: () => void): void => {
@@ -215,12 +219,22 @@ export function installMapInteractions(
 			() => canvas.removeEventListener('mouseleave', handlers.mouseleave),
 		);
 	} catch (registrationError) {
+		const rollbackErrors: unknown[] = [];
 		for (const rollback of [...rollbacks].reverse()) {
 			try {
 				rollback();
-			} catch {
-				// Preserve the registration failure while still unwinding earlier receipts.
+			} catch (rollbackError) {
+				rollbackErrors.push(rollbackError);
 			}
+		}
+		if (rollbackErrors.length > 0) {
+			throw Object.assign(
+				new AggregateError(
+					[registrationError, ...rollbackErrors],
+					'Map interaction registration and rollback failed',
+				),
+				{ disposers: rollbacks },
+			) as MapInteractionRegistrationFailure;
 		}
 		throw registrationError;
 	}

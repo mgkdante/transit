@@ -74,6 +74,76 @@ describe('Kit navigation simulator source contract', () => {
 		expect(resetFocus).toContain('root.focus({ preventScroll: true, focusVisible: false });');
 	});
 
+	it('does not let an accepted option bypass the real beforeNavigate cancellation callback', () => {
+		const simulator = new KitNavigationSimulator({
+			publishPage: () => {},
+			publishNavigating: () => {},
+			settled: async () => {},
+			tick: async () => {},
+			activeElement: () => null,
+			bodyElement: () => null,
+			resetFocus: () => {},
+		});
+		const bypass = simulator.startNavigation('http://localhost/lines', undefined, {
+			accepted: false,
+		} as Parameters<KitNavigationSimulator['startNavigation']>[2]);
+		expect(bypass.accepted).toBe(true);
+
+		simulator.reset();
+		const release = simulator.beforeNavigate((navigation) => navigation.cancel());
+		const cancelled = simulator.startNavigation('http://localhost/lines');
+		release();
+
+		expect(cancelled.accepted).toBe(false);
+		expect(simulator.acceptedPublications).toEqual([]);
+	});
+
+	it('rejects superseded work only when that work reaches Kit stale-token checkpoints', async () => {
+		const simulator = new KitNavigationSimulator({
+			publishPage: () => {},
+			publishNavigating: () => {},
+			settled: async () => {},
+			tick: async () => {},
+			activeElement: () => null,
+			bodyElement: () => null,
+			resetFocus: () => {},
+		});
+		const predecessor = simulator.startNavigation('http://localhost/lines');
+		let predecessorState: 'pending' | 'fulfilled' | 'rejected' = 'pending';
+		void predecessor.navigation.complete.then(
+			() => (predecessorState = 'fulfilled'),
+			() => (predecessorState = 'rejected'),
+		);
+
+		simulator.startNavigation('http://localhost/map');
+		await Promise.resolve();
+		expect(predecessorState).toBe('pending');
+		expect(simulator.reachLoadCheckpoint(predecessor.navigation)).toBe(false);
+		await expect(predecessor.navigation.complete).rejects.toThrow('navigation aborted');
+	});
+
+	it('normalizes the full shared navigation URL object before onNavigate', async () => {
+		const seenHrefs: string[] = [];
+		const simulator = new KitNavigationSimulator({
+			publishPage: () => {},
+			publishNavigating: () => {},
+			settled: async () => {},
+			tick: async () => {},
+			activeElement: () => null,
+			bodyElement: () => null,
+			resetFocus: () => {},
+		});
+		simulator.onNavigate((navigation) => seenHrefs.push(navigation.to?.url.href ?? 'null'));
+		const started = simulator.startNavigation('http://localhost/map/?queued=1#old');
+		const acceptedUrl = started.navigation.to?.url;
+
+		await simulator.commitNavigation('http://localhost/map?settled=1#new');
+
+		expect(started.navigation.to?.url).toBe(acceptedUrl);
+		expect(started.navigation.to?.url.href).toBe('http://localhost/map?settled=1#new');
+		expect(seenHrefs).toEqual(['http://localhost/map?settled=1#new']);
+	});
+
 	it('executes the outcome harness with active-navigation suppression and no intervening flush', async () => {
 		const navigating: Array<string | null> = [];
 		const pages: string[] = [];
@@ -82,7 +152,8 @@ describe('Kit navigation simulator source contract', () => {
 		const simulator = new KitNavigationSimulator({
 			publishPage: (href) => pages.push(href),
 			publishNavigating: (navigation) => navigating.push(navigation?.to?.url.href ?? null),
-			flushDom: async () => {},
+			settled: async () => {},
+			tick: async () => {},
 			activeElement: () => activeElement,
 			bodyElement: () => body,
 			resetFocus: () => {},
@@ -108,6 +179,7 @@ describe('Kit navigation simulator source contract', () => {
 			{ href: 'http://localhost/map/', flushRevision: 0 },
 		]);
 		expect(successor.navigation.token).toBe(normalizedRedirect.navigation.token);
+		expect(simulator.reachLoadCheckpoint(original.navigation)).toBe(false);
 		await expect(original.navigation.complete).rejects.toThrow('navigation aborted');
 
 		await simulator.commitNavigation('http://localhost/map');
@@ -125,8 +197,11 @@ describe('Kit navigation simulator source contract', () => {
 			publishNavigating: (navigation) => {
 				if (!navigation) events.push('idle');
 			},
-			flushDom: async () => {
-				events.push('flush');
+			settled: async () => {
+				events.push('settled');
+			},
+			tick: async () => {
+				events.push('tick');
 			},
 			activeElement: () => activeElement,
 			bodyElement: () => body,
@@ -142,9 +217,9 @@ describe('Kit navigation simulator source contract', () => {
 		expect(events).toEqual([
 			'onNavigate',
 			'page:/map',
-			'flush',
-			'flush',
-			'flush',
+			'settled',
+			'tick',
+			'tick',
 			'focus:/map',
 			'afterNavigate',
 			'idle',

@@ -17,9 +17,9 @@
       aware, fail-soft), vendor+CSS imports overlap it, pmtiles registers ONCE
       globally, then the Map constructs against the resolved basemap.
     - a FAILED attempt (importer/protocol/style/construct/setup) cleans up its
-      own map/observer/abort scope and signals `onerror`; Retry bumps the keyed
-      host (MapLibre needs an empty container) and re-boots — except importer
-      failures, which reload the document (module-import failures cache).
+		own map/observer/abort scope and signals `onerror`; Retry bumps the keyed
+		host (MapLibre needs an empty container) and re-boots — except importer
+		failures, which reload the document (module-import failures cache).
     - $effect → after the map exists, keep center/zoom/basemap in sync when the
       camera props actually change (jumpTo for camera, setStyle for basemap);
       theme-only changes repaint via `onthemerepaint`, never setStyle.
@@ -34,7 +34,9 @@
 	import type { addProtocol } from 'maplibre-gl';
 
 	export interface MapStageImporters {
-		maplibre: () => Promise<Pick<typeof import('maplibre-gl'), 'Map' | 'addProtocol'>>;
+		maplibre: () => Promise<
+			Pick<typeof import('maplibre-gl'), 'Map' | 'AttributionControl' | 'addProtocol'>
+		>;
 		css: () => Promise<unknown>;
 		pmtiles: () => Promise<typeof import('pmtiles')>;
 	}
@@ -100,6 +102,7 @@
 	import { cn } from '$lib/utils';
 	import type { BasemapFile } from '$lib/v1/schemas';
 	import { applyBasemapTheme, resolveBasemapStyle, type BasemapTheme } from './basemap';
+	import { constructRecoverableMap } from './maplibreConstructorCleanup';
 	import { mapViewportOptions, type MapFitPadding } from './viewport';
 	// Type-only import — erased at compile time, so it never pulls maplibre-gl
 	// into the server bundle. The RUNTIME import happens dynamically in onMount.
@@ -169,7 +172,7 @@
 		/** Release consumer-owned map state before MapLibre removal. */
 		onbeforeremove?: (map: MapLibreMap) => void;
 		/** Receives each teardown error after every cleanup step has run. */
-		oncleanupfailure?: (error: unknown) => void;
+		oncleanupfailure?: (error: unknown) => unknown;
 		/** Partial MapLibre locale table applied at construction. */
 		locale?: Record<string, string>;
 		/** Consumer styling on the host wrapper. */
@@ -237,6 +240,7 @@
 		readonly generation: number;
 		readonly container: HTMLDivElement;
 		readonly controller: AbortController;
+		runtimeContainer: HTMLDivElement | null;
 		map: MapLibreMap | null;
 		observer: ResizeObserver | null;
 		disposers: Array<() => void>;
@@ -259,12 +263,44 @@
 		);
 	}
 
-	function reportCleanupFailure(error: unknown): void {
+	function reportLastResort(error: unknown): void {
 		try {
-			if (oncleanupfailure) oncleanupfailure(error);
-			else console.error('MapStage cleanup failed', error);
+			globalThis.reportError?.(error);
 		} catch {
-			// Fault reporting cannot reopen a disposal path.
+			// A broken platform reporter cannot reopen a disposal path.
+		}
+	}
+
+	function reportCleanupReporterFailure(cleanupError: unknown, reporterError: unknown): void {
+		const failure = new AggregateError(
+			[cleanupError, reporterError],
+			'MapStage cleanup reporter failed',
+		);
+		try {
+			console.error('MapStage cleanup reporter failed', failure);
+		} catch {
+			reportLastResort(failure);
+		}
+	}
+
+	function reportCleanupFailure(error: unknown): void {
+		if (!oncleanupfailure) {
+			try {
+				console.error('MapStage cleanup failed', error);
+			} catch {
+				reportLastResort(error);
+			}
+			return;
+		}
+		try {
+			const reported = oncleanupfailure(error);
+			if (reported && typeof (reported as PromiseLike<unknown>).then === 'function') {
+				void Promise.resolve(reported).catch((reporterError) =>
+					reportCleanupReporterFailure(error, reporterError),
+				);
+			}
+		} catch (reporterError) {
+			reportCleanupReporterFailure(error, reporterError);
 		}
 	}
 
@@ -282,6 +318,8 @@
 		attempt.initializing = false;
 		const ownedMap = attempt.map;
 		attempt.map = null;
+		const runtimeContainer = attempt.runtimeContainer;
+		attempt.runtimeContainer = null;
 		const disposers = attempt.disposers.splice(0);
 		const observer = attempt.observer;
 		attempt.observer = null;
@@ -299,11 +337,24 @@
 		release(() => attempt.controller.abort());
 		if (observer) release(() => observer.disconnect());
 		if (ownedMap && onbeforeremove) release(() => onbeforeremove(ownedMap));
-		for (const dispose of disposers) release(dispose);
+		let pendingDisposers = disposers;
+		for (let pass = 0; pass < 2 && pendingDisposers.length > 0; pass += 1) {
+			const retainedDisposers: Array<() => void> = [];
+			for (const dispose of pendingDisposers) {
+				try {
+					dispose();
+				} catch (error) {
+					cleanupErrors.push(error);
+					retainedDisposers.push(dispose);
+				}
+			}
+			pendingDisposers = retainedDisposers;
+		}
 		// MapLibre remove() can throw in control teardown before it reaches its own
 		// style destruction. Isolate that resource release so sources still reach zero.
 		if (ownedMap) release(() => ownedMap.setStyle(null));
 		if (ownedMap) release(() => ownedMap.remove());
+		if (runtimeContainer) release(() => runtimeContainer.remove());
 		for (const error of cleanupErrors) reportCleanupFailure(error);
 	}
 
@@ -335,11 +386,42 @@
 		return dispose;
 	}
 
+	function ownMapControl(
+		attempt: BootAttempt,
+		instance: MapLibreMap,
+		control: Parameters<MapLibreMap['addControl']>[0],
+	): void {
+		let active = true;
+		const dispose = () => {
+			if (!active) return;
+			instance.removeControl(control);
+			active = false;
+		};
+		attempt.disposers.push(dispose);
+		try {
+			instance.addControl(control);
+		} catch (error) {
+			try {
+				dispose();
+			} catch {
+				// The attempt ledger retains the exact partial-control receipt.
+			}
+			throw error;
+		}
+	}
+
 	function preflightWebgl(): void {
 		const canvas = document.createElement('canvas');
 		const context = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
 		if (!context) throw new Error('WebGL is unavailable');
 		context.getExtension('WEBGL_lose_context')?.loseContext();
+	}
+
+	function loseRuntimeContexts(runtimeContainer: HTMLElement): void {
+		for (const canvas of runtimeContainer.querySelectorAll('canvas')) {
+			const context = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
+			context?.getExtension('WEBGL_lose_context')?.loseContext();
+		}
 	}
 
 	function failAttempt(attempt: BootAttempt, kind: MapStageFailureKind): void {
@@ -386,6 +468,7 @@
 			generation,
 			container,
 			controller: new AbortController(),
+			runtimeContainer: null,
 			map: null,
 			observer: null,
 			disposers: [],
@@ -422,17 +505,36 @@
 			failureKind = 'construct';
 			preflightWebgl();
 			const viewport = mapViewportOptions(bounds, fitPadding, maxBounds);
-			const instance = new maplibregl.Map({
-				container: attempt.container,
-				style,
-				center,
-				zoom,
-				...viewport,
-				locale,
-				// Honest chrome: attribution is owned by the basemap/snapshot, not us.
-				attributionControl: { compact: true },
-			});
+			const runtimeContainer = document.createElement('div');
+			runtimeContainer.style.width = '100%';
+			runtimeContainer.style.height = '100%';
+			runtimeContainer.dataset.mapRuntime = '';
+			attempt.runtimeContainer = runtimeContainer;
+			attempt.container.append(runtimeContainer);
+			let instance: MapLibreMap;
+			try {
+				instance = constructRecoverableMap(
+					maplibregl.Map,
+					{
+						container: runtimeContainer,
+						style,
+						center,
+						zoom,
+						...viewport,
+						locale,
+						// Honest chrome: attribution is owned by the basemap/snapshot, not us.
+						attributionControl: false,
+					},
+					reportCleanupFailure,
+				);
+			} catch (error) {
+				releaseWithoutEscape(() => loseRuntimeContexts(runtimeContainer));
+				throw error;
+			}
 			attempt.map = instance;
+			// No options preserves MapLibre's implicit-control defaults, including its
+			// required default attribution, while making the control an explicit receipt.
+			ownMapControl(attempt, instance, new maplibregl.AttributionControl());
 			activeLayoutSig = fitPaddingKey(fitPadding);
 			activeBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
 			activeCameraKey = cameraKey(center, zoom);

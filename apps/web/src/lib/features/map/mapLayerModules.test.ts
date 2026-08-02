@@ -123,6 +123,7 @@ describe('installMapInteractions', () => {
 		const rollbackError = new Error('canvas rollback failed');
 		const mapHandlers = new Map<string, Set<Handler>>();
 		const canvasHandlers = new Map<string, Set<Handler>>();
+		let canvasRollbackAttempts = 0;
 		const register = (target: Map<string, Set<Handler>>, type: string, handler: Handler) => {
 			const handlers = target.get(type) ?? new Set<Handler>();
 			handlers.add(handler);
@@ -134,8 +135,9 @@ describe('installMapInteractions', () => {
 				throw registrationError;
 			},
 			removeEventListener: (type: string, handler: Handler) => {
+				canvasRollbackAttempts += 1;
+				if (canvasRollbackAttempts === 1) throw rollbackError;
 				canvasHandlers.get(type)?.delete(handler);
-				throw rollbackError;
 			},
 		};
 		const map = {
@@ -144,16 +146,29 @@ describe('installMapInteractions', () => {
 			getCanvas: () => canvas,
 		} as unknown as MapLibreMap;
 
-		expect(() =>
+		let failure: unknown;
+		try {
 			installMapInteractions(map, {
 				click: vi.fn(),
 				mousemove: vi.fn(),
 				mouseleave: vi.fn(),
-			}),
-		).toThrow(registrationError);
+			});
+		} catch (error) {
+			failure = error;
+		}
+		expect(failure).toBeInstanceOf(AggregateError);
+		expect((failure as AggregateError).errors).toEqual([registrationError, rollbackError]);
+		const disposers = (failure as AggregateError & { readonly disposers: readonly (() => void)[] })
+			.disposers;
+		expect(disposers).toHaveLength(3);
 		expect(mapHandlers.get('click')?.size).toBe(0);
 		expect(mapHandlers.get('mousemove')?.size).toBe(0);
+		expect(canvasHandlers.get('mouseleave')?.size).toBe(1);
+
+		disposers[2]!();
+		disposers[2]!();
 		expect(canvasHandlers.get('mouseleave')?.size).toBe(0);
+		expect(canvasRollbackAttempts).toBe(2);
 	});
 });
 

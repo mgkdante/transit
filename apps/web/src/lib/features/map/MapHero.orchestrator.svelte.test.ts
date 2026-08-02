@@ -61,7 +61,7 @@ describe('MapHero orchestrator — structural law', () => {
 	it('keeps the orchestrator bounded after the disposal correction', () => {
 		expect(script).toBeDefined();
 		expect(script).not.toContain(obsoleteM6hRouteExit);
-		expect(script!.split(/\r?\n/u).length).toBe(918);
+		expect(script!.split(/\r?\n/u).length).toBe(913);
 	});
 
 	it('uses one normal-script URL ingestion seam behind the shared three-writer coordinator', () => {
@@ -163,7 +163,9 @@ describe('MapHero orchestrator — structural law', () => {
 
 	it('acquires fetch and geolocation only in the sanctioned near-me dependency literal', () => {
 		expect(nearMeDependencies).toBeDefined();
-		expect(nearMeDependencies?.[1]).toContain('fetch: (input) => globalThis.fetch(input)');
+		expect(nearMeDependencies?.[1]).toContain(
+			'fetch: (input, init) => globalThis.fetch(input, init)',
+		);
 		expect(nearMeDependencies?.[1]).toContain(
 			"getGeolocation: () => (typeof navigator === 'undefined' ? null : navigator['geolocation'])",
 		);

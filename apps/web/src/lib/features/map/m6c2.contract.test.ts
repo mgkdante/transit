@@ -112,9 +112,111 @@ const BASE_INTERACTION_PUBLICATION = `
 		});
 	}`;
 const CURRENT_STAGE_WIRING = '\n\t\tonbeforeremove={releaseMapOwners}';
+const CURE8_OWNER_IMPORT = "\n\timport * as ownerCleanup from './mapOwnerCleanup';";
+const CURE8_FETCH = '\t\tfetch: (input, init) => globalThis.fetch(input, init),';
+const GATE7_FETCH = '\t\tfetch: (input) => globalThis.fetch(input),';
+const CURE8_LIVE_BOUNDARY = `
+	function reportMapCleanupFailure(error: unknown): void {
+		ownerCleanup.reportCleanupFailure('MapHero cleanup failed', error);
+	}
+	function releaseMapOwner(dispose: () => void): void {
+		ownerCleanup.releaseWithRetry(dispose, reportMapCleanupFailure);
+	}
+	$effect(() => () => {
+		releaseMapOwner(nearMeController.dispose);
+		releaseMapOwner(urlCoordinator.dispose);
+	});
+	onMount(() => {
+		live.start();
+		return () => releaseMapOwner(() => live.stop());
+	});
+
+	// Keep one shared server-time tick alive for map freshness and relative-time copy.
+	$effect(() => {
+		const unsubscribe = sharedClock.subscribe();
+		return () => releaseMapOwner(unsubscribe);
+	});`;
+const GATE7_LIVE_BOUNDARY = `
+	onMount(() => {
+		live.start();
+		return () => live.stop();
+	});
+
+	// Keep one shared server-time tick alive for map freshness and relative-time copy.
+	$effect(() => sharedClock.subscribe());`;
+const CURE8_OWNER_BOUNDARY = `
+	function releaseMapOwners(m: MapLibreMap): void {
+		if (map !== m) return;
+		const released = ownerCleanup.releaseMapOwnerReceipts(vehicleMotion, interactionDisposers, () =>
+			emphasisController.clear(m),
+		);
+		vehicleMotion = released.motion;
+		vehicleMotionMap = released.motion ? m : null;
+		interactionDisposers = released.disposers;
+		interactionsMap = released.disposers.length > 0 ? m : null;
+		map = released.motion || released.disposers.length > 0 || released.emphasisPending ? m : null;
+		ownerCleanup.throwCleanupErrors(released.errors, 'MapHero owner cleanup failed');
+	}
+
+	$effect(() => () => {
+		const ownedMap = untrack(() => map);
+		if (!ownedMap) return;
+		try {
+			releaseMapOwners(ownedMap);
+		} catch (error) {
+			// This fallback covers parent-first destruction. The normal child-first path
+			// reports through MapStage's exception-isolated disposal boundary.
+			reportMapCleanupFailure(error);
+		}
+	});`;
+const CURE8_INTERACTION_PUBLICATION = `
+	function ensureMapInteractions(m: MapLibreMap): void {
+		if (interactionsMap === m) return;
+		const previousMap = interactionsMap;
+		const released = ownerCleanup.releaseCleanupReceipts(interactionDisposers);
+		interactionDisposers = released.pending;
+		interactionsMap = released.pending.length > 0 ? previousMap : null;
+		ownerCleanup.throwCleanupErrors(released.errors, 'Map interaction replacement cleanup failed');
+		const nextDisposers = ownerCleanup.installCleanupReceipts(
+			() =>
+				installMapInteractions(m, {
+					click: (event) => selectPickedFeature(m, event),
+					mousemove: (event) => hoverPickedFeature(m, event),
+					mouseleave: () => clearHover(m),
+				}),
+			(partial) => {
+				interactionDisposers = partial;
+				interactionsMap = null;
+			},
+		);
+		interactionDisposers = nextDisposers;
+		interactionsMap = m;
+	}`;
+const CURE8_SELECTION_RELEASE = `
+	$effect(() => {
+		const release =
+			selected?.kind === 'vehicle'
+				? live.subscribeFamilies(['trips'])
+				: selected?.kind === 'stop'
+					? live.subscribeFamilies(['departures'])
+					: null;
+		if (!release) return;
+		return () => releaseMapOwner(release);
+	});`;
+const GATE7_SELECTION_RELEASE = `
+	$effect(() => {
+		if (selected?.kind === 'vehicle') return live.subscribeFamilies(['trips']);
+		if (selected?.kind === 'stop') return live.subscribeFamilies(['departures']);
+	});`;
 
 function reconstructBaseMapHero(hero: string): string {
 	const replacements: ReadonlyArray<readonly [string, string]> = [
+		[CURE8_OWNER_IMPORT, ''],
+		[CURE8_FETCH, GATE7_FETCH],
+		[CURE8_LIVE_BOUNDARY, GATE7_LIVE_BOUNDARY],
+		[CURE8_OWNER_BOUNDARY, CURRENT_OWNER_BOUNDARY],
+		[CURE8_INTERACTION_PUBLICATION, CURRENT_INTERACTION_PUBLICATION],
+		[CURE8_SELECTION_RELEASE, GATE7_SELECTION_RELEASE],
 		[CURRENT_SHARED_CLOCK_TO_TTL, BASE_SHARED_CLOCK_TO_TTL],
 		[CURRENT_MAP_HANDLE, BASE_MAP_HANDLE],
 		[CURRENT_OWNER_BOUNDARY, BASE_EMPHASIS_CLEANUP],
@@ -122,8 +224,8 @@ function reconstructBaseMapHero(hero: string): string {
 		[CURRENT_STAGE_WIRING, ''],
 	];
 	let reconstructed = hero;
-	for (const [current, base] of replacements) {
-		expect(reconstructed.split(current)).toHaveLength(2);
+	for (const [index, [current, base]] of replacements.entries()) {
+		expect(reconstructed.split(current), `reconstruction replacement ${index}`).toHaveLength(2);
 		reconstructed = reconstructed.replace(current, base);
 	}
 	return reconstructed;
@@ -227,7 +329,7 @@ describe('M6C-2 token and protected-surface contract', () => {
 		expect(hero.split(liveConsumer)).toHaveLength(2);
 		expect(hero.match(/function releaseMapOwners\(/gu)).toHaveLength(1);
 		expect(hero).toContain('onbeforeremove={releaseMapOwners}');
-		expect(hero).toContain('const nextDisposers = installMapInteractions');
+		expect(hero).toContain('const nextDisposers = ownerCleanup.installCleanupReceipts');
 		expect(createHash('sha256').update(reconstructed).digest('hex')).toBe(
 			'd95f375db5ca57f76a00eaf641c342a61961cae21b0003e9b5bbbb19a03c947f',
 		);

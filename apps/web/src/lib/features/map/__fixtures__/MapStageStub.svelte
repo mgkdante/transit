@@ -8,7 +8,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 	import { mapHeroReceiptSignals } from './MapHeroReceiptSignals.svelte';
 	// Test-only deep-import exception: this fixture is loaded from inside the
@@ -55,6 +55,7 @@
 	let setMaxBoundsCount = $state(0);
 	let pickLayer = STOPS_LAYER;
 	const sources = new SvelteMap<string, { setData: (data: unknown) => void }>();
+	const featureStates = new SvelteSet<string>();
 	let style:
 		| { getSource: (id: string) => { setData: (data: unknown) => void } | undefined }
 		| undefined;
@@ -70,10 +71,11 @@
 			receipt.recordListenerCount(`canvas:${type}`, list.length);
 		},
 		removeEventListener: (type: string, handler: Handler) => {
+			mapHeroReceiptSignals.throwCleanupFault(`canvas:${type}`, 'before');
 			const list = (canvasHandlers.get(type) ?? []).filter((candidate) => candidate !== handler);
 			canvasHandlers.set(type, list);
 			receipt.recordListenerCount(`canvas:${type}`, list.length);
-			mapHeroReceiptSignals.throwCleanupFault(`canvas:${type}`);
+			mapHeroReceiptSignals.throwCleanupFault(`canvas:${type}`, 'after');
 		},
 	};
 	function removeRawMap(): void {
@@ -96,10 +98,11 @@
 			return { unsubscribe: () => rawFakeMap.off(type, handler) };
 		},
 		off: (type: string, handler: Handler) => {
+			mapHeroReceiptSignals.throwCleanupFault(`map:${type}`, 'before');
 			const list = (handlers.get(type) ?? []).filter((candidate) => candidate !== handler);
 			handlers.set(type, list);
 			receipt.recordListenerCount(type, list.length);
-			mapHeroReceiptSignals.throwCleanupFault(`map:${type}`);
+			mapHeroReceiptSignals.throwCleanupFault(`map:${type}`, 'after');
 		},
 		addSource: (id: string, source: { setData: (data: unknown) => void }) => {
 			if (sources.has(id)) return;
@@ -126,6 +129,12 @@
 			state: Record<string, boolean>,
 		) => {
 			featureStateSetCount += 1;
+			for (const [property, active] of Object.entries(state)) {
+				const key = `${target.source}:${String(target.id)}:${property}`;
+				if (active) featureStates.add(key);
+				else featureStates.delete(key);
+			}
+			receipt.recordFeatureStateCount(featureStates.size);
 			mapHeroReceiptSignals.recordFeatureState({
 				operation: 'set',
 				target: { ...target },
@@ -133,13 +142,20 @@
 			});
 		},
 		removeFeatureState: (target: { source: string; id: string | number }, property?: string) => {
+			mapHeroReceiptSignals.throwCleanupFault('emphasis:removeFeatureState', 'before');
 			featureStateRemoveCount += 1;
+			const prefix = `${target.source}:${String(target.id)}:`;
+			if (property) featureStates.delete(`${prefix}${property}`);
+			else {
+				for (const key of featureStates) if (key.startsWith(prefix)) featureStates.delete(key);
+			}
+			receipt.recordFeatureStateCount(featureStates.size);
 			mapHeroReceiptSignals.recordFeatureState({
 				operation: 'remove',
 				target: { ...target },
 				property,
 			});
-			mapHeroReceiptSignals.throwCleanupFault('emphasis:removeFeatureState');
+			mapHeroReceiptSignals.throwCleanupFault('emphasis:removeFeatureState', 'after');
 		},
 		fitBounds: () => {
 			fitBoundsCount += 1;

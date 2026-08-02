@@ -94,3 +94,34 @@ it('characterizes a control fault as aborting real remove before style and DOM r
 	expect(fixture.internals._listeners?.click).toHaveLength(1);
 	expect(fixture.internals._removed).toBe(false);
 });
+
+it('characterizes removeControl ownership as splicing a faulty control before raw removal', () => {
+	const error = new Error('owned control removal failed once');
+	const trace: string[] = [];
+	let fail = true;
+	const control = {
+		onRemove: () => {
+			trace.push('control.onRemove');
+			if (fail) {
+				fail = false;
+				throw error;
+			}
+		},
+	};
+	const fixture = bareRealMap(control, trace);
+
+	expect(() => fixture.map.removeControl(control as never)).toThrow(error);
+	expect(fixture.internals._controls).toHaveLength(0);
+
+	fixture.map.remove();
+
+	expect(trace).toEqual([
+		'control.onRemove',
+		'painter.destroy',
+		'handlers.destroy',
+		'setStyle:null',
+		'canvas.remove',
+		'controls.remove',
+	]);
+	expect(fixture.internals._removed).toBe(true);
+});

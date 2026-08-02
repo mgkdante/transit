@@ -18,14 +18,14 @@ export type SimulatedNavigationCallback = (navigation: SimulatedNavigation) => u
 export interface KitNavigationSimulatorAdapter {
 	readonly publishPage: (href: string, state: Readonly<Record<string, unknown>>) => void;
 	readonly publishNavigating: (navigation: SimulatedNavigation | null) => void;
-	readonly flushDom: () => Promise<void>;
+	readonly settled: () => Promise<void>;
+	readonly tick: () => Promise<void>;
 	readonly activeElement: () => unknown;
 	readonly bodyElement: () => unknown;
 	readonly resetFocus: (url: URL) => void;
 }
 
 export interface StartNavigationOptions {
-	readonly accepted?: boolean;
 	readonly type?: SimulatedNavigationType;
 	readonly delta?: number;
 	readonly keepFocus?: boolean;
@@ -42,6 +42,7 @@ export class KitNavigationSimulator {
 	currentPageHref = 'http://localhost/map';
 	flushRevision = 0;
 	#nextNavigationToken = 0;
+	#pendingNavigations = new Set<SimulatedNavigation>();
 
 	constructor(private readonly adapter: KitNavigationSimulatorAdapter) {}
 
@@ -104,7 +105,7 @@ export class KitNavigationSimulator {
 		};
 
 		const beforeNavigateDelivered = this.activeNavigation == null;
-		let cancelled = options.accepted === false;
+		let cancelled = false;
 		if (beforeNavigateDelivered) {
 			const cancellable: SimulatedBeforeNavigation = {
 				...navigation,
@@ -118,10 +119,8 @@ export class KitNavigationSimulator {
 			navigation.reject(new Error('navigation cancelled'));
 			return { accepted: false, beforeNavigateDelivered, navigation };
 		}
-		if (this.activeNavigation && this.activeNavigation.token !== navigation.token) {
-			this.activeNavigation.reject(new Error('navigation aborted'));
-		}
 		this.activeNavigation = navigation;
+		this.#pendingNavigations.add(navigation);
 		this.acceptedPublications.push({
 			href: navigation.to!.url.href,
 			flushRevision: this.flushRevision,
@@ -131,24 +130,35 @@ export class KitNavigationSimulator {
 	}
 
 	async flushEffects(): Promise<void> {
-		await this.adapter.flushDom();
+		await this.adapter.tick();
 		this.flushRevision += 1;
+	}
+
+	reachLoadCheckpoint(navigation: SimulatedNavigation): boolean {
+		if (this.activeNavigation?.token === navigation.token) return true;
+		navigation.reject(new Error('navigation aborted'));
+		this.#pendingNavigations.delete(navigation);
+		return false;
 	}
 
 	async commitNavigation(committedHref: string): Promise<SimulatedNavigation> {
 		const navigation = this.activeNavigation;
 		if (!navigation) throw new Error('expected an active navigation');
+		const committedUrl = new URL(committedHref, this.currentPageHref);
+		if (navigation.to) navigation.to.url.href = committedUrl.href;
+		if (!this.reachLoadCheckpoint(navigation)) throw new Error('navigation superseded');
 		await Promise.all([...this.onNavigateCallbacks].map((callback) => callback(navigation)));
-		if (this.activeNavigation?.token !== navigation.token) {
+		if (!this.reachLoadCheckpoint(navigation)) {
 			throw new Error('navigation superseded');
 		}
 
 		this.setPageUrl(committedHref);
 		const activeElement = this.adapter.activeElement();
-		await this.flushEffects();
-		await this.flushEffects();
-		await this.flushEffects();
-		if (this.activeNavigation?.token !== navigation.token) {
+		await this.adapter.settled();
+		await this.adapter.tick();
+		await this.adapter.tick();
+		this.flushRevision += 3;
+		if (!this.reachLoadCheckpoint(navigation)) {
 			throw new Error('navigation superseded');
 		}
 		const currentActiveElement = this.adapter.activeElement();
@@ -160,13 +170,19 @@ export class KitNavigationSimulator {
 
 		this.activeNavigation = null;
 		navigation.fulfil();
+		for (const pending of this.#pendingNavigations) {
+			if (pending.token === navigation.token) this.#pendingNavigations.delete(pending);
+		}
 		for (const callback of this.afterNavigateCallbacks) callback(navigation);
 		this.adapter.publishNavigating(null);
 		return navigation;
 	}
 
 	reset(): void {
-		this.activeNavigation?.reject(new Error('navigation aborted'));
+		for (const navigation of this.#pendingNavigations) {
+			navigation.reject(new Error('navigation aborted'));
+		}
+		this.#pendingNavigations.clear();
 		this.activeNavigation = null;
 		this.beforeNavigateCallbacks.clear();
 		this.onNavigateCallbacks.clear();

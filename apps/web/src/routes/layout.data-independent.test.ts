@@ -1,5 +1,5 @@
 import { cleanup, render } from '@testing-library/svelte';
-import { createRawSnippet, tick } from 'svelte';
+import { createRawSnippet, settled, tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KitNavigationSimulator } from '$lib/features/map/__fixtures__/KitNavigationSimulator';
 
@@ -207,7 +207,8 @@ describe('root layout data-independent legal routes', () => {
 		const simulator = new KitNavigationSimulator({
 			publishPage: (href) => harness.setPath(new URL(href).pathname),
 			publishNavigating: () => {},
-			flushDom: tick,
+			settled,
+			tick,
 			activeElement: () => document.activeElement,
 			bodyElement: () => document.body,
 			resetFocus: () => document.body.focus(),

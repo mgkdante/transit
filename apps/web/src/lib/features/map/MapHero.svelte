@@ -102,6 +102,7 @@
 		type MapSelectionDetail as MapSelectionDetailModel,
 	} from './mapSelection';
 	import { createSelectionGrace } from './selectionGrace.svelte';
+	import * as ownerCleanup from './mapOwnerCleanup';
 
 	const locale: Locale = getLocale();
 	const t = $derived(MAP_COPY[locale]);
@@ -179,7 +180,7 @@
 		buildTargetSearch: buildNearTargetSearch,
 		clearTargetSearch: clearNearTargetSearch,
 		focusOrigin: focusNearMeOrigin,
-		fetch: (input) => globalThis.fetch(input),
+		fetch: (input, init) => globalThis.fetch(input, init),
 		getGeolocation: () => (typeof navigator === 'undefined' ? null : navigator['geolocation']),
 		isSecureContext: () => typeof window === 'undefined' || window.isSecureContext,
 		translations: MAP_COPY[locale],
@@ -234,13 +235,26 @@
 	const live = createLiveStore(manifest, {
 		families: ['vehicles', 'alerts'],
 	});
+	function reportMapCleanupFailure(error: unknown): void {
+		ownerCleanup.reportCleanupFailure('MapHero cleanup failed', error);
+	}
+	function releaseMapOwner(dispose: () => void): void {
+		ownerCleanup.releaseWithRetry(dispose, reportMapCleanupFailure);
+	}
+	$effect(() => () => {
+		releaseMapOwner(nearMeController.dispose);
+		releaseMapOwner(urlCoordinator.dispose);
+	});
 	onMount(() => {
 		live.start();
-		return () => live.stop();
+		return () => releaseMapOwner(() => live.stop());
 	});
 
 	// Keep one shared server-time tick alive for map freshness and relative-time copy.
-	$effect(() => sharedClock.subscribe());
+	$effect(() => {
+		const unsubscribe = sharedClock.subscribe();
+		return () => releaseMapOwner(unsubscribe);
+	});
 
 	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
 
@@ -264,36 +278,15 @@
 
 	function releaseMapOwners(m: MapLibreMap): void {
 		if (map !== m) return;
-		const motion = vehicleMotion;
-		const disposers = interactionDisposers;
-		vehicleMotion = null;
-		vehicleMotionMap = null;
-		interactionDisposers = [];
-		interactionsMap = null;
-		map = null;
-
-		const releaseErrors: unknown[] = [];
-		try {
-			motion?.destroy();
-		} catch (error) {
-			releaseErrors.push(error);
-		}
-		for (const dispose of disposers) {
-			try {
-				dispose();
-			} catch (error) {
-				releaseErrors.push(error);
-			}
-		}
-		try {
-			emphasisController.clear(m);
-		} catch (error) {
-			releaseErrors.push(error);
-		}
-		if (releaseErrors.length === 1) throw releaseErrors[0];
-		if (releaseErrors.length > 1) {
-			throw new AggregateError(releaseErrors, 'MapHero owner cleanup failed');
-		}
+		const released = ownerCleanup.releaseMapOwnerReceipts(vehicleMotion, interactionDisposers, () =>
+			emphasisController.clear(m),
+		);
+		vehicleMotion = released.motion;
+		vehicleMotionMap = released.motion ? m : null;
+		interactionDisposers = released.disposers;
+		interactionsMap = released.disposers.length > 0 ? m : null;
+		map = released.motion || released.disposers.length > 0 || released.emphasisPending ? m : null;
+		ownerCleanup.throwCleanupErrors(released.errors, 'MapHero owner cleanup failed');
 	}
 
 	$effect(() => () => {
@@ -304,19 +297,21 @@
 		} catch (error) {
 			// This fallback covers parent-first destruction. The normal child-first path
 			// reports through MapStage's exception-isolated disposal boundary.
-			try {
-				console.error('MapHero cleanup failed', error);
-			} catch {
-				// Fault reporting cannot reopen the parent destruction path.
-			}
+			reportMapCleanupFailure(error);
 		}
 	});
 
 	// Selection-scoped live families are ref-counted leases keyed strictly on the
 	// committed selection. Hover never activates a family or restarts polling.
 	$effect(() => {
-		if (selected?.kind === 'vehicle') return live.subscribeFamilies(['trips']);
-		if (selected?.kind === 'stop') return live.subscribeFamilies(['departures']);
+		const release =
+			selected?.kind === 'vehicle'
+				? live.subscribeFamilies(['trips'])
+				: selected?.kind === 'stop'
+					? live.subscribeFamilies(['departures'])
+					: null;
+		if (!release) return;
+		return () => releaseMapOwner(release);
 	});
 
 	const stopList = $derived(stops.data?.stops ?? []);
@@ -726,23 +721,23 @@
 
 	function ensureMapInteractions(m: MapLibreMap): void {
 		if (interactionsMap === m) return;
-		const previousDisposers = interactionDisposers;
-		interactionDisposers = [];
-		interactionsMap = null;
-		const releaseErrors: unknown[] = [];
-		for (const dispose of previousDisposers) {
-			try {
-				dispose();
-			} catch (error) {
-				releaseErrors.push(error);
-			}
-		}
-		if (releaseErrors.length > 0) throw releaseErrors[0];
-		const nextDisposers = installMapInteractions(m, {
-			click: (event) => selectPickedFeature(m, event),
-			mousemove: (event) => hoverPickedFeature(m, event),
-			mouseleave: () => clearHover(m),
-		});
+		const previousMap = interactionsMap;
+		const released = ownerCleanup.releaseCleanupReceipts(interactionDisposers);
+		interactionDisposers = released.pending;
+		interactionsMap = released.pending.length > 0 ? previousMap : null;
+		ownerCleanup.throwCleanupErrors(released.errors, 'Map interaction replacement cleanup failed');
+		const nextDisposers = ownerCleanup.installCleanupReceipts(
+			() =>
+				installMapInteractions(m, {
+					click: (event) => selectPickedFeature(m, event),
+					mousemove: (event) => hoverPickedFeature(m, event),
+					mouseleave: () => clearHover(m),
+				}),
+			(partial) => {
+				interactionDisposers = partial;
+				interactionsMap = null;
+			},
+		);
 		interactionDisposers = nextDisposers;
 		interactionsMap = m;
 	}

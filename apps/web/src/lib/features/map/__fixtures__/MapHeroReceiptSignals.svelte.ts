@@ -19,7 +19,11 @@ let featureStateObserver: ((event: MapHeroFeatureStateEvent) => void) | null = n
 let mapStageSequence = 0;
 const mapStageListenerCounts = new SvelteMap<number, Record<string, number>>();
 const mapStageSourceCounts = new SvelteMap<number, Record<string, number>>();
-const cleanupFaults = new SvelteMap<string, Error>();
+const mapStageFeatureStateCounts = new SvelteMap<number, number>();
+const cleanupFaults = new SvelteMap<
+	string,
+	{ readonly error: Error; readonly phase: 'before' | 'after'; remaining: number }
+>();
 
 function aggregateCounts(
 	countsByStage: ReadonlyMap<number, Readonly<Record<string, number>>>,
@@ -67,6 +71,9 @@ export const mapHeroReceiptSignals = {
 	get mapStageSourceCounts() {
 		return aggregateCounts(mapStageSourceCounts, false);
 	},
+	get mapStageFeatureStateCount() {
+		return [...mapStageFeatureStateCounts.values()].reduce((total, count) => total + count, 0);
+	},
 	advanceClock(deltaMs: number) {
 		serverNow += deltaMs;
 	},
@@ -86,19 +93,26 @@ export const mapHeroReceiptSignals = {
 	observeFeatureState(observer: ((event: MapHeroFeatureStateEvent) => void) | null) {
 		featureStateObserver = observer;
 	},
-	setCleanupFault(operation: string, error: Error) {
-		cleanupFaults.set(operation, error);
+	setCleanupFault(
+		operation: string,
+		error: Error,
+		phase: 'before' | 'after' = 'before',
+		times = 1,
+	) {
+		cleanupFaults.set(operation, { error, phase, remaining: times });
 	},
-	throwCleanupFault(operation: string) {
-		const error = cleanupFaults.get(operation);
-		if (!error) return;
-		cleanupFaults.delete(operation);
-		throw error;
+	throwCleanupFault(operation: string, phase: 'before' | 'after') {
+		const fault = cleanupFaults.get(operation);
+		if (!fault || fault.phase !== phase) return;
+		fault.remaining -= 1;
+		if (fault.remaining === 0) cleanupFaults.delete(operation);
+		throw fault.error;
 	},
 	createMapStageReceipt() {
 		const stageId = ++mapStageSequence;
 		mapStageListenerCounts.set(stageId, {});
 		mapStageSourceCounts.set(stageId, {});
+		mapStageFeatureStateCounts.set(stageId, 0);
 		return {
 			recordListenerCount(type: string, count: number) {
 				mapStageListenerCounts.set(stageId, {
@@ -112,6 +126,9 @@ export const mapHeroReceiptSignals = {
 					[type]: count,
 				});
 			},
+			recordFeatureStateCount(count: number) {
+				mapStageFeatureStateCounts.set(stageId, count);
+			},
 		};
 	},
 	reset() {
@@ -123,6 +140,7 @@ export const mapHeroReceiptSignals = {
 		mapStageSequence = 0;
 		mapStageListenerCounts.clear();
 		mapStageSourceCounts.clear();
+		mapStageFeatureStateCounts.clear();
 		cleanupFaults.clear();
 	},
 };
