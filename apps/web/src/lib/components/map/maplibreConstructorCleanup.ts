@@ -11,6 +11,43 @@ export function constructRecoverableMap(
 ): MapLibreMap {
 	let constructing = true;
 	class RecoverableMap extends MapConstructor {
+		override remove(): void {
+			const painter = this.painter;
+			const destroyPainter = painter.destroy;
+			const destroyDescriptor = Object.getOwnPropertyDescriptor(painter, 'destroy');
+			let painterFailed = false;
+			let painterFailure: unknown;
+			let removalFailed = false;
+			let removalFailure: unknown;
+
+			painter.destroy = () => {
+				try {
+					destroyPainter.call(painter);
+				} catch (error) {
+					painterFailed = true;
+					painterFailure = error;
+				}
+			};
+			try {
+				super.remove();
+			} catch (error) {
+				removalFailed = true;
+				removalFailure = error;
+			} finally {
+				if (destroyDescriptor) Object.defineProperty(painter, 'destroy', destroyDescriptor);
+				else Reflect.deleteProperty(painter, 'destroy');
+			}
+
+			if (painterFailed && removalFailed) {
+				throw new AggregateError(
+					[painterFailure, removalFailure],
+					'MapLibre removal failed after Painter teardown failed',
+				);
+			}
+			if (painterFailed) throw painterFailure;
+			if (removalFailed) throw removalFailure;
+		}
+
 		override _setupPainter(): void {
 			if (!constructing) {
 				super._setupPainter();

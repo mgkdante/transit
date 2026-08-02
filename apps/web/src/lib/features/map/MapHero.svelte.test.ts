@@ -1302,6 +1302,109 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 		}
 	});
 
+	it('contains a breakpoint-listener disposer fault without skipping route-unmount owners', async () => {
+		const pageErrors = capturePageErrors();
+		const cleanupError = new Error('matchMedia cleanup failed before mutation');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const listeners = new Set<EventListenerOrEventListenerObject>();
+		let failCleanup = true;
+		let targetRemoveCalls = 0;
+		const breakpoint = {
+			matches: true,
+			media: '(min-width: 1024px)',
+			onchange: null,
+			addListener: vi.fn(),
+			removeListener: vi.fn(),
+			addEventListener: vi.fn(
+				(_type: string, listener: EventListenerOrEventListenerObject | null) => {
+					if (listener) listeners.add(listener);
+				},
+			),
+			removeEventListener: vi.fn(
+				(_type: string, listener: EventListenerOrEventListenerObject | null) => {
+					const isMapHeroListener = typeof listener === 'function' && listener.name === 'onChange';
+					if (isMapHeroListener) targetRemoveCalls += 1;
+					if (isMapHeroListener && failCleanup) {
+						failCleanup = false;
+						throw cleanupError;
+					}
+					if (listener) listeners.delete(listener);
+				},
+			),
+			dispatchEvent: vi.fn(() => true),
+		} as unknown as MediaQueryList;
+		const nativeMatchMedia = window.matchMedia.bind(window);
+		const matchMedia = vi
+			.spyOn(window, 'matchMedia')
+			.mockImplementation((query) =>
+				query === breakpoint.media ? breakpoint : nativeMatchMedia(query),
+			);
+		try {
+			const before = await openDetail(true);
+			expect(
+				[...listeners].filter(
+					(listener) => typeof listener === 'function' && listener.name === 'onChange',
+				),
+			).toHaveLength(1);
+
+			await commitLines(before.currentUrl);
+
+			expect(pageErrors.values).toEqual([]);
+			expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
+			expect(harness.liveStore.stop).toHaveBeenCalledOnce();
+			expect(harness.releaseLease).toHaveBeenCalledOnce();
+			expect(harness.activeLeaseCount()).toBe(0);
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+			expect(listeners).toHaveLength(0);
+			expect(targetRemoveCalls).toBe(2);
+			expect(consoleError).toHaveBeenCalledWith('MapHero cleanup failed', cleanupError);
+		} finally {
+			matchMedia.mockRestore();
+			pageErrors.dispose();
+		}
+	});
+
+	it('contains and reports a rail-offset disposer fault during route unmount', async () => {
+		const pageErrors = capturePageErrors();
+		const cleanupError = new Error('rail offset cleanup failed before mutation');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const rootStyle = document.documentElement.style;
+		const setProperty = rootStyle.setProperty.bind(rootStyle);
+		let armed = false;
+		let targetCleanupCalls = 0;
+		const setPropertySpy = vi
+			.spyOn(rootStyle, 'setProperty')
+			.mockImplementation((property: string, value: string | null, priority?: string) => {
+				if (armed && property === '--app-effective-rail-offset' && value === '0px') {
+					targetCleanupCalls += 1;
+					if (targetCleanupCalls === 1) throw cleanupError;
+				}
+				setProperty(property, value, priority);
+			});
+		try {
+			const before = await openDetail(true);
+			armed = true;
+
+			await commitLines(before.currentUrl);
+
+			expect(pageErrors.values).toEqual([]);
+			expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
+			expect(targetCleanupCalls).toBe(2);
+			expect(consoleError).toHaveBeenCalledWith('MapHero cleanup failed', cleanupError);
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+			expect(harness.liveStore.stop).toHaveBeenCalledOnce();
+			expect(harness.releaseLease).toHaveBeenCalledOnce();
+			expect(harness.activeLeaseCount()).toBe(0);
+		} finally {
+			setPropertySpy.mockRestore();
+			pageErrors.dispose();
+		}
+	});
+
 	it('contains and reports a throwing selection lease without skipping sibling teardown owners', async () => {
 		const pageErrors = capturePageErrors();
 		const leaseError = new Error('selection lease release failed');

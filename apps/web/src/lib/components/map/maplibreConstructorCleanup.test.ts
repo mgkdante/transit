@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import maplibregl from 'maplibre-gl';
+import type { Map as MapLibreMap } from 'maplibre-gl';
 import maplibrePackage from 'maplibre-gl/package.json';
 import { afterEach, expect, it, vi } from 'vitest';
 import { constructRecoverableMap } from './maplibreConstructorCleanup';
@@ -124,6 +125,228 @@ it('loses every acquired GL context when Painter construction fails', () => {
 	expect(staleCallbackCalls).toBe(0);
 	expect(loseContextCalls).toBe(3);
 	expect(activeCreationErrorListeners()).toBe(0);
+	for (const container of containers) {
+		expect(container.childElementCount).toBe(0);
+		expect(container.className).toBe('');
+	}
+});
+
+it('keeps real Map removal global receipts flat at zero across repeated painter faults', () => {
+	expect(maplibrePackage.version).toBe('5.24.0');
+	const painterError = new Error('painter destroy failed before mutation');
+	const handlers: Array<{ destroy: () => void }> = [];
+	const onlineOwners: Array<{ destroy: () => void }> = [];
+	const resizeOwners: Array<{ disconnect: () => void }> = [];
+	let activeHandlers = 0;
+	let activeOnlineListeners = 0;
+	let activeResizeObservers = 0;
+	let retainedHandlerDispatches = 0;
+	let retainedOnlineDispatches = 0;
+	let loseContextCalls = 0;
+	let removeEvents = 0;
+
+	class HandlerManagerProbe {
+		private active = true;
+		private readonly onMouseMove = () => {
+			retainedHandlerDispatches += 1;
+		};
+
+		constructor() {
+			activeHandlers += 1;
+			document.addEventListener('mousemove', this.onMouseMove);
+		}
+
+		destroy = () => {
+			if (!this.active) return;
+			this.active = false;
+			activeHandlers -= 1;
+			document.removeEventListener('mousemove', this.onMouseMove);
+		};
+	}
+
+	class RemovalProbeMap {
+		_controls: unknown[] = [];
+		_frameRequest = null;
+		_renderTaskQueue = { clear: vi.fn() };
+		_diffStyleRequest = null;
+		painter = {
+			destroy: () => {
+				throw painterError;
+			},
+			context: {
+				gl: {
+					getExtension: (name: string) =>
+						name === 'WEBGL_lose_context' ? { loseContext: () => (loseContextCalls += 1) } : null,
+				},
+			},
+		};
+		handlers: HandlerManagerProbe;
+		_imageQueueHandle = Number.MAX_SAFE_INTEGER;
+		_resizeObserver: { disconnect: () => void };
+		_canvas = document.createElement('canvas');
+		_canvasContainer = document.createElement('div');
+		_controlContainer = document.createElement('div');
+		_container: HTMLElement;
+		_ownerWindow: { removeEventListener: typeof window.removeEventListener };
+		_onWindowOnline: () => void;
+		_contextRestored = () => {};
+		_contextLost = () => {};
+		_onMapScroll = () => {};
+		_removed = false;
+
+		constructor(options: { container: HTMLElement }) {
+			this._container = options.container;
+			this._container.classList.add('maplibregl-map');
+			this._canvasContainer.append(this._canvas);
+			this._container.append(this._canvasContainer, this._controlContainer);
+			this._container.addEventListener('scroll', this._onMapScroll);
+			this.handlers = new HandlerManagerProbe();
+			handlers.push(this.handlers);
+
+			let online = true;
+			this._onWindowOnline = () => {
+				retainedOnlineDispatches += 1;
+			};
+			activeOnlineListeners += 1;
+			window.addEventListener('online', this._onWindowOnline);
+			const destroyOnline = () => {
+				if (!online) return;
+				online = false;
+				activeOnlineListeners -= 1;
+				window.removeEventListener('online', this._onWindowOnline);
+			};
+			onlineOwners.push({ destroy: destroyOnline });
+			this._ownerWindow = {
+				removeEventListener: ((_type: string, listener: EventListenerOrEventListenerObject) => {
+					if (listener === this._onWindowOnline) destroyOnline();
+				}) as typeof window.removeEventListener,
+			};
+
+			let observing = true;
+			activeResizeObservers += 1;
+			this._resizeObserver = {
+				disconnect: () => {
+					if (!observing) return;
+					observing = false;
+					activeResizeObservers -= 1;
+				},
+			};
+			resizeOwners.push(this._resizeObserver);
+			this._setupPainter();
+		}
+
+		_setupPainter(): void {}
+
+		setStyle(_style: null): this {
+			return this;
+		}
+
+		fire(): this {
+			removeEvents += 1;
+			return this;
+		}
+	}
+
+	Object.defineProperty(RemovalProbeMap.prototype, 'remove', {
+		configurable: true,
+		writable: true,
+		value: maplibregl.Map.prototype.remove,
+	});
+
+	const activeHandlerSeries: number[] = [];
+	const activeOnlineSeries: number[] = [];
+	const activeResizeSeries: number[] = [];
+	const retainedHandlerDispatchSeries: number[] = [];
+	const retainedOnlineDispatchSeries: number[] = [];
+	const removedSeries: boolean[] = [];
+	const containers: HTMLElement[] = [];
+
+	try {
+		for (let round = 0; round < 3; round += 1) {
+			const container = document.createElement('div');
+			document.body.append(container);
+			containers.push(container);
+			const map = constructRecoverableMap(
+				RemovalProbeMap as unknown as typeof maplibregl.Map,
+				{ container },
+				vi.fn(),
+			) as unknown as RemovalProbeMap & { remove: () => void };
+
+			expect(() => map.remove()).toThrow(painterError);
+			document.dispatchEvent(new MouseEvent('mousemove'));
+			window.dispatchEvent(new Event('online'));
+			activeHandlerSeries.push(activeHandlers);
+			activeOnlineSeries.push(activeOnlineListeners);
+			activeResizeSeries.push(activeResizeObservers);
+			retainedHandlerDispatchSeries.push(retainedHandlerDispatches);
+			retainedOnlineDispatchSeries.push(retainedOnlineDispatches);
+			removedSeries.push(map._removed);
+		}
+
+		expect(activeHandlerSeries).toEqual([0, 0, 0]);
+		expect(activeOnlineSeries).toEqual([0, 0, 0]);
+		expect(activeResizeSeries).toEqual([0, 0, 0]);
+		expect(retainedHandlerDispatchSeries).toEqual([0, 0, 0]);
+		expect(retainedOnlineDispatchSeries).toEqual([0, 0, 0]);
+		expect(removedSeries).toEqual([true, true, true]);
+		expect(loseContextCalls).toBe(3);
+		expect(removeEvents).toBe(3);
+		for (const container of containers) {
+			expect(container.childElementCount).toBe(0);
+			expect(container.className).toBe('');
+		}
+	} finally {
+		for (const handler of handlers) handler.destroy();
+		for (const owner of onlineOwners) owner.destroy();
+		for (const owner of resizeOwners) owner.disconnect();
+	}
+});
+
+it('deletes bundled ImageRequest callbacks across repeated runtime painter faults', () => {
+	const painterError = new Error('runtime painter destroy failed');
+	let staleCallbackCalls = 0;
+	let loseContextCalls = 0;
+	class ProbeMap extends maplibregl.Map {
+		override _setupPainter(): void {
+			this.painter = {
+				destroy: () => {
+					throw painterError;
+				},
+				context: {
+					gl: {
+						getExtension: (name: string) =>
+							name === 'WEBGL_lose_context' ? { loseContext: () => (loseContextCalls += 1) } : null,
+					},
+				},
+			} as unknown as MapLibreMap['painter'];
+		}
+
+		override resize(): this {
+			return this;
+		}
+
+		override isMoving(): boolean {
+			staleCallbackCalls += 1;
+			return false;
+		}
+	}
+
+	const containers: HTMLElement[] = [];
+	for (let round = 0; round < 3; round += 1) {
+		const container = document.createElement('div');
+		document.body.append(container);
+		containers.push(container);
+		const map = constructRecoverableMap(
+			ProbeMap,
+			{ container, attributionControl: false, interactive: false },
+			vi.fn(),
+		);
+		expect(() => map.remove()).toThrow(painterError);
+	}
+	flushImageThrottleCallbacks();
+
+	expect(staleCallbackCalls).toBe(0);
+	expect(loseContextCalls).toBe(3);
 	for (const container of containers) {
 		expect(container.childElementCount).toBe(0);
 		expect(container.className).toBe('');

@@ -755,6 +755,32 @@ describe('MapStage boot lifecycle', () => {
 		expect(oncleanupfailure.mock.calls).toEqual([[releaseError], [mapRemoveError]]);
 	});
 
+	it('observes and reports a rejected thenable returned by consumer teardown', async () => {
+		const releaseError = new Error('async consumer release failed');
+		const rejectedThenable = {
+			then(
+				_onfulfilled: ((value: unknown) => unknown) | null | undefined,
+				onrejected: ((reason: unknown) => unknown) | null | undefined,
+			) {
+				onrejected?.(releaseError);
+			},
+		};
+		const oncleanupfailure = vi.fn();
+		const { view, map } = await bootStage({
+			onbeforeremove: () => rejectedThenable,
+			oncleanupfailure,
+		});
+
+		view.unmount();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(oncleanupfailure).toHaveBeenCalledExactlyOnceWith(releaseError);
+		for (const type of MAP_LISTENER_TYPES) expect(map.handlers.get(type)?.size ?? 0).toBe(0);
+		expect(map.styleAttached).toBe(false);
+		expect(map.remove).toHaveBeenCalledOnce();
+	});
+
 	it('isolates simultaneous observer, owner, listener, style, and raw-remove faults', async () => {
 		const errors = {
 			observer: new Error('observer disconnect failed after mutation'),

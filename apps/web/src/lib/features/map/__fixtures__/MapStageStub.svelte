@@ -23,8 +23,8 @@
 		onstyleload?: (map: unknown) => void;
 		onthemerepaint?: (map: unknown) => void;
 		onerror?: (failure: { kind: 'construct'; retry: () => Promise<void> } | null) => void;
-		onbeforeremove?: (map: unknown) => void;
-		oncleanupfailure?: (error: unknown) => void;
+		onbeforeremove?: (map: unknown) => void | PromiseLike<unknown>;
+		oncleanupfailure?: (error: unknown) => unknown;
 		locale?: Record<string, string>;
 		// The rest of MapStage's props are accepted and ignored (camera/theme/etc).
 		[key: string]: unknown;
@@ -210,6 +210,37 @@
 		for (const handler of canvasHandlers.get('mouseleave') ?? []) handler({});
 	}
 
+	function reportCleanupFailure(error: unknown): void {
+		try {
+			if (!oncleanupfailure) {
+				console.error('MapStage cleanup failed', error);
+				return;
+			}
+			const reported = oncleanupfailure(error);
+			if (reported && typeof (reported as PromiseLike<unknown>).then === 'function') {
+				void Promise.resolve(reported).catch((reporterError) => {
+					try {
+						console.error(
+							'MapStage cleanup reporter failed',
+							new AggregateError([error, reporterError], 'MapStage cleanup reporter failed'),
+						);
+					} catch {
+						// Fault reporting cannot reopen the fixture destructor boundary.
+					}
+				});
+			}
+		} catch (reporterError) {
+			try {
+				console.error(
+					'MapStage cleanup reporter failed',
+					new AggregateError([error, reporterError], 'MapStage cleanup reporter failed'),
+				);
+			} catch {
+				// Fault reporting cannot reopen the fixture destructor boundary.
+			}
+		}
+	}
+
 	const mapStageHandlers: ReadonlyArray<readonly [string, Handler]> = [
 		['load', () => {}],
 		['styledata', () => {}],
@@ -225,7 +256,7 @@
 		return () => {
 			const cleanupErrors: unknown[] = [];
 			try {
-				onbeforeremove?.(map);
+				void Promise.resolve(onbeforeremove?.(map)).catch(reportCleanupFailure);
 			} catch (error) {
 				cleanupErrors.push(error);
 			}
@@ -241,14 +272,7 @@
 			} catch (error) {
 				cleanupErrors.push(error);
 			}
-			for (const error of cleanupErrors) {
-				try {
-					if (oncleanupfailure) oncleanupfailure(error);
-					else console.error('MapStage cleanup failed', error);
-				} catch {
-					// Fault reporting cannot reopen the Svelte destructor boundary.
-				}
-			}
+			for (const error of cleanupErrors) reportCleanupFailure(error);
 		};
 	});
 </script>

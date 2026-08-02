@@ -142,7 +142,7 @@
 			isDesktopLayout = e.matches;
 		};
 		mql.addEventListener('change', onChange);
-		return () => mql.removeEventListener('change', onChange);
+		return () => releaseMapOwner(() => mql.removeEventListener('change', onChange));
 	});
 
 	// Right DETAIL panel — an absolute OVERLAY anchored flush to the map's right edge
@@ -919,7 +919,8 @@
 		const el = heroEl;
 		if (!el) return;
 		const open = detailOpen && layout.isDesktop;
-		return publishRailOffset(el, detailWidthPx, open, detailCollapsed, detailDragging);
+		const dispose = publishRailOffset(el, detailWidthPx, open, detailCollapsed, detailDragging);
+		return () => releaseMapOwner(dispose);
 	});
 
 	// Collapse/expand the right detail panel. A pure local toggle: it flips

@@ -225,4 +225,45 @@ describe('Kit navigation simulator source contract', () => {
 			'idle',
 		]);
 	});
+
+	it('keeps Kit commit work before the post-DOM stale-token checkpoint', async () => {
+		const events: string[] = [];
+		const simulator = new KitNavigationSimulator({
+			publishPage: (href) => events.push(`page:${new URL(href).pathname}`),
+			publishNavigating: (navigation) =>
+				events.push(navigation ? `navigating:${navigation.to?.url.pathname}` : 'idle'),
+			settled: async () => {
+				events.push('settled');
+			},
+			tick: async () => {
+				events.push('tick');
+			},
+			activeElement: () => null,
+			bodyElement: () => null,
+			resetFocus: () => {},
+		});
+		let superseded = false;
+		simulator.onNavigate((navigation) => {
+			events.push(`onNavigate:${navigation.to?.url.pathname}`);
+			if (!superseded) {
+				superseded = true;
+				simulator.startNavigation('http://localhost/second');
+			}
+		});
+		simulator.startNavigation('http://localhost/first');
+		events.length = 0;
+
+		await expect(simulator.commitNavigation('http://localhost/first')).rejects.toThrow(
+			'navigation superseded',
+		);
+
+		expect(events).toEqual([
+			'onNavigate:/first',
+			'navigating:/second',
+			'page:/first',
+			'settled',
+			'tick',
+			'tick',
+		]);
+	});
 });

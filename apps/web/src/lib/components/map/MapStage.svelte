@@ -170,7 +170,7 @@
 		/** Fatal initialization state. null clears the state before an in-place retry. */
 		onerror?: (failure: MapStageFailure | null) => void;
 		/** Release consumer-owned map state before MapLibre removal. */
-		onbeforeremove?: (map: MapLibreMap) => void;
+		onbeforeremove?: (map: MapLibreMap) => void | PromiseLike<unknown>;
 		/** Receives each teardown error after every cleanup step has run. */
 		oncleanupfailure?: (error: unknown) => unknown;
 		/** Partial MapLibre locale table applied at construction. */
@@ -336,7 +336,11 @@
 		};
 		release(() => attempt.controller.abort());
 		if (observer) release(() => observer.disconnect());
-		if (ownedMap && onbeforeremove) release(() => onbeforeremove(ownedMap));
+		if (ownedMap && onbeforeremove) {
+			release(() => {
+				void Promise.resolve(onbeforeremove(ownedMap)).catch(reportCleanupFailure);
+			});
+		}
 		let pendingDisposers = disposers;
 		for (let pass = 0; pass < 2 && pendingDisposers.length > 0; pass += 1) {
 			const retainedDisposers: Array<() => void> = [];

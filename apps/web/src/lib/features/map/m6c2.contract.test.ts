@@ -112,6 +112,14 @@ const BASE_INTERACTION_PUBLICATION = `
 		});
 	}`;
 const CURRENT_STAGE_WIRING = '\n\t\tonbeforeremove={releaseMapOwners}';
+const CURE9_BREAKPOINT_RELEASE =
+	"\t\treturn () => releaseMapOwner(() => mql.removeEventListener('change', onChange));";
+const BASE_BREAKPOINT_RELEASE = "\t\treturn () => mql.removeEventListener('change', onChange);";
+const CURE9_RAIL_RELEASE = `
+		const dispose = publishRailOffset(el, detailWidthPx, open, detailCollapsed, detailDragging);
+		return () => releaseMapOwner(dispose);`;
+const BASE_RAIL_RELEASE =
+	'\n\t\treturn publishRailOffset(el, detailWidthPx, open, detailCollapsed, detailDragging);';
 const CURE8_OWNER_IMPORT = "\n\timport * as ownerCleanup from './mapOwnerCleanup';";
 const CURE8_FETCH = '\t\tfetch: (input, init) => globalThis.fetch(input, init),';
 const GATE7_FETCH = '\t\tfetch: (input) => globalThis.fetch(input),';
@@ -211,6 +219,8 @@ const GATE7_SELECTION_RELEASE = `
 
 function reconstructBaseMapHero(hero: string): string {
 	const replacements: ReadonlyArray<readonly [string, string]> = [
+		[CURE9_BREAKPOINT_RELEASE, BASE_BREAKPOINT_RELEASE],
+		[CURE9_RAIL_RELEASE, BASE_RAIL_RELEASE],
 		[CURE8_OWNER_IMPORT, ''],
 		[CURE8_FETCH, GATE7_FETCH],
 		[CURE8_LIVE_BOUNDARY, GATE7_LIVE_BOUNDARY],
