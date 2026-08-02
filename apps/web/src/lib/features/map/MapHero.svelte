@@ -102,7 +102,7 @@
 		type MapSelectionDetail as MapSelectionDetailModel,
 	} from './mapSelection';
 	import { createSelectionGrace } from './selectionGrace.svelte';
-	import { attachMapDetailNavigationRecovery } from './mapDetailNavigationRecovery';
+	import { createMapDetailNavigationLifecycle } from './mapDetailNavigationLifecycle';
 
 	const locale: Locale = getLocale();
 	const t = $derived(MAP_COPY[locale]);
@@ -201,11 +201,19 @@
 		},
 	});
 
-	const mapDetailNavigationRecovery = attachMapDetailNavigationRecovery({
+	const mapDetailNavigationLifecycle = createMapDetailNavigationLifecycle({
 		currentIntent: urlCoordinator.currentIntent,
 		goto: urlCoordinator.goto,
 	});
-	$effect(() => mapDetailNavigationRecovery.observe($navigating?.to?.url ?? null));
+	onMount(() => {
+		const unsubscribe = navigating.subscribe((navigation) => {
+			mapDetailNavigationLifecycle.recordAccepted(navigation?.to?.url ?? null);
+		});
+		return () => {
+			unsubscribe();
+			mapDetailNavigationLifecycle.dispose();
+		};
+	});
 
 	let observedPageUrl: URL | null = null;
 	let ingestedUrlIdentity = '';
@@ -214,10 +222,9 @@
 		if (url === observedPageUrl) return;
 		observedPageUrl = url;
 		const urlIdentity = `${url.pathname}${url.search}`;
-		const mapSettlement = mapDetailNavigationRecovery.settle(
+		const mapSettlement = mapDetailNavigationLifecycle.settle(
 			url,
 			urlCoordinator.settle,
-			$navigating?.to?.url ?? null,
 			$page.state,
 		);
 		if (mapSettlement === 'recovered') return;
@@ -265,14 +272,24 @@
 	$effect(() => sharedClock.subscribe());
 
 	$effect(() => () => {
-		untrack(() => vehicleMotion)?.destroy();
-		for (const dispose of interactionDisposers) dispose();
+		try {
+			untrack(() => vehicleMotion)?.destroy();
+		} catch {
+			// MapStage normally releases owners first; this fallback cannot abort the parent tree.
+		}
+		for (const dispose of interactionDisposers) {
+			try {
+				dispose();
+			} catch {
+				// Keep unwinding every remaining owner.
+			}
+		}
 	});
 
 	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
 
-	// MapLibre is an opaque lifecycle owner. Track handle replacement, never proxy
-	// the instance itself; teardown callbacks must compare and release the exact map.
+	// MapStage supplies one revocable handle; the raw MapLibre instance never leaves it.
+	// Track handle identity so teardown releases only the matching logical map owner.
 	let map = $state.raw<MapLibreMap | null>(null);
 	let mapFailure = $state<{ readonly retry: () => Promise<void> } | null>(null);
 	let vehicleMotion = $state<VehicleMotionController | null>(null);
@@ -736,13 +753,25 @@
 
 	function ensureMapInteractions(m: MapLibreMap): void {
 		if (interactionsMap === m) return;
-		for (const dispose of interactionDisposers) dispose();
-		interactionsMap = m;
-		interactionDisposers = installMapInteractions(m, {
+		const previousDisposers = interactionDisposers;
+		interactionDisposers = [];
+		interactionsMap = null;
+		const releaseErrors: unknown[] = [];
+		for (const dispose of previousDisposers) {
+			try {
+				dispose();
+			} catch (error) {
+				releaseErrors.push(error);
+			}
+		}
+		if (releaseErrors.length > 0) throw releaseErrors[0];
+		const nextDisposers = installMapInteractions(m, {
 			click: (event) => selectPickedFeature(m, event),
 			mousemove: (event) => hoverPickedFeature(m, event),
 			mouseleave: () => clearHover(m),
 		});
+		interactionDisposers = nextDisposers;
+		interactionsMap = m;
 	}
 	function ensureVehicleMotion(m: MapLibreMap): void {
 		if (vehicleMotionMap !== m) {

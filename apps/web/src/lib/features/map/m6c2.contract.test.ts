@@ -9,8 +9,8 @@ function source(path: string): string {
 
 const OBSOLETE_M6H_ROUTE_EXIT = 'attachMapDetailRouteExit';
 const M6H_CURE2_MAP_HANDLE =
-	'\t// MapLibre is an opaque lifecycle owner. Track handle replacement, never proxy\n' +
-	'\t// the instance itself; teardown callbacks must compare and release the exact map.\n' +
+	'\t// MapStage supplies one revocable handle; the raw MapLibre instance never leaves it.\n' +
+	'\t// Track handle identity so teardown releases only the matching logical map owner.\n' +
 	'\tlet map = $state.raw<MapLibreMap | null>(null);';
 const M6H_CURE2_OWNER_RELEASE = `
 	function releaseMapOwners(m: MapLibreMap): void {
@@ -45,8 +45,62 @@ const M6H_CURE2_OWNER_RELEASE = `
 	}
 `;
 const M6H_CURE2_STAGE_WIRING = '\n\t\tonbeforeremove={releaseMapOwners}';
-const M6H_CURE3_RECOVERY_IMPORT =
-	"\timport { attachMapDetailNavigationRecovery } from './mapDetailNavigationRecovery';\n";
+const PRE_M6H_FALLBACK_CLEANUP = `
+	$effect(() => () => {
+		untrack(() => vehicleMotion)?.destroy();
+		for (const dispose of interactionDisposers) dispose();
+	});`;
+const M6H_DESIGN_FALLBACK_CLEANUP = `
+	$effect(() => () => {
+		try {
+			untrack(() => vehicleMotion)?.destroy();
+		} catch {
+			// MapStage normally releases owners first; this fallback cannot abort the parent tree.
+		}
+		for (const dispose of interactionDisposers) {
+			try {
+				dispose();
+			} catch {
+				// Keep unwinding every remaining owner.
+			}
+		}
+	});`;
+const PRE_M6H_INTERACTION_PUBLICATION = `
+	function ensureMapInteractions(m: MapLibreMap): void {
+		if (interactionsMap === m) return;
+		for (const dispose of interactionDisposers) dispose();
+		interactionsMap = m;
+		interactionDisposers = installMapInteractions(m, {
+			click: (event) => selectPickedFeature(m, event),
+			mousemove: (event) => hoverPickedFeature(m, event),
+			mouseleave: () => clearHover(m),
+		});
+	}`;
+const M6H_DESIGN_INTERACTION_PUBLICATION = `
+	function ensureMapInteractions(m: MapLibreMap): void {
+		if (interactionsMap === m) return;
+		const previousDisposers = interactionDisposers;
+		interactionDisposers = [];
+		interactionsMap = null;
+		const releaseErrors: unknown[] = [];
+		for (const dispose of previousDisposers) {
+			try {
+				dispose();
+			} catch (error) {
+				releaseErrors.push(error);
+			}
+		}
+		if (releaseErrors.length > 0) throw releaseErrors[0];
+		const nextDisposers = installMapInteractions(m, {
+			click: (event) => selectPickedFeature(m, event),
+			mousemove: (event) => hoverPickedFeature(m, event),
+			mouseleave: () => clearHover(m),
+		});
+		interactionDisposers = nextDisposers;
+		interactionsMap = m;
+	}`;
+const M6H_DESIGN_LIFECYCLE_IMPORT =
+	"\timport { createMapDetailNavigationLifecycle } from './mapDetailNavigationLifecycle';\n";
 const M6H_CURE6_SVELTE_LIFECYCLE_IMPORT =
 	"\timport { onDestroy, onMount, untrack } from 'svelte';\n";
 const PRE_M6H_SVELTE_LIFECYCLE_IMPORT = "\timport { onMount, untrack } from 'svelte';\n";
@@ -62,14 +116,22 @@ const M6H_CURE5_COORDINATOR_WIRING = `
 const PRE_M6H_COORDINATOR_WIRING =
 	'\n\tconst urlCoordinator = createMapUrlCoordinator($page.url, goto);\n';
 const M6H_CURE6_COORDINATOR_TEARDOWN = '\tonDestroy(() => urlCoordinator.dispose());\n';
-const M6H_CURE5_RECOVERY_WIRING = `
-	const mapDetailNavigationRecovery = attachMapDetailNavigationRecovery({
+const M6H_DESIGN_LIFECYCLE_WIRING = `
+	const mapDetailNavigationLifecycle = createMapDetailNavigationLifecycle({
 		currentIntent: urlCoordinator.currentIntent,
 		goto: urlCoordinator.goto,
+	});`;
+const M6H_DESIGN_ACCEPTED_SUBSCRIPTION = `
+	onMount(() => {
+		const unsubscribe = navigating.subscribe((navigation) => {
+			mapDetailNavigationLifecycle.recordAccepted(navigation?.to?.url ?? null);
+		});
+		return () => {
+			unsubscribe();
+			mapDetailNavigationLifecycle.dispose();
+		};
 	});
 `;
-const M6H_CURE6_NAVIGATION_OBSERVATION =
-	'\t$effect(() => mapDetailNavigationRecovery.observe($navigating?.to?.url ?? null));\n';
 const PRE_M6H_URL_INGESTION = `
 	let ingestedUrlIdentity = '';
 	$effect(() => {
@@ -78,7 +140,7 @@ const PRE_M6H_URL_INGESTION = `
 		if (urlIdentity === ingestedUrlIdentity) return;
 		ingestedUrlIdentity = urlIdentity;
 		filters.replaceFromUrl(fromSearchParams(url.searchParams), urlCoordinator.settle(url));`;
-const M6H_CURE5_RECOVERY_INGESTION = `
+const M6H_DESIGN_LIFECYCLE_INGESTION = `
 	let observedPageUrl: URL | null = null;
 	let ingestedUrlIdentity = '';
 	$effect(() => {
@@ -86,10 +148,9 @@ const M6H_CURE5_RECOVERY_INGESTION = `
 		if (url === observedPageUrl) return;
 		observedPageUrl = url;
 		const urlIdentity = \`\${url.pathname}\${url.search}\`;
-		const mapSettlement = mapDetailNavigationRecovery.settle(
+		const mapSettlement = mapDetailNavigationLifecycle.settle(
 			url,
 			urlCoordinator.settle,
-			$navigating?.to?.url ?? null,
 			$page.state,
 		);
 		if (mapSettlement === 'recovered') return;
@@ -102,14 +163,16 @@ function withoutM6hLifecycle(value: string): string {
 		.replace(M6H_CURE2_MAP_HANDLE, '\tlet map = $state<MapLibreMap | null>(null);')
 		.replace(M6H_CURE2_OWNER_RELEASE, '')
 		.replace(M6H_CURE2_STAGE_WIRING, '')
+		.replace(M6H_DESIGN_FALLBACK_CLEANUP, PRE_M6H_FALLBACK_CLEANUP)
+		.replace(M6H_DESIGN_INTERACTION_PUBLICATION, PRE_M6H_INTERACTION_PUBLICATION)
 		.replace(M6H_CURE6_SVELTE_LIFECYCLE_IMPORT, PRE_M6H_SVELTE_LIFECYCLE_IMPORT)
 		.replace(M6H_CURE4_PAGE_STORES_IMPORT, PRE_M6H_PAGE_STORES_IMPORT)
-		.replace(M6H_CURE3_RECOVERY_IMPORT, '')
+		.replace(M6H_DESIGN_LIFECYCLE_IMPORT, '')
 		.replace(M6H_CURE5_COORDINATOR_WIRING, PRE_M6H_COORDINATOR_WIRING)
 		.replace(M6H_CURE6_COORDINATOR_TEARDOWN, '')
-		.replace(M6H_CURE5_RECOVERY_WIRING, '')
-		.replace(M6H_CURE6_NAVIGATION_OBSERVATION, '')
-		.replace(M6H_CURE5_RECOVERY_INGESTION, PRE_M6H_URL_INGESTION);
+		.replace(M6H_DESIGN_LIFECYCLE_WIRING, '')
+		.replace(M6H_DESIGN_ACCEPTED_SUBSCRIPTION, '')
+		.replace(M6H_DESIGN_LIFECYCLE_INGESTION, PRE_M6H_URL_INGESTION);
 }
 
 function withoutComments(value: string): string {
@@ -206,14 +269,16 @@ describe('M6C-2 token and protected-surface contract', () => {
 		expect(hero.split(M6H_CURE2_MAP_HANDLE)).toHaveLength(2);
 		expect(hero.split(M6H_CURE2_OWNER_RELEASE)).toHaveLength(2);
 		expect(hero.split(M6H_CURE2_STAGE_WIRING)).toHaveLength(2);
+		expect(hero.split(M6H_DESIGN_FALLBACK_CLEANUP)).toHaveLength(2);
+		expect(hero.split(M6H_DESIGN_INTERACTION_PUBLICATION)).toHaveLength(2);
 		expect(hero.split(M6H_CURE6_SVELTE_LIFECYCLE_IMPORT)).toHaveLength(2);
 		expect(hero.split(M6H_CURE4_PAGE_STORES_IMPORT)).toHaveLength(2);
-		expect(hero.split(M6H_CURE3_RECOVERY_IMPORT)).toHaveLength(2);
+		expect(hero.split(M6H_DESIGN_LIFECYCLE_IMPORT)).toHaveLength(2);
 		expect(hero.split(M6H_CURE5_COORDINATOR_WIRING)).toHaveLength(2);
 		expect(hero.split(M6H_CURE6_COORDINATOR_TEARDOWN)).toHaveLength(2);
-		expect(hero.split(M6H_CURE5_RECOVERY_WIRING)).toHaveLength(2);
-		expect(hero.split(M6H_CURE6_NAVIGATION_OBSERVATION)).toHaveLength(2);
-		expect(hero.split(M6H_CURE5_RECOVERY_INGESTION)).toHaveLength(2);
+		expect(hero.split(M6H_DESIGN_LIFECYCLE_WIRING)).toHaveLength(2);
+		expect(hero.split(M6H_DESIGN_ACCEPTED_SUBSCRIPTION)).toHaveLength(2);
+		expect(hero.split(M6H_DESIGN_LIFECYCLE_INGESTION)).toHaveLength(2);
 		const protectedHero = withoutM6hLifecycle(hero);
 		const protectedRegion = protectedHero.split('\n').slice(19, 882).join('\n') + '\n';
 		const digest = createHash('sha256').update(protectedRegion).digest('hex');

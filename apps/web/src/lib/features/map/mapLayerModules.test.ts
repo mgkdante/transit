@@ -41,12 +41,14 @@ describe('installMapInteractions', () => {
 		type Handler = (event: never) => void;
 		const mapHandlers = new Map<string, Set<Handler>>();
 		const canvasHandlers = new Map<string, Set<Handler>>();
+		const unregisterCalls = new Map<string, number>();
 		const register = (target: Map<string, Set<Handler>>, type: string, handler: Handler) => {
 			const handlers = target.get(type) ?? new Set<Handler>();
 			handlers.add(handler);
 			target.set(type, handlers);
 		};
 		const unregister = (target: Map<string, Set<Handler>>, type: string, handler: Handler) => {
+			unregisterCalls.set(type, (unregisterCalls.get(type) ?? 0) + 1);
 			target.get(type)?.delete(handler);
 		};
 		const canvas = {
@@ -70,8 +72,85 @@ describe('installMapInteractions', () => {
 		expect(mapHandlers.get('mousemove')?.size).toBe(1);
 		expect(canvasHandlers.get('mouseleave')?.size).toBe(1);
 
-		for (const dispose of disposers) dispose();
+		for (const dispose of disposers) {
+			dispose();
+			dispose();
+		}
 
+		expect(mapHandlers.get('click')?.size).toBe(0);
+		expect(mapHandlers.get('mousemove')?.size).toBe(0);
+		expect(canvasHandlers.get('mouseleave')?.size).toBe(0);
+		expect(Object.fromEntries(unregisterCalls)).toEqual({
+			click: 1,
+			mousemove: 1,
+			mouseleave: 1,
+		});
+	});
+
+	it('rolls back a click when the second map registration mutates then throws', () => {
+		type Handler = (event: never) => void;
+		const registrationError = new Error('mousemove registration failed');
+		const mapHandlers = new Map<string, Set<Handler>>();
+		const register = (type: string, handler: Handler) => {
+			const handlers = mapHandlers.get(type) ?? new Set<Handler>();
+			handlers.add(handler);
+			mapHandlers.set(type, handlers);
+			if (type === 'mousemove') throw registrationError;
+		};
+		const map = {
+			on: register,
+			off: (type: string, handler: Handler) => mapHandlers.get(type)?.delete(handler),
+			getCanvas: () => ({
+				addEventListener: vi.fn(),
+				removeEventListener: vi.fn(),
+			}),
+		} as unknown as MapLibreMap;
+
+		expect(() =>
+			installMapInteractions(map, {
+				click: vi.fn(),
+				mousemove: vi.fn(),
+				mouseleave: vi.fn(),
+			}),
+		).toThrow(registrationError);
+		expect(mapHandlers.get('click')?.size).toBe(0);
+		expect(mapHandlers.get('mousemove')?.size).toBe(0);
+	});
+
+	it('rolls every map handler back when canvas registration mutates then throws', () => {
+		type Handler = (event: never) => void;
+		const registrationError = new Error('canvas registration failed');
+		const rollbackError = new Error('canvas rollback failed');
+		const mapHandlers = new Map<string, Set<Handler>>();
+		const canvasHandlers = new Map<string, Set<Handler>>();
+		const register = (target: Map<string, Set<Handler>>, type: string, handler: Handler) => {
+			const handlers = target.get(type) ?? new Set<Handler>();
+			handlers.add(handler);
+			target.set(type, handlers);
+		};
+		const canvas = {
+			addEventListener: (type: string, handler: Handler) => {
+				register(canvasHandlers, type, handler);
+				throw registrationError;
+			},
+			removeEventListener: (type: string, handler: Handler) => {
+				canvasHandlers.get(type)?.delete(handler);
+				throw rollbackError;
+			},
+		};
+		const map = {
+			on: (type: string, handler: Handler) => register(mapHandlers, type, handler),
+			off: (type: string, handler: Handler) => mapHandlers.get(type)?.delete(handler),
+			getCanvas: () => canvas,
+		} as unknown as MapLibreMap;
+
+		expect(() =>
+			installMapInteractions(map, {
+				click: vi.fn(),
+				mousemove: vi.fn(),
+				mouseleave: vi.fn(),
+			}),
+		).toThrow(registrationError);
 		expect(mapHandlers.get('click')?.size).toBe(0);
 		expect(mapHandlers.get('mousemove')?.size).toBe(0);
 		expect(canvasHandlers.get('mouseleave')?.size).toBe(0);

@@ -334,19 +334,16 @@
 	});
 
 	// SPA View Transitions — a tasteful root cross-fade between settled surfaces.
-	// SvelteKit updates browser history before it awaits `onNavigate`, but it does
-	// not commit `$page` or the destination DOM until every returned promise has
-	// resolved. Map detail stays live until that commit, so holding the optional
-	// transition would also hold `/map`'s full-bleed scroll lock. Skip it for this
-	// one transient exit so commit can unmount the map and run its ordered teardown
-	// immediately. All other routes retain the feature-detected/reduced-motion-aware
-	// cross-fade.
-	let skipViewTransitionForMapDetailExit = false;
-
+	// Decide the map-detail exception from this final transaction itself: Kit can
+	// suppress beforeNavigate callbacks while another accepted navigation is active.
 	onNavigate((navigation) => {
-		const skipViewTransition = skipViewTransitionForMapDetailExit;
-		skipViewTransitionForMapDetailExit = false;
-		if (skipViewTransition) return;
+		const isMapDetailExit =
+			typeof document !== 'undefined' &&
+			delocalizePath(navigation.from?.url.pathname ?? '') === '/map' &&
+			navigation.to != null &&
+			delocalizePath(navigation.to.url.pathname) !== '/map' &&
+			document.querySelector('[data-slot="map-detail-overlay"], [data-m6c2-detail-sheet]') != null;
+		if (isMapDetailExit) return;
 		return runViewTransition(navigation);
 	});
 
@@ -362,12 +359,6 @@
 	// detected, so steady-state SPA navigation (and View Transitions) is unchanged.
 	// Cold loads are already kept fresh by the network-first service worker.
 	beforeNavigate((navigation) => {
-		skipViewTransitionForMapDetailExit =
-			typeof document !== 'undefined' &&
-			delocalizePath(navigation.from?.url.pathname ?? '') === '/map' &&
-			navigation.to != null &&
-			delocalizePath(navigation.to.url.pathname) !== '/map' &&
-			document.querySelector('[data-slot="map-detail-overlay"], [data-m6c2-detail-sheet]') != null;
 		const decision = decideFreshnessReload({
 			hasNewVersion: updated.current,
 			willUnload: navigation.willUnload,

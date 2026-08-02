@@ -100,6 +100,7 @@
 	import { cn } from '$lib/utils';
 	import type { BasemapFile } from '$lib/v1/schemas';
 	import { applyBasemapTheme, resolveBasemapStyle, type BasemapTheme } from './basemap';
+	import { createMapDisposalBarrier, type MapDisposalBarrier } from './mapDisposalBarrier';
 	import { mapViewportOptions, type MapFitPadding } from './viewport';
 	// Type-only import — erased at compile time, so it never pulls maplibre-gl
 	// into the server bundle. The RUNTIME import happens dynamically in onMount.
@@ -166,8 +167,10 @@
 		onthemerepaint?: (map: MapLibreMap) => void;
 		/** Fatal initialization state. null clears the state before an in-place retry. */
 		onerror?: (failure: MapStageFailure | null) => void;
-		/** Release consumer-owned map state while MapLibre's style is still live. */
+		/** Release consumer state through an already-inert handle before raw removal. */
 		onbeforeremove?: (map: MapLibreMap) => void;
+		/** Receives the first teardown error after every cleanup step has run. */
+		oncleanupfailure?: (error: unknown) => void;
 		/** Partial MapLibre locale table applied at construction. */
 		locale?: Record<string, string>;
 		/** Consumer styling on the host wrapper. */
@@ -191,6 +194,7 @@
 		onthemerepaint,
 		onerror,
 		onbeforeremove,
+		oncleanupfailure,
 		locale,
 		class: className,
 	}: MapStageProps = $props();
@@ -198,7 +202,7 @@
 	/** The host <div> MapLibre attaches its canvas to. */
 	let container = $state<HTMLDivElement | null>(null);
 	/** The live Map instance (browser-only; null until mounted / after teardown). */
-	let map = $state<MapLibreMap | null>(null);
+	let map = $state.raw<MapLibreMap | null>(null);
 
 	// Basemap-swap baseline. Declared up here (not beside the effect) because onMount
 	// SEEDS them at construction to the basemap it paints — so the swap effect treats
@@ -234,7 +238,8 @@
 		readonly generation: number;
 		readonly container: HTMLDivElement;
 		readonly controller: AbortController;
-		map: MapLibreMap | null;
+		rawMap: MapLibreMap | null;
+		barrier: MapDisposalBarrier | null;
 		observer: ResizeObserver | null;
 		disposers: Array<() => void>;
 		initializing: boolean;
@@ -260,13 +265,17 @@
 		if (attempt.cleaned) return;
 		attempt.cleaned = true;
 		attempt.initializing = false;
-		const ownedMap = attempt.map;
-		attempt.map = null;
+		const rawMap = attempt.rawMap;
+		const barrier = attempt.barrier;
+		const guardedMap = barrier?.map ?? null;
+		attempt.rawMap = null;
+		attempt.barrier = null;
 		const disposers = attempt.disposers.splice(0);
 		const observer = attempt.observer;
 		attempt.observer = null;
 		if (activeAttempt === attempt) activeAttempt = null;
-		if (map === ownedMap) map = null;
+		if (map === guardedMap) map = null;
+		barrier?.dispose();
 
 		const cleanupErrors: unknown[] = [];
 		const release = (dispose: () => void): void => {
@@ -278,11 +287,15 @@
 		};
 		release(() => attempt.controller.abort());
 		if (observer) release(() => observer.disconnect());
-		if (ownedMap && onbeforeremove) release(() => onbeforeremove(ownedMap));
+		if (guardedMap && onbeforeremove) release(() => onbeforeremove(guardedMap));
 		for (const dispose of disposers) release(dispose);
-		if (ownedMap) release(() => ownedMap.remove());
-		if (cleanupErrors.length > 0) {
-			throw cleanupErrors[0];
+		if (rawMap) release(() => rawMap.remove());
+		if (cleanupErrors.length > 0 && oncleanupfailure) {
+			try {
+				oncleanupfailure(cleanupErrors[0]);
+			} catch {
+				// Teardown observers cannot reopen the destruction path.
+			}
 		}
 	}
 
@@ -337,7 +350,8 @@
 			generation,
 			container,
 			controller: new AbortController(),
-			map: null,
+			rawMap: null,
+			barrier: null,
 			observer: null,
 			disposers: [],
 			initializing: true,
@@ -383,12 +397,14 @@
 				// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 				attributionControl: { compact: true },
 			});
-			attempt.map = instance;
+			const barrier = createMapDisposalBarrier(instance);
+			attempt.rawMap = instance;
+			attempt.barrier = barrier;
 			activeLayoutSig = fitPaddingKey(fitPadding);
 			activeBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
 			activeCameraKey = cameraKey(center, zoom);
 			cameraOwner = 'fit';
-			map = instance;
+			map = barrier.map;
 
 			failureKind = 'setup';
 			const ownMapListener = (type: string, listener: (event: unknown) => void): (() => void) => {
@@ -408,7 +424,7 @@
 			const handleLoad = () => {
 				if (!isCurrentAttempt(attempt)) return;
 				instance.resize();
-				onready?.(instance);
+				onready?.(barrier.map);
 			};
 			ownMapListener('load', handleLoad);
 			// One-shot attribution collapse: maplibre's compact control still STARTS

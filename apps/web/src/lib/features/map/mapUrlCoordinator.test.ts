@@ -65,6 +65,18 @@ describe('map URL coordinator', () => {
 		);
 	});
 
+	it('preserves a requested hash in the actual navigation target', () => {
+		const { coordinator, navigate } = setup('https://transit.example/map#detail');
+
+		coordinator.goto('/map?route=24#detail', MAP_URL_REWRITE);
+
+		expect(navigate).toHaveBeenCalledWith(
+			'/map?route=24#detail',
+			expect.objectContaining(MAP_URL_REWRITE),
+		);
+		expect(coordinator.settle(new URL('https://transit.example/map?route=24#detail'))).toBe('echo');
+	});
+
 	it('matches normalized relative requests and consumes each settled echo only once', () => {
 		const { coordinator } = setup('https://transit.example/fr/map');
 		coordinator.goto('?route=24', MAP_URL_REWRITE);

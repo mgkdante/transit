@@ -72,10 +72,14 @@ export interface MapUrlCoordinator {
 	readonly dispose: () => void;
 }
 
-// One string serves as BOTH the token-matching key and the navigation target:
-// origin-free, locale-prefix preserved.
+// FIFO token matching stays origin-free pathname+search. The actual navigation
+// target is separate so a captured hash survives a corrective rewrite.
 function identity(url: URL): string {
 	return `${url.pathname}${url.search}`;
+}
+
+function navigationTarget(url: URL): string {
+	return `${identity(url)}${url.hash}`;
 }
 
 export function createMapUrlCoordinator(
@@ -94,7 +98,7 @@ export function createMapUrlCoordinator(
 		requested.push(nextIdentity);
 		latestIntent = next;
 		intentRevision += 1;
-		return navigate(nextIdentity, {
+		return navigate(navigationTarget(next), {
 			...options,
 			state: {
 				...readPageState(),
@@ -111,7 +115,7 @@ export function createMapUrlCoordinator(
 		for (const key of FILTER_SEARCH_PARAM_KEYS) {
 			for (const value of filters.getAll(key)) next.searchParams.append(key, value);
 		}
-		void request(identity(next), MAP_URL_REWRITE);
+		void request(navigationTarget(next), MAP_URL_REWRITE);
 	}
 
 	function settle(url: URL): MapUrlSettlement {

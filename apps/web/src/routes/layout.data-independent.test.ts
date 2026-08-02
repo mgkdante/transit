@@ -313,4 +313,59 @@ describe('root layout data-independent legal routes', () => {
 			}
 		},
 	);
+
+	it.each([
+		['desktop overlay', 'data-slot', 'map-detail-overlay', false],
+		['mobile sheet', 'data-m6c2-detail-sheet', '', true],
+	] as const)(
+		'skips the transition for a callback-suppressed panel-open map exit: %s',
+		async (_panelKind, attribute, value, locksBody) => {
+			const { container } = renderWithoutV1('/map', 'en');
+			const main = container.querySelector('#main') as HTMLElement;
+			expect(getComputedStyle(main).overflowY).toBe('hidden');
+
+			const panel = document.createElement('div');
+			panel.setAttribute(attribute, value);
+			document.body.append(panel);
+			if (locksBody) {
+				document.body.style.overflow = 'hidden';
+				document.body.style.pointerEvents = 'none';
+			}
+			let completeNavigation: () => void;
+			const complete = new Promise<void>((resolve) => {
+				completeNavigation = resolve;
+			});
+			const navigation = {
+				from: { url: new URL('https://transit.yesid.dev/map') },
+				to: { url: new URL('https://transit.yesid.dev/lines') },
+				willUnload: false,
+				complete,
+			};
+
+			// Kit suppresses beforeNavigate while another accepted navigation is active.
+			// The final transaction callback is still authoritative and must decide from
+			// its own from/to pair rather than a flag set by the missing callback.
+			window.history.replaceState({}, '', '/lines');
+			const blocker = harness.onNavigateCallbacks.at(-1)?.(navigation);
+
+			try {
+				if (!(blocker instanceof Promise)) {
+					harness.setPath('/lines');
+					await tick();
+				}
+
+				expect(blocker).toBeUndefined();
+				expect(harness.runViewTransition).not.toHaveBeenCalled();
+				expect(getComputedStyle(main).overflowY).toBe('auto');
+			} finally {
+				panel.remove();
+				document.body.style.removeProperty('overflow');
+				document.body.style.removeProperty('pointer-events');
+				harness.finishViewTransition();
+				completeNavigation!();
+				await blocker;
+				window.history.replaceState({}, '', '/');
+			}
+		},
+	);
 });

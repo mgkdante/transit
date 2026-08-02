@@ -269,6 +269,7 @@ const harness = vi.hoisted(() => {
 	const beforeNavigateCallbacks: Array<(navigation: HarnessNavigation) => void> = [];
 	const afterNavigateCallbacks: Array<(navigation: HarnessNavigation) => void> = [];
 	let activeNavigation: HarnessNavigation | null = null;
+	let navigatingSubscriberCount = 0;
 	let publishNavigating = (_navigation: HarnessNavigation | null): void => {
 		throw new Error('navigation publisher used before the $app/stores mock factory ran');
 	};
@@ -302,6 +303,18 @@ const harness = vi.hoisted(() => {
 		},
 		get navigationActive(): boolean {
 			return activeNavigation != null;
+		},
+		get navigatingSubscriberCount(): number {
+			return navigatingSubscriberCount;
+		},
+		captureNavigatingSubscriber(): () => void {
+			navigatingSubscriberCount += 1;
+			let active = true;
+			return () => {
+				if (!active) return;
+				active = false;
+				navigatingSubscriberCount -= 1;
+			};
 		},
 		resetNavigation(): void {
 			activeNavigation = null;
@@ -431,10 +444,23 @@ vi.mock('$app/stores', async () => {
 		from: { url: URL } | null;
 		to: { url: URL } | null;
 	} | null>(null);
+	const trackedNavigatingStore = {
+		subscribe(
+			run: Parameters<typeof navigatingStore.subscribe>[0],
+			invalidate?: Parameters<typeof navigatingStore.subscribe>[1],
+		) {
+			const releaseReceipt = harness.captureNavigatingSubscriber();
+			const unsubscribe = navigatingStore.subscribe(run, invalidate);
+			return () => {
+				unsubscribe();
+				releaseReceipt();
+			};
+		},
+	};
 	harness.setPageUrl = (href: string, state: Readonly<Record<string, unknown>> = {}) =>
 		store.set(pageValue(new URL(href), state));
 	harness.bindNavigatingStore((navigation) => navigatingStore.set(navigation));
-	return { page: store, navigating: navigatingStore };
+	return { page: store, navigating: trackedNavigatingStore };
 });
 
 vi.mock('$app/navigation', async () => {
@@ -1231,9 +1257,9 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 				{ type: 'link' },
 			);
 			expect(exitStart.beforeNavigateDelivered).toBe(true);
-			await tick();
 			// Kit suppresses another before-navigation callback for an in-flight
-			// supersession or redirect. The winning commit carries a plain /map URL.
+			// supersession or redirect. It can publish the plain /map winner in this
+			// same turn, before any Svelte effect flushes.
 			const winnerStart = harness.startNavigation(
 				'http://localhost/map',
 				attemptedExit.from.url.href,
@@ -1290,7 +1316,6 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 			delta: -1,
 		});
 		expect(historyExit.beforeNavigateDelivered).toBe(false);
-		await tick();
 		const winnerStart = harness.startNavigation(redirectedMapUrl.href, currentMapUrl, {
 			type: 'goto',
 		});
@@ -1345,7 +1370,6 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 				{ type: 'link' },
 			);
 			expect(exitStart.beforeNavigateDelivered).toBe(true);
-			await tick();
 			// Kit preserves the original false keepfocus through redirect recursion and
 			// suppresses a second before-navigation callback for this winning settlement.
 			const winnerStart = harness.startNavigation(
@@ -1406,7 +1430,6 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 				{ type: 'link' },
 			);
 			expect(exitStart.beforeNavigateDelivered).toBe(false);
-			await tick();
 			// The winning non-map navigation redirects to the still-queued selection URL.
 			// URL ownership is therefore an old `echo`, but the winner itself has keepFocus false.
 			const winnerStart = harness.startNavigation(
@@ -1466,7 +1489,6 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 				{ type: 'link' },
 			);
 			expect(exitStart.beforeNavigateDelivered).toBe(false);
-			await tick();
 			const winnerStart = harness.startNavigation(
 				redirectedMapUrl.href,
 				attemptedExit.from.url.href,
@@ -1503,6 +1525,51 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 			});
 		},
 	);
+
+	it('refreshes a repeated exit from U to the newest uncommitted map intent B before recovering V', async () => {
+		const before = await openStackedDetail(true);
+		const originalUrl = new URL(before.settledSelectionUrl.href);
+
+		const firstExit = harness.startNavigation('http://localhost/lines', originalUrl.href, {
+			type: 'link',
+		});
+		expect(firstExit.beforeNavigateDelivered).toBe(true);
+		await tick();
+
+		expect(harness.detailFilter).not.toBeNull();
+		harness.detailFilter?.({ kind: 'route', value: '55' });
+		await tick();
+		const latestIntentUrl = new URL(String(harness.goto.mock.lastCall?.[0]), originalUrl);
+		expect(latestIntentUrl.searchParams.get('route')?.split(',')).toContain('55');
+		const callsBeforeRecovery = harness.goto.mock.calls.length;
+
+		const intentStart = harness.startNavigation(latestIntentUrl.href, originalUrl.href, {
+			type: 'goto',
+		});
+		expect(intentStart.beforeNavigateDelivered).toBe(false);
+		const repeatedExit = harness.startNavigation('http://localhost/network', latestIntentUrl.href, {
+			type: 'link',
+		});
+		expect(repeatedExit.beforeNavigateDelivered).toBe(false);
+		const arbitraryWinner = new URL(latestIntentUrl.href);
+		arbitraryWinner.searchParams.set('stale-intent-winner', '1');
+		const winnerStart = harness.startNavigation(arbitraryWinner.href, latestIntentUrl.href, {
+			type: 'goto',
+		});
+		expect(winnerStart.beforeNavigateDelivered).toBe(false);
+		harness.setPageUrl(arbitraryWinner.href);
+		await tick();
+
+		expect(harness.goto).toHaveBeenCalledTimes(callsBeforeRecovery + 1);
+		expect(harness.goto.mock.lastCall?.[0]).toBe(
+			`${latestIntentUrl.pathname}${latestIntentUrl.search}`,
+		);
+		expect(harness.goto.mock.lastCall?.[0]).not.toBe(
+			`${originalUrl.pathname}${originalUrl.search}`,
+		);
+		expect(document.activeElement).toBe(before.close);
+		expect(document.querySelector(before.surfaceSelector)).toBe(before.surface);
+	});
 
 	it('retains callback-independent focus intent through a non-winning map invalidation', async () => {
 		const before = await openStackedDetail(true, { settleSelectionUrl: false });
@@ -1604,36 +1671,110 @@ describe('MapHero route-exit detail teardown (M6H)', () => {
 		},
 	);
 
-	it('continues releasing later map owners when an earlier cleanup throws', async () => {
-		harness.isDesktop = true;
-		const view = render(MapHeroNavigationHarness, { props: { route: 'map' } });
-		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
-		await waitFor(() =>
-			expect(document.querySelector('[data-slot="map-detail-overlay"]')).toBeInTheDocument(),
-		);
-		await settleLastGotoNavigation();
-		const exitStart = harness.startNavigation('http://localhost/lines', 'http://localhost/map', {
-			type: 'link',
-		});
-		expect(exitStart.beforeNavigateDelivered).toBe(true);
-		await tick();
+	it.each([
+		['desktop', true, '[data-slot="map-detail-overlay"]'],
+		['mobile', false, '[data-slot="bottom-sheet"]'],
+	] as const)(
+		'commits /lines and releases the whole %s tree when motion cleanup throws',
+		async (_viewport, isDesktop, panelSelector) => {
+			harness.isDesktop = isDesktop;
+			const pageErrors: unknown[] = [];
+			const recordError = (event: ErrorEvent) => pageErrors.push(event.error ?? event.message);
+			const recordRejection = (event: PromiseRejectionEvent) => pageErrors.push(event.reason);
+			window.addEventListener('error', recordError);
+			window.addEventListener('unhandledrejection', recordRejection);
 
-		const teardownError = new Error('motion cleanup failed');
-		const exceptionCallsBeforeTeardown = harness.setStopException.mock.calls.length;
-		harness.motionDestroy.mockImplementationOnce(() => {
-			throw teardownError;
-		});
-		let receivedError: unknown;
-		try {
-			await view.rerender({ route: 'lines' });
-			await tick();
-		} catch (error) {
-			receivedError = error;
-		}
+			try {
+				const view = render(MapHeroNavigationHarness, { props: { route: 'map' } });
+				await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+				await waitFor(() => expect(document.querySelector(panelSelector)).toBeInTheDocument());
+				await waitFor(() =>
+					expect(harness.liveStore.subscribeFamilies).toHaveBeenCalledExactlyOnceWith(['trips']),
+				);
+				expect(harness.urlCoordinators).toHaveLength(1);
+				expect(harness.urlCoordinators[0]?.pendingRequestCount()).toBe(1);
+				expect(harness.beforeNavigateCallbacks).toHaveLength(0);
+				expect(harness.afterNavigateCallbacks).toHaveLength(0);
+				expect(harness.navigatingSubscriberCount).toBe(1);
+				if (isDesktop) {
+					await waitFor(() =>
+						expect(
+							document.documentElement.style.getPropertyValue('--app-effective-rail-offset'),
+						).not.toBe('0px'),
+					);
+				} else {
+					expect(document.body.style.overflow).toBe('hidden');
+				}
 
-		expect(receivedError).toBe(teardownError);
-		expect(harness.setStopException.mock.calls.length).toBe(exceptionCallsBeforeTeardown + 1);
-	});
+				const teardownError = new Error('motion cleanup failed');
+				harness.motionDestroy.mockImplementationOnce(() => {
+					throw teardownError;
+				});
+				const rewriteStart = startLastGotoNavigation();
+				expect(rewriteStart.beforeNavigateDelivered).toBe(true);
+				const exitStart = harness.startNavigation(
+					'http://localhost/lines',
+					'http://localhost/map',
+					{ type: 'link' },
+				);
+				expect(exitStart.beforeNavigateDelivered).toBe(false);
+				await tick();
+
+				let routeCommitError: unknown;
+				try {
+					await view.rerender({ route: 'lines' });
+					await tick();
+					// Bits restores the final owner's body style on a real 24 ms macrotask.
+					// This observes post-commit ownership release; it is not a navigation flush.
+					if (!isDesktop) await new Promise((resolve) => setTimeout(resolve, 80));
+				} catch (error) {
+					routeCommitError = error;
+				}
+
+				expect.soft(routeCommitError).toBeUndefined();
+				expect.soft(pageErrors).toEqual([]);
+				expect.soft(screen.queryByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
+				expect.soft(document.querySelector('[data-slot="listing-page-shell"]')).toBeInTheDocument();
+				expect.soft(document.querySelector('.map-hero')).not.toBeInTheDocument();
+				expect.soft(document.querySelector(panelSelector)).not.toBeInTheDocument();
+				expect.soft(mapHeroReceiptSignals.mapStageListenerCounts).toEqual({
+					load: 0,
+					styledata: 0,
+					sourcedata: 0,
+					movestart: 0,
+					boxzoomend: 0,
+					click: 0,
+					mousemove: 0,
+					'canvas:mouseleave': 0,
+				});
+				expect.soft(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+				expect.soft(harness.beforeNavigateCallbacks).toHaveLength(0);
+				expect.soft(harness.afterNavigateCallbacks).toHaveLength(0);
+				expect.soft(harness.navigatingSubscriberCount).toBe(0);
+				expect.soft(harness.liveStore.stop).toHaveBeenCalledTimes(1);
+				expect.soft(harness.releaseLease).toHaveBeenCalledTimes(1);
+				expect.soft(harness.urlCoordinators[0]?.pendingRequestCount()).toBe(0);
+				expect.soft(harness.motionDestroy).toHaveBeenCalledTimes(1);
+
+				if (isDesktop) {
+					expect
+						.soft(document.documentElement.style.getPropertyValue('--app-effective-rail-offset'))
+						.toBe('0px');
+				} else {
+					expect.soft(document.body.style.overflow).not.toBe('hidden');
+					expect.soft(document.body.style.pointerEvents).toBe('');
+					expect.soft(document.body).not.toHaveAttribute('inert');
+					const destinationDisclosure = document.querySelector(
+						'[data-slot="listing-filter-body"].collapsible-content[data-state="closed"]',
+					);
+					expect.soft([...document.querySelectorAll('[inert]')]).toEqual([destinationDisclosure]);
+				}
+			} finally {
+				window.removeEventListener('error', recordError);
+				window.removeEventListener('unhandledrejection', recordRejection);
+			}
+		},
+	);
 
 	it('releases listeners and URL intent across a whole-component map to lines to map to lines loop', async () => {
 		harness.isDesktop = true;

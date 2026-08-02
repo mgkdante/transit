@@ -9,7 +9,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
+	import type { Map as MapLibreMap } from 'maplibre-gl';
 	import { mapHeroReceiptSignals } from './MapHeroReceiptSignals.svelte';
+	import { createMapDisposalBarrier } from '$lib/components/map/mapDisposalBarrier';
 	// Test-only deep-import exception: this fixture is loaded from inside the
 	// MapHero suite's vi.mock factory. Going through $lib/components/map would
 	// cycle back into that factory while it is replacing the barrel's MapStage.
@@ -23,6 +25,7 @@
 		onthemerepaint?: (map: unknown) => void;
 		onerror?: (failure: { kind: 'construct'; retry: () => Promise<void> } | null) => void;
 		onbeforeremove?: (map: unknown) => void;
+		oncleanupfailure?: (error: unknown) => void;
 		locale?: Record<string, string>;
 		// The rest of MapStage's props are accepted and ignored (camera/theme/etc).
 		[key: string]: unknown;
@@ -34,6 +37,7 @@
 		onthemerepaint,
 		onerror,
 		onbeforeremove,
+		oncleanupfailure,
 		locale,
 		class: className,
 	}: Props = $props();
@@ -72,14 +76,30 @@
 			receipt.recordListenerCount(`canvas:${type}`, list.length);
 		},
 	};
-	const fakeMap = {
+	function removeRawMap(): void {
+		for (const type of [...handlers.keys()]) {
+			handlers.set(type, []);
+			receipt.recordListenerCount(type, 0);
+		}
+		for (const type of [...canvasHandlers.keys()]) {
+			canvasHandlers.set(type, []);
+			receipt.recordListenerCount(`canvas:${type}`, 0);
+		}
+		for (const sourceId of [...sources.keys()]) {
+			sources.delete(sourceId);
+			receipt.recordSourceCount(sourceId, 0);
+		}
+		style = undefined;
+	}
+
+	const rawFakeMap = {
 		getSource: (id: string) => style!.getSource(id),
 		on: (type: string, handler: Handler) => {
 			const list = handlers.get(type) ?? [];
 			list.push(handler);
 			handlers.set(type, list);
 			receipt.recordListenerCount(type, list.length);
-			return { unsubscribe: () => fakeMap.off(type, handler) };
+			return { unsubscribe: () => rawFakeMap.off(type, handler) };
 		},
 		off: (type: string, handler: Handler) => {
 			const list = (handlers.get(type) ?? []).filter((candidate) => candidate !== handler);
@@ -137,7 +157,10 @@
 		setMaxBounds: () => {
 			setMaxBoundsCount += 1;
 		},
+		remove: removeRawMap,
 	};
+	const barrier = createMapDisposalBarrier(rawFakeMap as unknown as MapLibreMap);
+	const guardedMap = barrier.map;
 
 	function pick(nextLayer = STOPS_LAYER): void {
 		pickLayer = nextLayer;
@@ -148,11 +171,11 @@
 	}
 
 	function styleLoad(): void {
-		onstyleload?.(fakeMap);
+		onstyleload?.(guardedMap);
 	}
 
 	function themeRepaint(): void {
-		onthemerepaint?.(fakeMap);
+		onthemerepaint?.(guardedMap);
 	}
 
 	function fail(): void {
@@ -186,17 +209,34 @@
 
 	onMount(() => {
 		style = { getSource: (id) => sources.get(id) };
-		for (const [type, handler] of mapStageHandlers) fakeMap.on(type, handler);
-		onready?.(fakeMap);
+		for (const [type, handler] of mapStageHandlers) rawFakeMap.on(type, handler);
+		onready?.(guardedMap);
 		return () => {
-			// Model MapLibre `remove()` precisely enough for teardown-order tests:
-			// `setStyle(null)` deletes the internal style before later owners dispose.
+			barrier.dispose();
+			const cleanupErrors: unknown[] = [];
 			try {
-				onbeforeremove?.(fakeMap);
-			} finally {
-				for (const [type, handler] of mapStageHandlers) fakeMap.off(type, handler);
-				for (const sourceId of [...sources.keys()]) fakeMap.removeSource(sourceId);
-				style = undefined;
+				onbeforeremove?.(guardedMap);
+			} catch (error) {
+				cleanupErrors.push(error);
+			}
+			for (const [type, handler] of mapStageHandlers) {
+				try {
+					rawFakeMap.off(type, handler);
+				} catch (error) {
+					cleanupErrors.push(error);
+				}
+			}
+			try {
+				rawFakeMap.remove();
+			} catch (error) {
+				cleanupErrors.push(error);
+			}
+			if (cleanupErrors.length > 0 && oncleanupfailure) {
+				try {
+					oncleanupfailure(cleanupErrors[0]);
+				} catch {
+					// A teardown observer cannot reopen the Svelte destructor boundary.
+				}
 			}
 		};
 	});

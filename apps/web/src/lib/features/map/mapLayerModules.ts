@@ -186,13 +186,44 @@ export function installMapInteractions(
 	}>,
 ): readonly (() => void)[] {
 	const canvas = map.getCanvas();
-	map.on('click', handlers.click);
-	map.on('mousemove', handlers.mousemove);
-	canvas.addEventListener('mouseleave', handlers.mouseleave);
+	const rollbacks: Array<() => void> = [];
+	const once = (rollback: () => void): (() => void) => {
+		let pending = true;
+		return () => {
+			if (!pending) return;
+			pending = false;
+			rollback();
+		};
+	};
+	const register = (install: () => void, rollback: () => void): void => {
+		// Ledger first: a hostile Evented/DOM implementation may mutate and then throw.
+		rollbacks.push(once(rollback));
+		install();
+	};
 
-	return [
-		() => map.off('click', handlers.click),
-		() => map.off('mousemove', handlers.mousemove),
-		() => canvas.removeEventListener('mouseleave', handlers.mouseleave),
-	];
+	try {
+		register(
+			() => map.on('click', handlers.click),
+			() => map.off('click', handlers.click),
+		);
+		register(
+			() => map.on('mousemove', handlers.mousemove),
+			() => map.off('mousemove', handlers.mousemove),
+		);
+		register(
+			() => canvas.addEventListener('mouseleave', handlers.mouseleave),
+			() => canvas.removeEventListener('mouseleave', handlers.mouseleave),
+		);
+	} catch (registrationError) {
+		for (const rollback of [...rollbacks].reverse()) {
+			try {
+				rollback();
+			} catch {
+				// Preserve the registration failure while still unwinding earlier receipts.
+			}
+		}
+		throw registrationError;
+	}
+
+	return rollbacks;
 }

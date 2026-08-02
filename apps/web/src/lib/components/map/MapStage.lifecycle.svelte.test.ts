@@ -55,7 +55,9 @@ const harness = vi.hoisted(() => {
 		readonly getZoom = vi.fn(() => 11);
 		readonly setStyle = vi.fn();
 		readonly getStyle = vi.fn(() => ({ version: 8, sources: {}, layers: [] }));
+		readonly getSource = vi.fn((_id: string) => ({ type: 'geojson' }));
 		readonly getLayer = vi.fn(() => undefined);
+		readonly removeFeatureState = vi.fn((_target: unknown) => undefined);
 		readonly setPaintProperty = vi.fn();
 
 		constructor(readonly options: Record<string, unknown>) {
@@ -516,11 +518,24 @@ describe('MapStage boot lifecycle', () => {
 		expect(harness.state.observers[0]?.disconnect).toHaveBeenCalledTimes(1);
 	});
 
-	it('releases the consumer while the map is still live, before MapLibre removal', async () => {
+	it('revokes consumer map access before consumer release and before raw listener removal', async () => {
 		const order: string[] = [];
-		const onbeforeremove = vi.fn((map: InstanceType<typeof harness.MapStub>) => {
+		let receivedMap: InstanceType<typeof harness.MapStub> | undefined;
+		let lateSource: unknown = 'not called';
+		let lateMutationError: unknown;
+		let removeCallsAtConsumer = -1;
+		let offCallsAtConsumer = -1;
+		const onbeforeremove = vi.fn((guardedMap: InstanceType<typeof harness.MapStub>) => {
 			order.push('consumer');
-			expect(map.remove).not.toHaveBeenCalled();
+			receivedMap = guardedMap;
+			lateSource = guardedMap.getSource('vehicles');
+			try {
+				guardedMap.removeFeatureState({ source: 'vehicles' });
+			} catch (error) {
+				lateMutationError = error;
+			}
+			removeCallsAtConsumer = map.remove.mock.calls.length;
+			offCallsAtConsumer = map.off.mock.calls.length;
 		});
 		const { view, map } = await bootStage({ onbeforeremove });
 		map.remove.mockImplementation(() => {
@@ -528,19 +543,54 @@ describe('MapStage boot lifecycle', () => {
 			map.container.replaceChildren();
 		});
 
-		view.unmount();
+		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
 
-		expect(onbeforeremove).toHaveBeenCalledExactlyOnceWith(map);
+		expect(onbeforeremove).toHaveBeenCalledOnce();
+		expect(receivedMap).not.toBe(map);
+		expect(lateSource).toBeUndefined();
+		expect(lateMutationError).toBeUndefined();
+		expect(removeCallsAtConsumer).toBe(0);
+		expect(offCallsAtConsumer).toBe(0);
+		expect(map.getSource).not.toHaveBeenCalled();
+		expect(map.removeFeatureState).not.toHaveBeenCalled();
 		expect(order).toEqual(['consumer', 'map']);
 	});
 
-	it('still removes MapLibre exactly once when consumer release throws', async () => {
+	it('keeps proxy and method references captured at ready inert after unmount', async () => {
+		let capturedMap: InstanceType<typeof harness.MapStub> | undefined;
+		let capturedRemoveFeatureState:
+			| InstanceType<typeof harness.MapStub>['removeFeatureState']
+			| undefined;
+		const { view, map } = await bootStage({
+			onready: (readyMap: InstanceType<typeof harness.MapStub>) => {
+				capturedMap = readyMap;
+				capturedRemoveFeatureState = readyMap.removeFeatureState;
+			},
+		});
+		map.emit('load');
+		expect(capturedMap).toBeDefined();
+		expect(capturedMap).not.toBe(map);
+
+		view.unmount();
+
+		expect(() => capturedMap?.removeFeatureState({ source: 'vehicles' })).not.toThrow();
+		expect(() => capturedRemoveFeatureState?.({ source: 'vehicles' })).not.toThrow();
+		expect(capturedMap?.getSource('vehicles')).toBeUndefined();
+		expect(map.removeFeatureState).not.toHaveBeenCalled();
+		expect(map.getSource).not.toHaveBeenCalled();
+	});
+
+	it('finishes teardown and reports the first error when consumer and raw removal throw', async () => {
 		const releaseError = new Error('consumer release failed');
 		const onbeforeremove = vi.fn(() => {
 			throw releaseError;
 		});
+		const oncleanupfailure = vi.fn(() => {
+			throw new Error('cleanup failure observer failed');
+		});
 		const { view, map } = await bootStage({
 			onbeforeremove,
+			oncleanupfailure,
 		});
 		const registeredHandlers = MAP_LISTENER_TYPES.map((type) => {
 			const handlers = [...(map.handlers.get(type) ?? [])];
@@ -554,8 +604,8 @@ describe('MapStage boot lifecycle', () => {
 			throw mapRemoveError;
 		});
 
-		await expect(unmountComponent(view.component)).rejects.toBe(releaseError);
-		expect(onbeforeremove).toHaveBeenCalledExactlyOnceWith(map);
+		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+		expect(onbeforeremove).toHaveBeenCalledOnce();
 		expect(map.off.mock.calls).toEqual(
 			MAP_LISTENER_TYPES.map((type, index) => [type, registeredHandlers[index]]),
 		);
@@ -566,6 +616,7 @@ describe('MapStage boot lifecycle', () => {
 			expect(offOrder).toBeLessThan(map.remove.mock.invocationCallOrder[0]!);
 		}
 		expect(map.remove).toHaveBeenCalledOnce();
+		expect(oncleanupfailure).toHaveBeenCalledExactlyOnceWith(releaseError);
 	});
 
 	it('uses one document reload for importer-class retry instead of re-importing in place', async () => {
