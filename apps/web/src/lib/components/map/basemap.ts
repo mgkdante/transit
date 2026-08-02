@@ -255,9 +255,6 @@ export const BASEMAP_SOURCE_ID = 'basemap';
 
 const BASEMAP_GLYPHS_URL =
 	'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf';
-const THANKFUL_ATTRIBUTION_PREFIX = 'Big thanks to ';
-const THANKFUL_ATTRIBUTION_HEART =
-	' <span class="transit-basemap-thanks" aria-label="thank you">🧡</span>';
 const ROAD_NAME_FIELD = [
 	'coalesce',
 	['get', 'name'],
@@ -362,11 +359,6 @@ const LANDMARK_POI_FILTER = [
 	['match', ['get', 'kind_detail'], LANDMARK_POI_KINDS, true, false],
 ] as FilterSpecification;
 
-function thankfulAttribution(attribution: string): string {
-	return attribution.startsWith(THANKFUL_ATTRIBUTION_PREFIX)
-		? attribution
-		: `${THANKFUL_ATTRIBUTION_PREFIX}${attribution}${THANKFUL_ATTRIBUTION_HEART}`;
-}
 const MINOR_ROAD_FILTER = [
 	'match',
 	['get', 'kind'],
@@ -472,7 +464,7 @@ export function vectorStyleFromBasemap(
 	const vectorSource: StyleSpecification['sources'][string] = {
 		type: 'vector',
 		url: sourceUrl,
-		attribution: thankfulAttribution(file.attribution),
+		attribution: file.attribution,
 		...(file.min_zoom != null ? { minzoom: file.min_zoom } : {}),
 		...(file.max_zoom != null ? { maxzoom: file.max_zoom } : {}),
 	};

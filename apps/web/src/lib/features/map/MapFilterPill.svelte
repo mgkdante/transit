@@ -200,14 +200,29 @@
 	}
 
 	:global([data-m6b-controls-drawer][data-slot='sheet-content']) {
+		/* The Sheet is portaled under body, so derive its nav clearance directly from
+		   the root-published pill height and the pill's fixed top inset. Add this
+		   drawer's established 10px surface gap to the pill's actual lower edge. The
+		   max-height cap enforces that minimum top inset only when needed; naturally
+		   shorter drawers (including 390×844) keep their position. */
+		--map-controls-drawer-gap: 10px;
+		--map-controls-drawer-top: calc(
+			1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + var(--map-controls-drawer-gap)
+		);
+		--map-controls-drawer-bottom: calc(
+			5.25rem + env(safe-area-inset-bottom, 0px) + 44px + var(--map-controls-drawer-gap)
+		);
 		top: auto;
 		left: 0.75rem;
 		right: auto;
-		bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px) + 44px + 10px);
+		bottom: var(--map-controls-drawer-bottom);
 		display: block;
 		width: min(21rem, calc(100vw - 2rem));
 		max-width: none;
-		max-height: min(72dvh, calc(100dvh - 7rem));
+		max-height: min(
+			72dvh,
+			calc(100dvh - var(--map-controls-drawer-top) - var(--map-controls-drawer-bottom))
+		);
 		overflow-y: auto;
 		padding: 0;
 		background: color-mix(in srgb, var(--card) 95%, transparent);
