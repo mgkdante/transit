@@ -55,6 +55,7 @@ const ROUTE_FILE = {
 			stops: [
 				{ id: 'sA', seq: 1, name: 'First stop' },
 				{ id: 'sB', seq: 2, name: 'Second stop' },
+				{ id: 'sC', seq: 3, name: 'Third stop' },
 			],
 		},
 	],
@@ -69,6 +70,7 @@ const routeSeed = (id = '161', name = id === '161' ? '161 Van Horne' : id): Iden
 // bus (2 min late); sB has NONE → it must show the honest "no live bus".
 const PREDICTIONS = new Map<string, StopPrediction>([
 	['sA', { etaUtc: '2026-06-15T12:05:00Z', delayMin: 2 }],
+	['sB', { etaUtc: '2026-06-15T12:06:00Z', delayMin: null }],
 ]);
 
 // Live service alerts. AL_ROUTE is scoped to route 161 (the route under test) →
@@ -875,17 +877,24 @@ describe('RouteDetail Detail tab: clickable stops + live readout', () => {
 		);
 	});
 
-	it('shows the approaching bus on-time status for a stop with a live prediction', () => {
+	it('shows a known delay and a shared absence for a null-delay prediction', () => {
 		renderRoute();
 
 		// sA has a bus 2 min late.
 		expect(screen.getByText('2 min late')).toBeInTheDocument();
+
+		// sB has an arrival but no delay reading: central absence, never "No delay".
+		const stop = screen.getByRole('link', { name: 'View stop Second stop' });
+		const absence = stop.querySelector('[data-slot="absent-value"]');
+		expect(absence).not.toBeNull();
+		expect(absence).toHaveAttribute('data-density', 'row');
+		expect(stop).not.toHaveTextContent('No delay');
 	});
 
 	it('shows an honest "no live bus" for a stop with no live prediction', () => {
 		renderRoute();
 
-		// sB has no approaching bus → the placeholder, never a fabricated time.
+		// sC has no approaching bus → the placeholder, never a fabricated time.
 		expect(screen.getByText('No live bus')).toBeInTheDocument();
 	});
 
@@ -945,10 +954,14 @@ describe('RouteDetail Detail tab: current-buses roster', () => {
 		renderRoute();
 
 		const roster = document.querySelector('[data-testid="route-roster"]') as HTMLElement;
-		// Known delays read honestly; the null-delay bus reads "no data", never "0".
+		// Known delays read honestly; the null-delay bus uses the full shared row absence, never "0".
 		expect(within(roster).getByText('8 min late')).toBeInTheDocument();
 		expect(within(roster).getByText('3 min early')).toBeInTheDocument();
-		expect(within(roster).getByText('No data')).toBeInTheDocument();
+		const absence = within(roster)
+			.getByText('not reported in the live feed')
+			.closest('[data-slot="absent-value"]');
+		expect(absence).toHaveAttribute('data-density', 'row');
+		expect(absence).toHaveTextContent('Unknown · not reported in the live feed');
 		expect(within(roster).queryByText('0 min late')).not.toBeInTheDocument();
 	});
 

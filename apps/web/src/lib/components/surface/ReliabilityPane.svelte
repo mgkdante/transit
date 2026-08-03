@@ -72,8 +72,6 @@
 		readonly trend: string;
 		/** Unit suffix for the OTP sparkline tooltip value (axis metadata). */
 		readonly unitPct: string;
-		/** Short value-level no-data label for an absent metric tile. */
-		readonly noData: string;
 	};
 	const L: Record<Locale, Labels> = {
 		fr: {
@@ -85,7 +83,6 @@
 			severe: 'Retards majeurs',
 			trend: 'Tendance ponctualité',
 			unitPct: '%',
-			noData: 'sans données',
 		},
 		en: {
 			otp: 'On-time %',
@@ -96,7 +93,6 @@
 			severe: 'Major delays',
 			trend: 'On-time trend',
 			unitPct: '%',
-			noData: 'no data',
 		},
 	};
 	const t = $derived(L[locale]);
@@ -146,7 +142,6 @@
 						{/if}
 						<MetricDisplay
 							value={min(period.delayMin)}
-							emptyLabel={t.noData}
 							absentReason="no-observations"
 							{locale}
 							label={period.delayKind === 'median'
@@ -172,6 +167,7 @@
 								severity="watch"
 								value={period.severePct / 100}
 								label={`${period.grain}, ${t.severe}`}
+								{locale}
 								interactive
 							/>
 						</div>

@@ -15,6 +15,7 @@ import {
 } from './data/lineHistoryResource.svelte';
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';
 import { reliabilityCopy } from './reliability.copy';
+import { describeAbsence } from '$lib/site/absence';
 
 const harness = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/lines/A%2FB?tab=reliability'), state: {} };
@@ -530,7 +531,9 @@ describe('RouteReliabilityClusters retained Line history', () => {
 		});
 
 		expectMultiDayCaption(view.container);
-		expectAnnounced(view.container, reliabilityCopy.en.history.noData);
+		const absence = describeAbsence('no-retained-data', 'en');
+		expectAnnounced(view.container, absence.label);
+		expectAnnounced(view.container, absence.why);
 	});
 
 	it('announces a retained-range error, preserves the multi-day caption, and offers retry', async () => {
@@ -610,7 +613,6 @@ describe('RouteReliabilityClusters retained Line history', () => {
 		for (const locale of ['en', 'fr'] as const) {
 			const historyCopy = reliabilityCopy[locale].history;
 			expect(historyCopy.partial).toBeTruthy();
-			expect(historyCopy.noData).toBeTruthy();
 			expect(historyCopy.currentOnly).toBeTruthy();
 			expect(historyCopy.correction.malformed).toBeTruthy();
 		}

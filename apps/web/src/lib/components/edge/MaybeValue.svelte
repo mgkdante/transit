@@ -47,8 +47,8 @@
 		locale: Locale;
 		/** Copy params interpolated into the absence WHY (e.g. { first: '06:00' }). */
 		params?: Readonly<Record<string, string | number>>;
-		/** AbsentValue variant: inline chip (default) or block panel. */
-		variant?: 'inline' | 'block';
+		/** AbsentValue variant: inline chip (default), unboxed row text, or block panel. */
+		variant?: 'inline' | 'row' | 'block';
 	}
 
 	let {

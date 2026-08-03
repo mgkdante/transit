@@ -119,13 +119,8 @@ export const copy = defineCopy({
 				service_span: 'Service span',
 				skipped_stops: 'Skipped stops',
 			},
-			unavailable: 'Not published in this history index',
-			noCoverage: 'No retained dates reported',
-			noGapInventory: 'No gap inventory published',
-			noDeclaredGaps: 'No gaps declared',
 			familyGaps: 'Family gaps',
 			metricCoverage: 'Metric coverage',
-			noMetricInventory: 'No per-metric inventory published',
 			currentOnlySections: 'Current-only sections',
 			currentOnlyNote: 'These parts of the current page are not reconstructed for past dates:',
 			currentOnlySectionLabels: {
@@ -201,7 +196,6 @@ export const copy = defineCopy({
 			schemaVersionLabel: 'Contract version',
 			methodologyVersionLabel: 'Methodology version',
 		},
-		noData: 'no data',
 		toc: {
 			label: 'Jump to a section',
 			counterPrefix: 'SEC',
@@ -328,13 +322,8 @@ export const copy = defineCopy({
 				service_span: 'Amplitude de service',
 				skipped_stops: 'Arrêts sautés',
 			},
-			unavailable: 'Non publiée dans cet index historique',
-			noCoverage: 'Aucune date conservée signalée',
-			noGapInventory: 'Aucun inventaire des lacunes publié',
-			noDeclaredGaps: 'Aucune lacune déclarée',
 			familyGaps: 'Lacunes de la famille',
 			metricCoverage: 'Couverture par métrique',
-			noMetricInventory: 'Aucun inventaire par métrique publié',
 			currentOnlySections: 'Sections limitées au présent',
 			currentOnlyNote:
 				'Ces parties de la page actuelle ne sont pas reconstruites pour les dates passées :',
@@ -411,7 +400,6 @@ export const copy = defineCopy({
 			schemaVersionLabel: 'Version du contrat',
 			methodologyVersionLabel: 'Version de la méthode',
 		},
-		noData: 'aucune donnée',
 		toc: {
 			label: 'Aller à une section',
 			counterPrefix: 'SEC',

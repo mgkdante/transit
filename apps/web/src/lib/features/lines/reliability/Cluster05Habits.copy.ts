@@ -49,7 +49,6 @@ export const habitsBandCopy = defineCopy({
 				'Souvent en retard',
 				'Très peu fiable',
 			] as const,
-			noData: 'Aucune donnée',
 			worstGlyph: '◆',
 		},
 		weekdays: [
@@ -99,7 +98,6 @@ export const habitsBandCopy = defineCopy({
 		// to a rider (how unreliable that hour is) and double as the cell + tooltip readout.
 		tiers: {
 			labels: ['Rarely late', 'Sometimes late', 'Often late', 'Very unreliable'],
-			noData: 'No data',
 			worstGlyph: '◆',
 		},
 		weekdays: ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],

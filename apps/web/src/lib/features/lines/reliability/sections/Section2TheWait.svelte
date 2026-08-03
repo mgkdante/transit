@@ -27,6 +27,7 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
+	import { absenceShort } from '$lib/site/absence';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { HeadwayPeriod, SeverityCode, ServiceSpanPeriod } from '$lib/v1';
 	import { Chart } from '$lib/components/dataviz/chart';
@@ -236,15 +237,15 @@
 	});
 
 	/* ── formatters (pure) ───────────────────────────────────────────────────
-	   Absence → null (MetricDisplay renders the muted no-data label); inline
+	   Absence → null (MetricDisplay renders the shared typed absence); inline
 	   string consumers fall back to `valueNoData`. Never a bare "·", never 0. */
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });
 	const fmtCov = (v: number | null | undefined): string | null => (v == null ? null : v.toFixed(2));
 	const pct = (v: number | null | undefined): string | null => fmtPct(v, { rounding: 'round' });
 	const count = (v: number | null | undefined): string | null => fmtCount(v);
-	/** Short value-level no-data label for absent inline values + empty tiles. */
-	const valueNoData = $derived(copy.strip.noData);
+	/** Short value-level no-data label for chart and inline string consumers. */
+	const valueNoData = $derived(absenceShort('no-observations', locale));
 
 	/* ── service-span timeline copy + formatters ──────────────────────────────
 	   The first/last-trip clock times resolve inside the service-span mark (it owns the
@@ -425,7 +426,7 @@
 				unit: ' min',
 				scheduledLabel: terms.scheduledGap,
 				observedLabel: terms.observedGap,
-				noDataMarker: copy.strip.noData,
+				noDataMarker: valueNoData,
 			},
 		),
 	);
@@ -548,7 +549,7 @@
 				xLabel: terms.excessWait,
 				unit: ' min',
 				domain: HEADWAY_DOMAIN,
-				noDataMarker: copy.strip.noData,
+				noDataMarker: valueNoData,
 			},
 		),
 	);
@@ -567,7 +568,7 @@
 				xLabel: terms.spread,
 				unit: '',
 				domain: COV_DOMAIN,
-				noDataMarker: copy.strip.noData,
+				noDataMarker: valueNoData,
 			},
 		),
 	);
@@ -586,7 +587,7 @@
 				xLabel: terms.clumped,
 				unit: '%',
 				domain: BUNCHED_DOMAIN,
-				noDataMarker: copy.strip.noData,
+				noDataMarker: valueNoData,
 			},
 		),
 	);
@@ -629,7 +630,7 @@
 						hourLabel: (h) => `${String(h).padStart(2, '0')}h`,
 						ariaLabel: spanCopy.ariaLabel,
 						absentTitle: t.spanSection,
-						noDataLabel: copy.strip.noData,
+						noDataLabel: valueNoData,
 					},
 				)
 			: null,
@@ -683,7 +684,7 @@
 	{#if row.dir0 != null}
 		{min(row.dir0)}
 	{:else}
-		<AbsentValue variant="inline" reason="no-observations" {locale} />
+		<AbsentValue variant="row" reason="no-observations" {locale} />
 	{/if}
 {/snippet}
 
@@ -691,7 +692,7 @@
 	{#if row.dir1 != null}
 		{min(row.dir1)}
 	{:else}
-		<AbsentValue variant="inline" reason="no-observations" {locale} />
+		<AbsentValue variant="row" reason="no-observations" {locale} />
 	{/if}
 {/snippet}
 
@@ -886,7 +887,6 @@
 						<div class="metric-with-info">
 							<MetricDisplay
 								value={min(latestSpan.service_span_min)}
-								emptyLabel={valueNoData}
 								absentReason="no-observations"
 								{locale}
 								label={t.serviceSpan}
@@ -897,7 +897,6 @@
 						<div class="metric-with-info">
 							<MetricDisplay
 								value={min(latestSpan.first_trip_delay_min)}
-								emptyLabel={valueNoData}
 								absentReason="no-observations"
 								{locale}
 								label={t.firstTripDelay}
@@ -908,7 +907,6 @@
 						<div class="metric-with-info">
 							<MetricDisplay
 								value={min(latestSpan.last_trip_delay_min)}
-								emptyLabel={valueNoData}
 								absentReason="no-observations"
 								{locale}
 								label={t.lastTripDelay}
@@ -919,7 +917,6 @@
 						<div class="metric-with-info">
 							<MetricDisplay
 								value={count(latestSpan.trip_count)}
-								emptyLabel={valueNoData}
 								absentReason="no-observations"
 								{locale}
 								label={t.tripCount}

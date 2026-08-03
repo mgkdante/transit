@@ -40,6 +40,7 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
+	import { absenceShort } from '$lib/site/absence';
 	import { fmtPct, fmtCount, fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
@@ -160,6 +161,7 @@
 	);
 
 	const t = $derived(copy.strip);
+	const noDataLabel = $derived(absenceShort('no-observations', locale));
 	// Grouped thousands separators (locale-aware: "3,975" en / "3 975" fr) so the
 	// raw "X of Y" counts read cleanly instead of "3975" / "20189695".
 	const num = (v: number): string => fmtCount(v, { locale }) ?? `${v}`;
@@ -341,7 +343,7 @@
 			xLabel: copy.strip.avgDelayMin,
 			unit: copy.units.min,
 			bandLabel: (code) => bands[code],
-			noDataMarker: copy.strip.noData,
+			noDataMarker: noDataLabel,
 			noteFor: (cell) => {
 				const p50 = fmtMin(cell.p50_min);
 				const n = cell.observation_count ?? null;

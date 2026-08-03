@@ -380,8 +380,8 @@ describe('ScheduleTable — board mode', () => {
 	});
 
 	for (const [locale, unknownCopy] of [
-		['en', 'Realtime unavailable'],
-		['fr', 'Temps réel indisponible'],
+		['en', 'Unknown · not reported in the live feed'],
+		['fr', 'Inconnu · non signalé dans le flux en direct'],
 	] as const) {
 		it(`renders truthful localized unknown copy for a null delay (${locale})`, () => {
 			const rows: ScheduleRow[] = [
@@ -396,12 +396,12 @@ describe('ScheduleTable — board mode', () => {
 					delayCopy: detailCopy[locale].next,
 				},
 			});
-			const none = container.querySelector('.stop-departure-delay') as HTMLElement;
-			expect(none.getAttribute('data-tone')).toBe('none');
-			expect(none.getAttribute('style') ?? '').not.toContain('--dataviz-status');
-			expect(none.querySelector('.stop-departure-glyph')).toBeNull();
+			const none = container.querySelector('[data-slot="absent-value"]') as HTMLElement;
+			expect(none).not.toBeNull();
+			expect(none).toHaveAttribute('data-density', 'row');
 			expect(none).toHaveTextContent(unknownCopy);
 			expect(none).not.toHaveTextContent(detailCopy[locale].next.onTime);
+			expect(container.querySelector('.stop-departure-delay')).toBeNull();
 		});
 	}
 

@@ -78,8 +78,6 @@ export const reliabilityCopy = defineCopy({
 			wilsonBandCaption:
 				'La bande ombrée : on est sûr à 95 % que le vrai taux de ponctualité s’y trouve (plus la bande est large, moins l’échantillon est grand). Ligne pointillée : cible de 80 %.',
 			rampInNote: 'Nouveau, on compte depuis peu, donc le chiffre se précise avec le temps',
-			noDataNote: 'Aucune donnée',
-			noData: 'sans données',
 			regularity: {
 				regular: 'Passages réguliers',
 				irregular: 'Passages irréguliers',
@@ -117,7 +115,6 @@ export const reliabilityCopy = defineCopy({
 			heading: "Retard selon l'occupation",
 			bandHeader: "Niveau d'occupation",
 			typical: (p50: string) => `typique ${p50}`,
-			empty: 'Aucune donnée de retard par occupation',
 		},
 		crosstab: {
 			heading: 'Par période et type de jour',
@@ -130,7 +127,6 @@ export const reliabilityCopy = defineCopy({
 				low: 'Faible (0–40 %)',
 				mid: 'Moyenne (40–80 %)',
 				high: 'Élevée (80–100 %)',
-				noData: 'Sans données',
 			},
 			hottest: 'Meilleure ponctualité',
 			obs: (n: number) => `n=${n}`,
@@ -225,7 +221,6 @@ export const reliabilityCopy = defineCopy({
 				unpublished: 'La plage non publiée a été remplacée par le portrait actuel.',
 			},
 			partial: 'Cette plage ne couvre qu’une partie des mesures conservées.',
-			noData: 'Aucune donnée conservée pour cette plage.',
 			currentOnly:
 				'Les habitudes, les attentes, les pires arrêts et les associations restent basés sur le portrait actuel.',
 			headerCurrentOnly: 'Verdict d’en-tête : portrait actuel',
@@ -327,8 +322,6 @@ export const reliabilityCopy = defineCopy({
 			wilsonBandCaption:
 				'Shaded band: we’re 95% sure the true on-time rate sits inside it (a wider band = a smaller sample). Dashed line: the 80% target.',
 			rampInNote: 'New metric, we just started counting, so this number sharpens over time',
-			noDataNote: 'No data yet',
-			noData: 'no data',
 			regularity: {
 				regular: 'Regular arrivals',
 				irregular: 'Irregular arrivals',
@@ -365,7 +358,6 @@ export const reliabilityCopy = defineCopy({
 			heading: 'Delay by crowding',
 			bandHeader: 'Crowding band',
 			typical: (p50) => `typical ${p50}`,
-			empty: 'No delay-by-crowding data yet',
 		},
 		crosstab: {
 			heading: 'By shift and day type',
@@ -378,7 +370,6 @@ export const reliabilityCopy = defineCopy({
 				low: 'Low (0–40%)',
 				mid: 'Medium (40–80%)',
 				high: 'High (80–100%)',
-				noData: 'No data',
 			},
 			hottest: 'Best on-time rate',
 			obs: (n) => `n=${n}`,
@@ -473,7 +464,6 @@ export const reliabilityCopy = defineCopy({
 				unpublished: 'The unpublished date range was replaced with the current snapshot.',
 			},
 			partial: 'This range has only partial retained metric coverage.',
-			noData: 'No data is retained for this range.',
 			currentOnly:
 				'Habits, wait regularity, worst stops, and associations still use the current snapshot.',
 			headerCurrentOnly: 'Header verdict: current snapshot',

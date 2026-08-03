@@ -39,7 +39,6 @@
 	<div class="stop-reliability-percentile-tiles">
 		<MetricDisplay
 			value={min(percentiles.p50)}
-			emptyLabel={copy.noDelay}
 			absentReason="no-observations"
 			{locale}
 			label={copy.percentiles.typical}
@@ -48,7 +47,6 @@
 		/>
 		<MetricDisplay
 			value={min(percentiles.p90)}
-			emptyLabel={copy.noDelay}
 			absentReason="no-observations"
 			{locale}
 			label={copy.percentiles.worstCase}

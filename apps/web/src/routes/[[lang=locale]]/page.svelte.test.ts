@@ -602,7 +602,11 @@ describe('Home hub — movement boundary preservation', () => {
 		frDom.unmount();
 
 		expect({ enDomHash, frDomHash }).toEqual({
-			enDomHash: '51e7e368c2ca662a2d8bfb7a5b1056a965d3bbf3e71a608016dee83392ba72d3',
+			// Re-baselined for the (M6g) removal of the unreferenced
+			// data-slot="state-notice-title": the ONLY delta in the canonical markup is
+			// that attribute disappearing from four StateNotice titles. The FR/live hash
+			// below is untouched, because that state renders no absence at all.
+			enDomHash: 'ba527078cb4dcbe5beccebdf70a37c978cbe38eb0297ee4d2e4c742a10db82a8',
 			frDomHash: '551691044e2943d60fcb5c9dd422fcfbe06d23a10f64167d4f1a4aa13e7d2d7c',
 		});
 	});
@@ -631,8 +635,10 @@ describe('Home hub — movement boundary preservation', () => {
 			context.set(Symbol.for('transit.i18n.locale'), () => 'en' as const);
 			const { body } = renderSsr(pageModule.default, { context });
 
+			// Re-baselined for the (M6g) data-slot="state-notice-title" removal, same
+			// four-attribute delta as the hydrated lock above.
 			expect(fingerprint(canonicalMarkup(body))).toBe(
-				'11a12c4d77ba5c6c034384b3e3c2c6cc2361be3b302c3e06e445981f929bea2e',
+				'b98fdeda81e9c98a828eaf59c74a6560ca7585bc3a1986f683740f19b822b129',
 			);
 		} finally {
 			await server.close();

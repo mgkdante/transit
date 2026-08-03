@@ -33,7 +33,12 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { routeNameFallback, describeAbsence } from '$lib/site/absence';
+	import {
+		absenceSentence,
+		absenceShort,
+		describeAbsence,
+		routeNameFallback,
+	} from '$lib/site/absence';
 	import { layout, routeFor } from '$lib/nav';
 	import { mapSearchFor, fromSearchParams, toSearchParams, emptyFilterState } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
@@ -149,10 +154,12 @@
 	const provenance = createResource(() => getProvenance());
 
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
+	const noObservationLabel = $derived(absenceShort('no-observations', locale));
+	const retainedDataAbsence = $derived(describeAbsence('no-retained-data', locale));
 
 	/* ── formatters (locale-bound; kept out of the selectors) ─────────────────────── */
 	const fmtMin = (v: number | null): string =>
-		sharedFmtDelayMin(v, { suffix: t.units.min, noData: t.noData });
+		sharedFmtDelayMin(v, { suffix: t.units.min, noData: noObservationLabel });
 	const fmtCount = (v: number): string => sharedFmtCount(v, { locale, noData: '' });
 	// MetricDisplay-fed variants return NULL (not the noData string) on no-data so the tile
 	// renders the STYLED honest-absence chip (AbsentValue) instead of a plain "no data".
@@ -283,7 +290,10 @@
 	/* ── HISTORIC: retained range ownership + grain (day/week/month) ──────────────── */
 	const historyUi = createRetainedHistoryUi({
 		resource: () => history,
-		copy: () => t.history,
+		copy: () => ({
+			...t.history,
+			noData: absenceSentence('no-retained-data', locale),
+		}),
 		formatDate: (date) => formatDateKey(date, locale),
 	});
 	// Optional discovery can legitimately be absent. The coordinator reports that as `current`,
@@ -335,7 +345,7 @@
 	// series for renders disabled with the honest-absence reason, never selectable. `uid` keys
 	// the visually-hidden disabled-reason spans so they never collide with another surface.
 	const uid = $props.id();
-	const grainDisabledReason = $derived(describeAbsence('no-observations', locale).why);
+	const grainDisabledReason = $derived(absenceSentence('no-observations', locale));
 	const grainSegments = $derived<GrainSegment<NetworkGrain>[]>(
 		NETWORK_GRAINS.map((key) => {
 			const available = present.has(key);
@@ -526,7 +536,7 @@
 	const hasOccupancyTrend = $derived(isDailyGrain && occupancyDays.length > 0);
 
 	const pctOrNullSubtitle = (avg: number | null, severe: number | null): string =>
-		`${t.shift.avgLabel} ${fmtMin(avg)} · ${t.shift.severeLabel} ${sharedFmtPct(severe, { rounding: 'fixed1', suffix: t.units.pct, noData: t.noData })}`;
+		`${t.shift.avgLabel} ${fmtMin(avg)} · ${t.shift.severeLabel} ${sharedFmtPct(severe, { rounding: 'fixed1', suffix: t.units.pct, noData: noObservationLabel })}`;
 	const shiftRows = $derived(
 		selectShiftRank(trend.data?.by_shift ?? [], {
 			grainLabel: (g) => shiftLabel(g, locale),
@@ -650,7 +660,6 @@
 					latestDisplay={fmtCancel(cancelTrend.latest)}
 					{info}
 					copy={t}
-					noData={t.noData}
 					{locale}
 				/>
 			</div>
@@ -663,13 +672,7 @@
 		{/if}
 
 		<div class="network-history-companions" data-slot="network-history-companion-row">
-			<SectionCompleteness
-				latestDisplay={completenessDisplay}
-				{info}
-				copy={t}
-				noData={t.noData}
-				{locale}
-			/>
+			<SectionCompleteness latestDisplay={completenessDisplay} {info} copy={t} {locale} />
 
 			{#if hasShift}
 				<SectionByTimeOfDay
@@ -841,7 +844,6 @@
 						<SectionLiveHeadline
 							cards={kpis.headline}
 							{info}
-							noData={t.noData}
 							{locale}
 							copy={t}
 							terminal={{
@@ -856,14 +858,7 @@
 								meta: liveTerminalMeta,
 							}}
 						/>
-						<SectionReporting
-							cards={kpis.reporting}
-							{silentRows}
-							{info}
-							copy={t}
-							noData={t.noData}
-							{locale}
-						/>
+						<SectionReporting cards={kpis.reporting} {silentRows} {info} copy={t} {locale} />
 						<SectionStatusMix
 							{statusSpec}
 							occupancySpec={occupancyMix.spec}
@@ -934,7 +929,8 @@
 						{@render historicBoard()}
 					{:else if history.state === 'no-data'}
 						<StateNotice
-							title={t.history.noData}
+							title={retainedDataAbsence.label}
+							body={retainedDataAbsence.why}
 							presentation="responsive"
 							role="status"
 							ariaLive="polite"

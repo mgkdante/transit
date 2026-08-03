@@ -7,11 +7,21 @@
 //      layer (AbsentValue), never a bare dot or a fabricated 0.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createRawSnippet } from 'svelte';
 import { render, screen } from '@testing-library/svelte';
 import ExplainedMetricCard from './ExplainedMetricCard.svelte';
 
 describe('ExplainedMetricCard', () => {
+	it('does not forward a local-copy bypass around MetricDisplay', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/dataviz/ExplainedMetricCard.svelte'),
+			'utf8',
+		);
+		expect(source).not.toMatch(/\bemptyLabel\b/);
+	});
+
 	it('renders the label, value, and the explanation in its own column', () => {
 		const { container } = render(ExplainedMetricCard, {
 			props: {

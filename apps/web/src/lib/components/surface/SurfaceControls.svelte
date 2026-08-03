@@ -103,7 +103,7 @@
 
 <script lang="ts" generics="K extends string = Grain">
 	import type { Grain } from '$lib/v1/schemas';
-	import { describeAbsence } from '$lib/site/absence';
+	import { absenceSentence } from '$lib/site/absence';
 	import { usableFromOffered, MIN_POINTS_PER_GRAIN, isGrain } from '$lib/filters';
 	import { ControlsRail } from '$lib/components/layout';
 	import GrainPicker from './GrainPicker.svelte';
@@ -180,7 +180,7 @@
 		for (const k of offered) {
 			if (usable.has(k)) continue;
 			const reason: AbsenceReasonKey = availability[k]?.absentReason ?? 'no-observations';
-			out[k] = describeAbsence(reason, locale).why;
+			out[k] = absenceSentence(reason, locale);
 		}
 		return out;
 	});

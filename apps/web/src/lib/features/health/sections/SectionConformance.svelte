@@ -57,7 +57,6 @@
 						value={typeof conformance.extra_row_count === 'number'
 							? conformance.extra_row_count.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA')
 							: null}
-						emptyLabel={copy.noData}
 						absentReason="not-reported"
 						{locale}
 						label={t.extraRowsLabel}

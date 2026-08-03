@@ -101,7 +101,7 @@
 		{#if entry.headsign}
 			{entry.headsign}
 		{:else}
-			<AbsentValue variant="inline" reason="no-observations" {locale} />
+			<AbsentValue variant="row" reason="no-observations" {locale} />
 		{/if}
 	</span>
 {/snippet}
@@ -120,7 +120,7 @@
 			</p>
 		{/if}
 	{:else}
-		<AbsentValue variant="inline" reason="no-observations" {locale} />
+		<AbsentValue variant="row" reason="no-observations" {locale} />
 	{/if}
 {/snippet}
 
@@ -135,11 +135,16 @@
 {/snippet}
 
 {#snippet boardStatusCell(departure: ScheduleBoardRow)}
-	{@const tone = depTone(departure.delay_min)}
-	<span class="stop-departure-delay" style:color={rowColorVar(tone)} data-tone={tone}>
-		{#if rowGlyph(tone)}<span class="stop-departure-glyph" aria-hidden="true">{rowGlyph(tone)}</span
-			>{/if}{delayLabel(departure.delay_min, delayCopy ?? EMPTY_DELAY_COPY)}
-	</span>
+	{#if departure.delay_min == null}
+		<AbsentValue variant="row" reason="not-reported" {locale} />
+	{:else}
+		{@const tone = depTone(departure.delay_min)}
+		<span class="stop-departure-delay" style:color={rowColorVar(tone)} data-tone={tone}>
+			{#if rowGlyph(tone)}<span class="stop-departure-glyph" aria-hidden="true"
+					>{rowGlyph(tone)}</span
+				>{/if}{delayLabel(departure.delay_min, delayCopy ?? EMPTY_DELAY_COPY)}
+		</span>
+	{/if}
 {/snippet}
 
 {#snippet servicePeriodCell(service: ScheduleServiceRow)}
@@ -150,7 +155,7 @@
 	{#if service.window}
 		{service.window}
 	{:else}
-		<AbsentValue variant="inline" reason="not-in-schedule" {locale} />
+		<AbsentValue variant="row" reason="not-in-schedule" {locale} />
 	{/if}
 {/snippet}
 
@@ -158,7 +163,7 @@
 	{#if service.headway}
 		{service.headway}
 	{:else}
-		<AbsentValue variant="inline" reason="not-in-schedule" {locale} />
+		<AbsentValue variant="row" reason="not-in-schedule" {locale} />
 	{/if}
 {/snippet}
 

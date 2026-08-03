@@ -127,7 +127,6 @@ export const copy = defineCopy({
 		},
 		caveat:
 			'A daily summary of observed reliability, not a certified service report. Counts cover entities with a reading on the day; a blank figure means no data, never zero.',
-		noData: 'no data',
 		emptyIndex: 'No receipts have been published yet. Check back once the daily build runs.',
 		emptyReceipt: 'No receipt was published for this day.',
 		units: {
@@ -260,7 +259,6 @@ export const copy = defineCopy({
 		},
 		caveat:
 			'Un résumé quotidien de la fiabilité observée, et non un rapport de service certifié. Les décomptes portent sur les entités ayant une mesure ce jour-là; une valeur vide signifie aucune donnée, jamais zéro.',
-		noData: 'aucune donnée',
 		emptyIndex:
 			'Aucun reçu n’a encore été publié. Revenez une fois la production quotidienne effectuée.',
 		emptyReceipt: 'Aucun reçu n’a été publié pour cette journée.',

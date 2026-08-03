@@ -35,10 +35,9 @@
 			linkLabel: string;
 		};
 		copy: NetworkReliabilityCopy;
-		noData: string;
 		locale: Locale;
 	}
-	let { vm, latestDisplay, info, copy, noData, locale }: SectionCancellationsProps = $props();
+	let { vm, latestDisplay, info, copy, locale }: SectionCancellationsProps = $props();
 
 	const i = $derived(info('cancellation', copy.cancelSection));
 </script>
@@ -53,7 +52,6 @@
 			label={copy.cancel.metric}
 			value={latestDisplay}
 			absentReason="no-observations"
-			emptyLabel={noData}
 			{locale}
 			size="md"
 		>

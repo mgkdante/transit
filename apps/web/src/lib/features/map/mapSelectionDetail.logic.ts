@@ -6,6 +6,7 @@
 
 import {
 	absent,
+	absenceShort,
 	known,
 	stopNameFallback,
 	type AbsenceReasonKey,
@@ -147,9 +148,10 @@ export function vehicleForDeparture(
 		: null;
 }
 
-export function directionLabel(item: RouteMapDetail, t: MapSelectionDetailCopy): string {
-	if (item.directions.length === 1) return item.directions[0]?.label ?? t.noData;
+export function directionLabel(item: RouteMapDetail, locale: Locale): string {
+	if (item.directions.length === 1)
+		return item.directions[0]?.label ?? absenceShort('not-in-schedule', locale);
 	return item.directions.length > 0
 		? item.directions.map((direction) => direction.label).join(' / ')
-		: t.noData;
+		: absenceShort('not-in-schedule', locale);
 }

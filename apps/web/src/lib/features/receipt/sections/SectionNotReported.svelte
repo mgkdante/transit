@@ -17,6 +17,7 @@
 <script lang="ts">
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
+	import type { Locale } from '$lib/i18n';
 	import { NOT_REPORTED_DOMAIN, type NotReportedVM } from '../selectors/notReportedLines';
 
 	interface SectionNotReportedProps {
@@ -25,9 +26,17 @@
 		caveat: string;
 		/** "Showing 50 of 200" — rendered only when the list is capped below the total. */
 		shownOfTotal: (shown: number, total: number) => string;
+		locale: Locale;
 		headingLevel?: 2 | 3;
 	}
-	let { list, heading, caveat, shownOfTotal, headingLevel = 2 }: SectionNotReportedProps = $props();
+	let {
+		list,
+		heading,
+		caveat,
+		shownOfTotal,
+		locale,
+		headingLevel = 2,
+	}: SectionNotReportedProps = $props();
 
 	// Show the shown/total note only when the pre-cap total exceeds the shown rows.
 	const truncated = $derived(list.total != null && list.total > list.shown);
@@ -60,6 +69,8 @@
 						value={row.value}
 						domain={NOT_REPORTED_DOMAIN}
 						display={row.display}
+						absentReason="not-reported"
+						{locale}
 					/>
 				</a>
 			</li>

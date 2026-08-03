@@ -144,7 +144,7 @@ const richDataHealth: DataHealth = {
 			age_s: 18000,
 			files_written: null,
 			files_skipped: null,
-			files_total: null,
+			files_total: 120,
 			gate: null,
 		},
 	],
@@ -834,12 +834,13 @@ describe('HealthStatus — S11 pipeline lanes', () => {
 			'[data-slot="lane-row"][data-lane="static"]',
 		) as HTMLElement;
 		expect(within(stat).getByText(en.lanes.filesCount('118', '120'))).toBeInTheDocument();
-		// The rollup lane reports NO counts → the honest-absence chip, never 0 of 0.
+		// The rollup lane reports only its total → honest absence, never a fabricated 0 of 120.
 		const rollup = document.querySelector(
 			'[data-slot="lane-row"][data-lane="rollup"]',
 		) as HTMLElement;
 		const files = rollup.querySelector('[data-slot="lane-files"]') as HTMLElement;
 		expect(files.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+		expect(within(files).queryByText(en.lanes.filesCount('0', '120'))).toBeNull();
 	});
 
 	it('renders the MAINTENANCE row as honest not-applicable (no heartbeat, plain reason)', () => {

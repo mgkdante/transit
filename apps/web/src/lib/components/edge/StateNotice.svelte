@@ -3,7 +3,7 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { cn } from '$lib/utils';
 
-	export type StateNoticePresentation = 'pill' | 'silo' | 'card' | 'responsive';
+	export type StateNoticePresentation = 'row' | 'pill' | 'silo' | 'card' | 'responsive';
 	export type StateNoticeTone = 'neutral' | 'positive' | 'warning' | 'error';
 
 	export interface StateNoticeProps extends Omit<
@@ -40,7 +40,9 @@
 
 	// A plain field-level pill remains valid inline markup. Notices with arbitrary
 	// snippets use block-capable markup so their content cannot invalidate SSR.
-	const element = $derived(presentation === 'pill' && !meta && !action ? 'span' : 'div');
+	const element = $derived(
+		(presentation === 'pill' || presentation === 'row') && !meta && !action ? 'span' : 'div',
+	);
 </script>
 
 <svelte:element
@@ -56,14 +58,23 @@
 	{...restProps}
 >
 	<svelte:element this={element} class="state-notice-surface" data-part="surface">
-		<span class="state-notice-glyph" data-slot="state-notice-glyph" aria-hidden="true">
-			{glyph}
-		</span>
+		{#if presentation !== 'row'}
+			<span class="state-notice-glyph" data-slot="state-notice-glyph" aria-hidden="true">
+				{glyph}
+			</span>
+		{/if}
 
 		<span class="state-notice-copy">
 			<span class="state-notice-title">{title}</span>
 			{#if body}
-				<span class="state-notice-body">{body}</span>
+				{#if presentation === 'row' || presentation === 'pill'}<span
+						class="state-notice-separator"
+						aria-hidden="true"
+					>
+						·
+					</span>&nbsp;{/if}<span class="state-notice-body" data-slot="state-notice-body"
+					>{body}</span
+				>
 			{/if}
 		</span>
 
@@ -88,7 +99,7 @@
 		min-width: 0;
 		max-width: 100%;
 		color: var(--muted-foreground);
-		font-family: var(--font-body);
+		font-family: inherit;
 	}
 
 	.state-notice--responsive {
@@ -123,12 +134,25 @@
 		width: fit-content;
 	}
 
+	.state-notice--row {
+		display: inline;
+		width: auto;
+	}
+
 	.state-notice--pill .state-notice-surface {
 		align-items: center;
 		flex-wrap: wrap;
 		width: fit-content;
 		padding: 0.25rem 0.625rem;
-		border-radius: var(--radius-pill);
+		border-radius: var(--radius-md);
+	}
+
+	.state-notice--row .state-notice-surface {
+		display: inline;
+		width: auto;
+		padding: 0;
+		border: 0;
+		background: transparent;
 	}
 
 	.state-notice--silo .state-notice-surface,
@@ -158,34 +182,47 @@
 		flex-direction: column;
 		gap: 0.125rem;
 		min-width: 0;
+		max-inline-size: var(--measure-absence);
 	}
 
 	.state-notice--pill .state-notice-copy {
+		display: inline-block;
 		flex-basis: auto;
-		flex-direction: row;
-		flex-wrap: wrap;
-		gap: 0.125rem 0.375rem;
+		max-width: 100%;
+	}
+
+	.state-notice--row .state-notice-copy {
+		display: inline-block;
+		max-width: 100%;
+		max-inline-size: var(--measure-absence);
+		font-weight: 500;
+		vertical-align: top;
+	}
+
+	.state-notice-title,
+	.state-notice-body {
+		font-size: inherit;
+		white-space: normal;
+		overflow-wrap: anywhere;
 	}
 
 	.state-notice-title {
-		color: var(--foreground);
-		font-size: var(--text-small);
-		font-weight: 700;
+		color: var(--muted-foreground);
+		font-weight: 500;
 		line-height: 1.35;
-		overflow-wrap: anywhere;
 	}
 
 	.state-notice-body {
 		color: var(--muted-foreground);
-		font-size: var(--text-small);
 		line-height: 1.45;
-		overflow-wrap: anywhere;
 	}
 
-	.state-notice--pill .state-notice-body::before {
-		content: '·';
-		margin-inline-end: 0.375rem;
+	.state-notice-separator {
 		color: var(--state-notice-ink);
+	}
+
+	.state-notice--row .state-notice-separator {
+		color: inherit;
 	}
 
 	.state-notice-meta,

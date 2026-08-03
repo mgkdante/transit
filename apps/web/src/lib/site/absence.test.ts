@@ -17,6 +17,7 @@ import {
 	fieldAbsenceReason,
 	type AbsenceReasonKey,
 } from './absence';
+import * as absenceApi from './absence';
 import type { Locale } from '$lib/i18n';
 
 const LOCALES: Locale[] = ['en', 'fr'];
@@ -36,10 +37,25 @@ const ALL_KEYS: AbsenceReasonKey[] = [
 	'end-of-route',
 	'inferred',
 	'no-observations',
+	'not-published',
+	'no-retained-dates',
+	'no-gap-inventory',
+	'no-declared-gaps',
+	'no-metric-inventory',
+	'no-retained-data',
 ];
 
 // Provider literals copy must NEVER contain (provider-agnostic invariant).
 const PROVIDER_LITERALS = ['STM', 'STO', 'OC', 'STS', 'métro', 'metro'];
+
+const STATUS_KEYS = [
+	'not-published',
+	'no-retained-dates',
+	'no-gap-inventory',
+	'no-declared-gaps',
+	'no-metric-inventory',
+	'no-retained-data',
+] as const;
 
 describe('ABSENCE_COPY — bilingual parity for every reason key', () => {
 	for (const lang of LOCALES) {
@@ -56,6 +72,20 @@ describe('ABSENCE_COPY — bilingual parity for every reason key', () => {
 	it('EN and FR cover the EXACT same key set (no orphan key in either locale)', () => {
 		expect(Object.keys(ABSENCE_COPY.en).sort()).toEqual(Object.keys(ABSENCE_COPY.fr).sort());
 		expect(Object.keys(ABSENCE_COPY.en).sort()).toEqual([...ALL_KEYS].sort());
+	});
+
+	it('centralizes the retained-history and status reasons instead of leaving title-only forks', () => {
+		for (const locale of LOCALES) {
+			expect(Object.keys(ABSENCE_COPY[locale])).toEqual(expect.arrayContaining([...STATUS_KEYS]));
+		}
+	});
+
+	it('keeps every short label within the row-density budget', () => {
+		for (const locale of LOCALES) {
+			for (const [key, block] of Object.entries(ABSENCE_COPY[locale])) {
+				expect(block.short.length, `${key}.short (${locale})`).toBeLessThanOrEqual(24);
+			}
+		}
 	});
 
 	it('no copy string uses an em dash (brand voice)', () => {
@@ -104,6 +134,23 @@ describe('Maybe helpers — known() / absent()', () => {
 });
 
 describe('describeAbsence — pure resolver', () => {
+	it('exports short and sentence helpers backed by the same vocabulary', () => {
+		const api = absenceApi as unknown as Record<string, unknown>;
+		expect(api.absenceShort).toBeTypeOf('function');
+		expect(api.absenceSentence).toBeTypeOf('function');
+	});
+
+	it('builds canonical short and sentence forms without duplicating copy', () => {
+		const api = absenceApi as unknown as {
+			absenceShort: (reason: AbsenceReasonKey, locale: Locale) => string;
+			absenceSentence: (reason: AbsenceReasonKey, locale: Locale) => string;
+		};
+		expect(api.absenceShort).toBeTypeOf('function');
+		expect(api.absenceSentence).toBeTypeOf('function');
+		expect(api.absenceShort('no-observations', 'fr')).toBe('Aucune donnée');
+		expect(api.absenceSentence('no-observations', 'en')).toBe('No data · not enough readings yet');
+	});
+
 	it('returns label + why + the calm "unknown" tone', () => {
 		const d = describeAbsence('not-reported', 'en');
 		expect(d).toEqual({

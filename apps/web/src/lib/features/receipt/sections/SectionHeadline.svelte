@@ -17,7 +17,6 @@
 	interface SectionHeadlineProps {
 		kpis: readonly HeadlineKpiVM[];
 		heading: string;
-		noData: string;
 		info: (
 			key: MetricKey | SupplementalMetricKey,
 			name: string,
@@ -25,7 +24,7 @@
 		locale: Locale;
 		headingLevel?: 2 | 3;
 	}
-	let { kpis, heading, noData, info, locale, headingLevel = 2 }: SectionHeadlineProps = $props();
+	let { kpis, heading, info, locale, headingLevel = 2 }: SectionHeadlineProps = $props();
 
 	const headingInfo = $derived(info('otp', heading));
 </script>
@@ -52,7 +51,6 @@
 					size={kpi.size}
 					absentReason="no-observations"
 					{locale}
-					emptyLabel={noData}
 				/>
 				<MetricInfo
 					tip={i.tip}

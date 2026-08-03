@@ -98,6 +98,7 @@
   --measure-lede: 34rem;
   --measure-notice: 28rem;
   --measure-display: 28ch;
+  --measure-absence: 34ch;
 
   /* shadcn alias — components reference --radius */
   --radius: var(--radius-md);

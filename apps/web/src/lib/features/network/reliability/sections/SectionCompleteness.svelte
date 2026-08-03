@@ -33,10 +33,9 @@
 			linkLabel: string;
 		};
 		copy: NetworkReliabilityCopy;
-		noData: string;
 		locale: Locale;
 	}
-	let { latestDisplay, info, copy, noData, locale }: SectionCompletenessProps = $props();
+	let { latestDisplay, info, copy, locale }: SectionCompletenessProps = $props();
 
 	const i = $derived(info('cancellation', copy.completeness.section));
 </script>
@@ -52,7 +51,6 @@
 		value={latestDisplay}
 		note={latestDisplay == null ? copy.completeness.standDown : undefined}
 		absentReason="no-observations"
-		emptyLabel={noData}
 		{locale}
 		size="lg"
 	>

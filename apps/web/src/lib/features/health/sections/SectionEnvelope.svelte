@@ -60,7 +60,6 @@
 	<div class="envelope-rows">
 		<MetricDisplay
 			value={envelope.schemaVersion}
-			emptyLabel={copy.noData}
 			absentReason="not-reported"
 			{locale}
 			label={t.schemaVersionLabel}
@@ -68,7 +67,6 @@
 		/>
 		<MetricDisplay
 			value={envelope.methodologyVersion}
-			emptyLabel={copy.noData}
 			absentReason="not-reported"
 			{locale}
 			label={t.methodologyVersionLabel}

@@ -377,8 +377,8 @@
 	// The roster's delay reading: a known delay reads early / on time / N min late;
 	// a NULL delay reads an honest "no data" (not "no delay", which would imply
 	// on-time), and is NEVER rendered as a fabricated 0.
-	function rosterDelayLabel(delay: number | null | undefined): string {
-		if (delay == null) return t.roster.noData;
+	function rosterDelayLabel(delay: number | null | undefined): string | null {
+		if (delay == null) return null;
 		return delayLabel(delay, t);
 	}
 
@@ -517,6 +517,8 @@
 																		domain={DELAY_POS_DOMAIN}
 																		unit=" min"
 																		display={rosterDelayLabel(bus.delay_min)}
+																		absentReason="not-reported"
+																		{locale}
 																	/>
 																	<ChevronRightIcon
 																		size={14}
@@ -540,6 +542,8 @@
 																		domain={DELAY_POS_DOMAIN}
 																		unit=" min"
 																		display={rosterDelayLabel(bus.delay_min)}
+																		absentReason="not-reported"
+																		{locale}
 																	/>
 																</div>
 															{/if}
@@ -674,7 +678,6 @@
 										<div class="route-metric-cell">
 											<MetricDisplay
 												value={file.first_departure ?? null}
-												emptyLabel={t.noData}
 												absentReason="not-in-schedule"
 												{locale}
 												label={t.firstDeparture}
@@ -685,7 +688,6 @@
 										<div class="route-metric-cell">
 											<MetricDisplay
 												value={file.last_departure ?? null}
-												emptyLabel={t.noData}
 												absentReason="not-in-schedule"
 												{locale}
 												label={t.lastDeparture}

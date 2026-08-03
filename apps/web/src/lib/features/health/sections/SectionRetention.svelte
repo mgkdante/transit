@@ -26,7 +26,6 @@
 	<div class="health-retention">
 		<MetricDisplay
 			value={fmtDays(detail)}
-			emptyLabel={copy.noData}
 			absentReason="not-reported"
 			{locale}
 			label={t.detailLabel}
@@ -34,7 +33,6 @@
 		/>
 		<MetricDisplay
 			value={fmtDays(aggregate)}
-			emptyLabel={copy.noData}
 			absentReason="not-reported"
 			{locale}
 			label={t.aggregateLabel}

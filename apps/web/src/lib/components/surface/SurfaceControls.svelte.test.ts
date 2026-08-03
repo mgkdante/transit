@@ -88,9 +88,9 @@ describe('SurfaceControls — data-depth availability clamp', () => {
 		const descId = month.getAttribute('aria-describedby');
 		expect(descId).toBeTruthy();
 		const desc = document.getElementById(descId as string);
-		expect(desc?.textContent).toBe('not enough readings yet');
+		expect(desc?.textContent).toBe('No data · not enough readings yet');
 		// The same reason rides the title for pointer users.
-		expect(month).toHaveAttribute('title', 'not enough readings yet');
+		expect(month).toHaveAttribute('title', 'No data · not enough readings yet');
 	});
 
 	it('treats a grain absent from the availability map as 0 buckets (disabled)', () => {
@@ -151,9 +151,9 @@ describe('SurfaceControls — i18n', () => {
 			minPoints: 7,
 			availability: { day: { buckets: 30 }, week: { buckets: 30 }, month: { buckets: 1 } },
 		});
-		// FR 'no-observations' why = "pas assez de mesures".
+		// FR 'no-observations' uses the shared short + why sentence.
 		const month = getByRole('radio', { name: 'Month' });
-		expect(month).toHaveAttribute('title', 'pas assez de mesures');
+		expect(month).toHaveAttribute('title', 'Aucune donnée · pas assez de mesures');
 	});
 
 	it('has no em dash in the disabled reason copy', () => {
@@ -218,7 +218,7 @@ describe('SurfaceControls — enabled-grain hint (grain/sub-grain clarity)', () 
 		});
 		expect(getByRole('radio', { name: 'Month' })).toHaveAttribute(
 			'title',
-			'not enough readings yet',
+			'No data · not enough readings yet',
 		);
 	});
 });
