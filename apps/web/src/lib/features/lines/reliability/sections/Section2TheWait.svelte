@@ -684,7 +684,7 @@
 	{#if row.dir0 != null}
 		{min(row.dir0)}
 	{:else}
-		<AbsentValue variant="inline" density="row" reason="no-observations" {locale} />
+		<AbsentValue variant="row" reason="no-observations" {locale} />
 	{/if}
 {/snippet}
 
@@ -692,7 +692,7 @@
 	{#if row.dir1 != null}
 		{min(row.dir1)}
 	{:else}
-		<AbsentValue variant="inline" density="row" reason="no-observations" {locale} />
+		<AbsentValue variant="row" reason="no-observations" {locale} />
 	{/if}
 {/snippet}
 

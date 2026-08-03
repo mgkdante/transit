@@ -101,7 +101,7 @@
 		{#if entry.headsign}
 			{entry.headsign}
 		{:else}
-			<AbsentValue variant="inline" density="row" reason="no-observations" {locale} />
+			<AbsentValue variant="row" reason="no-observations" {locale} />
 		{/if}
 	</span>
 {/snippet}
@@ -120,7 +120,7 @@
 			</p>
 		{/if}
 	{:else}
-		<AbsentValue variant="inline" density="row" reason="no-observations" {locale} />
+		<AbsentValue variant="row" reason="no-observations" {locale} />
 	{/if}
 {/snippet}
 
@@ -136,7 +136,7 @@
 
 {#snippet boardStatusCell(departure: ScheduleBoardRow)}
 	{#if departure.delay_min == null}
-		<AbsentValue density="row" reason="not-reported" {locale} />
+		<AbsentValue variant="row" reason="not-reported" {locale} />
 	{:else}
 		{@const tone = depTone(departure.delay_min)}
 		<span class="stop-departure-delay" style:color={rowColorVar(tone)} data-tone={tone}>
@@ -155,7 +155,7 @@
 	{#if service.window}
 		{service.window}
 	{:else}
-		<AbsentValue variant="inline" density="row" reason="not-in-schedule" {locale} />
+		<AbsentValue variant="row" reason="not-in-schedule" {locale} />
 	{/if}
 {/snippet}
 
@@ -163,7 +163,7 @@
 	{#if service.headway}
 		{service.headway}
 	{:else}
-		<AbsentValue variant="inline" density="row" reason="not-in-schedule" {locale} />
+		<AbsentValue variant="row" reason="not-in-schedule" {locale} />
 	{/if}
 {/snippet}
 

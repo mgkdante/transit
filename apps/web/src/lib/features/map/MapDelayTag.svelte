@@ -30,7 +30,7 @@
 		{delayKnownLabel(m.value, t)}
 	</span>
 {:else}
-	<AbsentValue density="chip" reason={m.reason} {locale} params={m.params} />
+	<AbsentValue reason={m.reason} {locale} params={m.params} />
 {/if}
 
 <style>

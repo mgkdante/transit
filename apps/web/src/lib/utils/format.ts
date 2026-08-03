@@ -7,7 +7,7 @@
  * through a single `noData` branch. Callers choose what an absence renders as:
  *
  *   - `noData: null`   -> returns `null`, so the caller's own empty state takes
- *                         over (e.g. <MetricDisplay emptyLabel>, "?? copy.noData").
+ *                         over (e.g. <MaybeValue reason>, "?? copy.noData").
  *   - `noData: 'text'` -> returns the localized no-data string inline.
  *
  * Rounding / suffix / locale are all parameterized so each call site reproduces

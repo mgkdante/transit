@@ -31,7 +31,7 @@
 
 {#snippet gapList(items: readonly HistoryCoverageGapView[] | null)}
 	{#if items == null}
-		<AbsentValue density="row" reason="no-gap-inventory" {locale} />
+		<AbsentValue variant="row" reason="no-gap-inventory" {locale} />
 	{:else if items.length > 0}
 		<ul class="gap-list">
 			{#each items as gap (`${gap.startDate}:${gap.endDate}:${gap.reason ?? ''}`)}
@@ -55,7 +55,7 @@
 
 {#snippet familyCell(row: HistoryCoverageFamilyView)}
 	<span class="family-name">{t.families[row.key]}</span>
-	{#if !row.published}<AbsentValue density="row" reason="not-published" {locale} />{/if}
+	{#if !row.published}<AbsentValue variant="row" reason="not-published" {locale} />{/if}
 {/snippet}
 
 {#snippet windowCell(row: HistoryCoverageFamilyView)}
@@ -63,10 +63,10 @@
 		{#if row.firstDate && row.lastDate}
 			<span class="window-value">{windowLabel(row.firstDate, row.lastDate)}</span>
 		{:else}
-			<AbsentValue density="row" reason="no-retained-dates" {locale} />
+			<AbsentValue variant="row" reason="no-retained-dates" {locale} />
 		{/if}
 	{:else}
-		<AbsentValue density="row" reason="no-retained-dates" {locale} />
+		<AbsentValue variant="row" reason="no-retained-dates" {locale} />
 	{/if}
 {/snippet}
 
@@ -74,7 +74,7 @@
 	{#if row.selectionMode}
 		<span class="selection-chip">{t.selection[row.selectionMode]}</span>
 	{:else}
-		<AbsentValue density="row" reason="not-published" {locale} />
+		<AbsentValue variant="row" reason="not-published" {locale} />
 	{/if}
 {/snippet}
 
@@ -99,14 +99,14 @@
 									<span class="metric-window">{windowLabel(metric.firstDate, metric.lastDate)}</span
 									>
 								{:else}
-									<AbsentValue density="row" reason="no-retained-dates" {locale} />
+									<AbsentValue variant="row" reason="no-retained-dates" {locale} />
 								{/if}
 								{@render gapList(metric.gaps)}
 							</li>
 						{/each}
 					</ul>
 				{:else}
-					<AbsentValue density="row" reason="no-metric-inventory" {locale} />
+					<AbsentValue variant="row" reason="no-metric-inventory" {locale} />
 				{/if}
 			</div>
 		{/if}

@@ -74,7 +74,7 @@
 {#snippet hotspotReadingsCell(row: TrayRow)}
 	<MaybeValue
 		value={row.observationCount == null ? null : row.observationCount.toLocaleString(locale)}
-		density="row"
+		variant="row"
 		reason="no-observations"
 		{locale}
 	/>

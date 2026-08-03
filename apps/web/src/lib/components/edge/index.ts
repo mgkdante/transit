@@ -17,7 +17,7 @@ export type {
 // AbsentValue — the per-FIELD honest-absence VISUAL primitive (calm muted
 // "unknown · why"). Its business layer is the pure $lib/site/absence module.
 export { default as AbsentValue } from './AbsentValue.svelte';
-export type { AbsenceDensity, AbsentValueProps } from './AbsentValue.svelte';
+export type { AbsentValueProps } from './AbsentValue.svelte';
 
 // MaybeValue — the inline value-or-absence primitive: render the value, else the
 // AbsentValue chip. The free-standing-cell sibling of MetricDisplay (tiles) and

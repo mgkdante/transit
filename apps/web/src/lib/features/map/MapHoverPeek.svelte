@@ -46,7 +46,6 @@
 							? `il y a ${formatAge(peek.notReportingAgeS)}`
 							: `${formatAge(peek.notReportingAgeS)} ago`,
 				}}
-				density="chip"
 				{locale}
 				class="map-peek-stale"
 			/>
@@ -58,16 +57,12 @@
 					{#if peek.route}
 						<span>{peek.route.id}</span>
 						<span>{peek.route.longName}</span>
-						{#if peek.route.labelInferred}<AbsentValue
-								reason="inferred"
-								density="chip"
-								{locale}
-							/>{/if}
+						{#if peek.route.labelInferred}<AbsentValue reason="inferred" {locale} />{/if}
 						{#if peek.route.type != null}
 							<span>{routeModeHint(peek.route.type).tag ?? peek.route.type}</span>
 						{/if}
 					{:else}
-						<AbsentValue reason={vehicleAbsence} density="chip" {locale} />
+						<AbsentValue reason={vehicleAbsence} {locale} />
 					{/if}
 				</dd>
 			</div>
@@ -81,7 +76,7 @@
 					{#if peek.occupancy != null}
 						{OCCUPANCY_LABELS[locale][peek.occupancy]}
 					{:else}
-						<AbsentValue reason={vehicleAbsence} density="chip" {locale} />
+						<AbsentValue reason={vehicleAbsence} {locale} />
 					{/if}
 				</dd>
 			</div>
@@ -91,7 +86,7 @@
 					{#if peek.delayMin != null}
 						{delayKnownLabel(peek.delayMin, t)}
 					{:else}
-						<AbsentValue reason={vehicleAbsence} density="chip" {locale} />
+						<AbsentValue reason={vehicleAbsence} {locale} />
 					{/if}
 				</dd>
 			</div>
@@ -105,7 +100,7 @@
 							{peek.nextStop.name}
 						{/if}
 					{:else}
-						<AbsentValue reason={peek.nextStopAbsence} density="chip" {locale} />
+						<AbsentValue reason={peek.nextStopAbsence} {locale} />
 					{/if}
 				</dd>
 			</div>
@@ -120,7 +115,7 @@
 				<dt>{t.route}</dt>
 				<dd>
 					{peek.longName}
-					{#if peek.labelInferred}<AbsentValue reason="inferred" density="chip" {locale} />{/if}
+					{#if peek.labelInferred}<AbsentValue reason="inferred" {locale} />{/if}
 				</dd>
 			</div>
 			<div>

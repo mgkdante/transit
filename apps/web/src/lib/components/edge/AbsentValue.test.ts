@@ -11,7 +11,6 @@
 
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
-import type { Component } from 'svelte';
 import AbsentValue from './AbsentValue.svelte';
 import type { Locale } from '$lib/i18n';
 import type { AbsenceReasonKey } from '$lib/site/absence';
@@ -19,7 +18,6 @@ import type { AbsenceReasonKey } from '$lib/site/absence';
 const LOCALES: Locale[] = ['en', 'fr'];
 const RECEIPT_WIDTHS = [320, 360, 375, 390, 412, 428, 768, 1024, 1280, 1440] as const;
 const THEMES = ['light', 'dark'] as const;
-const DensityHarness = AbsentValue as unknown as Component<Record<string, unknown>>;
 
 describe('AbsentValue — renders the resolved label + why in FR + EN', () => {
 	for (const lang of LOCALES) {
@@ -100,8 +98,8 @@ describe('AbsentValue — row containment receipt matrix', () => {
 	)('keeps the full $locale row copy at $width px in $theme', ({ width, locale, theme }) => {
 		Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
 		document.documentElement.dataset.theme = theme;
-		const { container, unmount } = render(DensityHarness, {
-			props: { reason: 'no-observations', locale, density: 'row' },
+		const { container, unmount } = render(AbsentValue, {
+			props: { reason: 'no-observations', locale, variant: 'row' },
 		});
 		const root = container.querySelector('[data-slot="absent-value"]');
 		const expected =

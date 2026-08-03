@@ -135,11 +135,8 @@
 					<div>
 						<dt>{t.nextStop}</dt>
 						<dd>
-							<MaybeValue
-								present={detail.nextStop != null}
-								density="chip"
-								reason={detail.nextStopAbsence}
-								{locale}>{detail.nextStop!.name}</MaybeValue
+							<MaybeValue present={detail.nextStop != null} reason={detail.nextStopAbsence} {locale}
+								>{detail.nextStop!.name}</MaybeValue
 							>
 						</dd>
 					</div>
@@ -150,7 +147,6 @@
 								value={detail.nextStops[0]?.etaUtc
 									? timeLabel(detail.nextStops[0].etaUtc, locale)
 									: null}
-								density="chip"
 								reason="no-prediction"
 								{locale}
 							/>
@@ -176,11 +172,8 @@
 								data-m6d-glyph-code={detail.vehicle.occupancy ?? 'nodata'}
 								aria-hidden="true">{occupancyGlyph(detail.vehicle.occupancy)}</span
 							>
-							<MaybeValue
-								present={detail.vehicle.occupancy != null}
-								density="chip"
-								reason={absence}
-								{locale}>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
+							<MaybeValue present={detail.vehicle.occupancy != null} reason={absence} {locale}
+								>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
 							>
 						</dd>
 					</div>
@@ -233,7 +226,6 @@
 								? `il y a ${formatAge(notReporting.ageS)}`
 								: `${formatAge(notReporting.ageS)} ago`,
 					}}
-					density="chip"
 					{locale}
 					class="map-not-reporting"
 				/>{/if}

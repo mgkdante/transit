@@ -13,7 +13,6 @@
 	import { AbsentValue } from '$lib/components/edge';
 	import type { AbsenceReasonKey } from '$lib/site/absence';
 	import type { Locale } from '$lib/i18n';
-	import type { AbsenceDensity } from '$lib/components/edge';
 
 	export interface MetricDisplayProps extends HTMLAttributes<HTMLDivElement> {
 		/**
@@ -30,8 +29,6 @@
 		locale?: Locale;
 		/** Copy params interpolated into the absence WHY (e.g. { first: '06:00' }). */
 		absentParams?: Readonly<Record<string, string | number>>;
-		/** Presentation density forwarded to the shared absence primitive. */
-		density?: AbsenceDensity;
 		/** Primary label. */
 		label: string;
 		/** Optional secondary description. */
@@ -48,7 +45,6 @@
 		absentReason,
 		locale,
 		absentParams,
-		density,
 		label,
 		sublabel,
 		size = 'md',
@@ -74,13 +70,7 @@
 	{/if}
 	{#if isEmpty}
 		{#if absentReason && locale}
-			<AbsentValue
-				variant="inline"
-				reason={absentReason}
-				{locale}
-				params={absentParams}
-				{density}
-			/>
+			<AbsentValue variant="inline" reason={absentReason} {locale} params={absentParams} />
 		{/if}
 	{:else}
 		<span

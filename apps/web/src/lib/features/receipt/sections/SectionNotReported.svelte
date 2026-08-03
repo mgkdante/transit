@@ -70,7 +70,6 @@
 						domain={NOT_REPORTED_DOMAIN}
 						display={row.display}
 						absentReason="not-reported"
-						density="row"
 						{locale}
 					/>
 				</a>

@@ -518,7 +518,6 @@
 																		unit=" min"
 																		display={rosterDelayLabel(bus.delay_min)}
 																		absentReason="not-reported"
-																		density="row"
 																		{locale}
 																	/>
 																	<ChevronRightIcon
@@ -544,7 +543,6 @@
 																		unit=" min"
 																		display={rosterDelayLabel(bus.delay_min)}
 																		absentReason="not-reported"
-																		density="row"
 																		{locale}
 																	/>
 																</div>

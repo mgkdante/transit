@@ -34,7 +34,7 @@ function filesUnder(path: string, extension: string): string[] {
 }
 
 describe('absence containment contract', () => {
-	it('uses row density at every current table-cell absence site', () => {
+	it('uses the row variant at every current table-cell absence site', () => {
 		const expected = new Map([
 			['src/lib/components/schedule/ScheduleTable.svelte', 5],
 			['src/lib/features/repeat-offenders/sections/RepeatOffenderEvidenceTable.svelte', 3],
@@ -44,7 +44,7 @@ describe('absence containment contract', () => {
 		]);
 
 		for (const [path, count] of expected) {
-			const matches = read(path).match(/<(?:AbsentValue|MaybeValue)\b[^>]*\bdensity="row"/g) ?? [];
+			const matches = read(path).match(/<(?:AbsentValue|MaybeValue)\b[^>]*\bvariant="row"/g) ?? [];
 			expect(matches, path).toHaveLength(count);
 		}
 
@@ -72,7 +72,6 @@ describe('absence containment contract', () => {
 		expect(hoverGrid).toMatch(/grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
 		expect(hoverValues).toMatch(/min-width:\s*0/);
 		expect(hoverValues).not.toMatch(/(?:white-space:\s*nowrap|overflow:\s*hidden|text-overflow:)/);
-		expect(hover.match(/<AbsentValue\b[^>]*\bdensity="chip"/g) ?? []).toHaveLength(7);
 		expect(hover).not.toMatch(
 			/\.map-hover-peek\s+:global\(\[data-slot='absent-value'\][^{]*\{[^}]*border-radius:/s,
 		);

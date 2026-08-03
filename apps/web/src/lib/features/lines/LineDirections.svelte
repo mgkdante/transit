@@ -96,7 +96,7 @@
 														{delayLabel(prediction.delayMin, copy)}
 													</span>
 												{:else}
-													<AbsentValue reason="not-reported" density="row" {locale} />
+													<AbsentValue reason="not-reported" variant="row" {locale} />
 												{/if}
 											{:else}
 												<StateNotice title={copy.noLiveBus} presentation="pill" />

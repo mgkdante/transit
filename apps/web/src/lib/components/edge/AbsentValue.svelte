@@ -8,10 +8,12 @@
   { label, why, tone }, and renders the calm muted state. All the "what does this
   reason mean / which copy / which language" decisions live in the logic layer.
 
-  Variants
-    inline  a muted in-row value, "Delay unknown · not reported", for a single
-            absent cell in a list/table row. The middle dot separates the terse
-            label from the why (never an em dash).
+  Variants — ONE presentation axis, never a cross-product.
+    inline  a muted chip, "Delay unknown · not reported", for a single absent
+            cell. The middle dot separates the terse label from the why (never
+            an em dash).
+    row     the same copy as unboxed cell text, for a table/list row that must
+            not grow a box around its missing value.
     block   a calm centered block (EdgeState language) for a whole panel that has
             no value: the muted label as a heading + the why beneath.
 
@@ -26,8 +28,7 @@
 	import { describeAbsence, type AbsenceReasonKey } from '$lib/site/absence';
 	import StateNotice from './StateNotice.svelte';
 
-	type Variant = 'inline' | 'block';
-	export type AbsenceDensity = 'row' | 'chip' | 'block';
+	type Variant = 'inline' | 'row' | 'block';
 
 	export interface AbsentValueProps {
 		/** The typed absence reason (from the logic layer). */
@@ -36,22 +37,13 @@
 		locale: Locale;
 		/** Copy params (e.g. { first: '06:00' } / { age: '3 min ago' }) interpolated by the resolver. */
 		params?: Readonly<Record<string, string | number>>;
-		/** inline (muted in-row value) or block (calm centered panel). Defaults to inline. */
+		/** inline chip (default), row (unboxed cell text), or block (calm panel). */
 		variant?: Variant;
-		/** Presentation density. Row is unboxed cell text; chip is the default; block fills a panel. */
-		density?: AbsenceDensity;
 		/** Optional extra classes on the root. */
 		class?: string;
 	}
 
-	let {
-		reason,
-		locale,
-		params,
-		variant = 'inline',
-		density,
-		class: className,
-	}: AbsentValueProps = $props();
+	let { reason, locale, params, variant = 'inline', class: className }: AbsentValueProps = $props();
 
 	// The ONLY call into the logic layer: resolve the render-ready copy + tone.
 	// No branching on `reason` here — the resolver owns that.
@@ -59,21 +51,20 @@
 
 	// The full honest readout for AT: "label, why" (the visible glyph is decorative).
 	const ariaLabel = $derived(`${d.label}, ${d.why}`);
-	const resolvedDensity = $derived(density ?? (variant === 'block' ? 'block' : 'chip'));
 </script>
 
 <StateNotice
 	title={d.label}
 	body={d.why}
 	glyph="·"
-	presentation={resolvedDensity === 'row' ? 'row' : resolvedDensity === 'block' ? 'silo' : 'pill'}
+	presentation={variant === 'row' ? 'row' : variant === 'block' ? 'silo' : 'pill'}
 	tone="neutral"
-	role={resolvedDensity === 'block' ? 'status' : undefined}
-	ariaLive={resolvedDensity === 'block' ? 'polite' : undefined}
+	role={variant === 'block' ? 'status' : undefined}
+	ariaLive={variant === 'block' ? 'polite' : undefined}
 	{ariaLabel}
 	class={className}
 	data-slot="absent-value"
-	data-variant={resolvedDensity === 'block' ? 'block' : 'inline'}
-	data-density={resolvedDensity}
+	data-variant={variant === 'block' ? 'block' : 'inline'}
+	data-density={variant === 'inline' ? 'chip' : variant}
 	data-tone={d.tone}
 />
