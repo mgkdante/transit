@@ -363,6 +363,9 @@ const harness = vi.hoisted(() => {
 		flushEffects(): Promise<void> {
 			return navigationRouter().flushEffects();
 		},
+		reachLoadCheckpoint(navigation: HarnessNavigation): boolean {
+			return navigationRouter().reachLoadCheckpoint(navigation);
+		},
 		createLiveStore: vi.fn((_manifest: unknown, _options?: unknown) => liveStore),
 		liveStore,
 		identityReceivers,
@@ -1096,6 +1099,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 			closeLabel,
 			currentUrl,
 			selectionUrl: selectionStart.url,
+			selectionNavigation: selectionStart.navigation,
 			surfaceSelector,
 			surface: document.querySelector(surfaceSelector),
 			selectionIdentity,
@@ -1272,6 +1276,29 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 			}
 		},
 	);
+
+	it('keeps a superseded queued selection echo selection-owned after its stale-token rejection', async () => {
+		const before = await openDetail(true, { settleSelectionUrl: false });
+		const gotoCallsBefore = harness.goto.mock.calls.length;
+		const exit = harness.startNavigation('http://localhost/lines', before.currentUrl.href, {
+			type: 'link',
+		});
+		expect(exit.beforeNavigateDelivered).toBe(false);
+
+		expect(harness.reachLoadCheckpoint(before.selectionNavigation)).toBe(false);
+		await expect(before.selectionNavigation.complete).rejects.toThrow('navigation aborted');
+		await Promise.resolve();
+		await Promise.resolve();
+
+		harness.startNavigation(before.selectionUrl.href, before.currentUrl.href, { redirect: true });
+		await harness.commitNavigation(before.selectionUrl.href);
+		await fireEvent.click(screen.getByRole('button', { name: before.closeLabel }));
+		await tick();
+
+		expect(harness.goto).toHaveBeenCalledTimes(gotoCallsBefore + 1);
+		const closed = new URL(String(harness.goto.mock.lastCall?.[0]), 'http://localhost');
+		expect(closed.searchParams.has('vehicle')).toBe(false);
+	});
 
 	it('contains and reports a throwing live stop without skipping sibling teardown owners', async () => {
 		const pageErrors = capturePageErrors();

@@ -154,7 +154,7 @@ describe('map URL coordinator', () => {
 		expect(coordinator.currentUrl().pathname).toBe('/fr/map');
 	});
 
-	it('observes and reports a rejected navigation while retiring its token and latest intent', async () => {
+	it('observes and reports a rejected navigation without retiring its token or latest intent', async () => {
 		const navigationError = new Error('map URL navigation failed');
 		const navigate = vi.fn<MapUrlNavigate>(() => Promise.reject(navigationError));
 		const reportNavigationFailure = vi.fn();
@@ -166,7 +166,9 @@ describe('map URL coordinator', () => {
 		await Promise.resolve();
 
 		expect(reportNavigationFailure).toHaveBeenCalledExactlyOnceWith(navigationError);
-		expect(coordinator.currentUrl().href).toBe(initial.href);
-		expect(coordinator.settle(new URL('https://transit.example/map?route=24'))).toBe('adopt');
+		expect(coordinator.currentUrl().href).toBe('https://transit.example/map?route=24');
+		const rejectedTarget = new URL('https://transit.example/map?route=24');
+		expect(coordinator.settle(rejectedTarget)).toBe('echo');
+		expect(coordinator.settle(rejectedTarget)).toBe('adopt');
 	});
 });

@@ -106,7 +106,7 @@ export function createMapUrlCoordinator(
 			throw error;
 		}
 		if (navigation && typeof (navigation as PromiseLike<unknown>).then === 'function') {
-			void Promise.resolve(navigation).catch((error) => retireFailedRequest(token, error));
+			void Promise.resolve(navigation).catch(reportFailure);
 		}
 		return navigation;
 	}
