@@ -59,7 +59,7 @@ function createHarness() {
 	);
 	const buildTargetSearch = vi.fn(() => '?route=24&near=45.501000%2C-73.601000');
 	const clearTargetSearch = vi.fn(() => '?route=24');
-	const fetch = vi.fn<(input: string) => Promise<Response>>();
+	const fetch = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();
 	let secureContext = true;
 	let geolocationAvailable = true;
 
@@ -274,6 +274,23 @@ describe('map near-me controller', () => {
 		expect(harness.focusOrigin).toHaveBeenCalledWith(harness.controller.origin);
 	});
 
+	it('makes late geolocation callbacks inert after idempotent disposal', () => {
+		const harness = createHarness();
+		harness.controller.useLocation();
+		expect(harness.controller.loading).toBe(true);
+
+		harness.controller.dispose();
+		harness.controller.dispose();
+		harness.succeedPosition();
+		harness.failPosition(1);
+
+		expect(harness.controller.loading).toBe(false);
+		expect(harness.controller.origin).toBeNull();
+		expect(harness.controller.error).toBeNull();
+		expect(harness.focusOrigin).not.toHaveBeenCalled();
+		expect(harness.goto).not.toHaveBeenCalled();
+	});
+
 	it.each([
 		[1, 'Location permission denied'],
 		[3, 'Location timed out. Try again'],
@@ -320,10 +337,63 @@ describe('map near-me controller', () => {
 		await harness.controller.search(event);
 
 		expect(event.preventDefault).toHaveBeenCalledOnce();
-		expect(harness.fetch).toHaveBeenCalledWith('/api/geocode/montreal?q=Place%20des%20Arts');
+		expect(harness.fetch).toHaveBeenCalledWith('/api/geocode/montreal?q=Place%20des%20Arts', {
+			signal: expect.any(AbortSignal),
+		});
 		expect(harness.controller.query).toBe('Place des Arts');
 		expect(harness.controller.origin).toEqual(result);
 		expect(harness.controller.loading).toBe(false);
+	});
+
+	it('aborts a pending geocode fetch and ignores a forced late response', async () => {
+		const harness = createHarness();
+		let resolveFetch!: (response: Response) => void;
+		harness.fetch.mockReturnValue(
+			new Promise<Response>((resolve) => {
+				resolveFetch = resolve;
+			}),
+		);
+		harness.controller.query = 'Place des Arts';
+		const pending = harness.controller.search(submitEvent());
+		await waitFor(() => expect(harness.fetch).toHaveBeenCalledOnce());
+		const signal = harness.fetch.mock.lastCall?.[1]?.signal;
+		expect(signal?.aborted).toBe(false);
+
+		harness.controller.dispose();
+		expect(signal?.aborted).toBe(true);
+		resolveFetch({ ok: true, json: async () => target } as Response);
+		await pending;
+
+		expect(harness.controller.loading).toBe(false);
+		expect(harness.controller.origin).toBeNull();
+		expect(harness.controller.error).toBeNull();
+		expect(harness.focusOrigin).not.toHaveBeenCalled();
+		expect(harness.goto).not.toHaveBeenCalled();
+	});
+
+	it('ignores geocode JSON that resolves after disposal', async () => {
+		const harness = createHarness();
+		let resolveJson!: (result: GeocodedLocation) => void;
+		const json = vi.fn(
+			() =>
+				new Promise<GeocodedLocation>((resolve) => {
+					resolveJson = resolve;
+				}),
+		);
+		harness.fetch.mockResolvedValue({ ok: true, json } as unknown as Response);
+		harness.controller.query = 'Place des Arts';
+		const pending = harness.controller.search(submitEvent());
+		await waitFor(() => expect(json).toHaveBeenCalledOnce());
+
+		harness.controller.dispose();
+		resolveJson(target as GeocodedLocation);
+		await pending;
+
+		expect(harness.controller.loading).toBe(false);
+		expect(harness.controller.origin).toBeNull();
+		expect(harness.controller.error).toBeNull();
+		expect(harness.focusOrigin).not.toHaveBeenCalled();
+		expect(harness.goto).not.toHaveBeenCalled();
 	});
 
 	it('accepts an in-bounds coordinate query without fetching', async () => {
@@ -366,6 +436,7 @@ describe('map near-me controller', () => {
 
 		expect(harness.fetch).toHaveBeenCalledWith(
 			'/api/geocode/montreal?placeId=place-1&session=session-1',
+			{ signal: expect.any(AbortSignal) },
 		);
 		expect(harness.controller.query).toBe('Place des Arts');
 		expect(harness.controller.origin).toEqual(result);

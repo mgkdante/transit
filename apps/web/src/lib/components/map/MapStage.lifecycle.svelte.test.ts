@@ -1,10 +1,11 @@
 import { cleanup, render, waitFor } from '@testing-library/svelte';
-import { flushSync, tick, type Component } from 'svelte';
+import { flushSync, tick, unmount as unmountComponent, type Component } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MapStage from './MapStage.svelte';
 
 type FailureKind = 'importer' | 'protocol' | 'style' | 'construct' | 'setup';
 type Failure = Readonly<{ kind: FailureKind; retry: () => void | Promise<void> }>;
+const MAP_LISTENER_TYPES = ['load', 'styledata', 'sourcedata', 'movestart', 'boxzoomend'] as const;
 
 const harness = vi.hoisted(() => {
 	function deferred<T>() {
@@ -31,6 +32,18 @@ const harness = vi.hoisted(() => {
 		setupFailure: null as string | null,
 		observerConstructorFailure: false,
 		observerObserveFailure: false,
+		observerDisconnectFailure: null as Error | null,
+		offCleanupFailure: null as {
+			readonly type: string;
+			readonly error: Error;
+			readonly phase?: 'before' | 'after';
+		} | null,
+		setStyleCleanupFailure: null as Error | null,
+		controlCleanupFailure: null as {
+			readonly error: Error;
+			readonly phase: 'before' | 'after';
+		} | null,
+		controlListenerCount: 0,
 		maps: [] as MapStub[],
 		constructorCalls: 0,
 		observers: [] as ResizeObserverStub[],
@@ -40,8 +53,28 @@ const harness = vi.hoisted(() => {
 
 	class MapStub {
 		readonly handlers = new Map<string, Set<(...args: unknown[]) => void>>();
+		readonly registrations: Array<[string, (...args: unknown[]) => void]> = [];
 		readonly container: HTMLElement;
-		readonly remove = vi.fn(() => this.container.replaceChildren());
+		readonly controls: AttributionControlStub[] = [];
+		rawRemoved = false;
+		readonly addControl = vi.fn((control: AttributionControlStub): this => {
+			const element = control.onAdd(this);
+			this.controls.push(control);
+			this.container.append(element);
+			return this;
+		});
+		readonly removeControl = vi.fn((control: AttributionControlStub): this => {
+			const index = this.controls.indexOf(control);
+			if (index !== -1) this.controls.splice(index, 1);
+			control.onRemove();
+			return this;
+		});
+		readonly remove = vi.fn(() => {
+			for (const control of this.controls) control.onRemove();
+			this.controls.length = 0;
+			this.container.replaceChildren();
+			this.rawRemoved = true;
+		});
 		readonly resize = vi.fn(() => this.emit('movestart', {}));
 		readonly setMaxBounds = vi.fn();
 		readonly fitBounds = vi.fn((_bounds: unknown, _options?: Record<string, unknown>) =>
@@ -51,9 +84,15 @@ const harness = vi.hoisted(() => {
 		readonly easeTo = vi.fn((_options?: Record<string, unknown>) => this.emit('movestart', {}));
 		readonly flyTo = vi.fn((_options?: Record<string, unknown>) => this.emit('movestart', {}));
 		readonly getZoom = vi.fn(() => 11);
-		readonly setStyle = vi.fn();
+		styleAttached = true;
+		readonly setStyle = vi.fn((style: unknown) => {
+			this.styleAttached = style != null;
+			if (style == null && state.setStyleCleanupFailure) throw state.setStyleCleanupFailure;
+		});
 		readonly getStyle = vi.fn(() => ({ version: 8, sources: {}, layers: [] }));
+		readonly getSource = vi.fn((_id: string) => ({ type: 'geojson' }));
 		readonly getLayer = vi.fn(() => undefined);
+		readonly removeFeatureState = vi.fn((_target: unknown) => undefined);
 		readonly setPaintProperty = vi.fn();
 
 		constructor(readonly options: Record<string, unknown>) {
@@ -65,34 +104,46 @@ const harness = vi.hoisted(() => {
 				throw new Error('constructor failed');
 			}
 			this.container.append(document.createElement('canvas'));
-			const details = document.createElement('details');
-			details.className =
-				'maplibregl-ctrl-attrib maplibregl-compact maplibregl-compact-show maplibregl-attrib-empty';
-			details.setAttribute('open', '');
-			details.append(document.createElement('summary'), document.createElement('a'));
-			this.container.append(details);
 			state.maps.push(this);
 		}
 
-		on(type: string, handler: (...args: unknown[]) => void): this {
-			if (state.setupFailure === `on:${type}`) throw new Error(`listener ${type} failed`);
+		on(type: string, handler: (...args: unknown[]) => void) {
 			const handlers = this.handlers.get(type) ?? new Set();
 			handlers.add(handler);
 			this.handlers.set(type, handlers);
-			return this;
+			this.registrations.push([type, handler]);
+			if (state.setupFailure === `on:${type}`) throw new Error(`listener ${type} failed`);
+			return { unsubscribe: () => this.off(type, handler) };
 		}
 
-		off(type: string, handler: (...args: unknown[]) => void): this {
+		readonly off = vi.fn((type: string, handler: (...args: unknown[]) => void): this => {
+			if (
+				state.offCleanupFailure?.type === type &&
+				(state.offCleanupFailure.phase ?? 'after') === 'before'
+			) {
+				const { error } = state.offCleanupFailure;
+				state.offCleanupFailure = null;
+				throw error;
+			}
 			this.handlers.get(type)?.delete(handler);
+			if (
+				state.offCleanupFailure?.type === type &&
+				(state.offCleanupFailure.phase ?? 'after') === 'after'
+			) {
+				const { error } = state.offCleanupFailure;
+				state.offCleanupFailure = null;
+				throw error;
+			}
 			return this;
-		}
+		});
 
 		once(type: string, handler: (...args: unknown[]) => void): this {
 			const once = (...args: unknown[]) => {
 				this.off(type, once);
 				handler(...args);
 			};
-			return this.on(type, once);
+			this.on(type, once);
+			return this;
 		}
 
 		emit(type: string, payload: Record<string, unknown> = {}): void {
@@ -100,11 +151,54 @@ const harness = vi.hoisted(() => {
 		}
 	}
 
+	class AttributionControlStub {
+		container: HTMLDetailsElement | null = null;
+
+		constructor(
+			readonly options: { compact?: boolean; customAttribution?: string | string[] } = {
+				compact: true,
+				customAttribution: '<a href="https://maplibre.org/" target="_blank">MapLibre</a>',
+			},
+		) {}
+
+		onAdd(_map: MapStub): HTMLElement {
+			const details = document.createElement('details');
+			details.className =
+				'maplibregl-ctrl-attrib maplibregl-compact maplibregl-compact-show maplibregl-attrib-empty';
+			details.setAttribute('open', '');
+			details.append(document.createElement('summary'), document.createElement('a'));
+			this.container = details;
+			state.controlListenerCount += 5;
+			return details;
+		}
+
+		onRemove(): void {
+			if (state.controlCleanupFailure?.phase === 'before') {
+				const { error } = state.controlCleanupFailure;
+				state.controlCleanupFailure = null;
+				throw error;
+			}
+			this.container?.remove();
+			this.container = null;
+			state.controlListenerCount = Math.max(0, state.controlListenerCount - 5);
+			if (state.controlCleanupFailure?.phase === 'after') {
+				const { error } = state.controlCleanupFailure;
+				state.controlCleanupFailure = null;
+				throw error;
+			}
+		}
+	}
+
 	class ResizeObserverStub {
+		connected = false;
 		readonly observe = vi.fn((_target: Element) => {
+			this.connected = true;
 			if (state.observerObserveFailure) throw new Error('observe failed');
 		});
-		readonly disconnect = vi.fn();
+		readonly disconnect = vi.fn(() => {
+			this.connected = false;
+			if (state.observerDisconnectFailure) throw state.observerDisconnectFailure;
+		});
 
 		constructor(readonly callback: ResizeObserverCallback) {
 			if (state.observerConstructorFailure) throw new Error('observer failed');
@@ -145,6 +239,11 @@ const harness = vi.hoisted(() => {
 		state.setupFailure = null;
 		state.observerConstructorFailure = false;
 		state.observerObserveFailure = false;
+		state.observerDisconnectFailure = null;
+		state.offCleanupFailure = null;
+		state.setStyleCleanupFailure = null;
+		state.controlCleanupFailure = null;
+		state.controlListenerCount = 0;
 		state.maps.length = 0;
 		state.constructorCalls = 0;
 		state.observers.length = 0;
@@ -156,7 +255,7 @@ const harness = vi.hoisted(() => {
 		maplibre: async () => {
 			await state.runtime.promise;
 			if (state.runtimeError) throw state.runtimeError;
-			return { Map: MapStub, addProtocol };
+			return { Map: MapStub, AttributionControl: AttributionControlStub, addProtocol };
 		},
 		css: async () => {
 			await state.css.promise;
@@ -169,7 +268,16 @@ const harness = vi.hoisted(() => {
 		},
 	};
 
-	return { state, reset, MapStub, ResizeObserverStub, addProtocol, ProtocolStub, importers };
+	return {
+		state,
+		reset,
+		MapStub,
+		AttributionControlStub,
+		ResizeObserverStub,
+		addProtocol,
+		ProtocolStub,
+		importers,
+	};
 });
 
 vi.mock('./basemap', async (importOriginal) => {
@@ -397,21 +505,46 @@ describe('MapStage boot lifecycle', () => {
 	);
 
 	it.each([
-		['load listener', (): void => void (harness.state.setupFailure = 'on:load'), 0],
-		['styledata listener', (): void => void (harness.state.setupFailure = 'on:styledata'), 0],
+		['load listener', (): void => void (harness.state.setupFailure = 'on:load'), 0, ['load']],
+		[
+			'styledata listener',
+			(): void => void (harness.state.setupFailure = 'on:styledata'),
+			0,
+			['load', 'styledata'],
+		],
+		[
+			'sourcedata listener',
+			(): void => void (harness.state.setupFailure = 'on:sourcedata'),
+			0,
+			['load', 'styledata', 'sourcedata'],
+		],
+		[
+			'movestart listener',
+			(): void => void (harness.state.setupFailure = 'on:movestart'),
+			0,
+			['load', 'styledata', 'sourcedata', 'movestart'],
+		],
+		[
+			'boxzoomend listener',
+			(): void => void (harness.state.setupFailure = 'on:boxzoomend'),
+			0,
+			MAP_LISTENER_TYPES,
+		],
 		[
 			'ResizeObserver construction',
 			(): void => void (harness.state.observerConstructorFailure = true),
 			0,
+			MAP_LISTENER_TYPES,
 		],
 		[
 			'ResizeObserver observation',
 			(): void => void (harness.state.observerObserveFailure = true),
 			1,
+			MAP_LISTENER_TYPES,
 		],
 	] as const)(
 		'cleans the constructed map and observer after fatal %s setup',
-		async (_label, arrange, expectedObservers) => {
+		async (_label, arrange, expectedObservers, expectedOffTypes) => {
 			arrange();
 			const failures: Failure[] = [];
 			render(Stage, {
@@ -426,13 +559,58 @@ describe('MapStage boot lifecycle', () => {
 			releaseImports();
 
 			await waitFor(() => expect(failures.at(-1)?.kind).toBe('setup'));
-			expect(harness.state.maps[0]?.remove).toHaveBeenCalledTimes(1);
+			const map = harness.state.maps[0]!;
+			const failedType = harness.state.setupFailure?.replace('on:', '');
+			const expectedReleaseOrder = failedType
+				? [failedType, ...expectedOffTypes.filter((type) => type !== failedType)]
+				: [...expectedOffTypes];
+			expect(map.off.mock.calls.map(([type]) => type)).toEqual(expectedReleaseOrder);
+			expect(map.off.mock.calls).toEqual(
+				expectedReleaseOrder.map((type) =>
+					map.registrations.find(([registeredType]) => registeredType === type),
+				),
+			);
+			for (const type of MAP_LISTENER_TYPES) expect(map.handlers.get(type)?.size ?? 0).toBe(0);
+			for (const offOrder of map.off.mock.invocationCallOrder) {
+				expect(offOrder).toBeLessThan(map.remove.mock.invocationCallOrder[0]!);
+			}
+			expect(map.remove).toHaveBeenCalledTimes(1);
 			expect(harness.state.observers).toHaveLength(expectedObservers);
 			for (const observer of harness.state.observers) {
 				expect(observer.disconnect).toHaveBeenCalledTimes(1);
+				expect(observer.connected).toBe(false);
 			}
 		},
 	);
+
+	it('retries the exact listener receipt when registration and the first rollback both throw', async () => {
+		const rollbackError = new Error('load off failed before removal');
+		harness.state.setupFailure = 'on:load';
+		harness.state.offCleanupFailure = {
+			type: 'load',
+			error: rollbackError,
+			phase: 'before',
+		};
+		const failures: Failure[] = [];
+		render(Stage, {
+			props: {
+				importers: harness.importers,
+				basemapLoader: vi.fn(async () => null),
+				onerror: (failure: Failure | null) => {
+					if (failure) failures.push(failure);
+				},
+			},
+		});
+		releaseImports();
+
+		await waitFor(() => expect(failures.at(-1)?.kind).toBe('setup'));
+		const map = harness.state.maps[0]!;
+		const registeredLoad = map.registrations.find(([type]) => type === 'load');
+		expect(registeredLoad).toBeDefined();
+		expect(map.handlers.get('load')).toHaveLength(0);
+		expect(map.off.mock.calls).toEqual([registeredLoad, registeredLoad]);
+		expect(map.remove).toHaveBeenCalledOnce();
+	});
 
 	it('aborts and suppresses a pending attempt when unmounted mid-boot', async () => {
 		let signal: AbortSignal | undefined;
@@ -480,6 +658,254 @@ describe('MapStage boot lifecycle', () => {
 		expect(harness.state.observers[0]?.disconnect).toHaveBeenCalledTimes(1);
 	});
 
+	it('releases consumer owners against the raw map before stage listeners and raw removal', async () => {
+		const order: string[] = [];
+		let receivedMap: InstanceType<typeof harness.MapStub> | undefined;
+		const consumer = vi.fn();
+		let sourceAtConsumer: unknown;
+		let removeCallsAtConsumer = -1;
+		let offCallsAtConsumer = -1;
+		const onready = (readyMap: InstanceType<typeof harness.MapStub>) => {
+			readyMap.on('click', consumer);
+		};
+		const onbeforeremove = vi.fn((ownedMap: InstanceType<typeof harness.MapStub>) => {
+			order.push('consumer');
+			receivedMap = ownedMap;
+			sourceAtConsumer = ownedMap.getSource('vehicles');
+			ownedMap.removeFeatureState({ source: 'vehicles' });
+			ownedMap.off('click', consumer);
+			removeCallsAtConsumer = map.remove.mock.calls.length;
+			offCallsAtConsumer = map.off.mock.calls.length;
+		});
+		const { view, map } = await bootStage({ onready, onbeforeremove });
+		map.remove.mockImplementation(() => {
+			order.push('map');
+			map.container.replaceChildren();
+		});
+		map.emit('load');
+		expect(map.handlers.get('click')).toHaveLength(1);
+
+		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+
+		expect(onbeforeremove).toHaveBeenCalledOnce();
+		expect(receivedMap).toBe(map);
+		expect(sourceAtConsumer).toEqual({ type: 'geojson' });
+		expect(removeCallsAtConsumer).toBe(0);
+		expect(offCallsAtConsumer).toBe(1);
+		expect(map.handlers.get('click')).toHaveLength(0);
+		expect(map.getSource).toHaveBeenCalledExactlyOnceWith('vehicles');
+		expect(map.removeFeatureState).toHaveBeenCalledExactlyOnceWith({ source: 'vehicles' });
+		expect(order).toEqual(['consumer', 'map']);
+	});
+
+	it('owns attribution teardown so a pre-release control fault cannot block raw removal', async () => {
+		const controlError = new Error('attribution control failed before release');
+		const oncleanupfailure = vi.fn();
+		const { view, map } = await bootStage({ oncleanupfailure });
+		expect(map.options.attributionControl).toBe(false);
+		expect(map.controls).toHaveLength(1);
+		expect(map.controls[0]?.options).toEqual({ compact: true });
+		expect(map.controls[0]?.options).not.toHaveProperty('customAttribution');
+		expect(harness.state.controlListenerCount).toBe(5);
+		harness.state.controlCleanupFailure = { error: controlError, phase: 'before' };
+
+		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+
+		expect(map.removeControl).toHaveBeenCalledTimes(2);
+		expect(map.controls).toHaveLength(0);
+		expect(harness.state.controlListenerCount).toBe(0);
+		expect(map.remove).toHaveBeenCalledOnce();
+		expect(map.rawRemoved).toBe(true);
+		expect(map.container.childElementCount).toBe(0);
+		expect(oncleanupfailure).toHaveBeenCalledExactlyOnceWith(controlError);
+	});
+
+	it('finishes teardown and reports every error when consumer and raw removal throw', async () => {
+		const releaseError = new Error('consumer release failed');
+		const onbeforeremove = vi.fn(() => {
+			throw releaseError;
+		});
+		const oncleanupfailure = vi.fn();
+		const { view, map } = await bootStage({
+			onbeforeremove,
+			oncleanupfailure,
+		});
+		const registeredHandlers = MAP_LISTENER_TYPES.map((type) => {
+			const handlers = [...(map.handlers.get(type) ?? [])];
+			expect(handlers).toHaveLength(1);
+			return handlers[0]!;
+		});
+		expect(registeredHandlers[1]).toBe(registeredHandlers[2]);
+		const mapRemoveError = new Error('MapLibre remove failed after listener cleanup');
+		map.remove.mockImplementation(() => {
+			map.container.replaceChildren();
+			throw mapRemoveError;
+		});
+
+		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+		expect(onbeforeremove).toHaveBeenCalledOnce();
+		expect(map.off.mock.calls).toEqual(
+			MAP_LISTENER_TYPES.map((type, index) => [type, registeredHandlers[index]]),
+		);
+		for (const type of MAP_LISTENER_TYPES) expect(map.handlers.get(type)?.size ?? 0).toBe(0);
+		const consumerOrder = onbeforeremove.mock.invocationCallOrder[0]!;
+		for (const offOrder of map.off.mock.invocationCallOrder) {
+			expect(consumerOrder).toBeLessThan(offOrder);
+			expect(offOrder).toBeLessThan(map.setStyle.mock.invocationCallOrder[0]!);
+		}
+		expect(map.setStyle).toHaveBeenCalledOnce();
+		expect(map.setStyle).toHaveBeenCalledWith(null);
+		expect(map.setStyle.mock.invocationCallOrder[0]!).toBeLessThan(
+			map.remove.mock.invocationCallOrder[0]!,
+		);
+		expect(map.remove).toHaveBeenCalledOnce();
+		expect(oncleanupfailure.mock.calls).toEqual([[releaseError], [mapRemoveError]]);
+	});
+
+	it('observes and reports a rejected thenable returned by consumer teardown', async () => {
+		const releaseError = new Error('async consumer release failed');
+		const rejectedThenable = {
+			then(
+				_onfulfilled: ((value: unknown) => unknown) | null | undefined,
+				onrejected: ((reason: unknown) => unknown) | null | undefined,
+			) {
+				onrejected?.(releaseError);
+			},
+		};
+		const oncleanupfailure = vi.fn();
+		const { view, map } = await bootStage({
+			onbeforeremove: () => rejectedThenable,
+			oncleanupfailure,
+		});
+
+		view.unmount();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(oncleanupfailure).toHaveBeenCalledExactlyOnceWith(releaseError);
+		for (const type of MAP_LISTENER_TYPES) expect(map.handlers.get(type)?.size ?? 0).toBe(0);
+		expect(map.styleAttached).toBe(false);
+		expect(map.remove).toHaveBeenCalledOnce();
+	});
+
+	it('isolates simultaneous observer, owner, listener, style, and raw-remove faults', async () => {
+		const errors = {
+			observer: new Error('observer disconnect failed after mutation'),
+			owner: new Error('owner release failed'),
+			listener: new Error('styledata off failed after mutation'),
+			style: new Error('style release failed after mutation'),
+			remove: new Error('raw remove failed after DOM mutation'),
+		};
+		const oncleanupfailure = vi.fn();
+		const { view, map } = await bootStage({
+			onbeforeremove: () => {
+				throw errors.owner;
+			},
+			oncleanupfailure,
+		});
+		const observer = harness.state.observers[0]!;
+		expect(observer.connected).toBe(true);
+		expect(map.styleAttached).toBe(true);
+		for (const type of MAP_LISTENER_TYPES) expect(map.handlers.get(type)?.size ?? 0).toBe(1);
+		harness.state.observerDisconnectFailure = errors.observer;
+		harness.state.offCleanupFailure = { type: 'styledata', error: errors.listener };
+		harness.state.setStyleCleanupFailure = errors.style;
+		map.remove.mockImplementation(() => {
+			map.container.replaceChildren();
+			throw errors.remove;
+		});
+
+		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+
+		expect(observer.connected).toBe(false);
+		for (const type of MAP_LISTENER_TYPES) expect(map.handlers.get(type)?.size ?? 0).toBe(0);
+		expect(map.styleAttached).toBe(false);
+		expect(map.container.childElementCount).toBe(0);
+		expect(map.setStyle).toHaveBeenCalledExactlyOnceWith(null);
+		expect(map.remove).toHaveBeenCalledOnce();
+		expect(oncleanupfailure.mock.calls).toEqual([
+			[errors.observer],
+			[errors.owner],
+			[errors.listener],
+			[errors.style],
+			[errors.remove],
+		]);
+	});
+
+	it('surfaces an unobserved cleanup fault without letting it escape unmount', async () => {
+		const releaseError = new Error('consumer release failed');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { view } = await bootStage({
+			onbeforeremove: () => {
+				throw releaseError;
+			},
+		});
+
+		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+
+		expect(consoleError).toHaveBeenCalledExactlyOnceWith('MapStage cleanup failed', releaseError);
+	});
+
+	it('contains a cleanup reporter fault after all physical release attempts', async () => {
+		const releaseError = new Error('consumer release failed');
+		const reporterError = new Error('cleanup reporter failed');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const oncleanupfailure = vi.fn(() => {
+			throw reporterError;
+		});
+		const { view, map } = await bootStage({
+			onbeforeremove: () => {
+				throw releaseError;
+			},
+			oncleanupfailure,
+		});
+
+		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+
+		expect(oncleanupfailure).toHaveBeenCalledExactlyOnceWith(releaseError);
+		expect(consoleError).toHaveBeenCalledOnce();
+		expect(consoleError.mock.calls[0]?.[0]).toBe('MapStage cleanup reporter failed');
+		const surfaced = consoleError.mock.calls[0]?.[1];
+		expect(surfaced).toBeInstanceOf(AggregateError);
+		expect((surfaced as AggregateError).errors).toEqual([releaseError, reporterError]);
+		for (const type of MAP_LISTENER_TYPES) expect(map.handlers.get(type)?.size ?? 0).toBe(0);
+		expect(map.styleAttached).toBe(false);
+		expect(map.remove).toHaveBeenCalledOnce();
+	});
+
+	it('observes a rejected cleanup reporter and surfaces it through the fallback', async () => {
+		const releaseError = new Error('consumer release failed');
+		const reporterError = new Error('async cleanup reporter failed');
+		let rejectReporter!: (error: Error) => void;
+		const reporterResult = new Promise<void>((_resolve, reject) => {
+			rejectReporter = reject;
+		});
+		void reporterResult.catch(() => {});
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const oncleanupfailure = vi.fn(() => reporterResult);
+		const { view, map } = await bootStage({
+			onbeforeremove: () => {
+				throw releaseError;
+			},
+			oncleanupfailure,
+		});
+
+		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+		rejectReporter(reporterError);
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(oncleanupfailure).toHaveBeenCalledExactlyOnceWith(releaseError);
+		expect(consoleError).toHaveBeenCalledOnce();
+		expect(consoleError.mock.calls[0]?.[0]).toBe('MapStage cleanup reporter failed');
+		const surfaced = consoleError.mock.calls[0]?.[1];
+		expect(surfaced).toBeInstanceOf(AggregateError);
+		expect((surfaced as AggregateError).errors).toEqual([releaseError, reporterError]);
+		for (const type of MAP_LISTENER_TYPES) expect(map.handlers.get(type)?.size ?? 0).toBe(0);
+		expect(map.styleAttached).toBe(false);
+		expect(map.remove).toHaveBeenCalledOnce();
+	});
+
 	it('uses one document reload for importer-class retry instead of re-importing in place', async () => {
 		harness.state.runtimeError = new Error('runtime failed');
 		const reload = vi.fn();
@@ -503,7 +929,7 @@ describe('MapStage boot lifecycle', () => {
 		expect(harness.state.constructorCalls).toBe(0);
 	});
 
-	it('guards double retry, remounts an empty host, and suppresses the stale attempt', async () => {
+	it('zeros partial constructor DOM before one guarded in-place retry', async () => {
 		harness.state.constructFailures = 1;
 		const failures: Failure[] = [];
 		const view = render(Stage, {
@@ -518,44 +944,13 @@ describe('MapStage boot lifecycle', () => {
 		releaseImports();
 		await waitFor(() => expect(failures.at(-1)?.kind).toBe('construct'));
 		const firstHost = view.container.querySelector('[data-slot="map-stage"]');
-		expect(firstHost?.querySelector('canvas')).not.toBeNull();
+		expect(firstHost?.querySelector('canvas')).toBeNull();
+		expect(firstHost?.childElementCount).toBe(0);
 
-		const firstRetry = failures.at(-1)!.retry();
-		const duplicateRetry = failures.at(-1)!.retry();
-		await Promise.all([firstRetry, duplicateRetry]);
+		await Promise.all([failures.at(-1)!.retry(), failures.at(-1)!.retry()]);
 
 		await waitFor(() => expect(harness.state.maps).toHaveLength(1));
-		const retriedHost = view.container.querySelector('[data-slot="map-stage"]');
-		expect(retriedHost).not.toBe(firstHost);
-		expect(retriedHost?.querySelectorAll('canvas')).toHaveLength(1);
-		expect(harness.state.maps[0]?.options.center).toEqual([-73.5673, 45.5017]);
-	});
-
-	it('ignores a stale failure retry after a newer generation has failed', async () => {
-		harness.state.constructFailures = 2;
-		const failures: Failure[] = [];
-		render(Stage, {
-			props: {
-				importers: harness.importers,
-				basemapLoader: vi.fn(async () => null),
-				onerror: (failure: Failure | null) => {
-					if (failure) failures.push(failure);
-				},
-			},
-		});
-		releaseImports();
-		await waitFor(() => expect(failures).toHaveLength(1));
-		await failures[0]!.retry();
-		await waitFor(() => expect(failures).toHaveLength(2));
-
-		await failures[0]!.retry();
-		await settle();
 		expect(harness.state.constructorCalls).toBe(2);
-		expect(harness.state.maps).toHaveLength(0);
-
-		await failures[1]!.retry();
-		await waitFor(() => expect(harness.state.maps).toHaveLength(1));
-		expect(harness.state.constructorCalls).toBe(3);
 	});
 
 	it('separates theme repaint from genuine style swaps without constructing a second map', async () => {
@@ -613,6 +1008,97 @@ describe('MapStage boot lifecycle', () => {
 
 		harness.state.maps[0]?.emit('style.load');
 		expect(onstyleload).toHaveBeenCalledTimes(1);
+	});
+
+	it('releases a pending style-load callback when teardown wins the style swap', async () => {
+		const onstyleload = vi.fn();
+		const { view, props, map } = await bootStage({ onstyleload });
+
+		await view.rerender({
+			...props,
+			basemap: {
+				url: 'https://example.com/montreal.pmtiles',
+				attribution: 'Example',
+				generated_utc: '2026-07-31T00:00:00Z',
+			},
+		});
+		await settle();
+		expect(map.handlers.get('style.load')).toHaveLength(1);
+		const copiedCallback = [...(map.handlers.get('style.load') ?? [])][0]!;
+
+		view.unmount();
+		await settle();
+
+		expect(map.handlers.get('style.load')).toHaveLength(0);
+		copiedCallback({});
+		expect(onstyleload).not.toHaveBeenCalled();
+	});
+
+	it('contains and reports a style-load callback disposer fault after mutation', async () => {
+		const cleanupError = new Error('style.load off failed after mutation');
+		const oncleanupfailure = vi.fn();
+		const onstyleload = vi.fn();
+		const { view, props, map } = await bootStage({ oncleanupfailure, onstyleload });
+		await view.rerender({
+			...props,
+			basemap: {
+				url: 'https://example.com/montreal.pmtiles',
+				attribution: 'Example',
+				generated_utc: '2026-07-31T00:00:00Z',
+			},
+		});
+		await settle();
+		expect(map.handlers.get('style.load')).toHaveLength(1);
+		harness.state.offCleanupFailure = { type: 'style.load', error: cleanupError };
+
+		expect(() => map.emit('style.load')).not.toThrow();
+		expect(onstyleload).toHaveBeenCalledOnce();
+		expect(oncleanupfailure).toHaveBeenCalledExactlyOnceWith(cleanupError);
+
+		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+
+		expect(map.handlers.get('style.load')).toHaveLength(0);
+		for (const type of MAP_LISTENER_TYPES) expect(map.handlers.get(type)?.size ?? 0).toBe(0);
+		expect(map.setStyle).toHaveBeenLastCalledWith(null);
+		expect(map.remove).toHaveBeenCalledOnce();
+	});
+
+	it('contains and reports a pending style-load effect-disposer fault on the next swap', async () => {
+		const cleanupError = new Error('pending style.load off failed after mutation');
+		const oncleanupfailure = vi.fn();
+		const { view, props, map } = await bootStage({ oncleanupfailure });
+		const basemap = (suffix: string) => ({
+			url: `https://example.com/montreal-${suffix}.pmtiles`,
+			attribution: 'Example',
+			generated_utc: '2026-07-31T00:00:00Z',
+		});
+		await view.rerender({ ...props, basemap: basemap('a') });
+		await settle();
+		expect(map.handlers.get('style.load')).toHaveLength(1);
+		harness.state.offCleanupFailure = { type: 'style.load', error: cleanupError };
+
+		await expect(view.rerender({ ...props, basemap: basemap('b') })).resolves.toBeUndefined();
+		await settle();
+
+		expect(oncleanupfailure).toHaveBeenCalledExactlyOnceWith(cleanupError);
+		expect(map.handlers.get('style.load')).toHaveLength(1);
+		map.emit('style.load');
+		expect(map.handlers.get('style.load')).toHaveLength(0);
+	});
+
+	it('makes a copied ResizeObserver callback inert after teardown', async () => {
+		const { view, map } = await bootStage();
+		await settle();
+		const observer = harness.state.observers[0]!;
+		const copiedCallback = observer.callback;
+		map.resize.mockClear();
+
+		view.unmount();
+		await settle();
+		expect(observer.disconnect).toHaveBeenCalledOnce();
+
+		copiedCallback([], observer as unknown as ResizeObserver);
+		expect(map.resize).not.toHaveBeenCalled();
 	});
 
 	it('uses the normalized constructor viewport as the first fit with zero boot fitBounds calls', async () => {
@@ -858,7 +1344,7 @@ describe('MapStage boot lifecycle', () => {
 		expect(retriedMap.fitBounds).toHaveBeenCalledTimes(1);
 	});
 
-	it('disposes camera ownership listeners with the map effect', async () => {
+	it('disposes camera ownership listeners with the owning boot attempt', async () => {
 		const { view, map } = await bootStage();
 		expect(map.handlers.get('movestart')).toHaveLength(1);
 		expect(map.handlers.get('boxzoomend')).toHaveLength(1);
@@ -926,4 +1412,31 @@ describe('MapStage attribution one-shot', () => {
 		expect(details).not.toHaveAttribute('open');
 		expect(details).not.toHaveClass('maplibregl-compact-show');
 	});
+
+	it.each(['styledata', 'sourcedata'] as const)(
+		'contains a mutate-then-throw %s release and still detaches both attribution listeners',
+		async (failureType) => {
+			const cleanupError = new Error(`${failureType} off failed after mutation`);
+			const oncleanupfailure = vi.fn();
+			const view = render(Stage, {
+				props: {
+					importers: harness.importers,
+					basemapLoader: vi.fn(async () => null),
+					oncleanupfailure,
+				},
+			});
+			releaseImports();
+			await waitFor(() => expect(harness.state.maps).toHaveLength(1));
+			const map = harness.state.maps[0]!;
+			const details = view.container.querySelector('details')!;
+			details.classList.remove('maplibregl-attrib-empty');
+			harness.state.offCleanupFailure = { type: failureType, error: cleanupError };
+
+			expect(() => map.emit('sourcedata')).not.toThrow();
+
+			expect(map.handlers.get('styledata')).toHaveLength(0);
+			expect(map.handlers.get('sourcedata')).toHaveLength(0);
+			expect(oncleanupfailure).toHaveBeenCalledExactlyOnceWith(cleanupError);
+		},
+	);
 });

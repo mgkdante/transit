@@ -1,23 +1,32 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { tick } from 'svelte';
+import { settled, tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { toStopFeatures } from '$lib/components/map/stopsLayer';
+import {
+	setStopException as setRealStopException,
+	toStopFeatures,
+} from '$lib/components/map/stopsLayer';
 import MapHero from './MapHero.svelte';
+import MapHeroNavigationHarness from '../../../routes/__fixtures__/MapHeroNavigationHarness.svelte';
 import { mapHeroReceiptSignals } from './__fixtures__/MapHeroReceiptSignals.svelte';
 
 const harness = vi.hoisted(() => {
 	const identityReceivers: unknown[] = [];
 	const bakeVehicleSprites = vi.fn();
 	const bakeLocationPinSprite = vi.fn();
-	const addVehicleSource = vi.fn();
+	const sourceInstaller = (id: string) =>
+		vi.fn(
+			(map: { addSource: (sourceId: string, source: { setData(data: unknown): void }) => void }) =>
+				map.addSource(id, { setData: vi.fn() }),
+		);
+	const addVehicleSource = sourceInstaller('vehicles');
 	const addVehicleLayers = vi.fn();
-	const addStopsSource = vi.fn();
+	const addStopsSource = sourceInstaller('stops');
 	const addStopsLayer = vi.fn();
-	const addStopExceptionSource = vi.fn();
+	const addStopExceptionSource = sourceInstaller('stop-exception');
 	const addStopExceptionLayer = vi.fn();
-	const addRouteLineSource = vi.fn();
+	const addRouteLineSource = sourceInstaller('route-lines');
 	const addRouteLineLayers = vi.fn();
-	const addNearTargetSource = vi.fn();
+	const addNearTargetSource = sourceInstaller('near-target');
 	const addNearTargetLayer = vi.fn();
 	const setRouteLines = vi.fn();
 	const setStops = vi.fn();
@@ -84,7 +93,10 @@ const harness = vi.hoisted(() => {
 	};
 	const motionSet = vi.fn(runMotionSet);
 	const motionDestroy = vi.fn(stopVehicleUploads);
-	const releaseLease = vi.fn();
+	let activeLeaseCount = 0;
+	const releaseLease = vi.fn(() => {
+		activeLeaseCount = Math.max(0, activeLeaseCount - 1);
+	});
 	const stops = [
 		{
 			id: 'stop-1',
@@ -245,22 +257,133 @@ const harness = vi.hoisted(() => {
 		start: vi.fn(),
 		stop: vi.fn(),
 		refresh: vi.fn(),
-		subscribeFamilies: vi.fn(() => releaseLease),
+		subscribeFamilies: vi.fn(() => {
+			activeLeaseCount += 1;
+			return releaseLease;
+		}),
 	};
+	type HarnessNavigation = import('./__fixtures__/KitNavigationSimulator').SimulatedNavigation;
+	type BeforeNavigation = import('./__fixtures__/KitNavigationSimulator').SimulatedBeforeNavigation;
+	type NavigationCallback =
+		import('./__fixtures__/KitNavigationSimulator').SimulatedNavigationCallback;
+	let publishPage: (href: string, state: Readonly<Record<string, unknown>>) => void = () => {
+		throw new Error('page publisher used before the $app/stores mock factory ran');
+	};
+	let publishNavigating: (navigation: HarnessNavigation | null) => void = () => {
+		throw new Error('navigation publisher used before the $app/stores mock factory ran');
+	};
+	let settleDom = async (): Promise<void> => {
+		throw new Error('DOM settlement used before the test harness was initialized');
+	};
+	let tickDom = async (): Promise<void> => {
+		throw new Error('DOM tick used before the test harness was initialized');
+	};
+	let router: import('./__fixtures__/KitNavigationSimulator').KitNavigationSimulator | null = null;
+	const navigationRouter = () => {
+		if (!router) throw new Error('Kit navigation simulator used before installation');
+		return router;
+	};
+
+	function resetKitFocus(url: URL): void {
+		const autofocus = document.querySelector<HTMLElement>('[autofocus]');
+		if (autofocus) {
+			autofocus.focus();
+			return;
+		}
+		const hashTarget = url.hash
+			? document.getElementById(decodeURIComponent(url.hash.slice(1)))
+			: null;
+		if (hashTarget) return;
+		const tabindex = document.body.getAttribute('tabindex');
+		document.body.tabIndex = -1;
+		document.body.focus({ preventScroll: true });
+		if (tabindex === null) document.body.removeAttribute('tabindex');
+		else document.body.setAttribute('tabindex', tabindex);
+	}
+
+	const goto = vi.fn((target: string, options: Record<string, unknown> = {}) => {
+		const simulator = navigationRouter();
+		const started = simulator.startNavigation(
+			new URL(target, simulator.currentPageHref).href,
+			simulator.currentPageHref,
+			{ type: 'goto', keepFocus: options.keepFocus === true },
+		);
+		return started.navigation.complete;
+	});
 
 	return {
 		alert,
 		locale: 'en' as 'en' | 'fr',
 		isDesktop: false,
-		// reassigned by the $app/stores mock factory below
-		setPageUrl: (_href: string): void => {
-			throw new Error('setPageUrl used before the $app/stores mock factory ran');
+		setPageUrl(href: string, state: Readonly<Record<string, unknown>> = {}): void {
+			navigationRouter().setPageUrl(href, state);
+		},
+		installNavigationRouter(
+			Simulator: typeof import('./__fixtures__/KitNavigationSimulator').KitNavigationSimulator,
+		): void {
+			router = new Simulator({
+				publishPage: (href, state) => publishPage(href, state),
+				publishNavigating: (navigation) => publishNavigating(navigation),
+				settled: () => settleDom(),
+				tick: () => tickDom(),
+				activeElement: () => document.activeElement,
+				bodyElement: () => document.body,
+				resetFocus: resetKitFocus,
+			});
+		},
+		installStorePublishers(
+			nextPage: (href: string, state: Readonly<Record<string, unknown>>) => void,
+			nextNavigating: (navigation: HarnessNavigation | null) => void,
+		): void {
+			publishPage = nextPage;
+			publishNavigating = nextNavigating;
+		},
+		installDomFlush(nextSettled: () => Promise<void>, nextTick: () => Promise<void>): void {
+			settleDom = nextSettled;
+			tickDom = nextTick;
+		},
+		resetNavigation(): void {
+			navigationRouter().reset();
+		},
+		beforeNavigate(callback: (navigation: BeforeNavigation) => void): () => void {
+			return navigationRouter().beforeNavigate(callback);
+		},
+		onNavigate(callback: NavigationCallback): () => void {
+			return navigationRouter().onNavigate(callback);
+		},
+		afterNavigate(callback: NavigationCallback): () => void {
+			return navigationRouter().afterNavigate(callback);
+		},
+		get activeNavigation() {
+			return navigationRouter().activeNavigation;
+		},
+		get acceptedPublications() {
+			return navigationRouter().acceptedPublications;
+		},
+		flushEffects(): Promise<void> {
+			return navigationRouter().flushEffects();
+		},
+		reachLoadCheckpoint(navigation: HarnessNavigation): boolean {
+			return navigationRouter().reachLoadCheckpoint(navigation);
 		},
 		createLiveStore: vi.fn((_manifest: unknown, _options?: unknown) => liveStore),
 		liveStore,
 		identityReceivers,
-		goto: vi.fn(async (_target: string, _options?: Record<string, unknown>) => {}),
-		afterNavigate: vi.fn(),
+		goto,
+		startNavigation(
+			...args: Parameters<
+				import('./__fixtures__/KitNavigationSimulator').KitNavigationSimulator['startNavigation']
+			>
+		) {
+			return navigationRouter().startNavigation(...args);
+		},
+		commitNavigation(
+			...args: Parameters<
+				import('./__fixtures__/KitNavigationSimulator').KitNavigationSimulator['commitNavigation']
+			>
+		) {
+			return navigationRouter().commitNavigation(...args);
+		},
 		bakeVehicleSprites,
 		bakeLocationPinSprite,
 		addVehicleSource,
@@ -290,7 +413,13 @@ const harness = vi.hoisted(() => {
 		resetStopsIndex,
 		vehicleSourceSetData,
 		motionDestroy,
+		stopVehicleUploads,
+		hasPendingVehicleMotionFrame: () => vehicleMotionFrame != null,
 		releaseLease,
+		activeLeaseCount: () => activeLeaseCount,
+		resetActiveLeaseCount: () => {
+			activeLeaseCount = 0;
+		},
 		createVehicleMotionController,
 		getRoute,
 		getStop,
@@ -321,7 +450,8 @@ const originalGeolocation = Object.getOwnPropertyDescriptor(navigator, 'geolocat
 
 vi.mock('$app/stores', async () => {
 	const { writable } = await import('svelte/store');
-	const pageValue = (url: URL) => ({
+	const { KitNavigationSimulator } = await import('./__fixtures__/KitNavigationSimulator');
+	const pageValue = (url: URL, state: Readonly<Record<string, unknown>> = {}) => ({
 		url,
 		params: {},
 		route: { id: '/map' },
@@ -329,17 +459,31 @@ vi.mock('$app/stores', async () => {
 		error: null,
 		data: {},
 		form: null,
-		state: {},
+		state,
 	});
-	const store = writable(pageValue(new URL('http://localhost/map')));
-	harness.setPageUrl = (href: string) => store.set(pageValue(new URL(href)));
-	return { page: store };
+	const page = writable(pageValue(new URL('http://localhost/map')));
+	const navigating = writable<unknown>(null);
+	harness.installStorePublishers(
+		(href, state) => page.set(pageValue(new URL(href), state)),
+		(navigation) => navigating.set(navigation),
+	);
+	harness.installNavigationRouter(KitNavigationSimulator);
+	return { page, navigating };
 });
 
 vi.mock('$app/navigation', () => ({
 	goto: harness.goto,
+	beforeNavigate: harness.beforeNavigate,
+	onNavigate: harness.onNavigate,
 	afterNavigate: harness.afterNavigate,
 }));
+
+vi.mock('./mapUrlCoordinator', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('./mapUrlCoordinator')>();
+	return actual;
+});
+
+vi.mock('$env/dynamic/public', () => ({ env: {} }));
 
 vi.mock('$lib/i18n', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/i18n')>();
@@ -379,6 +523,7 @@ vi.mock('$lib/stores', async () => {
 			},
 			set: signals.setMotionMode,
 		},
+		persisted: <T>(_key: string, initial: T) => ({ value: initial }),
 		dataRefresh: {},
 	};
 });
@@ -510,6 +655,11 @@ vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	isPrefersReducedMotion: harness.isPrefersReducedMotion,
 }));
 
+harness.installDomFlush(
+	async () => settled(),
+	async () => tick(),
+);
+
 afterEach(() => {
 	cleanup();
 	document.body.innerHTML = '';
@@ -518,7 +668,9 @@ afterEach(() => {
 	harness.resetGetRouteImplementation();
 	harness.resetStopsIndex();
 	harness.setLiveVehicleVisible(true);
+	harness.resetActiveLeaseCount();
 	harness.captureDetailFilter(null);
+	harness.resetNavigation();
 	harness.identityReceivers.length = 0;
 	harness.locale = 'en';
 	harness.isDesktop = false;
@@ -651,6 +803,33 @@ describe('MapHero stage lifecycle', () => {
 });
 
 describe('MapHero near-me device location', () => {
+	it('ignores a device callback delivered after the map owner is destroyed', async () => {
+		let deliverPosition!: PositionCallback;
+		const getCurrentPosition = vi.fn((success: PositionCallback) => {
+			deliverPosition = success;
+		});
+		Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+		Object.defineProperty(navigator, 'geolocation', {
+			configurable: true,
+			value: { getCurrentPosition },
+		});
+		render(MapHero);
+		await fireEvent.click(screen.getByRole('button', { name: 'Stops near me' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+		await waitFor(() => expect(getCurrentPosition).toHaveBeenCalledOnce());
+		const focusCalls = harness.focusCoordinate.mock.calls.length;
+		const gotoCalls = harness.goto.mock.calls.length;
+
+		cleanup();
+		deliverPosition({
+			coords: { latitude: 45.525686, longitude: -73.594764 },
+		} as GeolocationPosition);
+		await tick();
+
+		expect(harness.focusCoordinate).toHaveBeenCalledTimes(focusCalls);
+		expect(harness.goto).toHaveBeenCalledTimes(gotoCalls);
+	});
+
 	it('pins a successful device fix without writing its coordinates or label to the URL', async () => {
 		const position: GeolocationPosition = {
 			coords: {
@@ -845,6 +1024,683 @@ describe('MapHero detail-panel camera isolation (protect #11)', () => {
 		expect(cameraCounts()).toEqual(baselineStub);
 		expect(focusCalls()).toBe(baselineFocus);
 		expect(fitCalls()).toBe(baselineFit);
+	});
+});
+
+describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
+	const releasedListeners = {
+		load: 0,
+		styledata: 0,
+		sourcedata: 0,
+		movestart: 0,
+		boxzoomend: 0,
+		click: 0,
+		mousemove: 0,
+		'canvas:mouseleave': 0,
+	};
+	const activeListeners = Object.fromEntries(
+		Object.keys(releasedListeners).map((type) => [type, 1]),
+	);
+	const activeSources = {
+		vehicles: 1,
+		stops: 1,
+		'stop-exception': 1,
+		'route-lines': 1,
+		'near-target': 1,
+	};
+
+	function capturePageErrors() {
+		const values: unknown[] = [];
+		const onError = (event: ErrorEvent) => values.push(event.error ?? event.message);
+		const onRejection = (event: PromiseRejectionEvent) => values.push(event.reason);
+		window.addEventListener('error', onError);
+		window.addEventListener('unhandledrejection', onRejection);
+		return {
+			values,
+			dispose() {
+				window.removeEventListener('error', onError);
+				window.removeEventListener('unhandledrejection', onRejection);
+			},
+		};
+	}
+
+	function activeLastGoto(from = 'http://localhost/map') {
+		const [target] = harness.goto.mock.lastCall ?? [];
+		if (target == null) throw new Error('expected a queued map goto');
+		const url = new URL(String(target), from);
+		const navigation = harness.activeNavigation;
+		if (!navigation) throw new Error('expected the queued goto to be active');
+		expect(navigation.to?.url.href).toBe(url.href);
+		return { navigation, url };
+	}
+
+	async function openDetail(isDesktop = true, options: { settleSelectionUrl?: boolean } = {}) {
+		harness.isDesktop = isDesktop;
+		render(MapHeroNavigationHarness);
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+		const closeLabel = isDesktop ? 'Close panel' : 'Close details';
+		const close = await screen.findByRole('button', { name: closeLabel });
+		const selectionIdentity = (await screen.findAllByRole('heading', { level: 2 })).find(
+			(heading) => heading.textContent === 'Bus bus-1',
+		);
+		expect(selectionIdentity).toBeDefined();
+		const selectionStart = activeLastGoto();
+		let currentUrl = new URL('http://localhost/map');
+		if (options.settleSelectionUrl !== false) {
+			await harness.commitNavigation(selectionStart.url.href);
+			currentUrl = selectionStart.url;
+		}
+		const surfaceSelector = isDesktop
+			? '[data-slot="map-detail-overlay"]'
+			: '[data-slot="bottom-sheet"]';
+		close.focus();
+		return {
+			close,
+			closeLabel,
+			currentUrl,
+			selectionUrl: selectionStart.url,
+			selectionNavigation: selectionStart.navigation,
+			surfaceSelector,
+			surface: document.querySelector(surfaceSelector),
+			selectionIdentity,
+			selectionOwnedVehicles: [...(harness.setStops.mock.lastCall?.[2].vehicles ?? [])],
+		};
+	}
+
+	type OpenDetail = Awaited<ReturnType<typeof openDetail>>;
+	type Shape =
+		| 'cancelled'
+		| 'superseded'
+		| 'redirected'
+		| 'echo'
+		| 'adopt'
+		| 'coalesced'
+		| 'normalized'
+		| 'localized-normalized';
+
+	async function commitMapWinner(shape: Shape, before: OpenDetail) {
+		const from = before.currentUrl.href;
+		const publicationStart = harness.acceptedPublications.length;
+		if (shape === 'cancelled') {
+			const releaseCancellation = harness.beforeNavigate((navigation) => {
+				if (navigation.to?.url.pathname === '/lines') navigation.cancel();
+			});
+			const attempt = harness.startNavigation('http://localhost/lines', from, { type: 'link' });
+			releaseCancellation();
+			expect(attempt.accepted).toBe(false);
+			expect(attempt.beforeNavigateDelivered).toBe(true);
+			await harness.flushEffects();
+			return {
+				url: before.currentUrl,
+				filtersPreserved: true,
+				focus: 'close' as const,
+				publications: harness.acceptedPublications.slice(publicationStart),
+			};
+		}
+
+		if (shape === 'normalized' || shape === 'localized-normalized') {
+			const accepted =
+				shape === 'normalized' ? 'http://localhost/map/' : 'http://localhost/fr/map/';
+			const committed = shape === 'normalized' ? 'http://localhost/map' : 'http://localhost/fr/map';
+			expect(
+				harness.startNavigation('http://localhost/lines', from, { type: 'link' })
+					.beforeNavigateDelivered,
+			).toBe(true);
+			// Kit suppresses the second callback and may normalize accepted /map/ only
+			// when it publishes the committed page URL. No flush is guaranteed here.
+			expect(
+				harness.startNavigation(accepted, from, { redirect: true }).beforeNavigateDelivered,
+			).toBe(false);
+			await harness.commitNavigation(committed);
+			return {
+				url: new URL(committed),
+				filtersPreserved: false,
+				focus: harness.isDesktop ? ('body' as const) : ('close' as const),
+				publications: harness.acceptedPublications.slice(publicationStart),
+			};
+		}
+
+		let winner = new URL(from);
+		let filtersPreserved = true;
+		const exit = harness.startNavigation('http://localhost/lines', from, { type: 'link' });
+		expect(exit.beforeNavigateDelivered).toBe(shape !== 'echo' && shape !== 'adopt');
+		if (shape !== 'echo' && shape !== 'adopt' && shape !== 'coalesced') {
+			await harness.flushEffects();
+		}
+		if (shape === 'superseded') {
+			winner = new URL('http://localhost/map');
+			filtersPreserved = false;
+		} else if (shape === 'echo') {
+			winner = new URL(before.selectionUrl);
+		} else if (shape === 'adopt') {
+			winner = new URL(before.selectionUrl);
+			winner.searchParams.set('external-adoption', '1');
+		}
+		expect(
+			harness.startNavigation(winner.href, from, {
+				redirect: shape !== 'superseded' && shape !== 'coalesced',
+			}).beforeNavigateDelivered,
+		).toBe(false);
+		await harness.commitNavigation(winner.href);
+		return {
+			url: winner,
+			filtersPreserved,
+			focus: harness.isDesktop ? ('body' as const) : ('close' as const),
+			publications: harness.acceptedPublications.slice(publicationStart),
+		};
+	}
+
+	async function commitLines(from: URL): Promise<void> {
+		expect(
+			harness.startNavigation('http://localhost/lines', from.href, { type: 'link' })
+				.beforeNavigateDelivered,
+		).toBe(true);
+		await harness.commitNavigation('http://localhost/lines');
+		if (!harness.isDesktop) await new Promise((resolve) => setTimeout(resolve, 80));
+	}
+
+	it.each(
+		(
+			[
+				'cancelled',
+				'superseded',
+				'redirected',
+				'echo',
+				'adopt',
+				'coalesced',
+				'normalized',
+				'localized-normalized',
+			] as const
+		).flatMap((shape) => [
+			[`desktop ${shape}`, true, shape] as const,
+			[`mobile ${shape}`, false, shape] as const,
+		]),
+	)(
+		'keeps base state/focus for %s, then renders an unlocked destination',
+		async (_viewport, desktop, shape) => {
+			const pageErrors = capturePageErrors();
+			const beforeCallbacks: string[] = [];
+			const releaseBeforeProbe = harness.beforeNavigate((navigation) => {
+				beforeCallbacks.push(navigation.to?.url.href ?? 'null');
+			});
+			try {
+				const before = await openDetail(desktop, {
+					settleSelectionUrl: shape !== 'echo' && shape !== 'adopt',
+				});
+				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(activeListeners);
+				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual(activeSources);
+				const gotoCalls = harness.goto.mock.calls.length;
+				const winner = await commitMapWinner(shape, before);
+				expect(document.querySelector(before.surfaceSelector)).toBe(before.surface);
+				expect(screen.getByRole('button', { name: before.closeLabel })).toBe(before.close);
+				expect(document.body.contains(before.selectionIdentity!)).toBe(true);
+				expect(before.selectionIdentity).toHaveTextContent('Bus bus-1');
+				expect([...(harness.setStops.mock.lastCall?.[2].vehicles ?? [])]).toEqual(
+					winner.filtersPreserved ? before.selectionOwnedVehicles : [],
+				);
+				expect(document.activeElement).toBe(
+					winner.focus === 'close' ? before.close : document.body,
+				);
+				expect(harness.goto).toHaveBeenCalledTimes(gotoCalls);
+				expect(beforeCallbacks).toHaveLength(shape === 'echo' || shape === 'adopt' ? 1 : 2);
+				if (
+					shape === 'echo' ||
+					shape === 'adopt' ||
+					shape === 'coalesced' ||
+					shape === 'normalized' ||
+					shape === 'localized-normalized'
+				) {
+					expect(winner.publications).toHaveLength(2);
+					expect(winner.publications[0]?.flushRevision).toBe(winner.publications[1]?.flushRevision);
+				}
+				if (shape === 'normalized' || shape === 'localized-normalized') {
+					expect(new URL(winner.publications[1]!.href).pathname.endsWith('/')).toBe(true);
+					expect(winner.url.pathname.endsWith('/')).toBe(false);
+				}
+
+				let exitUrl = winner.url;
+				if (shape === 'echo' || shape === 'adopt') {
+					const gotoCallsBeforeClose = harness.goto.mock.calls.length;
+					await fireEvent.click(before.close);
+					await waitFor(
+						() => expect(document.querySelectorAll(before.surfaceSelector)).toHaveLength(0),
+						{ onTimeout: (error) => error },
+					);
+
+					const survivesClose = shape === 'adopt';
+					await waitFor(() => {
+						const filter = harness.setStops.mock.lastCall?.[2];
+						expect(filter?.routes.has('24')).toBe(survivesClose);
+						expect(filter?.vehicles.has('bus-1')).toBe(survivesClose);
+					});
+					expect(harness.goto).toHaveBeenCalledTimes(
+						gotoCallsBeforeClose + (shape === 'echo' ? 1 : 0),
+					);
+
+					if (shape === 'echo') {
+						const closeNavigation = activeLastGoto(winner.url.href);
+						expect(closeNavigation.url.searchParams.has('route')).toBe(false);
+						expect(closeNavigation.url.searchParams.has('vehicle')).toBe(false);
+						await harness.commitNavigation(closeNavigation.url.href);
+						exitUrl = closeNavigation.url;
+					}
+				}
+
+				await commitLines(exitUrl);
+				const main = document.querySelector<HTMLElement>('#main');
+				expect(pageErrors.values).toEqual([]);
+				expect(main).toHaveClass('overflow-y-auto');
+				expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
+				expect(document.querySelector('[data-slot="listing-page-shell"]')).toBeInTheDocument();
+				expect(document.querySelector('.map-hero')).not.toBeInTheDocument();
+				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+				expect(harness.liveStore.stop).toHaveBeenCalledTimes(1);
+				expect(harness.releaseLease).toHaveBeenCalledTimes(1);
+				expect(document.activeElement).not.toBe(before.close);
+			} finally {
+				releaseBeforeProbe();
+				pageErrors.dispose();
+			}
+		},
+	);
+
+	it('keeps a superseded queued selection echo selection-owned after its stale-token rejection', async () => {
+		const before = await openDetail(true, { settleSelectionUrl: false });
+		const gotoCallsBefore = harness.goto.mock.calls.length;
+		const exit = harness.startNavigation('http://localhost/lines', before.currentUrl.href, {
+			type: 'link',
+		});
+		expect(exit.beforeNavigateDelivered).toBe(false);
+
+		expect(harness.reachLoadCheckpoint(before.selectionNavigation)).toBe(false);
+		await expect(before.selectionNavigation.complete).rejects.toThrow('navigation aborted');
+		await Promise.resolve();
+		await Promise.resolve();
+
+		harness.startNavigation(before.selectionUrl.href, before.currentUrl.href, { redirect: true });
+		await harness.commitNavigation(before.selectionUrl.href);
+		await fireEvent.click(screen.getByRole('button', { name: before.closeLabel }));
+		await tick();
+
+		expect(harness.goto).toHaveBeenCalledTimes(gotoCallsBefore + 1);
+		const closed = new URL(String(harness.goto.mock.lastCall?.[0]), 'http://localhost');
+		expect(closed.searchParams.has('vehicle')).toBe(false);
+	});
+
+	it('contains and reports a throwing live stop without skipping sibling teardown owners', async () => {
+		const pageErrors = capturePageErrors();
+		const stopError = new Error('live stop failed');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const releaseClock = vi.fn();
+		const subscribe = vi
+			.spyOn(mapHeroReceiptSignals.clock, 'subscribe')
+			.mockReturnValue(releaseClock);
+		harness.liveStore.stop.mockImplementationOnce(() => {
+			throw stopError;
+		});
+		try {
+			const before = await openDetail(true);
+			expect(harness.activeLeaseCount()).toBe(1);
+			await commitLines(before.currentUrl);
+
+			expect(pageErrors.values).toEqual([]);
+			expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+			expect(harness.releaseLease).toHaveBeenCalledOnce();
+			expect(releaseClock).toHaveBeenCalledTimes(subscribe.mock.results.length);
+			expect(consoleError).toHaveBeenCalledWith('MapHero cleanup failed', stopError);
+		} finally {
+			subscribe.mockRestore();
+			pageErrors.dispose();
+		}
+	});
+
+	it('contains a breakpoint-listener disposer fault without skipping route-unmount owners', async () => {
+		const pageErrors = capturePageErrors();
+		const cleanupError = new Error('matchMedia cleanup failed before mutation');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const listeners = new Set<EventListenerOrEventListenerObject>();
+		let failCleanup = true;
+		let targetRemoveCalls = 0;
+		const breakpoint = {
+			matches: true,
+			media: '(min-width: 1024px)',
+			onchange: null,
+			addListener: vi.fn(),
+			removeListener: vi.fn(),
+			addEventListener: vi.fn(
+				(_type: string, listener: EventListenerOrEventListenerObject | null) => {
+					if (listener) listeners.add(listener);
+				},
+			),
+			removeEventListener: vi.fn(
+				(_type: string, listener: EventListenerOrEventListenerObject | null) => {
+					const isMapHeroListener = typeof listener === 'function' && listener.name === 'onChange';
+					if (isMapHeroListener) targetRemoveCalls += 1;
+					if (isMapHeroListener && failCleanup) {
+						failCleanup = false;
+						throw cleanupError;
+					}
+					if (listener) listeners.delete(listener);
+				},
+			),
+			dispatchEvent: vi.fn(() => true),
+		} as unknown as MediaQueryList;
+		const nativeMatchMedia = window.matchMedia.bind(window);
+		const matchMedia = vi
+			.spyOn(window, 'matchMedia')
+			.mockImplementation((query) =>
+				query === breakpoint.media ? breakpoint : nativeMatchMedia(query),
+			);
+		try {
+			const before = await openDetail(true);
+			expect(
+				[...listeners].filter(
+					(listener) => typeof listener === 'function' && listener.name === 'onChange',
+				),
+			).toHaveLength(1);
+
+			await commitLines(before.currentUrl);
+
+			expect(pageErrors.values).toEqual([]);
+			expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
+			expect(harness.liveStore.stop).toHaveBeenCalledOnce();
+			expect(harness.releaseLease).toHaveBeenCalledOnce();
+			expect(harness.activeLeaseCount()).toBe(0);
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+			expect(listeners).toHaveLength(0);
+			expect(targetRemoveCalls).toBe(2);
+			expect(consoleError).toHaveBeenCalledWith('MapHero cleanup failed', cleanupError);
+		} finally {
+			matchMedia.mockRestore();
+			pageErrors.dispose();
+		}
+	});
+
+	it('contains and reports a rail-offset disposer fault during route unmount', async () => {
+		const pageErrors = capturePageErrors();
+		const cleanupError = new Error('rail offset cleanup failed before mutation');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const rootStyle = document.documentElement.style;
+		const setProperty = rootStyle.setProperty.bind(rootStyle);
+		let armed = false;
+		let targetCleanupCalls = 0;
+		const setPropertySpy = vi
+			.spyOn(rootStyle, 'setProperty')
+			.mockImplementation((property: string, value: string | null, priority?: string) => {
+				if (armed && property === '--app-effective-rail-offset' && value === '0px') {
+					targetCleanupCalls += 1;
+					if (targetCleanupCalls === 1) throw cleanupError;
+				}
+				setProperty(property, value, priority);
+			});
+		try {
+			const before = await openDetail(true);
+			armed = true;
+
+			await commitLines(before.currentUrl);
+
+			expect(pageErrors.values).toEqual([]);
+			expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
+			expect(targetCleanupCalls).toBe(2);
+			expect(consoleError).toHaveBeenCalledWith('MapHero cleanup failed', cleanupError);
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+			expect(harness.liveStore.stop).toHaveBeenCalledOnce();
+			expect(harness.releaseLease).toHaveBeenCalledOnce();
+			expect(harness.activeLeaseCount()).toBe(0);
+		} finally {
+			setPropertySpy.mockRestore();
+			pageErrors.dispose();
+		}
+	});
+
+	it('contains and reports a throwing selection lease without skipping sibling teardown owners', async () => {
+		const pageErrors = capturePageErrors();
+		const leaseError = new Error('selection lease release failed');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const releaseClock = vi.fn();
+		const subscribe = vi
+			.spyOn(mapHeroReceiptSignals.clock, 'subscribe')
+			.mockReturnValue(releaseClock);
+		harness.releaseLease.mockImplementationOnce(() => {
+			throw leaseError;
+		});
+		try {
+			const before = await openDetail(true);
+			await commitLines(before.currentUrl);
+
+			expect(pageErrors.values).toEqual([]);
+			expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+			expect(harness.liveStore.stop).toHaveBeenCalledOnce();
+			expect(harness.releaseLease).toHaveBeenCalledTimes(2);
+			expect(harness.activeLeaseCount()).toBe(0);
+			expect(releaseClock).toHaveBeenCalledTimes(subscribe.mock.results.length);
+			expect(consoleError).toHaveBeenCalledWith('MapHero cleanup failed', leaseError);
+		} finally {
+			subscribe.mockRestore();
+			pageErrors.dispose();
+		}
+	});
+
+	it.each([
+		['motion desktop', true, null],
+		['motion mobile', false, null],
+		['click interaction', true, 'map:click'],
+		['mousemove interaction', true, 'map:mousemove'],
+		['canvas interaction', true, 'canvas:mouseleave'],
+		['emphasis', true, 'emphasis:removeFeatureState'],
+	] as const)(
+		'isolates a %s teardown fault and still reaches physical zero',
+		async (_, desktop, operation) => {
+			const pageErrors = capturePageErrors();
+			const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+			const defaultSetStopException = harness.setStopException.getMockImplementation();
+			try {
+				harness.setStopException.mockImplementation(
+					setRealStopException as unknown as NonNullable<typeof defaultSetStopException>,
+				);
+				if (!operation) mapHeroReceiptSignals.setMotionMode('smooth');
+				const before = await openDetail(desktop);
+				if (operation === 'emphasis:removeFeatureState') {
+					await fireEvent.click(screen.getByTestId('map-stage-stub-hover-stop'));
+					await tick();
+				}
+				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(activeListeners);
+				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual(activeSources);
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(
+					operation === 'emphasis:removeFeatureState' ? 2 : 1,
+				);
+				expect(harness.activeLeaseCount()).toBe(1);
+				if (!operation) expect(harness.hasPendingVehicleMotionFrame()).toBe(true);
+				const error = new Error(`${operation ?? 'motion'} cleanup failed before mutation`);
+				if (operation) mapHeroReceiptSignals.setCleanupFault(operation, error, 'before');
+				else {
+					harness.motionDestroy.mockImplementationOnce(() => {
+						throw error;
+					});
+				}
+				await commitLines(before.currentUrl);
+				expect(pageErrors.values).toEqual([]);
+				expect(document.querySelector<HTMLElement>('#main')).toHaveClass('overflow-y-auto');
+				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+				expect(harness.liveStore.stop).toHaveBeenCalledTimes(1);
+				expect(harness.releaseLease).toHaveBeenCalledTimes(1);
+				expect(harness.activeLeaseCount()).toBe(0);
+				if (!operation) expect(harness.hasPendingVehicleMotionFrame()).toBe(false);
+				expect(consoleError).toHaveBeenCalledWith('MapStage cleanup failed', error);
+				if (!desktop) expect(document.body.style.overflow).not.toBe('hidden');
+			} finally {
+				if (defaultSetStopException) {
+					harness.setStopException.mockImplementation(defaultSetStopException);
+				}
+				pageErrors.dispose();
+			}
+		},
+	);
+
+	it('aggregates simultaneous owner faults after every release reaches physical zero', async () => {
+		const pageErrors = capturePageErrors();
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const errors = [
+			new Error('motion cleanup failed'),
+			new Error('click cleanup failed after mutation'),
+			new Error('mousemove cleanup failed after mutation'),
+			new Error('canvas cleanup failed after mutation'),
+			new Error('emphasis cleanup failed after mutation'),
+		];
+		try {
+			mapHeroReceiptSignals.setMotionMode('smooth');
+			const before = await openDetail(true);
+			await fireEvent.click(screen.getByTestId('map-stage-stub-hover-stop'));
+			await tick();
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(activeListeners);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual(activeSources);
+			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(2);
+			expect(harness.activeLeaseCount()).toBe(1);
+			expect(harness.hasPendingVehicleMotionFrame()).toBe(true);
+			harness.motionDestroy.mockImplementationOnce(() => {
+				throw errors[0];
+			});
+			mapHeroReceiptSignals.setCleanupFault('map:click', errors[1], 'before');
+			mapHeroReceiptSignals.setCleanupFault('map:mousemove', errors[2], 'before');
+			mapHeroReceiptSignals.setCleanupFault('canvas:mouseleave', errors[3], 'before');
+			mapHeroReceiptSignals.setCleanupFault('emphasis:removeFeatureState', errors[4], 'before');
+
+			await commitLines(before.currentUrl);
+
+			expect(pageErrors.values).toEqual([]);
+			expect(document.querySelector<HTMLElement>('#main')).toHaveClass('overflow-y-auto');
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+			expect(harness.liveStore.stop).toHaveBeenCalledTimes(1);
+			expect(harness.releaseLease).toHaveBeenCalledTimes(1);
+			expect(harness.activeLeaseCount()).toBe(0);
+			expect(harness.hasPendingVehicleMotionFrame()).toBe(false);
+			const reported = consoleError.mock.calls.find(
+				([message]) => message === 'MapStage cleanup failed',
+			)?.[1];
+			expect(reported).toBeInstanceOf(AggregateError);
+			expect((reported as AggregateError).errors).toEqual(errors);
+		} finally {
+			pageErrors.dispose();
+		}
+	});
+
+	it('retains a twice-failed canvas receipt for the parent fallback and reaches zero', async () => {
+		const error = new Error('canvas cleanup failed twice before mutation');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const before = await openDetail(true);
+		mapHeroReceiptSignals.setCleanupFault('canvas:mouseleave', error, 'before', 2);
+
+		await commitLines(before.currentUrl);
+
+		expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+		expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+		expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+		expect(harness.activeLeaseCount()).toBe(0);
+		expect(consoleError).toHaveBeenCalledWith(
+			'MapStage cleanup failed',
+			expect.any(AggregateError),
+		);
+	});
+
+	it('reaches physical zero through three map to lines round trips', async () => {
+		harness.isDesktop = true;
+		const pageErrors = capturePageErrors();
+		try {
+			render(MapHeroNavigationHarness);
+			for (let round = 0; round < 3; round += 1) {
+				if (round > 0) {
+					harness.startNavigation('http://localhost/map', 'http://localhost/lines');
+					await harness.commitNavigation('http://localhost/map');
+				}
+				await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+				await screen.findByRole('button', { name: 'Close panel' });
+				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(activeListeners);
+				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual(activeSources);
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(1);
+				expect(harness.activeLeaseCount()).toBe(1);
+				const selectionUrl = harness.activeNavigation?.to?.url;
+				if (!selectionUrl) throw new Error('expected a selection navigation');
+				await harness.commitNavigation(selectionUrl.href);
+				harness.startNavigation('http://localhost/lines', selectionUrl.href);
+				await harness.commitNavigation('http://localhost/lines');
+				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+				expect(harness.activeLeaseCount()).toBe(0);
+				expect(document.querySelector<HTMLElement>('#main')).toHaveClass('overflow-y-auto');
+			}
+			expect(pageErrors.values).toEqual([]);
+			expect(harness.liveStore.start).toHaveBeenCalledTimes(3);
+			expect(harness.liveStore.stop).toHaveBeenCalledTimes(3);
+			expect(harness.releaseLease).toHaveBeenCalledTimes(3);
+		} finally {
+			pageErrors.dispose();
+		}
+	});
+
+	it('bounds pre-mutation lease, canvas, and feature-state faults across three round trips', async () => {
+		harness.isDesktop = true;
+		const pageErrors = capturePageErrors();
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			render(MapHeroNavigationHarness);
+			for (let round = 0; round < 3; round += 1) {
+				if (round > 0) {
+					harness.startNavigation('http://localhost/map', 'http://localhost/lines');
+					await harness.commitNavigation('http://localhost/map');
+				}
+				await fireEvent.click(screen.getByTestId('map-stage-stub-pick-vehicle'));
+				await screen.findByRole('button', { name: 'Close panel' });
+				await fireEvent.click(screen.getByTestId('map-stage-stub-hover-stop'));
+				await tick();
+				expect(harness.activeLeaseCount()).toBe(1);
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(2);
+				const selectionUrl = harness.activeNavigation?.to?.url;
+				if (!selectionUrl) throw new Error('expected a selection navigation');
+				await harness.commitNavigation(selectionUrl.href);
+
+				harness.releaseLease.mockImplementationOnce(() => {
+					throw new Error(`round ${round} lease failed before mutation`);
+				});
+				mapHeroReceiptSignals.setCleanupFault(
+					'canvas:mouseleave',
+					new Error(`round ${round} canvas failed before mutation`),
+					'before',
+				);
+				mapHeroReceiptSignals.setCleanupFault(
+					'emphasis:removeFeatureState',
+					new Error(`round ${round} emphasis failed before mutation`),
+					'before',
+				);
+				harness.startNavigation('http://localhost/lines', selectionUrl.href);
+				await harness.commitNavigation('http://localhost/lines');
+
+				expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+				expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+				expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+				expect(harness.activeLeaseCount()).toBe(0);
+			}
+			expect(pageErrors.values).toEqual([]);
+			expect(harness.releaseLease).toHaveBeenCalledTimes(6);
+			expect(
+				consoleError.mock.calls.filter(([message]) => message === 'MapStage cleanup failed'),
+			).toHaveLength(3);
+		} finally {
+			pageErrors.dispose();
+		}
 	});
 });
 

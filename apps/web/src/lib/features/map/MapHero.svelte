@@ -102,6 +102,7 @@
 		type MapSelectionDetail as MapSelectionDetailModel,
 	} from './mapSelection';
 	import { createSelectionGrace } from './selectionGrace.svelte';
+	import * as ownerCleanup from './mapOwnerCleanup';
 
 	const locale: Locale = getLocale();
 	const t = $derived(MAP_COPY[locale]);
@@ -141,7 +142,7 @@
 			isDesktopLayout = e.matches;
 		};
 		mql.addEventListener('change', onChange);
-		return () => mql.removeEventListener('change', onChange);
+		return () => releaseMapOwner(() => mql.removeEventListener('change', onChange));
 	});
 
 	// Right DETAIL panel — an absolute OVERLAY anchored flush to the map's right edge
@@ -179,7 +180,7 @@
 		buildTargetSearch: buildNearTargetSearch,
 		clearTargetSearch: clearNearTargetSearch,
 		focusOrigin: focusNearMeOrigin,
-		fetch: (input) => globalThis.fetch(input),
+		fetch: (input, init) => globalThis.fetch(input, init),
 		getGeolocation: () => (typeof navigator === 'undefined' ? null : navigator['geolocation']),
 		isSecureContext: () => typeof window === 'undefined' || window.isSecureContext,
 		translations: MAP_COPY[locale],
@@ -234,22 +235,31 @@
 	const live = createLiveStore(manifest, {
 		families: ['vehicles', 'alerts'],
 	});
+	function reportMapCleanupFailure(error: unknown): void {
+		ownerCleanup.reportCleanupFailure('MapHero cleanup failed', error);
+	}
+	function releaseMapOwner(dispose: () => void): void {
+		ownerCleanup.releaseWithRetry(dispose, reportMapCleanupFailure);
+	}
+	$effect(() => () => {
+		releaseMapOwner(nearMeController.dispose);
+		releaseMapOwner(urlCoordinator.dispose);
+	});
 	onMount(() => {
 		live.start();
-		return () => live.stop();
+		return () => releaseMapOwner(() => live.stop());
 	});
 
 	// Keep one shared server-time tick alive for map freshness and relative-time copy.
-	$effect(() => sharedClock.subscribe());
-
-	$effect(() => () => {
-		untrack(() => vehicleMotion)?.destroy();
-		for (const dispose of interactionDisposers) dispose();
+	$effect(() => {
+		const unsubscribe = sharedClock.subscribe();
+		return () => releaseMapOwner(unsubscribe);
 	});
 
 	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
 
-	let map = $state<MapLibreMap | null>(null);
+	// Track map identity so teardown releases only the matching logical map owner.
+	let map = $state.raw<MapLibreMap | null>(null);
 	let mapFailure = $state<{ readonly retry: () => Promise<void> } | null>(null);
 	let vehicleMotion = $state<VehicleMotionController | null>(null);
 	let vehicleMotionMap: MapLibreMap | null = null;
@@ -265,13 +275,43 @@
 	const selectionStack = $derived(selectionController.stack);
 	const hovered = $derived(selectionController.hovered);
 	const detailOpen = $derived(selectionController.detailOpen);
-	$effect(() => () => untrack(() => emphasisController.clear()));
+
+	function releaseMapOwners(m: MapLibreMap): void {
+		if (map !== m) return;
+		const released = ownerCleanup.releaseMapOwnerReceipts(vehicleMotion, interactionDisposers, () =>
+			emphasisController.clear(m),
+		);
+		vehicleMotion = released.motion;
+		vehicleMotionMap = released.motion ? m : null;
+		interactionDisposers = released.disposers;
+		interactionsMap = released.disposers.length > 0 ? m : null;
+		map = released.motion || released.disposers.length > 0 || released.emphasisPending ? m : null;
+		ownerCleanup.throwCleanupErrors(released.errors, 'MapHero owner cleanup failed');
+	}
+
+	$effect(() => () => {
+		const ownedMap = untrack(() => map);
+		if (!ownedMap) return;
+		try {
+			releaseMapOwners(ownedMap);
+		} catch (error) {
+			// This fallback covers parent-first destruction. The normal child-first path
+			// reports through MapStage's exception-isolated disposal boundary.
+			reportMapCleanupFailure(error);
+		}
+	});
 
 	// Selection-scoped live families are ref-counted leases keyed strictly on the
 	// committed selection. Hover never activates a family or restarts polling.
 	$effect(() => {
-		if (selected?.kind === 'vehicle') return live.subscribeFamilies(['trips']);
-		if (selected?.kind === 'stop') return live.subscribeFamilies(['departures']);
+		const release =
+			selected?.kind === 'vehicle'
+				? live.subscribeFamilies(['trips'])
+				: selected?.kind === 'stop'
+					? live.subscribeFamilies(['departures'])
+					: null;
+		if (!release) return;
+		return () => releaseMapOwner(release);
 	});
 
 	const stopList = $derived(stops.data?.stops ?? []);
@@ -681,13 +721,25 @@
 
 	function ensureMapInteractions(m: MapLibreMap): void {
 		if (interactionsMap === m) return;
-		for (const dispose of interactionDisposers) dispose();
+		const previousMap = interactionsMap;
+		const released = ownerCleanup.releaseCleanupReceipts(interactionDisposers);
+		interactionDisposers = released.pending;
+		interactionsMap = released.pending.length > 0 ? previousMap : null;
+		ownerCleanup.throwCleanupErrors(released.errors, 'Map interaction replacement cleanup failed');
+		const nextDisposers = ownerCleanup.installCleanupReceipts(
+			() =>
+				installMapInteractions(m, {
+					click: (event) => selectPickedFeature(m, event),
+					mousemove: (event) => hoverPickedFeature(m, event),
+					mouseleave: () => clearHover(m),
+				}),
+			(partial) => {
+				interactionDisposers = partial;
+				interactionsMap = null;
+			},
+		);
+		interactionDisposers = nextDisposers;
 		interactionsMap = m;
-		interactionDisposers = installMapInteractions(m, {
-			click: (event) => selectPickedFeature(m, event),
-			mousemove: (event) => hoverPickedFeature(m, event),
-			mouseleave: () => clearHover(m),
-		});
 	}
 	function ensureVehicleMotion(m: MapLibreMap): void {
 		if (vehicleMotionMap !== m) {
@@ -867,7 +919,8 @@
 		const el = heroEl;
 		if (!el) return;
 		const open = detailOpen && layout.isDesktop;
-		return publishRailOffset(el, detailWidthPx, open, detailCollapsed, detailDragging);
+		const dispose = publishRailOffset(el, detailWidthPx, open, detailCollapsed, detailDragging);
+		return () => releaseMapOwner(dispose);
 	});
 
 	// Collapse/expand the right detail panel. A pure local toggle: it flips
@@ -908,6 +961,7 @@
 		onstyleload={onMapStyleLoad}
 		onthemerepaint={onMapThemeRepaint}
 		onerror={(failure) => (mapFailure = failure)}
+		onbeforeremove={releaseMapOwners}
 		locale={{
 			'Map.Title': t.mapCanvasLabel,
 			'AttributionControl.ToggleAttribution': t.attributionToggle,

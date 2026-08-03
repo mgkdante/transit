@@ -24,6 +24,7 @@ const layerModulesSource = readFileSync(
 	'utf-8',
 );
 const script = source.match(/<script(?:\s[^>]*)?>\r?\n([\s\S]*?)\r?\n<\/script>/u)?.[1];
+const obsoleteM6hRouteExit = 'attachMapDetailRouteExit';
 const mapStage = source.match(/<MapStage[\s\S]*?\/>/u)?.[0];
 const nearMeDependencies = script?.match(
 	/const nearMeController = createMapNearMeController\(\{([\s\S]*?)\r?\n\t\}\);\r?\n\tconst focusController/u,
@@ -49,24 +50,32 @@ function codeOnly(text: string): string {
 const forbiddenIdentifiers = /\b(?:navigator|geolocation|fetch)\b/gu;
 
 describe('MapHero orchestrator — structural law', () => {
-	it('re-freezes M6a at its actual 861-line script count', () => {
+	it('owns no accepted-navigation ledger or recovery pass', () => {
+		expect(source).not.toContain('mapDetailNavigationLifecycle');
+		expect(source).not.toContain('navigating.subscribe');
+		expect(source).not.toContain('urlCoordinator.currentIntent');
+		expect(source).not.toContain('observedPageUrl');
+		expect(source).toContain('urlCoordinator.settle(url)');
+	});
+
+	it('keeps the orchestrator bounded after the disposal correction', () => {
 		expect(script).toBeDefined();
-		expect(script!.split(/\r?\n/u).length).toBeLessThan(862);
+		expect(script).not.toContain(obsoleteM6hRouteExit);
+		expect(script!.split(/\r?\n/u).length).toBe(914);
 	});
 
 	it('uses one normal-script URL ingestion seam behind the shared three-writer coordinator', () => {
 		expect(source.match(/<script(?:\s[^>]*)?>/gu)).toHaveLength(1);
 		expect(source).not.toMatch(/<script[^>]*context=["']module["']/u);
 		expect(source).not.toContain('afterNavigate');
-		expect(source.match(/urlCoordinator\.settle\(/gu)).toHaveLength(1);
 		expect(source.match(/filters\.replaceFromUrl\(/gu)).toHaveLength(1);
 		expect(source).toContain('const urlIdentity = `${url.pathname}${url.search}`');
+		expect(source).toContain('urlCoordinator.settle(url)');
 		expect(source.indexOf('const urlCoordinator = createMapUrlCoordinator')).toBeLessThan(
 			source.indexOf('const nearMeController = createMapNearMeController'),
 		);
 		expect(source).toContain('urlCoordinator.writeFilters');
 		expect(source).toContain('goto: urlCoordinator.goto');
-		expect(source).toContain('currentUrl: urlCoordinator.currentUrl');
 		expect(source.match(/urlCoordinator\.goto\(/gu)).toHaveLength(1);
 	});
 
@@ -116,6 +125,7 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(mapStage).toContain('bounds={ISLAND_FIT_BOUNDS}');
 		expect(mapStage).toContain('maxBounds={MAP_MAX_BOUNDS}');
 		expect(mapStage).toContain('fitPadding={mapFitPadding}');
+		expect(mapStage).toContain('onbeforeremove={releaseMapOwners}');
 		expect(mapStage).not.toContain('layout.isDesktop');
 	});
 
@@ -133,6 +143,7 @@ describe('MapHero orchestrator — structural law', () => {
 			"import { createMapSelectionController } from './mapSelectionController.svelte'",
 		);
 		expect(source).toContain('const selectionController = createMapSelectionController();');
+		expect(source).not.toContain(obsoleteM6hRouteExit);
 		expect(source).toMatch(
 			/function addSelectionFilter[\s\S]*?filters\.applyChips\(chips, SELECTION_WRITE\)/u,
 		);
@@ -152,7 +163,9 @@ describe('MapHero orchestrator — structural law', () => {
 
 	it('acquires fetch and geolocation only in the sanctioned near-me dependency literal', () => {
 		expect(nearMeDependencies).toBeDefined();
-		expect(nearMeDependencies?.[1]).toContain('fetch: (input) => globalThis.fetch(input)');
+		expect(nearMeDependencies?.[1]).toContain(
+			'fetch: (input, init) => globalThis.fetch(input, init)',
+		);
 		expect(nearMeDependencies?.[1]).toContain(
 			"getGeolocation: () => (typeof navigator === 'undefined' ? null : navigator['geolocation'])",
 		);

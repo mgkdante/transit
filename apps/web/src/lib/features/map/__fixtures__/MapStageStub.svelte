@@ -8,7 +8,8 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+	import type { Map as MapLibreMap } from 'maplibre-gl';
 	import { mapHeroReceiptSignals } from './MapHeroReceiptSignals.svelte';
 	// Test-only deep-import exception: this fixture is loaded from inside the
 	// MapHero suite's vi.mock factory. Going through $lib/components/map would
@@ -22,14 +23,26 @@
 		onstyleload?: (map: unknown) => void;
 		onthemerepaint?: (map: unknown) => void;
 		onerror?: (failure: { kind: 'construct'; retry: () => Promise<void> } | null) => void;
+		onbeforeremove?: (map: unknown) => void | PromiseLike<unknown>;
+		oncleanupfailure?: (error: unknown) => unknown;
 		locale?: Record<string, string>;
 		// The rest of MapStage's props are accepted and ignored (camera/theme/etc).
 		[key: string]: unknown;
 	}
 
-	let { onready, onstyleload, onthemerepaint, onerror, locale, class: className }: Props = $props();
+	let {
+		onready,
+		onstyleload,
+		onthemerepaint,
+		onerror,
+		onbeforeremove,
+		oncleanupfailure,
+		locale,
+		class: className,
+	}: Props = $props();
 
 	type Handler = (e: unknown) => void;
+	const receipt = mapHeroReceiptSignals.createMapStageReceipt();
 	const handlers = new SvelteMap<string, Handler[]>();
 	const canvasHandlers = new SvelteMap<string, Handler[]>();
 	let pickCount = $state(0);
@@ -41,6 +54,11 @@
 	let flyToCount = $state(0);
 	let setMaxBoundsCount = $state(0);
 	let pickLayer = STOPS_LAYER;
+	const sources = new SvelteMap<string, { setData: (data: unknown) => void }>();
+	const featureStates = new SvelteSet<string>();
+	let style:
+		| { getSource: (id: string) => { setData: (data: unknown) => void } | undefined }
+		| undefined;
 
 	// A minimal fake MapLibre map: enough surface for installMapLayers /
 	// installMapInteractions / pickSelectionAt to run without WebGL.
@@ -50,25 +68,50 @@
 			const list = canvasHandlers.get(type) ?? [];
 			list.push(handler);
 			canvasHandlers.set(type, list);
+			receipt.recordListenerCount(`canvas:${type}`, list.length);
 		},
 		removeEventListener: (type: string, handler: Handler) => {
-			canvasHandlers.set(
-				type,
-				(canvasHandlers.get(type) ?? []).filter((candidate) => candidate !== handler),
-			);
+			mapHeroReceiptSignals.throwCleanupFault(`canvas:${type}`, 'before');
+			const list = (canvasHandlers.get(type) ?? []).filter((candidate) => candidate !== handler);
+			canvasHandlers.set(type, list);
+			receipt.recordListenerCount(`canvas:${type}`, list.length);
+			mapHeroReceiptSignals.throwCleanupFault(`canvas:${type}`, 'after');
 		},
 	};
-	const fakeMap = {
+	function removeRawMap(): void {
+		// Real MapLibre remove() tears down its resources but retains Evented
+		// listener registries. Listener zero must come from explicit owner disposal.
+		for (const sourceId of [...sources.keys()]) {
+			sources.delete(sourceId);
+			receipt.recordSourceCount(sourceId, 0);
+		}
+		style = undefined;
+	}
+
+	const rawFakeMap = {
+		getSource: (id: string) => style!.getSource(id),
 		on: (type: string, handler: Handler) => {
 			const list = handlers.get(type) ?? [];
 			list.push(handler);
 			handlers.set(type, list);
+			receipt.recordListenerCount(type, list.length);
+			return { unsubscribe: () => rawFakeMap.off(type, handler) };
 		},
 		off: (type: string, handler: Handler) => {
-			handlers.set(
-				type,
-				(handlers.get(type) ?? []).filter((candidate) => candidate !== handler),
-			);
+			mapHeroReceiptSignals.throwCleanupFault(`map:${type}`, 'before');
+			const list = (handlers.get(type) ?? []).filter((candidate) => candidate !== handler);
+			handlers.set(type, list);
+			receipt.recordListenerCount(type, list.length);
+			mapHeroReceiptSignals.throwCleanupFault(`map:${type}`, 'after');
+		},
+		addSource: (id: string, source: { setData: (data: unknown) => void }) => {
+			if (sources.has(id)) return;
+			sources.set(id, source);
+			receipt.recordSourceCount(id, 1);
+		},
+		removeSource: (id: string) => {
+			if (!sources.delete(id)) return;
+			receipt.recordSourceCount(id, 0);
 		},
 		getCanvas: () => fakeCanvas,
 		getLayer: (id: string) =>
@@ -86,6 +129,12 @@
 			state: Record<string, boolean>,
 		) => {
 			featureStateSetCount += 1;
+			for (const [property, active] of Object.entries(state)) {
+				const key = `${target.source}:${String(target.id)}:${property}`;
+				if (active) featureStates.add(key);
+				else featureStates.delete(key);
+			}
+			receipt.recordFeatureStateCount(featureStates.size);
 			mapHeroReceiptSignals.recordFeatureState({
 				operation: 'set',
 				target: { ...target },
@@ -93,12 +142,20 @@
 			});
 		},
 		removeFeatureState: (target: { source: string; id: string | number }, property?: string) => {
+			mapHeroReceiptSignals.throwCleanupFault('emphasis:removeFeatureState', 'before');
 			featureStateRemoveCount += 1;
+			const prefix = `${target.source}:${String(target.id)}:`;
+			if (property) featureStates.delete(`${prefix}${property}`);
+			else {
+				for (const key of featureStates) if (key.startsWith(prefix)) featureStates.delete(key);
+			}
+			receipt.recordFeatureStateCount(featureStates.size);
 			mapHeroReceiptSignals.recordFeatureState({
 				operation: 'remove',
 				target: { ...target },
 				property,
 			});
+			mapHeroReceiptSignals.throwCleanupFault('emphasis:removeFeatureState', 'after');
 		},
 		fitBounds: () => {
 			fitBoundsCount += 1;
@@ -112,7 +169,9 @@
 		setMaxBounds: () => {
 			setMaxBoundsCount += 1;
 		},
+		remove: removeRawMap,
 	};
+	const map = rawFakeMap as unknown as MapLibreMap;
 
 	function pick(nextLayer = STOPS_LAYER): void {
 		pickLayer = nextLayer;
@@ -123,11 +182,11 @@
 	}
 
 	function styleLoad(): void {
-		onstyleload?.(fakeMap);
+		onstyleload?.(map);
 	}
 
 	function themeRepaint(): void {
-		onthemerepaint?.(fakeMap);
+		onthemerepaint?.(map);
 	}
 
 	function fail(): void {
@@ -151,8 +210,70 @@
 		for (const handler of canvasHandlers.get('mouseleave') ?? []) handler({});
 	}
 
+	function reportCleanupFailure(error: unknown): void {
+		try {
+			if (!oncleanupfailure) {
+				console.error('MapStage cleanup failed', error);
+				return;
+			}
+			const reported = oncleanupfailure(error);
+			if (reported && typeof (reported as PromiseLike<unknown>).then === 'function') {
+				void Promise.resolve(reported).catch((reporterError) => {
+					try {
+						console.error(
+							'MapStage cleanup reporter failed',
+							new AggregateError([error, reporterError], 'MapStage cleanup reporter failed'),
+						);
+					} catch {
+						// Fault reporting cannot reopen the fixture destructor boundary.
+					}
+				});
+			}
+		} catch (reporterError) {
+			try {
+				console.error(
+					'MapStage cleanup reporter failed',
+					new AggregateError([error, reporterError], 'MapStage cleanup reporter failed'),
+				);
+			} catch {
+				// Fault reporting cannot reopen the fixture destructor boundary.
+			}
+		}
+	}
+
+	const mapStageHandlers: ReadonlyArray<readonly [string, Handler]> = [
+		['load', () => {}],
+		['styledata', () => {}],
+		['sourcedata', () => {}],
+		['movestart', () => {}],
+		['boxzoomend', () => {}],
+	];
+
 	onMount(() => {
-		onready?.(fakeMap);
+		style = { getSource: (id) => sources.get(id) };
+		for (const [type, handler] of mapStageHandlers) rawFakeMap.on(type, handler);
+		onready?.(map);
+		return () => {
+			const cleanupErrors: unknown[] = [];
+			try {
+				void Promise.resolve(onbeforeremove?.(map)).catch(reportCleanupFailure);
+			} catch (error) {
+				cleanupErrors.push(error);
+			}
+			for (const [type, handler] of mapStageHandlers) {
+				try {
+					rawFakeMap.off(type, handler);
+				} catch (error) {
+					cleanupErrors.push(error);
+				}
+			}
+			try {
+				rawFakeMap.remove();
+			} catch (error) {
+				cleanupErrors.push(error);
+			}
+			for (const error of cleanupErrors) reportCleanupFailure(error);
+		};
 	});
 </script>
 

@@ -85,12 +85,39 @@ export function createMapEmphasisController(
 	}
 
 	function clearMap(map: MapLibreMap): void {
-		if (hoveredTarget) removeState(map, hoveredTarget, 'hovered');
-		for (const target of selectedTargets) removeState(map, target, 'selected');
-		setStopException(map, stopsById, null, null);
-		exceptionMap = map;
-		exceptionSelectedStopId = null;
-		exceptionHoveredStopId = null;
+		const errors: unknown[] = [];
+		if (hoveredTarget) {
+			try {
+				removeState(map, hoveredTarget, 'hovered');
+				hoveredTarget = null;
+			} catch (error) {
+				errors.push(error);
+			}
+		}
+		const retainedSelected: MapEmphasisTarget[] = [];
+		for (const target of selectedTargets) {
+			try {
+				removeState(map, target, 'selected');
+			} catch (error) {
+				errors.push(error);
+				retainedSelected.push(target);
+			}
+		}
+		selectedTargets = retainedSelected;
+		if (
+			exceptionMap === map &&
+			(exceptionSelectedStopId != null || exceptionHoveredStopId != null)
+		) {
+			try {
+				setStopException(map, stopsById, null, null);
+				exceptionSelectedStopId = null;
+				exceptionHoveredStopId = null;
+			} catch (error) {
+				errors.push(error);
+			}
+		}
+		if (errors.length === 1) throw errors[0];
+		if (errors.length > 1) throw new AggregateError(errors, 'Map emphasis cleanup failed');
 	}
 
 	function apply(map: MapLibreMap, stops: readonly SlimStopEntry[]): void {
@@ -132,10 +159,18 @@ export function createMapEmphasisController(
 	}
 
 	function clear(map: MapLibreMap | null = activeMap): void {
-		if (map) clearMap(map);
-		hoveredTarget = null;
-		selectedTargets = [];
-		if (map === activeMap) activeMap = null;
+		if (!map) return;
+		clearMap(map);
+		if (
+			map === activeMap &&
+			hoveredTarget == null &&
+			selectedTargets.length === 0 &&
+			exceptionSelectedStopId == null &&
+			exceptionHoveredStopId == null
+		) {
+			activeMap = null;
+			exceptionMap = null;
+		}
 	}
 
 	function replay(map: MapLibreMap): void {

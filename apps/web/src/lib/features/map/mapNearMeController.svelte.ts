@@ -29,7 +29,7 @@ export interface MapNearMeControllerDependencies {
 	) => string;
 	readonly clearTargetSearch: (current: URLSearchParams, pathname: string) => string;
 	readonly focusOrigin: (origin: NearMeOrigin) => void;
-	readonly fetch: (input: string) => Promise<Response>;
+	readonly fetch: (input: string, init?: RequestInit) => Promise<Response>;
 	readonly getGeolocation: () => Geolocation | null;
 	readonly isSecureContext: () => boolean;
 	readonly translations: NearMeTranslations;
@@ -44,6 +44,7 @@ export interface MapNearMeController {
 	get error(): string | null;
 	get origin(): NearMeOrigin | null;
 	get urlKey(): string;
+	dispose(): void;
 	setOrigin(origin: NearMeOrigin, options?: { syncUrl?: boolean; urlBacked?: boolean }): void;
 	syncFromUrl(searchParams: URLSearchParams): void;
 	refocus(): void;
@@ -69,6 +70,8 @@ export function createMapNearMeController(
 	let error = $state<string | null>(null);
 	let origin = $state<NearMeOrigin | null>(null);
 	let urlKey = $state('');
+	let disposed = false;
+	const lifetime = new AbortController();
 	// S5-377 B1: syncUrl ("write this origin to the URL?") and urlBacked
 	// ("does the URL own it?") are separate questions — a URL-adopted origin
 	// is owned by the URL yet must not echo back into it; a device fix is
@@ -76,6 +79,7 @@ export function createMapNearMeController(
 	let urlBacked = $state(true);
 
 	function syncToUrl(nextOrigin: NearMeOrigin): void {
+		if (disposed) return;
 		const url = dependencies.currentUrl();
 		urlKey = dependencies.targetKey(nextOrigin);
 		void dependencies.goto(
@@ -88,6 +92,7 @@ export function createMapNearMeController(
 		nextOrigin: NearMeOrigin,
 		{ syncUrl = true, urlBacked: nextUrlBacked = true } = {},
 	): void {
+		if (disposed) return;
 		origin = nextOrigin;
 		error = null;
 		urlBacked = nextUrlBacked;
@@ -96,6 +101,7 @@ export function createMapNearMeController(
 	}
 
 	function syncFromUrl(searchParams: URLSearchParams): void {
+		if (disposed) return;
 		const nearTarget = dependencies.readTarget(searchParams);
 		if (!nearTarget) {
 			urlKey = '';
@@ -115,10 +121,12 @@ export function createMapNearMeController(
 	}
 
 	function refocus(): void {
+		if (disposed) return;
 		if (origin) dependencies.focusOrigin(origin);
 	}
 
 	function clear(): void {
+		if (disposed) return;
 		origin = null;
 		query = '';
 		error = null;
@@ -132,6 +140,7 @@ export function createMapNearMeController(
 	}
 
 	function useLocation(): void {
+		if (disposed) return;
 		open = true;
 		if (!dependencies.isSecureContext()) {
 			error = dependencies.translations.nearMeGeoInsecure;
@@ -146,6 +155,7 @@ export function createMapNearMeController(
 		error = null;
 		geolocation.getCurrentPosition(
 			(position) => {
+				if (disposed) return;
 				loading = false;
 				// A device fix never enters the URL (WS8-A privacy: no coordinate
 				// leak) and honestly frames at place precision, not street level.
@@ -160,6 +170,7 @@ export function createMapNearMeController(
 				);
 			},
 			(geoError) => {
+				if (disposed) return;
 				loading = false;
 				error =
 					geoError.code === geoError.PERMISSION_DENIED
@@ -172,29 +183,39 @@ export function createMapNearMeController(
 		);
 	}
 
-	async function resolveQuery(nextQuery: string): Promise<void> {
+	async function fetchLocation(url: string): Promise<GeocodedLocation | null> {
+		if (disposed) return null;
 		loading = true;
 		error = null;
 		try {
-			const response = await dependencies.fetch(
-				`/api/geocode/montreal?q=${encodeURIComponent(nextQuery)}`,
-			);
+			const response = await dependencies.fetch(url, { signal: lifetime.signal });
+			if (disposed) return null;
 			if (!response.ok) {
 				error = dependencies.translations.nearMeError;
-				return;
+				return null;
 			}
 			const result = (await response.json()) as GeocodedLocation;
-			query = result.label;
-			setOrigin(result);
+			if (disposed) return null;
+			return result;
 		} catch {
+			if (disposed) return null;
 			error = dependencies.translations.nearMeError;
+			return null;
 		} finally {
-			loading = false;
+			if (!disposed) loading = false;
 		}
+	}
+
+	async function resolveQuery(nextQuery: string): Promise<void> {
+		const result = await fetchLocation(`/api/geocode/montreal?q=${encodeURIComponent(nextQuery)}`);
+		if (!result || disposed) return;
+		query = result.label;
+		setOrigin(result);
 	}
 
 	async function search(event: SubmitEvent): Promise<void> {
 		event.preventDefault();
+		if (disposed) return;
 		const nextQuery = query.trim();
 		if (!nextQuery) return;
 
@@ -208,27 +229,16 @@ export function createMapNearMeController(
 	}
 
 	async function resolvePlace(placeId: string, sessionToken: string): Promise<void> {
-		loading = true;
-		error = null;
-		try {
-			const response = await dependencies.fetch(
-				`/api/geocode/montreal?placeId=${encodeURIComponent(placeId)}&session=${encodeURIComponent(sessionToken)}`,
-			);
-			if (!response.ok) {
-				error = dependencies.translations.nearMeError;
-				return;
-			}
-			const result = (await response.json()) as GeocodedLocation;
-			query = result.label;
-			setOrigin(result);
-		} catch {
-			error = dependencies.translations.nearMeError;
-		} finally {
-			loading = false;
-		}
+		const result = await fetchLocation(
+			`/api/geocode/montreal?placeId=${encodeURIComponent(placeId)}&session=${encodeURIComponent(sessionToken)}`,
+		);
+		if (!result || disposed) return;
+		query = result.label;
+		setOrigin(result);
 	}
 
 	async function selectSuggestion(result: GeocodeSuggestion, sessionToken: string): Promise<void> {
+		if (disposed) return;
 		query = result.label;
 		if (hasCoordinates(result)) {
 			setOrigin(result);
@@ -239,6 +249,13 @@ export function createMapNearMeController(
 			return;
 		}
 		await resolveQuery(result.label);
+	}
+
+	function dispose(): void {
+		if (disposed) return;
+		disposed = true;
+		lifetime.abort();
+		loading = false;
 	}
 
 	return {
@@ -266,6 +283,7 @@ export function createMapNearMeController(
 		get urlKey() {
 			return urlKey;
 		},
+		dispose,
 		setOrigin,
 		syncFromUrl,
 		refocus,

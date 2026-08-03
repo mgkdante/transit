@@ -15,12 +15,14 @@ type MatchMediaResult = { matches: boolean };
 
 function stubEnvironment(opts: { hasViewTransition: boolean; reducedMotion: boolean }): {
 	startViewTransition: ReturnType<typeof vi.fn>;
+	updateCallbackResults: Promise<unknown>[];
 } {
+	const updateCallbackResults: Promise<unknown>[] = [];
 	const startViewTransition = vi.fn((cb: () => unknown) => {
 		// Mirror the real API enough for the helper: run the callback and hand
 		// back a transition-like object. The callback's returned promise settles
 		// independently; the helper only needs `startViewTransition` to be called.
-		void cb();
+		updateCallbackResults.push(Promise.resolve(cb()));
 		return {
 			finished: Promise.resolve(),
 			ready: Promise.resolve(),
@@ -35,7 +37,7 @@ function stubEnvironment(opts: { hasViewTransition: boolean; reducedMotion: bool
 		}),
 	});
 
-	return { startViewTransition };
+	return { startViewTransition, updateCallbackResults };
 }
 
 afterEach(() => {
@@ -94,5 +96,29 @@ describe('runViewTransition', () => {
 		expect(result).toBeInstanceOf(Promise);
 		expect(startViewTransition).toHaveBeenCalledTimes(1);
 		await expect(result).resolves.toBeUndefined();
+	});
+
+	it('opens Kit commit inside the update callback before waiting for navigation.complete', async () => {
+		let finishNavigation!: () => void;
+		const complete = new Promise<void>((resolve) => {
+			finishNavigation = resolve;
+		});
+		const { updateCallbackResults } = stubEnvironment({
+			hasViewTransition: true,
+			reducedMotion: false,
+		});
+
+		const commitGate = runViewTransition({ complete });
+		await expect(commitGate).resolves.toBeUndefined();
+
+		let updateFinished = false;
+		void updateCallbackResults[0]!.then(() => {
+			updateFinished = true;
+		});
+		await Promise.resolve();
+		expect(updateFinished).toBe(false);
+
+		finishNavigation();
+		await expect(updateCallbackResults[0]).resolves.toBeUndefined();
 	});
 });

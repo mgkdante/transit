@@ -159,12 +159,10 @@ describe('NavPill — the flat menu', () => {
 		);
 		expect(within(audit).getByRole('link', { name: 'Alerts' })).toHaveAttribute('href', '/alerts');
 
-		const legal = within(menu).getByRole('group', { name: 'Legal' });
-		expect(within(legal).getByRole('link', { name: 'Privacy' })).toHaveAttribute(
-			'href',
-			'/privacy',
-		);
-		expect(within(legal).getByRole('link', { name: 'Terms' })).toHaveAttribute('href', '/terms');
+		// Owner decision 2026-08-03: legal destinations are footer-only on every route.
+		expect(within(menu).queryByRole('group', { name: 'Legal' })).not.toBeInTheDocument();
+		expect(within(menu).queryByRole('link', { name: 'Privacy' })).not.toBeInTheDocument();
+		expect(within(menu).queryByRole('link', { name: 'Terms' })).not.toBeInTheDocument();
 
 		// The parent-brand "Yesid" link is externalized (final menu row, external ↗).
 		const yesid = within(menu).getByRole('link', { name: /Yesid/ });
@@ -285,15 +283,11 @@ describe('NavPill — the flat menu', () => {
 			'href',
 			'/fr/repeat-offenders',
 		);
-		const legal = within(menu).getByRole('group', { name: 'Juridique' });
-		expect(within(legal).getByRole('link', { name: 'Confidentialité' })).toHaveAttribute(
-			'href',
-			'/fr/privacy',
-		);
-		expect(within(legal).getByRole('link', { name: 'Conditions d’utilisation' })).toHaveAttribute(
-			'href',
-			'/fr/terms',
-		);
+		expect(within(menu).queryByRole('group', { name: 'Juridique' })).not.toBeInTheDocument();
+		expect(within(menu).queryByRole('link', { name: 'Confidentialité' })).not.toBeInTheDocument();
+		expect(
+			within(menu).queryByRole('link', { name: 'Conditions d’utilisation' }),
+		).not.toBeInTheDocument();
 		// The parent-brand link stays "Yesid" (brand name, not localized) with a FR
 		// new-tab affordance, and still points at the external house site.
 		const yesid = within(menu).getByRole('link', { name: /Yesid/ });
