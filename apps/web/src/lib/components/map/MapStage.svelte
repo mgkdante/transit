@@ -536,8 +536,8 @@
 				throw error;
 			}
 			attempt.map = instance;
-			// No options preserves MapLibre's implicit-control defaults, including its
-			// required default attribution, while making the control an explicit receipt.
+			// Base's implicit control received { compact: true }; pass the same options
+			// while owning the control explicitly for teardown.
 			ownMapControl(attempt, instance, new maplibregl.AttributionControl({ compact: true }));
 			activeLayoutSig = fitPaddingKey(fitPadding);
 			activeBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
