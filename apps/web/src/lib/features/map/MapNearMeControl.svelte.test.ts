@@ -59,10 +59,9 @@ describe('MapNearMeControl', () => {
 		const s = source();
 
 		expect(s).toContain('let suggestionsOpen = $state(false)');
-		expect(s).not.toContain('<svelte:window');
-		expect(s).toContain("window.addEventListener('pointerdown', handleWindowPointerDown)");
-		expect(s).toContain("window.addEventListener('keydown', handleWindowKeydown)");
-		expect(s).toContain("return mapOwnerBoundary('MapNearMeControl'");
+		expect(s).toContain(
+			'<svelte:window onpointerdown={handleWindowPointerDown} onkeydown={handleWindowKeydown} />',
+		);
 		expect(s).toContain('function closeSuggestions()');
 		expect(s).toContain('function handleWindowPointerDown');
 		expect(s).toContain('function handleWindowKeydown');

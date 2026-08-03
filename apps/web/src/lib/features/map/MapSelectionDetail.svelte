@@ -6,7 +6,6 @@
 	import type { Alert } from '$lib/v1/schemas';
 	import { MaybeValue } from '$lib/components/edge';
 	import { STATUS_GLYPH, occupancyGlyph } from '$lib/components/dataviz';
-	import { reportCleanupFailure } from '$lib/components/map/mapOwnerBoundary';
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { MapSelection, MapSelectionDetail } from './mapSelection';
@@ -65,13 +64,11 @@
 		if (!nextDetail || presentation !== 'body') return;
 		const focusKey = document.activeElement?.getAttribute('data-detail-focus-key');
 		if (!focusKey) return;
-		void tick()
-			.then(() => {
-				[...(detailElement?.querySelectorAll<HTMLElement>('[data-detail-focus-key]') ?? [])]
-					.find((element) => element.dataset.detailFocusKey === focusKey)
-					?.focus();
-			})
-			.catch((error) => reportCleanupFailure('MapSelectionDetail deferred focus failed', error));
+		void tick().then(() => {
+			[...(detailElement?.querySelectorAll<HTMLElement>('[data-detail-focus-key]') ?? [])]
+				.find((element) => element.dataset.detailFocusKey === focusKey)
+				?.focus();
+		});
 	});
 
 	function selectRoute(route: string | null | undefined): void {

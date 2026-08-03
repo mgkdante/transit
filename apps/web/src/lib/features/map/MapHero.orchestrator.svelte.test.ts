@@ -61,7 +61,7 @@ describe('MapHero orchestrator — structural law', () => {
 	it('keeps the orchestrator bounded after the disposal correction', () => {
 		expect(script).toBeDefined();
 		expect(script).not.toContain(obsoleteM6hRouteExit);
-		expect(script!.split(/\r?\n/u).length).toBe(931);
+		expect(script!.split(/\r?\n/u).length).toBe(914);
 	});
 
 	it('uses one normal-script URL ingestion seam behind the shared three-writer coordinator', () => {

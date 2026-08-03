@@ -7,7 +7,6 @@
 	import type { FilterStore } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
 	import { copy as MAP_COPY } from './map.copy';
-	import { mapOwnerBoundary, reportCleanupFailure } from '$lib/components/map/mapOwnerBoundary';
 
 	interface Props {
 		store: FilterStore;
@@ -41,10 +40,10 @@
 		syncNarrow();
 		narrowQuery.addEventListener('change', syncNarrow);
 		desktopQuery.addEventListener('change', closeAtDesktop);
-		return mapOwnerBoundary('MapFilterPill', [
-			() => narrowQuery.removeEventListener('change', syncNarrow),
-			() => desktopQuery.removeEventListener('change', closeAtDesktop),
-		]);
+		return () => {
+			narrowQuery.removeEventListener('change', syncNarrow);
+			desktopQuery.removeEventListener('change', closeAtDesktop);
+		};
 	});
 
 	function focusTitle(event: Event): void {
@@ -66,11 +65,9 @@
 		const handFocusToNearMe = stallHidesTrigger;
 		drawerOpen = false;
 		if (handFocusToNearMe) {
-			void tick()
-				.then(() => {
-					document.querySelector<HTMLButtonElement>('.map-near-toggle')?.focus();
-				})
-				.catch((error) => reportCleanupFailure('MapFilterPill deferred focus failed', error));
+			void tick().then(() => {
+				document.querySelector<HTMLButtonElement>('.map-near-toggle')?.focus();
+			});
 		}
 	});
 </script>

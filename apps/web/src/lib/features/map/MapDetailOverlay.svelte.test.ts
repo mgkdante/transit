@@ -769,58 +769,6 @@ describe('MapDetailOverlay', () => {
 		expect(document.activeElement).toBe(mapCanvas);
 	});
 
-	it('isolates document cleanup faults and completes observer, timer, persistence, and focus release', async () => {
-		const cleanupError = new Error('focusin cleanup failed before mutation');
-		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-		const removeEventListener = document.removeEventListener.bind(document);
-		const removeSpy = vi.spyOn(document, 'removeEventListener');
-		const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
-		const clearTimer = vi.spyOn(globalThis, 'clearTimeout');
-		let focusRemoveCalls = 0;
-		let keydownRemoveCalls = 0;
-		let armed = false;
-		removeSpy.mockImplementation((type, listener, options) => {
-			if (armed && type === 'focusin') {
-				focusRemoveCalls += 1;
-				if (focusRemoveCalls === 1) throw cleanupError;
-			}
-			if (armed && type === 'keydown') keydownRemoveCalls += 1;
-			removeEventListener(type, listener, options);
-		});
-		const invoker = document.createElement('button');
-		document.body.append(invoker);
-		invoker.focus();
-		const { container, unmount } = render(MapDetailOverlay, {
-			props: {
-				widthPx: 400,
-				collapsed: false,
-				dragging: false,
-				resizeAria: 'Resize detail panel',
-				detailPanel: detailPanelFor('vehicle:123'),
-			},
-		});
-		await waitFor(() =>
-			expect(container.querySelector<HTMLElement>('.map-detail-handle')).toBeInTheDocument(),
-		);
-		const handle = container.querySelector<HTMLElement>('.map-detail-handle')!;
-		handle.setPointerCapture = vi.fn();
-		handle.releasePointerCapture = vi.fn();
-		await fireEvent.pointerDown(handle, { button: 0, clientX: 500, pointerId: 1 });
-		await fireEvent.pointerMove(handle, { clientX: 650, pointerId: 1 });
-		await fireEvent.pointerUp(handle, { pointerId: 1 });
-		localStorage.setItem(DETAIL_RAIL_STORAGE_KEY, 'vehicle:123');
-		armed = true;
-
-		expect(() => unmount()).not.toThrow();
-		expect(focusRemoveCalls).toBe(2);
-		expect(keydownRemoveCalls).toBeGreaterThanOrEqual(1);
-		expect(disconnect).toHaveBeenCalled();
-		expect(clearTimer).toHaveBeenCalled();
-		expect(localStorage.getItem(DETAIL_RAIL_STORAGE_KEY)).toBeNull();
-		expect(document.activeElement).toBe(invoker);
-		expect(consoleError).toHaveBeenCalledWith('MapDetailOverlay cleanup failed', cleanupError);
-	});
-
 	it('clears rail persistence on teardown regardless of the close path', async () => {
 		localStorage.setItem(DETAIL_RAIL_STORAGE_KEY, 'vehicle:123');
 		const { container, unmount } = render(MapDetailOverlay, {

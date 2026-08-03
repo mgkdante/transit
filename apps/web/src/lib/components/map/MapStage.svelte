@@ -101,13 +101,8 @@
 	import { onMount, tick } from 'svelte';
 	import { cn } from '$lib/utils';
 	import type { BasemapFile } from '$lib/v1/schemas';
-	import {
-		createMapDisposalRegistry,
-		mapOwnerBoundary,
-		type MapDisposalRegistry,
-	} from '$lib/components/map/mapOwnerBoundary';
 	import { applyBasemapTheme, resolveBasemapStyle, type BasemapTheme } from './basemap';
-	import { constructRecoverableMap, disposeMapAppResources } from './maplibreConstructorCleanup';
+	import { constructRecoverableMap } from './maplibreConstructorCleanup';
 	import { mapViewportOptions, type MapFitPadding } from './viewport';
 	// Type-only import — erased at compile time, so it never pulls maplibre-gl
 	// into the server bundle. The RUNTIME import happens dynamically in onMount.
@@ -245,9 +240,10 @@
 		readonly generation: number;
 		readonly container: HTMLDivElement;
 		readonly controller: AbortController;
-		readonly registry: MapDisposalRegistry;
+		runtimeContainer: HTMLDivElement | null;
 		map: MapLibreMap | null;
-		releaseObserver: (() => void) | null;
+		observer: ResizeObserver | null;
+		disposers: Array<() => void>;
 		initializing: boolean;
 		cleaned: boolean;
 	}
@@ -309,7 +305,11 @@
 	}
 
 	function releaseWithoutEscape(dispose: () => void): void {
-		mapOwnerBoundary('MapStage', [{ release: dispose, retry: false }], reportCleanupFailure)();
+		try {
+			dispose();
+		} catch (error) {
+			reportCleanupFailure(error);
+		}
 	}
 
 	function cleanupAttempt(attempt: BootAttempt): void {
@@ -318,31 +318,48 @@
 		attempt.initializing = false;
 		const ownedMap = attempt.map;
 		attempt.map = null;
+		const runtimeContainer = attempt.runtimeContainer;
+		attempt.runtimeContainer = null;
+		const disposers = attempt.disposers.splice(0);
+		const observer = attempt.observer;
+		attempt.observer = null;
 		if (activeAttempt === attempt) activeAttempt = null;
 		if (map === ownedMap) map = null;
 
-		const releaseObserver = attempt.releaseObserver;
-		attempt.releaseObserver = null;
-		releaseObserver?.();
+		const cleanupErrors: unknown[] = [];
+		const release = (dispose: () => void): void => {
+			try {
+				dispose();
+			} catch (error) {
+				cleanupErrors.push(error);
+			}
+		};
+		release(() => attempt.controller.abort());
+		if (observer) release(() => observer.disconnect());
 		if (ownedMap && onbeforeremove) {
-			mapOwnerBoundary(
-				'MapStage consumer',
-				[{ release: () => Promise.resolve(onbeforeremove(ownedMap)), retry: false }],
-				reportCleanupFailure,
-			)();
+			release(() => {
+				void Promise.resolve(onbeforeremove(ownedMap)).catch(reportCleanupFailure);
+			});
 		}
-		// The app registry is authoritative: globals, observers, app listeners,
-		// controls, and runtime DOM retire before MapLibre's own teardown begins.
-		attempt.registry.dispose();
-		if (!ownedMap) return;
-		mapOwnerBoundary(
-			'MapStage MapLibre',
-			[
-				{ release: () => ownedMap.setStyle(null), retry: false },
-				{ release: () => ownedMap.remove(), retry: false },
-			],
-			reportCleanupFailure,
-		)();
+		let pendingDisposers = disposers;
+		for (let pass = 0; pass < 2 && pendingDisposers.length > 0; pass += 1) {
+			const retainedDisposers: Array<() => void> = [];
+			for (const dispose of pendingDisposers) {
+				try {
+					dispose();
+				} catch (error) {
+					cleanupErrors.push(error);
+					retainedDisposers.push(dispose);
+				}
+			}
+			pendingDisposers = retainedDisposers;
+		}
+		// MapLibre remove() can throw in control teardown before it reaches its own
+		// style destruction. Isolate that resource release so sources still reach zero.
+		if (ownedMap) release(() => ownedMap.setStyle(null));
+		if (ownedMap) release(() => ownedMap.remove());
+		if (runtimeContainer) release(() => runtimeContainer.remove());
+		for (const error of cleanupErrors) reportCleanupFailure(error);
 	}
 
 	function ownMapListener(
@@ -359,14 +376,18 @@
 		};
 		// Ledger first: Evented registration can mutate and then throw. Cleanup must
 		// still know the exact listener identity in that partial-registration state.
-		const release = attempt.registry.own(dispose);
+		attempt.disposers.push(dispose);
 		try {
 			instance.on(type, listener);
 		} catch (error) {
-			release();
+			try {
+				dispose();
+			} catch {
+				// The attempt ledger keeps the disposer active for the teardown retry.
+			}
 			throw error;
 		}
-		return release;
+		return dispose;
 	}
 
 	function ownMapControl(
@@ -380,11 +401,15 @@
 			instance.removeControl(control);
 			active = false;
 		};
-		const release = attempt.registry.own(dispose);
+		attempt.disposers.push(dispose);
 		try {
 			instance.addControl(control);
 		} catch (error) {
-			release();
+			try {
+				dispose();
+			} catch {
+				// The attempt ledger retains the exact partial-control receipt.
+			}
 			throw error;
 		}
 	}
@@ -443,22 +468,17 @@
 	// stage by stage so the single catch classifies honestly.
 	async function startAttempt(generation: number): Promise<void> {
 		if (!mounted || !container || activeAttempt?.initializing) return;
-		const registry = createMapDisposalRegistry(
-			`MapStage attempt ${generation}`,
-			reportCleanupFailure,
-		);
-		const controller = new AbortController();
 		const attempt: BootAttempt = {
 			generation,
 			container,
-			controller,
-			registry,
+			controller: new AbortController(),
+			runtimeContainer: null,
 			map: null,
-			releaseObserver: null,
+			observer: null,
+			disposers: [],
 			initializing: true,
 			cleaned: false,
 		};
-		registry.own(() => controller.abort(), { retry: false });
 		activeAttempt = attempt;
 		const basemapPromise = Promise.resolve()
 			.then(() =>
@@ -493,7 +513,7 @@
 			runtimeContainer.style.width = '100%';
 			runtimeContainer.style.height = '100%';
 			runtimeContainer.dataset.mapRuntime = '';
-			registry.own(() => runtimeContainer.remove(), { retry: false });
+			attempt.runtimeContainer = runtimeContainer;
 			attempt.container.append(runtimeContainer);
 			let instance: MapLibreMap;
 			try {
@@ -515,7 +535,6 @@
 				releaseWithoutEscape(() => loseRuntimeContexts(runtimeContainer));
 				throw error;
 			}
-			registry.own(() => disposeMapAppResources(instance));
 			attempt.map = instance;
 			// No options preserves MapLibre's implicit-control defaults, including its
 			// required default attribution, while making the control an explicit receipt.
@@ -561,11 +580,10 @@
 			// MapLibre measures the container at construction; in a flex/grid parent
 			// layout may not have settled, so observing keeps the viewport in sync
 			// (fires once immediately, repainting the initial frame).
-			const observer = new ResizeObserver(() => {
+			attempt.observer = new ResizeObserver(() => {
 				if (isCurrentAttempt(attempt)) instance.resize();
 			});
-			attempt.releaseObserver = registry.own(() => observer.disconnect(), { retry: false });
-			observer.observe(attempt.container);
+			attempt.observer.observe(attempt.container);
 			attempt.initializing = false;
 		} catch {
 			failAttempt(attempt, failureKind);
@@ -581,18 +599,10 @@
 		void startAttempt(attemptKey);
 
 		// Teardown — release the GL context, event listeners, and DOM nodes.
-		return mapOwnerBoundary(
-			'MapStage',
-			[
-				() => {
-					mounted = false;
-				},
-				() => {
-					if (activeAttempt) cleanupAttempt(activeAttempt);
-				},
-			],
-			reportCleanupFailure,
-		);
+		return () => {
+			mounted = false;
+			if (activeAttempt) cleanupAttempt(activeAttempt);
+		};
 	});
 
 	// Constructor framing owns boot/retry. Later HMR/prop-driven camera changes
@@ -690,11 +700,7 @@
 			releaseWithoutEscape(releaseStyleLoad);
 			throw error;
 		}
-		return mapOwnerBoundary(
-			'MapStage',
-			[{ release: releaseStyleLoad, retry: false }],
-			reportCleanupFailure,
-		);
+		return () => releaseWithoutEscape(releaseStyleLoad);
 	});
 </script>
 

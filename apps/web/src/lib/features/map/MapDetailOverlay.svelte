@@ -33,7 +33,6 @@
 		MIN_DETAIL_PANEL_WIDTH,
 		MAX_DETAIL_PANEL_WIDTH,
 	} from './mapDetailPanes';
-	import { mapOwnerBoundary } from '$lib/components/map/mapOwnerBoundary';
 
 	interface Props {
 		/** The overlay's live width in px (= MapHero's detailWidthPx). Two-way. */
@@ -178,21 +177,15 @@
 
 		document.addEventListener('focusin', onDocumentFocusIn);
 		document.addEventListener('keydown', onDocumentKeyDown);
-		return mapOwnerBoundary('MapDetailOverlay', [
-			() => document.removeEventListener('focusin', onDocumentFocusIn),
-			() => document.removeEventListener('keydown', onDocumentKeyDown),
-			() => observer.disconnect(),
-			() => {
-				if (snapTimer) clearTimeout(snapTimer);
-				snapTimer = undefined;
-				snapping = false;
-			},
-			clearStoredDetailRail,
-			() => {
-				if (invoker?.isConnected) invoker.focus();
-				else document.querySelector<HTMLElement>('.maplibregl-canvas')?.focus();
-			},
-		]);
+		return () => {
+			document.removeEventListener('focusin', onDocumentFocusIn);
+			document.removeEventListener('keydown', onDocumentKeyDown);
+			observer.disconnect();
+			if (snapTimer) clearTimeout(snapTimer);
+			clearStoredDetailRail();
+			if (invoker?.isConnected) invoker.focus();
+			else document.querySelector<HTMLElement>('.maplibregl-canvas')?.focus();
+		};
 	});
 
 	// Pointer drag owns only the live width. The committed width persists exactly once

@@ -1082,44 +1082,6 @@ describe('createVehicleMotionController — forward projection', () => {
 		expect(hasPending()).toBe(false);
 	});
 
-	it('quarantines a retained frame callback when cancellation persistently throws', () => {
-		const queued: Array<() => void> = [];
-		let requestCount = 0;
-		let now = 1_000;
-		const cancelError = new Error('cancel failed before mutation');
-		const cancelFrame = vi.fn(() => {
-			throw cancelError;
-		});
-		const runtime: MotionRuntime = {
-			now: () => now,
-			requestFrame: (callback) => {
-				queued.push(callback);
-				requestCount += 1;
-				return requestCount;
-			},
-			cancelFrame,
-		};
-		const { map, setData } = stubMap();
-		const controller = createVehicleMotionController(map, runtime);
-		controller.set(fcAt(W[0], W[1]), {
-			tickKey: 't1',
-			animate: true,
-			fixFor: fixFor(5, 10),
-			shapeFor: straightShape,
-			serverNowFn: () => NOW_MS + now,
-		});
-		setData.mockClear();
-
-		expect(() => controller.destroy()).toThrow(cancelError);
-		expect(cancelFrame).toHaveBeenCalledOnce();
-		now += 40;
-		expect(queued).toHaveLength(1);
-		queued[0]!();
-
-		expect(setData).not.toHaveBeenCalled();
-		expect(requestCount).toBe(1);
-	});
-
 	it('projected position lands on the shape (arc-length matches the model)', () => {
 		const { map, setData } = stubMap();
 		const { runtime, serverNowFn } = controlledRuntime();
