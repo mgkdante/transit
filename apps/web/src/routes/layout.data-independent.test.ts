@@ -1,4 +1,4 @@
-import { cleanup, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, within } from '@testing-library/svelte';
 import { createRawSnippet, settled, tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KitNavigationSimulator } from '$lib/features/map/__fixtures__/KitNavigationSimulator';
@@ -62,12 +62,6 @@ vi.mock('$lib/analytics/runtime', () => ({
 vi.mock('$lib/components/SeoHead.svelte', async () => ({
 	default: (await import('./__fixtures__/RootLayoutEmptyStub.svelte')).default,
 }));
-vi.mock('$lib/components/shell', async () => ({
-	AppShell: (await import('./__fixtures__/RootLayoutShellStub.svelte')).default,
-}));
-vi.mock('$lib/components/layout', async () => ({
-	Footer: (await import('./__fixtures__/RootLayoutFooterStub.svelte')).default,
-}));
 vi.mock('$lib/components/edge', async () => ({
 	EdgeState: (await import('./__fixtures__/RootLayoutEdgeStateStub.svelte')).default,
 }));
@@ -105,9 +99,16 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({ data: null, error: null, loading: false, settled: false }),
 }));
 vi.mock('$lib/stores', () => ({
-	dataRefresh: { seedDataGeneratedUtc: vi.fn() },
+	dataRefresh: {
+		seedDataGeneratedUtc: vi.fn(),
+		seedNow: vi.fn(),
+		run: vi.fn(),
+		refreshing: false,
+		ageSeconds: null,
+	},
 	dataPulse: { subscribe: vi.fn(() => vi.fn()) },
-	themeStore: { init: vi.fn() },
+	sharedClock: { subscribe: vi.fn(() => vi.fn()) },
+	themeStore: { init: vi.fn(), isDark: false, toggle: vi.fn() },
 }));
 vi.mock('$lib/pwa/register', () => ({ registerServiceWorker: vi.fn() }));
 vi.mock('$lib/pwa/appVersion', () => ({
@@ -162,7 +163,7 @@ describe('root layout data-independent legal routes', () => {
 
 			expect(getByTestId('legal-child')).toBeInTheDocument();
 			expect(queryByTestId('root-layout-edge-state')).not.toBeInTheDocument();
-			expect(getByTestId('root-layout-footer')).toHaveTextContent(attribution);
+			expect(getByTestId('footer')).toHaveTextContent(attribution);
 		},
 	);
 
@@ -171,8 +172,60 @@ describe('root layout data-independent legal routes', () => {
 
 		expect(getByTestId('root-layout-edge-state')).toBeInTheDocument();
 		expect(queryByTestId('legal-child')).not.toBeInTheDocument();
-		expect(getByTestId('root-layout-footer').textContent?.trim()).toBe('');
+		expect(getByTestId('footer')).not.toHaveTextContent(
+			'Licensing and attribution notices are under legal review.',
+		);
 	});
+
+	it.each([
+		{
+			pathname: '/map',
+			lang: 'en' as const,
+			footer: false,
+			openMenu: 'Open menu',
+			legalLabel: 'Legal',
+			links: [
+				['Privacy', '/privacy'],
+				['Terms', '/terms'],
+			] as const,
+		},
+		{
+			pathname: '/fr/map',
+			lang: 'fr' as const,
+			footer: false,
+			openMenu: 'Ouvrir le menu',
+			legalLabel: 'Juridique',
+			links: [
+				['Confidentialité', '/fr/privacy'],
+				['Conditions d’utilisation', '/fr/terms'],
+			] as const,
+		},
+		{ pathname: '/privacy', lang: 'en' as const, footer: true },
+		{ pathname: '/fr/privacy', lang: 'fr' as const, footer: true },
+	])(
+		'mounts a Footer or localized legal destinations for $pathname through the real root shell',
+		async ({ pathname, lang, footer, openMenu, legalLabel, links }) => {
+			const view = renderWithoutV1(pathname, lang);
+			expect(view.container.querySelector('[data-slot="app-shell"]')).toBeInTheDocument();
+
+			if (footer) {
+				expect(view.getByTestId('footer')).toBeInTheDocument();
+				return;
+			}
+			if (!openMenu || !legalLabel || !links) {
+				throw new Error('Footerless route fixtures require localized legal navigation.');
+			}
+
+			expect(view.queryByTestId('footer')).not.toBeInTheDocument();
+			await fireEvent.click(view.getByRole('button', { name: openMenu }));
+			const legal = within(view.getByTestId('nav-menu')).getByRole('group', {
+				name: legalLabel,
+			});
+			for (const [label, href] of links) {
+				expect(within(legal).getByRole('link', { name: label })).toHaveAttribute('href', href);
+			}
+		},
+	);
 
 	it.each([
 		['ordinary map exit', '/map', '/lines'],

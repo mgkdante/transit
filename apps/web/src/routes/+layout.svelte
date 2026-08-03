@@ -119,7 +119,7 @@
 	// force the main column to scroll with the footer crammed under the canvas
 	// (the "squeezed footer" artifact). Only /map today. Its MapLibre control
 	// carries basemap attribution only; provider licensing belongs on the legal
-	// pages linked from document-route footers.
+	// pages that remain reachable through the always-mounted NavPill.
 	const isFullBleed = $derived(seoPath === '/map');
 	const dataIndependentRoute = $derived(isDataIndependentRoute(seoPath));
 
