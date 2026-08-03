@@ -1262,6 +1262,10 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				if (shape === 'echo' || shape === 'adopt') {
 					const gotoCallsBeforeClose = harness.goto.mock.calls.length;
 					await fireEvent.click(before.close);
+					await waitFor(
+						() => expect(document.querySelectorAll(before.surfaceSelector)).toHaveLength(0),
+						{ onTimeout: (error) => error },
+					);
 
 					const survivesClose = shape === 'adopt';
 					await waitFor(() => {

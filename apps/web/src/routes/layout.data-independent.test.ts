@@ -88,29 +88,39 @@ vi.mock('$lib/site/config', () => ({
 vi.mock('$lib/site/errorPage', () => ({
 	errorDocumentHead: () => ({ title: 'Error', description: 'Error' }),
 }));
-vi.mock('$lib/v1/boot', () => ({
-	setV1Context: vi.fn(),
+vi.mock('$lib/v1/boot', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/v1/boot')>()),
 	bootV1: vi.fn(),
 }));
 vi.mock('$lib/v1/repositories/live', () => ({ getVehicles: vi.fn() }));
 vi.mock('$lib/v1/repositories/static', () => ({
+	getRoute: vi.fn(),
 	getRoutesIndex: vi.fn(),
+	getStop: vi.fn(),
 	getStopsIndex: vi.fn(),
+	getStopsIndexSlim: vi.fn(),
 }));
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({ data: null, error: null, loading: false, settled: false }),
 }));
 vi.mock('$lib/stores', () => ({
 	dataRefresh: {
+		epoch: 0,
 		seedDataGeneratedUtc: vi.fn(),
 		seedNow: vi.fn(),
+		noteDataGeneratedUtc: vi.fn(),
 		run: vi.fn(),
 		refreshing: false,
 		ageSeconds: null,
 	},
 	dataPulse: { subscribe: vi.fn(() => vi.fn()) },
-	sharedClock: { subscribe: vi.fn(() => vi.fn()) },
-	themeStore: { init: vi.fn(), isDark: false, toggle: vi.fn() },
+	sharedClock: {
+		serverNow: Date.parse('2026-08-03T00:00:00Z'),
+		serverNowContinuousMs: () => Date.parse('2026-08-03T00:00:00Z'),
+		subscribe: vi.fn(() => vi.fn()),
+	},
+	motionMode: { current: 'raw', isSmooth: false, toggle: vi.fn() },
+	themeStore: { init: vi.fn(), current: 'dark', isDark: true, toggle: vi.fn() },
 }));
 vi.mock('$lib/pwa/register', () => ({ registerServiceWorker: vi.fn() }));
 vi.mock('$lib/pwa/appVersion', () => ({
@@ -119,7 +129,7 @@ vi.mock('$lib/pwa/appVersion', () => ({
 vi.mock('$lib/vitals/collect', () => ({ startVitals: () => vi.fn() }));
 vi.mock('$lib/motion/view-transition', () => ({ runViewTransition: harness.runViewTransition }));
 vi.mock('@yesid/motion/utils/globalRipple', () => ({ initGlobalRipple: () => vi.fn() }));
-vi.mock('$lib/nav', () => ({ layout: { isDesktop: true } }));
+vi.mock('$lib/nav', () => ({ layout: { isDesktop: true }, isDesktopViewport: () => true }));
 vi.mock('$lib/search/chromeSearch', () => ({
 	chromeSearchResultHref: () => '/map',
 	chromeSearchResults: () => [],
@@ -130,6 +140,7 @@ vi.mock('$lib/geocode/sessionToken', () => ({
 }));
 
 import RootLayout from './+layout.svelte';
+import RootLayoutMapRouteHarness from './__fixtures__/RootLayoutMapRouteHarness.svelte';
 
 const children = createRawSnippet(() => ({
 	render: () => '<article data-testid="legal-child">Legal child</article>',
@@ -157,6 +168,9 @@ function renderRoot(pathname: string, lang: 'en' | 'fr', v1: V1Context | null) {
 	harness.onNavigateCallbacks.length = 0;
 	harness.runViewTransition.mockClear();
 	harness.setPath(pathname);
+	if (v1 && /^\/(?:fr\/)?map$/u.test(pathname)) {
+		return render(RootLayoutMapRouteHarness, { props: { data: { lang, v1, v1Error: false } } });
+	}
 	return render(RootLayout, {
 		props: {
 			data: { lang, v1, v1Error: v1 === null },
@@ -217,7 +231,7 @@ describe('root layout data-independent legal routes', () => {
 		{
 			pathname: '/map',
 			lang: 'en' as const,
-			loaded: false,
+			loaded: true,
 			footer: false,
 			openMenu: 'Open menu',
 			legalLabel: 'Legal',
@@ -229,7 +243,7 @@ describe('root layout data-independent legal routes', () => {
 		{
 			pathname: '/fr/map',
 			lang: 'fr' as const,
-			loaded: false,
+			loaded: true,
 			footer: false,
 			openMenu: 'Ouvrir le menu',
 			legalLabel: 'Juridique',
@@ -292,7 +306,9 @@ describe('root layout data-independent legal routes', () => {
 			const view = renderRoot(pathname, lang, loaded ? loadedV1(lang) : null);
 			expect(view.container.querySelector('[data-slot="app-shell"]')).toBeInTheDocument();
 			if (loaded) {
-				expect(view.getByTestId('legal-child')).toBeInTheDocument();
+				expect(
+					footer ? view.getByTestId('legal-child') : view.container.querySelector('.map-hero'),
+				).toBeInTheDocument();
 				expect(view.queryByTestId('root-layout-edge-state')).not.toBeInTheDocument();
 			}
 
