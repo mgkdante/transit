@@ -154,7 +154,12 @@ const harness = vi.hoisted(() => {
 	class AttributionControlStub {
 		container: HTMLDetailsElement | null = null;
 
-		constructor(readonly options: { compact?: boolean } = {}) {}
+		constructor(
+			readonly options: { compact?: boolean; customAttribution?: string | string[] } = {
+				compact: true,
+				customAttribution: '<a href="https://maplibre.org/" target="_blank">MapLibre</a>',
+			},
+		) {}
 
 		onAdd(_map: MapStub): HTMLElement {
 			const details = document.createElement('details');
@@ -698,7 +703,8 @@ describe('MapStage boot lifecycle', () => {
 		const oncleanupfailure = vi.fn();
 		const { view, map } = await bootStage({ oncleanupfailure });
 		expect(map.controls).toHaveLength(1);
-		expect(map.controls[0]?.options).toEqual({});
+		expect(map.controls[0]?.options).toEqual({ compact: true });
+		expect(map.controls[0]?.options).not.toHaveProperty('customAttribution');
 		expect(harness.state.controlListenerCount).toBe(5);
 		harness.state.controlCleanupFailure = { error: controlError, phase: 'before' };
 

@@ -538,7 +538,7 @@
 			attempt.map = instance;
 			// No options preserves MapLibre's implicit-control defaults, including its
 			// required default attribution, while making the control an explicit receipt.
-			ownMapControl(attempt, instance, new maplibregl.AttributionControl());
+			ownMapControl(attempt, instance, new maplibregl.AttributionControl({ compact: true }));
 			activeLayoutSig = fitPaddingKey(fitPadding);
 			activeBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
 			activeCameraKey = cameraKey(center, zoom);
