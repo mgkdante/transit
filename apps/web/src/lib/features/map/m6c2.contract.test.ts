@@ -216,9 +216,124 @@ const GATE7_SELECTION_RELEASE = `
 		if (selected?.kind === 'vehicle') return live.subscribeFamilies(['trips']);
 		if (selected?.kind === 'stop') return live.subscribeFamilies(['departures']);
 	});`;
+const CURE10_OWNER_IMPORT = `
+	import {
+		installCleanupReceipts,
+		releaseCleanupReceipts,
+		releaseMapOwnerReceipts,
+		throwCleanupErrors,
+	} from './mapOwnerCleanup';
+	import { mapOwnerBoundary, reportCleanupFailure } from '$lib/components/map/mapOwnerBoundary';`;
+const CURE10_BREAKPOINT_RELEASE = `		return mapOwnerBoundary(
+			'MapHero',
+			[() => mql.removeEventListener('change', onChange)],
+			reportMapCleanupFailure,
+		);`;
+const CURE10_RAIL_RELEASE = `
+		const dispose = publishRailOffset(el, detailWidthPx, open, detailCollapsed, detailDragging);
+		return mapOwnerBoundary('MapHero', [dispose], reportMapCleanupFailure);`;
+const CURE10_LIVE_BOUNDARY = `
+	function reportMapCleanupFailure(error: unknown): void {
+		reportCleanupFailure('MapHero cleanup failed', error);
+	}
+	$effect(() =>
+		mapOwnerBoundary(
+			'MapHero',
+			[nearMeController.dispose, urlCoordinator.dispose],
+			reportMapCleanupFailure,
+		),
+	);
+	onMount(() => {
+		live.start();
+		return mapOwnerBoundary('MapHero', [() => live.stop()], reportMapCleanupFailure);
+	});
+
+	// Keep one shared server-time tick alive for map freshness and relative-time copy.
+	$effect(() => {
+		const unsubscribe = sharedClock.subscribe();
+		return mapOwnerBoundary('MapHero', [unsubscribe], reportMapCleanupFailure);
+	});`;
+const CURE10_OWNER_BOUNDARY = `
+	function releaseMapOwners(m: MapLibreMap): void {
+		if (map !== m) return;
+		const released = releaseMapOwnerReceipts(vehicleMotion, interactionDisposers, () =>
+			emphasisController.clear(m),
+		);
+		vehicleMotion = released.motion;
+		vehicleMotionMap = released.motion ? m : null;
+		interactionDisposers = released.disposers;
+		interactionsMap = released.disposers.length > 0 ? m : null;
+		map = released.motion || released.disposers.length > 0 || released.emphasisPending ? m : null;
+		throwCleanupErrors(released.errors, 'MapHero owner cleanup failed');
+	}
+
+	$effect(() =>
+		mapOwnerBoundary(
+			'MapHero',
+			[
+				() => {
+					const ownedMap = untrack(() => map);
+					if (ownedMap) releaseMapOwners(ownedMap);
+				},
+			],
+			reportMapCleanupFailure,
+		),
+	);`;
+const CURE10_INTERACTION_PUBLICATION = `
+	function ensureMapInteractions(m: MapLibreMap): void {
+		if (interactionsMap === m) return;
+		const previousMap = interactionsMap;
+		const released = releaseCleanupReceipts(interactionDisposers);
+		interactionDisposers = released.pending;
+		interactionsMap = released.pending.length > 0 ? previousMap : null;
+		throwCleanupErrors(released.errors, 'Map interaction replacement cleanup failed');
+		const nextDisposers = installCleanupReceipts(
+			() =>
+				installMapInteractions(m, {
+					click: (event) => selectPickedFeature(m, event),
+					mousemove: (event) => hoverPickedFeature(m, event),
+					mouseleave: () => clearHover(m),
+				}),
+			(partial) => {
+				interactionDisposers = partial;
+				interactionsMap = null;
+			},
+		);
+		interactionDisposers = nextDisposers;
+		interactionsMap = m;
+	}`;
+const CURE10_SELECTION_RELEASE = `
+	$effect(() => {
+		const release =
+			selected?.kind === 'vehicle'
+				? live.subscribeFamilies(['trips'])
+				: selected?.kind === 'stop'
+					? live.subscribeFamilies(['departures'])
+					: null;
+		if (!release) return;
+		return mapOwnerBoundary('MapHero', [release], reportMapCleanupFailure);
+	});`;
+const CURE10_MOTION_REPLACEMENT = `
+			if (vehicleMotion) {
+				mapOwnerBoundary(
+					'MapHero motion replacement',
+					[() => vehicleMotion?.destroy()],
+					reportMapCleanupFailure,
+				)();
+			}`;
+const BASE_MOTION_REPLACEMENT = `
+			vehicleMotion?.destroy();`;
 
 function reconstructBaseMapHero(hero: string): string {
 	const replacements: ReadonlyArray<readonly [string, string]> = [
+		[CURE10_BREAKPOINT_RELEASE, CURE9_BREAKPOINT_RELEASE],
+		[CURE10_RAIL_RELEASE, CURE9_RAIL_RELEASE],
+		[CURE10_OWNER_IMPORT, CURE8_OWNER_IMPORT],
+		[CURE10_LIVE_BOUNDARY, CURE8_LIVE_BOUNDARY],
+		[CURE10_OWNER_BOUNDARY, CURE8_OWNER_BOUNDARY],
+		[CURE10_INTERACTION_PUBLICATION, CURE8_INTERACTION_PUBLICATION],
+		[CURE10_SELECTION_RELEASE, CURE8_SELECTION_RELEASE],
+		[CURE10_MOTION_REPLACEMENT, BASE_MOTION_REPLACEMENT],
 		[CURE9_BREAKPOINT_RELEASE, BASE_BREAKPOINT_RELEASE],
 		[CURE9_RAIL_RELEASE, BASE_RAIL_RELEASE],
 		[CURE8_OWNER_IMPORT, ''],
@@ -339,7 +454,7 @@ describe('M6C-2 token and protected-surface contract', () => {
 		expect(hero.split(liveConsumer)).toHaveLength(2);
 		expect(hero.match(/function releaseMapOwners\(/gu)).toHaveLength(1);
 		expect(hero).toContain('onbeforeremove={releaseMapOwners}');
-		expect(hero).toContain('const nextDisposers = ownerCleanup.installCleanupReceipts');
+		expect(hero).toContain('const nextDisposers = installCleanupReceipts');
 		expect(createHash('sha256').update(reconstructed).digest('hex')).toBe(
 			'd95f375db5ca57f76a00eaf641c342a61961cae21b0003e9b5bbbb19a03c947f',
 		);

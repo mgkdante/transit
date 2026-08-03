@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import LocateFixedIcon from '@lucide/svelte/icons/locate-fixed';
 	import XIcon from '@lucide/svelte/icons/x';
@@ -8,6 +9,7 @@
 	import type { GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
 	import type { StopIndexEntry } from '$lib/v1/schemas';
 	import type { MapCopy } from './map.copy';
+	import { mapOwnerBoundary } from '$lib/components/map/mapOwnerBoundary';
 
 	interface Props {
 		open?: boolean;
@@ -67,7 +69,11 @@
 		const host = rootEl?.parentElement;
 		if (!host) return;
 		host.style.setProperty('--map-near-clearance', nearMeClearance);
-		return () => host.style.removeProperty('--map-near-clearance');
+		return mapOwnerBoundary('MapNearMeControl', [
+			() => {
+				host.style.removeProperty('--map-near-clearance');
+			},
+		]);
 	});
 
 	function shouldSuggestNearMeAddress(value: string): boolean {
@@ -128,6 +134,15 @@
 		if (event.key === 'Escape') closeSuggestions();
 	}
 
+	onMount(() => {
+		window.addEventListener('pointerdown', handleWindowPointerDown);
+		window.addEventListener('keydown', handleWindowKeydown);
+		return mapOwnerBoundary('MapNearMeControl', [
+			() => window.removeEventListener('pointerdown', handleWindowPointerDown),
+			() => window.removeEventListener('keydown', handleWindowKeydown),
+		]);
+	});
+
 	function formatDistance(distanceM: number): string {
 		if (distanceM < 1_000) return `${Math.round(distanceM)} m`;
 		return `${(distanceM / 1_000).toFixed(1)} km`;
@@ -180,14 +195,12 @@
 				});
 		}, 120);
 
-		return () => {
-			clearTimeout(timeout);
-			controller.abort();
-		};
+		return mapOwnerBoundary('MapNearMeControl', [
+			() => clearTimeout(timeout),
+			() => controller.abort(),
+		]);
 	});
 </script>
-
-<svelte:window onpointerdown={handleWindowPointerDown} onkeydown={handleWindowKeydown} />
 
 <div class="map-near" bind:this={rootEl}>
 	<button

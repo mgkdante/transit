@@ -69,6 +69,7 @@ export function createVehicleMotionController(
 	let serverNowFn: () => number = () => Date.now();
 	let animating = false;
 	let frameHandle: number | null = null;
+	let loopEpoch = 0;
 	// Per-vehicle ease-correct blends (keyed by id), seeded on a new fix.
 	const blends = new Map<string, BlendState>();
 	// Blend ORIGINS captured at `set` time for a NEW tick, awaiting the render that
@@ -147,18 +148,27 @@ export function createVehicleMotionController(
 	}
 
 	function stopLoop(): void {
-		if (frameHandle != null) cancelFrame(frameHandle);
-		frameHandle = null;
 		animating = false;
+		loopEpoch += 1;
+		if (frameHandle == null) return;
+		cancelFrame(frameHandle);
+		frameHandle = null;
 	}
 
 	function scheduleFrame(): void {
 		if (!animating || frameHandle != null) return;
-		frameHandle = requestFrame(() => {
-			frameHandle = null;
+		const epoch = loopEpoch;
+		let scheduledHandle = 0;
+		scheduledHandle = requestFrame(() => {
+			if (frameHandle === scheduledHandle) frameHandle = null;
+			if (!animating || epoch !== loopEpoch) {
+				if (animating) scheduleFrame();
+				return;
+			}
 			render(true);
 			if (animating) scheduleFrame();
 		});
+		frameHandle = scheduledHandle;
 	}
 
 	/**

@@ -10,32 +10,15 @@ export interface MapOwnerReleaseResult<TMotion> {
 	readonly errors: readonly unknown[];
 }
 
-export function reportCleanupFailure(message: string, error: unknown): void {
-	try {
-		console.error(message, error);
-	} catch {
-		try {
-			globalThis.reportError?.(error);
-		} catch {
-			// A broken fallback reporter cannot reopen component destruction.
-		}
-	}
-}
-
-export function releaseWithRetry(dispose: () => void, report: (error: unknown) => void): void {
-	try {
-		dispose();
-		return;
-	} catch (error) {
-		try {
-			dispose();
-		} catch (retryError) {
-			report(new AggregateError([error, retryError], 'Map cleanup retry failed'));
-			return;
-		}
-		report(error);
-	}
-}
+export {
+	createMapDisposalRegistry,
+	mapOwnerBoundary,
+	reportCleanupFailure,
+	type MapDisposalRegistry,
+	type MapOwnerCleanupReceipt,
+	type MapOwnerCleanupRelease,
+	type MapOwnerCleanupReporter,
+} from '$lib/components/map/mapOwnerBoundary';
 
 export function releaseCleanupReceipts(
 	disposers: readonly (() => void)[],

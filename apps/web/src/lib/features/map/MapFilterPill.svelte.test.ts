@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFilterStore, emptyFilterState } from '$lib/filters';
 import { motionMode } from '$lib/stores';
 import MapFilterPillHarness from './__fixtures__/MapFilterPillHarness.svelte';
@@ -13,9 +13,53 @@ beforeEach(() => {
 
 afterEach(() => {
 	localStorage.clear();
+	vi.restoreAllMocks();
 });
 
 describe('MapFilterPill', () => {
+	it('isolates a narrow-query cleanup fault and still releases the desktop query', () => {
+		const cleanupError = new Error('narrow cleanup failed before mutation');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const listeners = {
+			narrow: new Set<EventListenerOrEventListenerObject>(),
+			desktop: new Set<EventListenerOrEventListenerObject>(),
+		};
+		let narrowRemoveCalls = 0;
+		let desktopRemoveCalls = 0;
+		const query = (kind: keyof typeof listeners): MediaQueryList =>
+			({
+				matches: kind === 'narrow',
+				media: kind,
+				onchange: null,
+				addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) =>
+					listeners[kind].add(listener),
+				removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
+					if (kind === 'narrow') {
+						narrowRemoveCalls += 1;
+						if (narrowRemoveCalls === 1) throw cleanupError;
+					} else {
+						desktopRemoveCalls += 1;
+					}
+					listeners[kind].delete(listener);
+				},
+				addListener: () => {},
+				removeListener: () => {},
+				dispatchEvent: () => true,
+			}) as MediaQueryList;
+		vi.spyOn(window, 'matchMedia').mockImplementation((value) =>
+			value.includes('max-width') ? query('narrow') : query('desktop'),
+		);
+		const store = createFilterStore(emptyFilterState());
+		const { unmount } = render(MapFilterPillHarness, { props: { store, locale: 'en' } });
+
+		expect(() => unmount()).not.toThrow();
+		expect(narrowRemoveCalls).toBe(2);
+		expect(desktopRemoveCalls).toBe(1);
+		expect(listeners.narrow.size).toBe(0);
+		expect(listeners.desktop.size).toBe(0);
+		expect(consoleError).toHaveBeenCalledWith('MapFilterPill cleanup failed', cleanupError);
+	});
+
 	it('keeps four live filter mutations inside the Sheet until one Done close', async () => {
 		let pushed = '';
 		let writes = 0;

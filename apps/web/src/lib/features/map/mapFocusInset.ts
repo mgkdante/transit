@@ -1,5 +1,6 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { tick } from 'svelte';
+import { mapOwnerBoundary, reportCleanupFailure } from '$lib/components/map/mapOwnerBoundary';
 
 export const MIN_VISIBLE_SPAN_PX = 240;
 
@@ -90,14 +91,25 @@ export function deferMapFocusInset(
 	map: FocusMap,
 	consume: (inset: MapFocusInset) => void,
 	adapter: MapFocusMeasurementAdapter = DOM_MEASUREMENT,
+	reporter: (error: unknown) => unknown = (error) =>
+		reportCleanupFailure('Map focus inset failed', error),
 ): void {
 	const intentToken = ++latestIntentToken;
 	const container = map.getContainer();
-	void (async () => {
-		await tick();
-		await new Promise<void>((resolve) => adapter.requestFrame(() => resolve()));
-		if (intentToken !== latestIntentToken) return;
-		if (!container.isConnected) return;
-		consume(measureMapFocusInset({ getContainer: () => container }, adapter));
-	})();
+	mapOwnerBoundary(
+		'Map focus inset',
+		[
+			{
+				release: async () => {
+					await tick();
+					await new Promise<void>((resolve) => adapter.requestFrame(() => resolve()));
+					if (intentToken !== latestIntentToken) return;
+					if (!container.isConnected) return;
+					consume(measureMapFocusInset({ getContainer: () => container }, adapter));
+				},
+				retry: false,
+			},
+		],
+		reporter,
+	)();
 }

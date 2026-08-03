@@ -47,6 +47,7 @@
 	import { ageSeconds as ageFromUtc, formatRelativeSeconds } from '$lib/utils/time';
 	import { sharedClock } from '$lib/stores';
 	import { copy as MAP_COPY } from './map.copy';
+	import { mapOwnerBoundary } from '$lib/components/map/mapOwnerBoundary';
 
 	interface Props {
 		/** ISO 8601 (UTC) timestamp of the last live build, or null when unknown. */
@@ -86,7 +87,10 @@
 
 	// Keep the shared clock alive while the banner is on screen so the relative
 	// age ticks in lockstep with every other time label in the chrome.
-	$effect(() => sharedClock.subscribe());
+	$effect(() => {
+		const unsubscribe = sharedClock.subscribe();
+		return mapOwnerBoundary('MapFeedStallBanner', [unsubscribe]);
+	});
 
 	// The effective age: the live store's ticking age wins; otherwise derive it
 	// from generatedUtc off the shared SERVER clock. Both re-derive every tick.

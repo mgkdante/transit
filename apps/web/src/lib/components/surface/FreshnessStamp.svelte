@@ -34,6 +34,7 @@
 	import { freshnessAgeSeconds } from '$lib/v1/freshness';
 	import { sharedClock } from '$lib/stores';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
+	import { mapOwnerBoundary } from '$lib/components/map/mapOwnerBoundary';
 
 	type Variant = 'live' | 'updated';
 
@@ -77,7 +78,10 @@
 
 	// Keep the ONE shared clock alive while this stamp is on screen so its relative
 	// age ticks in lockstep with every other time label in the chrome.
-	$effect(() => sharedClock.subscribe());
+	$effect(() => {
+		const unsubscribe = sharedClock.subscribe();
+		return mapOwnerBoundary('FreshnessStamp', [unsubscribe]);
+	});
 
 	type Labels = {
 		readonly live: string;

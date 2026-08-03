@@ -178,7 +178,7 @@ describe('map focus inset deferral', () => {
 		);
 
 		expect(source).toMatch(
-			/const container = map\.getContainer\(\);\s*void \(async \(\) => \{\s*await tick\(\);\s*await new Promise<void>\(\(resolve\) => adapter\.requestFrame\(\(\) => resolve\(\)\)\);/u,
+			/const container = map\.getContainer\(\);\s*mapOwnerBoundary\([\s\S]*?release: async \(\) => \{\s*await tick\(\);\s*await new Promise<void>\(\(resolve\) => adapter\.requestFrame\(\(\) => resolve\(\)\)\);/u,
 		);
 	});
 
@@ -255,5 +255,25 @@ describe('map focus inset deferral', () => {
 		expect(consume).not.toHaveBeenCalled();
 		expect(setup.adapter.containerRect).not.toHaveBeenCalled();
 		expect(getContainer).toHaveBeenCalledOnce();
+	});
+
+	it('reports a deferred scheduler failure exactly once', async () => {
+		const { map } = mountedMap();
+		const setup = measurementAdapter();
+		const failure = new Error('frame scheduler failed');
+		const report = vi.fn();
+		const adapter: MapFocusMeasurementAdapter = {
+			...setup.adapter,
+			requestFrame: vi.fn(() => {
+				throw failure;
+			}),
+		};
+
+		deferMapFocusInset(map, vi.fn(), adapter, report);
+		await tick();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(report).toHaveBeenCalledExactlyOnceWith(failure);
 	});
 });

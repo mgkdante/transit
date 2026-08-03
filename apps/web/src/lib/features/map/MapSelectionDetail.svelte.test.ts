@@ -2,6 +2,7 @@ import { fireEvent, render } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compile } from 'svelte/compiler';
+import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { occupancyGlyph } from '$lib/components/dataviz';
 import { buildLiveIndex } from '$lib/v1/live';
@@ -755,6 +756,33 @@ describe('MapSelectionDetail', () => {
 			locale: 'en',
 		});
 		expect(document.activeElement).toBe(focused);
+	});
+
+	it('reports a deferred focus failure instead of leaking a rejected task', async () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		if (detail?.kind !== 'vehicle') throw new Error('expected vehicle detail');
+		const { getByRole, rerender } = render(MapSelectionDetail, {
+			props: { detail, locale: 'en' },
+		});
+		const focused = getByRole('button', { name: /Select stop Mont-Royal \/ Saint-Laurent,/ });
+		focused.focus();
+		const failure = new Error('deferred focus failed');
+		vi.spyOn(focused, 'focus').mockImplementation(() => {
+			throw failure;
+		});
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		await rerender({ detail: { ...detail, nextStops: [...detail.nextStops] }, locale: 'en' });
+		await tick();
+		await Promise.resolve();
+
+		expect(consoleError).toHaveBeenCalledExactlyOnceWith(
+			'MapSelectionDetail deferred focus failed',
+			failure,
+		);
 	});
 
 	it('keeps focus on a drill-in stop row through its selection callback', async () => {

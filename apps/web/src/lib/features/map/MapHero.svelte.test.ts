@@ -1366,6 +1366,100 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 		}
 	});
 
+	it('contains a filter-pill cleanup fault while the route and every owner still retire', async () => {
+		const pageErrors = capturePageErrors();
+		const cleanupError = new Error('filter pill cleanup failed before mutation');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const listeners = new Set<EventListenerOrEventListenerObject>();
+		let removeCalls = 0;
+		const narrowMedia = '(max-width: 1023.98px)';
+		const narrowQuery = {
+			matches: false,
+			media: narrowMedia,
+			onchange: null,
+			addListener: vi.fn(),
+			removeListener: vi.fn(),
+			addEventListener: vi.fn(
+				(_type: string, listener: EventListenerOrEventListenerObject | null) => {
+					if (listener) listeners.add(listener);
+				},
+			),
+			removeEventListener: vi.fn(
+				(_type: string, listener: EventListenerOrEventListenerObject | null) => {
+					removeCalls += 1;
+					if (removeCalls === 1) throw cleanupError;
+					if (listener) listeners.delete(listener);
+				},
+			),
+			dispatchEvent: vi.fn(() => true),
+		} as unknown as MediaQueryList;
+		const nativeMatchMedia = window.matchMedia.bind(window);
+		const matchMedia = vi
+			.spyOn(window, 'matchMedia')
+			.mockImplementation((query) =>
+				query === narrowMedia ? narrowQuery : nativeMatchMedia(query),
+			);
+		try {
+			const before = await openDetail(true);
+			expect(listeners).toHaveLength(1);
+
+			await commitLines(before.currentUrl);
+
+			expect(pageErrors.values).toEqual([]);
+			expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
+			expect(removeCalls).toBe(2);
+			expect(listeners).toHaveLength(0);
+			expect(harness.liveStore.stop).toHaveBeenCalledOnce();
+			expect(harness.releaseLease).toHaveBeenCalledOnce();
+			expect(harness.activeLeaseCount()).toBe(0);
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+			expect(consoleError).toHaveBeenCalledWith('MapFilterPill cleanup failed', cleanupError);
+		} finally {
+			matchMedia.mockRestore();
+			pageErrors.dispose();
+		}
+	});
+
+	it('contains a detail-overlay cleanup fault while the route and every owner still retire', async () => {
+		const pageErrors = capturePageErrors();
+		const cleanupError = new Error('detail focusin cleanup failed before mutation');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const removeEventListener = document.removeEventListener.bind(document);
+		let armed = false;
+		let focusinRemoveCalls = 0;
+		const removeSpy = vi
+			.spyOn(document, 'removeEventListener')
+			.mockImplementation((type, listener, options) => {
+				if (armed && type === 'focusin') {
+					focusinRemoveCalls += 1;
+					if (focusinRemoveCalls === 1) throw cleanupError;
+				}
+				removeEventListener(type, listener, options);
+			});
+		try {
+			const before = await openDetail(true);
+			armed = true;
+
+			await commitLines(before.currentUrl);
+
+			expect(pageErrors.values).toEqual([]);
+			expect(screen.getByRole('heading', { level: 1, name: 'Lines' })).toBeInTheDocument();
+			expect(focusinRemoveCalls).toBe(2);
+			expect(harness.liveStore.stop).toHaveBeenCalledOnce();
+			expect(harness.releaseLease).toHaveBeenCalledOnce();
+			expect(harness.activeLeaseCount()).toBe(0);
+			expect(mapHeroReceiptSignals.mapStageListenerCounts).toEqual(releasedListeners);
+			expect(mapHeroReceiptSignals.mapStageSourceCounts).toEqual({});
+			expect(mapHeroReceiptSignals.mapStageFeatureStateCount).toBe(0);
+			expect(consoleError).toHaveBeenCalledWith('MapDetailOverlay cleanup failed', cleanupError);
+		} finally {
+			removeSpy.mockRestore();
+			pageErrors.dispose();
+		}
+	});
+
 	it('contains and reports a rail-offset disposer fault during route unmount', async () => {
 		const pageErrors = capturePageErrors();
 		const cleanupError = new Error('rail offset cleanup failed before mutation');
