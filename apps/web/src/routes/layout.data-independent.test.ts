@@ -308,6 +308,7 @@ describe('root layout data-independent legal routes', () => {
 				}
 			} else {
 				expect(view.queryByTestId('footer')).not.toBeInTheDocument();
+				expectLegalDestinationsAbsent(view.container, legalLabel, links);
 			}
 
 			await fireEvent.click(view.getByRole('button', { name: openMenu }));

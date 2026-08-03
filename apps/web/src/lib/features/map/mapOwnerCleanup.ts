@@ -25,20 +25,16 @@ export function releaseWithRetry(dispose: () => void, report: (error: unknown) =
 	}
 }
 
-export function releaseCleanupReceipts(disposers: readonly (() => void)[], passes = 1) {
-	let pending = [...disposers];
+export function releaseCleanupReceipts(disposers: readonly (() => void)[]) {
+	const pending: Array<() => void> = [];
 	const errors: unknown[] = [];
-	for (let pass = 0; pass < passes && pending.length > 0; pass += 1) {
-		const retained: Array<() => void> = [];
-		for (const dispose of pending) {
-			try {
-				dispose();
-			} catch (error) {
-				errors.push(error);
-				retained.push(dispose);
-			}
+	for (const dispose of disposers) {
+		try {
+			dispose();
+		} catch (error) {
+			errors.push(error);
+			pending.push(dispose);
 		}
-		pending = retained;
 	}
 	return { pending, errors };
 }

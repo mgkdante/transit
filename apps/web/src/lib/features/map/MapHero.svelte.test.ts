@@ -1258,7 +1258,31 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 					expect(winner.url.pathname.endsWith('/')).toBe(false);
 				}
 
-				await commitLines(winner.url);
+				let exitUrl = winner.url;
+				if (shape === 'echo' || shape === 'adopt') {
+					const gotoCallsBeforeClose = harness.goto.mock.calls.length;
+					await fireEvent.click(before.close);
+
+					const survivesClose = shape === 'adopt';
+					await waitFor(() => {
+						const filter = harness.setStops.mock.lastCall?.[2];
+						expect(filter?.routes.has('24')).toBe(survivesClose);
+						expect(filter?.vehicles.has('bus-1')).toBe(survivesClose);
+					});
+					expect(harness.goto).toHaveBeenCalledTimes(
+						gotoCallsBeforeClose + (shape === 'echo' ? 1 : 0),
+					);
+
+					if (shape === 'echo') {
+						const closeNavigation = activeLastGoto(winner.url.href);
+						expect(closeNavigation.url.searchParams.has('route')).toBe(false);
+						expect(closeNavigation.url.searchParams.has('vehicle')).toBe(false);
+						await harness.commitNavigation(closeNavigation.url.href);
+						exitUrl = closeNavigation.url;
+					}
+				}
+
+				await commitLines(exitUrl);
 				const main = document.querySelector<HTMLElement>('#main');
 				expect(pageErrors.values).toEqual([]);
 				expect(main).toHaveClass('overflow-y-auto');

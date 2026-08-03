@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { releaseCleanupReceipts } from './mapOwnerCleanup';
 
 function source(path: string): string {
 	return readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -271,6 +272,21 @@ function productionTokenFingerprint(): string[] {
 }
 
 describe('M6C-2 token and protected-surface contract', () => {
+	it('releases cleanup receipts for exactly one pass', () => {
+		const failure = new Error('cleanup failed');
+		let attempts = 0;
+		const dispose = () => {
+			attempts += 1;
+			throw failure;
+		};
+
+		const released = Reflect.apply(releaseCleanupReceipts, undefined, [[dispose], 2]);
+
+		expect(attempts).toBe(1);
+		expect(released.pending).toEqual([dispose]);
+		expect(released.errors).toEqual([failure]);
+	});
+
 	it('keeps disclosure summaries as list-items so the ::marker affordance survives', () => {
 		// display:flex/grid/block on a summary drops the UA disclosure triangle —
 		// the collapsed sections' only expand cue (red-team blocker, cured).

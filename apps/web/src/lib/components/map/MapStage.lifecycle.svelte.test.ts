@@ -702,6 +702,7 @@ describe('MapStage boot lifecycle', () => {
 		const controlError = new Error('attribution control failed before release');
 		const oncleanupfailure = vi.fn();
 		const { view, map } = await bootStage({ oncleanupfailure });
+		expect(map.options.attributionControl).toBe(false);
 		expect(map.controls).toHaveLength(1);
 		expect(map.controls[0]?.options).toEqual({ compact: true });
 		expect(map.controls[0]?.options).not.toHaveProperty('customAttribution');
