@@ -37,6 +37,7 @@
 	import { formatDateKey } from '$lib/utils/time';
 	import { fromSearchParams, resolveWindow, type DateWindow } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
+	import { absenceSentence, absenceShort, describeAbsence } from '$lib/site/absence';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import type { StopReliability } from '$lib/v1';
 	import type { OccupancyCode } from '$lib/v1/schemas';
@@ -121,6 +122,9 @@
 	}: StopReliabilitySurfaceProps = $props();
 
 	const copy = $derived(stopReliabilityCopy[locale]);
+	const noObservationLabel = $derived(absenceShort('no-observations', locale));
+	const retainedDataAbsence = $derived(describeAbsence('no-retained-data', locale));
+	const retainedDataBody = $derived(`${retainedDataAbsence.why}. ${copy.history.currentOnly}`);
 	const railDisclosures = createRailDisclosureController({
 		controls: 'stop-reliability-controls',
 		toc: 'stop-reliability-toc',
@@ -162,7 +166,10 @@
 	const historyUi = createRetainedHistoryUi({
 		resource: () => history,
 		currentDates: () => currentHistoryDates,
-		copy: () => copy.history,
+		copy: () => ({
+			...copy.history,
+			noData: absenceSentence('no-retained-data', locale),
+		}),
 		formatDate: (date) => formatDateKey(date, locale),
 	});
 	const historyRequested = $derived(historyUi.requested);
@@ -263,7 +270,7 @@
 	const stopVerdict = $derived(selectVerdict(stopVerdictHeadline, grain, locale, copy.verdict));
 
 	const fmtMin = (v: number | null): string =>
-		fmtDelayMin(v, { rounding: 'fixed1', noData: copy.noDelay });
+		fmtDelayMin(v, { rounding: 'fixed1', noData: noObservationLabel });
 	const rankedRoutes = $derived(
 		selectRankedRoutes(data.by_route, fmtMin, {
 			href: (routeId) => localizeHref(routeFor({ kind: 'line', id: routeId }), locale),
@@ -481,8 +488,8 @@
 				{#if explicitHistory}
 					{#if history?.state === 'no-data'}
 						<StateNotice
-							title={copy.history.noData}
-							body={copy.history.currentOnly}
+							title={retainedDataAbsence.label}
+							body={retainedDataBody}
 							presentation="responsive"
 							data-slot="history-no-data"
 						/>

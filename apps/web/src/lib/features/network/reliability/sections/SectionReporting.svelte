@@ -41,10 +41,9 @@
 			linkLabel: string;
 		};
 		copy: NetworkReliabilityCopy;
-		noData: string;
 		locale: Locale;
 	}
-	let { cards, silentRows, info, copy, noData, locale }: SectionReportingProps = $props();
+	let { cards, silentRows, info, copy, locale }: SectionReportingProps = $props();
 
 	const hasSilentRows = $derived(silentRows.length > 0);
 </script>
@@ -61,13 +60,7 @@
 		<DashboardGrid minTile="220px" gutter={false}>
 			{#each cards as card (card.label)}
 				{@const i = info(card.key, card.label)}
-				<ExplainedMetricCard
-					label={card.label}
-					value={card.value}
-					emptyLabel={noData}
-					{locale}
-					size="lg"
-				>
+				<ExplainedMetricCard label={card.label} value={card.value} {locale} size="lg">
 					{#snippet info()}
 						<MetricInfo
 							tip={i.tip}

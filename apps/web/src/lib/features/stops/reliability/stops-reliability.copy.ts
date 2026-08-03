@@ -61,7 +61,6 @@ export const stopReliabilityCopy = defineCopy({
 				unpublished: 'La plage non publiée a été remplacée par le portrait actuel.',
 			},
 			partial: 'Cette plage ne couvre qu’une partie des mesures conservées.',
-			noData: 'Aucune donnée conservée pour cette plage.',
 			currentOnly:
 				'L’identité, les périodes, les habitudes, les jours, les heures et le détail par ligne restent basés sur le portrait actuel.',
 			loading: 'Chargement de la plage conservée…',
@@ -110,7 +109,6 @@ export const stopReliabilityCopy = defineCopy({
 				low: 'Faible',
 				medium: 'Moyen',
 				high: 'Élevé',
-				noData: 'Aucune donnée',
 				tiers: ['Rarement grave', 'Parfois grave', 'Souvent grave', 'Très peu fiable'] as const,
 			},
 			weekdays: [
@@ -145,7 +143,6 @@ export const stopReliabilityCopy = defineCopy({
 				'Répartition de l’occupation des bus observés à cet arrêt sur les 30 derniers jours, tous transporteurs confondus. Ce n’est pas une caractéristique de l’arrêt.',
 			barLabel: 'Répartition de l’occupation des bus observés à cet arrêt',
 			dominantLabel: 'Occupation la plus fréquente',
-			noTelemetry: 'Aucune donnée d’occupation rattachée à cet arrêt.',
 		},
 		trend: {
 			heading: 'Tendance journalière',
@@ -167,7 +164,6 @@ export const stopReliabilityCopy = defineCopy({
 			belowMinN: (n: number) =>
 				`Trop peu d’observations sur cette période (${n}) pour afficher un pourcentage fiable.`,
 		},
-		noDelay: 'Aucune donnée',
 	},
 	en: {
 		byRoute: 'Avg delay by route',
@@ -217,7 +213,6 @@ export const stopReliabilityCopy = defineCopy({
 				unpublished: 'The unpublished date range was replaced with the current snapshot.',
 			},
 			partial: 'This range has only partial retained metric coverage.',
-			noData: 'No data is retained for this range.',
 			currentOnly:
 				'Identity, periods, habits, weekday, time-of-day, and by-line detail still use the current snapshot.',
 			loading: 'Loading retained range…',
@@ -264,7 +259,6 @@ export const stopReliabilityCopy = defineCopy({
 				low: 'Low',
 				medium: 'Medium',
 				high: 'High',
-				noData: 'No data',
 				tiers: ['Rarely severe', 'Sometimes severe', 'Often severe', 'Very unreliable'],
 			},
 			weekdays: ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
@@ -290,7 +284,6 @@ export const stopReliabilityCopy = defineCopy({
 				'How full the buses observed at this stop ran over the last 30 days, across all carriers. This is not a property of the stop itself.',
 			barLabel: 'Occupancy mix of buses observed at this stop',
 			dominantLabel: 'Most common loading',
-			noTelemetry: 'No occupancy telemetry attributed to this stop.',
 		},
 		trend: {
 			heading: 'Daily trend',
@@ -312,7 +305,6 @@ export const stopReliabilityCopy = defineCopy({
 			belowMinN: (n) =>
 				`Too few observations over this window (${n}) to print a reliable percentage.`,
 		},
-		noDelay: 'No data',
 	},
 }) satisfies Readonly<Record<Locale, { readonly verdict: VerdictCopy }>>;
 

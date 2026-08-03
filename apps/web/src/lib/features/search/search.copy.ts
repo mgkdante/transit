@@ -47,11 +47,9 @@ export const copy = defineCopy({
 			next: (stop) => `Next: ${stop}`,
 			noNextStop: 'No next stop',
 			heading: 'Heading',
-			noCrowding: 'No crowding data',
 			early: (minutes) => `${Math.abs(minutes)} min early`,
 			late: (minutes) => `+${minutes} min`,
 			onTime: 'On time',
-			noDelay: 'No delay',
 		},
 	},
 	fr: {
@@ -86,11 +84,9 @@ export const copy = defineCopy({
 			next: (stop: string) => `Prochain : ${stop}`,
 			noNextStop: 'Aucun prochain arrêt',
 			heading: 'Direction',
-			noCrowding: 'Aucune donnée d’achalandage',
 			early: (minutes: number) => `${Math.abs(minutes)} min en avance`,
 			late: (minutes: number) => `+${minutes} min`,
 			onTime: 'À l’heure',
-			noDelay: 'Aucun retard',
 		},
 	},
 }) satisfies Readonly<Record<Locale, SurfaceHeadCopy>>;

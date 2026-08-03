@@ -12,6 +12,7 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
+	import { absenceShort } from '$lib/site/absence';
 	import { ChartLegend } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { selectHabitsHeatmap, selectHabitsHeatmapSpec } from '../selectors/habitsHeatmap';
@@ -33,6 +34,7 @@
 	// Four plain-language tiers, calmest → worst (rider language, same shape as the
 	// lines §1 hero — they say what the colour MEANS, not just an intensity word).
 	const tierLabels = $derived([...copy.habits.legend.tiers]);
+	const noDataLabel = $derived(absenceShort('no-observations', locale));
 	const WORST_GLYPH = '◆';
 
 	const spec = $derived(
@@ -44,7 +46,7 @@
 			rowLabels: [...copy.habits.weekdaysShort],
 			fullRowLabels: [...habitsFullDays],
 			tierLabels,
-			noDataLabel: copy.habits.legend.noData,
+			noDataLabel,
 			worstGlyph: WORST_GLYPH,
 			hourLabel: (h) => `${String(h).padStart(2, '0')}:00`,
 			hourTicks: [0, 3, 6, 9, 12, 15, 18, 21],
@@ -65,7 +67,7 @@
 		},
 		{
 			colorVar: 'var(--dataviz-heatmap-nodata)',
-			label: copy.habits.legend.noData,
+			label: noDataLabel,
 			swatch: 'square' as const,
 		},
 	]);

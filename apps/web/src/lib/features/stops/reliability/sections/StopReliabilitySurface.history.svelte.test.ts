@@ -548,7 +548,6 @@ describe('StopReliabilitySurface retained Stop history', () => {
 		type HistoryCopy = {
 			navigator?: { group?: string };
 			partial?: string;
-			noData?: string;
 			currentOnly?: string;
 			loading?: string;
 			error?: string;
@@ -561,7 +560,6 @@ describe('StopReliabilitySurface retained Stop history', () => {
 			expect.soft(historyCopy).toBeDefined();
 			expect.soft(historyCopy?.navigator?.group).toBeTruthy();
 			expect.soft(historyCopy?.partial).toBeTruthy();
-			expect.soft(historyCopy?.noData).toBeTruthy();
 			expect.soft(historyCopy?.currentOnly).toBeTruthy();
 			expect.soft(historyCopy?.loading).toBeTruthy();
 			expect.soft(historyCopy?.error).toBeTruthy();

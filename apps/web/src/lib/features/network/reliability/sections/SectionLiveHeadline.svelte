@@ -37,8 +37,6 @@
 			label: string;
 			linkLabel: string;
 		};
-		/** Plain no-data label fallback (the styled chip carries the real WHY). */
-		noData: string;
 		locale: Locale;
 		copy: NetworkReliabilityCopy;
 		terminal: {
@@ -48,7 +46,7 @@
 			meta: Snippet;
 		};
 	}
-	let { cards, info, noData, locale, copy, terminal }: SectionLiveHeadlineProps = $props();
+	let { cards, info, locale, copy, terminal }: SectionLiveHeadlineProps = $props();
 </script>
 
 <!-- Glance board — the four scalars on an auto-fit grid so they fill the desktop width and
@@ -69,7 +67,6 @@
 					label={card.label}
 					value={card.value}
 					absentReason={card.absentReason}
-					emptyLabel={noData}
 					{locale}
 					size="lg"
 				>

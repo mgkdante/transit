@@ -70,27 +70,23 @@ describe('SectionHistoryCoverage empty values', () => {
 		}
 	});
 
-	it('uses shared compact notices and keeps no declared gaps as a healthy zero', () => {
+	it('uses full shared row notices and keeps no declared gaps as a healthy zero', () => {
 		render(SectionHistoryCoverage, {
 			props: { rows: [row], copy: copy.en, locale: 'en' },
 		});
 
-		const healthy = screen.getByText('No gaps declared').closest('[data-component="state-notice"]');
-		expect(healthy).toHaveAttribute('data-presentation', 'pill');
+		const healthy = screen.getByText('No declared gaps').closest('[data-component="state-notice"]');
+		expect(healthy).toHaveAttribute('data-presentation', 'row');
 		expect(healthy).toHaveAttribute('data-tone', 'positive');
+		expect(healthy).toHaveTextContent('the history index reports no known gaps');
 
-		for (const message of [
-			'No retained dates reported',
-			'Not published in this history index',
-			'No per-metric inventory published',
-		]) {
+		for (const message of ['No retained dates', 'Not published', 'No metric inventory']) {
 			const matches = screen.getAllByText(message);
 			expect(matches.length).toBeGreaterThan(0);
 			for (const match of matches) {
-				expect(match.closest('[data-component="state-notice"]')).toHaveAttribute(
-					'data-presentation',
-					'pill',
-				);
+				const notice = match.closest('[data-component="state-notice"]');
+				expect(notice).toHaveAttribute('data-presentation', 'row');
+				expect(notice?.querySelector('[data-slot="state-notice-body"]')).not.toBeEmptyDOMElement();
 			}
 		}
 	});
@@ -100,10 +96,9 @@ describe('SectionHistoryCoverage empty values', () => {
 			props: { rows: [{ ...row, gaps: null }], copy: copy.en, locale: 'en' },
 		});
 
-		const unknown = screen
-			.getByText('No gap inventory published')
-			.closest('[data-component="state-notice"]');
-		expect(unknown).toHaveAttribute('data-tone', 'neutral');
-		expect(screen.queryByText('No gaps declared')).not.toBeInTheDocument();
+		const unknown = screen.getByText('No gap inventory').closest('[data-component="state-notice"]');
+		expect(unknown).toHaveAttribute('data-tone', 'unknown');
+		expect(unknown).toHaveTextContent('the history index does not publish gap details');
+		expect(screen.queryByText('No declared gaps')).not.toBeInTheDocument();
 	});
 });

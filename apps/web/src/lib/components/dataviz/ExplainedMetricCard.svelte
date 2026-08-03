@@ -57,8 +57,6 @@
 		absentParams?: Readonly<Record<string, string | number>>;
 		/** Locale for the styled absence copy (required for `absentReason`). */
 		locale?: Locale;
-		/** Plain no-data label fallback when no `absentReason`/`locale` is supplied. */
-		emptyLabel?: string;
 		/** Value size, threaded to MetricDisplay. */
 		size?: 'sm' | 'md' | 'lg';
 		class?: string;
@@ -79,7 +77,6 @@
 		absentReason,
 		absentParams,
 		locale,
-		emptyLabel,
 		size = 'md',
 		class: className,
 	}: ExplainedMetricCardProps = $props();
@@ -97,16 +94,7 @@
 		     annotates); the (i) is pinned to the visual top-right corner via CSS, so
 		     DOM order does not change where it appears. -->
 		<div class="emc-figure" data-slot="explained-metric-figure">
-			<MetricDisplay
-				{label}
-				{value}
-				{sublabel}
-				{emptyLabel}
-				{absentReason}
-				{absentParams}
-				{locale}
-				{size}
-			/>
+			<MetricDisplay {label} {value} {sublabel} {absentReason} {absentParams} {locale} {size} />
 			{#if info}
 				<span class="emc-info" data-slot="explained-metric-info">{@render info()}</span>
 			{/if}

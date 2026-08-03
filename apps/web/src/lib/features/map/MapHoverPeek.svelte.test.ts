@@ -64,9 +64,7 @@ describe('MapHoverPeek', () => {
 	it.each([
 		['vehicle-stale', vehicleStale],
 		['vehicle-fresh', vehicleFresh],
-		// S5-387 B1: the AbsentValue pill branch (delay unknown) is the shape
-		// whose wrapped notice clamped into an ellipse - it stays inert AND
-		// styled (the radius scope-override lives in the component).
+		// The AbsentValue pill branch stays inert and uses the shared chassis.
 		['vehicle-delay-unknown', { ...vehicleFresh, delayMin: null }],
 		['route-populated', route],
 		['stop-populated', stop],
@@ -75,11 +73,10 @@ describe('MapHoverPeek', () => {
 		expectInert(container);
 	});
 
-	it('scopes the AbsentValue surface radius inside the narrow peek grid', () => {
+	it('lets the shared absence chassis own presentation inside the narrow peek grid', () => {
 		const { container } = render(MapHoverPeek, {
 			props: { peek: { ...vehicleFresh, delayMin: null }, locale: 'en' },
 		});
-		// the scoped rule must reach the node that owns border-radius
 		expect(
 			container.querySelectorAll("[data-slot='absent-value'] [data-part='surface']"),
 		).toHaveLength(1);
@@ -87,7 +84,9 @@ describe('MapHoverPeek', () => {
 			resolve(process.cwd(), 'src/lib/features/map/MapHoverPeek.svelte'),
 			'utf8',
 		);
-		expect(source).toMatch(/\[data-slot='absent-value'\] \[data-part='surface'\]/u);
+		expect(source).not.toMatch(/\[data-slot='absent-value'\] \[data-part='surface'\]/u);
+		expect(source).toMatch(/grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/u);
+		expect(source).toMatch(/dd \{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere;/u);
 		expect(source).toMatch(/dl \{[^}]*gap: 0\.625rem 0\.875rem;[^}]*\}/u);
 	});
 
@@ -101,7 +100,7 @@ describe('MapHoverPeek', () => {
 		expect(container).toHaveTextContent('Standing');
 		expect(container).toHaveTextContent('4 min late');
 		expect(container).toHaveTextContent('Sherbrooke / Saint-Denis');
-		expect(container).toHaveTextContent('Not reporting GPS');
+		expect(container).toHaveTextContent('No recent position');
 		expect(container).toHaveTextContent('3 min');
 		expect(container).not.toHaveTextContent('trip-secret');
 		expect(container).not.toHaveTextContent('Alerts');

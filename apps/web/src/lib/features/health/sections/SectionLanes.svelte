@@ -72,10 +72,10 @@
 							<!-- File counts: written of total. Absent → the honest absence chip. -->
 							<div class="lane-cell" data-slot="lane-files">
 								<span class="lane-cell-label">{t.filesLabel}</span>
-								{#if row.filesTotal != null}
+								{#if row.filesWritten != null && row.filesTotal != null}
 									<span class="lane-cell-value"
 										>{t.filesCount(
-											(row.filesWritten ?? 0).toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA'),
+											row.filesWritten.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA'),
 											row.filesTotal.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA'),
 										)}</span
 									>

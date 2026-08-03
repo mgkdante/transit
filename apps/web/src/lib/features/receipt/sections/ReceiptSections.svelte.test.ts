@@ -21,7 +21,6 @@ const info = (_key: string, name: string) => ({
 const headlineProps = {
 	kpis: [{ key: 'otp', label: 'On time', value: '82%', size: 'lg' }] as const,
 	heading: 'Headline',
-	noData: 'No data',
 	info,
 	locale: 'en' as const,
 };
@@ -93,7 +92,6 @@ const stateCutsProps = {
 	explainer: 'Observed scheduled service.',
 	standDown: 'Not available.',
 	splitLabel: 'Service states',
-	noData: 'No data',
 	info,
 	locale: 'en' as const,
 };
@@ -123,6 +121,7 @@ const notReportedProps = {
 	heading: 'Scheduled but never appeared',
 	caveat: 'No live-feed reading was observed.',
 	shownOfTotal: (shown: number, total: number) => `Showing ${shown} of ${total}`,
+	locale: 'en' as const,
 };
 
 afterEach(cleanup);
@@ -161,6 +160,21 @@ describe('Daily Receipt section heading levels', () => {
 });
 
 describe('Daily Receipt presenter refinements', () => {
+	it('renders a shared row-density absence when a not-reported count is missing', () => {
+		const list: NotReportedVM = {
+			...notReportedList,
+			rows: [{ ...notReportedList.rows[0], value: null, display: null }],
+		};
+		const { container } = render(SectionNotReported, {
+			props: { ...notReportedProps, list },
+		});
+		const absence = container.querySelector('[data-slot="absent-value"]');
+
+		expect(absence).not.toBeNull();
+		expect(absence).toHaveAttribute('data-density', 'row');
+		expect(absence).toHaveTextContent('Unknown · not reported in the live feed');
+	});
+
 	it('renders the time-of-day caveat as a labeled typed caveat card after the ranking', () => {
 		const { container } = render(SectionTimeOfDay, { props: timeOfDayProps });
 		const list = container.querySelector('[data-slot="receipt-time-of-day"] [role="list"]');

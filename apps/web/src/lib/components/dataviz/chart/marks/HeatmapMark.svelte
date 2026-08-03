@@ -21,6 +21,7 @@
 	import HeatmapCells from './HeatmapCells.svelte';
 	import { heatmapTier, HEATMAP_WORST_TIER } from '../heatmapTiers';
 	import type { HeatmapSpec } from '../ChartSpec';
+	import { absenceShort } from '$lib/site/absence';
 
 	export interface HeatmapMarkProps {
 		spec: HeatmapSpec;
@@ -32,7 +33,9 @@
 	const cols = $derived(spec.colLabels.length);
 	const domain = $derived<[number, number]>([spec.domain?.[0] ?? 0, spec.domain?.[1] ?? 1]);
 	const tierLabels = $derived(spec.tiers?.tierLabels ?? []);
-	const noDataLabel = $derived(spec.tiers?.noDataLabel ?? 'no data');
+	const noDataLabel = $derived(
+		spec.tiers?.noDataLabel ?? absenceShort('no-observations', spec.locale),
+	);
 	const worstGlyph = $derived(spec.tiers?.worstGlyph ?? '');
 
 	type FlatCell = {

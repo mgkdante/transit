@@ -27,6 +27,7 @@
 	import StateNotice from './StateNotice.svelte';
 
 	type Variant = 'inline' | 'block';
+	export type AbsenceDensity = 'row' | 'chip' | 'block';
 
 	export interface AbsentValueProps {
 		/** The typed absence reason (from the logic layer). */
@@ -37,11 +38,20 @@
 		params?: Readonly<Record<string, string | number>>;
 		/** inline (muted in-row value) or block (calm centered panel). Defaults to inline. */
 		variant?: Variant;
+		/** Presentation density. Row is unboxed cell text; chip is the default; block fills a panel. */
+		density?: AbsenceDensity;
 		/** Optional extra classes on the root. */
 		class?: string;
 	}
 
-	let { reason, locale, params, variant = 'inline', class: className }: AbsentValueProps = $props();
+	let {
+		reason,
+		locale,
+		params,
+		variant = 'inline',
+		density,
+		class: className,
+	}: AbsentValueProps = $props();
 
 	// The ONLY call into the logic layer: resolve the render-ready copy + tone.
 	// No branching on `reason` here — the resolver owns that.
@@ -49,19 +59,21 @@
 
 	// The full honest readout for AT: "label, why" (the visible glyph is decorative).
 	const ariaLabel = $derived(`${d.label}, ${d.why}`);
+	const resolvedDensity = $derived(density ?? (variant === 'block' ? 'block' : 'chip'));
 </script>
 
 <StateNotice
 	title={d.label}
 	body={d.why}
 	glyph="·"
-	presentation={variant === 'inline' ? 'pill' : 'silo'}
+	presentation={resolvedDensity === 'row' ? 'row' : resolvedDensity === 'block' ? 'silo' : 'pill'}
 	tone="neutral"
-	role={variant === 'block' ? 'status' : undefined}
-	ariaLive={variant === 'block' ? 'polite' : undefined}
+	role={resolvedDensity === 'block' ? 'status' : undefined}
+	ariaLive={resolvedDensity === 'block' ? 'polite' : undefined}
 	{ariaLabel}
 	class={className}
 	data-slot="absent-value"
-	data-variant={variant}
+	data-variant={resolvedDensity === 'block' ? 'block' : 'inline'}
+	data-density={resolvedDensity}
 	data-tone={d.tone}
 />

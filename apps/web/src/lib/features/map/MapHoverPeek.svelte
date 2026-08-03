@@ -38,9 +38,18 @@
 			<strong>{peek.id}</strong>
 		</div>
 		{#if peek.notReportingAgeS != null}
-			<p class="map-peek-stale">
-				{t.notReporting} · {t.lastPosition(formatAge(peek.notReportingAgeS))}
-			</p>
+			<AbsentValue
+				reason="last-seen"
+				params={{
+					age:
+						locale === 'fr'
+							? `il y a ${formatAge(peek.notReportingAgeS)}`
+							: `${formatAge(peek.notReportingAgeS)} ago`,
+				}}
+				density="chip"
+				{locale}
+				class="map-peek-stale"
+			/>
 		{/if}
 		<dl>
 			<div>
@@ -49,12 +58,16 @@
 					{#if peek.route}
 						<span>{peek.route.id}</span>
 						<span>{peek.route.longName}</span>
-						{#if peek.route.labelInferred}<AbsentValue reason="inferred" {locale} />{/if}
+						{#if peek.route.labelInferred}<AbsentValue
+								reason="inferred"
+								density="chip"
+								{locale}
+							/>{/if}
 						{#if peek.route.type != null}
 							<span>{routeModeHint(peek.route.type).tag ?? peek.route.type}</span>
 						{/if}
 					{:else}
-						<AbsentValue reason={vehicleAbsence} {locale} />
+						<AbsentValue reason={vehicleAbsence} density="chip" {locale} />
 					{/if}
 				</dd>
 			</div>
@@ -68,7 +81,7 @@
 					{#if peek.occupancy != null}
 						{OCCUPANCY_LABELS[locale][peek.occupancy]}
 					{:else}
-						<AbsentValue reason={vehicleAbsence} {locale} />
+						<AbsentValue reason={vehicleAbsence} density="chip" {locale} />
 					{/if}
 				</dd>
 			</div>
@@ -78,7 +91,7 @@
 					{#if peek.delayMin != null}
 						{delayKnownLabel(peek.delayMin, t)}
 					{:else}
-						<AbsentValue reason={vehicleAbsence} {locale} />
+						<AbsentValue reason={vehicleAbsence} density="chip" {locale} />
 					{/if}
 				</dd>
 			</div>
@@ -92,7 +105,7 @@
 							{peek.nextStop.name}
 						{/if}
 					{:else}
-						<AbsentValue reason={peek.nextStopAbsence} {locale} />
+						<AbsentValue reason={peek.nextStopAbsence} density="chip" {locale} />
 					{/if}
 				</dd>
 			</div>
@@ -107,7 +120,7 @@
 				<dt>{t.route}</dt>
 				<dd>
 					{peek.longName}
-					{#if peek.labelInferred}<AbsentValue reason="inferred" {locale} />{/if}
+					{#if peek.labelInferred}<AbsentValue reason="inferred" density="chip" {locale} />{/if}
 				</dd>
 			</div>
 			<div>
@@ -167,14 +180,6 @@
 		font-family: var(--font-mono);
 		color: var(--accent-text);
 	}
-	.map-peek-stale {
-		margin: 0;
-		padding: 0.5rem 0.625rem;
-		border: 1px solid color-mix(in srgb, var(--dataviz-severity-watch) 35%, var(--border));
-		border-radius: var(--radius-sm);
-		background: color-mix(in srgb, var(--dataviz-severity-watch) 8%, var(--card));
-		font-size: var(--text-caption);
-	}
 	dl {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -182,12 +187,6 @@
 		margin: 0;
 	}
 
-	/* S5-387 B1: AbsentValue's pill radius (9999px) clamps into a full ellipse
-	   when the notice wraps inside this narrow half-column — scope the SURFACE
-	   (StateNotice.svelte:126-132 owns the radius) back to a soft rectangle. */
-	.map-hover-peek :global([data-slot='absent-value'] [data-part='surface']) {
-		border-radius: var(--radius-sm);
-	}
 	dl > div {
 		display: flex;
 		min-width: 0;

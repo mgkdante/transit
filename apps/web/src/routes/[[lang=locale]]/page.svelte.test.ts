@@ -602,7 +602,7 @@ describe('Home hub — movement boundary preservation', () => {
 		frDom.unmount();
 
 		expect({ enDomHash, frDomHash }).toEqual({
-			enDomHash: '51e7e368c2ca662a2d8bfb7a5b1056a965d3bbf3e71a608016dee83392ba72d3',
+			enDomHash: '5edfa6d804a72fbaf8534e933b44e9243754f14ba3e4b9d324172b7f95a68214',
 			frDomHash: '551691044e2943d60fcb5c9dd422fcfbe06d23a10f64167d4f1a4aa13e7d2d7c',
 		});
 	});
@@ -632,7 +632,7 @@ describe('Home hub — movement boundary preservation', () => {
 			const { body } = renderSsr(pageModule.default, { context });
 
 			expect(fingerprint(canonicalMarkup(body))).toBe(
-				'11a12c4d77ba5c6c034384b3e3c2c6cc2361be3b302c3e06e445981f929bea2e',
+				'b963701825abd3f0f97730dcf8d6c3ff8fc00646410e8dc40ca2710b1ab744c5',
 			);
 		} finally {
 			await server.close();

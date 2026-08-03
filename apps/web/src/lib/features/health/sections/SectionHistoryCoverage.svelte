@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import DataTable, { type DataTableColumn } from '$lib/components/data/DataTable.svelte';
-	import { StateNotice } from '$lib/components/edge';
+	import { AbsentValue, StateNotice } from '$lib/components/edge';
+	import { absenceShort, describeAbsence } from '$lib/site/absence';
 	import { formatDateKey } from '$lib/utils/time';
 	import type { HealthCopy } from '../health.copy';
 	import type {
@@ -19,7 +20,7 @@
 	const t = $derived(copy.historyCoverage);
 
 	function windowLabel(first: string | null, last: string | null): string {
-		if (first == null || last == null) return t.noCoverage;
+		if (first == null || last == null) return absenceShort('no-retained-dates', locale);
 		return `${formatDateKey(first, locale)} – ${formatDateKey(last, locale)}`;
 	}
 
@@ -30,7 +31,7 @@
 
 {#snippet gapList(items: readonly HistoryCoverageGapView[] | null)}
 	{#if items == null}
-		<StateNotice title={t.noGapInventory} presentation="pill" />
+		<AbsentValue density="row" reason="no-gap-inventory" {locale} />
 	{:else if items.length > 0}
 		<ul class="gap-list">
 			{#each items as gap (`${gap.startDate}:${gap.endDate}:${gap.reason ?? ''}`)}
@@ -41,13 +42,20 @@
 			{/each}
 		</ul>
 	{:else}
-		<StateNotice title={t.noDeclaredGaps} glyph="●" tone="positive" presentation="pill" />
+		{@const description = describeAbsence('no-declared-gaps', locale)}
+		<StateNotice
+			title={description.label}
+			body={description.why}
+			glyph="●"
+			tone="positive"
+			presentation="row"
+		/>
 	{/if}
 {/snippet}
 
 {#snippet familyCell(row: HistoryCoverageFamilyView)}
 	<span class="family-name">{t.families[row.key]}</span>
-	{#if !row.published}<StateNotice title={t.unavailable} presentation="pill" />{/if}
+	{#if !row.published}<AbsentValue density="row" reason="not-published" {locale} />{/if}
 {/snippet}
 
 {#snippet windowCell(row: HistoryCoverageFamilyView)}
@@ -55,10 +63,10 @@
 		{#if row.firstDate && row.lastDate}
 			<span class="window-value">{windowLabel(row.firstDate, row.lastDate)}</span>
 		{:else}
-			<StateNotice title={t.noCoverage} presentation="pill" />
+			<AbsentValue density="row" reason="no-retained-dates" {locale} />
 		{/if}
 	{:else}
-		<StateNotice title={t.noCoverage} presentation="pill" />
+		<AbsentValue density="row" reason="no-retained-dates" {locale} />
 	{/if}
 {/snippet}
 
@@ -66,7 +74,7 @@
 	{#if row.selectionMode}
 		<span class="selection-chip">{t.selection[row.selectionMode]}</span>
 	{:else}
-		<StateNotice title={t.unavailable} presentation="pill" />
+		<AbsentValue density="row" reason="not-published" {locale} />
 	{/if}
 {/snippet}
 
@@ -91,14 +99,14 @@
 									<span class="metric-window">{windowLabel(metric.firstDate, metric.lastDate)}</span
 									>
 								{:else}
-									<StateNotice title={t.noCoverage} presentation="pill" />
+									<AbsentValue density="row" reason="no-retained-dates" {locale} />
 								{/if}
 								{@render gapList(metric.gaps)}
 							</li>
 						{/each}
 					</ul>
 				{:else}
-					<StateNotice title={t.noMetricInventory} presentation="pill" />
+					<AbsentValue density="row" reason="no-metric-inventory" {locale} />
 				{/if}
 			</div>
 		{/if}

@@ -494,6 +494,10 @@ describe('MapSelectionDetail', () => {
 			expect(occupancyValue).toHaveTextContent(noDataGlyph);
 			expect(occupancyValue).toHaveTextContent(unknown);
 			expect(occupancyValue).toHaveTextContent(reason);
+			expect(occupancyValue.querySelector('[data-slot="absent-value"]')).toHaveAttribute(
+				'data-density',
+				'chip',
+			);
 			expect(occupancyValue).not.toHaveTextContent(occupancyGlyph('empty'));
 			expect(occupancyValue).not.toHaveTextContent(empty);
 			expectHiddenGlyph(statusValue, 'status', 'unknown', '○');
@@ -1182,15 +1186,16 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', notReporting: { ageS: 180 } },
 		});
 
-		// The honest caution note stays visible but is not a hover-driven live region.
+		// The honest caution note uses the shared vocabulary and is not a hover-driven live region.
 		const note = container.querySelector('.map-not-reporting')!;
 		expect(note).toBeInTheDocument();
 		expect(note).not.toHaveAttribute('role');
-		expect(note).toHaveTextContent('Not reporting GPS');
+		expect(note).toHaveAttribute('data-density', 'chip');
+		expect(note).toHaveTextContent('No recent position');
 		expect(note).toHaveTextContent('3 min');
 		// No em-dash in the copy (brand rule) — a middot separates the two halves.
 		expect(note.textContent).not.toContain('—');
-		expect(getByText(/last updated position 3 min ago/)).toBeInTheDocument();
+		expect(getByText(/last seen 3 min ago/)).toBeInTheDocument();
 	});
 
 	it('renders the not-reporting age in seconds for a recently-silent bus', () => {
@@ -1202,7 +1207,7 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', notReporting: { ageS: 45 } },
 		});
 
-		expect(getByText(/last updated position 45 s ago/)).toBeInTheDocument();
+		expect(getByText(/last seen 45 s ago/)).toBeInTheDocument();
 	});
 
 	it('renders the not-reporting note in French', () => {
@@ -1214,8 +1219,8 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'fr', notReporting: { ageS: 180 } },
 		});
 
-		const note = getByText(/Pas de signal GPS/).closest('.map-not-reporting');
-		expect(note).toHaveTextContent('Pas de signal GPS');
+		const note = getByText(/Aucune position récente/).closest('.map-not-reporting');
+		expect(note).toHaveTextContent('Aucune position récente');
 		expect(note).toHaveTextContent('dernière position il y a 3 min');
 		expect(queryByRole('status')).not.toBeInTheDocument();
 	});
@@ -1229,7 +1234,7 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', notReporting: null },
 		});
 
-		expect(queryByText(/Not reporting GPS/)).not.toBeInTheDocument();
+		expect(queryByText(/No recent position/)).not.toBeInTheDocument();
 		expect(queryByRole('status')).not.toBeInTheDocument();
 	});
 
@@ -1354,8 +1359,10 @@ describe('MapSelectionDetail', () => {
 		});
 
 		// The delay cell is the honest absence primitive (calm "unknown" tone), not a tag.
-		const absent = container.querySelector('[data-slot="absent-value"][data-tone="unknown"]');
+		const delay = detailValue(container, 'Delay');
+		const absent = delay.querySelector('[data-slot="absent-value"][data-tone="unknown"]');
 		expect(absent).not.toBeNull();
+		expect(absent).toHaveAttribute('data-density', 'chip');
 		// The reason: the feed simply omitted it (not-reported), not on-time, not "No delay".
 		expect(absent!.textContent).toContain('not reported in the live feed');
 		expect(queryByText('On time')).not.toBeInTheDocument();

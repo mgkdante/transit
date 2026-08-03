@@ -26,7 +26,6 @@
 		explainer: string;
 		standDown: string;
 		splitLabel: string;
-		noData: string;
 		info: (
 			key: MetricKey | SupplementalMetricKey,
 			name: string,
@@ -41,7 +40,6 @@
 		explainer,
 		standDown,
 		splitLabel,
-		noData,
 		info,
 		locale,
 		headingLevel = 2,
@@ -62,7 +60,6 @@
 			explanation={explainer}
 			note={state.completenessDisplay == null ? standDown : undefined}
 			absentReason="no-observations"
-			emptyLabel={noData}
 			{locale}
 			size="lg"
 		>

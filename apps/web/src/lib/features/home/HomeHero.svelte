@@ -121,8 +121,8 @@
 	const cornerVehicleCount = $derived(fmtCount(net?.vehicles_in_service));
 
 	// The pulse formatters return `null` for a missing value (never a fabricated 0);
-	// the MetricDisplay then renders its muted `emptyLabel` no-data state, the
-	// honest absence reading consistent with the null-aware MetricDisplay.
+	// MetricDisplay then renders the central typed absence state, consistent with
+	// the null-aware MetricDisplay.
 	function fmtPct(value: number | null | undefined): string | null {
 		return sharedFmtPct(value, { suffix: t.pct });
 	}
@@ -336,14 +336,7 @@
 	{@const verdict = verdictPct == null ? null : otpVerdict(verdictPct)}
 	<div class="pulse-kpi">
 		<div class="pulse-kpi-body">
-			<MetricDisplay
-				{value}
-				{label}
-				emptyLabel={t.noData}
-				absentReason="not-reported"
-				{locale}
-				size="lg"
-			/>
+			<MetricDisplay {value} {label} absentReason="not-reported" {locale} size="lg" />
 			{#if verdict}
 				<StatusBadge
 					status={verdict}

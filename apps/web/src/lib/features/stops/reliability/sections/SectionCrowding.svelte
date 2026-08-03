@@ -54,7 +54,9 @@
 	>
 		<p class="stop-reliability-window">{windowText}</p>
 		<MetricDisplay
-			value={vm.dominantPct ?? copy.noDelay}
+			value={vm.dominantPct}
+			absentReason="no-observations"
+			{locale}
 			label={vm.dominant.label}
 			sublabel={copy.crowding.dominantLabel}
 			size="md"

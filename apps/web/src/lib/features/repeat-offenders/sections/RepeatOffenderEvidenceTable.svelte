@@ -32,7 +32,7 @@
 {/snippet}
 
 {#snippet offenderSevereRateCell(row: OffenderEvidenceRow)}
-	<MaybeValue value={row.severeRate} reason="no-observations" {locale} />
+	<MaybeValue value={row.severeRate} density="row" reason="no-observations" {locale} />
 	{#if row.confidenceInterval != null}
 		<span class="offender-evidence-ci">
 			{copy.ladder.ci}
@@ -46,11 +46,11 @@
 {/snippet}
 
 {#snippet offenderAverageDelayCell(row: OffenderEvidenceRow)}
-	<MaybeValue value={row.averageDelay} reason="no-observations" {locale} />
+	<MaybeValue value={row.averageDelay} density="row" reason="no-observations" {locale} />
 {/snippet}
 
 {#snippet offenderReadingsCell(row: OffenderEvidenceRow)}
-	<MaybeValue value={row.readings} reason="no-observations" {locale} />
+	<MaybeValue value={row.readings} density="row" reason="no-observations" {locale} />
 {/snippet}
 
 <DataTable

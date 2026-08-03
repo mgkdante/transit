@@ -127,7 +127,6 @@ export const detailCopy = defineCopy({
 			late: (min: number) => `+${min} min de retard`,
 			early: (min: number) => `${Math.abs(min)} min d’avance`,
 			onTime: 'à l’heure',
-			noDelay: 'Temps réel indisponible',
 			route: 'Ligne',
 			table: {
 				caption: 'Prochains passages en direct',
@@ -208,7 +207,6 @@ export const detailCopy = defineCopy({
 			late: (min) => `+${min} min late`,
 			early: (min) => `${Math.abs(min)} min early`,
 			onTime: 'on time',
-			noDelay: 'Realtime unavailable',
 			route: 'Line',
 			table: {
 				caption: 'Live next departures',

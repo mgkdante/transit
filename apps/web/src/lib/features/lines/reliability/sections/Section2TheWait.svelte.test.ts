@@ -115,7 +115,11 @@ describe('Section2TheWait — direction DataTable contract', () => {
 		expect(table.querySelector('caption')).toHaveTextContent('Observed gap by direction');
 		expect(table.querySelectorAll('thead th[scope="col"]')).toHaveLength(3);
 		expect(table.querySelectorAll('tbody th[scope="row"]')).toHaveLength(2);
-		expect(table.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+		const absent = table.querySelector('[data-slot="absent-value"]');
+		expect(absent).toHaveAttribute('data-density', 'row');
+		expect(absent?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+			'No data · not enough readings yet',
+		);
 
 		for (const row of table.querySelectorAll('tbody tr')) {
 			const cells = Array.from(row.querySelectorAll(':scope > th, :scope > td'));
@@ -140,6 +144,11 @@ describe('Section2TheWait — direction DataTable contract', () => {
 		const localized = view.getByRole('table', {
 			name: 'Intervalle observé par direction',
 		});
+		const localizedAbsent = localized.querySelector('[data-slot="absent-value"]');
+		expect(localizedAbsent).toHaveAttribute('data-density', 'row');
+		expect(localizedAbsent?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+			'Aucune donnée · pas assez de mesures',
+		);
 		expect(localized.querySelectorAll('caption')).toHaveLength(1);
 		for (const row of localized.querySelectorAll('tbody tr')) {
 			expect(

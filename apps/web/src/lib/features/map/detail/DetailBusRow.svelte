@@ -2,6 +2,7 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '$lib/i18n';
 	import type { Vehicle } from '$lib/v1/schemas';
+	import { absenceShort } from '$lib/site/absence';
 	import { STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { MapSelectionDetailCopy } from '../mapSelectionDetail.copy';
 	import { delayKnownLabel, timeLabel } from '../mapSelectionDetail.logic';
@@ -17,7 +18,7 @@
 
 	let { vehicle, locale, etaUtc = null, t, onselect }: Props = $props();
 	const accessibleName = $derived(
-		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale)}, ` : ''}${STATUS_LABELS[locale][vehicle.status]}, ${t.delay}: ${vehicle.delay_min == null ? t.noData : delayKnownLabel(vehicle.delay_min, t)}`,
+		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale)}, ` : ''}${STATUS_LABELS[locale][vehicle.status]}, ${t.delay}: ${vehicle.delay_min == null ? absenceShort('not-reported', locale) : delayKnownLabel(vehicle.delay_min, t)}`,
 	);
 </script>
 

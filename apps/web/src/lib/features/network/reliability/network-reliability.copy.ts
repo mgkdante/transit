@@ -140,12 +140,10 @@ export const networkReliabilityCopy = defineCopy({
 				unpublished: 'The unpublished date range was replaced with the current snapshot.',
 			},
 			partial: 'Coverage is partial for this range. Missing dates and metrics remain no data.',
-			noData: 'No data is retained for this range.',
 			currentOnly: 'Time-of-day and weekday views remain from the current snapshot.',
 			dailyOnly:
 				'Slowest-10% delay and vehicles are exact daily readings; they are not pooled into week or month.',
 		},
-		noData: 'no data',
 		units: { pct: '%', min: ' min' },
 		verdict: {
 			windowPhrase: {
@@ -306,13 +304,11 @@ export const networkReliabilityCopy = defineCopy({
 			},
 			partial:
 				'La couverture est partielle pour cette plage. Les dates et mesures absentes restent sans données.',
-			noData: 'Aucune donnée n’est conservée pour cette plage.',
 			currentOnly:
 				'Les vues par moment de la journée et par type de jour restent celles de l’instantané actuel.',
 			dailyOnly:
 				'Le retard des 10 % les plus lents et les véhicules sont des lectures quotidiennes exactes; ils ne sont pas regroupés par semaine ou par mois.',
 		},
-		noData: 'aucune donnée',
 		units: { pct: '%', min: ' min' },
 		verdict: {
 			windowPhrase: {

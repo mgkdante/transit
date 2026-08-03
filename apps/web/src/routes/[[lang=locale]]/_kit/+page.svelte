@@ -56,6 +56,7 @@
 
 	// Edge states.
 	import { EdgeState } from '$lib/components/edge';
+	import { absenceShort } from '$lib/site/absence';
 
 	// Chrome & layout (Set-B brand + layout primitives).
 	import { StickyPanel } from '@yesid/ui/brand';
@@ -206,7 +207,7 @@
 		tiers: {
 			tierLabels:
 				lang === 'fr' ? ['Calme', 'Modéré', 'Chargé', 'Pire'] : ['Calm', 'Mild', 'Busy', 'Worst'],
-			noDataLabel: lang === 'fr' ? 'Aucune donnée' : 'No data',
+			noDataLabel: absenceShort('no-observations', lang),
 			worstGlyph: '◆',
 		},
 		valueLabel: lang === 'fr' ? 'Retard normalisé' : 'Normalised delay',
@@ -408,9 +409,21 @@
 				<SectionLabel text="SEVERITY BARS" variant="metric" />
 				<div class="kit-stack">
 					{#each SEVERITY_CODES as sev, i (sev)}
-						<SeverityBar severity={sev} value={[0.95, 0.6, 0.3][i]} label={`${sev}`} interactive />
+						<SeverityBar
+							severity={sev}
+							value={[0.95, 0.6, 0.3][i]}
+							label={`${sev}`}
+							locale={lang}
+							interactive
+						/>
 					{/each}
-					<SeverityBar severity="watch" value={null} label="no data" interactive />
+					<SeverityBar
+						severity="watch"
+						value={null}
+						label={absenceShort('no-observations', lang)}
+						locale={lang}
+						interactive
+					/>
 				</div>
 			</div>
 			<div class="kit-card kit-card-wide">

@@ -139,8 +139,8 @@
 
 	// delayTone + delayLabel are the site-wide shared helpers ($lib/site/
 	// delayPresentation); a null/absent delay is handled at the call site by the
-	// styled honest-absence chip (AbsentValue), so delayLabel's null branch falls
-	// back to the trip copy's noDelay only as a defensive guard.
+	// styled honest-absence chip (AbsentValue), so delayLabel's null branch is not
+	// rendered on this surface.
 
 	/**
 	 * The CHIP's tone. Derived from the server StatusCode (the SAME source the

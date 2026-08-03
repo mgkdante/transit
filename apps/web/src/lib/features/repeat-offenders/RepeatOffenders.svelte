@@ -38,7 +38,7 @@
 	import { routeFor, type SurfaceKind, type SurfaceTarget } from '$lib/nav';
 	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { describeAbsence } from '$lib/site/absence';
+	import { absenceSentence } from '$lib/site/absence';
 	import { fmtCount, fmtDelayMin, fmtDelayMin as sharedFmtDelayMin, fmtPct } from '$lib/utils';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
 	import { availabilityFromPointCollectionIndex } from '$lib/v1/history/selection';
@@ -197,7 +197,7 @@
 		month: t.grain.month,
 	});
 	const uid = $props.id();
-	const disabledReason = $derived(describeAbsence('no-observations', locale).why);
+	const disabledReason = $derived(absenceSentence('no-observations', locale));
 	const grainSegments = $derived<GrainSegment<OffenderGrainKey>[]>(
 		OFFENDER_GRAINS.map((key) => {
 			const available = present.has(key);

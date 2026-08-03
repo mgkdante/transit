@@ -29,6 +29,7 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
+	import { absenceShort } from '$lib/site/absence';
 	import { fmtPct } from '$lib/utils';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import { SectionLabel } from '@yesid/ui/brand';
@@ -78,6 +79,7 @@
 	let { punctuality, habits, locale, copy, mode = 'day' }: Section1WhenToRideProps = $props();
 
 	const band = $derived(habitsBandCopy[locale]);
+	const noDataLabel = $derived(absenceShort('no-observations', locale));
 	// Resolved window grain for the comparison phrasing (a custom range reads the day window).
 	const win = $derived<'day' | 'week' | 'month'>(
 		mode === 'week' || mode === 'month' ? mode : 'day',
@@ -136,7 +138,7 @@
 			rowLabels: band.weekdaysShort,
 			fullRowLabels: fullDayLabels,
 			tierLabels: band.tiers.labels,
-			noDataLabel: band.tiers.noData,
+			noDataLabel,
 			worstGlyph: band.tiers.worstGlyph,
 			hourLabel: (h) => `${String(h).padStart(2, '0')}:00`,
 			hourTicks: [0, 3, 6, 9, 12, 15, 18, 21],
@@ -169,7 +171,7 @@
 		},
 		{
 			colorVar: 'var(--dataviz-heatmap-nodata)',
-			label: band.tiers.noData,
+			label: noDataLabel,
 			swatch: 'square' as const,
 		},
 	]);
@@ -198,7 +200,7 @@
 	const hasShiftStrip = $derived(timeOfDaySpec.kind === 'dot-strip');
 	const shiftMeanLabel = $derived(
 		timeOfDaySpec.kind === 'dot-strip' && timeOfDaySpec.medianRef != null
-			? copy.peak.strip.mean(pct(timeOfDaySpec.medianRef) ?? copy.strip.noData)
+			? copy.peak.strip.mean(pct(timeOfDaySpec.medianRef) ?? noDataLabel)
 			: '',
 	);
 
@@ -227,7 +229,7 @@
 				title: label(r.grain),
 				severity: severeShareToSeverity(r.severePct),
 				value: r.severePct,
-				display: pct(r.severePct) ?? copy.strip.noData,
+				display: pct(r.severePct) ?? noDataLabel,
 			}));
 	}
 
@@ -260,7 +262,7 @@
 				xLabel: copy.strip.severePct,
 				unit: '%',
 				domain: SEVERE_DOMAIN,
-				noDataMarker: copy.strip.noData,
+				noDataMarker: noDataLabel,
 			},
 		),
 	);
@@ -371,7 +373,7 @@
 		data-prior={row.delta.hasPrior ? (row.delta.significant ? 'change' : 'noise') : 'absent'}
 	>
 		<span class="compare-label">{row.label}</span>
-		<span class="compare-value">{pct(row.otpPct) ?? copy.strip.noData}</span>
+		<span class="compare-value">{pct(row.otpPct) ?? noDataLabel}</span>
 		<DeltaStat
 			class="compare-delta"
 			delta={row.delta.significant ? row.delta.delta : null}

@@ -13,30 +13,25 @@
 	import { AbsentValue } from '$lib/components/edge';
 	import type { AbsenceReasonKey } from '$lib/site/absence';
 	import type { Locale } from '$lib/i18n';
+	import type { AbsenceDensity } from '$lib/components/edge';
 
 	export interface MetricDisplayProps extends HTMLAttributes<HTMLDivElement> {
 		/**
 		 * The metric value (e.g. "82%", "5 min", "1.2k"). When `null` / `undefined`
-		 * / "" the tile shows the muted `emptyLabel` instead of the amber value voice
-		 * — the honest no-data state, never a bare "·" and never a fabricated 0.
+		 * / "" the tile uses the typed shared absence state when one is supplied.
 		 */
 		value: string | null | undefined;
 		/**
-		 * Localized no-data label rendered (muted, quiet) when `value` is absent.
-		 * When this is also empty, nothing is rendered rather than an empty amber span.
-		 */
-		emptyLabel?: string;
-		/**
 		 * Optional typed absence reason. When set (with `locale`), the empty state
-		 * renders the styled honest-absence (AbsentValue: calm "unknown" tone + glyph
-		 * + the WHY) instead of the plain `emptyLabel` text — the site-wide upgrade.
-		 * Falls back to `emptyLabel` when no reason/locale is supplied.
+		 * renders the shared AbsentValue chassis with the canonical short + why copy.
 		 */
 		absentReason?: AbsenceReasonKey;
 		/** Locale for the styled absence copy (required for `absentReason` to render). */
 		locale?: Locale;
 		/** Copy params interpolated into the absence WHY (e.g. { first: '06:00' }). */
 		absentParams?: Readonly<Record<string, string | number>>;
+		/** Presentation density forwarded to the shared absence primitive. */
+		density?: AbsenceDensity;
 		/** Primary label. */
 		label: string;
 		/** Optional secondary description. */
@@ -50,10 +45,10 @@
 
 	let {
 		value,
-		emptyLabel,
 		absentReason,
 		locale,
 		absentParams,
+		density,
 		label,
 		sublabel,
 		size = 'md',
@@ -68,9 +63,8 @@
 		lg: 'text-title',
 	} as const;
 
-	// A value is "empty" when null/undefined/"" — the honest no-data state. The
-	// amber metric-value voice speaks ONLY for a real value; absence speaks in the
-	// quiet muted-mono caption voice (never --accent-text, never --primary).
+	// A value is "empty" when null/undefined/"". The amber metric-value voice speaks
+	// ONLY for a real value; typed absence always uses the shared chassis.
 	const isEmpty = $derived(value == null || value === '');
 </script>
 
@@ -80,9 +74,13 @@
 	{/if}
 	{#if isEmpty}
 		{#if absentReason && locale}
-			<AbsentValue variant="inline" reason={absentReason} {locale} params={absentParams} />
-		{:else if emptyLabel}
-			<span class="metric-empty" data-slot="metric-empty">{emptyLabel}</span>
+			<AbsentValue
+				variant="inline"
+				reason={absentReason}
+				{locale}
+				params={absentParams}
+				{density}
+			/>
 		{/if}
 	{:else}
 		<span
@@ -99,14 +97,3 @@
 		<span class="mt-1 font-mono text-caption text-[var(--muted-foreground)]">{sublabel}</span>
 	{/if}
 </div>
-
-<style>
-	/* Honest no-data: a quiet muted-mono caption, never the amber metric-value
-	   voice and never --primary. Smaller than the value so it reads as an absence. */
-	.metric-empty {
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		line-height: 1.2;
-		color: var(--muted-foreground);
-	}
-</style>

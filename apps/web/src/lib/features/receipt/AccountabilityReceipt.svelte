@@ -25,7 +25,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { routeNameFallback, stopNameFallback } from '$lib/site/absence';
+	import { absenceShort, routeNameFallback, stopNameFallback } from '$lib/site/absence';
 	import { layout, routeFor } from '$lib/nav';
 	import { mirrorSearchParam } from '$lib/site/urlMirror';
 	import { formatDateKey, formatUtc } from '$lib/utils/time';
@@ -201,11 +201,15 @@
 	const fmtCount = (v: number | null | undefined) => sharedFmtCount(v, { locale });
 	const fmtSharePct = (v: number | null) =>
 		sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
-	// Inline (concatenated into meta text) → keeps the localized no-data STRING.
+	// Inline (concatenated into meta text) → uses the central localized absence label.
 	const fmtMinInline = (v: number | null | undefined) =>
-		sharedFmtDelayMin(v, { rounding: 'auto', suffix: t.units.min, noData: t.noData });
+		sharedFmtDelayMin(v, {
+			rounding: 'auto',
+			suffix: t.units.min,
+			noData: absenceShort('not-reported', locale),
+		});
 	const fmtDelta = (v: number | null | undefined) => {
-		if (v == null) return t.noData;
+		if (v == null) return absenceShort('not-reported', locale);
 		return `${v > 0 ? '+' : ''}${v}${t.units.pts}`;
 	};
 
@@ -570,7 +574,6 @@
 													<SectionHeadline
 														kpis={headlineKpis}
 														heading={t.receiptSection}
-														noData={t.noData}
 														headingLevel={3}
 														{info}
 														{locale}
@@ -617,7 +620,6 @@
 										explainer={t.stateCuts.explainer}
 										standDown={t.stateCuts.standDown}
 										splitLabel={t.stateCuts.splitLabel}
-										noData={t.noData}
 										headingLevel={3}
 										{info}
 										{locale}
@@ -629,6 +631,7 @@
 										caveat={t.notReported.caveat}
 										shownOfTotal={t.notReported.shownOfTotal}
 										headingLevel={3}
+										{locale}
 									/>
 								{/if}
 							</CollapsibleSection>

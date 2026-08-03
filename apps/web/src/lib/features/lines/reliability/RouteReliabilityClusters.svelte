@@ -33,7 +33,7 @@
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { fromSearchParams, toSearchParams, emptyFilterState, resolveWindow } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
-	import { describeAbsence } from '$lib/site/absence';
+	import { absenceSentence, describeAbsence } from '$lib/site/absence';
 	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
 	import type { RouteReliability } from '$lib/v1';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -193,7 +193,10 @@
 		resource: () => history,
 		initialRequest: initialHistoryRequest,
 		currentDates: () => currentAvailableDates,
-		copy: () => copy.history,
+		copy: () => ({
+			...copy.history,
+			noData: absenceSentence('no-retained-data', locale),
+		}),
 		formatDate: (date) => formatDateKey(date, locale),
 		isCompleteRequest: ({ rawFrom, rawTo }) => Boolean(rawFrom && rawTo),
 		onCorrection: () => {
@@ -350,7 +353,8 @@
 		month: availableGrains.has('month'),
 		range: hasDatedPeriods,
 	});
-	const disabledReason = $derived(describeAbsence('no-observations', locale).why);
+	const disabledReason = $derived(absenceSentence('no-observations', locale));
+	const retainedDataAbsence = $derived(describeAbsence('no-retained-data', locale));
 	const segments = $derived<GrainSegment<GrainMode>[]>(
 		(['day', 'week', 'month', 'range'] as const).map((key) => {
 			const label =
@@ -571,8 +575,8 @@
 				{#if explicitHistory}
 					{#if history?.state === 'no-data'}
 						<StateNotice
-							title={copy.history.noData}
-							body={copy.history.currentOnly}
+							title={retainedDataAbsence.label}
+							body={`${retainedDataAbsence.why}. ${copy.history.currentOnly}`}
 							presentation="responsive"
 							data-slot="history-no-data"
 						/>

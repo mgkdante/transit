@@ -15,6 +15,8 @@
 	import { severityVar } from './tokens';
 	import ChartTooltip from './ChartTooltip.svelte';
 	import { createChartTooltip } from './useChartTooltip.svelte';
+	import type { Locale } from '$lib/i18n';
+	import { absenceShort } from '$lib/site/absence';
 
 	export interface SeverityBarProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** Severity band — drives the fill colour AND the announced a11y band. */
@@ -54,6 +56,8 @@
 		 * byte-identical. Pass `false` from RankedRow to avoid double tooltips.
 		 */
 		interactive?: boolean;
+		/** Locale for the centralized no-data readout. */
+		locale?: Locale;
 		class?: string;
 	}
 
@@ -66,6 +70,7 @@
 		label,
 		size = 'md',
 		interactive = false,
+		locale = 'en',
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -85,7 +90,7 @@
 	// Readout: the ABSOLUTE value (+unit) when domain-scaled, else the fill %.
 	const readout = $derived(
 		!hasData
-			? 'no data'
+			? absenceShort('no-observations', locale)
 			: domain
 				? `${Math.round((value as number) * 10) / 10}${unit ?? ''}`
 				: `${Math.round(pct)}%`,

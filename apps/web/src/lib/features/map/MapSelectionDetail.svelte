@@ -1,10 +1,9 @@
 <script lang="ts">
-	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { tick } from 'svelte';
 	import type { Locale } from '$lib/i18n';
 	import type { Chip } from '$lib/filters';
 	import type { Alert } from '$lib/v1/schemas';
-	import { MaybeValue } from '$lib/components/edge';
+	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import { STATUS_GLYPH, occupancyGlyph } from '$lib/components/dataviz';
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
@@ -136,17 +135,25 @@
 					<div>
 						<dt>{t.nextStop}</dt>
 						<dd>
-							<MaybeValue present={detail.nextStop != null} reason={detail.nextStopAbsence} {locale}
-								>{detail.nextStop!.name}</MaybeValue
+							<MaybeValue
+								present={detail.nextStop != null}
+								density="chip"
+								reason={detail.nextStopAbsence}
+								{locale}>{detail.nextStop!.name}</MaybeValue
 							>
 						</dd>
 					</div>
 					<div>
 						<dt>ETA</dt>
 						<dd>
-							{detail.nextStops[0]?.etaUtc
-								? timeLabel(detail.nextStops[0].etaUtc, locale)
-								: t.noData}
+							<MaybeValue
+								value={detail.nextStops[0]?.etaUtc
+									? timeLabel(detail.nextStops[0].etaUtc, locale)
+									: null}
+								density="chip"
+								reason="no-prediction"
+								{locale}
+							/>
 						</dd>
 					</div>
 					<div>
@@ -169,8 +176,11 @@
 								data-m6d-glyph-code={detail.vehicle.occupancy ?? 'nodata'}
 								aria-hidden="true">{occupancyGlyph(detail.vehicle.occupancy)}</span
 							>
-							<MaybeValue present={detail.vehicle.occupancy != null} reason={absence} {locale}
-								>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
+							<MaybeValue
+								present={detail.vehicle.occupancy != null}
+								density="chip"
+								reason={absence}
+								{locale}>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
 							>
 						</dd>
 					</div>
@@ -215,11 +225,18 @@
 						>{t.route} {detail.vehicle.route}</button
 					>{/if}
 			</DetailStatPills>
-			{#if notReporting}<p class="map-not-reporting">
-					<TriangleAlertIcon size={14} aria-hidden="true" />{t.notReporting} · {t.lastPosition(
-						formatAge(notReporting.ageS),
-					)}
-				</p>{/if}
+			{#if notReporting}<AbsentValue
+					reason="last-seen"
+					params={{
+						age:
+							locale === 'fr'
+								? `il y a ${formatAge(notReporting.ageS)}`
+								: `${formatAge(notReporting.ageS)} ago`,
+					}}
+					density="chip"
+					{locale}
+					class="map-not-reporting"
+				/>{/if}
 			{#if detail.nextStops.length > 0}
 				<DetailSection title={t.nextStops} slot="detail-next-stops"
 					><ol>
@@ -320,7 +337,8 @@
 			<DetailStatPills
 				><span class="detail-pill">{detailIdentity(detail, locale)}</span
 				>{#if detail.route.long}<span class="detail-pill">{detail.route.long}</span
-					>{/if}{#if detail.direction}<span class="detail-pill">{directionLabel(detail, t)}</span
+					>{/if}{#if detail.direction}<span class="detail-pill"
+						>{directionLabel(detail, locale)}</span
 					>{/if}</DetailStatPills
 			>
 			{#if detail.vehicles.length > 0}<DetailSection title={t.liveBuses} slot="detail-live-buses"
@@ -354,8 +372,7 @@
 		display: grid;
 		gap: 0.5rem;
 	}
-	.detail-source-state,
-	.map-not-reporting {
+	.detail-source-state {
 		margin: 0;
 		padding: 0.5rem;
 		border: 1px solid var(--border-subtle);
@@ -365,9 +382,6 @@
 	.detail-source-state[data-source-health] {
 		border-color: color-mix(in srgb, var(--dataviz-status-late) 38%, var(--border) 62%);
 		background: color-mix(in srgb, var(--dataviz-status-late) 7%, var(--card) 86%);
-	}
-	.map-not-reporting {
-		background: var(--muted);
 	}
 	.detail-retry {
 		display: inline-flex;

@@ -169,7 +169,6 @@ export const detailCopy = defineCopy({
 			viewBusOnMap: (id: string) => `Voir le bus ${id} sur la carte`,
 			mapAction: 'Carte',
 			count: (n: number) => (n === 1 ? '1 bus en service' : `${n} bus en service`),
-			noData: 'Aucune donnée',
 		},
 		noLiveBus: 'Aucun bus en direct',
 		approaching: 'À l’approche',
@@ -177,8 +176,6 @@ export const detailCopy = defineCopy({
 		early: (minutes: number) => `${Math.abs(minutes)} min en avance`,
 		late: (minutes: number) => `${minutes} min en retard`,
 		onTime: "À l'heure",
-		noDelay: 'Aucun retard',
-		noData: 'sans données',
 	},
 	en: {
 		kicker: 'LINE',
@@ -270,7 +267,6 @@ export const detailCopy = defineCopy({
 			viewBusOnMap: (id) => `View bus ${id} on map`,
 			mapAction: 'Map',
 			count: (n) => (n === 1 ? '1 bus in service' : `${n} buses in service`),
-			noData: 'No data',
 		},
 		noLiveBus: 'No live bus',
 		approaching: 'Approaching',
@@ -278,8 +274,6 @@ export const detailCopy = defineCopy({
 		early: (minutes) => `${Math.abs(minutes)} min early`,
 		late: (minutes) => `${minutes} min late`,
 		onTime: 'On time',
-		noDelay: 'No delay',
-		noData: 'no data',
 	},
 });
 

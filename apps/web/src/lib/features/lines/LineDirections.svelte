@@ -39,7 +39,7 @@
 	import { stopNameFallback } from '$lib/site/absence';
 	import { formatUtc } from '$lib/utils/time';
 	import { delayLabel, delayTone } from '$lib/site/delayPresentation';
-	import { StateNotice } from '$lib/components/edge';
+	import { AbsentValue, StateNotice } from '$lib/components/edge';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
 	let { directions, predictions, locale, copy }: LineDirectionsProps = $props();
@@ -91,9 +91,13 @@
 												{:else}
 													<span class="line-stop-eta">{copy.approaching}</span>
 												{/if}
-												<span class="line-stop-delay" data-tone={delayTone(prediction.delayMin)}>
-													{delayLabel(prediction.delayMin, copy)}
-												</span>
+												{#if prediction.delayMin != null}
+													<span class="line-stop-delay" data-tone={delayTone(prediction.delayMin)}>
+														{delayLabel(prediction.delayMin, copy)}
+													</span>
+												{:else}
+													<AbsentValue reason="not-reported" density="row" {locale} />
+												{/if}
 											{:else}
 												<StateNotice title={copy.noLiveBus} presentation="pill" />
 											{/if}

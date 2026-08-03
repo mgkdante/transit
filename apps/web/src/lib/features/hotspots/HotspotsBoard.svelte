@@ -13,7 +13,7 @@
 	import { routeFor, type SurfaceKind } from '$lib/nav';
 	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { describeAbsence } from '$lib/site/absence';
+	import { absenceSentence } from '$lib/site/absence';
 	import { availabilityFromPointCollectionIndex } from '$lib/v1/history/selection';
 	import { createHistoryCorrectionPresentation } from '$lib/v1/history/datePresentation.svelte';
 	import {
@@ -159,7 +159,7 @@
 	});
 	const showGrainPicker = $derived(present.size > 1);
 	const uid = $props.id();
-	const disabledReason = $derived(describeAbsence('no-observations', locale).why);
+	const disabledReason = $derived(absenceSentence('no-observations', locale));
 	const grainSegments = $derived<GrainSegment<HotspotGrainKey>[]>(
 		HOTSPOT_GRAINS.map((key) => {
 			const available = present.has(key);

@@ -102,4 +102,64 @@ describe('StateNotice — shared state presentation chassis', () => {
 		expect(source).not.toMatch(/(?:filter|drop-shadow)\s*:/);
 		expect(source).not.toContain('--edge-rule');
 	});
+
+	it('owns its wrap policy, intrinsic cap, inherited type voice, and quiet title', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/edge/StateNotice.svelte'),
+			'utf8',
+		);
+		const tokens = readFileSync(resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+		expect(source).toMatch(
+			/\.state-notice-title,\s*\.state-notice-body\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/s,
+		);
+		expect(tokens).toMatch(/--measure-absence:\s*34ch;/);
+		expect(source).toMatch(
+			/\.state-notice-copy\s*\{[^}]*max-inline-size:\s*var\(--measure-absence\);/s,
+		);
+		expect(source).toMatch(/\.state-notice\s*\{[^}]*font-family:\s*inherit;/s);
+		expect(source).toMatch(
+			/\.state-notice-title\s*\{[^}]*color:\s*var\(--muted-foreground\);[^}]*font-weight:\s*500;/s,
+		);
+		expect(source).not.toMatch(
+			/\.state-notice-(?:title|body)\s*\{[^}]*(?:overflow:\s*hidden|text-overflow:|white-space:\s*nowrap)/s,
+		);
+	});
+
+	it('gives row presentation a literal separator and no box chassis', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/edge/StateNotice.svelte'),
+			'utf8',
+		);
+
+		expect(source).toContain("presentation === 'row'");
+		expect(source).toMatch(
+			/<span\s+class="state-notice-separator"\s+aria-hidden="true"\s*>\s*·\s*<\/span>/s,
+		);
+		expect(source).toMatch(
+			/\.state-notice--row \.state-notice-surface\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;/s,
+		);
+		expect(source).toMatch(
+			/\.state-notice--row \.state-notice-copy\s*\{[^}]*display:\s*inline-block;[^}]*max-inline-size:\s*var\(--measure-absence\);[^}]*font-weight:\s*500;/s,
+		);
+		expect(source).toMatch(
+			/\.state-notice--row \.state-notice-separator\s*\{[^}]*color:\s*inherit;/s,
+		);
+		expect(source).not.toMatch(/\.state-notice--row[^}]*border-radius:\s*var\(--radius-pill\)/s);
+	});
+
+	it('renders a pill separator as text instead of generated flex-sibling content', () => {
+		const { container } = render(StateNotice, {
+			props: { title: 'No data', body: 'not enough readings yet', presentation: 'pill' },
+		});
+		const copy = container.querySelector('.state-notice-copy');
+		expect(copy?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+			'No data · not enough readings yet',
+		);
+
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/edge/StateNotice.svelte'),
+			'utf8',
+		);
+		expect(source).not.toMatch(/\.state-notice--pill \.state-notice-body::before/);
+	});
 });

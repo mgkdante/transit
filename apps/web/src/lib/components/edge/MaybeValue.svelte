@@ -18,7 +18,7 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import AbsentValue from './AbsentValue.svelte';
+	import AbsentValue, { type AbsenceDensity } from './AbsentValue.svelte';
 	import type { AbsenceReasonKey } from '$lib/site/absence';
 	import type { Locale } from '$lib/i18n';
 
@@ -49,6 +49,8 @@
 		params?: Readonly<Record<string, string | number>>;
 		/** AbsentValue variant: inline chip (default) or block panel. */
 		variant?: 'inline' | 'block';
+		/** Absence presentation density; defaults to the shared chip treatment. */
+		density?: AbsenceDensity;
 	}
 
 	let {
@@ -59,6 +61,7 @@
 		locale,
 		params,
 		variant = 'inline',
+		density,
 	}: MaybeValueProps = $props();
 
 	// Present when explicitly told, else when the formatted value is a real string.
@@ -71,4 +74,5 @@
 		{locale}
 		{params}
 		{variant}
+		{density}
 	/>{/if}

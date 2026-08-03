@@ -22,6 +22,7 @@
 	import { AbsentValue } from '$lib/components/edge';
 	import type { AbsenceReasonKey } from '$lib/site/absence';
 	import type { Locale } from '$lib/i18n';
+	import type { AbsenceDensity } from '$lib/components/edge';
 
 	export interface RankedRowProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** 1-based rank. */
@@ -71,6 +72,8 @@
 		locale?: Locale;
 		/** Copy params interpolated into the absence WHY (e.g. { first: '06:00' }). */
 		absentParams?: Readonly<Record<string, string | number>>;
+		/** Presentation density for the absent display. Ranked rows default to unboxed row text. */
+		density?: AbsenceDensity;
 		/**
 		 * Delta vs prior period. Sign drives the glyph + colour. `null` = no
 		 * comparison available (renders an em-dash, neutral).
@@ -127,6 +130,7 @@
 		absentReason,
 		locale,
 		absentParams,
+		density = 'row',
 		delta = null,
 		deltaDisplay,
 		higherIsBetter = false,
@@ -227,9 +231,10 @@
 		<div class="flex items-baseline justify-between gap-2">
 			<span class="truncate font-medium text-foreground">{title}</span>
 			{#if showAbsent}
-				<span class="shrink-0">
+				<span class="min-w-0 text-right">
 					<AbsentValue
 						variant="inline"
+						{density}
 						reason={absentReason!}
 						locale={locale!}
 						params={absentParams}
@@ -249,6 +254,7 @@
 				{value}
 				{domain}
 				{unit}
+				{locale}
 				label={`Rank ${rank}: ${title}`}
 				size="sm"
 				interactive={barInteractive && !tooltip}

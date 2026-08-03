@@ -40,6 +40,7 @@ export { inferAbsenceReason } from './serviceWindow';
  *   end-of-route    — no next item because the trip ended.
  *   inferred        — value synthesized (computed/estimated), not published as-is.
  *   no-observations — a historic/aggregate metric had too few readings to report.
+ *   retained-history keys — typed explanations for omitted history-index facts.
  */
 export type ValueAbsenceKey =
 	| 'not-reported'
@@ -48,7 +49,13 @@ export type ValueAbsenceKey =
 	| 'no-prediction'
 	| 'end-of-route'
 	| 'inferred'
-	| 'no-observations';
+	| 'no-observations'
+	| 'not-published'
+	| 'no-retained-dates'
+	| 'no-gap-inventory'
+	| 'no-declared-gaps'
+	| 'no-metric-inventory'
+	| 'no-retained-data';
 
 /**
  * The canonical, unified absence vocabulary: every service-window reason key plus
@@ -111,6 +118,30 @@ export const ABSENCE_COPY: Record<Locale, Record<AbsenceReasonKey, ReasonCopy>> 
 		'end-of-route': { short: 'End of line', why: 'no next stop, the trip has ended' },
 		inferred: { short: 'Estimated', why: 'estimated, not published directly' },
 		'no-observations': { short: 'No data', why: 'not enough readings yet' },
+		'not-published': {
+			short: 'Not published',
+			why: 'this family is not listed in the retained history index',
+		},
+		'no-retained-dates': {
+			short: 'No retained dates',
+			why: 'the history index reports no published date range',
+		},
+		'no-gap-inventory': {
+			short: 'No gap inventory',
+			why: 'the history index does not publish gap details',
+		},
+		'no-declared-gaps': {
+			short: 'No declared gaps',
+			why: 'the history index reports no known gaps',
+		},
+		'no-metric-inventory': {
+			short: 'No metric inventory',
+			why: 'the history index does not publish per-metric coverage',
+		},
+		'no-retained-data': {
+			short: 'No retained data',
+			why: 'no data is retained for this range',
+		},
 	},
 	fr: {
 		// service-window keys (block-level)
@@ -137,6 +168,30 @@ export const ABSENCE_COPY: Record<Locale, Record<AbsenceReasonKey, ReasonCopy>> 
 		'end-of-route': { short: 'Terminus', why: 'aucun arrêt suivant, le trajet est terminé' },
 		inferred: { short: 'Estimé', why: 'estimé, non publié directement' },
 		'no-observations': { short: 'Aucune donnée', why: 'pas assez de mesures' },
+		'not-published': {
+			short: 'Non publiée',
+			why: 'cette famille n’apparaît pas dans l’index de l’historique conservé',
+		},
+		'no-retained-dates': {
+			short: 'Aucune date conservée',
+			why: 'l’index historique ne signale aucune plage de dates publiée',
+		},
+		'no-gap-inventory': {
+			short: 'Aucun inventaire',
+			why: 'l’index historique ne publie pas le détail des lacunes',
+		},
+		'no-declared-gaps': {
+			short: 'Aucune lacune déclarée',
+			why: 'l’index historique ne signale aucune lacune connue',
+		},
+		'no-metric-inventory': {
+			short: 'Aucun détail métrique',
+			why: 'l’index historique ne publie pas la couverture par métrique',
+		},
+		'no-retained-data': {
+			short: 'Aucune donnée conservée',
+			why: 'aucune donnée n’est conservée pour cette plage',
+		},
 	},
 };
 
@@ -177,6 +232,21 @@ export function describeAbsence(
 		why: interpolate(copy.why, params),
 		tone: 'unknown',
 	};
+}
+
+/** Canonical terse form for string-only chart, SVG, aria, and control consumers. */
+export function absenceShort(reason: AbsenceReasonKey, locale: Locale): string {
+	return describeAbsence(reason, locale).label;
+}
+
+/** Canonical complete text form for string-only consumers that cannot render the chassis. */
+export function absenceSentence(
+	reason: AbsenceReasonKey,
+	locale: Locale,
+	params?: Readonly<Record<string, string | number>>,
+): string {
+	const description = describeAbsence(reason, locale, params);
+	return `${description.label} · ${description.why}`;
 }
 
 /**

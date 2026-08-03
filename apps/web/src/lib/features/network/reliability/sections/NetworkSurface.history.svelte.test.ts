@@ -593,7 +593,7 @@ describe('NetworkSurface retained-history integration', () => {
 
 		await waitFor(() => {
 			const empty = view.container.querySelector('[data-slot="history-no-data"]');
-			expect(empty).toHaveTextContent('No data is retained for this range.');
+			expect(empty).toHaveTextContent(/No retained data.*no data is retained for this range/i);
 			expect(empty).toHaveAttribute('data-component', 'state-notice');
 			expect(empty).toHaveAttribute('data-presentation', 'responsive');
 		});
@@ -764,12 +764,11 @@ describe('NetworkSurface retained-history integration', () => {
 });
 
 describe('Network retained-history copy', () => {
-	it('defines honest partial, no-data, and current-only messages in English and French', () => {
+	it('defines honest partial and current-only messages in English and French', () => {
 		const en = networkReliabilityCopy.en as unknown as NetworkReliabilityCopyWithHistory;
 		const fr = networkReliabilityCopy.fr as unknown as NetworkReliabilityCopyWithHistory;
 
 		expect(en.history.partial).toMatch(/partial|coverage/i);
-		expect(en.history.noData).toMatch(/no data/i);
 		expect(en.history.currentOnly).toMatch(/current|live/i);
 		expect(en.history.currentOnly).not.toMatch(/\blive\b/i);
 		expect(en.trend.retardAvg).toBe('Average');
@@ -777,7 +776,6 @@ describe('Network retained-history copy', () => {
 		expect(en.trend.delayOnlySummary).not.toMatch(/on-time/i);
 		expect(en.trend.onTimeOnlySummary).not.toMatch(/delay/i);
 		expect(fr.history.partial).toMatch(/partiel|couverture/i);
-		expect(fr.history.noData).toMatch(/aucune donnée/i);
 		expect(fr.history.currentOnly).toMatch(/actuel|direct/i);
 		expect(fr.trend.retardAvg).toBe('Moyen');
 		expect(fr.trend.retardAvgLabel).toBe('Retard moyen (min)');
@@ -795,7 +793,6 @@ interface NetworkReliabilityCopyWithHistory {
 	};
 	readonly history: {
 		readonly partial: string;
-		readonly noData: string;
 		readonly currentOnly: string;
 	};
 }

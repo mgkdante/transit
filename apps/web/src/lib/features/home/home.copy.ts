@@ -16,7 +16,6 @@ type CopyKey =
 	| 'pulseLive'
 	| 'pulseStandby'
 	| 'datasetLabel'
-	| 'noData'
 	| 'pct'
 	| 'min'
 	| 'enter'
@@ -76,7 +75,6 @@ export function homeCopy(locale: Locale, manifest: Manifest): HomeCopy {
 			pulseLive: 'EN DIRECT',
 			pulseStandby: 'EN ATTENTE',
 			datasetLabel: 'Jeu de données',
-			noData: 'aucune donnée',
 			pct: '%',
 			min: ' min',
 			enter: 'Ouvrir',
@@ -130,7 +128,6 @@ export function homeCopy(locale: Locale, manifest: Manifest): HomeCopy {
 			pulseLive: 'LIVE',
 			pulseStandby: 'STANDBY',
 			datasetLabel: 'Dataset',
-			noData: 'no data',
 			pct: '%',
 			min: ' min',
 			enter: 'Open',
