@@ -22,10 +22,6 @@ export interface MapUrlRewriteOptions {
 export type MapUrlNavigate = (target: string, options: MapUrlRewriteOptions) => unknown;
 export type MapUrlSettlement = 'echo' | 'adopt';
 
-export interface MapUrlCoordinatorOptions {
-	readonly reportNavigationFailure?: (error: unknown) => unknown;
-}
-
 export const MAP_URL_REWRITE = {
 	replaceState: true,
 	keepFocus: true,
@@ -48,7 +44,7 @@ function identity(url: URL): string {
 export function createMapUrlCoordinator(
 	initialUrl: URL,
 	navigate: MapUrlNavigate,
-	options: MapUrlCoordinatorOptions = {},
+	options: { readonly reportNavigationFailure?: (error: unknown) => unknown } = {},
 ): MapUrlCoordinator {
 	interface RequestedNavigation {
 		readonly identity: string;

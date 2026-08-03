@@ -69,10 +69,6 @@ export interface LayerModule {
 	};
 }
 
-export interface MapInteractionRegistrationFailure extends AggregateError {
-	readonly disposers: readonly (() => void)[];
-}
-
 const routesModule: LayerModule = {
 	id: 'routes',
 	install(map, beforeId) {
@@ -234,7 +230,7 @@ export function installMapInteractions(
 					'Map interaction registration and rollback failed',
 				),
 				{ disposers: rollbacks },
-			) as MapInteractionRegistrationFailure;
+			) as AggregateError & { readonly disposers: readonly (() => void)[] };
 		}
 		throw registrationError;
 	}

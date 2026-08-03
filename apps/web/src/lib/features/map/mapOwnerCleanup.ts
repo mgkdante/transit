@@ -1,15 +1,3 @@
-export interface CleanupReleaseResult {
-	readonly pending: readonly (() => void)[];
-	readonly errors: readonly unknown[];
-}
-
-export interface MapOwnerReleaseResult<TMotion> {
-	readonly motion: TMotion | null;
-	readonly disposers: readonly (() => void)[];
-	readonly emphasisPending: boolean;
-	readonly errors: readonly unknown[];
-}
-
 export function reportCleanupFailure(message: string, error: unknown): void {
 	try {
 		console.error(message, error);
@@ -37,10 +25,7 @@ export function releaseWithRetry(dispose: () => void, report: (error: unknown) =
 	}
 }
 
-export function releaseCleanupReceipts(
-	disposers: readonly (() => void)[],
-	passes = 1,
-): CleanupReleaseResult {
+export function releaseCleanupReceipts(disposers: readonly (() => void)[], passes = 1) {
 	let pending = [...disposers];
 	const errors: unknown[] = [];
 	for (let pass = 0; pass < passes && pending.length > 0; pass += 1) {
@@ -74,7 +59,7 @@ export function releaseMapOwnerReceipts<TMotion extends { destroy(): void }>(
 	motion: TMotion | null,
 	disposers: readonly (() => void)[],
 	clearEmphasis: () => void,
-): MapOwnerReleaseResult<TMotion> {
+) {
 	let pendingMotion = motion;
 	let pendingDisposers = [...disposers];
 	let emphasisPending = true;
