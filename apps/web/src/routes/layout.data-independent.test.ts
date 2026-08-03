@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, within } from '@testing-library/svelte';
 import { createRawSnippet, settled, tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KitNavigationSimulator } from '$lib/features/map/__fixtures__/KitNavigationSimulator';
+import type { V1Context } from '$lib/v1/boot';
+import type { IsoUtc } from '$lib/v1/schemas';
 
 const harness = vi.hoisted(() => {
 	const beforeNavigateCallbacks: Array<(navigation: unknown) => unknown> = [];
@@ -133,17 +135,51 @@ const children = createRawSnippet(() => ({
 	render: () => '<article data-testid="legal-child">Legal child</article>',
 }));
 
-function renderWithoutV1(pathname: string, lang: 'en' | 'fr') {
+function loadedV1(lang: 'en' | 'fr'): V1Context {
+	return {
+		lang,
+		labels: {},
+		manifest: {
+			provider: 'fixture',
+			display_name: 'Fixture Transit',
+			bbox: [-74, 45, -73, 46],
+			attribution: 'Fixture attribution',
+			dataset_version: 'fixture-v1',
+			labels: {},
+			files: { live: { generated_utc: '2026-08-03T00:00:00Z' as IsoUtc } },
+			surfaces: [],
+		},
+	};
+}
+
+function renderRoot(pathname: string, lang: 'en' | 'fr', v1: V1Context | null) {
 	harness.beforeNavigateCallbacks.length = 0;
 	harness.onNavigateCallbacks.length = 0;
 	harness.runViewTransition.mockClear();
 	harness.setPath(pathname);
 	return render(RootLayout, {
 		props: {
-			data: { lang, v1: null, v1Error: true },
+			data: { lang, v1, v1Error: v1 === null },
 			children,
 		},
 	});
+}
+
+function renderWithoutV1(pathname: string, lang: 'en' | 'fr') {
+	return renderRoot(pathname, lang, null);
+}
+
+function expectLegalDestinationsAbsent(
+	surface: HTMLElement,
+	legalLabel: string,
+	links: readonly (readonly [label: string, href: string])[],
+): void {
+	const scoped = within(surface);
+	expect(scoped.queryByRole('group', { name: legalLabel })).not.toBeInTheDocument();
+	for (const [label, href] of links) {
+		expect(scoped.queryByRole('link', { name: label })).not.toBeInTheDocument();
+		expect(surface.querySelector(`a[href="${href}"]`)).not.toBeInTheDocument();
+	}
 }
 
 afterEach(() => {
@@ -181,6 +217,7 @@ describe('root layout data-independent legal routes', () => {
 		{
 			pathname: '/map',
 			lang: 'en' as const,
+			loaded: false,
 			footer: false,
 			openMenu: 'Open menu',
 			legalLabel: 'Legal',
@@ -192,6 +229,7 @@ describe('root layout data-independent legal routes', () => {
 		{
 			pathname: '/fr/map',
 			lang: 'fr' as const,
+			loaded: false,
 			footer: false,
 			openMenu: 'Ouvrir le menu',
 			legalLabel: 'Juridique',
@@ -200,29 +238,90 @@ describe('root layout data-independent legal routes', () => {
 				['Conditions d’utilisation', '/fr/terms'],
 			] as const,
 		},
-		{ pathname: '/privacy', lang: 'en' as const, footer: true },
-		{ pathname: '/fr/privacy', lang: 'fr' as const, footer: true },
+		{
+			pathname: '/privacy',
+			lang: 'en' as const,
+			loaded: false,
+			footer: true,
+			openMenu: 'Open menu',
+			legalLabel: 'Legal',
+			links: [
+				['Privacy', '/privacy'],
+				['Terms', '/terms'],
+			] as const,
+		},
+		{
+			pathname: '/fr/privacy',
+			lang: 'fr' as const,
+			loaded: false,
+			footer: true,
+			openMenu: 'Ouvrir le menu',
+			legalLabel: 'Juridique',
+			links: [
+				['Confidentialité', '/fr/privacy'],
+				['Conditions d’utilisation', '/fr/terms'],
+			] as const,
+		},
+		{
+			pathname: '/lines',
+			lang: 'en' as const,
+			loaded: true,
+			footer: true,
+			openMenu: 'Open menu',
+			legalLabel: 'Legal',
+			links: [
+				['Privacy', '/privacy'],
+				['Terms', '/terms'],
+			] as const,
+		},
+		{
+			pathname: '/fr/lines',
+			lang: 'fr' as const,
+			loaded: true,
+			footer: true,
+			openMenu: 'Ouvrir le menu',
+			legalLabel: 'Juridique',
+			links: [
+				['Confidentialité', '/fr/privacy'],
+				['Conditions d’utilisation', '/fr/terms'],
+			] as const,
+		},
 	])(
-		'mounts a Footer or localized legal destinations for $pathname through the real root shell',
-		async ({ pathname, lang, footer, openMenu, legalLabel, links }) => {
-			const view = renderWithoutV1(pathname, lang);
+		'keeps localized legal destinations footer-only for $pathname through the real root shell',
+		async ({ pathname, lang, loaded, footer, openMenu, legalLabel, links }) => {
+			const view = renderRoot(pathname, lang, loaded ? loadedV1(lang) : null);
 			expect(view.container.querySelector('[data-slot="app-shell"]')).toBeInTheDocument();
+			if (loaded) {
+				expect(view.getByTestId('legal-child')).toBeInTheDocument();
+				expect(view.queryByTestId('root-layout-edge-state')).not.toBeInTheDocument();
+			}
 
 			if (footer) {
-				expect(view.getByTestId('footer')).toBeInTheDocument();
-				return;
-			}
-			if (!openMenu || !legalLabel || !links) {
-				throw new Error('Footerless route fixtures require localized legal navigation.');
+				const legalFooter = within(view.getByTestId('footer')).getByRole('navigation', {
+					name: legalLabel,
+				});
+				for (const [label, href] of links) {
+					expect(within(legalFooter).getByRole('link', { name: label })).toHaveAttribute(
+						'href',
+						href,
+					);
+				}
+			} else {
+				expect(view.queryByTestId('footer')).not.toBeInTheDocument();
 			}
 
-			expect(view.queryByTestId('footer')).not.toBeInTheDocument();
 			await fireEvent.click(view.getByRole('button', { name: openMenu }));
-			const legal = within(view.getByTestId('nav-menu')).getByRole('group', {
-				name: legalLabel,
-			});
-			for (const [label, href] of links) {
-				expect(within(legal).getByRole('link', { name: label })).toHaveAttribute('href', href);
+			const menu = view.getByTestId('nav-menu');
+			expect(menu).toBeInTheDocument();
+			expectLegalDestinationsAbsent(menu, legalLabel, links);
+
+			const chromeSurfaces = [
+				...view.container.querySelectorAll<HTMLElement>('header'),
+				view.container.querySelector<HTMLElement>('[data-slot="app-shell-chrome"]'),
+			].filter((surface): surface is HTMLElement => surface !== null);
+			expect(chromeSurfaces.length).toBeGreaterThan(0);
+			for (const surface of chromeSurfaces) {
+				expectLegalDestinationsAbsent(surface, legalLabel, links);
 			}
 		},
 	);

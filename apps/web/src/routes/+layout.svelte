@@ -117,9 +117,9 @@
 	// Full-bleed surfaces own the whole viewport: #main must NOT scroll and must
 	// NOT carry a footer. The map fills height:100%, so a trailing footer would
 	// force the main column to scroll with the footer crammed under the canvas
-	// (the "squeezed footer" artifact). Only /map today. Its MapLibre control
-	// carries basemap attribution only; provider licensing belongs on the legal
-	// pages that remain reachable through the always-mounted NavPill.
+	// (the "squeezed footer" artifact). Only /map today. By the owner's 2026-08-03
+	// decision, the full-bleed /map omits the footer and therefore carries no legal
+	// links.
 	const isFullBleed = $derived(seoPath === '/map');
 	const dataIndependentRoute = $derived(isDataIndependentRoute(seoPath));
 
