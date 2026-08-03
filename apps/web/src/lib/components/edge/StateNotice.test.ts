@@ -113,8 +113,12 @@ describe('StateNotice — shared state presentation chassis', () => {
 			/\.state-notice-title,\s*\.state-notice-body\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/s,
 		);
 		expect(tokens).toMatch(/--measure-absence:\s*34ch;/);
+		// LEFT-ANCHORED on purpose: `.state-notice-copy {` is also a suffix of
+		// `.state-notice--row .state-notice-copy {`, so an unanchored match let the row
+		// sibling silently satisfy this line while the BASE cap was deleted. The
+		// start-of-line boundary pins the base rule and nothing else.
 		expect(source).toMatch(
-			/\.state-notice-copy\s*\{[^}]*max-inline-size:\s*var\(--measure-absence\);/s,
+			/(?:^|\n)[ \t]*\.state-notice-copy\s*\{[^}]*max-inline-size:\s*var\(--measure-absence\);/s,
 		);
 		expect(source).toMatch(/\.state-notice\s*\{[^}]*font-family:\s*inherit;/s);
 		expect(source).toMatch(

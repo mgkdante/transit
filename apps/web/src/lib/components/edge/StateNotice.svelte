@@ -65,7 +65,7 @@
 		{/if}
 
 		<span class="state-notice-copy">
-			<span class="state-notice-title" data-slot="state-notice-title">{title}</span>
+			<span class="state-notice-title">{title}</span>
 			{#if body}
 				{#if presentation === 'row' || presentation === 'pill'}<span
 						class="state-notice-separator"

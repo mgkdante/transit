@@ -33,6 +33,24 @@ function filesUnder(path: string, extension: string): string[] {
 	return out;
 }
 
+// The PROTECTED consolidation decision: absence copy lives in ONE vocabulary
+// ($lib/site/absence), reached through a typed reason key. A module that grows its
+// own noData / noDelay label has FORKED that vocabulary.
+//
+// This walk is deliberately wide. It used to read only `src/lib/features/**/*.copy.ts`,
+// which left a fork three places to hide: outside src/lib/features entirely, inside a
+// feature module not named *.copy.ts, and behind a QUOTED key ('noData':) in the very
+// files it did read. It now walks every non-test .ts module under src.
+// *.test.ts is excluded on purpose: a test may legitimately build a `{ noDelay }`
+// options object to exercise the formatter contract (src/lib/site/delayPresentation.test.ts).
+const copyModules = (): string[] =>
+	filesUnder('src', '.ts').filter((path) => !path.endsWith('.test.ts'));
+
+// Quote-tolerant: `noData:`, `'noData':` and `"noData":` are the same fork.
+const FORKED_KEY = /^[ \t]*(['"`]?)(?:noData|noDelay)\1\s*:/m;
+const FORKED_GENERIC_LABEL =
+	/^[ \t]*(['"`]?)(?:noData|noDelay)\1\s*:\s*(['"])(?:No data|no data|Aucune donnée|aucune donnée|Sans données|sans données)[^'"\n]*\2,?\s*$/m;
+
 describe('absence containment contract', () => {
 	it('uses the row variant at every current table-cell absence site', () => {
 		const expected = new Map([
@@ -72,26 +90,33 @@ describe('absence containment contract', () => {
 		expect(hoverGrid).toMatch(/grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
 		expect(hoverValues).toMatch(/min-width:\s*0/);
 		expect(hoverValues).not.toMatch(/(?:white-space:\s*nowrap|overflow:\s*hidden|text-overflow:)/);
+		// The hover peek is a floating card, NOT a table: its seven absences stay
+		// inline chips. Pin the count AND the absence of any variant override, so a
+		// chip -> row/block flip (or a dropped absence) cannot pass this suite.
+		const hoverAbsences = hover.match(/<AbsentValue\b[^>]*>/g) ?? [];
+		expect(hoverAbsences, 'MapHoverPeek absence chips').toHaveLength(7);
+		expect(
+			hoverAbsences.filter((tag) => /\bvariant\s*=/.test(tag)),
+			'MapHoverPeek absences must stay the default inline chip',
+		).toHaveLength(0);
 		expect(hover).not.toMatch(
 			/\.map-hover-peek\s+:global\(\[data-slot='absent-value'\][^{]*\{[^}]*border-radius:/s,
 		);
 	});
 
-	it('keeps generic no-data labels out of feature-owned copy keys', () => {
-		const genericNoData =
-			/^\s*(?:noData|noDelay):\s*(['"])(?:No data|no data|Aucune donnée|aucune donnée|Sans données|sans données)(?:[^'"\n]*)\1,?\s*$/m;
-		for (const file of filesUnder('src/lib/features', '.ts').filter((path) =>
-			path.endsWith('.copy.ts'),
-		)) {
-			expect(readFileSync(file, 'utf8'), file).not.toMatch(genericNoData);
+	it('keeps generic no-data labels out of every copy module, quoted key or not', () => {
+		const scanned = copyModules();
+		expect(scanned.length).toBeGreaterThan(200);
+		for (const file of scanned) {
+			expect(readFileSync(file, 'utf8'), file).not.toMatch(FORKED_GENERIC_LABEL);
 		}
 	});
 
-	it('removes feature-owned noData and noDelay keys after consumers move to typed reasons', () => {
-		for (const file of filesUnder('src/lib/features', '.ts').filter((path) =>
-			path.endsWith('.copy.ts'),
-		)) {
-			expect(readFileSync(file, 'utf8'), file).not.toMatch(/^\s*(?:noData|noDelay)\s*:/m);
+	it('removes noData and noDelay keys app-wide after consumers move to typed reasons', () => {
+		const scanned = copyModules();
+		expect(scanned.length).toBeGreaterThan(200);
+		for (const file of scanned) {
+			expect(readFileSync(file, 'utf8'), file).not.toMatch(FORKED_KEY);
 		}
 	});
 
