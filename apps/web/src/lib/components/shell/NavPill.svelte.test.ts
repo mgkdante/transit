@@ -747,6 +747,39 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 		expect(queryByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeNull();
 	});
 
+	// The Google Places attribution is a THIRD-PARTY obligation, so it is pinned to
+	// what is actually on screen — in both directions. Gating it on the unfiltered
+	// blend leaves a bare "Powered by Google" after the family narrowing drops every
+	// Google row; gating it too tightly hides it while a Google row is still shown.
+	it('keeps the Google attribution with the visible Google-sourced rows — never without, never missing', async () => {
+		const { getByLabelText, queryByLabelText, getByRole, queryByRole } = render(NavPill, {
+			props: {
+				locale: 'en',
+				search: 'casgrain',
+				searchScope: 'all',
+				searchResults: [
+					{ kind: 'route', id: '161', label: '161 Van Horne', priority: 0 },
+					{
+						kind: 'address',
+						id: 'google:casgrain',
+						label: '5333 Avenue Casgrain, Montréal, Quebec',
+						meta: 'Address',
+						priority: 30,
+						attribution: 'google',
+					},
+				],
+			},
+		});
+		// A visible Google-sourced row ALWAYS carries the attribution.
+		expect(getByRole('button', { name: /5333 Avenue Casgrain/ })).toBeInTheDocument();
+		expect(getByLabelText('Powered by Google')).toBeInTheDocument();
+		// Narrowing the family away drops the row AND its attribution together —
+		// never a bare attribution with no Google content on screen.
+		await fireEvent.click(getByRole('radio', { name: /Lines \(1\)/ }));
+		expect(queryByRole('button', { name: /5333 Avenue Casgrain/ })).toBeNull();
+		expect(queryByLabelText('Powered by Google')).toBeNull();
+	});
+
 	it('omits the filter row where the blend is already one family (honesty)', () => {
 		const { getByRole } = render(NavPill, {
 			props: {
