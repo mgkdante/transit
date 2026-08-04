@@ -47,6 +47,13 @@
 		 */
 		ageSeconds?: number | null;
 		/**
+		 * Caller-owned replacement for the relative age. When set it wins over every
+		 * derivation — the map passes its "not responding" verdict here so a stalled
+		 * feed reads as a fact instead of an age (M6f-2 F14). The caller owns the
+		 * wording; this component adds no vocabulary for it.
+		 */
+		ageLabel?: string | null;
+		/**
 		 * Live variant only: whether the feed is behind its freshness budget. The
 		 * updated variant ignores this (a daily document never reads "stale").
 		 */
@@ -68,6 +75,7 @@
 	let {
 		generatedUtc,
 		ageSeconds = undefined,
+		ageLabel = null,
 		isStale = false,
 		degraded = false,
 		variant = 'live',
@@ -104,6 +112,7 @@
 	// vague "2 days ago". Honest "unknown" when there is no resolvable anchor.
 	const ABSOLUTE_AFTER_S = 86_400; // 24h
 	const relative = $derived.by(() => {
+		if (ageLabel != null) return ageLabel;
 		if (effectiveAge == null) return t.unknown;
 		if (effectiveAge >= ABSOLUTE_AFTER_S && generatedUtc) {
 			return formatUtc(generatedUtc, locale, {

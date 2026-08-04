@@ -99,29 +99,33 @@
 			liveEdgeMessage,
 		}),
 	);
-	const freshnessSuppressed = $derived(feedBannerState === 'global-stall');
-	const freshnessGeneratedUtc = $derived(freshnessSuppressed ? null : generatedUtc);
-	const freshnessAgeSeconds = $derived(freshnessSuppressed ? null : ageSeconds);
+	// M6f-2 F14: a stalled feed no longer DESTROYS the freshness readout (it used to
+	// null the timestamps at every viewport, which dropped .map-freshness from the
+	// DOM entirely). The readout survives and swaps its age for the banner's own
+	// "not responding" verdict, so the chrome still states what it knows.
+	const ageLabel = $derived(feedBannerState === 'global-stall' ? t.feedNotRespondingShort : null);
 </script>
 
 <div
 	data-slot="map-freshness-owner"
 	data-active-placement={isDesktop ? 'floating' : 'head'}
-	data-suppressed={freshnessSuppressed ? 'true' : 'false'}
+	data-not-responding={ageLabel ? 'true' : 'false'}
 >
 	<MapHeadTitle
 		{locale}
 		kicker={t.kicker}
 		heading={t.heading}
-		generatedUtc={freshnessGeneratedUtc}
-		ageSeconds={freshnessAgeSeconds}
+		{generatedUtc}
+		{ageSeconds}
+		{ageLabel}
 		{isStale}
 		{degraded}
 	/>
 	<MapFreshness
 		placement="floating"
-		generatedUtc={freshnessGeneratedUtc}
-		ageSeconds={freshnessAgeSeconds}
+		{generatedUtc}
+		{ageSeconds}
+		{ageLabel}
 		{isStale}
 		{degraded}
 		{locale}
@@ -155,13 +159,10 @@
 	{@render controls(undefined)}
 </div>
 
-<MapFilterPill
-	store={filtersStore}
-	{locale}
-	hidden={detailOpen}
-	stalled={feedBannerState === 'global-stall'}
-	{controls}
-/>
+<!-- M6f-2 F14: no `stalled` gate. People must still be able to SEE what the
+     controls are when the data is not responding, so the peel stays present,
+     hit-testable and openable through a stall; only the detail overlay hides it. -->
+<MapFilterPill store={filtersStore} {locale} hidden={detailOpen} {controls} />
 
 <!-- One stable announcement owner. It prioritizes a selected-family failure over
      aggregate stall, then live edge; it stays empty at rest. -->

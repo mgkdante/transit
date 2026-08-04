@@ -1,7 +1,7 @@
 <!-- Mobile Controls trigger + anchored modal drawer. The shared controls snippet
      remains the single filter/motion owner; this shell owns only open/close. -->
 <script lang="ts">
-	import { onMount, tick, type Snippet } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import * as Sheet from '@yesid/ui/sheet';
 	import type { FilterStore } from '$lib/filters';
@@ -12,38 +12,27 @@
 		store: FilterStore;
 		locale: Locale;
 		hidden?: boolean;
-		stalled?: boolean;
 		controls: Snippet<[{ collapsible?: boolean } | undefined]>;
 	}
 
-	let { store, locale, hidden = false, stalled = false, controls }: Props = $props();
+	let { store, locale, hidden = false, controls }: Props = $props();
 	const t = $derived(MAP_COPY[locale]);
 	const activeCount = $derived(store.chips.length);
 
 	let drawerOpen = $state(false);
-	let narrowBaseline = $state(false);
 	let desktopHandoff = false;
 	let pillBtn = $state<HTMLButtonElement | null>(null);
 	let drawerTitle = $state<HTMLElement | null>(null);
-	const stallHidesTrigger = $derived(stalled && narrowBaseline);
-	const presentationHidden = $derived(hidden || stallHidesTrigger);
 
 	onMount(() => {
-		const narrowQuery = window.matchMedia('(max-width: 1023.98px)');
 		const desktopQuery = window.matchMedia('(min-width: 1024px)');
-		const syncNarrow = () => (narrowBaseline = narrowQuery.matches);
 		const closeAtDesktop = (event: MediaQueryListEvent) => {
 			if (!event.matches || !drawerOpen) return;
 			desktopHandoff = true;
 			drawerOpen = false;
 		};
-		syncNarrow();
-		narrowQuery.addEventListener('change', syncNarrow);
 		desktopQuery.addEventListener('change', closeAtDesktop);
-		return () => {
-			narrowQuery.removeEventListener('change', syncNarrow);
-			desktopQuery.removeEventListener('change', closeAtDesktop);
-		};
+		return () => desktopQuery.removeEventListener('change', closeAtDesktop);
 	});
 
 	function focusTitle(event: Event): void {
@@ -60,25 +49,18 @@
 		panel?.querySelector<HTMLButtonElement>(target)?.focus();
 	}
 
+	// The detail overlay removes the trigger from the DOM, so an open drawer would
+	// be left with no owner. Nothing else closes it: a feed that is not responding
+	// leaves the Controls fully present and open (M6f-2 F14).
 	$effect(() => {
-		if (!presentationHidden || !drawerOpen) return;
-		const handFocusToNearMe = stallHidesTrigger;
+		if (!hidden || !drawerOpen) return;
 		drawerOpen = false;
-		if (handFocusToNearMe) {
-			void tick().then(() => {
-				document.querySelector<HTMLButtonElement>('.map-near-toggle')?.focus();
-			});
-		}
 	});
 </script>
 
 <Sheet.Root bind:open={drawerOpen}>
-	{#if !presentationHidden}
-		<div
-			class="map-filter-pill-container"
-			data-testid="map-filter-pill"
-			data-global-stall={stalled}
-		>
+	{#if !hidden}
+		<div class="map-filter-pill-container" data-testid="map-filter-pill">
 			<Sheet.Trigger
 				bind:ref={pillBtn}
 				type="button"
@@ -312,12 +294,6 @@
 		:global([data-slot='sheet-overlay'][data-state]:has(+ [data-m6b-controls-drawer])) {
 			animation: none;
 			transition: none;
-		}
-	}
-
-	@media (max-width: 1023.98px) {
-		.map-filter-pill-container[data-global-stall='true'] {
-			display: none;
 		}
 	}
 

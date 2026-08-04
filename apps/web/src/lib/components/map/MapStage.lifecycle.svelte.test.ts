@@ -698,6 +698,29 @@ describe('MapStage boot lifecycle', () => {
 		expect(order).toEqual(['consumer', 'map']);
 	});
 
+	// M6f-2 F19 RECEIPT (behavioural DOM contract, not geometry). The provider's
+	// licence line is a RUNTIME manifest value, so the only thing that can be
+	// asserted in-repo is that the string reaches the attribution control
+	// UNTOUCHED — no rewording, no abbreviation, no truncation. RED before the
+	// fix: MapStage had no way to carry it at all, so the credit never shipped.
+	it('carries the provider licence into the attribution control byte-for-byte', async () => {
+		// The value the STM manifest actually publishes (apps/db provider config).
+		const licence = 'Contains STM data made available under CC BY 4.0.';
+		const { map } = await bootStage({ customAttribution: licence });
+
+		expect(map.controls).toHaveLength(1);
+		const options = map.controls[0]!.options;
+		expect(options.compact).toBe(true);
+		expect(options.customAttribution).toBe(licence);
+		// Byte-for-byte, including the trailing period and the exact casing.
+		expect(String(options.customAttribution)).toHaveLength(licence.length);
+	});
+
+	it('adds no attribution key at all when the manifest carries no licence line', async () => {
+		const { map } = await bootStage({ customAttribution: null });
+		expect(map.controls[0]?.options).toEqual({ compact: true });
+	});
+
 	it('owns attribution teardown so a pre-release control fault cannot block raw removal', async () => {
 		const controlError = new Error('attribution control failed before release');
 		const oncleanupfailure = vi.fn();

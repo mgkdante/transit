@@ -109,6 +109,13 @@ export interface MapGeometry {
 	attribution: GeometryRect;
 	expanded: boolean;
 	controls: GeometryRect[];
+	/**
+	 * The SAME credit measured before it was opened. The sweep runs in BOTH
+	 * states because the two carry different obligations (M6f-2 F19): collapsed,
+	 * the credit shares the bottom row and must clear every control; expanded, the
+	 * owner ruled (2026-08-04) that it may overlay them while open.
+	 */
+	collapsedAttribution: GeometryRect;
 }
 
 export interface MobileRouteGeometry {
@@ -280,11 +287,29 @@ export function validateMobileRouteGeometry(route: MobileRouteGeometry): string[
 	}
 
 	if (route.map?.expanded) {
-		if (!rectContains(route.map.stage, route.map.attribution)) {
+		const { stage, attribution, collapsedAttribution, controls } = route.map;
+		// COLLAPSED — the resting state. It shares the bottom row with both peels,
+		// so it must clear every one of them.
+		if (!rectContains(stage, collapsedAttribution)) {
+			errors.push(`${label}: collapsed attribution escapes the map stage`);
+		}
+		if (controls.some((control) => rectsOverlap(collapsedAttribution, control))) {
+			errors.push(`${label}: collapsed attribution overlaps a mobile map control`);
+		}
+		// EXPANDED — transient and user-initiated. The owner ruled the credit
+		// collapses by default and overlays UPWARD on tap, so an overlap here is
+		// sanctioned; what is NOT sanctioned is the overlay escaping the stage or
+		// leaving the controls gone. Dismissibility and the absence of a focus trap
+		// are structural (a native <details>/<summary>) and asserted in vitest, not
+		// derivable from rectangles.
+		if (!rectContains(stage, attribution)) {
 			errors.push(`${label}: expanded attribution escapes the map stage`);
 		}
-		if (route.map.controls.some((control) => rectsOverlap(route.map!.attribution, control))) {
-			errors.push(`${label}: expanded attribution overlaps a mobile map control`);
+		if (controls.length === 0) {
+			errors.push(`${label}: expanded attribution left no mobile map control on screen`);
+		}
+		if (controls.some((control) => control.width <= 0 || control.height <= 0)) {
+			errors.push(`${label}: expanded attribution collapsed a mobile map control`);
 		}
 	}
 
