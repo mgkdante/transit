@@ -389,10 +389,20 @@ describe('mobile geometry browser contract', () => {
 		]);
 
 		// And the sanctioned case stays green: the expanded overlay DOES cover a
-		// control, and that is exactly what the owner asked for.
+		// control — PARTIALLY, which is what "overlays upward" means. The control
+		// keeps an uncovered edge, so it is still reachable.
 		const overlaying = structuredClone(valid);
-		overlaying.map!.attribution = rect(12, 366, 560, 120);
+		overlaying.map!.attribution = rect(12, 366, 600, 80);
 		expect(validateMobileRouteGeometry(overlaying)).toEqual([]);
+
+		// What the owner did NOT sanction: an overlay that SWALLOWS a control whole.
+		// A partially covered control is still reachable; a fully contained one is
+		// gone, and "left it on screen at non-zero size" does not catch that.
+		const swallowed = structuredClone(valid);
+		swallowed.map!.attribution = rect(12, 366, 560, 120);
+		expect(validateMobileRouteGeometry(swallowed)).toEqual([
+			'Map: expanded attribution fully covers a mobile map control',
+		]);
 	});
 
 	it('requires a complete route matrix and all five non-collapsing interaction probes', () => {

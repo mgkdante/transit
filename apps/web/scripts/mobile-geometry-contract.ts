@@ -305,6 +305,11 @@ export function validateMobileRouteGeometry(route: MobileRouteGeometry): string[
 		if (!rectContains(stage, attribution)) {
 			errors.push(`${label}: expanded attribution escapes the map stage`);
 		}
+		// "Overlays upward" was sanctioned; SWALLOWING a control whole was not. A
+		// partially covered control is still reachable — a fully contained one is not.
+		if (controls.some((control) => rectContains(attribution, control))) {
+			errors.push(`${label}: expanded attribution fully covers a mobile map control`);
+		}
 		if (controls.length === 0) {
 			errors.push(`${label}: expanded attribution left no mobile map control on screen`);
 		}

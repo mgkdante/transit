@@ -441,6 +441,9 @@ describe('MapOverlayChrome', () => {
 			const age = active.querySelector('.freshness-stamp-age')!;
 			if (readout) {
 				expect(age).toHaveTextContent(readout);
+				// The stall swaps the AGE, it does not destroy the ANCHOR: the
+				// machine-readable last-update timestamp survives for AT and scrapers.
+				expect(age).toHaveAttribute('datetime', '2026-06-15T00:00:00Z');
 			} else {
 				expect(age).not.toHaveTextContent('not responding');
 				expect(age.textContent).toMatch(/\d/);
