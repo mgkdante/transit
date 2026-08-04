@@ -32,6 +32,8 @@ export { default as FreshnessStamp } from './FreshnessStamp.svelte';
 export { default as ConformanceBadge } from './ConformanceBadge.svelte';
 export { default as ReliabilityBadge } from './ReliabilityBadge.svelte';
 export { default as SearchInput } from './SearchInput.svelte';
+export { default as SearchControls } from './SearchControls.svelte';
+export type { SearchScopeKey } from './SearchControls.svelte';
 export { default as MapDrilldownLink } from './MapDrilldownLink.svelte';
 export { default as AffectedAlerts } from './AffectedAlerts.svelte';
 export { createRailDisclosureController } from './createRailDisclosureController.svelte';

@@ -88,6 +88,8 @@
 		type ChromeSearchResult,
 		type ChromeSearchScope,
 	} from '$lib/search/chromeSearch';
+	import type { TransitModeKey } from '$lib/search/stopMode';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { createGooglePlacesSessionToken } from '$lib/geocode/sessionToken';
 	import type { GeocodeSuggestion, GeocodedLocation } from '$lib/geocode/types';
 	import type { LayoutData } from './$types';
@@ -244,6 +246,10 @@
 	let topSearch = $state('');
 	let addressSuggestions = $state<GeocodeSuggestion[]>([]);
 	let addressSessionToken = $state(createGooglePlacesSessionToken());
+	// The transit-mode narrowing the NavPill dropdown exposes (M6i F26) — the same
+	// combinable filter the search page has always offered. Owned here because the
+	// blend is computed here; the chips mutate the reactive set in place.
+	const searchModes = new SvelteSet<TransitModeKey>();
 	// Search indexes are interaction data, not page prerequisites. Keep the three
 	// requests idle on ordinary navigation and open them as soon as the user types.
 	const chromeSearchEnabled = $derived(topSearch.trim().length > 0);
@@ -265,7 +271,7 @@
 				vehicles: searchVehicles.data?.vehicles ?? [],
 				addresses: addressSuggestions,
 			},
-			{ scope: searchScope },
+			{ scope: searchScope, modes: searchModes },
 		),
 	);
 
@@ -274,7 +280,10 @@
 		// Only map/all scope surfaces addresses — skip the geocode fetch (and its
 		// "Powered by Google" footer) entirely on the line/stop catalogue surfaces.
 		const wantsAddress = searchScope === 'map' || searchScope === 'all';
-		if (!browser || !wantsAddress || !shouldSuggestAddress(query)) {
+		// A picked transit-mode set is a transit-mode question: an address carries no
+		// mode, so the blend stands it down — don't spend a geocode call on a row
+		// that would be dropped on arrival.
+		if (!browser || !wantsAddress || searchModes.size > 0 || !shouldSuggestAddress(query)) {
 			addressSuggestions = [];
 			return;
 		}
@@ -394,15 +403,17 @@
 				vehicles: searchVehicles.data?.vehicles ?? [],
 				addresses: addressSuggestions,
 			},
-			{ scope: searchScope },
+			{ scope: searchScope, modes: searchModes },
 		);
 		if (first) {
 			await selectSearchResult(first);
 			return;
 		}
 
-		// The line/stop catalogues never resolve an address — no fallback there.
+		// The line/stop catalogues never resolve an address — no fallback there, and
+		// neither does a transit-mode narrowing (an address has no mode).
 		if (searchScope === 'route' || searchScope === 'stop') return;
+		if (searchModes.size > 0) return;
 		if (!shouldSuggestAddress(query)) return;
 		const addresses = await fetchAddressSuggestions(query, 1);
 		const [addressResult] = chromeSearchResults(query, { addresses }, { scope: searchScope });
@@ -503,6 +514,7 @@
 	bind:search={topSearch}
 	searchResults={topSearchResults}
 	{searchScope}
+	{searchModes}
 	onsearch={submitSearch}
 	onresultselect={selectSearchResult}
 	{mainLabel}

@@ -33,6 +33,8 @@
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
 	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
+	import type { TransitModeKey } from '$lib/search/stopMode';
+	import type { SvelteSet } from 'svelte/reactivity';
 	import type { BilingualLabel } from '$lib/content/nav';
 	// `layout.isDesktop` is consulted ONLY for the detail surface's desktop-overlay
 	// vs mobile-sheet presentation — the genuine route-vs-panel intent decision. The
@@ -60,6 +62,8 @@
 		onresultselect?: (result: ChromeSearchResult) => void;
 		/** Active surface scope — drives the scoped NavPill placeholder hint. */
 		searchScope?: ChromeSearchScope;
+		/** Transit modes picked in the NavPill dropdown; the layout owns the set. */
+		searchModes?: SvelteSet<TransitModeKey>;
 
 		/** Whether the detail surface (RightPanel / BottomSheet) is shown (bindable). */
 		detailOpen?: boolean;
@@ -98,6 +102,7 @@
 		searchResults = [],
 		onresultselect,
 		searchScope = 'all',
+		searchModes,
 		detailOpen = $bindable(false),
 		detailTitle,
 		surfaceKey = 'empty',
@@ -151,6 +156,7 @@
 			{searchResults}
 			{onresultselect}
 			{searchScope}
+			{searchModes}
 		/>
 	</div>
 

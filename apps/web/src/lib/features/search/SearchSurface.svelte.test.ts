@@ -248,3 +248,30 @@ describe('SearchSurface vehicle results', () => {
 		expect(within(busRow).getByText('Next: Van Horne / Rockland')).toBeInTheDocument();
 	});
 });
+
+// ── M6i · F25 (mobile) — the disclosure reaches the search page ─────────────────
+// The chrome field is desktop-only, so on a phone the search PAGE is the only
+// search a rider ever sees. The disclosure it carries must describe what THIS
+// page does: line/stop/bus matching runs client-side against the already-loaded
+// indexes (no geocode call lives on this surface), while address search — the
+// top-bar field and the map's near-me — is what transmits.
+describe('SearchSurface collection disclosure (M6i F25)', () => {
+	const NOTICE_EN =
+		'Lines, stops and buses are matched in your browser; address search is sent to our server and its geocoding providers (Google, geo.ca).';
+
+	it('shows the disclosure on the search page, idle and with a query', () => {
+		setUrlQuery('');
+		const idle = render(SearchSurface);
+		expect(within(idle.container).getByText(NOTICE_EN)).toBeInTheDocument();
+		idle.unmount();
+
+		setUrlQuery('q=van horne');
+		const queried = render(SearchSurface);
+		expect(within(queried.container).getByText(NOTICE_EN)).toBeInTheDocument();
+	});
+
+	it('presents the disclosure to assistive tech (not an aria-hidden twin)', () => {
+		render(SearchSurface);
+		expect(screen.getByText(NOTICE_EN)).not.toHaveAttribute('aria-hidden', 'true');
+	});
+});
