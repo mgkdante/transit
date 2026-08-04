@@ -42,6 +42,9 @@
 		localizeUrl,
 	} from '$lib/i18n';
 	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
+	import type { TransitModeKey } from '$lib/search/stopMode';
+	import { SvelteSet } from 'svelte/reactivity';
+	import { SearchControls, type SearchScopeKey } from '$lib/components/surface';
 	import { SURFACE_NAV, AUDIT_NAV, YESID_HOUSE_LINK, isSurfaceActive } from '$lib/content/nav';
 	import { footerCopy } from '$lib/components/layout/footer.copy';
 	import { navPillCopy } from './navPill.copy';
@@ -71,6 +74,12 @@
 		searchResults?: readonly ChromeSearchResult[];
 		/** Active surface scope — drives the scoped placeholder hint. */
 		searchScope?: ChromeSearchScope;
+		/**
+		 * Transit modes picked in the focus dropdown. The OWNER of the set is the
+		 * layout, which feeds it back into the blend — the chips here mutate it in
+		 * place (SvelteSet is reactive), so no bind: round-trip is needed.
+		 */
+		searchModes?: SvelteSet<TransitModeKey>;
 		/** Fired when a search result is selected. */
 		onresultselect?: (result: ChromeSearchResult) => void;
 		/** Locales offered in the switcher; defaults to the published set. */
@@ -87,6 +96,7 @@
 		onsearch,
 		searchResults = [],
 		searchScope = 'all',
+		searchModes = new SvelteSet<TransitModeKey>(),
 		onresultselect,
 		availableLocales = PUBLISHED_LOCALES,
 		class: className,
@@ -131,10 +141,15 @@
 	// The menu remains visually flat. These strings are group aria-labels so
 	// assistive tech can distinguish primary and audit destinations.
 	const auditLabel = $derived(footerCopy[locale].auditLabel);
-	const searchCollectionNotice = $derived(navPillCopy[locale].searchCollectionNotice);
+	const navCopy = $derived(navPillCopy[locale]);
+	const searchCollectionNotice = $derived(navCopy.searchCollectionNotice);
 	// Route/stop-scoped surfaces never fire the geocode fetch, so a transmission
 	// notice there would claim what does not happen (S5-377 B3).
 	const transmitsSearches = $derived(searchScope === 'map' || searchScope === 'all');
+	// A scoped catalogue's blend is ALREADY one family (chromeSearchResults returns
+	// lines only on /lines, stops only on /stops), so a family filter there could
+	// read nothing but "(0)". Offer it where the blend is genuinely mixed (M6i F26).
+	const blendIsMixed = $derived(searchScope === 'map' || searchScope === 'all');
 	const primaryGroupLabel = $derived(locale === 'fr' ? 'Explorer' : 'Explore');
 	// The parent-brand "Yesid" link out to yesid.dev — the final burger-menu row,
 	// with an external ↗ affordance. NOT the pill's main click anymore.
@@ -189,11 +204,52 @@
 	// (the backdrop is no longer a focusable dismiss control).
 	let menuEl = $state<HTMLElement>();
 
-	const showSearchResults = $derived(
-		searchResultsOpen && search.trim().length > 0 && searchResults.length > 0,
+	// Which result FAMILY the dropdown shows. Like the search surface, the family
+	// control is a visibility gate over the blend, not a matching filter — so the
+	// per-family counts below stay truthful while one family is on screen. (The
+	// MODE chips are a matching filter and run inside the blend; the layout owns
+	// that set and feeds it back to chromeSearchResults.)
+	let searchFamily = $state<SearchScopeKey>('all');
+	const familyOf = (result: ChromeSearchResult): SearchScopeKey =>
+		result.kind === 'address' ? 'all' : result.kind;
+	const visibleResults = $derived(
+		searchFamily === 'all'
+			? searchResults
+			: searchResults.filter((result) => familyOf(result) === searchFamily),
 	);
+	const searchScopeSegments = $derived([
+		{ key: 'all' as const, label: navCopy.searchScopeAll },
+		{
+			key: 'route' as const,
+			label: navCopy.searchScopeCount(
+				navCopy.searchScopeRoutes,
+				searchResults.filter((r) => r.kind === 'route').length,
+			),
+		},
+		{
+			key: 'stop' as const,
+			label: navCopy.searchScopeCount(
+				navCopy.searchScopeStops,
+				searchResults.filter((r) => r.kind === 'stop').length,
+			),
+		},
+		{
+			key: 'vehicle' as const,
+			label: navCopy.searchScopeCount(
+				navCopy.searchScopeVehicles,
+				searchResults.filter((r) => r.kind === 'vehicle').length,
+			),
+		},
+	]);
+
+	const showSearchResults = $derived(
+		searchResultsOpen && search.trim().length > 0 && visibleResults.length > 0,
+	);
+	// The "Powered by Google" obligation follows what is actually ON SCREEN: it
+	// rides the visible blend, so narrowing away every Google-sourced row never
+	// leaves a bare attribution, and any visible one always carries it.
 	const showGoogleAttribution = $derived(
-		showSearchResults && searchResults.some((result) => result.attribution === 'google'),
+		showSearchResults && visibleResults.some((result) => result.attribution === 'google'),
 	);
 	// The pill widens the moment the menu opens (per yesid's compact tier); no box
 	// shadow while open so the dropdown reads as the elevated layer.
@@ -371,40 +427,58 @@
 				{#if transmitsSearches}
 					<!-- The sr-only node is the ALWAYS-PRESENT describedby target, so browse-
 				     mode screen-reader users can still discover the disclosure idle; the
-				     visible twin is decorative and focus-gated. -->
+				     visible twin lives in the dropdown below and is decorative + focus-gated. -->
 					<span id="nav-search-notice" class="sr-only">{searchCollectionNotice}</span>
-					<span class="nav-search-notice" aria-hidden="true">{searchCollectionNotice}</span>
 				{/if}
-				{#if showSearchResults}
-					<div class="nav-search-results" role="group" aria-label={searchAria}>
-						{#each searchResults as result (`${result.kind}:${result.id}`)}
-							<button
-								type="button"
-								class="nav-search-result"
-								aria-label={resultAria(result)}
-								onclick={() => selectResult(result)}
-							>
-								<span class="nav-search-main">
-									<span class="nav-search-kind">{resultKindLabel(result)}</span>
-									<span class="nav-search-label">{result.label}</span>
-								</span>
-								{#if result.meta}
-									<small>{result.meta}</small>
-								{/if}
-							</button>
-						{/each}
-						{#if showGoogleAttribution}
-							<div class="nav-google-attribution" aria-label="Powered by Google">
-								<span>Powered by</span>
-								<span class="nav-google-wordmark" aria-hidden="true">
-									<span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span
-										>e</span
-									>
-								</span>
-							</div>
-						{/if}
-					</div>
-				{/if}
+
+				<!-- THE FOCUS DROPDOWN (M6i F25/F26). One anchored surface, opened by the
+				     same focus gate the bare notice used to carry, holding the disclosure,
+				     the search page's own filters, and the results — in that order. It is
+				     ALWAYS in the DOM (the gate is CSS, not conditional rendering) and its
+				     box is transparent, so an empty dropdown paints nothing. -->
+				<div class="nav-search-panel" data-slot="nav-search-panel">
+					<SearchControls
+						variant="panel"
+						notice={transmitsSearches ? searchCollectionNotice : null}
+						noticeDecorative
+						filters={blendIsMixed}
+						scopeLabel={navCopy.searchScopeLabel}
+						scopeSegments={searchScopeSegments}
+						bind:scope={searchFamily}
+						modeLabel={navCopy.searchModeLabel}
+						modes={searchModes}
+					/>
+					{#if showSearchResults}
+						<div class="nav-search-results" role="group" aria-label={searchAria}>
+							{#each visibleResults as result (`${result.kind}:${result.id}`)}
+								<button
+									type="button"
+									class="nav-search-result"
+									aria-label={resultAria(result)}
+									onclick={() => selectResult(result)}
+								>
+									<span class="nav-search-main">
+										<span class="nav-search-kind">{resultKindLabel(result)}</span>
+										<span class="nav-search-label">{result.label}</span>
+									</span>
+									{#if result.meta}
+										<small>{result.meta}</small>
+									{/if}
+								</button>
+							{/each}
+							{#if showGoogleAttribution}
+								<div class="nav-google-attribution" aria-label="Powered by Google">
+									<span>Powered by</span>
+									<span class="nav-google-wordmark" aria-hidden="true">
+										<span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span
+											>e</span
+										>
+									</span>
+								</div>
+							{/if}
+						</div>
+					{/if}
+				</div>
 			</form>
 
 			<span class="nav-divider" aria-hidden="true"></span>
@@ -727,23 +801,44 @@
 		box-shadow: 0 0 0 2px var(--ring);
 	}
 
-	.nav-search-notice {
+	/* THE FOCUS DROPDOWN (M6i F25) — the disclosure's real home.
+
+	   ANCHOR: 1.75rem below the field, the SAME offset the result list has always
+	   used. At the only widths where the in-pill field renders (viewport ≥1024px
+	   AND rail ≥1024px) the pill's box is deterministic — 2px border + 12px pad +
+	   a 44px control band + 12px pad + 2px border = --pill-h 72px — and the 36px
+	   field is centred in that band, so the field's bottom sits 54px under the
+	   pill's top and the pill's own edge is 18px further down. 1.75rem = 28px
+	   clears that edge by 10px. The disclosure previously anchored at 0.25rem
+	   (4px) with `white-space: nowrap` pinning it to 448px, so it painted 448×14
+	   straight across the pill — the whole of its own area.
+
+	   The box itself is TRANSPARENT: each child (the SearchControls card, the
+	   result list) carries its own chrome, so a dropdown with nothing to say
+	   paints nothing. */
+	.nav-search-panel {
 		position: absolute;
-		top: calc(100% + 0.25rem);
+		z-index: var(--z-nav);
+		top: calc(100% + 1.75rem);
 		left: 0;
-		width: max-content;
-		max-width: min(28rem, calc(100vw - 2rem));
-		color: var(--muted-foreground);
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		line-height: 1.25;
-		white-space: nowrap;
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		width: min(max(100%, 28rem), calc(100vw - 2rem));
+		/* The dropdown is taller than the one-line notice it replaces, so it earns an
+		   explicit floor: its own top edge measured back out of the viewport (rail
+		   inset + --pill-h + the 10px it clears the pill by), less a 1rem gutter. The
+		   result list is the flexible child, so a short viewport shrinks the SCROLL
+		   area instead of pushing the dropdown off-screen. */
+		max-height: calc(100dvh - 1rem - env(safe-area-inset-top, 0px) - var(--pill-h) - 10px - 1rem);
 		/* Focus-gated (owner directive 2026-07-31): the transmission disclosure
 		   appears only while the search is in use — idle chrome stays quiet. The
-		   visible span is decorative (aria-hidden); its sr-only twin above keeps
-		   the disclosure discoverable in browse mode and is the describedby
-		   target. Opacity-only (no movement); asymmetric timing — prompt in
-		   (fast), receding out (normal) — so it never blinks off mid-read. */
+		   visible copy inside is decorative (aria-hidden); its sr-only twin on the
+		   form keeps the disclosure discoverable in browse mode and is the
+		   describedby target. Opacity-only (no movement); asymmetric timing —
+		   prompt in (fast), receding out (normal) — so it never blinks off
+		   mid-read. `visibility` also keeps the dropdown's controls out of the tab
+		   order while it is closed. */
 		opacity: 0;
 		visibility: hidden;
 		transition:
@@ -753,8 +848,8 @@
 
 	/* In use = focus anywhere in the form OR the results list open (a pointerdown
 	   elsewhere in the pill can drop focus while the list stays up). */
-	.nav-search:focus-within .nav-search-notice,
-	.nav-search:has(.nav-search-results) .nav-search-notice {
+	.nav-search:focus-within .nav-search-panel,
+	.nav-search:has(.nav-search-results) .nav-search-panel {
 		opacity: 1;
 		visibility: visible;
 		transition:
@@ -1106,13 +1201,16 @@
 		white-space: nowrap;
 	}
 
-	/* SEARCH RESULTS — anchored under the in-pill field (≥lg). */
+	/* The control card keeps its intrinsic height; only the result list gives way. */
+	.nav-search-panel > :global([data-slot='search-controls']) {
+		flex: none;
+	}
+
+	/* SEARCH RESULTS — the dropdown's second card (the panel owns the anchor). */
 	.nav-search-results {
-		position: absolute;
-		z-index: var(--z-nav);
-		top: calc(100% + 1.75rem);
-		left: 0;
-		width: min(max(100%, 28rem), calc(100vw - 2rem));
+		min-width: 0;
+		min-height: 0;
+		flex: 0 1 auto;
 		display: grid;
 		gap: 0.25rem;
 		max-height: min(22rem, calc(100dvh - var(--pill-h) - 3rem));
@@ -1276,7 +1374,7 @@
 		.nav-menu-toggle,
 		.nav-menu-line,
 		.nav-search-input,
-		.nav-search-notice,
+		.nav-search-panel,
 		.nav-compact-search,
 		.nav-menu-link,
 		.nav-menu-language,

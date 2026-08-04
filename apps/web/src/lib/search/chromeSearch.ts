@@ -3,7 +3,7 @@ import { FILTER_SEARCH_PARAM_KEYS, fromSearchParams, toSearchString } from '$lib
 import type { GeocodePrecision, GeocodeSource, GeocodeSuggestion } from '$lib/geocode/types';
 import { routeFor } from '$lib/nav';
 import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
-import { stopGroupKey } from '$lib/search/stopMode';
+import { routeModeKey, stopGroupKey, stopModeKey, type TransitModeKey } from '$lib/search/stopMode';
 import { setMapFocusSearchParams, type MapFocusKind } from '$lib/search/mapFocus';
 import {
 	copyNearTargetSearchParams,
@@ -26,6 +26,14 @@ export type ChromeSearchScope = 'route' | 'stop' | 'map' | 'all';
 export interface ChromeSearchOptions {
 	/** Active surface context (delocalized). Default `'all'` (today's blend). */
 	readonly scope?: ChromeSearchScope;
+	/**
+	 * Combinable transit-mode narrowing — the SAME control the search surface
+	 * offers, so the chrome dropdown's chips narrow real matches. Empty (or
+	 * omitted) = every mode. A row whose mode is unknown, and an address (which
+	 * has no transit mode at all), stand down while the set is non-empty rather
+	 * than be guessed into a transit-mode answer.
+	 */
+	readonly modes?: ReadonlySet<TransitModeKey>;
 }
 
 export interface ChromeSearchResult {
@@ -72,11 +80,15 @@ export function chromeSearchResults(
 	if (!q) return [];
 
 	const scope = options.scope ?? 'all';
+	// The mode narrowing runs on the MATCH set, before each family's slice — a
+	// post-slice filter would silently shrink a family below its cap.
+	const modes = options.modes?.size ? options.modes : null;
+	const keepsMode = (mode: TransitModeKey | null): boolean => !modes || (!!mode && modes.has(mode));
 
 	const routes = (sources.routes ?? [])
 		.map((route): ChromeSearchResult | null => {
 			const score = tokenMatchScore([route.id, route.short, route.long], q);
-			if (score == null) return null;
+			if (score == null || !keepsMode(routeModeKey(route.type))) return null;
 			return {
 				kind: 'route',
 				id: route.id,
@@ -91,6 +103,7 @@ export function chromeSearchResults(
 	const stopMatches = (sources.stops ?? [])
 		.map((stop) => ({ stop, score: tokenMatchScore([stop.code, stop.id, stop.name], q) }))
 		.filter((m): m is { stop: StopIndexEntry; score: number } => m.score != null)
+		.filter((m) => keepsMode(stopModeKey(m.stop)))
 		.sort((a, b) => a.score - b.score);
 	// One row per logical stop: métro/station names collapse to a single station;
 	// ordinary stops collapse only true code duplicates.
@@ -106,7 +119,9 @@ export function chromeSearchResults(
 		)
 		.slice(0, 5);
 
-	const vehicles = (sources.vehicles ?? [])
+	// A vehicle has no mode field — it is always a bus, so an active mode set
+	// keeps buses only when 'bus' is among the picked modes.
+	const vehicles = (keepsMode('bus') ? (sources.vehicles ?? []) : [])
 		.filter((vehicle) => foldSearchText(vehicle.id) === q)
 		.map(
 			(vehicle): ChromeSearchResult => ({
@@ -120,7 +135,8 @@ export function chromeSearchResults(
 		.sort(collate)
 		.slice(0, 3);
 
-	const addresses = (sources.addresses ?? [])
+	// An address is not a transit mode, so it stands down while modes are picked.
+	const addresses = (modes ? [] : (sources.addresses ?? []))
 		.map(
 			(address, index): ChromeSearchResult => ({
 				kind: 'address',

@@ -417,3 +417,75 @@ describe('chromeSearchResultHref', () => {
 		expect(chromeSearchResultHref({ ...routeResult, id: '10 A' }, 'route')).toBe('/lines/10%20A');
 	});
 });
+
+// ── M6i · F26 — the transit-mode filter the search page already offers ─────────
+// The chrome blend now accepts the SAME combinable mode set the search surface
+// uses, so the nav dropdown's chips narrow real results instead of decorating.
+// The narrowing happens INSIDE the blend (before the per-family slice), so a
+// filtered family is not silently truncated by matches the filter would drop.
+describe('chromeSearchResults mode filter', () => {
+	it('keeps every family when no mode is selected', () => {
+		const results = chromeSearchResults(
+			'van horne',
+			{ routes, stops, vehicles },
+			{ modes: new Set() },
+		);
+		expect(results.some((r) => r.kind === 'route' && r.id === '161')).toBe(true);
+		expect(results.some((r) => r.kind === 'stop' && r.id === '57191')).toBe(true);
+	});
+
+	it('narrows lines and stops to the selected transit modes', () => {
+		const busOnly = chromeSearchResults(
+			'van horne',
+			{ routes, stops, vehicles },
+			{ modes: new Set(['bus' as const]) },
+		);
+		expect(busOnly.some((r) => r.kind === 'route' && r.id === '161')).toBe(true);
+
+		const metroOnly = chromeSearchResults(
+			'van horne',
+			{ routes, stops, vehicles },
+			{ modes: new Set(['metro' as const]) },
+		);
+		// 161 is a bus line and 57191 a bus stop — the métro filter drops both.
+		expect(metroOnly).toEqual([]);
+
+		const metroLine = chromeSearchResults(
+			'ligne 1',
+			{ routes },
+			{ modes: new Set(['metro' as const]) },
+		);
+		expect(metroLine.map((r) => r.id)).toContain('1');
+	});
+
+	it('drops buses and addresses that the selected modes exclude', () => {
+		const addresses = [
+			{
+				label: '5333 Avenue Casgrain',
+				lat: 45.53,
+				lon: -73.6,
+				precision: 'address' as const,
+				source: 'google_places' as const,
+			},
+		];
+		const metro = chromeSearchResults(
+			'40061',
+			{ routes, stops, vehicles, addresses },
+			{ modes: new Set(['metro' as const]) },
+		);
+		expect(metro.some((r) => r.kind === 'vehicle')).toBe(false);
+
+		const bus = chromeSearchResults('40061', { vehicles }, { modes: new Set(['bus' as const]) });
+		expect(bus.map((r) => r.id)).toContain('40061');
+
+		// An address has no transit mode — an active mode set is a transit-mode
+		// question, so addresses stand down rather than be guessed into the blend.
+		const withModes = chromeSearchResults(
+			'casgrain',
+			{ addresses },
+			{ modes: new Set(['bus' as const]) },
+		);
+		expect(withModes).toEqual([]);
+		expect(chromeSearchResults('casgrain', { addresses }).length).toBe(1);
+	});
+});

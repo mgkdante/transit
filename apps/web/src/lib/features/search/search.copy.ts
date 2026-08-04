@@ -9,8 +9,16 @@
 // result row phrasing, and the instructional empty state. FR is the canonical
 // product voice; EN is the parallel translation. No strings inline in the .svelte.
 //
-// Provider-agnostic: no 'STM' / 'Montréal' — transit-mode proper nouns (Métro /
-// Tram / Bus …) read the same in both languages.
+// Provider-agnostic: no 'STM' / 'Montréal'. The transit-mode chip labels are NOT
+// here: Métro / Tram / Bus / Train / Ferry are proper nouns that read the same in
+// both languages, so they live once in $lib/search/stopMode (TRANSIT_MODE_FILTERS)
+// beside the row tags they must match.
+//
+// `collectionNotice` is this SURFACE's data-collection disclosure, and it is not a
+// copy of the chrome's. The chrome field geocodes; this page does not — matching
+// runs against the already-loaded indexes — so the honest sentence here names what
+// each search actually does (the S5-377 B3 scope-accuracy rule, applied to a
+// second surface).
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
@@ -28,8 +36,9 @@ export const copy = defineCopy({
 		scopeLabel: 'Show',
 		scopeAll: 'All',
 		modeLabel: 'Mode',
-		modes: { metro: 'Métro', tram: 'Tram', bus: 'Bus', rail: 'Train', ferry: 'Ferry' },
 		scopeCount: (label, n) => `${label} (${n})`,
+		collectionNotice:
+			'Lines, stops and buses are matched in your browser; address search is sent to our server and its geocoding providers (Google, geo.ca).',
 		idleTitle: 'Search a line, stop or bus',
 		idleBody: 'Type a line number, a line or stop name, a stop code, or a live bus id to find it.',
 		census: {
@@ -64,8 +73,9 @@ export const copy = defineCopy({
 		scopeLabel: 'Afficher',
 		scopeAll: 'Tout',
 		modeLabel: 'Mode',
-		modes: { metro: 'Métro', tram: 'Tram', bus: 'Bus', rail: 'Train', ferry: 'Ferry' },
 		scopeCount: (label: string, n: number) => `${label} (${n})`,
+		collectionNotice:
+			'Les lignes, arrêts et bus sont trouvés dans votre navigateur ; la recherche d’adresse est envoyée à notre serveur et à ses fournisseurs de géocodage (Google, geo.ca).',
 		idleTitle: 'Rechercher une ligne, un arrêt ou un bus',
 		idleBody:
 			'Saisissez un numéro de ligne, un nom de ligne ou d’arrêt, un code d’arrêt, ou un identifiant de bus en direct pour le trouver.',

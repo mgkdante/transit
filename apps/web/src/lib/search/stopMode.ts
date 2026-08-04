@@ -84,6 +84,20 @@ export function modeKeyForTag(tag: TransitModeTag | null | undefined): TransitMo
 }
 
 /**
+ * The transit-mode FILTER vocabulary, in rider-facing display order (the order
+ * the search surface has always drawn its chips: métro, tram, bus, train,
+ * ferry). Derived from MODE_TAGS, so a filter chip's label can never drift from
+ * the tag a matching row wears. Locale-invariant proper nouns — no copy entry.
+ */
+export const TRANSIT_MODE_FILTERS = [
+	{ key: 'metro', tag: MODE_TAGS.metro },
+	{ key: 'tram', tag: MODE_TAGS.tram },
+	{ key: 'bus', tag: MODE_TAGS.bus },
+	{ key: 'rail', tag: MODE_TAGS.rail },
+	{ key: 'ferry', tag: MODE_TAGS.ferry },
+] as const satisfies readonly { key: TransitModeKey; tag: TransitModeTag }[];
+
+/**
  * The VISIBLE mode tag for a stop — covers EVERY known mode (metro/tram/rail/
  * bus/ferry), unlike `stopModeHint.label` which only tags metro/rail. Uses the
  * real `mode` field; falls back to the métro/train name prefix when absent so a
@@ -100,6 +114,15 @@ export function stopModeTag(stop: StopModeInput): TransitModeTag | null {
 		if (folded.startsWith('gare ')) return MODE_TAGS.rail;
 	}
 	return null;
+}
+
+/**
+ * Canonical mode key for a stop — the visible tag routed back through the same
+ * reverse lookup, so a mode FILTER and a row's visible tag can never disagree.
+ * null when the stop's mode is unknown (never guessed in or out of a filter).
+ */
+export function stopModeKey(stop: StopModeInput): TransitModeKey | null {
+	return modeKeyForTag(stopModeTag(stop));
 }
 
 // GTFS route_type → the shared identity glyph (0 tram '╤' · 1 metro '◉' · 2 rail

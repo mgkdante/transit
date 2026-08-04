@@ -16,12 +16,19 @@
     · BUS rows   — a status chip, a crowding indicator, the signed delay, a
       'next: <stop>' subtitle (resolved against the stops index) + a heading arrow.
 
-  Two combinable controls sit above the results:
+  Two combinable controls sit above the results, drawn by the SHARED
+  SearchControls surface ($lib/components/surface) — the same component the nav
+  pill's focus dropdown mounts, so the filters a rider learns in one place are
+  literally the ones offered in the other (M6i F26):
     · an entity-type SCOPE segmented filter (All / Lines / Stops / Buses) with
       per-group counts — exposing the chrome's ChromeSearchScope concept as a
       visible radiogroup.
     · a transit-MODE chip filter (Métro / Tram / Bus / Train / Ferry), reusing the
       map's combinable-facet chip pattern.
+  That surface also carries this page's DATA-COLLECTION DISCLOSURE. The in-pill
+  chrome field is desktop-only, so the search page is the only search a phone ever
+  sees — and it is the honest place to say what this page does and does not
+  transmit (M6i F25).
 
   DOCTRINE: Svelte 5 runes; tokens, no hex (the route GTFS colour is DATA, guarded
   via routeColor + an inline style — the one allowed dynamic colour); --primary
@@ -60,7 +67,8 @@
 		EntityRow,
 		SearchInput,
 		ReliabilityBadge,
-		GrainPicker,
+		SearchControls,
+		type SearchScopeKey,
 	} from '$lib/components/surface';
 	import { Masthead } from '$lib/components/brand';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
@@ -79,9 +87,11 @@
 	import {
 		stopGroupKey,
 		stopModeHint,
+		stopModeKey,
 		stopModeTag,
 		routeModeHint,
-		modeKeyForTag,
+		routeModeKey,
+		type TransitModeKey,
 	} from '$lib/search/stopMode';
 	import { routeColor } from '$lib/search/routeColor';
 	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
@@ -134,38 +144,14 @@
 	const normalized = $derived(foldSearchText(query));
 	const hasQuery = $derived(normalized.length > 0);
 
-	// ── Scope (entity-type) segmented filter ────────────────────────────────────
-	type Scope = 'all' | 'route' | 'stop' | 'vehicle';
-	let scope = $state<Scope>('all');
-
-	// ── Transit-mode combinable chip filter (reuses the map's facet toggle model) ─
-	const MODE_KEYS = ['metro', 'tram', 'bus', 'rail', 'ferry'] as const;
-	type ModeKey = (typeof MODE_KEYS)[number];
-	// A reactive Set of selected modes — mutated in place (SvelteSet is reactive,
-	// so the derived results recompute on toggle without a fresh-Set reassign).
-	const modes = new SvelteSet<ModeKey>();
-	function toggleMode(m: ModeKey): void {
-		if (modes.has(m)) modes.delete(m);
-		else modes.add(m);
-	}
+	// ── Filter state (the SHARED SearchControls surface draws the controls) ──────
+	// The entity-family scope, and a reactive Set of picked transit modes mutated
+	// in place (SvelteSet is reactive, so the derived results recompute on toggle
+	// without a fresh-Set reassign). The mode VOCABULARY lives in stopMode.ts, the
+	// same single source the row tags read.
+	let scope = $state<SearchScopeKey>('all');
+	const modes = new SvelteSet<TransitModeKey>();
 	const modeActive = $derived(modes.size > 0);
-
-	// Map a GTFS route_type / a stop mode tag to a ModeKey for the mode filter.
-	const ROUTE_TYPE_MODE: Record<number, ModeKey> = {
-		0: 'tram',
-		1: 'metro',
-		2: 'rail',
-		3: 'bus',
-		4: 'ferry',
-	};
-	function routeModeKey(r: RouteIndexEntry): ModeKey | null {
-		return ROUTE_TYPE_MODE[r.type] ?? null;
-	}
-	// A stop's mode key comes straight from its visible tag via stopMode.ts's
-	// single-source reverse lookup — no local tag→mode map that could drift.
-	function stopModeKey(s: StopIndexEntry): ModeKey | null {
-		return modeKeyForTag(stopModeTag(s));
-	}
 
 	// ── Matching (accent-blind, word-order-free, token-AND, tier-ranked) ─────────
 	const matchedRoutesAll = $derived.by<RouteIndexEntry[]>(() => {
@@ -200,7 +186,7 @@
 	const matchedRoutes = $derived(
 		modeActive
 			? matchedRoutesAll.filter((r) => {
-					const m = routeModeKey(r);
+					const m = routeModeKey(r.type);
 					return m != null && modes.has(m);
 				})
 			: matchedRoutesAll,
@@ -230,10 +216,10 @@
 	// Scope segments carry per-family counts (post mode-filter) so the rider sees
 	// where the matches live before narrowing.
 	const scopeSegments = $derived([
-		{ key: 'all', label: t.scopeAll },
-		{ key: 'route', label: t.scopeCount(t.linesLabel, matchedRoutes.length) },
-		{ key: 'stop', label: t.scopeCount(t.stopsLabel, matchedStops.length) },
-		{ key: 'vehicle', label: t.scopeCount(t.vehiclesLabel, matchedVehicles.length) },
+		{ key: 'all' as const, label: t.scopeAll },
+		{ key: 'route' as const, label: t.scopeCount(t.linesLabel, matchedRoutes.length) },
+		{ key: 'stop' as const, label: t.scopeCount(t.stopsLabel, matchedStops.length) },
+		{ key: 'vehicle' as const, label: t.scopeCount(t.vehiclesLabel, matchedVehicles.length) },
 	]);
 
 	// In-memory stop-name lookup for resolving a vehicle's next_stop id → a name.
@@ -250,9 +236,6 @@
 	function routeTitle(r: RouteIndexEntry): string {
 		return r.short || r.id;
 	}
-
-	// Mode chip definitions (reuses the map facet chip pattern: combinable toggles).
-	const modeChips = $derived(MODE_KEYS.map((key) => ({ key, label: t.modes[key] })));
 
 	const statusLabelFor = (s: StatusCode): string => STATUS_LABELS[locale][s];
 	const occupancyLabelFor = (o: OccupancyCode | null | undefined): string | null =>
@@ -275,30 +258,15 @@
 			bind:value={query}
 		/>
 
-		{#if hasQuery}
-			<div class="search-controls">
-				<div class="search-control">
-					<span class="search-control-label">{t.scopeLabel}</span>
-					<GrainPicker segments={scopeSegments} bind:value={scope} label={t.scopeLabel} />
-				</div>
-				<div class="search-control">
-					<span class="search-control-label" id="search-mode-label">{t.modeLabel}</span>
-					<div class="search-mode-chips" role="group" aria-labelledby="search-mode-label">
-						{#each modeChips as chip (chip.key)}
-							<button
-								type="button"
-								class="search-mode-chip"
-								data-on={modes.has(chip.key)}
-								aria-pressed={modes.has(chip.key)}
-								onclick={() => toggleMode(chip.key)}
-							>
-								{chip.label}
-							</button>
-						{/each}
-					</div>
-				</div>
-			</div>
-		{/if}
+		<SearchControls
+			notice={t.collectionNotice}
+			filters={hasQuery}
+			scopeLabel={t.scopeLabel}
+			{scopeSegments}
+			bind:scope
+			modeLabel={t.modeLabel}
+			{modes}
+		/>
 	</Masthead>
 
 	<ResourceBoundary resource={routes} lang={locale}>
@@ -476,26 +444,6 @@
 </Surface>
 
 <style>
-	.search-controls {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 1.25rem 2rem;
-		margin-top: 0.875rem;
-	}
-	/* Desktop: keep the scope + mode controls in reach while results scroll (§C5.14).
-	   The single --chrome-offset knob clears the floating pill; mobile drops the
-	   sticky (a sticky control bar would eat scarce phone viewport). */
-	@media (min-width: 1024px) {
-		.search-controls {
-			position: sticky;
-			top: var(--chrome-offset);
-			z-index: var(--z-rail);
-			background: color-mix(in srgb, var(--background) 92%, transparent);
-			backdrop-filter: blur(16px) saturate(1.1);
-			padding-block: 0.5rem;
-			margin-top: 0;
-		}
-	}
 	/* Group heading label + its (i) affordance sit inline. */
 	.search-group-labelrow {
 		display: inline-flex;
@@ -585,56 +533,6 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
-	.search-control {
-		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
-	}
-	.search-control-label {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: 600;
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-	/* Combinable mode chips — the map's facet toggle pattern: a tinted "on" state,
-	   --primary as the interaction accent (never a data mark). */
-	.search-mode-chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.375rem;
-	}
-	.search-mode-chip {
-		appearance: none;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		line-height: 1.2;
-		padding: 0.375rem 0.75rem;
-		color: var(--muted-foreground);
-		background: var(--card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		cursor: pointer;
-		transition:
-			color 0.15s ease,
-			background-color 0.15s ease,
-			border-color 0.15s ease;
-	}
-	.search-mode-chip:hover {
-		color: var(--foreground);
-		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
-	}
-	.search-mode-chip[data-on='true'] {
-		color: var(--primary-foreground);
-		background: var(--primary);
-		border-color: var(--primary);
-	}
-	.search-mode-chip:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-
 	.search-idle {
 		display: flex;
 		flex-direction: column;
@@ -697,7 +595,6 @@
 		color: var(--muted-foreground);
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.search-mode-chip,
 		.search-census__chip {
 			transition: none;
 		}

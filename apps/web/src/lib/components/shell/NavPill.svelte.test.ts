@@ -429,25 +429,35 @@ describe('NavPill — search', () => {
 
 	it('keeps search results below the chrome collection notice', () => {
 		const source = readSource();
-		expect(source).toMatch(/\.nav-search-notice\s*\{[\s\S]*?top:\s*calc\(100% \+ 0\.25rem\)/);
-		expect(source).toMatch(/\.nav-search-results\s*\{[\s\S]*?top:\s*calc\(100% \+ 1\.75rem\)/);
+		// The two used to be anchored INDEPENDENTLY (0.25rem for the disclosure vs
+		// 1.75rem for the results) — which is precisely how the disclosure ended up
+		// painting on the pill while the results cleared it. One dropdown now owns
+		// the anchor, so the ordering is structural: the disclosure card is markup-
+		// before the result list, and the list no longer positions itself at all.
+		expect(source).toMatch(/\.nav-search-panel\s*\{[^}]*top:\s*calc\(100% \+ 1\.75rem\)/);
+		expect(source).not.toMatch(/\.nav-search-results\s*\{[^}]*position:\s*absolute/);
+		const panel = source.slice(source.indexOf('<div class="nav-search-panel"'));
+		expect(panel.indexOf('<SearchControls')).toBeGreaterThanOrEqual(0);
+		expect(panel.indexOf('<SearchControls')).toBeLessThan(
+			panel.indexOf('class="nav-search-results"'),
+		);
 	});
 
 	it('gates the collection notice on search use (opacity-only fade)', () => {
 		const source = readSource();
-		// Idle: the visible twin is hidden; the sr-only target stays in the tree.
-		expect(source).toMatch(/\.nav-search-notice\s*\{[^}]*opacity:\s*0;[^}]*visibility:\s*hidden/);
+		// Idle: the dropdown holding the visible disclosure is hidden; the sr-only
+		// describedby target stays in the tree so browse mode can still find it.
+		expect(source).toMatch(/\.nav-search-panel\s*\{[^}]*opacity:\s*0;[^}]*visibility:\s*hidden/);
 		expect(source).toMatch(/id="nav-search-notice"\s+class="sr-only"/);
-		// In use: focus anywhere in the form OR the results list open reveals it.
+		// In use: focus anywhere in the form OR the results list open reveals it —
+		// the SAME two-armed gate, now carried by the dropdown that holds the copy.
 		expect(source).toMatch(
-			/\.nav-search:focus-within\s+\.nav-search-notice,\s*\.nav-search:has\(\.nav-search-results\)\s+\.nav-search-notice\s*\{[^}]*opacity:\s*1;[^}]*visibility:\s*visible/,
+			/\.nav-search:focus-within\s+\.nav-search-panel,\s*\.nav-search:has\(\.nav-search-results\)\s+\.nav-search-panel\s*\{[^}]*opacity:\s*1;[^}]*visibility:\s*visible/,
 		);
-		// No movement in any notice rule — the fade stays reduced-motion-safe.
-		expect(source).not.toMatch(
-			/\.nav-search-notice\s*\{[^}]*(?:transform|translate|scale|rotate):/,
-		);
-		// House precedent: the notice transition is disabled under reduced motion.
-		expect(source).toMatch(/prefers-reduced-motion[\s\S]{0,400}\.nav-search-notice,/);
+		// No movement in the gated rule — the fade stays reduced-motion-safe.
+		expect(source).not.toMatch(/\.nav-search-panel\s*\{[^}]*(?:transform|translate|scale|rotate):/);
+		// House precedent: the transition is disabled under reduced motion.
+		expect(source).toMatch(/prefers-reduced-motion[\s\S]{0,400}\.nav-search-panel,/);
 	});
 
 	it('renders selectable grouped chrome search results and fires select', async () => {
@@ -632,5 +642,127 @@ describe('NavPill — the pill chassis + --pill-h contract (source)', () => {
 		expect(source).toMatch(
 			/@media \(min-width: 768px\)\s*\{\s*\.nav-menu\s*\{\s*max-height:\s*min\(calc\(100dvh - var\(--pill-h\) - 3rem\), 34rem\);/,
 		);
+	});
+});
+
+// ── M6i · F25 + F26 — the disclosure gets a real home ───────────────────────────
+//
+// RECEIPT CLASS: SOURCE + DOM contracts. happy-dom performs NO layout
+// (getBoundingClientRect() is all zeros here), so a measured-overlap assertion in
+// this file would be a false receipt. What IS checkable is the ARITHMETIC over the
+// box model the pill declares in plain CSS: at the only widths where the in-pill
+// field renders (viewport ≥1024px AND rail ≥1024px) the pill is 2px border + 12px
+// pad + a 44px control band + 12px pad + 2px border = --pill-h 72px, and the 36px
+// field is centred in that band. So the field's bottom edge sits 54px below the
+// pill's top and the pill's own bottom edge is a further 18px down: a dropdown
+// anchored inside .nav-search at `top: calc(100% + X)` PAINTS ON THE PILL for
+// every X < 18px. The shipped notice used X = 0.25rem = 4px, which is exactly the
+// 448×14 overlap the browser lane measured. Real pixels stay in the browser lane;
+// this pins the constant that produces them.
+const PILL_EDGE_BELOW_FIELD_PX = 18;
+const NOTICE_EN =
+	'Your searches are sent to our server and its geocoding providers (Google, geo.ca).';
+
+function ruleFor(source: string, selector: string): string {
+	const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	return source.match(new RegExp(`\\n\\t${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+}
+
+function renderWithResults() {
+	return render(NavPill, {
+		props: {
+			locale: 'en',
+			search: '161',
+			searchScope: 'all',
+			searchResults: [{ kind: 'route', id: '161', label: '161 Van Horne', priority: 0 }],
+		},
+	});
+}
+
+describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26)', () => {
+	it('anchors the focus dropdown clear of the pill instead of painting on it', () => {
+		const source = readSource();
+		const panel = ruleFor(source, '.nav-search-panel');
+		expect(panel, '.nav-search-panel must exist as the one focus dropdown').not.toBe('');
+		expect(panel).toMatch(/position:\s*absolute;/);
+
+		const anchor = panel.match(/top:\s*calc\(100% \+ ([\d.]+)rem\)/);
+		expect(anchor, '.nav-search-panel must anchor at top: calc(100% + <n>rem)').not.toBeNull();
+		expect(Number(anchor![1]) * 16).toBeGreaterThanOrEqual(PILL_EDGE_BELOW_FIELD_PX);
+
+		// The 4px anchor that produced the 448×14 overlap must not survive anywhere.
+		expect(source).not.toMatch(/top:\s*calc\(100% \+ 0\.25rem\)/);
+	});
+
+	it('parks the visible disclosure inside that dropdown, ahead of the results', () => {
+		const { getByRole } = renderWithResults();
+		const form = getByRole('search');
+		const panel = form.querySelector<HTMLElement>('[data-slot="nav-search-panel"]');
+		expect(panel).not.toBeNull();
+
+		const notice = within(panel!).getByText(NOTICE_EN);
+		expect(notice).toHaveAttribute('aria-hidden', 'true');
+		const results = panel!.querySelector('.nav-search-results');
+		expect(results).not.toBeNull();
+		// DOM order is the layout-independent statement of "results below the notice".
+		expect(
+			notice.compareDocumentPosition(results!) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+
+		// PR #392 pin: the describedby target stays UNIQUE and outside the dropdown.
+		expect(document.querySelectorAll('#nav-search-notice')).toHaveLength(1);
+		expect(panel!.querySelector('#nav-search-notice')).toBeNull();
+	});
+
+	it('carries the search page scope + mode filters in the dropdown (F26)', () => {
+		const { getByRole } = renderWithResults();
+		const panel = getByRole('search').querySelector<HTMLElement>('[data-slot="nav-search-panel"]');
+		expect(panel).not.toBeNull();
+		expect(within(panel!).getByRole('radiogroup', { name: 'Show' })).toBeInTheDocument();
+		for (const mode of ['Métro', 'Tram', 'Bus', 'Train', 'Ferry']) {
+			expect(within(panel!).getByRole('button', { name: mode })).toBeInTheDocument();
+		}
+		// Never a second search form (PR #392 pin).
+		expect(document.querySelectorAll('form[role="search"]')).toHaveLength(1);
+	});
+
+	it('narrows the visible results when a dropdown scope segment is picked', async () => {
+		const { getByRole, queryByRole } = render(NavPill, {
+			props: {
+				locale: 'en',
+				search: 'van horne',
+				searchScope: 'all',
+				searchResults: [
+					{ kind: 'route', id: '161', label: '161 Van Horne', priority: 0 },
+					{ kind: 'stop', id: '57191', label: 'Van Horne / Rockland', meta: '57191', priority: 4 },
+				],
+			},
+		});
+		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toBeInTheDocument();
+		expect(getByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeInTheDocument();
+
+		await fireEvent.click(getByRole('radio', { name: /Lines \(1\)/ }));
+
+		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toBeInTheDocument();
+		expect(queryByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeNull();
+	});
+
+	it('omits the filter row where the blend is already one family (honesty)', () => {
+		const { getByRole } = render(NavPill, {
+			props: {
+				locale: 'en',
+				searchScope: 'route',
+				search: '161',
+				searchResults: [{ kind: 'route', id: '161', label: '161 Van Horne', priority: 0 }],
+			},
+		});
+		const panel = getByRole('search').querySelector<HTMLElement>('[data-slot="nav-search-panel"]');
+		expect(panel).not.toBeNull();
+		expect(within(panel!).queryByRole('radiogroup', { name: 'Show' })).toBeNull();
+		expect(within(panel!).queryByRole('button', { name: 'Métro' })).toBeNull();
+		// A scoped catalogue also transmits nothing, so the control surface has
+		// neither a disclosure nor a filter to draw — and must not paint an empty
+		// card in the dropdown for it.
+		expect(panel!.querySelector('[data-slot="search-controls"]')).toBeNull();
 	});
 });
