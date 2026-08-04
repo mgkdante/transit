@@ -181,7 +181,7 @@ describe('MapFilterPill', () => {
 		expect(source).not.toContain('map-filter-drawer-backdrop');
 	});
 
-	it('keeps the pill breakpoint at 1024px and moves the stall swap to the real <1024 query', () => {
+	it('keeps the pill breakpoint at 1024px and carries no stall suppression at all', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/map/MapFilterPill.svelte'),
 			'utf-8',
@@ -190,10 +190,17 @@ describe('MapFilterPill', () => {
 		expect(source).toMatch(
 			/@media \(min-width: 1024px\)[\s\S]*\.map-filter-pill-container[\s\S]*display:\s*none/,
 		);
-		expect(source).toMatch(
-			/@media \(max-width: 1023\.98px\)[\s\S]*data-global-stall='true'[\s\S]*display:\s*none/,
-		);
-		expect(source).toContain("window.matchMedia('(max-width: 1023.98px)')");
+		expect(source).toContain("window.matchMedia('(min-width: 1024px)')");
 		expect(source).not.toContain("window.matchMedia('(max-width: 768px)')");
+
+		// M6f-2 F14 RECEIPT (source contract). The peel was suppressed under a stall
+		// by FOUR independent sites; removing any one alone left it invisible, so all
+		// four are asserted gone together: the `stalled` prop, the derived
+		// `stallHidesTrigger` gate on the `{#if}`, the standalone CSS display:none on
+		// [data-global-stall], and the force-close/focus handoff to near-me.
+		expect(source).not.toContain('stalled');
+		expect(source).not.toContain('stallHidesTrigger');
+		expect(source).not.toContain('data-global-stall');
+		expect(source).not.toContain('map-near-toggle');
 	});
 });

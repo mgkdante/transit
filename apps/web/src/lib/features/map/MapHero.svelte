@@ -962,6 +962,7 @@
 		onthemerepaint={onMapThemeRepaint}
 		onerror={(failure) => (mapFailure = failure)}
 		onbeforeremove={releaseMapOwners}
+		customAttribution={manifest.attribution}
 		locale={{
 			'Map.Title': t.mapCanvasLabel,
 			'AttributionControl.ToggleAttribution': t.attributionToggle,

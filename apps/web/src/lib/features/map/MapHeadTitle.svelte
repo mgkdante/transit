@@ -16,6 +16,8 @@
 		heading: string;
 		generatedUtc: string | null;
 		ageSeconds: number | null;
+		/** Replaces the relative age when the feed is not responding (M6f-2 F14). */
+		ageLabel?: string | null;
 		isStale: boolean;
 		degraded?: boolean;
 	}
@@ -26,6 +28,7 @@
 		heading,
 		generatedUtc,
 		ageSeconds,
+		ageLabel = null,
 		isStale,
 		degraded = false,
 	}: Props = $props();
@@ -36,7 +39,15 @@
 <div class="map-overlay map-head">
 	<div class="map-kicker-row">
 		<p class="map-kicker">{kicker}</p>
-		<MapFreshness placement="head" {generatedUtc} {ageSeconds} {isStale} {degraded} {locale} />
+		<MapFreshness
+			placement="head"
+			{generatedUtc}
+			{ageSeconds}
+			{ageLabel}
+			{isStale}
+			{degraded}
+			{locale}
+		/>
 	</div>
 	<div class="map-title-row">
 		<h1 class="map-heading">{heading}<span class="map-dot">.</span></h1>

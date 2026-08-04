@@ -66,17 +66,28 @@ describe('MapFeedStallBanner', () => {
 		expect(screen.getByRole('status').textContent?.trim()).toBe('');
 	});
 
-	it('joins the shared narrow baseline without blocking the near-me CTA', () => {
+	// M6f-2 F14. The banner used to OWN the control row's anchor and merely dodge
+	// near-me on the right — which was only survivable because the Controls peel
+	// was being hidden underneath it. The peel now survives a stall, so the banner
+	// clears the whole row by stacking one control height (44px) plus this file's
+	// own 10px gap above it, and spans the full row width again.
+	it('stacks above the shared narrow control row instead of occupying its anchor', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/map/MapFeedStallBanner.svelte'),
 			'utf-8',
 		);
 
 		expect(source).toMatch(
-			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-feed-stall\s*\{[^}]*bottom:\s*var\(--map-mobile-control-bottom\)/s,
+			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-feed-stall\s*\{[^}]*bottom:\s*calc\(var\(--map-mobile-control-bottom\) \+ 44px \+ 10px\)/s,
 		);
+		// It no longer sits ON the peels' baseline, and no longer carves a hole for
+		// near-me, because it is not in their row any more.
+		expect(source).not.toMatch(
+			/\.map-feed-stall\s*\{[^}]*bottom:\s*var\(--map-mobile-control-bottom\);/s,
+		);
+		expect(source).not.toContain('calc(0.75rem + 44px + 10px)');
 		expect(source).toMatch(
-			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-feed-stall\s*\{[^}]*right:\s*calc\(0\.75rem \+ 44px \+ 10px\)/s,
+			/@media \(max-width: 1023\.98px\)[\s\S]*\.map-feed-stall\s*\{[^}]*right:\s*0\.75rem/s,
 		);
 		expect(source).toMatch(/\.map-live-edge\s*\{[^}]*pointer-events:\s*none/s);
 	});

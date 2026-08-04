@@ -253,11 +253,18 @@ describe('MapOverlayChrome', () => {
 		expect(document.querySelectorAll('#map-motion-label')).toHaveLength(0);
 	});
 
+	// M6f-2 F14 RECEIPT (DOM contract, not geometry). Under the harness stale
+	// controller the Controls peel stays PRESENT, OPENABLE, and an already-open
+	// drawer STAYS open. RED before the fix: every one of the four suppression
+	// sites removed the peel from the DOM and moved focus to near-me.
 	it.each([768, 769, 1023])(
-		'swaps a %dpx global stall into the stable banner row and focuses near-me',
+		'keeps the Controls peel present, open and openable through a %dpx global stall',
 		async (widthPx) => {
 			installViewportMatchMedia(widthPx);
-			installCompiledCss('src/lib/features/map/MapFeedStallBanner.svelte');
+			installCompiledCss(
+				'src/lib/features/map/MapFilterPill.svelte',
+				'src/lib/features/map/MapFeedStallBanner.svelte',
+			);
 			const store = createFilterStore(emptyFilterState());
 			const view = render(MapOverlayChromeHarness, {
 				props: { store, locale: 'en', isDesktop: false, isStale: false },
@@ -270,15 +277,30 @@ describe('MapOverlayChrome', () => {
 			expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
 
 			await view.rerender({ store, locale: 'en', isDesktop: false, isStale: true });
-			await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-			expect(screen.queryByTestId('map-filter-pill')).not.toBeInTheDocument();
+			// Guard the graft: assert the stall was actually REACHED, so a healthy
+			// feed can never deliver a silent pass.
 			expect(screen.getByRole('status')).toBe(stableRegion);
 			expect(stableRegion).toHaveAttribute('data-state', 'global-stall');
 			expect(stableRegion).toHaveClass('map-feed-stall');
+			expect(stableRegion.textContent?.trim()).toMatch(/Live feed not responding/);
+
+			// The drawer stays open, the peel stays in the DOM and visible, and
+			// focus is NOT taken away from the user.
+			expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
+			const pill = screen.getByTestId('map-filter-pill');
+			expect(getComputedStyle(pill).display).not.toBe('none');
+			expect(screen.getByRole('button', { name: 'Stops near me' })).not.toHaveFocus();
+
+			// And it is still OPERABLE while stalled: close, then re-open.
+			await fireEvent.click(screen.getByTestId('map-filter-done'));
+			await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+			await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
+			expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
+
+			// The banner vacates the peel's anchor and stacks ABOVE the control row.
 			expect(getComputedStyle(stableRegion).top).toBe('auto');
-			expect(getComputedStyle(stableRegion).bottom).toBe('84px');
-			expect(getComputedStyle(stableRegion).right).toBe('calc(12px + 44px + 10px)');
-			expect(screen.getByRole('button', { name: 'Stops near me' })).toHaveFocus();
+			expect(getComputedStyle(stableRegion).bottom).toBe('calc(84px + 44px + 10px)');
+			expect(getComputedStyle(stableRegion).right).toBe('12px');
 
 			await view.rerender({ store, locale: 'en', isDesktop: false, isStale: false });
 			expect(screen.getByTestId('map-filter-pill')).toBeInTheDocument();
@@ -287,7 +309,19 @@ describe('MapOverlayChrome', () => {
 		},
 	);
 
-	it('keeps the stall swap disabled at 1024px with the real complementary query keys', async () => {
+	// The peel's touch target is declared in CSS, so this is a SOURCE contract —
+	// the real ≥44px measurement is the browser lane's, not jsdom's.
+	it('declares a 44px minimum touch target on the Controls peel trigger', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/map/MapFilterPill.svelte'),
+			'utf-8',
+		);
+		expect(source).toMatch(
+			/\.map-filter-pill-container :global\(\.map-filter-pill\)\s*\{[\s\S]*min-height:\s*44px/,
+		);
+	});
+
+	it('keeps the banner in its top-centre row at 1024px with the real complementary query keys', async () => {
 		installViewportMatchMedia(1024);
 		const store = createFilterStore(emptyFilterState());
 		const view = render(MapOverlayChromeHarness, {
@@ -323,7 +357,7 @@ describe('MapOverlayChrome', () => {
 			failure: null,
 			state: 'idle',
 			placement: 'head',
-			hidden: false,
+			readout: null,
 		},
 		{
 			widthPx: 1023,
@@ -331,7 +365,7 @@ describe('MapOverlayChrome', () => {
 			failure: null,
 			state: 'global-stall',
 			placement: 'head',
-			hidden: true,
+			readout: 'not responding',
 		},
 		{
 			widthPx: 1023,
@@ -339,7 +373,7 @@ describe('MapOverlayChrome', () => {
 			failure: 'Vehicle positions unavailable',
 			state: 'selected-family-failure',
 			placement: 'head',
-			hidden: false,
+			readout: null,
 		},
 		{
 			widthPx: 1024,
@@ -347,7 +381,7 @@ describe('MapOverlayChrome', () => {
 			failure: null,
 			state: 'idle',
 			placement: 'floating',
-			hidden: false,
+			readout: null,
 		},
 		{
 			widthPx: 1024,
@@ -355,7 +389,7 @@ describe('MapOverlayChrome', () => {
 			failure: null,
 			state: 'global-stall',
 			placement: 'floating',
-			hidden: true,
+			readout: 'not responding',
 		},
 		{
 			widthPx: 1024,
@@ -363,11 +397,11 @@ describe('MapOverlayChrome', () => {
 			failure: 'Vehicle positions unavailable',
 			state: 'selected-family-failure',
 			placement: 'floating',
-			hidden: false,
+			readout: null,
 		},
 	] as const)(
 		'resolves the freshness/banner matrix at $widthPx for $state',
-		({ widthPx, isStale, failure, state, placement, hidden }) => {
+		({ widthPx, isStale, failure, state, placement, readout }) => {
 			installViewportMatchMedia(widthPx);
 			installCompiledCss(
 				'src/lib/features/map/MapFreshness.svelte',
@@ -390,22 +424,35 @@ describe('MapOverlayChrome', () => {
 
 			expect(screen.getByRole('status')).toHaveAttribute('data-state', state);
 			expect(owner).toHaveAttribute('data-active-placement', placement);
-			expect(owner).toHaveAttribute('data-suppressed', hidden ? 'true' : 'false');
-			expect(container.querySelectorAll('[data-placement]')).toHaveLength(hidden ? 0 : 2);
-			if (!hidden) {
-				const active = container.querySelector<HTMLElement>(`[data-placement="${placement}"]`)!;
-				const inactivePlacement = placement === 'head' ? 'floating' : 'head';
-				const inactive = container.querySelector<HTMLElement>(
-					`[data-placement="${inactivePlacement}"]`,
-				)!;
-				expect(getComputedStyle(active).display).not.toBe('none');
-				expect(getComputedStyle(inactive).display).toBe('none');
+			expect(owner).toHaveAttribute('data-not-responding', readout ? 'true' : 'false');
+			// M6f-2 F14: the readout SURVIVES every state at every viewport. It used
+			// to be destroyed outright under a stall — at 1024 as well as at 1023 —
+			// because the owner nulled both timestamps.
+			expect(container.querySelectorAll('[data-placement]')).toHaveLength(2);
+			const active = container.querySelector<HTMLElement>(`[data-placement="${placement}"]`)!;
+			const inactivePlacement = placement === 'head' ? 'floating' : 'head';
+			const inactive = container.querySelector<HTMLElement>(
+				`[data-placement="${inactivePlacement}"]`,
+			)!;
+			expect(getComputedStyle(active).display).not.toBe('none');
+			expect(getComputedStyle(inactive).display).toBe('none');
+			// "Instead of 'one minute ago', it will say 'not responding'."
+			expect(active.getAttribute('data-not-responding')).toBe(readout ? 'true' : null);
+			const age = active.querySelector('.freshness-stamp-age')!;
+			if (readout) {
+				expect(age).toHaveTextContent(readout);
+				// The stall swaps the AGE, it does not destroy the ANCHOR: the
+				// machine-readable last-update timestamp survives for AT and scrapers.
+				expect(age).toHaveAttribute('datetime', '2026-06-15T00:00:00Z');
+			} else {
+				expect(age).not.toHaveTextContent('not responding');
+				expect(age.textContent).toMatch(/\d/);
 			}
 			expect(container.querySelector('.map-feed-stall') != null).toBe(state === 'global-stall');
 			if (state === 'global-stall' && widthPx < 1024) {
 				expect(getComputedStyle(banner).top).toBe('auto');
-				expect(getComputedStyle(banner).bottom).toBe('84px');
-				expect(getComputedStyle(banner).right).toBe('calc(12px + 44px + 10px)');
+				expect(getComputedStyle(banner).bottom).toBe('calc(84px + 44px + 10px)');
+				expect(getComputedStyle(banner).right).toBe('12px');
 			} else {
 				expect(getComputedStyle(banner).top).not.toBe('auto');
 				expect(getComputedStyle(banner).bottom).not.toBe('84px');

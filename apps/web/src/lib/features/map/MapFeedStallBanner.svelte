@@ -189,12 +189,18 @@
 		top: calc(var(--chrome-offset) + 2.5rem);
 	}
 
+	/* M6f-2 F14: the banner used to sit ON the control row's own anchor
+	   (--map-mobile-control-bottom, left 0.75rem) — the controls peel's exact
+	   origin — which only worked because the peel was being hidden. The peel now
+	   survives a stall, so the banner STACKS ABOVE the row: one 44px control
+	   height plus the 10px gap this file already uses. Clear of both peels, it
+	   spans the full row width instead of dodging near-me. */
 	@media (max-width: 1023.98px) {
 		.map-feed-stall {
 			top: auto;
-			bottom: var(--map-mobile-control-bottom);
+			bottom: calc(var(--map-mobile-control-bottom) + 44px + 10px);
 			left: 0.75rem;
-			right: calc(0.75rem + 44px + 10px);
+			right: 0.75rem;
 			margin-inline: 0;
 			width: auto;
 			max-width: none;

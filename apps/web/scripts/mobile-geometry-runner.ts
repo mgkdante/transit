@@ -6,6 +6,7 @@ import {
 	MOBILE_GEOMETRY_ROUTES,
 	MOBILE_GEOMETRY_VIEWPORT,
 	MOBILE_REQUIRED_EVIDENCE,
+	type GeometryRect,
 	type MobileGeometryRoute,
 	type MobileGeometryRun,
 	type MobileInteractionResult,
@@ -420,7 +421,14 @@ async function navigate(
 	await delay(400);
 }
 
-const CAPTURE_GEOMETRY_EXPRESSION = `(route) => {
+const CAPTURE_ATTRIBUTION_RECT_EXPRESSION = `() => {
+	const attribution = document.querySelector('[data-slot="map-stage"] .maplibregl-ctrl-attrib');
+	if (!attribution) return null;
+	const { left, right, top, bottom, width, height } = attribution.getBoundingClientRect();
+	return { left, right, top, bottom, width, height };
+}`;
+
+const CAPTURE_GEOMETRY_EXPRESSION = `(route, collapsedAttribution) => {
 	const readRect = (element) => {
 		const rect = element.getBoundingClientRect();
 		return {
@@ -505,6 +513,7 @@ const CAPTURE_GEOMETRY_EXPRESSION = `(route) => {
 				attribution: readRect(attribution),
 				expanded: attribution.classList.contains('maplibregl-compact-show') || !attribution.classList.contains('maplibregl-compact'),
 				controls,
+				collapsedAttribution: collapsedAttribution || readRect(attribution),
 			};
 		}
 	}
@@ -679,13 +688,20 @@ export async function runMobileGeometryHarness(
 		const routes: MobileRouteGeometry[] = [];
 		for (const route of MOBILE_GEOMETRY_ROUTES) {
 			await navigate(client, baseUrl, route);
+			// The credit rests COLLAPSED, so measure it there first; only then open
+			// it and measure the expanded overlay. Both states are swept (M6f-2 F19).
+			let collapsedAttribution: GeometryRect | null = null;
 			if (route.id === 'map') {
+				collapsedAttribution = await evaluate<GeometryRect | null>(
+					client,
+					`(${CAPTURE_ATTRIBUTION_RECT_EXPRESSION})()`,
+				);
 				await expandMapAttribution(client);
 				await delay(300);
 			}
 			const snapshot = await evaluate<MobileRouteGeometry>(
 				client,
-				`(${CAPTURE_GEOMETRY_EXPRESSION})(${JSON.stringify(route)})`,
+				`(${CAPTURE_GEOMETRY_EXPRESSION})(${JSON.stringify(route)}, ${JSON.stringify(collapsedAttribution)})`,
 			);
 			routes.push(snapshot);
 			log(

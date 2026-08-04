@@ -80,6 +80,9 @@ export const copy = defineCopy({
 				? `Live data for ${family} is unavailable. Showing the last successful update.`
 				: `Live data for ${family} is unavailable right now.`,
 		feedNotResponding: (age) => `Live feed not responding. Last update ${age}.`,
+		// The same verdict, shortened to fit the freshness chip's age slot: under a
+		// stall the readout states the fact instead of an age (M6f-2 F14).
+		feedNotRespondingShort: 'not responding',
 		motion: {
 			label: 'Motion',
 			smooth: 'Almost real-time',
@@ -166,6 +169,7 @@ export const copy = defineCopy({
 				: `Les données en direct pour ${family} sont indisponibles pour l’instant.`,
 		feedNotResponding: (age: string) =>
 			`Le flux en direct ne répond pas. Dernière mise à jour ${age}.`,
+		feedNotRespondingShort: 'ne répond pas',
 		motion: {
 			label: 'Mouvement',
 			smooth: 'Presque en temps réel',

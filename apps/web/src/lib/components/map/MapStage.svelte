@@ -173,6 +173,14 @@
 		onbeforeremove?: (map: MapLibreMap) => void | PromiseLike<unknown>;
 		/** Receives each teardown error after every cleanup step has run. */
 		oncleanupfailure?: (error: unknown) => unknown;
+		/**
+		 * Extra credit rendered in the attribution control alongside the basemap's
+		 * own source attribution. The map carries the provider's licence obligation
+		 * (STM CC BY 4.0), which is a RUNTIME manifest value, so it arrives as a
+		 * prop and is passed through VERBATIM — never reworded, abbreviated or
+		 * truncated (M6f-2 F19).
+		 */
+		customAttribution?: string | null;
 		/** Partial MapLibre locale table applied at construction. */
 		locale?: Record<string, string>;
 		/** Consumer styling on the host wrapper. */
@@ -197,6 +205,7 @@
 		onerror,
 		onbeforeremove,
 		oncleanupfailure,
+		customAttribution = null,
 		locale,
 		class: className,
 	}: MapStageProps = $props();
@@ -537,8 +546,18 @@
 			}
 			attempt.map = instance;
 			// Base's implicit control received { compact: true }; pass the same options
-			// while owning the control explicitly for teardown.
-			ownMapControl(attempt, instance, new maplibregl.AttributionControl({ compact: true }));
+			// while owning the control explicitly for teardown. `customAttribution`
+			// carries the provider's licence line VERBATIM next to the basemap's own
+			// OpenStreetMap/Protomaps credit, in the one surface that already holds
+			// map credits (M6f-2 F19).
+			ownMapControl(
+				attempt,
+				instance,
+				new maplibregl.AttributionControl({
+					compact: true,
+					...(customAttribution ? { customAttribution } : {}),
+				}),
+			);
 			activeLayoutSig = fitPaddingKey(fitPadding);
 			activeBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
 			activeCameraKey = cameraKey(center, zoom);
@@ -750,6 +769,15 @@
 		transition: right var(--duration-normal) var(--ease-out);
 	}
 
+	/* M6f-2 F16: MapLibre's own `.maplibregl-ctrl-bottom-right .maplibregl-ctrl`
+	   sets `margin: 0 10px 10px 0`, so the credit's VISIBLE right edge sat 10px
+	   inside the container inset while the location peel sat exactly on it. Zero
+	   the margin (specificity (0,3,0) beats maplibre's (0,2,0)) so the container
+	   inset IS the visible inset and both surfaces share one right edge. */
+	.map-stage :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl) {
+		margin: 0;
+	}
+
 	.map-stage :global(.maplibregl-ctrl-attrib) {
 		background-color: var(--card);
 		color: var(--muted-foreground);
@@ -768,13 +796,33 @@
 		color: var(--accent-text);
 	}
 
+	/* The collapsed credit is a 24px maplibre glyph carrying a LEGAL obligation —
+	   it has to be openable on a touch screen. Grow the hit area to 44px around
+	   the button without growing the visible control (M6f-2 F19); the button is
+	   already absolutely positioned, so the overlay centres on it. */
+	.map-stage :global(.maplibregl-ctrl-attrib-button)::after {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: 44px;
+		height: 44px;
+		transform: translate(-50%, -50%);
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.map-stage :global(.maplibregl-ctrl-bottom-right) {
 			transition: none;
 		}
 	}
 
-	@media (max-width: 768px) {
+	/* M6f-2 F16: 1023.98px, NOT 768px. The credit was the last surface on the old
+	   768 line while both peels, the panel hide and the JS `layout.isDesktop`
+	   snapshot had already converged on 1024 — so through the whole 769–1023 band
+	   the credit kept its desktop inset while the peels used the compact one, and
+	   the two right edges disagreed by more than they do on desktop. One line for
+	   every map surface. */
+	@media (max-width: 1023.98px) {
 		.map-stage :global(.maplibregl-ctrl-bottom-right) {
 			right: 0.75rem;
 			bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
@@ -789,7 +837,6 @@
 		.map-stage :global(.maplibregl-ctrl-attrib.maplibregl-compact) {
 			box-sizing: border-box;
 			min-height: 1.75rem;
-			margin: 0;
 			padding: 0.25rem 1.85rem 0.25rem 0.55rem;
 		}
 

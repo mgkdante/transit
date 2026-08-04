@@ -17,15 +17,25 @@
 	interface Props {
 		generatedUtc: string | null;
 		ageSeconds: number | null;
+		/** Replaces the relative age when the feed is not responding (M6f-2 F14). */
+		ageLabel?: string | null;
 		isStale: boolean;
 		degraded?: boolean;
 		locale: Locale;
 		placement: 'head' | 'floating';
 	}
 
-	let { generatedUtc, ageSeconds, isStale, degraded = false, locale, placement }: Props = $props();
+	let {
+		generatedUtc,
+		ageSeconds,
+		ageLabel = null,
+		isStale,
+		degraded = false,
+		locale,
+		placement,
+	}: Props = $props();
 
-	const hasFreshness = $derived(generatedUtc != null || ageSeconds != null);
+	const hasFreshness = $derived(generatedUtc != null || ageSeconds != null || ageLabel != null);
 </script>
 
 {#if hasFreshness}
@@ -34,8 +44,17 @@
 		data-placement={placement}
 		data-stale={isStale}
 		data-degraded={degraded}
+		data-not-responding={ageLabel ? 'true' : undefined}
 	>
-		<FreshnessStamp variant="live" {generatedUtc} {ageSeconds} {isStale} {degraded} {locale} />
+		<FreshnessStamp
+			variant="live"
+			{generatedUtc}
+			{ageSeconds}
+			{ageLabel}
+			{isStale}
+			{degraded}
+			{locale}
+		/>
 	</div>
 {/if}
 

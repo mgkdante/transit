@@ -355,9 +355,15 @@ describe('M6C-2 token and protected-surface contract', () => {
 		expect(hero.split(liveConsumer)).toHaveLength(2);
 		expect(hero.match(/function releaseMapOwners\(/gu)).toHaveLength(1);
 		expect(hero).toContain('onbeforeremove={releaseMapOwners}');
+		// M6f-2 F19: the STM licence is a RUNTIME manifest value, so the hero hands
+		// the manifest's own string straight to the stage — no repo constant, no
+		// local rewording, nothing between the manifest and the credit surface.
+		expect(hero).toContain('customAttribution={manifest.attribution}');
+		expect(hero).not.toMatch(/CC BY|Contains STM/);
 		expect(hero).toContain('const nextDisposers = ownerCleanup.installCleanupReceipts');
 		expect(createHash('sha256').update(reconstructed).digest('hex')).toBe(
-			'd95f375db5ca57f76a00eaf641c342a61961cae21b0003e9b5bbbb19a03c947f',
+			// M6f-2: +1 line — `customAttribution={manifest.attribution}` on MapStage.
+			'70008fbff011bb3b945113e8e4b022880e4c83cc976748cf6d1b5edbc7716530',
 		);
 	});
 
