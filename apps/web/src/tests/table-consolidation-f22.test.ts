@@ -237,7 +237,8 @@ function tableRules(source: string): string[] {
 		.sort();
 }
 
-const RENDER_SITE = /<DataTable\b/g;
+const RENDER_SITE = /<DataTable\b/;
+const RENDER_SITE_COUNT = /<DataTable\b/g; // .match()-only twin: String.match ignores lastIndex; never .test() a /g regex
 
 type Verdict =
 	// Drift: the declaration re-specifies something the primitive's own contract
@@ -458,7 +459,7 @@ describe('F22 B — the page-level declaration fingerprint', () => {
 	it('inventories every DataTable render site (a new consumer must be declared)', () => {
 		const observed = ALL_SVELTE.filter((file) => RENDER_SITE.test(read(file))).map((file) => ({
 			file: rel(file),
-			renders: (read(file).match(RENDER_SITE) ?? []).length,
+			renders: (read(file).match(RENDER_SITE_COUNT) ?? []).length,
 		}));
 
 		expect(observed).toEqual(RENDER_SITES.map(({ file, renders }) => ({ file, renders })));
