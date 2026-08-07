@@ -77,7 +77,10 @@
 		/**
 		 * Transit modes picked in the focus dropdown. The OWNER of the set is the
 		 * layout, which feeds it back into the blend — the chips here mutate it in
-		 * place (SvelteSet is reactive), so no bind: round-trip is needed.
+		 * place (SvelteSet is reactive), so no bind: round-trip is needed. Besides
+		 * the chips, this chrome also CLEARS the set when the scope stops being
+		 * mixed (the REGATE-m6i cure effect below): the chips exist only where the
+		 * blend is mixed, and a narrowing must not outlive its on-screen control.
 		 */
 		searchModes?: SvelteSet<TransitModeKey>;
 		/** Fired when a search result is selected. */
@@ -217,6 +220,18 @@
 			? searchResults
 			: searchResults.filter((result) => familyOf(result) === searchFamily),
 	);
+	// A narrowing must never outlive its on-screen control (REGATE-m6i FIRE). The
+	// family segments and the mode chips exist only where the blend is mixed
+	// (`filters={blendIsMixed}` below), but this chrome is PERSISTENT — navigation
+	// swaps `searchScope` on the same instance. So when the scope stops being
+	// mixed, reset both at the point their control unmounts; otherwise a family or
+	// mode picked on /map keeps filtering the /lines catalogue with no visible
+	// cause and nothing on screen to clear it.
+	$effect(() => {
+		if (blendIsMixed) return;
+		searchFamily = 'all';
+		searchModes.clear();
+	});
 	const searchScopeSegments = $derived([
 		{ key: 'all' as const, label: navCopy.searchScopeAll },
 		{

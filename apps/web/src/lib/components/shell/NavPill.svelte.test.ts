@@ -1,7 +1,12 @@
 import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { tick } from 'svelte';
+import { SvelteSet } from 'svelte/reactivity';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { chromeSearchResults } from '$lib/search/chromeSearch';
+import type { TransitModeKey } from '$lib/search/stopMode';
+import type { RouteIndexEntry } from '$lib/v1/schemas';
 import NavPill from './NavPill.svelte';
 
 function readSource(): string {
@@ -778,6 +783,111 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 		await fireEvent.click(getByRole('radio', { name: /Lines \(1\)/ }));
 		expect(queryByRole('button', { name: /5333 Avenue Casgrain/ })).toBeNull();
 		expect(queryByLabelText('Powered by Google')).toBeNull();
+	});
+
+	// ── REGATE-m6i §5 cure — a narrowing must never outlive its on-screen control ──
+	//
+	// NavPill is PERSISTENT chrome: client-side navigation changes `searchScope` on
+	// the SAME instance, and the family/mode controls are drawn only where the blend
+	// is mixed (`filters={blendIsMixed}`). The re-gate's FIRE: a family or mode
+	// picked on /map kept filtering the /lines catalogue after navigation removed
+	// `SearchControls` — an empty result list with no visible cause and no control
+	// left to clear it. Invariant pinned here: the filter applies ONLY while its
+	// controlling surface is rendered; when the control unmounts, the state resets.
+
+	it('drops the family narrowing when navigation leaves the mixed blend (REGATE-m6i §5b)', async () => {
+		const route161 = { kind: 'route', id: '161', label: '161 Van Horne', priority: 0 } as const;
+		const stop57191 = {
+			kind: 'stop',
+			id: '57191',
+			label: 'Van Horne / Rockland',
+			meta: '57191',
+			priority: 4,
+		} as const;
+		const { getByRole, queryByRole, rerender, container } = render(NavPill, {
+			props: {
+				locale: 'en',
+				search: 'van horne',
+				searchScope: 'all',
+				searchResults: [route161, stop57191],
+			},
+		});
+		await fireEvent.click(getByRole('radio', { name: /Stops \(1\)/ }));
+		expect(getByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeInTheDocument();
+		expect(queryByRole('button', { name: 'Route 161 Van Horne' })).toBeNull();
+
+		// Client-side navigation to /lines: SAME instance, new scope, route-only blend.
+		await rerender({
+			locale: 'en',
+			search: 'van horne',
+			searchScope: 'route',
+			searchResults: [route161],
+		});
+
+		// The controlling surface is gone from this scope —
+		expect(container.querySelector('[data-slot="search-controls"]')).toBeNull();
+		expect(queryByRole('radiogroup', { name: 'Show' })).toBeNull();
+		// — so the blend must be un-narrowed: the catalogue's match is on screen.
+		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toBeInTheDocument();
+
+		// Round trip back to the mixed surface: the family was RESET, not parked —
+		// the control returns at "All" with the whole blend visible.
+		await rerender({
+			locale: 'en',
+			search: 'van horne',
+			searchScope: 'all',
+			searchResults: [route161, stop57191],
+		});
+		expect(getByRole('radio', { name: 'All' })).toBeChecked();
+		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toBeInTheDocument();
+		expect(getByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeInTheDocument();
+	});
+
+	it('clears the mode set the moment its chips have no surface — no control, no narrowing (REGATE-m6i §5c)', async () => {
+		const modes = new SvelteSet<TransitModeKey>(['metro']);
+		const routes: RouteIndexEntry[] = [{ id: '161', short: '161', long: 'Van Horne', type: 3 }];
+		// The sticky set narrows the scoped blend even though this scope draws no chips:
+		expect(chromeSearchResults('161', { routes }, { scope: 'route', modes })).toEqual([]);
+
+		const { container } = render(NavPill, {
+			props: {
+				locale: 'en',
+				search: '161',
+				searchScope: 'route',
+				searchResults: [],
+				searchModes: modes,
+			},
+		});
+		await tick();
+
+		// No SearchControls and no chips exist on this scope —
+		expect(container.querySelector('[data-slot="search-controls"]')).toBeNull();
+		expect(container.querySelector('.search-mode-chip')).toBeNull();
+		// — so the chrome must have dropped the set: the absence of the control
+		// implies an un-narrowed blend (the exact class REGATE-m6i §5e found missing).
+		expect(modes.size).toBe(0);
+		expect(
+			chromeSearchResults('161', { routes }, { scope: 'route', modes }).map((r) => r.id),
+		).toEqual(['161']);
+	});
+
+	// MERGEGATE-414 trigger 4: the reset must not OVER-fire. This is the oracle for
+	// the other direction of the invariant — while the chips ARE on screen (mixed
+	// scope), a picked mode survives. Without it, an effect that also clears the
+	// set on mixed scopes makes every chrome chip inert with the whole suite green.
+	it('keeps a picked mode while its chips are on screen (mixed scope)', async () => {
+		const modes = new SvelteSet<TransitModeKey>();
+		const { getByRole } = render(NavPill, {
+			props: {
+				locale: 'en',
+				search: '161',
+				searchScope: 'all',
+				searchResults: [{ kind: 'route', id: '161', label: '161 Van Horne', priority: 0 }],
+				searchModes: modes,
+			},
+		});
+		await fireEvent.click(getByRole('button', { name: 'Métro' })); // ← the pin
+		expect(modes.size).toBe(1); // ← the pin
 	});
 
 	it('omits the filter row where the blend is already one family (honesty)', () => {
