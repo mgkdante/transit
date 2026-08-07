@@ -77,7 +77,10 @@
 		/**
 		 * Transit modes picked in the focus dropdown. The OWNER of the set is the
 		 * layout, which feeds it back into the blend — the chips here mutate it in
-		 * place (SvelteSet is reactive), so no bind: round-trip is needed.
+		 * place (SvelteSet is reactive), so no bind: round-trip is needed. Besides
+		 * the chips, this chrome also CLEARS the set when the scope stops being
+		 * mixed (the REGATE-m6i cure effect below): the chips exist only where the
+		 * blend is mixed, and a narrowing must not outlive its on-screen control.
 		 */
 		searchModes?: SvelteSet<TransitModeKey>;
 		/** Fired when a search result is selected. */

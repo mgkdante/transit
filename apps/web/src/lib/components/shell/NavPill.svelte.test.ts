@@ -871,6 +871,25 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 		).toEqual(['161']);
 	});
 
+	// MERGEGATE-414 trigger 4: the reset must not OVER-fire. This is the oracle for
+	// the other direction of the invariant — while the chips ARE on screen (mixed
+	// scope), a picked mode survives. Without it, an effect that also clears the
+	// set on mixed scopes makes every chrome chip inert with the whole suite green.
+	it('keeps a picked mode while its chips are on screen (mixed scope)', async () => {
+		const modes = new SvelteSet<TransitModeKey>();
+		const { getByRole } = render(NavPill, {
+			props: {
+				locale: 'en',
+				search: '161',
+				searchScope: 'all',
+				searchResults: [{ kind: 'route', id: '161', label: '161 Van Horne', priority: 0 }],
+				searchModes: modes,
+			},
+		});
+		await fireEvent.click(getByRole('button', { name: 'Métro' })); // ← the pin
+		expect(modes.size).toBe(1); // ← the pin
+	});
+
 	it('omits the filter row where the blend is already one family (honesty)', () => {
 		const { getByRole } = render(NavPill, {
 			props: {
