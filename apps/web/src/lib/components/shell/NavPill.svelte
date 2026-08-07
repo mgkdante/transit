@@ -217,6 +217,18 @@
 			? searchResults
 			: searchResults.filter((result) => familyOf(result) === searchFamily),
 	);
+	// A narrowing must never outlive its on-screen control (REGATE-m6i FIRE). The
+	// family segments and the mode chips exist only where the blend is mixed
+	// (`filters={blendIsMixed}` below), but this chrome is PERSISTENT — navigation
+	// swaps `searchScope` on the same instance. So when the scope stops being
+	// mixed, reset both at the point their control unmounts; otherwise a family or
+	// mode picked on /map keeps filtering the /lines catalogue with no visible
+	// cause and nothing on screen to clear it.
+	$effect(() => {
+		if (blendIsMixed) return;
+		searchFamily = 'all';
+		searchModes.clear();
+	});
 	const searchScopeSegments = $derived([
 		{ key: 'all' as const, label: navCopy.searchScopeAll },
 		{
