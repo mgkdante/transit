@@ -7,6 +7,9 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { makeHexAccessor, ratio, type Mode } from '@yesid/gates';
 import TocNav from './TocNav.svelte';
 import type { TocEntry } from './toc';
 
@@ -191,5 +194,62 @@ describe('TocNav', () => {
 		for (const btn of buttons) {
 			expect(btn.classList.contains('toc-item')).toBe(true);
 		}
+	});
+});
+
+// B12 axe cure lock (2026-08-08): production /lines/24 (both locales) rendered
+// the "SEC n / m" counter at `color-mix(in srgb, var(--primary) 30%, transparent)`
+// — #553612 composited over the #1a1a1a card, contrast 1.59:1 against the 4.5:1
+// floor for 12px normal text (axe color-contrast, serious). This unit resolves
+// the counter's AUTHORED colour declaration through tools/tokens/tokens.json and
+// computes its rendered contrast on the card surface with the gates math, in both
+// themes, so the declaration can never dip below AA again.
+describe('TocNav counter contrast (B12 axe cure lock)', () => {
+	const source = readFileSync(
+		resolve(process.cwd(), 'src/lib/components/shared/TocNav.svelte'),
+		'utf-8',
+	);
+	const tokens = JSON.parse(
+		readFileSync(resolve(process.cwd(), 'tools/tokens/tokens.json'), 'utf-8'),
+	) as Record<string, unknown>;
+	const hex = makeHexAccessor(tokens);
+
+	const declaration = source.match(/\.toc-counter-text\s*\{[^}]*?color:\s*([^;]+);/s)?.[1]?.trim();
+
+	/** Resolve the authored declaration to the hex the reader sees on the themed card. */
+	function renderedOnCard(mode: Mode): string {
+		if (!declaration) throw new Error('no color declaration found for .toc-counter-text');
+		const plain = declaration.match(/^var\(--([a-z0-9-]+)\)$/);
+		if (plain) return hex(mode, plain[1] as string);
+		const mix = declaration.match(
+			/^color-mix\(in srgb,\s*var\(--([a-z0-9-]+)\)\s*(\d+(?:\.\d+)?)%,\s*transparent\)$/,
+		);
+		if (mix) {
+			// Alpha-composite the mixed token over the card, per channel — the same
+			// flattening the browser (and axe) performs on the served page.
+			const fg = hex(mode, mix[1] as string);
+			const bg = hex(mode, 'card');
+			const alpha = Number(mix[2]) / 100;
+			const channel = (i: number) =>
+				Math.round(
+					alpha * parseInt(fg.slice(i, i + 2), 16) + (1 - alpha) * parseInt(bg.slice(i, i + 2), 16),
+				)
+					.toString(16)
+					.padStart(2, '0');
+			return `#${channel(1)}${channel(3)}${channel(5)}`;
+		}
+		throw new Error(`unresolvable .toc-counter-text color: ${declaration}`);
+	}
+
+	it('meets WCAG AA 4.5:1 on the dark card (the served surface axe measured)', () => {
+		const fg = renderedOnCard('dark');
+		const r = ratio(fg, hex('dark', 'card'));
+		expect(r, `${fg} on dark card computed ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+	});
+
+	it('meets WCAG AA 4.5:1 on the light card', () => {
+		const fg = renderedOnCard('light');
+		const r = ratio(fg, hex('light', 'card'));
+		expect(r, `${fg} on light card computed ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
 	});
 });
