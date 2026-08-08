@@ -227,6 +227,6 @@
 	}
 
 	.toc-counter-text {
-		color: color-mix(in srgb, var(--primary) 30%, transparent);
+		color: var(--muted-foreground);
 	}
 </style>
