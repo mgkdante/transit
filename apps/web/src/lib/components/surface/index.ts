@@ -22,7 +22,6 @@ export { default as SegmentedChoice } from './SegmentedChoice.svelte';
 export { default as GrainPicker } from './GrainPicker.svelte';
 export { default as ArticleControlDisclosure } from './ArticleControlDisclosure.svelte';
 export { default as ArticleControlStack } from './ArticleControlStack.svelte';
-export { default as SurfaceControls } from './SurfaceControls.svelte';
 export { default as SurfaceRail } from './SurfaceRail.svelte';
 export { default as DateRangePicker } from './DateRangePicker.svelte';
 export { default as HistoryNavigator } from './HistoryNavigator.svelte';
@@ -59,10 +58,6 @@ export type {
 export type { GrainPickerProps } from './GrainPicker.svelte';
 export type { ArticleControlDisclosureProps } from './ArticleControlDisclosure.svelte';
 export type { ArticleControlStackProps } from './ArticleControlStack.svelte';
-// SurfaceControls is generic (<K extends string = Grain>). Its Props interface lives
-// in the MODULE script (generic over K, default string) precisely so it CAN be exported
-// (a `generics=` instance script disallows exports) — Props-export convention.
-export type { GrainAvailability, SurfaceControlsProps } from './SurfaceControls.svelte';
 // DateRangePicker's Props + labels interfaces live in its MODULE script (one export site).
 export type {
 	DateRangePickerProps,
