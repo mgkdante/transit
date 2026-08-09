@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { tierFreshness, type FreshnessTier } from './freshness';
+import {
+	freshnessAgeSeconds,
+	freshnessRelative,
+	tierFreshness,
+	type FreshnessTier,
+} from './freshness';
+import type { TimeLang } from '$lib/utils/time';
 import type { Manifest } from './schemas';
+
+type Equal<A, B> =
+	(<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+type Expect<T extends true> = T;
+type _FreshnessAgeSignature = Expect<
+	Equal<
+		typeof freshnessAgeSeconds,
+		(generatedUtc: string | null | undefined, nowMs: number) => number | null
+	>
+>;
+type _FreshnessRelativeSignature = Expect<
+	Equal<
+		typeof freshnessRelative,
+		(generatedUtc: string | null | undefined, lang: TimeLang, nowMs: number) => string | null
+	>
+>;
 
 // tierFreshness turns a tier's manifest pointer into a published/age/stale
 // verdict. Staleness is DERIVED (2x the tier's effective ttl), never a literal
@@ -8,6 +30,15 @@ import type { Manifest } from './schemas';
 // absent generated_utc empty-state path, clock-skew clamping, and bad input.
 
 const NOW = new Date('2026-06-15T12:00:00Z');
+
+describe('shared freshness derivation', () => {
+	it('uses the caller-supplied server clock for age and relative text', () => {
+		const generatedUtc = '2026-06-15T11:59:50Z';
+
+		expect(freshnessAgeSeconds(generatedUtc, NOW.getTime())).toBe(10);
+		expect(freshnessRelative(generatedUtc, 'en', NOW.getTime())).toBe('10 seconds ago');
+	});
+});
 
 /** Minimal valid Manifest carrying just the per-tier files we vary. */
 function manifest(

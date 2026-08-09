@@ -99,6 +99,10 @@ export async function readWhole<T>(
 	return value;
 }
 
+export function loadManifestFresh(ctx?: AdapterCtx): Promise<Manifest> {
+	return readWhole(R2_DEFAULTS.manifest, ManifestSchema, 'manifest', MUTABLE_CACHE, ctx);
+}
+
 export async function readOptionalWhole<T>(
 	relativePath: string,
 	schema: z.ZodType<T>,
@@ -132,6 +136,7 @@ export async function readEntity<T>(
 
 export const manifestPort: ManifestPort = {
 	get: loadManifest,
+	getFresh: loadManifestFresh,
 };
 
 export const labelsPort: LabelsPort = {

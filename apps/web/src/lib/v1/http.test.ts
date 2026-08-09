@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 // getEntityJson is the single client fetch+validate primitive. PR-6 adds a
 // browser-only side effect: it captures the server's current time from the
-// response `Date` / `Age` headers and feeds sharedClock.noteServerEpochMs so
+// response `Date` / `Age` headers and feeds the injected clock port so
 // every freshness readout anchors to server time. These tests cover that capture
 // (cache-header reconciliation, missing/NaN header skip, SSR no-op) without touching the
 // existing fail-soft contract.
@@ -18,14 +18,18 @@ vi.mock('$app/environment', () => ({
 		return mocks.browser;
 	},
 }));
-vi.mock('$lib/stores/clock.svelte', () => ({
-	sharedClock: {
-		noteServerEpochMs: (ms: number) => mocks.noteServerEpochMs(ms),
-	},
-}));
-
 async function loadHttp() {
 	vi.resetModules();
+	const { configureV1Runtime } = await import('./runtime');
+	configureV1Runtime({
+		clock: {
+			get serverNow() {
+				return 0;
+			},
+			noteServerEpochMs: (ms: number) => mocks.noteServerEpochMs(ms),
+			subscribe: () => () => {},
+		},
+	});
 	return import('./http');
 }
 

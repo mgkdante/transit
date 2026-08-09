@@ -74,6 +74,7 @@ export interface AdapterCtx {
 /** Snapshot root pointer. Read first — every other family resolves relative to it. */
 export interface ManifestPort {
 	get(ctx?: AdapterCtx): Promise<Manifest>;
+	getFresh(ctx?: AdapterCtx): Promise<Manifest>;
 }
 
 /** Code -> human-text dictionary for a UI language. Missing file -> empty map (fail-soft). */

@@ -84,6 +84,10 @@ vi.mock('$lib/v1/adapter', () => ({
 // dynamic import after vi.resetModules would load a second runtime → effect
 // orphan). The hoisted mocks above are applied at this import.
 import { createLiveStore, type LiveFamily } from './store.svelte';
+import { dataRefresh, sharedClock } from '$lib/stores';
+import { configureV1Runtime } from '$lib/v1/runtime';
+
+configureV1Runtime({ clock: sharedClock, refresh: dataRefresh });
 
 function resetLiveFetches(): void {
 	mocks.resetRefreshEpoch();
