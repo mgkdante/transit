@@ -1,14 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const mocks = vi.hoisted(() => ({ getFresh: vi.fn() }));
 vi.mock('$lib/v1/adapter', () => ({
-	adapter: { manifest: { get: vi.fn() } },
-}));
-
-vi.mock('$lib/v1/config', () => ({
-	resolveUrl: (path: string) => `/data/v1/stm/${path}`,
+	adapter: { manifest: { get: vi.fn(), getFresh: mocks.getFresh } },
 }));
 
 import { getManifestFresh } from './manifest';
+import type { AdapterCtx } from '$lib/v1/adapter';
 
 const ISO = '2026-07-15T12:00:00Z';
 
@@ -26,23 +24,17 @@ function manifest() {
 }
 
 afterEach(() => {
-	vi.unstubAllGlobals();
+	vi.clearAllMocks();
 });
 
 describe('getManifestFresh', () => {
-	it('uses normal HTTP cache semantics on one stable manifest URL', async () => {
-		const request = vi.fn(
-			async (_input: RequestInfo | URL, _init?: RequestInit) =>
-				new Response(JSON.stringify(manifest()), {
-					status: 200,
-					headers: { 'content-type': 'application/json' },
-				}),
-		);
-		vi.stubGlobal('fetch', request);
+	it('delegates the fresh read and its context to the manifest port', async () => {
+		const ctx: AdapterCtx = { cache: new Map<string, unknown>() };
+		mocks.getFresh.mockResolvedValue(manifest());
 
-		await expect(getManifestFresh()).resolves.toMatchObject({ provider: 'stm' });
+		await expect(getManifestFresh(ctx)).resolves.toMatchObject({ provider: 'stm' });
 
-		expect(request).toHaveBeenCalledWith('/data/v1/stm/manifest.json');
-		expect(String(request.mock.calls[0]?.[0])).not.toContain('_=');
+		expect(mocks.getFresh).toHaveBeenCalledOnce();
+		expect(mocks.getFresh).toHaveBeenCalledWith(ctx);
 	});
 });

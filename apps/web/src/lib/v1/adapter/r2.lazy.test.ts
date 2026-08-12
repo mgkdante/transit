@@ -26,7 +26,7 @@ vi.mock('$lib/v1/schemas/provenance', async (importOriginal) => {
 });
 
 const PORT_METHODS = {
-	manifest: ['get'],
+	manifest: ['get', 'getFresh'],
 	labels: ['get'],
 	live: ['vehicles', 'trips', 'stopDepartures', 'alerts', 'network'],
 	static: ['routesIndex', 'route', 'stopsIndex', 'stop'],

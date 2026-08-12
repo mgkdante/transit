@@ -17,12 +17,12 @@
 // ttl = 90s at the 30s live ttl) — NEVER a literal 90s, so they track the
 // publisher's cadence.
 //
-// The age advances off the SHARED clock (`$lib/stores` sharedClock), not a
+// The age advances off the app-supplied shared clock port, not a
 // private interval, so the freshness here ticks in lockstep with every other
 // relative-time label in the chrome (the TopBar refresh chip, etc.). This store
 // is also the SINGLE authoritative writer of the chrome's `dataGeneratedUtc`:
-// each successful poll pushes the snapshot's own DATA timestamp into the shared
-// `dataRefresh` coordinator, so the freshness readout never drifts from the
+// each successful poll pushes the snapshot's own DATA timestamp through the
+// refresh port, so the freshness readout never drifts from the
 // data it describes.
 //
 // Lifecycle: createLiveStore(manifest) builds an instance; call .start() from
@@ -34,8 +34,8 @@
 
 import { browser } from '$app/environment';
 import { ageSeconds } from '$lib/utils/time';
-import { dataRefresh, sharedClock } from '$lib/stores';
 import { adapter, type AdapterCtx } from '$lib/v1/adapter';
+import { getV1Runtime } from '$lib/v1/runtime';
 import { untrack } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type {
@@ -143,6 +143,7 @@ function liveTtlMs(manifest: Manifest): number {
  * several panels need the same tick.
  */
 export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = {}): LiveStore {
+	const runtime = getV1Runtime();
 	const ttlMs = liveTtlMs(manifest);
 	const staleThresholdS = (ttlMs / 1000) * STALE_TTL_MULTIPLIER;
 	const adapterCtx: AdapterCtx = { manifest };
@@ -216,14 +217,14 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		// with the rest of the chrome instead of off a private interval. `serverNow`
 		// (not `now`) anchors the age to server time so a skewed client clock can't
 		// mis-report it or falsely trip the 3x-ttl (90s) stale threshold.
-		const age = ageSeconds(generatedUtc, sharedClock.serverNow);
+		const age = ageSeconds(generatedUtc, runtime.clock.serverNow);
 		return Number.isNaN(age) ? null : Math.max(0, age);
 	});
 	const isStale = $derived(ageSecondsValue == null ? false : ageSecondsValue >= staleThresholdS);
 	const vehiclesGeneratedUtc = $derived(vehicles?.generated_utc ?? null);
 	const vehiclesAgeSecondsValue = $derived.by<number | null>(() => {
 		if (!vehiclesGeneratedUtc) return null;
-		const age = ageSeconds(vehiclesGeneratedUtc, sharedClock.serverNow);
+		const age = ageSeconds(vehiclesGeneratedUtc, runtime.clock.serverNow);
 		return Number.isNaN(age) ? null : Math.max(0, age);
 	});
 	const vehiclesIsStale = $derived(
@@ -245,9 +246,9 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	// Honor the global "refresh data" press: re-poll immediately on an epoch bump
 	// instead of waiting for the next ttl tick. `epoch` starts at 0; we only react
 	// to CHANGES, so mount does not double-fetch (start() owns the initial poll).
-	let lastRefreshEpoch = dataRefresh.epoch;
+	let lastRefreshEpoch = runtime.refresh.epoch;
 	$effect(() => {
-		const e = dataRefresh.epoch;
+		const e = runtime.refresh.epoch;
 		if (e !== lastRefreshEpoch) {
 			lastRefreshEpoch = e;
 			if (browser) void refresh();
@@ -392,14 +393,14 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 			familyStatesValue[family] = {
 				...state,
 				phase: 'ready',
-				lastGoodAt: sharedClock.serverNow,
+				lastGoodAt: runtime.clock.serverNow,
 				retainedGeneration: payloadGeneration ?? state.retainedGeneration,
 				consecutiveFailures: 0,
 				error: null,
 				successRevision: changed ? state.successRevision + 1 : state.successRevision,
 			};
 			if (payloadGeneration != null) {
-				dataRefresh.noteDataGeneratedUtc(payloadGeneration);
+				runtime.refresh.noteDataGeneratedUtc(payloadGeneration);
 			}
 		} catch (value) {
 			if (!requestIsCurrent(family, token, generation, controller)) return;
@@ -606,7 +607,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		// Subscribe to the SHARED clock so age/staleness keep moving between fetches
 		// (the data still ages visibly even when a poll is served unchanged from the
 		// browser/edge cache) on the SAME tick as every other chrome label.
-		clockDispose = sharedClock.subscribe();
+		clockDispose = runtime.clock.subscribe();
 		wireLifecycle();
 		resumePolling();
 	}

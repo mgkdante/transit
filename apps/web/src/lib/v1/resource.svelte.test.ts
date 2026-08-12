@@ -1,23 +1,42 @@
 import { describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
 
-// Capture the shared newest-data writer so the freshness-bearing tests can assert
-// exactly what createResource feeds it. Mock $lib/stores BEFORE importing the
-// resource (which imports dataRefresh from it).
+// Capture the default newest-data writer so freshness-bearing tests can assert
+// exactly what createResource feeds through its runtime port.
 const mocks = vi.hoisted(() => ({
 	noteDataGeneratedUtc: vi.fn<(v: string | null | undefined) => void>(),
+	bumpRefreshEpoch: () => {},
+	resetRefreshEpoch: () => {},
 }));
-vi.mock('$lib/stores/refresh.svelte', () => ({
-	dataRefresh: {
-		// `epoch` must be a reactive-looking getter so the resource's effect tracks it.
-		get epoch() {
-			return 0;
+vi.mock('$lib/stores/refresh.svelte', async () => {
+	const { createSubscriber } = await import('svelte/reactivity');
+	let refreshEpoch = 0;
+	const subscribe = createSubscriber((update) => {
+		mocks.bumpRefreshEpoch = () => {
+			refreshEpoch += 1;
+			update();
+		};
+		mocks.resetRefreshEpoch = () => {
+			refreshEpoch = 0;
+			update();
+		};
+	});
+	return {
+		dataRefresh: {
+			get epoch() {
+				subscribe();
+				return refreshEpoch;
+			},
+			noteDataGeneratedUtc: mocks.noteDataGeneratedUtc,
 		},
-		noteDataGeneratedUtc: mocks.noteDataGeneratedUtc,
-	},
-}));
+	};
+});
 
+import { dataRefresh } from '$lib/stores/refresh.svelte';
+import { configureV1Runtime } from './runtime';
 import { createResource } from './resource.svelte';
+
+configureV1Runtime({ refresh: dataRefresh });
 
 // A deferred so a test can hold a fetch open and assert in-flight ordering if needed.
 function deferred<T>() {
@@ -155,6 +174,23 @@ describe('createResource — reactivity to inputs read inside the fetcher', () =
 				flushSync();
 				expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledWith('2026-06-20T00:00:00Z');
 			});
+		} finally {
+			cleanup();
+		}
+	});
+
+	it('refetches when the installed refresh epoch changes', async () => {
+		mocks.resetRefreshEpoch();
+		const fetcher = vi.fn(async () => 'value');
+		const cleanup = $effect.root(() => {
+			createResource(fetcher);
+			flushSync();
+		});
+		try {
+			await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+			mocks.bumpRefreshEpoch();
+			flushSync();
+			await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
 		} finally {
 			cleanup();
 		}

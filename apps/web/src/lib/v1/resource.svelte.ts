@@ -13,13 +13,13 @@
 // empty / loaded rendering — no surface re-implements that. Live-tier data uses
 // the live store (createLiveStore) instead; this is for static + historic.
 //
-// It also honors the global `dataRefresh` epoch: a chrome "refresh data" press
+// It also honors the app-supplied refresh epoch: a chrome "refresh data" press
 // bumps it, which re-runs the fetch here (createResource surfaces don't use load
 // functions, so invalidateAll alone would never reach them).
 //
 // FRESHNESS-BEARING (slice-9.8 A): a resource whose payload carries a server
 // `generated_utc` can OPT IN (`{ freshness: true }`) to feed that timestamp into
-// the shared `dataRefresh.noteDataGeneratedUtc` authority. This is how the
+// the app-supplied newest-data authority. This is how the
 // static/historic surfaces (/status, /alerts, /hotspots, /receipt,
 // /repeat-offenders, /trip) contribute the ONE site-wide newest-data timestamp
 // with ZERO per-page age math — the live store remains the live-tier writer, and
@@ -27,7 +27,7 @@
 // recently owns the readout.
 
 import { untrack } from 'svelte';
-import { dataRefresh } from '$lib/stores/refresh.svelte';
+import { getV1Runtime } from '$lib/v1/runtime';
 
 /** A payload that may carry the server's build timestamp (latest-data anchor). */
 type MaybeFreshPayload = { readonly generated_utc?: string | null } | null | undefined;
@@ -96,6 +96,9 @@ export function createResource<T>(
 	options: ResourceOptions<T> = {},
 ): Resource<T> {
 	const wantsFreshness = options.freshness === true;
+	const epoch = () => getV1Runtime().refresh.epoch;
+	const onGenerated = (generatedUtc: string | null | undefined) =>
+		getV1Runtime().refresh.noteDataGeneratedUtc(generatedUtc);
 	let data = $state<T | null>(null);
 	let error = $state<Error | null>(null);
 	let loading = $state(false);
@@ -123,10 +126,9 @@ export function createResource<T>(
 		// synchronously below (before any await). The values themselves are unused.
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		manual;
-		// Reading the global refresh epoch makes a chrome "refresh data" press re-run
+		// Reading the app refresh epoch makes a chrome "refresh data" press re-run
 		// this fetch too (these surfaces have no load fn for invalidateAll to re-run).
-		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
-		dataRefresh.epoch;
+		epoch();
 		const activeKey = options.key?.() ?? unresolvedKey;
 		const seed = options.seed?.();
 		const matchingSeed = seed !== undefined && (!keyed || Object.is(seed.key, activeKey));
@@ -198,7 +200,7 @@ export function createResource<T>(
 				// the payload's own server stamp (latest-wins/monotonic). One line, no
 				// per-page age math — the spine derives the relative age centrally.
 				if (wantsFreshness) {
-					dataRefresh.noteDataGeneratedUtc((value as MaybeFreshPayload)?.generated_utc);
+					onGenerated((value as MaybeFreshPayload)?.generated_utc);
 				}
 			})
 			.catch((e) => {

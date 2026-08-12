@@ -19,7 +19,7 @@
 import { browser } from '$app/environment';
 import type { z } from 'zod';
 import { parsePort } from '$lib/v1/schemas/parse';
-import { sharedClock } from '$lib/stores/clock.svelte';
+import { getV1Runtime } from '$lib/v1/runtime';
 
 // Live snapshots and the manifest are cached for at most 30 seconds. Older
 // static/historic cache hits do not need to recalibrate the live clock, and
@@ -52,7 +52,7 @@ function noteServerTime(res: Response): void {
 	const parsedAgeSeconds = Number.parseInt(res.headers.get('age') ?? '0', 10);
 	const ageSeconds = Math.max(0, Number.isFinite(parsedAgeSeconds) ? parsedAgeSeconds : 0);
 	if (ageSeconds > MAX_SERVER_TIME_CALIBRATION_AGE_S) return;
-	sharedClock.noteServerEpochMs(dateMs + ageSeconds * 1000);
+	getV1Runtime().clock.noteServerEpochMs(dateMs + ageSeconds * 1000);
 }
 
 /** A fetch-shaped function. Matches both the global `fetch` and SvelteKit's `event.fetch`. */

@@ -15,11 +15,6 @@
 // is reported as { published: false } (an empty-state signal, not staleness).
 
 import { ageSeconds, formatRelativeSeconds, type TimeLang } from '$lib/utils/time';
-// Import sharedClock from its module directly, NOT the $lib/stores barrel: the
-// barrel pulls themeStore (reads `document` at module load) + dataPulse, which
-// would break this module's pure-node ($lib/v1) consumers and tests. The clock
-// module is SSR/node-safe (all window access is typeof-guarded).
-import { sharedClock } from '$lib/stores/clock.svelte';
 import type { Manifest } from '$lib/v1/schemas';
 
 /** Which snapshot tier to evaluate. */
@@ -32,16 +27,18 @@ export type FreshnessTier = 'live' | 'static' | 'historic';
  * never re-implemented per surface.
  *
  * `generatedUtc` is a SERVER timestamp, so the age is anchored to the
- * server-corrected clock (`sharedClock.serverNow`) — NOT the raw client clock — so
- * a skewed client can never mis-report it. Read inside a reactive context, it
- * re-derives every shared tick (subscribe via `sharedClock.subscribe()` to keep
- * the tick alive). Returns null for a null/invalid stamp (the honest "no age"),
+ * caller's server-corrected `nowMs` — NOT an app-store import — so a skewed client
+ * cannot mis-report it. Reactive callers should pass their shared ticking clock.
+ * Returns null for a null/invalid stamp (the honest "no age"),
  * clamped to >= 0 so a build stamped slightly in the future reads as 0, not
  * negative.
  */
-export function freshnessAgeSeconds(generatedUtc: string | null | undefined): number | null {
+export function freshnessAgeSeconds(
+	generatedUtc: string | null | undefined,
+	nowMs: number,
+): number | null {
 	if (!generatedUtc) return null;
-	const age = ageSeconds(generatedUtc, sharedClock.serverNow);
+	const age = ageSeconds(generatedUtc, nowMs);
 	return Number.isNaN(age) ? null : Math.max(0, age);
 }
 
@@ -54,8 +51,9 @@ export function freshnessAgeSeconds(generatedUtc: string | null | undefined): nu
 export function freshnessRelative(
 	generatedUtc: string | null | undefined,
 	lang: TimeLang,
+	nowMs: number,
 ): string | null {
-	const age = freshnessAgeSeconds(generatedUtc);
+	const age = freshnessAgeSeconds(generatedUtc, nowMs);
 	return age == null ? null : formatRelativeSeconds(age, lang);
 }
 

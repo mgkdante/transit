@@ -12,8 +12,7 @@
 // transport underneath can change.
 
 import { adapter, type AdapterCtx } from '$lib/v1/adapter';
-import { resolveUrl } from '$lib/v1/config';
-import { ManifestSchema, type Manifest } from '$lib/v1/schemas/manifest';
+import type { Manifest } from '$lib/v1/schemas/manifest';
 
 /**
  * Fetch + validate the snapshot manifest (snapshot root pointer).
@@ -33,15 +32,9 @@ export async function getManifest(ctx?: AdapterCtx): Promise<Manifest> {
  * when the response is still fresh; an expired response revalidates at the same
  * shared cache key.
  *
- * Browser-only (it uses the global `fetch` against the same-origin `/data/v1`
- * base); never call it under SSR. Throws on a non-200 or a schema-invalid body so
+ * Throws on a non-200 or a schema-invalid body so
  * the caller can swallow a transient failure and retry on the next tick.
  */
-export async function getManifestFresh(): Promise<Manifest> {
-	const url = resolveUrl('manifest.json');
-	const res = await fetch(url);
-	if (!res.ok) {
-		throw new Error(`[v1.manifest] fresh manifest fetch failed: ${res.status} ${url}`);
-	}
-	return ManifestSchema.parse(await res.json());
+export async function getManifestFresh(ctx?: AdapterCtx): Promise<Manifest> {
+	return adapter.manifest.getFresh(ctx);
 }

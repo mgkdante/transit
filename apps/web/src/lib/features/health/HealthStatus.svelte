@@ -58,7 +58,7 @@
 		type TocEntry,
 	} from '$lib/components/shared';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { persisted } from '$lib/stores';
+	import { persisted, sharedClock } from '$lib/stores';
 	import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 	import { copy as COPY } from './health.copy';
 	import {
@@ -120,7 +120,7 @@
 	}
 	/** Relative last-loaded stamp from an ISO string, or the localized fallback. */
 	function lastLoaded(iso: string | null | undefined): string {
-		return freshnessRelative(iso, locale) ?? t.sources.neverLoaded;
+		return freshnessRelative(iso, locale, sharedClock.serverNow) ?? t.sources.neverLoaded;
 	}
 	/** Humanize a raw gap feed-token into a citizen sentence (localized lookup). */
 	function humanizeGap(token: string): string {

@@ -2,7 +2,7 @@
   HistogramMark — the LayerChart renderer for a `kind: 'histogram'` ChartSpec (A1, S7).
 
   The signed-delay distribution on a TRUE LINEAR delay axis (seconds, clipped to the decision
-  window DELAY_HISTOGRAM_DOMAIN). Each contract bin is unequal width (30 s near 0 → minutes in
+  window supplied by the chart spec). Each contract bin is unequal width (30 s near 0 → minutes in
   the tail), so a bar spans its real [lo,hi] and its HEIGHT is the density (count ÷ bin-width):
   the bar AREA is proportional to the trip count — the honest unequal-bin histogram. (Rendering
   one equal-pixel bar per bin would over-weight the wide tail bins and bend the time axis.)
@@ -21,7 +21,6 @@
 	import ChartFrame from '../ChartFrame.svelte';
 	import { structuralLabels } from '../structuralLabels';
 	import HistogramBars from './HistogramBars.svelte';
-	import { DELAY_HISTOGRAM_DOMAIN } from '$lib/features/reliability/domains';
 	import type { HistogramBin, HistogramSpec } from '../ChartSpec';
 
 	export interface HistogramMarkProps {
@@ -34,11 +33,10 @@
 
 	const ON_TIME_LO = -60;
 	const ON_TIME_HI = 300;
-	const DOM_LO = DELAY_HISTOGRAM_DOMAIN[0];
-	const DOM_HI = DELAY_HISTOGRAM_DOMAIN[1];
+	const xDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
 	/** The minute landmarks (in seconds) to tick on the linear x-axis (those inside the window). */
-	const LANDMARKS_SEC = [-300, -60, 0, 60, 300, 600, 1800].filter(
-		(s) => s >= DOM_LO && s <= DOM_HI,
+	const landmarksSec = $derived(
+		[-300, -60, 0, 60, 300, 600, 1800].filter((s) => s >= xDomain[0] && s <= xDomain[1]),
 	);
 
 	function groupOf(b: HistogramBin): 'early' | 'ontime' | 'late' {
@@ -63,7 +61,8 @@
 		spec.bins
 			.map((b, i) => ({ b, i }))
 			.filter(
-				({ b }) => b.lo != null && b.hi != null && b.lo >= DOM_LO && b.hi <= DOM_HI && b.hi > b.lo,
+				({ b }) =>
+					b.lo != null && b.hi != null && b.lo >= xDomain[0] && b.hi <= xDomain[1] && b.hi > b.lo,
 			)
 			.map(({ b, i }) => {
 				const lo = b.lo as number;
@@ -85,12 +84,14 @@
 
 	/** Median / p90 reference positions (seconds), only when inside the visible window. */
 	const medianRef = $derived(
-		spec.medianRef != null && spec.medianRef >= DOM_LO && spec.medianRef <= DOM_HI
+		spec.medianRef != null && spec.medianRef >= xDomain[0] && spec.medianRef <= xDomain[1]
 			? spec.medianRef
 			: null,
 	);
 	const p90Ref = $derived(
-		spec.p90Ref != null && spec.p90Ref >= DOM_LO && spec.p90Ref <= DOM_HI ? spec.p90Ref : null,
+		spec.p90Ref != null && spec.p90Ref >= xDomain[0] && spec.p90Ref <= xDomain[1]
+			? spec.p90Ref
+			: null,
 	);
 
 	const padding = { top: 12, right: 14, bottom: 40, left: 16 };
@@ -108,7 +109,7 @@
 			data={bars}
 			x={(d: Bar) => d.center}
 			xScale={scaleLinear()}
-			xDomain={[DOM_LO, DOM_HI]}
+			{xDomain}
 			y={(d: Bar) => d.density}
 			yScale={scaleLinear()}
 			{yDomain}
@@ -122,7 +123,7 @@
 					placement="bottom"
 					label={spec.xLabel}
 					labelPlacement="middle"
-					ticks={LANDMARKS_SEC}
+					ticks={landmarksSec}
 					format={minutesTick}
 					class="dv-histmark-axis"
 				/>

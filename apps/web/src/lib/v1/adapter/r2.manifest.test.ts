@@ -58,6 +58,28 @@ describe('r2 manifest memo', () => {
 		);
 	});
 
+	it('fresh reads bypass boot and memo manifests at the same cacheable URL', async () => {
+		const booted = { ...manifest(), dataset_version: 'boot' };
+		const fresh = { ...manifest(), dataset_version: 'fresh' };
+		installBrowserAdapterManifest(() => booted as never);
+		const request = vi.fn(async () => json(fresh));
+
+		await expect(
+			r2Adapter.manifest.getFresh({
+				manifest: booted as never,
+				cache: new Map<string, unknown>([['v1:manifest', booted]]),
+				fetch: request as unknown as typeof fetch,
+			}),
+		).resolves.toMatchObject({ dataset_version: 'fresh' });
+
+		expect(request).toHaveBeenCalledOnce();
+		expect(request).toHaveBeenCalledWith('/data/v1/stm/manifest.json', {
+			headers: { accept: 'application/json' },
+			cache: 'default',
+			signal: undefined,
+		});
+	});
+
 	it('selects the locale labels file from the manifest pointer', async () => {
 		const booted = {
 			...manifest(),

@@ -103,7 +103,9 @@
 	// the centralized server-anchored derivation off the shared clock. Both
 	// re-derive every shared tick, so the readout never freezes.
 	const effectiveAge = $derived<number | null>(
-		ageSeconds !== undefined ? ageSeconds : freshnessAgeSeconds(generatedUtc),
+		ageSeconds !== undefined
+			? ageSeconds
+			: freshnessAgeSeconds(generatedUtc, sharedClock.serverNow),
 	);
 
 	// Doctrine §3.5 freshness display: a RELATIVE age under 24h ("4 minutes ago"),
