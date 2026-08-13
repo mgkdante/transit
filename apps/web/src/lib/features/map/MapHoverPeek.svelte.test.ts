@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { Alert } from '$lib/v1/schemas';
 import MapHoverPeek from './MapHoverPeek.svelte';
 import type { MapHoverPeek as MapHoverPeekModel } from './mapHoverPeek';
 
@@ -16,6 +17,8 @@ const vehicleStale: MapHoverPeekModel = {
 	nextStop: { id: 'stop-2', name: 'Sherbrooke / Saint-Denis', nameAbsent: false },
 	nextStopAbsence: 'not-in-schedule',
 	notReportingAgeS: 180,
+	tripId: 'trip-secret',
+	alerts: null,
 };
 const vehicleFresh: MapHoverPeekModel = { ...vehicleStale, notReportingAgeS: null };
 const route: MapHoverPeekModel = {
@@ -26,6 +29,8 @@ const route: MapHoverPeekModel = {
 	type: 3,
 	labelInferred: false,
 	visibleVehicleCount: 2,
+	directionLabel: null,
+	alerts: null,
 };
 const stop: MapHoverPeekModel = {
 	kind: 'stop',
@@ -34,7 +39,18 @@ const stop: MapHoverPeekModel = {
 	nameAbsent: false,
 	code: '202',
 	vehicleCount: 2,
+	departureCount: 3,
+	alerts: null,
 };
+
+const alert = {
+	id: 'alert-24',
+	severity: 'high',
+	header_key: 'Detour on route 24',
+	description_en: '<p>Route 24 is diverted.</p>',
+	routes: ['24'],
+	stops: [],
+} as Alert;
 
 afterEach(() => cleanup());
 
@@ -90,8 +106,10 @@ describe('MapHoverPeek', () => {
 		expect(source).toMatch(/dl \{[^}]*gap: 0\.625rem 0\.875rem;[^}]*\}/u);
 	});
 
-	it('renders the vehicle keep table and drops trip, alerts, actions, and links', () => {
-		const { container } = render(MapHoverPeek, { props: { peek: vehicleStale, locale: 'en' } });
+	it('renders useful trip and alert truth without turning the peek into an interactive panel', () => {
+		const { container } = render(MapHoverPeek, {
+			props: { peek: { ...vehicleStale, alerts: [alert] }, locale: 'en' },
+		});
 
 		expect(container).toHaveTextContent('Route 24');
 		expect(container).toHaveTextContent('bus-24');
@@ -102,9 +120,49 @@ describe('MapHoverPeek', () => {
 		expect(container).toHaveTextContent('Sherbrooke / Saint-Denis');
 		expect(container).toHaveTextContent('No recent position');
 		expect(container).toHaveTextContent('3 min');
-		expect(container).not.toHaveTextContent('trip-secret');
-		expect(container).not.toHaveTextContent('Alerts');
+		expect(definitionValue(container, 'Trip')).toHaveTextContent('trip-secret');
+		expect(container).toHaveTextContent('Alerts');
+		expect(container).toHaveTextContent('Route 24 is diverted.');
 		expectInert(container);
+	});
+
+	it.each([
+		{ delayMin: 0, status: 'on_time', want: 'On-time', absence: false },
+		{ delayMin: 4, status: 'late', want: 'Late · 4 min late', absence: false },
+		{
+			delayMin: null,
+			status: 'unknown',
+			want: 'not reported in the live feed',
+			absence: true,
+		},
+	] as const)(
+		'merges vehicle delay $delayMin into the passive status fact',
+		({ delayMin, status, want, absence }) => {
+			const { container } = render(MapHoverPeek, {
+				props: { peek: { ...vehicleFresh, delayMin, status }, locale: 'en' },
+			});
+			const statusValue = definitionValue(container, 'Status');
+
+			expect(statusValue).toHaveTextContent(want);
+			expect(statusValue.querySelector('[data-slot="absent-value"]') != null).toBe(absence);
+			if (delayMin == null) expect(statusValue.textContent?.match(/Unknown/g)).toHaveLength(1);
+			expect([...container.querySelectorAll('dt')].map((term) => term.textContent)).not.toContain(
+				'Delay',
+			);
+			expectInert(container);
+		},
+	);
+
+	it('keeps unavailable and empty alert rails out of the transient peek', () => {
+		for (const alerts of [null, []] as const) {
+			const { container, unmount } = render(MapHoverPeek, {
+				props: { peek: { ...vehicleFresh, alerts }, locale: 'en' },
+			});
+			expect(container).not.toHaveTextContent('Alerts');
+			expect(container).not.toHaveTextContent('Alert data unavailable');
+			expect(container).not.toHaveTextContent('No alerts attached');
+			unmount();
+		}
 	});
 
 	it('renders fresh metro null fields as no live data, never not reported', () => {
@@ -119,7 +177,7 @@ describe('MapHoverPeek', () => {
 		});
 
 		expect(definitionValue(container, 'Crowding')).toHaveTextContent('No live data');
-		expect(definitionValue(container, 'Delay')).toHaveTextContent('No live data');
+		expect(definitionValue(container, 'Status')).toHaveTextContent('No live data');
 		expect(container).not.toHaveTextContent('Not reported');
 	});
 
@@ -134,7 +192,7 @@ describe('MapHoverPeek', () => {
 		});
 
 		expect(definitionValue(container, 'Crowding')).toHaveTextContent(/not reporting/i);
-		expect(definitionValue(container, 'Delay')).toHaveTextContent(/not reporting/i);
+		expect(definitionValue(container, 'Status')).toHaveTextContent(/not reporting/i);
 	});
 
 	it('renders fresh non-metro null fields as not reported', () => {
@@ -148,17 +206,20 @@ describe('MapHoverPeek', () => {
 		});
 
 		expect(definitionValue(container, 'Crowding')).toHaveTextContent(/not reported/i);
-		expect(definitionValue(container, 'Delay')).toHaveTextContent(/not reported/i);
+		expect(definitionValue(container, 'Status')).toHaveTextContent(/not reported/i);
 	});
 
-	it('renders route long name, type, and visible-bus count without direction', () => {
-		const { container } = render(MapHoverPeek, { props: { peek: route, locale: 'en' } });
+	it('renders route long name, type, direction, and visible-bus count', () => {
+		const { container } = render(MapHoverPeek, {
+			props: { peek: { ...route, directionLabel: 'East · toward Frontenac' }, locale: 'en' },
+		});
 
 		expect(container).toHaveTextContent('Route 24');
 		expect(container).toHaveTextContent('Sherbrooke');
 		expect(container).toHaveTextContent('Bus');
 		expect(container).toHaveTextContent('2 buses visible');
-		expect(container).not.toHaveTextContent('Direction');
+		expect(definitionValue(container, 'Direction')).toHaveTextContent('East · toward Frontenac');
+		expectInert(container);
 	});
 
 	it('marks inferred vehicle route copy and labels an unnamed stop honestly', () => {
@@ -173,6 +234,8 @@ describe('MapHoverPeek', () => {
 			nameAbsent: true,
 			code: null,
 			vehicleCount: 0,
+			departureCount: null,
+			alerts: null,
 		};
 
 		const vehicleRender = render(MapHoverPeek, {
@@ -200,27 +263,23 @@ describe('MapHoverPeek', () => {
 		expect(container).not.toHaveTextContent('Next stop unknown');
 	});
 
-	it('renders stop code and vehicles-heading count while omitting departures entirely', () => {
+	it('renders stop code, vehicles-heading count, and loaded departure count', () => {
 		const { container } = render(MapHoverPeek, { props: { peek: stop, locale: 'en' } });
 
 		expect(container).toHaveTextContent('Sherbrooke / Saint-Denis');
 		expect(container).toHaveTextContent('202');
 		expect(container).toHaveTextContent('2 buses heading here');
-		expect(container.textContent?.toLowerCase()).not.toContain('departure');
+		expect(container).toHaveTextContent('3 departures');
+		expectInert(container);
 	});
 
-	it('structurally drops the former alerts states and the false departures-unavailable path', () => {
-		const modelSource = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/mapHoverPeek.ts'),
-			'utf8',
-		);
-		const componentSource = readFileSync(
-			resolve(process.cwd(), 'src/lib/features/map/MapHoverPeek.svelte'),
-			'utf8',
-		);
+	it('renders unavailable departures honestly instead of fabricating zero', () => {
+		const { container } = render(MapHoverPeek, {
+			props: { peek: { ...stop, departureCount: null }, locale: 'en' },
+		});
 
-		expect(modelSource).not.toContain('alerts');
-		expect(componentSource).not.toContain('alerts');
-		expect(componentSource).not.toContain('departuresUnavailable');
+		expect(container).toHaveTextContent('Live departures unavailable');
+		expect(container).not.toHaveTextContent('0 departures');
+		expectInert(container);
 	});
 });

@@ -2,7 +2,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { LiveIndex } from '$lib/v1/live';
-import { VehicleSchema, type RouteIndexEntry } from '$lib/v1/schemas';
+import {
+	VehicleSchema,
+	type Alert,
+	type IsoUtc,
+	type RouteFile,
+	type RouteIndexEntry,
+} from '$lib/v1/schemas';
 import { resolveMapHoverPeek, type MapHoverPeekContext } from './mapHoverPeek';
 
 const now = Date.parse('2026-07-31T12:00:00Z');
@@ -42,17 +48,52 @@ const stops = [
 ];
 const clock = { serverNow: now };
 const context: MapHoverPeekContext = {
-	index: { byVehicleId, vehiclesByStop } satisfies Pick<
+	index: { byVehicleId, vehiclesByStop, byStopId: new Map() } satisfies Pick<
 		LiveIndex,
-		'byVehicleId' | 'vehiclesByStop'
+		'byVehicleId' | 'vehiclesByStop' | 'byStopId'
 	>,
 	stops,
 	routesIndex,
 	clock,
 };
 
+const routeAlert = {
+	id: 'route-alert',
+	severity: 'high',
+	header_key: 'Detour on route 24',
+	description_en: '<p>Route 24 is diverted.</p>',
+	routes: ['24'],
+	stops: [],
+} as Alert;
+
+const stopAlert = {
+	id: 'stop-alert',
+	severity: 'watch',
+	header_key: 'Stop moved',
+	description_en: '<p>Stop 202 moved.</p>',
+	routes: [],
+	stops: ['stop-2'],
+} as Alert;
+
+const routeFile = {
+	generated_utc: '2026-07-31T12:00:00Z',
+	id: '24',
+	long: 'Sherbrooke',
+	directions: [
+		{
+			dir: 0,
+			headsign: 'East',
+			shape: null,
+			stops: [
+				{ id: 'stop-1', seq: 1, name: 'Place-des-Arts' },
+				{ id: 'stop-2', seq: 2, name: 'Sherbrooke / Saint-Denis' },
+			],
+		},
+	],
+} as RouteFile;
+
 describe('resolveMapHoverPeek', () => {
-	it('builds the vehicle keep table without trip, alerts, or forbidden live indexes', () => {
+	it('builds the vehicle peek from the vehicle index without requiring hover-only fetches', () => {
 		const peek = resolveMapHoverPeek({ kind: 'vehicle', id: 'bus-24' }, context);
 
 		expect(peek).toEqual({
@@ -70,9 +111,9 @@ describe('resolveMapHoverPeek', () => {
 			},
 			nextStopAbsence: 'not-in-schedule',
 			notReportingAgeS: 180,
+			tripId: 'trip-secret',
+			alerts: null,
 		});
-		expect(peek).not.toHaveProperty('trip');
-		expect(peek).not.toHaveProperty('alerts');
 	});
 
 	it('uses the slim-stop absence vocabulary without leaking an unresolved stop id as a name', () => {
@@ -113,6 +154,8 @@ describe('resolveMapHoverPeek', () => {
 			type: 3,
 			labelInferred: false,
 			visibleVehicleCount: 2,
+			directionLabel: null,
+			alerts: null,
 		});
 	});
 
@@ -127,7 +170,7 @@ describe('resolveMapHoverPeek', () => {
 		expect(peek).not.toHaveProperty('direction');
 	});
 
-	it('builds the stop code and vehicles-heading count with no departures field', () => {
+	it('builds the stop code and vehicle count while preserving unavailable departure truth', () => {
 		const peek = resolveMapHoverPeek({ kind: 'stop', id: 'stop-2' }, context);
 
 		expect(peek).toEqual({
@@ -137,8 +180,9 @@ describe('resolveMapHoverPeek', () => {
 			nameAbsent: false,
 			code: '202',
 			vehicleCount: 2,
+			departureCount: null,
+			alerts: null,
 		});
-		expect(peek).not.toHaveProperty('departures');
 	});
 
 	it('recomputes stale age from the shared server clock without any lease or fetch input', () => {
@@ -152,13 +196,69 @@ describe('resolveMapHoverPeek', () => {
 		expect(second).toMatchObject({ notReportingAgeS: 240 });
 	});
 
-	it('pins the typed context and forbidden source vocabulary', () => {
+	it('restores useful hover truth from already-loaded trip, alert, departure, and route data', () => {
+		const enrichedContext: MapHoverPeekContext = {
+			...context,
+			index: {
+				...context.index,
+				byStopId: new Map([
+					[
+						'stop-2',
+						[
+							{ route: '24', trip: 'trip-a', eta_utc: '2026-07-31T12:05:00Z' as IsoUtc },
+							{ route: '24', trip: 'trip-b', eta_utc: '2026-07-31T12:10:00Z' as IsoUtc },
+						],
+					],
+				]),
+			},
+			departuresAvailable: true,
+			alerts: [routeAlert, stopAlert],
+			hoverRoute: routeFile,
+		};
+
+		expect(resolveMapHoverPeek({ kind: 'vehicle', id: 'bus-24' }, enrichedContext)).toMatchObject({
+			kind: 'vehicle',
+			tripId: 'trip-secret',
+			alerts: [routeAlert, stopAlert],
+		});
+		expect(
+			resolveMapHoverPeek({ kind: 'route', id: '24', direction: 0 }, enrichedContext),
+		).toMatchObject({
+			kind: 'route',
+			directionLabel: 'toward Sherbrooke / Saint-Denis',
+			alerts: [routeAlert],
+		});
+		expect(resolveMapHoverPeek({ kind: 'stop', id: 'stop-2' }, enrichedContext)).toMatchObject({
+			kind: 'stop',
+			departureCount: 2,
+			alerts: [stopAlert],
+		});
+	});
+
+	it('keeps unavailable departures distinct from an honestly empty loaded board', () => {
+		const unavailable = resolveMapHoverPeek({ kind: 'stop', id: 'stop-2' }, context);
+		const empty = resolveMapHoverPeek(
+			{ kind: 'stop', id: 'stop-2' },
+			{
+				...context,
+				index: {
+					...context.index,
+					byStopId: new Map(),
+				},
+				departuresAvailable: true,
+			},
+		);
+
+		expect(unavailable).toMatchObject({ departureCount: null });
+		expect(empty).toMatchObject({ departureCount: 0 });
+	});
+
+	it('keeps trip detail unavailable while admitting the opaque departure count board', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/map/mapHoverPeek.ts'),
 			'utf8',
 		);
-		expect(source).toContain("Pick<LiveIndex, 'byVehicleId' | 'vehiclesByStop'>");
+		expect(source).toContain("Pick<LiveIndex, 'byVehicleId' | 'vehiclesByStop' | 'byStopId'>");
 		expect(source).not.toContain('byTripId');
-		expect(source).not.toContain('byStopId');
 	});
 });

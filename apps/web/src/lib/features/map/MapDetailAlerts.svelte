@@ -17,10 +17,12 @@
 		locale: Locale;
 		t: MapSelectionDetailCopy;
 		onalertselect?: (alert: Alert) => void;
+		presentation?: 'detail' | 'peek-passive';
 	}
 
-	let { alerts, locale, t, onalertselect }: Props = $props();
+	let { alerts, locale, t, onalertselect, presentation = 'detail' }: Props = $props();
 	const uid = $props.id();
+	const PEEK_ALERT_CAP = 1;
 
 	function displayAlert(alert: Alert) {
 		return alertDisplayText(alert, locale);
@@ -32,37 +34,47 @@
 	{#if alerts == null}
 		<StateNotice title={t.alertsUnavailable} glyph="○" tone="neutral" presentation="silo" />
 	{:else if alerts.length > 0}
-		<ul>
-			{#each alerts.slice(0, 4) as alert, index (alert.id)}
+		<ul class:map-alerts-peek={presentation === 'peek-passive'}>
+			{#each alerts.slice(0, presentation === 'peek-passive' ? PEEK_ALERT_CAP : 4) as alert, index (alert.id)}
 				{@const cause = causeLabel(alert.cause, locale)}
 				{@const effect = effectLabel(alert.effect, locale)}
 				{@const display = displayAlert(alert)}
 				{@const marker = display.isFallback && display.lang && display.lang !== locale}
 				{@const url = alertDisplayUrl(alert, locale)}
 				{@const labelId = `${uid}-map-alert-label-${index}`}
-				<li data-severity={alert.severity}>
-					<button
-						type="button"
-						class="map-alert-button"
-						aria-labelledby={labelId}
-						onclick={() => onalertselect?.(alert)}
-					>
-						<span class="map-alert-text">
-							<span lang={display.lang && display.lang !== locale ? display.lang : undefined}>
-								{display.text}
-							</span>
+				<li class="map-alert" data-severity={alert.severity}>
+					{#if presentation === 'peek-passive'}
+						<span class="map-alert-text map-alert-passive">
+							<span class="map-alert-severity" aria-hidden="true"
+								>{alert.severity === 'critical' ? '◆' : alert.severity === 'high' ? '▲' : '●'}</span
+							>
+							<span lang={display.lang && display.lang !== locale ? display.lang : undefined}
+								>{display.text}</span
+							>
 							{#if marker}<span class="alert-language-marker">{t.foreignLanguage}</span>{/if}
 						</span>
-						<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-						<span id={labelId} class="sr-only">
-							{t.selectAlertAction}
-							<span lang={display.lang && display.lang !== locale ? display.lang : undefined}>
-								{display.text}
+					{:else}<button
+							type="button"
+							class="map-alert-button"
+							aria-labelledby={labelId}
+							onclick={() => onalertselect?.(alert)}
+						>
+							<span class="map-alert-text">
+								<span lang={display.lang && display.lang !== locale ? display.lang : undefined}>
+									{display.text}
+								</span>
+								{#if marker}<span class="alert-language-marker">{t.foreignLanguage}</span>{/if}
 							</span>
-							{#if marker}<span>{t.foreignLanguage}</span>{/if}
-						</span>
-					</button>
-					{#if url}
+							<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
+							<span id={labelId} class="sr-only">
+								{t.selectAlertAction}
+								<span lang={display.lang && display.lang !== locale ? display.lang : undefined}>
+									{display.text}
+								</span>
+								{#if marker}<span>{t.foreignLanguage}</span>{/if}
+							</span>
+						</button>{/if}
+					{#if presentation === 'detail' && url}
 						<a
 							class="map-alert-link"
 							href={url.href}
@@ -74,7 +86,7 @@
 							{t.alertLink} · {url.host}
 						</a>
 					{/if}
-					{#if cause || effect}
+					{#if presentation === 'detail' && (cause || effect)}
 						<dl class="map-alert-meta">
 							{#if cause}
 								<div>
@@ -93,6 +105,9 @@
 				</li>
 			{/each}
 		</ul>
+		{#if presentation === 'peek-passive' && alerts.length > PEEK_ALERT_CAP}
+			<p class="map-peek-alerts-more">+{alerts.length - PEEK_ALERT_CAP} {t.more}</p>
+		{/if}
 	{:else}
 		<StateNotice title={t.noAlerts} glyph="●" tone="positive" presentation="silo" />
 	{/if}
@@ -183,6 +198,21 @@
 	   never as part of the provider's own headline. */
 	.map-alert-text {
 		min-width: 0;
+	}
+	.map-alert-passive {
+		display: block;
+		line-height: 1.35;
+	}
+	.map-alert-severity {
+		margin-inline-end: 0.375rem;
+		font-family: var(--font-mono);
+		color: color-mix(in srgb, var(--alert-tone) 72%, var(--foreground) 28%);
+	}
+	.map-peek-alerts-more {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		color: var(--muted-foreground);
 	}
 
 	.map-alert-text .alert-language-marker {

@@ -6,8 +6,10 @@
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { MapHoverPeek } from './mapHoverPeek';
+	import MapDelayTag from './MapDelayTag.svelte';
+	import MapDetailAlerts from './MapDetailAlerts.svelte';
 	import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
-	import { delayKnownLabel, formatAge, vehicleFieldAbsence } from './mapSelectionDetail.logic';
+	import { formatAge, vehicleFieldAbsence } from './mapSelectionDetail.logic';
 
 	interface Props {
 		peek: MapHoverPeek;
@@ -68,23 +70,31 @@
 			</div>
 			<div>
 				<dt>{t.status}</dt>
-				<dd>{STATUS_LABELS[locale][peek.status]}</dd>
+				<dd class="map-peek-status">
+					{#if peek.delayMin != null || peek.status !== 'unknown'}
+						{STATUS_LABELS[locale][peek.status]}
+					{/if}
+					{#if peek.delayMin !== 0}
+						{#if peek.delayMin != null || peek.status !== 'unknown'}
+							<span aria-hidden="true">·</span>
+						{/if}
+						<MapDelayTag
+							delay={peek.delayMin}
+							{locale}
+							{t}
+							ctx={{
+								stale: peek.notReportingAgeS != null,
+								metro: peek.route?.type === ROUTE_TYPE_METRO,
+							}}
+						/>
+					{/if}
+				</dd>
 			</div>
 			<div>
 				<dt>{t.crowding}</dt>
 				<dd>
 					{#if peek.occupancy != null}
 						{OCCUPANCY_LABELS[locale][peek.occupancy]}
-					{:else}
-						<AbsentValue reason={vehicleAbsence} {locale} />
-					{/if}
-				</dd>
-			</div>
-			<div>
-				<dt>{t.delay}</dt>
-				<dd>
-					{#if peek.delayMin != null}
-						{delayKnownLabel(peek.delayMin, t)}
 					{:else}
 						<AbsentValue reason={vehicleAbsence} {locale} />
 					{/if}
@@ -104,7 +114,19 @@
 					{/if}
 				</dd>
 			</div>
+			<div>
+				<dt>{t.trip}</dt>
+				<dd>
+					{#if peek.tripId}{peek.tripId}{:else}<AbsentValue reason={vehicleAbsence} {locale} />{/if}
+				</dd>
+			</div>
 		</dl>
+		{#if peek.alerts && peek.alerts.length > 0}<MapDetailAlerts
+				alerts={peek.alerts}
+				{locale}
+				{t}
+				presentation="peek-passive"
+			/>{/if}
 	{:else if peek.kind === 'route'}
 		<div class="map-peek-id">
 			<span>{t.route}</span>
@@ -122,14 +144,38 @@
 				<dt>{t.routeKind}</dt>
 				<dd>{routeModeHint(peek.type).tag ?? peek.type}</dd>
 			</div>
+			<div>
+				<dt>{t.direction}</dt>
+				<dd>
+					{#if peek.directionLabel}{peek.directionLabel}{:else}<AbsentValue
+							reason="not-in-schedule"
+							{locale}
+						/>{/if}
+				</dd>
+			</div>
 		</dl>
 		<p class="map-peek-count">{t.visibleBuses(peek.visibleVehicleCount)}</p>
+		{#if peek.alerts && peek.alerts.length > 0}<MapDetailAlerts
+				alerts={peek.alerts}
+				{locale}
+				{t}
+				presentation="peek-passive"
+			/>{/if}
 	{:else}
 		<div class="map-peek-id">
 			<span>{t.stopCode}</span>
 			<strong>{peek.code ?? peek.id}</strong>
 		</div>
 		<p class="map-peek-count">{t.vehiclesHeading(peek.vehicleCount)}</p>
+		<p class="map-peek-count">
+			{peek.departureCount == null ? t.departuresUnavailable : t.departures(peek.departureCount)}
+		</p>
+		{#if peek.alerts && peek.alerts.length > 0}<MapDetailAlerts
+				alerts={peek.alerts}
+				{locale}
+				{t}
+				presentation="peek-passive"
+			/>{/if}
 	{/if}
 </article>
 
@@ -196,6 +242,12 @@
 		margin: 0;
 		font-size: var(--text-small);
 		overflow-wrap: anywhere;
+	}
+	.map-peek-status {
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem;
 	}
 	.map-peek-count {
 		margin: 0;
