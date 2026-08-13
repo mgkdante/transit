@@ -56,6 +56,35 @@ const mobileAlert: Alert = {
 
 const stopDetailWithAlert: StopMapDetail = { ...stopDetail, alerts: [mobileAlert] };
 
+const noTargetVehicle: VehicleMapDetail = {
+	kind: 'vehicle',
+	id: 'veh-no-target',
+	title: 'Bus veh-no-target',
+	vehicle: {
+		id: 'veh-no-target',
+		lat: 45.5,
+		lon: -73.6,
+		status: 'unknown',
+		updated_utc: '2026-06-15T00:00:00Z' as IsoUtc,
+		route: null,
+		trip: null,
+		next_stop: null,
+		bearing: null,
+		delay_min: null,
+		occupancy: null,
+	},
+	trip: null,
+	route: null,
+	routeDirection: null,
+	routeDirectionVariant: null,
+	nextStop: null,
+	nextStopAbsence: 'end-of-route',
+	pastStops: [],
+	nextStops: [],
+	alerts: [],
+	routeType: null,
+};
+
 function compiledCss(path: string): string {
 	return (
 		compile(readFileSync(resolve(process.cwd(), path), 'utf8'), {
@@ -64,6 +93,12 @@ function compiledCss(path: string): string {
 			css: 'external',
 		}).css?.code ?? ''
 	);
+}
+
+function cssFloorPx(value: string): number {
+	if (value.endsWith('rem')) return Number.parseFloat(value) * 16;
+	if (value.endsWith('px')) return Number.parseFloat(value);
+	return 0;
 }
 
 function installMobileLadderSeam(outerWidthPx: number): HTMLStyleElement {
@@ -172,34 +207,6 @@ describe('MapMobileDetailSheet', () => {
 	});
 
 	it('renders no footer slot or action for an open vehicle with neither trip nor route', async () => {
-		const noTargetVehicle = {
-			kind: 'vehicle',
-			id: 'veh-no-target',
-			title: 'Bus veh-no-target',
-			vehicle: {
-				id: 'veh-no-target',
-				lat: 45.5,
-				lon: -73.6,
-				status: 'unknown',
-				updated_utc: '2026-06-15T00:00:00Z' as IsoUtc,
-				route: null,
-				trip: null,
-				next_stop: null,
-				bearing: null,
-				delay_min: null,
-				occupancy: null,
-			},
-			trip: null,
-			route: null,
-			routeDirection: null,
-			routeDirectionVariant: null,
-			nextStop: null,
-			nextStopAbsence: 'end-of-route',
-			pastStops: [],
-			nextStops: [],
-			alerts: [],
-			routeType: null,
-		} as VehicleMapDetail;
 		render(MapMobileDetailSheet, { props: baseProps({ selectedDetail: noTargetVehicle }) });
 
 		await waitFor(() => {
@@ -221,6 +228,64 @@ describe('MapMobileDetailSheet', () => {
 		const body = document.querySelector('[data-slot="bottom-sheet-body"]')!;
 		expect(body).toBeInTheDocument();
 		expect(document.querySelector('[data-slot="sheet-title"]')).toHaveTextContent(stop.name);
+	});
+
+	it('gives only the mobile sheet definition rows aligned scan columns and strong wrapping', async () => {
+		const style = document.createElement('style');
+		let unmount: (() => void) | undefined;
+		style.textContent = [
+			compiledCss('src/lib/features/map/MapMobileDetailSheet.svelte'),
+			compiledCss('src/lib/features/map/MapSelectionDetail.svelte'),
+			compiledCss('src/lib/features/map/detail/DetailAttributeGrid.svelte'),
+		].join('\n');
+		document.head.append(style);
+		try {
+			const vehicleDetail: VehicleMapDetail = {
+				...noTargetVehicle,
+				id: 'veh-tablet',
+				title: 'Bus veh-tablet',
+				vehicle: {
+					...noTargetVehicle.vehicle,
+					id: 'veh-tablet',
+					status: 'late',
+					route: '24',
+					trip: 'trip-with-an-intentionally-long-identifier-that-must-wrap',
+					next_stop: 'stop-1',
+					delay_min: 4,
+					occupancy: 'standing',
+				},
+				nextStop: stop,
+				nextStopAbsence: 'not-in-schedule',
+				routeType: 3,
+			};
+			({ unmount } = render(MapMobileDetailSheet, {
+				props: baseProps({ selectedDetail: vehicleDetail }),
+			}));
+			const row = await waitFor(() => {
+				const element = document.querySelector<HTMLElement>(
+					'[data-mobile-detail-body] .detail-attribute-grid > div',
+				);
+				expect(element).toBeInTheDocument();
+				return element!;
+			});
+			const value = row.querySelector<HTMLElement>('dd')!;
+			const action = row.querySelector<HTMLElement>('button')!;
+
+			expect(getComputedStyle(row).gridTemplateColumns).toBe(
+				'5.75rem minmax(0, 1fr) minmax(5.5rem, auto)',
+			);
+			expect(getComputedStyle(row).borderBottomWidth).toBe('1px');
+			expect(getComputedStyle(value).overflowWrap).toBe('anywhere');
+			expect(
+				Math.max(
+					cssFloorPx(getComputedStyle(action).minHeight),
+					cssFloorPx(getComputedStyle(action).minBlockSize),
+				),
+			).toBeGreaterThanOrEqual(44);
+		} finally {
+			unmount?.();
+			style.remove();
+		}
 	});
 
 	it.each(['en', 'fr'] as const)(

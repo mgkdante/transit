@@ -112,6 +112,18 @@ function installContainerSizeSeam(outerWidthPx: number): HTMLStyleElement {
 	return style;
 }
 
+function installLeafContainerSizeSeam(file: string, outerWidthPx: number): HTMLStyleElement {
+	const css = splitContainerRules(compiledCss(file));
+	const activeQueries = css.rules
+		.filter(({ condition }) => containerConditionMatches(condition, outerWidthPx))
+		.map(({ body }) => body)
+		.join('\n');
+	const style = document.createElement('style');
+	style.textContent = [css.base, activeQueries].join('\n');
+	document.head.append(style);
+	return style;
+}
+
 function cssFloorPx(value: string): number {
 	if (value.endsWith('rem')) return Number.parseFloat(value) * 16;
 	if (value.endsWith('px')) return Number.parseFloat(value);
@@ -383,7 +395,7 @@ describe('MapSelectionDetail', () => {
 			statusLabel: 'Status',
 			crowdingLabel: 'Crowding',
 			status: '▲ Late',
-			statusName: 'Late',
+			statusName: 'Late 4 min late',
 			occupancyName: 'Standing',
 		},
 		{
@@ -391,7 +403,7 @@ describe('MapSelectionDetail', () => {
 			statusLabel: 'Statut',
 			crowdingLabel: 'Achalandage',
 			status: '▲ En retard',
-			statusName: 'En retard',
+			statusName: 'En retard 4 min en retard',
 			occupancyName: 'Debout',
 		},
 	] as const)(
@@ -411,6 +423,61 @@ describe('MapSelectionDetail', () => {
 			expectHiddenGlyph(occupancyValue, 'crowding', 'standing', occupancyGlyph('standing'));
 			expectAccessibleContentName(statusValue, statusName);
 			expectAccessibleContentName(occupancyValue, occupancyName);
+		},
+	);
+
+	it('maps status and crowding glyphs to their canonical tokens while retaining text', () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const { container } = render(MapSelectionDetail, { props: { detail, locale: 'en' } });
+		const status = container.querySelector<HTMLElement>(
+			'[data-m6d-glyph-kind="status"][data-m6d-glyph-code="late"]',
+		);
+		const crowding = container.querySelector<HTMLElement>(
+			'[data-m6d-glyph-kind="crowding"][data-m6d-glyph-code="standing"]',
+		);
+
+		expect(status?.getAttribute('style')).toContain('--glyph: var(--dataviz-status-late)');
+		expect(crowding?.getAttribute('style')).toContain('--glyph: var(--dataviz-occupancy-standing)');
+		expect(detailValue(container, 'Status')).toHaveTextContent('▲ Late');
+		expect(detailValue(container, 'Crowding')).toHaveTextContent('▇ Standing');
+	});
+
+	it.each([
+		{ delayMin: 0, status: 'on_time', want: '● On-time', absence: false },
+		{ delayMin: 4, status: 'late', want: '▲ Late · 4 min late', absence: false },
+		{
+			delayMin: null,
+			status: 'unknown',
+			want: 'not reported in the live feed',
+			absence: true,
+		},
+	] as const)(
+		'merges delay $delayMin into the vehicle status fact without a duplicate delay row',
+		({ delayMin, status, want, absence }) => {
+			const delayIndex = buildLiveIndex({
+				vehicles: {
+					generated_utc: utc('2026-06-15T00:00:00Z'),
+					vehicles: [{ ...vehicles[0]!, status, delay_min: delayMin }],
+				},
+				trips: { generated_utc: utc('2026-06-15T00:00:00Z'), trips: {} },
+				stopDepartures: { generated_utc: utc('2026-06-15T00:00:00Z'), stops: {} },
+			});
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{ index: delayIndex, stops, alerts, routes },
+			);
+			const { container } = render(MapSelectionDetail, { props: { detail, locale: 'en' } });
+			const statusValue = detailValue(container, 'Status');
+
+			expect(statusValue).toHaveTextContent(want);
+			expect(statusValue.querySelector('[data-slot="absent-value"]') != null).toBe(absence);
+			if (delayMin == null) expect(statusValue.textContent?.match(/Unknown/g)).toHaveLength(1);
+			expect([...container.querySelectorAll('dt')].map((term) => term.textContent)).not.toContain(
+				'Delay',
+			);
 		},
 	);
 
@@ -474,6 +541,7 @@ describe('MapSelectionDetail', () => {
 							...vehicles[0]!,
 							id: 'veh-no-occupancy',
 							status: 'unknown',
+							delay_min: 0,
 							occupancy: null,
 						},
 					],
@@ -740,6 +808,64 @@ describe('MapSelectionDetail', () => {
 		expect(getByRole('button')).toHaveAccessibleName(
 			'Select bus veh-1, Route 24, 20:06, Late, Delay: 4 min late',
 		);
+	});
+
+	it('previews stop and vehicle rows from pointer or keyboard without changing selection', async () => {
+		const vehicleDetail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const stopDetail = resolveMapSelection(
+			{ kind: 'stop', id: 'stop-2' },
+			{ index, stops, alerts, stopFiles, now: new Date('2026-06-15T16:30:00Z') },
+		);
+		const onpreview = vi.fn();
+		const selected = vi.fn();
+		const vehicleRender = render(MapSelectionDetail, {
+			props: { detail: vehicleDetail, locale: 'en', onselect: selected, onpreview },
+		});
+		const stopRow = vehicleRender.getByRole('button', {
+			name: /Select stop Mont-Royal \/ Saint-Laurent,/,
+		});
+
+		await fireEvent.pointerEnter(stopRow);
+		expect(stopRow).toHaveAttribute('data-previewing', 'true');
+		expect(onpreview).toHaveBeenLastCalledWith({ kind: 'stop', id: 'stop-2' });
+		await fireEvent.pointerLeave(stopRow);
+		expect(onpreview).toHaveBeenLastCalledWith(null);
+
+		vehicleRender.unmount();
+		onpreview.mockClear();
+		const stopRender = render(MapSelectionDetail, {
+			props: { detail: stopDetail, locale: 'en', onselect: selected, onpreview },
+		});
+		const busRow = stopRender.getByRole('button', { name: /^Select bus veh-1,/ });
+		await fireEvent.focus(busRow);
+		expect(busRow).toHaveAttribute('data-previewing', 'true');
+		expect(onpreview).toHaveBeenLastCalledWith({ kind: 'vehicle', id: 'veh-1' });
+		await fireEvent.blur(busRow);
+		expect(onpreview).toHaveBeenLastCalledWith(null);
+		expect(selected).not.toHaveBeenCalled();
+	});
+
+	it('reflows a bus row into two columns in a 320px panel container', () => {
+		const style = installLeafContainerSizeSeam(
+			'src/lib/features/map/detail/DetailBusRow.svelte',
+			320,
+		);
+		try {
+			const { getByRole } = render(DetailBusRow, {
+				props: {
+					vehicle: vehicles[0],
+					locale: 'en',
+					t: MAP_SELECTION_DETAIL_COPY.en,
+					onselect: () => {},
+				},
+			});
+			expect(getComputedStyle(getByRole('button')).gridTemplateColumns).toBe('minmax(0, 1fr) auto');
+		} finally {
+			style.remove();
+		}
 	});
 
 	it('preserves a focused stop row through a same-entity refeed and reorder', async () => {
@@ -1139,7 +1265,7 @@ describe('MapSelectionDetail', () => {
 			},
 		);
 
-		expect(getByRole('button', { name: 'Select bus veh-1' })).toBeInTheDocument();
+		expect(getByText('Bus veh-1')).toBeInTheDocument();
 		expect(detailValue(container, 'Status')).toHaveTextContent('▲ Late');
 		expect(detailValue(container, 'Crowding')).toHaveTextContent(
 			`${occupancyGlyph('standing')} Standing`,
@@ -1160,9 +1286,6 @@ describe('MapSelectionDetail', () => {
 		await fireEvent.click(getByRole('button', { name: 'Select route 24' }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'route', id: '24' });
 
-		await fireEvent.click(getByRole('button', { name: 'Select bus veh-1' }));
-		expect(onselect).toHaveBeenCalledWith({ kind: 'vehicle', id: 'veh-1' });
-
 		await fireEvent.click(
 			getAllByRole('button', { name: /Select stop Mont-Royal \/ Saint-Laurent,/ })[0],
 		);
@@ -1175,6 +1298,43 @@ describe('MapSelectionDetail', () => {
 		expect(onalertselect).toHaveBeenCalledTimes(1);
 		expect(onalertselect.mock.calls[0]?.[0]).toBe(alerts[0]);
 		expect(window.location.href).toBe(locationBeforeAlertTap);
+	});
+
+	it('makes vehicle facts useful while keeping the selected bus identity passive', async () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const onselect = vi.fn();
+		const onfilter = vi.fn();
+		const { getByRole, queryByRole } = render(MapSelectionDetail, {
+			props: { detail, locale: 'en', onselect, onfilter },
+		});
+
+		expect(queryByRole('button', { name: 'Select bus veh-1' })).not.toBeInTheDocument();
+		await fireEvent.click(getByRole('button', { name: 'Filter status Late' }));
+		expect(onfilter).toHaveBeenLastCalledWith({ kind: 'status', value: 'late' });
+		await fireEvent.click(getByRole('button', { name: 'Filter crowding Standing' }));
+		expect(onfilter).toHaveBeenLastCalledWith({ kind: 'occupancy', value: 'standing' });
+		await fireEvent.click(getByRole('button', { name: 'Filter trip trip-24-a' }));
+		expect(onfilter).toHaveBeenLastCalledWith({ kind: 'trip', value: 'trip-24-a' });
+		await fireEvent.click(getByRole('button', { name: 'Select stop Mont-Royal / Saint-Laurent' }));
+		expect(onselect).toHaveBeenLastCalledWith({ kind: 'stop', id: 'stop-2' });
+	});
+
+	it.each([
+		{ alertState: null, message: 'Alert data unavailable' },
+		{ alertState: [] as Alert[], message: 'No alerts attached' },
+	])('distinguishes $message in the detail surface', ({ alertState, message }) => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		if (detail?.kind !== 'vehicle') throw new Error('expected vehicle detail');
+		const { getByText } = render(MapSelectionDetail, {
+			props: { detail: { ...detail, alerts: alertState }, locale: 'en' },
+		});
+		expect(getByText(message)).toBeInTheDocument();
 	});
 
 	it('renders a per-bus not-reporting GPS note when the vehicle fix is stale', () => {
@@ -1358,9 +1518,9 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en' },
 		});
 
-		// The delay cell is the honest absence primitive (calm "unknown" tone), not a tag.
-		const delay = detailValue(container, 'Delay');
-		const absent = delay.querySelector('[data-slot="absent-value"][data-tone="unknown"]');
+		// The status cell owns the honest delay absence (calm "unknown" tone), not a second row.
+		const status = detailValue(container, 'Status');
+		const absent = status.querySelector('[data-slot="absent-value"][data-tone="unknown"]');
 		expect(absent).not.toBeNull();
 		expect(absent).toHaveAttribute('data-density', 'chip');
 		// The reason: the feed simply omitted it (not-reported), not on-time, not "No delay".

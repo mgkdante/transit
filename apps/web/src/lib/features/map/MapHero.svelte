@@ -477,6 +477,12 @@
 			stops: stopList,
 			routesIndex: routesIndex.data?.routes ?? [],
 			clock: sharedClock,
+			alerts: live.alerts?.alerts ?? null,
+			departuresAvailable,
+			hoverRoute:
+				hovered?.kind === 'route' && focusedRoute.data?.id === hovered.id
+					? focusedRoute.data
+					: null,
 		}),
 	);
 	const vehicleSelectionGrace = createSelectionGrace<MapSelectionDetailModel>();
@@ -571,12 +577,7 @@
 		const next = pickSelectionAt(m, e);
 		if (!next) return;
 		commitPickedSelection(next);
-		// A fresh pick always shows its detail: if the panel was sitting collapsed in
-		// the icon strip, expand it so the new selection is visible, never stranded.
 		detailCollapsed = false;
-		// Zoom to whatever was clicked, same as a search pick (data is already
-		// loaded — it's on the map). Point entities centre + zoom in; a route frames
-		// its linework.
 		focusSelection(next);
 	}
 
@@ -703,7 +704,6 @@
 
 	function selectNearbyStop(stop: WithDistance<SlimStopEntry>): void {
 		commitPickedSelection({ kind: 'stop', id: stop.id });
-		// A fresh pick always shows its detail: expand the panel if it was collapsed.
 		detailCollapsed = false;
 		focusCoordinate(map, [stop.lon, stop.lat], 15);
 	}
@@ -983,6 +983,7 @@
 				{selectionSourceHealth}
 				onrefresh={live.refresh}
 				onselect={selectFromDetail}
+				onpreview={(next) => void selectionController.setHovered(next)}
 				onfilter={applyDetailFilter}
 				onalertselect={selectAlertRelated}
 			/>
@@ -1141,6 +1142,7 @@
 			{selectionSourceHealth}
 			onrefresh={live.refresh}
 			onselect={selectFromDetail}
+			onpreview={(next) => void selectionController.setHovered(next)}
 			onfilter={applyDetailFilter}
 			onalertselect={selectAlertRelated}
 		/>

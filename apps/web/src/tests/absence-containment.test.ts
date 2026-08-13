@@ -90,11 +90,11 @@ describe('absence containment contract', () => {
 		expect(hoverGrid).toMatch(/grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
 		expect(hoverValues).toMatch(/min-width:\s*0/);
 		expect(hoverValues).not.toMatch(/(?:white-space:\s*nowrap|overflow:\s*hidden|text-overflow:)/);
-		// The hover peek is a floating card, NOT a table: its seven absences stay
+		// The hover peek is a floating card, NOT a table: its eight absences stay
 		// inline chips. Pin the count AND the absence of any variant override, so a
 		// chip -> row/block flip (or a dropped absence) cannot pass this suite.
 		const hoverAbsences = hover.match(/<AbsentValue\b[^>]*>/g) ?? [];
-		expect(hoverAbsences, 'MapHoverPeek absence chips').toHaveLength(7);
+		expect(hoverAbsences, 'MapHoverPeek absence chips').toHaveLength(8);
 		expect(
 			hoverAbsences.filter((tag) => /\bvariant\s*=/.test(tag)),
 			'MapHoverPeek absences must stay the default inline chip',

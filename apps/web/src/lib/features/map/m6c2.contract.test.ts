@@ -217,9 +217,45 @@ const GATE7_SELECTION_RELEASE = `
 		if (selected?.kind === 'vehicle') return live.subscribeFamilies(['trips']);
 		if (selected?.kind === 'stop') return live.subscribeFamilies(['departures']);
 	});`;
+const M6E_HOVER_CONTEXT = `
+			alerts: live.alerts?.alerts ?? null,
+			departuresAvailable,
+			hoverRoute:
+				hovered?.kind === 'route' && focusedRoute.data?.id === hovered.id
+					? focusedRoute.data
+					: null,`;
+const M6E_DESKTOP_PREVIEW =
+	'\n\t\t\t\tonpreview={(next) => void selectionController.setHovered(next)}';
+const M6E_MOBILE_PREVIEW =
+	'\n\t\t\tonpreview={(next) => void selectionController.setHovered(next)}';
+const M6E_PICK_COMPACTION = `
+		commitPickedSelection(next);
+		detailCollapsed = false;
+		focusSelection(next);`;
+const BASE_PICK_COMMENTS = `
+		commitPickedSelection(next);
+		// A fresh pick always shows its detail: if the panel was sitting collapsed in
+		// the icon strip, expand it so the new selection is visible, never stranded.
+		detailCollapsed = false;
+		// Zoom to whatever was clicked, same as a search pick (data is already
+		// loaded — it's on the map). Point entities centre + zoom in; a route frames
+		// its linework.
+		focusSelection(next);`;
+const M6E_NEARBY_COMPACTION = `
+		commitPickedSelection({ kind: 'stop', id: stop.id });
+		detailCollapsed = false;`;
+const BASE_NEARBY_COMMENT = `
+		commitPickedSelection({ kind: 'stop', id: stop.id });
+		// A fresh pick always shows its detail: expand the panel if it was collapsed.
+		detailCollapsed = false;`;
 
 function reconstructBaseMapHero(hero: string): string {
 	const replacements: ReadonlyArray<readonly [string, string]> = [
+		[M6E_HOVER_CONTEXT, ''],
+		[M6E_DESKTOP_PREVIEW, ''],
+		[M6E_MOBILE_PREVIEW, ''],
+		[M6E_PICK_COMPACTION, BASE_PICK_COMMENTS],
+		[M6E_NEARBY_COMPACTION, BASE_NEARBY_COMMENT],
 		[CURE9_BREAKPOINT_RELEASE, BASE_BREAKPOINT_RELEASE],
 		[CURE9_RAIL_RELEASE, BASE_RAIL_RELEASE],
 		[CURE8_OWNER_IMPORT, ''],

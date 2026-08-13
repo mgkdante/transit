@@ -1,18 +1,26 @@
 import type { LiveIndex } from '$lib/v1/live';
-import type { OccupancyCode, RouteIndexEntry, StatusCode } from '$lib/v1/schemas';
+import type { Alert, OccupancyCode, RouteFile, RouteIndexEntry, StatusCode } from '$lib/v1/schemas';
 import type { SlimStopEntry } from '$lib/v1';
 import type { sharedClock } from '$lib/stores/clock.svelte';
-import { fixAgeS, isVehicleStale } from '$lib/components/map';
+import { fixAgeS, isVehicleStale, routeDirectionVariants } from '$lib/components/map';
 import type { AbsenceReasonKey } from '$lib/site/absence';
-import type { MapSelection } from './mapSelection';
+import {
+	alertMatchesRoute,
+	alertMatchesStop,
+	alertMatchesVehicle,
+	type MapSelection,
+} from './mapSelection';
 
-type PeekLiveIndex = Pick<LiveIndex, 'byVehicleId' | 'vehiclesByStop'>;
+type PeekLiveIndex = Pick<LiveIndex, 'byVehicleId' | 'vehiclesByStop' | 'byStopId'>;
 
 export interface MapHoverPeekContext {
 	readonly index: PeekLiveIndex;
 	readonly stops: readonly SlimStopEntry[];
 	readonly routesIndex: readonly RouteIndexEntry[];
 	readonly clock: Pick<typeof sharedClock, 'serverNow'>;
+	readonly alerts?: readonly Alert[] | null;
+	readonly hoverRoute?: RouteFile | null;
+	readonly departuresAvailable?: boolean;
 }
 
 export interface MapHoverPeekRouteRef {
@@ -39,6 +47,8 @@ export interface VehicleHoverPeek {
 	readonly nextStop: MapHoverPeekStopRef | null;
 	readonly nextStopAbsence: AbsenceReasonKey;
 	readonly notReportingAgeS: number | null;
+	readonly tripId: string | null;
+	readonly alerts: readonly Alert[] | null;
 }
 
 export interface RouteHoverPeek {
@@ -49,6 +59,8 @@ export interface RouteHoverPeek {
 	readonly type: number;
 	readonly labelInferred: boolean;
 	readonly visibleVehicleCount: number;
+	readonly directionLabel: string | null;
+	readonly alerts: readonly Alert[] | null;
 }
 
 export interface StopHoverPeek {
@@ -58,6 +70,8 @@ export interface StopHoverPeek {
 	readonly nameAbsent: boolean;
 	readonly code: string | null;
 	readonly vehicleCount: number;
+	readonly departureCount: number | null;
+	readonly alerts: readonly Alert[] | null;
 }
 
 export type MapHoverPeek = VehicleHoverPeek | RouteHoverPeek | StopHoverPeek;
@@ -114,6 +128,11 @@ export function resolveMapHoverPeek(
 			nextStop: stopRef(vehicle.next_stop, context.stops),
 			nextStopAbsence: hasNextStop ? 'not-in-schedule' : 'end-of-route',
 			notReportingAgeS: isVehicleStale(ageS) ? ageS : null,
+			tripId: vehicle.trip ?? null,
+			alerts:
+				context.alerts == null
+					? null
+					: context.alerts.filter((alert) => alertMatchesVehicle(alert, vehicle)),
 		};
 	}
 
@@ -125,6 +144,14 @@ export function resolveMapHoverPeek(
 		for (const vehicle of context.index.byVehicleId.values()) {
 			if (vehicle.route === route.id) visibleVehicleCount += 1;
 		}
+		const hoverRoute = context.hoverRoute?.id === route.id ? context.hoverRoute : null;
+		const variants = hoverRoute ? routeDirectionVariants(hoverRoute) : [];
+		const variant =
+			selection.variantKey != null
+				? (variants.find((candidate) => candidate.key === selection.variantKey) ?? null)
+				: selection.direction != null
+					? (variants.find((candidate) => candidate.dir === selection.direction) ?? null)
+					: (variants[0] ?? null);
 		return {
 			kind: 'route',
 			id: route.id,
@@ -133,6 +160,11 @@ export function resolveMapHoverPeek(
 			type: route.type,
 			labelInferred: !publishedLongName,
 			visibleVehicleCount,
+			directionLabel: variant?.label ?? null,
+			alerts:
+				context.alerts == null
+					? null
+					: context.alerts.filter((alert) => alertMatchesRoute(alert, route.id)),
 		};
 	}
 
@@ -146,5 +178,13 @@ export function resolveMapHoverPeek(
 		nameAbsent: publishedName.length === 0,
 		code: stop.code ?? null,
 		vehicleCount: context.index.vehiclesByStop.get(stop.id)?.size ?? 0,
+		departureCount:
+			context.departuresAvailable === true
+				? (context.index.byStopId.get(stop.id)?.length ?? 0)
+				: null,
+		alerts:
+			context.alerts == null
+				? null
+				: context.alerts.filter((alert) => alertMatchesStop(alert, stop.id)),
 	};
 }

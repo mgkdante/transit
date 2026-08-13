@@ -2126,6 +2126,44 @@ describe('MapHero map-layer feed lifecycle', () => {
 		);
 	});
 
+	it('keeps map emphasis in sync with pointer and keyboard preview inside detail rows', async () => {
+		harness.isDesktop = true;
+		render(MapHero);
+		await tick();
+		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));
+		const busRow = await screen.findByRole('button', { name: /^Select bus bus-1,/ });
+
+		mapHeroReceiptSignals.clearFeatureStateEvents();
+		await fireEvent.pointerEnter(busRow);
+		await waitFor(() =>
+			expect(mapHeroReceiptSignals.featureStateEvents).toContainEqual({
+				operation: 'set',
+				target: { source: 'vehicles', id: 'bus-1' },
+				state: { hovered: true },
+			}),
+		);
+
+		mapHeroReceiptSignals.clearFeatureStateEvents();
+		await fireEvent.pointerLeave(busRow);
+		await waitFor(() =>
+			expect(mapHeroReceiptSignals.featureStateEvents).toContainEqual({
+				operation: 'remove',
+				target: { source: 'vehicles', id: 'bus-1' },
+				property: 'hovered',
+			}),
+		);
+
+		mapHeroReceiptSignals.clearFeatureStateEvents();
+		await fireEvent.focus(busRow);
+		await waitFor(() =>
+			expect(mapHeroReceiptSignals.featureStateEvents).toContainEqual({
+				operation: 'set',
+				target: { source: 'vehicles', id: 'bus-1' },
+				state: { hovered: true },
+			}),
+		);
+	});
+
 	it('keeps vehicle leases and route reads unchanged during hover without fetching a stop', async () => {
 		const bulkCounts = () => ({
 			routes: harness.setRouteLines.mock.calls.length,

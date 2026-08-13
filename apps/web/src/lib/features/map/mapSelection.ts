@@ -169,15 +169,15 @@ function hasValue(
 	return value != null && values != null && values.includes(value);
 }
 
-function alertMatchesVehicle(alert: Alert, vehicle: Vehicle): boolean {
+export function alertMatchesVehicle(alert: Alert, vehicle: Vehicle): boolean {
 	return hasValue(alert.routes, vehicle.route) || hasValue(alert.stops, vehicle.next_stop);
 }
 
-function alertMatchesStop(alert: Alert, stopId: string): boolean {
+export function alertMatchesStop(alert: Alert, stopId: string): boolean {
 	return hasValue(alert.stops, stopId);
 }
 
-function alertMatchesRoute(alert: Alert, routeId: string): boolean {
+export function alertMatchesRoute(alert: Alert, routeId: string): boolean {
 	return hasValue(alert.routes, routeId);
 }
 

@@ -26,6 +26,8 @@ const stopPeek: MapHoverPeek = {
 	nameAbsent: false,
 	code: '52618',
 	vehicleCount: 0,
+	departureCount: null,
+	alerts: null,
 };
 
 const happyWindow = window as typeof window & {

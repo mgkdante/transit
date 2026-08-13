@@ -30,6 +30,7 @@
 		selectionSourceHealth?: SelectionSourceHealth | null;
 		onrefresh?: () => void;
 		onselect: (selection: MapSelection) => void;
+		onpreview?: (selection: MapSelection | null) => void;
 		onfilter: (chip: Chip) => void;
 		onalertselect: (alert: Alert) => void;
 		identity?: Snippet;
@@ -49,6 +50,7 @@
 		selectionSourceHealth = null,
 		onrefresh,
 		onselect,
+		onpreview,
 		onfilter,
 		onalertselect,
 		identity,
@@ -84,17 +86,51 @@
 	{onback}
 >
 	{#if selectedDetail}
-		<MapSelectionDetail
-			detail={selectedDetail}
-			{locale}
-			{notReporting}
-			{selectionPresence}
-			{selectionSourceHealth}
-			{onrefresh}
-			{onselect}
-			{onfilter}
-			{onalertselect}
-			presentation="body"
-		/>
+		<div class="mobile-detail-body" data-mobile-detail-body>
+			<MapSelectionDetail
+				detail={selectedDetail}
+				{locale}
+				{notReporting}
+				{selectionPresence}
+				{selectionSourceHealth}
+				{onrefresh}
+				{onselect}
+				{onpreview}
+				{onfilter}
+				{onalertselect}
+				presentation="body"
+			/>
+		</div>
 	{/if}
 </BottomSheet>
+
+<style>
+	.mobile-detail-body :global(.detail-attribute-grid > div) {
+		grid-template-columns: 5.75rem minmax(0, 1fr) minmax(5.5rem, auto);
+		align-items: center;
+		column-gap: 0.75rem;
+		padding-block: 0.75rem;
+		border-bottom-width: 1px;
+		border-bottom-style: solid;
+		border-bottom-color: var(--border);
+	}
+	.mobile-detail-body :global(.detail-attribute-grid > div > dt) {
+		grid-column: 1;
+	}
+	.mobile-detail-body :global(.detail-attribute-grid > div > dd) {
+		grid-column: 2;
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+	.mobile-detail-body :global(.detail-attribute-grid > div > .detail-fact-action) {
+		grid-column: 3;
+		min-width: 5.5rem;
+		min-block-size: 2.75rem;
+		justify-content: center;
+	}
+	.mobile-detail-body :global(.detail-attribute-grid > div > dd .detail-fact-action) {
+		max-width: 100%;
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+</style>

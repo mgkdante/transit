@@ -4,7 +4,7 @@
 	import type { Chip } from '$lib/filters';
 	import type { Alert } from '$lib/v1/schemas';
 	import { AbsentValue, MaybeValue } from '$lib/components/edge';
-	import { STATUS_GLYPH, occupancyGlyph } from '$lib/components/dataviz';
+	import { STATUS_GLYPH, occupancyGlyph, occupancyVar, statusVar } from '$lib/components/dataviz';
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { MapSelection, MapSelectionDetail } from './mapSelection';
@@ -31,6 +31,7 @@
 		detail: MapSelectionDetail | null;
 		locale: Locale;
 		onselect?: (selection: MapSelection) => void;
+		onpreview?: (selection: MapSelection | null) => void;
 		onfilter?: (chip: Chip) => void;
 		onalertselect?: (alert: Alert) => void;
 		notReporting?: { ageS: number } | null;
@@ -44,6 +45,7 @@
 		detail,
 		locale,
 		onselect,
+		onpreview,
 		onfilter,
 		onalertselect,
 		notReporting = null,
@@ -127,10 +129,35 @@
 								class="detail-state-glyph"
 								data-m6d-glyph-kind="status"
 								data-m6d-glyph-code={detail.vehicle.status}
-								aria-hidden="true">{STATUS_GLYPH[detail.vehicle.status]}</span
+								aria-hidden="true"
+								style={`--glyph: ${statusVar(detail.vehicle.status)}`}
+								>{STATUS_GLYPH[detail.vehicle.status]}</span
 							>
-							{STATUS_LABELS[locale][detail.vehicle.status]}
+							{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
+								{STATUS_LABELS[locale][detail.vehicle.status]}
+							{/if}
+							{#if detail.vehicle.delay_min !== 0}
+								{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
+									<span aria-hidden="true">·</span>
+								{/if}
+								<MapDelayTag
+									delay={detail.vehicle.delay_min}
+									{locale}
+									{t}
+									ctx={{
+										stale: notReporting != null,
+										metro: detail.routeType === ROUTE_TYPE_METRO,
+									}}
+								/>
+							{/if}
 						</dd>
+						<button
+							type="button"
+							class="detail-fact-action"
+							aria-label={t.filterStatus(STATUS_LABELS[locale][detail.vehicle.status])}
+							onclick={() => onfilter?.({ kind: 'status', value: detail.vehicle.status })}
+							>{locale === 'fr' ? 'Filtrer' : 'Filter'}</button
+						>
 					</div>
 					<div>
 						<dt>{t.nextStop}</dt>
@@ -139,6 +166,12 @@
 								>{detail.nextStop!.name}</MaybeValue
 							>
 						</dd>
+						{#if detail.nextStop}<button
+								type="button"
+								class="detail-fact-action"
+								aria-label={t.selectStop(detail.nextStop.name)}
+								onclick={() => selectStop(detail.nextStop!.id)}>{t.stop}</button
+							>{/if}
 					</div>
 					<div>
 						<dt>ETA</dt>
@@ -153,14 +186,14 @@
 						</dd>
 					</div>
 					<div>
-						<dt>{t.delay}</dt>
+						<dt>{t.trip}</dt>
 						<dd>
-							<MapDelayTag
-								delay={detail.vehicle.delay_min}
-								{locale}
-								{t}
-								ctx={{ stale: notReporting != null, metro: detail.routeType === ROUTE_TYPE_METRO }}
-							/>
+							{#if detail.vehicle.trip}<button
+									type="button"
+									class="detail-fact-action"
+									aria-label={t.filterTrip(detail.vehicle.trip)}
+									onclick={() => filterTrip(detail.vehicle.trip)}>{detail.vehicle.trip}</button
+								>{:else}<AbsentValue reason={absence} {locale} />{/if}
 						</dd>
 					</div>
 					<div>
@@ -170,12 +203,24 @@
 								class="detail-state-glyph"
 								data-m6d-glyph-kind="crowding"
 								data-m6d-glyph-code={detail.vehicle.occupancy ?? 'nodata'}
-								aria-hidden="true">{occupancyGlyph(detail.vehicle.occupancy)}</span
+								aria-hidden="true"
+								style={`--glyph: ${detail.vehicle.occupancy ? occupancyVar(detail.vehicle.occupancy) : 'var(--muted-foreground)'}`}
+								>{occupancyGlyph(detail.vehicle.occupancy)}</span
 							>
 							<MaybeValue present={detail.vehicle.occupancy != null} reason={absence} {locale}
 								>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
 							>
 						</dd>
+						{#if detail.vehicle.occupancy != null}<button
+								type="button"
+								class="detail-fact-action"
+								aria-label={t.filterCrowding(OCCUPANCY_LABELS[locale][detail.vehicle.occupancy])}
+								onclick={() =>
+									detail.kind === 'vehicle' &&
+									detail.vehicle.occupancy != null &&
+									onfilter?.({ kind: 'occupancy', value: detail.vehicle.occupancy })}
+								>{locale === 'fr' ? 'Filtrer' : 'Filter'}</button
+							>{/if}
 					</div>
 				</DetailAttributeGrid>
 			{:else if detail.kind === 'stop'}
@@ -199,17 +244,10 @@
 			{/if}
 		</div>
 
-		{#if detail.alerts && detail.alerts.length > 0}
-			<MapDetailAlerts alerts={detail.alerts} {locale} {t} {onalertselect} />
-		{/if}
+		<MapDetailAlerts alerts={detail.alerts} {locale} {t} {onalertselect} />
 		{#if detail.kind === 'vehicle'}
 			<DetailStatPills>
-				<button
-					type="button"
-					class="detail-pill"
-					aria-label={t.selectBus(detail.vehicle.id)}
-					onclick={() => selectVehicle(detail.vehicle.id)}>{t.bus} {detail.vehicle.id}</button
-				>
+				<span class="detail-pill">{t.bus} {detail.vehicle.id}</span>
 				{#if detail.vehicle.route}<button
 						type="button"
 						class="detail-pill"
@@ -233,7 +271,14 @@
 				<DetailSection title={t.nextStops} slot="detail-next-stops"
 					><ol>
 						{#each detail.nextStops as stop (stop.id)}<li>
-								<DetailStopRow {stop} {locale} {t} {seqUnknownAria} onselect={selectStop} />
+								<DetailStopRow
+									{stop}
+									{locale}
+									{t}
+									{seqUnknownAria}
+									onselect={selectStop}
+									{onpreview}
+								/>
 							</li>{/each}
 					</ol></DetailSection
 				>
@@ -242,7 +287,14 @@
 				<DetailSection title={t.pastStops} slot="detail-past-stops" collapsed
 					><ol>
 						{#each detail.pastStops as stop (stop.id)}<li>
-								<DetailStopRow {stop} {locale} {t} {seqUnknownAria} onselect={selectStop} />
+								<DetailStopRow
+									{stop}
+									{locale}
+									{t}
+									{seqUnknownAria}
+									onselect={selectStop}
+									{onpreview}
+								/>
 							</li>{/each}
 					</ol></DetailSection
 				>
@@ -321,6 +373,7 @@
 									{locale}
 									{t}
 									onselect={selectVehicle}
+									{onpreview}
 								/>
 							</li>{/each}
 					</ol></DetailSection
@@ -336,7 +389,7 @@
 			{#if detail.vehicles.length > 0}<DetailSection title={t.liveBuses} slot="detail-live-buses"
 					><ol>
 						{#each detail.vehicles.slice(0, 8) as vehicle (vehicle.id)}<li>
-								<DetailBusRow {vehicle} {locale} {t} onselect={selectVehicle} />
+								<DetailBusRow {vehicle} {locale} {t} onselect={selectVehicle} {onpreview} />
 							</li>{/each}
 					</ol></DetailSection
 				>{/if}
@@ -345,7 +398,14 @@
 							<h4>{direction.label}</h4>
 							<ol>
 								{#each direction.stops as stop (stop.id)}<li>
-										<DetailStopRow {stop} {locale} {t} {seqUnknownAria} onselect={selectStop} />
+										<DetailStopRow
+											{stop}
+											{locale}
+											{t}
+											{seqUnknownAria}
+											onselect={selectStop}
+											{onpreview}
+										/>
 									</li>{/each}
 							</ol>
 						</div>{/each}</DetailSection
@@ -358,7 +418,34 @@
 	.map-selection-detail {
 		display: grid;
 		gap: 1rem;
+		min-width: 0;
+		overflow-wrap: anywhere;
 		color: var(--foreground);
+	}
+	.detail-fact-action {
+		display: inline-flex;
+		min-height: 2.75rem;
+		min-block-size: 2.75rem;
+		align-items: center;
+		justify-content: flex-start;
+		padding-inline: 0.75rem;
+		border: 1px solid var(--border-subtle);
+		border-radius: var(--radius-pill);
+		color: var(--primary);
+		background: transparent;
+	}
+	.detail-fact-action:hover {
+		background: var(--muted);
+	}
+	.detail-fact-action:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+	.detail-state-glyph {
+		margin-inline-end: 0.25rem;
+		font-family: var(--font-mono);
+		font-weight: 800;
+		color: var(--glyph);
 	}
 	.detail-status-band {
 		display: grid;
@@ -398,6 +485,7 @@
 		padding: 0.5rem;
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-sm);
+		min-width: 0;
 	}
 	.map-departures button {
 		display: inline-flex;
