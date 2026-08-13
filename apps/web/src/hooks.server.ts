@@ -8,6 +8,7 @@ import { configureTransitUi } from '$lib/ui/configure';
 export const init: ServerInit = configureTransitUi;
 
 const HTML_EDGE_TTL_S = 30;
+const HTML_EDGE_CACHE_NAME = 'transit-html-v1';
 const HTML_EDGE_CACHE_CONTROL = `public, max-age=0, s-maxage=${HTML_EDGE_TTL_S}`;
 const HTML_PUBLIC_CACHE_CONTROL = 'no-store';
 const EDGE_CACHE_STATUS = 'x-transit-edge-cache';
@@ -17,9 +18,12 @@ interface EdgeCache {
 	put(request: RequestInfo | URL, response: Response): Promise<void>;
 }
 
-function edgeCache(platform: App.Platform | undefined): EdgeCache | undefined {
-	return (platform?.caches as (CacheStorage & { readonly default?: EdgeCache }) | undefined)
-		?.default;
+async function edgeCache(platform: App.Platform | undefined): Promise<EdgeCache | undefined> {
+	try {
+		return (await platform?.caches?.open(HTML_EDGE_CACHE_NAME)) as EdgeCache | undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 function cacheKey(url: URL): Request {
@@ -94,7 +98,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// pure function of the URL path, so each URL is independently cacheable.
 	const lang = pathLocale(event.url.pathname);
 	event.locals.locale = lang;
-	const cache = edgeCache(event.platform);
+	const cache = await edgeCache(event.platform);
 	const cacheBypassed = cache == null || requestBypassesHtmlCache(event.request);
 	const key = cacheBypassed ? null : cacheKey(event.url);
 

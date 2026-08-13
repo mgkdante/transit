@@ -2,17 +2,27 @@ import { describe, expect, it, vi } from 'vitest';
 import { handle } from '../hooks.server';
 
 interface CacheHarness {
+	readonly defaultMatch: ReturnType<typeof vi.fn>;
+	readonly defaultPut: ReturnType<typeof vi.fn>;
 	readonly match: ReturnType<typeof vi.fn>;
 	readonly put: ReturnType<typeof vi.fn>;
+	readonly open: ReturnType<typeof vi.fn>;
 	readonly waitUntil: ReturnType<typeof vi.fn>;
 	readonly writes: Promise<unknown>[];
 }
 
 function cacheHarness(hit?: Response): CacheHarness {
 	const writes: Promise<unknown>[] = [];
+	const match = vi.fn(async () => hit);
+	const put = vi.fn(async () => undefined);
+	const defaultMatch = vi.fn();
+	const defaultPut = vi.fn();
 	return {
-		match: vi.fn(async () => hit),
-		put: vi.fn(async () => undefined),
+		defaultMatch,
+		defaultPut,
+		match,
+		put,
+		open: vi.fn(async () => ({ match, put })),
 		waitUntil: vi.fn((promise: Promise<unknown>) => writes.push(promise)),
 		writes,
 	};
@@ -38,7 +48,10 @@ function event(
 			cache == null
 				? undefined
 				: ({
-						caches: { default: { match: cache.match, put: cache.put } },
+						caches: {
+							default: { match: cache.defaultMatch, put: cache.defaultPut },
+							open: cache.open,
+						},
 						ctx: { waitUntil: cache.waitUntil },
 					} as unknown as App.Platform),
 	} as Parameters<typeof handle>[0]['event'];
@@ -71,6 +84,9 @@ describe('server HTML edge cache', () => {
 		const response = await handle({ event: request, resolve });
 
 		expect(await response.text()).toBe('cached');
+		expect(cache.open).toHaveBeenCalledWith('transit-html-v1');
+		expect(cache.defaultMatch).not.toHaveBeenCalled();
+		expect(cache.defaultPut).not.toHaveBeenCalled();
 		expect(resolve).not.toHaveBeenCalled();
 		expect(cache.match).toHaveBeenCalledTimes(1);
 		const key = cache.match.mock.calls[0]?.[0] as Request;
