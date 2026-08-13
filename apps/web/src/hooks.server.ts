@@ -7,6 +7,67 @@ import { configureTransitUi } from '$lib/ui/configure';
 
 export const init: ServerInit = configureTransitUi;
 
+const HTML_EDGE_TTL_S = 30;
+const HTML_EDGE_CACHE_CONTROL = `public, max-age=0, s-maxage=${HTML_EDGE_TTL_S}`;
+const EDGE_CACHE_STATUS = 'x-transit-edge-cache';
+
+interface EdgeCache {
+	match(request: RequestInfo | URL): Promise<Response | undefined>;
+	put(request: RequestInfo | URL, response: Response): Promise<void>;
+}
+
+function edgeCache(platform: App.Platform | undefined): EdgeCache | undefined {
+	return (platform?.caches as (CacheStorage & { readonly default?: EdgeCache }) | undefined)
+		?.default;
+}
+
+function cacheKey(url: URL): Request {
+	return new Request(url.toString(), { method: 'GET' });
+}
+
+function requestBypassesHtmlCache(request: Request): boolean {
+	if (request.method !== 'GET' && request.method !== 'HEAD') return true;
+	if (
+		request.headers.has('cookie') ||
+		request.headers.has('authorization') ||
+		request.headers.has('range')
+	) {
+		return true;
+	}
+	const cacheControl = request.headers.get('cache-control')?.toLowerCase() ?? '';
+	return /(?:^|,)\s*no-(?:cache|store)(?:\s*(?:=|,|$))/.test(cacheControl);
+}
+
+function isHtml(response: Response): boolean {
+	return (response.headers.get('content-type') ?? '').toLowerCase().includes('text/html');
+}
+
+function responseCanEnterHtmlCache(response: Response): boolean {
+	if (response.status !== 200 || !isHtml(response) || response.headers.has('set-cookie'))
+		return false;
+	const cacheControl = response.headers.get('cache-control')?.toLowerCase() ?? '';
+	if (/(?:^|,)\s*(?:private|no-cache|no-store)(?:\s*(?:=|,|$))/.test(cacheControl)) return false;
+	return response.headers.get('vary')?.trim() !== '*';
+}
+
+function mutableResponse(response: Response, head = false): Response {
+	return new Response(head ? null : response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers: response.headers,
+	});
+}
+
+function applyDocumentHeaders(response: Response): void {
+	for (const [name, value] of Object.entries(securityHeaders({ dev }))) {
+		response.headers.set(name, value);
+	}
+
+	if (!readPublicSiteConfig().indexing) {
+		response.headers.set('x-robots-tag', 'noindex, nofollow');
+	}
+}
+
 // Server hooks — the request-time plumbing for the transit web app.
 //
 // Two jobs, both per-request and CDN-safe (adapted from yesid.dev slice-28.6):
@@ -32,21 +93,49 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// pure function of the URL path, so each URL is independently cacheable.
 	const lang = pathLocale(event.url.pathname);
 	event.locals.locale = lang;
+	const cache = edgeCache(event.platform);
+	const cacheBypassed = cache == null || requestBypassesHtmlCache(event.request);
+	const key = cacheBypassed ? null : cacheKey(event.url);
 
-	const response = await resolve(event, {
+	if (cache != null && key != null) {
+		let hit: Response | undefined;
+		try {
+			hit = await cache.match(key);
+		} catch {
+			// Edge cache is an optimization. SSR remains the fail-open authority.
+		}
+		if (hit != null && responseCanEnterHtmlCache(hit)) {
+			const response = mutableResponse(hit, event.request.method === 'HEAD');
+			applyDocumentHeaders(response);
+			response.headers.set(EDGE_CACHE_STATUS, 'HIT');
+			return response;
+		}
+	}
+
+	const resolved = await resolve(event, {
 		transformPageChunk: ({ html }) => html.replace('%lang%', lang),
 	});
+	const response = mutableResponse(resolved, event.request.method === 'HEAD');
 
 	// Security headers on the SSR-rendered document. The static `_headers` file
 	// only covers static *assets* in Worker mode, so without this every HTML
 	// document shipped zero CSP/HSTS/frame protection. Source of truth +
 	// _headers parity gate: $lib/site/securityHeaders.
-	for (const [name, value] of Object.entries(securityHeaders({ dev }))) {
-		response.headers.set(name, value);
-	}
+	applyDocumentHeaders(response);
 
-	if (!readPublicSiteConfig().indexing) {
-		response.headers.set('x-robots-tag', 'noindex, nofollow');
+	if (cache != null) {
+		if (key != null && event.request.method === 'GET' && responseCanEnterHtmlCache(response)) {
+			response.headers.set('cache-control', HTML_EDGE_CACHE_CONTROL);
+			const stored = response.clone();
+			stored.headers.delete(EDGE_CACHE_STATUS);
+			const write = cache.put(key, stored).catch(() => undefined);
+			const context = event.platform?.ctx ?? event.platform?.context;
+			if (context != null) context.waitUntil(write);
+			else await write;
+			response.headers.set(EDGE_CACHE_STATUS, 'MISS');
+		} else {
+			response.headers.set(EDGE_CACHE_STATUS, 'BYPASS');
+		}
 	}
 	return response;
 };

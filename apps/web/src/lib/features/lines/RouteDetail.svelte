@@ -85,9 +85,11 @@
 		seed: IdentitySeed;
 		/** Server-loaded static route; absent only when that read failed. */
 		routeSeed?: ResourceSeed<RouteFile | null>;
+		/** Server-loaded reliability archive; absent only when that independent read failed. */
+		reliabilitySeed?: ResourceSeed<RouteReliability | null>;
 	}
 
-	let { id, seed, routeSeed }: RouteDetailProps = $props();
+	let { id, seed, routeSeed, reliabilitySeed }: RouteDetailProps = $props();
 
 	const locale = getLocale();
 	const t = $derived(detailCopy[locale]);
@@ -140,7 +142,7 @@
 			const routeId = id;
 			return getRouteReliability(routeId);
 		},
-		{ key: () => id },
+		{ key: () => id, seed: () => reliabilitySeed },
 	);
 
 	function historyFor(routeId: string): LineHistoryResource {
@@ -309,33 +311,31 @@
 	const articleNav = $derived(articleNavigationCopy[locale]);
 	const detailTocEntries = $derived.by<TocEntry[]>(() => {
 		if (route.data == null) return [];
-		const entries: TocEntry[] = [];
-		if (hasListColumn) {
-			entries.push({
-				id: 'line-detail-live',
-				title: t.liveService.title,
-				level: 2,
-				badge: { kind: 'number', value: 1 },
-				children: [],
-			});
-		}
-		const offset = entries.length;
-		entries.push(
+		const entries: TocEntry[] = [
 			{
 				id: 'line-detail-profile',
 				title: t.profile.title,
 				level: 2,
-				badge: { kind: 'number', value: offset + 1 },
+				badge: { kind: 'number', value: 1 },
 				children: [],
 			},
 			{
 				id: 'line-detail-directions',
 				title: t.directions,
 				level: 2,
-				badge: { kind: 'number', value: offset + 2 },
+				badge: { kind: 'number', value: 2 },
 				children: [],
 			},
-		);
+		];
+		if (hasListColumn) {
+			entries.push({
+				id: 'line-detail-live',
+				title: t.liveService.title,
+				level: 2,
+				badge: { kind: 'number', value: 3 },
+				children: [],
+			});
+		}
 		return entries;
 	});
 	const scheduleTocEntries = $derived.by<TocEntry[]>(() =>
@@ -457,118 +457,15 @@
 		{#if key === 'detail'}
 			<ResourceBoundary resource={route} lang={locale}>
 				{#snippet children(file)}
-					<!-- The Detail pane uses the full desktop width: the live roster + the
-					     affected alerts sit in a fixed-width LIST column; the static
-					     directions-with-stops fill the flexing DETAIL pane (single column on
-					     mobile). The list column stands down entirely when no live bus is on
-					     the route AND no alert is active (hasListColumn) so the directions take
-					     the whole width, never an empty bordered column. -->
+					<!-- Stable route facts lead; optional live content appends after them so a
+					     late poll never moves settled profile or directions content. -->
 					<ArticleSectionStack>
 						{#key id}
-							{#if hasListColumn}
-								<CollapsibleSection
-									title={t.liveService.title}
-									subtitle={t.liveService.summary}
-									headerVariant="article-summary"
-									index={0}
-									anchor="line-detail-live"
-									sectionKey={`line-detail-${id}-live`}
-									closeSignal={quietModeStore.closeSignal}
-									openSignal={quietModeStore.openSignal}
-									bulkCollapsed={quietModeStore.enabled}
-								>
-									<div class="route-aside">
-										<!-- LIVE: service alerts affecting this route (stands down when none). -->
-										<AffectedAlerts
-											alerts={routeAlerts}
-											{locale}
-											copy={t.alerts}
-											testId="route-alerts"
-										/>
-
-										<!-- LIVE: current-buses roster — the vehicles running this route right
-									     now, worst-delay first, each linking to its trip. Stands down
-									     entirely when no live bus is on the route (metro / feed gap). -->
-										{#if roster.length > 0}
-											<div class="route-roster" data-testid="route-roster">
-												<div class="route-section-head">
-													<SectionHeading level={2} overline={t.roster.heading} />
-													<span class="route-roster-count">{t.roster.count(roster.length)}</span>
-												</div>
-												<ul class="route-roster-list" aria-label={t.roster.listLabel}>
-													{#each roster as bus, bi (bus.id)}
-														<li class="route-roster-item">
-															{#if bus.trip}
-																<a
-																	class="route-roster-link"
-																	href={tripHref(bus.trip)}
-																	aria-label={t.roster.viewTrip(bus.id)}
-																>
-																	<RankedRow
-																		bare
-																		rank={bi + 1}
-																		title={t.roster.busLabel(bus.id)}
-																		subtitle={bus.next_stop != null
-																			? t.roster.nextStop(bus.next_stop)
-																			: undefined}
-																		severity={delaySeverity(bus.delay_min)}
-																		colorVar={delayColorVar(bus.delay_min)}
-																		value={bus.delay_min ?? null}
-																		domain={DELAY_POS_DOMAIN}
-																		unit=" min"
-																		display={rosterDelayLabel(bus.delay_min)}
-																		absentReason="not-reported"
-																		{locale}
-																	/>
-																	<ChevronRightIcon
-																		size={14}
-																		strokeWidth={2.4}
-																		aria-hidden="true"
-																	/>
-																</a>
-															{:else}
-																<!-- No trip id to link to: still surface the bus + its map link. -->
-																<div class="route-roster-link route-roster-link--static">
-																	<RankedRow
-																		bare
-																		rank={bi + 1}
-																		title={t.roster.busLabel(bus.id)}
-																		subtitle={bus.next_stop != null
-																			? t.roster.nextStop(bus.next_stop)
-																			: undefined}
-																		severity={delaySeverity(bus.delay_min)}
-																		colorVar={delayColorVar(bus.delay_min)}
-																		value={bus.delay_min ?? null}
-																		domain={DELAY_POS_DOMAIN}
-																		unit=" min"
-																		display={rosterDelayLabel(bus.delay_min)}
-																		absentReason="not-reported"
-																		{locale}
-																	/>
-																</div>
-															{/if}
-															<a
-																class="route-roster-map"
-																href={mapHrefFor({ vehicle: bus.id }, locale)}
-																aria-label={t.roster.viewBusOnMap(bus.id)}
-															>
-																<MapPinIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-																<span>{t.roster.mapAction}</span>
-															</a>
-														</li>
-													{/each}
-												</ul>
-											</div>
-										{/if}
-									</div>
-								</CollapsibleSection>
-							{/if}
-
 							<CollapsibleSection
 								title={t.profile.title}
 								subtitle={t.profile.summary}
 								headerVariant="article-summary"
-								index={hasListColumn ? 1 : 0}
+								index={0}
 								anchor="line-detail-profile"
 								sectionKey={`line-detail-${id}-profile`}
 								closeSignal={quietModeStore.closeSignal}
@@ -611,7 +508,7 @@
 							<CollapsibleSection
 								title={t.directions}
 								headerVariant="article-summary"
-								index={hasListColumn ? 2 : 1}
+								index={1}
 								anchor="line-detail-directions"
 								sectionKey={`line-detail-${id}-directions`}
 								closeSignal={quietModeStore.closeSignal}
@@ -651,6 +548,100 @@
 									<LineDirections directions={file.directions} {predictions} {locale} copy={t} />
 								</div>
 							</CollapsibleSection>
+
+							{#if hasListColumn}
+								<CollapsibleSection
+									title={t.liveService.title}
+									subtitle={t.liveService.summary}
+									headerVariant="article-summary"
+									index={2}
+									anchor="line-detail-live"
+									sectionKey={`line-detail-${id}-live`}
+									closeSignal={quietModeStore.closeSignal}
+									openSignal={quietModeStore.openSignal}
+									bulkCollapsed={quietModeStore.enabled}
+								>
+									<div class="route-aside">
+										<AffectedAlerts
+											alerts={routeAlerts}
+											{locale}
+											copy={t.alerts}
+											testId="route-alerts"
+										/>
+
+										{#if roster.length > 0}
+											<div class="route-roster" data-testid="route-roster">
+												<div class="route-section-head">
+													<SectionHeading level={2} overline={t.roster.heading} />
+													<span class="route-roster-count">{t.roster.count(roster.length)}</span>
+												</div>
+												<ul class="route-roster-list" aria-label={t.roster.listLabel}>
+													{#each roster as bus, bi (bus.id)}
+														<li class="route-roster-item">
+															{#if bus.trip}
+																<a
+																	class="route-roster-link"
+																	href={tripHref(bus.trip)}
+																	aria-label={t.roster.viewTrip(bus.id)}
+																>
+																	<RankedRow
+																		bare
+																		rank={bi + 1}
+																		title={t.roster.busLabel(bus.id)}
+																		subtitle={bus.next_stop != null
+																			? t.roster.nextStop(bus.next_stop)
+																			: undefined}
+																		severity={delaySeverity(bus.delay_min)}
+																		colorVar={delayColorVar(bus.delay_min)}
+																		value={bus.delay_min ?? null}
+																		domain={DELAY_POS_DOMAIN}
+																		unit=" min"
+																		display={rosterDelayLabel(bus.delay_min)}
+																		absentReason="not-reported"
+																		{locale}
+																	/>
+																	<ChevronRightIcon
+																		size={14}
+																		strokeWidth={2.4}
+																		aria-hidden="true"
+																	/>
+																</a>
+															{:else}
+																<div class="route-roster-link route-roster-link--static">
+																	<RankedRow
+																		bare
+																		rank={bi + 1}
+																		title={t.roster.busLabel(bus.id)}
+																		subtitle={bus.next_stop != null
+																			? t.roster.nextStop(bus.next_stop)
+																			: undefined}
+																		severity={delaySeverity(bus.delay_min)}
+																		colorVar={delayColorVar(bus.delay_min)}
+																		value={bus.delay_min ?? null}
+																		domain={DELAY_POS_DOMAIN}
+																		unit=" min"
+																		display={rosterDelayLabel(bus.delay_min)}
+																		absentReason="not-reported"
+																		{locale}
+																	/>
+																</div>
+															{/if}
+															<a
+																class="route-roster-map"
+																href={mapHrefFor({ vehicle: bus.id }, locale)}
+																aria-label={t.roster.viewBusOnMap(bus.id)}
+															>
+																<MapPinIcon size={13} strokeWidth={2.4} aria-hidden="true" />
+																<span>{t.roster.mapAction}</span>
+															</a>
+														</li>
+													{/each}
+												</ul>
+											</div>
+										{/if}
+									</div>
+								</CollapsibleSection>
+							{/if}
 						{/key}
 					</ArticleSectionStack>
 				{/snippet}

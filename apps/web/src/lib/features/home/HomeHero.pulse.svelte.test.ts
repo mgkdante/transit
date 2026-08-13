@@ -199,6 +199,14 @@ function borderCascade(element: Element) {
 }
 
 describe('HomeHero pulse DataTable', () => {
+	it('reserves the settled terminal footprint on wide screens', () => {
+		const widePulseRule = componentRules.find(
+			(rule) => rule.selector === ':global(.hub-pulse)' && rule.declarations.has('min-height'),
+		);
+
+		expect(widePulseRule?.declarations.get('min-height')).toBe('49.5rem');
+	});
+
 	it('renders Fleet status as the sole caption-named wash ledger with subtle gridlines', () => {
 		const rootStyle = document.documentElement.style;
 		const rootVariables = ['--border', '--border-subtle'].map((name) => ({

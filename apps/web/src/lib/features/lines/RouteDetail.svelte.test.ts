@@ -391,7 +391,7 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 beforeEach(() => routeSurface.reset());
 
 afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(34);
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(35);
 });
 
 describe('RouteDetail article cover and focus scope', () => {
@@ -539,6 +539,19 @@ describe('RouteDetail article cover and focus scope', () => {
 		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
 		expect(within(rail).getByRole('button', { name: 'Service span' })).toBeInTheDocument();
 		expect(within(rail).getByRole('button', { name: 'Service periods' })).toBeInTheDocument();
+	});
+
+	it('keeps static route detail ahead of late live content', () => {
+		const view = renderRoute();
+		const stack = view.container.querySelector(
+			'[data-slot="article-section-stack"]',
+		) as HTMLElement;
+
+		expect(Array.from(stack.children).map((section) => section.getAttribute('data-toc'))).toEqual([
+			'line-detail-profile',
+			'line-detail-directions',
+			'line-detail-live',
+		]);
 	});
 
 	it('keeps article controls visible across tabs without mutating a card until used', async () => {
