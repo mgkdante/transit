@@ -77,11 +77,12 @@ describe('server HTML edge cache', () => {
 		expect(key.method).toBe('GET');
 		expect(key.url).toBe('https://transit.yesid.dev/fr/metrics?grain=week');
 		expect(response.headers.get('x-transit-edge-cache')).toBe('HIT');
+		expect(response.headers.get('cache-control')).toBe('no-store');
 		expect(response.headers.get('content-security-policy')).toBeTruthy();
 		expect(cache.put).not.toHaveBeenCalled();
 	});
 
-	it('stores a safe anonymous HTML miss with a short browser-safe TTL through waitUntil', async () => {
+	it('stores a safe anonymous HTML miss for 30 seconds without exposing that TTL publicly', async () => {
 		const cache = cacheHarness();
 		const request = event('https://transit.yesid.dev/lines/24?tab=detail', { cache });
 		const resolve = vi.fn(async () => html('fresh'));
@@ -91,16 +92,14 @@ describe('server HTML edge cache', () => {
 
 		expect(await response.text()).toBe('fresh');
 		expect(response.headers.get('x-transit-edge-cache')).toBe('MISS');
-		expect(response.headers.get('cache-control')).toMatch(
-			/^public, max-age=0, s-maxage=(?:[1-9]|[12][0-9]|30)$/,
-		);
+		expect(response.headers.get('cache-control')).toBe('no-store');
 		expect(cache.put).toHaveBeenCalledTimes(1);
 		expect(cache.waitUntil).toHaveBeenCalledTimes(1);
 		const [key, stored] = cache.put.mock.calls[0] as [Request, Response];
 		expect(key.url).toBe('https://transit.yesid.dev/lines/24?tab=detail');
 		expect(key.method).toBe('GET');
 		expect(stored.headers.get('content-security-policy')).toBeTruthy();
-		expect(stored.headers.get('cache-control')).toBe(response.headers.get('cache-control'));
+		expect(stored.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=30');
 		expect(stored.headers.get('x-transit-edge-cache')).toBeNull();
 	});
 

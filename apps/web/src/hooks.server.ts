@@ -9,6 +9,7 @@ export const init: ServerInit = configureTransitUi;
 
 const HTML_EDGE_TTL_S = 30;
 const HTML_EDGE_CACHE_CONTROL = `public, max-age=0, s-maxage=${HTML_EDGE_TTL_S}`;
+const HTML_PUBLIC_CACHE_CONTROL = 'no-store';
 const EDGE_CACHE_STATUS = 'x-transit-edge-cache';
 
 interface EdgeCache {
@@ -107,6 +108,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		if (hit != null && responseCanEnterHtmlCache(hit)) {
 			const response = mutableResponse(hit, event.request.method === 'HEAD');
 			applyDocumentHeaders(response);
+			response.headers.set('cache-control', HTML_PUBLIC_CACHE_CONTROL);
 			response.headers.set(EDGE_CACHE_STATUS, 'HIT');
 			return response;
 		}
@@ -125,13 +127,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	if (cache != null) {
 		if (key != null && event.request.method === 'GET' && responseCanEnterHtmlCache(response)) {
-			response.headers.set('cache-control', HTML_EDGE_CACHE_CONTROL);
 			const stored = response.clone();
+			stored.headers.set('cache-control', HTML_EDGE_CACHE_CONTROL);
 			stored.headers.delete(EDGE_CACHE_STATUS);
 			const write = cache.put(key, stored).catch(() => undefined);
 			const context = event.platform?.ctx ?? event.platform?.context;
 			if (context != null) context.waitUntil(write);
 			else await write;
+			response.headers.set('cache-control', HTML_PUBLIC_CACHE_CONTROL);
 			response.headers.set(EDGE_CACHE_STATUS, 'MISS');
 		} else {
 			response.headers.set(EDGE_CACHE_STATUS, 'BYPASS');
