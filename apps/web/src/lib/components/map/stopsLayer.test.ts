@@ -25,7 +25,7 @@ function usesTopLevelZoomExpression(value: unknown): boolean {
 }
 
 describe('addStopsLayer', () => {
-	it('hands the base layer in at z8 with static size and feature-state paint emphasis', () => {
+	it('uses a circle overview through z12 and the accepted diamond only from z12', () => {
 		const layers: LayerSpecification[] = [];
 		const map = {
 			getLayer: () => undefined,
@@ -35,34 +35,47 @@ describe('addStopsLayer', () => {
 		} as unknown as MapLibreMap;
 
 		addStopsLayer(map);
-		const layer = layers.find((candidate) => candidate.id === STOPS_LAYER);
-		if (!layer) throw new Error('expected stops layer');
-		const rendered = layer as LayerSpecification & {
+		const overview = layers.find((candidate) => candidate.id === 'stops-overview') as
+			| (LayerSpecification & { paint: Record<string, unknown> })
+			| undefined;
+		const detail = layers.find((candidate) => candidate.id === STOPS_LAYER);
+		if (!overview || !detail) throw new Error('expected overview and detail stop layers');
+		const renderedDetail = detail as LayerSpecification & {
 			layout: Record<string, unknown>;
 			paint: Record<string, unknown>;
 		};
 
-		expect(rendered).toMatchObject({
+		expect(overview).toMatchObject({
+			id: 'stops-overview',
+			type: 'circle',
+			source: STOPS_SOURCE,
+			minzoom: 8,
+			maxzoom: 12,
+		});
+		expect(renderedDetail).toMatchObject({
 			id: STOPS_LAYER,
 			type: 'symbol',
 			source: STOPS_SOURCE,
-			minzoom: 8,
+			minzoom: 12,
 			layout: {
 				'icon-image': STOP_ICON,
 			},
 		});
-		expect(JSON.stringify(rendered.layout['icon-size'])).toContain('0');
-		expect(JSON.stringify(rendered.layout['icon-size'])).not.toContain('selected');
-		expect(JSON.stringify(rendered.layout['icon-size'])).not.toContain('hovered');
-		expect(JSON.stringify(rendered.layout['icon-size'])).not.toContain('feature-state');
-		expect(JSON.stringify(rendered.paint['icon-opacity'])).toContain('feature-state');
-		expect(JSON.stringify(rendered.paint['icon-opacity'])).toContain('selected');
-		expect(JSON.stringify(rendered.paint['icon-opacity'])).toContain('hovered');
-		expect(JSON.stringify(rendered.paint['icon-opacity'])).toContain(
+		expect(overview.maxzoom).toBe(renderedDetail.minzoom);
+		expect(JSON.stringify(overview.paint)).toContain('feature-state');
+		expect(JSON.stringify(overview.paint)).toContain(JSON.stringify(['get', 'selected']));
+		expect(JSON.stringify(renderedDetail.layout['icon-size'])).toContain('0');
+		expect(JSON.stringify(renderedDetail.layout['icon-size'])).not.toContain('selected');
+		expect(JSON.stringify(renderedDetail.layout['icon-size'])).not.toContain('hovered');
+		expect(JSON.stringify(renderedDetail.layout['icon-size'])).not.toContain('feature-state');
+		expect(JSON.stringify(renderedDetail.paint['icon-opacity'])).toContain('feature-state');
+		expect(JSON.stringify(renderedDetail.paint['icon-opacity'])).toContain('selected');
+		expect(JSON.stringify(renderedDetail.paint['icon-opacity'])).toContain('hovered');
+		expect(JSON.stringify(renderedDetail.paint['icon-opacity'])).toContain(
 			JSON.stringify(['get', 'selected']),
 		);
-		expect(usesTopLevelZoomExpression(rendered.layout['icon-size'])).toBe(true);
-		expect(usesTopLevelZoomExpression(rendered.paint['icon-opacity'])).toBe(true);
+		expect(usesTopLevelZoomExpression(renderedDetail.layout['icon-size'])).toBe(true);
+		expect(usesTopLevelZoomExpression(renderedDetail.paint['icon-opacity'])).toBe(true);
 	});
 
 	it('installs the minzoom-8 stop highlight below the stop symbol on the existing source', () => {
@@ -85,11 +98,14 @@ describe('addStopsLayer', () => {
 		});
 		expect(JSON.stringify(highlight?.paint)).toContain('feature-state');
 		expect(layers.findIndex((layer) => layer.id === STOP_HIGHLIGHT_LAYER)).toBeLessThan(
+			layers.findIndex((layer) => layer.id === 'stops-overview'),
+		);
+		expect(layers.findIndex((layer) => layer.id === 'stops-overview')).toBeLessThan(
 			layers.findIndex((layer) => layer.id === STOPS_LAYER),
 		);
 	});
 
-	it('retints an existing stop highlight on a live theme change', () => {
+	it('retints existing overview and highlight layers on a live theme change', () => {
 		const setPaintProperty = vi.fn();
 		const map = {
 			getLayer: (id: string) => ({ id }),
@@ -107,6 +123,16 @@ describe('addStopsLayer', () => {
 			STOP_HIGHLIGHT_LAYER,
 			'circle-stroke-color',
 			'rgb(255, 95, 87)',
+		);
+		expect(setPaintProperty).toHaveBeenCalledWith(
+			'stops-overview',
+			'circle-color',
+			'rgb(255, 182, 39)',
+		);
+		expect(setPaintProperty).toHaveBeenCalledWith(
+			'stops-overview',
+			'circle-stroke-color',
+			'#141414',
 		);
 	});
 
@@ -208,6 +234,19 @@ describe('addStopsLayer', () => {
 		]).features;
 
 		for (const feature of features) expect(feature.properties).not.toHaveProperty('hovered');
+	});
+
+	it('keeps every bulk stop while serializing exactly id and selected', () => {
+		const features = toStopFeatures([
+			{ id: 's1', name: 'Stop 1', code: '1001', lat: 45.5, lon: -73.6 },
+			{ id: 's2', name: 'Stop 2', code: '1002', lat: 45.51, lon: -73.61 },
+		]).features;
+
+		expect(features).toHaveLength(2);
+		expect(features.map((feature) => feature.properties)).toEqual([
+			{ id: 's1', selected: 0 },
+			{ id: 's2', selected: 0 },
+		]);
 	});
 });
 

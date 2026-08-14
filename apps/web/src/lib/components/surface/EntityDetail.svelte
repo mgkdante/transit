@@ -126,10 +126,27 @@
 	const trail = $derived(resolveBreadcrumbTrail(page.url.pathname, locale));
 	const paneOwnsRail = $derived(paneOwnedRailKeys.includes(active));
 	const articleTocEntries = $derived(articleToc?.entries[active] ?? []);
+	let mountedPanes = $state<{ pathname: string; keys: K[] }>(
+		untrack(() => ({ pathname: page.url.pathname, keys: [active] })),
+	);
 	let activeTocId = $state('');
 	let tabViewport = $state<HTMLElement>();
 	let tabsMoreEnd = $state(false);
 	let previousTocIds: string[] = [];
+	$effect.pre(() => {
+		const pathname = page.url.pathname;
+		if (mountedPanes.pathname !== pathname) {
+			mountedPanes = { pathname, keys: [active] };
+		} else if (!mountedPanes.keys.includes(active)) {
+			mountedPanes = { pathname, keys: [...mountedPanes.keys, active] };
+		}
+	});
+	function paneBodyMounted(key: K): boolean {
+		const pathname = page.url.pathname;
+		return (
+			key === active || (mountedPanes.pathname === pathname && mountedPanes.keys.includes(key))
+		);
+	}
 	$effect(() => {
 		const nextIds = articleTocEntries.map((entry) => entry.id);
 		const currentId = untrack(() => activeTocId);
@@ -275,7 +292,9 @@
 {#snippet tabPanes()}
 	{#each tabs as t (t.key)}
 		<TabsContent value={t.key} class={cn('surface-pane', articleHeader && 'surface-pane--article')}>
-			{@render pane(t.key)}
+			{#if paneBodyMounted(t.key)}
+				{@render pane(t.key)}
+			{/if}
 		</TabsContent>
 	{/each}
 {/snippet}

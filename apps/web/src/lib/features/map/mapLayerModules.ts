@@ -18,6 +18,7 @@ import {
 	setStale,
 	setStops,
 	STOP_EXCEPTION_LAYER,
+	STOP_OVERVIEW_LAYER,
 	STOPS_LAYER,
 	toVehicleFeatures,
 	VEHICLE_BODY_LAYER,
@@ -110,7 +111,7 @@ const stopsModule: LayerModule = {
 		const stops = ctx.stops;
 		setStops(map, stops.items, stops.filter, stops.alertIds, stops.selectedId);
 	},
-	pick: { layerIds: [STOPS_LAYER, STOP_EXCEPTION_LAYER], priority: 20 },
+	pick: { layerIds: [STOPS_LAYER, STOP_OVERVIEW_LAYER, STOP_EXCEPTION_LAYER], priority: 20 },
 };
 
 const vehiclesModule: LayerModule = {

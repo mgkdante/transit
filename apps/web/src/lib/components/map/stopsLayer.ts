@@ -1,17 +1,25 @@
 // map/stopsLayer.ts — the static stops layer.
 //
-// One calm yellow diamond, ZOOM-GATED to z≥9 so stops appear as soon as the
-// low-zoom street network appears, with a tiny early ramp to avoid blanketing.
+// Calm token-coloured circles provide the overview; the accepted stop-pin
+// diamond takes over at detail zoom without overlapping the circle range.
 // Rendered UNDER the vehicle layers (stops are context; buses ride on top).
 // State (e.g. alert=has_alert) will tint via the filter.
 
 import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
 import type { StopIndexEntry } from '$lib/v1/schemas';
 import type { FilterState } from '$lib/filters';
-import { resolveColor, STOP_ICON } from './vehicleSprites';
+import {
+	resolveColor,
+	STOP_FILL_FALLBACK,
+	STOP_FILL_TOKEN,
+	STOP_HALO_FALLBACK,
+	STOP_HALO_TOKEN,
+	STOP_ICON,
+} from './vehicleSprites';
 
 export const STOPS_SOURCE = 'stops';
 export const STOP_HIGHLIGHT_LAYER = 'stop-highlight';
+export const STOP_OVERVIEW_LAYER = 'stops-overview';
 export const STOPS_LAYER = 'stops';
 export const STOP_EXCEPTION_SOURCE = 'stop-exception';
 export const STOP_EXCEPTION_LAYER = 'stop-exception';
@@ -19,7 +27,7 @@ export const STOP_EXCEPTION_LAYER = 'stop-exception';
 interface StopFeature {
 	type: 'Feature';
 	geometry: { type: 'Point'; coordinates: [number, number] };
-	properties: { id: string; name: string; code: string; selected: number };
+	properties: { id: string; selected: number };
 }
 interface StopFC {
 	type: 'FeatureCollection';
@@ -63,8 +71,6 @@ export function toStopFeatures(
 			geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
 			properties: {
 				id: s.id,
-				name: s.name,
-				code: s.code ?? '',
 				selected: selectedStopId === s.id || (filter?.stops.has(s.id) ?? false) ? 1 : 0,
 			},
 		})),
@@ -79,6 +85,37 @@ export function addStopsSource(map: MapLibreMap): void {
 
 const FEATURE_HOVERED = ['boolean', ['feature-state', 'hovered'], false];
 const FEATURE_SELECTED = ['boolean', ['feature-state', 'selected'], false];
+const STOP_DETAIL_MIN_ZOOM = 12;
+
+const stopOpacityAt = (baseOpacity: number) => [
+	'case',
+	FEATURE_HOVERED,
+	1,
+	FEATURE_SELECTED,
+	0.95,
+	['==', ['get', 'selected'], 1],
+	0.95,
+	baseOpacity,
+];
+const STOP_OPACITY = [
+	'interpolate',
+	['linear'],
+	['zoom'],
+	8,
+	stopOpacityAt(0),
+	9,
+	stopOpacityAt(0.14),
+	10,
+	stopOpacityAt(0.18),
+	11,
+	stopOpacityAt(0.26),
+	12,
+	stopOpacityAt(0.42),
+	13,
+	stopOpacityAt(0.62),
+	16,
+	stopOpacityAt(0.7),
+];
 
 /** Owner-retunable companion to the vehicle candidate: a primary outer stroke
  * separated from the stop glyph by a background casing disc. */
@@ -151,21 +188,79 @@ function addStopHighlightLayer(map: MapLibreMap): void {
 				],
 			},
 		} as unknown as LayerSpecification,
+		map.getLayer(STOP_OVERVIEW_LAYER)
+			? STOP_OVERVIEW_LAYER
+			: map.getLayer(STOPS_LAYER)
+				? STOPS_LAYER
+				: undefined,
+	);
+}
+
+const STOP_OVERVIEW_RADIUS = [
+	'interpolate',
+	['linear'],
+	['zoom'],
+	8,
+	0.75,
+	9,
+	0.9,
+	10,
+	1.1,
+	11,
+	1.5,
+	STOP_DETAIL_MIN_ZOOM,
+	2.3,
+];
+
+function retintStopOverview(map: MapLibreMap): void {
+	map.setPaintProperty(
+		STOP_OVERVIEW_LAYER,
+		'circle-color',
+		resolveColor(STOP_FILL_TOKEN, STOP_FILL_FALLBACK),
+	);
+	map.setPaintProperty(
+		STOP_OVERVIEW_LAYER,
+		'circle-stroke-color',
+		resolveColor(STOP_HALO_TOKEN, STOP_HALO_FALLBACK),
+	);
+}
+
+function addStopOverviewLayer(map: MapLibreMap): void {
+	if (map.getLayer(STOP_OVERVIEW_LAYER)) {
+		retintStopOverview(map);
+		return;
+	}
+	map.addLayer(
+		{
+			id: STOP_OVERVIEW_LAYER,
+			type: 'circle',
+			source: STOPS_SOURCE,
+			minzoom: 8,
+			maxzoom: STOP_DETAIL_MIN_ZOOM,
+			paint: {
+				'circle-radius': STOP_OVERVIEW_RADIUS,
+				'circle-color': resolveColor(STOP_FILL_TOKEN, STOP_FILL_FALLBACK),
+				'circle-stroke-color': resolveColor(STOP_HALO_TOKEN, STOP_HALO_FALLBACK),
+				'circle-stroke-width': 0.75,
+				'circle-opacity': STOP_OPACITY,
+			},
+		} as unknown as LayerSpecification,
 		map.getLayer(STOPS_LAYER) ? STOPS_LAYER : undefined,
 	);
 }
 
-/** Add the stops layer — yellow DIAMOND sprite, single colour, zoom-gated.
+/** Add the stops layers — overview circles, then the accepted DIAMOND sprite.
  * Dimmer + smaller than the buses so the live vehicles keep primacy (hierarchy
  * by weight + shape, not hue). Idempotent. */
 export function addStopsLayer(map: MapLibreMap): void {
 	addStopHighlightLayer(map);
+	addStopOverviewLayer(map);
 	if (map.getLayer(STOPS_LAYER)) return;
 	map.addLayer({
 		id: STOPS_LAYER,
 		type: 'symbol',
 		source: STOPS_SOURCE,
-		minzoom: 8,
+		minzoom: STOP_DETAIL_MIN_ZOOM,
 		layout: {
 			'icon-image': STOP_ICON,
 			'icon-size': [
@@ -191,88 +286,7 @@ export function addStopsLayer(map: MapLibreMap): void {
 			'icon-ignore-placement': true,
 		},
 		paint: {
-			'icon-opacity': [
-				'interpolate',
-				['linear'],
-				['zoom'],
-				8,
-				[
-					'case',
-					FEATURE_HOVERED,
-					1,
-					FEATURE_SELECTED,
-					0.95,
-					['==', ['get', 'selected'], 1],
-					0.95,
-					0,
-				],
-				9,
-				[
-					'case',
-					FEATURE_HOVERED,
-					1,
-					FEATURE_SELECTED,
-					0.95,
-					['==', ['get', 'selected'], 1],
-					0.95,
-					0.14,
-				],
-				10,
-				[
-					'case',
-					FEATURE_HOVERED,
-					1,
-					FEATURE_SELECTED,
-					0.95,
-					['==', ['get', 'selected'], 1],
-					0.95,
-					0.18,
-				],
-				11,
-				[
-					'case',
-					FEATURE_HOVERED,
-					1,
-					FEATURE_SELECTED,
-					0.95,
-					['==', ['get', 'selected'], 1],
-					0.95,
-					0.26,
-				],
-				12,
-				[
-					'case',
-					FEATURE_HOVERED,
-					1,
-					FEATURE_SELECTED,
-					0.95,
-					['==', ['get', 'selected'], 1],
-					0.95,
-					0.42,
-				],
-				13,
-				[
-					'case',
-					FEATURE_HOVERED,
-					1,
-					FEATURE_SELECTED,
-					0.95,
-					['==', ['get', 'selected'], 1],
-					0.95,
-					0.62,
-				],
-				16,
-				[
-					'case',
-					FEATURE_HOVERED,
-					1,
-					FEATURE_SELECTED,
-					0.95,
-					['==', ['get', 'selected'], 1],
-					0.95,
-					0.7,
-				],
-			],
+			'icon-opacity': STOP_OPACITY,
 		},
 	} as unknown as LayerSpecification);
 }

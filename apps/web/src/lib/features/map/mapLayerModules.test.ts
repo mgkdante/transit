@@ -337,7 +337,11 @@ describe('map layer feed invariants', () => {
 		expect(feeds['near-target']).toHaveBeenCalledTimes(3);
 	});
 
-	it('registers the low-zoom stop exception as a sibling pick target', () => {
+	it('registers both bulk stop render modes and the low-zoom exception at stop priority', () => {
+		expect(PICKABLE_MAP_LAYERS).toContain('stops-overview');
 		expect(PICKABLE_MAP_LAYERS).toContain(STOP_EXCEPTION_LAYER);
+		expect(PICKABLE_MAP_LAYERS.indexOf('stops-overview')).toBeLessThan(
+			PICKABLE_MAP_LAYERS.indexOf('route-lines-hit'),
+		);
 	});
 });

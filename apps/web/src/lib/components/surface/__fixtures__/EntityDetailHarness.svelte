@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import EntityDetail from '../EntityDetail.svelte';
 	import type { TocEntry } from '$lib/components/shared/toc';
 	import { ReliabilityRailLayout } from '$lib/components/layout';
@@ -9,12 +10,14 @@
 		mode = 'classic',
 		sectionKey = 'entity-detail-harness-toc',
 		withBanner = true,
+		initialActive = 'detail',
 	}: {
 		mode?: 'classic' | 'article';
 		sectionKey?: string;
 		withBanner?: boolean;
+		initialActive?: TabKey;
 	} = $props();
-	let active = $state<TabKey>('detail');
+	let active = $state<TabKey>(untrack(() => initialActive));
 
 	const tabs = [
 		{ key: 'detail', label: 'Detail' },
@@ -67,6 +70,9 @@
 	{:else}
 		<section data-toc={`${key}-section`}>
 			<p>{key === 'detail' ? 'Detail pane' : 'Schedule pane'}</p>
+			{#if key === 'schedule'}
+				<input aria-label="Schedule note" />
+			{/if}
 		</section>
 	{/if}
 {/snippet}

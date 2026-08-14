@@ -1,13 +1,39 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tick } from 'svelte';
 import EntityDetailHarness from './__fixtures__/EntityDetailHarness.svelte';
 
-vi.mock('$app/state', () => ({
-	page: { url: new URL('https://transit.yesid.dev/lines/24') },
+const navigation = vi.hoisted(() => ({
+	setPath: (_path: string) => {},
 }));
+
+vi.mock('$app/state', async () => {
+	const { createSubscriber } = await import('svelte/reactivity');
+	let url = new URL('https://transit.yesid.dev/lines/24');
+	let notify: (() => void) | undefined;
+	const subscribe = createSubscriber((update) => {
+		notify = update;
+		return () => {
+			if (notify === update) notify = undefined;
+		};
+	});
+	navigation.setPath = (path: string) => {
+		url = new URL(path, url);
+		notify?.();
+	};
+	return {
+		page: {
+			get url() {
+				subscribe();
+				return url;
+			},
+		},
+	};
+});
+
+beforeEach(() => navigation.setPath('/lines/24'));
 
 // Regression guard for the signage-active tab look (yesid StationTabs parity).
 // EntityDetail's tab strip renders each bits-ui TabsTrigger through a `child`
@@ -24,6 +50,52 @@ const detailShellSrc = readFileSync(
 	join(process.cwd(), 'src/lib/components/layout/DetailShell.svelte'),
 	'utf8',
 );
+
+describe('EntityDetail — demand-mounted pane bodies', () => {
+	it('mounts only the initially active pane body while retaining every tabpanel wrapper', () => {
+		const { container } = render(EntityDetailHarness, {
+			props: { mode: 'article', initialActive: 'reliability' },
+		});
+
+		expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(3);
+		expect(screen.getByText('Reliability pane')).toBeInTheDocument();
+		expect(screen.queryByText('Detail pane')).not.toBeInTheDocument();
+		expect(screen.queryByText('Schedule pane')).not.toBeInTheDocument();
+	});
+
+	it('mounts a pane on first activation and retains its DOM state across later switches', async () => {
+		render(EntityDetailHarness, { props: { mode: 'article' } });
+
+		expect(screen.getByText('Detail pane')).toBeInTheDocument();
+		expect(screen.queryByText('Schedule pane')).not.toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
+		const note = screen.getByRole('textbox', { name: 'Schedule note' });
+		await fireEvent.input(note, { target: { value: 'keep this note' } });
+
+		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		expect(screen.getByText('Schedule pane')).toBeInTheDocument();
+		expect(note).toHaveValue('keep this note');
+		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
+		expect(screen.getByRole('textbox', { name: 'Schedule note' })).toBe(note);
+		expect(note).toHaveValue('keep this note');
+	});
+
+	it('resets visited pane bodies when the logical route pathname changes', async () => {
+		const { container } = render(EntityDetailHarness, { props: { mode: 'article' } });
+		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		expect(screen.getByText('Detail pane')).toBeInTheDocument();
+		expect(screen.getByText('Schedule pane')).toBeInTheDocument();
+
+		navigation.setPath('/lines/51');
+
+		await waitFor(() => expect(screen.queryByText('Detail pane')).not.toBeInTheDocument());
+		expect(screen.queryByText('Schedule pane')).not.toBeInTheDocument();
+		expect(screen.getByText('Reliability pane')).toBeInTheDocument();
+		expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(3);
+	});
+});
 
 describe('EntityDetail — signage-active tab pattern', () => {
 	it('renders each trigger through a bits-ui child snippet (behavior stays on bits-ui)', () => {
