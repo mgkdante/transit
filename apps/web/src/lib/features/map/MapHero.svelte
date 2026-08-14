@@ -957,6 +957,7 @@
 		bounds={ISLAND_FIT_BOUNDS}
 		maxBounds={MAP_MAX_BOUNDS}
 		fitPadding={mapFitPadding}
+		pixelRatioCap={isDesktopLayout ? undefined : 1.25}
 		onready={onMapReady}
 		onstyleload={onMapStyleLoad}
 		onthemerepaint={onMapThemeRepaint}

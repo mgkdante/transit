@@ -724,6 +724,56 @@ describe('MapHero stage lifecycle', () => {
 		);
 	});
 
+	it('passes the compact canvas cap and clears it on the existing desktop breakpoint', async () => {
+		const listeners = new Set<(event: MediaQueryListEvent) => void>();
+		let desktop = false;
+		const breakpoint = {
+			get matches() {
+				return desktop;
+			},
+			media: '(min-width: 1024px)',
+			onchange: null,
+			addListener: vi.fn(),
+			removeListener: vi.fn(),
+			addEventListener: vi.fn(
+				(_type: string, listener: EventListenerOrEventListenerObject | null) => {
+					if (typeof listener === 'function') {
+						listeners.add(listener as (event: MediaQueryListEvent) => void);
+					}
+				},
+			),
+			removeEventListener: vi.fn(
+				(_type: string, listener: EventListenerOrEventListenerObject | null) => {
+					if (typeof listener === 'function') {
+						listeners.delete(listener as (event: MediaQueryListEvent) => void);
+					}
+				},
+			),
+			dispatchEvent: vi.fn(() => true),
+		} as unknown as MediaQueryList;
+		const nativeMatchMedia = window.matchMedia.bind(window);
+		const matchMedia = vi
+			.spyOn(window, 'matchMedia')
+			.mockImplementation((query) =>
+				query === breakpoint.media ? breakpoint : nativeMatchMedia(query),
+			);
+		try {
+			render(MapHero);
+			const stage = screen.getByTestId('map-stage-stub');
+			expect(stage).toHaveAttribute('data-pixel-ratio-cap', '1.25');
+
+			desktop = true;
+			for (const listener of listeners) listener({ matches: true } as MediaQueryListEvent);
+			await tick();
+
+			expect(screen.getByTestId('map-stage-stub')).toBe(stage);
+			expect(stage).toHaveAttribute('data-pixel-ratio-cap', 'none');
+			expect(screen.getAllByTestId('map-stage-stub')).toHaveLength(1);
+		} finally {
+			matchMedia.mockRestore();
+		}
+	});
+
 	it('retints every token surface on theme repaint without feed, motion, or emphasis replay', async () => {
 		const installSpies = [
 			harness.bakeVehicleSprites,
