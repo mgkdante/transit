@@ -7,6 +7,7 @@ import type {
 	IsoUtc,
 	RepeatOffenders,
 } from '$lib/v1/schemas';
+import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
 
 const harness = vi.hoisted(() => {
 	const state = { url: new URL('http://localhost/repeat-offenders') };
@@ -681,6 +682,7 @@ describe('RepeatOffenders retained date history', () => {
 	] as const)(
 		'uses only the custom touch dialog for retained %s chart rows and never redirects',
 		async (cardId, heading, expectedHref) => {
+			vi.stubGlobal('IntersectionObserver', EnteringIntersectionObserver);
 			reset('http://localhost/repeat-offenders?date=2026-06-22&campaign=walk');
 			harness.getRepeatOffendersHistoryDay.mockResolvedValue(parityPayload());
 			const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
@@ -772,6 +774,7 @@ describe('RepeatOffenders retained date history', () => {
 				expect(harness.goto).not.toHaveBeenCalled();
 				expect(harness.state.url.toString()).toBe(initialUrl);
 			} finally {
+				vi.unstubAllGlobals();
 				observer.disconnect();
 				width.mockRestore();
 				height.mockRestore();

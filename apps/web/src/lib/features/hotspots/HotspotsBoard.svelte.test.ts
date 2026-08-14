@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import type { Hotspots, IsoUtc } from '$lib/v1/schemas';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
+import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
 
 // Mock the SvelteKit page URL (mutable) + a replaceState that UPDATES it, so the ?grain
 // / ?n seed and the round-trip mirror remain covered while the page changes shells.
@@ -307,6 +308,7 @@ describe('HotspotsBoard article', () => {
 	);
 
 	it('keeps a real chart touch click inside its open card while opening details', async () => {
+		vi.stubGlobal('IntersectionObserver', EnteringIntersectionObserver);
 		const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
 		const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
 		const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');
@@ -351,6 +353,7 @@ describe('HotspotsBoard article', () => {
 			expect(navigate).not.toHaveBeenCalled();
 			expect(body).toHaveAttribute('data-state', 'open');
 		} finally {
+			vi.unstubAllGlobals();
 			width.mockRestore();
 			height.mockRestore();
 			if (originalAnimate) Object.defineProperty(Element.prototype, 'animate', originalAnimate);
