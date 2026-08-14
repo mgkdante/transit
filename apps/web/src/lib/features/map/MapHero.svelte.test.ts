@@ -609,6 +609,7 @@ vi.mock('$lib/components/map', async () => {
 	return {
 		MapStage,
 		STOPS_LAYER: 'stops',
+		STOP_OVERVIEW_LAYER: 'stops-overview',
 		STOPS_SOURCE: 'stops',
 		STOP_EXCEPTION_LAYER: 'stop-exception',
 		STOP_EXCEPTION_SOURCE: 'stop-exception',
