@@ -243,12 +243,14 @@ vi.mock('$lib/nav', async () => ({ layout: { isDesktop: true } }));
 // live in a vi.hoisted block so both the (hoisted) vi.mock factories AND the test
 // bodies can reference them. freshnessRelative delegates to the real module so
 // relative-age math stays honest.
-const { getProvenance, getDataHealth, getHistoricAvailability, resourceOptions } = vi.hoisted(() => ({
-	getProvenance: vi.fn(),
-	getDataHealth: vi.fn(),
-	getHistoricAvailability: vi.fn(),
-	resourceOptions: [] as Array<{ kind: string; options: Record<string, unknown> }>,
-}));
+const { getProvenance, getDataHealth, getHistoricAvailability, resourceOptions } = vi.hoisted(
+	() => ({
+		getProvenance: vi.fn(),
+		getDataHealth: vi.fn(),
+		getHistoricAvailability: vi.fn(),
+		resourceOptions: [] as Array<{ kind: string; options: Record<string, unknown> }>,
+	}),
+);
 vi.mock('$lib/v1', async () => {
 	const freshness = await import('$lib/v1/freshness');
 	return {

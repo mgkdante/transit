@@ -10,7 +10,5 @@ it('/status forwards all request-scoped seeds through its thin feature mount', (
 
 	expect(source).toContain('provenanceSeed={data.provenanceSeed ?? undefined}');
 	expect(source).toContain('dataHealthSeed={data.dataHealthSeed ?? undefined}');
-	expect(source).toContain(
-		'historicAvailabilitySeed={data.historicAvailabilitySeed ?? undefined}',
-	);
+	expect(source).toContain('historicAvailabilitySeed={data.historicAvailabilitySeed ?? undefined}');
 });

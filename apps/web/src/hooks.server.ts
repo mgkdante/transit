@@ -120,6 +120,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	const resolved = await resolve(event, {
 		transformPageChunk: ({ html }) => html.replace('%lang%', lang),
+		preload: ({ type }) => type !== 'js',
 	});
 	const response = mutableResponse(resolved, event.request.method === 'HEAD');
 

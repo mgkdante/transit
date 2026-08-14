@@ -6,12 +6,9 @@ import { serverV1Context } from '$lib/v1/serverContext';
 
 export const load: PageServerLoad = async (event) => {
 	const context = serverV1Context(event);
-	const [provenanceResult, dataHealthResult, historicAvailabilityResult] =
-		await Promise.allSettled([
-			getProvenance(context),
-			getDataHealth(context),
-			getHistoricAvailability(context),
-		]);
+	const [provenanceResult, dataHealthResult, historicAvailabilityResult] = await Promise.allSettled(
+		[getProvenance(context), getDataHealth(context), getHistoricAvailability(context)],
+	);
 
 	return {
 		provenanceSeed:
