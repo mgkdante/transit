@@ -99,14 +99,20 @@ export function createResource<T>(
 	const epoch = () => getV1Runtime().refresh.epoch;
 	const onGenerated = (generatedUtc: string | null | undefined) =>
 		getV1Runtime().refresh.noteDataGeneratedUtc(generatedUtc);
-	let data = $state<T | null>(null);
-	let error = $state<Error | null>(null);
-	let loading = $state(false);
-	let settled = $state(false);
 	const keyed = options.key !== undefined;
 	const unresolvedKey = Symbol('unresolved-resource-key');
-	let stateKey = $state.raw<unknown>(unresolvedKey);
-	let dataKey = $state.raw<unknown>(unresolvedKey);
+	const initialKey = options.key?.() ?? unresolvedKey;
+	const candidateSeed = options.seed?.();
+	const initialSeed =
+		candidateSeed !== undefined && (!keyed || Object.is(candidateSeed.key, initialKey))
+			? candidateSeed
+			: undefined;
+	let data = $state<T | null>(initialSeed?.data ?? null);
+	let error = $state<Error | null>(null);
+	let loading = $state(false);
+	let settled = $state(initialSeed !== undefined);
+	let stateKey = $state.raw<unknown>(initialSeed === undefined ? unresolvedKey : initialKey);
+	let dataKey = $state.raw<unknown>(initialSeed === undefined ? unresolvedKey : initialKey);
 	let lastSeedKey: unknown = unresolvedKey;
 	let lastSeedData: T | null | typeof unresolvedKey = unresolvedKey;
 	let sawSeed = false;
@@ -147,6 +153,9 @@ export function createResource<T>(
 			sawSeed = true;
 			lastSeedKey = seed.key;
 			lastSeedData = seed.data;
+			if (wantsFreshness) {
+				onGenerated((seed.data as MaybeFreshPayload)?.generated_utc);
+			}
 			return;
 		}
 

@@ -36,7 +36,7 @@
 	import type { DataHealth } from '$lib/v1/schemas/data_health';
 	import type { HistoricAvailabilityIndex } from '$lib/v1/schemas/history';
 	import type { Provenance } from '$lib/v1/schemas/provenance';
-	import { createResource } from '$lib/v1/resource.svelte';
+	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
 	import { formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import { METHODOLOGY_METRIC_KEY } from '$lib/features/metrics/metrics.content';
 	import {
@@ -82,6 +82,14 @@
 	import SectionEnvelope from './sections/SectionEnvelope.svelte';
 	import SectionHistoryCoverage from './sections/SectionHistoryCoverage.svelte';
 
+	interface Props {
+		provenanceSeed?: ResourceSeed<Provenance>;
+		dataHealthSeed?: ResourceSeed<DataHealth>;
+		historicAvailabilitySeed?: ResourceSeed<HistoricAvailabilityIndex>;
+	}
+
+	let { provenanceSeed, dataHealthSeed, historicAvailabilitySeed }: Props = $props();
+
 	const PIPELINE_NOTE_KINDS = {
 		history_freeze: 'pipeline-note',
 		service_time_conversion: 'math',
@@ -101,14 +109,26 @@
 	// The three honesty documents. `freshness: true` on each wires the shared
 	// newest-data contribution AND the dataPulse-epoch auto-refresh: a new publish
 	// bumps the epoch and all resources re-run, so /status advances with no polling.
-	const provenance = createResource(() => getProvenance(), { freshness: true });
+	const provenance = createResource(() => getProvenance(), {
+		freshness: true,
+		key: () => 'provenance',
+		seed: () => provenanceSeed,
+	});
 	// data_health.json lives on the LIVE lane; null when not published yet (legacy
 	// manifest / 404) → the lanes section stands down honestly.
-	const dataHealth = createResource(() => getDataHealth(), { freshness: true });
+	const dataHealth = createResource(() => getDataHealth(), {
+		freshness: true,
+		key: () => 'data-health',
+		seed: () => dataHealthSeed,
+	});
 	// The optional retained-history discovery root is independently retryable. A
 	// legacy root with no families stands down; a partial real root stays visible
 	// and the selector names every omitted public family honestly.
-	const historicAvailability = createResource(() => getHistoricAvailability(), { freshness: true });
+	const historicAvailability = createResource(() => getHistoricAvailability(), {
+		freshness: true,
+		key: () => 'historic-availability',
+		seed: () => historicAvailabilitySeed,
+	});
 
 	// ── Localized pass-through helpers handed to the sections ────────────────────
 	function verdictFor(status: string | null | undefined) {

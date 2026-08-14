@@ -6,9 +6,10 @@
 // owns the URL + parsePort validation; this module just delegates.
 
 import { adapter } from '$lib/v1/adapter';
+import type { AdapterCtx } from '$lib/v1/adapter';
 import type { Provenance } from '$lib/v1/schemas';
 
 /** Fetch + validate the provenance/honesty document. */
-export async function getProvenance(): Promise<Provenance> {
-	return adapter.provenance.get();
+export async function getProvenance(ctx?: AdapterCtx): Promise<Provenance> {
+	return adapter.provenance.get(ctx);
 }

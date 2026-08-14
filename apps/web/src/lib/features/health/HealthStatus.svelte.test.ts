@@ -243,10 +243,11 @@ vi.mock('$lib/nav', async () => ({ layout: { isDesktop: true } }));
 // live in a vi.hoisted block so both the (hoisted) vi.mock factories AND the test
 // bodies can reference them. freshnessRelative delegates to the real module so
 // relative-age math stays honest.
-const { getProvenance, getDataHealth, getHistoricAvailability } = vi.hoisted(() => ({
+const { getProvenance, getDataHealth, getHistoricAvailability, resourceOptions } = vi.hoisted(() => ({
 	getProvenance: vi.fn(),
 	getDataHealth: vi.fn(),
 	getHistoricAvailability: vi.fn(),
+	resourceOptions: [] as Array<{ kind: string; options: Record<string, unknown> }>,
 }));
 vi.mock('$lib/v1', async () => {
 	const freshness = await import('$lib/v1/freshness');
@@ -272,7 +273,7 @@ vi.mock('$lib/v1/repositories/historic', () => ({
 // INVOKE the fetcher (harmless: the stubbed getters return undefined) and route by
 // which spy fired. getDataHealth firing → the data-health resource; else provenance.
 vi.mock('$lib/v1/resource.svelte', () => ({
-	createResource: (fetcher: () => unknown) => {
+	createResource: (fetcher: () => unknown, options: Record<string, unknown> = {}) => {
 		getProvenance.mockClear();
 		getDataHealth.mockClear();
 		getHistoricAvailability.mockClear();
@@ -283,6 +284,10 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 		}
 		const isDataHealth = getDataHealth.mock.calls.length > 0;
 		const isHistory = getHistoricAvailability.mock.calls.length > 0;
+		resourceOptions.push({
+			kind: isHistory ? 'historic-availability' : isDataHealth ? 'data-health' : 'provenance',
+			options,
+		});
 		const state = isHistory ? historyState : isDataHealth ? dataHealthState : provenanceState;
 		return {
 			...state,
@@ -299,6 +304,7 @@ function resetHealthSurfaceState(): void {
 	getProvenance.mockReset();
 	getDataHealth.mockReset();
 	getHistoricAvailability.mockReset();
+	resourceOptions.length = 0;
 	quietModeStore.resetForTest();
 }
 
@@ -318,7 +324,7 @@ const render = healthSurface.mount;
 beforeEach(() => healthSurface.reset());
 
 afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(38);
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(39);
 });
 
 describe('HealthStatus — full manifest render', () => {
@@ -570,26 +576,26 @@ describe('HealthStatus — full manifest render', () => {
 		expect(within(header).queryByText('LIVE')).toBeNull();
 	});
 
-	it('AUTO-REFRESHES both resources via the shared epoch (freshness: true on each)', async () => {
-		// dataPulse bumps dataRefresh.epoch on a new publish; createResource surfaces
-		// read `epoch` in their effect and re-fetch. We assert /status opts BOTH the
-		// provenance AND the data-health reads into that via `{ freshness: true }`.
-		const src = (await import('node:fs')).readFileSync(
-			(await import('node:path')).resolve(
-				process.cwd(),
-				'src/lib/features/health/HealthStatus.svelte',
-			),
-			'utf-8',
-		);
-		expect(src).toMatch(
-			/createResource\(\(\) => getProvenance\(\),\s*\{\s*freshness:\s*true\s*\}\)/,
-		);
-		expect(src).toMatch(
-			/createResource\(\(\) => getDataHealth\(\),\s*\{\s*freshness:\s*true\s*\}\)/,
-		);
-		expect(src).toMatch(
-			/createResource\(\(\) => getHistoricAvailability\(\),\s*\{\s*freshness:\s*true\s*\}\)/,
-		);
+	it('wires each request-scoped seed to its freshness-bearing auto-refresh resource', () => {
+		const seeds = {
+			provenanceSeed: { key: 'provenance', data: richProvenance },
+			dataHealthSeed: { key: 'data-health', data: richDataHealth },
+			historicAvailabilitySeed: { key: 'historic-availability', data: richHistory },
+		};
+
+		render(HealthStatus, { props: seeds });
+
+		expect(resourceOptions).toHaveLength(3);
+		for (const [kind, seed] of Object.entries({
+			provenance: seeds.provenanceSeed,
+			'data-health': seeds.dataHealthSeed,
+			'historic-availability': seeds.historicAvailabilitySeed,
+		})) {
+			const call = resourceOptions.find((candidate) => candidate.kind === kind);
+			expect(call?.options.freshness).toBe(true);
+			expect((call?.options.key as (() => unknown) | undefined)?.()).toBe(kind);
+			expect((call?.options.seed as (() => unknown) | undefined)?.()).toBe(seed);
+		}
 	});
 
 	it('states the live cadence as a 30-second operating target rather than a browser guarantee', () => {

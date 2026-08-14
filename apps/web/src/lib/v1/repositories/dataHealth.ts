@@ -7,9 +7,10 @@
 // or a 404) so the section stands down honestly.
 
 import { adapter } from '$lib/v1/adapter';
+import type { AdapterCtx } from '$lib/v1/adapter';
 import type { DataHealth } from '$lib/v1/schemas';
 
 /** Fetch + validate the data-health document, or null when not published. */
-export async function getDataHealth(): Promise<DataHealth | null> {
-	return adapter.dataHealth.get();
+export async function getDataHealth(ctx?: AdapterCtx): Promise<DataHealth | null> {
+	return adapter.dataHealth.get(ctx);
 }
