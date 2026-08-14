@@ -1043,9 +1043,9 @@ describe('RouteDetail Detail tab: HONEST ABSENCE (no live bus)', () => {
 	});
 
 	it('falls back to a plain no-data note when no reason is derivable (no window, not metro)', () => {
-		// ROUTE_FILE has no first/last departure + no type, gap present but type ≠ 1 →
-		// inferAbsenceReason returns null → the generic honest no-data copy, never a
-		// fabricated reason.
+		// Remove both service-window bounds and keep the route non-metro: the declared
+		// metro gap alone cannot supply a reason, so the generic honest copy renders.
+		routeFileData = { ...ROUTE_FILE, first_departure: null, last_departure: null };
 		liveIndex = buildIndex([]);
 		renderRoute();
 
