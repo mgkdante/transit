@@ -62,6 +62,7 @@ export interface LayerModule {
 	/** Must complete synchronously so installs and the first feed cannot race assets. */
 	prepare?(map: MapLibreMap): void;
 	install(map: MapLibreMap, beforeId?: string): void;
+	invalidationKey(ctx: MapLayerFeedContext): readonly unknown[];
 	feed(map: MapLibreMap, ctx: MapLayerFeedContext): void;
 	readonly pick?: {
 		readonly layerIds: readonly string[];
@@ -74,6 +75,10 @@ const routesModule: LayerModule = {
 	install(map, beforeId) {
 		addRouteLineSource(map);
 		addRouteLineLayers(map, beforeId);
+	},
+	invalidationKey(ctx) {
+		const selected = ctx.routes.selected;
+		return [...ctx.routes.items, selected?.id, selected?.direction, selected?.variantKey];
 	},
 	feed(map, ctx) {
 		setRouteLines(map, ctx.routes.items, ctx.routes.selected);
@@ -88,6 +93,18 @@ const stopsModule: LayerModule = {
 		addStopExceptionSource(map);
 		addStopsLayer(map);
 		addStopExceptionLayer(map);
+	},
+	invalidationKey(ctx) {
+		const { alertIds, filter, items, selectedId } = ctx.stops;
+		const alertFilterActive = (filter?.alerts?.length ?? 0) > 0;
+		return [
+			items,
+			selectedId,
+			[...(filter?.stops ?? [])].sort().join('\u0000'),
+			!filter?.entities?.length || filter.entities.includes('stop'),
+			alertFilterActive,
+			alertFilterActive ? [...(alertIds ?? [])].sort().join('\u0000') : '',
+		];
 	},
 	feed(map, ctx) {
 		const stops = ctx.stops;
@@ -106,6 +123,30 @@ const vehiclesModule: LayerModule = {
 	install(map) {
 		addVehicleSource(map);
 		addVehicleLayers(map);
+	},
+	invalidationKey(ctx) {
+		const vehicles = ctx.vehicles;
+		const filter = vehicles.filter;
+		const alertFilterActive = (filter.alerts?.length ?? 0) > 0;
+		const join = (values: Iterable<string>): string => [...values].sort().join('\u0000');
+		return [
+			vehicles.motion,
+			vehicles.tickKey ?? vehicles.items,
+			join(filter.routes),
+			join(filter.stops),
+			join(filter.trips),
+			join(filter.vehicles),
+			join(filter.status ?? []),
+			join(filter.occupancy ?? []),
+			join(filter.entities ?? []),
+			alertFilterActive,
+			alertFilterActive ? join(vehicles.alertIds ?? []) : '',
+			vehicles.selectedId,
+			vehicles.ttlS,
+			vehicles.stale,
+			vehicles.shapeFor,
+			vehicles.animate,
+		];
 	},
 	feed(map, ctx) {
 		const vehicles = ctx.vehicles;
@@ -137,6 +178,10 @@ const nearTargetModule: LayerModule = {
 		addNearTargetSource(map);
 		addNearTargetLayer(map);
 	},
+	invalidationKey(ctx) {
+		const target = ctx.nearTarget.target;
+		return [target?.lat, target?.lon, target?.label, target?.precision];
+	},
 	feed(map, ctx) {
 		setNearTarget(map, ctx.nearTarget.target);
 	},
@@ -149,6 +194,39 @@ export const MAP_LAYER_MODULES: readonly LayerModule[] = Object.freeze([
 	vehiclesModule,
 	nearTargetModule,
 ]);
+
+function sameInvalidationKey(previous: readonly unknown[], next: readonly unknown[]): boolean {
+	return (
+		previous.length === next.length &&
+		previous.every((value, index) => Object.is(value, next[index]))
+	);
+}
+
+export interface MapLayerFeedController {
+	feed(map: MapLibreMap, ctx: MapLayerFeedContext, layerRevision: number): void;
+}
+
+export function createMapLayerFeedController(): MapLayerFeedController {
+	let previousMap: MapLibreMap | null = null;
+	let previousRevision = -1;
+	const previousKeys = new Map<string, readonly unknown[]>();
+
+	return {
+		feed(map, ctx, layerRevision) {
+			const force = map !== previousMap || layerRevision !== previousRevision;
+			for (const module of MAP_LAYER_MODULES) {
+				const nextKey = module.invalidationKey(ctx);
+				const previousKey = previousKeys.get(module.id);
+				if (force || !previousKey || !sameInvalidationKey(previousKey, nextKey)) {
+					module.feed(map, ctx);
+				}
+				previousKeys.set(module.id, nextKey);
+			}
+			previousMap = map;
+			previousRevision = layerRevision;
+		},
+	};
+}
 
 // Prepare EVERY module before installing any layer (bakeVehicleSprites owns
 // STOP_ICON even though the stops module consumes it — a per-module loop would

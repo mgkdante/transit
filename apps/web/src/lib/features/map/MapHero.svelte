@@ -89,8 +89,8 @@
 	import { publishRailOffset, readStoredDetailPanelWidth } from './mapDetailPanes';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import {
+		createMapLayerFeedController,
 		installMapInteractions,
-		MAP_LAYER_MODULES,
 		PICKABLE_MAP_LAYERS,
 		retintMapLayers,
 		type MapLayerFeedContext,
@@ -271,6 +271,7 @@
 	let interactionDisposers: readonly (() => void)[] = [];
 	const selectionController = createMapSelectionController();
 	const emphasisController = createMapEmphasisController(selectionController);
+	const layerFeedController = createMapLayerFeedController();
 	const selected = $derived(selectionController.selected);
 	const selectionStack = $derived(selectionController.stack);
 	const hovered = $derived(selectionController.hovered);
@@ -819,12 +820,11 @@
 	// effect re-feeds files/filter/selection changes but not the per-second clock.
 	$effect(() => {
 		const m = map;
-		// Reading `layerRevision` registers the post-style-swap layer install as an
+		// Reading the revision registers the post-style-swap layer install as an
 		// effect dependency, so data is re-fed after MapLibre clears custom sources.
 		// (A resolved route shape needs NO re-feed: the controller's per-frame
 		// shapeFor reads routeShapeCache directly and upgrades buses on the next frame.)
-		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
-		layerRevision;
+		const revision = layerRevision;
 		if (!m) return;
 		const reduceMotion = $prefersReducedMotion;
 		// Smooth = forward-projection ("almost real-time"); raw = ping-on-load (snap
@@ -873,7 +873,7 @@
 			},
 		};
 
-		for (const module of MAP_LAYER_MODULES) module.feed(m, ctx);
+		layerFeedController.feed(m, ctx, revision);
 	});
 
 	$effect(() => {

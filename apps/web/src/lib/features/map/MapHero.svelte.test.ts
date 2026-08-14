@@ -137,7 +137,7 @@ const harness = vi.hoisted(() => {
 	const toVehicleFeatures = vi.fn(
 		(
 			_items: unknown,
-			filter: { vehicles: ReadonlySet<string> },
+			filter: { routes: ReadonlySet<string>; vehicles: ReadonlySet<string> },
 			_alertIds: unknown,
 			selectedId: string | null,
 		) => ({
@@ -1103,7 +1103,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 			surfaceSelector,
 			surface: document.querySelector(surfaceSelector),
 			selectionIdentity,
-			selectionOwnedVehicles: [...(harness.setStops.mock.lastCall?.[2].vehicles ?? [])],
+			selectionOwnedVehicles: [...(harness.toVehicleFeatures.mock.lastCall?.[1].vehicles ?? [])],
 		};
 	}
 
@@ -1235,7 +1235,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 				expect(screen.getByRole('button', { name: before.closeLabel })).toBe(before.close);
 				expect(document.body.contains(before.selectionIdentity!)).toBe(true);
 				expect(before.selectionIdentity).toHaveTextContent('Bus bus-1');
-				expect([...(harness.setStops.mock.lastCall?.[2].vehicles ?? [])]).toEqual(
+				expect([...(harness.toVehicleFeatures.mock.lastCall?.[1].vehicles ?? [])]).toEqual(
 					winner.filtersPreserved ? before.selectionOwnedVehicles : [],
 				);
 				expect(document.activeElement).toBe(
@@ -1269,7 +1269,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 
 					const survivesClose = shape === 'adopt';
 					await waitFor(() => {
-						const filter = harness.setStops.mock.lastCall?.[2];
+						const filter = harness.toVehicleFeatures.mock.lastCall?.[1];
 						expect(filter?.routes.has('24')).toBe(survivesClose);
 						expect(filter?.vehicles.has('bus-1')).toBe(survivesClose);
 					});
@@ -1820,8 +1820,12 @@ describe('MapHero map-layer feed lifecycle', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Late' }));
 		await tick();
 		for (const install of installSpies) expect(install).toHaveBeenCalledTimes(2);
-		for (const feed of feedSpies) expect(feed).toHaveBeenCalledTimes(3);
-		expect(harness.setStops.mock.lastCall?.[2]).toMatchObject({ status: ['late'] });
+		expect(harness.setRouteLines).toHaveBeenCalledTimes(2);
+		expect(harness.motionSet).toHaveBeenCalledTimes(3);
+		expect(harness.setStops).toHaveBeenCalledTimes(2);
+		expect(harness.setNearTarget).toHaveBeenCalledTimes(2);
+		expect(harness.setStale).toHaveBeenCalledTimes(3);
+		expect(harness.toVehicleFeatures.mock.lastCall?.[1]).toMatchObject({ status: ['late'] });
 	});
 
 	it('keeps a settled hover storm off every bulk feed and live-family lease', async () => {
@@ -1865,7 +1869,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 		}
 	});
 
-	it('commits and closes a selection-owned vehicle with one bulk mutation each', async () => {
+	it('commits and closes a selection-owned vehicle through affected layers only', async () => {
 		// Hold the newly selected route resource pending so this spy window measures
 		// only the selection/filter mutation, not a later independent network settle.
 		harness.getRoute.mockImplementation(() => new Promise<null>(() => {}) as never);
@@ -1878,8 +1882,8 @@ describe('MapHero map-layer feed lifecycle', () => {
 			expect(bulkCounts()).toEqual({
 				routes: beforeCommit.routes + 1,
 				motion: beforeCommit.motion + 1,
-				stops: beforeCommit.stops + 1,
-				nearTarget: beforeCommit.nearTarget + 1,
+				stops: beforeCommit.stops,
+				nearTarget: beforeCommit.nearTarget,
 			}),
 		);
 		expect(
@@ -1896,8 +1900,8 @@ describe('MapHero map-layer feed lifecycle', () => {
 			expect(bulkCounts()).toEqual({
 				routes: beforeClose.routes + 1,
 				motion: beforeClose.motion + 1,
-				stops: beforeClose.stops + 1,
-				nearTarget: beforeClose.nearTarget + 1,
+				stops: beforeClose.stops,
+				nearTarget: beforeClose.nearTarget,
 			}),
 		);
 
@@ -1939,7 +1943,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 		expect(closed.searchParams.has('vehicle')).toBe(false);
 	});
 
-	it('commits and closes a selection-owned stop with one bulk mutation each', async () => {
+	it('commits and closes a selection-owned stop through affected layers only', async () => {
 		render(MapHero);
 		await tick();
 		const beforeCommit = bulkCounts();
@@ -1947,10 +1951,10 @@ describe('MapHero map-layer feed lifecycle', () => {
 		await fireEvent.click(screen.getByTestId('map-stage-stub-pick'));
 		await waitFor(() =>
 			expect(bulkCounts()).toEqual({
-				routes: beforeCommit.routes + 1,
+				routes: beforeCommit.routes,
 				motion: beforeCommit.motion + 1,
 				stops: beforeCommit.stops + 1,
-				nearTarget: beforeCommit.nearTarget + 1,
+				nearTarget: beforeCommit.nearTarget,
 			}),
 		);
 
@@ -1958,10 +1962,10 @@ describe('MapHero map-layer feed lifecycle', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Close details' }));
 		await waitFor(() =>
 			expect(bulkCounts()).toEqual({
-				routes: beforeClose.routes + 1,
+				routes: beforeClose.routes,
 				motion: beforeClose.motion + 1,
 				stops: beforeClose.stops + 1,
-				nearTarget: beforeClose.nearTarget + 1,
+				nearTarget: beforeClose.nearTarget,
 			}),
 		);
 
@@ -2284,13 +2288,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 		}
 	});
 
-	it('re-feeds on a live generation but not across five seconds of shared-clock ticks', async () => {
-		const bulkCounts = () => ({
-			routes: harness.setRouteLines.mock.calls.length,
-			motion: harness.motionSet.mock.calls.length,
-			stops: harness.setStops.mock.calls.length,
-		});
-
+	it('updates motion only on a live generation and never re-feeds on clock ticks', async () => {
 		mapHeroReceiptSignals.setMotionMode('smooth');
 		render(MapHero);
 		await tick();
@@ -2305,9 +2303,10 @@ describe('MapHero map-layer feed lifecycle', () => {
 		mapHeroReceiptSignals.setVehiclesGeneration('2026-06-20T12:00:30Z');
 		await tick();
 		expect(bulkCounts()).toEqual({
-			routes: beforeClock.routes + 1,
+			routes: beforeClock.routes,
 			motion: beforeClock.motion + 1,
-			stops: beforeClock.stops + 1,
+			stops: beforeClock.stops,
+			nearTarget: beforeClock.nearTarget,
 		});
 	});
 
