@@ -1,4 +1,4 @@
-import { resolveUrl } from '$lib/v1/config';
+import { normalizeSnapshotPointer, resolveUrl } from '$lib/v1/config';
 import { getEntityJson } from '$lib/v1/http';
 import { BasemapFileSchema } from '$lib/v1/schemas/basemap';
 import { RouteFileSchema } from '$lib/v1/schemas/route';
@@ -73,6 +73,7 @@ export const basemapPort: BasemapPort = {
 			fetchOf(ctx),
 			{ cache: MUTABLE_CACHE, signal: ctx?.signal },
 		);
-		return value ?? null;
+		if (value === undefined) return null;
+		return { ...value, url: normalizeSnapshotPointer(value.url) };
 	},
 };

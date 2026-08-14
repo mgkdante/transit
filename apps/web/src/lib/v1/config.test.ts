@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { normalizeV1BaseUrl, resolveUrl } from './config';
+import { describe, expect, it, vi } from 'vitest';
+import { normalizeSnapshotPointer, normalizeV1BaseUrl, resolveUrl } from './config';
+
+vi.mock('$env/dynamic/public', () => ({
+	env: {
+		PUBLIC_V1_BASE: 'https://r2.example.test/v1',
+		PUBLIC_V1_PROVIDER: 'stm',
+	},
+}));
 
 describe('normalizeV1BaseUrl', () => {
 	it('keeps absolute URL bases and same-origin absolute paths stable', () => {
@@ -14,9 +21,27 @@ describe('normalizeV1BaseUrl', () => {
 		expect(normalizeV1BaseUrl('')).toBe('/data/v1');
 	});
 
-	it('does not rebase absolute manifest pointers', () => {
-		expect(resolveUrl('https://transit.yesid.dev/data/v1/stm/static/basemap.json')).toBe(
-			'https://transit.yesid.dev/data/v1/stm/static/basemap.json',
+	it('rebases a canonical Transit manifest pointer onto the configured snapshot base', () => {
+		expect(
+			resolveUrl(
+				'https://transit.yesid.dev/data/v1/stm/static/basemap.json?generation=42#descriptor',
+			),
+		).toBe('https://r2.example.test/v1/stm/static/basemap.json?generation=42#descriptor');
+	});
+
+	it('preserves unrelated and provider-mismatched absolute pointers', () => {
+		expect(resolveUrl('https://cdn.example.test/data/v1/stm/static/basemap.json?x=1#y')).toBe(
+			'https://cdn.example.test/data/v1/stm/static/basemap.json?x=1#y',
 		);
+		expect(resolveUrl('https://transit.yesid.dev/data/v1/exo/static/basemap.json?x=1#y')).toBe(
+			'https://transit.yesid.dev/data/v1/exo/static/basemap.json?x=1#y',
+		);
+	});
+
+	it.each([
+		'https://r2.example.test/v1/stm/static/basemap.json?generation=42#descriptor',
+		'pmtiles://archive.example.test/montreal.pmtiles?generation=42#archive',
+	])('preserves an already-direct or non-HTTP pointer byte-for-byte: %s', (pointer) => {
+		expect(normalizeSnapshotPointer(pointer)).toBe(pointer);
 	});
 });

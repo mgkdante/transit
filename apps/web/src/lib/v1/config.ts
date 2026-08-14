@@ -26,12 +26,14 @@
 // resolves the same PUBLIC_* values and safely returns `undefined` when unset.
 
 import { env } from '$env/dynamic/public';
+import { DEFAULT_SITE_ORIGIN } from '$lib/site/config';
 
 /** Default base when PUBLIC_V1_BASE is unset. Same-origin, version-pinned. */
 const DEFAULT_BASE = '/data/v1';
 
 /** Default provider namespace when PUBLIC_V1_PROVIDER is unset. */
 const DEFAULT_PROVIDER = 'stm';
+const ABSOLUTE_URL = /^[a-z][a-z\d+\-.]*:\/\//i;
 
 /**
  * The /v1 snapshot base URL (no trailing slash).
@@ -66,9 +68,34 @@ export function v1Provider(): string {
  */
 export function resolveUrl(relativePath: string): string {
 	const raw = relativePath.trim();
-	if (/^[a-z][a-z\d+\-.]*:\/\//i.test(raw)) return raw;
+	if (ABSOLUTE_URL.test(raw)) return normalizeSnapshotPointer(raw);
 	const rel = trimLeadingSlash(raw);
 	return `${v1BaseUrl()}/${v1Provider()}/${rel}`;
+}
+
+/** Rebase only canonical Transit snapshot aliases onto the configured v1 base. */
+export function normalizeSnapshotPointer(value: string): string {
+	const raw = value.trim();
+	if (!ABSOLUTE_URL.test(raw)) return raw;
+
+	let pointer: URL;
+	try {
+		pointer = new URL(raw);
+	} catch {
+		return raw;
+	}
+
+	const provider = v1Provider();
+	const canonicalRoot = `/data/v1/${provider}`;
+	if (
+		pointer.origin !== DEFAULT_SITE_ORIGIN ||
+		(pointer.pathname !== canonicalRoot && !pointer.pathname.startsWith(`${canonicalRoot}/`))
+	) {
+		return raw;
+	}
+
+	const suffix = pointer.pathname.slice(canonicalRoot.length);
+	return `${v1BaseUrl()}/${provider}${suffix}${pointer.search}${pointer.hash}`;
 }
 
 /**
@@ -114,7 +141,7 @@ function stripTrailingSlash(s: string): string {
 export function normalizeV1BaseUrl(value: string | null | undefined): string {
 	const raw = (value ?? DEFAULT_BASE).trim() || DEFAULT_BASE;
 	const withoutTrailingSlash = stripTrailingSlash(raw);
-	if (/^[a-z][a-z\d+\-.]*:\/\//i.test(withoutTrailingSlash)) return withoutTrailingSlash;
+	if (ABSOLUTE_URL.test(withoutTrailingSlash)) return withoutTrailingSlash;
 	if (withoutTrailingSlash.startsWith('/')) return withoutTrailingSlash;
 	return `/${withoutTrailingSlash}`;
 }

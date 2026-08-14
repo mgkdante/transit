@@ -3,8 +3,15 @@ import type { Manifest } from '$lib/v1/schemas/manifest';
 import { r2Adapter } from './r2';
 
 vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$env/dynamic/public', () => ({
+	env: {
+		PUBLIC_V1_BASE: 'https://r2.example.test/v1',
+		PUBLIC_V1_PROVIDER: 'stm',
+	},
+}));
 
 const ISO = '2026-07-15T12:00:00Z';
+const DIRECT_R2_BASE = 'https://r2.example.test/v1';
 
 function manifest(overrides: Record<string, unknown> = {}): Manifest {
 	return {
@@ -65,7 +72,7 @@ describe('r2 static ports', () => {
 			'static/custom-basemap.json': basemap,
 		};
 		const request = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
-			const path = String(input).replace('/data/v1/stm/', '');
+			const path = String(input).replace(`${DIRECT_R2_BASE}/stm/`, '');
 			const payload = payloads[path];
 			if (payload === undefined) throw new Error(`unexpected URL ${String(input)}`);
 			return json(payload);
@@ -83,15 +90,15 @@ describe('r2 static ports', () => {
 		await expect(r2Adapter.static.stop('../é', ctx)).resolves.toEqual(stop);
 		await expect(r2Adapter.basemap.get(ctx)).resolves.toEqual(basemap);
 
-		expect(request.mock.calls.map(([input]) => String(input).replace('/data/v1/stm/', ''))).toEqual(
-			[
-				'static/catalog/routes.json',
-				'static/routes-v2/A%2FB.json',
-				'static/catalog/stops.json',
-				'static/stops-v2/..%2F%C3%A9.json',
-				'static/custom-basemap.json',
-			],
-		);
+		expect(
+			request.mock.calls.map(([input]) => String(input).replace(`${DIRECT_R2_BASE}/stm/`, '')),
+		).toEqual([
+			'static/catalog/routes.json',
+			'static/routes-v2/A%2FB.json',
+			'static/catalog/stops.json',
+			'static/stops-v2/..%2F%C3%A9.json',
+			'static/custom-basemap.json',
+		]);
 		for (const [, init] of request.mock.calls) {
 			expect(init).toEqual({
 				headers: { accept: 'application/json' },
@@ -99,6 +106,35 @@ describe('r2 static ports', () => {
 				signal: controller.signal,
 			});
 		}
+	});
+
+	it('rebases the canonical descriptor and its PMTiles archive onto direct R2', async () => {
+		const authoritativeManifest = {
+			...manifest(),
+			basemap: 'https://transit.yesid.dev/data/v1/stm/static/basemap.json?generation=42#descriptor',
+		} as Manifest;
+		const request = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+			expect(String(input)).toBe(
+				`${DIRECT_R2_BASE}/stm/static/basemap.json?generation=42#descriptor`,
+			);
+			return json({
+				url: 'https://transit.yesid.dev/data/v1/stm/static/basemap/montreal.pmtiles?generation=42#archive',
+				attribution: 'STM',
+				generated_utc: ISO,
+			});
+		});
+
+		await expect(
+			r2Adapter.basemap.get({
+				fetch: request as unknown as typeof fetch,
+				manifest: authoritativeManifest,
+			}),
+		).resolves.toEqual({
+			url: `${DIRECT_R2_BASE}/stm/static/basemap/montreal.pmtiles?generation=42#archive`,
+			attribution: 'STM',
+			generated_utc: ISO,
+		});
+		expect(request).toHaveBeenCalledOnce();
 	});
 
 	it('keeps required roots strict while default entity and basemap 404s resolve null', async () => {
@@ -113,21 +149,21 @@ describe('r2 static ports', () => {
 		};
 
 		await expect(r2Adapter.static.routesIndex(ctx)).rejects.toThrow(
-			'[v1.static.routesIndex] expected file not found at /data/v1/stm/static/routes_index.json',
+			`[v1.static.routesIndex] expected file not found at ${DIRECT_R2_BASE}/stm/static/routes_index.json`,
 		);
 		await expect(r2Adapter.static.stopsIndex(ctx)).rejects.toThrow(
-			'[v1.static.stopsIndex] expected file not found at /data/v1/stm/static/stops_index.json',
+			`[v1.static.stopsIndex] expected file not found at ${DIRECT_R2_BASE}/stm/static/stops_index.json`,
 		);
 		await expect(r2Adapter.static.route('97', ctx)).resolves.toBeNull();
 		await expect(r2Adapter.static.stop('123', ctx)).resolves.toBeNull();
 		await expect(r2Adapter.basemap.get(ctx)).resolves.toBeNull();
 
 		expect(request.mock.calls.map(([input]) => String(input))).toEqual([
-			'/data/v1/stm/static/routes_index.json',
-			'/data/v1/stm/static/stops_index.json',
-			'/data/v1/stm/static/routes/97.json',
-			'/data/v1/stm/static/stops/123.json',
-			'/data/v1/stm/static/basemap.json',
+			`${DIRECT_R2_BASE}/stm/static/routes_index.json`,
+			`${DIRECT_R2_BASE}/stm/static/stops_index.json`,
+			`${DIRECT_R2_BASE}/stm/static/routes/97.json`,
+			`${DIRECT_R2_BASE}/stm/static/stops/123.json`,
+			`${DIRECT_R2_BASE}/stm/static/basemap.json`,
 		]);
 	});
 });
