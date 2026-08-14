@@ -1145,6 +1145,14 @@ describe('MapStage boot lifecycle', () => {
 		expect(map.setMaxBounds).not.toHaveBeenCalled();
 	});
 
+	it('requests a desynchronized canvas without overriding native DPR or WebGL fallback', async () => {
+		const { map } = await bootStage();
+
+		expect(map.options.canvasContextAttributes).toEqual({ desynchronized: true });
+		expect(map.options).not.toHaveProperty('pixelRatio');
+		expect(map.options.canvasContextAttributes).not.toHaveProperty('contextType');
+	});
+
 	it('coalesces fit-owned layout and bounds changes and applies prop camera changes', async () => {
 		const initial = {
 			bounds: [-74, 45, -73, 46],

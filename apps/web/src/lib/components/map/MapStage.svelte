@@ -534,6 +534,7 @@
 						center,
 						zoom,
 						...viewport,
+						canvasContextAttributes: { desynchronized: true },
 						locale,
 						// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 						attributionControl: false,
