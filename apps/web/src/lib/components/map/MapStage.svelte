@@ -113,8 +113,6 @@
 		center?: [number, number];
 		/** Initial zoom level. */
 		zoom?: number;
-		/** Optional upper bound for the MapLibre canvas pixel ratio. */
-		pixelRatioCap?: number;
 		/**
 		 * Resolved BasemapFile pointer for the current snapshot, or null when the
 		 * manifest ships no hosted PMTiles archive. null → self-contained minimal
@@ -193,7 +191,6 @@
 		// Default centre: STM service area (downtown Montréal).
 		center = [-73.5673, 45.5017],
 		zoom = 11,
-		pixelRatioCap,
 		basemap = undefined,
 		basemapLoader,
 		importers = DEFAULT_IMPORTERS,
@@ -225,11 +222,6 @@
 	let styleInited = false;
 	let activeStyleKey: string | null = null;
 	let activeTheme: BasemapTheme | null = null;
-	let activePixelRatioCap: number | undefined;
-
-	function pixelRatioForCap(cap: number): number {
-		return Math.min(window.devicePixelRatio, cap);
-	}
 
 	function styleKey(file: BasemapFile | null): string {
 		return file?.url ?? 'minimal';
@@ -543,7 +535,6 @@
 						zoom,
 						...viewport,
 						locale,
-						...(pixelRatioCap === undefined ? {} : { pixelRatio: pixelRatioForCap(pixelRatioCap) }),
 						// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 						attributionControl: false,
 					},
@@ -570,7 +561,6 @@
 			activeLayoutSig = fitPaddingKey(fitPadding);
 			activeBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
 			activeCameraKey = cameraKey(center, zoom);
-			activePixelRatioCap = pixelRatioCap;
 			cameraOwner = 'fit';
 			map = instance;
 
@@ -642,14 +632,6 @@
 	let activeLayoutSig: string | null = null;
 	let activeBoundsSig: string | null = null;
 	let activeCameraKey: string | null = null;
-
-	$effect(() => {
-		const m = map;
-		const cap = pixelRatioCap;
-		if (!m || Object.is(activePixelRatioCap, cap)) return;
-		activePixelRatioCap = cap;
-		m.setPixelRatio(cap === undefined ? window.devicePixelRatio : pixelRatioForCap(cap));
-	});
 
 	$effect(() => {
 		const m = map;

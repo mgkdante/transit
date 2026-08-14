@@ -17,38 +17,32 @@ function feature(layer: string, properties: Record<string, unknown>): FakeFeatur
 }
 
 describe('pickMapSelection', () => {
-	it.each([STOPS_LAYER, 'stops-overview'])(
-		'prioritizes buses over %s stops and routes at the same pixel',
-		(stopLayer) => {
-			const picked = pickMapSelection([
-				feature(ROUTE_LINE_HIT_LAYER, {
-					route_id: '161',
-					direction: 0,
-					variant_key: '161:0:van-horne',
-				}),
-				feature(stopLayer, { id: '53355', selected: 0 }),
-				feature(VEHICLE_BODY_LAYER, { id: '40061' }),
-			]);
+	it('prioritizes buses over stops and routes at the same pixel', () => {
+		const picked = pickMapSelection([
+			feature(ROUTE_LINE_HIT_LAYER, {
+				route_id: '161',
+				direction: 0,
+				variant_key: '161:0:van-horne',
+			}),
+			feature(STOPS_LAYER, { id: '53355' }),
+			feature(VEHICLE_BODY_LAYER, { id: '40061' }),
+		]);
 
-			expect(picked).toEqual({ kind: 'vehicle', id: '40061' });
-		},
-	);
+		expect(picked).toEqual({ kind: 'vehicle', id: '40061' });
+	});
 
-	it.each([STOPS_LAYER, 'stops-overview'])(
-		'prioritizes %s stops over route hit lines when no bus is present',
-		(stopLayer) => {
-			const picked = pickMapSelection([
-				feature(ROUTE_LINE_HIT_LAYER, {
-					route_id: '161',
-					direction: 1,
-					variant_key: '161:1:plamondon',
-				}),
-				feature(stopLayer, { id: '53355', selected: 0 }),
-			]);
+	it('prioritizes stops over route hit lines when no bus is present', () => {
+		const picked = pickMapSelection([
+			feature(ROUTE_LINE_HIT_LAYER, {
+				route_id: '161',
+				direction: 1,
+				variant_key: '161:1:plamondon',
+			}),
+			feature(STOPS_LAYER, { id: '53355' }),
+		]);
 
-			expect(picked).toEqual({ kind: 'stop', id: '53355' });
-		},
-	);
+		expect(picked).toEqual({ kind: 'stop', id: '53355' });
+	});
 
 	it('maps the low-zoom stop exception layer to a stop selection', () => {
 		expect(pickMapSelection([feature(STOP_EXCEPTION_LAYER, { id: '53355' })])).toEqual({

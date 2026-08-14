@@ -84,11 +84,6 @@ const harness = vi.hoisted(() => {
 		readonly easeTo = vi.fn((_options?: Record<string, unknown>) => this.emit('movestart', {}));
 		readonly flyTo = vi.fn((_options?: Record<string, unknown>) => this.emit('movestart', {}));
 		readonly getZoom = vi.fn(() => 11);
-		pixelRatio: number;
-		readonly getPixelRatio = vi.fn(() => this.pixelRatio);
-		readonly setPixelRatio = vi.fn((nextPixelRatio: number) => {
-			this.pixelRatio = nextPixelRatio;
-		});
 		styleAttached = true;
 		readonly setStyle = vi.fn((style: unknown) => {
 			this.styleAttached = style != null;
@@ -103,8 +98,6 @@ const harness = vi.hoisted(() => {
 		constructor(readonly options: Record<string, unknown>) {
 			state.constructorCalls += 1;
 			this.container = options.container as HTMLElement;
-			this.pixelRatio =
-				typeof options.pixelRatio === 'number' ? options.pixelRatio : window.devicePixelRatio;
 			if (state.constructFailures > 0) {
 				state.constructFailures -= 1;
 				this.container.append(document.createElement('canvas'));
@@ -437,43 +430,6 @@ describe('MapStage boot lifecycle', () => {
 
 		await waitFor(() => expect(harness.state.maps).toHaveLength(1));
 		expect(onerror).not.toHaveBeenCalledWith(expect.objectContaining({ kind: expect.anything() }));
-	});
-
-	it('caps a compact DPR 1.75 canvas at construction without upscaling it', async () => {
-		vi.stubGlobal('devicePixelRatio', 1.75);
-
-		const { map } = await bootStage({ pixelRatioCap: 1.25 });
-
-		expect(map.options.pixelRatio).toBe(1.25);
-		expect(map.getPixelRatio()).toBe(1.25);
-		expect(map.setPixelRatio).not.toHaveBeenCalled();
-	});
-
-	it('leaves a desktop DPR 1.75 canvas uncapped at construction', async () => {
-		vi.stubGlobal('devicePixelRatio', 1.75);
-
-		const { map } = await bootStage();
-
-		expect(map.options).not.toHaveProperty('pixelRatio');
-		expect(map.getPixelRatio()).toBe(1.75);
-	});
-
-	it('updates the existing map pixel ratio across compact breakpoint changes', async () => {
-		vi.stubGlobal('devicePixelRatio', 1.75);
-		const { view, props, map } = await bootStage({ pixelRatioCap: 1.25 });
-
-		await view.rerender({ ...props, pixelRatioCap: undefined });
-		await waitFor(() => expect(map.setPixelRatio).toHaveBeenLastCalledWith(1.75));
-		expect(map.getPixelRatio()).toBe(1.75);
-		expect(harness.state.maps).toEqual([map]);
-		expect(harness.state.constructorCalls).toBe(1);
-
-		await view.rerender({ ...props, pixelRatioCap: 1.25 });
-		await waitFor(() => expect(map.setPixelRatio).toHaveBeenLastCalledWith(1.25));
-		expect(map.getPixelRatio()).toBe(1.25);
-		expect(map.setPixelRatio.mock.calls).toEqual([[1.75], [1.25]]);
-		expect(harness.state.maps).toEqual([map]);
-		expect(harness.state.constructorCalls).toBe(1);
 	});
 
 	it('aborts an in-flight basemap after a fatal import and absorbs its late rejection', async () => {

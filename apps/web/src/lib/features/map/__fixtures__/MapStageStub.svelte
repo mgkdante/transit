@@ -26,7 +26,6 @@
 		onbeforeremove?: (map: unknown) => void | PromiseLike<unknown>;
 		oncleanupfailure?: (error: unknown) => unknown;
 		locale?: Record<string, string>;
-		pixelRatioCap?: number;
 		// The rest of MapStage's props are accepted and ignored (camera/theme/etc).
 		[key: string]: unknown;
 	}
@@ -39,7 +38,6 @@
 		onbeforeremove,
 		oncleanupfailure,
 		locale,
-		pixelRatioCap,
 		class: className,
 	}: Props = $props();
 
@@ -291,7 +289,6 @@
 	data-fly-to-count={flyToCount}
 	data-set-max-bounds-count={setMaxBoundsCount}
 	data-locale={JSON.stringify(locale)}
-	data-pixel-ratio-cap={pixelRatioCap ?? 'none'}
 >
 	<button type="button" data-testid="map-stage-stub-pick" onclick={() => pick()} hidden>pick</button
 	>
