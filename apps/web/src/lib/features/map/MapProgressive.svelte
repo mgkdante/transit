@@ -79,16 +79,30 @@
 		publish('transit:map-intent', intentTime);
 	}
 
+	async function waitForBootPresentation(activeAttempt: number): Promise<boolean> {
+		await tick();
+		if (!alive || attempt !== activeAttempt || phase !== 'booting') return false;
+		if (typeof requestAnimationFrame === 'function') {
+			await new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+			);
+		}
+		return alive && attempt === activeAttempt && phase === 'booting';
+	}
+
 	function activate(event?: MouseEvent): void {
 		if (importPending || LiveMap || phase === 'booting') return;
 		focusLiveOnIdle = event?.detail === 0;
 		acknowledgeIntent();
 		liveFailure = null;
 		const activeAttempt = attempt;
-		const pending = Promise.resolve()
-			.then(() => (importHero ? importHero() : import('./MapHero.svelte')))
+		const pending = waitForBootPresentation(activeAttempt)
+			.then((mayStart) => {
+				if (!mayStart) return null;
+				return importHero ? importHero() : import('./MapHero.svelte');
+			})
 			.then((module) => {
-				if (!alive || attempt !== activeAttempt) return;
+				if (!module || !alive || attempt !== activeAttempt) return;
 				LiveMap = module.default;
 			})
 			.catch(() => {
@@ -141,10 +155,14 @@
 		focusLiveOnIdle = event?.detail === 0;
 		liveRetryPending = true;
 		acknowledgeIntent();
-		void retryFailure
-			.retry()
+		const activeAttempt = attempt;
+		void waitForBootPresentation(activeAttempt)
+			.then((mayStart) => {
+				if (!mayStart) return;
+				return retryFailure.retry();
+			})
 			.catch(() => {
-				if (alive) phase = 'failed';
+				if (alive && attempt === activeAttempt) phase = 'failed';
 			})
 			.finally(() => {
 				liveRetryPending = false;

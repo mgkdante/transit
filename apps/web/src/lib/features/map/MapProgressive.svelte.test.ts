@@ -38,6 +38,34 @@ function deferred<T>() {
 	return { promise, resolve, reject };
 }
 
+function controlledAnimationFrames() {
+	let frameId = 0;
+	const callbacks: FrameRequestCallback[] = [];
+	const request = vi.fn((callback: FrameRequestCallback) => {
+		callbacks.push(callback);
+		frameId += 1;
+		return frameId;
+	});
+	vi.stubGlobal('requestAnimationFrame', request);
+
+	async function flushNext(): Promise<void> {
+		const callback = callbacks.shift();
+		if (!callback) throw new Error('Expected a pending animation frame');
+		callback(performance.now());
+		await tick();
+	}
+
+	async function flushPresentationBoundary(): Promise<void> {
+		await tick();
+		expect(callbacks).toHaveLength(1);
+		await flushNext();
+		expect(callbacks).toHaveLength(1);
+		await flushNext();
+	}
+
+	return { callbacks, flushNext, flushPresentationBoundary, request };
+}
+
 afterEach(() => {
 	cleanup();
 	harness.locale = 'en';
@@ -67,8 +95,36 @@ describe('MapProgressive deferred activation', () => {
 		expect(importer).not.toHaveBeenCalled();
 
 		await fireEvent.click(view.getByRole('button', { name: 'Load live interactive map' }));
-		expect(importer).toHaveBeenCalledOnce();
 		expect(view.getByRole('status')).toHaveTextContent('Starting live map');
+		await waitFor(() => expect(importer).toHaveBeenCalledOnce());
+	});
+
+	it('presents the boot acknowledgement across two animation frames before importing', async () => {
+		const frames = controlledAnimationFrames();
+		const { default: MapProgressive } = await import('./MapProgressive.svelte');
+		const importer = vi.fn(() => new Promise<never>(() => {}));
+		const view = render(MapProgressive, { props: { importHero: importer } });
+
+		await tick();
+		expect(importer).not.toHaveBeenCalled();
+		expect(frames.request).not.toHaveBeenCalled();
+
+		await fireEvent.click(view.getByRole('button', { name: 'Load live interactive map' }));
+
+		expect(view.getByRole('status')).toHaveTextContent('Starting live map');
+		expect(view.getByTestId('map-progressive')).toHaveAttribute(
+			'data-map-progressive-state',
+			'booting',
+		);
+		expect(importer).not.toHaveBeenCalled();
+		expect(frames.request).toHaveBeenCalledOnce();
+
+		await frames.flushNext();
+		expect(importer).not.toHaveBeenCalled();
+		expect(frames.request).toHaveBeenCalledTimes(2);
+
+		await frames.flushNext();
+		await waitFor(() => expect(importer).toHaveBeenCalledOnce());
 	});
 
 	it.each(['Enter', ' '] as const)(
@@ -84,7 +140,7 @@ describe('MapProgressive deferred activation', () => {
 			await fireEvent.click(button, { detail: 0 });
 
 			expect(button.tagName).toBe('BUTTON');
-			expect(importer).toHaveBeenCalledOnce();
+			await waitFor(() => expect(importer).toHaveBeenCalledOnce());
 		},
 	);
 
@@ -97,12 +153,42 @@ describe('MapProgressive deferred activation', () => {
 
 		await Promise.all([fireEvent.click(button), fireEvent.click(button), fireEvent.click(button)]);
 
-		expect(importer).toHaveBeenCalledOnce();
+		await waitFor(() => expect(importer).toHaveBeenCalledOnce());
 		expect(view.getByRole('button', { name: 'Load live interactive map' })).toHaveAttribute(
 			'aria-disabled',
 			'true',
 		);
 		expect(view.getByRole('status')).toHaveTextContent('Starting live map');
+	});
+
+	it('presents the retry acknowledgement before invoking a live-map failure retry', async () => {
+		const frames = controlledAnimationFrames();
+		const { default: MapProgressive } = await import('./MapProgressive.svelte');
+		const fixture = await import('./__fixtures__/MapProgressiveHeroStub.svelte');
+		const view = render(MapProgressive, { props: { importHero: async () => fixture } });
+
+		await fireEvent.click(view.getByRole('button', { name: 'Load live interactive map' }));
+		await frames.flushPresentationBoundary();
+		const hero = await view.findByTestId('map-progressive-hero-stub');
+
+		await fireEvent.click(view.getByTestId('progressive-stub-failure'));
+		expect(view.getByRole('alert')).toHaveTextContent('Live map could not start');
+		expect(hero).toHaveAttribute('data-retry-count', '0');
+		expect(frames.callbacks).toHaveLength(0);
+		frames.request.mockClear();
+
+		await fireEvent.click(view.getByRole('button', { name: 'Try live map again' }));
+
+		expect(view.getByRole('status')).toHaveTextContent('Starting live map');
+		expect(hero).toHaveAttribute('data-retry-count', '0');
+		expect(frames.request).toHaveBeenCalledOnce();
+
+		await frames.flushNext();
+		expect(hero).toHaveAttribute('data-retry-count', '0');
+		expect(frames.request).toHaveBeenCalledTimes(2);
+
+		await frames.flushNext();
+		await waitFor(() => expect(hero).toHaveAttribute('data-retry-count', '1'));
 	});
 
 	it('keeps keyboard focus during boot and hands it to the MapLibre canvas after first idle', async () => {
@@ -213,7 +299,9 @@ describe('MapProgressive deferred activation', () => {
 	it('does not activate from timers or requestIdleCallback', async () => {
 		vi.useFakeTimers();
 		const requestIdleCallback = vi.fn();
+		const requestAnimationFrame = vi.fn();
 		vi.stubGlobal('requestIdleCallback', requestIdleCallback);
+		vi.stubGlobal('requestAnimationFrame', requestAnimationFrame);
 		const { default: MapProgressive } = await import('./MapProgressive.svelte');
 		const importer = vi.fn(() => new Promise<never>(() => {}));
 		render(MapProgressive, { props: { importHero: importer } });
@@ -223,5 +311,6 @@ describe('MapProgressive deferred activation', () => {
 
 		expect(importer).not.toHaveBeenCalled();
 		expect(requestIdleCallback).not.toHaveBeenCalled();
+		expect(requestAnimationFrame).not.toHaveBeenCalled();
 	});
 });

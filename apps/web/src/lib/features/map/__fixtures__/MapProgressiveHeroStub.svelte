@@ -11,16 +11,20 @@
 	}
 
 	let { onready, onidle, onfailure }: Props = $props();
+	let retryCount = $state(0);
 
 	function fail(): void {
 		onfailure?.({
 			kind: 'construct',
-			retry: async () => onfailure?.(null),
+			retry: async () => {
+				retryCount += 1;
+				onfailure?.(null);
+			},
 		});
 	}
 </script>
 
-<div data-testid="map-progressive-hero-stub">
+<div data-testid="map-progressive-hero-stub" data-retry-count={retryCount}>
 	<canvas
 		class="maplibregl-canvas"
 		data-testid="progressive-stub-map-canvas"
