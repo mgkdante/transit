@@ -30,7 +30,7 @@
   error shows error-v1. All prose comes from ../network-reliability.copy.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import {
@@ -53,9 +53,11 @@
 	import { createLiveStore } from '$lib/v1/live/store.svelte';
 	import { getNetworkTrend } from '$lib/v1/repositories/historic';
 	import { getProvenance } from '$lib/v1/repositories/provenance';
-	import type { TrendPoint } from '$lib/v1/schemas/network_trend';
+	import type { NetworkFile } from '$lib/v1/schemas/network';
+	import type { NetworkTrend, TrendPoint } from '$lib/v1/schemas/network_trend';
+	import type { Provenance } from '$lib/v1/schemas/provenance';
 	import type { OccupancyCode, StatusCode } from '$lib/v1/schemas/types';
-	import { createResource } from '$lib/v1/resource.svelte';
+	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
 	import { shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
 	import {
 		ArticleControlDisclosure,
@@ -124,6 +126,14 @@
 	import SectionByTimeOfDay from './SectionByTimeOfDay.svelte';
 	import SectionWeekday from './SectionWeekday.svelte';
 
+	interface Props {
+		networkSeed?: NetworkFile;
+		trendSeed?: ResourceSeed<NetworkTrend>;
+		provenanceSeed?: ResourceSeed<Provenance>;
+	}
+
+	let { networkSeed, trendSeed, provenanceSeed }: Props = $props();
+
 	const locale: Locale = getLocale();
 	const t = $derived(networkReliabilityCopy[locale]);
 
@@ -137,21 +147,31 @@
 	});
 
 	// Live tier — one store instance; the v1 context is booted by the time the tree renders.
-	const live = createLiveStore(getV1Context().manifest, { families: ['network'] });
+	const initialNetworkSeed = untrack(() => networkSeed);
+	const live = createLiveStore(getV1Context().manifest, {
+		families: ['network'],
+		...(initialNetworkSeed === undefined ? {} : { seed: { network: initialNetworkSeed } }),
+	});
 	onMount(() => {
 		live.start();
 		return () => live.stop();
 	});
 
 	// Historic tier — the daily network trend (createResource, browser-only).
-	const trend = createResource(() => getNetworkTrend());
+	const trend = createResource(() => getNetworkTrend(), {
+		key: () => 'network-trend',
+		seed: () => trendSeed,
+	});
 	const history = createNetworkHistoryResource(
 		historyRangeRequestFromSearchParams(page.url.searchParams),
 	);
 	onMount(() => () => history.destroy());
 	// Honesty layer — the provider's feed-conformance verdict (provenance.json). Supplementary:
 	// a null/errored fetch renders nothing, never a blocking boundary.
-	const provenance = createResource(() => getProvenance());
+	const provenance = createResource(() => getProvenance(), {
+		key: () => 'provenance',
+		seed: () => provenanceSeed,
+	});
 
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 	const noObservationLabel = $derived(absenceShort('no-observations', locale));

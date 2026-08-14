@@ -42,6 +42,7 @@ const liveHeadlineSource = () =>
 
 const networkManifest = vi.hoisted(() => ({ files: { live: { ttl_s: 30 } } }));
 const createLiveStoreSpy = vi.hoisted(() => vi.fn());
+const createResourceSpy = vi.hoisted(() => vi.fn());
 const { openSurface, live, network, trendSeries, weeklySeries, monthlySeries, byShift, byDaytype } =
 	vi.hoisted(() => ({
 		openSurface: vi.fn(),
@@ -141,6 +142,7 @@ function resetNetworkSurfaceState(): void {
 	restoreArray(byDaytype, daytypeDefaults);
 	openSurface.mockClear();
 	createLiveStoreSpy.mockClear();
+	createResourceSpy.mockClear();
 	quietModeStore.resetForTest();
 }
 
@@ -218,7 +220,8 @@ vi.mock('$lib/v1/repositories/historic', () => ({
 vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: vi.fn() }));
 
 vi.mock('$lib/v1/resource.svelte', () => ({
-	createResource: (loader: () => unknown) => {
+	createResource: (loader: () => unknown, options?: unknown) => {
+		createResourceSpy(loader, options);
 		const src = loader.toString();
 		const isProvenance = src.includes('Provenance') || src.includes('provenance');
 		return {
@@ -246,7 +249,7 @@ afterEach(() => {
 });
 
 afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(54);
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(55);
 });
 
 describe('NetworkSurface article shell', () => {
@@ -264,6 +267,41 @@ describe('NetworkSurface article shell', () => {
 		expect(createLiveStoreSpy).toHaveBeenCalledWith(networkManifest, {
 			families: ['network'],
 		});
+	});
+
+	it('accepts request-scoped network, trend, and provenance seeds without changing refresh ownership', () => {
+		const trendSeed = {
+			key: 'network-trend',
+			data: {
+				series: trendSeries,
+				weekly: weeklySeries,
+				monthly: monthlySeries,
+				by_shift: byShift,
+				by_daytype: byDaytype,
+			},
+		};
+		const provenanceSeed = { key: 'provenance', data: { conformance: null } };
+
+		render(NetworkSurface, {
+			props: { networkSeed: network, trendSeed, provenanceSeed },
+		});
+
+		expect(createLiveStoreSpy).toHaveBeenCalledWith(networkManifest, {
+			families: ['network'],
+			seed: { network },
+		});
+		const trendOptions = createResourceSpy.mock.calls[0]?.[1] as {
+			key: () => unknown;
+			seed: () => unknown;
+		};
+		const provenanceOptions = createResourceSpy.mock.calls[1]?.[1] as {
+			key: () => unknown;
+			seed: () => unknown;
+		};
+		expect(trendOptions.key()).toBe('network-trend');
+		expect(trendOptions.seed()).toBe(trendSeed);
+		expect(provenanceOptions.key()).toBe('provenance');
+		expect(provenanceOptions.seed()).toBe(provenanceSeed);
 	});
 
 	it('keeps the live ToC anchor mounted while the live tier is still loading', () => {

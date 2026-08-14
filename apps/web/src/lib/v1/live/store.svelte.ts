@@ -86,6 +86,10 @@ export interface LiveFamilyState {
 export interface LiveStoreOptions {
 	/** Families this surface reads. Omit to preserve the five-file default. */
 	readonly families?: readonly LiveFamily[];
+	/** Validated request-scoped payloads available for the first render. */
+	readonly seed?: {
+		readonly network?: NetworkFile;
+	};
 }
 
 /** The public reactive surface of a live store instance. */
@@ -148,12 +152,13 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	const staleThresholdS = (ttlMs / 1000) * STALE_TTL_MULTIPLIER;
 	const adapterCtx: AdapterCtx = { manifest };
 	const baselineFamilies = new SvelteSet<LiveFamily>(options.families ?? LIVE_FAMILIES);
+	const initialNetwork = baselineFamilies.has('network') ? (options.seed?.network ?? null) : null;
 
 	let vehicles = $state<VehiclesFile | null>(null);
 	let trips = $state<TripsFile | null>(null);
 	let departures = $state<StopDeparturesFile | null>(null);
 	let alerts = $state<AlertsFile | null>(null);
-	let network = $state<NetworkFile | null>(null);
+	let network = $state<NetworkFile | null>(initialNetwork);
 
 	const familyRefCounts: Record<LiveFamily, number> = {
 		vehicles: baselineFamilies.has('vehicles') ? 1 : 0,
@@ -174,7 +179,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		trips: initialFamilyState(familyRefCounts.trips > 0),
 		departures: initialFamilyState(familyRefCounts.departures > 0),
 		alerts: initialFamilyState(familyRefCounts.alerts > 0),
-		network: initialFamilyState(familyRefCounts.network > 0),
+		network: initialFamilyState(familyRefCounts.network > 0, initialNetwork?.generated_utc ?? null),
 	});
 
 	// One handle: the poll timer (live ttl cadence). The age/staleness derivation
@@ -257,15 +262,19 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 
 	type LiveFamilyPayload = VehiclesFile | TripsFile | StopDeparturesFile | AlertsFile | NetworkFile;
 
-	function initialFamilyState(active: boolean): LiveFamilyState {
+	function initialFamilyState(
+		active: boolean,
+		retainedGeneration: string | null = null,
+	): LiveFamilyState {
+		const hasSeed = active && retainedGeneration != null;
 		return {
-			phase: 'idle',
+			phase: hasSeed ? 'ready' : 'idle',
 			active,
 			lastGoodAt: null,
-			retainedGeneration: null,
+			retainedGeneration: hasSeed ? retainedGeneration : null,
 			consecutiveFailures: 0,
 			error: null,
-			successRevision: 0,
+			successRevision: hasSeed ? 1 : 0,
 		};
 	}
 

@@ -1,15 +1,19 @@
 <!--
   /network (+ /fr/network) — thin mount of the Network-health surface.
 
-  THIN by contract (slice-9.3): this page only imports the feature screen and
-  mounts it inside the AppShell `main` zone. No data load, no logic, no markup —
-  the screen owns presentation; locale comes from getLocale() context, so this
-  index surface needs no +page.ts. (S9A: the surface is now the decomposed
-  NetworkSurface orchestrator under network/reliability, replacing the former
-  1,432-line NetworkHealth god-file.)
+  THIN by contract (slice-9.3): this page only forwards request-scoped seeds to
+  the feature screen. The screen owns presentation and client refreshes; locale
+  comes from getLocale() context.
 -->
 <script lang="ts">
 	import { NetworkSurface } from '$lib/features/network/reliability';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
 </script>
 
-<NetworkSurface />
+<NetworkSurface
+	networkSeed={data.networkSeed ?? undefined}
+	trendSeed={data.trendSeed ?? undefined}
+	provenanceSeed={data.provenanceSeed ?? undefined}
+/>
