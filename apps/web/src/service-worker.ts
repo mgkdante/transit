@@ -16,8 +16,10 @@
 //                             cached HTML document when online -> the kill-switch
 //                             and any new deploy always take effect.
 //   /data/* + /v1 snapshots   PASSTHROUGH    — never intercepted, never cached.
-//   shell assets              CACHE-FIRST    — hashed /_app/immutable/* + the
-//                             precached static set (fonts/icons/manifest/offline).
+//   immutable build assets    CACHE-FIRST    — requested /_app/immutable/* files
+//                             are cached on demand, never during installation.
+//   non-map static files      CACHE-FIRST    — precached for established offline
+//                             shell guarantees; poster variants stay on demand.
 //   all other requests        PASSTHROUGH    — left to the browser default.
 //
 // KILL-SWITCH
@@ -28,7 +30,7 @@
 //   no code change required. A second, independent lever runs client-side from
 //   the root layout (see $lib/pwa/register).
 
-import { build, files, version } from '$service-worker';
+import { files, version } from '$service-worker';
 import {
 	KILL_FLAG_PATH,
 	cacheNameFor,
@@ -48,26 +50,33 @@ const CACHE = cacheNameFor(version);
 /** Offline fallback document precached on install (see static/offline.html). */
 const OFFLINE_PATH = '/offline.html';
 
-/** Same-origin pathnames precached on install (hashed build + static + offline). */
-const PRECACHE = precachePathnames([...build, ...files], ORIGIN, OFFLINE_PATH);
+/** Heavy responsive map posters stay outside the install-time static-file cache. */
+const MAP_POSTER_PATH_PREFIX = '/map/basemap-montreal-';
+const NON_MAP_STATIC_FILES = files.filter(
+	(file) => !new URL(file, ORIGIN).pathname.startsWith(MAP_POSTER_PATH_PREFIX),
+);
+
+/** Preserve the established static/offline shell without eager build chunks or posters. */
+const PRECACHE = precachePathnames(NON_MAP_STATIC_FILES, ORIGIN, OFFLINE_PATH);
 
 /** Min interval (ms) between kill-flag checks triggered from fetch handlers. */
 const KILL_CHECK_THROTTLE_MS = 5 * 60 * 1000;
 let lastKillCheck = 0;
 
-// --- install: precache the shell + offline page ----------------------------
+// --- install: precache non-map static files + the offline page -------------
 
 sw.addEventListener('install', (event) => {
 	event.waitUntil(
 		(async () => {
 			const cache = await caches.open(CACHE);
-			// Cache the hashed build + static set. addAll is atomic-ish; if any one
-			// asset fails we still want the SW to install, so add individually and
-			// swallow per-asset failures rather than aborting the whole install.
+			// Build chunks, vendor CSS, and poster variants must not become hidden
+			// install-time downloads. Immutable assets enter this cache only after a
+			// real request reaches cacheFirst below; ordinary static shell files retain
+			// their established offline availability.
 			await Promise.all(
 				[...PRECACHE].map(async (path) => {
 					try {
-						await cache.add(new Request(path, { cache: 'reload' }));
+						await cache.add(new Request(new URL(path, ORIGIN), { cache: 'reload' }));
 					} catch {
 						// Skip an asset that 404s / fails — never block install on it.
 					}

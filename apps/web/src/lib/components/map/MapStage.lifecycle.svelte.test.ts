@@ -5,7 +5,14 @@ import MapStage from './MapStage.svelte';
 
 type FailureKind = 'importer' | 'protocol' | 'style' | 'construct' | 'setup';
 type Failure = Readonly<{ kind: FailureKind; retry: () => void | Promise<void> }>;
-const MAP_LISTENER_TYPES = ['load', 'styledata', 'sourcedata', 'movestart', 'boxzoomend'] as const;
+const MAP_LISTENER_TYPES = [
+	'load',
+	'idle',
+	'styledata',
+	'sourcedata',
+	'movestart',
+	'boxzoomend',
+] as const;
 
 const harness = vi.hoisted(() => {
 	function deferred<T>() {
@@ -376,6 +383,31 @@ describe('MapStage boot lifecycle', () => {
 		expect(harness.state.successfulRegistrations).toBe(1);
 	});
 
+	it('reports the first idle event once and releases its listener immediately', async () => {
+		const onidle = vi.fn();
+		const { map } = await bootStage({ onidle });
+
+		expect(map.handlers.get('idle')).toHaveLength(1);
+		map.emit('idle');
+		map.emit('idle');
+
+		expect(onidle).toHaveBeenCalledExactlyOnceWith(map);
+		expect(map.handlers.get('idle')).toHaveLength(0);
+	});
+
+	it('cleans and suppresses a copied idle callback after its attempt becomes stale', async () => {
+		const onidle = vi.fn();
+		const { view, map } = await bootStage({ onidle });
+		const copiedIdle = [...(map.handlers.get('idle') ?? [])][0];
+		expect(copiedIdle).toBeDefined();
+
+		view.unmount();
+		expect(map.handlers.get('idle')).toHaveLength(0);
+		copiedIdle?.();
+
+		expect(onidle).not.toHaveBeenCalled();
+	});
+
 	it('starts the abort-aware basemap load before vendor settlement and constructs only after every barrier', async () => {
 		const basemap = (() => {
 			let resolve!: (value: null) => void;
@@ -510,19 +542,19 @@ describe('MapStage boot lifecycle', () => {
 			'styledata listener',
 			(): void => void (harness.state.setupFailure = 'on:styledata'),
 			0,
-			['load', 'styledata'],
+			['load', 'idle', 'styledata'],
 		],
 		[
 			'sourcedata listener',
 			(): void => void (harness.state.setupFailure = 'on:sourcedata'),
 			0,
-			['load', 'styledata', 'sourcedata'],
+			['load', 'idle', 'styledata', 'sourcedata'],
 		],
 		[
 			'movestart listener',
 			(): void => void (harness.state.setupFailure = 'on:movestart'),
 			0,
-			['load', 'styledata', 'sourcedata', 'movestart'],
+			['load', 'idle', 'styledata', 'sourcedata', 'movestart'],
 		],
 		[
 			'boxzoomend listener',
@@ -758,7 +790,7 @@ describe('MapStage boot lifecycle', () => {
 			expect(handlers).toHaveLength(1);
 			return handlers[0]!;
 		});
-		expect(registeredHandlers[1]).toBe(registeredHandlers[2]);
+		expect(registeredHandlers[2]).toBe(registeredHandlers[3]);
 		const mapRemoveError = new Error('MapLibre remove failed after listener cleanup');
 		map.remove.mockImplementation(() => {
 			map.container.replaceChildren();

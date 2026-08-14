@@ -1,2 +1,3 @@
-// $lib/features/map — the Family A live vehicle map hero (slice-9.3).
-export { default as MapHero } from './MapHero.svelte';
+// Static-first public route boundary. MapHero stays a direct dynamic import from
+// MapProgressive so the live map graph cannot become an eager barrel dependency.
+export { default as MapProgressive } from './MapProgressive.svelte';

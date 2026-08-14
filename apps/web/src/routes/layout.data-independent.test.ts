@@ -307,7 +307,9 @@ describe('root layout data-independent legal routes', () => {
 			expect(view.container.querySelector('[data-slot="app-shell"]')).toBeInTheDocument();
 			if (loaded) {
 				expect(
-					footer ? view.getByTestId('legal-child') : view.container.querySelector('.map-hero'),
+					footer
+						? view.getByTestId('legal-child')
+						: view.container.querySelector('.map-progressive'),
 				).toBeInTheDocument();
 				expect(view.queryByTestId('root-layout-edge-state')).not.toBeInTheDocument();
 			}

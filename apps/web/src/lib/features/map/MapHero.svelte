@@ -23,6 +23,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
+	import type { MapStageFailure } from '$lib/components/map/MapStage.svelte';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { themeStore } from '$lib/stores';
 	import { layout, isDesktopViewport } from '$lib/nav';
@@ -103,6 +104,14 @@
 	} from './mapSelection';
 	import { createSelectionGrace } from './selectionGrace.svelte';
 	import * as ownerCleanup from './mapOwnerCleanup';
+
+	interface Props {
+		onready?: () => void;
+		onidle?: () => void;
+		onfailure?: (failure: MapStageFailure | null) => void;
+	}
+
+	let { onready, onidle, onfailure }: Props = $props();
 
 	const locale: Locale = getLocale();
 	const t = $derived(MAP_COPY[locale]);
@@ -260,7 +269,7 @@
 
 	// Track map identity so teardown releases only the matching logical map owner.
 	let map = $state.raw<MapLibreMap | null>(null);
-	let mapFailure = $state<{ readonly retry: () => Promise<void> } | null>(null);
+	let mapFailure = $state<MapStageFailure | null>(null);
 	let vehicleMotion = $state<VehicleMotionController | null>(null);
 	let vehicleMotionMap: MapLibreMap | null = null;
 
@@ -773,6 +782,16 @@
 		map = m;
 		installMapLayers(m);
 		nearMeController.refocus();
+		onready?.();
+	}
+
+	function onMapIdle(): void {
+		onidle?.();
+	}
+
+	function onMapFailure(failure: MapStageFailure | null): void {
+		mapFailure = failure;
+		onfailure?.(failure);
 	}
 
 	function onMapStyleLoad(m: MapLibreMap): void {
@@ -958,9 +977,10 @@
 		maxBounds={MAP_MAX_BOUNDS}
 		fitPadding={mapFitPadding}
 		onready={onMapReady}
+		onidle={onMapIdle}
 		onstyleload={onMapStyleLoad}
 		onthemerepaint={onMapThemeRepaint}
-		onerror={(failure) => (mapFailure = failure)}
+		onerror={onMapFailure}
 		onbeforeremove={releaseMapOwners}
 		customAttribution={manifest.attribution}
 		locale={{

@@ -13,8 +13,9 @@
 //                                take effect (no stale-shell trap).
 //   - /data/* + /v1 snapshots -> NEVER intercepted. Straight passthrough to the
 //                                network so live transit data is never stale.
-//   - App SHELL (hashed JS/CSS + static fonts/icons) -> cache-first (safe: the
-//                                filenames are content-hashed / content-stable).
+//   - Hashed JS/CSS          -> CACHE-FIRST on demand (never install-precached).
+//   - Non-map static files  -> CACHE-FIRST after install precache.
+//   - Explicit offline file -> CACHE-FIRST after install precache.
 //   - Everything else (cross-origin, POST, Range) -> passthrough.
 
 /** The path prefix under which the LIVE /v1 snapshot contract is served. */
@@ -59,18 +60,19 @@ export function isKillFlagRequest(url: URL): boolean {
 /**
  * Is this a SHELL asset that is safe to cache-first?
  *
- * Only content-addressed build output and content-stable static files qualify:
+ * Only content-addressed build output and explicitly precached files qualify:
  *   - `/_app/immutable/*` — SvelteKit's content-hashed JS/CSS (filename changes
  *     on every edit, so a forever-cache can never go stale).
- *   - the static asset set passed in `precachedAssets` (fonts, icons, favicon,
- *     manifest, offline page) — content-stable files precached on install.
+ *   - the explicit install allowlist passed in `precachedAssets` (non-map static
+ *     shell files plus the offline fallback). Poster variants remain normal
+ *     browser requests.
  *
  * NOTE: HTML documents are deliberately NOT shell assets here — navigations are
  * network-first (see isNavigationRequest). Data requests are excluded up front.
  *
  * @param url             an already-parsed URL (same-origin).
  * @param precachedAssets the exact set of precached asset pathnames (from
- *                        $service-worker `build` + `files`), as pathnames.
+ *                        the service-worker install allowlist), as pathnames.
  */
 export function isShellAsset(url: URL, precachedAssets: ReadonlySet<string>): boolean {
 	if (isDataRequest(url)) return false;
@@ -175,13 +177,13 @@ export function cacheNameFor(version: string): string {
 /**
  * Derive the set of precache PATHNAMES from the $service-worker asset URL lists.
  *
- * `build` + `files` are URL strings (may be relative like `./_app/...` or carry
- * the deployment base). We normalize each to a same-origin PATHNAME so the
+ * Asset URLs may be relative or carry the deployment base. We normalize each
+ * to a same-origin PATHNAME so the
  * runtime cache-key comparison in isShellAsset is apples-to-apples. The offline
  * fallback path is always included so a navigation while offline has something
  * honest to render.
  *
- * @param assetUrls    the concatenation of $service-worker `build` and `files`.
+ * @param assetUrls    the selected $service-worker asset URLs.
  * @param origin       the SW origin used to resolve relative URLs.
  * @param offlinePath  the offline fallback pathname to guarantee in the set.
  */

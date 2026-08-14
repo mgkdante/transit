@@ -712,6 +712,25 @@ function peekText(container: HTMLElement): string {
 }
 
 describe('MapHero stage lifecycle', () => {
+	it('forwards ready, first-idle, and failure lifecycle signals without replacing retry', async () => {
+		const onready = vi.fn();
+		const onidle = vi.fn();
+		const onfailure = vi.fn();
+		render(MapHero, { props: { onready, onidle, onfailure } });
+
+		expect(onready).toHaveBeenCalledOnce();
+		expect(onidle).not.toHaveBeenCalled();
+		await fireEvent.click(screen.getByTestId('map-stage-stub-idle'));
+		expect(onidle).toHaveBeenCalledOnce();
+
+		await fireEvent.click(screen.getByTestId('map-stage-stub-error'));
+		const failure = onfailure.mock.calls.at(-1)?.[0];
+		expect(failure).toMatchObject({ kind: 'construct', retry: expect.any(Function) });
+		await failure.retry();
+		expect(onfailure).toHaveBeenLastCalledWith(null);
+		expect(screen.getByTestId('map-stage-stub')).toHaveAttribute('data-retry-count', '1');
+	});
+
 	it('passes the exact English MapLibre locale dictionary to the stage', () => {
 		render(MapHero);
 
@@ -1030,6 +1049,7 @@ describe('MapHero detail-panel camera isolation (protect #11)', () => {
 describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 	const releasedListeners = {
 		load: 0,
+		idle: 0,
 		styledata: 0,
 		sourcedata: 0,
 		movestart: 0,

@@ -252,6 +252,20 @@ it('pins the owner-directed footer divider as the only P7 stripe in Footer.svelt
 	expect(statusRule.replace(/\s+/g, ' ').trim()).toBe(`${OWNER_DIRECTED_FOOTER_DECLARATION};`);
 });
 
+it('keeps the progressive poster heading and kicker on shared type tokens', () => {
+	const source = readFileSync(
+		resolve(process.cwd(), 'src/lib/features/map/MapProgressive.svelte'),
+		'utf8',
+	);
+	const kickerRule = source.match(/\.map-progressive-kicker\s*\{([^}]*)\}/)?.[1] ?? '';
+	const headingRule = source.match(/\n\s*h1\s*\{([^}]*)\}/)?.[1] ?? '';
+
+	expect(kickerRule).toContain('letter-spacing: var(--tracking-eyebrow)');
+	expect(headingRule).toContain('font-size: var(--text-display)');
+	expect(headingRule).toContain('font-weight: 700');
+	expect(headingRule).toContain('letter-spacing: var(--tracking-tight)');
+});
+
 describe('style regressions — the FORBIDDEN guard (P5.3d §C4)', () => {
 	for (const rel of FORBIDDEN_ROOTS) {
 		const root = resolve(process.cwd(), rel);

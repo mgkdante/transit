@@ -2,6 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { copy } from './map.copy';
 
 describe('map copy', () => {
+	it('labels the deferred poster honestly and provides bilingual activation states', () => {
+		for (const c of [copy.en, copy.fr]) {
+			expect(c.staticHeading.trim()).toBeTruthy();
+			expect(c.staticBody.toLowerCase()).toMatch(/static|statique/u);
+			expect(c.staticBody.toLowerCase()).toMatch(/non-live|pas en direct/u);
+			expect(c.staticBody.toLowerCase()).not.toMatch(/vehicle position|position des véhicules/u);
+			expect(c.activateMap.trim()).toBeTruthy();
+			expect(c.mapBooting.trim()).toBeTruthy();
+			expect(c.mapImportError.trim()).toBeTruthy();
+			expect(c.mapImportRetry.trim()).toBeTruthy();
+			expect(c.staticNoScript.toLowerCase()).toMatch(/static|statique/u);
+		}
+		expect(copy.en.staticBody).toBe(
+			'Static, non-live basemap. No vehicles, stops, service alerts, or freshness data are shown.',
+		);
+		expect(copy.fr.staticBody).toBe(
+			'Fond de carte statique, pas en direct. Aucun véhicule, arrêt, avis de service ou renseignement de fraîcheur n’est affiché.',
+		);
+		expect(copy.en.staticSnapshot).toBe('Basemap snapshot · Aug 12, 2026');
+		expect(copy.fr.staticSnapshot).toBe('Fond de carte · 12 août 2026');
+	});
+
 	it('uses vernacular marker labels', () => {
 		expect(copy.en.legendTitle).toBe('Markers');
 		expect(copy.fr.legendTitle).toBe('Marqueurs');
