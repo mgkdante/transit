@@ -451,5 +451,9 @@
 			right: auto;
 			max-width: calc(100% - 1.3rem);
 		}
+
+		.map-progressive-noscript {
+			bottom: 2.25rem;
+		}
 	}
 </style>
