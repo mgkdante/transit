@@ -37,6 +37,7 @@ import type {
 import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '$lib/features/reliability/shiftGrains';
 import { roundHalfAwayFromZero } from '$lib/utils';
 import type { RetainedLineHistory } from './data/retainedHistory';
+import { selectHeadlinePeriod } from './selectors/dayVerdictHeadline';
 
 /* ── VM types ────────────────────────────────────────────────────────────── */
 
@@ -389,39 +390,6 @@ const crosstabHasSignal = (c: CrosstabCell): boolean =>
 	c.avg_delay_min != null ||
 	c.severe_pct != null ||
 	c.observation_count != null;
-
-/**
- * Pick the headline period for the selected grain.
- *
- * F1 FIX: week/month rows arrive ASC (oldest→newest), so a naive `.find` would
- * surface the STALEST week/month. We instead pick the MOST-RECENT matching row
- * (max `date`; rows without a date keep array order as a tiebreak — daily/dateless
- * grains fall back to the last match). When `selectedDate` is set and a day-grain
- * row matches it, that exact day wins (the specific-date picker fix). Falls back
- * to the first period when the grain is absent, so an unknown grain fabricates
- * nothing.
- */
-function selectStripPeriod(
-	periods: readonly ReliabilityPeriod[],
-	grain: string,
-	selectedDate?: string,
-): ReliabilityPeriod | null {
-	if (periods.length === 0) return null;
-	const matches = periods.filter((p) => p.grain === grain);
-	if (matches.length === 0) return periods[0];
-	// Specific-date pick: honour an exact dated match when asked.
-	if (selectedDate) {
-		const exact = matches.find((p) => p.date === selectedDate);
-		if (exact) return exact;
-	}
-	// Most-recent matching row: pick the max `date`; if no row carries a date,
-	// keep the LAST array position (contract tail = most-recent for dateless grains).
-	return matches.reduce((best, p) => {
-		if (p.date == null) return best.date == null ? p : best;
-		if (best.date == null) return p;
-		return p.date >= best.date ? p : best;
-	}, matches[0]);
-}
 
 /** Split the mixed-grain contract array into clean grain groups (F4). */
 function partitionPeriods(periods: readonly ReliabilityPeriod[]): PartitionedPeriods {
@@ -894,7 +862,7 @@ export function toReliabilityClusters(
 						};
 		}
 	} else {
-		const stripPeriod = selectStripPeriod(calendarPeriods, grain, selectedDate);
+		const stripPeriod = selectHeadlinePeriod(calendarPeriods, grain, selectedDate);
 		otpPct = stripPeriod ? num(stripPeriod.otp_pct) : null;
 		avgDelayMin = stripPeriod ? num(stripPeriod.avg_delay_min) : null;
 		p50Min = stripPeriod ? num(stripPeriod.p50_min) : null;
