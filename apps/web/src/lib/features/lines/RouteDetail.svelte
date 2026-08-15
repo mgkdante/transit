@@ -62,8 +62,8 @@
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
 	import { VerdictBanner } from '$lib/components/brand';
 	import { selectVerdict } from '$lib/v1/verdict';
-	import { toReliabilityClusters } from './reliability/clusters';
-	import { reliabilityCopy } from './reliability/reliability.copy';
+	import { selectDayVerdictHeadline } from './reliability/selectors/dayVerdictHeadline';
+	import { routeVerdictCopy } from './reliability/routeVerdict.copy';
 	import LazyRouteReliabilityPane from './LazyRouteReliabilityPane.svelte';
 	import {
 		createLineHistoryResource,
@@ -177,11 +177,9 @@
 	// The band renders ONLY once the historic archive has loaded (a null → no band, never
 	// a fabricated verdict); the Wilson hedge + natural frequency ride the archive's own
 	// observation_count / on_time (never fabricated).
-	const relCopy = $derived(reliabilityCopy[locale]);
+	const relCopy = $derived(routeVerdictCopy[locale]);
 	const verdictHeadline = $derived(
-		reliability.data
-			? toReliabilityClusters(reliability.data, { grain: 'day' }).punctuality.headline
-			: null,
+		reliability.data ? selectDayVerdictHeadline(reliability.data) : null,
 	);
 	const routeVerdict = $derived(
 		verdictHeadline ? selectVerdict(verdictHeadline, 'day', locale, relCopy.verdict) : null,

@@ -15,11 +15,8 @@
 
 import { defineCopy, type Locale } from '$lib/i18n/copy';
 import { historyCopy } from '$lib/components/surface/historyCopy';
-// The verdict copy shape is now the shared $lib/v1 kernel (hoisted so every OTP-headline
-// surface reuses the ONE verdict engine); re-export VerdictSentenceArgs for the callers
-// that still reference it from here.
-import type { VerdictCopy, VerdictSentenceArgs } from '$lib/v1/verdict';
-export type { VerdictSentenceArgs };
+import type { VerdictCopy } from '$lib/v1/verdict';
+import { routeVerdictCopy } from './routeVerdict.copy';
 
 /** The five cluster keys, in surface order. */
 export type ReliabilityClusterKey =
@@ -223,7 +220,7 @@ export const reliabilityCopy = defineCopy({
 			partial: 'Cette plage ne couvre qu’une partie des mesures conservées.',
 			currentOnly:
 				'Les habitudes, les attentes, les pires arrêts et les associations restent basés sur le portrait actuel.',
-			headerCurrentOnly: 'Verdict d’en-tête : portrait actuel',
+			headerCurrentOnly: routeVerdictCopy.fr.history.headerCurrentOnly,
 			loading: 'Chargement de la plage conservée…',
 			ready: 'Plage conservée chargée.',
 			error: 'Impossible de charger cette plage conservée.',
@@ -251,29 +248,7 @@ export const reliabilityCopy = defineCopy({
 			detailShow: 'Voir le détail',
 			detailHide: 'Masquer le détail',
 		},
-		verdict: {
-			windowPhrase: {
-				day: "aujourd'hui",
-				week: 'cette semaine',
-				month: 'ce mois-ci',
-				range: 'sur les jours choisis',
-			},
-			reliable: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
-				`Service fiable ${window}, environ ${onTen} trajets sur 10 à l'heure${hedge}; ${lateTen} sur 10 en retard.`,
-			patchy: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
-				`Service inégal ${window}, environ ${onTen} trajets sur 10 à l'heure${hedge}; ${lateTen} sur 10 en retard.`,
-			unreliable: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
-				`Service peu fiable ${window}, seulement ${onTen} trajets sur 10 à l'heure${hedge}; ${lateTen} sur 10 en retard.`,
-			tentative: ({ window, otp, n, lo, hi }) =>
-				`Trop peu de trajets ${window} pour être certain, ${otp} % de ${n} trajets suivis à l'heure (probablement ${lo}–${hi} %).`,
-			tooFew: (window: string, n: number) =>
-				`Mesure en cours ${window}, seulement ${n} trajets suivis jusqu'ici, pas assez pour juger la fiabilité.`,
-			absent:
-				"Mesure en cours, aucun trajet suivi pour l'instant, impossible de juger la fiabilité.",
-			hedgeSimple: (otp: number) => ` (${otp} %)`,
-			hedgeCI: (otp: number, lo: number, hi: number) =>
-				` (${otp} %, sûr à 95 % entre ${lo} et ${hi} %)`,
-		} satisfies VerdictCopy,
+		verdict: routeVerdictCopy.fr.verdict,
 	},
 	en: {
 		clusters: {
@@ -466,7 +441,7 @@ export const reliabilityCopy = defineCopy({
 			partial: 'This range has only partial retained metric coverage.',
 			currentOnly:
 				'Habits, wait regularity, worst stops, and associations still use the current snapshot.',
-			headerCurrentOnly: 'Header verdict: current snapshot',
+			headerCurrentOnly: routeVerdictCopy.en.history.headerCurrentOnly,
 			loading: 'Loading retained range…',
 			ready: 'Retained range loaded.',
 			error: 'This retained range could not be loaded.',
@@ -488,27 +463,7 @@ export const reliabilityCopy = defineCopy({
 			detailShow: 'Show the detail',
 			detailHide: 'Hide the detail',
 		},
-		verdict: {
-			windowPhrase: {
-				day: 'today',
-				week: 'this week',
-				month: 'this month',
-				range: 'over the selected days',
-			},
-			reliable: ({ window, onTen, lateTen, hedge }) =>
-				`Ran reliably ${window}, about ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
-			patchy: ({ window, onTen, lateTen, hedge }) =>
-				`Ran unevenly ${window}, about ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
-			unreliable: ({ window, onTen, lateTen, hedge }) =>
-				`Ran unreliably ${window}, only about ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
-			tentative: ({ window, otp, n, lo, hi }) =>
-				`Too few trips ${window} to call it with confidence, ${otp}% of ${n} tracked trips on time (likely ${lo}–${hi}%).`,
-			tooFew: (window, n) =>
-				`Still measuring ${window}, only ${n} tracked trips so far, not enough to say how reliable this line is.`,
-			absent: 'Still measuring, no tracked trips yet to say how reliable this line is.',
-			hedgeSimple: (otp) => ` (${otp}%)`,
-			hedgeCI: (otp, lo, hi) => ` (${otp}%, 95% sure between ${lo} and ${hi}%)`,
-		} satisfies VerdictCopy,
+		verdict: routeVerdictCopy.en.verdict,
 	},
 }) satisfies Readonly<Record<Locale, { readonly verdict: VerdictCopy }>>;
 
