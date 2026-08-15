@@ -64,7 +64,7 @@
 	import { selectVerdict } from '$lib/v1/verdict';
 	import { toReliabilityClusters } from './reliability/clusters';
 	import { reliabilityCopy } from './reliability/reliability.copy';
-	import RouteReliabilityClusters from './reliability/RouteReliabilityClusters.svelte';
+	import LazyRouteReliabilityPane from './LazyRouteReliabilityPane.svelte';
 	import {
 		createLineHistoryResource,
 		type LineHistoryResource,
@@ -727,35 +727,17 @@
 				{/snippet}
 			</ResourceBoundary>
 		{:else}
-			{#if reliability.settled && reliability.error == null && reliability.data == null && historyOnlyReliability != null && lineHistory.state !== 'current'}
-				{#key id}
-					<RouteReliabilityClusters
-						data={historyOnlyReliability}
-						{locale}
-						directionHeadsigns={dirHeadsigns}
-						history={lineHistory}
-						articleSummary={detailTabController.active === 'reliability' && hasHeaderVerdict
-							? routeBanner
-							: undefined}
-					/>
-				{/key}
-			{:else}
-				<ResourceBoundary resource={reliability} lang={locale}>
-					{#snippet children(rel)}
-						{#key id}
-							<RouteReliabilityClusters
-								data={rel}
-								{locale}
-								directionHeadsigns={dirHeadsigns}
-								history={lineHistory}
-								articleSummary={detailTabController.active === 'reliability' && hasHeaderVerdict
-									? routeBanner
-									: undefined}
-							/>
-						{/key}
-					{/snippet}
-				</ResourceBoundary>
-			{/if}
+			<LazyRouteReliabilityPane
+				entityId={id}
+				resource={reliability}
+				{locale}
+				directionHeadsigns={dirHeadsigns}
+				history={lineHistory}
+				{historyOnlyReliability}
+				articleSummary={detailTabController.active === 'reliability' && hasHeaderVerdict
+					? routeBanner
+					: undefined}
+			/>
 		{/if}
 	{/snippet}
 </EntityDetail>
