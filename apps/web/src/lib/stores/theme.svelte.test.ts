@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { themeStore } from './theme.svelte';
 
 describe('theme store — canvas integration event', () => {
@@ -21,5 +21,18 @@ describe('theme store — canvas integration event', () => {
 
 		expect(appliedTheme).toBe('light');
 		expect(detail).toEqual({ theme: 'light' });
+	});
+
+	it('starts in SSR dark and adopts the pre-paint document theme on init', async () => {
+		document.documentElement.dataset.theme = 'light';
+		vi.resetModules();
+		const { themeStore: freshThemeStore } = await import('./theme.svelte');
+
+		expect(freshThemeStore.current).toBe('dark');
+
+		freshThemeStore.init();
+
+		expect(freshThemeStore.current).toBe('light');
+		expect(document.documentElement.dataset.theme).toBe('light');
 	});
 });

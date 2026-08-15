@@ -521,6 +521,11 @@
 	:global(.hub-pulse) {
 		width: 100%;
 	}
+	@media (min-width: 1024px) {
+		:global(.hub-pulse) {
+			min-height: 49.5rem;
+		}
+	}
 	.pulse-head {
 		display: flex;
 		flex-wrap: wrap;

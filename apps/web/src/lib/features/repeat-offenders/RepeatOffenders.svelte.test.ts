@@ -12,6 +12,7 @@ import { resolve } from 'node:path';
 import type { RepeatOffenders as RepeatOffendersData, IsoUtc } from '$lib/v1/schemas';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
+import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 
 vi.mock('@testing-library/svelte', { spy: true });
@@ -652,6 +653,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 	});
 
 	it('keeps a touch datum activation inside the card and exposes only the popover action', async () => {
+		vi.stubGlobal('IntersectionObserver', EnteringIntersectionObserver);
 		const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
 		const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
 		const originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate');
@@ -697,6 +699,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 			expect(window.location.href).toBe(initialHref);
 			expect(cardTrigger(container, 'repeat-trips')).toHaveAttribute('aria-expanded', 'true');
 		} finally {
+			vi.unstubAllGlobals();
 			width.mockRestore();
 			height.mockRestore();
 			if (originalAnimate) Object.defineProperty(Element.prototype, 'animate', originalAnimate);

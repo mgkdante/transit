@@ -8,6 +8,20 @@ import { defineCopy, type Locale } from '$lib/i18n/copy';
 
 export const copy = defineCopy({
 	en: {
+		staticKicker: 'MONTRÉAL · STATIC',
+		staticHeading: 'Montréal transit map',
+		staticBody:
+			'Static, non-live basemap. No vehicles, stops, service alerts, or freshness data are shown.',
+		bootHeading: 'Live map',
+		bootBody:
+			'The live interactive map loads automatically. This static basemap stays visible until it is ready.',
+		staticSnapshot: 'Basemap snapshot · Aug 12, 2026',
+		staticImageAlt: 'Static basemap of Montréal',
+		mapBooting: 'Loading live map…',
+		mapImportError: 'Live map could not start.',
+		mapImportRetry: 'Try live map again',
+		staticNoScript:
+			'JavaScript is required to load the live interactive map. This static, non-live basemap remains available.',
 		kicker: 'NETWORK · LIVE',
 		heading: 'Live map',
 		mapLabel: 'Live transit map of Montréal, buses coloured by status',
@@ -95,6 +109,20 @@ export const copy = defineCopy({
 		},
 	},
 	fr: {
+		staticKicker: 'MONTRÉAL · STATIQUE',
+		staticHeading: 'Carte du réseau de Montréal',
+		staticBody:
+			'Fond de carte statique, pas en direct. Aucun véhicule, arrêt, avis de service ou renseignement de fraîcheur n’est affiché.',
+		bootHeading: 'Carte en direct',
+		bootBody:
+			'La carte interactive en direct se charge automatiquement. Ce fond de carte statique reste visible jusqu’à ce qu’elle soit prête.',
+		staticSnapshot: 'Fond de carte · 12 août 2026',
+		staticImageAlt: 'Fond de carte statique de Montréal',
+		mapBooting: 'Chargement de la carte en direct…',
+		mapImportError: 'La carte en direct n’a pas pu démarrer.',
+		mapImportRetry: 'Réessayer la carte en direct',
+		staticNoScript:
+			'JavaScript est requis pour charger la carte interactive en direct. Ce fond de carte statique reste accessible.',
 		kicker: 'RÉSEAU · EN DIRECT',
 		heading: 'Carte en direct',
 		mapLabel: 'Carte en direct du réseau de Montréal, bus colorés par statut',

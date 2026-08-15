@@ -56,6 +56,7 @@ const cell = (c: HTMLElement): string =>
 	c.querySelector('table.sr-only tbody tr td')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
 function renderReadyMark(spec: MagnitudeBarsSpec) {
+	vi.stubGlobal('IntersectionObserver', undefined);
 	vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
 	vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
 	Object.defineProperty(Element.prototype, 'animate', {
@@ -103,6 +104,7 @@ async function pointerClick(element: Element, pointerType: string): Promise<void
 afterEach(() => {
 	cleanup();
 	navigate.mockClear();
+	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
 	if (originalAnimate) Object.defineProperty(Element.prototype, 'animate', originalAnimate);
 	else Reflect.deleteProperty(Element.prototype, 'animate');

@@ -25,7 +25,7 @@ function usesTopLevelZoomExpression(value: unknown): boolean {
 }
 
 describe('addStopsLayer', () => {
-	it('hands the base layer in at z8 with static size and feature-state paint emphasis', () => {
+	it('hands the accepted diamond layer in at z8 with feature-state paint emphasis', () => {
 		const layers: LayerSpecification[] = [];
 		const map = {
 			getLayer: () => undefined,
@@ -51,6 +51,7 @@ describe('addStopsLayer', () => {
 				'icon-image': STOP_ICON,
 			},
 		});
+		expect(layers.map((candidate) => candidate.id)).toEqual([STOP_HIGHLIGHT_LAYER, STOPS_LAYER]);
 		expect(JSON.stringify(rendered.layout['icon-size'])).toContain('0');
 		expect(JSON.stringify(rendered.layout['icon-size'])).not.toContain('selected');
 		expect(JSON.stringify(rendered.layout['icon-size'])).not.toContain('hovered');
@@ -108,6 +109,7 @@ describe('addStopsLayer', () => {
 			'circle-stroke-color',
 			'rgb(255, 95, 87)',
 		);
+		expect(setPaintProperty).toHaveBeenCalledTimes(2);
 	});
 
 	it('hides stops when the shape filter selects buses only', () => {
@@ -208,6 +210,19 @@ describe('addStopsLayer', () => {
 		]).features;
 
 		for (const feature of features) expect(feature.properties).not.toHaveProperty('hovered');
+	});
+
+	it('keeps every bulk stop while serializing exactly id and selected', () => {
+		const features = toStopFeatures([
+			{ id: 's1', name: 'Stop 1', code: '1001', lat: 45.5, lon: -73.6 },
+			{ id: 's2', name: 'Stop 2', code: '1002', lat: 45.51, lon: -73.61 },
+		]).features;
+
+		expect(features).toHaveLength(2);
+		expect(features.map((feature) => feature.properties)).toEqual([
+			{ id: 's1', selected: 0 },
+			{ id: 's2', selected: 0 },
+		]);
 	});
 });
 

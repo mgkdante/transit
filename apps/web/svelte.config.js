@@ -11,6 +11,7 @@ const config = {
 		runes: projectRunes(import.meta.dirname),
 	},
 	kit: {
+		inlineStyleThreshold: 60_000,
 		// Cloudflare Worker (Static Assets) — see apps/web/wrangler.toml. /data/* is kept
 		// off this app by Cloudflare ROUTE specificity: the data-proxy worker's
 		// transit.yesid.dev/data/* route beats this app's transit.yesid.dev/*.

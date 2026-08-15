@@ -391,7 +391,7 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 beforeEach(() => routeSurface.reset());
 
 afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(34);
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(35);
 });
 
 describe('RouteDetail article cover and focus scope', () => {
@@ -420,13 +420,14 @@ describe('RouteDetail article cover and focus scope', () => {
 	});
 
 	it('keeps exactly the Detail, Schedule, and Reliability tabs', () => {
-		renderRoute();
+		const view = renderRoute();
 
 		expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.trim())).toEqual([
 			'Detail',
 			'Schedule',
 			'Reliability',
 		]);
+		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).toBeNull();
 	});
 
 	it('keeps tab URLs shareable while preserving unrelated search parameters', async () => {
@@ -539,6 +540,19 @@ describe('RouteDetail article cover and focus scope', () => {
 		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
 		expect(within(rail).getByRole('button', { name: 'Service span' })).toBeInTheDocument();
 		expect(within(rail).getByRole('button', { name: 'Service periods' })).toBeInTheDocument();
+	});
+
+	it('keeps static route detail ahead of late live content', () => {
+		const view = renderRoute();
+		const stack = view.container.querySelector(
+			'[data-slot="article-section-stack"]',
+		) as HTMLElement;
+
+		expect(Array.from(stack.children).map((section) => section.getAttribute('data-toc'))).toEqual([
+			'line-detail-profile',
+			'line-detail-directions',
+			'line-detail-live',
+		]);
 	});
 
 	it('keeps article controls visible across tabs without mutating a card until used', async () => {
@@ -700,7 +714,9 @@ describe('RouteDetail reliability boundary with history-only fallback', () => {
 		const view = renderRoute();
 
 		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledOnce());
-		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).not.toBeNull();
+		await waitFor(() =>
+			expect(view.container.querySelector('[data-slot="reliability-clusters"]')).not.toBeNull(),
+		);
 		expect(view.container.querySelector('[data-slot="history-loading"]')).toHaveTextContent(
 			'Loading retained range',
 		);
@@ -739,7 +755,9 @@ describe('RouteDetail always-visible verdict history scope', () => {
 		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 		expect(view.container.querySelector('.route-verdict-banner')).toBeNull();
 		expect(view.container.querySelector('[data-slot="reliability-rail-summary"]')).toBeNull();
-		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).not.toBeNull();
+		await waitFor(() =>
+			expect(view.container.querySelector('[data-slot="reliability-clusters"]')).not.toBeNull(),
+		);
 	});
 
 	it('keeps one centered line reliability banner aligned with the active tab rail', async () => {
@@ -1030,9 +1048,9 @@ describe('RouteDetail Detail tab: HONEST ABSENCE (no live bus)', () => {
 	});
 
 	it('falls back to a plain no-data note when no reason is derivable (no window, not metro)', () => {
-		// ROUTE_FILE has no first/last departure + no type, gap present but type ≠ 1 →
-		// inferAbsenceReason returns null → the generic honest no-data copy, never a
-		// fabricated reason.
+		// Remove both service-window bounds and keep the route non-metro: the declared
+		// metro gap alone cannot supply a reason, so the generic honest copy renders.
+		routeFileData = { ...ROUTE_FILE, first_departure: null, last_departure: null };
 		liveIndex = buildIndex([]);
 		renderRoute();
 

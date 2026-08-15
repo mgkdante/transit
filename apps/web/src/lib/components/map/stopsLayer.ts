@@ -19,7 +19,7 @@ export const STOP_EXCEPTION_LAYER = 'stop-exception';
 interface StopFeature {
 	type: 'Feature';
 	geometry: { type: 'Point'; coordinates: [number, number] };
-	properties: { id: string; name: string; code: string; selected: number };
+	properties: { id: string; selected: number };
 }
 interface StopFC {
 	type: 'FeatureCollection';
@@ -63,8 +63,6 @@ export function toStopFeatures(
 			geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
 			properties: {
 				id: s.id,
-				name: s.name,
-				code: s.code ?? '',
 				selected: selectedStopId === s.id || (filter?.stops.has(s.id) ?? false) ? 1 : 0,
 			},
 		})),

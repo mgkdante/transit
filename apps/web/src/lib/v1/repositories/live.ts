@@ -11,7 +11,7 @@
 // are the one-shot path (SSR load, tests, manual refresh). Both go through the
 // same adapter port, which owns conditional-GET + parsePort validation.
 
-import { adapter } from '$lib/v1/adapter';
+import { adapter, type AdapterCtx } from '$lib/v1/adapter';
 import type {
 	AlertsFile,
 	NetworkFile,
@@ -41,6 +41,6 @@ export async function getAlerts(): Promise<AlertsFile> {
 }
 
 /** Fetch + validate the live network-health rollup (network.json). */
-export async function getNetwork(): Promise<NetworkFile> {
-	return adapter.live.network();
+export async function getNetwork(ctx?: AdapterCtx): Promise<NetworkFile> {
+	return adapter.live.network(ctx);
 }

@@ -86,6 +86,7 @@ vi.mock('$lib/v1/adapter', () => ({
 import { createLiveStore, type LiveFamily } from './store.svelte';
 import { dataRefresh, sharedClock } from '$lib/stores';
 import { configureV1Runtime } from '$lib/v1/runtime';
+import type { NetworkFile } from '$lib/v1/schemas';
 
 configureV1Runtime({ clock: sharedClock, refresh: dataRefresh });
 
@@ -291,6 +292,71 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 			manifest,
 			signal: expect.any(AbortSignal),
 		});
+	});
+
+	it('exposes a network seed synchronously and retains it when the first refresh fails', async () => {
+		const seed = {
+			generated_utc: '2026-06-21T12:00:00Z',
+			vehicles_in_service: 10,
+			on_time_pct: 91,
+			status_dist: { early: 0, on_time: 9, late: 1, severe: 0, unknown: 0 },
+			delay_p50_min: 1,
+			delay_p90_min: 6,
+			non_responding: 0,
+			feed_freshness_s: 20,
+			coverage_pct: 100,
+		} as unknown as NetworkFile;
+		const failure = new Error('network refresh unavailable');
+		mocks.network.mockRejectedValueOnce(failure);
+		const manifest = {
+			files: { live: { generated_utc: Date.parse(seed.generated_utc), ttl_s: 30 } },
+		} as never;
+		let store!: ReturnType<typeof createLiveStore>;
+		const disposeRoot = $effect.root(() => {
+			store = createLiveStore(manifest, {
+				families: ['network'],
+				seed: { network: seed },
+			});
+			flushSync();
+		});
+
+		try {
+			expect(mocks.network).not.toHaveBeenCalled();
+			expect(store.network).toEqual(seed);
+			const retainedSeed = store.network;
+			expect(store.generatedUtc).toBe(seed.generated_utc);
+			expect(store.loading).toBe(false);
+			expect(store.error).toBeNull();
+			expect(store.familyStates.network).toEqual({
+				phase: 'ready',
+				active: true,
+				lastGoodAt: null,
+				retainedGeneration: seed.generated_utc,
+				consecutiveFailures: 0,
+				error: null,
+				successRevision: 1,
+			});
+
+			await store.refresh();
+			flushSync();
+
+			expect(mocks.network).toHaveBeenCalledOnce();
+			expect(store.network).toBe(retainedSeed);
+			expect(store.generatedUtc).toBe(seed.generated_utc);
+			expect(store.error).toBe(failure);
+			expect(store.familyStates.network).toEqual({
+				phase: 'failed',
+				active: true,
+				lastGoodAt: null,
+				retainedGeneration: seed.generated_utc,
+				consecutiveFailures: 1,
+				error: failure,
+				successRevision: 1,
+			});
+		} finally {
+			store.stop();
+			disposeRoot();
+		}
 	});
 
 	it('maps the public departures family to stopDepartures and builds only its index', async () => {

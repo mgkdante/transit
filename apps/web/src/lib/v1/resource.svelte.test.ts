@@ -288,6 +288,73 @@ describe('createResource — reactivity to inputs read inside the fetcher', () =
 });
 
 describe('createResource — cancellation ownership', () => {
+	it('exposes a matching seed before the first effect flush without consuming reload', () => {
+		const key = $state('A');
+		const seed = $state<{ key: string; data: string | null }>({
+			key: 'A',
+			data: 'server-A',
+		});
+		const fetcher = vi.fn(() => deferred<string>().promise);
+		let resource!: ReturnType<typeof createResource<string>>;
+		let initial!: Pick<typeof resource, 'data' | 'loading' | 'settled'>;
+
+		const cleanup = $effect.root(() => {
+			resource = createResource(fetcher, {
+				key: () => key,
+				seed: () => seed,
+			});
+			initial = {
+				data: resource.data,
+				loading: resource.loading,
+				settled: resource.settled,
+			};
+		});
+
+		try {
+			// SSR and the first client render happen before effects run.
+			expect(initial).toEqual({ data: 'server-A', loading: false, settled: true });
+			expect(fetcher).not.toHaveBeenCalled();
+
+			// Hydration consumes the same seed rather than duplicating the request.
+			flushSync();
+			expect(resource.data).toBe('server-A');
+			expect(fetcher).not.toHaveBeenCalled();
+
+			resource.reload();
+			flushSync();
+			expect(fetcher).toHaveBeenCalledTimes(1);
+			expect(resource.data).toBe('server-A');
+			expect(resource.loading).toBe(true);
+		} finally {
+			cleanup();
+		}
+	});
+
+	it('publishes freshness from an accepted seed without a duplicate fetch', () => {
+		mocks.noteDataGeneratedUtc.mockClear();
+		const seeded = {
+			generated_utc: '2026-07-14T12:00:00Z',
+		};
+		const fetcher = vi.fn(async () => seeded);
+
+		const cleanup = $effect.root(() => {
+			createResource(fetcher, {
+				freshness: true,
+				key: () => 'provenance',
+				seed: () => ({ key: 'provenance', data: seeded }),
+			});
+			flushSync();
+		});
+
+		try {
+			expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledOnce();
+			expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledWith('2026-07-14T12:00:00Z');
+			expect(fetcher).not.toHaveBeenCalled();
+		} finally {
+			cleanup();
+		}
+	});
+
 	it('does not refetch a keyed entity when its first response records the resolved key', async () => {
 		const key = $state('A');
 		const first = deferred<string>();

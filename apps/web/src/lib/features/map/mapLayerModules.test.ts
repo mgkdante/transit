@@ -4,6 +4,7 @@ import type { FilterState } from '$lib/filters';
 import { minimalDarkStyle } from '$lib/components/map/basemap';
 import { STOP_EXCEPTION_LAYER } from '$lib/components/map/stopsLayer';
 import {
+	createMapLayerFeedController,
 	firstSymbolLayerId,
 	installMapInteractions,
 	MAP_LAYER_MODULES,
@@ -260,7 +261,85 @@ describe('map layer feed invariants', () => {
 		);
 	});
 
-	it('registers the low-zoom stop exception as a sibling pick target', () => {
+	it('feeds only modules whose semantic input changed, but force-feeds after reinstall', () => {
+		const filter: FilterState = {
+			routes: new Set(),
+			stops: new Set(),
+			trips: new Set(),
+			vehicles: new Set(),
+		};
+		const context = {
+			routes: { items: [], selected: null },
+			vehicles: {
+				motion: null,
+				items: [],
+				filter,
+				alertIds: new Set(),
+				selectedId: null,
+				serverNow: 123_456,
+				ttlS: 30,
+				tickKey: 'tick-1',
+				stale: false,
+				fixFor: vi.fn(() => null),
+				shapeFor: undefined,
+				serverNowFn: vi.fn(() => 123_456),
+				animate: false,
+			},
+			stops: { items: [], filter, alertIds: new Set(), selectedId: null },
+			nearTarget: { target: null },
+		} as unknown as MapLayerFeedContext;
+		const feeds = Object.fromEntries(
+			MAP_LAYER_MODULES.map((module) => [
+				module.id,
+				vi.spyOn(module, 'feed').mockImplementation(() => {}),
+			]),
+		);
+		const controller = createMapLayerFeedController();
+		const map = {} as MapLibreMap;
+
+		controller.feed(map, context, 1);
+		const nextVehicles = {
+			...context,
+			vehicles: { ...context.vehicles, items: [{}], tickKey: 'tick-2' },
+		} as unknown as MapLayerFeedContext;
+		controller.feed(map, nextVehicles, 1);
+
+		expect(feeds.routes).toHaveBeenCalledTimes(1);
+		expect(feeds.stops).toHaveBeenCalledTimes(1);
+		expect(feeds.vehicles).toHaveBeenCalledTimes(2);
+		expect(feeds['near-target']).toHaveBeenCalledTimes(1);
+
+		const nextFilter: FilterState = { ...filter, stops: new Set(['stop-1']) };
+		const filtered = {
+			...nextVehicles,
+			vehicles: { ...nextVehicles.vehicles, filter: nextFilter },
+			stops: { ...nextVehicles.stops, filter: nextFilter },
+		} as MapLayerFeedContext;
+		controller.feed(map, filtered, 1);
+
+		expect(feeds.routes).toHaveBeenCalledTimes(1);
+		expect(feeds.stops).toHaveBeenCalledTimes(2);
+		expect(feeds.vehicles).toHaveBeenCalledTimes(3);
+		expect(feeds['near-target']).toHaveBeenCalledTimes(1);
+
+		controller.feed(map, filtered, 2);
+
+		expect(feeds.routes).toHaveBeenCalledTimes(2);
+		expect(feeds.stops).toHaveBeenCalledTimes(3);
+		expect(feeds.vehicles).toHaveBeenCalledTimes(4);
+		expect(feeds['near-target']).toHaveBeenCalledTimes(2);
+
+		controller.feed({} as MapLibreMap, filtered, 2);
+
+		expect(feeds.routes).toHaveBeenCalledTimes(3);
+		expect(feeds.stops).toHaveBeenCalledTimes(4);
+		expect(feeds.vehicles).toHaveBeenCalledTimes(5);
+		expect(feeds['near-target']).toHaveBeenCalledTimes(3);
+	});
+
+	it('registers the shipped stop layer and low-zoom exception at stop priority', () => {
+		expect(PICKABLE_MAP_LAYERS).toContain('stops');
 		expect(PICKABLE_MAP_LAYERS).toContain(STOP_EXCEPTION_LAYER);
+		expect(PICKABLE_MAP_LAYERS).not.toContain('stops-overview');
 	});
 });

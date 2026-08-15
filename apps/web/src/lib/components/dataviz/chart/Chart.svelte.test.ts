@@ -39,10 +39,12 @@ const heatmapSpec: HeatmapSpec = {
 };
 
 const resizeObservers: ResizeObserverStub[] = [];
+const intersectionObservers: IntersectionObserverStub[] = [];
 
 class ResizeObserverStub {
 	readonly targets = new Set<Element>();
 	readonly observe = vi.fn((target: Element) => this.targets.add(target));
+	readonly unobserve = vi.fn((target: Element) => this.targets.delete(target));
 	readonly disconnect = vi.fn(() => this.targets.clear());
 
 	constructor(private readonly callback: ResizeObserverCallback) {
@@ -58,6 +60,40 @@ function observerFor(target: Element): ResizeObserverStub | undefined {
 	return resizeObservers.find((observer) => observer.targets.has(target));
 }
 
+class IntersectionObserverStub {
+	readonly targets = new Set<Element>();
+	readonly root: Element | Document | null;
+	readonly rootMargin: string;
+	readonly thresholds: readonly number[];
+	readonly observe = vi.fn((target: Element) => this.targets.add(target));
+	readonly unobserve = vi.fn((target: Element) => this.targets.delete(target));
+	readonly disconnect = vi.fn(() => this.targets.clear());
+	readonly takeRecords = vi.fn((): IntersectionObserverEntry[] => []);
+
+	constructor(
+		private readonly callback: IntersectionObserverCallback,
+		options: IntersectionObserverInit = {},
+	) {
+		this.root = options.root ?? null;
+		this.rootMargin = options.rootMargin ?? '0px';
+		this.thresholds = Array.isArray(options.threshold)
+			? options.threshold
+			: [options.threshold ?? 0];
+		intersectionObservers.push(this);
+	}
+
+	trigger(target: Element, isIntersecting: boolean): void {
+		this.callback(
+			[{ target, isIntersecting } as unknown as IntersectionObserverEntry],
+			this as unknown as IntersectionObserver,
+		);
+	}
+}
+
+function intersectionObserverFor(target: Element): IntersectionObserverStub | undefined {
+	return intersectionObservers.find((observer) => observer.targets.has(target));
+}
+
 function renderChart(spec: ChartSpec) {
 	return render(Chart, { props: { spec } });
 }
@@ -65,11 +101,13 @@ function renderChart(spec: ChartSpec) {
 describe('Chart shared viewport', () => {
 	beforeEach(() => {
 		resizeObservers.length = 0;
+		intersectionObservers.length = 0;
 		vi.stubGlobal('ResizeObserver', ResizeObserverStub);
 	});
 
 	afterEach(() => {
 		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
 	});
 
 	it.each([
@@ -122,5 +160,82 @@ describe('Chart shared viewport', () => {
 		expect(viewport).not.toHaveAttribute('aria-label');
 		expect(viewport).not.toHaveAttribute('tabindex');
 		expect(output).toHaveAttribute('data-more-end', 'false');
+	});
+
+	it('keeps a sized mark unmounted until its frame approaches the viewport, then latches it', async () => {
+		vi.stubGlobal('IntersectionObserver', IntersectionObserverStub);
+		vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
+		vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(120);
+		const { container } = renderChart(fluidSpec);
+		const frame = container.querySelector<HTMLElement>('[data-slot="chart-frame"]');
+		const table = container.querySelector<HTMLTableElement>('table.sr-only');
+
+		expect(frame).not.toBeNull();
+		expect(frame?.style.height).toBe('0.875rem');
+		expect(table).not.toBeNull();
+		expect(frame?.contains(table)).toBe(false);
+		expect(frame?.querySelector('.lc-tooltip-context')).toBeNull();
+
+		const observer = intersectionObserverFor(frame!);
+		expect(observer).toBeDefined();
+		expect(observer?.rootMargin).toBe('200px 0px');
+		expect(observer?.thresholds).toEqual([0]);
+
+		observer?.trigger(frame!, true);
+		await vi.waitFor(() => {
+			expect(frame?.querySelector('.lc-tooltip-context')).not.toBeNull();
+		});
+		const mountedMark = frame?.querySelector('.lc-tooltip-context');
+
+		observer?.trigger(frame!, false);
+		await tick();
+		expect(frame?.querySelector('.lc-tooltip-context')).toBe(mountedMark);
+	});
+
+	it('waits for a hidden zero-size frame to recover after entering the viewport', async () => {
+		vi.stubGlobal('IntersectionObserver', IntersectionObserverStub);
+		let width = 0;
+		let height = 0;
+		vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
+		vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => height);
+		const { container } = renderChart(fluidSpec);
+		const frame = container.querySelector<HTMLElement>('[data-slot="chart-frame"]');
+		const resizeObserver = observerFor(frame!);
+		const intersectionObserver = intersectionObserverFor(frame!);
+
+		intersectionObserver?.trigger(frame!, true);
+		await tick();
+		expect(frame?.querySelector('.lc-tooltip-context')).toBeNull();
+
+		width = 768;
+		height = 120;
+		resizeObserver?.trigger();
+		await vi.waitFor(() => {
+			expect(frame?.querySelector('.lc-tooltip-context')).not.toBeNull();
+		});
+	});
+
+	it('renders eagerly when IntersectionObserver is unavailable', async () => {
+		vi.stubGlobal('IntersectionObserver', undefined);
+		vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
+		vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(120);
+		const { container } = renderChart(fluidSpec);
+		const frame = container.querySelector<HTMLElement>('[data-slot="chart-frame"]');
+
+		await vi.waitFor(() => {
+			expect(frame?.querySelector('.lc-tooltip-context')).not.toBeNull();
+		});
+	});
+
+	it('disconnects both frame observers when an unentered chart unmounts', () => {
+		vi.stubGlobal('IntersectionObserver', IntersectionObserverStub);
+		const rendered = renderChart(fluidSpec);
+		const frame = rendered.container.querySelector<HTMLElement>('[data-slot="chart-frame"]');
+		const resizeObserver = observerFor(frame!);
+		const intersectionObserver = intersectionObserverFor(frame!);
+
+		rendered.unmount();
+		expect(resizeObserver?.disconnect).toHaveBeenCalledOnce();
+		expect(intersectionObserver?.disconnect).toHaveBeenCalledOnce();
 	});
 });

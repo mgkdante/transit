@@ -25,7 +25,7 @@ const layerModulesSource = readFileSync(
 );
 const script = source.match(/<script(?:\s[^>]*)?>\r?\n([\s\S]*?)\r?\n<\/script>/u)?.[1];
 const obsoleteM6hRouteExit = 'attachMapDetailRouteExit';
-const mapStage = source.match(/<MapStage[\s\S]*?\/>/u)?.[0];
+const mapStage = source.match(/<MapStage\s[\s\S]*?\/>/u)?.[0];
 const nearMeDependencies = script?.match(
 	/const nearMeController = createMapNearMeController\(\{([\s\S]*?)\r?\n\t\}\);\r?\n\tconst focusController/u,
 );
@@ -58,10 +58,12 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(source).toContain('urlCoordinator.settle(url)');
 	});
 
-	it('keeps the orchestrator bounded after the disposal correction', () => {
+	it('keeps the orchestrator bounded and delegates outward lifecycle signals', () => {
 		expect(script).toBeDefined();
 		expect(script).not.toContain(obsoleteM6hRouteExit);
-		expect(script!.split(/\r?\n/u).length).toBe(914);
+		expect(script!.split(/\r?\n/u).length).toBeLessThan(950);
+		expect(script).toContain('function onMapIdle(): void');
+		expect(script).toContain('function onMapFailure(failure: MapStageFailure | null): void');
 	});
 
 	it('uses one normal-script URL ingestion seam behind the shared three-writer coordinator', () => {
@@ -125,6 +127,8 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(mapStage).toContain('bounds={ISLAND_FIT_BOUNDS}');
 		expect(mapStage).toContain('maxBounds={MAP_MAX_BOUNDS}');
 		expect(mapStage).toContain('fitPadding={mapFitPadding}');
+		expect(mapStage).toContain('onidle={onMapIdle}');
+		expect(mapStage).toContain('onerror={onMapFailure}');
 		expect(mapStage).toContain('onbeforeremove={releaseMapOwners}');
 		expect(mapStage).not.toContain('layout.isDesktop');
 	});

@@ -97,6 +97,7 @@ describe('Transit shared-config canary', () => {
 		const source = text('apps/web/svelte.config.js');
 		expect(source).toContain("from '@yesid/config/svelte/project-runes.js'");
 		expect(source).not.toContain("from 'node:path'");
+		expect(webConfig.kit?.inlineStyleThreshold).toBe(60_000);
 		expect(webConfig.kit?.version?.pollInterval).toBe(60_000);
 		expect(webConfig.kit?.adapter?.name).toBe('@sveltejs/adapter-cloudflare');
 		expect(source).toMatch(

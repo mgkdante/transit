@@ -1,4 +1,4 @@
-import { centerFromProviderBbox, type MapFitPadding } from '$lib/components/map';
+import { centerFromProviderBbox, type MapFitPadding } from '../../components/map/viewport';
 
 // Initial framing fits the Île de Montréal extremes rather than the wider
 // basemap square, keeping off-island east geometry from consuming the view.

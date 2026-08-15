@@ -32,7 +32,10 @@ function readDocumentTheme(): Theme {
 	return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
 }
 
-let theme = $state<Theme>(readDocumentTheme());
+// Hydration must begin from the same dark default used by SSR. The pre-paint
+// script may already have changed the DOM to light; init() adopts that choice
+// after mount so Svelte observes a real state transition and updates bindings.
+let theme = $state<Theme>('dark');
 
 /**
  * Apply a theme everywhere it lives: the runes state, the <html data-theme>

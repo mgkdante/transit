@@ -159,6 +159,8 @@
 		 * only; never invoked under SSR.
 		 */
 		onready?: (map: MapLibreMap) => void;
+		/** Fired ONCE when MapLibre first becomes idle for the current boot attempt. */
+		onidle?: (map: MapLibreMap) => void;
 		/**
 		 * Fired after a later style swap caused by a theme/basemap change. Consumers
 		 * must re-add custom images/sources/layers because MapLibre clears them when
@@ -200,6 +202,7 @@
 		fitPadding = 40,
 		label = 'Transit map',
 		onready,
+		onidle,
 		onstyleload,
 		onthemerepaint,
 		onerror,
@@ -534,6 +537,7 @@
 						center,
 						zoom,
 						...viewport,
+						canvasContextAttributes: { desynchronized: true },
 						locale,
 						// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 						attributionControl: false,
@@ -574,6 +578,15 @@
 				onready?.(instance);
 			};
 			ownMapListener(attempt, instance, 'load', handleLoad);
+			let releaseIdle = () => {};
+			let idleDelivered = false;
+			const handleIdle = () => {
+				releaseWithoutEscape(releaseIdle);
+				if (idleDelivered || !isCurrentAttempt(attempt)) return;
+				idleDelivered = true;
+				onidle?.(instance);
+			};
+			releaseIdle = ownMapListener(attempt, instance, 'idle', handleIdle);
 			// One-shot attribution collapse: maplibre's compact control still STARTS
 			// expanded; once attribution populates (never on the empty fallback), we
 			// land the exact end state a user click produces, then detach.

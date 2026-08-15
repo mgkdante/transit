@@ -20,6 +20,7 @@
 	interface Props {
 		class?: string;
 		onready?: (map: unknown) => void;
+		onidle?: (map: unknown) => void;
 		onstyleload?: (map: unknown) => void;
 		onthemerepaint?: (map: unknown) => void;
 		onerror?: (failure: { kind: 'construct'; retry: () => Promise<void> } | null) => void;
@@ -32,6 +33,7 @@
 
 	let {
 		onready,
+		onidle,
 		onstyleload,
 		onthemerepaint,
 		onerror,
@@ -185,6 +187,10 @@
 		onstyleload?.(map);
 	}
 
+	function idle(): void {
+		onidle?.(map);
+	}
+
 	function themeRepaint(): void {
 		onthemerepaint?.(map);
 	}
@@ -243,6 +249,7 @@
 
 	const mapStageHandlers: ReadonlyArray<readonly [string, Handler]> = [
 		['load', () => {}],
+		['idle', () => {}],
 		['styledata', () => {}],
 		['sourcedata', () => {}],
 		['movestart', () => {}],
@@ -303,6 +310,7 @@
 	<button type="button" data-testid="map-stage-stub-style-load" onclick={styleLoad} hidden>
 		style load
 	</button>
+	<button type="button" data-testid="map-stage-stub-idle" onclick={idle} hidden>idle</button>
 	<button type="button" data-testid="map-stage-stub-theme-repaint" onclick={themeRepaint} hidden>
 		theme repaint
 	</button>

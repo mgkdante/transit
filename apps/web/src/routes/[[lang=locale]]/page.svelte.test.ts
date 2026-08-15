@@ -584,7 +584,7 @@ describe('Home hub — movement boundary preservation', () => {
 
 	it('locks the authored CSS output rule-by-rule while ownership moves', () => {
 		expect(homeCssFingerprint()).toBe(
-			'a60020d18ced95360d2106fde12e42a207fb490d29c03b615f42d0b9882cde30',
+			'70e492c64dca058104a8290ddfa454bbc3ee601963b5fb8d8893cad77673e099',
 		);
 	});
 
