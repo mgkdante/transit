@@ -45,32 +45,8 @@ function deferred<T>() {
 	return { promise, resolve, reject };
 }
 
-function controlledAnimationFrames() {
-	let frameId = 0;
-	const callbacks: FrameRequestCallback[] = [];
-	const request = vi.fn((callback: FrameRequestCallback) => {
-		callbacks.push(callback);
-		frameId += 1;
-		return frameId;
-	});
-	vi.stubGlobal('requestAnimationFrame', request);
-
-	async function flushNext(): Promise<void> {
-		const callback = callbacks.shift();
-		if (!callback) throw new Error('Expected a pending animation frame');
-		callback(performance.now());
-		await tick();
-	}
-
-	async function flushPresentationBoundary(): Promise<void> {
-		await tick();
-		expect(callbacks).toHaveLength(1);
-		await flushNext();
-		expect(callbacks).toHaveLength(1);
-		await flushNext();
-	}
-
-	return { callbacks, flushNext, flushPresentationBoundary, request };
+function neverImport(): Promise<never> {
+	return new Promise<never>(() => {});
 }
 
 afterEach(() => {
@@ -81,7 +57,7 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
-describe('MapProgressive deferred activation', () => {
+describe('MapProgressive automatic live boot', () => {
 	it('stacks the mobile no-JS explanation above the attribution', () => {
 		const mobile = source.match(
 			/@media \(max-width: 767px\) \{(?<body>[\s\S]*?)\n\t\}\n<\/style>/u,
@@ -100,142 +76,67 @@ describe('MapProgressive deferred activation', () => {
 		expect(Number(bottomRem)).toBeGreaterThanOrEqual(attributionTopRem + 0.2);
 	});
 
-	it('shows the pinned basemap generation date before activation in both locales', async () => {
+	it('shows the pinned basemap generation date while the live map boots in both locales', async () => {
 		const { default: MapProgressive } = await import('./MapProgressive.svelte');
-		const english = render(MapProgressive);
+		const english = render(MapProgressive, { props: { importHero: neverImport } });
 		expect(english.getByText('Basemap snapshot · Aug 12, 2026')).toBeVisible();
 		cleanup();
 
 		harness.locale = 'fr';
-		const french = render(MapProgressive);
+		const french = render(MapProgressive, { props: { importHero: neverImport } });
 		expect(french.getByText('Fond de carte · 12 août 2026')).toBeVisible();
 	});
 
-	it('does not call the hero importer until the native activation button is clicked', async () => {
-		const { default: MapProgressive } = await import('./MapProgressive.svelte');
-		const importer = vi.fn(() => new Promise<never>(() => {}));
-		const view = render(MapProgressive, { props: { importHero: importer } });
+	it('imports immediately on mount without a CTA, intent seam, timer, idle, or frame gate', async () => {
+		vi.useFakeTimers();
+		const requestIdleCallback = vi.fn();
+		const requestAnimationFrame = vi.fn();
+		vi.stubGlobal('requestIdleCallback', requestIdleCallback);
+		vi.stubGlobal('requestAnimationFrame', requestAnimationFrame);
+		const intent = vi.fn();
+		document.addEventListener('transit:map-intent', intent);
 
-		await tick();
-		expect(importer).not.toHaveBeenCalled();
-
-		await fireEvent.click(view.getByRole('button', { name: 'Load live interactive map' }));
-		expect(view.getByRole('status')).toHaveTextContent('Starting live map');
-		await waitFor(() => expect(importer).toHaveBeenCalledOnce());
-	});
-
-	it('presents the boot acknowledgement across two animation frames before importing', async () => {
-		const frames = controlledAnimationFrames();
-		const { default: MapProgressive } = await import('./MapProgressive.svelte');
-		const importer = vi.fn(() => new Promise<never>(() => {}));
-		const view = render(MapProgressive, { props: { importHero: importer } });
-
-		await tick();
-		expect(importer).not.toHaveBeenCalled();
-		expect(frames.request).not.toHaveBeenCalled();
-
-		await fireEvent.click(view.getByRole('button', { name: 'Load live interactive map' }));
-
-		expect(view.getByRole('status')).toHaveTextContent('Starting live map');
-		expect(view.getByTestId('map-progressive')).toHaveAttribute(
-			'data-map-progressive-state',
-			'booting',
-		);
-		expect(importer).not.toHaveBeenCalled();
-		expect(frames.request).toHaveBeenCalledOnce();
-
-		await frames.flushNext();
-		expect(importer).not.toHaveBeenCalled();
-		expect(frames.request).toHaveBeenCalledTimes(2);
-
-		await frames.flushNext();
-		await waitFor(() => expect(importer).toHaveBeenCalledOnce());
-	});
-
-	it.each(['Enter', ' '] as const)(
-		'accepts the native %s keyboard-generated button click without a custom key handler',
-		async (key) => {
+		try {
 			const { default: MapProgressive } = await import('./MapProgressive.svelte');
-			const importer = vi.fn(() => new Promise<never>(() => {}));
+			const importer = vi.fn(neverImport);
 			const view = render(MapProgressive, { props: { importHero: importer } });
-			const button = view.getByRole('button', { name: 'Load live interactive map' });
 
-			button.focus();
-			await fireEvent.keyDown(button, { key });
-			await fireEvent.click(button, { detail: 0 });
+			await tick();
 
-			expect(button.tagName).toBe('BUTTON');
-			await waitFor(() => expect(importer).toHaveBeenCalledOnce());
-		},
-	);
+			expect(importer).toHaveBeenCalledOnce();
+			expect(requestIdleCallback).not.toHaveBeenCalled();
+			expect(requestAnimationFrame).not.toHaveBeenCalled();
+			expect(intent).not.toHaveBeenCalled();
+			expect(view.getByTestId('map-progressive')).toHaveAttribute(
+				'data-map-progressive-state',
+				'booting',
+			);
+			expect(view.getByRole('heading', { level: 1 })).toHaveTextContent('Live map');
+			expect(view.getByText(/The live interactive map loads automatically\./u)).toBeVisible();
+			expect(view.queryByText(/Static, non-live basemap/u)).toBeNull();
+			expect(view.getByRole('status')).toHaveTextContent('Loading live map');
+			expect(view.queryByRole('button', { name: /load live interactive map/iu })).toBeNull();
+			expect(view.container.querySelector('[data-map-wake]')).toBeNull();
+			expect(view.getByTestId('map-progressive')).not.toHaveAttribute('data-map-intent-time');
+		} finally {
+			document.removeEventListener('transit:map-intent', intent);
+		}
+	});
 
-	it('keeps activation single-flight while the deferred hero chunk is pending', async () => {
+	it('keeps the automatic hero import single-flight while its chunk is pending', async () => {
 		const { default: MapProgressive } = await import('./MapProgressive.svelte');
 		const pending = deferred<HeroModule>();
 		const importer = vi.fn(() => pending.promise);
 		const view = render(MapProgressive, { props: { importHero: importer } });
-		const button = view.getByRole('button', { name: 'Load live interactive map' });
 
-		await Promise.all([fireEvent.click(button), fireEvent.click(button), fireEvent.click(button)]);
+		await tick();
+		await tick();
+		expect(importer).toHaveBeenCalledOnce();
+		expect(view.queryByTestId('map-progressive-hero-stub')).toBeNull();
 
-		await waitFor(() => expect(importer).toHaveBeenCalledOnce());
-		expect(view.getByRole('button', { name: 'Load live interactive map' })).toHaveAttribute(
-			'aria-disabled',
-			'true',
-		);
-		expect(view.getByRole('status')).toHaveTextContent('Starting live map');
-	});
-
-	it('presents the retry acknowledgement before invoking a live-map failure retry', async () => {
-		const frames = controlledAnimationFrames();
-		const { default: MapProgressive } = await import('./MapProgressive.svelte');
-		const fixture = await import('./__fixtures__/MapProgressiveHeroStub.svelte');
-		const view = render(MapProgressive, { props: { importHero: async () => fixture } });
-
-		await fireEvent.click(view.getByRole('button', { name: 'Load live interactive map' }));
-		await frames.flushPresentationBoundary();
-		const hero = await view.findByTestId('map-progressive-hero-stub');
-
-		await fireEvent.click(view.getByTestId('progressive-stub-failure'));
-		expect(view.getByRole('alert')).toHaveTextContent('Live map could not start');
-		expect(hero).toHaveAttribute('data-retry-count', '0');
-		expect(frames.callbacks).toHaveLength(0);
-		frames.request.mockClear();
-
-		await fireEvent.click(view.getByRole('button', { name: 'Try live map again' }));
-
-		expect(view.getByRole('status')).toHaveTextContent('Starting live map');
-		expect(hero).toHaveAttribute('data-retry-count', '0');
-		expect(frames.request).toHaveBeenCalledOnce();
-
-		await frames.flushNext();
-		expect(hero).toHaveAttribute('data-retry-count', '0');
-		expect(frames.request).toHaveBeenCalledTimes(2);
-
-		await frames.flushNext();
-		await waitFor(() => expect(hero).toHaveAttribute('data-retry-count', '1'));
-	});
-
-	it('keeps keyboard focus during boot and hands it to the MapLibre canvas after first idle', async () => {
-		const { default: MapProgressive } = await import('./MapProgressive.svelte');
-		const fixture = await import('./__fixtures__/MapProgressiveHeroStub.svelte');
-		const view = render(MapProgressive, { props: { importHero: async () => fixture } });
-		const wake = view.getByRole('button', { name: 'Load live interactive map' });
-
-		wake.focus();
-		await fireEvent.click(wake, { detail: 0 });
-		expect(document.activeElement).toBe(wake);
-		expect(wake).toHaveAttribute('aria-disabled', 'true');
-
-		await view.findByTestId('map-progressive-hero-stub');
-		await fireEvent.click(view.getByTestId('progressive-stub-ready'));
-		expect(document.activeElement).toBe(wake);
-		expect(view.getByTestId('map-progressive-poster')).toHaveAttribute('data-visible', 'true');
-
-		await fireEvent.click(view.getByTestId('progressive-stub-idle'));
-		await waitFor(() =>
-			expect(document.activeElement).toBe(view.getByTestId('progressive-stub-map-canvas')),
-		);
+		pending.resolve(await import('./__fixtures__/MapProgressiveHeroStub.svelte'));
+		expect(await view.findByTestId('map-progressive-hero-stub')).toBeInTheDocument();
+		expect(importer).toHaveBeenCalledOnce();
 	});
 
 	it('keeps the poster mounted and the live layer inert until first MapLibre idle', async () => {
@@ -243,9 +144,11 @@ describe('MapProgressive deferred activation', () => {
 		const pending = deferred<HeroModule>();
 		const view = render(MapProgressive, { props: { importHero: () => pending.promise } });
 
-		await fireEvent.click(view.getByRole('button', { name: 'Load live interactive map' }));
+		await tick();
 		expect(view.queryByTestId('map-progressive-hero-stub')).toBeNull();
 		expect(view.getByTestId('map-progressive-poster')).toHaveAttribute('data-visible', 'true');
+		expect(view.getByTestId('map-progressive-live')).toHaveAttribute('aria-hidden', 'true');
+		expect(view.getByTestId('map-progressive-live')).toHaveAttribute('inert');
 
 		pending.resolve(await import('./__fixtures__/MapProgressiveHeroStub.svelte'));
 		await waitFor(() => expect(view.getByTestId('map-progressive-hero-stub')).toBeInTheDocument());
@@ -260,82 +163,138 @@ describe('MapProgressive deferred activation', () => {
 		expect(view.getByTestId('map-progressive-poster')).toHaveAttribute('data-visible', 'false');
 		expect(view.getByTestId('map-progressive-live')).not.toHaveAttribute('aria-hidden');
 		expect(view.getByTestId('map-progressive-live')).not.toHaveAttribute('inert');
+
+		await fireEvent.click(view.getByTestId('progressive-stub-idle'));
+		expect(view.getByTestId('map-progressive')).toHaveAttribute(
+			'data-map-progressive-state',
+			'ready',
+		);
 	});
 
-	it('retries a rejected hero import without mounting or preloading it early', async () => {
-		const { default: MapProgressive } = await import('./MapProgressive.svelte');
-		const fixture = await import('./__fixtures__/MapProgressiveHeroStub.svelte');
-		const importer = vi
-			.fn<() => Promise<HeroModule>>()
-			.mockRejectedValueOnce(new Error('chunk unavailable'))
-			.mockResolvedValueOnce(fixture);
-		const view = render(MapProgressive, { props: { importHero: importer } });
+	it('does not steal focus when the live map reaches first idle', async () => {
+		const focusOwner = document.createElement('button');
+		focusOwner.textContent = 'Current focus';
+		document.body.append(focusOwner);
 
-		await fireEvent.click(view.getByRole('button', { name: 'Load live interactive map' }));
-		expect(await view.findByRole('alert')).toHaveTextContent('Live map could not start');
-		expect(view.queryByTestId('map-progressive-hero-stub')).toBeNull();
+		try {
+			focusOwner.focus();
+			const { default: MapProgressive } = await import('./MapProgressive.svelte');
+			const fixture = await import('./__fixtures__/MapProgressiveHeroStub.svelte');
+			const view = render(MapProgressive, { props: { importHero: async () => fixture } });
 
-		await fireEvent.click(view.getByRole('button', { name: 'Try live map again' }));
-		expect(await view.findByTestId('map-progressive-hero-stub')).toBeInTheDocument();
-		expect(importer).toHaveBeenCalledTimes(2);
+			await view.findByTestId('map-progressive-hero-stub');
+			await fireEvent.click(view.getByTestId('progressive-stub-ready'));
+			await fireEvent.click(view.getByTestId('progressive-stub-idle'));
+			await tick();
+
+			expect(document.activeElement).toBe(focusOwner);
+			expect(document.activeElement).not.toBe(view.getByTestId('progressive-stub-map-canvas'));
+		} finally {
+			focusOwner.remove();
+		}
 	});
 
-	it('publishes distinct intent, ready, and first-idle DOM measurement seams', async () => {
-		const { default: MapProgressive } = await import('./MapProgressive.svelte');
-		const fixture = await import('./__fixtures__/MapProgressiveHeroStub.svelte');
-		const view = render(MapProgressive, { props: { importHero: async () => fixture } });
-		const root = view.getByTestId('map-progressive');
+	it('retries a rejected automatic import once without an activation seam or focus handoff', async () => {
+		const focusOwner = document.createElement('button');
+		focusOwner.textContent = 'Current focus';
+		document.body.append(focusOwner);
+		const secondImport = deferred<HeroModule>();
+
+		try {
+			focusOwner.focus();
+			const { default: MapProgressive } = await import('./MapProgressive.svelte');
+			const importer = vi
+				.fn<() => Promise<HeroModule>>()
+				.mockRejectedValueOnce(new Error('chunk unavailable'))
+				.mockImplementationOnce(() => secondImport.promise);
+			const view = render(MapProgressive, { props: { importHero: importer } });
+			const retry = await view.findByRole('button', { name: 'Try live map again' });
+
+			expect(view.getByRole('alert')).toHaveTextContent('Live map could not start');
+			expect(view.container.querySelector('[data-map-wake]')).toBeNull();
+			await Promise.all([fireEvent.click(retry), fireEvent.click(retry), fireEvent.click(retry)]);
+			expect(importer).toHaveBeenCalledTimes(2);
+
+			secondImport.resolve(await import('./__fixtures__/MapProgressiveHeroStub.svelte'));
+			await view.findByTestId('map-progressive-hero-stub');
+			await fireEvent.click(view.getByTestId('progressive-stub-ready'));
+			await fireEvent.click(view.getByTestId('progressive-stub-idle'));
+			await tick();
+
+			expect(importer).toHaveBeenCalledTimes(2);
+			expect(document.activeElement).toBe(focusOwner);
+		} finally {
+			focusOwner.remove();
+		}
+	});
+
+	it('retries one live MapStage failure without moving focus to the canvas', async () => {
+		const focusOwner = document.createElement('button');
+		focusOwner.textContent = 'Current focus';
+		document.body.append(focusOwner);
+
+		try {
+			const { default: MapProgressive } = await import('./MapProgressive.svelte');
+			const fixture = await import('./__fixtures__/MapProgressiveHeroStub.svelte');
+			const view = render(MapProgressive, { props: { importHero: async () => fixture } });
+			const hero = await view.findByTestId('map-progressive-hero-stub');
+
+			await fireEvent.click(view.getByTestId('progressive-stub-failure'));
+			expect(view.getByRole('alert')).toHaveTextContent('Live map could not start');
+			const retry = view.getByRole('button', { name: 'Try live map again' });
+			focusOwner.focus();
+			await Promise.all([fireEvent.click(retry), fireEvent.click(retry), fireEvent.click(retry)]);
+			await waitFor(() => expect(hero).toHaveAttribute('data-retry-count', '1'));
+
+			await fireEvent.click(view.getByTestId('progressive-stub-ready'));
+			await fireEvent.click(view.getByTestId('progressive-stub-idle'));
+			await tick();
+
+			expect(hero).toHaveAttribute('data-retry-count', '1');
+			expect(document.activeElement).toBe(focusOwner);
+			expect(document.activeElement).not.toBe(view.getByTestId('progressive-stub-map-canvas'));
+		} finally {
+			focusOwner.remove();
+		}
+	});
+
+	it('keeps ready and first-idle measurement events without restoring an intent event', async () => {
 		const intent = vi.fn();
-		const ready = vi.fn();
-		const idle = vi.fn();
-		root.addEventListener('transit:map-intent', intent);
-		root.addEventListener('transit:map-ready', ready);
-		root.addEventListener('transit:maplibre-idle', idle);
+		document.addEventListener('transit:map-intent', intent);
 
-		await fireEvent.click(view.getByRole('button', { name: 'Load live interactive map' }));
-		await view.findByTestId('map-progressive-hero-stub');
-		expect(intent).toHaveBeenCalledOnce();
-		expect(root.dataset.mapIntentTime).toMatch(/^\d+(?:\.\d+)?$/u);
-		expect(root.dataset.mapReadyTime).toBeUndefined();
-		expect(root.dataset.mapIdleTime).toBeUndefined();
+		try {
+			const { default: MapProgressive } = await import('./MapProgressive.svelte');
+			const fixture = await import('./__fixtures__/MapProgressiveHeroStub.svelte');
+			const view = render(MapProgressive, { props: { importHero: async () => fixture } });
+			const root = view.getByTestId('map-progressive');
+			const ready = vi.fn();
+			const idle = vi.fn();
+			root.addEventListener('transit:map-ready', ready);
+			root.addEventListener('transit:maplibre-idle', idle);
 
-		await fireEvent.click(view.getByTestId('progressive-stub-ready'));
-		expect(ready).toHaveBeenCalledOnce();
-		expect(root).toHaveAttribute('data-map-progressive-state', 'booting');
-		expect(root.dataset.mapReadyTime).toMatch(/^\d+(?:\.\d+)?$/u);
-		expect(root.dataset.mapIdleTime).toBeUndefined();
+			await view.findByTestId('map-progressive-hero-stub');
+			expect(intent).not.toHaveBeenCalled();
+			expect(root.dataset.mapIntentTime).toBeUndefined();
 
-		await fireEvent.click(view.getByTestId('progressive-stub-idle'));
-		await fireEvent.click(view.getByTestId('progressive-stub-idle'));
-		expect(idle).toHaveBeenCalledOnce();
-		expect(root).toHaveAttribute('data-map-progressive-state', 'ready');
-		expect(root.dataset.mapIdleTime).toMatch(/^\d+(?:\.\d+)?$/u);
+			await fireEvent.click(view.getByTestId('progressive-stub-ready'));
+			expect(ready).toHaveBeenCalledOnce();
+			expect(root).toHaveAttribute('data-map-progressive-state', 'booting');
+
+			await fireEvent.click(view.getByTestId('progressive-stub-idle'));
+			await fireEvent.click(view.getByTestId('progressive-stub-idle'));
+			expect(idle).toHaveBeenCalledOnce();
+			expect(root).toHaveAttribute('data-map-progressive-state', 'ready');
+		} finally {
+			document.removeEventListener('transit:map-intent', intent);
+		}
 	});
 
 	it('disables the poster-to-live transition when reduced motion is requested', async () => {
 		harness.setReduced(true);
 		const { default: MapProgressive } = await import('./MapProgressive.svelte');
-		const view = render(MapProgressive);
+		const view = render(MapProgressive, { props: { importHero: neverImport } });
 
 		expect(view.getByTestId('map-progressive-poster')).toHaveStyle({ transition: 'none' });
 		expect(view.getByTestId('map-progressive-live')).toHaveStyle({ transition: 'none' });
-	});
-
-	it('does not activate from timers or requestIdleCallback', async () => {
-		vi.useFakeTimers();
-		const requestIdleCallback = vi.fn();
-		const requestAnimationFrame = vi.fn();
-		vi.stubGlobal('requestIdleCallback', requestIdleCallback);
-		vi.stubGlobal('requestAnimationFrame', requestAnimationFrame);
-		const { default: MapProgressive } = await import('./MapProgressive.svelte');
-		const importer = vi.fn(() => new Promise<never>(() => {}));
-		render(MapProgressive, { props: { importHero: importer } });
-
-		await tick();
-		await vi.runAllTimersAsync();
-
-		expect(importer).not.toHaveBeenCalled();
-		expect(requestIdleCallback).not.toHaveBeenCalled();
-		expect(requestAnimationFrame).not.toHaveBeenCalled();
 	});
 });

@@ -18,7 +18,7 @@
 </script>
 
 <script lang="ts">
-	import { onDestroy, tick } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { getLocale } from '$lib/i18n';
 	import { themeStore } from '$lib/stores';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
@@ -38,19 +38,18 @@
 	const posterDesktop = $derived(`/map/basemap-montreal-${posterTheme}-desktop-20260812.avif`);
 
 	let root = $state<HTMLDivElement | null>(null);
-	let liveLayer = $state<HTMLDivElement | null>(null);
 	let phase = $state<ProgressiveState>('static');
 	let LiveMap = $state.raw<ProgressiveMapHeroModule['default'] | null>(null);
 	let importPending: Promise<void> | null = null;
 	let liveFailure: ProgressiveMapFailure | null = null;
 	let liveRetryPending = $state(false);
 	let attempt = $state(0);
-	let intentTime = $state<number | null>(null);
 	let readyTime = $state<number | null>(null);
 	let idleTime = $state<number | null>(null);
 	let idleAttempt = 0;
-	let focusLiveOnIdle = false;
 	let alive = true;
+
+	onMount(startImport);
 
 	onDestroy(() => {
 		alive = false;
@@ -69,40 +68,29 @@
 		);
 	}
 
-	function acknowledgeIntent(): void {
+	function beginAttempt(): void {
 		attempt += 1;
-		intentTime = clock();
 		readyTime = null;
 		idleTime = null;
 		idleAttempt = 0;
 		phase = 'booting';
-		publish('transit:map-intent', intentTime);
 	}
 
-	async function waitForBootPresentation(activeAttempt: number): Promise<boolean> {
-		await tick();
-		if (!alive || attempt !== activeAttempt || phase !== 'booting') return false;
-		if (typeof requestAnimationFrame === 'function') {
-			await new Promise<void>((resolve) =>
-				requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-			);
-		}
-		return alive && attempt === activeAttempt && phase === 'booting';
-	}
-
-	function activate(event?: MouseEvent): void {
+	function startImport(): void {
 		if (importPending || LiveMap || phase === 'booting') return;
-		focusLiveOnIdle = event?.detail === 0;
-		acknowledgeIntent();
+		beginAttempt();
 		liveFailure = null;
 		const activeAttempt = attempt;
-		const pending = waitForBootPresentation(activeAttempt)
-			.then((mayStart) => {
-				if (!mayStart) return null;
-				return importHero ? importHero() : import('./MapHero.svelte');
-			})
+		let heroImport: Promise<ProgressiveMapHeroModule>;
+		try {
+			heroImport = importHero ? importHero() : import('./MapHero.svelte');
+		} catch {
+			if (alive && attempt === activeAttempt) phase = 'failed';
+			return;
+		}
+		const pending = heroImport
 			.then((module) => {
-				if (!module || !alive || attempt !== activeAttempt) return;
+				if (!alive || attempt !== activeAttempt) return;
 				LiveMap = module.default;
 			})
 			.catch(() => {
@@ -123,18 +111,10 @@
 
 	function handleIdle(): void {
 		if (idleAttempt === attempt || phase !== 'booting' || readyTime === null) return;
-		const shouldMoveFocus = focusLiveOnIdle;
-		focusLiveOnIdle = false;
 		idleAttempt = attempt;
 		idleTime = clock();
 		phase = 'ready';
 		publish('transit:maplibre-idle', idleTime);
-		if (shouldMoveFocus) {
-			void tick().then(() => {
-				if (!alive || phase !== 'ready') return;
-				liveLayer?.querySelector<HTMLElement>('.maplibregl-canvas')?.focus({ preventScroll: true });
-			});
-		}
 	}
 
 	function handleFailure(failure: ProgressiveMapFailure | null): void {
@@ -143,24 +123,27 @@
 		else if (LiveMap) phase = 'booting';
 	}
 
-	function retry(event?: MouseEvent): void {
+	function retry(): void {
 		if (phase !== 'failed' || liveRetryPending) return;
 		if (!liveFailure) {
 			LiveMap = null;
-			activate(event);
+			startImport();
 			return;
 		}
 
 		const retryFailure = liveFailure;
-		focusLiveOnIdle = event?.detail === 0;
 		liveRetryPending = true;
-		acknowledgeIntent();
+		beginAttempt();
 		const activeAttempt = attempt;
-		void waitForBootPresentation(activeAttempt)
-			.then((mayStart) => {
-				if (!mayStart) return;
-				return retryFailure.retry();
-			})
+		let retryResult: Promise<void>;
+		try {
+			retryResult = retryFailure.retry();
+		} catch {
+			phase = 'failed';
+			liveRetryPending = false;
+			return;
+		}
+		void retryResult
 			.catch(() => {
 				if (alive && attempt === activeAttempt) phase = 'failed';
 			})
@@ -175,13 +158,11 @@
 	data-testid="map-progressive"
 	data-map-progressive-state={phase}
 	data-map-attempt={attempt}
-	data-map-intent-time={intentTime ?? undefined}
 	data-map-ready-time={readyTime ?? undefined}
 	data-map-idle-time={idleTime ?? undefined}
 	bind:this={root}
 >
 	<div
-		bind:this={liveLayer}
 		class="map-progressive-live"
 		data-testid="map-progressive-live"
 		data-visible={phase === 'ready'}
@@ -225,30 +206,23 @@
 
 		<div class="map-progressive-copy">
 			<p class="map-progressive-kicker">{t.staticKicker}</p>
-			<h1 id="map-progressive-heading">{t.staticHeading}</h1>
-			<p class="map-progressive-body">{t.staticBody}</p>
+			<h1 id="map-progressive-heading">
+				{phase === 'booting' ? t.bootHeading : t.staticHeading}
+			</h1>
+			<p class="map-progressive-body">
+				{phase === 'booting' ? t.bootBody : t.staticBody}
+			</p>
 			<p class="map-progressive-snapshot">{t.staticSnapshot}</p>
+			<p class="map-progressive-status" role="status" aria-live="polite">
+				{phase === 'booting' ? t.mapBooting : ''}
+			</p>
 
-			{#if phase === 'static' || phase === 'booting'}
-				<button
-					type="button"
-					class="map-progressive-action"
-					data-map-wake
-					aria-disabled={phase === 'booting' ? 'true' : undefined}
-					onclick={activate}
-				>
-					{t.activateMap}
-				</button>
-				{#if phase === 'booting'}
-					<p class="map-progressive-status" role="status" aria-live="polite">{t.mapBooting}</p>
-				{/if}
-			{:else if phase === 'failed'}
+			{#if phase === 'failed'}
 				<div class="map-progressive-failure" role="alert">
 					<p>{t.mapImportError}</p>
 					<button
 						type="button"
 						class="map-progressive-action"
-						data-map-wake
 						disabled={liveRetryPending}
 						onclick={retry}>{t.mapImportRetry}</button
 					>

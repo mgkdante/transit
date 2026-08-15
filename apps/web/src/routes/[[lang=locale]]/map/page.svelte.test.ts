@@ -8,18 +8,35 @@ it.each([
 	{
 		locale: 'en' as const,
 		path: '/map',
+		heading: 'Montréal transit map',
 		bodyCopy: 'Static, non-live basemap',
-		button: 'Load live interactive map',
+		bootHeading: 'Live map',
+		bootBody: 'The live interactive map loads automatically',
+		bootStatus: 'Loading live map',
+		activationCopy: 'Load live interactive map',
 	},
 	{
 		locale: 'fr' as const,
 		path: '/fr/map',
+		heading: 'Carte du réseau de Montréal',
 		bodyCopy: 'Fond de carte statique, pas en direct',
-		button: 'Charger la carte interactive en direct',
+		bootHeading: 'Carte en direct',
+		bootBody: 'La carte interactive en direct se charge automatiquement',
+		bootStatus: 'Chargement de la carte en direct',
+		activationCopy: 'Charger la carte interactive en direct',
 	},
 ])(
-	'$path server-compiles to the static-first map without browser APIs',
-	async ({ locale, path, bodyCopy, button }) => {
+	'$path server-compiles to the automatic-live boot poster without browser APIs',
+	async ({
+		locale,
+		path,
+		heading,
+		bodyCopy,
+		bootHeading,
+		bootBody,
+		bootStatus,
+		activationCopy,
+	}) => {
 		const server = await createServer({
 			configFile: 'vite.config.ts',
 			appType: 'custom',
@@ -53,9 +70,16 @@ it.each([
 			const rendered = render(page.default, { context });
 			const body = rendered.body;
 			expect(body).toContain('map-progressive');
+			expect(body).toContain(heading);
 			expect(body).toContain(bodyCopy);
-			expect(body).toContain(button);
-			expect(body).toContain('<button');
+			expect(body).not.toContain(bootHeading);
+			expect(body).not.toContain(bootBody);
+			expect(body).not.toContain(bootStatus);
+			expect(body).not.toContain(activationCopy);
+			expect(body).not.toContain('data-map-wake');
+			expect(body).not.toContain('map-intent');
+			expect(body).not.toContain('<button');
+			expect(body).toMatch(/<p[^>]*role="status"[^>]*aria-live="polite"/u);
 			expect(body).toContain('<noscript');
 			expect(body).toContain('https://www.openstreetmap.org/copyright');
 			expect(body).toContain('https://github.com/protomaps/basemaps');

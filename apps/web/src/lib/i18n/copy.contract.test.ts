@@ -103,9 +103,8 @@ describe('bilingual copy contract', () => {
 			lineDetailCopy: '12790a92f07d2d505ac30229be29f2b69922c8e0a230c043a11dbfd8c4e6b4a6',
 			lineIndexCopy: '50b9f280c49f3aadb8330d27a350de6d8338db2a4671672ea0717fcf2bbb2406',
 			legalCopy: '964dbf1b15fbaa01381e11a826ee22bc5d0b51a35398c87c896645a79b9257ae',
-			// B1 static-first map: + staticSnapshot (en/fr), the poster generation
-			// date that keeps the non-live preview visibly honest about staleness.
-			mapCopy: '95c4490f14f03d83979d591478755c337cf303ef9783ded919dfa75296a2bc21',
+			// B1 automatic-live map: neutral static SSR copy plus phase-gated boot copy.
+			mapCopy: 'ecf57224532730a7137bc79651dafd0cb2f50336521e154136b6e502668d29fd',
 			mapSelectionDetailCopy: '8c4872a4fa67d956cd22ac874fa7be4a0e5184de2edd6265d95a8edec2958459',
 			metricsCopy: '836857439792b6506b8bb691d286186a816b29b09c0b5525d3f2cd9843f202e4',
 			networkReliabilityCopy: 'a80d5f3a3badfae173ea4950b1e98340f6c6fc11eb8c0e6ce6e322973eec9089',

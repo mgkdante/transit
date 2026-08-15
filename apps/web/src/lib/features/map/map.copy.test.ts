@@ -2,23 +2,44 @@ import { describe, expect, it } from 'vitest';
 import { copy } from './map.copy';
 
 describe('map copy', () => {
-	it('labels the deferred poster honestly and provides bilingual activation states', () => {
+	it('describes automatic live boot and the static no-JS fallback honestly in both locales', () => {
 		for (const c of [copy.en, copy.fr]) {
 			expect(c.staticHeading.trim()).toBeTruthy();
 			expect(c.staticBody.toLowerCase()).toMatch(/static|statique/u);
-			expect(c.staticBody.toLowerCase()).toMatch(/non-live|pas en direct/u);
-			expect(c.staticBody.toLowerCase()).not.toMatch(/vehicle position|position des véhicules/u);
-			expect(c.activateMap.trim()).toBeTruthy();
+			expect(c.staticHeading.toLowerCase()).not.toMatch(/preview|aperçu/u);
+			expect(c.bootHeading.trim()).toBeTruthy();
+			expect(c.bootBody.toLowerCase()).toMatch(/automatically|automatiquement/u);
+			expect(c.bootBody.toLowerCase()).toMatch(/static|statique/u);
+			expect(c.bootBody.toLowerCase()).not.toMatch(/choice|choix/u);
+			expect(c).not.toHaveProperty('activateMap');
 			expect(c.mapBooting.trim()).toBeTruthy();
 			expect(c.mapImportError.trim()).toBeTruthy();
 			expect(c.mapImportRetry.trim()).toBeTruthy();
 			expect(c.staticNoScript.toLowerCase()).toMatch(/static|statique/u);
 		}
+		expect(copy.en.staticHeading).toBe('Montréal transit map');
 		expect(copy.en.staticBody).toBe(
 			'Static, non-live basemap. No vehicles, stops, service alerts, or freshness data are shown.',
 		);
+		expect(copy.fr.staticHeading).toBe('Carte du réseau de Montréal');
 		expect(copy.fr.staticBody).toBe(
 			'Fond de carte statique, pas en direct. Aucun véhicule, arrêt, avis de service ou renseignement de fraîcheur n’est affiché.',
+		);
+		expect(copy.en.bootHeading).toBe('Live map');
+		expect(copy.en.bootBody).toBe(
+			'The live interactive map loads automatically. This static basemap stays visible until it is ready.',
+		);
+		expect(copy.fr.bootHeading).toBe('Carte en direct');
+		expect(copy.fr.bootBody).toBe(
+			'La carte interactive en direct se charge automatiquement. Ce fond de carte statique reste visible jusqu’à ce qu’elle soit prête.',
+		);
+		expect(copy.en.mapBooting).toBe('Loading live map…');
+		expect(copy.fr.mapBooting).toBe('Chargement de la carte en direct…');
+		expect(copy.en.staticNoScript).toBe(
+			'JavaScript is required to load the live interactive map. This static, non-live basemap remains available.',
+		);
+		expect(copy.fr.staticNoScript).toBe(
+			'JavaScript est requis pour charger la carte interactive en direct. Ce fond de carte statique reste accessible.',
 		);
 		expect(copy.en.staticSnapshot).toBe('Basemap snapshot · Aug 12, 2026');
 		expect(copy.fr.staticSnapshot).toBe('Fond de carte · 12 août 2026');
