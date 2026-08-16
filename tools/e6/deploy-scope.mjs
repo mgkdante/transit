@@ -20,6 +20,7 @@ const DEPLOYABLE_PREFIXES = [
 ];
 const NON_DEPLOYABLE_PATHS = new Set([
   ".github/workflows/web.yml",
+  "apps/web/src/lib/features/lines/RouteDetail.svelte.test.ts",
   "apps/web/src/tests/shared-tooling-adoption.test.ts",
 ]);
 const NON_DEPLOYABLE_PREFIXES = ["tools/e6/"];

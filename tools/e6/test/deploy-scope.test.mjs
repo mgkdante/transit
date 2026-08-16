@@ -19,6 +19,7 @@ test("tooling-only and workflow-only pushes preserve the deployed Worker", () =>
         "tools/e6/lib/stats.mjs",
         ".github/workflows/web.yml",
         "apps/web/src/tests/shared-tooling-adoption.test.ts",
+        "apps/web/src/lib/features/lines/RouteDetail.svelte.test.ts",
       ],
     }),
     false,
