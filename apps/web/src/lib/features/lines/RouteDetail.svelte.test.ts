@@ -5,6 +5,7 @@ import {
 	waitFor,
 	within,
 } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -714,9 +715,9 @@ describe('RouteDetail reliability boundary with history-only fallback', () => {
 		const view = renderRoute();
 
 		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledOnce());
-		await waitFor(() =>
-			expect(view.container.querySelector('[data-slot="reliability-clusters"]')).not.toBeNull(),
-		);
+		await import('./reliability/RouteReliabilityClusters.svelte');
+		await tick();
+		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).not.toBeNull();
 		expect(view.container.querySelector('[data-slot="history-loading"]')).toHaveTextContent(
 			'Loading retained range',
 		);
@@ -755,9 +756,9 @@ describe('RouteDetail always-visible verdict history scope', () => {
 		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 		expect(view.container.querySelector('.route-verdict-banner')).toBeNull();
 		expect(view.container.querySelector('[data-slot="reliability-rail-summary"]')).toBeNull();
-		await waitFor(() =>
-			expect(view.container.querySelector('[data-slot="reliability-clusters"]')).not.toBeNull(),
-		);
+		await import('./reliability/RouteReliabilityClusters.svelte');
+		await tick();
+		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).not.toBeNull();
 	});
 
 	it('keeps one centered line reliability banner aligned with the active tab rail', async () => {

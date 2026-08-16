@@ -89,4 +89,4 @@ node tools/e6/e6-measure.mjs --red-proof --duration-ms 2000
 
 ## Deployment scope
 
-The `web` workflow runs B2 contracts for `tools/e6/**`, but a tooling-only push does not redeploy the unchanged Worker. The known non-deployable B2 set is `tools/e6/**`, `.github/workflows/web.yml`, and the exact non-product workflow contract `apps/web/src/tests/shared-tooling-adoption.test.ts`. Every other `apps/web/**` path remains deployable. Manual dispatch, an unresolved diff, an empty resolved diff, or an unknown path conservatively remains deployment-eligible.
+The `web` workflow runs B2 contracts for `tools/e6/**`, but a tooling-only push does not redeploy the unchanged Worker. The known non-deployable B2 set is `tools/e6/**`, `.github/workflows/web.yml`, and the exact non-product test paths `apps/web/src/tests/shared-tooling-adoption.test.ts` and `apps/web/src/lib/features/lines/RouteDetail.svelte.test.ts`. Every other `apps/web/**` path remains deployable. Manual dispatch, an unresolved diff, an empty resolved diff, or an unknown path conservatively remains deployment-eligible.
