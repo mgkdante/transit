@@ -14,6 +14,8 @@ bun run --cwd tools/e6 b2:check
 
 This runs every unit and workflow contract under `tools/e6/test`, then runs the deterministic synthetic busy-budget RED proof. It does not run the browser benchmark or deploy anything.
 
+`b2:check` is the required hermetic CI gate and must remain under 90 seconds. The full `/map` replay/browser integration (`node tools/e6/e6-measure.mjs --dry-run`) is instead a required manual pre-Monday and exact-main gate. It is deliberately not required CI because Chromium, the production build, WebGL, and the trusted canvas actions make it multi-minute and environment-sensitive; do not replace that manual receipt with optional CI theater.
+
 ## Monday weekday-rush capture
 
 The only closure-eligible capture date is Monday, 2026-08-17 in `America/Toronto`. The CLI requires the explicit `weekday-rush` label; there is no hidden hour window.

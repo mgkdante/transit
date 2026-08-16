@@ -1,8 +1,6 @@
-export const E6_BASE_VEHICLES = 856;
-export const E6_SCALE_LANES = 4;
-export const E6_FLEET_VEHICLES = E6_BASE_VEHICLES * E6_SCALE_LANES;
+import { B2_FLEET_CONTRACT as FLEET } from "./fleet-contract.mjs";
+
 export const E6_MIN_ACTIVE_ROUTES = 182;
-export const E6_IDENTITY_ORDER = "vehicle.id code-point ascending";
 const CAPTURE_DATE = "2026-08-17";
 const CAPTURE_TIME_ZONE = "America/Toronto";
 const CAPTURE_LABEL = "weekday-rush";
@@ -107,10 +105,10 @@ function assertCaptureMetadata(metadata, purpose) {
 function assertScaleMetadata(metadata, vehicleTicks) {
   const scale = metadata.scale;
   if (
-    scale?.baseVehicles !== E6_BASE_VEHICLES ||
-    scale?.lanes !== E6_SCALE_LANES ||
-    scale?.fleetVehicles !== E6_FLEET_VEHICLES ||
-    scale?.identityOrder !== E6_IDENTITY_ORDER ||
+    scale?.baseVehicles !== FLEET.baseVehicles ||
+    scale?.lanes !== FLEET.scaleLanes ||
+    scale?.fleetVehicles !== FLEET.fleetVehicles ||
+    scale?.identityOrder !== FLEET.identityOrder ||
     !Array.isArray(scale?.ticks) ||
     scale.ticks.length !== vehicleTicks.length
   ) {
@@ -120,16 +118,16 @@ function assertScaleMetadata(metadata, vehicleTicks) {
     const audit = scale.ticks[index];
     if (
       audit?.tick !== index ||
-      audit?.baseVehicles !== E6_BASE_VEHICLES ||
-      audit?.lanes !== E6_SCALE_LANES ||
-      audit?.fleetVehicles !== E6_FLEET_VEHICLES ||
-      audit?.identityOrder !== E6_IDENTITY_ORDER ||
+      audit?.baseVehicles !== FLEET.baseVehicles ||
+      audit?.lanes !== FLEET.scaleLanes ||
+      audit?.fleetVehicles !== FLEET.fleetVehicles ||
+      audit?.identityOrder !== FLEET.identityOrder ||
       !Number.isInteger(audit?.sourceCount) ||
-      audit.sourceCount < E6_BASE_VEHICLES ||
+      audit.sourceCount < FLEET.baseVehicles ||
       !Array.isArray(audit.sourceIdentities) ||
       audit.sourceIdentities.length !== audit.sourceCount ||
       !Array.isArray(audit.selectedBaseIdentities) ||
-      audit.selectedBaseIdentities.length !== E6_BASE_VEHICLES
+      audit.selectedBaseIdentities.length !== FLEET.baseVehicles
     ) {
       fail(`E6_SCALE_METADATA_INVALID tick=${index}`);
     }
@@ -142,7 +140,7 @@ function assertScaleMetadata(metadata, vehicleTicks) {
       new Set(audit.sourceIdentities).size !== audit.sourceIdentities.length ||
       JSON.stringify([...audit.sourceIdentities].sort(codePointCompare)) !==
         JSON.stringify(audit.sourceIdentities) ||
-      JSON.stringify(audit.sourceIdentities.slice(0, E6_BASE_VEHICLES)) !==
+      JSON.stringify(audit.sourceIdentities.slice(0, FLEET.baseVehicles)) !==
         JSON.stringify(audit.selectedBaseIdentities)
     ) {
       fail(`E6_SCALE_METADATA_INVALID tick=${index}`);
@@ -157,7 +155,7 @@ function assertScaleMetadata(metadata, vehicleTicks) {
         !selected.has(sourceIdentity) ||
         !Number.isInteger(lane) ||
         lane < 0 ||
-        lane >= E6_SCALE_LANES ||
+        lane >= FLEET.scaleLanes ||
         vehicle.id !== `${sourceIdentity}::b2-lane-${lane + 1}`
       ) {
         fail(`E6_SCALE_METADATA_INVALID tick=${index}`);
@@ -167,8 +165,10 @@ function assertScaleMetadata(metadata, vehicleTicks) {
       lanesBySource.set(sourceIdentity, lanes);
     }
     if (
-      lanesBySource.size !== E6_BASE_VEHICLES ||
-      [...lanesBySource.values()].some((lanes) => lanes.size !== E6_SCALE_LANES)
+      lanesBySource.size !== FLEET.baseVehicles ||
+      [...lanesBySource.values()].some(
+        (lanes) => lanes.size !== FLEET.scaleLanes,
+      )
     ) {
       fail(`E6_SCALE_METADATA_INVALID tick=${index}`);
     }
@@ -241,9 +241,9 @@ export function validateRecordingSnapshot(
     if (!Array.isArray(payload?.vehicles)) {
       fail(`E6_RECORDING_INVALID ${path} has no vehicles array`);
     }
-    if (payload.vehicles.length !== E6_FLEET_VEHICLES) {
+    if (payload.vehicles.length !== FLEET.fleetVehicles) {
       fail(
-        `E6_FLEET_COUNT_MISMATCH tick=${index} actual=${payload.vehicles.length} expected=${E6_FLEET_VEHICLES}`,
+        `E6_FLEET_COUNT_MISMATCH tick=${index} actual=${payload.vehicles.length} expected=${FLEET.fleetVehicles}`,
       );
     }
     const identities = payload.vehicles.map((vehicle) => vehicle?.id);
@@ -351,9 +351,9 @@ export function validateRecordingSnapshot(
     vehicles,
     activeRoutes,
     files,
-    baseVehicles: E6_BASE_VEHICLES,
-    scaleLanes: E6_SCALE_LANES,
-    fleetVehicles: E6_FLEET_VEHICLES,
+    baseVehicles: FLEET.baseVehicles,
+    scaleLanes: FLEET.scaleLanes,
+    fleetVehicles: FLEET.fleetVehicles,
     minimumActiveRoutes,
     completeRouteFiles: activeRouteIds.length,
     vehicleTicks: vehicleTicks.length,

@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  assertPreviewPortsFree,
-  buildMeasurementPlan,
-  parseE6Config,
-  parseListeningPorts,
-} from "../lib/config.mjs";
+import { buildMeasurementPlan, parseE6Config } from "../lib/config.mjs";
 import * as config from "../lib/config.mjs";
 
 test("uses the sole raw unthrottled 3,424-vehicle arm by default", () => {
@@ -94,17 +89,4 @@ test("rejects invalid mode, rate, and interaction inputs before a run begins", (
     () => parseE6Config({ env: { E6_INTERACTIONS: "0" } }),
     /E6_INTERACTIONS_INVALID/u,
   );
-});
-
-test("parses preview listeners and fails closed for the guarded port range", () => {
-  const ports = parseListeningPorts(`
-LISTEN 0      511        127.0.0.1:4217       0.0.0.0:*    users:(("node",pid=12,fd=21))
-node 44 runner  22u  IPv6 0x0  TCP *:4221 (LISTEN)
-`);
-  assert.deepEqual(ports, [4217, 4221]);
-  assert.throws(
-    () => assertPreviewPortsFree(ports),
-    /E6_PREVIEW_PORTS_BUSY 4217,4221/u,
-  );
-  assert.doesNotThrow(() => assertPreviewPortsFree([4216, 4224]));
 });

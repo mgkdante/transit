@@ -5,30 +5,13 @@ export function samplerInitScript() {
   if (existing?.stop) existing.stop();
   const state = {
     busy: [],
-    loaf: [],
     interactions: [],
-    loafSupported: false,
     eventTimingSupported: false,
     running: true,
   };
   window.__e6Sampler = state;
 
   const supported = PerformanceObserver.supportedEntryTypes ?? [];
-  state.createLoafObserver = () => {
-    if (!supported.includes("long-animation-frame")) return;
-    state.loafSupported = true;
-    state.loafObserver = new PerformanceObserver((list) => {
-      for (const entry of list.getEntries())
-        state.loaf.push({
-          duration: entry.duration,
-          startTime: entry.startTime,
-        });
-    });
-    state.loafObserver.observe({
-      type: "long-animation-frame",
-      buffered: false,
-    });
-  };
   state.createEventTimingObserver = () => {
     if (!supported.includes("event")) return;
     state.eventTimingSupported = true;
@@ -66,15 +49,12 @@ export function samplerInitScript() {
     if (state.started) return;
     state.started = true;
     state.busy.length = 0;
-    state.loaf.length = 0;
     state.interactions.length = 0;
-    state.createLoafObserver();
     state.createEventTimingObserver();
     requestAnimationFrame(frame);
   };
   state.stop = () => {
     state.running = false;
-    state.loafObserver?.disconnect();
     state.recordEventTiming?.(state.eventTimingObserver?.takeRecords() ?? []);
     state.eventTimingObserver?.disconnect();
     channel.port1.close();
@@ -93,9 +73,7 @@ export async function readSampler(page, { stop = true } = {}) {
     if (shouldStop) state.stop();
     return {
       busy: [...state.busy],
-      loaf: [...state.loaf],
       interactions: [...state.interactions],
-      loafSupported: state.loafSupported,
       eventTimingSupported: state.eventTimingSupported,
     };
   }, stop);
@@ -113,7 +91,6 @@ export function assertSamplerEvidence(
   report,
   { requireInteraction = false } = {},
 ) {
-  if (!report?.loafSupported) throw new Error("E6_LOAF_MISSING");
   if (!Array.isArray(report.busy) || report.busy.length === 0)
     throw new Error("E6_BUSY_MISSING");
   if (requireInteraction && !report?.eventTimingSupported)

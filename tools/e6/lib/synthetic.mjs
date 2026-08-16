@@ -1,10 +1,5 @@
-import {
-  B2_BASE_VEHICLES,
-  B2_FLEET_VEHICLES,
-  B2_IDENTITY_ORDER,
-  B2_SCALE_LANES,
-  scaleVehicleTick,
-} from "./capture.mjs";
+import { scaleVehicleTick } from "./capture.mjs";
+import { B2_FLEET_CONTRACT as FLEET } from "./fleet-contract.mjs";
 import { evaluateCaptureGate } from "./recording.mjs";
 
 const ROUTE_COUNT = 182;
@@ -78,7 +73,7 @@ export function createSyntheticRecording({ now = Date.now } = {}) {
     };
   });
   const sourceVehicles = Array.from(
-    { length: B2_BASE_VEHICLES },
+    { length: FLEET.baseVehicles },
     (_, index) => {
       const routeIndex = index % ROUTE_COUNT;
       const id = activeRouteIds[routeIndex];
@@ -207,13 +202,13 @@ export function createSyntheticRecording({ now = Date.now } = {}) {
       "live/network.json",
       {
         generated_utc: generatedUtc,
-        vehicles_in_service: B2_FLEET_VEHICLES,
+        vehicles_in_service: FLEET.fleetVehicles,
         on_time_pct: 50,
         status_dist: {
-          early: 856,
-          on_time: 856,
-          late: 856,
-          severe: 856,
+          early: FLEET.baseVehicles,
+          on_time: FLEET.baseVehicles,
+          late: FLEET.baseVehicles,
+          severe: FLEET.baseVehicles,
           unknown: 0,
         },
         delay_p50_min: 1,
@@ -276,19 +271,19 @@ export function createSyntheticRecording({ now = Date.now } = {}) {
       paths: { vehicles: "live/vehicles.json" },
       vehicleTickPaths: ["live/vehicles.json", VEHICLE_TICK_1_PATH],
       scale: {
-        baseVehicles: B2_BASE_VEHICLES,
-        lanes: B2_SCALE_LANES,
-        fleetVehicles: B2_FLEET_VEHICLES,
-        identityOrder: B2_IDENTITY_ORDER,
+        baseVehicles: FLEET.baseVehicles,
+        lanes: FLEET.scaleLanes,
+        fleetVehicles: FLEET.fleetVehicles,
+        identityOrder: FLEET.identityOrder,
         ticks: scaledTicks.map(({ audit }) => audit),
       },
       counts: {
-        vehicles: B2_FLEET_VEHICLES,
+        vehicles: FLEET.fleetVehicles,
         activeRoutes: ROUTE_COUNT,
         files: payloads.size,
         vehicleTicks: [
-          { vehicles: B2_FLEET_VEHICLES, activeRoutes: ROUTE_COUNT },
-          { vehicles: B2_FLEET_VEHICLES, activeRoutes: ROUTE_COUNT },
+          { vehicles: FLEET.fleetVehicles, activeRoutes: ROUTE_COUNT },
+          { vehicles: FLEET.fleetVehicles, activeRoutes: ROUTE_COUNT },
         ],
       },
     },

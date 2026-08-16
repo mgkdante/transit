@@ -1,3 +1,9 @@
+import { B2_FLEET_CONTRACT as FLEET } from "./fleet-contract.mjs";
+import {
+  evaluateCaptureGate,
+  validateRecordingSnapshot,
+} from "./recording.mjs";
+
 const LIVE_DEFAULTS = {
   vehicles: "live/vehicles.json",
   trips: "live/trips.json",
@@ -6,15 +12,6 @@ const LIVE_DEFAULTS = {
   network: "live/network.json",
 };
 const VEHICLE_TICK_1_PATH = "recording/vehicle-tick-1.json";
-export const B2_BASE_VEHICLES = 856;
-export const B2_SCALE_LANES = 4;
-export const B2_FLEET_VEHICLES = B2_BASE_VEHICLES * B2_SCALE_LANES;
-export const B2_IDENTITY_ORDER = "vehicle.id code-point ascending";
-
-import {
-  evaluateCaptureGate,
-  validateRecordingSnapshot,
-} from "./recording.mjs";
 
 function codePointCompare(left, right) {
   const leftPoints = [...left].map((value) => value.codePointAt(0));
@@ -45,15 +42,15 @@ export function scaleVehicleTick(payload, { tick } = {}) {
     }
     byIdentity.set(identity, vehicle);
   }
-  if (byIdentity.size < B2_BASE_VEHICLES) {
+  if (byIdentity.size < FLEET.baseVehicles) {
     throw new Error(
-      `E6_SOURCE_FLEET_TOO_THIN distinct=${byIdentity.size} minimum=${B2_BASE_VEHICLES}`,
+      `E6_SOURCE_FLEET_TOO_THIN distinct=${byIdentity.size} minimum=${FLEET.baseVehicles}`,
     );
   }
   const sourceIdentities = [...byIdentity.keys()].sort(codePointCompare);
-  const selectedBaseIdentities = sourceIdentities.slice(0, B2_BASE_VEHICLES);
+  const selectedBaseIdentities = sourceIdentities.slice(0, FLEET.baseVehicles);
   const vehicles = selectedBaseIdentities.flatMap((sourceIdentity) =>
-    Array.from({ length: B2_SCALE_LANES }, (_, scaleLane) => ({
+    Array.from({ length: FLEET.scaleLanes }, (_, scaleLane) => ({
       ...byIdentity.get(sourceIdentity),
       id: `${sourceIdentity}::b2-lane-${scaleLane + 1}`,
       source_identity: sourceIdentity,
@@ -61,8 +58,8 @@ export function scaleVehicleTick(payload, { tick } = {}) {
     })),
   );
   if (
-    vehicles.length !== B2_FLEET_VEHICLES ||
-    new Set(vehicles.map(({ id }) => id)).size !== B2_FLEET_VEHICLES
+    vehicles.length !== FLEET.fleetVehicles ||
+    new Set(vehicles.map(({ id }) => id)).size !== FLEET.fleetVehicles
   ) {
     throw new Error(`E6_FLEET_SCALE_COLLISION tick=${String(tick)}`);
   }
@@ -73,10 +70,10 @@ export function scaleVehicleTick(payload, { tick } = {}) {
       sourceCount: byIdentity.size,
       sourceIdentities,
       selectedBaseIdentities,
-      identityOrder: B2_IDENTITY_ORDER,
-      baseVehicles: B2_BASE_VEHICLES,
-      lanes: B2_SCALE_LANES,
-      fleetVehicles: B2_FLEET_VEHICLES,
+      identityOrder: FLEET.identityOrder,
+      baseVehicles: FLEET.baseVehicles,
+      lanes: FLEET.scaleLanes,
+      fleetVehicles: FLEET.fleetVehicles,
     },
   };
 }
@@ -305,20 +302,20 @@ export async function captureRecording({
     paths: plan.paths,
     vehicleTickPaths: [vehiclesPath, VEHICLE_TICK_1_PATH],
     scale: {
-      baseVehicles: B2_BASE_VEHICLES,
-      lanes: B2_SCALE_LANES,
-      fleetVehicles: B2_FLEET_VEHICLES,
-      identityOrder: B2_IDENTITY_ORDER,
+      baseVehicles: FLEET.baseVehicles,
+      lanes: FLEET.scaleLanes,
+      fleetVehicles: FLEET.fleetVehicles,
+      identityOrder: FLEET.identityOrder,
       ticks: scaledTicks.map(({ audit }) => audit),
     },
     counts: {
-      vehicles: B2_FLEET_VEHICLES,
+      vehicles: FLEET.fleetVehicles,
       activeRoutes: new Set(
         scaledTicks.flatMap(({ payload }) => activeRouteIdsFor(payload)),
       ).size,
       files: payloads.size,
       vehicleTicks: selectedRouteCounts.map((activeRoutes) => ({
-        vehicles: B2_FLEET_VEHICLES,
+        vehicles: FLEET.fleetVehicles,
         activeRoutes,
       })),
     },

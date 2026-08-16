@@ -1,19 +1,18 @@
+import { B2_FLEET_CONTRACT as FLEET } from "./fleet-contract.mjs";
+
 const BINDING_MODE = "raw";
 const BINDING_RATE = 1;
-const BINDING_FLEET_VEHICLES = 3_424;
 const DEFAULT_INTERACTIONS = 13;
 const E6_WINDOW_MS = 20_000;
 const E6_BUSY_BUDGET_MS = 8;
 const E6_INTERACTION_BUDGET_MS = 200;
-const PREVIEW_PORT_MIN = 4217;
-const PREVIEW_PORT_MAX = 4223;
 
 export const DEFAULT_E6_ARMS = Object.freeze([
   Object.freeze({
     id: "raw@3424-unthrottled",
     mode: BINDING_MODE,
     rate: BINDING_RATE,
-    fleetVehicles: BINDING_FLEET_VEHICLES,
+    fleetVehicles: FLEET.fleetVehicles,
   }),
 ]);
 
@@ -69,12 +68,12 @@ export function parseE6Config({ env = {}, argv = [] } = {}) {
   const mode = cli.mode ?? env.E6_MODE ?? BINDING_MODE;
   const rate = Number(cli.rate ?? env.E6_RATE ?? BINDING_RATE);
   const fleetVehicles = Number(
-    cli["fleet-vehicles"] ?? env.E6_FLEET_VEHICLES ?? BINDING_FLEET_VEHICLES,
+    cli["fleet-vehicles"] ?? env.E6_FLEET_VEHICLES ?? FLEET.fleetVehicles,
   );
   if (
     mode !== BINDING_MODE ||
     rate !== BINDING_RATE ||
-    fleetVehicles !== BINDING_FLEET_VEHICLES
+    fleetVehicles !== FLEET.fleetVehicles
   ) {
     bindingFailure(
       `mode=${String(mode)} rate=${String(rate)} fleetVehicles=${String(fleetVehicles)}`,
@@ -117,32 +116,5 @@ export function assertAllArmsScored(plan, results) {
     .filter((id) => !scored.has(id));
   if (missing.length > 0)
     throw new Error(`E6_ARMS_UNSCORED ${missing.join(",")}`);
-  return true;
-}
-
-export function parseListeningPorts(output) {
-  if (typeof output !== "string") throw new Error("E6_PORTS_INVALID");
-  const ports = new Set();
-  for (const line of output.split(/\r?\n/u)) {
-    if (!/\bLISTEN\b/u.test(line)) continue;
-    for (const match of line.matchAll(
-      /(?:\*|localhost|(?:\d{1,3}\.){3}\d{1,3}|\[[^\]]+\]):(\d{1,5})(?=\s|\(|$)/gu,
-    )) {
-      const port = Number(match[1]);
-      if (port >= 1 && port <= 65_535) ports.add(port);
-    }
-  }
-  return [...ports].sort((left, right) => left - right);
-}
-
-export function assertPreviewPortsFree(ports) {
-  if (!Array.isArray(ports) || ports.some((port) => !Number.isInteger(port))) {
-    throw new Error("E6_PORTS_INVALID");
-  }
-  const busy = [...new Set(ports)]
-    .filter((port) => port >= PREVIEW_PORT_MIN && port <= PREVIEW_PORT_MAX)
-    .sort((left, right) => left - right);
-  if (busy.length > 0)
-    throw new Error(`E6_PREVIEW_PORTS_BUSY ${busy.join(",")}`);
   return true;
 }

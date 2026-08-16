@@ -26,8 +26,6 @@ test("red proof receipt binds a measured p95 over the eight-millisecond budget t
   const receipt = redProofReceipt(
     {
       busy: [23, 24, 24, 25],
-      loafSupported: true,
-      loaf: [],
       interactions: [],
     },
     { redBlockMs: 24, redToleranceMs: 2 },
