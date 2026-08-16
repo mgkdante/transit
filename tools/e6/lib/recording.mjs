@@ -1,0 +1,411 @@
+import { B2_FLEET_CONTRACT as FLEET } from "./fleet-contract.mjs";
+
+export const E6_MIN_ACTIVE_ROUTES = 182;
+const CAPTURE_DATE = "2026-08-17";
+const CAPTURE_TIME_ZONE = "America/Toronto";
+const CAPTURE_LABEL = "weekday-rush";
+
+const ISO_INSTANT =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/u;
+
+function fail(message) {
+  throw new Error(message);
+}
+
+function localCaptureParts(capturedUtc) {
+  if (typeof capturedUtc !== "string" || !ISO_INSTANT.test(capturedUtc)) {
+    fail("E6_CAPTURE_INSTANT_INVALID");
+  }
+  const instant = new Date(capturedUtc);
+  if (!Number.isFinite(instant.valueOf())) fail("E6_CAPTURE_INSTANT_INVALID");
+  const values = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: CAPTURE_TIME_ZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      weekday: "long",
+    })
+      .formatToParts(instant)
+      .filter(({ type }) => type !== "literal")
+      .map(({ type, value }) => [type, value]),
+  );
+  return {
+    localDate: `${values.year}-${values.month}-${values.day}`,
+    weekday: values.weekday,
+  };
+}
+
+export function evaluateCaptureGate({ sourceKind, capturedUtc, label } = {}) {
+  const { localDate, weekday } = localCaptureParts(capturedUtc);
+  return {
+    eligible:
+      sourceKind === "live" &&
+      label === CAPTURE_LABEL &&
+      localDate === CAPTURE_DATE &&
+      weekday === "Monday",
+    label: label ?? null,
+    timeZone: CAPTURE_TIME_ZONE,
+    capturedUtc,
+    localDate,
+    weekday,
+  };
+}
+
+function payloadMap(value) {
+  if (!(value instanceof Map))
+    fail("E6_RECORDING_INVALID payloads must be a Map");
+  return value;
+}
+
+function sortedUnique(values) {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+function codePointCompare(left, right) {
+  const leftPoints = [...left].map((value) => value.codePointAt(0));
+  const rightPoints = [...right].map((value) => value.codePointAt(0));
+  const length = Math.min(leftPoints.length, rightPoints.length);
+  for (let index = 0; index < length; index += 1) {
+    if (leftPoints[index] !== rightPoints[index]) {
+      return leftPoints[index] - rightPoints[index];
+    }
+  }
+  return leftPoints.length - rightPoints.length;
+}
+
+function recordingPath(paths, key, fallback) {
+  const path = paths?.[key] ?? fallback;
+  if (typeof path !== "string" || path.length === 0) {
+    fail(`E6_RECORDING_INVALID ${key} path is required`);
+  }
+  return path;
+}
+
+function assertCaptureMetadata(metadata, purpose) {
+  const actual = evaluateCaptureGate({
+    sourceKind: metadata.sourceKind,
+    capturedUtc: metadata.capturedUtc,
+    label: metadata.label,
+  });
+  if (JSON.stringify(metadata.captureGate) !== JSON.stringify(actual)) {
+    fail("E6_CAPTURE_GATE_MISMATCH");
+  }
+  if (metadata.benchmarkEligible !== actual.eligible) {
+    fail("E6_BENCHMARK_ELIGIBILITY_MISMATCH");
+  }
+  if (purpose === "benchmark" && !actual.eligible) {
+    fail(
+      `E6_CAPTURE_NOT_ELIGIBLE sourceKind=${String(metadata.sourceKind)} localDate=${actual.localDate} weekday=${actual.weekday} label=${String(metadata.label)}`,
+    );
+  }
+  return actual;
+}
+
+function assertScaleMetadata(metadata, vehicleTicks) {
+  const scale = metadata.scale;
+  if (
+    scale?.baseVehicles !== FLEET.baseVehicles ||
+    scale?.lanes !== FLEET.scaleLanes ||
+    scale?.fleetVehicles !== FLEET.fleetVehicles ||
+    scale?.identityOrder !== FLEET.identityOrder ||
+    !Array.isArray(scale?.ticks) ||
+    scale.ticks.length !== vehicleTicks.length
+  ) {
+    fail("E6_SCALE_METADATA_INVALID");
+  }
+  for (const [index, tick] of vehicleTicks.entries()) {
+    const audit = scale.ticks[index];
+    if (
+      audit?.tick !== index ||
+      audit?.baseVehicles !== FLEET.baseVehicles ||
+      audit?.lanes !== FLEET.scaleLanes ||
+      audit?.fleetVehicles !== FLEET.fleetVehicles ||
+      audit?.identityOrder !== FLEET.identityOrder ||
+      !Number.isInteger(audit?.sourceCount) ||
+      audit.sourceCount < FLEET.baseVehicles ||
+      !Array.isArray(audit.sourceIdentities) ||
+      audit.sourceIdentities.length !== audit.sourceCount ||
+      !Array.isArray(audit.selectedBaseIdentities) ||
+      audit.selectedBaseIdentities.length !== FLEET.baseVehicles
+    ) {
+      fail(`E6_SCALE_METADATA_INVALID tick=${index}`);
+    }
+    const invalidSource = audit.sourceIdentities.some(
+      (identity) =>
+        typeof identity !== "string" || identity.trim().length === 0,
+    );
+    if (
+      invalidSource ||
+      new Set(audit.sourceIdentities).size !== audit.sourceIdentities.length ||
+      JSON.stringify([...audit.sourceIdentities].sort(codePointCompare)) !==
+        JSON.stringify(audit.sourceIdentities) ||
+      JSON.stringify(audit.sourceIdentities.slice(0, FLEET.baseVehicles)) !==
+        JSON.stringify(audit.selectedBaseIdentities)
+    ) {
+      fail(`E6_SCALE_METADATA_INVALID tick=${index}`);
+    }
+    const selected = new Set(audit.selectedBaseIdentities);
+    const lanesBySource = new Map();
+    for (const vehicle of tick.payload.vehicles) {
+      const sourceIdentity = vehicle?.source_identity;
+      const lane = vehicle?.scale_lane;
+      if (
+        typeof sourceIdentity !== "string" ||
+        !selected.has(sourceIdentity) ||
+        !Number.isInteger(lane) ||
+        lane < 0 ||
+        lane >= FLEET.scaleLanes ||
+        vehicle.id !== `${sourceIdentity}::b2-lane-${lane + 1}`
+      ) {
+        fail(`E6_SCALE_METADATA_INVALID tick=${index}`);
+      }
+      const lanes = lanesBySource.get(sourceIdentity) ?? new Set();
+      lanes.add(lane);
+      lanesBySource.set(sourceIdentity, lanes);
+    }
+    if (
+      lanesBySource.size !== FLEET.baseVehicles ||
+      [...lanesBySource.values()].some(
+        (lanes) => lanes.size !== FLEET.scaleLanes,
+      )
+    ) {
+      fail(`E6_SCALE_METADATA_INVALID tick=${index}`);
+    }
+  }
+  return scale;
+}
+
+export function validateRecordingSnapshot(
+  recording,
+  { purpose = "benchmark", minimumActiveRoutes = E6_MIN_ACTIVE_ROUTES } = {},
+) {
+  if (
+    recording?.metadata?.schema !== 1 ||
+    recording?.metadata?.kind !== "e6-recording"
+  ) {
+    fail("E6_RECORDING_INVALID expected schema=1 kind=e6-recording");
+  }
+  const { metadata } = recording;
+  const payloads = payloadMap(recording.payloads);
+  if (!["benchmark", "capture", "dry-run"].includes(purpose))
+    fail(`E6_RECORDING_PURPOSE_INVALID ${String(purpose)}`);
+  const captureGate = assertCaptureMetadata(metadata, purpose);
+
+  const paths = metadata.paths ?? {};
+  const vehiclesPath = recordingPath(paths, "vehicles", "live/vehicles.json");
+  const vehicleTickPaths = metadata.vehicleTickPaths;
+  if (
+    !Array.isArray(vehicleTickPaths) ||
+    vehicleTickPaths.length !== 2 ||
+    vehicleTickPaths.some(
+      (path) => typeof path !== "string" || path.length === 0,
+    ) ||
+    vehicleTickPaths[0] !== vehiclesPath ||
+    vehicleTickPaths[0] === vehicleTickPaths[1]
+  ) {
+    fail(
+      "E6_RECORDING_INVALID vehicleTickPaths must contain two distinct paths beginning with vehicles",
+    );
+  }
+  const requiredPaths = sortedUnique([
+    ...(Array.isArray(metadata.requiredPaths) ? metadata.requiredPaths : []),
+    "manifest.json",
+    recordingPath(paths, "labels", `labels/${metadata.language ?? "en"}.json`),
+    ...vehicleTickPaths,
+    vehiclesPath,
+    recordingPath(paths, "trips", "live/trips.json"),
+    recordingPath(paths, "stopDepartures", "live/stop_departures.json"),
+    recordingPath(paths, "alerts", "live/alerts.json"),
+    recordingPath(paths, "network", "live/network.json"),
+    recordingPath(paths, "routesIndex", "static/routes_index.json"),
+    recordingPath(paths, "stopsIndex", "static/stops_index.json"),
+  ]);
+  const claimedRoutePrefix = metadata.routePrefix;
+  const missingRequired = requiredPaths.filter(
+    (path) =>
+      !payloads.has(path) &&
+      !(
+        typeof claimedRoutePrefix === "string" &&
+        path.startsWith(claimedRoutePrefix)
+      ),
+  );
+  if (missingRequired.length > 0) {
+    fail(
+      `E6_RECORDING_INCOMPLETE missing required files: ${missingRequired.join(", ")}`,
+    );
+  }
+
+  const vehicleTicks = vehicleTickPaths.map((path, index) => {
+    const payload = payloads.get(path);
+    if (!Array.isArray(payload?.vehicles)) {
+      fail(`E6_RECORDING_INVALID ${path} has no vehicles array`);
+    }
+    if (payload.vehicles.length !== FLEET.fleetVehicles) {
+      fail(
+        `E6_FLEET_COUNT_MISMATCH tick=${index} actual=${payload.vehicles.length} expected=${FLEET.fleetVehicles}`,
+      );
+    }
+    const identities = payload.vehicles.map((vehicle) => vehicle?.id);
+    if (
+      identities.some(
+        (identity) =>
+          typeof identity !== "string" || identity.trim().length === 0,
+      )
+    ) {
+      fail(`E6_FLEET_IDENTITY_INVALID tick=${index}`);
+    }
+    if (new Set(identities).size !== identities.length) {
+      fail(`E6_FLEET_IDENTITY_DUPLICATE tick=${index}`);
+    }
+    const activeRouteIds = sortedUnique(
+      payload.vehicles
+        .map((vehicle) => vehicle?.route)
+        .filter((route) => typeof route === "string" && route.length > 0),
+    );
+    const tick = {
+      payload,
+      vehicles: payload.vehicles.length,
+      activeRoutes: activeRouteIds.length,
+      activeRouteIds,
+    };
+    if (tick.activeRoutes < minimumActiveRoutes) {
+      fail(
+        `E6_RECORDING_TOO_THIN activeRoutes=${tick.activeRoutes} minimum=${minimumActiveRoutes}`,
+      );
+    }
+    return tick;
+  });
+  const scale = assertScaleMetadata(metadata, vehicleTicks);
+  const vehicles = vehicleTicks[0].vehicles;
+  const activeRouteIds = sortedUnique(
+    vehicleTicks.flatMap((tick) => tick.activeRouteIds),
+  );
+  const activeRoutes = activeRouteIds.length;
+
+  const routePrefix = metadata.routePrefix;
+  if (typeof routePrefix !== "string" || routePrefix.length === 0) {
+    fail("E6_RECORDING_INVALID routePrefix is required");
+  }
+  const missingRouteIds = activeRouteIds.filter(
+    (id) => !payloads.has(`${routePrefix}${encodeURIComponent(id)}.json`),
+  );
+  if (missingRouteIds.length > 0) {
+    fail(
+      `E6_RECORDING_INCOMPLETE missing route files: ${missingRouteIds.join(", ")}`,
+    );
+  }
+  const missingClaimedRouteFiles = requiredPaths.filter(
+    (path) => path.startsWith(routePrefix) && !payloads.has(path),
+  );
+  if (missingClaimedRouteFiles.length > 0) {
+    fail(
+      `E6_RECORDING_INCOMPLETE missing required files: ${missingClaimedRouteFiles.join(", ")}`,
+    );
+  }
+
+  const routesIndexPath = recordingPath(
+    paths,
+    "routesIndex",
+    "static/routes_index.json",
+  );
+  const indexedIds = new Set(
+    (payloads.get(routesIndexPath)?.routes ?? [])
+      .map((route) => route?.id)
+      .filter((id) => typeof id === "string"),
+  );
+  const absentFromIndex = activeRouteIds.filter((id) => !indexedIds.has(id));
+  if (absentFromIndex.length > 0) {
+    fail(
+      `E6_RECORDING_INCOMPLETE active routes absent from index: ${absentFromIndex.join(", ")}`,
+    );
+  }
+
+  const files = payloads.size;
+  const declared = metadata.counts ?? {};
+  const mismatches = [];
+  if (declared.vehicles !== vehicles)
+    mismatches.push(`vehicles ${declared.vehicles}!=${vehicles}`);
+  if (declared.activeRoutes !== activeRoutes) {
+    mismatches.push(`activeRoutes ${declared.activeRoutes}!=${activeRoutes}`);
+  }
+  const declaredTicks = declared.vehicleTicks;
+  const actualTicks = vehicleTicks.map(
+    ({ vehicles: count, activeRoutes: routes }) => ({
+      vehicles: count,
+      activeRoutes: routes,
+    }),
+  );
+  if (JSON.stringify(declaredTicks) !== JSON.stringify(actualTicks)) {
+    mismatches.push("vehicleTicks mismatch");
+  }
+  if (declared.files !== files)
+    mismatches.push(`files ${declared.files}!=${files}`);
+  if (mismatches.length > 0) {
+    fail(`E6_RECORDING_COUNT_MISMATCH ${mismatches.join(" ")}`);
+  }
+
+  return {
+    sourceKind: metadata.sourceKind,
+    benchmarkEligible: metadata.benchmarkEligible,
+    vehicles,
+    activeRoutes,
+    files,
+    baseVehicles: FLEET.baseVehicles,
+    scaleLanes: FLEET.scaleLanes,
+    fleetVehicles: FLEET.fleetVehicles,
+    minimumActiveRoutes,
+    completeRouteFiles: activeRouteIds.length,
+    vehicleTicks: vehicleTicks.length,
+    captureGate,
+    scale,
+  };
+}
+
+function anchorIso(payload) {
+  if (
+    typeof payload?.generated_utc === "string" &&
+    ISO_INSTANT.test(payload.generated_utc)
+  ) {
+    return payload.generated_utc;
+  }
+  const liveGenerated = payload?.files?.live?.generated_utc;
+  if (typeof liveGenerated === "string" && ISO_INSTANT.test(liveGenerated)) {
+    return liveGenerated;
+  }
+  fail("E6_RECORDING_TIMESTAMP_MISSING payload has no generated_utc anchor");
+}
+
+function shiftIsoValues(value, deltaMs) {
+  if (typeof value === "string") {
+    if (!ISO_INSTANT.test(value)) return value;
+    const instant = Date.parse(value);
+    return Number.isFinite(instant)
+      ? new Date(instant + deltaMs).toISOString()
+      : value;
+  }
+  if (Array.isArray(value))
+    return value.map((entry) => shiftIsoValues(entry, deltaMs));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        shiftIsoValues(entry, deltaMs),
+      ]),
+    );
+  }
+  return value;
+}
+
+export function createStampAdvancer({ now = Date.now } = {}) {
+  let lastServeMs = Number.NEGATIVE_INFINITY;
+  return (payload) => {
+    const wallNow = now();
+    if (!Number.isFinite(wallNow)) fail("E6_REPLAY_CLOCK_INVALID");
+    const serveMs = Math.max(wallNow, lastServeMs + 1);
+    lastServeMs = serveMs;
+    const recordedMs = Date.parse(anchorIso(payload));
+    if (!Number.isFinite(recordedMs)) fail("E6_RECORDING_TIMESTAMP_INVALID");
+    return shiftIsoValues(payload, serveMs - recordedMs);
+  };
+}

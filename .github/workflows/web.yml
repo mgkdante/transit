@@ -15,6 +15,7 @@ on:
       - "turbo.json"
       - ".github/workflows/web.yml"
       - ".github/actions/**"
+      - "tools/e6/**"
   workflow_dispatch:
     inputs:
       deploy_target:
@@ -63,6 +64,10 @@ jobs:
                 "ci-work": {
                   "paths": [],
                   "prefixes": ["apps/data-proxy/", "apps/web/", "packages/"]
+                },
+                "e6-tests-work": {
+                  "paths": [],
+                  "prefixes": ["tools/e6/"]
                 }
               },
               "ignore": {
@@ -127,9 +132,25 @@ jobs:
       - name: Unit tests
         run: bun run test
 
+  e6-tests-work:
+    needs: [classify]
+    if: ${{ fromJSON(needs.classify.outputs.classification).relevant['e6-tests-work'] }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up JS workspace
+        uses: ./.github/actions/setup
+
+      - name: B2 fleet harness contracts
+        working-directory: ${{ github.workspace }}
+        run: bun run --cwd tools/e6 b2:check
+
   ci:
     name: ci
-    needs: [classify, ci-work]
+    needs: [classify, ci-work, e6-tests-work]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -138,13 +159,34 @@ jobs:
         with:
           needs-json: ${{ toJSON(needs) }}
 
+  deploy_scope:
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      deploy_web: ${{ steps.scope.outputs.deploy_web }}
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve deployable event diff
+        id: scope
+        working-directory: ${{ github.workspace }}
+        env:
+          E6_DEPLOY_EVENT: ${{ github.event_name }}
+          E6_DEPLOY_BEFORE: ${{ github.event.before }}
+          E6_DEPLOY_AFTER: ${{ github.sha }}
+        run: node tools/e6/deploy-scope.mjs >> "$GITHUB_OUTPUT"
+
   deploy-dev:
     name: deploy dev
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: ci
+    needs: [ci, deploy_scope]
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/develop') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.deploy_scope.outputs.deploy_web == 'true') ||
       (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'dev')
     environment: development
     steps:
@@ -211,9 +253,9 @@ jobs:
     name: deploy production
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: ci
+    needs: [ci, deploy_scope]
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deploy_scope.outputs.deploy_web == 'true') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy_target == 'production')
     environment: production
     steps:
