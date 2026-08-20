@@ -1,55 +1,125 @@
-import { B2_FLEET_CONTRACT as FLEET } from "./fleet-contract.mjs";
+import {
+  B2_FLEET_CONTRACT as FLEET,
+  codePointCompare,
+} from "./fleet-contract.mjs";
 
 export const E6_MIN_ACTIVE_ROUTES = 182;
-const CAPTURE_DATE = "2026-08-17";
+export const E6_SOURCE_BASE = "https://data.yesid.dev/v1";
+export const E6_PROVIDER = "stm";
+const CAPTURE_DATE = "2026-08-24";
 const CAPTURE_TIME_ZONE = "America/Toronto";
 const CAPTURE_LABEL = "weekday-rush";
+const CAPTURE_START_HOUR = 6;
+const CAPTURE_END_HOUR = 9;
 
 const ISO_INSTANT =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/u;
+  /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})T(?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})(?:\.\d{1,3})?(?:Z|(?<offsetSign>[+-])(?<offsetHour>\d{2}):(?<offsetMinute>\d{2}))$/u;
 
 function fail(message) {
   throw new Error(message);
 }
 
+function parseIsoInstant(value) {
+  const parts =
+    typeof value === "string" ? ISO_INSTANT.exec(value)?.groups : null;
+  if (!parts) return Number.NaN;
+  const year = Number(parts.year);
+  const month = Number(parts.month);
+  const day = Number(parts.day);
+  const hour = Number(parts.hour);
+  const minute = Number(parts.minute);
+  const second = Number(parts.second);
+  const offsetHour = Number(parts.offsetHour ?? 0);
+  const offsetMinute = Number(parts.offsetMinute ?? 0);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [
+    31,
+    leap ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ][month - 1];
+  if (
+    year < 1 ||
+    !daysInMonth ||
+    day < 1 ||
+    day > daysInMonth ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 14 ||
+    offsetMinute > 59 ||
+    (offsetHour === 14 && offsetMinute !== 0) ||
+    (parts.offsetSign === "-" && offsetHour === 0 && offsetMinute === 0)
+  )
+    return Number.NaN;
+  return Date.parse(value);
+}
+
 function localCaptureParts(capturedUtc) {
-  if (typeof capturedUtc !== "string" || !ISO_INSTANT.test(capturedUtc)) {
-    fail("E6_CAPTURE_INSTANT_INVALID");
-  }
-  const instant = new Date(capturedUtc);
-  if (!Number.isFinite(instant.valueOf())) fail("E6_CAPTURE_INSTANT_INVALID");
+  const epoch = parseIsoInstant(capturedUtc);
+  if (!Number.isFinite(epoch)) fail("E6_CAPTURE_INSTANT_INVALID");
   const values = Object.fromEntries(
     new Intl.DateTimeFormat("en-CA", {
       timeZone: CAPTURE_TIME_ZONE,
+      hourCycle: "h23",
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
       weekday: "long",
     })
-      .formatToParts(instant)
+      .formatToParts(new Date(epoch))
       .filter(({ type }) => type !== "literal")
       .map(({ type, value }) => [type, value]),
   );
   return {
     localDate: `${values.year}-${values.month}-${values.day}`,
+    localTime: `${values.hour}:${values.minute}:${values.second}`,
+    localHour: Number(values.hour),
     weekday: values.weekday,
   };
 }
 
 export function evaluateCaptureGate({ sourceKind, capturedUtc, label } = {}) {
-  const { localDate, weekday } = localCaptureParts(capturedUtc);
+  const { localDate, localTime, localHour, weekday } =
+    localCaptureParts(capturedUtc);
   return {
     eligible:
       sourceKind === "live" &&
       label === CAPTURE_LABEL &&
       localDate === CAPTURE_DATE &&
+      localHour >= CAPTURE_START_HOUR &&
+      localHour < CAPTURE_END_HOUR &&
       weekday === "Monday",
     label: label ?? null,
     timeZone: CAPTURE_TIME_ZONE,
     capturedUtc,
     localDate,
+    localTime,
     weekday,
   };
+}
+
+function isCaptureWindowInstant(capturedUtc) {
+  try {
+    return evaluateCaptureGate({
+      sourceKind: "live",
+      capturedUtc,
+      label: CAPTURE_LABEL,
+    }).eligible;
+  } catch {
+    return false;
+  }
 }
 
 function payloadMap(value) {
@@ -60,18 +130,6 @@ function payloadMap(value) {
 
 function sortedUnique(values) {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
-}
-
-function codePointCompare(left, right) {
-  const leftPoints = [...left].map((value) => value.codePointAt(0));
-  const rightPoints = [...right].map((value) => value.codePointAt(0));
-  const length = Math.min(leftPoints.length, rightPoints.length);
-  for (let index = 0; index < length; index += 1) {
-    if (leftPoints[index] !== rightPoints[index]) {
-      return leftPoints[index] - rightPoints[index];
-    }
-  }
-  return leftPoints.length - rightPoints.length;
 }
 
 function recordingPath(paths, key, fallback) {
@@ -191,6 +249,22 @@ export function validateRecordingSnapshot(
   if (!["benchmark", "capture", "dry-run"].includes(purpose))
     fail(`E6_RECORDING_PURPOSE_INVALID ${String(purpose)}`);
   const captureGate = assertCaptureMetadata(metadata, purpose);
+  if (
+    metadata.sourceKind === "live" &&
+    (metadata.sourceBase !== E6_SOURCE_BASE ||
+      metadata.provider !== E6_PROVIDER ||
+      payloads.get("manifest.json")?.provider !== E6_PROVIDER)
+  ) {
+    fail("E6_RECORDING_SOURCE_INVALID");
+  }
+  if (
+    metadata.benchmarkEligible === true &&
+    !isCaptureWindowInstant(
+      payloads.get("manifest.json")?.files?.live?.generated_utc,
+    )
+  ) {
+    fail("E6_MANIFEST_CAPTURE_WINDOW_INVALID");
+  }
 
   const paths = metadata.paths ?? {};
   const vehiclesPath = recordingPath(paths, "vehicles", "live/vehicles.json");
@@ -236,11 +310,27 @@ export function validateRecordingSnapshot(
     );
   }
 
+  let previousGeneratedMs = Number.NEGATIVE_INFINITY;
   const vehicleTicks = vehicleTickPaths.map((path, index) => {
     const payload = payloads.get(path);
     if (!Array.isArray(payload?.vehicles)) {
       fail(`E6_RECORDING_INVALID ${path} has no vehicles array`);
     }
+    const generatedUtc = payload.generated_utc;
+    const generatedMs = parseIsoInstant(generatedUtc);
+    if (!Number.isFinite(generatedMs)) {
+      fail(`E6_VEHICLE_TICK_GENERATED_UTC_INVALID tick=${index}`);
+    }
+    if (generatedMs <= previousGeneratedMs) {
+      fail(`E6_VEHICLE_TICK_GENERATED_UTC_NOT_INCREASING tick=${index}`);
+    }
+    if (
+      metadata.benchmarkEligible === true &&
+      !isCaptureWindowInstant(generatedUtc)
+    ) {
+      fail(`E6_VEHICLE_TICK_CAPTURE_WINDOW_INVALID tick=${index}`);
+    }
+    previousGeneratedMs = generatedMs;
     if (payload.vehicles.length !== FLEET.fleetVehicles) {
       fail(
         `E6_FLEET_COUNT_MISMATCH tick=${index} actual=${payload.vehicles.length} expected=${FLEET.fleetVehicles}`,
@@ -363,15 +453,15 @@ export function validateRecordingSnapshot(
 }
 
 function anchorIso(payload) {
-  if (
-    typeof payload?.generated_utc === "string" &&
-    ISO_INSTANT.test(payload.generated_utc)
-  ) {
-    return payload.generated_utc;
+  if (typeof payload?.generated_utc === "string") {
+    if (Number.isFinite(parseIsoInstant(payload.generated_utc)))
+      return payload.generated_utc;
+    fail("E6_RECORDING_TIMESTAMP_INVALID");
   }
   const liveGenerated = payload?.files?.live?.generated_utc;
-  if (typeof liveGenerated === "string" && ISO_INSTANT.test(liveGenerated)) {
-    return liveGenerated;
+  if (typeof liveGenerated === "string") {
+    if (Number.isFinite(parseIsoInstant(liveGenerated))) return liveGenerated;
+    fail("E6_RECORDING_TIMESTAMP_INVALID");
   }
   fail("E6_RECORDING_TIMESTAMP_MISSING payload has no generated_utc anchor");
 }
@@ -379,10 +469,9 @@ function anchorIso(payload) {
 function shiftIsoValues(value, deltaMs) {
   if (typeof value === "string") {
     if (!ISO_INSTANT.test(value)) return value;
-    const instant = Date.parse(value);
-    return Number.isFinite(instant)
-      ? new Date(instant + deltaMs).toISOString()
-      : value;
+    const instant = parseIsoInstant(value);
+    if (!Number.isFinite(instant)) fail("E6_RECORDING_TIMESTAMP_INVALID");
+    return new Date(instant + deltaMs).toISOString();
   }
   if (Array.isArray(value))
     return value.map((entry) => shiftIsoValues(entry, deltaMs));
@@ -404,8 +493,7 @@ export function createStampAdvancer({ now = Date.now } = {}) {
     if (!Number.isFinite(wallNow)) fail("E6_REPLAY_CLOCK_INVALID");
     const serveMs = Math.max(wallNow, lastServeMs + 1);
     lastServeMs = serveMs;
-    const recordedMs = Date.parse(anchorIso(payload));
-    if (!Number.isFinite(recordedMs)) fail("E6_RECORDING_TIMESTAMP_INVALID");
+    const recordedMs = parseIsoInstant(anchorIso(payload));
     return shiftIsoValues(payload, serveMs - recordedMs);
   };
 }

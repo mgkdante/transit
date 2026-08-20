@@ -67,7 +67,11 @@ describe('shouldRunViewTransition', () => {
 });
 
 describe('runViewTransition', () => {
-	const navigation = { complete: Promise.resolve() };
+	const navigation = {
+		from: { url: new URL('https://transit.yesid.dev/map') },
+		to: { url: new URL('https://transit.yesid.dev/lines') },
+		complete: Promise.resolve(),
+	};
 
 	it('returns undefined (instant swap) when the API is unsupported', () => {
 		const { startViewTransition } = stubEnvironment({
@@ -87,7 +91,22 @@ describe('runViewTransition', () => {
 		expect(startViewTransition).not.toHaveBeenCalled();
 	});
 
-	it('drives a transition and resolves once the swap is committed', async () => {
+	it('returns undefined for a same-path query rewrite', () => {
+		const { startViewTransition } = stubEnvironment({
+			hasViewTransition: true,
+			reducedMotion: false,
+		});
+		const result = runViewTransition({
+			from: { url: new URL('https://transit.yesid.dev/map?vehicle=V') },
+			to: { url: new URL('https://transit.yesid.dev/map') },
+			complete: Promise.resolve(),
+		});
+
+		expect(result).toBeUndefined();
+		expect(startViewTransition).not.toHaveBeenCalled();
+	});
+
+	it('drives a transition for /map -> /lines and resolves once the swap is committed', async () => {
 		const { startViewTransition } = stubEnvironment({
 			hasViewTransition: true,
 			reducedMotion: false,
@@ -108,7 +127,7 @@ describe('runViewTransition', () => {
 			reducedMotion: false,
 		});
 
-		const commitGate = runViewTransition({ complete });
+		const commitGate = runViewTransition({ ...navigation, complete });
 		await expect(commitGate).resolves.toBeUndefined();
 
 		let updateFinished = false;

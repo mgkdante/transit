@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildMeasurementPlan, parseE6Config } from "../lib/config.mjs";
-import * as config from "../lib/config.mjs";
+import {
+  E6_INTERACTION_BUDGET_MS,
+  E6_WINDOW_MS,
+  buildMeasurementPlan,
+} from "../lib/config.mjs";
 
 test("uses the sole raw unthrottled 3,424-vehicle arm by default", () => {
   const plan = buildMeasurementPlan();
+  assert.equal(E6_WINDOW_MS, 20_000);
+  assert.equal(E6_INTERACTION_BUDGET_MS, 200);
+  assert.equal(plan.windowMs, E6_WINDOW_MS);
+  assert.equal(plan.interactionBudgetMs, E6_INTERACTION_BUDGET_MS);
   assert.deepEqual(plan, {
+    id: "raw@3424-unthrottled",
     mode: "raw",
     rate: 1,
     fleetVehicles: 3_424,
@@ -14,79 +22,26 @@ test("uses the sole raw unthrottled 3,424-vehicle arm by default", () => {
     windowMs: 20_000,
     busyBudgetMs: 8,
     interactionBudgetMs: 200,
-    arms: [
-      {
-        id: "raw@3424-unthrottled",
-        mode: "raw",
-        rate: 1,
-        fleetVehicles: 3_424,
-      },
-    ],
   });
 });
 
-test("rejects the binding arm when it is unscored", () => {
-  const plan = buildMeasurementPlan();
-  assert.throws(
-    () => config.assertAllArmsScored(plan, []),
-    /E6_ARMS_UNSCORED raw@3424-unthrottled/u,
-  );
-  assert.equal(
-    config.assertAllArmsScored(
-      plan,
-      plan.arms.map(({ id }) => ({ id, scored: true })),
-    ),
-    true,
-  );
-});
-
-test("accepts explicit binding values and a custom trusted-action count", () => {
-  const config = parseE6Config({
-    env: { E6_MODE: "raw", E6_RATE: "1", E6_INTERACTIONS: "9" },
-    argv: [
-      "--mode=raw",
-      "--rate",
-      "1",
-      "--fleet-vehicles=3424",
-      "--interactions=17",
-    ],
-  });
-  assert.deepEqual(config, {
-    mode: "raw",
-    rate: 1,
-    fleetVehicles: 3_424,
-    interactions: 17,
-    windowMs: 20_000,
-    busyBudgetMs: 8,
-    interactionBudgetMs: 200,
-  });
-});
-
-test("rejects smooth, throttled, wrong-fleet, and hidden throttle inputs", () => {
+test("keeps every binding field fixed instead of exposing an override", () => {
   for (const options of [
-    { env: { E6_MODE: "smooth" } },
-    { env: { E6_RATE: "2" } },
-    { env: { E6_FLEET_VEHICLES: "856" } },
+    { env: { E6_MODE: "raw" } },
+    { env: { E6_RATE: "1" } },
+    { env: { E6_FLEET_VEHICLES: "3424" } },
+    { env: { E6_INTERACTIONS: "9" } },
+    { env: { E6_INTERACTIONS: "13" } },
     { env: { E6_CPU_THROTTLE_RATE: "1" } },
+    { argv: ["--mode=raw"] },
+    { argv: ["--rate", "1"] },
+    { argv: ["--fleet-vehicles=3424"] },
+    { argv: ["--interactions=13"] },
+    { argv: ["--cpu-throttle", "1"] },
   ]) {
     assert.throws(
       () => buildMeasurementPlan(options),
       /E6_BINDING_ARM_REQUIRED/u,
     );
   }
-});
-
-test("rejects invalid mode, rate, and interaction inputs before a run begins", () => {
-  assert.throws(
-    () => parseE6Config({ env: { E6_MODE: "fast" } }),
-    /E6_BINDING_ARM_REQUIRED/u,
-  );
-  assert.throws(
-    () => parseE6Config({ env: { E6_RATE: "Infinity" } }),
-    /E6_BINDING_ARM_REQUIRED/u,
-  );
-  assert.throws(
-    () => parseE6Config({ env: { E6_INTERACTIONS: "0" } }),
-    /E6_INTERACTIONS_INVALID/u,
-  );
 });

@@ -10,9 +10,6 @@ import { validateRecordingSnapshot } from "./lib/recording.mjs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
-const DEFAULT_SOURCE_BASE = "https://data.yesid.dev/v1";
-const DEFAULT_PROVIDER = "stm";
-
 function fail(message) {
   throw new Error(message);
 }
@@ -43,6 +40,7 @@ function receipt(command, metadata, validation, recordingDigest) {
   return {
     command,
     sourceKind: validation.sourceKind,
+    sourceBase: metadata.sourceBase,
     provider: metadata.provider,
     vehicles: validation.vehicles,
     activeRoutes: validation.activeRoutes,
@@ -114,8 +112,6 @@ export async function runCli({
       fail("E6_CAPTURE_LABEL_REQUIRED weekday-rush");
     }
     const recording = await captureRecording({
-      sourceBase: env.E6_SOURCE_BASE ?? DEFAULT_SOURCE_BASE,
-      provider: env.E6_PROVIDER ?? DEFAULT_PROVIDER,
       captureLabel: env.E6_CAPTURE_LABEL,
     });
     const validation = validateRecordingSnapshot(recording, {

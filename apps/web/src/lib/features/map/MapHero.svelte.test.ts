@@ -664,6 +664,7 @@ afterEach(() => {
 	cleanup();
 	document.body.innerHTML = '';
 	vi.clearAllMocks();
+	harness.vehicleSourceSetData.mockReset();
 	harness.resetMotionSetImplementation();
 	harness.resetGetRouteImplementation();
 	harness.resetStopsIndex();
@@ -2328,6 +2329,28 @@ describe('MapHero map-layer feed lifecycle', () => {
 			stops: beforeClock.stops,
 			nearTarget: beforeClock.nearTarget,
 		});
+	});
+
+	it('publishes a processed tick only after the raw vehicle source upload completes', async () => {
+		render(MapHero);
+		await tick();
+		const hero = document.querySelector('.map-hero');
+		expect(hero).not.toBeNull();
+		const nextTickKey = '2026-06-20T12:00:30Z';
+		const uploadsBefore = harness.vehicleSourceSetData.mock.calls.length;
+		harness.vehicleSourceSetData.mockImplementation(() => {
+			expect(hero).not.toHaveAttribute('data-motion-tick-key', nextTickKey);
+		});
+
+		mapHeroReceiptSignals.setVehiclesGeneration(nextTickKey);
+		await waitFor(() => expect(hero).toHaveAttribute('data-motion-tick-key', nextTickKey));
+		expect(hero).toHaveAttribute('data-motion-vehicle-count', '1');
+		expect(harness.vehicleSourceSetData).toHaveBeenCalledTimes(uploadsBefore + 1);
+
+		const uploads = harness.vehicleSourceSetData.mock.calls.length;
+		mapHeroReceiptSignals.setVehiclesGeneration(nextTickKey);
+		await tick();
+		expect(harness.vehicleSourceSetData).toHaveBeenCalledTimes(uploads);
 	});
 
 	it('reacts to reduced motion by snapping and cancelling the pending animated upload', async () => {

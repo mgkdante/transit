@@ -2,6 +2,83 @@ import { createServer } from "node:http";
 
 import { createStampAdvancer } from "./recording.mjs";
 
+export function assertReplayVehicleRequests(
+  stats,
+  vehiclePath,
+  before = {},
+  expected = 1,
+) {
+  if (
+    typeof vehiclePath !== "string" ||
+    vehiclePath.length === 0 ||
+    !Number.isSafeInteger(expected) ||
+    expected < 0
+  ) {
+    throw new Error("E6_REPLAY_VEHICLE_REQUEST_INPUT_INVALID");
+  }
+  const served =
+    (stats?.served?.[vehiclePath] ?? 0) - (before?.served?.[vehiclePath] ?? 0);
+  if (!Number.isSafeInteger(served) || served !== expected) {
+    throw new Error(
+      `E6_REPLAY_VEHICLE_REQUEST_COUNT expected=${expected} actual=${served}`,
+    );
+  }
+  return { path: vehiclePath, served };
+}
+
+export function assertReplayVehicleTicks(stats, vehicleTickPaths, before = {}) {
+  if (
+    !Array.isArray(vehicleTickPaths) ||
+    vehicleTickPaths.length !== 2 ||
+    new Set(vehicleTickPaths).size !== 2
+  ) {
+    throw new Error("E6_REPLAY_VEHICLE_TICKS_INVALID");
+  }
+  const vehicleTicks = vehicleTickPaths.map((path) => ({
+    path,
+    served:
+      (stats?.vehicleTicks?.[path] ?? 0) - (before?.vehicleTicks?.[path] ?? 0),
+  }));
+  if (vehicleTicks.some(({ path, served }) => !path || served !== 1)) {
+    throw new Error("E6_REPLAY_VEHICLE_TICKS_INCOMPLETE");
+  }
+  let vehicleEndpoint;
+  try {
+    vehicleEndpoint = assertReplayVehicleRequests(
+      stats,
+      vehicleTickPaths[0],
+      before,
+      2,
+    );
+  } catch (error) {
+    throw new Error("E6_REPLAY_VEHICLE_TICKS_INCOMPLETE", { cause: error });
+  }
+  const beforeDeliveryCount = before?.vehicleDeliveries?.length ?? 0;
+  const vehicleDeliveries =
+    stats?.vehicleDeliveries?.slice(beforeDeliveryCount);
+  if (
+    !Array.isArray(vehicleDeliveries) ||
+    vehicleDeliveries.length !== 2 ||
+    new Set(vehicleDeliveries.map(({ recordedPath }) => recordedPath)).size !==
+      2 ||
+    vehicleDeliveries.some(
+      ({ recordedPath, servedGeneratedUtc }) =>
+        !vehicleTickPaths.includes(recordedPath) ||
+        typeof servedGeneratedUtc !== "string" ||
+        !Number.isFinite(Date.parse(servedGeneratedUtc)),
+    ) ||
+    Date.parse(vehicleDeliveries[1].servedGeneratedUtc) <=
+      Date.parse(vehicleDeliveries[0].servedGeneratedUtc)
+  ) {
+    throw new Error("E6_REPLAY_VEHICLE_TICKS_INCOMPLETE");
+  }
+  return {
+    vehicleEndpoint,
+    vehicleTicks,
+    vehicleDeliveries: vehicleDeliveries.map((delivery) => ({ ...delivery })),
+  };
+}
+
 export function createReplayResponder(recording, { now = Date.now } = {}) {
   const provider = recording?.metadata?.provider;
   if (typeof provider !== "string" || provider.length === 0) {
@@ -11,6 +88,8 @@ export function createReplayResponder(recording, { now = Date.now } = {}) {
     throw new Error("E6_REPLAY_PAYLOADS_INVALID");
   const advance = createStampAdvancer({ now });
   const served = {};
+  const servedVehicleTicks = {};
+  const vehicleDeliveries = [];
   const providerPrefix = `/v1/${encodeURIComponent(provider)}/`;
   const vehiclesPath =
     recording.metadata.paths?.vehicles ?? "live/vehicles.json";
@@ -31,14 +110,26 @@ export function createReplayResponder(recording, { now = Date.now } = {}) {
       if (!pathname.startsWith(providerPrefix))
         return { status: 404, headers: {}, body: "" };
       const path = pathname.slice(providerPrefix.length);
-      const recordedPath =
-        alternateVehicleTicks && path === vehiclesPath
-          ? vehicleTickPaths[vehicleTickCursor++ % vehicleTickPaths.length]
-          : path;
-      const recorded = recording.payloads.get(recordedPath);
-      if (recorded === undefined) return { status: 404, headers: {}, body: "" };
-      const body = `${JSON.stringify(advance(recorded))}\n`;
-      served[path] = (served[path] ?? 0) + 1;
+      const isVehicleEndpoint = alternateVehicleTicks && path === vehiclesPath;
+      const recordedPath = isVehicleEndpoint
+        ? vehicleTickPaths[vehicleTickCursor % vehicleTickPaths.length]
+        : path;
+      const payload = recording.payloads.get(recordedPath);
+      if (payload === undefined) return { status: 404, headers: {}, body: "" };
+      const servedPayload = method === "GET" ? advance(payload) : null;
+      const body = servedPayload ? `${JSON.stringify(servedPayload)}\n` : "";
+      if (method === "GET") {
+        served[path] = (served[path] ?? 0) + 1;
+        if (isVehicleEndpoint) {
+          vehicleTickCursor += 1;
+          servedVehicleTicks[recordedPath] =
+            (servedVehicleTicks[recordedPath] ?? 0) + 1;
+          vehicleDeliveries.push({
+            recordedPath,
+            servedGeneratedUtc: servedPayload?.generated_utc,
+          });
+        }
+      }
       return {
         status: 200,
         headers: {
@@ -49,10 +140,14 @@ export function createReplayResponder(recording, { now = Date.now } = {}) {
           "content-type": "application/json; charset=utf-8",
           date: new Date(now()).toUTCString(),
         },
-        body: method === "HEAD" ? "" : body,
+        body,
       };
     },
-    stats: () => ({ served: { ...served } }),
+    stats: () => ({
+      served: { ...served },
+      vehicleTicks: { ...servedVehicleTicks },
+      vehicleDeliveries: vehicleDeliveries.map((delivery) => ({ ...delivery })),
+    }),
   };
 }
 

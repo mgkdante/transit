@@ -271,6 +271,7 @@
 	let map = $state.raw<MapLibreMap | null>(null);
 	let mapFailure = $state<MapStageFailure | null>(null);
 	let vehicleMotion = $state<VehicleMotionController | null>(null);
+	let processedMotion = $state<{ tickKey: string; vehicleCount: number } | null>(null);
 	let vehicleMotionMap: MapLibreMap | null = null;
 
 	const shapeCache = createShapeCacheManager(getRoute);
@@ -844,7 +845,10 @@
 		// (A resolved route shape needs NO re-feed: the controller's per-frame
 		// shapeFor reads routeShapeCache directly and upgrades buses on the next frame.)
 		const revision = layerRevision;
-		if (!m) return;
+		if (!m) {
+			processedMotion = null;
+			return;
+		}
 		const reduceMotion = $prefersReducedMotion;
 		// Smooth = forward-projection ("almost real-time"); raw = ping-on-load (snap
 		// every feed, no estimation), the honest default. Reading motionMode.current
@@ -858,6 +862,8 @@
 		const serverNow = untrack(() => sharedClock.serverNow);
 		const filter = filters.state;
 		const stale = live.vehiclesIsStale;
+		const vehicleItems = live.vehicles?.vehicles ?? [];
+		const vehicleTickKey = live.vehiclesGeneratedUtc;
 		const ctx: MapLayerFeedContext = {
 			routes: {
 				items: routeLineRoutes,
@@ -865,13 +871,13 @@
 			},
 			vehicles: {
 				motion: vehicleMotion,
-				items: live.vehicles?.vehicles ?? [],
+				items: vehicleItems,
 				filter,
 				alertIds: alertVehicleIds,
 				selectedId: selectedVehicleId,
 				serverNow,
 				ttlS: liveTtl,
-				tickKey: live.vehiclesGeneratedUtc,
+				tickKey: vehicleTickKey,
 				stale,
 				// FORWARD projection: speed + fix-time per bus, the route shape to walk,
 				// and the live skew-free clock read each frame. Reduced motion, global
@@ -893,6 +899,9 @@
 		};
 
 		layerFeedController.feed(m, ctx, revision);
+		processedMotion = vehicleTickKey
+			? { tickKey: vehicleTickKey, vehicleCount: vehicleItems.length }
+			: null;
 	});
 
 	$effect(() => {
@@ -1109,7 +1118,8 @@
 	data-selection-presence={selectionPresence}
 	data-selection-source-health={selectionSourceHealth}
 	data-motion-stale={live.vehiclesIsStale}
-	data-motion-tick-key={live.vehiclesGeneratedUtc ?? undefined}
+	data-motion-tick-key={processedMotion?.tickKey}
+	data-motion-vehicle-count={processedMotion?.vehicleCount}
 	bind:this={heroEl}
 	bind:clientWidth={mapWidthPx}
 >

@@ -5,12 +5,17 @@ import { promisify } from "node:util";
 
 import {
   assertNoVitalsRequests,
+  assertTrustedInteractionStart,
   createArmContext,
   launchChromium,
   observeForbiddenVitals,
+  readMapTickSnapshot,
+  runObservedRefreshes,
   runTrustedInteractions,
   waitForMapReady,
+  waitForMapTickChange,
 } from "./lib/browser.mjs";
+import { captureIntervalMs } from "./lib/capture.mjs";
 import {
   assertPortsAvailable,
   startManagedProcess,
@@ -18,9 +23,11 @@ import {
   waitForHttp,
 } from "./lib/process.mjs";
 import {
+  E6_BUSY_PROBE_CADENCE_MS,
   assertSamplerEvidence,
   assertSyntheticProof,
   installSampler,
+  markSamplerWorkloadComplete,
   readSampler,
   startSampler,
 } from "./lib/sampler.mjs";
@@ -30,27 +37,29 @@ import {
   scoreBusyBudget,
   scoreInteractionBudget,
 } from "./lib/stats.mjs";
-import { assertAllArmsScored, buildMeasurementPlan } from "./lib/config.mjs";
+import {
+  E6_BUSY_BUDGET_MS,
+  E6_WINDOW_MS,
+  buildMeasurementPlan,
+} from "./lib/config.mjs";
 import { loadRecording, recordingContentDigest } from "./lib/files.mjs";
 import { fingerprintServedBuild } from "./lib/fingerprint.mjs";
 import { validateRecordingSnapshot } from "./lib/recording.mjs";
-import { startReplayServer } from "./lib/replay.mjs";
+import {
+  assertReplayVehicleRequests,
+  assertReplayVehicleTicks,
+  startReplayServer,
+} from "./lib/replay.mjs";
 import { createSyntheticRecording } from "./lib/synthetic.mjs";
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_DURATION_MS = 20_000;
-const BUDGET_MS = 8;
-const PREVIEW_PORTS = [4217, 4218, 4219, 4220, 4221, 4222, 4223];
+const PREVIEW_PORTS = [4217, 4218];
 export const webPaths = Object.freeze({
   webDirectory: fileURLToPath(new URL("../../apps/web/", import.meta.url)),
   clientRoot: fileURLToPath(
     new URL("../../apps/web/.svelte-kit/output/client", import.meta.url),
   ),
 });
-
-export function defaultPreviewUrl() {
-  return "http://127.0.0.1:4217/map";
-}
 
 function fail(message) {
   throw new Error(message);
@@ -65,10 +74,9 @@ function numberOption(value, name, { minimum = 0 } = {}) {
 
 function parseArgs(args, env = process.env) {
   const options = {
-    url: env.E6_URL ?? null,
     recordingDirectory: env.E6_RECORDING_DIR ?? null,
     durationMs: numberOption(
-      env.E6_DURATION_MS ?? DEFAULT_DURATION_MS,
+      env.E6_DURATION_MS ?? E6_WINDOW_MS,
       "E6_DURATION_MS",
     ),
     redProof: false,
@@ -81,11 +89,9 @@ function parseArgs(args, env = process.env) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     const value = () => args[++index] ?? fail(`E6_OPTION_VALUE_MISSING ${arg}`);
-    if (arg === "--url") options.url = value();
-    else if (arg === "--recording") options.recordingDirectory = value();
+    if (arg === "--recording") options.recordingDirectory = value();
     else if (arg === "--mode") value();
     else if (arg === "--rate") value();
-    else if (arg === "--interactions") value();
     else if (arg === "--fleet-vehicles") value();
     else if (arg === "--expected-head") options.expectedHead = value();
     else if (arg === "--expected-recording-digest")
@@ -107,14 +113,9 @@ function parseArgs(args, env = process.env) {
   if (
     !options.redProof &&
     !options.dryRun &&
-    options.durationMs !== DEFAULT_DURATION_MS
+    options.durationMs !== E6_WINDOW_MS
   ) {
-    fail(`E6_BENCHMARK_WINDOW_REQUIRED windowMs=${DEFAULT_DURATION_MS}`);
-  }
-  if (options.url) {
-    const url = new URL(options.url);
-    if (!["http:", "https:"].includes(url.protocol))
-      fail(`E6_URL_INVALID ${options.url}`);
+    fail(`E6_BENCHMARK_WINDOW_REQUIRED windowMs=${E6_WINDOW_MS}`);
   }
   return options;
 }
@@ -123,27 +124,39 @@ function print(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
-async function blockImmediatelyAfterSamplerPost(page, blockMs) {
-  await page.evaluate((duration) => {
-    window.__e6AfterSamplerPostMessage = () => {
-      const until = performance.now() + duration;
-      while (performance.now() < until) {}
-    };
-  }, blockMs);
+async function blockSamplerProbe(page, blockMs, phase) {
+  await page.evaluate(
+    ({ duration, hook }) => {
+      window[hook] = () => {
+        const until = performance.now() + duration;
+        while (performance.now() < until) {}
+      };
+    },
+    {
+      duration: blockMs,
+      hook:
+        phase === "before-post"
+          ? "__e6BeforeSamplerPostMessage"
+          : "__e6AfterSamplerPostMessage",
+    },
+  );
 }
 
 export function redProofReceipt(evidence, options) {
+  const expectedServiceMs = options.redBlockMs + E6_BUSY_PROBE_CADENCE_MS;
   const proof = assertSyntheticProof(evidence, {
-    expectedBlockMs: options.redBlockMs,
+    expectedBusyMs: expectedServiceMs,
     toleranceMs: options.redToleranceMs,
   });
-  const budget = scoreBusyBudget(proof.summary.p95, BUDGET_MS);
+  const budget = scoreBusyBudget(proof.summary.p95, E6_BUSY_BUDGET_MS);
   return {
     label: "SYNTHETIC_NOT_A_BENCHMARK",
     sourceKind: "synthetic",
     benchmarkEligible: false,
     proof: {
-      expectedBlockMs: options.redBlockMs,
+      injectedBlockMs: options.redBlockMs,
+      cadenceMs: E6_BUSY_PROBE_CADENCE_MS,
+      expectedServiceMs,
       toleranceMs: options.redToleranceMs,
     },
     busy: proof.summary,
@@ -195,57 +208,120 @@ export function assertExpectedIdentity({
   return { head: actualHead, recordingDigest: actualRecordingDigest };
 }
 
-export async function runEvidenceWindow({ start, wait, runActions, read }) {
-  for (const [name, value] of Object.entries({
-    start,
-    wait,
-    runActions,
-    read,
-  })) {
-    if (typeof value !== "function") fail(`E6_EVIDENCE_WINDOW_INVALID ${name}`);
-  }
-  await start();
-  await wait();
-  const actions = await runActions();
-  const evidence = await read();
-  return { actions, evidence };
+export function assertCleanGitStatus(status) {
+  if (status !== "") fail("E6_IDENTITY_WORKTREE_DIRTY");
 }
 
-export function bindRawEvidence({ busy, interactions } = {}) {
-  if (!Array.isArray(busy) || !Array.isArray(interactions)) {
-    fail("E6_RAW_EVIDENCE_INVALID");
+export function assertVehicleDelivery({
+  before,
+  after,
+  vehiclePath,
+  observedTickKey,
+  vehicleCount,
+  expectedVehicleCount,
+} = {}) {
+  const request = assertReplayVehicleRequests(after, vehiclePath, before, 1);
+  const beforeCount = before?.vehicleDeliveries?.length ?? 0;
+  const deliveries = after?.vehicleDeliveries?.slice(beforeCount);
+  if (
+    !Array.isArray(deliveries) ||
+    deliveries.length !== 1 ||
+    deliveries[0]?.servedGeneratedUtc !== observedTickKey ||
+    vehicleCount !== expectedVehicleCount
+  ) {
+    fail("E6_VEHICLE_DELIVERY_MISMATCH");
   }
   return {
-    busySamples: [...busy],
-    eventTimingEntries: interactions.map((entry) => ({ ...entry })),
-    percentileMethod: PERCENTILE_METHOD,
+    request,
+    delivery: { ...deliveries[0] },
+    processed: { tickKey: observedTickKey, vehicleCount },
   };
 }
 
-async function measureRedProof(browser, options) {
-  const arm = await createArmContext(browser, { rate: 1 });
-  try {
-    await installSampler(arm.page);
-    await arm.page.goto(
-      'data:text/html,<button aria-label="red proof blocker">red proof blocker</button>',
-      { waitUntil: "load" },
-    );
-    await arm.page.getByRole("button", { name: "red proof blocker" }).click();
-    await blockImmediatelyAfterSamplerPost(arm.page, options.redBlockMs);
-    await startSampler(arm.page);
-    await new Promise((resolve) => setTimeout(resolve, options.durationMs));
-    const evidence = await readSampler(arm.page);
-    return redProofReceipt(evidence, options);
-  } finally {
-    await arm.context.close();
+export function assertNaturalPollMargin({
+  servedGeneratedUtc,
+  manifest,
+  windowMs,
+  nowMs = Date.now(),
+} = {}) {
+  const ttlSeconds = Number(manifest?.files?.live?.ttl_s ?? 30);
+  const ttlMs = Math.max(1, ttlSeconds) * 1000;
+  const servedMs = Date.parse(servedGeneratedUtc);
+  const alignmentAgeMs = nowMs - servedMs;
+  const safetyMs = (ttlMs - windowMs) / 2;
+  const remainingAfterWindowMs = ttlMs - alignmentAgeMs - windowMs;
+  if (
+    ![ttlMs, servedMs, nowMs, windowMs].every(Number.isFinite) ||
+    windowMs <= 0 ||
+    ttlMs <= windowMs ||
+    alignmentAgeMs < 0 ||
+    remainingAfterWindowMs <= safetyMs
+  ) {
+    fail("E6_NATURAL_POLL_MARGIN_INVALID");
   }
+  return { ttlMs, alignmentAgeMs, safetyMs, remainingAfterWindowMs };
 }
 
-async function measureArm(browser, options, armPlan, environment) {
+export async function startMeasurementWindow({
+  start,
+  stats,
+  alignedReplay,
+  vehiclePath,
+  servedGeneratedUtc,
+  manifest,
+  windowMs,
+  now = Date.now,
+}) {
+  await start();
+  const pollAlignment = assertNaturalPollMargin({
+    servedGeneratedUtc,
+    manifest,
+    windowMs,
+    nowMs: now(),
+  });
+  assertReplayVehicleRequests(stats(), vehiclePath, alignedReplay, 0);
+  return { replay: alignedReplay, pollAlignment };
+}
+
+async function measureRedProof(browser, options) {
+  const phases = [];
+  for (const phase of ["before-post", "after-post"]) {
+    const arm = await createArmContext(browser, { rate: 1 });
+    try {
+      await installSampler(arm.page);
+      await arm.page.goto(
+        'data:text/html,<button aria-label="red proof blocker">red proof blocker</button>',
+        { waitUntil: "load" },
+      );
+      await arm.page.getByRole("button", { name: "red proof blocker" }).click();
+      await blockSamplerProbe(arm.page, options.redBlockMs, phase);
+      await startSampler(arm.page, options.durationMs);
+      const receipt = redProofReceipt(await readSampler(arm.page), options);
+      phases.push({ phase, busy: receipt.busy, budget: receipt.budget });
+    } finally {
+      await arm.context.close();
+    }
+  }
+  return {
+    label: "SYNTHETIC_NOT_A_BENCHMARK",
+    sourceKind: "synthetic",
+    benchmarkEligible: false,
+    proof: {
+      injectedBlockMs: options.redBlockMs,
+      cadenceMs: E6_BUSY_PROBE_CADENCE_MS,
+      expectedServiceMs: options.redBlockMs + E6_BUSY_PROBE_CADENCE_MS,
+      toleranceMs: options.redToleranceMs,
+    },
+    phases,
+  };
+}
+
+async function measureArm(browser, options, environment) {
+  const plan = options.plan;
   const arm = await createArmContext(browser, {
-    rate: armPlan.rate,
+    rate: plan.rate,
     storage: {
-      "transit:motion-mode": armPlan.mode,
+      "transit:motion-mode": plan.mode,
       "transit:controls-rail": "false",
     },
   });
@@ -254,31 +330,88 @@ async function measureArm(browser, options, armPlan, environment) {
     const vitalsAttempts = await observeForbiddenVitals(arm.page);
     await arm.page.goto(environment.previewUrl, { waitUntil: "networkidle" });
     await waitForMapReady(arm.page);
-    const measured = await runEvidenceWindow({
-      start: () => startSampler(arm.page),
-      wait: () =>
-        new Promise((resolve) => setTimeout(resolve, options.durationMs)),
-      runActions: () =>
-        runTrustedInteractions(arm.page, {
-          interactions: options.plan.interactions,
-        }),
-      read: () => readSampler(arm.page),
+    const alignmentTickKey = (await readMapTickSnapshot(arm.page)).tickKey;
+    const vehiclePath = environment.recording.metadata.paths.vehicles;
+    const beforeAlignment = environment.replay.stats();
+    const alignment = await waitForMapTickChange(arm.page, {
+      previousTickKey: alignmentTickKey,
+      expectedVehicleCount: plan.fleetVehicles,
+      timeoutMs: captureIntervalMs(
+        environment.recording.payloads.get("manifest.json"),
+      ),
     });
-    const evidence = assertSamplerEvidence(measured.evidence, {
+    const alignedReplay = environment.replay.stats();
+    const alignmentDelivery = assertVehicleDelivery({
+      before: beforeAlignment,
+      after: alignedReplay,
+      vehiclePath,
+      observedTickKey: alignment.tickKey,
+      vehicleCount: alignment.vehicleCount,
+      expectedVehicleCount: plan.fleetVehicles,
+    });
+    await assertTrustedInteractionStart(arm.page);
+    const startBoundary = await startMeasurementWindow({
+      start: () => startSampler(arm.page, options.durationMs),
+      stats: () => environment.replay.stats(),
+      alignedReplay,
+      vehiclePath,
+      servedGeneratedUtc: alignmentDelivery.delivery.servedGeneratedUtc,
+      manifest: environment.recording.payloads.get("manifest.json"),
+      windowMs: options.durationMs,
+    });
+    const [evidenceReport, workload] = await Promise.all([
+      readSampler(arm.page),
+      (async () => {
+        const actions = await runTrustedInteractions(arm.page, {
+          interactions: plan.interactions,
+        });
+        const refreshEvidence = [];
+        let refreshBaseline = environment.replay.stats();
+        const tickObservation = await runObservedRefreshes(arm.page, {
+          count: 2,
+          expectedVehicleCount: plan.fleetVehicles,
+          timeoutMs: options.durationMs,
+          afterTransition: async ({ nextTickKey, vehicleCount }) => {
+            const after = environment.replay.stats();
+            refreshEvidence.push(
+              assertVehicleDelivery({
+                before: refreshBaseline,
+                after,
+                vehiclePath,
+                observedTickKey: nextTickKey,
+                vehicleCount,
+                expectedVehicleCount: plan.fleetVehicles,
+              }),
+            );
+            refreshBaseline = after;
+          },
+        });
+        await markSamplerWorkloadComplete(arm.page);
+        return { actions, refreshEvidence, tickObservation };
+      })(),
+    ]);
+    const endBoundary = environment.replay.stats();
+    const evidence = assertSamplerEvidence(evidenceReport, {
       requireInteraction: true,
+      requiredWindowMs: options.durationMs,
     });
     assertNoVitalsRequests(vitalsAttempts);
+    const replay = assertReplayVehicleTicks(
+      endBoundary,
+      environment.recording.metadata.vehicleTickPaths,
+      startBoundary.replay,
+    );
     const interactionBudget = scoreInteractionBudget(evidence.interactions, {
-      requiredInteractions: options.plan.interactions,
+      requiredInteractions: plan.interactions,
+      budgetMs: plan.interactionBudgetMs,
     });
-    const busyBudget = scoreBusyBudget(evidence.summary.p95, BUDGET_MS);
+    const busyBudget = scoreBusyBudget(evidence.summary.p95, plan.busyBudgetMs);
     const verdict = scoreArmVerdict({
-      busyP95Ms: evidence.summary.p95,
-      interactionP95Ms: interactionBudget.p95Ms,
-      requestedActions: options.plan.interactions,
-      completedActions: measured.actions.length,
+      busyPassed: busyBudget.passed,
+      interactionPassed: interactionBudget.passed,
+      requestedActions: plan.interactions,
+      completedActions: workload.actions.length,
     });
-    const rawEvidence = bindRawEvidence(evidence);
     const benchmarkEligible =
       environment.recording.metadata.benchmarkEligible === true;
     return {
@@ -286,15 +419,30 @@ async function measureArm(browser, options, armPlan, environment) {
         ? "BENCHMARK"
         : "SYNTHETIC_DRY_RUN_NOT_A_BENCHMARK",
       sourceKind: environment.recording.metadata.sourceKind,
+      sourceBase: environment.recording.metadata.sourceBase ?? null,
+      provider: environment.recording.metadata.provider,
       benchmarkEligible,
-      id: armPlan.id,
-      mode: armPlan.mode,
-      rate: armPlan.rate,
-      fleetVehicles: armPlan.fleetVehicles,
-      actions: measured.actions,
+      id: plan.id,
+      mode: plan.mode,
+      rate: plan.rate,
+      fleetVehicles: plan.fleetVehicles,
+      actions: workload.actions,
+      tickObservation: workload.tickObservation,
+      refreshEvidence: workload.refreshEvidence,
+      pollAlignment: startBoundary.pollAlignment,
+      replay,
       forbiddenVitalsRequests: 0,
       busy: evidence.summary,
-      ...rawEvidence,
+      busySamples: evidence.busy,
+      busyProbes: evidence.busyProbes,
+      busyProbeCadenceMs: evidence.busyProbeCadenceMs,
+      windowStartedAt: evidence.windowStartedAt,
+      stopRequestedAt: evidence.stopRequestedAt,
+      requestedWindowMs: evidence.requestedWindowMs,
+      observedWindowMs: evidence.observedWindowMs,
+      workloadCompletedAt: evidence.workloadCompletedAt,
+      eventTimingEntries: evidence.interactions,
+      percentileMethod: PERCENTILE_METHOD,
       interactionTiming: interactionBudget,
       budgets: { busy: busyBudget, interaction: interactionBudget },
       verdict,
@@ -347,6 +495,14 @@ async function startEnvironment(options) {
   validateRecordingSnapshot(recording, {
     purpose: options.dryRun ? "dry-run" : "benchmark",
   });
+  if (!options.dryRun) {
+    const { stdout: status } = await execFileAsync(
+      "git",
+      ["status", "--porcelain=v1", "--untracked-files=normal"],
+      { cwd: fileURLToPath(new URL("../../", import.meta.url)) },
+    );
+    assertCleanGitStatus(status);
+  }
   const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], {
     cwd: fileURLToPath(new URL("../../", import.meta.url)),
   });
@@ -364,7 +520,7 @@ async function startEnvironment(options) {
   const replay = await startReplayServer(recording, { port: 4218 });
   try {
     const preview = await startPreview(replay.baseUrl);
-    const previewUrl = options.url ?? defaultPreviewUrl();
+    const previewUrl = "http://127.0.0.1:4217/map";
     const html = await (await fetch(previewUrl)).text();
     const fingerprint = await fingerprintServedBuild({
       head: actualHead,
@@ -387,7 +543,7 @@ async function startEnvironment(options) {
 }
 
 function usage() {
-  return "Usage: node tools/e6/e6-measure.mjs [--url URL] [--mode raw] [--rate 1] [--fleet-vehicles 3424] [--interactions N] [--expected-head SHA] [--expected-recording-digest SHA256] [--duration-ms N] [--dry-run] [--red-proof]";
+  return "Usage: node tools/e6/e6-measure.mjs [--expected-head SHA] [--expected-recording-digest SHA256] [--duration-ms N] [--dry-run] [--red-proof]";
 }
 
 export async function main(args = process.argv.slice(2), env = process.env) {
@@ -404,16 +560,13 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       browser = await launchChromium();
       const result = await measureRedProof(browser, options);
       print({ kind: "E6_RED_PROOF_RESULT", ...result });
-      return result.budget.passed ? 1 : 0;
+      return result.phases.every(({ budget }) => !budget.passed) ? 0 : 1;
     }
     const environment = await startEnvironment(options);
     preview = environment.preview;
     replay = environment.replay;
     browser = await launchChromium();
-    const arms = [];
-    for (const arm of options.plan.arms)
-      arms.push(await measureArm(browser, options, arm, environment));
-    assertAllArmsScored(options.plan, arms);
+    const arm = await measureArm(browser, options, environment);
     print({
       kind: "E6_MEASURE_RESULT",
       label: options.dryRun ? "SYNTHETIC_DRY_RUN_NOT_A_BENCHMARK" : "BENCHMARK",
@@ -426,9 +579,9 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       fingerprint: environment.fingerprint,
       identity: environment.identity,
       scale: environment.recording.metadata.scale,
-      arms,
+      arms: [arm],
     });
-    return arms.every((arm) => arm.verdict.passed) ? 0 : 1;
+    return arm.verdict.passed ? 0 : 1;
   } finally {
     await browser?.close();
     await stopManagedProcess(preview);
