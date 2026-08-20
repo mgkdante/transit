@@ -1,5 +1,10 @@
-import { B2_FLEET_CONTRACT as FLEET } from "./fleet-contract.mjs";
 import {
+  B2_FLEET_CONTRACT as FLEET,
+  codePointCompare,
+} from "./fleet-contract.mjs";
+import {
+  E6_PROVIDER,
+  E6_SOURCE_BASE,
   evaluateCaptureGate,
   validateRecordingSnapshot,
 } from "./recording.mjs";
@@ -12,18 +17,6 @@ const LIVE_DEFAULTS = {
   network: "live/network.json",
 };
 const VEHICLE_TICK_1_PATH = "recording/vehicle-tick-1.json";
-
-function codePointCompare(left, right) {
-  const leftPoints = [...left].map((value) => value.codePointAt(0));
-  const rightPoints = [...right].map((value) => value.codePointAt(0));
-  const length = Math.min(leftPoints.length, rightPoints.length);
-  for (let index = 0; index < length; index += 1) {
-    if (leftPoints[index] !== rightPoints[index]) {
-      return leftPoints[index] - rightPoints[index];
-    }
-  }
-  return leftPoints.length - rightPoints.length;
-}
 
 export function scaleVehicleTick(payload, { tick } = {}) {
   if (!Array.isArray(payload?.vehicles)) {
@@ -213,7 +206,7 @@ async function fetchPaths(paths, limit, work) {
   await Promise.all(workers);
 }
 
-function captureIntervalMs(manifest) {
+export function captureIntervalMs(manifest) {
   const ttlSeconds = Number(manifest?.files?.live?.ttl_s);
   return (
     (Math.max(Number.isFinite(ttlSeconds) ? ttlSeconds : 30, 30) + 5) * 1000
@@ -225,8 +218,8 @@ function defaultWait(milliseconds) {
 }
 
 export async function captureRecording({
-  sourceBase,
-  provider = "stm",
+  sourceBase = E6_SOURCE_BASE,
+  provider = E6_PROVIDER,
   fetchFn = fetch,
   now = Date.now,
   wait = defaultWait,

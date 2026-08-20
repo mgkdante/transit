@@ -5,11 +5,13 @@
 // (`@view-transition` + the `::view-transition-*(root)` cross-fade in app.css)
 // is the document-level styling; this module owns the SPA-navigation behaviour.
 //
-// We gate on TWO conditions, both honoured here so the layout stays a one-liner:
+// We gate on three conditions, all honoured here so the layout stays a one-liner:
 //   - feature-detect `document.startViewTransition` (absent in Firefox/older
 //     Safari → fall through to the instant default SvelteKit swap), and
 //   - respect `prefers-reduced-motion: reduce` (a cross-fade is "motion" on a
-//     data dashboard; reduced-motion users get the instant swap).
+//     data dashboard; reduced-motion users get the instant swap), and
+//   - skip same-path query/hash rewrites, which update the current surface and
+//     must not place a transient document layer over its controls.
 //
 // On the happy path we return a Promise that resolves INSIDE
 // `startViewTransition`, so the DOM swap (resolve) happens within the
@@ -21,6 +23,8 @@ import { isPrefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 
 /** The slice of SvelteKit's `onNavigate` argument this helper needs. */
 export interface ViewTransitionNavigation {
+	from: { url: URL } | null;
+	to: { url: URL } | null;
 	complete: Promise<unknown>;
 }
 
@@ -41,6 +45,7 @@ export function shouldRunViewTransition(): boolean {
  */
 export function runViewTransition(navigation: ViewTransitionNavigation): Promise<void> | undefined {
 	if (!shouldRunViewTransition()) return;
+	if (navigation.from && navigation.from.url.pathname === navigation.to?.url.pathname) return;
 	return new Promise<void>((resolve) => {
 		document.startViewTransition(async () => {
 			resolve();

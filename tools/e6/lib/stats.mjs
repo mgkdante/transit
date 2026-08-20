@@ -35,7 +35,7 @@ export function busySummary(samples) {
   };
 }
 
-export function scoreBusyBudget(p95Ms, budgetMs = 8) {
+export function scoreBusyBudget(p95Ms, budgetMs) {
   if (
     !Number.isFinite(p95Ms) ||
     p95Ms < 0 ||
@@ -55,7 +55,7 @@ export function scoreBusyBudget(p95Ms, budgetMs = 8) {
 
 export function scoreInteractionBudget(
   entries,
-  { requiredInteractions, budgetMs = 200 } = {},
+  { requiredInteractions, budgetMs } = {},
 ) {
   if (!Array.isArray(entries) || entries.length === 0) {
     throw new Error("E6_EVENT_TIMING_MISSING");
@@ -82,9 +82,9 @@ export function scoreInteractionBudget(
       Math.max(maxima.get(entry.interactionId) ?? 0, entry.duration),
     );
   }
-  if (maxima.size < requiredInteractions) {
+  if (maxima.size !== requiredInteractions) {
     throw new Error(
-      `E6_EVENT_TIMING_INSUFFICIENT distinct=${maxima.size} required=${requiredInteractions}`,
+      `E6_EVENT_TIMING_COUNT_MISMATCH distinct=${maxima.size} required=${requiredInteractions}`,
     );
   }
   const values = [...maxima]
@@ -105,16 +105,14 @@ export function scoreInteractionBudget(
 }
 
 export function scoreArmVerdict({
-  busyP95Ms,
-  interactionP95Ms,
+  busyPassed,
+  interactionPassed,
   requestedActions,
   completedActions,
 } = {}) {
   if (
-    !Number.isFinite(busyP95Ms) ||
-    busyP95Ms < 0 ||
-    !Number.isFinite(interactionP95Ms) ||
-    interactionP95Ms < 0 ||
+    typeof busyPassed !== "boolean" ||
+    typeof interactionPassed !== "boolean" ||
     !Number.isInteger(requestedActions) ||
     requestedActions < 1 ||
     !Number.isInteger(completedActions) ||
@@ -122,8 +120,6 @@ export function scoreArmVerdict({
   ) {
     throw new Error("E6_ARM_VERDICT_INPUT_INVALID");
   }
-  const busyPassed = busyP95Ms <= 8;
-  const interactionPassed = interactionP95Ms < 200;
   const actionsPassed = completedActions === requestedActions;
   const passed = busyPassed && interactionPassed && actionsPassed;
   return {

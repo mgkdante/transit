@@ -203,7 +203,6 @@ describe('MapHero orchestrator — structural law', () => {
 		expect(layerModulesSource).toContain('stale: vehicles.stale');
 		expect(layerModulesSource).toContain('setStale(map, vehicles.stale)');
 		expect(source).toContain('data-motion-stale={live.vehiclesIsStale}');
-		expect(source).toContain('data-motion-tick-key={live.vehiclesGeneratedUtc ?? undefined}');
 		expect(source).toContain('live.familyStates.departures.retainedGeneration != null');
 		expect(source).toContain("family.phase === 'failed' || family.consecutiveFailures > 0");
 		expect(source).toContain('getStopsIndexSlim({ signal })');

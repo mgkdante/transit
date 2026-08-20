@@ -10,10 +10,11 @@ import { createSyntheticRecording } from "../lib/synthetic.mjs";
 
 function completeRecording({ sourceKind = "live" } = {}) {
   const recording = createSyntheticRecording({
-    now: () => Date.parse("2026-08-17T12:00:00.000Z"),
+    now: () => Date.parse("2026-08-24T12:00:00.000Z"),
   });
   recording.metadata.sourceKind = sourceKind;
   if (sourceKind === "live") {
+    recording.metadata.sourceBase = "https://data.yesid.dev/v1";
     recording.metadata.label = "weekday-rush";
     recording.metadata.captureGate = evaluateCaptureGate({
       sourceKind,
@@ -55,6 +56,88 @@ test("refuses a second tick with any count other than exactly 3,424", () => {
     () => validateRecordingSnapshot(recording),
     /E6_FLEET_COUNT_MISMATCH tick=1 actual=3423 expected=3424/u,
   );
+});
+
+for (const { name, mutate, error } of [
+  {
+    name: "missing",
+    mutate: (firstTick) => delete firstTick.generated_utc,
+    error: /E6_VEHICLE_TICK_GENERATED_UTC_INVALID tick=0/u,
+  },
+  {
+    name: "malformed",
+    mutate: (firstTick) => (firstTick.generated_utc = "not-an-instant"),
+    error: /E6_VEHICLE_TICK_GENERATED_UTC_INVALID tick=0/u,
+  },
+  {
+    name: "calendar-invalid",
+    mutate: (firstTick) => (firstTick.generated_utc = "2026-02-30T12:00:00Z"),
+    error: /E6_VEHICLE_TICK_GENERATED_UTC_INVALID tick=0/u,
+  },
+  {
+    name: "equal",
+    mutate: (firstTick, secondTick) =>
+      (secondTick.generated_utc = firstTick.generated_utc),
+    error: /E6_VEHICLE_TICK_GENERATED_UTC_NOT_INCREASING tick=1/u,
+  },
+  {
+    name: "decreasing",
+    mutate: (firstTick, secondTick) =>
+      (secondTick.generated_utc = "2026-08-24T11:59:54.999Z"),
+    error: /E6_VEHICLE_TICK_GENERATED_UTC_NOT_INCREASING tick=1/u,
+  },
+]) {
+  test(`refuses ${name} vehicle tick generated_utc values`, () => {
+    const recording = completeRecording();
+    const [firstPath, secondPath] = recording.metadata.vehicleTickPaths;
+    mutate(
+      recording.payloads.get(firstPath),
+      recording.payloads.get(secondPath),
+    );
+    assert.throws(() => validateRecordingSnapshot(recording), error);
+  });
+}
+
+for (const { name, mutate } of [
+  {
+    name: "before the authorized window",
+    mutate: (firstTick) =>
+      (firstTick.generated_utc = "2026-08-24T09:59:59.999Z"),
+  },
+  {
+    name: "at the excluded window end",
+    mutate: (_firstTick, secondTick) =>
+      (secondTick.generated_utc = "2026-08-24T13:00:00.000Z"),
+  },
+]) {
+  test(`refuses an eligible source tick ${name}`, () => {
+    const recording = completeRecording();
+    const [firstPath, secondPath] = recording.metadata.vehicleTickPaths;
+    mutate(
+      recording.payloads.get(firstPath),
+      recording.payloads.get(secondPath),
+    );
+    for (const purpose of ["capture", "benchmark"]) {
+      assert.throws(
+        () => validateRecordingSnapshot(recording, { purpose }),
+        /E6_VEHICLE_TICK_CAPTURE_WINDOW_INVALID/u,
+        purpose,
+      );
+    }
+  });
+}
+
+test("refuses an eligible recording whose manifest is outside the capture window", () => {
+  const recording = completeRecording();
+  recording.payloads.get("manifest.json").files.live.generated_utc =
+    "2026-08-24T09:59:59.999Z";
+  for (const purpose of ["capture", "benchmark"]) {
+    assert.throws(
+      () => validateRecordingSnapshot(recording, { purpose }),
+      /E6_MANIFEST_CAPTURE_WINDOW_INVALID/u,
+      purpose,
+    );
+  }
 });
 
 test("validates against manifest-derived vehicle and route-index paths", () => {
@@ -110,6 +193,26 @@ test("refuses synthetic data for a benchmark measurement", () => {
   );
 });
 
+test("pins live recordings to the settled STM source", () => {
+  for (const [field, value] of [
+    ["sourceBase", "https://example.test/v1"],
+    ["provider", "other"],
+  ]) {
+    const recording = completeRecording();
+    recording.metadata[field] = value;
+    assert.throws(
+      () => validateRecordingSnapshot(recording),
+      /E6_RECORDING_SOURCE_INVALID/u,
+    );
+  }
+  const recording = completeRecording();
+  recording.payloads.get("manifest.json").provider = "other";
+  assert.throws(
+    () => validateRecordingSnapshot(recording),
+    /E6_RECORDING_SOURCE_INVALID/u,
+  );
+});
+
 test("advances every ISO stamp by one payload-relative delta", () => {
   const advance = createStampAdvancer({
     now: () => Date.parse("2026-08-10T12:00:00.000Z"),
@@ -126,6 +229,51 @@ test("advances every ISO stamp by one payload-relative delta", () => {
   assert.equal(shifted.nested.label, "2026-08-08");
   assert.equal(shifted.periods[0].start_utc, "2026-08-10T11:00:00.000Z");
   assert.equal(shifted.periods[1].end_utc, null);
+});
+
+test("refuses non-real or unknown UTC offsets at the capture gate", () => {
+  for (const capturedUtc of [
+    "2026-08-25T00:01:00.000+14:01",
+    "2026-08-25T09:59:00.000+23:59",
+    "2026-08-24T10:00:00.000-00:00",
+  ]) {
+    assert.throws(
+      () =>
+        evaluateCaptureGate({
+          sourceKind: "live",
+          capturedUtc,
+          label: "weekday-rush",
+        }),
+      /E6_CAPTURE_INSTANT_INVALID/u,
+      capturedUtc,
+    );
+  }
+  assert.equal(
+    evaluateCaptureGate({
+      sourceKind: "live",
+      capturedUtc: "2026-08-25T00:00:00.000+14:00",
+      label: "weekday-rush",
+    }).eligible,
+    true,
+  );
+});
+
+test("refuses calendar-invalid replay anchors and nested instants", () => {
+  const advance = createStampAdvancer({
+    now: () => Date.parse("2026-08-10T12:00:00.000Z"),
+  });
+  assert.throws(
+    () => advance({ generated_utc: "2026-02-30T12:00:00Z" }),
+    /E6_RECORDING_TIMESTAMP_INVALID/u,
+  );
+  assert.throws(
+    () =>
+      advance({
+        generated_utc: "2026-08-08T12:00:00Z",
+        nested: { eta_utc: "2026-02-30T12:00:00Z" },
+      }),
+    /E6_RECORDING_TIMESTAMP_INVALID/u,
+  );
 });
 
 test("keeps generated stamps monotonic when two serves share a wall-clock millisecond", () => {

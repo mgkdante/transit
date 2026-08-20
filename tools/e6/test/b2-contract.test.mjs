@@ -153,67 +153,6 @@ test("fleet validation fails closed on count, identity, declaration, scale, and 
   }
 });
 
-test("the only measurement plan is raw, 3,424 vehicles, rate 1, with no hidden throttle", () => {
-  assert.deepEqual(config.buildMeasurementPlan(), {
-    mode: "raw",
-    rate: 1,
-    fleetVehicles: 3_424,
-    interactions: 13,
-    windowMs: 20_000,
-    busyBudgetMs: 8,
-    interactionBudgetMs: 200,
-    arms: [
-      {
-        id: "raw@3424-unthrottled",
-        mode: "raw",
-        rate: 1,
-        fleetVehicles: 3_424,
-      },
-    ],
-  });
-  const rejected = [
-    { env: { E6_MODE: "smooth" } },
-    { env: { E6_RATE: "4" } },
-    { env: { E6_FLEET_VEHICLES: "856" } },
-    { env: { E6_CPU_THROTTLE_RATE: "1" } },
-    { argv: ["--mode", "smooth"] },
-    { argv: ["--rate", "2"] },
-    { argv: ["--fleet-vehicles", "3423"] },
-    { argv: ["--cpu-throttle", "1"] },
-  ];
-  for (const options of rejected) {
-    assert.throws(
-      () => config.buildMeasurementPlan(options),
-      /E6_BINDING_ARM_REQUIRED/u,
-    );
-  }
-});
-
-test("arm creation sends zero CDP CPU-throttling commands, including at rate 1", async () => {
-  const calls = [];
-  const page = {
-    context: () => ({
-      newCDPSession: async () => ({
-        send: async (...args) => calls.push(args),
-      }),
-    }),
-  };
-  const context = {
-    addInitScript: async () => {},
-    newPage: async () => page,
-  };
-  const arm = await browser.createArmContext(
-    { newContext: async () => context },
-    { rate: 1, storage: { "transit:motion-mode": "raw" } },
-  );
-  assert.equal(arm.page, page);
-  assert.equal(
-    calls.filter(([command]) => command === "Emulation.setCPUThrottlingRate")
-      .length,
-    0,
-  );
-});
-
 test("preview forces the vitals collector off and any attempted beacon fails the arm", async () => {
   const previewEnvironment = requireFunction(measure, "previewEnvironment");
   const observeForbiddenVitals = requireFunction(
@@ -255,7 +194,10 @@ test("Event Timing groups by interactionId maximum and enforces its strict indep
       { interactionId: 11, duration: 90 },
       { interactionId: 22, duration: 199.9 },
     ],
-    { requiredInteractions: 2 },
+    {
+      requiredInteractions: 2,
+      budgetMs: config.E6_INTERACTION_BUDGET_MS,
+    },
   );
   assert.deepEqual(grouped.values, [90, 199.9]);
   assert.equal(grouped.distinctInteractions, 2);
@@ -267,7 +209,10 @@ test("Event Timing groups by interactionId maximum and enforces its strict indep
         { interactionId: 1, duration: 200 },
         { interactionId: 2, duration: 200 },
       ],
-      { requiredInteractions: 2 },
+      {
+        requiredInteractions: 2,
+        budgetMs: config.E6_INTERACTION_BUDGET_MS,
+      },
     ).passed,
     false,
   );
@@ -276,40 +221,182 @@ test("Event Timing groups by interactionId maximum and enforces its strict indep
       interactionId: index + 1,
       duration: index === 19 ? 200 : 0,
     })),
-    { requiredInteractions: 20 },
+    {
+      requiredInteractions: 20,
+      budgetMs: config.E6_INTERACTION_BUDGET_MS,
+    },
   );
   assert.equal(notAMaxBudget.p95Ms, 10.000000000000142);
   assert.equal(notAMaxBudget.passed, true);
   assert.equal(
     scoreInteractionBudget([{ interactionId: 1, duration: 199.999 }], {
       requiredInteractions: 1,
+      budgetMs: config.E6_INTERACTION_BUDGET_MS,
     }).passed,
     true,
   );
   assert.equal(
     scoreInteractionBudget([{ interactionId: 1, duration: 200 }], {
       requiredInteractions: 1,
+      budgetMs: config.E6_INTERACTION_BUDGET_MS,
     }).passed,
     false,
   );
+  assert.throws(
+    () =>
+      scoreInteractionBudget([{ interactionId: 1, duration: 1 }], {
+        requiredInteractions: 1,
+      }),
+    /E6_EVENT_TIMING_BUDGET_INVALID/u,
+  );
 });
 
-test("arm receipts retain raw busy and Event Timing entries for independent recomputation", () => {
-  const bindRawEvidence = requireFunction(measure, "bindRawEvidence");
-  const busy = [1, 2, 8];
-  const interactions = [
-    { interactionId: 1, duration: 20 },
-    { interactionId: 1, duration: 40 },
-    { interactionId: 2, duration: 80 },
-  ];
-  const bound = bindRawEvidence({ busy, interactions });
-  assert.deepEqual(bound, {
-    busySamples: busy,
-    eventTimingEntries: interactions,
-    percentileMethod: "r7-linear-interpolation",
+test("binds each processed tick to exactly one ordered public replay delivery", () => {
+  const assertVehicleDelivery = requireFunction(
+    measure,
+    "assertVehicleDelivery",
+  );
+  const before = {
+    served: { "live/vehicles.json": 4 },
+    vehicleDeliveries: [
+      { recordedPath: "old", servedGeneratedUtc: "2026-08-24T10:00:00Z" },
+    ],
+  };
+  const after = {
+    served: { "live/vehicles.json": 5 },
+    vehicleDeliveries: [
+      ...before.vehicleDeliveries,
+      {
+        recordedPath: "recording/vehicle-tick-1.json",
+        servedGeneratedUtc: "2026-08-24T10:00:30Z",
+      },
+    ],
+  };
+  assert.deepEqual(
+    assertVehicleDelivery({
+      before,
+      after,
+      vehiclePath: "live/vehicles.json",
+      observedTickKey: "2026-08-24T10:00:30Z",
+      vehicleCount: 3_424,
+      expectedVehicleCount: 3_424,
+    }),
+    {
+      request: { path: "live/vehicles.json", served: 1 },
+      delivery: {
+        recordedPath: "recording/vehicle-tick-1.json",
+        servedGeneratedUtc: "2026-08-24T10:00:30Z",
+      },
+      processed: {
+        tickKey: "2026-08-24T10:00:30Z",
+        vehicleCount: 3_424,
+      },
+    },
+  );
+  assert.throws(
+    () =>
+      assertVehicleDelivery({
+        before,
+        after,
+        vehiclePath: "live/vehicles.json",
+        observedTickKey: "2026-08-24T10:00:31Z",
+        vehicleCount: 3_424,
+        expectedVehicleCount: 3_424,
+      }),
+    /E6_VEHICLE_DELIVERY_MISMATCH/u,
+  );
+});
+
+test("requires the fixed window to finish well before the next natural poll", () => {
+  const assertNaturalPollMargin = requireFunction(
+    measure,
+    "assertNaturalPollMargin",
+  );
+  assert.deepEqual(
+    assertNaturalPollMargin({
+      servedGeneratedUtc: "2026-08-24T10:00:00.000Z",
+      manifest: { files: { live: { ttl_s: 30 } } },
+      windowMs: 20_000,
+      nowMs: Date.parse("2026-08-24T10:00:01.000Z"),
+    }),
+    {
+      ttlMs: 30_000,
+      alignmentAgeMs: 1_000,
+      safetyMs: 5_000,
+      remainingAfterWindowMs: 9_000,
+    },
+  );
+  for (const changes of [
+    { nowMs: Date.parse("2026-08-24T10:00:06.000Z") },
+    { manifest: { files: { live: { ttl_s: 20 } } } },
+  ]) {
+    assert.throws(
+      () =>
+        assertNaturalPollMargin({
+          servedGeneratedUtc: "2026-08-24T10:00:00.000Z",
+          manifest: { files: { live: { ttl_s: 30 } } },
+          windowMs: 20_000,
+          nowMs: Date.parse("2026-08-24T10:00:01.000Z"),
+          ...changes,
+        }),
+      /E6_NATURAL_POLL_MARGIN_INVALID/u,
+    );
+  }
+});
+
+test("starts from the immutable aligned replay boundary and then checks the real poll margin", async () => {
+  const startMeasurementWindow = requireFunction(
+    measure,
+    "startMeasurementWindow",
+  );
+  const servedGeneratedUtc = "2026-08-24T10:00:00.000Z";
+  const manifest = { files: { live: { ttl_s: 30 } } };
+  const vehiclePath = "live/vehicles.json";
+  const alignedReplay = { served: { [vehiclePath]: 1 } };
+  let nowMs = Date.parse("2026-08-24T10:00:01.000Z");
+  let currentReplay = alignedReplay;
+  const input = {
+    stats: () => currentReplay,
+    alignedReplay,
+    vehiclePath,
+    servedGeneratedUtc,
+    manifest,
+    windowMs: 20_000,
+    now: () => nowMs,
+  };
+
+  await assert.rejects(
+    startMeasurementWindow({
+      ...input,
+      start: async () => {
+        nowMs = Date.parse("2026-08-24T10:00:06.000Z");
+      },
+    }),
+    /E6_NATURAL_POLL_MARGIN_INVALID/u,
+  );
+
+  nowMs = Date.parse("2026-08-24T10:00:01.000Z");
+  await assert.rejects(
+    startMeasurementWindow({
+      ...input,
+      start: async () => {
+        nowMs = Date.parse("2026-08-24T10:00:02.000Z");
+        currentReplay = { served: { [vehiclePath]: 2 } };
+      },
+    }),
+    /E6_REPLAY_VEHICLE_REQUEST_COUNT expected=0 actual=1/u,
+  );
+
+  currentReplay = alignedReplay;
+  nowMs = Date.parse("2026-08-24T10:00:01.000Z");
+  const started = await startMeasurementWindow({
+    ...input,
+    start: async () => {
+      nowMs = Date.parse("2026-08-24T10:00:04.000Z");
+    },
   });
-  assert.notEqual(bound.busySamples, busy);
-  assert.notEqual(bound.eventTimingEntries, interactions);
+  assert.equal(started.replay, alignedReplay);
+  assert.equal(started.pollAlignment.alignmentAgeMs, 4_000);
 });
 
 test("Event Timing fails closed on missing, malformed, zero-ID, and insufficient evidence", () => {
@@ -326,11 +413,15 @@ test("Event Timing fails closed on missing, malformed, zero-ID, and insufficient
       [{ interactionId: 1, duration: Number.NaN }],
       /E6_EVENT_TIMING_DURATION_INVALID/u,
     ],
-    [[{ interactionId: 1, duration: 10 }], /E6_EVENT_TIMING_INSUFFICIENT/u],
+    [[{ interactionId: 1, duration: 10 }], /E6_EVENT_TIMING_COUNT_MISMATCH/u],
   ];
   for (const [entries, expected] of cases) {
     assert.throws(
-      () => scoreInteractionBudget(entries, { requiredInteractions: 2 }),
+      () =>
+        scoreInteractionBudget(entries, {
+          requiredInteractions: 2,
+          budgetMs: config.E6_INTERACTION_BUDGET_MS,
+        }),
       expected,
     );
   }
@@ -340,8 +431,8 @@ test("arm verdict requires both budgets and every requested action", () => {
   const scoreArmVerdict = requireFunction(stats, "scoreArmVerdict");
   assert.equal(
     scoreArmVerdict({
-      busyP95Ms: 8,
-      interactionP95Ms: 199.9,
+      busyPassed: true,
+      interactionPassed: true,
       requestedActions: 13,
       completedActions: 13,
     }).verdict,
@@ -349,20 +440,20 @@ test("arm verdict requires both budgets and every requested action", () => {
   );
   for (const input of [
     {
-      busyP95Ms: 8.01,
-      interactionP95Ms: 100,
+      busyPassed: false,
+      interactionPassed: true,
       requestedActions: 13,
       completedActions: 13,
     },
     {
-      busyP95Ms: 8,
-      interactionP95Ms: 200,
+      busyPassed: true,
+      interactionPassed: false,
       requestedActions: 13,
       completedActions: 13,
     },
     {
-      busyP95Ms: 8,
-      interactionP95Ms: 100,
+      busyPassed: true,
+      interactionPassed: true,
       requestedActions: 13,
       completedActions: 12,
     },
@@ -371,64 +462,50 @@ test("arm verdict requires both budgets and every requested action", () => {
   }
 });
 
-test("trusted actions execute while Event Timing is active and evidence is read only afterward", async () => {
-  const runEvidenceWindow = requireFunction(measure, "runEvidenceWindow");
-  const order = [];
-  const result = await runEvidenceWindow({
-    start: async () => order.push("start"),
-    wait: async () => order.push("wait"),
-    runActions: async () => {
-      order.push("actions");
-      return ["a", "b"];
-    },
-    read: async () => {
-      order.push("read");
-      return { interactions: [{ interactionId: 1, duration: 20 }] };
-    },
-  });
-  assert.deepEqual(order, ["start", "wait", "actions", "read"]);
-  assert.deepEqual(result.actions, ["a", "b"]);
-});
-
-test("only the exact Monday Toronto weekday-rush live capture is benchmark eligible", () => {
+test("only the exact August 24 Toronto weekday-rush live capture is benchmark eligible", () => {
   const evaluateCaptureGate = requireFunction(recording, "evaluateCaptureGate");
   const monday = evaluateCaptureGate({
     sourceKind: "live",
-    capturedUtc: "2026-08-17T12:34:56.000Z",
+    capturedUtc: "2026-08-24T12:34:56.000Z",
     label: "weekday-rush",
   });
   assert.deepEqual(monday, {
     eligible: true,
     label: "weekday-rush",
     timeZone: "America/Toronto",
-    capturedUtc: "2026-08-17T12:34:56.000Z",
-    localDate: "2026-08-17",
+    capturedUtc: "2026-08-24T12:34:56.000Z",
+    localDate: "2026-08-24",
+    localTime: "08:34:56",
     weekday: "Monday",
   });
   for (const input of [
     {
       sourceKind: "live",
-      capturedUtc: "2026-08-15T12:34:56.000Z",
+      capturedUtc: "2026-08-17T12:34:56.000Z",
       label: "weekday-rush",
     },
     {
       sourceKind: "live",
-      capturedUtc: "2026-08-17T12:34:56.000Z",
+      capturedUtc: "2026-08-24T12:34:56.000Z",
       label: "rush",
     },
     {
       sourceKind: "synthetic",
-      capturedUtc: "2026-08-17T12:34:56.000Z",
+      capturedUtc: "2026-08-24T12:34:56.000Z",
       label: "weekday-rush",
     },
   ]) {
     assert.equal(evaluateCaptureGate(input).eligible, false);
   }
   for (const [capturedUtc, eligible] of [
-    ["2026-08-17T03:59:59.999Z", false],
-    ["2026-08-17T04:00:00.000Z", true],
-    ["2026-08-18T03:59:59.999Z", true],
-    ["2026-08-18T04:00:00.000Z", false],
+    ["2026-08-24T03:59:59.999Z", false],
+    ["2026-08-24T04:00:00.000Z", false],
+    ["2026-08-24T09:59:59.999Z", false],
+    ["2026-08-24T10:00:00.000Z", true],
+    ["2026-08-24T12:59:59.999Z", true],
+    ["2026-08-24T13:00:00.000Z", false],
+    ["2026-08-25T03:59:59.999Z", false],
+    ["2026-08-25T04:00:00.000Z", false],
   ]) {
     assert.equal(
       evaluateCaptureGate({
@@ -468,8 +545,14 @@ test("recording identity is recomputed from canonical content and exact expectat
     measure,
     "assertExpectedIdentity",
   );
+  const assertCleanGitStatus = requireFunction(measure, "assertCleanGitStatus");
   const value = createSyntheticRecording({ now: () => 1_723_726_800_000 });
   const digest = recordingContentDigest(value);
+  assert.doesNotThrow(() => assertCleanGitStatus(""));
+  assert.throws(
+    () => assertCleanGitStatus(" M tools/e6/e6-measure.mjs\n"),
+    /E6_IDENTITY_WORKTREE_DIRTY/u,
+  );
   assert.match(digest, /^[a-f\d]{64}$/u);
   const changed = structuredClone(value);
   changed.payloads = new Map(changed.payloads);

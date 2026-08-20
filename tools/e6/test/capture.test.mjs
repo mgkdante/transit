@@ -15,7 +15,7 @@ function sourceFleet(routeOffset = 0) {
 }
 
 function capturePayloads(manifest, routeIds) {
-  const generated = "2026-08-17T12:00:00.000Z";
+  const generated = "2026-08-24T12:00:00.000Z";
   const payloads = new Map([
     ["manifest.json", manifest],
     ["labels/en.json", { generated_utc: generated, labels: {} }],
@@ -46,7 +46,7 @@ test("derives five live families and one route file per distinct active route", 
     labels: { en: "labels/en.json" },
     files: {
       live: {
-        generated_utc: "2026-08-17T12:00:00.000Z",
+        generated_utc: "2026-08-24T12:00:00.000Z",
         vehicles: "live/v.json",
       },
       static: {
@@ -83,7 +83,7 @@ test("derives five live families and one route file per distinct active route", 
 });
 
 test("captures two manifest-derived ticks and scales each exact deterministic fleet", async () => {
-  const generated = "2026-08-17T12:00:00.000Z";
+  const generated = "2026-08-24T12:00:00.000Z";
   const routeIds = Array.from({ length: 182 }, (_, index) => routeId(index));
   const manifest = {
     provider: "stm",
@@ -99,25 +99,25 @@ test("captures two manifest-derived ticks and scales each exact deterministic fl
     },
   };
   const payloads = capturePayloads(manifest, routeIds);
-  const sourceTick = { generated_utc: generated, vehicles: sourceFleet() };
+  const sourceTicks = [generated, "2026-08-24T12:00:01.000Z"].map(
+    (generated_utc) => ({ generated_utc, vehicles: sourceFleet() }),
+  );
   const requested = [];
   let vehicleFetches = 0;
   const recording = await captureRecording({
-    sourceBase: "https://data.example/v1",
-    provider: "stm",
     fetchFn: async (url) => {
       const path = new URL(url).pathname.replace("/v1/stm/", "");
       requested.push(path);
       const payload =
         path === "live/vehicles.json"
-          ? (vehicleFetches += 1) && sourceTick
+          ? sourceTicks[vehicleFetches++]
           : payloads.get(path);
       return payload
         ? new Response(JSON.stringify(payload), { status: 200 })
         : new Response("not found", { status: 404 });
     },
     wait: async () => {},
-    now: () => Date.parse("2026-08-17T12:00:02.000Z"),
+    now: () => Date.parse("2026-08-24T12:00:02.000Z"),
     captureLabel: "weekday-rush",
   });
   assert.equal(recording.metadata.counts.files, 192);
@@ -135,9 +135,10 @@ test("captures two manifest-derived ticks and scales each exact deterministic fl
 });
 
 test("captures the second tick after manifest cadence and fetches the route union", async () => {
-  const generated = "2026-08-17T12:00:00.000Z";
+  const generated = "2026-08-24T12:00:00.000Z";
   const routeIds = Array.from({ length: 183 }, (_, index) => routeId(index));
   const manifest = {
+    provider: "stm",
     default_lang: "en",
     labels: { en: "labels/en.json" },
     files: {
@@ -147,7 +148,7 @@ test("captures the second tick after manifest cadence and fetches the route unio
   };
   const tick0 = { generated_utc: generated, vehicles: sourceFleet(0) };
   const tick1 = {
-    generated_utc: generated,
+    generated_utc: "2026-08-24T12:00:01.000Z",
     vehicles: sourceFleet(0).map((vehicle, index) => ({
       ...vehicle,
       route: routeIds[(index % 182) + 1],
@@ -157,7 +158,6 @@ test("captures the second tick after manifest cadence and fetches the route unio
   let vehicleFetches = 0;
   const waits = [];
   const recording = await captureRecording({
-    sourceBase: "https://data.example/v1",
     fetchFn: async (url) => {
       const path = new URL(url).pathname.replace("/v1/stm/", "");
       const payload =
@@ -167,7 +167,7 @@ test("captures the second tick after manifest cadence and fetches the route unio
       return new Response(JSON.stringify(payload), { status: 200 });
     },
     wait: async (milliseconds) => waits.push(milliseconds),
-    now: () => Date.parse("2026-08-17T12:00:02.000Z"),
+    now: () => Date.parse("2026-08-24T12:00:02.000Z"),
     captureLabel: "weekday-rush",
   });
   assert.deepEqual(waits, [35_000]);
@@ -191,7 +191,7 @@ test("fails closed when any planned family returns a non-success status", async 
           provider: "stm",
           labels: { en: "labels/en.json" },
           files: {
-            live: { generated_utc: "2026-08-17T12:00:00.000Z" },
+            live: { generated_utc: "2026-08-24T12:00:00.000Z" },
             static: {},
           },
         }),
@@ -203,8 +203,6 @@ test("fails closed when any planned family returns a non-success status", async 
   await assert.rejects(
     () =>
       captureRecording({
-        sourceBase: "https://data.example/v1",
-        provider: "stm",
         fetchFn,
         captureLabel: "weekday-rush",
       }),
