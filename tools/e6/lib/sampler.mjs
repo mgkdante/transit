@@ -124,6 +124,11 @@ export async function readSampler(page) {
       workloadCompletedAt: state.workloadCompletedAt,
       interactions: [...state.interactions],
       eventTimingSupported: state.eventTimingSupported,
+      ...(state.redProofTraces
+        ? {
+            redProofTraces: state.redProofTraces.map((trace) => ({ ...trace })),
+          }
+        : {}),
     };
   });
 }
@@ -220,7 +225,7 @@ export function assertSamplerEvidence(
 
 export function assertSyntheticProof(
   report,
-  { expectedBusyMs, toleranceMs = 4 } = {},
+  { expectedBusyMs, redBlockMs, phase } = {},
 ) {
   const checked = assertSamplerEvidence(report, {
     requireInteraction: false,
@@ -228,15 +233,43 @@ export function assertSyntheticProof(
   if (
     !Number.isFinite(expectedBusyMs) ||
     expectedBusyMs <= 0 ||
-    !Number.isFinite(toleranceMs) ||
-    toleranceMs < 0
+    !Number.isFinite(redBlockMs) ||
+    redBlockMs <= E6_BUSY_BUDGET_MS ||
+    !["before-post", "after-post"].includes(phase)
   ) {
     throw new Error("E6_RED_PROOF_INPUT_INVALID");
   }
-  const difference = checked.summary.p95 - expectedBusyMs;
-  if (difference < -E6_BUSY_PROBE_CADENCE_MS / 2 || difference > toleranceMs) {
+  if (
+    !Array.isArray(report.redProofTraces) ||
+    report.redProofTraces.length !== report.busyProbes.length
+  ) {
+    throw new Error("E6_RED_PROOF_TRACE_COUNT_MISMATCH");
+  }
+  for (let index = 0; index < report.busyProbes.length; index += 1) {
+    const probe = report.busyProbes[index];
+    const trace = report.redProofTraces[index];
+    if (trace?.phase !== phase)
+      throw new Error("E6_RED_PROOF_TRACE_PHASE_MISMATCH");
+    const { startedAt, endedAt } = trace;
+    if (
+      ![startedAt, endedAt].every(
+        (value) => Number.isFinite(value) && value >= 0,
+      )
+    ) {
+      throw new Error("E6_RED_PROOF_TRACE_TIME_INVALID");
+    }
+    if (endedAt < startedAt + redBlockMs)
+      throw new Error("E6_RED_PROOF_TRACE_DURATION_INVALID");
+    const contained =
+      phase === "before-post"
+        ? probe.scheduledAt <= startedAt && endedAt <= probe.postedAt
+        : probe.postedAt <= startedAt && endedAt <= probe.sampledAt;
+    if (!contained) throw new Error("E6_RED_PROOF_TRACE_CONTAINMENT_INVALID");
+  }
+  const minimumAcceptedBusyMs = expectedBusyMs - E6_BUSY_PROBE_CADENCE_MS / 2;
+  if (checked.summary.p95 < minimumAcceptedBusyMs) {
     throw new Error(
-      `E6_RED_PROOF_TOLERANCE measured=${checked.summary.p95} expected=${expectedBusyMs} tolerance=${toleranceMs}`,
+      `E6_RED_PROOF_UNDERSHOOT measured=${checked.summary.p95} minimum=${minimumAcceptedBusyMs}`,
     );
   }
   return checked;

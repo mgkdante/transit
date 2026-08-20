@@ -87,7 +87,7 @@ The preview targets the real `/map` route. Its app and immutable local replay ru
 node tools/e6/e6-measure.mjs --dry-run
 ```
 
-The sampler RED proof injects a 28 ms main-thread block before publication and again after publication. It exits zero only when both raw service p95 values are near the expected 32 ms including cadence and both binding 8 ms budget verdicts are `FAIL`:
+The sampler RED proof injects a 28 ms main-thread block before publication and again after publication. For every raw probe it validates one complete blocker span on the declared side of publication. It exits zero only when both raw service p95 values meet the one-sided 30 ms lower guard around the nominal 32 ms service time including cadence and both binding 8 ms budget verdicts are `FAIL`; scheduler overshoot remains valid RED evidence:
 
 ```sh
 node tools/e6/e6-measure.mjs --red-proof --duration-ms 2000

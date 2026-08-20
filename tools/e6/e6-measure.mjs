@@ -81,7 +81,6 @@ function parseArgs(args, env = process.env) {
     ),
     redProof: false,
     redBlockMs: 28,
-    redToleranceMs: 4,
     dryRun: false,
     expectedHead: env.E6_EXPECTED_HEAD ?? null,
     expectedRecordingDigest: env.E6_EXPECTED_RECORDING_DIGEST ?? null,
@@ -103,8 +102,6 @@ function parseArgs(args, env = process.env) {
       options.redBlockMs = numberOption(value(), "--red-block-ms", {
         minimum: Number.EPSILON,
       });
-    else if (arg === "--red-tolerance-ms")
-      options.redToleranceMs = numberOption(value(), "--red-tolerance-ms");
     else if (arg === "--dry-run") options.dryRun = true;
     else if (arg === "--help") return { help: true };
     else fail(`E6_OPTION_UNKNOWN ${arg}`);
@@ -126,14 +123,24 @@ function print(value) {
 
 async function blockSamplerProbe(page, blockMs, phase) {
   await page.evaluate(
-    ({ duration, hook }) => {
+    ({ duration, hook, proofPhase }) => {
+      const sampler = window.__e6Sampler;
+      if (!sampler) throw new Error("E6_SAMPLER_NOT_INSTALLED");
+      sampler.redProofTraces = [];
       window[hook] = () => {
-        const until = performance.now() + duration;
-        while (performance.now() < until) {}
+        const startedAt = performance.now();
+        const targetAt = startedAt + duration;
+        while (performance.now() < targetAt) {}
+        sampler.redProofTraces.push({
+          phase: proofPhase,
+          startedAt,
+          endedAt: performance.now(),
+        });
       };
     },
     {
       duration: blockMs,
+      proofPhase: phase,
       hook:
         phase === "before-post"
           ? "__e6BeforeSamplerPostMessage"
@@ -144,11 +151,19 @@ async function blockSamplerProbe(page, blockMs, phase) {
 
 export function redProofReceipt(evidence, options) {
   const expectedServiceMs = options.redBlockMs + E6_BUSY_PROBE_CADENCE_MS;
+  const minimumAcceptedServiceMs =
+    expectedServiceMs - E6_BUSY_PROBE_CADENCE_MS / 2;
   const proof = assertSyntheticProof(evidence, {
     expectedBusyMs: expectedServiceMs,
-    toleranceMs: options.redToleranceMs,
+    redBlockMs: options.redBlockMs,
+    phase: options.phase,
   });
   const budget = scoreBusyBudget(proof.summary.p95, E6_BUSY_BUDGET_MS);
+  const minimumInjectedBlockMs = Math.min(
+    ...proof.redProofTraces.map(
+      ({ startedAt, endedAt }) => endedAt - startedAt,
+    ),
+  );
   return {
     label: "SYNTHETIC_NOT_A_BENCHMARK",
     sourceKind: "synthetic",
@@ -157,7 +172,10 @@ export function redProofReceipt(evidence, options) {
       injectedBlockMs: options.redBlockMs,
       cadenceMs: E6_BUSY_PROBE_CADENCE_MS,
       expectedServiceMs,
-      toleranceMs: options.redToleranceMs,
+      minimumAcceptedServiceMs,
+      phase: options.phase,
+      traceCount: proof.redProofTraces.length,
+      minimumInjectedBlockMs,
     },
     busy: proof.summary,
     budget,
@@ -296,8 +314,17 @@ async function measureRedProof(browser, options) {
       await arm.page.getByRole("button", { name: "red proof blocker" }).click();
       await blockSamplerProbe(arm.page, options.redBlockMs, phase);
       await startSampler(arm.page, options.durationMs);
-      const receipt = redProofReceipt(await readSampler(arm.page), options);
-      phases.push({ phase, busy: receipt.busy, budget: receipt.budget });
+      const receipt = redProofReceipt(await readSampler(arm.page), {
+        ...options,
+        phase,
+      });
+      phases.push({
+        phase,
+        traceCount: receipt.proof.traceCount,
+        minimumInjectedBlockMs: receipt.proof.minimumInjectedBlockMs,
+        busy: receipt.busy,
+        budget: receipt.budget,
+      });
     } finally {
       await arm.context.close();
     }
@@ -310,7 +337,8 @@ async function measureRedProof(browser, options) {
       injectedBlockMs: options.redBlockMs,
       cadenceMs: E6_BUSY_PROBE_CADENCE_MS,
       expectedServiceMs: options.redBlockMs + E6_BUSY_PROBE_CADENCE_MS,
-      toleranceMs: options.redToleranceMs,
+      minimumAcceptedServiceMs:
+        options.redBlockMs + E6_BUSY_PROBE_CADENCE_MS / 2,
     },
     phases,
   };
