@@ -8,6 +8,10 @@ import {
   evaluateCaptureGate,
   validateRecordingSnapshot,
 } from "./recording.mjs";
+import {
+  assertAttempt,
+  attemptMarkerDigest as digestAttempt,
+} from "./attempt.mjs";
 
 const LIVE_DEFAULTS = {
   vehicles: "live/vehicles.json",
@@ -207,10 +211,11 @@ async function fetchPaths(paths, limit, work) {
 }
 
 export function captureIntervalMs(manifest) {
-  const ttlSeconds = Number(manifest?.files?.live?.ttl_s);
-  return (
-    (Math.max(Number.isFinite(ttlSeconds) ? ttlSeconds : 30, 30) + 5) * 1000
-  );
+  const ttlSeconds = manifest?.files?.live?.ttl_s;
+  if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
+    throw new Error("E6_RECORDING_TTL_INVALID");
+  }
+  return (Math.max(ttlSeconds, 30) + 5) * 1000;
 }
 
 function defaultWait(milliseconds) {
@@ -225,6 +230,8 @@ export async function captureRecording({
   wait = defaultWait,
   concurrency = 8,
   captureLabel,
+  attempt,
+  attemptMarkerDigest,
 }) {
   if (typeof sourceBase !== "string" || !/^https?:\/\//iu.test(sourceBase)) {
     throw new Error("E6_RECORDING_SOURCE_BASE_INVALID");
@@ -233,6 +240,19 @@ export async function captureRecording({
     throw new Error("E6_RECORDING_CONCURRENCY_INVALID");
   }
   if (typeof wait !== "function") throw new Error("E6_RECORDING_WAIT_INVALID");
+  try {
+    assertAttempt(attempt);
+  } catch {
+    throw new Error("E6_ATTEMPT_METADATA_INVALID");
+  }
+  if (
+    attemptMarkerDigest !== digestAttempt(attempt) ||
+    sourceBase.replace(/\/+$/u, "") !== E6_SOURCE_BASE ||
+    provider !== E6_PROVIDER ||
+    captureLabel !== "weekday-rush"
+  ) {
+    throw new Error("E6_ATTEMPT_METADATA_INVALID");
+  }
   const manifest = await fetchJson(
     fetchFn,
     sourceUrl(sourceBase, provider, "manifest.json"),
@@ -289,6 +309,8 @@ export async function captureRecording({
     provider,
     capturedUtc,
     captureGate,
+    attempt,
+    attemptMarkerDigest,
     language: plan.language,
     requiredPaths,
     routePrefix: plan.routePrefix,

@@ -146,7 +146,7 @@ jobs:
 
       - name: B2 fleet harness contracts
         working-directory: ${{ github.workspace }}
-        run: bun run --cwd tools/e6 b2:check
+        run: bun run --shell=bun --cwd tools/e6 b2:check
 
   ci:
     name: ci

@@ -1,8 +1,20 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const IMMUTABLE_PATH = /^\/_app\/immutable\/.+$/u;
+const SHA_40 = /^[a-f\d]{40}$/u;
+const SHA_256 = /^[a-f\d]{64}$/u;
+
+function exactKeys(value, keys) {
+  return (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    JSON.stringify(Object.keys(value).sort()) ===
+      JSON.stringify([...keys].sort())
+  );
+}
 
 function normalizedOrigin(origin) {
   if (typeof origin !== "string")
@@ -19,6 +31,85 @@ function normalizedOrigin(origin) {
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function fingerprintDigest(htmlSha256, assets) {
+  return sha256(
+    [
+      `html:${htmlSha256}`,
+      ...assets.map((asset) => `${asset.path}:${asset.sha256}`),
+    ].join("\n"),
+  );
+}
+
+export function assertServedBuildFingerprint(receipt) {
+  if (
+    !exactKeys(receipt, [
+      "head",
+      "origin",
+      "htmlSha256",
+      "assetCount",
+      "fingerprint",
+      "assets",
+    ]) ||
+    !SHA_40.test(receipt.head ?? "") ||
+    normalizedOrigin(receipt.origin) !== receipt.origin ||
+    !SHA_256.test(receipt.htmlSha256 ?? "") ||
+    !Number.isSafeInteger(receipt.assetCount) ||
+    receipt.assetCount < 1 ||
+    !SHA_256.test(receipt.fingerprint ?? "") ||
+    !Array.isArray(receipt.assets) ||
+    receipt.assets.length !== receipt.assetCount
+  ) {
+    throw new Error("E6_FINGERPRINT_RECEIPT_INVALID");
+  }
+  const seen = new Set();
+  for (const [index, asset] of receipt.assets.entries()) {
+    if (
+      !exactKeys(asset, ["path", "url", "sha256"]) ||
+      !IMMUTABLE_PATH.test(asset.path ?? "") ||
+      asset.url !== new URL(asset.path, receipt.origin).href ||
+      !SHA_256.test(asset.sha256 ?? "") ||
+      seen.has(asset.path) ||
+      (index > 0 && receipt.assets[index - 1].path >= asset.path)
+    ) {
+      throw new Error("E6_FINGERPRINT_RECEIPT_INVALID");
+    }
+    seen.add(asset.path);
+  }
+  if (
+    fingerprintDigest(receipt.htmlSha256, receipt.assets) !==
+    receipt.fingerprint
+  ) {
+    throw new Error("E6_FINGERPRINT_RECEIPT_INVALID");
+  }
+  return receipt;
+}
+
+export function assertServedAssetBytes(receipt, url, bytes) {
+  assertServedBuildFingerprint(receipt);
+  const asset = receipt.assets.find((entry) => entry.url === url);
+  if (!asset || sha256(bytes) !== asset.sha256) {
+    throw new Error(`E6_FINGERPRINT_BROWSER_ASSET_MISMATCH url=${String(url)}`);
+  }
+  return asset;
+}
+
+export function assertServedHtmlBytes(receipt, bytes) {
+  assertServedBuildFingerprint(receipt);
+  if (sha256(bytes) !== receipt.htmlSha256) {
+    throw new Error("E6_FINGERPRINT_BROWSER_HTML_MISMATCH");
+  }
+  return receipt.htmlSha256;
+}
+
+export function assertSameServedBuildFingerprint(before, after) {
+  assertServedBuildFingerprint(before);
+  assertServedBuildFingerprint(after);
+  if (JSON.stringify(before) !== JSON.stringify(after)) {
+    throw new Error("E6_FINGERPRINT_CHANGED");
+  }
+  return after;
 }
 
 function localAssetPath(clientRoot, pathname) {
@@ -64,6 +155,24 @@ async function servedBytes(fetchFn, url) {
   return Buffer.from(await response.arrayBuffer());
 }
 
+async function immutableBuildPaths(clientRoot, readdirFn) {
+  const root = join(clientRoot, "_app", "immutable");
+  const paths = [];
+  const walk = async (directory, prefix) => {
+    const entries = await readdirFn(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isSymbolicLink())
+        throw new Error("E6_FINGERPRINT_LOCAL_INVALID");
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) await walk(join(directory, entry.name), relative);
+      else if (entry.isFile()) paths.push(`/_app/immutable/${relative}`);
+      else throw new Error("E6_FINGERPRINT_LOCAL_INVALID");
+    }
+  };
+  await walk(root, "");
+  return paths.sort();
+}
+
 export async function fingerprintServedBuild({
   head,
   origin,
@@ -71,15 +180,33 @@ export async function fingerprintServedBuild({
   clientRoot,
   fetchFn = fetch,
   readFileFn = readFile,
+  readdirFn = readdir,
 } = {}) {
-  if (typeof head !== "string" || head.length === 0)
+  if (!SHA_40.test(head ?? ""))
     throw new Error("E6_FINGERPRINT_HEAD_INVALID");
-  if (typeof fetchFn !== "function" || typeof readFileFn !== "function") {
+  if (
+    typeof fetchFn !== "function" ||
+    typeof readFileFn !== "function" ||
+    typeof readdirFn !== "function"
+  ) {
     throw new Error("E6_FINGERPRINT_IO_INVALID");
   }
   const normalized = normalizedOrigin(origin);
-  const urls = extractServedEntryUrls(html, normalized);
-  if (urls.length === 0) throw new Error("E6_FINGERPRINT_NO_ENTRY_ASSETS");
+  const entryUrls = extractServedEntryUrls(html, normalized);
+  if (entryUrls.length === 0)
+    throw new Error("E6_FINGERPRINT_NO_ENTRY_ASSETS");
+  let paths;
+  try {
+    paths = await immutableBuildPaths(clientRoot, readdirFn);
+  } catch (error) {
+    throw new Error(
+      `E6_FINGERPRINT_LOCAL_MISSING error=${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const urls = paths.map((path) => new URL(path, normalized).href);
+  if (entryUrls.some((url) => !urls.includes(url)) || urls.length === 0) {
+    throw new Error("E6_FINGERPRINT_LOCAL_MISSING");
+  }
   const assets = [];
   for (const url of urls) {
     const pathname = new URL(url).pathname;
@@ -101,17 +228,14 @@ export async function fingerprintServedBuild({
     }
     assets.push({ path: pathname, url, sha256: servedHash });
   }
-  const fingerprint = sha256(
-    assets
-      .map((asset) => `${asset.path}:${asset.sha256}`)
-      .sort()
-      .join("\n"),
-  );
-  return {
+  const htmlSha256 = sha256(Buffer.from(html, "utf8"));
+  const fingerprint = fingerprintDigest(htmlSha256, assets);
+  return assertServedBuildFingerprint({
     head,
     origin: normalized,
+    htmlSha256,
     assetCount: assets.length,
     fingerprint,
     assets,
-  };
+  });
 }

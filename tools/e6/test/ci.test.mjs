@@ -38,7 +38,10 @@ test("tools/e6 changes trigger the web workflow and dedicated required B2 work",
   assert.match(work, /^    needs: \[classify\]$/mu);
   assert.match(work, /relevant\['e6-tests-work'\]/u);
   assert.match(work, /working-directory: \$\{\{ github\.workspace \}\}/u);
-  assert.match(work, /run: bun run --cwd tools\/e6 b2:check/u);
+  assert.match(
+    work,
+    /run: bun run --shell=bun --cwd tools\/e6 b2:check/u,
+  );
 
   const aggregate = jobBlock("ci");
   assert.match(

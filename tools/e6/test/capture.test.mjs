@@ -1,7 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { attemptMarkerDigest, buildAttempt } from "../lib/attempt.mjs";
 import { buildCapturePlan, captureRecording } from "../lib/capture.mjs";
+
+const HEAD = "4fcb603aa2d600d97061c26ee010a7212555dced";
+const TREE = "45892764d7c65708a9c56467d444999ea2ca0d4b";
+
+function attemptEvidence() {
+  const attempt = buildAttempt({
+    consumedUtc: "2026-08-24T12:00:00.000Z",
+    identity: {
+      head: HEAD,
+      tree: TREE,
+      publicMainHead: HEAD,
+      publicMainTree: TREE,
+      remote: "https://github.com/mgkdante/transit.git",
+      gitCommonDirectory: "/tmp/e6-git-common",
+      status: "",
+    },
+    recordingDirectory: "/tmp/peak-20260824T120000Z",
+    id: "11111111-1111-4111-8111-111111111111",
+  });
+  return { attempt, attemptMarkerDigest: attemptMarkerDigest(attempt) };
+}
 
 function routeId(index) {
   return `route-${String(index + 1).padStart(3, "0")}`;
@@ -90,7 +112,7 @@ test("captures two manifest-derived ticks and scales each exact deterministic fl
     default_lang: "en",
     labels: { en: "labels/en.json" },
     files: {
-      live: { generated_utc: generated },
+      live: { generated_utc: generated, ttl_s: 60 },
       static: {
         routes_index: "static/routes_index.json",
         stops_index: "static/stops_index.json",
@@ -104,7 +126,9 @@ test("captures two manifest-derived ticks and scales each exact deterministic fl
   );
   const requested = [];
   let vehicleFetches = 0;
+  let waitedMs;
   const recording = await captureRecording({
+    ...attemptEvidence(),
     fetchFn: async (url) => {
       const path = new URL(url).pathname.replace("/v1/stm/", "");
       requested.push(path);
@@ -116,14 +140,22 @@ test("captures two manifest-derived ticks and scales each exact deterministic fl
         ? new Response(JSON.stringify(payload), { status: 200 })
         : new Response("not found", { status: 404 });
     },
-    wait: async () => {},
+    wait: async (milliseconds) => {
+      waitedMs = milliseconds;
+    },
     now: () => Date.parse("2026-08-24T12:00:02.000Z"),
     captureLabel: "weekday-rush",
   });
   assert.equal(recording.metadata.counts.files, 192);
+  assert.equal(waitedMs, 65_000);
   assert.equal(recording.metadata.counts.vehicles, 3_424);
   assert.equal(recording.metadata.counts.activeRoutes, 182);
   assert.equal(recording.metadata.benchmarkEligible, true);
+  assert.deepEqual(recording.metadata.attempt, attemptEvidence().attempt);
+  assert.equal(
+    recording.metadata.attemptMarkerDigest,
+    attemptEvidence().attemptMarkerDigest,
+  );
   assert.equal(recording.metadata.scale.ticks[0].sourceCount, 856);
   assert.deepEqual(recording.metadata.vehicleTickPaths, [
     "live/vehicles.json",
@@ -158,6 +190,7 @@ test("captures the second tick after manifest cadence and fetches the route unio
   let vehicleFetches = 0;
   const waits = [];
   const recording = await captureRecording({
+    ...attemptEvidence(),
     fetchFn: async (url) => {
       const path = new URL(url).pathname.replace("/v1/stm/", "");
       const payload =
@@ -203,9 +236,31 @@ test("fails closed when any planned family returns a non-success status", async 
   await assert.rejects(
     () =>
       captureRecording({
+        ...attemptEvidence(),
         fetchFn,
         captureLabel: "weekday-rush",
       }),
     /E6_RECORDING_FETCH_FAILED path=live\/vehicles\.json status=503/u,
   );
+});
+
+test("refuses missing or corrupted attempt evidence before the first source fetch", async () => {
+  for (const evidence of [
+    {},
+    { ...attemptEvidence(), attemptMarkerDigest: "0".repeat(64) },
+  ]) {
+    let fetches = 0;
+    await assert.rejects(
+      captureRecording({
+        ...evidence,
+        fetchFn: async () => {
+          fetches += 1;
+          throw new Error("E6_TEST_FETCH_REACHED");
+        },
+        captureLabel: "weekday-rush",
+      }),
+      /E6_ATTEMPT_METADATA_INVALID/u,
+    );
+    assert.equal(fetches, 0);
+  }
 });
