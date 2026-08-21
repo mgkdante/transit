@@ -2,11 +2,28 @@
 
 import { captureRecording, scaleVehicleTick } from "./lib/capture.mjs";
 import {
+  assertAttemptExecutionWindow,
+  assertAttemptMarkerBinding,
+  assertAttemptMarkerRecording,
+  assertRecordingOutputReady,
+  buildAttempt,
+  claimAttemptMarker,
+  loadAttemptMarker,
+} from "./lib/attempt.mjs";
+import {
   loadRecording,
   recordingContentDigest,
   writeRecording,
 } from "./lib/files.mjs";
 import { validateRecordingSnapshot } from "./lib/recording.mjs";
+import { assertCleanBenchmarkEnvironment } from "./lib/runtime.mjs";
+import {
+  assertGitIdentityUnchanged,
+  assertPublicGitIdentity,
+  readGitCommonDirectory,
+  readLocalGitIdentity,
+  readPublicGitIdentity,
+} from "./lib/identity.mjs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
@@ -15,6 +32,8 @@ function fail(message) {
 }
 
 function parseArgs(args) {
+  if (args.length === 1 && args[0] === "--validate-attempt")
+    return { command: "validate-attempt" };
   if (args.length === 1 && args[0] === "--prove-thin-refusal")
     return { command: "prove-thin-refusal" };
   if (args[0] === "--validate") {
@@ -32,7 +51,7 @@ function parseArgs(args) {
     return { command: "capture", directory: captureArgs[1] };
   }
   fail(
-    "E6_RECORDING_USAGE e6-record.mjs [capture] [--output <directory>] | --validate <directory> | --prove-thin-refusal",
+    "E6_RECORDING_USAGE e6-record.mjs [capture] [--output <directory>] | --validate <directory> | --validate-attempt | --prove-thin-refusal",
   );
 }
 
@@ -52,6 +71,8 @@ function receipt(command, metadata, validation, recordingDigest) {
     fleetVehicles: validation.fleetVehicles,
     minimumActiveRoutes: validation.minimumActiveRoutes,
     benchmarkEligible: validation.benchmarkEligible,
+    attempt: validation.attempt,
+    attemptMarkerDigest: validation.attempt?.markerDigest ?? null,
     captureGate: validation.captureGate,
     scale: validation.scale,
     recordingDigest,
@@ -88,6 +109,11 @@ export async function runCli({
   env = process.env,
   stdout = process.stdout,
   stderr = process.stderr,
+  now = Date.now,
+  readIdentity = readPublicGitIdentity,
+  readLocalIdentity = readLocalGitIdentity,
+  readCommonDirectory = readGitCommonDirectory,
+  capture = captureRecording,
 } = {}) {
   try {
     const parsed = parseArgs(args);
@@ -95,32 +121,101 @@ export async function runCli({
       proveThinRefusal(stdout);
       return 0;
     }
+    if (parsed.command === "validate-attempt") {
+      const marker = await loadAttemptMarker({
+        gitCommonDirectory: await readCommonDirectory(),
+      });
+      stdout.write(
+        `${JSON.stringify({
+          command: "validate-attempt",
+          consumedUtc: marker.attempt.consumedUtc,
+          head: marker.attempt.head,
+          tree: marker.attempt.tree,
+          recordingBasename: marker.attempt.recordingBasename,
+          runtime: marker.attempt.runtime,
+          attemptMarkerDigest: marker.attemptMarkerDigest,
+        })}\n`,
+      );
+      return 0;
+    }
     if (parsed.command === "validate") {
       const recording = await loadRecording(parsed.directory);
       const validation = validateRecordingSnapshot(recording, {
-        purpose: "capture",
+        purpose: "benchmark",
+      });
+      const marker = await loadAttemptMarker({
+        gitCommonDirectory: await readCommonDirectory(),
+      });
+      assertAttemptMarkerRecording({
+        metadata: recording.metadata,
+        marker,
+        recordingDirectory: parsed.directory,
       });
       stdout.write(
         `${JSON.stringify(receipt("validate", recording.metadata, validation, recording.recordingDigest))}\n`,
       );
       return 0;
     }
-    const directory = parsed.directory ?? env.E6_RECORDING_DIR;
-    if (!directory)
+    const requestedDirectory = parsed.directory ?? env.E6_RECORDING_DIR;
+    if (!requestedDirectory)
       fail("E6_RECORDING_OUTPUT_REQUIRED provide --output or E6_RECORDING_DIR");
     if (env.E6_CAPTURE_LABEL !== "weekday-rush") {
       fail("E6_CAPTURE_LABEL_REQUIRED weekday-rush");
     }
-    const recording = await captureRecording({
+    assertCleanBenchmarkEnvironment(env);
+    const directory = await assertRecordingOutputReady(requestedDirectory);
+    const identity = assertPublicGitIdentity(await readIdentity());
+    assertGitIdentityUnchanged(identity, await readLocalIdentity());
+    const consumedUtc = new Date(now()).toISOString();
+    const attempt = buildAttempt({
+      consumedUtc,
+      identity,
+      recordingDirectory: directory,
+    });
+    const claimed = await claimAttemptMarker({
+      attempt,
+      gitCommonDirectory: identity.gitCommonDirectory,
+    });
+    assertGitIdentityUnchanged(identity, await readLocalIdentity());
+    assertAttemptExecutionWindow(claimed.attempt, now());
+    const recording = await capture({
       captureLabel: env.E6_CAPTURE_LABEL,
+      now,
+      attempt: claimed.attempt,
+      attemptMarkerDigest: claimed.attemptMarkerDigest,
     });
-    const validation = validateRecordingSnapshot(recording, {
-      purpose: "capture",
+    assertGitIdentityUnchanged(identity, await readLocalIdentity());
+    validateRecordingSnapshot(recording, {
+      purpose: "benchmark",
     });
-    await writeRecording(directory, recording);
-    const recordingDigest = recordingContentDigest(recording);
+    assertAttemptMarkerBinding({
+      metadata: recording.metadata,
+      marker: await loadAttemptMarker({
+        gitCommonDirectory: identity.gitCommonDirectory,
+      }),
+      identity,
+      recordingDirectory: directory,
+    });
+    await writeRecording(directory, recording, {
+      beforeInstall: async () =>
+        assertGitIdentityUnchanged(identity, await readLocalIdentity()),
+    });
+    const stored = await loadRecording(directory);
+    const validation = validateRecordingSnapshot(stored, {
+      purpose: "benchmark",
+    });
+    assertGitIdentityUnchanged(identity, await readLocalIdentity());
+    assertAttemptMarkerBinding({
+      metadata: stored.metadata,
+      marker: await loadAttemptMarker({
+        gitCommonDirectory: identity.gitCommonDirectory,
+      }),
+      identity,
+      recordingDirectory: directory,
+    });
+    const recordingDigest = recordingContentDigest(stored);
     stdout.write(
-      `${JSON.stringify(receipt("capture", recording.metadata, validation, recordingDigest))}\n`,
+      `${JSON.stringify(receipt("capture", stored.metadata, validation, recordingDigest))}\n`,
     );
     return 0;
   } catch (error) {

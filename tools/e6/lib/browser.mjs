@@ -385,14 +385,14 @@ async function trustedInteractionActions(page) {
   };
   return [
     {
-      name: "canvas-vehicle-pick",
+      name: E6_TRUSTED_ACTION_NAMES[0],
       run: async () => {
         await clickLiveVehicleAt(page, await findLiveVehiclePoint(page));
         return true;
       },
     },
     {
-      name: "keyboard-detail-escape",
+      name: E6_TRUSTED_ACTION_NAMES[1],
       run: async () => {
         await page.keyboard.press("Escape");
         await page
@@ -407,7 +407,7 @@ async function trustedInteractionActions(page) {
       },
     },
     {
-      name: "chrome-motion-click",
+      name: E6_TRUSTED_ACTION_NAMES[2],
       run: () =>
         toggle(motion, async () => {
           const box = await motion.boundingBox();
@@ -419,24 +419,42 @@ async function trustedInteractionActions(page) {
         }),
     },
     {
-      name: "keyboard-motion-enter",
+      name: E6_TRUSTED_ACTION_NAMES[3],
       run: async () => {
         await motion.focus();
         return toggle(motion, () => page.keyboard.press("Enter"));
       },
     },
     {
-      name: "keyboard-motion-space",
+      name: E6_TRUSTED_ACTION_NAMES[4],
       run: async () => {
         await motion.focus();
         return toggle(motion, () => page.keyboard.press("Space"));
       },
     },
     {
-      name: "chrome-filter-toggle",
+      name: E6_TRUSTED_ACTION_NAMES[5],
       run: () => toggle(filter, () => filter.click()),
     },
   ];
+}
+
+export const E6_TRUSTED_ACTION_NAMES = Object.freeze([
+  "canvas-vehicle-pick",
+  "keyboard-detail-escape",
+  "chrome-motion-click",
+  "keyboard-motion-enter",
+  "keyboard-motion-space",
+  "chrome-filter-toggle",
+]);
+
+export function expectedTrustedActionNames(interactions) {
+  if (!Number.isSafeInteger(interactions) || interactions < 1)
+    throw new Error("E6_INTERACTIONS_INVALID");
+  return Array.from(
+    { length: interactions },
+    (_, index) => E6_TRUSTED_ACTION_NAMES[index % E6_TRUSTED_ACTION_NAMES.length],
+  );
 }
 
 export async function runTrustedInteractions(page, { interactions } = {}) {

@@ -281,7 +281,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(work).toContain("relevant['ci-work']");
 		expect(directNeeds(e6Work)).toEqual(['classify']);
 		expect(e6Work).toContain("relevant['e6-tests-work']");
-		expect(e6Work).toContain('bun run --cwd tools/e6 b2:check');
+		expect(e6Work).toContain('bun run --shell=bun --cwd tools/e6 b2:check');
 		expect(directNeeds(reporter)).toEqual(['classify', 'ci-work', 'e6-tests-work']);
 		expect(reporter).toMatch(/^ {4}if:\s*(?:\$\{\{\s*)?always\(\)(?:\s*\}\})?\s*$/mu);
 		expect(reporter).toContain(`${SOURCE_REPOSITORY}/${ACTIONS.reporter}@${SOURCE_SHA}`);

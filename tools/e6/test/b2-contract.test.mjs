@@ -320,15 +320,26 @@ test("requires the fixed window to finish well before the next natural poll", ()
       nowMs: Date.parse("2026-08-24T10:00:01.000Z"),
     }),
     {
+      checkedUtc: "2026-08-24T10:00:01.000Z",
       ttlMs: 30_000,
       alignmentAgeMs: 1_000,
       safetyMs: 5_000,
       remainingAfterWindowMs: 9_000,
     },
   );
+  assert.equal(
+    assertNaturalPollMargin({
+      servedGeneratedUtc: "2026-08-24T10:00:00.000Z",
+      manifest: { files: { live: { ttl_s: 60 } } },
+      windowMs: 20_000,
+      nowMs: Date.parse("2026-08-24T10:00:01.000Z"),
+    }).ttlMs,
+    60_000,
+  );
   for (const changes of [
     { nowMs: Date.parse("2026-08-24T10:00:06.000Z") },
     { manifest: { files: { live: { ttl_s: 20 } } } },
+    { manifest: { files: { live: {} } } },
   ]) {
     assert.throws(
       () =>
@@ -355,6 +366,7 @@ test("starts from the immutable aligned replay boundary and then checks the real
   const alignedReplay = { served: { [vehiclePath]: 1 } };
   let nowMs = Date.parse("2026-08-24T10:00:01.000Z");
   let currentReplay = alignedReplay;
+  let ready = true;
   const input = {
     stats: () => currentReplay,
     alignedReplay,
@@ -363,8 +375,52 @@ test("starts from the immutable aligned replay boundary and then checks the real
     manifest,
     windowMs: 20_000,
     now: () => nowMs,
+    assertReady: () => {
+      if (!ready) throw new Error("E6_TEST_PRECLAIM_NOT_READY");
+    },
   };
 
+  nowMs = Date.parse("2026-08-24T10:00:06.000Z");
+  let starts = 0;
+  await assert.rejects(
+    startMeasurementWindow({
+      ...input,
+      start: async () => {
+        starts += 1;
+      },
+    }),
+    /E6_NATURAL_POLL_MARGIN_INVALID/u,
+  );
+  assert.equal(starts, 0);
+
+  nowMs = Date.parse("2026-08-24T10:00:01.000Z");
+  currentReplay = { served: { [vehiclePath]: 2 } };
+  await assert.rejects(
+    startMeasurementWindow({
+      ...input,
+      start: async () => {
+        starts += 1;
+      },
+    }),
+    /E6_REPLAY_VEHICLE_REQUEST_COUNT expected=0 actual=1/u,
+  );
+  assert.equal(starts, 0);
+
+  currentReplay = alignedReplay;
+  ready = false;
+  await assert.rejects(
+    startMeasurementWindow({
+      ...input,
+      start: async () => {
+        starts += 1;
+      },
+    }),
+    /E6_TEST_PRECLAIM_NOT_READY/u,
+  );
+  assert.equal(starts, 0);
+  ready = true;
+
+  nowMs = Date.parse("2026-08-24T10:00:01.000Z");
   await assert.rejects(
     startMeasurementWindow({
       ...input,
@@ -554,6 +610,7 @@ test("recording identity is recomputed from canonical content and exact expectat
     /E6_IDENTITY_WORKTREE_DIRTY/u,
   );
   assert.match(digest, /^[a-f\d]{64}$/u);
+  const markerDigest = "1".repeat(64);
   const changed = structuredClone(value);
   changed.payloads = new Map(changed.payloads);
   changed.payloads.get(changed.metadata.vehicleTickPaths[0]).vehicles[0].lon +=
@@ -566,8 +623,13 @@ test("recording identity is recomputed from canonical content and exact expectat
       expectedHead: "abc",
       actualRecordingDigest: digest,
       expectedRecordingDigest: digest,
+      actualAttemptMarkerDigest: markerDigest,
     }),
-    { head: "abc", recordingDigest: digest },
+    {
+      head: "abc",
+      recordingDigest: digest,
+      attemptMarkerDigest: markerDigest,
+    },
   );
   for (const input of [
     {
@@ -588,6 +650,14 @@ test("recording identity is recomputed from canonical content and exact expectat
       expectedHead: "abc",
       actualRecordingDigest: digest,
       expectedRecordingDigest: "0".repeat(64),
+      actualAttemptMarkerDigest: markerDigest,
+    },
+    {
+      benchmarkEligible: true,
+      actualHead: "abc",
+      expectedHead: "abc",
+      actualRecordingDigest: digest,
+      expectedRecordingDigest: digest,
     },
   ]) {
     assert.throws(() => assertExpectedIdentity(input), /E6_IDENTITY_/u);

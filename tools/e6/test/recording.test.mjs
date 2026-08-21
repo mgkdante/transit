@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { attemptMarkerDigest, buildAttempt } from "../lib/attempt.mjs";
 import {
   createStampAdvancer,
   evaluateCaptureGate,
@@ -22,6 +23,23 @@ function completeRecording({ sourceKind = "live" } = {}) {
       label: recording.metadata.label,
     });
     recording.metadata.benchmarkEligible = true;
+    const head = "4fcb603aa2d600d97061c26ee010a7212555dced";
+    const tree = "45892764d7c65708a9c56467d444999ea2ca0d4b";
+    const attempt = buildAttempt({
+      consumedUtc: "2026-08-24T12:00:00.000Z",
+      identity: {
+        head,
+        tree,
+        publicMainHead: head,
+        publicMainTree: tree,
+        remote: "https://github.com/mgkdante/transit.git",
+        gitCommonDirectory: "/tmp/e6-git-common",
+        status: "",
+      },
+      recordingDirectory: "/tmp/peak-20260824T120000Z",
+    });
+    recording.metadata.attempt = attempt;
+    recording.metadata.attemptMarkerDigest = attemptMarkerDigest(attempt);
   }
   return recording;
 }
@@ -38,6 +56,40 @@ test("accepts an exact live B2 fleet using counts derived from payloads", () => 
   assert.equal(receipt.fleetVehicles, 3_424);
   assert.equal(receipt.completeRouteFiles, 182);
   assert.equal(receipt.vehicleTicks, 2);
+  assert.equal(receipt.attempt.head, recordingHead());
+});
+
+function recordingHead() {
+  return "4fcb603aa2d600d97061c26ee010a7212555dced";
+}
+
+test("refuses eligible live evidence with missing or tampered attempt metadata", () => {
+  for (const mutate of [
+    (metadata) => delete metadata.attempt,
+    (metadata) => (metadata.attemptMarkerDigest = "0".repeat(64)),
+    (metadata) => (metadata.attempt.head = "0".repeat(40)),
+  ]) {
+    const recording = completeRecording();
+    mutate(recording.metadata);
+    assert.throws(
+      () => validateRecordingSnapshot(recording),
+      /E6_ATTEMPT_METADATA_INVALID/u,
+    );
+  }
+});
+
+test("refuses an attempt consumed after the recorded capture instant", () => {
+  const recording = completeRecording();
+  const attempt = {
+    ...recording.metadata.attempt,
+    consumedUtc: "2026-08-24T12:00:00.001Z",
+  };
+  recording.metadata.attempt = attempt;
+  recording.metadata.attemptMarkerDigest = attemptMarkerDigest(attempt);
+  assert.throws(
+    () => validateRecordingSnapshot(recording),
+    /E6_ATTEMPT_METADATA_INVALID/u,
+  );
 });
 
 test("refuses a first tick with any count other than exactly 3,424", () => {
@@ -211,6 +263,21 @@ test("pins live recordings to the settled STM source", () => {
     () => validateRecordingSnapshot(recording),
     /E6_RECORDING_SOURCE_INVALID/u,
   );
+});
+
+test("live recording requires an explicit positive numeric manifest TTL", () => {
+  for (const ttl of [undefined, null, "30", 0, -1, Number.NaN]) {
+    const recording = completeRecording();
+    if (ttl === undefined) {
+      delete recording.payloads.get("manifest.json").files.live.ttl_s;
+    } else {
+      recording.payloads.get("manifest.json").files.live.ttl_s = ttl;
+    }
+    assert.throws(
+      () => validateRecordingSnapshot(recording),
+      /E6_RECORDING_TTL_INVALID/u,
+    );
+  }
 });
 
 test("advances every ISO stamp by one payload-relative delta", () => {
