@@ -23,6 +23,9 @@ import pytest
 from sqlalchemy import text
 
 from transit_ops.gold import rollups
+from transit_ops.snapshots import gate
+from transit_ops.snapshots.builders.historic.route_reliability import build_route_reliability
+from transit_ops.snapshots.gate import Severity
 
 PROVIDER = "stm_otp_test"
 ENDPOINT_ID = 990030
@@ -49,6 +52,17 @@ def _migration_0030():
         / "src/transit_ops/db/migrations/versions/0030_otp_observation_counts.py"
     )
     spec = importlib.util.spec_from_file_location("m0030", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _migration_0085():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "src/transit_ops/db/migrations/versions/0085_repair_otp_count_universe.py"
+    )
+    spec = importlib.util.spec_from_file_location("m0085", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -395,3 +409,80 @@ def test_migration_backfill_fills_buckets_within_fact_window(conn) -> None:
     }
     assert rows[PERIOD] == 2
     assert rows[datetime(2026, 6, 12, 12, 15, tzinfo=UTC)] is None
+
+
+def test_forward_repair_restores_route_reliability_publish_gate(conn) -> None:
+    migration = _migration_0085()
+    period = datetime(2026, 5, 27, 12, 55, tzinfo=UTC)
+    conn.execute(
+        text(
+            """
+            INSERT INTO gold.trip_delay_summary_5m
+                (provider_id, period_start_utc, route_id, trip_count, observation_count,
+                 delay_observation_count, on_time_observation_count, avg_delay_seconds,
+                 avg_delay_seconds_capped, max_delay_seconds, min_delay_seconds,
+                 delayed_trip_count, outlier_count, built_at_utc)
+            VALUES
+                (:p, :period, '444', 8, 64, 8, 12, 0, 0, 0, 0, 0, 0, :built_at)
+            """
+        ),
+        {"p": PROVIDER, "period": period, "built_at": BUILT_AT},
+    )
+    _insert_hourly(
+        conn,
+        period=period.replace(minute=0),
+        route_id="444",
+        delay_obs=8,
+        on_time=12,
+        observation_count=64,
+        avg_delay_seconds=0,
+    )
+
+    before = build_route_reliability(
+        conn,
+        provider_id=PROVIDER,
+        route_id="444",
+        generated_utc="2026-08-28T00:00:00Z",
+    )
+    before_errors = [
+        result
+        for result in gate.check_route_reliability(
+            before, rel_key="historic/route_reliability/444.json"
+        )
+        if result.severity is Severity.ERROR
+    ]
+    assert any(result.check == "invariant" for result in before_errors)
+
+    conn.execute(text(migration._REPAIR_5M_OBSERVATION_UNIVERSE))
+    conn.execute(text(migration._REPAIR_HOURLY_OBSERVATION_UNIVERSE))
+
+    repaired = conn.execute(
+        text(
+            """
+            SELECT
+                (SELECT delay_observation_count
+                 FROM gold.trip_delay_summary_5m
+                 WHERE provider_id = :p AND route_id = '444') AS five_minute_delay,
+                (SELECT delay_observation_count
+                 FROM gold.route_delay_hourly
+                 WHERE provider_id = :p AND route_id = '444') AS hourly_delay
+            """
+        ),
+        {"p": PROVIDER},
+    ).one()
+    assert repaired == (12, 12)
+
+    after = build_route_reliability(
+        conn,
+        provider_id=PROVIDER,
+        route_id="444",
+        generated_utc="2026-08-28T00:00:00Z",
+    )
+    after_errors = [
+        result
+        for result in gate.check_route_reliability(
+            after, rel_key="historic/route_reliability/444.json"
+        )
+        if result.severity is Severity.ERROR
+    ]
+    assert after_errors == []
