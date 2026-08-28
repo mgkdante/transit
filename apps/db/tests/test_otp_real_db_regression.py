@@ -5,7 +5,7 @@ tests cannot prove: band-edge inclusivity, NULL-guard aggregation, and the 0030
 backfill join.
 
 They run ONLY when TRANSIT_TEST_DATABASE_URL points at a disposable Postgres
-with the transit schema migrated through 0030:
+with the transit schema migrated through the current Alembic head:
 
     TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/i3repro" \
         uv run pytest tests/test_otp_real_db_regression.py -v
@@ -23,6 +23,9 @@ import pytest
 from sqlalchemy import text
 
 from transit_ops.gold import rollups
+from transit_ops.snapshots import gate
+from transit_ops.snapshots.builders.historic.route_reliability import build_route_reliability
+from transit_ops.snapshots.gate import Severity
 
 PROVIDER = "stm_otp_test"
 ENDPOINT_ID = 990030
@@ -49,6 +52,17 @@ def _migration_0030():
         / "src/transit_ops/db/migrations/versions/0030_otp_observation_counts.py"
     )
     spec = importlib.util.spec_from_file_location("m0030", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _migration_0085():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "src/transit_ops/db/migrations/versions/0085_repair_otp_count_universe.py"
+    )
+    spec = importlib.util.spec_from_file_location("m0085", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -395,3 +409,159 @@ def test_migration_backfill_fills_buckets_within_fact_window(conn) -> None:
     }
     assert rows[PERIOD] == 2
     assert rows[datetime(2026, 6, 12, 12, 15, tzinfo=UTC)] is None
+
+
+def test_forward_repair_restores_route_reliability_publish_gate(
+    conn, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    migration = _migration_0085()
+    periods = {
+        "444_valid": datetime(2026, 5, 27, 12, 50, tzinfo=UTC),
+        "444_invalid": datetime(2026, 5, 27, 12, 55, tzinfo=UTC),
+        "445_valid": datetime(2026, 5, 27, 13, 50, tzinfo=UTC),
+        "445_invalid": datetime(2026, 5, 27, 13, 55, tzinfo=UTC),
+    }
+    conn.execute(
+        text(
+            """
+            INSERT INTO gold.trip_delay_summary_5m
+                (provider_id, period_start_utc, route_id, trip_count, observation_count,
+                 delay_observation_count, on_time_observation_count, avg_delay_seconds,
+                 avg_delay_seconds_capped, max_delay_seconds, min_delay_seconds,
+                 delayed_trip_count, outlier_count, built_at_utc)
+            VALUES
+                (:p, :period, :route_id, :trip_count, :observation_count,
+                 :delay_observation_count, :on_time_observation_count,
+                 0, 0, 0, 0, 0, 0, :built_at)
+            """
+        ),
+        [
+            {
+                "p": PROVIDER,
+                "period": periods["444_valid"],
+                "route_id": "444",
+                "trip_count": 13,
+                "observation_count": 13,
+                "delay_observation_count": 13,
+                "on_time_observation_count": 13,
+                "built_at": BUILT_AT,
+            },
+            {
+                "p": PROVIDER,
+                "period": periods["444_invalid"],
+                "route_id": "444",
+                "trip_count": 8,
+                "observation_count": 64,
+                "delay_observation_count": 8,
+                "on_time_observation_count": 12,
+                "built_at": BUILT_AT,
+            },
+            {
+                "p": PROVIDER,
+                "period": periods["445_valid"],
+                "route_id": "445",
+                "trip_count": 100,
+                "observation_count": 100,
+                "delay_observation_count": 100,
+                "on_time_observation_count": 0,
+                "built_at": BUILT_AT,
+            },
+            {
+                "p": PROVIDER,
+                "period": periods["445_invalid"],
+                "route_id": "445",
+                "trip_count": 8,
+                "observation_count": 64,
+                "delay_observation_count": 8,
+                "on_time_observation_count": 12,
+                "built_at": BUILT_AT,
+            },
+        ],
+    )
+    _insert_hourly(
+        conn,
+        period=periods["444_invalid"].replace(minute=0),
+        route_id="444",
+        delay_obs=21,
+        on_time=25,
+        observation_count=77,
+        avg_delay_seconds=0,
+    )
+    _insert_hourly(
+        conn,
+        period=periods["445_invalid"].replace(minute=0),
+        route_id="445",
+        delay_obs=108,
+        on_time=12,
+        observation_count=164,
+        avg_delay_seconds=0,
+    )
+
+    before = build_route_reliability(
+        conn,
+        provider_id=PROVIDER,
+        route_id="444",
+        generated_utc="2026-08-28T00:00:00Z",
+    )
+    before_errors = [
+        result
+        for result in gate.check_route_reliability(
+            before, rel_key="historic/route_reliability/444.json"
+        )
+        if result.severity is Severity.ERROR
+    ]
+    assert any(result.check == "invariant" for result in before_errors)
+
+    monkeypatch.setattr(migration.op, "execute", lambda sql: conn.execute(text(sql)))
+    migration.upgrade()
+
+    repaired_5m = conn.execute(
+        text(
+            """
+            SELECT route_id, period_start_utc, delay_observation_count,
+                   on_time_observation_count
+            FROM gold.trip_delay_summary_5m
+            WHERE provider_id = :p AND route_id IN ('444', '445')
+            ORDER BY route_id, period_start_utc
+            """
+        ),
+        {"p": PROVIDER},
+    ).all()
+    assert repaired_5m == [
+        ("444", periods["444_valid"], 13, 13),
+        ("444", periods["444_invalid"], 8, None),
+        ("445", periods["445_valid"], 100, 0),
+        ("445", periods["445_invalid"], 8, None),
+    ]
+
+    repaired_hourly = conn.execute(
+        text(
+            """
+            SELECT route_id, delay_observation_count, on_time_observation_count
+            FROM gold.route_delay_hourly
+            WHERE provider_id = :p AND route_id IN ('444', '445')
+            ORDER BY route_id
+            """
+        ),
+        {"p": PROVIDER},
+    ).all()
+    assert repaired_hourly == [("444", 21, None), ("445", 108, None)]
+
+    after = build_route_reliability(
+        conn,
+        provider_id=PROVIDER,
+        route_id="444",
+        generated_utc="2026-08-28T00:00:00Z",
+    )
+    after_errors = [
+        result
+        for result in gate.check_route_reliability(
+            after, rel_key="historic/route_reliability/444.json"
+        )
+        if result.severity is Severity.ERROR
+    ]
+    assert after_errors == []
+    assert len(after.periods) == 1
+    assert after.periods[0].observation_count == 21
+    assert after.periods[0].on_time is None
+    assert after.periods[0].otp_pct is None
