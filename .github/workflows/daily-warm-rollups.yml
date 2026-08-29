@@ -109,9 +109,9 @@ jobs:
   rollups:
     needs: prepare
     runs-on: ubuntu-latest
-    # Three 75-minute provider bounds plus kill grace fit inside the aggregate
-    # step; job headroom preserves the always-run receipt upload.
-    timeout-minutes: 250
+    # Three first attempts plus one deferred 75-minute retry and kill grace fit
+    # inside the aggregate step; job headroom preserves the always-run upload.
+    timeout-minutes: 325
     defaults:
       run:
         working-directory: apps/db
@@ -131,7 +131,7 @@ jobs:
         uses: ./.github/actions/setup-py
 
       - name: Build warm rollups serially
-        timeout-minutes: 235
+        timeout-minutes: 310
         run: |
           artifact_dir="artifacts/daily-warm-rollups/rollups"
           mkdir -p "$artifact_dir"
@@ -158,21 +158,23 @@ jobs:
           )"
           provider_lines="$(jq -r '.[]' <<< "$provider_plan")" || exit "$?"
           mapfile -t providers <<< "$provider_lines"
-          aggregate_status=0
-          for provider in "${providers[@]}"; do
-            receipt_path="$artifact_dir/rollup-stage-${provider}.json"
-            log_path="$artifact_dir/rollup-${provider}.log"
-            started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            jq -n \
-              --arg provider_id "$provider" \
-              --arg status "running" \
-              --arg started_utc "$started_at" \
-              '{provider_id: $provider_id, status: $status, started_utc: $started_utc}' \
-              > "$receipt_path"
+          declare -A attempt_exit_codes=()
+          declare -A effective_exit_codes=()
+          declare -A started_at_by_provider=()
+          deferred_provider=""
+
+          run_rollup_attempt() {
+            local provider="$1"
+            local receipt_path="$artifact_dir/rollup-stage-${provider}.json"
+            local log_path="$artifact_dir/rollup-${provider}.log"
+            local tee_args=()
+            if [[ "${attempt_exit_codes[$provider]}" != "[]" ]]; then
+              tee_args=(-a)
+            fi
             set +e
             timeout --signal=TERM --kill-after=1m "75m" \
               uv run python -m transit_ops.cli build-warm-rollups "$provider" 2>&1 \
-              | tee "$log_path"
+              | tee "${tee_args[@]}" "$log_path"
             pipeline_status=("${PIPESTATUS[@]}")
             set -e
             command_status="${pipeline_status[0]}"
@@ -180,22 +182,72 @@ jobs:
             if [[ "$log_status" -ne 0 ]]; then
               command_status="$log_status"
             fi
+            attempt_exit_codes[$provider]="$(
+              jq -cn \
+                --argjson attempts "${attempt_exit_codes[$provider]}" \
+                --argjson exit_code "$command_status" \
+                '$attempts + [$exit_code]'
+            )"
+            effective_exit_codes[$provider]="$command_status"
             if [[ "$command_status" -eq 0 ]]; then
               stage_status="success"
             else
               stage_status="failure"
             fi
+            recovered_after_timeout="false"
+            if [[ "$(jq 'length' <<< "${attempt_exit_codes[$provider]}")" -eq 2 \
+              && "$(jq '.[0]' <<< "${attempt_exit_codes[$provider]}")" -eq 124 \
+              && "$command_status" -eq 0 ]]; then
+              recovered_after_timeout="true"
+            fi
             jq -n \
               --arg provider_id "$provider" \
               --arg status "$stage_status" \
-              --arg started_utc "$started_at" \
+              --arg started_utc "${started_at_by_provider[$provider]}" \
               --arg completed_utc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               --argjson exit_code "$command_status" \
+              --argjson attempt_exit_codes "${attempt_exit_codes[$provider]}" \
+              --argjson recovered_after_timeout "$recovered_after_timeout" \
               '{provider_id: $provider_id, status: $status, started_utc: $started_utc,
-                completed_utc: $completed_utc, exit_code: $exit_code}' \
+                completed_utc: $completed_utc, exit_code: $exit_code,
+                attempt_exit_codes: $attempt_exit_codes,
+                attempt_count: ($attempt_exit_codes | length),
+                recovered_after_timeout: $recovered_after_timeout}' \
               > "$receipt_path"
-            if [[ "$aggregate_status" -eq 0 && "$command_status" -ne 0 ]]; then
-              aggregate_status="$command_status"
+          }
+
+          for provider in "${providers[@]}"; do
+            receipt_path="$artifact_dir/rollup-stage-${provider}.json"
+            started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            started_at_by_provider[$provider]="$started_at"
+            attempt_exit_codes[$provider]="[]"
+            jq -n \
+              --arg provider_id "$provider" \
+              --arg status "running" \
+              --arg started_utc "$started_at" \
+              '{provider_id: $provider_id, status: $status, started_utc: $started_utc,
+                attempt_exit_codes: [], attempt_count: 0,
+                recovered_after_timeout: false}' \
+              > "$receipt_path"
+            run_rollup_attempt "$provider"
+            if [[ "$command_status" -eq 124 && -z "$deferred_provider" ]]; then
+              deferred_provider="$provider"
+            fi
+          done
+
+          if [[ -n "$deferred_provider" ]]; then
+            original_timeout_status="${effective_exit_codes[$deferred_provider]}"
+            run_rollup_attempt "$deferred_provider"
+            if [[ "$command_status" -ne 0 ]]; then
+              effective_exit_codes[$deferred_provider]="$original_timeout_status"
+            fi
+          fi
+
+          aggregate_status=0
+          for provider in "${providers[@]}"; do
+            if [[ "$aggregate_status" -eq 0 \
+              && "${effective_exit_codes[$provider]}" -ne 0 ]]; then
+              aggregate_status="${effective_exit_codes[$provider]}"
             fi
           done
           exit "$aggregate_status"
@@ -421,7 +473,7 @@ jobs:
                 provider="$1"
                 uv run python -m transit_ops.cli prune-i3-storage "$provider"
                 uv run python -m transit_ops.cli prune-warm-rollup-storage "$provider"
-                uv run python -m transit_ops.cli prune-bronze-storage "$provider" --require-exhausted
+                uv run python -m transit_ops.cli prune-bronze-storage "$provider" --max-batches 4 --require-exhausted
               ' _ "$provider"
             prune_status="$?"
             set -e

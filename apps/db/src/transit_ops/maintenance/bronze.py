@@ -272,22 +272,18 @@ def prune_bronze_realtime_objects(
             set(),
         )
 
-    deleted_object_count = 0
-    failed_object_ids: set[int] = set()
-    for row in rows:
-        ingestion_object_id = int(row[0])
-        storage_path = str(row[2])
-        try:
-            bronze_storage.delete_object(storage_path)
-            deleted_object_count += 1
-        except Exception as exc:
-            logger.error(
-                "Failed to delete Bronze realtime object '%s' (ingestion_object_id=%s): %s",
-                storage_path,
-                ingestion_object_id,
-                exc,
-            )
-            failed_object_ids.add(ingestion_object_id)
+    failed_paths = bronze_storage.delete_objects(str(row[2]) for row in rows)
+    failed_object_ids = {
+        int(row[0]) for row in rows if str(row[2]) in failed_paths
+    }
+    if failed_object_ids:
+        logger.error(
+            "Bronze realtime bulk deletion failed for %s of %s objects; "
+            "metadata retained for failed objects",
+            len(failed_object_ids),
+            len(rows),
+        )
+    deleted_object_count = len(rows) - len(failed_object_ids)
 
     successful_object_ids = [
         int(row[0]) for row in rows if int(row[0]) not in failed_object_ids
@@ -380,22 +376,18 @@ def prune_bronze_static_objects(
     if not rows:
         return cutoff_utc, zero_object_counts, zero_meta_counts, set()
 
-    deleted_object_count = 0
-    failed_object_ids: set[int] = set()
-    for row in rows:
-        ingestion_object_id = int(row[0])
-        storage_path = str(row[2])
-        try:
-            bronze_storage.delete_object(storage_path)
-            deleted_object_count += 1
-        except Exception as exc:
-            logger.error(
-                "Failed to delete Bronze static object '%s' (ingestion_object_id=%s): %s",
-                storage_path,
-                ingestion_object_id,
-                exc,
-            )
-            failed_object_ids.add(ingestion_object_id)
+    failed_paths = bronze_storage.delete_objects(str(row[2]) for row in rows)
+    failed_object_ids = {
+        int(row[0]) for row in rows if str(row[2]) in failed_paths
+    }
+    if failed_object_ids:
+        logger.error(
+            "Bronze static bulk deletion failed for %s of %s objects; "
+            "metadata retained for failed objects",
+            len(failed_object_ids),
+            len(rows),
+        )
+    deleted_object_count = len(rows) - len(failed_object_ids)
 
     successful_object_ids = [
         int(row[0]) for row in rows if int(row[0]) not in failed_object_ids

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -12,6 +13,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from transit_ops.core.models import StorageBackend
 from transit_ops.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class BronzeStorageError(ValueError):
@@ -52,6 +55,21 @@ class BronzeStorage:
 
     def delete_object(self, storage_path: str) -> None:
         raise NotImplementedError
+
+    def delete_objects(self, storage_paths: Iterable[str]) -> set[str]:
+        failed_paths: set[str] = set()
+        for storage_path in storage_paths:
+            try:
+                self.delete_object(storage_path)
+            except Exception as exc:
+                logger.error(
+                    "Failed to delete Bronze object at %s via '%s' fallback: %s",
+                    self.describe_location(storage_path),
+                    self.storage_backend,
+                    exc,
+                )
+                failed_paths.add(storage_path)
+        return failed_paths
 
     def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]:
         raise NotImplementedError
@@ -163,6 +181,42 @@ class S3BronzeStorage(BronzeStorage):
                 "Failed to delete Bronze artifact at "
                 f"{self.describe_location(storage_path)} via endpoint {self.endpoint_url}: {exc}"
             ) from exc
+
+    def delete_objects(self, storage_paths: Iterable[str]) -> set[str]:
+        paths = list(storage_paths)
+        failed_paths: set[str] = set()
+        for offset in range(0, len(paths), 1000):
+            chunk = paths[offset : offset + 1000]
+            try:
+                response = self.client.delete_objects(
+                    Bucket=self.bucket,
+                    Delete={"Objects": [{"Key": path} for path in chunk], "Quiet": True},
+                )
+            except (BotoCoreError, ClientError) as exc:
+                logger.error(
+                    "Failed to bulk delete %s Bronze objects from bucket '%s' via endpoint %s: %s",
+                    len(chunk),
+                    self.bucket,
+                    self.endpoint_url,
+                    exc,
+                )
+                failed_paths.update(chunk)
+                continue
+            for error in response.get("Errors", []):
+                if "Key" not in error:
+                    continue
+                failed_path = str(error["Key"])
+                failed_paths.add(failed_path)
+                logger.error(
+                    "Failed to bulk delete Bronze object '%s' from bucket '%s' "
+                    "via endpoint %s: code=%s message=%s",
+                    failed_path,
+                    self.bucket,
+                    self.endpoint_url,
+                    error.get("Code", "unknown"),
+                    error.get("Message", "unknown"),
+                )
+        return failed_paths
 
     def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]:
         try:

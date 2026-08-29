@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -346,12 +347,20 @@ class FakeBronzeStorage:
 
     def __init__(self) -> None:
         self.deleted: list[str] = []
+        self.delete_batches: list[list[str]] = []
         self.fail_on: set[str] = set()
 
     def delete_object(self, storage_path: str) -> None:
         if storage_path in self.fail_on:
             raise OSError(f"Simulated failure for {storage_path}")
         self.deleted.append(storage_path)
+
+    def delete_objects(self, storage_paths) -> set[str]:  # noqa: ANN001
+        paths = list(storage_paths)
+        self.delete_batches.append(paths)
+        failed_paths = paths and self.fail_on.intersection(paths)
+        self.deleted.extend(path for path in paths if path not in failed_paths)
+        return set(failed_paths)
 
     def storage_backend(self) -> str:
         return "local"
@@ -1622,6 +1631,62 @@ def test_prune_bronze_realtime_objects_skips_failed_r2_deletes() -> None:
     assert failed_object_ids == {10}
 
 
+def test_prune_bronze_realtime_bulk_failures_never_delete_failed_metadata() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    failed_path = "stm/trip_updates/captured_at_utc=2026-01-01/key1.pb"
+    storage.fail_on = {failed_path}
+
+    _cutoff, object_counts, _meta, failed_object_ids = prune_bronze_realtime_objects(
+        connection,
+        provider_id="stm",
+        retention_days=7,
+        bronze_storage=storage,
+        now_utc=datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC),
+    )
+
+    assert storage.delete_batches == [list(MOCK_REALTIME_PATHS)]
+    assert failed_object_ids == {10}
+    assert object_counts == {"realtime": 2}
+    metadata_delete_params = [
+        params
+        for sql, params in connection.executed
+        if "DELETE FROM raw.ingestion_objects" in sql
+    ]
+    assert metadata_delete_params == [{"ingestion_object_ids": [11, 12]}]
+
+
+def test_prune_bronze_realtime_bulk_failures_emit_one_bounded_summary(
+    caplog,
+) -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    storage.fail_on = set(MOCK_REALTIME_PATHS)
+    caplog.set_level(logging.ERROR, logger="transit_ops.maintenance")
+
+    _cutoff, object_counts, _meta, failed_object_ids = prune_bronze_realtime_objects(
+        connection,
+        provider_id="stm",
+        retention_days=7,
+        bronze_storage=storage,
+        now_utc=datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC),
+    )
+
+    records = [
+        record for record in caplog.records if record.name == "transit_ops.maintenance"
+    ]
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "3 of 3" in message
+    assert "realtime" in message
+    assert "metadata" in message
+    assert object_counts == {"realtime": 0}
+    assert failed_object_ids == {10, 11, 12}
+    assert all(
+        "DELETE FROM raw.ingestion_objects" not in sql for sql, _ in connection.executed
+    )
+
+
 def test_prune_bronze_realtime_objects_disabled_when_zero_retention() -> None:
     connection = RecordingConnection()
     storage = FakeBronzeStorage()
@@ -1690,6 +1755,28 @@ def test_prune_bronze_static_objects_live_deletes_r2_then_metadata() -> None:
     obj_deletes = [c for c in connection.calls if "DELETE FROM raw.ingestion_objects" in c]
     assert len(obj_deletes) == 1
     assert meta_counts["raw.ingestion_objects"] == 3  # mock rowcount
+
+
+def test_prune_bronze_static_bulk_failures_never_delete_failed_metadata() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    failed_path = "stm/static_schedule/ingested_at_utc=2026-01-01/file.zip"
+    storage.fail_on = {failed_path}
+
+    _cutoff, object_counts, _meta, failed_object_ids = prune_bronze_static_objects(
+        connection,
+        provider_id="stm",
+        retention_days=30,
+        bronze_storage=storage,
+        now_utc=datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC),
+    )
+
+    assert storage.delete_batches == [[failed_path]]
+    assert failed_object_ids == {20}
+    assert object_counts == {"static": 0}
+    assert all(
+        "DELETE FROM raw.ingestion_objects" not in sql for sql, _ in connection.executed
+    )
 
 
 def test_prune_bronze_static_objects_disabled_when_zero_retention() -> None:
@@ -1873,6 +1960,48 @@ def test_prune_bronze_storage_two_full_batches_do_not_claim_exhaustion(
 
     assert result.batch_counts == {"realtime": 2, "static": 1}
     assert result.deleted_object_counts == {"realtime": 6, "static": 0}
+    assert result.exhausted is False
+
+
+def test_prune_bronze_storage_four_batches_cover_measured_nightly_backlog(
+    monkeypatch,
+) -> None:
+    storage = FakeBronzeStorage()
+    _patch_bronze_storage(monkeypatch, storage)
+
+    result = prune_bronze_storage(
+        "stm",
+        settings=BronzePruneSettings(),  # type: ignore[arg-type]
+        engine=RecordingEngine(  # type: ignore[arg-type]
+            SequencedBronzeConnection([5000, 5000, 4861])
+        ),
+        max_objects=5000,
+        max_batches=4,
+    )
+
+    assert result.batch_counts == {"realtime": 3, "static": 1}
+    assert result.deleted_object_counts == {"realtime": 14861, "static": 0}
+    assert result.exhausted is True
+
+
+def test_prune_bronze_storage_four_full_batches_cannot_claim_exhaustion(
+    monkeypatch,
+) -> None:
+    storage = FakeBronzeStorage()
+    _patch_bronze_storage(monkeypatch, storage)
+
+    result = prune_bronze_storage(
+        "stm",
+        settings=BronzePruneSettings(),  # type: ignore[arg-type]
+        engine=RecordingEngine(  # type: ignore[arg-type]
+            SequencedBronzeConnection([5000, 5000, 5000, 5000])
+        ),
+        max_objects=5000,
+        max_batches=4,
+    )
+
+    assert result.batch_counts == {"realtime": 4, "static": 1}
+    assert result.deleted_object_counts == {"realtime": 20000, "static": 0}
     assert result.exhausted is False
 
 

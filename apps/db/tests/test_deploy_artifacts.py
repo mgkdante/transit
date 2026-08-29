@@ -350,9 +350,12 @@ def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof()
 
     # Each provider gets a bounded, serial retention job after publication.
     # Exhaustion is required so a capped backlog cannot silently keep growing.
-    assert 'prune-bronze-storage "$provider" --require-exhausted' in workflow
+    bronze_command = (
+        'prune-bronze-storage "$provider" --max-batches 4 --require-exhausted'
+    )
+    assert bronze_command in workflow
     assert workflow.index(
-        'prune-bronze-storage "$provider" --require-exhausted'
+        bronze_command
     ) > workflow.index('prune-warm-rollup-storage "$provider"')
     # Proof report + artifact give the prune a daily visible receipt.
     assert 'retention-proof-report "$provider" --report-path' in workflow
@@ -380,8 +383,10 @@ def test_daily_warm_rollups_bounds_expensive_work_and_gates_publish() -> None:
     )
     publish = document["jobs"]["publish"]
 
-    assert rollups["timeout-minutes"] == 250
-    assert build["timeout-minutes"] == 235
+    provider_count = len(tuple((REPO_ROOT / "apps/db/config/providers").glob("*.yaml")))
+    required_attempt_minutes = (provider_count + 1) * 76
+    assert required_attempt_minutes < build["timeout-minutes"]
+    assert build["timeout-minutes"] + 10 <= rollups["timeout-minutes"] <= 360
     assert 'timeout --signal=TERM --kill-after=1m "75m"' in build["run"]
     assert publish["timeout-minutes"] == 90
     assert publish["if"] == (

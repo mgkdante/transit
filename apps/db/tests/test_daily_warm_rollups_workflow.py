@@ -295,10 +295,8 @@ def test_prepare_discovery_propagates_list_provider_failure(tmp_path: Path) -> N
 def test_rollups_are_serial_per_provider_with_a_bounded_budget_and_receipt() -> None:
     rollups = _load(DAILY_WORKFLOW)["jobs"]["rollups"]
 
-    assert rollups["timeout-minutes"] == 250
     assert rollups["env"]["PROVIDER_PLAN"] == "${{ needs.prepare.outputs.providers }}"
     build = _step(rollups, "Build warm rollups serially")
-    assert build["timeout-minutes"] == 235
     assert 'timeout --signal=TERM --kill-after=1m "75m"' in build["run"]
     assert 'pipeline_status=("${PIPESTATUS[@]}")' in build["run"]
     assert 'build-warm-rollups "$provider"' in build["run"]
@@ -316,7 +314,10 @@ def test_rollups_are_serial_per_provider_with_a_bounded_budget_and_receipt() -> 
     assert upload["with"]["retention-days"] == 30
     assert sum(step.get("uses") == upload["uses"] for step in rollups["steps"]) == 1
     provider_count = len(tuple((REPO_ROOT / "apps/db/config/providers").glob("*.yaml")))
-    assert provider_count * 76 <= build["timeout-minutes"]
+    attempt_budget_minutes = 75 + 1
+    required_attempts = provider_count + 1
+    assert required_attempts * attempt_budget_minutes < build["timeout-minutes"]
+    assert build["timeout-minutes"] + 10 <= rollups["timeout-minutes"] <= 360
 
 
 def test_rollups_preserve_order_continue_after_failures_and_return_first_nonzero(
@@ -361,6 +362,169 @@ exit 0
         assert (artifact_dir / f"rollup-{provider}.log").read_text(encoding="utf-8") == (
             f"rollup output for {provider}\n"
         )
+
+
+def test_rollups_defer_first_timeout_until_all_providers_run_then_recover(
+    tmp_path: Path,
+) -> None:
+    calls = tmp_path / "rollup-calls.txt"
+    stm_attempts = tmp_path / "stm-attempts.txt"
+    environment = _fake_uv_environment(
+        tmp_path,
+        """\
+if [[ "$*" == *"build-warm-rollups"* ]]; then
+  provider="${!#}"
+  printf '%s\\n' "$provider" >> "$ROLLUP_CALLS"
+  printf 'rollup output for %s\\n' "$provider"
+  if [[ "$provider" == "stm" && ! -f "$STM_ATTEMPTS" ]]; then
+    touch "$STM_ATTEMPTS"
+    sleep 1
+  fi
+fi
+exit 0
+""",
+    )
+    environment["PROVIDER_PLAN"] = '["stm","sto"]'
+    environment["ROLLUP_CALLS"] = str(calls)
+    environment["STM_ATTEMPTS"] = str(stm_attempts)
+    rollups = _load(DAILY_WORKFLOW)["jobs"]["rollups"]
+
+    result = _run_step(
+        rollups,
+        "Build warm rollups serially",
+        cwd=tmp_path,
+        environment=environment,
+        replacements={'"75m"': '"0.1s"'},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text(encoding="utf-8") == "stm\nsto\nstm\n"
+    artifact_dir = tmp_path / "artifacts" / "daily-warm-rollups" / "rollups"
+    receipt = json.loads((artifact_dir / "rollup-stage-stm.json").read_text(encoding="utf-8"))
+    assert receipt["attempt_exit_codes"] == [124, 0]
+    assert receipt["attempt_count"] == 2
+    assert receipt["recovered_after_timeout"] is True
+    assert receipt["status"] == "success"
+    assert (artifact_dir / "rollup-stm.log").read_text(encoding="utf-8") == (
+        "rollup output for stm\nrollup output for stm\n"
+    )
+
+
+def test_rollups_second_timeout_fails_after_exactly_two_attempts(tmp_path: Path) -> None:
+    calls = tmp_path / "rollup-calls.txt"
+    environment = _fake_uv_environment(
+        tmp_path,
+        """\
+if [[ "$*" == *"build-warm-rollups"* ]]; then
+  provider="${!#}"
+  printf '%s\\n' "$provider" >> "$ROLLUP_CALLS"
+  if [[ "$provider" == "stm" ]]; then sleep 1; fi
+fi
+exit 0
+""",
+    )
+    environment["PROVIDER_PLAN"] = '["stm","sto"]'
+    environment["ROLLUP_CALLS"] = str(calls)
+    rollups = _load(DAILY_WORKFLOW)["jobs"]["rollups"]
+
+    result = _run_step(
+        rollups,
+        "Build warm rollups serially",
+        cwd=tmp_path,
+        environment=environment,
+        replacements={'"75m"': '"0.1s"'},
+    )
+
+    assert result.returncode == 124
+    assert calls.read_text(encoding="utf-8") == "stm\nsto\nstm\n"
+    receipt = json.loads(
+        (tmp_path / "artifacts/daily-warm-rollups/rollups/rollup-stage-stm.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert receipt["attempt_exit_codes"] == [124, 124]
+    assert receipt["attempt_count"] == 2
+    assert receipt["recovered_after_timeout"] is False
+
+
+def test_rollups_do_not_retry_non_timeout_failure(tmp_path: Path) -> None:
+    calls = tmp_path / "rollup-calls.txt"
+    environment = _fake_uv_environment(
+        tmp_path,
+        """\
+if [[ "$*" == *"build-warm-rollups"* ]]; then
+  provider="${!#}"
+  printf '%s\\n' "$provider" >> "$ROLLUP_CALLS"
+  if [[ "$provider" == "stm" ]]; then exit 41; fi
+fi
+exit 0
+""",
+    )
+    environment["PROVIDER_PLAN"] = '["stm","sto"]'
+    environment["ROLLUP_CALLS"] = str(calls)
+    rollups = _load(DAILY_WORKFLOW)["jobs"]["rollups"]
+
+    result = _run_step(
+        rollups,
+        "Build warm rollups serially",
+        cwd=tmp_path,
+        environment=environment,
+    )
+
+    assert result.returncode == 41
+    assert calls.read_text(encoding="utf-8") == "stm\nsto\n"
+    receipt = json.loads(
+        (tmp_path / "artifacts/daily-warm-rollups/rollups/rollup-stage-stm.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert receipt["attempt_exit_codes"] == [41]
+    assert receipt["attempt_count"] == 1
+
+
+def test_rollups_allow_only_first_timed_out_provider_to_use_global_retry(
+    tmp_path: Path,
+) -> None:
+    calls = tmp_path / "rollup-calls.txt"
+    attempt_dir = tmp_path / "attempts"
+    attempt_dir.mkdir()
+    environment = _fake_uv_environment(
+        tmp_path,
+        """\
+if [[ "$*" == *"build-warm-rollups"* ]]; then
+  provider="${!#}"
+  printf '%s\\n' "$provider" >> "$ROLLUP_CALLS"
+  attempt_file="$ATTEMPT_DIR/$provider"
+  if [[ ! -f "$attempt_file" ]]; then
+    touch "$attempt_file"
+    sleep 1
+  fi
+fi
+exit 0
+""",
+    )
+    environment["PROVIDER_PLAN"] = '["stm","sto"]'
+    environment["ROLLUP_CALLS"] = str(calls)
+    environment["ATTEMPT_DIR"] = str(attempt_dir)
+    rollups = _load(DAILY_WORKFLOW)["jobs"]["rollups"]
+
+    result = _run_step(
+        rollups,
+        "Build warm rollups serially",
+        cwd=tmp_path,
+        environment=environment,
+        replacements={'"75m"': '"0.1s"'},
+    )
+
+    assert result.returncode == 124
+    assert calls.read_text(encoding="utf-8") == "stm\nsto\nstm\n"
+    artifact_dir = tmp_path / "artifacts/daily-warm-rollups/rollups"
+    stm_receipt = json.loads((artifact_dir / "rollup-stage-stm.json").read_text())
+    sto_receipt = json.loads((artifact_dir / "rollup-stage-sto.json").read_text())
+    assert stm_receipt["attempt_exit_codes"] == [124, 0]
+    assert stm_receipt["recovered_after_timeout"] is True
+    assert sto_receipt["attempt_exit_codes"] == [124]
+    assert sto_receipt["attempt_count"] == 1
 
 
 def test_rollups_treat_receipt_log_pipeline_failure_as_stage_failure(tmp_path: Path) -> None:
@@ -606,7 +770,8 @@ def test_retention_is_serial_after_publish_and_requires_bronze_exhaustion() -> N
     assert 'timeout --signal=TERM --kill-after=1m "40m"' in prune
     i3 = prune.index('prune-i3-storage "$provider"')
     warm = prune.index('prune-warm-rollup-storage "$provider"')
-    bronze = prune.index('prune-bronze-storage "$provider" --require-exhausted')
+    bronze_command = 'prune-bronze-storage "$provider" --max-batches 4 --require-exhausted'
+    bronze = prune.index(bronze_command)
     assert i3 < warm < bronze
     assert 'retention-proof-report "$provider" --report-path' in prune
     assert prune.index('retention-proof-report "$provider" --report-path') > bronze
