@@ -105,6 +105,15 @@ class FakeBronzeStorage:
             raise OSError(f"Simulated failure for {storage_path}")
         self.deleted.append(storage_path)
 
+    def delete_objects(self, storage_paths) -> set[str]:  # noqa: ANN001
+        failed_paths: set[str] = set()
+        for storage_path in storage_paths:
+            try:
+                self.delete_object(storage_path)
+            except Exception:
+                failed_paths.add(storage_path)
+        return failed_paths
+
     def storage_backend(self) -> str:
         return "local"
 
