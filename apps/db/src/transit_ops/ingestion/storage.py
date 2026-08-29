@@ -53,6 +53,15 @@ class BronzeStorage:
     def delete_object(self, storage_path: str) -> None:
         raise NotImplementedError
 
+    def delete_objects(self, storage_paths: Iterable[str]) -> set[str]:
+        failed_paths: set[str] = set()
+        for storage_path in storage_paths:
+            try:
+                self.delete_object(storage_path)
+            except Exception:
+                failed_paths.add(storage_path)
+        return failed_paths
+
     def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]:
         raise NotImplementedError
 
@@ -163,6 +172,24 @@ class S3BronzeStorage(BronzeStorage):
                 "Failed to delete Bronze artifact at "
                 f"{self.describe_location(storage_path)} via endpoint {self.endpoint_url}: {exc}"
             ) from exc
+
+    def delete_objects(self, storage_paths: Iterable[str]) -> set[str]:
+        paths = list(storage_paths)
+        failed_paths: set[str] = set()
+        for offset in range(0, len(paths), 1000):
+            chunk = paths[offset : offset + 1000]
+            try:
+                response = self.client.delete_objects(
+                    Bucket=self.bucket,
+                    Delete={"Objects": [{"Key": path} for path in chunk], "Quiet": True},
+                )
+            except (BotoCoreError, ClientError):
+                failed_paths.update(chunk)
+                continue
+            failed_paths.update(
+                str(error["Key"]) for error in response.get("Errors", []) if "Key" in error
+            )
+        return failed_paths
 
     def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]:
         try:

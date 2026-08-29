@@ -21,6 +21,8 @@ class FakeS3Client:
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.upload_calls: list[tuple[str, str]] = []
+        self.delete_objects_calls: list[dict[str, object]] = []
+        self.delete_objects_outcomes: list[dict[str, object] | Exception] = []
         self.paginator_calls: list[str] = []
         self.paginator_pages: list[dict[str, object]] | None = None
         self.close_calls = 0
@@ -42,6 +44,15 @@ class FakeS3Client:
     def get_paginator(self, operation_name: str):  # noqa: ANN201
         self.paginator_calls.append(operation_name)
         return FakeS3Paginator(self)
+
+    def delete_objects(self, **kwargs):  # noqa: ANN003, ANN201
+        self.delete_objects_calls.append(kwargs)
+        if self.delete_objects_outcomes:
+            outcome = self.delete_objects_outcomes.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+        return {}
 
     def close(self) -> None:
         self.close_calls += 1
@@ -311,6 +322,23 @@ def test_local_bronze_storage_list_objects_empty_prefix_lists_all_files(tmp_path
     ]
 
 
+def test_local_bronze_storage_bulk_delete_preserves_per_path_failures(
+    tmp_path: Path,
+) -> None:
+    storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
+    storage.root.mkdir()
+    (storage.root / "a.pb").write_bytes(b"a")
+    (storage.root / "b.pb").write_bytes(b"b")
+    (storage.root / "cannot-unlink").mkdir()
+
+    failed_paths = storage.delete_objects(["a.pb", "cannot-unlink", "b.pb"])
+
+    assert failed_paths == {"cannot-unlink"}
+    assert (storage.root / "a.pb").exists() is False
+    assert (storage.root / "b.pb").exists() is False
+    assert (storage.root / "cannot-unlink").is_dir()
+
+
 def test_local_bronze_storage_list_objects_rejects_absolute_prefix(tmp_path: Path) -> None:
     storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
 
@@ -382,6 +410,86 @@ def test_s3_bronze_storage_list_objects_consumes_multiple_pages() -> None:
         "stm/static_schedule/b.zip",
     ]
     assert [obj.byte_size for obj in objects] == [3, 4]
+
+
+def test_s3_bronze_storage_bulk_delete_chunks_at_one_thousand_keys() -> None:
+    fake_client = FakeS3Client()
+    storage = S3BronzeStorage(
+        storage_backend="s3",
+        bucket="bronze-bucket",
+        endpoint_url="https://example.r2.cloudflarestorage.com",
+        client=fake_client,
+    )
+    storage_paths = [f"stm/trip_updates/{index}.pb" for index in range(1001)]
+
+    failed_paths = storage.delete_objects(storage_paths)
+
+    assert failed_paths == set()
+    assert len(fake_client.delete_objects_calls) == 2
+    assert [
+        len(call["Delete"]["Objects"])  # type: ignore[index]
+        for call in fake_client.delete_objects_calls
+    ] == [1000, 1]
+    assert all(
+        call["Bucket"] == "bronze-bucket"
+        and call["Delete"]["Quiet"] is True  # type: ignore[index]
+        for call in fake_client.delete_objects_calls
+    )
+
+
+def test_s3_bronze_storage_bulk_delete_returns_exact_partial_failures() -> None:
+    fake_client = FakeS3Client()
+    fake_client.delete_objects_outcomes = [
+        {
+            "Errors": [
+                {"Key": "stm/trip_updates/b.pb", "Code": "InternalError"},
+                {"Key": "stm/trip_updates/d.pb", "Code": "AccessDenied"},
+            ]
+        }
+    ]
+    storage = S3BronzeStorage(
+        storage_backend="s3",
+        bucket="bronze-bucket",
+        endpoint_url="https://example.r2.cloudflarestorage.com",
+        client=fake_client,
+    )
+
+    failed_paths = storage.delete_objects(
+        [
+            "stm/trip_updates/a.pb",
+            "stm/trip_updates/b.pb",
+            "stm/trip_updates/c.pb",
+            "stm/trip_updates/d.pb",
+        ]
+    )
+
+    assert failed_paths == {
+        "stm/trip_updates/b.pb",
+        "stm/trip_updates/d.pb",
+    }
+
+
+def test_s3_bronze_storage_bulk_delete_marks_failed_request_chunk_unconfirmed() -> None:
+    fake_client = FakeS3Client()
+    fake_client.delete_objects_outcomes = [
+        ClientError(
+            {"Error": {"Code": "InternalError", "Message": "R2 unavailable"}},
+            "DeleteObjects",
+        ),
+        {},
+    ]
+    storage = S3BronzeStorage(
+        storage_backend="s3",
+        bucket="bronze-bucket",
+        endpoint_url="https://example.r2.cloudflarestorage.com",
+        client=fake_client,
+    )
+    storage_paths = [f"stm/trip_updates/{index}.pb" for index in range(1001)]
+
+    failed_paths = storage.delete_objects(storage_paths)
+
+    assert failed_paths == set(storage_paths[:1000])
+    assert len(fake_client.delete_objects_calls) == 2
 
 
 def test_get_bronze_storage_requires_s3_configuration(tmp_path: Path) -> None:
