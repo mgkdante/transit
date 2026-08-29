@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -1653,6 +1654,37 @@ def test_prune_bronze_realtime_bulk_failures_never_delete_failed_metadata() -> N
         if "DELETE FROM raw.ingestion_objects" in sql
     ]
     assert metadata_delete_params == [{"ingestion_object_ids": [11, 12]}]
+
+
+def test_prune_bronze_realtime_bulk_failures_emit_one_bounded_summary(
+    caplog,
+) -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    storage.fail_on = set(MOCK_REALTIME_PATHS)
+    caplog.set_level(logging.ERROR, logger="transit_ops.maintenance")
+
+    _cutoff, object_counts, _meta, failed_object_ids = prune_bronze_realtime_objects(
+        connection,
+        provider_id="stm",
+        retention_days=7,
+        bronze_storage=storage,
+        now_utc=datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC),
+    )
+
+    records = [
+        record for record in caplog.records if record.name == "transit_ops.maintenance"
+    ]
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "3 of 3" in message
+    assert "realtime" in message
+    assert "metadata" in message
+    assert object_counts == {"realtime": 0}
+    assert failed_object_ids == {10, 11, 12}
+    assert all(
+        "DELETE FROM raw.ingestion_objects" not in sql for sql, _ in connection.executed
+    )
 
 
 def test_prune_bronze_realtime_objects_disabled_when_zero_retention() -> None:

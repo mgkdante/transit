@@ -276,15 +276,13 @@ def prune_bronze_realtime_objects(
     failed_object_ids = {
         int(row[0]) for row in rows if str(row[2]) in failed_paths
     }
-    for row in rows:
-        ingestion_object_id = int(row[0])
-        storage_path = str(row[2])
-        if ingestion_object_id in failed_object_ids:
-            logger.error(
-                "Failed to delete Bronze realtime object '%s' (ingestion_object_id=%s)",
-                storage_path,
-                ingestion_object_id,
-            )
+    if failed_object_ids:
+        logger.error(
+            "Bronze realtime bulk deletion failed for %s of %s objects; "
+            "metadata retained for failed objects",
+            len(failed_object_ids),
+            len(rows),
+        )
     deleted_object_count = len(rows) - len(failed_object_ids)
 
     successful_object_ids = [
@@ -382,15 +380,13 @@ def prune_bronze_static_objects(
     failed_object_ids = {
         int(row[0]) for row in rows if str(row[2]) in failed_paths
     }
-    for row in rows:
-        ingestion_object_id = int(row[0])
-        storage_path = str(row[2])
-        if ingestion_object_id in failed_object_ids:
-            logger.error(
-                "Failed to delete Bronze static object '%s' (ingestion_object_id=%s)",
-                storage_path,
-                ingestion_object_id,
-            )
+    if failed_object_ids:
+        logger.error(
+            "Bronze static bulk deletion failed for %s of %s objects; "
+            "metadata retained for failed objects",
+            len(failed_object_ids),
+            len(rows),
+        )
     deleted_object_count = len(rows) - len(failed_object_ids)
 
     successful_object_ids = [
