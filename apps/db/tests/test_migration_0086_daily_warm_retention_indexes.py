@@ -406,11 +406,18 @@ def test_embedded_alembic_uses_disposable_url_when_settings_are_cached(
     monkeypatch,
 ) -> None:
     database_url = real_db_engine.url.render_as_string(hide_password=False)
+    stale_database_url = "postgresql+psycopg://sentinel:sentinel@127.0.0.1:1/stale"
     get_settings.cache_clear()
     try:
-        assert get_settings().sqlalchemy_database_url is None
+        monkeypatch.setenv("DATABASE_URL", stale_database_url)
+        cached_settings = get_settings()
+        assert cached_settings.sqlalchemy_database_url == stale_database_url
         monkeypatch.setenv("DATABASE_URL", database_url)
-        command.current(_alembic_config(database_url))
+        assert get_settings() is cached_settings
+        assert get_settings().sqlalchemy_database_url == stale_database_url
+        config = _alembic_config(database_url)
+        assert config.get_main_option("sqlalchemy.url") == database_url
+        command.current(config)
     finally:
         get_settings.cache_clear()
 

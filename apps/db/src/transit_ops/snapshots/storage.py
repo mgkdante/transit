@@ -1,6 +1,6 @@
 """Snapshot storage layer — PUT /v1 JSON to Cloudflare R2 (or local disk).
 
-The R2 backend reuses the existing Bronze S3 client builder (`build_s3_client`)
+The R2 backend owns a snapshot-specific client built by `_build_snapshot_s3_client`,
 which reads BRONZE_S3_* credentials.  The snapshot-specific settings control
 which *bucket* the published snapshots land in and whether to use local disk
 instead (useful for development and CI).
