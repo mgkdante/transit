@@ -392,7 +392,7 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 beforeEach(() => routeSurface.reset());
 
 afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(35);
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(36);
 });
 
 describe('RouteDetail article cover and focus scope', () => {
@@ -429,6 +429,21 @@ describe('RouteDetail article cover and focus scope', () => {
 			'Reliability',
 		]);
 		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).toBeNull();
+	});
+
+	it('uses historic freshness on the reliability tab', () => {
+		routeDetailNav.page.url = new URL('http://localhost/lines/161?tab=reliability');
+		reliabilityResourceState = {
+			data: CURRENT_RELIABILITY,
+			error: null,
+			loading: false,
+			settled: true,
+		};
+		const view = renderRoute();
+		expect(view.container.querySelector('[data-slot="article-header"] time')).toHaveAttribute(
+			'datetime',
+			CURRENT_RELIABILITY.generated_utc,
+		);
 	});
 
 	it('keeps tab URLs shareable while preserving unrelated search parameters', async () => {

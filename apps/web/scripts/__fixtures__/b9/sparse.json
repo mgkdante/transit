@@ -1,0 +1,314 @@
+{
+	"name": "sparse",
+	"frozen_utc": "2026-08-30T16:00:00Z",
+	"files": {
+		"manifest.json": {
+			"provider": "stm",
+			"display_name": "Société de transport de Montréal",
+			"short_name": "STM",
+			"city": "Montréal",
+			"bbox": [-74.2, 45.2, -73.2, 45.9],
+			"attribution": "B9 sparse synthetic STM fixture",
+			"dataset_version": "b9-sparse-v1",
+			"labels": { "en": "labels/en.json", "fr": "labels/fr.json" },
+			"files": {
+				"live": {
+					"generated_utc": "2026-08-30T15:55:00Z",
+					"network": "live/network.json",
+					"vehicles": "live/vehicles.json",
+					"trips": "live/trips.json",
+					"stop_departures": "live/stop_departures.json",
+					"alerts": "live/alerts.json",
+					"ttl_s": 3600
+				},
+				"static": {
+					"generated_utc": "2026-08-29T04:00:00Z",
+					"routes_prefix": "static/routes/",
+					"stops_prefix": "static/stops/",
+					"ttl_s": 86400
+				},
+				"historic": {
+					"generated_utc": "2026-08-30T06:00:00Z",
+					"route_reliability_prefix": "historic/route_reliability/",
+					"stop_reliability_prefix": "historic/stop_reliability/",
+					"network_trend": "historic/network_trend.json",
+					"provenance": "provenance.json",
+					"receipts_index": "historic/receipts/index.json",
+					"ttl_s": 86400
+				}
+			},
+			"surfaces": ["network_health", "lookups", "reliability"],
+			"capabilities": {
+				"live_map": "partial",
+				"network_health": "partial",
+				"lookups": "enabled",
+				"reliability": "partial",
+				"accountability": "unavailable",
+				"data_trust": "partial"
+			},
+			"basemap": null,
+			"default_lang": "fr",
+			"tz": "America/Toronto",
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"labels/en.json": {},
+		"labels/fr.json": {},
+		"static/routes/24.json": {
+			"generated_utc": "2026-08-29T04:00:00Z",
+			"id": "24",
+			"long": "Sparse B9",
+			"type": 3,
+			"directions": [
+				{
+					"dir": 0,
+					"headsign": "Sparse East",
+					"stops": [{ "id": "52095", "seq": 1, "name": "Sparse B9 Stop" }]
+				}
+			],
+			"service_periods": [],
+			"first_departure": null,
+			"last_departure": null,
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"static/stops/52095.json": {
+			"generated_utc": "2026-08-29T04:00:00Z",
+			"id": "52095",
+			"name": "Sparse B9 Stop",
+			"lat": 45.5,
+			"lon": -73.6,
+			"code": null,
+			"routes_served": ["24", "0"],
+			"scheduled": [],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"live/vehicles.json": {
+			"generated_utc": "2026-08-30T15:55:00Z",
+			"vehicles": [],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"live/trips.json": {
+			"generated_utc": "2026-08-30T15:55:00Z",
+			"trips": {},
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"live/stop_departures.json": {
+			"generated_utc": "2026-08-30T15:55:00Z",
+			"stops": {},
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"live/alerts.json": {
+			"generated_utc": "2026-08-30T15:55:00Z",
+			"alerts": [],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"live/network.json": {
+			"generated_utc": "2026-08-30T15:55:00Z",
+			"vehicles_in_service": 0,
+			"on_time_pct": null,
+			"status_dist": { "early": 0, "on_time": 0, "late": 0, "severe": 0, "unknown": 0 },
+			"delay_p50_min": 0,
+			"delay_p90_min": null,
+			"non_responding": 0,
+			"feed_freshness_s": null,
+			"coverage_pct": null,
+			"occupancy_mix": { "empty": 0, "many_seats": 0, "few_seats": 0, "standing": 0, "full": 0 },
+			"delay_histogram": null,
+			"non_responding_by_route": null,
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/network_trend.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"series": [
+				{
+					"date": "2026-08-29",
+					"otp_pct": 0,
+					"avg_delay_min": 0,
+					"p90_min": null,
+					"vehicles": 0,
+					"cancellation_rate": null,
+					"service_completeness_rate": null,
+					"occupancy_mix": null,
+					"observation_count": 0,
+					"wilson_lo": null,
+					"wilson_hi": null
+				}
+			],
+			"weekly": [],
+			"monthly": [],
+			"by_shift": [
+				{
+					"grain": "am_peak",
+					"otp_pct": null,
+					"avg_delay_min": 0,
+					"severe_pct": 0,
+					"observation_count": 0
+				}
+			],
+			"by_daytype": [
+				{
+					"grain": "weekday",
+					"otp_pct": 0,
+					"avg_delay_min": 0,
+					"severe_pct": 0,
+					"observation_count": 0
+				}
+			],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"provenance.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"sources": [],
+			"freshness": [],
+			"gaps": ["synthetic_sparse"],
+			"retention": {},
+			"methodology": { "oracle": "b9" },
+			"conformance": null,
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/receipts/index.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"dates": ["2026-08-29"],
+			"available": [{ "date": "2026-08-29", "has_data": true, "has_schedule": false }],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/route_reliability/24.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"id": "24",
+			"name": "Sparse B9",
+			"periods": [
+				{
+					"grain": "day",
+					"date": "2026-08-29",
+					"otp_pct": 0,
+					"avg_delay_min": 0,
+					"p50_min": 0,
+					"p90_min": null,
+					"severe_pct": 0,
+					"observation_count": 0,
+					"wilson_lo": null,
+					"wilson_hi": null,
+					"on_time": 0,
+					"delay_histogram": null
+				}
+			],
+			"headway": [
+				{
+					"shift": "am_peak",
+					"scheduled_min": 0,
+					"observed_min": null,
+					"excess_wait_min": null,
+					"cov": null,
+					"bunched_pct": 0,
+					"observation_count": 0
+				}
+			],
+			"habits": null,
+			"day_of_week": [
+				{ "day_of_week_iso": 1, "avg_delay_min": 0, "severe_pct": 0, "observation_count": 0 }
+			],
+			"weak_stops": [],
+			"cancellations": [
+				{
+					"grain": "day",
+					"date": "2026-08-29",
+					"cancellation_rate_pct": null,
+					"canceled_trip_days": 0,
+					"total_trip_days": 0,
+					"scheduled_trip_days": 0,
+					"delivered_trip_days": 0,
+					"silent_trip_days": 0,
+					"service_completeness_pct": null
+				}
+			],
+			"occupancy_mix": { "empty": 0, "many_seats": 0, "few_seats": 0, "standing": 0, "full": 0 },
+			"service_spans": [
+				{
+					"date": "2026-08-29",
+					"first_trip_utc": "2026-08-29T09:00:00Z",
+					"last_trip_utc": null,
+					"service_span_min": null,
+					"first_trip_delay_min": 0,
+					"last_trip_delay_min": null,
+					"trip_count": 0
+				}
+			],
+			"skipped_stops": [
+				{
+					"date": "2026-08-29",
+					"skipped_stop_rate_pct": null,
+					"skipped_stop_count": 0,
+					"stop_time_update_count": 0
+				}
+			],
+			"delay_by_crowding": [
+				{
+					"band": "standing",
+					"avg_delay_min": 7,
+					"p50_min": 0,
+					"observation_count": 31,
+					"day_count": 1
+				}
+			],
+			"by_shift_daytype": [],
+			"occupancy_by_grain": [
+				{
+					"grain": "day",
+					"mix": { "empty": 0, "many_seats": 0, "few_seats": 0, "standing": 0, "full": 0 }
+				}
+			],
+			"occupancy_by_dow": [],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/stop_reliability/52095.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"id": "52095",
+			"name": "Sparse B9 Stop",
+			"periods": [
+				{
+					"grain": "day",
+					"otp_pct": null,
+					"avg_delay_min": 0,
+					"p50_min": 0,
+					"p90_min": null,
+					"severe_pct": 0,
+					"observation_count": 29,
+					"wilson_lo": null,
+					"wilson_hi": null
+				}
+			],
+			"habits": { "scale": "severe_relative", "matrix": [[null]] },
+			"day_of_week": [
+				{ "day_of_week_iso": 1, "avg_delay_min": 0, "severe_pct": 0, "observation_count": 29 }
+			],
+			"by_route": [
+				{ "route": "null-route", "avg_delay_min": null },
+				{ "route": "0", "avg_delay_min": 0 }
+			],
+			"occupancy_mix": { "empty": 0, "many_seats": 0, "few_seats": 0, "standing": 0, "full": 0 },
+			"daily": [
+				{
+					"date": "2026-08-29",
+					"observation_count": 29,
+					"severe_count": 0,
+					"severe_pct": 0,
+					"avg_delay_min": 0
+				}
+			],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		}
+	},
+	"not_found": ["historic/history/index.json"]
+}

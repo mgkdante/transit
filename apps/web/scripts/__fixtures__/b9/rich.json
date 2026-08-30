@@ -1,0 +1,1797 @@
+{
+	"name": "rich",
+	"frozen_utc": "2026-08-30T16:00:00Z",
+	"files": {
+		"manifest.json": {
+			"provider": "stm",
+			"display_name": "Société de transport de Montréal",
+			"short_name": "STM",
+			"city": "Montréal",
+			"bbox": [-74.2, 45.2, -73.2, 45.9],
+			"attribution": "B9 synthetic STM fixture",
+			"dataset_version": "b9-rich-v1",
+			"labels": { "en": "labels/en.json", "fr": "labels/fr.json" },
+			"files": {
+				"live": {
+					"generated_utc": "2026-08-30T15:55:00Z",
+					"network": "live/network.json",
+					"vehicles": "live/vehicles.json",
+					"trips": "live/trips.json",
+					"stop_departures": "live/stop_departures.json",
+					"alerts": "live/alerts.json",
+					"ttl_s": 3600
+				},
+				"static": {
+					"generated_utc": "2026-08-29T04:00:00Z",
+					"routes_prefix": "static/routes/",
+					"stops_prefix": "static/stops/",
+					"ttl_s": 86400
+				},
+				"historic": {
+					"generated_utc": "2026-08-30T06:00:00Z",
+					"route_reliability_prefix": "historic/route_reliability/",
+					"stop_reliability_prefix": "historic/stop_reliability/",
+					"network_trend": "historic/network_trend.json",
+					"provenance": "provenance.json",
+					"receipts_index": "historic/receipts/index.json",
+					"ttl_s": 86400
+				}
+			},
+			"surfaces": ["live_map", "network_health", "lookups", "reliability", "data_trust"],
+			"capabilities": {
+				"live_map": "enabled",
+				"network_health": "enabled",
+				"lookups": "enabled",
+				"reliability": "enabled",
+				"accountability": "partial",
+				"data_trust": "enabled"
+			},
+			"basemap": null,
+			"default_lang": "fr",
+			"tz": "America/Toronto",
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"labels/en.json": {},
+		"labels/fr.json": {},
+		"static/routes/24.json": {
+			"generated_utc": "2026-08-29T04:00:00Z",
+			"id": "24",
+			"long": "Sherbrooke",
+			"type": 3,
+			"directions": [
+				{
+					"dir": 0,
+					"headsign": "West B9",
+					"stops": [{ "id": "52095", "seq": 1, "name": "B9 Atwater" }]
+				},
+				{
+					"dir": 1,
+					"headsign": "East B9",
+					"stops": [{ "id": "52095", "seq": 1, "name": "B9 Atwater" }]
+				}
+			],
+			"service_periods": [{ "shift": "am_peak", "window": "06:00–09:00", "headway_min": 8 }],
+			"first_departure": "05:00",
+			"last_departure": "25:30",
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"static/stops/52095.json": {
+			"generated_utc": "2026-08-29T04:00:00Z",
+			"id": "52095",
+			"name": "B9 Atwater",
+			"lat": 45.48901,
+			"lon": -73.58602,
+			"code": "B952095",
+			"routes_served": ["24", "51", "99"],
+			"scheduled": [{ "route": "24", "headsign": "East B9", "times": ["05:00", "25:30"] }],
+			"wheelchair": true,
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"live/vehicles.json": {
+			"generated_utc": "2026-08-30T15:55:00Z",
+			"vehicles": [],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"live/trips.json": {
+			"generated_utc": "2026-08-30T15:55:00Z",
+			"trips": {},
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"live/stop_departures.json": {
+			"generated_utc": "2026-08-30T15:55:00Z",
+			"stops": {},
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"live/alerts.json": {
+			"generated_utc": "2026-08-30T15:55:00Z",
+			"alerts": [],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"live/network.json": {
+			"generated_utc": "2026-08-30T15:55:00Z",
+			"vehicles_in_service": 37,
+			"on_time_pct": 73,
+			"status_dist": { "early": 2, "on_time": 21, "late": 7, "severe": 4, "unknown": 3 },
+			"delay_p50_min": 2,
+			"delay_p90_min": 11,
+			"non_responding": 9,
+			"feed_freshness_s": 17,
+			"coverage_pct": 84,
+			"occupancy_mix": {
+				"empty": 0.07,
+				"many_seats": 0.31,
+				"few_seats": 0.29,
+				"standing": 0.21,
+				"full": 0.12
+			},
+			"delay_histogram": [
+				{ "lo_min": null, "hi_min": -5, "count": 2 },
+				{ "lo_min": -5, "hi_min": -2, "count": 4 },
+				{ "lo_min": -2, "hi_min": 0, "count": 8 },
+				{ "lo_min": 0, "hi_min": 2, "count": 16 },
+				{ "lo_min": 2, "hi_min": 5, "count": 20 },
+				{ "lo_min": 5, "hi_min": 10, "count": 10 },
+				{ "lo_min": 10, "hi_min": 15, "count": 5 },
+				{ "lo_min": 15, "hi_min": null, "count": 3 }
+			],
+			"non_responding_by_route": [
+				{ "route_id": "99", "count": 5 },
+				{ "route_id": "24", "count": 3 },
+				{ "route_id": "51", "count": 1 }
+			],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/network_trend.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"series": [
+				{
+					"date": "2026-08-27",
+					"otp_pct": 68,
+					"avg_delay_min": 3.2,
+					"p90_min": 12,
+					"vehicles": 34,
+					"cancellation_rate": 4.5,
+					"service_completeness_rate": 88,
+					"observation_count": 100,
+					"wilson_lo": 58,
+					"wilson_hi": 77,
+					"occupancy_mix": {
+						"empty": 0.1,
+						"many_seats": 0.3,
+						"few_seats": 0.3,
+						"standing": 0.2,
+						"full": 0.1
+					}
+				},
+				{
+					"date": "2026-08-28",
+					"otp_pct": 72,
+					"avg_delay_min": 2.7,
+					"p90_min": 10,
+					"vehicles": 36,
+					"cancellation_rate": 3.5,
+					"service_completeness_rate": 91,
+					"observation_count": 120,
+					"wilson_lo": 63,
+					"wilson_hi": 79,
+					"occupancy_mix": null
+				},
+				{
+					"date": "2026-08-29",
+					"otp_pct": 79,
+					"avg_delay_min": 1.9,
+					"p90_min": 8,
+					"vehicles": 37,
+					"cancellation_rate": 2.5,
+					"service_completeness_rate": 94,
+					"observation_count": 140,
+					"wilson_lo": 71,
+					"wilson_hi": 85,
+					"occupancy_mix": {
+						"empty": 0.05,
+						"many_seats": 0.35,
+						"few_seats": 0.3,
+						"standing": 0.2,
+						"full": 0.1
+					}
+				}
+			],
+			"weekly": [
+				{
+					"date": "2026-08-17",
+					"otp_pct": 70,
+					"avg_delay_min": 2.9,
+					"p90_min": null,
+					"vehicles": null
+				},
+				{
+					"date": "2026-08-24",
+					"otp_pct": 76,
+					"avg_delay_min": 2.2,
+					"p90_min": null,
+					"vehicles": null
+				}
+			],
+			"monthly": [
+				{
+					"date": "2026-07-01",
+					"otp_pct": 69,
+					"avg_delay_min": 3.1,
+					"p90_min": null,
+					"vehicles": null
+				},
+				{
+					"date": "2026-08-01",
+					"otp_pct": 75,
+					"avg_delay_min": 2.4,
+					"p90_min": null,
+					"vehicles": null
+				}
+			],
+			"by_shift": [
+				{
+					"grain": "am_peak",
+					"otp_pct": 71,
+					"avg_delay_min": 3.1,
+					"severe_pct": 14,
+					"observation_count": 80,
+					"wilson_lo": 60,
+					"wilson_hi": 80
+				},
+				{
+					"grain": "midday",
+					"otp_pct": 86,
+					"avg_delay_min": 1.2,
+					"severe_pct": 5,
+					"observation_count": 90,
+					"wilson_lo": 77,
+					"wilson_hi": 92
+				},
+				{
+					"grain": "pm_peak",
+					"otp_pct": 63,
+					"avg_delay_min": 4.4,
+					"severe_pct": 19,
+					"observation_count": 75,
+					"wilson_lo": 52,
+					"wilson_hi": 73
+				},
+				{
+					"grain": "night",
+					"otp_pct": null,
+					"avg_delay_min": 5.5,
+					"severe_pct": 24,
+					"observation_count": null
+				}
+			],
+			"by_daytype": [
+				{
+					"grain": "weekday",
+					"otp_pct": 74,
+					"avg_delay_min": 2.6,
+					"severe_pct": 11,
+					"observation_count": 300,
+					"wilson_lo": 69,
+					"wilson_hi": 79
+				},
+				{
+					"grain": "weekend",
+					"otp_pct": 81,
+					"avg_delay_min": 1.7,
+					"severe_pct": 7,
+					"observation_count": 110,
+					"wilson_lo": 72,
+					"wilson_hi": 87
+				}
+			],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"provenance.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"sources": [
+				{ "feed": "gtfs-rt", "last_loaded_utc": "2026-08-30T15:55:00Z", "chain": "STM B9" }
+			],
+			"freshness": [{ "feed": "gtfs-rt", "age_s": 17, "status": "fresh" }],
+			"gaps": [],
+			"retention": { "historic": 90 },
+			"methodology": { "oracle": "b9" },
+			"conformance": { "status": "compliant", "extra_row_count": 0, "unknown_members": [] },
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/receipts/index.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"dates": ["2026-08-29"],
+			"available": [{ "date": "2026-08-29", "has_data": true, "has_schedule": true }],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/history/index.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"families": [
+				{
+					"family": "lines",
+					"selection_mode": "range",
+					"index_path": "historic/history/lines/index.json",
+					"collection_generation_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+					"first_available_date": "2026-08-27",
+					"last_available_date": "2026-08-29",
+					"gaps": [],
+					"metrics": []
+				},
+				{
+					"family": "network",
+					"selection_mode": "range",
+					"index_path": "historic/history/network/index.json",
+					"collection_generation_id": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+					"first_available_date": "2026-08-27",
+					"last_available_date": "2026-08-29",
+					"gaps": [],
+					"metrics": [
+						{
+							"metric": "delay",
+							"aggregation": "additive",
+							"first_available_date": "2026-08-27",
+							"last_available_date": "2026-08-29",
+							"gaps": []
+						},
+						{
+							"metric": "delay_percentiles",
+							"aggregation": "daily_only",
+							"first_available_date": "2026-08-27",
+							"last_available_date": "2026-08-29",
+							"gaps": []
+						},
+						{
+							"metric": "vehicles",
+							"aggregation": "daily_only",
+							"first_available_date": "2026-08-27",
+							"last_available_date": "2026-08-29",
+							"gaps": []
+						},
+						{
+							"metric": "cancellation",
+							"aggregation": "additive",
+							"first_available_date": "2026-08-27",
+							"last_available_date": "2026-08-29",
+							"gaps": []
+						}
+					]
+				}
+			],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/history/lines/index.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"family": "lines",
+			"selection_mode": "range",
+			"collection_generation_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+			"first_available_date": "2026-08-27",
+			"last_available_date": "2026-08-29",
+			"entities": [
+				{
+					"entity_id": "24",
+					"encoded_id": "3234",
+					"index_path": "historic/history/lines/3234/index.json",
+					"collection_generation_id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+					"first_available_date": "2026-08-27",
+					"last_available_date": "2026-08-29"
+				}
+			],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/history/lines/3234/index.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"family": "lines",
+			"selection_mode": "range",
+			"entity_id": "24",
+			"collection_generation_id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+			"first_available_date": "2026-08-27",
+			"last_available_date": "2026-08-29",
+			"gaps": [],
+			"partitions": [
+				{
+					"path": "historic/history/lines/3234/generations/527864c22a3853a65c42ec69d86e009cd7a9fe782b9614e0abbda550d300ea43/2026-08.json",
+					"coverage_start": "2026-08-27",
+					"coverage_end": "2026-08-29",
+					"count": 3,
+					"sha256": "527864c22a3853a65c42ec69d86e009cd7a9fe782b9614e0abbda550d300ea43",
+					"byte_size": 2194
+				}
+			],
+			"metrics": [
+				{
+					"metric": "delay",
+					"aggregation": "additive",
+					"first_available_date": "2026-08-27",
+					"last_available_date": "2026-08-29",
+					"gaps": []
+				},
+				{
+					"metric": "delay_percentiles",
+					"aggregation": "daily_only",
+					"first_available_date": "2026-08-27",
+					"last_available_date": "2026-08-29",
+					"gaps": []
+				},
+				{
+					"metric": "cancellation",
+					"aggregation": "additive",
+					"first_available_date": "2026-08-27",
+					"last_available_date": "2026-08-29",
+					"gaps": []
+				},
+				{
+					"metric": "occupancy",
+					"aggregation": "additive",
+					"first_available_date": "2026-08-27",
+					"last_available_date": "2026-08-29",
+					"gaps": []
+				},
+				{
+					"metric": "service_span",
+					"aggregation": "daily_only",
+					"first_available_date": "2026-08-27",
+					"last_available_date": "2026-08-29",
+					"gaps": []
+				},
+				{
+					"metric": "skipped_stops",
+					"aggregation": "additive",
+					"first_available_date": "2026-08-27",
+					"last_available_date": "2026-08-29",
+					"gaps": []
+				}
+			],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/history/lines/3234/generations/527864c22a3853a65c42ec69d86e009cd7a9fe782b9614e0abbda550d300ea43/2026-08.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"month": "2026-08",
+			"entity_id": "24",
+			"days": [
+				{
+					"date": "2026-08-27",
+					"delay": {
+						"observation_count": 10,
+						"in_clamp_observation_count": 10,
+						"on_time_count": 5,
+						"severe_count": 2,
+						"sum_delay_seconds": 1800
+					},
+					"delay_percentiles": {
+						"observation_count": 10,
+						"p50_delay_seconds": 84,
+						"p90_delay_seconds": 738
+					},
+					"cancellation": {
+						"canceled_trip_days": 1,
+						"total_trip_days": 30,
+						"scheduled_trip_days": 30,
+						"delivered_trip_days": 28,
+						"silent_trip_days": 2
+					},
+					"occupancy": { "empty": 1, "many_seats": 7, "few_seats": 1, "standing": 1, "full": 0 },
+					"service_span": {
+						"trip_count": 30,
+						"first_trip_utc": "2026-08-27T09:00:00Z",
+						"last_trip_utc": "2026-08-28T05:00:00Z",
+						"first_trip_delay_seconds": 0,
+						"last_trip_delay_seconds": 60
+					},
+					"skipped_stops": { "skipped_stop_count": 0, "stop_time_update_count": 1 }
+				},
+				{
+					"date": "2026-08-28",
+					"delay": {
+						"observation_count": 15,
+						"in_clamp_observation_count": 15,
+						"on_time_count": 10,
+						"severe_count": 3,
+						"sum_delay_seconds": 3600
+					},
+					"delay_percentiles": {
+						"observation_count": 15,
+						"p50_delay_seconds": 84,
+						"p90_delay_seconds": 738
+					},
+					"cancellation": {
+						"canceled_trip_days": 2,
+						"total_trip_days": 30,
+						"scheduled_trip_days": 30,
+						"delivered_trip_days": 27,
+						"silent_trip_days": 3
+					},
+					"occupancy": { "empty": 1, "many_seats": 9, "few_seats": 3, "standing": 2, "full": 0 },
+					"service_span": {
+						"trip_count": 31,
+						"first_trip_utc": "2026-08-28T09:00:00Z",
+						"last_trip_utc": "2026-08-29T05:00:00Z",
+						"first_trip_delay_seconds": -30,
+						"last_trip_delay_seconds": 120
+					},
+					"skipped_stops": { "skipped_stop_count": 0, "stop_time_update_count": 1 }
+				},
+				{
+					"date": "2026-08-29",
+					"delay": {
+						"observation_count": 25,
+						"in_clamp_observation_count": 25,
+						"on_time_count": 18,
+						"severe_count": 4,
+						"sum_delay_seconds": 5400
+					},
+					"delay_percentiles": {
+						"observation_count": 25,
+						"p50_delay_seconds": 84,
+						"p90_delay_seconds": 738
+					},
+					"cancellation": {
+						"canceled_trip_days": 2,
+						"total_trip_days": 40,
+						"scheduled_trip_days": 40,
+						"delivered_trip_days": 38,
+						"silent_trip_days": 2
+					},
+					"occupancy": { "empty": 2, "many_seats": 20, "few_seats": 11, "standing": 7, "full": 0 },
+					"service_span": {
+						"trip_count": 77,
+						"first_trip_utc": "2026-08-29T09:00:00Z",
+						"last_trip_utc": "2026-08-30T05:30:00Z",
+						"first_trip_delay_seconds": -90,
+						"last_trip_delay_seconds": 270
+					},
+					"skipped_stops": { "skipped_stop_count": 5, "stop_time_update_count": 198 }
+				}
+			],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/history/network/index.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"family": "network",
+			"selection_mode": "range",
+			"collection_generation_id": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+			"first_available_date": "2026-08-27",
+			"last_available_date": "2026-08-29",
+			"gaps": [],
+			"partitions": [
+				{
+					"path": "historic/history/network/generations/51c9d71841d8439d69b6cf49582478e4c4187a60b84e2d0ded3a0abbc3ca9d21/2026-08.json",
+					"coverage_start": "2026-08-27",
+					"coverage_end": "2026-08-29",
+					"count": 3,
+					"sha256": "51c9d71841d8439d69b6cf49582478e4c4187a60b84e2d0ded3a0abbc3ca9d21",
+					"byte_size": 1261
+				}
+			],
+			"metrics": [
+				{
+					"metric": "delay",
+					"aggregation": "additive",
+					"first_available_date": "2026-08-27",
+					"last_available_date": "2026-08-29",
+					"gaps": []
+				},
+				{
+					"metric": "delay_percentiles",
+					"aggregation": "daily_only",
+					"first_available_date": "2026-08-27",
+					"last_available_date": "2026-08-29",
+					"gaps": []
+				},
+				{
+					"metric": "vehicles",
+					"aggregation": "daily_only",
+					"first_available_date": "2026-08-27",
+					"last_available_date": "2026-08-29",
+					"gaps": []
+				},
+				{
+					"metric": "cancellation",
+					"aggregation": "additive",
+					"first_available_date": "2026-08-27",
+					"last_available_date": "2026-08-29",
+					"gaps": []
+				}
+			],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/history/network/generations/51c9d71841d8439d69b6cf49582478e4c4187a60b84e2d0ded3a0abbc3ca9d21/2026-08.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"month": "2026-08",
+			"days": [
+				{
+					"date": "2026-08-27",
+					"delay": {
+						"observation_count": 10,
+						"in_clamp_observation_count": 10,
+						"on_time_count": 5,
+						"severe_count": 1,
+						"sum_delay_seconds": 600
+					},
+					"delay_percentiles": {
+						"observation_count": 10,
+						"p50_delay_seconds": 60,
+						"p90_delay_seconds": 240
+					},
+					"vehicles": 5,
+					"cancellation": {
+						"canceled_trip_days": 1,
+						"total_trip_days": 10,
+						"scheduled_trip_days": 10,
+						"delivered_trip_days": 8,
+						"silent_trip_days": 1
+					}
+				},
+				{
+					"date": "2026-08-28",
+					"delay": {
+						"observation_count": 10,
+						"in_clamp_observation_count": 10,
+						"on_time_count": 2,
+						"severe_count": 1,
+						"sum_delay_seconds": 1200
+					},
+					"delay_percentiles": {
+						"observation_count": 10,
+						"p50_delay_seconds": 120,
+						"p90_delay_seconds": 360
+					},
+					"vehicles": 6,
+					"cancellation": {
+						"canceled_trip_days": 1,
+						"total_trip_days": 10,
+						"scheduled_trip_days": 10,
+						"delivered_trip_days": 7,
+						"silent_trip_days": 2
+					}
+				},
+				{
+					"date": "2026-08-29",
+					"delay": {
+						"observation_count": 10,
+						"in_clamp_observation_count": 10,
+						"on_time_count": 9,
+						"severe_count": 1,
+						"sum_delay_seconds": 300
+					},
+					"delay_percentiles": {
+						"observation_count": 10,
+						"p50_delay_seconds": 30,
+						"p90_delay_seconds": 120
+					},
+					"vehicles": 7,
+					"cancellation": {
+						"canceled_trip_days": 0,
+						"total_trip_days": 10,
+						"scheduled_trip_days": 10,
+						"delivered_trip_days": 9,
+						"silent_trip_days": 1
+					}
+				}
+			],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/route_reliability/24.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"id": "24",
+			"name": "B9 Sherbrooke",
+			"periods": [
+				{
+					"grain": "day",
+					"date": "2026-08-26",
+					"otp_pct": 66,
+					"avg_delay_min": 3.6,
+					"p50_min": 1.4,
+					"p90_min": 12.3,
+					"severe_pct": 18,
+					"observation_count": 50,
+					"wilson_lo": 52,
+					"wilson_hi": 77,
+					"on_time": 33
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-27",
+					"otp_pct": 70,
+					"avg_delay_min": 3.0,
+					"p50_min": 1.2,
+					"p90_min": 10.5,
+					"severe_pct": 15,
+					"observation_count": 60,
+					"wilson_lo": 57,
+					"wilson_hi": 80,
+					"on_time": 42
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-28",
+					"otp_pct": 75,
+					"avg_delay_min": 2.5,
+					"p50_min": 1.0,
+					"p90_min": 9.0,
+					"severe_pct": 12,
+					"observation_count": 80,
+					"wilson_lo": 64,
+					"wilson_hi": 83,
+					"on_time": 60
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-29",
+					"otp_pct": 80,
+					"avg_delay_min": 1.8,
+					"p50_min": 0.8,
+					"p90_min": 7.5,
+					"severe_pct": 9,
+					"observation_count": 100,
+					"wilson_lo": 71,
+					"wilson_hi": 87,
+					"on_time": 80
+				},
+				{
+					"grain": "week",
+					"date": "2026-08-24",
+					"otp_pct": 76,
+					"avg_delay_min": 2.4,
+					"p50_min": 1.1,
+					"p90_min": 9.5,
+					"severe_pct": 13,
+					"observation_count": 290,
+					"wilson_lo": 71,
+					"wilson_hi": 81,
+					"on_time": 220,
+					"delay_histogram": [
+						{ "lo_sec": null, "hi_sec": -300, "count": 2 },
+						{ "lo_sec": -300, "hi_sec": -120, "count": 5 },
+						{ "lo_sec": -120, "hi_sec": 0, "count": 20 },
+						{ "lo_sec": 0, "hi_sec": 120, "count": 80 },
+						{ "lo_sec": 120, "hi_sec": 300, "count": 50 },
+						{ "lo_sec": 300, "hi_sec": 600, "count": 20 },
+						{ "lo_sec": 600, "hi_sec": null, "count": 7 }
+					]
+				},
+				{
+					"grain": "month",
+					"date": "2026-08-01",
+					"otp_pct": 74,
+					"avg_delay_min": 2.7,
+					"p50_min": 1.2,
+					"p90_min": 10.2,
+					"severe_pct": 14,
+					"observation_count": 900,
+					"wilson_lo": 71,
+					"wilson_hi": 77,
+					"on_time": 666
+				}
+			],
+			"headway": [
+				{
+					"shift": "am_peak",
+					"direction_id": 0,
+					"day_type": "weekday",
+					"scheduled_min": 8,
+					"observed_min": 12.5,
+					"excess_wait_min": 4.5,
+					"cov": 0.42,
+					"bunched_pct": 28,
+					"observation_count": 70
+				},
+				{
+					"shift": "midday",
+					"direction_id": 0,
+					"day_type": "weekday",
+					"scheduled_min": 10,
+					"observed_min": 11,
+					"excess_wait_min": 1,
+					"cov": 0.21,
+					"bunched_pct": 9,
+					"observation_count": 55
+				},
+				{
+					"shift": "pm_peak",
+					"direction_id": 1,
+					"day_type": "weekday",
+					"scheduled_min": 7,
+					"observed_min": 14,
+					"excess_wait_min": 7,
+					"cov": 0.58,
+					"bunched_pct": 35,
+					"observation_count": 65
+				}
+			],
+			"habits": {
+				"scale": "repeat_problem_relative",
+				"matrix": [
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.2,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.9,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					],
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.3,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.7,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					],
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.4,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.8,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					],
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.1,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.6,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					],
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.5,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						1,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					],
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.1,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.2,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					],
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.05,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.1,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					]
+				]
+			},
+			"day_of_week": [
+				{ "day_of_week_iso": 1, "avg_delay_min": 1.1, "severe_pct": 5, "observation_count": 40 },
+				{ "day_of_week_iso": 2, "avg_delay_min": 2.2, "severe_pct": 7, "observation_count": 41 },
+				{ "day_of_week_iso": 3, "avg_delay_min": 3.3, "severe_pct": 9, "observation_count": 42 },
+				{ "day_of_week_iso": 4, "avg_delay_min": 4.4, "severe_pct": 11, "observation_count": 43 },
+				{ "day_of_week_iso": 5, "avg_delay_min": 5.5, "severe_pct": 13, "observation_count": 44 },
+				{ "day_of_week_iso": 6, "avg_delay_min": 2.6, "severe_pct": 8, "observation_count": 45 },
+				{ "day_of_week_iso": 7, "avg_delay_min": 1.7, "severe_pct": 6, "observation_count": 46 }
+			],
+			"weak_stops": [{ "id": "legacy", "name": "Legacy B9", "avg_delay_min": 12 }],
+			"cancellations": [
+				{
+					"grain": "day",
+					"date": "2026-08-28",
+					"cancellation_rate_pct": 4,
+					"canceled_trip_days": 4,
+					"total_trip_days": 100,
+					"scheduled_trip_days": 100,
+					"delivered_trip_days": 91,
+					"silent_trip_days": 9,
+					"service_completeness_pct": 91
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-29",
+					"cancellation_rate_pct": 5,
+					"canceled_trip_days": 5,
+					"total_trip_days": 100,
+					"scheduled_trip_days": 100,
+					"delivered_trip_days": 93,
+					"silent_trip_days": 7,
+					"service_completeness_pct": 93
+				}
+			],
+			"occupancy_mix": {
+				"empty": 0.05,
+				"many_seats": 0.35,
+				"few_seats": 0.3,
+				"standing": 0.2,
+				"full": 0.1
+			},
+			"service_spans": [
+				{
+					"date": "2026-08-29",
+					"first_trip_utc": "2026-08-29T09:00:00Z",
+					"last_trip_utc": "2026-08-30T05:30:00Z",
+					"service_span_min": 1230,
+					"first_trip_delay_min": -1.5,
+					"last_trip_delay_min": 4.5,
+					"trip_count": 77
+				}
+			],
+			"skipped_stops": [
+				{
+					"date": "2026-08-29",
+					"skipped_stop_rate_pct": 2.5,
+					"skipped_stop_count": 5,
+					"stop_time_update_count": 200
+				}
+			],
+			"delay_by_crowding": [
+				{
+					"band": "empty",
+					"avg_delay_min": 0.5,
+					"p50_min": 0.2,
+					"observation_count": 40,
+					"day_count": 4
+				},
+				{
+					"band": "standing",
+					"avg_delay_min": 6.5,
+					"p50_min": 4.2,
+					"observation_count": 50,
+					"day_count": 5
+				},
+				{
+					"band": "full",
+					"avg_delay_min": 9.5,
+					"p50_min": 7.2,
+					"observation_count": 60,
+					"day_count": 6
+				}
+			],
+			"by_shift_daytype": [
+				{
+					"shift": "am_peak",
+					"day_type": "weekday",
+					"otp_pct": 68,
+					"avg_delay_min": 3.4,
+					"severe_pct": 16,
+					"observation_count": 80
+				},
+				{
+					"shift": "am_peak",
+					"day_type": "weekend",
+					"otp_pct": 82,
+					"avg_delay_min": 1.4,
+					"severe_pct": 6,
+					"observation_count": 45
+				},
+				{
+					"shift": "pm_peak",
+					"day_type": "weekday",
+					"otp_pct": 61,
+					"avg_delay_min": 4.8,
+					"severe_pct": 22,
+					"observation_count": 75
+				},
+				{
+					"shift": "pm_peak",
+					"day_type": "weekend",
+					"otp_pct": 78,
+					"avg_delay_min": 2.0,
+					"severe_pct": 9,
+					"observation_count": 40
+				}
+			],
+			"occupancy_by_grain": [
+				{
+					"grain": "day",
+					"mix": {
+						"empty": 0.04,
+						"many_seats": 0.36,
+						"few_seats": 0.3,
+						"standing": 0.2,
+						"full": 0.1
+					}
+				},
+				{
+					"grain": "week",
+					"mix": {
+						"empty": 0.08,
+						"many_seats": 0.32,
+						"few_seats": 0.28,
+						"standing": 0.2,
+						"full": 0.12
+					}
+				},
+				{
+					"grain": "month",
+					"mix": {
+						"empty": 0.1,
+						"many_seats": 0.3,
+						"few_seats": 0.28,
+						"standing": 0.2,
+						"full": 0.12
+					}
+				}
+			],
+			"occupancy_by_dow": [
+				{
+					"day_of_week_iso": 1,
+					"mix": {
+						"empty": 0.05,
+						"many_seats": 0.35,
+						"few_seats": 0.3,
+						"standing": 0.2,
+						"full": 0.1
+					},
+					"n": 100
+				},
+				{
+					"day_of_week_iso": 2,
+					"mix": {
+						"empty": 0.06,
+						"many_seats": 0.34,
+						"few_seats": 0.3,
+						"standing": 0.2,
+						"full": 0.1
+					},
+					"n": 100
+				},
+				{
+					"day_of_week_iso": 3,
+					"mix": {
+						"empty": 0.07,
+						"many_seats": 0.33,
+						"few_seats": 0.3,
+						"standing": 0.2,
+						"full": 0.1
+					},
+					"n": 100
+				},
+				{
+					"day_of_week_iso": 4,
+					"mix": {
+						"empty": 0.08,
+						"many_seats": 0.32,
+						"few_seats": 0.3,
+						"standing": 0.2,
+						"full": 0.1
+					},
+					"n": 100
+				},
+				{
+					"day_of_week_iso": 5,
+					"mix": {
+						"empty": 0.09,
+						"many_seats": 0.31,
+						"few_seats": 0.3,
+						"standing": 0.2,
+						"full": 0.1
+					},
+					"n": 100
+				},
+				{
+					"day_of_week_iso": 6,
+					"mix": {
+						"empty": 0.2,
+						"many_seats": 0.4,
+						"few_seats": 0.2,
+						"standing": 0.1,
+						"full": 0.1
+					},
+					"n": 60
+				},
+				{
+					"day_of_week_iso": 7,
+					"mix": {
+						"empty": 0.3,
+						"many_seats": 0.4,
+						"few_seats": 0.15,
+						"standing": 0.1,
+						"full": 0.05
+					},
+					"n": 40
+				}
+			],
+			"periods_by_grain": [
+				{
+					"grain": "day",
+					"date": "2026-08-29",
+					"by_shift": [
+						{
+							"grain": "am_peak",
+							"otp_pct": 70,
+							"avg_delay_min": 3,
+							"severe_pct": 14,
+							"observation_count": 50,
+							"on_time": 35,
+							"prior_observation_count": 50,
+							"prior_otp_pct": 60,
+							"prior_on_time": 30
+						},
+						{
+							"grain": "pm_peak",
+							"otp_pct": 60,
+							"avg_delay_min": 4,
+							"severe_pct": 20,
+							"observation_count": 50,
+							"on_time": 30,
+							"prior_observation_count": 50,
+							"prior_otp_pct": 76,
+							"prior_on_time": 38
+						}
+					],
+					"by_daytype": [
+						{
+							"grain": "weekday",
+							"otp_pct": 74,
+							"avg_delay_min": 2.5,
+							"severe_pct": 12,
+							"observation_count": 80,
+							"on_time": 59,
+							"prior_observation_count": 80,
+							"prior_otp_pct": 65,
+							"prior_on_time": 52
+						},
+						{
+							"grain": "weekend",
+							"otp_pct": 84,
+							"avg_delay_min": 1.2,
+							"severe_pct": 5,
+							"observation_count": 40,
+							"on_time": 34,
+							"prior_observation_count": 40,
+							"prior_otp_pct": 75,
+							"prior_on_time": 30
+						}
+					],
+					"day_of_week": [
+						{
+							"day_of_week_iso": 1,
+							"avg_delay_min": 1.1,
+							"severe_pct": 5,
+							"observation_count": 40
+						},
+						{
+							"day_of_week_iso": 5,
+							"avg_delay_min": 5.5,
+							"severe_pct": 13,
+							"observation_count": 44
+						}
+					],
+					"by_shift_daytype": [
+						{
+							"shift": "am_peak",
+							"day_type": "weekday",
+							"otp_pct": 68,
+							"avg_delay_min": 3.4,
+							"severe_pct": 16,
+							"observation_count": 80
+						},
+						{
+							"shift": "pm_peak",
+							"day_type": "weekend",
+							"otp_pct": 78,
+							"avg_delay_min": 2,
+							"severe_pct": 9,
+							"observation_count": 40
+						}
+					]
+				}
+			],
+			"headway_by_grain": [
+				{
+					"grain": "day",
+					"date": "2026-08-29",
+					"headway": [
+						{
+							"shift": "am_peak",
+							"scheduled_min": 8,
+							"observed_min": 12.5,
+							"excess_wait_min": 4.5,
+							"cov": 0.42,
+							"bunched_pct": 28,
+							"observation_count": 70
+						},
+						{
+							"shift": "midday",
+							"scheduled_min": 10,
+							"observed_min": 11,
+							"excess_wait_min": 1,
+							"cov": 0.21,
+							"bunched_pct": 9,
+							"observation_count": 55
+						},
+						{
+							"shift": "pm_peak",
+							"scheduled_min": 7,
+							"observed_min": 14,
+							"excess_wait_min": 7,
+							"cov": 0.58,
+							"bunched_pct": 35,
+							"observation_count": 65
+						}
+					]
+				}
+			],
+			"weak_stops_by_grain": [
+				{
+					"grain": "day",
+					"date": "2026-08-29",
+					"stops": [
+						{
+							"id": "b9-01",
+							"name": "B9 Stop 01",
+							"avg_delay_min": -1,
+							"observation_count": 100,
+							"severe_pct": 50,
+							"wilson_lo": 40.4,
+							"wilson_hi": 59.6
+						},
+						{
+							"id": "b9-02",
+							"name": "B9 Stop 02",
+							"avg_delay_min": 12,
+							"observation_count": 100,
+							"severe_pct": 48,
+							"wilson_lo": 42.3,
+							"wilson_hi": 61.5
+						},
+						{
+							"id": "b9-03",
+							"name": "B9 Stop 03",
+							"avg_delay_min": 11,
+							"observation_count": 100,
+							"severe_pct": 46,
+							"wilson_lo": 42.3,
+							"wilson_hi": 63.4
+						},
+						{
+							"id": "b9-04",
+							"name": "B9 Stop 04",
+							"avg_delay_min": 11,
+							"observation_count": 100,
+							"severe_pct": 44,
+							"wilson_lo": 42.3,
+							"wilson_hi": 65.3
+						},
+						{
+							"id": "b9-05",
+							"name": "B9 Stop 05",
+							"avg_delay_min": 3,
+							"observation_count": 100,
+							"severe_pct": 42,
+							"wilson_lo": 48.2,
+							"wilson_hi": 67.2
+						},
+						{
+							"id": "b9-06",
+							"name": "B9 Stop 06",
+							"avg_delay_min": 10,
+							"observation_count": 100,
+							"severe_pct": 40,
+							"wilson_lo": 50.2,
+							"wilson_hi": 69.1
+						},
+						{
+							"id": "b9-07",
+							"name": "B9 Stop 07",
+							"avg_delay_min": 4,
+							"observation_count": 100,
+							"severe_pct": 38,
+							"wilson_lo": 52.2,
+							"wilson_hi": 70.9
+						},
+						{
+							"id": "b9-08",
+							"name": "B9 Stop 08",
+							"avg_delay_min": 9,
+							"observation_count": 100,
+							"severe_pct": 36,
+							"wilson_lo": 54.2,
+							"wilson_hi": 72.7
+						},
+						{
+							"id": "b9-09",
+							"name": "B9 Stop 09",
+							"avg_delay_min": 5,
+							"observation_count": 100,
+							"severe_pct": 34,
+							"wilson_lo": 56.3,
+							"wilson_hi": 74.5
+						},
+						{
+							"id": "b9-10",
+							"name": "B9 Stop 10",
+							"avg_delay_min": 8,
+							"observation_count": 100,
+							"severe_pct": 32,
+							"wilson_lo": 58.3,
+							"wilson_hi": 76.3
+						},
+						{
+							"id": "b9-11",
+							"name": "B9 Stop 11",
+							"avg_delay_min": 6,
+							"observation_count": 100,
+							"severe_pct": 30,
+							"wilson_lo": 60.4,
+							"wilson_hi": 78.1
+						},
+						{
+							"id": "b9-12",
+							"name": "B9 Stop 12",
+							"avg_delay_min": 7,
+							"observation_count": 100,
+							"severe_pct": 28,
+							"wilson_lo": 62.5,
+							"wilson_hi": 79.9
+						},
+						{
+							"id": "b9-13",
+							"name": "B9 Stop 13",
+							"avg_delay_min": 1,
+							"observation_count": 100,
+							"severe_pct": 26,
+							"wilson_lo": 64.6,
+							"wilson_hi": 81.6
+						},
+						{
+							"id": "b9-14",
+							"name": "B9 Stop 14",
+							"avg_delay_min": 13,
+							"observation_count": 100,
+							"severe_pct": 24,
+							"wilson_lo": 66.8,
+							"wilson_hi": 83.3
+						},
+						{
+							"id": "b9-15",
+							"name": "B9 Stop 15",
+							"avg_delay_min": 0,
+							"observation_count": 100,
+							"severe_pct": 22,
+							"wilson_lo": 68.9,
+							"wilson_hi": 85
+						}
+					]
+				}
+			],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		},
+		"historic/stop_reliability/52095.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"id": "52095",
+			"name": "B9 Atwater",
+			"periods": [
+				{
+					"grain": "day",
+					"otp_pct": 87,
+					"p50_min": 1.1,
+					"p90_min": 8.7,
+					"observation_count": 120,
+					"wilson_lo": 80,
+					"wilson_hi": 92
+				},
+				{
+					"grain": "week",
+					"otp_pct": 82,
+					"avg_delay_min": 2.9,
+					"p50_min": null,
+					"p90_min": null,
+					"severe_pct": 18,
+					"observation_count": 420,
+					"wilson_lo": 78,
+					"wilson_hi": 85
+				},
+				{
+					"grain": "month",
+					"otp_pct": 79,
+					"avg_delay_min": 3.2,
+					"p50_min": null,
+					"p90_min": null,
+					"severe_pct": 21,
+					"observation_count": 1300,
+					"wilson_lo": 77,
+					"wilson_hi": 81
+				},
+				{
+					"grain": "am_peak",
+					"otp_pct": 74,
+					"avg_delay_min": 3.8,
+					"severe_pct": 26,
+					"observation_count": 80
+				},
+				{
+					"grain": "pm_peak",
+					"otp_pct": 69,
+					"avg_delay_min": 4.4,
+					"severe_pct": 31,
+					"observation_count": 75
+				},
+				{
+					"grain": "weekday",
+					"otp_pct": 76,
+					"avg_delay_min": 3.5,
+					"severe_pct": 24,
+					"observation_count": 300
+				},
+				{
+					"grain": "weekend",
+					"otp_pct": 88,
+					"avg_delay_min": 1.5,
+					"severe_pct": 12,
+					"observation_count": 110
+				}
+			],
+			"habits": {
+				"scale": "severe_relative",
+				"matrix": [
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.2,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.8,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					],
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.3,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.7,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					],
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.4,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.6,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					],
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.5,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						1,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					],
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.6,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.9,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					],
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.1,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.2,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					],
+					[
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.05,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null,
+						0.1,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					]
+				]
+			},
+			"day_of_week": [
+				{ "day_of_week_iso": 1, "avg_delay_min": 1.1, "severe_pct": 8, "observation_count": 40 },
+				{ "day_of_week_iso": 3, "avg_delay_min": 3.3, "severe_pct": 18, "observation_count": 42 },
+				{ "day_of_week_iso": 5, "avg_delay_min": 5.5, "severe_pct": 28, "observation_count": 44 }
+			],
+			"by_route": [
+				{ "route": "51", "avg_delay_min": 2 },
+				{ "route": "99", "avg_delay_min": 11 },
+				{ "route": "24", "avg_delay_min": 6 }
+			],
+			"occupancy_mix": {
+				"empty": 0.05,
+				"many_seats": 0.25,
+				"few_seats": 0.3,
+				"standing": 0.25,
+				"full": 0.15
+			},
+			"daily": [
+				{
+					"date": "2026-08-27",
+					"observation_count": 40,
+					"severe_count": 4,
+					"severe_pct": 10,
+					"avg_delay_min": 1.5
+				},
+				{
+					"date": "2026-08-28",
+					"observation_count": 60,
+					"severe_count": 9,
+					"severe_pct": 15,
+					"avg_delay_min": 2.1
+				},
+				{
+					"date": "2026-08-29",
+					"observation_count": 80,
+					"severe_count": 16,
+					"severe_pct": 20,
+					"avg_delay_min": 2.7
+				}
+			],
+			"schema_version": 1,
+			"methodology_version": "b9"
+		}
+	},
+	"not_found": []
+}

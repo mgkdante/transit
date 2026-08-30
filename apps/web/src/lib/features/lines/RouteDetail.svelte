@@ -207,7 +207,9 @@
 	// data tier. Missing values stand down instead of becoming decorative filler.
 	const shortName = manifest.short_name?.trim() || manifest.display_name;
 	const articleGeneratedUtc = $derived(
-		live.generatedUtc ?? route.data?.generated_utc ?? reliability.data?.generated_utc ?? null,
+		detailTabController.active === 'reliability'
+			? (reliability.data?.generated_utc ?? route.data?.generated_utc ?? live.generatedUtc)
+			: (live.generatedUtc ?? route.data?.generated_utc ?? reliability.data?.generated_utc ?? null),
 	);
 	const articleEdgeLeft = $derived(`${t.kicker} ${id}`);
 	const articleEdgeRight = $derived(

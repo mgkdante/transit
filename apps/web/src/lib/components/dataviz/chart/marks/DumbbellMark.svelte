@@ -32,6 +32,17 @@
 	const reals = $derived(spec.rows.filter((r) => r.scheduled != null && r.observed != null));
 	const xDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
 	const structure = $derived(structuralLabels(spec.locale));
+	const layerStructureKey = $derived(
+		JSON.stringify([
+			spec.domain,
+			spec.rows.map((row) => [
+				row.key,
+				row.label,
+				row.scheduled == null || row.observed == null,
+				row.severity ?? 'watch',
+			]),
+		]),
+	);
 
 	const obsBySeverity = (sev: SeverityCode): DumbbellDatum[] =>
 		reals.filter((r) => (r.severity ?? 'watch') === sev);
@@ -61,61 +72,71 @@
 	</div>
 
 	<ChartFrame height={frameHeight} class="dv-dumbbell-plot">
-		<LcChart
-			data={reals}
-			x={schedOf}
-			y={yOf}
-			xScale={scaleLinear().clamp(true)}
-			{xDomain}
-			yScale={scaleBand().padding(0.5)}
-			yDomain={labels}
-			{padding}
-			tooltipContext={{ mode: 'band' }}
-		>
-			<Svg>
-				<Grid x class="dv-dumbbell-grid" />
-				<Axis
-					placement="bottom"
-					label={spec.xLabel}
-					labelPlacement="middle"
-					ticks={5}
-					format={(v) => `${v}`}
-					class="dv-dumbbell-axis"
-				/>
-				<Axis
-					placement="left"
-					rule={false}
-					format={(l: string) => gutter.truncate(l)}
-					class="dv-dumbbell-axis"
-				/>
-				<!-- Connectors: a thin floating bar from scheduled (chart x) to observed (x1). -->
-				{#each reals as row (row.key)}
-					<Bar data={row} x1={obsOf} radius={2} class="dv-dumbbell-conn" />
-				{/each}
-				<!-- Scheduled endpoint (muted reference). -->
-				<Points r={4} class="dv-dumbbell-sched" />
-				<!-- Observed endpoint, severity-coloured (the "is it bad" signal). -->
-				<Points data={obsBySeverity('watch')} x={obsOf} r={5} class="dv-dumbbell-obs-watch" />
-				<Points data={obsBySeverity('high')} x={obsOf} r={5} class="dv-dumbbell-obs-high" />
-				<Points data={obsBySeverity('critical')} x={obsOf} r={5} class="dv-dumbbell-obs-critical" />
-			</Svg>
-			<Tooltip.Root>
-				{#snippet children({ data }: { data: DumbbellDatum })}
-					<Tooltip.Header>{data.label}</Tooltip.Header>
-					<Tooltip.List>
-						<Tooltip.Item
-							label={spec.scheduledLabel}
-							value={`${fmt(data.scheduled)}${spec.unit}`}
-						/>
-						<Tooltip.Item label={spec.observedLabel} value={`${fmt(data.observed)}${spec.unit}`} />
-						{#if data.excess != null}
-							<Tooltip.Item label={structure.gap} value={`${fmt(data.excess)}${spec.unit}`} />
-						{/if}
-						{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
-					</Tooltip.List>
-				{/snippet}
-			</Tooltip.Root>
-		</LcChart>
+		{#key layerStructureKey}
+			<LcChart
+				data={reals}
+				x={schedOf}
+				y={yOf}
+				xScale={scaleLinear().clamp(true)}
+				{xDomain}
+				yScale={scaleBand().padding(0.5)}
+				yDomain={labels}
+				{padding}
+				tooltipContext={{ mode: 'band' }}
+			>
+				<Svg>
+					<Grid x class="dv-dumbbell-grid" />
+					<Axis
+						placement="bottom"
+						label={spec.xLabel}
+						labelPlacement="middle"
+						ticks={5}
+						format={(v) => `${v}`}
+						class="dv-dumbbell-axis"
+					/>
+					<Axis
+						placement="left"
+						rule={false}
+						format={(l: string) => gutter.truncate(l)}
+						class="dv-dumbbell-axis"
+					/>
+					<!-- Connectors: a thin floating bar from scheduled (chart x) to observed (x1). -->
+					{#each reals as row (row.key)}
+						<Bar data={row} x1={obsOf} radius={2} class="dv-dumbbell-conn" />
+					{/each}
+					<!-- Scheduled endpoint (muted reference). -->
+					<Points r={4} class="dv-dumbbell-sched" />
+					<!-- Observed endpoint, severity-coloured (the "is it bad" signal). -->
+					<Points data={obsBySeverity('watch')} x={obsOf} r={5} class="dv-dumbbell-obs-watch" />
+					<Points data={obsBySeverity('high')} x={obsOf} r={5} class="dv-dumbbell-obs-high" />
+					<Points
+						data={obsBySeverity('critical')}
+						x={obsOf}
+						r={5}
+						class="dv-dumbbell-obs-critical"
+					/>
+				</Svg>
+				<Tooltip.Root>
+					{#snippet children({ data }: { data: DumbbellDatum })}
+						<Tooltip.Header>{data.label}</Tooltip.Header>
+						<Tooltip.List>
+							<Tooltip.Item
+								label={spec.scheduledLabel}
+								value={`${fmt(data.scheduled)}${spec.unit}`}
+							/>
+							<Tooltip.Item
+								label={spec.observedLabel}
+								value={`${fmt(data.observed)}${spec.unit}`}
+							/>
+							{#if data.excess != null}
+								<Tooltip.Item label={structure.gap} value={`${fmt(data.excess)}${spec.unit}`} />
+							{/if}
+							{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
+						</Tooltip.List>
+					{/snippet}
+				</Tooltip.Root>
+			</LcChart>
+		{/key}
 	</ChartFrame>
 
 	<table class="sr-only">

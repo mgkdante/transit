@@ -96,8 +96,10 @@
 
 	const padding = { top: 12, right: 14, bottom: 40, left: 16 };
 
+	const fmtMinute = (seconds: number): string =>
+		new Intl.NumberFormat(spec.locale, { maximumFractionDigits: 1 }).format(seconds / 60);
 	const fmtRange = (b: { lo: number | null; hi: number | null }): string =>
-		`${b.lo == null ? '-∞' : Math.round(b.lo / 60)} ${structure.rangeTo} ${b.hi == null ? '+∞' : Math.round(b.hi / 60)} min`;
+		`${b.lo == null ? '-∞' : fmtMinute(b.lo)} ${structure.rangeTo} ${b.hi == null ? '+∞' : fmtMinute(b.hi)} min`;
 	const sharePct = (count: number): string =>
 		total > 0 ? `${Math.round((count / total) * 100)}%` : '';
 	const minutesTick = (sec: number): string => `${Math.round(sec / 60)}`;

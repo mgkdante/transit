@@ -225,33 +225,6 @@
 		onTime: null,
 	});
 	const networkVerdict = $derived(selectVerdict(networkHeadline, 'day', locale, t.verdict));
-	// The Δ-vs-prior chip (§C6 #3 — the comparison network entirely lacked): the latest
-	// daily trend OTP minus the immediately-prior day's, from the SAME dated series the
-	// trend plots. Both bounds must be real (no fabricated 0): a null on either day → no
-	// chip. Rounded to whole points (OTP is an integer percentage).
-	const verdictDeltaPts = $derived.by<number | null>(() => {
-		const s = trend.data?.series ?? [];
-		if (s.length < 2) return null;
-		const latest = s[s.length - 1]?.otp_pct;
-		const prior = s[s.length - 2]?.otp_pct;
-		if (latest == null || prior == null) return null;
-		return Math.round(latest - prior);
-	});
-	const verdictDeltaText = $derived(
-		verdictDeltaPts == null
-			? null
-			: t.verdictDelta.chip(`${verdictDeltaPts > 0 ? '+' : ''}${verdictDeltaPts}${t.units.pct}`),
-	);
-	// The Δ chip's tone rides the dataviz status scale (improving vs slipping vs flat) —
-	// colour is paired with the +/− sign so it is never the sole channel.
-	const verdictDeltaColor = $derived(
-		verdictDeltaPts == null || verdictDeltaPts === 0
-			? 'var(--muted-foreground)'
-			: verdictDeltaPts > 0
-				? 'var(--dataviz-status-on-time)'
-				: 'var(--dataviz-status-late)',
-	);
-
 	const statusSpec = $derived(
 		selectStatusMix(
 			live.network?.status_dist ?? null,
@@ -322,6 +295,27 @@
 	const retainedReady = $derived(historyUi.ready);
 	const selectedTrend = $derived(
 		explicitHistory ? (retainedReady ? history.value : null) : trend.data,
+	);
+	// The comparison reads the same selected daily series the historic board plots.
+	const verdictDeltaPts = $derived.by<number | null>(() => {
+		const s = selectedTrend?.series ?? [];
+		if (s.length < 2) return null;
+		const latest = s[s.length - 1]?.otp_pct;
+		const prior = s[s.length - 2]?.otp_pct;
+		if (latest == null || prior == null) return null;
+		return Math.round(latest - prior);
+	});
+	const verdictDeltaText = $derived(
+		verdictDeltaPts == null
+			? null
+			: t.verdictDelta.chip(`${verdictDeltaPts > 0 ? '+' : ''}${verdictDeltaPts}${t.units.pct}`),
+	);
+	const verdictDeltaColor = $derived(
+		verdictDeltaPts == null || verdictDeltaPts === 0
+			? 'var(--muted-foreground)'
+			: verdictDeltaPts > 0
+				? 'var(--dataviz-status-on-time)'
+				: 'var(--dataviz-status-late)',
 	);
 	const dailySeries = $derived<readonly TrendPoint[]>(selectedTrend?.series ?? []);
 	const weeklySeries = $derived<readonly TrendPoint[]>(selectedTrend?.weekly ?? []);

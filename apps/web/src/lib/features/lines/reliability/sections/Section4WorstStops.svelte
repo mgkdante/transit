@@ -21,7 +21,7 @@
   section degrades to its header + the styled AbsentValue chip (says WHY), never a fake 0.
 -->
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
+	import { localizeHref, type Locale } from '$lib/i18n';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { AbsentValue } from '$lib/components/edge';
@@ -102,7 +102,7 @@
 				severeUnit: copy.units.pct,
 				note: weakStopNote,
 				ciLabel: copy.strip.weakStopCi,
-				stopHref: (id) => `/stop/${id}`,
+				stopHref: (id) => localizeHref(`/stop/${id}`, locale),
 			},
 			{ preRanked: punctuality.weakStopsWindowed },
 		),

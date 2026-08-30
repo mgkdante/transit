@@ -408,6 +408,7 @@ describe('NetworkSurface retained-history integration', () => {
 		const view = render(NetworkSurface);
 
 		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20', '90']));
+		expect(view.container.querySelector('[data-slot="verdict-delta"]')).toHaveTextContent('+70');
 		expect(view.queryByRole('radiogroup', { name: 'Trend window' })).toBeNull();
 
 		await fireEvent.click(view.getByRole('radio', { name: 'Week' }));

@@ -405,6 +405,12 @@
 		}
 		if (mode === 'week') return aw.week;
 		if (mode === 'month') return aw.month;
+		const latest = datedPeriods.at(-1);
+		if (
+			latest &&
+			data.cancellations?.some((row) => row.date === latest.date && row.scheduled_trip_days === 0)
+		)
+			return aw.singleDay(latest.date);
 		return aw.day;
 	});
 
