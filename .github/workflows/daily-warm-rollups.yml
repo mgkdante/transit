@@ -524,10 +524,14 @@ jobs:
                   uv run python -m transit_ops.cli prune-i3-storage "$provider"
                 PGAPPNAME="$3" \
                   uv run python -m transit_ops.cli prune-warm-rollup-storage "$provider"
-                PGAPPNAME="$4" \
-                  uv run python -m transit_ops.cli prune-bronze-storage "$provider" --max-batches 4 --require-exhausted
-              ' _ "$provider" "$i3_app_name" "$warm_app_name" "$bronze_app_name"
+              ' _ "$provider" "$i3_app_name" "$warm_app_name"
             prune_status="$?"
+            if [[ "$prune_status" -eq 0 ]]; then
+              PGAPPNAME="$bronze_app_name" \
+                timeout --signal=TERM --kill-after=1m "40m" \
+                uv run python -m transit_ops.cli prune-bronze-storage "$provider" --max-batches 4 --require-exhausted
+              prune_status="$?"
+            fi
             set -e
             if [[ "$aggregate_status" -eq 0 && "$prune_status" -ne 0 ]]; then
               aggregate_status="$prune_status"

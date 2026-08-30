@@ -866,6 +866,29 @@ def test_bronze_realtime_prune_waits_for_source_snapshot_rows_to_be_gone() -> No
         assert dropped_table not in sql
 
 
+@pytest.mark.parametrize(
+    "statement",
+    [
+        SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+        COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+    ],
+)
+def test_bronze_realtime_eligibility_materializes_latest_and_splits_silver_guards(
+    statement,
+) -> None:
+    sql = str(statement)
+    normalized = " ".join(sql.split())
+    anti_join_fragment = normalized[normalized.index("AND NOT EXISTS") :]
+
+    assert "WITH latest_by_endpoint_key AS MATERIALIZED" in sql
+    assert "GROUP BY fe_latest.endpoint_key" in sql
+    assert sql.count("NOT EXISTS") == 2
+    assert "rfs.source_realtime_snapshot_id = rsi.realtime_snapshot_id" in sql
+    assert "rfs.ingestion_object_id = io.ingestion_object_id" in sql
+    assert " OR " not in anti_join_fragment
+    assert "rsi.captured_at_utc < :cutoff_utc" in sql
+
+
 def test_eligible_bronze_selects_order_oldest_first_limit_and_exclude() -> None:
     realtime_sql = str(SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS)
     static_sql = str(SELECT_ELIGIBLE_BRONZE_STATIC_OBJECTS)

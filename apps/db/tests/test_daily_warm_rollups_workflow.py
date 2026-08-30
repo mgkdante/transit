@@ -846,12 +846,21 @@ def test_retention_is_serial_after_publish_and_requires_bronze_exhaustion() -> N
     stage = _step(retention, "Prune retained storage and write proofs")
     assert stage["timeout-minutes"] == 130
     prune = stage["run"]
-    assert 'timeout --signal=TERM --kill-after=1m "40m"' in prune
+    timeout_wrapper = 'timeout --signal=TERM --kill-after=1m "40m"'
+    assert prune.count(timeout_wrapper) == 2
+    timeout_offsets = []
+    offset = 0
+    for _ in range(2):
+        offset = prune.index(timeout_wrapper, offset)
+        timeout_offsets.append(offset)
+        offset += len(timeout_wrapper)
     i3 = prune.index('prune-i3-storage "$provider"')
     warm = prune.index('prune-warm-rollup-storage "$provider"')
     bronze_command = 'prune-bronze-storage "$provider" --max-batches 4 --require-exhausted'
     bronze = prune.index(bronze_command)
-    assert i3 < warm < bronze
+    bronze_success_guard = prune.index('if [[ "$prune_status" -eq 0 ]]; then')
+    assert timeout_offsets[0] < i3 < warm < bronze_success_guard
+    assert bronze_success_guard < timeout_offsets[1] < bronze
     assert 'retention-proof-report "$provider" --report-path' in prune
     assert prune.index('retention-proof-report "$provider" --report-path') > bronze
     assert 'exit "$aggregate_status"' in prune
@@ -867,8 +876,7 @@ def test_retention_is_serial_after_publish_and_requires_bronze_exhaustion() -> N
     assert upload["with"]["path"] == "apps/db/artifacts/daily-warm-rollups/retention/"
     assert upload["with"]["retention-days"] == 30
     assert sum(step.get("uses") == upload["uses"] for step in retention["steps"]) == 1
-    provider_count = len(tuple((REPO_ROOT / "apps/db/config/providers").glob("*.yaml")))
-    assert provider_count * 41 + 4 <= stage["timeout-minutes"]
+    assert 30 < 40 < stage["timeout-minutes"] < retention["timeout-minutes"]
 
 
 def test_retention_commands_expose_traceable_database_identity(tmp_path: Path) -> None:

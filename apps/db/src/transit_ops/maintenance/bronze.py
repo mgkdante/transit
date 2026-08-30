@@ -26,34 +26,50 @@ RAW_BRONZE_METADATA_TABLES = (
 
 # Bronze / raw retention SQL
 
+_BRONZE_REALTIME_LATEST_CTE = """
+WITH latest_by_endpoint_key AS MATERIALIZED (
+    SELECT
+        fe_latest.endpoint_key,
+        MAX(rsi_latest.realtime_snapshot_id) AS latest_snapshot_id
+    FROM raw.realtime_snapshot_index rsi_latest
+    JOIN core.feed_endpoints fe_latest
+        ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
+    WHERE rsi_latest.provider_id = :provider_id
+    GROUP BY fe_latest.endpoint_key
+)
+"""
+
+_BRONZE_REALTIME_ELIGIBILITY_FROM = """
+FROM raw.ingestion_objects io
+JOIN raw.realtime_snapshot_index rsi
+    ON rsi.ingestion_object_id = io.ingestion_object_id
+JOIN core.feed_endpoints fe
+    ON fe.feed_endpoint_id = rsi.feed_endpoint_id
+LEFT JOIN latest_by_endpoint_key latest
+    ON latest.endpoint_key = fe.endpoint_key
+WHERE rsi.provider_id = :provider_id
+  AND rsi.captured_at_utc < :cutoff_utc
+  AND rsi.realtime_snapshot_id <> COALESCE(latest.latest_snapshot_id, -1)
+  AND NOT EXISTS (
+      SELECT 1 FROM silver.rt_feed_snapshots rfs
+      WHERE rfs.source_realtime_snapshot_id = rsi.realtime_snapshot_id
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM silver.rt_feed_snapshots rfs
+      WHERE rfs.ingestion_object_id = io.ingestion_object_id
+  )
+"""
+
 SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
-    """
+    f"""
+    {_BRONZE_REALTIME_LATEST_CTE}
     SELECT
         io.ingestion_object_id,
         io.ingestion_run_id,
         io.storage_path,
         io.storage_backend,
         rsi.realtime_snapshot_id
-    FROM raw.ingestion_objects io
-    JOIN raw.realtime_snapshot_index rsi
-        ON rsi.ingestion_object_id = io.ingestion_object_id
-    JOIN core.feed_endpoints fe
-        ON fe.feed_endpoint_id = rsi.feed_endpoint_id
-    WHERE rsi.provider_id = :provider_id
-      AND rsi.captured_at_utc < :cutoff_utc
-      AND NOT EXISTS (
-          SELECT 1 FROM silver.rt_feed_snapshots rfs
-          WHERE rfs.source_realtime_snapshot_id = rsi.realtime_snapshot_id
-             OR rfs.ingestion_object_id = io.ingestion_object_id
-      )
-      AND rsi.realtime_snapshot_id <> COALESCE((
-          SELECT MAX(rsi_latest.realtime_snapshot_id)
-          FROM raw.realtime_snapshot_index rsi_latest
-          INNER JOIN core.feed_endpoints fe_latest
-              ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
-          WHERE rsi_latest.provider_id = :provider_id
-            AND fe_latest.endpoint_key = fe.endpoint_key
-      ), -1)
+    {_BRONZE_REALTIME_ELIGIBILITY_FROM}
       AND NOT (io.ingestion_object_id = ANY(CAST(:excluded_object_ids AS bigint[])))
     ORDER BY rsi.captured_at_utc ASC, io.ingestion_object_id ASC
     LIMIT :max_objects
@@ -61,28 +77,10 @@ SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
 )
 
 COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
-    """
+    f"""
+    {_BRONZE_REALTIME_LATEST_CTE}
     SELECT COUNT(*)
-    FROM raw.ingestion_objects io
-    JOIN raw.realtime_snapshot_index rsi
-        ON rsi.ingestion_object_id = io.ingestion_object_id
-    JOIN core.feed_endpoints fe
-        ON fe.feed_endpoint_id = rsi.feed_endpoint_id
-    WHERE rsi.provider_id = :provider_id
-      AND rsi.captured_at_utc < :cutoff_utc
-      AND NOT EXISTS (
-          SELECT 1 FROM silver.rt_feed_snapshots rfs
-          WHERE rfs.source_realtime_snapshot_id = rsi.realtime_snapshot_id
-             OR rfs.ingestion_object_id = io.ingestion_object_id
-      )
-      AND rsi.realtime_snapshot_id <> COALESCE((
-          SELECT MAX(rsi_latest.realtime_snapshot_id)
-          FROM raw.realtime_snapshot_index rsi_latest
-          INNER JOIN core.feed_endpoints fe_latest
-              ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
-          WHERE rsi_latest.provider_id = :provider_id
-            AND fe_latest.endpoint_key = fe.endpoint_key
-      ), -1)
+    {_BRONZE_REALTIME_ELIGIBILITY_FROM}
     """
 )
 
