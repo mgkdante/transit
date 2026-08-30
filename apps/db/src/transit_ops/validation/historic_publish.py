@@ -79,7 +79,7 @@ from transit_ops.snapshots.paths import safe_public_path as _safe_public_path
 SYNC_MAX_AGE = timedelta(hours=6)
 GATE_MAX_AGE = timedelta(hours=36)
 FUTURE_SKEW = timedelta(minutes=5)
-HISTORIC_PROOF_FETCH_CONCURRENCY = 8
+HISTORIC_PROOF_FETCH_CONCURRENCY = 16
 HISTORIC_PROOF_TIMEOUT_SECONDS = 35 * 60
 PUBLIC_PROOF_USER_AGENT = "transit-historic-proof/1.0 (+https://transit.yesid.dev)"
 RANGE_PARTITION_SAMPLE_LIMIT_PER_FAMILY = 8

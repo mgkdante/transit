@@ -1233,12 +1233,12 @@ def test_historic_publish_proof_reuses_one_http_client_and_executor_for_complete
     ]
     assert len(requests) == len(reference_fixture.fetch_calls)
     assert len(executors) == 1
-    assert executors[0].configured_workers == 8
+    assert executors[0].configured_workers == 16
     assert executors[0].shutdown_calls == 1
     assert len(clients) == 1
     assert clients[0].close_calls == 1
     assert clients[0].timeouts == [30.0] * len(requests)
-    assert 1 <= len(connections) <= 8 < len(requests)
+    assert 1 <= len(connections) <= 16 < len(requests)
     assert all(request["accept"] == "application/json" for request in requests)
     assert all(request["cache_control"] == "no-cache" for request in requests)
     assert all(request["user_agent"] == historic_publish_module.PUBLIC_PROOF_USER_AGENT for request in requests)
@@ -1425,11 +1425,11 @@ def test_bounded_fetch_deadline_never_queues_a_later_worker_window() -> None:
 
     assert elapsed < 1
     assert len(results) == len(requests)
-    assert len(fetch_calls) <= 8
+    assert len(fetch_calls) <= 16
     assert failures == ["historic_proof_deadline_exceeded"]
     evidence = deadline.evidence()
-    assert evidence["max_batch_size"] <= 8
-    assert evidence["skipped_request_count"] >= len(requests) - 8
+    assert evidence["max_batch_size"] <= 16
+    assert evidence["skipped_request_count"] >= len(requests) - 16
 
 
 def test_historic_publish_proof_fails_when_final_fetch_crosses_deadline() -> None:
