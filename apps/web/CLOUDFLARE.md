@@ -1,9 +1,8 @@
 # Cloudflare deploy notes — Transit web
 
 How the SvelteKit app deploys to Cloudflare and how it talks to the `/v1`
-snapshot contract. Operational truth lives in the Transit Notion subtree
-(Runtime / Architecture); this file is the in-repo quick reference for the
-serving glue that ships in `apps/web/`.
+snapshot contract. This file is the in-repo quick reference for the serving
+glue that ships in `apps/web/`.
 
 ## Topology
 

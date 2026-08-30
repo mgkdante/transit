@@ -18,8 +18,7 @@
 # ~midnight–2am EST) or RT trip_ids won't join stop_times.
 # License: City of Ottawa Open Government Licence (revocable — keep attribution).
 #
-# Credential (resolved by `op` at deploy time):
-#   OCTRANSPO_API_KEY  →  op://yesid-dev/n5hshc5sugkbpcb24fi4sjvxqy/credential
+# Provision OCTRANSPO_API_KEY securely at deploy time; never inline it here.
 # ─────────────────────────────────────────────────────────────────────────────
 
 provider:
