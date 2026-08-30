@@ -724,9 +724,7 @@ def test_retention_docs_match_gold_fact_default_of_fourteen_days() -> None:
     # GOLD_FACT_RETENTION_DAYS default is 14 (settings.py); the prose must not
     # contradict it with a stale "7 days" claim.
     env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
-    env_1password = (REPO_ROOT / ".env.1password").read_text(encoding="utf-8")
     assert "GOLD_FACT_RETENTION_DAYS=7" not in _active_lines(env_example)
-    assert "GOLD_FACT_RETENTION_DAYS=7" not in _active_lines(env_1password)
     assert "Gold facts keep 14 days" in env_example
     assert "keep 7 days" not in env_example
     readme = (DB_ROOT / "README.md").read_text(encoding="utf-8")
@@ -734,13 +732,13 @@ def test_retention_docs_match_gold_fact_default_of_fourteen_days() -> None:
     assert "Gold detail facts 7 days" not in readme
 
 
-def test_env_1password_has_no_retired_neon_or_arcgis_entries() -> None:
-    # slice-9.1.1w: the database compute moved off the legacy vendor and ArcGIS
-    # was retired with Power BI, so neither belongs in the inject source. String
-    # concatenation keeps a grep for the legacy vendor from hitting this test.
-    text = (REPO_ROOT / ".env.1password").read_text(encoding="utf-8")
-    assert ("Ne" "on") not in text
-    assert "ARCGIS_API_KEY" not in text
+def test_local_1password_env_files_stay_ignored() -> None:
+    result = subprocess.run(
+        ["git", "check-ignore", "--quiet", "--no-index", "local.env.1password"],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    assert result.returncode == 0
 
 
 def test_dead_module_dirs_stay_deleted() -> None:

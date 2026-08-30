@@ -54,7 +54,7 @@ must never be edited by hand.
 
 ## Local development
 
-Prerequisites: Bun 1.3+, Node 22+, Python 3.12, [uv](https://docs.astral.sh/uv/),
+Prerequisites: Bun 1.3.11, Node 22+, Python 3.12, [uv](https://docs.astral.sh/uv/),
 PostgreSQL/PostGIS, and credentials for the feed or storage paths you run.
 
 Install the JavaScript workspace and start the dashboard:
@@ -85,11 +85,11 @@ For the full data-pipeline verification battery, see
 Copy `.env.example` to `.env` only for local work and provide the variables for
 the path you are exercising. Never commit credentials or production exports.
 
-## Notion Home
+## Repository guides
 
-The [Transit Notion home](https://www.notion.so/themlabs/Transit-3663e8630690809891abd71e03b57254?source=copy_link)
-contains the deeper architecture, decisions, and operational history; workspace
-access may be required. Repository-facing rules live in [AGENTS.md](AGENTS.md).
+- [Data pipeline and database](apps/db/README.md)
+- [Web dashboard](apps/web/README.md) and [Cloudflare serving](apps/web/CLOUDFLARE.md)
+- [Contributing and verification](CONTRIBUTING.md)
 
 ## Project policies
 
@@ -97,3 +97,4 @@ access may be required. Repository-facing rules live in [AGENTS.md](AGENTS.md).
 - [Support](SUPPORT.md)
 - [Security](SECURITY.md)
 - [MIT License](LICENSE)
+- [Notices and attribution](NOTICE)

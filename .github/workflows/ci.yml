@@ -81,7 +81,7 @@ jobs:
                   "prefixes": ["docs/"]
                 },
                 "irrelevant": {
-                  "paths": [".env.1password", ".gitattributes", ".gitignore", ".mcp.json", ".npmrc", "bun.lock", "package.json", "turbo.json"],
+                  "paths": [".gitattributes", ".gitignore", ".mcp.json", ".npmrc", "bun.lock", "package.json", "turbo.json"],
                   "prefixes": [".claude/", ".codex/", ".githooks/", "apps/data-proxy/", "apps/web/", "packages/"]
                 }
               }

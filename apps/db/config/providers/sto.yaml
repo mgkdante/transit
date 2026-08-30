@@ -15,9 +15,8 @@
 #   Expressed by AuthType.API_KEY_SIGNED + SignatureScheme.SHA256_UTC_MINUTE.
 #   The worker host MUST run NTP — the hash is minute-granular; clock drift = 401.
 #
-# Credentials (resolved by `op` at deploy time — never inline):
-#   STO_PUBLIC_KEY   →  op://yesid-dev/x7l35eiiryhwbdic33mqkm4lre/username
-#   STO_PRIVATE_KEY  →  op://yesid-dev/x7l35eiiryhwbdic33mqkm4lre/credential
+# Provision STO_PUBLIC_KEY and STO_PRIVATE_KEY securely at deploy time; never
+# inline either value here.
 #
 # RT base URLs are not pinned here (confirm exact paths from the STO dev PDF);
 # supply them at deploy time via the source_url_env_var overrides below.
