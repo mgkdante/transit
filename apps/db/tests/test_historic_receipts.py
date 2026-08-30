@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, date, datetime
@@ -49,12 +51,13 @@ def _digest_row(
 
 def _common_envelope(
     *,
+    provider_id: str = "receipt-unit",
     lock_sha: str = "6" * 64,
     schema_sha: str = "7" * 64,
     config_sha: str = "9" * 64,
 ):
     return build_historic_common_envelope(
-        provider_id="receipt-unit",
+        provider_id=provider_id,
         provider_timezone="America/Toronto",
         family="stops",
         installed_code_sha256="1" * 64,
@@ -82,10 +85,13 @@ def _scope_evidence(
     scope_date: date = date(2026, 7, 1),
     *,
     dependency_dates: tuple[date, ...] | None = None,
+    provider_id: str = "receipt-unit",
+    entity_key: str = "S/1",
+    source_sha256: str = "d" * 64,
 ):
     dates = dependency_dates or (scope_date,)
     collector = HistoryDigestCollector(
-        provider_id="receipt-unit",
+        provider_id=provider_id,
         family="stops",
         source_names=("delay", "percentiles", "occupancy"),
         named_query_sha256={"history.stops.delay": "4" * 64},
@@ -94,7 +100,7 @@ def _scope_evidence(
     collector.consume_inventory_rows(
         [
             {
-                "stop_id": "S/1",
+                "stop_id": entity_key,
                 "__f7_inventory_row_count": 1,
                 "__f7_inventory_sha256": "c" * 64,
                 "__f7_inventory_sentinel": False,
@@ -106,18 +112,18 @@ def _scope_evidence(
         "delay",
         [
             {
-                "stop_id": "S/1",
+                "stop_id": entity_key,
                 "local_date": local_date,
                 "observation_count": 3,
                 "source_generated_utc": datetime(2026, 7, 2, tzinfo=UTC),
                 **(
                     _digest_row(
-                        entity_key="S/1",
+                        entity_key=entity_key,
                         month=scope_date.replace(day=1),
                         row_count=len(dates),
                         minimum=min(dates),
                         maximum=max(dates),
-                        sha256="d" * 64,
+                        sha256=source_sha256,
                     )
                     if index == 0
                     else dict.fromkeys(
@@ -139,6 +145,80 @@ def _scope_evidence(
     collector.consume_source_rows("percentiles", [], entity_field="stop_id")
     collector.consume_source_rows("occupancy", [], entity_field="stop_id")
     return next(collector.iter_scope_evidence())
+
+
+def _persistence_receipt(
+    entity_key: str,
+    *,
+    revision: str = "a",
+    padding_bytes: int = 0,
+    scope_date: date = date(2026, 7, 1),
+    provider_id: str = "receipt-unit",
+):
+    common = _common_envelope(provider_id=provider_id)
+    source_sha256 = hashlib.sha256(
+        f"source:{entity_key}:{scope_date:%Y-%m}:{revision}".encode()
+    ).hexdigest()
+    evidence = _scope_evidence(
+        scope_date,
+        provider_id=provider_id,
+        entity_key=entity_key,
+        source_sha256=source_sha256,
+    )
+    artifact_sha256 = hashlib.sha256(
+        f"artifact:{entity_key}:{scope_date:%Y-%m}:{revision}".encode()
+    ).hexdigest()
+    artifact_ref = {
+        "path": (
+            "historic/history/stops/fixture/generations/"
+            f"{artifact_sha256}/{scope_date:%Y-%m}.json"
+        ),
+        "coverage_start": scope_date.isoformat(),
+        "coverage_end": scope_date.isoformat(),
+        "count": 1,
+        "sha256": artifact_sha256,
+        "byte_size": 321 + padding_bytes,
+    }
+    detached = build_historic_detached_contribution(
+        family="stops",
+        artifact_ref=artifact_ref,
+        partition={
+            "generated_utc": "2026-07-02T00:00:00Z",
+            "methodology_version": "history-1",
+            "month": f"{scope_date:%Y-%m}",
+            "entity_id": entity_key,
+            "days": [
+                {"date": scope_date.isoformat(), "delay": {"observation_count": 1}}
+            ],
+        },
+    )
+    scope = build_historic_scope_receipt(
+        common_envelope=common,
+        source_evidence=evidence,
+        artifact_ref=artifact_ref,
+        raw_day_count=1,
+        detached_summary=detached,
+        source_timestamps=evidence.source_timestamps,
+        origin_gate={
+            "enabled": True,
+            "force": False,
+            "verdict": "PASS",
+            "checks": 12,
+            "errors": 0,
+            "warnings": 0,
+            "complete": True,
+        },
+        diagnostics={"padding": "x" * padding_bytes},
+    )
+    return build_historic_entity_receipt(
+        provider_id=provider_id,
+        family="stops",
+        entity_key=entity_key,
+        common_envelope=common,
+        scope_receipts=(scope,),
+        origin_publish_generation_id="origin",
+        activated_root_generation_id="root",
+    )
 
 
 def test_digest_wrappers_frame_typed_rows_and_strip_validated_sidecars():
@@ -927,3 +1007,165 @@ def test_origin_gate_evidence_is_fail_closed_and_writer_enforces_map_cardinality
             origin_publish_generation_id="origin-detached",
             activated_root_generation_id="root-detached",
         )
+
+
+def test_receipt_persistence_prefilters_headers_and_batches_only_changed_rows():
+    receipts = tuple(
+        _persistence_receipt(f"S{position:04d}", revision="new", padding_bytes=256)
+        for position in range(504)
+    )
+    unchanged = receipts[0]
+    stale_json = {
+        ("stops", "STALE-A"): (
+            {"family": "stops", "padding": "a" * 800},
+            {"2026-05": {"padding": "b" * 900}, "2026-06": {"v": 1}},
+        ),
+        ("stops", "STALE-B"): (
+            {"family": "stops", "padding": "c" * 700},
+            {"2026-07": {"padding": "d" * 600}},
+        ),
+    }
+    existing_rows = [
+        {
+            "family": "stops",
+            "entity_key": unchanged.entity_key,
+            "entity_receipt_sha256": unchanged.entity_receipt_sha256,
+            "month_keys": ["2026-07"],
+            "common_envelope": unchanged.common_envelope,
+            "month_receipts": unchanged.month_receipts,
+        },
+        {
+            "family": "stops",
+            "entity_key": receipts[1].entity_key,
+            "entity_receipt_sha256": "0" * 64,
+            "month_keys": ["2026-06", "2026-07"],
+            "common_envelope": receipts[1].common_envelope,
+            "month_receipts": {
+                "2026-06": {"legacy": True},
+                **receipts[1].month_receipts,
+            },
+        },
+        *[
+            {
+                "family": family,
+                "entity_key": entity_key,
+                "entity_receipt_sha256": "f" * 64,
+                "month_keys": list(month_receipts),
+                "common_envelope": common_envelope,
+                "month_receipts": month_receipts,
+            }
+            for (family, entity_key), (common_envelope, month_receipts) in stale_json.items()
+        ],
+    ]
+    existing_digests = {
+        (row["family"], row["entity_key"]): row["entity_receipt_sha256"]
+        for row in existing_rows
+    }
+
+    class Result:
+        def __init__(self, rows=(), *, rowcount=0):  # noqa: ANN001
+            self._rows = tuple(rows)
+            self.rowcount = rowcount
+
+        def mappings(self):  # noqa: ANN201
+            return self._rows
+
+    class Connection:
+        def __init__(self) -> None:
+            self.statements: list[tuple[str, str]] = []
+            self.upsert_batches: list[list[dict[str, object]]] = []
+            self.stale_fetches: list[dict[str, object]] = []
+
+        def execute(self, statement, parameters):  # noqa: ANN001, ANN201
+            name = query_name(statement)
+            self.statements.append((name, str(statement)))
+            if name == "snapshot.historic_receipts.existing":
+                return Result(existing_rows)
+            if name == "snapshot.historic_receipts.stale_json":
+                self.stale_fetches.append(dict(parameters))
+                keys = set(parameters["entity_keys"])
+                return Result(
+                    {
+                        "entity_key": entity_key,
+                        "common_envelope": common_envelope,
+                        "month_receipts": month_receipts,
+                    }
+                    for (family, entity_key), (
+                        common_envelope,
+                        month_receipts,
+                    ) in stale_json.items()
+                    if family == parameters["family"] and entity_key in keys
+                )
+            if name == "snapshot.historic_receipts.upsert":
+                batch = parameters if isinstance(parameters, list) else [parameters]
+                copied = [dict(item) for item in batch]
+                self.upsert_batches.append(copied)
+                changed = sum(
+                    existing_digests.get((item["family"], item["entity_key"]))
+                    != item["entity_receipt_sha256"]
+                    for item in copied
+                )
+                return Result(rowcount=changed)
+            if name == "snapshot.historic_receipts.delete_stale":
+                current = set(parameters["entity_keys"])
+                deleted = sum(
+                    family == parameters["family"] and entity_key not in current
+                    for family, entity_key in existing_digests
+                )
+                return Result(rowcount=deleted)
+            raise AssertionError(name)
+
+    connection = Connection()
+    stats = receipts_module.persist_historic_receipts(
+        connection,
+        provider_id="receipt-unit",
+        receipts=receipts,
+        complete_families=("stops",),
+    )
+
+    canonical_size = lambda value: len(  # noqa: E731
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+    )
+    expected_attempted_bytes = sum(
+        canonical_size(receipt.common_envelope) + canonical_size(receipt.month_receipts)
+        for receipt in receipts
+    )
+    expected_changed_bytes = sum(
+        canonical_size(receipt.common_envelope) + canonical_size(receipt.month_receipts)
+        for receipt in receipts[1:]
+    ) + sum(
+        canonical_size(common_envelope) + canonical_size(month_receipts)
+        for common_envelope, month_receipts in stale_json.values()
+    )
+    header_sql = next(
+        sql
+        for name, sql in connection.statements
+        if name == "snapshot.historic_receipts.existing"
+    )
+    upserted_keys = [
+        (item["family"], item["entity_key"])
+        for batch in connection.upsert_batches
+        for item in batch
+    ]
+    observed_shape = {
+        "header_has_full_json": "common_envelope" in header_sql,
+        "header_has_month_keys": "jsonb_object_keys(month_receipts)" in header_sql,
+        "stale_fetches": len(connection.stale_fetches),
+        "upsert_batch_sizes": [len(batch) for batch in connection.upsert_batches],
+        "unchanged_upserted": ("stops", unchanged.entity_key) in upserted_keys,
+    }
+    assert observed_shape == {
+        "header_has_full_json": False,
+        "header_has_month_keys": True,
+        "stale_fetches": 1,
+        "upsert_batch_sizes": [250, 250, 3],
+        "unchanged_upserted": False,
+    }, observed_shape
+    assert stats == receipts_module.HistoricReceiptPersistenceStats(
+        rows_attempted=504,
+        rows_changed=505,
+        json_bytes_attempted=expected_attempted_bytes,
+        json_bytes_changed=expected_changed_bytes,
+        stale_entities_deleted=2,
+        stale_months_deleted=4,
+    )

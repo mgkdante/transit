@@ -4166,3 +4166,145 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
             assert gate_contribution["unique_day_count"] == len(
                 gate_contribution["available_date_mask"]
             )
+
+
+def test_parent_indexes_are_materialized_stamped_and_reused_once(monkeypatch):
+    from transit_ops.snapshots.contract import HistoricCollectionIndex
+
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=_large_network_history_plan(1),
+        line_plan=_line_history_plan(),
+        stop_plan=_stop_history_plan(),
+    )
+    consumers: dict[tuple[str, str], list[tuple[str, int, bytes]]] = {}
+    materialized: Counter[tuple[str, str]] = Counter()
+
+    def observe(label, payload):  # noqa: ANN001, ANN202
+        if not isinstance(payload, HistoricCollectionIndex) or payload.family not in {
+            "lines",
+            "stops",
+        }:
+            return
+        key = (payload.family, payload.entity_id or "")
+        consumers.setdefault(key, []).append((label, id(payload), snapshot_json_bytes(payload)))
+
+    class TrackingLineSummary(BuilderLineHistoryStreamSummary):
+        def build_indexes(self, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+            indexes = super().build_indexes(fallback_generated_utc=fallback_generated_utc)
+            for index in indexes:
+                materialized[("lines", index.entity_id or "")] += 1
+                observe("materialize", index)
+            return indexes
+
+        def build_directory(self, indexes, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+            for index in indexes:
+                observe("directory", index)
+            return super().build_directory(
+                indexes,
+                fallback_generated_utc=fallback_generated_utc,
+            )
+
+    class TrackingStopSummary(BuilderStopHistoryStreamSummary):
+        def iter_indexes(self, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+            for index in super().iter_indexes(
+                fallback_generated_utc=fallback_generated_utc
+            ):
+                materialized[("stops", index.entity_id or "")] += 1
+                observe("materialize", index)
+                yield index
+
+    monkeypatch.setattr(publish.builders, "LineHistoryStreamSummary", TrackingLineSummary)
+    monkeypatch.setattr(publish.builders, "StopHistoryStreamSummary", TrackingStopSummary)
+
+    real_stamp = publish._stamp_envelope
+
+    def record_stamp(items, *, provider_id, stamp):  # noqa: ANN001, ANN202
+        real_stamp(items, provider_id=provider_id, stamp=stamp)
+        for _path, payload, _tier in items:
+            observe("stamp", payload)
+
+    monkeypatch.setattr(publish, "_stamp_envelope", record_stamp)
+
+    real_line_gate = gate.check_line_history_stream_indexes
+
+    def record_line_gate(indexes, summary, *, fallback_generated_utc):  # noqa: ANN001, ANN202
+        for index in indexes:
+            observe("stream_gate", index)
+        return real_line_gate(
+            indexes,
+            summary,
+            fallback_generated_utc=fallback_generated_utc,
+        )
+
+    monkeypatch.setattr(gate, "check_line_history_stream_indexes", record_line_gate)
+    real_line_directory_summary = gate.LineHistoryDirectorySummary.from_indexes
+
+    def record_line_directory_summary(indexes, *, index_paths=None):  # noqa: ANN001, ANN202
+        for index in indexes:
+            observe("directory_gate", index)
+        return real_line_directory_summary(indexes, index_paths=index_paths)
+
+    monkeypatch.setattr(
+        gate.LineHistoryDirectorySummary,
+        "from_indexes",
+        record_line_directory_summary,
+    )
+    real_root_gate = gate.check_history_availability_graph
+
+    def record_root_gate(payload, **kwargs):  # noqa: ANN001, ANN202
+        for index in kwargs["line_indexes"]:
+            observe("root_gate", index)
+        return real_root_gate(payload, **kwargs)
+
+    monkeypatch.setattr(gate, "check_history_availability_graph", record_root_gate)
+
+    class TrackingStore(_RecordingStore):
+        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
+            observe("upload", payload)
+            return super().put_immutable_json(rel_key, payload)
+
+    store = TrackingStore()
+    report = _gate_report(True)
+    keys = _publish_historic(
+        object(),
+        store,
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        stamp="2026-07-13T00:00:00Z",
+        gate_report=report,
+    )
+
+    expected_parent_sha256 = {
+        "historic/history/lines/31/generations/2cdaea9ad9db269ed888e13cc41eb0f91c40f2bfc59ad89ca34fbf6553f70bc9/index.json": "2cdaea9ad9db269ed888e13cc41eb0f91c40f2bfc59ad89ca34fbf6553f70bc9",
+        "historic/history/lines/3130/generations/61994aafe0fb5a8e1e4fd6fee571ba2f16ddbd7474849d9522dc8e8da168e450/index.json": "61994aafe0fb5a8e1e4fd6fee571ba2f16ddbd7474849d9522dc8e8da168e450",
+        "historic/history/lines/412f42/generations/b94124a6d14a4b68d588d20688c372d8ca03af742966bf2f2d8e995e6ff78a1d/index.json": "b94124a6d14a4b68d588d20688c372d8ca03af742966bf2f2d8e995e6ff78a1d",
+        "historic/history/lines/generations/f602d45205df15f1892206da55369b87769367203fd956d0279edf1b66c19767/index.json": "f602d45205df15f1892206da55369b87769367203fd956d0279edf1b66c19767",
+        "historic/history/stops/412f4220c3a9e99baa/generations/565453ca13ace587f44557a83e7e790b1f67684fa445567ce47841694f234477/index.json": "565453ca13ace587f44557a83e7e790b1f67684fa445567ce47841694f234477",
+        "historic/history/stops/generations/c66e17fd19afbfd0484f372c1e31ef976dd18dc36664efc0e28efa58126a6dcb/index.json": "c66e17fd19afbfd0484f372c1e31ef976dd18dc36664efc0e28efa58126a6dcb",
+        "historic/history/index.json": "229f5749ced1e7867518adac7d4588a120354c74b90e1dd592bd0d37f4a72783",
+    }
+    actual_parent_sha256 = {
+        path: hashlib.sha256(store.objects[path]).hexdigest()
+        for path in expected_parent_sha256
+    }
+    assert actual_parent_sha256 == expected_parent_sha256
+    assert report.errors == []
+    assert report.warnings == []
+    assert (report.checks_run, report.payloads_checked) == (32, 22)
+    assert keys[-1] == "historic/history/index.json"
+    assert store.calls[-1] == ("normal", "historic/history/index.json")
+    assert materialized == Counter({key: 1 for key in consumers})
+    for observations in consumers.values():
+        labels = [label for label, _identity, _body in observations]
+        assert labels.count("materialize") == 1
+        assert labels.count("stamp") == 1
+        assert labels.count("upload") == 1
+        assert len({identity for _label, identity, _body in observations}) == 1
+        assert len(
+            {
+                body
+                for label, _identity, body in observations
+                if label != "materialize"
+            }
+        ) == 1

@@ -1536,7 +1536,8 @@ def _publish_historic(
     stop_directory_summary = gate.StopHistoryDirectorySummary()
     stop_index_paths: dict[str, str] = {}
     stop_referenced_generation_keys: set[str] = set()
-    for stop_index in stop_build_summary.iter_indexes(fallback_generated_utc=stamp):
+    stop_indexes = list(stop_build_summary.iter_indexes(fallback_generated_utc=stamp))
+    for stop_index in stop_indexes:
         if not stop_index.entity_id:
             continue
         stop_stamp_item = [
@@ -1585,12 +1586,12 @@ def _publish_historic(
     gate.enforce(effective_report, force=force)
 
     line_directory_summary = gate.LineHistoryDirectorySummary.from_indexes(
-        [index.model_copy(deep=True) for index in line_indexes],
+        cast(list[object], line_indexes),
         index_paths=line_index_paths,
     )
     line_directory = readdress_history_directory(
         line_build_summary.build_directory(
-            [index.model_copy(deep=True) for index in line_indexes],
+            line_indexes,
             fallback_generated_utc=stamp,
         ),
         line_index_paths,
@@ -1723,7 +1724,7 @@ def _publish_historic(
         receipts_index=receipts_index,
         network_index=network_index,
         line_directory=line_directory,
-        line_indexes=[index.model_copy(deep=True) for index in line_indexes],
+        line_indexes=cast(list[object], line_indexes),
         stop_directory=stop_directory,
         hotspots_index=hotspots_index,
         repeat_offenders_index=repeat_offenders_index,
@@ -1801,7 +1802,7 @@ def _publish_historic(
     )
     stop_index_keys: list[str] = []
     stop_index_batch: list[_PutItem] = []
-    for stop_index in stop_build_summary.iter_indexes(fallback_generated_utc=stamp):
+    for stop_index in stop_indexes:
         if not stop_index.entity_id:
             continue
         stop_index_batch.append(
@@ -1812,7 +1813,6 @@ def _publish_historic(
             )
         )
         if len(stop_index_batch) >= STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE:
-            _stamp_envelope(stop_index_batch, provider_id=provider_id, stamp=stamp)
             stop_index_keys.extend(
                 _parallel_put(
                     storage,
@@ -1823,7 +1823,6 @@ def _publish_historic(
             )
             stop_index_batch = []
     if stop_index_batch:
-        _stamp_envelope(stop_index_batch, provider_id=provider_id, stamp=stamp)
         stop_index_keys.extend(
             _parallel_put(
                 storage,
