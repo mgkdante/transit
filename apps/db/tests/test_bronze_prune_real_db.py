@@ -31,6 +31,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
 from transit_ops.maintenance import (
+    COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+    SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     prune_bronze_realtime_objects,
     prune_bronze_static_objects,
 )
@@ -92,6 +94,70 @@ IN_FLIGHT_RUN_ID = 990121
 AGED_ORPHAN_RUN_ID = 990122
 
 SILVER_SNAPSHOT_ROW_ID = 990501
+
+PARITY_OTHER_PROVIDER = "sto_bronze_prune_parity_test"
+PARITY_CUTOFF_ENDPOINT_ID = 990031
+PARITY_SILVER_SOURCE_ENDPOINT_ID = 990032
+PARITY_SILVER_OBJECT_ENDPOINT_ID = 990033
+PARITY_OTHER_ENDPOINT_ID = 990041
+PARITY_JUST_BEFORE_OBJECT_ID = 991202
+
+OLD_SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
+    """
+    SELECT io.ingestion_object_id
+    FROM raw.ingestion_objects io
+    JOIN raw.realtime_snapshot_index rsi
+      ON rsi.ingestion_object_id = io.ingestion_object_id
+    JOIN core.feed_endpoints fe
+      ON fe.feed_endpoint_id = rsi.feed_endpoint_id
+    WHERE rsi.provider_id = :provider_id
+      AND rsi.captured_at_utc < :cutoff_utc
+      AND NOT EXISTS (
+          SELECT 1
+          FROM silver.rt_feed_snapshots rfs
+          WHERE rfs.source_realtime_snapshot_id = rsi.realtime_snapshot_id
+             OR rfs.ingestion_object_id = io.ingestion_object_id
+      )
+      AND rsi.realtime_snapshot_id <> COALESCE((
+          SELECT MAX(rsi_latest.realtime_snapshot_id)
+          FROM raw.realtime_snapshot_index rsi_latest
+          JOIN core.feed_endpoints fe_latest
+            ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
+          WHERE rsi_latest.provider_id = :provider_id
+            AND fe_latest.endpoint_key = fe.endpoint_key
+      ), -1)
+      AND NOT (io.ingestion_object_id = ANY(CAST(:excluded_object_ids AS bigint[])))
+    ORDER BY rsi.captured_at_utc ASC, io.ingestion_object_id ASC
+    LIMIT :max_objects
+    """
+)
+
+OLD_COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
+    """
+    SELECT COUNT(*)
+    FROM raw.ingestion_objects io
+    JOIN raw.realtime_snapshot_index rsi
+      ON rsi.ingestion_object_id = io.ingestion_object_id
+    JOIN core.feed_endpoints fe
+      ON fe.feed_endpoint_id = rsi.feed_endpoint_id
+    WHERE rsi.provider_id = :provider_id
+      AND rsi.captured_at_utc < :cutoff_utc
+      AND NOT EXISTS (
+          SELECT 1
+          FROM silver.rt_feed_snapshots rfs
+          WHERE rfs.source_realtime_snapshot_id = rsi.realtime_snapshot_id
+             OR rfs.ingestion_object_id = io.ingestion_object_id
+      )
+      AND rsi.realtime_snapshot_id <> COALESCE((
+          SELECT MAX(rsi_latest.realtime_snapshot_id)
+          FROM raw.realtime_snapshot_index rsi_latest
+          JOIN core.feed_endpoints fe_latest
+            ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
+          WHERE rsi_latest.provider_id = :provider_id
+            AND fe_latest.endpoint_key = fe.endpoint_key
+      ), -1)
+    """
+)
 
 
 class FakeBronzeStorage:
@@ -203,6 +269,63 @@ def _seed(connection, seed_provider) -> None:
         )
 
 
+def _seed_realtime_row(
+    connection,
+    *,
+    provider_id: str,
+    endpoint_id: int,
+    run_id: int,
+    object_id: int,
+    snapshot_id: int,
+    captured_at: datetime,
+) -> None:
+    connection.execute(
+        text(
+            """
+            INSERT INTO raw.ingestion_runs
+                (ingestion_run_id, provider_id, feed_endpoint_id,
+                 run_kind, status, started_at_utc)
+            VALUES (:r, :p, :e, 'trip_updates', 'succeeded', :captured)
+            """
+        ),
+        {"r": run_id, "p": provider_id, "e": endpoint_id, "captured": captured_at},
+    )
+    connection.execute(
+        text(
+            """
+            INSERT INTO raw.ingestion_objects
+                (ingestion_object_id, ingestion_run_id, provider_id,
+                 object_kind, storage_backend, storage_path)
+            VALUES (:o, :r, :p, 'gtfs_rt_feed', 's3', :path)
+            """
+        ),
+        {
+            "o": object_id,
+            "r": run_id,
+            "p": provider_id,
+            "path": f"bronze-prune-parity/{provider_id}/{object_id}.pb",
+        },
+    )
+    connection.execute(
+        text(
+            """
+            INSERT INTO raw.realtime_snapshot_index
+                (realtime_snapshot_id, ingestion_run_id, ingestion_object_id,
+                 provider_id, feed_endpoint_id, feed_timestamp_utc, captured_at_utc)
+            VALUES (:s, :r, :o, :p, :e, :captured, :captured)
+            """
+        ),
+        {
+            "s": snapshot_id,
+            "r": run_id,
+            "o": object_id,
+            "p": provider_id,
+            "e": endpoint_id,
+            "captured": captured_at,
+        },
+    )
+
+
 def _seed_static_runs(connection) -> None:
     for run_id, object_id, storage_path in (
         (
@@ -295,6 +418,123 @@ def _run_exists(connection, run_id: int) -> bool:
             {"r": run_id},
         ).first()
     )
+
+
+def test_realtime_eligibility_rewrite_matches_independent_reference(conn, seed_provider) -> None:
+    cutoff = NOW - timedelta(days=30)
+    seed_provider(
+        conn,
+        PARITY_OTHER_PROVIDER,
+        display_name="STO bronze prune parity isolation",
+    )
+    for endpoint_id, provider_id, endpoint_key in (
+        (PARITY_CUTOFF_ENDPOINT_ID, PROVIDER, "parity_cutoff"),
+        (PARITY_SILVER_SOURCE_ENDPOINT_ID, PROVIDER, "parity_silver_source"),
+        (PARITY_SILVER_OBJECT_ENDPOINT_ID, PROVIDER, "parity_silver_object"),
+        (PARITY_OTHER_ENDPOINT_ID, PARITY_OTHER_PROVIDER, "trip_updates"),
+    ):
+        conn.execute(
+            text(
+                """
+                INSERT INTO core.feed_endpoints
+                    (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
+                VALUES (:e, :p, :key, 'trip_updates', 'gtfs_rt_trip_updates')
+                """
+            ),
+            {"e": endpoint_id, "p": provider_id, "key": endpoint_key},
+        )
+
+    parity_rows = (
+        # Strict boundary: exact cutoff is retained, one microsecond before is eligible.
+        (PROVIDER, PARITY_CUTOFF_ENDPOINT_ID, 991001, 991201, 991301, cutoff),
+        (
+            PROVIDER,
+            PARITY_CUTOFF_ENDPOINT_ID,
+            991002,
+            PARITY_JUST_BEFORE_OBJECT_ID,
+            991302,
+            cutoff - timedelta(microseconds=1),
+        ),
+        (PROVIDER, PARITY_CUTOFF_ENDPOINT_ID, 991003, 991203, 991303, NOW),
+        # Each arm of the former OR guard gets an independently referenced old row.
+        (
+            PROVIDER,
+            PARITY_SILVER_SOURCE_ENDPOINT_ID,
+            991011,
+            991211,
+            991311,
+            cutoff - timedelta(days=2),
+        ),
+        (PROVIDER, PARITY_SILVER_SOURCE_ENDPOINT_ID, 991012, 991212, 991312, NOW),
+        (
+            PROVIDER,
+            PARITY_SILVER_OBJECT_ENDPOINT_ID,
+            991021,
+            991221,
+            991321,
+            cutoff - timedelta(days=3),
+        ),
+        (PROVIDER, PARITY_SILVER_OBJECT_ENDPOINT_ID, 991022, 991222, 991322, NOW),
+        # A provider with the same endpoint key must not affect STM latest protection.
+        (
+            PARITY_OTHER_PROVIDER,
+            PARITY_OTHER_ENDPOINT_ID,
+            991031,
+            991231,
+            991331,
+            cutoff - timedelta(days=4),
+        ),
+        (PARITY_OTHER_PROVIDER, PARITY_OTHER_ENDPOINT_ID, 991032, 991232, 991332, NOW),
+    )
+    for provider_id, endpoint_id, run_id, object_id, snapshot_id, captured_at in parity_rows:
+        _seed_realtime_row(
+            conn,
+            provider_id=provider_id,
+            endpoint_id=endpoint_id,
+            run_id=run_id,
+            object_id=object_id,
+            snapshot_id=snapshot_id,
+            captured_at=captured_at,
+        )
+
+    conn.execute(
+        text(
+            """
+            INSERT INTO silver.rt_feed_snapshots
+                (rt_feed_snapshot_id, provider_id, feed_endpoint_id, ingestion_run_id,
+                 ingestion_object_id, endpoint_key, source_realtime_snapshot_id)
+            VALUES
+                (991501, :p, :source_endpoint, 991011, NULL,
+                 'parity_silver_source', 991311),
+                (991502, :p, :object_endpoint, 991021, 991221,
+                 'parity_silver_object', NULL)
+            """
+        ),
+        {
+            "p": PROVIDER,
+            "source_endpoint": PARITY_SILVER_SOURCE_ENDPOINT_ID,
+            "object_endpoint": PARITY_SILVER_OBJECT_ENDPOINT_ID,
+        },
+    )
+
+    live_params = {
+        "provider_id": PROVIDER,
+        "cutoff_utc": cutoff,
+        "excluded_object_ids": [TU_OLD_B[1]],
+        "max_objects": 100,
+    }
+    expected_ordered_ids = [TU_OLD_A[1], TU_OLD_C[1], PARITY_JUST_BEFORE_OBJECT_ID]
+    old_ids = list(conn.execute(OLD_SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS, live_params).scalars())
+    new_ids = list(conn.execute(SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS, live_params).scalars())
+
+    assert old_ids == expected_ordered_ids
+    assert new_ids == expected_ordered_ids
+
+    count_params = {"provider_id": PROVIDER, "cutoff_utc": cutoff}
+    old_count = conn.execute(OLD_COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS, count_params).scalar_one()
+    new_count = conn.execute(COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS, count_params).scalar_one()
+    assert old_count == 4
+    assert new_count == old_count
 
 
 def test_realtime_prune_honors_oldest_first_limit(conn) -> None:

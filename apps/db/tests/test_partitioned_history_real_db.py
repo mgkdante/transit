@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -863,6 +863,20 @@ def test_stop_history_real_db_reconciles_routes_auxiliary_sources_and_compatibil
 ):
     _extend_history_retention(monkeypatch)
     stamp = "2026-07-13T00:00:00Z"
+    provider_local_current_date = stop_history_conn.execute(
+        text(
+            "SELECT (now() AT TIME ZONE dp.timezone)::date "
+            "FROM gold.dim_provider AS dp WHERE dp.provider_id = :provider_id"
+        ),
+        {"provider_id": STOP_PROVIDER},
+    ).scalar_one()
+    compatibility_cutoff = provider_local_current_date - timedelta(days=90)
+    fixture_daily_dates = [date(2026, 5, 31), date(2026, 6, 2)]
+    expected_compatibility_dates = [
+        fixture_date.isoformat()
+        for fixture_date in fixture_daily_dates
+        if fixture_date >= compatibility_cutoff
+    ]
     compatibility_before = {
         stop_id: snapshot_json_bytes(payload)
         for stop_id, payload in build_stop_reliability(
@@ -990,7 +1004,7 @@ def test_stop_history_real_db_reconciles_routes_auxiliary_sources_and_compatibil
         ).items()
         if stop_id == main_stop
     )
-    assert [day.date for day in main_compatibility.daily] == ["2026-05-31", "2026-06-02"]
+    assert [day.date for day in main_compatibility.daily] == expected_compatibility_dates
 
 
 def test_route_reliability_batch_real_db_matches_standalone_bytes_and_scope(

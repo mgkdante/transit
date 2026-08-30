@@ -19,13 +19,17 @@ Never point this at production. (CI has no Postgres — skipped there.)
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import text
+from test_historic_receipts import _persistence_receipt
 
 from transit_ops.snapshots import builders
+from transit_ops.snapshots import historic_receipts as receipts_module
 from transit_ops.snapshots.publish import _prior_files_total, _record_publish_state
+from transit_ops.sql_registry import query_name
 
 PROVIDER = "stm_snapstate_test"
 T1 = datetime(2026, 6, 1, 0, 0, tzinfo=UTC)
@@ -295,3 +299,153 @@ def test_f7a_historic_telemetry_is_zero_reuse_and_live_static_stay_null(conn) ->
                 ),
                 {"provider_id": PROVIDER},
             )
+
+
+def test_historic_receipt_batches_and_later_batch_savepoint_rollback_real_db(conn) -> None:
+    def receipt_json_bytes(receipt) -> int:  # noqa: ANN001
+        return sum(
+            len(
+                json.dumps(
+                    value,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode()
+            )
+            for value in (receipt.common_envelope, receipt.month_receipts)
+        )
+
+    initial = tuple(
+        _persistence_receipt(
+            f"R{position:04d}",
+            revision="initial",
+            padding_bytes=2048,
+            provider_id=PROVIDER,
+        )
+        for position in range(2005)
+    )
+    receipts_module.persist_historic_receipts(
+        conn,
+        provider_id=PROVIDER,
+        receipts=initial,
+        complete_families=("stops",),
+    )
+    candidate = (
+        *initial[:1251],
+        *(
+            _persistence_receipt(
+                f"R{position:04d}",
+                revision="changed",
+                padding_bytes=2048,
+                provider_id=PROVIDER,
+            )
+            for position in range(1251, 2000)
+        ),
+        *(
+            _persistence_receipt(
+                f"R{position:04d}",
+                revision="new",
+                padding_bytes=2048,
+                provider_id=PROVIDER,
+            )
+            for position in range(2005, 2256)
+        ),
+    )
+
+    class RecordingConnection:
+        def __init__(self, delegate) -> None:  # noqa: ANN001
+            self.delegate = delegate
+            self.upsert_batches: list[list[dict[str, object]]] = []
+
+        def execute(self, statement, parameters):  # noqa: ANN001, ANN201
+            if query_name(statement) == "snapshot.historic_receipts.upsert":
+                assert isinstance(parameters, list)
+                self.upsert_batches.append([dict(item) for item in parameters])
+            return self.delegate.execute(statement, parameters)
+
+    recording = RecordingConnection(conn)
+    stats = receipts_module.persist_historic_receipts(
+        recording,
+        provider_id=PROVIDER,
+        receipts=candidate,
+        complete_families=("stops",),
+    )
+    upserted_keys = {
+        item["entity_key"] for batch in recording.upsert_batches for item in batch
+    }
+    assert [len(batch) for batch in recording.upsert_batches] == [250, 250, 250, 250]
+    assert not upserted_keys.intersection(f"R{position:04d}" for position in range(1251))
+    assert stats.rows_attempted == 2251
+    assert stats.rows_changed == 1005
+    assert stats.stale_entities_deleted == 5
+    assert stats.stale_months_deleted == 5
+    assert stats.json_bytes_attempted == sum(receipt_json_bytes(receipt) for receipt in candidate)
+    assert stats.json_bytes_changed == sum(
+        receipt_json_bytes(receipt) for receipt in (*candidate[1251:], *initial[2000:])
+    )
+    row_count = conn.execute(
+        text(
+            "SELECT count(*) FROM core.snapshot_historic_receipts "
+            "WHERE provider_id = :provider_id AND family = 'stops'"
+        ),
+        {"provider_id": PROVIDER},
+    ).scalar_one()
+    assert row_count == 2251
+
+    before_failure = dict(
+        conn.execute(
+            text(
+                "SELECT entity_key, entity_receipt_sha256 "
+                "FROM core.snapshot_historic_receipts "
+                "WHERE provider_id = :provider_id AND family = 'stops'"
+            ),
+            {"provider_id": PROVIDER},
+        ).all()
+    )
+    assert before_failure == {
+        receipt.entity_key: receipt.entity_receipt_sha256 for receipt in candidate
+    }
+    rollback_candidate = (
+        *(
+            _persistence_receipt(
+                f"R{position:04d}",
+                revision="rollback",
+                padding_bytes=2048,
+                provider_id=PROVIDER,
+            )
+            for position in range(501)
+        ),
+        *candidate[501:],
+    )
+
+    class LaterBatchFailure(RecordingConnection):
+        def execute(self, statement, parameters):  # noqa: ANN001, ANN201
+            if query_name(statement) == "snapshot.historic_receipts.upsert":
+                assert isinstance(parameters, list)
+                self.upsert_batches.append([dict(item) for item in parameters])
+                if len(self.upsert_batches) == 2:
+                    raise RuntimeError("injected later receipt batch failure")
+                return self.delegate.execute(statement, parameters)
+            return self.delegate.execute(statement, parameters)
+
+    failing = LaterBatchFailure(conn)
+    with pytest.raises(RuntimeError, match="later receipt batch failure"):
+        with conn.begin_nested():
+            receipts_module.persist_historic_receipts(
+                failing,
+                provider_id=PROVIDER,
+                receipts=rollback_candidate,
+                complete_families=("stops",),
+            )
+    assert [len(batch) for batch in failing.upsert_batches] == [250, 250]
+    after_failure = dict(
+        conn.execute(
+            text(
+                "SELECT entity_key, entity_receipt_sha256 "
+                "FROM core.snapshot_historic_receipts "
+                "WHERE provider_id = :provider_id AND family = 'stops'"
+            ),
+            {"provider_id": PROVIDER},
+        ).all()
+    )
+    assert after_failure == before_failure

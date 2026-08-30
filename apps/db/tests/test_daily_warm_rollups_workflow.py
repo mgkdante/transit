@@ -846,14 +846,25 @@ def test_retention_is_serial_after_publish_and_requires_bronze_exhaustion() -> N
     stage = _step(retention, "Prune retained storage and write proofs")
     assert stage["timeout-minutes"] == 130
     prune = stage["run"]
-    assert 'timeout --signal=TERM --kill-after=1m "40m"' in prune
+    bounded_wrapper = 'timeout --signal=TERM --kill-after=1m "5m"'
+    bronze_wrapper = 'timeout --signal=TERM --kill-after=1m "31m"'
+    assert prune.count(bounded_wrapper) == 2
+    assert prune.count(bronze_wrapper) == 1
+    bounded_offsets = []
+    offset = 0
+    for _ in range(2):
+        offset = prune.index(bounded_wrapper, offset)
+        bounded_offsets.append(offset)
+        offset += len(bounded_wrapper)
     i3 = prune.index('prune-i3-storage "$provider"')
     warm = prune.index('prune-warm-rollup-storage "$provider"')
     bronze_command = 'prune-bronze-storage "$provider" --max-batches 4 --require-exhausted'
     bronze = prune.index(bronze_command)
-    assert i3 < warm < bronze
-    assert 'retention-proof-report "$provider" --report-path' in prune
-    assert prune.index('retention-proof-report "$provider" --report-path') > bronze
+    bronze_success_guard = prune.index('if [[ "$prune_status" -eq 0 ]]; then')
+    proof = prune.index('retention-proof-report "$provider" --report-path')
+    assert bounded_offsets[0] < i3 < warm < bronze_success_guard
+    assert bronze_success_guard < prune.index(bronze_wrapper) < bronze
+    assert bronze < bounded_offsets[1] < proof
     assert 'exit "$aggregate_status"' in prune
     assert "${{" not in prune
     assert prune.count('if [[ "$aggregate_status" -eq 0 && "$prune_status" -ne 0 ]]; then') == 1
@@ -868,7 +879,15 @@ def test_retention_is_serial_after_publish_and_requires_bronze_exhaustion() -> N
     assert upload["with"]["retention-days"] == 30
     assert sum(step.get("uses") == upload["uses"] for step in retention["steps"]) == 1
     provider_count = len(tuple((REPO_ROOT / "apps/db/config/providers").glob("*.yaml")))
-    assert provider_count * 41 + 4 <= stage["timeout-minutes"]
+    worst_case_provider_minutes = 5 + 31 + 5
+    cleanup_budget_minutes = 4
+    assert provider_count == 3
+    assert provider_count * worst_case_provider_minutes == 123
+    assert (
+        provider_count * worst_case_provider_minutes + cleanup_budget_minutes
+        <= stage["timeout-minutes"]
+        < retention["timeout-minutes"]
+    )
 
 
 def test_retention_commands_expose_traceable_database_identity(tmp_path: Path) -> None:

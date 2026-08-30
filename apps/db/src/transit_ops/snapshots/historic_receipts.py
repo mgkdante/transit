@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 RECEIPT_SCHEMA_VERSION = 1
+HISTORIC_RECEIPT_UPSERT_BATCH_SIZE = 250
 ROW_FRAME_VERSION = "f7-row-frame-v1"
 GROUPED_DIGEST_VERSION = "f7-grouped-digest-v1"
 COMMON_ENVELOPE_VERSION = "f7-common-envelope-v1"
@@ -208,12 +209,24 @@ _EXISTING_RECEIPTS_SQL = named_query(
     SELECT family,
            entity_key,
            entity_receipt_sha256,
-           common_envelope,
-           month_receipts
+           ARRAY(SELECT jsonb_object_keys(month_receipts)) AS month_keys
     FROM core.snapshot_historic_receipts
     WHERE provider_id = :provider_id
       AND family = ANY(CAST(:families AS text[]))
     ORDER BY family, entity_key
+    """,
+)
+_STALE_RECEIPT_JSON_SQL = named_query(
+    "snapshot.historic_receipts.stale_json",
+    """
+    SELECT entity_key,
+           common_envelope,
+           month_receipts
+    FROM core.snapshot_historic_receipts
+    WHERE provider_id = :provider_id
+      AND family = :family
+      AND entity_key = ANY(CAST(:entity_keys AS text[]))
+    ORDER BY entity_key
     """,
 )
 _UPSERT_RECEIPT_SQL = named_query(
@@ -1819,10 +1832,18 @@ def persist_historic_receipts(
     ).mappings():
         row = dict(raw_row)
         key = (row["family"], row["entity_key"])
+        month_keys = row["month_keys"]
+        if not isinstance(month_keys, Sequence) or isinstance(month_keys, str):
+            raise HistoricReceiptEvidenceError("stored receipt month keys must be an array")
+        normalized_month_keys = tuple(month_keys)
+        if any(
+            not isinstance(month, str) or not _MONTH.fullmatch(month)
+            for month in normalized_month_keys
+        ):
+            raise HistoricReceiptEvidenceError("stored receipt month key is invalid")
         existing[key] = {
             "entity_receipt_sha256": row["entity_receipt_sha256"],
-            "common_envelope": _mapping_json(row["common_envelope"]),
-            "month_receipts": _mapping_json(row["month_receipts"]),
+            "month_keys": normalized_month_keys,
         }
 
     attempted_bytes = sum(_receipt_json_bytes(receipt) for receipt in materialized)
@@ -1835,26 +1856,63 @@ def persist_historic_receipts(
         != receipt.entity_receipt_sha256
     }
     stale_keys = set(existing) - keys
+    stale_json: dict[tuple[str, str], tuple[dict[str, Any], dict[str, Any]]] = {}
+    for family in families:
+        entity_keys = sorted(
+            entity_key
+            for stale_family, entity_key in stale_keys
+            if stale_family == family
+        )
+        if not entity_keys:
+            continue
+        for raw_row in conn.execute(
+            _STALE_RECEIPT_JSON_SQL,
+            {
+                "provider_id": provider_id,
+                "family": family,
+                "entity_keys": entity_keys,
+            },
+        ).mappings():
+            row = dict(raw_row)
+            key = (family, row["entity_key"])
+            if key not in stale_keys or key in stale_json:
+                raise HistoricReceiptEvidenceError(
+                    "stale receipt JSON lookup returned an unexpected entity"
+                )
+            stale_json[key] = (
+                _mapping_json(row["common_envelope"]),
+                _mapping_json(row["month_receipts"]),
+            )
+    if set(stale_json) != stale_keys:
+        raise HistoricReceiptEvidenceError("stale receipt JSON lookup was incomplete")
     changed_bytes = sum(
         _receipt_json_bytes(receipt)
         for receipt in materialized
         if (receipt.family, receipt.entity_key) in changed_new
     )
     changed_bytes += sum(
-        len(_canonical_json_bytes(existing[key]["common_envelope"]))
-        + len(_canonical_json_bytes(existing[key]["month_receipts"]))
+        len(_canonical_json_bytes(stale_json[key][0]))
+        + len(_canonical_json_bytes(stale_json[key][1]))
         for key in stale_keys
     )
     stale_months = sum(
-        len(set(existing[key]["month_receipts"]) - set(receipt.month_receipts))
+        len(set(existing[key]["month_keys"]) - set(receipt.month_receipts))
         for receipt in materialized
         if (key := (receipt.family, receipt.entity_key)) in existing
     )
-    stale_months += sum(len(existing[key]["month_receipts"]) for key in stale_keys)
+    stale_months += sum(len(existing[key]["month_keys"]) for key in stale_keys)
 
     upserted = 0
-    for receipt in materialized:
-        result = conn.execute(_UPSERT_RECEIPT_SQL, receipt.as_sql_params())
+    changed_params = [
+        receipt.as_sql_params()
+        for receipt in materialized
+        if (receipt.family, receipt.entity_key) in changed_new
+    ]
+    for offset in range(0, len(changed_params), HISTORIC_RECEIPT_UPSERT_BATCH_SIZE):
+        result = conn.execute(
+            _UPSERT_RECEIPT_SQL,
+            changed_params[offset : offset + HISTORIC_RECEIPT_UPSERT_BATCH_SIZE],
+        )
         upserted += max(0, int(result.rowcount or 0))
     deleted = 0
     current_by_family = {

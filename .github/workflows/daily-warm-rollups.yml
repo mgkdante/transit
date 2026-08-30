@@ -517,17 +517,21 @@ jobs:
             warm_app_name="$(pgapp_name "$provider" warm)"
             bronze_app_name="$(pgapp_name "$provider" bronze)"
             set +e
-            timeout --signal=TERM --kill-after=1m "40m" \
+            timeout --signal=TERM --kill-after=1m "5m" \
               bash --noprofile --norc -eo pipefail -c '
                 provider="$1"
                 PGAPPNAME="$2" \
                   uv run python -m transit_ops.cli prune-i3-storage "$provider"
                 PGAPPNAME="$3" \
                   uv run python -m transit_ops.cli prune-warm-rollup-storage "$provider"
-                PGAPPNAME="$4" \
-                  uv run python -m transit_ops.cli prune-bronze-storage "$provider" --max-batches 4 --require-exhausted
-              ' _ "$provider" "$i3_app_name" "$warm_app_name" "$bronze_app_name"
+              ' _ "$provider" "$i3_app_name" "$warm_app_name"
             prune_status="$?"
+            if [[ "$prune_status" -eq 0 ]]; then
+              PGAPPNAME="$bronze_app_name" \
+                timeout --signal=TERM --kill-after=1m "31m" \
+                uv run python -m transit_ops.cli prune-bronze-storage "$provider" --max-batches 4 --require-exhausted
+              prune_status="$?"
+            fi
             set -e
             if [[ "$aggregate_status" -eq 0 && "$prune_status" -ne 0 ]]; then
               aggregate_status="$prune_status"
@@ -535,6 +539,7 @@ jobs:
 
             set +e
             PGAPPNAME="$(pgapp_name "$provider" proof)" \
+              timeout --signal=TERM --kill-after=1m "5m" \
               uv run python -m transit_ops.cli retention-proof-report "$provider" --report-path \
               "$artifact_dir/retention-proof-${provider}.json"
             proof_status="$?"

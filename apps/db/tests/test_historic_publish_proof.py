@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor as RealThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from http.client import HTTPException, IncompleteRead, InvalidURL
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from multiprocessing import get_context
-from threading import Event
+from threading import Event, Lock, Thread, current_thread
 from time import monotonic, sleep
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlsplit
 
+import httpx
 import pytest
 
 import transit_ops.validation.historic_publish as historic_publish_module
@@ -817,6 +821,430 @@ def _build_report(
         now_utc=NOW_UTC,
         **deadline_options,
     )
+
+
+def _build_default_httpx_report(
+    fixture: PublicFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    handler: Callable[[httpx.Request], httpx.Response],
+    *,
+    proof_timeout_seconds: float | None = None,
+    monotonic_clock: Callable[[], float] | None = None,
+) -> HistoricPublishProofReport:
+    real_client = httpx.Client
+    transport = httpx.MockTransport(handler)
+
+    def client_factory(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        return real_client(*args, transport=transport, **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", client_factory)
+    deadline_options: dict[str, object] = {"isolate_process": False}
+    if proof_timeout_seconds is not None:
+        deadline_options["proof_timeout_seconds"] = proof_timeout_seconds
+    if monotonic_clock is not None:
+        deadline_options["monotonic"] = monotonic_clock
+    return build_historic_publish_proof(
+        "stm",
+        sync_receipt=_sync_receipt(),
+        gate_report=_gate_report(fixture),
+        settings=Settings(
+            _env_file=None,
+            DATABASE_URL="postgresql://proof:secret@localhost/transit",
+            SNAPSHOT_PUBLIC_BASE_URL="https://data.example.com",
+        ),
+        engine=object(),  # type: ignore[arg-type]
+        migration_reader=lambda settings, engine: MigrationEvidence(
+            ("0081_snapshot_publish_stable_files",),
+            ("0081_snapshot_publish_stable_files",),
+        ),
+        expectations_reader=fixture.expectations_reader,
+        now_utc=NOW_UTC,
+        **deadline_options,
+    )
+
+
+@pytest.mark.parametrize(
+    ("error_factory", "retryable"),
+    [
+        pytest.param(
+            lambda request: httpx.ReadTimeout("private timeout", request=request),
+            True,
+            id="timeout",
+        ),
+        pytest.param(
+            lambda request: httpx.ConnectError("private connect", request=request),
+            True,
+            id="connect",
+        ),
+        pytest.param(
+            lambda request: httpx.ReadError("private read", request=request),
+            True,
+            id="connection-read",
+        ),
+        pytest.param(
+            lambda request: httpx.DecodingError("private decoding", request=request),
+            False,
+            id="decoding",
+        ),
+        pytest.param(
+            lambda request: httpx.TooManyRedirects("private redirects", request=request),
+            False,
+            id="redirects",
+        ),
+        pytest.param(
+            lambda request: httpx.RemoteProtocolError("private protocol", request=request),
+            False,
+            id="protocol",
+        ),
+        pytest.param(
+            lambda request: httpx.UnsupportedProtocol("private request", request=request),
+            False,
+            id="other-request",
+        ),
+    ],
+)
+def test_default_httpx_transport_retries_only_prior_connect_timeout_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+    error_factory: Callable[[httpx.Request], Exception],
+    retryable: bool,
+) -> None:
+    fixture = _complete_public_fixture()
+    target = "manifest.json"
+    attempts: Counter[str] = Counter()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path.split("/v1/stm/", 1)[1]
+        attempts[path] += 1
+        if path == target and (not retryable or attempts[path] == 1):
+            raise error_factory(request)
+        return httpx.Response(200, content=fixture.public_bytes[path])
+
+    report = _build_default_httpx_report(fixture, monkeypatch, handler)
+    transport = report.public["deadline"]["transport"]
+
+    if retryable:
+        assert report.status == "pass"
+        assert report.failures == ()
+        assert attempts[target] == 2
+        assert transport["retries"] == 1
+        assert transport["recovered"] == 1
+    else:
+        assert report.status == "fail"
+        assert "public_artifact_fetch_failed" in report.failures
+        assert attempts[target] == 1
+        assert transport["retries"] == 0
+        assert transport["recovered"] == 0
+        artifact = report.public["artifacts"][target]
+        assert artifact["failures"] == ["public_artifact_fetch_failed"]
+        expected_error = type(error_factory(httpx.Request("GET", "https://x"))).__name__
+        assert artifact["error_type"] == expected_error
+    assert transport["attempts"] == sum(attempts.values())
+    assert "private" not in str(report.display_dict())
+
+
+@pytest.mark.parametrize(
+    ("http_status", "expected_report_status", "expected_artifact_status"),
+    [
+        pytest.param(404, "pass", "optional_absent", id="optional-manifest-404"),
+        pytest.param(503, "fail", "fail", id="manifest-503"),
+    ],
+)
+def test_default_httpx_transport_preserves_http_status_artifact_behavior(
+    monkeypatch: pytest.MonkeyPatch,
+    http_status: int,
+    expected_report_status: str,
+    expected_artifact_status: str,
+) -> None:
+    fixture = _complete_public_fixture()
+    attempts: Counter[str] = Counter()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path.split("/v1/stm/", 1)[1]
+        attempts[path] += 1
+        if path == "manifest.json":
+            return httpx.Response(http_status, request=request)
+        return httpx.Response(200, content=fixture.public_bytes[path])
+
+    report = _build_default_httpx_report(fixture, monkeypatch, handler)
+    artifact = report.public["artifacts"]["manifest.json"]
+
+    assert report.status == expected_report_status
+    assert attempts["manifest.json"] == 1
+    assert artifact["status"] == expected_artifact_status
+    assert artifact["http_status"] == http_status
+    assert artifact["error_type"] == "HTTPError"
+    assert report.public["deadline"]["transport"]["retries"] == 0
+    if http_status == 404:
+        assert artifact["failures"] == []
+        assert "public_artifact_fetch_failed" not in report.failures
+    else:
+        assert artifact["failures"] == ["public_artifact_fetch_failed"]
+        assert "public_artifact_fetch_failed" in report.failures
+
+
+@pytest.mark.parametrize("termination", ["deadline", "error"])
+def test_default_httpx_deadline_or_error_drains_active_worker_before_closing_client(
+    monkeypatch: pytest.MonkeyPatch,
+    termination: str,
+) -> None:
+    fixture = _complete_public_fixture()
+    real_client = httpx.Client
+    main_thread = current_thread()
+    request_started = Event()
+    release_request = Event()
+    client_lock = Lock()
+    clock_value = [0.0]
+    worker_paths: dict[str, str] = {}
+    active_requests = 0
+    close_active_counts: list[int] = []
+    attempts_after_deadline = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path.split("/v1/stm/", 1)[1]
+        if current_thread() is not main_thread and path == worker_paths.get("error"):
+            raise TypeError("worker programming error")
+        if current_thread() is not main_thread and path == worker_paths.get("blocked"):
+            if termination == "deadline":
+                clock_value[0] = 2.0
+            request_started.set()
+            assert release_request.wait(timeout=2)
+        return httpx.Response(200, content=fixture.public_bytes[path])
+
+    transport = httpx.MockTransport(handler)
+
+    class TrackingClient:
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            self.inner = real_client(*args, transport=transport, **kwargs)
+            clients.append(self)
+
+        def get(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+            nonlocal active_requests, attempts_after_deadline
+            with client_lock:
+                if clock_value[0] >= 1.0:
+                    attempts_after_deadline += 1
+                active_requests += 1
+            try:
+                return self.inner.get(*args, **kwargs)
+            finally:
+                with client_lock:
+                    active_requests -= 1
+
+        def close(self) -> None:
+            with client_lock:
+                close_active_counts.append(active_requests)
+            self.inner.close()
+
+    clients: list[TrackingClient] = []
+
+    class CoordinatedExecutor(RealThreadPoolExecutor):
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            super().__init__(*args, **kwargs)
+            self.submissions = 0
+            executors.append(self)
+
+        def submit(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+            self.submissions += 1
+            path = urlsplit(args[1]).path.split("/v1/stm/", 1)[1]
+            if termination == "deadline" and self.submissions == 1:
+                worker_paths["blocked"] = path
+            elif termination == "error" and self.submissions == 1:
+                worker_paths["error"] = path
+            elif termination == "error" and self.submissions == 2:
+                worker_paths["blocked"] = path
+            future = super().submit(*args, **kwargs)
+            if path == worker_paths.get("blocked"):
+                assert request_started.wait(timeout=1)
+            return future
+
+    executors: list[CoordinatedExecutor] = []
+
+    def delayed_release() -> None:
+        assert request_started.wait(timeout=2)
+        sleep(0.15)
+        release_request.set()
+
+    monkeypatch.setattr(httpx, "Client", TrackingClient)
+    monkeypatch.setattr(historic_publish_module, "ThreadPoolExecutor", CoordinatedExecutor)
+    releaser = Thread(target=delayed_release)
+    releaser.start()
+
+    def run_proof() -> HistoricPublishProofReport:
+        return build_historic_publish_proof(
+            "stm",
+            sync_receipt=_sync_receipt(),
+            gate_report=_gate_report(fixture),
+            settings=Settings(
+                _env_file=None,
+                DATABASE_URL="postgresql://proof:secret@localhost/transit",
+                SNAPSHOT_PUBLIC_BASE_URL="https://data.example.com",
+            ),
+            engine=object(),  # type: ignore[arg-type]
+            migration_reader=lambda settings, engine: MigrationEvidence(
+                ("0081_snapshot_publish_stable_files",),
+                ("0081_snapshot_publish_stable_files",),
+            ),
+            expectations_reader=fixture.expectations_reader,
+            now_utc=NOW_UTC,
+            proof_timeout_seconds=1.0,
+            monotonic=lambda: clock_value[0],
+            isolate_process=False,
+        )
+
+    if termination == "error":
+        with pytest.raises(TypeError, match="worker programming error"):
+            run_proof()
+        report = None
+    else:
+        report = run_proof()
+    releaser.join(timeout=2)
+    for worker in executors[0]._threads:  # noqa: SLF001
+        worker.join(timeout=1)
+
+    if report is not None:
+        assert report.status == "fail"
+        assert "historic_proof_deadline_exceeded" in report.failures
+        assert report.public["deadline"]["transport"]["attempts"] > 0
+        assert report.public["deadline"]["skipped_request_count"] > 0
+    assert attempts_after_deadline == 0
+    assert close_active_counts == [0]
+    assert all(not worker.is_alive() for worker in executors[0]._threads)  # noqa: SLF001
+    assert not releaser.is_alive()
+    assert len(clients) == len(executors) == 1
+
+
+def test_historic_publish_proof_reuses_one_http_client_and_executor_for_complete_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reference_fixture = _complete_public_fixture()
+    reference = _build_report(reference_fixture)
+    fixture = _complete_public_fixture()
+    request_lock = Lock()
+    requests: list[dict[str, object]] = []
+    connections: set[tuple[str, int]] = set()
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self) -> None:  # noqa: N802
+            parsed = urlsplit(self.path)
+            prefix = "/v1/stm/"
+            path = parsed.path.split(prefix, 1)[1]
+            with request_lock:
+                connections.add(self.client_address)
+                requests.append(
+                    {
+                        "path": path,
+                        "query": parsed.query,
+                        "accept": self.headers.get("Accept"),
+                        "cache_control": self.headers.get("Cache-Control"),
+                        "user_agent": self.headers.get("User-Agent"),
+                    }
+                )
+            body = fixture.public_bytes[path]
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server_thread = Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    real_client = httpx.Client
+
+    class TrackingClient:
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            self.inner = real_client(*args, **kwargs)
+            self.timeouts: list[object] = []
+            self.close_calls = 0
+            clients.append(self)
+
+        def get(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+            self.timeouts.append(kwargs.get("timeout"))
+            return self.inner.get(*args, **kwargs)
+
+        def close(self) -> None:
+            self.close_calls += 1
+            self.inner.close()
+
+        def __enter__(self):  # noqa: ANN204
+            return self
+
+        def __exit__(self, *args):  # noqa: ANN002
+            self.close()
+            return False
+
+    clients: list[TrackingClient] = []
+
+    class ExecutorProbe(RealThreadPoolExecutor):
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            super().__init__(*args, **kwargs)
+            self.configured_workers = kwargs.get("max_workers", args[0] if args else None)
+            self.shutdown_calls = 0
+            executors.append(self)
+
+        def shutdown(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+            self.shutdown_calls += 1
+            return super().shutdown(*args, **kwargs)
+
+    executors: list[ExecutorProbe] = []
+
+    monkeypatch.setattr(httpx, "Client", TrackingClient)
+    monkeypatch.setattr(historic_publish_module, "ThreadPoolExecutor", ExecutorProbe)
+
+    def migration_reader(settings, engine):  # noqa: ANN001
+        return MigrationEvidence(
+            ("0081_snapshot_publish_stable_files",),
+            ("0081_snapshot_publish_stable_files",),
+        )
+
+    try:
+        report = build_historic_publish_proof(
+            "stm",
+            sync_receipt=_sync_receipt(),
+            gate_report=_gate_report(fixture),
+            settings=Settings(
+                _env_file=None,
+                DATABASE_URL="postgresql://proof:secret@localhost/transit",
+                SNAPSHOT_PUBLIC_BASE_URL=(
+                    f"http://127.0.0.1:{server.server_address[1]}"
+                ),
+            ),
+            engine=object(),  # type: ignore[arg-type]
+            migration_reader=migration_reader,
+            expectations_reader=fixture.expectations_reader,
+            now_utc=NOW_UTC,
+            isolate_process=False,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=2)
+
+    assert report.status == reference.status == "pass"
+    assert report.failures == reference.failures == ()
+    assert list(report.public["artifacts"]) == list(reference.public["artifacts"])
+    assert report.public["range_partition_remote_sample"] == reference.public[
+        "range_partition_remote_sample"
+    ]
+    assert len(requests) == len(reference_fixture.fetch_calls)
+    assert len(executors) == 1
+    assert executors[0].configured_workers == 8
+    assert executors[0].shutdown_calls == 1
+    assert len(clients) == 1
+    assert clients[0].close_calls == 1
+    assert clients[0].timeouts == [30.0] * len(requests)
+    assert 1 <= len(connections) <= 8 < len(requests)
+    assert all(request["accept"] == "application/json" for request in requests)
+    assert all(request["cache_control"] == "no-cache" for request in requests)
+    assert all(request["user_agent"] == historic_publish_module.PUBLIC_PROOF_USER_AGENT for request in requests)
+    proof_queries = {request["query"] for request in requests}
+    assert len(proof_queries) == 1
+    assert next(iter(proof_queries)).startswith("proof=")
 
 
 def test_historic_publish_proof_passes_complete_public_contract() -> None:
@@ -2150,39 +2578,47 @@ def test_historic_publish_proof_only_allows_manifest_not_found(
 def test_public_fetch_sends_explicit_transit_user_agent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    request_headers: dict[str, str | None] = {}
+    observed: dict[str, object] = {}
 
     class Response:
-        def __enter__(self):
-            return self
+        status_code = 200
+        reason_phrase = "OK"
+        headers: dict[str, str] = {}
+        content = b'{"ready":true}'
 
-        def __exit__(self, *args):  # noqa: ANN002
-            return False
+    class Client:
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            observed["client_args"] = args
+            observed["client_kwargs"] = kwargs
 
-        def read(self) -> bytes:
-            return b'{"ready":true}'
+        def get(self, url, *, timeout):  # noqa: ANN001, ANN201
+            observed["url"] = url
+            observed["timeout"] = timeout
+            return Response()
 
-    def fake_urlopen(request, timeout):  # noqa: ANN001, ARG001
-        request_headers.update(
-            {
-                "accept": request.get_header("Accept"),
-                "cache_control": request.get_header("Cache-control"),
-                "user_agent": request.get_header("User-agent"),
-            }
-        )
-        return Response()
+        def close(self) -> None:
+            observed["closed"] = True
 
-    monkeypatch.setattr(historic_publish_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(httpx, "Client", Client)
 
     payload = historic_publish_module._default_fetch_bytes(
         "https://data.example.com/v1/stm/historic/history/index.json"
     )
 
     assert payload == b'{"ready":true}'
-    assert request_headers == {
-        "accept": "application/json",
-        "cache_control": "no-cache",
-        "user_agent": "transit-historic-proof/1.0 (+https://transit.yesid.dev)",
+    assert observed == {
+        "client_args": (),
+        "client_kwargs": {
+            "follow_redirects": True,
+            "headers": {
+                "Accept": "application/json",
+                "Cache-Control": "no-cache",
+                "User-Agent": "transit-historic-proof/1.0 (+https://transit.yesid.dev)",
+            },
+        },
+        "url": "https://data.example.com/v1/stm/historic/history/index.json",
+        "timeout": 30.0,
+        "closed": True,
     }
 
 

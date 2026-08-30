@@ -4,6 +4,7 @@ import hashlib
 import re
 import threading
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor as RealThreadPoolExecutor
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import replace
@@ -98,8 +99,9 @@ def _network_history_plan():
 def _large_network_history_plan(month_count: int = 70):
     delay_rows = []
     for offset in range(month_count):
-        year = 2020 + offset // 12
-        month = offset % 12 + 1
+        absolute_month = (2026 * 12 + 6) - (month_count - offset - 1)
+        year, zero_based_month = divmod(absolute_month, 12)
+        month = zero_based_month + 1
         local_date = date(year, month, 1)
         delay_rows.append(
             {
@@ -2027,10 +2029,10 @@ def test_network_partition_uploads_are_genuinely_concurrent_and_config_bounded(
     assert 1 < store.peak <= 3
 
 
-def test_network_partition_scale_fixture_uses_fixed_memory_batches_and_stable_order(
+def test_provider_publish_reuses_one_executor_across_1000_partition_flushes(
     monkeypatch,
 ):
-    plan = _large_network_history_plan()
+    plan = _large_network_history_plan(1_000)
     expected_paths = [ref.path for ref, _partition in plan.iter_partition_items()]
     _patch_minimal_historic(
         monkeypatch,
@@ -2038,28 +2040,59 @@ def test_network_partition_scale_fixture_uses_fixed_memory_batches_and_stable_or
         line_plan=_empty_line_history_plan(),
         stop_plan=_empty_stop_history_plan(),
     )
-    batch_sizes: list[int] = []
+    class ExecutorProbe(RealThreadPoolExecutor):
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            super().__init__(*args, **kwargs)
+            self.configured_workers = kwargs.get("max_workers", args[0] if args else None)
+            self.shutdown_calls = 0
+            executors.append(self)
 
-    def record_batches(_storage, items, **_kwargs):  # noqa: ANN001, ANN202
-        if items and all(
-            type(payload).__name__ == "NetworkHistoryPartition"
-            for _rel_key, payload, _tier in items
-        ):
-            batch_sizes.append(len(items))
-        return [rel_key for rel_key, _payload, _tier in items]
+        def shutdown(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+            self.shutdown_calls += 1
+            return super().shutdown(*args, **kwargs)
 
-    monkeypatch.setattr(publish, "_parallel_put", record_batches)
+    executors: list[ExecutorProbe] = []
+
+    class LifecycleStore(_RecordingStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.lock = threading.Lock()
+            self.in_flight = 0
+            self.peak = 0
+
+        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
+            is_network_partition = (
+                "/history/network/generations/" in rel_key and not rel_key.endswith("/index.json")
+            )
+            if not is_network_partition:
+                return super().put_immutable_json(rel_key, payload)
+            with self.lock:
+                self.in_flight += 1
+                self.peak = max(self.peak, self.in_flight)
+            try:
+                threading.Event().wait(0.0005)
+                return super().put_immutable_json(rel_key, payload)
+            finally:
+                with self.lock:
+                    self.in_flight -= 1
+
+    monkeypatch.setattr(publish, "ThreadPoolExecutor", ExecutorProbe)
+    store = LifecycleStore()
 
     keys = _publish_historic(
         object(),
-        _RecordingStore(),
+        store,
         provider_id="stm",
-        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=10_000),
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=16),
         stamp="2026-07-13T00:00:00Z",
     )
 
-    assert batch_sizes == [32, 32, 6]
+    assert len(executors) == 1
+    assert executors[0].configured_workers == 16
+    assert executors[0].shutdown_calls == 1
+    assert 1 < store.peak <= 16
     assert keys[: len(expected_paths)] == expected_paths
+    assert store.calls[-1] == ("normal", "historic/history/index.json")
 
 
 @pytest.mark.parametrize("failure_kind", ["upload", "collision"])
@@ -4133,3 +4166,145 @@ def test_full_historic_rebuild_flag_is_observable_without_changing_the_publish_g
             assert gate_contribution["unique_day_count"] == len(
                 gate_contribution["available_date_mask"]
             )
+
+
+def test_parent_indexes_are_materialized_stamped_and_reused_once(monkeypatch):
+    from transit_ops.snapshots.contract import HistoricCollectionIndex
+
+    _patch_minimal_historic(
+        monkeypatch,
+        network_plan=_large_network_history_plan(1),
+        line_plan=_line_history_plan(),
+        stop_plan=_stop_history_plan(),
+    )
+    consumers: dict[tuple[str, str], list[tuple[str, int, bytes]]] = {}
+    materialized: Counter[tuple[str, str]] = Counter()
+
+    def observe(label, payload):  # noqa: ANN001, ANN202
+        if not isinstance(payload, HistoricCollectionIndex) or payload.family not in {
+            "lines",
+            "stops",
+        }:
+            return
+        key = (payload.family, payload.entity_id or "")
+        consumers.setdefault(key, []).append((label, id(payload), snapshot_json_bytes(payload)))
+
+    class TrackingLineSummary(BuilderLineHistoryStreamSummary):
+        def build_indexes(self, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+            indexes = super().build_indexes(fallback_generated_utc=fallback_generated_utc)
+            for index in indexes:
+                materialized[("lines", index.entity_id or "")] += 1
+                observe("materialize", index)
+            return indexes
+
+        def build_directory(self, indexes, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+            for index in indexes:
+                observe("directory", index)
+            return super().build_directory(
+                indexes,
+                fallback_generated_utc=fallback_generated_utc,
+            )
+
+    class TrackingStopSummary(BuilderStopHistoryStreamSummary):
+        def iter_indexes(self, *, fallback_generated_utc):  # noqa: ANN001, ANN201
+            for index in super().iter_indexes(
+                fallback_generated_utc=fallback_generated_utc
+            ):
+                materialized[("stops", index.entity_id or "")] += 1
+                observe("materialize", index)
+                yield index
+
+    monkeypatch.setattr(publish.builders, "LineHistoryStreamSummary", TrackingLineSummary)
+    monkeypatch.setattr(publish.builders, "StopHistoryStreamSummary", TrackingStopSummary)
+
+    real_stamp = publish._stamp_envelope
+
+    def record_stamp(items, *, provider_id, stamp):  # noqa: ANN001, ANN202
+        real_stamp(items, provider_id=provider_id, stamp=stamp)
+        for _path, payload, _tier in items:
+            observe("stamp", payload)
+
+    monkeypatch.setattr(publish, "_stamp_envelope", record_stamp)
+
+    real_line_gate = gate.check_line_history_stream_indexes
+
+    def record_line_gate(indexes, summary, *, fallback_generated_utc):  # noqa: ANN001, ANN202
+        for index in indexes:
+            observe("stream_gate", index)
+        return real_line_gate(
+            indexes,
+            summary,
+            fallback_generated_utc=fallback_generated_utc,
+        )
+
+    monkeypatch.setattr(gate, "check_line_history_stream_indexes", record_line_gate)
+    real_line_directory_summary = gate.LineHistoryDirectorySummary.from_indexes
+
+    def record_line_directory_summary(indexes, *, index_paths=None):  # noqa: ANN001, ANN202
+        for index in indexes:
+            observe("directory_gate", index)
+        return real_line_directory_summary(indexes, index_paths=index_paths)
+
+    monkeypatch.setattr(
+        gate.LineHistoryDirectorySummary,
+        "from_indexes",
+        record_line_directory_summary,
+    )
+    real_root_gate = gate.check_history_availability_graph
+
+    def record_root_gate(payload, **kwargs):  # noqa: ANN001, ANN202
+        for index in kwargs["line_indexes"]:
+            observe("root_gate", index)
+        return real_root_gate(payload, **kwargs)
+
+    monkeypatch.setattr(gate, "check_history_availability_graph", record_root_gate)
+
+    class TrackingStore(_RecordingStore):
+        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
+            observe("upload", payload)
+            return super().put_immutable_json(rel_key, payload)
+
+    store = TrackingStore()
+    report = _gate_report(True)
+    keys = _publish_historic(
+        object(),
+        store,
+        provider_id="stm",
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=1),
+        stamp="2026-07-13T00:00:00Z",
+        gate_report=report,
+    )
+
+    expected_parent_sha256 = {
+        "historic/history/lines/31/generations/2cdaea9ad9db269ed888e13cc41eb0f91c40f2bfc59ad89ca34fbf6553f70bc9/index.json": "2cdaea9ad9db269ed888e13cc41eb0f91c40f2bfc59ad89ca34fbf6553f70bc9",
+        "historic/history/lines/3130/generations/61994aafe0fb5a8e1e4fd6fee571ba2f16ddbd7474849d9522dc8e8da168e450/index.json": "61994aafe0fb5a8e1e4fd6fee571ba2f16ddbd7474849d9522dc8e8da168e450",
+        "historic/history/lines/412f42/generations/b94124a6d14a4b68d588d20688c372d8ca03af742966bf2f2d8e995e6ff78a1d/index.json": "b94124a6d14a4b68d588d20688c372d8ca03af742966bf2f2d8e995e6ff78a1d",
+        "historic/history/lines/generations/f602d45205df15f1892206da55369b87769367203fd956d0279edf1b66c19767/index.json": "f602d45205df15f1892206da55369b87769367203fd956d0279edf1b66c19767",
+        "historic/history/stops/412f4220c3a9e99baa/generations/565453ca13ace587f44557a83e7e790b1f67684fa445567ce47841694f234477/index.json": "565453ca13ace587f44557a83e7e790b1f67684fa445567ce47841694f234477",
+        "historic/history/stops/generations/c66e17fd19afbfd0484f372c1e31ef976dd18dc36664efc0e28efa58126a6dcb/index.json": "c66e17fd19afbfd0484f372c1e31ef976dd18dc36664efc0e28efa58126a6dcb",
+        "historic/history/index.json": "229f5749ced1e7867518adac7d4588a120354c74b90e1dd592bd0d37f4a72783",
+    }
+    actual_parent_sha256 = {
+        path: hashlib.sha256(store.objects[path]).hexdigest()
+        for path in expected_parent_sha256
+    }
+    assert actual_parent_sha256 == expected_parent_sha256
+    assert report.errors == []
+    assert report.warnings == []
+    assert (report.checks_run, report.payloads_checked) == (32, 22)
+    assert keys[-1] == "historic/history/index.json"
+    assert store.calls[-1] == ("normal", "historic/history/index.json")
+    assert materialized == Counter({key: 1 for key in consumers})
+    for observations in consumers.values():
+        labels = [label for label, _identity, _body in observations]
+        assert labels.count("materialize") == 1
+        assert labels.count("stamp") == 1
+        assert labels.count("upload") == 1
+        assert len({identity for _label, identity, _body in observations}) == 1
+        assert len(
+            {
+                body
+                for label, _identity, body in observations
+                if label != "materialize"
+            }
+        ) == 1

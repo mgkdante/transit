@@ -1,6 +1,6 @@
 """Snapshot storage layer — PUT /v1 JSON to Cloudflare R2 (or local disk).
 
-The R2 backend reuses the existing Bronze S3 client builder (`build_s3_client`)
+The R2 backend owns a snapshot-specific client built by `_build_snapshot_s3_client`,
 which reads BRONZE_S3_* credentials.  The snapshot-specific settings control
 which *bucket* the published snapshots land in and whether to use local disk
 instead (useful for development and CI).
@@ -20,10 +20,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from botocore.exceptions import ClientError
+import boto3
+from botocore.config import Config as BotoConfig
+from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import BaseModel
 
-from transit_ops.ingestion.storage import build_s3_client
+from transit_ops.ingestion.storage import BronzeStorageError, _validated_s3_target
 from transit_ops.settings import Settings
 from transit_ops.snapshots.serialization import snapshot_json_bytes
 
@@ -141,13 +143,9 @@ class SnapshotStorage:
 
     Thread-safety
     -------------
-    The stage-2 publish (slice-9.1.1r) uploads per-entity files through a
-    ThreadPoolExecutor. boto3 low-level clients are not documented as safe to
-    share across threads, so when a *client_factory* is supplied each worker
-    thread lazily builds and caches **its own** client in thread-local storage
-    (``put_bytes`` then never shares a client between threads). When only a bare
-    *client* is supplied the same instance is used on every thread, which is
-    fine for the single-threaded path and the test fakes.
+    Boto3 low-level clients may be shared between threads. A provider publish
+    therefore owns one client whose connection pool is sized for the bounded
+    publisher executor.
     """
 
     def __init__(
@@ -156,29 +154,30 @@ class SnapshotStorage:
         *,
         bucket: str,
         base_prefix: str,
-        client_factory: object | None = None,
     ) -> None:
         self._client = client
         self._bucket = bucket
         self._prefix = base_prefix.strip("/")
-        self._client_factory = client_factory
-        self._local = threading.local()
+        self._close_lock = threading.Lock()
+        self._closed = False
         self._immutable_registry_lock = threading.Lock()
         self._immutable_locks: dict[str, threading.Lock] = {}
 
     def _thread_client(self) -> object:
-        """Return the client for the calling thread.
+        """Return the provider-scoped low-level client."""
 
-        With a *client_factory* every thread gets its own cached client; without
-        one the shared *client* is returned (the single-threaded / fake path).
-        """
-        if self._client_factory is None:
-            return self._client
-        cached = getattr(self._local, "client", None)
-        if cached is None:
-            cached = self._client_factory()  # type: ignore[operator]
-            self._local.client = cached
-        return cached
+        return self._client
+
+    def close(self) -> None:
+        """Close the owned low-level client once all publisher workers have drained."""
+
+        with self._close_lock:
+            if self._closed:
+                return
+            close = getattr(self._client, "close", None)
+            if callable(close):
+                close()
+            self._closed = True
 
     def full_key(self, rel_key: str) -> str:
         """Return the full bucket key for *rel_key* (``{base_prefix}/{rel_key}``)."""
@@ -949,6 +948,39 @@ class HashGatedStorage:
         return self._inner.put_bytes(self._state_rel_key, body, tier="internal")  # type: ignore[attr-defined]
 
 
+def _snapshot_publish_pool_size(settings: Settings) -> int:
+    try:
+        concurrency = int(settings.SNAPSHOT_PUBLISH_CONCURRENCY)
+    except (TypeError, ValueError):
+        concurrency = 16
+    return max(16, concurrency)
+
+
+def _build_snapshot_s3_client(settings: Settings) -> object:
+    endpoint_url, _bucket_name = _validated_s3_target(settings)
+    try:
+        return boto3.client(
+            "s3",
+            endpoint_url=endpoint_url,
+            aws_access_key_id=settings.BRONZE_S3_ACCESS_KEY,
+            aws_secret_access_key=settings.BRONZE_S3_SECRET_KEY,
+            region_name=settings.BRONZE_S3_REGION,
+            config=BotoConfig(
+                signature_version="s3v4",
+                s3={"addressing_style": "path"},
+                retries={"max_attempts": 3, "mode": "standard"},
+                connect_timeout=10,
+                read_timeout=60,
+                max_pool_connections=_snapshot_publish_pool_size(settings),
+            ),
+        )
+    except (BotoCoreError, ValueError) as exc:
+        raise BronzeStorageError(
+            "Failed to initialize S3-compatible Bronze storage client for endpoint "
+            f"{endpoint_url} and bucket {settings.BRONZE_S3_BUCKET}: {exc}"
+        ) from exc
+
+
 def build_snapshot_storage(
     settings: Settings,
     *,
@@ -966,7 +998,7 @@ def build_snapshot_storage(
         path segment so that all objects land under ``v1/{provider_id}/``.
     client:
         Optional pre-built boto3-compatible S3 client.  When omitted the
-        real ``build_s3_client(settings)`` is called (reads BRONZE_S3_*
+        real ``_build_snapshot_s3_client(settings)`` is called (reads BRONZE_S3_*
         credentials, which are shared between Bronze ingest and snapshot
         publishing).
 
@@ -986,9 +1018,6 @@ def build_snapshot_storage(
     if not settings.SNAPSHOT_R2_BUCKET:
         raise ValueError("SNAPSHOT_R2_BUCKET required for s3 backend")
 
-    # A per-thread client factory lets the stage-2 parallel publish give each
-    # worker thread its own boto3 client (boto3 clients are not safe to share
-    # across threads). Skipped when a *client* is injected (tests pass a fake).
     if client is not None:
         return SnapshotStorage(
             client,
@@ -996,8 +1025,7 @@ def build_snapshot_storage(
             base_prefix=base_prefix,
         )
     return SnapshotStorage(
-        build_s3_client(settings),
+        _build_snapshot_s3_client(settings),
         bucket=settings.SNAPSHOT_R2_BUCKET,
         base_prefix=base_prefix,
-        client_factory=lambda: build_s3_client(settings),
     )

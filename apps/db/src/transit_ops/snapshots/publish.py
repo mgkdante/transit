@@ -1,18 +1,11 @@
-"""Publish orchestrator — builds and uploads all snapshot tiers (live, static, historic).
-
-Ties together:
-  - :func:`transit_ops.snapshots.builders` — SQL -> Pydantic models
-  - :func:`transit_ops.snapshots.storage.build_snapshot_storage` — PUT to R2 / local disk
-
-The ``registry`` parameter is accepted for signature parity with CLI / cycle
-callers.
-"""
+"""Build, gate, and upload live, static, and historic snapshot tiers."""
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Executor, ThreadPoolExecutor, wait
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar, cast
 
@@ -88,6 +81,9 @@ type _LegacyCollected = tuple[list[_CollectedItem], list[_CollectedItem], str, i
 STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE = 100
 POINT_HISTORY_UPLOAD_BATCH_SIZE = 32
 HISTORY_PARTITION_UPLOAD_BATCH_SIZE = 32
+_ACTIVE_PUBLISH_EXECUTOR: ContextVar[Executor | None] = ContextVar(
+    "snapshot_publish_executor", default=None
+)
 
 
 PointDayT = TypeVar(
@@ -501,22 +497,12 @@ def _parallel_put(
     *,
     concurrency: int,
     write_mode: str = "normal",
+    executor: Executor | None = None,
 ) -> list[str]:
-    """Upload every ``(rel_key, payload, tier)`` in *items* and return the keys.
+    """Upload items through an owned or provider executor, preserving item order.
 
-    Uploads run through a bounded :class:`ThreadPoolExecutor` so the per-file
-    network round-trips overlap — the new-GTFS-edition-day fix where the
-    hash-gate skips nothing and all files must be re-PUT. Guarantees preserved:
-
-    * The hash-gate still applies per file (a skipped file does no PUT) — that
-      decision lives in ``HashGatedStorage.put_json``, which is thread-safe.
-    * Every future is collected; the FIRST upload to raise propagates out (no
-      silent swallowing) after the pool drains.
-    * ``concurrency <= 1`` runs the puts sequentially (no pool) — used by tests
-      and as an escape hatch.
-
-    Returned keys are in the same order as *items* so callers keep deterministic
-    result ordering regardless of thread completion order.
+    Every barrier drains all submitted work before a submission-order exception
+    is raised. ``concurrency <= 1`` stays deterministic and inline.
     """
     if not items:
         return []
@@ -532,10 +518,16 @@ def _parallel_put(
     if concurrency <= 1:
         return [put(item) for item in items]
 
+    if executor is None:
+        executor = _ACTIVE_PUBLISH_EXECUTOR.get()
+    if executor is not None:
+        futures = [executor.submit(put, item) for item in items]
+        wait(futures)
+        return [future.result() for future in futures]
+
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = [pool.submit(put, item) for item in items]
-        # Resolve in submission order; the first exception re-raises here, and
-        # the `with` block still joins the remaining workers on the way out.
+        wait(futures)
         return [future.result() for future in futures]
 
 
@@ -1189,33 +1181,27 @@ def _publish_historic(
     force: bool = False,
     _historic_run: _HistoricPublishRun | None = None,
 ) -> list[str]:
-    """Build and upload all historic-tier snapshot files; return the list of keys written.
+    """Build, gate, and stage the complete historic snapshot graph.
 
-    *stamp* is the day-truncated DATA-time stamp every artifact carries; when
-    omitted (direct callers / older tests) it defaults to today's truncated UTC.
-
-    Compatibility payloads remain one build/gate pass. Retained point-date families stream
-    one day at a time and Network, Line, and Stop history stream one month at a time through
-    structural gates and immutable storage. Only compact refs and coverage scalars survive
-    between artifacts. Compatibility stages publish only after every retained immutable child
-    succeeds. Every family index publishes before the exact seven-family root, which activates
-    last. A failed run may leave harmless unreferenced immutable objects, but never a new parent
-    pointing to incomplete children.
-
-    Uploads run STAGED: within each stage puts fan out through a bounded thread pool,
-    but a stage COMPLETES before the next begins, so a discovery index (its own stage)
-    is only PUT after every per-entity file in the preceding stage finished — the
-    pointer-last invariant. Only the upload is staged; the build+gate is one pass.
-
-    Partition batching bounds in-flight payload memory and overlaps remote immutable
-    probes/writes. Builders and gates still query and recompute the complete retained
-    graph each run; closed-month delta reuse remains a separate follow-up.
+    One provider executor serves every bounded upload batch. Each barrier drains
+    before its parent advances, and the exact seven-family root activates last.
+    Builders and gates still recompute the complete retained graph each run.
     """
     if stamp is None:
         stamp = _historic_stamp()
-
-    _historic._activate_historic_phase(_historic_run, "parent_compose")
     concurrency = _concurrency(settings)
+    if concurrency > 1 and _ACTIVE_PUBLISH_EXECUTOR.get() is None:
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            token = _ACTIVE_PUBLISH_EXECUTOR.set(executor)
+            try:
+                return _publish_historic(
+                    conn, storage, provider_id=provider_id, settings=settings, stamp=stamp,
+                    gate_report=gate_report, prior_files_total=prior_files_total, force=force,
+                    _historic_run=_historic_run,
+                )
+            finally:
+                _ACTIVE_PUBLISH_EXECUTOR.reset(token)
+    _historic._activate_historic_phase(_historic_run, "parent_compose")
     root_rel_key = "historic/history/index.json"
     capture_stable_version = getattr(storage, "capture_stable_version", None)
     stable_activation_supported = getattr(storage, "stable_activation_supported", True)
@@ -1550,7 +1536,8 @@ def _publish_historic(
     stop_directory_summary = gate.StopHistoryDirectorySummary()
     stop_index_paths: dict[str, str] = {}
     stop_referenced_generation_keys: set[str] = set()
-    for stop_index in stop_build_summary.iter_indexes(fallback_generated_utc=stamp):
+    stop_indexes = list(stop_build_summary.iter_indexes(fallback_generated_utc=stamp))
+    for stop_index in stop_indexes:
         if not stop_index.entity_id:
             continue
         stop_stamp_item = [
@@ -1599,12 +1586,12 @@ def _publish_historic(
     gate.enforce(effective_report, force=force)
 
     line_directory_summary = gate.LineHistoryDirectorySummary.from_indexes(
-        [index.model_copy(deep=True) for index in line_indexes],
+        cast(list[object], line_indexes),
         index_paths=line_index_paths,
     )
     line_directory = readdress_history_directory(
         line_build_summary.build_directory(
-            [index.model_copy(deep=True) for index in line_indexes],
+            line_indexes,
             fallback_generated_utc=stamp,
         ),
         line_index_paths,
@@ -1737,7 +1724,7 @@ def _publish_historic(
         receipts_index=receipts_index,
         network_index=network_index,
         line_directory=line_directory,
-        line_indexes=[index.model_copy(deep=True) for index in line_indexes],
+        line_indexes=cast(list[object], line_indexes),
         stop_directory=stop_directory,
         hotspots_index=hotspots_index,
         repeat_offenders_index=repeat_offenders_index,
@@ -1815,7 +1802,7 @@ def _publish_historic(
     )
     stop_index_keys: list[str] = []
     stop_index_batch: list[_PutItem] = []
-    for stop_index in stop_build_summary.iter_indexes(fallback_generated_utc=stamp):
+    for stop_index in stop_indexes:
         if not stop_index.entity_id:
             continue
         stop_index_batch.append(
@@ -1826,7 +1813,6 @@ def _publish_historic(
             )
         )
         if len(stop_index_batch) >= STOP_HISTORY_INDEX_UPLOAD_BATCH_SIZE:
-            _stamp_envelope(stop_index_batch, provider_id=provider_id, stamp=stamp)
             stop_index_keys.extend(
                 _parallel_put(
                     storage,
@@ -1837,7 +1823,6 @@ def _publish_historic(
             )
             stop_index_batch = []
     if stop_index_batch:
-        _stamp_envelope(stop_index_batch, provider_id=provider_id, stamp=stamp)
         stop_index_keys.extend(
             _parallel_put(
                 storage,
@@ -2033,43 +2018,11 @@ def publish_snapshot(
     force: bool = False,
     full_historic_rebuild: bool = False,
 ) -> PublishResult:
-    """Publish all snapshot files for *provider_id* to the configured backend.
+    """Publish *provider_id* to the configured live, static, or historic tier.
 
-    Parameters
-    ----------
-    provider_id:
-        Transit provider identifier, e.g. ``"stm"``.
-    tier:
-        Data tier to publish.  ``"live"``, ``"static"``, and ``"historic"``
-        are implemented; any other value raises :exc:`ValueError`.
-    settings:
-        Application settings object.  When ``None`` the real
-        :func:`~transit_ops.settings.get_settings` is called.
-    registry:
-        Reserved for future route-registry injection.
-    engine:
-        SQLAlchemy engine.  When ``None`` a real engine is created from
-        *settings*.
-    storage:
-        Storage backend instance.  When ``None`` one is built from *settings*.
-    gate_enabled:
-        Run the value gate over the built payloads before upload (default True).
-        On the HISTORIC tier a gate ERROR aborts the publish (rolls the txn back,
-        state un-advanced) unless *force* is set. On the LIVE tier the gate is
-        WARN-ONLY — it never aborts the ~57s cycle (findings are logged only). The
-        STATIC tier registers only the universal sentinel/NaN scan.
-    force:
-        Publish even when the gate finds ERROR-severity issues (a logged
-        "GATE OVERRIDDEN" warning lists them). Ignored on the live tier, which is
-        already WARN-only.
-    full_historic_rebuild:
-        Record full-rebuild intent in historic telemetry; other tiers reject it
-        before constructing an engine or storage backend.
-
-    Returns
-    -------
-    PublishResult
-        Metadata about the completed publish operation.
+    Missing settings, engine, and storage dependencies are constructed here.
+    Historic gate errors abort unless ``force`` is set; live gates remain
+    warn-only. Full-rebuild intent is accepted only for the historic tier.
     """
     if full_historic_rebuild and tier != "historic":
         raise ValueError("--full-historic-rebuild requires tier='historic'")
@@ -2077,7 +2030,24 @@ def publish_snapshot(
     settings = settings or get_settings()
 
     engine = engine or make_engine(settings)
-    storage = storage or build_snapshot_storage(settings, provider_id=provider_id)
+    if storage is None:
+        owned_storage = build_snapshot_storage(settings, provider_id=provider_id)
+        try:
+            return publish_snapshot(
+                provider_id,
+                tier=tier,
+                settings=settings,
+                registry=registry,
+                engine=engine,
+                storage=owned_storage,
+                gate_enabled=gate_enabled,
+                force=force,
+                full_historic_rebuild=full_historic_rebuild,
+            )
+        finally:
+            close = getattr(owned_storage, "close", None)
+            if callable(close):
+                close()
 
     if tier == "live":
         # Live tier is NOT hash-gated: its 5 files' bytes change every cycle, so

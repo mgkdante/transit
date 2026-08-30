@@ -7,7 +7,7 @@ import json
 import re
 import time
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -20,9 +20,9 @@ from threading import Lock
 from typing import Literal, TypeVar, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
 from uuid import uuid4
 
+import httpx
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from pydantic import BaseModel, ValidationError
@@ -91,6 +91,14 @@ MonotonicClock = Callable[[], float]
 
 class HistoricProofDeadlineExceeded(TimeoutError):
     """Raised internally when public proof work reaches its monotonic deadline."""
+
+
+class _PublicHttpxRequestError(HTTPException):
+    """Non-retryable HTTPX failure normalized to the prior artifact-error path."""
+
+    def __init__(self, artifact_error_type: str) -> None:
+        self.artifact_error_type = artifact_error_type
+        super().__init__()
 
 
 @dataclass
@@ -183,6 +191,10 @@ class _HistoricProofDeadline:
 
 _ACTIVE_PROOF_DEADLINE: ContextVar[_HistoricProofDeadline | None] = ContextVar(
     "historic_publish_proof_deadline",
+    default=None,
+)
+_ACTIVE_PROOF_EXECUTOR: ContextVar[Executor | None] = ContextVar(
+    "historic_publish_proof_executor",
     default=None,
 )
 
@@ -354,17 +366,43 @@ def _artifact_entry(
     return artifact
 
 
-def _default_fetch_bytes(url: str) -> bytes:
-    request = Request(
-        url,
+def _new_public_http_client() -> httpx.Client:
+    return httpx.Client(
+        follow_redirects=True,
         headers={
             "Accept": "application/json",
             "Cache-Control": "no-cache",
             "User-Agent": PUBLIC_PROOF_USER_AGENT,
         },
     )
-    with urlopen(request, timeout=30) as response:  # noqa: S310
-        return response.read()
+
+
+def _fetch_bytes_with_client(client: httpx.Client, url: str) -> bytes:
+    try:
+        response = client.get(url, timeout=30.0)
+    except httpx.TimeoutException as exc:
+        raise TimeoutError from exc
+    except httpx.NetworkError as exc:
+        raise ConnectionError from exc
+    except httpx.RequestError as exc:
+        raise _PublicHttpxRequestError(type(exc).__name__) from exc
+    if response.status_code >= 400:
+        raise HTTPError(
+            url,
+            response.status_code,
+            response.reason_phrase,
+            response.headers,
+            None,
+        )
+    return response.content
+
+
+def _default_fetch_bytes(url: str) -> bytes:
+    client = _new_public_http_client()
+    try:
+        return _fetch_bytes_with_client(client, url)
+    finally:
+        client.close()
 
 
 def _public_root(settings: Settings, provider_id: str, failures: list[str]) -> str | None:
@@ -461,7 +499,7 @@ def _fetch_model(
         _add_failure(failures, "historic_proof_deadline_exceeded", artifact)
         return None, None, artifact
     except (*OperationalErrorTypes, HTTPException) as exc:
-        artifact["error_type"] = type(exc).__name__
+        artifact["error_type"] = getattr(exc, "artifact_error_type", type(exc).__name__)
         _add_failure(failures, "public_artifact_fetch_failed", artifact)
         return None, None, artifact
 
@@ -512,6 +550,24 @@ def _fetch_models_bounded(
 
     if not requests:
         return []
+    executor = _ACTIVE_PROOF_EXECUTOR.get()
+    if executor is None:
+        owned_executor = ThreadPoolExecutor(max_workers=HISTORIC_PROOF_FETCH_CONCURRENCY)
+        token = _ACTIVE_PROOF_EXECUTOR.set(owned_executor)
+        try:
+            return _fetch_models_bounded(
+                requests,
+                public_root=public_root,
+                fetch_bytes=fetch_bytes,
+                artifacts=artifacts,
+                failures=failures,
+                query=query,
+                gate_digests=gate_digests,
+                bind_gate_digest=bind_gate_digest,
+            )
+        finally:
+            _ACTIVE_PROOF_EXECUTOR.reset(token)
+            owned_executor.shutdown(wait=False, cancel_futures=True)
     deadline = _ACTIVE_PROOF_DEADLINE.get()
     results: list[ModelFetchResult] = []
 
@@ -560,8 +616,6 @@ def _fetch_models_bounded(
             break
 
         batch = requests[offset : offset + HISTORIC_PROOF_FETCH_CONCURRENCY]
-        worker_count = min(HISTORIC_PROOF_FETCH_CONCURRENCY, len(batch))
-        executor = ThreadPoolExecutor(max_workers=worker_count)
         futures: dict[str, Future[bytes]] = {}
         try:
             for path, _ in batch:
@@ -604,7 +658,6 @@ def _fetch_models_bounded(
                     abandoned += 1
             if deadline is not None:
                 deadline.record_shutdown(cancelled=cancelled, abandoned=abandoned)
-            executor.shutdown(wait=False, cancel_futures=True)
 
         if deadline is not None and deadline.is_expired():
             remaining_count = len(requests) - offset - len(batch)
@@ -2364,27 +2417,40 @@ def build_historic_publish_proof(
     )
 
     def run_proof() -> HistoricPublishProofReport:
-        token = _ACTIVE_PROOF_DEADLINE.set(deadline)
+        proof_executor = ThreadPoolExecutor(max_workers=HISTORIC_PROOF_FETCH_CONCURRENCY)
+        executor_token = _ACTIVE_PROOF_EXECUTOR.set(proof_executor)
+        created_client: httpx.Client | None = None
         try:
-            report = _build_historic_publish_proof(
-                provider_id,
-                sync_receipt=sync_receipt,
-                gate_report=gate_report,
-                settings=settings,
-                engine=engine,
-                fetch_bytes=fetch_bytes,
-                migration_reader=migration_reader,
-                expectations_reader=expectations_reader,
-                now_utc=verified_at_utc,
-            )
-            if deadline.is_expired():
-                failures = list(report.failures)
-                deadline.mark_exceeded(failures)
-                report = replace(report, status="fail", failures=tuple(failures))
-            report.public["deadline"] = deadline.evidence()
-            return report
+            resolved_fetch = fetch_bytes
+            if resolved_fetch is None:
+                created_client = _new_public_http_client()
+                resolved_fetch = lambda url: _fetch_bytes_with_client(created_client, url)
+            deadline_token = _ACTIVE_PROOF_DEADLINE.set(deadline)
+            try:
+                report = _build_historic_publish_proof(
+                    provider_id,
+                    sync_receipt=sync_receipt,
+                    gate_report=gate_report,
+                    settings=settings,
+                    engine=engine,
+                    fetch_bytes=resolved_fetch,
+                    migration_reader=migration_reader,
+                    expectations_reader=expectations_reader,
+                    now_utc=verified_at_utc,
+                )
+                if deadline.is_expired():
+                    failures = list(report.failures)
+                    deadline.mark_exceeded(failures)
+                    report = replace(report, status="fail", failures=tuple(failures))
+                report.public["deadline"] = deadline.evidence()
+                return report
+            finally:
+                _ACTIVE_PROOF_DEADLINE.reset(deadline_token)
         finally:
-            _ACTIVE_PROOF_DEADLINE.reset(token)
+            _ACTIVE_PROOF_EXECUTOR.reset(executor_token)
+            proof_executor.shutdown(wait=created_client is not None, cancel_futures=True)
+            if created_client is not None:
+                created_client.close()
 
     if not isolate_process:
         return run_proof()
