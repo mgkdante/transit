@@ -93,6 +93,14 @@ class HistoricProofDeadlineExceeded(TimeoutError):
     """Raised internally when public proof work reaches its monotonic deadline."""
 
 
+class _PublicHttpxRequestError(HTTPException):
+    """Non-retryable HTTPX failure normalized to the prior artifact-error path."""
+
+    def __init__(self, artifact_error_type: str) -> None:
+        self.artifact_error_type = artifact_error_type
+        super().__init__()
+
+
 @dataclass
 class _HistoricProofDeadline:
     budget_seconds: float
@@ -374,8 +382,10 @@ def _fetch_bytes_with_client(client: httpx.Client, url: str) -> bytes:
         response = client.get(url, timeout=30.0)
     except httpx.TimeoutException as exc:
         raise TimeoutError from exc
-    except httpx.TransportError as exc:
+    except httpx.NetworkError as exc:
         raise ConnectionError from exc
+    except httpx.RequestError as exc:
+        raise _PublicHttpxRequestError(type(exc).__name__) from exc
     if response.status_code >= 400:
         raise HTTPError(
             url,
@@ -489,7 +499,7 @@ def _fetch_model(
         _add_failure(failures, "historic_proof_deadline_exceeded", artifact)
         return None, None, artifact
     except (*OperationalErrorTypes, HTTPException) as exc:
-        artifact["error_type"] = type(exc).__name__
+        artifact["error_type"] = getattr(exc, "artifact_error_type", type(exc).__name__)
         _add_failure(failures, "public_artifact_fetch_failed", artifact)
         return None, None, artifact
 
@@ -2438,7 +2448,7 @@ def build_historic_publish_proof(
                 _ACTIVE_PROOF_DEADLINE.reset(deadline_token)
         finally:
             _ACTIVE_PROOF_EXECUTOR.reset(executor_token)
-            proof_executor.shutdown(wait=False, cancel_futures=True)
+            proof_executor.shutdown(wait=created_client is not None, cancel_futures=True)
             if created_client is not None:
                 created_client.close()
 
