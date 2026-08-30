@@ -11,6 +11,7 @@ Never point this at production.
 from __future__ import annotations
 
 import os
+import secrets
 import subprocess
 import sys
 import time
@@ -514,7 +515,8 @@ def test_stop_delay_differential_matches_legacy_across_corrections_and_consumers
 def test_terminated_client_rolls_back_active_dml_and_removes_named_backend(
     real_db_engine,  # noqa: ANN001
 ) -> None:
-    application_name = "dwr-r33279553860-a2-pstm-h8c87b489-crollup-pa2"
+    application_name = f"dwr-test-stop-{secrets.token_hex(8)}"
+    assert application_name.isascii() and len(application_name.encode("ascii")) <= 63
     timeout_provider = "stm_rollup_timeout_test"
     child = '''
 import os
@@ -552,17 +554,17 @@ finally:
             "TEST_PROVIDER": timeout_provider,
         }
     )
+    active_backend = None
     process = subprocess.Popen([sys.executable, "-c", child], env=environment)
     try:
-        active_pid = None
         deadline = time.monotonic() + 3
         with real_db_engine.connect() as monitor:
             while time.monotonic() < deadline:
                 monitor.execute(text("SELECT pg_stat_clear_snapshot()"))
-                active_pid = monitor.execute(
+                active_backend = monitor.execute(
                     text(
                         """
-                        SELECT pid
+                        SELECT pid, backend_start
                         FROM pg_stat_activity
                         WHERE application_name = :name
                           AND state = 'active'
@@ -570,11 +572,11 @@ finally:
                         """
                     ),
                     {"name": application_name},
-                ).scalar_one_or_none()
-                if active_pid is not None:
+                ).one_or_none()
+                if active_backend is not None:
                     break
                 time.sleep(0.02)
-        assert active_pid is not None
+        assert active_backend is not None
 
         process.kill()
         process.wait(timeout=3)
@@ -600,12 +602,23 @@ finally:
             process.kill()
             process.wait(timeout=3)
         with real_db_engine.begin() as cleanup:
-            pids = cleanup.execute(
-                text("SELECT pid FROM pg_stat_activity WHERE application_name = :name"),
-                {"name": application_name},
-            ).scalars()
-            for pid in pids:
-                cleanup.execute(text("SELECT pg_terminate_backend(:pid)"), {"pid": pid})
+            if active_backend is not None:
+                cleanup.execute(
+                    text(
+                        """
+                        SELECT pg_terminate_backend(pid)
+                        FROM pg_stat_activity
+                        WHERE pid = :pid
+                          AND backend_start = :backend_start
+                          AND application_name = :name
+                        """
+                    ),
+                    {
+                        "pid": active_backend.pid,
+                        "backend_start": active_backend.backend_start,
+                        "name": application_name,
+                    },
+                ).scalar_one_or_none()
             cleanup.execute(
                 text("DELETE FROM core.providers WHERE provider_id = :provider"),
                 {"provider": timeout_provider},
@@ -615,7 +628,7 @@ finally:
 def test_rollup_statement_timeout_is_57014_and_nullpool_rolls_back(
     real_db_engine,  # noqa: ANN001
 ) -> None:
-    application_name = "dwr-r33279553860-a2-pstm-h8c87b489-crollup-pa3"
+    application_name = f"dwr-test-57014-{secrets.token_hex(8)}"
     timeout_provider = "stm_rollup_57014_test"
     isolated_engine = create_engine(
         real_db_engine.url,

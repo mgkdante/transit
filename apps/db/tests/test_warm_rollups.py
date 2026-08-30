@@ -1627,7 +1627,9 @@ def test_stop_delay_refresh_is_one_guarded_differential_transaction() -> None:
         )
     )
     statements = transaction["statements"]
-    assert any("SET LOCAL work_mem = '384MB'" in sql for sql in statements)
+    workmem = next(
+        i for i, sql in enumerate(statements) if "SET LOCAL work_mem = '384MB'" in sql
+    )
     advisory = next(i for i, sql in enumerate(statements) if "pg_try_advisory_xact_lock" in sql)
     create = next(i for i, sql in enumerate(statements) if "CREATE TEMP TABLE" in sql)
     analyze = next(i for i, sql in enumerate(statements) if "ANALYZE stop_delay_hourly" in sql)
@@ -1637,6 +1639,7 @@ def test_stop_delay_refresh_is_one_guarded_differential_transaction() -> None:
     upsert = next(
         i for i, sql in enumerate(statements) if "INSERT INTO gold.stop_delay_hourly" in sql
     )
+    assert workmem < create
     assert advisory < create < analyze
     assert analyze < delete < upsert
     assert transaction["status"] == "committed"
