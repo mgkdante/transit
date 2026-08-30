@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 import transit_ops.maintenance as _maintenance_pkg
-from transit_ops.db.connection import make_engine
+from transit_ops.db.connection import make_engine, set_daily_warm_transaction_timeouts
 from transit_ops.gold.alert_archive import (
     AlertArchiveSyncResult,
     alert_archive_default_bounds,
@@ -399,6 +399,7 @@ def prune_i3_storage(
     archive_from, archive_to = _provider_alert_archive_bounds(provider_id, settings)
 
     with engine.begin() as connection:
+        set_daily_warm_transaction_timeouts(connection)
         archive_sync = sync_alert_archive_on_connection(
             connection,
             provider_id=provider_id,

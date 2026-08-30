@@ -1,9 +1,19 @@
 from __future__ import annotations
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 
 from transit_ops.settings import Settings
+
+DAILY_WARM_STATEMENT_TIMEOUT = text("SET LOCAL statement_timeout = '30min'")
+DAILY_WARM_LOCK_TIMEOUT = text("SET LOCAL lock_timeout = '30s'")
+
+
+def set_daily_warm_transaction_timeouts(connection: Connection) -> None:
+    """Bound one Daily Warm Rollups or retention transaction inside Postgres."""
+
+    connection.execute(DAILY_WARM_STATEMENT_TIMEOUT)
+    connection.execute(DAILY_WARM_LOCK_TIMEOUT)
 
 
 def require_database_url(settings: Settings) -> str:

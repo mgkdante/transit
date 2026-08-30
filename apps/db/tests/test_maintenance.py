@@ -66,6 +66,11 @@ EXPECTED_NORMALIZED_REALTIME_SILVER_TABLES = (
     "silver.rt_feed_snapshots",
 )
 
+TRANSACTION_TIMEOUT_SQL = [
+    "SET LOCAL statement_timeout = '30min'",
+    "SET LOCAL lock_timeout = '30s'",
+]
+
 EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.trip_delay_summary_5m": 3,
     "gold.warm_rollup_periods": 8,
@@ -1123,6 +1128,8 @@ def test_prune_silver_storage_runs_realtime_and_static_in_separate_transactions(
 
     assert engine.begin_count == 2
     realtime_conn, static_conn = engine.connections
+    assert realtime_conn.calls[:2] == TRANSACTION_TIMEOUT_SQL
+    assert static_conn.calls[:2] == TRANSACTION_TIMEOUT_SQL
 
     # tx1 (realtime first) ran only the silver.rt_* DELETEs — never touched
     # core.dataset_versions or the static silver tables.
@@ -1335,6 +1342,7 @@ def test_prune_gold_storage_threads_gold_fact_prune_batch_setting() -> None:
     )
 
     connection = engine.connections[0]
+    assert connection.calls[:2] == TRANSACTION_TIMEOUT_SQL
     fact_delete_params = [
         params
         for sql, params in connection.executed
@@ -1375,6 +1383,7 @@ def test_prune_warm_rollup_storage_applies_aggregate_retention_to_reporting_mart
     )
 
     assert isinstance(result, WarmRollupStoragePruneResult)
+    assert connection.calls[:2] == TRANSACTION_TIMEOUT_SQL
     assert result.retention_days == 365
     assert result.deleted_row_counts == {
         **EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS,
@@ -1899,6 +1908,36 @@ def test_prune_bronze_storage_opens_one_transaction_per_batch(monkeypatch) -> No
     assert result.exhausted is False
 
 
+def test_prune_bronze_storage_bounds_every_batch_inside_postgres(monkeypatch) -> None:
+    connection = RecordingConnection()
+    engine = RecordingEngine(connection)
+    _patch_bronze_storage(monkeypatch, FakeBronzeStorage())
+
+    prune_bronze_storage(
+        "stm",
+        settings=BronzePruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+        max_objects=3,
+        max_batches=2,
+    )
+
+    statement_deadlines = [
+        index
+        for index, sql in enumerate(connection.calls)
+        if "SET LOCAL statement_timeout = '30min'" in sql
+    ]
+    lock_deadlines = [
+        index
+        for index, sql in enumerate(connection.calls)
+        if "SET LOCAL lock_timeout = '30s'" in sql
+    ]
+    assert len(statement_deadlines) == engine.begin_calls
+    assert len(lock_deadlines) == engine.begin_calls
+    assert all(statement_index + 1 == lock_index for statement_index, lock_index in zip(
+        statement_deadlines, lock_deadlines, strict=True
+    ))
+
+
 def test_prune_bronze_storage_sets_exhausted_only_when_both_phases_under_limit(
     monkeypatch,
 ) -> None:
@@ -2207,6 +2246,7 @@ def test_prune_i3_storage_syncs_archive_before_silver_and_raw(monkeypatch, dry_r
     )
 
     assert calls == [("archive", dry_run), ("silver", dry_run), ("raw", dry_run)]
+    assert connection.calls[:2] == TRANSACTION_TIMEOUT_SQL
     assert result.alert_archive_sync is not None
     assert result.alert_archive_sync.dry_run is dry_run
     assert result.display_dict()["alert_archive_sync"]["requested_from"] == "2024-07-01"
