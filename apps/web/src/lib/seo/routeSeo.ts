@@ -331,10 +331,9 @@ export function resolveRouteSeo(
  * Paths are delocalized; the caller localizes each crumb path for the active
  * locale. Returns [] for surfaces without a meaningful hierarchy.
  *
- * TODO(seo): the leaf uses the URL id (route number / stop code), not the entity
- * NAME (line headsign / stop name). A per-entity leaf label — and matching per-
- * entity <title>/description — needs the data-binding SSR-seed (the /v1 entity
- * resolved server-side), which is out of scope for this header-level pass.
+ * The leaf deliberately uses the URL id (route number / stop code), not an
+ * entity name. Names require a server-resolved /v1 entity seed; keeping the id
+ * makes this synchronous SSR contract truthful when that data is unavailable.
  */
 export function resolveBreadcrumbTrail(pathname: string, locale: Locale): BreadcrumbTrailItem[] {
 	const path = delocalizePath(pathname);

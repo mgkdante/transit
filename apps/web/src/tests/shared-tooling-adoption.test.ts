@@ -178,14 +178,14 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(quotedList(nestedBlock(webEvents, 'push'))).toEqual([
 			'apps/web/**',
 			'apps/data-proxy/**',
-			'packages/**',
 			'bun.lock',
 			'.bun-version',
 			'package.json',
 			'turbo.json',
 			'.github/workflows/web.yml',
 			'.github/actions/**',
-			'tools/e6/**',
+			'.github/scripts/deploy-scope.mjs',
+			'.github/scripts/deploy-scope.test.mjs',
 		]);
 		for (const workflow of [ci, web]) {
 			expect(Object.fromEntries(directMapping(topLevelBlock(workflow, 'permissions')))).toEqual({
@@ -269,20 +269,16 @@ describe('ST5 Transit shared-tooling adoption', () => {
 	it('preserves the web ci and deploy contract behind one always reporter', () => {
 		const jobs = jobBlocks(text('.github/workflows/web.yml'));
 		const work = jobs.get('ci-work');
-		const e6Work = jobs.get('e6-tests-work');
 		const reporter = jobs.get('ci');
 		const deployScope = jobs.get('deploy_scope');
 		expect(work).toBeDefined();
-		expect(e6Work).toBeDefined();
 		expect(reporter).toBeDefined();
 		expect(deployScope).toBeDefined();
-		if (!work || !e6Work || !reporter || !deployScope) return;
+		if (!work || !reporter || !deployScope) return;
 		expect(directNeeds(work)).toEqual(['classify']);
 		expect(work).toContain("relevant['ci-work']");
-		expect(directNeeds(e6Work)).toEqual(['classify']);
-		expect(e6Work).toContain("relevant['e6-tests-work']");
-		expect(e6Work).toContain('bun run --shell=bun --cwd tools/e6 b2:check');
-		expect(directNeeds(reporter)).toEqual(['classify', 'ci-work', 'e6-tests-work']);
+		expect(work).toContain('node --test .github/scripts/deploy-scope.test.mjs');
+		expect(directNeeds(reporter)).toEqual(['classify', 'ci-work']);
 		expect(reporter).toMatch(/^ {4}if:\s*(?:\$\{\{\s*)?always\(\)(?:\s*\}\})?\s*$/mu);
 		expect(reporter).toContain(`${SOURCE_REPOSITORY}/${ACTIONS.reporter}@${SOURCE_SHA}`);
 
@@ -296,6 +292,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 			/^ {4}outputs:\n {6}deploy_web:\s*\$\{\{\s*steps\.scope\.outputs\.deploy_web\s*\}\}\s*$/mu,
 		);
 		expect(deployScope).toMatch(/^ {8}id:\s*scope\s*$/mu);
+		expect(deployScope).toContain('node .github/scripts/deploy-scope.mjs');
 
 		for (const deploy of ['deploy-dev', 'deploy-production']) {
 			const deployJob = jobs.get(deploy)!;
@@ -322,20 +319,13 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(classify('README.md', dbRules)).toEqual(noDb);
 		expect(classify('new-root-surface.txt', dbRules)).toEqual(allDb);
 
-		const productWeb = { 'ci-work': true, 'e6-tests-work': false };
-		const allWeb = { 'ci-work': true, 'e6-tests-work': true };
-		const noWeb = { 'ci-work': false, 'e6-tests-work': false };
+		const productWeb = { 'ci-work': true };
+		const allWeb = { 'ci-work': true };
+		const noWeb = { 'ci-work': false };
 		expect(classify('apps/web/src/routes/+page.svelte', webRules)).toEqual(productWeb);
 		expect(classify('apps/data-proxy/src/index.ts', webRules)).toEqual(productWeb);
-		expect(classify('tools/e6/lib/stats.mjs', webRules)).toEqual({
-			'ci-work': false,
-			'e6-tests-work': true,
-		});
 		expect(classify('.github/workflows/ci.yml', webRules)).toEqual(allWeb);
-		expect(classify('.github/scripts/materialize-shared-config.mjs', webRules)).toEqual({
-			'ci-work': true,
-			'e6-tests-work': true,
-		});
+		expect(classify('.github/scripts/materialize-shared-config.mjs', webRules)).toEqual(allWeb);
 		expect(classify('apps/db/src/transit_ops/cli.py', webRules)).toEqual(noWeb);
 		expect(classify('README.md', webRules)).toEqual(noWeb);
 		expect(classify('new-root-surface.txt', webRules)).toEqual(allWeb);

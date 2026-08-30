@@ -120,8 +120,8 @@
 	// the trail follows client navigations. resolveBreadcrumbTrail returns [] for
 	// every other surface, so the Breadcrumb (which itself guards on >1 crumb) is
 	// inert elsewhere. The leaf label is the URL id segment (route #/stop code) —
-	// a per-entity NAME leaf is a tracked follow-up (see routeSeo TODO(seo); needs
-	// the SSR entity seed), so this matches the JSON-LD trail exactly today.
+	// entity names require an SSR /v1 seed that this shared shell does not own, so
+	// the stable id matches the JSON-LD trail without inventing unavailable data.
 	const locale = getLocale();
 	const trail = $derived(resolveBreadcrumbTrail(page.url.pathname, locale));
 	const paneOwnsRail = $derived(paneOwnedRailKeys.includes(active));

@@ -27,10 +27,9 @@
 //     follow-up. script-src also allows https://static.cloudflareinsights.com so
 //     Cloudflare Web Analytics' beacon.min.js can load (else the CSP blocks it).
 //
-// TODO(security/csp-hardening): drop script-src 'unsafe-inline' in favor of a
-// sha256-<hash> allowlist for the app.html pre-paint theme IIFE. This is a
-// deliberate SEPARATE follow-up — it needs a Content-Security-Policy-Report-Only
-// rollout first to confirm nothing else inline-injects before enforcing.
+// The enforced policy retains script-src 'unsafe-inline' because the pre-paint
+// theme IIFE and Svelte styles are inline today. Removing it requires a bounded
+// report-only rollout that proves every inline producer before enforcement.
 
 // Basemap glyph/raster host — kept in img-src as defense-in-depth (see CSP NOTES).
 const BASEMAP_IMG_HOST = 'https://protomaps.github.io';

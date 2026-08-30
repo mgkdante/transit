@@ -1,14 +1,12 @@
-// $lib/nav — navigation-as-intent ("panels, not pages").
+// $lib/nav — navigation-as-intent.
 //
 // Single import surface for the nav layer:
-//   import { openSurface, activePanel, layout } from '$lib/nav';
+//   import { openSurface, routeFor, layout } from '$lib/nav';
 //
-// `openSurface(target)` is the one call sites use: it resolves a semantic
-// `SurfaceTarget` to a route-push on mobile or an `activePanel` swap on desktop,
-// branching on the reactive `layout.isDesktop` store. `routeFor` exposes the
-// shared canonical route map for deep-link / SSR hydration.
+// `openSurface(target)` resolves a semantic `SurfaceTarget` to a localized
+// route push. `routeFor` exposes the shared canonical map for links and SSR.
 
 export type { SurfaceKind, SurfaceTarget } from './intent.svelte';
-export { openSurface, routeFor, mapHrefFor, activePanel } from './intent.svelte';
+export { openSurface, routeFor, mapHrefFor } from './intent.svelte';
 
 export { layout, isDesktopViewport } from './layout.svelte';

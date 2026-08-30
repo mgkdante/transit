@@ -5,8 +5,7 @@
 	"description": "Transit — STM transit operations analytics turborepo: apps/db (Python pipeline) + apps/web (SvelteKit citizen dashboard) + apps/data-proxy (Cloudflare /v1 snapshot worker).",
 	"packageManager": "bun@1.3.11",
 	"workspaces": [
-		"apps/*",
-		"packages/*"
+		"apps/*"
 	],
 	"scripts": {
 		"setup:hooks": "git config core.hooksPath .githooks",

@@ -1,8 +1,0 @@
-{
-  "name": "@transit/e6",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "b2:check": "bun test test/*.test.mjs && node e6-measure.mjs --red-proof --duration-ms 2000"
-  }
-}
