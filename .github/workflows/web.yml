@@ -129,6 +129,13 @@ jobs:
       - name: Build (adapter-cloudflare)
         run: bun run build
 
+      - name: B9 displayed-value correctness
+        env:
+          B9_REUSE_BUILD: "1"
+        run: |
+          ./node_modules/.bin/playwright-core install chromium-headless-shell
+          bun run test:b9-display
+
       - name: Unit tests
         run: bun run test
 

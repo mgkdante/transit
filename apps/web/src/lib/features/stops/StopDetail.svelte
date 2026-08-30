@@ -146,25 +146,6 @@
 	});
 
 	const shortName = manifest.short_name?.trim() || manifest.display_name;
-	const articleTags = $derived([`${t.article.stopId} ${id}`, shortName]);
-	const articleEdgeLeft = $derived(`${t.kicker} ${id}`);
-	const articleEdgeRight = $derived(
-		live.generatedUtc ? formatUtc(live.generatedUtc, locale) : shortName,
-	);
-	const articleMeta = $derived.by<ArticleMetaEntry[]>(() => {
-		const values: ArticleMetaEntry[] = [
-			{ label: t.article.stopId, text: id },
-			{ label: t.article.provider, text: shortName },
-		];
-		if (live.generatedUtc != null) {
-			values.push({
-				label: t.article.updated,
-				text: formatUtc(live.generatedUtc, locale),
-				datetime: live.generatedUtc,
-			});
-		}
-		return values;
-	});
 	// Departures for THIS stop from the authoritative per-stop board. null before
 	// the first tick (skeleton); [] is a real "no upcoming departures" verdict.
 	const departures = $derived<readonly StopDeparture[] | null>(
@@ -202,19 +183,57 @@
 	// state). A missing-snapshot 404 here is suppressed at the edge (one-time cache
 	// purge / future stops_index flag), not in this client code.
 	const reliability = createResource(() => getStopReliability(id), { key: () => id });
+	const articleGeneratedUtc = $derived(
+		detailTabController.active === 'reliability'
+			? (reliability.data?.generated_utc ?? live.generatedUtc)
+			: live.generatedUtc,
+	);
+	const articleTags = $derived([`${t.article.stopId} ${id}`, shortName]);
+	const articleEdgeLeft = $derived(`${t.kicker} ${id}`);
+	const articleEdgeRight = $derived(
+		articleGeneratedUtc ? formatUtc(articleGeneratedUtc, locale) : shortName,
+	);
+	const articleMeta = $derived.by<ArticleMetaEntry[]>(() => {
+		const values: ArticleMetaEntry[] = [
+			{ label: t.article.stopId, text: id },
+			{ label: t.article.provider, text: shortName },
+		];
+		if (articleGeneratedUtc)
+			values.push({
+				label: t.article.updated,
+				text: formatUtc(articleGeneratedUtc, locale),
+				datetime: articleGeneratedUtc,
+			});
+		return values;
+	});
 	const stopSummaryPeriod = $derived.by(() => {
 		const rows = (reliability.data?.periods ?? []).filter((period) => period.grain === 'day');
 		return rows.at(-1) ?? null;
 	});
+	const stopSummaryDaily = $derived.by(() =>
+		(reliability.data?.daily ?? [])
+			.slice()
+			.sort((a, b) => a.date.localeCompare(b.date))
+			.at(-1),
+	);
+	const stopSummarySeverePct = $derived(
+		stopSummaryPeriod?.severe_pct ??
+			(stopSummaryDaily?.observation_count && stopSummaryDaily.severe_count != null
+				? (100 * stopSummaryDaily.severe_count) / stopSummaryDaily.observation_count
+				: null),
+	);
 	const stopSummarySevere = $derived(
-		stopSummaryPeriod?.severe_pct == null
+		stopSummarySeverePct == null
 			? null
-			: `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(stopSummaryPeriod.severe_pct)}%`,
+			: `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(stopSummarySeverePct)}%`,
+	);
+	const stopSummaryDelayMin = $derived(
+		stopSummaryPeriod?.avg_delay_min ?? stopSummaryDaily?.avg_delay_min ?? null,
 	);
 	const stopSummaryDelay = $derived(
-		stopSummaryPeriod?.avg_delay_min == null
+		stopSummaryDelayMin == null
 			? null
-			: `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(stopSummaryPeriod.avg_delay_min)} ${reliabilityT.trend.minUnit}`,
+			: `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(stopSummaryDelayMin)} ${reliabilityT.trend.minUnit}`,
 	);
 	const hasStopSummary = $derived(stopSummarySevere != null || stopSummaryDelay != null);
 

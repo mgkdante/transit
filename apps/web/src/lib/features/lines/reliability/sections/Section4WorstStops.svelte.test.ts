@@ -157,9 +157,10 @@ describe('Section4WorstStops — windowed severe-rate path (S7-B)', () => {
 	});
 
 	it('FR locale renders the "Tous" all-segment', () => {
-		const { getByText } = render(Section4WorstStops, {
+		const { container, getByText } = render(Section4WorstStops, {
 			props: { punctuality: vm(windowedStops, true), locale: 'fr', copy: reliabilityCopy.fr },
 		});
 		expect(getByText('Tous')).toBeTruthy();
+		expect(container.querySelector('a[href="/fr/stop/w1"]')).not.toBeNull();
 	});
 });

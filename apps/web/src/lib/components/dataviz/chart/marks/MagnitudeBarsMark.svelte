@@ -37,6 +37,19 @@
 	const xDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
 	const hasTapPopover = $derived(spec.rows.some((r) => r.tapPopover != null));
 	const popover = createChartDatumPopover();
+	// LayerChart retains scale context across reactive updates. Remount only its visual subtree when
+	// the scale or row topology changes, leaving the figure and AT links stable for keyboard focus.
+	const layerStructureKey = $derived(
+		JSON.stringify([
+			spec.mark,
+			spec.scale,
+			spec.sort,
+			spec.domain,
+			spec.ciLabel != null,
+			hasTapPopover,
+			spec.rows.map((row) => [row.key, row.label, row.value == null, row.severity ?? 'watch']),
+		]),
+	);
 
 	const bySeverity = (sev: SeverityCode): MagnitudeDatum[] =>
 		reals.filter((r) => (r.severity ?? 'watch') === sev);
@@ -75,65 +88,67 @@
 	use:chartDatumPopoverBoundary={popover}
 >
 	<ChartFrame height={frameHeight} class="dv-barmark-plot">
-		<LcChart
-			data={reals}
-			x={xOf}
-			y={yOf}
-			xScale={scaleLinear().clamp(true)}
-			{xDomain}
-			yScale={scaleBand().padding(0.42)}
-			yDomain={labels}
-			{padding}
-			tooltipContext={{
-				mode: 'band',
-				onclick: onRowClick,
-				...(hasTapPopover ? { touchEvents: 'auto' as const } : {}),
-			}}
-		>
-			<Svg>
-				<Grid x class="dv-barmark-grid" />
-				<Axis
-					placement="bottom"
-					label={spec.xLabel}
-					labelPlacement="middle"
-					ticks={4}
-					format={(v) => `${v}`}
-					class="dv-barmark-axis"
-				/>
-				<Axis
-					placement="left"
-					rule={false}
-					format={(l: string) => gutter.truncate(l)}
-					class="dv-barmark-axis"
-				/>
-				<Bars data={bySeverity('watch')} radius={3} class="dv-barmark-watch" />
-				<Bars data={bySeverity('high')} radius={3} class="dv-barmark-high" />
-				<Bars data={bySeverity('critical')} radius={3} class="dv-barmark-critical" />
-				<!-- PR-WEB-5: the 95% Wilson CI whisker per row (only the windowed severe-rate path
+		{#key layerStructureKey}
+			<LcChart
+				data={reals}
+				x={xOf}
+				y={yOf}
+				xScale={scaleLinear().clamp(true)}
+				{xDomain}
+				yScale={scaleBand().padding(0.42)}
+				yDomain={labels}
+				{padding}
+				tooltipContext={{
+					mode: 'band',
+					onclick: onRowClick,
+					...(hasTapPopover ? { touchEvents: 'auto' as const } : {}),
+				}}
+			>
+				<Svg>
+					<Grid x class="dv-barmark-grid" />
+					<Axis
+						placement="bottom"
+						label={spec.xLabel}
+						labelPlacement="middle"
+						ticks={4}
+						format={(v) => `${v}`}
+						class="dv-barmark-axis"
+					/>
+					<Axis
+						placement="left"
+						rule={false}
+						format={(l: string) => gutter.truncate(l)}
+						class="dv-barmark-axis"
+					/>
+					<Bars data={bySeverity('watch')} radius={3} class="dv-barmark-watch" />
+					<Bars data={bySeverity('high')} radius={3} class="dv-barmark-high" />
+					<Bars data={bySeverity('critical')} radius={3} class="dv-barmark-critical" />
+					<!-- PR-WEB-5: the 95% Wilson CI whisker per row (only the windowed severe-rate path
 				     carries a meaningful, bar-scale CI). Drawn ON TOP so the line + caps read over the
 				     bar; the CI was flipped onto the severe scale in the selector so it brackets the bar. -->
-				{#if spec.ciLabel}
-					<MagnitudeCiWhiskers rows={reals} domain={xDomain} />
+					{#if spec.ciLabel}
+						<MagnitudeCiWhiskers rows={reals} domain={xDomain} />
+					{/if}
+				</Svg>
+				{#if !hasTapPopover || popover.showNativeTooltip}
+					<Tooltip.Root>
+						{#snippet children({ data }: { data: MagnitudeDatum })}
+							<Tooltip.Header>{data.label}</Tooltip.Header>
+							<Tooltip.List>
+								<Tooltip.Item label={spec.xLabel ?? spec.title} value={fmtWithUnit(data.value)} />
+								{#if spec.ciLabel && data.wilsonLo != null && data.wilsonHi != null}
+									<Tooltip.Item
+										label={spec.ciLabel}
+										value={`${fmtWithUnit(data.wilsonLo)}–${fmtWithUnit(data.wilsonHi)}`}
+									/>
+								{/if}
+								{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
+							</Tooltip.List>
+						{/snippet}
+					</Tooltip.Root>
 				{/if}
-			</Svg>
-			{#if !hasTapPopover || popover.showNativeTooltip}
-				<Tooltip.Root>
-					{#snippet children({ data }: { data: MagnitudeDatum })}
-						<Tooltip.Header>{data.label}</Tooltip.Header>
-						<Tooltip.List>
-							<Tooltip.Item label={spec.xLabel ?? spec.title} value={fmtWithUnit(data.value)} />
-							{#if spec.ciLabel && data.wilsonLo != null && data.wilsonHi != null}
-								<Tooltip.Item
-									label={spec.ciLabel}
-									value={`${fmtWithUnit(data.wilsonLo)}–${fmtWithUnit(data.wilsonHi)}`}
-								/>
-							{/if}
-							{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
-						</Tooltip.List>
-					{/snippet}
-				</Tooltip.Root>
-			{/if}
-		</LcChart>
+			</LcChart>
+		{/key}
 	</ChartFrame>
 	<ChartDatumPopover controller={popover} />
 

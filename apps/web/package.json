@@ -21,6 +21,7 @@
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"test": "vitest run --maxWorkers=4",
+		"test:b9-display": "bun scripts/b9-displayed-values.mjs",
 		"test:unit": "vitest",
 		"test:mobile-geometry": "bun scripts/test-mobile-geometry.ts"
 	},
@@ -45,7 +46,7 @@
 		"eslint-plugin-svelte": "^3.19.0",
 		"globals": "^17.6.0",
 		"happy-dom": "^20.8.9",
-		"playwright-core": "^1.62.0",
+		"playwright-core": "1.62.0",
 		"prettier": "^3.8.4",
 		"prettier-plugin-svelte": "^4.1.0",
 		"rollup-plugin-visualizer": "^7.0.1",

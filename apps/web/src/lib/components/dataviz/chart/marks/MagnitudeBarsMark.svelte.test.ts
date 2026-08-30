@@ -152,6 +152,54 @@ describe('MagnitudeBarsMark — localized semantic AT table', () => {
 			).toEqual([rowLabel, xLabel]);
 		},
 	);
+
+	it('preserves a focused row link while value and structural updates stay finite', async () => {
+		const initial = baseSpec('95% CI');
+		const view = renderReadyMark(initial);
+		await rowOverlay(view.container);
+		const link = within(view.container).getByRole('link', { name: 'Stop One' });
+		link.focus();
+		expect(link).toHaveFocus();
+
+		await view.rerender({
+			spec: {
+				...initial,
+				rows: [{ ...initial.rows[0], value: 57, wilsonLo: 43, wilsonHi: 68 }],
+			},
+		});
+		expect(link).toHaveFocus();
+		expect(cell(view.container)).toContain('57%');
+
+		await view.rerender({
+			spec: {
+				...initial,
+				domain: [0, 200],
+				rows: [
+					{ key: 'new', label: 'New row', value: null, severity: 'watch' },
+					{
+						...initial.rows[0],
+						label: 'Stop One renamed',
+						value: 140,
+						severity: 'critical',
+					},
+				],
+			},
+		});
+
+		await waitFor(() => {
+			const bars = [
+				...view.container.querySelectorAll<SVGRectElement>(
+					'rect.dv-barmark-watch, rect.dv-barmark-high, rect.dv-barmark-critical',
+				),
+			];
+			expect(bars).toHaveLength(1);
+			for (const bar of bars)
+				for (const attribute of ['x', 'y', 'width', 'height'])
+					expect(bar.getAttribute(attribute) ?? '').not.toMatch(/NaN|Infinity/u);
+		});
+		expect(link).toHaveFocus();
+		expect(link).toHaveTextContent('Stop One renamed');
+	});
 });
 
 describe('MagnitudeBarsMark — touch datum popover integration', () => {

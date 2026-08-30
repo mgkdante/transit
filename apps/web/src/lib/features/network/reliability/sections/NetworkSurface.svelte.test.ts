@@ -752,12 +752,12 @@ describe('NetworkSurface trend window + series', () => {
 		// paints nothing in happy-dom). The secondary column header carries the resolved
 		// retard label; its cells carry the series.
 		const { container } = render(NetworkSurface);
-		const figure = container.querySelector('[data-slot="trend-mark"]') as HTMLElement;
-		expect(figure).not.toBeNull();
+		const figure = () => container.querySelector('[data-slot="trend-mark"]') as HTMLElement;
+		expect(figure()).not.toBeNull();
 		const secondaryHeader = () =>
-			figure.querySelectorAll('table.sr-only thead th')[2]?.textContent ?? '';
+			figure().querySelectorAll('table.sr-only thead th')[2]?.textContent ?? '';
 		const lastY2 = () => {
-			const rows = figure.querySelectorAll('table.sr-only tbody tr');
+			const rows = figure().querySelectorAll('table.sr-only tbody tr');
 			// The daily fixture's last REAL reading sits on the second row (day 2 of 2 real).
 			const cells = rows[1]?.querySelectorAll('td');
 			return cells?.[1]?.textContent ?? '';

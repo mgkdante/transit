@@ -459,7 +459,7 @@ function render(_component: typeof StopDetail, options: { props: StopDetailTestP
 }
 
 afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(68);
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(70);
 });
 
 function articleCardFor(body: Element | null): HTMLElement {
@@ -523,6 +523,31 @@ describe('StopDetail article contract', () => {
 		expect(summaries()).toHaveLength(1);
 		expect(summary().closest('[data-slot="reliability-rail-summary"]')).not.toBeNull();
 		expect(container.querySelector('[data-slot="detail-shell-summary"]')).toBeNull();
+	});
+
+	it('fills a percentile-only day summary from the latest daily row', () => {
+		reliabilityData = {
+			...RELIABILITY,
+			periods: [{ ...RELIABILITY.periods![0], avg_delay_min: null, severe_pct: null }],
+			daily: [{ date: '2026-06-15', observation_count: 50, severe_count: 10, avg_delay_min: 2.7 }],
+		};
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+		const summary = container.querySelector('[data-slot="stop-reliability-summary"]');
+		expect(summary).toHaveTextContent('20%');
+		expect(summary).toHaveTextContent('2.7 min');
+	});
+
+	it('uses historic freshness on the reliability tab', () => {
+		reliabilityData = {
+			...RELIABILITY,
+			generated_utc: '2026-06-14T06:00:00Z' as StopReliability['generated_utc'],
+		};
+		stopDetailNav.page.url = new URL('http://localhost/stop/57191?tab=reliability');
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+		expect(container.querySelector('[data-slot="article-header"] time')).toHaveAttribute(
+			'datetime',
+			'2026-06-14T06:00:00Z',
+		);
 	});
 
 	it('reserves no summary gap when this stop has no summary metrics', async () => {

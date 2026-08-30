@@ -79,10 +79,10 @@
 			<ServiceSpanMark {spec} class={className} />
 		{:else}
 			<!--
-				Pending branches (added as each family migrates, each gate-green + browser-verified):
-				  metric → a scalar tile (no data mark) — the number IS the value voice
-				  cycle  → LayerChart weekday small-multiples (shared y + mean rule)
-			-->
+					Pending branches (added as each family migrates, each gate-green + browser-verified):
+					  metric → a scalar tile (no data mark) — the number IS the value voice
+					  cycle  → LayerChart weekday small-multiples (shared y + mean rule)
+					-->
 		{/if}
 	</ChartViewport>
 {/if}

@@ -274,6 +274,17 @@ describe('RouteReliabilityClusters', () => {
 		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.week);
 	});
 
+	it('does not call an explicitly unscheduled observed date the latest closed day', () => {
+		const data = {
+			...populated,
+			cancellations: populated.cancellations?.map((row) =>
+				row.date === '2026-06-19' ? { ...row, scheduled_trip_days: 0 } : row,
+			),
+		};
+		const { container } = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
+		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.singleDay('2026-06-19'));
+	});
+
 	it('honours the FR canonical voice for the section overlines', () => {
 		render(RouteReliabilityClusters, { props: { data: populated, locale: 'fr' } });
 
