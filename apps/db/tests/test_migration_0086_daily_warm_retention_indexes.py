@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import time
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,11 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
+
+from transit_ops.maintenance import (
+    COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+    SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+)
 
 MIGRATION_MODULE = "transit_ops.db.migrations.versions.0086_daily_warm_retention_indexes"
 REVISION = "0086_daily_warm_retention_indexes"
@@ -47,6 +53,38 @@ PERF_BASE_ID = 8_600_000_000
 PERF_OBJECT_COUNT = 30_000
 PERF_SILVER_COUNT = 2_000
 PERF_GOLD_COUNT = 300_000
+PERF_CUTOFF = datetime(2027, 1, 1, tzinfo=UTC)
+PERF_ELIGIBLE_COUNT = 27_999
+
+OLD_SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
+    """
+    SELECT io.ingestion_object_id
+    FROM raw.ingestion_objects io
+    JOIN raw.realtime_snapshot_index rsi
+      ON rsi.ingestion_object_id = io.ingestion_object_id
+    JOIN core.feed_endpoints fe
+      ON fe.feed_endpoint_id = rsi.feed_endpoint_id
+    WHERE rsi.provider_id = :provider_id
+      AND rsi.captured_at_utc < :cutoff_utc
+      AND NOT EXISTS (
+          SELECT 1
+          FROM silver.rt_feed_snapshots rfs
+          WHERE rfs.source_realtime_snapshot_id = rsi.realtime_snapshot_id
+             OR rfs.ingestion_object_id = io.ingestion_object_id
+      )
+      AND rsi.realtime_snapshot_id <> COALESCE((
+          SELECT MAX(rsi_latest.realtime_snapshot_id)
+          FROM raw.realtime_snapshot_index rsi_latest
+          JOIN core.feed_endpoints fe_latest
+            ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
+          WHERE rsi_latest.provider_id = :provider_id
+            AND fe_latest.endpoint_key = fe.endpoint_key
+      ), -1)
+      AND NOT (io.ingestion_object_id = ANY(CAST(:excluded_object_ids AS bigint[])))
+    ORDER BY rsi.captured_at_utc ASC, io.ingestion_object_id ASC
+    LIMIT :max_objects
+    """
+)
 
 
 class RecordingMigrationContext:
@@ -110,6 +148,11 @@ def _index_state(connection) -> dict[tuple[str, str], tuple[bool, bool]]:
         (str(schema), str(index_name)): (bool(indisready), bool(indisvalid))
         for schema, index_name, indisready, indisvalid in rows
     }
+
+
+def _database_revision(engine) -> str:
+    with engine.connect() as connection:
+        return str(connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one())
 
 
 def _cleanup_perf_rows(engine) -> None:
@@ -250,10 +293,10 @@ def _seed_perf_rows(engine) -> None:
                 SELECT :base + 100000 + generated_id,
                        :provider,
                        :endpoint,
-                       :base + 100 + generated_id,
-                       :base + 100 + generated_id,
+                       :base + 5000 + generated_id,
+                       :base + 5000 + generated_id,
                        'trip_updates',
-                       :base + 100 + generated_id
+                       :base + 5000 + generated_id
                 FROM generate_series(1, :silver_count) AS generated(generated_id)
                 """
             ),
@@ -277,8 +320,8 @@ def _seed_perf_rows(engine) -> None:
                          snapshot_date_key, snapshot_local_date,
                          feed_timestamp_utc, captured_at_utc{required_tail})
                     SELECT :provider,
-                           :base + 101 + ((generated_id - 1) % 29900),
-                           ((generated_id - 1) / 29900)::integer,
+                           :base + 5001 + ((generated_id - 1) % 25000),
+                           ((generated_id - 1) / 25000)::integer,
                            20260101,
                            DATE '2026-01-01',
                            TIMESTAMPTZ '2026-01-01 00:00:00+00',
@@ -362,10 +405,12 @@ def test_real_postgres_migration_indexes_and_fk_delete_performance(
     database_url = real_db_engine.url.render_as_string(hide_password=False)
     monkeypatch.setenv("DATABASE_URL", database_url)
     config = _alembic_config()
+    original_revision = _database_revision(real_db_engine)
     candidate_object_ids = [PERF_BASE_ID + value for value in range(1, 101)]
     candidate_snapshot_ids = candidate_object_ids.copy()
+    full_batch_object_ids = [PERF_BASE_ID + value for value in range(1, 5_001)]
+    expected_selector_ids = full_batch_object_ids.copy()
 
-    command.upgrade(config, REVISION)
     _cleanup_perf_rows(real_db_engine)
     try:
         command.downgrade(config, DOWN_REVISION)
@@ -381,6 +426,51 @@ def test_real_postgres_migration_indexes_and_fk_delete_performance(
                 PERF_GOLD_COUNT,
                 PERF_GOLD_COUNT,
             )
+
+        selector_params = {
+            "provider_id": PERF_PROVIDER,
+            "cutoff_utc": PERF_CUTOFF,
+            "excluded_object_ids": [],
+            "max_objects": 5_000,
+        }
+        with real_db_engine.connect() as connection:
+            transaction = connection.begin()
+            connection.execute(text("SET LOCAL statement_timeout = '250ms'"))
+            with pytest.raises(DBAPIError) as selector_timeout_error:
+                connection.execute(
+                    OLD_SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+                    selector_params,
+                ).all()
+            assert selector_timeout_error.value.orig.sqlstate == "57014"
+            transaction.rollback()
+
+        with real_db_engine.connect() as connection:
+            transaction = connection.begin()
+            connection.execute(text("SET LOCAL statement_timeout = '2s'"))
+            started = time.perf_counter()
+            selected_object_ids = list(
+                connection.execute(
+                    SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+                    selector_params,
+                ).scalars()
+            )
+            selector_elapsed_seconds = time.perf_counter() - started
+            started = time.perf_counter()
+            eligible_count = int(
+                connection.execute(
+                    COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+                    {
+                        "provider_id": PERF_PROVIDER,
+                        "cutoff_utc": PERF_CUTOFF,
+                    },
+                ).scalar_one()
+            )
+            count_elapsed_seconds = time.perf_counter() - started
+            assert selected_object_ids == expected_selector_ids
+            assert eligible_count == PERF_ELIGIBLE_COUNT
+            assert selector_elapsed_seconds < 2
+            assert count_elapsed_seconds < 2
+            transaction.rollback()
 
         with real_db_engine.connect() as connection:
             transaction = connection.begin()
@@ -449,6 +539,28 @@ def test_real_postgres_migration_indexes_and_fk_delete_performance(
             transaction.rollback()
 
         with real_db_engine.connect() as connection:
+            transaction = connection.begin()
+            connection.execute(text("SET LOCAL statement_timeout = '60s'"))
+            started = time.perf_counter()
+            deleted_full_batch_ids = connection.execute(
+                text(
+                    """
+                    DELETE FROM raw.realtime_snapshot_index
+                    WHERE ingestion_object_id = ANY(
+                        CAST(:ingestion_object_ids AS bigint[])
+                    )
+                    RETURNING realtime_snapshot_id
+                    """
+                ),
+                {"ingestion_object_ids": full_batch_object_ids},
+            ).scalars()
+            deleted_full_batch_ids = sorted(int(value) for value in deleted_full_batch_ids)
+            full_batch_elapsed_seconds = time.perf_counter() - started
+            assert deleted_full_batch_ids == full_batch_object_ids
+            assert full_batch_elapsed_seconds < 60
+            transaction.rollback()
+
+        with real_db_engine.connect() as connection:
             retained_after_rollback = connection.execute(
                 text(
                     """
@@ -460,6 +572,19 @@ def test_real_postgres_migration_indexes_and_fk_delete_performance(
                 {"snapshot_ids": candidate_snapshot_ids},
             ).scalar_one()
             assert retained_after_rollback == 100
+            retained_full_batch_after_rollback = connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM raw.realtime_snapshot_index
+                    WHERE realtime_snapshot_id = ANY(CAST(:snapshot_ids AS bigint[]))
+                    """
+                ),
+                {"snapshot_ids": full_batch_object_ids},
+            ).scalar_one()
+            assert retained_full_batch_after_rollback == 5_000
     finally:
-        command.upgrade(config, REVISION)
+        command.upgrade(config, original_revision)
         _cleanup_perf_rows(real_db_engine)
+
+    assert _database_revision(real_db_engine) == original_revision
