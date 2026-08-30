@@ -204,6 +204,9 @@ class FakeConnection:
         ):
             return ScalarResult(False)
 
+        if "pg_try_advisory_xact_lock" in sql:
+            return ScalarResult(True)
+
         # Append-only daily missing-days SELECTs (no DATE_BIN; sargable
         # snapshot_date_key window minus the warm_rollup_periods watermark).
         # Default to no missing days so the daily loops are noops here —
@@ -228,6 +231,29 @@ class FakeConnection:
         ):
             if self.rebuild_missing_days is not None:
                 return IterableResult(list(self.rebuild_missing_days))
+            return IterableResult([])
+
+        if (
+            "fact_vehicle_snapshot" in sql
+            and "snapshot_date_key" in sql
+            and "INSERT" not in sql
+        ):
+            return IterableResult([])
+
+        if (
+            "fact_trip_delay_snapshot" in sql
+            and "snapshot_date_key" in sql
+            and "INSERT" not in sql
+        ):
+            return IterableResult([])
+
+        if (
+            "FROM gold.warm_rollup_periods" in sql
+            and "rollup_kind = :rollup_kind" in sql
+            and "SELECT" in sql
+            and "COUNT" not in sql
+            and "EXISTS" not in sql
+        ):
             return IterableResult([])
 
         if "INSERT INTO gold.vehicle_summary_5m" in sql:
@@ -435,6 +461,138 @@ class FakeEngine:
         yield self._connection
 
 
+class SharedCalendarConnection(FakeConnection):
+    """One trip day and one vehicle day with one trip-kind watermark."""
+
+    trip_day = FakeMissingDayRow(date(2026, 3, 24), 20260324)
+    vehicle_day = FakeMissingDayRow(date(2026, 3, 25), 20260325)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.bound_calls: list[tuple[str, dict[str, object]]] = []
+
+    def execute(self, statement, params=None):  # noqa: ANN001
+        sql = str(statement)
+        bound = dict(params or {})
+        self.bound_calls.append((sql, bound))
+
+        if (
+            "FROM gold.warm_rollup_periods" in sql
+            and "fact_trip_delay_snapshot" not in sql
+            and "fact_vehicle_snapshot" not in sql
+            and "DATE_BIN" not in sql
+            and "SELECT" in sql
+        ):
+            rows = [self.trip_day] if bound.get("rollup_kind") == "route_percentile_daily" else []
+            self.executed.append(sql)
+            return IterableResult(rows)
+
+        if (
+            "FROM gold.fact_trip_delay_snapshot" in sql
+            and "snapshot_date_key" in sql
+            and "INSERT" not in sql
+        ):
+            self.executed.append(sql)
+            if (
+                "warm_rollup_periods" in sql
+                and bound.get("rollup_kind") == "route_percentile_daily"
+            ):
+                return IterableResult([])
+            return IterableResult([self.trip_day])
+
+        if (
+            "FROM gold.fact_vehicle_snapshot" in sql
+            and "snapshot_date_key" in sql
+            and "INSERT" not in sql
+        ):
+            self.executed.append(sql)
+            return IterableResult([self.vehicle_day])
+
+        return super().execute(statement, params)
+
+
+class ResumableDailyConnection(FakeConnection):
+    def __init__(self, engine: ResumableDailyEngine) -> None:
+        super().__init__()
+        self.engine = engine
+        self.pending_targets: set[date] = set()
+        self.pending_watermarks: set[tuple[str, date]] = set()
+
+    def execute(self, statement, params=None):  # noqa: ANN001
+        sql = str(statement)
+        bound = dict(params or {})
+
+        if (
+            "FROM gold.fact_trip_delay_snapshot" in sql
+            and "snapshot_date_key" in sql
+            and "warm_rollup_periods" not in sql
+            and "INSERT" not in sql
+        ):
+            self.engine.trip_source_scans += 1
+            return IterableResult(self.engine.days)
+        if (
+            "FROM gold.fact_vehicle_snapshot" in sql
+            and "snapshot_date_key" in sql
+            and "warm_rollup_periods" not in sql
+            and "INSERT" not in sql
+        ):
+            self.engine.vehicle_source_scans += 1
+            return IterableResult([])
+        if (
+            "FROM gold.warm_rollup_periods" in sql
+            and "rollup_kind = :rollup_kind" in sql
+            and "SELECT" in sql
+        ):
+            kind = str(bound["rollup_kind"])
+            rows = [
+                FakeMissingDayRow(local_date, int(local_date.strftime("%Y%m%d")))
+                for built_kind, local_date in self.engine.committed_watermarks
+                if built_kind == kind
+            ]
+            return IterableResult(rows)
+        if "INSERT INTO gold.route_delay_percentile_daily" in sql:
+            local_date = bound["local_date"]
+            self.engine.target_attempts[local_date] += 1
+            self.pending_targets.add(local_date)
+            return RowcountResult(1)
+        if "INSERT INTO gold.warm_rollup_periods" in sql:
+            kind = str(bound["rollup_kind"])
+            local_date = bound["period_start_utc"].date()
+            if (
+                kind == "route_percentile_daily"
+                and local_date == self.engine.fail_date
+                and not self.engine.failure_raised
+            ):
+                self.engine.failure_raised = True
+                raise RuntimeError("forced daily watermark interruption")
+            self.pending_watermarks.add((kind, local_date))
+            return RowcountResult(1)
+        return super().execute(statement, params)
+
+
+class ResumableDailyEngine:
+    def __init__(self, days: list[FakeMissingDayRow], fail_date: date) -> None:
+        self.days = days
+        self.fail_date = fail_date
+        self.failure_raised = False
+        self.committed_targets: set[date] = set()
+        self.committed_watermarks: set[tuple[str, date]] = set()
+        self.target_attempts: Counter[date] = Counter()
+        self.trip_source_scans = 0
+        self.vehicle_source_scans = 0
+
+    @contextmanager
+    def begin(self):
+        conn = ResumableDailyConnection(self)
+        try:
+            yield conn
+        except Exception:
+            raise
+        else:
+            self.committed_targets.update(conn.pending_targets)
+            self.committed_watermarks.update(conn.pending_watermarks)
+
+
 class TransactionTrackingEngine(FakeEngine):
     def __init__(self, connection: FakeConnection) -> None:
         super().__init__(connection)
@@ -472,6 +630,15 @@ class FailingReportingConnection(FakeConnection):
         if f"INSERT INTO gold.{self.fail_table}" in sql:
             self.executed.append(sql)
             raise RuntimeError(f"forced failure for {self.fail_table}")
+        return super().execute(statement, params)
+
+
+class StopLockDeniedConnection(FakeConnection):
+    def execute(self, statement, params=None):  # noqa: ANN001
+        sql = str(statement)
+        if "pg_try_advisory_xact_lock" in sql:
+            self.executed.append(sql)
+            return ScalarResult(False)
         return super().execute(statement, params)
 
 
@@ -738,11 +905,11 @@ def test_trip_delay_5m_locked_recheck_skips_stale_missing_periods() -> None:
     ]
     assert len(period_transactions) == 4
     assert all(transaction["status"] == "committed" for transaction in period_transactions)
-    assert all(
-        transaction["statements"][0].find("pg_advisory_xact_lock") >= 0
-        and "SELECT EXISTS" in transaction["statements"][1]
-        for transaction in period_transactions
-    )
+    for transaction in period_transactions:
+        statements = transaction["statements"]
+        lock_index = next(i for i, sql in enumerate(statements) if "pg_advisory_xact_lock" in sql)
+        recheck_index = next(i for i, sql in enumerate(statements) if "SELECT EXISTS" in sql)
+        assert lock_index < recheck_index
 
     lock_keys = [
         params["lock_key"] for sql, params in engine.calls if "pg_advisory_xact_lock" in sql
@@ -768,6 +935,78 @@ def test_build_warm_rollups_empty_facts_is_noop() -> None:
     assert result.built_route_service_span_days == 0
     assert result.built_route_skipped_stop_days == 0
     assert isinstance(result.completed_at_utc, datetime)
+
+
+def test_build_warm_rollups_shares_source_calendars_without_sharing_watermarks() -> None:
+    conn = SharedCalendarConnection()
+
+    result = build_warm_rollups("stm", engine=FakeEngine(conn))
+
+    source_scans = [
+        sql
+        for sql, _params in conn.bound_calls
+        if "snapshot_date_key" in sql and "INSERT" not in sql
+    ]
+    assert sum("FROM gold.fact_trip_delay_snapshot" in sql for sql in source_scans) == 1
+    assert sum("FROM gold.fact_vehicle_snapshot" in sql for sql in source_scans) == 1
+
+    assert result.built_route_percentile_days == 0
+    assert result.built_stop_percentile_days == 1
+    assert result.built_route_occupancy_days == 1
+    assert result.built_route_occupancy_hourly_days == 1
+    assert result.built_stop_occupancy_days == 1
+
+    upserts = [
+        (sql, params)
+        for sql, params in conn.bound_calls
+        if "INSERT INTO gold." in sql and "warm_rollup_periods" not in sql
+    ]
+    stop_percentile_params = next(
+        params for sql, params in upserts if "gold.stop_delay_percentile_daily" in sql
+    )
+    route_occupancy_params = next(
+        params for sql, params in upserts if "gold.route_occupancy_band_daily" in sql
+    )
+    assert stop_percentile_params["date_key"] == conn.trip_day.date_key
+    assert route_occupancy_params["date_key"] == conn.vehicle_day.date_key
+
+    upsert_sql = [sql for sql, _params in upserts]
+    scheduled = next(i for i, sql in enumerate(upsert_sql) if "route_scheduled_trips_daily" in sql)
+    cancellation = next(i for i, sql in enumerate(upsert_sql) if "route_cancellation_daily" in sql)
+    assert scheduled < cancellation
+
+
+def test_shared_calendar_daily_build_resumes_after_atomic_day_rollback() -> None:
+    days = [
+        FakeMissingDayRow(date(2026, 3, day), 20260300 + day)
+        for day in (21, 22, 23)
+    ]
+    engine = ResumableDailyEngine(days, fail_date=days[-1].local_date)
+
+    with pytest.raises(RuntimeError, match="forced daily watermark interruption"):
+        build_warm_rollups("stm", engine=engine)
+
+    route_kind = "route_percentile_daily"
+    assert engine.committed_targets == {days[0].local_date, days[1].local_date}
+    assert {
+        local_date
+        for kind, local_date in engine.committed_watermarks
+        if kind == route_kind
+    } == {days[0].local_date, days[1].local_date}
+
+    resumed = build_warm_rollups("stm", engine=engine)
+
+    assert resumed.built_route_percentile_days == 1
+    assert engine.committed_targets == {row.local_date for row in days}
+    assert {
+        local_date
+        for kind, local_date in engine.committed_watermarks
+        if kind == route_kind
+    } == {row.local_date for row in days}
+    assert engine.target_attempts == Counter(
+        {days[0].local_date: 1, days[1].local_date: 1, days[2].local_date: 2}
+    )
+    assert (engine.trip_source_scans, engine.vehicle_source_scans) == (2, 2)
 
 
 def test_provider_is_seeded_true_when_dim_provider_row_present() -> None:
@@ -1026,22 +1265,27 @@ def test_trip_delay_summary_5m_severe_excludes_outliers() -> None:
 
 
 def test_stop_delay_hourly_aggregates_real_per_stop_delays() -> None:
-    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["stop_delay_hourly"])
-    compact = " ".join(sql.split())
+    summary_sql = str(rollups.CREATE_STOP_DELAY_HOURLY_SOURCE_SUMMARY)
+    upsert_sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["stop_delay_hourly"])
+    compact = " ".join(summary_sql.split())
 
-    assert "FROM gold.fact_trip_delay_snapshot AS f" in sql
-    assert "f.delay_stop_id" in sql
-    assert "date_trunc('hour', f.captured_at_utc)" in sql
-    assert "f.delay_seconds IS NOT NULL" in sql
-    assert "ABS(f.delay_seconds) <= 3600" in sql
+    assert "CREATE TEMP TABLE stop_delay_hourly_source_summary" in summary_sql
+    assert "ON COMMIT DROP" in summary_sql
+    assert "FROM gold.fact_trip_delay_snapshot AS f" in summary_sql
+    assert "f.delay_stop_id" in summary_sql
+    assert "date_trunc('hour', f.captured_at_utc)" in summary_sql
+    assert "f.delay_seconds IS NOT NULL" in summary_sql
+    assert "ABS(f.delay_seconds) <= 3600" in summary_sql
     assert "delay_seconds > 300 AND ABS(f.delay_seconds) <= 3600" in compact
-    assert "ROUND(AVG(f.delay_seconds::numeric), 2)" in sql
-    assert "COUNT(*)::integer" in sql
-    assert "ON CONFLICT" not in sql
-    assert "fact_vehicle_snapshot" not in sql
-    assert "route_delay_hourly" not in sql
-    assert "max_delay_seconds" not in sql
-    assert "THEN sa.observation_count" not in sql
+    assert "ROUND(AVG(f.delay_seconds::numeric), 2)" in summary_sql
+    assert "COUNT(*)::integer" in summary_sql
+    assert "FROM stop_delay_hourly_source_summary" in upsert_sql
+    assert "ON CONFLICT (provider_id, period_start_utc, stop_id, route_id)" in upsert_sql
+    assert "IS DISTINCT FROM" in upsert_sql
+    assert "fact_vehicle_snapshot" not in summary_sql
+    assert "route_delay_hourly" not in summary_sql
+    assert "max_delay_seconds" not in summary_sql
+    assert "THEN sa.observation_count" not in summary_sql
 
 
 def test_route_delay_hourly_severe_single_sourced_from_5m() -> None:
@@ -1057,35 +1301,36 @@ def test_windowed_cutoffs_share_hour_aligned_expression() -> None:
     cutoff = getattr(rollups, "OPEN_WINDOW_HOURLY_CUTOFF_SQL", "")
 
     assert "date_trunc('hour', CAST(:built_at_utc" in cutoff
-    for table_name in ("route_delay_hourly", "stop_delay_hourly"):
-        delete_sql = str(rollups.DELETE_REPORTING_AGGREGATES[table_name])
-        upsert_sql = str(rollups.REPORTING_AGGREGATE_UPSERTS[table_name])
-        assert cutoff in delete_sql
-        assert cutoff in upsert_sql
+    route_delete = str(rollups.DELETE_REPORTING_AGGREGATES["route_delay_hourly"])
+    route_upsert = str(rollups.REPORTING_AGGREGATE_UPSERTS["route_delay_hourly"])
+    stop_delete = str(rollups.DELETE_REPORTING_AGGREGATES["stop_delay_hourly"])
+    stop_summary = str(rollups.CREATE_STOP_DELAY_HOURLY_SOURCE_SUMMARY)
+    assert cutoff in route_delete
+    assert cutoff in route_upsert
+    assert cutoff in stop_delete
+    assert cutoff in stop_summary
 
 
-def test_windowed_history_inserts_have_no_on_conflict() -> None:
-    for table_name in (
-        "route_delay_hourly",
-        "stop_delay_hourly",
-        "citizen_accountability_daily",
-    ):
+def test_windowed_history_syncs_preserve_each_tables_refresh_contract() -> None:
+    for table_name in ("route_delay_hourly", "citizen_accountability_daily"):
         assert "ON CONFLICT" not in str(rollups.REPORTING_AGGREGATE_UPSERTS[table_name])
 
+    assert "ON CONFLICT" in str(rollups.REPORTING_AGGREGATE_UPSERTS["stop_delay_hourly"])
     assert "ON CONFLICT" in str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M)
     assert "ON CONFLICT" in str(rollups.UPSERT_REPEATED_PROBLEM_ROUTE_STOP)
 
 
 def test_stop_delay_hourly_scoped_to_open_window() -> None:
     cutoff = getattr(rollups, "OPEN_WINDOW_HOURLY_CUTOFF_SQL", "")
-    sql = str(rollups.UPSERT_STOP_DELAY_HOURLY)
+    summary_sql = str(rollups.CREATE_STOP_DELAY_HOURLY_SOURCE_SUMMARY)
+    upsert_sql = str(rollups.UPSERT_STOP_DELAY_HOURLY)
 
     assert cutoff
-    assert cutoff in sql
+    assert cutoff in summary_sql
     assert cutoff in str(rollups.DELETE_REPORTING_AGGREGATES["stop_delay_hourly"])
-    assert "FROM gold.fact_trip_delay_snapshot AS f" in sql
-    assert "LEFT JOIN gold.route_delay_hourly" not in sql
-    assert "ON CONFLICT" not in sql
+    assert "FROM gold.fact_trip_delay_snapshot AS f" in summary_sql
+    assert "LEFT JOIN gold.route_delay_hourly" not in summary_sql
+    assert "ON CONFLICT" in upsert_sql
 
 
 def test_citizen_accountability_rebuilds_only_open_local_dates() -> None:
@@ -1479,6 +1724,66 @@ def test_reporting_aggregates_commit_in_one_transaction_per_table() -> None:
             or f"DELETE FROM gold.{other_table}" not in "\n".join(statements)
             for other_table in BUILD_REPORTING_AGGREGATE_TABLES
         )
+
+
+def test_stop_delay_refresh_is_one_guarded_differential_transaction() -> None:
+    engine = TransactionTrackingEngine(FakeConnection())
+
+    build_warm_rollups("stm", engine=engine)
+
+    transaction = next(
+        item
+        for item in engine.transactions
+        if any(
+            "CREATE TEMP TABLE stop_delay_hourly_source_summary" in sql
+            for sql in item["statements"]
+        )
+    )
+    statements = transaction["statements"]
+    workmem = next(i for i, sql in enumerate(statements) if "SET LOCAL work_mem = '384MB'" in sql)
+    advisory = next(i for i, sql in enumerate(statements) if "pg_try_advisory_xact_lock" in sql)
+    create = next(i for i, sql in enumerate(statements) if "CREATE TEMP TABLE" in sql)
+    analyze = next(i for i, sql in enumerate(statements) if "ANALYZE stop_delay_hourly" in sql)
+    delete = next(
+        i for i, sql in enumerate(statements) if "DELETE FROM gold.stop_delay_hourly" in sql
+    )
+    upsert = next(
+        i for i, sql in enumerate(statements) if "INSERT INTO gold.stop_delay_hourly" in sql
+    )
+    assert workmem < advisory < create < analyze < delete < upsert
+    assert transaction["status"] == "committed"
+
+
+def test_stop_delay_refresh_fails_before_writes_when_advisory_lock_is_busy() -> None:
+    engine = TransactionTrackingEngine(StopLockDeniedConnection())
+
+    with pytest.raises(RuntimeError, match="stop_delay_hourly refresh already running"):
+        build_warm_rollups("stm", engine=engine)
+
+    lock_transaction = next(
+        item
+        for item in engine.transactions
+        if any("pg_try_advisory_xact_lock" in sql for sql in item["statements"])
+    )
+    assert lock_transaction["status"] == "rolled_back"
+    assert all("CREATE TEMP TABLE" not in sql for sql in lock_transaction["statements"])
+    assert all(
+        "DELETE FROM gold.stop_delay_hourly" not in sql
+        for sql in lock_transaction["statements"]
+    )
+
+
+def test_every_rollup_transaction_starts_with_server_side_deadlines() -> None:
+    engine = TransactionTrackingEngine(FakeConnection())
+
+    build_warm_rollups("stm", engine=engine)
+
+    assert engine.transactions
+    for transaction in engine.transactions:
+        statements = transaction["statements"]
+        assert "SET LOCAL statement_timeout = '30min'" in statements[0]
+        assert "SET LOCAL lock_timeout = '30s'" in statements[1]
+        assert all("idle_in_transaction_session_timeout" not in sql for sql in statements)
 
 
 def test_reporting_stage_failure_logs_error_reraises_and_keeps_prior_commits(

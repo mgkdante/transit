@@ -51,6 +51,20 @@ OPEN_WINDOW_HOURLY_CUTOFF_SQL = (
     "- make_interval(days => :open_window_days)"
 )
 
+SET_ROLLUP_STATEMENT_TIMEOUT = named_query(
+    "rollup.session.statement_timeout",
+    "SET LOCAL statement_timeout = '30min'",
+)
+SET_ROLLUP_LOCK_TIMEOUT = named_query(
+    "rollup.session.lock_timeout",
+    "SET LOCAL lock_timeout = '30s'",
+)
+
+
+def _set_rollup_transaction_timeouts(conn) -> None:  # noqa: ANN001
+    conn.execute(SET_ROLLUP_STATEMENT_TIMEOUT)
+    conn.execute(SET_ROLLUP_LOCK_TIMEOUT)
+
 # ---------------------------------------------------------------------------
 # SQL — missing period detection
 # ---------------------------------------------------------------------------
@@ -238,6 +252,44 @@ SELECT_MISSING_OCCUPANCY_DAYS = named_query(
       )
     ORDER BY f.snapshot_local_date
     """
+)
+
+SELECT_AVAILABLE_PERCENTILE_DAYS = named_query(
+    "rollup.percentile.available_days",
+    """
+    SELECT DISTINCT
+        f.snapshot_local_date AS local_date,
+        f.snapshot_date_key AS date_key
+    FROM gold.fact_trip_delay_snapshot AS f
+    WHERE f.provider_id = :provider_id
+      AND f.snapshot_date_key >= :floor_key
+      AND f.snapshot_date_key < :today_key
+    ORDER BY f.snapshot_local_date
+    """,
+)
+
+SELECT_AVAILABLE_OCCUPANCY_DAYS = named_query(
+    "rollup.occupancy.available_days",
+    """
+    SELECT DISTINCT
+        f.snapshot_local_date AS local_date,
+        f.snapshot_date_key AS date_key
+    FROM gold.fact_vehicle_snapshot AS f
+    WHERE f.provider_id = :provider_id
+      AND f.snapshot_date_key >= :floor_key
+      AND f.snapshot_date_key < :today_key
+    ORDER BY f.snapshot_local_date
+    """,
+)
+
+SELECT_BUILT_DAILY_DAYS = named_query(
+    "rollup.daily.built_days",
+    """
+    SELECT (period_start_utc AT TIME ZONE 'UTC')::date AS local_date
+    FROM gold.warm_rollup_periods
+    WHERE provider_id = :provider_id
+      AND rollup_kind = :rollup_kind
+    """,
 )
 
 UPSERT_ROUTE_DELAY_PERCENTILE_DAILY = named_query(
@@ -1242,9 +1294,17 @@ DELETE_REPORTING_AGGREGATES = {
     "stop_delay_hourly": named_query(
         "rollup.stop_delay_hourly.delete",
         f"""
-        DELETE FROM gold.stop_delay_hourly
-        WHERE provider_id = :provider_id
-          AND period_start_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
+        DELETE FROM gold.stop_delay_hourly AS target
+        WHERE target.provider_id = :provider_id
+          AND target.period_start_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
+          AND NOT EXISTS (
+              SELECT 1
+              FROM stop_delay_hourly_source_summary AS source
+              WHERE source.provider_id = target.provider_id
+                AND source.period_start_utc = target.period_start_utc
+                AND source.stop_id = target.stop_id
+                AND source.route_id = target.route_id
+          )
         """,
     ),
     "citizen_accountability_daily": named_query(
@@ -1337,20 +1397,15 @@ UPSERT_ROUTE_DELAY_HOURLY = named_query(
     """
 )
 
-UPSERT_STOP_DELAY_HOURLY = named_query(
-    "rollup.stop_delay_hourly.upsert",
+DROP_STOP_DELAY_HOURLY_SOURCE_SUMMARY = named_query(
+    "rollup.stop_delay_hourly.drop_source_summary",
+    "DROP TABLE IF EXISTS pg_temp.stop_delay_hourly_source_summary",
+)
+
+CREATE_STOP_DELAY_HOURLY_SOURCE_SUMMARY = named_query(
+    "rollup.stop_delay_hourly.create_source_summary",
     f"""
-    INSERT INTO gold.stop_delay_hourly (
-        provider_id,
-        period_start_utc,
-        stop_id,
-        route_id,
-        observation_count,
-        avg_arrival_delay_seconds,
-        avg_departure_delay_seconds,
-        severe_delay_count,
-        built_at_utc
-    )
+    CREATE TEMP TABLE stop_delay_hourly_source_summary ON COMMIT DROP AS
     SELECT
         f.provider_id,
         date_trunc('hour', f.captured_at_utc) AS period_start_utc,
@@ -1365,7 +1420,7 @@ UPSERT_STOP_DELAY_HOURLY = named_query(
             WHERE f.delay_seconds > {SEVERE_DELAY_SECONDS}
               AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
         )::integer AS severe_delay_count,
-        :built_at_utc
+        :built_at_utc AS built_at_utc
     FROM gold.fact_trip_delay_snapshot AS f
     WHERE f.provider_id = :provider_id
       AND f.delay_stop_id IS NOT NULL
@@ -1374,6 +1429,71 @@ UPSERT_STOP_DELAY_HOURLY = named_query(
       AND f.captured_at_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
     GROUP BY 1, 2, 3, 4
     """
+)
+
+ANALYZE_STOP_DELAY_HOURLY_SOURCE_SUMMARY = named_query(
+    "rollup.stop_delay_hourly.analyze_source_summary",
+    "ANALYZE stop_delay_hourly_source_summary",
+)
+
+SET_STOP_DELAY_HOURLY_WORK_MEM = named_query(
+    "rollup.stop_delay_hourly.work_mem",
+    "SET LOCAL work_mem = '384MB'",
+)
+
+TRY_STOP_DELAY_HOURLY_LOCK = named_query(
+    "rollup.stop_delay_hourly.try_lock",
+    """
+    SELECT pg_try_advisory_xact_lock(
+        hashtext('transit.warm_rollup.stop_delay_hourly'),
+        hashtext(:provider_id)
+    )
+    """,
+)
+
+UPSERT_STOP_DELAY_HOURLY = named_query(
+    "rollup.stop_delay_hourly.upsert",
+    """
+    INSERT INTO gold.stop_delay_hourly (
+        provider_id,
+        period_start_utc,
+        stop_id,
+        route_id,
+        observation_count,
+        avg_arrival_delay_seconds,
+        avg_departure_delay_seconds,
+        severe_delay_count,
+        built_at_utc
+    )
+    SELECT
+        provider_id,
+        period_start_utc,
+        stop_id,
+        route_id,
+        observation_count,
+        avg_arrival_delay_seconds,
+        avg_departure_delay_seconds,
+        severe_delay_count,
+        built_at_utc
+    FROM stop_delay_hourly_source_summary
+    ON CONFLICT (provider_id, period_start_utc, stop_id, route_id) DO UPDATE SET
+        observation_count = EXCLUDED.observation_count,
+        avg_arrival_delay_seconds = EXCLUDED.avg_arrival_delay_seconds,
+        avg_departure_delay_seconds = EXCLUDED.avg_departure_delay_seconds,
+        severe_delay_count = EXCLUDED.severe_delay_count,
+        built_at_utc = EXCLUDED.built_at_utc
+    WHERE (
+        stop_delay_hourly.observation_count,
+        stop_delay_hourly.avg_arrival_delay_seconds,
+        stop_delay_hourly.avg_departure_delay_seconds,
+        stop_delay_hourly.severe_delay_count
+    ) IS DISTINCT FROM (
+        EXCLUDED.observation_count,
+        EXCLUDED.avg_arrival_delay_seconds,
+        EXCLUDED.avg_departure_delay_seconds,
+        EXCLUDED.severe_delay_count
+    )
+    """,
 )
 
 UPSERT_REPEATED_PROBLEM_ROUTE_STOP = named_query(
@@ -2268,6 +2388,7 @@ def _build_percentile_days(
     floor_key: int,
     now: datetime,
     select_missing=SELECT_MISSING_PERCENTILE_DAYS,  # noqa: ANN001
+    available_days=None,  # noqa: ANN001
 ) -> int:
     """Build + watermark each missing closed local day for one append-only kind.
 
@@ -2285,15 +2406,26 @@ def _build_percentile_days(
     matches the data table.
     """
     with engine.begin() as conn:
-        rows = conn.execute(
-            select_missing,
-            {
-                "provider_id": provider_id,
-                "rollup_kind": rollup_kind,
-                "today_key": today_key,
-                "floor_key": floor_key,
-            },
-        ).fetchall()
+        _set_rollup_transaction_timeouts(conn)
+        if available_days is None:
+            rows = conn.execute(
+                select_missing,
+                {
+                    "provider_id": provider_id,
+                    "rollup_kind": rollup_kind,
+                    "today_key": today_key,
+                    "floor_key": floor_key,
+                },
+            ).fetchall()
+        else:
+            built_dates = {
+                row.local_date
+                for row in conn.execute(
+                    SELECT_BUILT_DAILY_DAYS,
+                    {"provider_id": provider_id, "rollup_kind": rollup_kind},
+                ).fetchall()
+            }
+            rows = [row for row in available_days if row.local_date not in built_dates]
     built = 0
     for row in rows:
         local_date = row.local_date
@@ -2302,6 +2434,7 @@ def _build_percentile_days(
         # 5-minute UTC bins).
         period_start_utc = datetime(local_date.year, local_date.month, local_date.day, tzinfo=UTC)
         with engine.begin() as conn:
+            _set_rollup_transaction_timeouts(conn)
             # Prod-scale planner tuning for the finest-grain spine builders, scoped to this
             # one-day transaction (SET LOCAL reverts on COMMIT). Each builder reads a full
             # closed day of the trip-delay fact (~3M rows at prod scale) and dedups/aggregates
@@ -2361,6 +2494,7 @@ def _build_trip_delay_periods(
     interruption to the current five-minute bin instead of rolling back the backlog.
     """
     with engine.begin() as conn:
+        _set_rollup_transaction_timeouts(conn)
         rows = conn.execute(
             SELECT_MISSING_TRIP_DELAY_PERIODS,
             {"provider_id": provider_id, "since_utc": since_utc},
@@ -2370,6 +2504,7 @@ def _build_trip_delay_periods(
     for row in rows:
         period = row.period_start_utc
         with engine.begin() as conn:
+            _set_rollup_transaction_timeouts(conn)
             conn.execute(
                 ACQUIRE_TRIP_DELAY_ROLLUP_PERIOD_LOCK,
                 {"lock_key": _trip_delay_period_lock_key(provider_id, period)},
@@ -2434,6 +2569,7 @@ def build_warm_rollups(
     # dp.timezone calendar lookup below would raise NoResultFound and abort the
     # all-providers Daily Warm Rollups run. Skip cleanly instead (exit 0).
     with engine.begin() as conn:
+        _set_rollup_transaction_timeouts(conn)
         seeded = provider_is_seeded(conn, provider_id)
     if not seeded:
         logger.info(
@@ -2458,12 +2594,29 @@ def build_warm_rollups(
     # daily build is an index range scan rather than a full-table timezone() scan.
     percentile_lookback_days = fact_retention_days - 1
     with engine.begin() as conn:
+        _set_rollup_transaction_timeouts(conn)
         today_local = conn.execute(
             _PROVIDER_TODAY_LOCAL_SQL,
             {"provider_id": provider_id},
         ).scalar_one()
     today_key = int(today_local.strftime("%Y%m%d"))
     floor_key = int((today_local - timedelta(days=percentile_lookback_days)).strftime("%Y%m%d"))
+
+    calendar_params = {
+        "provider_id": provider_id,
+        "today_key": today_key,
+        "floor_key": floor_key,
+    }
+    with engine.begin() as conn:
+        _set_rollup_transaction_timeouts(conn)
+        trip_available_days = conn.execute(
+            SELECT_AVAILABLE_PERCENTILE_DAYS,
+            calendar_params,
+        ).fetchall()
+        vehicle_available_days = conn.execute(
+            SELECT_AVAILABLE_OCCUPANCY_DAYS,
+            calendar_params,
+        ).fetchall()
 
     trip_delay_progress = WarmRollupStageProgress()
     trip_delay_receipt = _run_warm_rollup_stage(
@@ -2490,6 +2643,11 @@ def build_warm_rollups(
         upsert,  # noqa: ANN001
         select_missing=SELECT_MISSING_PERCENTILE_DAYS,  # noqa: ANN001
     ) -> int:
+        available_days = (
+            vehicle_available_days
+            if select_missing is SELECT_MISSING_OCCUPANCY_DAYS
+            else trip_available_days
+        )
         receipt = _run_warm_rollup_stage(
             provider_id=provider_id,
             stage="append_only_daily",
@@ -2504,6 +2662,7 @@ def build_warm_rollups(
                 floor_key=floor_key,
                 now=now,
                 select_missing=select_missing,
+                available_days=available_days,
             ),
         )
         completed_stage_receipts.append(receipt)
@@ -2659,6 +2818,20 @@ def build_warm_rollups(
                     "open_window_days": open_window_days,
                 }
             with engine.begin() as conn:
+                _set_rollup_transaction_timeouts(conn)
+                if table_name == "stop_delay_hourly":
+                    conn.execute(SET_STOP_DELAY_HOURLY_WORK_MEM)
+                    lock_acquired = conn.execute(
+                        TRY_STOP_DELAY_HOURLY_LOCK,
+                        {"provider_id": provider_id},
+                    ).scalar_one()
+                    if not lock_acquired:
+                        raise RuntimeError(
+                            f"stop_delay_hourly refresh already running for {provider_id!r}"
+                        )
+                    conn.execute(DROP_STOP_DELAY_HOURLY_SOURCE_SUMMARY)
+                    conn.execute(CREATE_STOP_DELAY_HOURLY_SOURCE_SUMMARY, upsert_params)
+                    conn.execute(ANALYZE_STOP_DELAY_HOURLY_SOURCE_SUMMARY)
                 conn.execute(
                     DELETE_REPORTING_AGGREGATES[table_name],
                     delete_params,
@@ -3018,6 +3191,7 @@ def rebuild_warm_rollups(
     # as build_warm_rollups does. floor = today - (fact_retention_days - 1) is the
     # oldest day whose facts are still intact; today excludes the still-open day.
     with engine.begin() as conn:
+        _set_rollup_transaction_timeouts(conn)
         today_local = conn.execute(
             _PROVIDER_TODAY_LOCAL_SQL,
             {"provider_id": provider_id},
@@ -3104,6 +3278,7 @@ def rebuild_warm_rollups(
         # Delete phase — one transaction per kind (matches the per-kind isolation
         # of the reporting rebuild). Rows first, then their watermarks.
         with engine.begin() as conn:
+            _set_rollup_transaction_timeouts(conn)
             deleted_rows[kind.rollup_kind] = _safe_rowcount(
                 conn.execute(
                     _rebuild_row_delete_sql(kind, dry_run=False),
@@ -3181,6 +3356,7 @@ def _count_rebuild_window(
     deleted_rows: dict[str, int] = {}
     deleted_watermarks: dict[str, int] = {}
     with engine.begin() as conn:
+        _set_rollup_transaction_timeouts(conn)
         for kind in target_kinds:
             from_utc, to_utc = _rebuild_watermark_window(from_date, to_date, kind)
             deleted_rows[kind.rollup_kind] = _safe_scalar(

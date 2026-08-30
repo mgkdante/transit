@@ -28,6 +28,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from transit_ops.maintenance import (
     prune_bronze_realtime_objects,
@@ -323,6 +324,55 @@ def test_realtime_prune_honors_oldest_first_limit(conn) -> None:
     # Third-oldest stays for the next batch; fresh latest survives.
     assert _object_exists(conn, TU_OLD_C[1])
     assert _object_exists(conn, TU_FRESH[1])
+
+
+def test_realtime_prune_statement_timeout_rolls_back_candidate_metadata(conn) -> None:
+    storage = FakeBronzeStorage()
+    conn.execute(
+        text(
+            """
+            CREATE OR REPLACE FUNCTION pg_temp.delay_bronze_snapshot_delete()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                PERFORM pg_sleep(0.2);
+                RETURN OLD;
+            END
+            $$
+            """
+        )
+    )
+    conn.execute(
+        text(
+            f"""
+            CREATE TRIGGER delay_bronze_snapshot_delete
+            BEFORE DELETE ON raw.realtime_snapshot_index
+            FOR EACH ROW
+            WHEN (OLD.provider_id = '{PROVIDER}')
+            EXECUTE FUNCTION pg_temp.delay_bronze_snapshot_delete()
+            """
+        )
+    )
+    conn.execute(text("SET LOCAL statement_timeout = '25ms'"))
+    batch = conn.begin_nested()
+    try:
+        with pytest.raises(DBAPIError) as timeout_error:
+            prune_bronze_realtime_objects(
+                conn,
+                provider_id=PROVIDER,
+                retention_days=30,
+                bronze_storage=storage,
+                now_utc=NOW,
+                max_objects=1,
+            )
+        assert timeout_error.value.orig.sqlstate == "57014"
+    finally:
+        batch.rollback()
+        conn.execute(text("SET LOCAL statement_timeout = 0"))
+
+    assert storage.deleted == [TU_OLD_A[5]]
+    assert _snapshot_exists(conn, TU_OLD_A[2])
+    assert _object_exists(conn, TU_OLD_A[1])
+    assert _run_exists(conn, TU_OLD_A[0])
 
 
 def test_realtime_prune_skips_excluded_object_ids(conn) -> None:

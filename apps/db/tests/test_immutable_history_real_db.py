@@ -73,6 +73,27 @@ def _settings() -> Settings:
     )
 
 
+def test_daily_watermark_calendar_is_independent_of_session_timezone(conn) -> None:  # noqa: ANN001
+    local_date = date(2026, 3, 24)
+    conn.execute(
+        rollups.UPSERT_WARM_ROLLUP_PERIOD,
+        {
+            "provider_id": PROVIDER,
+            "rollup_kind": "route_percentile_daily",
+            "period_start_utc": datetime(2026, 3, 24, tzinfo=UTC),
+            "built_at_utc": BUILT_T,
+        },
+    )
+    conn.execute(text("SET LOCAL TIME ZONE 'America/Toronto'"))
+
+    rows = conn.execute(
+        rollups.SELECT_BUILT_DAILY_DAYS,
+        {"provider_id": PROVIDER, "rollup_kind": "route_percentile_daily"},
+    ).fetchall()
+
+    assert [row.local_date for row in rows] == [local_date]
+
+
 def _seed_provider(connection, seed_provider) -> None:  # noqa: ANN001
     seed_provider(
         connection,

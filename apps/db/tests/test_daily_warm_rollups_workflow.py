@@ -320,6 +320,46 @@ def test_rollups_are_serial_per_provider_with_a_bounded_budget_and_receipt() -> 
     assert build["timeout-minutes"] + 10 <= rollups["timeout-minutes"] <= 360
 
 
+def test_rollup_attempts_expose_traceable_database_identity(tmp_path: Path) -> None:
+    identities = tmp_path / "rollup-identities.txt"
+    first_attempt = tmp_path / "first-attempt"
+    environment = _fake_uv_environment(
+        tmp_path,
+        """\
+printf '%s\n' "$PGAPPNAME" >> "$IDENTITIES"
+if [[ ! -f "$FIRST_ATTEMPT" ]]; then
+  touch "$FIRST_ATTEMPT"
+  sleep 1
+fi
+exit 0
+""",
+    )
+    environment.update(
+        {
+            "PROVIDER_PLAN": '["stm.provider.with.invalid.chars.and-a-name-that-is-too-long"]',
+            "GITHUB_RUN_ID": "33279553860",
+            "GITHUB_RUN_ATTEMPT": "2",
+            "IDENTITIES": str(identities),
+            "FIRST_ATTEMPT": str(first_attempt),
+        }
+    )
+    rollups = _load(DAILY_WORKFLOW)["jobs"]["rollups"]
+
+    result = _run_step(
+        rollups,
+        "Build warm rollups serially",
+        cwd=tmp_path,
+        environment=environment,
+        replacements={'"75m"': '"0.1s"'},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert identities.read_text(encoding="utf-8").splitlines() == [
+        "dwr-r33279553860-a2-pstm_provider_wit-crollup-pa1",
+        "dwr-r33279553860-a2-pstm_provider_wit-crollup-pa2",
+    ]
+
+
 def test_rollups_preserve_order_continue_after_failures_and_return_first_nonzero(
     tmp_path: Path,
 ) -> None:
@@ -790,6 +830,41 @@ def test_retention_is_serial_after_publish_and_requires_bronze_exhaustion() -> N
     assert sum(step.get("uses") == upload["uses"] for step in retention["steps"]) == 1
     provider_count = len(tuple((REPO_ROOT / "apps/db/config/providers").glob("*.yaml")))
     assert provider_count * 41 + 4 <= stage["timeout-minutes"]
+
+
+def test_retention_commands_expose_traceable_database_identity(tmp_path: Path) -> None:
+    identities = tmp_path / "retention-identities.txt"
+    environment = _fake_uv_environment(
+        tmp_path,
+        """\
+printf '%s\n' "$PGAPPNAME" >> "$IDENTITIES"
+exit 0
+""",
+    )
+    environment.update(
+        {
+            "PROVIDER_PLAN": '["oc.transpo.provider.name.that-is-too-long"]',
+            "GITHUB_RUN_ID": "33279553860",
+            "GITHUB_RUN_ATTEMPT": "2",
+            "IDENTITIES": str(identities),
+        }
+    )
+    retention = _load(DAILY_WORKFLOW)["jobs"]["retention"]
+
+    result = _run_step(
+        retention,
+        "Prune retained storage and write proofs",
+        cwd=tmp_path,
+        environment=environment,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert identities.read_text(encoding="utf-8").splitlines() == [
+        "dwr-r33279553860-a2-poc_transpo_provi-ci3-pa1",
+        "dwr-r33279553860-a2-poc_transpo_provi-cwarm-pa1",
+        "dwr-r33279553860-a2-poc_transpo_provi-cbronze-pa1",
+        "dwr-r33279553860-a2-poc_transpo_provi-cproof-pa1",
+    ]
 
 
 def test_retention_attempts_every_provider_and_proof_after_middle_prune_failure(

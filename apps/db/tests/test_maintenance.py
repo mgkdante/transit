@@ -1899,6 +1899,36 @@ def test_prune_bronze_storage_opens_one_transaction_per_batch(monkeypatch) -> No
     assert result.exhausted is False
 
 
+def test_prune_bronze_storage_bounds_every_batch_inside_postgres(monkeypatch) -> None:
+    connection = RecordingConnection()
+    engine = RecordingEngine(connection)
+    _patch_bronze_storage(monkeypatch, FakeBronzeStorage())
+
+    prune_bronze_storage(
+        "stm",
+        settings=BronzePruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+        max_objects=3,
+        max_batches=2,
+    )
+
+    statement_deadlines = [
+        index
+        for index, sql in enumerate(connection.calls)
+        if "SET LOCAL statement_timeout = '30min'" in sql
+    ]
+    lock_deadlines = [
+        index
+        for index, sql in enumerate(connection.calls)
+        if "SET LOCAL lock_timeout = '30s'" in sql
+    ]
+    assert len(statement_deadlines) == engine.begin_calls
+    assert len(lock_deadlines) == engine.begin_calls
+    assert all(statement_index + 1 == lock_index for statement_index, lock_index in zip(
+        statement_deadlines, lock_deadlines, strict=True
+    ))
+
+
 def test_prune_bronze_storage_sets_exhausted_only_when_both_phases_under_limit(
     monkeypatch,
 ) -> None:

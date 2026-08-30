@@ -24,6 +24,14 @@ RAW_BRONZE_METADATA_TABLES = (
     "raw.ingestion_runs",
 )
 
+SET_BRONZE_STATEMENT_TIMEOUT = text("SET LOCAL statement_timeout = '30min'")
+SET_BRONZE_LOCK_TIMEOUT = text("SET LOCAL lock_timeout = '30s'")
+
+
+def _set_bronze_transaction_timeouts(connection: Connection) -> None:
+    connection.execute(SET_BRONZE_STATEMENT_TIMEOUT)
+    connection.execute(SET_BRONZE_LOCK_TIMEOUT)
+
 # Bronze / raw retention SQL
 
 SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
@@ -446,6 +454,7 @@ def _run_bronze_prune_phase(
 
     while batches < max_batches:
         with engine.begin() as connection:
+            _set_bronze_transaction_timeouts(connection)
             cutoff_utc, batch_object_counts, batch_meta_counts, batch_failed_ids = (
                 prune_batch(
                     connection,
@@ -506,6 +515,7 @@ def prune_bronze_storage(
 
     if dry_run:
         with engine.begin() as connection:
+            _set_bronze_transaction_timeouts(connection)
             realtime_cutoff_utc, realtime_object_counts, realtime_meta_counts, _ = (
                 prune_bronze_realtime_objects(
                     connection,
