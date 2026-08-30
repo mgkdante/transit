@@ -9,7 +9,7 @@ stage-1 guarantees:
   * the manifest / receipts index are uploaded LAST (after the tier files);
   * a single failed upload PROPAGATES (no silent swallow);
   * the hash-gate skip still does no PUT;
-  * the storage layer is thread-safe (per-thread boto3 clients + locked state).
+  * the storage layer safely shares one pooled low-level boto3 client.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ import re
 import threading
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from types import SimpleNamespace
 
@@ -103,6 +104,40 @@ def test_parallel_put_propagates_first_failure() -> None:
     items = [(f"static/stops/{i}.json", {"i": i}, "static") for i in range(40)]
     with pytest.raises(RuntimeError, match="upload failed for 13"):
         _parallel_put(_Boom(), items, concurrency=8)
+
+
+def test_parallel_put_reuses_provider_executor_and_drains_a_failed_barrier() -> None:
+    lock = threading.Lock()
+    finished: list[str] = []
+
+    class _BarrierStore:
+        def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
+            try:
+                if rel_key.endswith("/2.json"):
+                    raise RuntimeError("shared worker failed")
+                time.sleep(0.01)
+                return rel_key
+            finally:
+                with lock:
+                    finished.append(rel_key)
+
+    items = [(f"historic/stage/{index}.json", {"i": index}, "historic") for index in range(8)]
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        with pytest.raises(RuntimeError, match="shared worker failed"):
+            _parallel_put(
+                _BarrierStore(),
+                items,
+                concurrency=4,
+                executor=executor,
+            )
+        assert sorted(finished) == sorted(item[0] for item in items)
+        follow_up = _parallel_put(
+            _ConcurrencyProbe(delay=0),
+            [("historic/follow-up.json", {}, "historic")],
+            concurrency=4,
+            executor=executor,
+        )
+    assert follow_up == ["historic/follow-up.json"]
 
 
 # ---------------------------------------------------------------------------
@@ -305,13 +340,11 @@ def test_hash_gated_skip_does_no_put_under_concurrency() -> None:
 
 
 # ---------------------------------------------------------------------------
-# SnapshotStorage — per-thread boto3 client factory
+# SnapshotStorage — one low-level boto3 client shared across publisher workers
 # ---------------------------------------------------------------------------
 
 
-def test_snapshot_storage_uses_per_thread_client() -> None:
-    """With a client_factory, each thread gets its own client instance."""
-    made: list[int] = []
+def test_snapshot_storage_shares_one_client_across_threads() -> None:
     seen_ids: set[int] = set()
     seen_lock = threading.Lock()
 
@@ -324,27 +357,11 @@ def test_snapshot_storage_uses_per_thread_client() -> None:
                 seen_ids.add(self.cid)
             time.sleep(0.01)
 
-    counter = {"n": 0}
-    counter_lock = threading.Lock()
-
-    def factory() -> _FakeClient:
-        with counter_lock:
-            counter["n"] += 1
-            cid = counter["n"]
-        made.append(cid)
-        return _FakeClient(cid)
-
-    store = SnapshotStorage(
-        _FakeClient(0), bucket="b", base_prefix="v1/stm", client_factory=factory
-    )
+    store = SnapshotStorage(_FakeClient(0), bucket="b", base_prefix="v1/stm")
     items = [(f"static/stops/{i}.json", {"i": i}, "static") for i in range(40)]
     _parallel_put(store, items, concurrency=8)
 
-    # the seeded client (cid 0) is never used; each worker thread built its own
-    assert 0 not in seen_ids
-    assert len(seen_ids) >= 2  # multiple distinct per-thread clients were used
-    # a thread reuses its cached client rather than making one per put
-    assert len(made) <= 8
+    assert seen_ids == {0}
 
 
 def test_snapshot_storage_shares_client_without_factory() -> None:

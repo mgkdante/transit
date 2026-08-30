@@ -9,11 +9,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
+import boto3
 import pytest
 from botocore.exceptions import ClientError
 
 import transit_ops.snapshots.storage as storage_module
+from transit_ops.settings import Settings
 from transit_ops.snapshots.contract import VehiclesFile
+from transit_ops.snapshots.publish import _parallel_put
 from transit_ops.snapshots.storage import (
     CACHE_CONTROL,
     HashGatedStorage,
@@ -467,6 +470,116 @@ def test_s3_backend_uses_injected_client():
     store = build_snapshot_storage(s, provider_id="stm", client=c)
     store.put_json("live/vehicles.json", {"vehicles": []}, tier="live")
     assert "v1/stm/live/vehicles.json" in c.objects
+
+
+def test_s3_provider_publish_reuses_one_pool_sized_client_for_immutable_batches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class LifecycleProbe:
+        def __init__(self) -> None:
+            self.lock = threading.Lock()
+            self.in_flight = 0
+            self.peak = 0
+            self.clients: list[LifecycleClient] = []
+            self.configs: list[object] = []
+
+        def enter(self) -> None:
+            with self.lock:
+                self.in_flight += 1
+                self.peak = max(self.peak, self.in_flight)
+
+        def leave(self) -> None:
+            with self.lock:
+                self.in_flight -= 1
+
+    class LifecycleClient:
+        def __init__(self, probe: LifecycleProbe) -> None:
+            self.probe = probe
+            self.head_calls: list[str] = []
+            self.put_calls: list[dict[str, object]] = []
+            self.close_calls = 0
+
+        def head_object(self, **kwargs):  # noqa: ANN003, ANN201
+            self.probe.enter()
+            try:
+                with self.probe.lock:
+                    self.head_calls.append(kwargs["Key"])
+                time.sleep(0.0005)
+            finally:
+                self.probe.leave()
+            raise ClientError(
+                {"Error": {"Code": "404", "Message": "missing"}},
+                "HeadObject",
+            )
+
+        def put_object(self, **kwargs):  # noqa: ANN003, ANN201
+            self.probe.enter()
+            try:
+                with self.probe.lock:
+                    self.put_calls.append(dict(kwargs))
+                time.sleep(0.0005)
+            finally:
+                self.probe.leave()
+            return {"ETag": '"created"'}
+
+        def close(self) -> None:
+            self.close_calls += 1
+
+    probe = LifecycleProbe()
+
+    def build_client(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        assert args == ("s3",)
+        client = LifecycleClient(probe)
+        probe.clients.append(client)
+        probe.configs.append(kwargs["config"])
+        return client
+
+    monkeypatch.setattr(boto3, "client", build_client)
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://u:p@example.com/transit",
+        SNAPSHOT_STORAGE_BACKEND="s3",
+        SNAPSHOT_R2_BUCKET="transit-snapshots",
+        SNAPSHOT_PUBLISH_CONCURRENCY=23,
+        BRONZE_STORAGE_BACKEND="s3",
+        BRONZE_S3_ENDPOINT="https://account.example.com",
+        BRONZE_S3_BUCKET="bronze",
+        BRONZE_S3_ACCESS_KEY="access",
+        BRONZE_S3_SECRET_KEY="secret",
+    )
+    store = storage_module.build_snapshot_storage(settings, provider_id="stm")
+    items = [
+        (f"historic/generations/{index:04d}.json", {"index": index}, "historic_immutable")
+        for index in range(1_000)
+    ]
+    returned: list[str] = []
+    for offset in range(0, len(items), 32):
+        returned.extend(
+            _parallel_put(
+                store,
+                items[offset : offset + 32],
+                concurrency=23,
+                write_mode="immutable",
+            )
+        )
+    expected_rel_keys = [item[0] for item in items]
+    expected_full_keys = [f"v1/stm/{key}" for key in expected_rel_keys]
+    head_calls = [key for client in probe.clients for key in client.head_calls]
+    put_calls = [call for client in probe.clients for call in client.put_calls]
+    assert len(probe.clients) == 1
+    assert len(probe.configs) == 1
+    assert probe.configs[0].max_pool_connections == 23
+    assert 1 < probe.peak <= 23
+    assert returned == expected_full_keys
+    assert sorted(head_calls) == expected_full_keys
+    assert sorted(call["Key"] for call in put_calls) == expected_full_keys
+    assert all(call["IfNoneMatch"] == "*" for call in put_calls)
+    assert all(
+        call["Metadata"] == {"sha256": hashlib.sha256(call["Body"]).hexdigest()}
+        for call in put_calls
+    )
+    store.close()
+    assert probe.clients[0].close_calls == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1552,23 +1665,13 @@ def test_snapshot_storage_conditional_read_rejects_a_version_for_another_key():
     assert client.get_requests == []
 
 
-def test_snapshot_storage_conditional_reads_use_and_reuse_thread_local_clients():
-    seeded_client = FakeS3Client()
-    created: list[_ConditionalReadClient] = []
-    factory_lock = threading.Lock()
+def test_snapshot_storage_conditional_reads_share_one_client_across_workers():
+    client = _ConditionalReadClient()
     task_barrier = threading.Barrier(4)
-
-    def factory() -> _ConditionalReadClient:
-        client = _ConditionalReadClient()
-        with factory_lock:
-            created.append(client)
-        return client
-
     storage = SnapshotStorage(
-        seeded_client,
+        client,
         bucket="snapshots",
         base_prefix="v1/stm",
-        client_factory=factory,
     )
 
     def read_twice(index: int) -> tuple[bytes, bytes]:
@@ -1589,9 +1692,7 @@ def test_snapshot_storage_conditional_reads_use_and_reuse_thread_local_clients()
         results = list(pool.map(read_twice, range(4)))
 
     assert results == [(b'{"ok":true}', b'{"ok":true}')] * 4
-    assert seeded_client.get_calls == []
-    assert len(created) == 4
-    assert sorted(len(client.get_requests) for client in created) == [2, 2, 2, 2]
+    assert len(client.get_requests) == 8
 
 
 def test_local_snapshot_storage_has_list_head_and_raw_read_parity(tmp_path):

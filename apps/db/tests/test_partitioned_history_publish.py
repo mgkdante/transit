@@ -4,6 +4,7 @@ import hashlib
 import re
 import threading
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor as RealThreadPoolExecutor
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import replace
@@ -98,8 +99,9 @@ def _network_history_plan():
 def _large_network_history_plan(month_count: int = 70):
     delay_rows = []
     for offset in range(month_count):
-        year = 2020 + offset // 12
-        month = offset % 12 + 1
+        absolute_month = (2026 * 12 + 6) - (month_count - offset - 1)
+        year, zero_based_month = divmod(absolute_month, 12)
+        month = zero_based_month + 1
         local_date = date(year, month, 1)
         delay_rows.append(
             {
@@ -2027,10 +2029,10 @@ def test_network_partition_uploads_are_genuinely_concurrent_and_config_bounded(
     assert 1 < store.peak <= 3
 
 
-def test_network_partition_scale_fixture_uses_fixed_memory_batches_and_stable_order(
+def test_provider_publish_reuses_one_executor_across_1000_partition_flushes(
     monkeypatch,
 ):
-    plan = _large_network_history_plan()
+    plan = _large_network_history_plan(1_000)
     expected_paths = [ref.path for ref, _partition in plan.iter_partition_items()]
     _patch_minimal_historic(
         monkeypatch,
@@ -2038,28 +2040,59 @@ def test_network_partition_scale_fixture_uses_fixed_memory_batches_and_stable_or
         line_plan=_empty_line_history_plan(),
         stop_plan=_empty_stop_history_plan(),
     )
-    batch_sizes: list[int] = []
+    class ExecutorProbe(RealThreadPoolExecutor):
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            super().__init__(*args, **kwargs)
+            self.configured_workers = kwargs.get("max_workers", args[0] if args else None)
+            self.shutdown_calls = 0
+            executors.append(self)
 
-    def record_batches(_storage, items, **_kwargs):  # noqa: ANN001, ANN202
-        if items and all(
-            type(payload).__name__ == "NetworkHistoryPartition"
-            for _rel_key, payload, _tier in items
-        ):
-            batch_sizes.append(len(items))
-        return [rel_key for rel_key, _payload, _tier in items]
+        def shutdown(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+            self.shutdown_calls += 1
+            return super().shutdown(*args, **kwargs)
 
-    monkeypatch.setattr(publish, "_parallel_put", record_batches)
+    executors: list[ExecutorProbe] = []
+
+    class LifecycleStore(_RecordingStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.lock = threading.Lock()
+            self.in_flight = 0
+            self.peak = 0
+
+        def put_immutable_json(self, rel_key, payload):  # noqa: ANN001, ANN201
+            is_network_partition = (
+                "/history/network/generations/" in rel_key and not rel_key.endswith("/index.json")
+            )
+            if not is_network_partition:
+                return super().put_immutable_json(rel_key, payload)
+            with self.lock:
+                self.in_flight += 1
+                self.peak = max(self.peak, self.in_flight)
+            try:
+                threading.Event().wait(0.0005)
+                return super().put_immutable_json(rel_key, payload)
+            finally:
+                with self.lock:
+                    self.in_flight -= 1
+
+    monkeypatch.setattr(publish, "ThreadPoolExecutor", ExecutorProbe)
+    store = LifecycleStore()
 
     keys = _publish_historic(
         object(),
-        _RecordingStore(),
+        store,
         provider_id="stm",
-        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=10_000),
+        settings=SimpleNamespace(SNAPSHOT_PUBLISH_CONCURRENCY=16),
         stamp="2026-07-13T00:00:00Z",
     )
 
-    assert batch_sizes == [32, 32, 6]
+    assert len(executors) == 1
+    assert executors[0].configured_workers == 16
+    assert executors[0].shutdown_calls == 1
+    assert 1 < store.peak <= 16
     assert keys[: len(expected_paths)] == expected_paths
+    assert store.calls[-1] == ("normal", "historic/history/index.json")
 
 
 @pytest.mark.parametrize("failure_kind", ["upload", "collision"])
