@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from transit_ops.gold import rollups
 from transit_ops.settings import Settings
@@ -30,6 +31,36 @@ ROUTE = "51"
 STOP = "S51"
 BUILT_OLD = datetime(2026, 5, 1, 7, 0, tzinfo=UTC)
 BUILT_T = datetime(2026, 6, 12, 7, 3, 22, tzinfo=UTC)
+RESUME_PROVIDER = "dwr_daily_resume_test"
+RESUME_ENDPOINT_ID = 994100
+RESUME_SNAPSHOT_BASE = 994300
+RESUME_GOLD_TABLES = (
+    "route_delay_percentile_daily",
+    "stop_delay_percentile_daily",
+    "route_scheduled_trips_daily",
+    "route_cancellation_daily",
+    "route_occupancy_band_daily",
+    "route_occupancy_band_hourly",
+    "stop_occupancy_band_daily",
+    "route_service_span_daily",
+    "route_skipped_stop_daily",
+    "route_delay_by_crowding_daily",
+    "route_delay_spine",
+    "route_headway_shift_daily",
+    "stop_delay_spine",
+    "stop_delay_shift_daily",
+    "repeat_offender_daily_spine",
+    "route_delay_hourly",
+    "stop_delay_hourly",
+    "repeated_problem_route_stop",
+    "citizen_accountability_daily",
+    "route_headway_by_shift",
+    "repeat_offender",
+    "route_headway_by_direction_shift",
+    "trip_delay_summary_5m",
+    "warm_rollup_periods",
+    "fact_trip_delay_snapshot",
+)
 
 
 class _NoCommitEngine:
@@ -39,6 +70,53 @@ class _NoCommitEngine:
     @contextmanager
     def begin(self):  # noqa: ANN201
         yield self._connection
+
+
+def _cleanup_resume_provider(connection) -> None:  # noqa: ANN001
+    params = {"provider": RESUME_PROVIDER}
+    for table_name in RESUME_GOLD_TABLES:
+        connection.execute(
+            text(f"DELETE FROM gold.{table_name} WHERE provider_id = :provider"),
+            params,
+        )
+    connection.execute(
+        text("DELETE FROM raw.realtime_snapshot_index WHERE provider_id = :provider"),
+        params,
+    )
+    connection.execute(
+        text("DELETE FROM raw.ingestion_runs WHERE provider_id = :provider"),
+        params,
+    )
+    connection.execute(
+        text("DELETE FROM core.feed_endpoints WHERE provider_id = :provider"),
+        params,
+    )
+    connection.execute(
+        text("DELETE FROM core.providers WHERE provider_id = :provider"),
+        params,
+    )
+
+
+def _resume_daily_state(connection) -> tuple[set[date], set[date]]:  # noqa: ANN001
+    params = {"provider": RESUME_PROVIDER, "kind": "route_percentile_daily"}
+    target_days = set(
+        connection.execute(
+            text(
+                """
+                SELECT provider_local_date FROM gold.route_delay_percentile_daily
+                WHERE provider_id = :provider
+                """
+            ),
+            params,
+        ).scalars()
+    )
+    watermark_days = set(
+        connection.execute(
+            rollups.SELECT_BUILT_DAILY_DAYS,
+            {"provider_id": RESUME_PROVIDER, "rollup_kind": params["kind"]},
+        ).scalars()
+    )
+    return target_days, watermark_days
 
 
 @pytest.fixture()
@@ -94,6 +172,109 @@ def test_daily_watermark_calendar_is_independent_of_session_timezone(conn) -> No
     assert [row.local_date for row in rows] == [local_date]
 
 
+def test_daily_failure_commits_prior_days_and_atomically_resumes(
+    real_db_engine, seed_provider  # noqa: ANN001
+) -> None:
+    trigger_name = "dwr_daily_resume_failure"
+    function_name = "public.dwr_daily_resume_failure"
+    days: list[date] = []
+    with real_db_engine.begin() as setup:
+        setup.execute(text(f"DROP TRIGGER IF EXISTS {trigger_name} ON gold.warm_rollup_periods"))
+        setup.execute(text(f"DROP FUNCTION IF EXISTS {function_name}()"))
+        _cleanup_resume_provider(setup)
+        seed_provider(
+            setup,
+            RESUME_PROVIDER,
+            display_name="Daily resume regression",
+            timezone="UTC",
+        )
+        setup.execute(
+            text(
+                """
+                INSERT INTO core.feed_endpoints
+                    (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
+                VALUES (:endpoint, :provider, 'trip_updates', 'trip_updates',
+                        'gtfs_rt_trip_updates')
+                """
+            ),
+            {"endpoint": RESUME_ENDPOINT_ID, "provider": RESUME_PROVIDER},
+        )
+        today = setup.execute(text("SELECT current_date")).scalar_one()
+        days = [today - timedelta(days=offset) for offset in (3, 2, 1)]
+        for index, local_date in enumerate(days):
+            _insert_trip_fact(
+                setup,
+                captured_at=datetime(
+                    local_date.year, local_date.month, local_date.day, 12, tzinfo=UTC
+                ),
+                snapshot_id=RESUME_SNAPSHOT_BASE + index,
+                entity_index=index,
+                delay_seconds=120,
+                trip_id=f"T-resume-{index}",
+                provider_id=RESUME_PROVIDER,
+                endpoint_id=RESUME_ENDPOINT_ID,
+            )
+        failed_period = datetime(days[-1].year, days[-1].month, days[-1].day, tzinfo=UTC)
+        setup.execute(
+            text(
+                f"""
+                CREATE FUNCTION {function_name}() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF NEW.provider_id = '{RESUME_PROVIDER}'
+                       AND NEW.rollup_kind = 'route_percentile_daily'
+                       AND NEW.period_start_utc = '{failed_period.isoformat()}'::timestamptz THEN
+                        RAISE EXCEPTION 'forced daily watermark interruption';
+                    END IF;
+                    RETURN NEW;
+                END
+                $$
+                """
+            )
+        )
+        setup.execute(
+            text(
+                f"""
+                CREATE TRIGGER {trigger_name}
+                BEFORE INSERT OR UPDATE ON gold.warm_rollup_periods
+                FOR EACH ROW EXECUTE FUNCTION {function_name}()
+                """
+            )
+        )
+
+    try:
+        with pytest.raises(DBAPIError, match="forced daily watermark interruption"):
+            rollups.build_warm_rollups(
+                RESUME_PROVIDER,
+                settings=_settings(),
+                engine=real_db_engine,
+            )
+
+        with real_db_engine.connect() as check:
+            assert _resume_daily_state(check) == (set(days[:2]), set(days[:2]))
+
+        with real_db_engine.begin() as release:
+            release.execute(
+                text(f"DROP TRIGGER {trigger_name} ON gold.warm_rollup_periods")
+            )
+            release.execute(text(f"DROP FUNCTION {function_name}()"))
+
+        resumed = rollups.build_warm_rollups(
+            RESUME_PROVIDER,
+            settings=_settings(),
+            engine=real_db_engine,
+        )
+        assert resumed.built_route_percentile_days == 1
+        with real_db_engine.connect() as check:
+            assert _resume_daily_state(check) == (set(days), set(days))
+    finally:
+        with real_db_engine.begin() as cleanup:
+            cleanup.execute(
+                text(f"DROP TRIGGER IF EXISTS {trigger_name} ON gold.warm_rollup_periods")
+            )
+            cleanup.execute(text(f"DROP FUNCTION IF EXISTS {function_name}()"))
+            _cleanup_resume_provider(cleanup)
+
+
 def _seed_provider(connection, seed_provider) -> None:  # noqa: ANN001
     seed_provider(
         connection,
@@ -136,6 +317,7 @@ def _insert_snapshot(
     endpoint_id: int,
     run_kind: str,
     entity_count: int = 1,
+    provider_id: str = PROVIDER,
 ) -> None:
     connection.execute(
         text(
@@ -147,7 +329,7 @@ def _insert_snapshot(
         ),
         {
             "run_id": run_id,
-            "p": PROVIDER,
+            "p": provider_id,
             "endpoint_id": endpoint_id,
             "run_kind": run_kind,
         },
@@ -164,7 +346,7 @@ def _insert_snapshot(
         {
             "snapshot_id": snapshot_id,
             "run_id": run_id,
-            "p": PROVIDER,
+            "p": provider_id,
             "endpoint_id": endpoint_id,
             "captured": captured_at,
             "n": entity_count,
@@ -180,6 +362,8 @@ def _insert_trip_fact(
     entity_index: int,
     delay_seconds: int,
     trip_id: str,
+    provider_id: str = PROVIDER,
+    endpoint_id: int = TRIP_ENDPOINT_ID,
 ) -> None:
     local_date = captured_at.date()
     _insert_snapshot(
@@ -187,8 +371,9 @@ def _insert_trip_fact(
         captured_at=captured_at,
         run_id=BASE_RUN_ID + snapshot_id,
         snapshot_id=snapshot_id,
-        endpoint_id=TRIP_ENDPOINT_ID,
+        endpoint_id=endpoint_id,
         run_kind="trip_updates",
+        provider_id=provider_id,
     )
     connection.execute(
         text(
@@ -206,7 +391,7 @@ def _insert_trip_fact(
             """
         ),
         {
-            "p": PROVIDER,
+            "p": provider_id,
             "snapshot_id": snapshot_id,
             "entity_index": entity_index,
             "date_key": int(local_date.strftime("%Y%m%d")),

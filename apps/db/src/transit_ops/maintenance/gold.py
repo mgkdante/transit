@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
-from transit_ops.db.connection import make_engine
+from transit_ops.db.connection import make_engine, set_daily_warm_transaction_timeouts
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import Settings, get_settings
 from transit_ops.sql_registry import named_query
@@ -323,6 +323,7 @@ def prune_gold_storage(
     engine = engine or make_engine(settings)
 
     with engine.begin() as connection:
+        set_daily_warm_transaction_timeouts(connection)
         cutoff_utc, deleted_row_counts = prune_gold_fact_history(
             connection,
             provider_id=provider_id,
@@ -372,6 +373,7 @@ def prune_warm_rollup_storage(
     params = {"provider_id": provider_id, "cutoff_utc": cutoff_utc}
 
     with engine.begin() as connection:
+        set_daily_warm_transaction_timeouts(connection)
         counter = _safe_scalar_count if dry_run else _safe_rowcount
         deleted_row_counts = {
             table_name: counter(

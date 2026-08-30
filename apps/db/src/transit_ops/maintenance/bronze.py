@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 import transit_ops.maintenance as _maintenance_pkg
-from transit_ops.db.connection import make_engine
+from transit_ops.db.connection import make_engine, set_daily_warm_transaction_timeouts
 from transit_ops.ingestion.common import utc_now
 from transit_ops.ingestion.storage import BronzeStorage
 from transit_ops.settings import Settings, get_settings
@@ -23,14 +23,6 @@ RAW_BRONZE_METADATA_TABLES = (
     "raw.ingestion_objects",
     "raw.ingestion_runs",
 )
-
-SET_BRONZE_STATEMENT_TIMEOUT = text("SET LOCAL statement_timeout = '30min'")
-SET_BRONZE_LOCK_TIMEOUT = text("SET LOCAL lock_timeout = '30s'")
-
-
-def _set_bronze_transaction_timeouts(connection: Connection) -> None:
-    connection.execute(SET_BRONZE_STATEMENT_TIMEOUT)
-    connection.execute(SET_BRONZE_LOCK_TIMEOUT)
 
 # Bronze / raw retention SQL
 
@@ -454,7 +446,7 @@ def _run_bronze_prune_phase(
 
     while batches < max_batches:
         with engine.begin() as connection:
-            _set_bronze_transaction_timeouts(connection)
+            set_daily_warm_transaction_timeouts(connection)
             cutoff_utc, batch_object_counts, batch_meta_counts, batch_failed_ids = (
                 prune_batch(
                     connection,
@@ -515,7 +507,7 @@ def prune_bronze_storage(
 
     if dry_run:
         with engine.begin() as connection:
-            _set_bronze_transaction_timeouts(connection)
+            set_daily_warm_transaction_timeouts(connection)
             realtime_cutoff_utc, realtime_object_counts, realtime_meta_counts, _ = (
                 prune_bronze_realtime_objects(
                     connection,

@@ -9,7 +9,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy.engine import Engine
 
-from transit_ops.db.connection import make_engine
+from transit_ops.db.connection import make_engine, set_daily_warm_transaction_timeouts
 from transit_ops.gold.reader.buckets import daytype_case_sql, shift_case_sql
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import Settings, get_settings
@@ -40,7 +40,9 @@ def provider_is_seeded(conn, provider_id: str) -> bool:  # noqa: ANN001
     params = {"provider_id": provider_id}
     if isinstance(conn, Engine):
         with conn.connect() as connection:
+            set_daily_warm_transaction_timeouts(connection)
             return connection.execute(sql, params).scalar_one_or_none() is not None
+    set_daily_warm_transaction_timeouts(conn)
     return conn.execute(sql, params).scalar_one_or_none() is not None
 
 
@@ -50,20 +52,6 @@ OPEN_WINDOW_HOURLY_CUTOFF_SQL = (
     "date_trunc('hour', CAST(:built_at_utc AS timestamptz)) "
     "- make_interval(days => :open_window_days)"
 )
-
-SET_ROLLUP_STATEMENT_TIMEOUT = named_query(
-    "rollup.session.statement_timeout",
-    "SET LOCAL statement_timeout = '30min'",
-)
-SET_ROLLUP_LOCK_TIMEOUT = named_query(
-    "rollup.session.lock_timeout",
-    "SET LOCAL lock_timeout = '30s'",
-)
-
-
-def _set_rollup_transaction_timeouts(conn) -> None:  # noqa: ANN001
-    conn.execute(SET_ROLLUP_STATEMENT_TIMEOUT)
-    conn.execute(SET_ROLLUP_LOCK_TIMEOUT)
 
 # ---------------------------------------------------------------------------
 # SQL — missing period detection
@@ -2406,7 +2394,7 @@ def _build_percentile_days(
     matches the data table.
     """
     with engine.begin() as conn:
-        _set_rollup_transaction_timeouts(conn)
+        set_daily_warm_transaction_timeouts(conn)
         if available_days is None:
             rows = conn.execute(
                 select_missing,
@@ -2434,7 +2422,7 @@ def _build_percentile_days(
         # 5-minute UTC bins).
         period_start_utc = datetime(local_date.year, local_date.month, local_date.day, tzinfo=UTC)
         with engine.begin() as conn:
-            _set_rollup_transaction_timeouts(conn)
+            set_daily_warm_transaction_timeouts(conn)
             # Prod-scale planner tuning for the finest-grain spine builders, scoped to this
             # one-day transaction (SET LOCAL reverts on COMMIT). Each builder reads a full
             # closed day of the trip-delay fact (~3M rows at prod scale) and dedups/aggregates
@@ -2494,7 +2482,7 @@ def _build_trip_delay_periods(
     interruption to the current five-minute bin instead of rolling back the backlog.
     """
     with engine.begin() as conn:
-        _set_rollup_transaction_timeouts(conn)
+        set_daily_warm_transaction_timeouts(conn)
         rows = conn.execute(
             SELECT_MISSING_TRIP_DELAY_PERIODS,
             {"provider_id": provider_id, "since_utc": since_utc},
@@ -2504,7 +2492,7 @@ def _build_trip_delay_periods(
     for row in rows:
         period = row.period_start_utc
         with engine.begin() as conn:
-            _set_rollup_transaction_timeouts(conn)
+            set_daily_warm_transaction_timeouts(conn)
             conn.execute(
                 ACQUIRE_TRIP_DELAY_ROLLUP_PERIOD_LOCK,
                 {"lock_key": _trip_delay_period_lock_key(provider_id, period)},
@@ -2569,7 +2557,6 @@ def build_warm_rollups(
     # dp.timezone calendar lookup below would raise NoResultFound and abort the
     # all-providers Daily Warm Rollups run. Skip cleanly instead (exit 0).
     with engine.begin() as conn:
-        _set_rollup_transaction_timeouts(conn)
         seeded = provider_is_seeded(conn, provider_id)
     if not seeded:
         logger.info(
@@ -2594,7 +2581,7 @@ def build_warm_rollups(
     # daily build is an index range scan rather than a full-table timezone() scan.
     percentile_lookback_days = fact_retention_days - 1
     with engine.begin() as conn:
-        _set_rollup_transaction_timeouts(conn)
+        set_daily_warm_transaction_timeouts(conn)
         today_local = conn.execute(
             _PROVIDER_TODAY_LOCAL_SQL,
             {"provider_id": provider_id},
@@ -2608,7 +2595,7 @@ def build_warm_rollups(
         "floor_key": floor_key,
     }
     with engine.begin() as conn:
-        _set_rollup_transaction_timeouts(conn)
+        set_daily_warm_transaction_timeouts(conn)
         trip_available_days = conn.execute(
             SELECT_AVAILABLE_PERCENTILE_DAYS,
             calendar_params,
@@ -2641,13 +2628,8 @@ def build_warm_rollups(
         rollup_kind: str,
         table_name: str,
         upsert,  # noqa: ANN001
-        select_missing=SELECT_MISSING_PERCENTILE_DAYS,  # noqa: ANN001
+        available_days,  # noqa: ANN001
     ) -> int:
-        available_days = (
-            vehicle_available_days
-            if select_missing is SELECT_MISSING_OCCUPANCY_DAYS
-            else trip_available_days
-        )
         receipt = _run_warm_rollup_stage(
             provider_id=provider_id,
             stage="append_only_daily",
@@ -2661,7 +2643,6 @@ def build_warm_rollups(
                 today_key=today_key,
                 floor_key=floor_key,
                 now=now,
-                select_missing=select_missing,
                 available_days=available_days,
             ),
         )
@@ -2678,11 +2659,13 @@ def build_warm_rollups(
         rollup_kind="route_percentile_daily",
         table_name="route_delay_percentile_daily",
         upsert=UPSERT_ROUTE_DELAY_PERCENTILE_DAILY,
+        available_days=trip_available_days,
     )
     built_stop_percentile = build_daily_stage(
         rollup_kind="stop_percentile_daily",
         table_name="stop_delay_percentile_daily",
         upsert=UPSERT_STOP_DELAY_PERCENTILE_DAILY,
+        available_days=trip_available_days,
     )
     # Scheduled universe (GC2 H1) — MUST build BEFORE cancellation so the same run's
     # cancellation LEFT JOIN finds the scheduled row for the day. Reads silver (the
@@ -2693,6 +2676,7 @@ def build_warm_rollups(
         rollup_kind="route_scheduled_trips_daily",
         table_name="route_scheduled_trips_daily",
         upsert=UPSERT_ROUTE_SCHEDULED_TRIPS_DAILY,
+        available_days=trip_available_days,
     )
     # Cancellation reads fact_trip_delay_snapshot, so it reuses the default
     # trip-delay missing-day calendar. Occupancy reads fact_vehicle_snapshot,
@@ -2701,12 +2685,13 @@ def build_warm_rollups(
         rollup_kind="route_cancellation_daily",
         table_name="route_cancellation_daily",
         upsert=UPSERT_ROUTE_CANCELLATION_DAILY,
+        available_days=trip_available_days,
     )
     built_route_occupancy = build_daily_stage(
         rollup_kind="route_occupancy_band_daily",
         table_name="route_occupancy_band_daily",
         upsert=UPSERT_ROUTE_OCCUPANCY_BAND_DAILY,
-        select_missing=SELECT_MISSING_OCCUPANCY_DAYS,
+        available_days=vehicle_available_days,
     )
     # Hour-grain route occupancy band reduction (migration 0074) — same
     # fact_vehicle_snapshot source as the daily rollup, so it MUST use
@@ -2716,7 +2701,7 @@ def build_warm_rollups(
         rollup_kind="route_occupancy_band_hourly",
         table_name="route_occupancy_band_hourly",
         upsert=UPSERT_ROUTE_OCCUPANCY_BAND_HOURLY,
-        select_missing=SELECT_MISSING_OCCUPANCY_DAYS,
+        available_days=vehicle_available_days,
     )
     # Per-stop occupancy band reduction — twin of route occupancy, same
     # fact_vehicle_snapshot source, so it MUST use SELECT_MISSING_OCCUPANCY_DAYS too.
@@ -2724,19 +2709,21 @@ def build_warm_rollups(
         rollup_kind="stop_occupancy_band_daily",
         table_name="stop_occupancy_band_daily",
         upsert=UPSERT_STOP_OCCUPANCY_BAND_DAILY,
-        select_missing=SELECT_MISSING_OCCUPANCY_DAYS,
+        available_days=vehicle_available_days,
     )
     # Service span reads fact_trip_delay_snapshot → default trip-delay calendar.
     built_route_service_span = build_daily_stage(
         rollup_kind="route_service_span_daily",
         table_name="route_service_span_daily",
         upsert=UPSERT_ROUTE_SERVICE_SPAN_DAILY,
+        available_days=trip_available_days,
     )
     # Skipped-stop reads fact_trip_delay_snapshot (carried skip count) → default.
     built_route_skipped_stop = build_daily_stage(
         rollup_kind="route_skipped_stop_daily",
         table_name="route_skipped_stop_daily",
         upsert=UPSERT_ROUTE_SKIPPED_STOP_DAILY,
+        available_days=trip_available_days,
     )
     # Delay x crowding co-observation (FIX-3) reads fact_trip_delay_snapshot's carried
     # occupancy_status → default trip-delay calendar. APPEND-ONLY; ramps in from the deploy
@@ -2745,6 +2732,7 @@ def build_warm_rollups(
         rollup_kind="route_delay_by_crowding_daily",
         table_name="route_delay_by_crowding_daily",
         upsert=UPSERT_ROUTE_DELAY_BY_CROWDING_DAILY,
+        available_days=trip_available_days,
     )
     # Route delay spine — finest-grain additive delay metric family (hour x direction).
     # Reads fact_trip_delay_snapshot -> default trip-delay missing-day calendar.
@@ -2753,6 +2741,7 @@ def build_warm_rollups(
         rollup_kind="route_delay_spine",
         table_name="route_delay_spine",
         upsert=UPSERT_ROUTE_DELAY_SPINE,
+        available_days=trip_available_days,
     )
 
     # Headway shift-daily spine — finest-grain additive HEADWAY family (shift x direction).
@@ -2762,6 +2751,7 @@ def build_warm_rollups(
         rollup_kind="route_headway_shift_daily",
         table_name="route_headway_shift_daily",
         upsert=UPSERT_ROUTE_HEADWAY_SHIFT_DAILY,
+        available_days=trip_available_days,
     )
 
     # Stop delay spine — finest-grain additive STOP-DELAY family (windowed worst-N ranking).
@@ -2771,6 +2761,7 @@ def build_warm_rollups(
         rollup_kind="stop_delay_spine",
         table_name="stop_delay_spine",
         upsert=UPSERT_STOP_DELAY_SPINE,
+        available_days=trip_available_days,
     )
 
     # Stop delay shift-daily — shift grain of the stop-delay family (GC1 / Step G4). Reads
@@ -2780,6 +2771,7 @@ def build_warm_rollups(
         rollup_kind="stop_delay_shift_daily",
         table_name="stop_delay_shift_daily",
         upsert=UPSERT_STOP_DELAY_SHIFT_DAILY,
+        available_days=trip_available_days,
     )
 
     # Repeat-offender daily spine (S14) — daily per-entity (trip|vehicle) offender grain feeding
@@ -2790,6 +2782,7 @@ def build_warm_rollups(
         rollup_kind="repeat_offender_daily_spine",
         table_name="repeat_offender_daily_spine",
         upsert=UPSERT_REPEAT_OFFENDER_DAILY_SPINE,
+        available_days=trip_available_days,
     )
 
     # Each reporting aggregate has its own transaction so a late-table failure
@@ -2818,7 +2811,7 @@ def build_warm_rollups(
                     "open_window_days": open_window_days,
                 }
             with engine.begin() as conn:
-                _set_rollup_transaction_timeouts(conn)
+                set_daily_warm_transaction_timeouts(conn)
                 if table_name == "stop_delay_hourly":
                     conn.execute(SET_STOP_DELAY_HOURLY_WORK_MEM)
                     lock_acquired = conn.execute(
@@ -3191,7 +3184,7 @@ def rebuild_warm_rollups(
     # as build_warm_rollups does. floor = today - (fact_retention_days - 1) is the
     # oldest day whose facts are still intact; today excludes the still-open day.
     with engine.begin() as conn:
-        _set_rollup_transaction_timeouts(conn)
+        set_daily_warm_transaction_timeouts(conn)
         today_local = conn.execute(
             _PROVIDER_TODAY_LOCAL_SQL,
             {"provider_id": provider_id},
@@ -3278,7 +3271,7 @@ def rebuild_warm_rollups(
         # Delete phase — one transaction per kind (matches the per-kind isolation
         # of the reporting rebuild). Rows first, then their watermarks.
         with engine.begin() as conn:
-            _set_rollup_transaction_timeouts(conn)
+            set_daily_warm_transaction_timeouts(conn)
             deleted_rows[kind.rollup_kind] = _safe_rowcount(
                 conn.execute(
                     _rebuild_row_delete_sql(kind, dry_run=False),
@@ -3356,7 +3349,7 @@ def _count_rebuild_window(
     deleted_rows: dict[str, int] = {}
     deleted_watermarks: dict[str, int] = {}
     with engine.begin() as conn:
-        _set_rollup_transaction_timeouts(conn)
+        set_daily_warm_transaction_timeouts(conn)
         for kind in target_kinds:
             from_utc, to_utc = _rebuild_watermark_window(from_date, to_date, kind)
             deleted_rows[kind.rollup_kind] = _safe_scalar(

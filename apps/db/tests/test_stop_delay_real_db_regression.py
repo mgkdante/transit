@@ -10,12 +10,16 @@ Never point this at production.
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import time
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.pool import NullPool
 
 from transit_ops.gold import marts, rollups
 from transit_ops.snapshots.builders.historic.small_surfaces import _RECEIPTS_WORST_STOP_SQL
@@ -507,15 +511,120 @@ def test_stop_delay_differential_matches_legacy_across_corrections_and_consumers
     assert unchanged_after == unchanged_before
 
 
-def test_rollup_server_deadlines_cancel_rollback_and_leave_no_matching_backend(
+def test_terminated_client_rolls_back_active_dml_and_removes_named_backend(
     real_db_engine,  # noqa: ANN001
 ) -> None:
-    application_name = "dwr-r33279553860-a2-pstm-crollup-pa2"
+    application_name = "dwr-r33279553860-a2-pstm-h8c87b489-crollup-pa2"
     timeout_provider = "stm_rollup_timeout_test"
-    connection = real_db_engine.connect()
+    child = '''
+import os
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
+
+engine = create_engine(
+    os.environ["TEST_DATABASE_URL"],
+    poolclass=NullPool,
+    connect_args={"application_name": os.environ["TEST_APPLICATION_NAME"]},
+)
+try:
+    with engine.begin() as connection:
+        connection.execute(text("SET LOCAL statement_timeout = '2s'"))
+        connection.execute(text("SET LOCAL lock_timeout = '100ms'"))
+        connection.execute(
+            text(
+                """
+                INSERT INTO core.providers
+                    (provider_id, display_name, timezone, provider_key)
+                SELECT :provider, 'Timeout rollback probe', 'America/Toronto', :provider
+                FROM (SELECT pg_sleep(5)) AS delayed
+                """
+            ),
+            {"provider": os.environ["TEST_PROVIDER"]},
+        )
+finally:
+    engine.dispose()
+'''
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "TEST_APPLICATION_NAME": application_name,
+            "TEST_DATABASE_URL": real_db_engine.url.render_as_string(hide_password=False),
+            "TEST_PROVIDER": timeout_provider,
+        }
+    )
+    process = subprocess.Popen([sys.executable, "-c", child], env=environment)
+    try:
+        active_pid = None
+        deadline = time.monotonic() + 3
+        with real_db_engine.connect() as monitor:
+            while time.monotonic() < deadline:
+                monitor.execute(text("SELECT pg_stat_clear_snapshot()"))
+                active_pid = monitor.execute(
+                    text(
+                        """
+                        SELECT pid
+                        FROM pg_stat_activity
+                        WHERE application_name = :name
+                          AND state = 'active'
+                          AND query LIKE '%INSERT INTO core.providers%'
+                        """
+                    ),
+                    {"name": application_name},
+                ).scalar_one_or_none()
+                if active_pid is not None:
+                    break
+                time.sleep(0.02)
+        assert active_pid is not None
+
+        process.kill()
+        process.wait(timeout=3)
+
+        deadline = time.monotonic() + 3
+        with real_db_engine.connect() as monitor:
+            while time.monotonic() < deadline:
+                monitor.execute(text("SELECT pg_stat_clear_snapshot()"))
+                remaining = monitor.execute(
+                    text("SELECT COUNT(*) FROM pg_stat_activity WHERE application_name = :name"),
+                    {"name": application_name},
+                ).scalar_one()
+                if remaining == 0:
+                    break
+                time.sleep(0.02)
+            assert remaining == 0
+            assert monitor.execute(
+                text("SELECT COUNT(*) FROM core.providers WHERE provider_id = :provider"),
+                {"provider": timeout_provider},
+            ).scalar_one() == 0
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=3)
+        with real_db_engine.begin() as cleanup:
+            pids = cleanup.execute(
+                text("SELECT pid FROM pg_stat_activity WHERE application_name = :name"),
+                {"name": application_name},
+            ).scalars()
+            for pid in pids:
+                cleanup.execute(text("SELECT pg_terminate_backend(:pid)"), {"pid": pid})
+            cleanup.execute(
+                text("DELETE FROM core.providers WHERE provider_id = :provider"),
+                {"provider": timeout_provider},
+            )
+
+
+def test_rollup_statement_timeout_is_57014_and_nullpool_rolls_back(
+    real_db_engine,  # noqa: ANN001
+) -> None:
+    application_name = "dwr-r33279553860-a2-pstm-h8c87b489-crollup-pa3"
+    timeout_provider = "stm_rollup_57014_test"
+    isolated_engine = create_engine(
+        real_db_engine.url,
+        poolclass=NullPool,
+        connect_args={"application_name": application_name},
+    )
+    connection = isolated_engine.connect()
     transaction = connection.begin()
     try:
-        connection.execute(text(f"SET LOCAL application_name = '{application_name}'"))
         connection.execute(text("SET LOCAL statement_timeout = '25ms'"))
         connection.execute(text("SET LOCAL lock_timeout = '50ms'"))
         connection.execute(
@@ -523,32 +632,31 @@ def test_rollup_server_deadlines_cancel_rollback_and_leave_no_matching_backend(
                 """
                 INSERT INTO core.providers
                     (provider_id, display_name, timezone, provider_key)
-                VALUES (:p, 'Timeout rollback probe', 'America/Toronto', :p)
+                VALUES (:provider, 'Timeout rollback probe', 'America/Toronto', :provider)
                 """
             ),
-            {"p": timeout_provider},
+            {"provider": timeout_provider},
         )
-        actual_application_name = connection.execute(
-            text("SELECT current_setting('application_name')")
-        ).scalar_one()
-        assert actual_application_name == application_name
         with pytest.raises(DBAPIError) as timeout_error:
             connection.execute(text("SELECT pg_sleep(0.2)"))
         assert timeout_error.value.orig.sqlstate == "57014"
     finally:
         transaction.rollback()
         connection.close()
+        isolated_engine.dispose()
 
     with real_db_engine.connect() as monitor:
         assert monitor.execute(
-            text("SELECT COUNT(*) FROM core.providers WHERE provider_id = :p"),
-            {"p": timeout_provider},
+            text("SELECT COUNT(*) FROM core.providers WHERE provider_id = :provider"),
+            {"provider": timeout_provider},
         ).scalar_one() == 0
         assert monitor.execute(
             text("SELECT COUNT(*) FROM pg_stat_activity WHERE application_name = :name"),
             {"name": application_name},
         ).scalar_one() == 0
 
+
+def test_rollup_lock_timeout_and_advisory_probe_fail_fast(real_db_engine) -> None:  # noqa: ANN001
     holder = real_db_engine.connect()
     contender = real_db_engine.connect()
     holder_transaction = holder.begin()

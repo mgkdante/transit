@@ -354,10 +354,49 @@ exit 0
     )
 
     assert result.returncode == 0, result.stderr
-    assert identities.read_text(encoding="utf-8").splitlines() == [
-        "dwr-r33279553860-a2-pstm_provider_wit-crollup-pa1",
-        "dwr-r33279553860-a2-pstm_provider_wit-crollup-pa2",
+    names = identities.read_text(encoding="utf-8").splitlines()
+    assert names == [
+        "dwr-r33279553860-a2-pstm_provider-he456b9bd-crollup-pa1",
+        "dwr-r33279553860-a2-pstm_provider-he456b9bd-crollup-pa2",
     ]
+    assert all(name.isascii() and len(name.encode("ascii")) <= 63 for name in names)
+
+
+def test_rollup_identity_hash_disambiguates_sanitized_and_shared_prefixes(tmp_path: Path) -> None:
+    identities = tmp_path / "rollup-identities.txt"
+    environment = _fake_uv_environment(
+        tmp_path,
+        "printf '%s\n' \"$PGAPPNAME\" >> \"$IDENTITIES\"\nexit 0\n",
+    )
+    environment.update(
+        {
+            "PROVIDER_PLAN": json.dumps(
+                ["a.b", "a_b", "shared-prefix-provider-alpha", "shared-prefix-provider-beta"]
+            ),
+            "GITHUB_RUN_ID": "33279553860",
+            "GITHUB_RUN_ATTEMPT": "2",
+            "IDENTITIES": str(identities),
+        }
+    )
+    rollups = _load(DAILY_WORKFLOW)["jobs"]["rollups"]
+
+    result = _run_step(
+        rollups,
+        "Build warm rollups serially",
+        cwd=tmp_path,
+        environment=environment,
+    )
+
+    assert result.returncode == 0, result.stderr
+    names = identities.read_text(encoding="utf-8").splitlines()
+    assert names == [
+        "dwr-r33279553860-a2-pa_b-h2e7336dc-crollup-pa1",
+        "dwr-r33279553860-a2-pa_b-h648fa9b3-crollup-pa1",
+        "dwr-r33279553860-a2-pshared-prefi-h625cafcd-crollup-pa1",
+        "dwr-r33279553860-a2-pshared-prefi-h2e8b9bcd-crollup-pa1",
+    ]
+    assert len(names) == len(set(names))
+    assert all(name.isascii() and len(name.encode("ascii")) <= 63 for name in names)
 
 
 def test_rollups_preserve_order_continue_after_failures_and_return_first_nonzero(
@@ -843,7 +882,7 @@ exit 0
     )
     environment.update(
         {
-            "PROVIDER_PLAN": '["oc.transpo.provider.name.that-is-too-long"]',
+            "PROVIDER_PLAN": '["a.b","a_b"]',
             "GITHUB_RUN_ID": "33279553860",
             "GITHUB_RUN_ATTEMPT": "2",
             "IDENTITIES": str(identities),
@@ -859,12 +898,19 @@ exit 0
     )
 
     assert result.returncode == 0, result.stderr
-    assert identities.read_text(encoding="utf-8").splitlines() == [
-        "dwr-r33279553860-a2-poc_transpo_provi-ci3-pa1",
-        "dwr-r33279553860-a2-poc_transpo_provi-cwarm-pa1",
-        "dwr-r33279553860-a2-poc_transpo_provi-cbronze-pa1",
-        "dwr-r33279553860-a2-poc_transpo_provi-cproof-pa1",
+    names = identities.read_text(encoding="utf-8").splitlines()
+    assert names == [
+        "dwr-r33279553860-a2-pa_b-h2e7336dc-ci3-pa1",
+        "dwr-r33279553860-a2-pa_b-h2e7336dc-cwarm-pa1",
+        "dwr-r33279553860-a2-pa_b-h2e7336dc-cbronze-pa1",
+        "dwr-r33279553860-a2-pa_b-h2e7336dc-cproof-pa1",
+        "dwr-r33279553860-a2-pa_b-h648fa9b3-ci3-pa1",
+        "dwr-r33279553860-a2-pa_b-h648fa9b3-cwarm-pa1",
+        "dwr-r33279553860-a2-pa_b-h648fa9b3-cbronze-pa1",
+        "dwr-r33279553860-a2-pa_b-h648fa9b3-cproof-pa1",
     ]
+    assert len(names) == len(set(names))
+    assert all(name.isascii() and len(name.encode("ascii")) <= 63 for name in names)
 
 
 def test_retention_attempts_every_provider_and_proof_after_middle_prune_failure(

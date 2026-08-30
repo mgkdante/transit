@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
-from transit_ops.db.connection import make_engine
+from transit_ops.db.connection import make_engine, set_daily_warm_transaction_timeouts
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import Settings, get_settings
 
@@ -438,6 +438,7 @@ def prune_silver_storage(
     # Transaction 1: realtime retention — must commit independently of the
     # static prune below.
     with engine.begin() as connection:
+        set_daily_warm_transaction_timeouts(connection)
         realtime_cutoff_utc, realtime_deleted_row_counts = prune_realtime_silver_history(
             connection,
             provider_id=provider_id,
@@ -448,6 +449,7 @@ def prune_silver_storage(
 
     # Transaction 2: static dataset prune (with gold-reference deferral).
     with engine.begin() as connection:
+        set_daily_warm_transaction_timeouts(connection)
         (
             retained_dataset_version_ids,
             pruned_dataset_version_ids,

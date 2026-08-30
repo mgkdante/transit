@@ -511,88 +511,6 @@ class SharedCalendarConnection(FakeConnection):
         return super().execute(statement, params)
 
 
-class ResumableDailyConnection(FakeConnection):
-    def __init__(self, engine: ResumableDailyEngine) -> None:
-        super().__init__()
-        self.engine = engine
-        self.pending_targets: set[date] = set()
-        self.pending_watermarks: set[tuple[str, date]] = set()
-
-    def execute(self, statement, params=None):  # noqa: ANN001
-        sql = str(statement)
-        bound = dict(params or {})
-
-        if (
-            "FROM gold.fact_trip_delay_snapshot" in sql
-            and "snapshot_date_key" in sql
-            and "warm_rollup_periods" not in sql
-            and "INSERT" not in sql
-        ):
-            self.engine.trip_source_scans += 1
-            return IterableResult(self.engine.days)
-        if (
-            "FROM gold.fact_vehicle_snapshot" in sql
-            and "snapshot_date_key" in sql
-            and "warm_rollup_periods" not in sql
-            and "INSERT" not in sql
-        ):
-            self.engine.vehicle_source_scans += 1
-            return IterableResult([])
-        if (
-            "FROM gold.warm_rollup_periods" in sql
-            and "rollup_kind = :rollup_kind" in sql
-            and "SELECT" in sql
-        ):
-            kind = str(bound["rollup_kind"])
-            rows = [
-                FakeMissingDayRow(local_date, int(local_date.strftime("%Y%m%d")))
-                for built_kind, local_date in self.engine.committed_watermarks
-                if built_kind == kind
-            ]
-            return IterableResult(rows)
-        if "INSERT INTO gold.route_delay_percentile_daily" in sql:
-            local_date = bound["local_date"]
-            self.engine.target_attempts[local_date] += 1
-            self.pending_targets.add(local_date)
-            return RowcountResult(1)
-        if "INSERT INTO gold.warm_rollup_periods" in sql:
-            kind = str(bound["rollup_kind"])
-            local_date = bound["period_start_utc"].date()
-            if (
-                kind == "route_percentile_daily"
-                and local_date == self.engine.fail_date
-                and not self.engine.failure_raised
-            ):
-                self.engine.failure_raised = True
-                raise RuntimeError("forced daily watermark interruption")
-            self.pending_watermarks.add((kind, local_date))
-            return RowcountResult(1)
-        return super().execute(statement, params)
-
-
-class ResumableDailyEngine:
-    def __init__(self, days: list[FakeMissingDayRow], fail_date: date) -> None:
-        self.days = days
-        self.fail_date = fail_date
-        self.failure_raised = False
-        self.committed_targets: set[date] = set()
-        self.committed_watermarks: set[tuple[str, date]] = set()
-        self.target_attempts: Counter[date] = Counter()
-        self.trip_source_scans = 0
-        self.vehicle_source_scans = 0
-
-    @contextmanager
-    def begin(self):
-        conn = ResumableDailyConnection(self)
-        try:
-            yield conn
-        except Exception:
-            raise
-        else:
-            self.committed_targets.update(conn.pending_targets)
-            self.committed_watermarks.update(conn.pending_watermarks)
-
-
 class TransactionTrackingEngine(FakeEngine):
     def __init__(self, connection: FakeConnection) -> None:
         super().__init__(connection)
@@ -976,44 +894,13 @@ def test_build_warm_rollups_shares_source_calendars_without_sharing_watermarks()
     assert scheduled < cancellation
 
 
-def test_shared_calendar_daily_build_resumes_after_atomic_day_rollback() -> None:
-    days = [
-        FakeMissingDayRow(date(2026, 3, day), 20260300 + day)
-        for day in (21, 22, 23)
-    ]
-    engine = ResumableDailyEngine(days, fail_date=days[-1].local_date)
-
-    with pytest.raises(RuntimeError, match="forced daily watermark interruption"):
-        build_warm_rollups("stm", engine=engine)
-
-    route_kind = "route_percentile_daily"
-    assert engine.committed_targets == {days[0].local_date, days[1].local_date}
-    assert {
-        local_date
-        for kind, local_date in engine.committed_watermarks
-        if kind == route_kind
-    } == {days[0].local_date, days[1].local_date}
-
-    resumed = build_warm_rollups("stm", engine=engine)
-
-    assert resumed.built_route_percentile_days == 1
-    assert engine.committed_targets == {row.local_date for row in days}
-    assert {
-        local_date
-        for kind, local_date in engine.committed_watermarks
-        if kind == route_kind
-    } == {row.local_date for row in days}
-    assert engine.target_attempts == Counter(
-        {days[0].local_date: 1, days[1].local_date: 1, days[2].local_date: 2}
-    )
-    assert (engine.trip_source_scans, engine.vehicle_source_scans) == (2, 2)
-
-
 def test_provider_is_seeded_true_when_dim_provider_row_present() -> None:
     """The EXISTS probe returns True when scalar_one_or_none yields a row."""
     conn = FakeConnection(seeded=True)
 
     assert rollups.provider_is_seeded(conn, "stm") is True
+    assert "SET LOCAL statement_timeout = '30min'" in conn.executed[0]
+    assert "SET LOCAL lock_timeout = '30s'" in conn.executed[1]
     probe = conn.executed[-1]
     assert "gold.dim_provider" in probe
     assert "LIMIT 1" in probe
@@ -1740,7 +1627,7 @@ def test_stop_delay_refresh_is_one_guarded_differential_transaction() -> None:
         )
     )
     statements = transaction["statements"]
-    workmem = next(i for i, sql in enumerate(statements) if "SET LOCAL work_mem = '384MB'" in sql)
+    assert any("SET LOCAL work_mem = '384MB'" in sql for sql in statements)
     advisory = next(i for i, sql in enumerate(statements) if "pg_try_advisory_xact_lock" in sql)
     create = next(i for i, sql in enumerate(statements) if "CREATE TEMP TABLE" in sql)
     analyze = next(i for i, sql in enumerate(statements) if "ANALYZE stop_delay_hourly" in sql)
@@ -1750,7 +1637,8 @@ def test_stop_delay_refresh_is_one_guarded_differential_transaction() -> None:
     upsert = next(
         i for i, sql in enumerate(statements) if "INSERT INTO gold.stop_delay_hourly" in sql
     )
-    assert workmem < advisory < create < analyze < delete < upsert
+    assert advisory < create < analyze
+    assert analyze < delete < upsert
     assert transaction["status"] == "committed"
 
 

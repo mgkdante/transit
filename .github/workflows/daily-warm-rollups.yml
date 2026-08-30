@@ -174,10 +174,13 @@ jobs:
             local provider="$1"
             local command="$2"
             local provider_attempt="$3"
-            printf 'dwr-r%s-a%s-p%s-c%s-pa%s' \
-              "$(pgapp_component "${GITHUB_RUN_ID:-local}" 16)" \
+            local provider_digest
+            provider_digest="$(printf '%s' "$provider" | sha256sum)"
+            printf 'dwr-r%s-a%s-p%s-h%s-c%s-pa%s' \
+              "$(pgapp_component "${GITHUB_RUN_ID:-local}" 14)" \
               "$(pgapp_component "${GITHUB_RUN_ATTEMPT:-0}" 3)" \
-              "$(pgapp_component "$provider" 16)" \
+              "$(pgapp_component "$provider" 12)" \
+              "${provider_digest:0:8}" \
               "$(pgapp_component "$command" 8)" \
               "$(pgapp_component "$provider_attempt" 3)"
           }
@@ -499,10 +502,13 @@ jobs:
           pgapp_name() {
             local provider="$1"
             local command="$2"
-            printf 'dwr-r%s-a%s-p%s-c%s-pa1' \
-              "$(pgapp_component "${GITHUB_RUN_ID:-local}" 16)" \
+            local provider_digest
+            provider_digest="$(printf '%s' "$provider" | sha256sum)"
+            printf 'dwr-r%s-a%s-p%s-h%s-c%s-pa1' \
+              "$(pgapp_component "${GITHUB_RUN_ID:-local}" 14)" \
               "$(pgapp_component "${GITHUB_RUN_ATTEMPT:-0}" 3)" \
-              "$(pgapp_component "$provider" 16)" \
+              "$(pgapp_component "$provider" 12)" \
+              "${provider_digest:0:8}" \
               "$(pgapp_component "$command" 8)"
           }
 
