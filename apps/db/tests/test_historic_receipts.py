@@ -1149,6 +1149,8 @@ def test_receipt_persistence_prefilters_headers_and_batches_only_changed_rows():
     ]
     observed_shape = {
         "header_has_full_json": "common_envelope" in header_sql,
+        "header_has_raw_month_receipts": "month_receipts"
+        in {line.strip().rstrip(",") for line in header_sql.splitlines()},
         "header_has_month_keys": "jsonb_object_keys(month_receipts)" in header_sql,
         "stale_fetches": len(connection.stale_fetches),
         "upsert_batch_sizes": [len(batch) for batch in connection.upsert_batches],
@@ -1156,6 +1158,7 @@ def test_receipt_persistence_prefilters_headers_and_batches_only_changed_rows():
     }
     assert observed_shape == {
         "header_has_full_json": False,
+        "header_has_raw_month_receipts": False,
         "header_has_month_keys": True,
         "stale_fetches": 1,
         "upsert_batch_sizes": [250, 250, 3],

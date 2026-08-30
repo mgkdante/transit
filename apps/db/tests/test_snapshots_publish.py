@@ -123,6 +123,21 @@ class FakeStore:
         return rel_key
 
 
+class CloseTrackingStore(FakeStore):
+    def __init__(self, *, fail_on_write: bool = False) -> None:
+        super().__init__()
+        self.fail_on_write = fail_on_write
+        self.close_calls = 0
+
+    def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
+        if self.fail_on_write:
+            raise RuntimeError("snapshot write failed")
+        return super().put_json(rel_key, payload, tier=tier)
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
 class StatefulFakeStore:
     """Hash-gate-compatible in-memory store (get_json / put_bytes / full_key).
 
@@ -202,6 +217,64 @@ def test_publish_live_uploads_all_files_manifest_last() -> None:
     assert res.provider_id == "stm"
     assert res.tier == "live"
     assert res.keys_written == expected_keys
+
+
+@pytest.mark.parametrize("fail_on_write", [False, True])
+def test_publish_closes_internally_constructed_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    fail_on_write: bool,
+) -> None:
+    from transit_ops.snapshots import publish as snapshot_publish
+
+    store = CloseTrackingStore(fail_on_write=fail_on_write)
+    monkeypatch.setattr(
+        snapshot_publish,
+        "build_snapshot_storage",
+        lambda *_args, **_kwargs: store,
+    )
+
+    if fail_on_write:
+        with pytest.raises(RuntimeError, match="snapshot write failed"):
+            snapshot_publish.publish_snapshot(
+                "stm",
+                tier="live",
+                settings=FakeSettings(),
+                engine=FakeEngine(),
+            )
+    else:
+        snapshot_publish.publish_snapshot(
+            "stm",
+            tier="live",
+            settings=FakeSettings(),
+            engine=FakeEngine(),
+        )
+
+    assert store.close_calls == 1
+
+
+@pytest.mark.parametrize("fail_on_write", [False, True])
+def test_publish_never_closes_caller_owned_storage(fail_on_write: bool) -> None:
+    store = CloseTrackingStore(fail_on_write=fail_on_write)
+
+    if fail_on_write:
+        with pytest.raises(RuntimeError, match="snapshot write failed"):
+            publish_snapshot(
+                "stm",
+                tier="live",
+                settings=FakeSettings(),
+                engine=FakeEngine(),
+                storage=store,
+            )
+    else:
+        publish_snapshot(
+            "stm",
+            tier="live",
+            settings=FakeSettings(),
+            engine=FakeEngine(),
+            storage=store,
+        )
+
+    assert store.close_calls == 0
 
 
 def test_publish_live_stamps_h4_envelope_on_every_payload() -> None:

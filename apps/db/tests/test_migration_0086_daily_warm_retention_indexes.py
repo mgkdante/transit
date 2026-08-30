@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import time
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ from transit_ops.maintenance import (
     COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
 )
+from transit_ops.settings import get_settings
 
 MIGRATION_MODULE = "transit_ops.db.migrations.versions.0086_daily_warm_retention_indexes"
 REVISION = "0086_daily_warm_retention_indexes"
@@ -113,12 +115,13 @@ def _migration_module():
     return importlib.import_module(MIGRATION_MODULE)
 
 
-def _alembic_config() -> Config:
+def _alembic_config(database_url: str) -> Config:
     config = Config(str(DB_ROOT / "alembic.ini"))
     config.set_main_option(
         "script_location",
         str(DB_ROOT / "src" / "transit_ops" / "db" / "migrations"),
     )
+    config.set_main_option("sqlalchemy.url", database_url)
     return config
 
 
@@ -398,13 +401,37 @@ def test_migration_metadata_and_exact_concurrent_operations(monkeypatch) -> None
     assert operations.executed == [pair[0] for pair in reversed(EXPECTED_UPGRADE_OPERATIONS)]
 
 
-def test_real_postgres_migration_indexes_and_fk_delete_performance(
+def test_embedded_alembic_uses_disposable_url_when_settings_are_cached(
     real_db_engine,
     monkeypatch,
 ) -> None:
     database_url = real_db_engine.url.render_as_string(hide_password=False)
-    monkeypatch.setenv("DATABASE_URL", database_url)
-    config = _alembic_config()
+    get_settings.cache_clear()
+    try:
+        assert get_settings().sqlalchemy_database_url is None
+        monkeypatch.setenv("DATABASE_URL", database_url)
+        command.current(_alembic_config(database_url))
+    finally:
+        get_settings.cache_clear()
+
+
+def test_embedded_alembic_preserves_existing_application_loggers(real_db_engine) -> None:
+    logger = logging.getLogger("transit_ops.orchestration")
+    previous_disabled = logger.disabled
+    logger.disabled = False
+    try:
+        database_url = real_db_engine.url.render_as_string(hide_password=False)
+        command.current(_alembic_config(database_url))
+        assert logger.disabled is False
+    finally:
+        logger.disabled = previous_disabled
+
+
+def test_real_postgres_migration_indexes_and_fk_delete_performance(
+    real_db_engine,
+) -> None:
+    database_url = real_db_engine.url.render_as_string(hide_password=False)
+    config = _alembic_config(database_url)
     original_revision = _database_revision(real_db_engine)
     candidate_object_ids = [PERF_BASE_ID + value for value in range(1, 101)]
     candidate_snapshot_ids = candidate_object_ids.copy()

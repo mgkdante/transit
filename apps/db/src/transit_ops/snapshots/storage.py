@@ -998,7 +998,7 @@ def build_snapshot_storage(
         path segment so that all objects land under ``v1/{provider_id}/``.
     client:
         Optional pre-built boto3-compatible S3 client.  When omitted the
-        real ``build_s3_client(settings)`` is called (reads BRONZE_S3_*
+        real ``_build_snapshot_s3_client(settings)`` is called (reads BRONZE_S3_*
         credentials, which are shared between Bronze ingest and snapshot
         publishing).
 
