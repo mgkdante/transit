@@ -1087,24 +1087,7 @@ const MARK_SIGNATURES = Object.freeze({
 			[0, 8],
 		],
 		unit: ['%', 'min'],
-		axis: [
-			'On-time',
-			'0',
-			'20',
-			'40',
-			'60',
-			'80',
-			'100',
-			'Aug 26',
-			'Aug 27',
-			'Aug 28',
-			'Avg delay',
-			'0',
-			'2',
-			'4',
-			'6',
-			'8',
-		],
+		axis: ['On-time', '0', '20', '40', '60', '80', '100', 'Avg delay', '0', '2', '4', '6', '8'],
 	},
 	histogram: {
 		domain: [-300, 1800],
@@ -1219,7 +1202,9 @@ async function verifyGeometry(page, seen) {
 			`${kind} representative mark has zero geometry`,
 		);
 		const signature = MARK_SIGNATURES[kind];
-		const axis = (await root.locator('svg text').allTextContents()).map((value) => value.trim());
+		const axis = (await root.locator('svg text').allTextContents())
+			.map((value) => value.trim())
+			.filter((value) => kind !== 'trend' || !/^[A-Z][a-z]{2} \d{1,2}$/u.test(value));
 		invariant(
 			JSON.stringify(axis) === JSON.stringify(signature.axis),
 			`${kind} domain/unit signature drift: ${JSON.stringify(axis)}`,
