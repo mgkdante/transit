@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { deploymentEligible, main } from './deploy-scope.mjs';
+
+function git(repository, args) {
+	return execFileSync('git', args, {
+		cwd: repository,
+		encoding: 'utf8',
+		stdio: ['ignore', 'pipe', 'pipe'],
+	}).trim();
+}
 
 test('tooling-only and workflow-only pushes preserve the deployed Worker', () => {
 	assert.equal(typeof deploymentEligible, 'function');
@@ -87,5 +99,42 @@ test('CLI scope output is conservative for zero-before pushes and explicit dispa
 		let output = '';
 		assert.equal(main(env, { write: (value) => (output += value) }), 0);
 		assert.equal(output, 'deploy_web=true\n');
+	}
+});
+
+test('CLI resolves a valid base/head diff in the checked-out repository', () => {
+	const repository = mkdtempSync(join(tmpdir(), 'transit-deploy-scope-'));
+	try {
+		git(repository, ['init', '--initial-branch=main']);
+		git(repository, ['config', 'user.email', 'test@example.invalid']);
+		git(repository, ['config', 'user.name', 'Transit test']);
+		mkdirSync(join(repository, '.github/workflows'), { recursive: true });
+		const workflow = join(repository, '.github/workflows/web.yml');
+		writeFileSync(workflow, 'name: web\n');
+		git(repository, ['add', '.github/workflows/web.yml']);
+		git(repository, ['commit', '--message', 'base']);
+		const before = git(repository, ['rev-parse', 'HEAD']);
+
+		writeFileSync(workflow, 'name: web\n# non-deploying workflow edit\n');
+		git(repository, ['add', '.github/workflows/web.yml']);
+		git(repository, ['commit', '--message', 'workflow edit']);
+		const after = git(repository, ['rev-parse', 'HEAD']);
+
+		let output = '';
+		assert.equal(
+			main(
+				{
+					TRANSIT_DEPLOY_EVENT: 'push',
+					TRANSIT_DEPLOY_BEFORE: before,
+					TRANSIT_DEPLOY_AFTER: after,
+				},
+				{ write: (value) => (output += value) },
+				repository,
+			),
+			0,
+		);
+		assert.equal(output, 'deploy_web=false\n');
+	} finally {
+		rmSync(repository, { recursive: true, force: true });
 	}
 });

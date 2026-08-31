@@ -44,7 +44,7 @@ export function deploymentEligible({ eventName, diffResolved, paths } = {}) {
 	return !onlyKnownNonDeployable;
 }
 
-function resolvePushDiff(before, after) {
+function resolvePushDiff(before, after, cwd) {
 	if (
 		!/^[a-f\d]{40}$/u.test(before ?? '') ||
 		!/^[a-f\d]{40}$/u.test(after ?? '') ||
@@ -56,6 +56,7 @@ function resolvePushDiff(before, after) {
 
 	try {
 		const output = execFileSync('git', ['diff', '--name-only', '-z', before, after], {
+			cwd,
 			stdio: ['ignore', 'pipe', 'ignore'],
 		});
 		return {
@@ -70,12 +71,12 @@ function resolvePushDiff(before, after) {
 	}
 }
 
-export function main(env = process.env, stdout = process.stdout) {
+export function main(env = process.env, stdout = process.stdout, cwd = process.cwd()) {
 	const eventName = env.TRANSIT_DEPLOY_EVENT;
 	const diff =
 		eventName === 'workflow_dispatch'
 			? { diffResolved: true, paths: [] }
-			: resolvePushDiff(env.TRANSIT_DEPLOY_BEFORE, env.TRANSIT_DEPLOY_AFTER);
+			: resolvePushDiff(env.TRANSIT_DEPLOY_BEFORE, env.TRANSIT_DEPLOY_AFTER, cwd);
 	const deployWeb = deploymentEligible({ eventName, ...diff });
 	stdout.write(`deploy_web=${deployWeb ? 'true' : 'false'}\n`);
 	return 0;

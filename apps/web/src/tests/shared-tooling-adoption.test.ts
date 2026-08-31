@@ -158,7 +158,7 @@ describe('ST7 Transit workflow timeout governance', () => {
 });
 
 describe('ST5 Transit shared-tooling adoption', () => {
-	it('keeps push selectivity while making both PR workflows always report', () => {
+	it('admits every web push to the inner classifier while making both PR workflows always report', () => {
 		const ci = text('.github/workflows/ci.yml');
 		const web = text('.github/workflows/web.yml');
 		const ciEvents = topLevelBlock(ci, 'on');
@@ -175,18 +175,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 			'.github/actions/**',
 			'.bun-version',
 		]);
-		expect(quotedList(nestedBlock(webEvents, 'push'))).toEqual([
-			'apps/web/**',
-			'apps/data-proxy/**',
-			'bun.lock',
-			'.bun-version',
-			'package.json',
-			'turbo.json',
-			'.github/workflows/web.yml',
-			'.github/actions/**',
-			'.github/scripts/deploy-scope.mjs',
-			'.github/scripts/deploy-scope.test.mjs',
-		]);
+		expect(nestedBlock(webEvents, 'push')).not.toMatch(/^\s*paths:/mu);
 		for (const workflow of [ci, web]) {
 			expect(Object.fromEntries(directMapping(topLevelBlock(workflow, 'permissions')))).toEqual({
 				contents: 'read',
