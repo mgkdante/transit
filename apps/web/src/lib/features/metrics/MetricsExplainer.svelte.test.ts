@@ -649,16 +649,16 @@ describe('MetricsExplainer', () => {
 			},
 		});
 		try {
-			window.history.replaceState(null, '', '#otp');
+			window.location.hash = '#otp';
 			await fireEvent(window, new HashChangeEvent('hashchange'));
-			window.history.replaceState(null, '', '#headway');
+			window.location.hash = '#headway';
 			await fireEvent(window, new HashChangeEvent('hashchange'));
 
 			await vi.waitFor(() => expect(scrollCalls).toEqual(['headway']));
 		} finally {
 			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
 			else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
-			window.history.replaceState(null, '', window.location.pathname);
+			window.location.hash = '';
 			void container;
 		}
 	});

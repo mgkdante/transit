@@ -313,7 +313,8 @@ def test_service_span_is_append_only_idempotent(conn_span) -> None:  # noqa: ANN
         ).scalar_one()
 
     before = _count()
-    assert before == 1  # exactly one service-day row was built (no double-count from the 2-day window)
+    # Exactly one service-day row was built; the two-day window did not double-count.
+    assert before == 1
     _build_rollups(connection)  # re-run skips already-watermarked days
     assert _count() == before
 

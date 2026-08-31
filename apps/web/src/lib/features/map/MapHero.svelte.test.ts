@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { settled, tick } from 'svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	setStopException as setRealStopException,
 	toStopFeatures,
@@ -11,6 +11,7 @@ import { mapHeroReceiptSignals } from './__fixtures__/MapHeroReceiptSignals.svel
 
 const harness = vi.hoisted(() => {
 	const identityReceivers: unknown[] = [];
+	const reportNavigationFailure = vi.fn();
 	const bakeVehicleSprites = vi.fn();
 	const bakeLocationPinSprite = vi.fn();
 	const sourceInstaller = (id: string) =>
@@ -369,6 +370,7 @@ const harness = vi.hoisted(() => {
 		createLiveStore: vi.fn((_manifest: unknown, _options?: unknown) => liveStore),
 		liveStore,
 		identityReceivers,
+		reportNavigationFailure,
 		goto,
 		startNavigation(
 			...args: Parameters<
@@ -480,7 +482,14 @@ vi.mock('$app/navigation', () => ({
 
 vi.mock('./mapUrlCoordinator', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('./mapUrlCoordinator')>();
-	return actual;
+	return {
+		...actual,
+		createMapUrlCoordinator: (...args: Parameters<typeof actual.createMapUrlCoordinator>) =>
+			actual.createMapUrlCoordinator(args[0], args[1], {
+				...args[2],
+				reportNavigationFailure: harness.reportNavigationFailure,
+			}),
+	};
 });
 
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
@@ -660,8 +669,39 @@ harness.installDomFlush(
 	async () => tick(),
 );
 
-afterEach(() => {
+async function settleDismissibleLayers(): Promise<void> {
+	await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+const nativeSetTimeout = globalThis.setTimeout.bind(globalThis);
+let timeoutSpy: ReturnType<typeof vi.spyOn>;
+
+beforeEach(() => {
+	timeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+		handler: TimerHandler,
+		delay?: number,
+		...args: unknown[]
+	) => {
+		if (delay === 1 && typeof handler === 'function') {
+			handler(...args);
+			return 0;
+		}
+		return nativeSetTimeout(handler, delay, ...args);
+	}) as typeof setTimeout);
+});
+
+afterEach(async () => {
+	await settled();
+	await tick();
+	await settleDismissibleLayers();
 	cleanup();
+	await tick();
+	harness.resetNavigation();
+	await Promise.resolve();
+	for (const [failure] of harness.reportNavigationFailure.mock.calls) {
+		expect(failure).toBeInstanceOf(Error);
+		expect((failure as Error).message).toBe('navigation aborted');
+	}
 	document.body.innerHTML = '';
 	vi.clearAllMocks();
 	harness.vehicleSourceSetData.mockReset();
@@ -671,7 +711,6 @@ afterEach(() => {
 	harness.setLiveVehicleVisible(true);
 	harness.resetActiveLeaseCount();
 	harness.captureDetailFilter(null);
-	harness.resetNavigation();
 	harness.identityReceivers.length = 0;
 	harness.locale = 'en';
 	harness.isDesktop = false;
@@ -690,6 +729,7 @@ afterEach(() => {
 	} else {
 		Reflect.deleteProperty(navigator, 'geolocation');
 	}
+	timeoutSpy.mockRestore();
 });
 
 function bulkCounts() {
@@ -840,6 +880,7 @@ describe('MapHero near-me device location', () => {
 		const focusCalls = harness.focusCoordinate.mock.calls.length;
 		const gotoCalls = harness.goto.mock.calls.length;
 
+		await settleDismissibleLayers();
 		cleanup();
 		deliverPosition({
 			coords: { latitude: 45.525686, longitude: -73.594764 },
@@ -1216,6 +1257,7 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 			harness.startNavigation('http://localhost/lines', from.href, { type: 'link' })
 				.beforeNavigateDelivered,
 		).toBe(true);
+		await settleDismissibleLayers();
 		await harness.commitNavigation('http://localhost/lines');
 		if (!harness.isDesktop) await new Promise((resolve) => setTimeout(resolve, 80));
 	}

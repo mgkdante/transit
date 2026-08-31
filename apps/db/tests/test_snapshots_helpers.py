@@ -7,7 +7,6 @@ failure.  No database connection is required.
 
 from __future__ import annotations
 
-
 from transit_ops.snapshots.builders import (
     _gtfs_min,
     _infer_shift,
@@ -17,7 +16,6 @@ from transit_ops.snapshots.builders import (
     _sample_times,
     _wallclock,
 )
-
 
 # ---------------------------------------------------------------------------
 # _wallclock

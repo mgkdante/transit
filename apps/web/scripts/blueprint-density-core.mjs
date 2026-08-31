@@ -115,9 +115,7 @@ export function parseBlueprintDensityArgs(args) {
 	}
 
 	if (!previewArg) {
-		throw new Error(
-			'Preview URL is required; call parseBlueprintDensityArgs([url, ...options])',
-		);
+		throw new Error('Preview URL is required; call parseBlueprintDensityArgs([url, ...options])');
 	}
 
 	const previewUrl = new URL(previewArg);

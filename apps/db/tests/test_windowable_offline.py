@@ -49,7 +49,10 @@ _SHIFTS = ["am_peak", "midday", "pm_peak", "evening", "night"]
 
 def _hist() -> list[RouteDelayHistogramBin]:
     # A full 21-bin signed-delay distribution (the prod shape on histogram-bearing periods).
-    return [RouteDelayHistogramBin(lo_sec=i * 60, hi_sec=(i + 1) * 60, count=100 + i) for i in range(21)]
+    return [
+        RouteDelayHistogramBin(lo_sec=i * 60, hi_sec=(i + 1) * 60, count=100 + i)
+        for i in range(21)
+    ]
 
 
 def _period(grain: str, *, with_hist: bool, with_prior: bool = True) -> ReliabilityPeriod:
@@ -87,7 +90,10 @@ def _full_payload(*, windowed_histograms: bool) -> RouteReliability:
     """
     # Scalar `periods`: 30 daily (histogram None per the daily carve-out) + week + month + the
     # 5 by_shift + 2 by_daytype spine reads (all histogram-ON in prod, no prior on the scalars).
-    scalar_periods = [_period(f"2026-06-{d:02d}", with_hist=False, with_prior=False) for d in range(1, 31)]
+    scalar_periods = [
+        _period(f"2026-06-{day:02d}", with_hist=False, with_prior=False)
+        for day in range(1, 31)
+    ]
     scalar_periods += [_period(g, with_hist=True, with_prior=False) for g in ("week", "month")]
     scalar_periods += [_period(s, with_hist=True, with_prior=False) for s in _SHIFTS]
     scalar_periods += [_period(d, with_hist=True, with_prior=False) for d in ("weekday", "weekend")]
@@ -97,8 +103,15 @@ def _full_payload(*, windowed_histograms: bool) -> RouteReliability:
                      observation_count=2000)
         for s in _SHIFTS for dt in ("weekday", "weekend")
     ]
-    dow = [RouteDayOfWeek(day_of_week_iso=i, avg_delay_min=3.1, severe_pct=4.0, observation_count=9000)
-           for i in range(1, 8)]
+    dow = [
+        RouteDayOfWeek(
+            day_of_week_iso=day,
+            avg_delay_min=3.1,
+            severe_pct=4.0,
+            observation_count=9000,
+        )
+        for day in range(1, 8)
+    ]
     by_grain = [
         ReliabilityByGrain(
             grain=g,
@@ -248,7 +261,13 @@ def test_attach_prior_emits_exact_prior_on_time() -> None:
     assert midday.prior_otp_pct is None
 
 
-def _hw_summed_row(shift: str, gaps: list[float], *, direction_id: int = 0, trips: int = 10) -> dict:
+def _hw_summed_row(
+    shift: str,
+    gaps: list[float],
+    *,
+    direction_id: int = 0,
+    trips: int = 10,
+) -> dict:
     """A gold.route_headway_shift_daily-shaped row for _headway_period_from_summed. Carries the
     additive moment sums the EWT reads; the gap histogram is empty (EWT uses the moments, not the
     median), so observed_min comes back None — fine, this test pins excess_wait only."""
@@ -284,7 +303,8 @@ def test_headway_excess_wait_is_passenger_weighted_ewt() -> None:
 
 
 def test_headway_excess_wait_clamped_and_honest_none() -> None:
-    # Clamp: actual far more frequent than scheduled → AWT < scheduled/2 → EWT floors at 0 (never <0).
+    # Actual far more frequent than scheduled makes AWT < scheduled/2.
+    # EWT therefore floors at 0 and never goes negative.
     rows = [_hw_summed_row("am_peak", [3, 3, 3, 3, 3])]  # AWT = 45/(2·15) = 1.5
     clamped = H._headway_period_from_summed(rows, {"am_peak": 12.0})  # 1.5 − 6.0 < 0
     assert clamped["am_peak"].excess_wait_min == 0.0

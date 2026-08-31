@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "check": "node --check src/cors.js && node --check src/kpis.js && node --check src/worker.js && node --check scripts/configure-data-edge.mjs",
     "test": "node --test \"test/*.test.mjs\"",
     "deploy": "wrangler deploy"
   },

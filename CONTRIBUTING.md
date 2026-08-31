@@ -17,29 +17,60 @@ in an issue before implementing them.
 
 ## Verification
 
-Install from the lockfile and run the core workspace commands:
+Run the affected subset while iterating. Before handing off a release candidate,
+run this ordered clean-clone CI-equivalent command from the repository root.
+The final migration replay and real-DB suite require an empty disposable
+`postgis/postgis:16-3.4` database at `localhost:5432`, with database and user
+`transit_ci` and password `transit_ci@:/%`. Never point these commands at a
+shared, retained, or production database.
 
 ```bash
+set -euo pipefail
+
 bun install --frozen-lockfile
-bun run check
-bun run build
-bun run test
+(cd apps/db && uv sync --locked)
+
+node .github/scripts/materialize-shared-config.mjs
+git diff --exit-code -- turbo.json
+node --test .github/scripts/deploy-scope.test.mjs
+bun apps/web/vendor/design/tools/adopt.ts --check --dest apps/web/vendor/design
+
+bun run --cwd apps/web tokens:build
+git diff --exit-code -- apps/web/src/lib/styles/tokens.css apps/web/src/app.css
+bun run --cwd apps/web og:check
+bun run --cwd apps/web icons:check
+bun run --cwd apps/web map-posters:check
+
+bun run --cwd apps/data-proxy check
+bun run --cwd apps/data-proxy test
+bun run --cwd apps/web lint
+bun run --cwd apps/web format:check
+bun run --cwd apps/web check
+bun run --cwd apps/web build
+apps/web/node_modules/.bin/playwright-core install chromium-headless-shell
+B9_REUSE_BUILD=1 bun run --cwd apps/web test:b9-display
+bun run --cwd apps/web test
+
+(
+  cd apps/db
+  env -u TRANSIT_TEST_DATABASE_URL COLUMNS=200 uv run pytest tests
+  uv run ruff check src tests
+  uv run mypy src/transit_ops/snapshots/publish.py
+  test "$(uv run alembic heads 2>/dev/null | grep -c '(head)' || true)" = "1"
+)
+
+bun audit --audit-level=high
+gitleaks detect --redact --config .gitleaks.toml
+
+export DATABASE_URL='postgresql+psycopg://transit_ci@localhost:5432/transit_ci'
+export TRANSIT_TEST_DATABASE_URL="$DATABASE_URL"
+export PGPASSWORD='transit_ci@:/%'
+(
+  cd apps/db
+  uv run alembic upgrade head
+  COLUMNS=200 uv run pytest tests
+)
 ```
-
-For data-pipeline changes, also run the CI offline and migration-head gates:
-
-```bash
-cd apps/db
-uv sync --locked
-env -u TRANSIT_TEST_DATABASE_URL COLUMNS=200 uv run pytest tests
-uv run ruff check src tests --select F
-uv run mypy src/transit_ops/snapshots/publish.py
-test "$(uv run alembic heads 2>/dev/null | grep -c '(head)' || true)" = "1"
-```
-
-CI separately runs `uv run alembic upgrade head` and `uv run pytest tests`
-against its empty, disposable `postgis/postgis:16-3.4` service with `COLUMNS=200`,
-`DATABASE_URL`, `TRANSIT_TEST_DATABASE_URL`, and `PGPASSWORD` set.
 
 Behavior changes require a regression test. In the pull request, explain the
 problem, the boundary that owns the fix, and the commands or runtime evidence

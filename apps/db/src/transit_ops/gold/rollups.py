@@ -1112,6 +1112,9 @@ UPSERT_STOP_DELAY_SPINE = named_query(
 #     the WHERE is identical to the spine, SUM-over-shifts == the stop_delay_spine
 #     per-(stop,route,date) counts (a finer partition of the same in-clamp row set). Drops
 #     straight into _build_percentile_days. ---
+_STOP_DELAY_SHIFT_HOUR_SQL = (
+    "EXTRACT(HOUR FROM timezone(dp.timezone, f.captured_at_utc))::int"
+)
 UPSERT_STOP_DELAY_SHIFT_DAILY = named_query(
     "rollup.stop_delay_shift_daily.upsert",
     f"""
@@ -1141,7 +1144,7 @@ UPSERT_STOP_DELAY_SHIFT_DAILY = named_query(
             -- shift derived ONCE at build time from the provider-localized capture hour, via
             -- the ONE gold.reader.buckets CASE (byte-identical to the route projector's
             -- _SPINE_SHIFT_CASE). Distinct hours in the same shift collapse to one grain row.
-{shift_case_sql("EXTRACT(HOUR FROM timezone(dp.timezone, f.captured_at_utc))::int", indent=12)} AS shift
+{shift_case_sql(_STOP_DELAY_SHIFT_HOUR_SQL, indent=12)} AS shift
         FROM gold.fact_trip_delay_snapshot AS f
         INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
         WHERE f.provider_id = :provider_id
@@ -1174,6 +1177,14 @@ UPSERT_STOP_DELAY_SHIFT_DAILY = named_query(
 #     COUNT(DISTINCT date WHERE severe_delay_count>0) over a window == the mart's recurrence_days
 #     (COUNT(DISTINCT local_day) FILTER (delay>300)) by construction. Drops straight into
 #     _build_percentile_days. ---
+_REPEAT_OFFENDER_DATE_PREDICATE_SQL = (
+    "          AND f.snapshot_date_key = :date_key                     "
+    "-- SARGABLE (ix_..._provider_date_key)"
+)
+_REPEAT_OFFENDER_GHOST_PREDICATE_SQL = (
+    f"          AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}    "
+    "-- GHOST clamp (ghosts + nulls out)"
+)
 UPSERT_REPEAT_OFFENDER_DAILY_SPINE = named_query(
     "rollup.repeat_offender_daily_spine.upsert",
     f"""
@@ -1199,11 +1210,11 @@ UPSERT_REPEAT_OFFENDER_DAILY_SPINE = named_query(
             f.delay_seconds
         FROM gold.fact_trip_delay_snapshot AS f
         WHERE f.provider_id = :provider_id
-          AND f.snapshot_date_key = :date_key                     -- SARGABLE (ix_..._provider_date_key)
+{_REPEAT_OFFENDER_DATE_PREDICATE_SQL}
           AND f.trip_id IS NOT NULL
           AND f.route_id IS NOT NULL
           AND f.delay_seconds IS NOT NULL
-          AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}    -- GHOST clamp (ghosts + nulls out)
+{_REPEAT_OFFENDER_GHOST_PREDICATE_SQL}
         UNION ALL
         SELECT
             f.provider_id,
@@ -1213,11 +1224,11 @@ UPSERT_REPEAT_OFFENDER_DAILY_SPINE = named_query(
             f.delay_seconds
         FROM gold.fact_trip_delay_snapshot AS f
         WHERE f.provider_id = :provider_id
-          AND f.snapshot_date_key = :date_key                     -- SARGABLE (ix_..._provider_date_key)
+{_REPEAT_OFFENDER_DATE_PREDICATE_SQL}
           AND f.vehicle_id IS NOT NULL
           AND f.route_id IS NOT NULL
           AND f.delay_seconds IS NOT NULL
-          AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}    -- GHOST clamp (ghosts + nulls out)
+{_REPEAT_OFFENDER_GHOST_PREDICATE_SQL}
     ) AS e
     GROUP BY provider_id, entity_kind, entity_id, route_id
     ON CONFLICT (provider_id, entity_kind, entity_id, route_id, provider_local_date)
@@ -2009,6 +2020,10 @@ UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = named_query(
 # + %bunched. EVERY direction stored (busiest-direction argmax is read-time, per window). The
 # clamp (0 < gap_min < 240) + n>=2 guard are byte-identical to route_headway_by_shift. Binds
 # {provider_id, local_date, date_key, built_at_utc} -> drops into _build_percentile_days.
+_HEADWAY_HISTOGRAM_BIN_SQL = (
+    "            LEAST(GREATEST(width_bucket(gap_min, "
+    f"{_HEADWAY_GAP_HIST_EDGES_SQL}), 1), 20) - 1 AS bin_idx"
+)
 UPSERT_ROUTE_HEADWAY_SHIFT_DAILY = named_query(
     "rollup.route_headway_shift.upsert",
     f"""
@@ -2060,7 +2075,7 @@ UPSERT_ROUTE_HEADWAY_SHIFT_DAILY = named_query(
     filtered AS (
         SELECT
             provider_id, route_id, direction_id, shift, gap_min,
-            LEAST(GREATEST(width_bucket(gap_min, {_HEADWAY_GAP_HIST_EDGES_SQL}), 1), 20) - 1 AS bin_idx
+{_HEADWAY_HISTOGRAM_BIN_SQL}
         FROM gaps
         WHERE gap_min IS NOT NULL AND gap_min > 0 AND gap_min < 240
     ),
@@ -2438,7 +2453,9 @@ def _build_percentile_days(
             # 45 min to ~9 s (verified by EXPLAIN ANALYZE on prod). Mirrors migration 0034's
             # heavy-build session tuning.
             conn.execute(named_query("rollup.session.work_mem", "SET LOCAL work_mem = '512MB'"))
-            conn.execute(named_query("rollup.session.nestloop_off", "SET LOCAL enable_nestloop = off"))
+            conn.execute(
+                named_query("rollup.session.nestloop_off", "SET LOCAL enable_nestloop = off")
+            )
             conn.execute(
                 upsert,
                 {

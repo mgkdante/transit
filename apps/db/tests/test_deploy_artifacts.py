@@ -39,13 +39,16 @@ EXPECTED_PINNED_ACTION_LINES = {
         "uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4"
     ),
     "mgkdante/yesid.dev-design/.github/actions/classify-paths": (
-        "uses: mgkdante/yesid.dev-design/.github/actions/classify-paths@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
+        "uses: mgkdante/yesid.dev-design/.github/actions/classify-paths@"
+        "a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
     ),
     "mgkdante/yesid.dev-design/.github/actions/required-context": (
-        "uses: mgkdante/yesid.dev-design/.github/actions/required-context@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
+        "uses: mgkdante/yesid.dev-design/.github/actions/required-context@"
+        "a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
     ),
     "mgkdante/yesid.dev-design/.github/actions/shared-tooling-drift": (
-        "uses: mgkdante/yesid.dev-design/.github/actions/shared-tooling-drift@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
+        "uses: mgkdante/yesid.dev-design/.github/actions/shared-tooling-drift@"
+        "a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
     ),
     "oven-sh/setup-bun": (
         "uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2"

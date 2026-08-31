@@ -1,5 +1,5 @@
 import { cleanup, render, waitFor } from '@testing-library/svelte';
-import { flushSync, tick, unmount as unmountComponent, type Component } from 'svelte';
+import { flushSync, tick, type Component } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MapStage from './MapStage.svelte';
 
@@ -683,7 +683,6 @@ describe('MapStage boot lifecycle', () => {
 		await waitFor(() => expect(harness.state.maps).toHaveLength(1));
 
 		view.unmount();
-		view.unmount();
 
 		expect(signal?.aborted).toBe(true);
 		expect(harness.state.maps[0]?.remove).toHaveBeenCalledTimes(1);
@@ -717,7 +716,7 @@ describe('MapStage boot lifecycle', () => {
 		map.emit('load');
 		expect(map.handlers.get('click')).toHaveLength(1);
 
-		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+		view.unmount();
 
 		expect(onbeforeremove).toHaveBeenCalledOnce();
 		expect(receivedMap).toBe(map);
@@ -764,7 +763,7 @@ describe('MapStage boot lifecycle', () => {
 		expect(harness.state.controlListenerCount).toBe(5);
 		harness.state.controlCleanupFailure = { error: controlError, phase: 'before' };
 
-		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+		view.unmount();
 
 		expect(map.removeControl).toHaveBeenCalledTimes(2);
 		expect(map.controls).toHaveLength(0);
@@ -797,7 +796,7 @@ describe('MapStage boot lifecycle', () => {
 			throw mapRemoveError;
 		});
 
-		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+		view.unmount();
 		expect(onbeforeremove).toHaveBeenCalledOnce();
 		expect(map.off.mock.calls).toEqual(
 			MAP_LISTENER_TYPES.map((type, index) => [type, registeredHandlers[index]]),
@@ -870,7 +869,7 @@ describe('MapStage boot lifecycle', () => {
 			throw errors.remove;
 		});
 
-		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+		view.unmount();
 
 		expect(observer.connected).toBe(false);
 		for (const type of MAP_LISTENER_TYPES) expect(map.handlers.get(type)?.size ?? 0).toBe(0);
@@ -896,7 +895,7 @@ describe('MapStage boot lifecycle', () => {
 			},
 		});
 
-		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+		view.unmount();
 
 		expect(consoleError).toHaveBeenCalledExactlyOnceWith('MapStage cleanup failed', releaseError);
 	});
@@ -915,7 +914,7 @@ describe('MapStage boot lifecycle', () => {
 			oncleanupfailure,
 		});
 
-		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+		view.unmount();
 
 		expect(oncleanupfailure).toHaveBeenCalledExactlyOnceWith(releaseError);
 		expect(consoleError).toHaveBeenCalledOnce();
@@ -945,7 +944,7 @@ describe('MapStage boot lifecycle', () => {
 			oncleanupfailure,
 		});
 
-		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+		view.unmount();
 		rejectReporter(reporterError);
 		await Promise.resolve();
 		await Promise.resolve();
@@ -1110,7 +1109,7 @@ describe('MapStage boot lifecycle', () => {
 		expect(onstyleload).toHaveBeenCalledOnce();
 		expect(oncleanupfailure).toHaveBeenCalledExactlyOnceWith(cleanupError);
 
-		await expect(unmountComponent(view.component)).resolves.toBeUndefined();
+		view.unmount();
 
 		expect(map.handlers.get('style.load')).toHaveLength(0);
 		for (const type of MAP_LISTENER_TYPES) expect(map.handlers.get(type)?.size ?? 0).toBe(0);

@@ -68,6 +68,7 @@ Run the core workspace commands:
 
 ```bash
 bun run check
+bun run lint
 bun run build
 bun run test
 ```
@@ -79,8 +80,9 @@ cd apps/db
 uv sync --locked
 ```
 
-For the full data-pipeline verification battery, see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+For the ordered clean-clone command that mirrors required web, data-proxy, and
+database CI, including the disposable PostGIS gates, see
+[CONTRIBUTING.md](CONTRIBUTING.md#verification).
 
 Copy `.env.example` to `.env` only for local work and provide the variables for
 the path you are exercising. Never commit credentials or production exports.

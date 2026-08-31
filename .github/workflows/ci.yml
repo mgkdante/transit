@@ -104,8 +104,8 @@ jobs:
       - name: Run offline test suite
         run: uv run pytest tests
 
-      - name: Ruff (F-rules)
-        run: uv run ruff check src tests --select F
+      - name: Ruff
+        run: uv run ruff check src tests
 
       - name: Mypy (snapshot publisher)
         run: uv run mypy src/transit_ops/snapshots/publish.py

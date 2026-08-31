@@ -35,6 +35,7 @@ const ACTIONS = {
 } as const;
 const DB_WORK = ['offline-tests-work', 'alembic-single-head-work', 'real-db-tests-work'];
 const DB_CONTEXTS = ['offline-tests', 'alembic-single-head', 'real-db-tests'];
+const WEB_WORK = ['ci-work', 'map-poster-check'];
 const GOVERNED_PR_WORKFLOWS = ['.github/workflows/ci.yml', '.github/workflows/web.yml'];
 
 function text(path: string): string {
@@ -257,6 +258,9 @@ describe('ST5 Transit shared-tooling adoption', () => {
 
 	it('preserves the web ci and deploy contract behind one always reporter', () => {
 		const jobs = jobBlocks(text('.github/workflows/web.yml'));
+		const proxyPackage = JSON.parse(text('apps/data-proxy/package.json')) as {
+			scripts: Record<string, string>;
+		};
 		const work = jobs.get('ci-work');
 		const reporter = jobs.get('ci');
 		const deployScope = jobs.get('deploy_scope');
@@ -267,7 +271,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(directNeeds(work)).toEqual(['classify']);
 		expect(work).toContain("relevant['ci-work']");
 		expect(work).toContain('node --test .github/scripts/deploy-scope.test.mjs');
-		expect(directNeeds(reporter)).toEqual(['classify', 'ci-work']);
+		expect(directNeeds(reporter)).toEqual(['classify', ...WEB_WORK]);
 		expect(reporter).toMatch(/^ {4}if:\s*(?:\$\{\{\s*)?always\(\)(?:\s*\}\})?\s*$/mu);
 		expect(reporter).toContain(`${SOURCE_REPOSITORY}/${ACTIONS.reporter}@${SOURCE_SHA}`);
 
@@ -277,6 +281,14 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(setup).toBeGreaterThanOrEqual(0);
 		expect(materialize).toBeGreaterThan(setup);
 		expect(drift).toBeGreaterThan(materialize);
+		expect(proxyPackage.scripts.check).toBe(
+			'node --check src/cors.js && node --check src/kpis.js && node --check src/worker.js && node --check scripts/configure-data-edge.mjs',
+		);
+		const proxyCheck = work.indexOf('bun run --cwd apps/data-proxy check');
+		const proxyTest = work.indexOf('bun run --cwd apps/data-proxy test');
+		expect(proxyCheck).toBeGreaterThan(drift);
+		expect(proxyTest).toBeGreaterThan(proxyCheck);
+		expect(work).toContain('bun run icons:check');
 		expect(deployScope).toMatch(
 			/^ {4}outputs:\n {6}deploy_web:\s*\$\{\{\s*steps\.scope\.outputs\.deploy_web\s*\}\}\s*$/mu,
 		);
@@ -294,6 +306,29 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(jobs.get('deploy-production')).toContain('run: bash smoke.sh');
 	});
 
+	it('owns the poster gate and prepares Bun before a basemap upload', () => {
+		const webJobs = jobBlocks(text('.github/workflows/web.yml'));
+		const poster = webJobs.get('map-poster-check');
+		const reporter = webJobs.get('ci');
+		expect(poster).toBeDefined();
+		expect(reporter).toBeDefined();
+		if (!poster || !reporter) return;
+		expect(directNeeds(poster)).toEqual(['classify']);
+		expect(poster).toContain("relevant['map-poster-check']");
+		expect(poster).toContain('bun run map-posters:check');
+		expect(directNeeds(reporter)).toEqual(['classify', ...WEB_WORK]);
+
+		const refresh = jobBlocks(text('.github/workflows/refresh-basemap.yml')).get('refresh-basemap');
+		expect(refresh).toBeDefined();
+		if (!refresh) return;
+		const setupBun = refresh.indexOf('oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6');
+		const upload = refresh.indexOf(
+			'cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0',
+		);
+		expect(setupBun).toBeGreaterThanOrEqual(0);
+		expect(upload).toBeGreaterThan(setupBun);
+	});
+
 	it('classifies each product domain selectively while unknown paths fail safe', () => {
 		const dbRules = classifierRules(text('.github/workflows/ci.yml'));
 		const webRules = classifierRules(text('.github/workflows/web.yml'));
@@ -308,11 +343,14 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(classify('README.md', dbRules)).toEqual(noDb);
 		expect(classify('new-root-surface.txt', dbRules)).toEqual(allDb);
 
-		const productWeb = { 'ci-work': true };
-		const allWeb = { 'ci-work': true };
-		const noWeb = { 'ci-work': false };
+		const productWeb = { 'ci-work': true, 'map-poster-check': false };
+		const posterWeb = { 'ci-work': true, 'map-poster-check': true };
+		const allWeb = { 'ci-work': true, 'map-poster-check': true };
+		const noWeb = { 'ci-work': false, 'map-poster-check': false };
 		expect(classify('apps/web/src/routes/+page.svelte', webRules)).toEqual(productWeb);
 		expect(classify('apps/data-proxy/src/index.ts', webRules)).toEqual(productWeb);
+		expect(classify('apps/web/scripts/build-map-posters.ts', webRules)).toEqual(posterWeb);
+		expect(classify('apps/web/static/map/poster.avif', webRules)).toEqual(posterWeb);
 		expect(classify('.github/workflows/ci.yml', webRules)).toEqual(allWeb);
 		expect(classify('.github/scripts/materialize-shared-config.mjs', webRules)).toEqual(allWeb);
 		expect(classify('apps/db/src/transit_ops/cli.py', webRules)).toEqual(noWeb);
