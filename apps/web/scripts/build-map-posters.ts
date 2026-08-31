@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import sharp from 'sharp';
@@ -17,22 +17,29 @@ import type { BasemapFile } from '../src/lib/v1/schemas/basemap';
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(here, '..');
 const outputDir = resolve(webRoot, 'static/map');
+const receiptPath = resolve(outputDir, 'basemap-montreal-posters.json');
 const maplibreScript = resolve(webRoot, 'node_modules/maplibre-gl/dist/maplibre-gl.js');
 const maplibreCss = resolve(webRoot, 'node_modules/maplibre-gl/dist/maplibre-gl.css');
 const pmtilesScript = resolve(webRoot, 'node_modules/pmtiles/dist/pmtiles.js');
 
 const DESCRIPTOR_URL = 'https://data.yesid.dev/v1/stm/static/basemap.json';
 const PMTILES_URL = 'https://transit.yesid.dev/data/v1/stm/static/basemap/montreal.pmtiles';
-const PMTILES_ETAG = '"6403e3c2777cc710276331111b570633"';
-const PMTILES_RANGE = 'bytes 0-0/86282797';
 const ATTRIBUTION = '© OpenStreetMap contributors, © Protomaps';
 const MAX_POSTER_BYTES = 125 * 1024;
+const PLAYWRIGHT_CORE_VERSION = '1.62.0';
 const PINNED_CHROMIUM_VERSION = '151.0.7922.34';
+const RENDER_INPUT_PATHS = [
+	'scripts/build-map-posters.ts',
+	'src/lib/components/map/basemap.ts',
+	'src/lib/components/map/viewport.ts',
+	'src/lib/features/map/mapCameraFraming.ts',
+] as const;
 
 type PinnedDescriptor = BasemapFile & {
 	schema_version: number;
 	methodology_version: string;
 	publish_generation_id: string;
+	generated_utc: string;
 	format: string;
 };
 
@@ -43,32 +50,35 @@ interface PosterSpec {
 	height: number;
 }
 
-const POSTERS: readonly PosterSpec[] = [
-	{
-		filename: 'basemap-montreal-dark-mobile-20260812.avif',
-		theme: 'dark',
-		width: 390,
-		height: 844,
-	},
-	{
-		filename: 'basemap-montreal-light-mobile-20260812.avif',
-		theme: 'light',
-		width: 390,
-		height: 844,
-	},
-	{
-		filename: 'basemap-montreal-dark-desktop-20260812.avif',
-		theme: 'dark',
-		width: 1280,
-		height: 720,
-	},
-	{
-		filename: 'basemap-montreal-light-desktop-20260812.avif',
-		theme: 'light',
-		width: 1280,
-		height: 720,
-	},
-] as const;
+interface PosterEntry extends PosterSpec {
+	format: 'avif';
+	bytes: number;
+	sha256: string;
+}
+
+interface PosterSourceReceipt {
+	descriptor_url: string;
+	descriptor_etag: string;
+	publish_generation_id: string;
+	generated_utc: string;
+	pmtiles_url: string;
+	pmtiles_etag: string;
+	pmtiles_size_bytes: number;
+	attribution: string;
+	min_zoom: number;
+	max_zoom: number;
+}
+
+interface PosterReceipt {
+	schema_version: 1;
+	source: PosterSourceReceipt;
+	reproduced_with: {
+		playwright_core_version: string;
+		chromium_version: string;
+	};
+	render_inputs: Array<{ path: string; sha256: string }>;
+	posters: PosterEntry[];
+}
 
 function assertEqual(actual: unknown, expected: unknown, label: string): void {
 	if (actual !== expected) {
@@ -78,16 +88,154 @@ function assertEqual(actual: unknown, expected: unknown, label: string): void {
 	}
 }
 
-async function readPinnedDescriptor(): Promise<PinnedDescriptor> {
+function assertString(value: unknown, label: string): asserts value is string {
+	if (typeof value !== 'string' || value.length === 0) throw new Error(`${label} must be a string`);
+}
+
+function sha256(bytes: Buffer): string {
+	return createHash('sha256').update(bytes).digest('hex');
+}
+
+function validateReceipt(value: unknown): asserts value is PosterReceipt {
+	if (!value || typeof value !== 'object') throw new Error('poster receipt must be an object');
+	const receipt = value as Partial<PosterReceipt>;
+	assertEqual(receipt.schema_version, 1, 'poster receipt schema_version');
+	if (!receipt.source || typeof receipt.source !== 'object') {
+		throw new Error('poster receipt source must be an object');
+	}
+	assertEqual(receipt.source.descriptor_url, DESCRIPTOR_URL, 'poster descriptor URL');
+	assertString(receipt.source.descriptor_etag, 'poster descriptor ETag');
+	assertString(receipt.source.publish_generation_id, 'poster generation ID');
+	assertString(receipt.source.generated_utc, 'poster generated UTC');
+	assertEqual(receipt.source.pmtiles_url, PMTILES_URL, 'poster PMTiles URL');
+	assertString(receipt.source.pmtiles_etag, 'poster PMTiles ETag');
+	if (
+		!Number.isSafeInteger(receipt.source.pmtiles_size_bytes) ||
+		receipt.source.pmtiles_size_bytes <= 100_000
+	) {
+		throw new Error('poster PMTiles size must be a safe integer above 100000 bytes');
+	}
+	assertEqual(receipt.source.attribution, ATTRIBUTION, 'poster attribution');
+	assertEqual(receipt.source.min_zoom, 0, 'poster min zoom');
+	assertEqual(receipt.source.max_zoom, 15, 'poster max zoom');
+	if (!receipt.reproduced_with || typeof receipt.reproduced_with !== 'object') {
+		throw new Error('poster renderer receipt must be an object');
+	}
+	assertEqual(
+		receipt.reproduced_with.playwright_core_version,
+		PLAYWRIGHT_CORE_VERSION,
+		'poster Playwright version',
+	);
+	assertEqual(
+		receipt.reproduced_with.chromium_version,
+		PINNED_CHROMIUM_VERSION,
+		'poster Chromium version',
+	);
+	if (
+		!Array.isArray(receipt.render_inputs) ||
+		receipt.render_inputs.length !== RENDER_INPUT_PATHS.length
+	) {
+		throw new Error(
+			`poster receipt must contain exactly ${RENDER_INPUT_PATHS.length} render inputs`,
+		);
+	}
+	for (const [index, input] of receipt.render_inputs.entries()) {
+		assertEqual(input.path, RENDER_INPUT_PATHS[index], `poster render input ${index} path`);
+		if (!/^[0-9a-f]{64}$/u.test(input.sha256)) {
+			throw new Error(`${input.path} SHA-256 receipt is invalid`);
+		}
+	}
+	if (!Array.isArray(receipt.posters) || receipt.posters.length !== 4) {
+		throw new Error('poster receipt must contain exactly four assets');
+	}
+	const variants = new Set<string>();
+	for (const poster of receipt.posters) {
+		assertString(poster.filename, 'poster filename');
+		if (
+			basename(poster.filename) !== poster.filename ||
+			!/^basemap-montreal-(?:dark|light)-(?:mobile|desktop)-\d{8}\.avif$/u.test(poster.filename)
+		) {
+			throw new Error(`unsafe or unexpected poster filename: ${poster.filename}`);
+		}
+		if (poster.theme !== 'dark' && poster.theme !== 'light') {
+			throw new Error(`unexpected poster theme: ${String(poster.theme)}`);
+		}
+		if (!Number.isSafeInteger(poster.width) || !Number.isSafeInteger(poster.height)) {
+			throw new Error(`${poster.filename} dimensions must be safe integers`);
+		}
+		assertEqual(poster.format, 'avif', `${poster.filename} receipt format`);
+		if (
+			!Number.isSafeInteger(poster.bytes) ||
+			poster.bytes <= 0 ||
+			poster.bytes > MAX_POSTER_BYTES
+		) {
+			throw new Error(`${poster.filename} byte receipt is outside the allowed range`);
+		}
+		if (!/^[0-9a-f]{64}$/u.test(poster.sha256)) {
+			throw new Error(`${poster.filename} SHA-256 receipt is invalid`);
+		}
+		variants.add(`${poster.theme}:${poster.width}x${poster.height}`);
+	}
+	const expectedVariants = ['dark:390x844', 'light:390x844', 'dark:1280x720', 'light:1280x720'];
+	assertEqual([...variants].sort().join(','), expectedVariants.sort().join(','), 'poster variants');
+}
+
+async function readPosterReceipt(): Promise<PosterReceipt> {
+	const receipt = JSON.parse(await readFile(receiptPath, 'utf8')) as unknown;
+	validateReceipt(receipt);
+	return receipt;
+}
+
+async function readRenderInputs(): Promise<Array<{ path: string; sha256: string }>> {
+	return Promise.all(
+		RENDER_INPUT_PATHS.map(async (path) => ({
+			path,
+			sha256: sha256(await readFile(resolve(webRoot, path))),
+		})),
+	);
+}
+
+async function verifyPosterReceipt(receipt: PosterReceipt): Promise<void> {
+	assertEqual(
+		JSON.stringify(await readRenderInputs()),
+		JSON.stringify(receipt.render_inputs),
+		'poster render inputs',
+	);
+	for (const poster of receipt.posters) {
+		const bytes = await readFile(resolve(outputDir, poster.filename));
+		const metadata = await sharp(bytes).metadata();
+		assertEqual(metadata.format, 'heif', `${poster.filename} format`);
+		assertEqual(metadata.width, poster.width, `${poster.filename} width`);
+		assertEqual(metadata.height, poster.height, `${poster.filename} height`);
+		assertEqual(bytes.byteLength, poster.bytes, `${poster.filename} bytes`);
+		assertEqual(sha256(bytes), poster.sha256, `${poster.filename} SHA-256`);
+		console.log(
+			`[build-map-posters] ok: ${poster.filename} (${bytes.byteLength} bytes, sha256 ${poster.sha256})`,
+		);
+	}
+}
+
+function requiredHeader(response: Response, name: string, label: string): string {
+	const value = response.headers.get(name);
+	if (!value) throw new Error(`${label} is missing ${name}`);
+	return value;
+}
+
+async function readLiveSource(): Promise<{
+	descriptor: PinnedDescriptor;
+	source: PosterSourceReceipt;
+}> {
 	const descriptorResponse = await fetch(DESCRIPTOR_URL, {
 		cache: 'no-store',
 		headers: { 'Accept-Encoding': 'identity' },
 	});
 	assertEqual(descriptorResponse.status, 200, 'basemap descriptor status');
-
+	const descriptorEtag = requiredHeader(descriptorResponse, 'etag', 'basemap descriptor');
 	const descriptor = (await descriptorResponse.json()) as PinnedDescriptor;
 	assertEqual(descriptor.schema_version, 1, 'basemap schema_version');
 	assertEqual(descriptor.methodology_version, 'static-1', 'basemap methodology_version');
+	assertString(descriptor.publish_generation_id, 'basemap publish_generation_id');
+	assertString(descriptor.generated_utc, 'basemap generated_utc');
 	assertEqual(descriptor.format, 'pmtiles', 'basemap format');
 	assertEqual(descriptor.url, PMTILES_URL, 'basemap URL');
 	assertEqual(descriptor.style_url, null, 'basemap style_url');
@@ -100,11 +248,30 @@ async function readPinnedDescriptor(): Promise<PinnedDescriptor> {
 		headers: { 'Accept-Encoding': 'identity', Range: 'bytes=0-0' },
 	});
 	assertEqual(archiveResponse.status, 206, 'PMTiles range status');
-	assertEqual(archiveResponse.headers.get('etag'), PMTILES_ETAG, 'PMTiles ETag');
-	assertEqual(archiveResponse.headers.get('content-range'), PMTILES_RANGE, 'PMTiles content-range');
+	const contentRange = requiredHeader(archiveResponse, 'content-range', 'PMTiles range response');
+	const rangeMatch = /^bytes 0-0\/(\d+)$/u.exec(contentRange);
+	if (!rangeMatch) throw new Error(`unexpected PMTiles content-range: ${contentRange}`);
+	const pmtilesSize = Number(rangeMatch[1]);
+	if (!Number.isSafeInteger(pmtilesSize) || pmtilesSize <= 100_000) {
+		throw new Error(`unexpected PMTiles size: ${rangeMatch[1]}`);
+	}
 	assertEqual((await archiveResponse.arrayBuffer()).byteLength, 1, 'PMTiles range body length');
 
-	return descriptor;
+	return {
+		descriptor,
+		source: {
+			descriptor_url: DESCRIPTOR_URL,
+			descriptor_etag: descriptorEtag,
+			publish_generation_id: descriptor.publish_generation_id,
+			generated_utc: descriptor.generated_utc,
+			pmtiles_url: PMTILES_URL,
+			pmtiles_etag: requiredHeader(archiveResponse, 'etag', 'PMTiles range response'),
+			pmtiles_size_bytes: pmtilesSize,
+			attribution: ATTRIBUTION,
+			min_zoom: 0,
+			max_zoom: 15,
+		},
+	};
 }
 
 async function preparePage(browser: Browser, spec: PosterSpec): Promise<Page> {
@@ -191,53 +358,82 @@ async function capturePoster(
 	}
 }
 
-function sha256(bytes: Buffer): string {
-	return createHash('sha256').update(bytes).digest('hex');
-}
-
-async function main(): Promise<void> {
-	const checkOnly = process.argv.includes('--check');
+async function buildPosters(seed: PosterReceipt): Promise<void> {
 	await mkdir(outputDir, { recursive: true });
-	const descriptor = await readPinnedDescriptor();
+	const liveBefore = await readLiveSource();
+	const renderInputsBefore = await readRenderInputs();
 	const explicitExecutable = process.env.CHROME_PATH?.trim();
 	const browser = await chromium.launch({
 		...(explicitExecutable ? { executablePath: explicitExecutable } : {}),
 		headless: true,
 		args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'],
 	});
-	let drift = false;
+	const generated: Array<{ spec: PosterSpec; bytes: Buffer }> = [];
+	let browserVersion: string;
 	try {
-		const browserVersion = browser.version();
+		browserVersion = browser.version();
 		assertEqual(browserVersion, PINNED_CHROMIUM_VERSION, 'poster Chromium version');
-		console.log(`[build-map-posters] browser: playwright-core 1.62.0 / Chromium ${browserVersion}`);
-		for (const spec of POSTERS) {
-			const generated = await capturePoster(browser, descriptor, spec);
-			const outPath = resolve(outputDir, spec.filename);
-			if (checkOnly) {
-				const current = await readFile(outPath).catch(() => null);
-				if (!current?.equals(generated)) {
-					drift = true;
-					console.error(`[build-map-posters] DRIFT: ${outPath} is missing or stale.`);
-				} else {
-					console.log(
-						`[build-map-posters] ok: ${outPath} (${generated.byteLength} bytes, sha256 ${sha256(generated)})`,
-					);
-				}
-				continue;
-			}
-			await writeFile(outPath, generated);
-			console.log(
-				`[build-map-posters] wrote ${outPath} (${generated.byteLength} bytes, sha256 ${sha256(generated)})`,
-			);
+		console.log(
+			`[build-map-posters] browser: playwright-core ${PLAYWRIGHT_CORE_VERSION} / Chromium ${browserVersion}`,
+		);
+		for (const poster of seed.posters) {
+			const spec: PosterSpec = {
+				filename: poster.filename,
+				theme: poster.theme,
+				width: poster.width,
+				height: poster.height,
+			};
+			generated.push({ spec, bytes: await capturePoster(browser, liveBefore.descriptor, spec) });
 		}
 	} finally {
 		await browser.close();
 	}
 
-	await readPinnedDescriptor();
-	if (checkOnly && drift) {
-		throw new Error('Poster assets are out of date. Run `bun scripts/build-map-posters.ts`.');
+	const liveAfter = await readLiveSource();
+	const renderInputsAfter = await readRenderInputs();
+	assertEqual(
+		JSON.stringify(liveAfter.source),
+		JSON.stringify(liveBefore.source),
+		'basemap source identity during poster render',
+	);
+	assertEqual(
+		JSON.stringify(renderInputsAfter),
+		JSON.stringify(renderInputsBefore),
+		'poster render inputs during render',
+	);
+	for (const poster of generated) {
+		const outPath = resolve(outputDir, poster.spec.filename);
+		await writeFile(outPath, poster.bytes);
+		console.log(
+			`[build-map-posters] wrote ${outPath} (${poster.bytes.byteLength} bytes, sha256 ${sha256(poster.bytes)})`,
+		);
 	}
+	const receipt: PosterReceipt = {
+		schema_version: 1,
+		source: liveBefore.source,
+		reproduced_with: {
+			playwright_core_version: PLAYWRIGHT_CORE_VERSION,
+			chromium_version: browserVersion,
+		},
+		render_inputs: renderInputsBefore,
+		posters: generated.map(({ spec, bytes }) => ({
+			...spec,
+			format: 'avif',
+			bytes: bytes.byteLength,
+			sha256: sha256(bytes),
+		})),
+	};
+	await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+	await verifyPosterReceipt(receipt);
+}
+
+async function main(): Promise<void> {
+	const receipt = await readPosterReceipt();
+	if (process.argv.includes('--check')) {
+		await verifyPosterReceipt(receipt);
+		return;
+	}
+	await buildPosters(receipt);
 }
 
 main().catch((error) => {

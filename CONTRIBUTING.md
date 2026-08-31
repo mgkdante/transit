@@ -46,13 +46,13 @@ bun install --frozen-lockfile
 node .github/scripts/materialize-shared-config.mjs
 git diff --exit-code -- turbo.json
 node --test .github/scripts/deploy-scope.test.mjs
+node --test .github/scripts/refresh-basemap-r2.test.mjs
 bun apps/web/vendor/design/tools/adopt.ts --check --dest apps/web/vendor/design
 
 bun run --cwd apps/web tokens:build
 git diff --exit-code -- apps/web/src/lib/styles/tokens.css apps/web/src/app.css
 bun run --cwd apps/web og:check
 bun run --cwd apps/web icons:check
-apps/web/node_modules/.bin/playwright-core install chromium-headless-shell
 bun run --cwd apps/web map-posters:check
 
 bun run --cwd apps/data-proxy check
@@ -89,3 +89,12 @@ export PGPASSWORD='transit_ci@:/%'
 Behavior changes require a regression test. In the pull request, explain the
 problem, the boundary that owns the fix, and the commands or runtime evidence
 used to verify it.
+
+`map-posters:check` verifies the checked-in dated posters and their source
+receipt entirely offline. To intentionally rebuild those assets, install the
+pinned browser with
+`apps/web/node_modules/.bin/playwright-core install chromium-headless-shell`,
+replace the receipt's filenames with the new `YYYYMMDD`, update the matching
+`MapProgressive.svelte` filenames and bilingual `staticSnapshot` date, then run
+`bun run --cwd apps/web map-posters:build`. Review the changed images, receipt,
+client filenames, copy, and tests together.

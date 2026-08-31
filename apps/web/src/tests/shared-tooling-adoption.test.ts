@@ -306,21 +306,21 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(jobs.get('deploy-production')).toContain('run: bash smoke.sh');
 	});
 
-	it('owns the poster gate and prepares Bun before a basemap upload', () => {
+	it('owns the offline poster gate and prepares Bun before a verified basemap replacement', () => {
 		const webJobs = jobBlocks(text('.github/workflows/web.yml'));
+		const ciWork = webJobs.get('ci-work');
 		const poster = webJobs.get('map-poster-check');
 		const reporter = webJobs.get('ci');
+		expect(ciWork).toBeDefined();
 		expect(poster).toBeDefined();
 		expect(reporter).toBeDefined();
-		if (!poster || !reporter) return;
+		if (!ciWork || !poster || !reporter) return;
+		expect(ciWork).toContain('node --test .github/scripts/refresh-basemap-r2.test.mjs');
 		expect(directNeeds(poster)).toEqual(['classify']);
 		expect(poster).toContain("relevant['map-poster-check']");
-		const installBrowser = poster.indexOf(
-			'./node_modules/.bin/playwright-core install chromium-headless-shell',
-		);
 		const checkPosters = poster.indexOf('bun run map-posters:check');
-		expect(installBrowser).toBeGreaterThanOrEqual(0);
-		expect(checkPosters).toBeGreaterThan(installBrowser);
+		expect(checkPosters).toBeGreaterThanOrEqual(0);
+		expect(poster).not.toContain('playwright-core install');
 		expect(directNeeds(reporter)).toEqual(['classify', ...WEB_WORK]);
 
 		const posterScript = text('apps/web/scripts/build-map-posters.ts');
@@ -337,19 +337,28 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(contributing).toContain(
 			'551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
 		);
-		expect(contributing.indexOf('playwright-core install chromium-headless-shell')).toBeLessThan(
-			contributing.indexOf('map-posters:check'),
+		const contributingPosterCheck = contributing.indexOf('map-posters:check');
+		expect(contributingPosterCheck).toBeGreaterThanOrEqual(0);
+		expect(contributing.slice(0, contributingPosterCheck)).not.toContain(
+			'playwright-core install chromium-headless-shell',
 		);
+		expect(contributingPosterCheck).toBeLessThan(
+			contributing.indexOf('playwright-core install chromium-headless-shell'),
+		);
+		expect(contributing).toContain('node --test .github/scripts/refresh-basemap-r2.test.mjs');
 
 		const refresh = jobBlocks(text('.github/workflows/refresh-basemap.yml')).get('refresh-basemap');
 		expect(refresh).toBeDefined();
 		if (!refresh) return;
 		const setupBun = refresh.indexOf('oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6');
-		const upload = refresh.indexOf(
-			'cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0',
-		);
+		const upload = refresh.indexOf('bun .github/scripts/refresh-basemap-r2.mjs');
 		expect(setupBun).toBeGreaterThanOrEqual(0);
 		expect(upload).toBeGreaterThan(setupBun);
+		expect(refresh).toContain('timeout-minutes: 45');
+		expect(refresh).toContain('timeout 5m pmtiles extract');
+		expect(refresh).toContain('timeout 2m pmtiles verify');
+		expect(refresh).toContain('${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}');
+		expect(refresh).not.toContain('cloudflare/wrangler-action@');
 	});
 
 	it('classifies each product domain selectively while unknown paths fail safe', () => {
@@ -374,7 +383,13 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(classify('apps/data-proxy/src/index.ts', webRules)).toEqual(productWeb);
 		expect(classify('apps/web/scripts/build-map-posters.ts', webRules)).toEqual(posterWeb);
 		expect(classify('apps/web/package.json', webRules)).toEqual(posterWeb);
-		expect(classify('apps/web/static/map/poster.avif', webRules)).toEqual(posterWeb);
+		expect(classify('apps/web/static/map/basemap-montreal-posters.json', webRules)).toEqual(
+			posterWeb,
+		);
+		expect(classify('apps/web/src/lib/components/map/basemap.ts', webRules)).toEqual(posterWeb);
+		expect(classify('apps/web/src/lib/features/map/mapCameraFraming.ts', webRules)).toEqual(
+			posterWeb,
+		);
 		expect(classify('.github/workflows/ci.yml', webRules)).toEqual(allWeb);
 		expect(classify('.github/scripts/materialize-shared-config.mjs', webRules)).toEqual(allWeb);
 		expect(classify('apps/db/src/transit_ops/cli.py', webRules)).toEqual(noWeb);

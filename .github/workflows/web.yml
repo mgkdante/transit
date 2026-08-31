@@ -105,6 +105,10 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: node --test .github/scripts/deploy-scope.test.mjs
 
+      - name: Basemap replacement transaction contract
+        working-directory: ${{ github.workspace }}
+        run: node --test .github/scripts/refresh-basemap-r2.test.mjs
+
       - name: Design adoption integrity
         run: bun vendor/design/tools/adopt.ts --check --dest vendor/design
 
@@ -154,9 +158,6 @@ jobs:
 
       - name: Set up JS workspace
         uses: ./.github/actions/setup
-
-      - name: Install pinned poster browser
-        run: ./node_modules/.bin/playwright-core install chromium-headless-shell
 
       - name: Map poster drift gate
         run: bun run map-posters:check
