@@ -1,4 +1,7 @@
-"""Migration-source assertions for 0071_stop_delay_shift_daily (GC1 / Step G4). Clones test_migration_0066."""
+"""Migration-source assertions for 0071_stop_delay_shift_daily.
+
+This clones test_migration_0066 for GC1 / Step G4.
+"""
 
 from __future__ import annotations
 

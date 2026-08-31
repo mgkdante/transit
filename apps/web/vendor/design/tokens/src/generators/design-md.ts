@@ -90,7 +90,7 @@ export function generateDesignMd(tree: TokenTree, opts: DesignMdOptions = {}): s
   const components = opts.components ?? opts.brandComponents ?? [];
   const componentsBlock = components.length
     ? components.map((component) => `  ${component}: {}`).join('\n')
-    : '  # see Notion design system page';
+    : '  # see packages/ui/README.md and the public @yesid/ui exports';
   const brandComponents = opts.brandComponents ?? [];
   const primitiveSubpaths = opts.primitiveSubpaths ?? [];
   const componentInventory = brandComponents.length || primitiveSubpaths.length
@@ -129,7 +129,8 @@ dark-first, governed by the four-color infrastructure doctrine below. Every visu
 traces back to one of five principles: edge-to-edge layout, dark-first surfaces, one-orange
 interactivity (orange is the clickable hue — with a single doctrinal exception: yellow
 conversion buttons, see Colors), motion-with-intent, no fluff.
-Full narrative and implementation rules: Notion → Business → Brand.
+Public narrative and implementation rules: README.md, BOUNDARIES.md, and
+docs/BUILD-A-YESID-PRODUCT.md.
 
 ## Colors
 
@@ -168,7 +169,8 @@ Hard floors: body ≥ 16px, mono ≥ 13px, labels ≥ 12px, micro for chrome onl
 
 Four CSS Grid recipes: Full-Bleed · Contained · Content+Sidebars · Edge-Title-Grid. Container
 widths cap at \`64rem\` (content) / \`72rem\` (wide). Page gutters scale via \`--space-page-x\`.
-Section spacing scales via \`--space-section-y\`. Detailed recipes: Notion → Business → Brand.
+Section spacing scales via \`--space-section-y\`. Consumer integration guidance lives in
+docs/BUILD-A-YESID-PRODUCT.md.
 
 ## Elevation & Depth
 
@@ -184,7 +186,7 @@ Borders use semantic tokens (\`border\`, \`border-subtle\`, \`border-strong\`).
 ## Components
 
 ${componentInventory} Design-system documentation:
-Notion → Business → Brand.
+the public \`@yesid/ui\` package documentation and the living Gallery.
 
 ## Do's and Don'ts
 

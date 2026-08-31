@@ -35,6 +35,7 @@ const ACTIONS = {
 } as const;
 const DB_WORK = ['offline-tests-work', 'alembic-single-head-work', 'real-db-tests-work'];
 const DB_CONTEXTS = ['offline-tests', 'alembic-single-head', 'real-db-tests'];
+const WEB_WORK = ['ci-work', 'map-poster-check'];
 const GOVERNED_PR_WORKFLOWS = ['.github/workflows/ci.yml', '.github/workflows/web.yml'];
 
 function text(path: string): string {
@@ -158,7 +159,7 @@ describe('ST7 Transit workflow timeout governance', () => {
 });
 
 describe('ST5 Transit shared-tooling adoption', () => {
-	it('keeps push selectivity while making both PR workflows always report', () => {
+	it('admits every web push to the inner classifier while making both PR workflows always report', () => {
 		const ci = text('.github/workflows/ci.yml');
 		const web = text('.github/workflows/web.yml');
 		const ciEvents = topLevelBlock(ci, 'on');
@@ -175,18 +176,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 			'.github/actions/**',
 			'.bun-version',
 		]);
-		expect(quotedList(nestedBlock(webEvents, 'push'))).toEqual([
-			'apps/web/**',
-			'apps/data-proxy/**',
-			'packages/**',
-			'bun.lock',
-			'.bun-version',
-			'package.json',
-			'turbo.json',
-			'.github/workflows/web.yml',
-			'.github/actions/**',
-			'tools/e6/**',
-		]);
+		expect(nestedBlock(webEvents, 'push')).not.toMatch(/^\s*paths:/mu);
 		for (const workflow of [ci, web]) {
 			expect(Object.fromEntries(directMapping(topLevelBlock(workflow, 'permissions')))).toEqual({
 				contents: 'read',
@@ -268,21 +258,20 @@ describe('ST5 Transit shared-tooling adoption', () => {
 
 	it('preserves the web ci and deploy contract behind one always reporter', () => {
 		const jobs = jobBlocks(text('.github/workflows/web.yml'));
+		const proxyPackage = JSON.parse(text('apps/data-proxy/package.json')) as {
+			scripts: Record<string, string>;
+		};
 		const work = jobs.get('ci-work');
-		const e6Work = jobs.get('e6-tests-work');
 		const reporter = jobs.get('ci');
 		const deployScope = jobs.get('deploy_scope');
 		expect(work).toBeDefined();
-		expect(e6Work).toBeDefined();
 		expect(reporter).toBeDefined();
 		expect(deployScope).toBeDefined();
-		if (!work || !e6Work || !reporter || !deployScope) return;
+		if (!work || !reporter || !deployScope) return;
 		expect(directNeeds(work)).toEqual(['classify']);
 		expect(work).toContain("relevant['ci-work']");
-		expect(directNeeds(e6Work)).toEqual(['classify']);
-		expect(e6Work).toContain("relevant['e6-tests-work']");
-		expect(e6Work).toContain('bun run --shell=bun --cwd tools/e6 b2:check');
-		expect(directNeeds(reporter)).toEqual(['classify', 'ci-work', 'e6-tests-work']);
+		expect(work).toContain('node --test .github/scripts/deploy-scope.test.mjs');
+		expect(directNeeds(reporter)).toEqual(['classify', ...WEB_WORK]);
 		expect(reporter).toMatch(/^ {4}if:\s*(?:\$\{\{\s*)?always\(\)(?:\s*\}\})?\s*$/mu);
 		expect(reporter).toContain(`${SOURCE_REPOSITORY}/${ACTIONS.reporter}@${SOURCE_SHA}`);
 
@@ -292,10 +281,19 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(setup).toBeGreaterThanOrEqual(0);
 		expect(materialize).toBeGreaterThan(setup);
 		expect(drift).toBeGreaterThan(materialize);
+		expect(proxyPackage.scripts.check).toBe(
+			'node --check src/cors.js && node --check src/kpis.js && node --check src/worker.js && node --check scripts/configure-data-edge.mjs',
+		);
+		const proxyCheck = work.indexOf('bun run --cwd apps/data-proxy check');
+		const proxyTest = work.indexOf('bun run --cwd apps/data-proxy test');
+		expect(proxyCheck).toBeGreaterThan(drift);
+		expect(proxyTest).toBeGreaterThan(proxyCheck);
+		expect(work).toContain('bun run icons:check');
 		expect(deployScope).toMatch(
 			/^ {4}outputs:\n {6}deploy_web:\s*\$\{\{\s*steps\.scope\.outputs\.deploy_web\s*\}\}\s*$/mu,
 		);
 		expect(deployScope).toMatch(/^ {8}id:\s*scope\s*$/mu);
+		expect(deployScope).toContain('node .github/scripts/deploy-scope.mjs');
 
 		for (const deploy of ['deploy-dev', 'deploy-production']) {
 			const deployJob = jobs.get(deploy)!;
@@ -306,6 +304,52 @@ describe('ST5 Transit shared-tooling adoption', () => {
 			]).toHaveLength(1);
 		}
 		expect(jobs.get('deploy-production')).toContain('run: bash smoke.sh');
+	});
+
+	it('owns the poster gate and prepares Bun before a basemap upload', () => {
+		const webJobs = jobBlocks(text('.github/workflows/web.yml'));
+		const poster = webJobs.get('map-poster-check');
+		const reporter = webJobs.get('ci');
+		expect(poster).toBeDefined();
+		expect(reporter).toBeDefined();
+		if (!poster || !reporter) return;
+		expect(directNeeds(poster)).toEqual(['classify']);
+		expect(poster).toContain("relevant['map-poster-check']");
+		const installBrowser = poster.indexOf(
+			'./node_modules/.bin/playwright-core install chromium-headless-shell',
+		);
+		const checkPosters = poster.indexOf('bun run map-posters:check');
+		expect(installBrowser).toBeGreaterThanOrEqual(0);
+		expect(checkPosters).toBeGreaterThan(installBrowser);
+		expect(directNeeds(reporter)).toEqual(['classify', ...WEB_WORK]);
+
+		const posterScript = text('apps/web/scripts/build-map-posters.ts');
+		expect(posterScript).not.toContain('/usr/bin/google-chrome');
+		expect(posterScript).toContain("const PINNED_CHROMIUM_VERSION = '151.0.7922.34'");
+		expect(posterScript).toContain('browser.version()');
+
+		const contributing = text('CONTRIBUTING.md');
+		expect(contributing).toContain('Bun 1.3.11');
+		expect(contributing).toContain('Node.js 22');
+		expect(contributing).toContain('Python 3.12');
+		expect(contributing).toContain('uv 0.11.15');
+		expect(contributing).toContain('Gitleaks 8.30.1');
+		expect(contributing).toContain(
+			'551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
+		);
+		expect(contributing.indexOf('playwright-core install chromium-headless-shell')).toBeLessThan(
+			contributing.indexOf('map-posters:check'),
+		);
+
+		const refresh = jobBlocks(text('.github/workflows/refresh-basemap.yml')).get('refresh-basemap');
+		expect(refresh).toBeDefined();
+		if (!refresh) return;
+		const setupBun = refresh.indexOf('oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6');
+		const upload = refresh.indexOf(
+			'cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0',
+		);
+		expect(setupBun).toBeGreaterThanOrEqual(0);
+		expect(upload).toBeGreaterThan(setupBun);
 	});
 
 	it('classifies each product domain selectively while unknown paths fail safe', () => {
@@ -322,20 +366,17 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(classify('README.md', dbRules)).toEqual(noDb);
 		expect(classify('new-root-surface.txt', dbRules)).toEqual(allDb);
 
-		const productWeb = { 'ci-work': true, 'e6-tests-work': false };
-		const allWeb = { 'ci-work': true, 'e6-tests-work': true };
-		const noWeb = { 'ci-work': false, 'e6-tests-work': false };
+		const productWeb = { 'ci-work': true, 'map-poster-check': false };
+		const posterWeb = { 'ci-work': true, 'map-poster-check': true };
+		const allWeb = { 'ci-work': true, 'map-poster-check': true };
+		const noWeb = { 'ci-work': false, 'map-poster-check': false };
 		expect(classify('apps/web/src/routes/+page.svelte', webRules)).toEqual(productWeb);
 		expect(classify('apps/data-proxy/src/index.ts', webRules)).toEqual(productWeb);
-		expect(classify('tools/e6/lib/stats.mjs', webRules)).toEqual({
-			'ci-work': false,
-			'e6-tests-work': true,
-		});
+		expect(classify('apps/web/scripts/build-map-posters.ts', webRules)).toEqual(posterWeb);
+		expect(classify('apps/web/package.json', webRules)).toEqual(posterWeb);
+		expect(classify('apps/web/static/map/poster.avif', webRules)).toEqual(posterWeb);
 		expect(classify('.github/workflows/ci.yml', webRules)).toEqual(allWeb);
-		expect(classify('.github/scripts/materialize-shared-config.mjs', webRules)).toEqual({
-			'ci-work': true,
-			'e6-tests-work': true,
-		});
+		expect(classify('.github/scripts/materialize-shared-config.mjs', webRules)).toEqual(allWeb);
 		expect(classify('apps/db/src/transit_ops/cli.py', webRules)).toEqual(noWeb);
 		expect(classify('README.md', webRules)).toEqual(noWeb);
 		expect(classify('new-root-surface.txt', webRules)).toEqual(allWeb);

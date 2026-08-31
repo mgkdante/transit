@@ -11,7 +11,8 @@ local cluster restored from ``pg_dump --schema-only`` of prod then
 ``alembic upgrade head`` (which applies 0042 on top). Each test runs inside one
 transaction and rolls back — nothing persists, reruns are idempotent.
 
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/snaprepro" \
+    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro\
+?host=/tmp/snaprepro" \
         uv run pytest tests/test_snapshots_real_db_state.py -v
 
 Never point this at production. (CI has no Postgres — skipped there.)

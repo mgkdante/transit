@@ -12,10 +12,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from test_snapshots_builders import FakeConn
+
 from transit_ops.snapshots.builders import build_data_health
 from transit_ops.snapshots.contract import DataHealth
-
-from test_snapshots_builders import FakeConn
 
 
 def _lanes_key() -> str:
@@ -53,7 +53,11 @@ def test_build_data_health_all_three_lanes_present() -> None:
             ],
             _feeds_key(): [
                 {"endpoint_key": "trip_updates", "status": "fresh", "completed_age_seconds": 30},
-                {"endpoint_key": "vehicle_positions", "status": "fresh", "completed_age_seconds": 12},
+                {
+                    "endpoint_key": "vehicle_positions",
+                    "status": "fresh",
+                    "completed_age_seconds": 12,
+                },
             ],
         }
     )

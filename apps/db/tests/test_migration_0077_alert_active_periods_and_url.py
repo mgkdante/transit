@@ -1,4 +1,7 @@
-"""Migration-source assertions for 0077_alert_active_periods_and_url (S15). Clones test_migration_0075."""
+"""Migration-source assertions for 0077_alert_active_periods_and_url.
+
+This clones test_migration_0075 for S15.
+"""
 
 from __future__ import annotations
 

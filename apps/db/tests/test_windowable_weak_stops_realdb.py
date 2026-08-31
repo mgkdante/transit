@@ -65,7 +65,7 @@ def _seeded_dated(rows, real_db_engine, seed_provider):  # noqa: ANN001
 
 @contextmanager
 def _seeded(rows, real_db_engine, seed_provider):  # noqa: ANN001
-    """rows = list of (stop_id, observation_count, severe_delay_count, sum_delay_seconds). One date (_D)."""
+    """Seed (stop_id, observation_count, severe_count, delay_sum) rows for one date."""
     with _seeded_dated(
         [(s, _D, n, sev, sm) for (s, n, sev, sm) in rows],
         real_db_engine,
@@ -102,12 +102,13 @@ def test_rank_ascending_by_not_severe_wilson_lower_bound(real_db_engine, seed_pr
 
 
 def test_rank_is_the_lower_bound_not_the_point_estimate(real_db_engine, seed_provider) -> None:
-    """B1 (diff-review): the rank MUST be the Wilson LOWER bound, not the not-severe POINT estimate.
-    Two MIN_N-clearing stops with the SAME not-severe point estimate (50%) but different n: under the
-    lower bound the smaller-n stop ranks WORSE (wider interval -> lower LB); under the point estimate
-    they tie and fall back to the (equal-avg) id tie-break, flipping the order. This reds a
-    `rank on (100*severe_k/obs)` mutation that the other recompose tests do NOT catch."""
-    # small: 40 obs / 20 severe -> not-severe 50%, wilson_lo 35.2 ; big: 400/200 -> 50%, wilson_lo 45.1
+    """Rank by Wilson lower bound, not the not-severe point estimate.
+
+    Two MIN_N-clearing stops have the same 50% estimate but different n. The
+    smaller sample ranks worse under the lower bound; point-estimate ranking
+    would tie and incorrectly fall back to id.
+    """
+    # Small: 40/20 -> 50%, Wilson 35.2. Big: 400/200 -> 50%, Wilson 45.1.
     assert _wilson_lo(20, 40) < _wilson_lo(200, 400), "precondition: equal p, smaller n -> lower LB"
     with _seeded(
         [
@@ -155,7 +156,7 @@ def test_min_n_floor_excludes_tiny_fluke_not_merely_outranks_it(
 
 
 def test_avg_and_wilson_fields_match_hand_computation(real_db_engine, seed_provider) -> None:
-    """avg_delay_min = round(sum/obs/60, 1); wilson_lo/wilson_hi = the not-severe Wilson interval."""
+    """Match hand-computed average delay and the not-severe Wilson interval."""
     obs, severe, total = 50, 10, 50 * 180  # avg 180s = 3.0 min; not-severe k = 40
     with _seeded([("s1", obs, severe, total)], real_db_engine, seed_provider) as conn:
         stops = _month(_weak_stops_by_grain(conn, _params(), {})).stops
@@ -196,10 +197,12 @@ def test_stored_cap_truncates_full_ranked_set_to_15(real_db_engine, seed_provide
 
 
 def test_window_boundaries_day_week_month_inclusive_edges(real_db_engine, seed_provider) -> None:
-    """SF5 (diff-review): the trailing windows are date-INCLUSIVE on the right edges. anchor =
-    MAX(provider_local_date); day=[anchor,anchor], week=[anchor-6,anchor], month=[anchor-29,anchor].
-    Each boundary stop (>=MIN_N obs on ONE date) must land in exactly the grains whose window covers
-    its date — pinning the `provider_local_date BETWEEN win_start AND win_end` edges (off-by-one bait)."""
+    """Keep trailing day, week, and month windows inclusive at both edges.
+
+    The anchor is MAX(provider_local_date); windows start at anchor, anchor-6,
+    and anchor-29. Each MIN_N-clearing boundary stop must land only in grains
+    whose window covers its date.
+    """
     anchor = date(2026, 6, 30)
     rows = [
         ("at_anchor", anchor, 40, 8, 40 * 120),  # day, week, month
@@ -228,9 +231,12 @@ def test_window_boundaries_day_week_month_inclusive_edges(real_db_engine, seed_p
 def test_end_to_end_build_route_reliability_emits_weak_stops_by_grain(
     real_db_engine, seed_provider
 ) -> None:
-    """Wiring gate: build_route_reliability() (the full publisher path, NOT a direct _weak_stops_by_grain
-    call) must call the recompose AND pass it to the RouteReliability constructor. A missing call or a
-    dropped kwarg leaves weak_stops_by_grain=[] -> this fails. Seed clears MIN_N so the path is real."""
+    """Wire weak-stop recomposition through the full publisher path.
+
+    build_route_reliability must pass the result to RouteReliability. A missing
+    call or dropped keyword leaves weak_stops_by_grain empty. The seed clears
+    MIN_N so the path is real.
+    """
     with _seeded(
         [
             ("chronic", 900, 360, 900 * 200),

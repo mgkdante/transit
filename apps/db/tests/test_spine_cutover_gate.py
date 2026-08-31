@@ -57,7 +57,12 @@ _SEED_ROUTES = (ROUTE, ROUTE2)
 TORONTO = ZoneInfo("America/Toronto")
 GENERATED_UTC = "2026-06-25T00:00:00Z"  # fixed -> stable across runs
 
-GOLDEN_PATH = Path(__file__).parent / "fixtures" / "spine_golden" / "route_reliability_CUT-1.fact.json"
+GOLDEN_PATH = (
+    Path(__file__).parent
+    / "fixtures"
+    / "spine_golden"
+    / "route_reliability_CUT-1.fact.json"
+)
 
 # The only leaves allowed to differ between fact and spine (the rebaseline).
 ALLOW_MOVE = {"avg_delay_min", "p50_min", "p90_min"}
@@ -191,7 +196,8 @@ def _insert_trip_snapshot(connection, ids, route, local_date, hour, rows) -> Non
              "ts": captured_at, "entity": f"e{sid}-{idx}", "trip": f"t{sid}-{idx}",
              # delay_stop_id from a small FIXED pool (deterministic per row position -> identical
              # every seeded day -> calendar-stable): feeds the legacy stop_delay_hourly/weekly path
-             # (scalar weak_stops[]) AND the new gold.stop_delay_spine (weak_stops_by_grain). 3 stops.
+             # Feeds scalar weak_stops[] and gold.stop_delay_spine
+             # (weak_stops_by_grain). Three stops.
              "route": route, "dir": direction, "sched": sched, "delay": delay,
              "stop": f"stop{idx % 3}"},
         )
@@ -396,10 +402,13 @@ def _has_delay_subtree(canon: dict) -> bool:
 
 
 def _has_weak_stops(canon: dict) -> bool:
-    """DB-PR-3 vacuity guard: refuse to freeze an empty scalar weak_stops[] subtree — the cutover
-    gate's job is to LICENSE the future stop_delay_weekly/monthly drop (id+name frozen, avg
-    allow-move), which is vacuous if no stop rendered. (weak_stops_by_grain is net-new + MIN_N=30
-    gated, so it may legitimately be [] on this light seed; the scalar is the drop-license subject.)"""
+    """Refuse to freeze an empty scalar weak_stops[] subtree.
+
+    The cutover gate licenses the future stop_delay_weekly/monthly drop (id+name
+    frozen, avg allow-move), which is vacuous if no stop rendered.
+    weak_stops_by_grain is net-new and MIN_N=30 gated, so it may legitimately
+    be empty on this light seed; the scalar is the drop-license subject.
+    """
     ws = canon.get("weak_stops") or []
     return bool(ws) and all(s.get("id") for s in ws)
 
@@ -579,10 +588,12 @@ def test_hotspots_by_grain_payload_size_under_ceiling(conn) -> None:
 
 
 def test_repeat_offenders_payload_size_under_ceiling(conn) -> None:
-    """S14 real-DB size probe: the full published repeat_offenders.json (scalar + by_grain) off
-    the seeded gold stays under REPEAT_OFFENDERS_BYTE_CEILING. The seeded fixture may leave the
-    0075 offender spine empty (by_grain honest-empty); this still guards the scalar path + the
-    envelope size. The dense by_grain worst case is probed in test_windowable_repeat_offenders_realdb."""
+    """Keep the full published repeat_offenders.json under its byte ceiling.
+
+    The seeded fixture may leave the 0075 offender spine empty (by_grain
+    honest-empty); this still guards the scalar path and envelope size. The
+    dense by_grain worst case is covered by its dedicated real-DB test.
+    """
     from transit_ops.snapshots.builders.historic import build_repeat_offenders
     from transit_ops.snapshots.contract import REPEAT_OFFENDERS_BYTE_CEILING
     from transit_ops.snapshots.storage import _body

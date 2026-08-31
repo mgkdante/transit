@@ -1,10 +1,16 @@
-import importlib.util, pathlib
+import importlib.util
+import pathlib
 
 
 def _load():
-    p = pathlib.Path(__file__).resolve().parents[1] / "src/transit_ops/db/migrations/versions/0027_live_promotion_views.py"
+    p = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "src/transit_ops/db/migrations/versions/0027_live_promotion_views.py"
+    )
     spec = importlib.util.spec_from_file_location("m0027", p)
-    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
 
 
 def test_0027_chain_and_objects():
@@ -15,5 +21,7 @@ def test_0027_chain_and_objects():
     assert "gold.non_responding_current" in blob
     assert "DROP VIEW IF EXISTS gold.current_stop_next_departures" in m._DROP
     # correctness fixes locked in:
-    assert "GROUP BY provider_id" in m._CREATE_STOP_NEXT_DEPARTURES  # P1 per-provider latest snapshot
-    assert "exception_type = 2" in m._CREATE_NON_RESPONDING  # non_responding subtracts cancelled services
+    # P1 per-provider latest snapshot.
+    assert "GROUP BY provider_id" in m._CREATE_STOP_NEXT_DEPARTURES
+    # non_responding subtracts cancelled services.
+    assert "exception_type = 2" in m._CREATE_NON_RESPONDING

@@ -17,7 +17,7 @@ from multiprocessing import get_context
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import Lock
-from typing import Literal, TypeVar, cast
+from typing import Literal, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -296,7 +296,6 @@ class HistoricPublishProofReport:
 
 
 OperationalErrorTypes = (OSError, ValueError, SQLAlchemyError)
-PayloadT = TypeVar("PayloadT", bound=BaseModel)
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PointFamily = Literal["hotspots", "repeat_offenders"]
 _POINT_DAY_MODELS: dict[
@@ -441,7 +440,7 @@ def _public_root(settings: Settings, provider_id: str, failures: list[str]) -> s
     return f"{raw_base.rstrip('/')}/v1/{safe_provider}/"
 
 
-def _fetch_model(
+def _fetch_model[PayloadT: BaseModel](
     path: str,
     model_type: type[PayloadT],
     *,
@@ -1261,7 +1260,7 @@ def _bind_range_candidates_to_parent_indexes(
     }
 
 
-def _verify_range_partition(
+def _verify_range_partition[PayloadT: BaseModel](
     ref: object,
     model_type: type[PayloadT],
     *,
@@ -2423,8 +2422,13 @@ def build_historic_publish_proof(
         try:
             resolved_fetch = fetch_bytes
             if resolved_fetch is None:
-                created_client = _new_public_http_client()
-                resolved_fetch = lambda url: _fetch_bytes_with_client(created_client, url)
+                client = _new_public_http_client()
+                created_client = client
+
+                def fetch_with_client(url: str) -> bytes:
+                    return _fetch_bytes_with_client(client, url)
+
+                resolved_fetch = fetch_with_client
             deadline_token = _ACTIVE_PROOF_DEADLINE.set(deadline)
             try:
                 report = _build_historic_publish_proof(

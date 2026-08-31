@@ -23,13 +23,11 @@ const pmtilesScript = resolve(webRoot, 'node_modules/pmtiles/dist/pmtiles.js');
 
 const DESCRIPTOR_URL = 'https://data.yesid.dev/v1/stm/static/basemap.json';
 const PMTILES_URL = 'https://transit.yesid.dev/data/v1/stm/static/basemap/montreal.pmtiles';
-const DESCRIPTOR_ETAG = '"45960886b853dd90f0bd275a633855aa"';
 const PMTILES_ETAG = '"6403e3c2777cc710276331111b570633"';
 const PMTILES_RANGE = 'bytes 0-0/86282797';
-const GENERATION_ID = 'stm@2026-08-12T07:42:41Z';
-const GENERATED_UTC = '2026-08-12T07:42:41Z';
 const ATTRIBUTION = '© OpenStreetMap contributors, © Protomaps';
 const MAX_POSTER_BYTES = 125 * 1024;
+const PINNED_CHROMIUM_VERSION = '151.0.7922.34';
 
 type PinnedDescriptor = BasemapFile & {
 	schema_version: number;
@@ -86,13 +84,10 @@ async function readPinnedDescriptor(): Promise<PinnedDescriptor> {
 		headers: { 'Accept-Encoding': 'identity' },
 	});
 	assertEqual(descriptorResponse.status, 200, 'basemap descriptor status');
-	assertEqual(descriptorResponse.headers.get('etag'), DESCRIPTOR_ETAG, 'basemap descriptor ETag');
 
 	const descriptor = (await descriptorResponse.json()) as PinnedDescriptor;
 	assertEqual(descriptor.schema_version, 1, 'basemap schema_version');
 	assertEqual(descriptor.methodology_version, 'static-1', 'basemap methodology_version');
-	assertEqual(descriptor.publish_generation_id, GENERATION_ID, 'basemap publish_generation_id');
-	assertEqual(descriptor.generated_utc, GENERATED_UTC, 'basemap generated_utc');
 	assertEqual(descriptor.format, 'pmtiles', 'basemap format');
 	assertEqual(descriptor.url, PMTILES_URL, 'basemap URL');
 	assertEqual(descriptor.style_url, null, 'basemap style_url');
@@ -110,10 +105,6 @@ async function readPinnedDescriptor(): Promise<PinnedDescriptor> {
 	assertEqual((await archiveResponse.arrayBuffer()).byteLength, 1, 'PMTiles range body length');
 
 	return descriptor;
-}
-
-function browserExecutable(): string {
-	return process.env.CHROME_PATH ?? '/usr/bin/google-chrome';
 }
 
 async function preparePage(browser: Browser, spec: PosterSpec): Promise<Page> {
@@ -208,14 +199,17 @@ async function main(): Promise<void> {
 	const checkOnly = process.argv.includes('--check');
 	await mkdir(outputDir, { recursive: true });
 	const descriptor = await readPinnedDescriptor();
+	const explicitExecutable = process.env.CHROME_PATH?.trim();
 	const browser = await chromium.launch({
-		executablePath: browserExecutable(),
+		...(explicitExecutable ? { executablePath: explicitExecutable } : {}),
 		headless: true,
 		args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'],
 	});
-
 	let drift = false;
 	try {
+		const browserVersion = browser.version();
+		assertEqual(browserVersion, PINNED_CHROMIUM_VERSION, 'poster Chromium version');
+		console.log(`[build-map-posters] browser: playwright-core 1.62.0 / Chromium ${browserVersion}`);
 		for (const spec of POSTERS) {
 			const generated = await capturePoster(browser, descriptor, spec);
 			const outPath = resolve(outputDir, spec.filename);

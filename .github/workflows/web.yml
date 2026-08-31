@@ -5,17 +5,6 @@ on:
     branches: [main, develop]
   push:
     branches: [main, develop]
-    paths:
-      - "apps/web/**"
-      - "apps/data-proxy/**"
-      - "packages/**"
-      - "bun.lock"
-      - ".bun-version"
-      - "package.json"
-      - "turbo.json"
-      - ".github/workflows/web.yml"
-      - ".github/actions/**"
-      - "tools/e6/**"
   workflow_dispatch:
     inputs:
       deploy_target:
@@ -63,21 +52,21 @@ jobs:
               "jobs": {
                 "ci-work": {
                   "paths": [],
-                  "prefixes": ["apps/data-proxy/", "apps/web/", "packages/"]
+                  "prefixes": ["apps/data-proxy/", "apps/web/"]
                 },
-                "e6-tests-work": {
-                  "paths": [],
-                  "prefixes": ["tools/e6/"]
+                "map-poster-check": {
+                  "paths": ["apps/web/package.json", "apps/web/scripts/build-map-posters.ts", "apps/web/src/lib/components/map/basemap.ts", "apps/web/src/lib/components/map/viewport.ts", "apps/web/src/lib/features/map/mapCameraFraming.ts"],
+                  "prefixes": ["apps/web/static/map/"]
                 }
               },
               "ignore": {
                 "docs-only": {
-                  "paths": ["AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md", "LICENSE", "README.md", "SECURITY.md", "SUPPORT.md"],
+                  "paths": ["CONTRIBUTING.md", "LICENSE", "README.md", "SECURITY.md", "SUPPORT.md"],
                   "prefixes": ["docs/"]
                 },
                 "irrelevant": {
-                  "paths": [".env.example", ".gitattributes", ".gitignore", ".gitleaks.toml", ".mcp.json"],
-                  "prefixes": [".claude/", ".codex/", ".githooks/", "apps/db/"]
+                  "paths": [".env.example", ".gitattributes", ".gitignore", ".gitleaks.toml"],
+                  "prefixes": [".githooks/", "apps/db/"]
                 }
               }
             }
@@ -104,6 +93,18 @@ jobs:
         with:
           manifest: .github/shared-tooling.json
 
+      - name: Data proxy syntax
+        working-directory: ${{ github.workspace }}
+        run: bun run --cwd apps/data-proxy check
+
+      - name: Data proxy unit tests
+        working-directory: ${{ github.workspace }}
+        run: bun run --cwd apps/data-proxy test
+
+      - name: Deployment scope contract
+        working-directory: ${{ github.workspace }}
+        run: node --test .github/scripts/deploy-scope.test.mjs
+
       - name: Design adoption integrity
         run: bun vendor/design/tools/adopt.ts --check --dest vendor/design
 
@@ -117,6 +118,9 @@ jobs:
       # stale vs current copy (the failure mode `og:build --check` was built for).
       - name: OG drift gate
         run: bun run og:check
+
+      - name: Icon drift gate
+        run: bun run icons:check
 
       - name: Lint + format
         run: |
@@ -139,11 +143,11 @@ jobs:
       - name: Unit tests
         run: bun run test
 
-  e6-tests-work:
+  map-poster-check:
     needs: [classify]
-    if: ${{ fromJSON(needs.classify.outputs.classification).relevant['e6-tests-work'] }}
+    if: ${{ fromJSON(needs.classify.outputs.classification).relevant['map-poster-check'] }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -151,13 +155,15 @@ jobs:
       - name: Set up JS workspace
         uses: ./.github/actions/setup
 
-      - name: B2 fleet harness contracts
-        working-directory: ${{ github.workspace }}
-        run: bun run --shell=bun --cwd tools/e6 b2:check
+      - name: Install pinned poster browser
+        run: ./node_modules/.bin/playwright-core install chromium-headless-shell
+
+      - name: Map poster drift gate
+        run: bun run map-posters:check
 
   ci:
     name: ci
-    needs: [classify, ci-work, e6-tests-work]
+    needs: [classify, ci-work, map-poster-check]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -182,10 +188,10 @@ jobs:
         id: scope
         working-directory: ${{ github.workspace }}
         env:
-          E6_DEPLOY_EVENT: ${{ github.event_name }}
-          E6_DEPLOY_BEFORE: ${{ github.event.before }}
-          E6_DEPLOY_AFTER: ${{ github.sha }}
-        run: node tools/e6/deploy-scope.mjs >> "$GITHUB_OUTPUT"
+          TRANSIT_DEPLOY_EVENT: ${{ github.event_name }}
+          TRANSIT_DEPLOY_BEFORE: ${{ github.event.before }}
+          TRANSIT_DEPLOY_AFTER: ${{ github.sha }}
+        run: node .github/scripts/deploy-scope.mjs >> "$GITHUB_OUTPUT"
 
   deploy-dev:
     name: deploy dev

@@ -1,7 +1,0 @@
-# transit — workflow-overlord v4 Codex CLI config.
-# Hooks come only from the installed plugin's hooks/hooks.json.
-
-[features]
-hooks = true
-remote_connections = true
-suppress_unstable_features_warning = true

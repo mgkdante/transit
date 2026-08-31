@@ -4275,14 +4275,23 @@ def test_parent_indexes_are_materialized_stamped_and_reused_once(monkeypatch):
         gate_report=report,
     )
 
+    line_31_sha = "2cdaea9ad9db269ed888e13cc41eb0f91c40f2bfc59ad89ca34fbf6553f70bc9"
+    line_3130_sha = "61994aafe0fb5a8e1e4fd6fee571ba2f16ddbd7474849d9522dc8e8da168e450"
+    line_412f42_sha = "b94124a6d14a4b68d588d20688c372d8ca03af742966bf2f2d8e995e6ff78a1d"
+    lines_sha = "f602d45205df15f1892206da55369b87769367203fd956d0279edf1b66c19767"
+    stop_412f_sha = "565453ca13ace587f44557a83e7e790b1f67684fa445567ce47841694f234477"
+    stops_sha = "c66e17fd19afbfd0484f372c1e31ef976dd18dc36664efc0e28efa58126a6dcb"
+    history_sha = "229f5749ced1e7867518adac7d4588a120354c74b90e1dd592bd0d37f4a72783"
     expected_parent_sha256 = {
-        "historic/history/lines/31/generations/2cdaea9ad9db269ed888e13cc41eb0f91c40f2bfc59ad89ca34fbf6553f70bc9/index.json": "2cdaea9ad9db269ed888e13cc41eb0f91c40f2bfc59ad89ca34fbf6553f70bc9",
-        "historic/history/lines/3130/generations/61994aafe0fb5a8e1e4fd6fee571ba2f16ddbd7474849d9522dc8e8da168e450/index.json": "61994aafe0fb5a8e1e4fd6fee571ba2f16ddbd7474849d9522dc8e8da168e450",
-        "historic/history/lines/412f42/generations/b94124a6d14a4b68d588d20688c372d8ca03af742966bf2f2d8e995e6ff78a1d/index.json": "b94124a6d14a4b68d588d20688c372d8ca03af742966bf2f2d8e995e6ff78a1d",
-        "historic/history/lines/generations/f602d45205df15f1892206da55369b87769367203fd956d0279edf1b66c19767/index.json": "f602d45205df15f1892206da55369b87769367203fd956d0279edf1b66c19767",
-        "historic/history/stops/412f4220c3a9e99baa/generations/565453ca13ace587f44557a83e7e790b1f67684fa445567ce47841694f234477/index.json": "565453ca13ace587f44557a83e7e790b1f67684fa445567ce47841694f234477",
-        "historic/history/stops/generations/c66e17fd19afbfd0484f372c1e31ef976dd18dc36664efc0e28efa58126a6dcb/index.json": "c66e17fd19afbfd0484f372c1e31ef976dd18dc36664efc0e28efa58126a6dcb",
-        "historic/history/index.json": "229f5749ced1e7867518adac7d4588a120354c74b90e1dd592bd0d37f4a72783",
+        f"historic/history/lines/31/generations/{line_31_sha}/index.json": line_31_sha,
+        f"historic/history/lines/3130/generations/{line_3130_sha}/index.json": line_3130_sha,
+        f"historic/history/lines/412f42/generations/{line_412f42_sha}/index.json": line_412f42_sha,
+        f"historic/history/lines/generations/{lines_sha}/index.json": lines_sha,
+        f"historic/history/stops/412f4220c3a9e99baa/generations/{stop_412f_sha}/index.json": (
+            stop_412f_sha
+        ),
+        f"historic/history/stops/generations/{stops_sha}/index.json": stops_sha,
+        "historic/history/index.json": history_sha,
     }
     actual_parent_sha256 = {
         path: hashlib.sha256(store.objects[path]).hexdigest()

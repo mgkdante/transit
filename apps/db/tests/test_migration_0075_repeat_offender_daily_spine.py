@@ -1,4 +1,7 @@
-"""Migration-source assertions for 0075_repeat_offender_daily_spine (S14). Clones test_migration_0071."""
+"""Migration-source assertions for 0075_repeat_offender_daily_spine.
+
+This clones test_migration_0071 for S14.
+"""
 
 from __future__ import annotations
 

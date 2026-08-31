@@ -57,8 +57,12 @@ def test_0066_is_lean_no_hour_no_histogram() -> None:
     """The lean-grain guard (D-A): a regression that re-adds hour_of_day_local or a delay_histogram
     (the ~9-18x cardinality variant that trips HARD GATE 1) must fail this test."""
     src = _source()
-    assert "hour_of_day_local" not in src, "stop_delay_spine must NOT carry hour_of_day_local (lean grain)"
-    assert "delay_histogram" not in src, "stop_delay_spine must NOT carry a delay_histogram (lean grain)"
+    assert "hour_of_day_local" not in src, (
+        "stop_delay_spine must NOT carry hour_of_day_local (lean grain)"
+    )
+    assert "delay_histogram" not in src, (
+        "stop_delay_spine must NOT carry a delay_histogram (lean grain)"
+    )
     assert "direction_id" not in src, "stop_delay_spine does not key on direction"
 
 

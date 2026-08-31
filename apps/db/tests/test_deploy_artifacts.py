@@ -39,13 +39,16 @@ EXPECTED_PINNED_ACTION_LINES = {
         "uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4"
     ),
     "mgkdante/yesid.dev-design/.github/actions/classify-paths": (
-        "uses: mgkdante/yesid.dev-design/.github/actions/classify-paths@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
+        "uses: mgkdante/yesid.dev-design/.github/actions/classify-paths@"
+        "a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
     ),
     "mgkdante/yesid.dev-design/.github/actions/required-context": (
-        "uses: mgkdante/yesid.dev-design/.github/actions/required-context@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
+        "uses: mgkdante/yesid.dev-design/.github/actions/required-context@"
+        "a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
     ),
     "mgkdante/yesid.dev-design/.github/actions/shared-tooling-drift": (
-        "uses: mgkdante/yesid.dev-design/.github/actions/shared-tooling-drift@a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
+        "uses: mgkdante/yesid.dev-design/.github/actions/shared-tooling-drift@"
+        "a4e9d0e3b42da8121b5e9f98de2e315ad48e8f25"
     ),
     "oven-sh/setup-bun": (
         "uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2"
@@ -683,21 +686,6 @@ def test_compose_postgres_environment_is_bootstrap_only() -> None:
         "POSTGRES_USER",
         "POSTGRES_PASSWORD",
     }
-
-
-def test_repo_contracts_describe_web_serving_layer_not_powerbi() -> None:
-    # slice-9.1.1w: Power BI was retired (2026-05-30) for the web/ citizen app
-    # fed by the /v1 R2 snapshot contract. The cross-tool repo contracts must not
-    # still claim Power BI is the serving layer.
-    for rel in ("AGENTS.md", "CLAUDE.md"):
-        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
-        assert "Power BI" not in text, f"{rel} still mentions Power BI"
-        assert ".pbix" not in text, f"{rel} still mentions .pbix"
-    serving_readme = (
-        DB_ROOT / "infra" / "postgres-serving-access" / "README.md"
-    ).read_text(encoding="utf-8")
-    assert "Power BI" not in serving_readme
-    assert "/v1" in (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
 
 def test_env_example_documents_all_runtime_knobs() -> None:

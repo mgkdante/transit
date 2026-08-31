@@ -1241,7 +1241,10 @@ def test_historic_publish_proof_reuses_one_http_client_and_executor_for_complete
     assert 1 <= len(connections) <= 16 < len(requests)
     assert all(request["accept"] == "application/json" for request in requests)
     assert all(request["cache_control"] == "no-cache" for request in requests)
-    assert all(request["user_agent"] == historic_publish_module.PUBLIC_PROOF_USER_AGENT for request in requests)
+    assert all(
+        request["user_agent"] == historic_publish_module.PUBLIC_PROOF_USER_AGENT
+        for request in requests
+    )
     proof_queries = {request["query"] for request in requests}
     assert len(proof_queries) == 1
     assert next(iter(proof_queries)).startswith("proof=")

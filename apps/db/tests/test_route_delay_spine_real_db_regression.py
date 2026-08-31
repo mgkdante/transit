@@ -243,7 +243,7 @@ def test_spine_histograms_are_additive_across_hours(conn) -> None:  # noqa: ANN0
     # hour 9 dir 0 = [60, 60, 90] -> bin 9 = 2, bin 10 = 1.
     assert h9[9] == 2 and h9[10] == 1
     assert sum(h9) == 3
-    combined = [a + b for a, b in zip(h8, h9)]
+    combined = [a + b for a, b in zip(h8, h9, strict=False)]
     assert combined[9] == 4  # 2 (h8) + 2 (h9): bins re-merge by addition
     assert sum(combined) == sum(h8) + sum(h9) == 17
 

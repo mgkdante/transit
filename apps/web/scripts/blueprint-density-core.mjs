@@ -115,9 +115,7 @@ export function parseBlueprintDensityArgs(args) {
 	}
 
 	if (!previewArg) {
-		throw new Error(
-			'Usage: node scripts/blueprint-density-check.mjs <preview-url> [--theme dark|light] [--viewport WIDTHxHEIGHT]',
-		);
+		throw new Error('Preview URL is required; call parseBlueprintDensityArgs([url, ...options])');
 	}
 
 	const previewUrl = new URL(previewArg);

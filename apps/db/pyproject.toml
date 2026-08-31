@@ -50,6 +50,9 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["B", "E", "F", "I", "UP"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/transit_ops/db/migrations/versions/*.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.12"
 files = ["src/transit_ops/snapshots/publish.py"]

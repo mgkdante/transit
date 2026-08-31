@@ -56,9 +56,9 @@ from transit_ops.snapshots.contract import (
     ManifestLiveFiles,
     ManifestStaticFiles,
     NetworkFile,
-    ProviderCapabilities,
     NonRespondingRoute,
     OccupancyMix,
+    ProviderCapabilities,
     StatusDist,
     StopDeparture,
     StopDeparturesFile,
@@ -483,7 +483,8 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
     params = {"provider_id": provider_id}
 
     dist = StatusDist()
-    occ_counts: dict[str, int] = {k: 0 for k in ("empty", "many_seats", "few_seats", "standing", "full")}
+    occupancy_states = ("empty", "many_seats", "few_seats", "standing", "full")
+    occ_counts: dict[str, int] = {key: 0 for key in occupancy_states}
     vehicles_in_service = 0
     for r in conn.execute(_NETWORK_VEHICLES_SQL, params).mappings():
         vehicles_in_service += 1

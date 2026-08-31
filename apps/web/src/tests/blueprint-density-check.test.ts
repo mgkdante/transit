@@ -116,6 +116,9 @@ describe('blueprint density receipt contract', () => {
 		expect(() =>
 			parseBlueprintDensityArgs(['https://preview.example.test', '--theme', 'sepia']),
 		).toThrow(/--theme must be dark or light/);
+		expect(() => parseBlueprintDensityArgs([])).toThrow(
+			'Preview URL is required; call parseBlueprintDensityArgs([url, ...options])',
+		);
 	});
 
 	it('defines the adjudicated token ladders for both themes', () => {

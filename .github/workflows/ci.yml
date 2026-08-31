@@ -77,12 +77,12 @@ jobs:
               },
               "ignore": {
                 "docs-only": {
-                  "paths": ["AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md", "LICENSE", "README.md", "SECURITY.md", "SUPPORT.md"],
+                  "paths": ["CONTRIBUTING.md", "LICENSE", "README.md", "SECURITY.md", "SUPPORT.md"],
                   "prefixes": ["docs/"]
                 },
                 "irrelevant": {
-                  "paths": [".gitattributes", ".gitignore", ".mcp.json", ".npmrc", "bun.lock", "package.json", "turbo.json"],
-                  "prefixes": [".claude/", ".codex/", ".githooks/", "apps/data-proxy/", "apps/web/", "packages/"]
+                  "paths": [".gitattributes", ".gitignore", ".npmrc", "bun.lock", "package.json", "turbo.json"],
+                  "prefixes": [".githooks/", "apps/data-proxy/", "apps/web/"]
                 }
               }
             }
@@ -104,8 +104,8 @@ jobs:
       - name: Run offline test suite
         run: uv run pytest tests
 
-      - name: Ruff (F-rules)
-        run: uv run ruff check src tests --select F
+      - name: Ruff
+        run: uv run ruff check src tests
 
       - name: Mypy (snapshot publisher)
         run: uv run mypy src/transit_ops/snapshots/publish.py

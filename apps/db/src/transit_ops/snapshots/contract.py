@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from datetime import date as date_type
 from datetime import timedelta
-from enum import Enum
+from enum import StrEnum
 from typing import Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -87,7 +87,7 @@ class PayloadEnvelope(BaseModel):
     publish_generation_id: str | None = None
 
 
-class Status(str, Enum):
+class Status(StrEnum):
     early = "early"
     on_time = "on_time"
     late = "late"
@@ -95,13 +95,13 @@ class Status(str, Enum):
     unknown = "unknown"
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     critical = "critical"
     high = "high"
     watch = "watch"
 
 
-class Occupancy(str, Enum):
+class Occupancy(StrEnum):
     empty = "empty"
     many_seats = "many_seats"
     few_seats = "few_seats"
@@ -365,7 +365,7 @@ class ManifestFiles(BaseModel):
     historic: ManifestHistoricFiles = Field(default_factory=ManifestHistoricFiles)
 
 
-class Capability(str, Enum):
+class Capability(StrEnum):
     # GC2 H4 — per-surface capability honesty. 'enabled' = the surface is fully served;
     # 'partial' = served but incomplete (e.g. a feed subset); 'unavailable' = the
     # provider's feed simply does not carry it (honest absence, NOT an error);
@@ -1581,18 +1581,18 @@ class AlertArchiveIndex(PayloadEnvelope):
     months: list[AlertArchiveMonth]
 
 
-class HistorySelectionMode(str, Enum):
+class HistorySelectionMode(StrEnum):
     range = "range"
     date = "date"
 
 
-class HistoryMetricAggregation(str, Enum):
+class HistoryMetricAggregation(StrEnum):
     additive = "additive"
     daily_only = "daily_only"
     current_only = "current_only"
 
 
-class HistoryMetricName(str, Enum):
+class HistoryMetricName(StrEnum):
     delay = "delay"
     delay_percentiles = "delay_percentiles"
     vehicles = "vehicles"
