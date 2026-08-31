@@ -10,32 +10,121 @@ import { parseArgs } from "node:util";
 
 const WRANGLER_VERSION = "4.100.0";
 const CONTENT_TYPE = "application/octet-stream";
+const DEFAULT_COMMAND_TIMEOUT_MS = 180_000;
+const TERMINATION_GRACE_MS = 5_000;
+
+let activeChild = null;
+let pendingTerminationSignal = null;
+
+function terminate(child, signal) {
+  if (process.platform !== "win32" && child.pid) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch (error) {
+      if (error.code !== "ESRCH") throw error;
+    }
+  }
+  child.kill(signal);
+}
+
+function recordTermination(signal) {
+  pendingTerminationSignal ??= signal;
+  process.exitCode = 1;
+  if (activeChild) terminate(activeChild, "SIGTERM");
+}
+
+process.on("SIGINT", () => recordTermination("SIGINT"));
+process.on("SIGTERM", () => recordTermination("SIGTERM"));
 
 function required(value, name) {
   if (!value?.trim()) throw new Error(`Missing --${name}`);
   return value;
 }
 
+function commandTimeoutMs() {
+  const value = Number(
+    process.env.WRANGLER_TIMEOUT_MS ?? DEFAULT_COMMAND_TIMEOUT_MS,
+  );
+  if (!Number.isSafeInteger(value) || value < 50 || value > 600_000) {
+    throw new Error(
+      "WRANGLER_TIMEOUT_MS must be an integer between 50 and 600000",
+    );
+  }
+  return value;
+}
+
+function consumeTerminationSignal() {
+  const signal = pendingTerminationSignal;
+  pendingTerminationSignal = null;
+  return signal;
+}
+
+function throwIfTerminationRequested() {
+  const signal = consumeTerminationSignal();
+  if (signal) throw new Error(`received ${signal}`);
+}
+
 function run(command, args) {
   return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(command, args, { stdio: "inherit" });
-    child.once("error", rejectRun);
+    const waitingSignal = consumeTerminationSignal();
+    if (waitingSignal) {
+      rejectRun(new Error(`received ${waitingSignal}`));
+      return;
+    }
+    const timeoutMs = commandTimeoutMs();
+    const child = spawn(command, args, { detached: true, stdio: "inherit" });
+    activeChild = child;
+    let settled = false;
+    let timedOut = false;
+    let forceKillTimer;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      terminate(child, "SIGTERM");
+      forceKillTimer = setTimeout(
+        () => terminate(child, "SIGKILL"),
+        TERMINATION_GRACE_MS,
+      );
+      forceKillTimer.unref();
+    }, timeoutMs);
+    timeout.unref();
+
+    function finish(error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      clearTimeout(forceKillTimer);
+      if (activeChild === child) activeChild = null;
+      if (error) rejectRun(error);
+      else resolveRun();
+    }
+
+    child.once("error", finish);
     child.once("close", (code, signal) => {
-      if (code === 0) resolveRun();
-      else
-        rejectRun(
+      const terminationSignal = consumeTerminationSignal();
+      if (terminationSignal) {
+        finish(new Error(`received ${terminationSignal}`));
+      } else if (timedOut) {
+        finish(new Error(`${command} timed out after ${timeoutMs}ms`));
+      } else if (code === 0) {
+        finish();
+      } else {
+        finish(
           new Error(
             `${command} exited with code ${code} signal ${signal ?? "none"}`,
           ),
         );
+      }
     });
   });
 }
 
 async function fileIdentity(path) {
+  const file = await stat(path);
+  if (!file.isFile()) throw new Error(`${path} is not a regular file`);
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
-  return { bytes: (await stat(path)).size, sha256: hash.digest("hex") };
+  return { bytes: file.size, sha256: hash.digest("hex") };
 }
 
 function assertSame(actual, expected, label) {
@@ -107,6 +196,7 @@ async function main() {
   const stableObject = `${bucket}/${stableKey}`;
   const backupObject = `${bucket}/${backupKey}`;
   const work = await mkdtemp(join(tmpdir(), "transit-basemap-r2-"));
+  let transactionError;
   try {
     const previousFile = join(work, "previous.pmtiles");
     const backupReadback = join(work, "backup-readback.pmtiles");
@@ -125,6 +215,7 @@ async function main() {
       await putObject(stableObject, newFile);
       await getObject(stableObject, stableReadback);
       assertSame(await fileIdentity(stableReadback), after, "stable readback");
+      throwIfTerminationRequested();
 
       const receipt = {
         schema_version: 1,
@@ -133,7 +224,6 @@ async function main() {
         backup_key: backupKey,
         before,
         after,
-        rollback_performed: false,
       };
       await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, {
         flag: "wx",
@@ -159,9 +249,21 @@ async function main() {
           "previous object restored and verified",
       );
     }
-  } finally {
-    await rm(work, { recursive: true, force: true });
+  } catch (error) {
+    transactionError = error;
   }
+  try {
+    await rm(work, { recursive: true, force: true });
+  } catch (cleanupError) {
+    if (transactionError) {
+      throw new Error(
+        `${errorMessage(transactionError)}; TEMP CLEANUP FAILED: ${errorMessage(cleanupError)}`,
+        { cause: transactionError },
+      );
+    }
+    throw cleanupError;
+  }
+  if (transactionError) throw transactionError;
 }
 
 main().catch((error) => {

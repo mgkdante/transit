@@ -26,11 +26,13 @@ interface PosterReceipt {
 		playwright_core_version: string;
 		chromium_version: string;
 	};
+	render_inputs: Array<{ path: string; sha256: string }>;
 	posters: Array<{
 		filename: string;
 		theme: 'dark' | 'light';
 		width: number;
 		height: number;
+		format: 'avif';
 		bytes: number;
 		sha256: string;
 	}>;
@@ -64,12 +66,27 @@ describe('static Montréal basemap posters', () => {
 				playwright_core_version: '1.62.0',
 				chromium_version: '151.0.7922.34',
 			},
+			render_inputs: [
+				{
+					path: 'src/lib/components/map/basemap.ts',
+					sha256: '3d0f658aaabc0eed0787bbd367949f9bd2b8b3fa32a4b24e29ad30ccbffff7b1',
+				},
+				{
+					path: 'src/lib/components/map/viewport.ts',
+					sha256: '0d752d353888887752fce1e0e8f09599b2db3562078608c7c7da489cbe4e8094',
+				},
+				{
+					path: 'src/lib/features/map/mapCameraFraming.ts',
+					sha256: 'c2af44c95b30c679210cda9b45e3d89513c937d8bf965c6d9d4c85790419d5e1',
+				},
+			],
 			posters: [
 				{
 					filename: 'basemap-montreal-dark-mobile-20260812.avif',
 					theme: 'dark',
 					width: 390,
 					height: 844,
+					format: 'avif',
 					bytes: 39_346,
 					sha256: '69a4e7f5218a1a9b624af7d986539b806f60379b4b7bc65dc18ad7c7d7fd8037',
 				},
@@ -78,6 +95,7 @@ describe('static Montréal basemap posters', () => {
 					theme: 'light',
 					width: 390,
 					height: 844,
+					format: 'avif',
 					bytes: 48_756,
 					sha256: '98e45dd0d14feb30ba433a00f83acb65f1e842463aed05448f8f09a3d43e6254',
 				},
@@ -86,6 +104,7 @@ describe('static Montréal basemap posters', () => {
 					theme: 'dark',
 					width: 1280,
 					height: 720,
+					format: 'avif',
 					bytes: 94_947,
 					sha256: 'acd80dfa5d45639009a3f76a1da5ecd11cc3d81b40a6c876154a5f6f6dfa537a',
 				},
@@ -94,6 +113,7 @@ describe('static Montréal basemap posters', () => {
 					theme: 'light',
 					width: 1280,
 					height: 720,
+					format: 'avif',
 					bytes: 113_527,
 					sha256: 'abae403dcb93a1e968ab9e6eb450a74591659e7d0233849a94722446c4b84b7f',
 				},

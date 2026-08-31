@@ -46,6 +46,7 @@ bun install --frozen-lockfile
 node .github/scripts/materialize-shared-config.mjs
 git diff --exit-code -- turbo.json
 node --test .github/scripts/deploy-scope.test.mjs
+node --test .github/scripts/refresh-basemap-r2.test.mjs
 bun apps/web/vendor/design/tools/adopt.ts --check --dest apps/web/vendor/design
 
 bun run --cwd apps/web tokens:build
@@ -93,5 +94,7 @@ used to verify it.
 receipt entirely offline. To intentionally rebuild those assets, install the
 pinned browser with
 `apps/web/node_modules/.bin/playwright-core install chromium-headless-shell`,
-run `bun run --cwd apps/web map-posters:build`, and review the changed images,
-receipt, and client filenames together.
+replace the receipt's filenames with the new `YYYYMMDD`, update the matching
+`MapProgressive.svelte` filenames and bilingual `staticSnapshot` date, then run
+`bun run --cwd apps/web map-posters:build`. Review the changed images, receipt,
+client filenames, copy, and tests together.

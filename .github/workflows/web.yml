@@ -55,7 +55,7 @@ jobs:
                   "prefixes": ["apps/data-proxy/", "apps/web/"]
                 },
                 "map-poster-check": {
-                  "paths": ["apps/web/package.json", "apps/web/scripts/build-map-posters.ts"],
+                  "paths": ["apps/web/package.json", "apps/web/scripts/build-map-posters.ts", "apps/web/src/lib/components/map/basemap.ts", "apps/web/src/lib/components/map/viewport.ts", "apps/web/src/lib/features/map/mapCameraFraming.ts"],
                   "prefixes": ["apps/web/static/map/"]
                 }
               },
@@ -104,6 +104,10 @@ jobs:
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
         run: node --test .github/scripts/deploy-scope.test.mjs
+
+      - name: Basemap replacement transaction contract
+        working-directory: ${{ github.workspace }}
+        run: node --test .github/scripts/refresh-basemap-r2.test.mjs
 
       - name: Design adoption integrity
         run: bun vendor/design/tools/adopt.ts --check --dest vendor/design

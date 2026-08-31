@@ -28,6 +28,11 @@ const ATTRIBUTION = '© OpenStreetMap contributors, © Protomaps';
 const MAX_POSTER_BYTES = 125 * 1024;
 const PLAYWRIGHT_CORE_VERSION = '1.62.0';
 const PINNED_CHROMIUM_VERSION = '151.0.7922.34';
+const RENDER_INPUT_PATHS = [
+	'src/lib/components/map/basemap.ts',
+	'src/lib/components/map/viewport.ts',
+	'src/lib/features/map/mapCameraFraming.ts',
+] as const;
 
 type PinnedDescriptor = BasemapFile & {
 	schema_version: number;
@@ -45,6 +50,7 @@ interface PosterSpec {
 }
 
 interface PosterEntry extends PosterSpec {
+	format: 'avif';
 	bytes: number;
 	sha256: string;
 }
@@ -69,6 +75,7 @@ interface PosterReceipt {
 		playwright_core_version: string;
 		chromium_version: string;
 	};
+	render_inputs: Array<{ path: string; sha256: string }>;
 	posters: PosterEntry[];
 }
 
@@ -123,6 +130,15 @@ function validateReceipt(value: unknown): asserts value is PosterReceipt {
 		PINNED_CHROMIUM_VERSION,
 		'poster Chromium version',
 	);
+	if (!Array.isArray(receipt.render_inputs) || receipt.render_inputs.length !== 3) {
+		throw new Error('poster receipt must contain exactly three render inputs');
+	}
+	for (const [index, input] of receipt.render_inputs.entries()) {
+		assertEqual(input.path, RENDER_INPUT_PATHS[index], `poster render input ${index} path`);
+		if (!/^[0-9a-f]{64}$/u.test(input.sha256)) {
+			throw new Error(`${input.path} SHA-256 receipt is invalid`);
+		}
+	}
 	if (!Array.isArray(receipt.posters) || receipt.posters.length !== 4) {
 		throw new Error('poster receipt must contain exactly four assets');
 	}
@@ -141,6 +157,7 @@ function validateReceipt(value: unknown): asserts value is PosterReceipt {
 		if (!Number.isSafeInteger(poster.width) || !Number.isSafeInteger(poster.height)) {
 			throw new Error(`${poster.filename} dimensions must be safe integers`);
 		}
+		assertEqual(poster.format, 'avif', `${poster.filename} receipt format`);
 		if (
 			!Number.isSafeInteger(poster.bytes) ||
 			poster.bytes <= 0 ||
@@ -163,7 +180,21 @@ async function readPosterReceipt(): Promise<PosterReceipt> {
 	return receipt;
 }
 
+async function readRenderInputs(): Promise<Array<{ path: string; sha256: string }>> {
+	return Promise.all(
+		RENDER_INPUT_PATHS.map(async (path) => ({
+			path,
+			sha256: sha256(await readFile(resolve(webRoot, path))),
+		})),
+	);
+}
+
 async function verifyPosterReceipt(receipt: PosterReceipt): Promise<void> {
+	assertEqual(
+		JSON.stringify(await readRenderInputs()),
+		JSON.stringify(receipt.render_inputs),
+		'poster render inputs',
+	);
 	for (const poster of receipt.posters) {
 		const bytes = await readFile(resolve(outputDir, poster.filename));
 		const metadata = await sharp(bytes).metadata();
@@ -324,6 +355,7 @@ async function capturePoster(
 async function buildPosters(seed: PosterReceipt): Promise<void> {
 	await mkdir(outputDir, { recursive: true });
 	const liveBefore = await readLiveSource();
+	const renderInputsBefore = await readRenderInputs();
 	const explicitExecutable = process.env.CHROME_PATH?.trim();
 	const browser = await chromium.launch({
 		...(explicitExecutable ? { executablePath: explicitExecutable } : {}),
@@ -352,10 +384,16 @@ async function buildPosters(seed: PosterReceipt): Promise<void> {
 	}
 
 	const liveAfter = await readLiveSource();
+	const renderInputsAfter = await readRenderInputs();
 	assertEqual(
 		JSON.stringify(liveAfter.source),
 		JSON.stringify(liveBefore.source),
 		'basemap source identity during poster render',
+	);
+	assertEqual(
+		JSON.stringify(renderInputsAfter),
+		JSON.stringify(renderInputsBefore),
+		'poster render inputs during render',
 	);
 	for (const poster of generated) {
 		const outPath = resolve(outputDir, poster.spec.filename);
@@ -371,8 +409,10 @@ async function buildPosters(seed: PosterReceipt): Promise<void> {
 			playwright_core_version: PLAYWRIGHT_CORE_VERSION,
 			chromium_version: browserVersion,
 		},
+		render_inputs: renderInputsBefore,
 		posters: generated.map(({ spec, bytes }) => ({
 			...spec,
+			format: 'avif',
 			bytes: bytes.byteLength,
 			sha256: sha256(bytes),
 		})),
