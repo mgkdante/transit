@@ -68,6 +68,10 @@ describe('static Montréal basemap posters', () => {
 			},
 			render_inputs: [
 				{
+					path: 'scripts/build-map-posters.ts',
+					sha256: '23a703f2683d450cec2e3e3d5941b320c5a04d2a49328605b09609632b186b80',
+				},
+				{
 					path: 'src/lib/components/map/basemap.ts',
 					sha256: '3d0f658aaabc0eed0787bbd367949f9bd2b8b3fa32a4b24e29ad30ccbffff7b1',
 				},
@@ -119,6 +123,13 @@ describe('static Montréal basemap posters', () => {
 				},
 			],
 		});
+	});
+
+	it('binds the poster renderer implementation into the offline receipt', async () => {
+		const receipt = await readReceipt();
+		expect(receipt.render_inputs.map((input) => input.path)).toContain(
+			'scripts/build-map-posters.ts',
+		);
 	});
 
 	it('matches every receipt digest, byte count, viewport, and AVIF limit', async () => {

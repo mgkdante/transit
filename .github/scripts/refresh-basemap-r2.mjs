@@ -11,9 +11,10 @@ import { parseArgs } from "node:util";
 const WRANGLER_VERSION = "4.100.0";
 const CONTENT_TYPE = "application/octet-stream";
 const DEFAULT_COMMAND_TIMEOUT_MS = 180_000;
-const TERMINATION_GRACE_MS = 5_000;
+const DEFAULT_TERMINATION_GRACE_MS = 5_000;
 
 let activeChild = null;
+let externalTerminationTimer;
 let pendingTerminationSignal = null;
 
 function terminate(child, signal) {
@@ -31,7 +32,15 @@ function terminate(child, signal) {
 function recordTermination(signal) {
   pendingTerminationSignal ??= signal;
   process.exitCode = 1;
-  if (activeChild) terminate(activeChild, "SIGTERM");
+  if (activeChild) {
+    const child = activeChild;
+    terminate(child, "SIGTERM");
+    clearTimeout(externalTerminationTimer);
+    externalTerminationTimer = setTimeout(() => {
+      if (activeChild === child) terminate(child, "SIGKILL");
+    }, terminationGraceMs());
+    externalTerminationTimer.unref();
+  }
 }
 
 process.on("SIGINT", () => recordTermination("SIGINT"));
@@ -49,6 +58,18 @@ function commandTimeoutMs() {
   if (!Number.isSafeInteger(value) || value < 50 || value > 600_000) {
     throw new Error(
       "WRANGLER_TIMEOUT_MS must be an integer between 50 and 600000",
+    );
+  }
+  return value;
+}
+
+function terminationGraceMs() {
+  const value = Number(
+    process.env.TERMINATION_GRACE_MS ?? DEFAULT_TERMINATION_GRACE_MS,
+  );
+  if (!Number.isSafeInteger(value) || value < 50 || value > 30_000) {
+    throw new Error(
+      "TERMINATION_GRACE_MS must be an integer between 50 and 30000",
     );
   }
   return value;
@@ -83,7 +104,7 @@ function run(command, args) {
       terminate(child, "SIGTERM");
       forceKillTimer = setTimeout(
         () => terminate(child, "SIGKILL"),
-        TERMINATION_GRACE_MS,
+        terminationGraceMs(),
       );
       forceKillTimer.unref();
     }, timeoutMs);
@@ -94,6 +115,7 @@ function run(command, args) {
       settled = true;
       clearTimeout(timeout);
       clearTimeout(forceKillTimer);
+      clearTimeout(externalTerminationTimer);
       if (activeChild === child) activeChild = null;
       if (error) rejectRun(error);
       else resolveRun();

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmod,
   mkdir,
@@ -37,6 +37,7 @@ import { dirname, join } from 'node:path';
 const args = process.argv.slice(2);
 const operation = args[2];
 const objectPath = args[3];
+if (process.env.FAKE_R2_IGNORE_SIGTERM === '1') process.on('SIGTERM', () => {});
 const fileFlag = args.find((value) => value.startsWith('--file='));
 if (
   args[0] !== 'r2' ||
@@ -116,7 +117,7 @@ async function waitForBytes(path, expected) {
 async function runHelper(
   fixture,
   extraEnv = {},
-  { signalAfterCommit = false } = {},
+  { signalAfterCommit = null } = {},
 ) {
   const child = spawn(
     process.execPath,
@@ -144,12 +145,13 @@ async function runHelper(
   child.stderr.on("data", (chunk) => (stderr += chunk));
   const signal = signalAfterCommit
     ? waitForBytes(fixture.stable, fixture.newBytes).then(() =>
-        child.kill("SIGTERM"),
+        child.kill(signalAfterCommit),
       )
     : Promise.resolve();
   let guardKilled = false;
   const guard = setTimeout(() => {
     guardKilled = true;
+    spawnSync("pkill", ["-KILL", "-P", String(child.pid)]);
     process.kill(-child.pid, "SIGKILL");
   }, 3_000);
   const code = await new Promise((resolveExit) =>
@@ -271,7 +273,27 @@ describe("basemap R2 replacement", () => {
     assert.deepEqual(await readFile(fixture.stable), fixture.previousBytes);
   });
 
-  it("compensates a committed stable put when the runner sends SIGTERM", async () => {
+  it("force-stops a signal-resistant PUT and compensates after SIGTERM", async () => {
+    const fixture = await makeFixture();
+    const result = await runHelper(
+      fixture,
+      {
+        FAKE_R2_HANG_PUT_AFTER_COPY_KEY: STABLE_KEY,
+        FAKE_R2_HANG_PUT_AFTER_COPY_NUMBER: "1",
+        FAKE_R2_IGNORE_SIGTERM: "1",
+        TERMINATION_GRACE_MS: "100",
+      },
+      { signalAfterCommit: "SIGTERM" },
+    );
+
+    assert.equal(result.guardKilled, false);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /received SIGTERM/u);
+    assert.match(result.stderr, /previous object restored and verified/u);
+    assert.deepEqual(await readFile(fixture.stable), fixture.previousBytes);
+  });
+
+  it("compensates a committed stable put when the runner sends SIGINT", async () => {
     const fixture = await makeFixture();
     const result = await runHelper(
       fixture,
@@ -279,12 +301,12 @@ describe("basemap R2 replacement", () => {
         FAKE_R2_HANG_PUT_AFTER_COPY_KEY: STABLE_KEY,
         FAKE_R2_HANG_PUT_AFTER_COPY_NUMBER: "1",
       },
-      { signalAfterCommit: true },
+      { signalAfterCommit: "SIGINT" },
     );
 
     assert.equal(result.guardKilled, false);
     assert.equal(result.code, 1);
-    assert.match(result.stderr, /received SIGTERM/u);
+    assert.match(result.stderr, /received SIGINT/u);
     assert.match(result.stderr, /previous object restored and verified/u);
     assert.deepEqual(await readFile(fixture.stable), fixture.previousBytes);
   });

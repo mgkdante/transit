@@ -29,6 +29,7 @@ const MAX_POSTER_BYTES = 125 * 1024;
 const PLAYWRIGHT_CORE_VERSION = '1.62.0';
 const PINNED_CHROMIUM_VERSION = '151.0.7922.34';
 const RENDER_INPUT_PATHS = [
+	'scripts/build-map-posters.ts',
 	'src/lib/components/map/basemap.ts',
 	'src/lib/components/map/viewport.ts',
 	'src/lib/features/map/mapCameraFraming.ts',
@@ -130,8 +131,13 @@ function validateReceipt(value: unknown): asserts value is PosterReceipt {
 		PINNED_CHROMIUM_VERSION,
 		'poster Chromium version',
 	);
-	if (!Array.isArray(receipt.render_inputs) || receipt.render_inputs.length !== 3) {
-		throw new Error('poster receipt must contain exactly three render inputs');
+	if (
+		!Array.isArray(receipt.render_inputs) ||
+		receipt.render_inputs.length !== RENDER_INPUT_PATHS.length
+	) {
+		throw new Error(
+			`poster receipt must contain exactly ${RENDER_INPUT_PATHS.length} render inputs`,
+		);
 	}
 	for (const [index, input] of receipt.render_inputs.entries()) {
 		assertEqual(input.path, RENDER_INPUT_PATHS[index], `poster render input ${index} path`);
