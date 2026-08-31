@@ -61,6 +61,7 @@
 								severity={row.severity}
 								value={row.value}
 								display={row.display}
+								{locale}
 							/>
 						{/each}
 					</div>
@@ -78,6 +79,7 @@
 								severity={row.severity}
 								value={row.value}
 								display={row.display}
+								{locale}
 							/>
 						{/each}
 					</div>
@@ -95,6 +97,7 @@
 								severity={row.severity}
 								value={row.value}
 								display={row.display}
+								{locale}
 							/>
 						{/each}
 					</div>

@@ -103,6 +103,7 @@
 									value={row.value}
 									domain={NON_RESPONDING_DOMAIN}
 									display={row.display}
+									{locale}
 								/>
 							</a>
 						</li>
