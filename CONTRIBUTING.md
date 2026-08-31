@@ -19,6 +19,8 @@ in an issue before implementing them.
 
 Run the affected subset while iterating. Before handing off a release candidate,
 run this ordered clean-clone CI-equivalent command from the repository root.
+The tool contract is Bun 1.3.11, Node.js 22, Python 3.12, uv 0.11.15,
+playwright-core 1.62.0 with Chromium 151.0.7922.34, and Gitleaks 8.30.1.
 The final migration replay and real-DB suite require an empty disposable
 `postgis/postgis:16-3.4` database at `localhost:5432`, with database and user
 `transit_ci` and password `transit_ci@:/%`. Never point these commands at a
@@ -26,6 +28,17 @@ shared, retained, or production database.
 
 ```bash
 set -euo pipefail
+
+test "$(bun --version)" = "1.3.11"
+test "$(node --version | cut -d. -f1)" = "v22"
+test "$(python3 --version | cut -d. -f1,2)" = "Python 3.12"
+test "$(uv --version | cut -d' ' -f1,2)" = "uv 0.11.15"
+
+GITLEAKS_VERSION=8.30.1
+curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tar.gz" | sha256sum -c -
+tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+GITLEAKS_BIN=/tmp/gitleaks
 
 bun install --frozen-lockfile
 (cd apps/db && uv sync --locked)
@@ -39,6 +52,7 @@ bun run --cwd apps/web tokens:build
 git diff --exit-code -- apps/web/src/lib/styles/tokens.css apps/web/src/app.css
 bun run --cwd apps/web og:check
 bun run --cwd apps/web icons:check
+apps/web/node_modules/.bin/playwright-core install chromium-headless-shell
 bun run --cwd apps/web map-posters:check
 
 bun run --cwd apps/data-proxy check
@@ -60,7 +74,7 @@ bun run --cwd apps/web test
 )
 
 bun audit --audit-level=high
-gitleaks detect --redact --config .gitleaks.toml
+"$GITLEAKS_BIN" detect --redact --config .gitleaks.toml
 
 export DATABASE_URL='postgresql+psycopg://transit_ci@localhost:5432/transit_ci'
 export TRANSIT_TEST_DATABASE_URL="$DATABASE_URL"

@@ -315,8 +315,31 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		if (!poster || !reporter) return;
 		expect(directNeeds(poster)).toEqual(['classify']);
 		expect(poster).toContain("relevant['map-poster-check']");
-		expect(poster).toContain('bun run map-posters:check');
+		const installBrowser = poster.indexOf(
+			'./node_modules/.bin/playwright-core install chromium-headless-shell',
+		);
+		const checkPosters = poster.indexOf('bun run map-posters:check');
+		expect(installBrowser).toBeGreaterThanOrEqual(0);
+		expect(checkPosters).toBeGreaterThan(installBrowser);
 		expect(directNeeds(reporter)).toEqual(['classify', ...WEB_WORK]);
+
+		const posterScript = text('apps/web/scripts/build-map-posters.ts');
+		expect(posterScript).not.toContain('/usr/bin/google-chrome');
+		expect(posterScript).toContain("const PINNED_CHROMIUM_VERSION = '151.0.7922.34'");
+		expect(posterScript).toContain('browser.version()');
+
+		const contributing = text('CONTRIBUTING.md');
+		expect(contributing).toContain('Bun 1.3.11');
+		expect(contributing).toContain('Node.js 22');
+		expect(contributing).toContain('Python 3.12');
+		expect(contributing).toContain('uv 0.11.15');
+		expect(contributing).toContain('Gitleaks 8.30.1');
+		expect(contributing).toContain(
+			'551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
+		);
+		expect(contributing.indexOf('playwright-core install chromium-headless-shell')).toBeLessThan(
+			contributing.indexOf('map-posters:check'),
+		);
 
 		const refresh = jobBlocks(text('.github/workflows/refresh-basemap.yml')).get('refresh-basemap');
 		expect(refresh).toBeDefined();
@@ -350,6 +373,7 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(classify('apps/web/src/routes/+page.svelte', webRules)).toEqual(productWeb);
 		expect(classify('apps/data-proxy/src/index.ts', webRules)).toEqual(productWeb);
 		expect(classify('apps/web/scripts/build-map-posters.ts', webRules)).toEqual(posterWeb);
+		expect(classify('apps/web/package.json', webRules)).toEqual(posterWeb);
 		expect(classify('apps/web/static/map/poster.avif', webRules)).toEqual(posterWeb);
 		expect(classify('.github/workflows/ci.yml', webRules)).toEqual(allWeb);
 		expect(classify('.github/scripts/materialize-shared-config.mjs', webRules)).toEqual(allWeb);

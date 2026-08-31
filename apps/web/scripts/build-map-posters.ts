@@ -27,6 +27,7 @@ const PMTILES_ETAG = '"6403e3c2777cc710276331111b570633"';
 const PMTILES_RANGE = 'bytes 0-0/86282797';
 const ATTRIBUTION = '© OpenStreetMap contributors, © Protomaps';
 const MAX_POSTER_BYTES = 125 * 1024;
+const PINNED_CHROMIUM_VERSION = '151.0.7922.34';
 
 type PinnedDescriptor = BasemapFile & {
 	schema_version: number;
@@ -104,10 +105,6 @@ async function readPinnedDescriptor(): Promise<PinnedDescriptor> {
 	assertEqual((await archiveResponse.arrayBuffer()).byteLength, 1, 'PMTiles range body length');
 
 	return descriptor;
-}
-
-function browserExecutable(): string {
-	return process.env.CHROME_PATH ?? '/usr/bin/google-chrome';
 }
 
 async function preparePage(browser: Browser, spec: PosterSpec): Promise<Page> {
@@ -202,14 +199,17 @@ async function main(): Promise<void> {
 	const checkOnly = process.argv.includes('--check');
 	await mkdir(outputDir, { recursive: true });
 	const descriptor = await readPinnedDescriptor();
+	const explicitExecutable = process.env.CHROME_PATH?.trim();
 	const browser = await chromium.launch({
-		executablePath: browserExecutable(),
+		...(explicitExecutable ? { executablePath: explicitExecutable } : {}),
 		headless: true,
 		args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'],
 	});
-
 	let drift = false;
 	try {
+		const browserVersion = browser.version();
+		assertEqual(browserVersion, PINNED_CHROMIUM_VERSION, 'poster Chromium version');
+		console.log(`[build-map-posters] browser: playwright-core 1.62.0 / Chromium ${browserVersion}`);
 		for (const spec of POSTERS) {
 			const generated = await capturePoster(browser, descriptor, spec);
 			const outPath = resolve(outputDir, spec.filename);

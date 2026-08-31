@@ -9,6 +9,17 @@ const ports = vi.hoisted(() => ({
 	getHistoricAvailability: vi.fn(),
 }));
 const motion = vi.hoisted(() => ({ reduced: false }));
+const navigation = vi.hoisted(() => {
+	const page = { url: new URL('http://localhost/status'), state: {} };
+	const replaceState = vi.fn((url: string | URL) => {
+		page.url = new URL(url, 'http://localhost');
+		window.location.hash = page.url.hash;
+	});
+	return { page, replaceState };
+});
+
+vi.mock('$app/state', () => ({ page: navigation.page }));
+vi.mock('$app/navigation', () => ({ replaceState: navigation.replaceState }));
 
 vi.mock('$lib/v1', async () => {
 	const freshness = await import('$lib/v1/freshness');
@@ -48,6 +59,7 @@ vi.mock('$lib/components/shared/toc', async (importOriginal) => {
 
 import { dataRefresh } from '$lib/stores';
 import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
+import { replaceState } from '$app/navigation';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';
 
@@ -127,6 +139,11 @@ async function openHealthToc(left: HTMLElement): Promise<HTMLElement> {
 	return trigger;
 }
 
+async function replaceHash(hash: string): Promise<void> {
+	replaceState(hash, {});
+	await fireEvent(window, new HashChangeEvent('hashchange'));
+}
+
 beforeEach(() => {
 	cleanup();
 	quietModeStore.resetForTest();
@@ -134,6 +151,8 @@ beforeEach(() => {
 	localStorage.setItem('transit:quiet-mode', 'true');
 	sessionStorage.setItem('transit.persisted:status-card-health-lanes', 'false');
 	window.location.hash = '';
+	navigation.page.url = new URL('http://localhost/status');
+	navigation.replaceState.mockClear();
 	motion.reduced = false;
 	scrollIntoView.mockReset();
 	Object.defineProperty(Element.prototype, 'scrollIntoView', {
@@ -321,12 +340,10 @@ describe('HealthStatus — async reveal navigation', () => {
 			targets.push(this.getAttribute('data-toc'));
 		});
 
-		window.history.replaceState(null, '', '#health-lanes');
-		await fireEvent(window, new HashChangeEvent('hashchange'));
+		await replaceHash('#health-lanes');
 		await tick();
 		await tick();
-		window.history.replaceState(null, '', '#health-freshness');
-		await fireEvent(window, new HashChangeEvent('hashchange'));
+		await replaceHash('#health-freshness');
 
 		await waitFor(() => expect(targets).toEqual(['health-freshness']));
 	});
@@ -347,8 +364,7 @@ describe('HealthStatus — async reveal navigation', () => {
 			targets.push(this.getAttribute('data-toc'));
 		});
 
-		window.history.replaceState(null, '', '#health-lanes');
-		await fireEvent(window, new HashChangeEvent('hashchange'));
+		await replaceHash('#health-lanes');
 		await tick();
 		await tick();
 		await fireEvent.click(within(left).getByRole('button', { name: copy.en.freshness.section }));
