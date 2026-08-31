@@ -1,6 +1,6 @@
 {
 	"name": "@yesid/i18n-core",
-	"version": "0.13.0",
+	"version": "0.13.1",
 	"private": true,
 	"type": "module",
 	"description": "Pure, consumer-configured locale-routing mechanics with app-owned locale values, exemption policy, and runtime guards.",

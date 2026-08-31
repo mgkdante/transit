@@ -90,8 +90,8 @@ primitive renders.
 
 Use one shared initializer imported by both SvelteKit `hooks.client.ts`
 (`ClientInit`) and `hooks.server.ts` (`ServerInit`). Do not initialize from a
-root layout instance script. See
-[`docs/BUILD-A-YESID-PRODUCT.md`](../../docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
+root layout instance script. See the
+[`v0.13.1 product setup guide`](https://github.com/mgkdante/yesid.dev-design/blob/v0.13.1/docs/BUILD-A-YESID-PRODUCT.md#4-configure-ui-once-per-module-graph-at-boot)
 for the complete hook pattern.
 
 The state boundary is the loaded ESM module graph, not an account or an entire
