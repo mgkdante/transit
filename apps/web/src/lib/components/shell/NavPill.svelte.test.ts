@@ -413,10 +413,10 @@ describe('NavPill — the flat menu', () => {
 
 describe('NavPill — search', () => {
 	it.each([
-		['en', 'Your searches are sent to our server and its geocoding providers (Google, geo.ca).'],
+		['en', 'Your searches are sent to our server and the Government of Canada Geo.ca service.'],
 		[
 			'fr',
-			'Vos recherches sont envoyées à notre serveur et à ses fournisseurs de géocodage (Google, geo.ca).',
+			'Vos recherches sont envoyées à notre serveur et au service Géo.ca du gouvernement du Canada.',
 		],
 	] as const)(
 		'renders the %s chrome collection notice beside the search input',
@@ -512,7 +512,7 @@ describe('NavPill — search', () => {
 				props: { locale: 'en', searchScope },
 			});
 			const notices = getAllByText(
-				'Your searches are sent to our server and its geocoding providers (Google, geo.ca).',
+				'Your searches are sent to our server and the Government of Canada Geo.ca service.',
 			);
 			expect(notices).toHaveLength(2);
 			const target = notices.find((n) => n.id === 'nav-search-notice');
@@ -666,7 +666,7 @@ describe('NavPill — the pill chassis + --pill-h contract (source)', () => {
 // this pins the constant that produces them.
 const PILL_EDGE_BELOW_FIELD_PX = 18;
 const NOTICE_EN =
-	'Your searches are sent to our server and its geocoding providers (Google, geo.ca).';
+	'Your searches are sent to our server and the Government of Canada Geo.ca service.';
 
 function ruleFor(source: string, selector: string): string {
 	const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -750,39 +750,6 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 
 		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toBeInTheDocument();
 		expect(queryByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeNull();
-	});
-
-	// The Google Places attribution is a THIRD-PARTY obligation, so it is pinned to
-	// what is actually on screen — in both directions. Gating it on the unfiltered
-	// blend leaves a bare "Powered by Google" after the family narrowing drops every
-	// Google row; gating it too tightly hides it while a Google row is still shown.
-	it('keeps the Google attribution with the visible Google-sourced rows — never without, never missing', async () => {
-		const { getByLabelText, queryByLabelText, getByRole, queryByRole } = render(NavPill, {
-			props: {
-				locale: 'en',
-				search: 'casgrain',
-				searchScope: 'all',
-				searchResults: [
-					{ kind: 'route', id: '161', label: '161 Van Horne', priority: 0 },
-					{
-						kind: 'address',
-						id: 'google:casgrain',
-						label: '5333 Avenue Casgrain, Montréal, Quebec',
-						meta: 'Address',
-						priority: 30,
-						attribution: 'google',
-					},
-				],
-			},
-		});
-		// A visible Google-sourced row ALWAYS carries the attribution.
-		expect(getByRole('button', { name: /5333 Avenue Casgrain/ })).toBeInTheDocument();
-		expect(getByLabelText('Powered by Google')).toBeInTheDocument();
-		// Narrowing the family away drops the row AND its attribution together —
-		// never a bare attribution with no Google content on screen.
-		await fireEvent.click(getByRole('radio', { name: /Lines \(1\)/ }));
-		expect(queryByRole('button', { name: /5333 Avenue Casgrain/ })).toBeNull();
-		expect(queryByLabelText('Powered by Google')).toBeNull();
 	});
 
 	// ── REGATE-m6i §5 cure — a narrowing must never outlive its on-screen control ──

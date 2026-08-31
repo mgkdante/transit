@@ -45,11 +45,6 @@ export interface ChromeSearchResult {
 	readonly lat?: number;
 	readonly lon?: number;
 	readonly precision?: GeocodePrecision;
-	readonly attribution?: 'google';
-	// Carried through from the picked GeocodeSuggestion so a coordinate-less
-	// (Google) address can be resolved by placeId on selection instead of being
-	// re-text-searched by its label.
-	readonly placeId?: string;
 	readonly source?: GeocodeSource;
 }
 
@@ -140,15 +135,13 @@ export function chromeSearchResults(
 		.map(
 			(address, index): ChromeSearchResult => ({
 				kind: 'address',
-				id: addressResultId(address, index),
+				id: addressResultId(address),
 				label: address.label,
 				meta: precisionLabel(address.precision),
 				priority: 30 + index,
 				lat: address.lat,
 				lon: address.lon,
 				precision: address.precision,
-				attribution: address.attribution,
-				placeId: address.placeId,
 				source: address.source,
 			}),
 		)
@@ -233,13 +226,8 @@ export function chromeSearchHref(
 	return search ? `/map?${search}` : '/map';
 }
 
-function addressResultId(address: GeocodeSuggestion, index: number): string {
-	if (typeof address.lat === 'number' && typeof address.lon === 'number') {
-		return mapNearId(address.lat, address.lon);
-	}
-	if (address.placeId)
-		return `${address.source === 'google_places' ? 'google' : address.source}:${address.placeId}`;
-	return `address:${index}:${address.label}`;
+function addressResultId(address: GeocodeSuggestion): string {
+	return mapNearId(address.lat, address.lon);
 }
 
 function addressTargetFromResult(

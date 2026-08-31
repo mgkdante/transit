@@ -38,7 +38,7 @@ export const copy = defineCopy({
 		modeLabel: 'Mode',
 		scopeCount: (label, n) => `${label} (${n})`,
 		collectionNotice:
-			'Lines, stops and buses are matched in your browser; address search is sent to our server and its geocoding providers (Google, geo.ca).',
+			'Lines, stops and buses are matched in your browser; address search is sent to our server and the Government of Canada Geo.ca service.',
 		idleTitle: 'Search a line, stop or bus',
 		idleBody: 'Type a line number, a line or stop name, a stop code, or a live bus id to find it.',
 		census: {
@@ -75,7 +75,7 @@ export const copy = defineCopy({
 		modeLabel: 'Mode',
 		scopeCount: (label: string, n: number) => `${label} (${n})`,
 		collectionNotice:
-			'Les lignes, arrêts et bus sont trouvés dans votre navigateur ; la recherche d’adresse est envoyée à notre serveur et à ses fournisseurs de géocodage (Google, geo.ca).',
+			'Les lignes, arrêts et bus sont trouvés dans votre navigateur ; la recherche d’adresse est envoyée à notre serveur et au service Géo.ca du gouvernement du Canada.',
 		idleTitle: 'Rechercher une ligne, un arrêt ou un bus',
 		idleBody:
 			'Saisissez un numéro de ligne, un nom de ligne ou d’arrêt, un code d’arrêt, ou un identifiant de bus en direct pour le trouver.',

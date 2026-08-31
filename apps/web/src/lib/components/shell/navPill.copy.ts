@@ -3,7 +3,7 @@ import { defineCopy } from '$lib/i18n/copy';
 export const navPillCopy = defineCopy({
 	fr: {
 		searchCollectionNotice:
-			'Vos recherches sont envoyées à notre serveur et à ses fournisseurs de géocodage (Google, geo.ca).',
+			'Vos recherches sont envoyées à notre serveur et au service Géo.ca du gouvernement du Canada.',
 		searchScopeLabel: 'Afficher',
 		searchScopeAll: 'Tout',
 		searchScopeRoutes: 'Lignes',
@@ -14,7 +14,7 @@ export const navPillCopy = defineCopy({
 	},
 	en: {
 		searchCollectionNotice:
-			'Your searches are sent to our server and its geocoding providers (Google, geo.ca).',
+			'Your searches are sent to our server and the Government of Canada Geo.ca service.',
 		searchScopeLabel: 'Show',
 		searchScopeAll: 'All',
 		searchScopeRoutes: 'Lines',

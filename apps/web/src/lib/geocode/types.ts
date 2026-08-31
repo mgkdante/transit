@@ -1,10 +1,10 @@
 export type GeocodePrecision = 'address' | 'street' | 'neighbourhood' | 'postal' | 'place';
 
-export type GeocodeSource = 'geo_ca' | 'google_places';
+export type GeocodeSource = 'geo_ca';
 
 /**
- * The Montréal bias rectangle shared by Google Places locationRestriction,
- * the near-me coordinate guard, and the Place-Details bounds check.
+ * The Montréal bounds shared by Geo.ca result filtering and the near-me
+ * coordinate guard.
  */
 export const MONTREAL_BOUNDS = {
 	minLat: 45.35,
@@ -24,22 +24,11 @@ export function isInsideMontrealBounds(lat: number, lon: number): boolean {
 }
 
 export interface GeocodeSuggestion {
-	readonly lat?: number;
-	readonly lon?: number;
+	readonly lat: number;
+	readonly lon: number;
 	readonly label: string;
 	readonly source: GeocodeSource;
 	readonly precision: GeocodePrecision;
-	readonly placeId?: string;
-	readonly attribution?: 'google';
 }
 
-export interface GeocodedLocation extends GeocodeSuggestion {
-	readonly lat: number;
-	readonly lon: number;
-	// Google autocomplete itself is coordinate-less until Place Details resolves it.
-	readonly source: 'geo_ca' | 'google_places';
-}
-
-export function hasCoordinates(suggestion: GeocodeSuggestion): suggestion is GeocodedLocation {
-	return typeof suggestion.lat === 'number' && typeof suggestion.lon === 'number';
-}
+export type GeocodedLocation = GeocodeSuggestion;

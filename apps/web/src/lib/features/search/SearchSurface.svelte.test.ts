@@ -257,7 +257,7 @@ describe('SearchSurface vehicle results', () => {
 // top-bar field and the map's near-me — is what transmits.
 describe('SearchSurface collection disclosure (M6i F25)', () => {
 	const NOTICE_EN =
-		'Lines, stops and buses are matched in your browser; address search is sent to our server and its geocoding providers (Google, geo.ca).';
+		'Lines, stops and buses are matched in your browser; address search is sent to our server and the Government of Canada Geo.ca service.';
 
 	it('shows the disclosure on the search page, idle and with a query', () => {
 		setUrlQuery('');

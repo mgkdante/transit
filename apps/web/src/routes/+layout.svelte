@@ -90,8 +90,7 @@
 	} from '$lib/search/chromeSearch';
 	import type { TransitModeKey } from '$lib/search/stopMode';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { createGooglePlacesSessionToken } from '$lib/geocode/sessionToken';
-	import type { GeocodeSuggestion, GeocodedLocation } from '$lib/geocode/types';
+	import type { GeocodeSuggestion } from '$lib/geocode/types';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
@@ -245,7 +244,6 @@
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 	let topSearch = $state('');
 	let addressSuggestions = $state<GeocodeSuggestion[]>([]);
-	let addressSessionToken = $state(createGooglePlacesSessionToken());
 	// The transit-mode narrowing the NavPill dropdown exposes (M6i F26) — the same
 	// combinable filter the search page has always offered. Owned here because the
 	// blend is computed here; the chips mutate the reactive set in place.
@@ -277,8 +275,8 @@
 
 	$effect(() => {
 		const query = topSearch.trim();
-		// Only map/all scope surfaces addresses — skip the geocode fetch (and its
-		// "Powered by Google" footer) entirely on the line/stop catalogue surfaces.
+		// Only map/all scope surfaces addresses; skip the geocode fetch entirely on
+		// the line/stop catalogue surfaces.
 		const wantsAddress = searchScope === 'map' || searchScope === 'all';
 		// A picked transit-mode set is a transit-mode question: an address carries no
 		// mode, so the blend stands it down — don't spend a geocode call on a row
@@ -381,12 +379,7 @@
 	}
 
 	async function selectSearchResult(result: ChromeSearchResult): Promise<void> {
-		if (result.kind === 'address' && !hasResultCoordinates(result)) {
-			await selectUnresolvedAddressResult(result);
-			return;
-		}
 		topSearch = '';
-		addressSessionToken = createGooglePlacesSessionToken();
 		void goto(
 			localizeHref(chromeSearchResultHref(result, searchScope, $page.url.searchParams), locale),
 			{ noScroll: true },
@@ -432,62 +425,12 @@
 		signal?: AbortSignal,
 	): Promise<GeocodeSuggestion[]> {
 		const response = await fetch(
-			`/api/geocode/montreal?q=${encodeURIComponent(query)}&suggest=1&limit=${limit}&session=${encodeURIComponent(addressSessionToken)}`,
+			`/api/geocode/montreal?q=${encodeURIComponent(query)}&suggest=1&limit=${limit}`,
 			{ signal },
 		);
 		if (!response.ok) return [];
 		const payload = (await response.json()) as { results?: GeocodeSuggestion[] };
 		return payload.results ?? [];
-	}
-
-	async function selectUnresolvedAddressResult(result: ChromeSearchResult): Promise<void> {
-		// A Google suggestion is coordinate-less but carries a placeId — resolve the
-		// EXACT place via Place Details (reusing the autocomplete session token)
-		// instead of re-text-searching its label, which landed on the wrong place.
-		const resolved = result.placeId
-			? await fetchPlaceDetails(result.placeId)
-			: await fetchGeocodedLocation(result.label);
-		if (!resolved) return;
-
-		topSearch = '';
-		addressSessionToken = createGooglePlacesSessionToken();
-		void goto(
-			localizeHref(
-				chromeSearchResultHref(
-					{
-						kind: 'address',
-						id: `${resolved.lat},${resolved.lon}`,
-						label: resolved.label,
-						lat: resolved.lat,
-						lon: resolved.lon,
-						precision: resolved.precision,
-						priority: 30,
-					},
-					searchScope,
-					$page.url.searchParams,
-				),
-				locale,
-			),
-			{ noScroll: true },
-		);
-	}
-
-	async function fetchGeocodedLocation(query: string): Promise<GeocodedLocation | null> {
-		const response = await fetch(`/api/geocode/montreal?q=${encodeURIComponent(query)}`);
-		if (!response.ok) return null;
-		return (await response.json()) as GeocodedLocation;
-	}
-
-	async function fetchPlaceDetails(placeId: string): Promise<GeocodedLocation | null> {
-		const response = await fetch(
-			`/api/geocode/montreal?placeId=${encodeURIComponent(placeId)}&session=${encodeURIComponent(addressSessionToken)}`,
-		);
-		if (!response.ok) return null;
-		return (await response.json()) as GeocodedLocation;
-	}
-
-	function hasResultCoordinates(result: ChromeSearchResult): boolean {
-		return typeof result.lat === 'number' && typeof result.lon === 'number';
 	}
 </script>
 

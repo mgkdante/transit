@@ -892,6 +892,30 @@ def test_build_manifest_assembles_from_provider_and_version() -> None:
     assert out.capabilities.data_trust.value == "enabled"
 
 
+def test_build_manifest_renders_provider_attribution_update_date() -> None:
+    conn = FakeConn(
+        {
+            "core.providers": [
+                {
+                    "provider_id": "sto",
+                    "display_name": "Société de transport de l'Outaouais",
+                    "attribution_text": "Last update: {last_update}.",
+                }
+            ],
+            "core.dataset_versions": [{"dataset_version": "sto-v1"}],
+        }
+    )
+
+    out = build_manifest(
+        conn,
+        provider_id="sto",
+        generated_utc="2026-08-31T23:10:50Z",
+        settings=_FakeSettings(),
+    )
+
+    assert out.attribution == "Last update: 2026-08-31."
+
+
 def test_build_manifest_capabilities_honest_absence_without_feeds() -> None:
     # A provider with ONLY a static schedule (STS-like): live_map / reliability /
     # accountability are honestly 'unavailable', lookups + data_trust stay 'enabled'.
@@ -1146,14 +1170,24 @@ def test_build_labels_non_stm_derives_attribution_from_core_providers():
                     [
                         {
                             "display_name": "Société de transport de l'Outaouais",
-                            "attribution_text": "Contains STO open data.",
+                            "attribution_text": (
+                                "This service incorporates STO open data. "
+                                "Last update: {last_update}."
+                            ),
                         }
                     ]
                 )
             return FakeResult([])  # gold.report_labels
 
-    fr = build_labels(FakeConn(), provider_id="sto", lang="fr", generated_utc="t")
-    assert fr.labels["attribution.data_source"] == "Contains STO open data."
+    fr = build_labels(
+        FakeConn(),
+        provider_id="sto",
+        lang="fr",
+        generated_utc="2026-08-31T23:10:50Z",
+    )
+    assert fr.labels["attribution.data_source"] == (
+        "This service incorporates STO open data. Last update: 2026-08-31."
+    )
     assert "Outaouais" in fr.labels["attribution.disclaimer"]
     # STM's metro-realtime gap is not carried for a non-metro provider
     assert "gap.metro_realtime" not in fr.labels

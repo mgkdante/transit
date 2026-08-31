@@ -47,7 +47,7 @@
 		nearbyStops: readonly WithDistance<StopIndexEntry>[];
 		onuselocation: () => void;
 		onsearch: (event: SubmitEvent) => void | Promise<void>;
-		onsuggestion: (result: GeocodeSuggestion, sessionToken: string) => void | Promise<void>;
+		onsuggestion: (result: GeocodeSuggestion) => void | Promise<void>;
 		onstopselect: (stop: WithDistance<StopIndexEntry>) => void;
 		onclear: () => void;
 		// Layout snapshot — gates the desktop-only hover peek.

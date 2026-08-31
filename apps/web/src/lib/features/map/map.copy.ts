@@ -45,7 +45,7 @@ export const copy = defineCopy({
 		nearMeSearchPlaceholder: 'Address, postal code, or coordinates',
 		nearMeSearchSubmit: 'Find',
 		nearMeCollectionNotice:
-			'Your searches are sent to our server and its geocoding providers (Google, geo.ca).',
+			'Your searches are sent to our server and the Government of Canada Geo.ca service.',
 		nearMeClear: 'Clear location',
 		nearMeLoading: 'Finding stops...',
 		nearMeNoResults: 'No nearby stops',
@@ -146,7 +146,7 @@ export const copy = defineCopy({
 		nearMeSearchPlaceholder: 'Adresse, code postal ou coordonnées',
 		nearMeSearchSubmit: 'Trouver',
 		nearMeCollectionNotice:
-			'Vos recherches sont envoyées à notre serveur et à ses fournisseurs de géocodage (Google, geo.ca).',
+			'Vos recherches sont envoyées à notre serveur et au service Géo.ca du gouvernement du Canada.',
 		nearMeClear: 'Effacer le lieu',
 		nearMeLoading: 'Recherche des arrêts...',
 		nearMeNoResults: 'Aucun arrêt proche',

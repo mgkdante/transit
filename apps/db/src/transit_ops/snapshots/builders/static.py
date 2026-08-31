@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
+from transit_ops.snapshots.attribution import render_provider_attribution
 from transit_ops.snapshots.builders._helpers import (
     _ALL_ROUTE_SCHEDULES_SQL,
     _BOARDABLE_STOP,
@@ -188,7 +189,9 @@ _PROVIDER_ATTRIBUTION_SQL = named_query(
 )
 
 
-def _provider_label_copy(conn: Connection, provider_id: str, lang: str) -> dict[str, str]:
+def _provider_label_copy(
+    conn: Connection, provider_id: str, lang: str, generated_utc: str
+) -> dict[str, str]:
     """Attribution + provider-specific gap copy for one provider and language.
 
     Curated providers (STM) return their hand-written bilingual copy. Others
@@ -203,7 +206,9 @@ def _provider_label_copy(conn: Connection, provider_id: str, lang: str) -> dict[
         _PROVIDER_ATTRIBUTION_SQL, {"provider_id": provider_id}
     ).mappings().one_or_none()
     display_name = (row["display_name"] if row else None) or provider_id
-    attribution_text = (row["attribution_text"] if row else None) or ""
+    attribution_text = render_provider_attribution(
+        (row["attribution_text"] if row else None) or "", generated_utc
+    )
     if lang == "fr":
         disclaimer = (
             f"Site indépendant, non affilié à {display_name} "
@@ -244,11 +249,11 @@ def build_labels(
          type == 1 (métro), with gap.metro_realtime.short as the compact badge.
       2. The attribution surface is labels['attribution.data_source'] +
          labels['attribution.disclaimer']; manifest.attribution is the unlocalized
-         machine-level fallback, frozen until the STM licensing determination (T1).
+         machine-level fallback from the provider manifest.
     """
     static = _STATIC_LABELS_FR if lang == "fr" else _STATIC_LABELS_EN
     labels: dict[str, str] = dict(static)
-    labels.update(_provider_label_copy(conn, provider_id, lang))
+    labels.update(_provider_label_copy(conn, provider_id, lang, generated_utc))
 
     for r in conn.execute(_LABELS_SQL).mappings():
         key = f"metric.{r['label_key']}"

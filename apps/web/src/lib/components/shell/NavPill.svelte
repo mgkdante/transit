@@ -260,12 +260,6 @@
 	const showSearchResults = $derived(
 		searchResultsOpen && search.trim().length > 0 && visibleResults.length > 0,
 	);
-	// The "Powered by Google" obligation follows what is actually ON SCREEN: it
-	// rides the visible blend, so narrowing away every Google-sourced row never
-	// leaves a bare attribution, and any visible one always carries it.
-	const showGoogleAttribution = $derived(
-		showSearchResults && visibleResults.some((result) => result.attribution === 'google'),
-	);
 	// The pill widens the moment the menu opens (per yesid's compact tier); no box
 	// shadow while open so the dropdown reads as the elevated layer.
 	const overlayActive = $derived(menuOpen);
@@ -481,16 +475,6 @@
 									{/if}
 								</button>
 							{/each}
-							{#if showGoogleAttribution}
-								<div class="nav-google-attribution" aria-label="Powered by Google">
-									<span>Powered by</span>
-									<span class="nav-google-wordmark" aria-hidden="true">
-										<span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span
-											>e</span
-										>
-									</span>
-								</div>
-							{/if}
 						</div>
 					{/if}
 				</div>
@@ -1290,43 +1274,6 @@
 	.nav-search-result small {
 		flex: none;
 		color: var(--muted-foreground);
-	}
-
-	.nav-google-attribution {
-		display: flex;
-		align-items: center;
-		justify-content: flex-end;
-		gap: 0.375rem;
-		min-height: 1.5rem;
-		padding: 0.25rem 0.5rem 0.375rem;
-		color: var(--muted-foreground);
-		border-top: 1px solid var(--border-subtle);
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-	}
-
-	.nav-google-wordmark {
-		display: inline-flex;
-		align-items: baseline;
-		font-family: var(--font-heading);
-		font-size: var(--text-micro);
-		font-weight: 700;
-		letter-spacing: 0;
-	}
-
-	.nav-google-wordmark span:nth-child(1),
-	.nav-google-wordmark span:nth-child(4) {
-		color: #4285f4;
-	}
-	.nav-google-wordmark span:nth-child(2),
-	.nav-google-wordmark span:nth-child(6) {
-		color: #ea4335;
-	}
-	.nav-google-wordmark span:nth-child(3) {
-		color: #fbbc05;
-	}
-	.nav-google-wordmark span:nth-child(5) {
-		color: #34a853;
 	}
 
 	/* PADDING + PILL-HEIGHT TIERS — deterministic --pill-h = 44 + 2·padV + 2·2px. */

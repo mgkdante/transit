@@ -411,34 +411,18 @@ describe('map near-me controller', () => {
 		});
 	});
 
-	it('resolves a coordinate-less Google suggestion by place id and session', async () => {
+	it('selects a Geo.ca suggestion directly without another provider request', async () => {
 		const harness = createHarness();
 		const result: GeocodedLocation = {
 			...target,
 			precision: 'address',
-			source: 'google_places',
-			placeId: 'place-1',
+			source: 'geo_ca',
 		};
-		harness.fetch.mockResolvedValue({
-			ok: true,
-			json: async () => result,
-		} as Response);
 
-		await harness.controller.selectSuggestion(
-			{
-				label: 'Place des Arts',
-				source: 'google_places',
-				precision: 'place',
-				placeId: 'place-1',
-			},
-			'session-1',
-		);
+		await harness.controller.selectSuggestion(result);
 
-		expect(harness.fetch).toHaveBeenCalledWith(
-			'/api/geocode/montreal?placeId=place-1&session=session-1',
-			{ signal: expect.any(AbortSignal) },
-		);
-		expect(harness.controller.query).toBe('Place des Arts');
+		expect(harness.fetch).not.toHaveBeenCalled();
+		expect(harness.controller.query).toBe(result.label);
 		expect(harness.controller.origin).toEqual(result);
 		expect(harness.controller.loading).toBe(false);
 	});

@@ -720,6 +720,14 @@ def test_retention_docs_match_gold_fact_default_of_fourteen_days() -> None:
     assert "Gold detail facts 7 days" not in readme
 
 
+def test_compose_bronze_realtime_default_matches_the_ninety_day_runtime_contract() -> None:
+    compose_text = (DB_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert compose_text.count(
+        "BRONZE_REALTIME_RETENTION_DAYS: ${BRONZE_REALTIME_RETENTION_DAYS:-90}"
+    ) == 2
+    assert "BRONZE_REALTIME_RETENTION_DAYS:-30" not in compose_text
+
+
 def test_local_1password_env_files_stay_ignored() -> None:
     result = subprocess.run(
         ["git", "check-ignore", "--quiet", "--no-index", "local.env.1password"],

@@ -64,10 +64,10 @@ describe('map copy', () => {
 
 	it('discloses the near-me search recipients in both languages', () => {
 		expect(copy.en.nearMeCollectionNotice).toBe(
-			'Your searches are sent to our server and its geocoding providers (Google, geo.ca).',
+			'Your searches are sent to our server and the Government of Canada Geo.ca service.',
 		);
 		expect(copy.fr.nearMeCollectionNotice).toBe(
-			'Vos recherches sont envoyées à notre serveur et à ses fournisseurs de géocodage (Google, geo.ca).',
+			'Vos recherches sont envoyées à notre serveur et au service Géo.ca du gouvernement du Canada.',
 		);
 	});
 

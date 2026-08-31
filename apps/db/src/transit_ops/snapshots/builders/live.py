@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING
 
+from transit_ops.snapshots.attribution import render_provider_attribution
 from transit_ops.snapshots.builders._helpers import (
     _OCCUPANCY_MAP,
     _SURFACES,
@@ -668,7 +669,9 @@ def build_manifest(
     city = prow.get("city") or None
     tz = prow.get("timezone") or "America/Toronto"
     default_lang = prow.get("default_language") or "fr"
-    attribution = prow.get("attribution_text") or ""
+    attribution = render_provider_attribution(
+        prow.get("attribution_text") or "", generated_utc
+    )
 
     bbox = [
         float(prow.get("min_longitude") or 0.0),
