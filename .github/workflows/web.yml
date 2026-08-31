@@ -55,7 +55,7 @@ jobs:
                   "prefixes": ["apps/data-proxy/", "apps/web/"]
                 },
                 "map-poster-check": {
-                  "paths": ["apps/web/package.json", "apps/web/scripts/build-map-posters.ts", "apps/web/src/lib/components/map/basemap.ts", "apps/web/src/lib/components/map/viewport.ts", "apps/web/src/lib/features/map/mapCameraFraming.ts"],
+                  "paths": ["apps/web/package.json", "apps/web/scripts/build-map-posters.ts"],
                   "prefixes": ["apps/web/static/map/"]
                 }
               },
@@ -154,9 +154,6 @@ jobs:
 
       - name: Set up JS workspace
         uses: ./.github/actions/setup
-
-      - name: Install pinned poster browser
-        run: ./node_modules/.bin/playwright-core install chromium-headless-shell
 
       - name: Map poster drift gate
         run: bun run map-posters:check

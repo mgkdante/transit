@@ -52,7 +52,6 @@ bun run --cwd apps/web tokens:build
 git diff --exit-code -- apps/web/src/lib/styles/tokens.css apps/web/src/app.css
 bun run --cwd apps/web og:check
 bun run --cwd apps/web icons:check
-apps/web/node_modules/.bin/playwright-core install chromium-headless-shell
 bun run --cwd apps/web map-posters:check
 
 bun run --cwd apps/data-proxy check
@@ -89,3 +88,10 @@ export PGPASSWORD='transit_ci@:/%'
 Behavior changes require a regression test. In the pull request, explain the
 problem, the boundary that owns the fix, and the commands or runtime evidence
 used to verify it.
+
+`map-posters:check` verifies the checked-in dated posters and their source
+receipt entirely offline. To intentionally rebuild those assets, install the
+pinned browser with
+`apps/web/node_modules/.bin/playwright-core install chromium-headless-shell`,
+run `bun run --cwd apps/web map-posters:build`, and review the changed images,
+receipt, and client filenames together.
