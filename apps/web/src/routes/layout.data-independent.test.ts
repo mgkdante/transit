@@ -204,6 +204,19 @@ afterEach(() => {
 
 describe('root layout data-independent legal routes', () => {
 	it.each([
+		['/privacy', 'en', 'Skip to content', 'Aller au contenu'],
+		['/fr/privacy', 'fr', 'Aller au contenu', 'Skip to content'],
+	] as const)(
+		'renders the first-focus skip link in the active locale on %s',
+		(pathname, lang, expected, wrongLocale) => {
+			const { getByRole, queryByRole } = renderWithoutV1(pathname, lang);
+
+			expect(getByRole('link', { name: expected })).toHaveAttribute('href', '#main');
+			expect(queryByRole('link', { name: wrongLocale })).not.toBeInTheDocument();
+		},
+	);
+
+	it.each([
 		['/privacy', 'en', 'Licensing and attribution notices are under legal review.'],
 		['/fr/terms', 'fr', 'Mentions de licence et d’attribution en cours de révision juridique.'],
 	] as const)(

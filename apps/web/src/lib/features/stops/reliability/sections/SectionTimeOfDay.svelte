@@ -50,6 +50,7 @@
 					domain={row.domain}
 					unit={row.unit}
 					display={row.display}
+					{locale}
 				/>
 			{/each}
 		</div>
@@ -69,6 +70,7 @@
 						domain={row.domain}
 						unit={row.unit}
 						display={row.display}
+						{locale}
 					/>
 				{/each}
 			</div>

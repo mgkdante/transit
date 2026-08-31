@@ -17,6 +17,7 @@
 	import { createChartTooltip } from './useChartTooltip.svelte';
 	import type { Locale } from '$lib/i18n';
 	import { absenceShort } from '$lib/site/absence';
+	import { SEVERITY_LABELS } from '$lib/v1/enumLabels';
 
 	export interface SeverityBarProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** Severity band — drives the fill colour AND the announced a11y band. */
@@ -96,6 +97,7 @@
 				: `${Math.round(pct)}%`,
 	);
 	const color = $derived(colorVar ?? severityVar(severity));
+	const severityLabel = $derived(SEVERITY_LABELS[locale][severity]);
 	const heightClass = { sm: 'h-1.5', md: 'h-2.5' } as const;
 
 	// Interactive tooltip controller (only wired when `interactive`).
@@ -106,7 +108,7 @@
 		tip.show({
 			xPct: 50,
 			yPct: 0,
-			heading: severity,
+			heading: severityLabel,
 			rows: [
 				{
 					colorVar: color,
@@ -146,7 +148,7 @@
 			aria-valuemin={0}
 			aria-valuemax={100}
 			aria-valuenow={hasData ? Math.round(pct) : undefined}
-			aria-label={label ? `${label}, ${severity}` : severity}
+			aria-label={label ? `${label}, ${severityLabel}` : severityLabel}
 			aria-describedby={tip.open ? tip.id : undefined}
 			tabindex={0}
 			onpointerenter={showTip}
@@ -178,7 +180,7 @@
 		aria-valuemin={0}
 		aria-valuemax={100}
 		aria-valuenow={hasData ? Math.round(pct) : undefined}
-		aria-label={label ? `${label}, ${severity}` : severity}
+		aria-label={label ? `${label}, ${severityLabel}` : severityLabel}
 		data-slot="severity-bar"
 		data-card-interactive
 		data-severity={severity}

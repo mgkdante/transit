@@ -506,6 +506,8 @@
 	{jsonLd}
 />
 
+<a class="skip-link" href="#main">{locale === 'fr' ? 'Aller au contenu' : 'Skip to content'}</a>
+
 <AppShell
 	{locale}
 	url={$page.url}

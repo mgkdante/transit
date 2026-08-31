@@ -37,6 +37,7 @@
 		caveat,
 		caveatLabel,
 		info,
+		locale,
 		headingLevel = 2,
 	}: SectionTimeOfDayProps = $props();
 
@@ -66,6 +67,7 @@
 				domain={row.domain}
 				unit={row.unit}
 				display={row.display}
+				{locale}
 			/>
 		{/each}
 	</div>

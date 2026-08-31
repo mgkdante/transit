@@ -141,6 +141,18 @@
 	}: RankedRowProps = $props();
 
 	const hasDelta = $derived(delta != null && !Number.isNaN(delta));
+	const activeLocale = $derived(locale ?? 'en');
+	const rankLabel = $derived(
+		showRank
+			? activeLocale === 'fr'
+				? `Rang ${rank} : ${title}`
+				: `Rank ${rank}: ${title}`
+			: title,
+	);
+	const noChangeLabel = $derived(
+		activeLocale === 'fr' ? 'aucune donnée de variation' : 'no change data',
+	);
+	const changeLabel = $derived(activeLocale === 'fr' ? 'variation' : 'change');
 
 	// Honest absence in the display slot: only when the DISPLAY value is genuinely
 	// absent (display == null/"") AND a typed reason + locale are supplied. Keyed
@@ -231,7 +243,7 @@
 					<AbsentValue
 						variant="row"
 						reason={absentReason!}
-						locale={locale!}
+						locale={activeLocale}
 						params={absentParams}
 					/>
 				</span>
@@ -249,8 +261,8 @@
 				{value}
 				{domain}
 				{unit}
-				{locale}
-				label={`Rank ${rank}: ${title}`}
+				locale={activeLocale}
+				label={rankLabel}
 				size="sm"
 				interactive={barInteractive && !tooltip}
 			/>
@@ -262,7 +274,7 @@
 		class="dv-delta inline-flex shrink-0 items-center gap-1 font-mono text-caption tabular-nums"
 		style="color: {deltaVar};"
 		role="img"
-		aria-label={hasDelta ? `change ${deltaText}` : 'no change data'}
+		aria-label={hasDelta ? `${changeLabel} ${deltaText}` : noChangeLabel}
 	>
 		<span aria-hidden="true">{deltaGlyph}</span>
 		{#if hasDelta}<span aria-hidden="true">{deltaText}</span>{/if}

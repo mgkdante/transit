@@ -58,6 +58,7 @@
 								domain={row.domain}
 								unit={row.unit}
 								display={row.display}
+								{locale}
 							/>
 							<span class="sr-only">{row.ariaLabel}</span>
 						</a>

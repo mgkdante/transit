@@ -1,4 +1,4 @@
-import { render } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import SeverityBar from './SeverityBar.svelte';
 
@@ -47,5 +47,23 @@ describe('SeverityBar — absolute domain (S7 relative-to-max fix)', () => {
 			props: { severity: 'watch', value: null, domain: [0, 35] },
 		});
 		expect(container.querySelector('.dv-severity-fill')).toBeNull();
+	});
+
+	it('localizes the interactive French severity tooltip and accessible name', async () => {
+		const { container } = render(SeverityBar, {
+			props: {
+				severity: 'high',
+				value: 12,
+				domain: [0, 35],
+				label: 'Retard',
+				interactive: true,
+				locale: 'fr',
+			},
+		});
+		const bar = container.querySelector('[role="progressbar"]') as HTMLElement;
+
+		expect(bar).toHaveAttribute('aria-label', 'Retard, Élevé');
+		await fireEvent.focus(bar);
+		expect(await screen.findByRole('tooltip')).toHaveTextContent('Élevé');
 	});
 });

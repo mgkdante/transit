@@ -58,6 +58,23 @@ describe('RankedRow — the dataviz-row template contract', () => {
 		expect(el.textContent).not.toMatch(/\d/);
 	});
 
+	it('localizes rank, severity, and no-change announcements for French assistive tech', () => {
+		const { container } = render(RankedRow, {
+			props: { ...base, locale: 'fr', delta: null },
+		});
+
+		expect(container.querySelector('[role="progressbar"]')).toHaveAttribute(
+			'aria-label',
+			'Rang 1 : Route 165, Élevé',
+		);
+		expect(deltaEl(container)).toHaveAttribute('aria-label', 'aucune donnée de variation');
+
+		const changed = render(RankedRow, {
+			props: { ...base, locale: 'fr', delta: 2.1 },
+		});
+		expect(deltaEl(changed.container)).toHaveAttribute('aria-label', 'variation +2.1');
+	});
+
 	it('becomes a button when activatable, and drops its role when bare', () => {
 		const { container: a } = render(RankedRow, { props: { ...base, onSelect: () => {} } });
 		const btn = a.querySelector('[data-slot="ranked-row"]')!;
@@ -73,6 +90,24 @@ describe('RankedRow — the dataviz-row template contract', () => {
 		expect(withRank.container.querySelector('.dv-rank')).not.toBeNull();
 		const noRank = render(RankedRow, { props: { ...base, display: '4 min', showRank: false } });
 		expect(noRank.container.querySelector('.dv-rank')).toBeNull();
+		expect(noRank.container.querySelector('[role="progressbar"]')).toHaveAttribute(
+			'aria-label',
+			'Route 165, High',
+		);
+
+		const french = render(RankedRow, {
+			props: {
+				...base,
+				rank: 0,
+				title: 'Pointe AM',
+				locale: 'fr',
+				showRank: false,
+			},
+		});
+		expect(french.container.querySelector('[role="progressbar"]')).toHaveAttribute(
+			'aria-label',
+			'Pointe AM, Élevé',
+		);
 	});
 
 	it('forwards a fixed absolute domain to the bar (stable, not relative-to-max, S7)', () => {

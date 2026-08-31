@@ -160,6 +160,21 @@ describe('Daily Receipt section heading levels', () => {
 });
 
 describe('Daily Receipt presenter refinements', () => {
+	it('passes French locale through the time-of-day ranked rows', () => {
+		const { container } = render(SectionTimeOfDay, {
+			props: { ...timeOfDayProps, locale: 'fr' },
+		});
+
+		expect(container.querySelector('[role="progressbar"]')).toHaveAttribute(
+			'aria-label',
+			'Rang 1 : AM peak, Élevé',
+		);
+		expect(container.querySelector('[role="img"]')).toHaveAttribute(
+			'aria-label',
+			'aucune donnée de variation',
+		);
+	});
+
 	it('renders a shared row-density absence when a not-reported count is missing', () => {
 		const list: NotReportedVM = {
 			...notReportedList,
