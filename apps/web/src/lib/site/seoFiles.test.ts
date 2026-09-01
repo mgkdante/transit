@@ -23,7 +23,8 @@ const SURFACES = [
 	'/receipt',
 	'/repeat-offenders',
 	'/alerts',
-	// /privacy and /terms carry complete static content and stay indexable.
+	'/privacy',
+	'/terms',
 ] as const;
 
 describe('SEO static files', () => {

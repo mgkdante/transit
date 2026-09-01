@@ -298,7 +298,7 @@ const documents = {
 					],
 					links: [
 						{
-							href: 'https://ressources-naturelles.canada.ca/cartes-outils-et-publications/images-satellites-elevation-et-photos-aeriennes/service-geolocalisation',
+							href: 'https://ressources-naturelles.canada.ca/carte-outils-publications/imagerie-satellitaire-donnees-elevation-photos-aeriennes/service-geolocalisation',
 							label: 'Service de géolocalisation Geo.ca du gouvernement du Canada',
 						},
 					],
