@@ -11,7 +11,7 @@ const HEADER = `/* GENERATED FROM packages/tokens/tokens.json - DO NOT EDIT */
  * These map shadcn-compatible aliases to primary semantic tokens via var().
  * A theme group may override any of these by declaring the same token name
  * explicitly (e.g. light accent-foreground #111111) — explicit wins, the
- * paired alias is skipped for that theme (GO-day W2 Track 2).
+ * paired alias is skipped for that theme.
  */
 const PAIRED_DEFS: ReadonlyArray<{ name: string; line: string }> = [
   { name: 'card-foreground', line: '--card-foreground: var(--foreground);' },

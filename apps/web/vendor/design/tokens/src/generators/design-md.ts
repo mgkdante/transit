@@ -49,7 +49,7 @@ function flatColorMap(colorTree: TokenTree): string {
   const dark = colorTree.dark as TokenTree | undefined;
   if (dark) {
     for (const [k, v] of Object.entries(dark)) {
-      if (k.startsWith('$') || !isLeaf(v) || seen.has(k)) continue; // skip brand re-pins (GO-W2.2)
+      if (k.startsWith('$') || !isLeaf(v) || seen.has(k)) continue; // skip names emitted from brand
       if (typeof v.$value === 'string' && v.$value.startsWith('#')) {
         lines.push(`  ${k}: ${serializeYaml(v)}`);
       }

@@ -8,7 +8,7 @@ export interface DtcgPrimitive {
   $description?: string;
 }
 
-/** yesid.dev extension for clamp() values. See research/clamp-spike.md. */
+/** Structured fluid-value extension; serialized under DECISIONS.md D10. */
 export interface YesidClampToken {
   $type: 'yesid.clamp';
   $value: {

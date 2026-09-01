@@ -1,25 +1,21 @@
-// Two-tier motion policy (GO-day Wave 2, Track 5) — formalizes the slice-23
-// operator rule that was previously spread across in-file comments.
+// Two-tier motion policy.
 //
 // SAFE-ALWAYS — runs even under `prefers-reduced-motion: reduce`:
 //   opacity / color / border / filter / shadow changes, translations ≤ 4px,
 //   and user-initiated feedback < 400ms on small elements.
-//   Members: boop, cursorGlow, sectionGlow, pressBounce, morphHover,
-//   global click ripple, tap-press/tap-feedback, SvgIcon entrance draws,
-//   HomeServices icon draw-in, CloserGraffiti letter draw, link underline
-//   draws, chip-settle pops, view-toggle arrow nudges.
+//   Members and categories: boop, cursorGlow, sectionGlow, pressBounce,
+//   morphHover, global click ripple, tap-press/tap-feedback, icon/letter/link
+//   draws, chip-settle pops and view-toggle arrow nudges.
 //
 // MOTION-GATED — must no-op under reduce:
-//   pinned/scroll scrubs (hero timeline, crescendo, draw scrubs), parallax
-//   (cardParallax), pointer-tracking translation (magnetic, wordmarkHover),
-//   scale jumps > 1.05 (SvgIcon 'morph' entrance, ProjectCard image zoom),
-//   content rotation, infinite ambient motion (DataFlowDiagram pulse,
-//   ManifestoCanvas, AboutWeather particles, backgroundBreathing, AboutTrain
-//   loop), smooth-scroll easing (Lenis), FLIP filter transitions.
+//   pinned/scroll scrubs, cardParallax, pointer-tracking translation through
+//   magnetic/wordmarkHover, scale jumps > 1.05 such as morph entrances and
+//   image zooms, content rotation, infinite loops/pulses/particles,
+//   smooth-scroll easing through Lenis, and FLIP filter transitions.
 //
-// Gating is mount-time-only across the site (isPrefersReducedMotion() is a
-// sync snapshot): toggling the OS setting mid-session takes effect on the
-// next navigation. Accepted operator trade-off (Wave-1 research §5.6).
+// Gating is mount-time-only because isPrefersReducedMotion() is a synchronous
+// snapshot. An OS-setting change takes effect on the next initialization or
+// navigation.
 
 import { isPrefersReducedMotion } from './stores/reducedMotion.js';
 

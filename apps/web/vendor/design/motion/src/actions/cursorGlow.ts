@@ -3,11 +3,11 @@
 // WHY: Static hover glows feel flat. Tracking the cursor creates a spotlight effect
 // that makes cards feel interactive and spatial — like light reacting to your hand.
 //
-// Enhanced in 17a-2: auto-injects overlay DOM element. Consumers no longer need
-// a manual <div> with radial-gradient — the action creates and manages it.
+// The action creates and manages its overlay DOM element, so consumers do not
+// need a manual <div> with a radial gradient.
 //
 // Pattern: same as tilt.ts — event listeners, cleanup in destroy().
-// Disabled on touch devices. SAFE-ALWAYS under reduced motion (GO-w2t5 retier).
+// Disabled on touch devices. SAFE-ALWAYS under reduced motion.
 //
 // Usage: <div use:cursorGlow={{ intensity: 0.06 }}>
 //   That's it — overlay is auto-injected.
@@ -24,7 +24,7 @@ export interface CursorGlowParams {
 }
 
 export function cursorGlow(node: HTMLElement, params: CursorGlowParams = {}) {
-	// SAFE-ALWAYS tier (GO-w2t5): the glow is an opacity-only gradient that
+	// SAFE-ALWAYS tier: the glow is an opacity-only gradient that
 	// follows the pointer — nothing translates or scales. Touch-gated only.
 	if (isTouchDevice()) {
 		return { update() {}, destroy() {} };

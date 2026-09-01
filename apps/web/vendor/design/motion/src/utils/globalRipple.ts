@@ -1,7 +1,6 @@
-// Site-wide click ripple — spawns a two-ring expanding ripple at the
-// pointer position on every pointerdown. Same visual language as the
-// Manifesto canvas ripple, lifted from .manifesto__ripple +
-// .manifesto__ripple-inner but applied document-wide.
+// Site-wide click ripple — spawns a two-ring expanding ripple at the pointer
+// position on every pointerdown. The optional public stylesheet owns the
+// corresponding outer and inner ring classes.
 //
 // Outer ring  — 200px max, brand-primary border, 1.2s expansion
 // Inner ring  — 100px max, accent      border, 0.8s expansion
@@ -10,9 +9,8 @@
 // elements are position: fixed (relative to viewport) so they stay
 // where the user pressed even if a mid-ripple scroll happens.
 //
-// Reduced-motion: KEPT ACTIVE per operator policy (slice-23). Click ripple
-// is user-initiated, brief (<1.2s), expanding-ring visual — not a
-// vestibular trigger.
+// Reduced-motion: the click ripple stays active because it is user-initiated,
+// brief (<1.2s) and not a vestibular trigger.
 
 const OUTER_DURATION_MS = 1200;
 const INNER_DURATION_MS = 800;

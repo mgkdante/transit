@@ -1,9 +1,9 @@
 /* @yesid/motion global ripple. Explicit opt-in import; never injected automatically. */
 
-/* Slice-23: site-wide click ripple — appended to <body> by
+/* Site-wide click ripple — appended to <body> by
    motion/utils/globalRipple.ts on every pointerdown. Two expanding
-   rings (outer brand-primary, inner accent) for Manifesto-style
-   click feedback that works on desktop + mobile. position: fixed
+   rings (outer brand-primary, inner accent) provide click feedback
+   on desktop and mobile. Position is fixed
    so ripples stay where pressed regardless of scroll. */
 .global-ripple {
 	position: fixed;

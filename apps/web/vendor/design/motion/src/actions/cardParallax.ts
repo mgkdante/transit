@@ -15,8 +15,6 @@ import { isPrefersReducedMotion } from '../stores/reducedMotion.js';
  * On pointerleave the vars reset to 0px so the inner elements snap back.
  * The action is a no-op under `prefers-reduced-motion: reduce` and on
  * touch-only devices (no `(hover: hover)` capability).
- *
- * Slice-23 Task 6.
  */
 
 const MAX_OFFSET = 4; // px — clamp magnitude on each axis
