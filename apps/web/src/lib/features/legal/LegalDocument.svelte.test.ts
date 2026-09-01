@@ -59,6 +59,14 @@ describe('LegalDocument', () => {
 		expect(JSON.stringify(legalDocument('fr', 'privacy'))).toContain(
 			'Lorsque la présente politique est modifiée',
 		);
+		const enPrivacy = JSON.stringify(legalDocument('en', 'privacy'));
+		const frPrivacy = JSON.stringify(legalDocument('fr', 'privacy'));
+		expect(enPrivacy).toContain('public website');
+		expect(enPrivacy).not.toContain('public service');
+		expect(frPrivacy).toContain('accessible au public');
+		expect(frPrivacy).toContain('site public');
+		expect(frPrivacy).not.toContain('projet public d’information');
+		expect(frPrivacy).not.toContain('service public');
 	});
 
 	it.each(['privacy', 'terms'] as const)('keeps EN/FR %s sections aligned', (kind) => {
