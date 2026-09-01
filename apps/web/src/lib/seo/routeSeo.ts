@@ -99,8 +99,8 @@ const PRIVACY_DESCRIPTION: BilingualText = {
 };
 
 const TERMS_DESCRIPTION: BilingualText = {
-	en: 'Terms for using the Transit site, public data endpoints and MIT-licensed source, including attribution, acceptable use and service limitations.',
-	fr: 'Conditions d’utilisation du site Transit, de ses données publiques et de son code sous licence MIT, y compris l’attribution et les limites du service.',
+	en: 'Terms for using the hosted Transit site and public data endpoints, including attribution, acceptable use, service limits and separately licensed source.',
+	fr: 'Conditions d’utilisation du site Transit hébergé et de ses données publiques : attribution, usage acceptable, limites du service et code sous licence distincte.',
 };
 
 const SURFACES: Record<string, BilingualSeo> = {
