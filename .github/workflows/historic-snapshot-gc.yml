@@ -30,7 +30,7 @@ jobs:
     env:
       APP_ENV: production
       LOG_LEVEL: INFO
-      PROVIDER_PLAN: '["stm","octranspo","sto"]'
+      PROVIDER_PLAN: '["stm","octranspo"]'
       GC_MODE: ${{ github.event_name == 'schedule' && 'mark' || inputs.mode }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       BRONZE_S3_ENDPOINT: https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com

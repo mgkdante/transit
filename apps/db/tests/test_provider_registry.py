@@ -280,6 +280,7 @@ def test_manifest_loading() -> None:
     gis_url = provider.feeds["gis_static"].resolved_source_url(settings)
 
     assert registry.list_provider_ids() == ["octranspo", "stm", "sto"]
+    assert registry.list_active_provider_ids() == ["octranspo", "stm"]
     assert provider.provider.provider_id == "stm"
     assert static_url is not None
     assert static_url.endswith("/gtfs_stm.zip")
@@ -452,7 +453,7 @@ def test_list_providers_command() -> None:
     result = runner.invoke(app, ["list-providers"])
 
     assert result.exit_code == 0
-    assert result.stdout.strip().splitlines() == ["octranspo", "stm", "sto"]
+    assert result.stdout.strip().splitlines() == ["octranspo", "stm"]
 
 
 def test_show_provider_command() -> None:

@@ -1691,7 +1691,9 @@ def test_publish_all_skips_unseeded_and_publishes_seeded(monkeypatch) -> None:
     monkeypatch.setattr(
         cli_module,
         "_provider_registry",
-        lambda settings: SimpleNamespace(list_provider_ids=lambda: ["octranspo", "stm"]),
+        lambda settings: SimpleNamespace(
+            list_active_provider_ids=lambda: ["octranspo", "stm"]
+        ),
     )
 
     def fake_publish_snapshot(provider_id, *, tier, settings, registry, **kwargs):  # noqa: ANN001
@@ -1714,9 +1716,9 @@ def test_publish_all_forwards_full_historic_rebuild_to_every_seeded_provider(
     monkeypatch,
 ) -> None:
     calls: list[dict[str, object]] = []
-    provider_ids = ["octranspo", "stm", "sto"]
+    provider_ids = ["octranspo", "stm"]
     settings = SimpleNamespace(LOG_LEVEL="INFO")
-    registry = SimpleNamespace(list_provider_ids=lambda: provider_ids)
+    registry = SimpleNamespace(list_active_provider_ids=lambda: provider_ids)
 
     monkeypatch.setattr(cli_module, "get_settings", lambda: settings)
     monkeypatch.setattr(cli_module, "make_engine", lambda _settings: _FakeEngine())
@@ -1797,7 +1799,7 @@ def test_publish_all_writes_gate_report_on_success(monkeypatch, tmp_path) -> Non
     monkeypatch.setattr(
         cli_module,
         "_provider_registry",
-        lambda settings: SimpleNamespace(list_provider_ids=lambda: ["stm"]),
+        lambda settings: SimpleNamespace(list_active_provider_ids=lambda: ["stm"]),
     )
 
     def fake_publish_snapshot(provider_id, *, tier, settings, registry, **kwargs):  # noqa: ANN001

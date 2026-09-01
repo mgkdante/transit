@@ -57,7 +57,7 @@ jobs:
       - name: Seed core metadata
         run: uv run python -m transit_ops.cli seed-core
 
-      - name: Run static + GIS Bronze -> Silver -> Gold pipeline (all providers)
+      - name: Run static + GIS Bronze -> Silver -> Gold pipeline (all active providers)
         id: run-static-providers
         continue-on-error: true
         # Explicit so the executable workflow test's bash -eo pipefail matches
@@ -91,7 +91,7 @@ jobs:
           done
           exit "$aggregate_status"
 
-      - name: Publish static /v1 snapshot to R2 (all providers)
+      - name: Publish static /v1 snapshot to R2 (all active providers)
         run: uv run python -m transit_ops.cli publish-all --tier static
 
       - name: Re-fail after provider pipeline failures
