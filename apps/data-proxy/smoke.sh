@@ -134,18 +134,18 @@ assert_missing_edge_bypass() {
 }
 
 assert_retired_provider() {
-  local url="$1" status attempt
+  local url="$1" expected_status="${2:-410}" status attempt
   for ((attempt = 1; attempt <= EDGE_MAX_ATTEMPTS; attempt++)); do
     status="$(status_of --path-as-is "$url")"
-    if [ "$status" = "410" ]; then
-      ok "$url retired provider -> 410"
+    if [ "$status" = "$expected_status" ]; then
+      ok "$url retired provider -> $expected_status"
       return
     fi
     if [ "$attempt" -lt "$EDGE_MAX_ATTEMPTS" ]; then
       sleep "$EDGE_RETRY_DELAY_S"
     fi
   done
-  fail "$url exhausted $EDGE_MAX_ATTEMPTS attempts without retired-provider 410"
+  fail "$url exhausted $EDGE_MAX_ATTEMPTS attempts without retired-provider $expected_status"
 }
 
 # --- direct R2 custom domain: manifest + all three tiers + provenance (hard asserts;
@@ -157,11 +157,11 @@ ok "manifest body carries provider stm"
 assert_edge_hit "$CANONICAL_BASE/v1/stm/manifest.json" "public, max-age=30"
 assert_range_preflight "$CANONICAL_BASE/v1/stm/static/basemap/montreal.pmtiles"
 assert_missing_edge_bypass "$CANONICAL_BASE/v1/stm/definitely-missing.json"
-assert_retired_provider "$CANONICAL_BASE/v1/sto/static/routes_index.json"
-assert_retired_provider "$CANONICAL_BASE/v1%2Fsto/static/routes_index.json"
-assert_retired_provider "$CANONICAL_BASE/%761%2Fsto/static/routes_index.json"
-assert_retired_provider "$CANONICAL_BASE/v1/sto%2Fstatic/routes_index.json"
-assert_retired_provider "$CANONICAL_BASE/v1/%73to/static/routes_index.json"
+assert_retired_provider "$CANONICAL_BASE/v1/sto/static/routes_index.json" 404
+assert_retired_provider "$CANONICAL_BASE/v1%2Fsto/static/routes_index.json" 404
+assert_retired_provider "$CANONICAL_BASE/%761%2Fsto/static/routes_index.json" 404
+assert_retired_provider "$CANONICAL_BASE/v1/sto%2Fstatic/routes_index.json" 404
+assert_retired_provider "$CANONICAL_BASE/v1/%73to/static/routes_index.json" 404
 
 assert_object "$CANONICAL_BASE/v1/stm/live/vehicles.json" "public, max-age=30"
 assert_object "$CANONICAL_BASE/v1/stm/static/routes_index.json" "public, max-age=86400, stale-while-revalidate=86400|public, max-age=604800"

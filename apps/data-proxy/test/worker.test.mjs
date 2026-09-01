@@ -148,67 +148,6 @@ test("GET /data/v1 key returns 200 with passthrough content-type and cache-contr
   assert.equal(await response.text(), '{"provider":"stm"}');
 });
 
-test("active direct-R2 requests pass through without changing HTTP semantics", async () => {
-  const originalFetch = globalThis.fetch;
-  const forwarded = [];
-  globalThis.fetch = async (request) => {
-    forwarded.push(request);
-    const headers = {
-      "accept-ranges": "bytes",
-      "cache-control": "public, max-age=30",
-      "content-type": "application/json",
-      etag: '"origin-etag"',
-    };
-    if (request.headers.get("if-none-match") === '"origin-etag"') {
-      return new Response(null, { status: 304, headers });
-    }
-    if (request.headers.has("range")) {
-      return new Response("part", {
-        status: 206,
-        headers: { ...headers, "content-range": "bytes 0-3/10" },
-      });
-    }
-    return new Response(request.method === "HEAD" ? null : '{"provider":"active"}', {
-      status: 200,
-      headers,
-    });
-  };
-  try {
-    const requests = [
-      new Request("https://data.yesid.dev/v1/stm/manifest.json"),
-      new Request("https://data.yesid.dev/v1/octranspo/manifest.json"),
-      new Request("https://data.yesid.dev/v1%2Fstm/manifest.json"),
-      new Request("https://data.yesid.dev/non-snapshot-origin-object.txt"),
-      new Request("https://data.yesid.dev/v1/octranspo/static/routes_index.json", {
-        method: "HEAD",
-      }),
-      new Request("https://data.yesid.dev/v1/stm/static/basemap/montreal.pmtiles", {
-        headers: { range: "bytes=0-3" },
-      }),
-      new Request("https://data.yesid.dev/v1/stm/manifest.json", {
-        headers: { "if-none-match": '"origin-etag"' },
-      }),
-    ];
-    const responses = [];
-    for (const request of requests) responses.push(await worker.fetch(request, makeEnv()));
-
-    assert.deepEqual(
-      responses.map((response) => response.status),
-      [200, 200, 200, 200, 200, 206, 304],
-    );
-    assert.equal(await responses[0].text(), '{"provider":"active"}');
-    assert.equal(await responses[1].text(), '{"provider":"active"}');
-    assert.equal(await responses[2].text(), '{"provider":"active"}');
-    assert.equal(await responses[3].text(), '{"provider":"active"}');
-    assert.equal(await responses[4].text(), "");
-    assert.equal(responses[5].headers.get("content-range"), "bytes 0-3/10");
-    assert.equal(responses[6].headers.get("etag"), '"origin-etag"');
-    assert.deepEqual(forwarded, requests);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
 test("GET missing key returns 404", async () => {
   const response = await fetchWorker("/data/v1/stm/definitely-missing.json");
   assert.equal(response.status, 404);
@@ -226,17 +165,12 @@ test("GET path outside /data/v1 returns 404", async () => {
   }
 });
 
-test("retired STO paths return uncacheable 410 on compatibility and direct hosts", async () => {
+test("retired STO compatibility paths return uncacheable 410", async () => {
   for (const url of [
     `${BASE}/data/v1/sto/static/routes_index.json`,
     `${BASE}/data/v1%2Fsto/static/routes_index.json`,
     `${BASE}/data/v1/sto%2Fstatic/routes_index.json`,
     `${BASE}/data/v1/%73to/static/routes_index.json`,
-    "https://data.yesid.dev/v1/sto/static/routes_index.json",
-    "https://data.yesid.dev/v1%2Fsto/static/routes_index.json",
-    "https://data.yesid.dev/%761%2Fsto/static/routes_index.json",
-    "https://data.yesid.dev/v1/sto%2Fstatic/routes_index.json",
-    "https://data.yesid.dev/v1/%73to/static/routes_index.json",
   ]) {
     for (const method of ["GET", "HEAD"]) {
       const response = await worker.fetch(
