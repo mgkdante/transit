@@ -1,11 +1,11 @@
 // pressBounce — Svelte action for tactile tap-press feedback on touch devices.
-// Layer 2 of the slice-19 two-layer hybrid primitive system.
+// Layer 2 of the two-layer tactile-feedback system.
 //
 // Gated by:
 //   - isTouchDevice() — pointer-only devices use hover/active CSS instead.
 //
-// Reduced-motion: KEPT ACTIVE per operator policy (slice-23). pressBounce
-// is <200ms scale feedback on user action — not a vestibular trigger.
+// Reduced-motion: pressBounce stays active because it is <200ms scale feedback
+// on user action, not a vestibular trigger.
 //
 // Pair with class="tap-press" (Layer 1 CSS baseline) for layered feedback.
 // Layer 1 is the optional @yesid/motion/tap-feedback.css public import and

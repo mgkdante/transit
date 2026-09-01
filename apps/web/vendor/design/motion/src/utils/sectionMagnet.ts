@@ -1,9 +1,8 @@
-// Section magnetism (go2/w5) — ease-to-nearest-section on scroll settle for
-// the home page. The magnet sits on top of whatever scroll engine is live
-// (Lenis wheel easing on desktop, native touch scroll on mobile) by listening
-// for settle and nudging the window.
+// Section magnetism eases to the nearest section on scroll settle. The magnet
+// sits on top of whatever scroll engine is live (Lenis wheel easing on desktop,
+// native touch scroll on mobile) by listening for settle and nudging the window.
 //
-// Taste round 2 (operator): the magnet is TIERED by input modality.
+// The magnet is tiered by input modality.
 //   - Desktop (wheel / keyboard / mouse): STRONGER — a wider attraction
 //     radius and a firmer, quicker ease make the pull into sections decisive.
 //   - Touch: GENTLER — natural touch scrolling must never fight the magnet,
@@ -15,7 +14,7 @@
 // nothing moves — free scrolling is untouched, and the hero pin interior
 // (hundreds of vh from any boundary) can never be yanked.
 //
-// Reduced motion (operator-corrected): the magnet is ASSISTIVE, not
+// Reduced motion: the magnet is ASSISTIVE, not
 // vestibular — reduce users KEEP the alignment but get an instant settle
 // (behavior: 'auto') instead of the smooth ease. This is deliberately NOT
 // shouldAnimate('motion-gated')-gated off.
@@ -73,10 +72,10 @@ export interface MagnetTier {
 	settleMs: number;
 }
 
-/** Desktop tier — decisive pull (taste round 2: radius up 0.22→0.32). */
+/** Desktop tier — decisive pull with a 0.32 viewport radius capped at 360px. */
 export const DESKTOP_TIER: MagnetTier = { radiusVh: 0.32, maxRadiusPx: 360, settleMs: 150 };
 
-/** Touch tier — gentler than round 1 (0.22→0.16) + waits out momentum. */
+/** Touch tier — gentle 0.16 viewport radius capped at 160px; waits out momentum. */
 export const TOUCH_TIER: MagnetTier = { radiusVh: 0.16, maxRadiusPx: 160, settleMs: 260 };
 
 export interface SectionMagnetOpts {
@@ -88,10 +87,10 @@ export interface SectionMagnetOpts {
 	lenisDuration?: number;
 	/**
 	 * Optional predicate — when it returns true the magnet stands down (no
-	 * settle nudge). slice-34.4 uses it to suppress the magnet while a
-	 * locale-switch scroll restore is in flight: the restore's forced jump to a
-	 * scroll fraction fires scroll events that would otherwise trip a settle and
-	 * yank the just-restored position to the nearest section top.
+	 * settle nudge). Use it while a locale-switch scroll restore is in flight:
+	 * the restore's forced jump to a scroll fraction fires scroll events that
+	 * would otherwise trip a settle and yank the just-restored position to the
+	 * nearest section top.
 	 */
 	suppress?: () => boolean;
 }

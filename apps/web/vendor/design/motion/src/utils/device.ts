@@ -10,12 +10,11 @@ export function isTouchDevice(): boolean {
  * True when the viewport matches `(max-width: ${maxWidthPx}px)`.
  * SSR-safe: returns false when `window` is unavailable.
  *
- * Consolidates the former inline isMobile checks (slice-28.3 #103/#114).
- * Breakpoints differ deliberately per call site:
- * - HeroBanner pin length: 1023 (tablet-and-below get the short pin)
- * - morphHover disable: 767 (phone-width only)
- * - MetroNetwork viewBox crop: 767 (replaces `window.innerWidth < 768`,
- *   equivalent at integer CSS pixel widths)
+ * Breakpoints differ deliberately by behavior:
+ * - 1023: tablet-and-below layouts use the shorter pinned range.
+ * - 767: phone-width pointer effects are disabled.
+ * - 767: phone-width viewBox crops replace `window.innerWidth < 768`, which
+ *   is equivalent at integer CSS pixel widths.
  */
 export function isViewportAtMost(maxWidthPx: number): boolean {
 	if (typeof window === 'undefined') return false;

@@ -5,8 +5,8 @@
 //   A boop fires once — like a tap — then immediately returns to rest. This creates a
 //   "alive" feeling: the element responds to attention without staying in a transformed
 //   state that can look stuck or heavy. Concept from joshwcomeau.com.
-// SAFE-ALWAYS tier (GO-w2t5): ≤1.05 scale, user-initiated, self-resetting —
-// runs under prefers-reduced-motion (pressBounce precedent, slice-23 policy).
+// SAFE-ALWAYS tier: the default ≤1.05 scale is user-initiated and self-resetting,
+// so it runs under prefers-reduced-motion.
 //
 // Usage: <button use:boop={{ scale: 1.05, rotation: 5, timing: 300 }}>
 

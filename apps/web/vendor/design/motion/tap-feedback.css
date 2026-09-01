@@ -7,7 +7,7 @@
    version, layer order, or @utility support. @yesid/motion ships no automatic
    or app-conditional CSS.
 
-   Two layers, by design (slice-19 hybrid primitive system):
+   Two layers, by design:
      Layer 1 — this CSS: `.tap-press` / `.tap-feedback`. Instant scale/opacity
                feedback on :active. Works on every device with no JS. This is
                the baseline every interactive surface should carry.

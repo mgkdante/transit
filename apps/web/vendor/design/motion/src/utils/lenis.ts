@@ -5,12 +5,12 @@
 // Strategy:
 // - Desktop: Lenis provides buttery easing for wheel scroll.
 // - Touch devices: native browser scroll. NO scroll-jacking.
-// - Reduced motion: native scroll, no Lenis (GO-w2t5, MOTION-GATED tier).
+// - Reduced motion: native scroll, no Lenis (MOTION-GATED tier).
 //
 // Previous versions called `ScrollTrigger.normalizeScroll({ allowNestedScroll: true })`
 // on touch devices. That call applied `touch-action: pan-x pinch-zoom` to html/body,
-// which altered iOS click synthesis — causing the tap-vs-click bug where TocPill
-// opened on vertical scroll and ProjectsStrip links fired on horizontal swipe.
+// which altered iOS click synthesis and misclassified vertical-scroll or
+// horizontal-swipe gestures as taps.
 // Removing it is the right fix. Touch pin recalculations are handled by
 // `ScrollTrigger.config({ ignoreMobileResize: true })` (set in gsap.ts).
 
@@ -25,7 +25,7 @@ let isTouchDevice = false;
 export function initLenis(): void {
 	if (instance) return;
 
-	// MOTION-GATED tier (GO-w2t5 retier): reduced-motion users get native
+	// MOTION-GATED tier: reduced-motion users get native
 	// browser scroll — no 1.2s eased scroll-jacking. Native scroll is the
 	// correct reduce behavior; ScrollTrigger keeps working off native scroll.
 	if (!shouldAnimate('motion-gated')) return;

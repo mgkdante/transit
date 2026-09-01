@@ -20,15 +20,13 @@
  *     transition: opacity 200ms ease-out;
  *   }
  *
- * SAFE-ALWAYS tier (GO-w2t5): output is an alpha-only radial gradient, so
+ * SAFE-ALWAYS tier: output is an alpha-only radial gradient, so
  * the action runs under `prefers-reduced-motion: reduce`. It remains a
  * no-op on touch-only devices (no `(hover: hover)` capability).
  *
  * Pointerleave debounce: the opacity flip to 0 is delayed 200ms so that
  * a moving cursor that briefly crosses the section boundary doesn't
  * trigger a flicker.
- *
- * Slice-23 Task 5.
  */
 export function sectionGlow(node: HTMLElement) {
 	if (typeof window === 'undefined') return { destroy: () => {} };

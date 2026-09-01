@@ -80,16 +80,16 @@ function findRetiredMotionImports(): string[] {
 }
 
 const PINNED_RELEASE = {
-	tag: 'v0.13.1',
-	tagObject: 'cb2a6d76423c33303b9e86257f5639d10eb20bc7',
-	peeledCommit: '7cda0887287ef1e274582813d4c1a5795a54b7ea',
-	assetName: 'yesid.dev-design-v0.13.1.tar',
-	assetSize: 839_680,
-	assetDigest: 'sha256:a21533147e24da9b8ee5009d7952d01bf3c39865ba260a8cb7674bc2904b4857',
+	tag: 'v0.13.2',
+	tagObject: '2809b5a33ed08cf0c2e470cbc56d2a8ac68836cb',
+	peeledCommit: 'bcc628763245387c23eeeb7d81af7c0f75176421',
+	assetName: 'yesid.dev-design-v0.13.2.tar',
+	assetSize: 798_720,
+	assetDigest: 'sha256:1376c630f0c5288c13ca671bc78073ca70e1f5d7d16287d4bc731c05847565e9',
 	exclusionPolicyDigest: 'sha256:4f709f3409292c0971728a7f9cddb4ce06b8c354eed46cd5832e626b83af4300',
 	toolDigest: 'sha256:650011070755661770506f51bc07f99ba6905fc62a573a4fcf0b668c00cbe2b8',
-	treeHash: 'sha256:fadcce88fe64837bf4c997ce9b5dbef185016b47849479fb429056f6edeaad6f',
-	manifestDigest: '72dfc19c31d6038bd2c54127f736ec925adddd72ebcfcf1bd7b3d794a84b0760',
+	treeHash: 'sha256:b52a34d388b0c77ab3084536912a9e2192e2e7c2a60609b4705a674b4449fced',
+	manifestDigest: '843b5bd64524f2f17135ffac12de5d157ceaad67502d6a0844e5b1589876fe3d',
 } as const;
 
 function walkFiles(dir: string, out: string[] = []): string[] {
@@ -173,7 +173,7 @@ describe('vendor/design integrity', () => {
 		const files = walkFiles(uiRoot).map((file) => relative(uiRoot, file));
 
 		expect(packageJson.name).toBe('@yesid/ui');
-		expect(packageJson.version).toBe('0.13.1');
+		expect(packageJson.version).toBe('0.13.2');
 		expect(readFileSync(join(VENDOR, 'LICENSE'), 'utf-8')).toContain('MIT License');
 		expect(packageJson.dependencies['@yesid/motion']).toBe('file:../motion');
 		expect(Object.values(packageJson.dependencies)).not.toContain('workspace:*');
@@ -198,7 +198,7 @@ describe('vendor/design integrity', () => {
 
 		expect(packageJson).toMatchObject({
 			name: '@yesid/analytics',
-			version: '0.13.1',
+			version: '0.13.2',
 		});
 		expect(files).toEqual([
 			'package.json',
