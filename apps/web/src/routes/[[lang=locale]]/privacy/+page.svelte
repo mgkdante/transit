@@ -1,5 +1,5 @@
 <script lang="ts">
-	import LegalPlaceholder from '$lib/features/legal/LegalPlaceholder.svelte';
+	import LegalDocument from '$lib/features/legal/LegalDocument.svelte';
 </script>
 
-<LegalPlaceholder kind="privacy" />
+<LegalDocument kind="privacy" />

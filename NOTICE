@@ -40,6 +40,11 @@ the applicable map attribution. The in-repository provider manifests are
 [`octranspo.yaml`](apps/db/config/providers/octranspo.yaml), and
 [`sto.yaml`](apps/db/config/providers/sto.yaml).
 
+OpenStreetMap data is © OpenStreetMap contributors and available under the
+[Open Data Commons Open Database License](https://www.openstreetmap.org/copyright).
+The Protomaps basemap is a produced work that retains visible OpenStreetMap and
+[Protomaps](https://docs.protomaps.com/basemaps/downloads) credit.
+
 STM, OC Transpo, and STO data and marks remain their owners' material under
 their applicable terms and configured attribution:
 

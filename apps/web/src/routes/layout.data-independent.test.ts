@@ -68,7 +68,7 @@ vi.mock('$lib/components/edge', async () => ({
 	EdgeState: (await import('./__fixtures__/RootLayoutEdgeStateStub.svelte')).default,
 }));
 vi.mock('$lib/seo/routeSeo', () => ({
-	resolveRouteSeo: () => ({ title: 'Legal', description: 'Legal placeholder description.' }),
+	resolveRouteSeo: () => ({ title: 'Legal', description: 'Legal document description.' }),
 	isEphemeralPath: () => false,
 	breadcrumbItemsForHead: () => [],
 	resolveDatasetSeo: () => ({ name: 'Dataset', description: 'Dataset description.' }),
@@ -214,8 +214,8 @@ describe('root layout data-independent legal routes', () => {
 	);
 
 	it.each([
-		['/privacy', 'en', 'Licensing and attribution notices are under legal review.'],
-		['/fr/terms', 'fr', 'Mentions de licence et d’attribution en cours de révision juridique.'],
+		['/privacy', 'en', 'Open-source and third-party rights are identified'],
+		['/fr/terms', 'fr', 'Les droits liés au code ouvert et au contenu tiers sont indiqués'],
 	] as const)(
 		'renders %s with v1=null and a static legal footer attribution',
 		(pathname, lang, attribution) => {
@@ -233,7 +233,7 @@ describe('root layout data-independent legal routes', () => {
 		expect(getByTestId('root-layout-edge-state')).toBeInTheDocument();
 		expect(queryByTestId('legal-child')).not.toBeInTheDocument();
 		expect(getByTestId('footer')).not.toHaveTextContent(
-			'Licensing and attribution notices are under legal review.',
+			'Open-source and third-party rights are identified',
 		);
 	});
 

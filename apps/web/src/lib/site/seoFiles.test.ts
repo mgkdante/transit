@@ -23,8 +23,7 @@ const SURFACES = [
 	'/receipt',
 	'/repeat-offenders',
 	'/alerts',
-	// /privacy and /terms re-enter with WS8-B's real content — indexing
-	// placeholder pages under full-policy descriptions is the S5-377 B2 defect.
+	// /privacy and /terms carry complete static content and stay indexable.
 ] as const;
 
 describe('SEO static files', () => {

@@ -11,7 +11,7 @@
       RIGHT  : localized Explore, Audit and Legal link groups from the canonical nav.
     Row 2 (below the hazard rule, departure-board rule):
       caller-supplied attribution (the active manifest's verbatim licence on data
-      routes, static under-review copy on legal placeholders) + the unofficial-site
+      routes, static rights copy on legal documents) + the unofficial-site
       disclaimer (Honesty Gate #6) on the left; the live system-date readout on
       the right (the orange route-set lamp is the lone --primary touch).
 
@@ -33,7 +33,7 @@
 		locale?: Locale;
 		/**
 		 * Caller-owned attribution rendered verbatim. Data routes supply the active
-		 * manifest licence; legal placeholders supply static under-review copy.
+		 * manifest licence; legal documents supply static rights copy.
 		 * Omitted ⇒ the line is hidden (never fabricate a licence we do not hold).
 		 */
 		attribution?: string;

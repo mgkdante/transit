@@ -18,7 +18,7 @@
   FAIL-SOFT: if +layout.ts could not boot the /v1 contract (manifest 404 /
   unreachable), `data.v1` is null. Data-dependent routes then render the
   `error-v1` edge state instead of their page tree, so they never read a missing
-  context. Static legal placeholders remain available and carry static footer
+  context. Static legal documents remain available and carry static footer
   attribution while the data contract is down.
 
   Adapted from the yesid.dev +layout.svelte chrome composition: gsap/lenis/seo/

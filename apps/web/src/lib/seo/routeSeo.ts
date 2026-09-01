@@ -94,13 +94,13 @@ const HOME: BilingualSeo = {
 };
 
 const PRIVACY_DESCRIPTION: BilingualText = {
-	en: 'This privacy page is a placeholder while the full Transit policy is under legal review. The complete text will be published here once approved.',
-	fr: 'Cette page de confidentialité est provisoire pendant la révision juridique de Transit. Le texte complet sera publié ici une fois approuvé.',
+	en: 'How Transit handles Cloudflare request analytics, address searches, device location, browser storage, retention and privacy requests.',
+	fr: 'Comment Transit traite l’analyse Cloudflare, la recherche d’adresse, la localisation, le stockage du navigateur, la conservation et vos droits.',
 };
 
 const TERMS_DESCRIPTION: BilingualText = {
-	en: 'This terms page is a placeholder while the Transit conditions of use are under legal review. The complete text will be published here once approved.',
-	fr: 'Cette page de conditions est provisoire pendant la révision juridique de Transit. Le texte complet sera publié ici une fois approuvé.',
+	en: 'Terms for using the Transit site, public data endpoints and MIT-licensed source, including attribution, acceptable use and service limitations.',
+	fr: 'Conditions d’utilisation du site Transit, de ses données publiques et de son code sous licence MIT, y compris l’attribution et les limites du service.',
 };
 
 const SURFACES: Record<string, BilingualSeo> = {
