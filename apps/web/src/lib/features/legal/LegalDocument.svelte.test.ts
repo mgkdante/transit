@@ -55,6 +55,10 @@ describe('LegalDocument', () => {
 		expect(JSON.stringify(legalDocument('fr', 'privacy'))).toMatch(
 			/URL.*retirer.*extérieur du Québec.*30 jours/su,
 		);
+		expect(JSON.stringify(legalDocument('en', 'privacy'))).toContain('When this policy is amended');
+		expect(JSON.stringify(legalDocument('fr', 'privacy'))).toContain(
+			'Lorsque la présente politique est modifiée',
+		);
 	});
 
 	it.each(['privacy', 'terms'] as const)('keeps EN/FR %s sections aligned', (kind) => {

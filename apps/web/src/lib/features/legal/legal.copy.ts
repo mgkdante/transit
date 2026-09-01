@@ -102,7 +102,7 @@ const documents = {
 					title: 'Your choices and consent',
 					paragraphs: [
 						'Where consent is the basis for processing, you may withdraw it for future processing. You can deny or revoke device-location permission in your browser, clear a selected map location and clear browser storage. Those choices may disable the related convenience feature.',
-						'Essential request delivery, security and abuse prevention are necessary to provide the public service and cannot be disabled through Transit settings.',
+						'Essential request delivery, security and abuse prevention are necessary to provide the public website and cannot be disabled through Transit settings.',
 					],
 				},
 				{
@@ -151,7 +151,7 @@ const documents = {
 					id: 'changes',
 					title: 'Changes and contact',
 					paragraphs: [
-						'This policy may change when Transit, its providers or applicable requirements change. The effective and last-updated date above identifies the current version. A material change will be called out on this page or elsewhere on the site when practicable.',
+						'This policy may change when Transit, its providers or applicable requirements change. The effective and last-updated date above identifies the current version. When this policy is amended, a notice will be published on this page or elsewhere on the site when the amendment takes effect.',
 						'Questions about this policy are welcome in English or French at contact@yesid.dev.',
 					],
 				},
@@ -264,7 +264,7 @@ const documents = {
 					id: 'operator',
 					title: 'Exploitant et responsable de la protection des renseignements personnels',
 					paragraphs: [
-						'Transit est un projet public d’information sur le transport collectif et de portfolio exploité par Yesid Fernando Otalora, travailleur autonome exploitant une entreprise individuelle au Québec, au Canada.',
+						'Transit est un projet d’information sur le transport collectif et de portfolio accessible au public, exploité par Yesid Fernando Otalora, travailleur autonome exploitant une entreprise individuelle au Québec, au Canada.',
 						'Yesid Fernando Otalora est la personne responsable de la protection des renseignements personnels pour Transit. Titre : Responsable de la protection des renseignements personnels. Contact : contact@yesid.dev.',
 					],
 				},
@@ -316,7 +316,7 @@ const documents = {
 					title: 'Vos choix et votre consentement',
 					paragraphs: [
 						'Lorsque le consentement fonde un traitement, vous pouvez le retirer pour l’avenir. Vous pouvez refuser ou révoquer la permission de localisation dans votre navigateur, effacer un lieu sélectionné et supprimer les données du navigateur. Ces choix peuvent désactiver la fonction pratique concernée.',
-						'La livraison essentielle des requêtes, la sécurité et la prévention des abus sont nécessaires pour fournir le service public et ne peuvent pas être désactivées dans les réglages de Transit.',
+						'La livraison essentielle des requêtes, la sécurité et la prévention des abus sont nécessaires pour fournir le site public et ne peuvent pas être désactivées dans les réglages de Transit.',
 					],
 				},
 				{
@@ -365,7 +365,7 @@ const documents = {
 					id: 'changes',
 					title: 'Modifications et contact',
 					paragraphs: [
-						'La présente politique peut changer lorsque Transit, ses fournisseurs ou les exigences applicables changent. La date d’entrée en vigueur et de dernière mise à jour ci-dessus indique la version actuelle. Une modification importante sera signalée sur cette page ou ailleurs sur le site lorsque possible.',
+						'La présente politique peut changer lorsque Transit, ses fournisseurs ou les exigences applicables changent. La date d’entrée en vigueur et de dernière mise à jour ci-dessus indique la version actuelle. Lorsque la présente politique est modifiée, un avis est publié sur cette page ou ailleurs sur le site au moment de l’entrée en vigueur de la modification.',
 						'Les questions sur cette politique sont les bienvenues en français ou en anglais à contact@yesid.dev.',
 					],
 				},
