@@ -735,7 +735,9 @@ def test_sto_retirement_workflow_backs_up_and_verifies_before_deleting() -> None
     assert set(triggers) == {"workflow_dispatch"}
     job = workflow["jobs"]["retire-sto-snapshots"]
     assert job["environment"] == "production"
-    assert job["permissions"] == {"contents": "read"}
+    assert job["permissions"] == {"actions": "write", "contents": "read"}
+    assert job["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert job["env"]["CLOUDFLARE_API_TOKEN"] == "${{ secrets.CLOUDFLARE_API_TOKEN }}"
     script = next(
         step["run"]
         for step in job["steps"]
@@ -744,9 +746,23 @@ def test_sto_retirement_workflow_backs_up_and_verifies_before_deleting() -> None
     assert "v1/sto/" in script
     assert "retired-public-snapshots/sto/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/" in script
     assert "s3 sync" in script
+    assert "daily-static-pipeline.yml" in script
+    assert "daily-warm-rollups.yml" in script
+    assert script.count("assert_publishers_idle") >= 2
+    assert "gh workflow disable" in script
+    assert "gh workflow enable" in script
     assert script.index("cmp source-manifest.json backup-manifest.json") < script.index(
-        "s3 rm"
+        "delete-objects"
     )
+    assert script.index("cmp source-manifest.json pre-delete-manifest.json") < script.index(
+        "delete-objects"
+    )
+    assert "gh run list" in script
+    assert "--recursive" not in script
+    assert "purge_cache" in script
+    assert "data.yesid.dev/v1/" in script
+    assert "transit.yesid.dev/data/v1/" in script
+    assert script.index('purge_cache "$purge_payload"') > script.index("delete-objects")
     assert "test \"$remaining\" = '0'" in script
     assert "curl --path-as-is" in script
     assert "sto%2Fstatic/routes_index.json" in script

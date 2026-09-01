@@ -18,14 +18,18 @@ jobs:
     timeout-minutes: 30
     environment: production
     permissions:
+      actions: write
       contents: read
     env:
+      GH_TOKEN: ${{ github.token }}
       AWS_ACCESS_KEY_ID: ${{ secrets.BRONZE_S3_ACCESS_KEY }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.BRONZE_S3_SECRET_KEY }}
       AWS_DEFAULT_REGION: auto
       SNAPSHOT_BUCKET: ${{ secrets.SNAPSHOT_R2_BUCKET }}
       BACKUP_BUCKET: transit-raw
       S3_ENDPOINT: https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: 8a4ad7999bd6c2259b5b4acd52f39015
       CONFIRMATION: ${{ inputs.confirmation }}
     steps:
       - name: Back up, verify, and retire the STO prefix
@@ -34,17 +38,119 @@ jobs:
           set -euo pipefail
           test "$CONFIRMATION" = 'RETIRE-STO-PUBLIC-SNAPSHOTS'
           command -v aws >/dev/null
+          command -v gh >/dev/null
           command -v jq >/dev/null
 
           source_prefix='v1/sto/'
           backup_prefix="retired-public-snapshots/sto/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/"
+          publisher_workflows=(
+            daily-static-pipeline.yml
+            daily-warm-rollups.yml
+            historic-publish-recovery.yml
+            historic-snapshot-gc.yml
+          )
+          reenable_workflows=()
+          source_changed=false
+          retirement_complete=false
+          purge_payload="$(
+            jq -cn '{prefixes:["data.yesid.dev/v1/","transit.yesid.dev/data/v1/"]}'
+          )"
 
-          aws --endpoint-url "$S3_ENDPOINT" s3api list-objects-v2 \
-            --bucket "$SNAPSHOT_BUCKET" --prefix "$source_prefix" \
-            --output json > source-inventory.json
-          jq -S --arg prefix "$source_prefix" \
-            '[.Contents[]? | {Key:(.Key | ltrimstr($prefix)), Size, ETag}] | sort_by(.Key)' \
-            source-inventory.json > source-manifest.json
+          inventory_prefix() {
+            local bucket="$1"
+            local prefix="$2"
+            local output="$3"
+            aws --endpoint-url "$S3_ENDPOINT" s3api list-objects-v2 \
+              --bucket "$bucket" --prefix "$prefix" --output json \
+              | jq -S --arg prefix "$prefix" \
+                '[.Contents[]? | {Key:(.Key | ltrimstr($prefix)), Size, ETag}] | sort_by(.Key)' \
+              > "$output"
+          }
+
+          assert_publishers_idle() {
+            local workflow runs
+            for workflow in "${publisher_workflows[@]}"; do
+              runs="$(
+                gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" \
+                  --limit 100 --json databaseId,headSha,status,url
+              )"
+              if ! jq -e 'all(.[]; .status == "completed")' <<< "$runs" >/dev/null; then
+                echo "::error title=Active snapshot publisher::$workflow still has a live run"
+                jq -c '.[] | select(.status != "completed")' <<< "$runs" >&2
+                return 1
+              fi
+            done
+          }
+
+          purge_cache() {
+            local payload="$1"
+            local response
+            response="$(
+              curl --fail-with-body --retry 4 --retry-all-errors --retry-delay 2 -sS \
+                -X POST \
+                "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H 'Content-Type: application/json' \
+                --data "$payload"
+            )"
+            jq -e '.success == true and ((.errors // []) | length == 0)' \
+              <<< "$response" >/dev/null
+            printf '%s\n' "$response"
+          }
+
+          restore_state() {
+            local status="$?"
+            local workflow
+            trap - EXIT
+            set +e
+            if [[ "$source_changed" == true && "$retirement_complete" != true ]]; then
+              echo "::warning title=Retirement rollback::Restoring the verified STO backup"
+              aws --endpoint-url "$S3_ENDPOINT" s3 sync \
+                "s3://${BACKUP_BUCKET}/${backup_prefix}" \
+                "s3://${SNAPSHOT_BUCKET}/${source_prefix}" \
+                --only-show-errors --no-progress
+              inventory_prefix "$SNAPSHOT_BUCKET" "$source_prefix" restored-manifest.json
+              if ! cmp source-manifest.json restored-manifest.json; then
+                echo "::error title=Retirement rollback incomplete::Source does not match backup"
+              fi
+            fi
+            for workflow in "${reenable_workflows[@]}"; do
+              if ! gh workflow enable "$workflow" --repo "$GITHUB_REPOSITORY"; then
+                echo "::error title=Workflow restore failed::$workflow was active before retirement"
+                status=1
+              fi
+            done
+            exit "$status"
+          }
+          trap restore_state EXIT
+
+          # Stop every hosted writer while preserving each workflow's prior state.
+          for workflow in "${publisher_workflows[@]}"; do
+            state="$(
+              gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}" --jq '.state'
+            )"
+            case "$state" in
+              active)
+                reenable_workflows+=("$workflow")
+                gh workflow disable "$workflow" --repo "$GITHUB_REPOSITORY"
+                ;;
+              disabled_manually)
+                ;;
+              *)
+                echo "::error title=Unexpected workflow state::$workflow is $state"
+                exit 1
+                ;;
+            esac
+          done
+          assert_publishers_idle
+
+          # Prove cache-purge permission before the reversible data mutation.
+          preflight_payload="$(
+            jq -cn '{prefixes:["data.yesid.dev/__sto-retirement-preflight__"]}'
+          )"
+          purge_cache "$preflight_payload" > cache-purge-preflight.json
+
+          inventory_prefix "$SNAPSHOT_BUCKET" "$source_prefix" source-manifest.json
           source_count="$(jq length source-manifest.json)"
           source_bytes="$(jq '[.[].Size] | add // 0' source-manifest.json)"
           test "$source_count" -gt 0
@@ -54,37 +160,63 @@ jobs:
             "s3://${BACKUP_BUCKET}/${backup_prefix}" \
             --only-show-errors --no-progress
 
-          aws --endpoint-url "$S3_ENDPOINT" s3api list-objects-v2 \
-            --bucket "$BACKUP_BUCKET" --prefix "$backup_prefix" \
-            --output json > backup-inventory.json
-          jq -S --arg prefix "$backup_prefix" \
-            '[.Contents[]? | {Key:(.Key | ltrimstr($prefix)), Size, ETag}] | sort_by(.Key)' \
-            backup-inventory.json > backup-manifest.json
+          inventory_prefix "$BACKUP_BUCKET" "$backup_prefix" backup-manifest.json
           cmp source-manifest.json backup-manifest.json
 
-          aws --endpoint-url "$S3_ENDPOINT" s3 rm \
-            "s3://${SNAPSHOT_BUCKET}/${source_prefix}" \
-            --recursive --only-show-errors
+          # With all hosted writers disabled and idle, prove the source is still
+          # byte-for-byte the set that was copied. Delete only those captured keys.
+          assert_publishers_idle
+          inventory_prefix "$SNAPSHOT_BUCKET" "$source_prefix" pre-delete-manifest.json
+          cmp source-manifest.json pre-delete-manifest.json
+          jq -c --arg prefix "$source_prefix" \
+            '[.[] | {Key:($prefix + .Key)}] as $objects
+             | range(0; ($objects | length); 1000) as $offset
+             | {Objects:$objects[$offset:$offset + 1000], Quiet:false}' \
+            source-manifest.json > delete-requests.jsonl
 
-          aws --endpoint-url "$S3_ENDPOINT" s3api list-objects-v2 \
-            --bucket "$SNAPSHOT_BUCKET" --prefix "$source_prefix" \
-            --output json > remaining-inventory.json
-          remaining="$(jq '[.Contents[]?] | length' remaining-inventory.json)"
+          delete_batch=0
+          source_changed=true
+          while IFS= read -r delete_request; do
+            delete_batch="$((delete_batch + 1))"
+            jq . <<< "$delete_request" > delete-request.json
+            aws --endpoint-url "$S3_ENDPOINT" s3api delete-objects \
+              --bucket "$SNAPSHOT_BUCKET" --delete file://delete-request.json \
+              --output json > "delete-response-${delete_batch}.json"
+            jq -e '((.Errors // []) | length) == 0' \
+              "delete-response-${delete_batch}.json" >/dev/null
+            expected="$(jq '.Objects | length' delete-request.json)"
+            deleted="$(jq '(.Deleted // []) | length' "delete-response-${delete_batch}.json")"
+            test "$deleted" = "$expected"
+          done < delete-requests.jsonl
+          test "$delete_batch" -gt 0
+
+          inventory_prefix "$SNAPSHOT_BUCKET" "$source_prefix" remaining-manifest.json
+          remaining="$(jq length remaining-manifest.json)"
           test "$remaining" = '0'
 
-          aws --endpoint-url "$S3_ENDPOINT" s3api list-objects-v2 \
-            --bucket "$BACKUP_BUCKET" --prefix "$backup_prefix" \
-            --output json > backup-after-delete.json
-          jq -S --arg prefix "$backup_prefix" \
-            '[.Contents[]? | {Key:(.Key | ltrimstr($prefix)), Size, ETag}] | sort_by(.Key)' \
-            backup-after-delete.json > backup-after-delete-manifest.json
+          inventory_prefix "$BACKUP_BUCKET" "$backup_prefix" backup-after-delete-manifest.json
           cmp source-manifest.json backup-after-delete-manifest.json
 
+          # R2 deletion does not evict Cloudflare cache. Purge both public data
+          # prefixes before probing encoded aliases, then require every retired
+          # URL to stop serving the old object.
+          purge_cache "$purge_payload" > cache-purge.json
+
           for retired_url in \
+            'https://data.yesid.dev/v1/sto/static/routes_index.json' \
             'https://data.yesid.dev/v1/sto%2Fstatic/routes_index.json' \
             'https://data.yesid.dev/v1/%73to/static/routes_index.json' \
+            'https://transit.yesid.dev/data/v1/sto/static/routes_index.json' \
             'https://transit.yesid.dev/data/v1/%73to/static/routes_index.json'; do
-            retired_status="$(curl --path-as-is -sS -o /dev/null -w '%{http_code}' "$retired_url")"
+            retired_status='200'
+            for attempt in {1..12}; do
+              retired_status="$(
+                curl --path-as-is --retry 2 --retry-all-errors -sS \
+                  -o /dev/null -w '%{http_code}' "$retired_url"
+              )"
+              [[ "$retired_status" != '200' ]] && break
+              sleep 5
+            done
             test "$retired_status" != '200'
           done
 
@@ -93,9 +225,25 @@ jobs:
             --arg source_prefix "$source_prefix" \
             --arg backup_bucket "$BACKUP_BUCKET" \
             --arg backup_prefix "$backup_prefix" \
+            --arg manifest_sha256 "$(sha256sum source-manifest.json | cut -d' ' -f1)" \
             --argjson objects "$source_count" \
             --argjson bytes "$source_bytes" \
             '{schema_version:1, source_bucket:$source_bucket, source_prefix:$source_prefix,
               backup_bucket:$backup_bucket, backup_prefix:$backup_prefix,
-              objects:$objects, bytes:$bytes, source_remaining:0}' \
+              objects:$objects, bytes:$bytes, manifest_sha256:$manifest_sha256,
+              cache_prefixes_purged:["data.yesid.dev/v1/","transit.yesid.dev/data/v1/"],
+              source_remaining:0}' \
             | tee retirement-receipt.json
+          retirement_complete=true
+
+      - name: Upload retirement evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sto-retirement-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            *manifest.json
+            cache-purge*.json
+            delete-response-*.json
+            retirement-receipt.json
+          if-no-files-found: warn
