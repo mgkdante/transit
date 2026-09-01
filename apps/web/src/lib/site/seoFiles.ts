@@ -21,8 +21,8 @@ export const PATHS = [
 	'/receipt',
 	'/repeat-offenders',
 	'/alerts',
-	// /privacy + /terms enter the sitemap with WS8-B's real content — indexing
-	// placeholder pages under full-policy descriptions is the defect S5-377 B2.
+	'/privacy',
+	'/terms',
 ] as const;
 
 // sitemaps.org caps a single sitemap file at 50,000 URLs / 50 MB. EN and FR are

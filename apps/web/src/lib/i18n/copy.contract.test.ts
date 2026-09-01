@@ -102,7 +102,7 @@ describe('bilingual copy contract', () => {
 			hotspotsCopy: '2995f1994b9d88b3f5b690f7a4c91158575bdfceb90335ae25773798b1149f43',
 			lineDetailCopy: '12790a92f07d2d505ac30229be29f2b69922c8e0a230c043a11dbfd8c4e6b4a6',
 			lineIndexCopy: '50b9f280c49f3aadb8330d27a350de6d8338db2a4671672ea0717fcf2bbb2406',
-			legalCopy: '964dbf1b15fbaa01381e11a826ee22bc5d0b51a35398c87c896645a79b9257ae',
+			legalCopy: '3d3c261f25aad83eac80e949bfe8e692ed14b145b301aa4f7df3a8d196e91b1e',
 			// B1 automatic-live map: neutral static SSR copy plus phase-gated boot copy.
 			mapCopy: 'be4f43d0e0f5c6abf52d041c39ad992585d11fe94475d41148e107a73b20cb14',
 			mapSelectionDetailCopy: '8c4872a4fa67d956cd22ac874fa7be4a0e5184de2edd6265d95a8edec2958459',

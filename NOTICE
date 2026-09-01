@@ -13,6 +13,14 @@ The snapshot under `apps/web/vendor/design` is yesid.dev-design `v0.13.1`:
 The snapshot retains its license at
 [`apps/web/vendor/design/LICENSE`](apps/web/vendor/design/LICENSE).
 
+## GSAP
+
+The web runtime resolves GSAP `3.15.0`, including the plugins used by the
+vendored motion package. GSAP is licensed separately under the
+[Standard "No Charge" GSAP License](https://gsap.com/community/standard-license/)
+and is not covered by Transit’s MIT License. The linked GSAP license controls
+its permitted uses and restrictions.
+
 ## Fonts
 
 Inter and JetBrains Mono files under `apps/web/static/fonts` and
@@ -39,6 +47,11 @@ the applicable map attribution. The in-repository provider manifests are
 [`stm.yaml`](apps/db/config/providers/stm.yaml),
 [`octranspo.yaml`](apps/db/config/providers/octranspo.yaml), and
 [`sto.yaml`](apps/db/config/providers/sto.yaml).
+
+OpenStreetMap data is © OpenStreetMap contributors and available under the
+[Open Data Commons Open Database License](https://www.openstreetmap.org/copyright).
+The Protomaps basemap is a produced work that retains visible OpenStreetMap and
+[Protomaps](https://docs.protomaps.com/basemaps/downloads) credit.
 
 STM, OC Transpo, and STO data and marks remain their owners' material under
 their applicable terms and configured attribution:
