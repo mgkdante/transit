@@ -1,7 +1,9 @@
+import json
 import math
 import os
 import shutil
 import subprocess
+import textwrap
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -735,23 +737,37 @@ def test_sto_retirement_workflow_backs_up_and_verifies_before_deleting() -> None
     assert set(triggers) == {"workflow_dispatch"}
     job = workflow["jobs"]["retire-sto-snapshots"]
     assert job["environment"] == "production"
-    assert job["permissions"] == {"actions": "write", "contents": "read"}
-    assert job["env"]["GH_TOKEN"] == "${{ github.token }}"
-    assert job["env"]["CLOUDFLARE_API_TOKEN"] == "${{ secrets.CLOUDFLARE_API_TOKEN }}"
-    script = next(
-        step["run"]
+    assert job["permissions"] == {"actions": "read", "contents": "read"}
+    assert "AWS_ACCESS_KEY_ID" not in job.get("env", {})
+    assert "CLOUDFLARE_API_TOKEN" not in job.get("env", {})
+    retirement_step = next(
+        step
         for step in job["steps"]
         if step.get("name") == "Back up, verify, and retire the STO prefix"
     )
+    assert retirement_step["timeout-minutes"] == 20
+    assert retirement_step["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert retirement_step["env"]["CLOUDFLARE_API_TOKEN"] == (
+        "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+    )
+    assert retirement_step["env"]["AWS_ACCESS_KEY_ID"] == (
+        "${{ secrets.BRONZE_S3_ACCESS_KEY }}"
+    )
+    script = retirement_step["run"]
     assert "v1/sto/" in script
-    assert "retired-public-snapshots/sto/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/" in script
+    assert "retired-public-snapshots/sto/phase3-public-retirement/" in script
     assert "s3 sync" in script
     assert "daily-static-pipeline.yml" in script
     assert "daily-warm-rollups.yml" in script
     assert script.count("assert_publishers_idle") >= 2
-    assert "gh workflow disable" in script
-    assert "gh workflow enable" in script
-    assert script.index("cmp source-manifest.json backup-manifest.json") < script.index(
+    assert "gh workflow disable" not in script
+    assert "gh workflow enable" not in script
+    assert "restore_state" not in script
+    assert script.count("assert_quarantined") >= 3
+    assert script.index("# Quarantine every") < script.index("delete-objects")
+    assert "durable_manifest_key" in script
+    assert "source_is_backed_up" in script
+    assert script.index("cmp full-manifest.json backup-manifest.json") < script.index(
         "delete-objects"
     )
     assert script.index("cmp source-manifest.json pre-delete-manifest.json") < script.index(
@@ -763,10 +779,221 @@ def test_sto_retirement_workflow_backs_up_and_verifies_before_deleting() -> None
     assert "data.yesid.dev/v1/" in script
     assert "transit.yesid.dev/data/v1/" in script
     assert script.index('purge_cache "$purge_payload"') > script.index("delete-objects")
+    assert '"s3://${BACKUP_BUCKET}/${durable_receipt_key}"' in script
     assert "test \"$remaining\" = '0'" in script
     assert "curl --path-as-is" in script
     assert "sto%2Fstatic/routes_index.json" in script
     assert "%73to/static/routes_index.json" in script
+
+
+def test_sto_retirement_resumes_from_durable_backup_after_post_delete_failure(
+    tmp_path: Path,
+) -> None:
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/retire-sto-snapshots.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    script = next(
+        step["run"]
+        for step in workflow["jobs"]["retire-sto-snapshots"]["steps"]
+        if step.get("name") == "Back up, verify, and retire the STO prefix"
+    )
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "source.json").write_text(
+        json.dumps(
+            [
+                {"Key": "v1/sto/a.json", "Size": 10, "ETag": '"etag-a"'},
+                {"Key": "v1/sto/b.json", "Size": 20, "ETag": '"etag-b"'},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (state_dir / "backup.json").write_text("[]", encoding="utf-8")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    aws = bin_dir / "aws"
+    aws.write_text(
+        textwrap.dedent(
+            r"""
+            #!/usr/bin/env python3
+            import json
+            import os
+            import shutil
+            import sys
+            from pathlib import Path
+
+            args = sys.argv[1:]
+            state = Path(os.environ["STATE_DIR"])
+
+            def option(name):
+                return args[args.index(name) + 1]
+
+            def load(name):
+                return json.loads((state / name).read_text(encoding="utf-8"))
+
+            def save(name, value):
+                (state / name).write_text(json.dumps(value), encoding="utf-8")
+
+            def split_s3(uri):
+                bucket, _, key = uri.removeprefix("s3://").partition("/")
+                return bucket, key
+
+            if "list-objects-v2" in args:
+                bucket = option("--bucket")
+                prefix = option("--prefix")
+                objects = (
+                    load("source.json")
+                    if bucket == os.environ["SNAPSHOT_BUCKET"]
+                    else load("backup.json")
+                )
+                contents = [item for item in objects if item["Key"].startswith(prefix)]
+                print(json.dumps({"Contents": contents}))
+            elif "head-object" in args:
+                key = option("--key")
+                evidence = state / ("evidence-" + Path(key).name)
+                if not evidence.exists():
+                    raise SystemExit(1)
+                print(json.dumps({"ContentLength": evidence.stat().st_size}))
+            elif "delete-objects" in args:
+                request = json.loads(Path(option("--delete").removeprefix("file://")).read_text(encoding="utf-8"))
+                keys = {item["Key"] for item in request["Objects"]}
+                source = load("source.json")
+                save("source.json", [item for item in source if item["Key"] not in keys])
+                print(json.dumps({"Deleted": [{"Key": key} for key in sorted(keys)]}))
+            elif "sync" in args:
+                index = args.index("sync")
+                _, source_prefix = split_s3(args[index + 1])
+                _, backup_prefix = split_s3(args[index + 2])
+                copied = []
+                for item in load("source.json"):
+                    if item["Key"].startswith(source_prefix):
+                        relative_key = item["Key"][len(source_prefix):]
+                        copied.append({**item, "Key": backup_prefix + relative_key})
+                save("backup.json", copied)
+            elif "cp" in args:
+                index = args.index("cp")
+                source = args[index + 1]
+                destination = args[index + 2]
+                if source.startswith("s3://"):
+                    _, key = split_s3(source)
+                    shutil.copyfile(state / ("evidence-" + Path(key).name), destination)
+                else:
+                    _, key = split_s3(destination)
+                    shutil.copyfile(source, state / ("evidence-" + Path(key).name))
+            else:
+                print(f"unsupported aws invocation: {args}", file=sys.stderr)
+                raise SystemExit(2)
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+    aws.chmod(0o755)
+
+    gh = bin_dir / "gh"
+    gh.write_text(
+        textwrap.dedent(
+            r"""
+            #!/usr/bin/env python3
+            import json
+            import os
+            import sys
+            from pathlib import Path
+
+            state = Path(os.environ["STATE_DIR"])
+            with (state / "gh.log").open("a", encoding="utf-8") as handle:
+                handle.write(" ".join(sys.argv[1:]) + "\n")
+            if sys.argv[1:3] != ["run", "list"]:
+                raise SystemExit(2)
+            print(json.dumps([]))
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+    gh.chmod(0o755)
+
+    curl = bin_dir / "curl"
+    curl.write_text(
+        textwrap.dedent(
+            r"""
+            #!/usr/bin/env python3
+            import json
+            import os
+            import sys
+
+            args = sys.argv[1:]
+            url = next((value for value in args if value.startswith("https://")), "")
+            if "api.cloudflare.com" in url:
+                payload = args[args.index("--data") + 1]
+                if os.environ.get("FAIL_ACTUAL_PURGE") == "1" and "data.yesid.dev/v1/" in payload:
+                    print(json.dumps({"success": False, "errors": [{"message": "injected"}]}))
+                    raise SystemExit(22)
+                print(json.dumps({"success": True, "errors": []}))
+            else:
+                print("410", end="")
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+    curl.chmod(0o755)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    script_path = run_dir / "retire.sh"
+    script_path.write_text(script, encoding="utf-8")
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "STATE_DIR": str(state_dir),
+        "CONFIRMATION": "RETIRE-STO-PUBLIC-SNAPSHOTS",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_REPOSITORY": "mgkdante/transit",
+        "GITHUB_RUN_ID": "12345",
+        "GITHUB_SHA": "a" * 40,
+        "SNAPSHOT_BUCKET": "transit-snapshots",
+        "BACKUP_BUCKET": "transit-raw",
+        "S3_ENDPOINT": "https://example.invalid",
+        "CLOUDFLARE_API_TOKEN": "test-token",
+        "CLOUDFLARE_ZONE_ID": "test-zone",
+    }
+
+    failed = subprocess.run(
+        ["bash", str(script_path)],
+        cwd=run_dir,
+        env={**env, "FAIL_ACTUAL_PURGE": "1"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert failed.returncode != 0
+    assert json.loads((state_dir / "source.json").read_text(encoding="utf-8")) == [], (
+        failed.stderr
+    )
+    assert len(json.loads((state_dir / "backup.json").read_text(encoding="utf-8"))) == 2
+    assert (state_dir / "evidence-full-manifest.json").is_file()
+    assert not (state_dir / "evidence-retirement-receipt.json").exists()
+
+    resumed = subprocess.run(
+        ["bash", str(script_path)],
+        cwd=run_dir,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert resumed.returncode == 0, resumed.stderr
+    receipt = json.loads(
+        (state_dir / "evidence-retirement-receipt.json").read_text(encoding="utf-8")
+    )
+    assert receipt["objects"] == 2
+    assert receipt["objects_present_at_start"] == 0
+    assert receipt["source_remaining"] == 0
+    gh_log = (state_dir / "gh.log").read_text(encoding="utf-8")
+    assert "workflow disable" not in gh_log
+    assert "workflow enable" not in gh_log
 
 
 def test_local_1password_env_files_stay_ignored() -> None:

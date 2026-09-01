@@ -136,7 +136,7 @@ assert_missing_edge_bypass() {
 assert_retired_provider() {
   local url="$1" status attempt
   for ((attempt = 1; attempt <= EDGE_MAX_ATTEMPTS; attempt++)); do
-    status="$(status_of "$url")"
+    status="$(status_of --path-as-is "$url")"
     if [ "$status" = "410" ]; then
       ok "$url retired provider -> 410"
       return
@@ -158,6 +158,8 @@ assert_edge_hit "$CANONICAL_BASE/v1/stm/manifest.json" "public, max-age=30"
 assert_range_preflight "$CANONICAL_BASE/v1/stm/static/basemap/montreal.pmtiles"
 assert_missing_edge_bypass "$CANONICAL_BASE/v1/stm/definitely-missing.json"
 assert_retired_provider "$CANONICAL_BASE/v1/sto/static/routes_index.json"
+assert_retired_provider "$CANONICAL_BASE/v1/sto%2Fstatic/routes_index.json"
+assert_retired_provider "$CANONICAL_BASE/v1/%73to/static/routes_index.json"
 
 assert_object "$CANONICAL_BASE/v1/stm/live/vehicles.json" "public, max-age=30"
 assert_object "$CANONICAL_BASE/v1/stm/static/routes_index.json" "public, max-age=86400, stale-while-revalidate=86400|public, max-age=604800"
@@ -187,6 +189,7 @@ ok "POST -> 405"
   || fail "compatibility route $FALLBACK_BASE manifest must still return 200"
 ok "compatibility route $FALLBACK_BASE manifest -> 200"
 assert_retired_provider "$FALLBACK_BASE/v1/sto/static/routes_index.json"
+assert_retired_provider "$FALLBACK_BASE/v1/%73to/static/routes_index.json"
 
 # --- /api/v1/kpis: public KPI endpoint (frozen v1 contract, src/kpis.js) ---
 # APEX_BASE is independent from CANONICAL_BASE because the latter ends in
