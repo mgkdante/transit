@@ -18,7 +18,7 @@ test("deployment config temporarily quarantines every direct snapshot path", () 
   assert.deepEqual(routePatterns(config), [
     "transit.yesid.dev/data/*",
     "transit.yesid.dev/api/v1/*",
-    "data.yesid.dev/v1/*",
+    "data.yesid.dev/*",
   ]);
 });
 

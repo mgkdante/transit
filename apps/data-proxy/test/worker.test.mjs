@@ -177,6 +177,8 @@ test("active direct-R2 requests pass through without changing HTTP semantics", a
     const requests = [
       new Request("https://data.yesid.dev/v1/stm/manifest.json"),
       new Request("https://data.yesid.dev/v1/octranspo/manifest.json"),
+      new Request("https://data.yesid.dev/v1%2Fstm/manifest.json"),
+      new Request("https://data.yesid.dev/non-snapshot-origin-object.txt"),
       new Request("https://data.yesid.dev/v1/octranspo/static/routes_index.json", {
         method: "HEAD",
       }),
@@ -192,13 +194,15 @@ test("active direct-R2 requests pass through without changing HTTP semantics", a
 
     assert.deepEqual(
       responses.map((response) => response.status),
-      [200, 200, 200, 206, 304],
+      [200, 200, 200, 200, 200, 206, 304],
     );
     assert.equal(await responses[0].text(), '{"provider":"active"}');
     assert.equal(await responses[1].text(), '{"provider":"active"}');
-    assert.equal(await responses[2].text(), "");
-    assert.equal(responses[3].headers.get("content-range"), "bytes 0-3/10");
-    assert.equal(responses[4].headers.get("etag"), '"origin-etag"');
+    assert.equal(await responses[2].text(), '{"provider":"active"}');
+    assert.equal(await responses[3].text(), '{"provider":"active"}');
+    assert.equal(await responses[4].text(), "");
+    assert.equal(responses[5].headers.get("content-range"), "bytes 0-3/10");
+    assert.equal(responses[6].headers.get("etag"), '"origin-etag"');
     assert.deepEqual(forwarded, requests);
   } finally {
     globalThis.fetch = originalFetch;
@@ -225,8 +229,11 @@ test("GET path outside /data/v1 returns 404", async () => {
 test("retired STO paths return uncacheable 410 on compatibility and direct hosts", async () => {
   for (const url of [
     `${BASE}/data/v1/sto/static/routes_index.json`,
+    `${BASE}/data/v1%2Fsto/static/routes_index.json`,
     `${BASE}/data/v1/%73to/static/routes_index.json`,
     "https://data.yesid.dev/v1/sto/static/routes_index.json",
+    "https://data.yesid.dev/v1%2Fsto/static/routes_index.json",
+    "https://data.yesid.dev/%761%2Fsto/static/routes_index.json",
     "https://data.yesid.dev/v1/sto%2Fstatic/routes_index.json",
     "https://data.yesid.dev/v1/%73to/static/routes_index.json",
   ]) {

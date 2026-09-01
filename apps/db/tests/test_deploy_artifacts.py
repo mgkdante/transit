@@ -783,6 +783,8 @@ def test_sto_retirement_workflow_backs_up_and_verifies_before_deleting() -> None
     assert "test \"$remaining\" = '0'" in script
     assert "curl --path-as-is" in script
     assert "sto%2Fstatic/routes_index.json" in script
+    assert "v1%2Fsto/static/routes_index.json" in script
+    assert "%761%2Fsto/static/routes_index.json" in script
     assert "%73to/static/routes_index.json" in script
 
 
@@ -928,7 +930,10 @@ def test_sto_retirement_resumes_from_durable_backup_after_post_delete_failure(
             url = next((value for value in args if value.startswith("https://")), "")
             if "api.cloudflare.com" in url:
                 payload = args[args.index("--data") + 1]
-                if os.environ.get("FAIL_ACTUAL_PURGE") == "1" and "data.yesid.dev/v1/" in payload:
+                if (
+                    os.environ.get("FAIL_ACTUAL_PURGE") == "1"
+                    and "transit.yesid.dev/data/v1" in payload
+                ):
                     print(json.dumps({"success": False, "errors": [{"message": "injected"}]}))
                     raise SystemExit(22)
                 print(json.dumps({"success": True, "errors": []}))

@@ -158,6 +158,8 @@ assert_edge_hit "$CANONICAL_BASE/v1/stm/manifest.json" "public, max-age=30"
 assert_range_preflight "$CANONICAL_BASE/v1/stm/static/basemap/montreal.pmtiles"
 assert_missing_edge_bypass "$CANONICAL_BASE/v1/stm/definitely-missing.json"
 assert_retired_provider "$CANONICAL_BASE/v1/sto/static/routes_index.json"
+assert_retired_provider "$CANONICAL_BASE/v1%2Fsto/static/routes_index.json"
+assert_retired_provider "$CANONICAL_BASE/%761%2Fsto/static/routes_index.json"
 assert_retired_provider "$CANONICAL_BASE/v1/sto%2Fstatic/routes_index.json"
 assert_retired_provider "$CANONICAL_BASE/v1/%73to/static/routes_index.json"
 
@@ -189,6 +191,7 @@ ok "POST -> 405"
   || fail "compatibility route $FALLBACK_BASE manifest must still return 200"
 ok "compatibility route $FALLBACK_BASE manifest -> 200"
 assert_retired_provider "$FALLBACK_BASE/v1/sto/static/routes_index.json"
+assert_retired_provider "$FALLBACK_BASE/v1%2Fsto/static/routes_index.json"
 assert_retired_provider "$FALLBACK_BASE/v1/%73to/static/routes_index.json"
 
 # --- /api/v1/kpis: public KPI endpoint (frozen v1 contract, src/kpis.js) ---

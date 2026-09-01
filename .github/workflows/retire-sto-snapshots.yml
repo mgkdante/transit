@@ -59,7 +59,7 @@ jobs:
             historic-snapshot-gc.yml
           )
           purge_payload="$(
-            jq -cn '{prefixes:["data.yesid.dev/v1/","transit.yesid.dev/data/v1/"]}'
+            jq -cn '{prefixes:["data.yesid.dev","transit.yesid.dev/data/v1"]}'
           )"
 
           inventory_prefix() {
@@ -109,9 +109,12 @@ jobs:
             local method retired_status retired_url
             for retired_url in \
               'https://data.yesid.dev/v1/sto/static/routes_index.json' \
+              'https://data.yesid.dev/v1%2Fsto/static/routes_index.json' \
+              'https://data.yesid.dev/%761%2Fsto/static/routes_index.json' \
               'https://data.yesid.dev/v1/sto%2Fstatic/routes_index.json' \
               'https://data.yesid.dev/v1/%73to/static/routes_index.json' \
               'https://transit.yesid.dev/data/v1/sto/static/routes_index.json' \
+              'https://transit.yesid.dev/data/v1%2Fsto/static/routes_index.json' \
               'https://transit.yesid.dev/data/v1/%73to/static/routes_index.json'; do
               for method in GET HEAD; do
                 if [[ "$method" == HEAD ]]; then
@@ -241,7 +244,7 @@ jobs:
               objects_present_at_start:$objects_present_at_start,
               delete_batches:$delete_batches, manifest_sha256:$manifest_sha256,
               github_sha:$github_sha, github_run_id:$github_run_id,
-              cache_prefixes_purged:["data.yesid.dev/v1/","transit.yesid.dev/data/v1/"],
+              cache_prefixes_purged:["data.yesid.dev","transit.yesid.dev/data/v1"],
               source_remaining:0, quarantine_status:410}' \
             | tee retirement-receipt.json
           aws --endpoint-url "$S3_ENDPOINT" s3 cp \

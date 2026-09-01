@@ -6,7 +6,7 @@ const CACHE_RULESET_PHASE = "http_request_cache_settings";
 const CACHE_RULESET_NAME = "Transit direct R2 JSON cache";
 const CACHE_RULESET_DESCRIPTION =
   "Cache public Transit JSON snapshots while respecting publisher Cache-Control";
-const PURGE_PREFIX = "data.yesid.dev/v1/";
+const PURGE_PREFIX = "data.yesid.dev";
 
 export const CACHE_RULE_REF = "transit_direct_r2_json";
 

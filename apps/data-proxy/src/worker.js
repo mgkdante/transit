@@ -4,7 +4,7 @@
 // endpoint on transit.yesid.dev/api/v1/* (src/kpis.js). A narrow direct-domain
 // route also quarantines the retired /v1/sto/* prefix with 410 responses. The
 // direct data route is temporarily broad during STO storage retirement; every
-// other direct /v1/* request passes through unchanged to the R2 custom-domain
+// other direct-host request passes through unchanged to the R2 custom-domain
 // origin and the route is removed after retirement is proven.
 //
 // Contract: GET/HEAD only; Content-Type and Cache-Control written at publish
@@ -19,7 +19,6 @@ import { serveKpis } from "./kpis.js";
 // onto bucket keys (e.g. /data/v1/stm/manifest.json -> v1/stm/manifest.json).
 const KEY_PREFIX = "/data/";
 const SERVABLE_PREFIX = "/data/v1/";
-const DIRECT_SERVABLE_PREFIX = "/v1/";
 const DIRECT_DATA_HOST = "data.yesid.dev";
 
 const KPIS_PATH = "/api/v1/kpis";
@@ -103,10 +102,7 @@ export default {
     ) {
       return errorResponse(410);
     }
-    if (
-      hostname === DIRECT_DATA_HOST &&
-      pathname.startsWith(DIRECT_SERVABLE_PREFIX)
-    ) {
+    if (hostname === DIRECT_DATA_HOST) {
       return fetch(request);
     }
     if (decodedPathname === KPIS_PATH) {
