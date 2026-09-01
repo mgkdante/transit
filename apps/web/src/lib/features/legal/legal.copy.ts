@@ -1,7 +1,7 @@
 import { defineCopy, type Locale } from '$lib/i18n';
 
 export type LegalPageKind = 'privacy' | 'terms';
-export const LEGAL_EFFECTIVE_DATE = '2026-08-31';
+export const LEGAL_EFFECTIVE_DATE = '2026-09-01';
 
 export interface LegalLinkCopy {
 	readonly href: string;
@@ -42,7 +42,7 @@ const documents = {
 			kicker: 'LEGAL',
 			title: 'Privacy Policy',
 			effectiveLabel: 'Effective and last updated',
-			effectiveDate: 'August 31, 2026',
+			effectiveDate: 'September 1, 2026',
 			summary:
 				'This policy explains the limited personal information processing involved when you use Transit. Transit has no user accounts, payments, advertising, newsletter or direct marketing.',
 			sections: [
@@ -161,7 +161,7 @@ const documents = {
 			kicker: 'LEGAL',
 			title: 'Terms of Use',
 			effectiveLabel: 'Effective and last updated',
-			effectiveDate: 'August 31, 2026',
+			effectiveDate: 'September 1, 2026',
 			summary:
 				'These terms govern the hosted Transit website and public data endpoints. Repository source is licensed separately. Transit is an independent informational project, not an official transit-agency service.',
 			sections: [
@@ -256,7 +256,7 @@ const documents = {
 			kicker: 'JURIDIQUE',
 			title: 'Politique de confidentialité',
 			effectiveLabel: 'Entrée en vigueur et dernière mise à jour',
-			effectiveDate: '31 août 2026',
+			effectiveDate: '1er septembre 2026',
 			summary:
 				'La présente politique explique le traitement limité de renseignements personnels lié à l’utilisation de Transit. Transit ne propose aucun compte, paiement, publicité, infolettre ni marketing direct.',
 			sections: [
@@ -375,7 +375,7 @@ const documents = {
 			kicker: 'JURIDIQUE',
 			title: 'Conditions d’utilisation',
 			effectiveLabel: 'Entrée en vigueur et dernière mise à jour',
-			effectiveDate: '31 août 2026',
+			effectiveDate: '1er septembre 2026',
 			summary:
 				'Les présentes conditions régissent le site Transit hébergé et ses points de terminaison publics. Le code du dépôt est offert sous une licence distincte. Transit est un projet d’information indépendant, et non un service officiel d’une société de transport.',
 			sections: [
