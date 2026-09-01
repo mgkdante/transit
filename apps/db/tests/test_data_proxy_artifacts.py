@@ -222,15 +222,15 @@ def test_smoke_recovers_when_kpi_route_appears_after_propagation(
               fi
             done
 
-                if [ "$status_only" = true ]; then
-                  case "$url" in
-                    */api/vitals) printf 400 ;;
-                    */api/v1/definitely-missing) printf 404 ;;
-                    */definitely-missing.json|*/secrets.txt) printf 404 ;;
-                    */v1/sto/static/routes_index.json) printf 410 ;;
-                    */manifest.json)
-                      [ "$method" = POST ] && printf 405 || printf 200
-                      ;;
+            if [ "$status_only" = true ]; then
+              case "$url" in
+                */api/vitals) printf 400 ;;
+                */api/v1/definitely-missing) printf 404 ;;
+                */definitely-missing.json|*/secrets.txt) printf 404 ;;
+                */v1/sto/static/routes_index.json) printf 410 ;;
+                */manifest.json)
+                  [ "$method" = POST ] && printf 405 || printf 200
+                  ;;
                 *) printf 200 ;;
               esac
               exit 0
