@@ -46,6 +46,7 @@ def test_wrangler_config_routes_public_contracts_to_snapshots_bucket() -> None:
     assert config["routes"] == [
         {"pattern": "transit.yesid.dev/data/*", "zone_name": "yesid.dev"},
         {"pattern": "transit.yesid.dev/api/v1/*", "zone_name": "yesid.dev"},
+        {"pattern": "data.yesid.dev/v1/sto/*", "zone_name": "yesid.dev"},
     ]
     assert config["r2_buckets"] == [{"binding": "SNAPSHOTS", "bucket_name": "transit-snapshots"}]
 
@@ -221,14 +222,15 @@ def test_smoke_recovers_when_kpi_route_appears_after_propagation(
               fi
             done
 
-            if [ "$status_only" = true ]; then
-              case "$url" in
-                */api/vitals) printf 400 ;;
-                */api/v1/definitely-missing) printf 404 ;;
-                */definitely-missing.json|*/secrets.txt) printf 404 ;;
-                */manifest.json)
-                  [ "$method" = POST ] && printf 405 || printf 200
-                  ;;
+                if [ "$status_only" = true ]; then
+                  case "$url" in
+                    */api/vitals) printf 400 ;;
+                    */api/v1/definitely-missing) printf 404 ;;
+                    */definitely-missing.json|*/secrets.txt) printf 404 ;;
+                    */v1/sto/static/routes_index.json) printf 410 ;;
+                    */manifest.json)
+                      [ "$method" = POST ] && printf 405 || printf 200
+                      ;;
                 *) printf 200 ;;
               esac
               exit 0
