@@ -1,7 +1,5 @@
 export type GeocodePrecision = 'address' | 'street' | 'neighbourhood' | 'postal' | 'place';
 
-export type GeocodeSource = 'geo_ca';
-
 /**
  * The Montréal bounds shared by Geo.ca result filtering and the near-me
  * coordinate guard.
@@ -27,7 +25,7 @@ export interface GeocodeSuggestion {
 	readonly lat: number;
 	readonly lon: number;
 	readonly label: string;
-	readonly source: GeocodeSource;
+	readonly source: 'geo_ca';
 	readonly precision: GeocodePrecision;
 }
 

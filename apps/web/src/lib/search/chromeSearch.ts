@@ -1,6 +1,6 @@
 import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
 import { FILTER_SEARCH_PARAM_KEYS, fromSearchParams, toSearchString } from '$lib/filters';
-import type { GeocodePrecision, GeocodeSource, GeocodeSuggestion } from '$lib/geocode/types';
+import type { GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
 import { routeFor } from '$lib/nav';
 import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 import { routeModeKey, stopGroupKey, stopModeKey, type TransitModeKey } from '$lib/search/stopMode';
@@ -45,7 +45,6 @@ export interface ChromeSearchResult {
 	readonly lat?: number;
 	readonly lon?: number;
 	readonly precision?: GeocodePrecision;
-	readonly source?: GeocodeSource;
 }
 
 interface ChromeSearchSources {
@@ -142,7 +141,6 @@ export function chromeSearchResults(
 				lat: address.lat,
 				lon: address.lon,
 				precision: address.precision,
-				source: address.source,
 			}),
 		)
 		.sort(collate)
