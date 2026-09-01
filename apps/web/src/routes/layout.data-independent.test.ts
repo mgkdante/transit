@@ -135,9 +135,6 @@ vi.mock('$lib/search/chromeSearch', () => ({
 	chromeSearchResults: () => [],
 	scopeForPath: () => 'all',
 }));
-vi.mock('$lib/geocode/sessionToken', () => ({
-	createGooglePlacesSessionToken: () => '123e4567-e89b-12d3-a456-426614174000',
-}));
 
 import RootLayout from './+layout.svelte';
 import RootLayoutMapRouteHarness from './__fixtures__/RootLayoutMapRouteHarness.svelte';

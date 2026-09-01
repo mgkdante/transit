@@ -379,10 +379,10 @@ def show_config() -> None:
 
 @app.command("list-providers")
 def list_providers() -> None:
-    """List available provider manifest ids."""
+    """List active provider manifest ids."""
 
     registry = _provider_registry(get_settings())
-    for provider_id in registry.list_provider_ids():
+    for provider_id in registry.list_active_provider_ids():
         typer.echo(provider_id)
 
 
@@ -806,7 +806,7 @@ def measure_alert_language_coverage_command(
     registry = _provider_registry(settings)
     manifests = [
         registry.get_provider(provider_id)
-        for provider_id in registry.list_provider_ids()
+        for provider_id in registry.list_active_provider_ids()
     ]
     with make_engine(settings).begin() as connection:
         receipt = run_alert_language_coverage_measurement(
@@ -1327,7 +1327,7 @@ def publish_all_command(
         help="write each provider's gate report JSON to {report_dir}/publish-gate-{provider}.json",
     ),
 ) -> None:
-    """Build and publish the /v1 snapshot for EVERY configured provider.
+    """Build and publish the /v1 snapshot for every active configured provider.
 
     Attempts every provider so one provider's failure does not skip the others;
     exits non-zero if any failed. A gate ERROR raises PER-PROVIDER (the others still
@@ -1343,7 +1343,7 @@ def publish_all_command(
     results: list[dict[str, object]] = []
     failures: list[str] = []
     skipped: list[str] = []
-    for provider_id in registry.list_provider_ids():
+    for provider_id in registry.list_active_provider_ids():
         # Enrolled-but-unseeded providers have no gold.dim_provider row and thus
         # no gold data to build/publish; skip cleanly so the all-providers run
         # never fails on a provider whose static pipeline has not run yet.

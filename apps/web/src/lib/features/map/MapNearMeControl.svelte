@@ -4,7 +4,6 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import type { Locale } from '$lib/i18n';
 	import type { LatLon, WithDistance } from '$lib/components/map';
-	import { createGooglePlacesSessionToken } from '$lib/geocode/sessionToken';
 	import type { GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
 	import type { StopIndexEntry } from '$lib/v1/schemas';
 	import type { MapCopy } from './map.copy';
@@ -20,10 +19,7 @@
 		stops?: readonly WithDistance<StopIndexEntry>[];
 		onuselocation: () => void;
 		onsearch: (event: SubmitEvent) => void | Promise<void>;
-		// sessionToken is the autocomplete session that produced this suggestion —
-		// the parent reuses it for the Place-Details call so the two bill as one
-		// Google session. Passed BEFORE the token rotates (see selectSuggestion).
-		onsuggestion: (result: GeocodeSuggestion, sessionToken: string) => void | Promise<void>;
+		onsuggestion: (result: GeocodeSuggestion) => void | Promise<void>;
 		onstopselect: (stop: WithDistance<StopIndexEntry>) => void;
 		onclear: () => void;
 	}
@@ -47,7 +43,6 @@
 	let suggestions = $state<GeocodeSuggestion[]>([]);
 	let suggestionsLoading = $state(false);
 	let suggestionsOpen = $state(false);
-	let suggestionSessionToken = $state(createGooglePlacesSessionToken());
 	let lastSelectedSuggestionLabel = $state('');
 	let rootEl = $state<HTMLElement>();
 	let inputEl = $state<HTMLInputElement>();
@@ -57,9 +52,6 @@
 	const suggestionCache = new SvelteMap<string, GeocodeSuggestion[]>();
 	const showSuggestions = $derived(
 		open && suggestionsOpen && suggestions.length > 0 && shouldSuggestNearMeAddress(query),
-	);
-	const showGoogleAttribution = $derived(
-		showSuggestions && suggestions.some((result) => result.attribution === 'google'),
 	);
 	const nearMeClearance = 'calc(5.1rem + 2.75rem + 0.75rem)';
 
@@ -81,8 +73,7 @@
 	}
 
 	function suggestionKey(result: GeocodeSuggestion): string {
-		if (result.placeId) return `${result.source}:${result.placeId}`;
-		return `${result.lat ?? 'pending'}:${result.lon ?? 'pending'}:${result.label}`;
+		return `${result.lat}:${result.lon}:${result.label}`;
 	}
 
 	function precisionLabel(precision: GeocodeSuggestion['precision']): string {
@@ -94,16 +85,12 @@
 	}
 
 	function selectSuggestion(result: GeocodeSuggestion): void {
-		// Capture the active session token and hand it to the parent BEFORE minting
-		// a fresh one — the Place-Details resolution must close THIS session.
-		const usedToken = suggestionSessionToken;
 		query = result.label;
 		suggestions = [];
 		suggestionsOpen = false;
 		lastSelectedSuggestionLabel = result.label;
 		inputEl?.blur();
-		void onsuggestion(result, usedToken);
-		suggestionSessionToken = createGooglePlacesSessionToken();
+		void onsuggestion(result);
 	}
 
 	function closeSuggestions(): void {
@@ -158,7 +145,7 @@
 		const controller = new AbortController();
 		const timeout = setTimeout(() => {
 			suggestionsLoading = true;
-			const url = `/api/geocode/montreal?q=${encodeURIComponent(trimmed)}&suggest=1&limit=4&session=${encodeURIComponent(suggestionSessionToken)}`;
+			const url = `/api/geocode/montreal?q=${encodeURIComponent(trimmed)}&suggest=1&limit=4`;
 			void fetch(url, { signal: controller.signal })
 				.then(async (response) => {
 					if (!response.ok) return [];
@@ -239,16 +226,6 @@
 								<small>{precisionLabel(result.precision)}</small>
 							</button>
 						{/each}
-						{#if showGoogleAttribution}
-							<div class="map-near-google-attribution" aria-label="Powered by Google">
-								<span>Powered by</span>
-								<span class="map-near-google-wordmark" aria-hidden="true">
-									<span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span
-										>e</span
-									>
-								</span>
-							</div>
-						{/if}
 					</div>
 				{/if}
 			</form>
@@ -486,48 +463,6 @@
 		font-size: var(--text-micro);
 		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
-	}
-	.map-near-google-attribution {
-		display: flex;
-		align-items: center;
-		justify-content: flex-end;
-		gap: 0.375rem;
-		min-height: 1.5rem;
-		padding: 0.25rem 0.375rem 0.125rem;
-		color: var(--muted-foreground);
-		background: color-mix(in srgb, var(--card) 92%, transparent);
-		border-radius: var(--radius-sm);
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-	}
-	/* Google's own brand palette — exempt-by-brand (§C4 P12 exemptions): an EXTERNAL
-	   provider wordmark that cannot flow through the transit token scale. Named here as
-	   local consts so the raw hexes are documented, not scattered. */
-	.map-near-google-wordmark {
-		--google-blue: #4285f4;
-		--google-red: #ea4335;
-		--google-yellow: #fbbc05;
-		--google-green: #34a853;
-		display: inline-flex;
-		align-items: baseline;
-		font-family: var(--font-heading);
-		font-size: var(--text-micro);
-		font-weight: 700;
-		letter-spacing: 0;
-	}
-	.map-near-google-wordmark span:nth-child(1),
-	.map-near-google-wordmark span:nth-child(4) {
-		color: var(--google-blue);
-	}
-	.map-near-google-wordmark span:nth-child(2),
-	.map-near-google-wordmark span:nth-child(6) {
-		color: var(--google-red);
-	}
-	.map-near-google-wordmark span:nth-child(3) {
-		color: var(--google-yellow);
-	}
-	.map-near-google-wordmark span:nth-child(5) {
-		color: var(--google-green);
 	}
 	.map-near-message,
 	.map-near-origin {

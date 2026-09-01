@@ -49,10 +49,8 @@ describe('MapNearMeControl', () => {
 		expect(s).toContain('role="listbox"');
 		expect(s).toContain('role="option"');
 		expect(s).toContain('class="map-near-suggestion"');
-		// Hands the active autocomplete session token to the parent (for the
-		// Place-Details resolution) BEFORE minting a fresh one.
-		expect(s).toContain('const usedToken = suggestionSessionToken');
-		expect(s).toContain('onsuggestion(result, usedToken)');
+		expect(s).toContain('onsuggestion(result)');
+		expect(s).not.toMatch(/suggestionSessionToken|Place-Details/u);
 	});
 
 	it('closes address suggestions like a standard autocomplete popover', () => {
@@ -91,17 +89,10 @@ describe('MapNearMeControl', () => {
 		expect(s).not.toContain('@media (max-width: 768px)');
 	});
 
-	it('renders Google autocomplete attribution with token-based light and dark styling', () => {
+	it('contains no inactive Google provider session or attribution surface', () => {
 		const s = source();
 
-		expect(s).toContain('showGoogleAttribution');
-		expect(s).toContain('map-near-google-attribution');
-		expect(s).toContain('Powered by');
-		expect(s).toContain('Google');
-		expect(s).toMatch(
-			/\.map-near-google-attribution\s*\{[\s\S]*background:\s*color-mix\(in srgb, var\(--card\)/,
-		);
-		expect(s).toMatch(/\.map-near-google-wordmark\s*\{[\s\S]*font-family:\s*var\(--font-heading\)/);
+		expect(s).not.toMatch(/Google|sessionToken|placeId/u);
 	});
 
 	it('labels street and neighbourhood suggestions distinctly from generic places', () => {
@@ -115,12 +106,12 @@ describe('MapNearMeControl', () => {
 		[
 			'en',
 			'Stops near me',
-			'Your searches are sent to our server and its geocoding providers (Google, geo.ca).',
+			'Your searches are sent to our server and the Government of Canada Geo.ca service.',
 		],
 		[
 			'fr',
 			'Arrêts près de moi',
-			'Vos recherches sont envoyées à notre serveur et à ses fournisseurs de géocodage (Google, geo.ca).',
+			'Vos recherches sont envoyées à notre serveur et au service Géo.ca du gouvernement du Canada.',
 		],
 	] as const)(
 		'renders the %s collection notice directly below the near-me search form',

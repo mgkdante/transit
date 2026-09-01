@@ -2,12 +2,13 @@
 # transit-snapshots R2 bucket on the canonical host (slice-9.1.1p), plus the
 # aggregated public KPI endpoint /api/v1/kpis (src/kpis.js).
 #
-# Deliberately narrow zone ROUTES (transit.yesid.dev/data/* + /api/v1/*), NOT
-# a Worker custom domain: routes are matched most-specific-first, so both beat
-# the transit-web app's transit.yesid.dev/* and everything else falls through
-# to the app. /api/v1/* is scoped one level below /api/* on purpose — the web
-# app owns /api/vitals (web-vitals beacon) and must keep receiving it. Do not
-# widen or delete these routes without re-running smoke.sh.
+# Deliberately narrow zone ROUTES: the compatibility data/API surfaces plus one
+# temporary direct-domain retirement quarantine. The transit routes beat the web app's wider
+# transit.yesid.dev/* route; every other path falls through. /api/v1/* stays one
+# level below /api/* so the web app keeps /api/vitals. The host-wide data.yesid.dev
+# route must remain only until the backed-up STO prefix is empty; non-STO paths
+# pass through to the existing R2 custom-domain origin unchanged. Remove this
+# route in the post-retirement cleanup and re-run smoke.sh.
 name = "transit-data-proxy"
 main = "src/worker.js"
 compatibility_date = "2026-06-10"
@@ -18,6 +19,7 @@ workers_dev = false
 routes = [
   { pattern = "transit.yesid.dev/data/*", zone_name = "yesid.dev" },
   { pattern = "transit.yesid.dev/api/v1/*", zone_name = "yesid.dev" },
+  { pattern = "data.yesid.dev/*", zone_name = "yesid.dev" },
 ]
 
 [[r2_buckets]]

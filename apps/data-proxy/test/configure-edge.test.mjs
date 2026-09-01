@@ -86,7 +86,7 @@ test("creates the scoped JSON cache rule and enables both tiered-cache settings"
   assert.deepEqual(requestBody(calls[1]), CACHE_RULE);
   assert.deepEqual(requestBody(calls[2]), { value: "on" });
   assert.deepEqual(requestBody(calls[3]), { value: "on" });
-  assert.deepEqual(requestBody(calls[4]), { prefixes: ["data.yesid.dev/v1/"] });
+  assert.deepEqual(requestBody(calls[4]), { prefixes: ["data.yesid.dev"] });
   assert.deepEqual(CACHE_RULE.action_parameters, {
     cache: true,
     edge_ttl: { mode: "bypass_by_default" },

@@ -7,7 +7,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "daily-static-pipeline.yml"
 PROVIDER_STEP_NAME = (
-    "Run static + GIS Bronze -> Silver -> Gold pipeline (all providers)"
+    "Run static + GIS Bronze -> Silver -> Gold pipeline (all active providers)"
 )
 
 
@@ -29,7 +29,7 @@ def test_static_provider_failures_publish_before_refailing_the_bounded_job() -> 
     assert provider_step["id"] == "run-static-providers"
     assert provider_step["continue-on-error"] is True
 
-    publish = _step(job, "Publish static /v1 snapshot to R2 (all providers)")
+    publish = _step(job, "Publish static /v1 snapshot to R2 (all active providers)")
     publish_index = steps.index(publish)
     assert publish_index == provider_index + 1
     assert "if" not in publish
@@ -49,7 +49,7 @@ def test_static_provider_loop_attempts_every_provider_and_returns_first_failure(
 ) -> None:
     job = _load_workflow()["jobs"]["run-static-pipeline"]
     provider_step = _step(job, PROVIDER_STEP_NAME)
-    publish_step = _step(job, "Publish static /v1 snapshot to R2 (all providers)")
+    publish_step = _step(job, "Publish static /v1 snapshot to R2 (all active providers)")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     attempts = tmp_path / "attempts.txt"
@@ -62,7 +62,7 @@ def test_static_provider_loop_attempts_every_provider_and_returns_first_failure(
 #!/usr/bin/env bash
 set -eu
 if [[ "$*" == *"list-providers"* ]]; then
-  printf 'octranspo\\nstm\\nsto\\n'
+  printf 'octranspo\\nstm\\n'
   exit 0
 fi
 if [[ "$*" == *"run-static-pipeline"* ]]; then
@@ -70,9 +70,6 @@ if [[ "$*" == *"run-static-pipeline"* ]]; then
   printf '%s\\n' "$provider" >> "$ATTEMPTS"
   if [[ "$provider" == "octranspo" ]]; then
     exit 42
-  fi
-  if [[ "$provider" == "sto" ]]; then
-    exit 43
   fi
   exit 0
 fi
@@ -125,7 +122,6 @@ exec "$@"
     assert attempts.read_text(encoding="utf-8").splitlines() == [
         "octranspo",
         "stm",
-        "sto",
     ]
     assert timeout_calls.read_text(encoding="utf-8").splitlines() == [
         (
@@ -136,15 +132,10 @@ exec "$@"
             "--signal=TERM --kill-after=1m 30m uv run python -m "
             "transit_ops.cli run-static-pipeline stm"
         ),
-        (
-            "--signal=TERM --kill-after=1m 30m uv run python -m "
-            "transit_ops.cli run-static-pipeline sto"
-        ),
     ]
-    assert result.stdout.count("::endgroup::") == 3
+    assert result.stdout.count("::endgroup::") == 2
     assert "provider=octranspo outcome=failure exit_code=42" in result.stdout
     assert "provider=stm outcome=success exit_code=0" in result.stdout
-    assert "provider=sto outcome=failure exit_code=43" in result.stdout
 
     publish_script = tmp_path / "publish-step.sh"
     publish_script.write_text(publish_step["run"], encoding="utf-8")

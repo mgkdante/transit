@@ -1,5 +1,4 @@
 import type { GeocodedLocation, GeocodeSuggestion } from '$lib/geocode/types';
-import { hasCoordinates } from '$lib/geocode/types';
 import type { MapNearTarget } from '$lib/search/mapNear';
 import { parseCoordinateQuery } from './mapNearMe';
 
@@ -51,7 +50,7 @@ export interface MapNearMeController {
 	clear(): void;
 	useLocation(): void;
 	search(event: SubmitEvent): Promise<void>;
-	selectSuggestion(result: GeocodeSuggestion, sessionToken: string): Promise<void>;
+	selectSuggestion(result: GeocodeSuggestion): Promise<void>;
 }
 
 const NAVIGATION_OPTIONS = {
@@ -228,27 +227,10 @@ export function createMapNearMeController(
 		await resolveQuery(nextQuery);
 	}
 
-	async function resolvePlace(placeId: string, sessionToken: string): Promise<void> {
-		const result = await fetchLocation(
-			`/api/geocode/montreal?placeId=${encodeURIComponent(placeId)}&session=${encodeURIComponent(sessionToken)}`,
-		);
-		if (!result || disposed) return;
-		query = result.label;
-		setOrigin(result);
-	}
-
-	async function selectSuggestion(result: GeocodeSuggestion, sessionToken: string): Promise<void> {
+	async function selectSuggestion(result: GeocodeSuggestion): Promise<void> {
 		if (disposed) return;
 		query = result.label;
-		if (hasCoordinates(result)) {
-			setOrigin(result);
-			return;
-		}
-		if (result.placeId && result.source === 'google_places') {
-			await resolvePlace(result.placeId, sessionToken);
-			return;
-		}
-		await resolveQuery(result.label);
+		setOrigin(result);
 	}
 
 	function dispose(): void {

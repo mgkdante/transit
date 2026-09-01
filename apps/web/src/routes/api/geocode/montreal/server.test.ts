@@ -1,20 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const providers = vi.hoisted(() => ({
-	googlePlaceDetails: vi.fn(),
-	googlePlacesAutocompleteSuggestions: vi.fn(),
 	geocodeMontreal: vi.fn(),
 	geocodeMontrealSuggestions: vi.fn(),
 }));
 
-vi.mock('$env/dynamic/private', () => ({
-	env: { GOOGLE_MAPS_API_KEY: 'test-google-key' },
-}));
-vi.mock('$lib/geocode/googlePlaces', () => ({
-	googlePlaceDetails: providers.googlePlaceDetails,
-	googlePlacesAutocompleteSuggestions: providers.googlePlacesAutocompleteSuggestions,
-}));
-vi.mock('$lib/geocode/nominatim', () => ({
+vi.mock('$lib/geocode/geoCa', () => ({
 	geocodeMontreal: providers.geocodeMontreal,
 	geocodeMontrealSuggestions: providers.geocodeMontrealSuggestions,
 }));
@@ -25,7 +16,6 @@ type Handler = typeof GET;
 type HeaderValue = string | null;
 
 const ORIGIN = 'https://transit.yesid.dev';
-const VALID_SESSION = '123e4567-e89b-12d3-a456-426614174000';
 let clientSequence = 0;
 
 function event(
@@ -69,22 +59,6 @@ async function responseBody(response: Response): Promise<unknown> {
 beforeEach(() => {
 	clientSequence = 0;
 	for (const provider of Object.values(providers)) provider.mockReset();
-	providers.googlePlaceDetails.mockResolvedValue({
-		lat: 45.5,
-		lon: -73.6,
-		label: 'Montréal',
-		source: 'google_places',
-		precision: 'place',
-	});
-	providers.googlePlacesAutocompleteSuggestions.mockResolvedValue([
-		{
-			label: 'Montréal',
-			source: 'google_places',
-			precision: 'place',
-			placeId: 'ChIJDbdkHFQayUwR7-8fITgxTmU',
-			attribution: 'google',
-		},
-	]);
 	providers.geocodeMontreal.mockResolvedValue({
 		lat: 45.5,
 		lon: -73.6,
@@ -152,7 +126,7 @@ describe('/api/geocode/montreal provenance gate', () => {
 	it('runs provenance before mode parsing or the native rate decision', async () => {
 		const limit = vi.fn().mockResolvedValue({ success: true });
 		const response = await GET(
-			event(`?q=&placeId=&session=${VALID_SESSION}`, {
+			event('?q=&placeId=legacy', {
 				headers: { 'sec-fetch-site': null },
 				platformEnv: { GEOCODE_RATE_LIMITER: { limit } },
 			}),
@@ -167,9 +141,9 @@ describe('/api/geocode/montreal provenance gate', () => {
 describe('/api/geocode/montreal input contract', () => {
 	it.each([
 		['neither mode', ''],
-		['mixed q/placeId modes', `?q=Montr%C3%A9al&placeId=ChIJabc&session=${VALID_SESSION}`],
+		['the removed placeId mode', '?placeId=ChIJabc'],
+		['mixed q/placeId modes', '?q=Montr%C3%A9al&placeId=ChIJabc'],
 		['a repeated q mode', '?q=Montr%C3%A9al&q=Laval'],
-		['a repeated placeId mode', `?placeId=ChIJabc&placeId=ChIJdef&session=${VALID_SESSION}`],
 		['an empty query', '?q='],
 		['a 161-code-point query', `?q=${'a'.repeat(161)}`],
 		[
@@ -177,22 +151,7 @@ describe('/api/geocode/montreal input contract', () => {
 			`?q=${encodeURIComponent(`${' '.repeat(160)}a`)}`,
 		],
 		['a query containing a control character', `?q=${encodeURIComponent('rue\nBerri')}`],
-		['an empty placeId', `?placeId=&session=${VALID_SESSION}`],
-		['a 256-character placeId', `?placeId=${'a'.repeat(256)}&session=${VALID_SESSION}`],
-		[
-			'a placeId whose raw length exceeds the bound using surrounding whitespace',
-			`?placeId=${encodeURIComponent(`${' '.repeat(255)}a`)}&session=${VALID_SESSION}`,
-		],
-		[
-			'a placeId containing a control character',
-			`?placeId=${encodeURIComponent('ChIJ\nabc')}&session=${VALID_SESSION}`,
-		],
-		['suggest mode without a session', '?q=Montr%C3%A9al&suggest=1'],
-		['Details mode without a session', '?placeId=ChIJabc'],
-		['a 37-character session', `?q=Montr%C3%A9al&suggest=1&session=${'a'.repeat(37)}`],
-		['a non-URL-safe session', '?q=Montr%C3%A9al&suggest=1&session=session.token'],
-		['a repeated session', `?q=Montr%C3%A9al&suggest=1&session=${VALID_SESSION}&session=second`],
-		['an invalid optional session on text geocode', '?q=Montr%C3%A9al&session=bad.token'],
+		['the removed session parameter', '?q=Montr%C3%A9al&session=legacy'],
 	] as const)('returns 400 with zero provider calls for %s', async (_case, query) => {
 		const response = await GET(event(query));
 
@@ -208,26 +167,48 @@ describe('/api/geocode/montreal input contract', () => {
 		expect(providers.geocodeMontreal).toHaveBeenCalledWith(query, expect.any(Function));
 	});
 
-	it('accepts the exact q, placeId, and session upper bounds', async () => {
+	it('accepts the exact query upper bound', async () => {
 		const queryResponse = await GET(event(`?q=${'é'.repeat(160)}`));
-		const detailsResponse = await GET(
-			event(`?placeId=${'a'.repeat(255)}&session=${'s'.repeat(36)}`),
-		);
 
 		expect(queryResponse.status).toBe(200);
-		expect(detailsResponse.status).toBe(200);
-		expect(providers.googlePlaceDetails).toHaveBeenCalledWith(
-			'a'.repeat(255),
-			'test-google-key',
+	});
+
+	it('serves Geo.ca suggestions without a provider session', async () => {
+		providers.geocodeMontrealSuggestions.mockResolvedValueOnce([
+			{
+				lat: 45.5,
+				lon: -73.6,
+				label: 'Montréal',
+				source: 'geo_ca',
+				precision: 'place',
+			},
+		]);
+
+		const response = await GET(event('?q=Montr%C3%A9al&suggest=1&limit=4'));
+
+		expect(response.status).toBe(200);
+		expect(providers.geocodeMontrealSuggestions).toHaveBeenCalledWith(
+			'Montréal',
 			expect.any(Function),
-			{ sessionToken: 's'.repeat(36), languageCode: 'en' },
+			4,
 		);
+		expect(await responseBody(response)).toEqual({
+			results: [
+				{
+					lat: 45.5,
+					lon: -73.6,
+					label: 'Montréal',
+					source: 'geo_ca',
+					precision: 'place',
+				},
+			],
+		});
 	});
 
 	it('runs exact-mode parsing and validation before the native rate decision', async () => {
 		const limit = vi.fn().mockResolvedValue({ success: true });
 		const response = await GET(
-			event(`?q=&placeId=&session=${VALID_SESSION}`, {
+			event('?q=&placeId=legacy', {
 				platformEnv: { GEOCODE_RATE_LIMITER: { limit } },
 			}),
 		);
@@ -240,17 +221,7 @@ describe('/api/geocode/montreal input contract', () => {
 });
 
 describe('/api/geocode/montreal privacy cache contract', () => {
-	it('marks a missing Google Place Details result private and non-cacheable', async () => {
-		providers.googlePlaceDetails.mockResolvedValueOnce(null);
-
-		const response = await GET(event(`?placeId=ChIJabc&session=${VALID_SESSION}`));
-
-		expect(response.status).toBe(404);
-		expect(response.headers.get('cache-control')).toBe('private, no-store');
-	});
-
-	it('marks geo.ca fallback suggestions private and non-cacheable', async () => {
-		providers.googlePlacesAutocompleteSuggestions.mockResolvedValueOnce([]);
+	it('marks Geo.ca suggestions private and non-cacheable', async () => {
 		providers.geocodeMontrealSuggestions.mockResolvedValueOnce([
 			{
 				lat: 45.5,
@@ -261,7 +232,7 @@ describe('/api/geocode/montreal privacy cache contract', () => {
 			},
 		]);
 
-		const response = await GET(event(`?q=Montr%C3%A9al&suggest=1&session=${VALID_SESSION}`));
+		const response = await GET(event('?q=Montr%C3%A9al&suggest=1'));
 
 		expect(response.status).toBe(200);
 		expect(response.headers.get('cache-control')).toBe('private, no-store');

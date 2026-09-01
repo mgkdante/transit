@@ -34,7 +34,7 @@ def test_measure_alert_language_coverage_outputs_receipt_and_forwards_retain(
 ) -> None:  # noqa: ANN001
     manifest = SimpleNamespace(provider=SimpleNamespace(provider_id="stm"))
     registry = SimpleNamespace(
-        list_provider_ids=lambda: ["stm"],
+        list_active_provider_ids=lambda: ["stm"],
         get_provider=lambda provider_id: manifest,
     )
     measurement = AlertLanguageCoverageMeasurement(

@@ -110,7 +110,7 @@ def test_publish_snapshot_full_historic_rebuild_forwards_and_preserves_output(mo
     assert "--full-historic-rebuild requires --tier historic" in rejected.output
 
 
-def test_publish_all_cmd_loops_every_provider(monkeypatch):
+def test_publish_all_cmd_loops_every_active_provider(monkeypatch):
     calls = []
 
     def fake(provider_id, **kw):
@@ -126,7 +126,7 @@ def test_publish_all_cmd_loops_every_provider(monkeypatch):
     result = CliRunner().invoke(cli.app, ["publish-all", "--tier", "static"])
 
     assert result.exit_code == 0, result.output
-    assert calls == ["octranspo", "stm", "sto"]  # every enrolled (seeded) provider
+    assert calls == ["octranspo", "stm"]
     assert "manifest.json" in result.output
 
 

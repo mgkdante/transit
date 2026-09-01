@@ -19,7 +19,15 @@ Inter and JetBrains Mono files under `apps/web/static/fonts` and
 `apps/web/scripts/og-fonts` are distributed with the SIL Open Font License 1.1
 text at
 [`apps/web/static/fonts/LICENSES.txt`](apps/web/static/fonts/LICENSES.txt).
-This index does not assert an unverified acquisition source for the TTF files.
+
+The three Satori-compatible TTF files are byte-identical to the documented
+official artifacts used by yesid.dev:
+
+| File | Source | SHA-256 |
+|---|---|---|
+| `Inter-Medium.ttf` | [Inter 4.1 release archive](https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip), `extras/ttf/Inter-Medium.ttf` | `97ad806f526e41546d46365bb3a393145f75b7b1568913db74549ad8b8dba872` |
+| `Inter-Black.ttf` | [Inter 4.1 release archive](https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip), `extras/ttf/Inter-Black.ttf` | `6342d3ea6dc088b43867f615e807d898adf100c93edb978b8e52c5eb71a264da` |
+| `JetBrainsMono-Medium.ttf` | [JetBrains Mono v2.304](https://github.com/JetBrains/JetBrainsMono/tree/v2.304/fonts/ttf), `JetBrainsMono-Medium.ttf` | `31c92d01a8a08528b718a43addf0ad3df0af2ca4b7b3290a452f70f358e14d3d` |
 
 ## Maps and transit-provider material
 
@@ -33,8 +41,16 @@ the applicable map attribution. The in-repository provider manifests are
 [`sto.yaml`](apps/db/config/providers/sto.yaml).
 
 STM, OC Transpo, and STO data and marks remain their owners' material under
-their applicable terms and configured attribution. Transit is independent and
-is not affiliated with those agencies.
+their applicable terms and configured attribution:
+
+- [STM developer conditions](https://www.stm.info/fr/a-propos/developpeurs/condition-dutilisation), including CC BY 4.0;
+- [Open Government Licence – City of Ottawa](https://ottawa.ca/en/city-hall/open-transparent-and-accountable-government/open-data/open-data-licence-version-20);
+- [STO open-data conditions](https://www.sto.ca/en/business/developer-space-open-data/terms-of-use-stos-open-data-and-api-key/). The STO provider template is inactive and no STO data is published; activation requires the exact bilingual statement with the source-data update date used.
+
+Transit is independent and is not affiliated with those agencies.
+
+Address search uses the Government of Canada
+[Geo.ca Geolocation Service](https://natural-resources.canada.ca/maps-tools-publications/satellite-elevation-air-photos/geolocation-service).
 
 The root MIT grant does not relicense third-party data, fonts, marks, or other
 file-specific material.

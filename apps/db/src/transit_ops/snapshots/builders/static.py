@@ -244,7 +244,7 @@ def build_labels(
          type == 1 (métro), with gap.metro_realtime.short as the compact badge.
       2. The attribution surface is labels['attribution.data_source'] +
          labels['attribution.disclaimer']; manifest.attribution is the unlocalized
-         machine-level fallback, frozen until the STM licensing determination (T1).
+         machine-level fallback from the provider manifest.
     """
     static = _STATIC_LABELS_FR if lang == "fr" else _STATIC_LABELS_EN
     labels: dict[str, str] = dict(static)

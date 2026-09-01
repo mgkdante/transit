@@ -113,34 +113,6 @@ describe('chromeSearchResults', () => {
 		});
 	});
 
-	it('keeps Google autocomplete suggestions coordinate-less for local resolution on selection', () => {
-		const results = chromeSearchResults('casgrain', {
-			addresses: [
-				{
-					label: '5333 Avenue Casgrain, Montréal, QC, Canada',
-					source: 'google_places',
-					precision: 'address',
-					placeId: 'google-address',
-					attribution: 'google',
-				},
-			],
-		});
-
-		expect(results[0]).toMatchObject({
-			kind: 'address',
-			id: 'google:google-address',
-			label: '5333 Avenue Casgrain, Montréal, QC, Canada',
-			meta: 'Address',
-			attribution: 'google',
-			// placeId + source ride through so selection can resolve by Place Details
-			// instead of re-text-searching the label (the wrong-place fix).
-			placeId: 'google-address',
-			source: 'google_places',
-		});
-		expect(results[0]?.lat).toBeUndefined();
-		expect(results[0]?.lon).toBeUndefined();
-	});
-
 	it('finds métro stations and accented names the way riders type them', () => {
 		const metro: StopIndexEntry[] = [
 			{ id: '10146', code: '10146', name: 'Station Berri-UQAM', lat: 45.51, lon: -73.56 },
@@ -465,7 +437,7 @@ describe('chromeSearchResults mode filter', () => {
 				lat: 45.53,
 				lon: -73.6,
 				precision: 'address' as const,
-				source: 'google_places' as const,
+				source: 'geo_ca' as const,
 			},
 		];
 		const metro = chromeSearchResults(

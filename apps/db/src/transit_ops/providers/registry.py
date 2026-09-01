@@ -50,6 +50,13 @@ class ProviderRegistry:
     def list_provider_ids(self) -> list[str]:
         return list(self._providers.keys())
 
+    def list_active_provider_ids(self) -> list[str]:
+        return [
+            provider_id
+            for provider_id, manifest in self._providers.items()
+            if manifest.provider.is_active
+        ]
+
     def get_provider(self, provider_id: str) -> ProviderManifest:
         try:
             return self._providers[provider_id]

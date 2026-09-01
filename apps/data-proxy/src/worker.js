@@ -1,14 +1,17 @@
 // transit-data-proxy — read-only Cloudflare Worker serving the public /v1
 // snapshot contract from the transit-snapshots R2 bucket on the route
 // transit.yesid.dev/data/* (slice-9.1.1p), plus the aggregated public KPI
-// endpoint on transit.yesid.dev/api/v1/* (src/kpis.js).
+// endpoint on transit.yesid.dev/api/v1/* (src/kpis.js). A narrow direct-domain
+// route also quarantines the retired /v1/sto/* prefix with 410 responses. The
+// direct data route is temporarily broad during STO storage retirement; every
+// other direct-host request passes through unchanged to the R2 custom-domain
+// origin and the route is removed after retirement is proven.
 //
 // Contract: GET/HEAD only; Content-Type and Cache-Control written at publish
 // time (db/src/transit_ops/snapshots/storage.py) pass through unchanged via
 // writeHttpMetadata; errors are never cacheable (no-store); CORS is wide open
 // (public read-only data) so the slice-9.2 app can fetch the canonical host
-// directly from any dev or prod origin. data.yesid.dev stays untouched as the
-// fallback origin — this worker never writes to the bucket.
+// directly from any dev or prod origin. This worker never writes to the bucket.
 import { CORS_HEADERS, PREFLIGHT_HEADERS } from "./cors.js";
 import { serveKpis } from "./kpis.js";
 
@@ -16,9 +19,11 @@ import { serveKpis } from "./kpis.js";
 // onto bucket keys (e.g. /data/v1/stm/manifest.json -> v1/stm/manifest.json).
 const KEY_PREFIX = "/data/";
 const SERVABLE_PREFIX = "/data/v1/";
+const DIRECT_DATA_HOST = "data.yesid.dev";
 
 const KPIS_PATH = "/api/v1/kpis";
 const API_PREFIX = "/api/v1/";
+const RETIRED_STO_PREFIXES = ["/data/v1/sto/", "/v1/sto/"];
 
 function errorResponse(status, extraHeaders = {}) {
   // no-store: a transient 404/405 must never stick in any browser or
@@ -83,25 +88,36 @@ export default {
       return errorResponse(405, { allow: "GET, HEAD, OPTIONS" });
     }
 
-    const { pathname } = new URL(request.url);
-    if (pathname === KPIS_PATH) {
+    const { hostname, pathname } = new URL(request.url);
+    let decodedPathname;
+    try {
+      decodedPathname = decodeURIComponent(pathname);
+    } catch {
+      return errorResponse(404); // malformed percent-encoding
+    }
+    if (
+      RETIRED_STO_PREFIXES.some((prefix) =>
+        decodedPathname.startsWith(prefix),
+      )
+    ) {
+      return errorResponse(410);
+    }
+    if (hostname === DIRECT_DATA_HOST) {
+      return fetch(request);
+    }
+    if (decodedPathname === KPIS_PATH) {
       return serveKpis(request, env, ctx);
     }
-    if (pathname.startsWith(API_PREFIX)) {
+    if (decodedPathname.startsWith(API_PREFIX)) {
       // The /api/v1/* zone route lands here for paths this worker doesn't
       // define yet — a clean, uncacheable 404 (never the web app's HTML).
       return errorResponse(404);
     }
-    if (!pathname.startsWith(SERVABLE_PREFIX)) {
+    if (!decodedPathname.startsWith(SERVABLE_PREFIX)) {
       return errorResponse(404);
     }
 
-    let key;
-    try {
-      key = decodeURIComponent(pathname.slice(KEY_PREFIX.length));
-    } catch {
-      return errorResponse(404); // malformed percent-encoding
-    }
+    const key = decodedPathname.slice(KEY_PREFIX.length);
     if (key.includes("..")) {
       // URL() normalizes literal dot-segments; this guards the encoded form.
       return errorResponse(404);

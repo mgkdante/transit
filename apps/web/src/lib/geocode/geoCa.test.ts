@@ -4,7 +4,7 @@ import {
 	geocodeMontreal,
 	geocodeMontrealSuggestions,
 	type GeocodeFetcher,
-} from './nominatim';
+} from './geoCa';
 
 function jsonResponse(payload: unknown): Response {
 	return new Response(JSON.stringify(payload), {

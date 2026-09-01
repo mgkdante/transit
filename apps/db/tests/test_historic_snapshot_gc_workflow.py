@@ -85,7 +85,7 @@ def test_historic_gc_workflow_serializes_with_publication_and_keeps_provider_rec
     job = workflow["jobs"]["mark"]
     assert job["timeout-minutes"] == 300
     assert "strategy" not in job
-    assert json.loads(job["env"]["PROVIDER_PLAN"]) == ["stm", "octranspo", "sto"]
+    assert json.loads(job["env"]["PROVIDER_PLAN"]) == ["stm", "octranspo"]
     assert job["env"]["GC_MODE"] == (
         "${{ github.event_name == 'schedule' && 'mark' || inputs.mode }}"
     )

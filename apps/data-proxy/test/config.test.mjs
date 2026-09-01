@@ -13,11 +13,12 @@ function routePatterns(config) {
   return [...routes[1].matchAll(/pattern\s*=\s*"([^"]+)"/g)].map((match) => match[1]);
 }
 
-test("deployment config keeps the data and KPI routes narrowly scoped", () => {
+test("deployment config temporarily quarantines every direct snapshot path", () => {
   const config = readFileSync(configPath, "utf8");
   assert.deepEqual(routePatterns(config), [
     "transit.yesid.dev/data/*",
     "transit.yesid.dev/api/v1/*",
+    "data.yesid.dev/*",
   ]);
 });
 

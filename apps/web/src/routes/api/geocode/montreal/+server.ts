@@ -1,19 +1,15 @@
 import { json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
-import { googlePlaceDetails, googlePlacesAutocompleteSuggestions } from '$lib/geocode/googlePlaces';
-import { geocodeMontreal, geocodeMontrealSuggestions } from '$lib/geocode/nominatim';
+import { geocodeMontreal, geocodeMontrealSuggestions } from '$lib/geocode/geoCa';
 import {
 	GEOCODE_RATE_LIMIT,
 	TokenBucketLimiter,
 	type TokenBucketDecision,
 } from '$lib/geocode/rateLimit.server';
-import { isGooglePlacesSessionToken } from '$lib/geocode/sessionToken';
 
 export const prerender = false;
 
 const QUERY_MAX_CODE_POINTS = 160;
-const PLACE_ID_MAX_CODE_POINTS = 255;
 const NATIVE_RATE_WINDOW_SECONDS = 60;
 const MISSING_IP_KEY = '__missing_cf_connecting_ip__';
 const CONTROL_CHARACTER = /\p{Cc}/u;
@@ -27,18 +23,10 @@ const missingIpLimiter = new TokenBucketLimiter(GEOCODE_RATE_LIMIT.missingIp, {
 	maxEntries: GEOCODE_RATE_LIMIT.maxMissingIpEntries,
 });
 
-type ParsedGeocodeRequest =
-	| {
-			readonly mode: 'details';
-			readonly placeId: string;
-			readonly sessionToken: string;
-	  }
-	| {
-			readonly mode: 'query';
-			readonly query: string;
-			readonly suggest: boolean;
-			readonly sessionToken: string | null;
-	  };
+interface ParsedGeocodeRequest {
+	readonly query: string;
+	readonly suggest: boolean;
+}
 
 type ParseResult =
 	| { readonly ok: true; readonly value: ParsedGeocodeRequest }
@@ -60,54 +48,11 @@ export const GET: RequestHandler = async ({ url, request, fetch, platform }) => 
 	const rate = await decideRate(request.headers, platform?.env);
 	if (!rate.allowed) return rateLimited(rate.retryAfterSeconds);
 
-	// Place-Details mode: resolve a Google placeId to exact coordinates server-side
-	// (keeps the API key off the client and closes the autocomplete billing
-	// session). This is what a picked Google suggestion calls instead of
-	// re-text-searching its label — the fix for the wrong-place bug.
-	if (parsed.value.mode === 'details') {
-		const detail = await googlePlaceDetails(parsed.value.placeId, googlePlacesApiKey(), fetch, {
-			sessionToken: parsed.value.sessionToken,
-			languageCode: 'en',
-		}).catch(() => null);
-		if (!detail) {
-			return json(
-				{ error: 'not_found' },
-				{ status: 404, headers: { 'cache-control': 'private, no-store' } },
-			);
-		}
-		return json(detail, {
-			headers: {
-				'cache-control': 'private, max-age=0, no-store',
-			},
-		});
-	}
-
 	if (parsed.value.suggest) {
 		const requestedLimit = Number(url.searchParams.get('limit') ?? 5);
 		const limit = Number.isFinite(requestedLimit)
 			? Math.min(Math.max(Math.trunc(requestedLimit), 1), 6)
 			: 5;
-		const googleResults = await googlePlacesAutocompleteSuggestions(
-			parsed.value.query,
-			googlePlacesApiKey(),
-			fetch,
-			{
-				limit,
-				sessionToken: parsed.value.sessionToken,
-				languageCode: 'en',
-			},
-		).catch(() => []);
-		if (googleResults.length > 0) {
-			return json(
-				{ results: googleResults, attribution: 'google' },
-				{
-					headers: {
-						'cache-control': 'private, max-age=0, no-store',
-					},
-				},
-			);
-		}
-
 		const results = await geocodeMontrealSuggestions(parsed.value.query, fetch, limit);
 		return json(
 			{ results },
@@ -134,38 +79,10 @@ export const GET: RequestHandler = async ({ url, request, fetch, platform }) => 
 	});
 };
 
-function googlePlacesApiKey(): string | undefined {
-	return env.GOOGLE_MAPS_API_KEY ?? env.GOOGLE_PLACES_API_KEY ?? env.GOOGLE_MAPS_PLATFORM_API_KEY;
-}
-
 function parseGeocodeRequest(searchParams: URLSearchParams): ParseResult {
 	const queries = searchParams.getAll('q');
-	const placeIds = searchParams.getAll('placeId');
-	const hasExactlyOneQuery = queries.length === 1 && placeIds.length === 0;
-	const hasExactlyOnePlaceId = placeIds.length === 1 && queries.length === 0;
-	if (!hasExactlyOneQuery && !hasExactlyOnePlaceId) {
+	if (queries.length !== 1 || searchParams.has('placeId') || searchParams.has('session')) {
 		return { ok: false, error: 'invalid_mode' };
-	}
-
-	const sessions = searchParams.getAll('session');
-	if (sessions.length > 1) return { ok: false, error: 'invalid_session' };
-	const sessionToken = sessions[0] ?? null;
-	if (sessionToken != null && !isGooglePlacesSessionToken(sessionToken)) {
-		return { ok: false, error: 'invalid_session' };
-	}
-
-	if (hasExactlyOnePlaceId) {
-		const rawPlaceId = placeIds[0];
-		const placeId = rawPlaceId.trim();
-		if (
-			!placeId ||
-			codePointLength(rawPlaceId) > PLACE_ID_MAX_CODE_POINTS ||
-			CONTROL_CHARACTER.test(rawPlaceId)
-		) {
-			return { ok: false, error: 'invalid_place_id' };
-		}
-		if (sessionToken == null) return { ok: false, error: 'invalid_session' };
-		return { ok: true, value: { mode: 'details', placeId, sessionToken } };
 	}
 
 	const rawQuery = queries[0];
@@ -178,8 +95,7 @@ function parseGeocodeRequest(searchParams: URLSearchParams): ParseResult {
 		return { ok: false, error: 'invalid_query' };
 	}
 	const suggest = searchParams.get('suggest') === '1';
-	if (suggest && sessionToken == null) return { ok: false, error: 'invalid_session' };
-	return { ok: true, value: { mode: 'query', query, suggest, sessionToken } };
+	return { ok: true, value: { query, suggest } };
 }
 
 function codePointLength(value: string): number {
