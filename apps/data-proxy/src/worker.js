@@ -1,14 +1,14 @@
 // transit-data-proxy — read-only Cloudflare Worker serving the public /v1
 // snapshot contract from the transit-snapshots R2 bucket on the route
 // transit.yesid.dev/data/* (slice-9.1.1p), plus the aggregated public KPI
-// endpoint on transit.yesid.dev/api/v1/* (src/kpis.js).
+// endpoint on transit.yesid.dev/api/v1/* (src/kpis.js). A narrow direct-domain
+// route also quarantines the retired /v1/sto/* prefix with 410 responses.
 //
 // Contract: GET/HEAD only; Content-Type and Cache-Control written at publish
 // time (db/src/transit_ops/snapshots/storage.py) pass through unchanged via
 // writeHttpMetadata; errors are never cacheable (no-store); CORS is wide open
 // (public read-only data) so the slice-9.2 app can fetch the canonical host
-// directly from any dev or prod origin. data.yesid.dev stays untouched as the
-// fallback origin — this worker never writes to the bucket.
+// directly from any dev or prod origin. This worker never writes to the bucket.
 import { CORS_HEADERS, PREFLIGHT_HEADERS } from "./cors.js";
 import { serveKpis } from "./kpis.js";
 
@@ -19,6 +19,7 @@ const SERVABLE_PREFIX = "/data/v1/";
 
 const KPIS_PATH = "/api/v1/kpis";
 const API_PREFIX = "/api/v1/";
+const RETIRED_STO_PREFIXES = ["/data/v1/sto/", "/v1/sto/"];
 
 function errorResponse(status, extraHeaders = {}) {
   // no-store: a transient 404/405 must never stick in any browser or
@@ -84,6 +85,9 @@ export default {
     }
 
     const { pathname } = new URL(request.url);
+    if (RETIRED_STO_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+      return errorResponse(410);
+    }
     if (pathname === KPIS_PATH) {
       return serveKpis(request, env, ctx);
     }

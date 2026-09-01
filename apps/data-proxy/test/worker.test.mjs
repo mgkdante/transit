@@ -165,6 +165,23 @@ test("GET path outside /data/v1 returns 404", async () => {
   }
 });
 
+test("retired STO paths return uncacheable 410 on compatibility and direct hosts", async () => {
+  for (const url of [
+    `${BASE}/data/v1/sto/static/routes_index.json`,
+    "https://data.yesid.dev/v1/sto/static/routes_index.json",
+  ]) {
+    for (const method of ["GET", "HEAD"]) {
+      const response = await worker.fetch(
+        new Request(url, { method }),
+        makeEnv(),
+      );
+      assert.equal(response.status, 410, `${method} ${url}`);
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      assert.equal(await response.text(), "");
+    }
+  }
+});
+
 test("POST returns 405 with Allow GET, HEAD, OPTIONS", async () => {
   for (const method of ["POST", "PUT", "DELETE", "PATCH"]) {
     const response = await fetchWorker("/data/v1/stm/manifest.json", {
