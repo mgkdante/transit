@@ -46,7 +46,6 @@ def test_wrangler_config_routes_public_contracts_to_snapshots_bucket() -> None:
     assert config["routes"] == [
         {"pattern": "transit.yesid.dev/data/*", "zone_name": "yesid.dev"},
         {"pattern": "transit.yesid.dev/api/v1/*", "zone_name": "yesid.dev"},
-        {"pattern": "data.yesid.dev/*", "zone_name": "yesid.dev"},
     ]
     assert config["r2_buckets"] == [{"binding": "SNAPSHOTS", "bucket_name": "transit-snapshots"}]
 
@@ -227,9 +226,13 @@ def test_smoke_recovers_when_kpi_route_appears_after_propagation(
                 */api/vitals) printf 400 ;;
                 */api/v1/definitely-missing) printf 404 ;;
                 */definitely-missing.json|*/secrets.txt) printf 404 ;;
+                https://canonical.test/v1/sto/static/routes_index.json|\
+                https://canonical.test/v1%2Fsto/static/routes_index.json|\
+                https://canonical.test/%761%2Fsto/static/routes_index.json|\
+                https://canonical.test/v1/sto%2Fstatic/routes_index.json|\
+                https://canonical.test/v1/%73to/static/routes_index.json) printf 404 ;;
                 */v1/sto/static/routes_index.json|\
                 */v1%2Fsto/static/routes_index.json|\
-                */%761%2Fsto/static/routes_index.json|\
                 */v1/sto%2Fstatic/routes_index.json|\
                 */v1/%73to/static/routes_index.json) printf 410 ;;
                 */manifest.json)
@@ -301,7 +304,7 @@ def test_smoke_recovers_when_kpi_route_appears_after_propagation(
         **os.environ,
         "PATH": f"{mock_bin}:{os.environ['PATH']}",
         "CURL_COUNT_FILE": str(count_file),
-        "CANONICAL_BASE": "https://canonical.test/data",
+        "CANONICAL_BASE": "https://canonical.test",
         "FALLBACK_BASE": "https://fallback.test",
         "APEX_BASE": "https://apex.test",
         "KPIS_MAX_ATTEMPTS": "3",
