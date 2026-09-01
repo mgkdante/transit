@@ -85,6 +85,8 @@ describe('LegalDocument', () => {
 	it('binds both localized documents to the actual publication date', () => {
 		expect(LEGAL_EFFECTIVE_DATE).toBe('2026-09-01');
 		expect(legalDocument('en', 'privacy').effectiveDate).toBe('September 1, 2026');
+		expect(legalDocument('en', 'terms').effectiveDate).toBe('September 1, 2026');
 		expect(legalDocument('fr', 'privacy').effectiveDate).toBe('1er septembre 2026');
+		expect(legalDocument('fr', 'terms').effectiveDate).toBe('1er septembre 2026');
 	});
 });
