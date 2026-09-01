@@ -115,6 +115,7 @@ jobs:
               'https://data.yesid.dev/v1/%73to/static/routes_index.json' \
               'https://transit.yesid.dev/data/v1/sto/static/routes_index.json' \
               'https://transit.yesid.dev/data/v1%2Fsto/static/routes_index.json' \
+              'https://transit.yesid.dev/data/v1/sto%2Fstatic/routes_index.json' \
               'https://transit.yesid.dev/data/v1/%73to/static/routes_index.json'; do
               for method in GET HEAD; do
                 if [[ "$method" == HEAD ]]; then
@@ -225,36 +226,55 @@ jobs:
 
           full_count="$(jq length full-manifest.json)"
           full_bytes="$(jq '[.[].Size] | add // 0' full-manifest.json)"
-          jq -n \
-            --arg source_bucket "$SNAPSHOT_BUCKET" \
-            --arg source_prefix "$source_prefix" \
-            --arg backup_bucket "$BACKUP_BUCKET" \
-            --arg backup_data_prefix "$backup_data_prefix" \
-            --arg backup_evidence_prefix "$backup_evidence_prefix" \
-            --arg manifest_sha256 "$(sha256sum full-manifest.json | cut -d' ' -f1)" \
-            --arg github_sha "$GITHUB_SHA" \
-            --arg github_run_id "$GITHUB_RUN_ID" \
-            --argjson objects "$full_count" \
-            --argjson bytes "$full_bytes" \
-            --argjson objects_present_at_start "$source_count" \
-            --argjson delete_batches "$delete_batch" \
-            '{schema_version:1, source_bucket:$source_bucket, source_prefix:$source_prefix,
-              backup_bucket:$backup_bucket, backup_data_prefix:$backup_data_prefix,
-              backup_evidence_prefix:$backup_evidence_prefix, objects:$objects, bytes:$bytes,
-              objects_present_at_start:$objects_present_at_start,
-              delete_batches:$delete_batches, manifest_sha256:$manifest_sha256,
-              github_sha:$github_sha, github_run_id:$github_run_id,
-              cache_prefixes_purged:["data.yesid.dev","transit.yesid.dev/data/v1"],
-              source_remaining:0, quarantine_status:410}' \
-            | tee retirement-receipt.json
-          aws --endpoint-url "$S3_ENDPOINT" s3 cp \
-            retirement-receipt.json \
-            "s3://${BACKUP_BUCKET}/${durable_receipt_key}" \
-            --content-type application/json --only-show-errors
-          aws --endpoint-url "$S3_ENDPOINT" s3 cp \
-            "s3://${BACKUP_BUCKET}/${durable_receipt_key}" \
-            durable-receipt-readback.json --only-show-errors
-          cmp retirement-receipt.json durable-receipt-readback.json
+          manifest_sha256="$(sha256sum full-manifest.json | cut -d' ' -f1)"
+          if aws --endpoint-url "$S3_ENDPOINT" s3api head-object \
+            --bucket "$BACKUP_BUCKET" --key "$durable_receipt_key" \
+            > durable-receipt-head.json 2>/dev/null; then
+            aws --endpoint-url "$S3_ENDPOINT" s3 cp \
+              "s3://${BACKUP_BUCKET}/${durable_receipt_key}" \
+              retirement-receipt.json --only-show-errors
+            jq -e \
+              --arg manifest_sha256 "$manifest_sha256" \
+              --argjson objects "$full_count" \
+              --argjson bytes "$full_bytes" \
+              '.manifest_sha256 == $manifest_sha256
+               and .objects == $objects
+               and .bytes == $bytes
+               and .source_remaining == 0
+               and .quarantine_status == 410' \
+              retirement-receipt.json >/dev/null
+          else
+            jq -n \
+              --arg source_bucket "$SNAPSHOT_BUCKET" \
+              --arg source_prefix "$source_prefix" \
+              --arg backup_bucket "$BACKUP_BUCKET" \
+              --arg backup_data_prefix "$backup_data_prefix" \
+              --arg backup_evidence_prefix "$backup_evidence_prefix" \
+              --arg manifest_sha256 "$manifest_sha256" \
+              --arg github_sha "$GITHUB_SHA" \
+              --arg github_run_id "$GITHUB_RUN_ID" \
+              --argjson objects "$full_count" \
+              --argjson bytes "$full_bytes" \
+              --argjson objects_present_at_start "$source_count" \
+              --argjson delete_batches "$delete_batch" \
+              '{schema_version:1, source_bucket:$source_bucket, source_prefix:$source_prefix,
+                backup_bucket:$backup_bucket, backup_data_prefix:$backup_data_prefix,
+                backup_evidence_prefix:$backup_evidence_prefix, objects:$objects, bytes:$bytes,
+                objects_present_at_start:$objects_present_at_start,
+                delete_batches:$delete_batches, manifest_sha256:$manifest_sha256,
+                github_sha:$github_sha, github_run_id:$github_run_id,
+                cache_prefixes_purged:["data.yesid.dev","transit.yesid.dev/data/v1"],
+                source_remaining:0, quarantine_status:410}' \
+              | tee retirement-receipt.json
+            aws --endpoint-url "$S3_ENDPOINT" s3 cp \
+              retirement-receipt.json \
+              "s3://${BACKUP_BUCKET}/${durable_receipt_key}" \
+              --content-type application/json --only-show-errors
+            aws --endpoint-url "$S3_ENDPOINT" s3 cp \
+              "s3://${BACKUP_BUCKET}/${durable_receipt_key}" \
+              durable-receipt-readback.json --only-show-errors
+            cmp retirement-receipt.json durable-receipt-readback.json
+          fi
 
       - name: Upload retirement evidence
         if: always()

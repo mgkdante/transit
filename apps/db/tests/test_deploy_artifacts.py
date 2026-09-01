@@ -786,9 +786,14 @@ def test_sto_retirement_workflow_backs_up_and_verifies_before_deleting() -> None
     assert "v1%2Fsto/static/routes_index.json" in script
     assert "%761%2Fsto/static/routes_index.json" in script
     assert "%73to/static/routes_index.json" in script
+    for quarantined_url in (
+        "https://data.yesid.dev/v1/sto%2Fstatic/routes_index.json",
+        "https://transit.yesid.dev/data/v1/sto%2Fstatic/routes_index.json",
+    ):
+        assert quarantined_url in script
 
 
-def test_sto_retirement_resumes_from_durable_backup_after_post_delete_failure(
+def test_sto_retirement_resumes_from_durable_backup_after_partial_delete(
     tmp_path: Path,
 ) -> None:
     workflow = yaml.safe_load(
@@ -807,8 +812,12 @@ def test_sto_retirement_resumes_from_durable_backup_after_post_delete_failure(
     (state_dir / "source.json").write_text(
         json.dumps(
             [
-                {"Key": "v1/sto/a.json", "Size": 10, "ETag": '"etag-a"'},
-                {"Key": "v1/sto/b.json", "Size": 20, "ETag": '"etag-b"'},
+                {
+                    "Key": f"v1/sto/object-{index:04}.json",
+                    "Size": index + 1,
+                    "ETag": f'"etag-{index:04}"',
+                }
+                for index in range(1001)
             ]
         ),
         encoding="utf-8",
@@ -861,7 +870,18 @@ def test_sto_retirement_resumes_from_durable_backup_after_post_delete_failure(
                     raise SystemExit(1)
                 print(json.dumps({"ContentLength": evidence.stat().st_size}))
             elif "delete-objects" in args:
-                request = json.loads(Path(option("--delete").removeprefix("file://")).read_text(encoding="utf-8"))
+                count_path = state / "delete-count"
+                count = (
+                    int(count_path.read_text(encoding="utf-8"))
+                    if count_path.exists()
+                    else 0
+                )
+                count += 1
+                count_path.write_text(str(count), encoding="utf-8")
+                if os.environ.get("FAIL_SECOND_DELETE") == "1" and count == 2:
+                    raise SystemExit(70)
+                request_path = Path(option("--delete").removeprefix("file://"))
+                request = json.loads(request_path.read_text(encoding="utf-8"))
                 keys = {item["Key"] for item in request["Objects"]}
                 source = load("source.json")
                 save("source.json", [item for item in source if item["Key"] not in keys])
@@ -923,19 +943,11 @@ def test_sto_retirement_resumes_from_durable_backup_after_post_delete_failure(
             r"""
             #!/usr/bin/env python3
             import json
-            import os
             import sys
 
             args = sys.argv[1:]
             url = next((value for value in args if value.startswith("https://")), "")
             if "api.cloudflare.com" in url:
-                payload = args[args.index("--data") + 1]
-                if (
-                    os.environ.get("FAIL_ACTUAL_PURGE") == "1"
-                    and "transit.yesid.dev/data/v1" in payload
-                ):
-                    print(json.dumps({"success": False, "errors": [{"message": "injected"}]}))
-                    raise SystemExit(22)
                 print(json.dumps({"success": True, "errors": []}))
             else:
                 print("410", end="")
@@ -968,16 +980,14 @@ def test_sto_retirement_resumes_from_durable_backup_after_post_delete_failure(
     failed = subprocess.run(
         ["bash", str(script_path)],
         cwd=run_dir,
-        env={**env, "FAIL_ACTUAL_PURGE": "1"},
+        env={**env, "FAIL_SECOND_DELETE": "1"},
         text=True,
         capture_output=True,
         check=False,
     )
     assert failed.returncode != 0
-    assert json.loads((state_dir / "source.json").read_text(encoding="utf-8")) == [], (
-        failed.stderr
-    )
-    assert len(json.loads((state_dir / "backup.json").read_text(encoding="utf-8"))) == 2
+    assert len(json.loads((state_dir / "source.json").read_text(encoding="utf-8"))) == 1
+    assert len(json.loads((state_dir / "backup.json").read_text(encoding="utf-8"))) == 1001
     assert (state_dir / "evidence-full-manifest.json").is_file()
     assert not (state_dir / "evidence-retirement-receipt.json").exists()
 
@@ -993,9 +1003,21 @@ def test_sto_retirement_resumes_from_durable_backup_after_post_delete_failure(
     receipt = json.loads(
         (state_dir / "evidence-retirement-receipt.json").read_text(encoding="utf-8")
     )
-    assert receipt["objects"] == 2
-    assert receipt["objects_present_at_start"] == 0
+    assert receipt["objects"] == 1001
+    assert receipt["objects_present_at_start"] == 1
     assert receipt["source_remaining"] == 0
+    canonical_receipt = (state_dir / "evidence-retirement-receipt.json").read_bytes()
+
+    third = subprocess.run(
+        ["bash", str(script_path)],
+        cwd=run_dir,
+        env={**env, "GITHUB_RUN_ID": "67890", "GITHUB_SHA": "b" * 40},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert third.returncode == 0, third.stderr
+    assert (state_dir / "evidence-retirement-receipt.json").read_bytes() == canonical_receipt
     gh_log = (state_dir / "gh.log").read_text(encoding="utf-8")
     assert "workflow disable" not in gh_log
     assert "workflow enable" not in gh_log

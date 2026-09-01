@@ -230,6 +230,7 @@ test("retired STO paths return uncacheable 410 on compatibility and direct hosts
   for (const url of [
     `${BASE}/data/v1/sto/static/routes_index.json`,
     `${BASE}/data/v1%2Fsto/static/routes_index.json`,
+    `${BASE}/data/v1/sto%2Fstatic/routes_index.json`,
     `${BASE}/data/v1/%73to/static/routes_index.json`,
     "https://data.yesid.dev/v1/sto/static/routes_index.json",
     "https://data.yesid.dev/v1%2Fsto/static/routes_index.json",

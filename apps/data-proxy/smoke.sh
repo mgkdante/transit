@@ -192,6 +192,7 @@ ok "POST -> 405"
 ok "compatibility route $FALLBACK_BASE manifest -> 200"
 assert_retired_provider "$FALLBACK_BASE/v1/sto/static/routes_index.json"
 assert_retired_provider "$FALLBACK_BASE/v1%2Fsto/static/routes_index.json"
+assert_retired_provider "$FALLBACK_BASE/v1/sto%2Fstatic/routes_index.json"
 assert_retired_provider "$FALLBACK_BASE/v1/%73to/static/routes_index.json"
 
 # --- /api/v1/kpis: public KPI endpoint (frozen v1 contract, src/kpis.js) ---
