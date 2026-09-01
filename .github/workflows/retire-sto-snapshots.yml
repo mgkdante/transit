@@ -1,0 +1,101 @@
+name: Retire STO Snapshot Prefix
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type RETIRE-STO-PUBLIC-SNAPSHOTS"
+        required: true
+        type: string
+
+concurrency:
+  group: retire-sto-snapshots
+  cancel-in-progress: false
+
+jobs:
+  retire-sto-snapshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.BRONZE_S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.BRONZE_S3_SECRET_KEY }}
+      AWS_DEFAULT_REGION: auto
+      SNAPSHOT_BUCKET: ${{ secrets.SNAPSHOT_R2_BUCKET }}
+      BACKUP_BUCKET: transit-raw
+      S3_ENDPOINT: https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com
+      CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - name: Back up, verify, and retire the STO prefix
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = 'RETIRE-STO-PUBLIC-SNAPSHOTS'
+          command -v aws >/dev/null
+          command -v jq >/dev/null
+
+          source_prefix='v1/sto/'
+          backup_prefix="retired-public-snapshots/sto/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/"
+
+          aws --endpoint-url "$S3_ENDPOINT" s3api list-objects-v2 \
+            --bucket "$SNAPSHOT_BUCKET" --prefix "$source_prefix" \
+            --output json > source-inventory.json
+          jq -S --arg prefix "$source_prefix" \
+            '[.Contents[]? | {Key:(.Key | ltrimstr($prefix)), Size, ETag}] | sort_by(.Key)' \
+            source-inventory.json > source-manifest.json
+          source_count="$(jq length source-manifest.json)"
+          source_bytes="$(jq '[.[].Size] | add // 0' source-manifest.json)"
+          test "$source_count" -gt 0
+
+          aws --endpoint-url "$S3_ENDPOINT" s3 sync \
+            "s3://${SNAPSHOT_BUCKET}/${source_prefix}" \
+            "s3://${BACKUP_BUCKET}/${backup_prefix}" \
+            --only-show-errors --no-progress
+
+          aws --endpoint-url "$S3_ENDPOINT" s3api list-objects-v2 \
+            --bucket "$BACKUP_BUCKET" --prefix "$backup_prefix" \
+            --output json > backup-inventory.json
+          jq -S --arg prefix "$backup_prefix" \
+            '[.Contents[]? | {Key:(.Key | ltrimstr($prefix)), Size, ETag}] | sort_by(.Key)' \
+            backup-inventory.json > backup-manifest.json
+          cmp source-manifest.json backup-manifest.json
+
+          aws --endpoint-url "$S3_ENDPOINT" s3 rm \
+            "s3://${SNAPSHOT_BUCKET}/${source_prefix}" \
+            --recursive --only-show-errors
+
+          aws --endpoint-url "$S3_ENDPOINT" s3api list-objects-v2 \
+            --bucket "$SNAPSHOT_BUCKET" --prefix "$source_prefix" \
+            --output json > remaining-inventory.json
+          remaining="$(jq '[.Contents[]?] | length' remaining-inventory.json)"
+          test "$remaining" = '0'
+
+          aws --endpoint-url "$S3_ENDPOINT" s3api list-objects-v2 \
+            --bucket "$BACKUP_BUCKET" --prefix "$backup_prefix" \
+            --output json > backup-after-delete.json
+          jq -S --arg prefix "$backup_prefix" \
+            '[.Contents[]? | {Key:(.Key | ltrimstr($prefix)), Size, ETag}] | sort_by(.Key)' \
+            backup-after-delete.json > backup-after-delete-manifest.json
+          cmp source-manifest.json backup-after-delete-manifest.json
+
+          for retired_url in \
+            'https://data.yesid.dev/v1/sto%2Fstatic/routes_index.json' \
+            'https://data.yesid.dev/v1/%73to/static/routes_index.json' \
+            'https://transit.yesid.dev/data/v1/%73to/static/routes_index.json'; do
+            retired_status="$(curl --path-as-is -sS -o /dev/null -w '%{http_code}' "$retired_url")"
+            test "$retired_status" != '200'
+          done
+
+          jq -n \
+            --arg source_bucket "$SNAPSHOT_BUCKET" \
+            --arg source_prefix "$source_prefix" \
+            --arg backup_bucket "$BACKUP_BUCKET" \
+            --arg backup_prefix "$backup_prefix" \
+            --argjson objects "$source_count" \
+            --argjson bytes "$source_bytes" \
+            '{schema_version:1, source_bucket:$source_bucket, source_prefix:$source_prefix,
+              backup_bucket:$backup_bucket, backup_prefix:$backup_prefix,
+              objects:$objects, bytes:$bytes, source_remaining:0}' \
+            | tee retirement-receipt.json

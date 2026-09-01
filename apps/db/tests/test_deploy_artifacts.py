@@ -728,6 +728,31 @@ def test_compose_bronze_realtime_default_matches_the_ninety_day_runtime_contract
     assert "BRONZE_REALTIME_RETENTION_DAYS:-30" not in compose_text
 
 
+def test_sto_retirement_workflow_backs_up_and_verifies_before_deleting() -> None:
+    path = REPO_ROOT / ".github/workflows/retire-sto-snapshots.yml"
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    triggers = workflow.get("on", workflow.get(True))
+    assert set(triggers) == {"workflow_dispatch"}
+    job = workflow["jobs"]["retire-sto-snapshots"]
+    assert job["environment"] == "production"
+    assert job["permissions"] == {"contents": "read"}
+    script = next(
+        step["run"]
+        for step in job["steps"]
+        if step.get("name") == "Back up, verify, and retire the STO prefix"
+    )
+    assert "v1/sto/" in script
+    assert "retired-public-snapshots/sto/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/" in script
+    assert "s3 sync" in script
+    assert script.index("cmp source-manifest.json backup-manifest.json") < script.index(
+        "s3 rm"
+    )
+    assert "test \"$remaining\" = '0'" in script
+    assert "curl --path-as-is" in script
+    assert "sto%2Fstatic/routes_index.json" in script
+    assert "%73to/static/routes_index.json" in script
+
+
 def test_local_1password_env_files_stay_ignored() -> None:
     result = subprocess.run(
         ["git", "check-ignore", "--quiet", "--no-index", "local.env.1password"],
