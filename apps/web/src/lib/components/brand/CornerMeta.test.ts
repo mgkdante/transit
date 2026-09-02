@@ -64,8 +64,8 @@ describe('CornerMeta — decorative contract', () => {
 describe('CornerMeta — corner readouts stay in their quadrant', () => {
 	it('renders both bottom corners independently so a long readout stays in its own corner', () => {
 		// A long dataset-edition string in one corner must not swallow or displace the
-		// opposite corner (the home hero DATASET·… overrunning VEHICLES·… regression;
-		// the width-cap + ellipsis containment is CSS, verified geometrically). Lock
+		// opposite corner (the width-cap + ellipsis containment is CSS, verified
+		// geometrically). Lock
 		// that each bottom corner is its own contained element carrying its own text.
 		const { container, getByText } = render(CornerMeta, {
 			props: {

@@ -4,7 +4,7 @@
   Blueprint-margin annotations: mono --text-micro in --muted-foreground pinned
   to the four corners of a position:relative host. REAL data only — provider
   name · generated_utc · route/stop counts · build short-hash. Never
-  decoration-only text. Hero zones ONLY (home hero, detail heads, /metrics
+  decoration-only text. Hero zones ONLY (detail heads, /metrics
   masthead); never on dense data sections.
 
   Decorative by contract: aria-hidden + pointer-events:none — it annotates,
