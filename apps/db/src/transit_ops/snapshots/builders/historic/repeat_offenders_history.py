@@ -384,17 +384,22 @@ def build_repeat_offenders_history_plan_from_rows(
 def build_repeat_offenders_history_plan(
     conn: Connection,
     provider_id: str = "stm",
+    *,
+    names: HistoryNameIndex | None = None,
 ) -> RepeatOffendersHistoryPlan:
-    """Read the three fixed production inputs exactly once."""
+    """Read the daily stream, resolving provider names when they are not shared."""
 
     params = {"provider_id": provider_id}
-    timezone_row = (
-        conn.execute(_REPEAT_OFFENDERS_HISTORY_TIMEZONE_SQL, params).mappings().fetchone()
-    )
-    if timezone_row is None or not isinstance(timezone_row.get("timezone"), str):
-        raise ValueError(f"Repeat Offenders history provider {provider_id!r} has no timezone")
-    name_rows = conn.execute(_REPEAT_OFFENDERS_HISTORY_NAMES_SQL, params).mappings()
-    names = HistoryNameIndex(name_rows, provider_timezone=timezone_row["timezone"])
+    if names is None:
+        timezone_row = (
+            conn.execute(_REPEAT_OFFENDERS_HISTORY_TIMEZONE_SQL, params).mappings().fetchone()
+        )
+        if timezone_row is None or not isinstance(timezone_row.get("timezone"), str):
+            raise ValueError(
+                f"Repeat Offenders history provider {provider_id!r} has no timezone"
+            )
+        name_rows = conn.execute(_REPEAT_OFFENDERS_HISTORY_NAMES_SQL, params).mappings()
+        names = HistoryNameIndex(name_rows, provider_timezone=timezone_row["timezone"])
     daily_rows = conn.execute(_REPEAT_OFFENDERS_HISTORY_DAILY_SQL, params).mappings()
     return RepeatOffendersHistoryPlan(daily_rows=daily_rows, names=names)
 

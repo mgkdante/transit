@@ -88,6 +88,9 @@ schemas and is SSH-tunnel-first.
 - Realtime publication is best-effort after capture and normalization. The
   dedicated pruner runs independently, isolates Silver and Gold failures, and
   drains deletions in bounded batches.
+- Bundled historic point publication builds the Hotspots plan first and reuses
+  its materialized provider-local name index for Repeat Offenders. Standalone
+  builders still resolve their own provider context.
 
 Do not invent one-off replay procedures. Use the owned CLI paths and retained
 raw inputs so lineage, idempotency, and failure telemetry remain intact.

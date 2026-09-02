@@ -7,7 +7,6 @@ from datetime import UTC, date, datetime
 from sqlalchemy import text
 
 from transit_ops.snapshots import gate, publish
-from transit_ops.snapshots.builders import historic
 from transit_ops.snapshots.builders.historic.history_common import (
     PointHistorySummary,
     history_pointer_path,
@@ -279,18 +278,18 @@ def test_production_point_plans_are_bounded_closed_parity_exactly_addressed(
 ) -> None:
     with _seeded_connection(real_db_engine, seed_provider) as connection:
         recorded = _NamedQueryConnection(connection)
-        hotspot_plan = historic.build_hotspots_history_plan(recorded, PROVIDER)
-        repeat_plan = historic.build_repeat_offenders_history_plan(recorded, PROVIDER)
-        hotspot_days = list(hotspot_plan.iter_days())
-        repeat_days = list(repeat_plan.iter_days())
+        point_plans = publish._build_historic_point_plans(  # noqa: SLF001
+            recorded,
+            provider_id=PROVIDER,
+        )
+        hotspot_days = list(point_plans.hotspots.iter_days())
+        repeat_days = list(point_plans.repeat_offenders.iter_days())
 
         assert recorded.names == [
             "history.hotspots.timezone",
             "history.hotspots.names",
             "history.hotspots.route_daily",
             "history.hotspots.stop_daily",
-            "history.repeat_offenders.timezone",
-            "history.repeat_offenders.names",
             "history.repeat_offenders.daily",
         ]
         expected_dates = [value.isoformat() for value in DATES]

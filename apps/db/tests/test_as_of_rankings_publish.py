@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
+from _sqlfakes import NamedQueryConn
 from test_partitioned_history_publish import (
     _line_history_plan,
     _network_history_plan,
@@ -29,6 +30,7 @@ from transit_ops.snapshots.contract import (
     Offender,
 )
 from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
+from transit_ops.sql_registry import query_name
 
 STAMP = "2026-07-13T00:00:00Z"
 
@@ -73,6 +75,7 @@ def _repeat_day(
 class _PointPlan:
     def __init__(self, *days: object) -> None:
         self.days = days
+        self.names = history_common.HistoryNameIndex([], provider_timezone="UTC")
 
     def iter_days(self):  # noqa: ANN201
         yield from self.days
@@ -96,6 +99,30 @@ def _patch_points(monkeypatch: pytest.MonkeyPatch, *, hotspots=(), repeat=()) ->
         "build_repeat_offenders_history_plan",
         lambda *args, **kwargs: _PointPlan(*repeat),
     )
+
+
+def test_point_bundle_reuses_provider_names_and_executes_five_queries() -> None:
+    connection = NamedQueryConn(
+        {
+            "history.hotspots.timezone": [{"timezone": "America/Toronto"}],
+            "history.hotspots.names": [],
+            "history.hotspots.route_daily": [],
+            "history.hotspots.stop_daily": [],
+            "history.repeat_offenders.daily": [],
+        },
+        strict=True,
+    )
+
+    bundle = publish._build_historic_point_plans(connection, provider_id="stm")  # noqa: SLF001
+
+    assert bundle.hotspots.names is bundle.repeat_offenders.names
+    assert [query_name(statement) for statement in connection.executed] == [
+        "history.hotspots.timezone",
+        "history.hotspots.names",
+        "history.hotspots.route_daily",
+        "history.hotspots.stop_daily",
+        "history.repeat_offenders.daily",
+    ]
 
 
 def test_point_summary_uses_exact_final_bytes_and_honest_date_coverage() -> None:

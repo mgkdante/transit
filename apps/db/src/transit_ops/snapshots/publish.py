@@ -126,14 +126,16 @@ def _build_historic_point_plans(
     *,
     provider_id: str,
 ) -> HistoricPointPlanBundle:
+    hotspots = builders.build_hotspots_history_plan(
+        conn,
+        provider_id=provider_id,
+    )
     return HistoricPointPlanBundle(
-        hotspots=builders.build_hotspots_history_plan(
-            conn,
-            provider_id=provider_id,
-        ),
+        hotspots=hotspots,
         repeat_offenders=builders.build_repeat_offenders_history_plan(
             conn,
             provider_id=provider_id,
+            names=hotspots.names,
         ),
     )
 
