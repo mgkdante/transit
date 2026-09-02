@@ -32,12 +32,12 @@ STM feeds
 apps/db ──► Bronze (R2) ──► Silver + Gold (PostgreSQL/PostGIS)
                                       │
                                       ▼
-                           versioned /v1 snapshot (R2)
+                      versioned /v1 snapshot (public R2 contract)
                                       │
                          ┌────────────┴────────────┐
                          ▼                         ▼
               apps/data-proxy             apps/web
-              edge contract               SvelteKit dashboard
+              compatibility + KPI API     SvelteKit dashboard
 ```
 
 The three application domains have one-way responsibilities:
@@ -45,8 +45,8 @@ The three application domains have one-way responsibilities:
 | Domain | Responsibility |
 |---|---|
 | [`apps/db`](apps/db/README.md) | Python ingestion, normalization, marts, publication, retention, and health checks |
-| `apps/data-proxy` | Cloudflare Worker for the public `/v1` contract and compatibility routes |
-| `apps/web` | SvelteKit citizen dashboard; reads snapshots only, never PostgreSQL |
+| `apps/data-proxy` | Cloudflare Worker for `/data/*` compatibility snapshots and `/api/v1/kpis` |
+| `apps/web` | SvelteKit citizen dashboard; browser `/v1` reads use public R2 and SSR uses an R2 binding, never PostgreSQL |
 
 The web app consumes an immutable `yesid.dev-design` Release under
 `apps/web/vendor/design`. The snapshot retains its accompanying MIT license and
