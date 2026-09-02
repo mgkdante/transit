@@ -828,7 +828,7 @@ async function collectNetwork(page, locale) {
 	];
 }
 
-function verifyLedger(cell, fixture, ledger) {
+function expectedLedger(cell, fixture) {
 	const labelPath = `labels/${cell.locale}.json`;
 	const historyStatus = fixture.not_found.includes('historic/history/index.json') ? 404 : 200;
 	const expected = {
@@ -908,6 +908,26 @@ function verifyLedger(cell, fixture, ledger) {
 			}
 		}
 	}
+	return expected;
+}
+
+async function waitForLedger(cell, fixture, ledger) {
+	const expectedBrowser = expectedLedger(cell, fixture).filter(([lane]) => lane === 'browser');
+	const deadline = Date.now() + 5_000;
+	while (Date.now() < deadline) {
+		const complete = expectedBrowser.every(
+			([lane, path, status, count]) =>
+				ledger.filter(
+					(entry) => entry.lane === lane && entry.path === path && entry.status === status,
+				).length >= count,
+		);
+		if (complete) return;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
+}
+
+function verifyLedger(cell, fixture, ledger) {
+	const expected = expectedLedger(cell, fixture);
 	const counts = new Map();
 	for (const entry of ledger) {
 		invariant(entry.method === 'GET', `${cell.path} unexpected ${entry.method} ${entry.path}`);
@@ -1010,11 +1030,50 @@ async function verifyAccessibleMirrors(page, cell) {
 	invariant(invalid.length === 0, `${cell.path} invalid AT mirrors: ${invalid.join(', ')}`);
 }
 
-async function verifyTextSemantics(page, cell) {
-	const text = normalizeObservation(await page.locator('main').innerText());
-	if (!(cell.fixture === 'sparse' && cell.surface === 'network')) {
-		invariant(text.includes('2026-08-29'), `${cell.path} omitted the representative date`);
+const NETWORK_TERMINAL_SELECTOR =
+	'#net-historic [data-slot="network-history-board"], #net-historic [data-slot="edge-state"]:not([data-variant="skeleton"])';
+
+function latestDatedRow(rows) {
+	return rows
+		.filter((row) => /^\d{4}-\d{2}-\d{2}$/u.test(row?.date ?? ''))
+		.sort((left, right) => left.date.localeCompare(right.date))
+		.at(-1);
+}
+
+function expectedSurfaceState(cell, fixture) {
+	if (cell.fixture === 'live') {
+		const representativeDate = new URL(cell.path, 'http://b9.local').searchParams.get('to');
+		invariant(representativeDate != null, `${cell.path} live range omitted its terminal date`);
+		return { representativeDate, terminalSelector: null };
 	}
+	const rows = {
+		line: fixture.files['historic/route_reliability/24.json']?.periods?.filter(
+			(row) => row.grain === 'day',
+		),
+		stop: fixture.files['historic/stop_reliability/52095.json']?.daily,
+		network: fixture.files['historic/network_trend.json']?.series,
+	}[cell.surface];
+	const latest = latestDatedRow(rows ?? []);
+	const terminalSelector =
+		cell.surface === 'network' && !(latest?.observation_count > 0)
+			? NETWORK_TERMINAL_SELECTOR
+			: null;
+	return { representativeDate: terminalSelector ? null : (latest?.date ?? null), terminalSelector };
+}
+
+async function verifyTextSemantics(page, cell, fixture) {
+	const text = normalizeObservation(await page.locator('main').innerText());
+	const { representativeDate, terminalSelector } = expectedSurfaceState(cell, fixture);
+	if (representativeDate)
+		invariant(
+			text.includes(representativeDate),
+			`${cell.path} omitted the representative date ${representativeDate}`,
+		);
+	else
+		invariant(
+			terminalSelector && (await page.locator(terminalSelector).count()) > 0,
+			`${cell.path} omitted its terminal state`,
+		);
 	if (cell.fixture !== 'rich') return;
 	if (cell.surface === 'line') {
 		if (!cell.path.includes('from=')) {
@@ -1314,6 +1373,7 @@ async function freePort() {
 
 function jsonHeaders(fixture) {
 	return {
+		'Access-Control-Expose-Headers': 'Date, Age',
 		'Access-Control-Allow-Origin': '*',
 		'Cache-Control': 'no-store',
 		'Content-Type': 'application/json; charset=utf-8',
@@ -1574,30 +1634,41 @@ async function installNetworkBoundary(context, pageOrigin, replay, cell) {
 	});
 }
 
-async function settleSurface(page, cell) {
+async function settleSurface(page, cell, fixture) {
 	const selector = {
 		line: '[data-section="verdict"]',
 		stop: '[data-slot="stop-reliability-sections"]',
 		network: '[data-network-section="network-live-headline"]',
 	}[cell.surface];
 	await page.locator(selector).waitFor({ state: 'attached', timeout: 30_000 });
-	const needsRepresentativeDate = !(cell.fixture === 'sparse' && cell.surface === 'network');
+	const expected = expectedSurfaceState(cell, fixture);
 	const needsRichNetwork = cell.fixture === 'rich' && cell.surface === 'network';
+	const expectedNetworkFreshnessSeconds =
+		cell.surface === 'network'
+			? Math.max(
+					0,
+					Math.round(
+						(Date.parse(fixture.frozen_utc) -
+							Date.parse(fixture.files['live/network.json'].generated_utc)) /
+							1000,
+					),
+				)
+			: null;
 	await page.waitForFunction(
-		({ needsDate, needsNetworkDetails }) => {
+		({ representativeDate, terminalSelector, needsNetworkDetails, networkFreshnessSeconds }) => {
 			const main = document.querySelector('main');
 			if (!main || main.querySelector('[data-slot="edge-state"][data-variant="skeleton"]')) {
 				return false;
 			}
-			if (needsDate && !main.textContent?.includes('2026-08-29')) return false;
+			if (representativeDate && !main.textContent?.includes(representativeDate)) return false;
+			if (terminalSelector && !main.querySelector(terminalSelector)) return false;
 			if (
-				!needsDate &&
+				networkFreshnessSeconds != null &&
 				!main.querySelector(
-					'#net-historic [data-slot="network-history-board"], #net-historic [data-slot="edge-state"]:not([data-variant="skeleton"])',
+					`[data-slot="freshness-stamp"][data-variant="live"][data-age-seconds="${networkFreshnessSeconds}"]`,
 				)
-			) {
+			)
 				return false;
-			}
 			if (
 				needsNetworkDetails &&
 				[
@@ -1611,7 +1682,11 @@ async function settleSurface(page, cell) {
 			}
 			return true;
 		},
-		{ needsDate: needsRepresentativeDate, needsNetworkDetails: needsRichNetwork },
+		{
+			...expected,
+			needsNetworkDetails: needsRichNetwork,
+			networkFreshnessSeconds: expectedNetworkFreshnessSeconds,
+		},
 		{ timeout: 30_000 },
 	);
 	await page.evaluate(() => document.fonts.ready);
@@ -1669,10 +1744,10 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				});
 				invariant(response?.ok(), `${cell.path} returned ${response?.status()}`);
 				const ssrHtml = await response.text();
-				await settleSurface(page, cell);
+				await settleSurface(page, cell, fixture);
 				verifySsr(cell, fixture, ssrHtml);
 				await verifyAccessibility(page, cell);
-				await verifyTextSemantics(page, cell);
+				await verifyTextSemantics(page, cell, fixture);
 				let actual;
 				try {
 					actual =
@@ -1719,6 +1794,7 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 					await verifyGeometry(page, geometrySeen);
 				}
 				await verifyControls(page, cell);
+				await waitForLedger(cell, fixture, replay.state.ledger);
 				const expected404 = replay.state.ledger.some((entry) => entry.status === 404);
 				const svgViolations = await page.evaluate(() => window.__b9SvgViolations ?? []);
 				const geometryErrors = errors.filter((error) =>
@@ -1986,9 +2062,42 @@ async function runLive() {
 	}
 }
 
-const result = args.has('--self-check')
-	? runOracleSelfCheck()
-	: args.has('--live')
-		? await runLive()
-		: await runGate();
+async function runReadyDateSelfCheck() {
+	const cell = {
+		fixture: 'live',
+		locale: 'en',
+		surface: 'line',
+		path: '/lines/24?tab=reliability&from=2026-09-01&to=2026-09-02',
+	};
+	const fixture = { name: 'live', files: {} };
+	const mainText = 'Line 24 reliability for 2026-09-02';
+	const page = {
+		locator: (selector) => ({
+			innerText: async () => {
+				invariant(selector === 'main', `unexpected self-check text selector ${selector}`);
+				return mainText;
+			},
+			waitFor: async () => {},
+		}),
+		waitForFunction: async (_predicate, state) => {
+			invariant(
+				state.representativeDate === '2026-09-02',
+				`live readiness expected ${JSON.stringify(state.representativeDate)} instead of 2026-09-02`,
+			);
+			invariant(!JSON.stringify(state).includes('2026-08-29'), 'live readiness retained August 29');
+		},
+		evaluate: async () => {},
+	};
+	await settleSurface(page, cell, fixture);
+	await verifyTextSemantics(page, cell, fixture);
+	return { representativeDate: '2026-09-02', network: 'none' };
+}
+
+const result = args.has('--ready-date-self-check')
+	? await runReadyDateSelfCheck()
+	: args.has('--self-check')
+		? runOracleSelfCheck()
+		: args.has('--live')
+			? await runLive()
+			: await runGate();
 console.log(`B9 displayed-value gate PASS ${JSON.stringify(result)}`);
