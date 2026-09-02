@@ -1,29 +1,8 @@
-import type { Locale } from '$lib/i18n';
-import { defineCopy } from '$lib/i18n/copy';
+import { defineCopy, type Locale } from '$lib/i18n/copy';
 import type { SurfaceTarget } from '$lib/nav';
-import type { Manifest } from '$lib/v1';
 
 type CopyKey =
-	| 'kicker'
-	| 'thesis1'
-	| 'thesis2'
-	| 'statement'
-	| 'tagline'
-	| 'ctaNetwork'
-	| 'ctaMap'
-	| 'terminalTitle'
-	| 'pulseLabel'
-	| 'pulseLive'
-	| 'pulseStandby'
-	| 'datasetLabel'
-	| 'pct'
-	| 'min'
 	| 'enter'
-	| 'whatTitle'
-	| 'whatSub'
-	| 'whatBody'
-	| 'pillarsLabel'
-	| 'measureLink'
 	| 'filterLabel'
 	| 'filterByQuestion'
 	| 'filterByKind'
@@ -33,18 +12,6 @@ type CopyKey =
 	| 'filterOpen'
 	| 'filterClose'
 	| 'filterEmpty'
-	| 'metricOnTime'
-	| 'metricDelayP50'
-	| 'metricSilent'
-	| 'metricCoverage'
-	| 'distLabel'
-	| 'distColStatus'
-	| 'distColVehicles'
-	| 'crowdLabel'
-	| 'distColCrowding'
-	| 'distColShare'
-	| 'busyLabel'
-	| 'distColRoute'
 	| 'qWhere'
 	| 'qWhereScope'
 	| 'qTrust'
@@ -55,153 +22,53 @@ type CopyKey =
 	| 'qMethodScope'
 	| 'exploreNav';
 
-export type HomeCopy = Readonly<Record<CopyKey, string>>;
-
-export function homeCopy(locale: Locale, manifest: Manifest): HomeCopy {
-	const shortName = manifest.short_name?.trim() || manifest.display_name;
-	const city = manifest.city?.trim() || manifest.display_name;
-
-	return defineCopy({
-		fr: {
-			kicker: `TABLEAU DE BORD CITOYEN · ${shortName.toUpperCase()} · ${city.toUpperCase()}`,
-			thesis1: 'LE RÉSEAU,',
-			thesis2: 'MESURÉ HONNÊTEMENT',
-			statement: 'On n’invente jamais de données.',
-			tagline: `Le réseau ${shortName} de ${city}, mesuré en direct depuis le flux public. Quand une donnée manque, on l’affiche absente.`,
-			ctaNetwork: 'Explorer le réseau →',
-			ctaMap: 'Ouvrir la carte en direct',
-			terminalTitle: 'reseau.salle-de-controle',
-			pulseLabel: 'Le réseau, en ce moment',
-			pulseLive: 'EN DIRECT',
-			pulseStandby: 'EN ATTENTE',
-			datasetLabel: 'Jeu de données',
-			pct: '%',
-			min: ' min',
-			enter: 'Ouvrir',
-			whatTitle: 'Ce que c’est',
-			whatSub: '// INDÉPENDANT · HONNÊTE D’ABORD',
-			whatBody: `Un tableau de bord indépendant pour le réseau ${shortName} de ${city}, construit à partir du même flux public que les bus diffusent en direct. Ici, « à l’heure » veut dire ce qu’on a mesuré nous-mêmes, pas une statistique officielle. Quand une donnée manque, on l’affiche comme absente. Jamais de zéro inventé.`,
-			pillarsLabel: '// LES RÈGLES DU JEU',
-			measureLink: 'Comment on mesure',
-			filterLabel: 'Filtres',
-			filterByQuestion: 'Par question',
-			filterByKind: 'Par genre',
-			tempoNow: 'En direct',
-			tempoRecord: 'Le bilan',
-			tempoMethod: 'La méthode',
-			filterOpen: 'Ouvrir les filtres',
-			filterClose: 'Fermer les filtres',
-			filterEmpty:
-				'Rien ne correspond à ces filtres. Effacez-les pour retrouver toutes les destinations.',
-			metricOnTime: 'Ponctualité',
-			metricDelayP50: 'Retard médian',
-			metricSilent: 'Sans réponse',
-			metricCoverage: 'Couverture',
-			distLabel: 'État de la flotte',
-			distColStatus: 'statut',
-			distColVehicles: 'véhicules',
-			crowdLabel: 'Achalandage',
-			distColCrowding: 'achalandage',
-			distColShare: 'part',
-			busyLabel: 'Lignes les plus actives',
-			distColRoute: 'ligne',
-			qWhere: 'Où est mon bus ?',
-			qWhereScope: 'Le voir bouger, savoir quand il passe, trouver le vôtre.',
-			qTrust: 'À quelle ligne se fier ?',
-			qTrustScope: 'Comparer la performance réelle des lignes et du réseau.',
-			qPromise: 'Ont-ils tenu parole ?',
-			qPromiseScope: 'Le bilan du jour, les récidivistes et les perturbations.',
-			qMethod: 'Derrière les chiffres',
-			qMethodScope: 'Comment on mesure, et à quel point les données sont fraîches.',
-			exploreNav: 'Tout explorer',
-		},
-		en: {
-			kicker: `CITIZEN DASHBOARD · ${shortName.toUpperCase()} · ${city.toUpperCase()}`,
-			thesis1: 'THE NETWORK,',
-			thesis2: 'MEASURED HONESTLY',
-			statement: 'We never invent data.',
-			tagline: `The ${shortName} network across ${city}, measured live from the public feed. When a number is missing, we show it missing.`,
-			ctaNetwork: 'Explore the network →',
-			ctaMap: 'Open the live map',
-			terminalTitle: 'network.control-room',
-			pulseLabel: 'The network, right now',
-			pulseLive: 'LIVE',
-			pulseStandby: 'STANDBY',
-			datasetLabel: 'Dataset',
-			pct: '%',
-			min: ' min',
-			enter: 'Open',
-			whatTitle: 'What this is',
-			whatSub: '// INDEPENDENT · HONESTY FIRST',
-			whatBody: `An independent dashboard for the ${shortName} network across ${city}, built from the same public feed the buses broadcast live. Here, “on time” means what we measured ourselves, not an official statistic. When a number is missing, we show it as missing. Never a fabricated zero.`,
-			pillarsLabel: '// THE GROUND RULES',
-			measureLink: 'How we measure',
-			filterLabel: 'Filters',
-			filterByQuestion: 'By question',
-			filterByKind: 'By kind',
-			tempoNow: 'Live now',
-			tempoRecord: 'The record',
-			tempoMethod: 'The method',
-			filterOpen: 'Open the filters',
-			filterClose: 'Close the filters',
-			filterEmpty: 'Nothing matches these filters. Clear them to see every destination.',
-			metricOnTime: 'On-time',
-			metricDelayP50: 'Median delay',
-			metricSilent: 'Not reporting',
-			metricCoverage: 'Coverage',
-			distLabel: 'Fleet status',
-			distColStatus: 'status',
-			distColVehicles: 'vehicles',
-			crowdLabel: 'Crowding',
-			distColCrowding: 'crowding',
-			distColShare: 'share',
-			busyLabel: 'Busiest lines',
-			distColRoute: 'route',
-			qWhere: 'Where’s my bus?',
-			qWhereScope: 'See it moving, know when it comes, find yours.',
-			qTrust: 'Which line can I trust?',
-			qTrustScope: 'Compare how lines and the whole network actually perform.',
-			qPromise: 'Did they keep their promise?',
-			qPromiseScope: 'The daily verdict, the repeat offenders, the disruptions.',
-			qMethod: 'Behind the numbers',
-			qMethodScope: 'How we measure, and how fresh the data is.',
-			exploreNav: 'Explore everything',
-		},
-	})[locale];
-}
-
-export interface HomePillar {
-	readonly glyph: string;
-	readonly title: Readonly<Record<Locale, string>>;
-	readonly desc: Readonly<Record<Locale, string>>;
-}
-
-export const HOME_PILLARS: readonly HomePillar[] = [
-	{
-		glyph: '◉',
-		title: { fr: 'En direct', en: 'Live' },
-		desc: {
-			fr: 'Lu du flux temps réel, rafraîchi en continu.',
-			en: 'Read from the realtime feed, refreshed continuously.',
-		},
+export const homeCopy = defineCopy({
+	fr: {
+		enter: 'Ouvrir',
+		filterLabel: 'Filtres',
+		filterByQuestion: 'Par question',
+		filterByKind: 'Par genre',
+		tempoNow: 'En direct',
+		tempoRecord: 'Le bilan',
+		tempoMethod: 'La méthode',
+		filterOpen: 'Ouvrir les filtres',
+		filterClose: 'Fermer les filtres',
+		filterEmpty:
+			'Rien ne correspond à ces filtres. Effacez-les pour retrouver toutes les destinations.',
+		qWhere: 'Où est mon bus ?',
+		qWhereScope: 'Le voir bouger, savoir quand il passe, trouver le vôtre.',
+		qTrust: 'À quelle ligne se fier ?',
+		qTrustScope: 'Comparer la performance réelle des lignes et du réseau.',
+		qPromise: 'Ont-ils tenu parole ?',
+		qPromiseScope: 'Le bilan du jour, les récidivistes et les perturbations.',
+		qMethod: 'Derrière les chiffres',
+		qMethodScope: 'Comment on mesure, et à quel point les données sont fraîches.',
+		exploreNav: 'Tout explorer',
 	},
-	{
-		glyph: '⊘',
-		title: { fr: 'Honnête', en: 'Honest' },
-		desc: {
-			fr: 'Une donnée absente reste absente. Aucun zéro inventé.',
-			en: 'Missing data stays missing. No fabricated zero.',
-		},
+	en: {
+		enter: 'Open',
+		filterLabel: 'Filters',
+		filterByQuestion: 'By question',
+		filterByKind: 'By kind',
+		tempoNow: 'Live now',
+		tempoRecord: 'The record',
+		tempoMethod: 'The method',
+		filterOpen: 'Open the filters',
+		filterClose: 'Close the filters',
+		filterEmpty: 'Nothing matches these filters. Clear them to see every destination.',
+		qWhere: 'Where’s my bus?',
+		qWhereScope: 'See it moving, know when it comes, find yours.',
+		qTrust: 'Which line can I trust?',
+		qTrustScope: 'Compare how lines and the whole network actually perform.',
+		qPromise: 'Did they keep their promise?',
+		qPromiseScope: 'The daily verdict, the repeat offenders, the disruptions.',
+		qMethod: 'Behind the numbers',
+		qMethodScope: 'How we measure, and how fresh the data is.',
+		exploreNav: 'Explore everything',
 	},
-	{
-		glyph: '⚖',
-		title: { fr: 'Redevable', en: 'Accountable' },
-		desc: {
-			fr: 'Points chauds, récidivistes et reçu quotidien, à découvert.',
-			en: 'Hotspots, repeat offenders and a daily receipt, in the open.',
-		},
-	},
-];
+} satisfies Readonly<Record<Locale, Readonly<Record<CopyKey, string>>>>);
+
+export type HomeCopy = (typeof homeCopy)[Locale];
 
 export type HomeTempo = 'now' | 'record' | 'method';
 
