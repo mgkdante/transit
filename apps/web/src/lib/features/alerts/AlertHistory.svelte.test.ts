@@ -74,11 +74,6 @@ const archiveState = vi.hoisted(() => ({
 	entries: [] as AlertArchiveEntry[],
 }));
 
-vi.mock('$lib/v1', () => ({
-	getAlertHistory: ports.getAlertHistory,
-	getAlertArchiveIndex: ports.getAlertArchiveIndex,
-	getAlertArchiveRange: ports.getAlertArchiveRange,
-}));
 vi.mock('$lib/v1/repositories/historic', () => ({
 	getAlertHistory: ports.getAlertHistory,
 	getAlertArchiveIndex: ports.getAlertArchiveIndex,

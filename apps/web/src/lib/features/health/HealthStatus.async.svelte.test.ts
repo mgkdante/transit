@@ -21,15 +21,6 @@ const navigation = vi.hoisted(() => {
 vi.mock('$app/state', () => ({ page: navigation.page }));
 vi.mock('$app/navigation', () => ({ replaceState: navigation.replaceState }));
 
-vi.mock('$lib/v1', async () => {
-	const freshness = await import('$lib/v1/freshness');
-	return {
-		getProvenance: ports.getProvenance,
-		getDataHealth: ports.getDataHealth,
-		getHistoricAvailability: ports.getHistoricAvailability,
-		freshnessRelative: freshness.freshnessRelative,
-	};
-});
 vi.mock('$lib/v1/repositories/provenance', () => ({
 	getProvenance: ports.getProvenance,
 }));

@@ -1,71 +1,8 @@
-// $lib/v1 — the stable compatibility facade for the v1 snapshot contract.
-//
-// Everything the UI needs to read the snapshot contract is re-exported here:
-//   - repositories  : per-family async data ports (manifest/labels/live/static/
-//                     historic/provenance) + their flat function aliases.
-//   - boot          : bootV1() + V1Context + getV1Context/setV1Context +
-//                     resolveLabel(code, labels).
-//   - freshness     : tierFreshness() + the Freshness verdict types.
-//   - live          : the runes live store (createLiveStore), the O(1) index
-//                     builder, and the facet aggregator.
-//   - config        : v1BaseUrl()/v1Provider()/resolveUrl()/entityUrl() URL helpers.
-//   - schemas       : the closed enums + inferred contract types (StatusCode,
-//                     OccupancyCode, SeverityCode, Grain, Manifest, *File, …).
-//
-// Use this facade for compatibility and type-only imports. Navigation-critical
-// production code may import the exact owning repository, history, schema, boot,
-// or live-store leaf when that preserves a lazy tier or a smaller client closure.
-// Features and routes must not reach into adapter/*; repositories and boot own
-// that boundary. Keep tier imports literal so Vite can preserve split points.
+// $lib/v1 is the stable contract and shared-kernel facade. Runtime data callers
+// import the repository leaf that owns their tier; the facade keeps cross-domain
+// types and shared computation available without hiding fetch or split points.
 
-// --- repositories (per-family ports + flat aliases) --------------------------
-export {
-	repositories,
-	getManifest,
-	getManifestFresh,
-	getLabels,
-	getVehicles,
-	getTrips,
-	getStopDepartures,
-	getAlerts,
-	getNetwork,
-	getRoutesIndex,
-	getRoute,
-	getStopsIndex,
-	getStopsIndexSlim,
-	getStop,
-	getNetworkTrend,
-	getHotspots,
-	getHotspotsHistoryDay,
-	getHotspotsHistoryIndex,
-	getRepeatOffenders,
-	getRepeatOffendersHistoryDay,
-	getRepeatOffendersHistoryIndex,
-	getAlertHistory,
-	getAdvertisedReceipt,
-	getAlertArchiveIndex,
-	getAlertArchiveRange,
-	getReceiptsIndex,
-	getHistoricAvailability,
-	getNetworkHistoryIndex,
-	getLineHistoryDirectory,
-	getStopHistoryDirectory,
-	getLineHistoryIndex,
-	getStopHistoryIndex,
-	loadNetworkHistoryRange,
-	loadLineHistoryRange,
-	loadStopHistoryRange,
-	getReceipt,
-	getRouteReliability,
-	getRouteReliabilityIndex,
-	getStopReliability,
-	getProvenance,
-	getDataHealth,
-	getBasemap,
-	toSlimStop,
-	toSlimStopsIndex,
-} from './repositories';
-export type { SlimStopEntry, SlimStopsIndex } from './repositories';
+export type { SlimStopEntry, SlimStopsIndex } from './repositories/stopsSlim';
 
 // --- retained-history selection, partition loading, and typed failures -------
 export * from './history';

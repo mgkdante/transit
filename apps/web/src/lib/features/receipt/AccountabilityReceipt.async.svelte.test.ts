@@ -19,11 +19,6 @@ const nav = vi.hoisted(() => ({
 }));
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
 
-vi.mock('$lib/v1', () => ({
-	getReceiptsIndex: ports.getReceiptsIndex,
-	getReceipt: ports.getReceipt,
-	getAdvertisedReceipt: ports.getAdvertisedReceipt,
-}));
 vi.mock('$lib/v1/repositories/historic', () => ({
 	getReceiptsIndex: ports.getReceiptsIndex,
 	getAdvertisedReceipt: ports.getAdvertisedReceipt,

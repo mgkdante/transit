@@ -27,7 +27,7 @@ import { quietModeStore } from '$lib/stores/quiet-mode.svelte';
 
 // The explainer now reads the provider's feed-conformance verdict off
 // provenance.json for the honesty-layer badge. Stub the data ports so this DOM
-// gate stays env-free (the real $lib/v1 chain reads $env/dynamic/public) and
+// gate stays env-free (the real repository chain reads $env/dynamic/public) and
 // off-network. data:null → no conformance → the badge renders nothing, leaving
 // every assertion below about the static article untouched.
 const { provState } = vi.hoisted(() => ({
@@ -40,12 +40,6 @@ const { provState } = vi.hoisted(() => ({
 	},
 }));
 
-vi.mock('$lib/v1', () => ({
-	getProvenance: vi.fn(),
-	getV1Context: () => ({
-		manifest: { short_name: 'STM', display_name: 'STM', dataset_version: 'test' },
-	}),
-}));
 vi.mock('$lib/v1/repositories/provenance', () => ({
 	getProvenance: vi.fn(),
 }));
