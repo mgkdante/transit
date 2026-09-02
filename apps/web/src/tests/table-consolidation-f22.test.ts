@@ -391,32 +391,6 @@ const RENDER_SITES: readonly RenderSite[] = [
 		],
 	},
 	{
-		file: 'src/lib/features/home/HomeHero.svelte',
-		renders: 1,
-		bespoke: [
-			{
-				rule: '.pulse-dist :global(.data-table-frame) { width: max-content; max-width: 100%; }',
-				verdict: 'legitimate:host-layout',
-				note: 'shrink-to-fit inside the hero flex row. This is the HOST deciding how wide its child may be, not table styling.',
-			},
-			{
-				rule: ".pulse-dist :global(.data-table-frame[data-frame='gridlines'] .pulse-dist-table) { width: max-content; max-width: 100%; font-family: var(--font-mono); font-size: var(--text-micro); border: 1px solid var(--border-subtle); }",
-				verdict: 'drift:type-scale',
-				note: 'width is host layout, but the font-size is a fourth independent type-scale override and the border re-colours the gridlines variant.',
-			},
-			{
-				rule: ".pulse-dist :global(.data-table-frame[data-frame='gridlines'] .pulse-dist-table th), .pulse-dist :global(.data-table-frame[data-frame='gridlines'] .pulse-dist-table td) { border: 1px solid var(--border-subtle); padding: 0.375rem 0.875rem; }",
-				verdict: 'drift:density',
-				note: 'the gridlines variant paints var(--border); this repaints it var(--border-subtle) and sets a fourth cell density.',
-			},
-			{
-				rule: '.pulse-dist :global(.pulse-dist-table thead th) { text-align: left; font-weight: 400; text-transform: uppercase; letter-spacing: var(--tracking-eyebrow); color: var(--muted-foreground); }',
-				verdict: 'drift:header-treatment',
-				note: "header treatment is named in the primitive's contract. Three of the five declarations restate primitive defaults; only the weight (400 vs 500) and the tracking token actually differ.",
-			},
-		],
-	},
-	{
 		file: 'src/lib/features/hotspots/sections/HotspotSection.svelte',
 		renders: 1,
 		bespoke: [
@@ -519,19 +493,18 @@ describe('F22 B — the page-level declaration fingerprint', () => {
 				.filter(({ verdict }) => (DRIFT_VERDICTS as readonly string[]).includes(verdict))
 				.map(({ verdict }) => `${file} :: ${verdict}`),
 		);
-		// 23 bespoke rules total: 20 drift + 3 legitimate, across 5 of the 6
-		// consumers. Section2TheWait is the only clean one. Measured 2026-08-04
-		// at base 95907930.
-		expect(drift).toHaveLength(20);
+		// 19 bespoke rules total: 17 drift + 2 legitimate, across 4 of the 5
+		// consumers. Section2TheWait is the only clean one.
+		expect(drift).toHaveLength(17);
 		expect(
 			new Set(RENDER_SITES.filter(({ bespoke }) => bespoke.length > 0).map(({ file }) => file))
 				.size,
-		).toBe(5);
+		).toBe(4);
 		expect(
 			RENDER_SITES.flatMap(({ bespoke }) => bespoke).filter(({ verdict }) =>
 				verdict.startsWith('legitimate:'),
 			),
-		).toHaveLength(3);
+		).toHaveLength(2);
 	});
 });
 
@@ -581,7 +554,7 @@ describe('F22 C — the in-table empty state is part of the table contract', () 
 describe('F22 D — extraction verdict for yesid.dev-design', () => {
 	it('records that DataTable serves ONE app and therefore stays app-side', () => {
 		// The owner's rule: an export serving one app stays app-side. DataTable
-		// has 6 consumer files / 8 render sites, every one of them in this app.
+		// has 5 consumer files / 7 render sites, every one of them in this app.
 		//
 		// The third-consumer test was run against the other two repos on
 		// 2026-08-04. `@yesid/ui` ships no table primitive. yesid.dev has
@@ -599,8 +572,8 @@ describe('F22 D — extraction verdict for yesid.dev-design', () => {
 		const consumerFiles = RENDER_SITES.length;
 		const renderSites = RENDER_SITES.reduce((sum, site) => sum + site.renders, 0);
 
-		expect(consumerFiles).toBe(6);
-		expect(renderSites).toBe(8);
+		expect(consumerFiles).toBe(5);
+		expect(renderSites).toBe(7);
 		// A design-system import would show up as an @yesid/* table import here.
 		expect(read(resolve(WEB_ROOT, PRIMITIVE))).not.toMatch(/from '@yesid\//);
 	});

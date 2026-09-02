@@ -14,7 +14,7 @@
 	interface SurfaceProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> {
 		children?: Snippet;
 		gutter?: boolean;
-		pad?: 'surface' | 'hub' | 'none';
+		pad?: 'surface' | 'none';
 		as?: 'section' | 'div' | 'article';
 		class?: string;
 	}
@@ -51,13 +51,6 @@
 	}
 	.surface-shell--surface {
 		padding-block: clamp(1.5rem, 4vw, 2.5rem);
-	}
-	.surface-shell--hub {
-		/* Exposed as a var so a full-viewport hero can cancel exactly this pad
-		   (margin-top: calc(-1 * var(--surface-pad-y))) without duplicating the
-		   clamp — one source of truth for the hub's block rhythm. */
-		--surface-pad-y: clamp(2rem, 6vw, 4rem);
-		padding-block: var(--surface-pad-y);
 	}
 	.surface-shell--none {
 		padding-block: 0;

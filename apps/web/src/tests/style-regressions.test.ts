@@ -98,9 +98,7 @@ const FORBIDDEN_ROOTS = ['src/lib/components', 'src/lib/features', 'src/routes']
 const STYLE_SOURCE_EXTENSIONS = ['.svelte', '.css'] as const;
 
 // A6 path-prefix exclusions. These are structural files/subtrees outside the
-// prose-measure law, never a selector/value allowlist. Home is the named legacy
-// calibrated exception; _kit is dev-only. SearchInput and the two map controls
-// are pre-existing control geometry that the prose census deliberately excludes.
+// prose-measure law, never a selector/value allowlist.
 const MEASURE_PATH_PREFIX_EXCLUSIONS = [
 	{
 		prefix: 'src/lib/components/shared/ErrorIllustration.svelte',
@@ -123,16 +121,8 @@ const MEASURE_PATH_PREFIX_EXCLUSIONS = [
 		reason: 'structural retention grid',
 	},
 	{
-		prefix: 'src/lib/features/home/HomeHero.svelte',
-		reason: 'legacy calibrated home measure',
-	},
-	{
 		prefix: 'src/lib/features/receipt/sections/SectionStateCuts.svelte',
 		reason: 'structural KPI-card wrapper (S5-382 B1)',
-	},
-	{
-		prefix: 'src/lib/features/home/HomeWhat.svelte',
-		reason: 'legacy calibrated home measure',
 	},
 	{
 		prefix: 'src/lib/features/map/MapMotionControl.svelte',

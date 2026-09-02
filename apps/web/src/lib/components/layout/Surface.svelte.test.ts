@@ -49,11 +49,11 @@ describe('Surface (A1 full-bleed)', () => {
 
 	it('is polymorphic (as) and carries the pad modifier', () => {
 		const { container } = render(Surface, {
-			props: { children: body, as: 'div', pad: 'hub' },
+			props: { children: body, as: 'div', pad: 'none' },
 		});
 		const shell = container.querySelector('[data-slot="surface"]')!;
 		expect(shell.tagName.toLowerCase()).toBe('div');
-		expect(shell.classList.contains('surface-shell--hub')).toBe(true);
+		expect(shell.classList.contains('surface-shell--none')).toBe(true);
 	});
 
 	it('drops the width prop and the max-width cap from source (A1)', () => {

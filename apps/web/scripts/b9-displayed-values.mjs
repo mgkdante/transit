@@ -47,6 +47,23 @@ function invariant(condition, message) {
 	if (!condition) throw new Error(`B9 runner invariant: ${message}`);
 }
 
+function transcriptDifference(left, right) {
+	const fields = ['cell', 'actual', 'ssr', 'hydrated', 'ledger'];
+	for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+		const first = left[index];
+		const second = right[index];
+		if (!first || !second) return `cell ${index}: one run omitted the cell`;
+		for (const field of fields) {
+			const firstValue = JSON.stringify(first[field]);
+			const secondValue = JSON.stringify(second[field]);
+			if (firstValue !== secondValue) {
+				return `${first.cell} ${field}\nrun 1: ${firstValue}\nrun 2: ${secondValue}`;
+			}
+		}
+	}
+	return 'no differing field found';
+}
+
 const observation = (id, value) => ({ id, value });
 const parseNumber = (value) => {
 	if (value == null) return null;
@@ -1557,15 +1574,50 @@ async function installNetworkBoundary(context, pageOrigin, replay, cell) {
 	});
 }
 
-async function settleSurface(page, surface) {
+async function settleSurface(page, cell) {
 	const selector = {
 		line: '[data-section="verdict"]',
 		stop: '[data-slot="stop-reliability-sections"]',
 		network: '[data-network-section="network-live-headline"]',
-	}[surface];
-	await page.locator(selector).waitFor({ state: 'attached', timeout: 12_000 });
+	}[cell.surface];
+	await page.locator(selector).waitFor({ state: 'attached', timeout: 30_000 });
+	const needsRepresentativeDate = !(cell.fixture === 'sparse' && cell.surface === 'network');
+	const needsRichNetwork = cell.fixture === 'rich' && cell.surface === 'network';
+	await page.waitForFunction(
+		({ needsDate, needsNetworkDetails }) => {
+			const main = document.querySelector('main');
+			if (!main || main.querySelector('[data-slot="edge-state"][data-variant="skeleton"]')) {
+				return false;
+			}
+			if (needsDate && !main.textContent?.includes('2026-08-29')) return false;
+			if (
+				!needsDate &&
+				!main.querySelector(
+					'#net-historic [data-slot="network-history-board"], #net-historic [data-slot="edge-state"]:not([data-variant="skeleton"])',
+				)
+			) {
+				return false;
+			}
+			if (
+				needsNetworkDetails &&
+				[
+					'[data-slot="completeness-section"]:not(:has([data-slot="absent-value"]))',
+					'[data-slot="verdict-delta"]',
+					'[data-slot="network-shift"]',
+					'[data-network-section="network-weekday-weekend"]',
+				].some((required) => !main.querySelector(required))
+			) {
+				return false;
+			}
+			return true;
+		},
+		{ needsDate: needsRepresentativeDate, needsNetworkDetails: needsRichNetwork },
+		{ timeout: 30_000 },
+	);
 	await page.evaluate(() => document.fonts.ready);
-	await page.waitForTimeout(500);
+	await page.evaluate(
+		() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+	);
 }
 
 async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic = true } = {}) {
@@ -1617,7 +1669,7 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				});
 				invariant(response?.ok(), `${cell.path} returned ${response?.status()}`);
 				const ssrHtml = await response.text();
-				await settleSurface(page, cell.surface);
+				await settleSurface(page, cell);
 				verifySsr(cell, fixture, ssrHtml);
 				await verifyAccessibility(page, cell);
 				await verifyTextSemantics(page, cell);
@@ -1719,7 +1771,10 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 		}
 		if (synthetic) {
 			const identical = JSON.stringify(transcripts[0]) === JSON.stringify(transcripts[1]);
-			invariant(identical, 'two normalized synthetic runs were not identical');
+			invariant(
+				identical,
+				`two normalized synthetic runs were not identical\n${transcriptDifference(transcripts[0], transcripts[1])}`,
+			);
 			invariant(
 				JSON.stringify([...geometrySeen.keys()].sort()) === JSON.stringify([...MARK_KINDS].sort()),
 				`mark branch coverage mismatch: ${JSON.stringify([...geometrySeen.keys()].sort())}`,
