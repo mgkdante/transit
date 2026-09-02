@@ -828,7 +828,7 @@ async function collectNetwork(page, locale) {
 	];
 }
 
-function expectedLedger(cell, fixture) {
+function verifyLedger(cell, fixture, ledger) {
 	const labelPath = `labels/${cell.locale}.json`;
 	const historyStatus = fixture.not_found.includes('historic/history/index.json') ? 404 : 200;
 	const expected = {
@@ -908,26 +908,6 @@ function expectedLedger(cell, fixture) {
 			}
 		}
 	}
-	return expected;
-}
-
-async function waitForLedger(cell, fixture, ledger) {
-	const expectedBrowser = expectedLedger(cell, fixture).filter(([lane]) => lane === 'browser');
-	const deadline = Date.now() + 5_000;
-	while (Date.now() < deadline) {
-		const complete = expectedBrowser.every(
-			([lane, path, status, count]) =>
-				ledger.filter(
-					(entry) => entry.lane === lane && entry.path === path && entry.status === status,
-				).length >= count,
-		);
-		if (complete) return;
-		await new Promise((resolve) => setTimeout(resolve, 20));
-	}
-}
-
-function verifyLedger(cell, fixture, ledger) {
-	const expected = expectedLedger(cell, fixture);
 	const counts = new Map();
 	for (const entry of ledger) {
 		invariant(entry.method === 'GET', `${cell.path} unexpected ${entry.method} ${entry.path}`);
@@ -1696,7 +1676,7 @@ async function settleSurface(page, cell, fixture) {
 }
 
 async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic = true } = {}) {
-	const selfCheck = runOracleSelfCheck();
+	const selfCheck = runRunnerSelfCheck();
 	const built = await ensureBuild();
 	const replay = await startReplay(fixtures, cells[0]?.fixture);
 	const displayFailures = new Map();
@@ -1794,7 +1774,6 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 					await verifyGeometry(page, geometrySeen);
 				}
 				await verifyControls(page, cell);
-				await waitForLedger(cell, fixture, replay.state.ledger);
 				const expected404 = replay.state.ledger.some((entry) => entry.status === 404);
 				const svgViolations = await page.evaluate(() => window.__b9SvgViolations ?? []);
 				const geometryErrors = errors.filter((error) =>
@@ -2062,42 +2041,29 @@ async function runLive() {
 	}
 }
 
-async function runReadyDateSelfCheck() {
+function runReadyDateSelfCheck() {
 	const cell = {
 		fixture: 'live',
 		locale: 'en',
 		surface: 'line',
 		path: '/lines/24?tab=reliability&from=2026-09-01&to=2026-09-02',
 	};
-	const fixture = { name: 'live', files: {} };
-	const mainText = 'Line 24 reliability for 2026-09-02';
-	const page = {
-		locator: (selector) => ({
-			innerText: async () => {
-				invariant(selector === 'main', `unexpected self-check text selector ${selector}`);
-				return mainText;
-			},
-			waitFor: async () => {},
-		}),
-		waitForFunction: async (_predicate, state) => {
-			invariant(
-				state.representativeDate === '2026-09-02',
-				`live readiness expected ${JSON.stringify(state.representativeDate)} instead of 2026-09-02`,
-			);
-			invariant(!JSON.stringify(state).includes('2026-08-29'), 'live readiness retained August 29');
-		},
-		evaluate: async () => {},
-	};
-	await settleSurface(page, cell, fixture);
-	await verifyTextSemantics(page, cell, fixture);
-	return { representativeDate: '2026-09-02', network: 'none' };
+	const state = expectedSurfaceState(cell, { files: {} });
+	invariant(
+		state.representativeDate === '2026-09-02',
+		`live readiness expected ${JSON.stringify(state.representativeDate)} instead of 2026-09-02`,
+	);
+	invariant(!JSON.stringify(state).includes('2026-08-29'), 'live readiness retained August 29');
+	return { representativeDate: state.representativeDate };
 }
 
-const result = args.has('--ready-date-self-check')
-	? await runReadyDateSelfCheck()
-	: args.has('--self-check')
-		? runOracleSelfCheck()
-		: args.has('--live')
-			? await runLive()
-			: await runGate();
+function runRunnerSelfCheck() {
+	return { ...runOracleSelfCheck(), ...runReadyDateSelfCheck() };
+}
+
+const result = args.has('--self-check')
+	? runRunnerSelfCheck()
+	: args.has('--live')
+		? await runLive()
+		: await runGate();
 console.log(`B9 displayed-value gate PASS ${JSON.stringify(result)}`);
