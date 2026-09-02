@@ -17,6 +17,7 @@ from test_partitioned_history_builders import _line_history_rows, _network_histo
 from transit_ops.snapshots import gate, publish
 from transit_ops.snapshots.builders.historic.history_common import (
     HistoryDigestCollector,
+    HistoryNameIndex,
     PointHistorySummary,
     encode_history_entity_id,
     history_entity_directory_generation_id,
@@ -55,7 +56,10 @@ from transit_ops.snapshots.storage import ImmutableKeyCollisionError, LocalSnaps
 
 @pytest.fixture(autouse=True)
 def _empty_point_history_plans(monkeypatch: pytest.MonkeyPatch) -> None:
-    empty = SimpleNamespace(iter_days=lambda: iter(()))
+    empty = SimpleNamespace(
+        iter_days=lambda: iter(()),
+        names=HistoryNameIndex([], provider_timezone="UTC"),
+    )
     monkeypatch.setattr(
         publish.builders,
         "build_hotspots_history_plan",
@@ -632,7 +636,10 @@ def _patch_minimal_historic(
         lambda *args, **kwargs: stop_plan or _empty_stop_history_plan(),
         raising=False,
     )
-    empty_point_plan = SimpleNamespace(iter_days=lambda: iter(()))
+    empty_point_plan = SimpleNamespace(
+        iter_days=lambda: iter(()),
+        names=HistoryNameIndex([], provider_timezone="UTC"),
+    )
     monkeypatch.setattr(
         publish.builders,
         "build_hotspots_history_plan",
