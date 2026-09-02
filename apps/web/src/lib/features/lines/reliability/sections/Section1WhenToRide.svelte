@@ -20,12 +20,6 @@
   peak / crosstab / day-of-week signal at all, the whole section renders the
   styled AbsentValue chip (says WHY), never a dropped section.
 
-  NOTE (Phase 2): the plain-language verdict SENTENCE ("Worst around weekday PM
-  peak; calmest mid-morning …") lands here above the heatmap once the verdict
-  rules engine is built. Phase 1 frames the section with the rider question.
-
-  NOTE (Phase 4): the heatmap PRIMARY will be rebuilt as a LayerChart classed-tier
-  mark for the "same face" convergence; Phase 1 keeps the Heatmap primitive.
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';

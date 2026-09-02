@@ -1,5 +1,5 @@
 # transit-data-proxy — serves the public /v1 snapshot contract from the
-# transit-snapshots R2 bucket on the canonical host (slice-9.1.1p), plus the
+# transit-snapshots R2 bucket on the canonical host, plus the
 # aggregated public KPI endpoint /api/v1/kpis (src/kpis.js).
 #
 # Deliberately narrow zone routes: the compatibility data/API surfaces beat the

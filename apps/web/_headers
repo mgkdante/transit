@@ -1,4 +1,4 @@
-# Cloudflare Pages _headers — response headers by path (slice-9.2 P5 deploy glue).
+# Cloudflare _headers — response headers by path.
 #
 # This file is copied verbatim from static/ to the deploy root by
 # adapter-cloudflare; Cloudflare Pages reads it to attach headers. First matching

@@ -1,7 +1,7 @@
 name: Refresh Basemap Extract
 
-# Monthly refresh of the Montréal PMTiles basemap extract (slice-9.3, Family A
-# live map). NOT triggered by push/turbo build — the basemap is app-independent
+# Monthly refresh of the Montréal PMTiles basemap extract for the live map.
+# NOT triggered by push/turbo build — the basemap is app-independent
 # infrastructure on a stable R2 key; a monthly swap keeps roads/landuse current without
 # coupling to app deploys. Manual runs via workflow_dispatch.
 

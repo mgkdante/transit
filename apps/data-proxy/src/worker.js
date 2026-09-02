@@ -1,14 +1,14 @@
 // transit-data-proxy — read-only Cloudflare Worker serving the public /v1
 // snapshot contract from the transit-snapshots R2 bucket on the route
-// transit.yesid.dev/data/* (slice-9.1.1p), plus the aggregated public KPI
+// transit.yesid.dev/data/*, plus the aggregated public KPI
 // endpoint on transit.yesid.dev/api/v1/* (src/kpis.js). The compatibility route
 // also quarantines the retired /data/v1/sto/* prefix with 410 responses.
 //
 // Contract: GET/HEAD only; Content-Type and Cache-Control written at publish
 // time (db/src/transit_ops/snapshots/storage.py) pass through unchanged via
 // writeHttpMetadata; errors are never cacheable (no-store); CORS is wide open
-// (public read-only data) so the slice-9.2 app can fetch the canonical host
-// directly from any dev or prod origin. This worker never writes to the bucket.
+// (public read-only data) so consumers can fetch the canonical host directly
+// from any dev or prod origin. This worker never writes to the bucket.
 import { CORS_HEADERS, PREFLIGHT_HEADERS } from "./cors.js";
 import { serveKpis } from "./kpis.js";
 

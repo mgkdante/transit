@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# freshness-probe.sh — external freshness probe for the transit pipeline
-# (slice-9.1.1o). Dependency-light bash (curl + jq + date + psql, all
+# freshness-probe.sh — external freshness probe for the transit pipeline.
+# Dependency-light bash (curl + jq + date + psql, all
 # preinstalled on ubuntu-latest; NO uv sync). Six checks:
 #
 #   A. Live manifest age — the public /v1 manifest's files.live.generated_utc
@@ -17,7 +17,7 @@
 #      ONLY detector for the silver-load-freeze incident class: during it,
 #      captures and publishes kept succeeding (so A-D stayed green) while
 #      the silver load failed silently. The new run_kind='silver_load' rows
-#      (slice-9.1.1o) make those failures countable here.
+#      make those failures countable here.
 #   F. Stale newest silver snapshot — the newest silver.rt_feed_snapshots row
 #      must be younger than SILVER_STALE_MAX_AGE_SECONDS. With silver now
 #      ephemeral (1-day retention; raw R2 is the rebuild source), a silent

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# alert-issue.sh — the shared alert CHANNEL for the transit pipeline
-# (slice-9.1.1o). Zero new SaaS, zero new secrets: a labeled GitHub issue IS
+# alert-issue.sh — the shared alert CHANNEL for the transit pipeline.
+# Zero new SaaS, zero new secrets: a labeled GitHub issue IS
 # the alert, and GitHub emails admin@yesid.dev on create/close. An open issue
 # is the "alerting" state; closing it is the "recovered" state.
 #
