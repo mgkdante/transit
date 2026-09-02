@@ -474,6 +474,15 @@ function shareRows(values, keys) {
 		: [];
 }
 
+function dominantShare(values, keys) {
+	if (values == null) return null;
+	const bands = keys.map((key) => [key, Math.max(0, finite(values[key]) ?? 0)]);
+	const total = bands.reduce((sum, [, value]) => sum + value, 0);
+	if (total <= 0) return null;
+	const dominant = bands.reduce((best, row) => (row[1] > best[1] ? row : best));
+	return [dominant[0], Math.round((dominant[1] / total) * 100)];
+}
+
 function heatmapTiers(habits) {
 	const matrix = habits?.matrix ?? [];
 	if (!matrix.some((row) => row.some((value) => finite(value) != null))) return [];
@@ -572,6 +581,31 @@ function retainedLineDays(fixture, view) {
 		: [];
 }
 
+function retainedStopDays(fixture, view) {
+	if (!view.includes('from=')) return null;
+	const params = new URLSearchParams(view.split('?')[1] ?? '');
+	const from = params.get('from');
+	const to = params.get('to');
+	return Object.keys(fixture.files)
+		.filter((candidate) =>
+			/^historic\/history\/stops\/3532303935\/generations\/[0-9a-f]{64}\/\d{4}-\d{2}\.json$/u.test(
+				candidate,
+			),
+		)
+		.flatMap((path) => rawFile(fixture, path).days ?? [])
+		.filter((row) => (!from || from <= row.date) && (!to || row.date <= to));
+}
+
+function stopOccupancyMix(raw, retained) {
+	if (retained == null) return raw.occupancy_mix;
+	return Object.fromEntries(
+		OCCUPANCY.map((key) => [
+			key,
+			retained.reduce((sum, row) => sum + (finite(row.occupancy?.[key]) ?? 0), 0),
+		]),
+	);
+}
+
 function sumField(rows, group, field) {
 	return rows.reduce((sum, row) => sum + (finite(row[group]?.[field]) ?? 0), 0);
 }
@@ -633,7 +667,9 @@ function lineOracle(fixture, locale, view) {
 				last_trip_delay_min: round(retainedSpan.last_trip_delay_seconds / 60),
 				trip_count: retainedSpan.trip_count,
 			}
-		: latestDated(raw.service_spans ?? []);
+		: view.includes('from=')
+			? null
+			: latestDated(raw.service_spans ?? []);
 	const hasSpanPair =
 		typeof span?.first_trip_utc === 'string' && typeof span?.last_trip_utc === 'string';
 	const windowedStops =
@@ -968,6 +1004,7 @@ function lineOracle(fixture, locale, view) {
 
 function stopOracle(fixture, locale, view) {
 	const raw = stopFile(fixture);
+	const retained = retainedStopDays(fixture, view);
 	const day = (raw.periods ?? []).find((row) => row.grain === 'day') ?? null;
 	const allDaily = (raw.daily ?? []).filter(
 		(row) => finite(row.observation_count) != null && finite(row.severe_count) != null,
@@ -1030,10 +1067,9 @@ function stopOracle(fixture, locale, view) {
 					text: locale === 'fr' ? 'Part des retards graves' : 'Severe-delay share',
 				},
 			]);
-	const occupancyRows = shareRows(raw.occupancy_mix, OCCUPANCY);
-	const stopDominant = occupancyRows.length
-		? occupancyRows.reduce((best, row) => (row[1] > best[1] ? row : best))
-		: null;
+	const occupancyMix = stopOccupancyMix(raw, retained);
+	const occupancyRows = shareRows(occupancyMix, OCCUPANCY);
+	const stopDominant = dominantShare(occupancyMix, OCCUPANCY);
 	const localeNumber = (value) =>
 		new Intl.NumberFormat(locale === 'fr' ? 'fr' : 'en', { maximumFractionDigits: 1 }).format(
 			value,
@@ -1313,7 +1349,8 @@ function networkOracle(fixture, locale, view) {
 			},
 		},
 	};
-	const latestCancellation = cancellationRows.length ? cancellationRows.at(-1)[1] : null;
+	const latestCancellation =
+		series.findLast((row) => finite(row.cancellation_rate) != null)?.cancellation_rate ?? null;
 	return [
 		observation('network.live.vehicles', finite(live.vehicles_in_service)),
 		observation('network.live.on_time_pct', finite(live.on_time_pct)),
@@ -1439,6 +1476,105 @@ function proveNegativeControl(family) {
 }
 
 export function runOracleSelfCheck() {
+	const retainedStopFixture = structuredClone(FIXTURES.rich);
+	retainedStopFixture.files['historic/stop_reliability/52095.json'].occupancy_mix = {
+		empty: 0,
+		many_seats: 14,
+		few_seats: 46,
+		standing: 40,
+		full: 0,
+	};
+	retainedStopFixture.files[
+		'historic/history/stops/3532303935/generations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2026-08.json'
+	] = {
+		days: [
+			{
+				date: '2026-08-29',
+				occupancy: {
+					empty: 0,
+					many_seats: 13,
+					few_seats: 47,
+					standing: 40,
+					full: 0,
+				},
+			},
+		],
+	};
+	expectLiteral(
+		expectedDomainObservationsFromFixture(
+			retainedStopFixture,
+			'stop',
+			'en',
+			'?from=2026-08-29&to=2026-08-29',
+		).find((row) => row.id === 'stop.occupancy.shares')?.value.dominant.value.value,
+		47,
+		'selected stop history occupancy replaces current mix',
+	);
+	retainedStopFixture.files[
+		'historic/history/stops/3532303935/generations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2026-08.json'
+	].days[0].occupancy = {
+		empty: 0,
+		many_seats: 462,
+		few_seats: 464,
+		standing: 74,
+		full: 0,
+	};
+	expectLiteral(
+		expectedDomainObservationsFromFixture(
+			retainedStopFixture,
+			'stop',
+			'en',
+			'?from=2026-08-29&to=2026-08-29',
+		).find((row) => row.id === 'stop.occupancy.shares')?.value.dominant.label,
+		'FEW SEATS',
+		'stop dominant occupancy is selected before display rounding',
+	);
+	const noSpanFixture = structuredClone(FIXTURES.rich);
+	noSpanFixture.files[
+		'historic/history/lines/3234/generations/527864c22a3853a65c42ec69d86e009cd7a9fe782b9614e0abbda550d300ea43/2026-08.json'
+	].days.find((day) => day.date === '2026-08-29').service_span = null;
+	expectLiteral(
+		expectedDomainObservationsFromFixture(
+			noSpanFixture,
+			'line',
+			'en',
+			'?from=2026-08-29&to=2026-08-29',
+		).find((row) => row.id === 'line.service_span')?.value,
+		{
+			date: null,
+			first: null,
+			last: null,
+			minutes: null,
+			firstDelay: null,
+			lastDelay: null,
+			trips: null,
+		},
+		'selected line range never falls back to unselected current service span',
+	);
+	const oneDayNetworkFixture = structuredClone(FIXTURES.rich);
+	const networkPartitionPath = Object.keys(oneDayNetworkFixture.files).find((candidate) =>
+		/^historic\/history\/network\/generations\/[0-9a-f]{64}\/\d{4}-\d{2}\.json$/u.test(candidate),
+	);
+	invariant(networkPartitionPath != null, 'rich fixture lacks retained network partition');
+	oneDayNetworkFixture.files[networkPartitionPath].days = [
+		{
+			date: '2026-08-29',
+			cancellation: { canceled_trip_days: 1, total_trip_days: 200 },
+		},
+	];
+	expectLiteral(
+		expectedDomainObservationsFromFixture(
+			oneDayNetworkFixture,
+			'network',
+			'en',
+			'?from=2026-08-29&to=2026-08-29',
+		).find((row) => row.id === 'network.cancellations.rows')?.value,
+		{
+			table: { headers: [], rows: [] },
+			latest: { value: 0.5, text: '0.5%' },
+		},
+		'single retained cancellation keeps latest while chart remains absent',
+	);
 	expectLiteral(
 		expectedDomainObservations('rich', 'line', 'en', '?from=2026-08-27&to=2026-08-29').find(
 			(row) => row.id === 'line.day.completeness_pct',
