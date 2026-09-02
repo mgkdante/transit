@@ -217,14 +217,14 @@
 		gap: 0.375rem;
 		max-width: var(--measure-lede);
 		padding-left: clamp(1rem, 3vw, 1.5rem);
-		border-left: 1px solid var(--line-amber);
+		border-left: 1px solid var(--border-subtle);
 	}
 	.audit-brief-kicker,
 	.audit-brief-body {
 		margin: 0;
 	}
 	.audit-brief-kicker {
-		color: var(--accent-text);
+		color: var(--muted-foreground);
 	}
 	.audit-brief-body {
 		color: var(--secondary-foreground);
