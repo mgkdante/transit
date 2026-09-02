@@ -121,6 +121,10 @@
 		/>
 
 		<nav class="launch-content" aria-label={t.exploreNav}>
+			<div class="audit-brief" data-slot="home-audit-brief">
+				<p class="audit-brief-kicker label-metric">{t.auditKicker}</p>
+				<p class="audit-brief-body">{t.auditBody}</p>
+			</div>
 			{#each visibleGroups as { group, entries } (group.key)}
 				{@render launchGroup(group, entries)}
 			{/each}
@@ -161,6 +165,7 @@
 		<span class="hub-tile-tag label-metric">{tempoTag[entry.tempo]}</span>
 	</span>
 	<span class="hub-tile-title">{entry.title[locale]}</span>
+	<span class="hub-tile-preview" data-slot="home-destination-preview">{entry.preview[locale]}</span>
 	<span class="hub-tile-desc">{entry.desc[locale]}</span>
 	<span class="hub-tile-cta label-metric" aria-hidden="true">{t.enter} →</span>
 {/snippet}
@@ -205,6 +210,26 @@
 		flex-direction: column;
 		gap: 2.5rem;
 		min-width: 0;
+	}
+	.audit-brief {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		max-width: var(--measure-lede);
+		padding-left: clamp(1rem, 3vw, 1.5rem);
+		border-left: 1px solid var(--border-subtle);
+	}
+	.audit-brief-kicker,
+	.audit-brief-body {
+		margin: 0;
+	}
+	.audit-brief-kicker {
+		color: var(--muted-foreground);
+	}
+	.audit-brief-body {
+		color: var(--secondary-foreground);
+		font-size: var(--text-small);
+		line-height: 1.6;
 	}
 	.launch-group {
 		display: flex;
@@ -298,6 +323,12 @@
 		color: var(--muted-foreground);
 		font-size: var(--text-body);
 		line-height: 1.6;
+	}
+	.hub-tile-preview {
+		color: var(--accent-text);
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		line-height: 1.45;
 	}
 	.hub-tile-cta {
 		margin-top: auto;
