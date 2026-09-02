@@ -1,4 +1,4 @@
-// build-og — standalone Open Graph card generator (slice-9.2 P5 deploy glue).
+// build-og — standalone Open Graph card generator.
 //
 // Renders the two DEFAULT social cards (en + fr) at 1200×630 and writes them to
 // `static/og/{lang}.png`, where SeoHead.svelte points `og:image` / `twitter:image`.

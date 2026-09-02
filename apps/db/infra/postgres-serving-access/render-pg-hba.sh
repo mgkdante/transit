@@ -28,7 +28,7 @@ validate_hba_identifier "TRANSIT_REPORTING_ROLE" "$reporting_role"
 validate_hba_identifier "TRANSIT_DB_ROLE" "$db_role"
 
 cat <<HBA
-# Managed by Transit slice-8.5. Public TCP is limited to TLS + app owner/reporting.
+# Managed by Transit. Public TCP is limited to TLS + app owner/reporting.
 # transit-db is SSH-tunnel first unless TRANSIT_DB_PUBLIC_MODE=allow is set deliberately.
 # TYPE      DATABASE      USER                ADDRESS         METHOD
 local       all           all                                 scram-sha-256

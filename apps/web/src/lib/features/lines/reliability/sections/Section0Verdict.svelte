@@ -15,9 +15,6 @@
   Honest absence throughout: a null value renders the styled AbsentValue chip
   (says WHY), never a fabricated 0; each chart degrades to its own absence mark.
 
-  NOTE (Phase 2): the plain-language two-sided verdict SENTENCE ("Line 51 ran on
-  time 4 of 5 trips this week …") lands here above the tiles once the verdict
-  rules engine is built. Phase 1 frames the section with the rider question.
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';

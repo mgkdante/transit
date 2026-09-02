@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Run a conservative pg_repack maintenance pass against the configured database.
 #
-# slice-9.1.1m: the previous DEFAULT_TABLES named silver.trip_updates /
-# silver.trip_update_stop_time_updates / silver.vehicle_positions — all DROPPED by
+# The previous DEFAULT_TABLES named silver.trip_updates /
+# silver.trip_update_stop_time_updates / silver.vehicle_positions were all dropped by
 # migration 0014, so every live/dry run failed with "relations do not exist"
 # (exit 21). The list below is the 7 current churn tables, mirroring the
 # canonical sets in maintenance.py: REALTIME_SILVER_TABLES minus the 29GB

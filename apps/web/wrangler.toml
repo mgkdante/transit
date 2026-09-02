@@ -1,12 +1,12 @@
 # Cloudflare Worker (Static Assets) config for the Transit citizen web app
-# (slice-9.2). Deployed as a WORKER — not Pages — because the operator's
+# Deployed as a WORKER — not Pages — because the operator's
 # account API token carries Workers + Workers Routes + DNS + zone scope but
 # NOT Cloudflare Pages. adapter-cloudflare v7 targets either; the presence of
 # `main` + `[assets]` (and the absence of `pages_build_output_dir`) selects the
 # Workers build (emits `_worker.js` + `.assetsignore`, no `_routes.json`).
 #
-# /data/* stays on the existing zone-route worker (transit-data-proxy,
-# slice-9.1.1p): Cloudflare matches the MORE-SPECIFIC route first, so
+# /data/* stays on the existing zone-route worker (transit-data-proxy):
+# Cloudflare matches the MORE-SPECIFIC route first, so
 # `transit.yesid.dev/data/*` beats this app's `transit.yesid.dev/*` and the
 # data worker keeps serving the /v1 snapshot contract untouched. Re-run
 # apps/data-proxy/smoke.sh after any route change here.
@@ -67,7 +67,7 @@ bucket_name = "transit-snapshots"
 # namespace_id = "1002"
 # simple = { limit = 24, period = 60 }
 
-# ── Web-Vitals RUM (slice-9.7 item D) — INERT BY DEFAULT ────────────────────
+# ── Web-Vitals RUM — INERT BY DEFAULT ───────────────────────────────────────
 # The web app ships a Core-Web-Vitals collector ($lib/vitals/collect.ts) + a
 # beacon endpoint (/api/vitals → src/routes/api/vitals/+server.ts) that writes
 # to a Cloudflare Analytics Engine dataset. BOTH halves are dormant until the
@@ -90,7 +90,7 @@ bucket_name = "transit-snapshots"
 # dataset = "transit_web_vitals"
 
 [vars]
-# Web-Vitals RUM master switch (slice-9.7 D). Commented = OFF = inert: the
+# Web-Vitals RUM master switch. Commented = OFF = inert: the
 # client collector imports nothing and beacons nothing. Uncomment to "true"
 # (step (b) above) to turn the browser collector on. Keep in sync with the
 # WEB_VITALS binding above — flag on + binding present = data flows.

@@ -26,7 +26,7 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    # Per-service scoped env (slice-9.1.1w): the worker runs the full pipeline, so
+    # Per-service scoped env: the worker runs the full pipeline, so
     # it gets every Settings knob EXCEPT the health-only HEALTH_* ones. Typed
     # int/bool/float fields carry a default mirroring settings.py so an unset var
     # never becomes "" (which would crash pydantic at start); str|None fields use
@@ -97,7 +97,7 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    # Dedicated retention pruner (PR-B / slice-9.8). Same image as worker, with a
+    # Dedicated retention pruner. Same image as worker, with a
     # command override to run-pruner-loop. Retention pruning is DECOUPLED from the
     # realtime cycle: the worker no longer prunes in-cycle (which delayed every
     # live publish and could mark a healthy cycle "failed"); this always-on service
@@ -132,7 +132,7 @@ services:
       context: .
       dockerfile: Dockerfile.health
     restart: unless-stopped
-    # Per-service scoped env (slice-9.1.1w): the health service only reads DB +
+    # Per-service scoped env: the health service only reads DB +
     # bronze-storage + HEALTH_* knobs + the provider id + the five retention
     # values it reports. It deliberately has NO STM_API_KEY (run_health_checks
     # never calls check_stm_feed) and no third-party AI-tooling secrets.
