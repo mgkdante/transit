@@ -37,7 +37,7 @@ apps/db ──► Bronze (R2) ──► Silver + Gold (PostgreSQL/PostGIS)
                          ┌────────────┴────────────┐
                          ▼                         ▼
               apps/data-proxy             apps/web
-              compatibility + KPI API     SvelteKit dashboard
+              edge contract               SvelteKit dashboard
 ```
 
 The three application domains have one-way responsibilities:
@@ -45,7 +45,7 @@ The three application domains have one-way responsibilities:
 | Domain | Responsibility |
 |---|---|
 | [`apps/db`](apps/db/README.md) | Python ingestion, normalization, marts, publication, retention, and health checks |
-| `apps/data-proxy` | Cloudflare Worker for `/data/*` compatibility snapshots and `/api/v1/kpis` |
+| `apps/data-proxy` | Cloudflare Worker for the public `/v1` contract and compatibility routes |
 | `apps/web` | SvelteKit citizen dashboard; reads snapshots only, never PostgreSQL |
 
 The web app consumes an immutable `yesid.dev-design` Release under
