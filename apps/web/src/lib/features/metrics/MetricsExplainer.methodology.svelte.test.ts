@@ -7,7 +7,7 @@
 // note (the card is unchanged). The pure metric→key resolver is unit-tested in
 // metrics.methodology.test.ts; here we assert the rendered wiring.
 //
-// The data ports are stubbed (the real $lib/v1 chain reads $env/dynamic/public)
+// The data ports are stubbed (the real repository chain reads $env/dynamic/public)
 // with a mutable `provState` the createResource mock reads by reference.
 
 import { afterEach, describe, it, expect, vi } from 'vitest';
@@ -34,12 +34,6 @@ const { provState } = vi.hoisted(() => ({
 	},
 }));
 
-vi.mock('$lib/v1', () => ({
-	getProvenance: vi.fn(),
-	getV1Context: () => ({
-		manifest: { short_name: 'STM', display_name: 'STM', dataset_version: 'test' },
-	}),
-}));
 vi.mock('$lib/v1/repositories/provenance', () => ({
 	getProvenance: vi.fn(),
 }));

@@ -238,11 +238,8 @@ const historyReload = vi.fn();
 
 vi.mock('$lib/nav', async () => ({ layout: { isDesktop: true } }));
 
-// The barrel mock exports the two fetchers (distinct spy identities so the resource
-// mock can tell them apart) + the freshness helper HealthStatus imports. The spies
-// live in a vi.hoisted block so both the (hoisted) vi.mock factories AND the test
-// bodies can reference them. freshnessRelative delegates to the real module so
-// relative-age math stays honest.
+// Distinct hoisted leaf-fetcher spies let the resource mock route each request while
+// keeping the same identities available to the mock factories and test assertions.
 const { getProvenance, getDataHealth, getHistoricAvailability, resourceOptions } = vi.hoisted(
 	() => ({
 		getProvenance: vi.fn(),
@@ -251,15 +248,6 @@ const { getProvenance, getDataHealth, getHistoricAvailability, resourceOptions }
 		resourceOptions: [] as Array<{ kind: string; options: Record<string, unknown> }>,
 	}),
 );
-vi.mock('$lib/v1', async () => {
-	const freshness = await import('$lib/v1/freshness');
-	return {
-		getProvenance,
-		getDataHealth,
-		getHistoricAvailability,
-		freshnessRelative: freshness.freshnessRelative,
-	};
-});
 vi.mock('$lib/v1/repositories/provenance', () => ({
 	getProvenance,
 }));
