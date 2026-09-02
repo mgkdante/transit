@@ -104,12 +104,9 @@ const ports = vi.hoisted(() => ({
 	getAdvertisedReceipt: vi.fn(),
 }));
 
-// Mock $lib/v1 with a clean factory (importing the real barrel pulls the full
-// module graph incl. $app/environment, which jsdom can't boot). The two getters
-// are the only v1 surface this screen touches.
-vi.mock('$lib/v1', () => ports);
 vi.mock('$lib/v1/repositories/historic', () => ({
 	getReceiptsIndex: ports.getReceiptsIndex,
+	getReceipt: ports.getReceipt,
 	getAdvertisedReceipt: ports.getAdvertisedReceipt,
 }));
 
@@ -172,7 +169,7 @@ beforeEach(async () => {
 		worst_route: { id: '161', name: 'Van Horne', otp_delta_pts: -8 },
 		worst_stop: { id: '57191', name: 'Rockland', avg_delay_min: 6.1 },
 	};
-	const v1 = await import('$lib/v1');
+	const v1 = await import('$lib/v1/repositories/historic');
 	// Resolve synchronously: the createResource mock above captures a non-thenable
 	// return immediately, so first paint carries data (the real getters are async;
 	// the synchronous stub only matters for the test's render timing).
@@ -199,7 +196,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('puts the availability-bound day picker and four-entry TOC in one combined rail', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		receiptData = withAllCuts();
 		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
 		const { container } = render(AccountabilityReceipt);
@@ -228,7 +225,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('stands optional cards and TOC entries down together while retaining fixed numbers', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		receiptData = {
 			...withAllCuts(),
 			by_shift: undefined,
@@ -253,7 +250,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('applies the delivered and silent gates independently to each card and TOC entry', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		const base = receiptData as Receipt;
 		receiptData = {
 			...base,
@@ -303,7 +300,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('Collapse all and Expand all cover every currently rendered receipt card', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		receiptData = withAllCuts();
 		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
 		const { container } = render(AccountabilityReceipt);
@@ -326,7 +323,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('persists the Day and TOC disclosures independently across a remount', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		receiptData = withAllCuts();
 		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
 		const first = render(AccountabilityReceipt);
@@ -358,7 +355,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('Always start collapsed initializes both rail disclosures and every current card closed', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		receiptData = withAllCuts();
 		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
 		localStorage.setItem('transit:quiet-mode', 'true');
@@ -382,7 +379,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('a late optional card mounted by a date change adopts remembered collapsed mode', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		localStorage.setItem('transit:quiet-mode', 'true');
 		const base = receiptData as Receipt;
 		const byDate: Record<string, Receipt> = {
@@ -403,7 +400,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('opens a closed TOC target before scrolling without opening another card', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		receiptData = withAllCuts();
 		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
 		const { container } = render(AccountabilityReceipt);
@@ -424,7 +421,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('reconciles an active Silent destination to the nearest surviving receipt card', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		const base = receiptData as Receipt;
 		const byDate: Record<string, Receipt> = {
 			'2026-06-17': withAllCuts(base),
@@ -481,7 +478,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('never renders stale cards from the previously selected receipt while a new day resolves', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		receiptData = withAllCuts();
 		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
 		const { container } = render(AccountabilityReceipt);
@@ -540,7 +537,7 @@ describe('AccountabilityReceipt honesty', () => {
 	});
 
 	it('shows the SPECIFIC empty-index copy when no receipt dates are published', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		indexData = { generated_utc: '2026-06-17T07:00:00Z' as IsoUtc, dates: [] };
 		vi.mocked(v1.getReceiptsIndex).mockImplementation(() => indexData as never);
 		render(AccountabilityReceipt);
@@ -556,7 +553,7 @@ describe('AccountabilityReceipt honesty', () => {
 	});
 
 	it('loads the latest day through the strict advertised-receipt seam', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		render(AccountabilityReceipt);
 		expect(await screen.findByText('82%')).toBeInTheDocument();
 		expect(vi.mocked(v1.getAdvertisedReceipt)).toHaveBeenCalledWith(
@@ -588,7 +585,7 @@ describe('AccountabilityReceipt composed layout (E2)', () => {
 	});
 
 	it('stands the worst-of-day panel down and marks the layout no-worst when absent', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		receiptData = {
 			generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
 			date: '2026-06-17',
@@ -627,7 +624,7 @@ describe('AccountabilityReceipt composed layout (E2)', () => {
 
 describe('AccountabilityReceipt date switching', () => {
 	it('re-fetches the chosen day and renders its figures when a non-default chip is picked', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 
 		// Model a reactive, date-KEYED re-fetch: getReceipt returns the day matching
 		// the date it is invoked with, so picking another chip (which flips the
@@ -710,7 +707,7 @@ describe('AccountabilityReceipt smart date picker (S13)', () => {
 	});
 
 	it('bounds the calendar across a GAP day (native pickers cannot disable an interior day)', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		// Jun 15 + Jun 17 published; Jun 16 is a gap the index never published.
 		indexData = {
 			generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
@@ -732,7 +729,7 @@ describe('AccountabilityReceipt smart date picker (S13)', () => {
 
 describe('AccountabilityReceipt S13 re-granulated cuts', () => {
 	it('renders the by-time-of-day, service-delivered, and not-reported cuts when present', async () => {
-		const v1 = await import('$lib/v1');
+		const v1 = await import('$lib/v1/repositories/historic');
 		receiptData = {
 			...(receiptData as Receipt),
 			by_shift: [
