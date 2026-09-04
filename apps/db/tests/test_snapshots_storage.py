@@ -631,6 +631,108 @@ def test_local_get_json_roundtrips(tmp_path):
     assert store.get_json("_meta/state.json") == {"b": 2}
 
 
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "full_key",
+        "put_bytes",
+        "read_bytes",
+        "read_bytes_at_version",
+        "capture_object_version",
+        "iter_object_versions",
+        "immutable_exists",
+        "capture_stable_version",
+        "activate_stable_json_outcome",
+        "put_immutable_json_outcome",
+        "get_json",
+    ],
+)
+def test_local_snapshot_storage_rejects_parent_paths_for_every_operation(
+    tmp_path,
+    operation: str,
+) -> None:
+    root = tmp_path / "snapshots"
+    outside = tmp_path / "outside.json"
+    outside.write_bytes(b'{"outside":true}')
+    outside_stat = outside.stat()
+    rel_key = "../../../outside.json"
+    store = LocalSnapshotStorage(str(root), "v1/stm")
+    stored_version = StoredObjectVersion(
+        rel_key=rel_key,
+        etag=hashlib.sha256(outside.read_bytes()).hexdigest(),
+        last_modified_utc=datetime.fromtimestamp(outside_stat.st_mtime, tz=UTC),
+        size=outside_stat.st_size,
+    )
+    stable_version = storage_module.StableObjectVersion(
+        rel_key=rel_key,
+        token=hashlib.sha256(outside.read_bytes()).hexdigest(),
+    )
+    operations = {
+        "full_key": lambda: store.full_key(rel_key),
+        "put_bytes": lambda: store.put_bytes(rel_key, b"{}", tier="static"),
+        "read_bytes": lambda: store.read_bytes(rel_key),
+        "read_bytes_at_version": lambda: store.read_bytes_at_version(rel_key, stored_version),
+        "capture_object_version": lambda: store.capture_object_version(rel_key),
+        "iter_object_versions": lambda: list(store.iter_object_versions(rel_key)),
+        "immutable_exists": lambda: store.immutable_exists(rel_key),
+        "capture_stable_version": lambda: store.capture_stable_version(rel_key),
+        "activate_stable_json_outcome": lambda: store.activate_stable_json_outcome(
+            rel_key,
+            {"outside": False},
+            expected_version=stable_version,
+            tier="historic",
+        ),
+        "put_immutable_json_outcome": lambda: store.put_immutable_json_outcome(
+            rel_key, {"outside": False}
+        ),
+        "get_json": lambda: store.get_json(rel_key),
+    }
+
+    with pytest.raises(ValueError, match="unsafe_local_snapshot_path"):
+        operations[operation]()
+
+
+def test_local_snapshot_storage_rejects_absolute_paths(tmp_path) -> None:
+    root = tmp_path / "snapshots"
+    outside = tmp_path / "outside.json"
+    store = LocalSnapshotStorage(str(root), "v1/stm")
+
+    with pytest.raises(ValueError, match="unsafe_local_snapshot_path"):
+        store.put_bytes(str(outside), b"{}", tier="static")
+
+    assert not outside.exists()
+
+
+def test_local_snapshot_storage_rejects_existing_symlink_escape(tmp_path) -> None:
+    root = tmp_path / "snapshots"
+    provider_root = root / "v1" / "stm"
+    outside = tmp_path / "outside"
+    provider_root.mkdir(parents=True)
+    outside.mkdir()
+    (provider_root / "escape").symlink_to(outside, target_is_directory=True)
+    store = LocalSnapshotStorage(str(root), "v1/stm")
+
+    with pytest.raises(ValueError, match="unsafe_local_snapshot_path"):
+        store.put_bytes("escape/file.json", b"{}", tier="static")
+
+    assert not (outside / "file.json").exists()
+
+
+def test_local_snapshot_storage_rejects_parent_path_in_base_prefix(tmp_path) -> None:
+    with pytest.raises(ValueError, match="unsafe_local_snapshot_path"):
+        LocalSnapshotStorage(str(tmp_path / "snapshots"), "../outside")
+
+
+def test_local_snapshot_storage_preserves_safe_key_characters(tmp_path) -> None:
+    store = LocalSnapshotStorage(str(tmp_path), "v1/stm")
+    rel_key = "static/routes/Blue line #1.json"
+
+    key = store.put_bytes(rel_key, b"{}", tier="static")
+
+    assert key == str(tmp_path / "v1/stm" / rel_key)
+    assert store.read_bytes(rel_key) == b"{}"
+
+
 def test_put_json_delegates_to_put_bytes():
     calls = []
 

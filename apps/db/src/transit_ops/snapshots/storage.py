@@ -583,16 +583,44 @@ class LocalSnapshotStorage:
     def __init__(self, root: str, base_prefix: str) -> None:
         self._root = pathlib.Path(root)
         self._prefix = base_prefix.strip("/")
+        prefix_path = pathlib.PurePosixPath(self._prefix)
+        if prefix_path.is_absolute() or ".." in prefix_path.parts:
+            raise ValueError("unsafe_local_snapshot_path")
+        self._provider_root = self._root.joinpath(*prefix_path.parts)
+        try:
+            self._resolved_root = self._root.resolve()
+            self._resolved_provider_root = self._provider_root.resolve()
+            self._resolved_provider_root.relative_to(self._resolved_root)
+        except (OSError, RuntimeError, ValueError):
+            raise ValueError("unsafe_local_snapshot_path") from None
         self._immutable_registry_lock = threading.Lock()
         self._immutable_locks: dict[str, threading.Lock] = {}
 
+    def _path(self, rel_key: str) -> pathlib.Path:
+        """Resolve one logical key without crossing the configured provider root."""
+
+        try:
+            rel_path = pathlib.PurePosixPath(rel_key)
+            if (
+                not rel_key
+                or not rel_path.parts
+                or rel_path.is_absolute()
+                or ".." in rel_path.parts
+            ):
+                raise ValueError
+            path = self._provider_root.joinpath(*rel_path.parts)
+            path.resolve().relative_to(self._resolved_provider_root)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            raise ValueError("unsafe_local_snapshot_path") from None
+        return path
+
     def full_key(self, rel_key: str) -> str:
         """Return the on-disk path for *rel_key* as a string."""
-        return str(self._root / self._prefix / rel_key)
+        return str(self._path(rel_key))
 
     def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:  # noqa: ARG002
         """Write raw *body* bytes to ``{root}/{base_prefix}/{rel_key}``; return path."""
-        dest = self._root / self._prefix / rel_key
+        dest = self._path(rel_key)
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(body)
         return str(dest)
@@ -604,7 +632,7 @@ class LocalSnapshotStorage:
     def read_bytes(self, rel_key: str) -> bytes | None:
         """Read exact local snapshot bytes, returning ``None`` when absent."""
 
-        path = self._root / self._prefix / rel_key
+        path = self._path(rel_key)
         try:
             return path.read_bytes()
         except FileNotFoundError:
@@ -619,7 +647,7 @@ class LocalSnapshotStorage:
 
         if expected_version.rel_key != rel_key:
             raise ValueError("stored object version belongs to a different key")
-        path = self._root / self._prefix / rel_key
+        path = self._path(rel_key)
         try:
             raw = path.read_bytes()
             stat = path.stat()
@@ -638,7 +666,7 @@ class LocalSnapshotStorage:
     def capture_object_version(self, rel_key: str) -> StoredObjectVersion | None:
         """Capture a content token plus filesystem time and size."""
 
-        path = self._root / self._prefix / rel_key
+        path = self._path(rel_key)
         try:
             body = path.read_bytes()
             stat = path.stat()
@@ -654,8 +682,8 @@ class LocalSnapshotStorage:
     def iter_object_versions(self, rel_prefix: str) -> Iterator[StoredObjectVersion]:
         """Yield deterministic recursive local inventory below *rel_prefix*."""
 
-        provider_root = self._root / self._prefix
-        prefix_path = provider_root / rel_prefix
+        provider_root = self._provider_root
+        prefix_path = self._path(rel_prefix)
         if not prefix_path.exists():
             return
         paths = [prefix_path] if prefix_path.is_file() else sorted(prefix_path.rglob("*"))
@@ -676,13 +704,14 @@ class LocalSnapshotStorage:
             registry_lock=self._immutable_registry_lock,
             locks=self._immutable_locks,
         )
+        path = self._path(rel_key)
         with lock:
-            return (self._root / self._prefix / rel_key).exists()
+            return path.exists()
 
     def capture_stable_version(self, rel_key: str) -> StableObjectVersion:
         """Capture a stable local file's content version, or absence."""
 
-        dest = self._root / self._prefix / rel_key
+        dest = self._path(rel_key)
         try:
             body = dest.read_bytes()
         except FileNotFoundError:
@@ -703,7 +732,7 @@ class LocalSnapshotStorage:
             raise ValueError("stable activation version belongs to a different key")
 
         body = snapshot_json_bytes(payload)
-        dest = self._root / self._prefix / rel_key
+        dest = self._path(rel_key)
         with _exclusive_directory_lock(dest.parent):
             try:
                 active_body = dest.read_bytes()
@@ -769,7 +798,7 @@ class LocalSnapshotStorage:
         """Exclusively create an immutable file or verify exact existing bytes."""
 
         body = snapshot_json_bytes(payload)
-        dest = self._root / self._prefix / rel_key
+        dest = self._path(rel_key)
         lock = _lock_for_key(
             rel_key,
             registry_lock=self._immutable_registry_lock,
@@ -798,7 +827,7 @@ class LocalSnapshotStorage:
 
     def get_json(self, rel_key: str) -> dict | None:  # type: ignore[type-arg]
         """Read and JSON-decode the object at *rel_key*; ``None`` if the file is missing."""
-        path = self._root / self._prefix / rel_key
+        path = self._path(rel_key)
         if not path.exists():
             return None
         return json.loads(path.read_bytes())
