@@ -20,6 +20,7 @@ const SCRIPT = fileURLToPath(
 const STABLE_KEY = "transit-snapshots/v1/stm/static/basemap/montreal.pmtiles";
 const BACKUP_KEY =
   "transit-snapshots/v1/stm/static/basemap/backups/test-before.pmtiles";
+const HELPER_GUARD_TIMEOUT_MS = 8_000;
 const temporaryDirectories = [];
 
 function sha256(bytes) {
@@ -60,6 +61,10 @@ const statePath = join(
 await mkdir(dirname(statePath), { recursive: true });
 const count = Number(await readFile(statePath, 'utf8').catch(() => '0')) + 1;
 await writeFile(statePath, String(count));
+const operationDelayMs = Number(process.env.FAKE_R2_OPERATION_DELAY_MS ?? '0');
+if (operationDelayMs > 0) {
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, operationDelayMs));
+}
 if (
   operation === 'put' &&
   process.env.FAKE_R2_FAIL_PUT_KEY === objectPath &&
@@ -114,6 +119,15 @@ async function waitForBytes(path, expected) {
   throw new Error(`timed out waiting for ${path}`);
 }
 
+async function fakeOperationCount(fixture, operation, objectPath) {
+  const statePath = join(
+    fixture.root,
+    ".fake-wrangler-state",
+    Buffer.from(`${operation}:${objectPath}`).toString("base64url"),
+  );
+  return Number(await readFile(statePath, "utf8"));
+}
+
 async function runHelper(
   fixture,
   extraEnv = {},
@@ -153,7 +167,7 @@ async function runHelper(
     guardKilled = true;
     spawnSync("pkill", ["-KILL", "-P", String(child.pid)]);
     process.kill(-child.pid, "SIGKILL");
-  }, 3_000);
+  }, HELPER_GUARD_TIMEOUT_MS);
   const code = await new Promise((resolveExit) =>
     child.once("close", resolveExit),
   );
@@ -263,13 +277,18 @@ describe("basemap R2 replacement", () => {
     const result = await runHelper(fixture, {
       FAKE_R2_HANG_PUT_AFTER_COPY_KEY: STABLE_KEY,
       FAKE_R2_HANG_PUT_AFTER_COPY_NUMBER: "1",
-      WRANGLER_TIMEOUT_MS: "100",
+      FAKE_R2_OPERATION_DELAY_MS: "150",
+      WRANGLER_TIMEOUT_MS: "1000",
     });
 
     assert.equal(result.guardKilled, false);
     assert.equal(result.code, 1);
     assert.match(result.stderr, /timed out/u);
     assert.match(result.stderr, /previous object restored and verified/u);
+    assert.equal(await fakeOperationCount(fixture, "put", BACKUP_KEY), 1);
+    assert.equal(await fakeOperationCount(fixture, "get", BACKUP_KEY), 1);
+    assert.equal(await fakeOperationCount(fixture, "put", STABLE_KEY), 2);
+    assert.equal(await fakeOperationCount(fixture, "get", STABLE_KEY), 2);
     assert.deepEqual(await readFile(fixture.stable), fixture.previousBytes);
   });
 
