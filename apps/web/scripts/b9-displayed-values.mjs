@@ -19,7 +19,7 @@ const args = new Set(process.argv.slice(2));
 const WEB_ROOT = new URL('..', import.meta.url).pathname;
 const OUTPUT = new URL('../.svelte-kit/output/server/index.js', import.meta.url).pathname;
 const BUILD_ROOT = join(WEB_ROOT, '.svelte-kit/cloudflare');
-const WRANGLER = join(WEB_ROOT, '../data-proxy/node_modules/.bin/wrangler');
+const WRANGLER = join(WEB_ROOT, '../../node_modules/.bin/wrangler');
 const REPLAY_PREFIX = '/v1/stm/';
 const CELLS = Object.freeze([
 	{

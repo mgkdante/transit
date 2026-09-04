@@ -387,6 +387,11 @@ describe('ST5 Transit shared-tooling adoption', () => {
 		expect(webDryRun).toBeGreaterThan(proxyDryRun);
 		expect(chromiumInstall).toBeGreaterThan(webDryRun);
 		expect(browserProof).toBeGreaterThan(chromiumInstall);
+
+		const b9Runner = text('apps/web/scripts/b9-displayed-values.mjs');
+		expect(b9Runner).toContain("join(WEB_ROOT, '../../node_modules/.bin/wrangler')");
+		expect(b9Runner).not.toContain('../data-proxy/node_modules/.bin/wrangler');
+		expect(existsSync(join(ROOT, 'node_modules/.bin/wrangler'))).toBe(true);
 	});
 
 	it('makes an exact Node pin change exercise every affected owned lane', () => {
