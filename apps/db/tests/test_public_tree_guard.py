@@ -411,6 +411,65 @@ def test_utf8_keeps_distinct_vault_marker_locations(
     ]
 
 
+def test_valid_utf8_with_nul_keeps_precise_marker_location(indexed_repo: IndexedRepo) -> None:
+    content = ("public heading\n" + "op" + "://Transit/item/field").encode() + b"\x00"
+    indexed_repo.write_bytes("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "vault-reference: notes.txt:2\n"
+
+
+@pytest.mark.parametrize(
+    ("bom", "encoding", "stray_byte"),
+    [
+        (b"", "utf-16-le", b"\x41"),
+        (b"", "utf-16-be", b"\x59"),
+        (codecs.BOM_UTF16_LE, "utf-16-le", b"\x41"),
+        (codecs.BOM_UTF16_BE, "utf-16-be", b"\x59"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("marker", "category"),
+    [
+        ("op" + "://Transit/item/field", "vault-reference"),
+        ("/" + "Users/Private.User/project", "absolute-home-path"),
+        ("PRIVATE " + "VULNERABILITY: details", "private-" + "vulnerability-marker"),
+    ],
+)
+def test_utf16_word_corruption_before_marker_still_fails_file_level(
+    indexed_repo: IndexedRepo,
+    bom: bytes,
+    encoding: str,
+    stray_byte: bytes,
+    marker: str,
+    category: str,
+) -> None:
+    content = bom + "public prefix ".encode(encoding) + stray_byte + marker.encode(encoding)
+    indexed_repo.write_bytes("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == f"{category}: notes.txt:1\n"
+
+
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_utf16_embedded_vault_fragment_without_boundary_stays_allowed(
+    indexed_repo: IndexedRepo, encoding: str
+) -> None:
+    indexed_repo.write_bytes("notes.txt", ("scoop" + "://public.example").encode(encoding))
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
 def test_bomless_utf16_with_trailing_byte_is_scanned(
     indexed_repo: IndexedRepo, encoding: str

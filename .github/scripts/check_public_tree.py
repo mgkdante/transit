@@ -51,12 +51,22 @@ PEM_PATTERN = re.compile(
     re.escape("-----BEGIN ") + r"(?:CERTIFICATE|(?:[A-Z0-9]+ )?PRIVATE KEY)" + re.escape("-----")
 )
 VAULT_PATTERN = re.compile(r"\b(?:op|1password|vault)://", re.IGNORECASE)
+AMBIGUOUS_VAULT_PATTERN = re.compile(r"(?:op|1password|vault)://", re.IGNORECASE)
 VULNERABILITY_LABEL_PATTERN = re.compile(
     r"\b(?:private|embargoed)[ _-]+vulnerabilit(?:y|ies)\s*(?=[:\]})])",
     re.IGNORECASE,
 )
 SECURITY_REPORT_MARKER_PATTERN = re.compile(
     r"\b(?:confidential|private|embargoed)[ _-]+"
+    r"(?:vulnerabilit(?:y|ies)[ _-]+report|security[ _-]+finding)\b",
+    re.IGNORECASE,
+)
+AMBIGUOUS_VULNERABILITY_LABEL_PATTERN = re.compile(
+    r"(?:private|embargoed)[ _-]+vulnerabilit(?:y|ies)\s*(?=[:\]})])",
+    re.IGNORECASE,
+)
+AMBIGUOUS_SECURITY_REPORT_MARKER_PATTERN = re.compile(
+    r"(?:confidential|private|embargoed)[ _-]+"
     r"(?:vulnerabilit(?:y|ies)[ _-]+report|security[ _-]+finding)\b",
     re.IGNORECASE,
 )
@@ -85,6 +95,24 @@ HOME_PATTERNS = (
     ),
 )
 ROOT_HOME_PATTERN = re.compile(r"(?<![\w.$-])/root(?=/|[\s\"'`]|$)")
+AMBIGUOUS_HOME_PATTERNS = (
+    re.compile(re.escape("/" + "home" + "/") + USER_SEGMENT + USER_TERMINATOR),
+    re.compile(re.escape("/" + "Users" + "/") + USER_SEGMENT + USER_TERMINATOR),
+    re.compile(
+        r"[A-Za-z]:"
+        + re.escape("\\")
+        + r"Users"
+        + re.escape("\\")
+        + USER_SEGMENT
+        + USER_TERMINATOR,
+        re.IGNORECASE,
+    ),
+    re.compile(
+        re.escape("/mnt/") + r"[A-Za-z]" + re.escape("/Users/") + USER_SEGMENT + USER_TERMINATOR,
+        re.IGNORECASE,
+    ),
+)
+AMBIGUOUS_ROOT_HOME_PATTERN = re.compile(r"/root(?=/|[\s\"'`]|$)")
 
 Finding = tuple[str, str, int]
 
@@ -94,6 +122,13 @@ class IndexEntry:
     mode: str
     object_id: str
     path: str
+
+
+@dataclass(frozen=True)
+class TextCandidate:
+    text: str
+    file_level: bool
+    relaxed_boundaries: bool = False
 
 
 class GitQueryError(RuntimeError):
@@ -207,74 +242,96 @@ def _is_home_user(user: str) -> bool:
     )
 
 
-def _has_private_home(line: str) -> bool:
+def _has_private_home(line: str, *, relaxed_boundaries: bool = False) -> bool:
+    patterns = AMBIGUOUS_HOME_PATTERNS if relaxed_boundaries else HOME_PATTERNS
+    root_pattern = AMBIGUOUS_ROOT_HOME_PATTERN if relaxed_boundaries else ROOT_HOME_PATTERN
     return (
         any(
             _is_home_user(match.group("user"))
             and unicodedata.normalize("NFC", match.group("user")).casefold()
             not in PLACEHOLDER_USERS
-            for pattern in HOME_PATTERNS
+            for pattern in patterns
             for match in pattern.finditer(line)
         )
-        or ROOT_HOME_PATTERN.search(line) is not None
+        or root_pattern.search(line) is not None
     )
 
 
-def _utf16_candidates(content: bytes, encodings: tuple[str, ...]) -> tuple[str, ...]:
-    candidates: list[str] = []
-    for byte_offset in (0, 1):
+def _utf16_candidates(content: bytes, encodings: tuple[str, ...]) -> tuple[TextCandidate, ...]:
+    candidates: list[TextCandidate] = []
+    byte_offsets = (0, 1) if len(content) % 2 else (0,)
+    for byte_offset in byte_offsets:
         for encoding in encodings:
             decoded = content[byte_offset:].decode(encoding, errors="replace")
-            if decoded not in candidates:
-                candidates.append(decoded)
+            candidate = TextCandidate(
+                text=decoded,
+                file_level=True,
+                relaxed_boundaries=byte_offset == 1,
+            )
+            if candidate not in candidates:
+                candidates.append(candidate)
     return tuple(candidates)
 
 
-def _decode_indexed_text_candidates(content: bytes) -> tuple[tuple[str, ...], bool]:
+def _decode_indexed_text_candidates(content: bytes) -> tuple[TextCandidate, ...]:
     if content.startswith((codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)):
-        return (content.decode("utf-32", errors="replace"),), False
+        return (TextCandidate(content.decode("utf-32", errors="replace"), file_level=False),)
     if content.startswith(codecs.BOM_UTF16_LE):
-        return (
-            _utf16_candidates(content[len(codecs.BOM_UTF16_LE) :], ("utf-16-le",)),
-            True,
-        )
+        return _utf16_candidates(content[len(codecs.BOM_UTF16_LE) :], ("utf-16-le",))
     if content.startswith(codecs.BOM_UTF16_BE):
-        return (
-            _utf16_candidates(content[len(codecs.BOM_UTF16_BE) :], ("utf-16-be",)),
-            True,
-        )
-    if content.startswith(codecs.BOM_UTF8):
-        return (content.decode("utf-8-sig", errors="replace"),), False
+        return _utf16_candidates(content[len(codecs.BOM_UTF16_BE) :], ("utf-16-be",))
+
+    candidates: list[TextCandidate] = []
+    utf8_encoding = "utf-8-sig" if content.startswith(codecs.BOM_UTF8) else "utf-8"
+    try:
+        utf8_text = content.decode(utf8_encoding)
+    except UnicodeDecodeError:
+        if b"\0" not in content:
+            candidates.append(TextCandidate(content.decode("utf-8", errors="replace"), False))
+    else:
+        candidates.append(TextCandidate(utf8_text, file_level=False))
 
     if b"\0" in content:
-        return _utf16_candidates(content, ("utf-16-le", "utf-16-be")), True
-    return (content.decode("utf-8", errors="replace"),), False
+        utf16_content = (
+            content[len(codecs.BOM_UTF8) :] if content.startswith(codecs.BOM_UTF8) else content
+        )
+        candidates.extend(_utf16_candidates(utf16_content, ("utf-16-le", "utf-16-be")))
+    return tuple(candidates)
 
 
-def _candidate_findings(candidate: str) -> set[tuple[str, int]]:
+def _candidate_findings(candidate: TextCandidate) -> set[tuple[str, int]]:
     findings: set[tuple[str, int]] = set()
-    for line_number, line in enumerate(candidate.splitlines(), start=1):
+    vault_pattern = AMBIGUOUS_VAULT_PATTERN if candidate.relaxed_boundaries else VAULT_PATTERN
+    vulnerability_patterns = (
+        (AMBIGUOUS_VULNERABILITY_LABEL_PATTERN, AMBIGUOUS_SECURITY_REPORT_MARKER_PATTERN)
+        if candidate.relaxed_boundaries
+        else (VULNERABILITY_LABEL_PATTERN, SECURITY_REPORT_MARKER_PATTERN)
+    )
+    for line_number, line in enumerate(candidate.text.splitlines(), start=1):
         if PEM_PATTERN.search(line):
             findings.add(("pem-material", line_number))
-        if VAULT_PATTERN.search(line):
+        if vault_pattern.search(line):
             findings.add(("vault-reference", line_number))
-        if any(
-            pattern.search(line)
-            for pattern in (VULNERABILITY_LABEL_PATTERN, SECURITY_REPORT_MARKER_PATTERN)
-        ):
+        if any(pattern.search(line) for pattern in vulnerability_patterns):
             findings.add(("private-" + "vulnerability-marker", line_number))
-        if _has_private_home(line):
+        if _has_private_home(line, relaxed_boundaries=candidate.relaxed_boundaries):
             findings.add(("absolute-home-path", line_number))
     return findings
 
 
 def _content_findings(path: str, content: bytes) -> set[Finding]:
-    findings: set[Finding] = set()
-    candidates, file_level = _decode_indexed_text_candidates(content)
-    for candidate in candidates:
+    precise_findings: set[Finding] = set()
+    file_level_categories: set[str] = set()
+    for candidate in _decode_indexed_text_candidates(content):
         for category, line_number in _candidate_findings(candidate):
-            findings.add((category, path, 1 if file_level else line_number))
-    return findings
+            if candidate.file_level:
+                file_level_categories.add(category)
+            else:
+                precise_findings.add((category, path, line_number))
+    precise_categories = {category for category, _path, _line in precise_findings}
+    return precise_findings | {
+        (category, path, 1) for category in file_level_categories - precise_categories
+    }
 
 
 def _scan_index(root: Path) -> set[Finding]:
