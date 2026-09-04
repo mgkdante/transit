@@ -15,8 +15,8 @@ CONNECTION-level prune functions are exercised here: the engine-level batch
 loop commits per batch and would escape the rollback fixture (it is covered
 offline in tests/test_maintenance.py).
 
-    TRANSIT_TEST_DATABASE_URL=\
-        "postgresql+psycopg://repro@/transit_repro?host=/tmp/bronzerepro" \
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@/transit_repro?host=/tmp/bronzerepro" \
         uv run pytest tests/test_bronze_prune_real_db.py -v
 
 Never point this at production.

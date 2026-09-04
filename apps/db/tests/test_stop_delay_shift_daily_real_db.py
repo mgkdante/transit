@@ -9,7 +9,8 @@ Proves the two invariants the shift grain must hold:
 
 Runs only against a disposable Postgres migrated to head:
 
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:55434/transit_test" \
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:55434/transit_test" \
         uv run pytest tests/test_stop_delay_shift_daily_real_db.py -v
 
 Never point this at production.

@@ -10,7 +10,8 @@ Runs ONLY with TRANSIT_TEST_DATABASE_URL on a disposable Postgres at head
 (0077). CI has no Postgres; this file is local-only. Never point at production.
 Each test runs inside one transaction and rolls back.
 
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55437/transit_repro?host=/tmp/pg" \
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55437/transit_repro?host=/tmp/pg" \
         uv run pytest tests/test_alert_history_window_realdb.py -v
 """
 

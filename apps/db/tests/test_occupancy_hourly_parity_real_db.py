@@ -14,8 +14,10 @@ TRANSIT_TEST_DATABASE_URL is unset:
     PGB=/usr/lib/postgresql/16/bin
     "$PGB/initdb" -D <shortdir> ...  # listen 127.0.0.1, -p 55437, createdb,
                                     # CREATE EXTENSION postgis
-    DATABASE_URL=... TRANSIT_TEST_DATABASE_URL=... uv run alembic upgrade head
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:55437/transit_test" \
+    DATABASE_URL=... TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL=... uv run alembic upgrade head
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:55437/transit_test" \
         uv run pytest tests/test_occupancy_hourly_parity_real_db.py -v
 """
 

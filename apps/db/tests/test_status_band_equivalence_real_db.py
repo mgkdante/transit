@@ -15,7 +15,8 @@ contract verbatim.
 
 Runs ONLY when TRANSIT_TEST_DATABASE_URL points at a disposable Postgres:
 
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://..." \
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@localhost/transit_test" \
         uv run pytest tests/test_status_band_equivalence_real_db.py -v
 
 No transit schema/migration is required — the VALUES grid is self-contained.

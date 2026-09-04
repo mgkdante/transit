@@ -9,7 +9,8 @@ the FakeConn unit test cannot prove the column actually flows from dim_route.
 Runs ONLY when TRANSIT_TEST_DATABASE_URL points at a disposable Postgres with
 the transit schema at head 0057, e.g.:
 
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@localhost:5433/transit_ci" \
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://transit_ci@localhost:5433/transit_ci" \
         uv run pytest tests/test_route_file_type_real_db.py -v
 
 Each test runs inside one transaction and rolls back — nothing persists.

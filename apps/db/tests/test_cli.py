@@ -896,6 +896,36 @@ def test_init_db_requires_database_url(monkeypatch) -> None:
     assert "Invalid value: DATABASE_URL is required for init-db." in result.output
 
 
+def test_init_db_refuses_implicit_remote_dotenv_before_alembic_upgrade(
+    monkeypatch, tmp_path: Path
+) -> None:
+    database_url = "postgresql://operator:super-secret@db.example.invalid:5432/transit"
+    (tmp_path / ".env").write_text(f"DATABASE_URL={database_url}\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    cli_module.get_settings.cache_clear()
+    upgrade_calls: list[object] = []
+    monkeypatch.setattr(
+        cli_module.command,
+        "upgrade",
+        lambda *args, **kwargs: upgrade_calls.append((args, kwargs)),
+    )
+
+    try:
+        result = runner.invoke(app, ["init-db"])
+    finally:
+        cli_module.get_settings.cache_clear()
+
+    error = str(result.exception)
+    assert result.exit_code != 0
+    assert upgrade_calls == []
+    assert "Migration database target policy failed" in error
+    assert "super-secret" not in result.output
+    assert database_url not in result.output
+    assert "super-secret" not in error
+    assert database_url not in error
+
+
 def test_build_warm_rollups_help() -> None:
     result = runner.invoke(app, ["build-warm-rollups", "--help"])
 
@@ -1691,9 +1721,7 @@ def test_publish_all_skips_unseeded_and_publishes_seeded(monkeypatch) -> None:
     monkeypatch.setattr(
         cli_module,
         "_provider_registry",
-        lambda settings: SimpleNamespace(
-            list_active_provider_ids=lambda: ["octranspo", "stm"]
-        ),
+        lambda settings: SimpleNamespace(list_active_provider_ids=lambda: ["octranspo", "stm"]),
     )
 
     def fake_publish_snapshot(provider_id, *, tier, settings, registry, **kwargs):  # noqa: ANN001
@@ -1750,9 +1778,7 @@ def test_publish_all_forwards_full_historic_rebuild_to_every_seeded_provider(
                 "full_historic_rebuild": full_historic_rebuild,
             }
         )
-        return SimpleNamespace(
-            display_dict=lambda: {"provider_id": provider_id, "tier": tier}
-        )
+        return SimpleNamespace(display_dict=lambda: {"provider_id": provider_id, "tier": tier})
 
     monkeypatch.setattr(cli_module, "publish_snapshot", fake_publish_snapshot)
 

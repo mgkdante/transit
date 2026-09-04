@@ -21,6 +21,7 @@ from transit_ops.backups import (
 )
 from transit_ops.core.models import FeedKind, ProviderManifest
 from transit_ops.db.connection import make_engine, test_connection
+from transit_ops.db.migration_guard import assert_explicit_remote_url
 from transit_ops.gold import (
     alert_archive_default_bounds,
     backfill_dim_name_history,
@@ -95,6 +96,7 @@ def _alembic_config(settings: Settings) -> Config:
     if not settings.sqlalchemy_database_url:
         raise typer.BadParameter("DATABASE_URL is required for init-db.")
 
+    assert_explicit_remote_url(settings.sqlalchemy_database_url, os.environ)
     config = Config(str(_project_root() / "alembic.ini"))
     script_location = _project_root() / "src/transit_ops/db/migrations"
     config.set_main_option("script_location", str(script_location))
@@ -805,8 +807,7 @@ def measure_alert_language_coverage_command(
     settings = get_settings()
     registry = _provider_registry(settings)
     manifests = [
-        registry.get_provider(provider_id)
-        for provider_id in registry.list_active_provider_ids()
+        registry.get_provider(provider_id) for provider_id in registry.list_active_provider_ids()
     ]
     with make_engine(settings).begin() as connection:
         receipt = run_alert_language_coverage_measurement(

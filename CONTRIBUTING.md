@@ -78,6 +78,7 @@ bun audit --audit-level=high
 
 export DATABASE_URL='postgresql+psycopg://transit_ci@localhost:5432/transit_ci'
 export TRANSIT_TEST_DATABASE_URL="$DATABASE_URL"
+export TRANSIT_TEST_DATABASE_DISPOSABLE='I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE'
 export PGPASSWORD='transit_ci@:/%'
 (
   cd apps/db

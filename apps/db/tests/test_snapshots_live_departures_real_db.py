@@ -14,6 +14,7 @@ the transit schema applied (a throwaway local cluster restored from
 ``alembic upgrade head`` so the 0018/0027 gold views exist). Each test runs inside
 one transaction and rolls back — nothing persists, reruns are idempotent.
 
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \\
     TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/qrepro" \\
         uv run pytest tests/test_snapshots_live_departures_real_db.py -v
 

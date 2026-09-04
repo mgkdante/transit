@@ -19,9 +19,10 @@ They run ONLY when TRANSIT_TEST_DATABASE_URL points at a disposable Postgres
 with the transit schema applied AND migrated to head (>= 0041):
 
     pg_dump --schema-only -n core -n raw -n silver -n gold prod | psql repro
-    cd apps/db && TRANSIT_TEST_DATABASE_URL=... uv run alembic upgrade head
-    TRANSIT_TEST_DATABASE_URL=\
-        "postgresql+psycopg://repro@/transit_repro?host=/tmp/failrepro" \
+    cd apps/db && TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL=... uv run alembic upgrade head
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@/transit_repro?host=/tmp/failrepro" \
         uv run pytest tests/test_failure_rows_real_db.py -v
 
 Each test runs inside one transaction and rolls back — nothing persists,

@@ -12,6 +12,7 @@ with the transit schema applied (e.g. a throwaway local cluster restored from
 0037 EN columns + gold views are present). Each test runs inside one
 transaction and rolls back — nothing persists, reruns are idempotent.
 
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
     TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://repro@:55432/transit_repro?host=/tmp/i3repro" \
         uv run pytest tests/test_i3_real_db_regression.py -v
 

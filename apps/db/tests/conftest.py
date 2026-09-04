@@ -10,6 +10,8 @@ import pytest
 import typer.rich_utils as _rich_utils
 from sqlalchemy import Connection, Engine, create_engine, text
 
+from transit_ops.db.target_safety import assert_disposable_test_url
+
 
 class SeedProvider(Protocol):
     def __call__(
@@ -29,6 +31,7 @@ def real_db_engine() -> Iterator[Engine]:
     if not database_url:
         pytest.skip("TRANSIT_TEST_DATABASE_URL not set — real-DB tests skipped")
 
+    assert_disposable_test_url(database_url, os.environ)
     engine = create_engine(database_url)
     try:
         yield engine

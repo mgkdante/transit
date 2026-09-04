@@ -3,7 +3,8 @@
 Runs ONLY against a disposable Postgres database migrated to head (incl. 0063);
 self-skips when TRANSIT_TEST_DATABASE_URL is unset, so the offline gate stays green:
 
-    TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:54329/transit_test" \
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL="postgresql+psycopg://postgres@127.0.0.1:54329/transit_test" \
         uv run pytest tests/test_route_delay_spine_real_db_regression.py -v
 
 Exercises what the FakeConnection unit tests cannot (they do not execute SQL): that the

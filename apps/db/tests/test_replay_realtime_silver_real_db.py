@@ -14,7 +14,8 @@ hardcoded), so a tautology cannot pass.
 
 Runs ONLY against a disposable Postgres migrated to head:
 
-    TRANSIT_TEST_DATABASE_URL=postgresql+psycopg://postgres@localhost:5433/transit_ci \
+    TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
+        TRANSIT_TEST_DATABASE_URL=postgresql+psycopg://transit_ci@localhost:5433/transit_ci \
         uv run pytest tests/test_replay_realtime_silver_real_db.py -v
 
 Never point this at production.
