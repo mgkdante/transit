@@ -91,11 +91,8 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
     assert deploy_job["if"] == ("github.event_name == 'push' && github.ref == 'refs/heads/main'")
     assert deploy_job["environment"] == "production"
 
-    # CI must deploy with the EXACT wrangler the worker declares, or the
-    # dry-run-validated toolchain and the deployed one silently drift. Under the
-    # bun workspace the data-proxy carries no per-app lockfile (deps resolve via
-    # the root bun.lock), so wrangler is pinned EXACTLY in package.json and the
-    # deploy command must use that same pin.
+    # CI must deploy with the exact root-owned Wrangler installed by the shared
+    # workspace action, or the dry-run and production executable can drift.
     deploy_steps = deploy_job["steps"]
     wrangler_steps = [
         step
@@ -111,9 +108,12 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
     smoke_index = next(index for index, run in enumerate(deploy_runs) if run == "bash smoke.sh")
     assert smoke_index > wrangler_index, "live smoke must verify the deployed Worker"
 
+    root_pkg = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
     proxy_pkg = json.loads((PROXY_DIR / "package.json").read_text(encoding="utf-8"))
-    declared_wrangler = proxy_pkg["devDependencies"]["wrangler"]
-    assert f"wrangler@{declared_wrangler}" in wrangler_step["run"]
+    assert root_pkg["devDependencies"]["wrangler"] == "4.115.0"
+    assert "wrangler" not in proxy_pkg.get("devDependencies", {})
+    assert any(step.get("uses") == "./.github/actions/setup" for step in deploy_steps)
+    assert wrangler_step["run"] == "../../node_modules/.bin/wrangler deploy"
 
 
 def test_production_workflow_uses_opaque_public_base_and_web_config_exposes_origin() -> None:

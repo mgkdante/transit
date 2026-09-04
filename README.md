@@ -42,11 +42,11 @@ apps/db ──► Bronze (R2) ──► Silver + Gold (PostgreSQL/PostGIS)
 
 The three application domains have one-way responsibilities:
 
-| Domain | Responsibility |
+| Domain                         | Responsibility                                                                                              |
 |---|---|
-| [`apps/db`](apps/db/README.md) | Python ingestion, normalization, marts, publication, retention, and health checks |
-| `apps/data-proxy` | Cloudflare Worker for `/data/*` compatibility snapshots and `/api/v1/kpis` |
-| `apps/web` | SvelteKit citizen dashboard; browser `/v1` reads use public R2 and SSR uses an R2 binding, never PostgreSQL |
+| [`apps/db`](apps/db/README.md) | Python ingestion, normalization, marts, publication, retention, and health checks                           |
+| `apps/data-proxy`              | Cloudflare Worker for `/data/*` compatibility snapshots and `/api/v1/kpis`                                  |
+| `apps/web`                     | SvelteKit citizen dashboard; browser `/v1` reads use public R2 and SSR uses an R2 binding, never PostgreSQL |
 
 The web app consumes an immutable `yesid.dev-design` Release under
 `apps/web/vendor/design`. The snapshot retains its accompanying MIT license and
@@ -54,12 +54,17 @@ must never be edited by hand.
 
 ## Local development
 
-Prerequisites: Bun 1.3.11, Node 22+, Python 3.12, [uv](https://docs.astral.sh/uv/),
-PostgreSQL/PostGIS, and credentials for the feed or storage paths you run.
+Prerequisites: Bun 1.3.11, Node 22.23.2, Python 3.12,
+[uv](https://docs.astral.sh/uv/) 0.11.15, Docker Compose v2 with `up --wait`,
+and credentials for only the feed or storage paths you run. Wrangler 4.115.0
+is installed with the workspace. The root
+`.bun-version`, `.nvmrc`, and `.python-version` files own the supported
+executable lines; deployment images separately pin Python 3.12.14.
 
 Install the JavaScript workspace and start the dashboard:
 
 ```bash
+nvm install
 bun install --frozen-lockfile
 bun run dev
 ```
