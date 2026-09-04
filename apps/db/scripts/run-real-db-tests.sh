@@ -12,6 +12,9 @@ cleanup_needed=0
 project_name=""
 volume_name=""
 compose_command=()
+active_uv_group=""
+pending_signal_name=""
+pending_signal_status=""
 
 fail() {
   echo "real-db verification: $*" >&2
@@ -21,6 +24,8 @@ fail() {
 cleanup() {
   local primary_status=$?
   local cleanup_failed=0
+  local listed_volume
+  local listed_volumes
   trap - EXIT HUP INT TERM
 
   if ((cleanup_needed)); then
@@ -28,9 +33,19 @@ cleanup() {
       echo "real-db cleanup failed: Docker Compose teardown failed." >&2
       cleanup_failed=1
     fi
-    if docker volume inspect "${volume_name}" >/dev/null 2>&1; then
-      echo "real-db cleanup failed: data volume still exists." >&2
+    if ! listed_volumes="$(
+      docker volume ls --quiet --filter "name=${volume_name}"
+    )"; then
+      echo "real-db cleanup failed: could not verify data volume removal." >&2
       cleanup_failed=1
+    else
+      while IFS= read -r listed_volume; do
+        if [[ "${listed_volume}" == "${volume_name}" ]]; then
+          echo "real-db cleanup failed: data volume still exists." >&2
+          cleanup_failed=1
+          break
+        fi
+      done <<<"${listed_volumes}"
     fi
   fi
 
@@ -41,12 +56,51 @@ cleanup() {
 }
 
 on_signal() {
-  exit "$1"
+  local signal_name="$1"
+  local signal_status="$2"
+  local group="${active_uv_group}"
+  trap - HUP INT TERM
+  if [[ -n "${group}" ]]; then
+    kill -s "${signal_name}" -- "-${group}" 2>/dev/null || true
+    wait "${group}" 2>/dev/null || true
+    active_uv_group=""
+  fi
+  exit "${signal_status}"
+}
+
+install_signal_traps() {
+  trap 'on_signal HUP 129' HUP
+  trap 'on_signal INT 130' INT
+  trap 'on_signal TERM 143' TERM
+}
+
+queue_signal() {
+  pending_signal_name="$1"
+  pending_signal_status="$2"
+}
+
+run_uv() {
+  local command_status
+  pending_signal_name=""
+  pending_signal_status=""
+  trap 'queue_signal HUP 129' HUP
+  trap 'queue_signal INT 130' INT
+  trap 'queue_signal TERM 143' TERM
+  setsid "$@" &
+  active_uv_group=$!
+  install_signal_traps
+  if [[ -n "${pending_signal_name}" ]]; then
+    on_signal "${pending_signal_name}" "${pending_signal_status}"
+  fi
+  wait "${active_uv_group}"
+  command_status=$?
+  active_uv_group=""
+  return "${command_status}"
 }
 
 preflight() {
   local dependency
-  for dependency in docker uv od tr; do
+  for dependency in docker uv od tr setsid; do
     command -v "${dependency}" >/dev/null 2>&1 || {
       fail "required command '${dependency}' was not found."
       return 2
@@ -65,7 +119,7 @@ preflight() {
     fail "could not inspect Docker Compose up options."
     return 2
   }
-  [[ "${compose_help}" == *"--wait"* ]] || {
+  [[ "${compose_help}" =~ (^|[[:space:]])--wait([=[:space:]]|$) ]] || {
     fail "Docker Compose up must support --wait."
     return 2
   }
@@ -97,9 +151,7 @@ main() {
   export PGPASSWORD="${password}"
 
   trap cleanup EXIT
-  trap 'on_signal 129' HUP
-  trap 'on_signal 130' INT
-  trap 'on_signal 143' TERM
+  install_signal_traps
   cleanup_needed=1
 
   "${compose_command[@]}" up --detach --wait --wait-timeout 120 postgres
@@ -131,14 +183,10 @@ main() {
   export TRANSIT_TEST_DATABASE_DISPOSABLE="${DISPOSABLE_CONFIRMATION}"
   unset PGHOST PGHOSTADDR PGPORT PGDATABASE PGUSER PGSERVICE PGSERVICEFILE
 
-  (
-    cd -- "${DB_ROOT}" || exit 1
-    uv run alembic upgrade head
-  ) || return $?
-  (
-    cd -- "${DB_ROOT}" || exit 1
-    COLUMNS=200 uv run pytest tests
-  ) || return $?
+  cd -- "${DB_ROOT}" || return 1
+  run_uv uv run alembic upgrade head || return $?
+  export COLUMNS=200
+  run_uv uv run pytest tests || return $?
 }
 
 main

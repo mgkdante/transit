@@ -424,6 +424,7 @@ def test_real_db_ci_uses_the_disposable_script_interface() -> None:
     )
     job = document["jobs"]["real-db-tests-work"]
 
+    assert document["defaults"]["run"]["working-directory"] == "apps/db"
     assert job["runs-on"] == "ubuntu-latest"
     assert job["timeout-minutes"] == 20
     assert "services" not in job
