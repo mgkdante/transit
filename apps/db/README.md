@@ -40,9 +40,18 @@ env -u TRANSIT_TEST_DATABASE_URL COLUMNS=200 uv run pytest tests
 uv run mypy src/transit_ops/snapshots/publish.py
 ```
 
-Real-database tests use `TRANSIT_TEST_DATABASE_URL` and must target a disposable
-Postgres 16 + PostGIS database. Without it, those tests skip and the offline
-suite remains safe.
+Real-database verification is supported on Linux and WSL with a local amd64
+Docker daemon and requires Python 3.12 and Docker Compose v2. It owns its
+disposable Postgres 16 + PostGIS target from creation through cleanup:
+
+```bash
+bash scripts/run-real-db-tests.sh
+```
+
+The command uses a dynamic loopback port. It attempts cleanup on handled exits
+and returns success only after proving its generated data volume is absent;
+SIGKILL, host loss, and Docker daemon loss cannot guarantee cleanup. Without
+that command, real-database tests skip and the offline suite remains safe.
 
 ## Database lifecycle
 
