@@ -41,9 +41,8 @@ uv run mypy src/transit_ops/snapshots/publish.py
 ```
 
 Real-database verification is supported on Linux and WSL with a local amd64
-Docker daemon and requires Docker Compose v2 plus the standard `setsid`
-utility. It owns its disposable Postgres 16 + PostGIS target from creation
-through cleanup:
+Docker daemon and requires Python 3.12 and Docker Compose v2. It owns its
+disposable Postgres 16 + PostGIS target from creation through cleanup:
 
 ```bash
 bash scripts/run-real-db-tests.sh

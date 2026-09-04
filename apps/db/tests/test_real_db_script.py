@@ -268,7 +268,6 @@ if tool == "docker":
 if arguments == ["run", "alembic", "upgrade", "head"]:
     if scenario in (
         "signal-during-alembic",
-        "delayed-setsid-during-alembic",
         "signal-ignoring-grandchild-during-alembic",
     ):
         block_for_signal("uv")
@@ -281,59 +280,11 @@ raise SystemExit(98)
 '''
 
 PYTHON_WRAPPER = r'''
-import json
 import os
-from pathlib import Path
 import signal
 import sys
-import time
 
 
-def record_wrapper(tool):
-    with Path(os.environ["FAKE_COMMAND_LOG"]).open("a", encoding="utf-8") as stream:
-        stream.write(json.dumps({
-            "tool": tool,
-            "pid": os.getpid(),
-            "pgid": os.getpgrp(),
-        }, sort_keys=True) + "\n")
-
-
-scenario = os.environ.get("FAKE_SCENARIO")
-tracked_tool = Path(sys.argv[3]).name if len(sys.argv) > 3 else ""
-if tracked_tool == "docker" and scenario in {
-    "handshake-at-timeout",
-    "handshake-late-readiness",
-    "handshake-eof",
-    "handshake-shim-failure",
-    "signal-during-pending-handshake",
-}:
-    record_wrapper("shim-pending")
-    if scenario == "handshake-at-timeout":
-        time.sleep(1.0)
-    elif scenario == "handshake-late-readiness":
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        time.sleep(1.2)
-    elif scenario == "handshake-eof":
-        raise SystemExit(71)
-    elif scenario == "handshake-shim-failure":
-        os.setsid()
-        raise SystemExit(72)
-    elif scenario == "signal-during-pending-handshake":
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        time.sleep(2)
-
-if (
-    scenario == "delayed-setsid-during-alembic"
-    and len(sys.argv) > 3
-    and Path(sys.argv[3]).name == "uv"
-):
-    with Path(os.environ["FAKE_COMMAND_LOG"]).open("a", encoding="utf-8") as stream:
-        stream.write(json.dumps({
-            "tool": "shim-before-setsid",
-            "pid": os.getpid(),
-            "pgid": os.getpgrp(),
-        }, sort_keys=True) + "\n")
-    time.sleep(0.4)
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
 '''
@@ -344,13 +295,10 @@ def _install_fakes(
     *,
     include_docker: bool = True,
     include_uv: bool = True,
-    include_setsid: bool = True,
     include_python: bool = True,
 ) -> None:
     fake_bin.mkdir()
-    tools = ["bash", "dirname", "od", "ps", "sleep", "tr"]
-    if include_setsid:
-        tools.append("setsid")
+    tools = ["bash", "dirname"]
     for name in tools:
         source = shutil.which(name)
         assert source is not None
@@ -436,7 +384,6 @@ def _run_scenario(
     *,
     include_docker: bool = True,
     include_uv: bool = True,
-    include_setsid: bool = True,
     include_python: bool = True,
     environment_overrides: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]]]:
@@ -446,7 +393,6 @@ def _run_scenario(
         fake_bin,
         include_docker=include_docker,
         include_uv=include_uv,
-        include_setsid=include_setsid,
         include_python=include_python,
     )
     result = subprocess.run(
@@ -704,19 +650,12 @@ def test_script_refuses_missing_uv_before_creating_resources(tmp_path: Path) -> 
     assert events == []
 
 
-def test_script_refuses_missing_setsid_before_creating_resources(tmp_path: Path) -> None:
-    result, events = _run_scenario(tmp_path, "success", include_setsid=False)
-
-    assert result.returncode == 2
-    assert "required command 'setsid' was not found" in result.stderr
-    assert events == []
-
-
 def test_script_refuses_missing_python_before_creating_resources(tmp_path: Path) -> None:
     result, events = _run_scenario(tmp_path, "success", include_python=False)
 
-    assert result.returncode == 2
-    assert "required command 'python3' was not found" in result.stderr
+    assert result.returncode == 127
+    assert "python3" in result.stderr
+    assert "not found" in result.stderr
     assert events == []
 
 
@@ -791,6 +730,21 @@ def test_script_preserves_local_docker_endpoints(
     assert result.returncode == 0
     assert "local Docker daemon is required" not in result.stderr
     assert "up" in [_operation(event) for event in events]
+
+
+def test_script_rejects_zero_port_local_docker_endpoint(tmp_path: Path) -> None:
+    result, events = _run_scenario(
+        tmp_path,
+        "success",
+        environment_overrides={"DOCKER_HOST": "tcp://127.0.0.1:0"},
+    )
+
+    assert result.returncode == 2
+    assert "local Docker daemon is required" in result.stderr
+    assert [_operation(event) for event in events] == [
+        "compose-version",
+        "compose-up-help",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -1091,94 +1045,22 @@ def _process_is_live(process_id: int) -> bool:
     return stat[stat.rfind(")") + 2 :].split()[0] != "Z"
 
 
-def _assert_recorded_processes_exit(events: list[dict[str, object]]) -> None:
-    process_ids = {
-        event["pid"]
-        for event in events
-        if event["tool"] == "shim-pending"
-    }
-    assert all(isinstance(process_id, int) for process_id in process_ids)
-    deadline = time.monotonic() + 1
-    while time.monotonic() < deadline and any(
-        _process_is_live(process_id) for process_id in process_ids
-    ):
-        time.sleep(0.02)
-    assert not any(_process_is_live(process_id) for process_id in process_ids)
+def _process_state(process_id: int) -> str | None:
+    try:
+        stat = Path(f"/proc/{process_id}/stat").read_text(encoding="utf-8")
+    except (FileNotFoundError, PermissionError):
+        return None
+    return stat[stat.rfind(")") + 2 :].split()[0]
 
 
-@pytest.mark.parametrize(
-    ("scenario", "maximum_seconds"),
-    [
-        ("handshake-at-timeout", 4.0),
-        ("handshake-late-readiness", 7.0),
-        ("handshake-eof", 2.0),
-        ("handshake-shim-failure", 2.0),
-    ],
-)
-def test_script_handles_pipe_handshake_boundary_safely(
-    tmp_path: Path, scenario: str, maximum_seconds: float
-) -> None:
-    fake_bin = tmp_path / "bin"
-    log_path = tmp_path / "commands.jsonl"
-    _install_fakes(fake_bin)
-    started = time.monotonic()
-    result = subprocess.run(
-        ["bash", str(SCRIPT_PATH)],
-        cwd=REPO_ROOT,
-        env=_script_environment(fake_bin, log_path, scenario),
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=8,
-    )
-    elapsed = time.monotonic() - started
-    events = _events(log_path)
-
-    assert result.returncode in ({0, 2} if scenario == "handshake-at-timeout" else {2})
-    assert elapsed < maximum_seconds
-    if result.returncode == 2:
-        assert "could not establish an isolated command process group" in result.stderr
-        assert [_operation(event) for event in events][-5:] == [
-            "down",
-            "container-list",
-            "network-list",
-            "network-list",
-            "volume-list",
-        ]
-    _assert_recorded_processes_exit(events)
-
-
-def test_script_handles_wrapper_signal_while_pipe_handshake_is_pending(
-    tmp_path: Path,
-) -> None:
-    fake_bin = tmp_path / "bin"
-    log_path = tmp_path / "commands.jsonl"
-    _install_fakes(fake_bin)
-    process = subprocess.Popen(
-        ["bash", str(SCRIPT_PATH)],
-        cwd=REPO_ROOT,
-        env=_script_environment(fake_bin, log_path, "signal-during-pending-handshake"),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    _wait_for_event(log_path, "shim-pending")
-    started = time.monotonic()
-    os.kill(process.pid, signal.SIGTERM)
-    _, stderr = process.communicate(timeout=3)
-    events = _events(log_path)
-
-    assert process.returncode == 143, stderr
-    assert time.monotonic() - started < 2.8
-    assert "cleanup failed" not in stderr
-    assert [_operation(event) for event in events][-5:] == [
-        "down",
-        "container-list",
-        "network-list",
-        "network-list",
-        "volume-list",
-    ]
-    _assert_recorded_processes_exit(events)
+def _process_fd_targets(process_id: int) -> set[str]:
+    targets: set[str] = set()
+    for fd_path in Path(f"/proc/{process_id}/fd").iterdir():
+        try:
+            targets.add(os.readlink(fd_path))
+        except FileNotFoundError:
+            continue
+    return targets
 
 
 def _run_wrapper_signal_case(
@@ -1203,7 +1085,7 @@ def _run_wrapper_signal_case(
     )
     ready_event = _wait_for_event(log_path, ready_tool)
     child_pid = ready_event["pid"]
-    group_id = child_pid if ready_tool == "shim-before-setsid" else ready_event["pgid"]
+    group_id = ready_event["pgid"]
     assert isinstance(child_pid, int)
     assert isinstance(group_id, int)
     started = time.monotonic()
@@ -1228,7 +1110,6 @@ def _run_wrapper_signal_case(
         _operation(event)
         for event in events
         if not str(event["tool"]).endswith("-ready")
-        and event["tool"] != "shim-before-setsid"
     ]
     assert operations[-len(expected_operation_tail) :] == expected_operation_tail
     assert "uv-pytest" not in operations
@@ -1307,27 +1188,95 @@ def test_script_forwards_wrapper_signal_to_each_tracked_stage_and_cleans_up(
     }, stage
 
 
-def test_script_queues_signal_until_delayed_process_group_exists(tmp_path: Path) -> None:
-    events, child_pid, _ = _run_wrapper_signal_case(
-        tmp_path,
-        scenario="delayed-setsid-during-alembic",
-        ready_tool="shim-before-setsid",
-        signal_number=signal.SIGTERM,
-        expected_status=143,
-        expected_operation_tail=[
-            "up",
-            "port",
-            "down",
-            "container-list",
-            "network-list",
-            "network-list",
-            "volume-list",
-        ],
+@pytest.mark.parametrize(
+    ("scenario", "ready_tool"),
+    [
+        ("signal-during-startup", "docker-up-ready"),
+        ("signal-during-alembic", "uv-ready"),
+    ],
+)
+def test_tracked_stage_does_not_inherit_an_unrelated_parent_descriptor(
+    tmp_path: Path,
+    scenario: str,
+    ready_tool: str,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    log_path = tmp_path / "commands.jsonl"
+    _install_fakes(fake_bin)
+    read_fd, write_fd = os.pipe()
+    sentinel_target = os.readlink(f"/proc/self/fd/{write_fd}")
+    process = subprocess.Popen(
+        ["bash", str(SCRIPT_PATH)],
+        cwd=REPO_ROOT,
+        env=_script_environment(fake_bin, log_path, scenario),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        pass_fds=(write_fd,),
     )
+    os.close(write_fd)
+    try:
+        ready_event = _wait_for_event(log_path, ready_tool)
+        child_pid = ready_event["pid"]
+        assert isinstance(child_pid, int)
+        child_fd_targets = _process_fd_targets(child_pid)
+        os.kill(process.pid, signal.SIGTERM)
+        _, stderr = process.communicate(timeout=3)
+    finally:
+        os.close(read_fd)
+        if process.poll() is None:
+            process.kill()
+            process.communicate(timeout=3)
 
-    before_setsid = next(event for event in events if event["tool"] == "shim-before-setsid")
-    assert before_setsid["pid"] == child_pid
-    assert before_setsid["pgid"] != child_pid
+    assert process.returncode == 143, stderr
+    assert sentinel_target not in child_fd_targets
+
+
+def test_group_leader_remains_unreaped_until_escalation_finishes(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    log_path = tmp_path / "commands.jsonl"
+    _install_fakes(fake_bin)
+    process = subprocess.Popen(
+        ["bash", str(SCRIPT_PATH)],
+        cwd=REPO_ROOT,
+        env=_script_environment(
+            fake_bin,
+            log_path,
+            "signal-ignoring-grandchild-during-alembic",
+        ),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    leader_event = _wait_for_event(log_path, "uv-ready")
+    grandchild_event = _wait_for_event(log_path, "grandchild-ready")
+    leader_pid = leader_event["pid"]
+    grandchild_pid = grandchild_event["pid"]
+    assert isinstance(leader_pid, int)
+    assert isinstance(grandchild_pid, int)
+
+    os.kill(process.pid, signal.SIGTERM)
+    deadline = time.monotonic() + 0.7
+    leader_state = _process_state(leader_pid)
+    while leader_state not in {None, "Z"} and time.monotonic() < deadline:
+        time.sleep(0.01)
+        leader_state = _process_state(leader_pid)
+    grandchild_was_live_during_grace = _process_is_live(grandchild_pid)
+    try:
+        _, stderr = process.communicate(timeout=3)
+    except subprocess.TimeoutExpired:
+        for member_pid in _live_process_group_members(int(leader_event["pgid"])):
+            os.kill(member_pid, signal.SIGKILL)
+        process.kill()
+        process.communicate(timeout=3)
+        pytest.fail("wrapper did not finish bounded group escalation")
+
+    assert leader_state == "Z"
+    assert grandchild_was_live_during_grace is True
+    assert process.returncode == 143, stderr
+    assert _live_process_group_members(int(leader_event["pgid"])) == []
 
 
 def test_script_kills_signal_ignoring_grandchild_before_cleanup(tmp_path: Path) -> None:
