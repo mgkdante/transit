@@ -166,6 +166,7 @@ jobs:
       # tests read TRANSIT_TEST_DATABASE_URL. Same disposable container for both.
       DATABASE_URL: postgresql+psycopg://transit_ci@localhost:5432/transit_ci
       TRANSIT_TEST_DATABASE_URL: postgresql+psycopg://transit_ci@localhost:5432/transit_ci
+      TRANSIT_TEST_DATABASE_DISPOSABLE: I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE
       PGPASSWORD: "transit_ci@:/%"
     steps:
       - name: Check out repository

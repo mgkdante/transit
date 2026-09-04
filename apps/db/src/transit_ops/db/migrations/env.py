@@ -19,22 +19,18 @@ target_metadata = None
 
 def _get_url() -> str:
     url = config.get_main_option("sqlalchemy.url")
-    if url:
-        return url
-    settings = get_settings()
-    if settings.sqlalchemy_database_url:
-        # An .env-sourced URL may only target a local database; remote migrations must
-        # pass DATABASE_URL explicitly (see transit_ops.db.migration_guard).
-        assert_explicit_remote_url(settings.sqlalchemy_database_url, os.environ)
-        return settings.sqlalchemy_database_url
-    raise RuntimeError(
-        "No database URL configured. "
-        "Set DATABASE_URL in .env or sqlalchemy.url in alembic.ini."
-    )
+    if not url:
+        settings = get_settings()
+        url = settings.sqlalchemy_database_url
+    if not url:
+        raise RuntimeError(
+            "No database URL configured. Set DATABASE_URL in .env or sqlalchemy.url in alembic.ini."
+        )
+    assert_explicit_remote_url(url, os.environ)
+    return url
 
 
-def run_migrations_offline() -> None:
-    url = _get_url()
+def run_migrations_offline(url: str) -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -47,9 +43,7 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def run_migrations_online() -> None:
-    ini_section = config.get_section(config.config_ini_section, {})
-    url = ini_section.get("sqlalchemy.url") or _get_url()
+def run_migrations_online(url: str) -> None:
     connectable = create_engine(url, poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
@@ -65,7 +59,8 @@ def run_migrations_online() -> None:
             context.run_migrations()
 
 
+database_url = _get_url()
 if context.is_offline_mode():
-    run_migrations_offline()
+    run_migrations_offline(database_url)
 else:
-    run_migrations_online()
+    run_migrations_online(database_url)
