@@ -15,6 +15,8 @@ compose_command=()
 active_command_group=""
 pending_signal_name=""
 pending_signal_status=""
+group_ready=0
+group_launch_failed=0
 
 fail() {
   echo "real-db verification: $*" >&2
@@ -34,7 +36,7 @@ cleanup() {
       cleanup_failed=1
     fi
     if ! listed_volumes="$(
-      docker volume ls --quiet --filter "name=${volume_name}"
+      docker volume ls --quiet --filter "name=^${volume_name}$"
     )"; then
       echo "real-db cleanup failed: could not verify data volume removal." >&2
       cleanup_failed=1
@@ -59,10 +61,19 @@ on_signal() {
   local signal_name="$1"
   local signal_status="$2"
   local group="${active_command_group}"
+  local killer_pid
   trap - HUP INT TERM
   if [[ -n "${group}" ]]; then
     kill -s "${signal_name}" -- "-${group}" 2>/dev/null || true
+    (
+      sleep 1
+      if kill -0 -- "-${group}" 2>/dev/null; then
+        kill -s KILL -- "-${group}" 2>/dev/null || true
+      fi
+    ) &
+    killer_pid=$!
     wait "${group}" 2>/dev/null || true
+    wait "${killer_pid}" 2>/dev/null || true
     active_command_group=""
   fi
   exit "${signal_status}"
@@ -80,14 +91,52 @@ queue_signal() {
 }
 
 run_tracked() {
+  local command_group
   local command_status
+  local launch_attempt
+  local parent_pid="${BASHPID}"
   pending_signal_name=""
   pending_signal_status=""
+  group_ready=0
+  group_launch_failed=0
   trap 'queue_signal HUP 129' HUP
   trap 'queue_signal INT 130' INT
   trap 'queue_signal TERM 143' TERM
-  setsid "$@" &
-  active_command_group=$!
+  trap 'group_ready=1' USR1
+  trap 'group_launch_failed=1' USR2
+  python3 -c '
+import os
+import signal
+import sys
+
+parent_pid = int(sys.argv[1])
+try:
+    for signal_number in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+        signal.signal(signal_number, signal.SIG_DFL)
+    os.setsid()
+except BaseException:
+    os.kill(parent_pid, signal.SIGUSR2)
+    raise
+os.kill(parent_pid, signal.SIGUSR1)
+os.execvp(sys.argv[2], sys.argv[2:])
+' "${parent_pid}" "$@" &
+  command_group=$!
+  for ((launch_attempt = 0; launch_attempt < 500; launch_attempt++)); do
+    ((group_ready || group_launch_failed)) && break
+    sleep 0.01
+  done
+  trap - USR1 USR2
+  if ((group_launch_failed || !group_ready)); then
+    kill -s KILL -- "${command_group}" 2>/dev/null || true
+    wait "${command_group}" 2>/dev/null || true
+    install_signal_traps
+    if [[ -n "${pending_signal_name}" ]]; then
+      on_signal "${pending_signal_name}" "${pending_signal_status}"
+    fi
+    fail "could not establish an isolated command process group."
+    return 2
+  fi
+  active_command_group="${command_group}"
   install_signal_traps
   if [[ -n "${pending_signal_name}" ]]; then
     on_signal "${pending_signal_name}" "${pending_signal_status}"
@@ -98,9 +147,139 @@ run_tracked() {
   return "${command_status}"
 }
 
+is_local_docker_endpoint() {
+  local endpoint="$1"
+  local octet
+  local port
+
+  if [[ "${endpoint}" == unix:///* && "${endpoint}" != "unix:///" && "${endpoint}" != *[$'\r\n']* ]]; then
+    return 0
+  fi
+  if [[ "${endpoint}" =~ ^tcp://127\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3}):([0-9]{1,5})$ ]]; then
+    for octet in "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"; do
+      ((10#${octet} <= 255)) || return 1
+    done
+    port="${BASH_REMATCH[4]}"
+    ((10#${port} >= 1 && 10#${port} <= 65535))
+    return
+  fi
+  if [[ "${endpoint}" =~ ^tcp://\[::1\]:([0-9]{1,5})$ ]]; then
+    port="${BASH_REMATCH[1]}"
+    ((10#${port} >= 1 && 10#${port} <= 65535))
+    return
+  fi
+  return 1
+}
+
+verify_local_docker_endpoint() {
+  local context
+  local endpoint
+
+  if [[ -n "${DOCKER_CONTEXT:-}" ]]; then
+    context="${DOCKER_CONTEXT}"
+    [[ "${context}" != *[$'\r\n\t ']* ]] || {
+      fail "could not resolve the selected Docker context."
+      return 2
+    }
+    endpoint="$(docker context inspect --format '{{.Endpoints.docker.Host}}' "${context}" 2>/dev/null)" || {
+      fail "could not resolve the selected Docker context."
+      return 2
+    }
+  elif [[ -n "${DOCKER_HOST:-}" ]]; then
+    endpoint="${DOCKER_HOST}"
+  else
+    context="$(docker context show 2>/dev/null)" || {
+      fail "could not resolve the current Docker context."
+      return 2
+    }
+    [[ -n "${context}" && "${context}" != *[$'\r\n\t ']* ]] || {
+      fail "could not resolve the current Docker context."
+      return 2
+    }
+    endpoint="$(docker context inspect --format '{{.Endpoints.docker.Host}}' "${context}" 2>/dev/null)" || {
+      fail "could not resolve the current Docker context."
+      return 2
+    }
+  fi
+
+  [[ -n "${endpoint}" ]] || {
+    fail "could not resolve the Docker context endpoint."
+    return 2
+  }
+
+  is_local_docker_endpoint "${endpoint}" || {
+    fail "a local Docker daemon is required."
+    return 2
+  }
+}
+
+verify_docker_architecture() {
+  local architecture
+
+  architecture="$(docker info --format '{{.Architecture}}' 2>/dev/null)" || {
+    fail "could not verify Docker daemon architecture."
+    return 2
+  }
+  [[ "${architecture}" == "amd64" || "${architecture}" == "x86_64" ]] || {
+    fail "a local amd64 Docker daemon is required."
+    return 2
+  }
+}
+
+select_resource_identity() {
+  local collision
+  local containers
+  local listed_volume
+  local listed_volumes
+  local suffix
+  local attempt
+
+  for ((attempt = 0; attempt < 8; attempt++)); do
+    suffix="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" || {
+      fail "could not generate a disposable Docker resource identity."
+      return 2
+    }
+    [[ "${suffix}" =~ ^[0-9a-f]{32}$ ]] || {
+      fail "could not generate a disposable Docker resource identity."
+      return 2
+    }
+    project_name="transit-real-db-${suffix}"
+    volume_name="${project_name}-data"
+    compose_command=(
+      docker compose
+      --project-name "${project_name}"
+      --file "${COMPOSE_FILE}"
+    )
+    export TRANSIT_REAL_DB_VOLUME="${volume_name}"
+
+    containers="$(
+      docker ps --all --quiet \
+        --filter "label=com.docker.compose.project=${project_name}"
+    )" || {
+      fail "could not verify Compose project ownership."
+      return 2
+    }
+    listed_volumes="$(
+      docker volume ls --quiet --filter "name=^${volume_name}$"
+    )" || {
+      fail "could not verify volume ownership."
+      return 2
+    }
+    collision=0
+    [[ -n "${containers}" ]] && collision=1
+    while IFS= read -r listed_volume; do
+      [[ "${listed_volume}" == "${volume_name}" ]] && collision=1
+    done <<<"${listed_volumes}"
+    ((collision)) || return 0
+  done
+
+  fail "could not prove a collision-free Docker resource identity."
+  return 2
+}
+
 preflight() {
   local dependency
-  for dependency in docker uv od tr setsid; do
+  for dependency in docker uv od python3 sleep tr setsid; do
     command -v "${dependency}" >/dev/null 2>&1 || {
       fail "required command '${dependency}' was not found."
       return 2
@@ -123,12 +302,14 @@ preflight() {
     fail "Docker Compose up must support --wait."
     return 2
   }
+  verify_local_docker_endpoint || return $?
+  verify_docker_architecture || return $?
 }
 
 main() {
   preflight || return $?
+  select_resource_identity || return $?
 
-  local suffix="${BASHPID}-${RANDOM}${RANDOM}"
   local password
   password="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')" || {
     fail "could not generate the disposable database password."
@@ -139,14 +320,6 @@ main() {
     return 2
   }
 
-  project_name="transit-real-db-${suffix}"
-  volume_name="${project_name}-data"
-  compose_command=(
-    docker compose
-    --project-name "${project_name}"
-    --file "${COMPOSE_FILE}"
-  )
-  export TRANSIT_REAL_DB_VOLUME="${volume_name}"
   export TRANSIT_REAL_DB_PASSWORD="${password}"
   export PGPASSWORD="${password}"
 

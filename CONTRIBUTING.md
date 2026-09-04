@@ -21,10 +21,12 @@ Run the affected subset while iterating. Before handing off a release candidate,
 run this ordered clean-clone CI-equivalent command from the repository root.
 The tool contract is Bun 1.3.11, Node.js 22, Python 3.12, uv 0.11.15,
 playwright-core 1.62.0 with Chromium 151.0.7922.34, and Gitleaks 8.30.1.
-The final real-DB verification is supported on Linux and WSL and requires
-Docker Compose v2 plus the standard `setsid` utility. Its one command creates a
-one-service, digest-pinned PostGIS container on a dynamic loopback port and
-always removes the container and its data volume.
+The final real-DB verification is supported on Linux and WSL with a local amd64
+Docker daemon and requires Docker Compose v2 plus the standard `setsid`
+utility. Its one command creates a one-service, digest-pinned PostGIS container
+on a dynamic loopback port. Cleanup is attempted on handled exits, and success
+is returned only after the generated data volume is proven absent. SIGKILL,
+host loss, and Docker daemon loss cannot guarantee cleanup.
 
 ```bash
 set -euo pipefail
