@@ -76,6 +76,8 @@ bun run --cwd apps/web test
 )
 
 bun audit --audit-level=high
+python3 .github/scripts/check_public_tree.py
+"$GITLEAKS_BIN" dir --redact --config .gitleaks.toml .
 "$GITLEAKS_BIN" detect --redact --config .gitleaks.toml
 
 bash apps/db/scripts/run-real-db-tests.sh

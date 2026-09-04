@@ -471,7 +471,7 @@ def test_runtime_vm_health_exposes_sanitized_cost_free_metrics() -> None:
             "platform_machine": "aarch64",
             "hostname": "must-not-leak",
             "ip_address": "203.0.113.10",
-            "home_path": "/home/mgkdante",
+            "home_path": "/home/example-user",
         },
         use_cache=False,
     )
@@ -492,7 +492,7 @@ def test_runtime_vm_health_exposes_sanitized_cost_free_metrics() -> None:
     serialized = str(result.display_dict())
     assert "must-not-leak" not in serialized
     assert "203.0.113.10" not in serialized
-    assert "/home/mgkdante" not in serialized
+    assert "/home/example-user" not in serialized
 
 
 def test_runtime_vm_health_degrades_on_high_storage_or_memory() -> None:
