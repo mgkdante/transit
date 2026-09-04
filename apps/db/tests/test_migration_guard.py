@@ -178,6 +178,81 @@ def test_query_form_loopback_with_inline_port_is_allowed_for_migrations() -> Non
     )
 
 
+def test_single_query_host_keeps_authority_port_like_psycopg() -> None:
+    candidate_url = "postgresql+psycopg://transit@ignored.example:6543/transit?host=db.example"
+    process_url = "postgresql+psycopg://transit@ignored.example/transit?host=db.example"
+    dialect = PGDialect_psycopg()
+
+    candidate_connect = dialect.create_connect_args(make_url(candidate_url))[1]
+    process_connect = dialect.create_connect_args(make_url(process_url))[1]
+
+    assert candidate_connect["port"] == 6543
+    assert "port" not in process_connect
+    assert parse_database_target(candidate_url).port == 6543
+    with pytest.raises(RuntimeError, match="Migration database target policy failed"):
+        assert_explicit_remote_url(candidate_url, {"DATABASE_URL": process_url})
+
+
+def test_single_query_host_uses_ambient_pgport_only_when_url_ports_are_absent() -> None:
+    candidate_url = "postgresql+psycopg://transit@ignored/transit?host=db.example"
+    process_url = "postgresql+psycopg://transit@ignored/transit?host=db.example&port=7654"
+    dialect = PGDialect_psycopg()
+
+    candidate_connect = dialect.create_connect_args(make_url(candidate_url))[1]
+    process_connect = dialect.create_connect_args(make_url(process_url))[1]
+
+    assert "port" not in candidate_connect
+    assert process_connect["port"] == "7654"
+    assert_explicit_remote_url(
+        candidate_url,
+        {"DATABASE_URL": process_url, "PGPORT": "7654"},
+    )
+
+
+def test_query_port_overrides_authority_port_like_psycopg() -> None:
+    url = "postgresql+psycopg://transit@ignored:6543/transit?host=db.example&port=7654"
+    connect_options = PGDialect_psycopg().create_connect_args(make_url(url))[1]
+
+    assert connect_options["port"] == "7654"
+    assert parse_database_target(url).port == 7654
+
+
+def test_inline_query_host_port_overrides_authority_port_like_psycopg() -> None:
+    url = "postgresql+psycopg://transit@ignored:6543/transit?host=db.example:7654"
+    connect_options = PGDialect_psycopg().create_connect_args(make_url(url))[1]
+
+    assert connect_options["port"] == "7654"
+    assert parse_database_target(url).port == 7654
+
+
+@pytest.mark.parametrize(
+    "candidate_query",
+    [
+        "host=host-one&host=host-two",
+        "host=host-one,host-two",
+    ],
+)
+def test_multi_query_hosts_use_default_ports_not_authority_or_ambient_port(
+    candidate_query: str,
+) -> None:
+    candidate_url = "postgresql+psycopg://transit@ignored:6543/transit?" + candidate_query
+    process_url = (
+        "postgresql+psycopg://transit@ignored/transit?host=host-one,host-two&port=5432,5432"
+    )
+    dialect = PGDialect_psycopg()
+
+    candidate_connect = dialect.create_connect_args(make_url(candidate_url))[1]
+    process_connect = dialect.create_connect_args(make_url(process_url))[1]
+
+    assert candidate_connect["port"] == ","
+    assert process_connect["port"] == "5432,5432"
+    assert parse_database_target(candidate_url).port == 5432
+    assert_explicit_remote_url(
+        candidate_url,
+        {"DATABASE_URL": process_url, "PGPORT": "7654"},
+    )
+
+
 def test_hostless_target_requires_explicit_process_intent() -> None:
     with pytest.raises(RuntimeError, match="Migration database target policy failed"):
         assert_explicit_remote_url("postgresql://transit@/transit", {})

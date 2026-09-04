@@ -89,6 +89,18 @@ def _collapsed_ports(ports: tuple[int, ...]) -> int | tuple[int, ...]:
     return ports[0] if len(set(ports)) == 1 else ports
 
 
+def _query_host_fallback_ports(
+    host_count: int,
+    authority_port: int | None,
+    environment_port: tuple[int | None, ...] | None,
+) -> tuple[int | None, ...]:
+    if host_count > 1:
+        return (_POSTGRESQL_DEFAULT_PORT,)
+    if authority_port is not None:
+        return (authority_port,)
+    return environment_port or (_POSTGRESQL_DEFAULT_PORT,)
+
+
 def _effective_host_and_port(
     authority_host: str | None,
     authority_port: int | None,
@@ -139,16 +151,15 @@ def _effective_host_and_port(
     if port_values:
         effective_ports = _expanded_ports(_parse_ports(port_values), len(hosts))
     elif inline_ports is not None:
-        fallback_ports = environment_port or (_POSTGRESQL_DEFAULT_PORT,)
+        fallback_ports = _query_host_fallback_ports(len(hosts), authority_port, environment_port)
         expanded_fallback = _expanded_ports(fallback_ports, len(hosts))
         effective_ports = tuple(
             port if port is not None else expanded_fallback[index]
             for index, port in enumerate(inline_ports)
         )
     else:
-        effective_ports = _expanded_ports(
-            environment_port or (_POSTGRESQL_DEFAULT_PORT,), len(hosts)
-        )
+        fallback_ports = _query_host_fallback_ports(len(hosts), authority_port, environment_port)
+        effective_ports = _expanded_ports(fallback_ports, len(hosts))
 
     if len(effective_ports) != len(hosts):
         raise ValueError

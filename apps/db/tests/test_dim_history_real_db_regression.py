@@ -10,14 +10,15 @@ be blocked by the append-only history tables).
 They run ONLY when TRANSIT_TEST_DATABASE_URL points at a disposable Postgres
 with the transit schema applied. Throwaway cluster recipe:
 
-    /usr/lib/postgresql/16/bin/initdb -D /tmp/dimhist_pg
+    /usr/lib/postgresql/16/bin/initdb -U repro -D /tmp/dimhist_pg
     pg_ctl -D /tmp/dimhist_pg -o '-k /tmp/dimhist_pg -p 55433 -c listen_addresses=' start
-    createdb -h /tmp/dimhist_pg -p 55433 transit_repro
+    createdb -h /tmp/dimhist_pg -p 55433 -U repro transit_repro
     # restore schema from prod (either AFTER prod ran migration 0029, or
     # restore the pre-0029 dump and then apply 0029 by hand:
-    #   cd apps/db && DATABASE_URL=postgresql+psycopg://...55433/transit_repro \
+    #   cd apps/db && \
+    #   DATABASE_URL="postgresql+psycopg://repro@/transit_repro?host=/tmp/dimhist_pg&port=55433" \
     #       uv run python -m transit_ops.cli init-db
-    psql -h /tmp/dimhist_pg -p 55433 transit_repro < schema_only_dump.sql
+    psql -h /tmp/dimhist_pg -p 55433 -U repro transit_repro < schema_only_dump.sql
 
     TRANSIT_TEST_DATABASE_DISPOSABLE=I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE \
     TRANSIT_TEST_DATABASE_URL=postgresql+psycopg://repro@:55433/transit_repro?host=/tmp/dimhist_pg \
