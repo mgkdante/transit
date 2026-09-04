@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 import os
 import subprocess
 import sys
@@ -297,6 +298,86 @@ def test_bomless_utf16_with_stray_byte_before_vault_marker_is_scanned(
 
     assert result.returncode == 1
     assert result.stdout == "vault-reference: notes.txt:1\n"
+
+
+@pytest.mark.parametrize(
+    ("bom", "encoding"),
+    [
+        (codecs.BOM_UTF16_LE, "utf-16-le"),
+        (codecs.BOM_UTF16_BE, "utf-16-be"),
+    ],
+)
+def test_utf16_bom_with_stray_byte_before_vault_marker_is_scanned(
+    indexed_repo: IndexedRepo, bom: bytes, encoding: str
+) -> None:
+    content = (
+        bom
+        + "valid prefix: ".encode(encoding)
+        + b"\xff"
+        + ("op" + "://Transit/item/field\n").encode(encoding)
+    )
+    indexed_repo.write_bytes("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "vault-reference: notes.txt:1\n"
+
+
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_bomless_utf16_stray_byte_after_newline_keeps_original_line(
+    indexed_repo: IndexedRepo, encoding: str
+) -> None:
+    content = (
+        "public heading\n".encode(encoding)
+        + b"\xff"
+        + ("op" + "://Transit/item/field\n").encode(encoding)
+    )
+    indexed_repo.write_bytes("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "vault-reference: notes.txt:2\n"
+
+
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_bomless_utf16_markers_before_and_after_stray_byte_keep_locations(
+    indexed_repo: IndexedRepo, encoding: str
+) -> None:
+    content = (
+        ("op" + "://Transit/first/field\npublic heading\n").encode(encoding)
+        + b"\xff"
+        + ("op" + "://Transit/second/field\n").encode(encoding)
+    )
+    indexed_repo.write_bytes("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout.splitlines() == [
+        "vault-reference: notes.txt:1",
+        "vault-reference: notes.txt:3",
+    ]
+
+
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_utf16_decomposed_prefix_before_home_marker_has_one_location(
+    indexed_repo: IndexedRepo, encoding: str
+) -> None:
+    content = (
+        "public heading\nE\u0301 A\u030a workspace=/" + "Users/Private.User/project\n"
+    ).encode(encoding)
+    indexed_repo.write_bytes("notes.txt", content)
+    indexed_repo.stage("notes.txt")
+
+    result = indexed_repo.run_guard()
+
+    assert result.returncode == 1
+    assert result.stdout == "absolute-home-path: notes.txt:2\n"
 
 
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])

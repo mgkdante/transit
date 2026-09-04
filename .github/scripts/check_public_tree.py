@@ -60,7 +60,7 @@ SECURITY_REPORT_MARKER_PATTERN = re.compile(
     r"(?:vulnerabilit(?:y|ies)[ _-]+report|security[ _-]+finding)\b",
     re.IGNORECASE,
 )
-USER_SEGMENT = r"(?P<user>[^\W][\w.-]*)"
+USER_SEGMENT = r"""(?P<user>[^\s/\\"'`]+)"""
 USER_TERMINATOR = r"(?=/|\\|[\s\"'`]|$)"
 HOME_PATTERNS = (
     re.compile(r"(?<![\w.$-])" + re.escape("/" + "home" + "/") + USER_SEGMENT + USER_TERMINATOR),
@@ -205,40 +205,65 @@ def _tracked_ignored_paths(index_tree: Path, paths: list[str]) -> set[str]:
     return {os.fsdecode(path) for path in output.split(b"\0") if path}
 
 
+def _is_home_user(user: str) -> bool:
+    return re.fullmatch(r"[^\W]", user[0]) is not None and all(
+        re.fullmatch(r"\w", character) is not None
+        or character in ".-"
+        or unicodedata.category(character).startswith("M")
+        for character in user
+    )
+
+
 def _private_home_column(line: str) -> int | None:
-    normalized_line = unicodedata.normalize("NFC", line)
     columns = [
         match.start()
         for pattern in HOME_PATTERNS
-        for match in pattern.finditer(normalized_line)
-        if match.group("user").casefold() not in PLACEHOLDER_USERS
+        for match in pattern.finditer(line)
+        if _is_home_user(match.group("user"))
+        and unicodedata.normalize("NFC", match.group("user")).casefold() not in PLACEHOLDER_USERS
     ]
-    if root_match := ROOT_HOME_PATTERN.search(normalized_line):
+    if root_match := ROOT_HOME_PATTERN.search(line):
         columns.append(root_match.start())
     return min(columns, default=None)
+
+
+def _utf16_candidates(
+    content: bytes, encodings: tuple[str, ...], *, base_offset: int = 0
+) -> tuple[TextCandidate, ...]:
+    candidates: list[TextCandidate] = []
+    for byte_offset in (0, 1):
+        for encoding in encodings:
+            decoded = content[byte_offset:].decode(encoding, errors="replace")
+            if all(candidate.text != decoded for candidate in candidates):
+                candidates.append(TextCandidate(decoded, encoding, base_offset + byte_offset))
+    return tuple(candidates)
 
 
 def _decode_indexed_text_candidates(content: bytes) -> tuple[TextCandidate, ...]:
     if content.startswith((codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)):
         return (TextCandidate(content.decode("utf-32", errors="replace")),)
-    if content.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
-        return (TextCandidate(content.decode("utf-16", errors="replace")),)
+    if content.startswith(codecs.BOM_UTF16_LE):
+        return _utf16_candidates(
+            content[len(codecs.BOM_UTF16_LE) :],
+            ("utf-16-le",),
+            base_offset=len(codecs.BOM_UTF16_LE),
+        )
+    if content.startswith(codecs.BOM_UTF16_BE):
+        return _utf16_candidates(
+            content[len(codecs.BOM_UTF16_BE) :],
+            ("utf-16-be",),
+            base_offset=len(codecs.BOM_UTF16_BE),
+        )
     if content.startswith(codecs.BOM_UTF8):
         return (TextCandidate(content.decode("utf-8-sig", errors="replace")),)
 
     if b"\0" in content:
-        candidates: list[TextCandidate] = []
-        for byte_offset in (0, 1):
-            for encoding in ("utf-16-le", "utf-16-be"):
-                decoded = content[byte_offset:].decode(encoding, errors="replace")
-                if all(candidate.text != decoded for candidate in candidates):
-                    candidates.append(TextCandidate(decoded, encoding, byte_offset))
-        return tuple(candidates)
+        return _utf16_candidates(content, ("utf-16-le", "utf-16-be"))
     return (TextCandidate(content.decode("utf-8", errors="replace")),)
 
 
-def _candidate_findings(path: str, candidate: TextCandidate) -> dict[Finding, int | None]:
-    findings: dict[Finding, int | None] = {}
+def _candidate_findings(candidate: TextCandidate) -> dict[tuple[str, int], int | None]:
+    findings: dict[tuple[str, int], int | None] = {}
     raw_line_start = candidate.byte_offset
     lines = candidate.text.splitlines()
     lines_with_endings = candidate.text.splitlines(keepends=True)
@@ -272,7 +297,7 @@ def _candidate_findings(path: str, candidate: TextCandidate) -> dict[Finding, in
                 raw_position = raw_line_start + len(
                     line[:column].encode(candidate.encoding, errors="replace")
                 )
-            findings[(category, path, line_number)] = raw_position
+            findings[(category, line_number)] = raw_position
 
         if candidate.encoding is not None:
             raw_line_start += len(line_with_ending.encode(candidate.encoding, errors="replace"))
@@ -281,26 +306,27 @@ def _candidate_findings(path: str, candidate: TextCandidate) -> dict[Finding, in
 
 
 def _content_findings(path: str, content: bytes) -> set[Finding]:
-    findings: dict[Finding, int | None] = {}
+    findings: set[Finding] = set()
+    raw_findings: list[tuple[str, int, str]] = []
     for candidate in _decode_indexed_text_candidates(content):
-        for finding, raw_position in _candidate_findings(path, candidate).items():
-            if finding in findings:
+        for (category, candidate_line), raw_position in _candidate_findings(candidate).items():
+            if raw_position is None:
+                findings.add((category, path, candidate_line))
                 continue
-            category, finding_path, _ = finding
-            duplicate_marker = raw_position is not None and any(
-                existing_position is not None
-                and existing_category == category
-                and existing_path == finding_path
-                and abs(existing_position - raw_position) <= 1
-                for (
-                    existing_category,
-                    existing_path,
-                    _existing_line,
-                ), existing_position in findings.items()
+            if candidate.encoding is None:
+                raise UnicodeError
+            duplicate_marker = any(
+                existing_category == category and abs(existing_position - raw_position) <= 1
+                for existing_category, existing_position, _encoding in raw_findings
             )
             if not duplicate_marker:
-                findings[finding] = raw_position
-    return set(findings)
+                raw_findings.append((category, raw_position, candidate.encoding))
+
+    for category, raw_position, encoding in raw_findings:
+        encoded_line_feed = "\n".encode(encoding)
+        line_number = content[:raw_position].count(encoded_line_feed) + 1
+        findings.add((category, path, line_number))
+    return findings
 
 
 def _scan_index(root: Path) -> set[Finding]:
