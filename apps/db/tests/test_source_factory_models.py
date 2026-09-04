@@ -12,7 +12,7 @@ def test_source_factory_result_display_dict_is_stable() -> None:
         started_at_utc=datetime(2026, 5, 25, 12, 0, tzinfo=UTC),
         completed_at_utc=datetime(2026, 5, 25, 12, 1, tzinfo=UTC),
         phase_status={FactoryPhase.PREFLIGHT: PhaseStatus.OK},
-        artifacts={"preflight": "artifacts/slice-8.6/preflight.json"},
+        artifacts={"preflight": "artifacts/source-factory/preflight.json"},
         summaries={"r2_inventory": {"known_keep": 3, "unknown_prefix": 1}},
     )
 

@@ -970,8 +970,33 @@ class FakeSourceFactoryCliResult:
             "provider_id": self.provider_id,
             "execute": self.execute,
             "phase_status": {"preflight": "ok"},
-            "artifacts": {"source_factory_result": "artifacts/slice-8.6/result.json"},
+            "artifacts": {"source_factory_result": "artifacts/source-factory/result.json"},
         }
+
+
+def test_rebuild_source_factory_default_report_dir_bootstraps_clean_checkout(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    recorded: dict[str, object] = {}
+
+    def fake_run_source_factory_rebuild(provider_id, **kwargs):  # noqa: ANN001
+        recorded.update(provider_id=provider_id, **kwargs)
+        return FakeSourceFactoryCliResult(provider_id, execute=False)
+
+    monkeypatch.setattr(
+        cli_module,
+        "run_source_factory_rebuild",
+        fake_run_source_factory_rebuild,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["rebuild-source-factory", "stm"])
+
+    expected = Path("artifacts/source-factory")
+    assert result.exit_code == 0
+    assert recorded["artifact_dir"] == expected
+    assert (tmp_path / expected).is_dir()
 
 
 def test_rebuild_source_factory_passes_destructive_gate_options(
@@ -1077,7 +1102,7 @@ def test_rebuild_source_factory_bad_report_dir_prevents_run(
             "rebuild-source-factory",
             "stm",
             "--report-dir",
-            str(tmp_path / "missing" / "slice-8.6"),
+            str(tmp_path / "missing" / "source-factory"),
         ],
     )
 

@@ -5,18 +5,11 @@ from transit_ops.source_factory.artifacts import write_json_artifact
 
 def test_write_json_artifact_writes_stable_sorted_pretty_json(tmp_path) -> None:
     artifact = write_json_artifact(
-        tmp_path / "slice-8.6" / "preflight.json",
+        tmp_path / "source-factory" / "preflight.json",
         {"z": 1, "a": {"phase": "preflight"}},
     )
 
-    expected_body = (
-        '{\n'
-        '  "a": {\n'
-        '    "phase": "preflight"\n'
-        "  },\n"
-        '  "z": 1\n'
-        "}\n"
-    )
+    expected_body = '{\n  "a": {\n    "phase": "preflight"\n  },\n  "z": 1\n}\n'
 
     assert artifact.path.name == "preflight.json"
     assert artifact.path.read_bytes() == expected_body.encode()
@@ -25,7 +18,7 @@ def test_write_json_artifact_writes_stable_sorted_pretty_json(tmp_path) -> None:
 
 
 def test_write_json_artifact_rejects_non_json_payload_without_partial_file(tmp_path) -> None:
-    artifact_path = tmp_path / "slice-8.6" / "bad.json"
+    artifact_path = tmp_path / "source-factory" / "bad.json"
 
     with pytest.raises(TypeError):
         write_json_artifact(artifact_path, {"bad": object()})
@@ -34,7 +27,7 @@ def test_write_json_artifact_rejects_non_json_payload_without_partial_file(tmp_p
 
 
 def test_write_json_artifact_rejects_nan_without_partial_file(tmp_path) -> None:
-    artifact_path = tmp_path / "slice-8.6" / "nan.json"
+    artifact_path = tmp_path / "source-factory" / "nan.json"
 
     with pytest.raises(ValueError):
         write_json_artifact(artifact_path, {"bad": float("nan")})
